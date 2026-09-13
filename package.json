@@ -1,0 +1,43 @@
+{
+  "name": "game-dayhike",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "build": "npm run build -w client",
+    "test": "vitest run --root client && vitest run --root server && vitest run --root tools",
+    "test:client": "vitest run --root client",
+    "test:server": "vitest run --root server",
+    "test:watch": "vitest --root client",
+    "bench": "vitest bench --root client",
+    "typecheck": "tsc -p client --noEmit && tsc -p server --noEmit",
+    "lint": "eslint .",
+    "vendor:ktx2": "node tools/vendor-ktx2.mjs",
+    "infra:check": "terraform -chdir=_infra fmt -check -recursive && terraform -chdir=_infra validate",
+    "deploy": "node tools/deploy/server.mjs && node tools/deploy/client.mjs",
+    "deploy:server": "node tools/deploy/server.mjs",
+    "deploy:client": "node tools/deploy/client.mjs",
+    "deploy:desktop": "node tools/deploy/desktop.mjs",
+    "desktop:smoke": "node desktop/test/smoke.mjs",
+    "desktop:outdated": "node tools/deploy/desktopOutdated.mjs",
+    "deploy:verify": "node tools/deploy/verify.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "10.0.4",
+    "esbuild": "0.28.1",
+    "eslint": "10.8.0",
+    "sharp": "0.34.5",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10"
+  }
+}

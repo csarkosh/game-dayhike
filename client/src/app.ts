@@ -1,0 +1,670 @@
+import { parseLevel } from "./sim/level.js";
+import { createForest } from "./sim/forest.js";
+import { createRenderer } from "./game/renderer.js";
+import { createInputSampler } from "./game/input.js";
+import { FixedStepAccumulator } from "./game/loop.js";
+import { createHud } from "./game/hud.js";
+import { createNetgraph, RateCounter } from "./game/netgraph.js";
+import { navigateToLanding } from "./game/router.js";
+import { createCommandBar } from "./game/commandBar.js";
+import { createPauseMenu } from "./game/pauseMenu.js";
+import {
+  findCommand,
+  parseCommandLine,
+  registerTerrainVariants,
+  resolveTypedArgs,
+  validateCommand,
+} from "./game/commands.js";
+import {
+  lastEntry,
+  parseScript,
+  serialiseScript,
+  setEntry,
+  splitEntries,
+  type ScriptEntry,
+} from "./game/script.js";
+import { stepFreecam, type FreecamState } from "./game/freecam.js";
+import { DEFAULT_HOUR } from "./game/lighting.js";
+import { seedFromToken } from "./game/seed.js";
+import { createAmbientAudio } from "./game/ambientAudio.js";
+import { createWildlifeAudio } from "./game/wildlifeAudio.js";
+import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
+import { DEFAULT_STYLE, STYLE_NAMES, type StyleName } from "./game/stylizeParams.js";
+import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
+import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherPresetName } from "./game/weather.js";
+import {
+  DEFAULT_TERRAIN_VARIANT,
+  activeTerrainVariant,
+  elevationAt,
+  setActiveTerrainVariant,
+  terrainVariantNames,
+} from "./sim/terrain.js";
+import { acceptAsHost, connectAsClient } from "./net/peer.js";
+import { createHostSession } from "./net/hostSession.js";
+import { createClientSession } from "./net/clientSession.js";
+import { degradeTransport, parseNetConditions } from "./net/channels.js";
+import type { Transport } from "./net/transport.js";
+import { isDesktop } from "./game/platform.js";
+import type { WorldState } from "./sim/types.js";
+import type { Lobby } from "./net/lobby.js";
+import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
+
+export type GameHandle = { dispose(): void };
+
+export type GameOptions = {
+  lobby: Lobby | null;
+  onExit(): void;
+  /** The pause menu opened (true) or closed (false); false again on dispose. */
+  onPauseChange(paused: boolean): void;
+};
+
+export function startGame(canvas: HTMLCanvasElement, token: string, options: GameOptions): GameHandle {
+  // The sim registry is the source of truth for variant names; the command
+  // layer only validates against them. This MUST run before `parseScript`
+  // below: `parseScript` validates every entry as it parses, so a `terrain`
+  // entry in `?cmd=` is rejected outright — landing in `errors`, never
+  // `entries` — if the registry is still empty when parsing happens. On a
+  // genuinely cold page load (opening a shared link) this is the only call to
+  // `startGame` there is, so there is no later chance to register before that
+  // parse. Registered every start, not just the first, so a later /terrain
+  // re-initialisation validates against the same list it will resolve from.
+  registerTerrainVariants(terrainVariantNames());
+
+  // sandbox01 stays imported as the fallback and as the shape `renderer.ts` and
+  // both sessions expect. A forest world carries a stub level with no brushes, so
+  // the brush-mesh path is simply a no-op rather than a second code path.
+  const level = parseLevel(sandbox01);
+
+  const params = new URLSearchParams(location.search);
+  const { entries, errors } = parseScript(params.get("cmd") ?? "");
+  const { world, view } = splitEntries(entries);
+
+  // World entries are *resolved* here, never dispatched. Dispatching one would
+  // rewrite `?cmd=` and re-initialise, which would re-read the script and
+  // dispatch it again — an unbounded restart loop.
+  // `lastEntry`, not `find`: a later entry wins, so `seed a;seed b` builds `b` —
+  // which is also the only entry the write-back would leave in the URL.
+  const seedEntry = lastEntry(world, "seed");
+  const seed = seedFromToken(seedEntry ? (seedEntry.args[0] as string) : token);
+
+  // `?cmd=debug`: registers the trailhead pad marker below (host only — the
+  // registry is host-side truth) and turns on the Interacted console logging
+  // on both sessions, so Interact can be proven end to end in the browser.
+  const debugOn = lastEntry(world, "debug") !== undefined;
+
+  // Resolved like `seed`, never dispatched — a dispatched world entry would
+  // rewrite ?cmd= and re-initialise forever. The active variant is module
+  // state that survives the popstate re-initialisation, so it is set
+  // explicitly on EVERY start: an absent entry must reset to the default, not
+  // inherit the previous world's. An unknown name (hand-edited URL) falls
+  // back to the default rather than crashing the boot.
+  const terrainEntry = lastEntry(world, "terrain");
+  const requested = terrainEntry?.args[0];
+  setActiveTerrainVariant(
+    requested !== undefined && terrainVariantNames().includes(requested)
+      ? requested
+      : DEFAULT_TERRAIN_VARIANT,
+  );
+
+  const forest = createForest(seed);
+  const renderer = createRenderer(canvas, level, forest);
+  const ambient = createAmbientAudio();
+  // Shares the ambient context — one AudioContext for the whole game, gated on
+  // the same unlock gesture. Constructed here rather than inside the renderer
+  // because the renderer owns no audio: it produces the events and the camera
+  // pose, and this loop carries them across. Null on a hand-authored level,
+  // where there are no animals to voice: the six clip fetches and the per-frame
+  // listener write would both be for nothing.
+  const wildlifeAudio = renderer.hasWildlife ? createWildlifeAudio(ambient, seed) : null;
+  let weatherName: WeatherPresetName = DEFAULT_WEATHER;
+  // Recomputed only when the weather does — `wildlifePresenceUnder` builds a
+  // per-species array, and the frame loop below would otherwise allocate one
+  // every frame to say the same thing.
+  let wildlifePresence = wildlifePresenceUnder(WEATHER_PRESETS[DEFAULT_WEATHER]);
+  let styleName: StyleName = DEFAULT_STYLE;
+  // The audio graph is gated on a user gesture; this is the same click that
+  // requests pointer lock, so unlocking here needs no dedicated UI of its own.
+  // Named so dispose() can remove it: a world command (e.g. `/seed`) can
+  // dispatch popstate — tearing this session down — before any pointerdown,
+  // and an anonymous `{ once: true }` listener left on `window` would still
+  // fire later, calling `unlock()` on an ambient whose `dispose()` already ran
+  // and building a full oscillator/gain graph nothing references or disposes.
+  const unlockOnPointerDown = () => ambient.unlock();
+  window.addEventListener("pointerdown", unlockOnPointerDown, { once: true });
+  const input = createInputSampler(canvas);
+  const accumulator = new FixedStepAccumulator();
+  const container = canvas.parentElement ?? document.body;
+  const hud = createHud(container);
+
+  let freecam: FreecamState | null = null;
+  /**
+   * Freecam is enabled but has no position yet. It cannot be given one at the
+   * moment it is enabled: a script is applied before the first frame, when
+   * `renderer.camera` still holds the `UniversalCamera` constructor value
+   * (0, 2, 0) — underground on any seed whose ground at the origin is above 2 m,
+   * which shows as a black screen. `stepFreecamView` seeds it once the renderer
+   * has actually put the camera on the local player.
+   */
+  let freecamPending = false;
+  /** Whether the last `renderer.sync` put the camera on the local player's eye. */
+  let cameraOnPlayer = false;
+  // Mirrors what the renderer was last told, so a bare typed `/wireframe` knows
+  // what it is flipping.
+  let wireframe = false;
+  // Mirrors what the renderer was last told, so a bare typed `/skin` knows what
+  // it is flipping. On by default: skin shading starts enabled.
+  let skin = true;
+  let disposed = false;
+
+  function currentScript(): ScriptEntry[] {
+    return parseScript(new URLSearchParams(location.search).get("cmd") ?? "").entries;
+  }
+
+  /** Writes one entry back, so the URL always describes what is on screen. */
+  function persist(name: string, args: readonly string[]): void {
+    const next = setEntry(currentScript(), name, args);
+    const url = new URL(location.href);
+    const text = serialiseScript(next);
+    if (text.length === 0) url.searchParams.delete("cmd");
+    else url.searchParams.set("cmd", text);
+    // replaceState, so dev fiddling does not fill the back button.
+    history.replaceState({}, "", url);
+  }
+
+  /** Whether a toggle view command is currently on, for typed bare toggles. */
+  function isToggleOn(name: string): boolean {
+    if (name === "freecam") return freecam !== null || freecamPending;
+    if (name === "wireframe") return wireframe;
+    if (name === "skin") return skin;
+    return false;
+  }
+
+  /**
+   * Applies a view command. World commands re-initialise instead.
+   *
+   * Arguments arrive in the script's declarative dialect — bare means enable —
+   * whether they came from `?cmd=` or from `resolveTypedArgs`.
+   *
+   * `instant` covers the one command whose default apply is a fade: the
+   * startup loop below passes `instant: true` so restoring `?cmd=weather …`
+   * on page load lands on that weather immediately, like every other view
+   * command re-establishing state on load — see the `time` branch's "Instant,
+   * like every other view command" comment. A typed `/weather` from
+   * `onSubmit` omits `instant` and keeps the default 3 s fade.
+   */
+  function applyView(name: string, args: readonly string[], options: { instant?: boolean } = {}): void {
+    const value = findCommand(name)?.scriptValue?.(args);
+    if (name === "freecam") {
+      if (value === true) {
+        // Enabling an already-flying camera must not move it, so a re-applied
+        // script leaves the view where it is.
+        if (freecam === null) freecamPending = true;
+      } else {
+        freecam = null;
+        freecamPending = false;
+        renderer.setFreecam(null);
+      }
+    } else if (name === "wireframe") {
+      wireframe = value === true;
+      renderer.setWireframe(wireframe);
+    } else if (name === "skin") {
+      skin = value !== false;
+      renderer.setSkinShading(skin);
+    } else if (name === "time") {
+      // Instant, like every other view command: the sun moves, the world is not
+      // rebuilt. Validation has already bounded this to [0, 24), so the fallback
+      // is unreachable and exists only to satisfy the union type.
+      renderer.setHour(typeof value === "number" ? value : DEFAULT_HOUR);
+    } else if (name === "weather") {
+      // `Object.hasOwn`, not `in`: `in` also passes prototype keys (e.g.
+      // "toString"), which are not entries of WEATHER_PRESETS.
+      const preset =
+        typeof value === "string" && Object.hasOwn(WEATHER_PRESETS, value)
+          ? (value as WeatherPresetName)
+          : DEFAULT_WEATHER;
+      weatherName = preset;
+      renderer.setWeather(WEATHER_PRESETS[preset], options.instant ? 0 : undefined);
+      ambient.setWeather(WEATHER_PRESETS[preset]);
+      wildlifePresence = wildlifePresenceUnder(WEATHER_PRESETS[preset]);
+    } else if (name === "style") {
+      const next =
+        typeof value === "string" && (STYLE_NAMES as readonly string[]).includes(value)
+          ? (value as StyleName)
+          : DEFAULT_STYLE;
+      styleName = next;
+      renderer.setStyle(next);
+    } else if (name === "bob") {
+      renderer.setBobScale(typeof value === "number" ? value : DEFAULT_BOB_SCALE);
+    } else if (name === "volume") {
+      // No `scriptValue` on this command (it is not persisted — see
+      // commands.ts): read the validated argument directly instead.
+      ambient.setVolume(args.length > 0 ? Number(args[0]) : 0.5);
+    }
+  }
+
+  /**
+   * Moves the listener and plays the calls the renderer produced. Runs AFTER
+   * `renderer.sync` on both loops, and only after it: `sync` is what steps the
+   * animals — so it is what appends the events — and what puts the camera where
+   * the listener has to be. Shared for the same reason `stepFreecamView` is.
+   */
+  function playWildlifeAudio(): void {
+    if (wildlifeAudio === null) return;
+    wildlifeAudio.setListener(renderer.listener());
+    wildlifeAudio.play(renderer.wildlifeEvents(), wildlifePresence);
+  }
+
+  /**
+   * Advances the free camera by one frame and pushes the result to the
+   * renderer. Shared by the host and client render loops below: those two
+   * closures differ because they drive different session objects, but this
+   * piece of them has no such reason to fork.
+   */
+  function stepFreecamView(dt: number): void {
+    if (freecamPending) {
+      // Wait for a real position. This runs *before* `renderer.sync` in both
+      // loops, so on the frame freecam is enabled the camera has not been moved
+      // yet; returning here leaves `renderer` on its player-following path for
+      // one more frame and adopts the eye position it produces on the next.
+      //
+      // That position carries whatever walking-cue offset was applied on that
+      // frame — at most a few centimetres (`viewBob.ts`), and deliberately not
+      // corrected for: freecam flies at 12-144 m/s, so paying for exactness
+      // here would mean new renderer API for an error no one can perceive.
+      if (!cameraOnPlayer) return;
+      const p = renderer.camera.position;
+      freecam = { x: p.x, y: p.y, z: p.z };
+      freecamPending = false;
+    }
+    if (freecam === null) return;
+    // Typing a command leaves letter keys (e.g. `KeyA` in "freecam") in the
+    // shared held-key set — see input.ts. `sample()` already reports neutral
+    // movement while suppressed, but `stepFreecam` reads `input.keys` directly
+    // and has no notion of suppression, so it must be skipped here or the
+    // camera would drift while you type.
+    if (input.suppressed) return;
+    // `sample` only reads accumulated state, so re-reading it for the current
+    // aim is free and avoids a second source of yaw and pitch that could drift
+    // from the one the player uses.
+    const aim = input.sample(seq);
+    freecam = stepFreecam(freecam, { yaw: aim.yaw, keys: input.keys, dt });
+    renderer.setFreecam({ ...freecam, yaw: aim.yaw, pitch: aim.pitch });
+  }
+
+  const bar = createCommandBar(container, {
+    onOpenChange: (open) => {
+      // The bar outranks the pause menu: `/` over the menu switches to typing.
+      if (open) menu.hide();
+      input.setSuppressed(open || menu.isOpen);
+      // Closing the bar hands the mouse back, so mouselook resumes without a
+      // click on the canvas — worst right after `/freecam`, whose whole point is
+      // looking around. Guarded on `disposed` because a world command dispatches
+      // popstate, tearing this session down, *before* the bar closes: without
+      // the guard this asks a disposed sampler to lock a detached canvas.
+      if (!open && !disposed) input.requestLock();
+    },
+    onSubmit: (line) => {
+      const parsed = parseCommandLine(line);
+      if (parsed === null) return null;
+      const error = validateCommand(parsed);
+      if (error !== null) return error;
+
+      // A bare `/weather` is a query, not a state change: answer it through the
+      // bar's message channel and stop before anything is persisted or applied.
+      if (parsed.name === "weather" && parsed.args.length === 0) {
+        return `weather: ${weatherName}`;
+      }
+      if (parsed.name === "style" && parsed.args.length === 0) {
+        return `style: ${styleName}`;
+      }
+
+      // A bare toggle typed into the bar flips; the URL records the state that
+      // results, not the keystroke that caused it.
+      const args = resolveTypedArgs(parsed.name, parsed.args, isToggleOn(parsed.name));
+      // /volume is not persisted — the URL feeds the invite link, and
+      // a volume level is a listener preference, not part of the shared scene.
+      // Applied below via applyView; never written back to `?cmd=`.
+      if (parsed.name !== "volume") persist(parsed.name, args);
+      if (findCommand(parsed.name)?.kind === "world") {
+        // Re-initialise through the path `main.ts` already listens on.
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      } else {
+        applyView(parsed.name, args);
+      }
+      return null;
+    },
+  });
+
+  const menu = createPauseMenu(container, {
+    onResume: () => {
+      // Re-locking hides the menu through `onLockStateChange`, not here: the
+      // request can be refused, and a menu that vanished anyway would leave
+      // the player staring at a live game that ignores their mouse.
+      if (!disposed) input.requestLock();
+    },
+    onExit: () => options.onExit(),
+  });
+
+  /**
+   * The pause menu is driven by pointer-lock state, not by who released it:
+   * Esc (the browser releases the lock), alt-tab, focus loss — one rule
+   * covers them all. The command bar's own unlock is the exception; the bar
+   * is already handling the keyboard.
+   */
+  const onLockStateChange = () => {
+    if (disposed) return;
+    if (input.locked) {
+      menu.hide();
+      input.setSuppressed(bar.isOpen);
+      options.onPauseChange(false);
+    } else if (!bar.isOpen) {
+      menu.show();
+      input.setSuppressed(true);
+      options.onPauseChange(true);
+    }
+  };
+  document.addEventListener("pointerlockchange", onLockStateChange);
+
+  // Restoring from the URL on load, not a live edit: every view command
+  // applies instantly, weather included — see `applyView`'s `instant` doc.
+  for (const entry of view) applyView(entry.name, entry.args, { instant: true });
+  if (errors.length > 0) bar.showError(errors.join("  •  "));
+
+  const degradation = parseNetConditions(location.search);
+
+  const netgraph = createNetgraph(container);
+  const snapshotRate = new RateCounter(1000);
+  const byteRate = new RateCounter(1000);
+  const frameRate = new RateCounter(1000);
+  let lastSnapshots = 0;
+  let lastBytes = 0;
+
+  const onDebugKey = (e: KeyboardEvent) => {
+    if (e.code === "F3" || e.code === "Backquote") {
+      e.preventDefault();
+      netgraph.toggle();
+    }
+  };
+  window.addEventListener("keydown", onDebugKey);
+
+  const lobby = options.lobby;
+  let seq = 0;
+  // Populated once we know whether we host or join.
+  let stepAndRender: (() => void) | null = null;
+  // The live host or client session, so dispose() can close its transports.
+  // Left open, a finished game's per-connection `onSignal` handler (registered
+  // inside `peer.ts`, not tracked in `unsubscribe` below) stays live on the
+  // lobby's socket — which now outlives the game — and would feed the next
+  // game's offer/answer traffic into a dead RTCPeerConnection.
+  let session: { dispose(): void } | null = null;
+  // Everything this game registered on the lobby's socket, undone on dispose:
+  // the socket outlives the game.
+  const unsubscribe: (() => void)[] = [];
+
+  const wrap = (t: Transport): Transport =>
+    degradation === null ? t : degradeTransport(t, degradation);
+
+  let last = performance.now();
+  function frameSeconds(): number {
+    const now = performance.now();
+    const delta = (now - last) / 1000;
+    last = now;
+    return delta;
+  }
+
+  // Kept so dispose() can cancel it. Without that, a session ending seconds
+  // before the game is torn down still navigates — landing on top of whatever
+  // the player is doing by then, which for a follower is the host's next game.
+  let landingTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function endSession(message: string): void {
+    // A disposed game has no HUD to write to and no business steering the
+    // page: whoever disposed it decided where the player goes next.
+    if (disposed) return;
+    hud.setStatus(message);
+    // One timer, not one per call: two ends in the same session (a session-end
+    // event and a lost transport, say) would otherwise push two history
+    // entries. The later message wins, as the more recent explanation.
+    if (landingTimer !== null) clearTimeout(landingTimer);
+    landingTimer = setTimeout(navigateToLanding, 2000);
+  }
+
+  /**
+   * Hosting covers solo play too: a host session with zero peers is exactly a
+   * local game, so the only difference a lobby makes is whether offers are
+   * answered.
+   */
+  function runAsHost(): void {
+    const host = createHostSession(level, seed, () => performance.now(), { forest });
+    session = host;
+    hud.setStatus(null);
+
+    // The debug pad marker: a lone interactable 2 m out from the trailhead,
+    // at chest height, so it is provably in reach when standing on the pad
+    // and facing it. Host-only — `world.interactables` is host-side truth,
+    // resolved every tick against whichever player pressed Interact.
+    if (debugOn) {
+      const th = activeTerrainVariant().trailGraph?.(seed).trailhead;
+      if (th !== undefined) {
+        const y = elevationAt(seed, th.x + 2, th.z) + 0.5;
+        host.world.interactables.set(1, {
+          id: 1,
+          pos: { x: th.x + 2, y, z: th.z },
+          radius: 0.5,
+          kind: 0,
+          onInteract: (id) => console.info("[debug] interact by", id),
+        });
+      }
+    }
+    host.onInteracted((e) => {
+      if (debugOn) console.info("[debug] interacted", e);
+    });
+
+    if (lobby !== null) {
+      const signaling = lobby.signaling;
+      unsubscribe.push(
+        signaling.onSignal((from, payload) => {
+          const data = payload as { sdp?: RTCSessionDescriptionInit };
+          if (!data.sdp || data.sdp.type !== "offer") return;
+          void acceptAsHost(signaling, from, data.sdp, () => host.removePeer(from))
+            .then((transport) => {
+              host.addPeer(from, wrap(transport));
+            })
+            .catch(() => undefined);
+        }),
+      );
+    }
+
+    stepAndRender = () => {
+      const dt = frameSeconds();
+      const ticks = accumulator.advance(dt);
+      for (let i = 0; i < ticks; i++) host.tick(input.sample(++seq));
+      stepFreecamView(dt);
+
+      const state: WorldState = host.world.state;
+      const self = state.players.get(host.localEntityId);
+      hud.setRespawn(self?.respawnTimer ?? null);
+      renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
+      playWildlifeAudio();
+      // True exactly when `sync` took its player-following branch, which is
+      // the only case in which `renderer.camera.position` is an eye position
+      // a pending freecam can adopt.
+      cameraOnPlayer = self !== undefined && freecam === null;
+      renderer.scene.render();
+
+      const now = performance.now();
+      frameRate.add(1, now);
+      // The host is the authority: it has no prediction error, and no RTT
+      // or downstream traffic of its own.
+      netgraph.update({
+        fps: frameRate.perSecond(now),
+        tick: state.tick,
+        rttMs: 0,
+        snapshotsPerSecond: 0,
+        bytesPerSecond: 0,
+        entities: state.players.size + state.enemies.size,
+        unackedInputs: 0,
+        predictionError: 0,
+      });
+    };
+  }
+
+  async function runAsClient(active: Lobby): Promise<void> {
+    const signaling = active.signaling;
+    let reconnecting = false;
+    // The lobby is the reliable, immediate word on whether the host is still
+    // there. Without it the only signal is the data channel closing, which is
+    // indistinguishable from a network hiccup and costs an ICE timeout to
+    // resolve — end the session at once instead.
+    let lobbyEnded = false;
+    unsubscribe.push(
+      active.onEnd((reason) => {
+        lobbyEnded = true;
+        if (reason === "host_gone") endSession("The host ended this session.");
+      }),
+    );
+
+    const onClose = () => {
+      // One attempt only: a peer that cannot re-establish twice in a row
+      // is not coming back, and a retry loop would hide that.
+      // A channel that closed because the lobby ended has nothing to reconnect
+      // to: the offer would go to a host that has left, and the answer that
+      // never comes would strand this game behind a 15 s timeout.
+      if (reconnecting || disposed || lobbyEnded) return;
+      reconnecting = true;
+      hud.setStatus("Reconnecting…");
+      connectAsClient(signaling, active.state.hostId, onClose)
+        .then(() => {
+          reconnecting = false;
+          hud.setStatus(null);
+        })
+        .catch(() => {
+          // The handshake takes up to 15 s to fail, and by then this game may
+          // be gone or the lobby may have explained itself already; either way
+          // this is no longer the story to tell.
+          if (disposed || lobbyEnded) return;
+          endSession("Lost connection to the host.");
+        });
+    };
+
+    const transport = wrap(await connectAsClient(signaling, active.state.hostId, onClose));
+    if (disposed) {
+      // dispose() ran while the handshake was in flight, so nothing owns this
+      // transport yet — close it directly rather than orphaning it.
+      transport.close();
+      return;
+    }
+    const client = createClientSession(level, seed, transport, () => performance.now(), {
+      expectedLevelId: forest.levelId,
+      forest,
+      ...(isDesktop()
+        ? { staleClientAdvice: "Download the latest desktop version from the landing page." }
+        : {}),
+    });
+    session = client;
+    client.onInteracted((e) => {
+      if (debugOn) console.info("[debug] interacted", e);
+    });
+    // Show the reason the session actually gave. Hardcoding one message here
+    // made every failure read as a deliberate host shutdown, including the
+    // level-mismatch check, whose whole purpose is to say what went wrong.
+    client.onSessionEnd((reason) =>
+      endSession(reason.length > 0 ? reason : "The host ended this session."),
+    );
+    // Not unconditionally: the lobby can end while the handshake is in flight,
+    // and clearing the status here would wipe the explanation it just wrote.
+    if (!lobbyEnded) hud.setStatus(null);
+
+    // No signaling error handler here on purpose: by this point the transport
+    // is up, and `signalingPolicy.ts` ignores every code once it is — a
+    // reconnect's `host_away` or `room_full` says nothing about a match that
+    // is already running. The one code that does end the session, `host_gone`,
+    // arrives through `active.onEnd` above, which does not have to wait for
+    // the peer connection to notice.
+
+    stepAndRender = () => {
+      const dt = frameSeconds();
+      const ticks = accumulator.advance(dt);
+      for (let i = 0; i < ticks; i++) client.tick(input.sample(++seq));
+      stepFreecamView(dt);
+
+      const state = client.renderState(performance.now());
+      const self = state.players.get(client.localEntityId);
+      hud.setRespawn(self?.respawnTimer ?? null);
+      renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
+      playWildlifeAudio();
+      // See the host loop: a pending freecam waits for this.
+      cameraOnPlayer = self !== undefined && freecam === null;
+      renderer.scene.render();
+
+      const now = performance.now();
+      frameRate.add(1, now);
+      const s = client.stats;
+      snapshotRate.add(s.snapshotsReceived - lastSnapshots, now);
+      byteRate.add(s.bytesReceived - lastBytes, now);
+      lastSnapshots = s.snapshotsReceived;
+      lastBytes = s.bytesReceived;
+      netgraph.update({
+        fps: frameRate.perSecond(now),
+        tick: state.tick,
+        rttMs: s.rttMs,
+        snapshotsPerSecond: snapshotRate.perSecond(now),
+        bytesPerSecond: byteRate.perSecond(now),
+        entities: state.players.size + state.enemies.size,
+        unackedInputs: s.unackedInputs,
+        predictionError: s.lastPredictionError,
+      });
+    };
+  }
+
+  if (lobby === null || lobby.state.role === "host") {
+    runAsHost();
+  } else {
+    hud.setStatus("Connecting…");
+    void runAsClient(lobby).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      hud.setStatus(
+        message === "ice_failed"
+          ? "Could not connect. You or the host may be on a restrictive network."
+          : "Could not reach the host.",
+      );
+    });
+  }
+
+  renderer.engine.runRenderLoop(() => {
+    if (stepAndRender === null) {
+      // Not connected yet: keep the frame clock from accumulating a huge first
+      // delta, and still draw the empty level behind the HUD.
+      frameSeconds();
+      renderer.scene.render();
+      return;
+    }
+    stepAndRender();
+  });
+
+  const onResize = () => renderer.resize();
+  window.addEventListener("resize", onResize);
+
+  return {
+    dispose() {
+      disposed = true;
+      options.onPauseChange(false);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onDebugKey);
+      window.removeEventListener("pointerdown", unlockOnPointerDown);
+      document.removeEventListener("pointerlockchange", onLockStateChange);
+      netgraph.dispose();
+      if (landingTimer !== null) clearTimeout(landingTimer);
+      renderer.engine.stopRenderLoop();
+      session?.dispose();
+      for (const off of unsubscribe) off();
+      hud.dispose();
+      bar.dispose();
+      menu.dispose();
+      input.dispose();
+      renderer.dispose();
+      wildlifeAudio?.dispose();
+      ambient.dispose();
+    },
+  };
+}

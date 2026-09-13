@@ -1,0 +1,36 @@
+node_modules/
+dist/
+site/
+server/dist/
+.DS_Store
+*.log
+.env
+.env.local
+coverage/
+.vite/
+
+# Git worktrees for isolated agent runs: a whole second checkout of this repository. ESLint's flat
+# config does not read .gitignore, so eslint.config.js ignores the same path separately.
+.claude/worktrees/
+
+# Archives never belong in the tree.
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+*.dmg
+
+# Terraform
+_infra/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!_infra/terraform.tfvars.example
+
+# Desktop release working state.
+desktop/.cache/
+
+# Firebase CLI's deploy cache.
+.firebase/

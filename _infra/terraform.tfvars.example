@@ -1,0 +1,8 @@
+# GCP configuration
+gcp_project_id = "fps-csarko"
+gcp_region     = "us-west1"
+
+# Public hostname. The Route53 zone must already exist.
+domain_name        = "games.csarko.sh"
+legacy_domain_name = "game.csarko.sh"
+dns_zone_name      = "csarko.sh"

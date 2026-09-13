@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Day Hike</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #101014; color: #fff;
+    font-family: ui-monospace, Menlo, monospace; }
+  main { height: 100%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 0.75rem; text-align: center; padding: 0 2rem; }
+  h1 { font-size: 1.25rem; font-weight: 600; margin: 0; }
+  p { margin: 0; color: rgba(255, 255, 255, 0.62); max-width: 32rem; }
+  button { margin-top: 0.5rem; font: inherit; cursor: pointer; color: #101014;
+    background: rgba(255, 255, 255, 0.85); border: 0; border-radius: 4px; padding: 0.5rem 1.2rem; }
+  button:hover { background: #fff; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Couldn’t reach games.csarko.sh</h1>
+  <p>Day Hike runs from the web. Check your connection and try again.</p>
+  <button id="retry" type="button">Retry</button>
+</main>
+<script>
+  // The shell passes the site URL as ?url=; only an http(s) URL is followed.
+  const url = new URLSearchParams(location.search).get('url') || '';
+  document.getElementById('retry').addEventListener('click', () => {
+    if (/^https?:\/\//.test(url)) location.href = url;
+  });
+</script>
+</body>
+</html>

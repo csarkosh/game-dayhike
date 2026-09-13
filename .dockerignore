@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+client/assets
+client/dist
+client/public
+server/dist
+.git
+.claude
+tools
+_infra

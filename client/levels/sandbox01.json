@@ -1,0 +1,35 @@
+{
+  "id": "sandbox01",
+  "brushes": [
+    { "min": [-32, -1, -32], "max": [32, 0, 32], "material": "concrete" },
+    { "min": [-32, 0, -33], "max": [32, 6, -32], "material": "wall" },
+    { "min": [-32, 0, 32], "max": [32, 6, 33], "material": "wall" },
+    { "min": [-33, 0, -32], "max": [-32, 6, 32], "material": "wall" },
+    { "min": [32, 0, -32], "max": [33, 6, 32], "material": "wall" },
+    { "min": [-6, 0, -6], "max": [6, 2, 6], "material": "platform" },
+    { "min": [-7, 0, -6], "max": [-6, 0.45, 6], "material": "step" },
+    { "min": [10, 0, 10], "max": [12, 1, 12], "material": "crate" },
+    { "min": [-14, 0, 8], "max": [-12, 1, 10], "material": "crate" },
+    { "min": [8, 0, -16], "max": [10, 3, -14], "material": "pillar" },
+    { "min": [-18, 0, -18], "max": [-16, 3, -16], "material": "pillar" },
+    { "min": [18, 0, 4], "max": [20, 4, 6], "material": "pillar" },
+    { "min": [-2, 0, 20], "max": [14, 4, 21], "material": "wall" }
+  ],
+  "playerSpawns": [
+    [0, 4, 0],
+    [4, 4, 4],
+    [-4, 4, 4],
+    [4, 4, -4],
+    [-4, 4, -4]
+  ],
+  "enemySpawns": [
+    [24, 1, 24],
+    [-24, 1, 24],
+    [24, 1, -24],
+    [-24, 1, -24],
+    [0, 1, 28],
+    [28, 1, 0],
+    [-28, 1, 0],
+    [0, 1, -28]
+  ]
+}

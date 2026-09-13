@@ -1,0 +1,107 @@
+import { describe, expect, it, vi } from "vitest";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
+import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import "../../src/sim/passes/index.js";
+import { CLUTTER_CLASS_COUNT } from "../../src/sim/clutter.js";
+import { clutterFadeEdges, clutterSeamEdges } from "../../src/game/clutterField.js";
+import { createClutterMeshes } from "../../src/game/clutterMeshes.js";
+import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
+
+describe("createClutterMeshes attaches the distance fade", () => {
+  it("puts the plugin on every bucket material and a constant fadeBands per bucket", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    // Two variants, two LODs per class; each mesh has its own material so a
+    // wrong per-class edge cannot hide behind sharing. Alpha-tested, the way
+    // every real clutter material with an alpha-cutout card is (foliage,
+    // grass, flower, bush) — so the "plugin on every bucket material"
+    // assertion below keeps meaning something given that opaque materials
+    // skip the plugin entirely. One bucket (class 1, variant 1,
+    // LOD 0) is left OPAQUE on purpose: it proves the opaque skip still
+    // uploads that bucket's fadeBands buffer even with no plugin attached.
+    const assets: Mesh[][][][] = [];
+    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+      assets.push([0, 1].map((variant) => [0, 1].map((lod) => {
+        const mesh = CreateBox(`c${cls}v${variant}l${lod}`, { size: 0.5 }, scene);
+        mesh.material = new PBRMaterial(mesh.name, scene);
+        if (!(cls === 1 && variant === 1 && lod === 0)) {
+          mesh.material.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST;
+        }
+        return [mesh];
+      })));
+    }
+    const clutter = createClutterMeshes(scene, 1, { assets, radiusScale: 0.6 });
+
+    // Babylon has no `thinInstanceGetBuffer`; read what reached the GPU
+    // through a prototype-level spy instead — the `forestMeshes.test.ts`
+    // "gradient to the GPU" test's shape, widened from one mesh to all of
+    // them since this test's 32 meshes share no single instance to spy on.
+    const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    clutter.update(2500, 2500);
+
+    // spy.mock.calls[k] and spy.mock.instances[k] are parallel arrays: the
+    // `this` Babylon bound each call to. `applyBucket` only calls
+    // `thinInstanceSetBuffer` when a bucket has grown, which every non-empty
+    // bucket does on this first `update`, so each such mesh appears exactly
+    // once per buffer kind.
+    function fadeBandsFor(mesh: Mesh): Float32Array | null {
+      for (let k = spy.mock.calls.length - 1; k >= 0; k--) {
+        const call = spy.mock.calls[k]!;
+        if (spy.mock.instances[k] === mesh && call[0] === "fadeBands") {
+          return call[1] as Float32Array;
+        }
+      }
+      return null;
+    }
+
+    let seen = 0;
+    let nonEmpty = 0; // guard: the loop below must actually reach the fadeBands assertions somewhere
+    let sawOpaqueBucket = false; // guard: the opaque exception below must actually run
+    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+      const edge = clutterFadeEdges(cls, 0.6);
+      const seam = clutterSeamEdges(cls, 0.6);
+      for (const [variant, perLod] of assets[cls]!.entries()) {
+        perLod.forEach((meshes, lod) => {
+          const isOpaqueBucket = cls === 1 && variant === 1 && lod === 0;
+          for (const mesh of meshes) {
+            const plugin = mesh.material!.pluginManager?.getPlugin("DistanceFade");
+            if (isOpaqueBucket) {
+              // Opaque materials skip the plugin: needAlphaTesting() is
+              // false, so attachDistanceFade skips it — no discard, no
+              // early-Z cost — but the per-instance fadeBands buffer still
+              // uploads, because every bucket writes it regardless (an
+              // opaque shader simply never reads the attribute).
+              expect(plugin, mesh.name).toBeNull();
+            } else {
+              expect(plugin, mesh.name).toBeInstanceOf(DistanceFadePlugin);
+            }
+            seen++;
+            if (mesh.thinInstanceCount === 0) continue;
+            nonEmpty++;
+            if (isOpaqueBucket) sawOpaqueBucket = true;
+            const bands = fadeBandsFor(mesh);
+            expect(bands, mesh.name).not.toBeNull();
+            // Math.fround, not toBeCloseTo: the buffer is float32 (the
+            // forestMeshes.test.ts "gradient to the GPU" precedent), so this
+            // is the exact value that reaches the GPU.
+            const expected = (lod === 0
+              ? [-2, -1, seam.start, seam.end]
+              : [seam.start, seam.end, edge.start, edge.end]
+            ).map(Math.fround);
+            for (let i = 0; i < mesh.thinInstanceCount; i++) {
+              expect(Array.from(bands!.subarray(i * 4, i * 4 + 4)), `${mesh.name}#${i}`).toEqual(expected);
+            }
+          }
+        });
+      }
+    }
+    expect(seen).toBe(CLUTTER_CLASS_COUNT * 4);
+    expect(nonEmpty).toBeGreaterThan(0);
+    expect(sawOpaqueBucket).toBe(true);
+    clutter.dispose();
+    engine.dispose();
+  });
+});

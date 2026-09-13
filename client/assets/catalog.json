@@ -1,0 +1,294 @@
+{
+  "assets": [
+    {
+      "id": "enemy.grunt",
+      "kind": "character",
+      "output": "models/enemy.grunt.glb",
+      "animations": {
+        "idle": "Idle",
+        "walk": "Walk",
+        "attack": "Attack",
+        "death": "Death"
+      }
+    },
+    {
+      "id": "enemy.skeleton",
+      "kind": "character",
+      "output": "models/enemy.skeleton.glb",
+      "animations": {
+        "idle": "Skeletons_Idle",
+        "walk": "Skeletons_Walking",
+        "attack": "Melee_Unarmed_Attack_Punch_A",
+        "death": "Skeletons_Death"
+      }
+    },
+    {
+      "id": "tree.conifer_a",
+      "kind": "prop",
+      "output": "models/tree.conifer_a.glb"
+    },
+    {
+      "id": "tree.conifer_b",
+      "kind": "prop",
+      "output": "models/tree.conifer_b.glb"
+    },
+    {
+      "id": "tree.giant_pine",
+      "kind": "prop",
+      "output": "models/tree.giant_pine.glb"
+    },
+    {
+      "id": "tree.giant_fir",
+      "kind": "prop",
+      "output": "models/tree.giant_fir.glb"
+    },
+    {
+      "id": "understory.fern",
+      "kind": "prop",
+      "output": "models/understory.fern.glb"
+    },
+    {
+      "id": "understory.shrub",
+      "kind": "prop",
+      "output": "models/understory.shrub.glb"
+    },
+    {
+      "id": "deadwood.snag",
+      "kind": "prop",
+      "output": "models/deadwood.snag.glb"
+    },
+    {
+      "id": "clutter.boulder_a",
+      "kind": "prop",
+      "output": "models/clutter.boulder_a.glb"
+    },
+    {
+      "id": "clutter.boulder_b",
+      "kind": "prop",
+      "output": "models/clutter.boulder_b.glb"
+    },
+    {
+      "id": "clutter.rock_a",
+      "kind": "prop",
+      "output": "models/clutter.rock_a.glb"
+    },
+    {
+      "id": "clutter.rock_b",
+      "kind": "prop",
+      "output": "models/clutter.rock_b.glb"
+    },
+    {
+      "id": "clutter.grass_a",
+      "kind": "prop",
+      "output": "models/clutter.grass_a.glb"
+    },
+    {
+      "id": "clutter.grass_b",
+      "kind": "prop",
+      "output": "models/clutter.grass_b.glb"
+    },
+    {
+      "id": "clutter.meadow",
+      "kind": "prop",
+      "output": "models/clutter.meadow.glb"
+    },
+    {
+      "id": "clutter.driftwood",
+      "kind": "prop",
+      "output": "models/clutter.driftwood.glb"
+    },
+    {
+      "id": "clutter.fungus_a",
+      "kind": "prop",
+      "output": "models/clutter.fungus_a.glb"
+    },
+    {
+      "id": "clutter.fungus_b",
+      "kind": "prop",
+      "output": "models/clutter.fungus_b.glb"
+    },
+    {
+      "id": "clutter.bush_a",
+      "kind": "prop",
+      "output": "models/clutter.bush_a.glb"
+    },
+    {
+      "id": "clutter.bush_b",
+      "kind": "prop",
+      "output": "models/clutter.bush_b.glb"
+    },
+    {
+      "id": "clutter.flower_a",
+      "kind": "prop",
+      "output": "models/clutter.flower_a.glb"
+    },
+    {
+      "id": "clutter.flower_b",
+      "kind": "prop",
+      "output": "models/clutter.flower_b.glb"
+    },
+    {
+      "id": "wildlife.rabbit",
+      "kind": "creature",
+      "output": "models/wildlife.rabbit.glb",
+      "animations": {
+        "graze": "Graze",
+        "walk": "Hop",
+        "run": "Hop"
+      }
+    },
+    {
+      "id": "wildlife.crow_perched",
+      "kind": "prop",
+      "output": "models/wildlife.crow_perched.glb"
+    },
+    {
+      "id": "wildlife.eagle",
+      "kind": "prop",
+      "output": "models/wildlife.eagle.glb"
+    },
+    {
+      "id": "wildlife.gull",
+      "kind": "prop",
+      "output": "models/wildlife.gull.glb"
+    },
+    {
+      "id": "wildlife.raven",
+      "kind": "prop",
+      "output": "models/wildlife.raven.glb"
+    },
+    {
+      "id": "wildlife.squirrel",
+      "kind": "creature",
+      "output": "models/wildlife.squirrel.glb",
+      "animations": {
+        "graze": "Graze",
+        "walk": "Walk",
+        "run": "Run",
+        "alert": "Alert"
+      }
+    },
+    {
+      "id": "wildlife.elk",
+      "kind": "creature",
+      "output": "models/wildlife.elk.glb",
+      "animations": {
+        "graze": "Graze",
+        "walk": "Walk",
+        "run": "Run",
+        "alert": "Alert"
+      }
+    },
+    {
+      "id": "wildlife.deer",
+      "kind": "creature",
+      "output": "models/wildlife.deer.glb",
+      "animations": {
+        "graze": "Graze",
+        "walk": "Walk",
+        "run": "Run",
+        "alert": "Alert"
+      }
+    }
+  ],
+  "textures": [
+    {
+      "id": "ground.grass",
+      "output": "textures/ground.grass.webp"
+    },
+    {
+      "id": "ground.grass.normal",
+      "output": "textures/ground.grass.normal.webp"
+    },
+    {
+      "id": "ground.grass.rah",
+      "output": "textures/ground.grass.rah.webp"
+    },
+    {
+      "id": "ground.forest_floor",
+      "output": "textures/ground.forest_floor.webp"
+    },
+    {
+      "id": "ground.forest_floor.normal",
+      "output": "textures/ground.forest_floor.normal.webp"
+    },
+    {
+      "id": "ground.forest_floor.rah",
+      "output": "textures/ground.forest_floor.rah.webp"
+    },
+    {
+      "id": "ground.rock",
+      "output": "textures/ground.rock.webp"
+    },
+    {
+      "id": "ground.rock.normal",
+      "output": "textures/ground.rock.normal.webp"
+    },
+    {
+      "id": "ground.rock.rah",
+      "output": "textures/ground.rock.rah.webp"
+    },
+    {
+      "id": "ground.sand",
+      "output": "textures/ground.sand.webp"
+    },
+    {
+      "id": "ground.sand.normal",
+      "output": "textures/ground.sand.normal.webp"
+    },
+    {
+      "id": "ground.sand.rah",
+      "output": "textures/ground.sand.rah.webp"
+    },
+    {
+      "id": "ground.pebble",
+      "output": "textures/ground.pebble.webp"
+    },
+    {
+      "id": "ground.pebble.normal",
+      "output": "textures/ground.pebble.normal.webp"
+    },
+    {
+      "id": "ground.pebble.rah",
+      "output": "textures/ground.pebble.rah.webp"
+    },
+    {
+      "id": "ground.asphalt",
+      "output": "textures/ground.asphalt.webp"
+    },
+    {
+      "id": "ground.asphalt.normal",
+      "output": "textures/ground.asphalt.normal.webp"
+    },
+    {
+      "id": "ground.asphalt.rah",
+      "output": "textures/ground.asphalt.rah.webp"
+    }
+  ],
+  "audio": [
+    {
+      "id": "call.raven_croak",
+      "output": "audio/call.raven_croak.mp3"
+    },
+    {
+      "id": "call.gull_cry",
+      "output": "audio/call.gull_cry.mp3"
+    },
+    {
+      "id": "call.elk_bugle",
+      "output": "audio/call.elk_bugle.mp3"
+    },
+    {
+      "id": "call.elk_bark",
+      "output": "audio/call.elk_bark.mp3"
+    },
+    {
+      "id": "call.squirrel_chatter",
+      "output": "audio/call.squirrel_chatter.mp3"
+    },
+    {
+      "id": "call.eagle_cry",
+      "output": "audio/call.eagle_cry.mp3"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "//": "Where production is, for the deploy scripts. Read only when Terraform cannot answer — see tools/deploy/lib/preconditions.mjs. Every value is public: they appear in the deployed bundle, in DNS, or in a URL a player visits. Nothing secret belongs here.",
+  "gcp_project_id": "fps-csarko",
+  "signaling_url": "https://fps-signaling-5pogqa5sqq-uw.a.run.app",
+  "signaling_service_name": "fps-signaling",
+  "signaling_image_repository": "us-west1-docker.pkg.dev/fps-csarko/signaling",
+  "hosting_site_id": "fps-csarko",
+  "site_url": "https://games.csarko.sh/dayhike",
+  "legacy_domain_name": "game.csarko.sh",
+  "downloads_bucket": "fps-csarko-downloads",
+  "downloads_url": "https://storage.googleapis.com/fps-csarko-downloads"
+}

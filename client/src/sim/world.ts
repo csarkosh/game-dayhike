@@ -1,0 +1,362 @@
+import type { Interactable } from "./interact.js";
+import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "./types.js";
+import { cloneVec3, distanceSquared } from "./types.js";
+import type { Level } from "./level.js";
+import type { BoxProvider } from "./boxSource.js";
+import type { Forest } from "./forest.js";
+import { groundSpawn, ringSample, spiralSpawn } from "./spawn.js";
+import { collisionBoxes } from "./level.js";
+import { activeTerrainVariant } from "./terrain.js";
+import { createGroundField, type GroundField } from "./ground.js";
+import { stepMovement, type MoveState } from "./movement.js";
+import { isExpiredCorpse, stepEnemy } from "./ai.js";
+import { updateDirector } from "./director.js";
+import {
+  ENEMY_DETECT_RANGE,
+  ENEMY_POPULATION_CAP,
+  PLAYER_HALF,
+  PLAYER_MAX_HEALTH,
+  RESPAWN_SECONDS,
+  TICK_DT,
+} from "./constants.js";
+
+export type World = {
+  state: WorldState;
+  level: Level;
+  /**
+   * Prop collision: trunks and anything else genuinely box-shaped, or a
+   * hand-authored level's whole box list. The generated ground is NOT in here —
+   * see `ground` below.
+   */
+  boxes: BoxProvider;
+  /**
+   * The generated ground surface, or null for hand-authored levels, whose
+   * floors are ordinary brushes. Continuous and analytic, and the same field
+   * the renderer draws, so the player stands exactly where they can see they
+   * stand (`ground.ts`).
+   */
+  ground: GroundField | null;
+  /** Set for generated worlds, null for hand-authored levels like sandbox01. */
+  forest: Forest | null;
+  /**
+   * Whether this world owns the entities no one predicts: enemies, the spawn
+   * director, and respawn timers. The host's world does. A client's predicted
+   * world does not — it holds only the local player and takes everything else
+   * from snapshots, so running the director there invents a second population
+   * of enemies that exist nowhere else, chase the local player, and chew its
+   * predicted health between snapshots.
+   */
+  authoritative: boolean;
+  /**
+   * Ceiling on the director's target population — generated worlds set 0 while
+   * enemy behaviour is broken by construction on montane ground; restoring them
+   * is this one number.
+   */
+  maxEnemies: number;
+  /**
+   * Sea level for wading, from the active variant's registry entry; null for
+   * hand-authored levels and variants without water. Rooms
+   * below y = 0 in authored maps are unaffected because this stays null there.
+   */
+  waterLevel: number | null;
+  /**
+   * What a player can act on: registered by the owning system, resolved
+   * by `interact.ts` on the host. A client's predicted world keeps this empty —
+   * it never resolves an interaction, only learns the result.
+   */
+  interactables: Map<number, Interactable>;
+};
+
+export function createWorld(level: Level, seed: number, authoritative = true): World {
+  return {
+    level,
+    boxes: collisionBoxes(level),
+    ground: null,
+    forest: null,
+    authoritative,
+    maxEnemies: ENEMY_POPULATION_CAP,
+    waterLevel: null,
+    interactables: new Map(),
+    state: {
+      tick: 0,
+      players: new Map(),
+      enemies: new Map(),
+      nextEntityId: 1,
+      rngSeed: seed | 0,
+    },
+  };
+}
+
+/**
+ * A world whose geometry is generated rather than authored.
+ *
+ * The `level` it carries is a stub with no brushes: `hostSession` sends
+ * `level.id` in Welcome, which is how the generator version and seed reach the
+ * client, and `renderer.ts` iterates `level.brushes`, which is correctly empty.
+ */
+export function createForestWorld(forest: Forest, authoritative = true): World {
+  return {
+    level: { id: forest.levelId, brushes: [], playerSpawns: [], enemySpawns: [] },
+    boxes: forest.grid,
+    ground: createGroundField(forest.seed),
+    forest,
+    authoritative,
+    maxEnemies: 0,
+    waterLevel: activeTerrainVariant().waterLevel ?? null,
+    interactables: new Map(),
+    state: {
+      tick: 0,
+      players: new Map(),
+      enemies: new Map(),
+      nextEntityId: 1,
+      rngSeed: forest.seed | 0,
+    },
+  };
+}
+
+/**
+ * Where a joining player starts.
+ *
+ * Hand-authored levels cycle their spawn list by player count so a full lobby
+ * never stacks. A forest has no list, so every peer walks the same deterministic
+ * spiral out from the origin and arrives at the same answer without exchanging
+ * anything.
+ */
+function pickSpawn(world: World): Vec3 {
+  if (world.forest !== null) {
+    const seed = world.forest.seed;
+    const th = activeTerrainVariant().trailGraph?.(seed).trailhead;
+    return spiralSpawn(world.boxes, seed, PLAYER_HALF, th === undefined ? { x: 0.5, z: 0.5 } : { x: th.x, z: th.z });
+  }
+  const spawns = world.level.playerSpawns;
+  return spawns[world.state.players.size % spawns.length] as Vec3;
+}
+
+/**
+ * Respawn point: a ring 15-25 m from where the player died, biased toward the
+ * bearing with the fewest enemies near it.
+ *
+ * Not the exact spot they fell: RESPAWN_SECONDS is 3 and ENEMY_ATTACK_COOLDOWN is
+ * 1.2, so whatever killed them is still standing over the corpse and ready to
+ * swing. Respawning in place would be a death loop.
+ */
+function pickRespawn(world: World, player: PlayerState): Vec3 {
+  const died = player.deathPos;
+  if (world.forest === null || died === null) return pickSpawn(world);
+
+  let best: Vec3 | null = null;
+  let bestThreat = Infinity;
+  const detectSq = ENEMY_DETECT_RANGE * ENEMY_DETECT_RANGE;
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const candidate = ringSample(world.state, died, 15, 25);
+    if (candidate === null) continue;
+    const placed = groundSpawn(
+      world.boxes,
+      world.forest.seed,
+      candidate.x,
+      candidate.z,
+      PLAYER_HALF,
+    );
+    if (placed === null) continue;
+
+    let threat = 0;
+    for (const enemy of world.state.enemies.values()) {
+      if (distanceSquared(enemy.pos, placed) < detectSq) threat++;
+    }
+    if (threat < bestThreat) {
+      bestThreat = threat;
+      best = placed;
+      if (threat === 0) break;
+    }
+  }
+  return best ?? pickSpawn(world);
+}
+
+export function spawnPlayer(world: World): PlayerState {
+  const id = world.state.nextEntityId++;
+  const spawn = pickSpawn(world);
+  const player: PlayerState = {
+    id,
+    pos: cloneVec3(spawn),
+    vel: { x: 0, y: 0, z: 0 },
+    yaw: 0,
+    pitch: 0,
+    health: PLAYER_MAX_HEALTH,
+    grounded: false,
+    lastProcessedInput: 0,
+    respawnTimer: 0,
+    lamp: { on: false, charge: 1 },
+    deathPos: null,
+  };
+  world.state.players.set(id, player);
+  return player;
+}
+
+export function removePlayer(world: World, id: number): void {
+  world.state.players.delete(id);
+}
+
+export function tickWorld(world: World, inputs: Map<number, InputCommand>): void {
+  world.state.tick++;
+
+  for (const player of world.state.players.values()) {
+    const cmd = inputs.get(player.id);
+
+    if (isDead(player)) {
+      // Dead players do not move. This runs on both sides, unlike the respawn
+      // itself, so a client predicting its own corpse agrees with the host
+      // about where it is lying. Yaw and pitch still track the mouse: freezing
+      // the camera for three seconds reads as a hang, and view angles carry no
+      // authority anyway.
+      player.vel = { x: 0, y: 0, z: 0 };
+      if (cmd !== undefined) {
+        player.yaw = cmd.yaw;
+        player.pitch = cmd.pitch;
+        player.lastProcessedInput = cmd.seq;
+      }
+      continue;
+    }
+
+    if (cmd === undefined) {
+      // No input this tick: still integrate gravity so the player does not
+      // hang in mid-air while their packets are late.
+      applyMove(world, player, {
+        seq: player.lastProcessedInput,
+        moveX: 0,
+        moveZ: 0,
+        yaw: player.yaw,
+        pitch: player.pitch,
+        buttons: 0,
+      });
+      continue;
+    }
+    player.yaw = cmd.yaw;
+    player.pitch = cmd.pitch;
+    applyMove(world, player, cmd);
+    player.lastProcessedInput = cmd.seq;
+  }
+
+  if (!world.authoritative) return;
+
+  for (const enemy of world.state.enemies.values()) {
+    stepEnemy(enemy, world, TICK_DT);
+  }
+  for (const [id, enemy] of world.state.enemies) {
+    if (isExpiredCorpse(enemy)) world.state.enemies.delete(id);
+  }
+
+  updateDirector(world);
+  updateRespawns(world);
+}
+
+export function isDead(player: PlayerState): boolean {
+  return player.health <= 0 || player.respawnTimer > 0;
+}
+
+/**
+ * Host-only, and deliberately so. A client that predicted its own death and had
+ * it revoked by the next snapshot would be far worse than a 100 ms delay before
+ * the screen changes, so this never runs during reconciliation replay.
+ */
+function updateRespawns(world: World): void {
+  for (const player of world.state.players.values()) {
+    if (player.respawnTimer > 0) {
+      player.respawnTimer = Math.max(0, player.respawnTimer - TICK_DT);
+      if (player.respawnTimer === 0) {
+        player.pos = cloneVec3(pickRespawn(world, player));
+        player.vel = { x: 0, y: 0, z: 0 };
+        player.health = PLAYER_MAX_HEALTH;
+        player.grounded = false;
+        player.deathPos = null;
+      }
+      continue;
+    }
+    if (player.health <= 0) {
+      player.respawnTimer = RESPAWN_SECONDS;
+      player.vel = { x: 0, y: 0, z: 0 };
+      player.deathPos = cloneVec3(player.pos);
+    }
+  }
+}
+
+/**
+ * Applies one input as a movement step for a single player, outside the normal
+ * world tick. The host uses this to drain a backlog without advancing everyone
+ * else. Safe because movement is a pure chain: the same commands applied in the
+ * same order from the same state land in the same place, no matter how they are
+ * grouped into ticks — which is exactly what lets the client replay them
+ * one-per-tick and still agree.
+ */
+export function applyPlayerInput(world: World, playerId: number, cmd: InputCommand): void {
+  const player = world.state.players.get(playerId);
+  if (player === undefined) return;
+  player.yaw = cmd.yaw;
+  player.pitch = cmd.pitch;
+  if (!isDead(player)) applyMove(world, player, cmd);
+  player.lastProcessedInput = cmd.seq;
+}
+
+function applyMove(world: World, player: PlayerState, cmd: InputCommand): void {
+  const before: MoveState = { pos: player.pos, vel: player.vel, grounded: player.grounded };
+  const after = stepMovement(
+    before,
+    cmd,
+    TICK_DT,
+    world.boxes,
+    PLAYER_HALF,
+    world.waterLevel,
+    world.ground,
+  );
+  player.pos = after.pos;
+  player.vel = after.vel;
+  player.grounded = after.grounded;
+}
+
+export function cloneWorldState(state: WorldState): WorldState {
+  const players = new Map<number, PlayerState>();
+  for (const [id, p] of state.players) {
+    players.set(id, {
+      ...p,
+      pos: cloneVec3(p.pos),
+      vel: cloneVec3(p.vel),
+      lamp: { ...p.lamp },
+      deathPos: p.deathPos === null ? null : cloneVec3(p.deathPos),
+    });
+  }
+  const enemies = new Map<number, EnemyState>();
+  for (const [id, e] of state.enemies) {
+    enemies.set(id, { ...e, pos: cloneVec3(e.pos), vel: cloneVec3(e.vel) });
+  }
+  return {
+    tick: state.tick,
+    players,
+    enemies,
+    nextEntityId: state.nextEntityId,
+    rngSeed: state.rngSeed,
+  };
+}
+
+/**
+ * Canonical text fingerprint of world state. Used by the determinism tests.
+ * Deliberately not a hash: when it differs you can diff the two strings and
+ * see exactly which entity and which field drifted.
+ */
+export function serializeWorldState(state: WorldState): string {
+  const parts: string[] = [`t:${state.tick}`, `n:${state.nextEntityId}`, `r:${state.rngSeed}`];
+
+  for (const [id, p] of [...state.players.entries()].sort((a, b) => a[0] - b[0])) {
+    parts.push(
+      `P${id}:${p.pos.x},${p.pos.y},${p.pos.z},${p.vel.x},${p.vel.y},${p.vel.z},` +
+        `${p.yaw},${p.pitch},${p.health},${p.grounded ? 1 : 0},${p.lastProcessedInput},${p.respawnTimer}` +
+        `,${p.lamp.on ? 1 : 0},${Math.round(p.lamp.charge * 127)}`,
+    );
+  }
+  for (const [id, e] of [...state.enemies.entries()].sort((a, b) => a[0] - b[0])) {
+    parts.push(
+      `E${id}:${e.pos.x},${e.pos.y},${e.pos.z},${e.vel.x},${e.vel.y},${e.vel.z},` +
+        `${e.yaw},${e.health},${e.ai},${e.targetId},${e.stateTimer}`,
+    );
+  }
+  return parts.join("|");
+}

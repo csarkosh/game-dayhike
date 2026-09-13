@@ -1,0 +1,376 @@
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+
+// `terrainTexture.ts`'s plugin constructor calls the real `loadGroundArrays`
+// whenever `renderer.ts`'s `attachTerrainTexture(scene, mat)` call sites (no
+// factory option — that call site is out of scope for this task) don't
+// supply one, and the real loader builds a `RawTexture2DArray`, which
+// NullEngine cannot create (the same gap `groundMaps.test.ts` documents and
+// works around with its own factory injection). Mocked here, at the module
+// boundary, rather than by touching `renderer.ts`.
+vi.mock("../../src/game/groundMaps.js", () => ({
+  loadGroundArrays: () => ({
+    normals: { isReady: () => true, dispose() {} },
+    // `getSize` mirrors the real `BaseTexture` surface `bindForSubMesh` reads
+    // (`terrainReliefOn`'s placeholder-vs-real signature) — present here so a
+    // future test that exercises binding fails on the plugin code, not on a
+    // mock that is missing a method the real texture always has.
+    rah: { isReady: () => true, dispose() {}, getSize: () => ({ width: 1, height: 1 }) },
+    ready: Promise.resolve(),
+    dispose() {},
+  }),
+}));
+
+// The terrain field lives behind the variant registry, and `activeTerrainVariant`
+// throws until something has registered one. `app.ts` gets that transitively
+// through `forest.ts`; a renderer-only test has to ask for it.
+import "../../src/sim/passes/index.js";
+import {
+  applyRingGeometry,
+  applyWetness,
+  createClipmap,
+  createClipmapMesh,
+  terrainMaterialFor,
+  writeListenerPose,
+} from "../../src/game/renderer.js";
+import {
+  createRingSamples,
+  holeCellsFor,
+  ringGeometry,
+  ringSpacing,
+  HOLE_CELLS,
+  RING_CELLS,
+  RING_COUNT,
+  type RingSamples,
+} from "../../src/game/clipmap.js";
+import { WEATHER_PRESETS } from "../../src/game/weather.js";
+
+let engine: NullEngine | null = null;
+
+afterEach(() => {
+  engine?.dispose();
+  engine = null;
+});
+
+function scene(): Scene {
+  engine = new NullEngine();
+  return new Scene(engine);
+}
+
+describe("terrainMaterialFor", () => {
+  it("returns a PBR material, not a StandardMaterial", () => {
+    // Terrain materials are PBR, not Standard: a
+    // StandardMaterial ignores the environment texture entirely, so image-based
+    // lighting would silently do nothing.
+    const s = scene();
+    const mat = terrainMaterialFor(s, "terrain");
+    expect(mat).toBeInstanceOf(PBRMaterial);
+    expect(mat).not.toBeInstanceOf(StandardMaterial);
+  });
+
+  it("leaves terrain albedo white so vertex colours are the palette", () => {
+    // PBR multiplies vertex colour into albedo. Tinting the material as well
+    // would multiply the palette twice and darken everything.
+    const s = scene();
+    const mat = terrainMaterialFor(s, "terrain");
+    expect(mat.albedoColor.r).toBeCloseTo(1, 6);
+    expect(mat.albedoColor.g).toBeCloseTo(1, 6);
+    expect(mat.albedoColor.b).toBeCloseTo(1, 6);
+  });
+
+  it("gives non-terrain materials their palette colour", () => {
+    const s = scene();
+    const mat = terrainMaterialFor(s, "platform");
+    expect(mat.albedoColor.b).toBeGreaterThan(mat.albedoColor.r);
+  });
+
+  it("keeps world surfaces dielectric and rough", () => {
+    // Metallic terrain is the classic PBR mistake and reads as wet plastic.
+    const s = scene();
+    for (const name of ["terrain", "concrete", "wall", "platform"]) {
+      const mat = terrainMaterialFor(s, name);
+      expect(mat.metallic).toBe(0);
+      expect(mat.roughness).toBeGreaterThan(0.5);
+    }
+  });
+
+  it("caches one material per name", () => {
+    const s = scene();
+    expect(terrainMaterialFor(s, "terrain")).toBe(terrainMaterialFor(s, "terrain"));
+    expect(terrainMaterialFor(s, "terrain")).not.toBe(terrainMaterialFor(s, "concrete"));
+  });
+});
+
+describe("clipmap meshes", () => {
+  it("uploads positions, normals and stride-4 colours", () => {
+    // The wiring bug this catches: building colours in clipmap.ts and never
+    // putting them on the mesh — identical on screen to never computing them.
+    const s = scene();
+    const mesh = createClipmapMesh(s, "clipmap_test");
+    applyRingGeometry(mesh, ringGeometry(createRingSamples(0x7e44a1, 5, 0, 0), null, null));
+    expect(mesh.isVerticesDataPresent(VertexBuffer.PositionKind)).toBe(true);
+    expect(mesh.isVerticesDataPresent(VertexBuffer.NormalKind)).toBe(true);
+    expect(mesh.isVerticesDataPresent(VertexBuffer.ColorKind)).toBe(true);
+    // `VertexData.applyToMesh` uploads colours with a hard-coded stride of 4.
+    // A 3-component array would still leave `isVerticesDataPresent` above
+    // `true` and then get reinterpreted as garbage — silently. Read the
+    // buffer back off the mesh (not `ringGeometry`'s return value) so this
+    // checks what actually reached the mesh.
+    const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
+    const colors = mesh.getVerticesData(VertexBuffer.ColorKind);
+    expect(positions).not.toBeNull();
+    expect(colors).not.toBeNull();
+    expect((colors as Float32Array).length).toBe(((positions as Float32Array).length / 3) * 4);
+  });
+
+  it("re-upload replaces every buffer, including the index count", () => {
+    // Not "in place": `Geometry.setVerticesData` builds a new VertexBuffer and
+    // disposes the old one on every call, whatever `updatable` says. What must
+    // hold is that ALL FOUR buffers follow the second call — a ring that
+    // scrolls its positions while keeping the first upload's normals or colours
+    // would light and tint the new ground with the old ground's values.
+    const s = scene();
+    const mesh = createClipmapMesh(s, "clipmap_test");
+    const read = (kind: string): Float32Array =>
+      mesh.getVerticesData(kind) as Float32Array;
+
+    applyRingGeometry(mesh, ringGeometry(createRingSamples(0x7e44a1, 5, 0, 0), null, null));
+    const before = {
+      position: read(VertexBuffer.PositionKind)[1] as number,
+      normal: read(VertexBuffer.NormalKind)[0] as number,
+      color: read(VertexBuffer.ColorKind)[1] as number,
+      indices: mesh.getTotalIndices(),
+    };
+    expect(before.indices).toBe(RING_CELLS * RING_CELLS * 6);
+
+    // Second upload carries a hole, which is the shape every ring but ring 0
+    // actually uses — the first upload's solid index buffer is the exception.
+    const ring = createRingSamples(0x7e44a1, 5, 5000, 5000);
+    const finer = createRingSamples(0x7e44a1, 4, 5000, 5000);
+    applyRingGeometry(mesh, ringGeometry(ring, holeCellsFor(ring, finer), null));
+
+    expect(read(VertexBuffer.PositionKind)[1]).not.toBe(before.position);
+    expect(read(VertexBuffer.NormalKind)[0]).not.toBe(before.normal);
+    expect(read(VertexBuffer.ColorKind)[1]).not.toBe(before.color);
+    expect(mesh.getTotalIndices()).toBe(
+      (RING_CELLS * RING_CELLS - HOLE_CELLS * HOLE_CELLS) * 6,
+    );
+  });
+
+  it("receives shadows and takes the white terrain material", () => {
+    const s = scene();
+    const mesh = createClipmapMesh(s, "clipmap_test");
+    expect(mesh.receiveShadows).toBe(true);
+    expect(mesh.material).toBe(terrainMaterialFor(s, "terrain"));
+  });
+});
+
+describe("createClipmap", () => {
+  const SEED = 0x7e44a1;
+
+  /**
+   * What each ring's mesh must be holding, built from scratch at this camera
+   * position with no scrolling and no incremental state involved. Seven fresh
+   * rings, reused across all levels, because each level needs the one inside it.
+   */
+  function expectedAt(camX: number, camZ: number): { positions: Float32Array; indices: Uint16Array }[] {
+    const fresh: RingSamples[] = [];
+    for (let level = 0; level < RING_COUNT; level++) {
+      fresh.push(createRingSamples(SEED, level, camX, camZ));
+    }
+    return fresh.map((ring, level) =>
+      ringGeometry(
+        ring,
+        level === 0 ? null : holeCellsFor(ring, fresh[level - 1]!),
+        // The border blends to the coarser ring's samples, so this must be
+        // the real neighbour ring, not a boolean —
+        // createClipmap emits with exactly this ring, and the tests below
+        // compare positions bit-for-bit against it.
+        level < RING_COUNT - 1 ? fresh[level + 1]! : null,
+      ),
+    );
+  }
+
+  it("re-emits a ring whose hole moved even when the ring itself did not", () => {
+    // THE test for the re-emit rule. `snapOrigin` puts ring L on a lattice of
+    // 2^(L+1) m, so stepping the camera 2 m from the origin moves ring 0 (step
+    // 2 m) and leaves ring 1 (step 4 m) exactly where it was. Ring 1 must still
+    // re-emit: its index-buffer hole follows ring 0's footprint, which just
+    // slid one coarse cell. Drop the `moved[level - 1]` clause in
+    // `createClipmap` and ring 1 keeps a hole cut for ring 0's old position —
+    // a tear in the terrain that nothing reports.
+    const s = scene();
+    const clipmap = createClipmap(s, SEED);
+    expect(ringSpacing(0)).toBe(1); // ring 0 snaps every 2 m
+    expect(ringSpacing(1)).toBe(2); // ring 1 snaps every 4 m, so it will not move
+
+    clipmap.update(2, 0);
+
+    const want = expectedAt(2, 0);
+    // Ring 1's vertices are unchanged — only its index buffer is stale — so
+    // indices are where the whole tell lives.
+    expect(Array.from(clipmap.meshes[1]!.getIndices()!)).toEqual(Array.from(want[1]!.indices));
+    expect(clipmap.meshes[0]!.getVerticesData(VertexBuffer.PositionKind)).toEqual(want[0]!.positions);
+  });
+
+  // Explicit 30 s timeout, not a smaller assertion: three camera moves × seven
+  // rings × a from-scratch rebuild each already ran near vitest's 5000 ms
+  // default, and the two extra per-vertex Float32Arrays the ground-texture
+  // attributes added pushed it over under full-suite load. Several other
+  // suites in this repo need `--testTimeout=30000` for the same reason.
+  it("leaves every ring matching a from-scratch rebuild as the camera moves", () => {
+    const s = scene();
+    const clipmap = createClipmap(s, SEED);
+    for (const [x, z] of [[2, 0], [37.5, -18.25], [-260.75, 96]] as const) {
+      clipmap.update(x, z);
+      const want = expectedAt(x, z);
+      for (let level = 0; level < RING_COUNT; level++) {
+        const mesh = clipmap.meshes[level]!;
+        expect(
+          Array.from(mesh.getIndices()!),
+          `indices, ring ${level} at (${x}, ${z})`,
+        ).toEqual(Array.from(want[level]!.indices));
+        expect(
+          mesh.getVerticesData(VertexBuffer.PositionKind),
+          `positions, ring ${level} at (${x}, ${z})`,
+        ).toEqual(want[level]!.positions);
+      }
+    }
+  }, 30000);
+
+  it("builds one named mesh per ring and disposes them all", () => {
+    const s = scene();
+    const clipmap = createClipmap(s, SEED);
+    expect(clipmap.meshes).toHaveLength(RING_COUNT);
+    for (let level = 0; level < RING_COUNT; level++) {
+      expect(s.getMeshByName(`clipmap_${level}`)).toBe(clipmap.meshes[level]);
+    }
+    clipmap.dispose();
+    expect(s.getMeshByName("clipmap_0")).toBeNull();
+  });
+});
+
+describe("applyWetness", () => {
+  it("darkens and glosses cached materials, and restores exactly at clear", () => {
+    const s = scene();
+    const terrain = terrainMaterialFor(s, "terrain");
+    const wall = terrainMaterialFor(s, "wall");
+    const baseAlbedo = wall.albedoColor.r;
+    const baseRough = terrain.roughness!;
+
+    applyWetness(s, WEATHER_PRESETS.rain); // wetness 1
+    expect(wall.albedoColor.r).toBeCloseTo(baseAlbedo * 0.62, 10);
+    expect(terrain.roughness).toBeCloseTo(baseRough * 0.6, 10);
+
+    applyWetness(s, WEATHER_PRESETS.clear); // wetness 0 — exact restore
+    expect(wall.albedoColor.r).toBe(baseAlbedo);
+    expect(terrain.roughness).toBe(baseRough);
+  });
+});
+
+describe("world shell wiring", () => {
+  // `createRenderer` needs a real canvas and a WebGL context, so nothing in
+  // this file can build one — every case above tests an exported piece of it
+  // instead. The forest, clutter and mist shells therefore have no smoke test
+  // here at all, and the failure they share is invisible to the unit suites:
+  // a shell that is constructed and never updated, or updated on only one of
+  // the two camera branches, renders a world frozen at frame zero. This reads
+  // the source for that wiring — the architecture.test.ts precedent — because
+  // it is the only place the wiring exists.
+  const src = readFileSync(fileURLToPath(new URL("../../src/game/renderer.ts", import.meta.url)), "utf8");
+
+  /** The source between two anchors, both of which must exist. */
+  function slice(from: string, to: string): string {
+    const a = src.indexOf(from);
+    const b = src.indexOf(to, a + 1);
+    expect(a, `anchor not found: ${from}`).toBeGreaterThanOrEqual(0);
+    expect(b, `anchor not found: ${to}`).toBeGreaterThan(a);
+    return src.slice(a, b);
+  }
+
+  it("creates wildlife under the forest guard, at the low tier's radius, with both shadow hooks", () => {
+    const creation = slice("const wildlife =", "const wildlifePlayerPool");
+    // Hand-authored levels have no forest and must get no animals.
+    expect(creation).toMatch(/forest !== null\s*\?\s*createWildlifeMeshes\(/);
+    expect(creation).toContain('radiusScale: tier === "low" ? 0.6 : undefined');
+    // Both halves of the shadow registry: an add with no remove leaks every
+    // released animal into the shadow map (lighting.ts's own note).
+    expect(creation).toContain("lighting.addShadowMesh");
+    expect(creation).toContain("lighting.removeShadowMesh");
+    // The same guard, published: `app.ts` builds no audio shell without it, so a
+    // constant `true` here would fetch six clips for a world with no animals.
+    expect(src).toContain("hasWildlife: wildlife !== null,");
+  });
+
+  it("updates wildlife in the freecam branch AND the player branch, with the same arguments", () => {
+    // Counting `wildlife?.update(` over the whole file would pass with both
+    // calls sitting in the freecam branch — the exact failure this guards.
+    const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
+    const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
+    expect(freecamBranch.match(/wildlife\?\.update\(/g)).toHaveLength(1);
+    expect(playerBranch.match(/wildlife\?\.update\(/g)).toHaveLength(1);
+    expect(freecamBranch).toContain(
+      "wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour);",
+    );
+    expect(playerBranch).toContain(
+      "wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour);",
+    );
+    expect(src.match(/wildlife\?\.dispose\(\)/g)).toHaveLength(1);
+  });
+
+  it("drains the wildlife events by copying them out and emptying the shell's list", () => {
+    // The contract `app.ts` relies on: one call per frame yields each
+    // event exactly once. Handing back the live array without emptying it would
+    // replay every call forever, which is inaudible in a unit test and deafening
+    // in the game.
+    const drain = slice("wildlifeEvents() {", "listener() {");
+    expect(drain).toContain("source.length = 0;");
+    expect(drain).toContain("wildlifeEventDrain[n++] = e;");
+    // The reused array is truncated to this frame's count, not left holding the
+    // previous frame's tail.
+    expect(drain).toContain("wildlifeEventDrain.length = n;");
+  });
+});
+
+describe("writeListenerPose", () => {
+  // The audio listener's pose, in Babylon's left-handed world:
+  // `wildlifeAudio.ts` is what mirrors it into Web Audio's. A sign error here
+  // swaps front for back or left for right, which no other test in the suite
+  // can see.
+  const pose = () => ({ x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 0, ux: 0, uy: 0, uz: 0 });
+  // `+ 0` normalises a negative zero: cos(pi/2) is not exactly 0, and toEqual
+  // treats -0 and 0 as different values.
+  const round = (n: number) => Math.round(n * 1e6) / 1e6 + 0;
+
+  it("copies the position and faces +Z at yaw 0, level", () => {
+    const out = pose();
+    writeListenerPose(out, 3, 4, 5, 0, 0);
+    expect([out.x, out.y, out.z]).toEqual([3, 4, 5]);
+    expect([round(out.fx), round(out.fy), round(out.fz)]).toEqual([0, 0, 1]);
+    expect([out.ux, out.uy, out.uz]).toEqual([0, 1, 0]);
+  });
+
+  it("turns right with yaw, matching the camera's own convention", () => {
+    // viewBob.ts already encodes it: at yaw 0 the camera faces +Z, so a quarter
+    // turn of yaw must face +X, not -X.
+    const out = pose();
+    writeListenerPose(out, 0, 0, 0, Math.PI / 2, 0);
+    expect([round(out.fx), round(out.fy), round(out.fz)]).toEqual([1, 0, 0]);
+  });
+
+  it("looks DOWN at positive pitch, and keeps forward a unit vector", () => {
+    const out = pose();
+    writeListenerPose(out, 0, 0, 0, 0, Math.PI / 2);
+    expect(round(out.fy)).toBe(-1);
+    for (const [yaw, pitch] of [[0.3, 0.2], [2.1, -0.9], [-1.4, 1.1]]) {
+      writeListenerPose(out, 0, 0, 0, yaw!, pitch!);
+      expect(round(Math.hypot(out.fx, out.fy, out.fz))).toBe(1);
+    }
+  });
+});

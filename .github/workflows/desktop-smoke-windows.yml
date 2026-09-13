@@ -1,0 +1,78 @@
+name: desktop-smoke-windows
+
+# The release script has no other way to tell its own run apart from a
+# concurrent one: `gh workflow run` prints no id, and "newest run created around
+# now" would happily latch a human's dispatch. The installer's sha256 is unique
+# to the artifact, so putting it in the run name makes the match exact. `inputs`
+# in run-name is an expression, not a shell context — nothing is interpolated
+# into a command here.
+run-name: "desktop smoke ${{ inputs.sha256 }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Installer URL (https://storage.googleapis.com/…/DayHike-Setup-<v>-x64.exe)"
+        required: true
+      sha256:
+        description: "Expected sha256 of the installer"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      # No checkout: the job runs nothing from this repository. Everything it
+      # needs comes from the installer at `url`.
+      - name: download and verify
+        shell: pwsh
+        env:
+          URL: ${{ inputs.url }}
+          SHA: ${{ inputs.sha256 }}
+        run: |
+          # Pinned to this project's bucket and prefix, not to storage.googleapis.com
+          # at large: the job installs and runs whatever it downloads, so the only
+          # acceptable source is the one the release script uploads to.
+          if ($env:URL -notmatch '^https://storage\.googleapis\.com/fps-csarko-downloads/desktop/[A-Za-z0-9._-]+\.exe$') { throw "refusing url: $env:URL" }
+          if ($env:SHA -notmatch '^[0-9a-f]{64}$') { throw "bad sha256" }
+          Invoke-WebRequest -Uri $env:URL -OutFile Setup.exe
+          $got = (Get-FileHash Setup.exe -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:SHA) { throw "sha256 mismatch: got $got, expected $env:SHA" }
+          "installer sha256 ok"
+      - name: install silently (per-user)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath .\Setup.exe -ArgumentList '/S' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
+          $exe = Get-ChildItem -Path "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'Day Hike.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw "Day Hike.exe not found under $env:LOCALAPPDATA\Programs" }
+          "installed at $($exe.FullName)"
+          "EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: launch smoke
+        shell: pwsh
+        env:
+          DAYHIKE_SMOKE: "1"
+        run: |
+          # Electron's launcher is a GUI-subsystem binary: PowerShell's call
+          # operator neither waits for it nor sets $LASTEXITCODE, so run it
+          # through Start-Process with stdout redirected to the artifact file.
+          $p = Start-Process -FilePath $env:EXE -PassThru -Wait -NoNewWindow `
+            -RedirectStandardOutput smoke.jsonl -RedirectStandardError smoke.err
+          Get-Content smoke.jsonl -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) {
+            Get-Content smoke.err -ErrorAction SilentlyContinue
+            throw "smoke exit code $($p.ExitCode)"
+          }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-${{ github.run_id }}
+          # smoke.err too: on a crash the exit code is all the log shows, and
+          # whatever Electron wrote to stderr is the only clue to why.
+          path: |
+            smoke.jsonl
+            smoke.err

@@ -1,0 +1,119 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { clipForEnemy, EntityViews } from "../../src/game/entityViews.js";
+import { LAMP_INTENSITY, LIGHT_BUDGET, budgetLights, createHeadlamp, setLamp } from "../../src/game/headlamp.js";
+import { AiState } from "../../src/sim/types.js";
+import type { PlayerState, WorldState } from "../../src/sim/types.js";
+import { MAX_PLAYERS } from "../../src/sim/constants.js";
+
+describe("clipForEnemy", () => {
+  it("plays idle when standing around", () => {
+    expect(clipForEnemy({ health: 40, ai: AiState.Idle })).toBe("idle");
+  });
+
+  it("plays walk while chasing", () => {
+    expect(clipForEnemy({ health: 40, ai: AiState.Chase })).toBe("walk");
+  });
+
+  it("plays attack while attacking", () => {
+    expect(clipForEnemy({ health: 40, ai: AiState.Attack })).toBe("attack");
+  });
+
+  it("plays death once dead", () => {
+    expect(clipForEnemy({ health: 0, ai: AiState.Dead })).toBe("death");
+  });
+
+  it("plays death on zero health even before the state machine catches up", () => {
+    expect(clipForEnemy({ health: 0, ai: AiState.Chase })).toBe("death");
+  });
+
+  // Enemy velocity is not in the snapshot, so a joining client sees every
+  // remote enemy with a zeroed vector. Selecting on speed would leave them all
+  // standing still on every machine except the host's.
+  it("does not depend on velocity, which is never networked", () => {
+    expect(clipForEnemy({ health: 40, ai: AiState.Chase })).toBe("walk");
+    expect(clipForEnemy({ health: 40, ai: AiState.Idle })).toBe("idle");
+  });
+});
+
+let engine: NullEngine;
+let scene: Scene;
+beforeAll(() => {
+  engine = new NullEngine();
+  scene = new Scene(engine);
+});
+afterAll(() => {
+  scene.dispose();
+  engine.dispose();
+});
+
+function player(id: number, on: boolean, yaw = 0): PlayerState {
+  return {
+    id,
+    pos: { x: id, y: 0.9, z: 0 },
+    vel: { x: 0, y: 0, z: 0 },
+    yaw,
+    pitch: 0,
+    health: 100,
+    grounded: true,
+    lastProcessedInput: 0,
+    respawnTimer: 0,
+    deathPos: null,
+    lamp: { on, charge: 1 },
+  };
+}
+function state(...players: PlayerState[]): WorldState {
+  return { tick: 1, players: new Map(players.map((p) => [p.id, p])), enemies: new Map(), nextEntityId: 10, rngSeed: 1 };
+}
+
+describe("headlamp", () => {
+  it("is a spot light that starts dark and casts no shadows", () => {
+    const l = createHeadlamp(scene, "lamp_t");
+    expect(l).toBeInstanceOf(SpotLight);
+    expect(l.intensity).toBe(0);
+    expect(l.getShadowGenerator()).toBeNull();
+    setLamp(l, true);
+    expect(l.intensity).toBe(LAMP_INTENSITY);
+    setLamp(l, false);
+    expect(l.intensity).toBe(0);
+    l.dispose();
+  });
+
+  it("raises every material's light cap to sun + fill + one lamp per player, including materials added later", async () => {
+    const s = new Scene(engine);
+    const before = new PBRMaterial("mat_before", s);
+    budgetLights(s);
+    const after = new PBRMaterial("mat_after", s);
+    expect(LIGHT_BUDGET).toBe(2 + MAX_PLAYERS);
+    expect(before.maxSimultaneousLights).toBe(LIGHT_BUDGET);
+    // Babylon fires onNewMaterialAddedObservable via TimingTools.SetImmediate
+    // (a 1 ms setTimeout), not synchronously on construction, so the callback
+    // for `after` has not run yet at this point in the test.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(after.maxSimultaneousLights).toBe(LIGHT_BUDGET);
+    s.dispose();
+  });
+});
+
+describe("EntityViews lamps", () => {
+  it("gives every remote player a lamp that follows lamp.on, and the local player none", () => {
+    const views = new EntityViews(scene);
+    const before = scene.lights.length;
+    views.sync(state(player(1, true), player(2, false), player(3, true, 1.2)), 1, 1);
+    const lamps = scene.lights.filter((l) => l.name.startsWith("lamp_player_")) as SpotLight[];
+    expect(lamps.map((l) => l.name).sort()).toEqual(["lamp_player_2", "lamp_player_3"]);
+    expect(lamps.find((l) => l.name === "lamp_player_2")!.intensity).toBe(0);
+    expect(lamps.find((l) => l.name === "lamp_player_3")!.intensity).toBe(LAMP_INTENSITY);
+    // Steered by the player's yaw: yaw 1.2 → direction (sin 1.2, 0, cos 1.2).
+    const d = lamps.find((l) => l.name === "lamp_player_3")!.direction;
+    expect(d.x).toBeCloseTo(Math.sin(1.2), 5);
+    expect(d.z).toBeCloseTo(Math.cos(1.2), 5);
+    views.sync(state(player(1, true)), 1, 1);
+    expect(scene.lights.filter((l) => l.name.startsWith("lamp_player_"))).toHaveLength(0);
+    views.dispose();
+    expect(scene.lights.length).toBe(before);
+  });
+});

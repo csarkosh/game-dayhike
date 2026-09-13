@@ -1,0 +1,17 @@
+{
+  "name": "day-hike-desktop",
+  "productName": "Day Hike",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Day Hike for macOS (Apple silicon) and Windows (x64): a launcher for games.csarko.sh/dayhike on the electron-gamepatch Electron.",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --mac --win",
+    "electron:fetch": "node node_modules/electron/install.js"
+  },
+  "devDependencies": {
+    "electron": "44.1.1",
+    "electron-builder": "26.15.3"
+  }
+}

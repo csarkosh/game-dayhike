@@ -1,0 +1,9 @@
+# Throwaway spike. Binaries are re-derived by patch.py.
+stock/
+patched-*/
+symbols/
+*.zip
+out/**/*.png
+out/
+*.jsonl
+consumer/
