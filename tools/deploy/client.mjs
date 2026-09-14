@@ -30,7 +30,10 @@ rmSync('site', { recursive: true, force: true });
 mkdirSync(`site${sitePath}`, { recursive: true });
 cpSync('client/dist', `site${sitePath}`, { recursive: true });
 writeFileSync('site/index.html', renderRedirectPage({ legacyHost, base: siteUrl }));
-console.log(`→ site dir  site${sitePath} (+ redirect page at /)`);
+// Browsers ask the origin for /favicon.ico whatever page they are on, and the
+// catch-all rewrite would answer with the redirect page's HTML.
+cpSync('client/dist/favicon.ico', 'site/favicon.ico');
+console.log(`→ site dir  site${sitePath} (+ redirect page and favicon at /)`);
 
 runLoud('npx', [
   'firebase-tools',

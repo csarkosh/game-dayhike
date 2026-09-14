@@ -1,11 +1,12 @@
-# Shipped binaries go through Git LFS: models, ground textures, wildlife calls, and the vendored
-# KTX2 decoder's wasm. Keep this list in sync with the LFS check in .agents/skills/github-push.
+# Shipped binaries go through Git LFS: models, ground textures, wildlife calls, the vendored
+# KTX2 decoder's wasm, and the favicons. Keep this list in sync with the LFS check in .agents/skills/github-push.
 *.glb  filter=lfs diff=lfs merge=lfs -text
 *.webp filter=lfs diff=lfs merge=lfs -text
 *.mp3  filter=lfs diff=lfs merge=lfs -text
 *.wasm filter=lfs diff=lfs merge=lfs -text
 *.png  filter=lfs diff=lfs merge=lfs -text
 *.jpg  filter=lfs diff=lfs merge=lfs -text
+*.ico  filter=lfs diff=lfs merge=lfs -text
 
 *.json text eol=lf
 *.md   text eol=lf

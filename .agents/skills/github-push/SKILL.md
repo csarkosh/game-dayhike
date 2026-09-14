@@ -112,10 +112,10 @@ Three layers stop this, and the third is the one that actually catches mistakes:
 
 1. **`.gitignore`** — `node_modules/`, build output (`dist/`, `site/`), archives (`.zip`,
    `.7z`, `.rar`, `.tar`, `.tar.gz`, `.tgz`, `.dmg`), and Terraform's local state.
-2. **`.gitattributes`** — `.glb`, `.webp`, `.mp3`, `.wasm`, `.png` and `.jpg` are tracked
+2. **`.gitattributes`** — `.glb`, `.webp`, `.mp3`, `.wasm`, `.png`, `.jpg` and `.ico` are tracked
    through **Git LFS**, so the object database stores a ~130-byte pointer instead of the
    file. That covers every binary under `client/assets/` (models, ground textures, wildlife
-   calls) and the vendored KTX2 decoder's wasm.
+   calls), the vendored KTX2 decoder's wasm, and the favicons under `client/public/`.
 3. **The check below** — run it before every push. `.gitignore` does not protect against
    `git add -f` or against a file that was already tracked before a rule existed.
 
