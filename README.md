@@ -6,9 +6,7 @@ Four hikers signed the trailhead register and haven't been seen since.
 
 Play as a park ranger sent to find these missing hikers. Lead a search party of up to five up the trail and follow the register to where each hiker was last seen. Bring back what's left of them and sign their names out of the book.
 
-The birds were singing when you started up the trail. They stopped somewhere past the last strip of flagging tape, and no one in your party can say when.
-
-Whatever took those hikers is still in the woods. At first light it was only a shape among the far trees, too distant to be sure of. It was closer when you signed out the first name, and closer still with every name after. It has never once hurried. Now the light is going and the whispers have started. On the long walk back to your truck, it is close enough to hear you breathe.
+Somewhere past the last strip of flagging tape the birds go quiet, and whatever took those hikers is still in the woods. At first light it is only a shape among the far trees. It never hurries, but it draws closer with every name you sign out. By the time the light fails and the whispers start, it is close enough to hear you breathe.
 
 **Play it: [games.csarko.sh/dayhike](https://games.csarko.sh/dayhike)**
 
