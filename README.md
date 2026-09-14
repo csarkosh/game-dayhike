@@ -1,8 +1,16 @@
 # Day Hike
 
-**Send a link. Play together. No install, no account, no server bill.**
+*A mild morning; an easy trail; and the peculiar conviction that the woods were counting us.*
 
-A browser-based co-op game for 1–5 players. One person presses **Invite**, shares the link, and up to four friends join their lobby from the landing page. When the host presses Play, everyone's game starts.
+Four hikers signed the trailhead register and were never seen again.
+
+You're the park ranger sent up after them. Lead a search party of up to five up the trail and follow the register to where each hiker was last seen. Bring back what's left of them and sign their names out of the book.
+
+The birds were singing when you started up the trail. They stopped somewhere past the last strip of flagging tape, and no one in your party can say when.
+
+Whatever took those hikers is still in the woods. At first light it was only a shape among the far trees, too distant to be sure of. It was closer when you signed out the first name, and closer still with every name after. It has never once hurried. Now the light is going and the whispers have started. On the long walk back to your truck, it is close enough to hear you breathe.
+
+**Send a link. Play together. No install, no account, no server bill.** One person presses **Invite** and shares the link, and up to four friends join their lobby from the landing page. When the host presses Play, everyone's game starts.
 
 **Play it: [games.csarko.sh/dayhike](https://games.csarko.sh/dayhike)**
 
