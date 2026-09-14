@@ -1,6 +1,6 @@
 # Day Hike
 
-> *A mild morning; an easy trail; and the peculiar conviction that the woods were counting us.*
+*A mild morning; an easy trail; and the peculiar conviction that the woods were counting us.*
 
 Four hikers signed the trailhead register and haven't been seen since.
 
