@@ -25,7 +25,7 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 
 | Path | What |
 |---|---|
-| `client/` | The game: `src/{game,net,sim}` (Babylon.js rendering, WebRTC networking, deterministic simulation), `index.html`, `levels/`, `public/` (favicons, shared with csarko.sh, and the vendored KTX2 decoder), tests under `test/`. |
+| `client/` | The game: `src/{game,net,sim}` (Babylon.js rendering, WebRTC networking, deterministic simulation), `index.html`, `levels/`, `public/` (favicons, in csarko.sh's colours, and the vendored KTX2 decoder), tests under `test/`. |
 | `client/assets/` | Shipped models, ground textures and wildlife calls, committed through Git LFS. `client/assets/catalog.json` lists every one; [`CREDITS.md`](CREDITS.md) credits the third-party work. |
 | `branding/` | The Day Hike icon (`dayhike.svg`) shown at the top of the README. |
 | `server/` | The Node (`ws`) signaling server: introduces peers in a room, then steps out. |
