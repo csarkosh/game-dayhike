@@ -1,6 +1,15 @@
-# Day Hike
+<p align="center">
+  <img src="./branding/dayhike.svg" alt="Day Hike" width="128" />
+</p>
 
-*A mild morning; an easy trail; and the peculiar conviction that the woods were counting us.*
+<h1 align="center">Day Hike</h1>
+
+<p align="center">
+  <em>A mild morning; an easy trail;
+  <br>and the peculiar conviction that the woods were counting us.</em>
+</p>
+
+<br>
 
 Four hikers signed the trailhead register and haven't been seen since.
 

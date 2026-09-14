@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Dawn at the top, dusk below: the day the game plays out. -->
+    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fcd34d"/>
+      <stop offset="55%" stop-color="#2dd4bf"/>
+      <stop offset="100%" stop-color="#0f766e"/>
+    </linearGradient>
+    <clipPath id="tile">
+      <rect x="181" y="181" width="150" height="150" rx="14"/>
+    </clipPath>
+    <filter id="outerGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="glint" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- The sky over the trailhead — the hero -->
+  <rect x="181" y="181" width="150" height="150" rx="14" fill="url(#skyGrad)" filter="url(#outerGlow)"/>
+
+  <!-- The treeline -->
+  <g clip-path="url(#tile)" fill="#0b1716">
+    <path d="M214,262 L233,293 L224,293 L241,313 L226,313 L248,335 L180,335 L202,313 L187,313 L204,293 L195,293 Z"/>
+    <path d="M300,250 L321,286 L311,286 L330,310 L313,310 L338,335 L262,335 L287,310 L270,310 L289,286 L279,286 Z"/>
+    <path d="M257,214 L282,265 L270,265 L294,299 L273,299 L303,335 L211,335 L241,299 L220,299 L244,265 L232,265 Z"/>
+  </g>
+
+  <!-- Something in the trees, looking back -->
+  <g fill="#ffffff" filter="url(#glint)">
+    <path d="M238,296 L254,300 L240,303 Z"/>
+    <path d="M276,296 L260,300 L274,303 Z"/>
+  </g>
+
+  <!-- Small accent stars around -->
+  <g fill="#fde68a" filter="url(#glint)">
+    <g transform="translate(340, 160)">
+      <polygon points="0,-18 2,-4 0,0 -2,-4"/>
+      <polygon points="0,18 2,4 0,0 -2,4"/>
+      <polygon points="-18,0 -4,2 0,0 -4,-2"/>
+      <polygon points="18,0 4,2 0,0 4,-2"/>
+    </g>
+    <g transform="translate(166, 356)">
+      <polygon points="0,-12 1.5,-3 0,0 -1.5,-3"/>
+      <polygon points="0,12 1.5,3 0,0 -1.5,3"/>
+      <polygon points="-12,0 -3,1.5 0,0 -3,-1.5"/>
+      <polygon points="12,0 3,1.5 0,0 3,-1.5"/>
+    </g>
+    <g transform="translate(176, 170)">
+      <polygon points="0,-8 1,-2 0,0 -1,-2"/>
+      <polygon points="0,8 1,2 0,0 -1,2"/>
+      <polygon points="-8,0 -2,1 0,0 -2,-1"/>
+      <polygon points="8,0 2,1 0,0 2,-1"/>
+    </g>
+  </g>
+</svg>
