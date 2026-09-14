@@ -1,29 +1,18 @@
 # Day Hike
 
-*A mild morning; an easy trail; and the peculiar conviction that the woods were counting us.*
+> *A mild morning; an easy trail; and the peculiar conviction that the woods were counting us.*
 
-Four hikers signed the trailhead register and were never seen again.
+Four hikers signed the trailhead register and haven't been seen since.
 
-You're the park ranger sent up after them. Lead a search party of up to five up the trail and follow the register to where each hiker was last seen. Bring back what's left of them and sign their names out of the book.
+Play as a park ranger sent to find these missing hikers. Lead a search party of up to five up the trail and follow the register to where each hiker was last seen. Bring back what's left of them and sign their names out of the book.
 
 The birds were singing when you started up the trail. They stopped somewhere past the last strip of flagging tape, and no one in your party can say when.
 
 Whatever took those hikers is still in the woods. At first light it was only a shape among the far trees, too distant to be sure of. It was closer when you signed out the first name, and closer still with every name after. It has never once hurried. Now the light is going and the whispers have started. On the long walk back to your truck, it is close enough to hear you breathe.
 
-**Send a link. Play together. No install, no account, no server bill.** One person presses **Invite** and shares the link, and up to four friends join their lobby from the landing page. When the host presses Play, everyone's game starts.
-
 **Play it: [games.csarko.sh/dayhike](https://games.csarko.sh/dayhike)**
 
 ---
-
-## Why it exists
-
-Most browser games feel like browser games — floaty, laggy, one-frame-behind. This one is built the way a real netcoded game is built:
-
-- **Zero-latency controls.** Your input applies instantly through client-side prediction, then reconciles silently against the host. At 150 ms ping, your own movement still feels local.
-- **The host resolves what you're pointing at.** Left click is Interact: on the press edge, the host checks a 2.5 m reach and a ~35° facing cone from your eye before anything happens — no client-side guessing. F toggles a headlamp, host-authoritative like everything else.
-- **Peer-to-peer gameplay.** WebRTC data channels carry the match. The Node signaling server only introduces peers and then steps out — if it dies mid-game, your match doesn't.
-- **The link is the invite.** `/game/<uuid>` is the room, end to end. Distinct links are fully independent games.
 
 ## Under the hood
 
