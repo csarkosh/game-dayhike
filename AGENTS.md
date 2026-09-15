@@ -31,7 +31,8 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | `server/` | The Node (`ws`) signaling server: introduces peers in a room, then steps out. |
 | `desktop/` | Electron launcher (macOS and Windows) that loads the hosted site. |
 | `_infra/` | Terraform for hosting, DNS and the signaling service. |
-| `tools/` | `deploy/` (deploy and verify scripts), `vendor-ktx2.mjs`, and their tests. |
+| `docs/` | Research notes, specs, plans and design docs, grouped by subject (`docs/rendering/`, …). Every file is named `YYYY-MM-DD-<topic>.md`; see [Docs](#docs). |
+| `tools/` | `deploy/` (deploy and verify scripts), `vendor-ktx2.mjs`, `docs/` (the docs file-name test), and their tests. |
 | `.agents/skills/` | Agent skills. `.claude/skills` is a symlink to it so Claude Code discovers them. |
 | `.github/` | CI workflow: the Windows desktop smoke test. |
 | `AGENTS.md` | This file. `CLAUDE.md` points here. |
@@ -45,6 +46,16 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | `.dockerignore` | Build context excludes for the signaling server's Docker image. |
 | `.gitattributes` | Git LFS tracking for shipped binaries. |
 | `.gitignore` | Build output, local state and worktrees excluded from version control. |
+
+## Docs
+
+Every file committed under `docs/` is named `YYYY-MM-DD-<topic>.md`:
+
+- `YYYY-MM-DD` is the date the doc was written, which is today's date for a new doc. Keep the original date when you revise the doc later.
+- `<topic>` is lowercase kebab-case: letters, digits and single hyphens.
+- Group docs into a folder by subject, such as `docs/rendering/2026-09-14-stylized-shader-looks.md`.
+
+`tools/docs/test/docNames.test.mjs` fails `npm test` if any file under `docs/` breaks this rule.
 
 ## Skills
 
