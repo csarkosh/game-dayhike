@@ -39,6 +39,8 @@ const mat3 AGX_INSET = mat3(0.856627153315983, 0.137318972929847, 0.111898212999
 const mat3 AGX_OUTSET = mat3(1.1271005818144368, -0.1413297634984383, -0.14132976349843826, -0.11060664309660323, 1.157823702216272, -0.11060664309660294, -0.016493938717834573, -0.016493938717834257, 1.2519364065950405);
 const float AGX_MIN_EV = -12.47393;
 const float AGX_MAX_EV = 4.026069;
+const float SPLIT_TONE_DENSITY_SCALE = 0.35;
+const float SPLIT_TONE_SATURATION_SCALE = 0.5;
 
 float gradeLuma(vec3 c) {
   return dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -67,9 +69,9 @@ vec3 agxToneMap(vec3 c) {
 // scales its saturation by (1 + saturation), weighted by the band mask.
 vec3 gradeBand(vec3 c, float mask, vec3 tintColour, vec2 amount) {
   float l = gradeLuma(c);
-  vec3 tinted = mix(c, tintColour * l, amount.x);
+  vec3 tinted = mix(c, tintColour * l, amount.x * SPLIT_TONE_DENSITY_SCALE);
   vec3 grey = vec3(gradeLuma(tinted));
-  vec3 sat = mix(grey, tinted, 1.0 + amount.y);
+  vec3 sat = mix(grey, tinted, 1.0 + amount.y * SPLIT_TONE_SATURATION_SCALE);
   return mix(c, sat, mask);
 }
 
@@ -92,7 +94,8 @@ void main(void) {
   c = gradeBand(c, highlightMask, highlightTint, highlightAmount);
   c = lift + c * (1.0 - lift);
   vec2 centred = (vUV - 0.5) * 2.0;
-  float vig = 1.0 - smoothstep(0.4, 1.4, length(centred) * vignetteWeight * 0.5);
+  float vr = length(centred) / 1.41421356;
+  float vig = 1.0 - smoothstep(0.55, 1.0, vr) * clamp(vignetteWeight * 0.22, 0.0, 0.8);
   c = mix(vignetteColour, c, vig);
   vec3 halo = texture2D(halationSampler, vUV).rgb * halationStrength;
   c = 1.0 - (1.0 - c) * (1.0 - clamp(halo, 0.0, 1.0));

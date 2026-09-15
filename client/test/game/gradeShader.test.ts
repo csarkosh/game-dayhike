@@ -3,7 +3,8 @@ import gradeFragment from "../../src/game/shaders/grade.fragment.fx?raw";
 import finishFragment from "../../src/game/shaders/finish.fragment.fx?raw";
 import halationFragment from "../../src/game/shaders/halationExtract.fragment.fx?raw";
 import {
-  AGX_INSET, AGX_OUTSET, SRGB_TO_REC2020, REC2020_TO_SRGB, AGX_MIN_EV, AGX_MAX_EV, type Mat3,
+  AGX_INSET, AGX_OUTSET, SRGB_TO_REC2020, REC2020_TO_SRGB, AGX_MIN_EV, AGX_MAX_EV,
+  SPLIT_TONE_DENSITY_SCALE, SPLIT_TONE_SATURATION_SCALE, type Mat3,
 } from "../../src/game/gradeParams.js";
 import { OVERLAP_INNER, OVERLAP_SCALE, DITHER_LSB, HALATION_THRESHOLD, HALATION_CAP } from "../../src/game/postParams.js";
 
@@ -22,6 +23,10 @@ describe("grade.fragment.fx stays in lockstep with gradeParams.ts", () => {
     expect(gradeFragment).toContain(`const mat3 REC2020_TO_SRGB = ${glslMat3(REC2020_TO_SRGB)};`);
     expect(gradeFragment).toContain(`const float AGX_MIN_EV = ${glslFloat(AGX_MIN_EV)};`);
     expect(gradeFragment).toContain(`const float AGX_MAX_EV = ${glslFloat(AGX_MAX_EV)};`);
+  });
+  it("carries the split-tone response scales verbatim", () => {
+    expect(gradeFragment).toContain(`const float SPLIT_TONE_DENSITY_SCALE = ${glslFloat(SPLIT_TONE_DENSITY_SCALE)};`);
+    expect(gradeFragment).toContain(`const float SPLIT_TONE_SATURATION_SCALE = ${glslFloat(SPLIT_TONE_SATURATION_SCALE)};`);
   });
   it("keeps the MIT notice for the borrowed tone map", () => {
     expect(gradeFragment).toContain("three.js, MIT License, Copyright 2010-2024 three.js authors");

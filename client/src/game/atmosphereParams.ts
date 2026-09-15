@@ -28,15 +28,15 @@ export const GRADIENT_STEPS = 256;
 /** Quílez `a` at clear: a faint valley haze even on a sunny day. */
 export const HEIGHT_DENSITY_BASE = 0.004;
 /** Height-density gain at full mist: density × (1 + gain·mist). */
-export const HEIGHT_MIST_GAIN = 6;
+export const HEIGHT_MIST_GAIN = 2;
 /** Quílez `b`, per metre: the fog halves every ~14 m of height. */
 export const HEIGHT_FALLOFF = 0.05;
 /** World y the height fog is densest at, at clear. Below the trailhead pad. */
 export const REFERENCE_LEVEL_BASE = -20;
 /** Metres the reference level rises at full mist. */
-export const LEVEL_MIST_RISE = 25;
+export const LEVEL_MIST_RISE = 8;
 /** Additional rise on the top dread plateau. */
-export const LEVEL_DREAD_RISE = 20;
+export const LEVEL_DREAD_RISE = 6;
 /** Exponent on dot(rd, sunDir): 8 is a broad warm glow, 64 a tight disc. */
 export const SUN_POWER = 8;
 /** How much of the sun glow survives full cloud cover. */

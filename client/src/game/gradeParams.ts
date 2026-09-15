@@ -149,6 +149,11 @@ export const ABERRATION_BASE = 10;
 export const ABERRATION_DREAD_GAIN = 1.5;
 export const VIGNETTE_COLOUR: Rgb = { r: 0.01, g: 0.02, b: 0.03 };
 
+// ---- Split-tone response. Scales the ColorCurves-era densities/saturations
+// onto the analytic bands; browser-tuned. ----
+export const SPLIT_TONE_DENSITY_SCALE = 0.35;
+export const SPLIT_TONE_SATURATION_SCALE = 0.5;
+
 /** Pure hue to a unit-saturation RGB, HSB with S = B = 1. */
 export function hueToRgb(hueDeg: number): Rgb {
   const h = (((hueDeg % 360) + 360) % 360) / 60;
