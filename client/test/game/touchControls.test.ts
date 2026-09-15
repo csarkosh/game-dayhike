@@ -145,6 +145,14 @@ describe("sprint: double-tap and hold the stick", () => {
     m.down({ id: 2, x: 110, y: 300, hit: "canvas" }, DOUBLE_TAP_MS + 1);
     expect(m.sprinting).toBe(false);
   });
+
+  it("sprints when the second down lands at exactly DOUBLE_TAP_MS, since the check is <=", () => {
+    const m = model();
+    m.down({ id: 1, x: 100, y: 300, hit: "canvas" }, 0);
+    m.up(1, 80);
+    m.down({ id: 2, x: 110, y: 300, hit: "canvas" }, DOUBLE_TAP_MS);
+    expect(m.sprinting).toBe(true);
+  });
 });
 
 describe("jump: double-tap the look zone", () => {
@@ -194,6 +202,22 @@ describe("jump: double-tap the look zone", () => {
     m.move(2, 640, 200, 220);
     expect(m.takeLook().yaw).toBeCloseTo(40 * LOOK_RATE, 9);
   });
+
+  it("a cancelled look pointer never counts as a tap", () => {
+    const m = model();
+    m.down({ id: 1, x: 600, y: 200, hit: "canvas" }, 0);
+    m.cancel(1, 100); // within TAP_MAX_MS, but cancelled rather than released
+    m.down({ id: 2, x: 600, y: 200, hit: "canvas" }, 200); // 100ms after the cancel
+    expect(m.takeButtons() & Button.Jump).toBe(0);
+  });
+
+  it("a tap held for exactly TAP_MAX_MS still counts, since the check is <=", () => {
+    const m = model();
+    m.down({ id: 1, x: 600, y: 200, hit: "canvas" }, 0);
+    m.up(1, TAP_MAX_MS);
+    m.down({ id: 2, x: 600, y: 200, hit: "canvas" }, 200);
+    expect(m.takeButtons() & Button.Jump).toBe(Button.Jump);
+  });
 });
 
 describe("buttons", () => {
@@ -208,11 +232,12 @@ describe("buttons", () => {
     expect(m.takeButtons() & Button.Lamp).toBe(0);
   });
 
-  it("a cancelled lamp press toggles nothing", () => {
+  it("a cancelled lamp press toggles nothing and clears the pressed state", () => {
     const m = model();
     m.down({ id: 1, x: 40, y: 200, hit: "lamp" }, 0);
     m.cancel(1, 60);
     expect(m.takeButtons() & Button.Lamp).toBe(0);
+    expect(m.state.lampPressed).toBe(false);
   });
 
   it("pause fires the hook on release, not on press", () => {
