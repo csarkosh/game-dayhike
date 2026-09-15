@@ -280,7 +280,6 @@ const STYLE = `
 
 export type TouchLayer = {
   sync(): void;
-  show(): void;
   dispose(): void;
 };
 
@@ -332,13 +331,17 @@ export function createTouchLayer(
 
   const now = () => performance.now();
 
+  function show(): void {
+    visible = true;
+    root.classList.remove("off");
+  }
+
   // The stick and look pointers live on the canvas; a device that started
   // without the layer gets it on its first real touch.
   const onCanvasDown = (e: PointerEvent) => {
     if (e.pointerType !== "touch") return;
     if (!visible) {
-      visible = true;
-      root.classList.remove("off");
+      show();
       hooks.onFirstTouch();
     }
     if (!hooks.engaged()) return;
@@ -406,10 +409,6 @@ export function createTouchLayer(
         clearTimeout(pulseTimer);
         pulseTimer = setTimeout(() => lamp.classList.remove("pulse"), 300);
       }
-    },
-    show() {
-      visible = true;
-      root.classList.remove("off");
     },
     dispose() {
       clearTimeout(pulseTimer);
