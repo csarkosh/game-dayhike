@@ -32,6 +32,8 @@ export type InputSampler = {
   /**
    * Switches engaged semantics to the touch layer. Idempotent. Turning it on
    * engages at once: the game starts playable on a phone with nothing to click.
+   * A switch in either direction announces any resulting change to the
+   * observed `engaged` value, exactly once, through `onEngagedChange`.
    */
   setTouchMode(on: boolean): void;
   dispose(): void;
@@ -175,8 +177,11 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
     },
     setTouchMode(on) {
       if (touchMode === on) return;
+      const was = engaged();
       touchMode = on;
-      if (on) setTouchEngaged(true);
+      if (on) touchEngaged = true;
+      const is = engaged();
+      if (is !== was) engagedHandler?.(is);
     },
     get sprinting() {
       return sprintHeld();

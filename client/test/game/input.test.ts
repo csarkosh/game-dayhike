@@ -245,6 +245,18 @@ describe("engaged on touch", () => {
     input.disengage();
     expect(input.keys.has("KeyW")).toBe(false);
   });
+
+  it("switching touch mode off announces the drop to desktop's unlocked state once", () => {
+    const { input } = sampler({ touch: fakeTouch().source, touchMode: true });
+    expect(input.engaged).toBe(true);
+    const seen: boolean[] = [];
+    input.onEngagedChange((e) => seen.push(e));
+    input.setTouchMode(false);
+    expect(input.engaged).toBe(false);
+    expect(seen).toEqual([false]);
+    input.setTouchMode(false);
+    expect(seen).toEqual([false]);
+  });
 });
 
 describe("touch source in sample", () => {
