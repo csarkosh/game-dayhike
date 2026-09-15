@@ -49,6 +49,9 @@ import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { createRegisterPanel, registerPanelModel } from "./game/registerPanel.js";
 import { roadLine, WIN_LINE } from "./game/registerHud.js";
 import { InteractKind, SIGN_OUT_TICKS } from "./sim/register.js";
+import { signPosts } from "./sim/signs.js";
+import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
+import { PROPS, propSite, type RoadProp } from "./sim/passes/trailhead.js";
 import { afterNextPaint } from "./game/paint.js";
 import { connectFailureMessage, createConnectPanel } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
@@ -326,6 +329,25 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     );
   }
 
+  let signs: SignMeshes | null = null;
+  /** Junction posts and the trailhead board, from the same seed the sim used. */
+  function createSigns(world: World): SignMeshes | null {
+    const register = world.register;
+    const variant = activeTerrainVariant();
+    const graph = variant.trailGraph?.(seed);
+    const roadCenterX = variant.roadCenterX;
+    if (register === null || graph === undefined || roadCenterX === undefined) return null;
+    const sign = propSite(graph, roadCenterX, seed, PROPS[1] as RoadProp);
+    // The face toward the pad: the sign stands SIGN_ROAD_Z along the road from the trailhead.
+    const facing = { dx: 0, dz: sign.z > graph.trailhead.z ? -1 : 1 };
+    return createSignMeshes(
+      renderer.scene,
+      signPosts(graph, register.hikers.map((h) => h.site)),
+      { x: sign.x, z: sign.z, facing, lines: ["TRAILHEAD REGISTER", ...register.hikers.map((h) => `${h.name} — ${h.site.name}`)] },
+      (x, z) => elevationAt(seed, x, z),
+    );
+  }
+
   const registerPanel = createRegisterPanel(container);
   let lastButtons = 0;
   /**
@@ -587,6 +609,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     hud.setStatus(null);
 
     registerInteractables(host.world);
+    signs = createSigns(host.world);
     host.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
@@ -699,6 +722,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     });
     session = client;
     registerInteractables(client.world);
+    signs = createSigns(client.world);
     client.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
@@ -823,6 +847,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       menu.dispose();
       connectPanel.dispose();
       registerPanel.dispose();
+      signs?.dispose();
       touchLayer.dispose();
       prompt.dispose();
       input.dispose();

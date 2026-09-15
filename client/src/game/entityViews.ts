@@ -8,7 +8,8 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 
 import type { EnemyState, Vec3, WorldState } from "../sim/types.js";
-import { AiState } from "../sim/types.js";
+import { AiState, NO_CARRIER } from "../sim/types.js";
+import { ITEM_RADIUS } from "../sim/register.js";
 import { ENEMY_HALF, PLAYER_HALF, PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { aimDirection } from "../sim/view.js";
 import { EnemyModelPool, type ClipKind, type EnemyInstance } from "./enemyModel.js";
@@ -52,8 +53,10 @@ export class EntityViews {
   private readonly enemies = new Map<number, View>();
   private readonly enemyModels = new Map<number, { instance: EnemyInstance; view: View }>();
   private readonly lamps = new Map<number, SpotLight>();
+  private readonly items = new Map<number, Mesh>();
   private readonly playerMaterial: PBRMaterial;
   private readonly enemyMaterial: PBRMaterial;
+  private readonly itemMaterial: PBRMaterial;
   readonly models = new EnemyModelPool();
 
   constructor(private readonly scene: Scene) {
@@ -75,6 +78,11 @@ export class EntityViews {
     this.enemyMaterial.albedoColor = new Color3(0.54, 0.18, 0.69);
     this.enemyMaterial.metallic = 0;
     this.enemyMaterial.roughness = 0.85;
+    // A pale bundle: what is left of a hiker, matte so the lamp reads it.
+    this.itemMaterial = new PBRMaterial("mat_item", scene);
+    this.itemMaterial.albedoColor = new Color3(0.85, 0.8, 0.7);
+    this.itemMaterial.metallic = 0;
+    this.itemMaterial.roughness = 0.9;
   }
 
   /**
@@ -149,6 +157,49 @@ export class EntityViews {
       }
     }
     this.prune(this.enemies, state.enemies);
+
+    for (const item of state.items) {
+      let mesh = this.items.get(item.id);
+      if (mesh === undefined) {
+        // A pale bundle about the size of a pack: the placeholder for what is
+        // left of a hiker, lit like everything else so the lamp finds it.
+        mesh = MeshBuilder.CreateBox(`item_${item.id}`, { width: 0.5, height: 2 * ITEM_RADIUS, depth: 0.35 }, this.scene);
+        mesh.material = this.itemMaterial;
+        this.items.set(item.id, mesh);
+      }
+      if (item.signedOut || item.carrier === localId) {
+        // Gone, or in this player's own hands: the renderer's camera bundle draws that one.
+        mesh.setEnabled(false);
+        continue;
+      }
+      const carrier = item.carrier === NO_CARRIER ? undefined : this.players.get(item.carrier);
+      if (carrier !== undefined) {
+        // Held against the front of the carrier's body: half a metre ahead
+        // along their facing, a little above the hull's centre.
+        const yaw = carrier.node.rotation.y;
+        mesh.position.set(
+          carrier.node.position.x + Math.sin(yaw) * 0.5,
+          carrier.node.position.y + 0.2,
+          carrier.node.position.z + Math.cos(yaw) * 0.5,
+        );
+        mesh.rotation.y = yaw;
+      } else if (item.carrier === NO_CARRIER) {
+        mesh.position.set(item.pos.x, item.pos.y, item.pos.z);
+        mesh.rotation.y = 0;
+      } else {
+        // Carried by someone this frame's state does not hold (a joiner
+        // between snapshots): nothing to attach to, so nothing to draw.
+        mesh.setEnabled(false);
+        continue;
+      }
+      mesh.setEnabled(true);
+    }
+    for (const [id, mesh] of this.items) {
+      if (!state.items.some((it) => it.id === id)) {
+        mesh.dispose();
+        this.items.delete(id);
+      }
+    }
   }
 
   private ensureModel(
@@ -204,6 +255,8 @@ export class EntityViews {
     for (const view of this.players.values()) view.node.dispose();
     for (const view of this.enemies.values()) view.node.dispose();
     for (const lamp of this.lamps.values()) lamp.dispose();
+    for (const mesh of this.items.values()) mesh.dispose();
+    this.items.clear();
     this.players.clear();
     this.enemies.clear();
     this.enemyModels.clear();
