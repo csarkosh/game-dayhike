@@ -13,6 +13,7 @@ import { ENEMY_HALF, PLAYER_HALF, PLAYER_EYE_OFFSET } from "../sim/constants.js"
 import { aimDirection } from "../sim/view.js";
 import { EnemyModelPool, type ClipKind, type EnemyInstance } from "./enemyModel.js";
 import { createHeadlamp, setLamp } from "./headlamp.js";
+import { LAMP_DEFAULT, type LampState } from "./lampParams.js";
 
 type View = { node: TransformNode; previous: Vector3; target: Vector3 };
 
@@ -76,7 +77,12 @@ export class EntityViews {
     this.enemyMaterial.roughness = 0.85;
   }
 
-  sync(state: WorldState, localId: number, alpha: number): void {
+  /**
+   * `lamp` is this frame's headlamp state (`lampUnder(weather, t)`), shared
+   * by every remote player's lamp: dread dims and flickers all of them alike.
+   * Defaults to the tuned lamp for callers without weather.
+   */
+  sync(state: WorldState, localId: number, alpha: number, lampState: LampState = LAMP_DEFAULT): void {
     const clamped = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
 
     for (const [id, player] of state.players) {
@@ -104,7 +110,7 @@ export class EntityViews {
       lamp.position.set(view.node.position.x, view.node.position.y + PLAYER_EYE_OFFSET, view.node.position.z);
       const d = aimDirection(player.yaw, player.pitch);
       lamp.direction.set(d.x, d.y, d.z);
-      setLamp(lamp, player.lamp.on);
+      setLamp(lamp, player.lamp.on, lampState);
     }
     this.prune(this.players, state.players);
     for (const [id, lamp] of this.lamps) {

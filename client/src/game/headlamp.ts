@@ -4,6 +4,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import { MAX_PLAYERS } from "../sim/constants.js";
+import { LAMP_COLOUR, LAMP_INTENSITY } from "./lampParams.js";
 
 /**
  * The headlamp's light: one SpotLight at the eye per player,
@@ -15,16 +16,16 @@ import { MAX_PLAYERS } from "../sim/constants.js";
  * roughly twice the cone a player sees: 1.5 rad reads as a ~40° pool on the
  * bed 3–12 m ahead, and the plan's 0.70 was a 10° hotspot that landed past
  * the range when looking level. LAMP_INTENSITY is in Babylon's light units
- * against a sun of ~4 at noon: 400 lifts the dusk bed from 28 to 110 (8-bit
- * luminance) with the forest and far trail untouched; 150 barely read and
- * 1000 was a searchlight. LAMP_EXPONENT only matters under the standard
- * falloff, which no material here uses.
+ * against a sun of ~4 at noon (the number and its tuning notes are in
+ * lampParams.ts). LAMP_EXPONENT only matters under the standard falloff,
+ * which no material here uses.
  */
 export const LAMP_RANGE = 25;
 export const LAMP_ANGLE = 1.5;
 export const LAMP_EXPONENT = 8;
-export const LAMP_INTENSITY = 400;
-export const LAMP_COLOUR: readonly [number, number, number] = [1.0, 0.92, 0.78];
+// The intensity and colour live in lampParams.ts (Babylon-free, so the dread
+// arithmetic on them is testable under Node) and are re-exported here.
+export { LAMP_INTENSITY, LAMP_COLOUR } from "./lampParams.js";
 
 export function createHeadlamp(scene: Scene, name: string): SpotLight {
   const light = new SpotLight(name, Vector3.Zero(), new Vector3(0, 0, 1), LAMP_ANGLE, LAMP_EXPONENT, scene);
@@ -36,8 +37,22 @@ export function createHeadlamp(scene: Scene, name: string): SpotLight {
   return light;
 }
 
-export function setLamp(light: SpotLight, on: boolean): void {
-  light.intensity = on ? LAMP_INTENSITY : 0;
+/**
+ * Applies the lamp's state for this frame. `state` is `lampUnder(weather, t)`
+ * from `lampParams.ts` — dimmed, dirtier and flickering under dread — and
+ * defaults to the tuned lamp so a caller without weather still gets it.
+ * Writes both diffuse and specular, so the dread tint reaches highlights too.
+ */
+export function setLamp(
+  light: SpotLight,
+  on: boolean,
+  state: { intensity: number; colour: { r: number; g: number; b: number } } = { intensity: LAMP_INTENSITY, colour: { r: LAMP_COLOUR[0], g: LAMP_COLOUR[1], b: LAMP_COLOUR[2] } },
+): void {
+  light.intensity = on ? state.intensity : 0;
+  if (on) {
+    light.diffuse.set(state.colour.r, state.colour.g, state.colour.b);
+    light.specular.set(state.colour.r, state.colour.g, state.colour.b);
+  }
 }
 
 /** Sun + fill + one lamp per player. Babylon binds lights per mesh in scene

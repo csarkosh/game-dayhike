@@ -18,6 +18,7 @@ import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
 import { EntityViews } from "./entityViews.js";
 import { budgetLights, createHeadlamp, setLamp } from "./headlamp.js";
+import { lampUnder } from "./lampParams.js";
 import {
   createRingSamples,
   holeCellsFor,
@@ -837,7 +838,14 @@ export function createRenderer(
     camera,
     views,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
-      views.sync(state, localId, alpha);
+      // Weather follows the fade, so surfaces wet and dry smoothly. A handful
+      // of materials x four property writes: cheap enough to do every frame.
+      // Read once: `lighting.weather` is a getter that allocates a fresh copy
+      // per call, and this reads it several times a frame otherwise. Read
+      // BEFORE the views sync, which needs the lamp state derived from it.
+      const weather = lighting.weather;
+      const lampState = lampUnder(weather, performance.now() / 1000);
+      views.sync(state, localId, alpha, lampState);
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once
       // its GLBs have loaded, so new entries are picked up here.
@@ -854,11 +862,6 @@ export function createRenderer(
         }
       }
 
-      // Weather follows the fade, so surfaces wet and dry smoothly. A handful
-      // of materials x four property writes: cheap enough to do every frame.
-      // Read once: `lighting.weather` is a getter that allocates a fresh copy
-      // per call, and this reads it three times a frame otherwise.
-      const weather = lighting.weather;
       applyWetness(scene, weather);
       atmosphere.update(weather, lighting.hour);
       post.update(weather, lighting.hour, unsettle);
@@ -918,7 +921,7 @@ export function createRenderer(
         // and its default forward is +Z, which matches the sim convention.
         // Roll goes on z — the only thing that ever writes it.
         camera.rotation.set(local.pitch, local.yaw, offset.roll);
-        setLamp(localLamp, local.lamp.on);
+        setLamp(localLamp, local.lamp.on, lampState);
         rain.update(camera.position, weather);
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour());
       }
