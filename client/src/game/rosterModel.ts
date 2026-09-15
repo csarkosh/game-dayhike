@@ -133,8 +133,14 @@ export type RosterView = {
    * nothing. Paused is a cursor the player can aim, so the panel answers it.
    */
   interactive: boolean;
-  /** Faded while a match is being played; full on the landing and on the pause menu. */
-  presence: "full" | "subdued";
+  /**
+   * Faded while a match is being played on desktop; gone entirely while it is
+   * played on touch, where the screen belongs to the controls; full on the
+   * landing and on the pause menu.
+   */
+  presence: "full" | "subdued" | "hidden";
+  /** Offer the system share sheet for the invite (touch devices). */
+  share: boolean;
   /** A follower that has not yet heard from the host. */
   joining: boolean;
   error?: string;
@@ -155,6 +161,8 @@ export function rosterModel(input: {
   paused: boolean;
   /** A create-or-join in flight, or null. Ignored once `lobby` is set. */
   attempt: RosterAttempt | null;
+  /** A touch device: the roster hides while playing and offers Share. */
+  touch?: boolean;
   error?: string;
 }): RosterView {
   const view: RosterView = {
@@ -163,7 +171,8 @@ export function rosterModel(input: {
     invite: inviteView(input.attempt),
     editable: !input.inGame,
     interactive: !input.inGame || input.paused,
-    presence: input.inGame && !input.paused ? "subdued" : "full",
+    presence: !input.inGame || input.paused ? "full" : input.touch ? "hidden" : "subdued",
+    share: input.touch === true,
     joining: false,
   };
   if (input.error !== undefined) view.error = input.error;

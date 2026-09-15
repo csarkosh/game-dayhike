@@ -15,7 +15,7 @@ import {
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
 import { createLandingScene } from "./game/landingScene.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
-import { isDesktop, hostPlatform, desktopVersion } from "./game/platform.js";
+import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
 import { inviteLink, parseJoinLink } from "./game/joinLink.js";
 import { loadName, saveName } from "./game/playerName.js";
 import { createRoster } from "./game/roster.js";
@@ -42,6 +42,7 @@ let paused = false;
 // the router's base, which is the same address everywhere now that the shell
 // loads the site itself.
 const desktop = isDesktop();
+const touch = isTouchDevice();
 const host = hostPlatform();
 const appVersion = desktopVersion();
 const webBase = import.meta.env.VITE_WEB_BASE || `${location.origin}${BASE.replace(/\/+$/, "")}`;
@@ -117,6 +118,7 @@ function paintRoster(): void {
       inGame: parseRoute(location.pathname).kind === "game",
       paused,
       attempt: clock?.attempt ?? null,
+      touch,
       error: lobbyError,
     }),
   );

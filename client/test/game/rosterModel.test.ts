@@ -21,6 +21,7 @@ describe("rosterModel with no lobby", () => {
       editable: true,
       interactive: true,
       presence: "full",
+      share: false,
       joining: false,
     });
   });
@@ -190,5 +191,29 @@ describe("rosterModel pending attempt", () => {
     };
     const view = rosterModel({ ...base, lobby, attempt: { kind: "invite", elapsedMs: 400, connectedAtMs: 300 } });
     expect(view.invite).toEqual({ url: invite(LOBBY) });
+  });
+});
+
+describe("rosterModel on a touch device", () => {
+  const base = { lobby: null, selfId: "me", selfName: "Sam", inviteUrl: invite, attempt: null };
+  it("hides while a match is being played, since the screen belongs to the controls", () => {
+    const view = rosterModel({ ...base, inGame: true, paused: false, touch: true });
+    expect(view.presence).toBe("hidden");
+    expect(view.interactive).toBe(false);
+  });
+  it("is full and interactive on the pause menu, the one place to invite from", () => {
+    const view = rosterModel({ ...base, inGame: true, paused: true, touch: true });
+    expect(view.presence).toBe("full");
+    expect(view.interactive).toBe(true);
+  });
+  it("is full on the landing", () => {
+    expect(rosterModel({ ...base, inGame: false, paused: false, touch: true }).presence).toBe("full");
+  });
+  it("offers the share sheet on touch and not otherwise", () => {
+    expect(rosterModel({ ...base, inGame: false, paused: false, touch: true }).share).toBe(true);
+    expect(rosterModel({ ...base, inGame: false, paused: false }).share).toBe(false);
+  });
+  it("keeps the desktop subdued presence without touch", () => {
+    expect(rosterModel({ ...base, inGame: true, paused: false }).presence).toBe("subdued");
   });
 });

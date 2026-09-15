@@ -29,6 +29,14 @@ const STYLE = `
   .roster.locked { pointer-events: none; }
   /* Playing: the game has the screen. Full again on the pause menu. */
   .roster.subdued { opacity: 0.35; backdrop-filter: none; }
+  /* Playing on touch: the screen belongs to the controls. */
+  .roster.hidden { opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
+  @media (max-width: 480px) {
+    .roster { left: 1rem; right: 1rem; min-width: 0; max-width: none; }
+  }
+  @media (max-height: 420px) {
+    .roster { min-width: 0; max-width: 40vw; }
+  }
   .roster .head {
     display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
     margin-bottom: 0.4rem; color: rgba(255, 255, 255, 0.62);
@@ -121,6 +129,7 @@ export function createRoster(handlers: {
     if (editing) return; // never yank the field out from under a typist
     root.classList.toggle("locked", !view.interactive);
     root.classList.toggle("subdued", view.presence === "subdued");
+    root.classList.toggle("hidden", view.presence === "hidden");
     const parts: Node[] = [];
 
     const head = document.createElement("div");
@@ -203,7 +212,22 @@ export function createRoster(handlers: {
           field.select();
         }
       });
+      // The share sheet where the browser has one: on a phone that is how a
+      // link gets to a friend. Copy stays beside it for everyone.
+      const share = view.share && typeof navigator.share === "function"
+        ? (() => {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.className = "share";
+            b.textContent = "Share";
+            b.addEventListener("click", () => {
+              void navigator.share({ url: field.value }).catch(() => field.select());
+            });
+            return b;
+          })()
+        : null;
       row.append(field, copy);
+      if (share !== null) row.append(share);
       parts.push(row);
     }
 
