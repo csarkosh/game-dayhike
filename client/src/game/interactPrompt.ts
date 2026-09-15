@@ -48,10 +48,22 @@ const STYLE = `
     font-family: system-ui, sans-serif; font-size: 0.95rem; color: #fff;
     text-shadow: 0 1px 4px #000; white-space: nowrap;
     pointer-events: none; opacity: 0;
-    transition: opacity 150ms ease-out, transform 150ms ease-out;
+    /* transform is rewritten every frame by sync() to track the projected
+       point, so only opacity transitions here — a transform transition would
+       make the prompt lag the target by its own duration. The entry rise is a
+       one-shot keyframe below instead. transform-origin keeps the dot's
+       centre pinned at (x, y) while scale changes its size around it, rather
+       than around the row's default centre, which would carry the label along
+       and drift the dot off the projected point. */
+    transition: opacity 150ms ease-out;
+    transform-origin: 6px 50%;
     -webkit-user-select: none; user-select: none;
   }
-  .prompt.on { opacity: 1; }
+  .prompt.on { opacity: 1; animation: prompt-rise 150ms ease-out; }
+  @keyframes prompt-rise {
+    from { translate: 0 4px; }
+    to { translate: 0 0; }
+  }
   /*
    * A hidden prompt must never intercept a tap meant for what is underneath
    * it. "pressable", not "touch": the touch layer's own root element in
@@ -68,7 +80,10 @@ const STYLE = `
     0%, 100% { transform: translateY(-2px); }
     50% { transform: translateY(2px); }
   }
-  @media (prefers-reduced-motion: reduce) { .prompt .dot { animation: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .prompt .dot { animation: none; }
+    .prompt.on { animation: none; }
+  }
 `;
 
 export type InteractPrompt = {
@@ -126,9 +141,10 @@ export function createInteractPrompt(
         root.classList.add("on");
       }
       label.textContent = view.label;
-      // The 4 px rise on entry comes from the transition between the last
-      // hidden position and this one; steady state is exact.
-      root.style.transform = `translate(${view.x}px, ${view.y - 6}px) scale(${view.scale})`;
+      // The 4 px rise on entry is the `prompt-rise` keyframe on `.on` (an
+      // independent `translate`, so it composes with this `transform` rather
+      // than fighting it); this is always the exact, steady-state point.
+      root.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
     },
     dispose() {
       root.remove();
