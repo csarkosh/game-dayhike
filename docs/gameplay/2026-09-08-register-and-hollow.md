@@ -31,7 +31,9 @@ Taken in the order they were made.
    proximity to the Hollow.
 5. **A cutscene plays on Play**, masking world generation, establishing the story, *and*
    teaching the rules of the world.
-6. **Four names** in the register at the start.
+6. **Four names** in the register at the start. *Superseded 2026-09-15 by sub-project B
+   (`docs/gameplay/2026-09-15-register-and-count.md` §1.1): the count is however many sites
+   the world builds, 2 to 4.*
 7. **The Hollow is visible from Act 1**, but always far enough away to be hard to notice.
 8. **The world starts bright and gets darker, mistier and eerier** as the game progresses.
 9. **Total loss is a black screen with Edgar Allan Poe-style prose** about the characters'
@@ -55,8 +57,9 @@ Taken in the order they were made.
     name to the book, and allowed a rescue, was rejected.
 16. **Carry-and-light**: a player may hold the headlamp while carrying. The stricter
     carry-*or*-light rule is held in reserve as a difficulty lever.
-17. **Escalation tracks progress, not the clock** — sign-outs ratchet it up, and straying
-    off-trail spikes it until the player returns.
+17. **Escalation tracks progress, not the clock** — retrieval ratchets it up, and straying
+    off-trail spikes it until the player returns. *Amended 2026-09-15 (B §1.14): the ratchet
+    fires on the first pick-up of each hiker's item, not on each sign-out.*
 18. **The car is the exit.**
 19. **The stalker asset is a placeholder** until the real one exists.
 
@@ -64,16 +67,16 @@ Taken in the order they were made.
 
 Day hikers park at a trailhead below a forested ridge. In the trailhead register — the
 wooden box on a post where hikers sign in and out — are names that signed in and never
-signed out. The last of them is the player's own, in the player's own handwriting. *(In
-multiplayer this works best as **each player seeing their own name** in that final entry
-rather than one shared name — the book addresses whoever is holding it. Proposal — §13.)*
+signed out. *(Amended 2026-09-15, B §1.3: the last entry is NOT the player's own name. The
+register lists the missing and nobody else.)*
 
 The Hollow is what keeps the book. It has been counting for a long time and it considers
 the players overdue. *(The identity of the Hollow as the book's keeper is a proposal —
 §13.)*
 
-To win: **find what is left of the four missing hikers, sign each of them out, sign
-yourselves out, and reach the car.** The final walk to the car happens in full dark.
+To win: **find what is left of the missing hikers, sign each of them out, and get every
+living player to the car.** The final walk happens in full dark. *(Amended 2026-09-15, B
+§1.1 and §1.11: the count is the world's site count, and there is no self sign-out.)*
 
 ## 3. Geography
 
@@ -137,21 +140,24 @@ puts the pressure in the right half of each trip.
 
 ## 5. The register and the count
 
-- **Four names** at the start, each with the landmark where that hiker was last seen.
+- **One name per site** at the start, each with the site where that hiker was last seen —
+  2 to 4 of them, per B §2. *(Was "four names".)*
 - At each landmark, what is left of that hiker. Retrieve it, carry it back, sign them out.
 - **The sign-out is a ritual that cannot be rushed** — several seconds at the box, hands
   busy, lamp on, while it comes. It should be the scariest recurring moment in the game and
   the place the dread stack peaks. *(Proposal — §13.)*
-- **Each sign-out ratchets the escalation up one permanent step.** The game gets harder
-  because the player is winning.
+- **The first pick-up of each hiker's item ratchets the escalation up one permanent step**
+  (amended 2026-09-15, B §1.14 — it was each sign-out). Each step is one share of the
+  world's own count, so the last hiker always brings full dark, and a party retrieving
+  several at once darkens the world faster than one player making the trips in turn.
 - Tension also rises *within* a trip, because carrying is what draws the Hollow (§6), and
   resets at the sign-out. The curve is a sawtooth on a rising floor, not a staircase.
-- **The book can grow** — a joining player adds their name (§10) — but **the win condition
-  stays at the original four**. Added names are flavour and pressure, never a moving target.
+- **The book does not grow.** A joining player is not added, and neither is a player who
+  dies (amended 2026-09-15, B §1.3 and §1.5). The register is the missing.
 
-With four names and four escalation steps:
+With four sites, four steps — a world with fewer takes correspondingly larger ones:
 
-| Signed out | The world |
+| Retrieved | The world |
 | --- | --- |
 | 0 | grey dawn, thin mist, long sight lines |
 | 1 | overcast, mist thickening |
@@ -333,17 +339,17 @@ as the "your world is ready" signal.
 
 Nothing below blocks the shape of the design; each changes what gets built.
 
-1. **What a death costs (§10).** The spread: *free* (rejoin at once — keeps everyone
-   playing, deaths stop mattering); *timed* (60–90 seconds watching the woods first);
-   *progress* (whatever you carried is dropped where you died and someone must fetch it —
-   death costs the group a trip). Recommendation: **timed plus dropped-carry**, and
-   optionally one escalation tick per death, so the woods darken as the group thins.
+1. ~~What a death costs (§10).~~ **Decided 2026-09-15 (B §1.4): death is permanent.** The
+   dead do not rejoin and are not added to the book; they watch the living from a preview
+   mode, its own sub-project. What they carried stays where they fell.
 2. **The Hollow's identity** — that it is the keeper of the book, and the players are
    overdue (§2).
-3. **The player's own name as the last entry** (§2).
+3. ~~The player's own name as the last entry (§2).~~ **Decided 2026-09-15 (B §1.3): no.**
 4. **Altitude as a second escalation axis, furthest fork highest** (§3).
-5. **Fork signs carrying the landmark names** (§4).
-6. **The sign-out as a multi-second, uninterruptible ritual** (§5).
+5. ~~Fork signs carrying the landmark names (§4).~~ **Decided 2026-09-15 (B §1.6): yes,
+   wooden sign posts at every junction.**
+6. ~~The sign-out as a multi-second, uninterruptible ritual (§5).~~ **Decided 2026-09-15
+   (B §1.7): a five-second hold that breaks on release, on leaving reach, and on death.**
 7. **"Looking slows it"** as the sole defensive verb, and its tuning (§6.6).
 8. **A counterpart Poe passage for the win** (§12).
 9. **Carry-or-light** is held in reserve as the primary difficulty lever if the game plays
@@ -392,7 +398,9 @@ Recorded so the plan does not rebuild any of it.
 
 - Weapons, combat, damage to the Hollow, and any mechanic that removes it.
 - A minimap, compass, waypoint marker, or objective arrow.
-- Invisible walls, boundary warnings, or "return to the play area" messaging.
+- Invisible walls, boundary warnings, or "return to the play area" messaging — *except at the
+  road's edge, from 2026-09-15 (B §1.12): one wall there, with a line that names the objective.
+  Everywhere else the leash still does the work.*
 - A wall-clock difficulty timer.
 - Reaching the highway on foot.
 - Multiple monsters, or a population of them.
@@ -407,26 +415,28 @@ with the design. Letters are the ones the sub-project specs use.
 | **A** | Trailhead & trail graph — bowl geography, trailhead flat, car and register post, ascent, forks, four landmark endpoints | — | highest | **Complete.** Shipped 2026-09-09 (`docs/trail/2026-09-08-trailhead-and-trail-graph.md`); revised 2026-09-09 (`docs/trail/2026-09-09-open-hillside-trail.md`: wall removed, bench cut) and 2026-09-10 (`docs/trail/2026-09-09-apron-and-ground-trail.md`: the trail is the ground) |
 | **G1** | Rifle out, Interact in — the fire bit becomes Interact, `combat.ts` dormant, a headlamp | — | low | shipped 2026-09-11 |
 | **T** | The trail system — a stem to a made peak (the only dead end), seeded loops around made features (meadow flats, wadeable ponds), the pad a car's worth from the road, every chunk prop drawn (`docs/trail/2026-09-11-trail-system.md`) | A, G1 | high | shipped 2026-09-11 |
-| **B** | Register & the count — replicated book state, items at the sites, carry, the sign-out ritual, the win at the car (§5) | A, G1 | medium | |
+| **B** | Register & the count — replicated book state, items at the sites, carry, the sign-out ritual, the win at the car, containment (§5; `docs/gameplay/2026-09-15-register-and-count.md`) | A, G1, T | medium | spec written 2026-09-15 |
 | **C** | The Hollow — one entity replacing the director population, walks the trail graph toward progress, contact kills via the existing respawn, placeholder asset, visible far (§6) | A, B | medium | |
 | **D** | Escalation & atmosphere — the scalar (sign-out floor + off-trail spike), the weather/lighting/mist curve, wildlife silence (§7) | A, B, C | low | |
 | **F** | Tape & leash — retroreflective tape along the trails, distance-to-trail feeding the scalar (§8) | A, D | medium | |
 | **E** | Dread stack — whispers and misleading one-shots, screen warp, lighting collapse (§7) | C, D | medium (GLSL) | |
-| **H** | Join & respawn as emergence — the spawn band, a name added to the register, the death cost (§10) | A, B, C, F | needs §13.1 | |
+| **H** | Join as emergence — the spawn band for a joining player. *Amended 2026-09-15: death is permanent (B §1.4), so no respawn path and no name added to the register.* | A, B, C, F | low | |
+| **P** | Preview mode — a dead player watches the living from their views; permanent death ships here (B §6) | A, B | medium | added 2026-09-15 |
 | **I** | Cutscene — an incremental world build first (`startGame` builds synchronously today), full and trimmed variants, the skip prompt (§11) | A–D settled | medium | |
 | **J** | Endings & verb polish — the Poe passages, crouch, stamina, "looking slows it" tuning (§12, §9) | everything | low | |
 
 **Order:** A → G1 → T → B → C is the vertical slice (T added 2026-09-11 — B places the register on T's graph) — the game with placeholders, and the earliest
-point at which the loop can be judged. Then D, F, E, H, I, J. The one open decision that gates a
-sub-project is §13.1 (what a death costs), before H.
+point at which the loop can be judged. Then D, F, E, P, H, I, J (P added 2026-09-15: it pairs with
+permanent death, so it follows C, which is what kills anybody). Nothing gates a sub-project any
+more: §13.1 was decided on 2026-09-15.
 
 Two facts agreed at the same time that later sub-projects should not rediscover: the trail graph
 **is** the Hollow's navigation graph (its targets sit on or beside the network, so pursuit is a
 graph walk plus a short approach, and §14's second risk mostly folds into the first); and the
 world build is synchronous, so the cutscene needs an incremental build before it can mask one.
 
-**Containment is unowned.** The open-hillside revision of A replaced "cliffs keep you in" with an
-invisible wall at the road edge and a spoken line, deferred; nothing in the code contains the
-player today, and §16 still lists invisible walls as out. B or F should claim it, and §16 should
-be amended when one does.
+**Containment belongs to B** (claimed 2026-09-15, B §1.12 and §3.5): an invisible wall at the
+pavement's edge, with the car on the shoulder still reachable, and a line on the HUD. §16's
+"invisible walls, boundary warnings" exclusion is amended accordingly — the wall at the road is in,
+everywhere else the leash (F) still does the work.
 
