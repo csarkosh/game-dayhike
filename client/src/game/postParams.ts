@@ -23,18 +23,23 @@ export function postFeaturesFor(tier: QualityTier, fxSupported: boolean): PostFe
 export type FinishRecord = { overlapGain: number; overlapPhase: number; grainGain: number; time: number };
 
 // ---- Browser-tunable magnitudes. `clear` identity is not. ----
-/** Overlap gain at full dread and unsettle 1. */
-export const OVERLAP_MAX = 0.35;
+/** Overlap gain at full dread and unsettle 1. 0.35 was imperceptible in the
+ * browser (the gate note said so, then the owner did); 0.8 reads. */
+export const OVERLAP_MAX = 0.8;
 /** Radius (of the half-diagonal) inside which the overlap mask is zero. */
-export const OVERLAP_INNER = 0.55;
+export const OVERLAP_INNER = 0.4;
+/** How bright the de-lit echo is before the mask: the echo's luma × this. */
+export const OVERLAP_ECHO = 0.6;
 /** Scale of the echo about the frame centre. */
 export const OVERLAP_SCALE = 1.06;
 /** The echo's breathing rate. */
 export const OVERLAP_BREATH_HZ = 0.05;
 /** Grain amplitude in display units at clear; near the threshold of perception. */
 export const GRAIN_BASE = 0.035;
-/** Grain gain at full dread: base × (1 + gain). */
-export const GRAIN_DREAD_GAIN = 1.5;
+/** Grain gain at full dread: base × (1 + gain). 1.5 was below the threshold
+ * of noticing next to the clear baseline; 4 is the point the image reads as
+ * a bad recording. */
+export const GRAIN_DREAD_GAIN = 4;
 /** One 8-bit step. The finish pass applies TPDF dither at ±1 LSB
  * (`(d1 + d2 − 1) · LSB`, the sum of two uniform draws), the correct
  * triangular form — not ±½ LSB, which is RPDF (a single uniform draw). Don't

@@ -1,7 +1,7 @@
 import { clamp01, type Rgb } from "./colour.js";
 import { sunPositionAt, twilightT } from "./sky.js";
 import {
-  dreadLensUnder, exposureUnder, moodUnder, vignetteWeightUnder,
+  dreadLensUnder, dreadWorldUnder, exposureUnder, moodUnder, saturationUnder, vignetteWeightUnder,
   GRADE_SHADOW_HUE, GRADE_SHADOW_DENSITY, GRADE_SHADOW_SATURATION,
   GRADE_MIDTONE_HUE, GRADE_MIDTONE_DENSITY, GRADE_MIDTONE_SATURATION,
   GRADE_HIGHLIGHT_HUE, GRADE_HIGHLIGHT_DENSITY, GRADE_HIGHLIGHT_SATURATION,
@@ -26,7 +26,10 @@ export type GradeRecord = {
   shadows: Tint;
   midtones: Tint;
   highlights: Tint;
-  lift: number;
+  /** The colour the shadows lift toward: `c = lift + c·(1 − lift)`. Black at clear. */
+  lift: Rgb;
+  /** Global saturation as the pass's −1..0 uniform (Babylon's −100..0 over 100). 0 at clear. */
+  saturation: number;
   vignetteWeight: number;
   vignetteColour: Rgb;
   halationStrength: number;
@@ -147,7 +150,7 @@ function lerpXy(a: { x: number; y: number }, b: { x: number; y: number }, t: num
 // Below PURKINJE_THRESHOLD of pixel luma the colour blends toward a
 // rod-weighted grey tinted blue: rods peak in the blue-green and see no red.
 export const PURKINJE_THRESHOLD = 0.08;
-export const PURKINJE_MAX = 0.6;
+export const PURKINJE_MAX = 0.8;
 /** Column-major: each column is what one input channel contributes to (r, g, b). */
 export const PURKINJE_MATRIX: Mat3 = [0.02, 0.03, 0.05, 0.35, 0.45, 0.60, 0.20, 0.25, 0.40];
 
@@ -155,8 +158,21 @@ export const PURKINJE_MATRIX: Mat3 = [0.02, 0.03, 0.05, 0.35, 0.45, 0.60, 0.20, 
 export const HALATION_BASE = 0.04;
 export const HALATION_DREAD_GAIN = 4;
 export const ABERRATION_BASE = 10;
-export const ABERRATION_DREAD_GAIN = 1.5;
+export const ABERRATION_DREAD_GAIN = 3;
 export const VIGNETTE_COLOUR: Rgb = { r: 0.01, g: 0.02, b: 0.03 };
+/** The vignette's breathing under dread: ±VIGNETTE_PULSE of its weight on a
+ * VIGNETTE_PULSE_PERIOD-second cycle, scaled by the lens dread (Amnesia's
+ * screen pulse). Zero amplitude at clear, so the vignette holds still there. */
+export const VIGNETTE_PULSE = 0.12;
+export const VIGNETTE_PULSE_PERIOD = 7;
+
+// ---- World-side sickness. Browser-tunable; `clear` identity is not. ----
+/** The green-grey the shadows lift toward on the top dread plateau (the Alan
+ * Wake 2 knob): blacks go faintly milky and wrong rather than black. These
+ * are LINEAR values applied before the sRGB encode, so they are tiny: 0.011
+ * linear is ~0.11 in display terms. A first pass at 0.04–0.07 turned the
+ * whole night frame into a grey-green wash and erased the sky. */
+export const LIFT_DREAD: Rgb = { r: 0.005, g: 0.011, b: 0.008 };
 
 // ---- Split-tone response. Scales the ColorCurves-era densities/saturations
 // onto the analytic bands; browser-tuned. ----
@@ -186,11 +202,20 @@ function tint(hue: number, density: number, saturation: number, mood: number): T
   return { r: c.r, g: c.g, b: c.b, density: mood === 0 ? 0 : (density / 100) * mood, saturation: mood === 0 ? 0 : (saturation / 100) * mood };
 }
 
-export function gradeRecordUnder(w: WeatherParams, hour: number, unsettle: number): GradeRecord {
+/**
+ * The grade pass's record. `timeSeconds` only drives the vignette's breath;
+ * it defaults to 0 so callers that do not animate (and every identity test)
+ * see the resting weight.
+ */
+export function gradeRecordUnder(w: WeatherParams, hour: number, unsettle: number, timeSeconds = 0): GradeRecord {
   const altitude = sunPositionAt(hour).y;
   const lens = dreadLensUnder(w) * clamp01(unsettle);
+  const world = dreadWorldUnder(w);
   const mood = moodUnder(w);
   const night = 1 - clamp01(twilightT(altitude) / twilightT(0));
+  // The resting weight, then the breath: at lens 0 the multiplier is exactly 1.
+  const restingVignette = lens === 0 ? vignetteWeightUnder({ ...w, dread: 0 }) : vignetteWeightUnder({ ...w, dread: lens });
+  const breath = lens === 0 ? 1 : 1 + VIGNETTE_PULSE * lens * Math.sin((2 * Math.PI * timeSeconds) / VIGNETTE_PULSE_PERIOD);
   return {
     exposure: exposureUnder(w, altitude),
     whitePoint: whitePointMatrix(altitude),
@@ -200,9 +225,10 @@ export function gradeRecordUnder(w: WeatherParams, hour: number, unsettle: numbe
     shadows: tint(GRADE_SHADOW_HUE, GRADE_SHADOW_DENSITY, GRADE_SHADOW_SATURATION, mood),
     midtones: tint(GRADE_MIDTONE_HUE, GRADE_MIDTONE_DENSITY, GRADE_MIDTONE_SATURATION, mood),
     highlights: tint(GRADE_HIGHLIGHT_HUE, GRADE_HIGHLIGHT_DENSITY, GRADE_HIGHLIGHT_SATURATION, mood),
-    lift: 0,
+    lift: world === 0 ? { r: 0, g: 0, b: 0 } : { r: LIFT_DREAD.r * world, g: LIFT_DREAD.g * world, b: LIFT_DREAD.b * world },
+    saturation: saturationUnder(w) / 100,
     // The dread share of the vignette is lens-side: at unsettle 0 the base weight stands.
-    vignetteWeight: lens === 0 ? vignetteWeightUnder({ ...w, dread: 0 }) : vignetteWeightUnder({ ...w, dread: lens }),
+    vignetteWeight: restingVignette * breath,
     vignetteColour: VIGNETTE_COLOUR,
     halationStrength: lens === 0 ? HALATION_BASE : HALATION_BASE * (1 + HALATION_DREAD_GAIN * lens),
     aberrationAmount: lens === 0 ? ABERRATION_BASE : ABERRATION_BASE * (1 + ABERRATION_DREAD_GAIN * lens),

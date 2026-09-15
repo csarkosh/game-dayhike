@@ -122,8 +122,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
 
     grade = new PostProcess("grade", "grade",
       ["exposure", "whitePoint", "purkinje", "purkinjeThreshold", "purkinjeStrength", "shadowTint", "shadowAmount",
-        "midtoneTint", "midtoneAmount", "highlightTint", "highlightAmount", "lift", "vignetteWeight", "vignetteColour",
-        "halationStrength"],
+        "midtoneTint", "midtoneAmount", "highlightTint", "highlightAmount", "saturation", "lift", "vignetteWeight",
+        "vignetteColour", "halationStrength"],
       ["halationSampler"], 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
     const boundScenePass = scenePass;
     const boundBlurY = blurY;
@@ -149,7 +149,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
       effect.setFloat2("midtoneAmount", r.midtones.density, r.midtones.saturation);
       effect.setFloat3("highlightTint", r.highlights.r, r.highlights.g, r.highlights.b);
       effect.setFloat2("highlightAmount", r.highlights.density, r.highlights.saturation);
-      effect.setFloat("lift", r.lift);
+      effect.setFloat("saturation", r.saturation);
+      effect.setFloat3("lift", r.lift.r, r.lift.g, r.lift.b);
       effect.setFloat("vignetteWeight", r.vignetteWeight);
       effect.setFloat3("vignetteColour", r.vignetteColour.r, r.vignetteColour.g, r.vignetteColour.b);
       effect.setFloat("halationStrength", r.halationStrength);
@@ -189,8 +190,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
   return {
     features,
     update(weather, hour, unsettle) {
-      record = gradeRecordUnder(weather, hour, unsettle);
-      finishRecord = finishUnder(weather, unsettle, (performance.now() - start) / 1000);
+      const seconds = (performance.now() - start) / 1000;
+      record = gradeRecordUnder(weather, hour, unsettle, seconds);
+      finishRecord = finishUnder(weather, unsettle, seconds);
       if (aberration !== null) {
         aberration.aberrationAmount = record.aberrationAmount;
         return;

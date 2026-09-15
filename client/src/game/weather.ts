@@ -88,6 +88,10 @@ export const AMBIENT_DESAT = 0.5;
 export const FILL_LIFT = 2.5;
 /** Fog density multiplier gain: density x(1 + gain·mist). 11 → 12x at mist 1. */
 export const FOG_MIST_GAIN = 11;
+/** Fog density gain on the top dread plateau, on top of the mist gain: the
+ * treeline dissolves a few tens of metres out instead of a few hundred, so
+ * whatever is in it cannot be seen. Reads the stepped world dread. */
+export const FOG_DREAD_GAIN = 1;
 /** Exposure dip at full cloud cover — dim pallor, not darkness. */
 export const EXPOSURE_DIP = 0.15;
 /** globalSaturation drop at full cloud (Babylon curves: 0 neutral, -100 grey).
@@ -105,16 +109,18 @@ export const WET_ROUGHNESS_LOSS = 0.4;
 export const MIST_OPACITY_MAX = 0.55;
 /** Bright mist air the fog colour pulls toward under mist. */
 const MIST_AIR: Rgb = { r: 0.58, g: 0.6, b: 0.62 };
-/** Fraction of the way fog is pulled toward the dread air at full dread. */
-export const DREAD_FOG_PULL = 0.35;
+/** Fraction of the way fog is pulled toward the dread air at full dread.
+ * Raised 0.35 → 0.7 in the dread-night pass: at 0.35 the eerie night read
+ * as rain, not dread. */
+export const DREAD_FOG_PULL = 0.7;
 /** Additional exposure dip at full dread, on top of the cloud dip. */
 export const DREAD_EXPOSURE_DIP = 0.1;
-/** Additional globalSaturation drop at full dread. Cut from 20 to 5:
- * left at 20 alongside the first SATURATION_DROP
- * cut, eerie's total crush (-35) was barely below the pre-branch value
- * (-40.5), so the eeriest preset was almost unchanged. Now the grade —
- * not a global crush — carries eerie's mood. */
-export const DREAD_SATURATION_DROP = 5;
+/** Additional globalSaturation drop at full dread. Was cut to 5 while the
+ * split-tone grade carried eerie's mood; raised to 30 in the dread-night
+ * pass, because under dread the image should drain as well as tint — the
+ * grade keeps the hue, this takes the life out of it. Continuous (lens-side
+ * on the post path, where the grade pass reads it as a −1..0 uniform). */
+export const DREAD_SATURATION_DROP = 30;
 /** Mist-bank opacity gain at full dread — denser banks, same 12-bank cap. */
 export const DREAD_MIST_GAIN = 0.3;
 /** Vignette weight baseline (Babylon vignetteWeight) and its dread gain. */
@@ -124,7 +130,7 @@ export const DREAD_VIGNETTE_GAIN = 0.6;
  * it is lifted DOWN to the current fog's luma before mixing, so dread shifts
  * hue without ever brightening — the fixed-bright-target night-glow trap
  * documented on MIST_AIR, avoided the same way. */
-const DREAD_AIR: Rgb = { r: 0.35, g: 0.42, b: 0.36 };
+const DREAD_AIR: Rgb = { r: 0.22, g: 0.3, b: 0.24 };
 
 // ---- Stepped dread. Browser-tunable; `clear` identity is not. ----
 
@@ -132,8 +138,10 @@ const DREAD_AIR: Rgb = { r: 0.35, g: 0.42, b: 0.36 };
 export const DREAD_PLATEAUS = 4;
 /** Half-width, in dread units, of the soft edge on each plateau. */
 export const DREAD_STEP_EDGE = 0.06;
-/** Fraction of the fill and probe ambient lost on the top plateau. */
-export const AMBIENT_COLLAPSE = 0.45;
+/** Fraction of the fill and probe ambient lost on the top plateau. 0.45 left
+ * the night ground moonlit and readable; 0.75 makes the headlamp the only
+ * light worth trusting. */
+export const AMBIENT_COLLAPSE = 0.75;
 
 function smoothstep01(x: number): number {
   const c = Math.min(1, Math.max(0, x));
@@ -271,7 +279,11 @@ export function ambientColourUnder(w: WeatherParams, hour: number): Rgb {
 }
 
 export function fogDensityUnder(w: WeatherParams, viewDistance: number): number {
-  return fogDensityFor(viewDistance) * (1 + FOG_MIST_GAIN * clamp01(w.mist));
+  return (
+    fogDensityFor(viewDistance) *
+    (1 + FOG_MIST_GAIN * clamp01(w.mist)) *
+    (1 + FOG_DREAD_GAIN * dreadWorldUnder(w))
+  );
 }
 
 /**

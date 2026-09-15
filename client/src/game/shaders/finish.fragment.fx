@@ -16,8 +16,9 @@ uniform float overlapPhase;
 uniform float grainGain;
 uniform float time;
 
-const float OVERLAP_INNER = 0.55;
+const float OVERLAP_INNER = 0.4;
 const float OVERLAP_SCALE = 1.06;
+const float OVERLAP_ECHO = 0.6;
 const float DITHER_LSB = 0.00392156862745098;
 const float TWO_PI = 6.28318530718;
 
@@ -41,7 +42,7 @@ void main(void) {
     vec2 mirrored = vec2(1.0 - vUV.x, vUV.y);
     vec2 echoUv = (mirrored - 0.5) / OVERLAP_SCALE + 0.5 + vec2(breath, 0.0);
     vec3 echo = texture2D(textureSampler, clamp(echoUv, 0.0, 1.0)).rgb;
-    vec3 delit = vec3(finishLuma(echo)) * 0.35;
+    vec3 delit = vec3(finishLuma(echo)) * OVERLAP_ECHO;
     c = 1.0 - (1.0 - c) * (1.0 - delit * mask);
   }
   vec2 pixel = vUV / texelSize;

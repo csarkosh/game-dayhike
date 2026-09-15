@@ -1,7 +1,8 @@
 // The grade pass: the whole colour identity in one full-screen shader, run
 // on linear HDR before the pipeline's chromatic aberration and FXAA. Order:
-// exposure, AgX, white point, Purkinje, split-tone, lift, vignette, halation,
-// sRGB encode. Every knob is a uniform from gradeRecordUnder in
+// exposure, AgX, white point, Purkinje, split-tone, global saturation, lift
+// (a colour: under dread the shadows go milky green-grey), vignette,
+// halation, sRGB encode. Every knob is a uniform from gradeRecordUnder in
 // gradeParams.ts, so nothing recompiles at runtime.
 //
 // The AgX tone map is ported from three.js, MIT License, Copyright 2010-2024 three.js authors
@@ -28,7 +29,8 @@ uniform vec3 midtoneTint;
 uniform vec2 midtoneAmount;
 uniform vec3 highlightTint;
 uniform vec2 highlightAmount;
-uniform float lift;
+uniform vec3 lift;
+uniform float saturation;
 uniform float vignetteWeight;
 uniform vec3 vignetteColour;
 uniform float halationStrength;
@@ -92,6 +94,7 @@ void main(void) {
   c = gradeBand(c, shadowMask, shadowTint, shadowAmount);
   c = gradeBand(c, midMask, midtoneTint, midtoneAmount);
   c = gradeBand(c, highlightMask, highlightTint, highlightAmount);
+  c = mix(vec3(gradeLuma(c)), c, 1.0 + saturation);
   c = lift + c * (1.0 - lift);
   vec2 centred = (vUV - 0.5) * 2.0;
   float vr = length(centred) / 1.41421356;

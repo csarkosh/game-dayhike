@@ -67,7 +67,8 @@ describe("gradeRecordUnder", () => {
       expect(g.shadows.density).toBe(0);
       expect(g.midtones.density).toBe(0);
       expect(g.highlights.density).toBe(0);
-      expect(g.lift).toBe(0);
+      expect(g.lift).toEqual({ r: 0, g: 0, b: 0 });
+      expect(g.saturation).toBe(0);
       expect(g.vignetteWeight).toBe(VIGNETTE_WEIGHT_BASE);
       expect(g.halationStrength).toBe(HALATION_BASE);
       expect(g.aberrationAmount).toBe(ABERRATION_BASE);
