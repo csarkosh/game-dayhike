@@ -4,6 +4,11 @@ const STYLE = `
     position: absolute; left: 50%; top: 55%; transform: translateX(-50%);
     font-size: 1.1rem; text-shadow: 0 1px 4px #000; text-align: center;
   }
+  .hud .fade {
+    position: absolute; inset: 0; background: #000; opacity: 0;
+    transition: opacity 1.5s ease-in;
+  }
+  .hud .fade.on { opacity: 1; }
   .hud .respawn {
     position: absolute; left: 50%; top: 42%; transform: translateX(-50%);
     font-size: 1.6rem; font-weight: 600; text-shadow: 0 2px 6px #000;
@@ -13,6 +18,10 @@ const STYLE = `
 
 export type Hud = {
   setStatus(text: string | null): void;
+  /** A line that clears itself after `ms`, unless something replaces it first. */
+  flash(text: string, ms: number): void;
+  /** Darkens the whole view over 1.5 s; the status line stays readable on top. */
+  fade(on: boolean): void;
   /** Seconds until respawn, or null when alive. */
   setRespawn(seconds: number | null): void;
   dispose(): void;
@@ -29,6 +38,10 @@ export function createHud(container: HTMLElement): Hud {
   const root = document.createElement("div");
   root.className = "hud";
 
+  // The fade comes first so the lines below it paint on top.
+  const fade = document.createElement("div");
+  fade.className = "fade";
+
   const status = document.createElement("div");
   status.className = "status";
 
@@ -36,12 +49,30 @@ export function createHud(container: HTMLElement): Hud {
   respawn.className = "respawn";
   respawn.hidden = true;
 
-  root.append(status, respawn);
+  root.append(fade, status, respawn);
   container.append(style, root);
+
+  let flashTimer: ReturnType<typeof setTimeout> | null = null;
+  const cancelFlash = () => {
+    if (flashTimer !== null) clearTimeout(flashTimer);
+    flashTimer = null;
+  };
 
   return {
     setStatus(text) {
+      cancelFlash();
       status.textContent = text ?? "";
+    },
+    flash(text, ms) {
+      cancelFlash();
+      status.textContent = text;
+      flashTimer = setTimeout(() => {
+        flashTimer = null;
+        if (status.textContent === text) status.textContent = "";
+      }, ms);
+    },
+    fade(on) {
+      fade.classList.toggle("on", on);
     },
     setRespawn(seconds) {
       const dead = seconds !== null && seconds > 0;
@@ -49,6 +80,7 @@ export function createHud(container: HTMLElement): Hud {
       respawn.textContent = dead ? `Respawning… ${Math.ceil(seconds)}` : "";
     },
     dispose() {
+      cancelFlash();
       root.remove();
       style.remove();
     },

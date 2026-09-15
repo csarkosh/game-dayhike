@@ -46,10 +46,13 @@ import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
 import { isDesktop, isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
+import { createRegisterPanel, registerPanelModel } from "./game/registerPanel.js";
+import { roadLine, WIN_LINE } from "./game/registerHud.js";
+import { InteractKind, SIGN_OUT_TICKS } from "./sim/register.js";
 import { afterNextPaint } from "./game/paint.js";
 import { connectFailureMessage, createConnectPanel } from "./game/connectPanel.js";
-import { resolveInteract } from "./sim/interact.js";
-import type { PlayerState, WorldState } from "./sim/types.js";
+import { pressedEdges, resolveInteract } from "./sim/interact.js";
+import { Button, NO_ITEM, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
 import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
@@ -313,9 +316,64 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     }
     const target = resolveInteract(world, self);
     const projected = target === null ? null : renderer.project(target.pos);
+    const carrying =
+      self.carrying === NO_ITEM ? null : (world.register?.hikers[self.carrying]?.name ?? null);
     prompt.sync(
-      promptModel(target, projected, { width: canvas.clientWidth, height: canvas.clientHeight }, touchStart),
+      promptModel(target, projected, { width: canvas.clientWidth, height: canvas.clientHeight }, touchStart, {
+        carrying,
+        hold: self.signOutTicks / SIGN_OUT_TICKS,
+      }),
     );
+  }
+
+  const registerPanel = createRegisterPanel(container);
+  let lastButtons = 0;
+  /**
+   * The book is this player's own screen: it opens on an Interact press at
+   * the box with empty hands, and closes on the next press or the first step.
+   * Local only — the host resolves the same press and does nothing with it.
+   */
+  function syncBook(world: World, self: PlayerState | undefined, cmd: InputCommand, state: WorldState): void {
+    const edges = pressedEdges(lastButtons, cmd.buttons);
+    lastButtons = cmd.buttons;
+    if (self === undefined || world.register === null) return;
+    if (registerPanel.isOpen) {
+      if ((edges & Button.Interact) !== 0 || cmd.moveX !== 0 || cmd.moveZ !== 0) registerPanel.hide();
+      return;
+    }
+    if ((edges & Button.Interact) === 0 || self.carrying !== NO_ITEM) return;
+    const target = resolveInteract(world, self);
+    if (target === null || target.kind !== InteractKind.Register) return;
+    // No carrier names yet: lobby members are keyed by signaling peer id and
+    // the items by entity id, and nothing in the game maps one to the other.
+    // A carried item reads "carried"; naming the carrier is a follow-up.
+    registerPanel.show(registerPanelModel(world.register, state.items, new Map()));
+  }
+
+  let roadLineAt = -Infinity;
+  /** The line at the wall, at most once every four seconds. */
+  function syncRoadLine(self: PlayerState | undefined, state: WorldState): void {
+    const roadCenterX = activeTerrainVariant().roadCenterX;
+    if (self === undefined || roadCenterX === undefined || state.items.length === 0) return;
+    const u = self.pos.x - roadCenterX(seed, self.pos.z);
+    const line = roadLine(u, state.items.every((it) => it.signedOut));
+    const now = performance.now();
+    if (line === null || now - roadLineAt < 4000) return;
+    roadLineAt = now;
+    hud.flash(line, 3000);
+  }
+
+  let won = false;
+  /** The win, once: the view fades to one line and the match returns to the landing. */
+  function syncOutcome(state: WorldState): void {
+    if (won || state.outcome !== Outcome.Won) return;
+    won = true;
+    input.setSuppressed(true);
+    registerPanel.hide();
+    hud.fade(true);
+    hud.setStatus(WIN_LINE);
+    if (landingTimer !== null) clearTimeout(landingTimer);
+    landingTimer = setTimeout(navigateToLanding, 5000);
   }
 
   /** Advances and paints the touch layer. Both loops, after `renderer.sync`. */
@@ -558,7 +616,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     stepAndRender = () => {
       const dt = frameSeconds();
       const ticks = accumulator.advance(dt);
-      for (let i = 0; i < ticks; i++) host.tick(input.sample(++seq));
+      let cmd: InputCommand | null = null;
+      for (let i = 0; i < ticks; i++) {
+        cmd = input.sample(++seq);
+        host.tick(cmd);
+      }
       stepFreecamView(dt);
 
       const state: WorldState = host.world.state;
@@ -568,6 +630,9 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       playWildlifeAudio();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(host.world, self);
+      if (cmd !== null) syncBook(host.world, self, cmd, state);
+      syncRoadLine(self, state);
+      syncOutcome(state);
       // True exactly when `sync` took its player-following branch, which is
       // the only case in which `renderer.camera.position` is an eye position
       // a pending freecam can adopt.
@@ -657,7 +722,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     stepAndRender = () => {
       const dt = frameSeconds();
       const ticks = accumulator.advance(dt);
-      for (let i = 0; i < ticks; i++) client.tick(input.sample(++seq));
+      let cmd: InputCommand | null = null;
+      for (let i = 0; i < ticks; i++) {
+        cmd = input.sample(++seq);
+        client.tick(cmd);
+      }
       stepFreecamView(dt);
 
       const state = client.renderState(performance.now());
@@ -667,6 +736,9 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       playWildlifeAudio();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(client.world, self);
+      if (cmd !== null) syncBook(client.world, self, cmd, state);
+      syncRoadLine(self, state);
+      syncOutcome(state);
       // See the host loop: a pending freecam waits for this.
       cameraOnPlayer = self !== undefined && freecam === null;
       renderer.scene.render();
@@ -750,6 +822,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       bar.dispose();
       menu.dispose();
       connectPanel.dispose();
+      registerPanel.dispose();
       touchLayer.dispose();
       prompt.dispose();
       input.dispose();
