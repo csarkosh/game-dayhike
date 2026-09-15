@@ -52,7 +52,8 @@ const STYLE = `
     -webkit-user-select: none; user-select: none;
   }
   .prompt.on { opacity: 1; }
-  .prompt.touch { pointer-events: auto; touch-action: none; }
+  /* A hidden prompt must never intercept a tap meant for what is underneath it. */
+  .prompt.touch.on { pointer-events: auto; touch-action: none; }
   .prompt .dot {
     width: 12px; height: 12px; border-radius: 50%;
     background: rgba(255, 255, 255, 0.85); box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
