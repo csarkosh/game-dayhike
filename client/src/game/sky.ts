@@ -67,7 +67,7 @@ const MOONLIGHT: Rgb = { r: 0.2, g: 0.26, b: 0.4 };
  * `fillIntensityFor` and `ambientColourFor` so the two ramp in step rather than
  * drifting apart as `/time` sweeps.
  */
-function twilightT(altitude: number): number {
+export function twilightT(altitude: number): number {
   return clamp01((altitude + NIGHT_ALTITUDE) / (NIGHT_ALTITUDE + DAY_ALTITUDE));
 }
 
