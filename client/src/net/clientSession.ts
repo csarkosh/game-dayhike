@@ -39,6 +39,12 @@ export type ClientSession = {
   readonly ready: boolean;
   readonly localEntityId: number;
   readonly stats: NetStats;
+  /**
+   * The predicted world: the local player and, once app.ts registers them,
+   * the same interactables the host has. Read to resolve what is in reach for
+   * the prompt; the host still decides what an Interact does.
+   */
+  readonly world: World;
   tick(input: InputCommand): void;
   renderState(nowMs: number): WorldState;
   localPlayer(): PlayerState | undefined;
@@ -290,6 +296,9 @@ export function createClientSession(
     },
     get stats() {
       return { ...stats, unackedInputs: unacked.length };
+    },
+    get world() {
+      return predicted;
     },
 
     tick(input) {

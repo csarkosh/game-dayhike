@@ -46,7 +46,10 @@ import { createClientSession } from "./net/clientSession.js";
 import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
 import { isDesktop, isTouchDevice } from "./game/platform.js";
-import type { WorldState } from "./sim/types.js";
+import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
+import { resolveInteract } from "./sim/interact.js";
+import type { PlayerState, WorldState } from "./sim/types.js";
+import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
 
@@ -276,6 +279,47 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     wildlifeAudio.play(renderer.wildlifeEvents(), wildlifePresence);
   }
 
+  /**
+   * The world's interactables, registered identically on the host and on a
+   * client's predicted world so both can resolve what is in reach. Nothing
+   * crosses the wire: the registry is seeded like everything else. Today that
+   * is only the debug pad marker: a lone interactable 2 m out from the
+   * trailhead at chest height, provably in reach when standing on the pad and
+   * facing it.
+   */
+  function registerInteractables(world: World): void {
+    if (!debugOn) return;
+    const th = activeTerrainVariant().trailGraph?.(seed).trailhead;
+    if (th === undefined) return;
+    const y = elevationAt(seed, th.x + 2, th.z) + 0.5;
+    world.interactables.set(1, {
+      id: 1,
+      pos: { x: th.x + 2, y, z: th.z },
+      radius: 0.5,
+      kind: 0,
+      onInteract: (id) => console.info("[debug] interact by", id),
+    });
+  }
+
+  const prompt = createInteractPrompt(container, {
+    onDown: () => touchModel.interactDown(),
+    onUp: () => touchModel.interactUp(),
+    touch: touchStart,
+  });
+
+  /** Resolves and paints the prompt. Both loops, after `renderer.sync`. */
+  function syncPrompt(world: World, self: PlayerState | undefined): void {
+    if (self === undefined || freecam !== null) {
+      prompt.sync(null);
+      return;
+    }
+    const target = resolveInteract(world, self);
+    const projected = target === null ? null : renderer.project(target.pos);
+    prompt.sync(
+      promptModel(target, projected, { width: canvas.clientWidth, height: canvas.clientHeight }, input.engaged && touchStart),
+    );
+  }
+
   /** Advances and paints the touch layer. Both loops, after `renderer.sync`. */
   function syncTouch(lampOn: boolean): void {
     touchModel.tick(performance.now());
@@ -467,23 +511,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     session = host;
     hud.setStatus(null);
 
-    // The debug pad marker: a lone interactable 2 m out from the trailhead,
-    // at chest height, so it is provably in reach when standing on the pad
-    // and facing it. Host-only — `world.interactables` is host-side truth,
-    // resolved every tick against whichever player pressed Interact.
-    if (debugOn) {
-      const th = activeTerrainVariant().trailGraph?.(seed).trailhead;
-      if (th !== undefined) {
-        const y = elevationAt(seed, th.x + 2, th.z) + 0.5;
-        host.world.interactables.set(1, {
-          id: 1,
-          pos: { x: th.x + 2, y, z: th.z },
-          radius: 0.5,
-          kind: 0,
-          onInteract: (id) => console.info("[debug] interact by", id),
-        });
-      }
-    }
+    registerInteractables(host.world);
     host.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
@@ -515,6 +543,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncTouch(self?.lamp.on ?? false);
+      syncPrompt(host.world, self);
       // True exactly when `sync` took its player-following branch, which is
       // the only case in which `renderer.camera.position` is an eye position
       // a pending freecam can adopt.
@@ -591,6 +620,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
         : {}),
     });
     session = client;
+    registerInteractables(client.world);
     client.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
@@ -623,6 +653,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncTouch(self?.lamp.on ?? false);
+      syncPrompt(client.world, self);
       // See the host loop: a pending freecam waits for this.
       cameraOnPlayer = self !== undefined && freecam === null;
       renderer.scene.render();
@@ -695,6 +726,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       bar.dispose();
       menu.dispose();
       touchLayer.dispose();
+      prompt.dispose();
       input.dispose();
       renderer.dispose();
       wildlifeAudio?.dispose();

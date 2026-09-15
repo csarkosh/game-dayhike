@@ -1,6 +1,6 @@
 import { Engine } from "@babylonjs/core/Engines/engine.js";
 import { Scene } from "@babylonjs/core/scene.js";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -11,7 +11,7 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 
 import type { Level } from "../sim/level.js";
-import type { WorldState } from "../sim/types.js";
+import type { Vec3, WorldState } from "../sim/types.js";
 import type { Forest } from "../sim/forest.js";
 import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
@@ -578,6 +578,11 @@ export type Renderer = {
    * read every frame and its nine numbers are copied straight into AudioParams.
    */
   listener(): ListenerPose;
+  /**
+   * A world point as CSS pixels on the canvas, with its distance from the
+   * camera, or null when it is behind the camera. Drives the interact prompt.
+   */
+  project(pos: Vec3): { x: number; y: number; depth: number } | null;
   resize(): void;
   dispose(): void;
   setFreecam(view: FreecamView | null): void;
@@ -933,6 +938,19 @@ export function createRenderer(
         camera.rotation.y, camera.rotation.x,
       );
       return listenerPose;
+    },
+    project(pos) {
+      const p = new Vector3(pos.x, pos.y, pos.z);
+      const view = Vector3.TransformCoordinates(p, camera.getViewMatrix());
+      if (view.z <= camera.minZ) return null;
+      const w = engine.getRenderWidth();
+      const h = engine.getRenderHeight();
+      const s = Vector3.Project(p, Matrix.IdentityReadOnly, scene.getTransformMatrix(), camera.viewport.toGlobal(w, h));
+      // Render pixels to CSS pixels: the hardware scaling level makes them differ.
+      const canvasEl = engine.getRenderingCanvas();
+      const cw = canvasEl?.clientWidth ?? w;
+      const ch = canvasEl?.clientHeight ?? h;
+      return { x: (s.x / w) * cw, y: (s.y / h) * ch, depth: Vector3.Distance(p, camera.position) };
     },
     resize() {
       engine.resize();
