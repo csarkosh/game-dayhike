@@ -1,0 +1,14 @@
+{
+  "enabledPlugins": {
+    "general@csarkosh": true,
+    "general-claude@csarkosh": true
+  },
+  "extraKnownMarketplaces": {
+    "csarkosh": {
+      "source": {
+        "source": "github",
+        "repo": "csarkosh/skills-general"
+      }
+    }
+  }
+}

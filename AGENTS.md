@@ -34,6 +34,7 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | `docs/` | Research notes, specs, plans and design docs, grouped by subject (`docs/rendering/`, …). Every file is named `YYYY-MM-DD-<topic>.md`; see [Docs](#docs). |
 | `tools/` | `deploy/` (deploy and verify scripts), `vendor-ktx2.mjs`, `docs/` (the docs file-name test), and their tests. |
 | `.agents/skills/` | Agent skills. `.claude/skills` is a symlink to it so Claude Code discovers them. |
+| `.claude/settings.json` | Imports the shared skill plugins from [`csarkosh/skills-general`](https://github.com/csarkosh/skills-general); see [Skills](#skills). |
 | `.github/` | CI workflow: the Windows desktop smoke test. |
 | `AGENTS.md` | This file. `CLAUDE.md` points here. |
 | `README.md` | Human-facing overview of the game. |
@@ -59,8 +60,16 @@ Every file committed under `docs/` is named `YYYY-MM-DD-<topic>.md`:
 
 ## Skills
 
+This repository's own skills, in `.agents/skills/`:
+
 - `deploy-production` — shipping this repository to production: deploying the client to Firebase Hosting and the signaling server to Cloud Run, and verifying what's live matches `main`.
-- `doc-artifact` — viewing, reading, opening or sharing a repo document (spec, plan, research note, design doc) as a published web artifact in this project's house style.
 - `github-push` — pushing work to the `game-dayhike` GitHub repository, and writing the commit message before a push.
+
+Shared skills, imported from the [`csarkosh/skills-general`](https://github.com/csarkosh/skills-general) plugin marketplace rather than copied here:
+
+- `general:doc-preview` — opening a repo document (spec, plan, research note, design doc) as a styled page in Chrome on this machine, without publishing it. Claude Code and Codex.
+- `general-claude:doc-artifact` — publishing a repo document as a claude.ai Artifact. Claude Code only.
+
+To change a shared skill, change it in `skills-general`, not here. Claude Code reads the import from `.claude/settings.json`; on a machine that has never installed the plugins, run `claude plugin install general@csarkosh` and `claude plugin install general-claude@csarkosh` once. Codex has no per-repository import, so install once per machine with `codex plugin marketplace add csarkosh/skills-general` and `codex plugin add general@csarkosh`.
 
 Read a skill's `SKILL.md` before using it.
