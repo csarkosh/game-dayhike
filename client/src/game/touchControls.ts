@@ -227,7 +227,10 @@ const STYLE = `
     font-family: ui-monospace, monospace; color: #fff;
     opacity: 0; transition: opacity 400ms ease-out;
   }
-  .touch.on { opacity: 1; }
+  /* .on's own transition is the idle-wake speed (any touch, 0.35 -> 1); .fresh
+     overrides it for the slower engage fade (0 -> 1, first touch or lock). */
+  .touch.on { opacity: 1; transition: opacity 120ms ease-out; }
+  .touch.on.fresh { transition: opacity 400ms ease-out; }
   .touch.on.idle { opacity: 0.35; transition: opacity 600ms ease-out; }
   .touch.on.paused { opacity: 0; transition: opacity 200ms ease-out; }
   .touch.off { display: none; }
@@ -316,6 +319,12 @@ export function createTouchLayer(
   root.classList.toggle("off", !visible);
   let wasLampOn = model.state.lampOn;
   let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+  // Whether the layer was engaged-and-visible as of the last sync, so the
+  // 0 -> 1 engage fade (`fresh`, 400ms) is applied once on the frame it
+  // starts, not fought every frame by the idle-wake speed (`.on`'s own
+  // 120ms) that also applies once engaged.
+  let wasEngagedVisible = false;
+  let freshTimer: ReturnType<typeof setTimeout> | undefined;
 
   const now = () => performance.now();
 
@@ -363,6 +372,16 @@ export function createTouchLayer(
     sync() {
       const s = model.state;
       const engaged = hooks.engaged();
+      const engagedVisible = visible && engaged;
+      if (engagedVisible && !wasEngagedVisible) {
+        // The layer just engaged (a first touch or a pointer lock): the
+        // slower 400ms fade in from fully hidden, not the 120ms idle-wake
+        // speed `.on` carries for every touch after.
+        root.classList.add("fresh");
+        clearTimeout(freshTimer);
+        freshTimer = setTimeout(() => root.classList.remove("fresh"), 400);
+      }
+      wasEngagedVisible = engagedVisible;
       root.classList.toggle("on", visible);
       root.classList.toggle("paused", visible && !engaged);
       root.classList.toggle("idle", visible && engaged && s.idle);
@@ -390,6 +409,7 @@ export function createTouchLayer(
     },
     dispose() {
       clearTimeout(pulseTimer);
+      clearTimeout(freshTimer);
       canvas.removeEventListener("pointerdown", onCanvasDown);
       canvas.removeEventListener("pointermove", onCanvasMove);
       canvas.removeEventListener("pointerup", onCanvasUp);
