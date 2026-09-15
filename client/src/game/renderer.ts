@@ -69,6 +69,7 @@ const MATERIAL_COLORS: Record<string, [number, number, number]> = {
   step: [0.4, 0.46, 0.54],
   crate: [0.55, 0.42, 0.26],
   pillar: [0.48, 0.36, 0.36],
+  signpost: [0.45, 0.33, 0.2],
   default: [0.5, 0.5, 0.5],
 };
 

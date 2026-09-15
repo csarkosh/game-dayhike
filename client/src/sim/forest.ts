@@ -134,6 +134,11 @@ const PROBE_CHUNKS: readonly (readonly [number, number])[] = [
   // alone would churn every level id for nothing.
   [-10, 0],
   [-9, 0],
+  // Extended 2026-09-15 for pass 9 (signs): a junction post for PROBE_SEED.
+  // Measured: the graph for 0x0badf00d stands posts at (x=75.98, z=-166) in
+  // [2, -6], two more in [8, -9] and one in [13, -10]; one chunk is enough for
+  // the coverage case, and the cheapest is taken.
+  [2, -6],
 ];
 
 /**

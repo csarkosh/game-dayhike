@@ -8,6 +8,7 @@
  * trees return they take id 6 or higher — reusing an id would shift the RNG
  * streams of every pass registered after it. Elevation (1), trees (6), clutter
  * (7) are registered. Pass 8, trailhead, emits the placeholder props on the flat.
+ * Pass 9, signs, emits the sign posts at the trail's junctions.
  */
 import "../montane.js";
 import "../olympic.js";
@@ -15,3 +16,4 @@ import "./elevation.js";
 import "./trees.js";
 import "./clutter.js";
 import "./trailhead.js";
+import "./signs.js";
