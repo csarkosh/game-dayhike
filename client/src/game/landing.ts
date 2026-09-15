@@ -143,6 +143,13 @@ const STYLE = `
     background: rgba(255, 255, 255, 0.65);
     border-color: rgba(255, 255, 255, 0.65);
   }
+  /* A finger gets no hover: the press itself has to show, and so does the
+     wait that follows it. */
+  .landing button:active { background: rgba(255, 255, 255, 0.85); border-color: rgba(255, 255, 255, 0.85); }
+  .landing button:disabled {
+    cursor: default; color: rgba(16, 16, 20, 0.7);
+    background: rgba(255, 255, 255, 0.28); border-color: rgba(255, 255, 255, 0.28);
+  }
   .landing a.download, .landing a.update {
     margin-top: 0.5rem; color: rgba(255, 255, 255, 0.85);
     text-decoration: underline; text-underline-offset: 0.2em;
@@ -303,6 +310,7 @@ export function renderLanding(
       button.id = "create";
       button.type = "button";
       button.textContent = v.play.label;
+      button.disabled = v.play.busy === true;
       button.addEventListener("click", handlers.onCreate);
       parts.push(button);
     }

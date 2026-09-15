@@ -13,6 +13,7 @@ import {
   type Route,
 } from "./game/router.js";
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
+import { afterNextPaint } from "./game/paint.js";
 import { createLandingScene } from "./game/landingScene.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
@@ -72,6 +73,8 @@ const selfId = createLobbyId();
 let selfName = loadName();
 let lobby: Lobby | null = null;
 let lobbyError: string | undefined;
+// Play was pressed; the world builds on the next frame (see `onPlay`).
+let launching = false;
 let detachLobby: (() => void) | null = null;
 // One create-or-join in flight at a time. The button now disables itself the
 // moment an attempt starts, but this guard is what actually holds the line:
@@ -328,6 +331,7 @@ function landingInput(over: Partial<LandingInput> = {}): LandingInput {
     latest,
     follower: lobby !== null && lobby.state.role === "client",
     touch,
+    launching,
     ...over,
   };
 }
@@ -359,7 +363,16 @@ function isLandingRoute(route: Route): route is Exclude<Route, { kind: "game" }>
 
 function onPlay(): void {
   // Solo or host: a fresh token, a fresh world. Followers never see Play.
-  navigateToGame(createLobbyId());
+  // The button shows Loading… first and the build starts once that has
+  // painted: `startGame` blocks the page for a second or more, and a tap
+  // that changed nothing reads as a tap that missed.
+  if (launching) return;
+  launching = true;
+  repaintLanding();
+  afterNextPaint(() => {
+    launching = false;
+    navigateToGame(createLobbyId());
+  });
 }
 
 // `app` is passed in rather than closed over: the null check above does not

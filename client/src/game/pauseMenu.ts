@@ -22,11 +22,19 @@ const STYLE = `
     border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 4px;
   }
   .pausemenu button:hover { background: rgba(255, 255, 255, 0.18); }
+  /* A finger gets no hover: the press itself has to show, and so does the
+     teardown that follows Exit. */
+  .pausemenu button:active { background: rgba(255, 255, 255, 0.3); }
+  .pausemenu button:disabled { cursor: default; color: rgba(255, 255, 255, 0.55); background: rgba(255, 255, 255, 0.04); }
 `;
 
 export type PauseMenu = {
   show(): void;
   hide(): void;
+  /** Exit was pressed and the game is about to be torn down: the button says
+   * so and neither button takes another press. Nothing undoes it; the menu
+   * goes with the game. */
+  setExiting(): void;
   readonly isOpen: boolean;
   dispose(): void;
 };
@@ -97,6 +105,11 @@ export function createPauseMenu(
     hide() {
       isOpen = false;
       root.classList.remove("open");
+    },
+    setExiting() {
+      exit.textContent = "Leaving…";
+      exit.disabled = true;
+      resume.disabled = true;
     },
     get isOpen() {
       return isOpen;

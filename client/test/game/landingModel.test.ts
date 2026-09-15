@@ -119,3 +119,16 @@ describe("landingModel on a touch device", () => {
     expect(view.downloadsPage).toBeUndefined();
   });
 });
+
+describe("landingModel while a game is launching", () => {
+  it("turns Play into a disabled Loading… the moment it is pressed", () => {
+    const view = landingModel({ desktop: false, host: "darwin-arm64", latest: null, launching: true });
+    expect(view.play).toEqual({ label: "Loading…", busy: true });
+  });
+
+  it("leaves a follower's waiting line alone", () => {
+    const view = landingModel({ desktop: false, host: "darwin-arm64", latest: null, follower: true, launching: true });
+    expect(view.play).toBeUndefined();
+    expect(view.waiting).toBe(WAITING_FOR_HOST);
+  });
+});

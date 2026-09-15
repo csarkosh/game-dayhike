@@ -47,6 +47,7 @@ import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
 import { isDesktop, isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
+import { afterNextPaint } from "./game/paint.js";
 import { resolveInteract } from "./sim/interact.js";
 import type { PlayerState, WorldState } from "./sim/types.js";
 import type { World } from "./sim/world.js";
@@ -415,7 +416,14 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       // the player staring at a live game that ignores their mouse.
       if (!disposed) input.engage();
     },
-    onExit: () => options.onExit(),
+    onExit: () => {
+      // Leaving tears the renderer down and builds the landing's backdrop,
+      // which blocks the page for a second or more: show the press first.
+      menu.setExiting();
+      afterNextPaint(() => {
+        if (!disposed) options.onExit();
+      });
+    },
   });
 
   /**

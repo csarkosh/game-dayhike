@@ -36,13 +36,19 @@ export type LandingInput = {
   follower?: boolean;
   /** A touch device: the download cards make no sense here. */
   touch?: boolean;
+  /** Play was pressed and the world is about to build: the button says so
+   * and takes no second press. */
+  launching?: boolean;
 };
 
 export type DownloadCard = { platform: Platform; url: string; label: string; caption: string; note: string };
 
 export type LandingView = {
-  /** The primary action. Absent for a follower, who gets `waiting` instead. */
-  play?: { label: string };
+  /** The primary action. Absent for a follower, who gets `waiting` instead.
+   * `busy` while the game it started is loading: disabled, with a label that
+   * says so, because the build that follows blocks the page for a second or
+   * more and a button that changed nothing reads as a missed tap. */
+  play?: { label: string; busy?: boolean };
   waiting?: string;
   /** The Downloads panel's content. Absent on the desktop shell: an app does
    * not download itself, and the update link on the home panel covers the
@@ -64,7 +70,7 @@ export type LandingView = {
 export function landingModel(input: LandingInput): LandingView {
   const view: LandingView = { credits: { label: "Credits" } };
   if (input.follower) view.waiting = WAITING_FOR_HOST;
-  else view.play = { label: "Play" };
+  else view.play = input.launching ? { label: "Loading…", busy: true } : { label: "Play" };
 
   if (!input.desktop) {
     const cards: DownloadCard[] = [];
