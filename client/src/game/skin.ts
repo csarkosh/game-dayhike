@@ -116,8 +116,8 @@ export type SkinShading = {
 
 /**
  * The controller the renderer and `/skin` use. `scene` is part of the
- * signature for parity with createCelShading (renderer.ts call site) even
- * though the module-level state does not need it.
+ * signature for parity with the renderer's other `create*Shading`-style call
+ * sites, even though the module-level state does not need it.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function createSkinShading(_scene: Scene): SkinShading {

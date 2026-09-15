@@ -4,7 +4,7 @@ import { QUALITY, tierFor, type Capabilities, type QualityTier } from "../../src
 describe("QUALITY", () => {
   it("matches the quality tier table", () => {
     // Pins the specified values: hardware scaling, shadow map sizes, LOD
-    // bias, texture mip caps, and SSAO flags. Also pins cascade counts so
+    // bias, and texture mip caps. Also pins cascade counts so
     // they cannot drift silently; note that `high`'s cascade count is a
     // tuning value, not a fixed requirement. It was 4 (Babylon's default)
     // until production measurement showed the old-growth canopy's
@@ -16,7 +16,6 @@ describe("QUALITY", () => {
       shadowCascades: 0,
       lodBias: 1,
       textureMipCap: 512,
-      ssao: false,
     });
     expect(QUALITY.medium).toEqual({
       hardwareScaling: 1,
@@ -24,7 +23,6 @@ describe("QUALITY", () => {
       shadowCascades: 1,
       lodBias: 0,
       textureMipCap: 1024,
-      ssao: false,
     });
     expect(QUALITY.high).toEqual({
       hardwareScaling: 1,
@@ -32,7 +30,6 @@ describe("QUALITY", () => {
       shadowCascades: 2,
       lodBias: 0,
       textureMipCap: 0,
-      ssao: true,
     });
   });
 

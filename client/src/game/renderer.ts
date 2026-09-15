@@ -28,11 +28,8 @@ import {
   type RingSamples,
 } from "./clipmap.js";
 import { createLighting } from "./lighting.js";
-import { createStylize } from "./stylize.js";
-import { createCelShading } from "./cel.js";
 import { createSkinShading } from "./skin.js";
 import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint } from "./terrainTexture.js";
-import type { StyleName } from "./stylizeParams.js";
 import type { WeatherParams } from "./weather.js";
 import { wetSurfaceUnder } from "./weather.js";
 import { tierFor, type QualityTier } from "./quality.js";
@@ -590,7 +587,6 @@ export type Renderer = {
   setSkinShading(on: boolean): void;
   setHour(hour: number): void;
   setWeather(next: WeatherParams, fadeSeconds?: number): void;
-  setStyle(name: StyleName): void;
   /** 0 switches the walking cue off; 1 is the tuned default. */
   setBobScale(scale: number): void;
 };
@@ -618,10 +614,6 @@ export function createRenderer(
   // exists, so it also catches every material a GLB load adds later.
   budgetLights(scene);
 
-  // Cel-spike plugin registration. BEFORE anything creates
-  // a material: RegisterMaterialPlugin only reaches materials constructed
-  // after it runs, and the first PBR materials appear a few lines down.
-  const cel = createCelShading(scene);
   const skinShading = createSkinShading(scene);
 
   // Never call attachControl: this camera is driven entirely by sim state.
@@ -655,11 +647,6 @@ export function createRenderer(
   // sandbox's old dark clear colour.
   const tier = options.tier ?? detectTier();
   const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE });
-
-  // The stylization layer: vignette, grain, chromatic
-  // aberration, etched outlines — tier-gated internally, capability-guarded,
-  // and a no-op shell where neither applies.
-  const stylize = createStylize(scene, camera, tier);
 
   // A forest draws terrain instead of brushes. Guarded here rather than relying on
   // the caller to pass an empty level: app.ts passes the parsed sandbox01 so it
@@ -857,7 +844,6 @@ export function createRenderer(
       // per call, and this reads it three times a frame otherwise.
       const weather = lighting.weather;
       applyWetness(scene, weather);
-      stylize.update(weather);
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
@@ -974,9 +960,7 @@ export function createRenderer(
       wildlife?.dispose();
       mist?.dispose();
       rain.dispose();
-      stylize.dispose();
       skinShading.dispose();
-      cel.dispose();
       lighting.dispose();
       scene.dispose();
       engine.dispose();
@@ -992,9 +976,6 @@ export function createRenderer(
     },
     setBobScale(scale) {
       bob.setScale(scale);
-    },
-    setStyle(name) {
-      cel.setEnabled(name === "cel");
     },
     setWireframe(on) {
       // Scene-wide rather than per material, so it covers the clipmap rings and

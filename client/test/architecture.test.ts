@@ -114,7 +114,6 @@ describe("layer boundaries", () => {
       join(SRC, "game", "forestField.ts"),
       join(SRC, "game", "mistField.ts"),
       join(SRC, "game", "weather.ts"),
-      join(SRC, "game", "stylizeParams.ts"),
       join(SRC, "game", "skinParams.ts"),
       join(SRC, "game", "viewBob.ts"),
     ];

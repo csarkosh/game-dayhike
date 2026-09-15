@@ -22,11 +22,10 @@ export type QualitySettings = {
   lodBias: number;
   /** Largest mip dimension to keep. Zero means no cap. */
   textureMipCap: number;
-  ssao: boolean;
 };
 
-/** Hardware scaling, shadow map sizes, LOD bias, texture mip caps, and SSAO
- * flags, by tier. Cascade counts are tuning values: `medium` uses a single
+/** Hardware scaling, shadow map sizes, LOD bias, and texture mip caps, by
+ * tier. Cascade counts are tuning values: `medium` uses a single
  * cascade, and `high`'s count is ours to tune. `high` ran Babylon's default of 4 until
  * 2026-08-26: rasterising the old-growth giants' alpha-tested canopy into four 2048²
  * cascade maps measured ~5 ms/frame of GPU time at a deep-forest camera on production —
@@ -40,7 +39,6 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     shadowCascades: 0,
     lodBias: 1,
     textureMipCap: 512,
-    ssao: false,
   },
   medium: {
     hardwareScaling: 1,
@@ -48,7 +46,6 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     shadowCascades: 1,
     lodBias: 0,
     textureMipCap: 1024,
-    ssao: false,
   },
   high: {
     hardwareScaling: 1,
@@ -56,7 +53,6 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     shadowCascades: 2,
     lodBias: 0,
     textureMipCap: 0,
-    ssao: true,
   },
 };
 

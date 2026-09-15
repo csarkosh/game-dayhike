@@ -4,7 +4,7 @@ import { WALK_SPEED } from "../sim/constants.js";
 /**
  * The pure arithmetic of the walking cue. Babylon-free and on the architecture
  * test's BABYLON_FREE_FILES list; `renderer.ts` is the shell that applies it —
- * the `stylizeParams.ts` / `stylize.ts` split, repeated.
+ * the params-module / shell split used elsewhere in `game/`, repeated.
  *
  * This exists because the ground got *too* smooth. Once collision became the
  * continuous elevation field (`sim/ground.ts`), the eye tracked the surface

@@ -1,4 +1,3 @@
-import { DEFAULT_STYLE, STYLE_NAMES } from "./stylizeParams.js";
 import { DEFAULT_WEATHER, WEATHER_NAMES } from "./weather.js";
 import { DEFAULT_BOB_SCALE, MAX_BOB_SCALE } from "./viewBob.js";
 
@@ -27,6 +26,13 @@ export type CommandSpec = {
 
 /** Long enough for any memorable phrase, short enough to keep URLs sane. */
 export const SEED_TOKEN_MAX = 64;
+
+/**
+ * Commands that once existed and may still sit in a shared `?cmd=` link.
+ * `parseScript` drops them without an error: a stale entry is not a mistake
+ * the person opening the link can do anything about.
+ */
+export const RETIRED_COMMANDS: readonly string[] = ["style"];
 
 /** Excludes whitespace and the `;` that separates script entries. */
 const SEED_TOKEN = /^[^\s;]+$/;
@@ -88,20 +94,6 @@ const SPECS: readonly CommandSpec[] = [
     },
     scriptValue: (args) => args[0] ?? DEFAULT_WEATHER,
     defaultValue: DEFAULT_WEATHER,
-  },
-  {
-    name: "style",
-    kind: "view",
-    validate(args) {
-      // Bare reports the current state; app.ts answers it without dispatching.
-      if (args.length === 0) return null;
-      if (args.length === 1 && (STYLE_NAMES as readonly string[]).includes(args[0] as string)) {
-        return null;
-      }
-      return `style takes no argument, or one of ${STYLE_NAMES.join(", ")}`;
-    },
-    scriptValue: (args) => args[0] ?? DEFAULT_STYLE,
-    defaultValue: DEFAULT_STYLE,
   },
   {
     name: "volume",

@@ -9,10 +9,7 @@
  * were still flat. `windPlugin.ts` has the same shape for the same reason — the
  * normal rotation costs a second matrix per vertex and the birds it would serve
  * are a few pixels across at 300 m. Recorded here so this reads
- * as a decision rather than rediscovering it as a bug. The stylizer's
- * geometry-buffer pass (`stylize.ts`) draws with its own material and so sees
- * un-flapped geometry, which is the same pre-existing class of mismatch wind
- * already carries at ground scale.
+ * as a decision rather than rediscovering it as a bug.
  *
  * Injected at CUSTOM_VERTEX_UPDATE_POSITION — BEFORE the instance matrix —
  * because the rotation is in the bird's own frame; windPlugin.ts hooks

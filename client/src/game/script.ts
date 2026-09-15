@@ -1,4 +1,10 @@
-import { findCommand, parseCommandLine, validateCommand, type ParsedCommand } from "./commands.js";
+import {
+  findCommand,
+  parseCommandLine,
+  validateCommand,
+  RETIRED_COMMANDS,
+  type ParsedCommand,
+} from "./commands.js";
 
 export type ScriptEntry = ParsedCommand;
 
@@ -17,6 +23,7 @@ export function parseScript(raw: string): { entries: ScriptEntry[]; errors: stri
     // An empty chunk from `;;` or a trailing `;` carries no command and is not
     // a mistake worth reporting.
     if (parsed === null) continue;
+    if (RETIRED_COMMANDS.includes(parsed.name)) continue;
     const error = validateCommand(parsed);
     if (error !== null) errors.push(error);
     else entries.push(parsed);

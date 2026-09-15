@@ -30,7 +30,6 @@ import { seedFromToken } from "./game/seed.js";
 import { createAmbientAudio } from "./game/ambientAudio.js";
 import { createWildlifeAudio } from "./game/wildlifeAudio.js";
 import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
-import { DEFAULT_STYLE, STYLE_NAMES, type StyleName } from "./game/stylizeParams.js";
 import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherPresetName } from "./game/weather.js";
 import {
@@ -130,7 +129,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // per-species array, and the frame loop below would otherwise allocate one
   // every frame to say the same thing.
   let wildlifePresence = wildlifePresenceUnder(WEATHER_PRESETS[DEFAULT_WEATHER]);
-  let styleName: StyleName = DEFAULT_STYLE;
   // The audio graph is gated on a user gesture; this is the same click that
   // requests pointer lock, so unlocking here needs no dedicated UI of its own.
   // Named so dispose() can remove it: a world command (e.g. `/seed`) can
@@ -256,13 +254,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       renderer.setWeather(WEATHER_PRESETS[preset], options.instant ? 0 : undefined);
       ambient.setWeather(WEATHER_PRESETS[preset]);
       wildlifePresence = wildlifePresenceUnder(WEATHER_PRESETS[preset]);
-    } else if (name === "style") {
-      const next =
-        typeof value === "string" && (STYLE_NAMES as readonly string[]).includes(value)
-          ? (value as StyleName)
-          : DEFAULT_STYLE;
-      styleName = next;
-      renderer.setStyle(next);
     } else if (name === "bob") {
       renderer.setBobScale(typeof value === "number" ? value : DEFAULT_BOB_SCALE);
     } else if (name === "volume") {
@@ -391,9 +382,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       // bar's message channel and stop before anything is persisted or applied.
       if (parsed.name === "weather" && parsed.args.length === 0) {
         return `weather: ${weatherName}`;
-      }
-      if (parsed.name === "style" && parsed.args.length === 0) {
-        return `style: ${styleName}`;
       }
 
       // A bare toggle typed into the bar flips; the URL records the state that

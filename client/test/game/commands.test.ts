@@ -6,7 +6,9 @@ import {
   validateCommand,
   findCommand,
   registerTerrainVariants,
+  RETIRED_COMMANDS,
 } from "../../src/game/commands.js";
+import { parseScript } from "../../src/game/script.js";
 
 describe("parseCommandLine", () => {
   it("splits a name from its arguments", () => {
@@ -149,16 +151,13 @@ describe("/weather", () => {
   });
 });
 
-describe("/style (cel spike)", () => {
-  it("accepts bare, etched, and cel", () => {
-    expect(validateCommand({ name: "style", args: [] })).toBeNull();
-    expect(validateCommand({ name: "style", args: ["etched"] })).toBeNull();
-    expect(validateCommand({ name: "style", args: ["cel"] })).toBeNull();
-  });
-
-  it("rejects unknown styles and extra arguments", () => {
-    expect(validateCommand({ name: "style", args: ["toon"] })).toMatch(/style takes/);
-    expect(validateCommand({ name: "style", args: ["etched", "cel"] })).toMatch(/style takes/);
+describe("retired commands", () => {
+  it("style is retired and an old URL carrying it parses without an error", () => {
+    expect(RETIRED_COMMANDS).toContain("style");
+    expect(findCommand("style")).toBeUndefined();
+    const { entries, errors } = parseScript("time 17;style cel;weather mist");
+    expect(errors).toEqual([]);
+    expect(entries.map((e) => e.name)).toEqual(["time", "weather"]);
   });
 });
 
