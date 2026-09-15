@@ -13,6 +13,9 @@ export const AIR_LEVEL = 0.25;
  * is close and loud still cannot drown the synthesized weather beds above.
  */
 export const WILDLIFE_LEVEL = 0.7;
+/** The bus for the world's small object sounds: an item picked up or set down, the pen at the box. */
+export const OBJECTS_LEVEL = 0.6;
+export type ObjectSound = "pickup" | "putdown";
 /** setTargetAtTime time constant — slow enough that weather fades are audible. */
 export const GAIN_RAMP_S = 2;
 export const DEFAULT_VOLUME = 0.5;
@@ -63,6 +66,14 @@ export type AmbientAudio = {
     x: number, y: number, z: number,
     gain: number, ref: number, max: number,
   ): AudioEmitter | null;
+  /**
+   * One positioned object sound, synthesized: a short low thud for a
+   * put-down, a brighter rustle for a pick-up. Coordinates in Web Audio's
+   * right-handed frame, like `emitter`. False before `unlock()`.
+   */
+  objectSound(kind: ObjectSound, x: number, y: number, z: number): boolean;
+  /** The pen's scratch while a sign-out is held: on starts it looping, off stops it. */
+  setPen(on: boolean): void;
   /** Places the listener, in Web Audio's right-handed frame. Inert before `unlock()`. */
   setListener(
     x: number, y: number, z: number,
@@ -82,6 +93,23 @@ export type AmbientAudio = {
  * `createCtx` is injectable so tests can hand in a fake — node has no
  * AudioContext, the same reason the Babylon shells test under NullEngine.
  */
+/**
+ * White noise of `seconds`, from a fixed xorshift stream rather than
+ * Math.random, so two runs of the same sound sound alike.
+ */
+function noise(ctx: AudioContext, seconds: number): AudioBuffer {
+  const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * seconds), ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  let s = 0x2545f491;
+  for (let i = 0; i < data.length; i++) {
+    s ^= s << 13;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    data[i] = ((s >>> 0) / 4294967296) * 2 - 1;
+  }
+  return buffer;
+}
+
 export function createAmbientAudio(
   createCtx: () => AudioContext = () => new AudioContext(),
 ): AmbientAudio {
@@ -93,6 +121,8 @@ export function createAmbientAudio(
   let windGain: GainNode | null = null;
   let airGain: GainNode | null = null;
   let wildlifeGain: GainNode | null = null;
+  let objectsGain: GainNode | null = null;
+  let pen: AudioBufferSourceNode | null = null;
   /** Drained and emptied by `unlock`; a registration after that runs immediately. */
   const unlockListeners: (() => void)[] = [];
 
@@ -178,6 +208,12 @@ export function createAmbientAudio(
       wildlifeGain.gain.value = WILDLIFE_LEVEL;
       wildlifeGain.connect(master);
 
+      // The objects bus: the register's few sounds, under the master and
+      // apart from the wildlife chorus.
+      objectsGain = ctx.createGain();
+      objectsGain.gain.value = OBJECTS_LEVEL;
+      objectsGain.connect(master);
+
       applyGains(pending);
 
       // Last, so a listener sees a context with its full graph already built.
@@ -257,6 +293,59 @@ export function createAmbientAudio(
         },
       };
     },
+    objectSound(kind, x, y, z) {
+      if (!ctx || !objectsGain) return false;
+      const src = ctx.createBufferSource();
+      src.buffer = noise(ctx, kind === "pickup" ? 0.12 : 0.08);
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.value = kind === "pickup" ? 2400 : 320;
+      filter.Q.value = 1.2;
+      const panner = ctx.createPanner();
+      panner.panningModel = "equalpower";
+      panner.distanceModel = "inverse";
+      panner.refDistance = 2;
+      panner.maxDistance = 40;
+      panner.rolloffFactor = 1;
+      panner.positionX.value = x;
+      panner.positionY.value = y;
+      panner.positionZ.value = z;
+      const g = ctx.createGain();
+      g.gain.value = kind === "pickup" ? 0.5 : 0.8;
+      src.connect(filter);
+      filter.connect(panner);
+      panner.connect(g);
+      g.connect(objectsGain);
+      src.start();
+      return true;
+    },
+    setPen(on) {
+      if (!ctx || !objectsGain) return;
+      if (on === (pen !== null)) return;
+      if (!on) {
+        try {
+          pen?.stop();
+        } catch {
+          /* already ended */
+        }
+        pen = null;
+        return;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = noise(ctx, 0.5);
+      src.loop = true;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.value = 1800;
+      filter.Q.value = 3;
+      const g = ctx.createGain();
+      g.gain.value = 0.18;
+      src.connect(filter);
+      filter.connect(g);
+      g.connect(objectsGain);
+      src.start();
+      pen = src;
+    },
     setListener(x, y, z, fx, fy, fz, ux, uy, uz) {
       if (!ctx) return;
       const l = ctx.listener;
@@ -273,7 +362,8 @@ export function createAmbientAudio(
     dispose() {
       void ctx?.close();
       ctx = null;
-      master = rainGain = windGain = airGain = wildlifeGain = null;
+      master = rainGain = windGain = airGain = wildlifeGain = objectsGain = null;
+      pen = null;
       unlockListeners.length = 0;
     },
   };

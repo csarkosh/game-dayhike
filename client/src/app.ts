@@ -55,7 +55,7 @@ import { PROPS, propSite, type RoadProp } from "./sim/passes/trailhead.js";
 import { afterNextPaint } from "./game/paint.js";
 import { connectFailureMessage, createConnectPanel } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
-import { Button, NO_ITEM, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
+import { Button, NO_CARRIER, NO_ITEM, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
 import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
@@ -385,6 +385,24 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     hud.flash(line, 3000);
   }
 
+  let lastCarriers: number[] = [];
+  /** Item carrier transitions become sounds; the pen runs while this player's hold does. */
+  function syncRegisterAudio(state: WorldState, self: PlayerState | undefined): void {
+    for (const item of state.items) {
+      const was = lastCarriers[item.id];
+      if (was === undefined) continue;
+      if (was === NO_CARRIER && item.carrier !== NO_CARRIER) {
+        const p = state.players.get(item.carrier);
+        // Web Audio's frame is right-handed: -z, as wildlifeAudio.ts mirrors it.
+        if (p !== undefined) ambient.objectSound("pickup", p.pos.x, p.pos.y, -p.pos.z);
+      } else if (was !== NO_CARRIER && item.carrier === NO_CARRIER && !item.signedOut) {
+        ambient.objectSound("putdown", item.pos.x, item.pos.y, -item.pos.z);
+      }
+    }
+    lastCarriers = state.items.map((it) => it.carrier);
+    ambient.setPen(self !== undefined && self.signOutTicks > 0);
+  }
+
   let won = false;
   /** The win, once: the view fades to one line and the match returns to the landing. */
   function syncOutcome(state: WorldState): void {
@@ -655,6 +673,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       syncPrompt(host.world, self);
       if (cmd !== null) syncBook(host.world, self, cmd, state);
       syncRoadLine(self, state);
+      syncRegisterAudio(state, self);
       syncOutcome(state);
       // True exactly when `sync` took its player-following branch, which is
       // the only case in which `renderer.camera.position` is an eye position
@@ -762,6 +781,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       syncPrompt(client.world, self);
       if (cmd !== null) syncBook(client.world, self, cmd, state);
       syncRoadLine(self, state);
+      syncRegisterAudio(state, self);
       syncOutcome(state);
       // See the host loop: a pending freecam waits for this.
       cameraOnPlayer = self !== undefined && freecam === null;
