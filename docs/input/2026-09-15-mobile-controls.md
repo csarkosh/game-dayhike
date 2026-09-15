@@ -226,7 +226,7 @@ Interact has no button. When something is in reach, a prompt floats at the objec
 - The HUD's `pointer-events: none` stays; the prompt alone is `pointer-events: auto` on touch.
 
 Today the prompt is dormant in normal play, since no content registers interactables yet;
-the browser gate proves it against the debug marker.
+the debug pad marker under `?cmd=debug` is how to see it working.
 
 ## The lobby on a phone
 
@@ -301,11 +301,10 @@ Headless vitest, following the house split of pure model tested and renderer unt
   pointer lock on desktop and the source on touch; edges taken once.
 - `architecture.test.ts` unchanged and still green.
 
-## Browser gates
+## Checks in the browser
 
-Driven by the controller against `npm run dev` with the `chrome-devtools` CLI, emulating an
-iPhone-class viewport (390 × 844 and 844 × 390) with touch, every shot archived outside the
-repo:
+Against `npm run dev` in a browser emulating an iPhone-class viewport (390 × 844 and
+844 × 390) with touch:
 
 1. The landing at both viewports: no horizontal scroll, Play reachable, roster readable.
 2. Start a game: the layer fades in; the stick appears under a synthesized touch, walks the
@@ -319,4 +318,4 @@ repo:
 7. Pause: the menu opens, the roster is live, Invite offers share or copy; Resume returns.
 8. Two pages, one at phone size, one desktop: the phone joins by invite and both see each
    other, with the joiner's prediction error at 0 cm.
-9. Frame time on the emulated phone viewport at the `low` tier, reported, not gated.
+9. Frame time on the emulated phone viewport at the `low` tier, reported, not a pass/fail check.

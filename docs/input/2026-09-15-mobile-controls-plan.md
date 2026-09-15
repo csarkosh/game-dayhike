@@ -1,6 +1,6 @@
 # Mobile Touch Controls Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A phone or tablet can play a full Day Hike match through a touch layer that feeds the existing input sampler, with an in-world interact prompt on every device.
 
@@ -17,9 +17,9 @@
 - Every UI screen is a pure model (tested) plus a dumb renderer (untested): decisions live in the model.
 - One source of "paused": the sampler's `engaged` state. Nothing else decides whether the pause menu is up.
 - Numbers from the spec, verbatim: stick zone `0.45` of width, stick radius `60` px, dead zone `0.15`, double-tap window `300` ms, tap hold `250` ms, tap travel `10` px, look rate `0.0045` rad/px, idle after `3000` ms, idle opacity `0.35`, safe-area insets on every edge.
-- Run from the worktree root `/Users/csarko/Projects/game-dayhike/.claude/worktrees/mobile-controls`: `npx vitest run --root client <path>` for a file, `npx tsc -p client --noEmit` for types, `npx eslint .` for lint. `node_modules` is a symlink to the main checkout's.
+- Run from the repository root: `npx vitest run --root client <path>` for a file, `npx tsc -p client --noEmit` for types, `npx eslint .` for lint.
 - Commit messages follow `.agents/skills/github-push/SKILL.md`: `<type>: <subject>`, a `## What` paragraph, a `## How` list led by file paths, and the trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Stage explicit paths, never `git add -A`.
-- Never kill processes you did not start; never start a dev server or a browser (the controller runs the browser gates).
+- Never kill processes you did not start.
 
 ---
 
@@ -1233,7 +1233,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Files:**
 - Modify: `client/src/game/touchControls.ts` (add `createTouchLayer`)
 - Modify: `client/src/app.ts` (construct the model and layer, drive them per frame, visibility disengage, canvas `touch-action`)
-- No headless test (renderer). The controller's browser gates 2 to 5 and 7 cover it.
+- No headless test (renderer). Checks 2 to 5 and 7 in the browser (Task 9) cover it.
 
 **Interfaces:**
 - Consumes: `createTouchModel`, `TouchModel`, `TouchState` (Task 2/3); `InputSampler.engaged`, `setTouchMode`, `disengage` (Task 4); `isTouchDevice` (Task 1).
@@ -2148,33 +2148,33 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 9: Full gates and the browser gates
+### Task 9: Full checks and the browser checks
 
-**Files:** none new. This task is the controller's.
+**Files:** none new.
 
-- [ ] **Step 1: The three repo gates from the worktree root**
+- [ ] **Step 1: The three repository checks from the root**
 
 Run: `npm run typecheck && npm run lint && npm test`
 Expected: all exit 0. `forestField.test.ts` "keeps a warm one-cell-move collect fast", `clipmap.test.ts` "scrolls to exactly what a fresh build produces" and `trailWalk.test.ts` are known to flake under machine load; rerun any of those alone before believing a failure.
 
-- [ ] **Step 2: Browser gates (controller, chrome-devtools CLI against `PORT=8080 npm run dev` from the worktree, daemon started `--isolated=true --headless=false --allowUnrestrictedPaths=true`)**
+- [ ] **Step 2: Checks in the browser, against `npm run dev`**
 
-Emulate a phone: `chrome-devtools emulate <page> --viewport 390x844x3` and, for touch, dispatch `PointerEvent`s with `pointerType: "touch"` from `evaluate_script` on the canvas, the buttons and the prompt. Archive every screenshot under `~/Projects/fps-sdd-archive/2026-09-15-mobile-controls/`.
+Emulate a phone (390×844, DPR 3, touch) and, for touch, dispatch `PointerEvent`s with `pointerType: "touch"` on the canvas, the buttons and the prompt.
 
 1. Landing at 390×844 and 844×390: `document.documentElement.scrollWidth <= innerWidth`, Play visible, roster readable, Downloads shows the note.
 2. Game start on a touch-emulated page: `.touch.on` present, `.pausemenu` not open, `.roster.hidden` present.
 3. Stick: a touch `pointerdown` at (100, 700) then `pointermove` to (100, 640): `.stick.live` present, the player's position (read via a throwaway `window.__player` hook if needed, reverted before commit) advances; `pointerup` clears the stick.
-4. Sprint: two stick downs 150 ms apart with the second held and moved: distance covered in 2 s exceeds the walking distance from gate 3 by at least 25%.
+4. Sprint: two stick downs 150 ms apart with the second held and moved: distance covered in 2 s exceeds the walking distance from check 3 by at least 25%.
 5. Look and jump: a drag on the right half changes the camera yaw; two taps 150 ms apart at the same point raise the player's y within 300 ms; one drag never does.
 6. Lamp: a tap on `.touch .lamp` toggles the local player's lamp; `.lamp.lit` follows; after 3 s without touches `.touch.idle` is present.
 7. `?cmd=debug`: walk to the pad marker; `.prompt.on` appears with label "Interact"; a touch press on it logs `[debug] interact by` on the host page.
 8. Pause: tap `.touch .pause`: `.pausemenu.open`, roster full with Copy and (if `navigator.share` exists in the emulation) Share; tap Resume: `.touch.on` without `.paused`.
 9. Two pages, one phone-emulated joiner and one desktop host, on a fresh lobby: both see each other, joiner's netgraph prediction error 0.0 cm.
-10. Frame time on the phone viewport at the `low` tier, reported as a number in the report, not gated.
+10. Frame time on the phone viewport at the `low` tier, reported as a number, not a pass/fail check.
 
-- [ ] **Step 3: Report**
+- [ ] **Step 3: Record**
 
-Write the gate results, screenshots and any deviation to the archive directory and summarise to the user. No commit in this task unless a gate found a defect, in which case fix it under its own task-sized commit with the same message shape.
+Note the results and any deviation. No commit in this task unless a check finds a defect, in which case fix it under its own commit with the same message shape.
 
 ---
 
