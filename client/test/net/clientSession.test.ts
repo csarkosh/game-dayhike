@@ -5,7 +5,7 @@ import { FakeNetwork } from "../../src/net/fakeNetwork.js";
 import { PERFECT_NETWORK, type NetworkConditions } from "../../src/net/transport.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { createForest } from "../../src/sim/forest.js";
-import { PLAYER_MAX_HEALTH, TICK_DT } from "../../src/sim/constants.js";
+import { MAX_UNACKED_INPUTS, PLAYER_MAX_HEALTH, TICK_DT } from "../../src/sim/constants.js";
 import { Button, type InputCommand } from "../../src/sim/types.js";
 import { encodeEvent, MessageType, PROTOCOL_VERSION } from "../../src/net/protocol.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
@@ -164,6 +164,32 @@ describe("reconciliation", () => {
     const clientPos = h.client.localPlayer()!.pos;
     expect(distance(hostPos, clientPos)).toBeLessThan(1.0);
   });
+
+  it("keeps reconciling after the input sequence passes 65536", () => {
+    // About 18 minutes at 60 Hz. The wire used to carry seq as a uint16, so
+    // past this point the host saw every input as already processed and
+    // dropped it, while the client's unacked queue grew without bound and
+    // was replayed in full on every snapshot.
+    const h = harness(PERFECT_NETWORK);
+    const ticks = 70_000;
+    drive(h, ticks, (t) => input({ seq: t + 1, moveZ: 1, moveX: t % 600 < 300 ? 1 : -1 }));
+
+    expect(h.client.stats.unackedInputs).toBeLessThanOrEqual(MAX_UNACKED_INPUTS + 4);
+    // Still reconciling cleanly: only quantization error, as on a fresh link.
+    expect(h.client.stats.lastPredictionError).toBeLessThan(0.02);
+
+    // Stop feeding input and let the host drain what is still in flight, so
+    // the comparison is host-to-client and not host-to-one-tick-ahead.
+    h.net.advance(500);
+    for (let i = 0; i < 60; i++) {
+      h.host.tick(input({ seq: 0 }));
+      h.net.advance(TICK_MS);
+    }
+    h.net.advance(500);
+    const hostPos = h.host.world.state.players.get(h.peerEntityId)!.pos;
+    const clientPos = h.client.localPlayer()!.pos;
+    expect(distance(hostPos, clientPos)).toBeLessThan(0.05);
+  }, 120_000);
 
   it("ignores a snapshot that arrives out of order", () => {
     const h = harness({ latencyMs: 40, jitterMs: 30, lossRate: 0 }, 606);

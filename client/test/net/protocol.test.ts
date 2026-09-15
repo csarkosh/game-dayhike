@@ -23,9 +23,12 @@ import {
 import type { InputCommand } from "../../src/sim/types.js";
 
 describe("quantization", () => {
-  it("round-trips positions within half a step", () => {
+  it("round-trips positions within half a step across a 10 km world", () => {
+    // The forest's trailhead sits hundreds of metres from the origin and the
+    // trail graph runs out to about +/-800 m; the wire must carry the whole
+    // forest, not a 512 m box around the origin.
     fc.assert(
-      fc.property(fc.double({ min: -255, max: 255, noNaN: true }), (v) => {
+      fc.property(fc.double({ min: -10_000, max: 10_000, noNaN: true }), (v) => {
         expect(Math.abs(dequantizePosition(quantizePosition(v)) - v)).toBeLessThanOrEqual(
           POSITION_PRECISION / 2 + 1e-9,
         );
@@ -34,9 +37,11 @@ describe("quantization", () => {
     );
   });
 
-  it("clamps positions to the int16 range instead of wrapping", () => {
-    expect(quantizePosition(1e6)).toBeLessThanOrEqual(32767);
-    expect(quantizePosition(-1e6)).toBeGreaterThanOrEqual(-32768);
+  it("clamps positions to the int32 range instead of wrapping", () => {
+    expect(quantizePosition(1e12)).toBe(2147483647);
+    expect(quantizePosition(-1e12)).toBe(-2147483648);
+    // Well inside the range, nothing is touched.
+    expect(dequantizePosition(quantizePosition(-16_000_000))).toBeCloseTo(-16_000_000, 6);
   });
 
   it("wraps yaw into [0, 2pi) and round-trips it", () => {
@@ -105,6 +110,15 @@ describe("input codec", () => {
     expect(decodeInput(encodeInput([]))).toEqual([]);
   });
 
+  it("carries a sequence number past 65536 without wrapping", () => {
+    // 65,536 ticks is about 18 minutes at 60 Hz. A uint16 seq wraps there
+    // and the host, comparing raw numbers, drops every later input.
+    for (const seq of [70_000, 4_000_000_000]) {
+      const [back] = decodeInput(encodeInput([command({ seq })]));
+      expect(back?.seq).toBe(seq);
+    }
+  });
+
   it("tags the buffer as an input message", () => {
     expect(messageTypeOf(encodeInput([command()]))).toBe(MessageType.Input);
   });
@@ -169,10 +183,40 @@ describe("snapshot codec", () => {
   });
 
   it("stays within the bandwidth budget", () => {
-    // 471 bytes at 20 Hz is about 9.2 KB/s down per client, and 37 KB/s up
-    // for a host serving four of them.
-    // 476 bytes: 471 plus one lamp byte for each of the five players.
-    expect(encodeSnapshot(sampleSnapshot()).byteLength).toBe(476);
+    // 688 bytes at 20 Hz is about 13.4 KB/s down per client, and 54 KB/s up
+    // for a host serving four of them. That is 476 (protocol 1: 471 plus a
+    // lamp byte per player) plus six bytes per entity for int32 positions
+    // and two for the uint32 input ack.
+    expect(encodeSnapshot(sampleSnapshot()).byteLength).toBe(688);
+  });
+
+  it("carries a lastProcessedInput past 65536 without wrapping", () => {
+    const snap = sampleSnapshot();
+    snap.lastProcessedInput = 70_000;
+    expect(decodeSnapshot(encodeSnapshot(snap)).lastProcessedInput).toBe(70_000);
+  });
+
+  it("round-trips player and enemy positions across a 10 km, 2 km-tall world", () => {
+    const horizontal = fc.double({ min: -10_000, max: 10_000, noNaN: true });
+    const vertical = fc.double({ min: -2_000, max: 2_000, noNaN: true });
+    const vec = fc.record({ x: horizontal, y: vertical, z: horizontal });
+    fc.assert(
+      fc.property(vec, vec, (playerPos, enemyPos) => {
+        const snap = sampleSnapshot();
+        snap.players[0]!.pos = playerPos;
+        snap.enemies[0]!.pos = enemyPos;
+        const back = decodeSnapshot(encodeSnapshot(snap));
+        for (const [actual, expected] of [
+          [back.players[0]!.pos, playerPos],
+          [back.enemies[0]!.pos, enemyPos],
+        ] as const) {
+          expect(Math.abs(actual.x - expected.x)).toBeLessThanOrEqual(POSITION_PRECISION / 2 + 1e-9);
+          expect(Math.abs(actual.y - expected.y)).toBeLessThanOrEqual(POSITION_PRECISION / 2 + 1e-9);
+          expect(Math.abs(actual.z - expected.z)).toBeLessThanOrEqual(POSITION_PRECISION / 2 + 1e-9);
+        }
+      }),
+      { numRuns: 500 },
+    );
   });
 
   it("round-trips an empty world", () => {

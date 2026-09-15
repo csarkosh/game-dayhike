@@ -1,12 +1,15 @@
 import type { InputCommand, Vec3 } from "../sim/types.js";
 
 /**
- * Bumped whenever the wire format changes (most recently: the lamp byte and
- * the Interacted event). `Welcome` carries it; a client on another version is
- * refused in words instead of decoding garbage. The level id does not cover
- * this — it moves with the terrain, not the codec.
+ * Bumped whenever the wire format changes (most recently: positions widened
+ * from int16 to int32 so the wire carries the whole forest rather than a
+ * 512 m box around the origin, and input sequence numbers widened from
+ * uint16 to uint32 so they no longer wrap after 18 minutes; before that, the
+ * lamp byte and the Interacted event). `Welcome` carries it; a client on
+ * another version is refused in words instead of decoding garbage. The level
+ * id does not cover this — it moves with the terrain, not the codec.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export const enum MessageType {
   Input = 1,
@@ -21,10 +24,17 @@ export const enum MessageType {
   SessionEnded = 10,
 }
 
+/**
+ * Positions ride as int32 at 1/128 m: about +/-16,777 km, which is every
+ * place the terrain can put anything. Velocities share the scale but ride as
+ * int16 (+/-256 m/s): they are speeds, and nothing here moves that fast.
+ */
 const POSITION_SCALE = 128;
 export const POSITION_PRECISION = 1 / POSITION_SCALE;
-const POSITION_MIN = -32768 / POSITION_SCALE;
-const POSITION_MAX = 32767 / POSITION_SCALE;
+const POSITION_MIN = -2147483648 / POSITION_SCALE;
+const POSITION_MAX = 2147483647 / POSITION_SCALE;
+const VELOCITY_MIN = -32768 / POSITION_SCALE;
+const VELOCITY_MAX = 32767 / POSITION_SCALE;
 const TWO_PI = Math.PI * 2;
 const HALF_PI = Math.PI / 2;
 
@@ -40,6 +50,10 @@ export function quantizePosition(v: number): number {
 }
 export function dequantizePosition(v: number): number {
   return v / POSITION_SCALE;
+}
+/** Same 1/128 scale as positions, clamped to the int16 a velocity rides in. */
+export function quantizeVelocity(v: number): number {
+  return Math.round(clamp(v, VELOCITY_MIN, VELOCITY_MAX) * POSITION_SCALE);
 }
 export function quantizeYaw(v: number): number {
   let a = v % TWO_PI;
@@ -130,7 +144,7 @@ export function messageTypeOf(buffer: ArrayBuffer): number {
   return new DataView(buffer).getUint8(0);
 }
 
-const INPUT_BYTES = 13;
+const INPUT_BYTES = 15;
 
 export function encodeInput(commands: InputCommand[]): ArrayBuffer {
   const buffer = new ArrayBuffer(3 + commands.length * INPUT_BYTES);
@@ -141,8 +155,8 @@ export function encodeInput(commands: InputCommand[]): ArrayBuffer {
   view.setUint16(o, commands.length, true);
   o += 2;
   for (const c of commands) {
-    view.setUint16(o, c.seq & 0xffff, true);
-    o += 2;
+    view.setUint32(o, c.seq >>> 0, true);
+    o += 4;
     view.setInt8(o, quantizeAxis(c.moveX));
     o += 1;
     view.setInt8(o, quantizeAxis(c.moveZ));
@@ -168,8 +182,8 @@ export function decodeInput(buffer: ArrayBuffer): InputCommand[] {
   o += 2;
   const commands: InputCommand[] = [];
   for (let i = 0; i < count; i++) {
-    const seq = view.getUint16(o, true);
-    o += 2;
+    const seq = view.getUint32(o, true);
+    o += 4;
     const moveX = dequantizeAxis(view.getInt8(o));
     o += 1;
     const moveZ = dequantizeAxis(view.getInt8(o));
@@ -185,14 +199,14 @@ export function decodeInput(buffer: ArrayBuffer): InputCommand[] {
   return commands;
 }
 
-const PLAYER_BYTES = 21;
-const ENEMY_BYTES = 12;
+const PLAYER_BYTES = 27;
+const ENEMY_BYTES = 18;
 
 export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
   const size =
     1 +
     4 +
-    2 +
+    4 +
     2 +
     snapshot.players.length * PLAYER_BYTES +
     2 +
@@ -205,25 +219,25 @@ export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
   o += 1;
   view.setUint32(o, snapshot.tick, true);
   o += 4;
-  view.setUint16(o, snapshot.lastProcessedInput & 0xffff, true);
-  o += 2;
+  view.setUint32(o, snapshot.lastProcessedInput >>> 0, true);
+  o += 4;
 
   view.setUint16(o, snapshot.players.length, true);
   o += 2;
   for (const p of snapshot.players) {
     view.setUint16(o, p.id, true);
     o += 2;
-    view.setInt16(o, quantizePosition(p.pos.x), true);
+    view.setInt32(o, quantizePosition(p.pos.x), true);
+    o += 4;
+    view.setInt32(o, quantizePosition(p.pos.y), true);
+    o += 4;
+    view.setInt32(o, quantizePosition(p.pos.z), true);
+    o += 4;
+    view.setInt16(o, quantizeVelocity(p.vel.x), true);
     o += 2;
-    view.setInt16(o, quantizePosition(p.pos.y), true);
+    view.setInt16(o, quantizeVelocity(p.vel.y), true);
     o += 2;
-    view.setInt16(o, quantizePosition(p.pos.z), true);
-    o += 2;
-    view.setInt16(o, quantizePosition(p.vel.x), true);
-    o += 2;
-    view.setInt16(o, quantizePosition(p.vel.y), true);
-    o += 2;
-    view.setInt16(o, quantizePosition(p.vel.z), true);
+    view.setInt16(o, quantizeVelocity(p.vel.z), true);
     o += 2;
     view.setUint16(o, quantizeYaw(p.yaw), true);
     o += 2;
@@ -244,12 +258,12 @@ export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
   for (const e of snapshot.enemies) {
     view.setUint16(o, e.id, true);
     o += 2;
-    view.setInt16(o, quantizePosition(e.pos.x), true);
-    o += 2;
-    view.setInt16(o, quantizePosition(e.pos.y), true);
-    o += 2;
-    view.setInt16(o, quantizePosition(e.pos.z), true);
-    o += 2;
+    view.setInt32(o, quantizePosition(e.pos.x), true);
+    o += 4;
+    view.setInt32(o, quantizePosition(e.pos.y), true);
+    o += 4;
+    view.setInt32(o, quantizePosition(e.pos.z), true);
+    o += 4;
     view.setUint16(o, quantizeYaw(e.yaw), true);
     o += 2;
     view.setUint8(o, clamp(e.health, 0, 255));
@@ -267,8 +281,8 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
 
   const tick = view.getUint32(o, true);
   o += 4;
-  const lastProcessedInput = view.getUint16(o, true);
-  o += 2;
+  const lastProcessedInput = view.getUint32(o, true);
+  o += 4;
 
   const playerCount = view.getUint16(o, true);
   o += 2;
@@ -276,12 +290,12 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
   for (let i = 0; i < playerCount; i++) {
     const id = view.getUint16(o, true);
     o += 2;
-    const x = dequantizePosition(view.getInt16(o, true));
-    o += 2;
-    const y = dequantizePosition(view.getInt16(o, true));
-    o += 2;
-    const z = dequantizePosition(view.getInt16(o, true));
-    o += 2;
+    const x = dequantizePosition(view.getInt32(o, true));
+    o += 4;
+    const y = dequantizePosition(view.getInt32(o, true));
+    o += 4;
+    const z = dequantizePosition(view.getInt32(o, true));
+    o += 4;
     const vx = dequantizePosition(view.getInt16(o, true));
     o += 2;
     const vy = dequantizePosition(view.getInt16(o, true));
@@ -319,12 +333,12 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
   for (let i = 0; i < enemyCount; i++) {
     const id = view.getUint16(o, true);
     o += 2;
-    const x = dequantizePosition(view.getInt16(o, true));
-    o += 2;
-    const y = dequantizePosition(view.getInt16(o, true));
-    o += 2;
-    const z = dequantizePosition(view.getInt16(o, true));
-    o += 2;
+    const x = dequantizePosition(view.getInt32(o, true));
+    o += 4;
+    const y = dequantizePosition(view.getInt32(o, true));
+    o += 4;
+    const z = dequantizePosition(view.getInt32(o, true));
+    o += 4;
     const yaw = dequantizeYaw(view.getUint16(o, true));
     o += 2;
     const health = view.getUint8(o);
