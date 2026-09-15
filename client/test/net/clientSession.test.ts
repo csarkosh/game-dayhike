@@ -513,6 +513,7 @@ describe("items and outcome", () => {
     expect(state.items.map((i) => [i.id, i.carrier, i.pickedUp, i.signedOut])).toEqual([[0, 0, false, false], [1, me, true, false]]);
     expect(state.outcome).toBe(Outcome.Won);
     expect(h.client.localPlayer()!.carrying).toBe(1);
+    // A sandbox host has no register, so nothing there touches the hold.
     expect(h.client.localPlayer()!.signOutTicks).toBe(42);
     expect(state.players.get(me)!.carrying).toBe(1);
   });

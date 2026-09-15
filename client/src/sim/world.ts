@@ -7,7 +7,7 @@ import type { Forest } from "./forest.js";
 import { groundSpawn, ringSample, spiralSpawn } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
-import { buildRegister, installRegister, type Register } from "./register.js";
+import { buildRegister, installRegister, putDown, stepRegister, type Register } from "./register.js";
 import { PROPS, propSite, type RoadProp } from "./passes/trailhead.js";
 import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
@@ -286,6 +286,7 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
 
   updateDirector(world);
   updateRespawns(world);
+  stepRegister(world, inputs);
 }
 
 export function isDead(player: PlayerState): boolean {
@@ -311,6 +312,10 @@ function updateRespawns(world: World): void {
       continue;
     }
     if (player.health <= 0) {
+      // What they carried stays where they fell: the item is dropped at the
+      // corpse before the respawn timer starts, so the position it lands on
+      // is the death position.
+      putDown(world, player);
       player.respawnTimer = RESPAWN_SECONDS;
       player.vel = { x: 0, y: 0, z: 0 };
       player.deathPos = cloneVec3(player.pos);

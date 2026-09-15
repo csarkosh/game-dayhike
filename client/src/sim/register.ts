@@ -6,9 +6,11 @@
  *
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
-import type { Vec3 } from "./types.js";
-import { NO_CARRIER, cloneVec3 } from "./types.js";
+import type { InputCommand, PlayerState, Vec3, WorldState } from "./types.js";
+import { Button, NO_CARRIER, NO_ITEM, Outcome, cloneVec3 } from "./types.js";
 import type { World } from "./world.js";
+import { resolveInteract } from "./interact.js";
+import { PLAYER_HALF } from "./constants.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import type { Landmark } from "./landmarks.js";
 import { CAR_HALF } from "./passes/trailhead.js";
@@ -245,9 +247,104 @@ export function syncItemInteractables(world: World): void {
   }
 }
 
-/** An Interact press on an item in reach. The rules land with the next change; nothing moves yet. */
+/** `isDead` without importing world.ts, which imports this module. */
+function dead(p: PlayerState): boolean {
+  return p.health <= 0 || p.respawnTimer > 0;
+}
+
+/**
+ * An Interact press on an item in reach. Empty hands only, one item at a
+ * time; the first pick-up of a hiker is what raises the escalation count,
+ * and a second never adds to it.
+ */
 export function pickUp(world: World, playerId: number, itemId: number): void {
-  void world;
-  void playerId;
-  void itemId;
+  const player = world.state.players.get(playerId);
+  const item = world.state.items[itemId];
+  if (player === undefined || item === undefined) return;
+  if (dead(player) || player.carrying !== NO_ITEM) return;
+  if (item.carrier !== NO_CARRIER || item.signedOut) return;
+  item.carrier = playerId;
+  item.pickedUp = true;
+  player.carrying = itemId;
+  player.signOutTicks = 0;
+}
+
+/** Sets the carried item down at the player's feet — on a press with nothing in reach, and on death. */
+export function putDown(world: World, player: PlayerState): void {
+  if (player.carrying === NO_ITEM) return;
+  const item = world.state.items[player.carrying];
+  player.carrying = NO_ITEM;
+  player.signOutTicks = 0;
+  if (item === undefined) return;
+  item.carrier = NO_CARRIER;
+  item.pos = { x: player.pos.x, y: player.pos.y - PLAYER_HALF.y + ITEM_RADIUS, z: player.pos.z };
+}
+
+function signOut(world: World, player: PlayerState): void {
+  const item = world.state.items[player.carrying];
+  player.carrying = NO_ITEM;
+  player.signOutTicks = 0;
+  if (item === undefined) return;
+  item.carrier = NO_CARRIER;
+  item.signedOut = true;
+}
+
+/**
+ * The per-tick rules, host only (`tickWorld` calls this in its authoritative
+ * branch): the sign-out hold, the item interactables, and the win.
+ *
+ * The hold is read from this tick's command rather than from press edges: a
+ * hold is a level, and it breaks the tick the level drops, the tick the box
+ * leaves reach, and the tick the player dies or empties their hands.
+ */
+export function stepRegister(world: World, inputs: ReadonlyMap<number, InputCommand>): void {
+  if (world.register === null) return;
+  for (const player of world.state.players.values()) {
+    if (player.carrying === NO_ITEM || dead(player)) {
+      player.signOutTicks = 0;
+      continue;
+    }
+    const cmd = inputs.get(player.id);
+    const held = cmd !== undefined && (cmd.buttons & Button.Interact) !== 0;
+    const target = held ? resolveInteract(world, player) : null;
+    if (target === null || target.kind !== InteractKind.Register) {
+      player.signOutTicks = 0;
+      continue;
+    }
+    player.signOutTicks++;
+    if (player.signOutTicks >= SIGN_OUT_TICKS) signOut(world, player);
+  }
+  syncItemInteractables(world);
+  updateOutcome(world);
+}
+
+/** Every hiker signed out, and every living player within CAR_RADIUS of the car. */
+function updateOutcome(world: World): void {
+  const register = world.register;
+  const state = world.state;
+  if (register === null || state.outcome !== Outcome.Playing) return;
+  if (state.items.length === 0 || !state.items.every((it) => it.signedOut)) return;
+  let living = 0;
+  for (const p of state.players.values()) {
+    if (dead(p)) continue;
+    living++;
+    const dx = p.pos.x - register.car.x;
+    const dz = p.pos.z - register.car.z;
+    if (dx * dx + dz * dz > CAR_RADIUS * CAR_RADIUS) return;
+  }
+  if (living === 0) return;
+  state.outcome = Outcome.Won;
+}
+
+/** Hikers picked up at least once: the escalation count (D reads this). */
+export function retrievedCount(state: WorldState): number {
+  let n = 0;
+  for (const it of state.items) if (it.pickedUp) n++;
+  return n;
+}
+
+export function signedOutCount(state: WorldState): number {
+  let n = 0;
+  for (const it of state.items) if (it.signedOut) n++;
+  return n;
 }

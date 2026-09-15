@@ -14,6 +14,7 @@ import {
 import { PositionHistory } from "../sim/history.js";
 import type { Forest } from "../sim/forest.js";
 import { pressedEdges, resolveInteract } from "../sim/interact.js";
+import { putDown } from "../sim/register.js";
 import {
   INPUT_BUFFER_TARGET,
   MAX_INPUTS_PER_TICK,
@@ -333,7 +334,12 @@ export function createHostSession(
         if (player === undefined || isDead(player)) continue;
         if ((bits & Button.Interact) !== 0) {
           const target = resolveInteract(world, player);
-          if (target !== null) {
+          if (target === null) {
+            // A press at nothing is the put-down: the carried item lands at
+            // the player's feet (register.ts). No event: the next snapshot
+            // carries the item where it fell.
+            putDown(world, player);
+          } else {
             target.onInteract(id);
             const peer = peerForEntity(id);
             const event = { t: MessageType.Interacted as const, entityId: id, targetId: target.id };
