@@ -712,6 +712,7 @@ registerTerrainVariant({
   roadCenterX,
   trailDistance: trailDistanceHook,
   trailGraph: trailGraphHook,
+  sceneryLandmarks: (seed) => bowlFor(seed).landmarks,
   landmarkMask: landmarkMaskHook,
   featureMask: featureMaskHook,
   sample: olympicSample,

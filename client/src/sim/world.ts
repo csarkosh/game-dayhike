@@ -6,7 +6,9 @@ import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
 import { groundSpawn, ringSample, spiralSpawn } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
-import { activeTerrainVariant } from "./terrain.js";
+import { activeTerrainVariant, elevationAt } from "./terrain.js";
+import { buildRegister, installRegister, type Register } from "./register.js";
+import { PROPS, propSite, type RoadProp } from "./passes/trailhead.js";
 import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
@@ -67,6 +69,11 @@ export type World = {
    * has effect; a client resolves the same map only to drive its own prompt.
    */
   interactables: Map<number, Interactable>;
+  /**
+   * The book, the box and the car for a forest world (`register.ts`); null
+   * for a hand-authored level, which has no trail to lose anybody on.
+   */
+  register: Register | null;
 };
 
 export function createWorld(level: Level, seed: number, authoritative = true): World {
@@ -79,6 +86,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
     maxEnemies: ENEMY_POPULATION_CAP,
     waterLevel: null,
     interactables: new Map(),
+    register: null,
     state: {
       tick: 0,
       players: new Map(),
@@ -99,15 +107,17 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
  * client, and `renderer.ts` iterates `level.brushes`, which is correctly empty.
  */
 export function createForestWorld(forest: Forest, authoritative = true): World {
-  return {
+  const variant = activeTerrainVariant();
+  const world: World = {
     level: { id: forest.levelId, brushes: [], playerSpawns: [], enemySpawns: [] },
     boxes: forest.grid,
     ground: createGroundField(forest.seed),
     forest,
     authoritative,
     maxEnemies: 0,
-    waterLevel: activeTerrainVariant().waterLevel ?? null,
+    waterLevel: variant.waterLevel ?? null,
     interactables: new Map(),
+    register: null,
     state: {
       tick: 0,
       players: new Map(),
@@ -118,6 +128,26 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
       rngSeed: forest.seed | 0,
     },
   };
+  // The register stands where the trailhead pass put its post and its car,
+  // and the book comes from the same seed on every peer.
+  const graph = variant.trailGraph?.(forest.seed);
+  const roadCenterX = variant.roadCenterX;
+  if (graph !== undefined && roadCenterX !== undefined) {
+    const post = propSite(graph, roadCenterX, forest.seed, PROPS[0] as RoadProp);
+    const car = propSite(graph, roadCenterX, forest.seed, PROPS[2] as RoadProp);
+    installRegister(
+      world,
+      buildRegister({
+        seed: forest.seed,
+        graph,
+        landmarks: variant.sceneryLandmarks?.(forest.seed) ?? [],
+        groundH: (x, z) => elevationAt(forest.seed, x, z),
+        box: post,
+        car,
+      }),
+    );
+  }
+  return world;
 }
 
 /**

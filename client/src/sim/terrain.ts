@@ -11,7 +11,7 @@
  */
 
 import type { TrailGraph } from "./trail.js";
-import type { LandmarkMask } from "./landmarks.js";
+import type { Landmark, LandmarkMask } from "./landmarks.js";
 import type { FeatureMask } from "./features.js";
 
 export type TerrainSample = {
@@ -48,6 +48,9 @@ export type TerrainVariant = {
   trailDistance?: (seed: number, x: number, z: number) => number;
   /** The seeded trail graph for this world, memoized per seed. */
   trailGraph?: (seed: number) => TrailGraph;
+  /** The two scenery landmarks (the stand, the talus) beside the trail, for
+   * the register's fallback site. Absent = none. */
+  sceneryLandmarks?: (seed: number) => readonly Landmark[];
   /** Per-point multipliers and floors carved landmarks apply to tree and
    * boulder density; identity (`{1, 1, 0, 0}`) where nothing is carved. */
   landmarkMask?: (seed: number, x: number, z: number) => LandmarkMask;
