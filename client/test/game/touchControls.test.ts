@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   createTouchModel,
   STICK_RADIUS,
+  STICK_HIT_RADIUS,
+  STICK_MARGIN,
   LOOK_RATE,
   DOUBLE_TAP_MS,
   TAP_MAX_MS,
@@ -12,13 +14,17 @@ import {
 import { Button } from "../../src/sim/types.js";
 
 const VIEW = { width: 800, height: 400 };
+/** The fixed stick's base, pinned where the tests below put their fingers. */
+const BASE = { x: 100, y: 300, r: STICK_HIT_RADIUS };
 
 function model(onPause: () => void = () => undefined): TouchModel {
-  return createTouchModel(VIEW, { onPause });
+  const m = createTouchModel(VIEW, { onPause });
+  m.setStickBase(BASE);
+  return m;
 }
 
 describe("stick", () => {
-  it("anchors where the first finger lands in the left 45% and reads zero until it moves", () => {
+  it("takes a finger that lands on the base, anchored at the base centre, reading zero at the centre", () => {
     const m = model();
     m.down({ id: 1, x: 100, y: 300, hit: "canvas" }, 0);
     expect(m.state.stick).toEqual({ anchorX: 100, anchorY: 300, dx: 0, dy: 0 });
@@ -26,9 +32,19 @@ describe("stick", () => {
     expect(m.moveZ).toBe(0);
   });
 
-  it("does not anchor on a finger that lands right of the zone", () => {
+  it("deflects at once when the finger lands off-centre on the base", () => {
     const m = model();
-    m.down({ id: 1, x: 400, y: 300, hit: "canvas" }, 0); // 0.5 * width
+    m.down({ id: 1, x: 100 + STICK_RADIUS, y: 300, hit: "canvas" }, 0);
+    expect(m.state.stick?.dx).toBeCloseTo(STICK_RADIUS, 5);
+    expect(m.moveX).toBeCloseTo(1, 5);
+  });
+
+  it("ignores a finger outside the base, even on the left of the screen", () => {
+    const m = model();
+    m.down({ id: 1, x: 100 + STICK_HIT_RADIUS + 1, y: 300, hit: "canvas" }, 0);
+    expect(m.state.stick).toBeNull();
+    m.up(1, 5);
+    m.down({ id: 2, x: 20, y: 60, hit: "canvas" }, 10);
     expect(m.state.stick).toBeNull();
   });
 
@@ -72,12 +88,13 @@ describe("stick", () => {
     expect(m.moveX).toBe(0);
   });
 
-  it("gives a second finger in the zone the look role while the stick is held", () => {
+  it("gives a second finger the look role while the stick is held, even one landing on the base", () => {
     const m = model();
     m.down({ id: 1, x: 100, y: 300, hit: "canvas" }, 0);
-    m.down({ id: 2, x: 200, y: 300, hit: "canvas" }, 10);
-    m.move(2, 300, 300, 20);
+    m.down({ id: 2, x: 120, y: 300, hit: "canvas" }, 10);
+    m.move(2, 220, 300, 20);
     expect(m.state.stick?.anchorX).toBe(100);
+    expect(m.state.stick?.dx).toBe(0);
     expect(m.takeLook().yaw).toBeCloseTo(100 * LOOK_RATE, 9);
   });
 });
@@ -111,15 +128,27 @@ describe("look", () => {
   });
 });
 
-describe("resize", () => {
-  it("re-evaluates the stick zone against the new width", () => {
-    const m = model();
-    m.resize({ width: 400, height: 800 });
-    m.down({ id: 1, x: 190, y: 700, hit: "canvas" }, 0); // 0.475 of 400: outside
-    expect(m.state.stick).toBeNull();
+describe("the default base", () => {
+  it("sits at the bottom-left of the viewport and follows a resize until the layer measures it", () => {
+    const m = createTouchModel(VIEW, { onPause: () => undefined });
+    const cx = STICK_MARGIN + STICK_RADIUS;
+    m.down({ id: 1, x: cx, y: VIEW.height - STICK_MARGIN - STICK_RADIUS, hit: "canvas" }, 0);
+    expect(m.state.stick).toEqual({ anchorX: cx, anchorY: VIEW.height - STICK_MARGIN - STICK_RADIUS, dx: 0, dy: 0 });
     m.up(1, 5);
-    m.down({ id: 2, x: 170, y: 700, hit: "canvas" }, 10); // 0.425: inside
-    expect(m.state.stick?.anchorX).toBe(170);
+    m.resize({ width: 400, height: 800 });
+    m.down({ id: 2, x: cx, y: VIEW.height - STICK_MARGIN - STICK_RADIUS, hit: "canvas" }, 10); // where it used to be
+    expect(m.state.stick).toBeNull();
+    m.up(2, 15);
+    m.down({ id: 3, x: cx, y: 800 - STICK_MARGIN - STICK_RADIUS, hit: "canvas" }, 20);
+    expect(m.state.stick?.anchorY).toBe(800 - STICK_MARGIN - STICK_RADIUS);
+  });
+
+  it("a measured base wins over the default and survives a resize", () => {
+    const m = createTouchModel(VIEW, { onPause: () => undefined });
+    m.setStickBase({ x: 500, y: 100, r: 40 });
+    m.resize({ width: 400, height: 800 });
+    m.down({ id: 1, x: 500, y: 100, hit: "canvas" }, 0);
+    expect(m.state.stick?.anchorX).toBe(500);
   });
 });
 
@@ -249,7 +278,7 @@ describe("buttons", () => {
     expect(pauses).toBe(1);
   });
 
-  it("a lamp press does not anchor the stick even though it is in the left zone", () => {
+  it("a lamp press does not anchor the stick even when it lands on the base", () => {
     const m = model();
     m.down({ id: 1, x: 40, y: 200, hit: "lamp" }, 0);
     expect(m.state.stick).toBeNull();

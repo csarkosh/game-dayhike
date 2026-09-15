@@ -1,9 +1,13 @@
 import { Button } from "../sim/types.js";
 
-/** Fraction of the viewport width, from the left, that anchors the stick. */
-export const STICK_ZONE = 0.45;
-/** Thumb travel from the anchor that reads as full deflection, CSS px. */
+/** Thumb travel from the base centre that reads as full deflection, CSS px. */
 export const STICK_RADIUS = 60;
+/** A finger landing within this of the base centre takes the stick. Wider than
+ * the drawn base so a thumb that lands on its rim still grabs it. */
+export const STICK_HIT_RADIUS = 72;
+/** The base's inset from the viewport's bottom-left corner, before safe-area
+ * insets. The layer measures the real base and overrides this. */
+export const STICK_MARGIN = 20;
 /** Fraction of the radius inside which the stick reads zero. */
 export const DEAD_ZONE = 0.15;
 /** Radians per CSS px of drag: about twice the mouse rate. */
@@ -19,6 +23,8 @@ export const IDLE_AFTER_MS = 3000;
 
 export type TouchPointer = { id: number; x: number; y: number; hit: "canvas" | "lamp" | "pause" };
 export type Viewport = { width: number; height: number };
+/** Where the fixed stick base is, in CSS px: its centre and the radius that takes a finger. */
+export type StickBase = { x: number; y: number; r: number };
 
 /** What the input sampler reads from touch, alongside keys and the mouse. */
 export type TouchSource = {
@@ -34,6 +40,7 @@ export type TouchSource = {
 
 /** What the layer paints. Read every frame; never mutated by the layer. */
 export type TouchState = {
+  /** The base centre and the thumb's clamped offset from it while a finger holds the stick. */
   stick: { anchorX: number; anchorY: number; dx: number; dy: number } | null;
   lampPressed: boolean;
   pausePressed: boolean;
@@ -53,6 +60,12 @@ export type TouchModel = TouchSource & {
   interactUp(): void;
   /** The local player's lamp, so the layer can draw the lit ring. */
   setLampOn(on: boolean): void;
+  /**
+   * Where the layer actually drew the base, once laid out: safe-area insets
+   * move it, and the model cannot know them. Until this is called the base is
+   * assumed at STICK_MARGIN from the viewport's bottom-left.
+   */
+  setStickBase(base: StickBase): void;
   resize(viewport: Viewport): void;
   /** Advances the idle clock. Once a frame. */
   tick(nowMs: number): void;
@@ -70,7 +83,13 @@ type Role =
  * `nowMs` so the double-tap windows and the idle fade are testable.
  */
 export function createTouchModel(viewport: Viewport, hooks: { onPause(): void }): TouchModel {
-  let width = viewport.width;
+  const defaultBase = (v: Viewport): StickBase => ({
+    x: STICK_MARGIN + STICK_RADIUS,
+    y: v.height - STICK_MARGIN - STICK_RADIUS,
+    r: STICK_HIT_RADIUS,
+  });
+  let base = defaultBase(viewport);
+  let measured = false;
   const roles = new Map<number, Role>();
   const state: TouchState = { stick: null, lampPressed: false, pausePressed: false, lampOn: false, idle: false };
 
@@ -165,9 +184,12 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
         state.pausePressed = true;
         return;
       }
-      if (state.stick === null && p.x < width * STICK_ZONE) {
+      if (state.stick === null && Math.hypot(p.x - base.x, p.y - base.y) <= base.r) {
         roles.set(p.id, { kind: "stick" });
-        state.stick = { anchorX: p.x, anchorY: p.y, dx: 0, dy: 0 };
+        // The base is fixed, so the anchor is its centre, not the finger: a
+        // finger landing off-centre is already a deflection.
+        state.stick = { anchorX: base.x, anchorY: base.y, dx: 0, dy: 0 };
+        stickAxes(p.x - base.x, p.y - base.y);
         // A second stick down inside the window is "double-tap and hold": sprint
         // for as long as this finger stays down.
         sprinting = nowMs - lastStickDownAt <= DOUBLE_TAP_MS;
@@ -212,8 +234,13 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
     setLampOn(on) {
       state.lampOn = on;
     },
+    setStickBase(next) {
+      base = next;
+      measured = true;
+    },
     resize(next) {
-      width = next.width;
+      // A measured base is the layer's to move; only the guess follows the viewport.
+      if (!measured) base = defaultBase(next);
     },
     tick(nowMs) {
       state.idle = nowMs - lastTouchAt > IDLE_AFTER_MS;
@@ -227,59 +254,125 @@ const STYLE = `
     font-family: ui-monospace, monospace; color: #fff;
     opacity: 0; transition: opacity 400ms ease-out;
   }
-  /* .on's own transition is the idle-wake speed (any touch, 0.35 -> 1); .fresh
+  /* .on's own transition is the idle-wake speed (any touch, faint -> full); .fresh
      overrides it for the slower engage fade (0 -> 1, first touch or lock). */
   .touch.on { opacity: 1; transition: opacity 120ms ease-out; }
   .touch.on.fresh { transition: opacity 400ms ease-out; }
-  .touch.on.idle { opacity: 0.35; transition: opacity 600ms ease-out; }
   .touch.on.paused { opacity: 0; transition: opacity 200ms ease-out; }
   /* Invisible is not inert: without this the Lamp and Pause buttons keep
      taking pointer events while faded out, sitting above the pause menu and
      eating its taps. */
   .touch.on.paused button { pointer-events: none; }
   .touch.off { display: none; }
+
+  /* The stick: a fixed base in the bottom-left corner, always drawn. Rests at
+     just over half strength, goes full while a thumb holds it, and fades to
+     the roster's faint level after three idle seconds. */
   .touch .stick {
-    position: absolute; left: 0; top: 0; width: 120px; height: 120px;
-    margin: -60px 0 0 -60px; border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.18);
-    opacity: 0; transform: scale(0.8);
-    transition: opacity 180ms ease-out, transform 180ms ease-out;
+    position: absolute; width: 120px; height: 120px; border-radius: 50%;
+    left: calc(20px + env(safe-area-inset-left, 0px));
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    background: radial-gradient(circle, rgba(16, 16, 20, 0.55) 0%, rgba(16, 16, 20, 0.3) 62%, rgba(16, 16, 20, 0) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    opacity: 0.55;
+    transition: opacity 180ms ease-out, border-color 180ms ease-out, box-shadow 180ms ease-out;
   }
-  .touch .stick.live { opacity: 1; transform: scale(1); transition: opacity 120ms ease-out, transform 120ms ease-out; }
+  .touch.on.idle .stick { opacity: 0.35; transition: opacity 600ms ease-out; }
+  .touch .stick.live { opacity: 1; border-color: rgba(255, 255, 255, 0.4); transition: opacity 120ms ease-out, border-color 120ms ease-out; }
+  /* Sprinting (double-tap and hold): the ring lights with the mist-light the
+     landing's tagline wears, so a sprint that took is visible at a glance. */
+  .touch .stick.sprint {
+    border-color: #dbe2e2;
+    box-shadow: 0 0 18px rgba(198, 222, 222, 0.45), inset 0 0 22px rgba(198, 222, 222, 0.18);
+  }
+  .touch .notch {
+    position: absolute; background: rgba(255, 255, 255, 0.35); border-radius: 1px;
+  }
+  .touch .notch.n, .touch .notch.s { left: 50%; width: 2px; height: 8px; margin-left: -1px; }
+  .touch .notch.e, .touch .notch.w { top: 50%; width: 8px; height: 2px; margin-top: -1px; }
+  .touch .notch.n { top: 5px; }
+  .touch .notch.s { bottom: 5px; }
+  .touch .notch.e { right: 5px; }
+  .touch .notch.w { left: 5px; }
+  /* A soft light that leans the way the thumb pushes; the layer moves and
+     brightens it with the deflection. */
+  .touch .glow {
+    position: absolute; left: 50%; top: 50%; width: 100px; height: 100px;
+    margin: -50px 0 0 -50px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(198, 222, 222, 0.5) 0%, rgba(198, 222, 222, 0) 68%);
+    opacity: 0; transition: opacity 120ms ease-out;
+  }
   .touch .thumb {
     position: absolute; left: 50%; top: 50%; width: 56px; height: 56px;
     margin: -28px 0 0 -28px; border-radius: 50%;
-    background: rgba(16, 16, 20, 0.72); border: 1px solid rgba(255, 255, 255, 0.18);
-    backdrop-filter: blur(4px);
-    transition: transform 180ms cubic-bezier(0.2, 1.4, 0.4, 1);
+    background: radial-gradient(circle at 36% 30%, rgba(255, 255, 255, 0.24) 0%, rgba(16, 16, 20, 0.9) 62%);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55), 0 0 12px rgba(198, 222, 222, 0.2);
+    transition: transform 180ms cubic-bezier(0.2, 1.4, 0.4, 1), box-shadow 120ms ease-out;
   }
-  .touch .stick.live .thumb { transition: none; }
+  .touch .stick.live .thumb {
+    transition: box-shadow 120ms ease-out;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6), 0 0 16px rgba(198, 222, 222, 0.45);
+  }
+
+  /* Icon buttons hug the left edge and sit faint until pressed or lit. */
   .touch button {
     position: absolute; pointer-events: auto; touch-action: none;
     display: flex; align-items: center; justify-content: center;
-    font: inherit; font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+    width: 44px; height: 44px; padding: 0;
     color: #fff; background: rgba(16, 16, 20, 0.72);
     border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 50%;
     backdrop-filter: blur(4px); -webkit-user-select: none; user-select: none;
-    transition: transform 80ms ease-out, background 80ms ease-out, box-shadow 300ms ease-out;
+    opacity: 0.35;
+    transition: opacity 120ms ease-out, transform 80ms ease-out, background 80ms ease-out, box-shadow 300ms ease-out;
   }
-  .touch button.pressed { transform: scale(0.92); background: rgba(255, 255, 255, 0.18); }
+  .touch button svg { width: 22px; height: 22px; display: block; }
+  .touch button.pressed { opacity: 1; transform: scale(0.92); background: rgba(255, 255, 255, 0.18); }
   .touch .lamp {
-    width: 56px; height: 56px;
-    left: calc(32px + env(safe-area-inset-left, 0px));
-    bottom: calc(200px + env(safe-area-inset-bottom, 0px));
+    left: calc(14px + env(safe-area-inset-left, 0px));
+    bottom: calc(154px + env(safe-area-inset-bottom, 0px));
   }
-  .touch .lamp.lit { box-shadow: 0 0 0 1px #ffd24d; }
+  .touch .lamp.lit { opacity: 1; box-shadow: 0 0 0 1px #ffd24d; }
   .touch .lamp.pulse { box-shadow: 0 0 0 3px #ffd24d; transition: none; }
   .touch .pause {
-    width: 40px; height: 40px; font-size: 0.9rem;
-    right: calc(20px + env(safe-area-inset-right, 0px));
-    top: calc(20px + env(safe-area-inset-top, 0px));
+    left: calc(14px + env(safe-area-inset-left, 0px));
+    top: calc(14px + env(safe-area-inset-top, 0px));
   }
 `;
 
+const SVG = "http://www.w3.org/2000/svg";
+
+/**
+ * A line icon in the game's own strokes. Drawn with DOM APIs, never markup:
+ * nothing dynamic goes in, but the file's rule is the same for every node.
+ */
+function icon(kind: "lamp" | "pause"): SVGSVGElement {
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.6");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("stroke-linecap", "round");
+  const paths =
+    kind === "lamp"
+      ? // A hand torch, head up: the body, the shoulder where it narrows, and the lens.
+        ["M8.5 3h7v3.2L13.5 9.5V21h-3V9.5L8.5 6.2z", "M8.5 6.2h7", "M12 12.5v3"]
+      : ["M8.5 5.5v13", "M15.5 5.5v13"];
+  for (const d of paths) {
+    const path = document.createElementNS(SVG, "path");
+    path.setAttribute("d", d);
+    if (kind === "pause") path.setAttribute("stroke-width", "2.6");
+    svg.append(path);
+  }
+  return svg;
+}
+
 export type TouchLayer = {
   sync(): void;
+  /** Re-measures the drawn base for the model. After a resize. */
+  measure(): void;
   dispose(): void;
 };
 
@@ -301,19 +394,27 @@ export function createTouchLayer(
 
   const stick = document.createElement("div");
   stick.className = "stick";
+  for (const side of ["n", "e", "s", "w"]) {
+    const notch = document.createElement("span");
+    notch.className = `notch ${side}`;
+    stick.append(notch);
+  }
+  const glow = document.createElement("span");
+  glow.className = "glow";
   const thumb = document.createElement("div");
   thumb.className = "thumb";
-  stick.append(thumb);
+  stick.append(glow, thumb);
 
   const lamp = document.createElement("button");
   lamp.type = "button";
   lamp.className = "lamp";
-  lamp.textContent = "Lamp";
+  lamp.setAttribute("aria-label", "Lamp");
+  lamp.append(icon("lamp"));
   const pause = document.createElement("button");
   pause.type = "button";
   pause.className = "pause";
-  pause.textContent = "‖";
   pause.setAttribute("aria-label", "Pause");
+  pause.append(icon("pause"));
 
   root.append(stick, lamp, pause);
   container.append(style, root);
@@ -330,6 +431,16 @@ export function createTouchLayer(
   let freshTimer: ReturnType<typeof setTimeout> | undefined;
 
   const now = () => performance.now();
+
+  // The base's real centre depends on the safe-area insets, which only CSS
+  // knows: measured once laid out, and again on every resize.
+  let measured = false;
+  function measure(): void {
+    const r = stick.getBoundingClientRect();
+    if (r.width === 0) return;
+    model.setStickBase({ x: r.left + r.width / 2, y: r.top + r.height / 2, r: STICK_HIT_RADIUS });
+    measured = true;
+  }
 
   function show(): void {
     visible = true;
@@ -376,6 +487,7 @@ export function createTouchLayer(
   bindButton(pause, "pause");
 
   return {
+    measure,
     sync() {
       const s = model.state;
       const engaged = hooks.engaged();
@@ -392,13 +504,17 @@ export function createTouchLayer(
       root.classList.toggle("on", visible);
       root.classList.toggle("paused", visible && !engaged);
       root.classList.toggle("idle", visible && engaged && s.idle);
+      if (visible && !measured) measure();
+      stick.classList.toggle("live", s.stick !== null);
+      stick.classList.toggle("sprint", model.sprinting);
       if (s.stick !== null) {
-        stick.classList.add("live");
-        stick.style.transform = `translate(${s.stick.anchorX}px, ${s.stick.anchorY}px)`;
         thumb.style.transform = `translate(${s.stick.dx}px, ${s.stick.dy}px)`;
+        const mag = Math.min(1, Math.hypot(s.stick.dx, s.stick.dy) / STICK_RADIUS);
+        glow.style.transform = `translate(${s.stick.dx * 0.35}px, ${s.stick.dy * 0.35}px)`;
+        glow.style.opacity = String(model.sprinting ? 1 : mag * 0.7);
       } else {
-        stick.classList.remove("live");
         thumb.style.transform = "translate(0px, 0px)";
+        glow.style.opacity = "0";
       }
       lamp.classList.toggle("pressed", s.lampPressed);
       pause.classList.toggle("pressed", s.pausePressed);

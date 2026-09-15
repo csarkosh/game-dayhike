@@ -706,6 +706,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   const onResize = () => {
     renderer.resize();
     touchModel.resize({ width: canvas.clientWidth, height: canvas.clientHeight });
+    touchLayer.measure();
   };
   window.addEventListener("resize", onResize);
 

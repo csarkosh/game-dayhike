@@ -76,8 +76,11 @@ engaged hides the menu and reports `onPauseChange(false)`; disengaged with the c
 closed shows the menu and reports `onPauseChange(true)`. The house rule holds: one source of
 paused, now named for what it means rather than how desktop implements it.
 
-The canvas click-to-lock handler is not installed on touch, and `touch-action: none` is set
-on the canvas so the browser never scrolls, zooms or selects on the game route.
+The canvas click-to-lock handler only acts on a click that came from a mouse (the sampler
+remembers the pointer type of the last press on the canvas). A tap ends in a synthetic click
+too, and Chrome on Android would otherwise grant pointer lock to it, show a "to show your
+cursor" toast, then drop the lock and disengage the touch controls with it. `touch-action:
+none` is set on the canvas so the browser never scrolls, zooms or selects on the game route.
 
 ## The touch model
 
@@ -108,21 +111,27 @@ windows. It exposes its state for the layer to paint: the stick's anchor and thu
 Every pointer gets one role on its `down`, kept until `up` or `cancel`. Roles are by pointer
 id, so one thumb walks while the other looks.
 
-- **Stick zone:** `x < 0.45 * width`, below the Lamp button and above the safe-area inset. A
-  `down` here with no stick pointer active becomes the **stick pointer** and anchors the stick
-  at that point.
+- **Stick base:** a fixed circle in the bottom-left corner, always drawn (20 px from each edge
+  plus the safe-area insets, 120 px across). A `down` within **72 px** of its centre, with no
+  stick pointer active, becomes the **stick pointer**. The anchor is the base centre, so a
+  finger that lands off-centre is already a deflection. A finger anywhere else on the left is
+  a look pointer like any other: the stick is grabbed by touching it, not the region around it.
 - **Buttons:** a `down` inside a button's circle becomes that button's pointer.
 - **Look zone:** any other `down` on the canvas becomes a **look pointer**.
 
 ### Stick
 
-- Axes are the thumb's offset from the anchor over a **60 px** radius, clamped to the unit
+- Axes are the finger's offset from the base centre over a **60 px** radius, clamped to the unit
   disc. Inside a **15 %** dead zone both axes are 0; outside it the magnitude is remapped so
   the edge of the dead zone reads as 0 and the rim reads as 1. `moveX` is right, `moveZ` is
   up on the screen.
 - The thumb is drawn at the clamped offset, so it stops at the rim while the finger keeps
   going.
-- `up` or `cancel` zeroes the axes and clears the stick.
+- `up` or `cancel` zeroes the axes and releases the stick; the base stays drawn, the thumb
+  springs home.
+- The layer measures where CSS actually put the base (safe-area insets move it) and hands the
+  centre to the model, once laid out and again on every resize; until then the model assumes
+  the base at its nominal corner.
 
 ### Sprint: double-tap and hold the stick
 
@@ -149,11 +158,11 @@ looking around cannot jump; a single tap does nothing.
 
 Three, no more:
 
-- **Lamp**, bottom-left above the stick zone: a tap latches one Lamp edge; the host toggles on
-  the edge as it does for the F key. The model tracks `lampOn` from the local player's state
-  (fed by the app each frame) so the layer can draw the lit ring.
-- **Pause**, top-right: a tap calls the layer's `onPause`, which is the sampler's
-  `disengage()`.
+- **Lamp**, a torch icon on the left edge just above the stick: a tap latches one Lamp edge;
+  the host toggles on the edge as it does for the F key. The model tracks `lampOn` from the
+  local player's state (fed by the app each frame) so the layer can draw the lit ring.
+- **Pause**, a pause icon in the top-left corner: a tap calls the layer's `onPause`, which is
+  the sampler's `disengage()`.
 - **Interact** is not a button. See the prompt below.
 
 Jump and Lamp edges latch until taken because a frame may contain no tick: the sampler is
@@ -173,27 +182,31 @@ stick pointers are captured on the canvas via `pointerdown`/`pointermove`/`point
 canvas still ends its role.
 
 Styling is the roster's: `rgba(16, 16, 20, 0.72)` fill, `1px solid rgba(255, 255, 255, 0.18)`
-border, `backdrop-filter: blur(4px)`, `ui-monospace` uppercase labels at 0.6 rem, letter
-spacing 0.08 em. Pressed state is the pause menu's `rgba(255, 255, 255, 0.18)`. The lit lamp
-ring is the roster's `#ffd24d` at 1 px. Every position adds the safe-area inset for its edge.
+border, `backdrop-filter: blur(4px)`. Pressed state is the pause menu's
+`rgba(255, 255, 255, 0.18)`. The lit lamp ring is the roster's `#ffd24d` at 1 px. Everything
+sits on the left edge, and every position adds the safe-area inset for its edge. The buttons
+are icons drawn as inline SVG strokes (a hand torch, a pause bar pair), no labels, and rest at
+the roster's faint 0.35 until pressed; the lamp stays full while lit.
 
-| Element | Size | Position |
+| Element | Look | Position |
 | --- | --- | --- |
-| Stick base | 120 px circle, 2 px border, no fill | at the anchor |
-| Stick thumb | 56 px circle, filled | anchor plus clamped offset |
-| Lamp | 56 px circle, label "Lamp" | left 32 px, bottom 200 px |
-| Pause | 40 px circle, label "‖" as text | right 20 px, top 20 px |
+| Stick base | 120 px circle: a dark radial fill that fades to nothing at the rim, a 1 px hairline ring, four 8 px notches at the cardinal points; rests at 0.55 | left 20 px, bottom 20 px |
+| Stick glow | a 100 px mist-light blob (`rgba(198, 222, 222, …)`) inside the base that slides 0.35 of the thumb's offset and brightens with the deflection; full while sprinting | centred on the base |
+| Stick thumb | 56 px circle with a radial highlight up-left, a hairline border, a drop shadow and a faint mist bloom that brightens while held | base centre plus clamped offset |
+| Lamp | 44 px circle, torch icon | left 14 px, bottom 154 px |
+| Pause | 44 px circle, pause icon | left 14 px, top 14 px |
 
 Motion, all `ease-out` unless said:
 
 | What | Timing |
 | --- | --- |
-| Stick appears | opacity 0 → 1 and scale 0.8 → 1 over 120 ms |
-| Stick disappears | thumb springs to the anchor over 180 ms `cubic-bezier(0.2, 1.4, 0.4, 1)` while the base fades over 180 ms |
-| Button press | scale 1 → 0.92 over 80 ms; release reverses |
+| Stick grabbed | base 0.55 → 1 and its ring brightens over 120 ms; the thumb's bloom brightens over 120 ms |
+| Stick released | thumb springs home over 180 ms `cubic-bezier(0.2, 1.4, 0.4, 1)`; base back to 0.55 over 180 ms; glow out over 120 ms |
+| Sprinting | the ring turns to `#dbe2e2` with an outer and inner mist glow over 180 ms, for as long as the sprint holds |
+| Button press | opacity 0.35 → 1 and scale 1 → 0.92 over 80 ms; release reverses over 120 ms |
 | Lamp toggled | one 300 ms pulse of the lit ring from 3 px back to 1 px |
 | Layer engaged | opacity 0 → 1 over 400 ms |
-| Layer idle | opacity 1 → 0.35 over 600 ms after 3 s without a touch; any touch returns it to 1 over 120 ms |
+| Stick idle | base 0.55 → 0.35 over 600 ms after 3 s without a touch; any touch returns it over 120 ms. The buttons are already at 0.35 at rest, so nothing else fades |
 | Pause menu open | layer opacity → 0 over 200 ms; the menu already fades itself; the layer's buttons stop taking pointer events and the interact prompt hides |
 
 The layer paints from the model each frame (`sync(model)`), the same shape as the roster:
@@ -246,7 +259,9 @@ the debug pad marker under `?cmd=debug` is how to see it working.
 Two viewports must work with 16 px gutters and no horizontal scroll: **400 × 800** portrait
 and **667 × 375** landscape.
 
-- Portrait: the title at 1.4 rem, the copy at 0.85 rem with `text-wrap: balance`, buttons
+- Portrait: the roster publishes its measured height as `--roster-height`, and every panel
+  reserves that much at the bottom, so Back and the last credit scroll clear of it however
+  many are in the party. The title at 1.4 rem, the copy at 0.85 rem with `text-wrap: balance`, buttons
   full-width up to 20 rem. The roster stays a fixed panel — not stacked into the page's flow
   under the buttons — but widens to fill the viewport at 1 rem gutters instead of pinning to
   the corner, so it reads as a bottom panel.
