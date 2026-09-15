@@ -3,12 +3,17 @@ import {
   createTouchModel,
   STICK_RADIUS,
   LOOK_RATE,
+  DOUBLE_TAP_MS,
+  TAP_MAX_MS,
+  TAP_MAX_TRAVEL,
+  IDLE_AFTER_MS,
   type TouchModel,
 } from "../../src/game/touchControls.js";
+import { Button } from "../../src/sim/types.js";
 
 const VIEW = { width: 800, height: 400 };
 
-function model(onPause = () => undefined): TouchModel {
+function model(onPause: () => void = () => undefined): TouchModel {
   return createTouchModel(VIEW, { onPause });
 }
 
@@ -115,5 +120,142 @@ describe("resize", () => {
     m.up(1, 5);
     m.down({ id: 2, x: 170, y: 700, hit: "canvas" }, 10); // 0.425: inside
     expect(m.state.stick?.anchorX).toBe(170);
+  });
+});
+
+describe("sprint: double-tap and hold the stick", () => {
+  it("sprints while the second stick finger stays down, inside the window", () => {
+    const m = model();
+    m.down({ id: 1, x: 100, y: 300, hit: "canvas" }, 0);
+    m.up(1, 80);
+    m.down({ id: 2, x: 110, y: 300, hit: "canvas" }, 200);
+    expect(m.sprinting).toBe(true);
+    expect(m.takeButtons() & Button.Sprint).toBe(Button.Sprint);
+    m.move(2, 160, 300, 220);
+    expect(m.moveX).toBeGreaterThan(0);
+    m.up(2, 900);
+    expect(m.sprinting).toBe(false);
+    expect(m.takeButtons() & Button.Sprint).toBe(0);
+  });
+
+  it("does not sprint when the second down is outside the window", () => {
+    const m = model();
+    m.down({ id: 1, x: 100, y: 300, hit: "canvas" }, 0);
+    m.up(1, 80);
+    m.down({ id: 2, x: 110, y: 300, hit: "canvas" }, DOUBLE_TAP_MS + 1);
+    expect(m.sprinting).toBe(false);
+  });
+});
+
+describe("jump: double-tap the look zone", () => {
+  it("latches one Jump edge on the second tap's down, taken once", () => {
+    const m = model();
+    m.down({ id: 1, x: 600, y: 200, hit: "canvas" }, 0);
+    m.up(1, 50);
+    m.down({ id: 2, x: 602, y: 201, hit: "canvas" }, 200);
+    expect(m.takeButtons() & Button.Jump).toBe(Button.Jump);
+    expect(m.takeButtons() & Button.Jump).toBe(0);
+  });
+
+  it("does not jump when the first press was a drag", () => {
+    const m = model();
+    m.down({ id: 1, x: 600, y: 200, hit: "canvas" }, 0);
+    m.move(1, 600 + TAP_MAX_TRAVEL + 1, 200, 20);
+    m.up(1, 50);
+    m.down({ id: 2, x: 600, y: 200, hit: "canvas" }, 200);
+    expect(m.takeButtons() & Button.Jump).toBe(0);
+  });
+
+  it("does not jump when the first press was held too long", () => {
+    const m = model();
+    m.down({ id: 1, x: 600, y: 200, hit: "canvas" }, 0);
+    m.up(1, TAP_MAX_MS + 1);
+    m.down({ id: 2, x: 600, y: 200, hit: "canvas" }, TAP_MAX_MS + 100);
+    expect(m.takeButtons() & Button.Jump).toBe(0);
+  });
+
+  it("does not jump on a single tap, and a third tap starts a new pair", () => {
+    const m = model();
+    m.down({ id: 1, x: 600, y: 200, hit: "canvas" }, 0);
+    m.up(1, 50);
+    expect(m.takeButtons() & Button.Jump).toBe(0);
+    m.down({ id: 2, x: 600, y: 200, hit: "canvas" }, 200);
+    m.up(2, 250);
+    expect(m.takeButtons() & Button.Jump).toBe(Button.Jump);
+    m.down({ id: 3, x: 600, y: 200, hit: "canvas" }, 400);
+    expect(m.takeButtons() & Button.Jump).toBe(0);
+  });
+
+  it("still looks while tapping: the drag of the second finger turns the camera", () => {
+    const m = model();
+    m.down({ id: 1, x: 600, y: 200, hit: "canvas" }, 0);
+    m.up(1, 50);
+    m.down({ id: 2, x: 600, y: 200, hit: "canvas" }, 200);
+    m.move(2, 640, 200, 220);
+    expect(m.takeLook().yaw).toBeCloseTo(40 * LOOK_RATE, 9);
+  });
+});
+
+describe("buttons", () => {
+  it("lamp latches one edge on release and reports pressed while down", () => {
+    const m = model();
+    m.down({ id: 1, x: 40, y: 200, hit: "lamp" }, 0);
+    expect(m.state.lampPressed).toBe(true);
+    expect(m.takeButtons() & Button.Lamp).toBe(0);
+    m.up(1, 60);
+    expect(m.state.lampPressed).toBe(false);
+    expect(m.takeButtons() & Button.Lamp).toBe(Button.Lamp);
+    expect(m.takeButtons() & Button.Lamp).toBe(0);
+  });
+
+  it("a cancelled lamp press toggles nothing", () => {
+    const m = model();
+    m.down({ id: 1, x: 40, y: 200, hit: "lamp" }, 0);
+    m.cancel(1, 60);
+    expect(m.takeButtons() & Button.Lamp).toBe(0);
+  });
+
+  it("pause fires the hook on release, not on press", () => {
+    let pauses = 0;
+    const m = model(() => pauses++);
+    m.down({ id: 1, x: 780, y: 20, hit: "pause" }, 0);
+    expect(pauses).toBe(0);
+    m.up(1, 60);
+    expect(pauses).toBe(1);
+  });
+
+  it("a lamp press does not anchor the stick even though it is in the left zone", () => {
+    const m = model();
+    m.down({ id: 1, x: 40, y: 200, hit: "lamp" }, 0);
+    expect(m.state.stick).toBeNull();
+  });
+
+  it("interact from the prompt: an edge on down and the bit while held", () => {
+    const m = model();
+    m.interactDown();
+    expect(m.takeButtons() & Button.Interact).toBe(Button.Interact);
+    expect(m.takeButtons() & Button.Interact).toBe(Button.Interact);
+    m.interactUp();
+    expect(m.takeButtons() & Button.Interact).toBe(0);
+  });
+
+  it("mirrors the lamp state it is told", () => {
+    const m = model();
+    m.setLampOn(true);
+    expect(m.state.lampOn).toBe(true);
+  });
+});
+
+describe("idle", () => {
+  it("is idle after three seconds without a touch and wakes on any down", () => {
+    const m = model();
+    m.down({ id: 1, x: 600, y: 200, hit: "canvas" }, 0);
+    m.up(1, 50);
+    m.tick(IDLE_AFTER_MS);
+    expect(m.state.idle).toBe(false);
+    m.tick(IDLE_AFTER_MS + 51);
+    expect(m.state.idle).toBe(true);
+    m.down({ id: 2, x: 600, y: 200, hit: "canvas" }, IDLE_AFTER_MS + 60);
+    expect(m.state.idle).toBe(false);
   });
 });
