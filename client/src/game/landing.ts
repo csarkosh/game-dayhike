@@ -169,7 +169,10 @@ const STYLE = `
   /* Phone widths: the title, copy and buttons scale to a 400 px screen with
      16 px gutters and nothing wider than the viewport. */
   @media (max-width: 480px) {
-    .landing .panel { padding: 1rem; gap: 0.6rem; }
+    /* The roster is a fixed full-width panel at the bottom here (roster.ts),
+       and publishes its height; leaving that much room keeps every panel's
+       last control — Back, the last credit — above it however big the party. */
+    .landing .panel { padding: 1rem 1rem calc(var(--roster-height, 0px) + 1.5rem); gap: 0.6rem; }
     .landing h1 { font-size: 1.4rem; letter-spacing: 0.1em; }
     .landing p { font-size: 0.85rem; max-width: 100%; }
     .landing button { width: 100%; max-width: 20rem; margin-top: 0.75rem; }

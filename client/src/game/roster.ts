@@ -267,6 +267,11 @@ export function createRoster(handlers: {
       parts.push(error);
     }
     root.replaceChildren(...parts);
+    // The landing's panels reserve this much at the bottom on a phone, where
+    // the roster is a fixed full-width panel: without it the Back button and
+    // the last credit scroll in underneath it, and the reservation has to
+    // grow with the party, so it is measured rather than guessed.
+    document.documentElement.style.setProperty("--roster-height", `${root.offsetHeight}px`);
   }
 
   function beginEdit(label: HTMLSpanElement, current: string): void {
