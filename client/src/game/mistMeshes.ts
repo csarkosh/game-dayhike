@@ -7,7 +7,7 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Engine } from "@babylonjs/core/Engines/engine.js";
 
-import { clamp01 } from "./colour.js";
+import { clamp01, type Rgb } from "./colour.js";
 import {
   collectMistBanks, MIST_CELL, MIST_RADIUS, MIST_TEX_SIZE, mistAlphaMap,
   type MistBank,
@@ -29,7 +29,7 @@ export const MIST_EDGE_FADE_SPAN = 150;
 export const MIST_CAP_BY_TIER: Record<QualityTier, number> = { low: 6, medium: 12, high: 12 };
 
 export type MistMeshes = {
-  update(camX: number, camZ: number, w: WeatherParams): void;
+  update(camX: number, camZ: number, w: WeatherParams, air: Rgb): void;
   dispose(): void;
   meshes: readonly Mesh[];
 };
@@ -38,8 +38,9 @@ export type MistMeshes = {
  * Twelve reusable billboard quads over one unlit alpha material. Placement is
  * `collectMistBanks`; this shell only positions, scales and fades. Depth write
  * is off (soft volumes must not occlude), fog stays ON so distant banks merge
- * into the haze, and the emissive colour tracks `scene.fogColor` so the banks
- * are always the colour of the air.
+ * into the haze, and the emissive colour is the fog gradient's middle,
+ * handed in by the renderer each frame, so the banks sit inside the fog
+ * rather than at its far end.
  */
 export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier): MistMeshes {
   const cap = MIST_CAP_BY_TIER[tier];
@@ -72,7 +73,7 @@ export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier):
 
   return {
     meshes,
-    update(camX, camZ, w) {
+    update(camX, camZ, w, air) {
       const opacity = mistOpacityUnder(w);
       if (opacity <= 0) {
         for (const m of meshes) m.setEnabled(false);
@@ -86,7 +87,7 @@ export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier):
         lastCellX = cellX;
         lastCellZ = cellZ;
       }
-      mat.emissiveColor.copyFrom(scene.fogColor);
+      mat.emissiveColor.set(air.r, air.g, air.b);
       for (let i = 0; i < meshes.length; i++) {
         const mesh = meshes[i] as Mesh;
         const bank = banks[i];

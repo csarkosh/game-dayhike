@@ -222,3 +222,16 @@ describe("/skin", () => {
     expect(resolveTypedArgs("skin", [], false)).toEqual([]);
   });
 });
+
+describe("/unsettle", () => {
+  it("takes a level in [0, 100], persists as a number, and defaults to 100", () => {
+    expect(validateCommand({ name: "unsettle", args: ["40"] })).toBeNull();
+    expect(validateCommand({ name: "unsettle", args: [] })).toBeNull();
+    expect(validateCommand({ name: "unsettle", args: ["101"] })).toContain("[0, 100]");
+    expect(validateCommand({ name: "unsettle", args: ["x"] })).toContain("[0, 100]");
+    const spec = findCommand("unsettle");
+    expect(spec?.kind).toBe("view");
+    expect(spec?.scriptValue?.(["40"])).toBe(40);
+    expect(spec?.defaultValue).toBe(100);
+  });
+});

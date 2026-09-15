@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { createMistMeshes, MIST_CAP_BY_TIER } from "../../src/game/mistMeshes.js";
 import { collectMistBanks } from "../../src/game/mistField.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
@@ -58,7 +59,7 @@ describe("createMistMeshes", () => {
     const s = scene();
     const mist = createMistMeshes(s, SEED, "high");
     const { x, z } = coastalOrigin();
-    mist.update(x, z, WEATHER_PRESETS.clear);
+    mist.update(x, z, WEATHER_PRESETS.clear, { r: 0.5, g: 0.5, b: 0.5 });
     for (const m of mist.meshes) expect(m.isEnabled()).toBe(false);
     mist.dispose();
   });
@@ -67,7 +68,7 @@ describe("createMistMeshes", () => {
     const s = scene();
     const mist = createMistMeshes(s, SEED, "high");
     const { x, z } = coastalOrigin();
-    mist.update(x, z, WEATHER_PRESETS.mist);
+    mist.update(x, z, WEATHER_PRESETS.mist, { r: 0.5, g: 0.5, b: 0.5 });
     const banks = collectMistBanks(SEED, x, z);
     const enabled = mist.meshes.filter((m) => m.isEnabled());
     expect(enabled.length).toBeGreaterThan(0);
@@ -78,6 +79,15 @@ describe("createMistMeshes", () => {
       const match = banks.find((b) => b.x === m.position.x && b.z === m.position.z);
       expect(match).toBeDefined();
     }
+    mist.dispose();
+  });
+
+  it("colours the banks from the air colour it is handed", () => {
+    const mist = createMistMeshes(scene(), 1, "high");
+    mist.update(0, 0, WEATHER_PRESETS.mist, { r: 0.2, g: 0.4, b: 0.6 });
+    const mat = mist.meshes[0]?.material as StandardMaterial;
+    expect(mat.emissiveColor.r).toBeCloseTo(0.2, 6);
+    expect(mat.emissiveColor.b).toBeCloseTo(0.6, 6);
     mist.dispose();
   });
 });

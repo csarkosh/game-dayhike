@@ -256,6 +256,8 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       wildlifePresence = wildlifePresenceUnder(WEATHER_PRESETS[preset]);
     } else if (name === "bob") {
       renderer.setBobScale(typeof value === "number" ? value : DEFAULT_BOB_SCALE);
+    } else if (name === "unsettle") {
+      renderer.setUnsettle((typeof value === "number" ? value : 100) / 100);
     } else if (name === "volume") {
       // No `scriptValue` on this command (it is not persisted — see
       // commands.ts): read the validated argument directly instead.

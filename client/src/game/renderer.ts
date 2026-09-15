@@ -28,6 +28,9 @@ import {
   type RingSamples,
 } from "./clipmap.js";
 import { createLighting } from "./lighting.js";
+import { createAtmosphere } from "./atmosphere.js";
+import { createPost, fxSupportedBy } from "./post.js";
+import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
 import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint } from "./terrainTexture.js";
 import type { WeatherParams } from "./weather.js";
@@ -589,6 +592,8 @@ export type Renderer = {
   setWeather(next: WeatherParams, fadeSeconds?: number): void;
   /** 0 switches the walking cue off; 1 is the tuned default. */
   setBobScale(scale: number): void;
+  /** 0 silences the lens-side dread effects; 1 is full. */
+  setUnsettle(level: number): void;
 };
 
 export type RendererOptions = { tier?: QualityTier };
@@ -613,6 +618,10 @@ export function createRenderer(
   // up to MAX_PLAYERS remote lamps ever light anything. Before any material
   // exists, so it also catches every material a GLB load adds later.
   budgetLights(scene);
+
+  // Atmosphere plugin registration. BEFORE anything creates a material:
+  // RegisterMaterialPlugin only reaches materials constructed after it runs.
+  const atmosphere = createAtmosphere(scene, FOG_DISTANCE);
 
   const skinShading = createSkinShading(scene);
 
@@ -646,9 +655,12 @@ export function createRenderer(
   // brush path as well as the forest — one lit world is worth more than the
   // sandbox's old dark clear colour.
   const tier = options.tier ?? detectTier();
-  // TODO(task 8): compute from `postFeaturesFor` once the post chain is wired
-  // back in, rather than pinning the material path unconditionally.
-  const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: "material" });
+  // Who owns colour is decided once, before lighting and the post chain are
+  // built, from the tier and the float-target capability.
+  const postFeatures = postFeaturesFor(tier, fxSupportedBy(engine));
+  const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath });
+  const post = createPost(scene, camera, postFeatures);
+  let unsettle = 1;
 
   // A forest draws terrain instead of brushes. Guarded here rather than relying on
   // the caller to pass an empty level: app.ts passes the parsed sandbox01 so it
@@ -846,6 +858,8 @@ export function createRenderer(
       // per call, and this reads it three times a frame otherwise.
       const weather = lighting.weather;
       applyWetness(scene, weather);
+      atmosphere.update(weather, lighting.hour);
+      post.update(weather, lighting.hour, unsettle);
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
@@ -856,7 +870,7 @@ export function createRenderer(
         forestMeshes?.update(freecam.x, freecam.z);
         clutterMeshes?.update(freecam.x, freecam.z);
         wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour);
-        mist?.update(freecam.x, freecam.z, weather);
+        mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour());
         camera.position.set(freecam.x, freecam.y, freecam.z);
         camera.rotation.set(freecam.pitch, freecam.yaw, 0);
         setLamp(localLamp, false);
@@ -875,7 +889,7 @@ export function createRenderer(
         forestMeshes?.update(local.pos.x, local.pos.z);
         clutterMeshes?.update(local.pos.x, local.pos.z);
         wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour);
-        mist?.update(local.pos.x, local.pos.z, weather);
+        mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour());
         const offset = bob.update(
           {
             x: local.pos.x,
@@ -962,8 +976,10 @@ export function createRenderer(
       wildlife?.dispose();
       mist?.dispose();
       rain.dispose();
+      post.dispose();
       skinShading.dispose();
       lighting.dispose();
+      atmosphere.dispose();
       scene.dispose();
       engine.dispose();
     },
@@ -978,6 +994,9 @@ export function createRenderer(
     },
     setBobScale(scale) {
       bob.setScale(scale);
+    },
+    setUnsettle(level) {
+      unsettle = Math.min(1, Math.max(0, level));
     },
     setWireframe(on) {
       // Scene-wide rather than per material, so it covers the clipmap rings and

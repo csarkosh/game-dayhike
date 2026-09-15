@@ -129,6 +129,20 @@ const SPECS: readonly CommandSpec[] = [
     defaultValue: DEFAULT_BOB_SCALE,
   },
   {
+    name: "unsettle",
+    kind: "view",
+    validate(args) {
+      if (args.length === 0) return null;
+      if (args.length > 1) return "unsettle takes one argument, a level in [0, 100]";
+      const v = Number(args[0]);
+      if (!Number.isFinite(v) || v < 0 || v > 100) return `"${args[0]}" is not a level in [0, 100]`;
+      return null;
+    },
+    // Bare `/unsettle` restores the full effects, matching `/bob`.
+    scriptValue: (args) => (args.length === 0 ? 100 : Number(args[0])),
+    defaultValue: 100,
+  },
+  {
     name: "seed",
     kind: "world",
     validate(args) {
