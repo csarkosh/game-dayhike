@@ -60,9 +60,11 @@ export type World = {
    */
   waterLevel: number | null;
   /**
-   * What a player can act on: registered by the owning system, resolved
-   * by `interact.ts` on the host. A client's predicted world keeps this empty —
-   * it never resolves an interaction, only learns the result.
+   * What a player can act on: registered identically on the host and on a
+   * client's predicted world, both from the same seed (`app.ts`'s
+   * `registerInteractables`), so nothing crosses the wire. `interact.ts`
+   * resolves against this map on both sides, but only the host's resolution
+   * has effect; a client resolves the same map only to drive its own prompt.
    */
   interactables: Map<number, Interactable>;
 };
