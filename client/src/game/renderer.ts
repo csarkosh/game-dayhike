@@ -58,6 +58,7 @@ import type { PlayerPoint, WildlifeEvent } from "./wildlifeBehaviour.js";
 import type { ListenerPose } from "./ambientAudio.js";
 import { createMistMeshes } from "./mistMeshes.js";
 import { createRain } from "./rain.js";
+import { createMotes } from "./motes.js";
 import { createPropMeshes } from "./propMeshes.js";
 
 const MATERIAL_COLORS: Record<string, [number, number, number]> = {
@@ -821,6 +822,7 @@ export function createRenderer(
   // Rain is universal, unlike the forest-gated effects above: weather applies
   // to hand-authored levels too, and a stopped particle system is free.
   const rain = createRain(scene, tier);
+  const motes = createMotes(scene, tier);
 
   const views = new EntityViews(scene);
   // Fire and forget: enemies render as capsules until this resolves, and stay
@@ -878,6 +880,7 @@ export function createRenderer(
         // back to the player's own position is never read as one enormous step.
         bob.reset();
         rain.update(camera.position, weather);
+        motes?.update(camera.position, weather, lighting.hour, atmosphere.midColour());
         return;
       }
 
@@ -917,6 +920,7 @@ export function createRenderer(
         camera.rotation.set(local.pitch, local.yaw, offset.roll);
         setLamp(localLamp, local.lamp.on);
         rain.update(camera.position, weather);
+        motes?.update(camera.position, weather, lighting.hour, atmosphere.midColour());
       }
     },
     hasWildlife: wildlife !== null,
@@ -976,6 +980,7 @@ export function createRenderer(
       wildlife?.dispose();
       mist?.dispose();
       rain.dispose();
+      motes?.dispose();
       post.dispose();
       skinShading.dispose();
       lighting.dispose();

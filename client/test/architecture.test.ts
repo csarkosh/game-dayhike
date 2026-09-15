@@ -119,6 +119,8 @@ describe("layer boundaries", () => {
       join(SRC, "game", "viewBob.ts"),
       join(SRC, "game", "gradeParams.ts"),
       join(SRC, "game", "postParams.ts"),
+      join(SRC, "game", "windField.ts"),
+      join(SRC, "game", "motesParams.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files

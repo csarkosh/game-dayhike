@@ -33,6 +33,10 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
+// Re-exported so a consumer that already imports this module can read the
+// same ω values the GLSL below inlines; motesParams.ts imports the Babylon-free
+// original from windField.ts directly rather than through this Babylon-bearing module.
+export { WIND_OMEGA_GUST, WIND_OMEGA_GUST2 } from "./windField.js";
 
 /** Wrap period (s). Every ω below is 2π·n / WIND_TIME_WRAP for integer n. */
 const WIND_TIME_WRAP = 300;
@@ -49,7 +53,7 @@ export const WIND_AMP_UNDERSTORY = 0.04;
 //   gust      n=18  → 0.376991…  (0.06 Hz — a ~25 m wave at ~1.5 m/s)
 //   gust 2nd  n=42  → 0.879646…
 //   flutter   n=600 → 12.566371… (2 Hz leaf flutter)
-const WIND_GLSL = `
+export const WIND_GLSL = `
 #ifdef WIND
 float windH = clamp(positionUpdated.y / windMeshHeight, 0.0, 1.0);
 float windK = windH * windH * windAmp;

@@ -2,7 +2,7 @@ import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { attachWind, WindPlugin } from "../../src/game/windPlugin.js";
+import { attachWind, WindPlugin, WIND_GLSL } from "../../src/game/windPlugin.js";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -58,5 +58,10 @@ describe("wind plugin", () => {
     const uniforms = plugin.getUniforms();
     const names = uniforms.ubo!.map((u: { name: string }) => u.name);
     expect(names).toEqual(expect.arrayContaining(["windTime", "windAmp", "windMeshHeight"]));
+  });
+
+  it("inlines the same gust ω values windField.ts exports, so they cannot drift apart", () => {
+    expect(WIND_GLSL).toContain("windTime * 0.3769911184");
+    expect(WIND_GLSL).toContain("windTime * 0.8796459430");
   });
 });
