@@ -2,6 +2,7 @@ import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
 import { createRenderer } from "./game/renderer.js";
 import { createInputSampler } from "./game/input.js";
+import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
 import { createHud } from "./game/hud.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
@@ -44,7 +45,7 @@ import { createHostSession } from "./net/hostSession.js";
 import { createClientSession } from "./net/clientSession.js";
 import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
-import { isDesktop } from "./game/platform.js";
+import { isDesktop, isTouchDevice } from "./game/platform.js";
 import type { WorldState } from "./sim/types.js";
 import type { Lobby } from "./net/lobby.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
@@ -131,10 +132,32 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // and building a full oscillator/gain graph nothing references or disposes.
   const unlockOnPointerDown = () => ambient.unlock();
   window.addEventListener("pointerdown", unlockOnPointerDown, { once: true });
-  const input = createInputSampler(canvas);
+  let disposed = false;
+  // The browser must never scroll, zoom or select on the game canvas: every
+  // finger on it is a stick or a look.
+  canvas.style.touchAction = "none";
+  const touchStart = isTouchDevice();
+  // Built on every device: a mouse machine that gets touched shows the layer
+  // on that first touch and flips the sampler into touch mode.
+  const touchModel = createTouchModel(
+    { width: canvas.clientWidth, height: canvas.clientHeight },
+    { onPause: () => input.disengage() },
+  );
+  const input = createInputSampler(canvas, { touch: touchModel, touchMode: touchStart });
   const accumulator = new FixedStepAccumulator();
   const container = canvas.parentElement ?? document.body;
   const hud = createHud(container);
+  const touchLayer = createTouchLayer(container, canvas, touchModel, {
+    engaged: () => input.engaged,
+    onFirstTouch: () => input.setTouchMode(true),
+    visible: touchStart,
+  });
+  // A phone backgrounds the page constantly; coming back should land on the
+  // pause menu, not mid-walk. Desktop already gets this from pointer lock.
+  const onVisibility = () => {
+    if (document.visibilityState === "hidden" && !disposed) input.disengage();
+  };
+  document.addEventListener("visibilitychange", onVisibility);
 
   let freecam: FreecamState | null = null;
   /**
@@ -154,7 +177,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // Mirrors what the renderer was last told, so a bare typed `/skin` knows what
   // it is flipping. On by default: skin shading starts enabled.
   let skin = true;
-  let disposed = false;
 
   function currentScript(): ScriptEntry[] {
     return parseScript(new URLSearchParams(location.search).get("cmd") ?? "").entries;
@@ -252,6 +274,13 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     if (wildlifeAudio === null) return;
     wildlifeAudio.setListener(renderer.listener());
     wildlifeAudio.play(renderer.wildlifeEvents(), wildlifePresence);
+  }
+
+  /** Advances and paints the touch layer. Both loops, after `renderer.sync`. */
+  function syncTouch(lampOn: boolean): void {
+    touchModel.tick(performance.now());
+    touchModel.setLampOn(lampOn);
+    touchLayer.sync();
   }
 
   /**
@@ -485,6 +514,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       hud.setRespawn(self?.respawnTimer ?? null);
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
+      syncTouch(self?.lamp.on ?? false);
       // True exactly when `sync` took its player-following branch, which is
       // the only case in which `renderer.camera.position` is an eye position
       // a pending freecam can adopt.
@@ -592,6 +622,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       hud.setRespawn(self?.respawnTimer ?? null);
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
+      syncTouch(self?.lamp.on ?? false);
       // See the host loop: a pending freecam waits for this.
       cameraOnPlayer = self !== undefined && freecam === null;
       renderer.scene.render();
@@ -641,7 +672,10 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     stepAndRender();
   });
 
-  const onResize = () => renderer.resize();
+  const onResize = () => {
+    renderer.resize();
+    touchModel.resize({ width: canvas.clientWidth, height: canvas.clientHeight });
+  };
   window.addEventListener("resize", onResize);
 
   return {
@@ -651,6 +685,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onDebugKey);
       window.removeEventListener("pointerdown", unlockOnPointerDown);
+      document.removeEventListener("visibilitychange", onVisibility);
       netgraph.dispose();
       if (landingTimer !== null) clearTimeout(landingTimer);
       renderer.engine.stopRenderLoop();
@@ -659,6 +694,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       hud.dispose();
       bar.dispose();
       menu.dispose();
+      touchLayer.dispose();
       input.dispose();
       renderer.dispose();
       wildlifeAudio?.dispose();

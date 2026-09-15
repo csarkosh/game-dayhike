@@ -220,3 +220,182 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
     },
   };
 }
+
+const STYLE = `
+  .touch {
+    position: absolute; inset: 0; pointer-events: none; z-index: 15;
+    font-family: ui-monospace, monospace; color: #fff;
+    opacity: 0; transition: opacity 400ms ease-out;
+  }
+  .touch.on { opacity: 1; }
+  .touch.on.idle { opacity: 0.35; transition: opacity 600ms ease-out; }
+  .touch.on.paused { opacity: 0; transition: opacity 200ms ease-out; }
+  .touch.off { display: none; }
+  .touch .stick {
+    position: absolute; left: 0; top: 0; width: 120px; height: 120px;
+    margin: -60px 0 0 -60px; border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.18);
+    opacity: 0; transform: scale(0.8);
+    transition: opacity 180ms ease-out, transform 180ms ease-out;
+  }
+  .touch .stick.live { opacity: 1; transform: scale(1); transition: opacity 120ms ease-out, transform 120ms ease-out; }
+  .touch .thumb {
+    position: absolute; left: 50%; top: 50%; width: 56px; height: 56px;
+    margin: -28px 0 0 -28px; border-radius: 50%;
+    background: rgba(16, 16, 20, 0.72); border: 1px solid rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(4px);
+    transition: transform 180ms cubic-bezier(0.2, 1.4, 0.4, 1);
+  }
+  .touch .stick.live .thumb { transition: none; }
+  .touch button {
+    position: absolute; pointer-events: auto; touch-action: none;
+    display: flex; align-items: center; justify-content: center;
+    font: inherit; font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #fff; background: rgba(16, 16, 20, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 50%;
+    backdrop-filter: blur(4px); -webkit-user-select: none; user-select: none;
+    transition: transform 80ms ease-out, background 80ms ease-out, box-shadow 300ms ease-out;
+  }
+  .touch button.pressed { transform: scale(0.92); background: rgba(255, 255, 255, 0.18); }
+  .touch .lamp {
+    width: 56px; height: 56px;
+    left: calc(32px + env(safe-area-inset-left, 0px));
+    bottom: calc(200px + env(safe-area-inset-bottom, 0px));
+  }
+  .touch .lamp.lit { box-shadow: 0 0 0 1px #ffd24d; }
+  .touch .lamp.pulse { box-shadow: 0 0 0 3px #ffd24d; transition: none; }
+  .touch .pause {
+    width: 40px; height: 40px; font-size: 0.9rem;
+    right: calc(20px + env(safe-area-inset-right, 0px));
+    top: calc(20px + env(safe-area-inset-top, 0px));
+  }
+`;
+
+export type TouchLayer = {
+  sync(): void;
+  show(): void;
+  dispose(): void;
+};
+
+/**
+ * The dumb half: paints `model.state` and forwards pointer events. The canvas
+ * gets the stick and look pointers (captured, so a finger sliding off still
+ * ends its role); the two buttons get their own. Never decides anything.
+ */
+export function createTouchLayer(
+  container: HTMLElement,
+  canvas: HTMLCanvasElement,
+  model: TouchModel,
+  hooks: { engaged(): boolean; onFirstTouch(): void; visible: boolean },
+): TouchLayer {
+  const style = document.createElement("style");
+  style.textContent = STYLE;
+  const root = document.createElement("div");
+  root.className = "touch";
+
+  const stick = document.createElement("div");
+  stick.className = "stick";
+  const thumb = document.createElement("div");
+  thumb.className = "thumb";
+  stick.append(thumb);
+
+  const lamp = document.createElement("button");
+  lamp.type = "button";
+  lamp.className = "lamp";
+  lamp.textContent = "Lamp";
+  const pause = document.createElement("button");
+  pause.type = "button";
+  pause.className = "pause";
+  pause.textContent = "‖";
+  pause.setAttribute("aria-label", "Pause");
+
+  root.append(stick, lamp, pause);
+  container.append(style, root);
+
+  let visible = hooks.visible;
+  root.classList.toggle("off", !visible);
+  let wasLampOn = model.state.lampOn;
+  let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const now = () => performance.now();
+
+  // The stick and look pointers live on the canvas; a device that started
+  // without the layer gets it on its first real touch.
+  const onCanvasDown = (e: PointerEvent) => {
+    if (e.pointerType !== "touch") return;
+    if (!visible) {
+      visible = true;
+      root.classList.remove("off");
+      hooks.onFirstTouch();
+    }
+    if (!hooks.engaged()) return;
+    canvas.setPointerCapture(e.pointerId);
+    model.down({ id: e.pointerId, x: e.clientX, y: e.clientY, hit: "canvas" }, now());
+  };
+  const onCanvasMove = (e: PointerEvent) => {
+    if (e.pointerType === "touch") model.move(e.pointerId, e.clientX, e.clientY, now());
+  };
+  const onCanvasUp = (e: PointerEvent) => {
+    if (e.pointerType === "touch") model.up(e.pointerId, now());
+  };
+  const onCanvasCancel = (e: PointerEvent) => {
+    if (e.pointerType === "touch") model.cancel(e.pointerId, now());
+  };
+  canvas.addEventListener("pointerdown", onCanvasDown);
+  canvas.addEventListener("pointermove", onCanvasMove);
+  canvas.addEventListener("pointerup", onCanvasUp);
+  canvas.addEventListener("pointercancel", onCanvasCancel);
+
+  function bindButton(el: HTMLButtonElement, hit: "lamp" | "pause"): void {
+    el.addEventListener("pointerdown", (e) => {
+      if (!hooks.engaged() && hit !== "pause") return;
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      model.down({ id: e.pointerId, x: e.clientX, y: e.clientY, hit }, now());
+    });
+    el.addEventListener("pointerup", (e) => model.up(e.pointerId, now()));
+    el.addEventListener("pointercancel", (e) => model.cancel(e.pointerId, now()));
+  }
+  bindButton(lamp, "lamp");
+  bindButton(pause, "pause");
+
+  return {
+    sync() {
+      const s = model.state;
+      const engaged = hooks.engaged();
+      root.classList.toggle("on", visible);
+      root.classList.toggle("paused", visible && !engaged);
+      root.classList.toggle("idle", visible && engaged && s.idle);
+      if (s.stick !== null) {
+        stick.classList.add("live");
+        stick.style.transform = `translate(${s.stick.anchorX}px, ${s.stick.anchorY}px)`;
+        thumb.style.transform = `translate(${s.stick.dx}px, ${s.stick.dy}px)`;
+      } else {
+        stick.classList.remove("live");
+        thumb.style.transform = "translate(0px, 0px)";
+      }
+      lamp.classList.toggle("pressed", s.lampPressed);
+      pause.classList.toggle("pressed", s.pausePressed);
+      lamp.classList.toggle("lit", s.lampOn);
+      if (s.lampOn !== wasLampOn) {
+        wasLampOn = s.lampOn;
+        lamp.classList.add("pulse");
+        clearTimeout(pulseTimer);
+        pulseTimer = setTimeout(() => lamp.classList.remove("pulse"), 300);
+      }
+    },
+    show() {
+      visible = true;
+      root.classList.remove("off");
+    },
+    dispose() {
+      clearTimeout(pulseTimer);
+      canvas.removeEventListener("pointerdown", onCanvasDown);
+      canvas.removeEventListener("pointermove", onCanvasMove);
+      canvas.removeEventListener("pointerup", onCanvasUp);
+      canvas.removeEventListener("pointercancel", onCanvasCancel);
+      root.remove();
+      style.remove();
+    },
+  };
+}
