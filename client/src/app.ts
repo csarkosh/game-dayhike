@@ -301,7 +301,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       // looking around. Guarded on `disposed` because a world command dispatches
       // popstate, tearing this session down, *before* the bar closes: without
       // the guard this asks a disposed sampler to lock a detached canvas.
-      if (!open && !disposed) input.requestLock();
+      if (!open && !disposed) input.engage();
     },
     onSubmit: (line) => {
       const parsed = parseCommandLine(line);
@@ -337,23 +337,23 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
   const menu = createPauseMenu(container, {
     onResume: () => {
-      // Re-locking hides the menu through `onLockStateChange`, not here: the
+      // Re-engaging hides the menu through `onEngagedChange`, not here: the
       // request can be refused, and a menu that vanished anyway would leave
       // the player staring at a live game that ignores their mouse.
-      if (!disposed) input.requestLock();
+      if (!disposed) input.engage();
     },
     onExit: () => options.onExit(),
   });
 
   /**
-   * The pause menu is driven by pointer-lock state, not by who released it:
-   * Esc (the browser releases the lock), alt-tab, focus loss — one rule
-   * covers them all. The command bar's own unlock is the exception; the bar
-   * is already handling the keyboard.
+   * The pause menu is driven by the sampler's engaged state, not by who
+   * changed it: Esc (the browser releases the lock), alt-tab, focus loss, the
+   * touch Pause button — one rule covers them all. The command bar's own
+   * unlock is the exception; the bar is already handling the keyboard.
    */
-  const onLockStateChange = () => {
+  input.onEngagedChange((engaged) => {
     if (disposed) return;
-    if (input.locked) {
+    if (engaged) {
       menu.hide();
       input.setSuppressed(bar.isOpen);
       options.onPauseChange(false);
@@ -362,8 +362,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       input.setSuppressed(true);
       options.onPauseChange(true);
     }
-  };
-  document.addEventListener("pointerlockchange", onLockStateChange);
+  });
 
   // Restoring from the URL on load, not a live edit: every view command
   // applies instantly, weather included — see `applyView`'s `instant` doc.
@@ -652,7 +651,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onDebugKey);
       window.removeEventListener("pointerdown", unlockOnPointerDown);
-      document.removeEventListener("pointerlockchange", onLockStateChange);
       netgraph.dispose();
       if (landingTimer !== null) clearTimeout(landingTimer);
       renderer.engine.stopRenderLoop();
