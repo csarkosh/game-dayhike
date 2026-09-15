@@ -529,6 +529,13 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
             .catch(() => undefined);
         }),
       );
+      // A data channel only closes when the other side closes it. A closed tab
+      // or a dead phone never does, and the lobby is told at once either way
+      // (`pagehide` says goodbye; the server reaps a silent socket), so the
+      // lobby's list decides who is still in the world.
+      unsubscribe.push(
+        lobby.onChange((s) => host.retainPeers(new Set(s.members.map((m) => m.id)))),
+      );
     }
 
     stepAndRender = () => {

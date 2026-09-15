@@ -82,6 +82,13 @@ export type HostSession = {
   readonly peerCount: number;
   addPeer(peerId: string, transport: Transport): number;
   removePeer(peerId: string): void;
+  /**
+   * Removes every peer whose id is not in `ids`. The lobby's member list is
+   * the reliable word on who is still here: a tab that closes, an app that is
+   * killed or a phone that loses its network sends no data-channel close, so
+   * a player could stand in the world for good after leaving the party.
+   */
+  retainPeers(ids: ReadonlySet<string>): void;
   tick(localInput: InputCommand): void;
   onInteracted(handler: InteractedHandler): void;
   dispose(): void;
@@ -236,6 +243,12 @@ export function createHostSession(
         );
       }
       return player.id;
+    },
+
+    retainPeers(ids) {
+      for (const peerId of [...peers.keys()]) {
+        if (!ids.has(peerId)) this.removePeer(peerId);
+      }
     },
 
     removePeer(peerId) {

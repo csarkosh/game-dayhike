@@ -175,6 +175,21 @@ describe("host session", () => {
     expect(host.peerCount).toBe(0);
   });
 
+  it("keeps only the peers the lobby still lists", () => {
+    const host = createHostSession(level, 42);
+    const net = new FakeNetwork(PERFECT_NETWORK, 1);
+    const [aSide] = net.createPair();
+    const [bSide] = net.createPair();
+    const a = host.addPeer("a", aSide);
+    const b = host.addPeer("b", bSide);
+    // The lobby has already dropped "a" (its tab closed without a data-channel
+    // close) and lists someone who has not connected yet.
+    host.retainPeers(new Set(["b", "not-connected-yet"]));
+    expect(host.world.state.players.has(a)).toBe(false);
+    expect(host.world.state.players.has(b)).toBe(true);
+    expect(host.peerCount).toBe(1);
+  });
+
   it("advances the world one tick per call", () => {
     const host = createHostSession(level, 42);
     host.tick(input());
