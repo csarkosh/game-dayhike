@@ -17,8 +17,6 @@ import {
   fogDensityUnder,
   sunIntensityUnder,
   exposureUnder,
-  gradeUnder,
-  SATURATION_DROP,
   ambientCollapseUnder,
 } from "../../src/game/weather.js";
 
@@ -328,7 +326,6 @@ describe("weather in lighting", () => {
     lighting.setWeather(WEATHER_PRESETS.rain, 0);
     const sky = s.getMaterialByName("skyMaterial") as unknown as { turbidity: number };
     expect(sky.turbidity).toBe(20);
-    expect(s.imageProcessingConfiguration.colorCurves?.globalSaturation).toBe(-SATURATION_DROP);
     lighting.dispose();
   });
 
@@ -342,33 +339,4 @@ describe("weather in lighting", () => {
     lighting.dispose();
   });
 
-  it("writes the split-tone grade onto colorCurves when weather changes", () => {
-    const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12, colourPath: "material" });
-    lighting.setWeather(WEATHER_PRESETS.eerie, 0);
-    const c = s.imageProcessingConfiguration.colorCurves;
-    const g = gradeUnder(WEATHER_PRESETS.eerie);
-    expect(c?.shadowsHue).toBe(g.shadowsHue);
-    expect(c?.shadowsDensity).toBe(g.shadowsDensity);
-    expect(c?.shadowsSaturation).toBe(g.shadowsSaturation);
-    expect(c?.midtonesHue).toBe(g.midtonesHue);
-    expect(c?.midtonesDensity).toBe(g.midtonesDensity);
-    expect(c?.midtonesSaturation).toBe(g.midtonesSaturation);
-    expect(c?.highlightsHue).toBe(g.highlightsHue);
-    expect(c?.highlightsDensity).toBe(g.highlightsDensity);
-    expect(c?.highlightsSaturation).toBe(g.highlightsSaturation);
-    lighting.dispose();
-  });
-
-  it("leaves the colour filter inert under clear — the sunny frame is untouched", () => {
-    const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12, colourPath: "material" });
-    lighting.setWeather(WEATHER_PRESETS.clear, 0);
-    const c = s.imageProcessingConfiguration.colorCurves;
-    expect(c?.shadowsDensity).toBe(0);
-    expect(c?.midtonesDensity).toBe(0);
-    expect(c?.highlightsDensity).toBe(0);
-    expect(c?.midtonesSaturation).toBe(0);
-    lighting.dispose();
-  });
 });

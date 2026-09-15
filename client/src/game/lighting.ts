@@ -34,8 +34,6 @@ import {
   fogColourUnder,
   shadowDarknessUnder,
   exposureUnder,
-  saturationUnder,
-  gradeUnder,
   ambientCollapseUnder,
 } from "./weather.js";
 
@@ -137,8 +135,10 @@ export type Lighting = {
 
 /**
  * Everything that turns a scene from flat to lit: a procedural sky, a sun with
- * cascaded shadows, image-based ambient captured from that sky, ACES tone
- * mapping, and aerial perspective tinted to match.
+ * cascaded shadows, image-based ambient captured from that sky, aerial
+ * perspective tinted to match, and one of two colour paths — the grade pass
+ * on `"post"`, Babylon's own Khronos Neutral tone mapping and colour curves
+ * on `"material"` — chosen by `postFeaturesFor` in postParams.ts.
  *
  * This is the Babylon shell. Every number it applies comes from `sky.ts` and
  * `quality.ts`, which are pure and tested; what is left here is wiring, and the
@@ -265,8 +265,10 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     image.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
     image.contrast = 1.1;
     image.ditheringEnabled = true;
-    // Colour curves carry the split-tone grade on this path. Neutral is 0 on
-    // Babylon's scale, so enabling them under clear weather changes nothing.
+    // Colour curves carry the split-tone grade on this path, written by
+    // post.ts's update() rather than here — see the doc comment above
+    // createLighting. Neutral is 0 on Babylon's scale, so enabling them under
+    // clear weather changes nothing.
     image.colorCurves ??= new ColorCurves();
     image.colorCurvesEnabled = true;
   }
@@ -325,23 +327,6 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // Read on both paths: the grade pass reads it from the same record, and on
     // the post path the value is simply unused by materials.
     image.exposure = exposureUnder(weather, toSun.y);
-    // The grade is nine writes on a rig Babylon already builds and enables, so
-    // it costs no pass and no allocation. Densities are the strength control:
-    // at `clear` every one is 0, which is why the sunny frame survives intact.
-    if (options.colourPath === "material" && image.colorCurves) {
-      const curves = image.colorCurves;
-      const grade = gradeUnder(weather);
-      curves.globalSaturation = saturationUnder(weather);
-      curves.shadowsHue = grade.shadowsHue;
-      curves.shadowsDensity = grade.shadowsDensity;
-      curves.shadowsSaturation = grade.shadowsSaturation;
-      curves.midtonesHue = grade.midtonesHue;
-      curves.midtonesDensity = grade.midtonesDensity;
-      curves.midtonesSaturation = grade.midtonesSaturation;
-      curves.highlightsHue = grade.highlightsHue;
-      curves.highlightsDensity = grade.highlightsDensity;
-      curves.highlightsSaturation = grade.highlightsSaturation;
-    }
     // Overcast has no directional shadows: fade them rather than reconfigure the CSM.
     shadows?.setDarkness(shadowDarknessUnder(weather));
 
