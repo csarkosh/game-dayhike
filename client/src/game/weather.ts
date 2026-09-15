@@ -129,6 +129,53 @@ export const DREAD_GRAIN_GAIN = 0.5;
  * documented on MIST_AIR, avoided the same way. */
 const DREAD_AIR: Rgb = { r: 0.35, g: 0.42, b: 0.36 };
 
+// ---- Stepped dread. Browser-tunable; `clear` identity is not. ----
+
+/** Number of plateaus the WORLD-side dread terms move through: 0, 1/3, 2/3, 1. */
+export const DREAD_PLATEAUS = 4;
+/** Half-width, in dread units, of the soft edge on each plateau. */
+export const DREAD_STEP_EDGE = 0.06;
+/** Fraction of the fill and probe ambient lost on the top plateau. */
+export const AMBIENT_COLLAPSE = 0.45;
+
+function smoothstep01(x: number): number {
+  const c = Math.min(1, Math.max(0, x));
+  return c * c * (3 - 2 * c);
+}
+
+/**
+ * Quantises a dread level to DREAD_PLATEAUS plateaus with a smoothstep edge
+ * of half-width DREAD_STEP_EDGE centred on each boundary. Exact at 0 and 1,
+ * monotonic, so the world changes DREAD_PLATEAUS − 1 times as dread rises
+ * rather than sliding.
+ */
+export function stepped(d: number): number {
+  const x = clamp01(d);
+  const step = 1 / (DREAD_PLATEAUS - 1);
+  let out = 0;
+  for (let i = 1; i < DREAD_PLATEAUS; i++) {
+    const edge = i * step - step / 2;
+    out += step * smoothstep01((x - edge + DREAD_STEP_EDGE) / (2 * DREAD_STEP_EDGE));
+  }
+  return x === 0 ? 0 : x === 1 ? 1 : out;
+}
+
+/** The plateau'd dread the world-side terms read: fog, exposure, mist, ambient, motes. */
+export function dreadWorldUnder(w: WeatherParams): number {
+  return stepped(w.dread);
+}
+
+/** The continuous dread the lens-side terms read: grain, aberration, vignette, halation, overlap. */
+export function dreadLensUnder(w: WeatherParams): number {
+  return clamp01(w.dread);
+}
+
+/** Multiplier on the fill light and the probe's contribution: 1 at clear, 1 − AMBIENT_COLLAPSE on the top plateau. */
+export function ambientCollapseUnder(w: WeatherParams): number {
+  const d = dreadWorldUnder(w);
+  return d === 0 ? 1 : 1 - AMBIENT_COLLAPSE * d;
+}
+
 /** Rain particle capacity by quality tier; emit rate is rain x capacity. */
 export const RAIN_CAPACITY: Record<QualityTier, number> = { low: 600, medium: 1200, high: 2000 };
 
@@ -252,7 +299,7 @@ export function fogColourUnder(w: WeatherParams, hour: number): Rgb {
   const daylight = clamp01(sunPositionAt(hour).y / 0.35);
   const duskDim = 1 - 0.85 * c * (1 - daylight);
   const dimmed = { r: grey.r * duskDim, g: grey.g * duskDim, b: grey.b * duskDim };
-  const d = clamp01(w.dread);
+  const d = dreadWorldUnder(w);
   // Early return to ensure no dread-term arithmetic touches the clear path; the
   // preceding cloud-term arithmetic is IEEE-exact at zero (dimmed is a freshly built
   // object; the sweep asserts value equality, not identity).
@@ -271,7 +318,7 @@ export function exposureUnder(w: WeatherParams, altitude: number): number {
   return (
     exposureFor(altitude) *
     (1 - EXPOSURE_DIP * clamp01(w.cloudCover)) *
-    (1 - DREAD_EXPOSURE_DIP * clamp01(w.dread))
+    (1 - DREAD_EXPOSURE_DIP * dreadWorldUnder(w))
   );
 }
 
@@ -290,7 +337,7 @@ export function rainEmitRateUnder(w: WeatherParams, tier: QualityTier): number {
 }
 
 export function mistOpacityUnder(w: WeatherParams): number {
-  return MIST_OPACITY_MAX * clamp01(w.mist) * (1 + DREAD_MIST_GAIN * clamp01(w.dread));
+  return MIST_OPACITY_MAX * clamp01(w.mist) * (1 + DREAD_MIST_GAIN * dreadWorldUnder(w));
 }
 
 /** Target gains in [0,1] per ambience layer; the audio shell scales by its levels. */
@@ -302,12 +349,12 @@ export function ambientGainsUnder(w: WeatherParams): { rain: number; wind: numbe
 
 /** Vignette weight for the unease layer: baseline always on, deeper under dread. */
 export function vignetteWeightUnder(w: WeatherParams): number {
-  return VIGNETTE_WEIGHT_BASE * (1 + DREAD_VIGNETTE_GAIN * clamp01(w.dread));
+  return VIGNETTE_WEIGHT_BASE * (1 + DREAD_VIGNETTE_GAIN * dreadLensUnder(w));
 }
 
 /** Film grain intensity: subtle baseline, grittier under dread. */
 export function grainIntensityUnder(w: WeatherParams): number {
-  return GRAIN_INTENSITY_BASE * (1 + DREAD_GRAIN_GAIN * clamp01(w.dread));
+  return GRAIN_INTENSITY_BASE * (1 + DREAD_GRAIN_GAIN * dreadLensUnder(w));
 }
 
 /** The nine ColorCurves values the grade drives, one triple per tonal range. */

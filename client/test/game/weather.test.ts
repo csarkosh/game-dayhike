@@ -30,6 +30,13 @@ import {
   GRADE_HIGHLIGHT_HUE,
   GRADE_HIGHLIGHT_DENSITY,
   GRADE_HIGHLIGHT_SATURATION,
+  stepped,
+  dreadWorldUnder,
+  dreadLensUnder,
+  ambientCollapseUnder,
+  AMBIENT_COLLAPSE,
+  DREAD_PLATEAUS,
+  DREAD_STEP_EDGE,
 } from "../../src/game/weather.js";
 import {
   ambientColourFor, exposureFor, fillIntensityFor, fogDensityFor,
@@ -266,5 +273,47 @@ describe("colour grade — rich eerie, identity at clear", () => {
 
   it("greyness stops carrying the mood — the crush is much smaller now", () => {
     expect(SATURATION_DROP).toBe(5);
+  });
+});
+
+describe("stepped dread — the world moves in plateaus, the lens moves continuously", () => {
+  it("is exact at 0 and 1 and monotonic between", () => {
+    expect(stepped(0)).toBe(0);
+    expect(stepped(1)).toBe(1);
+    let last = 0;
+    for (let d = 0; d <= 1; d += 0.001) {
+      const s = stepped(d);
+      expect(s).toBeGreaterThanOrEqual(last - 1e-12);
+      last = s;
+    }
+  });
+
+  it("sits on a plateau away from the edges", () => {
+    const step = 1 / (DREAD_PLATEAUS - 1);
+    for (let i = 0; i < DREAD_PLATEAUS; i++) {
+      const centre = i * step;
+      const probe = Math.min(1, Math.max(0, centre + (i === DREAD_PLATEAUS - 1 ? -0.5 : 0.5) * (step - 2 * DREAD_STEP_EDGE)));
+      expect(stepped(probe)).toBeCloseTo(centre, 10);
+    }
+  });
+
+  it("clear is the identity for every derived value", () => {
+    expect(dreadWorldUnder(WEATHER_PRESETS.clear)).toBe(0);
+    expect(dreadLensUnder(WEATHER_PRESETS.clear)).toBe(0);
+    expect(ambientCollapseUnder(WEATHER_PRESETS.clear)).toBe(1);
+  });
+
+  it("eerie reaches the top plateau and the full collapse", () => {
+    expect(dreadWorldUnder(WEATHER_PRESETS.eerie)).toBe(1);
+    expect(dreadLensUnder(WEATHER_PRESETS.eerie)).toBe(1);
+    expect(ambientCollapseUnder(WEATHER_PRESETS.eerie)).toBeCloseTo(1 - AMBIENT_COLLAPSE, 10);
+  });
+
+  it("a mid-fade dread holds the world on a plateau while the lens keeps moving", () => {
+    const a = { ...WEATHER_PRESETS.eerie, dread: 0.36 };
+    const b = { ...WEATHER_PRESETS.eerie, dread: 0.42 };
+    expect(dreadWorldUnder(a)).toBe(dreadWorldUnder(b));
+    expect(dreadLensUnder(b)).toBeGreaterThan(dreadLensUnder(a));
+    expect(fogColourUnder(a, 17)).toEqual(fogColourUnder(b, 17));
   });
 });
