@@ -5,9 +5,11 @@ description: Use when pushing work to the game-dayhike GitHub repository at gith
 
 # Pushing to GitHub
 
-`github.com/csarkosh/game-dayhike` is a private repository with no CI and no reviewers. The
-commit message is therefore the only record of why a change exists. It is written for the
-person reading `git log` months later with no memory of this session — usually the author.
+`github.com/csarkosh/game-dayhike` is a public, open-source repository with no reviewers, and
+nothing in CI runs on a push. The commit message is therefore the only record of why a change
+exists. It is written for the person reading `git log` months later with no memory of this
+session — usually the author — and anyone on the internet can read it too, so it describes the
+change and never anything private about how the work was done.
 
 Remote: `origin` → `git@github.com:csarkosh/game-dayhike.git` (SSH; `gh auth` is configured for it).
 Default branch: `main`.
@@ -92,7 +94,8 @@ without collateral damage.
 
 ## Before pushing
 
-The repo has no CI, so these are the gates:
+No CI runs on a push (the one workflow, the Windows desktop smoke test, is started by hand), so
+these are the gates:
 
 ```bash
 npm run typecheck && npm run lint && npm test
