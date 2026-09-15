@@ -35,7 +35,10 @@ export const OVERLAP_BREATH_HZ = 0.05;
 export const GRAIN_BASE = 0.035;
 /** Grain gain at full dread: base × (1 + gain). */
 export const GRAIN_DREAD_GAIN = 1.5;
-/** One 8-bit step, the dither's half-amplitude in display units. */
+/** One 8-bit step. The finish pass applies TPDF dither at ±1 LSB
+ * (`(d1 + d2 − 1) · LSB`, the sum of two uniform draws), the correct
+ * triangular form — not ±½ LSB, which is RPDF (a single uniform draw). Don't
+ * "fix" it to ±½. */
 export const DITHER_LSB = 1 / 255;
 /** Linear, EXPOSED scene luminance above which halation is extracted: brighter
  * than display white before the tone map rolls it off. */

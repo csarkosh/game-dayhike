@@ -15,7 +15,7 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { ColorCurves } from "@babylonjs/core/Materials/colorCurves.js";
 
 import type { WeatherParams } from "./weather.js";
-import { gradeUnder, saturationUnder } from "./weather.js";
+import { gradeUnder, saturationUnder, WEATHER_PRESETS } from "./weather.js";
 import { gradeRecordUnder, type GradeRecord } from "./gradeParams.js";
 import { finishUnder, type PostFeatures } from "./postParams.js";
 import halationExtractFragment from "./shaders/halationExtract.fragment.fx?raw";
@@ -91,8 +91,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
   let aberration: ChromaticAberrationPostProcess | null = null;
   let fxaa: FxaaPostProcess | null = null;
   let black: RawTexture | null = null;
-  let record: GradeRecord = gradeRecordUnder({ cloudCover: 0, mist: 0, rain: 0, wetness: 0, dread: 0 }, 12, 1);
-  let finishRecord = finishUnder({ cloudCover: 0, mist: 0, rain: 0, wetness: 0, dread: 0 }, 1, 0);
+  let record: GradeRecord = gradeRecordUnder(WEATHER_PRESETS.clear, 12, 1);
+  let finishRecord = finishUnder(WEATHER_PRESETS.clear, 1, 0);
   const start = performance.now();
 
   if (features.pipeline) {

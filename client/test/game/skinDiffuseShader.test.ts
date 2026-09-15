@@ -64,21 +64,3 @@ describe("skinWrapLambert — the TS mirror of the wrap term", () => {
     expect(skinWrapLambert(0.5, 0)).toBeCloseTo(0.5, 6);
   });
 });
-
-describe("comment hazards (the etchedOutline lessons)", () => {
-  it("has no declaration line with a trailing comment containing a semicolon, and no hashed keyword in any comment", () => {
-    const hashedKeyword = /#(ifdef|ifndef|if|else|elif|endif|define|undef|include)\b/;
-    for (const line of skinFragment.split("\n")) {
-      const trimmed = line.trim();
-      const commentAt = line.indexOf("//");
-      if (commentAt < 0) continue;
-      // Trailing comments (a `//` not at line start) carry this hazard too —
-      // slice from the comment marker so it is checked either way.
-      const comment = line.slice(commentAt);
-      expect(hashedKeyword.test(comment)).toBe(false);
-      if (!trimmed.startsWith("//")) {
-        expect(comment.includes(";")).toBe(false);
-      }
-    }
-  });
-});

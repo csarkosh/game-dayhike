@@ -880,7 +880,7 @@ export function createRenderer(
         // back to the player's own position is never read as one enormous step.
         bob.reset();
         rain.update(camera.position, weather);
-        motes?.update(camera.position, weather, lighting.hour, atmosphere.midColour());
+        motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour());
         return;
       }
 
@@ -920,7 +920,7 @@ export function createRenderer(
         camera.rotation.set(local.pitch, local.yaw, offset.roll);
         setLamp(localLamp, local.lamp.on);
         rain.update(camera.position, weather);
-        motes?.update(camera.position, weather, lighting.hour, atmosphere.midColour());
+        motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour());
       }
     },
     hasWildlife: wildlife !== null,

@@ -84,7 +84,7 @@ void main(void) {
   c = agxToneMap(c);
   c = clamp(whitePoint * c, 0.0, 1.0);
   float l = gradeLuma(c);
-  float rod = smoothstep(purkinjeThreshold, 0.0, l) * purkinjeStrength;
+  float rod = (1.0 - smoothstep(0.0, purkinjeThreshold, l)) * purkinjeStrength;
   c = mix(c, purkinje * c, rod);
   float shadowMask = 1.0 - smoothstep(0.0, 0.35, l);
   float highlightMask = smoothstep(0.55, 1.0, l);

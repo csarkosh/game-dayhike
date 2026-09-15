@@ -429,8 +429,9 @@ describe("relief array lifecycle", () => {
  *
  * So these tests run the plugin's OWN injected strings through Babylon's real
  * `Process()` — the same function `effect.functions.js` calls on the way to the
- * driver — rather than a look-alike. `client/test/game/etchedOutlineShader.test.ts`
- * exists for the identical reason and is the precedent for this approach.
+ * driver — rather than a look-alike. `client/test/game/shaderHygiene.test.ts`
+ * runs the same real `Process()` over every `.fx` file and is the precedent
+ * for this approach.
  */
 function processInjected(source: string, defines: string[], isFragment: boolean): Promise<string> {
   const options: _IProcessingOptions = {

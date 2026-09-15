@@ -323,3 +323,27 @@ the gates run; images archived outside the repository.
 - The `lift` term and a colder cast, if the Alan Wake 2 look is wanted later.
 - A SOMA-style peripheral aberration spike tied to the Hollow's proximity.
 - Depth of field at dusk and a headlamp volume cone, both deliberately out of this design.
+
+## 12. Departures from this design as built
+
+- **§7** specifies one `ParticleSystem`. The build uses three, one per species (pollen,
+  midges, frost/ash), each at `capacity / 3`: the per-species size and lifetime profiles and
+  the emit-rate crossfade between species cannot share a single system's uniform particle
+  parameters. Measured at ≈0.7 ms at native resolution.
+- **§4** specifies the gradient's near end as the air colour and the far end as the sky's
+  horizon colour. As built, the FAR end is `fogColourUnder` (the air colour, which equals
+  `skyColourAt` at clear) and the NEAR end is `0.85 ×` the far colour. `scene.fogColor` is
+  written with the far colour so the two writers (`lighting.ts` and `atmosphere.ts`) agree.
+- **§5.2** specifies Purkinje constants from Patry's Samurai Cinema talk. As built, the
+  Purkinje term is a luminance-keyed blend toward a rod-weighted blue-grey with
+  browser-tuned constants, not Patry's opponent-space model.
+- **§6** specifies `/unsettle` as a persisted view command that reports the current value
+  when called bare. As built, bare `/unsettle` resets the value to 100 (the `/bob` mould)
+  rather than reporting it — `/unsettle` with no argument is therefore not a query.
+- **§5.3** describes the dither as "triangular-PDF noise of ±½ LSB". As built, the dither is
+  TPDF at ±1 LSB (`(d1 + d2 − 1) · LSB`, the sum of two uniform draws), which is the correct
+  triangular form; the "±½ LSB" wording in §5.3 described RPDF (a single uniform draw) and
+  was wrong.
+
+Also, §10's write-up path is `docs/rendering/2026-09-15-atmosphere-restyle-verification.md`
+(the placeholder `YYYY-MM-DD` there was never meant literally).

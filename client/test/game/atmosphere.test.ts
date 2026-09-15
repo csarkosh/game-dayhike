@@ -53,6 +53,7 @@ describe("createAtmosphere", () => {
     atmosphere.update(WEATHER_PRESETS.clear, 12);
     const far = fogGradientUnder(WEATHER_PRESETS.clear, 12)[GRADIENT_STEPS - 1]!;
     expect(scene.fogColor.r).toBeCloseTo(far.r, 6);
+    expect(scene.fogDensity).toBe(atmosphere.record.baseDensity);
     expect(atmosphere.record.sunWeight).toBe(1);
     const before = atmosphere.gradientBuilds;
     atmosphere.update(WEATHER_PRESETS.clear, 12);
@@ -68,6 +69,13 @@ describe("createAtmosphere", () => {
     const mid = atmosphere.midColour();
     expect(mid.r).toBeGreaterThanOrEqual(Math.min(g[0]!.r, g[GRADIENT_STEPS - 1]!.r));
     expect(mid.r).toBeLessThanOrEqual(Math.max(g[0]!.r, g[GRADIENT_STEPS - 1]!.r));
+  });
+
+  it("nearColour is the gradient's near end", () => {
+    atmosphere.update(WEATHER_PRESETS.mist, 12);
+    const g = fogGradientUnder(WEATHER_PRESETS.mist, 12);
+    const near = atmosphere.nearColour();
+    expect(near).toEqual(g[0]);
   });
 });
 

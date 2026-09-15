@@ -62,10 +62,19 @@ export function mulMat3(m: Mat3, v: Rgb): Rgb {
   };
 }
 
+/**
+ * The AgX contrast sigmoid's seven coefficients, x^6 down to x^0, mirrored
+ * verbatim in the GLSL `agxContrast` and pinned there by a lockstep test —
+ * this was duplicated with no such test until the final review.
+ */
+export const AGX_CONTRAST: readonly [number, number, number, number, number, number, number] =
+  [15.5, -40.14, 31.96, -6.868, 0.4298, 0.1191, -0.00232];
+
 function agxContrast(x: number): number {
   const x2 = x * x;
   const x4 = x2 * x2;
-  return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
+  const [c6, c5, c4, c3, c2, c1, c0] = AGX_CONTRAST;
+  return c6 * x4 * x2 + c5 * x4 * x + c4 * x4 + c3 * x2 * x + c2 * x2 + c1 * x + c0;
 }
 
 /** The TS reference of `agxToneMap` in grade.fragment.fx. Input linear sRGB with exposure already applied; output linear sRGB in [0, 1]. */

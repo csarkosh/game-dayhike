@@ -120,9 +120,6 @@ export const DREAD_MIST_GAIN = 0.3;
 /** Vignette weight baseline (Babylon vignetteWeight) and its dread gain. */
 export const VIGNETTE_WEIGHT_BASE = 1.8;
 export const DREAD_VIGNETTE_GAIN = 0.6;
-/** Film grain intensity baseline (DefaultRenderingPipeline grain) and its dread gain. */
-export const GRAIN_INTENSITY_BASE = 8;
-export const DREAD_GRAIN_GAIN = 0.5;
 /** Bruised green-grey air the fog pulls toward under dread. Deliberately dim:
  * it is lifted DOWN to the current fog's luma before mixing, so dread shifts
  * hue without ever brightening — the fixed-bright-target night-glow trap
@@ -350,11 +347,6 @@ export function ambientGainsUnder(w: WeatherParams): { rain: number; wind: numbe
 /** Vignette weight for the unease layer: baseline always on, deeper under dread. */
 export function vignetteWeightUnder(w: WeatherParams): number {
   return VIGNETTE_WEIGHT_BASE * (1 + DREAD_VIGNETTE_GAIN * dreadLensUnder(w));
-}
-
-/** Film grain intensity: subtle baseline, grittier under dread. */
-export function grainIntensityUnder(w: WeatherParams): number {
-  return GRAIN_INTENSITY_BASE * (1 + DREAD_GRAIN_GAIN * dreadLensUnder(w));
 }
 
 /** The nine ColorCurves values the grade drives, one triple per tonal range. */

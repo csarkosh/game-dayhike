@@ -16,9 +16,7 @@ import {
   DREAD_SATURATION_DROP,
   DREAD_MIST_GAIN,
   VIGNETTE_WEIGHT_BASE,
-  GRAIN_INTENSITY_BASE,
   vignetteWeightUnder,
-  grainIntensityUnder,
   gradeUnder,
   moodUnder,
   GRADE_SHADOW_HUE,
@@ -198,11 +196,9 @@ describe("dread modifiers — identity at dread 0, monotonic toward the pit", ()
     expect(mistOpacityUnder(mistDread)).toBeCloseTo(MIST_OPACITY_MAX * (1 + DREAD_MIST_GAIN), 12);
   });
 
-  it("vignette and grain sit exactly at baseline at dread 0 and deepen with dread", () => {
+  it("vignette sits exactly at baseline at dread 0 and deepens with dread", () => {
     expect(vignetteWeightUnder(CLEAR)).toBe(VIGNETTE_WEIGHT_BASE);
-    expect(grainIntensityUnder(CLEAR)).toBe(GRAIN_INTENSITY_BASE);
     expect(vignetteWeightUnder(DREAD_ONLY)).toBeGreaterThan(VIGNETTE_WEIGHT_BASE);
-    expect(grainIntensityUnder(DREAD_ONLY)).toBeGreaterThan(GRAIN_INTENSITY_BASE);
   });
 });
 

@@ -7,9 +7,10 @@
 // declared by the plugin. This is exactly why a hashed keyword spelled in a
 // comment here is fatal — the preprocessor still sees it as live text.
 //
-// COMMENT RULES, hard-won in etchedOutline.fragment.fx: never put a semicolon
-// inside a trailing comment on a declaration line, and never spell a hashed
-// preprocessor keyword in comment prose.
+// COMMENT RULES, hard-won on a retired shader: never put a semicolon inside a
+// trailing comment on a declaration line, and never spell a hashed
+// preprocessor keyword in comment prose. client/test/game/shaderHygiene.test.ts
+// enforces both for every shader in this directory.
 //
 // The tint mirrors skinParams.ts and a lockstep test asserts they agree.
 // The wrap and scatter amounts are runtime uniforms (skinWrap, skinScatter),

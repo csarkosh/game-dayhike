@@ -98,8 +98,9 @@ Branch minus control: −2.7 ms in round 1, −6.8 ms in round 2. The branch is 
 control in both orders. The retired outline pass took its own depth and g-buffer pre-pass
 with it — a second full scene render on high — and that saving outweighs the cost of the
 new post chain. Motes cost about 2.7 ms at 4× pixel count, roughly 0.7 ms at native
-resolution. The design's ~2 ms post-chain budget (§2) is met by construction, since the net
-change from `main` is negative. PASS.
+resolution. Halation's own share was not attributed — only motes were toggled in this
+session — so the design's ~2 ms post-chain budget (§2) is inferred from the net-negative
+delta against `main`, not measured for the halation/grade/finish chain alone. PASS.
 
 ## Open tuning items
 
@@ -116,6 +117,9 @@ change from `main` is negative. PASS.
 - Halation on the headlamp (freecam has no lamp) and on the low sun through the canopy.
 - The overlap's look at higher gains, and the plateau steps' visibility from a darker pose.
 - Frame time at native resolution under vsync — both builds cap at 16.7 ms there.
+- Halation's own frame-time share: only motes were toggled in the same session, so the
+  halation/grade/finish chain's cost is not separately attributed, only inferred from the
+  net-negative delta against `main` (see Frame time, above).
 
 ## Images
 

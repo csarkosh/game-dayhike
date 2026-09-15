@@ -13,7 +13,11 @@ export type ScriptEntry = ParsedCommand;
  *
  * An invalid entry does not abort the rest. The valid entries are returned and
  * the failures are reported separately, because silently dropping one would
- * leave you believing a command took effect when it did not.
+ * leave you believing a command took effect when it did not. An entry named in
+ * `RETIRED_COMMANDS` is the one exception: it is dropped silently, because a
+ * persisted URL from before the command was retired (e.g. an old `style=`
+ * link) should load the rest of the script rather than report an error for a
+ * command the player never typed.
  */
 export function parseScript(raw: string): { entries: ScriptEntry[]; errors: string[] } {
   const entries: ScriptEntry[] = [];

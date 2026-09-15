@@ -161,6 +161,8 @@ describe("createLighting", () => {
     expect(ip.applyByPostProcess).toBe(false);
     expect(ip.exposure).toBeCloseTo(exposureFor(sunPositionAt(12).y), 5);
     lighting.setHour(0);
+    expect(ip.exposure).toBeCloseTo(exposureFor(sunPositionAt(0).y), 5);
+    // Night must be the brighter exposure, or `/time 0` renders as pure black.
     expect(ip.exposure).toBeGreaterThan(exposureFor(sunPositionAt(12).y));
     lighting.dispose();
   });

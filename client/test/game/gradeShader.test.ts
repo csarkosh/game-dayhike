@@ -4,7 +4,7 @@ import finishFragment from "../../src/game/shaders/finish.fragment.fx?raw";
 import halationFragment from "../../src/game/shaders/halationExtract.fragment.fx?raw";
 import {
   AGX_INSET, AGX_OUTSET, SRGB_TO_REC2020, REC2020_TO_SRGB, AGX_MIN_EV, AGX_MAX_EV,
-  SPLIT_TONE_DENSITY_SCALE, SPLIT_TONE_SATURATION_SCALE, type Mat3,
+  SPLIT_TONE_DENSITY_SCALE, SPLIT_TONE_SATURATION_SCALE, AGX_CONTRAST, type Mat3,
 } from "../../src/game/gradeParams.js";
 import { OVERLAP_INNER, OVERLAP_SCALE, DITHER_LSB, HALATION_THRESHOLD, HALATION_CAP } from "../../src/game/postParams.js";
 
@@ -30,6 +30,13 @@ describe("grade.fragment.fx stays in lockstep with gradeParams.ts", () => {
   });
   it("keeps the MIT notice for the borrowed tone map", () => {
     expect(gradeFragment).toContain("three.js, MIT License, Copyright 2010-2024 three.js authors");
+  });
+  it("carries the AgX contrast polynomial's coefficients from AGX_CONTRAST, not a second copy", () => {
+    const [c6, c5, c4, c3, c2, c1, c0] = AGX_CONTRAST;
+    expect(gradeFragment).toContain(
+      `${glslFloat(c6)} * x4 * x2 - ${glslFloat(Math.abs(c5))} * x4 * x + ${glslFloat(c4)} * x4 - ` +
+      `${glslFloat(Math.abs(c3))} * x2 * x + ${glslFloat(c2)} * x2 + ${glslFloat(c1)} * x - ${glslFloat(Math.abs(c0))}`,
+    );
   });
 });
 

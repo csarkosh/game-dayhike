@@ -259,13 +259,13 @@ export function rockParallaxOffset(
  *    `//` lines through verbatim (shaderCodeCursor.js:26-29). A comment that
  *    merely spells one is therefore parsed as a real directive and swallows
  *    every line up to the next real endif. That is not hypothetical — it ate
- *    this file's triplanar rock branch once already, and it ate
- *    `etchedOutline.fragment.fx` before that. So: never spell a hashed
- *    preprocessor keyword inside a GLSL comment here. Same rule as
- *    `celBand.fragment.fx`, and `terrainTexture.test.ts` now enforces it for
- *    every string this plugin injects. (TypeScript comments like this one are
- *    outside the template literals and never reach the shader, so they are
- *    free to name the directives.)
+ *    this file's triplanar rock branch once already, and it ate a shader
+ *    before that. So: never spell a hashed preprocessor keyword inside a
+ *    GLSL comment here. Same rule for every `.fx` file in the repo, enforced
+ *    by `client/test/game/shaderHygiene.test.ts`, and `terrainTexture.test.ts`
+ *    enforces it again for every string this plugin injects. (TypeScript
+ *    comments like this one are outside the template literals and never
+ *    reach the shader, so they are free to name the directives.)
  *
  * 3. The samplers are declared here rather than through `getUniforms().fragment`
  *    because that string lands at `#define ADDITIONAL_FRAGMENT_DECLARATION`,

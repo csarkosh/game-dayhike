@@ -16,7 +16,7 @@ import {
 } from "@babylonjs/core/Materials/materialPluginManager.js";
 import atmosphereFragment from "./shaders/atmosphereFog.fragment.fx?raw";
 import type { Rgb } from "./colour.js";
-import type { WeatherParams } from "./weather.js";
+import { WEATHER_PRESETS, type WeatherParams } from "./weather.js";
 import {
   atmosphereUnder, fogGradientUnder, GRADIENT_STEPS, type AtmosphereRecord,
 } from "./atmosphereParams.js";
@@ -109,6 +109,8 @@ export type Atmosphere = {
   readonly gradientBuilds: number;
   /** The gradient's middle colour, for mist banks. */
   midColour(): Rgb;
+  /** The gradient's near-end colour (sun-tinted, cloud-faded inscatter), for motes. */
+  nearColour(): Rgb;
   dispose(): void;
 };
 
@@ -136,12 +138,12 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
   RegisterMaterialPlugin("Atmosphere", (material) =>
     material instanceof PBRMaterial ? new AtmospherePlugin(material) : null,
   );
-  let record = atmosphereUnder({ cloudCover: 0, mist: 0, rain: 0, wetness: 0, dread: 0 }, 12, viewDistance);
+  let record = atmosphereUnder(WEATHER_PRESETS.clear, 12, viewDistance);
   let gradient: Rgb[] = [];
   let lastKey = "";
   let builds = 0;
   const tex = RawTexture.CreateRGBATexture(
-    gradientTexels(fogGradientUnder({ cloudCover: 0, mist: 0, rain: 0, wetness: 0, dread: 0 }, 12)),
+    gradientTexels(fogGradientUnder(WEATHER_PRESETS.clear, 12)),
     GRADIENT_STEPS, 1, scene, false, false, Texture.BILINEAR_SAMPLINGMODE, Engine.TEXTURETYPE_UNSIGNED_BYTE,
   );
   tex.wrapU = Texture.CLAMP_ADDRESSMODE;
@@ -175,6 +177,9 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
     },
     midColour() {
       return gradient[GRADIENT_STEPS >> 1] ?? { r: 0, g: 0, b: 0 };
+    },
+    nearColour() {
+      return gradient[0] ?? { r: 0, g: 0, b: 0 };
     },
     dispose() {
       UnregisterMaterialPlugin("Atmosphere");
