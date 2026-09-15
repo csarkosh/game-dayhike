@@ -3,6 +3,7 @@ import {
   DOWNLOADS_UNAVAILABLE,
   FIRST_OPEN_NOTE,
   FIRST_RUN_NOTE_WINDOWS,
+  TOUCH_DOWNLOADS_NOTE,
   WAITING_FOR_HOST,
   landingModel,
 } from "../../src/game/landingModel.js";
@@ -104,5 +105,17 @@ describe("landingModel on desktop", () => {
     expect(view.play).toBeUndefined();
     expect(view.join).toBeUndefined();
     expect(view.waiting).toBe(WAITING_FOR_HOST);
+  });
+});
+
+describe("landingModel on a touch device", () => {
+  it("replaces the desktop download cards with a one-line note", () => {
+    const view = landingModel({ desktop: false, host: "other", latest, touch: true });
+    expect(view.downloadsPage).toEqual({ label: "Downloads", cards: [], empty: TOUCH_DOWNLOADS_NOTE });
+    expect(view.play).toEqual({ label: "Play" });
+  });
+  it("leaves the desktop shell's view alone", () => {
+    const view = landingModel({ desktop: true, host: "darwin-arm64", latest, appVersion: "1.2.0", touch: true });
+    expect(view.downloadsPage).toBeUndefined();
   });
 });

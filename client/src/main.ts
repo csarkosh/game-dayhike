@@ -327,6 +327,7 @@ function landingInput(over: Partial<LandingInput> = {}): LandingInput {
     appVersion,
     latest,
     follower: lobby !== null && lobby.state.role === "client",
+    touch,
     ...over,
   };
 }

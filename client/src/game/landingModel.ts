@@ -18,6 +18,9 @@ const COPY: Record<Platform, { label: string; note: string }> = {
 export const DOWNLOADS_UNAVAILABLE = "Downloads are not available right now.";
 export const WAITING_FOR_HOST = "Waiting for the host…";
 
+/** A phone cannot install either desktop build; say so instead of offering them. */
+export const TOUCH_DOWNLOADS_NOTE = "Day Hike is a desktop download; play in the browser here.";
+
 export type LandingInput = {
   desktop: boolean;
   /** Which build this machine runs (or would): orders the cards, picks the update. */
@@ -31,6 +34,8 @@ export type LandingInput = {
   /** In a lobby someone else hosts. Followers do not start games or join
    * other lobbies; the host's navigation carries them. */
   follower?: boolean;
+  /** A touch device: the download cards make no sense here. */
+  touch?: boolean;
 };
 
 export type DownloadCard = { platform: Platform; url: string; label: string; caption: string; note: string };
@@ -78,6 +83,10 @@ export function landingModel(input: LandingInput): LandingView {
           note: COPY[platform].note,
         });
       }
+    }
+    if (input.touch) {
+      view.downloadsPage = { label: "Downloads", cards: [], empty: TOUCH_DOWNLOADS_NOTE };
+      return view;
     }
     view.downloadsPage = { label: "Downloads", cards };
     if (cards.length === 0) view.downloadsPage.empty = DOWNLOADS_UNAVAILABLE;

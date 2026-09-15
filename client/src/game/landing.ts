@@ -166,6 +166,17 @@ const STYLE = `
   }
   .landing .waiting { color: rgba(255, 255, 255, 0.62); margin-top: 1.25rem; }
   .landing .empty { color: rgba(255, 255, 255, 0.45); }
+  /* Phone widths: the title, copy and buttons scale to a 400 px screen with
+     16 px gutters and nothing wider than the viewport. */
+  @media (max-width: 480px) {
+    .landing .panel { padding: 1rem; gap: 0.6rem; }
+    .landing h1 { font-size: 1.4rem; letter-spacing: 0.1em; }
+    .landing p { font-size: 0.85rem; max-width: 100%; }
+    .landing button { width: 100%; max-width: 20rem; margin-top: 0.75rem; }
+    .landing button.secondary { width: auto; }
+    .landing form.join { width: 100%; max-width: 20rem; }
+    .landing form.join input { width: 100%; max-width: none; min-width: 0; }
+  }
 `;
 
 import type { Platform } from "../net/desktopRelease.js";
