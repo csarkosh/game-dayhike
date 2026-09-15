@@ -52,8 +52,13 @@ const STYLE = `
     -webkit-user-select: none; user-select: none;
   }
   .prompt.on { opacity: 1; }
-  /* A hidden prompt must never intercept a tap meant for what is underneath it. */
-  .prompt.touch.on { pointer-events: auto; touch-action: none; }
+  /*
+   * A hidden prompt must never intercept a tap meant for what is underneath
+   * it. "pressable", not "touch": the touch layer's own root element in
+   * touchControls.ts already owns the ".touch" class in this same container,
+   * and reusing it here would make the prompt match that full-viewport rule.
+   */
+  .prompt.pressable.on { pointer-events: auto; touch-action: none; }
   .prompt .dot {
     width: 12px; height: 12px; border-radius: 50%;
     background: rgba(255, 255, 255, 0.85); box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
@@ -84,7 +89,7 @@ export function createInteractPrompt(
   style.textContent = STYLE;
   const root = document.createElement("div");
   root.className = "prompt";
-  root.classList.toggle("touch", hooks.touch);
+  root.classList.toggle("pressable", hooks.touch);
   const dot = document.createElement("span");
   dot.className = "dot";
   const label = document.createElement("span");
