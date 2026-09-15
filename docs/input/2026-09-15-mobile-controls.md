@@ -55,6 +55,11 @@ menu is down. It replaces `locked` as the thing callers read.
 | Becomes engaged | canvas click requests lock; `pointerlockchange` confirms | the game starts engaged; Resume on the pause menu re-engages |
 | Becomes disengaged | Esc, alt-tab, focus loss release the lock | the Pause button; the page going hidden (`visibilitychange`) |
 
+On a hybrid device — a touch-screen laptop that starts in desktop mode and then takes a touch,
+which flips it into touch mode while a real pointer lock still sits underneath — a lost pointer
+lock still disengages and a regained one still engages, on top of the touch layer's own edges.
+A pure phone never has a pointer lock to lose or gain, so this is unobservable there.
+
 `InputSampler` changes:
 
 - `readonly engaged: boolean` replaces `locked`. `freecam.ts` and `app.ts` read it.
@@ -189,7 +194,7 @@ Motion, all `ease-out` unless said:
 | Lamp toggled | one 300 ms pulse of the lit ring from 3 px back to 1 px |
 | Layer engaged | opacity 0 → 1 over 400 ms |
 | Layer idle | opacity 1 → 0.35 over 600 ms after 3 s without a touch; any touch returns it to 1 over 120 ms |
-| Pause menu open | layer opacity → 0 over 200 ms; the menu already fades itself |
+| Pause menu open | layer opacity → 0 over 200 ms; the menu already fades itself; the layer's buttons stop taking pointer events and the interact prompt hides |
 
 The layer paints from the model each frame (`sync(model)`), the same shape as the roster:
 it never decides anything.
@@ -242,8 +247,9 @@ Two viewports must work with 16 px gutters and no horizontal scroll: **400 × 80
 and **667 × 375** landscape.
 
 - Portrait: the title at 1.4 rem, the copy at 0.85 rem with `text-wrap: balance`, buttons
-  full-width up to 20 rem, the roster panel full-width minus gutters and stacked under the
-  buttons rather than pinned to the corner.
+  full-width up to 20 rem. The roster stays a fixed panel — not stacked into the page's flow
+  under the buttons — but widens to fill the viewport at 1 rem gutters instead of pinning to
+  the corner, so it reads as a bottom panel.
 - Landscape: the panel already scrolls (`justify-content: safe center`); the roster narrows
   to 40 % and keeps the corner.
 - The Downloads panel hides the two desktop download cards behind a one-line note on touch
