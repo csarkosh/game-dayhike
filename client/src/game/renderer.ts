@@ -945,7 +945,14 @@ export function createRenderer(
       if (view.z <= camera.minZ) return null;
       const w = engine.getRenderWidth();
       const h = engine.getRenderHeight();
-      const s = Vector3.Project(p, Matrix.IdentityReadOnly, scene.getTransformMatrix(), camera.viewport.toGlobal(w, h));
+      // scene.getTransformMatrix() is only refreshed inside scene.render(),
+      // and this runs before that each frame (syncPrompt, ahead of render),
+      // so it would read last frame's camera. getViewMatrix() above already
+      // refreshed the view half; getProjectionMatrix() refreshes the other
+      // half, and getTransformationMatrix() multiplies the two fresh, off the
+      // camera rather than the scene's once-a-frame cache.
+      camera.getProjectionMatrix();
+      const s = Vector3.Project(p, Matrix.IdentityReadOnly, camera.getTransformationMatrix(), camera.viewport.toGlobal(w, h));
       // Render pixels to CSS pixels: the hardware scaling level makes them differ.
       const canvasEl = engine.getRenderingCanvas();
       const cw = canvasEl?.clientWidth ?? w;
