@@ -233,6 +233,10 @@ const STYLE = `
   .touch.on.fresh { transition: opacity 400ms ease-out; }
   .touch.on.idle { opacity: 0.35; transition: opacity 600ms ease-out; }
   .touch.on.paused { opacity: 0; transition: opacity 200ms ease-out; }
+  /* Invisible is not inert: without this the Lamp and Pause buttons keep
+     taking pointer events while faded out, sitting above the pause menu and
+     eating its taps. */
+  .touch.on.paused button { pointer-events: none; }
   .touch.off { display: none; }
   .touch .stick {
     position: absolute; left: 0; top: 0; width: 120px; height: 120px;

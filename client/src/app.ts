@@ -309,14 +309,14 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
   /** Resolves and paints the prompt. Both loops, after `renderer.sync`. */
   function syncPrompt(world: World, self: PlayerState | undefined): void {
-    if (self === undefined || freecam !== null) {
+    if (self === undefined || freecam !== null || !input.engaged) {
       prompt.sync(null);
       return;
     }
     const target = resolveInteract(world, self);
     const projected = target === null ? null : renderer.project(target.pos);
     prompt.sync(
-      promptModel(target, projected, { width: canvas.clientWidth, height: canvas.clientHeight }, input.engaged && touchStart),
+      promptModel(target, projected, { width: canvas.clientWidth, height: canvas.clientHeight }, touchStart),
     );
   }
 

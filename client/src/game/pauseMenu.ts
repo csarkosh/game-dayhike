@@ -4,6 +4,11 @@ const STYLE = `
     align-items: center; justify-content: center;
     background: rgba(16, 16, 20, 0.82);
     font-family: ui-monospace, monospace;
+    /* Above the touch layer (touchControls.ts, 15) and the interact prompt
+       (interactPrompt.ts, 12), below the roster (roster.ts, 20): the menu must
+       win a tap over the controls it is meant to cover, but the roster stays
+       reachable while it is open. */
+    z-index: 18;
   }
   .pausemenu.open { display: flex; }
   .pausemenu .panel { display: flex; flex-direction: column; gap: 0.75rem; min-width: 14rem; }
