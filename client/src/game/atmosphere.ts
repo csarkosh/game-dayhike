@@ -71,7 +71,6 @@ class AtmospherePlugin extends MaterialPluginBase {
         "uniform float atmSunWeight;",
         "uniform vec3 atmSunDir;",
         "uniform vec3 atmSunColour;",
-        "uniform sampler2D atmGradient;",
       ].join("\n"),
     };
   }

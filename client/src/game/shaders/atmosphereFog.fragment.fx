@@ -11,6 +11,17 @@
 // The literals below mirror atmosphereParams.ts and a lockstep test asserts
 // they agree. Tune them there and here together.
 
+// The gradient sampler is declared here, not in AtmospherePlugin's
+// getUniforms().fragment, because that string lands at
+// ADDITIONAL_FRAGMENT_DECLARATION, which exists only on the non-uniform-buffer
+// path. With UBOs supported, the fragment declaration include resolves to
+// pbrUboDeclaration instead, which carries only ADDITIONAL_UBO_DECLARATION,
+// and a sampler cannot live in a UBO — so the uniform would silently vanish
+// and every PBR fragment shader would fail to compile. This file lands at
+// CUSTOM_FRAGMENT_DEFINITIONS on both paths, the terrainTexture.ts precedent
+// for the same trap. getSamplers still lists atmGradient, unchanged.
+uniform sampler2D atmGradient;
+
 // Slope below which a ray counts as level, to keep the closed form finite.
 const float ATM_LEVEL_SLOPE = 1.0e-3;
 
