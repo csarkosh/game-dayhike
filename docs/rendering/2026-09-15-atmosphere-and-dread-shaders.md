@@ -23,9 +23,9 @@ Every game links to its Steam page, or to its official site or Wikipedia where i
 on Steam. Sources are in the table at the end; anything marked *unverified* was reported
 second-hand and the primary source could not be opened.
 
-## 1. What the shaders do today
+## 1. What the shaders did before the restyle
 
-The current "style" is thinner than it looks. All of it is in `client/src/game/`:
+The pre-restyle "style" was thinner than it looked. All of it was in `client/src/game/`:
 
 - `lighting.ts` — a `SkyMaterial` sky captured to a reflection probe for image-based
   ambient, a sun with cascaded shadows to 300 m, a hemispheric fill, ACES tone mapping
@@ -39,8 +39,8 @@ The current "style" is thinner than it looks. All of it is in `client/src/game/`
 - `stylize.ts` — a vignette on the shared image-processing config, a
   `DefaultRenderingPipeline` with grain and radial chromatic aberration on medium and high,
   and the **etched outline** post-process (Roberts-cross edges on a depth pre-pass, normals
-  on high, etch noise, dissolved by the fog). `/style cel` swaps it for `cel.ts`, a material
-  plugin that quantises direct diffuse into two bands.
+  on high, etch noise, dissolved by the fog); `/style cel` swapped it for `cel.ts`, a
+  material plugin that quantised direct diffuse into two bands. All retired by the restyle.
 - `skin.ts` — wrap Lambert with a red terminator scatter on characters that carry a
   metallic-roughness texture.
 - `mistMeshes.ts` — twelve unlit billboard banks coloured to the fog.
@@ -48,10 +48,11 @@ The current "style" is thinner than it looks. All of it is in `client/src/game/`
 
 The four material plugins (`distanceFadePlugin`, `groundConformPlugin`, `windPlugin`,
 `wingPlugin`) and the ground blend in `terrainTexture.ts` are functional, not stylistic;
-a restyle leaves them alone. Two facts to carry: the outline pass is the only thing
-that expresses the "etched" identity, so the look is one post-process plus a grade, which
-is why it does not read as distinct; and `quality.ts` declares an `ssao` flag for the high
-tier that nothing in `client/src` consumes.
+a restyle leaves them alone. Two facts carried into the restyle: the outline pass was the
+only thing that expressed the "etched" identity, so the look was one post-process plus a
+grade, which is why it did not read as distinct; and `quality.ts` declared an `ssao` flag
+for the high tier that nothing in `client/src` consumed. The restyle retired the outline
+pass, `/style` and the `ssao` flag.
 
 ## 2. Photoreal, but atmospheric
 

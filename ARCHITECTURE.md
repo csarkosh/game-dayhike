@@ -18,6 +18,8 @@ The simulation runs at a fixed 60 Hz from a seeded RNG. The world is derived fro
 
 The world streams around the camera in rings: full geometry near, cheaper levels of detail further out, and a far field beyond. Quality tiers (`low`, `medium`, `high`, `client/src/game/quality.ts`) set hardware scaling, shadow map sizes and LOD bias; the tier is auto-detected from the device's CPU core count, memory and whether it looks like a mobile browser.
 
+The look is an identity layer over PBR: a material plugin (`client/src/game/atmosphere.ts`) replaces Babylon's fog with height fog, a distance gradient and sun inscatter. On the high tier only, the chain runs `scene` (a full-resolution pass the halation extract reads from) → halation extract and blur → `grade` (AgX tone map, per-hour white point, a night Purkinje shift, the split-tone grade, vignette, halation) → chromatic aberration and FXAA passes built directly (there is no `DefaultRenderingPipeline`) → `finish` (peripheral overlap, luminance grain, dither); medium drops the halation chain and starts at `grade`. Every value is a uniform computed by the pure `*Params.ts` modules from the weather, the hour and `/unsettle`; the low tier has no passes and carries the same intent through Babylon's in-material image processing. Airborne motes (`motes.ts`) follow the sun's altitude and the wind.
+
 ## Assets
 
 - `client/assets/models/*.glb`, `client/assets/textures/*.webp` and `client/assets/audio/*.mp3` are committed through Git LFS.

@@ -23,6 +23,20 @@
 - Nothing here touches `client/src/sim/`, the level id, or invite links.
 - The one licensed piece of borrowed code is the AgX tone map from three.js (MIT). Keep the MIT notice line in `grade.fragment.fx`'s header exactly as Task 6 shows.
 
+## Amendments made during execution
+
+- Task 2/3's plateau tests use `{ ...WEATHER_PRESETS.eerie, dread: 0.36 }` and `{ ...WEATHER_PRESETS.eerie, dread: 0.42 }`, not a `mist`→`eerie` lerp at 0.4/0.45.
+- Task 4's shader hygiene test applies the hashed-keyword check to the comment portion of every line, standalone or trailing, not only to lines that start with a comment.
+- Task 4, 6, 7 and 8's commit subjects were shortened to stay under 72 characters.
+- Task 6's AgX middle-grey test asserts `0.15 < out < 0.30` because `agx()` returns linear values, not display-referred ones.
+- Task 7 builds no `DefaultRenderingPipeline`: `ChromaticAberrationPostProcess` and `FxaaPostProcess` are built directly, `finish` takes the half-float input, and on high a full-resolution `PassPostProcess("scene")` heads the chain because the scene renders into the first pass's input texture.
+- The halation extract works on the exposed linear scene, with `HALATION_THRESHOLD = 1.0` and `HALATION_CAP = 4.0`.
+- `post.test.ts` pins the pass order on high and medium.
+- The vignette is `1 − smoothstep(0.55, 1.0, r) · clamp(weight · 0.22, 0, 0.8)` on the normalised corner radius.
+- The split-tone is scaled by `SPLIT_TONE_DENSITY_SCALE = 0.35` and `SPLIT_TONE_SATURATION_SCALE = 0.5`.
+- `HEIGHT_MIST_GAIN = 2`, `LEVEL_MIST_RISE = 8` and `LEVEL_DREAD_RISE = 6` after the browser gate (the plan text had 6, 25 and 20).
+- Task 9's ω constants live in a Babylon-free `windField.ts`, not in `windPlugin.ts` itself.
+
 ## File structure
 
 | Path | Responsibility |
@@ -2576,7 +2590,7 @@ Subject: `feat: airborne motes — pollen, midges and frost lit by the air`.
 
 **Files:**
 - Modify: `ARCHITECTURE.md` (the Rendering section), `AGENTS.md` (nothing unless a path changed), `README.md` only if it names `/style`
-- Create: `docs/rendering/YYYY-MM-DD-atmosphere-restyle-verification.md` (dated the day the gates run)
+- Create: `docs/rendering/2026-09-15-atmosphere-restyle-verification.md` (dated the day the gates run)
 
 - [ ] **Step 1: Update ARCHITECTURE.md's Rendering paragraph**
 
@@ -2608,7 +2622,7 @@ Take: (a) a control from `main` at the same pose and script (the old look), (b) 
 
 - [ ] **Step 4: Write the verification note**
 
-Create `docs/rendering/YYYY-MM-DD-atmosphere-restyle-verification.md` with: the four frames judged (what reads photographic, what reads authored, anything wrong), the plateau sequence observed, the banding result, the `/unsettle 0` result, the low-tier result, the frame-time table (both orders, per pair, with the vsync check), the tuning changes made during the pass and the constants they changed, and what went unverified. Cite the archive by path for images. It is about the feature, not about the agents.
+Create `docs/rendering/2026-09-15-atmosphere-restyle-verification.md` with: the four frames judged (what reads photographic, what reads authored, anything wrong), the plateau sequence observed, the banding result, the `/unsettle 0` result, the low-tier result, the frame-time table (both orders, per pair, with the vsync check), the tuning changes made during the pass and the constants they changed, and what went unverified. Cite the archive by path for images. It is about the feature, not about the agents.
 
 - [ ] **Step 5: Run every gate and commit**
 
@@ -2616,7 +2630,7 @@ Run: `npm run typecheck && npm run lint && npm test`, then the pre-push hook's l
 Expected: all green, zero leak-scan failures.
 
 ```bash
-git add ARCHITECTURE.md docs/rendering/YYYY-MM-DD-atmosphere-restyle-verification.md
+git add ARCHITECTURE.md docs/rendering/2026-09-15-atmosphere-restyle-verification.md
 git commit
 ```
 
