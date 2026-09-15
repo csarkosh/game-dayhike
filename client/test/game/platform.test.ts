@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { desktopVersion, hostPlatform, isDesktop } from "../../src/game/platform.js";
+import { desktopVersion, hostPlatform, isDesktop, isTouchDevice } from "../../src/game/platform.js";
 
 const ELECTRON_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -49,5 +49,25 @@ describe("desktopVersion", () => {
     expect(desktopVersion(ELECTRON_UA + " DayHike/0.3")).toBeUndefined();
     expect(desktopVersion(ELECTRON_UA + " DayHike/v0.3.0")).toBeUndefined();
     expect(desktopVersion("MyDayHike/1.2.3")).toBeUndefined();
+  });
+});
+
+describe("isTouchDevice", () => {
+  it("needs a coarse primary pointer and at least one touch point", () => {
+    expect(isTouchDevice({ coarsePointer: true, maxTouchPoints: 5 })).toBe(true);
+  });
+  it("is false for a mouse-driven desktop", () => {
+    expect(isTouchDevice({ coarsePointer: false, maxTouchPoints: 0 })).toBe(false);
+  });
+  it("is false for a touch laptop whose primary pointer is fine", () => {
+    // Such a machine still gets the layer on its first real touch (the layer's
+    // own fallback); the probe only decides the starting state.
+    expect(isTouchDevice({ coarsePointer: false, maxTouchPoints: 10 })).toBe(false);
+  });
+  it("is false for a coarse pointer with no touch points, such as a TV remote", () => {
+    expect(isTouchDevice({ coarsePointer: true, maxTouchPoints: 0 })).toBe(false);
+  });
+  it("reads false with no browser at all", () => {
+    expect(isTouchDevice()).toBe(false);
   });
 });

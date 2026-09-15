@@ -32,3 +32,26 @@ export function hostPlatform(userAgent: string = navigator.userAgent): Platform 
 export function desktopVersion(userAgent: string = navigator.userAgent): string | undefined {
   return /\bDayHike\/(\d+\.\d+\.\d+)\b/.exec(userAgent)?.[1];
 }
+
+export type TouchFacts = { coarsePointer: boolean; maxTouchPoints: number };
+
+/**
+ * Whether this device should start with the touch layer up. A coarse primary
+ * pointer AND a touch point: a coarse pointer alone is a TV remote, touch
+ * points alone are a touch laptop that should keep its mouse. The layer's own
+ * first-touch fallback covers what this deliberately says no to.
+ *
+ * A different question from the quality tier's `mobile` (device class, by
+ * user agent): a touch Windows laptop should keep its tier.
+ */
+export function isTouchDevice(facts: TouchFacts = browserTouchFacts()): boolean {
+  return facts.coarsePointer && facts.maxTouchPoints > 0;
+}
+
+function browserTouchFacts(): TouchFacts {
+  const g = globalThis as { matchMedia?: (q: string) => { matches: boolean }; navigator?: { maxTouchPoints?: number } };
+  return {
+    coarsePointer: g.matchMedia?.("(pointer: coarse)").matches ?? false,
+    maxTouchPoints: g.navigator?.maxTouchPoints ?? 0,
+  };
+}
