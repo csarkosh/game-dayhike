@@ -48,6 +48,7 @@ import type { Transport } from "./net/transport.js";
 import { isDesktop, isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { afterNextPaint } from "./game/paint.js";
+import { connectFailureMessage, createConnectPanel } from "./game/connectPanel.js";
 import { resolveInteract } from "./sim/interact.js";
 import type { PlayerState, WorldState } from "./sim/types.js";
 import type { World } from "./sim/world.js";
@@ -59,6 +60,9 @@ export type GameHandle = { dispose(): void };
 export type GameOptions = {
   lobby: Lobby | null;
   onExit(): void;
+  /** A follower whose connection to the host failed chose to play alone:
+   * leave the party and start a fresh world. */
+  onContinueOffline(): void;
   /** The pause menu opened (true) or closed (false); false again on dispose. */
   onPauseChange(paused: boolean): void;
 };
@@ -432,6 +436,16 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
    * touch Pause button — one rule covers them all. The command bar's own
    * unlock is the exception; the bar is already handling the keyboard.
    */
+  // Set once a follower's first handshake is wired up (below); Retry re-runs it.
+  let connectClient: (() => void) | null = null;
+  const connectPanel = createConnectPanel(container, {
+    onRetry: () => {
+      connectPanel.hide();
+      connectClient?.();
+    },
+    onOffline: () => options.onContinueOffline(),
+  });
+
   input.onEngagedChange((engaged) => {
     if (disposed) return;
     if (engaged) {
@@ -477,6 +491,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // lobby's socket — which now outlives the game — and would feed the next
   // game's offer/answer traffic into a dead RTCPeerConnection.
   let session: { dispose(): void } | null = null;
+  // The lobby is the reliable, immediate word on whether the host is still
+  // there. Without it the only signal is the data channel closing, which is
+  // indistinguishable from a network hiccup and costs an ICE timeout to
+  // resolve — a client ends the session at once instead.
+  let lobbyEnded = false;
   // Everything this game registered on the lobby's socket, undone on dispose:
   // the socket outlives the game.
   const unsubscribe: (() => void)[] = [];
@@ -585,17 +604,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   async function runAsClient(active: Lobby): Promise<void> {
     const signaling = active.signaling;
     let reconnecting = false;
-    // The lobby is the reliable, immediate word on whether the host is still
-    // there. Without it the only signal is the data channel closing, which is
-    // indistinguishable from a network hiccup and costs an ICE timeout to
-    // resolve — end the session at once instead.
-    let lobbyEnded = false;
-    unsubscribe.push(
-      active.onEnd((reason) => {
-        lobbyEnded = true;
-        if (reason === "host_gone") endSession("The host ended this session.");
-      }),
-    );
 
     const onClose = () => {
       // One attempt only: a peer that cannot re-establish twice in a row
@@ -696,15 +704,25 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   if (lobby === null || lobby.state.role === "host") {
     runAsHost();
   } else {
-    hud.setStatus("Connecting…");
-    void runAsClient(lobby).catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      hud.setStatus(
-        message === "ice_failed"
-          ? "Could not connect. You or the host may be on a restrictive network."
-          : "Could not reach the host.",
-      );
-    });
+    const active = lobby;
+    unsubscribe.push(
+      active.onEnd((reason) => {
+        lobbyEnded = true;
+        if (reason === "host_gone") endSession("The host ended this session.");
+      }),
+    );
+    // A failed handshake used to leave the player in an empty world with a
+    // line of text and only the pause menu's Exit; the panel offers another
+    // try and a way to play on alone.
+    connectClient = () => {
+      hud.setStatus("Connecting…");
+      void runAsClient(active).catch((err: unknown) => {
+        if (disposed) return;
+        hud.setStatus(null);
+        connectPanel.show(connectFailureMessage(err));
+      });
+    };
+    connectClient();
   }
 
   renderer.engine.runRenderLoop(() => {
@@ -741,6 +759,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       hud.dispose();
       bar.dispose();
       menu.dispose();
+      connectPanel.dispose();
       touchLayer.dispose();
       prompt.dispose();
       input.dispose();

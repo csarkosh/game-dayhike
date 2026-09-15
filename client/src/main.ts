@@ -316,6 +316,16 @@ function exitGame(): void {
   navigateToLanding();
 }
 
+/** A follower whose connection to the host failed plays on alone: leave the
+ * party and start a fresh world, as if the invite had never been opened. */
+function continueOffline(): void {
+  if (lobby !== null && lobby.state.role === "client") {
+    lobby.leave();
+    detach();
+  }
+  navigateToGame(createLobbyId());
+}
+
 // Say goodbye on the way out so departures are immediate rather than waiting
 // on the server's grace window. `pagehide` fires on close, reload, and
 // navigation away — every case a socket close would otherwise have to imply.
@@ -461,6 +471,7 @@ function render(container: HTMLDivElement): void {
   running = startGame(canvas, route.token, {
     lobby,
     onExit: exitGame,
+    onContinueOffline: continueOffline,
     onPauseChange: (next) => {
       paused = next;
       paintRoster();
