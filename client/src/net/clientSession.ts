@@ -10,6 +10,7 @@ import {
 } from "../sim/world.js";
 import type { Forest } from "../sim/forest.js";
 import { INTERP_DELAY_MS, MAX_UNACKED_INPUTS } from "../sim/constants.js";
+import { syncItemInteractables } from "../sim/register.js";
 import type { Transport } from "./transport.js";
 import {
   MessageType,
@@ -207,6 +208,10 @@ export function createClientSession(
     predicted.state.tick = snapshot.tick;
     predicted.state.items = snapshot.items.map((it) => ({ ...it, pos: cloneVec3(it.pos) }));
     predicted.state.outcome = snapshot.outcome;
+    // The prompt resolves against the predicted world's interactables, so
+    // they follow the host's items: a carried item is not there to reach
+    // for, a dropped one is where it fell.
+    syncItemInteractables(predicted);
 
     // ...drop everything the host has already applied...
     while (unacked.length > 0 && (unacked[0] as InputCommand).seq <= snapshot.lastProcessedInput) {

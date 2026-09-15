@@ -7,6 +7,7 @@ import { parseLevel } from "../../src/sim/level.js";
 import { createForest } from "../../src/sim/forest.js";
 import { MAX_UNACKED_INPUTS, PLAYER_MAX_HEALTH, TICK_DT } from "../../src/sim/constants.js";
 import { Button, NO_ITEM, Outcome, type InputCommand } from "../../src/sim/types.js";
+import { installRegister, ITEM_INTERACTABLE_BASE, pickUp, type Register } from "../../src/sim/register.js";
 import { encodeEvent, MessageType, PROTOCOL_VERSION } from "../../src/net/protocol.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
@@ -524,5 +525,34 @@ describe("items and outcome", () => {
     expect(state.items).toEqual([]);
     expect(state.outcome).toBe(Outcome.Playing);
     expect(h.client.localPlayer()!.carrying).toBe(NO_ITEM);
+  });
+});
+
+describe("the client's item interactables", () => {
+  const register = (): Register => ({
+    hikers: [{ id: 0, name: "Dana Whitcombe", site: { kind: "summit", name: "the summit", x: 0, y: 0, z: 20, progress: 1 } }],
+    box: { x: 0, y: 1, z: -20 },
+    car: { x: 30, y: 0.8, z: -20 },
+  });
+
+  it("follows the snapshot: a carried item cannot be reached for, a dropped one can, where it fell", () => {
+    const h = harness();
+    installRegister(h.host.world, register());
+    installRegister(h.client.world, register());
+    drive(h, 3, (t) => input({ seq: t + 1 }));
+    expect(h.client.world.interactables.get(ITEM_INTERACTABLE_BASE)!.enabled).toBe(true);
+    pickUp(h.host.world, h.host.localEntityId, 0);
+    drive(h, 6, (t) => input({ seq: t + 4 }));
+    expect(h.client.world.interactables.get(ITEM_INTERACTABLE_BASE)!.enabled).toBe(false);
+    const me = h.host.world.state.players.get(h.host.localEntityId)!;
+    me.pos = { x: 9, y: 0.9, z: 9 };
+    h.host.world.state.items[0]!.carrier = 0;
+    h.host.world.state.items[0]!.pos = { x: 9, y: 0.35, z: 9 };
+    me.carrying = 255;
+    drive(h, 6, (t) => input({ seq: t + 10 }));
+    const it = h.client.world.interactables.get(ITEM_INTERACTABLE_BASE)!;
+    expect(it.enabled).toBe(true);
+    expect(it.pos.x).toBeCloseTo(9, 2);
+    expect(it.pos.z).toBeCloseTo(9, 2);
   });
 });
