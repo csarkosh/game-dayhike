@@ -6,7 +6,7 @@ import { PERFECT_NETWORK, type NetworkConditions } from "../../src/net/transport
 import { parseLevel } from "../../src/sim/level.js";
 import { createForest } from "../../src/sim/forest.js";
 import { MAX_UNACKED_INPUTS, PLAYER_MAX_HEALTH, TICK_DT } from "../../src/sim/constants.js";
-import { Button, type InputCommand } from "../../src/sim/types.js";
+import { Button, NO_ITEM, Outcome, type InputCommand } from "../../src/sim/types.js";
 import { encodeEvent, MessageType, PROTOCOL_VERSION } from "../../src/net/protocol.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
@@ -494,5 +494,34 @@ describe("level mismatch", () => {
     const reason = mismatch("Download the latest desktop version from the landing page.");
     expect(reason).toContain("Download the latest desktop version from the landing page.");
     expect(reason).not.toContain("Reload the page");
+  });
+});
+
+describe("items and outcome", () => {
+  it("carries items and the outcome into the render state, and the carry fields onto the local player", () => {
+    const h = harness();
+    const me = h.peerEntityId;
+    h.host.world.state.items = [
+      { id: 0, pos: { x: 5, y: 1, z: 5 }, carrier: 0, pickedUp: false, signedOut: false },
+      { id: 1, pos: { x: 0, y: 0, z: 0 }, carrier: me, pickedUp: true, signedOut: false },
+    ];
+    h.host.world.state.players.get(me)!.carrying = 1;
+    h.host.world.state.players.get(me)!.signOutTicks = 42;
+    h.host.world.state.outcome = Outcome.Won;
+    drive(h, 6, (t) => input({ seq: t + 1 }));
+    const state = h.client.renderState(h.net.now);
+    expect(state.items.map((i) => [i.id, i.carrier, i.pickedUp, i.signedOut])).toEqual([[0, 0, false, false], [1, me, true, false]]);
+    expect(state.outcome).toBe(Outcome.Won);
+    expect(h.client.localPlayer()!.carrying).toBe(1);
+    expect(h.client.localPlayer()!.signOutTicks).toBe(42);
+    expect(state.players.get(me)!.carrying).toBe(1);
+  });
+
+  it("starts empty-handed with no items before any snapshot", () => {
+    const h = harness();
+    const state = h.client.renderState(h.net.now);
+    expect(state.items).toEqual([]);
+    expect(state.outcome).toBe(Outcome.Playing);
+    expect(h.client.localPlayer()!.carrying).toBe(NO_ITEM);
   });
 });

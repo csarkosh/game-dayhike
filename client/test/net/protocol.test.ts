@@ -138,6 +138,8 @@ function sampleSnapshot(): Snapshot {
       grounded: i % 2 === 0,
       respawnTimer: i === 3 ? 2.5 : 0,
       lamp: { on: i % 2 === 1, charge: i / 4 },
+      carrying: i === 2 ? 1 : 255,
+      signOutTicks: i === 2 ? 173 : 0,
     })),
     enemies: Array.from({ length: 30 }, (_, i) => ({
       id: 100 + i,
@@ -146,6 +148,14 @@ function sampleSnapshot(): Snapshot {
       health: 40 - (i % 40),
       ai: i % 4,
     })),
+    items: Array.from({ length: 4 }, (_, i) => ({
+      id: i,
+      pos: { x: -400 + i * 130.5, y: 60 + i, z: 900 - i * 45.25 },
+      carrier: i === 1 ? 3 : 0,
+      pickedUp: i <= 1,
+      signedOut: i === 0,
+    })),
+    outcome: 1,
   };
 }
 
@@ -173,6 +183,20 @@ describe("snapshot codec", () => {
       expect(actual.respawnTimer).toBeCloseTo(expected.respawnTimer, 1);
       expect(actual.lamp.on).toBe(expected.lamp.on);
       expect(Math.abs(actual.lamp.charge - expected.lamp.charge)).toBeLessThanOrEqual(0.5 / 127);
+      expect(actual.carrying).toBe(expected.carrying);
+      expect(actual.signOutTicks).toBe(expected.signOutTicks);
+    }
+    expect(back.outcome).toBe(1);
+    expect(back.items).toHaveLength(4);
+    for (const [i, expected] of snap.items.entries()) {
+      const actual = back.items[i]!;
+      expect(actual.id).toBe(expected.id);
+      expect(actual.carrier).toBe(expected.carrier);
+      expect(actual.pickedUp).toBe(expected.pickedUp);
+      expect(actual.signedOut).toBe(expected.signedOut);
+      expect(Math.abs(actual.pos.x - expected.pos.x)).toBeLessThanOrEqual(POSITION_PRECISION);
+      expect(Math.abs(actual.pos.y - expected.pos.y)).toBeLessThanOrEqual(POSITION_PRECISION);
+      expect(Math.abs(actual.pos.z - expected.pos.z)).toBeLessThanOrEqual(POSITION_PRECISION);
     }
     for (const [i, expected] of snap.enemies.entries()) {
       const actual = back.enemies[i]!;
@@ -183,11 +207,11 @@ describe("snapshot codec", () => {
   });
 
   it("stays within the bandwidth budget", () => {
-    // 688 bytes at 20 Hz is about 13.4 KB/s down per client, and 54 KB/s up
-    // for a host serving four of them. That is 476 (protocol 1: 471 plus a
-    // lamp byte per player) plus six bytes per entity for int32 positions
-    // and two for the uint32 input ack.
-    expect(encodeSnapshot(sampleSnapshot()).byteLength).toBe(688);
+    // 769 bytes at 20 Hz is about 15 KB/s down per client, and 60 KB/s up for
+    // a host serving four of them. That is protocol 2's 688 plus three bytes
+    // per player (carrying, sign-out ticks), one byte of outcome, one byte of
+    // item count and 16 bytes per item, four here.
+    expect(encodeSnapshot(sampleSnapshot()).byteLength).toBe(769);
   });
 
   it("carries a lastProcessedInput past 65536 without wrapping", () => {
@@ -221,7 +245,7 @@ describe("snapshot codec", () => {
 
   it("round-trips an empty world", () => {
     const back = decodeSnapshot(
-      encodeSnapshot({ tick: 0, lastProcessedInput: 0, players: [], enemies: [] }),
+      encodeSnapshot({ tick: 0, lastProcessedInput: 0, players: [], enemies: [], items: [], outcome: 0 }),
     );
     expect(back.players).toEqual([]);
     expect(back.enemies).toEqual([]);

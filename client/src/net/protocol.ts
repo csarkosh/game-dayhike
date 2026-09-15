@@ -1,7 +1,9 @@
 import type { InputCommand, Vec3 } from "../sim/types.js";
 
 /**
- * Bumped whenever the wire format changes (most recently: positions widened
+ * Bumped whenever the wire format changes (most recently: the register —
+ * the hikers' items, the match outcome, and each player's carried item and
+ * sign-out ticks; before that, positions widened
  * from int16 to int32 so the wire carries the whole forest rather than a
  * 512 m box around the origin, and input sequence numbers widened from
  * uint16 to uint32 so they no longer wrap after 18 minutes; before that, the
@@ -9,7 +11,7 @@ import type { InputCommand, Vec3 } from "../sim/types.js";
  * another version is refused in words instead of decoding garbage. The level
  * id does not cover this — it moves with the terrain, not the codec.
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export const enum MessageType {
   Input = 1,
@@ -107,6 +109,19 @@ export type SnapshotPlayer = {
   respawnTimer: number;
   /** The headlamp. Carried as one byte; see {@link encodeLampByte}. */
   lamp: { on: boolean; charge: number };
+  /** The carried item's id, or 255 (NO_ITEM). One byte. */
+  carrying: number;
+  /** Ticks of Interact held at the register box, uint16. */
+  signOutTicks: number;
+};
+
+export type SnapshotItem = {
+  id: number;
+  pos: Vec3;
+  /** The carrying player's entity id, or 0. */
+  carrier: number;
+  pickedUp: boolean;
+  signedOut: boolean;
 };
 
 export type SnapshotEnemy = {
@@ -122,6 +137,9 @@ export type Snapshot = {
   lastProcessedInput: number;
   players: SnapshotPlayer[];
   enemies: SnapshotEnemy[];
+  items: SnapshotItem[];
+  /** `Outcome` as a byte. */
+  outcome: number;
 };
 
 export type NetEvent =
@@ -199,8 +217,9 @@ export function decodeInput(buffer: ArrayBuffer): InputCommand[] {
   return commands;
 }
 
-const PLAYER_BYTES = 27;
+const PLAYER_BYTES = 30;
 const ENEMY_BYTES = 18;
+const ITEM_BYTES = 16;
 
 export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
   const size =
@@ -210,7 +229,10 @@ export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
     2 +
     snapshot.players.length * PLAYER_BYTES +
     2 +
-    snapshot.enemies.length * ENEMY_BYTES;
+    snapshot.enemies.length * ENEMY_BYTES +
+    1 +
+    1 +
+    snapshot.items.length * ITEM_BYTES;
   const buffer = new ArrayBuffer(size);
   const view = new DataView(buffer);
   let o = 0;
@@ -251,6 +273,10 @@ export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
     o += 1;
     view.setUint8(o, encodeLampByte(p.lamp));
     o += 1;
+    view.setUint8(o, clamp(p.carrying, 0, 255));
+    o += 1;
+    view.setUint16(o, clamp(p.signOutTicks, 0, 65535), true);
+    o += 2;
   }
 
   view.setUint16(o, snapshot.enemies.length, true);
@@ -269,6 +295,25 @@ export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
     view.setUint8(o, clamp(e.health, 0, 255));
     o += 1;
     view.setUint8(o, e.ai & 0xff);
+    o += 1;
+  }
+
+  view.setUint8(o, snapshot.outcome & 0xff);
+  o += 1;
+  view.setUint8(o, snapshot.items.length & 0xff);
+  o += 1;
+  for (const it of snapshot.items) {
+    view.setUint8(o, it.id & 0xff);
+    o += 1;
+    view.setInt32(o, quantizePosition(it.pos.x), true);
+    o += 4;
+    view.setInt32(o, quantizePosition(it.pos.y), true);
+    o += 4;
+    view.setInt32(o, quantizePosition(it.pos.z), true);
+    o += 4;
+    view.setUint16(o, it.carrier, true);
+    o += 2;
+    view.setUint8(o, (it.pickedUp ? 1 : 0) | (it.signedOut ? 2 : 0));
     o += 1;
   }
 
@@ -314,6 +359,10 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
     o += 1;
     const lamp = decodeLampByte(view.getUint8(o));
     o += 1;
+    const carrying = view.getUint8(o);
+    o += 1;
+    const signOutTicks = view.getUint16(o, true);
+    o += 2;
     players.push({
       id,
       pos: { x, y, z },
@@ -324,6 +373,8 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
       grounded,
       respawnTimer,
       lamp,
+      carrying,
+      signOutTicks,
     });
   }
 
@@ -348,7 +399,28 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
     enemies.push({ id, pos: { x, y, z }, yaw, health, ai });
   }
 
-  return { tick, lastProcessedInput, players, enemies };
+  const outcome = view.getUint8(o);
+  o += 1;
+  const itemCount = view.getUint8(o);
+  o += 1;
+  const items: SnapshotItem[] = [];
+  for (let i = 0; i < itemCount; i++) {
+    const id = view.getUint8(o);
+    o += 1;
+    const x = dequantizePosition(view.getInt32(o, true));
+    o += 4;
+    const y = dequantizePosition(view.getInt32(o, true));
+    o += 4;
+    const z = dequantizePosition(view.getInt32(o, true));
+    o += 4;
+    const carrier = view.getUint16(o, true);
+    o += 2;
+    const flags = view.getUint8(o);
+    o += 1;
+    items.push({ id, pos: { x, y, z }, carrier, pickedUp: (flags & 1) !== 0, signedOut: (flags & 2) !== 0 });
+  }
+
+  return { tick, lastProcessedInput, players, enemies, items, outcome };
 }
 
 const textEncoder = new TextEncoder();

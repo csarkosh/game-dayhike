@@ -167,6 +167,8 @@ export function createHostSession(
         grounded: p.grounded,
         respawnTimer: p.respawnTimer,
         lamp: { on: p.lamp.on, charge: p.lamp.charge },
+        carrying: p.carrying,
+        signOutTicks: p.signOutTicks,
       })),
       enemies: [...world.state.enemies.values()].map((e) => ({
         id: e.id,
@@ -175,6 +177,14 @@ export function createHostSession(
         health: e.health,
         ai: e.ai,
       })),
+      items: world.state.items.map((it) => ({
+        id: it.id,
+        pos: it.pos,
+        carrier: it.carrier,
+        pickedUp: it.pickedUp,
+        signedOut: it.signedOut,
+      })),
+      outcome: world.state.outcome,
     };
   }
 

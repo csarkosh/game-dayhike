@@ -8,6 +8,7 @@ import { LAMP_INTENSITY, LIGHT_BUDGET, budgetLights, createHeadlamp, setLamp } f
 import { AiState } from "../../src/sim/types.js";
 import type { PlayerState, WorldState } from "../../src/sim/types.js";
 import { MAX_PLAYERS, PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
+import { NO_ITEM, Outcome } from "../../src/sim/types.js";
 
 describe("clipForEnemy", () => {
   it("plays idle when standing around", () => {
@@ -63,10 +64,15 @@ function player(id: number, on: boolean, yaw = 0): PlayerState {
     respawnTimer: 0,
     deathPos: null,
     lamp: { on, charge: 1 },
+    carrying: NO_ITEM,
+    signOutTicks: 0,
   };
 }
 function state(...players: PlayerState[]): WorldState {
-  return { tick: 1, players: new Map(players.map((p) => [p.id, p])), enemies: new Map(), nextEntityId: 10, rngSeed: 1 };
+  return {
+    tick: 1, players: new Map(players.map((p) => [p.id, p])), enemies: new Map(),
+    items: [], outcome: Outcome.Playing, nextEntityId: 10, rngSeed: 1,
+  };
 }
 
 describe("headlamp", () => {

@@ -32,9 +32,13 @@ function throughTheWire(pos: Vec3): Vec3 {
         grounded: true,
         respawnTimer: 0,
         lamp: { on: false, charge: 1 },
+        carrying: 255,
+        signOutTicks: 0,
       },
     ],
     enemies: [],
+    items: [],
+    outcome: 0,
   };
   return decodeSnapshot(encodeSnapshot(snapshot)).players[0]!.pos;
 }

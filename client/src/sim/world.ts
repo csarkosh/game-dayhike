@@ -1,6 +1,6 @@
 import type { Interactable } from "./interact.js";
 import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "./types.js";
-import { cloneVec3, distanceSquared } from "./types.js";
+import { NO_ITEM, Outcome, cloneVec3, distanceSquared } from "./types.js";
 import type { Level } from "./level.js";
 import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
@@ -83,6 +83,8 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
       tick: 0,
       players: new Map(),
       enemies: new Map(),
+      items: [],
+      outcome: Outcome.Playing,
       nextEntityId: 1,
       rngSeed: seed | 0,
     },
@@ -110,6 +112,8 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
       tick: 0,
       players: new Map(),
       enemies: new Map(),
+      items: [],
+      outcome: Outcome.Playing,
       nextEntityId: 1,
       rngSeed: forest.seed | 0,
     },
@@ -189,6 +193,8 @@ export function spawnPlayer(world: World): PlayerState {
     lastProcessedInput: 0,
     respawnTimer: 0,
     lamp: { on: false, charge: 1 },
+    carrying: NO_ITEM,
+    signOutTicks: 0,
     deathPos: null,
   };
   world.state.players.set(id, player);
@@ -330,10 +336,13 @@ export function cloneWorldState(state: WorldState): WorldState {
   for (const [id, e] of state.enemies) {
     enemies.set(id, { ...e, pos: cloneVec3(e.pos), vel: cloneVec3(e.vel) });
   }
+  const items = state.items.map((it) => ({ ...it, pos: cloneVec3(it.pos) }));
   return {
     tick: state.tick,
     players,
     enemies,
+    items,
+    outcome: state.outcome,
     nextEntityId: state.nextEntityId,
     rngSeed: state.rngSeed,
   };
@@ -345,19 +354,24 @@ export function cloneWorldState(state: WorldState): WorldState {
  * see exactly which entity and which field drifted.
  */
 export function serializeWorldState(state: WorldState): string {
-  const parts: string[] = [`t:${state.tick}`, `n:${state.nextEntityId}`, `r:${state.rngSeed}`];
+  const parts: string[] = [`t:${state.tick}`, `n:${state.nextEntityId}`, `r:${state.rngSeed}`, `o:${state.outcome}`];
 
   for (const [id, p] of [...state.players.entries()].sort((a, b) => a[0] - b[0])) {
     parts.push(
       `P${id}:${p.pos.x},${p.pos.y},${p.pos.z},${p.vel.x},${p.vel.y},${p.vel.z},` +
         `${p.yaw},${p.pitch},${p.health},${p.grounded ? 1 : 0},${p.lastProcessedInput},${p.respawnTimer}` +
-        `,${p.lamp.on ? 1 : 0},${Math.round(p.lamp.charge * 127)}`,
+        `,${p.lamp.on ? 1 : 0},${Math.round(p.lamp.charge * 127)},${p.carrying},${p.signOutTicks}`,
     );
   }
   for (const [id, e] of [...state.enemies.entries()].sort((a, b) => a[0] - b[0])) {
     parts.push(
       `E${id}:${e.pos.x},${e.pos.y},${e.pos.z},${e.vel.x},${e.vel.y},${e.vel.z},` +
         `${e.yaw},${e.health},${e.ai},${e.targetId},${e.stateTimer}`,
+    );
+  }
+  for (const it of state.items) {
+    parts.push(
+      `I${it.id}:${it.pos.x},${it.pos.y},${it.pos.z},${it.carrier},${it.pickedUp ? 1 : 0},${it.signedOut ? 1 : 0}`,
     );
   }
   return parts.join("|");

@@ -15,6 +15,16 @@ export type Interactable = {
   /** Half-extent of the thing, so reach is measured to its surface. */
   radius: number;
   kind: number;
+  /**
+   * What the prompt says, when the verb depends on the thing ("Pick up Dana
+   * Whitcombe") rather than only on its kind. Absent: the kind's own label.
+   */
+  label?: string;
+  /**
+   * False while the thing cannot be acted on — an item somebody is carrying,
+   * an item already signed out. Absent means enabled.
+   */
+  enabled?: boolean;
   onInteract: (playerId: number) => void;
 };
 
@@ -41,6 +51,7 @@ export function resolveInteract(world: World, player: PlayerState): Interactable
   // registers each interactable — deterministic across peers, and what makes
   // a tie between two equally-near targets resolve the same way everywhere.
   for (const it of world.interactables.values()) {
+    if (it.enabled === false) continue;
     const dx = it.pos.x - ex, dy = it.pos.y - ey, dz = it.pos.z - ez;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (dist - it.radius > INTERACT_REACH) continue;

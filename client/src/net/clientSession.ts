@@ -1,5 +1,5 @@
 import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "../sim/types.js";
-import { AiState, cloneVec3 } from "../sim/types.js";
+import { AiState, Outcome, cloneVec3 } from "../sim/types.js";
 import type { Level } from "../sim/level.js";
 import {
   createForestWorld,
@@ -201,8 +201,12 @@ export function createClientSession(
     // but the predicted player must own its own object rather than alias
     // one that belongs to a decoded snapshot.
     local.lamp = { on: authoritative.lamp.on, charge: authoritative.lamp.charge };
+    local.carrying = authoritative.carrying;
+    local.signOutTicks = authoritative.signOutTicks;
     local.lastProcessedInput = snapshot.lastProcessedInput;
     predicted.state.tick = snapshot.tick;
+    predicted.state.items = snapshot.items.map((it) => ({ ...it, pos: cloneVec3(it.pos) }));
+    predicted.state.outcome = snapshot.outcome;
 
     // ...drop everything the host has already applied...
     while (unacked.length > 0 && (unacked[0] as InputCommand).seq <= snapshot.lastProcessedInput) {
@@ -275,7 +279,8 @@ export function createClientSession(
         yaw: lerpAngle(from.yaw, to.yaw, alpha),
       };
     });
-    return { tick: b.tick, lastProcessedInput: b.lastProcessedInput, players, enemies };
+    // Items are not interpolated: the newer snapshot's are the truth.
+    return { tick: b.tick, lastProcessedInput: b.lastProcessedInput, players, enemies, items: b.items, outcome: b.outcome };
   }
 
   /** Interpolates the short way around the circle, so 359 -> 1 does not spin. */
@@ -342,6 +347,8 @@ export function createClientSession(
             lastProcessedInput: 0,
             respawnTimer: p.respawnTimer,
             lamp: { on: p.lamp.on, charge: p.lamp.charge },
+            carrying: p.carrying,
+            signOutTicks: p.signOutTicks,
             // Host-only and not in the snapshot. A client has no use for where a
             // remote player died: respawn placement is decided host-side and
             // arrives as a corrected position.
@@ -375,6 +382,8 @@ export function createClientSession(
         tick: predicted.state.tick,
         players,
         enemies,
+        items: (latest?.items ?? []).map((it) => ({ ...it, pos: cloneVec3(it.pos) })),
+        outcome: latest?.outcome ?? Outcome.Playing,
         nextEntityId: predicted.state.nextEntityId,
         rngSeed: predicted.state.rngSeed,
       };

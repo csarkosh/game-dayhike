@@ -22,6 +22,39 @@ export const enum Button {
   Lamp = 16,
 }
 
+/**
+ * `PlayerState.carrying` when the hands are empty. It rides the wire as one
+ * byte, so it is that byte's ceiling rather than -1.
+ */
+export const NO_ITEM = 255;
+/**
+ * `ItemState.carrier` when the item lies on the ground. Entity ids start at 1
+ * (`createWorld`), so 0 can never name a player.
+ */
+export const NO_CARRIER = 0;
+
+export const enum Outcome {
+  Playing = 0,
+  Won = 1,
+}
+
+/**
+ * One missing hiker's item: what is left of them, lying at their site until
+ * somebody carries it to the register. Host state, sent in every snapshot.
+ */
+export type ItemState = {
+  /** The hiker's index in the book, 0 to 3. */
+  id: number;
+  /** Where it lies. Meaningless while carried: the carrier's position is the truth then. */
+  pos: Vec3;
+  /** The player holding it, or NO_CARRIER. */
+  carrier: number;
+  /** Set on the first pick-up and never cleared: the escalation count reads this. */
+  pickedUp: boolean;
+  /** Signed out at the register box; the item has left the world. */
+  signedOut: boolean;
+};
+
 export type InputCommand = {
   seq: number;
   moveX: number;
@@ -53,6 +86,14 @@ export type PlayerState = {
    * ride the snapshot as one byte so peers see each other's lamps.
    */
   lamp: { on: boolean; charge: number };
+  /** The item in this player's hands, or NO_ITEM. Rides the snapshot as one byte. */
+  carrying: number;
+  /**
+   * Ticks of Interact held at the register box while carrying, 0 to
+   * SIGN_OUT_TICKS (register.ts). Back to 0 the moment the hold breaks. Rides
+   * the snapshot as a uint16 so the client can draw the ring.
+   */
+  signOutTicks: number;
   /**
    * Where this player last died, so respawn can put them back near it rather
    * than at a fixed point — in an unbounded world a fixed spawn could be a long
@@ -91,6 +132,9 @@ export type WorldState = {
   tick: number;
   players: Map<number, PlayerState>;
   enemies: Map<number, EnemyState>;
+  /** The missing hikers' items, by hiker index. Empty for a world with no register. */
+  items: ItemState[];
+  outcome: Outcome;
   nextEntityId: number;
   rngSeed: number;
 };

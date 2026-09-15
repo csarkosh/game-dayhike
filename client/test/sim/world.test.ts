@@ -8,7 +8,7 @@ import {
   serializeWorldState,
 } from "../../src/sim/world.js";
 import { collisionBoxes, parseLevel } from "../../src/sim/level.js";
-import type { InputCommand } from "../../src/sim/types.js";
+import { NO_ITEM, Outcome, type InputCommand, type ItemState } from "../../src/sim/types.js";
 import { PLAYER_MAX_HEALTH } from "../../src/sim/constants.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
@@ -162,5 +162,44 @@ describe("determinism", () => {
     a.state.rngSeed = 111;
     b.state.rngSeed = 222;
     expect(serializeWorldState(a.state)).not.toBe(serializeWorldState(b.state));
+  });
+});
+
+describe("items in world state", () => {
+  const item = (): ItemState => ({ id: 0, pos: { x: 1, y: 2, z: 3 }, carrier: 0, pickedUp: false, signedOut: false });
+
+  it("starts with no items, a playing outcome and empty hands", () => {
+    const w = createWorld(level, 1);
+    const p = spawnPlayer(w);
+    expect(w.state.items).toEqual([]);
+    expect(w.state.outcome).toBe(Outcome.Playing);
+    expect(p.carrying).toBe(NO_ITEM);
+    expect(p.signOutTicks).toBe(0);
+  });
+
+  it("clones items deeply and fingerprints them", () => {
+    const w = createWorld(level, 1);
+    w.state.items = [item()];
+    const copy = cloneWorldState(w.state);
+    copy.items[0]!.pos.x = 99;
+    copy.items[0]!.pickedUp = true;
+    expect(w.state.items[0]!.pos.x).toBe(1);
+    expect(w.state.items[0]!.pickedUp).toBe(false);
+    expect(serializeWorldState(copy)).not.toBe(serializeWorldState(w.state));
+    expect(serializeWorldState(w.state)).toContain("I0:1,2,3,0,0,0");
+  });
+
+  it("fingerprints the carry fields and the outcome", () => {
+    const w = createWorld(level, 1);
+    const p = spawnPlayer(w);
+    const before = serializeWorldState(w.state);
+    p.carrying = 2;
+    expect(serializeWorldState(w.state)).not.toBe(before);
+    p.carrying = NO_ITEM;
+    p.signOutTicks = 7;
+    expect(serializeWorldState(w.state)).not.toBe(before);
+    p.signOutTicks = 0;
+    w.state.outcome = Outcome.Won;
+    expect(serializeWorldState(w.state)).not.toBe(before);
   });
 });
