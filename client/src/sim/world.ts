@@ -9,6 +9,7 @@ import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
 import { buildRegister, installRegister, putDown, stepRegister, type Register } from "./register.js";
 import { PROPS, propSite, type RoadProp } from "./passes/trailhead.js";
+import { containAtRoad } from "./containment.js";
 import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
@@ -351,6 +352,15 @@ function applyMove(world: World, player: PlayerState, cmd: InputCommand): void {
     world.waterLevel,
     world.ground,
   );
+  // The wall at the road (containment.ts): a forest world with a road keeps
+  // every hull off the pavement. After the step, on the settled position, so
+  // the box sweep and the ground have already had their say.
+  if (world.forest !== null) {
+    const roadCenterX = activeTerrainVariant().roadCenterX;
+    if (roadCenterX !== undefined) {
+      containAtRoad(after.pos, after.vel, roadCenterX(world.forest.seed, after.pos.z));
+    }
+  }
   player.pos = after.pos;
   player.vel = after.vel;
   player.grounded = after.grounded;
