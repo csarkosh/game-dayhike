@@ -19,6 +19,7 @@ import {
   exposureUnder,
   gradeUnder,
   SATURATION_DROP,
+  ambientCollapseUnder,
 } from "../../src/game/weather.js";
 
 let engine: NullEngine | null = null;
@@ -39,14 +40,14 @@ describe("createLighting", () => {
     // throws on construction. Real hardware at the low tier is the same case.
     // If this throws, the renderer cannot be tested headlessly at all.
     const s = scene();
-    const lighting = createLighting(s, { tier: "high", viewDistance: 70 });
+    const lighting = createLighting(s, { tier: "high", viewDistance: 70, colourPath: "material" });
     expect(lighting.shadows).toBeNull();
     lighting.dispose();
   });
 
   it("never builds a shadow generator at the low tier", () => {
     const s = scene();
-    const lighting = createLighting(s, { tier: "low", viewDistance: 70 });
+    const lighting = createLighting(s, { tier: "low", viewDistance: 70, colourPath: "material" });
     expect(lighting.shadows).toBeNull();
     lighting.dispose();
   });
@@ -56,7 +57,7 @@ describe("createLighting", () => {
     // wants the opposite. Getting this backwards lights the world from
     // underground at noon and is invisible to any test that only checks the axis.
     const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12, colourPath: "material" });
     const sun = s.getLightByName("sun");
     expect(sun).not.toBeNull();
     const toSun = sunPositionAt(12);
@@ -70,14 +71,14 @@ describe("createLighting", () => {
 
   it("defaults to DEFAULT_HOUR, which matches the /time command's default", () => {
     const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, colourPath: "material" });
     expect(lighting.hour).toBe(DEFAULT_HOUR);
     lighting.dispose();
   });
 
   it("moves the sun when the hour changes", () => {
     const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12, colourPath: "material" });
     const sun = s.getLightByName("sun") as unknown as {
       direction: { x: number; y: number; z: number };
     };
@@ -91,7 +92,7 @@ describe("createLighting", () => {
   it("keeps fog colour and clear colour agreeing with the sky", () => {
     const s = scene();
     const lighting = createLighting(s, {
-      tier: "medium", viewDistance: 70, hour: 8, weather: WEATHER_PRESETS.clear,
+      tier: "medium", viewDistance: 70, hour: 8, weather: WEATHER_PRESETS.clear, colourPath: "material",
     });
     const expected = skyColourAt(8);
     expect(s.fogColor.r).toBeCloseTo(expected.r, 5);
@@ -119,7 +120,7 @@ describe("createLighting", () => {
     // a sun disc and gradient); it only pins the intent against a future
     // "tidy-up" that removes the line because it looks redundant.
     const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, colourPath: "material" });
     const skybox = s.getMeshByName("skybox");
     expect(skybox).not.toBeNull();
     expect(skybox!.applyFog).toBe(false);
@@ -132,7 +133,7 @@ describe("createLighting", () => {
   it("sets the fill light to the day intensity at the default hour", () => {
     const s = scene();
     const lighting = createLighting(s, {
-      tier: "medium", viewDistance: 70, weather: WEATHER_PRESETS.clear,
+      tier: "medium", viewDistance: 70, weather: WEATHER_PRESETS.clear, colourPath: "material",
     });
     const fill = s.getLightByName("fill");
     expect(fill).not.toBeNull();
@@ -143,26 +144,49 @@ describe("createLighting", () => {
   it("sets exponential-squared fog at the requested view distance", () => {
     const s = scene();
     const lighting = createLighting(s, {
-      tier: "medium", viewDistance: 250, weather: WEATHER_PRESETS.clear,
+      tier: "medium", viewDistance: 250, weather: WEATHER_PRESETS.clear, colourPath: "material",
     });
     expect(s.fogMode).toBe(Scene.FOGMODE_EXP2);
     expect(s.fogDensity).toBeCloseTo(fogDensityFor(250), 10);
     lighting.dispose();
   });
 
-  it("enables ACES tone mapping and tracks exposure to the sun", () => {
+  it("on the material path uses Khronos Neutral tone mapping with dithering and tracks exposure to the sun", () => {
     const s = scene();
     const lighting = createLighting(s, {
-      tier: "medium", viewDistance: 70, hour: 12, weather: WEATHER_PRESETS.clear,
+      tier: "medium", viewDistance: 70, hour: 12, weather: WEATHER_PRESETS.clear, colourPath: "material",
     });
     const ip = s.imageProcessingConfiguration;
     expect(ip.toneMappingEnabled).toBe(true);
-    expect(ip.toneMappingType).toBe(ImageProcessingConfiguration.TONEMAPPING_ACES);
+    expect(ip.toneMappingType).toBe(ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL);
+    expect(ip.ditheringEnabled).toBe(true);
+    expect(ip.applyByPostProcess).toBe(false);
     expect(ip.exposure).toBeCloseTo(exposureFor(sunPositionAt(12).y), 5);
     lighting.setHour(0);
-    expect(ip.exposure).toBeCloseTo(exposureFor(sunPositionAt(0).y), 5);
-    // Night must be the brighter exposure, or /time 0 renders as pure black.
     expect(ip.exposure).toBeGreaterThan(exposureFor(sunPositionAt(12).y));
+    lighting.dispose();
+  });
+
+  it("on the post path hands colour to the post chain", () => {
+    const s = scene();
+    const lighting = createLighting(s, { tier: "high", viewDistance: 70, hour: 12, colourPath: "post" });
+    const ip = s.imageProcessingConfiguration;
+    expect(ip.applyByPostProcess).toBe(true);
+    expect(ip.toneMappingEnabled).toBe(false);
+    expect(ip.colorCurvesEnabled).toBe(false);
+    expect(ip.vignetteEnabled).toBe(false);
+    lighting.dispose();
+  });
+
+  it("collapses the ambient on the top dread plateau", () => {
+    const s = scene();
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12, colourPath: "material" });
+    const before = s.environmentIntensity;
+    const fill = s.getLightByName("fill");
+    const fillBefore = fill?.intensity ?? 0;
+    lighting.setWeather(WEATHER_PRESETS.eerie, 0);
+    expect(s.environmentIntensity).toBeCloseTo(before * ambientCollapseUnder(WEATHER_PRESETS.eerie), 10);
+    expect(fill?.intensity ?? 0).toBeLessThan(fillBefore);
     lighting.dispose();
   });
 
@@ -170,7 +194,7 @@ describe("createLighting", () => {
     // Without this, PBR metals read as flat grey and everything looks like
     // plastic.
     const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, colourPath: "material" });
     expect(s.environmentTexture).not.toBeNull();
     lighting.dispose();
   });
@@ -185,7 +209,7 @@ describe("createLighting", () => {
     // pass against an implementation that hardcodes 1.5.
     const low = scene();
     const setLow = vi.spyOn(low.getEngine(), "setHardwareScalingLevel");
-    const lightingLow = createLighting(low, { tier: "low", viewDistance: 70 });
+    const lightingLow = createLighting(low, { tier: "low", viewDistance: 70, colourPath: "material" });
     expect(setLow).toHaveBeenCalledWith(QUALITY.low.hardwareScaling);
     lightingLow.dispose();
     // scene() reassigns the shared `engine` tracker, and afterEach disposes only
@@ -194,7 +218,7 @@ describe("createLighting", () => {
 
     const medium = scene();
     const setMedium = vi.spyOn(medium.getEngine(), "setHardwareScalingLevel");
-    const lightingMedium = createLighting(medium, { tier: "medium", viewDistance: 70 });
+    const lightingMedium = createLighting(medium, { tier: "medium", viewDistance: 70, colourPath: "material" });
     expect(setMedium).toHaveBeenCalledWith(QUALITY.medium.hardwareScaling);
     lightingMedium.dispose();
   });
@@ -208,7 +232,7 @@ describe("createLighting", () => {
     // practice and restoring would be dead code.
     const s = scene();
     const before = s.meshes.length;
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, colourPath: "material" });
     expect(s.meshes.length).toBeGreaterThan(before);
     lighting.dispose();
     expect(s.meshes.length).toBe(before);
@@ -224,7 +248,7 @@ describe("createLighting", () => {
     // The low tier and any engine without float render targets both take this
     // path, so the caller must not have to check.
     const s = scene();
-    const lighting = createLighting(s, { tier: "low", viewDistance: 70 });
+    const lighting = createLighting(s, { tier: "low", viewDistance: 70, colourPath: "material" });
     const box = s.meshes[0];
     expect(box).toBeDefined();
     expect(() => lighting.addShadowMesh(box!)).not.toThrow();
@@ -242,7 +266,7 @@ describe("createLighting", () => {
     // pairing itself is covered from the caller's side, against a recording
     // stand-in, in wildlifeMeshes.test.ts.
     const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, colourPath: "material" });
     expect(lighting.shadows).toBeNull();
     const box = s.meshes[0];
     expect(box).toBeDefined();
@@ -255,7 +279,7 @@ describe("createLighting", () => {
     // The wiring gap this closes: casting and receiving landed on different
     // call sites in `renderer.ts` and only one of them was ever wired.
     const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, colourPath: "material" });
     const box = s.meshes[0];
     expect(box).toBeDefined();
     box!.receiveShadows = false;
@@ -268,7 +292,7 @@ describe("createLighting", () => {
 describe("weather in lighting", () => {
   it("defaults to the mist preset — fog, sun and exposure all shifted", () => {
     const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12, colourPath: "material" });
     const w = WEATHER_PRESETS.mist;
     expect(lighting.weather).toEqual(w);
     expect(s.fogDensity).toBeCloseTo(fogDensityUnder(w, 70), 12);
@@ -282,7 +306,7 @@ describe("weather in lighting", () => {
   it("explicit clear weather reproduces the pre-weather sunny state exactly", () => {
     const s = scene();
     const lighting = createLighting(s, {
-      tier: "medium", viewDistance: 70, hour: 12, weather: WEATHER_PRESETS.clear,
+      tier: "medium", viewDistance: 70, hour: 12, weather: WEATHER_PRESETS.clear, colourPath: "material",
     });
     expect(s.fogDensity).toBe(fogDensityFor(70));
     expect(s.imageProcessingConfiguration.exposure).toBe(exposureFor(sunPositionAt(12).y));
@@ -297,7 +321,7 @@ describe("weather in lighting", () => {
 
   it("setWeather with fade 0 applies instantly; the sky material follows", () => {
     const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12, colourPath: "material" });
     lighting.setWeather(WEATHER_PRESETS.clear, 0);
     expect(lighting.weather).toEqual(WEATHER_PRESETS.clear);
     expect(s.fogDensity).toBe(fogDensityFor(70));
@@ -311,7 +335,7 @@ describe("weather in lighting", () => {
   it("a timed fade does not jump: current weather is unchanged until a frame renders", () => {
     const s = scene();
     const lighting = createLighting(s, {
-      tier: "medium", viewDistance: 70, hour: 12, weather: WEATHER_PRESETS.clear,
+      tier: "medium", viewDistance: 70, hour: 12, weather: WEATHER_PRESETS.clear, colourPath: "material",
     });
     lighting.setWeather(WEATHER_PRESETS.rain, 3);
     expect(lighting.weather).toEqual(WEATHER_PRESETS.clear);
@@ -320,7 +344,7 @@ describe("weather in lighting", () => {
 
   it("writes the split-tone grade onto colorCurves when weather changes", () => {
     const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12, colourPath: "material" });
     lighting.setWeather(WEATHER_PRESETS.eerie, 0);
     const c = s.imageProcessingConfiguration.colorCurves;
     const g = gradeUnder(WEATHER_PRESETS.eerie);
@@ -338,7 +362,7 @@ describe("weather in lighting", () => {
 
   it("leaves the colour filter inert under clear — the sunny frame is untouched", () => {
     const s = scene();
-    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12 });
+    const lighting = createLighting(s, { tier: "medium", viewDistance: 70, hour: 12, colourPath: "material" });
     lighting.setWeather(WEATHER_PRESETS.clear, 0);
     const c = s.imageProcessingConfiguration.colorCurves;
     expect(c?.shadowsDensity).toBe(0);

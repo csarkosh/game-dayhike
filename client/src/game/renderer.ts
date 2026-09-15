@@ -646,7 +646,9 @@ export function createRenderer(
   // brush path as well as the forest — one lit world is worth more than the
   // sandbox's old dark clear colour.
   const tier = options.tier ?? detectTier();
-  const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE });
+  // TODO(task 8): compute from `postFeaturesFor` once the post chain is wired
+  // back in, rather than pinning the material path unconditionally.
+  const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: "material" });
 
   // A forest draws terrain instead of brushes. Guarded here rather than relying on
   // the caller to pass an empty level: app.ts passes the parsed sandbox01 so it

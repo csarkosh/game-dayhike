@@ -36,6 +36,7 @@ import {
   exposureUnder,
   saturationUnder,
   gradeUnder,
+  ambientCollapseUnder,
 } from "./weather.js";
 
 /** Matches the `/time` command's `defaultValue` in `commands.ts`. */
@@ -74,6 +75,15 @@ export type LightingOptions = {
   viewDistance: number;
   hour?: number;
   weather?: WeatherParams;
+  /**
+   * Who owns colour. `"post"`: the grade pass tone-maps, grades and
+   * vignettes, so materials output linear HDR (`applyByPostProcess`).
+   * `"material"`: no post chain exists (low tier, or no float targets), so
+   * Babylon's in-material processing carries the intent with Khronos Neutral,
+   * the colour curves and dithering. Decided by `postFeaturesFor` in
+   * postParams.ts before either this or the post chain is built.
+   */
+  colourPath: "post" | "material";
 };
 
 export type Lighting = {
@@ -244,13 +254,22 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   scene.environmentTexture = probe.cubeTexture;
 
   const image = scene.imageProcessingConfiguration;
-  image.toneMappingEnabled = true;
-  image.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
-  image.contrast = 1.1;
-  // Colour curves carry the overcast desaturation. Neutral is 0 on Babylon's
-  // scale, so enabling them under clear weather changes nothing.
-  image.colorCurves ??= new ColorCurves();
-  image.colorCurvesEnabled = true;
+  if (options.colourPath === "post") {
+    image.applyByPostProcess = true;
+    image.toneMappingEnabled = false;
+    image.colorCurvesEnabled = false;
+    image.vignetteEnabled = false;
+  } else {
+    image.applyByPostProcess = false;
+    image.toneMappingEnabled = true;
+    image.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
+    image.contrast = 1.1;
+    image.ditheringEnabled = true;
+    // Colour curves carry the split-tone grade on this path. Neutral is 0 on
+    // Babylon's scale, so enabling them under clear weather changes nothing.
+    image.colorCurves ??= new ColorCurves();
+    image.colorCurvesEnabled = true;
+  }
 
   scene.fogMode = Scene.FOGMODE_EXP2;
 
@@ -297,13 +316,19 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     // contributes.
     const ambient = ambientColourUnder(weather, hour);
     fill.diffuse = new Color3(ambient.r, ambient.g, ambient.b);
-    fill.intensity = fillIntensityUnder(weather, toSun.y);
+    const collapse = ambientCollapseUnder(weather);
+    fill.intensity = fillIntensityUnder(weather, toSun.y) * collapse;
+    // The probe's share of the ambient collapses with the fill, so the top
+    // plateau reads as the light going, not the fill alone dimming.
+    scene.environmentIntensity = collapse;
 
+    // Read on both paths: the grade pass reads it from the same record, and on
+    // the post path the value is simply unused by materials.
     image.exposure = exposureUnder(weather, toSun.y);
     // The grade is nine writes on a rig Babylon already builds and enables, so
     // it costs no pass and no allocation. Densities are the strength control:
     // at `clear` every one is 0, which is why the sunny frame survives intact.
-    if (image.colorCurves) {
+    if (options.colourPath === "material" && image.colorCurves) {
       const curves = image.colorCurves;
       const grade = gradeUnder(weather);
       curves.globalSaturation = saturationUnder(weather);
