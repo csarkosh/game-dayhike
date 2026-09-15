@@ -219,13 +219,39 @@ describe("engaged on touch", () => {
     expect(seen).toEqual([false, true]);
   });
 
-  it("ignores pointer lock changes in touch mode", () => {
+  it("losing pointer lock in touch mode disengages, regaining it engages", () => {
+    // A hybrid device: a touch-screen laptop that started in desktop mode and
+    // took a touch, which flips touchMode on while a real pointer lock still
+    // exists underneath. Esc dropping that lock must still open the pause
+    // menu, and getting it back must still resume play.
     const { input, canvas } = sampler({ touch: fakeTouch().source, touchMode: true });
     const seen: boolean[] = [];
     input.onEngagedChange((e) => seen.push(e));
+    const doc = (globalThis as Record<string, unknown>).document as { pointerLockElement: unknown };
+
     lockPointer(canvas);
-    expect(seen).toEqual([]);
     expect(input.engaged).toBe(true);
+    expect(seen).toEqual([]);
+
+    doc.pointerLockElement = null;
+    fire("pointerlockchange", {});
+    expect(input.engaged).toBe(false);
+    expect(seen).toEqual([false]);
+
+    lockPointer(canvas);
+    expect(input.engaged).toBe(true);
+    expect(seen).toEqual([false, true]);
+  });
+
+  it("setTouchMode(true) while pointer-locked keeps engaged true and announces nothing", () => {
+    const { input, canvas } = sampler({ touch: fakeTouch().source });
+    lockPointer(canvas);
+    expect(input.engaged).toBe(true);
+    const seen: boolean[] = [];
+    input.onEngagedChange((e) => seen.push(e));
+    input.setTouchMode(true);
+    expect(input.engaged).toBe(true);
+    expect(seen).toEqual([]);
   });
 
   it("switching a mouse device into touch mode engages it once", () => {

@@ -122,12 +122,27 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
       keys.clear();
       interactHeld = false;
     }
-    // In touch mode pointer lock is not what engaged means, so it says nothing.
-    if (!touchMode && was !== locked) engagedHandler?.(locked);
+    if (touchMode) {
+      // A hybrid device: a touch-screen laptop that started in desktop mode,
+      // took a touch (which flips touchMode on), but still has real pointer
+      // lock underneath. Without this, losing the lock here left `engaged`
+      // stuck true — the pause menu never opened on Esc — and regaining it
+      // left `engaged` stuck false, since `onCanvasClick` below would no
+      // longer even ask for the lock back. Keep `engaged` following the lock
+      // for as long as one exists, on top of the touch layer's own edges.
+      if (was && !locked) setTouchEngaged(false);
+      else if (!was && locked) setTouchEngaged(true);
+      return;
+    }
+    if (was !== locked) engagedHandler?.(locked);
   };
 
   const onCanvasClick = () => {
-    if (!touchMode && !locked) void canvas.requestPointerLock();
+    // Not gated on touchMode: a hybrid device still has a mouse, and its click
+    // must still be able to (re)request pointer lock so onLockChange above has
+    // something to react to. The touch layer's own pointer handling is what
+    // engages a pure phone; this only matters where a real pointer lock exists.
+    if (!locked) void canvas.requestPointerLock();
   };
 
   window.addEventListener("keydown", onKeyDown);
