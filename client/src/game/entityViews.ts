@@ -7,7 +7,7 @@ import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 
-import type { EnemyState, WorldState } from "../sim/types.js";
+import type { EnemyState, Vec3, WorldState } from "../sim/types.js";
 import { AiState } from "../sim/types.js";
 import { ENEMY_HALF, PLAYER_HALF, PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { aimDirection } from "../sim/view.js";
@@ -15,6 +15,19 @@ import { EnemyModelPool, type ClipKind, type EnemyInstance } from "./enemyModel.
 import { createHeadlamp, setLamp } from "./headlamp.js";
 
 type View = { node: TransformNode; previous: Vector3; target: Vector3 };
+
+/**
+ * A view's first frame is drawn where the entity is, not on the way there.
+ * `advance` below interpolates from the last position the entity held, and
+ * `previous` only moves when `target` does, so a view whose two points
+ * started at the origin stayed a fraction of the way from the origin to the
+ * entity for as long as it stood still: a player who joined and did not walk
+ * was drawn hundreds of metres away until their first step.
+ */
+function placeView(node: TransformNode, x: number, y: number, z: number): View {
+  node.position.set(x, y, z);
+  return { node, previous: new Vector3(x, y, z), target: new Vector3(x, y, z) };
+}
 
 /**
  * Which clip an enemy should be playing, derived entirely from simulation
@@ -73,7 +86,7 @@ export class EntityViews {
         this.players.get(id)?.node.setEnabled(false);
         continue;
       }
-      const view = this.ensure(this.players, id, () =>
+      const view = this.ensure(this.players, id, player.pos, () =>
         this.makeCapsule(`player_${id}`, this.playerMaterial),
       );
       view.node.setEnabled(true);
@@ -104,7 +117,7 @@ export class EntityViews {
     for (const [id, enemy] of state.enemies) {
       const instance = this.models.acquire(id);
       if (instance !== null) {
-        const entry = this.ensureModel(id, instance);
+        const entry = this.ensureModel(id, instance, enemy.pos.x, enemy.pos.y - ENEMY_HALF.y, enemy.pos.z);
         // Hide the fallback capsule if one was made before the model loaded.
         this.enemies.get(id)?.node.setEnabled(false);
         // Model origins sit at the feet (ARCHITECTURE.md, Model conventions),
@@ -115,7 +128,7 @@ export class EntityViews {
         continue;
       }
 
-      const view = this.ensure(this.enemies, id, () =>
+      const view = this.ensure(this.enemies, id, enemy.pos, () =>
         this.makeCapsule(`enemy_${id}`, this.enemyMaterial),
       );
       view.node.setEnabled(true);
@@ -132,26 +145,24 @@ export class EntityViews {
     this.prune(this.enemies, state.enemies);
   }
 
-  private ensureModel(id: number, instance: EnemyInstance): { instance: EnemyInstance; view: View } {
+  private ensureModel(
+    id: number,
+    instance: EnemyInstance,
+    x: number,
+    y: number,
+    z: number,
+  ): { instance: EnemyInstance; view: View } {
     const existing = this.enemyModels.get(id);
     if (existing) return existing;
-    const entry = {
-      instance,
-      view: {
-        node: instance.root,
-        previous: instance.root.position.clone(),
-        target: instance.root.position.clone(),
-      },
-    };
+    const entry = { instance, view: placeView(instance.root, x, y, z) };
     this.enemyModels.set(id, entry);
     return entry;
   }
 
-  private ensure(map: Map<number, View>, id: number, make: () => Mesh): View {
+  private ensure(map: Map<number, View>, id: number, at: Vec3, make: () => Mesh): View {
     const existing = map.get(id);
     if (existing) return existing;
-    const node = make();
-    const view: View = { node, previous: node.position.clone(), target: node.position.clone() };
+    const view = placeView(make(), at.x, at.y, at.z);
     map.set(id, view);
     return view;
   }

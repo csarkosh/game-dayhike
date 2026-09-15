@@ -7,7 +7,7 @@ import { clipForEnemy, EntityViews } from "../../src/game/entityViews.js";
 import { LAMP_INTENSITY, LIGHT_BUDGET, budgetLights, createHeadlamp, setLamp } from "../../src/game/headlamp.js";
 import { AiState } from "../../src/sim/types.js";
 import type { PlayerState, WorldState } from "../../src/sim/types.js";
-import { MAX_PLAYERS } from "../../src/sim/constants.js";
+import { MAX_PLAYERS, PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
 
 describe("clipForEnemy", () => {
   it("plays idle when standing around", () => {
@@ -115,5 +115,23 @@ describe("EntityViews lamps", () => {
     expect(scene.lights.filter((l) => l.name.startsWith("lamp_player_"))).toHaveLength(0);
     views.dispose();
     expect(scene.lights.length).toBe(before);
+  });
+});
+
+describe("EntityViews placement", () => {
+  it("draws a player where they stand from their first frame, before they ever move", () => {
+    const views = new EntityViews(scene);
+    const still = { ...player(2, false), pos: { x: 7, y: 0.9, z: -3 } };
+    // Seen mid-tick on the very first sync: there is no earlier position to
+    // interpolate from, so the only right answer is where they are.
+    views.sync(state(player(1, false), still), 1, 0.5);
+    const mesh = scene.getMeshByName("player_2")!;
+    expect(mesh.position.asArray()).toEqual([7, 0.9, -3]);
+    const lamp = scene.lights.find((l) => l.name === "lamp_player_2") as SpotLight;
+    expect(lamp.position.asArray()).toEqual([7, 0.9 + PLAYER_EYE_OFFSET, -3]);
+    // And still there while they keep standing, whatever the frame's alpha.
+    views.sync(state(player(1, false), still), 1, 0.2);
+    expect(mesh.position.asArray()).toEqual([7, 0.9, -3]);
+    views.dispose();
   });
 });
