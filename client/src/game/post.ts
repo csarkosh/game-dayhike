@@ -3,6 +3,7 @@ import type { Camera } from "@babylonjs/core/Cameras/camera.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { Effect } from "@babylonjs/core/Materials/effect.js";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess.js";
+import { PassPostProcess } from "@babylonjs/core/PostProcesses/passPostProcess.js";
 import { BlurPostProcess } from "@babylonjs/core/PostProcesses/blurPostProcess.js";
 import { ChromaticAberrationPostProcess } from "@babylonjs/core/PostProcesses/chromaticAberrationPostProcess.js";
 import { FxaaPostProcess } from "@babylonjs/core/PostProcesses/fxaaPostProcess.js";
@@ -37,10 +38,25 @@ const HALATION_RATIO = 0.25;
 const HALATION_KERNEL = 32;
 
 /**
- * The post chain: halation extract and blur (high tier only), the grade
- * pass, chromatic aberration, FXAA, then the finish pass. Passes attach in
- * creation order, which is what fixes the order — aberration and FXAA must
- * run before grain and dither, and dither must be last.
+ * The post chain: on high, a full-resolution scene pass, then halation
+ * extract and blur, then the grade pass, chromatic aberration, FXAA, then the
+ * finish pass; on medium the scene pass and halation are skipped and grade is
+ * first. Passes attach in creation order, which is what fixes the order —
+ * aberration and FXAA must run before grain and dither, and dither must be
+ * last.
+ *
+ * The scene pass exists only because Babylon renders the scene straight into
+ * the FIRST post-process's own input render target: on high that would
+ * otherwise be `halationExtract`, whose ratio (`HALATION_RATIO`, a deliberate
+ * quarter resolution for the extract's OWN output) would size the scene
+ * render itself, rasterising the entire frame at quarter resolution. A
+ * `PassPostProcess` at ratio 1.0 in front of the halation chain absorbs that
+ * ratio instead, so the scene always renders full-resolution regardless of
+ * what the halation extract downsamples to. `grade.onApply` reads the scene
+ * from the scene pass's INPUT (the true full-resolution render), not from
+ * `halationExtract`'s input (which would give the same texture indirectly,
+ * but only because the scene pass happens to sit in front of it — binding the
+ * scene pass directly does not depend on that chaining detail).
  *
  * Aberration and FXAA are constructed directly as `ChromaticAberrationPostProcess`
  * and `FxaaPostProcess` rather than through `DefaultRenderingPipeline`: the
@@ -68,6 +84,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
   const image = scene.imageProcessingConfiguration;
   let grade: PostProcess | null = null;
   let finish: PostProcess | null = null;
+  let scenePass: PassPostProcess | null = null;
   let extract: PostProcess | null = null;
   let blurX: BlurPostProcess | null = null;
   let blurY: BlurPostProcess | null = null;
@@ -87,6 +104,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
     Effect.ShadersStore["finishFragmentShader"] = finishFragment;
 
     if (features.halation) {
+      // Absorbs the halation extract's quarter-resolution ratio so the scene
+      // itself always renders full-resolution — see the doc comment above.
+      scenePass = new PassPostProcess("scene", 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, textureType);
       extract = new PostProcess("halationExtract", "halationExtract", ["exposure"], [], HALATION_RATIO, camera,
         Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
       extract.onApply = (effect) => {
@@ -105,15 +125,17 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
         "midtoneTint", "midtoneAmount", "highlightTint", "highlightAmount", "lift", "vignetteWeight", "vignetteColour",
         "halationStrength"],
       ["halationSampler"], 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
-    const boundExtract = extract;
+    const boundScenePass = scenePass;
     const boundBlurY = blurY;
     const boundBlack = black;
     grade.onApply = (effect) => {
       const r = record;
-      // With halation the scene is the extract's INPUT (setTextureFromPostProcess
-      // binds a pass's input texture); without it the chain's previous output
-      // is already the scene, so textureSampler needs no override.
-      if (boundExtract !== null) effect.setTextureFromPostProcess("textureSampler", boundExtract);
+      // With halation the scene is the scene pass's INPUT (setTextureFromPostProcess
+      // binds a pass's input texture, and the scene pass's own input is the
+      // camera's actual render since it is first in the chain); without
+      // halation the chain's previous output is already the scene, so
+      // textureSampler needs no override.
+      if (boundScenePass !== null) effect.setTextureFromPostProcess("textureSampler", boundScenePass);
       if (boundBlurY !== null) effect.setTextureFromPostProcessOutput("halationSampler", boundBlurY);
       else if (boundBlack !== null) effect.setTexture("halationSampler", boundBlack);
       effect.setFloat("exposure", r.exposure);
@@ -199,6 +221,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
       blurY?.dispose();
       blurX?.dispose();
       extract?.dispose();
+      scenePass?.dispose();
       black?.dispose();
     },
   };

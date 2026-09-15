@@ -90,7 +90,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       camera.dispose();
       return order;
     };
-    expect(names("high")).toEqual(["halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "finish"]);
+    expect(names("high")).toEqual(["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "finish"]);
     expect(names("medium")).toEqual(["grade", "chromaticAberration", "fxaa", "finish"]);
   });
 });
