@@ -137,11 +137,17 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
     if (was !== locked) engagedHandler?.(locked);
   };
 
+  // Which kind of pointer the last press on the canvas came from. A tap on a
+  // phone ends in a synthetic `click` too, and Chrome on Android will grant
+  // pointer lock to it — with a "to show your cursor" toast, and a lock that
+  // drops again and takes the touch controls with it. Only a mouse click may
+  // ask for the lock; that still covers a hybrid laptop's mouse in touch mode.
+  let lastPointerType = "";
+  const onCanvasPointerDown = (e: PointerEvent) => {
+    lastPointerType = e.pointerType;
+  };
   const onCanvasClick = () => {
-    // Not gated on touchMode: a hybrid device still has a mouse, and its click
-    // must still be able to (re)request pointer lock so onLockChange above has
-    // something to react to. The touch layer's own pointer handling is what
-    // engages a pure phone; this only matters where a real pointer lock exists.
+    if (lastPointerType === "touch" || lastPointerType === "pen") return;
     if (!locked) void canvas.requestPointerLock();
   };
 
@@ -151,6 +157,7 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
   window.addEventListener("mousedown", onMouseDown);
   window.addEventListener("mouseup", onMouseUp);
   document.addEventListener("pointerlockchange", onLockChange);
+  canvas.addEventListener("pointerdown", onCanvasPointerDown);
   canvas.addEventListener("click", onCanvasClick);
 
   const sampler: InputSampler = {
@@ -237,6 +244,7 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);
       document.removeEventListener("pointerlockchange", onLockChange);
+      canvas.removeEventListener("pointerdown", onCanvasPointerDown);
       canvas.removeEventListener("click", onCanvasClick);
     },
   };

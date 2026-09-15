@@ -285,6 +285,57 @@ describe("engaged on touch", () => {
   });
 });
 
+describe("pointer lock is a mouse affair", () => {
+  function lockRequests(canvas: object): () => number {
+    let n = 0;
+    (canvas as { requestPointerLock: () => void }).requestPointerLock = () => {
+      n++;
+    };
+    return () => n;
+  }
+
+  it("does not request pointer lock for a click that came from a touch, in touch mode", () => {
+    // Chrome on Android grants pointer lock to a tap and shows a "to show your
+    // cursor" toast; the lock then drops and takes the touch controls with it.
+    const { input, canvas } = sampler({ touch: fakeTouch().source, touchMode: true });
+    const requests = lockRequests(canvas);
+    fire("pointerdown", { pointerType: "touch" });
+    fire("click", {});
+    expect(requests()).toBe(0);
+    expect(input.engaged).toBe(true);
+  });
+
+  it("does not request pointer lock for a touch click on desktop either", () => {
+    const { canvas } = sampler();
+    const requests = lockRequests(canvas);
+    fire("pointerdown", { pointerType: "touch" });
+    fire("click", {});
+    expect(requests()).toBe(0);
+  });
+
+  it("still requests pointer lock for a mouse click, in touch mode and out of it", () => {
+    const desktop = sampler();
+    const desktopRequests = lockRequests(desktop.canvas);
+    fire("pointerdown", { pointerType: "mouse" });
+    fire("click", {});
+    expect(desktopRequests()).toBe(1);
+
+    listeners.clear();
+    const hybrid = sampler({ touch: fakeTouch().source, touchMode: true });
+    const hybridRequests = lockRequests(hybrid.canvas);
+    fire("pointerdown", { pointerType: "mouse" });
+    fire("click", {});
+    expect(hybridRequests()).toBe(1);
+  });
+
+  it("a click with no pointerdown before it (keyboard activation) still requests the lock", () => {
+    const { canvas } = sampler();
+    const requests = lockRequests(canvas);
+    fire("click", {});
+    expect(requests()).toBe(1);
+  });
+});
+
 describe("touch source in sample", () => {
   it("adds touch axes to keyboard axes and clamps to the unit range", () => {
     const t = fakeTouch({ moveX: 0.5, moveZ: 1 });
