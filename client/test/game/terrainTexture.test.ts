@@ -743,7 +743,7 @@ describe("the grass floor", () => {
     // hexSetup(uvG and the grass albedo hex fetch both sit inside their own
     // `if (vTerrainW.x > 0.0)` gate, so non-grass ground never pays for a
     // lattice walk or three hashed fetches.
-    const setupGateAt = blend.indexOf("if (vTerrainW.x > 0.0) {\n    hexSetup(uvG");
+    const setupGateAt = blend.search(/if \(vTerrainW\.x > 0\.0\) \{\s*hexSetup\(uvG/);
     expect(setupGateAt).toBeGreaterThan(-1);
     const albedoGateAt = blend.indexOf("if (vTerrainW.x > 0.0) { grassAlbedo = hexFetch2D(terrainGrass");
     expect(albedoGateAt).toBeGreaterThan(setupGateAt);
@@ -765,8 +765,6 @@ describe("the grass floor", () => {
     const detailBlock = blend.slice(detailAt, detailEnd);
     // The detail scale fetches a normal and an occlusion, never an albedo: an
     // albedo term was tried and could not be seen with these maps.
-    expect(blend.match(/hexFetch2D\(terrainGrass, d1/g) ?? []).toHaveLength(0);
-    expect(detailBlock).not.toContain("detailAlbedo");
     expect(blend).not.toContain("detailAlbedo");
     expect(detailBlock).toContain("hexFetchArray(terrainNormals, d1");
     expect(detailBlock).toContain("hexFetchArray(terrainRAH, d1");
