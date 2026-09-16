@@ -53,8 +53,9 @@ the retune the meadow-side floor is slightly patchier than the control; nothing 
 
 ## Gate 3: the trail at eerie 20 h, lamp on — PASS
 
-No sparkle, no banding in the lamp pool with the detail term under the near light. The two builds
-read identical apart from the rain's own frame-to-frame variance.
+Read on both builds, `7f25772` and the retuned `0fa9be4`: no sparkle, no banding in the lamp pool
+with the detail term under the near light. The two builds read identical apart from the rain's
+own frame-to-frame variance.
 
 ## Gate 4: deep forest — PASS (visual)
 
@@ -86,8 +87,9 @@ Then the retuned run, Δ mean by order:
 And the low tier at 1.5× hardware scaling, meadow only: 16.68 ms vs 16.68 ms, n = 239 in every
 sample, both builds on the vsync cap.
 
-Verdict: about +0.75 ms at native resolution on the fill-heaviest view, inside the 60 Hz
-contract. The deep-forest ground carries a small non-zero grass weight under the canopy, so the
+Verdict: about +0.75 ms implied at native resolution (the 4× delta divided by four; the 1.5×
+pair stays on the cap) on the fill-heaviest view, inside the 60 Hz contract. The deep-forest
+ground carries a small non-zero grass weight under the canopy, so the
 vertex-weight gate saves only where grass is exactly zero (coast, rock); the fallback ladder in
 §10 was not needed.
 
@@ -100,4 +102,5 @@ speckles, zero console errors.
 
 ## Unverified in this rig
 
-- The retuned constants were judged at noon and 14 h only, not at a low sun.
+- The retuned constants were judged at noon, at 14 h and under the lamp at 20 h; not under a low
+  sun (17 h).

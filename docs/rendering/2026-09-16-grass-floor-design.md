@@ -182,5 +182,12 @@ relief fade only (plain tiling beyond 140 m); the horizon tint stays regardless 
 - **§4 and §7, cost.** The 2 m hex lattice and its three-tap fetches run only where the grass
   vertex weight is non-zero; elsewhere one plain fetch of each grass map keeps the height blend
   intact (the blend can still hand grass a small share where two other layers split the
-  weight). Measured cost at the meadow: about +0.75 ms at native resolution (+3 ms at 4×
-  pixels); the low tier at 1.5× scaling stays on the 60 Hz cap.
+  weight). Cost at the meadow: +3 ms at 4× pixels, about +0.75 ms implied at native; the low
+  tier at 1.5× scaling stays on the 60 Hz cap.
+- **§3, the API table.** `macroTint` takes `(noise, slope)`; `hexWeights` takes the three
+  barycentric weights; `forestMeshes.ts`'s understory writer applies the same tint as
+  `clutterMeshes.ts`.
+- **§8, the lockstep test.** `DETAIL_TILING`, the detail fade edges, `TUFT_ALBEDO` and the
+  horizon edges are uniforms bound from the TypeScript constants and pinned by the
+  uniform-write test, not `${value}` prints in the GLSL; the GLSL literals the lockstep test
+  pins are the hex, macro and hash constants.

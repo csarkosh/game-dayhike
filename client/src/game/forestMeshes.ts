@@ -333,7 +333,9 @@ function treeFoliageBuffer(seed: number, list: readonly TreeInstance[]): Float32
     const slope = Math.hypot(t.groundDx, t.groundDz);
     const c = surfaceAlbedo(seed, t.x, t.z, t.groundH, slope, canopy);
     // The floor applies the same tint in terrainTexture.ts, so a tuft and the
-    // ground under it agree by construction.
+    // ground under it agree where the ground is grass and inside the relief
+    // fade; on non-grass ground the card carries this tint alone, and past
+    // the fade the floor's tint has faded out while the card keeps its own.
     const ny = 1 / Math.sqrt(1 + t.groundDx * t.groundDx + t.groundDz * t.groundDz);
     const tint = macroTint(macroNoise(t.x, t.z), 1 - ny);
     buf[i * 4] = c.r * tint.r;

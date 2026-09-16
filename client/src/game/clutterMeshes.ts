@@ -342,7 +342,9 @@ function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Array, of
   const canopy = forestDensity(seed, inst.x, inst.z);
   const c = surfaceAlbedo(seed, inst.x, inst.z, inst.groundH, slope, canopy);
   // The floor applies the same tint in terrainTexture.ts, so a tuft and the
-  // ground under it agree by construction.
+  // ground under it agree where the ground is grass and inside the relief
+  // fade; on non-grass ground the card carries this tint alone, and past the
+  // fade the floor's tint has faded out while the card keeps its own.
   const ny = 1 / Math.sqrt(1 + inst.groundDx * inst.groundDx + inst.groundDz * inst.groundDz);
   const tint = macroTint(macroNoise(inst.x, inst.z), 1 - ny);
   buf[offset] = c.r * tint.r;

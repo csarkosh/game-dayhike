@@ -6,8 +6,9 @@ import { clamp01, type Rgb } from "./colour.js";
  * macro noise is built on, the lush/dry macro tint, and the horizon tint's
  * weight. `shaders/groundHex.fragment.fx` carries the GLSL twins and a
  * lockstep test pins them to these constants; `terrainTexture.ts` binds the
- * uniforms; `clutterMeshes.ts` multiplies each tuft's ground colour by
- * `macroTint` so tuft and floor agree by construction.
+ * uniforms; `clutterMeshes.ts` and `forestMeshes.ts` multiply each card's
+ * ground colour by `macroTint` so tuft and floor agree where the ground is
+ * grass and inside the relief fade (the paragraph below says where not).
  *
  * Renderer-only: nothing here may migrate into sim/ or a tunables registry.
  *
@@ -16,6 +17,12 @@ import { clamp01, type Rgb } from "./colour.js";
  * mirrored, so its hash is a multiply-add-fract on integer cell indices that
  * both sides compute exactly (a sin hash differs across GPUs by more than the
  * tint could hide).
+ *
+ * The tuft and the ground under it agree only where the code holds that up:
+ * on grass ground, inside the 80–140 m relief fade. On non-grass ground the
+ * card still carries the tint from `macroTint` but the floor never applies
+ * one there, and past the fade the floor's own tint has faded out while the
+ * cards keep theirs all the way to their own draw horizon.
  */
 
 /** Lattice cells per texture repeat. 1 = one hex cell is about one repeat. */
@@ -60,7 +67,14 @@ function smoothstep(e0: number, e1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-/** Exact on both CPU and GPU for |ci|, |cj| < 1e4: only multiplies, adds and fract. */
+/** Only multiplies, adds and fract — but the bound on CPU/GPU agreement is
+ * narrower than that suggests. The `0.0113·ci·cj` term must stay exactly
+ * representable in float32 for `fract` to land on the same value the CPU's
+ * float64 does; that holds for |ci·cj| up to about 1e4 (|c| ≲ 100 in both
+ * axes at once). Every scale this world uses stays well inside it — the 6 m
+ * octave over the level's extent gives |c| of a few hundred at most in one
+ * axis with the other kept small — and past the bound the two sides drift
+ * apart gracefully rather than failing outright. */
 export function latticeHash(ci: number, cj: number): number {
   return fract(0.618034 * ci + 0.381966 * cj + 0.0113 * ci * cj);
 }

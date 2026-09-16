@@ -45,10 +45,11 @@
  * blade-level normal and between-blade occlusion where the eye can resolve
  * them and costing nothing past the fade. Two tints finish it: a
  * lush/dry macro noise over tens of metres (mirrored on the CPU in
- * `groundHexParams.ts`, so `clutterMeshes.ts` tints each tuft to match by
- * construction), and a pull toward TUFT_ALBEDO past HORIZON, where the floor
- * should read as the same vegetation the clutter thins out of rather than as
- * bare palette.
+ * `groundHexParams.ts`, so `clutterMeshes.ts` and `forestMeshes.ts` tint each
+ * tuft to match — but only where the ground under it is grass and inside the
+ * relief fade; elsewhere the card carries the tint alone), and a pull toward
+ * TUFT_ALBEDO past HORIZON, where the floor should read as the same
+ * vegetation the clutter thins out of rather than as bare palette.
  *
  * No parallax on grass, deliberately: the rock march below works because stone
  * is a rigid surface whose height field is the shape. Grass height is blades,
@@ -389,6 +390,11 @@ const TERRAIN_FRAGMENT_BLEND = `
   vec2 ddx = dFdx(uvD); vec2 ddy = dFdy(uvD);
   // The 2 m hex lattice is grass-only work: gated on the raw vertex weight so
   // non-grass ground never pays for a lattice walk and three hashed fetches.
+  // At exactly zero vertex weight the grass maps switch from the three-tap
+  // hex to one plain fetch, so wherever the height blend below still hands
+  // grass a share the pattern changes there too — same mean, different
+  // texels, bounded by that share times the map's own variance. The coast is
+  // the one ground this happens on today.
   vec2 g1 = vec2(0.0); vec2 g2 = vec2(0.0); vec2 g3 = vec2(0.0); vec3 gw = vec3(0.0);
   if (vTerrainW.x > 0.0) {
     hexSetup(uvG, g1, g2, g3, gw);
