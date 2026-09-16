@@ -28,7 +28,7 @@ export const MIST_WRAP_FADE = 8;
 
 /**
  * Wraps a drift offset into ±MIST_CELL/2 so a bank wanders but never leaves
- * its cell. Every bank rides the same drift clock (`off`, below); wrapping it
+ * its cell. Every bank rides the same drift distance (`off`, below); wrapping it
  * unmodified would put every bank's own wrap boundary at the same `off`
  * value, so all twelve would cross it — and teleport by a full MIST_CELL —
  * in the same frame. The update loop instead wraps `off + bank.hash *
@@ -59,6 +59,8 @@ function wrapFadeAt(offset: number): number {
 export const MIST_CAP_BY_TIER: Record<QualityTier, number> = { low: 6, medium: 12, high: 12 };
 
 export type MistMeshes = {
+  /** `seconds` is the raw render clock; the shell differences it itself to step
+   * the drift, so callers pass the same clock every other renderer shell reads. */
   update(camX: number, camZ: number, w: WeatherParams, air: Rgb, wind: WindRecord, seconds: number): void;
   dispose(): void;
   meshes: readonly Mesh[];
@@ -100,10 +102,24 @@ export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier):
   let banks: MistBank[] = [];
   let lastCellX: number | null = null;
   let lastCellZ: number | null = null;
+  /** Metres of drift accumulated so far, and the clock the last step ended at.
+   * INTEGRATED rather than read off the absolute clock: with `off = MIST_DRIFT
+   * · speed · seconds` a change of speed rescales the whole history at once, so
+   * clear turning to rain ten minutes in slid every bank about 97 m sideways in
+   * a single frame. */
+  let driftDistance = 0;
+  let lastSeconds = 0;
 
   return {
     meshes,
     update(camX, camZ, w, air, wind, seconds) {
+      // Stepped first, and before the early return below, so the clock is
+      // tracked whether or not there is mist to draw. At most one second of
+      // wind a step: a suspended tab (or a stalled first frame) resumes where
+      // it left off instead of lurching the whole gap downwind at once, and a
+      // clock that has not moved contributes nothing.
+      driftDistance += MIST_DRIFT * wind.speed * Math.min(1, Math.max(0, seconds - lastSeconds));
+      lastSeconds = seconds;
       const opacity = mistOpacityUnder(w);
       if (opacity <= 0) {
         for (const m of meshes) m.setEnabled(false);
@@ -118,7 +134,7 @@ export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier):
         lastCellZ = cellZ;
       }
       mat.emissiveColor.set(air.r, air.g, air.b);
-      const off = MIST_DRIFT * wind.speed * seconds;
+      const off = driftDistance;
       for (let i = 0; i < meshes.length; i++) {
         const mesh = meshes[i] as Mesh;
         const bank = banks[i];

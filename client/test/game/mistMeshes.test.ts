@@ -30,6 +30,26 @@ function scene(): Scene {
 const SEED = 1;
 const STILL = windRecordUnder(WEATHER_PRESETS.clear, 0, 0);
 
+/**
+ * Drives the shell's integrated drift to `distance` metres downwind. The
+ * offset is no longer a function of the absolute clock — it accumulates, at
+ * most a second of wind per update — so a test that needs a particular offset
+ * has to step the clock there rather than jump it. `step` runs one update at
+ * the seconds it is handed.
+ */
+function driftTo(step: (seconds: number) => void, distance: number, speed: number): void {
+  const perStep = MIST_DRIFT * speed;
+  let seconds = 0;
+  let left = distance;
+  step(seconds);
+  while (left > perStep) {
+    seconds += 1;
+    left -= perStep;
+    step(seconds);
+  }
+  step(seconds + left / perStep);
+}
+
 function coastalOrigin(): { x: number; z: number } {
   for (let x = -350; x <= -100; x += 50) {
     for (let z = -400; z <= 400; z += 100) {
@@ -100,7 +120,7 @@ describe("createMistMeshes", () => {
     mist.dispose();
   });
 
-  it("banks drift downwind by MIST_DRIFT·speed·t and wrap inside their cell", () => {
+  it("banks drift downwind by MIST_DRIFT·speed·Δt and wrap inside their cell", () => {
     const s = scene();
     const mist = createMistMeshes(s, SEED, "high");
     const { x, z } = coastalOrigin();
@@ -111,12 +131,49 @@ describe("createMistMeshes", () => {
       .map((m) => ({ mesh: m, x0: m.position.x, z0: m.position.z }));
     expect(before.length).toBeGreaterThan(0);
 
-    mist.update(x, z, WEATHER_PRESETS.mist, { r: 0.5, g: 0.5, b: 0.5 }, wind, 10);
+    // Ten one-second steps, not a ten-second jump: the drift is INTEGRATED and
+    // each step is clamped to a second, so ten seconds of wind have to be
+    // handed over in ten seconds of updates.
+    for (let t = 1; t <= 10; t++) {
+      mist.update(x, z, WEATHER_PRESETS.mist, { r: 0.5, g: 0.5, b: 0.5 }, wind, t);
+    }
     for (const { mesh, x0, z0 } of before) {
       expect(mesh.isEnabled()).toBe(true);
       expect(mesh.position.x - x0).toBeCloseTo(MIST_DRIFT * wind.speed * 10, 6);
       expect(mesh.position.z).toBeCloseTo(z0, 6);
       expect(Math.abs(mesh.position.x - x0)).toBeLessThanOrEqual(MIST_CELL / 2);
+    }
+    mist.dispose();
+  });
+
+  it("a weather change does not teleport the banks, and a suspended tab resumes rather than lurches", () => {
+    const s = scene();
+    const mist = createMistMeshes(s, SEED, "high");
+    const { x, z } = coastalOrigin();
+    const air = { r: 0.5, g: 0.5, b: 0.5 };
+    const calm = { ...windRecordUnder(WEATHER_PRESETS.mist, 0, 0.2), dirX: 1, dirZ: 0 };
+    const gale = { ...calm, speed: 1 };
+    // Ten minutes of the calm wind, one second at a time.
+    for (let t = 1; t <= 600; t++) mist.update(x, z, WEATHER_PRESETS.mist, air, calm, t);
+    const before = mist.meshes
+      .filter((m) => m.isEnabled())
+      .map((m) => ({ mesh: m, x0: m.position.x }));
+    expect(before.length).toBeGreaterThan(0);
+
+    // Compared modulo the cell: a bank that happens to sit on its own wrap
+    // boundary reappears MIST_CELL away, which is the same bank, not a jump.
+    const wrapDelta = (d: number) =>
+      (((d + MIST_CELL / 2) % MIST_CELL) + MIST_CELL) % MIST_CELL - MIST_CELL / 2;
+
+    // The speed quintuples at the SAME clock: with the old absolute-clock
+    // offset the whole 600 s of drift rescaled and every bank jumped ~97 m.
+    mist.update(x, z, WEATHER_PRESETS.mist, air, gale, 600);
+    for (const { mesh, x0 } of before) expect(wrapDelta(mesh.position.x - x0)).toBeCloseTo(0, 6);
+
+    // A tab suspended for a minute integrates at most a second of it.
+    mist.update(x, z, WEATHER_PRESETS.mist, air, gale, 660);
+    for (const { mesh, x0 } of before) {
+      expect(wrapDelta(mesh.position.x - x0)).toBeCloseTo(MIST_DRIFT * gale.speed, 6);
     }
     mist.dispose();
   });
@@ -137,9 +194,12 @@ describe("createMistMeshes", () => {
     const goal = MIST_CELL / 2 - 0.5;
     const raw = goal - target.hash * MIST_CELL;
     const off = ((raw % MIST_CELL) + MIST_CELL) % MIST_CELL;
-    const seconds = off / (MIST_DRIFT * wind.speed);
 
-    mist.update(x, z, WEATHER_PRESETS.mist, { r: 0.5, g: 0.5, b: 0.5 }, wind, seconds);
+    driftTo(
+      (seconds) => mist.update(x, z, WEATHER_PRESETS.mist, { r: 0.5, g: 0.5, b: 0.5 }, wind, seconds),
+      off,
+      wind.speed,
+    );
 
     const targetMesh = mist.meshes[0] as Mesh;
     expect(targetMesh.visibility).toBeLessThan(0.02);
@@ -177,9 +237,13 @@ describe("createMistMeshes", () => {
     const goal = 47.5;
     const raw = goal - target.hash * MIST_CELL;
     const off = ((raw % MIST_CELL) + MIST_CELL) % MIST_CELL;
-    const seconds = off / (MIST_DRIFT * wind.speed);
 
-    mist.update(camX, camZ, WEATHER_PRESETS.mist, { r: 0.5, g: 0.5, b: 0.5 }, wind, seconds);
+    driftTo(
+      (seconds) =>
+        mist.update(camX, camZ, WEATHER_PRESETS.mist, { r: 0.5, g: 0.5, b: 0.5 }, wind, seconds),
+      off,
+      wind.speed,
+    );
 
     const banks = collectMistBanks(SEED, camX, camZ);
     const index = banks.findIndex((b) => b.x === target.x && b.z === target.z);
