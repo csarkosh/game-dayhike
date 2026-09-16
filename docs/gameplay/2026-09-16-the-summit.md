@@ -13,7 +13,7 @@ worlds (39 of 227); raising it is the density follow-up. A guide route in the 1.
 on 132 (58 %, floor 55 %), and on the rest the guide returns the longest of its walks under the cap;
 571 bed pairs on 142 worlds sit closer than the 16 m corridor gap (never under 4 m, so beds never
 overlap) because the simplifier's gap test works in cell space — a world-space test there is the
-follow-up that would raise every one of these numbers; build time 428 ms a seed.
+follow-up that would raise every one of these numbers; build time about 400 ms a seed.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md`. Supersedes its loop (§1 there, the
 count and the sign-out) and the §17 table's F and beyond. Keeps its trailhead, its Hollow's
 lethality and its tone.

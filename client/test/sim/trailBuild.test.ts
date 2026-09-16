@@ -373,9 +373,9 @@ describe("buildTrail on a synthetic world", () => {
   // vertices, where two loops landing on the same one was common. Junctions are
   // points on the stem now, split where the feature's own tangent falls, so a
   // hub needs two features' tangents to land within a split's snap
-  // reach — which on this fixture is a knife edge: scanning `shortStemFrame`'s
-  // wall from u = 420 to 900 in 20 m steps, a hub forms at exactly 460, 600 and
-  // 720 and at no other value. Moving the wall onto one of those would be
+  // reach — which on a synthetic fixture is a knife edge: sweeping the wall that
+  // shortens the stem from u = 420 to 900 in 20 m steps, a hub forms at exactly
+  // 460, 600 and 720 and at no other value. Moving the wall onto one of those would be
   // fitting the fixture to the assertion. Hubs are real and are asserted on
   // REAL terrain by a later test instead (at least 3 of the 227-seed sweep;
   // measured at 4 with the current code).

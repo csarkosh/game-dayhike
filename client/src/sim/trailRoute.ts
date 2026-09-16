@@ -188,8 +188,8 @@ function reachesPad(graph: TrailGraph, from: number, used: ReadonlySet<number>):
  * still reach the pad without a repeated edge, abandoned once it exceeds
  * `max` × shortestHome. The first walk whose length lands in
  * [min, max] × shortestHome is returned with `inBand: true`; otherwise the
- * longest walk found under the cap; otherwise the shortest path (the sweep
- * pins that last case to never happen on a built world). Deterministic in
+ * longest walk found under the cap; otherwise the shortest path (the 227-seed
+ * sweep shows the shortest-path case does not arise). Deterministic in
  * `rand` (the host passes `() => nextRandom(state)`).
  */
 export function guideWalk(
