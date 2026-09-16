@@ -426,14 +426,15 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
   let dead = false;
   /**
-   * Death, once: input off, the book closed, the view faded onto the passage.
-   * The session stays and the scene keeps rendering under the fade — the
-   * pause menu opens on Escape as ever, and preview mode will lift the fade.
+   * Death, once: the book closed, the view faded onto the passage. Input
+   * stays live — the sim already ignores a dead player's movement and
+   * Interact (`tickWorld`'s dead branch, `pickUp`'s `dead(player)` check),
+   * so nothing needs suppressing, their view angles keep tracking under the
+   * fade, and Escape keeps opening the pause menu on every platform.
    */
   function syncDeath(self: PlayerState | undefined): void {
     if (dead || self === undefined || self.health > 0) return;
     dead = true;
-    input.setSuppressed(true);
     registerPanel.hide();
     hud.fade(true);
     hud.setStatus(DEATH_LINE);
