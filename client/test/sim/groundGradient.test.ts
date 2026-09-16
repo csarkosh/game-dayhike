@@ -596,6 +596,9 @@ describe("the level id does not move", () => {
     // pass 9, a new registry entry with its own tunables, and the level-id
     // probe gained the chunk that holds a post. Both move this on purpose:
     // a peer without the posts has different collision at every fork.
-    expect(passHash()).toBe(-1513056523);
+    // Re-baselined 2026-09-16 from -1513056523: the trail bench narrowed
+    // (TRAIL_BED_HALF 1 -> 0.75) and sank (the new TRAIL_SINK, TRAIL_SINK_RAMP
+    // tunables), moving every trail's tread on purpose.
+    expect(passHash()).toBe(-1283394394);
   });
 });
