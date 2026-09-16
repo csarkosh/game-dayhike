@@ -41,6 +41,7 @@ import {
   type BuildFrame, type Heights, type Attempt, type GraphState, type StemSample,
 } from "./trailPlan.js";
 export type { BuildFrame } from "./trailPlan.js";
+import { buildStrands, stemPose } from "./trailBraid.js";
 import { homeDistances, forksOf } from "./trailRoute.js";
 import {
   scoreCandidate, scoredDisc, landmarkThreshold,
@@ -886,7 +887,26 @@ export function buildTrail(seed: number, frame: BuildFrame): { graph: TrailGraph
     // one loop. Every failure path above already popped its own pushed
     // feature and re-sampled the grid, so there is nothing left to undo here.
   }
+
+  // ---- The braid: strands between a top and a bottom fork ------------------
+  const braid = buildStrands(state, {
+    seed, grid, frame, H, ground, tree, treeEdges, features, summit,
+  });
+  state = braid.state;
+
   const { stem, stemLen } = stemGeometry(state, summit);
+
+  // Strand and rung edges carry the stem progress of each end's nearest stem
+  // point, so `nearestPointOnEdges` (register.ts) reads something sane on them.
+  {
+    const finalSamples = sampleStem(state, stemGeometry(state, summit));
+    const progressAt = (n: TrailNode): number => stemLen > 0 ? stemPose(finalSamples, n.x, n.z).arc / stemLen : 0;
+    for (const e of state.edges) {
+      if (e.kind !== "strand" && e.kind !== "rung") continue;
+      e.progress0 = progressAt(state.nodes[e.a] as TrailNode);
+      e.progress1 = progressAt(state.nodes[e.b] as TrailNode);
+    }
+  }
 
   // ---- Scenery: a stand and a talus, clear of the stem ---------------------
   /**

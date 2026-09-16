@@ -50,6 +50,7 @@ import {
   LANDMARK_TUNABLES, landmarkMaskAt, type Landmark, type LandmarkMask,
 } from "./landmarks.js";
 import { FEATURE_TUNABLES, featureStageD, featureMaskAt, type Feature, type FeatureMask } from "./features.js";
+import { BRAID_TUNABLES } from "./trailBraid.js";
 import { forestDensityUnmasked } from "./vegetation.js";
 import { boulderDensityUnmasked, CLUTTER_BOULDER_SLOPE_LO } from "./clutter.js";
 
@@ -706,6 +707,7 @@ registerTerrainVariant({
     ...TRAIL_TUNABLES,
     ...LANDMARK_TUNABLES,
     ...FEATURE_TUNABLES,
+    ...BRAID_TUNABLES,
   },
   waterLevel: SEA_LEVEL,
   coastDistance: signedCoastDistance,

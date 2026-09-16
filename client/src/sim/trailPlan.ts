@@ -212,7 +212,7 @@ export function sampleStem(state: GraphState, geom: StemGeometry): StemSample[] 
 export function routeTo(
   grid: TrailGrid, frame: BuildFrame, H: Heights, ground: GroundFn, state: GraphState,
   tree: Uint8Array, treeEdges: ReadonlyArray<[number, number]>, start: number, target: number,
-  marked: number[], weight: Float32Array | null,
+  marked: number[], weight: Float32Array | null, arriveOnTree = false,
 ): { ok: boolean; best: Attempt } {
   let best: Attempt | null = null;
   for (let attempt = 0; attempt <= TRAIL_REROUTE_MAX; attempt++) {
@@ -224,7 +224,7 @@ export function routeTo(
     let k = cells.length - 1;
     while (k > 0 && tree[cells[k - 1] as number] === 0) k--;
     const branch = cells.slice(Math.max(0, k - 1));
-    const simp = simplify(grid, frame, H, tree, treeEdges, branch);
+    const simp = simplify(grid, frame, H, tree, treeEdges, branch, arriveOnTree ? (branch[branch.length - 1] as number) : null);
     const plan = planPath(state, simp, grid, frame, H);
     const bad: number[] = [];
     let worst = 0;
@@ -366,10 +366,15 @@ export function cellsBetween(grid: TrailGrid, frame: BuildFrame, ax: number, az:
  * edge it does not share a node with, or (d) carry a profile over
  * TRAIL_HARD_SLOPE_MAX. The first cell of a branch is on the tree (its node
  * exists already) and is always kept.
+ *
+ * `arrive` is the cell a branch ENDS on when it ends on the tree too (a
+ * strand, a rung): the tree edges through it are exempt from the gap test the
+ * same way the departure's are.
  */
 export function simplify(
   grid: TrailGrid, frame: BuildFrame, H: Heights,
   tree: Uint8Array, treeEdges: ReadonlyArray<[number, number]>, cells: readonly number[],
+  arrive: number | null = null,
 ): number[] {
   const keep = new Uint8Array(cells.length);
   keep[0] = 1;
@@ -388,8 +393,15 @@ export function simplify(
    * is the furthest a segment crossing a cell can be from the middle of it.
    */
   const DEPART_REACH = TRAIL_GRID_CELL * Math.SQRT1_2;
-  const exempt = treeEdges.map(([ea, eb]) =>
-    segmentDistance(grid.x[ea] as number, grid.z[ea] as number, grid.x[eb] as number, grid.z[eb] as number, dx0, dz0) <= DEPART_REACH);
+  const ax0 = arrive === null ? NaN : (grid.x[arrive] as number), az0 = arrive === null ? NaN : (grid.z[arrive] as number);
+  const exempt = treeEdges.map(([ea, eb]) => {
+    const eax = grid.x[ea] as number, eaz = grid.z[ea] as number, ebx = grid.x[eb] as number, ebz = grid.z[eb] as number;
+    if (segmentDistance(eax, eaz, ebx, ebz, dx0, dz0) <= DEPART_REACH) return true;
+    // THE ARRIVAL IS EXEMPT LIKE THE DEPARTURE (2026-09-16): a strand or a rung
+    // ends ON an existing bed, so its last segment is 0 m from that bed by
+    // construction, exactly as its first is from the one it leaves.
+    return arrive !== null && segmentDistance(eax, eaz, ebx, ebz, ax0, az0) <= DEPART_REACH;
+  });
   const X = (k: number) => grid.x[cells[k] as number] as number;
   const Z = (k: number) => grid.z[cells[k] as number] as number;
   const violates = (a: number, b: number): boolean => {
