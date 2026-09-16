@@ -4,8 +4,10 @@ import {
   ambientGainsUnder, DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams,
 } from "./weather.js";
 
-/** Peak gain per synthesized layer, applied on top of `ambientGainsUnder`. */
+/** Peak gain for the rain layer, applied on top of `ambientGainsUnder`. */
 export const RAIN_LEVEL = 0.5;
+/** Peak gain for the wind layer, applied on top of `setWind`'s own
+ * speed/mist-scaled gain (`ambientGainsUnder` no longer has a say in it). */
 export const WIND_LEVEL = 0.4;
 /**
  * `setWind` knobs: the low-pass cutoff at zero gust and zero mist, how much a

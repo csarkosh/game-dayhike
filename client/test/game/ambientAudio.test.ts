@@ -160,6 +160,10 @@ describe("createAmbientAudio", () => {
     const n = windFilter.frequency.targets.length;
     audio.setWind({ ...rec, time: 5.02 }); // 20 ms later on the fake clock: throttled
     expect(windFilter.frequency.targets.length).toBe(n);
+    audio.setWind({ ...rec, time: 299.98 });
+    const n2 = windFilter.frequency.targets.length;
+    audio.setWind({ ...rec, time: 0.05 }); // wrapped past 300 s: must apply immediately
+    expect(windFilter.frequency.targets.length).toBe(n2 + 1);
     audio.dispose();
   });
 
