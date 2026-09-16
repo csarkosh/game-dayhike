@@ -146,9 +146,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   let base: AtmosphereBase = { weather: WEATHER_PRESETS[DEFAULT_WEATHER], hour: DEFAULT_HOUR };
   /** The escalation's eased state, reset when a match starts. */
   let escalation: EscalationState = ESCALATION_REST;
-  // Recomputed only when the weather does — `wildlifePresenceUnder` builds a
-  // per-species array, and the frame loop below would otherwise allocate one
-  // every frame to say the same thing.
+  // Recomputed when the weather does: on a `weather` command directly below,
+  // and on a forest world every frame by `syncAtmosphere`, as the escalation
+  // moves the weather on its own. `wildlifePresenceUnder` builds a
+  // per-species array, but that per-frame allocation is one it already
+  // accepts (see its own doc comment).
   let wildlifePresence = wildlifePresenceUnder(WEATHER_PRESETS[DEFAULT_WEATHER]);
   // The audio graph is gated on a user gesture; this is the same click that
   // requests pointer lock, so unlocking here needs no dedicated UI of its own.
