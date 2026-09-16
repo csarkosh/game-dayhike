@@ -170,6 +170,7 @@ export function createHostSession(
         lamp: { on: p.lamp.on, charge: p.lamp.charge },
         carrying: p.carrying,
         signOutTicks: p.signOutTicks,
+        stare: p.stare,
       })),
       enemies: [...world.state.enemies.values()].map((e) => ({
         id: e.id,

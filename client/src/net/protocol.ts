@@ -1,17 +1,18 @@
 import type { InputCommand, Vec3 } from "../sim/types.js";
 
 /**
- * Bumped whenever the wire format changes (most recently: the register —
- * the hikers' items, the match outcome, and each player's carried item and
- * sign-out ticks; before that, positions widened
- * from int16 to int32 so the wire carries the whole forest rather than a
- * 512 m box around the origin, and input sequence numbers widened from
- * uint16 to uint32 so they no longer wrap after 18 minutes; before that, the
- * lamp byte and the Interacted event). `Welcome` carries it; a client on
- * another version is refused in words instead of decoding garbage. The level
- * id does not cover this — it moves with the terrain, not the codec.
+ * Bumped whenever the wire format changes (most recently: the stare, one
+ * byte per player; before that, the register — the hikers' items, the match
+ * outcome, and each player's carried item and sign-out ticks; before that,
+ * positions widened from int16 to int32 so the wire carries the whole forest
+ * rather than a 512 m box around the origin, and input sequence numbers
+ * widened from uint16 to uint32 so they no longer wrap after 18 minutes;
+ * before that, the lamp byte and the Interacted event). `Welcome` carries it;
+ * a client on another version is refused in words instead of decoding
+ * garbage. The level id does not cover this — it moves with the terrain, not
+ * the codec.
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 export const enum MessageType {
   Input = 1,
@@ -113,6 +114,8 @@ export type SnapshotPlayer = {
   carrying: number;
   /** Ticks of Interact held at the register box, uint16. */
   signOutTicks: number;
+  /** The stare, 0 to 1, as one byte. */
+  stare: number;
 };
 
 export type SnapshotItem = {
@@ -217,7 +220,7 @@ export function decodeInput(buffer: ArrayBuffer): InputCommand[] {
   return commands;
 }
 
-const PLAYER_BYTES = 30;
+const PLAYER_BYTES = 31;
 const ENEMY_BYTES = 18;
 const ITEM_BYTES = 16;
 
@@ -277,6 +280,8 @@ export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
     o += 1;
     view.setUint16(o, clamp(p.signOutTicks, 0, 65535), true);
     o += 2;
+    view.setUint8(o, clamp(Math.round(p.stare * 255), 0, 255));
+    o += 1;
   }
 
   view.setUint16(o, snapshot.enemies.length, true);
@@ -363,6 +368,8 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
     o += 1;
     const signOutTicks = view.getUint16(o, true);
     o += 2;
+    const stare = view.getUint8(o) / 255;
+    o += 1;
     players.push({
       id,
       pos: { x, y, z },
@@ -375,6 +382,7 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
       lamp,
       carrying,
       signOutTicks,
+      stare,
     });
   }
 

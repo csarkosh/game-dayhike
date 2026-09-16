@@ -34,6 +34,7 @@ function throughTheWire(pos: Vec3): Vec3 {
         lamp: { on: false, charge: 1 },
         carrying: 255,
         signOutTicks: 0,
+        stare: 0,
       },
     ],
     enemies: [],

@@ -10,6 +10,12 @@ export const enum AiState {
   Chase = 1,
   Attack = 2,
   Dead = 3,
+  /** The Hollow (hollow.ts), free: walking the stem, pad to crest to pad. */
+  Crawl = 4,
+  /** The Hollow bound to `targetId`, a player, and walking at them. */
+  Hunt = 5,
+  /** The Hollow released but not the last: walking to `targetId`, another Hollow, to be absorbed. */
+  Merge = 6,
 }
 
 export const enum Button {
@@ -36,6 +42,8 @@ export const NO_CARRIER = 0;
 export const enum Outcome {
   Playing = 0,
   Won = 1,
+  /** Every player dead. */
+  Lost = 2,
 }
 
 /**
@@ -73,12 +81,7 @@ export type PlayerState = {
   health: number;
   grounded: boolean;
   lastProcessedInput: number;
-  /**
-   * Seconds until respawn; 0 means alive. Declared here rather than added
-   * later because it rides in the snapshot, and changing the wire format
-   * afterward would mean revisiting the codec, its byte-size test, and both
-   * sessions.
-   */
+  /** Always 0 since death became permanent; kept so the snapshot's byte layout stands. */
   respawnTimer: number;
   /**
    * The headlamp. `on` is toggled by the host on the Lamp press edge;
@@ -95,9 +98,21 @@ export type PlayerState = {
    */
   signOutTicks: number;
   /**
-   * Where this player last died, so respawn can put them back near it rather
-   * than at a fixed point — in an unbounded world a fixed spawn could be a long
-   * walk back through ground already cleared.
+   * The stare, 0 to 1: fills while a Hollow is in this player's view, empties
+   * when it is not, and kills at 1 (hollow.ts). Host truth; rides the snapshot
+   * as one byte so the screen's darkening and the death agree on every peer.
+   */
+  stare: number;
+  /**
+   * Set by the register on this player's sign-out, cleared when a hunt binds
+   * to them: a hunt ends on the hunted player's own sign-out. Host-only, never
+   * on the wire, outside the fingerprint.
+   */
+  signedOut: boolean;
+  /**
+   * Where this player fell. Set once, on the tick health reaches 0, and never
+   * cleared: death is permanent, and `updateDeaths` uses it to know the drop
+   * has been done.
    *
    * Host-only. The snapshot carries id, pos, vel, yaw, pitch, health,
    * respawnTimer and lamp, so this never reaches the wire and the codec is
@@ -126,6 +141,20 @@ export type EnemyState = {
   lastDistSq: number;
   stuckTimer: number;
   unstickTimer: number;
+  /**
+   * The Hollow's walk (hollow.ts): the node route it is following, the index
+   * of the next node, the stem direction of its crawl (+1 toward the crest,
+   * -1 toward the pad), whether it has left the graph for its target, and
+   * whether a living player had it in view last tick (which slows it).
+   *
+   * Host-only, like the stuck fields above: absent from the snapshot and the
+   * fingerprint. Unused (empty, 0, -1, false, false) on a sandbox chaser.
+   */
+  route: number[];
+  routeAt: number;
+  stemDir: number;
+  approach: boolean;
+  seen: boolean;
 };
 
 export type WorldState = {

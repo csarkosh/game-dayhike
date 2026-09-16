@@ -8,7 +8,7 @@ import {
   serializeWorldState,
 } from "../../src/sim/world.js";
 import { collisionBoxes, parseLevel } from "../../src/sim/level.js";
-import { NO_ITEM, Outcome, type InputCommand, type ItemState } from "../../src/sim/types.js";
+import { AiState, NO_ITEM, Outcome, type InputCommand, type ItemState } from "../../src/sim/types.js";
 import { PLAYER_MAX_HEALTH } from "../../src/sim/constants.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
@@ -201,5 +201,31 @@ describe("items in world state", () => {
     p.signOutTicks = 0;
     w.state.outcome = Outcome.Won;
     expect(serializeWorldState(w.state)).not.toBe(before);
+  });
+});
+
+describe("the stare and the graph", () => {
+  it("starts with an empty stare and no sign-out, and fingerprints the stare", () => {
+    const w = createWorld(level, 1);
+    const p = spawnPlayer(w);
+    expect(p.stare).toBe(0);
+    expect(p.signedOut).toBe(false);
+    expect(w.trail).toBeNull();
+    const before = serializeWorldState(w.state);
+    p.stare = 0.5;
+    expect(serializeWorldState(w.state)).not.toBe(before);
+    expect(serializeWorldState(w.state)).toContain(",0.5");
+  });
+
+  it("clones a Hollow's route as its own array", () => {
+    const w = createWorld(level, 1);
+    w.state.enemies.set(9, {
+      id: 9, pos: { x: 1, y: 2, z: 3 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, health: 40, ai: AiState.Crawl,
+      targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
+      route: [0, 1, 2], routeAt: 1, stemDir: -1, approach: false, seen: false,
+    });
+    const copy = cloneWorldState(w.state);
+    copy.enemies.get(9)!.route.push(3);
+    expect(w.state.enemies.get(9)!.route).toEqual([0, 1, 2]);
   });
 });

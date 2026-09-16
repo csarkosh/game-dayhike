@@ -204,6 +204,7 @@ export function createClientSession(
     local.lamp = { on: authoritative.lamp.on, charge: authoritative.lamp.charge };
     local.carrying = authoritative.carrying;
     local.signOutTicks = authoritative.signOutTicks;
+    local.stare = authoritative.stare;
     local.lastProcessedInput = snapshot.lastProcessedInput;
     predicted.state.tick = snapshot.tick;
     predicted.state.items = snapshot.items.map((it) => ({ ...it, pos: cloneVec3(it.pos) }));
@@ -354,9 +355,11 @@ export function createClientSession(
             lamp: { on: p.lamp.on, charge: p.lamp.charge },
             carrying: p.carrying,
             signOutTicks: p.signOutTicks,
-            // Host-only and not in the snapshot. A client has no use for where a
-            // remote player died: respawn placement is decided host-side and
-            // arrives as a corrected position.
+            stare: p.stare,
+            // Host-only and not in the snapshot. A client has no use for a remote
+            // player's own sign-out flag or where they died: respawn placement
+            // is decided host-side and arrives as a corrected position.
+            signedOut: false,
             deathPos: null,
           });
         }
@@ -376,6 +379,12 @@ export function createClientSession(
             lastDistSq: Infinity,
             stuckTimer: 0,
             unstickTimer: 0,
+            // Host-only Hollow walk state, also absent from the snapshot.
+            route: [],
+            routeAt: 0,
+            stemDir: -1,
+            approach: false,
+            seen: false,
           });
         }
       }

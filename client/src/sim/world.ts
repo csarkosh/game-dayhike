@@ -4,6 +4,7 @@ import { NO_ITEM, Outcome, cloneVec3, distanceSquared } from "./types.js";
 import type { Level } from "./level.js";
 import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
+import type { TrailGraph } from "./trail.js";
 import { groundSpawn, ringSample, spiralSpawn } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
@@ -75,6 +76,11 @@ export type World = {
    * for a hand-authored level, which has no trail to lose anybody on.
    */
   register: Register | null;
+  /**
+   * The trail network for a forest world (`trail.ts`): the Hollow's map and
+   * what `app.ts` paints signs from. Null for a hand-authored level.
+   */
+  trail: TrailGraph | null;
 };
 
 export function createWorld(level: Level, seed: number, authoritative = true): World {
@@ -88,6 +94,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
     waterLevel: null,
     interactables: new Map(),
     register: null,
+    trail: null,
     state: {
       tick: 0,
       players: new Map(),
@@ -109,6 +116,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
  */
 export function createForestWorld(forest: Forest, authoritative = true): World {
   const variant = activeTerrainVariant();
+  const graph = variant.trailGraph?.(forest.seed);
   const world: World = {
     level: { id: forest.levelId, brushes: [], playerSpawns: [], enemySpawns: [] },
     boxes: forest.grid,
@@ -119,6 +127,7 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
     waterLevel: variant.waterLevel ?? null,
     interactables: new Map(),
     register: null,
+    trail: graph ?? null,
     state: {
       tick: 0,
       players: new Map(),
@@ -131,7 +140,6 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
   };
   // The register stands where the trailhead pass put its post and its car,
   // and the book comes from the same seed on every peer.
-  const graph = variant.trailGraph?.(forest.seed);
   const roadCenterX = variant.roadCenterX;
   if (graph !== undefined && roadCenterX !== undefined) {
     const post = propSite(graph, roadCenterX, forest.seed, PROPS[0] as RoadProp);
@@ -226,6 +234,8 @@ export function spawnPlayer(world: World): PlayerState {
     lamp: { on: false, charge: 1 },
     carrying: NO_ITEM,
     signOutTicks: 0,
+    stare: 0,
+    signedOut: false,
     deathPos: null,
   };
   world.state.players.set(id, player);
@@ -379,7 +389,7 @@ export function cloneWorldState(state: WorldState): WorldState {
   }
   const enemies = new Map<number, EnemyState>();
   for (const [id, e] of state.enemies) {
-    enemies.set(id, { ...e, pos: cloneVec3(e.pos), vel: cloneVec3(e.vel) });
+    enemies.set(id, { ...e, pos: cloneVec3(e.pos), vel: cloneVec3(e.vel), route: [...e.route] });
   }
   const items = state.items.map((it) => ({ ...it, pos: cloneVec3(it.pos) }));
   return {
@@ -405,7 +415,7 @@ export function serializeWorldState(state: WorldState): string {
     parts.push(
       `P${id}:${p.pos.x},${p.pos.y},${p.pos.z},${p.vel.x},${p.vel.y},${p.vel.z},` +
         `${p.yaw},${p.pitch},${p.health},${p.grounded ? 1 : 0},${p.lastProcessedInput},${p.respawnTimer}` +
-        `,${p.lamp.on ? 1 : 0},${Math.round(p.lamp.charge * 127)},${p.carrying},${p.signOutTicks}`,
+        `,${p.lamp.on ? 1 : 0},${Math.round(p.lamp.charge * 127)},${p.carrying},${p.signOutTicks},${p.stare}`,
     );
   }
   for (const [id, e] of [...state.enemies.entries()].sort((a, b) => a[0] - b[0])) {

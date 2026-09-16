@@ -67,6 +67,8 @@ function player(id: number, on: boolean, yaw = 0): PlayerState {
     lamp: { on, charge: 1 },
     carrying: NO_ITEM,
     signOutTicks: 0,
+    stare: 0,
+    signedOut: false,
   };
 }
 function state(...players: PlayerState[]): WorldState {

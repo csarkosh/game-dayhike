@@ -140,6 +140,7 @@ function sampleSnapshot(): Snapshot {
       lamp: { on: i % 2 === 1, charge: i / 4 },
       carrying: i === 2 ? 1 : 255,
       signOutTicks: i === 2 ? 173 : 0,
+      stare: i / 4,
     })),
     enemies: Array.from({ length: 30 }, (_, i) => ({
       id: 100 + i,
@@ -185,6 +186,7 @@ describe("snapshot codec", () => {
       expect(Math.abs(actual.lamp.charge - expected.lamp.charge)).toBeLessThanOrEqual(0.5 / 127);
       expect(actual.carrying).toBe(expected.carrying);
       expect(actual.signOutTicks).toBe(expected.signOutTicks);
+      expect(Math.abs(actual.stare - expected.stare)).toBeLessThanOrEqual(0.5 / 255);
     }
     expect(back.outcome).toBe(1);
     expect(back.items).toHaveLength(4);
@@ -207,11 +209,10 @@ describe("snapshot codec", () => {
   });
 
   it("stays within the bandwidth budget", () => {
-    // 769 bytes at 20 Hz is about 15 KB/s down per client, and 60 KB/s up for
-    // a host serving four of them. That is protocol 2's 688 plus three bytes
-    // per player (carrying, sign-out ticks), one byte of outcome, one byte of
-    // item count and 16 bytes per item, four here.
-    expect(encodeSnapshot(sampleSnapshot()).byteLength).toBe(769);
+    // 774 bytes at 20 Hz is about 15 KB/s down per client, and 60 KB/s up for
+    // a host serving four of them. That is protocol 3's 769 plus one byte per
+    // player, the stare.
+    expect(encodeSnapshot(sampleSnapshot()).byteLength).toBe(774);
   });
 
   it("carries a lastProcessedInput past 65536 without wrapping", () => {
