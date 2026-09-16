@@ -81,6 +81,37 @@ export type WildlifeAudioOptions = {
   fetchClip?: (id: string) => Promise<ArrayBuffer>;
 };
 
+/** Reused by `listenerToAudio`: the pose is read and spread on the spot at
+ * both call sites, and both run every frame. */
+const audioListener: [number, number, number, number, number, number, number, number, number] =
+  [0, 0, 0, 0, 0, 1, 0, 1, 0];
+
+/**
+ * A listener pose in Babylon's left-handed world as the nine arguments
+ * `AmbientAudio.setListener` takes, in Web Audio's right-handed one: z, fz and
+ * uz negated, everything else carried across. THE one place that mirror is
+ * written — `wildlifeAudio` places the listener when it plays calls, `app.ts`
+ * places it every frame so the wind bed samples its gust where the player is
+ * even on a world with no wildlife at all, and the two must not drift apart.
+ *
+ * The returned array is reused between calls: spread it into `setListener`, do
+ * not hold on to it.
+ */
+export function listenerToAudio(
+  l: ListenerPose,
+): readonly [number, number, number, number, number, number, number, number, number] {
+  audioListener[0] = l.x;
+  audioListener[1] = l.y;
+  audioListener[2] = -l.z;
+  audioListener[3] = l.fx;
+  audioListener[4] = l.fy;
+  audioListener[5] = -l.fz;
+  audioListener[6] = l.ux;
+  audioListener[7] = l.uy;
+  audioListener[8] = -l.uz;
+  return audioListener;
+}
+
 /** One line per clip that will never play, at most once each. */
 function warnClip(id: string, reason: string): void {
   // Unconditional, not gated on a dev flag: nothing else in client/src logs, so
@@ -221,7 +252,7 @@ export function createWildlifeAudio(
         if (listenerSet && Math.hypot(e.x - listenerX, e.y - listenerY, e.z - listenerZ) > max) continue;
         // z negated: Babylon's world is left-handed, Web Audio's is right-handed
         // (see `ListenerPose`). Mirroring z on every position and every
-        // direction vector — here and in `setListener` below, and nowhere else —
+        // direction vector — here and in `listenerToAudio`, and nowhere else —
         // maps one to the other, so a call to the player's left pans left.
         // Emitted and forgotten: a call is a one-shot of at most three seconds
         // that ends on its own, and the animal that made it moves less than the
@@ -233,7 +264,7 @@ export function createWildlifeAudio(
       // Kept UNMIRRORED: the gate below compares against event positions, which
       // arrive in Babylon's frame. Only what crosses into Web Audio is mirrored.
       listenerX = l.x; listenerY = l.y; listenerZ = l.z; listenerSet = true;
-      ambient.setListener(l.x, l.y, -l.z, l.fx, l.fy, -l.fz, l.ux, l.uy, -l.uz);
+      ambient.setListener(...listenerToAudio(l));
     },
     dispose() {
       disposed = true;

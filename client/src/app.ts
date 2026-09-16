@@ -28,7 +28,7 @@ import { stepFreecam, type FreecamState } from "./game/freecam.js";
 import { DEFAULT_HOUR } from "./game/lighting.js";
 import { seedFromToken } from "./game/seed.js";
 import { createAmbientAudio } from "./game/ambientAudio.js";
-import { createWildlifeAudio } from "./game/wildlifeAudio.js";
+import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
 import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
 import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherPresetName } from "./game/weather.js";
@@ -295,6 +295,12 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
    * itself on the record's own clock, so calling this every frame is cheap.
    */
   function syncWind(): void {
+    // The listener FIRST, and from here rather than only from
+    // `playWildlifeAudio`: `setWind` samples the gust at the listener, and a
+    // world with no wildlife never builds a `wildlifeAudio` to place one — so
+    // the bed would read the gust at the world origin for the whole match.
+    // Placing it twice on a world that does have wildlife is free.
+    ambient.setListener(...listenerToAudio(renderer.listener()));
     ambient.setWind(renderer.wind());
   }
 

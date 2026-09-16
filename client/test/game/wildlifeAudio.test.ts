@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { createWildlifeAudio, CALL_CLIP, CALL_RANGE } from "../../src/game/wildlifeAudio.js";
+import {
+  createWildlifeAudio, listenerToAudio, CALL_CLIP, CALL_RANGE,
+} from "../../src/game/wildlifeAudio.js";
 import {
   CALL_COUNT, CALL_GULL_CRY, CALL_SQUIRREL_CHATTER, CALL_ELK_BUGLE, wildlifePresenceUnder,
   type WildlifeEvent,
@@ -141,6 +143,21 @@ describe("wildlifeAudio", () => {
     audio.setListener({ x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 1, ux: 0, uy: 0.8, uz: 0.6 });
     expect(listened[1]!.slice(6)).toEqual([0, 0.8, -0.6]);
     audio.dispose();
+  });
+
+  it("listenerToAudio mirrors z, fz and uz, and nothing else", () => {
+    // The one place the handedness flip is written. `app.ts` places the
+    // listener every frame through it too — a world with no wildlife would
+    // otherwise never place one at all, and the wind bed would sample its
+    // gust at the world origin for the whole match.
+    const pose = { x: 1, y: 2, z: 3, fx: 0.4, fy: 0.5, fz: 0.6, ux: 0.7, uy: 0.8, uz: 0.9 };
+    expect([...listenerToAudio(pose)]).toEqual([1, 2, -3, 0.4, 0.5, -0.6, 0.7, 0.8, -0.9]);
+    // The mirror is its own inverse: a pose that already points the other way
+    // comes back positive, and the eight unmirrored components are untouched.
+    const flipped = listenerToAudio({
+      x: -1, y: -2, z: -3, fx: -0.4, fy: -0.5, fz: -0.6, ux: -0.7, uy: -0.8, uz: -0.9,
+    });
+    expect([...flipped]).toEqual([-1, -2, 3, -0.4, -0.5, 0.6, -0.7, -0.8, 0.9]);
   });
 
   // The collect disc is 400 m and the call schedule is per
