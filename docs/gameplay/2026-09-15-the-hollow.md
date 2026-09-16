@@ -290,5 +290,6 @@ the merge; the loss.
 - **P (preview mode)** turns the dead peer's held fade into the living players' views; C keeps the
   dead player's session and render loop alive for it.
 - **J (endings and polish)** owns the full set of passages and the tuning of the look.
-- **Out of C:** the Hollow's identity (parent §13.2), any real asset, altitude as an axis, the
-  win's counterpart passage (parent §13.8).
+- **Out of C:** the real asset — the Hollow is a wendigo (parent §13.2, decided 2026-09-15), and
+  that is what the asset will depict; C ships the placeholder — altitude as an axis, the win's
+  counterpart passage (parent §13.8).

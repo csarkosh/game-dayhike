@@ -342,8 +342,9 @@ Nothing below blocks the shape of the design; each changes what gets built.
 1. ~~What a death costs (§10).~~ **Decided 2026-09-15 (B §1.4): death is permanent.** The
    dead do not rejoin and are not added to the book; they watch the living from a preview
    mode, its own sub-project. What they carried stays where they fell.
-2. **The Hollow's identity** — that it is the keeper of the book, and the players are
-   overdue (§2).
+2. ~~The Hollow's identity — that it is the keeper of the book, and the players are
+   overdue (§2).~~ **Decided 2026-09-15: the Hollow is a wendigo.** That is what the real
+   asset depicts when it exists; the keeper-of-the-book reading stands beside it.
 3. ~~The player's own name as the last entry (§2).~~ **Decided 2026-09-15 (B §1.3): no.**
 4. **Altitude as a second escalation axis, furthest fork highest** (§3).
 5. ~~Fork signs carrying the landmark names (§4).~~ **Decided 2026-09-15 (B §1.6): yes,
