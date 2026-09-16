@@ -230,6 +230,17 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     return false;
   }
 
+  // The hour and weather `syncAtmosphere` last actually pushed to the
+  // renderer and the ambient bed: `renderer.setHour` and `renderer.setWeather`
+  // both recompute the sky, the sun and the fog and re-render the reflection
+  // probe, so calling both unconditionally every frame would pay that cost
+  // twice a frame for a state that moves in fractions over seconds. `applyView`
+  // below writes both locals directly after its own renderer pushes, so a
+  // console override at full escalation is not read as no-op drift on the
+  // next `syncAtmosphere` and left standing for the rest of the match.
+  let appliedHour = base.hour;
+  let appliedWeather: WeatherParams = base.weather;
+
   /**
    * Applies a view command. World commands re-initialise instead.
    *
@@ -269,6 +280,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       // overrides the renderer next frame; elsewhere it is simply the hour.
       base = { ...base, hour: typeof value === "number" ? value : DEFAULT_HOUR };
       renderer.setHour(base.hour);
+      // Also the local `syncAtmosphere` throttles against: without this, a
+      // console override at full escalation reads as no-op drift on the next
+      // frame's comparison and the console's hour stands for the rest of the
+      // match instead of the escalation re-asserting itself.
+      appliedHour = base.hour;
     } else if (name === "weather") {
       // `Object.hasOwn`, not `in`: `in` also passes prototype keys (e.g.
       // "toString"), which are not entries of WEATHER_PRESETS.
@@ -279,9 +295,13 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       weatherName = preset;
       // The three direct calls stay so a world without a register behaves
       // exactly as today; on a forest world `syncAtmosphere` overrides them
-      // next frame.
+      // next frame — including the 3 s fade this starts, which its instant
+      // (0 s) set cancels before it is seen.
       base = { ...base, weather: WEATHER_PRESETS[preset] };
       renderer.setWeather(base.weather, options.instant ? 0 : undefined);
+      // Also the local `syncAtmosphere` throttles against — see the `time`
+      // branch above.
+      appliedWeather = base.weather;
       ambient.setWeather(base.weather);
       wildlifePresence = wildlifePresenceUnder(base.weather);
     } else if (name === "bob") {
@@ -373,14 +393,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       }),
     );
   }
-
-  // The hour and weather `syncAtmosphere` last actually pushed to the
-  // renderer and the ambient bed: `renderer.setHour` and `renderer.setWeather`
-  // both recompute the sky, the sun and the fog and re-render the reflection
-  // probe, so calling both unconditionally every frame would pay that cost
-  // twice a frame for a state that moves in fractions over seconds.
-  let appliedHour = base.hour;
-  let appliedWeather: WeatherParams = base.weather;
 
   /**
    * The world answering the game (escalation.ts): on a forest world with a
