@@ -40,12 +40,7 @@ const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
   [-600, -3000, 48, 1190728742],
   [600, -3000, 105, -346855702],
   // litter: along the stem near the trailhead, not near the world origin.
-  // 111 -> 50 (2026-09-16): litter now shares grass's own low-altitude gate
-  // (CLUTTER_GRASS_ALT_LO/_FADE), so a piece no longer stands below the
-  // grass line either — a deliberate content change, not a level-id move
-  // (no new tunable: the gate reads the constants CLUTTER_GRASS already
-  // declares).
-  [-500, -100, 50, 1360604123],
+  [-500, -100, 111, -621225397],
 ];
 
 describe("instances carry the ground gradient", () => {

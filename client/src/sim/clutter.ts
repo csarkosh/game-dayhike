@@ -534,12 +534,11 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
     case CLUTTER_LITTER: {
       const band = litterBand(rt);
       if (band === 0) return 0;
-      // The same low-altitude factor grass uses, so litter and grass share
-      // one altitude window at both ends: nothing on the tideline below the
-      // grass's own floor, nothing above the snow line.
-      const alt = smoothstep(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, s.h);
+      // Below the snow line only. Litter takes no low-altitude floor: the
+      // trail leaves the pad a few metres above the tide, inside the grass's
+      // own sand fade, and a walked path carries pebbles and twigs there too.
       const snow = 1 - smoothstep(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h);
-      return band * alt * snow;
+      return band * snow;
     }
     default:
       return 0;

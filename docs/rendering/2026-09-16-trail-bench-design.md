@@ -296,6 +296,6 @@ wear-and-junction width; the sim's own sink ramp (`trailSinkD`) has no such widt
 steps at the bare `TRAIL_BED_HALF`, so the two can disagree by up to about 0.5 m at a scuffed,
 widened junction — accepted rather than chased.
 
-**§6, litter's altitude.** The litter density case now multiplies in the same low-altitude
-smoothstep grass uses (`CLUTTER_GRASS_ALT_LO`/`_FADE`), on top of its existing high-altitude
-(snow-line) fade, so litter shares the grass gate's altitude window at both ends.
+**§4, litter's altitude.** Litter keeps only the snow-line fade and takes no low-altitude
+floor: the trail leaves the pad a few metres above the tide, inside the grass's own sand fade,
+and a walked path carries pebbles and twigs there too.
