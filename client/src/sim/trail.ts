@@ -56,8 +56,18 @@ export const TRAIL_HARD_SLOPE_MAX = 0.9;
  * Widened from 4 to 7: the smootherstep blend from the bed edge to here is the bench's SHOULDER, and over 3 m its peak cross-grade was 0.625 of the lift per metre — steep enough that the 1 m inner clipmap ring aliased it into light/dark stripes flanking every trail, and under the old rock thresholds the shoulder itself painted as cobbles. Over 6 m the peak is 0.3125 of the lift per metre.
  * 4 → 2 on 2026-09-10 with TRAIL_CORRIDOR_HALF 4 → 7: the grid's two-cell rule guarantees 2·TRAIL_GRID_CELL = 16 m between non-adjacent edges, so TRAIL_EDGE_MIN_GAP = 2·7 + gap must stay ≤ 16 — two metres of untouched ground between two fully faded corridors. */
 export const TRAIL_EDGE_GAP = 2;
-export const TRAIL_BED_HALF = 1;
+/** The flat bench's half-width: a 0.9 m compacted core plus a 0.3 m loose
+ * margin each side. 1 → 0.75 on 2026-09-16, narrowed from a 2 m bench to a
+ * walked footpath — TRAIL_SINK and TRAIL_SINK_RAMP pick up past here. */
+export const TRAIL_BED_HALF = 0.75;
 export const TRAIL_CORRIDOR_HALF = 7;
+/** The bench sits this far (m) below the corridor's blended bed, ramping
+ * back up over TRAIL_SINK_RAMP past TRAIL_BED_HALF: a walked footpath is
+ * sunk a few centimetres into the turf, and on a side-hill the uphill half
+ * of the ramp is its short soil face. Applied after the corridor blend
+ * (trailSinkD), as a saturating union across edges so a junction sinks once. */
+export const TRAIL_SINK = 0.06;
+export const TRAIL_SINK_RAMP = 0.5;
 /** Trees are rejected within this of any edge (vegetation.ts): 2 m past the
  * corridor's edge, so no trunk stands on the blend.
  * 6 → 8 on 2026-09-10 with TRAIL_CORRIDOR_HALF 4 → 7, so no trunk stands on the widened shoulder (the clearance follows the corridor). */
@@ -80,7 +90,7 @@ export const TRAIL_PROFILE_SMOOTH = 4;
 export const TRAIL_REROUTE_MAX = 3;
 
 export const TRAIL_TUNABLES: Readonly<Record<string, number>> = {
-  TRAIL_HARD_SLOPE_MAX, TRAIL_EDGE_GAP, TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, TRAIL_CLEAR, TRAIL_SALT,
+  TRAIL_HARD_SLOPE_MAX, TRAIL_EDGE_GAP, TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, TRAIL_SINK, TRAIL_SINK_RAMP, TRAIL_CLEAR, TRAIL_SALT,
   ...TRAIL_GRID_TUNABLES,
   TRAIL_SIMPLIFY_TOL, TRAIL_PROFILE_STEP, TRAIL_PROFILE_SMOOTH, TRAIL_REROUTE_MAX,
 };
@@ -346,6 +356,51 @@ export function trailCorridorD(
     h: (1 - w) * base.h + w * g,
     dx: -wDx * base.h + (1 - w) * base.dx + wDx * g + w * gDx,
     dz: -wDz * base.h + (1 - w) * base.dz + wDz * g + w * gDz,
+  };
+}
+
+/**
+ * The bench sink: TRAIL_SINK inside TRAIL_BED_HALF of any edge, ramping to
+ * zero over TRAIL_SINK_RAMP, as a saturating union across edges (a junction
+ * sinks once). Same analytic derivatives as the corridor: ∇d = q/d, and
+ * smootherstepD's own slope. Returns the sample untouched outside every ramp.
+ */
+export function trailSinkD(
+  nodes: readonly TrailNode[],
+  edges: readonly TrailEdge[],
+  x: number,
+  z: number,
+  sample: TerrainSample,
+): TerrainSample {
+  const outer = TRAIL_BED_HALF + TRAIL_SINK_RAMP;
+  let prod = 1, prodDx = 0, prodDz = 0;
+  for (const e of edges) {
+    const a = nodes[e.a] as TrailNode;
+    const b = nodes[e.b] as TrailNode;
+    if (x < Math.min(a.x, b.x) - outer || x > Math.max(a.x, b.x) + outer) continue;
+    if (z < Math.min(a.z, b.z) - outer || z > Math.max(a.z, b.z) + outer) continue;
+    const ex = b.x - a.x, ez = b.z - a.z;
+    const L2 = ex * ex + ez * ez;
+    if (L2 === 0) continue;
+    const px = x - a.x, pz = z - a.z;
+    const t = Math.min(1, Math.max(0, (px * ex + pz * ez) / L2));
+    const qx = px - t * ex, qz = pz - t * ez;
+    const d = Math.sqrt(qx * qx + qz * qz);
+    if (d >= outer) continue;
+    const r = smootherstepD(TRAIL_BED_HALF, outer, d);
+    const s = 1 - r.v;
+    const dDx = d > 1e-9 ? qx / d : 0, dDz = d > 1e-9 ? qz / d : 0;
+    const sDx = -r.d * dDx, sDz = -r.d * dDz;
+    prodDx = prodDx * (1 - s) - prod * sDx;
+    prodDz = prodDz * (1 - s) - prod * sDz;
+    prod *= 1 - s;
+  }
+  if (prod === 1) return sample;
+  const S = 1 - prod, SDx = -prodDx, SDz = -prodDz;
+  return {
+    h: sample.h - TRAIL_SINK * S,
+    dx: sample.dx - TRAIL_SINK * SDx,
+    dz: sample.dz - TRAIL_SINK * SDz,
   };
 }
 

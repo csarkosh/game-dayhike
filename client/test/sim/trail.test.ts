@@ -139,8 +139,11 @@ describe("trailCorridorD", () => {
     const ex = 90, ez = 20, L = Math.hypot(ex, ez), nx = -ez / L, nz = ex / L;
     const mx = 45, mz = 10;
     const bed = sample(mx, mz).h;
-    expect(sample(mx + nx * 0.9, mz + nz * 0.9).h).toBeCloseTo(bed, 6);
-    expect(sample(mx - nx * 0.9, mz - nz * 0.9).h).toBeCloseTo(bed, 6);
+    // 1 → 0.75 on 2026-09-16: TRAIL_BED_HALF narrowed to a footpath, so the
+    // in-bed probe moves with it, keeping the same 0.1 m margin inside it.
+    const inBed = TRAIL_BED_HALF - 0.1;
+    expect(sample(mx + nx * inBed, mz + nz * inBed).h).toBeCloseTo(bed, 6);
+    expect(sample(mx - nx * inBed, mz - nz * inBed).h).toBeCloseTo(bed, 6);
     const R = TRAIL_CORRIDOR_HALF + 0.01;
     const far = ground(mx + nx * R, mz + nz * R);
     expect(trailCorridorD(NODES, EDGES, mx + nx * R, mz + nz * R, far)).toBe(far);
@@ -193,7 +196,7 @@ describe("trailCorridorD", () => {
   });
   it("declares its tunables, exhaustively, and the two-cell rule covers the spacing invariant", () => {
     const keys = [
-      "TRAIL_HARD_SLOPE_MAX", "TRAIL_EDGE_GAP", "TRAIL_BED_HALF", "TRAIL_CORRIDOR_HALF", "TRAIL_CLEAR", "TRAIL_SALT",
+      "TRAIL_HARD_SLOPE_MAX", "TRAIL_EDGE_GAP", "TRAIL_BED_HALF", "TRAIL_CORRIDOR_HALF", "TRAIL_SINK", "TRAIL_SINK_RAMP", "TRAIL_CLEAR", "TRAIL_SALT",
       "TRAIL_GRID_CELL", "TRAIL_GRID_CAP", "TRAIL_SLOPE_COST", "TRAIL_REUSE_FACTOR", "TRAIL_MOVE_GRADE_MAX", "TRAIL_SIMPLIFY_TOL",
       "TRAIL_PROFILE_STEP", "TRAIL_PROFILE_SMOOTH", "TRAIL_REROUTE_MAX",
     ];

@@ -42,7 +42,7 @@ import {
   inBowl, padD, apronWindowD, apronKeepD, APRON_BLEND_END,
 } from "./bowl.js";
 import {
-  TRAIL_TUNABLES, trailCorridorD, trailDistance as graphTrailDistance,
+  TRAIL_TUNABLES, trailCorridorD, trailSinkD, trailDistance as graphTrailDistance,
   type TrailGraph,
 } from "./trail.js";
 import { buildTrail } from "./trailBuild.js";
@@ -608,6 +608,7 @@ function olympicSample(seed: number, x: number, z: number): TerrainSample {
     // The trail corridor over every edge: every edge's own grid cell lies
     // inside the bowl, so its corridor never needs to reach past this gate.
     staged = trailCorridorD(bowl.graph.nodes, bowl.graph.edges, x, z, staged);
+    staged = trailSinkD(bowl.graph.nodes, bowl.graph.edges, x, z, staged);
   }
   if (Math.abs(u) >= ROAD_CORRIDOR_HALF) return staged;
   return corridorD(u, uDz, roadGradeAt(seed, z), staged);
