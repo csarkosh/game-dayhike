@@ -385,7 +385,10 @@ describe("app.ts wiring", () => {
     // The presence is the weather's, recomputed wherever the weather is set —
     // a presence pinned at construction would leave the calls at `clear` gain
     // forever, including under dread where everything but the ravens is silent.
-    expect(src).toContain("wildlifePresence = wildlifePresenceUnder(WEATHER_PRESETS[preset]);");
+    // Two call sites feed it now: the `weather` command's own base, and
+    // `syncAtmosphere`'s eased weather on a forest world's escalation.
+    expect(src).toContain("wildlifePresence = wildlifePresenceUnder(base.weather);");
+    expect(src).toContain("wildlifePresence = wildlifePresenceUnder(a.weather);");
     expect(src).toContain("wildlifeAudio?.dispose();");
   });
 
