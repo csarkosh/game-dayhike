@@ -1,4 +1,5 @@
 import type { TrailGraph, TrailEdge } from "../../../src/sim/trail.js";
+import { homeDistances, forksOf } from "../../../src/sim/trailRoute.js";
 
 /** Straight stem 0→1→2 along +x (progress 0, 0.5, 1); loops 1→3→4→2 round a meadow at (150, 60) and 1→5→6→2 round one at (150, -60). */
 export function graph(loops: 0 | 1 | 2): TrailGraph {
@@ -13,6 +14,7 @@ export function graph(loops: 0 | 1 | 2): TrailGraph {
   const g: TrailGraph = {
     nodes, edges, trailhead: { x: 0, z: 0, u: 0 }, summit: 2, stem: [0, 1], loops: [], stemLen: 200,
     features: [{ id: 0, kind: "peak", x: 200, z: 0, radius: 300, height: 60 }], fallbacks: 0,
+    forks: [], homeDist: [], shortestHome: 200,
   };
   if (loops >= 1) {
     edges.push(edge(1, 3, "loop", 0.5, 0.5), edge(3, 4, "loop", 0.5, 0.5), edge(4, 2, "loop", 1, 1));
@@ -24,5 +26,8 @@ export function graph(loops: 0 | 1 | 2): TrailGraph {
     g.features.push({ id: 2, kind: "meadow", x: 150, z: -60, radius: 60, height: 0 });
     g.loops.push({ kind: "meadow", featureId: 2, edges: [5, 6, 7], junctionA: 1, junctionB: 2 });
   }
+  g.homeDist = homeDistances(g.nodes, g.edges);
+  g.forks = forksOf(g.nodes.length, g.edges);
+  g.shortestHome = g.homeDist[g.summit] as number;
   return g;
 }

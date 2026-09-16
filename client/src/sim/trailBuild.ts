@@ -41,6 +41,7 @@ import {
   type BuildFrame, type Heights, type Attempt, type GraphState, type StemSample,
 } from "./trailPlan.js";
 export type { BuildFrame } from "./trailPlan.js";
+import { homeDistances, forksOf } from "./trailRoute.js";
 import {
   scoreCandidate, scoredDisc, landmarkThreshold,
   LANDMARK_ORDER, LANDMARK_SCENERY_MIN_PATH, LANDMARK_SPACING, LANDMARK_CANDIDATE_STRIDE,
@@ -924,10 +925,14 @@ export function buildTrail(seed: number, frame: BuildFrame): { graph: TrailGraph
     landmarks.push({ type, x: chosen.x, z: chosen.z, carved: !chosen.cand.found, discX: disc.x, discZ: disc.z });
   }
 
+  const homeDist = homeDistances(state.nodes, state.edges);
   return {
     graph: {
       nodes: state.nodes, edges: state.edges, trailhead: { x: thX, z: thZ, u: TRAILHEAD_U },
       summit, stem, loops, features, stemLen, fallbacks,
+      forks: forksOf(state.nodes.length, state.edges),
+      homeDist,
+      shortestHome: homeDist[summit] as number,
     },
     landmarks,
     features,

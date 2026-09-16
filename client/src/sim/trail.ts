@@ -97,10 +97,11 @@ export const TRAIL_TUNABLES: Readonly<Record<string, number>> = {
 export const TRAIL_EDGE_MIN_GAP = 2 * TRAIL_CORRIDOR_HALF + TRAIL_EDGE_GAP;
 
 export type TrailNode = { x: number; z: number; h: number; u: number };
-/** stem: on the pad→crest chain; loop: on one of the made-feature loops.
- * Informational — the corridor and the paint treat
- * every edge alike. */
-export type EdgeKind = "stem" | "loop";
+/** stem: on the pad→crest chain; loop: on one of the made-feature loops;
+ * strand: one of the braid's parallel descents between the top and bottom
+ * forks; rung: a cross-link between two strands. Informational — the
+ * corridor and the paint treat every edge alike. */
+export type EdgeKind = "stem" | "loop" | "strand" | "rung";
 export type TrailEdge = {
   a: number;
   b: number;
@@ -108,7 +109,8 @@ export type TrailEdge = {
   /** The bed's heights every TRAIL_PROFILE_STEP along a→b, ends pinned to the node heights (buildProfile). */
   profile: Float64Array;
   /** stem edges: progress (0 pad → 1 crest) at a and b. loop edges: the
-   * nearer junction's progress, at both ends. */
+   * nearer junction's progress, at both ends. strand and rung edges: the stem
+   * progress of each end node's nearest stem point. */
   progress0: number;
   progress1: number;
 };
@@ -139,6 +141,14 @@ export type TrailGraph = {
    * that is a different, unflagged fallback: see `peakCentre` in
    * trailBuild.ts.) A count, not a boolean, so loop building can add to it. */
   fallbacks: number;
+  /** Every node of degree ≥ 3, ascending (trailRoute.ts `forksOf`). */
+  forks: number[];
+  /** Per node index: the shortest trail distance to the pad (node 0) by arc
+   * length; Infinity if unreachable (trailRoute.ts `homeDistances`). */
+  homeDist: number[];
+  /** `homeDist[summit]`: the shortest crest-to-pad length. The guide walk's
+   * band is a multiple of this. */
+  shortestHome: number;
 };
 
 /** Quintic smootherstep with derivative — same shape as olympic.ts's. */

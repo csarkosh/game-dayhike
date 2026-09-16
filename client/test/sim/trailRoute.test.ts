@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { route, stemNodes, stemProgress } from "../../src/sim/trailRoute.js";
+import { homeDistances, forksOf } from "../../src/sim/trailRoute.js";
 import { graph } from "./helpers/registerGraph.js";
 import type { TrailEdge, TrailGraph } from "../../src/sim/trail.js";
 
@@ -13,6 +14,7 @@ function diamond(): TrailGraph {
   return {
     nodes, edges: [edge(0, 1), edge(1, 3), edge(0, 2), edge(2, 3)], trailhead: { x: 0, z: 0, u: 0 }, summit: 3,
     stem: [0, 1], loops: [], features: [], stemLen: 28.28, fallbacks: 0,
+    forks: [], homeDist: [0, 14.14, 14.14, 28.28], shortestHome: 28.28,
   };
 }
 
@@ -73,5 +75,32 @@ describe("stemProgress", () => {
   it("reads 0 for a degenerate stem with no edges", () => {
     const g = { ...graph(0), stem: [] };
     expect(stemProgress(g, 50, 0)).toBe(0);
+  });
+});
+
+describe("homeDistances", () => {
+  it("is 0 at the pad and the arc length along the stem elsewhere", () => {
+    const g = graph(0);
+    expect(homeDistances(g.nodes, g.edges)).toEqual([0, 100, 200, Infinity, Infinity, Infinity, Infinity]);
+  });
+
+  it("takes the shorter way when a loop offers one", () => {
+    // Node 3 is 100 + 53.85 by the stem then the loop; node 4 is 100 + 53.85 + 60 that
+    // way, or 200 + 53.85 via the crest — the loop wins.
+    const g = graph(1);
+    const d = homeDistances(g.nodes, g.edges);
+    expect(d[3]).toBeCloseTo(100 + Math.sqrt(20 * 20 + 50 * 50), 6);
+    expect(d[4]).toBeCloseTo(100 + Math.sqrt(20 * 20 + 50 * 50) + 60, 6);
+  });
+});
+
+describe("forksOf", () => {
+  it("lists every node of degree three or more, ascending", () => {
+    expect(forksOf(graph(0).nodes.length, graph(0).edges)).toEqual([]);
+    // graph(1) has one loop off node 1 rejoining at node 2: node 1 is degree
+    // 3 (stem in, stem out, loop out), but node 2 is only degree 2 (stem in,
+    // loop in) until the second loop (graph(2)) also rejoins there.
+    expect(forksOf(graph(1).nodes.length, graph(1).edges)).toEqual([1]);
+    expect(forksOf(graph(2).nodes.length, graph(2).edges)).toEqual([1, 2]);
   });
 });

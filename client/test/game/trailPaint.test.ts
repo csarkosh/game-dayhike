@@ -8,6 +8,7 @@ import {
   type Segment,
 } from "../../src/game/trailPaint.js";
 import { TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, type TrailGraph } from "../../src/sim/trail.js";
+import { homeDistances, forksOf } from "../../src/sim/trailRoute.js";
 import {
   TRAIL_JUNCTION_W, TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF,
   TRAIL_CORE_TINT, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT, TRAIL_CORE_GAIN, TRAIL_MARGIN_GAIN, TRAIL_BENCH_SHADE,
@@ -68,6 +69,7 @@ describe("the bucketed segment table", () => {
     }));
     const g: TrailGraph = {
       nodes, edges, trailhead: { x: 0, z: 0, u: 0 }, summit: 69, stem: edges.map((_, i) => i), loops: [], features: [], stemLen: 690, fallbacks: 0,
+      forks: forksOf(nodes.length, edges), homeDist: homeDistances(nodes, edges), shortestHome: 690,
     };
     expect(trailSegments(g).length).toBe(69);
     expect(trailSegments(g)[3]).toEqual({ ax: 30, az: 0, bx: 40, bz: 0, ua: 30, ub: 40, wa: 1, wb: 1 });

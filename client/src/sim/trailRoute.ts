@@ -114,3 +114,47 @@ export function stemProgress(graph: TrailGraph, x: number, z: number): number {
   }
   return arc > 0 ? 1 - bestArc / arc : 0;
 }
+
+/**
+ * The shortest trail distance from every node to the pad (node 0), by arc
+ * length: Dijkstra from the pad over every edge. Infinity for a node no edge
+ * chain reaches. The same settle order as `route` (lowest index among equal
+ * distances), so it is bit-identical on every machine.
+ */
+export function homeDistances(nodes: readonly TrailNode[], edges: readonly TrailEdge[]): number[] {
+  const n = nodes.length;
+  const dist: number[] = new Array<number>(n).fill(Infinity);
+  const done: boolean[] = new Array<boolean>(n).fill(false);
+  if (n === 0) return dist;
+  dist[0] = 0;
+  for (let round = 0; round < n; round++) {
+    let u = -1;
+    for (let i = 0; i < n; i++) {
+      if (done[i] || (dist[i] as number) === Infinity) continue;
+      if (u === -1 || (dist[i] as number) < (dist[u] as number)) u = i;
+    }
+    if (u === -1) break;
+    done[u] = true;
+    for (const e of edges) {
+      const v = e.a === u ? e.b : e.b === u ? e.a : -1;
+      if (v === -1 || done[v]) continue;
+      const a = nodes[e.a] as TrailNode, b = nodes[e.b] as TrailNode;
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const d = (dist[u] as number) + Math.sqrt(dx * dx + dz * dz);
+      if (d < (dist[v] as number)) dist[v] = d;
+    }
+  }
+  return dist;
+}
+
+/** Every node of degree ≥ 3, ascending: the forks the cut rule works on. */
+export function forksOf(nodeCount: number, edges: readonly TrailEdge[]): number[] {
+  const degree = new Array<number>(nodeCount).fill(0);
+  for (const e of edges) {
+    degree[e.a] = (degree[e.a] as number) + 1;
+    degree[e.b] = (degree[e.b] as number) + 1;
+  }
+  const out: number[] = [];
+  for (let n = 0; n < nodeCount; n++) if ((degree[n] as number) >= 3) out.push(n);
+  return out;
+}

@@ -63,6 +63,7 @@ describe("every trail bed is walkable on the composed field", () => {
     // looking for.
     const worst: Record<EdgeKind, { g: number; seed: number; edge: string }> = {
       stem: { g: 0, seed: 0, edge: "" }, loop: { g: 0, seed: 0, edge: "" },
+      strand: { g: 0, seed: 0, edge: "" }, rung: { g: 0, seed: 0, edge: "" },
     };
     let fallbackSeeds = 0;
     for (const seed of SEEDS) {
