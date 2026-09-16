@@ -162,12 +162,62 @@ export function chainFrom(state: GraphState, from: number, firstEdge: number): n
   return chain;
 }
 
+/** A fork pair resolved onto a copy of the graph: the two cells, the two nodes
+ * and the graph they were split into. */
+type Forks = { state: GraphState; T: number; B: number; cTop: number; cBot: number };
+
 /**
- * The strands. Draws the count and the two forks, splits the stem at both on
- * a copy of the graph, and routes each extra strand top → bottom on its own
- * side of the stem. Returns the graph as it stands (the original `state` if
- * no strand built — the fork splits are committed only with a strand) and
- * the strand list with strand A first.
+ * The two forks for one candidate arc pair, split into a COPY of `base` — a
+ * candidate that never routes leaves the graph it was measured against
+ * untouched. `null` when the pair is not a legal fork pair.
+ */
+function forksFor(
+  base: GraphState, ctx: BraidCtx, samples: readonly StemSample[], topArc: number, bottomArc: number,
+): Forks | null {
+  const { grid, frame, H, summit } = ctx;
+  const sTop = sampleAtArc(samples, topArc), sBot = sampleAtArc(samples, bottomArc);
+  const cTop = cellAt(grid, frame.roadCenterX, sTop.x, sTop.z);
+  const cBot = cellAt(grid, frame.roadCenterX, sBot.x, sBot.z);
+  if (cTop < 0 || cBot < 0 || cTop === cBot) return null;
+  const state = planPath(base, [], grid, frame, H).state;
+  const T = state.nodeOfCell.get(cTop) ?? splitAt(cTop, grid, frame, H, state);
+  const B = state.nodeOfCell.get(cBot) ?? splitAt(cBot, grid, frame, H, state);
+  if (T === B || T === summit || B === 0) return null;
+  // BOTH FORKS MUST BE ON THE STEM (2026-09-16). A fork is a cell on the stem
+  // BED, and `splitAt` divides the edge that covers it — but `edgeOfCell` is
+  // filled along the CELL CENTRES a branch was routed through, while node 0 is
+  // the pad CENTRE, so the first stem edge's own geometry runs slightly off
+  // the cells recorded for it. A fork drawn low enough to land on that edge
+  // can fall in a cell no edge covers, and `splitAt`'s safe answer there is a
+  // FRESH node — which the strand then joins instead of the trail, leaving a
+  // second dead end. Measured on seed -714954089 of the 227-seed sweep before
+  // this check: node 23 at u 84, degree 1, one strand edge and nothing else.
+  const g0 = stemGeometry(state, summit);
+  if (!g0.stemNodes.includes(T) || !g0.stemNodes.includes(B)) return null;
+  return { state, T, B, cTop, cBot };
+}
+
+/**
+ * The strands. Draws the count, the forks and the first side, then routes each
+ * extra strand top → bottom on its own side of the stem. Returns the graph as
+ * it stands (the original `state` if no strand built — the fork splits are
+ * committed only with a strand) and the strand list with strand A first.
+ *
+ * THE DRAWN FORK AND SIDE ARE THE FIRST TRY, NOT THE ONLY ONE (2026-09-16,
+ * fix round 1). Measured over the 227-seed sweep with a single try: 233 strand
+ * attempts failed, 229 of them because the constrained search never REACHED
+ * the bottom fork, and the search descended a median 3 % of the way from the
+ * top fork before it ran out of walkable ground. The wall is the terrain, not
+ * the braid's own rules — relaxing the side, the arc window, the tree forbid,
+ * the feature discs or the two-cell rule left 137 of those 229 still
+ * unreachable, while making every cell passable freed them — and the terrain
+ * in question is the PEAK'S DOME: the drawn top fork sits at a median 0.57 of
+ * the peak radius from its centre, where the only walkable ground is the line
+ * the stem's own search threaded. So a strand tries, in order, each top fork
+ * in a three-rung ladder (the drawn arc, then the band's two ends) and, at
+ * each rung, its own side then the side no strand has taken. Measured over the
+ * same sweep, that unlocks 118 of the 233 failed attempts. The bottom fork is
+ * not laddered: redrawing it unlocked 6.
  */
 export function buildStrands(state: GraphState, ctx: BraidCtx): {
   state: GraphState; strands: Strand[]; topArc: number; bottomArc: number; samples: StemSample[];
@@ -178,83 +228,98 @@ export function buildStrands(state: GraphState, ctx: BraidCtx): {
   const count = braidDraw(seed, 0, 0, 1) < BRAID_STRANDS_WEIGHT_2 ? 2 : 3;
   const topArc = geom.stemLen * braidDraw(seed, 1, BRAID_TOP_MIN, BRAID_TOP_MAX);
   const bottomArc = geom.stemLen * braidDraw(seed, 2, BRAID_BOTTOM_MIN, BRAID_BOTTOM_MAX);
-  const sTop = sampleAtArc(samples, topArc), sBot = sampleAtArc(samples, bottomArc);
-  const cTop = cellAt(grid, frame.roadCenterX, sTop.x, sTop.z);
-  const cBot = cellAt(grid, frame.roadCenterX, sBot.x, sBot.z);
   const none = { state, strands: [] as Strand[], topArc, bottomArc, samples };
-  if (cTop < 0 || cBot < 0 || cTop === cBot) return none;
-
-  // The forks, split into a copy: a world where no strand routes keeps its
-  // unsplit stem.
-  let base = planPath(state, [], grid, frame, H).state;
-  const T = base.nodeOfCell.get(cTop) ?? splitAt(cTop, grid, frame, H, base);
-  const B = base.nodeOfCell.get(cBot) ?? splitAt(cBot, grid, frame, H, base);
-  if (T === B || T === summit || B === 0) return none;
-  // BOTH FORKS MUST BE ON THE STEM (2026-09-16). A fork is a cell on the stem
-  // BED, and `splitAt` divides the edge that covers it — but `edgeOfCell` is
-  // filled along the CELL CENTRES a branch was routed through, while node 0 is
-  // the pad CENTRE, so the first stem edge's own geometry runs slightly off
-  // the cells recorded for it. A fork drawn low enough to land on that edge
-  // can fall in a cell no edge covers, and `splitAt`'s safe answer there is a
-  // FRESH node — which the strand then joins instead of the trail, leaving a
-  // second dead end. Measured on seed -714954089 of the 227-seed sweep before
-  // this check: node 23 at u 84, degree 1, one strand edge and nothing else.
-  const g0 = stemGeometry(base, summit);
-  if (!g0.stemNodes.includes(T) || !g0.stemNodes.includes(B)) return none;
+  // The ladder: the drawn arc first, then the band's ends. Both ends stay
+  // inside [BRAID_TOP_MIN, BRAID_TOP_MAX] — this redraws the fork, it does not
+  // widen the band.
+  const topLadder = [topArc, geom.stemLen * BRAID_TOP_MIN, geom.stemLen * BRAID_TOP_MAX];
 
   const firstSide: 1 | -1 = braidDraw(seed, 3, 0, 1) < 0.5 ? 1 : -1;
   const built: Strand[] = [];
-  const tNode = base.nodes[T] as TrailNode, bNode = base.nodes[B] as TrailNode;
+  const usedSides = new Set<number>();
+  let base = state;
+  // The committed top fork's arc, -1 until a strand builds: once one has, the
+  // braid HAS its forks and every later strand leaves and rejoins at the same
+  // two. `forksFor` reuses them rather than splitting again — the split's own
+  // node is in `base.nodeOfCell` from the moment it is committed.
+  let forkArc = -1;
+  let forkT = -1, forkB = -1;
   for (let k = 1; k < count; k++) {
-    const side: 1 | -1 = k === 1 ? firstSide : (firstSide === 1 ? -1 : 1);
-    const tS = clearedAround(grid, tree, cBot, BRAID_ARRIVE_CELLS);
-    const w = baseWeight(ctx, tree, cTop, cBot);
-    for (let c = 0; c < w.length; c++) {
-      if ((w[c] as number) === 0) continue;
-      const x = grid.x[c] as number, z = grid.z[c] as number;
-      const dT = (x - tNode.x) * (x - tNode.x) + (z - tNode.z) * (z - tNode.z);
-      const dB = (x - bNode.x) * (x - bNode.x) + (z - bNode.z) * (z - bNode.z);
-      if (dT < BRAID_END_FREE * BRAID_END_FREE || dB < BRAID_END_FREE * BRAID_END_FREE) continue;
-      const { arc, lat } = stemPose(samples, x, z);
-      // Only between the forks, and only on this strand's side.
-      if (arc < bottomArc - BRAID_END_FREE || arc > topArc + BRAID_END_FREE || lat * side <= 0) { w[c] = 0; continue; }
-      const a = lat < 0 ? -lat : lat;
-      if (a < BRAID_LATERAL_MIN || a > BRAID_LATERAL_MAX) w[c] = BRAID_OFF_BAND_COST;
+    const drawn: 1 | -1 = k === 1 ? firstSide : (firstSide === 1 ? -1 : 1);
+    const other: 1 | -1 = drawn === 1 ? -1 : 1;
+    // A strand takes its own side first; the other side is a fallback only
+    // while no strand has taken it, so the strands of a three-strand braid
+    // still straddle the stem.
+    const sides = [drawn, other].filter((s) => !usedSides.has(s));
+    const arcs: number[] = forkArc < 0 ? topLadder : [forkArc];
+    let done = false;
+    for (const tArc of arcs) {
+      if (done) break;
+      const cand = forksFor(base, ctx, samples, tArc, bottomArc);
+      if (cand === null) continue;
+      const { T, B, cTop, cBot } = cand;
+      const tNode = cand.state.nodes[T] as TrailNode, bNode = cand.state.nodes[B] as TrailNode;
+      for (const side of sides) {
+        const tS = clearedAround(grid, tree, cBot, BRAID_ARRIVE_CELLS);
+        const w = baseWeight(ctx, tree, cTop, cBot);
+        for (let c = 0; c < w.length; c++) {
+          if ((w[c] as number) === 0) continue;
+          const x = grid.x[c] as number, z = grid.z[c] as number;
+          const dT = (x - tNode.x) * (x - tNode.x) + (z - tNode.z) * (z - tNode.z);
+          const dB = (x - bNode.x) * (x - bNode.x) + (z - bNode.z) * (z - bNode.z);
+          if (dT < BRAID_END_FREE * BRAID_END_FREE || dB < BRAID_END_FREE * BRAID_END_FREE) continue;
+          const { arc, lat } = stemPose(samples, x, z);
+          // Only between the forks, and only on this strand's side.
+          if (arc < bottomArc - BRAID_END_FREE || arc > tArc + BRAID_END_FREE || lat * side <= 0) { w[c] = 0; continue; }
+          const a = lat < 0 ? -lat : lat;
+          if (a < BRAID_LATERAL_MIN || a > BRAID_LATERAL_MAX) w[c] = BRAID_OFF_BAND_COST;
+        }
+        const marked: number[] = [];
+        const r = routeTo(grid, frame, H, ground, cand.state, tS, treeEdges, cTop, cBot, marked, w, true);
+        for (const c of marked) grid.pass[c] = 1;
+        if (!r.ok) continue;
+        // A STRAND HAS TO LEAVE THE STEM (2026-09-16). The lateral band is a
+        // WEIGHT, not a wall — off-band ground costs BRAID_OFF_BAND_COST rather
+        // than being forbidden, and within BRAID_END_FREE of either fork the side
+        // rule is waived entirely — so on ground with no room (a walled strip
+        // narrower than 2·BRAID_LATERAL_MIN: `narrowFrame` in the tests) the
+        // search happily returns a stub that runs beside the stem the whole way.
+        // That is not a strand, it is a second bed in the same corridor, and it
+        // takes the ground the scenery pass needs. Measured on the narrow frame
+        // before this rule: a 3-edge "strand" that never got 59 m off the stem,
+        // after which the talus could find no candidate clear of the trail.
+        let reach = 0;
+        for (const c of r.best.cells) {
+          const { lat } = stemPose(samples, grid.x[c] as number, grid.z[c] as number);
+          const a = lat < 0 ? -lat : lat;
+          if (a > reach) reach = a;
+        }
+        if (reach < BRAID_LATERAL_MIN) continue;
+        const plan = planPath(cand.state, r.best.cells, grid, frame, H);
+        if (plan.added.length === 0) continue;
+        for (const ei of plan.added) (plan.state.edges[ei] as TrailEdge).kind = "strand";
+        markPath(r.best.cells, grid, frame, tree, treeEdges);
+        base = plan.state;
+        forkArc = tArc;
+        forkT = T;
+        forkB = B;
+        usedSides.add(side);
+        built.push({ side, top: T, bottom: B, nodes: chainFrom(base, T, plan.added[0] as number) });
+        done = true;
+        break;
+      }
     }
-    const marked: number[] = [];
-    const r = routeTo(grid, frame, H, ground, base, tS, treeEdges, cTop, cBot, marked, w, true);
-    for (const c of marked) grid.pass[c] = 1;
-    if (!r.ok) continue;
-    // A STRAND HAS TO LEAVE THE STEM (2026-09-16). The lateral band is a
-    // WEIGHT, not a wall — off-band ground costs BRAID_OFF_BAND_COST rather
-    // than being forbidden, and within BRAID_END_FREE of either fork the side
-    // rule is waived entirely — so on ground with no room (a walled strip
-    // narrower than 2·BRAID_LATERAL_MIN: `narrowFrame` in the tests) the
-    // search happily returns a stub that runs beside the stem the whole way.
-    // That is not a strand, it is a second bed in the same corridor, and it
-    // takes the ground the scenery pass needs. Measured on the narrow frame
-    // before this rule: a 3-edge "strand" that never got 59 m off the stem,
-    // after which the talus could find no candidate clear of the trail.
-    let reach = 0;
-    for (const c of r.best.cells) {
-      const { lat } = stemPose(samples, grid.x[c] as number, grid.z[c] as number);
-      const a = lat < 0 ? -lat : lat;
-      if (a > reach) reach = a;
-    }
-    if (reach < BRAID_LATERAL_MIN) continue;
-    const plan = planPath(base, r.best.cells, grid, frame, H);
-    if (plan.added.length === 0) continue;
-    for (const ei of plan.added) (plan.state.edges[ei] as TrailEdge).kind = "strand";
-    markPath(r.best.cells, grid, frame, tree, treeEdges);
-    base = plan.state;
-    built.push({ side, top: T, bottom: B, nodes: chainFrom(base, T, plan.added[0] as number) });
   }
   if (built.length === 0) return none;
 
   // Strand A: the stem between the forks, read off the split graph.
+  const T = forkT, B = forkB;
   const g2 = stemGeometry(base, summit);
   const iT = g2.stemNodes.indexOf(T), iB = g2.stemNodes.indexOf(B);
   const aNodes = g2.stemNodes.slice(Math.min(iT, iB), Math.max(iT, iB) + 1);
   if (iT < iB) aNodes.reverse();
-  return { state: base, strands: [{ side: 0, top: T, bottom: B, nodes: aNodes }, ...built], topArc, bottomArc, samples };
+  return {
+    state: base, strands: [{ side: 0, top: T, bottom: B, nodes: aNodes }, ...built],
+    topArc: forkArc, bottomArc, samples,
+  };
 }
