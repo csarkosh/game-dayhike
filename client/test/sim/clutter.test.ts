@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import {
   CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS, CLUTTER_GRASS, CLUTTER_ROCK,
-  CLUTTER_MEADOW, CLUTTER_FLOWER,
+  CLUTTER_MEADOW, CLUTTER_FLOWER, CLUTTER_LITTER,
   grassTrailGate, CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_FAR,
+  CLUTTER_LITTER_CORE, CLUTTER_LITTER_FADE, CLUTTER_LITTER_CELL, litterBand,
   CLUTTER_CLASS_COUNT,
   CLUTTER_GRASS_ALT_LO,
   CLUTTER_GRASS_CANOPY_LO,
@@ -32,7 +33,7 @@ import { ROAD_BED_HALF } from "../../src/sim/road.js";
 import { bowlFor } from "../../src/sim/olympic.js";
 import { variantOrThrow, DERIV_SEED } from "./helpers/derivatives.js";
 import { centerlineX } from "./helpers/roadLine.js";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant } from "../../src/sim/terrain.js";
 import { MEADOW_RIM } from "../../src/sim/features.js";
 
 const SEED = DERIV_SEED; // 0x5eed — the roadLine/derivatives helpers are bound to it
@@ -74,8 +75,9 @@ describe("clutter density gates", () => {
     expect(grassTrailGate(CLUTTER_GRASS_TRAIL_NEAR)).toBe(0);
     expect(grassTrailGate(CLUTTER_GRASS_TRAIL_FAR)).toBe(1);
     expect(grassTrailGate(Infinity)).toBe(1); // outside the bowl, and variants without a trail
-    expect(grassTrailGate(3.5)).toBeGreaterThan(0);
-    expect(grassTrailGate(3.5)).toBeLessThan(1);
+    // Midway between the retuned NEAR (0.75) and FAR (2.5).
+    expect(grassTrailGate(1.5)).toBeGreaterThan(0);
+    expect(grassTrailGate(1.5)).toBeLessThan(1);
     // On the real graph: every class that shares the grass gate is 0 on the bed
     // of every edge, at the midpoint and at both quarter points.
     const v = variantOrThrow("olympic");
@@ -203,13 +205,13 @@ describe("bush density gates", () => {
     expect(dCanopy).toBeGreaterThan(dOpen);
   });
 
-  it("extends the class-range sweep to bushes (CLUTTER_CLASS_COUNT = 8)", () => {
+  it("extends the class-range sweep to the litter class (CLUTTER_CLASS_COUNT = 9)", () => {
     // The pre-existing "stays in [0, 1] for every class" sweep above loops
     // cls < CLUTTER_CLASS_COUNT, so it already covers class 5 (bush) — and,
-    // now that the constant is 8, classes 6-7
-    // (meadow, flower) too — automatically; this assertion is the loop bound.
+    // now that the constant is 9, classes 6-8
+    // (meadow, flower, litter) too — automatically; this assertion is the loop bound.
     // Same for the road-bed sweep in the domain census describe block below.
-    expect(CLUTTER_CLASS_COUNT).toBe(8);
+    expect(CLUTTER_CLASS_COUNT).toBe(9);
   });
 });
 
@@ -322,10 +324,59 @@ describe("clutter instances", () => {
     const mod = await import("../../src/sim/clutter.js");
     for (const [k, v] of Object.entries(mod)) {
       if (k.startsWith("CLUTTER_") && typeof v === "number" && k !== "CLUTTER_CLASS_COUNT"
-        && !["CLUTTER_GRASS", "CLUTTER_ROCK", "CLUTTER_BOULDER", "CLUTTER_DRIFTWOOD", "CLUTTER_FUNGUS", "CLUTTER_BUSH", "CLUTTER_MEADOW", "CLUTTER_FLOWER"].includes(k)) {
+        && !["CLUTTER_GRASS", "CLUTTER_ROCK", "CLUTTER_BOULDER", "CLUTTER_DRIFTWOOD", "CLUTTER_FUNGUS", "CLUTTER_BUSH", "CLUTTER_MEADOW", "CLUTTER_FLOWER", "CLUTTER_LITTER"].includes(k)) {
         expect(CLUTTER_TUNABLES[k], k).toBe(v);
       }
     }
+  });
+});
+
+describe("the litter class", () => {
+  it("follows its band of the trail distance", () => {
+    expect(litterBand(0)).toBe(CLUTTER_LITTER_CORE);
+    expect(litterBand(0.44)).toBe(CLUTTER_LITTER_CORE);
+    expect(litterBand(0.5)).toBe(1);
+    expect(litterBand(0.89)).toBe(1);
+    expect(litterBand(1.25)).toBeGreaterThan(0);
+    expect(litterBand(1.25)).toBeLessThan(1);
+    expect(litterBand(CLUTTER_LITTER_FADE)).toBe(0);
+    expect(litterBand(Infinity)).toBe(0);
+  });
+
+  it("is the ninth class with three variants and no instance farther than the fade", () => {
+    expect(CLUTTER_LITTER).toBe(8);
+    expect(CLUTTER_CLASS_COUNT).toBe(9);
+    const seed = SEED;
+    // A "no instance farther than the fade" scan over a 1200 m square of 1 m
+    // cells would be far too slow. Scan a 100 x 100 m window
+    // centred on the midpoint of the stem's second edge instead: small enough
+    // to run fast, real enough to hold litter instances.
+    const g = activeTerrainVariant().trailGraph!(seed);
+    const edge = g.edges[g.stem[1]!]!;
+    const a = g.nodes[edge.a]!, b = g.nodes[edge.b]!;
+    const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2;
+    const insts = clutterInRect(seed, CLUTTER_LITTER, midX - 50, midZ - 50, midX + 50, midZ + 50);
+    expect(insts.length).toBeGreaterThan(0);
+    const rt = (x: number, z: number) => activeTerrainVariant().trailDistance!(seed, x, z);
+    // litterBand — and so density — is evaluated at the CELL CENTRE, not the
+    // jittered instance; litter has no trailClear rejection (a stray pebble
+    // reads as ground litter wherever it lands), so an instance whose centre
+    // sits just inside the fade can jitter up to
+    // √2·(CLUTTER_JITTER/2)·CLUTTER_LITTER_CELL past it — the same derived-
+    // margin idiom the ROCK/BUSH road-bed tests use for their own NEAR floors.
+    const fadeCeiling = CLUTTER_LITTER_FADE + Math.SQRT2 * (CLUTTER_JITTER / 2) * CLUTTER_LITTER_CELL;
+    for (const i of insts) {
+      expect(rt(i.x, i.z)).toBeLessThan(fadeCeiling);
+      expect(i.variant).toBeGreaterThanOrEqual(0);
+      expect(i.variant).toBeLessThan(3);
+    }
+  });
+
+  it("tightens the grass gate to the bench edge", () => {
+    expect(CLUTTER_GRASS_TRAIL_NEAR).toBe(0.75);
+    expect(CLUTTER_GRASS_TRAIL_FAR).toBe(2.5);
+    expect(grassTrailGate(0.75)).toBe(0);
+    expect(grassTrailGate(2.5)).toBe(1);
   });
 });
 

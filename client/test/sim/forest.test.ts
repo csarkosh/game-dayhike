@@ -10,9 +10,17 @@ import {
 } from "../../src/sim/forest.js";
 import { registerPass, registeredPasses, type Pass } from "../../src/sim/chunk.js";
 
+const PRE_BENCH_LEVEL_ID_1234 = "forest/5/olympic/1234/1586030448/-1513056523";
+
 describe("createForest", () => {
   it("derives a stable levelId", () => {
     expect(createForest(1234).levelId).toBe(createForest(1234).levelId);
+  });
+
+  it("moved its level id with the trail bench release", () => {
+    // The id before the bench: TRAIL_BED_HALF 1, no sink, eight clutter classes.
+    // Pinned so a future retune cannot slide back to it unnoticed.
+    expect(createForest(1234).levelId).not.toBe(PRE_BENCH_LEVEL_ID_1234);
   });
 
   it("gives different seeds different levelIds", () => {

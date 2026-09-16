@@ -1,7 +1,7 @@
 /**
  * The Babylon shell over `clutterField.ts`: thin-
- * instance buckets for the eight clutter classes — grass, rock, boulder,
- * driftwood, fungus, bush, meadow, flower — two LOD levels deep. All band
+ * instance buckets for the nine clutter classes — grass, rock, boulder,
+ * driftwood, fungus, bush, meadow, flower, litter — two LOD levels deep. All band
  * math is `clutterField.ts` (via its memoizing `createClutterCollector`,
  * output-identical to the pure `collectClutter`); what lives here is buffers,
  * matrices and dispose — the same split as `forestField.ts`/`forestMeshes.ts`,
@@ -17,11 +17,11 @@
  * drew), and only two of the three LOD levels each model ships: LOD0 for
  * the `near` band, LOD1 for `far`. LOD2 exists in every file and goes unused —
  * a prop's LOD1 is already 36–230 triangles, and a third ring would buy
- * single-digit triangles per instance at the cost of fourteen more draw calls.
+ * single-digit triangles per instance at the cost of seventeen more draw calls.
  *
  * Draw-call budget ("one draw per model per LOD"): every clutter GLB
  * is single-primitive and single-material, so each bucket is exactly one draw
- * call — 14 models × 2 LOD levels = 28, all of them ground cover the forest's
+ * call — 17 models × 2 LOD levels = 34, all of them ground cover the forest's
  * own 29 sit on top of.
  *
  * Allocation discipline ("no per-frame allocation on the hot path"):
@@ -55,6 +55,7 @@ import {
   CLUTTER_FLOWER,
   CLUTTER_GRASS,
   CLUTTER_GRASS_CELL,
+  CLUTTER_LITTER,
   CLUTTER_MEADOW,
   CLUTTER_ROCK,
   type ClutterInstance,
@@ -85,9 +86,11 @@ import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../sim/passes/
 /**
  * Model per class per variant, indexed by the class ids of `sim/clutter.ts`
  * (grass 0, rock 1, boulder 2, driftwood 3, fungus 4, bush 5, meadow 6,
- * flower 7) and then by the instance's own `variant` draw. Driftwood and
+ * flower 7, litter 8) and then by the instance's own `variant` draw. Driftwood and
  * meadow ship ONE model each, which is why the sim gives those classes
- * `variants: 1` and their instances always draw variant 0.
+ * `variants: 1` and their instances always draw variant 0. Litter reuses the
+ * rock and driftwood models at its own (small) scale range rather than
+ * shipping dedicated pebble/twig geometry.
  */
 const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
   [modelUrl("models/clutter.grass_a.glb"), modelUrl("models/clutter.grass_b.glb")],
@@ -98,6 +101,7 @@ const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
   [modelUrl("models/clutter.bush_a.glb"), modelUrl("models/clutter.bush_b.glb")],
   [modelUrl("models/clutter.meadow.glb")],
   [modelUrl("models/clutter.flower_a.glb"), modelUrl("models/clutter.flower_b.glb")],
+  [modelUrl("models/clutter.rock_a.glb"), modelUrl("models/clutter.rock_b.glb"), modelUrl("models/clutter.driftwood.glb")],
 ];
 
 /** LOD node names inside each shipped GLB, in bucket order: index 0 is the
@@ -129,8 +133,9 @@ const FOLIAGE_BY_CLASS = new Map<number, FoliageProfile>([
 
 /** Classes that LIE on the ground rather than stand on it, so they take the
  * ground normal. Grass, meadow, flower, bush and fungus are excluded: measured,
- * their worst footprint gap is 0.28 m, and they sway, which a tilt fights. */
-const TILTED = new Set<number>([CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_DRIFTWOOD]);
+ * their worst footprint gap is 0.28 m, and they sway, which a tilt fights.
+ * Litter reuses the rock and driftwood meshes, so it tilts the same way. */
+const TILTED = new Set<number>([CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_DRIFTWOOD, CLUTTER_LITTER]);
 
 /** Instances a bucket's first real allocation covers. Sized so the sparse
  * classes (boulder ≤ 260, fungus ≤ 500 across two variants and two bands)
@@ -148,7 +153,7 @@ export type ClutterMeshesOptions = {
    * straight to the collector (low ≈ 60% radii). */
   radiusScale?: number;
   /** NullEngine escape hatch: bucket meshes per class → variant → LOD in
-   * place of the fourteen production GLBs (the forestMeshes `assets` idiom).
+   * place of the seventeen production GLBs (the forestMeshes `assets` idiom).
    * `adopt` runs synchronously on them. */
   assets?: Mesh[][][][];
 };
@@ -170,7 +175,7 @@ export type ClutterMeshes = {
 
 /**
  * One logical bucket: every geometry-bearing mesh of one model's one LOD
- * level (single-primitive for all fourteen clutter GLBs, so one mesh in practice)
+ * level (single-primitive for all seventeen clutter GLBs, so one mesh in practice)
  * sharing a single reused instance buffer.
  */
 type Bucket = {
@@ -354,7 +359,7 @@ function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Array, of
 }
 
 /**
- * The clutter's Babylon shell. Production loads the fourteen shipped GLBs
+ * The clutter's Babylon shell. Production loads the seventeen shipped GLBs
  * asynchronously and builds buckets when they arrive; the returned object is
  * complete immediately — an `update` before the assets exist just remembers
  * the camera, and is replayed the moment they land.
@@ -594,7 +599,7 @@ export function createClutterMeshes(
     maybeBuild();
   }
 
-  /** Production path: the fourteen clutter GLBs, `forestMeshes.ts`'s loading
+  /** Production path: the seventeen clutter GLBs, `forestMeshes.ts`'s loading
    * idiom (itself `enemyModel.ts`'s). */
   async function loadAssets(): Promise<void> {
     registerBuiltInLoaders();

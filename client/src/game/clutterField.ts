@@ -1,14 +1,14 @@
 /**
  * Pure per-class clutter band math:
- * walks each of the eight clutter grids — grass, rock, boulder, driftwood, fungus,
- * bush, meadow, flower — around the camera out to that class's own radius, splits
+ * walks each of the nine clutter grids — grass, rock, boulder, driftwood, fungus,
+ * bush, meadow, flower, litter — around the camera out to that class's own radius, splits
  * the disc at CLUTTER_FAR_SPLIT into a near (full-detail) and far (impostor) LOD
  * hint, and clamps each class to its instance budget, dropping the far tail first.
  * All comparisons are on squared distances: cheap, exact, trig-free — rotation and
  * any other trig is the renderer's job, same division of labour as `forestField.ts`.
  *
- * Output is a pure function of eight class-specific cell-snapped origins (one
- * per class, since the eight grids don't share a lattice) — the forestField
+ * Output is a pure function of nine class-specific cell-snapped origins (one
+ * per class, since the nine grids don't share a lattice) — the forestField
  * `bandsOrigin` idiom, just applied once per class instead of once overall.
  * `collectClutter` is the pure one-shot; `createClutterCollector` is the
  * renderer's hot path, memoizing `clutterInCell` results per (class, cell)
@@ -25,7 +25,7 @@ import {
 
 /**
  * Per-class scatter radius (m), indexed by class id (CLUTTER_GRASS = 0 ..
- * CLUTTER_BUSH = 5, CLUTTER_MEADOW = 6, CLUTTER_FLOWER = 7). Fungus is
+ * CLUTTER_BUSH = 5, CLUTTER_MEADOW = 6, CLUTTER_FLOWER = 7, CLUTTER_LITTER = 8). Fungus is
  * short-range ground texture; rock and driftwood read at mid-range; boulders
  * are large and rare enough to matter from far off. Grass ran to 115 m
  * (launch value 70) once dense, always-full ground cover became the goal:
@@ -58,9 +58,10 @@ import {
  * spawn design): the near/far LOD seam dithers the near/far
  * swap instead of popping it, so the disc can widen again without the pop
  * the earlier cuts were fighting — the far band now reads at a few pixels
- * rather than close underfoot.
+ * rather than close underfoot. Litter (index 8) gets 40 m: it is pebble-sized,
+ * and nothing that small reads past 40 m.
  */
-export const CLUTTER_RADII: readonly number[] = [110, 110, 400, 110, 70, 110, 40, 50];
+export const CLUTTER_RADII: readonly number[] = [110, 110, 400, 110, 70, 110, 40, 50, 40];
 
 /**
  * Fraction of a class's radius inside which the near (full-detail) LOD
@@ -77,7 +78,7 @@ export const CLUTTER_FAR_SPLIT = 0.45;
  * practice since presence is Bernoulli) and the mean-density ceiling
  * (π·r²·D_MAX, D_MAX the peak per-m² density constant from sim/clutter.ts,
  * reached only where every gate — altitude, slope, canopy, road, coast — is
- * fully open across the whole disc, which none of the eight classes' gates
+ * fully open across the whole disc, which none of the nine classes' gates
  * allow). Cells whose CENTRES lie up to √2·(CLUTTER_JITTER/2)·CELL past the
  * radius can still jitter an instance back inside the disc, so the hard
  * ceiling below widens r by that margin before squaring — the true worst
@@ -166,8 +167,17 @@ export const CLUTTER_FAR_SPLIT = 0.45;
  *            The drift
  *            gate keeps real counts far lower than either ceiling
  *            regardless of radius.
+ * litter:    hard π·(40+0.495)²/1²    ≈ 5153, density π·40²·0.6    ≈ 3016 —
+ *            with D (0.6) below the one-per-cell cap (1/1 per m²), the hard
+ *            geometric ceiling is still the tighter of the two once jitter
+ *            widens it; budget 5200 clears it, same shape as rock/fungus.
+ *            The litter band confines real counts to a thin strip either side
+ *            of the trail, far below this uniform-disc estimate — the
+ *            driftwood coastal-strip reasoning above, but the clamp is left
+ *            at the disc-clearing value anyway since litter's own radius (40 m)
+ *            is already small.
  */
-export const CLUTTER_BUDGETS: readonly number[] = [4400, 550, 260, 700, 500, 2500, 10600, 3650];
+export const CLUTTER_BUDGETS: readonly number[] = [4400, 550, 260, 700, 500, 2500, 10600, 3650, 5200];
 
 /**
  * Edge-fade ramp per class, as a fraction of the effective radius (this
@@ -184,7 +194,7 @@ export const CLUTTER_BUDGETS: readonly number[] = [4400, 550, 260, 700, 500, 250
  * visibility zero. Every other class starts at 0.2 and is judged in the
  * browser; boulders (80 m of 400) are the one to watch.
  */
-export const CLUTTER_FADE_FRACTION: readonly number[] = [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.3, 0.2];
+export const CLUTTER_FADE_FRACTION: readonly number[] = [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.3, 0.2, 0.2];
 
 /** The floor on the fade ramp's width, on every quality tier. The disc
  * boundary snaps to the grass cell (`maybeBuild`'s fixed 3 m rebuild grid)
@@ -223,7 +233,7 @@ export type ClutterBands = { near: ClutterInstance[]; far: ClutterInstance[] }[]
 
 /** The cell-snapped anchor class `cls`'s distances are measured from — the
  * forestField `bandsOrigin` idiom, but keyed to that class's own cell size
- * since the eight clutter grids don't share one lattice. Snapping makes the
+ * since the nine clutter grids don't share one lattice. Snapping makes the
  * band walk a pure function of the snapped origin: two cameras in the same
  * cell of a given class yield identical bands for that class. */
 function clutterOrigin(camX: number, camZ: number, cell: number): { x: number; z: number } {
@@ -378,7 +388,7 @@ export type ClutterCollector = {
   readonly size: number;
 };
 
-// Numeric cell key, class-prefixed since eight grids share one cache: exact
+// Numeric cell key, class-prefixed since nine grids share one cache: exact
 // for |cell index| < 2^20 per class (±12,582 km — far beyond anywhere a
 // camera can stand), same packing idiom as forestField's CELL_KEY constants.
 const CELL_KEY_HALF = 1 << 20;
@@ -435,7 +445,7 @@ export const COLLECTOR_SWEEP_SIZE = 110000;
  * so its results are cached across rebuilds keyed by (class, cell): a warm
  * collect after a small camera move re-samples only the cells newly inside
  * some class's disc instead of paying fresh density/terrain samples for all
- * eight grids every frame. Mirrors `forestField.ts`'s `createBandCollector`.
+ * nine grids every frame. Mirrors `forestField.ts`'s `createBandCollector`.
  */
 export function createClutterCollector(seed: number): ClutterCollector {
   const cache = new Map<number, ClutterInstance | null>();
@@ -455,9 +465,9 @@ export function createClutterCollector(seed: number): ClutterCollector {
       if (cache.size > COLLECTOR_SWEEP_SIZE) {
         // Hoisted out of the per-key loop below:
         // `clutterOrigin` is a pure function of (camX, camZ, cell), and cell
-        // takes only CLUTTER_CLASS_COUNT (8) distinct values, so computing it
+        // takes only CLUTTER_CLASS_COUNT (9) distinct values, so computing it
         // once per class here instead of once per cached KEY (tens of
-        // thousands, every sweep) was pure waste — the eight results below
+        // thousands, every sweep) was pure waste — the nine results below
         // are looked up by class inside the loop instead.
         const originByClass: { x: number; z: number }[] = [];
         for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {

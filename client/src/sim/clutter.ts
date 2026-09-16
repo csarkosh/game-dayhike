@@ -1,6 +1,6 @@
 /**
- * The ground-clutter fields: eight per-cell jittered scatter grids — grass, rocks, boulders,
- * driftwood, fungus, bushes, meadow carpet, flowers — each a pure point
+ * The ground-clutter fields: nine per-cell jittered scatter grids — grass, rocks, boulders,
+ * driftwood, fungus, bushes, meadow carpet, flowers, litter — each a pure point
  * function of (seed, class, cell), the vegetation.ts idiom.
  * Presence is Bernoulli against a biome-keyed density; at most one instance
  * per cell per class. `hash` is a plain [0,1) draw so the RENDERER derives
@@ -25,7 +25,9 @@ export const CLUTTER_BUSH = 5;
 export const CLUTTER_MEADOW = 6;
 /** Wildflowers: drift-gated bloom on open ground. */
 export const CLUTTER_FLOWER = 7;
-export const CLUTTER_CLASS_COUNT = 8;
+/** Litter: pebbles, twigs and torn turf along the trail's loose margin. */
+export const CLUTTER_LITTER = 8;
+export const CLUTTER_CLASS_COUNT = 9;
 
 // ---- Tunables (every one appears in CLUTTER_TUNABLES) ------------
 /** Cell sides (m): at most one instance per cell per class. */
@@ -66,12 +68,13 @@ export const CLUTTER_GRASS_CANOPY_HI = 0.85;
  * NEAR > ROAD_BED_HALF (5.5): asphalt and shoulders stay bare. */
 export const CLUTTER_GRASS_ROAD_NEAR = 7.5;
 export const CLUTTER_GRASS_ROAD_FAR = 13.5;
-/** Grass (and every class sharing its gate) is 0 over the trail bed and its
- * lip and returns over [NEAR, FAR] of trailDistance (m) — past the cut bank
- * (TRAIL_CORRIDOR_HALF = 4). Rocks and boulders are NOT gated: a few on the bed
- * read as gravel. */
-export const CLUTTER_GRASS_TRAIL_NEAR = 2;
-export const CLUTTER_GRASS_TRAIL_FAR = 5;
+/** Grass (and every class sharing its gate) is 0 over the bench — the
+ * 0.9 m core plus its 0.3 m loose margin (TRAIL_BED_HALF = 0.75) — and returns
+ * over [NEAR, FAR] of trailDistance (m): thin through the band the renderer
+ * tramples, full from 2.5 m. Rocks and boulders are NOT gated: a stone on
+ * the bench reads as a stone in the path. */
+export const CLUTTER_GRASS_TRAIL_NEAR = 0.75;
+export const CLUTTER_GRASS_TRAIL_FAR = 2.5;
 /** Meadow patchiness. The launch window (0.35–0.65) carved visible bare
  * swathes; under the fields-always-full tuning it is nearly wide open
  * (0.10–0.30) — the noise now only feathers density at the low tail, so a
@@ -118,7 +121,7 @@ export const CLUTTER_BOULDER_ROAD_FAR = 60;
  * slope that close to its own edge. The largest collider (`boulder_b`,
  * passes/clutter.ts: half-extent 1.239 m at scale 1) at CLUTTER_BOULDER_SCALE_MAX
  * (1.39) reaches 1.72 m from its own centre; 4 clears that plus the bed's own
- * half-width (TRAIL_BED_HALF 1) with margin, well inside the corridor's outer
+ * half-width (TRAIL_BED_HALF 0.75) with margin, well inside the corridor's outer
  * edge (TRAIL_CORRIDOR_HALF 7) where a boulder still reads as a talus field
  * beside the trail. Mirrors CLUTTER_FUNGUS_TRAIL_CLEAR's own fix for a stump
  * found the same way. */
@@ -135,7 +138,7 @@ export const CLUTTER_FUNGUS_CANOPY_LO = 0.35;
 export const CLUTTER_FUNGUS_CANOPY_HI = 0.7;
 /** Fungus (the mushroom cluster AND the cut stump, the class's two models)
  * is rejected at the jittered INSTANCE within this trailDistance (m): the
- * whole gravel (TRAIL_BED_HALF 1 + TRAIL_PAINT_MARGIN 0.5) plus the largest
+ * whole gravel (TRAIL_BED_HALF 0.75 + TRAIL_PAINT_MARGIN 0.5) plus the largest
  * stump's half-width (0.28 × 1.3) and a step of clear ground. A cell-centre
  * gate cannot do it — the 6 m cell's jitter reaches 2.97 m — and a stump
  * standing in the bed was found on 2026-09-10. Rocks stay ungated
@@ -302,6 +305,28 @@ export const CLUTTER_DRIFT_SCALE_MAX = 4.38;
  * 1.61290 → 1.61. */
 export const CLUTTER_FLOWER_SCALE_MIN = 0.81;
 export const CLUTTER_FLOWER_SCALE_MAX = 1.61;
+/** Litter lives on a 1 m cell along the trail: a few proud stones on the
+ * compacted core, the most over the loose margin and its lip, gone by
+ * CLUTTER_LITTER_FADE. D = 0.6 puts about one piece per 1.5 m per side on
+ * the margin (presence = min(1, band · 1 · D) per cell). */
+export const CLUTTER_LITTER_CELL = 1;
+export const CLUTTER_LITTER_D = 0.6;
+export const CLUTTER_LITTER_CORE = 0.15;
+export const CLUTTER_LITTER_MARGIN_LO = 0.45;
+export const CLUTTER_LITTER_MARGIN_HI = 0.9;
+export const CLUTTER_LITTER_FADE = 1.6;
+/** Of the model's own unit: rock_a/rock_b at this scale are pebbles; the
+ * renderer scales the driftwood variant further to twig size. */
+export const CLUTTER_LITTER_SCALE_MIN = 0.25;
+export const CLUTTER_LITTER_SCALE_MAX = 0.6;
+export const CLUTTER_LITTER_SALT = 0x1177;
+
+/** The litter density's band of the trail distance, pure. */
+export function litterBand(rt: number): number {
+  if (rt < CLUTTER_LITTER_MARGIN_LO) return CLUTTER_LITTER_CORE;
+  if (rt < CLUTTER_LITTER_MARGIN_HI) return 1;
+  return 1 - smoothstep(CLUTTER_LITTER_MARGIN_HI, CLUTTER_LITTER_FADE, rt);
+}
 /** Fungus keeps its original simple mesh — NOT
  * part of the scale re-derivation above. */
 export const CLUTTER_FUNGUS_SCALE_MIN = 0.8;
@@ -354,6 +379,7 @@ const CLASSES: readonly ClassConfig[] = [
   { cell: CLUTTER_BUSH_CELL, density: CLUTTER_BUSH_D, salt: CLUTTER_BUSH_SALT, scaleMin: CLUTTER_BUSH_SCALE_MIN, scaleMax: CLUTTER_BUSH_SCALE_MAX, variants: 2, trailClear: 0 },
   { cell: CLUTTER_MEADOW_CELL, density: CLUTTER_MEADOW_D, salt: CLUTTER_MEADOW_SALT, scaleMin: CLUTTER_MEADOW_SCALE_MIN, scaleMax: CLUTTER_MEADOW_SCALE_MAX, variants: 1, trailClear: 0 },
   { cell: CLUTTER_FLOWER_CELL, density: CLUTTER_FLOWER_D, salt: CLUTTER_FLOWER_SALT, scaleMin: CLUTTER_FLOWER_SCALE_MIN, scaleMax: CLUTTER_FLOWER_SCALE_MAX, variants: 2, trailClear: 0 },
+  { cell: CLUTTER_LITTER_CELL, density: CLUTTER_LITTER_D, salt: CLUTTER_LITTER_SALT, scaleMin: CLUTTER_LITTER_SCALE_MIN, scaleMax: CLUTTER_LITTER_SCALE_MAX, variants: 3, trailClear: 0 },
 ];
 
 export function clutterCell(cls: number): number {
@@ -503,6 +529,12 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       );
       return base * drift * fm.clutter * (1 + fm.meadow);
     }
+    case CLUTTER_LITTER: {
+      const band = litterBand(rt);
+      if (band === 0) return 0;
+      const snow = 1 - smoothstep(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h);
+      return band * snow;
+    }
     default:
       return 0;
   }
@@ -638,6 +670,8 @@ export const CLUTTER_TUNABLES: Readonly<Record<string, number>> = {
   CLUTTER_MEADOW_CELL, CLUTTER_MEADOW_D,
   CLUTTER_FLOWER_CELL, CLUTTER_FLOWER_D,
   CLUTTER_FLOWER_PATCH_WAVELENGTH, CLUTTER_FLOWER_PATCH_OCTAVES, CLUTTER_FLOWER_PATCH_LO, CLUTTER_FLOWER_PATCH_HI,
+  CLUTTER_LITTER_CELL, CLUTTER_LITTER_D, CLUTTER_LITTER_CORE, CLUTTER_LITTER_MARGIN_LO, CLUTTER_LITTER_MARGIN_HI,
+  CLUTTER_LITTER_FADE, CLUTTER_LITTER_SCALE_MIN, CLUTTER_LITTER_SCALE_MAX, CLUTTER_LITTER_SALT,
   CLUTTER_GRASS_SCALE_MIN, CLUTTER_GRASS_SCALE_MAX, CLUTTER_ROCK_SCALE_MIN, CLUTTER_ROCK_SCALE_MAX,
   CLUTTER_BOULDER_SCALE_MIN, CLUTTER_BOULDER_SCALE_MAX, CLUTTER_DRIFT_SCALE_MIN, CLUTTER_DRIFT_SCALE_MAX,
   CLUTTER_FUNGUS_SCALE_MIN, CLUTTER_FUNGUS_SCALE_MAX, CLUTTER_BUSH_SCALE_MIN, CLUTTER_BUSH_SCALE_MAX,
