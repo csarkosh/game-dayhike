@@ -31,7 +31,15 @@ import { createAmbientAudio } from "./game/ambientAudio.js";
 import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
 import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
 import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
-import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherPresetName } from "./game/weather.js";
+import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
+import {
+  ESCALATION_REST,
+  atmosphereUnder,
+  escalationTargets,
+  stepEscalation,
+  type AtmosphereBase,
+  type EscalationState,
+} from "./game/escalation.js";
 import {
   DEFAULT_TERRAIN_VARIANT,
   activeTerrainVariant,
@@ -131,6 +139,13 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // listener write would both be for nothing.
   const wildlifeAudio = renderer.hasWildlife ? createWildlifeAudio(ambient, seed) : null;
   let weatherName: WeatherPresetName = DEFAULT_WEATHER;
+  /**
+   * The console's preset and hour: what the escalation departs from on a
+   * forest world (escalation.ts), and simply what shows everywhere else.
+   */
+  let base: AtmosphereBase = { weather: WEATHER_PRESETS[DEFAULT_WEATHER], hour: DEFAULT_HOUR };
+  /** The escalation's eased state, reset when a match starts. */
+  let escalation: EscalationState = ESCALATION_REST;
   // Recomputed only when the weather does — `wildlifePresenceUnder` builds a
   // per-species array, and the frame loop below would otherwise allocate one
   // every frame to say the same thing.
@@ -247,8 +262,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     } else if (name === "time") {
       // Instant, like every other view command: the sun moves, the world is not
       // rebuilt. Validation has already bounded this to [0, 24), so the fallback
-      // is unreachable and exists only to satisfy the union type.
-      renderer.setHour(typeof value === "number" ? value : DEFAULT_HOUR);
+      // is unreachable and exists only to satisfy the union type. On a forest
+      // world this is the base the escalation departs from, and syncAtmosphere
+      // overrides the renderer next frame; elsewhere it is simply the hour.
+      base = { ...base, hour: typeof value === "number" ? value : DEFAULT_HOUR };
+      renderer.setHour(base.hour);
     } else if (name === "weather") {
       // `Object.hasOwn`, not `in`: `in` also passes prototype keys (e.g.
       // "toString"), which are not entries of WEATHER_PRESETS.
@@ -257,9 +275,13 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
           ? (value as WeatherPresetName)
           : DEFAULT_WEATHER;
       weatherName = preset;
-      renderer.setWeather(WEATHER_PRESETS[preset], options.instant ? 0 : undefined);
-      ambient.setWeather(WEATHER_PRESETS[preset]);
-      wildlifePresence = wildlifePresenceUnder(WEATHER_PRESETS[preset]);
+      // The three direct calls stay so a world without a register behaves
+      // exactly as today; on a forest world `syncAtmosphere` overrides them
+      // next frame.
+      base = { ...base, weather: WEATHER_PRESETS[preset] };
+      renderer.setWeather(base.weather, options.instant ? 0 : undefined);
+      ambient.setWeather(base.weather);
+      wildlifePresence = wildlifePresenceUnder(base.weather);
     } else if (name === "bob") {
       renderer.setBobScale(typeof value === "number" ? value : DEFAULT_BOB_SCALE);
     } else if (name === "unsettle") {
@@ -348,6 +370,46 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
         hold: self.signOutTicks / SIGN_OUT_TICKS,
       }),
     );
+  }
+
+  // The hour and weather `syncAtmosphere` last actually pushed to the
+  // renderer and the ambient bed: `renderer.setHour` and `renderer.setWeather`
+  // both recompute the sky, the sun and the fog and re-render the reflection
+  // probe, so calling both unconditionally every frame would pay that cost
+  // twice a frame for a state that moves in fractions over seconds.
+  let appliedHour = base.hour;
+  let appliedWeather: WeatherParams = base.weather;
+
+  /**
+   * The world answering the game (escalation.ts): on a forest world with a
+   * register, the sun, the weather, the ambient gains and the wildlife's
+   * presence follow the escalation every frame — the renderer's own weather
+   * fade is bypassed (0 s) because the model carries the easing. Elsewhere the
+   * console's base stands and this does nothing. Both loops, before
+   * `renderer.sync`, which reads the weather this sets.
+   */
+  function syncAtmosphere(world: World, state: WorldState, localId: number, dt: number): void {
+    if (world.register === null || world.trail === null) return;
+    const targets = escalationTargets(state, localId, world.register, world.trail, world.boxes, world.ground);
+    escalation = stepEscalation(escalation, targets, dt);
+    const a = atmosphereUnder(base, escalation);
+    wildlifePresence = wildlifePresenceUnder(a.weather);
+    // Skip the renderer and ambient pushes on a frame the eased state barely
+    // moved: `renderer.setHour`/`setWeather` recompute the sky, the sun and
+    // the fog and re-render the reflection probe on every call.
+    const hourMoved = Math.abs(a.hour - appliedHour) > 0.01;
+    const weatherMoved =
+      Math.abs(a.weather.cloudCover - appliedWeather.cloudCover) > 0.005 ||
+      Math.abs(a.weather.mist - appliedWeather.mist) > 0.005 ||
+      Math.abs(a.weather.rain - appliedWeather.rain) > 0.005 ||
+      Math.abs(a.weather.wetness - appliedWeather.wetness) > 0.005 ||
+      Math.abs(a.weather.dread - appliedWeather.dread) > 0.005;
+    if (!hourMoved && !weatherMoved) return;
+    appliedHour = a.hour;
+    appliedWeather = a.weather;
+    renderer.setHour(a.hour);
+    renderer.setWeather(a.weather, 0);
+    ambient.setWeather(a.weather);
   }
 
   let signs: SignMeshes | null = null;
@@ -662,6 +724,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   function runAsHost(): void {
     const host = createHostSession(level, seed, () => performance.now(), { forest });
     session = host;
+    escalation = ESCALATION_REST;
     hud.setStatus(null);
 
     registerInteractables(host.world);
@@ -704,6 +767,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
       const state: WorldState = host.world.state;
       const self = state.players.get(host.localEntityId);
+      syncAtmosphere(host.world, state, host.localEntityId, dt);
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncWind();
@@ -779,6 +843,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
         : {}),
     });
     session = client;
+    escalation = ESCALATION_REST;
     registerInteractables(client.world);
     signs = createSigns(client.world);
     client.onInteracted((e) => {
@@ -813,6 +878,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
       const state = client.renderState(performance.now());
       const self = state.players.get(client.localEntityId);
+      syncAtmosphere(client.world, state, client.localEntityId, dt);
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncWind();
