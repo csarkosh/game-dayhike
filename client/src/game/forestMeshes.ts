@@ -58,6 +58,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color4 } from "@babylonjs/core/Maths/math.color.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
 import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera.js";
@@ -86,7 +87,7 @@ import {
   type TreeInstance,
 } from "../sim/vegetation.js";
 import { elevationAt } from "../sim/terrain.js";
-import { attachFoliage, FOLIAGE_PROFILES } from "./foliagePlugin.js";
+import { attachFoliage, FOLIAGE_PROFILES, setFoliageEdges } from "./foliagePlugin.js";
 import { groundNormalTilt, groundNormalY, seatOnGround } from "./groundTilt.js";
 import { attachGroundConform } from "./groundConformPlugin.js";
 import {
@@ -828,6 +829,33 @@ export function createForestMeshes(
 
     for (const mesh of [...lods.flat(), ...(understory ?? [])]) prepBucketMesh(mesh);
 
+    // Every shipped tree GLB reuses ONE material per primitive across its
+    // whole LOD ladder (verified directly against the four tree.*.glb
+    // assets), so LOD0/1/2 usually arrive pointing at the SAME material
+    // object. That is harmless for ground conform and the distance dither —
+    // both read per-instance/per-vertex data, not per-material state — but
+    // the crown sway below attaches a plugin carrying per-material uniforms
+    // (the wind fade `edges`), and LOD2 must never see it. Split LOD2 onto
+    // its own material wherever it shares one with LOD0 or LOD1, before ANY
+    // plugin attaches to it: `Material.clone()` calls into Babylon's own
+    // class registry to reconstruct each existing plugin, which throws for a
+    // plugin outside that registry (ours all are), so cloning has to happen
+    // while the material is still plugin-free.
+    const lod01Materials = new Set(
+      [...lods[0], ...lods[1]].map((m) => m.material).filter((m): m is Material => m != null),
+    );
+    const lod2Clones = new Map<Material, Material>();
+    for (const mesh of lods[2]) {
+      const material = mesh.material;
+      if (material === null || !lod01Materials.has(material)) continue;
+      let clone = lod2Clones.get(material);
+      if (!clone) {
+        clone = material.clone(`${material.name}_lod2`) ?? material;
+        lod2Clones.set(material, clone);
+      }
+      mesh.material = clone;
+    }
+
     // Base conform and the distance dither: the LOD meshes only — understory
     // is tilted rather than conformed (its material already carries the
     // wind plugin), and the impostor plane's own material is built in
@@ -840,7 +868,28 @@ export function createForestMeshes(
       }
     }
 
-    // Foliage sway: understory here; the impostor quad stays rigid.
+    // Wind on the crowns: LOD0 and LOD1 carry the foliage plugin at the tree
+    // profile (whole-tree bend by height fraction squared, so trunks stay
+    // planted). LOD2, the snag and the impostor plane stay rigid, and LOD1's
+    // motion reaches zero across SEAM_LOD1 so nothing pops against them (LOD0
+    // sits entirely inside that band, so sharing the one plugin instance with
+    // LOD1 — the usual case, per the split above — is correct for both). The
+    // shadow depth pass does not run the plugin: casters draw unswayed,
+    // which at a 2 % tip lean is under a shadow-map texel at the cascade
+    // distances involved.
+    for (const lod of [0, 1] as const) {
+      for (const mesh of lods[lod]) {
+        if (mesh.material) {
+          mesh.refreshBoundingInfo();
+          attachFoliage(mesh.material, FOLIAGE_PROFILES.TREE, mesh.getBoundingInfo().boundingBox.maximum.y);
+          if (lod === 1) setFoliageEdges(mesh.material, SEAM_LOD1);
+        }
+      }
+    }
+
+    // Foliage sway, understory: its own profile (denser flutter, lower amp),
+    // attached here rather than below since it has no LOD ladder to split
+    // from the crowns' loop. The impostor quad stays rigid regardless.
     if (understory !== null) {
       for (const mesh of understory) {
         if (mesh.material) {

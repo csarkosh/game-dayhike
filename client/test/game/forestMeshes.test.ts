@@ -37,6 +37,7 @@ import {
 } from "../../src/game/forestField.js";
 import { COHORT_GIANT, COHORT_LOG, COHORT_SNAG, type TreeInstance } from "../../src/sim/vegetation.js";
 import { DistanceFadePlugin, fadeBands, fadeVisibility } from "../../src/game/distanceFadePlugin.js";
+import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import {
   createForestMeshes,
   defaultBakeImpostor,
@@ -612,6 +613,80 @@ describe("createForestMeshes under NullEngine", () => {
     }
     expect(sawAlphaTested).toBe(true);
     expect(sawOpaqueSkipped).toBe(true);
+  });
+
+  it("attaches the foliage plugin to LOD0 and LOD1 of giants and saplings, never LOD2 or the impostor", () => {
+    const { scene, assets } = build();
+    // Each stub LOD root is a bark+canopy sibling pair (`pairedBoxes`); the
+    // production bucket is every geometry-bearing mesh under the root, not
+    // just the root the stub asset handle points at (the same expansion
+    // "exposes exactly the giants' LOD0 bucket as shadow casters", above,
+    // relies on).
+    const bucketMeshes = (root: Mesh): Mesh[] => [root, ...(root.getChildMeshes(false) as Mesh[])];
+    for (const species of [...assets.giants, ...assets.saplings]) {
+      for (const lod of [0, 1] as const) {
+        for (const mesh of bucketMeshes(species.lods[lod])) {
+          expect(mesh.material!.pluginManager?.getPlugin("Foliage"), mesh.name).toBeTruthy();
+        }
+      }
+      for (const mesh of bucketMeshes(species.lods[2])) {
+        expect(mesh.material!.pluginManager?.getPlugin("Foliage") ?? null, mesh.name).toBeNull();
+      }
+    }
+    // LOD0 sits entirely inside SEAM_LOD1 (it hands over to LOD1 at
+    // SEAM_LOD0, well short of it), so the single plugin's edges — shared
+    // with LOD1's material in the stub only coincidentally, but always in
+    // production (see the shared-material test below) — is SEAM_LOD1.
+    const lod1Root = assets.giants[0]!.lods[1];
+    const plugin = lod1Root.material!.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    expect(plugin.edges).toEqual(SEAM_LOD1);
+    for (const plane of impostorPlanes(scene)) {
+      expect(plane.material!.pluginManager?.getPlugin("Foliage") ?? null).toBeNull();
+    }
+  });
+
+  it("splits LOD2 off a material it shares with LOD0/LOD1 before any plugin attaches, so it never inherits the sway", () => {
+    // The shipped tree GLBs (verified directly, outside this suite) reuse ONE
+    // material per primitive across every LOD root — unlike this file's
+    // `pairedBoxes` stub, where each LOD gets its own fresh material. Mimic
+    // that sharing here: three boxes, one material object underneath all of
+    // them, exactly as a real asset's LOD0/1/2 do.
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const sharedMat = new PBRMaterial("shared_mat", scene);
+    sharedMat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST;
+    const lod0 = MeshBuilder.CreateBox("shared_lod0", { size: 1 }, scene);
+    lod0.material = sharedMat;
+    const lod1 = MeshBuilder.CreateBox("shared_lod1", { size: 1 }, scene);
+    lod1.material = sharedMat;
+    const lod2 = MeshBuilder.CreateBox("shared_lod2", { size: 1 }, scene);
+    lod2.material = sharedMat;
+    const deadwood = MeshBuilder.CreateBox("deadwood", { size: 1 }, scene);
+    deadwood.material = new PBRMaterial("deadwood_mat", scene);
+
+    createForestMeshes(scene, SEED, {
+      assets: {
+        giants: [{ lods: [lod0, lod1, lod2] }],
+        saplings: [],
+        deadwood,
+      },
+      bakeImpostor: () => null,
+    });
+
+    // LOD0 and LOD1 keep pointing at the one shared object — only LOD2 moves.
+    expect(lod0.material).toBe(sharedMat);
+    expect(lod1.material).toBe(sharedMat);
+    expect(lod2.material).not.toBe(sharedMat);
+    expect(lod0.material!.pluginManager?.getPlugin("Foliage")).toBeTruthy();
+    expect(lod2.material!.pluginManager?.getPlugin("Foliage") ?? null).toBeNull();
+    // The split must not cost LOD2 the plugins every bucket material still
+    // needs: `Material.clone()` cannot reconstruct a plugin outside
+    // Babylon's own class registry (it throws trying), so the split has to
+    // happen before ANY custom plugin attaches — the clone must still end up
+    // with its own, independently attached ground conform and distance fade.
+    expect(lod2.material!.pluginManager?.getPlugin("GroundConform")).toBeTruthy();
+    expect(lod2.material!.pluginManager?.getPlugin("DistanceFade")).toBeTruthy();
   });
 
   it("writes a constant fadeBands per bucket: seams inward and outward, edges for understory and logs", () => {
