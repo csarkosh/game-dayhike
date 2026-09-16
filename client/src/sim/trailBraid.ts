@@ -164,6 +164,31 @@ export function stemPose(samples: readonly StemSample[], x: number, z: number): 
 }
 
 /**
+ * Every grid cell's stem pose, read once for the whole braid stage: `arc[c]`
+ * and `lat[c]` are what `stemPose` gives at cell `c`'s centre.
+ *
+ * The stem samples do not move while strands and rungs are built, so a cell's
+ * pose is a constant of the stage — but both searches ask for it over the WHOLE
+ * grid on every try, which is O(cells x samples) each time, and a braid makes up
+ * to twelve strand tries and a rung try per height, side and ladder rung. One
+ * pass fills these, and the try loops read them. `stemPose` itself stays: its
+ * other callers ask about arbitrary points, not cell centres.
+ */
+export type CellPose = { arc: Float32Array; lat: Float32Array };
+
+/** `stemPose` at every cell centre of `grid`, as a CellPose. */
+export function cellPoses(grid: TrailGrid, samples: readonly StemSample[]): CellPose {
+  const n = grid.pass.length;
+  const arc = new Float32Array(n), lat = new Float32Array(n);
+  for (let c = 0; c < n; c++) {
+    const p = stemPose(samples, grid.x[c] as number, grid.z[c] as number);
+    arc[c] = p.arc;
+    lat[c] = p.lat;
+  }
+  return { arc, lat };
+}
+
+/**
  * Where the stem enters the peak's disc, less BRAID_PEAK_MARGIN of stem: the
  * highest the top fork may sit. `Infinity` when there is no peak (a fallback
  * world), so the drawn band stands.
@@ -332,10 +357,11 @@ function forksFor(
  * `peakEntryArc` puts it below the disc (spec §3.2, amended after this
  * measurement).
  */
-export function buildStrands(state: GraphState, ctx: BraidCtx): Braid & { state: GraphState } {
+export function buildStrands(state: GraphState, ctx: BraidCtx): Braid & { state: GraphState; pose: CellPose } {
   const { seed, grid, frame, H, ground, tree, treeEdges, summit } = ctx;
   const geom = stemGeometry(state, summit);
   const samples = sampleStem(state, geom);
+  const pose = cellPoses(grid, samples);
   const count = braidDraw(seed, 0, 0, 1) < BRAID_STRANDS_WEIGHT_2 ? 2 : 3;
   const bottomArc = geom.stemLen * braidDraw(seed, 2, BRAID_BOTTOM_MIN, BRAID_BOTTOM_MAX);
   // THE DRAWN BAND OR BELOW THE DOME, WHICHEVER IS LOWER (spec §3.2, amended
@@ -347,7 +373,7 @@ export function buildStrands(state: GraphState, ctx: BraidCtx): Braid & { state:
   const floorArc = geom.stemLen * BRAID_TOP_FLOOR;
   const entryArc = peakEntryArc(samples, ctx.features);
   const topArc = Math.max(floorArc, Math.min(drawnArc, entryArc));
-  const none = { state, strands: [] as Strand[], topArc, bottomArc, samples };
+  const none = { state, strands: [] as Strand[], topArc, bottomArc, samples, pose };
   // The ladder: the top fork, then BRAID_LADDER_STEP down the stem twice. A
   // rung below the floor, or one that leaves less than BRAID_MIN_SPAN of stem
   // between the forks (Task 4's rungs need the room), is not a fork at all.
@@ -388,7 +414,7 @@ export function buildStrands(state: GraphState, ctx: BraidCtx): Braid & { state:
           const dT = (x - tNode.x) * (x - tNode.x) + (z - tNode.z) * (z - tNode.z);
           const dB = (x - bNode.x) * (x - bNode.x) + (z - bNode.z) * (z - bNode.z);
           if (dT < BRAID_END_FREE * BRAID_END_FREE || dB < BRAID_END_FREE * BRAID_END_FREE) continue;
-          const { arc, lat } = stemPose(samples, x, z);
+          const arc = pose.arc[c] as number, lat = pose.lat[c] as number;
           // Only between the forks, and only on this strand's side.
           if (arc < bottomArc - BRAID_END_FREE || arc > tArc + BRAID_END_FREE || lat * side <= 0) { w[c] = 0; continue; }
           const a = lat < 0 ? -lat : lat;
@@ -447,7 +473,7 @@ export function buildStrands(state: GraphState, ctx: BraidCtx): Braid & { state:
   if ((aNodes[0] as number) !== T) aNodes.reverse();
   return {
     state: base, strands: [{ side: 0, top: T, bottom: B, nodes: aNodes }, ...built],
-    topArc: forkArc, bottomArc, samples,
+    topArc: forkArc, bottomArc, samples, pose,
   };
 }
 
@@ -554,7 +580,7 @@ function crowds(state: GraphState, added: readonly number[]): boolean {
  */
 export function buildRungs(
   state: GraphState, ctx: BraidCtx, strands: readonly Strand[], samples: readonly StemSample[],
-  topArc: number, bottomArc: number,
+  topArc: number, bottomArc: number, pose: CellPose,
 ): { state: GraphState; rungs: number } {
   const { seed, grid, frame, H, ground, tree, treeEdges } = ctx;
   if (strands.length < 2) return { state, rungs: 0 };
@@ -592,7 +618,7 @@ export function buildRungs(
     const w = baseWeight(ctx, tree, cX, cY);
     for (let c = 0; c < w.length; c++) {
       if ((w[c] as number) === 0) continue;
-      const a = stemPose(samples, grid.x[c] as number, grid.z[c] as number).arc;
+      const a = pose.arc[c] as number;
       if (a < arc - BRAID_RUNG_ALONG_HALF || a > arc + BRAID_RUNG_ALONG_HALF) w[c] = 0;
     }
     w[cX] = 1;

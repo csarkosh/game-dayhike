@@ -897,7 +897,7 @@ export function buildTrail(
   state = braid.state;
   state = buildRungs(state, {
     seed, grid, frame, H, ground, tree, treeEdges, features, summit, loops,
-  }, braid.strands, braid.samples, braid.topArc, braid.bottomArc).state;
+  }, braid.strands, braid.samples, braid.topArc, braid.bottomArc, braid.pose).state;
 
   const { stem, stemLen } = stemGeometry(state, summit);
 
