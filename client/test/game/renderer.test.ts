@@ -27,6 +27,18 @@ vi.mock("../../src/game/groundMaps.js", () => ({
   }),
 }));
 
+// `createRenderer` builds a real WebGL `Engine`, which needs a canvas and a
+// context this suite does not have. Substituted with `NullEngine` at the
+// module boundary — same trick as the `groundMaps` mock above — so the wind
+// test below (the one case that needs a whole `Renderer`, not one exported
+// piece of it) can build one anyway.
+vi.mock("@babylonjs/core/Engines/engine.js", async () => {
+  const mod = await vi.importActual<typeof import("@babylonjs/core/Engines/nullEngine.js")>(
+    "@babylonjs/core/Engines/nullEngine.js",
+  );
+  return { Engine: mod.NullEngine };
+});
+
 // The terrain field lives behind the variant registry, and `activeTerrainVariant`
 // throws until something has registered one. `app.ts` gets that transitively
 // through `forest.ts`; a renderer-only test has to ask for it.
@@ -36,6 +48,7 @@ import {
   applyWetness,
   createClipmap,
   createClipmapMesh,
+  createRenderer,
   terrainMaterialFor,
   writeListenerPose,
 } from "../../src/game/renderer.js";
@@ -50,6 +63,8 @@ import {
   type RingSamples,
 } from "../../src/game/clipmap.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import type { Level } from "../../src/sim/level.js";
+import { NO_ITEM, Outcome, type PlayerState, type WorldState } from "../../src/sim/types.js";
 
 let engine: NullEngine | null = null;
 
@@ -274,11 +289,73 @@ describe("applyWetness", () => {
   });
 });
 
+/** A hand-authored level with nothing in it: `forest: null` keeps the forest,
+ * clutter and mist shells out of the renderer this fixture builds, so the
+ * wind test below only has to reckon with what it actually reads. */
+const EMPTY_LEVEL: Level = { id: "wind-test", brushes: [], playerSpawns: [], enemySpawns: [] };
+
+function windTestPlayer(id: number): PlayerState {
+  return {
+    id,
+    pos: { x: id, y: 0.9, z: 0 },
+    vel: { x: 0, y: 0, z: 0 },
+    yaw: 0,
+    pitch: 0,
+    health: 100,
+    grounded: true,
+    lastProcessedInput: 0,
+    respawnTimer: 0,
+    deathPos: null,
+    lamp: { on: false, charge: 1 },
+    carrying: NO_ITEM,
+    signOutTicks: 0,
+  };
+}
+
+function windTestState(...players: PlayerState[]): WorldState {
+  return {
+    tick: 1,
+    players: new Map(players.map((p) => [p.id, p])),
+    enemies: new Map(),
+    items: [],
+    outcome: Outcome.Playing,
+    nextEntityId: 10,
+    rngSeed: 1,
+  };
+}
+
+describe("renderer.wind()", () => {
+  it("is the weather-driven record until an override, then the override's speed", () => {
+    const canvas = {} as unknown as HTMLCanvasElement;
+    const renderer = createRenderer(canvas, EMPTY_LEVEL, null);
+    const state = windTestState(windTestPlayer(1));
+    try {
+      renderer.setWeather(WEATHER_PRESETS.rain, 0);
+      renderer.sync(state, 1, 0);
+      expect(renderer.wind().speed).toBeCloseTo(0.9, 6);
+
+      renderer.setWindOverride(0);
+      renderer.sync(state, 1, 0);
+      expect(renderer.wind().speed).toBe(0);
+      expect(renderer.wind().lean).toBe(0);
+
+      renderer.setWindOverride(null);
+      renderer.sync(state, 1, 0);
+      expect(renderer.wind().speed).toBeCloseTo(0.9, 6);
+    } finally {
+      renderer.dispose();
+    }
+  });
+});
+
 describe("world shell wiring", () => {
-  // `createRenderer` needs a real canvas and a WebGL context, so nothing in
-  // this file can build one — every case above tests an exported piece of it
-  // instead. The forest, clutter and mist shells therefore have no smoke test
-  // here at all, and the failure they share is invisible to the unit suites:
+  // `createRenderer` needs a real canvas and a WebGL context; the wind test
+  // above works around that with a `NullEngine` substitution (see the
+  // top-of-file mock), but that fixture uses `forest: null` and so never
+  // touches the forest, clutter or mist shells. Every case below still tests
+  // an exported piece of the renderer instead of the whole thing. The forest,
+  // clutter and mist shells therefore have no smoke test here at all, and
+  // the failure they share is invisible to the unit suites:
   // a shell that is constructed and never updated, or updated on only one of
   // the two camera branches, renders a world frozen at frame zero. This reads
   // the source for that wiring — the architecture.test.ts precedent — because

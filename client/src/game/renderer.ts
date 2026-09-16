@@ -19,7 +19,8 @@ import { FOG_DISTANCE } from "../sim/forestConstants.js";
 import { EntityViews } from "./entityViews.js";
 import { budgetLights, createHeadlamp, setLamp } from "./headlamp.js";
 import { lampUnder } from "./lampParams.js";
-import { windRecordUnder } from "./windParams.js";
+import { windRecordUnder, type WindRecord } from "./windParams.js";
+import { setFoliageWind, FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED } from "./foliagePlugin.js";
 import {
   createRingSamples,
   holeCellsFor,
@@ -600,6 +601,13 @@ export type Renderer = {
   setBobScale(scale: number): void;
   /** 0 silences the lens-side dread effects; 1 is full. */
   setUnsettle(level: number): void;
+  /** The wind record computed by the last `sync` (weather-driven, or the
+   * `/wind` override) — what `foliagePlugin.ts`'s players bend into and what
+   * `ambientAudio.ts`'s wind bed hears. */
+  wind(): WindRecord;
+  /** `null` restores the weather-driven speed; otherwise clamped to [0, 1]
+   * and used in place of it (the `/wind` command). */
+  setWindOverride(level: number | null): void;
 };
 
 export type RendererOptions = { tier?: QualityTier };
@@ -845,6 +853,15 @@ export function createRenderer(
 
   let freecam: FreecamView | null = null;
 
+  // The `/wind` override, and the one wind record every moving thing reads —
+  // recomputed once per `sync` below and read back by `wind()` and by
+  // `app.ts`'s `ambient.setWind`. `windPlayers` is reused rather than
+  // allocated per frame: `sync` runs every frame, and this is its only
+  // per-frame array.
+  let windOverride: number | null = null;
+  let wind: WindRecord = windRecordUnder(lighting.weather, 0);
+  const windPlayers = new Float32Array(FOLIAGE_PLAYERS * 3);
+
   return {
     scene,
     engine,
@@ -857,10 +874,27 @@ export function createRenderer(
       // per call, and this reads it several times a frame otherwise. Read
       // BEFORE the views sync, which needs the lamp state derived from it.
       const weather = lighting.weather;
-      const lampState = lampUnder(weather, performance.now() / 1000);
-      // TEMPORARY: a private clock until the sim carries the shared wind
-      // record (Task 8 replaces this call with that record).
-      const wind = windRecordUnder(weather, performance.now() / 1000);
+      const seconds = performance.now() / 1000;
+      const lampState = lampUnder(weather, seconds);
+      // The one wind record every moving thing reads this frame: the
+      // weather-driven speed, or the `/wind` override in its place. The
+      // players bend it — `windPlayers` is reused, not allocated, and absent
+      // slots are parked far off in XZ so the bend never reaches them.
+      wind = windRecordUnder(weather, seconds, windOverride ?? undefined);
+      let n = 0;
+      windPlayers.fill(0);
+      for (let i = 0; i < FOLIAGE_PLAYERS; i++) {
+        windPlayers[i * 3] = FOLIAGE_PLAYER_PARKED;
+        windPlayers[i * 3 + 2] = FOLIAGE_PLAYER_PARKED;
+      }
+      for (const p of state.players.values()) {
+        if (n === FOLIAGE_PLAYERS) break;
+        windPlayers[n * 3] = p.pos.x;
+        windPlayers[n * 3 + 1] = p.pos.y;
+        windPlayers[n * 3 + 2] = p.pos.z;
+        n++;
+      }
+      setFoliageWind(wind, windPlayers);
       views.sync(state, localId, alpha, lampState);
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once
@@ -891,7 +925,7 @@ export function createRenderer(
         forestMeshes?.update(freecam.x, freecam.z);
         clutterMeshes?.update(freecam.x, freecam.z);
         wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour);
-        mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour(), wind, performance.now() / 1000);
+        mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour(), wind, seconds);
         camera.position.set(freecam.x, freecam.y, freecam.z);
         camera.rotation.set(freecam.pitch, freecam.yaw, 0);
         setLamp(localLamp, false);
@@ -912,7 +946,7 @@ export function createRenderer(
         forestMeshes?.update(local.pos.x, local.pos.z);
         clutterMeshes?.update(local.pos.x, local.pos.z);
         wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour);
-        mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour(), wind, performance.now() / 1000);
+        mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour(), wind, seconds);
         const offset = bob.update(
           {
             x: local.pos.x,
@@ -1032,6 +1066,12 @@ export function createRenderer(
     },
     setSkinShading(on) {
       skinShading.setEnabled(on);
+    },
+    wind() {
+      return wind;
+    },
+    setWindOverride(level) {
+      windOverride = level === null ? null : Math.min(1, Math.max(0, level));
     },
   };
 }

@@ -264,6 +264,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       renderer.setBobScale(typeof value === "number" ? value : DEFAULT_BOB_SCALE);
     } else if (name === "unsettle") {
       renderer.setUnsettle((typeof value === "number" ? value : 100) / 100);
+    } else if (name === "wind") {
+      // Bare `/wind` restores the weather-driven speed: `scriptValue`
+      // returns `false` for it, not a level, so anything but a number means
+      // no override.
+      renderer.setWindOverride(typeof value === "number" ? value / 100 : null);
     } else if (name === "volume") {
       // No `scriptValue` on this command (it is not persisted — see
       // commands.ts): read the validated argument directly instead.
@@ -281,6 +286,16 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     if (wildlifeAudio === null) return;
     wildlifeAudio.setListener(renderer.listener());
     wildlifeAudio.play(renderer.wildlifeEvents(), wildlifePresence);
+  }
+
+  /**
+   * Hands the ambient wind bed the record `sync` just recomputed — the
+   * weather-driven speed, or the `/wind` override in its place. Both loops,
+   * after `renderer.sync`, which is what recomputes it; `setWind` throttles
+   * itself on the record's own clock, so calling this every frame is cheap.
+   */
+  function syncWind(): void {
+    ambient.setWind(renderer.wind());
   }
 
   /**
@@ -669,6 +684,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       hud.setRespawn(self?.respawnTimer ?? null);
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
+      syncWind();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(host.world, self);
       if (cmd !== null) syncBook(host.world, self, cmd, state);
@@ -777,6 +793,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       hud.setRespawn(self?.respawnTimer ?? null);
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
+      syncWind();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(client.world, self);
       if (cmd !== null) syncBook(client.world, self, cmd, state);

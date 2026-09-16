@@ -143,6 +143,21 @@ const SPECS: readonly CommandSpec[] = [
     defaultValue: 100,
   },
   {
+    name: "wind",
+    kind: "view",
+    validate(args) {
+      if (args.length === 0) return null;
+      if (args.length > 1) return "wind takes one argument, a level in [0, 100]";
+      const v = Number(args[0]);
+      if (!Number.isFinite(v) || v < 0 || v > 100) return `"${args[0]}" is not a level in [0, 100]`;
+      return null;
+    },
+    // Bare `/wind` restores the weather-driven wind: `false` means "no
+    // override", distinct from the number 0 an explicit `/wind 0` denotes.
+    scriptValue: (args) => (args.length === 0 ? false : Number(args[0])),
+    defaultValue: false,
+  },
+  {
     name: "seed",
     kind: "world",
     validate(args) {

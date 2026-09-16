@@ -235,3 +235,21 @@ describe("/unsettle", () => {
     expect(spec?.defaultValue).toBe(100);
   });
 });
+
+describe("/wind", () => {
+  it("accepts bare, 0–100, rejects the rest", () => {
+    expect(validateCommand({ name: "wind", args: [] })).toBeNull();
+    expect(validateCommand({ name: "wind", args: ["40"] })).toBeNull();
+    expect(validateCommand({ name: "wind", args: ["101"] })).toContain("[0, 100]");
+    expect(validateCommand({ name: "wind", args: ["x"] })).toContain("[0, 100]");
+    expect(validateCommand({ name: "wind", args: ["1", "2"] })).toContain("one argument");
+  });
+
+  it("is a view command whose bare form restores the weather-driven wind", () => {
+    const spec = findCommand("wind");
+    expect(spec?.kind).toBe("view");
+    expect(spec?.scriptValue?.([])).toBe(false);
+    expect(spec?.scriptValue?.(["25"])).toBe(25);
+    expect(spec?.defaultValue).toBe(false);
+  });
+});
