@@ -370,6 +370,31 @@ export function cellsBetween(grid: TrailGrid, frame: BuildFrame, ax: number, az:
  * `arrive` is the cell a branch ENDS on when it ends on the tree too (a
  * strand, a rung): the tree edges through it are exempt from the gap test the
  * same way the departure's are.
+ *
+ * BOTH EXEMPTIONS ARE SCOPED TO THEIR OWN CHORD (2026-09-16). The exemption
+ * exists because a chord that STARTS at the departure cell starts on the bed
+ * the branch is leaving and is 0 m from it by construction — and likewise for a
+ * chord that ENDS at the arrival cell. It was being applied to every chord the
+ * recursion tests, so a merged chord that starts cells away could run beside
+ * the bed it left for its whole length and never be seen. Measured on seed 32
+ * of the flat frame: a rung's second edge 9.07 m from both halves of the stem
+ * edge it departed, against the 16 m TRAIL_EDGE_MIN_GAP asks. The departure
+ * exemption now applies only when `a === 0` and the arrival's only when
+ * `b === cells.length - 1`; every other chord is measured against every tree
+ * edge it shares no cell with.
+ *
+ * The scoping costs nothing and catches nothing measurable: over the 227-seed
+ * sweep every world came out bit-identical (265 loops on 177 seeds, 162 strand
+ * seeds, 120 rungs, 0 dead ends). It is still the rule the exemption was
+ * written for — dropping both exemptions outright instead changes every world
+ * and leaves no rung standing at all, so they ARE load-bearing for their own
+ * chords — and what it does not catch, nothing here can: this test measures
+ * CELL-CENTRE chords against cell-centre tree edges, while the edge that gets
+ * committed ends at `splitAt`'s projection onto the bed it joins, up to half a
+ * cell away; and the recursion never gap-tests a chord it splits on deviation
+ * (`worst > TRAIL_SIMPLIFY_TOL` short-circuits `violates`) nor a leaf
+ * (`b - a < 2`). The braid measures its rungs again on the finished graph
+ * (`crowds`, trailBraid.ts) for exactly that reason.
  */
 export function simplify(
   grid: TrailGrid, frame: BuildFrame, H: Heights,
@@ -394,14 +419,15 @@ export function simplify(
    */
   const DEPART_REACH = TRAIL_GRID_CELL * Math.SQRT1_2;
   const ax0 = arrive === null ? NaN : (grid.x[arrive] as number), az0 = arrive === null ? NaN : (grid.z[arrive] as number);
-  const exempt = treeEdges.map(([ea, eb]) => {
-    const eax = grid.x[ea] as number, eaz = grid.z[ea] as number, ebx = grid.x[eb] as number, ebz = grid.z[eb] as number;
-    if (segmentDistance(eax, eaz, ebx, ebz, dx0, dz0) <= DEPART_REACH) return true;
-    // THE ARRIVAL IS EXEMPT LIKE THE DEPARTURE (2026-09-16): a strand or a rung
-    // ends ON an existing bed, so its last segment is 0 m from that bed by
-    // construction, exactly as its first is from the one it leaves.
-    return arrive !== null && segmentDistance(eax, eaz, ebx, ebz, ax0, az0) <= DEPART_REACH;
-  });
+  const lastCell = cells.length - 1;
+  const exemptDepart = treeEdges.map(([ea, eb]) =>
+    segmentDistance(grid.x[ea] as number, grid.z[ea] as number, grid.x[eb] as number, grid.z[eb] as number, dx0, dz0) <= DEPART_REACH);
+  // THE ARRIVAL IS EXEMPT LIKE THE DEPARTURE (2026-09-16): a strand or a rung
+  // ends ON an existing bed, so its last segment is 0 m from that bed by
+  // construction, exactly as its first is from the one it leaves. Kept in its
+  // own list, because it exempts the LAST chord and the departure's the first.
+  const exemptArrive = treeEdges.map(([ea, eb]) => arrive !== null
+    && segmentDistance(grid.x[ea] as number, grid.z[ea] as number, grid.x[eb] as number, grid.z[eb] as number, ax0, az0) <= DEPART_REACH);
   const X = (k: number) => grid.x[cells[k] as number] as number;
   const Z = (k: number) => grid.z[cells[k] as number] as number;
   const violates = (a: number, b: number): boolean => {
@@ -410,7 +436,8 @@ export function simplify(
     for (let i = 0; i < treeEdges.length; i++) {
       const [ea, eb] = treeEdges[i] as [number, number];
       if (ea === ca || eb === ca || ea === cb || eb === cb) continue; // adjacent: shares a node
-      if (exempt[i] === true) continue; // the bed this branch is leaving
+      if (a === 0 && exemptDepart[i] === true) continue; // this chord starts on the bed the branch leaves
+      if (b === lastCell && exemptArrive[i] === true) continue; // and this one ends on the bed it joins
       const d2 = segmentSegmentDistanceSq(X(a), Z(a), X(b), Z(b), grid.x[ea] as number, grid.z[ea] as number, grid.x[eb] as number, grid.z[eb] as number);
       if (d2 < TRAIL_EDGE_MIN_GAP * TRAIL_EDGE_MIN_GAP) return true;
     }
