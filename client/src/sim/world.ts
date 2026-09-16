@@ -149,16 +149,17 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
         car,
       }),
     );
-    // The Hollow starts on the crest, crawling down. Host only: a client's
-    // predicted world takes every enemy from snapshots.
-    if (authoritative) {
-      const crest = graph.nodes[graph.summit] as TrailNode;
-      spawnHollow(
-        world,
-        { x: crest.x, y: elevationAt(forest.seed, crest.x, crest.z) + ENEMY_HALF.y, z: crest.z },
-        AiState.Crawl,
-      );
-    }
+  }
+  // The Hollow starts on the crest, crawling down. Every world with a trail
+  // has one, road or no road, because that is what the tick keys on. Host
+  // only: a client's predicted world takes every enemy from snapshots.
+  if (graph !== undefined && authoritative) {
+    const crest = graph.nodes[graph.summit] as TrailNode;
+    spawnHollow(
+      world,
+      { x: crest.x, y: elevationAt(forest.seed, crest.x, crest.z) + ENEMY_HALF.y, z: crest.z },
+      AiState.Crawl,
+    );
   }
   return world;
 }

@@ -228,7 +228,18 @@ function pursue(h: EnemyState, world: World, graph: TrailGraph, dt: number, targ
   if (!h.approach) {
     const targetNode = nearestTrailNode(graph, target.x, target.z);
     if (h.routeAt >= h.route.length || h.route[h.route.length - 1] !== targetNode) {
-      h.route = [...route(graph, nearestTrailNode(graph, h.pos.x, h.pos.z), targetNode)];
+      // Seeded from the node it is already walking to, not the node nearest
+      // its feet. In the first half of an edge the nearest node is the one
+      // behind it, so rebuilding from there turns it round and throws away
+      // the ground it covered — and a target whose nearest node flips every
+      // tick (one crossing the perpendicular bisector of two nodes) would
+      // rock it about a single node forever. From the node ahead, progress
+      // stays monotone: at worst one edge of overshoot after a flip.
+      const from =
+        h.routeAt < h.route.length
+          ? (h.route[h.routeAt] as number)
+          : nearestTrailNode(graph, h.pos.x, h.pos.z);
+      h.route = [...route(graph, from, targetNode)];
       h.routeAt = 0;
       h.lastDistSq = Infinity;
     }

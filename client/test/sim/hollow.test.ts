@@ -5,6 +5,7 @@ import { parseLevel } from "../../src/sim/level.js";
 import { AiState } from "../../src/sim/types.js";
 import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
 import { HOLLOW_CRAWL_SPEED, HOLLOW_HUNT_SPEED, HOLLOW_LOOK_FACTOR, HOLLOW_LOST_SIGHT_S, spawnHollow } from "../../src/sim/hollow.js";
+import { nearestTrailNode } from "../../src/sim/trail.js";
 import { graph } from "./helpers/registerGraph.js";
 
 type Brush = { min: [number, number, number]; max: [number, number, number]; material: string };
@@ -74,6 +75,35 @@ describe("the hunt", () => {
     expect(h.route[h.route.length - 1]).toBe(2);
   });
 
+  it("rebuilds a route from the node it is already walking to, not the one behind it", () => {
+    // Two places to stand whose nearest graph nodes differ, so a target
+    // stepping between them rebuilds the route on every single tick. Rebuilt
+    // from the node nearest its feet, the Hollow would turn round for the
+    // node behind it every time it passed the halfway point of an edge and
+    // rock about that node forever, never reaching the far end of the stem.
+    const w = world();
+    const here = { x: 140, y: 0.9, z: 60 };
+    const there = { x: 160, y: 0.9, z: 60 };
+    const g = w.trail!;
+    expect(nearestTrailNode(g, here.x, here.z)).not.toBe(nearestTrailNode(g, there.x, there.z));
+    const p = spawnPlayer(w);
+    const h = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 0 }, AiState.Hunt, p.id);
+    const budget = Math.ceil((100 / HOLLOW_HUNT_SPEED / TICK_DT) * 1.5);
+    let t = 0;
+    let behind = h.pos.x;
+    while (t < budget && h.pos.x < 100) {
+      p.pos = t % 2 === 0 ? { ...here } : { ...there };
+      const walkingTo = h.route[h.routeAt];
+      const was = h.route;
+      tickWorld(w, new Map());
+      if (h.route !== was && walkingTo !== undefined) expect(h.route[0]).toBe(walkingTo);
+      expect(h.pos.x, `turned round at tick ${t}`).toBeGreaterThanOrEqual(behind);
+      behind = h.pos.x;
+      t++;
+    }
+    expect(h.pos.x, `only reached x=${h.pos.x} in ${t} ticks`).toBeGreaterThanOrEqual(100);
+  });
+
   it("gives up a straight approach after losing sight for HOLLOW_LOST_SIGHT_S and re-routes", () => {
     // A wall between them.
     const w = world({ min: [130, 0, 68], max: [170, 4, 70], material: "concrete" });
@@ -113,7 +143,7 @@ describe("the hunt", () => {
     const at = a.pos.z;
     tick(w, 60);
     const slowed = a.pos.z - at;
-    expect(slowed / free).toBeCloseTo(HOLLOW_LOOK_FACTOR, 1);
+    expect(slowed / free).toBeCloseTo(HOLLOW_LOOK_FACTOR, 3);
   });
 });
 
