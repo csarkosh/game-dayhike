@@ -23,10 +23,32 @@ export const MIST_NEAR_FADE_SPAN = 40;
 export const MIST_EDGE_FADE_SPAN = 150;
 /** Drift speed, m/s, at wind speed 1. */
 export const MIST_DRIFT = 0.25;
+/** Span, metres, over which a bank dissolves as it nears its own wrap boundary. */
+export const MIST_WRAP_FADE = 8;
 
-/** Wraps a drift offset into ±MIST_CELL/2 so a bank wanders but never leaves its cell. */
+/**
+ * Wraps a drift offset into ±MIST_CELL/2 so a bank wanders but never leaves
+ * its cell. Every bank rides the same drift clock (`off`, below); wrapping it
+ * unmodified would put every bank's own wrap boundary at the same `off`
+ * value, so all twelve would cross it — and teleport by a full MIST_CELL —
+ * in the same frame. The update loop instead wraps `off + bank.hash *
+ * MIST_CELL`: folding in a per-bank hash before the modulus staggers each
+ * bank onto its own phase of the 96 m cycle, so they wrap one at a time; the
+ * near-boundary fade below still hides the jump itself.
+ */
 function wrap(v: number): number {
   return ((v + MIST_CELL / 2) % MIST_CELL + MIST_CELL) % MIST_CELL - MIST_CELL / 2;
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clamp01((x - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
+}
+
+/** Fades a bank to invisible as its wrapped offset nears ±MIST_CELL/2, so it
+ * dissolves before it would otherwise snap back a cell. */
+function wrapFadeAt(offset: number): number {
+  return 1 - smoothstep(MIST_CELL / 2 - MIST_WRAP_FADE, MIST_CELL / 2, Math.abs(offset));
 }
 
 /**
@@ -104,12 +126,14 @@ export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier):
           mesh.setEnabled(false);
           continue;
         }
-        mesh.position.set(bank.x + wrap(off * wind.dirX), bank.y, bank.z + wrap(off * wind.dirZ));
+        const offset = wrap(off + bank.hash * MIST_CELL);
+        mesh.position.set(bank.x + offset * wind.dirX, bank.y, bank.z + offset * wind.dirZ);
         mesh.scaling.set(bank.width, bank.height, 1);
         const d = Math.sqrt((bank.x - camX) ** 2 + (bank.z - camZ) ** 2);
         const nearFade = clamp01((d - MIST_NEAR_FADE_START) / MIST_NEAR_FADE_SPAN);
         const edgeFade = clamp01((MIST_RADIUS - d) / MIST_EDGE_FADE_SPAN);
-        const visibility = opacity * nearFade * edgeFade;
+        const wrapFade = wrapFadeAt(offset);
+        const visibility = opacity * nearFade * edgeFade * wrapFade;
         mesh.visibility = visibility;
         mesh.setEnabled(visibility > 0.01);
       }

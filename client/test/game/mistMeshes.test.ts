@@ -3,7 +3,7 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
-import { createMistMeshes, MIST_CAP_BY_TIER, MIST_DRIFT } from "../../src/game/mistMeshes.js";
+import { createMistMeshes, MIST_CAP_BY_TIER, MIST_DRIFT, MIST_WRAP_FADE } from "../../src/game/mistMeshes.js";
 import { collectMistBanks, MIST_CELL } from "../../src/game/mistField.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
@@ -78,7 +78,11 @@ describe("createMistMeshes", () => {
     for (const m of enabled) {
       expect(m.visibility).toBeGreaterThan(0);
       expect(m.visibility).toBeLessThanOrEqual(0.55);
-      const match = banks.find((b) => b.x === m.position.x && b.z === m.position.z);
+      // Not an exact match: even at wind speed 0, a bank's own hash phases it
+      // up to ±MIST_CELL/2 from its seeded spot (see the wrap doc comment).
+      const match = banks.find(
+        (b) => Math.abs(b.x - m.position.x) <= MIST_CELL / 2 + 1e-6 && Math.abs(b.z - m.position.z) <= MIST_CELL / 2 + 1e-6,
+      );
       expect(match).toBeDefined();
     }
     mist.dispose();
@@ -111,6 +115,39 @@ describe("createMistMeshes", () => {
       expect(mesh.position.z).toBeCloseTo(z0, 6);
       expect(Math.abs(mesh.position.x - x0)).toBeLessThanOrEqual(MIST_CELL / 2);
     }
+    mist.dispose();
+  });
+
+  it("dissolves a bank at its own wrap boundary without collapsing one on a different phase", () => {
+    const s = scene();
+    const mist = createMistMeshes(s, SEED, "high");
+    const { x, z } = coastalOrigin();
+    const wind = { ...windRecordUnder(WEATHER_PRESETS.mist, 0, 1), dirX: 1, dirZ: 0 };
+    const banks = collectMistBanks(SEED, x, z);
+    expect(banks.length).toBeGreaterThanOrEqual(2);
+    const target = banks[0] as { hash: number };
+    const other = banks[1] as { hash: number };
+
+    // Same wrap arithmetic as mistMeshes.ts: solve for the drift `off` that
+    // puts `target`'s phased offset within 1 m of the +MIST_CELL/2 boundary.
+    const wrap = (v: number) => ((v + MIST_CELL / 2) % MIST_CELL + MIST_CELL) % MIST_CELL - MIST_CELL / 2;
+    const goal = MIST_CELL / 2 - 0.5;
+    const raw = goal - target.hash * MIST_CELL;
+    const off = ((raw % MIST_CELL) + MIST_CELL) % MIST_CELL;
+    const seconds = off / (MIST_DRIFT * wind.speed);
+
+    mist.update(x, z, WEATHER_PRESETS.mist, { r: 0.5, g: 0.5, b: 0.5 }, wind, seconds);
+
+    const targetMesh = mist.meshes[0] as Mesh;
+    expect(targetMesh.visibility).toBeLessThan(0.02);
+
+    // `other` rides a different hash phase, so it is not at its own boundary
+    // at the same `seconds` — the fix's whole point.
+    const otherOffset = wrap(off + other.hash * MIST_CELL);
+    expect(Math.abs(otherOffset)).toBeLessThan(MIST_CELL / 2 - MIST_WRAP_FADE);
+    const otherMesh = mist.meshes[1] as Mesh;
+    expect(otherMesh.visibility).toBeGreaterThan(0.02);
+
     mist.dispose();
   });
 });
