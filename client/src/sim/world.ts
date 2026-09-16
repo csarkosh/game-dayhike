@@ -1,10 +1,10 @@
 import type { Interactable } from "./interact.js";
 import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "./types.js";
-import { NO_ITEM, Outcome, cloneVec3 } from "./types.js";
+import { AiState, NO_ITEM, Outcome, cloneVec3 } from "./types.js";
 import type { Level } from "./level.js";
 import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
-import type { TrailGraph } from "./trail.js";
+import type { TrailGraph, TrailNode } from "./trail.js";
 import { spiralSpawn } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
@@ -15,7 +15,8 @@ import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
 import { updateDirector } from "./director.js";
-import { ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
+import { spawnHollow, stepHollows } from "./hollow.js";
+import { ENEMY_HALF, ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
 
 export type World = {
   state: WorldState;
@@ -148,6 +149,16 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
         car,
       }),
     );
+    // The Hollow starts on the crest, crawling down. Host only: a client's
+    // predicted world takes every enemy from snapshots.
+    if (authoritative) {
+      const crest = graph.nodes[graph.summit] as TrailNode;
+      spawnHollow(
+        world,
+        { x: crest.x, y: elevationAt(forest.seed, crest.x, crest.z) + ENEMY_HALF.y, z: crest.z },
+        AiState.Crawl,
+      );
+    }
   }
   return world;
 }
@@ -240,14 +251,18 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
 
   if (!world.authoritative) return;
 
-  for (const enemy of world.state.enemies.values()) {
-    stepEnemy(enemy, world, TICK_DT);
+  if (world.trail !== null) {
+    // A forest has the Hollow and no director (hollow.ts).
+    stepHollows(world, TICK_DT);
+  } else {
+    for (const enemy of world.state.enemies.values()) {
+      stepEnemy(enemy, world, TICK_DT);
+    }
+    for (const [id, enemy] of world.state.enemies) {
+      if (isExpiredCorpse(enemy)) world.state.enemies.delete(id);
+    }
+    updateDirector(world);
   }
-  for (const [id, enemy] of world.state.enemies) {
-    if (isExpiredCorpse(enemy)) world.state.enemies.delete(id);
-  }
-
-  updateDirector(world);
   updateDeaths(world);
   stepRegister(world, inputs);
 }

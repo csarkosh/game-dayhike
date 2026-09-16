@@ -23,15 +23,15 @@ import {
 const ENEMY_WISH = ENEMY_SPEED / WALK_SPEED;
 
 /** How long a chaser may fail to close before it tries going around. */
-const STUCK_SECONDS = 1.5;
+export const STUCK_SECONDS = 1.5;
 /** How long it strafes once it does. Roughly two metres at ENEMY_SPEED. */
-const UNSTICK_SECONDS = 0.7;
+export const UNSTICK_SECONDS = 0.7;
 /**
  * Squared-distance improvement that counts as progress. Squared, so this is
  * coarser far away than near — which is the right way round: an enemy 30 m out
  * inching sideways is not making progress worth crediting.
  */
-const STUCK_EPSILON = 0.01;
+export const STUCK_EPSILON = 0.01;
 
 export function hasLineOfSight(
   from: Vec3,

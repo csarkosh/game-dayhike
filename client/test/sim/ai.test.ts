@@ -3,6 +3,7 @@ import { hasLineOfSight, acquireTarget, stepEnemy } from "../../src/sim/ai.js";
 import { spawnEnemy, updateDirector, targetPopulation } from "../../src/sim/director.js";
 import { createForestWorld, createWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { createForest } from "../../src/sim/forest.js";
+import { isHollow } from "../../src/sim/hollow.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { AiState } from "../../src/sim/types.js";
 import {
@@ -198,7 +199,8 @@ describe("spawn director", () => {
     const w = createForestWorld(createForest(0xbeef));
     spawnPlayer(w);
     for (let i = 0; i < 500; i++) updateDirector(w);
-    expect(w.state.enemies.size).toBe(0);
+    // A forest starts with its Hollow, which is nothing the director made.
+    expect([...w.state.enemies.values()].filter((e) => !isHollow(e))).toEqual([]);
   });
 
   it("never spawns on top of a player", () => {
