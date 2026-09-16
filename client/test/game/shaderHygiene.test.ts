@@ -15,11 +15,24 @@ const files = readdirSync(SHADERS).filter((f) => f.endsWith(".fx"));
  * semicolon is split by Babylon's ShaderCodeCursor into bare code, and a
  * hashed preprocessor keyword merely SPELLED in a comment is parsed as a
  * real directive by MoveCursorRegex. Every .fx file is linted here, and run
- * through the REAL preprocessor to prove main() survives.
+ * through the REAL preprocessor to prove its own code survives: a file that
+ * declares a top-level function must still declare it once processed, and
+ * every file must still have at least one line of real code left, not just
+ * directives and comments. A splice file gated entirely behind its own
+ * `#ifdef`/`#ifndef`/`#if defined(...)` (a plugin's define, read straight out
+ * of the file's own guards) is processed with exactly those defines turned
+ * on, so its gated body is what gets checked rather than stripped away.
  */
-function processShader(source: string): Promise<string> {
+function definesGatedIn(source: string): string[] {
+  const names = new Set<string>();
+  for (const m of source.matchAll(/#\s*(?:ifdef|ifndef)\s+(\w+)/g)) names.add(m[1] as string);
+  for (const m of source.matchAll(/defined\(\s*(\w+)\s*\)/g)) names.add(m[1] as string);
+  return [...names];
+}
+
+function processShader(source: string, defines: string[]): Promise<string> {
   const options: _IProcessingOptions = {
-    defines: [],
+    defines,
     indexParameters: {},
     isFragment: true,
     shouldUseHighPrecisionShader: true,
@@ -57,11 +70,16 @@ describe("every shader under src/game/shaders", () => {
       }
     });
 
-    it(`${file}: survives Babylon's real preprocessor with every function intact`, async () => {
+    it(`${file}: survives Babylon's real preprocessor with its own gates enabled`, async () => {
       const declared = [...source.matchAll(/^(?:vec[234]|float|mat[34]|void)\s+(\w+)\s*\(/gm)].map((m) => m[1]);
-      expect(declared.length).toBeGreaterThan(0);
-      const processed = await processShader(source);
+      const defines = definesGatedIn(source).map((n) => `#define ${n}`);
+      const processed = await processShader(source, defines);
       for (const name of declared) expect(processed, `${file} lost ${name}`).toContain(`${name}(`);
+      const bodyLines = processed.split("\n").filter((line) => {
+        const trimmed = line.trim();
+        return trimmed.length > 0 && !trimmed.startsWith("//") && !trimmed.startsWith("#");
+      });
+      expect(bodyLines.length, `${file}: no code survived the preprocessor`).toBeGreaterThan(0);
     });
   }
 });
