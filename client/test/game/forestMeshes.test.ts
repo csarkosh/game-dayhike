@@ -21,6 +21,7 @@ import {
   registerTerrainVariant,
   terrainVariantNames,
   elevationAt,
+  elevationSampleAt,
 } from "../../src/sim/terrain.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
@@ -49,6 +50,8 @@ import {
   defaultBakeImpostor,
   type SpeciesMeshes,
 } from "../../src/game/forestMeshes.js";
+import { macroNoise, macroTint } from "../../src/game/groundHexParams.js";
+import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
 
 setActiveTerrainVariant("olympic");
 
@@ -686,14 +689,20 @@ describe("createForestMeshes under NullEngine", () => {
       const x = matrices[i * 16 + 12] as number;
       const z = matrices[i * 16 + 14] as number;
       expect(foliage[i * 4 + 3]!).toBeCloseTo(1 - 0.5 * forestDensity(SEED, x, z), 5);
-      // RGB is the palette colour for that spot; the altitude and slope that
-      // pick it live only on the instance record, so this checks that a real
-      // colour — not the generic (0, 0, 0, 1) attribute — reached the GPU.
-      for (const c of [0, 1, 2]) {
-        expect(foliage[i * 4 + c]!).toBeGreaterThanOrEqual(0);
-        expect(foliage[i * 4 + c]!).toBeLessThanOrEqual(1);
-      }
-      expect(foliage[i * 4]! + foliage[i * 4 + 1]! + foliage[i * 4 + 2]!).toBeGreaterThan(0);
+      // RGB is the palette colour for that spot, multiplied by the floor's
+      // macro tint so a tuft and the ground under it agree.
+      const sample = elevationSampleAt(SEED, x, z);
+      const slope = Math.hypot(sample.dx, sample.dz);
+      const canopy = forestDensity(SEED, x, z);
+      const baseColor = surfaceAlbedo(SEED, x, z, sample.h, slope, canopy);
+      const ny = 1 / Math.sqrt(1 + sample.dx * sample.dx + sample.dz * sample.dz);
+      const tint = macroTint(macroNoise(x, z), 1 - ny);
+      const expectedR = baseColor.r * tint.r;
+      const expectedG = baseColor.g * tint.g;
+      const expectedB = baseColor.b * tint.b;
+      expect(foliage[i * 4]!).toBeCloseTo(expectedR, 5);
+      expect(foliage[i * 4 + 1]!).toBeCloseTo(expectedG, 5);
+      expect(foliage[i * 4 + 2]!).toBeCloseTo(expectedB, 5);
     }
   });
 

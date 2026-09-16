@@ -11,6 +11,9 @@ import { createClutterMeshes } from "../../src/game/clutterMeshes.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
+import { macroNoise, macroTint } from "../../src/game/groundHexParams.js";
+import { elevationSampleAt } from "../../src/sim/terrain.js";
+import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
 
 describe("createClutterMeshes attaches the distance fade", () => {
   it("puts the plugin on every bucket material and a constant fadeBands per bucket", () => {
@@ -178,15 +181,20 @@ describe("foliage attribute and plugin", () => {
       const z = matrices[i * 16 + 14]!;
       const shade = foliage[i * 4 + 3]!;
       expect(shade).toBeCloseTo(1 - 0.5 * forestDensity(seed, x, z), 5);
-      // RGB is the palette colour surfaceAlbedo returns for that spot; the
-      // exact altitude/slope inputs live only on the instance record, so this
-      // checks the values reached the GPU in a sane [0, 1] range.
-      expect(foliage[i * 4]!).toBeGreaterThanOrEqual(0);
-      expect(foliage[i * 4]!).toBeLessThanOrEqual(1);
-      expect(foliage[i * 4 + 1]!).toBeGreaterThanOrEqual(0);
-      expect(foliage[i * 4 + 1]!).toBeLessThanOrEqual(1);
-      expect(foliage[i * 4 + 2]!).toBeGreaterThanOrEqual(0);
-      expect(foliage[i * 4 + 2]!).toBeLessThanOrEqual(1);
+      // RGB is the palette colour surfaceAlbedo returns for that spot,
+      // multiplied by the floor's macro tint so a tuft and the ground under it agree.
+      const sample = elevationSampleAt(seed, x, z);
+      const slope = Math.hypot(sample.dx, sample.dz);
+      const canopy = forestDensity(seed, x, z);
+      const baseColor = surfaceAlbedo(seed, x, z, sample.h, slope, canopy);
+      const ny = 1 / Math.sqrt(1 + sample.dx * sample.dx + sample.dz * sample.dz);
+      const tint = macroTint(macroNoise(x, z), 1 - ny);
+      const expectedR = baseColor.r * tint.r;
+      const expectedG = baseColor.g * tint.g;
+      const expectedB = baseColor.b * tint.b;
+      expect(foliage[i * 4]!).toBeCloseTo(expectedR, 5);
+      expect(foliage[i * 4 + 1]!).toBeCloseTo(expectedG, 5);
+      expect(foliage[i * 4 + 2]!).toBeCloseTo(expectedB, 5);
     }
     meshes.dispose();
     engine.dispose();

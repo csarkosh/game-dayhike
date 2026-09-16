@@ -65,6 +65,7 @@ import { attachDistanceFade, fadeBands, writeFadeBands, type FadeBands } from ".
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
 import { surfaceAlbedo } from "./terrainSurface.js";
+import { macroNoise, macroTint } from "./groundHexParams.js";
 import { forestDensity } from "../sim/vegetation.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
@@ -340,9 +341,13 @@ function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Array, of
   const slope = Math.hypot(inst.groundDx, inst.groundDz);
   const canopy = forestDensity(seed, inst.x, inst.z);
   const c = surfaceAlbedo(seed, inst.x, inst.z, inst.groundH, slope, canopy);
-  buf[offset] = c.r;
-  buf[offset + 1] = c.g;
-  buf[offset + 2] = c.b;
+  // The floor applies the same tint in terrainTexture.ts, so a tuft and the
+  // ground under it agree by construction.
+  const ny = 1 / Math.sqrt(1 + inst.groundDx * inst.groundDx + inst.groundDz * inst.groundDz);
+  const tint = macroTint(macroNoise(inst.x, inst.z), 1 - ny);
+  buf[offset] = c.r * tint.r;
+  buf[offset + 1] = c.g * tint.g;
+  buf[offset + 2] = c.b * tint.b;
   buf[offset + 3] = 1 - 0.5 * canopy;
 }
 

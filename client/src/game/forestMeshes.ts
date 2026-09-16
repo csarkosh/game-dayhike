@@ -88,6 +88,7 @@ import {
   type TreeInstance,
 } from "../sim/vegetation.js";
 import { surfaceAlbedo } from "./terrainSurface.js";
+import { macroNoise, macroTint } from "./groundHexParams.js";
 import { elevationAt } from "../sim/terrain.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageEdges } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
@@ -331,9 +332,13 @@ function treeFoliageBuffer(seed: number, list: readonly TreeInstance[]): Float32
     const canopy = forestDensity(seed, t.x, t.z);
     const slope = Math.hypot(t.groundDx, t.groundDz);
     const c = surfaceAlbedo(seed, t.x, t.z, t.groundH, slope, canopy);
-    buf[i * 4] = c.r;
-    buf[i * 4 + 1] = c.g;
-    buf[i * 4 + 2] = c.b;
+    // The floor applies the same tint in terrainTexture.ts, so a tuft and the
+    // ground under it agree by construction.
+    const ny = 1 / Math.sqrt(1 + t.groundDx * t.groundDx + t.groundDz * t.groundDz);
+    const tint = macroTint(macroNoise(t.x, t.z), 1 - ny);
+    buf[i * 4] = c.r * tint.r;
+    buf[i * 4 + 1] = c.g * tint.g;
+    buf[i * 4 + 2] = c.b * tint.b;
     buf[i * 4 + 3] = 1 - 0.5 * canopy;
   }
   return buf;
