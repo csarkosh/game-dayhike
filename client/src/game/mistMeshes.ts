@@ -14,12 +14,20 @@ import {
 } from "./mistField.js";
 import { mistOpacityUnder, type WeatherParams } from "./weather.js";
 import type { QualityTier } from "./quality.js";
+import type { WindRecord } from "./windParams.js";
 
 /** Below this distance a bank fades out so the camera can pass through it. */
 export const MIST_NEAR_FADE_START = 25;
 export const MIST_NEAR_FADE_SPAN = 40;
 /** Fade span inside the collection radius so the 12th bank never pops. */
 export const MIST_EDGE_FADE_SPAN = 150;
+/** Drift speed, m/s, at wind speed 1. */
+export const MIST_DRIFT = 0.25;
+
+/** Wraps a drift offset into ±MIST_CELL/2 so a bank wanders but never leaves its cell. */
+function wrap(v: number): number {
+  return ((v + MIST_CELL / 2) % MIST_CELL + MIST_CELL) % MIST_CELL - MIST_CELL / 2;
+}
 
 /**
  * Billboard quad cap by quality tier. `collectMistBanks` always
@@ -29,7 +37,7 @@ export const MIST_EDGE_FADE_SPAN = 150;
 export const MIST_CAP_BY_TIER: Record<QualityTier, number> = { low: 6, medium: 12, high: 12 };
 
 export type MistMeshes = {
-  update(camX: number, camZ: number, w: WeatherParams, air: Rgb): void;
+  update(camX: number, camZ: number, w: WeatherParams, air: Rgb, wind: WindRecord, seconds: number): void;
   dispose(): void;
   meshes: readonly Mesh[];
 };
@@ -73,7 +81,7 @@ export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier):
 
   return {
     meshes,
-    update(camX, camZ, w, air) {
+    update(camX, camZ, w, air, wind, seconds) {
       const opacity = mistOpacityUnder(w);
       if (opacity <= 0) {
         for (const m of meshes) m.setEnabled(false);
@@ -88,6 +96,7 @@ export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier):
         lastCellZ = cellZ;
       }
       mat.emissiveColor.set(air.r, air.g, air.b);
+      const off = MIST_DRIFT * wind.speed * seconds;
       for (let i = 0; i < meshes.length; i++) {
         const mesh = meshes[i] as Mesh;
         const bank = banks[i];
@@ -95,7 +104,7 @@ export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier):
           mesh.setEnabled(false);
           continue;
         }
-        mesh.position.set(bank.x, bank.y, bank.z);
+        mesh.position.set(bank.x + wrap(off * wind.dirX), bank.y, bank.z + wrap(off * wind.dirZ));
         mesh.scaling.set(bank.width, bank.height, 1);
         const d = Math.sqrt((bank.x - camX) ** 2 + (bank.z - camZ) ** 2);
         const nearFade = clamp01((d - MIST_NEAR_FADE_START) / MIST_NEAR_FADE_SPAN);

@@ -1,8 +1,11 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
-import { createRain, RAIN_EMITTER_LIFT } from "../../src/game/rain.js";
+import { createRain, RAIN_EMITTER_LIFT, RAIN_FALL_SPEED, RAIN_SLANT } from "../../src/game/rain.js";
 import { RAIN_CAPACITY, WEATHER_PRESETS } from "../../src/game/weather.js";
+import { windRecordUnder } from "../../src/game/windParams.js";
+
+const STILL = windRecordUnder(WEATHER_PRESETS.clear, 0, 0);
 
 let engine: NullEngine | null = null;
 afterEach(() => { engine?.dispose(); engine = null; });
@@ -21,7 +24,7 @@ describe("createRain", () => {
     const s = scene();
     const rain = createRain(s, "high");
     const cam = { x: 10, y: 5, z: -20 };
-    rain.update(cam, WEATHER_PRESETS.rain);
+    rain.update(cam, WEATHER_PRESETS.rain, STILL);
     expect(rain.system.isStarted()).toBe(true);
     expect(rain.system.emitRate).toBe(RAIN_CAPACITY.high);
     const emitter = rain.system.emitter as { x: number; y: number; z: number };
@@ -42,7 +45,7 @@ describe("createRain", () => {
     // render readiness the way `isStarted()` does.
     let stopped = false;
     rain.system.onStoppedObservable.addOnce(() => { stopped = true; });
-    rain.update(cam, WEATHER_PRESETS.clear);
+    rain.update(cam, WEATHER_PRESETS.clear, STILL);
     expect(stopped).toBe(true);
     rain.dispose();
   });
@@ -61,24 +64,34 @@ describe("createRain", () => {
     rain.system.onStartedObservable.add(() => { startCount++; });
     rain.system.onStoppedObservable.add(() => { stopCount++; });
 
-    rain.update(cam, WEATHER_PRESETS.rain);
+    rain.update(cam, WEATHER_PRESETS.rain, STILL);
     expect(startCount).toBe(1);
     expect(rain.system.emitRate).toBe(RAIN_CAPACITY.high);
 
-    rain.update(cam, WEATHER_PRESETS.clear);
+    rain.update(cam, WEATHER_PRESETS.clear, STILL);
     expect(stopCount).toBe(1);
     expect(rain.system.emitRate).toBe(0);
     // Babylon's one-way latch: still true here even though `stop()` was just
     // called — exactly why the fix cannot gate `start()` on this reading.
     expect(rain.system.isStarted()).toBe(true);
 
-    rain.update(cam, WEATHER_PRESETS.rain);
+    rain.update(cam, WEATHER_PRESETS.rain, STILL);
     // The regression this guards: a `!system.isStarted()` gate would see
     // `isStarted() === true` left over from the first `start()` and never
     // call `start()` again here, so rain would silently stay off.
     expect(startCount).toBe(2);
     expect(rain.system.emitRate).toBe(RAIN_CAPACITY.high);
 
+    rain.dispose();
+  });
+
+  it("slants downwind by RAIN_SLANT·speed", () => {
+    const s = scene();
+    const rain = createRain(s, "high");
+    const wind = { ...windRecordUnder(WEATHER_PRESETS.rain, 0), dirX: 0, dirZ: 1 };
+    rain.update({ x: 0, y: 0, z: 0 }, WEATHER_PRESETS.rain, wind);
+    expect((rain.system.direction1.z + rain.system.direction2.z) / 2).toBeCloseTo(RAIN_SLANT * wind.speed, 6);
+    expect(rain.system.direction1.y).toBe(-RAIN_FALL_SPEED);
     rain.dispose();
   });
 });

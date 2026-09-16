@@ -11,6 +11,7 @@ import type { Rgb } from "./colour.js";
 import type { QualityTier } from "./quality.js";
 import type { WeatherParams } from "./weather.js";
 import { MOTE_CAPACITY, motesUnder, type MoteSpecies } from "./motesParams.js";
+import type { WindRecord } from "./windParams.js";
 
 /** Emitter box half-width, metres, centred on the camera. */
 export const MOTE_BOX_HALF = 10;
@@ -38,7 +39,7 @@ export function moteDiscMap(size: number = MOTE_TEX_SIZE): Uint8Array {
 }
 
 export type Motes = {
-  update(camPos: { x: number; y: number; z: number }, w: WeatherParams, hour: number, air: Rgb): void;
+  update(camPos: { x: number; y: number; z: number }, w: WeatherParams, hour: number, air: Rgb, wind: WindRecord): void;
   dispose(): void;
   readonly systems: readonly ParticleSystem[];
 };
@@ -75,14 +76,12 @@ export function createMotes(scene: Scene, tier: QualityTier): Motes | null {
     systems.push(system);
     emitting.push(false);
   }
-  const start = performance.now();
 
   return {
     systems,
-    update(camPos, w, hour, air) {
+    update(camPos, w, hour, air, wind) {
       emitter.set(camPos.x, camPos.y, camPos.z);
-      const t = (performance.now() - start) / 1000;
-      const r = motesUnder(w, hour, air, tier, t);
+      const r = motesUnder(w, hour, air, tier, wind);
       const colour = new Color4(r.colour.r, r.colour.g, r.colour.b, MOTE_ALPHA);
       SPECIES.forEach((name, i) => {
         const s = r.species[name];

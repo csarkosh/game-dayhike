@@ -19,6 +19,7 @@ import { FOG_DISTANCE } from "../sim/forestConstants.js";
 import { EntityViews } from "./entityViews.js";
 import { budgetLights, createHeadlamp, setLamp } from "./headlamp.js";
 import { lampUnder } from "./lampParams.js";
+import { windRecordUnder } from "./windParams.js";
 import {
   createRingSamples,
   holeCellsFor,
@@ -857,6 +858,9 @@ export function createRenderer(
       // BEFORE the views sync, which needs the lamp state derived from it.
       const weather = lighting.weather;
       const lampState = lampUnder(weather, performance.now() / 1000);
+      // TEMPORARY: a private clock until the sim carries the shared wind
+      // record (Task 8 replaces this call with that record).
+      const wind = windRecordUnder(weather, performance.now() / 1000);
       views.sync(state, localId, alpha, lampState);
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once
@@ -887,7 +891,7 @@ export function createRenderer(
         forestMeshes?.update(freecam.x, freecam.z);
         clutterMeshes?.update(freecam.x, freecam.z);
         wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour);
-        mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour());
+        mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour(), wind, performance.now() / 1000);
         camera.position.set(freecam.x, freecam.y, freecam.z);
         camera.rotation.set(freecam.pitch, freecam.yaw, 0);
         setLamp(localLamp, false);
@@ -895,8 +899,8 @@ export function createRenderer(
         // Flying is not walking. Dropping the stride here also means the jump
         // back to the player's own position is never read as one enormous step.
         bob.reset();
-        rain.update(camera.position, weather);
-        motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour());
+        rain.update(camera.position, weather, wind);
+        motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
         return;
       }
 
@@ -908,7 +912,7 @@ export function createRenderer(
         forestMeshes?.update(local.pos.x, local.pos.z);
         clutterMeshes?.update(local.pos.x, local.pos.z);
         wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour);
-        mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour());
+        mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour(), wind, performance.now() / 1000);
         const offset = bob.update(
           {
             x: local.pos.x,
@@ -936,8 +940,8 @@ export function createRenderer(
         camera.rotation.set(local.pitch, local.yaw, offset.roll);
         setLamp(localLamp, local.lamp.on, lampState);
         carried.setEnabled(local.carrying !== NO_ITEM);
-        rain.update(camera.position, weather);
-        motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour());
+        rain.update(camera.position, weather, wind);
+        motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
       }
     },
     hasWildlife: wildlife !== null,

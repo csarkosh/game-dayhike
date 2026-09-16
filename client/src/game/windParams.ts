@@ -16,7 +16,7 @@ import type { WeatherParams } from "./weather.js";
  */
 
 export const WIND_TIME_WRAP = 300;
-/** rad/s: n = 18, 42 and 600 of 2π / 300. The gust pair is unchanged from the retired windField.ts. */
+/** rad/s: n = 18, 42 and 600 of 2π / 300. */
 export const WIND_OMEGA_GUST = 0.3769911184;
 export const WIND_OMEGA_GUST2 = 0.879645943;
 export const WIND_OMEGA_FLUTTER = 12.5663706144;

@@ -9,6 +9,7 @@ import { Engine } from "@babylonjs/core/Engines/engine.js";
 
 import { rainEmitRateUnder, RAIN_CAPACITY, type WeatherParams } from "./weather.js";
 import type { QualityTier } from "./quality.js";
+import type { WindRecord } from "./windParams.js";
 
 /** Emitter box half-width, metres, centred on the camera. */
 export const RAIN_BOX_HALF = 15;
@@ -16,6 +17,8 @@ export const RAIN_BOX_HALF = 15;
 export const RAIN_EMITTER_LIFT = 15;
 /** Fall speed in m/s; direction1/2 spread adds slight wind drift. */
 export const RAIN_FALL_SPEED = 11;
+/** Downwind slant, m/s, at wind speed 1. */
+export const RAIN_SLANT = 3;
 /** Seconds a streak lives — tuned to fall from the emitter to past ground level. */
 export const RAIN_LIFETIME = 2.2;
 
@@ -42,7 +45,7 @@ export function rainStreakMap(): Uint8Array {
 }
 
 export type Rain = {
-  update(camPos: { x: number; y: number; z: number }, w: WeatherParams): void;
+  update(camPos: { x: number; y: number; z: number }, w: WeatherParams, wind: WindRecord): void;
   dispose(): void;
   system: ParticleSystem;
 };
@@ -95,10 +98,13 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
 
   return {
     system,
-    update(camPos, w) {
+    update(camPos, w, wind) {
       emitter.set(camPos.x, camPos.y + RAIN_EMITTER_LIFT, camPos.z);
       const rate = rainEmitRateUnder(w, tier);
       system.emitRate = rate;
+      const slant = RAIN_SLANT * wind.speed;
+      system.direction1.set(wind.dirX * slant - 0.5, -RAIN_FALL_SPEED, wind.dirZ * slant - 0.2);
+      system.direction2.set(wind.dirX * slant + 0.5, -RAIN_FALL_SPEED, wind.dirZ * slant + 0.2);
       if (rate > 0 && !emitting) {
         system.start();
         emitting = true;
