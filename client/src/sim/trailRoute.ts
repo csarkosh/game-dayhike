@@ -19,12 +19,43 @@ export function stemNodes(graph: TrailGraph): number[] {
   return chain;
 }
 
-function edgeLength(graph: TrailGraph, e: TrailEdge): number {
-  const a = graph.nodes[e.a] as TrailNode;
-  const b = graph.nodes[e.b] as TrailNode;
-  const dx = b.x - a.x;
-  const dz = b.z - a.z;
-  return Math.sqrt(dx * dx + dz * dz);
+/**
+ * The Dijkstra core shared by `route` and `homeDistances`: settles the
+ * lowest-index node first among equal distances, and stops as soon as
+ * `stopAt` (default: none) is settled — so `route`'s early exit, its
+ * memoised results and its tie-breaking are all bit-identical to before this
+ * was factored out.
+ */
+function dijkstraFrom(
+  nodes: readonly TrailNode[], edges: readonly TrailEdge[], from: number, stopAt = -1,
+): { dist: number[]; prev: number[] } {
+  const n = nodes.length;
+  const dist: number[] = new Array<number>(n).fill(Infinity);
+  const prev: number[] = new Array<number>(n).fill(-1);
+  const done: boolean[] = new Array<boolean>(n).fill(false);
+  if (n === 0) return { dist, prev };
+  dist[from] = 0;
+  for (let round = 0; round < n; round++) {
+    let u = -1;
+    for (let i = 0; i < n; i++) {
+      if (done[i] || (dist[i] as number) === Infinity) continue;
+      if (u === -1 || (dist[i] as number) < (dist[u] as number)) u = i;
+    }
+    if (u === -1 || u === stopAt) break;
+    done[u] = true;
+    for (const e of edges) {
+      const v = e.a === u ? e.b : e.b === u ? e.a : -1;
+      if (v === -1 || done[v]) continue;
+      const a = nodes[e.a] as TrailNode, b = nodes[e.b] as TrailNode;
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const d = (dist[u] as number) + Math.sqrt(dx * dx + dz * dz);
+      if (d < (dist[v] as number)) {
+        dist[v] = d;
+        prev[v] = u;
+      }
+    }
+  }
+  return { dist, prev };
 }
 
 const memo = new WeakMap<TrailGraph, Map<number, readonly number[]>>();
@@ -46,29 +77,7 @@ export function route(graph: TrailGraph, from: number, to: number): readonly num
   const hit = table.get(key);
   if (hit !== undefined) return hit;
 
-  const n = graph.nodes.length;
-  const dist: number[] = new Array<number>(n).fill(Infinity);
-  const prev: number[] = new Array<number>(n).fill(-1);
-  const done: boolean[] = new Array<boolean>(n).fill(false);
-  dist[from] = 0;
-  for (let round = 0; round < n; round++) {
-    let u = -1;
-    for (let i = 0; i < n; i++) {
-      if (done[i] || (dist[i] as number) === Infinity) continue;
-      if (u === -1 || (dist[i] as number) < (dist[u] as number)) u = i;
-    }
-    if (u === -1 || u === to) break;
-    done[u] = true;
-    for (const e of graph.edges) {
-      const v = e.a === u ? e.b : e.b === u ? e.a : -1;
-      if (v === -1 || done[v]) continue;
-      const d = (dist[u] as number) + edgeLength(graph, e);
-      if (d < (dist[v] as number)) {
-        dist[v] = d;
-        prev[v] = u;
-      }
-    }
-  }
+  const { dist, prev } = dijkstraFrom(graph.nodes, graph.edges, from, to);
 
   const path: number[] = [];
   if ((dist[to] as number) < Infinity) {
@@ -122,29 +131,7 @@ export function stemProgress(graph: TrailGraph, x: number, z: number): number {
  * distances), so it is bit-identical on every machine.
  */
 export function homeDistances(nodes: readonly TrailNode[], edges: readonly TrailEdge[]): number[] {
-  const n = nodes.length;
-  const dist: number[] = new Array<number>(n).fill(Infinity);
-  const done: boolean[] = new Array<boolean>(n).fill(false);
-  if (n === 0) return dist;
-  dist[0] = 0;
-  for (let round = 0; round < n; round++) {
-    let u = -1;
-    for (let i = 0; i < n; i++) {
-      if (done[i] || (dist[i] as number) === Infinity) continue;
-      if (u === -1 || (dist[i] as number) < (dist[u] as number)) u = i;
-    }
-    if (u === -1) break;
-    done[u] = true;
-    for (const e of edges) {
-      const v = e.a === u ? e.b : e.b === u ? e.a : -1;
-      if (v === -1 || done[v]) continue;
-      const a = nodes[e.a] as TrailNode, b = nodes[e.b] as TrailNode;
-      const dx = b.x - a.x, dz = b.z - a.z;
-      const d = (dist[u] as number) + Math.sqrt(dx * dx + dz * dz);
-      if (d < (dist[v] as number)) dist[v] = d;
-    }
-  }
-  return dist;
+  return dijkstraFrom(nodes, edges, 0).dist;
 }
 
 /** Every node of degree ≥ 3, ascending: the forks the cut rule works on. */
