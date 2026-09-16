@@ -1,6 +1,7 @@
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
@@ -58,7 +59,7 @@ export class EntityViews {
   private readonly playerMaterial: PBRMaterial;
   private readonly enemyMaterial: PBRMaterial;
   private readonly itemMaterial: PBRMaterial;
-  private readonly hollowMaterial: PBRMaterial;
+  private readonly hollowMaterial: StandardMaterial;
   readonly models = new EnemyModelPool();
 
   constructor(private readonly scene: Scene) {
@@ -87,9 +88,18 @@ export class EntityViews {
     this.itemMaterial.roughness = 0.9;
     // The Hollow's placeholder: black, unlit, and outside the fog, so it stays
     // a silhouette at any distance in mist — findable in hindsight from far off.
-    this.hollowMaterial = new PBRMaterial("mat_hollow", scene);
-    this.hollowMaterial.albedoColor = new Color3(0, 0, 0);
-    this.hollowMaterial.unlit = true;
+    // StandardMaterial, not PBRMaterial: the Atmosphere plugin above attaches to
+    // every PBRMaterial and rewrites its fog line through a fixed anchor in
+    // Babylon's own fog code; a PBR material with `fogEnabled = false` never
+    // emits that line, so the anchor never matches and the plugin's effect never
+    // finishes compiling — the material silently never draws. A StandardMaterial
+    // is outside the plugin and outside the fog, which is the point: a
+    // silhouette at any distance.
+    this.hollowMaterial = new StandardMaterial("mat_hollow", scene);
+    this.hollowMaterial.diffuseColor = new Color3(0, 0, 0);
+    this.hollowMaterial.emissiveColor = new Color3(0, 0, 0);
+    this.hollowMaterial.specularColor = new Color3(0, 0, 0);
+    this.hollowMaterial.disableLighting = true;
     this.hollowMaterial.fogEnabled = false;
   }
 

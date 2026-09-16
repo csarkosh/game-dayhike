@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { clipForEnemy, EntityViews } from "../../src/game/entityViews.js";
 import { LAMP_INTENSITY, LIGHT_BUDGET, budgetLights, createHeadlamp, setLamp } from "../../src/game/headlamp.js";
 import { AiState } from "../../src/sim/types.js";
@@ -176,7 +178,7 @@ describe("EntityViews items", () => {
     expect(ITEM_RADIUS).toBe(0.35);
   });
 
-  it("draws a Hollow as a black, unlit, fog-free capsule and never as a chaser", () => {
+  it("draws a Hollow as a black, unlit, fog-free StandardMaterial capsule and never as a chaser", () => {
     const views = new EntityViews(scene);
     const world = state();
     world.enemies.set(7, {
@@ -188,9 +190,11 @@ describe("EntityViews items", () => {
     const mesh = scene.getMeshByName("hollow_7")!;
     expect(mesh).not.toBeNull();
     expect(scene.getMeshByName("enemy_7")).toBeNull();
-    const material = mesh.material as PBRMaterial;
+    const material = mesh.material as StandardMaterial;
     expect(material.fogEnabled).toBe(false);
-    expect(material.unlit).toBe(true);
+    expect(material.disableLighting).toBe(true);
+    expect(material.diffuseColor.equals(new Color3(0, 0, 0))).toBe(true);
+    expect(material.emissiveColor.equals(new Color3(0, 0, 0))).toBe(true);
     expect(mesh.rotation.y).toBeCloseTo(0.5, 9);
     // The hull centre is 0.9 m up; the 2.6 m capsule's centre sits 0.4 m higher so its feet meet the hull's.
     expect(mesh.position.y).toBeCloseTo(0.9 + (HOLLOW_HEIGHT / 2 - ENEMY_HALF.y), 6);
