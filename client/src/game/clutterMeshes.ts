@@ -60,6 +60,7 @@ import {
   type ClutterInstance,
 } from "../sim/clutter.js";
 import { attachFoliage, setFoliageEdges, FOLIAGE_PROFILES, type FoliageProfile } from "./foliagePlugin.js";
+import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { attachDistanceFade, fadeBands, writeFadeBands, type FadeBands } from "./distanceFadePlugin.js";
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
@@ -554,6 +555,7 @@ export function createClutterMeshes(
                 // models put the origin at the footprint base, so max.y IS the height.
                 mesh.refreshBoundingInfo();
                 attachFoliage(mesh.material, profile, mesh.getBoundingInfo().boundingBox.maximum.y);
+                attachFoliageLight(mesh.material);
                 // `edges` lives on the plugin instance, so it is per MATERIAL:
                 // a card GLB's two LOD buckets share one material, so setting
                 // the far bucket's edges here also governs the near bucket's

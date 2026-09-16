@@ -88,6 +88,7 @@ import {
 } from "../sim/vegetation.js";
 import { elevationAt } from "../sim/terrain.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageEdges } from "./foliagePlugin.js";
+import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { groundNormalTilt, groundNormalY, seatOnGround } from "./groundTilt.js";
 import { attachGroundConform } from "./groundConformPlugin.js";
 import {
@@ -927,6 +928,7 @@ export function createForestMeshes(
           // models put the origin at the footprint base, so max.y IS the height.
           mesh.refreshBoundingInfo();
           attachFoliage(mesh.material, FOLIAGE_PROFILES.UNDERSTORY, mesh.getBoundingInfo().boundingBox.maximum.y);
+          attachFoliageLight(mesh.material);
           attachDistanceFade(mesh.material);
         }
       }
