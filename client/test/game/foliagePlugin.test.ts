@@ -9,6 +9,7 @@ import fragmentLights from "../../src/game/shaders/foliageLights.fragment.fx?raw
 import {
   attachFoliage, setFoliageWind, setFoliageEdges, FoliagePlugin, FOLIAGE_PROFILES,
   FOLIAGE_TILT, FOLIAGE_BEND, FOLIAGE_BEND_R, FOLIAGE_SINK, FOLIAGE_CLUMP_LUMA, FOLIAGE_CLUMP_CELL,
+  FOLIAGE_PLAYER_PARKED,
 } from "../../src/game/foliagePlugin.js";
 import {
   WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_OMEGA_FLUTTER, WIND_K1, WIND_K2, WIND_RAGGED, WIND_RAGGED_CELL,
@@ -24,6 +25,17 @@ afterAll(() => { scene.dispose(); engine.dispose(); });
 function glslFloat(n: number): string { return Number.isInteger(n) ? `${n}.0` : `${n}`; }
 
 describe("foliage plugin", () => {
+  it("FOLIAGE_PROFILES matches the spec's table exactly", () => {
+    expect(FOLIAGE_PROFILES).toEqual({
+      GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true },
+      MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true },
+      FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true },
+      BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true },
+      UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true },
+      TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false },
+    });
+  });
+
   it("attaches once, idempotently, and activates", () => {
     const mat = new PBRMaterial("m", scene);
     attachFoliage(mat, FOLIAGE_PROFILES.GRASS, 0.4);
@@ -140,6 +152,33 @@ describe("foliage plugin", () => {
     expect(writes.foliageEdges).toEqual([88, 110]);
     expect((writes.windPlayers as number[]).slice(0, 3)).toEqual([3, 0, 4]);
     expect(writes.foliageHeight).toBe(0.4);
+  });
+
+  it("parks absent player slots by XZ, not Y, so the XZ-only bend never fires on them", () => {
+    const mat = new PBRMaterial("m5", scene);
+    attachFoliage(mat, FOLIAGE_PROFILES.GRASS, 0.4);
+    const record = windRecordUnder(WEATHER_PRESETS.clear, 0);
+    const positions = new Float32Array(15);
+    positions[0] = 3; positions[2] = 4;
+    for (let i = 1; i < 5; i++) {
+      positions[i * 3] = FOLIAGE_PLAYER_PARKED;
+      positions[i * 3 + 2] = FOLIAGE_PLAYER_PARKED;
+    }
+    setFoliageWind(record, positions);
+    const plugin = mat.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    const writes: Record<string, unknown> = {};
+    const ubo = {
+      updateFloat: (n: string, v: number) => { writes[n] = v; },
+      updateFloat2: (n: string, a: number, b: number) => { writes[n] = [a, b]; },
+      updateFloat3: (n: string, a: number, b: number, c: number) => { writes[n] = [a, b, c]; },
+      updateFloatArray: (n: string, v: Float32Array) => { writes[n] = Array.from(v); },
+    };
+    plugin.bindForSubMesh(ubo as never, scene, engine, undefined as never);
+    const written = writes.windPlayers as number[];
+    expect(written.slice(0, 3)).toEqual([3, 0, 4]);
+    for (let i = 1; i < 5; i++) {
+      expect(written.slice(i * 3, i * 3 + 3)).toEqual([FOLIAGE_PLAYER_PARKED, 0, FOLIAGE_PLAYER_PARKED]);
+    }
   });
 });
 

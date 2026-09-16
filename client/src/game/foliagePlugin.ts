@@ -42,6 +42,11 @@ export const FOLIAGE_SINK = 0.5;
 export const FOLIAGE_CLUMP_LUMA = 0.16;
 export const FOLIAGE_CLUMP_CELL = 1.5;
 export const FOLIAGE_PLAYERS = 5;
+/** XZ magnitude a parked (absent) player slot sits at. The bend reads only
+ * `windPlayers[i].xz` (foliageWorldPos.vertex.fx), so a slot parked below the
+ * world at this origin's XZ would still be a live bender there — parking has
+ * to move the slot's XZ, not its Y. */
+export const FOLIAGE_PLAYER_PARKED = 1e6;
 
 export type FoliageProfile = {
   /** Unitless multiplier on the record's fractions (grass 0.06 m of tip = 1). */
@@ -68,10 +73,19 @@ export const FOLIAGE_PROFILES = {
 // Module-level like skin.ts: every material's plugin instance reads one truth,
 // written once per frame by the renderer.
 let wind: WindRecord = { dirX: 1, dirZ: 0, speed: 0, lean: 0, gustAmp: 0, flutterAmp: 0, time: 0 };
-/** 5 × xyz; unused slots parked far below the world. */
+/** 5 × xyz; unused slots parked a thousand kilometres away in XZ, where no
+ * origin is within the bend radius. */
 const players = new Float32Array(FOLIAGE_PLAYERS * 3);
-for (let i = 0; i < FOLIAGE_PLAYERS; i++) players[i * 3 + 1] = -1e6;
+for (let i = 0; i < FOLIAGE_PLAYERS; i++) {
+  players[i * 3] = FOLIAGE_PLAYER_PARKED;
+  players[i * 3 + 2] = FOLIAGE_PLAYER_PARKED;
+}
 
+/** `positions` is 5 × xyz and replaces the whole array wholesale — it does
+ * not merge with the existing parked defaults. A caller with fewer than 5
+ * active players must park each absent slot itself, at
+ * `(FOLIAGE_PLAYER_PARKED, 0, FOLIAGE_PLAYER_PARKED)`, the same convention
+ * this module's own initial state uses. */
 export function setFoliageWind(record: WindRecord, positions: Float32Array): void {
   wind = record;
   players.set(positions.subarray(0, FOLIAGE_PLAYERS * 3));
