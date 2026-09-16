@@ -96,8 +96,8 @@ warm-up and a 4 s sample.
 | 3 | branch first, idle machine | meadow | 53.0 / 67 | 48.1 / 55 | +4.9 |
 | 3 | branch first, idle machine | trail | 52.5 / 61 | 51.6 / 62 | +0.9 |
 
-Round 1's meadow pair (+51.9) is the first page of the run: shader compile plus another
-session's load competing for the GPU at the same time. Round 1's trail pair (−24.0) is a
+Round 1's meadow pair (+51.9) is the first page of the run: shader compile plus other work on
+the machine competing for the GPU at the same time. Round 1's trail pair (−24.0) is a
 control-side outlier for the same reason. Both are superseded by rounds 2 and 3, run with the
 machine otherwise idle, where every view sits within a few milliseconds of the control in both
 orders.

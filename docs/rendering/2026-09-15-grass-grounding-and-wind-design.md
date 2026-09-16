@@ -162,7 +162,7 @@ tree bucket has no buffer to bind), pushed through `getAttributes` under the sam
 `surfaceAlbedo(seed, x, z, groundH, slope, canopy)` with slope from the instance's
 `groundDx/Dz` and canopy from `forestDensity(seed, x, z)`, and `shade = 1 − 0.5·forestDensity`.
 The buffer grows with the matrix buffer (16 floats ↔ 4 floats) exactly as `bands` does. Without
-the define the shader uses `vec4(0, 0, 0, 1)`.
+tint data the tint weight is zero (a guard on the attribute's magnitude), so no mix happens.
 
 **Vertex stage**, injected at `CUSTOM_VERTEX_UPDATE_WORLDPOS` after the instance matrix, in
 this order (`h = clamp(positionUpdated.y / foliageHeight, 0, 1)`, `h2 = h·h`,
@@ -170,10 +170,12 @@ this order (`h = clamp(positionUpdated.y / foliageHeight, 0, 1)`, `h2 = h·h`,
 
 1. **Clump hash**: `clump = hash2(floor(origin / 1.5))`, a 1.5 m lattice so neighbours share it.
    Passed to the fragment as a varying.
-2. **Motion weight**: `m = foliageAmp · h2 · foliageHeight · (1 − smoothstep(foliageEdges.x,
+2. **Motion weight**: `m = foliageAmp · h2 · foliageHeight · scale · (1 − smoothstep(foliageEdges.x,
    foliageEdges.y, dist))` with `dist = distance(origin, windEye.xz)`, so motion scales to zero
    across the bucket's outer fade (the tree LOD1 seam, the card disc edge) and nothing pops
-   against a rigid neighbour.
+   against a rigid neighbour. `scale = length(finalWorld[1].xyz)` is the instance's own uniform
+   scale: `foliageHeight` is the MODEL bounding height and the displacement is added in world
+   space, so without it the lean would be a fraction of model rather than drawn height.
 3. **Lean**: `worldPos.xyz += dir · windLean · m`.
 4. **Gust**: `worldPos.xyz += dir · windGust · m · gust(origin, windTime + 0.6·(clump − 0.5))`,
    evaluated at the **origin** so a tuft moves as one.
@@ -200,7 +202,8 @@ are established, before any light; `surfaceAlbedo` and `normalW` are in scope, t
 
 1. **Root darkening**: `surfaceAlbedo *= mix(foliageRootAO, 1.0, vFoliageH)`.
 2. **Ground tint**: `w = foliageTint · (1 − vFoliageH)² · (1 + 0.5 · smoothstep(20, 80,
-   vFoliageDist))`; `surfaceAlbedo = mix(surfaceAlbedo, vFoliage.rgb, clamp(w, 0, 0.85))`.
+   vFoliageDist)) · has`, where `has = step(1/255, max(vFoliage.rgb))` so a draw carrying no tint
+   data cannot mix toward black; `surfaceAlbedo = mix(surfaceAlbedo, vFoliage.rgb, clamp(w, 0, 0.85))`.
    Stronger at the root, more at distance (the pigment-map rule) so the far field dissolves into
    the ground colour and the card-to-texture horizon hides itself.
 3. **Shade**: `surfaceAlbedo *= vFoliage.a`.
@@ -238,18 +241,24 @@ About six ALU per fragment for one light.
 ## 7. Consumers
 
 - **Clutter.** `clutterMeshes.ts` attaches `attachFoliage` with the class profile in place of
-  `attachWind`, and `attachFoliageLight` beside it; the rebuild writes `foliage` per instance.
+  `attachWind`, and `attachFoliageLight` beside it; the rebuild writes `foliage` per instance for
+  every bucket whose profile tints — which is every bucket that declares the attribute, the rule
+  a test in `forestMeshes.test.ts` holds across both shells.
 - **Trees.** `forestMeshes.ts` attaches the `TREE` profile to every LOD0 and LOD1 mesh of the
   giants and saplings with `meshHeight` from the baked bounding box (the understory precedent);
   LOD2, the snag and the impostor quads stay rigid. LOD1 buckets get `foliageEdges = SEAM_LOD1`
-  (76–85 m) so the motion weight reaches zero where the rigid LOD2 takes over.
+  (76–85 m) so the motion weight reaches zero where the rigid LOD2 takes over. The understory
+  bucket takes the `UNDERSTORY` profile, which tints, so its rebuild writes the `foliage`
+  attribute too, from the same palette and density the clutter shell samples.
   Shadow casters are not wrapped: the depth pass draws the unswayed mesh, which at a 2 % tip lean
   is under a shadow-map texel at the cascade distances involved.
 - **Motes.** `motesParams.windAt(t)` becomes `windAt(record)` = `dir · WIND_DRIFT · (0.4 +
   0.6·speed) · (0.5 + 0.5·gustAt(record, 0, 0))`; the species and rise logic is untouched.
-- **Mist.** `mistMeshes.update` offsets every bank by `dir · MIST_DRIFT · speed · t` (with
-  `MIST_DRIFT = 0.25` m/s) wrapped within the bank's own cell so the seeded field never changes;
-  the banks read as slowly rolling downwind.
+- **Mist.** `mistMeshes.update` offsets every bank by `dir · drift`, where `drift` accumulates
+  `MIST_DRIFT · speed · Δt` (with `MIST_DRIFT = 0.25` m/s, and `Δt` clamped to a second so a
+  suspended tab resumes rather than lurches), wrapped within the bank's own cell so the seeded
+  field never changes; the banks read as slowly rolling downwind. Integrated rather than scaled
+  off the absolute clock, which would rescale the whole history on a change of speed.
 - **Rain.** `rain.ts` sets `direction1/2 = (dir · RAIN_SLANT · speed ± spread, −RAIN_FALL_SPEED,
   …)` with `RAIN_SLANT = 3` m/s, so rain slants downwind instead of falling on a fixed spread.
 - **Audio.** In `ambientAudio.ts` the two air oscillators and `airGain` are removed, and the wind

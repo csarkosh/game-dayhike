@@ -19,9 +19,8 @@ float foliageWrapLambert(float ndotl, float wrap) {
 }
 
 vec3 foliageDiffuseLighting(preLightingInfo info, vec3 lightColor, float lightIndex, float h, vec3 viewDir) {
-  vec3 base = computeDiffuseLighting(info, lightColor);
   if (lightIndex > 0.5) {
-    return base;
+    return computeDiffuseLighting(info, lightColor);
   }
   vec3 unit = info.attenuation * lightColor / FOLIAGE_PI;
   vec3 wrapped = unit * foliageWrapLambert(info.NdotLUnclamped, FOLIAGE_WRAP);

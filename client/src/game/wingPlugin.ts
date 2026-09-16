@@ -15,7 +15,9 @@
  * because the rotation is in the bird's own frame; foliagePlugin.ts hooks
  * WORLDPOS for the opposite reason. Time wraps at WING_TIME_WRAP and every ω
  * is an exact multiple of 2π / WING_TIME_WRAP so the wrap is phase-continuous
- * (the wind rule). The per-instance attribute plumbing mirrors
+ * (the rule windParams.ts states for the wind: renderer-only constants, never
+ * sim tunables, wrapped so the phase is continuous). The per-instance
+ * attribute plumbing mirrors
  * groundConformPlugin.ts's `groundGrad` exactly — see there for why
  * `getAttributes` and CUSTOM_VERTEX_DEFINITIONS are both needed. Birds never
  * cast shadows, so there is no shadow-depth mismatch.

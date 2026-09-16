@@ -32,7 +32,8 @@
  * Distance is measured from the instance ORIGIN (finalWorld[3]) in XZ, the
  * clutterFadePlugin measure, so a whole tuft or tree fades as one. The
  * vertex stage runs at CUSTOM_VERTEX_UPDATE_WORLDPOS (priority 205, after
- * the wind's 200) only to have finalWorld in scope; it writes two varyings.
+ * the foliage plugin's 200) only to have finalWorld in scope; it writes two
+ * varyings.
  * The fragment stage discards at CUSTOM_FRAGMENT_MAIN_BEGIN, before any
  * texture fetch, so a dropped fragment costs nothing else.
  *
