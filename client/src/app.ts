@@ -379,7 +379,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   function syncBook(world: World, self: PlayerState | undefined, cmd: InputCommand, state: WorldState): void {
     const edges = pressedEdges(lastButtons, cmd.buttons);
     lastButtons = cmd.buttons;
-    if (self === undefined || world.register === null) return;
+    if (self === undefined || self.health <= 0 || world.register === null) return;
     if (registerPanel.isOpen) {
       if ((edges & Button.Interact) !== 0 || cmd.moveX !== 0 || cmd.moveZ !== 0) registerPanel.hide();
       return;
