@@ -40,7 +40,7 @@ and one panicked escape.
 | The summit Hollow | Appears behind the body on discovery, a 2 s reveal, then hunts. |
 | Fork Hollows | **Step out of the wrong branch and join the chase.** The pack grows fork by fork. |
 | Pacing | Hollows hunt at **6.3 m/s**, a touch under a sprint (7). Walking, stopping, turning back or a wrong branch is what closes the gap. |
-| The trail | **Loops and braids**: the shipped stem-and-loops plus 2–3 parallel strands below the crest, cross-linked by rungs. 8–14 forks. |
+| The trail | **Loops and braids**: the shipped stem-and-loops plus 2–3 parallel strands below the crest, cross-linked by rungs. 8–18 forks. |
 | The one path home | **Cut fork by fork as you arrive**, guided by a hidden route drawn at discovery whose length is **1.5–2.5×** the shortest way down. Straying is re-guided, never trapped. |
 | Safety | **The Hollow stays in the woods.** The road corridor is safe ground; a Hollow never crosses the treeline into it. |
 | The end, 2–5 players | Each player is done on reaching the road. The match ends when no living player is still out: **won if anyone is safe, lost if all died.** The end screen groups the survived and the perished under a Poe-like passage. |
@@ -96,13 +96,14 @@ At a **top fork** on the stem — at stem progress 0.75–0.85, seeded, so the f
 is one trail — the stem splits into **2–3 strands** (seeded, weights 0.6 / 0.4 for 2 / 3) that
 descend roughly in parallel, 80–200 m apart laterally, and rejoin at a **bottom fork** near the pad
 (progress 0.08–0.15). The original stem is strand A. **Rungs** connect adjacent strands at seeded
-heights: 2–4 per adjacent pair, at least 120 m of descent apart, each running between the nearest
-nodes of the two strands at that height.
+heights: 2–3 per adjacent pair, at least 120 m of descent apart, each running between the nearest
+points of the two strands at that height.
 
-Loops keep hanging off the stem as today and may hang off any strand: a loop's feature is placed in
-a band lateral to the strand it attaches to (the shipped placement rule, with "the stem" read as
-"its strand"), and its two junctions are forks like any other. Strands and rungs treat every
-feature disc plus its apron as costly ground, so no strand cuts through a meadow its loop circles.
+Loops keep hanging off the stem as today, and their two junctions are forks like any other. Strands
+and rungs treat every feature disc plus its apron as forbidden ground, so no strand cuts through a
+meadow its loop circles. Loops off the other strands are a **follow-up**, not part of T2 (decided
+2026-09-16 while planning): the fork band is met without them, and they need the loop stage made
+generic over its spine, a refactor of a carefully measured stage with its own risk.
 
 ### 3.3 The builder
 
@@ -110,20 +111,16 @@ Per seed, in this order, each stage seeing the ground the earlier ones made:
 
 1. **Peak** and **stem**, as shipped.
 2. **Loop features and loops**, as shipped, attached to the stem: the seeded N ∈ {1, 2, 3} loops
-   with their kinds. A kind that finds no candidate on the stem is not dropped yet; it is retried
-   in step 4.
-3. **Strands.** Choose the top and bottom fork nodes on the stem (snapped to existing nodes in the
-   progress bands). For each extra strand, Dijkstra top → bottom on the walkability grid with a
-   lateral offset target (a seeded side and distance from strand A's line) and a penalty inside
-   every existing edge's corridor, reusing the corridor-union and reroute machinery. A strand that
-   cannot route within `TRAIL_REROUTE_MAX` tries is dropped and the count shrinks.
-4. **Loops off strands.** The loop kinds step 2 could not place are retried with each strand beyond
-   A in the stem's role, one loop per strand at most, under the same feature spacing. N never
-   grows; a kind with no candidate on any strand is dropped, as today.
-5. **Rungs.** For each adjacent strand pair, seeded heights in the pair's shared progress range,
-   spaced ≥ 120 m of descent; Dijkstra between the nearest nodes; a rung that fails the
-   `TRAIL_EDGE_MIN_GAP` check against any edge but its own ends is dropped, never forced.
-6. **Annotate** (§3.4).
+   with their kinds.
+3. **Strands.** Choose the top and bottom fork points on the stem (the stem is split there, as a
+   loop's junctions split it). For each extra strand, Dijkstra top → bottom on the walkability grid
+   on a seeded side of the stem, the lateral band 80–200 m preferred by weight, the existing trail
+   forbidden except at the two forks, reusing the reroute machinery and the composed fine check. A
+   strand that cannot route within `TRAIL_REROUTE_MAX` tries is dropped and the count shrinks.
+4. **Rungs.** For each adjacent strand pair, seeded heights between the forks, spaced ≥ 120 m of
+   stem apart; Dijkstra between the two strands' nearest points at that height, held within
+   ±100 m of it; a rung that fails to route is dropped, never forced.
+5. **Annotate** (§3.4).
 
 A seed always gets a legal world: a dropped strand or rung is a smaller web, not a fallback.
 
@@ -145,7 +142,8 @@ On a ~200-seed sweep of the composed field (red before, green after — never a 
 seeds):
 
 - connected; the crest is the only dead end (every other node has degree ≥ 2);
-- 8–14 forks per world;
+- 8–18 forks on at least 90 % of worlds, never more than 18 (a world whose strands all failed to
+  route is a stem-and-loops world and reads under 8);
 - a loop on ≥ 75 % of worlds, as today;
 - a guide route with length in [1.5, 2.5] × `shortestHome` exists from the crest on every seed
   (found by running §5.3's walk offline);
