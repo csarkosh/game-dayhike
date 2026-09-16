@@ -384,9 +384,11 @@ export function cellsBetween(grid: TrailGrid, frame: BuildFrame, ax: number, az:
  * edge it shares no cell with.
  *
  * The scoping costs nothing and catches nothing measurable: over the 227-seed
- * sweep every world came out bit-identical (265 loops on 177 seeds, 162 strand
- * seeds, 120 rungs, 0 dead ends). It is still the rule the exemption was
- * written for — dropping both exemptions outright instead changes every world
+ * sweep every world came out bit-identical — the same 265 loops on 177 seeds,
+ * the same 162 strand seeds, the same rungs, no dead end beyond the summit.
+ * (The braid has since gained a loop's bed as a rung's arrival of last resort,
+ * and stands at 128 rungs on 101 of the 227 seeds.) It is still the rule the
+ * exemption was written for — dropping both outright instead changes every world
  * and leaves no rung standing at all, so they ARE load-bearing for their own
  * chords — and what it does not catch, nothing here can: this test measures
  * CELL-CENTRE chords against cell-centre tree edges, while the edge that gets

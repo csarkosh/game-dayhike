@@ -509,8 +509,9 @@ function strandCellAtArc(
  * whole edge, well inside the gap. Measured on seed 32 of the flat frame before
  * this check: the rung's second edge 9.07 m from both halves of the stem edge it
  * departed, against the 16 m two corridors need — and over the 227-seed sweep
- * the rungs this rejects sit a median 8.0 m (one grid cell) from a bed they do
- * not meet, not at the margin. A rung is optional, so it is dropped.
+ * the 317 rungs this rejects sit a median 8.0 m from a bed they do not meet
+ * (p25 6.40, p75 8.03, max 16.0): one grid cell, not the margin. A rung is
+ * optional, so it is dropped.
  */
 function crowds(state: GraphState, added: readonly number[]): boolean {
   const { nodes, edges } = state;
@@ -543,11 +544,13 @@ function crowds(state: GraphState, added: readonly number[]): boolean {
  * A rung crosses ground the strands left behind, and where a loop's bed or a
  * fold seals the corridor between two strands at one height it usually does not
  * at the next. Measured over the 227-seed sweep with the drawn height alone: 71
- * rungs on 61 seeds; with the ladder, 120 rungs on 95 of the 162 seeds that
- * build a strand at all, for 15 % more sweep time (109 s → 125 s). The seeds
- * that still get none are walled in, not unlucky: on seed 32 of the flat frame
- * every try on the −1↔A pair failed to REACH the arrival, because that strand's
- * pocket is sealed by a loop bed the rung may not cross.
+ * rungs on 61 seeds; with the ladder, 120 on 95, for 3 % more sweep time
+ * (109.1 s -> 112.6 s). The braid as it now stands — the ladder, and a loop's
+ * bed as the arrival of last resort — builds 128 rungs over 237 edges on 101 of
+ * the 227 seeds, 162 of which build a strand at all. The seeds that still get
+ * none are walled in, not unlucky: on seed 32 of the flat frame every try on
+ * the -1-to-A pair failed to REACH the arrival, because that strand's pocket is
+ * sealed by a loop bed the rung may not cross.
  */
 export function buildRungs(
   state: GraphState, ctx: BraidCtx, strands: readonly Strand[], samples: readonly StemSample[],

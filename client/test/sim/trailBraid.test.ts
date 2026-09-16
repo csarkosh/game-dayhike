@@ -33,18 +33,24 @@ const THREE = 32;
  *
  * 485 is the first seed over 1..500 that builds three strands, keeps the gap
  * invariant the tests below assert AND builds a rung on each pair. A probe, not
- * a guarantee: over the 227-seed sweep 95 of the 162 seeds that build a strand
- * build a rung at all. See the task report.
+ * a guarantee: over the 227-seed sweep 101 of the 227 seeds build a rung at all,
+ * against the 162 that build a strand. See the task report.
  */
 const THREE_RUNGS = 485;
 /**
- * A seed whose rung ends on a LOOP's bed instead of on its pair's own strand:
- * the arrival of last resort, taken when the search cannot reach the strand at
- * all. The first over 1..120 whose rung ends on a loop node that is not also a
- * stem node (seed 40 comes first but is one of the flat frame's own
- * gap-invariant breakages, above).
+ * The two-strand world the rung gates below need: the first seed over 1..500
+ * that builds TWO rung chains on its single strand pair, which is what the
+ * BRAID_RUNG_GAP spacing gate has to read (seed 2 builds one, so that gate was
+ * measuring nothing). It is also, as it happens, the first seed over 1..120
+ * whose rung ends on a LOOP's bed rather than on its pair's strand — the
+ * arrival of last resort — so the loop gate reads the same world.
+ *
+ * Only 14 of the 390 two-strand seeds over 1..500 build two chains, and NONE of
+ * the 14 keeps the flat frame's gap invariant (the loop stage breaks it there,
+ * as the seed comment above says), which is why this world is read by the rung
+ * gates and not by Task 3's. See the task report.
  */
-const LOOP_RUNG = 52;
+const TWO_RUNGS = 52;
 
 function degreesOf(graph: TrailGraph): Map<number, number> {
   const d = new Map<number, number>();
@@ -101,7 +107,7 @@ function strandComponents(graph: TrailGraph): Array<{ nodes: number[]; forks: nu
 const two = buildTrail(TWO, flatFrame()).graph;
 const three = buildTrail(THREE, flatFrame()).graph;
 const threeRungs = buildTrail(THREE_RUNGS, flatFrame()).graph;
-const loopRung = buildTrail(LOOP_RUNG, flatFrame()).graph;
+const twoRungs = buildTrail(TWO_RUNGS, flatFrame()).graph;
 
 describe("buildStrands on the flat frame", () => {
   it("builds one extra strand for a two-strand seed and two for a three-strand seed", () => {
@@ -324,18 +330,30 @@ describe("buildRungs on the flat frame", () => {
   it("builds at least one rung per adjacent strand pair and never more than BRAID_RUNGS_MAX", () => {
     expect(rungChains(two).length).toBeGreaterThanOrEqual(1);
     expect(rungChains(two).length).toBeLessThanOrEqual(BRAID_RUNGS_MAX);
-    expect(rungChains(threeRungs).length).toBeGreaterThanOrEqual(2);
-    expect(rungChains(threeRungs).length).toBeLessThanOrEqual(2 * BRAID_RUNGS_MAX);
+    const chains = rungChains(threeRungs);
+    expect(chains.length).toBeGreaterThanOrEqual(2);
+    expect(chains.length).toBeLessThanOrEqual(2 * BRAID_RUNGS_MAX);
+    // ONE PER PAIR, not two on one pair — which is the whole reason THREE_RUNGS
+    // is pinned. Both pairs of a three-strand braid are (a built strand, strand
+    // A), so every chain has one end on the stem and one on a built strand, and
+    // the strands those ends belong to must be different ones.
+    const owner = bedOwners(threeRungs);
+    const across = chains.map((chain) => {
+      const ends = [owner.get(chain[0]!), owner.get(chain[chain.length - 1]!)];
+      expect(ends).toContain("stem");
+      return ends.find((o) => o !== "stem");
+    });
+    expect(new Set(across).size).toBeGreaterThanOrEqual(2);
   });
 
   it("joins two different beds with every rung, and both ends are forks", () => {
-    for (const g of [two, three, threeRungs, loopRung]) {
+    for (const g of [two, three, threeRungs, twoRungs]) {
       const deg = degreesOf(g);
+      const owner = bedOwners(g);
       for (const chain of rungChains(g)) {
         const a = chain[0]!, b = chain[chain.length - 1]!;
         expect(deg.get(a)).toBeGreaterThanOrEqual(3);
         expect(deg.get(b)).toBeGreaterThanOrEqual(3);
-        const owner = bedOwners(g);
         expect(owner.get(a)).toBeDefined();
         expect(owner.get(b)).toBeDefined();
         expect(owner.get(a)).not.toBe(owner.get(b));
@@ -344,19 +362,23 @@ describe("buildRungs on the flat frame", () => {
   });
 
   it("spaces one pair's rungs at least BRAID_RUNG_GAP of stem apart", () => {
-    // Only the two-strand world: with three strands the two pairs draw their
-    // heights independently and may land near each other on strand A.
-    const arcs = rungChains(two).map((chain) => {
-      const a = two.nodes[chain[0]!]!;
-      return (1 - stemProgress(two, a.x, a.z)) * two.stemLen;
+    // A TWO-STRAND world, so both chains are the same pair's: with three
+    // strands the two pairs draw their heights independently and may land near
+    // each other on strand A. Seed 2 builds a single chain, which made this
+    // gate's loop body unreachable — hence the length assertion, so it fails
+    // loudly rather than silently if the world ever stops covering it.
+    const arcs = rungChains(twoRungs).map((chain) => {
+      const a = twoRungs.nodes[chain[0]!]!;
+      return (1 - stemProgress(twoRungs, a.x, a.z)) * twoRungs.stemLen;
     }).sort((p, q) => p - q);
+    expect(arcs.length).toBeGreaterThanOrEqual(2);
     for (let i = 1; i < arcs.length; i++) expect(arcs[i]! - arcs[i - 1]!).toBeGreaterThanOrEqual(BRAID_RUNG_GAP - 2 * 8);
   });
 
   it("ends a rung on a loop's bed when the strand cannot be reached, and leaves the loop a ring", () => {
-    const deg = degreesOf(loopRung);
-    const owner = bedOwners(loopRung);
-    const ends = rungChains(loopRung).flatMap((c) => [c[0]!, c[c.length - 1]!]);
+    const deg = degreesOf(twoRungs);
+    const owner = bedOwners(twoRungs);
+    const ends = rungChains(twoRungs).flatMap((c) => [c[0]!, c[c.length - 1]!]);
     const onLoop = ends.filter((n) => (owner.get(n) ?? "").startsWith("l"));
     expect(onLoop.length).toBeGreaterThanOrEqual(1);
     for (const n of onLoop) expect(deg.get(n)).toBeGreaterThanOrEqual(3);
@@ -366,8 +388,8 @@ describe("buildRungs on the flat frame", () => {
     // its junction-to-junction path and its paint. `buildRungs` records the
     // new index on the loop when the rung commits; without that, this walk
     // stops at the split.
-    for (const loop of loopRung.loops) expect(walks(loopRung, loop.edges, loop.junctionA, loop.junctionB)).toBe(true);
-    expect([...deg.entries()].filter(([n, d]) => d === 1 && n !== 0).map(([n]) => n)).toEqual([loopRung.summit]);
+    for (const loop of twoRungs.loops) expect(walks(twoRungs, loop.edges, loop.junctionA, loop.junctionB)).toBe(true);
+    expect([...deg.entries()].filter(([n, d]) => d === 1 && n !== 0).map(([n]) => n)).toEqual([twoRungs.summit]);
   });
 
   it("lands every world's fork count in the spec's band on these seeds", () => {
