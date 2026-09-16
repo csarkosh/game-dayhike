@@ -15,7 +15,7 @@ import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
 import { updateDirector } from "./director.js";
-import { spawnHollow, stepHollows } from "./hollow.js";
+import { spawnHollow, stepHollows, updateHollows } from "./hollow.js";
 import { ENEMY_HALF, ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
 
 export type World = {
@@ -255,6 +255,7 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
   if (world.trail !== null) {
     // A forest has the Hollow and no director (hollow.ts).
     stepHollows(world, TICK_DT);
+    updateHollows(world);
   } else {
     for (const enemy of world.state.enemies.values()) {
       stepEnemy(enemy, world, TICK_DT);

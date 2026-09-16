@@ -21,6 +21,10 @@ describe("walking the trail graph", () => {
     it(`seed ${seed}: every edge is grounded and reaches its far node`, () => {
       const forest = createForest(seed);
       const world = createForestWorld(forest);
+      // The walk measures the ground, not the Hollow. It crawls this very
+      // stem, and on seed 12345 it meets the walker head-on: contact kills,
+      // death is permanent, and every later edge would be walked by a corpse.
+      world.state.enemies.clear();
       const player = spawnPlayer(world);
       const { graph } = bowlFor(seed);
       for (const e of graph.edges) {

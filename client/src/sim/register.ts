@@ -284,6 +284,8 @@ function signOut(world: World, player: PlayerState): void {
   const item = world.state.items[player.carrying];
   player.carrying = NO_ITEM;
   player.signOutTicks = 0;
+  // The Hollow bound to this player lets go (hollow.ts).
+  player.signedOut = true;
   if (item === undefined) return;
   item.carrier = NO_CARRIER;
   item.signedOut = true;

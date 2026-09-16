@@ -13,15 +13,25 @@
  * The walk itself passes its direction as a world-axis wish through
  * `stepMovement` with yaw 0, so movement needs no trig at all.
  */
-import type { EnemyState, Vec3 } from "./types.js";
-import { AiState, Button, cloneVec3 } from "./types.js";
+import type { EnemyState, PlayerState, Vec3 } from "./types.js";
+import { AiState, Button, NO_ITEM, Outcome, cloneVec3 } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { nearestTrailNode } from "./trail.js";
 import { route, stemNodes } from "./trailRoute.js";
 import { stepMovement } from "./movement.js";
+import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
-import { ENEMY_HALF, ENEMY_MAX_HEALTH, EPSILON, SPRINT_SPEED, WALK_SPEED } from "./constants.js";
+import {
+  ENEMY_HALF,
+  ENEMY_MAX_HEALTH,
+  EPSILON,
+  PLAYER_EYE_OFFSET,
+  PLAYER_HALF,
+  SIM_TICK_HZ,
+  SPRINT_SPEED,
+  WALK_SPEED,
+} from "./constants.js";
 
 /** Free: the stem pendulum, m/s. A 600 m stem takes about twelve minutes one way. */
 export const HOLLOW_CRAWL_SPEED = 0.8;
@@ -292,4 +302,139 @@ export function stepHollows(world: World, dt: number): void {
   const graph = world.trail;
   if (graph === null) return;
   for (const h of hollowsOf(world)) stepHollow(h, world, graph, dt);
+}
+
+/** Whether any Hollow hunts this player. */
+export function isHunted(world: World, playerId: number): boolean {
+  for (const e of world.state.enemies.values()) {
+    if (e.ai === AiState.Hunt && e.targetId === playerId) return true;
+  }
+  return false;
+}
+
+/**
+ * The look test: the Hollow's centre within HOLLOW_LOOK_COS of the player's
+ * aim ray, within HOLLOW_LOOK_RANGE of the eye, and nothing in between.
+ */
+export function playerSees(player: PlayerState, hollow: EnemyState, world: World): boolean {
+  const eye: Vec3 = { x: player.pos.x, y: player.pos.y + PLAYER_EYE_OFFSET, z: player.pos.z };
+  const dx = hollow.pos.x - eye.x;
+  const dy = hollow.pos.y - eye.y;
+  const dz = hollow.pos.z - eye.z;
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (dist < EPSILON || dist > HOLLOW_LOOK_RANGE) return false;
+  const dir = aimDirection(player.yaw, player.pitch);
+  if ((dx * dir.x + dy * dir.y + dz * dir.z) / dist < HOLLOW_LOOK_COS) return false;
+  return hasLineOfSight(eye, hollow.pos, world.boxes, world.ground);
+}
+
+function nearestTo(candidates: EnemyState[], pos: Vec3): EnemyState | null {
+  let best: EnemyState | null = null;
+  let bestSq = Infinity;
+  for (const h of candidates) {
+    const sq = horizontalDistSq(h.pos, pos);
+    if (sq < bestSq) {
+      bestSq = sq;
+      best = h;
+    }
+  }
+  return best;
+}
+
+function release(world: World, h: EnemyState): void {
+  h.targetId = 0;
+  clearRoute(h);
+  h.ai = hollowsOf(world).length > 1 ? AiState.Merge : AiState.Crawl;
+}
+
+/**
+ * The per-tick rules, host only, after every Hollow has moved: contact
+ * kills; the look test, which slows a seen Hollow next tick and fills or
+ * empties each player's stare; releases; binding on new carriers, with a
+ * split when no Hollow is free; merges; and the loss.
+ */
+export function updateHollows(world: World): void {
+  if (world.trail === null) return;
+  const state = world.state;
+
+  // Contact.
+  const reach = PLAYER_HALF.x + ENEMY_HALF.x + HOLLOW_CONTACT_MARGIN;
+  const tall = PLAYER_HALF.y + ENEMY_HALF.y;
+  for (const h of hollowsOf(world)) {
+    for (const p of state.players.values()) {
+      if (p.health <= 0) continue;
+      const dy = p.pos.y - h.pos.y;
+      if (horizontalDistSq(p.pos, h.pos) <= reach * reach && Math.abs(dy) <= tall) p.health = 0;
+    }
+  }
+
+  // Looking and the stare.
+  const all = hollowsOf(world);
+  for (const h of all) h.seen = false;
+  const fill = 1 / (HOLLOW_STARE_FILL_S * SIM_TICK_HZ);
+  const empty = 1 / (HOLLOW_STARE_EMPTY_S * SIM_TICK_HZ);
+  for (const p of state.players.values()) {
+    if (p.health <= 0) continue;
+    let sees = false;
+    for (const h of all) {
+      if (playerSees(p, h, world)) {
+        h.seen = true;
+        sees = true;
+      }
+    }
+    p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
+    if (p.stare >= 1) p.health = 0;
+  }
+
+  // Releases: the hunted player is gone, dead, or signed a hiker out.
+  for (const h of all) {
+    if (h.ai !== AiState.Hunt) continue;
+    const p = state.players.get(h.targetId);
+    if (p === undefined || p.health <= 0 || p.signedOut) release(world, h);
+  }
+
+  // Binding: a living carrier nobody hunts takes the nearest free Hollow, or
+  // a new one steps out of the nearest Hollow of any state.
+  for (const p of state.players.values()) {
+    if (p.health <= 0 || p.carrying === NO_ITEM || isHunted(world, p.id)) continue;
+    p.signedOut = false;
+    const live = hollowsOf(world);
+    const free = nearestTo(live.filter((h) => h.ai !== AiState.Hunt), p.pos);
+    if (free !== null) {
+      free.ai = AiState.Hunt;
+      free.targetId = p.id;
+      clearRoute(free);
+      continue;
+    }
+    const near = nearestTo(live, p.pos);
+    if (near !== null) spawnHollow(world, near.pos, AiState.Hunt, p.id);
+  }
+
+  // Merges: on touch, and never down to none.
+  for (const h of hollowsOf(world)) {
+    if (h.ai !== AiState.Merge) continue;
+    const other = nearestOtherHollow(world, h);
+    if (other === null) {
+      h.ai = AiState.Crawl;
+      clearRoute(h);
+      continue;
+    }
+    if (horizontalDistSq(h.pos, other.pos) <= HOLLOW_MERGE_RADIUS * HOLLOW_MERGE_RADIUS) {
+      state.enemies.delete(h.id);
+      if (hollowsOf(world).length === 1) {
+        const last = hollowsOf(world)[0] as EnemyState;
+        if (last.ai === AiState.Merge) {
+          last.ai = AiState.Crawl;
+          clearRoute(last);
+        }
+      }
+    }
+  }
+
+  // The loss.
+  if (state.outcome === Outcome.Playing && state.players.size > 0) {
+    let living = 0;
+    for (const p of state.players.values()) if (p.health > 0) living++;
+    if (living === 0) state.outcome = Outcome.Lost;
+  }
 }
