@@ -162,3 +162,25 @@ relief fade only (plain tiling beyond 140 m); the horizon tint stays regardless 
 - The trail sub-project reuses the lattice hash and the macro noise for its noise-broken edge.
 - Blade clumps reuse `TUFT_ALBEDO` as their base colour.
 - A drainage term, once the trail release adds its sim field.
+
+## 12. Amendments (from the browser gates)
+
+- **§5, the detail scale.** The detail albedo term is gone. The grass maps are 512 px over 2 m;
+  at a 3–6 m footprint their albedo carries about ±3 % visible contrast, so a second copy of it
+  at any weight could not be seen. The detail scale is 1 m (`DETAIL_TILING = 1.0`), and it
+  contributes a normal (`DETAIL_NORMAL = 0.5`) and a between-blades occlusion `ao *= mix(1,
+  smoothstep(DETAIL_AO_RANGE[0], DETAIL_AO_RANGE[1], detailHeight), DETAIL_AO ·
+  detailStrength)` with `DETAIL_AO_RANGE = [0.3, 0.7]` and `DETAIL_AO = 0.7`: the packed height
+  channel is centred on 0.5, and the original `smoothstep(0, 0.6, h)` sat near 1 across it, so
+  the occlusion had no contrast. Two fetches inside 20 m, not three.
+- **§6, macro variation.** `MACRO_LUSH = (0.82, 1.06, 0.84)`, `MACRO_DRY = (1.18, 0.98, 0.70)`;
+  the original ±8 % range was not visible across a meadow.
+- **§6, horizon tint.** `TUFT_ALBEDO = (0.18, 0.22, 0.11)`. The far field is already brighter
+  than the tufted band (its brightness is set by the atmosphere, not the albedo), so a bright
+  target widened the step instead of closing it; the darker value matches what a lit tuft card
+  reads at and turns the tint into a hue nudge.
+- **§4 and §7, cost.** The 2 m hex lattice and its three-tap fetches run only where the grass
+  vertex weight is non-zero; elsewhere one plain fetch of each grass map keeps the height blend
+  intact (the blend can still hand grass a small share where two other layers split the
+  weight). Measured cost at the meadow: about +0.75 ms at native resolution (+3 ms at 4×
+  pixels); the low tier at 1.5× scaling stays on the 60 Hz cap.
