@@ -5,15 +5,22 @@
  * the bed follows the ground — so the segments are BUCKETED: a 16 × 16 index
  * texture over the graph's bounding box (100 m buckets, one empty ring around
  * it so a clamped lookup outside reads nothing) holds (start, count) per
- * bucket, and a 512-entry list holds the segments, each entered in every
- * bucket its corridor-grown box touches. A fragment reads its bucket and
- * loops at most TRAIL_PAINT_BUCKET_MAX segments.
+ * bucket, and a 512-entry, two-row list holds the segments: row 0 is
+ * (ax, az, bx, bz), row 1 is (ua, ub, wa, wb) — the node parameter and the
+ * junction width factor at each end. A fragment reads its bucket and loops at
+ * most TRAIL_PAINT_BUCKET_MAX segments over row 0 to find the nearest one,
+ * then reads row 1 once, at the winner's index, to paint it: every band below
+ * is a function of that segment's along-length wear and width, and of the
+ * across distance shifted by the ragged edge and the pebble height.
  *
- * The bed paints as the gravel layer under a wet-earth tint; the bank — bare
- * forest floor — goes on the side where the ground RISES AWAY from the bed,
- * read from the vertex normal, which is what a bench cut into a hillside
- * exposes. There is no cut-depth model any more: the bed is the ground. The
- * bank paints only in proportion to the SOIL under it — the vertex's grass +
+ * The bed paints as four bands from the centreline out — core, margin,
+ * trample, then bare ground — each darkened, widened and shifted by
+ * along-length wear noise, with a ragged edge added to the across distance
+ * and a wet core that puddles with the weather. The bank — bare forest
+ * floor — goes on the side where the ground RISES AWAY from the bed, read
+ * from the vertex normal, which is what a bench cut into a hillside exposes.
+ * There is no cut-depth model any more: the bed is the ground. The bank
+ * paints only in proportion to the SOIL under it — the vertex's grass +
  * forest-floor class weight: a cut through rock exposes rock, which the base
  * albedo already is, and a beach or a snowfield has no floor to expose. The
  * floor texture times a rock-grey or sand-tan vertex albedo read as a bright
@@ -25,7 +32,16 @@
  * COMMENT PROSE IN THE GLSL STRINGS IS NOT INERT — never spell a hashed
  * preprocessor keyword inside a comment there.
  */
-import { TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, type TrailGraph } from "../sim/trail.js";
+import { TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, TRAIL_SINK, TRAIL_SINK_RAMP, type TrailGraph } from "../sim/trail.js";
+import {
+  TRAIL_JUNCTION_W,
+  TRAIL_WEAR_WAVE, TRAIL_WEAR_WEIGHT, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
+  TRAIL_EDGE_NOISE, TRAIL_EDGE_WAVE, TRAIL_EDGE_WEIGHT, TRAIL_HEIGHT_SHIFT,
+  TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE,
+  TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT,
+  TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE,
+  trailWear, trailBands,
+} from "./trailBenchParams.js";
 
 export type Rgb = { r: number; g: number; b: number };
 
@@ -33,24 +49,19 @@ export const TRAIL_PAINT_BUCKET = 100;
 export const TRAIL_PAINT_BUCKET_MAX = 32;
 export const TRAIL_PAINT_MAX_SEGMENTS = 512;
 export const TRAIL_PAINT_GRID = 16;
-/** The walked margin beyond the bed that is also gravel. */
-export const TRAIL_PAINT_MARGIN = 0.5;
-export const TRAIL_PAINT_EDGE = 0.4;
-/** Multiplies the gravel layer's albedo on the bed: wet earth, not sand. */
-export const TRAIL_DIRT_TINT: Rgb = { r: 0.34, g: 0.29, b: 0.24 };
-/** Scales the gravel layer's own brightness so its stones read as stone in dirt. */
-export const TRAIL_GRAVEL_GAIN = 0.6;
+/** Re-exported so existing importers of the old local constant keep working;
+ * the value now lives in trailBenchParams.ts beside the bands it edges. */
+export { TRAIL_PAINT_EDGE } from "./trailBenchParams.js";
 /** Ground slope away from the bed at which the bank paint is at full strength. */
 export const TRAIL_BANK_SLOPE = 0.15;
 
-const BED = TRAIL_BED_HALF + TRAIL_PAINT_MARGIN;
 const GROW = TRAIL_CORRIDOR_HALF;
 
-export type Segment = { ax: number; az: number; bx: number; bz: number };
+export type Segment = { ax: number; az: number; bx: number; bz: number; ua: number; ub: number; wa: number; wb: number };
 export type TrailTable = {
   /** TRAIL_PAINT_GRID² × RGBA: (start, count, 0, 0) per bucket, row-major in z then x. */
   index: Float32Array;
-  /** TRAIL_PAINT_MAX_SEGMENTS × RGBA: (ax, az, bx, bz). */
+  /** Two rows of TRAIL_PAINT_MAX_SEGMENTS × RGBA: row 0 (ax, az, bx, bz), row 1 (ua, ub, wa, wb). */
   list: Float32Array;
   x0: number;
   z0: number;
@@ -60,17 +71,26 @@ export type TrailTable = {
   overflow: boolean;
 };
 
+/** Width factor per node: TRAIL_JUNCTION_W at degree ≥ 3 and at the trailhead (node 0), else 1. */
+export function nodeWidths(graph: TrailGraph): number[] {
+  const degree = new Array<number>(graph.nodes.length).fill(0);
+  for (const e of graph.edges) { degree[e.a]!++; degree[e.b]!++; }
+  return degree.map((d, i) => (d >= 3 || i === 0 ? TRAIL_JUNCTION_W : 1));
+}
+
 export function trailSegments(graph: TrailGraph): Segment[] {
+  const w = nodeWidths(graph);
   return graph.edges.map((e) => {
     const a = graph.nodes[e.a]!, b = graph.nodes[e.b]!;
-    return { ax: a.x, az: a.z, bx: b.x, bz: b.z };
+    return { ax: a.x, az: a.z, bx: b.x, bz: b.z, ua: a.u, ub: b.u, wa: w[e.a]!, wb: w[e.b]! };
   });
 }
 
 export function buildTrailTable(segments: Segment[]): TrailTable {
   const N = TRAIL_PAINT_GRID;
   const index = new Float32Array(N * N * 4);
-  const list = new Float32Array(TRAIL_PAINT_MAX_SEGMENTS * 4);
+  const list = new Float32Array(TRAIL_PAINT_MAX_SEGMENTS * 4 * 2);
+  const ROW1 = TRAIL_PAINT_MAX_SEGMENTS * 4;
   let minX = Infinity, minZ = Infinity;
   for (const s of segments) {
     minX = Math.min(minX, s.ax, s.bx);
@@ -91,6 +111,8 @@ export function buildTrailTable(segments: Segment[]): TrailTable {
         if (Math.max(s.az, s.bz) + GROW < bz0 || Math.min(s.az, s.bz) - GROW >= bz1) continue;
         if (n >= TRAIL_PAINT_BUCKET_MAX || count >= TRAIL_PAINT_MAX_SEGMENTS) { overflow = true; break; }
         list[count * 4] = s.ax; list[count * 4 + 1] = s.az; list[count * 4 + 2] = s.bx; list[count * 4 + 3] = s.bz;
+        list[ROW1 + count * 4] = s.ua; list[ROW1 + count * 4 + 1] = s.ub;
+        list[ROW1 + count * 4 + 2] = s.wa; list[ROW1 + count * 4 + 3] = s.wb;
         count++; n++;
       }
       const b = (bj * N + bi) * 4;
@@ -120,31 +142,33 @@ export function bucketOf(table: TrailTable, x: number, z: number): number {
   return bj * N + bi;
 }
 
-/** Nearest segment among the point's bucket: the distance and the unit vector
- * AWAY from the bed (zero on the bed). Infinity when the bucket is empty. */
-export function trailNearest(table: TrailTable, x: number, z: number): { d: number; ex: number; ez: number } {
+/** Nearest segment among the point's bucket: the distance, the unit vector
+ * AWAY from the bed (zero on the bed), the winning entry's list index `k`
+ * (−1 when the bucket is empty) and the parameter `t` along it. */
+export function trailNearest(table: TrailTable, x: number, z: number): { d: number; ex: number; ez: number; k: number; t: number } {
   const b = bucketOf(table, x, z);
   const start = table.index[b * 4]!, n = table.index[b * 4 + 1]!;
-  let d = Infinity, qx = 0, qz = 0;
+  let d = Infinity, qx = 0, qz = 0, bestK = -1, bestT = 0;
   for (let i = 0; i < n; i++) {
-    const k = (start + i) * 4;
-    const ax = table.list[k]!, az = table.list[k + 1]!, bx = table.list[k + 2]!, bz = table.list[k + 3]!;
+    const k = start + i;
+    const kk = k * 4;
+    const ax = table.list[kk]!, az = table.list[kk + 1]!, bx = table.list[kk + 2]!, bz = table.list[kk + 3]!;
     const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez;
     const px = x - ax, pz = z - az;
     const t = L2 > 0 ? clamp01((px * ex + pz * ez) / L2) : 0;
     const ox = px - t * ex, oz = pz - t * ez;
     const dd = Math.sqrt(ox * ox + oz * oz);
-    if (dd < d) { d = dd; qx = ox; qz = oz; }
+    if (dd < d) { d = dd; qx = ox; qz = oz; bestK = k; bestT = t; }
   }
-  if (!Number.isFinite(d) || d < 1e-9) return { d, ex: 0, ez: 0 };
-  return { d, ex: qx / d, ez: qz / d };
+  if (!Number.isFinite(d) || d < 1e-9) return { d, ex: 0, ez: 0, k: bestK, t: bestT };
+  return { d, ex: qx / d, ez: qz / d, k: bestK, t: bestT };
 }
 
 /** Bed band weight at a world point; `aa` is the fragment footprint (fwidth), 0 for analytic. */
 export function trailBand(x: number, z: number, table: TrailTable, aa = 0): number {
   const { d } = trailNearest(table, x, z);
   const e = Math.max(TRAIL_PAINT_EDGE, aa);
-  return 1 - smoothstep(BED, BED + e, d);
+  return 1 - smoothstep(TRAIL_BED_HALF, TRAIL_BED_HALF + e, d);
 }
 
 /** The ground's slope AWAY from the bed: the gradient dotted with the unit
@@ -159,7 +183,22 @@ export function bankRise(gradX: number, gradZ: number, ex: number, ez: number): 
  * forest floor across the cut side, nothing where the ground falls away, and
  * nothing where there is no soil to expose. */
 export function trailBankBand(d: number, rise: number, soil = 1): number {
-  return smoothstep(0, TRAIL_BANK_SLOPE, rise) * (1 - smoothstep(BED, TRAIL_CORRIDOR_HALF, d)) * soil;
+  return smoothstep(0, TRAIL_BANK_SLOPE, rise) * (1 - smoothstep(TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, d)) * soil;
+}
+
+export type TrailPaintOpts = { edgeNoise: number; height: number };
+/** The band weights the shader computes at (x, z): edgeNoise is the metres the ragged
+ * edge adds (the shader's own comes from trailEdgeNoise), height the pebble height in [0, 1]. */
+export function trailPaintAt(x: number, z: number, table: TrailTable, opts: TrailPaintOpts): { core: number; margin: number; trample: number; wear: number; u: number; widthK: number } {
+  const n = trailNearest(table, x, z);
+  if (n.k < 0) return { core: 0, margin: 0, trample: 0, wear: 0, u: 0, widthK: 1 };
+  const row1 = TRAIL_PAINT_MAX_SEGMENTS * 4 + n.k * 4;
+  const u = table.list[row1]! + (table.list[row1 + 1]! - table.list[row1]!) * n.t;
+  const wj = table.list[row1 + 2]! + (table.list[row1 + 3]! - table.list[row1 + 2]!) * n.t;
+  const wear = trailWear(u);
+  const widthK = (TRAIL_WEAR_W0 + (TRAIL_WEAR_W1 - TRAIL_WEAR_W0) * wear) * wj;
+  const dB = (n.d + opts.edgeNoise) / widthK - TRAIL_HEIGHT_SHIFT * (opts.height - 0.5);
+  return { ...trailBands(dB), wear, u, widthK };
 }
 
 /** How a shader literal is printed below: an integer gets a decimal point
@@ -175,6 +214,12 @@ export const TRAIL_FRAGMENT_DEFS = `
 #ifdef TRAILPAINT
 uniform sampler2D trailIndex;
 uniform sampler2D trailSegs;
+float trailValueNoise1(float u, float wave) {
+  float q = u / wave;
+  float c = floor(q);
+  float f = smoothstep(0.0, 1.0, q - c);
+  return mix(latticeHash(vec2(c, 0.0)), latticeHash(vec2(c + 1.0, 0.0)), f);
+}
 #endif
 `;
 
@@ -184,8 +229,11 @@ uniform sampler2D trailSegs;
  * loop and the fwidth run in uniform control flow; the ring of empty buckets
  * makes a clamped lookup outside the box read count 0. The loop bound is the
  * compile-time constant TRAIL_PAINT_BUCKET_MAX; the break on the bucket's count
- * stops at the live entries. The bank side comes from vNormalW, the vertex
- * normal, before any detail normal has been folded into normalW.
+ * stops at the live entries. Row 0 of the 512 × 2 segment texture is read once
+ * per candidate to find the nearest one; row 1 is read once more, at the
+ * winner's index, for the node parameter and junction width the bands below
+ * are shaped by. The bank side comes from vNormalW, the vertex normal, before
+ * any detail normal has been folded into normalW.
  */
 export const TRAIL_FRAGMENT_PAINT = `
 #ifdef TRAILPAINT
@@ -194,17 +242,19 @@ export const TRAIL_FRAGMENT_PAINT = `
   vec2 tIdx = texture2D(trailIndex, (floor(tb) + 0.5) / trailInfo.w).xy;
   float tdBest = 1.0e9;
   vec2 tOff = vec2(0.0);
+  float tuBest = 0.0;
+  float ttBest = 0.0;
   for (int ti = 0; ti < ${TRAIL_PAINT_BUCKET_MAX}; ti++) {
     if (float(ti) >= tIdx.y) break;
     float tu = (tIdx.x + float(ti) + 0.5) / ${TRAIL_PAINT_MAX_SEGMENTS}.0;
-    vec4 ts = texture2D(trailSegs, vec2(tu, 0.5));
+    vec4 ts = texture2D(trailSegs, vec2(tu, 0.25));
     vec2 te = ts.zw - ts.xy;
     vec2 tp = vPositionW.xz - ts.xy;
     float tl2 = dot(te, te);
     float tt = tl2 > 0.0 ? clamp(dot(tp, te) / tl2, 0.0, 1.0) : 0.0;
     vec2 to = tp - tt * te;
     float td = length(to);
-    if (td < tdBest) { tdBest = td; tOff = to; }
+    if (td < tdBest) { tdBest = td; tOff = to; tuBest = tu; ttBest = tt; }
   }
   float taa = fwidth(tdBest);
   // The texture2D calls below (gravel/floor albedo, normals, RAH) run inside
@@ -213,8 +263,6 @@ export const TRAIL_FRAGMENT_PAINT = `
   // it compiled and rendered correctly on Metal when checked in the browser.
   if (tdBest < ${f(TRAIL_CORRIDOR_HALF)} + taa) {
     float tk = 1.0 - smoothstep(terrainFade.x, terrainFade.y, distance(vPositionW.xyz, terrainEye));
-    float tE = max(${f(TRAIL_PAINT_EDGE)}, taa);
-    float tBed = 1.0 - smoothstep(${f(BED)}, ${f(BED)} + tE, tdBest);
     vec2 tAway = tdBest > 1.0e-4 ? tOff / tdBest : vec2(0.0);
     float tRise = dot(-vNormalW.xz, tAway) / max(vNormalW.y, 1.0e-3);
     // Soil fraction: the grass + forest-floor class weights the ground blend
@@ -227,37 +275,68 @@ export const TRAIL_FRAGMENT_PAINT = `
     // blends to a slightly darker, bluer snow, keeps the snow's normal and
     // roughness, and the bare-floor bank fades out with the soil under it.
     float tSnow = 1.0 - clamp(vTerrainW2.y, 0.0, 1.0);
-    float tBank = smoothstep(0.0, ${f(TRAIL_BANK_SLOPE)}, tRise) * (1.0 - smoothstep(${f(BED)}, ${f(TRAIL_CORRIDOR_HALF)}, tdBest)) * tSoil * (1.0 - tSnow);
+    vec4 tRow = texture2D(trailSegs, vec2(tuBest, 0.75));
+    float tU = mix(tRow.x, tRow.y, ttBest);
+    float tWj = mix(tRow.z, tRow.w, ttBest);
+    float tWear = ${f(TRAIL_WEAR_WEIGHT[0])} * trailValueNoise1(tU, ${f(TRAIL_WEAR_WAVE[0])}) + ${f(TRAIL_WEAR_WEIGHT[1])} * trailValueNoise1(tU, ${f(TRAIL_WEAR_WAVE[1])});
+    float tWidthK = mix(${f(TRAIL_WEAR_W0)}, ${f(TRAIL_WEAR_W1)}, tWear) * tWj;
+    float tDarkK = mix(${f(TRAIL_WEAR_D0)}, ${f(TRAIL_WEAR_D1)}, tWear);
+    float tEdgeN = ${f(TRAIL_EDGE_WEIGHT[0])} * macroValueNoise(vPositionW.xz, ${f(TRAIL_EDGE_WAVE[0])}) + ${f(TRAIL_EDGE_WEIGHT[1])} * macroValueNoise(vPositionW.xz, ${f(TRAIL_EDGE_WAVE[1])});
+    float tdN = tdBest + ${f(TRAIL_EDGE_NOISE)} * (2.0 * tEdgeN - 1.0);
     vec2 tuvP = vPositionW.xz * terrainTiling.w;
     vec2 tuvF = vPositionW.xz * terrainTiling.y;
-    // Gravel: the pebble layer (index 4) planar at its own tiling, its albedo
-    // scaled and tinted to wet earth; forest floor: layer 1. Normals/RAH from
-    // the same arrays the ground blend reads, mixed the way the road mixes asphalt.
-    vec3 tGravelTex = mix(vec3(1.0), texture2D(terrainPebble, tuvP).rgb / terrainRock2.y, tk) * ${f(TRAIL_GRAVEL_GAIN)};
+    vec3 tGravelTex = mix(vec3(1.0), texture2D(terrainPebble, tuvP).rgb / terrainRock2.y, tk);
     vec3 tFloorTex = mix(vec3(1.0), texture2D(terrainFloor, tuvF).rgb / terrainRock2.y, tk);
     vec3 tGravelN = texture2D(terrainNormals, vec3(tuvP, 4.0)).rgb * 2.0 - 1.0;
     vec3 tGravelRAH = texture2D(terrainRAH, vec3(tuvP, 4.0)).rgb;
     vec3 tFloorN = texture2D(terrainNormals, vec3(tuvF, 1.0)).rgb * 2.0 - 1.0;
     vec3 tFloorRAH = texture2D(terrainRAH, vec3(tuvF, 1.0)).rgb;
-    // The bank is this ground with the floor texture in place of the blend, so
-    // it takes the VERTEX colour (the palette's darkness and canopy tint) —
-    // vAlbedoColor is the material's constant, and under it alone the floor
-    // texture painted at full brightness beside the bed (2026-09-10).
+    float tdB = tdN / tWidthK - ${f(TRAIL_HEIGHT_SHIFT)} * (mix(0.5, tGravelRAH.b, tk) - 0.5);
+    float tE = max(${f(TRAIL_PAINT_EDGE)}, taa / tWidthK);
+    float tInCore = 1.0 - smoothstep(${f(TRAIL_CORE_HALF)}, ${f(TRAIL_CORE_HALF)} + tE, tdB);
+    float tInMargin = 1.0 - smoothstep(${f(TRAIL_MARGIN_HALF)}, ${f(TRAIL_MARGIN_HALF)} + tE, tdB);
+    float tCore = tInCore * (1.0 - tSnow);
+    float tMargin = (tInMargin - tInCore) * (1.0 - tSnow);
+    float tTrample = (1.0 - tInMargin) * (1.0 - smoothstep(${f(TRAIL_MARGIN_HALF)}, ${f(TRAIL_TRAMPLE_HALF)}, tdB)) * tSoil * (1.0 - tSnow);
+    float tBank = smoothstep(0.0, ${f(TRAIL_BANK_SLOPE)}, tRise) * (1.0 - smoothstep(${f(TRAIL_BED_HALF)}, ${f(TRAIL_CORRIDOR_HALF)}, tdN)) * tSoil * (1.0 - tSnow) * (1.0 - tInMargin);
 #ifdef VERTEXCOLOR
     vec3 tBankBase = vColor.rgb;
 #else
     vec3 tBankBase = vAlbedoColor.rgb;
 #endif
-    vec3 tCol = mix(surfaceAlbedo, tFloorTex * mix(1.0, tFloorRAH.g / 0.5, tk) * tBankBase, tBank);
+    // The trampled band: this ground, dried and stained toward the bench.
+    vec3 tCol = surfaceAlbedo * mix(vec3(1.0), vec3(${f(TRAIL_TRAMPLE_TINT.r)}, ${f(TRAIL_TRAMPLE_TINT.g)}, ${f(TRAIL_TRAMPLE_TINT.b)}), tTrample);
+    // The bank: bare forest floor on the uphill side, under the vertex colour.
+    tCol = mix(tCol, tFloorTex * mix(1.0, tFloorRAH.g / 0.5, tk) * tBankBase, tBank);
     normalW = normalize(mix(normalW, normalize(normalW + vec3(tFloorN.x, 0.0, tFloorN.y)), tBank * tk));
     terrainRough = mix(terrainRough, clamp(terrainLayerRough.y * mix(1.0, tFloorRAH.r / 0.5, tk), 0.0, 1.0), tBank);
     terrainF0 = mix(terrainF0, terrainLayerF0.y, tBank);
-    vec3 tDirt = vec3(${f(TRAIL_DIRT_TINT.r)}, ${f(TRAIL_DIRT_TINT.g)}, ${f(TRAIL_DIRT_TINT.b)}) * tGravelTex * mix(1.0, tGravelRAH.g / 0.5, tk) * vAlbedoColor.rgb;
+    // Core and margin: the pebble layer under two tints, the core compacted and
+    // darkened by wear, the margin loose and pale. Wet: the core darkens and
+    // glosses, the margin half as much; puddles sit in the low spots of the
+    // 6 m noise inside the core.
+    float tAo = mix(1.0, tGravelRAH.g / 0.5, tk);
+    vec3 tCoreCol = vec3(${f(TRAIL_CORE_TINT.r)}, ${f(TRAIL_CORE_TINT.g)}, ${f(TRAIL_CORE_TINT.b)}) * tDarkK * tGravelTex * ${f(TRAIL_CORE_GAIN)} * tAo * vAlbedoColor.rgb;
+    vec3 tMarginCol = vec3(${f(TRAIL_MARGIN_TINT.r)}, ${f(TRAIL_MARGIN_TINT.g)}, ${f(TRAIL_MARGIN_TINT.b)}) * tGravelTex * ${f(TRAIL_MARGIN_GAIN)} * tAo * vAlbedoColor.rgb;
+    float tPuddleLow = smoothstep(${f(TRAIL_PUDDLE_LOW[0])}, ${f(TRAIL_PUDDLE_LOW[1])}, 1.0 - macroValueNoise(vPositionW.xz, ${f(TRAIL_PUDDLE_WAVE)}));
+    float tPuddle = smoothstep(${f(TRAIL_PUDDLE_WET[0])}, ${f(TRAIL_PUDDLE_WET[1])}, terrainWet) * tPuddleLow * tCore;
+    tCoreCol *= 1.0 - ${f(TRAIL_WET_DARK)} * terrainWet;
+    tMarginCol *= 1.0 - ${f(TRAIL_WET_DARK)} * 0.5 * terrainWet;
+    tCoreCol = mix(tCoreCol, tCoreCol * 0.5, tPuddle);
     vec3 tPacked = surfaceAlbedo * vec3(0.86, 0.88, 0.94);
-    tCol = mix(tCol, mix(tDirt, tPacked, tSnow), tBed);
-    float tGravel = tBed * (1.0 - tSnow);
-    normalW = normalize(mix(normalW, normalize(normalW + vec3(tGravelN.x, 0.0, tGravelN.y)), tGravel * tk));
-    terrainRough = mix(terrainRough, clamp(terrainLayerRough2.x * mix(1.0, tGravelRAH.r / 0.5, tk), 0.0, 1.0), tGravel);
+    float tOnBench = tInMargin;
+    tCol = mix(tCol, mix(mix(tMarginCol, tCoreCol, tInCore), tPacked, tSnow), tOnBench);
+    float tGravel = tOnBench * (1.0 - tSnow);
+    vec3 tBenchN = normalize(normalW + vec3(tGravelN.x, 0.0, tGravelN.y) * mix(1.0, 0.5, tInCore));
+    // The lip: over the sink ramp outside the bench the normal tilts outward
+    // and down by the ramp's slope, so a low sun draws the edge as a line.
+    float tRamp = smoothstep(${f(TRAIL_BED_HALF)}, ${f(TRAIL_BED_HALF + TRAIL_SINK_RAMP)}, tdN);
+    float tLip = 4.0 * tRamp * (1.0 - tRamp) * (1.0 - tSnow);
+    vec3 tLipN = normalize(normalW - vec3(tAway.x, 0.0, tAway.y) * ${f(TRAIL_SINK / TRAIL_SINK_RAMP)} * tLip);
+    normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), vec3(0.0, 1.0, 0.0), tPuddle));
+    float tRoughBench = clamp(terrainLayerRough2.x * mix(1.0, tGravelRAH.r / 0.5, tk), 0.0, 1.0);
+    tRoughBench *= 1.0 - ${f(TRAIL_WET_GLOSS)} * terrainWet * mix(0.5, 1.0, tInCore);
+    terrainRough = mix(mix(terrainRough, tRoughBench, tGravel), 0.05, tPuddle);
     terrainF0 = mix(terrainF0, terrainLayerF02.x, tGravel);
     surfaceAlbedo = tCol;
   }

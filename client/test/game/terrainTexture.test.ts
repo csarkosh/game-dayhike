@@ -17,6 +17,7 @@ import {
   HORIZON, HORIZON_MAX, TUFT_ALBEDO,
 } from "../../src/game/groundHexParams.js";
 import type { Feature } from "../../src/sim/features.js";
+import type { TrailGraph } from "../../src/sim/trail.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import "../../src/sim/passes/index.js";
@@ -783,6 +784,14 @@ describe("the grass floor", () => {
     expect(writes.terrainTuft).toEqual([TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b]);
     expect(writes.terrainMacroOn).toEqual([1]);
   });
+
+  it("binds terrainWet from setWet, unconditionally", () => {
+    const { plugin, ubo, writes } = makeBoundPlugin();
+    expect(writes.terrainWet).toEqual([0]);
+    plugin.setWet(1);
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(writes.terrainWet).toEqual([1]);
+  });
 });
 
 describe("the grass floor compiles into the fragment source on both paths", () => {
@@ -802,17 +811,26 @@ describe("the grass floor compiles into the fragment source on both paths", () =
     ["float", "terrainMacroOn"],
     ["vec3", "terrainHorizon"],
     ["vec3", "terrainTuft"],
+    ["float", "terrainWet"],
   ];
   /** The spliced code that reads them; it must survive on both paths too. */
   const FLOOR_CODE = ["hexSetup", "macroTint", "horizonWeight"];
 
-  async function compiledFragmentSource(targetScene: Scene): Promise<string> {
+  /** The two-node graph task 4's trail-paint fixtures use elsewhere. */
+  const trailGraphFixture: TrailGraph = {
+    nodes: [{ x: 0, z: 0, h: 0, u: 0 }, { x: 100, z: 0, h: 0, u: 100 }],
+    edges: [{ a: 0, b: 1, kind: "stem", profile: new Float64Array(2), progress0: 0, progress1: 1 }],
+    trailhead: { x: 0, z: 0, u: 0 }, summit: 1, stem: [0], loops: [], features: [], stemLen: 100, fallbacks: 0,
+  } as unknown as TrailGraph;
+
+  async function compiledFragmentSource(targetScene: Scene, setup?: (plugin: TerrainTexturePlugin) => void): Promise<string> {
     const material = new PBRMaterial("pbr-floor", targetScene);
     // `stubArrays` builds real 1x1 RawTextures, and NullEngine never reports
     // those ready — which would hang `isReadyForSubMesh` forever. The
     // always-ready stub the terrainReliefOn tests use is what lets the material
     // actually compile here.
     attachTerrainTexture(targetScene, material, { groundArrays: stubArraysWithRahWidth(1024) });
+    if (setup) setup(material.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin);
     const mesh = CreateBox("box-floor", {}, targetScene);
     mesh.material = material;
     const subMesh = mesh.subMeshes[0]!;
@@ -866,5 +884,22 @@ describe("the grass floor compiles into the fragment source on both paths", () =
       for (const name of FLOOR_CODE) expect(source, name).toContain(name);
       expect(source.indexOf("terrainHorizon")).toBeLessThan(source.indexOf("float horizonWeight("));
     } finally { s.dispose(); e.dispose(); }
+  });
+
+  it("with the trail enabled: trailSegs and terrainWet each declare once on both paths, row 1 read once", async () => {
+    for (const forceUbo of [false, true]) {
+      const e = new NullEngine();
+      if (forceUbo) (e as unknown as { _webGLVersion: number })._webGLVersion = 2;
+      const s = new Scene(e);
+      try {
+        const source = await compiledFragmentSource(s, (plugin) => plugin.enableTrail(trailGraphFixture));
+        expect(source).toContain("trailSegs");
+        expect(source).toContain("terrainWet");
+        expect(source.match(/uniform sampler2D trailSegs;/g)).toHaveLength(1);
+        const terrainWetDecl = forceUbo ? /\bfloat terrainWet;/g : /uniform\s+float\s+terrainWet\s*;/g;
+        expect(source.match(terrainWetDecl)).toHaveLength(1);
+        expect(source.match(/texture2D\(trailSegs, vec2\(tuBest, 0\.75\)\)/g)).toHaveLength(1);
+      } finally { s.dispose(); e.dispose(); }
+    }
   });
 });

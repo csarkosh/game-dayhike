@@ -26,7 +26,6 @@ import {
 } from "../../src/sim/clutter.js";
 import { SLOPE_HI, SLOPE_LO } from "../../src/sim/vegetation.js";
 import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
-import { TRAIL_PAINT_MARGIN } from "../../src/game/trailPaint.js";
 import { fbm2 } from "../../src/sim/field.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
 import { ROAD_BED_HALF } from "../../src/sim/road.js";
@@ -100,9 +99,9 @@ describe("clutter density gates", () => {
     // √2·(JITTER/2)·CELL ≈ 2.97 m off its centre, so a centre-evaluated gate
     // cannot keep the bed clear; the INSTANCE is rejected at its own position,
     // the way treeInCell rejects a tree. The floor is the whole
-    // gravel (bed + walked margin) plus the largest stump's half-width and a
-    // step of clear ground.
-    expect(CLUTTER_FUNGUS_TRAIL_CLEAR).toBeGreaterThanOrEqual(TRAIL_BED_HALF + TRAIL_PAINT_MARGIN + 0.5);
+    // bed plus the largest stump's half-width and a step of clear ground —
+    // the gravel margin is now painted within the bed rather than widening it.
+    expect(CLUTTER_FUNGUS_TRAIL_CLEAR).toBeGreaterThanOrEqual(TRAIL_BED_HALF + 0.5);
     const v = variantOrThrow("olympic");
     const { graph } = bowlFor(SEED);
     let seen = 0, near = 0;

@@ -582,6 +582,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   private _trailSegs: RawTexture | null = null;
   private _trailIndex: RawTexture | null = null;
   private _trailInfo: [number, number, number, number] = [0, 0, 0, 0];
+  private _wet = 0;
   private _featureTex: RawTexture | null = null;
   private _featureInfo: [number, number, number, number] = [0, 0, 0, 0];
 
@@ -649,7 +650,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     const table = buildTrailTable(trailSegments(graph));
     if (table.overflow) console.warn("trail paint: segment table overflowed; some of the trail is unpainted");
     const segs = RawTexture.CreateRGBATexture(
-      table.list, TRAIL_PAINT_MAX_SEGMENTS, 1, this._scene,
+      table.list, TRAIL_PAINT_MAX_SEGMENTS, 2, this._scene,
       false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
     );
     segs.name = "trailSegs"; segs.wrapU = Texture.CLAMP_ADDRESSMODE; segs.wrapV = Texture.CLAMP_ADDRESSMODE;
@@ -663,6 +664,9 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
     this._trailInfo = [table.x0, table.z0, 1 / TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID];
     this.markAllDefinesAsDirty();
   }
+
+  /** The weather's wetness in [0, 1]: the trail's core darkens, glosses and puddles with it. */
+  setWet(wetness: number): void { this._wet = Math.min(1, Math.max(0, wetness)); }
 
   /** Turn feature paint on for this world: bake the (x, z, radius, kind) +
    * treeline table once. Idempotent, same story as `enableRoad`/`enableTrail`. */
@@ -724,6 +728,9 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
         // declared unconditionally like roadTable; the paint that reads it is
         // gated on TRAILPAINT.
         { name: "trailInfo", size: 4, type: "vec4" },
+        // The weather's wetness [0, 1] — declared unconditionally like
+        // trailInfo; only the trail paint (TRAILPAINT) reads it today.
+        { name: "terrainWet", size: 1, type: "float" },
         // (live feature count, 0, 0, 0) for the feature table — declared
         // unconditionally like trailInfo; the paint that reads it is gated
         // on FEATUREPAINT.
@@ -769,6 +776,7 @@ uniform vec2 terrainFade;
 uniform vec3 terrainEye;
 uniform vec4 roadTable;
 uniform vec4 trailInfo;
+uniform float terrainWet;
 uniform vec4 featureInfo;
 uniform vec4 terrainLayerRough;
 uniform vec2 terrainLayerRough2;
@@ -817,6 +825,7 @@ uniform vec3 terrainTuft;
     uniformBuffer.updateFloat("terrainMacroOn", 1);
     uniformBuffer.updateFloat3("terrainHorizon", HORIZON[0], HORIZON[1], HORIZON_MAX);
     uniformBuffer.updateFloat3("terrainTuft", TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b);
+    uniformBuffer.updateFloat("terrainWet", this._wet);
     uniformBuffer.setTexture("terrainGrass", this._grass);
     uniformBuffer.setTexture("terrainFloor", this._floor);
     uniformBuffer.setTexture("terrainRock", this._rock);
@@ -994,6 +1003,19 @@ export function enableTrailPaint(scene: Scene, material: PBRMaterial, seed: numb
   if (graphOf === undefined) return;
   attachTerrainTexture(scene, material);
   (material.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin).enableTrail(graphOf(seed));
+}
+
+/**
+ * Feed the weather's wetness into the trail paint: the core darkens, glosses
+ * and puddles with it. A no-op on a material with no TerrainTexture plugin
+ * attached — every terrain material has one by the time weather is applied,
+ * but this stays defensive rather than throwing on a bare material in a test.
+ * `scene` is unused today — kept for the same (scene, material, …) shape as
+ * `enableRoadPaint`/`enableTrailPaint`/`enableFeaturePaint` above.
+ */
+export function setTerrainWetness(_scene: Scene, material: PBRMaterial, wetness: number): void {
+  const plugin = material.pluginManager?.getPlugin("TerrainTexture") as TerrainTexturePlugin | undefined;
+  plugin?.setWet(wetness);
 }
 
 /**

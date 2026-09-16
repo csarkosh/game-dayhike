@@ -35,7 +35,7 @@ import { createAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
-import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint } from "./terrainTexture.js";
+import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainWetness } from "./terrainTexture.js";
 import type { WeatherParams } from "./weather.js";
 import { wetSurfaceUnder } from "./weather.js";
 import { tierFor, type QualityTier } from "./quality.js";
@@ -913,6 +913,7 @@ export function createRenderer(
       }
 
       applyWetness(scene, weather);
+      setTerrainWetness(scene, terrainMaterialFor(scene, "terrain"), weather.wetness);
       atmosphere.update(weather, lighting.hour);
       const stare = state.players.get(localId)?.stare ?? 0;
       post.update(weather, lighting.hour, unsettle, stare);

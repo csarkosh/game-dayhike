@@ -138,7 +138,7 @@ export const CLUTTER_FUNGUS_CANOPY_LO = 0.35;
 export const CLUTTER_FUNGUS_CANOPY_HI = 0.7;
 /** Fungus (the mushroom cluster AND the cut stump, the class's two models)
  * is rejected at the jittered INSTANCE within this trailDistance (m): the
- * whole gravel (TRAIL_BED_HALF 0.75 + TRAIL_PAINT_MARGIN 0.5) plus the largest
+ * whole bed (TRAIL_BED_HALF 0.75) plus the largest
  * stump's half-width (0.28 × 1.3) and a step of clear ground. A cell-centre
  * gate cannot do it — the 6 m cell's jitter reaches 2.97 m — and a stump
  * standing in the bed was found on 2026-09-10. Rocks stay ungated
