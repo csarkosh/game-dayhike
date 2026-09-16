@@ -30,6 +30,24 @@ const STYLE = `
       rgba(16, 16, 20, 0.78) 100%
     );
     font-family: ui-monospace, monospace; color: #fff;
+
+    /* The cold cast every control on this screen is drawn in. pauseMenu.ts and
+       roster.ts carry the same tokens, deliberately repeated rather than
+       shared: each renderer owns exactly one STYLE literal, and the pale slab
+       these replace was already written out in all three. Change one, change
+       all three. */
+    --btn-sheen: linear-gradient(rgba(226, 236, 236, 0.16), rgba(198, 222, 222, 0));
+    --btn-fill: rgba(198, 222, 222, 0.10);
+    --btn-fill-lit: rgba(214, 234, 234, 0.20);
+    --btn-fill-hit: rgba(230, 244, 244, 0.32);
+    --btn-edge: rgba(198, 222, 222, 0.30);
+    --btn-edge-lit: rgba(214, 234, 234, 0.58);
+    --btn-rim: inset 0 1px 0 rgba(226, 236, 236, 0.30);
+    --btn-bloom: rgba(198, 222, 222, 0.24);
+    /* The filled variant, for the one control that outranks the page. */
+    --btn-solid: rgba(214, 234, 234, 0.48);
+    --btn-solid-lit: rgba(232, 248, 248, 0.68);
+    --btn-solid-hit: rgba(242, 253, 253, 0.86);
   }
   /* Two panels in the same box: home slides out to the left as credits slides
      in from the right, and back reverses it. Both are absolutely positioned
@@ -84,8 +102,22 @@ const STYLE = `
   /* The list is a tab stop (credits.ts sets tabIndex) so it can be scrolled
      from the keyboard; that stop has to be visible when it is reached. */
   .landing ul.credits:focus-visible { outline: 1px solid rgba(255, 255, 255, 0.5); outline-offset: 4px; }
-  .landing button.secondary { margin-top: 0.25rem; padding: 0.4rem 1.25rem; font-size: 0.85rem;
-    background: rgba(255, 255, 255, 0.18); border-color: rgba(255, 255, 255, 0.18); color: #fff; }
+  /* Secondary: the same slab as the pause menu's, hollow rather than filled,
+     so Play keeps the only solid shape on the screen. */
+  .landing button.secondary {
+    margin-top: 0.25rem; padding: 0.4rem 1.25rem; font-size: 0.85rem; color: #eaf1f1;
+    background-image: var(--btn-sheen); background-color: var(--btn-fill);
+    border-color: var(--btn-edge);
+    box-shadow: var(--btn-rim), 0 0 0 rgba(198, 222, 222, 0);
+  }
+  .landing button.secondary:hover:not(:disabled) {
+    background-color: var(--btn-fill-lit); border-color: var(--btn-edge-lit);
+    box-shadow: var(--btn-rim), 0 0 14px var(--btn-bloom);
+  }
+  .landing button.secondary:active:not(:disabled) {
+    background-color: var(--btn-fill-hit); border-color: var(--btn-edge-lit);
+    box-shadow: var(--btn-rim), 0 0 6px var(--btn-bloom);
+  }
   .landing h1 {
     margin: 0 0 0.25rem; font-size: 2rem; font-weight: 600;
     letter-spacing: 0.12em; text-transform: uppercase;
@@ -121,34 +153,62 @@ const STYLE = `
     0%, 100% { opacity: 0.8; }
     50% { opacity: 1; }
   }
+  /* Filled with the subtitle's colour, held below its alpha: as a solid slab
+     that colour reads far heavier than it does as thin monospace glyphs, and
+     the button should not outshout the title. The label takes the page's
+     ground colour to stay legible on it, and the border matches the fill so
+     the shape reads as a slab rather than an outline with something inside.
+     The fill is cold now rather than neutral white, and the rim-light along
+     its top edge is what stops a flat slab reading as a sticker. */
+  .landing button {
+    margin-top: 1.25rem; padding: 0.6rem 2rem; font: inherit; font-size: 1rem;
+    cursor: pointer; color: #0c0f11;
+    /* The title's vocabulary, carried down onto the controls. */
+    letter-spacing: 0.12em; text-transform: uppercase;
+    /* A fixed gradient over an animated flat colour: only background-color
+       moves between states, which interpolates cleanly and costs nothing,
+       while the sheen keeps the slab from reading as a flat wash. */
+    background-image: linear-gradient(rgba(255, 255, 255, 0.20), rgba(198, 222, 222, 0));
+    background-color: var(--btn-solid);
+    border: 1px solid var(--btn-solid); border-radius: 4px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 0 rgba(198, 222, 222, 0);
+    transition:
+      background-color 160ms ease-out, border-color 160ms ease-out,
+      box-shadow 160ms ease-out, transform 160ms ease-out;
+  }
+  .landing button:hover:not(:disabled) {
+    background-color: var(--btn-solid-lit); border-color: var(--btn-solid-lit);
+    /* Mist-light caught on the slab: the same bloom the dread line carries,
+       at the same cold tint. */
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 22px var(--btn-bloom);
+    transform: translateY(-1px);
+  }
+  /* A finger gets no hover: the press itself has to show, and so does the
+     wait that follows it. Faster than the rise, so the press reads as
+     mechanical rather than soft. */
+  .landing button:active:not(:disabled) {
+    background-color: var(--btn-solid-hit); border-color: var(--btn-solid-hit);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 8px var(--btn-bloom);
+    transform: translateY(1px);
+    transition-duration: 70ms;
+  }
+  /* Every control here is keyboard-reachable and none of them showed focus. */
+  .landing button:focus-visible { outline: 2px solid var(--btn-edge-lit); outline-offset: 3px; }
+  .landing button:disabled {
+    cursor: default; color: rgba(12, 15, 17, 0.7);
+    background-color: rgba(214, 234, 234, 0.28); border-color: rgba(214, 234, 234, 0.28);
+    box-shadow: none; transform: none;
+  }
+  /* Sits below the button rules on purpose: a media query carries no extra
+     specificity, so these overrides win on source order alone. */
   @media (prefers-reduced-motion: reduce) {
     .landing .dread { animation: none; }
     /* Still hidden until ready — that is flash suppression, not decoration —
        but revealed without the cross-fade. */
     .landing-bg.ready { transition: none; }
     .landing .panel { transition: none; }
-  }
-  /* Filled with the subtitle's colour, held below its alpha: as a solid slab
-     that colour reads far heavier than it does as thin monospace glyphs, and
-     the button should not outshout the title. The label takes the page's
-     ground colour to stay legible on it, and the border matches the fill so
-     the shape reads as a slab rather than an outline with something inside. */
-  .landing button {
-    margin-top: 1.25rem; padding: 0.6rem 2rem; font: inherit; font-size: 1rem;
-    cursor: pointer; color: #101014;
-    background: rgba(255, 255, 255, 0.45);
-    border: 1px solid rgba(255, 255, 255, 0.45); border-radius: 4px;
-  }
-  .landing button:hover {
-    background: rgba(255, 255, 255, 0.65);
-    border-color: rgba(255, 255, 255, 0.65);
-  }
-  /* A finger gets no hover: the press itself has to show, and so does the
-     wait that follows it. */
-  .landing button:active { background: rgba(255, 255, 255, 0.85); border-color: rgba(255, 255, 255, 0.85); }
-  .landing button:disabled {
-    cursor: default; color: rgba(16, 16, 20, 0.7);
-    background: rgba(255, 255, 255, 0.28); border-color: rgba(255, 255, 255, 0.28);
+    /* Colour still moves under the pointer; the slab no longer does. */
+    .landing button:hover:not(:disabled), .landing button:active:not(:disabled) { transform: none; }
   }
   .landing a.download, .landing a.update {
     margin-top: 0.5rem; color: rgba(255, 255, 255, 0.85);

@@ -21,9 +21,23 @@ const STYLE = `
     position: fixed; right: 0.75rem; bottom: 0.75rem; z-index: 20;
     min-width: 14rem; max-width: 22rem;
     font-family: ui-monospace, monospace; font-size: 0.85rem; color: #fff;
-    background: rgba(16, 16, 20, 0.72); border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(16, 16, 20, 0.72); border: 1px solid rgba(198, 222, 222, 0.20);
     border-radius: 6px; padding: 0.5rem 0.6rem; backdrop-filter: blur(4px);
+    /* The same rim-light the controls inside carry, so the panel reads as one
+       lit slab rather than a box with lit things in it. */
+    box-shadow: inset 0 1px 0 rgba(226, 236, 236, 0.14), 0 6px 22px rgba(0, 0, 0, 0.32);
     transition: opacity 250ms ease;
+
+    /* The cold cast the controls are drawn in — the part of it this panel
+       uses. pauseMenu.ts and landing.ts carry the same tokens, deliberately
+       repeated rather than shared: each renderer owns exactly one STYLE
+       literal, and the pale slab these replace was already written out in all
+       three. Change one, change all three; landing.ts has the full set. */
+    --btn-edge-lit: rgba(214, 234, 234, 0.58);
+    --btn-bloom: rgba(198, 222, 222, 0.24);
+    --btn-solid: rgba(214, 234, 234, 0.48);
+    --btn-solid-lit: rgba(232, 248, 248, 0.68);
+    --btn-solid-hit: rgba(242, 253, 253, 0.86);
   }
   /* Playing: the pointer is locked to the canvas and there is nothing to click. */
   .roster.locked { pointer-events: none; }
@@ -43,12 +57,38 @@ const STYLE = `
     letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.7rem;
   }
   .roster button {
-    font: inherit; font-size: 0.75rem; cursor: pointer; color: #101014;
-    background: rgba(255, 255, 255, 0.45); border: 1px solid rgba(255, 255, 255, 0.45);
+    font: inherit; font-size: 0.75rem; cursor: pointer; color: #0c0f11;
+    /* The header's vocabulary, carried onto the controls beside it. */
+    letter-spacing: 0.1em; text-transform: uppercase;
+    /* A fixed gradient over an animated flat colour: only background-color
+       moves between states, which interpolates cleanly and costs nothing,
+       while the sheen keeps the slab from reading as a flat wash. */
+    background-image: linear-gradient(rgba(255, 255, 255, 0.20), rgba(198, 222, 222, 0));
+    background-color: var(--btn-solid);
+    border: 1px solid var(--btn-solid);
     border-radius: 4px; padding: 0.2rem 0.6rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.40), 0 0 0 rgba(198, 222, 222, 0);
+    /* No lift here, unlike the landing and pause menu: on a control this short
+       a 1 px rise reads as jitter rather than as weight, so the press is
+       carried entirely by colour and bloom. */
+    transition:
+      background-color 160ms ease-out, border-color 160ms ease-out,
+      box-shadow 160ms ease-out;
   }
-  .roster button:hover:not([disabled]) { background: rgba(255, 255, 255, 0.65); }
-  .roster button[disabled] { opacity: 0.45; cursor: default; }
+  .roster button:hover:not([disabled]) {
+    background-color: var(--btn-solid-lit); border-color: var(--btn-solid-lit);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 12px var(--btn-bloom);
+  }
+  /* A finger gets no hover, and Invite and Copy are the two controls a phone
+     actually reaches. Faster than the hover so the press reads as mechanical. */
+  .roster button:active:not([disabled]) {
+    background-color: var(--btn-solid-hit); border-color: var(--btn-solid-hit);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 5px var(--btn-bloom);
+    transition-duration: 70ms;
+  }
+  /* These are keyboard-reachable and showed no focus at all. */
+  .roster button:focus-visible { outline: 2px solid var(--btn-edge-lit); outline-offset: 2px; }
+  .roster button[disabled] { opacity: 0.45; cursor: default; box-shadow: none; }
   /* The stage the attempt is in, in place of the button it replaces. */
   .roster .stage { color: rgba(255, 255, 255, 0.82); }
   .roster .bar {
