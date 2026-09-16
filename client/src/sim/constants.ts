@@ -81,8 +81,6 @@ export const WADE_CHEST_DEPTH = 1.3;
 export const WADE_FLOOR = 0.45;
 
 export const PLAYER_MAX_HEALTH = 100;
-/** Seconds a player stays dead. Rides the wire as uint8 tenths, so keep it under 25.5. */
-export const RESPAWN_SECONDS = 3;
 export const ENEMY_MAX_HEALTH = 40;
 
 export const ENEMY_DETECT_RANGE = 30;

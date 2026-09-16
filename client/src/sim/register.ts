@@ -249,7 +249,7 @@ export function syncItemInteractables(world: World): void {
 
 /** `isDead` without importing world.ts, which imports this module. */
 function dead(p: PlayerState): boolean {
-  return p.health <= 0 || p.respawnTimer > 0;
+  return p.health <= 0;
 }
 
 /**

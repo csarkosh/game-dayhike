@@ -9,11 +9,6 @@ const STYLE = `
     transition: opacity 1.5s ease-in;
   }
   .hud .fade.on { opacity: 1; }
-  .hud .respawn {
-    position: absolute; left: 50%; top: 42%; transform: translateX(-50%);
-    font-size: 1.6rem; font-weight: 600; text-shadow: 0 2px 6px #000;
-    color: #ff6b5e; text-align: center;
-  }
 `;
 
 export type Hud = {
@@ -22,8 +17,6 @@ export type Hud = {
   flash(text: string, ms: number): void;
   /** Darkens the whole view over 1.5 s; the status line stays readable on top. */
   fade(on: boolean): void;
-  /** Seconds until respawn, or null when alive. */
-  setRespawn(seconds: number | null): void;
   dispose(): void;
 };
 
@@ -45,11 +38,7 @@ export function createHud(container: HTMLElement): Hud {
   const status = document.createElement("div");
   status.className = "status";
 
-  const respawn = document.createElement("div");
-  respawn.className = "respawn";
-  respawn.hidden = true;
-
-  root.append(fade, status, respawn);
+  root.append(fade, status);
   container.append(style, root);
 
   let flashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -73,11 +62,6 @@ export function createHud(container: HTMLElement): Hud {
     },
     fade(on) {
       fade.classList.toggle("on", on);
-    },
-    setRespawn(seconds) {
-      const dead = seconds !== null && seconds > 0;
-      respawn.hidden = !dead;
-      respawn.textContent = dead ? `Respawning… ${Math.ceil(seconds)}` : "";
     },
     dispose() {
       cancelFlash();

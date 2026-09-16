@@ -1,11 +1,11 @@
 import type { Interactable } from "./interact.js";
 import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "./types.js";
-import { NO_ITEM, Outcome, cloneVec3, distanceSquared } from "./types.js";
+import { NO_ITEM, Outcome, cloneVec3 } from "./types.js";
 import type { Level } from "./level.js";
 import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
 import type { TrailGraph } from "./trail.js";
-import { groundSpawn, ringSample, spiralSpawn } from "./spawn.js";
+import { spiralSpawn } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
 import { buildRegister, installRegister, putDown, stepRegister, type Register } from "./register.js";
@@ -15,14 +15,7 @@ import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
 import { updateDirector } from "./director.js";
-import {
-  ENEMY_DETECT_RANGE,
-  ENEMY_POPULATION_CAP,
-  PLAYER_HALF,
-  PLAYER_MAX_HEALTH,
-  RESPAWN_SECONDS,
-  TICK_DT,
-} from "./constants.js";
+import { ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
 
 export type World = {
   state: WorldState;
@@ -44,7 +37,7 @@ export type World = {
   forest: Forest | null;
   /**
    * Whether this world owns the entities no one predicts: enemies, the spawn
-   * director, and respawn timers. The host's world does. A client's predicted
+   * director, and deaths. The host's world does. A client's predicted
    * world does not — it holds only the local player and takes everything else
    * from snapshots, so running the director there invents a second population
    * of enemies that exist nowhere else, chase the local player, and chew its
@@ -177,47 +170,6 @@ function pickSpawn(world: World): Vec3 {
   return spawns[world.state.players.size % spawns.length] as Vec3;
 }
 
-/**
- * Respawn point: a ring 15-25 m from where the player died, biased toward the
- * bearing with the fewest enemies near it.
- *
- * Not the exact spot they fell: RESPAWN_SECONDS is 3 and ENEMY_ATTACK_COOLDOWN is
- * 1.2, so whatever killed them is still standing over the corpse and ready to
- * swing. Respawning in place would be a death loop.
- */
-function pickRespawn(world: World, player: PlayerState): Vec3 {
-  const died = player.deathPos;
-  if (world.forest === null || died === null) return pickSpawn(world);
-
-  let best: Vec3 | null = null;
-  let bestThreat = Infinity;
-  const detectSq = ENEMY_DETECT_RANGE * ENEMY_DETECT_RANGE;
-
-  for (let attempt = 0; attempt < 6; attempt++) {
-    const candidate = ringSample(world.state, died, 15, 25);
-    if (candidate === null) continue;
-    const placed = groundSpawn(
-      world.boxes,
-      world.forest.seed,
-      candidate.x,
-      candidate.z,
-      PLAYER_HALF,
-    );
-    if (placed === null) continue;
-
-    let threat = 0;
-    for (const enemy of world.state.enemies.values()) {
-      if (distanceSquared(enemy.pos, placed) < detectSq) threat++;
-    }
-    if (threat < bestThreat) {
-      bestThreat = threat;
-      best = placed;
-      if (threat === 0) break;
-    }
-  }
-  return best ?? pickSpawn(world);
-}
-
 export function spawnPlayer(world: World): PlayerState {
   const id = world.state.nextEntityId++;
   const spawn = pickSpawn(world);
@@ -253,10 +205,10 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
     const cmd = inputs.get(player.id);
 
     if (isDead(player)) {
-      // Dead players do not move. This runs on both sides, unlike the respawn
-      // itself, so a client predicting its own corpse agrees with the host
-      // about where it is lying. Yaw and pitch still track the mouse: freezing
-      // the camera for three seconds reads as a hang, and view angles carry no
+      // Dead players do not move. This runs on both sides, unlike marking the
+      // death itself, so a client predicting its own corpse agrees with the
+      // host about where it is lying. Yaw and pitch still track the mouse:
+      // freezing the camera reads as a hang, and view angles carry no
       // authority anyway.
       player.vel = { x: 0, y: 0, z: 0 };
       if (cmd !== undefined) {
@@ -296,41 +248,30 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
   }
 
   updateDirector(world);
-  updateRespawns(world);
+  updateDeaths(world);
   stepRegister(world, inputs);
 }
 
 export function isDead(player: PlayerState): boolean {
-  return player.health <= 0 || player.respawnTimer > 0;
+  return player.health <= 0;
 }
 
 /**
- * Host-only, and deliberately so. A client that predicted its own death and had
- * it revoked by the next snapshot would be far worse than a 100 ms delay before
- * the screen changes, so this never runs during reconciliation replay.
+ * Host-only, and deliberately so: a client that predicted its own death and
+ * had it revoked by the next snapshot would be far worse than a 100 ms delay
+ * before the screen changes, so this never runs during reconciliation replay.
+ *
+ * Death is permanent. On the tick a player's health first reads 0 what they
+ * carried drops where they stand (the register's rule) and the spot is
+ * recorded; `deathPos` staying set is what stops this running twice, and
+ * nothing anywhere restores health.
  */
-function updateRespawns(world: World): void {
+function updateDeaths(world: World): void {
   for (const player of world.state.players.values()) {
-    if (player.respawnTimer > 0) {
-      player.respawnTimer = Math.max(0, player.respawnTimer - TICK_DT);
-      if (player.respawnTimer === 0) {
-        player.pos = cloneVec3(pickRespawn(world, player));
-        player.vel = { x: 0, y: 0, z: 0 };
-        player.health = PLAYER_MAX_HEALTH;
-        player.grounded = false;
-        player.deathPos = null;
-      }
-      continue;
-    }
-    if (player.health <= 0) {
-      // What they carried stays where they fell: the item is dropped at the
-      // corpse before the respawn timer starts, so the position it lands on
-      // is the death position.
-      putDown(world, player);
-      player.respawnTimer = RESPAWN_SECONDS;
-      player.vel = { x: 0, y: 0, z: 0 };
-      player.deathPos = cloneVec3(player.pos);
-    }
+    if (player.health > 0 || player.deathPos !== null) continue;
+    putDown(world, player);
+    player.vel = { x: 0, y: 0, z: 0 };
+    player.deathPos = cloneVec3(player.pos);
   }
 }
 

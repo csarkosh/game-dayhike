@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { Button, NO_CARRIER, NO_ITEM, Outcome, type InputCommand } from "../../src/sim/types.js";
-import { PLAYER_HALF, RESPAWN_SECONDS } from "../../src/sim/constants.js";
+import { PLAYER_HALF } from "../../src/sim/constants.js";
 import {
   CAR_RADIUS, ITEM_INTERACTABLE_BASE, ITEM_RADIUS, SIGN_OUT_TICKS,
   installRegister, pickUp, putDown, retrievedCount, signedOutCount, type Register,
@@ -84,14 +84,14 @@ describe("pick up and put down", () => {
     expect(retrievedCount(w.state)).toBe(1);
   });
 
-  it("drops the carried item where a player dies", () => {
+  it("drops the item where the player dies, and they stay dead", () => {
     const { w, p } = world();
     pickUp(w, p.id, 0);
     standAt(p, 12, 12);
     p.signOutTicks = 40;
     p.health = 0;
     tickWorld(w, new Map());
-    expect(p.respawnTimer).toBeCloseTo(RESPAWN_SECONDS, 6);
+    expect(p.respawnTimer).toBe(0);
     expect(p.carrying).toBe(NO_ITEM);
     expect(p.signOutTicks).toBe(0);
     expect(w.state.items[0]!.carrier).toBe(NO_CARRIER);

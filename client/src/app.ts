@@ -687,7 +687,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
       const state: WorldState = host.world.state;
       const self = state.players.get(host.localEntityId);
-      hud.setRespawn(self?.respawnTimer ?? null);
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncWind();
@@ -796,7 +795,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
       const state = client.renderState(performance.now());
       const self = state.players.get(client.localEntityId);
-      hud.setRespawn(self?.respawnTimer ?? null);
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncWind();
