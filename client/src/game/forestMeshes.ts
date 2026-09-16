@@ -599,7 +599,23 @@ export async function defaultBakeImpostor(
   const bakeMeshes = [clone, ...clone.getChildMeshes(false)].filter(
     (n): n is Mesh => n instanceof Mesh,
   );
+  // A mesh clone SHARES its source's material — fine for the geometry (see
+  // above), but this call runs before `adoptSpecies` attaches anything to
+  // that source material, and `adoptSpecies` is about to give it the Foliage
+  // plugin. If the bake render landed after that attach with the material
+  // still shared, the bake would render mid-sway (the render only happens
+  // once `isReadyForRendering()` gates it through, frames after this call
+  // returns) and freeze that pose into the billboard forever, tip clipping
+  // the ortho frustum framed from the undisplaced bounds below. So each bake
+  // mesh gets its OWN material clone right here, while the source is still
+  // whatever `adoptSpecies` has attached SO FAR (never Foliage, since this
+  // call happens first) — a material clone can only reconstruct a plugin
+  // Babylon's own class registry knows, throwing on anything else already
+  // attached (the same reason `adoptSpecies` splits LOD2's material before
+  // any of its own plugins attach), so cloning here, ahead of the unsafe
+  // ones, is what keeps it from ever throwing.
   for (const m of bakeMeshes) {
+    if (m.material) m.material = m.material.clone(`${m.material.name}_bake`) ?? m.material;
     m.layerMask = IMPOSTOR_BAKE_LAYER;
     m.isPickable = false;
   }
@@ -660,7 +676,10 @@ export async function defaultBakeImpostor(
     camera.dispose();
     return rtt;
   } finally {
-    clone.dispose(false, false);
+    // true: dispose the per-mesh material clones (and the textures `clone()`
+    // made for them) along with the mesh hierarchy — they are owned
+    // exclusively by this bake, never shared with the live buckets.
+    clone.dispose(false, true);
   }
 }
 
@@ -701,7 +720,7 @@ export function createForestMeshes(
 
   const casterMeshes: Mesh[] = [];
   const containers: AssetContainer[] = [];
-  const materials: PBRMaterial[] = [];
+  const materials: Material[] = [];
   const textures: Texture[] = [];
   let species: SpeciesBuckets[] | null = null;
   // Regeneration saplings, per species (index-aligned with `species`): the
@@ -851,6 +870,10 @@ export function createForestMeshes(
       let clone = lod2Clones.get(material);
       if (!clone) {
         clone = material.clone(`${material.name}_lod2`) ?? material;
+        // Owned exclusively by this split, never by LOD0/1 (which keep the
+        // shared original) — `dispose()` must walk it too, or it leaks with
+        // the species.
+        if (clone !== material) materials.push(clone);
         lod2Clones.set(material, clone);
       }
       mesh.material = clone;
@@ -871,18 +894,25 @@ export function createForestMeshes(
     // Wind on the crowns: LOD0 and LOD1 carry the foliage plugin at the tree
     // profile (whole-tree bend by height fraction squared, so trunks stay
     // planted). LOD2, the snag and the impostor plane stay rigid, and LOD1's
-    // motion reaches zero across SEAM_LOD1 so nothing pops against them (LOD0
-    // sits entirely inside that band, so sharing the one plugin instance with
-    // LOD1 — the usual case, per the split above — is correct for both). The
-    // shadow depth pass does not run the plugin: casters draw unswayed,
-    // which at a 2 % tip lean is under a shadow-map texel at the cascade
-    // distances involved.
+    // motion must reach zero no later than where its OWN bucket starts
+    // dissolving — `ringOutBand(SEAM_LOD1)`, not the fixed `SEAM_LOD1`: on a
+    // shrunk nearRadius (the low tier) that ring's out-band clips to
+    // `nearSeamBand`, ending well short of the fixed edge, and the motion
+    // weight has to clip with it or LOD1 would still be swaying at full
+    // amplitude while its own instances are dissolving out. LOD0 sits
+    // entirely inside that band either way, so sharing the one plugin
+    // instance with LOD1 — the usual case, per the split above — is correct
+    // for both. The shadow depth pass does not run the plugin, so casters
+    // draw unswayed; the tip lean this leaves undrawn ranges roughly 2.9 %
+    // of tree height at the calmest wind to 19.8 % at speed 1 — gate 4
+    // checks that crown/shadow decoupling directly, but the decision to skip
+    // a ShadowDepthWrapper here stands per spec regardless.
     for (const lod of [0, 1] as const) {
       for (const mesh of lods[lod]) {
         if (mesh.material) {
           mesh.refreshBoundingInfo();
           attachFoliage(mesh.material, FOLIAGE_PROFILES.TREE, mesh.getBoundingInfo().boundingBox.maximum.y);
-          if (lod === 1) setFoliageEdges(mesh.material, SEAM_LOD1);
+          if (lod === 1) setFoliageEdges(mesh.material, ringOutBand(SEAM_LOD1));
         }
       }
     }

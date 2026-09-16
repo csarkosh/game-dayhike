@@ -37,7 +37,7 @@ import {
 } from "../../src/game/forestField.js";
 import { COHORT_GIANT, COHORT_LOG, COHORT_SNAG, type TreeInstance } from "../../src/sim/vegetation.js";
 import { DistanceFadePlugin, fadeBands, fadeVisibility } from "../../src/game/distanceFadePlugin.js";
-import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
+import { attachFoliage, FOLIAGE_PROFILES, FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import {
   createForestMeshes,
   defaultBakeImpostor,
@@ -205,6 +205,16 @@ describe("createForestMeshes under NullEngine", () => {
   function impostorPlanes(scene: Scene): Mesh[] {
     return scene.meshes.filter((m) => m.name.startsWith("forest_impostor")) as Mesh[];
   }
+
+  /** Mirrors `forestMeshes.ts`'s internal (unexported) `ringOutBand`: a
+   * ring's own out-band, clipped to the near seam when its fixed edge would
+   * otherwise sit past `nearRadius` — the same clip "clips ring 1's out-band
+   * to the near seam at a low nearRadius" (below) exercises on the fade
+   * bands themselves. */
+  const ringOutBand = (
+    nearRadius: number,
+    s: readonly [number, number],
+  ): readonly [number, number] => (s[1] <= nearRadius ? s : seamNear(nearRadius));
 
   it("stays inside the 32-draw-call vegetation budget", () => {
     const { scene, forest } = build();
@@ -636,13 +646,33 @@ describe("createForestMeshes under NullEngine", () => {
     // LOD0 sits entirely inside SEAM_LOD1 (it hands over to LOD1 at
     // SEAM_LOD0, well short of it), so the single plugin's edges — shared
     // with LOD1's material in the stub only coincidentally, but always in
-    // production (see the shared-material test below) — is SEAM_LOD1.
+    // production (see the shared-material test below) — is
+    // `ringOutBand(SEAM_LOD1)`, the SAME clip its own bucket's fade band
+    // uses, not the raw `SEAM_LOD1`: at the default tier ring 1's fixed edge
+    // (85) is still inside `NEAR_RADIUS` (120), so the clip is a no-op and
+    // this equals SEAM_LOD1 — the low-tier case below is where it bites.
     const lod1Root = assets.giants[0]!.lods[1];
     const plugin = lod1Root.material!.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
-    expect(plugin.edges).toEqual(SEAM_LOD1);
+    expect(plugin.edges).toEqual(ringOutBand(NEAR_RADIUS, SEAM_LOD1));
     for (const plane of impostorPlanes(scene)) {
       expect(plane.material!.pluginManager?.getPlugin("Foliage") ?? null).toBeNull();
     }
+  });
+
+  it("clips LOD1's sway to the near seam too, at a low nearRadius where its bucket's out-band clips", () => {
+    // Same low tier as "clips ring 1's out-band to the near seam..." below:
+    // SEAM_LOD1's fixed edge (85) sits past LOW_NEAR (70), so the bucket's
+    // OWN out-band clips to seamNear(70) — the sway must clip with it, or
+    // LOD1 would keep swaying at full amplitude past where its instances are
+    // already dissolving into the impostor.
+    const LOW_NEAR = 70;
+    const { assets } = build(LOW_NEAR);
+    const plugin = assets.giants[0]!.lods[1].material!.pluginManager!.getPlugin(
+      "Foliage",
+    ) as FoliagePlugin;
+    expect(plugin.edges).toEqual(ringOutBand(LOW_NEAR, SEAM_LOD1));
+    expect(plugin.edges).toEqual(seamNear(LOW_NEAR));
+    expect(plugin.edges).not.toEqual(SEAM_LOD1);
   });
 
   it("splits LOD2 off a material it shares with LOD0/LOD1 before any plugin attaches, so it never inherits the sway", () => {
@@ -1120,6 +1150,45 @@ describe("defaultBakeImpostor readiness gate", () => {
     expect(extents[1]![1]).toBeCloseTo(8, 4);
     // The pose is not allowed to survive on the caller's mesh.
     expect(snag.rotationQuaternion).toBeNull();
+  });
+
+  it("clones the bake mesh's material away from the source, so a plugin `adoptSpecies` attaches to the source afterward never reaches the bake", async () => {
+    // The real bake path is unreachable through `createForestMeshes`'s stub
+    // assets: `build()` always injects a `bakeImpostor` stub in place of
+    // `defaultBakeImpostor` (NullEngine render targets lie), so the material
+    // split inside `defaultBakeImpostor` itself never runs for any test that
+    // goes through `adoptSpecies`. Exercising `defaultBakeImpostor` directly,
+    // with the same RTT-prototype spies the other tests in this describe use
+    // to make it safe under NullEngine, is the only way to cover it.
+    const { scene, mesh } = bakeScene();
+    const srcMat = new PBRMaterial("src_mat", scene);
+    mesh.material = srcMat;
+    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    let renderListAtRender: Mesh[] = [];
+    vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (
+      this: RenderTargetTexture,
+    ) {
+      renderListAtRender = [...(this.renderList ?? [])] as Mesh[];
+    });
+
+    const texture = await defaultBakeImpostor(mesh, scene);
+
+    expect(texture).not.toBeNull();
+    expect(renderListAtRender.length).toBeGreaterThan(0);
+    for (const m of renderListAtRender) expect(m.material, m.name).not.toBe(srcMat);
+
+    // Mirrors `adoptSpecies`: the bake is kicked off first, and only
+    // afterward does the source material pick up Foliage — a plugin outside
+    // Babylon's class registry, which `Material.clone()` cannot reconstruct
+    // once one is already attached (the same reason `adoptSpecies` splits
+    // LOD2's material before its own plugins attach). Since the bake mesh
+    // already has its own material clone by now, attaching Foliage to the
+    // source afterward must never reach it.
+    attachFoliage(srcMat, FOLIAGE_PROFILES.TREE, 10);
+    expect(srcMat.pluginManager?.getPlugin("Foliage")).toBeTruthy(); // the check below is not vacuous
+    for (const m of renderListAtRender) {
+      expect(m.material!.pluginManager?.getPlugin("Foliage") ?? null, m.name).toBeNull();
+    }
   });
 
   it("a gate that never opens times out to null and disposes the blank RTT", async () => {
