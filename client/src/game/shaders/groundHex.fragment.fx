@@ -3,8 +3,8 @@
 // the lattice hash and the two-octave macro noise the lush/dry tint rides on,
 // and the horizon tint's weight. Spliced by TerrainTexturePlugin at
 // CUSTOM_FRAGMENT_DEFINITIONS after its own uniform declarations, so the
-// functions below may read terrainMacro and terrainHorizon. Every constant
-// mirrors groundHexParams.ts and a lockstep test asserts they agree.
+// functions below may read terrainHorizon. Every constant mirrors
+// groundHexParams.ts and a lockstep test asserts they agree.
 //
 // The hex offsets use a sin hash that only the GPU evaluates. The macro noise
 // uses the multiply-add-fract lattice hash the CPU mirrors exactly, because the
@@ -67,24 +67,45 @@ vec3 hexWeightsSharp(vec3 w) {
   return s / max(s.x + s.y + s.z, 1.0e-9);
 }
 
-// One hex-tiled fetch of a 2D texture. dx, dy are the gradients of the plain uv.
-vec3 hexSample2D(sampler2D tex, vec2 uv, vec2 dx, vec2 dy) {
+// Everything a hex fetch needs that depends on the uv alone: the three hashed
+// uvs and the sharpened weights. Nine sin hashes and a lattice walk, so a
+// caller sampling several maps at ONE scale calls this once and hands the
+// result to as many fetchers as it likes.
+void hexSetup(vec2 uv, out vec2 u1, out vec2 u2, out vec2 u3, out vec3 s) {
   vec2 v1; vec2 v2; vec2 v3; vec3 w;
   hexTriangle(uv, v1, v2, v3, w);
-  vec3 s = hexWeightsSharp(w);
-  return textureGrad(tex, hexUv(uv, v1), dx, dy).rgb * s.x
-       + textureGrad(tex, hexUv(uv, v2), dx, dy).rgb * s.y
-       + textureGrad(tex, hexUv(uv, v3), dx, dy).rgb * s.z;
+  u1 = hexUv(uv, v1);
+  u2 = hexUv(uv, v2);
+  u3 = hexUv(uv, v3);
+  s = hexWeightsSharp(w);
+}
+
+// One hex-tiled fetch of a 2D texture from a prepared lattice. dx, dy are the
+// gradients of the plain uv.
+vec3 hexFetch2D(sampler2D tex, vec2 u1, vec2 u2, vec2 u3, vec3 s, vec2 dx, vec2 dy) {
+  return textureGrad(tex, u1, dx, dy).rgb * s.x
+       + textureGrad(tex, u2, dx, dy).rgb * s.y
+       + textureGrad(tex, u3, dx, dy).rgb * s.z;
 }
 
 // The same for one layer of a 2D array (the relief maps).
+vec3 hexFetchArray(highp sampler2DArray tex, vec2 u1, vec2 u2, vec2 u3, vec3 s, float layer, vec2 dx, vec2 dy) {
+  return textureGrad(tex, vec3(u1, layer), dx, dy).rgb * s.x
+       + textureGrad(tex, vec3(u2, layer), dx, dy).rgb * s.y
+       + textureGrad(tex, vec3(u3, layer), dx, dy).rgb * s.z;
+}
+
+// The one-shot spellings: lattice and fetch together, for a lone sample.
+vec3 hexSample2D(sampler2D tex, vec2 uv, vec2 dx, vec2 dy) {
+  vec2 u1; vec2 u2; vec2 u3; vec3 s;
+  hexSetup(uv, u1, u2, u3, s);
+  return hexFetch2D(tex, u1, u2, u3, s, dx, dy);
+}
+
 vec3 hexSampleArray(highp sampler2DArray tex, vec2 uv, float layer, vec2 dx, vec2 dy) {
-  vec2 v1; vec2 v2; vec2 v3; vec3 w;
-  hexTriangle(uv, v1, v2, v3, w);
-  vec3 s = hexWeightsSharp(w);
-  return textureGrad(tex, vec3(hexUv(uv, v1), layer), dx, dy).rgb * s.x
-       + textureGrad(tex, vec3(hexUv(uv, v2), layer), dx, dy).rgb * s.y
-       + textureGrad(tex, vec3(hexUv(uv, v3), layer), dx, dy).rgb * s.z;
+  vec2 u1; vec2 u2; vec2 u3; vec3 s;
+  hexSetup(uv, u1, u2, u3, s);
+  return hexFetchArray(tex, u1, u2, u3, s, layer, dx, dy);
 }
 
 // Mirrored exactly by latticeHash in groundHexParams.ts.
