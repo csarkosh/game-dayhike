@@ -92,8 +92,11 @@ the car.
 
 ### 3.2 The braid
 
-At a **top fork** on the stem — at stem progress 0.75–0.85, seeded, so the final climb to the crest
-is one trail — the stem splits into **2–3 strands** (seeded, weights 0.6 / 0.4 for 2 / 3) that
+At a **top fork** on the stem — at stem progress 0.75–0.85, seeded, **or where the stem enters the
+peak's disc less a margin, whichever is lower** (amended 2026-09-16: on most seeds the band lies inside
+the dome, whose skirt has no walkable ground to leave the stem laterally — measured, 76 of 227 seeds
+could not route a strand from any fork inside it), so the final climb to the crest, the whole dome, is
+one trail — the stem splits into **2–3 strands** (seeded, weights 0.6 / 0.4 for 2 / 3) that
 descend roughly in parallel, 80–200 m apart laterally, and rejoin at a **bottom fork** near the pad
 (progress 0.08–0.15). The original stem is strand A. **Rungs** connect adjacent strands at seeded
 heights: 2–3 per adjacent pair, at least 120 m of descent apart, each running between the nearest
