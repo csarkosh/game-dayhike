@@ -162,7 +162,13 @@ export function trailBankBand(d: number, rise: number, soil = 1): number {
   return smoothstep(0, TRAIL_BANK_SLOPE, rise) * (1 - smoothstep(BED, TRAIL_CORRIDOR_HALF, d)) * soil;
 }
 
-function f(n: number): string { return Number.isInteger(n) ? n.toFixed(1) : String(n); }
+/** How a shader literal is printed below: an integer gets a decimal point
+ * (GLSL floats need one), anything else prints as JS would. Exported so a
+ * test that checks a literal made it into the shader source formats it the
+ * same way the shader does, rather than assuming every value round-trips
+ * through `toFixed(1)`. */
+export function glslFloat(n: number): string { return Number.isInteger(n) ? n.toFixed(1) : String(n); }
+const f = glslFloat;
 
 /** Declarations; `terrainTexture.ts` declares `trailInfo` (x0, z0, 1/bucket, grid) beside its own uniforms. */
 export const TRAIL_FRAGMENT_DEFS = `

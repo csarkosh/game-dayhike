@@ -3,7 +3,7 @@ import {
   TRAIL_PAINT_BUCKET, TRAIL_PAINT_BUCKET_MAX, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_GRID,
   TRAIL_PAINT_MARGIN, TRAIL_PAINT_EDGE, TRAIL_DIRT_TINT, TRAIL_GRAVEL_GAIN, TRAIL_BANK_SLOPE,
   trailSegments, buildTrailTable, bucketOf, trailNearest, trailBand, bankRise, trailBankBand,
-  TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT,
+  TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT, glslFloat,
   type Segment,
 } from "../../src/game/trailPaint.js";
 import { TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, type TrailGraph } from "../../src/sim/trail.js";
@@ -147,12 +147,12 @@ describe("shader strings", () => {
     }
   });
   it("carries the mirror's constants, reads the bucket then the list, and runs fwidth before the branch", () => {
-    expect(TRAIL_FRAGMENT_PAINT).toContain(`${BED.toFixed(1)}`);
-    expect(TRAIL_FRAGMENT_PAINT).toContain(`${TRAIL_PAINT_EDGE}`);
-    expect(TRAIL_FRAGMENT_PAINT).toContain(`${TRAIL_CORRIDOR_HALF.toFixed(1)}`);
-    expect(TRAIL_FRAGMENT_PAINT).toContain(`${TRAIL_BANK_SLOPE}`);
-    expect(TRAIL_FRAGMENT_PAINT).toContain(`${TRAIL_DIRT_TINT.r}`);
-    expect(TRAIL_FRAGMENT_PAINT).toContain(`${TRAIL_GRAVEL_GAIN}`);
+    expect(TRAIL_FRAGMENT_PAINT).toContain(glslFloat(BED));
+    expect(TRAIL_FRAGMENT_PAINT).toContain(glslFloat(TRAIL_PAINT_EDGE));
+    expect(TRAIL_FRAGMENT_PAINT).toContain(glslFloat(TRAIL_CORRIDOR_HALF));
+    expect(TRAIL_FRAGMENT_PAINT).toContain(glslFloat(TRAIL_BANK_SLOPE));
+    expect(TRAIL_FRAGMENT_PAINT).toContain(glslFloat(TRAIL_DIRT_TINT.r));
+    expect(TRAIL_FRAGMENT_PAINT).toContain(glslFloat(TRAIL_GRAVEL_GAIN));
     expect(TRAIL_FRAGMENT_PAINT).toContain(`${TRAIL_PAINT_BUCKET_MAX}`);
     expect(TRAIL_FRAGMENT_PAINT).toContain(`${TRAIL_PAINT_MAX_SEGMENTS}.0`);
     expect(TRAIL_FRAGMENT_PAINT).toContain("vNormalW");
