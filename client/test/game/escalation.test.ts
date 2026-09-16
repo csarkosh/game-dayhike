@@ -104,6 +104,17 @@ describe("escalationTargets", () => {
     );
   });
 
+  it("outranks a blind near Hollow with a visible far one", () => {
+    const walled = world({ min: [90, 0, 20], max: [110, 4, 21], material: "concrete" });
+    const q = walled.p;
+    // 25 m behind the wall: blind, so its share is halved to (80-25)/70 * 0.5 ≈ 0.393.
+    spawnHollow(walled.w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: 25 }, AiState.Crawl);
+    // 30 m in the open: the wall spans x 90-110 at z 20-21, and this line never
+    // leaves z 0, so it is unobstructed — its share is (80-30)/70 ≈ 0.714, greater.
+    spawnHollow(walled.w, { x: 130, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: 0 }, AiState.Crawl);
+    expect(targetsOf(walled.w, q.id).near).toBeCloseTo((NEAR_START - 30) / (NEAR_START - NEAR_FULL), 9);
+  });
+
   it("marks a dead local player", () => {
     const { w, p } = world();
     expect(targetsOf(w, p.id).dead).toBe(false);
