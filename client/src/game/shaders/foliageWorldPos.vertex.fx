@@ -4,6 +4,18 @@
 // instance origin so a tuft moves as one), flutter (phased at the vertex so
 // blades break up), camera tilt, player bend, far sink.
 //
+// The motion weight carries the instance's own uniform scale — the Y column's
+// length, since thin instances here are uniformly scaled — because
+// foliageHeight is the MODEL bounding height while the displacement is added
+// in world space. Without it a tree drawn at 5x would lean a fifth as far, in
+// drawn terms, as one drawn at 1x. With it the tip lean is the same fraction
+// of DRAWN height at every scale: about 2.9 % at the calmest wind, 19.8 % at
+// speed 1.
+//
+// vPositionW is written BEFORE this hook, so fog, viewDirectionW and the
+// distance fade all see the undisplaced vertex — centimetres for cards, under
+// a metre for crowns, which is below what any of the three can resolve.
+//
 // COMMENT RULES as in foliage.vertex.fx.
 #ifdef FOLIAGE
 {
@@ -17,7 +29,8 @@
   float fDist = distance(fOrigin, windEye.xz);
   vec2 fCell = floor(fOrigin / FOLIAGE_CLUMP_CELL);
   float fClump = fract(fCell.x * 0.618034 + fCell.y * 0.381966);
-  float fM = foliageAmp * fH2 * foliageHeight * (1.0 - smoothstep(foliageEdges.x, foliageEdges.y, fDist));
+  float fScale = length(finalWorld[1].xyz);
+  float fM = foliageAmp * fH2 * foliageHeight * fScale * (1.0 - smoothstep(foliageEdges.x, foliageEdges.y, fDist));
   vec3 fDir = vec3(windDir.x, 0.0, windDir.y);
   float fGust = foliageGust(fOrigin, windTime + 0.6 * (fClump - 0.5));
   worldPos.xyz += fDir * (windLean + windGust * fGust) * fM;
@@ -35,15 +48,14 @@
       worldPos.xz += (fD / max(fL, 1.0e-3)) * (FOLIAGE_BEND * fH2 * fW * fW);
     }
   }
+  // The default, overwritten only where the attribute actually exists. The
+  // fragment stage treats a black rgb as "no tint data" and skips the mix.
+  vFoliage = vec4(0.0, 0.0, 0.0, 1.0);
 #ifdef FOLIAGE_TINT
   worldPos.y -= FOLIAGE_SINK * foliageHeight * smoothstep(foliageEdges.x, foliageEdges.y, fDist);
 #ifdef THIN_INSTANCES
   vFoliage = foliage;
-#else
-  vFoliage = vec4(0.0, 0.0, 0.0, 1.0);
 #endif
-#else
-  vFoliage = vec4(0.0, 0.0, 0.0, 1.0);
 #endif
   vFoliageH = fH;
   vFoliageClump = fClump;

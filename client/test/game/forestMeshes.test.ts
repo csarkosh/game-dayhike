@@ -35,7 +35,13 @@ import {
   seamNear,
   UNDERSTORY_RADIUS,
 } from "../../src/game/forestField.js";
-import { COHORT_GIANT, COHORT_LOG, COHORT_SNAG, type TreeInstance } from "../../src/sim/vegetation.js";
+import {
+  COHORT_GIANT,
+  COHORT_LOG,
+  COHORT_SNAG,
+  forestDensity,
+  type TreeInstance,
+} from "../../src/sim/vegetation.js";
 import { DistanceFadePlugin, fadeBands, fadeVisibility } from "../../src/game/distanceFadePlugin.js";
 import { attachFoliage, FOLIAGE_PROFILES, FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import {
@@ -657,6 +663,73 @@ describe("createForestMeshes under NullEngine", () => {
     for (const plane of impostorPlanes(scene)) {
       expect(plane.material!.pluginManager?.getPlugin("Foliage") ?? null).toBeNull();
     }
+  });
+
+  it("writes the ground colour and the canopy shade per understory instance", () => {
+    const { assets, forest } = build();
+    const under = assets.giants[0]!.understory!;
+    const spy = vi.spyOn(under, "thinInstanceSetBuffer");
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+
+    // Filter by kind rather than taking the last call: the understory bucket
+    // pushes three per-instance buffers now (matrix, fadeBands, foliage).
+    const matrices = spy.mock.calls.filter((c) => c[0] === "matrix").pop()![1] as Float32Array;
+    const call = spy.mock.calls.filter((c) => c[0] === "foliage").pop();
+    expect(call, "the understory bucket must upload a foliage buffer").toBeDefined();
+    const foliage = call![1] as Float32Array;
+    const count = matrices.length / 16;
+    expect(count).toBeGreaterThan(0);
+    // Four floats an instance, the stride clutterMeshes.ts uses.
+    expect(call![2]).toBe(4);
+    expect(foliage.length).toBe(4 * count);
+    for (let i = 0; i < Math.min(count, 8); i++) {
+      const x = matrices[i * 16 + 12] as number;
+      const z = matrices[i * 16 + 14] as number;
+      expect(foliage[i * 4 + 3]!).toBeCloseTo(1 - 0.5 * forestDensity(SEED, x, z), 5);
+      // RGB is the palette colour for that spot; the altitude and slope that
+      // pick it live only on the instance record, so this checks that a real
+      // colour — not the generic (0, 0, 0, 1) attribute — reached the GPU.
+      for (const c of [0, 1, 2]) {
+        expect(foliage[i * 4 + c]!).toBeGreaterThanOrEqual(0);
+        expect(foliage[i * 4 + c]!).toBeLessThanOrEqual(1);
+      }
+      expect(foliage[i * 4]! + foliage[i * 4 + 1]! + foliage[i * 4 + 2]!).toBeGreaterThan(0);
+    }
+  });
+
+  it("binds a foliage buffer on every bucket whose foliage plugin declares the attribute", () => {
+    // The architectural half of the same defect: a tinting profile makes the
+    // shader READ the attribute, so any bucket that declares it must also fill
+    // it — Babylon otherwise leaves it at the generic (0, 0, 0, 1) and the
+    // fragment stage mixes the root toward black.
+    const { scene, forest } = build();
+    const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+
+    const uploaded = new Map<Mesh, Set<string>>();
+    for (let k = 0; k < spy.mock.calls.length; k++) {
+      const mesh = spy.mock.instances[k] as Mesh;
+      let kinds = uploaded.get(mesh);
+      if (kinds === undefined) {
+        kinds = new Set<string>();
+        uploaded.set(mesh, kinds);
+      }
+      kinds.add(spy.mock.calls[k]![0] as string);
+    }
+
+    let checked = 0;
+    for (const [mesh, kinds] of uploaded) {
+      const plugin = mesh.material?.pluginManager?.getPlugin("Foliage") as FoliagePlugin | undefined;
+      if (!plugin) continue;
+      // The plugin's own contract, not a guess at which profile tints: a
+      // tinting profile is exactly one whose `getAttributes` asks for it.
+      const attributes: string[] = [];
+      plugin.getAttributes(attributes, scene, mesh);
+      if (!attributes.includes("foliage")) continue;
+      checked++;
+      expect(kinds.has("foliage"), mesh.name).toBe(true);
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 
   it("clips LOD1's sway to the near seam too, at a low nearRadius where its bucket's out-band clips", () => {

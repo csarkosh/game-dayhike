@@ -111,6 +111,13 @@ describe("foliage plugin", () => {
     expect(vertexDefs).toContain("sin(WIND_K1 * u - WIND_OMEGA1 * t + ragged) + 0.5 * sin(WIND_K2 * u - WIND_OMEGA2 * t + 1.7 * ragged)");
     // Tips move, bases anchored.
     expect(vertexWorldPos).toContain("fH * fH");
+    // The lean is a fraction of DRAWN height: the motion weight carries the
+    // instance's uniform scale (the Y column's length).
+    expect(vertexWorldPos).toContain("length(finalWorld[1].xyz)");
+    // The tint guard: a material with no tint data must never mix toward black.
+    expect(fragmentLights).toContain(
+      "float fHas = step(1.0 / 255.0, max(vFoliage.r, max(vFoliage.g, vFoliage.b)));",
+    );
     expect(fragmentLights).not.toContain("discard");
     expect(vertexDefs).not.toContain("sampler");
   });

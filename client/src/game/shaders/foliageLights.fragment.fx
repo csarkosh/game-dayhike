@@ -11,7 +11,11 @@
   const float FOLIAGE_CLUMP_LUMA = 0.16;
   surfaceAlbedo *= mix(foliageRootAO, 1.0, vFoliageH);
   float fRoot = (1.0 - vFoliageH) * (1.0 - vFoliageH);
-  float fTintW = foliageTint * fRoot * (1.0 + 0.5 * smoothstep(20.0, 80.0, vFoliageDist));
+  // Whether this draw actually carries tint data. Babylon leaves an undeclared
+  // or unfilled instance attribute at the generic (0, 0, 0, 1), which would
+  // otherwise read as "the ground here is black" and mix the root toward it.
+  float fHas = step(1.0 / 255.0, max(vFoliage.r, max(vFoliage.g, vFoliage.b)));
+  float fTintW = foliageTint * fRoot * (1.0 + 0.5 * smoothstep(20.0, 80.0, vFoliageDist)) * fHas;
   surfaceAlbedo = mix(surfaceAlbedo, vFoliage.rgb, clamp(fTintW, 0.0, 0.85));
   surfaceAlbedo *= vFoliage.a;
   surfaceAlbedo *= 1.0 + FOLIAGE_CLUMP_LUMA * (vFoliageClump - 0.5);

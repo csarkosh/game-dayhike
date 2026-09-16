@@ -84,8 +84,10 @@ import {
   COHORT_GIANT,
   COHORT_SAPLING,
   COHORT_SNAG,
+  forestDensity,
   type TreeInstance,
 } from "../sim/vegetation.js";
+import { surfaceAlbedo } from "./terrainSurface.js";
 import { elevationAt } from "../sim/terrain.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageEdges } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
@@ -244,12 +246,18 @@ function fadeBandsBuffer(count: number, bands: FadeBands): Float32Array {
 
 /** Replaces a bucket's instance buffers wholesale and enables/disables it.
  * `bands` overrides the bucket's constant fade for the buckets that vary per
- * instance; omit it and every instance gets `bucket.fade`. */
+ * instance; omit it and every instance gets `bucket.fade`. `grad` and
+ * `foliage` are the optional per-instance attributes only some buckets carry —
+ * the ground gradient the conform plugin reads, and the ground colour the
+ * foliage plugin tints the root toward. A bucket whose material declares
+ * either MUST pass it: Babylon leaves an unfilled attribute at the generic
+ * (0, 0, 0, 1). */
 function applyBucketBuffer(
   bucket: Bucket,
   buf: Float32Array,
   grad?: Float32Array,
   bands?: Float32Array,
+  foliage?: Float32Array,
 ): void {
   const count = buf.length / 16;
   const fade = bands ?? fadeBandsBuffer(count, bucket.fade);
@@ -263,6 +271,7 @@ function applyBucketBuffer(
     // checked against.
     mesh.thinInstanceSetBuffer("fadeBands", fade, 4, true);
     if (grad !== undefined) mesh.thinInstanceSetBuffer("groundGrad", grad, 2, true);
+    if (foliage !== undefined) mesh.thinInstanceSetBuffer("foliage", foliage, 4, true);
     // A zero-count bucket must be disabled outright: with `instancesCount` 0
     // Babylon's `hasThinInstances` is false and the bare bucket mesh would be
     // drawn once at the origin.
@@ -304,6 +313,28 @@ function groundGradBuffer(list: readonly TreeInstance[]): Float32Array {
     const t = list[i] as TreeInstance;
     buf[i * 2] = t.groundDx;
     buf[i * 2 + 1] = t.groundDz;
+  }
+  return buf;
+}
+
+/** Per-instance ground colour and canopy shade for the understory's `foliage`
+ * attribute — the four floats `writeFoliage` in clutterMeshes.ts writes for
+ * ground cover, from the same palette, so a fern's base and the ground it
+ * stands in can never disagree. Only the tinting profiles need it, which among
+ * the forest buckets is the understory alone: the tree profile has no ground
+ * tint and so never declares the attribute. Allocated with the matrix buffer,
+ * on the same wholesale-replace discipline. */
+function treeFoliageBuffer(seed: number, list: readonly TreeInstance[]): Float32Array {
+  const buf = new Float32Array(4 * list.length);
+  for (let i = 0; i < list.length; i++) {
+    const t = list[i] as TreeInstance;
+    const canopy = forestDensity(seed, t.x, t.z);
+    const slope = Math.hypot(t.groundDx, t.groundDz);
+    const c = surfaceAlbedo(seed, t.x, t.z, t.groundH, slope, canopy);
+    buf[i * 4] = c.r;
+    buf[i * 4 + 1] = c.g;
+    buf[i * 4 + 2] = c.b;
+    buf[i * 4 + 3] = 1 - 0.5 * canopy;
   }
   return buf;
 }
@@ -882,7 +913,7 @@ export function createForestMeshes(
 
     // Base conform and the distance dither: the LOD meshes only — understory
     // is tilted rather than conformed (its material already carries the
-    // wind plugin), and the impostor plane's own material is built in
+    // foliage plugin), and the impostor plane's own material is built in
     // `createImpostor`,
     // which attaches the dither itself.
     for (const mesh of lods.flat()) {
@@ -905,7 +936,9 @@ export function createForestMeshes(
     // instance with LOD1 — the usual case, per the split above — is correct
     // for both. The shadow depth pass does not run the plugin, so casters
     // draw unswayed; the tip lean this leaves undrawn ranges roughly 2.9 %
-    // of tree height at the calmest wind to 19.8 % at speed 1 — gate 4
+    // of DRAWN tree height at the calmest wind to 19.8 % at speed 1 — the
+    // motion weight carries the instance's own scale, so those fractions
+    // hold at every size a tree is drawn at — gate 4
     // checks that crown/shadow decoupling directly, but the decision to skip
     // a ShadowDepthWrapper here stands per spec regardless.
     for (const lod of [0, 1] as const) {
@@ -1286,7 +1319,16 @@ export function createForestMeshes(
         }
         if (sp.understory !== null) {
           const list = bands.understory.filter((t) => t.species === s);
-          applyBucketBuffer(sp.understory, treeMatrixBuffer(list, true));
+          // The understory profile tints its root toward the ground, so its
+          // material declares the `foliage` attribute and the bucket has to
+          // fill it — see `applyBucketBuffer`.
+          applyBucketBuffer(
+            sp.understory,
+            treeMatrixBuffer(list, true),
+            undefined,
+            undefined,
+            treeFoliageBuffer(seed, list),
+          );
         }
         const slot = slotBase + s;
         fillImpostor(sp.impostor, lattice[slot] as TreeInstance[], fill[slot] as TreeInstance[], x, z);
