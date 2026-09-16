@@ -14,7 +14,9 @@
 
 The simulation runs at a fixed 60 Hz from a seeded RNG. The world is derived from the level id and seed alone, so every peer builds the same world locally and nothing about it crosses the wire. A test serializes two runs of the world from identical inputs and asserts they match; client prediction depends on it.
 
-The register (`client/src/sim/register.ts`) follows the same split. The missing hikers' sites and names, the sign posts at the trail's forks and the wall at the road's edge are all derived from the seed and the trail graph on every peer; the items, who carries what, the sign-out hold and the match outcome are host state that rides every snapshot (protocol 3), and the wall clamps inside the movement step so a client predicts it exactly.
+The register (`client/src/sim/register.ts`) follows the same split. The missing hikers' sites and names, the sign posts at the trail's forks and the wall at the road's edge are all derived from the seed and the trail graph on every peer; the items, who carries what, the sign-out hold and the match outcome are host state that rides every snapshot (protocol 4), and the wall clamps inside the movement step so a client predicts it exactly.
+
+The Hollow (`client/src/sim/hollow.ts`) is one `EnemyState` with three `AiState` values — Crawl, Hunt and Merge — so the snapshot's existing enemy channel carries it unchanged, no new wire shape needed. Its rules and the routes it walks (`client/src/sim/trailRoute.ts`) run host-only, inside the same authoritative tick as everything else in `sim/`. Each player's stare at it rides the snapshot as one byte. Death, on every level, is permanent: there is no respawn.
 
 ## Rendering
 
