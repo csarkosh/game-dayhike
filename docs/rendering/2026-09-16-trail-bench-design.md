@@ -259,3 +259,29 @@ core), then the 0.4 m edge octave. If the sink reads as a trench at the 1 m ring
 - A wear map along the stem weighted by distance from the trailhead (the near end is walked
   most), once the graph exposes a walked-count per edge.
 - Blade clumps (sub-project 3) should respect the trampled band the same way the cards do.
+
+## 12. Amendments (from the browser gates)
+
+**§5, the bench colours.** The core and margin colours take the ground's vertex colour at
+`TRAIL_BENCH_SHADE = 0.6` (`mix(1, vertexColour, 0.6)`) instead of the material's white constant:
+at 1 the bench went black under canopy and the core/margin contrast was lost, at 0 the margin
+read as a chalk line in the open. Retuned tints: `TRAIL_MARGIN_TINT = (0.40, 0.36, 0.30)` at
+`TRAIL_MARGIN_GAIN = 0.75`, `TRAIL_CORE_TINT = (0.30, 0.26, 0.21)` at `TRAIL_CORE_GAIN = 0.5`, so
+the margin sits at about twice the core's brightness; `TRAIL_TRAMPLE_TINT = (0.90, 0.88, 0.80)`
+(the original read as a yellow ribbon).
+
+**§6, the lean axis.** The lean is a rotation about `(az, 0, −ax)`, the axis for which the card's
+top moves along the away direction `(ax, az)`; the opposite axis leans the grass into the bed. A
+matrix-level test pins it.
+
+**§6, litter distance.** The class radius is 40 m in the clutter field's radius table, so litter
+has the field's ordinary near and far bands out to 40 m rather than a near band only. A litter
+instance can jitter up to about 0.5 m past the 1.6 m fade because its gate is evaluated at the
+cell centre and, unlike boulders, it rejects nothing at the instance — a pebble at 2.1 m is fine.
+
+**§4, the level id.** The `passHash` pin in the tests moved twice (the sink and width; then the
+litter class and the grass gate) and is re-pinned with the reasons; a test also pins that the id
+differs from the pre-release one.
+
+**§7, cost.** Frame time at 4× pixels is within ±0.4 ms of the base on the trail and the meadow
+in both orders; the low tier at 1.5× scaling stays on the 60 Hz cap.
