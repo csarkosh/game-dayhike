@@ -21,7 +21,7 @@
  */
 import { hash3 } from "./field.js";
 import { cellAt, TRAIL_GRID_CELL, type TrailGrid, type GroundFn } from "./trailGrid.js";
-import { type TrailEdge, type TrailNode } from "./trail.js";
+import { trailCorridorD, type TrailEdge, type TrailNode } from "./trail.js";
 import { type Feature } from "./features.js";
 import {
   planPath, splitAt, markPath, routeTo, forEachCellNear, featureReach, stemGeometry, sampleStem,
@@ -30,9 +30,38 @@ import {
 
 /** P(two strands); otherwise three. */
 export const BRAID_STRANDS_WEIGHT_2 = 0.6;
-/** The top fork's stem progress band: the last climb to the crest is one trail. */
+/** The top fork's drawn stem progress band: the last climb to the crest is one trail. */
 export const BRAID_TOP_MIN = 0.75;
 export const BRAID_TOP_MAX = 0.85;
+/**
+ * How far below the peak disc's entry the top fork sits when the drawn band is
+ * inside the dome (m of stem). The whole dome is then the one trail the band's
+ * own reason asks for. Amended 2026-09-16 (spec §3.2): the band lies inside the
+ * dome on most seeds, and the skirt has no walkable ground for a strand to
+ * leave the stem on — measured, 76 of 227 seeds could route a strand from no
+ * fork anywhere in the band.
+ */
+export const BRAID_PEAK_MARGIN = 40;
+/** The top fork never drops below this stem progress, dome or no dome. */
+export const BRAID_TOP_FLOOR = 0.5;
+/** The ladder's rung spacing below the top fork (m of stem). */
+export const BRAID_LADDER_STEP = 60;
+/** The least stem a braid may span: the two forks must leave Task 4's rungs room. */
+export const BRAID_MIN_SPAN = 240;
+/**
+ * The most a strand's bed may stand off the ground it crosses (m).
+ *
+ * A STRAND IS OPTIONAL, SO IT CAN BE HELD TO THIS (2026-09-16, fix round 2).
+ * `trailBed.test.ts`'s flush gate caps |composed − ground| along every
+ * centreline at 2 m over the 227-seed sweep, and the stem and the loops sit
+ * where they sit — they have to exist, and a bed cutting a ridgelet narrower
+ * than the profile's own 8 m kernel is the documented tail (worst non-strand
+ * sample on this sweep: 1.784 m). A strand has no such claim: when its bed
+ * would not sit on the ground, the next rung or the other side is tried and
+ * the plan shrinks. Measured: the first strand below the dome on seed
+ * -663635494 cut 2.059 m through the skirt's foot, 3 % over the gate.
+ */
+export const BRAID_FLUSH_MAX = 1.5;
 /** The bottom fork's stem progress band: the strands rejoin above the pad. */
 export const BRAID_BOTTOM_MIN = 0.08;
 export const BRAID_BOTTOM_MAX = 0.15;
@@ -49,6 +78,7 @@ export const BRAID_SALT = 0xb2a1d;
 
 export const BRAID_TUNABLES: Readonly<Record<string, number>> = {
   BRAID_STRANDS_WEIGHT_2, BRAID_TOP_MIN, BRAID_TOP_MAX, BRAID_BOTTOM_MIN, BRAID_BOTTOM_MAX,
+  BRAID_PEAK_MARGIN, BRAID_TOP_FLOOR, BRAID_LADDER_STEP, BRAID_MIN_SPAN, BRAID_FLUSH_MAX,
   BRAID_LATERAL_MIN, BRAID_LATERAL_MAX, BRAID_OFF_BAND_COST, BRAID_END_FREE, BRAID_ARRIVE_CELLS, BRAID_SALT,
 };
 
@@ -104,6 +134,49 @@ export function stemPose(samples: readonly StemSample[], x: number, z: number): 
     return { arc: s.arc, lat: Math.sqrt((x - s.x) * (x - s.x) + (z - s.z) * (z - s.z)) };
   }
   return { arc: bestArc, lat: bestLat };
+}
+
+/**
+ * Where the stem enters the peak's disc, less BRAID_PEAK_MARGIN of stem: the
+ * highest the top fork may sit. `Infinity` when there is no peak (a fallback
+ * world), so the drawn band stands.
+ *
+ * Walked from the PAD, so it is the first crossing of the disc's rim, not the
+ * last — a stem that grazes the disc and comes out again still forks below it.
+ */
+export function peakEntryArc(samples: readonly StemSample[], features: readonly Feature[]): number {
+  for (const f of features) {
+    if (f.kind !== "peak") continue;
+    for (const s of samples) {
+      const dx = s.x - f.x, dz = s.z - f.z;
+      if (Math.sqrt(dx * dx + dz * dz) <= f.radius) return s.arc - BRAID_PEAK_MARGIN;
+    }
+  }
+  return Infinity;
+}
+
+/**
+ * The most the bed of `edges` stands off the ground under it, sampled at 1 m
+ * along each centreline — the same measure as `trailBed.test.ts`'s flush gate,
+ * over the corridor union of the whole planned graph.
+ */
+export function maxFlushOff(state: GraphState, ground: GroundFn, edges: readonly number[]): number {
+  let worst = 0;
+  for (const ei of edges) {
+    const e = state.edges[ei] as TrailEdge;
+    const a = state.nodes[e.a] as TrailNode, b = state.nodes[e.b] as TrailNode;
+    const L = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
+    const n = Math.max(1, Math.ceil(L));
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+      const g = ground(x, z);
+      const d = trailCorridorD(state.nodes, state.edges, x, z, g).h - g.h;
+      const ad = d < 0 ? -d : d;
+      if (ad > worst) worst = ad;
+    }
+  }
+  return worst;
 }
 
 /** The nearest sample by arc. */
@@ -214,10 +287,13 @@ function forksFor(
  * in question is the PEAK'S DOME: the drawn top fork sits at a median 0.57 of
  * the peak radius from its centre, where the only walkable ground is the line
  * the stem's own search threaded. So a strand tries, in order, each top fork
- * in a three-rung ladder (the drawn arc, then the band's two ends) and, at
- * each rung, its own side then the side no strand has taken. Measured over the
- * same sweep, that unlocks 118 of the 233 failed attempts. The bottom fork is
- * not laddered: redrawing it unlocked 6.
+ * in a three-rung ladder (the top fork, then BRAID_LADDER_STEP down the stem
+ * twice) and, at each rung, its own side then the side no strand has taken.
+ * The bottom fork is not laddered: redrawing it unlocked 6 of the 233.
+ *
+ * The dome itself is answered above the ladder, by where the top fork starts:
+ * `peakEntryArc` puts it below the disc (spec §3.2, amended after this
+ * measurement).
  */
 export function buildStrands(state: GraphState, ctx: BraidCtx): {
   state: GraphState; strands: Strand[]; topArc: number; bottomArc: number; samples: StemSample[];
@@ -226,13 +302,22 @@ export function buildStrands(state: GraphState, ctx: BraidCtx): {
   const geom = stemGeometry(state, summit);
   const samples = sampleStem(state, geom);
   const count = braidDraw(seed, 0, 0, 1) < BRAID_STRANDS_WEIGHT_2 ? 2 : 3;
-  const topArc = geom.stemLen * braidDraw(seed, 1, BRAID_TOP_MIN, BRAID_TOP_MAX);
   const bottomArc = geom.stemLen * braidDraw(seed, 2, BRAID_BOTTOM_MIN, BRAID_BOTTOM_MAX);
+  // THE DRAWN BAND OR BELOW THE DOME, WHICHEVER IS LOWER (spec §3.2, amended
+  // 2026-09-16). The drawn band lies inside the peak's disc on most seeds, and
+  // the dome's skirt has no walkable ground for a strand to leave the stem on;
+  // the fork therefore drops to BRAID_PEAK_MARGIN of stem below where the stem
+  // enters the disc, and never below BRAID_TOP_FLOOR of the way up.
+  const drawnArc = geom.stemLen * braidDraw(seed, 1, BRAID_TOP_MIN, BRAID_TOP_MAX);
+  const floorArc = geom.stemLen * BRAID_TOP_FLOOR;
+  const entryArc = peakEntryArc(samples, ctx.features);
+  const topArc = Math.max(floorArc, Math.min(drawnArc, entryArc));
   const none = { state, strands: [] as Strand[], topArc, bottomArc, samples };
-  // The ladder: the drawn arc first, then the band's ends. Both ends stay
-  // inside [BRAID_TOP_MIN, BRAID_TOP_MAX] — this redraws the fork, it does not
-  // widen the band.
-  const topLadder = [topArc, geom.stemLen * BRAID_TOP_MIN, geom.stemLen * BRAID_TOP_MAX];
+  // The ladder: the top fork, then BRAID_LADDER_STEP down the stem twice. A
+  // rung below the floor, or one that leaves less than BRAID_MIN_SPAN of stem
+  // between the forks (Task 4's rungs need the room), is not a fork at all.
+  const topLadder = [topArc, topArc - BRAID_LADDER_STEP, topArc - 2 * BRAID_LADDER_STEP]
+    .filter((a) => a >= floorArc && a - bottomArc >= BRAID_MIN_SPAN);
 
   const firstSide: 1 | -1 = braidDraw(seed, 3, 0, 1) < 0.5 ? 1 : -1;
   const built: Strand[] = [];
@@ -298,6 +383,8 @@ export function buildStrands(state: GraphState, ctx: BraidCtx): {
         const plan = planPath(cand.state, r.best.cells, grid, frame, H);
         if (plan.added.length === 0) continue;
         for (const ei of plan.added) (plan.state.edges[ei] as TrailEdge).kind = "strand";
+        // The bed has to sit on the ground, not cut through it: see BRAID_FLUSH_MAX.
+        if (maxFlushOff(plan.state, ground, plan.added) > BRAID_FLUSH_MAX) continue;
         markPath(r.best.cells, grid, frame, tree, treeEdges);
         base = plan.state;
         forkArc = tArc;

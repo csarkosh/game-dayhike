@@ -7,7 +7,8 @@ import { describe, it, expect } from "vitest";
 import { buildTrail } from "../../src/sim/trailBuild.js";
 import { segmentSegmentDistanceSq, segmentDistance, TRAIL_EDGE_MIN_GAP, type TrailGraph } from "../../src/sim/trail.js";
 import { stemProgress } from "../../src/sim/trailRoute.js";
-import { BRAID_TOP_MIN, BRAID_TOP_MAX, BRAID_BOTTOM_MIN, BRAID_BOTTOM_MAX, BRAID_LATERAL_MIN } from "../../src/sim/trailBraid.js";
+import { BRAID_TOP_MAX, BRAID_TOP_FLOOR, BRAID_BOTTOM_MIN, BRAID_BOTTOM_MAX, BRAID_LATERAL_MIN } from "../../src/sim/trailBraid.js";
+import { TRAIL_GRID_CELL } from "../../src/sim/trailGrid.js";
 import { flatFrame } from "./helpers/buildFrames.js";
 
 /** A seed whose braid draw gives two strands on the flat frame, and one that gives three
@@ -78,16 +79,31 @@ describe("buildStrands on the flat frame", () => {
     expect(strandComponents(three)).toHaveLength(2);
   });
 
-  it("runs every strand from a top fork in the top band to a bottom fork in the bottom band", () => {
+  /**
+   * The top fork is the drawn band OR below the peak's disc, whichever is lower
+   * (spec §3.2, amended 2026-09-16), and the ladder may take it lower still — so
+   * the band check is the two invariants that survive the amendment: the fork is
+   * never above the drawn band and never below BRAID_TOP_FLOOR, and it is
+   * OUTSIDE the peak's disc, which is the whole point of the amendment. The
+   * bottom fork keeps its own band.
+   */
+  it("runs every strand from a top fork below the dome to a bottom fork in the bottom band", () => {
     for (const g of [two, three]) {
+      const peak = g.features.find((f) => f.kind === "peak");
       for (const { forks } of strandComponents(g)) {
         expect(forks).toHaveLength(2);
         const ps = forks.map((f) => 1 - stemProgress(g, g.nodes[f]!.x, g.nodes[f]!.z)).sort((p, q) => p - q);
         const [lo, hi] = ps as [number, number];
-        expect(hi).toBeGreaterThanOrEqual(BRAID_TOP_MIN - 0.03);
         expect(hi).toBeLessThanOrEqual(BRAID_TOP_MAX + 0.03);
+        expect(hi).toBeGreaterThanOrEqual(BRAID_TOP_FLOOR - 0.03);
         expect(lo).toBeGreaterThanOrEqual(BRAID_BOTTOM_MIN - 0.03);
         expect(lo).toBeLessThanOrEqual(BRAID_BOTTOM_MAX + 0.03);
+        if (peak !== undefined) {
+          const top = g.nodes[forks[forks.length - 1]!]!;
+          const bottom = g.nodes[forks[0]!]!;
+          const high = 1 - stemProgress(g, top.x, top.z) > 1 - stemProgress(g, bottom.x, bottom.z) ? top : bottom;
+          expect(Math.hypot(high.x - peak.x, high.z - peak.z)).toBeGreaterThanOrEqual(peak.radius - TRAIL_GRID_CELL);
+        }
       }
     }
   });
