@@ -7,9 +7,10 @@ import { clipForEnemy, EntityViews } from "../../src/game/entityViews.js";
 import { LAMP_INTENSITY, LIGHT_BUDGET, budgetLights, createHeadlamp, setLamp } from "../../src/game/headlamp.js";
 import { AiState } from "../../src/sim/types.js";
 import type { PlayerState, WorldState } from "../../src/sim/types.js";
-import { MAX_PLAYERS, PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
+import { ENEMY_HALF, MAX_PLAYERS, PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
 import { NO_CARRIER, NO_ITEM, Outcome, type ItemState } from "../../src/sim/types.js";
 import { ITEM_RADIUS } from "../../src/sim/register.js";
+import { HOLLOW_HEIGHT } from "../../src/sim/hollow.js";
 
 describe("clipForEnemy", () => {
   it("plays idle when standing around", () => {
@@ -173,5 +174,26 @@ describe("EntityViews items", () => {
     expect(scene.getMeshByName("item_0")!.isEnabled()).toBe(false);
     views.dispose();
     expect(ITEM_RADIUS).toBe(0.35);
+  });
+
+  it("draws a Hollow as a black, unlit, fog-free capsule and never as a chaser", () => {
+    const views = new EntityViews(scene);
+    const world = state();
+    world.enemies.set(7, {
+      id: 7, pos: { x: 1, y: 0.9, z: 2 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0.5, health: 40, ai: AiState.Crawl,
+      targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
+      route: [], routeAt: 0, stemDir: -1, approach: false, seen: false,
+    });
+    views.sync(world, 99, 0);
+    const mesh = scene.getMeshByName("hollow_7")!;
+    expect(mesh).not.toBeNull();
+    expect(scene.getMeshByName("enemy_7")).toBeNull();
+    const material = mesh.material as PBRMaterial;
+    expect(material.fogEnabled).toBe(false);
+    expect(material.unlit).toBe(true);
+    expect(mesh.rotation.y).toBeCloseTo(0.5, 9);
+    // The hull centre is 0.9 m up; the 2.6 m capsule's centre sits 0.4 m higher so its feet meet the hull's.
+    expect(mesh.position.y).toBeCloseTo(0.9 + (HOLLOW_HEIGHT / 2 - ENEMY_HALF.y), 6);
+    views.dispose();
   });
 });

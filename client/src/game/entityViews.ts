@@ -12,6 +12,7 @@ import { AiState, NO_CARRIER } from "../sim/types.js";
 import { ITEM_RADIUS } from "../sim/register.js";
 import { ENEMY_HALF, PLAYER_HALF, PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { aimDirection } from "../sim/view.js";
+import { HOLLOW_HEIGHT, isHollowState } from "../sim/hollow.js";
 import { EnemyModelPool, type ClipKind, type EnemyInstance } from "./enemyModel.js";
 import { createHeadlamp, setLamp } from "./headlamp.js";
 import { LAMP_DEFAULT, type LampState } from "./lampParams.js";
@@ -57,6 +58,7 @@ export class EntityViews {
   private readonly playerMaterial: PBRMaterial;
   private readonly enemyMaterial: PBRMaterial;
   private readonly itemMaterial: PBRMaterial;
+  private readonly hollowMaterial: PBRMaterial;
   readonly models = new EnemyModelPool();
 
   constructor(private readonly scene: Scene) {
@@ -83,6 +85,12 @@ export class EntityViews {
     this.itemMaterial.albedoColor = new Color3(0.85, 0.8, 0.7);
     this.itemMaterial.metallic = 0;
     this.itemMaterial.roughness = 0.9;
+    // The Hollow's placeholder: black, unlit, and outside the fog, so it stays
+    // a silhouette at any distance in mist — findable in hindsight from far off.
+    this.hollowMaterial = new PBRMaterial("mat_hollow", scene);
+    this.hollowMaterial.albedoColor = new Color3(0, 0, 0);
+    this.hollowMaterial.unlit = true;
+    this.hollowMaterial.fogEnabled = false;
   }
 
   /**
@@ -129,6 +137,21 @@ export class EntityViews {
     }
 
     for (const [id, enemy] of state.enemies) {
+      if (isHollowState(enemy.ai)) {
+        // The capsule is taller than the hull: lift it so both stand on the same feet.
+        const hollowY = enemy.pos.y + (HOLLOW_HEIGHT / 2 - ENEMY_HALF.y);
+        const view = this.ensure(
+          this.enemies,
+          id,
+          { x: enemy.pos.x, y: hollowY, z: enemy.pos.z },
+          () => this.makeHollow(`hollow_${id}`),
+        );
+        view.node.setEnabled(true);
+        this.advance(view, enemy.pos.x, hollowY, enemy.pos.z, clamped);
+        view.node.rotation.y = enemy.yaw;
+        continue;
+      }
+
       const instance = this.models.acquire(id);
       if (instance !== null) {
         const entry = this.ensureModel(id, instance, enemy.pos.x, enemy.pos.y - ENEMY_HALF.y, enemy.pos.z);
@@ -251,6 +274,12 @@ export class EntityViews {
     return mesh;
   }
 
+  private makeHollow(name: string): Mesh {
+    const mesh = MeshBuilder.CreateCapsule(name, { height: HOLLOW_HEIGHT, radius: ENEMY_HALF.x }, this.scene);
+    mesh.material = this.hollowMaterial;
+    return mesh;
+  }
+
   dispose(): void {
     for (const view of this.players.values()) view.node.dispose();
     for (const view of this.enemies.values()) view.node.dispose();
@@ -262,5 +291,6 @@ export class EntityViews {
     this.enemyModels.clear();
     this.lamps.clear();
     this.models.dispose();
+    this.hollowMaterial.dispose();
   }
 }

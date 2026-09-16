@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   agx, gradeRecordUnder, whitePointMatrix, hueToRgb, IDENTITY,
-  HALATION_BASE, ABERRATION_BASE, PURKINJE_MAX, AGX_MIN_EV, AGX_MAX_EV,
+  HALATION_BASE, ABERRATION_BASE, PURKINJE_MAX, AGX_MIN_EV, AGX_MAX_EV, STARE_VIGNETTE,
 } from "../../src/game/gradeParams.js";
 import { WEATHER_PRESETS, exposureUnder, vignetteWeightUnder, VIGNETTE_WEIGHT_BASE } from "../../src/game/weather.js";
 import { sunPositionAt } from "../../src/game/sky.js";
@@ -98,5 +98,22 @@ describe("gradeRecordUnder", () => {
     const g = gradeRecordUnder(EERIE, 17, 1);
     expect(g.shadows.density).toBeGreaterThan(0);
     expect(g.midtones.density).toBeGreaterThan(g.highlights.density);
+  });
+});
+
+describe("the stare", () => {
+  it("leaves the record untouched at 0, darkens monotonically, and is black at 1", () => {
+    expect(gradeRecordUnder(CLEAR, 12, 1, 0, 0)).toEqual(gradeRecordUnder(CLEAR, 12, 1));
+    let lastExposure = Infinity;
+    let lastVignette = -Infinity;
+    for (const stare of [0, 0.25, 0.5, 0.75, 1]) {
+      const r = gradeRecordUnder(EERIE, 12, 1, 0, stare);
+      expect(r.exposure).toBeLessThanOrEqual(lastExposure);
+      expect(r.vignetteWeight).toBeGreaterThanOrEqual(lastVignette);
+      lastExposure = r.exposure;
+      lastVignette = r.vignetteWeight;
+    }
+    expect(gradeRecordUnder(EERIE, 12, 1, 0, 1).exposure).toBe(0);
+    expect(gradeRecordUnder(EERIE, 12, 1, 0, 1).vignetteWeight).toBeCloseTo(gradeRecordUnder(EERIE, 12, 1).vignetteWeight + STARE_VIGNETTE, 9);
   });
 });

@@ -684,6 +684,7 @@ export function createRenderer(
   const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath });
   const post = createPost(scene, camera, postFeatures);
   let unsettle = 1;
+  let stare = 0;
 
   // A forest draws terrain instead of brushes. Guarded here rather than relying on
   // the caller to pass an empty level: app.ts passes the parsed sandbox01 so it
@@ -914,7 +915,8 @@ export function createRenderer(
 
       applyWetness(scene, weather);
       atmosphere.update(weather, lighting.hour);
-      post.update(weather, lighting.hour, unsettle);
+      stare = state.players.get(localId)?.stare ?? 0;
+      post.update(weather, lighting.hour, unsettle, stare);
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to

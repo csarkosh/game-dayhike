@@ -24,7 +24,7 @@ import finishFragment from "./shaders/finish.fragment.fx?raw";
 
 export type Post = {
   readonly features: PostFeatures;
-  update(weather: WeatherParams, hour: number, unsettle: number): void;
+  update(weather: WeatherParams, hour: number, unsettle: number, stare: number): void;
   dispose(): void;
 };
 
@@ -189,9 +189,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
 
   return {
     features,
-    update(weather, hour, unsettle) {
+    update(weather, hour, unsettle, stare) {
       const seconds = (performance.now() - start) / 1000;
-      record = gradeRecordUnder(weather, hour, unsettle, seconds);
+      record = gradeRecordUnder(weather, hour, unsettle, seconds, stare);
       finishRecord = finishUnder(weather, unsettle, seconds);
       if (aberration !== null) {
         aberration.aberrationAmount = record.aberrationAmount;

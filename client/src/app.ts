@@ -47,7 +47,7 @@ import type { Transport } from "./net/transport.js";
 import { isDesktop, isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { createRegisterPanel, registerPanelModel } from "./game/registerPanel.js";
-import { roadLine, WIN_LINE } from "./game/registerHud.js";
+import { DEATH_LINE, LOSS_LANDING_MS, LOSS_LINE, roadLine, WIN_LINE } from "./game/registerHud.js";
 import { InteractKind, SIGN_OUT_TICKS } from "./sim/register.js";
 import { signPosts } from "./sim/signs.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
@@ -334,7 +334,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
   /** Resolves and paints the prompt. Both loops, after `renderer.sync`. */
   function syncPrompt(world: World, self: PlayerState | undefined): void {
-    if (self === undefined || freecam !== null || !input.engaged) {
+    if (self === undefined || self.health <= 0 || freecam !== null || !input.engaged) {
       prompt.sync(null);
       return;
     }
@@ -424,17 +424,33 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     ambient.setPen(self !== undefined && self.signOutTicks > 0);
   }
 
-  let won = false;
-  /** The win, once: the view fades to one line and the match returns to the landing. */
-  function syncOutcome(state: WorldState): void {
-    if (won || state.outcome !== Outcome.Won) return;
-    won = true;
+  let dead = false;
+  /**
+   * Death, once: input off, the book closed, the view faded onto the passage.
+   * The session stays and the scene keeps rendering under the fade — the
+   * pause menu opens on Escape as ever, and preview mode will lift the fade.
+   */
+  function syncDeath(self: PlayerState | undefined): void {
+    if (dead || self === undefined || self.health > 0) return;
+    dead = true;
     input.setSuppressed(true);
     registerPanel.hide();
     hud.fade(true);
-    hud.setStatus(WIN_LINE);
+    hud.setStatus(DEATH_LINE);
+  }
+
+  let ended = false;
+  /** The end, once: the view fades to one line and the match returns to the landing. */
+  function syncOutcome(state: WorldState): void {
+    if (ended || state.outcome === Outcome.Playing) return;
+    ended = true;
+    const won = state.outcome === Outcome.Won;
+    input.setSuppressed(true);
+    registerPanel.hide();
+    hud.fade(true);
+    hud.setStatus(won ? WIN_LINE : LOSS_LINE);
     if (landingTimer !== null) clearTimeout(landingTimer);
-    landingTimer = setTimeout(navigateToLanding, 5000);
+    landingTimer = setTimeout(navigateToLanding, won ? 5000 : LOSS_LANDING_MS);
   }
 
   /** Advances and paints the touch layer. Both loops, after `renderer.sync`. */
@@ -695,6 +711,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       if (cmd !== null) syncBook(host.world, self, cmd, state);
       syncRoadLine(self, state);
       syncRegisterAudio(state, self);
+      syncDeath(self);
       syncOutcome(state);
       // True exactly when `sync` took its player-following branch, which is
       // the only case in which `renderer.camera.position` is an eye position
@@ -803,6 +820,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       if (cmd !== null) syncBook(client.world, self, cmd, state);
       syncRoadLine(self, state);
       syncRegisterAudio(state, self);
+      syncDeath(self);
       syncOutcome(state);
       // See the host loop: a pending freecam waits for this.
       cameraOnPlayer = self !== undefined && freecam === null;

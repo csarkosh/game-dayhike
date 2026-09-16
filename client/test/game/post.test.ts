@@ -28,8 +28,8 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       const post = createPost(scene, camera, postFeaturesFor(tier, fxSupportedBy(engine)));
       expect(post.features.pipeline).toBe(false);
       expect(camera._postProcesses.length).toBe(0);
-      post.update(WEATHER_PRESETS.eerie, 17, 1);
-      post.update(WEATHER_PRESETS.clear, 12, 0);
+      post.update(WEATHER_PRESETS.eerie, 17, 1, 0);
+      post.update(WEATHER_PRESETS.clear, 12, 0, 0);
       post.dispose();
       camera.dispose();
     }
@@ -38,11 +38,11 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
   it("with the material path, update writes the grade record onto the image processing config", () => {
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
     const post = createPost(scene, camera, postFeaturesFor("low", false));
-    post.update(WEATHER_PRESETS.eerie, 17, 1);
+    post.update(WEATHER_PRESETS.eerie, 17, 1, 0);
     const ip = scene.imageProcessingConfiguration;
     expect(ip.vignetteEnabled).toBe(true);
     expect(ip.colorCurves?.midtonesDensity ?? 0).toBeGreaterThan(0);
-    post.update(WEATHER_PRESETS.clear, 12, 1);
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0);
     expect(ip.colorCurves?.midtonesDensity).toBe(0);
     post.dispose();
   });
@@ -50,7 +50,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
   it("writes the split-tone grade onto colorCurves when weather changes", () => {
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
     const post = createPost(scene, camera, postFeaturesFor("low", false));
-    post.update(WEATHER_PRESETS.eerie, 12, 1);
+    post.update(WEATHER_PRESETS.eerie, 12, 1, 0);
     const c = scene.imageProcessingConfiguration.colorCurves;
     const g = gradeUnder(WEATHER_PRESETS.eerie);
     expect(c?.globalSaturation).toBe(saturationUnder(WEATHER_PRESETS.eerie));
@@ -69,7 +69,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
   it("leaves the colour filter inert under clear — the sunny frame is untouched", () => {
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
     const post = createPost(scene, camera, postFeaturesFor("low", false));
-    post.update(WEATHER_PRESETS.clear, 12, 1);
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0);
     const c = scene.imageProcessingConfiguration.colorCurves;
     expect(c?.shadowsDensity).toBe(0);
     expect(c?.midtonesDensity).toBe(0);

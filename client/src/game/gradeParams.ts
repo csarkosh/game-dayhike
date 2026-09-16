@@ -165,6 +165,8 @@ export const VIGNETTE_COLOUR: Rgb = { r: 0.01, g: 0.02, b: 0.03 };
  * screen pulse). Zero amplitude at clear, so the vignette holds still there. */
 export const VIGNETTE_PULSE = 0.12;
 export const VIGNETTE_PULSE_PERIOD = 7;
+/** Vignette weight added at a full stare, on top of the weather's. */
+export const STARE_VIGNETTE = 3;
 
 // ---- World-side sickness. Browser-tunable; `clear` identity is not. ----
 /** The green-grey the shadows lift toward on the top dread plateau (the Alan
@@ -205,9 +207,10 @@ function tint(hue: number, density: number, saturation: number, mood: number): T
 /**
  * The grade pass's record. `timeSeconds` only drives the vignette's breath;
  * it defaults to 0 so callers that do not animate (and every identity test)
- * see the resting weight.
+ * see the resting weight. `stare` (hollow.ts) darkens the image toward black
+ * at 1 and closes the vignette.
  */
-export function gradeRecordUnder(w: WeatherParams, hour: number, unsettle: number, timeSeconds = 0): GradeRecord {
+export function gradeRecordUnder(w: WeatherParams, hour: number, unsettle: number, timeSeconds = 0, stare = 0): GradeRecord {
   const altitude = sunPositionAt(hour).y;
   const lens = dreadLensUnder(w) * clamp01(unsettle);
   const world = dreadWorldUnder(w);
@@ -216,8 +219,9 @@ export function gradeRecordUnder(w: WeatherParams, hour: number, unsettle: numbe
   // The resting weight, then the breath: at lens 0 the multiplier is exactly 1.
   const restingVignette = lens === 0 ? vignetteWeightUnder({ ...w, dread: 0 }) : vignetteWeightUnder({ ...w, dread: lens });
   const breath = lens === 0 ? 1 : 1 + VIGNETTE_PULSE * lens * Math.sin((2 * Math.PI * timeSeconds) / VIGNETTE_PULSE_PERIOD);
+  const sight = (1 - clamp01(stare)) * (1 - clamp01(stare));
   return {
-    exposure: exposureUnder(w, altitude),
+    exposure: exposureUnder(w, altitude) * sight,
     whitePoint: whitePointMatrix(altitude),
     purkinje: PURKINJE_MATRIX,
     purkinjeThreshold: PURKINJE_THRESHOLD,
@@ -228,7 +232,7 @@ export function gradeRecordUnder(w: WeatherParams, hour: number, unsettle: numbe
     lift: world === 0 ? { r: 0, g: 0, b: 0 } : { r: LIFT_DREAD.r * world, g: LIFT_DREAD.g * world, b: LIFT_DREAD.b * world },
     saturation: saturationUnder(w) / 100,
     // The dread share of the vignette is lens-side: at unsettle 0 the base weight stands.
-    vignetteWeight: restingVignette * breath,
+    vignetteWeight: restingVignette * breath + STARE_VIGNETTE * clamp01(stare),
     vignetteColour: VIGNETTE_COLOUR,
     halationStrength: lens === 0 ? HALATION_BASE : HALATION_BASE * (1 + HALATION_DREAD_GAIN * lens),
     aberrationAmount: lens === 0 ? ABERRATION_BASE : ABERRATION_BASE * (1 + ABERRATION_DREAD_GAIN * lens),
