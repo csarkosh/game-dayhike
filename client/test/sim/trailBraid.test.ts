@@ -5,9 +5,14 @@
  */
 import { describe, it, expect } from "vitest";
 import { buildTrail } from "../../src/sim/trailBuild.js";
+import { featureStageD } from "../../src/sim/features.js";
 import { segmentSegmentDistanceSq, segmentDistance, TRAIL_EDGE_MIN_GAP, type TrailGraph } from "../../src/sim/trail.js";
 import { stemProgress } from "../../src/sim/trailRoute.js";
-import { BRAID_TOP_MAX, BRAID_TOP_FLOOR, BRAID_BOTTOM_MIN, BRAID_BOTTOM_MAX, BRAID_LATERAL_MIN } from "../../src/sim/trailBraid.js";
+import {
+  maxFlushOff,
+  BRAID_TOP_MAX, BRAID_TOP_FLOOR, BRAID_BOTTOM_MIN, BRAID_BOTTOM_MAX, BRAID_LATERAL_MIN,
+  BRAID_MIN_SPAN, BRAID_FLUSH_MAX,
+} from "../../src/sim/trailBraid.js";
 import { TRAIL_GRID_CELL } from "../../src/sim/trailGrid.js";
 import { flatFrame } from "./helpers/buildFrames.js";
 
@@ -159,6 +164,62 @@ describe("buildStrands on the flat frame", () => {
       const a = two.nodes[e.a]!, b = two.nodes[e.b]!;
       expect(e.progress0).toBeCloseTo(1 - stemProgress(two, a.x, a.z), 6);
       expect(e.progress1).toBeCloseTo(1 - stemProgress(two, b.x, b.z), 6);
+    }
+  });
+
+  /**
+   * The braid's own product — `buildStrands`'s `Strand[]`, the two fork arcs
+   * and the stem samples — read back off `buildTrail`. Reconstructing a
+   * `BraidCtx` here would mean re-running the stem and the loop stages to get
+   * the grid, the tree and the heights the braid is handed, so `buildTrail`
+   * returns what the stage decided instead; the node ids still address the
+   * graph, since nothing after the braid adds or moves a node.
+   */
+  it("hands back strand A first, every chain top to bottom, and the two forks a braid apart", () => {
+    for (const [seed, graph] of [[TWO, two], [THREE, three]] as const) {
+      const { braid } = buildTrail(seed, flatFrame());
+      expect(braid.strands.length).toBeGreaterThanOrEqual(2); // strand A and at least one built
+      const [a, ...extra] = braid.strands;
+      expect(a!.side).toBe(0);
+      for (const s of braid.strands) {
+        expect(s.nodes.length).toBeGreaterThanOrEqual(2);
+        expect(s.nodes[0]).toBe(s.top);
+        expect(s.nodes[s.nodes.length - 1]).toBe(s.bottom);
+        // Top really is above bottom on the stem.
+        const top = graph.nodes[s.top]!, bottom = graph.nodes[s.bottom]!;
+        expect(1 - stemProgress(graph, top.x, top.z)).toBeGreaterThan(1 - stemProgress(graph, bottom.x, bottom.z));
+      }
+      // Every built strand keeps a side, and two of them never share one.
+      for (const s of extra) expect(Math.abs(s.side)).toBe(1);
+      if (extra.length === 2) expect(extra[0]!.side).not.toBe(extra[1]!.side);
+      // The forks span a braid's worth of stem.
+      expect(braid.bottomArc).toBeLessThan(braid.topArc);
+      expect(braid.topArc - braid.bottomArc).toBeGreaterThanOrEqual(BRAID_MIN_SPAN);
+      // The stem samples the braid measured against: from the pad, ascending.
+      expect(braid.samples.length).toBeGreaterThan(0);
+      expect(braid.samples[0]!.arc).toBe(0);
+      for (let i = 1; i < braid.samples.length; i++) {
+        expect(braid.samples[i]!.arc).toBeGreaterThanOrEqual(braid.samples[i - 1]!.arc);
+      }
+    }
+  });
+
+  /**
+   * THE FLUSH RULE'S OWN PIN. `BRAID_FLUSH_MAX` only means something while
+   * `maxFlushOff` still reads what the braid dropped strands for, so this
+   * asserts it of the built worlds — the strand beds that SURVIVED are under
+   * the cap. `trailBed.test.ts` is the gate this keeps the braid inside (its
+   * own ceiling is 2 m over the 227-seed sweep); if that gate's step, kernel
+   * or ceiling moves, this is the assertion to re-read.
+   */
+  it("keeps every strand bed under BRAID_FLUSH_MAX of the ground it crosses", () => {
+    for (const [seed, graph] of [[TWO, two], [THREE, three]] as const) {
+      const frame = flatFrame();
+      const ground = (x: number, z: number) => featureStageD(graph.features, x, z, frame.sample(x, z));
+      const strandEdges = graph.edges.map((e, ei) => ({ e, ei })).filter((x) => x.e.kind === "strand").map((x) => x.ei);
+      expect(strandEdges.length).toBeGreaterThan(0);
+      const state = { nodes: graph.nodes, edges: graph.edges, nodeOfCell: new Map<number, number>(), edgeOfCell: new Map<number, number>() };
+      expect(maxFlushOff(state, ground, strandEdges), `seed ${seed}`).toBeLessThanOrEqual(BRAID_FLUSH_MAX);
     }
   });
 });

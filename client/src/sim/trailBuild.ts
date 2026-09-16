@@ -41,7 +41,7 @@ import {
   type BuildFrame, type Heights, type Attempt, type GraphState, type StemSample,
 } from "./trailPlan.js";
 export type { BuildFrame } from "./trailPlan.js";
-import { buildStrands, stemPose } from "./trailBraid.js";
+import { buildStrands, stemPose, type Braid } from "./trailBraid.js";
 import { homeDistances, forksOf } from "./trailRoute.js";
 import {
   scoreCandidate, scoredDisc, landmarkThreshold,
@@ -99,7 +99,9 @@ function smoothedH(groundH: (x: number, z: number) => number, x: number, z: numb
 
 type Candidate = { cell: number; score: number; found: boolean };
 
-export function buildTrail(seed: number, frame: BuildFrame): { graph: TrailGraph; landmarks: Landmark[]; features: Feature[] } {
+export function buildTrail(
+  seed: number, frame: BuildFrame,
+): { graph: TrailGraph; landmarks: Landmark[]; features: Feature[]; braid: Braid } {
   const features: Feature[] = [];
   const ground: GroundFn = (x, z) => featureStageD(features, x, z, frame.sample(x, z));
   const groundH = (x: number, z: number): number => ground(x, z).h;
@@ -956,6 +958,10 @@ export function buildTrail(seed: number, frame: BuildFrame): { graph: TrailGraph
     },
     landmarks,
     features,
+    // The braid's own decisions, as the stage made them: the node ids in
+    // `strands` still address this graph, since nothing after the braid adds
+    // or moves a node.
+    braid: { strands: braid.strands, topArc: braid.topArc, bottomArc: braid.bottomArc, samples: braid.samples },
   };
 }
 

@@ -49,17 +49,21 @@ export const BRAID_LADDER_STEP = 60;
 /** The least stem a braid may span: the two forks must leave Task 4's rungs room. */
 export const BRAID_MIN_SPAN = 240;
 /**
- * The most a strand's bed may stand off the ground it crosses (m).
+ * The most a strand's bed may stand off the ground it crosses (m), as
+ * `maxFlushOff` measures it.
  *
  * A STRAND IS OPTIONAL, SO IT CAN BE HELD TO THIS (2026-09-16, fix round 2).
- * `trailBed.test.ts`'s flush gate caps |composed − ground| along every
- * centreline at 2 m over the 227-seed sweep, and the stem and the loops sit
- * where they sit — they have to exist, and a bed cutting a ridgelet narrower
- * than the profile's own 8 m kernel is the documented tail (worst non-strand
- * sample on this sweep: 1.784 m). A strand has no such claim: when its bed
- * would not sit on the ground, the next rung or the other side is tried and
- * the plan shrinks. Measured: the first strand below the dome on seed
- * -663635494 cut 2.059 m through the skirt's foot, 3 % over the gate.
+ * The flush invariant belongs to `trailBed.test.ts`, which caps the finished
+ * world's worst bed-to-ground residual at 2 m over the 227-seed sweep; the
+ * stem and the loops sit where they sit under it, because they have to exist
+ * and a bed cutting a ridgelet narrower than the profile's own 8 m kernel is
+ * that gate's documented tail (worst non-strand sample on this sweep:
+ * 1.784 m). A strand has no such claim: when its bed would not sit on the
+ * ground, the next rung or the other side is tried and the plan shrinks. The
+ * value is the stem's own tail rounded down, not the gate's ceiling, so a
+ * strand never spends the margin the trail that must exist may need.
+ * Measured: the first strand below the dome on seed -663635494 cut 2.059 m
+ * through the skirt's foot, 3 % over the gate.
  */
 export const BRAID_FLUSH_MAX = 1.5;
 /** The bottom fork's stem progress band: the strands rejoin above the pad. */
@@ -88,6 +92,14 @@ export function braidDraw(seed: number, i: number, lo: number, hi: number): numb
 }
 
 export type Strand = { side: -1 | 0 | 1; top: number; bottom: number; nodes: number[] };
+/**
+ * What the braid stage decided, apart from the graph it built: the strands
+ * (strand A first, every chain top → bottom), the two forks' arcs and the stem
+ * samples they were measured against. `buildTrail` hands this back so the
+ * braid's own decisions can be read — and tested — without rebuilding the
+ * world's grid, tree and heights to call `buildStrands` directly.
+ */
+export type Braid = { strands: Strand[]; topArc: number; bottomArc: number; samples: StemSample[] };
 export type BraidCtx = {
   seed: number; grid: TrailGrid; frame: BuildFrame; H: Heights; ground: GroundFn;
   tree: Uint8Array; treeEdges: Array<[number, number]>; features: readonly Feature[]; summit: number;
@@ -156,9 +168,19 @@ export function peakEntryArc(samples: readonly StemSample[], features: readonly 
 }
 
 /**
- * The most the bed of `edges` stands off the ground under it, sampled at 1 m
- * along each centreline — the same measure as `trailBed.test.ts`'s flush gate,
- * over the corridor union of the whole planned graph.
+ * How far the bed stands off the ground under it, at its worst over `edges`:
+ * the corridor union of the WHOLE graph in `state` (`trailCorridorD`, so every
+ * bed near the sample is blended in, not just this edge's own profile) minus
+ * the ground `ground` gives at the same point, sampled every metre along each
+ * edge's centreline, as an absolute value. Cut and fill count the same.
+ *
+ * This is the braid's OWN measure, not a call into the gate it serves.
+ * `trailBed.test.ts`'s flush gate asks the same question of the finished world
+ * — composed field against the pre-trail ground with its domes, at 1 m along
+ * every centreline — and `trailBraid.test.ts` pins the two together by
+ * asserting this function reads under BRAID_FLUSH_MAX on the built worlds.
+ * If the gate's step, kernel or ceiling moves, that assertion is what should
+ * be re-read before BRAID_FLUSH_MAX is trusted again.
  */
 export function maxFlushOff(state: GraphState, ground: GroundFn, edges: readonly number[]): number {
   let worst = 0;
@@ -295,9 +317,7 @@ function forksFor(
  * `peakEntryArc` puts it below the disc (spec §3.2, amended after this
  * measurement).
  */
-export function buildStrands(state: GraphState, ctx: BraidCtx): {
-  state: GraphState; strands: Strand[]; topArc: number; bottomArc: number; samples: StemSample[];
-} {
+export function buildStrands(state: GraphState, ctx: BraidCtx): Braid & { state: GraphState } {
   const { seed, grid, frame, H, ground, tree, treeEdges, summit } = ctx;
   const geom = stemGeometry(state, summit);
   const samples = sampleStem(state, geom);
@@ -399,12 +419,17 @@ export function buildStrands(state: GraphState, ctx: BraidCtx): {
   }
   if (built.length === 0) return none;
 
-  // Strand A: the stem between the forks, read off the split graph.
+  // Strand A: the stem between the forks, read off the split graph. Every
+  // strand's chain runs TOP → BOTTOM (the built ones start at T by
+  // construction, `chainFrom(base, T, …)`), and `stemNodes` runs pad → crest,
+  // so the slice always comes out bottom-first and always has to be reversed.
+  // Asked of the chain itself rather than of the two indices: it is the
+  // contract, and the index comparison was written the wrong way round.
   const T = forkT, B = forkB;
   const g2 = stemGeometry(base, summit);
   const iT = g2.stemNodes.indexOf(T), iB = g2.stemNodes.indexOf(B);
   const aNodes = g2.stemNodes.slice(Math.min(iT, iB), Math.max(iT, iB) + 1);
-  if (iT < iB) aNodes.reverse();
+  if ((aNodes[0] as number) !== T) aNodes.reverse();
   return {
     state: base, strands: [{ side: 0, top: T, bottom: B, nodes: aNodes }, ...built],
     topArc: forkArc, bottomArc, samples,
