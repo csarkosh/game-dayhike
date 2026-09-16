@@ -1,14 +1,11 @@
 import { parseLevel } from "../sim/level.js";
 import { createForest } from "../sim/forest.js";
 import { createWorld } from "../sim/world.js";
-import {
-  DEFAULT_TERRAIN_VARIANT,
-  elevationAt,
-  setActiveTerrainVariant,
-} from "../sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../sim/terrain.js";
+import { landingView } from "./landingPath.js";
 import { createRenderer } from "./renderer.js";
 import { seedFromToken } from "./seed.js";
-import { WEATHER_PRESETS } from "./weather.js";
+import type { WeatherParams } from "./weather.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
 /**
@@ -17,21 +14,28 @@ import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
  */
 const SEED_TOKEN = "day-hike";
 
-/** Minecraft-title-screen pan: slow enough to feel ambient, ~0.5 degrees/s. */
-const PAN_RADIANS_PER_SECOND = 0.009;
+/** Dusk: the sun is just down, the sky a soft slate blue warming toward the
+ * horizon. Later it goes blue-black, and much later the whole backdrop goes
+ * black under the page's own dimming; at 21 nothing reads at all. */
+const HOUR = 17.5;
 
 /**
- * Just above the canopy, pitched down so forest fills most of the frame at
- * every yaw of the pan — the sky stays a band, not the subject.
+ * Half the `mist` preset's fog with nearly its cloud, and a trace of dread.
+ * The two carry the look between them: at full mist the trees wash out to
+ * the fog's colour (white, or lime green under thinner cloud), while at half
+ * they keep their own dark colour and the mist settles low among the trunks.
+ * Cloud 0.85 keeps the dusk light off the fog, which turns it green at 0.6.
+ * Dread 0.15 sits below the first plateau (see `stepped` in `weather.ts`), so
+ * it only drains a little colour.
  */
-const EYE_ABOVE_GROUND = 16;
-const PITCH_DOWN = 0.24;
+const WEATHER: WeatherParams = { cloudCover: 0.85, mist: 0.5, rain: 0, wetness: 0.5, dread: 0.15 };
 
 export type LandingScene = { dispose(): void };
 
 /**
- * The landing page's background: the game's own scenery — fixed seed, mist
- * weather, low quality tier — with the camera slowly rotating in place. The
+ * The landing page's background: the game's own scenery — fixed seed, misty
+ * dusk, low quality tier — with the camera panning slowly along the
+ * shore, looking inland at the forest (see `landingPath.ts`). The
  * blur and vignette that turn it into a backdrop are CSS on the canvas and the
  * overlay, not the renderer's business.
  *
@@ -49,20 +53,16 @@ export function createLandingScene(canvas: HTMLCanvasElement): LandingScene | nu
     const level = parseLevel(sandbox01);
     const forest = createForest(seed);
     const renderer = createRenderer(canvas, level, forest, { tier: "low" });
-    renderer.setWeather(WEATHER_PRESETS.mist, 0);
+    renderer.setWeather(WEATHER, 0);
+    renderer.setHour(HOUR);
 
     // sync() needs a world state; an empty non-authoritative one is enough —
-    // with a freecam set it only drives the clipmap, mist and camera.
+    // with a freecam set it only drives the streaming, atmosphere and camera.
     const world = createWorld(level, seed, false);
-
-    const eyeX = 0;
-    const eyeZ = 0;
-    const eyeY = elevationAt(seed, eyeX, eyeZ) + EYE_ABOVE_GROUND;
 
     const start = performance.now();
     const frame = () => {
-      const yaw = ((performance.now() - start) / 1000) * PAN_RADIANS_PER_SECOND;
-      renderer.setFreecam({ x: eyeX, y: eyeY, z: eyeZ, yaw, pitch: PITCH_DOWN });
+      renderer.setFreecam(landingView(seed, (performance.now() - start) / 1000));
       renderer.sync(world.state, -1, 0);
       renderer.scene.render();
     };
