@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   HEX_LATTICE, HEX_SHARPNESS, DETAIL_TILING, DETAIL_FADE, DETAIL_STRENGTH, DETAIL_NORMAL, DETAIL_AO,
   MACRO_WAVE, MACRO_WEIGHT, MACRO_SLOPE, MACRO_LUSH, MACRO_DRY, TUFT_ALBEDO, HORIZON, HORIZON_MAX,
+  HEX_SKEW, HEX_UNSKEW,
   latticeHash, hexTriangle, hexWeights, macroNoise, macroTint, horizonWeight,
 } from "../../src/game/groundHexParams.js";
 
@@ -22,6 +23,8 @@ describe("constants are the spec's", () => {
     expect(TUFT_ALBEDO).toEqual({ r: 0.36, g: 0.42, b: 0.24 });
     expect(HORIZON).toEqual([35, 90]);
     expect(HORIZON_MAX).toBe(0.5);
+    expect(HEX_SKEW).toEqual([1, 0, -0.57735027, 1.15470054]);
+    expect(HEX_UNSKEW).toEqual([1, 0, 0.5, 0.8660254]);
   });
 });
 
@@ -49,15 +52,24 @@ describe("hex lattice", () => {
       expect(s[0] + s[1] + s[2]).toBeCloseTo(1, 9);
     }
   });
-  it("the three vertices are distinct lattice points and the point lies in their triangle", () => {
-    const t = hexTriangle(0.3, 0.2);
-    const keys = new Set(t.v.map(([a, b]) => `${a},${b}`));
-    expect(keys.size).toBe(3);
-    // Reconstruct the skewed point from the vertices and weights.
-    const sx = t.v[0][0] * t.w[0] + t.v[1][0] * t.w[1] + t.v[2][0] * t.w[2];
-    const sy = t.v[0][1] * t.w[0] + t.v[1][1] * t.w[1] + t.v[2][1] * t.w[2];
-    expect(sx).toBeCloseTo(t.skewed[0], 9);
-    expect(sy).toBeCloseTo(t.skewed[1], 9);
+  it("the three vertices are distinct lattice points and the point lies in their triangle (both branches)", () => {
+    // Test both the fx + fy < 1 branch (lower half) and fx + fy >= 1 branch (upper half).
+    const testPoints = [
+      { uv: [0.3, 0.2] as const, expectedFirstVertex: [0, 0] as const },
+      { uv: [0.8, 0.8] as const, expectedFirstVertex: [1, 1] as const },
+    ];
+    for (const test of testPoints) {
+      const t = hexTriangle(test.uv[0], test.uv[1]);
+      const keys = new Set(t.v.map(([a, b]) => `${a},${b}`));
+      expect(keys.size).toBe(3);
+      // Reconstruct the skewed point from the vertices and weights.
+      const sx = t.v[0][0] * t.w[0] + t.v[1][0] * t.w[1] + t.v[2][0] * t.w[2];
+      const sy = t.v[0][1] * t.w[0] + t.v[1][1] * t.w[1] + t.v[2][1] * t.w[2];
+      expect(sx).toBeCloseTo(t.skewed[0], 9);
+      expect(sy).toBeCloseTo(t.skewed[1], 9);
+      // Explicitly assert which branch this point falls into by checking the first vertex.
+      expect(t.v[0]).toEqual(test.expectedFirstVertex);
+    }
   });
   it("sharpening keeps two samples dominant: the smallest weight vanishes away from a vertex", () => {
     const s = hexWeights([0.5, 0.4, 0.1]);
