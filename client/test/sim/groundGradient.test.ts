@@ -232,8 +232,12 @@ describe("the scatter censuses are untouched", () => {
     // clears the gates. A deliberate content change; the level id moves with
     // it (see `passHash` below) because the two treeline constants and the
     // new PEAK_RIM_FADE are all FEATURE_TUNABLES.
-    expect(list.length).toBe(734);
-    expect(h | 0).toBe(-1724507358);
+    // Re-baselined 2026-09-16 from (734, -1724507358): the braid's own
+    // tunables now fold into the level id, and the strands and rungs they
+    // add carve new trail bed under this rect, so three fewer trees clear
+    // it. A deliberate elevation-field change.
+    expect(list.length).toBe(731);
+    expect(h | 0).toBe(1979230377);
   });
 
   it("keeps every clutter field bit-identical, class by class", () => {
@@ -606,6 +610,11 @@ describe("the level id does not move", () => {
     // gate's retune to the new bench edge (CLUTTER_GRASS_TRAIL_NEAR/FAR
     // 2/5 -> 0.75/2.5) both move this on purpose — every ground scatter near
     // a trail shifts.
-    expect(passHash()).toBe(49567251);
+    // Re-baselined 2026-09-16 from 49567251: the braid's own tunables
+    // (BRAID_TOP_MAX and the rest) join FEATURE_TUNABLES and TRAIL_TUNABLES
+    // in the level id, and the strands and rungs they add carry more trail
+    // for the litter and grass gates to scatter along. Both move this on
+    // purpose.
+    expect(passHash()).toBe(309897140);
   });
 });
