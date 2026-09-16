@@ -8,7 +8,8 @@ weather field 0.005 since the last application — slow drift still lands, becau
 against the last applied value; `near` is the greatest closeness over all Hollows after the line-of-sight
 halving (§2.2, reworded), so a visible far Hollow outranks a blind near one; the browser saw the whole
 curve on seed `hollow` — at world 0.5 the pad reads as bright mist rather than dusk (the sun is still at
-17), which is the hour curve's dial if dusk should come sooner.
+17), which is the hour curve's dial if dusk should come sooner; a base hour before dawn holds, as one
+past night does; a degenerate stem reads 0.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md` §1.8, §1.17, §7, §8, §17. Amends the
 parent: §7 (the escalation has a third input, the Hollow's crawl, and the proximity term joins the
 same scalar), §13.4 stays open (altitude is not an axis here), and the §17 table.
@@ -90,8 +91,8 @@ spike's own rise and decay are integrated before the lag.
 
 ## 3. The curve
 
-**The base** is whatever the console set: the weather preset (default `clear`) and the hour
-(default 12). The escalation only moves away from the base toward night and dread.
+**The base** is whatever the console set: the weather preset (the game's default, `mist`) and the
+hour (default 12). The escalation only moves away from the base toward night and dread.
 
 **The sun.** `hour = baseHour + (NIGHT_HOUR − baseHour) · ease(world)`, `NIGHT_HOUR` 22: the sky
 model's sun is up from 6 to 18, so 22 is full dark. A base hour at or past 22 stays where it is.
@@ -155,7 +156,7 @@ loops, after the tick and before `renderer.sync`: `escalationTargets` → `stepE
 `atmosphereUnder` → `setHour`, `setWeather(w, 0)`, `ambient.setWeather(w)`, `wildlifePresence =
 wildlifePresenceUnder(w)`. The host reads `host.world`; the client reads `client.renderState()` for
 items, enemies and the reconciled local player, and its predicted world's `trail`, `register`,
-`boxes` and `ground`. A bare `/weather` restores the base to `clear`.
+`boxes` and `ground`. A bare `/weather` reports the base's preset and changes nothing.
 
 ### 4.4 Nothing on the wire
 
