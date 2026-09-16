@@ -138,11 +138,13 @@ export const CLUTTER_FUNGUS_CANOPY_LO = 0.35;
 export const CLUTTER_FUNGUS_CANOPY_HI = 0.7;
 /** Fungus (the mushroom cluster AND the cut stump, the class's two models)
  * is rejected at the jittered INSTANCE within this trailDistance (m): the
- * whole bed (TRAIL_BED_HALF 0.75) plus the largest
- * stump's half-width (0.28 × 1.3) and a step of clear ground. A cell-centre
- * gate cannot do it — the 6 m cell's jitter reaches 2.97 m — and a stump
- * standing in the bed was found on 2026-09-10. Rocks stay ungated
- * (a few on the bed read as gravel). */
+ * floor is the wear- and junction-widened bench, not the bare sim step —
+ * TRAIL_BED_HALF · TRAIL_WEAR_W1 · TRAIL_JUNCTION_W = 0.75 · 1.25 · 1.35 ≈
+ * 1.27 m — plus the largest stump's half-width (0.28 × 1.3 ≈ 0.36) and a
+ * ≈ 0.5 m step of clear ground beyond it, ≈ 2.13 m in all, which 2.5 clears
+ * with margin. A cell-centre gate cannot do it — the 6 m cell's jitter
+ * reaches 2.97 m — and a stump standing in the bed was found on 2026-09-10.
+ * Rocks stay ungated (a few on the bed read as gravel). */
 export const CLUTTER_FUNGUS_TRAIL_CLEAR = 2.5;
 /** Fungus is forest floor: it closes over the same slope band as the trees
  * (SLOPE_LO..SLOPE_HI, vegetation.ts), which is also where the ground's own
@@ -532,8 +534,12 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
     case CLUTTER_LITTER: {
       const band = litterBand(rt);
       if (band === 0) return 0;
+      // The same low-altitude factor grass uses, so litter and grass share
+      // one altitude window at both ends: nothing on the tideline below the
+      // grass's own floor, nothing above the snow line.
+      const alt = smoothstep(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, s.h);
       const snow = 1 - smoothstep(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h);
-      return band * snow;
+      return band * alt * snow;
     }
     default:
       return 0;

@@ -216,7 +216,12 @@ describe("foliage attribute and plugin", () => {
     const p3 = { ...near, x: mx + nx * 3, z: mz + nz * 3 };
     const rt09 = rt(seed, p09.x, p09.z);
     expect(rt09).toBeCloseTo(0.9, 3);
-    const t09 = trampleFrame(seed, p09), t3 = trampleFrame(seed, p3);
+    // trampleFrame writes into one reusable scratch object rather than
+    // allocating: copy the fields this test compares out of it before
+    // calling again, the same discipline the rebuild itself follows.
+    const t09src = trampleFrame(seed, p09);
+    const t09 = { height: t09src.height, lean: t09src.lean, ax: t09src.ax, az: t09src.az, tint: { ...t09src.tint } };
+    const t3 = trampleFrame(seed, p3);
     // trampleAt is deterministic and pure, so feeding it the SAME measured
     // trail distance the implementation itself reads (rather than the
     // literal 0.9 the point was constructed from, which the graph's

@@ -264,7 +264,7 @@ core), then the 0.4 m edge octave. If the sink reads as a trench at the 1 m ring
   most), once the graph exposes a walked-count per edge.
 - Blade clumps (sub-project 3) should respect the trampled band the same way the cards do.
 
-## 12. Amendments (from the browser gates)
+## 11. Amendments (from the browser gates)
 
 **§5, the bench colours.** The core and margin colours take the ground's vertex colour at
 `TRAIL_BENCH_SHADE = 0.6` (`mix(1, vertexColour, 0.6)`) instead of the material's white constant:
@@ -289,3 +289,13 @@ differs from the pre-release one.
 
 **§7, cost.** Frame time at 4× pixels is within ±0.4 ms of the base on the trail and the meadow
 in both orders; the low tier at 1.5× scaling stays on the 60 Hz cap.
+
+**§5, the lip.** The lip's ramp reads the width-scaled distance (`tdN / tWidthK`), like the bands
+above it, rather than the raw across distance, so the drawn edge follows the painted bench's own
+wear-and-junction width; the sim's own sink ramp (`trailSinkD`) has no such width term and always
+steps at the bare `TRAIL_BED_HALF`, so the two can disagree by up to about 0.5 m at a scuffed,
+widened junction — accepted rather than chased.
+
+**§6, litter's altitude.** The litter density case now multiplies in the same low-altitude
+smoothstep grass uses (`CLUTTER_GRASS_ALT_LO`/`_FADE`), on top of its existing high-altitude
+(snow-line) fade, so litter shares the grass gate's altitude window at both ends.

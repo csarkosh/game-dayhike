@@ -323,51 +323,62 @@ function applyBucket(bucket: Bucket): void {
   }
 }
 
+/** The untrampled identity frame: frozen, and shared by every card the bench
+ * does not touch rather than allocated per instance. */
+const IDENTITY_TRAMPLE_FRAME: { readonly height: number; readonly lean: number; readonly ax: number; readonly az: number; readonly tint: Rgb } =
+  Object.freeze({ height: 1, lean: 0, ax: 0, az: 0, tint: Object.freeze({ r: 1, g: 1, b: 1 }) });
+/** `trampleFrame`'s own scratch result: written in place and returned, so a
+ * rebuild's per-instance call costs no allocation. Callers use the fields
+ * before the next call, the same contract `instanceMatrixFor`'s scratch
+ * matrix and quaternions already carry. */
+const scratchTrampleFrame: { height: number; lean: number; ax: number; az: number; tint: Rgb } = { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } };
+
 /**
  * The trampled band beside the bench for one card: height scale, lean (rad)
  * about the horizontal axis perpendicular to the away direction (ax, az) —
  * the unit gradient of the trail distance, by central difference — and the
- * stain tint. The identity (1, 0, 0, 0, white) past TRAMPLE_BAND[1], with
- * no trail, and for every class the bench does not trample.
+ * stain tint. The identity frame past TRAMPLE_BAND[1], with no trail, and
+ * for every class the bench does not trample.
  */
-export function trampleFrame(seed: number, inst: ClutterInstance): { height: number; lean: number; ax: number; az: number; tint: Rgb } {
-  const none = { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } };
-  if (!TRAMPLED.has(inst.cls)) return none;
+export function trampleFrame(seed: number, inst: ClutterInstance): Readonly<{ height: number; lean: number; ax: number; az: number; tint: Rgb }> {
+  if (!TRAMPLED.has(inst.cls)) return IDENTITY_TRAMPLE_FRAME;
   const rtOf = activeTerrainVariant().trailDistance;
-  if (rtOf === undefined) return none;
+  if (rtOf === undefined) return IDENTITY_TRAMPLE_FRAME;
   const rt = rtOf(seed, inst.x, inst.z);
-  if (rt >= TRAMPLE_BAND[1]) return none;
+  if (rt >= TRAMPLE_BAND[1]) return IDENTITY_TRAMPLE_FRAME;
   const h = 0.25;
   let gx = rtOf(seed, inst.x + h, inst.z) - rtOf(seed, inst.x - h, inst.z);
   let gz = rtOf(seed, inst.x, inst.z + h) - rtOf(seed, inst.x, inst.z - h);
   const gl = Math.hypot(gx, gz);
   if (gl > 1e-9) { gx /= gl; gz /= gl; } else { gx = 0; gz = 0; }
   const t = trampleAt(rt);
-  return { height: t.height, lean: t.lean, ax: gx, az: gz, tint: t.tint };
+  scratchTrampleFrame.height = t.height;
+  scratchTrampleFrame.lean = t.lean;
+  scratchTrampleFrame.ax = gx;
+  scratchTrampleFrame.az = gz;
+  scratchTrampleFrame.tint = t.tint;
+  return scratchTrampleFrame;
 }
 
 /**
- * One instance's world matrix, written straight into `buf` at `offset`.
- * Rotation is derived HERE, from the plain `hash` draw the sim emits: sim/ is
- * forbidden trig, game/ is not — the same division of labour `forestMeshes`'
- * `treeMatrixBuffer` documents. Yaw for the classes that stand, yaw composed
- * with the ground normal for the classes that lie — rock, boulder and
- * driftwood, whose flat undersides span up to 2.02 m at full scale and hang
- * visibly on a slope. The old objection here was that pitching would cost a
- * second terrain sample per instance; it no longer applies, because
- * `clutterInCell` now returns the gradient from the sample it was already
- * taking. Uniform scale, and a per-class sink:
+ * The instance's world matrix, written into `out` (16 floats, offset 0):
+ * `writeInstanceMatrix`'s pure core, split out so a test can build one
+ * matrix and inspect it directly rather than reading a bucket buffer back
+ * off a `thinInstanceSetBuffer` spy. Rotation is derived HERE, from the
+ * plain `hash` draw the sim emits: sim/ is forbidden trig, game/ is not —
+ * the same division of labour `forestMeshes`' `treeMatrixBuffer` documents.
+ * Yaw for the classes that stand, yaw composed with the ground normal for
+ * the classes that lie — rock, boulder, driftwood and litter (which reuses
+ * their meshes), whose flat undersides hang visibly on a slope untilted.
+ * Litter also scales by its own per-variant table (`LITTER_VARIANT_SCALE`)
+ * on top of the sim's own scale, on the class's own pebble/twig models — no
+ * other class reads that table. Uniform scale otherwise, and a per-class
+ * sink:
  *  - BOULDER sinks `BOULDER_SINK · (variant's own BASE_H) · scale`, the seat
  *    the mesh was sized around and the pass's per-variant collider box is
  *    derived from — variant 0 uses BOULDER_A_BASE_H, variant 1 uses
  *    BOULDER_B_BASE_H.
  *  - everything else sinks `CLUTTER_SINK`, purely to break coplanarity.
- */
-/**
- * The instance's world matrix, written into `out` (16 floats, offset 0) —
- * the pure core of `writeInstanceMatrix`, split out so a test can build one
- * matrix and inspect it directly rather than reading a bucket buffer back
- * off a `thinInstanceSetBuffer` spy.
  */
 export function instanceMatrixFor(inst: ClutterInstance, frame: ReturnType<typeof trampleFrame>, out: Float32Array): void {
   const yaw = inst.hash * Math.PI * 2;

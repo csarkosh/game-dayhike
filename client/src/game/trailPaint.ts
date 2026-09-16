@@ -417,7 +417,12 @@ export const TRAIL_FRAGMENT_PAINT = `
     vec3 tBenchN = normalize(normalW + vec3(tGravelN.x, 0.0, tGravelN.y) * mix(1.0, 0.5, tInCore));
     // The lip: over the sink ramp outside the bench the normal tilts outward
     // and down by the ramp's slope, so a low sun draws the edge as a line.
-    float tRamp = smoothstep(${f(TRAIL_BED_HALF)}, ${f(TRAIL_BED_HALF + TRAIL_SINK_RAMP)}, tdN);
+    // Reads the width-scaled distance, like the bands above it, so the drawn
+    // edge follows the painted bench's own wear-and-junction width; the
+    // sim's sink ramp (trailSinkD) has no such width term and always steps
+    // at the bare TRAIL_BED_HALF, so the two can disagree by up to about
+    // 0.5 m at a scuffed, widened junction — accepted rather than chased.
+    float tRamp = smoothstep(${f(TRAIL_BED_HALF)}, ${f(TRAIL_BED_HALF + TRAIL_SINK_RAMP)}, tdN / tWidthK);
     float tLip = 4.0 * tRamp * (1.0 - tRamp) * (1.0 - tSnow);
     vec3 tLipN = normalize(normalW - vec3(tAway.x, 0.0, tAway.y) * ${f(TRAIL_SINK / TRAIL_SINK_RAMP)} * tLip);
     normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), vec3(0.0, 1.0, 0.0), tPuddle));

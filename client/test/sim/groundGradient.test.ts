@@ -40,7 +40,12 @@ const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
   [-600, -3000, 48, 1190728742],
   [600, -3000, 105, -346855702],
   // litter: along the stem near the trailhead, not near the world origin.
-  [-500, -100, 111, -621225397],
+  // 111 -> 50 (2026-09-16): litter now shares grass's own low-altitude gate
+  // (CLUTTER_GRASS_ALT_LO/_FADE), so a piece no longer stands below the
+  // grass line either — a deliberate content change, not a level-id move
+  // (no new tunable: the gate reads the constants CLUTTER_GRASS already
+  // declares).
+  [-500, -100, 50, 1360604123],
 ];
 
 describe("instances carry the ground gradient", () => {
@@ -601,10 +606,11 @@ describe("the level id does not move", () => {
     // Re-baselined 2026-09-16 from -1513056523: the trail bench narrowed
     // (TRAIL_BED_HALF 1 -> 0.75) and sank (the new TRAIL_SINK, TRAIL_SINK_RAMP
     // tunables), moving every trail's tread on purpose.
-    // Re-baselined 2026-09-16 from -1283394394: the litter class (a new
-    // registry entry, its own CLUTTER_LITTER_* tunables) and the grass gate's
-    // retune to the new bench edge (CLUTTER_GRASS_TRAIL_NEAR/FAR 2/5 -> 0.75/2.5)
-    // both move this on purpose — every ground scatter near a trail shifts.
+    // Re-baselined 2026-09-16 from -1283394394: the litter class (the id
+    // moved through CLUTTER_TUNABLES, nine new constants) and the grass
+    // gate's retune to the new bench edge (CLUTTER_GRASS_TRAIL_NEAR/FAR
+    // 2/5 -> 0.75/2.5) both move this on purpose — every ground scatter near
+    // a trail shifts.
     expect(passHash()).toBe(49567251);
   });
 });
