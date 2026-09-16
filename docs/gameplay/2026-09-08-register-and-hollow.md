@@ -419,7 +419,7 @@ with the design. Letters are the ones the sub-project specs use.
 | **G1** | Rifle out, Interact in — the fire bit becomes Interact, `combat.ts` dormant, a headlamp | — | low | shipped 2026-09-11 |
 | **T** | The trail system — a stem to a made peak (the only dead end), seeded loops around made features (meadow flats, wadeable ponds), the pad a car's worth from the road, every chunk prop drawn (`docs/trail/2026-09-11-trail-system.md`) | A, G1 | high | shipped 2026-09-11 |
 | **B** | Register & the count — replicated book state, items at the sites, carry, the sign-out ritual, the win at the car, containment (§5; `docs/gameplay/2026-09-15-register-and-count.md`) | A, G1, T | medium | built 2026-09-15 |
-| **C** | The Hollow — one Hollow per hunted player (floor one) replacing the director population, a crawl down the stem from tick 0, the hunt on pick-up, contact kills for good, the stare, placeholder asset, visible far (§6; `docs/gameplay/2026-09-15-the-hollow.md`) | A, B | medium | designed 2026-09-15 |
+| **C** | The Hollow — one Hollow per hunted player (floor one) replacing the director population, a crawl down the stem from tick 0, the hunt on pick-up, contact kills for good, the stare, placeholder asset, visible far (§6; `docs/gameplay/2026-09-15-the-hollow.md`) | A, B | medium | built 2026-09-16 |
 | **D** | Escalation & atmosphere — the scalar (sign-out floor + off-trail spike), the weather/lighting/mist curve, wildlife silence (§7) | A, B, C | low | |
 | **F** | Tape & leash — retroreflective tape along the trails, distance-to-trail feeding the scalar (§8) | A, D | medium | |
 | **E** | Dread stack — whispers and misleading one-shots, screen warp, lighting collapse (§7) | C, D | medium (GLSL) | |

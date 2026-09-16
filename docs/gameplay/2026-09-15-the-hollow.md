@@ -1,7 +1,16 @@
 # The Hollow — sub-project C
 
 **Date:** 2026-09-15
-**Status:** Designed 2026-09-15; not built.
+**Status:** Built 2026-09-16 (`docs/gameplay/2026-09-15-the-hollow-plan.md`). What moved in execution:
+the placeholder is a `StandardMaterial`, not a PBR one — the atmosphere's fog plugin replaces
+Babylon's fog line by an anchor a fog-off PBR material never emits, so that material never compiles
+(found only in the browser: the sim saw the Hollow, the screen never did); a rebuilt hunt route
+starts from the node the Hollow is already walking to, or a target crossing between two nodes'
+catchments made it oscillate; the loss is checked on every world, not only a forest; a dead player's
+input is not suppressed (the sim already ignores it, and suppressing it locked the desktop shell's
+pause menu); two host-only fields the design did not name, `EnemyState.seen` and
+`PlayerState.signedOut` (§4.1, §4.2); the browser pass saw every rule below but the sign-out
+release, which `hollow.test.ts` covers.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md` §6, §7, §12, §14, §17. Amends the
 parent: §6.1 (one entity → one per hunted player, floor one), §6.3 (standing still is *slower*, not
 safe: the Hollow crawls toward the trailhead from tick 0), §6.6 (looking slows it *and* costs the
@@ -169,17 +178,21 @@ the same inputs with a hunt in progress stay byte-identical (§6).
 ### 4.1 Per Hollow
 
 An `EnemyState`. `ai` ∈ {`Crawl`, `Hunt`, `Merge`} (new `AiState` values after `Dead`);
-`targetId` is the hunted player (Hunt) or the other Hollow (Merge), 0 otherwise; `stateTimer` is
-the lost-sight timer; `lastDistSq`, `stuckTimer`, `unstickTimer` as today. New host-only fields,
-outside the snapshot and the fingerprint like the stuck fields: `route: number[]`, `routeAt`,
-`stemDir` (+1 toward the crest, −1 toward the pad), `approach: boolean`. `health` is
-`ENEMY_MAX_HEALTH` and nothing changes it.
+`targetId` is the hunted player (Hunt) and 0 otherwise — a merging Hollow re-derives its target,
+the nearest other Hollow, every tick rather than carrying it; `stateTimer` is the lost-sight timer;
+`lastDistSq`, `stuckTimer`, `unstickTimer` as today. New host-only fields, outside the snapshot and
+the fingerprint like the stuck fields: `route: number[]`, `routeAt`, `stemDir` (+1 toward the crest,
+−1 toward the pad), `approach: boolean`, and `seen: boolean` — whether a living player had it in
+view last tick, which is what slows it this tick. `health` is `ENEMY_MAX_HEALTH` and nothing
+changes it.
 
 ### 4.2 Per player
 
 `stare: number`, 0 to 1, host truth (§2.4). On the wire as one byte (`round(stare · 255)`); the
 client's reconcile copies it onto the predicted local player as it copies `signOutTicks`, so the
-screen and the death agree with the host.
+screen and the death agree with the host. `signedOut: boolean`, host-only: set by the register's
+sign-out, cleared when a hunt binds — the signal that ends a hunt on the hunted player's own
+sign-out.
 
 ### 4.3 Death, permanent
 
@@ -213,9 +226,10 @@ byte. `GEN_VERSION` is unchanged: the world is the same.
 
 ### 5.1 The placeholder
 
-A 2.6 m capsule, matte black, unlit, with **fog disabled on its material**, drawn by
-`entityViews` when an enemy's `ai` is a Hollow state (instead of the creature model or the violet
-capsule). No fog means it stays a silhouette at any distance in mist — a still, dark, upright shape
+A 2.6 m capsule, matte black, unlit, with **fog disabled on its material** — a `StandardMaterial`
+with lighting off, since the atmosphere's fog plugin attaches to every PBR material and cannot
+compile one with fog off — drawn by `entityViews` when an enemy's `ai` is a Hollow state (instead
+of the creature model or the violet capsule). No fog means it stays a silhouette at any distance in mist — a still, dark, upright shape
 against the sky or the far trees, which is what makes it findable in hindsight from Act 1. It
 faces the way it walks. Nothing else: no eyes, no animation, no sound of its own. E owns the look.
 
@@ -275,8 +289,9 @@ walkable by `stepMovement` at the enemy hull on real terrain.
 state and `Lost` decode to what was encoded.
 
 **`client/test/game/`** — the post record darkens monotonically with `stare` and is black at 1;
-the death overlay opens once on health 0 and never on a respawn (there is none); the loss timer
-navigates once.
+the Hollow's mesh and material under a NullEngine. The death overlay and the loss timer live in
+`app.ts`, which has no test harness: their once-only latches are checked in the browser, not by a
+test.
 
 **In the browser, before shipping:** the silhouette on the stem from the pad at tick 0; a pick-up
 turns it; the stare closes the vignette; a death and its passage; two carriers, two Hollows, and
