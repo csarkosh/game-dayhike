@@ -78,6 +78,7 @@ export function windRecordUnder(w: WeatherParams, seconds: number, override?: nu
 }
 
 /** The gust the shader evaluates (foliage.vertex.fx `foliageGust`), in [-1.5, 1.5].
+ * The front travels downwind (toward +direction) at Ω1/K1 = 1.5 m/s.
  * The ragged term is a golden-ratio lattice hash: multiply-add-fract on cell
  * indices, which GPU and CPU compute to the same 1e-3, unlike a sin() hash. */
 export function gustAt(r: WindRecord, x: number, z: number): number {
@@ -87,7 +88,7 @@ export function gustAt(r: WindRecord, x: number, z: number): number {
   const f = ci * 0.618034 + cj * 0.381966;
   const ragged = WIND_RAGGED * (f - Math.floor(f) - 0.5);
   return (
-    Math.sin(WIND_K1 * u + WIND_OMEGA_GUST * r.time + ragged) +
-    0.5 * Math.sin(WIND_K2 * u + WIND_OMEGA_GUST2 * r.time + 1.7 * ragged)
+    Math.sin(WIND_K1 * u - WIND_OMEGA_GUST * r.time + ragged) +
+    0.5 * Math.sin(WIND_K2 * u - WIND_OMEGA_GUST2 * r.time + 1.7 * ragged)
   );
 }

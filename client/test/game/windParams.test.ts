@@ -82,24 +82,21 @@ describe("gustAt", () => {
     expect(lo).toBeGreaterThanOrEqual(-1.5);
     expect(hi).toBeLessThanOrEqual(1.5);
   });
-  it("the primary front travels downwind at ω1 / k1 = 1.5 m/s", () => {
-    // Same 6 m ragged cell for both points so only the travelling phase differs:
-    // the first term at (x, t) equals the first term at (x + 15 m downwind, t + 10 s).
+  it("the front travels downwind: the crest moves +x over time, at about 1.5 m/s", () => {
+    expect(WIND_OMEGA_GUST / WIND_K1).toBeCloseTo(1.5, 6);
     const r = { ...windRecordUnder(WEATHER_PRESETS.rain, 0), dirX: 1, dirZ: 0 };
-    const speed = WIND_OMEGA_GUST / WIND_K1;
-    expect(speed).toBeCloseTo(1.5, 6);
-    const x0 = 0.5, dt = 10, x1 = x0 + speed * dt;
-    // Isolate the primary term by differencing out the second octave analytically.
-    const primary = (x: number, t: number) => gustAt({ ...r, time: t }, x, 0) - 0.5 * Math.sin(WIND_K2 * x + WIND_OMEGA_GUST2 * t + 1.7 * 0);
-    // Both points sit in cells whose ragged term is identical only if ci is equal;
-    // x0 = 0.5 and x1 = 15.5 are in cells 0 and 2, so compare with the ragged
-    // difference removed by evaluating on a record with the ragged amplitude ignored:
-    // the test therefore pins the closed form directly.
-    const raggedAt = (x: number) => { const f = Math.floor(x / 6) * 0.618034; return 1.2 * (f - Math.floor(f) - 0.5); };
-    const p0 = Math.sin(WIND_K1 * x0 + WIND_OMEGA_GUST * 0 + raggedAt(x0));
-    const p1 = Math.sin(WIND_K1 * x1 + WIND_OMEGA_GUST * dt + raggedAt(x1));
-    expect(Math.abs(Math.sin(WIND_K1 * x1 + WIND_OMEGA_GUST * dt) - Math.sin(WIND_K1 * x0))).toBeLessThan(1e-9);
-    expect(primary(x0, 0)).toBeCloseTo(p0, 9);
-    expect(primary(x1, dt)).toBeCloseTo(p1, 9);
+    // Search one ragged cell (x in [0, 6)) at 1 mm for the crest at t = 0 and t = 0.2 s.
+    const crestAt = (t: number): number => {
+      let best = -Infinity, bestX = 0;
+      for (let x = 0; x < 6; x += 0.001) {
+        const v = gustAt({ ...r, time: t }, x, 0);
+        if (v > best) { best = v; bestX = x; }
+      }
+      return bestX;
+    };
+    const dx = crestAt(0.2) - crestAt(0);
+    // Both octaves travel +x (at 1.5 and 1.26 m/s), so the summed crest advances between them.
+    expect(dx).toBeGreaterThan(0.2);
+    expect(dx).toBeLessThan(0.35);
   });
 });
