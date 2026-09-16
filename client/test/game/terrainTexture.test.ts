@@ -2,6 +2,7 @@ import { describe, expect, it, beforeAll, afterAll, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import { Process } from "@babylonjs/core/Engines/Processors/shaderProcessor.js";
 import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/shaderProcessingOptions.js";
 import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2ShaderProcessors.js";
@@ -11,6 +12,10 @@ import {
   rockParallaxOffset, ROCK_PARALLAX_DEPTH, ROCK_PARALLAX_STEPS, ROCK_PARALLAX_MIN_WEIGHT,
 } from "../../src/game/terrainTexture.js";
 import { FEATURE_PAINT_MAX } from "../../src/game/featurePaint.js";
+import {
+  DETAIL_TILING, DETAIL_FADE, DETAIL_STRENGTH, DETAIL_NORMAL, DETAIL_AO,
+  HORIZON, HORIZON_MAX, TUFT_ALBEDO,
+} from "../../src/game/groundHexParams.js";
 import type { Feature } from "../../src/sim/features.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
@@ -83,7 +88,11 @@ describe("terrain texture plugin", () => {
     expect(glsl).toContain("surfaceAlbedo");
     // Rock is the only triplanar layer: three projections of one sampler.
     expect(glsl.match(/texture2D\(\s*terrainRock/g)!.length).toBe(3);
-    expect(glsl.match(/texture2D\(\s*terrainGrass/g)!.length).toBe(1);
+    // Grass is the one layer that is hex tiled, so its albedo comes through
+    // hexFetch2D and never through a plain fetch: once in the blend, once more
+    // at the near-eye detail scale.
+    expect(glsl.match(/texture2D\(\s*terrainGrass/g) ?? []).toHaveLength(0);
+    expect(glsl.match(/hexFetch2D\(terrainGrass/g)!.length).toBe(2);
     const vert = plugin.getCustomCode("vertex");
     expect(Object.keys(vert!)).toContain("CUSTOM_VERTEX_MAIN_END");
   });
@@ -309,9 +318,14 @@ describe("relief plugin wiring", () => {
     // slice and the bed's gravel slice (trailPaint.ts). The rock parallax
     // march adds two more RAH fetches — the height at the
     // fragment before the loop and one per step inside it — and no normals.
-    // Hence 10 and 10, not the ground blend's own 7 and 5 + 2.
-    expect(blend.match(/texture2D\(\s*terrainNormals/g)!.length).toBe(10);
-    expect(blend.match(/texture2D\(\s*terrainRAH/g)!.length).toBe(10);
+    // Hence 10 and 10, not the ground blend's own 7 and 5 + 2. Grass's own
+    // slice of each array left the plain count when it became hex tiled, so
+    // both are 9 now, with grass's fetches counted through hexFetchArray
+    // instead: one in the blend and one at the detail scale, each array.
+    expect(blend.match(/texture2D\(\s*terrainNormals/g)!.length).toBe(9);
+    expect(blend.match(/texture2D\(\s*terrainRAH/g)!.length).toBe(9);
+    expect(blend.match(/hexFetchArray\(terrainNormals/g)!.length).toBe(2);
+    expect(blend.match(/hexFetchArray\(terrainRAH/g)!.length).toBe(2);
   });
   it("keeps rock's X-facing tangent axes in x,y order, not transposed", () => {
     const blend = pluginFor("r7").getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
@@ -662,5 +676,140 @@ describe("rock parallax in the shader", () => {
       const c = line.indexOf("//");
       if (c >= 0) expect(line.slice(c), line).not.toMatch(/#\s*(if|ifdef|ifndef|else|endif|define|undef)\b/);
     }
+  });
+});
+
+describe("the grass floor", () => {
+  let counter = 0;
+  /** A fresh material with the plugin attached, the way the first test does it. */
+  function makePlugin(): TerrainTexturePlugin {
+    return pluginFor(`gf${counter++}`);
+  }
+  /** …plus one `bindForSubMesh` against the fake uniform buffer, so the bound
+   * constants can be read back by uniform name. The scene has no active camera;
+   * `bindForSubMesh` already tolerates that (it binds terrainEye as the origin),
+   * which is what the existing bind tests rely on too. */
+  function makeBoundPlugin(): { plugin: TerrainTexturePlugin; ubo: ReturnType<typeof fakeUniformBuffer>; writes: Record<string, number[]> } {
+    const plugin = makePlugin();
+    const ubo = fakeUniformBuffer();
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    return { plugin, ubo, writes: ubo.values };
+  }
+
+  it("declares the floor uniforms and splices the hex include after its own definitions", () => {
+    const plugin = makePlugin();
+    const names = plugin.getUniforms().ubo.map((u: { name: string }) => u.name);
+    expect(names).toEqual(expect.arrayContaining([
+      "terrainDetail", "terrainDetail2", "terrainMacroOn", "terrainHorizon", "terrainTuft",
+    ]));
+    const defs = plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS!;
+    // The include lands AFTER this plugin's own definitions (so it sees the
+    // TERRAINTEX-gated declarations above it) and BEFORE the paints.
+    expect(defs.indexOf("uniform sampler2D terrainGrass;")).toBeLessThan(defs.indexOf("float horizonWeight("));
+    expect(defs.indexOf("float horizonWeight(")).toBeLessThan(defs.indexOf("roadAsphalt"));
+    expect(defs).toContain("vec3 hexSample2D(");
+    // terrainHorizon is a UBO member on the UBO path and a plain uniform on the
+    // other, so it is declared ONCE, in getUniforms(), never inside the include
+    // — which compiles on both paths and would double-declare it. (The brief
+    // asked for `uniform vec3 terrainHorizon;` inside these definitions; that
+    // cannot coexist with the UBO member the same test requires.)
+    expect(plugin.getUniforms().fragment).toMatch(/uniform\s+vec3\s+terrainHorizon\s*;/);
+    expect(defs).not.toContain("uniform vec3 terrainHorizon;");
+  });
+
+  it("hex-samples the grass layer and no other, adds the detail scale under its fade, and tints", () => {
+    const blend = makePlugin().getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
+    // The lattice and its three sin-hashed uvs are computed once per scale, not
+    // once per fetch: hexSetup prepares them and the fetchers reuse them.
+    expect(blend).toContain("hexSetup(uvG, ");
+    expect(blend).toContain("hexFetch2D(terrainGrass, ");
+    expect(blend).toContain("hexFetchArray(terrainNormals, ");
+    expect(blend).toContain("hexFetchArray(terrainRAH, ");
+    expect(blend).not.toContain("texture2D(terrainGrass");
+    // Grass alone is hex-tiled. The other four layers keep their plain fetch.
+    for (const layer of ["terrainFloor", "terrainSand", "terrainPebble", "terrainRock"]) {
+      expect(blend).not.toContain(`hexSample2D(${layer}`);
+      expect(blend).not.toContain(`hexFetch2D(${layer}`);
+    }
+    expect(blend).toContain("smoothstep(terrainDetail.y, terrainDetail.z, dist)");
+    expect(blend).toContain("macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y)");
+    expect(blend).toContain("horizonWeight(dist)");
+    expect(blend).toContain("terrainTuft");
+    expect(blend).not.toContain("discard");
+  });
+
+  it("keeps the detail fetches inside their own fade and the relief fetches inside the strength gate", () => {
+    const blend = makePlugin().getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
+    const detailAt = blend.indexOf("if (detailStrength > 0.0) {");
+    expect(detailAt).toBeGreaterThan(-1);
+    const detailEnd = blend.indexOf("\n    }", detailAt);
+    const detailBlock = blend.slice(detailAt, detailEnd);
+    // Every detail-scale fetch is inside the fade gate — the cost lands within
+    // DETAIL_FADE of the eye and nowhere else.
+    expect(blend.match(/hexFetch2D\(terrainGrass, d1/g) ?? []).toHaveLength(1);
+    expect(detailBlock).toContain("hexFetch2D(terrainGrass, d1");
+    expect(detailBlock).toContain("hexFetchArray(terrainNormals, d1");
+    expect(detailBlock).toContain("hexFetchArray(terrainRAH, d1");
+    // …and the detail gate is nested inside the relief gate, so a far fragment
+    // pays for neither.
+    expect(blend.indexOf("if (strength > 0.0) {\n    rah0")).toBeLessThan(detailAt);
+  });
+
+  it("binds the floor constants", () => {
+    const { writes } = makeBoundPlugin();
+    expect(writes.terrainDetail).toEqual([1 / DETAIL_TILING, DETAIL_FADE[0], DETAIL_FADE[1], DETAIL_STRENGTH]);
+    expect(writes.terrainDetail2).toEqual([DETAIL_NORMAL, DETAIL_AO]);
+    expect(writes.terrainHorizon).toEqual([HORIZON[0], HORIZON[1], HORIZON_MAX]);
+    expect(writes.terrainTuft).toEqual([TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b]);
+    expect(writes.terrainMacroOn).toEqual([1]);
+  });
+});
+
+describe("the grass floor compiles into the fragment source on both paths", () => {
+  // The sampler/UBO trap from the other side: a uniform declared only through
+  // getUniforms().fragment lands at ADDITIONAL_FRAGMENT_DECLARATION, which
+  // exists only on the NON-uniform-buffer path, so a UBO context never sees it.
+  // These identifiers must reach the compiled fragment under both.
+  const FLOOR_IDENTIFIERS = ["terrainDetail", "terrainHorizon", "terrainTuft", "hexSetup", "macroTint"];
+
+  async function compiledFragmentSource(targetScene: Scene): Promise<string> {
+    const material = new PBRMaterial("pbr-floor", targetScene);
+    // `stubArrays` builds real 1x1 RawTextures, and NullEngine never reports
+    // those ready — which would hang `isReadyForSubMesh` forever. The
+    // always-ready stub the terrainReliefOn tests use is what lets the material
+    // actually compile here.
+    attachTerrainTexture(targetScene, material, { groundArrays: stubArraysWithRahWidth(1024) });
+    const mesh = CreateBox("box-floor", {}, targetScene);
+    mesh.material = material;
+    const subMesh = mesh.subMeshes[0]!;
+    await new Promise<void>((resolve) => {
+      const tick = () => {
+        if (material.isReadyForSubMesh(mesh, subMesh, false)) { resolve(); return; }
+        setTimeout(tick, 16);
+      };
+      tick();
+    });
+    return subMesh.effect?.fragmentSourceCode ?? "";
+  }
+
+  it("non-UBO path (a default NullEngine)", async () => {
+    const e = new NullEngine();
+    expect(e.supportsUniformBuffers).toBe(false);
+    const s = new Scene(e);
+    try {
+      const source = await compiledFragmentSource(s);
+      for (const name of FLOOR_IDENTIFIERS) expect(source, name).toContain(name);
+    } finally { s.dispose(); e.dispose(); }
+  });
+
+  it("UBO path (a NullEngine forced to webGLVersion 2)", async () => {
+    const e = new NullEngine();
+    (e as unknown as { _webGLVersion: number })._webGLVersion = 2;
+    expect(e.supportsUniformBuffers).toBe(true);
+    const s = new Scene(e);
+    try {
+      const source = await compiledFragmentSource(s);
+      for (const name of FLOOR_IDENTIFIERS) expect(source, name).toContain(name);
+    } finally { s.dispose(); e.dispose(); }
   });
 });

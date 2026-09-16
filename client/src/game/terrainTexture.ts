@@ -33,6 +33,30 @@
  * ROADPAINT false and never register the two road-only samplers, so they
  * compile today's shader unchanged.
  *
+ * The grass floor is the one layer that is not plainly tiled. Grass is what
+ * most of the ground is, so its 2 m repeat reads as a printed grid the moment
+ * the eye is above it: `shaders/groundHex.fragment.fx` breaks that up by
+ * sampling the grass albedo and its two relief slices through a triangular
+ * lattice — three fetches at hashed offsets and rotations, blended by
+ * sharpened barycentric weights — so the repeat exists but no line of it does.
+ * The lattice and its hashed uvs are computed ONCE per scale (`hexSetup`) and
+ * handed to each fetcher, not recomputed per map. On top of that, a second
+ * grass scale at DETAIL_TILING fades in within DETAIL_FADE of the eye, adding
+ * blade-level albedo, normal and between-blade occlusion where the eye can
+ * resolve them and costing nothing past the fade. Two tints finish it: a
+ * lush/dry macro noise over tens of metres (mirrored on the CPU in
+ * `groundHexParams.ts`, so `clutterMeshes.ts` tints each tuft to match by
+ * construction), and a pull toward TUFT_ALBEDO past HORIZON, where the floor
+ * should read as the same vegetation the clutter thins out of rather than as
+ * bare palette.
+ *
+ * No parallax on grass, deliberately: the rock march below works because stone
+ * is a rigid surface whose height field is the shape. Grass height is blades,
+ * and marching an eye ray through them drags the texture sideways as the
+ * player walks — the warping-underfoot defect the rock depth had to be capped
+ * to cure. The detail scale's normal and occlusion buy the same depth cue
+ * without moving a texel.
+ *
  * The multiply is normalised by TEXTURE_MEAN, the mean luminance every layer was
  * normalised to when the texture was made, so a flat texture
  * is exactly neutral and the palette's tuning survives.
@@ -71,6 +95,11 @@ import {
 import type { TrailGraph } from "../sim/trail.js";
 import type { Feature } from "../sim/features.js";
 import { loadGroundArrays, type GroundArrays, type GroundArraysFactory } from "./groundMaps.js";
+import {
+  DETAIL_TILING, DETAIL_FADE, DETAIL_STRENGTH, DETAIL_NORMAL, DETAIL_AO,
+  HORIZON, HORIZON_MAX, TUFT_ALBEDO,
+} from "./groundHexParams.js";
+import groundHexFx from "./shaders/groundHex.fragment.fx?raw";
 
 import grassUrl from "../../assets/textures/ground.grass.webp?url";
 import floorUrl from "../../assets/textures/ground.forest_floor.webp?url";
@@ -295,6 +324,19 @@ uniform highp sampler2DArray terrainRAH;
 #endif
 `;
 
+/**
+ * The hex/macro/horizon GLSL, spliced straight after the declarations above and
+ * gated with them. The gate is load-bearing: `horizonWeight` reads
+ * `terrainHorizon`, which only exists inside the TERRAINTEX block (in the UBO
+ * on one path, in `getUniforms().fragment` on the other), so an ungated include
+ * would not compile wherever this plugin's define is off.
+ */
+const TERRAIN_HEX_DEFS = `
+#ifdef TERRAINTEX
+${groundHexFx}
+#endif
+`;
+
 const TERRAIN_VERTEX_DEFS = `
 #ifdef TERRAINTEX
 attribute vec4 terrainWeights;
@@ -337,6 +379,16 @@ const TERRAIN_FRAGMENT_BLEND = `
   vec2 uvF = uvXZ * terrainTiling.y;
   vec2 uvS = uvXZ * terrainTiling.z;
   vec2 uvP = uvXZ * terrainTiling.w;
+  // Gradients of the UNROTATED uv, and the lattice they index, computed once
+  // per scale: a hex seam then changes which texel is fetched but not the mip
+  // level, so no seam shows as a blur line. Both pairs are taken here, in
+  // uniform control flow, rather than inside the gates that use them —
+  // a derivative taken in non-uniform flow is undefined by the spec.
+  vec2 gdx = dFdx(uvG); vec2 gdy = dFdy(uvG);
+  vec2 uvD = uvXZ * terrainDetail.x;
+  vec2 ddx = dFdx(uvD); vec2 ddy = dFdy(uvD);
+  vec2 g1; vec2 g2; vec2 g3; vec3 gw;
+  hexSetup(uvG, g1, g2, g3, gw);
   float rt = terrainRock2.x;
   vec3 terrainN = vec3(0.0, 1.0, 0.0);
 #ifdef NORMAL
@@ -351,6 +403,10 @@ const TERRAIN_FRAGMENT_BLEND = `
   float w0 = vTerrainW.x; float w1 = vTerrainW.y; float w2 = vTerrainW.z; float w3 = vTerrainW.w; float w4 = vTerrainW2.x;
   vec3 rah0 = vec3(0.5, 1.0, 0.5); vec3 rah1 = rah0; vec3 rah2 = rah0; vec3 rah3 = rah0; vec3 rah4 = rah0;
   vec3 nrm = terrainN;
+  // Declared out here so the albedo line below still compiles — and stays a
+  // true no-op — on fragments where the relief gate never runs.
+  vec3 detailAlbedo = vec3(1.0);
+  float detailAo = 1.0;
   // Rock parallax: march the eye ray through the rock height on the dominant
   // triplanar face. The three offsets start at zero and only the dominant
   // face's moves, so the minority faces stay flat.
@@ -380,7 +436,7 @@ const TERRAIN_FRAGMENT_BLEND = `
     if (bw.y >= bw.x && bw.y >= bw.z) rpY = rOff; else if (bw.x >= bw.z) rpX = rOff; else rpZ = rOff;
   }
   if (strength > 0.0) {
-    rah0 = texture2D(terrainRAH, vec3(uvG, 0.0)).rgb;
+    rah0 = hexFetchArray(terrainRAH, g1, g2, g3, gw, 0.0, gdx, gdy);
     rah1 = texture2D(terrainRAH, vec3(uvF, 1.0)).rgb;
     rah2 = texture2D(terrainRAH, vec3(vPositionW.xz * rt + rpY, 2.0)).rgb;
     rah3 = texture2D(terrainRAH, vec3(uvS, 3.0)).rgb;
@@ -402,7 +458,7 @@ const TERRAIN_FRAGMENT_BLEND = `
     w3 = mix(w3, b3, strength); w4 = mix(w4, b4, strength);
     // Normals, UDN-style: the map's xy is added to the world normal in the
     // projection's frame. Planar layers: uv is world XZ, so x -> X, y -> Z.
-    vec3 t0 = texture2D(terrainNormals, vec3(uvG, 0.0)).rgb * 2.0 - 1.0;
+    vec3 t0 = hexFetchArray(terrainNormals, g1, g2, g3, gw, 0.0, gdx, gdy) * 2.0 - 1.0;
     vec3 t1 = texture2D(terrainNormals, vec3(uvF, 1.0)).rgb * 2.0 - 1.0;
     vec3 t3 = texture2D(terrainNormals, vec3(uvS, 3.0)).rgb * 2.0 - 1.0;
     vec3 t4 = texture2D(terrainNormals, vec3(uvP, 4.0)).rgb * 2.0 - 1.0;
@@ -410,6 +466,22 @@ const TERRAIN_FRAGMENT_BLEND = `
     vec3 ty = texture2D(terrainNormals, vec3(vPositionW.xz * rt + rpY, 2.0)).rgb * 2.0 - 1.0;
     vec3 tz = texture2D(terrainNormals, vec3(vPositionW.xy * rt + rpZ, 2.0)).rgb * 2.0 - 1.0;
     vec2 planar = t0.xy * w0 + t1.xy * w1 + t3.xy * w3 + t4.xy * w4;
+    // The near-eye detail scale: the same grass maps at DETAIL_TILING, hex
+    // tiled again so the small repeat does not draw its own grid either. Gated
+    // on grass weight AND its own fade, inside the relief gate, so the three
+    // extra fetches land on grass within DETAIL_FADE of the eye and nowhere
+    // else — and on terrainReliefOn, since a flat placeholder normal/height
+    // would only add noise.
+    float detailStrength = w0 * (1.0 - smoothstep(terrainDetail.y, terrainDetail.z, dist)) * terrainReliefOn;
+    if (detailStrength > 0.0) {
+      vec2 d1; vec2 d2; vec2 d3; vec3 dw;
+      hexSetup(uvD, d1, d2, d3, dw);
+      detailAlbedo = mix(vec3(1.0), hexFetch2D(terrainGrass, d1, d2, d3, dw, ddx, ddy) * ${meanInv("grass")}, terrainDetail.w * detailStrength);
+      vec3 tD = hexFetchArray(terrainNormals, d1, d2, d3, dw, 0.0, ddx, ddy) * 2.0 - 1.0;
+      planar += tD.xy * terrainDetail2.x * detailStrength;
+      float hD = hexFetchArray(terrainRAH, d1, d2, d3, dw, 0.0, ddx, ddy).b;
+      detailAo = mix(1.0, smoothstep(0.0, 0.6, hD), terrainDetail2.y * detailStrength);
+    }
     // Rock's X-facing projection samples vPositionW.yz, so the map's x runs
     // along world Y and its y along world Z: x,y order,
     // same rule as the other two faces (ty samples xz -> x,y; tz samples
@@ -425,7 +497,7 @@ const TERRAIN_FRAGMENT_BLEND = `
   }
 
   vec3 blended =
-      texture2D(terrainGrass,  uvG).rgb * ${meanInv("grass")} * w0
+      hexFetch2D(terrainGrass, g1, g2, g3, gw, gdx, gdy) * ${meanInv("grass")} * w0
     + texture2D(terrainFloor,  uvF).rgb * ${meanInv("floor")} * w1
     + texture2D(terrainSand,   uvS).rgb * ${meanInv("sand")} * w3
     + texture2D(terrainPebble, uvP).rgb * ${meanInv("pebble")} * w4
@@ -439,7 +511,15 @@ const TERRAIN_FRAGMENT_BLEND = `
   // value back by 0.5 turns it into a mean-1 multiplier — every layer darkens
   // around its own occlusion variation rather than around wherever its raw
   // source map's mean happened to land.
-  surfaceAlbedo *= mix(vec3(1.0), blended, strength) * mix(1.0, ao / 0.5, strength);
+  surfaceAlbedo *= mix(vec3(1.0), blended, strength) * detailAlbedo * mix(1.0, ao / 0.5, strength) * detailAo;
+  // Macro tint: the lush/dry variation over tens of metres, on grass only and
+  // faded out with the rest of the detail. A multiplicative tint of
+  // surfaceAlbedo, never a write to the material constant.
+  vec3 macro = macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y);
+  surfaceAlbedo *= mix(vec3(1.0), macro, w0 * terrainMacroOn * (1.0 - smoothstep(terrainFade.x, terrainFade.y, dist)));
+  // Horizon tint: past HORIZON the floor reads as the vegetation the clutter
+  // has thinned out of, not as bare palette.
+  surfaceAlbedo = mix(surfaceAlbedo, terrainTuft, w0 * horizonWeight(dist));
   // Roughness: the blended per-layer base,
   // modulated near the eye by the blended map over its own 0.5 neutral (so a
   // flat 0.5 placeholder or a failed decode is the identity, not a flash of
@@ -627,6 +707,17 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
         // — gates the height blend off until real per-texel
         // heights exist to blend on.
         { name: "terrainReliefOn", size: 1, type: "float" },
+        // The grass floor. (detail repeats per metre, fade start, fade end,
+        // albedo strength) and (normal weight, AO strength).
+        { name: "terrainDetail", size: 4, type: "vec4" },
+        { name: "terrainDetail2", size: 2, type: "vec2" },
+        // The macro tint's on/off gate. The tint's own constants are GLSL
+        // literals in the hex include, pinned to groundHexParams.ts by a
+        // lockstep test, because the CPU mirror must agree exactly.
+        { name: "terrainMacroOn", size: 1, type: "float" },
+        // (horizon start, end, max) and the tuft colour it blends toward.
+        { name: "terrainHorizon", size: 3, type: "vec3" },
+        { name: "terrainTuft", size: 3, type: "vec3" },
       ],
       // Non-UBO path only; see TERRAIN_FRAGMENT_DEFS' note 2. The two array
       // samplers do NOT belong here or in TERRAIN_FRAGMENT_DEFS's non-sampler
@@ -651,6 +742,11 @@ uniform vec2 terrainLayerRough2;
 uniform vec4 terrainLayerF0;
 uniform vec2 terrainLayerF02;
 uniform float terrainReliefOn;
+uniform vec4 terrainDetail;
+uniform vec2 terrainDetail2;
+uniform float terrainMacroOn;
+uniform vec3 terrainHorizon;
+uniform vec3 terrainTuft;
 #endif
 `,
     };
@@ -683,6 +779,11 @@ uniform float terrainReliefOn;
     // 1x1 is the placeholder's signature (groundMaps.ts); anything wider is a
     // real decoded array. Read every bind, same reason as the textures below.
     uniformBuffer.updateFloat("terrainReliefOn", this._arrays.rah.getSize().width > 1 ? 1.0 : 0.0);
+    uniformBuffer.updateFloat4("terrainDetail", 1 / DETAIL_TILING, DETAIL_FADE[0], DETAIL_FADE[1], DETAIL_STRENGTH);
+    uniformBuffer.updateFloat2("terrainDetail2", DETAIL_NORMAL, DETAIL_AO);
+    uniformBuffer.updateFloat("terrainMacroOn", 1);
+    uniformBuffer.updateFloat3("terrainHorizon", HORIZON[0], HORIZON[1], HORIZON_MAX);
+    uniformBuffer.updateFloat3("terrainTuft", TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b);
     uniformBuffer.setTexture("terrainGrass", this._grass);
     uniformBuffer.setTexture("terrainFloor", this._floor);
     uniformBuffer.setTexture("terrainRock", this._rock);
@@ -771,7 +872,10 @@ uniform float terrainReliefOn;
     }
     if (shaderType === "fragment") {
       return {
-        CUSTOM_FRAGMENT_DEFINITIONS: TERRAIN_FRAGMENT_DEFS + ROAD_FRAGMENT_DEFS + TRAIL_FRAGMENT_DEFS + FEATURE_FRAGMENT_DEFS,
+        // The hex include sits between this plugin's own declarations and the
+        // paints: after the uniforms its functions read, before the paint code
+        // that has no use for them.
+        CUSTOM_FRAGMENT_DEFINITIONS: TERRAIN_FRAGMENT_DEFS + TERRAIN_HEX_DEFS + ROAD_FRAGMENT_DEFS + TRAIL_FRAGMENT_DEFS + FEATURE_FRAGMENT_DEFS,
         // Unconditional locals the reflectivity rewrite below reads whatever
         // the defines say — see TERRAIN_FRAGMENT_MAIN_BEGIN.
         CUSTOM_FRAGMENT_MAIN_BEGIN: TERRAIN_FRAGMENT_MAIN_BEGIN,
