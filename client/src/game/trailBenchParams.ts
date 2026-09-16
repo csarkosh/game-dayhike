@@ -32,11 +32,18 @@ export const TRAIL_MARGIN_HALF: number = TRAIL_BED_HALF;
 export const TRAIL_TRAMPLE_HALF = 1.35;
 /** Boundary softness (m), widened to the fragment footprint in the shader. */
 export const TRAIL_PAINT_EDGE = 0.08;
-export const TRAIL_CORE_GAIN = 0.45;
-export const TRAIL_CORE_TINT: Rgb = { r: 0.26, g: 0.22, b: 0.18 };
-export const TRAIL_MARGIN_GAIN = 0.85;
-export const TRAIL_MARGIN_TINT: Rgb = { r: 0.42, g: 0.37, b: 0.3 };
-export const TRAIL_TRAMPLE_TINT: Rgb = { r: 0.82, g: 0.78, b: 0.66 };
+export const TRAIL_CORE_GAIN = 0.5;
+/** The bench's darker band, compacted by footfall. About half the margin's brightness. */
+export const TRAIL_CORE_TINT: Rgb = { r: 0.3, g: 0.26, b: 0.21 };
+export const TRAIL_MARGIN_GAIN = 0.75;
+/** The bench's loose, pale band. About twice the core's brightness. */
+export const TRAIL_MARGIN_TINT: Rgb = { r: 0.4, g: 0.36, b: 0.3 };
+export const TRAIL_TRAMPLE_TINT: Rgb = { r: 0.9, g: 0.88, b: 0.8 };
+/** The fraction of the ground's vertex colour (the palette's darkness and
+ * canopy tint) the bench colours take: at 1 the bench goes black under
+ * canopy and the core/margin contrast is lost, at 0 the margin reads as a
+ * chalk line in the open. */
+export const TRAIL_BENCH_SHADE = 0.6;
 /** Wet: the core's albedo loss and roughness loss at wetness 1; puddles. */
 export const TRAIL_WET_DARK = 0.35;
 export const TRAIL_WET_GLOSS = 0.5;

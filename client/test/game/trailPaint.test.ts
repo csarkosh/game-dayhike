@@ -10,7 +10,7 @@ import {
 import { TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, type TrailGraph } from "../../src/sim/trail.js";
 import {
   TRAIL_JUNCTION_W, TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF,
-  TRAIL_CORE_TINT, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT, TRAIL_CORE_GAIN, TRAIL_MARGIN_GAIN,
+  TRAIL_CORE_TINT, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT, TRAIL_CORE_GAIN, TRAIL_MARGIN_GAIN, TRAIL_BENCH_SHADE,
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_HEIGHT_SHIFT, TRAIL_EDGE_NOISE,
   TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
   TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE, TRAIL_WEAR_WAVE, TRAIL_EDGE_WAVE,
@@ -227,7 +227,7 @@ describe("shader strings", () => {
 describe("the GLSL", () => {
   it("prints the mirror's constants, reads row 1 once for the best segment, and carries every term", () => {
     const g = TRAIL_FRAGMENT_PAINT;
-    for (const v of [TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE, TRAIL_CORE_GAIN, TRAIL_MARGIN_GAIN, TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_HEIGHT_SHIFT, TRAIL_EDGE_NOISE, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1, TRAIL_PUDDLE_WAVE, ...TRAIL_WEAR_WAVE, ...TRAIL_EDGE_WAVE, ...TRAIL_PUDDLE_WET, ...TRAIL_PUDDLE_LOW]) {
+    for (const v of [TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE, TRAIL_CORE_GAIN, TRAIL_MARGIN_GAIN, TRAIL_BENCH_SHADE, TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_HEIGHT_SHIFT, TRAIL_EDGE_NOISE, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1, TRAIL_PUDDLE_WAVE, ...TRAIL_WEAR_WAVE, ...TRAIL_EDGE_WAVE, ...TRAIL_PUDDLE_WET, ...TRAIL_PUDDLE_LOW]) {
       expect(g).toContain(Number.isInteger(v) ? v.toFixed(1) : String(v));
     }
     for (const c of [TRAIL_CORE_TINT, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT]) expect(g).toContain(`vec3(${c.r}, ${c.g}, ${c.b})`);
@@ -238,6 +238,7 @@ describe("the GLSL", () => {
     expect(g).toContain("trailValueNoise1(tU, 12.0)");
     expect(g).toContain("trailValueNoise1(tU, 3.0)");
     expect(g).toContain("macroValueNoise(vPositionW.xz, 6.0)");
+    expect(g).toContain("mix(vec3(1.0), tBankBase, 0.6)");
     expect(g).toContain("texture2D(trailSegs, vec2(tu, 0.25))");
     expect(g.split("texture2D(trailSegs, vec2(tuBest, 0.75))").length).toBe(2);
     for (const term of ["trailValueNoise1(", "macroValueNoise(", "terrainWet", "tPuddle", "tLip", "tWidthK", "tDarkK", "tdN"]) expect(g).toContain(term);

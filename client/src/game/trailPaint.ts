@@ -38,7 +38,7 @@ import {
   TRAIL_WEAR_WAVE, TRAIL_WEAR_WEIGHT, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
   TRAIL_EDGE_NOISE, TRAIL_EDGE_WAVE, TRAIL_EDGE_WEIGHT, TRAIL_HEIGHT_SHIFT,
   TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE,
-  TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT,
+  TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT, TRAIL_BENCH_SHADE,
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE,
   trailWear, trailEdgeNoise, trailBands,
 } from "./trailBenchParams.js";
@@ -307,6 +307,10 @@ export const TRAIL_FRAGMENT_PAINT = `
 #else
     vec3 tBankBase = vAlbedoColor.rgb;
 #endif
+    // The bench takes a fraction of the ground's own vertex colour rather
+    // than the material's flat white, so it darkens under canopy and lightens
+    // in the open the way the ground around it does.
+    vec3 tBenchBase = mix(vec3(1.0), tBankBase, ${f(TRAIL_BENCH_SHADE)});
     // The trampled band: this ground, dried and stained toward the bench.
     vec3 tCol = surfaceAlbedo * mix(vec3(1.0), vec3(${f(TRAIL_TRAMPLE_TINT.r)}, ${f(TRAIL_TRAMPLE_TINT.g)}, ${f(TRAIL_TRAMPLE_TINT.b)}), tTrample);
     // The bank: bare forest floor on the uphill side, under the vertex colour.
@@ -314,13 +318,14 @@ export const TRAIL_FRAGMENT_PAINT = `
     normalW = normalize(mix(normalW, normalize(normalW + vec3(tFloorN.x, 0.0, tFloorN.y)), tBank * tk));
     terrainRough = mix(terrainRough, clamp(terrainLayerRough.y * mix(1.0, tFloorRAH.r / 0.5, tk), 0.0, 1.0), tBank);
     terrainF0 = mix(terrainF0, terrainLayerF0.y, tBank);
-    // Core and margin: the pebble layer under two tints, the core compacted and
-    // darkened by wear, the margin loose and pale. Wet: the core darkens and
-    // glosses, the margin half as much; puddles sit in the low spots of the
-    // 6 m noise inside the core.
+    // Core and margin: the pebble layer under two tints on the bench's own
+    // shaded base, the core compacted and darkened by wear, the margin loose
+    // and pale at about twice the core's brightness. Wet: the core darkens
+    // and glosses, the margin half as much; puddles sit in the low spots of
+    // the 6 m noise inside the core.
     float tAo = mix(1.0, tGravelRAH.g / 0.5, tk);
-    vec3 tCoreCol = vec3(${f(TRAIL_CORE_TINT.r)}, ${f(TRAIL_CORE_TINT.g)}, ${f(TRAIL_CORE_TINT.b)}) * tDarkK * tGravelTex * ${f(TRAIL_CORE_GAIN)} * tAo * vAlbedoColor.rgb;
-    vec3 tMarginCol = vec3(${f(TRAIL_MARGIN_TINT.r)}, ${f(TRAIL_MARGIN_TINT.g)}, ${f(TRAIL_MARGIN_TINT.b)}) * tGravelTex * ${f(TRAIL_MARGIN_GAIN)} * tAo * vAlbedoColor.rgb;
+    vec3 tCoreCol = vec3(${f(TRAIL_CORE_TINT.r)}, ${f(TRAIL_CORE_TINT.g)}, ${f(TRAIL_CORE_TINT.b)}) * tDarkK * tGravelTex * ${f(TRAIL_CORE_GAIN)} * tAo * tBenchBase;
+    vec3 tMarginCol = vec3(${f(TRAIL_MARGIN_TINT.r)}, ${f(TRAIL_MARGIN_TINT.g)}, ${f(TRAIL_MARGIN_TINT.b)}) * tGravelTex * ${f(TRAIL_MARGIN_GAIN)} * tAo * tBenchBase;
     float tPuddleLow = smoothstep(${f(TRAIL_PUDDLE_LOW[0])}, ${f(TRAIL_PUDDLE_LOW[1])}, 1.0 - macroValueNoise(vPositionW.xz, ${f(TRAIL_PUDDLE_WAVE)}));
     float tPuddle = smoothstep(${f(TRAIL_PUDDLE_WET[0])}, ${f(TRAIL_PUDDLE_WET[1])}, terrainWet) * tPuddleLow * tCore;
     tCoreCol *= 1.0 - ${f(TRAIL_WET_DARK)} * terrainWet;
