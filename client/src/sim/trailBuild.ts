@@ -41,7 +41,7 @@ import {
   type BuildFrame, type Heights, type Attempt, type GraphState, type StemSample,
 } from "./trailPlan.js";
 export type { BuildFrame } from "./trailPlan.js";
-import { buildStrands, stemPose, type Braid } from "./trailBraid.js";
+import { buildStrands, buildRungs, stemPose, type Braid } from "./trailBraid.js";
 import { homeDistances, forksOf } from "./trailRoute.js";
 import {
   scoreCandidate, scoredDisc, landmarkThreshold,
@@ -895,6 +895,9 @@ export function buildTrail(
     seed, grid, frame, H, ground, tree, treeEdges, features, summit,
   });
   state = braid.state;
+  state = buildRungs(state, {
+    seed, grid, frame, H, ground, tree, treeEdges, features, summit,
+  }, braid.strands, braid.samples, braid.topArc, braid.bottomArc).state;
 
   const { stem, stemLen } = stemGeometry(state, summit);
 

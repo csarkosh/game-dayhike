@@ -11,7 +11,7 @@ import { stemProgress } from "../../src/sim/trailRoute.js";
 import {
   maxFlushOff,
   BRAID_TOP_MAX, BRAID_TOP_FLOOR, BRAID_BOTTOM_MIN, BRAID_BOTTOM_MAX, BRAID_LATERAL_MIN,
-  BRAID_MIN_SPAN, BRAID_FLUSH_MAX,
+  BRAID_MIN_SPAN, BRAID_FLUSH_MAX, BRAID_RUNG_GAP, BRAID_RUNGS_MAX,
 } from "../../src/sim/trailBraid.js";
 import { TRAIL_GRID_CELL } from "../../src/sim/trailGrid.js";
 import { flatFrame } from "./helpers/buildFrames.js";
@@ -24,6 +24,19 @@ import { flatFrame } from "./helpers/buildFrames.js";
  * bed it left, which is what the two-cell rule allows. See the task report.) */
 const TWO = 2;
 const THREE = 32;
+/**
+ * A three-strand seed whose world can be crossed on BOTH strand pairs. Seed 32
+ * cannot: its -1 strand sits in a pocket sealed by a loop bed, and every rung
+ * try on the -1-to-A pair fails to REACH the arrival (measured: four tries, all
+ * unreached). Crossing that bed is exactly what the braid forbids, so the pair
+ * gets none and 32 can only ever show one rung chain.
+ *
+ * 485 is the first seed over 1..500 that builds three strands, keeps the gap
+ * invariant the tests below assert AND builds a rung on each pair. A probe, not
+ * a guarantee: over the 227-seed sweep 95 of the 162 seeds that build a strand
+ * build a rung at all. See the task report.
+ */
+const THREE_RUNGS = 485;
 
 function degreesOf(graph: TrailGraph): Map<number, number> {
   const d = new Map<number, number>();
@@ -75,10 +88,13 @@ function strandComponents(graph: TrailGraph): Array<{ nodes: number[]; forks: nu
   return out;
 }
 
-describe("buildStrands on the flat frame", () => {
-  const two = buildTrail(TWO, flatFrame()).graph;
-  const three = buildTrail(THREE, flatFrame()).graph;
+/** The three worlds every test below reads, built once each: `buildTrail` is
+ * the whole pipeline and neither describe block may pay for it twice. */
+const two = buildTrail(TWO, flatFrame()).graph;
+const three = buildTrail(THREE, flatFrame()).graph;
+const threeRungs = buildTrail(THREE_RUNGS, flatFrame()).graph;
 
+describe("buildStrands on the flat frame", () => {
   it("builds one extra strand for a two-strand seed and two for a three-strand seed", () => {
     expect(strandComponents(two)).toHaveLength(1);
     expect(strandComponents(three)).toHaveLength(2);
@@ -220,6 +236,86 @@ describe("buildStrands on the flat frame", () => {
       expect(strandEdges.length).toBeGreaterThan(0);
       const state = { nodes: graph.nodes, edges: graph.edges, nodeOfCell: new Map<number, number>(), edgeOfCell: new Map<number, number>() };
       expect(maxFlushOff(state, ground, strandEdges), `seed ${seed}`).toBeLessThanOrEqual(BRAID_FLUSH_MAX);
+    }
+  });
+});
+
+/** Rung chains: kind-"rung" edges walked fork to fork. */
+function rungChains(graph: TrailGraph): number[][] {
+  const adj = new Map<number, Array<{ to: number; ei: number }>>();
+  graph.edges.forEach((e, ei) => {
+    if (e.kind !== "rung") return;
+    (adj.get(e.a) ?? adj.set(e.a, []).get(e.a)!).push({ to: e.b, ei });
+    (adj.get(e.b) ?? adj.set(e.b, []).get(e.b)!).push({ to: e.a, ei });
+  });
+  const deg = degreesOf(graph);
+  const seen = new Set<number>();
+  const chains: number[][] = [];
+  for (const [start, links] of adj) {
+    if ((deg.get(start) ?? 0) < 3) continue;
+    for (const { to, ei } of links) {
+      if (seen.has(ei)) continue;
+      const chain = [start];
+      let prevEi = ei, at = to;
+      seen.add(ei);
+      chain.push(at);
+      while ((deg.get(at) ?? 0) === 2) {
+        const next = (adj.get(at) ?? []).find((l) => l.ei !== prevEi);
+        if (next === undefined) break;
+        seen.add(next.ei);
+        prevEi = next.ei;
+        at = next.to;
+        chain.push(at);
+      }
+      chains.push(chain);
+    }
+  }
+  return chains;
+}
+
+describe("buildRungs on the flat frame", () => {
+  it("builds at least one rung per adjacent strand pair and never more than BRAID_RUNGS_MAX", () => {
+    expect(rungChains(two).length).toBeGreaterThanOrEqual(1);
+    expect(rungChains(two).length).toBeLessThanOrEqual(BRAID_RUNGS_MAX);
+    expect(rungChains(threeRungs).length).toBeGreaterThanOrEqual(2);
+    expect(rungChains(threeRungs).length).toBeLessThanOrEqual(2 * BRAID_RUNGS_MAX);
+  });
+
+  it("joins two different strands with every rung, and both ends are forks", () => {
+    for (const g of [two, three, threeRungs]) {
+      const deg = degreesOf(g);
+      const strandOf = new Map<number, number>();
+      strandComponents(g).forEach(({ nodes }, si) => { for (const n of nodes) strandOf.set(n, si); });
+      const stem = stemNodeSet(g);
+      for (const chain of rungChains(g)) {
+        const a = chain[0]!, b = chain[chain.length - 1]!;
+        expect(deg.get(a)).toBeGreaterThanOrEqual(3);
+        expect(deg.get(b)).toBeGreaterThanOrEqual(3);
+        // Strand A is the stem between the forks: owner -1. A built strand: its component index.
+        const ownerA = stem.has(a) ? -1 : strandOf.get(a);
+        const ownerB = stem.has(b) ? -1 : strandOf.get(b);
+        expect(ownerA).toBeDefined();
+        expect(ownerB).toBeDefined();
+        expect(ownerA).not.toBe(ownerB);
+      }
+    }
+  });
+
+  it("spaces one pair's rungs at least BRAID_RUNG_GAP of stem apart", () => {
+    // Only the two-strand world: with three strands the two pairs draw their
+    // heights independently and may land near each other on strand A.
+    const arcs = rungChains(two).map((chain) => {
+      const a = two.nodes[chain[0]!]!;
+      return (1 - stemProgress(two, a.x, a.z)) * two.stemLen;
+    }).sort((p, q) => p - q);
+    for (let i = 1; i < arcs.length; i++) expect(arcs[i]! - arcs[i - 1]!).toBeGreaterThanOrEqual(BRAID_RUNG_GAP - 2 * 8);
+  });
+
+  it("lands every world's fork count in the spec's band on these seeds", () => {
+    expect(two.forks.length).toBeGreaterThanOrEqual(4);
+    for (const g of [three, threeRungs]) {
+      expect(g.forks.length).toBeGreaterThanOrEqual(6);
+      expect(g.forks.length).toBeLessThanOrEqual(18);
     }
   });
 });
