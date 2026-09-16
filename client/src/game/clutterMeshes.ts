@@ -122,7 +122,7 @@ const FAR_LOD = 1;
  * centimetres is under a blade's width, so nothing visibly shortens.
  * Boulders sink far further and by their own rule — see `BOULDER_SINK`.
  */
-const CLUTTER_SINK = 0.02;
+export const CLUTTER_SINK = 0.02;
 
 /** Ground-layer classes that sway and carry the foliage plugin's ground
  * tint, mapped to the profile that governs their amplitude, root darkening
@@ -221,6 +221,10 @@ const scratchPos = new Vector3();
 const scratchMat = new Matrix();
 const scratchLeanAxis = new Vector3();
 const scratchLean = new Quaternion();
+/** One matrix's worth of scratch floats, reused by `instanceMatrixFor` so
+ * `writeInstanceMatrix` can copy it into a bucket buffer at any offset
+ * without `Matrix.copyToArray` needing a per-instance subarray view. */
+const scratchMatBuf = new Float32Array(16);
 
 /** The node itself plus descendants, filtered to meshes that carry geometry —
  * `forestMeshes.ts`'s helper, which cannot be shared without exporting it from
@@ -359,7 +363,13 @@ export function trampleFrame(seed: number, inst: ClutterInstance): { height: num
  *    BOULDER_B_BASE_H.
  *  - everything else sinks `CLUTTER_SINK`, purely to break coplanarity.
  */
-function writeInstanceMatrix(inst: ClutterInstance, buf: Float32Array, offset: number, frame: ReturnType<typeof trampleFrame>): void {
+/**
+ * The instance's world matrix, written into `out` (16 floats, offset 0) —
+ * the pure core of `writeInstanceMatrix`, split out so a test can build one
+ * matrix and inspect it directly rather than reading a bucket buffer back
+ * off a `thinInstanceSetBuffer` spy.
+ */
+export function instanceMatrixFor(inst: ClutterInstance, frame: ReturnType<typeof trampleFrame>, out: Float32Array): void {
   const yaw = inst.hash * Math.PI * 2;
   if (TILTED.has(inst.cls)) {
     seatOnGround(yaw, inst.groundDx, inst.groundDz, scratchQ);
@@ -367,10 +377,11 @@ function writeInstanceMatrix(inst: ClutterInstance, buf: Float32Array, offset: n
     Quaternion.RotationAxisToRef(UP, yaw, scratchQ);
   }
   if (frame.lean > 0) {
-    // The axis perpendicular to the away direction, so the card's top moves
-    // along (ax, az); composed after the yaw (and after the ground tilt for
-    // tilted classes — cards are not tilted, so for them it is yaw then lean).
-    scratchLeanAxis.copyFromFloats(-frame.az, 0, frame.ax);
+    // The axis perpendicular to the away direction, chosen (by the right-hand
+    // rule) so the card's top moves ALONG (ax, az) rather than into the bed;
+    // composed after the yaw (and after the ground tilt for tilted classes —
+    // cards are not tilted, so for them it is yaw then lean).
+    scratchLeanAxis.copyFromFloats(frame.az, 0, -frame.ax);
     Quaternion.RotationAxisToRef(scratchLeanAxis, frame.lean, scratchLean);
     scratchLean.multiplyToRef(scratchQ, scratchQ);
   }
@@ -380,7 +391,12 @@ function writeInstanceMatrix(inst: ClutterInstance, buf: Float32Array, offset: n
   const sink = inst.cls === CLUTTER_BOULDER ? BOULDER_SINK * boulderBaseH * inst.scale : CLUTTER_SINK;
   scratchPos.copyFromFloats(inst.x, inst.groundH - sink, inst.z);
   Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchMat);
-  scratchMat.copyToArray(buf, offset);
+  scratchMat.copyToArray(out);
+}
+
+function writeInstanceMatrix(inst: ClutterInstance, buf: Float32Array, offset: number, frame: ReturnType<typeof trampleFrame>): void {
+  instanceMatrixFor(inst, frame, scratchMatBuf);
+  buf.set(scratchMatBuf, offset);
 }
 
 /** Ground colour at the instance (the palette the clipmap bakes into vertex

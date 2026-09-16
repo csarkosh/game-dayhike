@@ -4,10 +4,11 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import "../../src/sim/passes/index.js";
 import { CLUTTER_CLASS_COUNT, CLUTTER_GRASS, CLUTTER_LITTER, CLUTTER_ROCK } from "../../src/sim/clutter.js";
 import { clutterFadeEdges, clutterSeamEdges } from "../../src/game/clutterField.js";
-import { createClutterMeshes, LITTER_VARIANT_SCALE, trampleFrame } from "../../src/game/clutterMeshes.js";
+import { CLUTTER_SINK, createClutterMeshes, instanceMatrixFor, LITTER_VARIANT_SCALE, trampleFrame } from "../../src/game/clutterMeshes.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
@@ -228,6 +229,39 @@ describe("foliage attribute and plugin", () => {
     // The away direction points from the bed toward the card.
     expect(t09.ax * nx + t09.az * nz).toBeGreaterThan(0.99);
     expect(t3).toEqual({ height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } });
+  });
+
+  it("leans the trampled card's top along the away direction, not into the bed", () => {
+    // Matrix-level, not gradient-level: builds the exact matrix the rebuild
+    // writes (via the production `instanceMatrixFor`) and transforms the
+    // card's local top by it, so a wrong-signed lean axis shows up as the
+    // top landing on the wrong side rather than merely as a sign the
+    // gradient math happened to cancel out.
+    const white = { r: 1, g: 1, b: 1 };
+    const inst = { cls: CLUTTER_GRASS, x: 0, z: 0, groundH: 0, groundDx: 0, groundDz: 0, scale: 1, variant: 0, hash: 0 };
+    const buf = new Float32Array(16);
+    const top = new Vector3(0, 1, 0);
+
+    // height 0.55 scales the local top before the lean rotates it, so its
+    // horizontal excursion is height·sin(lean) ≈ 0.1886, not sin(lean) —
+    // a shorter, more-trampled blade's tip travels less far sideways for
+    // the same lean angle. cos(lean) then loses the same height factor
+    // before the -CLUTTER_SINK sink is added by the translation.
+    instanceMatrixFor(inst, { height: 0.55, lean: 0.35, ax: 1, az: 0, tint: white }, buf);
+    let world = Vector3.TransformCoordinates(top, Matrix.FromArray(buf));
+    expect(world.x).toBeGreaterThan(0.15); // toward +x, the away direction — not the −0.19 a bed-ward lean would land
+    expect(world.y).toBeGreaterThan(0.4);
+    expect(world.y).toBeLessThan(0.6);
+
+    instanceMatrixFor(inst, { height: 0.55, lean: 0.35, ax: 0, az: 1, tint: white }, buf);
+    world = Vector3.TransformCoordinates(top, Matrix.FromArray(buf));
+    expect(world.z).toBeGreaterThan(0.15);
+
+    instanceMatrixFor(inst, { height: 1, lean: 0, ax: 0, az: 0, tint: white }, buf);
+    world = Vector3.TransformCoordinates(top, Matrix.FromArray(buf));
+    expect(world.x).toBeCloseTo(0, 6);
+    expect(world.y).toBeCloseTo(1 - CLUTTER_SINK, 6);
+    expect(world.z).toBeCloseTo(0, 6);
   });
 
   it("scales the litter variants to pebbles and a twig, and lists litter among the tilted classes", () => {
