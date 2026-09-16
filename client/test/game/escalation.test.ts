@@ -94,6 +94,14 @@ describe("escalationTargets", () => {
     const q = walled.p;
     spawnHollow(walled.w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: (NEAR_START + NEAR_FULL) / 2 }, AiState.Crawl);
     expect(targetsOf(walled.w, q.id).near).toBeCloseTo(0.5 * NEAR_BLIND, 9);
+
+    const low = world();
+    spawnHollow(low.w, { x: 100, y: ENEMY_HALF.y, z: 45 }, AiState.Crawl);
+    // 0.7 m below the eye: the falloff reads the slant range, not the ground plan.
+    expect(targetsOf(low.w, low.p.id).near).toBeCloseTo(
+      (NEAR_START - Math.hypot(45, PLAYER_EYE_OFFSET)) / (NEAR_START - NEAR_FULL),
+      9,
+    );
   });
 
   it("marks a dead local player", () => {

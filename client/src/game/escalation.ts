@@ -46,7 +46,7 @@ export type EscalationTargets = {
   world: number;
   /** The local player's distance past the corridor, 0 on the trail to 1 at OFF_TRAIL_FULL. */
   offTrail: number;
-  /** The nearest Hollow's closeness to the local player, 0 to 1. */
+  /** The nearest Hollow's closeness to the local eye, 0 to 1. */
   near: number;
   /** The local player is dead: their spike and lens hold. */
   dead: boolean;
@@ -144,6 +144,5 @@ export function atmosphereUnder(base: AtmosphereBase, s: EscalationState): Atmos
   const hour = base.hour >= NIGHT_HOUR ? base.hour : base.hour + (NIGHT_HOUR - base.hour) * e;
   const weather = lerpWeather(base.weather, WEATHER_PRESETS.eerie, e);
   const lens = clamp01(s.lens);
-  if (lens > weather.dread) weather.dread = lens;
-  return { weather, hour };
+  return { weather: { ...weather, dread: Math.max(weather.dread, lens) }, hour };
 }
