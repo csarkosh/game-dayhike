@@ -350,7 +350,9 @@ Nothing below blocks the shape of the design; each changes what gets built.
    wooden sign posts at every junction.**
 6. ~~The sign-out as a multi-second, uninterruptible ritual (§5).~~ **Decided 2026-09-15
    (B §1.7): a five-second hold that breaks on release, on leaving reach, and on death.**
-7. **"Looking slows it"** as the sole defensive verb, and its tuning (§6.6).
+7. ~~"Looking slows it" as the sole defensive verb, and its tuning (§6.6).~~ **Decided
+   2026-09-15 (C §1.8): yes, and looking costs the stare — the screen darkens while a Hollow is
+   in view and a full stare kills.** The tuning stays with J.
 8. **A counterpart Poe passage for the win** (§12).
 9. **Carry-or-light** is held in reserve as the primary difficulty lever if the game plays
    too easy (§1.16, §8).
@@ -416,7 +418,7 @@ with the design. Letters are the ones the sub-project specs use.
 | **G1** | Rifle out, Interact in — the fire bit becomes Interact, `combat.ts` dormant, a headlamp | — | low | shipped 2026-09-11 |
 | **T** | The trail system — a stem to a made peak (the only dead end), seeded loops around made features (meadow flats, wadeable ponds), the pad a car's worth from the road, every chunk prop drawn (`docs/trail/2026-09-11-trail-system.md`) | A, G1 | high | shipped 2026-09-11 |
 | **B** | Register & the count — replicated book state, items at the sites, carry, the sign-out ritual, the win at the car, containment (§5; `docs/gameplay/2026-09-15-register-and-count.md`) | A, G1, T | medium | built 2026-09-15 |
-| **C** | The Hollow — one entity replacing the director population, walks the trail graph toward progress, contact kills via the existing respawn, placeholder asset, visible far (§6) | A, B | medium | |
+| **C** | The Hollow — one Hollow per hunted player (floor one) replacing the director population, a crawl down the stem from tick 0, the hunt on pick-up, contact kills for good, the stare, placeholder asset, visible far (§6; `docs/gameplay/2026-09-15-the-hollow.md`) | A, B | medium | designed 2026-09-15 |
 | **D** | Escalation & atmosphere — the scalar (sign-out floor + off-trail spike), the weather/lighting/mist curve, wildlife silence (§7) | A, B, C | low | |
 | **F** | Tape & leash — retroreflective tape along the trails, distance-to-trail feeding the scalar (§8) | A, D | medium | |
 | **E** | Dread stack — whispers and misleading one-shots, screen warp, lighting collapse (§7) | C, D | medium (GLSL) | |
