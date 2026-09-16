@@ -8,9 +8,10 @@
 import { describe, it, expect } from "vitest";
 import { buildTrail, type BuildFrame } from "../../src/sim/trailBuild.js";
 import {
-  segmentSegmentDistanceSq, segmentDistance, TRAIL_HARD_SLOPE_MAX, TRAIL_EDGE_MIN_GAP,
+  segmentDistance, TRAIL_HARD_SLOPE_MAX, TRAIL_EDGE_MIN_GAP,
   type TrailGraph,
 } from "../../src/sim/trail.js";
+import { closeNonAdjacentEdgePairs } from "./helpers/edgeGap.js";
 import { LANDMARK_DISC_RADIUS } from "../../src/sim/landmarks.js";
 import {
   PEAK_INLAND_MIN, PEAK_INLAND_MAX, PEAK_RISE_MAX, STEM_LEN_MIN,
@@ -231,41 +232,15 @@ describe("buildTrail on a synthetic world", () => {
     }
     // Two edges of the SAME junction are exempt, and "the same junction" is
     // the trail's own measure: their nearest endpoints are less than
-    // TRAIL_EDGE_MIN_GAP of walking apart.
-    const near = (from: number): Map<number, number> => {
-      const d = new Map<number, number>([[from, 0]]);
-      for (;;) {
-        let moved = false;
-        for (const e of g.edges) {
-          const L = Math.hypot(g.nodes[e.b]!.x - g.nodes[e.a]!.x, g.nodes[e.b]!.z - g.nodes[e.a]!.z);
-          for (const [p, q] of [[e.a, e.b], [e.b, e.a]] as const) {
-            const dp = d.get(p);
-            if (dp === undefined || dp + L >= TRAIL_EDGE_MIN_GAP) continue;
-            if ((d.get(q) ?? Infinity) > dp + L) { d.set(q, dp + L); moved = true; }
-          }
-        }
-        if (!moved) break;
-      }
-      return d;
-    };
-    const within = new Map<number, Map<number, number>>();
-    for (let n = 0; n < g.nodes.length; n++) within.set(n, near(n));
-    let pairs = 0;
-    for (let i = 0; i < g.edges.length; i++) {
-      for (let j = i + 1; j < g.edges.length; j++) {
-        const e = g.edges[i]!, f = g.edges[j]!;
-        const linked = [e.a, e.b].some((p) => [f.a, f.b].some((q) => within.get(p)!.has(q)));
-        if (linked) continue;
-        const a = g.nodes[e.a]!, b = g.nodes[e.b]!, c = g.nodes[f.a]!, d = g.nodes[f.b]!;
-        expect(segmentSegmentDistanceSq(a.x, a.z, b.x, b.z, c.x, c.z, d.x, d.z), `edges ${i},${j}`).toBeGreaterThanOrEqual(TRAIL_EDGE_MIN_GAP * TRAIL_EDGE_MIN_GAP - 1e-6);
-        pairs++;
-      }
-    }
+    // TRAIL_EDGE_MIN_GAP of walking apart. Shared with the 227-seed sweep
+    // (`trailSystem.test.ts`) via `helpers/edgeGap.ts` so the exemption rule
+    // stays identical on this synthetic world and on real terrain.
+    const close = closeNonAdjacentEdgePairs(g, TRAIL_EDGE_MIN_GAP);
     // A single stem chain has no branching, so non-adjacent pairs are scarce
     // on this small synthetic world — just assert the invariant holds on
     // whatever pairs exist; the 227-seed sweep (`trailBed.test.ts`) is the
     // real gate on how many that is on real terrain.
-    void pairs;
+    expect(close).toEqual([]);
   });
 
   it("routes each planned loop as two half-loops round its feature, off the stem and back onto it above", () => {
