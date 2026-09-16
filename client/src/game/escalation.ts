@@ -93,16 +93,13 @@ export function escalationTargets(
   const d = trailDistance(graph, me.pos.x, me.pos.z);
   const offTrail = clamp01((d - OFF_TRAIL_START) / (OFF_TRAIL_FULL - OFF_TRAIL_START));
 
-  // The eye carries the player's real height for the line-of-sight ray, but
-  // the near falloff itself, like offTrail and creep, reads the ground plan
-  // only — a Hollow at your side is exactly as near whatever its torso rides
-  // at.
   const eye: Vec3 = { x: me.pos.x, y: me.pos.y + PLAYER_EYE_OFFSET, z: me.pos.z };
   let near = 0;
   for (const h of hollows) {
-    const dx = h.x - me.pos.x;
-    const dz = h.z - me.pos.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
+    const dx = h.x - eye.x;
+    const dy = h.y - eye.y;
+    const dz = h.z - eye.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     let n = clamp01((NEAR_START - dist) / (NEAR_START - NEAR_FULL));
     if (n > 0 && !hasLineOfSight(eye, h, boxes, ground)) n *= NEAR_BLIND;
     if (n > near) near = n;

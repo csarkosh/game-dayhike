@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createWorld, spawnPlayer } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { AiState } from "../../src/sim/types.js";
-import { ENEMY_HALF } from "../../src/sim/constants.js";
+import { ENEMY_HALF, PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
 import { installRegister, type Register } from "../../src/sim/register.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
@@ -82,7 +82,8 @@ describe("escalationTargets", () => {
   it("nears with the closest Hollow, halved without line of sight, 0 with none", () => {
     const { w, p } = world();
     expect(targetsOf(w, p.id).near).toBe(0);
-    const h = spawnHollow(w, { x: 100, y: ENEMY_HALF.y, z: NEAR_START + 10 }, AiState.Crawl);
+    // At eye height, so the eye-to-centre distance equals the horizontal one the fixture's z picks.
+    const h = spawnHollow(w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: NEAR_START + 10 }, AiState.Crawl);
     expect(targetsOf(w, p.id).near).toBe(0);
     h.pos.z = (NEAR_START + NEAR_FULL) / 2;
     expect(targetsOf(w, p.id).near).toBeCloseTo(0.5, 9);
@@ -91,7 +92,7 @@ describe("escalationTargets", () => {
 
     const walled = world({ min: [90, 0, 20], max: [110, 4, 21], material: "concrete" });
     const q = walled.p;
-    spawnHollow(walled.w, { x: 100, y: ENEMY_HALF.y, z: (NEAR_START + NEAR_FULL) / 2 }, AiState.Crawl);
+    spawnHollow(walled.w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: (NEAR_START + NEAR_FULL) / 2 }, AiState.Crawl);
     expect(targetsOf(walled.w, q.id).near).toBeCloseTo(0.5 * NEAR_BLIND, 9);
   });
 
