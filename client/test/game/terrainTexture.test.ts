@@ -769,8 +769,22 @@ describe("the grass floor compiles into the fragment source on both paths", () =
   // The sampler/UBO trap from the other side: a uniform declared only through
   // getUniforms().fragment lands at ADDITIONAL_FRAGMENT_DECLARATION, which
   // exists only on the NON-uniform-buffer path, so a UBO context never sees it.
-  // These identifiers must reach the compiled fragment under both.
-  const FLOOR_IDENTIFIERS = ["terrainDetail", "terrainHorizon", "terrainTuft", "hexSetup", "macroTint"];
+  // Each of the five is therefore declared TWICE in the plugin, once per path.
+  //
+  // What this test must assert is the DECLARATION, in the spelling each path
+  // actually uses — never merely that the name appears. Every one of these
+  // names is USED by the spliced code, so a test that only looked for the name
+  // would still pass with the declaration deleted and the shader dead in every
+  // browser on one of the two paths.
+  const FLOOR_UNIFORMS: readonly (readonly [string, string])[] = [
+    ["vec4", "terrainDetail"],
+    ["vec2", "terrainDetail2"],
+    ["float", "terrainMacroOn"],
+    ["vec3", "terrainHorizon"],
+    ["vec3", "terrainTuft"],
+  ];
+  /** The spliced code that reads them; it must survive on both paths too. */
+  const FLOOR_CODE = ["hexSetup", "macroTint", "horizonWeight"];
 
   async function compiledFragmentSource(targetScene: Scene): Promise<string> {
     const material = new PBRMaterial("pbr-floor", targetScene);
@@ -792,24 +806,45 @@ describe("the grass floor compiles into the fragment source on both paths", () =
     return subMesh.effect?.fragmentSourceCode ?? "";
   }
 
-  it("non-UBO path (a default NullEngine)", async () => {
+  it("non-UBO path (a default NullEngine): five plain uniform declarations", async () => {
     const e = new NullEngine();
     expect(e.supportsUniformBuffers).toBe(false);
     const s = new Scene(e);
     try {
       const source = await compiledFragmentSource(s);
-      for (const name of FLOOR_IDENTIFIERS) expect(source, name).toContain(name);
+      // This path has no Material block, so getUniforms().fragment is the only
+      // thing that can declare them.
+      expect(source).not.toContain("uniform Material {");
+      for (const [type, name] of FLOOR_UNIFORMS) {
+        expect(source, name).toMatch(new RegExp(`uniform\\s+${type}\\s+${name}\\s*;`));
+      }
+      for (const name of FLOOR_CODE) expect(source, name).toContain(name);
+      // Declared before the include that reads them — the whole point of
+      // splicing the hex GLSL after this plugin's own definitions.
+      expect(source.indexOf("terrainHorizon")).toBeLessThan(source.indexOf("float horizonWeight("));
     } finally { s.dispose(); e.dispose(); }
   });
 
-  it("UBO path (a NullEngine forced to webGLVersion 2)", async () => {
+  it("UBO path (a NullEngine forced to webGLVersion 2): five Material members", async () => {
     const e = new NullEngine();
     (e as unknown as { _webGLVersion: number })._webGLVersion = 2;
     expect(e.supportsUniformBuffers).toBe(true);
     const s = new Scene(e);
     try {
       const source = await compiledFragmentSource(s);
-      for (const name of FLOOR_IDENTIFIERS) expect(source, name).toContain(name);
+      // Here they are members of Babylon's Material block, with no `uniform`
+      // keyword of their own — and getUniforms().fragment is dropped entirely,
+      // which is why the plain declaration must NOT also be present (it would
+      // redeclare a UBO member).
+      const blockAt = source.indexOf("uniform Material {");
+      expect(blockAt).toBeGreaterThan(-1);
+      const block = source.slice(blockAt, source.indexOf("};", blockAt));
+      for (const [type, name] of FLOOR_UNIFORMS) {
+        expect(block, name).toMatch(new RegExp(`\\b${type} ${name};`));
+        expect(source, name).not.toMatch(new RegExp(`uniform\\s+${type}\\s+${name}\\s*;`));
+      }
+      for (const name of FLOOR_CODE) expect(source, name).toContain(name);
+      expect(source.indexOf("terrainHorizon")).toBeLessThan(source.indexOf("float horizonWeight("));
     } finally { s.dispose(); e.dispose(); }
   });
 });

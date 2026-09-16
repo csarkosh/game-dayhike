@@ -13,6 +13,11 @@
 // Samples take explicit gradients of the UNROTATED uv, so a hex seam changes
 // the texel fetched but not the mip level, and no seam shows as a blur line.
 //
+// hexSample2D and hexSampleArray have no caller in the plugin: it sets the
+// lattice up once per scale with hexSetup and fetches through hexFetch2D and
+// hexFetchArray. They are kept as the one-shot spelling the lockstep tests
+// name, and as the obvious entry point for a lone sample.
+//
 // COMMENT RULES: no semicolon inside a trailing comment on a code line, no
 // hashed preprocessor keyword in comment prose.
 
