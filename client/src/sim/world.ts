@@ -15,7 +15,7 @@ import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
 import { updateDirector } from "./director.js";
-import { spawnHollow, stepHollows, updateHollows } from "./hollow.js";
+import { spawnHollow, stepHollows, updateHollows, updateLoss } from "./hollow.js";
 import { ENEMY_HALF, ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
 
 export type World = {
@@ -266,6 +266,7 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
     updateDirector(world);
   }
   updateDeaths(world);
+  updateLoss(world);
   stepRegister(world, inputs);
 }
 

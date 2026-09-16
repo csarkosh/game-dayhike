@@ -333,7 +333,9 @@ function nearestTo(candidates: EnemyState[], pos: Vec3): EnemyState | null {
   let bestSq = Infinity;
   for (const h of candidates) {
     const sq = horizontalDistSq(h.pos, pos);
-    if (sq < bestSq) {
+    // Ties go to the lower id, said outright rather than left to the order
+    // the enemy map happens to be walked in.
+    if (sq < bestSq || (sq === bestSq && best !== null && h.id < best.id)) {
       bestSq = sq;
       best = h;
     }
@@ -351,7 +353,8 @@ function release(world: World, h: EnemyState): void {
  * The per-tick rules, host only, after every Hollow has moved: contact
  * kills; the look test, which slows a seen Hollow next tick and fills or
  * empties each player's stare; releases; binding on new carriers, with a
- * split when no Hollow is free; merges; and the loss.
+ * split when no Hollow is free; and merges. The loss is `updateLoss`,
+ * which every world runs, Hollow or not.
  */
 export function updateHollows(world: World): void {
   if (world.trail === null) return;
@@ -430,11 +433,16 @@ export function updateHollows(world: World): void {
       }
     }
   }
+}
 
-  // The loss.
-  if (state.outcome === Outcome.Playing && state.players.size > 0) {
-    let living = 0;
-    for (const p of state.players.values()) if (p.health > 0) living++;
-    if (living === 0) state.outcome = Outcome.Lost;
-  }
+/**
+ * The loss: a match that had players and has no living one is over. Death is
+ * permanent on every level, so this runs on every world — the sandbox, where
+ * no Hollow walks, ends the same way the forest does.
+ */
+export function updateLoss(world: World): void {
+  const state = world.state;
+  if (state.outcome !== Outcome.Playing || state.players.size === 0) return;
+  for (const p of state.players.values()) if (p.health > 0) return;
+  state.outcome = Outcome.Lost;
 }

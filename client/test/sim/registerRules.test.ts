@@ -165,7 +165,9 @@ describe("the win", () => {
     for (const item of w2.state.items) item.signedOut = true;
     p2.health = 0;
     tickWorld(w2, new Map());
-    expect(w2.state.outcome).toBe(Outcome.Playing);
+    // Every hiker signed out, and nobody left alive to have driven away: the
+    // match is lost, not won (hollow.ts's `updateLoss`).
+    expect(w2.state.outcome).toBe(Outcome.Lost);
   });
 
   it("needs every hiker, not most of them", () => {

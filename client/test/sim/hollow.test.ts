@@ -394,6 +394,19 @@ describe("the loss", () => {
     tickWorld(w, new Map());
     expect(w.state.outcome).toBe(Outcome.Lost);
   });
+
+  it("is declared on a world with no trail and no Hollow", () => {
+    // Death is permanent everywhere, so the sandbox ends the same way.
+    const w = createWorld(level(), 1);
+    const a = spawnPlayer(w);
+    const b = spawnPlayer(w);
+    a.health = 0;
+    tickWorld(w, new Map());
+    expect(w.state.outcome).toBe(Outcome.Playing);
+    b.health = 0;
+    tickWorld(w, new Map());
+    expect(w.state.outcome).toBe(Outcome.Lost);
+  });
 });
 
 describe("determinism", () => {
