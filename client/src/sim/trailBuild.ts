@@ -892,11 +892,11 @@ export function buildTrail(
 
   // ---- The braid: strands between a top and a bottom fork ------------------
   const braid = buildStrands(state, {
-    seed, grid, frame, H, ground, tree, treeEdges, features, summit,
+    seed, grid, frame, H, ground, tree, treeEdges, features, summit, loops,
   });
   state = braid.state;
   state = buildRungs(state, {
-    seed, grid, frame, H, ground, tree, treeEdges, features, summit,
+    seed, grid, frame, H, ground, tree, treeEdges, features, summit, loops,
   }, braid.strands, braid.samples, braid.topArc, braid.bottomArc).state;
 
   const { stem, stemLen } = stemGeometry(state, summit);

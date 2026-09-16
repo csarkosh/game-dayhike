@@ -3,7 +3,8 @@
  *
  * At a TOP FORK on the stem the trail splits into 2–3 STRANDS that descend
  * roughly in parallel, BRAID_LATERAL_MIN–MAX apart, and rejoin at a BOTTOM
- * FORK above the pad. RUNGS cross-link adjacent strands at seeded heights.
+ * FORK above the pad. RUNGS cross-link adjacent strands at seeded heights (or a
+ * strand and a loop's bed, where the strand across cannot be reached).
  * The original stem between the two forks is strand A. Every strand and rung
  * is routed on the walkability grid with the same machinery the loops use
  * (trailPlan.ts): the tree is forbidden except at the endpoints, feature
@@ -23,7 +24,7 @@
  */
 import { hash3 } from "./field.js";
 import { cellAt, TRAIL_GRID_CELL, type TrailGrid, type GroundFn } from "./trailGrid.js";
-import { segmentSegmentDistanceSq, trailCorridorD, TRAIL_EDGE_MIN_GAP, type TrailEdge, type TrailNode } from "./trail.js";
+import { segmentSegmentDistanceSq, trailCorridorD, TRAIL_EDGE_MIN_GAP, type TrailEdge, type TrailLoop, type TrailNode } from "./trail.js";
 import { type Feature } from "./features.js";
 import {
   planPath, splitAt, markPath, routeTo, forEachCellNear, featureReach, stemGeometry, sampleStem,
@@ -115,6 +116,8 @@ export type Braid = { strands: Strand[]; topArc: number; bottomArc: number; samp
 export type BraidCtx = {
   seed: number; grid: TrailGrid; frame: BuildFrame; H: Heights; ground: GroundFn;
   tree: Uint8Array; treeEdges: Array<[number, number]>; features: readonly Feature[]; summit: number;
+  /** The loops the stage before this one committed: a rung may end on one. */
+  loops: readonly TrailLoop[];
 };
 
 /**
@@ -449,21 +452,23 @@ export function buildStrands(state: GraphState, ctx: BraidCtx): Braid & { state:
 }
 
 /**
- * The point on a strand's node chain nearest a stem arc, as a grid cell on the
- * tree (the cell the chain passes through nearest that arc), or -1.
+ * The point on a bed nearest a stem arc, as a grid cell on the tree (the cell
+ * the bed passes through nearest that arc), or -1 when the bed has no tree cell
+ * within `limit` of that arc. `segs` are the bed's node-index pairs — a
+ * strand's chain, or a loop's edges.
  *
- * Read off the chain's node POSITIONS rather than off the strand's cells:
- * `splitAt` puts its node on the centreline of the edge it divides, so the
- * chain's straight segments still lie on the bed after an earlier rung has
- * split them, and a stale `nodes` list still describes the same polyline.
+ * Read off node POSITIONS rather than off the bed's cells: `splitAt` puts its
+ * node on the centreline of the edge it divides, so the straight segments still
+ * lie on the bed after an earlier rung has split one, and a stale node list
+ * still describes the same polyline.
  */
-function strandCellAtArc(
+function bedCellAtArc(
   grid: TrailGrid, frame: BuildFrame, state: GraphState, tree: Uint8Array,
-  samples: readonly StemSample[], strand: Strand, arc: number,
+  samples: readonly StemSample[], segs: ReadonlyArray<readonly [number, number]>, arc: number, limit: number,
 ): number {
-  let best = -1, bestDiff = Infinity;
-  for (let k = 0; k + 1 < strand.nodes.length; k++) {
-    const a = state.nodes[strand.nodes[k] as number] as TrailNode, b = state.nodes[strand.nodes[k + 1] as number] as TrailNode;
+  let best = -1, bestDiff = limit;
+  for (const [na, nb] of segs) {
+    const a = state.nodes[na] as TrailNode, b = state.nodes[nb] as TrailNode;
     const L = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
     const n = Math.max(1, Math.ceil(L / TRAIL_GRID_CELL));
     for (let i = 0; i <= n; i++) {
@@ -478,6 +483,16 @@ function strandCellAtArc(
     }
   }
   return best;
+}
+
+/** `bedCellAtArc` over a strand's own chain: the nearest arc on it, wherever it is. */
+function strandCellAtArc(
+  grid: TrailGrid, frame: BuildFrame, state: GraphState, tree: Uint8Array,
+  samples: readonly StemSample[], strand: Strand, arc: number,
+): number {
+  const segs: Array<readonly [number, number]> = [];
+  for (let k = 0; k + 1 < strand.nodes.length; k++) segs.push([strand.nodes[k] as number, strand.nodes[k + 1] as number]);
+  return bedCellAtArc(grid, frame, state, tree, samples, segs, arc, Infinity);
 }
 
 /**
@@ -518,9 +533,10 @@ function crowds(state: GraphState, added: readonly number[]): boolean {
  * between the forks, each at least BRAID_RUNG_GAP of stem apart and from either
  * fork; each rung is routed from the pair's first strand to its second inside a
  * window of ±BRAID_RUNG_ALONG_HALF of its height, tree forbidden except at its
- * ends. A rung that cannot route, whose height cannot be found on both strands,
- * whose bed will not sit on the ground or which crowds a bed it does not meet is
- * dropped — the plan shrinks, a seed always gets a legal world.
+ * ends — or, when that strand cannot be reached at all, onto a loop's bed on the
+ * same side of the stem. A rung that cannot route, whose height cannot be found
+ * on both strands, whose bed will not sit on the ground or which crowds a bed it
+ * does not meet is dropped — the plan shrinks, a seed always gets a legal world.
  *
  * THE DRAWN HEIGHT IS THE FIRST TRY, NOT THE ONLY ONE (2026-09-16), the same
  * answer the top fork's ladder gives for the same reason and at the same step.
@@ -542,11 +558,13 @@ export function buildRungs(
   const ordered = strands.slice().sort((p, q) => p.side - q.side);
   let cur = state;
   let rungs = 0;
-  /** One rung of the pair X→Y at stem arc `arc`: the graph it builds, or null. */
-  const rungAt = (X: Strand, Y: Strand, arc: number): GraphState | null => {
-    const cX = strandCellAtArc(grid, frame, cur, tree, samples, X, arc);
-    const cY = strandCellAtArc(grid, frame, cur, tree, samples, Y, arc);
-    if (cX < 0 || cY < 0 || cX === cY) return null;
+  /**
+   * One rung from cell `cX` to cell `cY` at stem arc `arc`: the graph it builds,
+   * or null with `unreached` saying whether the search never got there at all
+   * (as against a rejection on slope, flush or crowding).
+   */
+  const rungTo = (cX: number, cY: number, arc: number, onLoop: TrailLoop | null): { state: GraphState | null; unreached: boolean } => {
+    const no = (unreached = false): { state: null; unreached: boolean } => ({ state: null, unreached });
     // BOTH ENDS MUST LAND ON A BED (2026-09-16). `planPath` splits the edge
     // under the branch's FIRST cell, but every later cell — the arrival
     // included — is looked up in `nodeOfCell` and MINTED as a fresh node when it
@@ -556,10 +574,17 @@ export function buildRungs(
     // else. So the arrival is split first, into a COPY of the graph (a rung that
     // never routes leaves `cur` untouched), exactly as `forksFor` splits a
     // strand's two forks; and a cell no edge covers is not a rung end at all.
-    if (!cur.nodeOfCell.has(cX) && !cur.edgeOfCell.has(cX)) return null;
-    if (!cur.nodeOfCell.has(cY) && !cur.edgeOfCell.has(cY)) return null;
+    if (!cur.nodeOfCell.has(cX) && !cur.edgeOfCell.has(cX)) return no();
+    if (!cur.nodeOfCell.has(cY) && !cur.edgeOfCell.has(cY)) return no();
     const staged = planPath(cur, [], grid, frame, H).state;
+    const edgesBefore = staged.edges.length;
     splitAt(cY, grid, frame, H, staged);
+    // A LOOP IS A RING AND HAS TO STAY ONE. `splitAt` shortens the edge it
+    // divides and pushes the far half on as a NEW index, which `loop.edges`
+    // does not know about — and that list is what walks the ring (its length,
+    // its junction-to-junction path, its paint). The new index is recorded on
+    // the loop when the rung commits, and only then.
+    const splitEdge = staged.edges.length > edgesBefore ? staged.edges.length - 1 : -1;
     const tS = clearedAround(grid, tree, cY, BRAID_ARRIVE_CELLS);
     const w = baseWeight(ctx, tree, cX, cY);
     for (let c = 0; c < w.length; c++) {
@@ -571,16 +596,65 @@ export function buildRungs(
     const marked: number[] = [];
     const r = routeTo(grid, frame, H, ground, staged, tS, treeEdges, cX, cY, marked, w, true);
     for (const c of marked) grid.pass[c] = 1;
-    if (!r.ok) return null;
+    if (!r.ok) return no(r.best.cells.length === 0);
     const plan = planPath(staged, r.best.cells, grid, frame, H);
-    if (plan.added.length === 0) return null;
+    if (plan.added.length === 0) return no();
     for (const ei of plan.added) (plan.state.edges[ei] as TrailEdge).kind = "rung";
     // The bed has to sit on the ground, not cut through it: a rung is as
     // optional as a strand, so it is held to the same BRAID_FLUSH_MAX.
-    if (maxFlushOff(plan.state, ground, plan.added) > BRAID_FLUSH_MAX) return null;
-    if (crowds(plan.state, plan.added)) return null;
+    if (maxFlushOff(plan.state, ground, plan.added) > BRAID_FLUSH_MAX) return no();
+    if (crowds(plan.state, plan.added)) return no();
     markPath(r.best.cells, grid, frame, tree, treeEdges);
-    return plan.state;
+    if (onLoop !== null && splitEdge >= 0) onLoop.edges.push(splitEdge);
+    return { state: plan.state, unreached: false };
+  };
+
+  /**
+   * A loop's bed at this arc, on `side` of the stem: the arrival of last resort
+   * when the pair's own strand cannot be reached. The loop that seals a
+   * strand's pocket is exactly the bed that is reachable when the strand behind
+   * it is not, and ending a rung on it is a fork on a real trail rather than no
+   * rung at all. Held to the same arc window the search is, so a rung never
+   * runs off to a loop the ground between could not carry it to anyway.
+   */
+  const loopCellAtArc = (side: number, arc: number): { cell: number; loop: TrailLoop } | null => {
+    if (side === 0) return null;
+    for (const loop of ctx.loops) {
+      const f = ctx.features.find((g) => g.id === loop.featureId);
+      if (f === undefined) continue;
+      if (stemPose(samples, f.x, f.z).lat * side <= 0) continue;
+      const segs = loop.edges.map((ei) => {
+        const e = cur.edges[ei] as TrailEdge;
+        return [e.a, e.b] as const;
+      });
+      const cell = bedCellAtArc(grid, frame, cur, tree, samples, segs, arc, BRAID_RUNG_ALONG_HALF);
+      if (cell >= 0) return { cell, loop };
+    }
+    return null;
+  };
+
+  /**
+   * One rung of the pair X→Y at stem arc `arc`: the graph it builds, or null.
+   *
+   * A LOOP'S BED IS THE ARRIVAL OF LAST RESORT (2026-09-16). When the search
+   * cannot REACH strand Y at all — measured as the single largest reason a rung
+   * is dropped — it is usually walled in rather than merely unlucky, and the
+   * wall is a bed: on seed 32 of the flat frame the -1 strand's pocket is
+   * sealed by a loop that runs from the stem out past it. That loop is
+   * reachable when the strand behind it is not, so the rung ends there instead,
+   * on the side of the stem the pair straddles (a pair is always one strand and
+   * strand A, so the side is whichever of the two is not the stem's own 0).
+   */
+  const rungAt = (X: Strand, Y: Strand, arc: number): GraphState | null => {
+    const cX = strandCellAtArc(grid, frame, cur, tree, samples, X, arc);
+    const cY = strandCellAtArc(grid, frame, cur, tree, samples, Y, arc);
+    if (cX < 0 || cY < 0 || cX === cY) return null;
+    const first = rungTo(cX, cY, arc, null);
+    if (first.state !== null) return first.state;
+    if (!first.unreached) return null;
+    const onLoop = loopCellAtArc(X.side !== 0 ? X.side : Y.side, arc);
+    if (onLoop === null || onLoop.cell === cX) return null;
+    return rungTo(cX, onLoop.cell, arc, onLoop.loop).state;
   };
   for (let pi = 0; pi + 1 < ordered.length; pi++) {
     const X = ordered[pi] as Strand, Y = ordered[pi + 1] as Strand;

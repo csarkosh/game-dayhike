@@ -37,6 +37,14 @@ const THREE = 32;
  * build a rung at all. See the task report.
  */
 const THREE_RUNGS = 485;
+/**
+ * A seed whose rung ends on a LOOP's bed instead of on its pair's own strand:
+ * the arrival of last resort, taken when the search cannot reach the strand at
+ * all. The first over 1..120 whose rung ends on a loop node that is not also a
+ * stem node (seed 40 comes first but is one of the flat frame's own
+ * gap-invariant breakages, above).
+ */
+const LOOP_RUNG = 52;
 
 function degreesOf(graph: TrailGraph): Map<number, number> {
   const d = new Map<number, number>();
@@ -88,11 +96,12 @@ function strandComponents(graph: TrailGraph): Array<{ nodes: number[]; forks: nu
   return out;
 }
 
-/** The three worlds every test below reads, built once each: `buildTrail` is
- * the whole pipeline and neither describe block may pay for it twice. */
+/** The worlds every test below reads, built once each: `buildTrail` is the
+ * whole pipeline and neither describe block may pay for it twice. */
 const two = buildTrail(TWO, flatFrame()).graph;
 const three = buildTrail(THREE, flatFrame()).graph;
 const threeRungs = buildTrail(THREE_RUNGS, flatFrame()).graph;
+const loopRung = buildTrail(LOOP_RUNG, flatFrame()).graph;
 
 describe("buildStrands on the flat frame", () => {
   it("builds one extra strand for a two-strand seed and two for a three-strand seed", () => {
@@ -273,6 +282,44 @@ function rungChains(graph: TrailGraph): number[][] {
   return chains;
 }
 
+/**
+ * Which BED each node lies on, for the ends of a rung: `"stem"` for strand A
+ * (the stem between the forks), `"s<i>"` for a built strand, `"l<i>"` for a
+ * loop. A rung ends on a loop when its pair's own strand could not be reached,
+ * so the ends test asks for two different beds, not two different strands.
+ * A node that is both (a loop's junction is a stem node) counts as the stem.
+ */
+function bedOwners(graph: TrailGraph): Map<number, string> {
+  const owner = new Map<number, string>();
+  graph.loops.forEach((loop, li) => {
+    for (const ei of loop.edges) {
+      const e = graph.edges[ei]!;
+      for (const n of [e.a, e.b]) if (!owner.has(n)) owner.set(n, `l${li}`);
+    }
+  });
+  strandComponents(graph).forEach(({ nodes }, si) => { for (const n of nodes) owner.set(n, `s${si}`); });
+  for (const n of stemNodeSet(graph)) owner.set(n, "stem");
+  return owner;
+}
+
+/** Whether `edges` walk from `from` to `to` — a loop is still a ring. */
+function walks(graph: TrailGraph, edges: readonly number[], from: number, to: number): boolean {
+  const adj = new Map<number, number[]>();
+  for (const ei of edges) {
+    const e = graph.edges[ei]!;
+    (adj.get(e.a) ?? adj.set(e.a, []).get(e.a)!).push(e.b);
+    (adj.get(e.b) ?? adj.set(e.b, []).get(e.b)!).push(e.a);
+  }
+  const seen = new Set<number>([from]);
+  const stack = [from];
+  while (stack.length > 0) {
+    const n = stack.pop()!;
+    if (n === to) return true;
+    for (const m of adj.get(n) ?? []) if (!seen.has(m)) { seen.add(m); stack.push(m); }
+  }
+  return false;
+}
+
 describe("buildRungs on the flat frame", () => {
   it("builds at least one rung per adjacent strand pair and never more than BRAID_RUNGS_MAX", () => {
     expect(rungChains(two).length).toBeGreaterThanOrEqual(1);
@@ -281,22 +328,17 @@ describe("buildRungs on the flat frame", () => {
     expect(rungChains(threeRungs).length).toBeLessThanOrEqual(2 * BRAID_RUNGS_MAX);
   });
 
-  it("joins two different strands with every rung, and both ends are forks", () => {
-    for (const g of [two, three, threeRungs]) {
+  it("joins two different beds with every rung, and both ends are forks", () => {
+    for (const g of [two, three, threeRungs, loopRung]) {
       const deg = degreesOf(g);
-      const strandOf = new Map<number, number>();
-      strandComponents(g).forEach(({ nodes }, si) => { for (const n of nodes) strandOf.set(n, si); });
-      const stem = stemNodeSet(g);
       for (const chain of rungChains(g)) {
         const a = chain[0]!, b = chain[chain.length - 1]!;
         expect(deg.get(a)).toBeGreaterThanOrEqual(3);
         expect(deg.get(b)).toBeGreaterThanOrEqual(3);
-        // Strand A is the stem between the forks: owner -1. A built strand: its component index.
-        const ownerA = stem.has(a) ? -1 : strandOf.get(a);
-        const ownerB = stem.has(b) ? -1 : strandOf.get(b);
-        expect(ownerA).toBeDefined();
-        expect(ownerB).toBeDefined();
-        expect(ownerA).not.toBe(ownerB);
+        const owner = bedOwners(g);
+        expect(owner.get(a)).toBeDefined();
+        expect(owner.get(b)).toBeDefined();
+        expect(owner.get(a)).not.toBe(owner.get(b));
       }
     }
   });
@@ -309,6 +351,23 @@ describe("buildRungs on the flat frame", () => {
       return (1 - stemProgress(two, a.x, a.z)) * two.stemLen;
     }).sort((p, q) => p - q);
     for (let i = 1; i < arcs.length; i++) expect(arcs[i]! - arcs[i - 1]!).toBeGreaterThanOrEqual(BRAID_RUNG_GAP - 2 * 8);
+  });
+
+  it("ends a rung on a loop's bed when the strand cannot be reached, and leaves the loop a ring", () => {
+    const deg = degreesOf(loopRung);
+    const owner = bedOwners(loopRung);
+    const ends = rungChains(loopRung).flatMap((c) => [c[0]!, c[c.length - 1]!]);
+    const onLoop = ends.filter((n) => (owner.get(n) ?? "").startsWith("l"));
+    expect(onLoop.length).toBeGreaterThanOrEqual(1);
+    for (const n of onLoop) expect(deg.get(n)).toBeGreaterThanOrEqual(3);
+    // THE LOOP IS STILL A RING. The arrival SPLITS a loop edge, and `splitAt`
+    // pushes the far half on as a new index the loop's own `edges` list would
+    // not know about — which is the list that walks the ring for its length,
+    // its junction-to-junction path and its paint. `buildRungs` records the
+    // new index on the loop when the rung commits; without that, this walk
+    // stops at the split.
+    for (const loop of loopRung.loops) expect(walks(loopRung, loop.edges, loop.junctionA, loop.junctionB)).toBe(true);
+    expect([...deg.entries()].filter(([n, d]) => d === 1 && n !== 0).map(([n]) => n)).toEqual([loopRung.summit]);
   });
 
   it("lands every world's fork count in the spec's band on these seeds", () => {

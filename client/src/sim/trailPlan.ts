@@ -630,8 +630,9 @@ export function restemProgress(state: GraphState, summit: number): { stem: numbe
  * that is why the composed check measures both halves (`affectedEdges`
  * includes both) rather than trusting the old edge's invariants to carry
  * over. Both halves keep the whole edge's `kind` (a stem edge splits into two
- * stem edges); `progress0`/`progress1` on both are placeholders, corrected by
- * the next `restemProgress` call.
+ * stem edges) and its `progress0`/`progress1` — the halves are collinear with
+ * the whole, and only the stem chain's values are recomputed afterwards
+ * (`restemProgress`), so a loop edge's have to survive the split.
  *
  * Within SPLIT_SNAP of either end the existing node is used instead. That is
  * not just a degeneracy guard: two nodes closer than the corridor's own width
@@ -664,13 +665,23 @@ export function splitAt(cell: number, grid: TrailGrid, frame: BuildFrame, H: Hei
   nodes.push({ x: px, z: pz, h: H.point(px, pz), u: px - frame.roadCenterX(pz) });
   const n = nodes.length - 1;
   const nn = nodes[n] as TrailNode;
+  // BOTH HALVES INHERIT THE WHOLE EDGE'S PROGRESS (2026-09-16). They used to be
+  // written as placeholder zeroes "corrected by the next `restemProgress`
+  // call" — but that call only rewrites the STEM chain. A loop edge carries its
+  // nearer junction's progress and nothing recomputes it, so a rung arriving on
+  // a loop's bed left both halves reading 0. Measured on seed 12345 of the
+  // 227-seed sweep: `trailSystem.test.ts` "returns every loop to the stem …"
+  // failed with progress0=0 against the junctions' 0.458/0.574. The halves are
+  // collinear with the whole, so its own values are the right answer for both;
+  // the stem's are still recomputed, and a strand's and a rung's are relabelled
+  // by `buildTrail` after the braid.
   edges[ei] = {
     a: e.a, b: n, kind: e.kind, profile: buildProfile(H.ground, a.x, a.z, a.h, px, pz, nn.h),
-    progress0: 0, progress1: 0,
+    progress0: e.progress0, progress1: e.progress1,
   };
   edges.push({
     a: n, b: e.b, kind: e.kind, profile: buildProfile(H.ground, px, pz, nn.h, b.x, b.z, b.h),
-    progress0: 0, progress1: 0,
+    progress0: e.progress0, progress1: e.progress1,
   });
   const ej = edges.length - 1;
   for (const c of cellsBetween(grid, frame, a.x, a.z, px, pz)) edgeOfCell.set(c, ei);
