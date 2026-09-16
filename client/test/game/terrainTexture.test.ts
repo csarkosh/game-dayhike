@@ -18,6 +18,7 @@ import {
 } from "../../src/game/groundHexParams.js";
 import type { Feature } from "../../src/sim/features.js";
 import type { TrailGraph } from "../../src/sim/trail.js";
+import { TRAIL_PAINT_MAX_SEGMENTS } from "../../src/game/trailPaint.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import "../../src/sim/passes/index.js";
@@ -785,10 +786,16 @@ describe("the grass floor", () => {
     expect(writes.terrainMacroOn).toEqual([1]);
   });
 
-  it("binds terrainWet from setWet, unconditionally", () => {
+  it("binds terrainWet from setWet, unconditionally, clamped to [0, 1]", () => {
     const { plugin, ubo, writes } = makeBoundPlugin();
     expect(writes.terrainWet).toEqual([0]);
     plugin.setWet(1);
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(writes.terrainWet).toEqual([1]);
+    plugin.setWet(-1);
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(writes.terrainWet).toEqual([0]);
+    plugin.setWet(2);
     plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
     expect(writes.terrainWet).toEqual([1]);
   });
@@ -816,7 +823,7 @@ describe("the grass floor compiles into the fragment source on both paths", () =
   /** The spliced code that reads them; it must survive on both paths too. */
   const FLOOR_CODE = ["hexSetup", "macroTint", "horizonWeight"];
 
-  /** The two-node graph task 4's trail-paint fixtures use elsewhere. */
+  /** The two-node graph the trail-paint tests use. */
   const trailGraphFixture: TrailGraph = {
     nodes: [{ x: 0, z: 0, h: 0, u: 0 }, { x: 100, z: 0, h: 0, u: 100 }],
     edges: [{ a: 0, b: 1, kind: "stem", profile: new Float64Array(2), progress0: 0, progress1: 1 }],
@@ -892,13 +899,28 @@ describe("the grass floor compiles into the fragment source on both paths", () =
       if (forceUbo) (e as unknown as { _webGLVersion: number })._webGLVersion = 2;
       const s = new Scene(e);
       try {
-        const source = await compiledFragmentSource(s, (plugin) => plugin.enableTrail(trailGraphFixture));
+        let trailPlugin: TerrainTexturePlugin | undefined;
+        const source = await compiledFragmentSource(s, (plugin) => {
+          plugin.enableTrail(trailGraphFixture);
+          trailPlugin = plugin;
+        });
         expect(source).toContain("trailSegs");
         expect(source).toContain("terrainWet");
         expect(source.match(/uniform sampler2D trailSegs;/g)).toHaveLength(1);
         const terrainWetDecl = forceUbo ? /\bfloat terrainWet;/g : /uniform\s+float\s+terrainWet\s*;/g;
         expect(source.match(terrainWetDecl)).toHaveLength(1);
         expect(source.match(/texture2D\(trailSegs, vec2\(tuBest, 0\.75\)\)/g)).toHaveLength(1);
+        // The regression this pins: at height 1 the shader would read world
+        // coordinates as u and width, and every TypeScript-side test would
+        // stay green since none of them touch the real texture.
+        const active: RawTexture[] = [];
+        trailPlugin!.getActiveTextures(active);
+        const segsTex = active.find((t) => t.name === "trailSegs")!;
+        expect(segsTex.getSize()).toEqual({ width: TRAIL_PAINT_MAX_SEGMENTS, height: 2 });
+        // The hex include's latticeHash is what trailValueNoise1 calls, and
+        // CUSTOM_FRAGMENT_DEFINITIONS splices the include before the trail
+        // defs for exactly that reason.
+        expect(source.indexOf("latticeHash(")).toBeLessThan(source.indexOf("trailValueNoise1("));
       } finally { s.dispose(); e.dispose(); }
     }
   });

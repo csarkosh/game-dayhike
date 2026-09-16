@@ -40,7 +40,7 @@ import {
   TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE,
   TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT,
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE,
-  trailWear, trailBands,
+  trailWear, trailEdgeNoise, trailBands,
 } from "./trailBenchParams.js";
 
 export type Rgb = { r: number; g: number; b: number };
@@ -188,8 +188,12 @@ export function trailBankBand(d: number, rise: number, soil = 1): number {
 
 export type TrailPaintOpts = { edgeNoise: number; height: number };
 /** The band weights the shader computes at (x, z): edgeNoise is the metres the ragged
- * edge adds (the shader's own comes from trailEdgeNoise), height the pebble height in [0, 1]. */
-export function trailPaintAt(x: number, z: number, table: TrailTable, opts: TrailPaintOpts): { core: number; margin: number; trample: number; wear: number; u: number; widthK: number } {
+ * edge adds (the shader's own comes from trailEdgeNoise), height the pebble height in
+ * [0, 1]. `opts` defaults to the shader's own edge noise at (x, z) and a level pebble
+ * (0.5), so a caller with no reason to override either can omit it. */
+export function trailPaintAt(x: number, z: number, table: TrailTable, opts?: TrailPaintOpts): { core: number; margin: number; trample: number; wear: number; u: number; widthK: number } {
+  const edgeNoise = opts?.edgeNoise ?? trailEdgeNoise(x, z);
+  const height = opts?.height ?? 0.5;
   const n = trailNearest(table, x, z);
   if (n.k < 0) return { core: 0, margin: 0, trample: 0, wear: 0, u: 0, widthK: 1 };
   const row1 = TRAIL_PAINT_MAX_SEGMENTS * 4 + n.k * 4;
@@ -197,7 +201,7 @@ export function trailPaintAt(x: number, z: number, table: TrailTable, opts: Trai
   const wj = table.list[row1 + 2]! + (table.list[row1 + 3]! - table.list[row1 + 2]!) * n.t;
   const wear = trailWear(u);
   const widthK = (TRAIL_WEAR_W0 + (TRAIL_WEAR_W1 - TRAIL_WEAR_W0) * wear) * wj;
-  const dB = (n.d + opts.edgeNoise) / widthK - TRAIL_HEIGHT_SHIFT * (opts.height - 0.5);
+  const dB = (n.d + edgeNoise) / widthK - TRAIL_HEIGHT_SHIFT * (height - 0.5);
   return { ...trailBands(dB), wear, u, widthK };
 }
 
@@ -296,7 +300,6 @@ export const TRAIL_FRAGMENT_PAINT = `
     float tInCore = 1.0 - smoothstep(${f(TRAIL_CORE_HALF)}, ${f(TRAIL_CORE_HALF)} + tE, tdB);
     float tInMargin = 1.0 - smoothstep(${f(TRAIL_MARGIN_HALF)}, ${f(TRAIL_MARGIN_HALF)} + tE, tdB);
     float tCore = tInCore * (1.0 - tSnow);
-    float tMargin = (tInMargin - tInCore) * (1.0 - tSnow);
     float tTrample = (1.0 - tInMargin) * (1.0 - smoothstep(${f(TRAIL_MARGIN_HALF)}, ${f(TRAIL_TRAMPLE_HALF)}, tdB)) * tSoil * (1.0 - tSnow);
     float tBank = smoothstep(0.0, ${f(TRAIL_BANK_SLOPE)}, tRise) * (1.0 - smoothstep(${f(TRAIL_BED_HALF)}, ${f(TRAIL_CORRIDOR_HALF)}, tdN)) * tSoil * (1.0 - tSnow) * (1.0 - tInMargin);
 #ifdef VERTEXCOLOR

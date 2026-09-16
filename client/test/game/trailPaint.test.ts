@@ -14,7 +14,7 @@ import {
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_HEIGHT_SHIFT, TRAIL_EDGE_NOISE,
   TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
   TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE, TRAIL_WEAR_WAVE, TRAIL_EDGE_WAVE,
-  trailWear,
+  trailWear, trailEdgeNoise,
 } from "../../src/game/trailBenchParams.js";
 
 const BED = TRAIL_BED_HALF;
@@ -152,6 +152,11 @@ describe("the mirror of the band selection", () => {
     expect(trailPaintAt(50, d, t, { edgeNoise: 0, height: 1.0 }).core).toBe(1);
     expect(trailPaintAt(50, d, t, { edgeNoise: -0.2, height: 0.5 }).core).toBe(1);
   });
+  it("defaults opts to the shader's own edge noise and a level pebble", () => {
+    for (const [x, z] of [[50, 0], [30, 0.3]] as const) {
+      expect(trailPaintAt(x, z, t)).toEqual(trailPaintAt(x, z, t, { edgeNoise: trailEdgeNoise(x, z), height: 0.5 }));
+    }
+  });
 });
 
 describe("the bank", () => {
@@ -199,7 +204,9 @@ describe("the bank", () => {
     expect(TRAIL_FRAGMENT_PAINT).toContain("float tGravel = tOnBench * (1.0 - tSnow);");
     const gravelSwaps = TRAIL_FRAGMENT_PAINT.split("\n").filter((l) => l.includes("tGravelN.x") || l.includes("terrainLayerRough2.x") || l.includes("terrainLayerF02.x"));
     expect(gravelSwaps).toHaveLength(3);
-    for (const l of gravelSwaps) expect(l).toContain("tGravel");
+    // The gate that actually carries tGravel into the normal and roughness mixes.
+    expect(TRAIL_FRAGMENT_PAINT).toContain("mix(tLipN, tBenchN, tGravel * tk)");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("mix(terrainRough, tRoughBench, tGravel)");
   });
 });
 
@@ -224,6 +231,13 @@ describe("the GLSL", () => {
       expect(g).toContain(Number.isInteger(v) ? v.toFixed(1) : String(v));
     }
     for (const c of [TRAIL_CORE_TINT, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT]) expect(g).toContain(`vec3(${c.r}, ${c.g}, ${c.b})`);
+    // The wave literals above collide across terms (0.4, 12.0, 3.0, 6.0 each
+    // print once but feed several calls), so pin each call shape too.
+    expect(g).toContain("macroValueNoise(vPositionW.xz, 1.5)");
+    expect(g).toContain("macroValueNoise(vPositionW.xz, 0.4)");
+    expect(g).toContain("trailValueNoise1(tU, 12.0)");
+    expect(g).toContain("trailValueNoise1(tU, 3.0)");
+    expect(g).toContain("macroValueNoise(vPositionW.xz, 6.0)");
     expect(g).toContain("texture2D(trailSegs, vec2(tu, 0.25))");
     expect(g.split("texture2D(trailSegs, vec2(tuBest, 0.75))").length).toBe(2);
     for (const term of ["trailValueNoise1(", "macroValueNoise(", "terrainWet", "tPuddle", "tLip", "tWidthK", "tDarkK", "tdN"]) expect(g).toContain(term);
