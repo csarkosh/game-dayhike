@@ -264,8 +264,37 @@ describe("foliage attribute and plugin", () => {
     expect(world.z).toBeCloseTo(0, 6);
   });
 
-  it("scales the litter variants to pebbles and a twig, and lists litter among the tilted classes", () => {
+  it("scales the litter variants to pebbles and a twig, on top of the sim's own scale", () => {
     expect(LITTER_VARIANT_SCALE).toEqual([1, 1, 0.3]);
     expect(CLUTTER_LITTER).toBe(8);
+    // Built through the production instanceMatrixFor with the identity
+    // frame (no lean, no trample) and flat ground (no tilt), so the matrix's
+    // column length is exactly the instance's own final scale: rotation is
+    // orthonormal, so it never changes a column's length, only its direction.
+    const IDENTITY_FRAME = { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } };
+    const colLen = (buf: Float32Array, col: number): number => Math.hypot(buf[col * 4]!, buf[col * 4 + 1]!, buf[col * 4 + 2]!);
+    const base = { x: 0, z: 0, groundH: 0, groundDx: 0, groundDz: 0, scale: 0.5, hash: 0.2 };
+    const buf = new Float32Array(16);
+    instanceMatrixFor({ ...base, cls: CLUTTER_LITTER, variant: 2 }, IDENTITY_FRAME, buf);
+    expect(colLen(buf, 0)).toBeCloseTo(0.5 * 0.3, 6);
+    instanceMatrixFor({ ...base, cls: CLUTTER_LITTER, variant: 0 }, IDENTITY_FRAME, buf);
+    expect(colLen(buf, 0)).toBeCloseTo(0.5, 6);
+    // Only the litter class reads LITTER_VARIANT_SCALE: a grass instance
+    // drawing the same variant index is untouched by the table.
+    instanceMatrixFor({ ...base, cls: CLUTTER_GRASS, variant: 2 }, IDENTITY_FRAME, buf);
+    expect(colLen(buf, 0)).toBeCloseTo(0.5, 6);
+  });
+
+  it("lists litter among the tilted classes: it seats onto sloped ground, unlike grass", () => {
+    const IDENTITY_FRAME = { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } };
+    const buf = new Float32Array(16);
+    const sloped = { x: 0, z: 0, groundH: 0, groundDx: 0.6, groundDz: 0, scale: 0.4, hash: 0, variant: 0 };
+    instanceMatrixFor({ ...sloped, cls: CLUTTER_LITTER }, IDENTITY_FRAME, buf);
+    // Seated onto the slope, the Y column tips away from purely vertical.
+    expect(Math.abs(buf[4]!) + Math.abs(buf[6]!)).toBeGreaterThan(0.01);
+    instanceMatrixFor({ ...sloped, cls: CLUTTER_GRASS }, IDENTITY_FRAME, buf);
+    // Grass never tilts: its Y column stays purely vertical (yaw only).
+    expect(buf[4]).toBeCloseTo(0, 9);
+    expect(buf[6]).toBeCloseTo(0, 9);
   });
 });

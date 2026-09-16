@@ -7,6 +7,7 @@ import {
   CLUTTER_LITTER_CORE, CLUTTER_LITTER_FADE, CLUTTER_LITTER_CELL, litterBand,
   CLUTTER_CLASS_COUNT,
   CLUTTER_GRASS_ALT_LO,
+  CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI_FADE,
   CLUTTER_GRASS_CANOPY_LO,
   CLUTTER_GRASS_CELL,
   CLUTTER_BOULDER_SCALE_MIN, CLUTTER_BOULDER_SCALE_MAX, CLUTTER_BOULDER_ROAD_NEAR, CLUTTER_BOULDER_CELL,
@@ -33,7 +34,7 @@ import { ROAD_BED_HALF } from "../../src/sim/road.js";
 import { bowlFor } from "../../src/sim/olympic.js";
 import { variantOrThrow, DERIV_SEED } from "./helpers/derivatives.js";
 import { centerlineX } from "./helpers/roadLine.js";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant } from "../../src/sim/terrain.js";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, type TerrainSample } from "../../src/sim/terrain.js";
 import { MEADOW_RIM } from "../../src/sim/features.js";
 
 const SEED = DERIV_SEED; // 0x5eed — the roadLine/derivatives helpers are bound to it
@@ -370,6 +371,21 @@ describe("the litter class", () => {
       expect(i.variant).toBeGreaterThanOrEqual(0);
       expect(i.variant).toBeLessThan(3);
     }
+  });
+
+  it("stands nowhere above the snow line, and its density gate closes there", () => {
+    const seed = SEED;
+    // Same 100 x 100 m window the ninth-class scan above uses.
+    const g = activeTerrainVariant().trailGraph!(seed);
+    const edge = g.edges[g.stem[1]!]!;
+    const a = g.nodes[edge.a]!, b = g.nodes[edge.b]!;
+    const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2;
+    const insts = clutterInRect(seed, CLUTTER_LITTER, midX - 50, midZ - 50, midX + 50, midZ + 50);
+    expect(insts.length).toBeGreaterThan(0);
+    const snowLine = CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE;
+    for (const i of insts) expect(i.groundH).toBeLessThan(snowLine);
+    const above: TerrainSample = { h: snowLine + 10, dx: 0, dz: 0 };
+    expect(clutterDensity(seed, CLUTTER_LITTER, midX, midZ, above)).toBe(0);
   });
 
   it("tightens the grass gate to the bench edge", () => {

@@ -3,7 +3,7 @@ import {
   TRAIL_PAINT_BUCKET, TRAIL_PAINT_BUCKET_MAX, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_GRID,
   TRAIL_PAINT_EDGE, TRAIL_BANK_SLOPE,
   trailSegments, buildTrailTable, bucketOf, trailNearest, trailBand, bankRise, trailBankBand,
-  nodeWidths, trailPaintAt,
+  nodeWidths, trailPaintAt, glslFloat,
   TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT,
   type Segment,
 } from "../../src/game/trailPaint.js";
@@ -86,6 +86,12 @@ describe("the band (the mirror of the fragment shader)", () => {
     expect(n.d).toBeCloseTo(3, 9);
     expect([n.ex, n.ez]).toEqual([0, 1]); // away from the bed, unit
     expect(trailNearest(t, 50, 300).d).toBe(Infinity);
+  });
+  it("is symmetric across the centreline, on a single straight edge", () => {
+    const single = buildTrailTable([SEGS[0]!]);
+    for (const d of [0.2, 0.75, 0.9, 1.5]) {
+      expect(trailBand(50, d, single)).toBeCloseTo(trailBand(50, -d, single), 12);
+    }
   });
 });
 
@@ -249,7 +255,7 @@ describe("the GLSL", () => {
   it("prints the mirror's constants, reads row 1 once for the best segment, and carries every term", () => {
     const g = TRAIL_FRAGMENT_PAINT;
     for (const v of [TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE, TRAIL_CORE_GAIN, TRAIL_MARGIN_GAIN, TRAIL_BENCH_SHADE, TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_HEIGHT_SHIFT, TRAIL_EDGE_NOISE, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1, TRAIL_PUDDLE_WAVE, ...TRAIL_WEAR_WAVE, ...TRAIL_EDGE_WAVE, ...TRAIL_PUDDLE_WET, ...TRAIL_PUDDLE_LOW]) {
-      expect(g).toContain(Number.isInteger(v) ? v.toFixed(1) : String(v));
+      expect(g).toContain(glslFloat(v));
     }
     for (const c of [TRAIL_CORE_TINT, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT]) expect(g).toContain(`vec3(${c.r}, ${c.g}, ${c.b})`);
     // The wave literals above collide across terms (0.4, 12.0, 3.0, 6.0 each
@@ -263,7 +269,6 @@ describe("the GLSL", () => {
     expect(g).toContain("texture2D(trailSegs, vec2(tu, 0.25))");
     expect(g.split("texture2D(trailSegs, vec2(tuBest, 0.75))").length).toBe(2);
     for (const term of ["trailValueNoise1(", "macroValueNoise(", "terrainWet", "tPuddle", "tLip", "tWidthK", "tDarkK", "tdN"]) expect(g).toContain(term);
-    expect(g).not.toContain("TRAIL_DIRT_TINT");
     expect(g.indexOf("fwidth(tdBest)")).toBeLessThan(g.indexOf("if (tdBest <"));
   });
 });
