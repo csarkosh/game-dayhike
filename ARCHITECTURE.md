@@ -14,6 +14,8 @@
 
 The simulation runs at a fixed 60 Hz from a seeded RNG. The world is derived from the level id and seed alone, so every peer builds the same world locally and nothing about it crosses the wire. A test serializes two runs of the world from identical inputs and asserts they match; client prediction depends on it.
 
+The register (`client/src/sim/register.ts`) follows the same split. The missing hikers' sites and names, the sign posts at the trail's forks and the wall at the road's edge are all derived from the seed and the trail graph on every peer; the items, who carries what, the sign-out hold and the match outcome are host state that rides every snapshot (protocol 3), and the wall clamps inside the movement step so a client predicts it exactly.
+
 ## Rendering
 
 The world streams around the camera in rings: full geometry near, cheaper levels of detail further out, and a far field beyond. Quality tiers (`low`, `medium`, `high`, `client/src/game/quality.ts`) set hardware scaling, shadow map sizes and LOD bias; the tier is auto-detected from the device's CPU core count, memory and whether it looks like a mobile browser.

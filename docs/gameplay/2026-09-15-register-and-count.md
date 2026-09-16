@@ -1,7 +1,12 @@
 # The Register and the count — sub-project B
 
 **Date:** 2026-09-15
-**Status:** Design agreed. Not planned and not implemented.
+**Status:** Built 2026-09-15 (`docs/gameplay/2026-09-15-register-and-count-plan.md`). Numbers that
+moved in execution: the wall stands at `ROAD_BED_HALF + 0.5 + PLAYER_HALF.x` (6.4 m) so the hull's
+face, not its centre, stops half a metre off the pavement; a fallback site keeps `SITE_SPACING` 20 m
+from every other site (a landmark past the crest projects onto the summit itself: seed 331); the
+book panel reads "carried" rather than naming the carrier, because lobby names are keyed by peer id
+and items by entity id.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md` §5, §17. Amends the parent:
 §1.6 (the count), §1.17 and §5 (what raises the tension), §2 (the player's own name), §5
 (the book growing), §10 (death and rejoining), §13.1, §13.3, §13.5, §13.6 (decided here),

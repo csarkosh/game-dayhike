@@ -592,6 +592,10 @@ describe("the level id does not move", () => {
     //     shipped values, so the WORLDS do not change, but the level id must
     //     fold them in before anyone pulls the "LOOP_TRIES 16" lever later — 50
     //     keys -> 53.
-    expect(passHash()).toBe(1594363661);
+    // Re-baselined 2026-09-15 from 1594363661: the register's sign posts are
+    // pass 9, a new registry entry with its own tunables, and the level-id
+    // probe gained the chunk that holds a post. Both move this on purpose:
+    // a peer without the posts has different collision at every fork.
+    expect(passHash()).toBe(-1513056523);
   });
 });
