@@ -1,7 +1,14 @@
 # Escalation and atmosphere — sub-project D
 
 **Date:** 2026-09-16
-**Status:** Designed 2026-09-16; not built.
+**Status:** Built 2026-09-16 (`docs/gameplay/2026-09-16-escalation-and-atmosphere-plan.md`). What moved
+in execution: no constant; the renderer's `setHour`/`setWeather` re-render the reflection probe on every
+call, so `syncAtmosphere` applies them (and the ambient gains) only when the hour has moved 0.01 or a
+weather field 0.005 since the last application — slow drift still lands, because the gate compares
+against the last applied value; `near` is the greatest closeness over all Hollows after the line-of-sight
+halving (§2.2, reworded), so a visible far Hollow outranks a blind near one; the browser saw the whole
+curve on seed `hollow` — at world 0.5 the pad reads as bright mist rather than dusk (the sun is still at
+17), which is the hour curve's dial if dusk should come sooner.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md` §1.8, §1.17, §7, §8, §17. Amends the
 parent: §7 (the escalation has a third input, the Hollow's crawl, and the proximity term joins the
 same scalar), §13.4 stays open (altitude is not an axis here), and the §17 table.
@@ -66,10 +73,11 @@ Both are 0–1, computed every frame on each client.
   with `OFF_TRAIL_FULL` 60 m — reaching 1 in `SPIKE_RISE_S` (20 s) at full rate; on the trail it
   decays to 0 in `SPIKE_DECAY_S` (8 s). Brushing the corridor's edge costs almost nothing; striking
   out into the trees costs everything.
-- **near**: the nearest Hollow's distance to your eye: 1 at or within `NEAR_FULL` (10 m), 0 at or
-  beyond `NEAR_START` (80 m), linear between; multiplied by `NEAR_BLIND` (0.5) when it has no line
-  of sight to you (`hasLineOfSight` from `sim/ai.ts`, eye to the Hollow's centre, against the
-  world's boxes and ground). It is still there, and you should still feel it.
+- **near**: each Hollow's closeness to your eye — 1 at or within `NEAR_FULL` (10 m), 0 at or beyond
+  `NEAR_START` (80 m), linear between, multiplied by `NEAR_BLIND` (0.5) when it has no line of sight
+  to you (`hasLineOfSight` from `sim/ai.ts`, eye to the Hollow's centre, against the world's boxes
+  and ground) — and `near` is the greatest of them, so a Hollow you can see at thirty metres counts
+  for more than one behind a wall at twenty-five. It is still there, and you should still feel it.
 - A dead player's lens freezes at its last value; the fade is their screen now.
 
 ### 2.3 Easing in time
