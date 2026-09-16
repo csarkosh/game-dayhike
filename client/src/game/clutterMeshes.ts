@@ -60,6 +60,7 @@ import {
   CLUTTER_ROCK,
   type ClutterInstance,
 } from "../sim/clutter.js";
+import { activeTerrainVariant } from "../sim/terrain.js";
 import { attachFoliage, setFoliageEdges, FOLIAGE_PROFILES, type FoliageProfile } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { attachDistanceFade, fadeBands, writeFadeBands, type FadeBands } from "./distanceFadePlugin.js";
@@ -68,6 +69,8 @@ import { modelUrl } from "./assetUrls.js";
 import { surfaceAlbedo } from "./terrainSurface.js";
 import { macroNoise, macroTint } from "./groundHexParams.js";
 import { forestDensity } from "../sim/vegetation.js";
+import type { Rgb } from "./colour.js";
+import { trampleAt, TRAMPLE_BAND } from "./trailBenchParams.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
 // exactly BOULDER_SINK · (that variant's own BASE_H) · scale shows a visible
@@ -136,6 +139,13 @@ const FOLIAGE_BY_CLASS = new Map<number, FoliageProfile>([
  * their worst footprint gap is 0.28 m, and they sway, which a tilt fights.
  * Litter reuses the rock and driftwood meshes, so it tilts the same way. */
 const TILTED = new Set<number>([CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_DRIFTWOOD, CLUTTER_LITTER]);
+
+/** Per-variant base scale of the litter class: rock_a/rock_b at the sim's
+ * 0.25–0.6 are pebbles already; driftwood needs another 0.3 to be a twig. */
+export const LITTER_VARIANT_SCALE: readonly number[] = [1, 1, 0.3];
+
+/** The classes the bench tramples: the swaying ground layer. */
+const TRAMPLED = new Set<number>([CLUTTER_GRASS, CLUTTER_MEADOW, CLUTTER_FLOWER]);
 
 /** Instances a bucket's first real allocation covers. Sized so the sparse
  * classes (boulder ≤ 260, fungus ≤ 500 across two variants and two bands)
@@ -209,6 +219,8 @@ const scratchQ = new Quaternion();
 const scratchScale = new Vector3();
 const scratchPos = new Vector3();
 const scratchMat = new Matrix();
+const scratchLeanAxis = new Vector3();
+const scratchLean = new Quaternion();
 
 /** The node itself plus descendants, filtered to meshes that carry geometry —
  * `forestMeshes.ts`'s helper, which cannot be shared without exporting it from
@@ -308,6 +320,29 @@ function applyBucket(bucket: Bucket): void {
 }
 
 /**
+ * The trampled band beside the bench for one card: height scale, lean (rad)
+ * about the horizontal axis perpendicular to the away direction (ax, az) —
+ * the unit gradient of the trail distance, by central difference — and the
+ * stain tint. The identity (1, 0, 0, 0, white) past TRAMPLE_BAND[1], with
+ * no trail, and for every class the bench does not trample.
+ */
+export function trampleFrame(seed: number, inst: ClutterInstance): { height: number; lean: number; ax: number; az: number; tint: Rgb } {
+  const none = { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } };
+  if (!TRAMPLED.has(inst.cls)) return none;
+  const rtOf = activeTerrainVariant().trailDistance;
+  if (rtOf === undefined) return none;
+  const rt = rtOf(seed, inst.x, inst.z);
+  if (rt >= TRAMPLE_BAND[1]) return none;
+  const h = 0.25;
+  let gx = rtOf(seed, inst.x + h, inst.z) - rtOf(seed, inst.x - h, inst.z);
+  let gz = rtOf(seed, inst.x, inst.z + h) - rtOf(seed, inst.x, inst.z - h);
+  const gl = Math.hypot(gx, gz);
+  if (gl > 1e-9) { gx /= gl; gz /= gl; } else { gx = 0; gz = 0; }
+  const t = trampleAt(rt);
+  return { height: t.height, lean: t.lean, ax: gx, az: gz, tint: t.tint };
+}
+
+/**
  * One instance's world matrix, written straight into `buf` at `offset`.
  * Rotation is derived HERE, from the plain `hash` draw the sim emits: sim/ is
  * forbidden trig, game/ is not — the same division of labour `forestMeshes`'
@@ -324,14 +359,23 @@ function applyBucket(bucket: Bucket): void {
  *    BOULDER_B_BASE_H.
  *  - everything else sinks `CLUTTER_SINK`, purely to break coplanarity.
  */
-function writeInstanceMatrix(inst: ClutterInstance, buf: Float32Array, offset: number): void {
+function writeInstanceMatrix(inst: ClutterInstance, buf: Float32Array, offset: number, frame: ReturnType<typeof trampleFrame>): void {
   const yaw = inst.hash * Math.PI * 2;
   if (TILTED.has(inst.cls)) {
     seatOnGround(yaw, inst.groundDx, inst.groundDz, scratchQ);
   } else {
     Quaternion.RotationAxisToRef(UP, yaw, scratchQ);
   }
-  scratchScale.copyFromFloats(inst.scale, inst.scale, inst.scale);
+  if (frame.lean > 0) {
+    // The axis perpendicular to the away direction, so the card's top moves
+    // along (ax, az); composed after the yaw (and after the ground tilt for
+    // tilted classes — cards are not tilted, so for them it is yaw then lean).
+    scratchLeanAxis.copyFromFloats(-frame.az, 0, frame.ax);
+    Quaternion.RotationAxisToRef(scratchLeanAxis, frame.lean, scratchLean);
+    scratchLean.multiplyToRef(scratchQ, scratchQ);
+  }
+  const litterScale = inst.cls === CLUTTER_LITTER ? inst.scale * (LITTER_VARIANT_SCALE[inst.variant] ?? 1) : inst.scale;
+  scratchScale.copyFromFloats(litterScale, litterScale * frame.height, litterScale);
   const boulderBaseH = inst.variant === 1 ? BOULDER_B_BASE_H : BOULDER_A_BASE_H;
   const sink = inst.cls === CLUTTER_BOULDER ? BOULDER_SINK * boulderBaseH * inst.scale : CLUTTER_SINK;
   scratchPos.copyFromFloats(inst.x, inst.groundH - sink, inst.z);
@@ -342,7 +386,7 @@ function writeInstanceMatrix(inst: ClutterInstance, buf: Float32Array, offset: n
 /** Ground colour at the instance (the palette the clipmap bakes into vertex
  * colour, so grass and ground can never disagree) and the canopy shade the
  * bush palette used to carry by hand. slope = |∇h|; canopy = forestDensity. */
-function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Array, offset: number): void {
+function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Array, offset: number, frame: ReturnType<typeof trampleFrame>): void {
   const slope = Math.hypot(inst.groundDx, inst.groundDz);
   const canopy = forestDensity(seed, inst.x, inst.z);
   const c = surfaceAlbedo(seed, inst.x, inst.z, inst.groundH, slope, canopy);
@@ -352,9 +396,9 @@ function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Array, of
   // fade the floor's tint has faded out while the card keeps its own.
   const ny = 1 / Math.sqrt(1 + inst.groundDx * inst.groundDx + inst.groundDz * inst.groundDz);
   const tint = macroTint(macroNoise(inst.x, inst.z), 1 - ny);
-  buf[offset] = c.r * tint.r;
-  buf[offset + 1] = c.g * tint.g;
-  buf[offset + 2] = c.b * tint.b;
+  buf[offset] = c.r * tint.r * frame.tint.r;
+  buf[offset + 1] = c.g * tint.g * frame.tint.g;
+  buf[offset + 2] = c.b * tint.b * frame.tint.b;
   buf[offset + 3] = 1 - 0.5 * canopy;
 }
 
@@ -435,16 +479,18 @@ export function createClutterMeshes(
       const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
       for (const inst of band.near) {
         const bucket = bucketFor(variants, inst, NEAR_LOD);
-        writeInstanceMatrix(inst, bucket.buf, bucket.count * 16);
+        const frame = trampleFrame(seed, inst);
+        writeInstanceMatrix(inst, bucket.buf, bucket.count * 16, frame);
         writeFadeBands(bucket.bands, bucket.count * 4, bucket.fade);
-        if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4);
+        if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4, frame);
         bucket.count++;
       }
       for (const inst of band.far) {
         const bucket = bucketFor(variants, inst, FAR_LOD);
-        writeInstanceMatrix(inst, bucket.buf, bucket.count * 16);
+        const frame = trampleFrame(seed, inst);
+        writeInstanceMatrix(inst, bucket.buf, bucket.count * 16, frame);
         writeFadeBands(bucket.bands, bucket.count * 4, bucket.fade);
-        if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4);
+        if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4, frame);
         bucket.count++;
       }
     }

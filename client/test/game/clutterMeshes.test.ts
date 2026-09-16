@@ -5,15 +5,16 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import "../../src/sim/passes/index.js";
-import { CLUTTER_CLASS_COUNT, CLUTTER_GRASS, CLUTTER_ROCK } from "../../src/sim/clutter.js";
+import { CLUTTER_CLASS_COUNT, CLUTTER_GRASS, CLUTTER_LITTER, CLUTTER_ROCK } from "../../src/sim/clutter.js";
 import { clutterFadeEdges, clutterSeamEdges } from "../../src/game/clutterField.js";
-import { createClutterMeshes } from "../../src/game/clutterMeshes.js";
+import { createClutterMeshes, LITTER_VARIANT_SCALE, trampleFrame } from "../../src/game/clutterMeshes.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
 import { macroNoise, macroTint } from "../../src/game/groundHexParams.js";
-import { elevationSampleAt } from "../../src/sim/terrain.js";
+import { activeTerrainVariant, elevationSampleAt } from "../../src/sim/terrain.js";
 import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
+import { trampleAt } from "../../src/game/trailBenchParams.js";
 
 describe("createClutterMeshes attaches the distance fade", () => {
   it("puts the plugin on every bucket material and a constant fadeBands per bucket", () => {
@@ -192,11 +193,45 @@ describe("foliage attribute and plugin", () => {
       const expectedR = baseColor.r * tint.r;
       const expectedG = baseColor.g * tint.g;
       const expectedB = baseColor.b * tint.b;
-      expect(foliage[i * 4]!).toBeCloseTo(expectedR, 5);
-      expect(foliage[i * 4 + 1]!).toBeCloseTo(expectedG, 5);
-      expect(foliage[i * 4 + 2]!).toBeCloseTo(expectedB, 5);
+      const trample = trampleAt(activeTerrainVariant().trailDistance!(seed, x, z)).tint;
+      expect(foliage[i * 4]!).toBeCloseTo(expectedR * trample.r, 5);
+      expect(foliage[i * 4 + 1]!).toBeCloseTo(expectedG * trample.g, 5);
+      expect(foliage[i * 4 + 2]!).toBeCloseTo(expectedB * trample.b, 5);
     }
     meshes.dispose();
     engine.dispose();
+  });
+
+  it("tramples the grass beside the bench: shorter, leaning away, stained; untouched past the band", () => {
+    const seed = 1234;
+    const rt = activeTerrainVariant().trailDistance!;
+    const near = { cls: CLUTTER_GRASS, x: 0, z: 0, groundH: 0, groundDx: 0, groundDz: 0, scale: 1, variant: 0, hash: 0.3 };
+    // Find a point 0.9 m from the trail and one 3 m away by scanning a stem edge's neighbourhood.
+    const g = activeTerrainVariant().trailGraph!(seed);
+    const e = g.edges[g.stem[1]!]!, a = g.nodes[e.a]!, b = g.nodes[e.b]!;
+    const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+    const L = Math.hypot(b.x - a.x, b.z - a.z), nx = -(b.z - a.z) / L, nz = (b.x - a.x) / L;
+    const p09 = { ...near, x: mx + nx * 0.9, z: mz + nz * 0.9 };
+    const p3 = { ...near, x: mx + nx * 3, z: mz + nz * 3 };
+    const rt09 = rt(seed, p09.x, p09.z);
+    expect(rt09).toBeCloseTo(0.9, 3);
+    const t09 = trampleFrame(seed, p09), t3 = trampleFrame(seed, p3);
+    // trampleAt is deterministic and pure, so feeding it the SAME measured
+    // trail distance the implementation itself reads (rather than the
+    // literal 0.9 the point was constructed from, which the graph's
+    // sqrt/hypot chain can only approximate to within a few ULPs) is what
+    // makes an exact `toEqual` on the tint meaningful.
+    const want = trampleAt(rt09);
+    expect(t09.height).toBeCloseTo(want.height, 6);
+    expect(t09.lean).toBeCloseTo(want.lean, 6);
+    expect(t09.tint).toEqual(want.tint);
+    // The away direction points from the bed toward the card.
+    expect(t09.ax * nx + t09.az * nz).toBeGreaterThan(0.99);
+    expect(t3).toEqual({ height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } });
+  });
+
+  it("scales the litter variants to pebbles and a twig, and lists litter among the tilted classes", () => {
+    expect(LITTER_VARIANT_SCALE).toEqual([1, 1, 0.3]);
+    expect(CLUTTER_LITTER).toBe(8);
   });
 });
