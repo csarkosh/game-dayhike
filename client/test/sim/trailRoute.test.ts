@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { route, stemNodes } from "../../src/sim/trailRoute.js";
+import { route, stemNodes, stemProgress } from "../../src/sim/trailRoute.js";
 import { graph } from "./helpers/registerGraph.js";
 import type { TrailEdge, TrailGraph } from "../../src/sim/trail.js";
 
@@ -48,5 +48,25 @@ describe("route", () => {
     const g = graph(1);
     expect(route(g, 0, 2)).toBe(route(g, 0, 2));
     expect(route(g, 0, 2)).not.toBe(route(graph(1), 0, 2));
+  });
+});
+
+describe("stemProgress", () => {
+  // The hand graph's stem is a straight 200 m along +x: pad (0,0), middle (100,0), crest (200,0).
+  it("is 0 at the crest, 1 at the pad and 0.5 at the middle node", () => {
+    const g = graph(1);
+    expect(stemProgress(g, 200, 0)).toBeCloseTo(0, 9);
+    expect(stemProgress(g, 0, 0)).toBeCloseTo(1, 9);
+    expect(stemProgress(g, 100, 0)).toBeCloseTo(0.5, 9);
+  });
+
+  it("projects a point beside the stem onto it", () => {
+    // Loop node 3 at (120, 50) is nearest the stem at (120, 0): 120 m from the pad of 200.
+    expect(stemProgress(graph(1), 120, 50)).toBeCloseTo(0.4, 9);
+  });
+
+  it("clamps past either end", () => {
+    expect(stemProgress(graph(1), 300, 0)).toBeCloseTo(0, 9);
+    expect(stemProgress(graph(1), -50, 10)).toBeCloseTo(1, 9);
   });
 });
