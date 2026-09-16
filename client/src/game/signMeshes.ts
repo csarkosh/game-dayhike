@@ -36,7 +36,10 @@ export function paintedMaterial(scene: Scene, name: string, lines: readonly stri
   const ctx = texture.getContext();
   ctx.fillStyle = WOOD;
   ctx.fillRect(0, 0, width, height);
-  const size = Math.round(Math.min(height * 0.45, (height / (lines.length + 1)) * 0.8));
+  // The largest size at which every line fits the width (monospace runs about
+  // 0.62 em per glyph) and all the lines fit the height.
+  const longest = Math.max(1, ...lines.map((l) => l.length));
+  const size = Math.round(Math.min(height * 0.45, (height / (lines.length + 1)) * 0.8, (width * 0.92) / (longest * 0.62)));
   ctx.font = `bold ${size}px ui-monospace, monospace`;
   ctx.fillStyle = PAINT;
   for (const [i, line] of lines.entries()) {
@@ -76,7 +79,7 @@ export function createSignMeshes(
   boardMesh.position.set(board.x + board.facing.dx * 0.11, groundH(board.x, board.z) + 1.0, board.z + board.facing.dz * 0.11);
   // A plane faces -z by default; turn it to face along `facing`.
   boardMesh.rotation.y = armYaw(board.facing) + Math.PI;
-  boardMesh.material = paint(scene, "sign_board_tex", board.lines, 512, 850);
+  boardMesh.material = paint(scene, "sign_board_tex", board.lines, 1024, 1700);
   boardMesh.isPickable = false;
   meshes.push(boardMesh);
   return {
