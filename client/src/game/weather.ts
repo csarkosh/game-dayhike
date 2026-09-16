@@ -14,7 +14,7 @@ import type { QualityTier } from "./quality.js";
 export type WeatherParams = {
   /** 0–1. Kills direct sun, greys the sky, fades shadows, desaturates. */
   cloudCover: number;
-  /** 0–1. Fog density multiplier, mist-bank opacity, wind/air audio. */
+  /** 0–1. Fog density multiplier, mist-bank opacity, wind audio deepening. */
   mist: number;
   /** 0–1. Rain particle rate, rain-loop gain. */
   rain: number;
@@ -350,10 +350,10 @@ export function mistOpacityUnder(w: WeatherParams): number {
 }
 
 /** Target gains in [0,1] per ambience layer; the audio shell scales by its levels. */
-export function ambientGainsUnder(w: WeatherParams): { rain: number; wind: number; air: number } {
+export function ambientGainsUnder(w: WeatherParams): { rain: number; wind: number } {
   const c = clamp01(w.cloudCover);
   const m = clamp01(w.mist);
-  return { rain: clamp01(w.rain), wind: 0.8 * Math.max(c, m), air: 0.6 * m };
+  return { rain: clamp01(w.rain), wind: 0.8 * Math.max(c, m) };
 }
 
 /** Vignette weight for the unease layer: baseline always on, deeper under dread. */

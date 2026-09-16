@@ -119,7 +119,7 @@ describe("clear-identity sweep — the sunny look survives, exactly", () => {
     for (const tier of ["low", "medium", "high"] as const) {
       expect(rainEmitRateUnder(CLEAR, tier)).toBe(0);
     }
-    expect(ambientGainsUnder(CLEAR)).toEqual({ rain: 0, wind: 0, air: 0 });
+    expect(ambientGainsUnder(CLEAR)).toEqual({ rain: 0, wind: 0 });
   });
 });
 
@@ -157,10 +157,9 @@ describe("modifiers under weather", () => {
     expect(rainEmitRateUnder({ ...CLEAR, rain: 0.5 }, "low")).toBe(0.5 * RAIN_CAPACITY.low);
   });
 
-  it("ambience: rain drives patter; mist and cloud drive wind and air", () => {
-    expect(ambientGainsUnder(RAIN)).toEqual({ rain: 1, wind: 0.8, air: 0.6 * 0.6 });
+  it("ambience: rain drives patter; mist and cloud drive wind", () => {
+    expect(ambientGainsUnder(RAIN)).toEqual({ rain: 1, wind: 0.8 });
     expect(ambientGainsUnder(MIST).wind).toBeCloseTo(0.8, 10);
-    expect(ambientGainsUnder(MIST).air).toBeCloseTo(0.6, 10);
   });
 });
 

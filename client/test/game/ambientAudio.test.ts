@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
-  AIR_LEVEL, createAmbientAudio, DEFAULT_VOLUME, OBJECTS_LEVEL, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
+  createAmbientAudio, DEFAULT_VOLUME, OBJECTS_LEVEL, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
+  WIND_CUTOFF_BASE, WIND_CUTOFF_GUST, WIND_GAIN_FLOOR, WIND_MIST_DEEPEN, WIND_MIST_QUIET,
 } from "../../src/game/ambientAudio.js";
 import { ambientGainsUnder, WEATHER_PRESETS } from "../../src/game/weather.js";
+import { gustAt, windRecordUnder } from "../../src/game/windParams.js";
 
 /** The smallest AudioContext fake that can carry the graph. Every node records
  * its connections; every AudioParam records setTargetAtTime calls. */
@@ -19,6 +21,7 @@ function fakeCtx() {
     gains: [] as ReturnType<typeof gainNode>[],
     panners: [] as ReturnType<typeof pannerNode>[],
     sources: [] as ReturnType<typeof sourceNode>[],
+    filterNodes: [] as ReturnType<typeof filterNode>[],
     oscillators: 0,
     filters: 0,
   };
@@ -26,6 +29,7 @@ function fakeCtx() {
     return { connections: [] as unknown[], connect(t: unknown) { this.connections.push(t); }, start() {} };
   }
   function gainNode() { return { ...node(), gain: param(1) }; }
+  function filterNode() { return { ...node(), frequency: param(350), Q: param(1), type: "lowpass" }; }
   /** Records `stop()` rather than ignoring it: a one-shot that is never stopped is
    * the emitter bug that leaks a source node per call. */
   function sourceNode() {
@@ -52,7 +56,7 @@ function fakeCtx() {
     createOscillator() { created.oscillators++; return { ...node(), frequency: param(440), type: "sine" }; },
     createBufferSource() { const s = sourceNode(); created.sources.push(s); return s; },
     createPanner() { const p = pannerNode(); created.panners.push(p); return p; },
-    createBiquadFilter() { created.filters++; return { ...node(), frequency: param(350), Q: param(1), type: "lowpass" }; },
+    createBiquadFilter() { created.filters++; const f = filterNode(); created.filterNodes.push(f); return f; },
     createBuffer(_ch: number, len: number, rate: number) {
       return { getChannelData: () => new Float32Array(len), length: len, sampleRate: rate };
     },
@@ -69,13 +73,12 @@ describe("createAmbientAudio", () => {
     audio.setWeather(WEATHER_PRESETS.rain); // must not throw pre-unlock
     expect(created.oscillators).toBe(0);
     audio.unlock();
-    // 2 noise sources (rain, wind), 3 oscillators (LFO + two detuned sines),
-    // 3 filters, and gains: master + rain + wind + air + LFO depth + wildlife
-    // + objects = 7.
+    // 2 noise sources (rain, wind), no oscillators, 2 filters (rain, wind),
+    // and gains: master + rain + wind + wildlife + objects = 5.
     expect(created.sources.length).toBe(2);
-    expect(created.oscillators).toBe(3);
-    expect(created.filters).toBe(3);
-    expect(created.gains.length).toBe(7);
+    expect(created.oscillators).toBe(0);
+    expect(created.filters).toBe(2);
+    expect(created.gains.length).toBe(5);
     audio.dispose();
   });
 
@@ -87,8 +90,6 @@ describe("createAmbientAudio", () => {
     const gains = ambientGainsUnder(WEATHER_PRESETS.mist);
     const targets = created.gains.flatMap((g) => g.gain.targets.map((t) => t.value));
     expect(targets).toContain(gains.rain * RAIN_LEVEL);
-    expect(targets).toContain(gains.wind * WIND_LEVEL);
-    expect(targets).toContain(gains.air * AIR_LEVEL);
     audio.dispose();
   });
 
@@ -102,14 +103,17 @@ describe("createAmbientAudio", () => {
     audio.dispose();
   });
 
-  it("defaults: pending weather is the mist preset, volume 0.5", () => {
+  it("defaults: pending weather is the mist preset, volume 0.5, wind bed not silent", () => {
     const { ctx, created } = fakeCtx();
     const audio = createAmbientAudio(() => ctx);
     audio.unlock();
     expect(created.gains[0]?.gain.value).toBe(DEFAULT_VOLUME);
     const gains = ambientGainsUnder(WEATHER_PRESETS.mist);
     const targets = created.gains.flatMap((g) => g.gain.targets.map((t) => t.value));
-    expect(targets).toContain(gains.wind * WIND_LEVEL);
+    expect(targets).toContain(gains.rain * RAIN_LEVEL);
+    // The wind bed starts at its floor gain, not silence, before the first setWind.
+    const windGain = created.gains.find((g) => g.gain.value === WIND_LEVEL * WIND_GAIN_FLOOR);
+    expect(windGain).toBeDefined();
     audio.dispose();
   });
 
@@ -121,22 +125,57 @@ describe("createAmbientAudio", () => {
     const master = created.gains[0];
     expect(master?.connections).toContain(ctx.destination);
 
-    // The LFO depth gain feeds an AudioParam (recognizable because params,
-    // unlike nodes, carry a `targets` array) rather than another node; every
-    // other non-master gain is a bus gain (rain/wind/air/wildlife/objects)
-    // and must reach the master gain directly.
+    // No gain feeds an AudioParam any more (the LFO depth gain is gone —
+    // `setWind` drives the wind filter's frequency directly); every
+    // non-master gain is a bus gain (rain/wind/wildlife/objects) and must
+    // reach the master gain directly.
     const isParam = (t: unknown): boolean =>
       Array.isArray((t as { targets?: unknown[] }).targets);
-    const others = created.gains.slice(1);
-    const depthGain = others.find((g) => g.connections.some(isParam));
-    const layerGains = others.filter((g) => g !== depthGain);
+    const layerGains = created.gains.slice(1);
 
-    expect(depthGain).toBeDefined();
-    expect(layerGains.length).toBe(5);
+    expect(layerGains.some((g) => g.connections.some(isParam))).toBe(false);
+    expect(layerGains.length).toBe(4);
     for (const g of layerGains) {
       expect(g.connections).toContain(master);
     }
 
+    audio.dispose();
+  });
+
+  it("setWind moves the wind cutoff with the gust and the gain with speed, no more than every 100 ms", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.setWeather(WEATHER_PRESETS.mist);
+    audio.unlock();
+    const windFilter = created.filterNodes.find((f) => f.type === "lowpass")!;
+    const rec = windRecordUnder(WEATHER_PRESETS.mist, 5);
+    audio.setWind(rec);
+    const cutoff = WIND_CUTOFF_BASE * (1 - WIND_MIST_DEEPEN * 1) + WIND_CUTOFF_GUST * gustAt(rec, 0, 0);
+    expect(windFilter.frequency.targets.at(-1)!.value).toBeCloseTo(cutoff, 6);
+    // Identified by its resting floor value — setWind only ever pushes targets,
+    // it never mutates this fake's `.value`.
+    const windGain = created.gains.find((g) => g.gain.value === WIND_LEVEL * WIND_GAIN_FLOOR)!;
+    const gain = WIND_LEVEL * (WIND_GAIN_FLOOR + (1 - WIND_GAIN_FLOOR) * rec.speed) * (1 - WIND_MIST_QUIET * 1);
+    expect(windGain.gain.targets.at(-1)!.value).toBeCloseTo(gain, 6);
+    const n = windFilter.frequency.targets.length;
+    audio.setWind({ ...rec, time: 5.02 }); // 20 ms later on the fake clock: throttled
+    expect(windFilter.frequency.targets.length).toBe(n);
+    audio.dispose();
+  });
+
+  it("clear has a quiet steady wind bed instead of silence", () => {
+    const rec = windRecordUnder(WEATHER_PRESETS.clear, 0);
+    expect(rec.speed).toBeCloseTo(0.25, 10);
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.unlock();
+    const windGain = created.gains.find((g) => g.gain.value === WIND_LEVEL * WIND_GAIN_FLOOR)!;
+    expect(windGain.gain.value).toBeGreaterThan(0); // before any setWind call
+    audio.setWeather(WEATHER_PRESETS.clear);
+    audio.setWind(rec);
+    const gain = WIND_LEVEL * (WIND_GAIN_FLOOR + (1 - WIND_GAIN_FLOOR) * rec.speed) * (1 - WIND_MIST_QUIET * 0);
+    expect(gain).toBeGreaterThan(0);
+    expect(windGain.gain.targets.at(-1)!.value).toBeCloseTo(gain, 6);
     audio.dispose();
   });
 

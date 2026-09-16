@@ -1,4 +1,5 @@
 import { clamp01 } from "./colour.js";
+import { gustAt, type WindRecord } from "./windParams.js";
 import {
   ambientGainsUnder, DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams,
 } from "./weather.js";
@@ -6,7 +7,18 @@ import {
 /** Peak gain per synthesized layer, applied on top of `ambientGainsUnder`. */
 export const RAIN_LEVEL = 0.5;
 export const WIND_LEVEL = 0.4;
-export const AIR_LEVEL = 0.25;
+/**
+ * `setWind` knobs: the low-pass cutoff at zero gust and zero mist, how much a
+ * gust darkens it further, how much mist deepens the base cutoff, the gain
+ * floor at zero wind speed (so the bed is never silent), how much mist
+ * quiets it, and the throttle on the shared wind field's own clock.
+ */
+export const WIND_CUTOFF_BASE = 400;
+export const WIND_CUTOFF_GUST = 250;
+export const WIND_MIST_DEEPEN = 0.5;
+export const WIND_GAIN_FLOOR = 0.35;
+export const WIND_MIST_QUIET = 0.3;
+export const WIND_AUDIO_INTERVAL_S = 0.1;
 /**
  * The bus every spatialized wildlife call is mixed through. One level
  * for the whole species chorus, sitting under the master volume, so a call that
@@ -49,6 +61,14 @@ export type AmbientAudio = {
    */
   onUnlock(fn: () => void): void;
   setWeather(w: WeatherParams): void;
+  /**
+   * Moves the wind bed's low-pass cutoff and gain to one moment of the
+   * shared wind field: a stronger gust at the listener darkens the cutoff
+   * and raises the gain, mist deepens the cutoff and quiets the gain.
+   * Throttled to `WIND_AUDIO_INTERVAL_S` by the record's own clock (which
+   * wraps at `WIND_TIME_WRAP`), so callers may call this every frame.
+   */
+  setWind(record: WindRecord): void;
   setVolume(v: number): void;
   /**
    * Decodes compressed clip bytes on the ambient context. Resolves null rather
@@ -84,10 +104,10 @@ export type AmbientAudio = {
 };
 
 /**
- * Three synthesized ambience layers on gain nodes — not an audio engine.
- * Rain patter is band-passed noise; wind is low-passed noise
- * whose cutoff wanders under a sub-hertz LFO; the eerie air tone is two
- * detuned low sines beating against each other. Everything is inert until
+ * Two synthesized ambience layers on gain nodes — not an audio engine. Rain
+ * patter is band-passed noise; wind is low-passed noise whose cutoff and gain
+ * `setWind` drives from the shared wind field (`windParams.ts`), so the bed
+ * tracks the same gusts the grass leans under. Everything is inert until
  * `unlock()`, and the latest weather/volume set before unlock applies then.
  *
  * `createCtx` is injectable so tests can hand in a fake — node has no
@@ -119,19 +139,22 @@ export function createAmbientAudio(
   let master: GainNode | null = null;
   let rainGain: GainNode | null = null;
   let windGain: GainNode | null = null;
-  let airGain: GainNode | null = null;
+  let windFilter: BiquadFilterNode | null = null;
   let wildlifeGain: GainNode | null = null;
   let objectsGain: GainNode | null = null;
   let pen: AudioBufferSourceNode | null = null;
   /** Drained and emptied by `unlock`; a registration after that runs immediately. */
   const unlockListeners: (() => void)[] = [];
+  /** Listener XZ for the gust sample, in Babylon's world (`setListener`'s mirrored z undone). */
+  let listenerX = 0, listenerZ = 0;
+  /** The wind record's own clock at the last applied `setWind`, so a fresh
+   * context (or dispose/recreate) never throttles the first call. */
+  let lastWindTime = -Infinity;
 
   function applyGains(w: WeatherParams): void {
-    if (!ctx || !rainGain || !windGain || !airGain) return;
+    if (!ctx || !rainGain) return;
     const g = ambientGainsUnder(w);
     rainGain.gain.setTargetAtTime(g.rain * RAIN_LEVEL, ctx.currentTime, GAIN_RAMP_S);
-    windGain.gain.setTargetAtTime(g.wind * WIND_LEVEL, ctx.currentTime, GAIN_RAMP_S);
-    airGain.gain.setTargetAtTime(g.air * AIR_LEVEL, ctx.currentTime, GAIN_RAMP_S);
   }
 
   return {
@@ -166,38 +189,17 @@ export function createAmbientAudio(
       rainFilter.connect(rainGain);
       rainGain.connect(master);
 
-      // Wind: noise -> low-pass whose cutoff wanders under a 0.07 Hz LFO.
-      const windFilter = ctx.createBiquadFilter();
+      // Wind: noise -> low-pass. `setWind` drives the cutoff and this gain
+      // from the shared wind field; the floor below keeps it audible — a
+      // quiet steady bed rather than silence — before the first call.
+      windFilter = ctx.createBiquadFilter();
       windFilter.type = "lowpass";
-      windFilter.frequency.value = 400;
-      const lfo = ctx.createOscillator();
-      lfo.frequency.value = 0.07;
-      const lfoDepth = ctx.createGain();
-      lfoDepth.gain.value = 250;
-      lfo.connect(lfoDepth);
-      lfoDepth.connect(windFilter.frequency);
-      lfo.start();
+      windFilter.frequency.value = WIND_CUTOFF_BASE;
       windGain = ctx.createGain();
-      windGain.gain.value = 0;
+      windGain.gain.value = WIND_LEVEL * WIND_GAIN_FLOOR;
       noiseSource().connect(windFilter);
       windFilter.connect(windGain);
       windGain.connect(master);
-
-      // Eerie air: two detuned low sines through a low-pass, beating slowly.
-      const airFilter = ctx.createBiquadFilter();
-      airFilter.type = "lowpass";
-      airFilter.frequency.value = 120;
-      airGain = ctx.createGain();
-      airGain.gain.value = 0;
-      for (const freq of [55, 57.3]) {
-        const osc = ctx.createOscillator();
-        osc.type = "sine";
-        osc.frequency.value = freq;
-        osc.connect(airFilter);
-        osc.start();
-      }
-      airFilter.connect(airGain);
-      airGain.connect(master);
 
       // The wildlife bus. Unlike the three beds above it carries no weather
       // ramp of its own: weather scales each call's own gain as it is emitted
@@ -229,6 +231,22 @@ export function createAmbientAudio(
     setWeather(w) {
       pending = { ...w };
       applyGains(pending);
+    },
+    setWind(record) {
+      if (!ctx || !windGain || !windFilter) return;
+      // Throttled on the record's own clock, not wall time, so tests can
+      // drive it — and so a caller re-sending a stale record never re-ramps.
+      // `record.time` wraps at `WIND_TIME_WRAP`; a wrap reads as time going
+      // backward, which this lets straight through rather than stalling.
+      if (record.time - lastWindTime < WIND_AUDIO_INTERVAL_S && record.time >= lastWindTime) return;
+      lastWindTime = record.time;
+      const mist = clamp01(pending.mist);
+      const cutoff = WIND_CUTOFF_BASE * (1 - WIND_MIST_DEEPEN * mist)
+        + WIND_CUTOFF_GUST * gustAt(record, listenerX, listenerZ);
+      windFilter.frequency.setTargetAtTime(cutoff, ctx.currentTime, 0.15);
+      const gain = WIND_LEVEL * (WIND_GAIN_FLOOR + (1 - WIND_GAIN_FLOOR) * record.speed)
+        * (1 - WIND_MIST_QUIET * mist);
+      windGain.gain.setTargetAtTime(gain, ctx.currentTime, GAIN_RAMP_S);
     },
     setVolume(v) {
       volume = clamp01(v);
@@ -348,6 +366,10 @@ export function createAmbientAudio(
     },
     setListener(x, y, z, fx, fy, fz, ux, uy, uz) {
       if (!ctx) return;
+      // Web Audio's frame is right-handed (z mirrored from Babylon's); undo
+      // that mirror so `gustAt` samples the gust in the world it was built for.
+      listenerX = x;
+      listenerZ = -z;
       const l = ctx.listener;
       l.positionX.value = x;
       l.positionY.value = y;
@@ -362,7 +384,8 @@ export function createAmbientAudio(
     dispose() {
       void ctx?.close();
       ctx = null;
-      master = rainGain = windGain = airGain = wildlifeGain = objectsGain = null;
+      master = rainGain = windGain = wildlifeGain = objectsGain = null;
+      windFilter = null;
       pen = null;
       unlockListeners.length = 0;
     },
