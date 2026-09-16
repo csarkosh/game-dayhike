@@ -23,24 +23,27 @@ export const HEX_LATTICE = 1;
 /** Weight sharpening exponent: two of three samples dominate anywhere. */
 export const HEX_SHARPNESS = 8;
 /** Metres per repeat of the near-eye detail scale of the grass maps. */
-export const DETAIL_TILING = 0.5;
+export const DETAIL_TILING = 1.0;
 /** Distance band (m) over which the detail scale fades out. */
 export const DETAIL_FADE: readonly [number, number] = [8, 20];
-/** Albedo modulation strength of the detail scale. */
-export const DETAIL_STRENGTH = 0.5;
 /** Weight of the detail normal in the perturbation. */
 export const DETAIL_NORMAL = 0.5;
 /** Between-blades occlusion strength from the detail height. */
-export const DETAIL_AO = 0.6;
+export const DETAIL_AO = 0.7;
+/** The occlusion curve's input band, against the packed height channel: it is
+ * centred on 0.5, so the curve must straddle it to have any contrast. */
+export const DETAIL_AO_RANGE: readonly [number, number] = [0.3, 0.7];
 /** Macro noise wavelengths (m) and their weights. */
 export const MACRO_WAVE: readonly [number, number] = [18, 6];
 export const MACRO_WEIGHT: readonly [number, number] = [0.65, 0.35];
 /** How far slope pushes the macro toward dry (added to the noise per unit of 1 − n.y). */
 export const MACRO_SLOPE = 0.6;
-export const MACRO_LUSH: Rgb = { r: 0.92, g: 1.03, b: 0.9 };
-export const MACRO_DRY: Rgb = { r: 1.08, g: 1.0, b: 0.82 };
-/** The tuft colour the far floor blends toward (linear albedo). */
-export const TUFT_ALBEDO: Rgb = { r: 0.36, g: 0.42, b: 0.24 };
+export const MACRO_LUSH: Rgb = { r: 0.82, g: 1.06, b: 0.84 };
+export const MACRO_DRY: Rgb = { r: 1.18, g: 0.98, b: 0.7 };
+/** The tuft colour the far floor blends toward (linear albedo): the mean
+ * albedo a lit tuft card reads at, measured against the far field in the
+ * running game, not the card texture's own mean. */
+export const TUFT_ALBEDO: Rgb = { r: 0.18, g: 0.22, b: 0.11 };
 /** Distance band (m) of the horizon tint, and its cap. */
 export const HORIZON: readonly [number, number] = [35, 90];
 export const HORIZON_MAX = 0.5;

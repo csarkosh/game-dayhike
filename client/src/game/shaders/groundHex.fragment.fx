@@ -28,8 +28,8 @@ const mat2 HEX_UNSKEW = mat2(1.0, 0.0, 0.5, 0.8660254);
 const vec2 MACRO_WAVE = vec2(18.0, 6.0);
 const vec2 MACRO_WEIGHT = vec2(0.65, 0.35);
 const float MACRO_SLOPE = 0.6;
-const vec3 MACRO_LUSH = vec3(0.92, 1.03, 0.9);
-const vec3 MACRO_DRY = vec3(1.08, 1.0, 0.82);
+const vec3 MACRO_LUSH = vec3(0.82, 1.06, 0.84);
+const vec3 MACRO_DRY = vec3(1.18, 0.98, 0.7);
 const float HEX_TAU = 6.28318531;
 
 // GPU-only: offsets and rotations per lattice vertex. Not mirrored.

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  HEX_LATTICE, HEX_SHARPNESS, DETAIL_TILING, DETAIL_FADE, DETAIL_STRENGTH, DETAIL_NORMAL, DETAIL_AO,
+  HEX_LATTICE, HEX_SHARPNESS, DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
   MACRO_WAVE, MACRO_WEIGHT, MACRO_SLOPE, MACRO_LUSH, MACRO_DRY, TUFT_ALBEDO, HORIZON, HORIZON_MAX,
   HEX_SKEW, HEX_UNSKEW,
   latticeHash, hexTriangle, hexWeights, macroNoise, macroTint, horizonWeight,
@@ -10,17 +10,17 @@ describe("constants are the spec's", () => {
   it("carries the spec values", () => {
     expect(HEX_LATTICE).toBe(1);
     expect(HEX_SHARPNESS).toBe(8);
-    expect(DETAIL_TILING).toBe(0.5);
+    expect(DETAIL_TILING).toBe(1.0);
     expect(DETAIL_FADE).toEqual([8, 20]);
-    expect(DETAIL_STRENGTH).toBe(0.5);
     expect(DETAIL_NORMAL).toBe(0.5);
-    expect(DETAIL_AO).toBe(0.6);
+    expect(DETAIL_AO).toBe(0.7);
+    expect(DETAIL_AO_RANGE).toEqual([0.3, 0.7]);
     expect(MACRO_WAVE).toEqual([18, 6]);
     expect(MACRO_WEIGHT).toEqual([0.65, 0.35]);
     expect(MACRO_SLOPE).toBe(0.6);
-    expect(MACRO_LUSH).toEqual({ r: 0.92, g: 1.03, b: 0.9 });
-    expect(MACRO_DRY).toEqual({ r: 1.08, g: 1.0, b: 0.82 });
-    expect(TUFT_ALBEDO).toEqual({ r: 0.36, g: 0.42, b: 0.24 });
+    expect(MACRO_LUSH).toEqual({ r: 0.82, g: 1.06, b: 0.84 });
+    expect(MACRO_DRY).toEqual({ r: 1.18, g: 0.98, b: 0.7 });
+    expect(TUFT_ALBEDO).toEqual({ r: 0.18, g: 0.22, b: 0.11 });
     expect(HORIZON).toEqual([35, 90]);
     expect(HORIZON_MAX).toBe(0.5);
     expect(HEX_SKEW).toEqual([1, 0, -0.57735027, 1.15470054]);

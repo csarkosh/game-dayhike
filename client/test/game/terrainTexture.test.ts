@@ -13,7 +13,7 @@ import {
 } from "../../src/game/terrainTexture.js";
 import { FEATURE_PAINT_MAX } from "../../src/game/featurePaint.js";
 import {
-  DETAIL_TILING, DETAIL_FADE, DETAIL_STRENGTH, DETAIL_NORMAL, DETAIL_AO,
+  DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
   HORIZON, HORIZON_MAX, TUFT_ALBEDO,
 } from "../../src/game/groundHexParams.js";
 import type { Feature } from "../../src/sim/features.js";
@@ -88,11 +88,11 @@ describe("terrain texture plugin", () => {
     expect(glsl).toContain("surfaceAlbedo");
     // Rock is the only triplanar layer: three projections of one sampler.
     expect(glsl.match(/texture2D\(\s*terrainRock/g)!.length).toBe(3);
-    // Grass is the one layer that is hex tiled, so its albedo comes through
-    // hexFetch2D and never through a plain fetch: once in the blend, once more
-    // at the near-eye detail scale.
+    // Grass is the one layer that is hex tiled, so its blended albedo comes
+    // through hexFetch2D and never through a plain fetch. The near-eye detail
+    // scale adds a normal and an occlusion only, not a second albedo fetch.
     expect(glsl.match(/texture2D\(\s*terrainGrass/g) ?? []).toHaveLength(0);
-    expect(glsl.match(/hexFetch2D\(terrainGrass/g)!.length).toBe(2);
+    expect(glsl.match(/hexFetch2D\(terrainGrass/g)!.length).toBe(1);
     const vert = plugin.getCustomCode("vertex");
     expect(Object.keys(vert!)).toContain("CUSTOM_VERTEX_MAIN_END");
   });
@@ -738,27 +738,49 @@ describe("the grass floor", () => {
     expect(blend).not.toContain("discard");
   });
 
+  it("gates the 2 m hex lattice and the grass fetches on the raw grass vertex weight", () => {
+    const blend = makePlugin().getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
+    // hexSetup(uvG and the grass albedo hex fetch both sit inside their own
+    // `if (vTerrainW.x > 0.0)` gate, so non-grass ground never pays for a
+    // lattice walk or three hashed fetches.
+    const setupGateAt = blend.indexOf("if (vTerrainW.x > 0.0) {\n    hexSetup(uvG");
+    expect(setupGateAt).toBeGreaterThan(-1);
+    const albedoGateAt = blend.indexOf("if (vTerrainW.x > 0.0) { grassAlbedo = hexFetch2D(terrainGrass");
+    expect(albedoGateAt).toBeGreaterThan(setupGateAt);
+    // The height blend can still hand grass a nonzero share at zero vertex
+    // weight (the other layers split the weight and a grass texel's height
+    // tops theirs), so every grass term keeps a real plain-fetch fallback
+    // rather than a placeholder.
+    expect(blend).toContain("textureGrad(terrainRAH, vec3(uvG, 0.0), gdx, gdy)");
+    expect(blend).toContain("textureGrad(terrainNormals, vec3(uvG, 0.0), gdx, gdy)");
+    expect(blend).toContain("textureGrad(terrainGrass, uvG, gdx, gdy)");
+    expect(blend).not.toContain("texture2D(terrainGrass");
+  });
+
   it("keeps the detail fetches inside their own fade and the relief fetches inside the strength gate", () => {
     const blend = makePlugin().getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
     const detailAt = blend.indexOf("if (detailStrength > 0.0) {");
     expect(detailAt).toBeGreaterThan(-1);
     const detailEnd = blend.indexOf("\n    }", detailAt);
     const detailBlock = blend.slice(detailAt, detailEnd);
-    // Every detail-scale fetch is inside the fade gate — the cost lands within
-    // DETAIL_FADE of the eye and nowhere else.
-    expect(blend.match(/hexFetch2D\(terrainGrass, d1/g) ?? []).toHaveLength(1);
-    expect(detailBlock).toContain("hexFetch2D(terrainGrass, d1");
+    // The detail scale fetches a normal and an occlusion, never an albedo: an
+    // albedo term was tried and could not be seen with these maps.
+    expect(blend.match(/hexFetch2D\(terrainGrass, d1/g) ?? []).toHaveLength(0);
+    expect(detailBlock).not.toContain("detailAlbedo");
+    expect(blend).not.toContain("detailAlbedo");
     expect(detailBlock).toContain("hexFetchArray(terrainNormals, d1");
     expect(detailBlock).toContain("hexFetchArray(terrainRAH, d1");
+    expect(blend).toContain("smoothstep(terrainDetail2.y, terrainDetail2.z, hD)");
+    expect(blend).not.toContain("smoothstep(0.0, 0.6, hD)");
     // …and the detail gate is nested inside the relief gate, so a far fragment
     // pays for neither.
-    expect(blend.indexOf("if (strength > 0.0) {\n    rah0")).toBeLessThan(detailAt);
+    expect(blend.indexOf("if (strength > 0.0) {")).toBeLessThan(detailAt);
   });
 
   it("binds the floor constants", () => {
     const { writes } = makeBoundPlugin();
-    expect(writes.terrainDetail).toEqual([1 / DETAIL_TILING, DETAIL_FADE[0], DETAIL_FADE[1], DETAIL_STRENGTH]);
-    expect(writes.terrainDetail2).toEqual([DETAIL_NORMAL, DETAIL_AO]);
+    expect(writes.terrainDetail).toEqual([1 / DETAIL_TILING, DETAIL_FADE[0], DETAIL_FADE[1], DETAIL_NORMAL]);
+    expect(writes.terrainDetail2).toEqual([DETAIL_AO, DETAIL_AO_RANGE[0], DETAIL_AO_RANGE[1]]);
     expect(writes.terrainHorizon).toEqual([HORIZON[0], HORIZON[1], HORIZON_MAX]);
     expect(writes.terrainTuft).toEqual([TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b]);
     expect(writes.terrainMacroOn).toEqual([1]);
@@ -778,7 +800,7 @@ describe("the grass floor compiles into the fragment source on both paths", () =
   // browser on one of the two paths.
   const FLOOR_UNIFORMS: readonly (readonly [string, string])[] = [
     ["vec4", "terrainDetail"],
-    ["vec2", "terrainDetail2"],
+    ["vec3", "terrainDetail2"],
     ["float", "terrainMacroOn"],
     ["vec3", "terrainHorizon"],
     ["vec3", "terrainTuft"],

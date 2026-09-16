@@ -42,8 +42,8 @@
  * The lattice and its hashed uvs are computed ONCE per scale (`hexSetup`) and
  * handed to each fetcher, not recomputed per map. On top of that, a second
  * grass scale at DETAIL_TILING fades in within DETAIL_FADE of the eye, adding
- * blade-level albedo, normal and between-blade occlusion where the eye can
- * resolve them and costing nothing past the fade. Two tints finish it: a
+ * blade-level normal and between-blade occlusion where the eye can resolve
+ * them and costing nothing past the fade. Two tints finish it: a
  * lush/dry macro noise over tens of metres (mirrored on the CPU in
  * `groundHexParams.ts`, so `clutterMeshes.ts` tints each tuft to match by
  * construction), and a pull toward TUFT_ALBEDO past HORIZON, where the floor
@@ -96,7 +96,7 @@ import type { TrailGraph } from "../sim/trail.js";
 import type { Feature } from "../sim/features.js";
 import { loadGroundArrays, type GroundArrays, type GroundArraysFactory } from "./groundMaps.js";
 import {
-  DETAIL_TILING, DETAIL_FADE, DETAIL_STRENGTH, DETAIL_NORMAL, DETAIL_AO,
+  DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
   HORIZON, HORIZON_MAX, TUFT_ALBEDO,
 } from "./groundHexParams.js";
 import groundHexFx from "./shaders/groundHex.fragment.fx?raw";
@@ -387,8 +387,12 @@ const TERRAIN_FRAGMENT_BLEND = `
   vec2 gdx = dFdx(uvG); vec2 gdy = dFdy(uvG);
   vec2 uvD = uvXZ * terrainDetail.x;
   vec2 ddx = dFdx(uvD); vec2 ddy = dFdy(uvD);
-  vec2 g1; vec2 g2; vec2 g3; vec3 gw;
-  hexSetup(uvG, g1, g2, g3, gw);
+  // The 2 m hex lattice is grass-only work: gated on the raw vertex weight so
+  // non-grass ground never pays for a lattice walk and three hashed fetches.
+  vec2 g1 = vec2(0.0); vec2 g2 = vec2(0.0); vec2 g3 = vec2(0.0); vec3 gw = vec3(0.0);
+  if (vTerrainW.x > 0.0) {
+    hexSetup(uvG, g1, g2, g3, gw);
+  }
   float rt = terrainRock2.x;
   vec3 terrainN = vec3(0.0, 1.0, 0.0);
 #ifdef NORMAL
@@ -403,9 +407,8 @@ const TERRAIN_FRAGMENT_BLEND = `
   float w0 = vTerrainW.x; float w1 = vTerrainW.y; float w2 = vTerrainW.z; float w3 = vTerrainW.w; float w4 = vTerrainW2.x;
   vec3 rah0 = vec3(0.5, 1.0, 0.5); vec3 rah1 = rah0; vec3 rah2 = rah0; vec3 rah3 = rah0; vec3 rah4 = rah0;
   vec3 nrm = terrainN;
-  // Declared out here so the albedo line below still compiles — and stays a
-  // true no-op — on fragments where the relief gate never runs.
-  vec3 detailAlbedo = vec3(1.0);
+  // Declared out here so the AO line below still compiles — and stays a true
+  // no-op — on fragments where the relief gate never runs.
   float detailAo = 1.0;
   // Rock parallax: march the eye ray through the rock height on the dominant
   // triplanar face. The three offsets start at zero and only the dominant
@@ -436,7 +439,16 @@ const TERRAIN_FRAGMENT_BLEND = `
     if (bw.y >= bw.x && bw.y >= bw.z) rpY = rOff; else if (bw.x >= bw.z) rpX = rOff; else rpZ = rOff;
   }
   if (strength > 0.0) {
-    rah0 = hexFetchArray(terrainRAH, g1, g2, g3, gw, 0.0, gdx, gdy);
+    // The height blend below can hand grass a nonzero share even where its
+    // vertex weight is zero: wherever the other layers split the weight and
+    // a grass texel's height tops theirs, b0 comes out positive. So every
+    // grass term needs a real value here — the hex is skipped only because a
+    // single plain fetch is enough for a share this small.
+    if (vTerrainW.x > 0.0) {
+      rah0 = hexFetchArray(terrainRAH, g1, g2, g3, gw, 0.0, gdx, gdy);
+    } else {
+      rah0 = textureGrad(terrainRAH, vec3(uvG, 0.0), gdx, gdy).rgb;
+    }
     rah1 = texture2D(terrainRAH, vec3(uvF, 1.0)).rgb;
     rah2 = texture2D(terrainRAH, vec3(vPositionW.xz * rt + rpY, 2.0)).rgb;
     rah3 = texture2D(terrainRAH, vec3(uvS, 3.0)).rgb;
@@ -458,7 +470,12 @@ const TERRAIN_FRAGMENT_BLEND = `
     w3 = mix(w3, b3, strength); w4 = mix(w4, b4, strength);
     // Normals, UDN-style: the map's xy is added to the world normal in the
     // projection's frame. Planar layers: uv is world XZ, so x -> X, y -> Z.
-    vec3 t0 = hexFetchArray(terrainNormals, g1, g2, g3, gw, 0.0, gdx, gdy) * 2.0 - 1.0;
+    vec3 t0;
+    if (vTerrainW.x > 0.0) {
+      t0 = hexFetchArray(terrainNormals, g1, g2, g3, gw, 0.0, gdx, gdy) * 2.0 - 1.0;
+    } else {
+      t0 = textureGrad(terrainNormals, vec3(uvG, 0.0), gdx, gdy).rgb * 2.0 - 1.0;
+    }
     vec3 t1 = texture2D(terrainNormals, vec3(uvF, 1.0)).rgb * 2.0 - 1.0;
     vec3 t3 = texture2D(terrainNormals, vec3(uvS, 3.0)).rgb * 2.0 - 1.0;
     vec3 t4 = texture2D(terrainNormals, vec3(uvP, 4.0)).rgb * 2.0 - 1.0;
@@ -468,19 +485,20 @@ const TERRAIN_FRAGMENT_BLEND = `
     vec2 planar = t0.xy * w0 + t1.xy * w1 + t3.xy * w3 + t4.xy * w4;
     // The near-eye detail scale: the same grass maps at DETAIL_TILING, hex
     // tiled again so the small repeat does not draw its own grid either. Gated
-    // on grass weight AND its own fade, inside the relief gate, so the three
+    // on grass weight AND its own fade, inside the relief gate, so the two
     // extra fetches land on grass within DETAIL_FADE of the eye and nowhere
     // else — and on terrainReliefOn, since a flat placeholder normal/height
-    // would only add noise.
+    // would only add noise. The finer scale adds a normal and a
+    // between-blades occlusion; an albedo term was tried and could not be
+    // seen with these maps, so it is not fetched.
     float detailStrength = w0 * (1.0 - smoothstep(terrainDetail.y, terrainDetail.z, dist)) * terrainReliefOn;
     if (detailStrength > 0.0) {
       vec2 d1; vec2 d2; vec2 d3; vec3 dw;
       hexSetup(uvD, d1, d2, d3, dw);
-      detailAlbedo = mix(vec3(1.0), hexFetch2D(terrainGrass, d1, d2, d3, dw, ddx, ddy) * ${meanInv("grass")}, terrainDetail.w * detailStrength);
       vec3 tD = hexFetchArray(terrainNormals, d1, d2, d3, dw, 0.0, ddx, ddy) * 2.0 - 1.0;
-      planar += tD.xy * terrainDetail2.x * detailStrength;
+      planar += tD.xy * terrainDetail.w * detailStrength;
       float hD = hexFetchArray(terrainRAH, d1, d2, d3, dw, 0.0, ddx, ddy).b;
-      detailAo = mix(1.0, smoothstep(0.0, 0.6, hD), terrainDetail2.y * detailStrength);
+      detailAo = mix(1.0, smoothstep(terrainDetail2.y, terrainDetail2.z, hD), terrainDetail2.x * detailStrength);
     }
     // Rock's X-facing projection samples vPositionW.yz, so the map's x runs
     // along world Y and its y along world Z: x,y order,
@@ -496,8 +514,16 @@ const TERRAIN_FRAGMENT_BLEND = `
     normalW = nrm;
   }
 
+  // Same story as the relief fetch above: the height blend can still hand
+  // grass a nonzero share here even at zero vertex weight, wherever the
+  // other layers split the weight and a grass texel's height tops theirs, so
+  // this needs a real value too — one plain fetch is enough for a share
+  // this small, without paying for the three-tap hex.
+  vec3 grassAlbedo;
+  if (vTerrainW.x > 0.0) { grassAlbedo = hexFetch2D(terrainGrass, g1, g2, g3, gw, gdx, gdy) * ${meanInv("grass")}; }
+  else { grassAlbedo = textureGrad(terrainGrass, uvG, gdx, gdy).rgb * ${meanInv("grass")}; }
   vec3 blended =
-      hexFetch2D(terrainGrass, g1, g2, g3, gw, gdx, gdy) * ${meanInv("grass")} * w0
+      grassAlbedo * w0
     + texture2D(terrainFloor,  uvF).rgb * ${meanInv("floor")} * w1
     + texture2D(terrainSand,   uvS).rgb * ${meanInv("sand")} * w3
     + texture2D(terrainPebble, uvP).rgb * ${meanInv("pebble")} * w4
@@ -511,7 +537,7 @@ const TERRAIN_FRAGMENT_BLEND = `
   // value back by 0.5 turns it into a mean-1 multiplier — every layer darkens
   // around its own occlusion variation rather than around wherever its raw
   // source map's mean happened to land.
-  surfaceAlbedo *= mix(vec3(1.0), blended, strength) * detailAlbedo * mix(1.0, ao / 0.5, strength) * detailAo;
+  surfaceAlbedo *= mix(vec3(1.0), blended, strength) * mix(1.0, ao / 0.5, strength) * detailAo;
   // Macro tint: the lush/dry variation over tens of metres, on grass only and
   // faded out with the rest of the detail. A multiplicative tint of
   // surfaceAlbedo, never a write to the material constant.
@@ -708,9 +734,10 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
         // heights exist to blend on.
         { name: "terrainReliefOn", size: 1, type: "float" },
         // The grass floor. (detail repeats per metre, fade start, fade end,
-        // albedo strength) and (normal weight, AO strength).
+        // normal weight) and (AO strength, AO curve's low band, AO curve's
+        // high band).
         { name: "terrainDetail", size: 4, type: "vec4" },
-        { name: "terrainDetail2", size: 2, type: "vec2" },
+        { name: "terrainDetail2", size: 3, type: "vec3" },
         // The macro tint's on/off gate. The tint's own constants are GLSL
         // literals in the hex include, pinned to groundHexParams.ts by a
         // lockstep test, because the CPU mirror must agree exactly.
@@ -743,7 +770,7 @@ uniform vec4 terrainLayerF0;
 uniform vec2 terrainLayerF02;
 uniform float terrainReliefOn;
 uniform vec4 terrainDetail;
-uniform vec2 terrainDetail2;
+uniform vec3 terrainDetail2;
 uniform float terrainMacroOn;
 uniform vec3 terrainHorizon;
 uniform vec3 terrainTuft;
@@ -779,8 +806,8 @@ uniform vec3 terrainTuft;
     // 1x1 is the placeholder's signature (groundMaps.ts); anything wider is a
     // real decoded array. Read every bind, same reason as the textures below.
     uniformBuffer.updateFloat("terrainReliefOn", this._arrays.rah.getSize().width > 1 ? 1.0 : 0.0);
-    uniformBuffer.updateFloat4("terrainDetail", 1 / DETAIL_TILING, DETAIL_FADE[0], DETAIL_FADE[1], DETAIL_STRENGTH);
-    uniformBuffer.updateFloat2("terrainDetail2", DETAIL_NORMAL, DETAIL_AO);
+    uniformBuffer.updateFloat4("terrainDetail", 1 / DETAIL_TILING, DETAIL_FADE[0], DETAIL_FADE[1], DETAIL_NORMAL);
+    uniformBuffer.updateFloat3("terrainDetail2", DETAIL_AO, DETAIL_AO_RANGE[0], DETAIL_AO_RANGE[1]);
     uniformBuffer.updateFloat("terrainMacroOn", 1);
     uniformBuffer.updateFloat3("terrainHorizon", HORIZON[0], HORIZON[1], HORIZON_MAX);
     uniformBuffer.updateFloat3("terrainTuft", TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b);
