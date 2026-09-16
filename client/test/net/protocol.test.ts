@@ -147,7 +147,7 @@ function sampleSnapshot(): Snapshot {
       pos: { x: Math.sin(i) * 25, y: 1, z: Math.cos(i) * 25 },
       yaw: i * 0.21,
       health: 40 - (i % 40),
-      ai: i % 4,
+      ai: i % 7,
     })),
     items: Array.from({ length: 4 }, (_, i) => ({
       id: i,
@@ -156,7 +156,7 @@ function sampleSnapshot(): Snapshot {
       pickedUp: i <= 1,
       signedOut: i === 0,
     })),
-    outcome: 1,
+    outcome: 2,
   };
 }
 
@@ -188,7 +188,7 @@ describe("snapshot codec", () => {
       expect(actual.signOutTicks).toBe(expected.signOutTicks);
       expect(Math.abs(actual.stare - expected.stare)).toBeLessThanOrEqual(0.5 / 255);
     }
-    expect(back.outcome).toBe(1);
+    expect(back.outcome).toBe(2);
     expect(back.items).toHaveLength(4);
     for (const [i, expected] of snap.items.entries()) {
       const actual = back.items[i]!;
