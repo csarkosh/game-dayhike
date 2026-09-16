@@ -1394,7 +1394,7 @@ In `docs/gameplay/2026-09-16-the-summit.md` §9, change T2's status cell to `Bui
 Run from the repo root: `npm run typecheck && npm run lint && npm test`
 Expected: all green. A timeout in a sweep file under load is environmental — re-run that file alone with `--maxWorkers=2` and report both runs.
 
-- [ ] **Step 3: Leak scan and commit**
+- [ ] **Step 3: Scan and commit**
 
 Run the pre-push scan (the repository's pre-push hook runs it; run the hook's command by hand from the worktree root) and confirm it is clean.
 Expected: clean. Then:

@@ -8,11 +8,12 @@ rungs are 2–3 per pair and may end on a loop's bed when their strand target is
 or rung whose bed would stand more than 1.5 m off the ground is dropped; loops off the extra
 strands were deferred (§3.2). Measured density on the 227-seed sweep, in place of §3.5's targets:
 162 of 227 worlds build a strand, 101 a rung; forks per world 0:18 2:32 3:4 4:61 5:8 6:57 7:8 8:30
-9:3 10:6 — 39 worlds reach eight, the floor is 15 %; a guide route in the 1.5–2.5× band exists on
-132 (58 %, floor 55 %), and on the rest the guide returns the longest way the graph offers; 571 bed
-pairs on 142 worlds sit closer than the 16 m corridor gap (never under 4 m, so beds never overlap)
-because the simplifier's gap test works in cell space — a world-space test there is the follow-up
-that would raise every one of these numbers; build time 428 ms a seed.
+9:3 10:6 — 39 worlds reach eight, the floor is 15 %. The 8–18 fork band of §1 is met on 17 % of
+worlds (39 of 227); raising it is the density follow-up. A guide route in the 1.5–2.5× band exists
+on 132 (58 %, floor 55 %), and on the rest the guide returns the longest of its walks under the cap;
+571 bed pairs on 142 worlds sit closer than the 16 m corridor gap (never under 4 m, so beds never
+overlap) because the simplifier's gap test works in cell space — a world-space test there is the
+follow-up that would raise every one of these numbers; build time 428 ms a seed.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md`. Supersedes its loop (§1 there, the
 count and the sign-out) and the §17 table's F and beyond. Keeps its trailhead, its Hollow's
 lethality and its tone.
@@ -108,17 +109,20 @@ the dome, whose skirt has no walkable ground to leave the stem laterally — mea
 could not route a strand from any fork inside it), so the final climb to the crest, the whole dome, is
 one trail — never below a floor of progress 0.5, and tried on a three-rung ladder descending 60 m of
 stem at a time, each rung on both sides, before a strand is dropped; a fork pair must leave at least
-240 m of stem between the forks so the rungs (§3.3) have room — the stem splits into **2–3 strands** (seeded, weights 0.6 / 0.4 for 2 / 3) that
-descend roughly in parallel, 80–200 m apart laterally, and rejoin at a **bottom fork** near the pad
-(progress 0.08–0.15). The original stem is strand A. **Rungs** connect adjacent strands at seeded
-heights: 2–3 per adjacent pair, at least 120 m of descent apart, each running between the nearest
-points of the two strands at that height.
+240 m of stem between the forks (a rung needs 360 m of span: the 120 m gap at each fork and between
+rungs; a shorter braid builds strands without a rung) — the stem splits into **2–3 strands**
+(seeded, weights 0.6 / 0.4 for 2 / 3) that descend roughly in parallel, 80–200 m apart laterally,
+and rejoin at a **bottom fork** near the pad (progress 0.08–0.15). The original stem is strand A.
+**Rungs** connect adjacent strands at seeded heights: 2–3 per adjacent pair, at least 120 m of
+descent apart, each running between the nearest points of the two strands at that height.
 
 Loops keep hanging off the stem as today, and their two junctions are forks like any other. Strands
-and rungs treat every feature disc plus its apron as forbidden ground, so no strand cuts through a
-meadow its loop circles. Loops off the other strands are a **follow-up**, not part of T2 (decided
-2026-09-16 while planning): the fork band is met without them, and they need the loop stage made
-generic over its spine, a refactor of a carefully measured stage with its own risk.
+and rungs treat every meadow's and pond's disc plus its apron as forbidden ground, so no strand cuts
+through a meadow its loop circles; the peak's dome is walkable, and a bed that would stand more than
+1.5 m off the ground on its skirt is dropped instead. Loops off the other strands are a
+**follow-up**, not part of T2 (decided 2026-09-16 while planning): the fork band is met without them,
+and they need the loop stage made generic over its spine, a refactor of a carefully measured stage
+with its own risk.
 
 ### 3.3 The builder
 
@@ -149,7 +153,7 @@ A seed always gets a legal world: a dropped strand or rung is a smaller web, not
   computed once at build. The cut rule and the Hollow's routing read it.
 - The graph carries `shortestHome`: `homeDist` of the crest, the shortest crest-to-pad length. The
   guide route (§5.3) is sized from it.
-- Every constant above lives in `TRAIL_TUNABLES`, so it folds into the level id.
+- Every constant above lives in `BRAID_TUNABLES`, folded into the level id beside `FEATURE_TUNABLES`.
 
 ### 3.5 Gates
 
@@ -160,7 +164,8 @@ seeds):
 - forks never exceed 18; at least 15 % of worlds reach 8 forks (measured 2026-09-16);
 - a loop on ≥ 75 % of worlds, as today;
 - a guide route with length in [1.5, 2.5] × `shortestHome` exists from the crest on at least 55 % of
-  worlds, and on the rest the guide returns the longest way the graph offers (measured 2026-09-16);
+  worlds, and on the rest the guide returns the longest of its walks under the cap
+  (measured 2026-09-16);
 - `fallbacks === 0`;
 - build time per seed within today's budget (the sweep clocks it).
 
@@ -248,8 +253,8 @@ random walk on the trail graph from the world RNG that never repeats an edge and
 loop's far side, choosing at each fork uniformly among the branches that can still reach the pad
 without a repeated edge. A walk is accepted when its length lands in
 [`GUIDE_MIN`, `GUIDE_MAX`] × `shortestHome` (1.5, 2.5). Up to `GUIDE_TRIES` (64) walks; failing
-that, the longest found under `GUIDE_MAX`; failing that, the shortest path — the sweep gate (§3.5)
-pins this last case to never happen. No one sees the guide. It is how the cuts know which way is
+that, the longest found under `GUIDE_MAX`; failing that, the shortest path (the sweep shows this
+does not arise on the 227-seed set). No one sees the guide. It is how the cuts know which way is
 "the one path", and it is what makes the way home medium-to-long rather than the stem.
 
 **Cutting a fork.** During Chase, when any living, unsafe player comes within `FORK_CUT_RADIUS`
