@@ -60,7 +60,9 @@ describe("the bucketed segment table", () => {
     expect(t.index[b * 4 + 1]).toBe(0);
   });
   it("takes every edge of a graph, uncapped", () => {
-    const nodes = Array.from({ length: 70 }, (_, i) => ({ x: i * 10, z: 0, h: i * 2, u: i * 10 }));
+    // u is garbage on every node: the paint reads arc length, computed from
+    // the stem walk, never the route builder's road-relative u.
+    const nodes = Array.from({ length: 70 }, (_, i) => ({ x: i * 10, z: 0, h: i * 2, u: 999 }));
     const edges = nodes.slice(1).map((_, i) => ({
       a: i, b: i + 1, kind: "stem" as const, profile: new Float64Array([i * 2, i * 2 + 2]), progress0: i / 69, progress1: (i + 1) / 69,
     }));
@@ -88,22 +90,41 @@ describe("the band (the mirror of the fragment shader)", () => {
 });
 
 describe("the table's second row", () => {
-  // A Y: trailhead 0 → 1 → 2 (degree 3 at 1) with a spur 1 → 3.
+  // A Y whose spur closes into a loop: trailhead 0 → 1 → 2 (degree 3 at 1),
+  // with a meadow loop 1 → 3 → 4 → 2 rejoining the stem at 2. u is garbage on
+  // every node — the paint reads arc length, never the route builder's u.
   const graph = {
-    nodes: [{ x: 0, z: 0, h: 0, u: 0 }, { x: 100, z: 0, h: 0, u: 100 }, { x: 200, z: 0, h: 0, u: 200 }, { x: 100, z: 80, h: 0, u: 180 }],
+    nodes: [
+      { x: 0, z: 0, h: 0, u: 999 }, { x: 100, z: 0, h: 0, u: 999 }, { x: 200, z: 0, h: 0, u: 999 },
+      { x: 100, z: 80, h: 0, u: 999 }, { x: 200, z: 80, h: 0, u: 999 },
+    ],
     edges: [
       { a: 0, b: 1, kind: "stem", profile: new Float64Array(2), progress0: 0, progress1: 0.5 },
       { a: 1, b: 2, kind: "stem", profile: new Float64Array(2), progress0: 0.5, progress1: 1 },
       { a: 1, b: 3, kind: "loop", profile: new Float64Array(2), progress0: 0.5, progress1: 0.5 },
+      { a: 3, b: 4, kind: "loop", profile: new Float64Array(2), progress0: 0.5, progress1: 0.5 },
+      { a: 4, b: 2, kind: "loop", profile: new Float64Array(2), progress0: 0.5, progress1: 0.5 },
     ],
-    trailhead: { x: 0, z: 0, u: 0 }, summit: 2, stem: [0, 1], loops: [], features: [], stemLen: 200, fallbacks: 0,
+    trailhead: { x: 0, z: 0, u: 0 }, summit: 2, stem: [0, 1],
+    loops: [{ kind: "meadow", featureId: 0, edges: [2, 3, 4], junctionA: 1, junctionB: 2 }],
+    features: [], stemLen: 200, fallbacks: 0,
   } as unknown as TrailGraph;
-  it("widens degree-3 nodes and the trailhead, and carries each node's u", () => {
-    expect(nodeWidths(graph)).toEqual([TRAIL_JUNCTION_W, TRAIL_JUNCTION_W, 1, 1]);
+  it("widens degree-3 nodes and the trailhead, and carries each edge's arc length", () => {
+    expect(nodeWidths(graph)).toEqual([TRAIL_JUNCTION_W, TRAIL_JUNCTION_W, 1, 1, 1]);
     const segs = trailSegments(graph);
     expect(segs[0]).toMatchObject({ ua: 0, ub: 100, wa: TRAIL_JUNCTION_W, wb: TRAIL_JUNCTION_W });
+    // The stem's own edge into the summit keeps ub = 200 — the loop rejoins
+    // it without disturbing the stem's own arc length.
     expect(segs[1]).toMatchObject({ ua: 100, ub: 200, wa: TRAIL_JUNCTION_W, wb: 1 });
+    // The loop: junctionA (node 1, arc 100) → node 3 (+80) → node 4 (+100) →
+    // junctionB (node 2, +80 = 360) — one seam, at node 2, where the loop's
+    // own arc (360) meets the stem's (200).
     expect(segs[2]).toMatchObject({ ua: 100, ub: 180, wa: TRAIL_JUNCTION_W, wb: 1 });
+    expect(segs[3]).toMatchObject({ ua: 180 });
+    expect(segs[4]).toMatchObject({ ub: 360 });
+  });
+  it("never leaves an edge unwalked", () => {
+    for (const s of trailSegments(graph)) expect(s.ua !== 0 || s.ub !== 0).toBe(true);
   });
   it("writes row 1 behind row 0 in one buffer, so the texture is 512 by 2", () => {
     const t = buildTrailTable(trailSegments(graph));

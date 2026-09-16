@@ -6,8 +6,13 @@
  * texture over the graph's bounding box (100 m buckets, one empty ring around
  * it so a clamped lookup outside reads nothing) holds (start, count) per
  * bucket, and a 512-entry, two-row list holds the segments: row 0 is
- * (ax, az, bx, bz), row 1 is (ua, ub, wa, wb) — the node parameter and the
- * junction width factor at each end. A fragment reads its bucket and loops at
+ * (ax, az, bx, bz), row 1 is (ua, ub, wa, wb) — the along-trail arc length and
+ * the junction width factor at each end. The arc length is computed HERE
+ * (`edgeArcLengths`), walking the stem from the pad and each loop from its
+ * first junction, rather than read off `TrailNode.u` — the road-relative
+ * coordinate (`x − roadCenterX(z)`) the route builder uses to shape the
+ * search, which runs parallel to the road rather than along the trail and is
+ * never read by the paint. A fragment reads its bucket and loops at
  * most TRAIL_PAINT_BUCKET_MAX segments over row 0 to find the nearest one,
  * then reads row 1 once, at the winner's index, to paint it: every band below
  * is a function of that segment's along-length wear and width, and of the
@@ -78,11 +83,85 @@ export function nodeWidths(graph: TrailGraph): number[] {
   return degree.map((d, i) => (d >= 3 || i === 0 ? TRAIL_JUNCTION_W : 1));
 }
 
+/**
+ * The along-trail arc length at each edge's own `a` and `b` ends, one entry
+ * per edge index. The stem walks from node 0 (the pad, `s = 0`) to the
+ * summit, following `graph.stem` in its own pad → summit order; each loop
+ * then walks from `junctionA` (the arc length a touching stem edge already
+ * carries) to `junctionB`, so a loop has exactly one seam, at the junction
+ * where its arc rejoins the stem's own.
+ *
+ * A loop's `edges` are its two half-loops concatenated — the first half
+ * junctionA → the turn, the second half junctionB → the turn — which is NOT
+ * a chain in that stored order (`trailBuild.ts`'s own loop-closing code walks
+ * the second half in reverse for the same reason). So the walk here follows
+ * ADJACENCY within a loop's own edges, starting at `junctionA`, rather than
+ * the array order: at every node along the way exactly one unwalked edge
+ * leads on (the loop's own edges form a simple path, junctionA to junctionB,
+ * with no branching), so the walk is unambiguous.
+ *
+ * An edge whose `a` is not the node the walk just arrived at has its roles
+ * swapped so `ua`/`ub` still land on the edge's own `a`/`b` ends rather than
+ * on "the end the walk saw first" — `trailSegments`' `ax, az, bx, bz` are
+ * always `a`, then `b`, so the paint's `mix(ua, ub, t)` must agree. Any edge
+ * the walk never reaches (there should be none — the stem plus every loop's
+ * edges cover the whole graph) is left at `ua = ub = 0`.
+ */
+export function edgeArcLengths(graph: TrailGraph): { ua: number; ub: number }[] {
+  const out: { ua: number; ub: number }[] = graph.edges.map(() => ({ ua: 0, ub: 0 }));
+  const edgeLength = (ei: number): number => {
+    const e = graph.edges[ei]!;
+    const a = graph.nodes[e.a]!, b = graph.nodes[e.b]!;
+    return Math.hypot(b.x - a.x, b.z - a.z);
+  };
+  // The stem: pad (node 0) to the summit, in the stored order.
+  let s = 0;
+  let at = 0;
+  for (const ei of graph.stem) {
+    const e = graph.edges[ei]!;
+    const len = edgeLength(ei);
+    if (e.a === at) { out[ei] = { ua: s, ub: s + len }; at = e.b; }
+    else { out[ei] = { ua: s + len, ub: s }; at = e.a; }
+    s += len;
+  }
+  // Each loop: from junctionA's own stem arc length, following the loop's
+  // OWN edges by adjacency (never the stored array order — see above).
+  for (const loop of graph.loops) {
+    let sLoop = 0;
+    for (const ei of graph.stem) {
+      const e = graph.edges[ei]!;
+      if (e.a === loop.junctionA) { sLoop = out[ei]!.ua; break; }
+      if (e.b === loop.junctionA) { sLoop = out[ei]!.ub; break; }
+    }
+    const adj = new Map<number, { ei: number; other: number }[]>();
+    for (const ei of loop.edges) {
+      const e = graph.edges[ei]!;
+      (adj.get(e.a) ?? adj.set(e.a, []).get(e.a)!).push({ ei, other: e.b });
+      (adj.get(e.b) ?? adj.set(e.b, []).get(e.b)!).push({ ei, other: e.a });
+    }
+    const walked = new Set<number>();
+    let cur = loop.junctionA;
+    while (cur !== loop.junctionB) {
+      const next = (adj.get(cur) ?? []).find((o) => !walked.has(o.ei));
+      if (next === undefined) break; // defensive: a malformed loop should not hang the walk
+      walked.add(next.ei);
+      const e = graph.edges[next.ei]!;
+      const len = edgeLength(next.ei);
+      if (e.a === cur) out[next.ei] = { ua: sLoop, ub: sLoop + len };
+      else out[next.ei] = { ua: sLoop + len, ub: sLoop };
+      sLoop += len;
+      cur = next.other;
+    }
+  }
+  return out;
+}
+
 export function trailSegments(graph: TrailGraph): Segment[] {
   const w = nodeWidths(graph);
-  return graph.edges.map((e) => {
+  const arcs = edgeArcLengths(graph);
+  return graph.edges.map((e, i) => {
     const a = graph.nodes[e.a]!, b = graph.nodes[e.b]!;
-    return { ax: a.x, az: a.z, bx: b.x, bz: b.z, ua: a.u, ub: b.u, wa: w[e.a]!, wb: w[e.b]! };
+    return { ax: a.x, az: a.z, bx: b.x, bz: b.z, ua: arcs[i]!.ua, ub: arcs[i]!.ub, wa: w[e.a]!, wb: w[e.b]! };
   });
 }
 

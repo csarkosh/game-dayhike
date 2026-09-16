@@ -111,12 +111,16 @@ the existing level-mismatch message; that is what a level-id release means.
 
 **Two coordinates.** The nearest-segment search over the bucketed table is unchanged. The
 `trailSegs` texture becomes 512 × 2: row 0 `(ax, az, bx, bz)` as today, row 1
-`(uA, uB, wA, wB)`: the two nodes' along-trail parameter `u` (the graph already carries it per
-node, so `u` is continuous across every node; a loop has one seam where `u` jumps, which the
-wear noise makes into one more change of width) and their width factors, `TRAIL_JUNCTION_W =
-1.35` at a node of degree three or more and at the trailhead, 1 elsewhere. The fragment ends
-the search with `d` (across), `t` (along the best segment) and reads row 1 once for that
-segment: `u = mix(uA, uB, t)`, `wj = mix(wA, wB, t)`. Same sampler, one more fetch.
+`(uA, uB, wA, wB)`: the two nodes' along-trail parameter `u` and their width factors,
+`TRAIL_JUNCTION_W = 1.35` at a node of degree three or more and at the trailhead, 1 elsewhere.
+`u` is arc length, computed once when the table is built rather than read off the graph's own
+`TrailNode.u` (the road-relative coordinate the route builder uses, which runs parallel to the
+road rather than along the trail): the stem walks from the pad (`u = 0`) to the crest, and each
+loop walks from its own first junction, so `u` is continuous along a walk — the stem, or around
+a loop — with one seam per loop, at the junction where its arc rejoins the stem's, which the
+wear noise makes into one more change of width. The fragment ends the search with `d` (across),
+`t` (along the best segment) and reads row 1 once for that segment: `u = mix(uA, uB, t)`,
+`wj = mix(wA, wB, t)`. Same sampler, one more fetch.
 
 **Wear.** `wear(u) = 0.6·noise1(u / 12) + 0.4·noise1(u / 3)` in [0, 1], a 1-D value noise on
 `latticeHash(cell, 0)` with the smoothstep fade the macro noise uses. It scales the bands and
