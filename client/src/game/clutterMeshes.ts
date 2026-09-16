@@ -59,10 +59,12 @@ import {
   CLUTTER_ROCK,
   type ClutterInstance,
 } from "../sim/clutter.js";
-import { attachWind, WIND_AMP_MEADOW, WIND_AMP_GRASS, WIND_AMP_FLOWER, WIND_AMP_BUSH } from "./windPlugin.js";
+import { attachFoliage, setFoliageEdges, FOLIAGE_PROFILES, type FoliageProfile } from "./foliagePlugin.js";
 import { attachDistanceFade, fadeBands, writeFadeBands, type FadeBands } from "./distanceFadePlugin.js";
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
+import { surfaceAlbedo } from "./terrainSurface.js";
+import { forestDensity } from "../sim/vegetation.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
 // exactly BOULDER_SINK · (that variant's own BASE_H) · scale shows a visible
@@ -113,13 +115,14 @@ const FAR_LOD = 1;
  */
 const CLUTTER_SINK = 0.02;
 
-/** Ground-layer classes that sway, and their tip amplitudes. Rock,
- * boulder, driftwood, and fungus stay static. */
-const WIND_AMPS = new Map<number, number>([
-  [CLUTTER_GRASS, WIND_AMP_GRASS],
-  [CLUTTER_BUSH, WIND_AMP_BUSH],
-  [CLUTTER_MEADOW, WIND_AMP_MEADOW],
-  [CLUTTER_FLOWER, WIND_AMP_FLOWER],
+/** Ground-layer classes that sway and carry the foliage plugin's ground
+ * tint, mapped to the profile that governs their amplitude, root darkening
+ * and canopy shade. Rock, boulder, driftwood, and fungus stay static. */
+const FOLIAGE_BY_CLASS = new Map<number, FoliageProfile>([
+  [CLUTTER_GRASS, FOLIAGE_PROFILES.GRASS],
+  [CLUTTER_MEADOW, FOLIAGE_PROFILES.MEADOW],
+  [CLUTTER_FLOWER, FOLIAGE_PROFILES.FLOWER],
+  [CLUTTER_BUSH, FOLIAGE_PROFILES.BUSH],
 ]);
 
 /** Classes that LIE on the ground rather than stand on it, so they take the
@@ -174,8 +177,17 @@ type Bucket = {
   buf: Float32Array;
   /** Four floats per instance, `fadeBands` attribute; capacity tracks `buf`. */
   bands: Float32Array;
+  /** Four floats per instance (ground colour rgb + canopy shade), the
+   * `foliage` attribute; capacity tracks `buf`. Only written and uploaded
+   * when `tints` is set — the classes without the foliage plugin never read
+   * this buffer, so it stays at `EMPTY_BUFFER`. */
+  foliage: Float32Array;
   /** The constant every instance of this bucket carries. */
   fade: FadeBands;
+  /** Set for the classes that wear the foliage plugin (`FOLIAGE_BY_CLASS`),
+   * which is exactly the classes whose `foliage` buffer this file writes and
+   * uploads. */
+  tints: boolean;
   /** Instances this rebuild — counted in pass 1, then reused as the write
    * cursor in pass 2, so it is the live count again when the fill ends. */
   count: number;
@@ -240,8 +252,9 @@ function ensureCapacity(bucket: Bucket): void {
   let capacity = Math.max(bucket.buf.length, BUCKET_MIN_INSTANCES * 16);
   while (capacity < needed) capacity *= 2;
   bucket.buf = new Float32Array(capacity);
-  // 16 floats of matrix per instance ↔ 4 floats of bands per instance.
+  // 16 floats of matrix per instance ↔ 4 floats of bands (or foliage) per instance.
   bucket.bands = new Float32Array(capacity / 4);
+  bucket.foliage = new Float32Array(capacity / 4);
   bucket.grown = true;
 }
 
@@ -270,12 +283,14 @@ function applyBucket(bucket: Bucket): void {
       // the assignment below immediately trims to the live count.
       mesh.thinInstanceSetBuffer("matrix", bucket.buf, 16, false);
       mesh.thinInstanceSetBuffer("fadeBands", bucket.bands, 4, false);
+      if (bucket.tints) mesh.thinInstanceSetBuffer("foliage", bucket.foliage, 4, false);
       mesh.thinInstanceCount = count;
     } else {
       mesh.thinInstanceCount = count;
       if (count > 0) {
         mesh.thinInstanceBufferUpdated("matrix");
         mesh.thinInstanceBufferUpdated("fadeBands");
+        if (bucket.tints) mesh.thinInstanceBufferUpdated("foliage");
       }
     }
     // A zero-count bucket must be disabled outright: with `instancesCount` 0
@@ -315,6 +330,19 @@ function writeInstanceMatrix(inst: ClutterInstance, buf: Float32Array, offset: n
   scratchPos.copyFromFloats(inst.x, inst.groundH - sink, inst.z);
   Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchMat);
   scratchMat.copyToArray(buf, offset);
+}
+
+/** Ground colour at the instance (the palette the clipmap bakes into vertex
+ * colour, so grass and ground can never disagree) and the canopy shade the
+ * bush palette used to carry by hand. slope = |∇h|; canopy = forestDensity. */
+function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Array, offset: number): void {
+  const slope = Math.hypot(inst.groundDx, inst.groundDz);
+  const canopy = forestDensity(seed, inst.x, inst.z);
+  const c = surfaceAlbedo(seed, inst.x, inst.z, inst.groundH, slope, canopy);
+  buf[offset] = c.r;
+  buf[offset + 1] = c.g;
+  buf[offset + 2] = c.b;
+  buf[offset + 3] = 1 - 0.5 * canopy;
 }
 
 /**
@@ -396,12 +424,14 @@ export function createClutterMeshes(
         const bucket = bucketFor(variants, inst, NEAR_LOD);
         writeInstanceMatrix(inst, bucket.buf, bucket.count * 16);
         writeFadeBands(bucket.bands, bucket.count * 4, bucket.fade);
+        if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4);
         bucket.count++;
       }
       for (const inst of band.far) {
         const bucket = bucketFor(variants, inst, FAR_LOD);
         writeInstanceMatrix(inst, bucket.buf, bucket.count * 16);
         writeFadeBands(bucket.bands, bucket.count * 4, bucket.fade);
+        if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4);
         bucket.count++;
       }
     }
@@ -510,29 +540,45 @@ export function createClutterMeshes(
           // BOTH their LOD buckets do: a boulder crossing the near/far split
           // would otherwise drop its shadow mid-view.
           if (cls === CLUTTER_BOULDER) casterMeshes.push(...meshes);
-          const amp = WIND_AMPS.get(cls);
-          if (amp !== undefined) {
+          // Every class dithers toward its disc edge, and across its near/far
+          // seam: the near LOD fades out over the seam, the
+          // far LOD in over the seam and out over the edge. Hoisted above the
+          // foliage block below, which also needs `edge`.
+          const edge = clutterFadeEdges(cls, radiusScale);
+          const seam = clutterSeamEdges(cls, radiusScale);
+          const profile = FOLIAGE_BY_CLASS.get(cls);
+          if (profile !== undefined) {
             for (const mesh of meshes) {
               if (mesh.material) {
                 // Bake ran already, so the bound box is the placed geometry;
                 // models put the origin at the footprint base, so max.y IS the height.
                 mesh.refreshBoundingInfo();
-                attachWind(mesh.material, amp, mesh.getBoundingInfo().boundingBox.maximum.y);
+                attachFoliage(mesh.material, profile, mesh.getBoundingInfo().boundingBox.maximum.y);
+                // `edges` lives on the plugin instance, so it is per MATERIAL:
+                // a card GLB's two LOD buckets share one material, so setting
+                // the far bucket's edges here also governs the near bucket's
+                // plugin instance — harmless, since the near bucket sits
+                // entirely inside the disc edge already.
+                if (lod === FAR_LOD) setFoliageEdges(mesh.material, [edge.start, edge.end]);
               }
             }
           }
-          // Every class dithers toward its disc edge, and across its near/far
-          // seam: the near LOD fades out over the seam, the
-          // far LOD in over the seam and out over the edge.
-          const edge = clutterFadeEdges(cls, radiusScale);
-          const seam = clutterSeamEdges(cls, radiusScale);
           const fade: FadeBands = lod === NEAR_LOD
             ? fadeBands(null, [seam.start, seam.end])
             : fadeBands([seam.start, seam.end], [edge.start, edge.end]);
           for (const mesh of meshes) {
             if (mesh.material) attachDistanceFade(mesh.material);
           }
-          return { meshes, buf: EMPTY_BUFFER, bands: EMPTY_BUFFER, count: 0, grown: false, fade };
+          return {
+            meshes,
+            buf: EMPTY_BUFFER,
+            bands: EMPTY_BUFFER,
+            foliage: EMPTY_BUFFER,
+            count: 0,
+            grown: false,
+            fade,
+            tints: profile !== undefined,
+          };
         }),
       ),
     );

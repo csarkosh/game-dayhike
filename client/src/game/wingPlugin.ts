@@ -6,13 +6,13 @@
  * (phase, amp): amp 0 is a glide.
  *
  * Position only: NORMALS are left unrotated, so a raised wing shades as if it
- * were still flat. `windPlugin.ts` has the same shape for the same reason — the
+ * were still flat. `foliagePlugin.ts` has the same shape for the same reason — the
  * normal rotation costs a second matrix per vertex and the birds it would serve
  * are a few pixels across at 300 m. Recorded here so this reads
  * as a decision rather than rediscovering it as a bug.
  *
  * Injected at CUSTOM_VERTEX_UPDATE_POSITION — BEFORE the instance matrix —
- * because the rotation is in the bird's own frame; windPlugin.ts hooks
+ * because the rotation is in the bird's own frame; foliagePlugin.ts hooks
  * WORLDPOS for the opposite reason. Time wraps at WING_TIME_WRAP and every ω
  * is an exact multiple of 2π / WING_TIME_WRAP so the wrap is phase-continuous
  * (the wind rule). The per-instance attribute plumbing mirrors
@@ -21,7 +21,7 @@
  * cast shadows, so there is no shadow-depth mismatch.
  *
  * Renderer-only by design — no constant here may migrate into sim/ or a
- * tunables registry, exactly as `windPlugin.ts` states for its amplitudes.
+ * tunables registry, exactly as `foliagePlugin.ts` states for its amplitudes.
  *
  * The body carries `groundConformPlugin.ts`'s `THIN_INSTANCES` guard, and the
  * reason is worth stating because it is NOT the same one. There, an unguarded
@@ -106,7 +106,7 @@ export class WingPlugin extends MaterialPluginBase {
   // `scene` and `mesh` are part of MaterialPluginBase's required override
   // signature even though a constant define needs neither; TS's own
   // noUnusedParameters exempts the leading underscore, only this project's
-  // eslint config does not — the `cel.ts` precedent, as in windPlugin.ts.
+  // eslint config does not — the `cel.ts` precedent, as in foliagePlugin.ts.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override prepareDefines(defines: MaterialDefines, _scene: Scene, _mesh: AbstractMesh): void {
     defines.WING = true;

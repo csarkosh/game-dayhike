@@ -30,7 +30,7 @@ const BASE: Record<MoteSpecies, Omit<MoteSettings, "rate">> = {
   frost: { minSize: 0.03, maxSize: 0.08, minLife: 5, maxLife: 9, rise: -0.25, jitter: 0.1 },
 };
 
-/** The two gust terms windPlugin.ts sums, evaluated at the origin, as a horizontal drift. */
+/** The two gust terms foliagePlugin.ts sums, evaluated at the origin, as a horizontal drift. */
 export function windAt(t: number): { x: number; z: number } {
   const gust = Math.sin(t * WIND_OMEGA_GUST) + 0.6 * Math.sin(t * WIND_OMEGA_GUST2);
   return { x: WIND_DRIFT * 0.75 * gust, z: WIND_DRIFT * 0.35 * gust };

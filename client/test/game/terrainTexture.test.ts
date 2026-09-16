@@ -39,7 +39,7 @@ describe("terrain texture plugin", () => {
     // Activation is what makes prepareDefines/bindForSubMesh/custom code run at
     // all: Babylon dispatches over _activePlugins, not _plugins. Without this
     // assertion, dropping `_enable(true)` is a silent, untested feature death —
-    // the gap windPlugin.test.ts had to be corrected for.
+    // the gap foliagePlugin.test.ts had to be corrected for.
     const active = (mat.pluginManager as unknown as { _activePlugins: unknown[] })._activePlugins;
     expect(active).toContain(plugin);
     // …and activated exactly once, which is what makes `attachTerrainTexture`'s

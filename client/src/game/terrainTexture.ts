@@ -474,7 +474,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   private _featureInfo: [number, number, number, number] = [0, 0, 0, 0];
 
   constructor(material: PBRMaterial, scene: Scene, options: { groundArrays?: GroundArraysFactory } = {}) {
-    // Priority 200, matching windPlugin/cel — after Babylon's own plugins. The
+    // Priority 200, matching foliagePlugin/cel — after Babylon's own plugins. The
     // TERRAINTEX define is declared here, which is what puts `#define TERRAINTEX`
     // into the compiled shader's define block; a plugin that gates injected code
     // on an UNDECLARED define compiles the whole branch out silently (the trap
@@ -568,7 +568,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   // signature even though a constant define needs neither. Kept on ONE line:
   // `eslint-disable-next-line` covers only the following line, so a wrapped
   // parameter list would leave the unused two unsuppressed (the `cel.ts` /
-  // `windPlugin.ts` precedent).
+  // `foliagePlugin.ts` precedent).
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override prepareDefines(defines: MaterialDefines, _scene: Scene, _mesh: AbstractMesh): void {
     defines.TERRAINTEX = true;

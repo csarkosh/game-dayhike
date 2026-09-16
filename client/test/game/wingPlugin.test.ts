@@ -101,7 +101,7 @@ describe("wing beat", () => {
   it("hooks the object-space stage, not the world-space one", () => {
     // The rotation is in the bird's own frame, so it has to land before
     // `#include<instancesVertex>` applies the thin-instance matrix —
-    // windPlugin.ts hooks WORLDPOS for the opposite reason. A WORLDPOS hook
+    // foliagePlugin.ts hooks WORLDPOS for the opposite reason. A WORLDPOS hook
     // would beat every bird's wings about the WORLD x axis instead of its own.
     const engine = new NullEngine();
     const scene = new Scene(engine);

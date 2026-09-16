@@ -95,7 +95,7 @@ describe("injected GLSL survives Babylon's real preprocessor", () => {
     expect(out).toContain("groundGrad");
     expect(out).toContain("min(");
     // ES 1.00 `attribute` must have been migrated to ES 3.00 `in`, proving the
-    // plugin may be written in plain ES 1.00 as windPlugin and terrainTexture
+    // plugin may be written in plain ES 1.00 as foliagePlugin and terrainTexture
     // both are.
     expect(out).not.toContain("attribute vec2 groundGrad;");
     expect(out).toContain("in vec2 groundGrad;");

@@ -5,7 +5,7 @@
  * the trunk above it stays vertical.
  *
  * Renderer-only by design — no constant here may migrate into sim/ or a
- * tunables registry, exactly as `windPlugin.ts` states for its amplitudes.
+ * tunables registry, exactly as `foliagePlugin.ts` states for its amplitudes.
  * Conforming is cosmetic, peers need not agree on it, and it must not move the
  * level id.
  *
@@ -23,7 +23,7 @@
  * is zero and so is the displacement.
  *
  * Injection point is CUSTOM_VERTEX_UPDATE_WORLDPOS for the same reason
- * `windPlugin.ts` records: it sits after `worldPos = finalWorld * position`,
+ * `foliagePlugin.ts` records: it sits after `worldPos = finalWorld * position`,
  * so the thin-instance matrix has been applied and both `worldPos` and
  * `positionUpdated` are in scope, along with `finalWorld` itself — whose
  * fourth column is the instance's own world origin.

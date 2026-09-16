@@ -5,10 +5,12 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import "../../src/sim/passes/index.js";
-import { CLUTTER_CLASS_COUNT } from "../../src/sim/clutter.js";
+import { CLUTTER_CLASS_COUNT, CLUTTER_GRASS, CLUTTER_ROCK } from "../../src/sim/clutter.js";
 import { clutterFadeEdges, clutterSeamEdges } from "../../src/game/clutterField.js";
 import { createClutterMeshes } from "../../src/game/clutterMeshes.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
+import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
+import { forestDensity } from "../../src/sim/vegetation.js";
 
 describe("createClutterMeshes attaches the distance fade", () => {
   it("puts the plugin on every bucket material and a constant fadeBands per bucket", () => {
@@ -102,6 +104,91 @@ describe("createClutterMeshes attaches the distance fade", () => {
     expect(nonEmpty).toBeGreaterThan(0);
     expect(sawOpaqueBucket).toBe(true);
     clutter.dispose();
+    engine.dispose();
+  });
+});
+
+describe("foliage attribute and plugin", () => {
+  const RADIUS_SCALE = 0.6;
+
+  /** Bucket meshes per class/variant/lod, with ONE material per class/variant
+   * shared across its two LOD buckets — the production shape (a card GLB's
+   * two LOD buckets share one material), which is what makes the "far
+   * bucket's edges also govern the near bucket" behaviour observable here. */
+  function buildWithAssets(): { meshes: ReturnType<typeof createClutterMeshes>; assets: Mesh[][][][]; seed: number; engine: NullEngine } {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const seed = 1;
+    const assets: Mesh[][][][] = [];
+    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+      assets.push([0, 1].map((variant) => {
+        const material = new PBRMaterial(`foliage-c${cls}v${variant}`, scene);
+        material.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST;
+        return [0, 1].map((lod) => {
+          const mesh = CreateBox(`foliage-c${cls}v${variant}l${lod}`, { size: 0.5 }, scene);
+          mesh.material = material;
+          return [mesh];
+        });
+      }));
+    }
+    const meshes = createClutterMeshes(scene, seed, { assets, radiusScale: RADIUS_SCALE });
+    return { meshes, assets, seed, engine };
+  }
+
+  it("attaches the foliage plugin to the swaying classes only, with the far bucket's edges", () => {
+    const { meshes, assets, engine } = buildWithAssets();
+    const grassNear = assets[CLUTTER_GRASS]![0]![0]![0]!;
+    const rockNear = assets[CLUTTER_ROCK]![0]![0]![0]!;
+    const plugin = grassNear.material!.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    expect(plugin).toBeInstanceOf(FoliagePlugin);
+    expect(rockNear.material!.pluginManager?.getPlugin("Foliage") ?? null).toBeNull();
+    const edge = clutterFadeEdges(CLUTTER_GRASS, RADIUS_SCALE);
+    expect(plugin.edges).toEqual([edge.start, edge.end]);
+    meshes.dispose();
+    engine.dispose();
+  });
+
+  it("writes the ground colour and the canopy shade per grass instance", () => {
+    const { meshes, assets, seed, engine } = buildWithAssets();
+    const grassNear = assets[CLUTTER_GRASS]![0]![0]![0]!;
+    // Reads back the buffer of `kind` most recently pushed to `mesh` through
+    // `thinInstanceSetBuffer` — the same GPU-bound spy the "distance fade"
+    // test above uses, standing in for the `thinInstanceGetBuffer` accessor
+    // Babylon 9.18 does not expose.
+    const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    function bufferFor(mesh: Mesh, kind: string): Float32Array | null {
+      for (let k = spy.mock.calls.length - 1; k >= 0; k--) {
+        const call = spy.mock.calls[k]!;
+        if (spy.mock.instances[k] === mesh && call[0] === kind) return call[1] as Float32Array;
+      }
+      return null;
+    }
+    // Near the origin, where the sim's own tests find grass reliably —
+    // (2500, 2500) (the "distance fade" test's camera above) is far enough
+    // out that this seed's terrain gates grass to zero there.
+    meshes.update(100, 100);
+    const count = grassNear.thinInstanceCount;
+    expect(count).toBeGreaterThan(0);
+    const matrices = bufferFor(grassNear, "matrix")!;
+    const foliage = bufferFor(grassNear, "foliage")!;
+    expect(matrices).not.toBeNull();
+    expect(foliage).not.toBeNull();
+    for (let i = 0; i < Math.min(count, 8); i++) {
+      const x = matrices[i * 16 + 12]!;
+      const z = matrices[i * 16 + 14]!;
+      const shade = foliage[i * 4 + 3]!;
+      expect(shade).toBeCloseTo(1 - 0.5 * forestDensity(seed, x, z), 5);
+      // RGB is the palette colour surfaceAlbedo returns for that spot; the
+      // exact altitude/slope inputs live only on the instance record, so this
+      // checks the values reached the GPU in a sane [0, 1] range.
+      expect(foliage[i * 4]!).toBeGreaterThanOrEqual(0);
+      expect(foliage[i * 4]!).toBeLessThanOrEqual(1);
+      expect(foliage[i * 4 + 1]!).toBeGreaterThanOrEqual(0);
+      expect(foliage[i * 4 + 1]!).toBeLessThanOrEqual(1);
+      expect(foliage[i * 4 + 2]!).toBeGreaterThanOrEqual(0);
+      expect(foliage[i * 4 + 2]!).toBeLessThanOrEqual(1);
+    }
+    meshes.dispose();
     engine.dispose();
   });
 });

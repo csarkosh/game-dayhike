@@ -114,7 +114,7 @@ function stubAssets(scene: Scene): {
   deadwood: Mesh;
 } {
   // Understory alone gets a real material (production GLBs always carry
-  // one): `adoptSpecies` gates both `attachWind` and the plugin-composition
+  // one): `adoptSpecies` gates both `attachFoliage` and the plugin-composition
   // it protects against behind `if (mesh.material)`, so a null-material stub
   // would trivially "pass" a plugin-absence check without exercising the
   // path this design actually protects against. Alpha-tested, like every

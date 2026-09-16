@@ -27,7 +27,7 @@
  * constant per instance; the attribute is what makes one material serve.
  *
  * Renderer-only by design — no constant here may migrate into sim/ or a
- * tunables registry (the windPlugin.ts rule). Peers need not agree on it.
+ * tunables registry (the foliagePlugin.ts rule). Peers need not agree on it.
  *
  * Distance is measured from the instance ORIGIN (finalWorld[3]) in XZ, the
  * clutterFadePlugin measure, so a whole tuft or tree fades as one. The
@@ -175,7 +175,7 @@ export class DistanceFadePlugin extends MaterialPluginBase {
     return "DistanceFadePlugin";
   }
 
-  // One line, for the eslint-disable reason windPlugin.ts records.
+  // One line, for the eslint-disable reason foliagePlugin.ts records.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override prepareDefines(defines: MaterialDefines, _scene: Scene, _mesh: AbstractMesh): void {
     defines.DISTANCEFADE = true;

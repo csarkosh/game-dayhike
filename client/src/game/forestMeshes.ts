@@ -86,7 +86,7 @@ import {
   type TreeInstance,
 } from "../sim/vegetation.js";
 import { elevationAt } from "../sim/terrain.js";
-import { attachWind, WIND_AMP_UNDERSTORY } from "./windPlugin.js";
+import { attachFoliage, FOLIAGE_PROFILES } from "./foliagePlugin.js";
 import { groundNormalTilt, groundNormalY, seatOnGround } from "./groundTilt.js";
 import { attachGroundConform } from "./groundConformPlugin.js";
 import {
@@ -840,15 +840,14 @@ export function createForestMeshes(
       }
     }
 
-    // Wind sway: understory only — never tree LODs
-    // or the impostor quad, which stay rigid.
+    // Foliage sway: understory here; the impostor quad stays rigid.
     if (understory !== null) {
       for (const mesh of understory) {
         if (mesh.material) {
           // Bake ran already, so the bound box is the placed geometry;
           // models put the origin at the footprint base, so max.y IS the height.
           mesh.refreshBoundingInfo();
-          attachWind(mesh.material, WIND_AMP_UNDERSTORY, mesh.getBoundingInfo().boundingBox.maximum.y);
+          attachFoliage(mesh.material, FOLIAGE_PROFILES.UNDERSTORY, mesh.getBoundingInfo().boundingBox.maximum.y);
           attachDistanceFade(mesh.material);
         }
       }
