@@ -14,7 +14,7 @@
 
 - Work in a fresh worktree off latest `origin/main` (`git worktree add -b worktree-t2-braid .claude/worktrees/t2-braid origin/main`). Stage explicit paths only; never `git add -A`.
 - Commit messages use the repo's `## What` / `## How` shape (`.agents/skills/github-push/SKILL.md`), trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
-- Never mention asset generation or any private design process in code, comments, commits or docs. This repo is public.
+- Never cite any private process or tooling in code, comments, commits or docs. This repo is public.
 - `sim/` never imports `net/`, `game/` or Babylon (ESLint enforces it). `sim/` determinism: no trig, no `Math.pow`, no `**`, no `Math.hypot`; `Math.sqrt` only.
 - Every new constant that steers the graph lives in `BRAID_TUNABLES` and is folded into the level id in `olympic.ts` beside `FEATURE_TUNABLES`.
 - A seed always gets a legal world: a strand or rung that cannot route is dropped, never forced, and never throws.
@@ -1396,7 +1396,7 @@ Expected: all green. A timeout in a sweep file under load is environmental — r
 
 - [ ] **Step 3: Leak scan and commit**
 
-Run: `node ~/Projects/asset-generation/tools/leak-scan/cli.mjs "$PWD" --revs origin/main..HEAD`
+Run the pre-push scan (the repository's pre-push hook runs it; run the hook's command by hand from the worktree root) and confirm it is clean.
 Expected: clean. Then:
 
 ```bash
