@@ -22,6 +22,29 @@ export const WIND_GAIN_FLOOR = 0.35;
 export const WIND_MIST_QUIET = 0.3;
 export const WIND_AUDIO_INTERVAL_S = 0.1;
 /**
+ * How much of the bed's loudness the gust swings: the gain scales by
+ * `1 − depth … 1 + depth` from a trough to a crest, so a front passing is
+ * heard as a swell, not only as the cutoff opening. The RAW gust drives it
+ * (the shader's amplitude scales with speed, this does not), so the bed
+ * breathes on a clear day too — it always plays, at a varying intensity.
+ */
+export const WIND_GAIN_DEPTH = 0.5;
+/** The gain's own ramp: fast enough that a gust's swell survives, unlike the
+ * 2 s `GAIN_RAMP_S` the weather fades use, which would smooth it away. */
+export const WIND_GAIN_RAMP_S = 0.4;
+
+/**
+ * The wind bed's gain for a wind speed (0–1), a mist amount (0–1) and the raw
+ * gust at the listener (`gustAt`, in [−1.5, 1.5]): the floor plus speed,
+ * quieter under mist, swung by the gust. Pure, so the tests pin it exactly.
+ */
+export function windBedGain(speed: number, mist: number, gust: number): number {
+  const gust01 = clamp01(0.5 + gust / 3);
+  return WIND_LEVEL * (WIND_GAIN_FLOOR + (1 - WIND_GAIN_FLOOR) * clamp01(speed))
+    * (1 - WIND_MIST_QUIET * clamp01(mist))
+    * (1 - WIND_GAIN_DEPTH + 2 * WIND_GAIN_DEPTH * gust01);
+}
+/**
  * The bus every spatialized wildlife call is mixed through. One level
  * for the whole species chorus, sitting under the master volume, so a call that
  * is close and loud still cannot drown the synthesized weather beds above.
@@ -243,12 +266,10 @@ export function createAmbientAudio(
       if (record.time - lastWindTime < WIND_AUDIO_INTERVAL_S && record.time >= lastWindTime) return;
       lastWindTime = record.time;
       const mist = clamp01(pending.mist);
-      const cutoff = WIND_CUTOFF_BASE * (1 - WIND_MIST_DEEPEN * mist)
-        + WIND_CUTOFF_GUST * gustAt(record, listenerX, listenerZ);
+      const gust = gustAt(record, listenerX, listenerZ);
+      const cutoff = WIND_CUTOFF_BASE * (1 - WIND_MIST_DEEPEN * mist) + WIND_CUTOFF_GUST * gust;
       windFilter.frequency.setTargetAtTime(cutoff, ctx.currentTime, 0.15);
-      const gain = WIND_LEVEL * (WIND_GAIN_FLOOR + (1 - WIND_GAIN_FLOOR) * record.speed)
-        * (1 - WIND_MIST_QUIET * mist);
-      windGain.gain.setTargetAtTime(gain, ctx.currentTime, GAIN_RAMP_S);
+      windGain.gain.setTargetAtTime(windBedGain(record.speed, mist, gust), ctx.currentTime, WIND_GAIN_RAMP_S);
     },
     setVolume(v) {
       volume = clamp01(v);

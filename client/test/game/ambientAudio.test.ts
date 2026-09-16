@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   createAmbientAudio, DEFAULT_VOLUME, OBJECTS_LEVEL, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
   WIND_CUTOFF_BASE, WIND_CUTOFF_GUST, WIND_GAIN_FLOOR, WIND_MIST_DEEPEN, WIND_MIST_QUIET,
+  WIND_GAIN_DEPTH, WIND_GAIN_RAMP_S, windBedGain,
 } from "../../src/game/ambientAudio.js";
 import { ambientGainsUnder, WEATHER_PRESETS } from "../../src/game/weather.js";
 import { gustAt, windRecordUnder } from "../../src/game/windParams.js";
@@ -155,8 +156,11 @@ describe("createAmbientAudio", () => {
     // Identified by its resting floor value — setWind only ever pushes targets,
     // it never mutates this fake's `.value`.
     const windGain = created.gains.find((g) => g.gain.value === WIND_LEVEL * WIND_GAIN_FLOOR)!;
-    const gain = WIND_LEVEL * (WIND_GAIN_FLOOR + (1 - WIND_GAIN_FLOOR) * rec.speed) * (1 - WIND_MIST_QUIET * 1);
+    const gain = windBedGain(rec.speed, 1, gustAt(rec, 0, 0));
     expect(windGain.gain.targets.at(-1)!.value).toBeCloseTo(gain, 6);
+    // The swell must be audible: the gain ramps on its own fast constant, not
+    // the 2 s weather fade.
+    expect(windGain.gain.targets.at(-1)!.tc).toBe(WIND_GAIN_RAMP_S);
     const n = windFilter.frequency.targets.length;
     audio.setWind({ ...rec, time: 5.02 }); // 20 ms later on the fake clock: throttled
     expect(windFilter.frequency.targets.length).toBe(n);
@@ -167,7 +171,25 @@ describe("createAmbientAudio", () => {
     audio.dispose();
   });
 
-  it("clear has a quiet steady wind bed instead of silence", () => {
+  it("the bed always plays and its intensity follows the gust: louder at a crest, quieter in a trough, never below the floor", () => {
+    // The raw gust, not the speed-scaled one, so even a clear day breathes.
+    const crest = windBedGain(0.25, 0, 1.5);
+    const trough = windBedGain(0.25, 0, -1.5);
+    const mid = windBedGain(0.25, 0, 0);
+    expect(crest).toBeGreaterThan(mid);
+    expect(mid).toBeGreaterThan(trough);
+    expect(crest / trough).toBeCloseTo((1 + WIND_GAIN_DEPTH) / (1 - WIND_GAIN_DEPTH), 6);
+    // Never silent: the floor holds at speed 0 in the deepest trough under full mist.
+    expect(windBedGain(0, 1, -1.5)).toBeGreaterThan(0);
+    expect(windBedGain(0, 1, -1.5)).toBeCloseTo(
+      WIND_LEVEL * WIND_GAIN_FLOOR * (1 - WIND_MIST_QUIET) * (1 - WIND_GAIN_DEPTH), 6,
+    );
+    // Louder with speed, quieter under mist, at the same gust.
+    expect(windBedGain(0.9, 0, 0)).toBeGreaterThan(windBedGain(0.25, 0, 0));
+    expect(windBedGain(0.25, 1, 0)).toBeLessThan(windBedGain(0.25, 0, 0));
+  });
+
+  it("clear has a quiet wind bed instead of silence", () => {
     const rec = windRecordUnder(WEATHER_PRESETS.clear, 0);
     expect(rec.speed).toBeCloseTo(0.25, 10);
     const { ctx, created } = fakeCtx();
@@ -177,7 +199,7 @@ describe("createAmbientAudio", () => {
     expect(windGain.gain.value).toBeGreaterThan(0); // before any setWind call
     audio.setWeather(WEATHER_PRESETS.clear);
     audio.setWind(rec);
-    const gain = WIND_LEVEL * (WIND_GAIN_FLOOR + (1 - WIND_GAIN_FLOOR) * rec.speed) * (1 - WIND_MIST_QUIET * 0);
+    const gain = windBedGain(rec.speed, 0, gustAt(rec, 0, 0));
     expect(gain).toBeGreaterThan(0);
     expect(windGain.gain.targets.at(-1)!.value).toBeCloseTo(gain, 6);
     audio.dispose();
