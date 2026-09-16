@@ -111,8 +111,10 @@ export function hexWeights(w: readonly [number, number, number]): [number, numbe
   return [a / s, b / s, c / s];
 }
 
-/** Value noise on the lattice hash at one wavelength, in [0, 1]. */
-function valueNoise(x: number, z: number, wave: number): number {
+/** One octave of value noise on the lattice hash at wavelength `wave` (m), in
+ * [0, 1]. Mirrors macroValueNoise in groundHex.fragment.fx token for token;
+ * trailBenchParams.ts shares it at the trail's own wavelengths. */
+export function valueNoise2(x: number, z: number, wave: number): number {
   const px = x / wave, pz = z / wave;
   const ci = Math.floor(px), cj = Math.floor(pz);
   const fx = smoothstep(0, 1, px - ci), fz = smoothstep(0, 1, pz - cj);
@@ -123,7 +125,7 @@ function valueNoise(x: number, z: number, wave: number): number {
 
 /** Two octaves at MACRO_WAVE, weighted by MACRO_WEIGHT; in [0, 1]. */
 export function macroNoise(x: number, z: number): number {
-  return MACRO_WEIGHT[0] * valueNoise(x, z, MACRO_WAVE[0]) + MACRO_WEIGHT[1] * valueNoise(x, z, MACRO_WAVE[1]);
+  return MACRO_WEIGHT[0] * valueNoise2(x, z, MACRO_WAVE[0]) + MACRO_WEIGHT[1] * valueNoise2(x, z, MACRO_WAVE[1]);
 }
 
 /** The lush→dry tint at a point: `noise` is `macroNoise(x, z)` (passed in so a

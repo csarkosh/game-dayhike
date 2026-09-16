@@ -1,0 +1,79 @@
+import { describe, expect, it } from "vitest";
+import { valueNoise2, macroNoise, MACRO_WAVE, MACRO_WEIGHT } from "../../src/game/groundHexParams.js";
+import {
+  TRAIL_JUNCTION_W, TRAIL_WEAR_WAVE, TRAIL_WEAR_WEIGHT, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
+  TRAIL_EDGE_NOISE, TRAIL_EDGE_WAVE, TRAIL_EDGE_WEIGHT, TRAIL_HEIGHT_SHIFT,
+  TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE,
+  TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT,
+  TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE,
+  TRAMPLE_HEIGHT, TRAMPLE_LEAN, TRAMPLE_TINT, TRAMPLE_BAND,
+  valueNoise1, trailWear, trailEdgeNoise, trailBands, trampleAt,
+} from "../../src/game/trailBenchParams.js";
+
+describe("constants", () => {
+  it("are the spec's values", () => {
+    expect(TRAIL_JUNCTION_W).toBe(1.35);
+    expect(TRAIL_WEAR_WAVE).toEqual([12, 3]); expect(TRAIL_WEAR_WEIGHT).toEqual([0.6, 0.4]);
+    expect([TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1]).toEqual([0.8, 1.25, 0.85, 1.1]);
+    expect(TRAIL_EDGE_NOISE).toBe(0.25); expect(TRAIL_EDGE_WAVE).toEqual([1.5, 0.4]); expect(TRAIL_EDGE_WEIGHT).toEqual([0.6, 0.4]);
+    expect(TRAIL_HEIGHT_SHIFT).toBe(0.3);
+    expect([TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE]).toEqual([0.45, 0.75, 1.35, 0.08]);
+    expect(TRAIL_CORE_GAIN).toBe(0.45); expect(TRAIL_CORE_TINT).toEqual({ r: 0.26, g: 0.22, b: 0.18 });
+    expect(TRAIL_MARGIN_GAIN).toBe(0.85); expect(TRAIL_MARGIN_TINT).toEqual({ r: 0.42, g: 0.37, b: 0.3 });
+    expect(TRAIL_TRAMPLE_TINT).toEqual({ r: 0.82, g: 0.78, b: 0.66 });
+    expect([TRAIL_WET_DARK, TRAIL_WET_GLOSS]).toEqual([0.35, 0.5]);
+    expect(TRAIL_PUDDLE_WET).toEqual([0.55, 0.8]); expect(TRAIL_PUDDLE_LOW).toEqual([0.62, 0.75]); expect(TRAIL_PUDDLE_WAVE).toBe(6);
+    expect([TRAMPLE_HEIGHT, TRAMPLE_LEAN]).toEqual([0.55, 0.35]); expect(TRAMPLE_TINT).toEqual({ r: 0.85, g: 0.8, b: 0.65 });
+    expect(TRAMPLE_BAND).toEqual([0.75, 1.6]);
+  });
+});
+
+describe("noise", () => {
+  it("macroNoise is the two-octave sum of valueNoise2", () => {
+    for (const [x, z] of [[0, 0], [12.3, -45.6], [1000.5, 2000.25]] as const) {
+      const expected = MACRO_WEIGHT[0] * valueNoise2(x, z, MACRO_WAVE[0]) + MACRO_WEIGHT[1] * valueNoise2(x, z, MACRO_WAVE[1]);
+      expect(macroNoise(x, z)).toBeCloseTo(expected, 12);
+    }
+  });
+  it("valueNoise1 and trailWear stay in [0, 1] and continuous", () => {
+    let prev = trailWear(0);
+    for (let u = 0; u <= 600; u += 0.1) {
+      const w = trailWear(u);
+      expect(w).toBeGreaterThanOrEqual(0); expect(w).toBeLessThanOrEqual(1);
+      expect(Math.abs(w - prev)).toBeLessThan(0.05);
+      prev = w;
+      const n = valueNoise1(u, 3);
+      expect(n).toBeGreaterThanOrEqual(0); expect(n).toBeLessThan(1);
+    }
+  });
+  it("the edge noise is bounded by TRAIL_EDGE_NOISE", () => {
+    for (let i = 0; i < 400; i++) {
+      const e = trailEdgeNoise(i * 0.37 - 70, i * 0.91 + 3);
+      expect(Math.abs(e)).toBeLessThanOrEqual(TRAIL_EDGE_NOISE);
+    }
+  });
+});
+
+describe("bands and trampling", () => {
+  it("partitions the shifted distance into core, margin and trampled with soft edges", () => {
+    for (const d of [0, 0.3, 0.45, 0.6, 0.75, 1.0, 1.35, 1.5, 3]) {
+      const b = trailBands(d);
+      expect(b.core + b.margin + b.trample).toBeLessThanOrEqual(1 + 1e-9);
+      for (const v of Object.values(b)) { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); }
+    }
+    expect(trailBands(0)).toEqual({ core: 1, margin: 0, trample: 0 });
+    expect(trailBands(0.6)).toEqual({ core: 0, margin: 1, trample: 0 });
+    expect(trailBands(1.0).trample).toBeGreaterThan(0.4);
+    expect(trailBands(1.5)).toEqual({ core: 0, margin: 0, trample: 0 });
+  });
+  it("trampleAt reaches the constants at the bench edge and is the identity past the band", () => {
+    const at = trampleAt(0.75);
+    expect(at.height).toBeCloseTo(TRAMPLE_HEIGHT, 9); expect(at.lean).toBeCloseTo(TRAMPLE_LEAN, 9);
+    expect(at.tint).toEqual(TRAMPLE_TINT);
+    const far = trampleAt(1.6);
+    expect(far).toEqual({ height: 1, lean: 0, tint: { r: 1, g: 1, b: 1 } });
+    expect(trampleAt(Infinity)).toEqual(far);
+    const mid = trampleAt(1.0);
+    expect(mid.height).toBeGreaterThan(TRAMPLE_HEIGHT); expect(mid.height).toBeLessThan(1);
+  });
+});

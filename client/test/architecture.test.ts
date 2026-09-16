@@ -119,6 +119,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "viewBob.ts"),
       join(SRC, "game", "gradeParams.ts"),
       join(SRC, "game", "groundHexParams.ts"),
+      join(SRC, "game", "trailBenchParams.ts"),
       join(SRC, "game", "postParams.ts"),
       join(SRC, "game", "windParams.ts"),
       join(SRC, "game", "motesParams.ts"),
