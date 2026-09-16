@@ -36,6 +36,8 @@ export const NEAR_START = 80;
 export const NEAR_BLIND = 0.5;
 /** The hour the world reaches at full escalation: the sun is up 6–18. */
 export const NIGHT_HOUR = 22;
+/** The sky's sunrise; a base before it is already dark and stays. */
+export const DAWN_HOUR = 6;
 /** Time constant of the world's easing, seconds: a pick-up is a minute of the light going. */
 export const WORLD_EASE_S = 20;
 /** Time constant of the lens's easing, seconds. */
@@ -136,12 +138,14 @@ function smootherstep(x: number): number {
 
 /**
  * The sky and the weather for an eased state: the sun from the base hour to
- * NIGHT_HOUR (a base already past it stays), the weather from the base preset
- * to eerie, both by smootherstep of the world; then dread lifted to the lens.
+ * NIGHT_HOUR (a base already past it, or before DAWN_HOUR, stays), the
+ * weather from the base preset to eerie, both by smootherstep of the world;
+ * then dread lifted to the lens.
  */
 export function atmosphereUnder(base: AtmosphereBase, s: EscalationState): AtmosphereBase {
   const e = smootherstep(clamp01(s.world));
-  const hour = base.hour >= NIGHT_HOUR ? base.hour : base.hour + (NIGHT_HOUR - base.hour) * e;
+  const hour =
+    base.hour >= NIGHT_HOUR || base.hour <= DAWN_HOUR ? base.hour : base.hour + (NIGHT_HOUR - base.hour) * e;
   const weather = lerpWeather(base.weather, WEATHER_PRESETS.eerie, e);
   const lens = clamp01(s.lens);
   return { weather: { ...weather, dread: Math.max(weather.dread, lens) }, hour };

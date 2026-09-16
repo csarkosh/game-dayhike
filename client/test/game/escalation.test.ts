@@ -177,6 +177,11 @@ describe("atmosphereUnder", () => {
     expect(atmosphereUnder({ weather: WEATHER_PRESETS.clear, hour: 23 }, s).hour).toBe(23);
   });
 
+  it("holds a base hour before dawn, same as one past night", () => {
+    const s = { ...ESCALATION_REST, world: 1 };
+    expect(atmosphereUnder({ weather: WEATHER_PRESETS.clear, hour: 2 }, s).hour).toBe(2);
+  });
+
   it("eases with smootherstep: half way is half way", () => {
     const a = atmosphereUnder(noon, { ...ESCALATION_REST, world: 0.5 });
     expect(a.hour).toBeCloseTo(12 + (NIGHT_HOUR - 12) * 0.5, 9);
