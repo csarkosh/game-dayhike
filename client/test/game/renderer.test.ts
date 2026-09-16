@@ -309,6 +309,8 @@ function windTestPlayer(id: number): PlayerState {
     lamp: { on: false, charge: 1 },
     carrying: NO_ITEM,
     signOutTicks: 0,
+    stare: 0,
+    signedOut: false,
   };
 }
 
