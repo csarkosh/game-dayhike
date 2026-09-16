@@ -15,15 +15,21 @@ import diffuseFragment from "./shaders/foliageDiffuse.fragment.fx?raw";
 export const FOLIAGE_WRAP = 0.35;
 
 /**
- * Per-light injection. Babylon's plugin manager applies a `!`-prefixed point
- * as a global regex with `$n` substitutions (materialPluginManager.pure.js,
- * ReplaceRegExpSubstitutions), run against the shader-store include BEFORE
- * Babylon unrolls `{X}` into each light's index — so `$2` is still the
- * literal text `{X}` here, and the substitution rides along into the final
- * per-light digit exactly like `$1` does. The pattern matches every
- * directional/point/spot light's diffuse line and captures both the light
- * colour expression and its index placeholder. Hemispheric lights and the
- * translucency variants have different tails and are left alone.
+ * Per-light injection. `shaderProcessor.js`'s `ProcessIncludes` expands the
+ * `lightFragment` include and unrolls `{X}` into each light's digit (0, 1, …)
+ * first; only afterwards does the plugin manager's `_injectCustomCode` run
+ * the `!`-prefixed point as a global regex with `$n` substitutions
+ * (materialPluginManager.pure.js, `ReplaceRegExpSubstitutions`) over that
+ * already-expanded code. So `$2` is a real digit at the point the regex
+ * fires, and `float($2)` compiles straight to `float(0)`, `float(1)`, etc. —
+ * nothing rides through a later unroll. The `\{X\}` alternative in the
+ * pattern exists only so `FOLIAGE_LIGHT_INJECTION_POINT`'s own anchor test
+ * can match the un-unrolled shader-store text directly (which still reads
+ * `diffuse{X}.rgb`), not because it ever matches in a compiled shader. The
+ * pattern matches every directional/point/spot light's diffuse line and
+ * captures both the light colour expression and its index. Hemispheric
+ * lights and the translucency variants have different tails and are left
+ * alone.
  */
 export const FOLIAGE_LIGHT_INJECTION_POINT =
   "!info\\.diffuse=computeDiffuseLighting\\(preInfo,(diffuse(\\d+|\\{X\\})\\.rgb)\\);";
