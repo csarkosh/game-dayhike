@@ -49,7 +49,15 @@ export const BRAID_PEAK_MARGIN = 40;
 export const BRAID_TOP_FLOOR = 0.5;
 /** The ladder's rung spacing below the top fork (m of stem). */
 export const BRAID_LADDER_STEP = 60;
-/** The least stem a braid may span: the two forks must leave Task 4's rungs room. */
+/**
+ * The least stem a braid may span: the two forks must leave the rungs room.
+ *
+ * 240 m is the LEAST BRAID, not the least braid that can carry a rung. A pair's
+ * rung window is `[bottomArc + BRAID_RUNG_GAP, topArc - BRAID_RUNG_GAP]` and
+ * `buildRungs` wants another BRAID_RUNG_GAP inside it, so a rung needs
+ * 3 x BRAID_RUNG_GAP = 360 m of span. A braid between 240 and 360 m builds its
+ * strands and never gets a rung: two ways down, not cross-linked.
+ */
 export const BRAID_MIN_SPAN = 240;
 /**
  * The most a strand's bed may stand off the ground it crosses (m), as
@@ -111,6 +119,14 @@ export type Strand = { side: -1 | 0 | 1; top: number; bottom: number; nodes: num
  * samples they were measured against. `buildTrail` hands this back so the
  * braid's own decisions can be read — and tested — without rebuilding the
  * world's grid, tree and heights to call `buildStrands` directly.
+ *
+ * `Strand.nodes` IS THE POLYLINE AS BUILT, NOT THE FINISHED NODE CHAIN. A rung
+ * splits the strand edge it departs from or arrives on, which mints a node the
+ * list never hears about, so the chain a reader walks after the rung stage has
+ * nodes between the ones recorded here. That is why `bedCellAtArc` reads
+ * POSITIONS along the recorded segments rather than the bed's cells: a split
+ * node sits on the centreline of the edge it divided, so the recorded polyline
+ * still describes the same ground.
  */
 export type Braid = { strands: Strand[]; topArc: number; bottomArc: number; samples: StemSample[] };
 export type BraidCtx = {
@@ -119,6 +135,8 @@ export type BraidCtx = {
   /** The loops the stage before this one committed: a rung may end on one. */
   loops: readonly TrailLoop[];
 };
+
+// ---- Stem geometry and shared helpers -----------------------------------
 
 /**
  * Where (x, z) stands relative to the stem: the arc of the NEAREST POINT ON
@@ -268,7 +286,7 @@ export function baseWeight(ctx: BraidCtx, tree: Uint8Array, start: number, arriv
   for (let c = 0; c < tree.length; c++) if (tree[c] === 1) w[c] = 0;
   w[start] = 1;
   forEachCellNear(grid, grid.x[arrival] as number, grid.z[arrival] as number, BRAID_ARRIVE_CELLS * TRAIL_GRID_CELL, (c) => {
-    if (ctx.tree[c] === 1) w[c] = 1; // the doorway: the bed being joined, not a feature disc
+    if (tree[c] === 1) w[c] = 1; // the doorway: the bed being joined, not a feature disc
   });
   return w;
 }
@@ -296,6 +314,8 @@ export function chainFrom(state: GraphState, from: number, firstEdge: number): n
   }
   return chain;
 }
+
+// ---- Strands ------------------------------------------------------------
 
 /** A fork pair resolved onto a copy of the graph: the two cells, the two nodes
  * and the graph they were split into. */
@@ -356,6 +376,18 @@ function forksFor(
  * The dome itself is answered above the ladder, by where the top fork starts:
  * `peakEntryArc` puts it below the disc (spec §3.2, amended after this
  * measurement).
+ *
+ * A STRAND IS NOT HELD TO `crowds`, THOUGH A RUNG IS (2026-09-16). That check
+ * re-measures a new bed against TRAIL_EDGE_MIN_GAP on the finished graph, where
+ * the simplifier's departure exemption cannot hide a bed that shadows another
+ * for the length of a whole edge. A strand cannot pay it: it leaves the stem at
+ * one fork and rejoins it at the other, so its first and last edges run beside
+ * the stem by construction. Measured by holding strands to the same check over
+ * the 227-seed sweep: the worlds that build a strand fall from 162 to 34, and
+ * those that build a rung from 101 to 27. So this is a deliberate coverage
+ * trade — the braid keeps its worlds, and the beds it leaves close are covered
+ * by the sweep's own floor (no two beds nearer than 4 m) until the simplifier's
+ * gap test is done in world space, which is that gate's recorded follow-up.
  */
 export function buildStrands(state: GraphState, ctx: BraidCtx): Braid & { state: GraphState; pose: CellPose } {
   const { seed, grid, frame, H, ground, tree, treeEdges, summit } = ctx;
@@ -405,8 +437,9 @@ export function buildStrands(state: GraphState, ctx: BraidCtx): Braid & { state:
       if (cand === null) continue;
       const { T, B, cTop, cBot } = cand;
       const tNode = cand.state.nodes[T] as TrailNode, bNode = cand.state.nodes[B] as TrailNode;
+      // The arrival's doorway depends on the bottom fork alone, not on the side.
+      const tS = clearedAround(grid, tree, cBot, BRAID_ARRIVE_CELLS);
       for (const side of sides) {
-        const tS = clearedAround(grid, tree, cBot, BRAID_ARRIVE_CELLS);
         const w = baseWeight(ctx, tree, cTop, cBot);
         for (let c = 0; c < w.length; c++) {
           if ((w[c] as number) === 0) continue;
@@ -477,6 +510,8 @@ export function buildStrands(state: GraphState, ctx: BraidCtx): Braid & { state:
   };
 }
 
+// ---- Rungs --------------------------------------------------------------
+
 /**
  * The point on a bed nearest a stem arc, as a grid cell on the tree (the cell
  * the bed passes through nearest that arc), or -1 when the bed has no tree cell
@@ -511,7 +546,16 @@ function bedCellAtArc(
   return best;
 }
 
-/** `bedCellAtArc` over a strand's own chain: the nearest arc on it, wherever it is. */
+/**
+ * `bedCellAtArc` over a strand's own chain: the nearest arc on it, wherever it is.
+ *
+ * THE `Infinity` LIMIT IS DELIBERATE. The window that matters is the search's,
+ * not this lookup's: `buildRungs` zeroes every cell more than
+ * BRAID_RUNG_ALONG_HALF of arc from the rung's height, so a cell this returns
+ * from further along the strand is unreachable ground and the try comes back
+ * `unreached` — which is exactly what sends the rung to a loop's bed instead.
+ * A finite limit here would drop the rung outright rather than retry it.
+ */
 function strandCellAtArc(
   grid: TrailGrid, frame: BuildFrame, state: GraphState, tree: Uint8Array,
   samples: readonly StemSample[], strand: Strand, arc: number,

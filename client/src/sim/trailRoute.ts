@@ -162,7 +162,7 @@ export function pathLength(graph: TrailGraph, path: readonly number[]): number {
   return len;
 }
 
-/** True if `from` reaches node 0 without using any edge index in `used` (BFS). */
+/** True if `from` reaches node 0 without using any edge index in `used` (DFS). */
 function reachesPad(graph: TrailGraph, from: number, used: ReadonlySet<number>): boolean {
   if (from === 0) return true;
   const seen = new Set<number>([from]);

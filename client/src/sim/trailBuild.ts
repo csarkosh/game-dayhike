@@ -899,12 +899,13 @@ export function buildTrail(
     seed, grid, frame, H, ground, tree, treeEdges, features, summit, loops,
   }, braid.strands, braid.samples, braid.topArc, braid.bottomArc, braid.pose).state;
 
-  const { stem, stemLen } = stemGeometry(state, summit);
+  const finalGeom = stemGeometry(state, summit);
+  const { stem, stemLen } = finalGeom;
 
   // Strand and rung edges carry the stem progress of each end's nearest stem
   // point, so `nearestPointOnEdges` (register.ts) reads something sane on them.
   {
-    const finalSamples = sampleStem(state, stemGeometry(state, summit));
+    const finalSamples = sampleStem(state, finalGeom);
     const progressAt = (n: TrailNode): number => stemLen > 0 ? stemPose(finalSamples, n.x, n.z).arc / stemLen : 0;
     for (const e of state.edges) {
       if (e.kind !== "strand" && e.kind !== "rung") continue;
