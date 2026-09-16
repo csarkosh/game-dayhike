@@ -115,3 +115,19 @@ native resolution both are vsync-locked at this pose. PASS.
   frame-time samples only; the owner should confirm the audio.
 - A 10 s motion clip at the forest edge — only the meadow got a `/wind 100` strip.
 - The low tier's 1.5x hardware-scaling frame pair.
+
+## Re-gate after the fix wave
+
+- The understory now carries a real per-instance `foliage` buffer and the shader ignores tint
+  data that is absent, so the understory was re-shot: a deep-forest pose at clear 12 h, pitched
+  down at the shrubs and ferns, branch beside control. The shrub and fern cards match the
+  control's tone; no darkened bases. Pass.
+- Tree sway was re-shot in motion at `/wind 100` (six frames 0.6 s apart) because the sway
+  amplitude is now a fraction of the drawn height rather than the model height. At the forest
+  edge the crown silhouettes and the tufts shift visibly between frames. In deep forest the
+  understory fronds move and the trunks stay planted; the canopy motion is subtle at that pose.
+  Pass, with the owner's in-game read at `/wind 100` as the final word on the amplitude.
+- The meadow `/wind 100` strip in gate 1 predates that change; grass cards draw at 0.74 to 1.49
+  times model scale, so their amplitude changed by at most that factor.
+- The full suite was green on an idle machine before the fix wave (client 1724 tests, server 92,
+  tools 70) and is re-run after it; the result is recorded in the commit that lands the branch.

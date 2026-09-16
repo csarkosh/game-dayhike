@@ -242,8 +242,9 @@ About six ALU per fragment for one light.
 
 - **Clutter.** `clutterMeshes.ts` attaches `attachFoliage` with the class profile in place of
   `attachWind`, and `attachFoliageLight` beside it; the rebuild writes `foliage` per instance for
-  every bucket whose profile tints — which is every bucket that declares the attribute, the rule
-  a test in `forestMeshes.test.ts` holds across both shells.
+  every bucket whose profile tints — which is every bucket that declares the attribute. The rule
+  is asserted for the forest shell's buckets in `forestMeshes.test.ts`, and the clutter shell's
+  buckets are covered by `clutterMeshes.test.ts`'s `foliage` buffer test.
 - **Trees.** `forestMeshes.ts` attaches the `TREE` profile to every LOD0 and LOD1 mesh of the
   giants and saplings with `meshHeight` from the baked bounding box (the understory precedent);
   LOD2, the snag and the impostor quads stay rigid. LOD1 buckets get `foliageEdges = SEAM_LOD1`
