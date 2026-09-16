@@ -1366,7 +1366,7 @@ it("wind() is the weather-driven record until an override, then the override's s
   wind = windRecordUnder(weather, seconds, windOverride ?? undefined);
   let n = 0;
   windPlayers.fill(0);
-  for (let i = 1; i < FOLIAGE_PLAYERS * 3; i += 3) windPlayers[i] = -1e6;
+  for (let i = 0; i < FOLIAGE_PLAYERS; i++) { windPlayers[i * 3] = FOLIAGE_PLAYER_PARKED; windPlayers[i * 3 + 2] = FOLIAGE_PLAYER_PARKED; }
   for (const p of state.players.values()) {
     if (n === FOLIAGE_PLAYERS) break;
     windPlayers[n * 3] = p.pos.x; windPlayers[n * 3 + 1] = p.pos.y; windPlayers[n * 3 + 2] = p.pos.z;
@@ -1415,3 +1415,10 @@ it("wind() is the weather-driven record until an override, then the override's s
 **Placeholders.** Task 3 step 1 and Task 6 step 1 describe two tests in prose where the file's existing helpers decide the exact accessor; each names the helper to copy and the assertion to make. Task 5's `createLighting` call defers to `lighting.test.ts` for the signature. Nothing says "TBD".
 
 **Type consistency.** `WindRecord` fields (`dirX, dirZ, speed, lean, gustAmp, flutterAmp, time`) are used identically in Tasks 1, 2, 6, 7, 8. `setFoliageWind(record, Float32Array)` in Tasks 2 and 8. `attachFoliage(material, profile, meshHeight)` and `setFoliageEdges(material, [start, end])` in Tasks 2, 3, 4. `motes.update(camPos, w, hour, air, wind)`, `mist.update(camX, camZ, w, air, wind, seconds)`, `rain.update(camPos, w, wind)` in Tasks 6 and 8. `ambient.setWind(record)` in Tasks 7 and 8.
+
+## Amendments (rulings made during execution)
+
+- **Task 1, the travelling phase.** The gust phase is `K·u − Ω·t`; with `+` the crest moves upwind. The spec's §4 and Task 2's shader text and lockstep assertion were corrected, and Task 1's algebraic front-travel test became a crest-tracking test (the crest found at 1 mm over one ragged cell at t = 0 and t = 0.2 s must advance by 0.2–0.35 m).
+- **Task 2, the shader-hygiene test.** `client/test/game/shaderHygiene.test.ts` required an unconditional top-level function in every `.fx` and processed with no defines, which no define-gated file or splice block can satisfy. It now enables every define a file gates on (collected from its own `#ifdef`/`#ifndef` lines), keeps the function-survives check where a file declares functions, and requires at least one code line to survive in every file. The intent — prove Babylon's real preprocessor keeps the code — is unchanged.
+- **Task 2, the attribute assertions.** Under `NullEngine` the compiled source is never define-evaluated, so `not.toContain("attribute vec4 foliage;")` cannot hold. Those two expectations were replaced by a structural check on the raw `CUSTOM_VERTEX_DEFINITIONS` text (the attribute declared once, nested under `FOLIAGE` → `FOLIAGE_TINT` → `THIN_INSTANCES`). The uniform-reach checks on both shader paths stay.
+- **Task 6, the mist wrap.** A shared drift offset wrapped inside the cell teleports every bank a full cell at the same instant. Each bank now wraps at its own phase (`wrap(off + bank.hash·MIST_CELL)`) and dissolves over the last `MIST_WRAP_FADE = 8` m before its wrap, so one soft bank at a time re-emerges upwind.
