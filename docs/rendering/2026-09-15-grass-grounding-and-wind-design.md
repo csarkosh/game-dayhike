@@ -107,7 +107,7 @@ plus a hash-based ragged offset:
 u        = dirX·x + dirZ·z
 ci, cj   = floor(x / 6), floor(z / 6)                              // 6 m cells
 ragged   = WIND_RAGGED · (fract(ci · 0.618034 + cj · 0.381966) − 0.5)   // ±0.6 rad
-gust     = sin(K1·u + Ω1·t + ragged) + 0.5 · sin(K2·u + Ω2·t + 1.7·ragged)
+gust     = sin(K1·u − Ω1·t + ragged) + 0.5 · sin(K2·u − Ω2·t + 1.7·ragged)
 ```
 
 The ragged term is a golden-ratio lattice hash rather than the usual `sin`-based one because the

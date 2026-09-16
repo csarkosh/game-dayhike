@@ -406,7 +406,7 @@ describe("foliage plugin", () => {
     expect(fragmentLights).toContain(`const float FOLIAGE_CLUMP_LUMA = ${glslFloat(FOLIAGE_CLUMP_LUMA)};`);
     // The gust closed form, token by token, so it cannot drift from gustAt.
     expect(vertexDefs).toContain("fract(c.x * 0.618034 + c.y * 0.381966) - 0.5");
-    expect(vertexDefs).toContain("sin(WIND_K1 * u + WIND_OMEGA1 * t + ragged) + 0.5 * sin(WIND_K2 * u + WIND_OMEGA2 * t + 1.7 * ragged)");
+    expect(vertexDefs).toContain("sin(WIND_K1 * u - WIND_OMEGA1 * t + ragged) + 0.5 * sin(WIND_K2 * u - WIND_OMEGA2 * t + 1.7 * ragged)");
     // Tips move, bases anchored.
     expect(vertexWorldPos).toContain("fH * fH");
     expect(fragmentLights).not.toContain("discard");
@@ -518,7 +518,7 @@ float foliageGust(vec2 p, float t) {
   float u = windDir.x * p.x + windDir.y * p.y;
   vec2 c = floor(p / WIND_RAGGED_CELL);
   float ragged = WIND_RAGGED * (fract(c.x * 0.618034 + c.y * 0.381966) - 0.5);
-  return sin(WIND_K1 * u + WIND_OMEGA1 * t + ragged) + 0.5 * sin(WIND_K2 * u + WIND_OMEGA2 * t + 1.7 * ragged);
+  return sin(WIND_K1 * u - WIND_OMEGA1 * t + ragged) + 0.5 * sin(WIND_K2 * u - WIND_OMEGA2 * t + 1.7 * ragged);
 }
 #endif
 ```
