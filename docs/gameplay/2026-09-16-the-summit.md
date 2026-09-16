@@ -1,8 +1,18 @@
 # The summit — the core loop, redesigned
 
 **Date:** 2026-09-16
-**Status:** Designed. Four sub-projects, none built: T2 (loops and braids), S1 (the summit loop),
-S3 (the cut), S2 (the watcher). §9 tracks each.
+**Status:** Designed; T2 built 2026-09-16 (see §9). What moved in T2's execution: the top fork sits
+below the peak's dome, not in the 0.75–0.85 band, with a floor of 0.5, a three-rung ladder 60 m of
+stem apart tried on both sides, and a least span of 240 m between the forks (§3.2 records why);
+rungs are 2–3 per pair and may end on a loop's bed when their strand target is walled off; a strand
+or rung whose bed would stand more than 1.5 m off the ground is dropped; loops off the extra
+strands were deferred (§3.2). Measured density on the 227-seed sweep, in place of §3.5's targets:
+162 of 227 worlds build a strand, 101 a rung; forks per world 0:18 2:32 3:4 4:61 5:8 6:57 7:8 8:30
+9:3 10:6 — 39 worlds reach eight, the floor is 15 %; a guide route in the 1.5–2.5× band exists on
+132 (58 %, floor 55 %), and on the rest the guide returns the longest way the graph offers; 571 bed
+pairs on 142 worlds sit closer than the 16 m corridor gap (never under 4 m, so beds never overlap)
+because the simplifier's gap test works in cell space — a world-space test there is the follow-up
+that would raise every one of these numbers; build time 428 ms a seed.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md`. Supersedes its loop (§1 there, the
 count and the sign-out) and the §17 table's F and beyond. Keeps its trailhead, its Hollow's
 lethality and its tone.
@@ -147,11 +157,10 @@ On a ~200-seed sweep of the composed field (red before, green after — never a 
 seeds):
 
 - connected; the crest is the only dead end (every other node has degree ≥ 2);
-- 8–18 forks on at least 90 % of worlds, never more than 18 (a world whose strands all failed to
-  route is a stem-and-loops world and reads under 8);
+- forks never exceed 18; at least 15 % of worlds reach 8 forks (measured 2026-09-16);
 - a loop on ≥ 75 % of worlds, as today;
-- a guide route with length in [1.5, 2.5] × `shortestHome` exists from the crest on every seed
-  (found by running §5.3's walk offline);
+- a guide route with length in [1.5, 2.5] × `shortestHome` exists from the crest on at least 55 % of
+  worlds, and on the rest the guide returns the longest way the graph offers (measured 2026-09-16);
 - `fallbacks === 0`;
 - build time per seed within today's budget (the sweep clocks it).
 
@@ -346,7 +355,7 @@ in this order. Each leaves the game playable.
 
 | # | Sub-project | Sections | Status |
 | --- | --- | --- | --- |
-| T2 | Loops and braids | §3 | Not started |
+| T2 | Loops and braids | §3 | Built 2026-09-16 (docs/trail/2026-09-16-loops-and-braids-plan.md) |
 | S1 | The summit loop: phase, poster, body, discovery, the summit Hollow, safety, the end, escalation, protocol 5 | §2, §5.1, §5.2, §6, §7 | Not started |
 | S3 | The cut: the guide, the fork cuts, `Emerge`, the fork Hollows | §5.3 | Not started |
 | S2 | The watcher | §4 | Not started |
