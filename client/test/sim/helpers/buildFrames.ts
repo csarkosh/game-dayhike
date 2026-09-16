@@ -14,7 +14,7 @@ export const ROAD_X = -250;
  * ridge across it at u ∈ [400, 440] (grade 2) broken by a gap at z ∈ [−60, −20],
  * and a knoll 40 m high at (u 700, z 300).
  */
-export function frame(seed: number): BuildFrame {
+function frame(seed: number): BuildFrame {
   void seed;
   const sample = (x: number, z: number): TerrainSample => {
     const u = x - ROAD_X;
@@ -44,7 +44,7 @@ export function ridgeFrame(): BuildFrame {
  * with real curvature — unlike a bare incline (an exact plane, zero
  * deviation from any chord), `simplify`'s Douglas-Peucker pass has a reason
  * to KEEP an intermediate stem node roughly every quarter period. Used only
- * by `flatFrame`/`shortStemFrame` (2026-09-11 — see their own comments). */
+ * by `flatFrame` (2026-09-11 — see its own comment). */
 const RIPPLE_AMP = 8;
 const RIPPLE_PERIOD = 250;
 function ripple(u: number): { dh: number; ddx: number } {

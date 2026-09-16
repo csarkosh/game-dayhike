@@ -21,7 +21,13 @@ import { flatFrame } from "./helpers/buildFrames.js";
  * invariant below. (That invariant is not a braid property: the flat frame's
  * LOOP stage already breaks it on seeds 13, 17, 37 and 40, none of which build
  * a strand at all — a branch's first step off the tree lands one cell from the
- * bed it left, which is what the two-cell rule allows. See the task report.) */
+ * bed it left, which is what the two-cell rule allows.) Strand–bed pairs break
+ * it too — over the 227-seed sweep the 571 non-exempt pairs under the 16 m
+ * corridor gap include stem–strand and loop–strand ones — so picking the seeds
+ * that keep it here SELECTS IN THE BRAID'S FAVOUR, and this gate is a fixture
+ * check rather than a property of the builder. The real gate is
+ * `trailSystem.test.ts`'s floor over the whole sweep: no two beds closer than
+ * 4 m (measured minimum 4.56 m). */
 const TWO = 2;
 const THREE = 32;
 /**
@@ -33,8 +39,9 @@ const THREE = 32;
  *
  * 485 is the first seed over 1..500 that builds three strands, keeps the gap
  * invariant the tests below assert AND builds a rung on each pair. A probe, not
- * a guarantee: over the 227-seed sweep 101 of the 227 seeds build a rung at all,
- * against the 162 that build a strand. See the task report.
+ * a guarantee: measured over the 227-seed sweep, 101 of the 227 seeds build a
+ * rung at all, against the 162 that build a strand — so a seed with a rung on
+ * every pair is the exception this fixture has to be chosen for.
  */
 const THREE_RUNGS = 485;
 /**
@@ -45,10 +52,11 @@ const THREE_RUNGS = 485;
  * whose rung ends on a LOOP's bed rather than on its pair's strand — the
  * arrival of last resort — so the loop gate reads the same world.
  *
- * Only 14 of the 390 two-strand seeds over 1..500 build two chains, and NONE of
- * the 14 keeps the flat frame's gap invariant (the loop stage breaks it there,
- * as the seed comment above says), which is why this world is read by the rung
- * gates and not by Task 3's. See the task report.
+ * Measured by scanning seeds 1..500 on the flat frame: only 14 of the 390
+ * two-strand seeds build two chains, and NONE of the 14 keeps the flat frame's
+ * gap invariant (the loop stage breaks it there, as the seed comment above
+ * says), which is why this world is read by the rung gates and not by the
+ * strand gates above.
  */
 const TWO_RUNGS = 52;
 
@@ -189,12 +197,17 @@ describe("buildStrands on the flat frame", () => {
     }
   });
 
-  it("labels strand edges with the stem progress of their ends' nearest stem points", () => {
-    for (const e of two.edges) {
-      if (e.kind !== "strand") continue;
-      const a = two.nodes[e.a]!, b = two.nodes[e.b]!;
-      expect(e.progress0).toBeCloseTo(1 - stemProgress(two, a.x, a.z), 6);
-      expect(e.progress1).toBeCloseTo(1 - stemProgress(two, b.x, b.z), 6);
+  // Rungs are labelled by the same loop in `trailBuild.ts`, which treats both
+  // kinds alike, so both kinds are read here — on a world with rungs as well as
+  // on the two-strand one.
+  it("labels strand and rung edges with the stem progress of their ends' nearest stem points", () => {
+    for (const g of [two, twoRungs]) {
+      for (const e of g.edges) {
+        if (e.kind !== "strand" && e.kind !== "rung") continue;
+        const a = g.nodes[e.a]!, b = g.nodes[e.b]!;
+        expect(e.progress0).toBeCloseTo(1 - stemProgress(g, a.x, a.z), 6);
+        expect(e.progress1).toBeCloseTo(1 - stemProgress(g, b.x, b.z), 6);
+      }
     }
   });
 
@@ -367,8 +380,17 @@ describe("buildRungs on the flat frame", () => {
     // each other on strand A. Seed 2 builds a single chain, which made this
     // gate's loop body unreachable — hence the length assertion, so it fails
     // loudly rather than silently if the world ever stops covering it.
+    // THE STEM-SIDE END, not `chain[0]`. `rungChains` starts each walk from
+    // whichever fork the adjacency Map hands it first, so `chain[0]` may be the
+    // far end — and the two ends of a rung sit up to BRAID_RUNG_ALONG_HALF of
+    // stem arc apart, most of the gap this gate measures. Both chains on this
+    // world have one end on the stem (the "joins two different beds" test reads
+    // the same world), so that end is the rung's height.
+    const owner = bedOwners(twoRungs);
     const arcs = rungChains(twoRungs).map((chain) => {
-      const a = twoRungs.nodes[chain[0]!]!;
+      const end = [chain[0]!, chain[chain.length - 1]!].find((n) => owner.get(n) === "stem");
+      expect(end, "a rung of a two-strand braid has an end on the stem").toBeDefined();
+      const a = twoRungs.nodes[end!]!;
       return (1 - stemProgress(twoRungs, a.x, a.z)) * twoRungs.stemLen;
     }).sort((p, q) => p - q);
     expect(arcs.length).toBeGreaterThanOrEqual(2);
@@ -394,6 +416,7 @@ describe("buildRungs on the flat frame", () => {
 
   it("lands every world's fork count in the spec's band on these seeds", () => {
     expect(two.forks.length).toBeGreaterThanOrEqual(4);
+    expect(two.forks.length).toBeLessThanOrEqual(18);
     for (const g of [three, threeRungs]) {
       expect(g.forks.length).toBeGreaterThanOrEqual(6);
       expect(g.forks.length).toBeLessThanOrEqual(18);

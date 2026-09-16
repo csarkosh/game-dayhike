@@ -18,8 +18,6 @@ import {
   planFeatures, LOOP_JUNCTION_GAP, LOOP_LEN_MIN, LOOP_LEN_MAX, FEATURE_SPACING,
 } from "../../src/sim/features.js";
 import { TRAIL_GRID_CELL } from "../../src/sim/trailGrid.js";
-// `frame` itself is exported by the helper for a test that wants the ridge world
-// parameterised; this file only ever used it through `ridgeFrame`.
 import { ROAD_X, ridgeFrame, flatFrame, narrowFrame } from "./helpers/buildFrames.js";
 
 /** The `progress0` of the stem edge whose `a === n`, or `progress1` of the one

@@ -106,9 +106,10 @@ describe("forksOf", () => {
 });
 
 /** A ladder: a stem 0→1→2→3 (three 100 m edges, summit 3) and a parallel strand
- * 1→4→5→2 (4 at (100,80), 5 at (200,80)) with a rung 4→... no: two rungs 1–4 and 2–5
- * make the strand; the far side 4→5 is 100 m. Round trips are possible: 3→2→5→4→1→0
- * is 100+80+100+80+100 = 460 vs the stem's 300. */
+ * 4→5 beside it (4 at (100,80), 5 at (200,80), 100 m apart), joined to the stem by
+ * two 80 m rungs, 1–4 and 5–2. Exactly two crest-to-pad walks exist: the stem
+ * itself, 3→2→1→0 at 300 m, and the way round the strand, 3→2→5→4→1→0 at
+ * 100+80+100+80+100 = 460 m. */
 function ladder(): TrailGraph {
   const nodes = [
     { x: 0, z: 0, h: 0, u: 0 }, { x: 100, z: 0, h: 0, u: 0 }, { x: 200, z: 0, h: 0, u: 0 }, { x: 300, z: 0, h: 0, u: 0 },
@@ -144,17 +145,34 @@ describe("guideWalk", () => {
     const under = guideWalk(g, () => nextRandom(rng), 2, 2.5, 16);
     expect(under.inBand).toBe(false);
     expect(under.length).toBeCloseTo(460, 6);
-    // Nothing under 1.2× but the stem itself: the shortest path.
-    const shortest = guideWalk(g, () => nextRandom(rng), 1.1, 1.2, 16);
+    // A band the stem itself is over: [0.5, 0.9] × 300 caps at 270, so BOTH
+    // walks are abandoned mid-walk (300 and 460 each pass the cap), `best` is
+    // never set, and the shortest path comes back instead. A band of
+    // [1.1, 1.2] would NOT reach here — 300 is under that cap, so the stem walk
+    // is kept as the longest under it and returned by the branch above.
+    const shortest = guideWalk(g, () => nextRandom(rng), 0.5, 0.9, 16);
     expect(shortest.inBand).toBe(false);
     expect(shortest.path).toEqual([3, 2, 1, 0]);
+    expect(shortest.length).toBeCloseTo(300, 6);
   });
 
   it("is deterministic in the RNG", () => {
     const g = ladder();
-    const a = guideWalk(g, () => nextRandom({ rngSeed: 99 }), GUIDE_MIN, GUIDE_MAX, 8);
-    const b = guideWalk(g, () => nextRandom({ rngSeed: 99 }), GUIDE_MIN, GUIDE_MAX, 8);
+    // The RNG STATE is hoisted, not allocated inside the closure: with
+    // `() => nextRandom({ rngSeed: 99 })` every call starts from the same
+    // state, so `rand` is a constant and the walk could not vary no matter
+    // what `guideWalk` did with it.
+    const ra = { rngSeed: 99 };
+    const a = guideWalk(g, () => nextRandom(ra), GUIDE_MIN, GUIDE_MAX, 8);
+    const rb = { rngSeed: 99 };
+    const b = guideWalk(g, () => nextRandom(rb), GUIDE_MIN, GUIDE_MAX, 8);
     expect(a).toEqual(b);
+    // NO SECOND SEED HERE. A different seed cannot give a different answer on
+    // the ladder: it offers exactly two crest-to-pad walks, only one of which
+    // (460 m = 1.53 × shortestHome) lands in [GUIDE_MIN, GUIDE_MAX], and
+    // `guideWalk` returns the first try that lands in band. Every seed probed
+    // finds it on the first try, so "a different seed walks differently" is a
+    // claim for a graph with more than two ways down, not for this fixture.
   });
 
   it("measures a path's length by arc", () => {
