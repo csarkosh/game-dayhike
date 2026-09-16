@@ -3,7 +3,10 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
-import { createMistMeshes, MIST_CAP_BY_TIER, MIST_DRIFT, MIST_WRAP_FADE } from "../../src/game/mistMeshes.js";
+import {
+  createMistMeshes, MIST_CAP_BY_TIER, MIST_DRIFT, MIST_WRAP_FADE,
+  MIST_NEAR_FADE_START, MIST_NEAR_FADE_SPAN,
+} from "../../src/game/mistMeshes.js";
 import { collectMistBanks, MIST_CELL } from "../../src/game/mistField.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
@@ -147,6 +150,47 @@ describe("createMistMeshes", () => {
     expect(Math.abs(otherOffset)).toBeLessThan(MIST_CELL / 2 - MIST_WRAP_FADE);
     const otherMesh = mist.meshes[1] as Mesh;
     expect(otherMesh.visibility).toBeGreaterThan(0.02);
+
+    mist.dispose();
+  });
+
+  it("fades a bank whose drawn position lands inside the near-fade ring even though its seeded position sits well outside it", () => {
+    const s = scene();
+    const mist = createMistMeshes(s, SEED, "high");
+    const { x, z } = coastalOrigin();
+    const target = collectMistBanks(SEED, x, z)[0] as { x: number; z: number; hash: number };
+
+    // A camera far enough from the bank's SEEDED spot that the old
+    // seed-distance fade would have called it fully visible (D0 clears
+    // MIST_NEAR_FADE_START + MIST_NEAR_FADE_SPAN = 65), but close enough
+    // that a ≤MIST_CELL/2 pull toward the camera still drags its DRAWN
+    // position under 20 m.
+    const D0 = 66;
+    expect(D0).toBeGreaterThan(MIST_NEAR_FADE_START + MIST_NEAR_FADE_SPAN);
+    const camX = target.x - D0;
+    const camZ = target.z;
+    const wind = { ...windRecordUnder(WEATHER_PRESETS.mist, 0, 1), dirX: -1, dirZ: 0 };
+
+    // Same wrap arithmetic as mistMeshes.ts: solve for the drift `off` that
+    // gives this bank a phased offset of +47.5 m (pulling it, via dirX=-1,
+    // to D0 - 47.5 = 18.5 m from the camera).
+    const goal = 47.5;
+    const raw = goal - target.hash * MIST_CELL;
+    const off = ((raw % MIST_CELL) + MIST_CELL) % MIST_CELL;
+    const seconds = off / (MIST_DRIFT * wind.speed);
+
+    mist.update(camX, camZ, WEATHER_PRESETS.mist, { r: 0.5, g: 0.5, b: 0.5 }, wind, seconds);
+
+    const banks = collectMistBanks(SEED, camX, camZ);
+    const index = banks.findIndex((b) => b.x === target.x && b.z === target.z);
+    expect(index).toBeGreaterThanOrEqual(0);
+    expect(index).toBeLessThan(mist.meshes.length);
+    const mesh = mist.meshes[index] as Mesh;
+
+    const drawnDistance = Math.hypot(mesh.position.x - camX, mesh.position.z - camZ);
+    expect(drawnDistance).toBeLessThan(20);
+    expect(mesh.visibility).toBe(0);
+    expect(mesh.isEnabled()).toBe(false);
 
     mist.dispose();
   });

@@ -127,9 +127,16 @@ export function createMistMeshes(scene: Scene, seed: number, tier: QualityTier):
           continue;
         }
         const offset = wrap(off + bank.hash * MIST_CELL);
-        mesh.position.set(bank.x + offset * wind.dirX, bank.y, bank.z + offset * wind.dirZ);
+        const drawnX = bank.x + offset * wind.dirX;
+        const drawnZ = bank.z + offset * wind.dirZ;
+        mesh.position.set(drawnX, bank.y, drawnZ);
         mesh.scaling.set(bank.width, bank.height, 1);
-        const d = Math.sqrt((bank.x - camX) ** 2 + (bank.z - camZ) ** 2);
+        // From the DRAWN position, not the seeded one: a bank's own hash can
+        // phase it up to ±MIST_CELL/2 off its seeded spot even at rest (see
+        // wrap's comment), and MIST_NEAR_FADE_SPAN is narrower than that, so
+        // keying the fades off the seed would let a drifted bank sit inside
+        // the near-fade ring — or past the collection radius — unfaded.
+        const d = Math.sqrt((drawnX - camX) ** 2 + (drawnZ - camZ) ** 2);
         const nearFade = clamp01((d - MIST_NEAR_FADE_START) / MIST_NEAR_FADE_SPAN);
         const edgeFade = clamp01((MIST_RADIUS - d) / MIST_EDGE_FADE_SPAN);
         const wrapFade = wrapFadeAt(offset);
