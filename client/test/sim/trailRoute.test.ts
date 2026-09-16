@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { route, stemNodes, stemProgress, homeDistances, forksOf } from "../../src/sim/trailRoute.js";
+import { route, stemNodes, stemProgress, homeDistances, forksOf, guideWalk, pathLength, GUIDE_MIN, GUIDE_MAX } from "../../src/sim/trailRoute.js";
 import { graph } from "./helpers/registerGraph.js";
 import type { TrailEdge, TrailGraph } from "../../src/sim/trail.js";
+import { nextRandom } from "../../src/sim/types.js";
 
 /** A diamond: 0 → 1 → 3 and 0 → 2 → 3 are exactly the same length. */
 function diamond(): TrailGraph {
@@ -101,5 +102,62 @@ describe("forksOf", () => {
     // loop in) until the second loop (graph(2)) also rejoins there.
     expect(forksOf(graph(1).nodes.length, graph(1).edges)).toEqual([1]);
     expect(forksOf(graph(2).nodes.length, graph(2).edges)).toEqual([1, 2]);
+  });
+});
+
+/** A ladder: a stem 0→1→2→3 (three 100 m edges, summit 3) and a parallel strand
+ * 1→4→5→2 (4 at (100,80), 5 at (200,80)) with a rung 4→... no: two rungs 1–4 and 2–5
+ * make the strand; the far side 4→5 is 100 m. Round trips are possible: 3→2→5→4→1→0
+ * is 100+80+100+80+100 = 460 vs the stem's 300. */
+function ladder(): TrailGraph {
+  const nodes = [
+    { x: 0, z: 0, h: 0, u: 0 }, { x: 100, z: 0, h: 0, u: 0 }, { x: 200, z: 0, h: 0, u: 0 }, { x: 300, z: 0, h: 0, u: 0 },
+    { x: 100, z: 80, h: 0, u: 0 }, { x: 200, z: 80, h: 0, u: 0 },
+  ];
+  const edge = (a: number, b: number, kind: TrailEdge["kind"]): TrailEdge =>
+    ({ a, b, kind, profile: new Float64Array([0, 0]), progress0: 0, progress1: 0 });
+  const edges = [edge(0, 1, "stem"), edge(1, 2, "stem"), edge(2, 3, "stem"), edge(1, 4, "rung"), edge(4, 5, "strand"), edge(5, 2, "rung")];
+  const homeDist = homeDistances(nodes, edges);
+  return {
+    nodes, edges, trailhead: { x: 0, z: 0, u: 0 }, summit: 3, stem: [0, 1, 2], loops: [], features: [], stemLen: 300, fallbacks: 0,
+    forks: forksOf(nodes.length, edges), homeDist, shortestHome: homeDist[3]!,
+  };
+}
+
+describe("guideWalk", () => {
+  it("returns a crest-to-pad walk in the band when one exists, never repeating an edge", () => {
+    const g = ladder();
+    const rng = { rngSeed: 7 };
+    const walk = guideWalk(g, () => nextRandom(rng), 1.5, 1.6, 64);
+    expect(walk.path[0]).toBe(3);
+    expect(walk.path[walk.path.length - 1]).toBe(0);
+    expect(walk.inBand).toBe(true);
+    expect(walk.length).toBeCloseTo(460, 6);
+    expect(walk.path).toEqual([3, 2, 5, 4, 1, 0]);
+  });
+
+  it("falls back to the longest walk under the cap, then to the shortest path", () => {
+    const g = ladder();
+    const rng = { rngSeed: 7 };
+    // Nothing in [2, 2.5] × 300 exists (the longest simple walk is 460 = 1.53×):
+    // the longest under the cap is returned, out of band.
+    const under = guideWalk(g, () => nextRandom(rng), 2, 2.5, 16);
+    expect(under.inBand).toBe(false);
+    expect(under.length).toBeCloseTo(460, 6);
+    // Nothing under 1.2× but the stem itself: the shortest path.
+    const shortest = guideWalk(g, () => nextRandom(rng), 1.1, 1.2, 16);
+    expect(shortest.inBand).toBe(false);
+    expect(shortest.path).toEqual([3, 2, 1, 0]);
+  });
+
+  it("is deterministic in the RNG", () => {
+    const g = ladder();
+    const a = guideWalk(g, () => nextRandom({ rngSeed: 99 }), GUIDE_MIN, GUIDE_MAX, 8);
+    const b = guideWalk(g, () => nextRandom({ rngSeed: 99 }), GUIDE_MIN, GUIDE_MAX, 8);
+    expect(a).toEqual(b);
+  });
+
+  it("measures a path's length by arc", () => {
+    expect(pathLength(ladder(), [3, 2, 1, 0])).toBeCloseTo(300, 6);
   });
 });

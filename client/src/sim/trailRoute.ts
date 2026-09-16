@@ -145,3 +145,89 @@ export function forksOf(nodeCount: number, edges: readonly TrailEdge[]): number[
   for (let n = 0; n < nodeCount; n++) if ((degree[n] as number) >= 3) out.push(n);
   return out;
 }
+
+/** The guide's length band, as multiples of `shortestHome`, and how many walks to try. */
+export const GUIDE_MIN = 1.5;
+export const GUIDE_MAX = 2.5;
+export const GUIDE_TRIES = 64;
+
+/** A node path's arc length. */
+export function pathLength(graph: TrailGraph, path: readonly number[]): number {
+  let len = 0;
+  for (let i = 0; i + 1 < path.length; i++) {
+    const a = graph.nodes[path[i] as number] as TrailNode, b = graph.nodes[path[i + 1] as number] as TrailNode;
+    const dx = b.x - a.x, dz = b.z - a.z;
+    len += Math.sqrt(dx * dx + dz * dz);
+  }
+  return len;
+}
+
+/** True if `from` reaches node 0 without using any edge index in `used` (BFS). */
+function reachesPad(graph: TrailGraph, from: number, used: ReadonlySet<number>): boolean {
+  if (from === 0) return true;
+  const seen = new Set<number>([from]);
+  const stack = [from];
+  while (stack.length > 0) {
+    const n = stack.pop() as number;
+    for (let ei = 0; ei < graph.edges.length; ei++) {
+      if (used.has(ei)) continue;
+      const e = graph.edges[ei] as TrailEdge;
+      const m = e.a === n ? e.b : e.b === n ? e.a : -1;
+      if (m === -1 || seen.has(m)) continue;
+      if (m === 0) return true;
+      seen.add(m);
+      stack.push(m);
+    }
+  }
+  return false;
+}
+
+/**
+ * The guide: a seeded random walk crest → pad that never repeats an edge,
+ * choosing at each node uniformly among the unused edges whose far node can
+ * still reach the pad without a repeated edge, abandoned once it exceeds
+ * `max` × shortestHome. The first walk whose length lands in
+ * [min, max] × shortestHome is returned with `inBand: true`; otherwise the
+ * longest walk found under the cap; otherwise the shortest path (the sweep
+ * pins that last case to never happen on a built world). Deterministic in
+ * `rand` (the host passes `() => nextRandom(state)`).
+ */
+export function guideWalk(
+  graph: TrailGraph, rand: () => number, min = GUIDE_MIN, max = GUIDE_MAX, tries = GUIDE_TRIES,
+): { path: readonly number[]; length: number; inBand: boolean } {
+  const lo = min * graph.shortestHome, hi = max * graph.shortestHome;
+  let best: { path: number[]; length: number } | null = null;
+  for (let t = 0; t < tries; t++) {
+    const used = new Set<number>();
+    const path = [graph.summit];
+    let at = graph.summit, length = 0, dead = false;
+    while (at !== 0) {
+      const options: Array<{ ei: number; to: number; len: number }> = [];
+      for (let ei = 0; ei < graph.edges.length; ei++) {
+        if (used.has(ei)) continue;
+        const e = graph.edges[ei] as TrailEdge;
+        const to = e.a === at ? e.b : e.b === at ? e.a : -1;
+        if (to === -1) continue;
+        const trial = new Set(used);
+        trial.add(ei);
+        if (!reachesPad(graph, to, trial)) continue;
+        const a = graph.nodes[e.a] as TrailNode, b = graph.nodes[e.b] as TrailNode;
+        const dx = b.x - a.x, dz = b.z - a.z;
+        options.push({ ei, to, len: Math.sqrt(dx * dx + dz * dz) });
+      }
+      if (options.length === 0) { dead = true; break; }
+      const pick = options[Math.min(options.length - 1, Math.floor(rand() * options.length))] as { ei: number; to: number; len: number };
+      used.add(pick.ei);
+      length += pick.len;
+      at = pick.to;
+      path.push(at);
+      if (length > hi) { dead = true; break; }
+    }
+    if (dead) continue;
+    if (length >= lo && length <= hi) return { path: Object.freeze(path), length, inBand: true };
+    if (best === null || length > best.length) best = { path, length };
+  }
+  if (best !== null) return { path: Object.freeze(best.path), length: best.length, inBand: false };
+  const shortest = route(graph, graph.summit, 0);
+  return { path: shortest, length: pathLength(graph, shortest), inBand: false };
+}
