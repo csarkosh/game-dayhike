@@ -69,4 +69,9 @@ describe("stemProgress", () => {
     expect(stemProgress(graph(1), 300, 0)).toBeCloseTo(0, 9);
     expect(stemProgress(graph(1), -50, 10)).toBeCloseTo(1, 9);
   });
+
+  it("reads 0 for a degenerate stem with no edges", () => {
+    const g = { ...graph(0), stem: [] };
+    expect(stemProgress(g, 50, 0)).toBe(0);
+  });
 });
