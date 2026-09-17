@@ -363,6 +363,37 @@ describe("the blade list", () => {
     }
   });
 
+  it("holds the reach-filtered survivors through the over-budget clamp, nearest first", () => {
+    // Force the meadow class's own clamp to bind at MEADOW_CAM, through the
+    // SAME clamp logic collectClutter runs (collectClutterWithBudgets is
+    // exported test-only for exactly this) — the brief's own "holds exactly
+    // the meadow instances" test never trips this path, since MEADOW_CAM's
+    // real load sits under CLUTTER_BUDGETS[CLUTTER_MEADOW] (10600).
+    const budgets = CLUTTER_BUDGETS.map((b, cls) => (cls === CLUTTER_MEADOW ? 200 : b));
+    const clamped = collectClutterWithBudgets(SEED, MEADOW_CAM.x, MEADOW_CAM.z, budgets, 1, REACH);
+    const meadow = clamped[CLUTTER_MEADOW]!;
+    const survivors = [...new Set([...meadow.near, ...meadow.far])];
+    // (a) the clamp actually fired: MEADOW_CAM's unclamped unique count is in
+    // the thousands (see the "holds exactly" test above), so a clamp that
+    // fired keeps exactly the tiny budget, not merely at-or-under it.
+    expect(survivors.length).toBe(200);
+
+    // (b) blades is exactly the reach-filtered subset of the survivors —
+    // same membership test as the "holds exactly" test above, but now
+    // against the post-clamp population, not the unclamped one.
+    const ox = Math.floor(MEADOW_CAM.x / CLUTTER_MEADOW_CELL) * CLUTTER_MEADOW_CELL;
+    const oz = Math.floor(MEADOW_CAM.z / CLUTTER_MEADOW_CELL) * CLUTTER_MEADOW_CELL;
+    const d2 = (i: { x: number; z: number }) => (i.x - ox) ** 2 + (i.z - oz) ** 2;
+    const want = survivors.filter((i) => d2(i) < REACH * REACH);
+    expect(meadow.blades.length).toBe(want.length);
+    for (const i of meadow.blades) expect(want).toContain(i);
+
+    // (c) still sorted nearest-first.
+    for (let k = 1; k < meadow.blades.length; k++) {
+      expect(d2(meadow.blades[k]!)).toBeGreaterThanOrEqual(d2(meadow.blades[k - 1]!));
+    }
+  });
+
   it("never lets a blade pop: every meadow instance under BLADE_RADIUS of any eye in the rebuild cell is present", () => {
     const collector = createClutterCollector(SEED);
     const bands = collector.collect(MEADOW_CAM.x, MEADOW_CAM.z, 1, REACH);
