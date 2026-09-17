@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BLADE_CLUMP_RADIUS, BLADE_COUNT, BLADE_HEIGHT, BLADE_RINGS, BLADE_SOFT, BLADE_TRIS, BLADE_VERTS,
+  BLADE_CLUMP_RADIUS, BLADE_COUNT, BLADE_HEIGHT, BLADE_RINGS, BLADE_SOFT, BLADE_TRIS, BLADE_VERTS, BLADE_WIDTH,
   bladeAlive, bladeClumpGeometry,
 } from "../../src/game/bladeClump.js";
 
@@ -8,13 +8,11 @@ describe("the blade clump geometry", () => {
   const g = bladeClumpGeometry();
   const vertexCount = g.positions.length / 3;
 
-  it("has 24 blades of 9 vertices and 7 triangles: 216 vertices, 168 triangles", () => {
+  it("has BLADE_COUNT blades of 9 vertices and 7 triangles each", () => {
     expect(BLADE_VERTS).toBe(BLADE_RINGS * 2 + 1);
     expect(BLADE_TRIS).toBe((BLADE_RINGS - 1) * 2 + 1);
     expect(vertexCount).toBe(BLADE_COUNT * BLADE_VERTS);
-    expect(vertexCount).toBe(216);
     expect(g.indices.length).toBe(BLADE_COUNT * BLADE_TRIS * 3);
-    expect(g.indices.length / 3).toBe(168);
     expect(g.normals.length).toBe(vertexCount * 3);
     expect(g.colors.length).toBe(vertexCount * 4);
     expect(g.blade.length).toBe(vertexCount * 4);
@@ -32,8 +30,8 @@ describe("the blade clump geometry", () => {
         // roots are stored as float32 at magnitudes up to 0.3 m, whose ULP
         // (about 2e-8) is far larger than a 9-digit tolerance (5e-10), so this
         // pins the half-width to 6 digits (5e-7), still well above the
-        // measured worst case (1.3e-8).
-        expect(Math.hypot(g.positions[v * 3]! - rx, g.positions[v * 3 + 2]! - rz)).toBeCloseTo(0.02, 6);
+        // measured worst case (about 2e-8).
+        expect(Math.hypot(g.positions[v * 3]! - rx, g.positions[v * 3 + 2]! - rz)).toBeCloseTo(BLADE_WIDTH, 6);
       }
       // Every vertex of the blade names the same root.
       for (let v = v0; v < v0 + BLADE_VERTS; v++) {

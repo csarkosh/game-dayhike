@@ -19,7 +19,7 @@ import { latticeHash } from "./groundHexParams.js";
  * Renderer-only: nothing here may migrate into sim/ or a tunables registry.
  */
 
-export const BLADE_COUNT = 24;
+export const BLADE_COUNT = 40;
 /** Cross-sections below the tip. */
 export const BLADE_RINGS = 4;
 export const BLADE_VERTS = BLADE_RINGS * 2 + 1;
@@ -27,17 +27,17 @@ export const BLADE_TRIS = (BLADE_RINGS - 1) * 2 + 1;
 /** Roots lie on a disc of this radius (m). */
 export const BLADE_CLUMP_RADIUS = 0.3;
 /** A blade's height (m) by its random. */
-export const BLADE_HEIGHT: readonly [number, number] = [0.35, 0.6];
+export const BLADE_HEIGHT: readonly [number, number] = [0.2, 0.45];
 /** Half-width (m) at the root; the strip tapers linearly to the tip. */
-export const BLADE_WIDTH = 0.02;
+export const BLADE_WIDTH = 0.012;
 /** Outward lean (rad) applied as a parabola of the height fraction. */
-export const BLADE_DROOP: readonly [number, number] = [0.1, 0.5];
+export const BLADE_DROOP: readonly [number, number] = [0.3, 0.9];
 /** The face normal is rolled this far (rad) about the blade's axis, one way per side. */
-export const BLADE_ROUND = 0.5;
+export const BLADE_ROUND = 0.3;
 /** Vertex colour at the tip, from white at the root. */
-export const BLADE_TIP_TINT: Rgb = { r: 1.05, g: 1.0, b: 0.8 };
+export const BLADE_TIP_TINT: Rgb = { r: 0.95, g: 0.95, b: 0.75 };
 /** Per-blade luminance spread: `1 + BLADE_LUMA · (random − 0.5)`. */
-export const BLADE_LUMA = 0.2;
+export const BLADE_LUMA = 0.3;
 /** Width of one blade's shrink window in units of the thinning ramp;
  * FOLIAGE_BLADE_SOFT in the GLSL. */
 export const BLADE_SOFT = 0.15;
