@@ -265,7 +265,8 @@ function geometryMeshes(node: Node): Mesh[] {
  * deep-forest frame past the 16.7 ms vsync cliff. Bushes read as
  * canopy-shadowed instead via a pre-darkened palette colour (`bush` in
  * `assets/palette.json`) rather than a real shadow
- * sample. */
+ * sample. The blade bucket is the one exception, and turns the flag back on
+ * itself right after this call — see `adopt`. */
 function prepBucketMesh(mesh: Mesh): void {
   mesh.isPickable = false;
   // Babylon culls a thin-instance mesh by its own bounding box, and syncing
@@ -746,6 +747,14 @@ export function createClutterMeshes(
       // the hand-off read one pair of numbers.
       bladeMesh = createBladeMesh(scene);
       prepBucketMesh(bladeMesh);
+      // The one clutter bucket that RECEIVES shadows, against the rule
+      // `prepBucketMesh` just applied: the clumps are opaque, a few metres
+      // from the eye and inside the first cascade, so a clump under the
+      // canopy has to sit in the same shadow as the turf it stands in — lit
+      // geometry on shadowed ground reads as a glow at this range, where a
+      // card's could hide behind its size and its cutout. It still never
+      // casts; no clutter does.
+      bladeMesh.receiveShadows = true;
       const band = bladeEdges();
       setFoliageEdges(bladeMesh.material as Material, [band.start, band.end]);
       (buckets[CLUTTER_MEADOW]![0] as Bucket[])[BLADE_BUCKET] = {

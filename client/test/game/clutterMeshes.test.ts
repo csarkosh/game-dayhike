@@ -345,6 +345,10 @@ describe("the blade bucket", () => {
     const on = build(true);
     const mesh = on.scene.getMeshByName(BLADE_MESH_NAME) as Mesh;
     expect(mesh).toBeInstanceOf(Mesh);
+    // The one clutter bucket that receives shadows, and it stays the one:
+    // every GLB bucket is left at the Babylon default.
+    expect(mesh.receiveShadows).toBe(true);
+    expect(on.assets[CLUTTER_MEADOW]![0]![0]![0]!.receiveShadows).toBe(false);
     expect(mesh.getTotalVertices()).toBe(bladeClumpGeometry().positions.length / 3);
     expect(mesh.getVerticesData("blade")).not.toBeNull();
     expect(mesh.isVerticesDataPresent("color")).toBe(true);
