@@ -779,10 +779,12 @@ export function createRenderer(
   // Ground clutter rides the same guard as the forest above it: hand-authored
   // levels have no forest and get no grass, rocks, boulders, driftwood or
   // fungus. Low tier shrinks every class radius to 60%, the clutter analogue
-  // of the forest's near-band tier rule.
+  // of the forest's near-band tier rule. High and medium draw the meadow's
+  // near instances as blade clumps; low keeps the cards, whose 1.5× scaling
+  // is where blades resolve worst.
   const clutterMeshes =
     forest !== null
-      ? createClutterMeshes(scene, forest.seed, { radiusScale: tier === "low" ? 0.6 : undefined })
+      ? createClutterMeshes(scene, forest.seed, { radiusScale: tier === "low" ? 0.6 : undefined, blades: tier !== "low" })
       : null;
   // Same late-registration story as the forest's casters: the eleven clutter
   // GLBs load asynchronously, so the boulder buckets appear in `casterMeshes`
