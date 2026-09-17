@@ -20,6 +20,13 @@ export function postFeaturesFor(tier: QualityTier, fxSupported: boolean): PostFe
   return { pipeline: true, halation: tier === "high", colourPath: "post" };
 }
 
+/** MSAA sample count on the first pass of the chain (the scene pass on high,
+ * the grade on medium): that pass's input target is the scene render, so
+ * multisampling it multisamples every opaque edge, which is what the blade
+ * clumps need. The engine clamps it to its cap; the low tier has no chain
+ * and gets none. */
+export const MSAA_SAMPLES = 4;
+
 export type FinishRecord = { overlapGain: number; overlapPhase: number; grainGain: number; time: number };
 
 // ---- Browser-tunable magnitudes. `clear` identity is not. ----

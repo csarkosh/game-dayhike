@@ -4,7 +4,7 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { createPost, fxSupportedBy } from "../../src/game/post.js";
-import { postFeaturesFor } from "../../src/game/postParams.js";
+import { postFeaturesFor, MSAA_SAMPLES } from "../../src/game/postParams.js";
 import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "../../src/game/weather.js";
 
 let engine: NullEngine;
@@ -92,5 +92,31 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     };
     expect(names("high")).toEqual(["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "finish"]);
     expect(names("medium")).toEqual(["grade", "chromaticAberration", "fxaa", "finish"]);
+  });
+
+  it("multisamples the first pass of the chain when the engine can, and leaves the rest at 1", () => {
+    expect(MSAA_SAMPLES).toBe(4);
+    for (const tier of ["high", "medium"] as const) {
+      // NullEngine reports no MSAA cap; raise it the way a real WebGL2 engine does.
+      engine.getCaps().maxMSAASamples = 4;
+      const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+      const post = createPost(scene, camera, postFeaturesFor(tier, true));
+      const passes = camera._postProcesses.map((p) => p!);
+      expect(passes[0]!.name).toBe(tier === "high" ? "scene" : "grade");
+      expect(passes[0]!.samples).toBe(MSAA_SAMPLES);
+      for (const p of passes.slice(1)) expect(p.samples, p.name).toBe(1);
+      post.dispose();
+      camera.dispose();
+    }
+  });
+
+  it("asks for no multisampling when the engine reports no cap", () => {
+    const caps = engine.getCaps() as { maxMSAASamples?: number };
+    delete caps.maxMSAASamples;
+    const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+    const post = createPost(scene, camera, postFeaturesFor("high", true));
+    expect(camera._postProcesses[0]!.samples).toBe(1);
+    post.dispose();
+    camera.dispose();
   });
 });

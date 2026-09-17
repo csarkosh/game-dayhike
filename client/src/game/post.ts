@@ -17,7 +17,7 @@ import { ColorCurves } from "@babylonjs/core/Materials/colorCurves.js";
 import type { WeatherParams } from "./weather.js";
 import { gradeUnder, saturationUnder, WEATHER_PRESETS } from "./weather.js";
 import { gradeRecordUnder, type GradeRecord } from "./gradeParams.js";
-import { finishUnder, type PostFeatures } from "./postParams.js";
+import { finishUnder, MSAA_SAMPLES, type PostFeatures } from "./postParams.js";
 import halationExtractFragment from "./shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "./shaders/grade.fragment.fx?raw";
 import finishFragment from "./shaders/finish.fragment.fx?raw";
@@ -180,6 +180,14 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
       effect.setFloat("grainGain", f.grainGain);
       effect.setFloat("time", f.time);
     };
+
+    // The first pass owns the scene's render target. Babylon's setter clamps
+    // to the engine's cap, but a NullEngine reports none at all, so ask only
+    // where a cap exists; a capped engine (Safari) reads 1 and nothing else
+    // changes. FXAA stays for the cards' alpha-test edges, which MSAA does
+    // not touch.
+    const first = scenePass ?? grade;
+    if (first !== null && engine.getCaps().maxMSAASamples > 1) first.samples = MSAA_SAMPLES;
   } else {
     image.vignetteEnabled = true;
     image.vignetteColor = new Color4(0.01, 0.02, 0.03, 0);
