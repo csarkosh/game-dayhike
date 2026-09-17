@@ -28,12 +28,11 @@ describe("the blade clump geometry", () => {
         expect(g.positions[v * 3 + 1]).toBe(0);
         const rx = g.blade[v * 4]!, rz = g.blade[v * 4 + 1]!;
         expect(Math.hypot(rx, rz)).toBeLessThanOrEqual(BLADE_CLUMP_RADIUS + 1e-9);
-        // The two root vertices straddle the root by the half-width. 9 decimal
-        // places is unreachable here: root and position are independently
-        // rounded to float32 at a magnitude up to BLADE_CLUMP_RADIUS (0.3), whose
-        // ULP (~1.5-3e-8) alone exceeds a 9-digit tolerance (5e-10) before any
-        // arithmetic runs; 6 digits (5e-7) keeps a >30x margin over the worst
-        // case observed (see task-1-report.md for the measurement).
+        // The two root vertices straddle the root by the half-width. The two
+        // roots are stored as float32 at magnitudes up to 0.3 m, whose ULP
+        // (about 2e-8) is far larger than a 9-digit tolerance (5e-10), so this
+        // pins the half-width to 6 digits (5e-7), still well above the
+        // measured worst case (1.3e-8).
         expect(Math.hypot(g.positions[v * 3]! - rx, g.positions[v * 3 + 2]! - rz)).toBeCloseTo(0.02, 6);
       }
       // Every vertex of the blade names the same root.

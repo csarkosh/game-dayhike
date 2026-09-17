@@ -10,7 +10,7 @@ import { latticeHash } from "./groundHexParams.js";
  *
  * A blade is a strip of BLADE_RINGS cross-sections plus one tip vertex, its
  * root on a disc of BLADE_CLUMP_RADIUS at y = 0 (the model convention: origin
- * at the base). It drooping outward as a parabola, tapers to the tip, and
+ * at the base). It droops outward as a parabola, tapers to the tip, and
  * carries its face normal rolled to either side so it shades as a
  * half-cylinder. One static vec4 per vertex, `blade`, names the root the
  * blade collapses to, the blade's random (its place in the thinning order)
