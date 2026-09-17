@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createInputSampler } from "../../src/game/input.js";
+import { createTouchModel } from "../../src/game/touchControls.js";
 
 type Listener = (e: unknown) => void;
 const listeners = new Map<string, Listener[]>();
@@ -333,6 +334,22 @@ describe("pointer lock is a mouse affair", () => {
     const requests = lockRequests(canvas);
     fire("click", {});
     expect(requests()).toBe(1);
+  });
+});
+
+describe("mouse look has no flick", () => {
+  it("stops the instant the mouse does, with a live touch model ticking beside it", () => {
+    const touch = createTouchModel({ width: 800, height: 400 }, { onPause: () => undefined });
+    const { input, canvas } = sampler({ touch });
+    lockPointer(canvas);
+    for (let i = 1; i <= 6; i++) {
+      fire("mousemove", { movementX: 60, movementY: 0 });
+      touch.tick(i * 16);
+    }
+    const moved = input.sample(1);
+    expect(moved.yaw).not.toBe(0);
+    for (let i = 7; i <= 200; i++) touch.tick(i * 16);
+    expect(input.sample(2).yaw).toBe(moved.yaw);
   });
 });
 

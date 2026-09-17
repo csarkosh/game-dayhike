@@ -650,6 +650,9 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
   input.onEngagedChange((engaged) => {
     if (disposed) return;
+    // Look is dropped while paused, but a flick still coasting would pick back up
+    // on a quick resume.
+    if (!engaged) touchModel.stopCoast();
     if (engaged) {
       menu.hide();
       input.setSuppressed(bar.isOpen);

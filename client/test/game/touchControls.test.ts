@@ -9,6 +9,8 @@ import {
   TAP_MAX_MS,
   TAP_MAX_TRAVEL,
   IDLE_AFTER_MS,
+  FLICK_MIN_SPEED,
+  FLICK_FULL_SPEED,
   type TouchModel,
 } from "../../src/game/touchControls.js";
 import { Button } from "../../src/sim/types.js";
@@ -311,5 +313,142 @@ describe("idle", () => {
     expect(m.state.idle).toBe(true);
     m.down({ id: 2, x: 600, y: 200, hit: "canvas" }, IDLE_AFTER_MS + 60);
     expect(m.state.idle).toBe(false);
+  });
+});
+
+/**
+ * A look drag at a steady speed in CSS px/s, one move per 60 Hz frame, lifted a
+ * frame after the last move. The lift frame counts toward the release speed, so
+ * it reads about a sixth under `vx`. Returns the lift time.
+ */
+function swipe(
+  m: TouchModel,
+  o: { id?: number; vx: number; vy?: number; at?: number; frames?: number; holdMs?: number },
+): number {
+  const id = o.id ?? 1;
+  const at = o.at ?? 0;
+  const frames = o.frames ?? 6;
+  const step = 1000 / 60;
+  m.down({ id, x: 400, y: 200, hit: "canvas" }, at);
+  let t = at;
+  for (let i = 1; i <= frames; i++) {
+    t = at + i * step;
+    m.move(id, 400 + (o.vx * (i * step)) / 1000, 200 + ((o.vy ?? 0) * (i * step)) / 1000, t);
+  }
+  const liftAt = t + (o.holdMs ?? step);
+  m.up(id, liftAt);
+  m.takeLook(); // the drag itself; only the coast is left to measure
+  return liftAt;
+}
+
+/** Ticks from `from` for `ms` at `fps`, draining look each frame; the summed turn. */
+function coast(m: TouchModel, from: number, ms: number, fps = 60): { yaw: number; pitch: number } {
+  const total = { yaw: 0, pitch: 0 };
+  const frames = Math.round((ms * fps) / 1000);
+  for (let i = 1; i <= frames; i++) {
+    m.tick(from + (i * 1000) / fps);
+    const look = m.takeLook();
+    total.yaw += look.yaw;
+    total.pitch += look.pitch;
+  }
+  return total;
+}
+
+describe("flick: a fast look swipe keeps turning after the lift", () => {
+  it("a slow swipe stops dead on the lift", () => {
+    const m = model();
+    const lift = swipe(m, { vx: FLICK_MIN_SPEED * 0.75 });
+    expect(coast(m, lift, 2000)).toEqual({ yaw: 0, pitch: 0 });
+  });
+
+  it("a fast flick keeps turning the way the finger went, on both axes", () => {
+    const m = model();
+    const lift = swipe(m, { vx: -1500, vy: -600 });
+    const turn = coast(m, lift, 2000);
+    expect(turn.yaw).toBeLessThan(-0.5);
+    expect(turn.pitch).toBeLessThan(0);
+  });
+
+  it("turns further the harder the flick", () => {
+    const medium = model();
+    const hard = model();
+    const a = coast(medium, swipe(medium, { vx: 1200 }), 3000).yaw;
+    const b = coast(hard, swipe(hard, { vx: 2200 }), 3000).yaw;
+    expect(a).toBeGreaterThan(0);
+    expect(b).toBeGreaterThan(a * 1.5);
+  });
+
+  it("a swipe just over the floor barely coasts, so there is no step at the threshold", () => {
+    const soft = model();
+    const firm = model();
+    const barely = coast(soft, swipe(soft, { vx: FLICK_MIN_SPEED * 1.3 }), 3000).yaw;
+    const full = coast(firm, swipe(firm, { vx: FLICK_FULL_SPEED * 1.2 }), 3000).yaw;
+    expect(barely).toBeGreaterThan(0);
+    expect(barely).toBeLessThan(full * 0.1);
+  });
+
+  it("lingers, then comes to rest", () => {
+    const m = model();
+    const lift = swipe(m, { vx: 2000 });
+    expect(coast(m, lift, 150).yaw).toBeGreaterThan(0);
+    coast(m, lift + 150, 3000);
+    expect(coast(m, lift + 3150, 1000)).toEqual({ yaw: 0, pitch: 0 });
+  });
+
+  it("turns the same amount whatever the frame rate", () => {
+    const slow = model();
+    const fast = model();
+    const a = coast(slow, swipe(slow, { vx: 1800 }), 4000, 30).yaw;
+    const b = coast(fast, swipe(fast, { vx: 1800 }), 4000, 144).yaw;
+    expect(Math.abs(a - b)).toBeLessThan(a * 0.02);
+  });
+
+  it("does not coast when the finger stopped before it lifted", () => {
+    const m = model();
+    const lift = swipe(m, { vx: 2000, holdMs: 80 });
+    expect(coast(m, lift, 2000)).toEqual({ yaw: 0, pitch: 0 });
+  });
+
+  it("does not coast from a cancelled pointer", () => {
+    const m = model();
+    m.down({ id: 1, x: 400, y: 200, hit: "canvas" }, 0);
+    m.move(1, 440, 200, 16);
+    m.move(1, 480, 200, 32);
+    m.cancel(1, 40);
+    m.takeLook();
+    expect(coast(m, 40, 2000)).toEqual({ yaw: 0, pitch: 0 });
+  });
+
+  it("does not coast from a quick tap that shifted a few px", () => {
+    const m = model();
+    m.down({ id: 1, x: 400, y: 200, hit: "canvas" }, 0);
+    m.move(1, 400 + TAP_MAX_TRAVEL - 1, 200, 5);
+    m.up(1, 8);
+    m.takeLook();
+    expect(coast(m, 8, 2000)).toEqual({ yaw: 0, pitch: 0 });
+  });
+
+  it("a new finger in the look zone catches the spin", () => {
+    const m = model();
+    const lift = swipe(m, { vx: 2000 });
+    coast(m, lift, 50);
+    m.down({ id: 2, x: 500, y: 200, hit: "canvas" }, lift + 60);
+    expect(coast(m, lift + 60, 2000)).toEqual({ yaw: 0, pitch: 0 });
+  });
+
+  it("the stick and the lamp leave the spin alone", () => {
+    const m = model();
+    const lift = swipe(m, { vx: 2000 });
+    m.down({ id: 2, x: 100, y: 300, hit: "canvas" }, lift + 5);
+    m.down({ id: 3, x: 0, y: 0, hit: "lamp" }, lift + 5);
+    expect(coast(m, lift, 500).yaw).toBeGreaterThan(0);
+  });
+
+  it("stopCoast ends the spin, for the pause menu", () => {
+    const m = model();
+    const lift = swipe(m, { vx: 2000 });
+    coast(m, lift, 50);
+    m.stopCoast();
+    expect(coast(m, lift + 50, 2000)).toEqual({ yaw: 0, pitch: 0 });
   });
 });

@@ -12,6 +12,18 @@ export const STICK_MARGIN = 20;
 export const DEAD_ZONE = 0.15;
 /** Radians per CSS px of drag: about twice the mouse rate. */
 export const LOOK_RATE = 0.0045;
+/** A look finger's release speed is read over this much of its recent track, ms. */
+export const FLICK_WINDOW_MS = 100;
+/** A look swipe released slower than this, CSS px/s, stops dead on the lift. */
+export const FLICK_MIN_SPEED = 400;
+/** From the floor up to this speed the coast fades in, so a soft swipe barely drifts. */
+export const FLICK_FULL_SPEED = 900;
+/** A flick's coast never starts faster than this, CSS px/s: a hard flick turns about 225°, not laps. */
+export const FLICK_MAX_SPEED = 2500;
+/** The coast's speed falls by e in this long, ms. Its total turn is its start speed times this. */
+export const FLICK_DECAY_MS = 350;
+/** The coast ends below this speed, CSS px/s. */
+export const FLICK_STOP_SPEED = 10;
 /** A second down inside this window of the previous one is a double tap. */
 export const DOUBLE_TAP_MS = 300;
 /** A press held longer than this is not a tap. */
@@ -53,13 +65,15 @@ export type TouchModel = TouchSource & {
   down(p: TouchPointer, nowMs: number): void;
   move(id: number, x: number, y: number, nowMs: number): void;
   up(id: number, nowMs: number): void;
-  /** The browser took the pointer (a system gesture, a tab switch): same as up. */
+  /** The browser took the pointer (a system gesture, a tab switch): up, without a flick. */
   cancel(id: number, nowMs: number): void;
   /** The in-world prompt was pressed: an Interact edge now, and the bit while held. */
   interactDown(): void;
   interactUp(): void;
   /** The local player's lamp, so the layer can draw the lit ring. */
   setLampOn(on: boolean): void;
+  /** Ends a flick's coast at once: the game paused under it. */
+  stopCoast(): void;
   /**
    * Where the layer actually drew the base, once laid out: safe-area insets
    * move it, and the model cannot know them. Until this is called the base is
@@ -67,13 +81,24 @@ export type TouchModel = TouchSource & {
    */
   setStickBase(base: StickBase): void;
   resize(viewport: Viewport): void;
-  /** Advances the idle clock. Once a frame. */
+  /** Advances the idle clock and a flick's coast. Once a frame. */
   tick(nowMs: number): void;
 };
 
 type Role =
   | { kind: "stick" }
-  | { kind: "look"; downX: number; downY: number; lastX: number; lastY: number; downAt: number; dragged: boolean; jumped: boolean }
+  | {
+      kind: "look";
+      downX: number;
+      downY: number;
+      lastX: number;
+      lastY: number;
+      downAt: number;
+      dragged: boolean;
+      jumped: boolean;
+      /** Recent positions, oldest first, trimmed to FLICK_WINDOW_MS: the release speed. */
+      track: { x: number; y: number; t: number }[];
+    }
   | { kind: "lamp" }
   | { kind: "pause" };
 
@@ -103,6 +128,32 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
   let lastStickDownAt = -Infinity;
   let lastTapDownAt = -Infinity;
   let lastTouchAt = -Infinity;
+  /** A flick's coast in CSS px/ms, advanced from `coastAt`; null when still. */
+  let coast: { vx: number; vy: number } | null = null;
+  let coastAt = 0;
+
+  /**
+   * The coast a lifted look finger leaves behind, or null. The speed is taken
+   * from the oldest point in the window to the lift itself, so a finger that
+   * stopped before it lifted reads slow, the way a list stops under a thumb.
+   */
+  function flick(role: Extract<Role, { kind: "look" }>, nowMs: number): { vx: number; vy: number } | null {
+    if (!role.dragged) return null;
+    const recent = role.track.filter((p) => nowMs - p.t <= FLICK_WINDOW_MS);
+    const first = recent[0];
+    const last = recent.at(-1);
+    if (recent.length < 2 || first === undefined || last === undefined) return null;
+    const dt = nowMs - first.t;
+    if (dt <= 0) return null;
+    const vx = ((last.x - first.x) / dt) * 1000;
+    const vy = ((last.y - first.y) / dt) * 1000;
+    const speed = Math.hypot(vx, vy);
+    if (speed <= FLICK_MIN_SPEED) return null;
+    // Linear from nothing at the floor to the whole speed at FLICK_FULL_SPEED, then capped.
+    const fade = Math.min(1, (speed - FLICK_MIN_SPEED) / (FLICK_FULL_SPEED - FLICK_MIN_SPEED));
+    const scale = (Math.min(speed * fade, FLICK_MAX_SPEED) / speed) / 1000;
+    return { vx: vx * scale, vy: vy * scale };
+  }
 
   function stickAxes(dx: number, dy: number): void {
     const dist = Math.hypot(dx, dy);
@@ -140,8 +191,13 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
     } else if (role.kind === "pause") {
       state.pausePressed = false;
       if (!cancelled) hooks.onPause();
-    } else if (role.kind === "look" && !cancelled && !role.jumped) {
-      if (nowMs - role.downAt <= TAP_MAX_MS && !role.dragged) lastTapDownAt = role.downAt;
+    } else if (role.kind === "look" && !cancelled) {
+      if (!role.jumped && nowMs - role.downAt <= TAP_MAX_MS && !role.dragged) lastTapDownAt = role.downAt;
+      const next = flick(role, nowMs);
+      if (next !== null) {
+        coast = next;
+        coastAt = nowMs;
+      }
     }
   }
 
@@ -202,7 +258,19 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
         // Consumed: a third tap starts a new pair rather than jumping again.
         lastTapDownAt = -Infinity;
       }
-      roles.set(p.id, { kind: "look", downX: p.x, downY: p.y, lastX: p.x, lastY: p.y, downAt: nowMs, dragged: false, jumped });
+      // A finger in the look zone catches a coasting view, as a thumb stops a list.
+      coast = null;
+      roles.set(p.id, {
+        kind: "look",
+        downX: p.x,
+        downY: p.y,
+        lastX: p.x,
+        lastY: p.y,
+        downAt: nowMs,
+        dragged: false,
+        jumped,
+        track: [{ x: p.x, y: p.y, t: nowMs }],
+      });
     },
     move(id, x, y, nowMs) {
       const role = roles.get(id);
@@ -216,6 +284,8 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
         role.lastX = x;
         role.lastY = y;
         if (Math.hypot(x - role.downX, y - role.downY) > TAP_MAX_TRAVEL) role.dragged = true;
+        role.track.push({ x, y, t: nowMs });
+        while (nowMs - (role.track[0]?.t ?? nowMs) > FLICK_WINDOW_MS) role.track.shift();
       }
     },
     up(id, nowMs) {
@@ -234,6 +304,9 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
     setLampOn(on) {
       state.lampOn = on;
     },
+    stopCoast() {
+      coast = null;
+    },
     setStickBase(next) {
       base = next;
       measured = true;
@@ -244,6 +317,16 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
     },
     tick(nowMs) {
       state.idle = nowMs - lastTouchAt > IDLE_AFTER_MS;
+      if (coast !== null && nowMs > coastAt) {
+        // Integrated exactly rather than stepped, so the turn is the same at any frame rate.
+        const decay = Math.exp(-(nowMs - coastAt) / FLICK_DECAY_MS);
+        const travel = FLICK_DECAY_MS * (1 - decay);
+        lookYaw += coast.vx * travel * LOOK_RATE;
+        lookPitch += coast.vy * travel * LOOK_RATE;
+        coast = { vx: coast.vx * decay, vy: coast.vy * decay };
+        coastAt = nowMs;
+        if (Math.hypot(coast.vx, coast.vy) * 1000 < FLICK_STOP_SPEED) coast = null;
+      }
     },
   };
 }
