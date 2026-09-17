@@ -182,10 +182,10 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
     };
 
     // The first pass owns the scene's render target. Babylon's setter clamps
-    // to the engine's cap, but a NullEngine reports none at all, so ask only
-    // where a cap exists; a capped engine (Safari) reads 1 and nothing else
-    // changes. FXAA stays for the cards' alpha-test edges, which MSAA does
-    // not touch.
+    // to the engine's cap, but an engine may report no cap at all, and
+    // Math.min(4, undefined) is NaN, so ask only where a cap above 1 exists;
+    // a capped engine (Safari) reads 1 and nothing else changes. FXAA stays
+    // for the cards' alpha-test edges, which MSAA does not touch.
     const first = scenePass ?? grade;
     if (first !== null && engine.getCaps().maxMSAASamples > 1) first.samples = MSAA_SAMPLES;
   } else {

@@ -36,7 +36,9 @@
   float fClump = fract(fCell.x * 0.618034 + fCell.y * 0.381966);
   float fScale = length(finalWorld[1].xyz);
 #ifdef NORMAL
-  vNormalW = normalize(vNormalW + vec3(0.0, foliageNormalUp, 0.0));
+  vec3 fUp = vNormalW + vec3(0.0, foliageNormalUp, 0.0);
+  float fUl = length(fUp);
+  vNormalW = fUl > 1.0e-4 ? fUp / fUl : vec3(0.0, 1.0, 0.0);
 #endif
   float fEdge = 1.0 - smoothstep(foliageEdges.x, foliageEdges.y, fDist);
 #ifdef FOLIAGE_BLADES

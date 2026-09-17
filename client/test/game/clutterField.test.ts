@@ -336,6 +336,9 @@ describe("the blade list", () => {
     expect(e.start).toBe(BLADE_RADIUS - BLADE_BAND);
     expect(e.end - e.start).toBeGreaterThanOrEqual(CLUTTER_FADE_MIN_RAMP);
     expect(BLADE_PAD).toBeCloseTo(Math.SQRT2 * (CLUTTER_GRASS_CELL + CLUTTER_MEADOW_CELL), 12);
+    // The reach/near-split coupling BLADE_PAD relies on: every instance the
+    // blade bucket reaches must also be a near-card instance.
+    expect(BLADE_RADIUS + BLADE_PAD).toBeLessThan(CLUTTER_RADII[CLUTTER_MEADOW]! * CLUTTER_FAR_SPLIT);
   });
 
   it("is empty for every class when the reach is 0, and for every class but the meadow otherwise", () => {

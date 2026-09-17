@@ -228,6 +228,14 @@ export const BLADE_BAND = 4.5;
  * collapsed by the shader and cost vertices only. */
 export const BLADE_PAD = Math.SQRT2 * (CLUTTER_GRASS_CELL + CLUTTER_MEADOW_CELL);
 
+/** The coupling this pad relies on: `BLADE_RADIUS + BLADE_PAD` (≈ 17.2 m)
+ * must stay under the meadow's near split (`CLUTTER_RADII[CLUTTER_MEADOW] ·
+ * CLUTTER_FAR_SPLIT` = 18 m), so every instance the blade bucket reaches is
+ * also a near-card instance — the card the blade hands off to at
+ * `bladeEdges().end` is always drawn. Neither side of this scales with
+ * `radiusScale`: blades exist only at scale 1, so the reach and the band are
+ * fixed while the near split they must clear moves with the tier. */
+
 /** The hand-off band (m of true eye distance): blades whole at `start`, gone
  * at `end`; the meadow near card bucket's in-band is the same pair. */
 export function bladeEdges(): { start: number; end: number } {

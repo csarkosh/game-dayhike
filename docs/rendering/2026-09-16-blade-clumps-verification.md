@@ -6,12 +6,12 @@
 
 `npm test`'s three roots, all green: client 156 files / 1,888 tests, server 6 files / 92 tests,
 tools 8 files / 70 tests. New: `bladeClump.test.ts` (9), and the blade cases in
-`clutterField.test.ts` (6), `foliagePlugin.test.ts` (5), `clutterMeshes.test.ts` (5),
-`post.test.ts` (2).
+`clutterField.test.ts` (6), `foliagePlugin.test.ts` (two new cases, three existing cases
+extended), `clutterMeshes.test.ts` (5), `post.test.ts` (2).
 
 ## Browser gates
 
-Branch `worktree-blade-clumps-impl` against control `dd8c6fb` (the branch base), same seed
+The branch merged after `dd8c6fb` against control `dd8c6fb` (the branch base), same seed
 (`atmo`), weather and hour on both.
 
 | Gate | Result |
@@ -44,7 +44,6 @@ each.
   sun.
 - `BLADE_TIP_TINT` (1.05, 1.0, 0.8) → (0.95, 0.95, 0.75) and `BLADE_LUMA` 0.2 → 0.3: the tips
   read too pale; more per-blade variation reads better.
-- The foliage profile gained `normalUp` (1.0 for the ground layer, 0 for bush, understory,
-  tree): cards and blades share one lighting model.
+- The foliage profile gained `normalUp` (1.0 for the blades; 0 for every card profile).
 - The blade mesh receives shadows (never casts): under the canopy an unshadowed clump glowed
   against a shadowed floor.

@@ -68,16 +68,20 @@ export type FoliageProfile = {
    * shrinks to its root across `edges` in place of the far sink, and the
    * motion weight ignores the edge term. */
   blades: boolean;
-  /** Weight of the ground's up mixed into the vertex normal before it is
-   * transformed, so a ground-layer card or blade takes the sun the way the
-   * turf under it does instead of the wrap light a vertical face gets. */
+  /** World-space up added to `vNormalW` at the hook where it runs (already
+   * transformed to world space, not the vertex normal before transform),
+   * then the sum renormalised — 1.0 puts a horizontal normal at 45°. Blades
+   * only: the blade mesh's own normals lie flat (y = 0), so the bias is what
+   * lets a blade take the sun the way the turf under it does; the card
+   * models already carry normals of their own, so every card profile keeps
+   * this at 0. */
   normalUp: number;
 };
 
 export const FOLIAGE_PROFILES = {
-  GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
-  MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
-  FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
+  GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
+  MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
+  FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
   BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
   UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
   TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false, blades: false, normalUp: 0 },

@@ -28,9 +28,9 @@ function glslFloat(n: number): string { return Number.isInteger(n) ? `${n}.0` : 
 describe("foliage plugin", () => {
   it("FOLIAGE_PROFILES matches the spec's table exactly", () => {
     expect(FOLIAGE_PROFILES).toEqual({
-      GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
-      MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
-      FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
+      GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
+      MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
+      FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 0 },
       BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
       UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
       TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false, blades: false, normalUp: 0 },
@@ -159,10 +159,12 @@ describe("foliage plugin", () => {
     );
     expect(fragmentLights).not.toContain("discard");
     expect(vertexDefs).not.toContain("sampler");
-    // The up bias on the world normal: gated on NORMAL, and applied before
-    // the motion weight is computed.
-    const normalUpLine = "vNormalW = normalize(vNormalW + vec3(0.0, foliageNormalUp, 0.0));";
+    // The up bias on the world normal: gated on NORMAL, applied before the
+    // motion weight is computed, and hardened against a near-straight-down
+    // normal yielding a zero vector.
+    const normalUpLine = "vec3 fUp = vNormalW + vec3(0.0, foliageNormalUp, 0.0);";
     expect(vertexWorldPos).toContain(normalUpLine);
+    expect(vertexWorldPos).toContain("vNormalW = fUl > 1.0e-4 ? fUp / fUl : vec3(0.0, 1.0, 0.0);");
     const normalUpIdx = vertexWorldPos.indexOf(normalUpLine);
     expect(vertexWorldPos.lastIndexOf("#ifdef NORMAL", normalUpIdx)).toBeGreaterThan(-1);
     expect(vertexWorldPos.slice(vertexWorldPos.lastIndexOf("#ifdef NORMAL", normalUpIdx), normalUpIdx)).not.toContain("#endif");

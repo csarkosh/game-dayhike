@@ -583,7 +583,7 @@ export function createClutterMeshes(
         for (const inst of band.blades) {
           const frame = trampleFrame(seed, inst);
           writeInstanceMatrix(inst, bucket.buf, bucket.count * 16, frame);
-          writeFoliage(seed, inst, bucket.foliage, bucket.count * 4, frame);
+          if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4, frame);
           bucket.count++;
         }
       }
@@ -814,6 +814,11 @@ export function createClutterMeshes(
     dispose() {
       if (disposed) return;
       disposed = true;
+      // The blade mesh and its material are ours, not a container's, so the
+      // material has to be disposed here rather than left to a container;
+      // captured before the bucket loop below disposes the mesh itself,
+      // since that loop already reaches this mesh through its own bucket.
+      const bladeMat = bladeMesh?.material ?? null;
       if (buckets !== null) {
         for (const variants of buckets) {
           for (const perLod of variants) {
@@ -823,12 +828,8 @@ export function createClutterMeshes(
           }
         }
       }
-      // The blade mesh and its material are ours, not a container's, so the
-      // material goes with the mesh.
-      if (bladeMesh !== null) {
-        bladeMesh.dispose(false, true);
-        bladeMesh = null;
-      }
+      bladeMat?.dispose();
+      bladeMesh = null;
       // Containers own whatever the buckets did not adopt (materials, LOD2
       // meshes, wrapper nodes); mesh.dispose is idempotent, so the overlap
       // with the loop above is harmless.

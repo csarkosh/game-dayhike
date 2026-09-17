@@ -217,7 +217,7 @@ compiled, so both the uniform-buffer and the non-UBO paths are exercised.
 
 ## 10. Browser gates
 
-Controller-run, against a control build at the branch base, with the trail-bench rig (the
+Run against a control build at the branch base, with the trail-bench rig (the
 gate hooks, branch on :5174/:8081, control on :5175/:8082) and its poses: MEADOW
 (−216.1, 22.38, 414) yaw 0.393 pitch 0.08 and the floor crop at pitch 0.55; EDGE
 (231.9, 85.61, 54) yaw −1.571; TRAIL (263.9, 85.77, 118) yaw 1.571; DEEP (159.9, 114.68, −234)
@@ -266,10 +266,16 @@ droop splays the clump); `BLADE_ROUND` 0.5 → 0.3 rad (the full roll gave every
 side under a side-lit sun); `BLADE_TIP_TINT` (1.05, 1.0, 0.8) → (0.95, 0.95, 0.75) together with
 `BLADE_LUMA` 0.2 → 0.3 (the tips read too pale; more per-blade variation reads better).
 
+**§5, the cost.** At the retuned `BLADE_COUNT` (40), a clump is 360 vertices and 280 triangles
+(§5's 216 and 168 assumed the original 24 blades); a card is 290 triangles, so a clump now
+costs about a card in triangles.
+
 **§5, the normals.** `BLADE_ROUND` is 0.3 rad, per the retune above. The up bias is not baked
 into the mesh: it is a foliage-plugin profile value, `normalUp`, applied to the world normal in
 the vertex block, so it is independent of the trample lean. Added to the §7 profile line:
-`normalUp: 1.0`.
+`normalUp: 1.0`. Ruling: `normalUp` applies to the blade profile only — the blade mesh's own
+normals lie flat, so the bias is what lets a blade take the sun like the turf under it. Every
+card profile keeps `normalUp: 0`, since a card model already carries normals of its own.
 
 **§7, shadows.** The blade mesh receives shadows and still never casts. Left unshadowed, a
 clump glowed against a shadowed floor under the canopy; receiving fixes it, at the cost
@@ -290,3 +296,6 @@ while the clumps add opaque fill on top. The low tier is unchanged. The fallback
 
 **§8, tiers.** Tier detection on this class of machine yields `high` (16 GB, 10 cores); Chrome
 on some platforms caps `deviceMemory` at 8 and lands on `medium` instead.
+
+**§11, the fallback ladder.** Re-based on the retuned `BLADE_COUNT`: `BLADE_COUNT` 40 → 28, then
+`BLADE_RADIUS` 12 → 10, then `MSAA_SAMPLES` 4 → 2.
