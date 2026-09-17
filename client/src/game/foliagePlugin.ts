@@ -1,6 +1,8 @@
 /**
  * The foliage plugin: everything the vertex stage does to a card or a crown
- * (lean, gust, flutter, camera tilt, player bend, far sink) and everything
+ * (lean, gust, flutter, camera tilt, player bend, far sink — or, for the blade
+ * clumps, a per-blade collapse to the root across the band in place of the
+ * sink) and everything
  * the fragment stage does to ground it (root darkening, ground tint, canopy
  * shade, clump variation, a rounded normal). Replaces windPlugin.ts. The wind
  * arrives as one WindRecord per frame through `setFoliageWind`, computed by
@@ -33,6 +35,7 @@ import fragmentDefs from "./shaders/foliage.fragment.fx?raw";
 import fragmentLights from "./shaders/foliageLights.fragment.fx?raw";
 import type { WindRecord } from "./windParams.js";
 import { FADE_NONE_OUT } from "./distanceFadePlugin.js";
+import { BLADE_SOFT } from "./bladeClump.js";
 
 /** Mirrored in the .fx files; the lockstep test asserts it. */
 export const FOLIAGE_TILT = 0.04;
@@ -47,6 +50,8 @@ export const FOLIAGE_PLAYERS = 5;
  * world at this origin's XZ would still be a live bender there — parking has
  * to move the slot's XZ, not its Y. */
 export const FOLIAGE_PLAYER_PARKED = 1e6;
+/** The per-blade shrink window; lives in bladeClump.ts, mirrored in foliageWorldPos.vertex.fx. */
+export { BLADE_SOFT as FOLIAGE_BLADE_SOFT };
 
 export type FoliageProfile = {
   /** Unitless multiplier on the record's fractions (grass 0.06 m of tip = 1). */
@@ -59,15 +64,20 @@ export type FoliageProfile = {
   normalRoot: number;
   tilt: boolean;
   bend: boolean;
+  /** The blade clump mesh: the `blade` attribute is declared, each blade
+   * shrinks to its root across `edges` in place of the far sink, and the
+   * motion weight ignores the edge term. */
+  blades: boolean;
 };
 
 export const FOLIAGE_PROFILES = {
-  GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true },
-  MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true },
-  FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true },
-  BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true },
-  UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true },
-  TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false },
+  GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true, blades: false },
+  MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false },
+  FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false },
+  BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true, blades: false },
+  UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true, blades: false },
+  TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false, blades: false },
+  BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: true },
 } as const satisfies Record<string, FoliageProfile>;
 
 // Module-level like skin.ts: every material's plugin instance reads one truth,
@@ -98,7 +108,7 @@ export class FoliagePlugin extends MaterialPluginBase {
   edges: readonly [number, number] = FADE_NONE_OUT;
 
   constructor(material: Material, profile: FoliageProfile, meshHeight: number) {
-    super(material, "Foliage", 200, { FOLIAGE: false, FOLIAGE_TINT: false });
+    super(material, "Foliage", 200, { FOLIAGE: false, FOLIAGE_TINT: false, FOLIAGE_BLADES: false });
     this._profile = profile;
     this._meshHeight = meshHeight;
     this._enable(true);
@@ -112,11 +122,13 @@ export class FoliagePlugin extends MaterialPluginBase {
   override prepareDefines(defines: MaterialDefines, _scene: Scene, _mesh: AbstractMesh): void {
     defines.FOLIAGE = true;
     defines.FOLIAGE_TINT = this._profile.groundTint > 0;
+    defines.FOLIAGE_BLADES = this._profile.blades;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override getAttributes(attributes: string[], _scene: Scene, _mesh: AbstractMesh): void {
     if (this._profile.groundTint > 0) attributes.push("foliage");
+    if (this._profile.blades) attributes.push("blade");
   }
 
   override getUniforms(): { ubo: { name: string; size: number; type: string; arraySize?: number }[]; vertex: string; fragment: string } {

@@ -9,13 +9,14 @@ import fragmentLights from "../../src/game/shaders/foliageLights.fragment.fx?raw
 import {
   attachFoliage, setFoliageWind, setFoliageEdges, FoliagePlugin, FOLIAGE_PROFILES,
   FOLIAGE_TILT, FOLIAGE_BEND, FOLIAGE_BEND_R, FOLIAGE_SINK, FOLIAGE_CLUMP_LUMA, FOLIAGE_CLUMP_CELL,
-  FOLIAGE_PLAYER_PARKED,
+  FOLIAGE_PLAYER_PARKED, FOLIAGE_BLADE_SOFT,
 } from "../../src/game/foliagePlugin.js";
 import {
   WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_OMEGA_FLUTTER, WIND_K1, WIND_K2, WIND_RAGGED, WIND_RAGGED_CELL,
   windRecordUnder,
 } from "../../src/game/windParams.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { BLADE_SOFT } from "../../src/game/bladeClump.js";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -27,12 +28,13 @@ function glslFloat(n: number): string { return Number.isInteger(n) ? `${n}.0` : 
 describe("foliage plugin", () => {
   it("FOLIAGE_PROFILES matches the spec's table exactly", () => {
     expect(FOLIAGE_PROFILES).toEqual({
-      GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true },
-      MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true },
-      FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true },
-      BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true },
-      UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true },
-      TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false },
+      GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true, blades: false },
+      MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false },
+      FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false },
+      BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true, blades: false },
+      UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true, blades: false },
+      TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false, blades: false },
+      BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: true },
     });
   });
 
@@ -62,12 +64,12 @@ describe("foliage plugin", () => {
     attachFoliage(grass, FOLIAGE_PROFILES.GRASS, 0.4);
     const tree = new PBRMaterial("t", scene);
     attachFoliage(tree, FOLIAGE_PROFILES.TREE, 30);
-    const dg: Record<string, boolean> = { FOLIAGE: false, FOLIAGE_TINT: false };
+    const dg: Record<string, boolean> = { FOLIAGE: false, FOLIAGE_TINT: false, FOLIAGE_BLADES: false };
     (grass.pluginManager!.getPlugin("Foliage") as FoliagePlugin).prepareDefines(dg as never, scene, undefined as never);
-    expect(dg).toEqual({ FOLIAGE: true, FOLIAGE_TINT: true });
-    const dt: Record<string, boolean> = { FOLIAGE: false, FOLIAGE_TINT: false };
+    expect(dg).toEqual({ FOLIAGE: true, FOLIAGE_TINT: true, FOLIAGE_BLADES: false });
+    const dt: Record<string, boolean> = { FOLIAGE: false, FOLIAGE_TINT: false, FOLIAGE_BLADES: false };
     (tree.pluginManager!.getPlugin("Foliage") as FoliagePlugin).prepareDefines(dt as never, scene, undefined as never);
-    expect(dt).toEqual({ FOLIAGE: true, FOLIAGE_TINT: false });
+    expect(dt).toEqual({ FOLIAGE: true, FOLIAGE_TINT: false, FOLIAGE_BLADES: false });
     // The attribute is pushed only for tinting profiles.
     const ag: string[] = [];
     (grass.pluginManager!.getPlugin("Foliage") as FoliagePlugin).getAttributes(ag, scene, undefined as never);
@@ -75,6 +77,42 @@ describe("foliage plugin", () => {
     const at: string[] = [];
     (tree.pluginManager!.getPlugin("Foliage") as FoliagePlugin).getAttributes(at, scene, undefined as never);
     expect(at).toEqual([]);
+  });
+
+  it("sets FOLIAGE_BLADES and pushes the blade attribute for the BLADES profile only", () => {
+    const blades = new PBRMaterial("b", scene);
+    attachFoliage(blades, FOLIAGE_PROFILES.BLADES, 0.6);
+    const plugin = blades.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    const d: Record<string, boolean> = { FOLIAGE: false, FOLIAGE_TINT: false, FOLIAGE_BLADES: false };
+    plugin.prepareDefines(d as never, scene, undefined as never);
+    expect(d).toEqual({ FOLIAGE: true, FOLIAGE_TINT: true, FOLIAGE_BLADES: true });
+    const a: string[] = [];
+    plugin.getAttributes(a, scene, undefined as never);
+    expect(a).toEqual(["foliage", "blade"]);
+  });
+
+  it("declares the blade attribute only under FOLIAGE_BLADES, and collapses after the wind", () => {
+    expect((vertexDefs.match(/attribute vec4 blade;/g) ?? []).length).toBe(1);
+    const attr = vertexDefs.indexOf("attribute vec4 blade;");
+    const before = vertexDefs.slice(0, attr);
+    expect(before.lastIndexOf("#ifdef FOLIAGE_BLADES")).toBeGreaterThan(before.lastIndexOf("#ifdef FOLIAGE\n"));
+    expect(before.slice(before.lastIndexOf("#ifdef FOLIAGE_BLADES"))).not.toContain("#endif");
+    // The collapse: the root through finalWorld with no displacement, the
+    // thinning on the edges, the alive window, then the vertex pulled to the root.
+    expect(vertexWorldPos).toContain(`const float FOLIAGE_BLADE_SOFT = ${glslFloat(FOLIAGE_BLADE_SOFT)};`);
+    expect(FOLIAGE_BLADE_SOFT).toBe(BLADE_SOFT);
+    expect(vertexWorldPos).toContain("vec3 bRoot = (finalWorld * vec4(blade.x, 0.0, blade.y, 1.0)).xyz;");
+    expect(vertexWorldPos).toContain("float bThin = smoothstep(foliageEdges.x, foliageEdges.y, fDist);");
+    expect(vertexWorldPos).toContain("float bAlive = clamp((blade.z - bThin * (1.0 + FOLIAGE_BLADE_SOFT)) / FOLIAGE_BLADE_SOFT + 1.0, 0.0, 1.0);");
+    expect(vertexWorldPos).toContain("worldPos.xyz = bRoot + (worldPos.xyz - bRoot) * bAlive;");
+    // After every displacement: the bend loop and the flutter precede it.
+    expect(vertexWorldPos.indexOf("bAlive")).toBeGreaterThan(vertexWorldPos.indexOf("windPlayers[i]"));
+    expect(vertexWorldPos.indexOf("bAlive")).toBeGreaterThan(vertexWorldPos.indexOf("fFlutter"));
+    // The motion weight ignores the edge term under the gate, and the sink is skipped.
+    expect(vertexWorldPos).toContain("float fEdge = 1.0 - smoothstep(foliageEdges.x, foliageEdges.y, fDist);");
+    expect(vertexWorldPos).toContain("fEdge = 1.0;");
+    expect(vertexWorldPos).toContain("float fM = foliageAmp * fH2 * foliageHeight * fScale * fEdge;");
+    expect(vertexWorldPos.indexOf("#ifndef FOLIAGE_BLADES")).toBeLessThan(vertexWorldPos.indexOf("FOLIAGE_SINK * foliageHeight"));
   });
 
   it("declares the record uniforms, the five-player array and the per-material profile", () => {
@@ -190,17 +228,24 @@ describe("foliage plugin", () => {
 });
 
 describe("compiles on both shader paths (the sampler/UBO trap, pinned even with no sampler)", () => {
-  async function compiledSources(targetScene: Scene, profileKey: "GRASS" | "TREE"): Promise<{ vertex: string; fragment: string }> {
+  async function compiledSources(targetScene: Scene, profileKey: "GRASS" | "TREE" | "BLADES"): Promise<{ vertex: string; fragment: string; defines: string }> {
     const material = new PBRMaterial(`pbr-${profileKey}`, targetScene);
     attachFoliage(material, FOLIAGE_PROFILES[profileKey], 1);
     const mesh = CreateBox(`box-${profileKey}`, {}, targetScene);
     mesh.material = material;
+    if (profileKey === "BLADES") {
+      mesh.setVerticesData("blade", new Float32Array(mesh.getTotalVertices() * 4), false, 4);
+    }
     const subMesh = mesh.subMeshes[0]!;
     await new Promise<void>((resolve) => {
       const tick = () => { if (material.isReadyForSubMesh(mesh, subMesh, false)) resolve(); else setTimeout(tick, 16); };
       tick();
     });
-    return { vertex: subMesh.effect?.vertexSourceCode ?? "", fragment: subMesh.effect?.fragmentSourceCode ?? "" };
+    return {
+      vertex: subMesh.effect?.vertexSourceCode ?? "",
+      fragment: subMesh.effect?.fragmentSourceCode ?? "",
+      defines: subMesh.effect?.defines ?? "",
+    };
   }
   for (const version of [1, 2]) {
     it(`webGL ${version}: the record uniforms reach both stages; the attribute only under FOLIAGE_TINT`, async () => {
@@ -214,6 +259,19 @@ describe("compiles on both shader paths (the sampler/UBO trap, pinned even with 
         const tree = await compiledSources(s, "TREE");
         for (const name of ["windDir", "windLean", "windGust", "windTime", "windPlayers", "foliageEdges"]) expect(tree.vertex).toContain(name);
         for (const name of ["foliageTint", "foliageRootAO", "foliageNormalRoot", "vFoliageH"]) expect(tree.fragment).toContain(name);
+        const blades = await compiledSources(s, "BLADES");
+        expect(blades.vertex).toContain("bAlive");
+        expect(blades.vertex).toContain("blade");
+        // vertexSourceCode is the raw GLSL text handed to the driver, with every
+        // #ifdef branch present verbatim (the real compiler strips them, not
+        // Babylon) — so gating is checked on the actual defines the effect
+        // compiled with, not by scanning that raw text for absence.
+        expect(blades.defines).toContain("#define FOLIAGE_BLADES");
+        expect(grass.defines).not.toContain("FOLIAGE_BLADES");
+        // The base PBR fragment template carries its own ALPHATEST "discard;" as
+        // dead text regardless of profile (same reason as above); the guarantee
+        // that the plugin itself injects none is the static check above on
+        // fragmentLights.
       } finally {
         s.dispose();
         e.dispose();

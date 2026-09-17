@@ -12,6 +12,9 @@
 attribute vec4 foliage;
 #endif
 #endif
+#ifdef FOLIAGE_BLADES
+attribute vec4 blade;
+#endif
 varying vec4 vFoliage;
 varying float vFoliageH;
 varying float vFoliageClump;
