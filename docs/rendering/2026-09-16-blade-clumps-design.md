@@ -254,3 +254,39 @@ Each is one constant, and none crosses a module boundary.
 - Blades on the grass class (the wider 3 m lattice) if the meadow's blade band proves the cost.
 - The low tier, if a measurement at 1.5× shows blades resolving well enough there.
 - Trampling memory (a camera-following render target) remains the research doc's parked item.
+
+## 13. Amendments (2026-09-16)
+
+**§5, the constants.** The browser gates retuned six of the mesh constants: `BLADE_COUNT` 24 →
+40 (24 blades per clump read as sparse wisps against the cards' dense tufts); `BLADE_HEIGHT`
+[0.35, 0.6] → [0.2, 0.45] m (the card model is 0.35 m tall, and the hand-off needs matching
+heights); `BLADE_WIDTH` 0.02 → 0.012 m (it is a half-width, so 0.02 drew 4 cm reeds);
+`BLADE_DROOP` [0.1, 0.5] → [0.3, 0.9] rad (straight blades read as reeds; a stronger parabolic
+droop splays the clump); `BLADE_ROUND` 0.5 → 0.3 rad (the full roll gave every blade a black
+side under a side-lit sun); `BLADE_TIP_TINT` (1.05, 1.0, 0.8) → (0.95, 0.95, 0.75) together with
+`BLADE_LUMA` 0.2 → 0.3 (the tips read too pale; more per-blade variation reads better).
+
+**§5, the normals.** `BLADE_ROUND` is 0.3 rad, per the retune above. The up bias is not baked
+into the mesh: it is a foliage-plugin profile value, `normalUp`, applied to the world normal in
+the vertex block, so it is independent of the trample lean. Added to the §7 profile line:
+`normalUp: 1.0`.
+
+**§7, shadows.** The blade mesh receives shadows and still never casts. Left unshadowed, a
+clump glowed against a shadowed floor under the canopy; receiving fixes it, at the cost
+measured in §10.
+
+**§6, the seam.** Beyond 12 m the cards read darker than the blades. The cause is the card
+albedo texture reading dark once minified — its transparent texels bleed dark into the mips —
+compounded by the root darkening and the ground tint; nothing on the blade side closes it.
+Recorded as a follow-up alongside §12's list: dilate the card albedo into its transparent
+texels, or move the blade radius out to the carpet's own 18 m seam.
+
+**§10, the pass bar.** Fill-bound costs scale with the pixel count: at native resolution the
+package costs about 0.9 ms for the multisampling and 1.0–1.5 ms for the blades with shadow
+receiving at the meadow, on hardware whose native frame there runs about 6 ms — about 2 ms at
+the worst pose on that 6 ms frame. The fill saving expected from replacing cards with opaque
+blades did not appear: the cards inside 7.5 m still run their vertex work and early discard
+while the clumps add opaque fill on top. The low tier is unchanged. The fallbacks stand.
+
+**§8, tiers.** Tier detection on this class of machine yields `high` (16 GB, 10 cores); Chrome
+on some platforms caps `deviceMemory` at 8 and lands on `medium` instead.
