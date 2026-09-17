@@ -28,13 +28,13 @@ function glslFloat(n: number): string { return Number.isInteger(n) ? `${n}.0` : 
 describe("foliage plugin", () => {
   it("FOLIAGE_PROFILES matches the spec's table exactly", () => {
     expect(FOLIAGE_PROFILES).toEqual({
-      GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true, blades: false },
-      MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false },
-      FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false },
-      BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true, blades: false },
-      UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true, blades: false },
-      TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false, blades: false },
-      BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: true },
+      GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
+      MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
+      FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
+      BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
+      UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
+      TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false, blades: false, normalUp: 0 },
+      BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: true, normalUp: 1.0 },
     });
   });
 
@@ -123,11 +123,12 @@ describe("foliage plugin", () => {
     const names = u.ubo!.map((x: { name: string }) => x.name);
     expect(names).toEqual(expect.arrayContaining([
       "windDir", "windLean", "windGust", "windFlutter", "windTime", "windPlayers", "windEye",
-      "foliageAmp", "foliageHeight", "foliageTint", "foliageRootAO", "foliageNormalRoot", "foliageFlags", "foliageEdges",
+      "foliageAmp", "foliageHeight", "foliageTint", "foliageRootAO", "foliageNormalRoot", "foliageNormalUp", "foliageFlags", "foliageEdges",
     ]));
     const players = u.ubo!.find((x: { name: string }) => x.name === "windPlayers") as { arraySize?: number };
     expect(players.arraySize).toBe(5);
     expect(u.vertex).toContain("uniform vec3 windPlayers[5];");
+    expect(u.vertex).toContain("uniform float foliageNormalUp;");
   });
 
   it("the GLSL constants stay in lockstep with windParams.ts and this module", () => {
@@ -158,6 +159,14 @@ describe("foliage plugin", () => {
     );
     expect(fragmentLights).not.toContain("discard");
     expect(vertexDefs).not.toContain("sampler");
+    // The up bias on the world normal: gated on NORMAL, and applied before
+    // the motion weight is computed.
+    const normalUpLine = "vNormalW = normalize(vNormalW + vec3(0.0, foliageNormalUp, 0.0));";
+    expect(vertexWorldPos).toContain(normalUpLine);
+    const normalUpIdx = vertexWorldPos.indexOf(normalUpLine);
+    expect(vertexWorldPos.lastIndexOf("#ifdef NORMAL", normalUpIdx)).toBeGreaterThan(-1);
+    expect(vertexWorldPos.slice(vertexWorldPos.lastIndexOf("#ifdef NORMAL", normalUpIdx), normalUpIdx)).not.toContain("#endif");
+    expect(normalUpIdx).toBeLessThan(vertexWorldPos.indexOf("float fM ="));
   });
 
   it("declares the foliage attribute only inside the FOLIAGE_TINT and THIN_INSTANCES gates", () => {
@@ -197,6 +206,7 @@ describe("foliage plugin", () => {
     expect(writes.foliageEdges).toEqual([88, 110]);
     expect((writes.windPlayers as number[]).slice(0, 3)).toEqual([3, 0, 4]);
     expect(writes.foliageHeight).toBe(0.4);
+    expect(writes.foliageNormalUp).toBe(FOLIAGE_PROFILES.GRASS.normalUp);
   });
 
   it("parks absent player slots by XZ, not Y, so the XZ-only bend never fires on them", () => {
@@ -254,7 +264,7 @@ describe("compiles on both shader paths (the sampler/UBO trap, pinned even with 
       const s = new Scene(e);
       try {
         const grass = await compiledSources(s, "GRASS");
-        for (const name of ["windDir", "windLean", "windGust", "windTime", "windPlayers", "foliageEdges"]) expect(grass.vertex).toContain(name);
+        for (const name of ["windDir", "windLean", "windGust", "windTime", "windPlayers", "foliageEdges", "foliageNormalUp"]) expect(grass.vertex).toContain(name);
         for (const name of ["foliageTint", "foliageRootAO", "foliageNormalRoot", "vFoliageH"]) expect(grass.fragment).toContain(name);
         const tree = await compiledSources(s, "TREE");
         for (const name of ["windDir", "windLean", "windGust", "windTime", "windPlayers", "foliageEdges"]) expect(tree.vertex).toContain(name);
@@ -262,6 +272,7 @@ describe("compiles on both shader paths (the sampler/UBO trap, pinned even with 
         const blades = await compiledSources(s, "BLADES");
         expect(blades.vertex).toContain("bAlive");
         expect(blades.vertex).toContain("blade");
+        expect(blades.vertex).toContain("foliageNormalUp");
         // vertexSourceCode is the raw GLSL text handed to the driver, with every
         // #ifdef branch present verbatim (the real compiler strips them, not
         // Babylon) — so gating is checked on the actual defines the effect

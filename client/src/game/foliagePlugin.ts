@@ -68,16 +68,20 @@ export type FoliageProfile = {
    * shrinks to its root across `edges` in place of the far sink, and the
    * motion weight ignores the edge term. */
   blades: boolean;
+  /** Weight of the ground's up mixed into the vertex normal before it is
+   * transformed, so a ground-layer card or blade takes the sun the way the
+   * turf under it does instead of the wrap light a vertical face gets. */
+  normalUp: number;
 };
 
 export const FOLIAGE_PROFILES = {
-  GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true, blades: false },
-  MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false },
-  FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false },
-  BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true, blades: false },
-  UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true, blades: false },
-  TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false, blades: false },
-  BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: true },
+  GRASS: { amp: 1.0, groundTint: 0.6, rootAO: 0.45, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
+  MEADOW: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
+  FLOWER: { amp: 0.83, groundTint: 0.4, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: false, normalUp: 1.0 },
+  BUSH: { amp: 0.5, groundTint: 0.3, rootAO: 0.6, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
+  UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
+  TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false, blades: false, normalUp: 0 },
+  BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: true, normalUp: 1.0 },
 } as const satisfies Record<string, FoliageProfile>;
 
 // Module-level like skin.ts: every material's plugin instance reads one truth,
@@ -146,6 +150,7 @@ export class FoliagePlugin extends MaterialPluginBase {
         { name: "foliageTint", size: 1, type: "float" },
         { name: "foliageRootAO", size: 1, type: "float" },
         { name: "foliageNormalRoot", size: 1, type: "float" },
+        { name: "foliageNormalUp", size: 1, type: "float" },
         { name: "foliageFlags", size: 2, type: "vec2" },
         { name: "foliageEdges", size: 2, type: "vec2" },
       ],
@@ -160,6 +165,7 @@ uniform vec3 windEye;
 uniform vec3 windPlayers[5];
 uniform float foliageAmp;
 uniform float foliageHeight;
+uniform float foliageNormalUp;
 uniform vec2 foliageFlags;
 uniform vec2 foliageEdges;
 #endif
@@ -190,6 +196,7 @@ uniform float foliageNormalRoot;
     uniformBuffer.updateFloat("foliageTint", p.groundTint);
     uniformBuffer.updateFloat("foliageRootAO", p.rootAO);
     uniformBuffer.updateFloat("foliageNormalRoot", p.normalRoot);
+    uniformBuffer.updateFloat("foliageNormalUp", p.normalUp);
     uniformBuffer.updateFloat2("foliageFlags", p.tilt ? 1 : 0, p.bend ? 1 : 0);
     uniformBuffer.updateFloat2("foliageEdges", this.edges[0], this.edges[1]);
   }

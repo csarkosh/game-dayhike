@@ -1,11 +1,12 @@
 // The foliage world-position block, spliced at CUSTOM_VERTEX_UPDATE_WORLDPOS,
 // after the thin-instance matrix: worldPos, positionUpdated and finalWorld
-// are in scope. Order: clump hash, motion weight, lean, gust (phased at the
-// instance origin so a tuft moves as one), flutter (phased at the vertex so
-// blades break up), camera tilt, player bend, far sink, then for the blade
-// clumps the collapse: each blade pulled toward its root by its share of the
-// thinning, last so a collapsed blade's vertices coincide exactly (the root
-// is taken through finalWorld with no displacement).
+// are in scope. Order: clump hash, the up bias on the world normal, motion
+// weight, lean, gust (phased at the instance origin so a tuft moves as one),
+// flutter (phased at the vertex so blades break up), camera tilt, player
+// bend, far sink, then for the blade clumps the collapse: each blade pulled
+// toward its root by its share of the thinning, last so a collapsed blade's
+// vertices coincide exactly (the root is taken through finalWorld with no
+// displacement).
 //
 // The motion weight carries the instance's own uniform scale — the Y column's
 // length, since thin instances here are uniformly scaled — because
@@ -34,6 +35,9 @@
   vec2 fCell = floor(fOrigin / FOLIAGE_CLUMP_CELL);
   float fClump = fract(fCell.x * 0.618034 + fCell.y * 0.381966);
   float fScale = length(finalWorld[1].xyz);
+#ifdef NORMAL
+  vNormalW = normalize(vNormalW + vec3(0.0, foliageNormalUp, 0.0));
+#endif
   float fEdge = 1.0 - smoothstep(foliageEdges.x, foliageEdges.y, fDist);
 #ifdef FOLIAGE_BLADES
   fEdge = 1.0;
