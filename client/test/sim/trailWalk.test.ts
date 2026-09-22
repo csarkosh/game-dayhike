@@ -6,7 +6,7 @@ import { bowlFor } from "../../src/sim/olympic.js";
 import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
 import { PLAYER_HALF } from "../../src/sim/constants.js";
 import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
-import type { InputCommand } from "../../src/sim/types.js";
+import { Phase, type InputCommand } from "../../src/sim/types.js";
 
 /**
  * The graph is walkable end to end. The sim has no pathing, so each edge is walked separately: the
@@ -15,7 +15,11 @@ import type { InputCommand } from "../../src/sim/types.js";
  * few metres of the far node. Facing uses the movement vector directly —
  * `yaw` is only for the renderer's camera here, so we drive `moveX/moveZ`.
  */
-describe("walking the trail graph", () => {
+// A timeout on the suite, as containment.test.ts carries one: each seed here
+// builds a forest cold, which runs past vitest's 5 s default whenever this
+// file shares the machine with the other forest suites. It guards a hang, not
+// the run time.
+describe("walking the trail graph", { timeout: 120_000 }, () => {
   setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
   for (const seed of [0x5eed, 1, 12345]) {
     it(`seed ${seed}: every edge is grounded and reaches its far node`, () => {
@@ -24,6 +28,11 @@ describe("walking the trail graph", () => {
       // The walk measures the ground, not the Hollow. It crawls this very
       // stem, and on seed 12345 it meets the walker head-on: contact kills,
       // death is permanent, and every later edge would be walked by a corpse.
+      // The chase is already on for the same reason: the walk teleports the
+      // player onto every node, the crest among them, and on the climb that
+      // reads as the find and steps a fresh Hollow out beside them
+      // (summit.ts).
+      world.state.phase = Phase.Chase;
       world.state.enemies.clear();
       const player = spawnPlayer(world);
       const { graph } = bowlFor(seed);

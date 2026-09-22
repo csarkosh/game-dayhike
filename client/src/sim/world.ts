@@ -16,6 +16,7 @@ import { stepMovement, type MoveState } from "./movement.js";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
 import { updateDirector } from "./director.js";
 import { stepHollows, updateHollows, updateLoss } from "./hollow.js";
+import { stepSummit } from "./summit.js";
 import { ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
 
 export type World = {
@@ -250,6 +251,9 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
   }
   updateDeaths(world);
   updateLoss(world);
+  // The summit last: safety, the find and the end all read the positions and
+  // the deaths this tick already settled (summit.ts).
+  stepSummit(world);
 }
 
 export function isDead(player: PlayerState): boolean {

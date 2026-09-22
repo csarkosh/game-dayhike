@@ -9,6 +9,7 @@ import { isOnCorridor, roadOffset } from "../../src/sim/containment.js";
 import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { ENEMY_HALF, PLAYER_HALF, TICK_DT } from "../../src/sim/constants.js";
 import { HOLLOW_HUNT_SPEED, hollowsOf, spawnHollow } from "../../src/sim/hollow.js";
+import { Phase } from "../../src/sim/types.js";
 
 /**
  * Where the trail crosses the treeline: the point on the stem nearest the pad,
@@ -105,6 +106,12 @@ describe("the Hollow walks the stem on real terrain", () => {
     for (const token of ["hollow0", "hollow29", "hollow18"]) {
       const seed = seedFromToken(token);
       const w = createForestWorld(createForest(seed));
+      // The chase is already on, as it is whenever a Hollow is walking: the
+      // target below stands on the body, so otherwise `stepSummit` would read
+      // the find on the first tick and step a second Hollow out beside them,
+      // which kills them in a few seconds and leaves this one with nobody to
+      // walk toward (summit.ts).
+      w.state.phase = Phase.Chase;
       const graph = w.trail!;
       // The target is the crest, far up the stem and well out of the corridor.
       const crest = graph.nodes[graph.summit]!;
