@@ -1,16 +1,14 @@
 /**
  * Escalation and atmosphere (docs/gameplay/2026-09-16-escalation-and-atmosphere.md):
  * two numbers computed on every client from state every peer already has.
- * The world — shared, never falling — is hikers retrieved or the Hollow's
- * crawl down the stem, whichever is further, and it takes the sun from the
- * base hour to night and the weather toward the eerie preset. The lens —
- * yours — is being off the trail or the nearest Hollow's closeness, and it
- * lifts the dread the grade and the wildlife read. Nothing here is
- * authoritative; nothing crosses the wire.
+ * The world — shared, never falling — is the furthest Hollow's progress down
+ * the stem, and it takes the sun from the base hour to night and the weather
+ * toward the eerie preset. The lens — yours — is being off the trail or the
+ * nearest Hollow's closeness, and it lifts the dread the grade and the
+ * wildlife read. Nothing here is authoritative; nothing crosses the wire.
  */
 import type { WorldState, Vec3 } from "../sim/types.js";
 import { isHollowState } from "../sim/hollow.js";
-import { retrievedCount, type Register } from "../sim/register.js";
 import { trailDistance, type TrailGraph } from "../sim/trail.js";
 import { stemProgress } from "../sim/trailRoute.js";
 import type { BoxProvider } from "../sim/boxSource.js";
@@ -38,13 +36,13 @@ export const NEAR_BLIND = 0.5;
 export const NIGHT_HOUR = 22;
 /** The sky's sunrise; a base before it is already dark and stays. */
 export const DAWN_HOUR = 6;
-/** Time constant of the world's easing, seconds: a pick-up is a minute of the light going. */
+/** Time constant of the world's easing, seconds: the light goes over about a minute. */
 export const WORLD_EASE_S = 20;
 /** Time constant of the lens's easing, seconds. */
 export const LENS_EASE_S = 1.5;
 
 export type EscalationTargets = {
-  /** max(floor, creep) before the ratchet. */
+  /** The creep before the ratchet. */
   world: number;
   /** The local player's distance past the corridor, 0 on the trail to 1 at OFF_TRAIL_FULL. */
   offTrail: number;
@@ -73,12 +71,10 @@ export type AtmosphereBase = { weather: WeatherParams; hour: number };
 export function escalationTargets(
   state: WorldState,
   localId: number,
-  register: Register,
   graph: TrailGraph,
   boxes: BoxProvider,
   ground: GroundField | null,
 ): EscalationTargets {
-  const floor = register.hikers.length > 0 ? retrievedCount(state) / register.hikers.length : 0;
   let creep = 0;
   const hollows: Vec3[] = [];
   for (const e of state.enemies.values()) {
@@ -87,7 +83,7 @@ export function escalationTargets(
     const p = stemProgress(graph, e.pos.x, e.pos.z);
     if (p > creep) creep = p;
   }
-  const world = Math.max(floor, creep);
+  const world = creep;
 
   const me = state.players.get(localId);
   if (me === undefined) return { world, offTrail: 0, near: 0, dead: false };

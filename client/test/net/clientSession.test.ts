@@ -6,8 +6,7 @@ import { PERFECT_NETWORK, type NetworkConditions } from "../../src/net/transport
 import { parseLevel } from "../../src/sim/level.js";
 import { createForest } from "../../src/sim/forest.js";
 import { MAX_UNACKED_INPUTS, PLAYER_MAX_HEALTH, TICK_DT } from "../../src/sim/constants.js";
-import { Button, NO_ITEM, Outcome, type InputCommand } from "../../src/sim/types.js";
-import { installRegister, ITEM_INTERACTABLE_BASE, pickUp, type Register } from "../../src/sim/register.js";
+import { Button, Outcome, type InputCommand } from "../../src/sim/types.js";
 import { encodeEvent, MessageType, PROTOCOL_VERSION } from "../../src/net/protocol.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
@@ -498,61 +497,17 @@ describe("level mismatch", () => {
   });
 });
 
-describe("items and outcome", () => {
-  it("carries items and the outcome into the render state, and the carry fields onto the local player", () => {
+describe("the outcome", () => {
+  it("carries the outcome into the render state", () => {
     const h = harness();
-    const me = h.peerEntityId;
-    h.host.world.state.items = [
-      { id: 0, pos: { x: 5, y: 1, z: 5 }, carrier: 0, pickedUp: false, signedOut: false },
-      { id: 1, pos: { x: 0, y: 0, z: 0 }, carrier: me, pickedUp: true, signedOut: false },
-    ];
-    h.host.world.state.players.get(me)!.carrying = 1;
-    h.host.world.state.players.get(me)!.signOutTicks = 42;
     h.host.world.state.outcome = Outcome.Won;
     drive(h, 6, (t) => input({ seq: t + 1 }));
-    const state = h.client.renderState(h.net.now);
-    expect(state.items.map((i) => [i.id, i.carrier, i.pickedUp, i.signedOut])).toEqual([[0, 0, false, false], [1, me, true, false]]);
-    expect(state.outcome).toBe(Outcome.Won);
-    expect(h.client.localPlayer()!.carrying).toBe(1);
-    // A sandbox host has no register, so nothing there touches the hold.
-    expect(h.client.localPlayer()!.signOutTicks).toBe(42);
-    expect(state.players.get(me)!.carrying).toBe(1);
+    expect(h.client.renderState(h.net.now).outcome).toBe(Outcome.Won);
   });
 
-  it("starts empty-handed with no items before any snapshot", () => {
+  it("starts playing before any snapshot", () => {
     const h = harness();
-    const state = h.client.renderState(h.net.now);
-    expect(state.items).toEqual([]);
-    expect(state.outcome).toBe(Outcome.Playing);
-    expect(h.client.localPlayer()!.carrying).toBe(NO_ITEM);
+    expect(h.client.renderState(h.net.now).outcome).toBe(Outcome.Playing);
   });
 });
 
-describe("the client's item interactables", () => {
-  const register = (): Register => ({
-    hikers: [{ id: 0, name: "Dana Whitcombe", site: { kind: "summit", name: "the summit", x: 0, y: 0, z: 20, progress: 1 } }],
-    box: { x: 0, y: 1, z: -20 },
-    car: { x: 30, y: 0.8, z: -20 },
-  });
-
-  it("follows the snapshot: a carried item cannot be reached for, a dropped one can, where it fell", () => {
-    const h = harness();
-    installRegister(h.host.world, register());
-    installRegister(h.client.world, register());
-    drive(h, 3, (t) => input({ seq: t + 1 }));
-    expect(h.client.world.interactables.get(ITEM_INTERACTABLE_BASE)!.enabled).toBe(true);
-    pickUp(h.host.world, h.host.localEntityId, 0);
-    drive(h, 6, (t) => input({ seq: t + 4 }));
-    expect(h.client.world.interactables.get(ITEM_INTERACTABLE_BASE)!.enabled).toBe(false);
-    const me = h.host.world.state.players.get(h.host.localEntityId)!;
-    me.pos = { x: 9, y: 0.9, z: 9 };
-    h.host.world.state.items[0]!.carrier = 0;
-    h.host.world.state.items[0]!.pos = { x: 9, y: 0.35, z: 9 };
-    me.carrying = 255;
-    drive(h, 6, (t) => input({ seq: t + 10 }));
-    const it = h.client.world.interactables.get(ITEM_INTERACTABLE_BASE)!;
-    expect(it.enabled).toBe(true);
-    expect(it.pos.x).toBeCloseTo(9, 2);
-    expect(it.pos.z).toBeCloseTo(9, 2);
-  });
-});

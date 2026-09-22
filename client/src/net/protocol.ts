@@ -41,9 +41,6 @@ const VELOCITY_MAX = 32767 / POSITION_SCALE;
 const TWO_PI = Math.PI * 2;
 const HALF_PI = Math.PI / 2;
 
-/** Respawn timers are sent in tenths of a second, capped at 25.5s. */
-const RESPAWN_SCALE = 10;
-
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
@@ -92,6 +89,18 @@ export function decodeLampByte(b: number): { on: boolean; charge: number } {
   return { on: (b & 1) !== 0, charge: (b >> 1) / 127 };
 }
 
+/**
+ * The player's flag bits in one byte: bit 0 is `safe`, the road corridor.
+ * A byte rather than a bit per flag, so the next host-truth boolean costs
+ * nothing on the wire.
+ */
+export function encodeFlagsByte(flags: { safe: boolean }): number {
+  return flags.safe ? 1 : 0;
+}
+export function decodeFlagsByte(b: number): { safe: boolean } {
+  return { safe: (b & 1) !== 0 };
+}
+
 export type SnapshotPlayer = {
   id: number;
   pos: Vec3;
@@ -107,24 +116,12 @@ export type SnapshotPlayer = {
   pitch: number;
   health: number;
   grounded: boolean;
-  respawnTimer: number;
   /** The headlamp. Carried as one byte; see {@link encodeLampByte}. */
   lamp: { on: boolean; charge: number };
-  /** The carried item's id, or 255 (NO_ITEM). One byte. */
-  carrying: number;
-  /** Ticks of Interact held at the register box, uint16. */
-  signOutTicks: number;
+  /** On the road corridor. Carried in the flags byte; see {@link encodeFlagsByte}. */
+  safe: boolean;
   /** The stare, 0 to 1, as one byte. */
   stare: number;
-};
-
-export type SnapshotItem = {
-  id: number;
-  pos: Vec3;
-  /** The carrying player's entity id, or 0. */
-  carrier: number;
-  pickedUp: boolean;
-  signedOut: boolean;
 };
 
 export type SnapshotEnemy = {
@@ -140,9 +137,10 @@ export type Snapshot = {
   lastProcessedInput: number;
   players: SnapshotPlayer[];
   enemies: SnapshotEnemy[];
-  items: SnapshotItem[];
   /** `Outcome` as a byte. */
   outcome: number;
+  /** `Phase` as a byte. */
+  phase: number;
 };
 
 export type NetEvent =
@@ -220,9 +218,8 @@ export function decodeInput(buffer: ArrayBuffer): InputCommand[] {
   return commands;
 }
 
-const PLAYER_BYTES = 31;
+const PLAYER_BYTES = 28;
 const ENEMY_BYTES = 18;
-const ITEM_BYTES = 16;
 
 export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
   const size =
@@ -234,8 +231,7 @@ export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
     2 +
     snapshot.enemies.length * ENEMY_BYTES +
     1 +
-    1 +
-    snapshot.items.length * ITEM_BYTES;
+    1;
   const buffer = new ArrayBuffer(size);
   const view = new DataView(buffer);
   let o = 0;
@@ -272,14 +268,10 @@ export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
     o += 1;
     view.setUint8(o, p.grounded ? 1 : 0);
     o += 1;
-    view.setUint8(o, clamp(Math.round(p.respawnTimer * RESPAWN_SCALE), 0, 255));
-    o += 1;
     view.setUint8(o, encodeLampByte(p.lamp));
     o += 1;
-    view.setUint8(o, clamp(p.carrying, 0, 255));
+    view.setUint8(o, encodeFlagsByte(p));
     o += 1;
-    view.setUint16(o, clamp(p.signOutTicks, 0, 65535), true);
-    o += 2;
     view.setUint8(o, clamp(Math.round(p.stare * 255), 0, 255));
     o += 1;
   }
@@ -305,22 +297,8 @@ export function encodeSnapshot(snapshot: Snapshot): ArrayBuffer {
 
   view.setUint8(o, snapshot.outcome & 0xff);
   o += 1;
-  view.setUint8(o, snapshot.items.length & 0xff);
+  view.setUint8(o, snapshot.phase & 0xff);
   o += 1;
-  for (const it of snapshot.items) {
-    view.setUint8(o, it.id & 0xff);
-    o += 1;
-    view.setInt32(o, quantizePosition(it.pos.x), true);
-    o += 4;
-    view.setInt32(o, quantizePosition(it.pos.y), true);
-    o += 4;
-    view.setInt32(o, quantizePosition(it.pos.z), true);
-    o += 4;
-    view.setUint16(o, it.carrier, true);
-    o += 2;
-    view.setUint8(o, (it.pickedUp ? 1 : 0) | (it.signedOut ? 2 : 0));
-    o += 1;
-  }
 
   return buffer;
 }
@@ -360,14 +338,10 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
     o += 1;
     const grounded = view.getUint8(o) !== 0;
     o += 1;
-    const respawnTimer = view.getUint8(o) / RESPAWN_SCALE;
-    o += 1;
     const lamp = decodeLampByte(view.getUint8(o));
     o += 1;
-    const carrying = view.getUint8(o);
+    const { safe } = decodeFlagsByte(view.getUint8(o));
     o += 1;
-    const signOutTicks = view.getUint16(o, true);
-    o += 2;
     const stare = view.getUint8(o) / 255;
     o += 1;
     players.push({
@@ -378,10 +352,8 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
       pitch,
       health,
       grounded,
-      respawnTimer,
       lamp,
-      carrying,
-      signOutTicks,
+      safe,
       stare,
     });
   }
@@ -409,26 +381,10 @@ export function decodeSnapshot(buffer: ArrayBuffer): Snapshot {
 
   const outcome = view.getUint8(o);
   o += 1;
-  const itemCount = view.getUint8(o);
+  const phase = view.getUint8(o);
   o += 1;
-  const items: SnapshotItem[] = [];
-  for (let i = 0; i < itemCount; i++) {
-    const id = view.getUint8(o);
-    o += 1;
-    const x = dequantizePosition(view.getInt32(o, true));
-    o += 4;
-    const y = dequantizePosition(view.getInt32(o, true));
-    o += 4;
-    const z = dequantizePosition(view.getInt32(o, true));
-    o += 4;
-    const carrier = view.getUint16(o, true);
-    o += 2;
-    const flags = view.getUint8(o);
-    o += 1;
-    items.push({ id, pos: { x, y, z }, carrier, pickedUp: (flags & 1) !== 0, signedOut: (flags & 2) !== 0 });
-  }
 
-  return { tick, lastProcessedInput, players, enemies, items, outcome };
+  return { tick, lastProcessedInput, players, enemies, outcome, phase };
 }
 
 const textEncoder = new TextEncoder();

@@ -64,7 +64,7 @@ import {
 } from "../../src/game/clipmap.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import type { Level } from "../../src/sim/level.js";
-import { NO_ITEM, Outcome, type PlayerState, type WorldState } from "../../src/sim/types.js";
+import { Outcome, Phase, type PlayerState, type WorldState } from "../../src/sim/types.js";
 
 let engine: NullEngine | null = null;
 
@@ -304,13 +304,10 @@ function windTestPlayer(id: number): PlayerState {
     health: 100,
     grounded: true,
     lastProcessedInput: 0,
-    respawnTimer: 0,
     deathPos: null,
     lamp: { on: false, charge: 1 },
-    carrying: NO_ITEM,
-    signOutTicks: 0,
     stare: 0,
-    signedOut: false,
+    safe: false,
   };
 }
 
@@ -319,8 +316,8 @@ function windTestState(...players: PlayerState[]): WorldState {
     tick: 1,
     players: new Map(players.map((p) => [p.id, p])),
     enemies: new Map(),
-    items: [],
     outcome: Outcome.Playing,
+    phase: Phase.Climb,
     nextEntityId: 10,
     rngSeed: 1,
   };

@@ -7,7 +7,6 @@ import { createForest, GEN_VERSION } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { activeTerrainVariant, elevationAt } from "../../src/sim/terrain.js";
 import { CAR_HALF, CAR_ROAD_U } from "../../src/sim/passes/trailhead.js";
-import { CAR_RADIUS } from "../../src/sim/register.js";
 import type { InputCommand } from "../../src/sim/types.js";
 
 const input = (over: Partial<InputCommand> = {}): InputCommand =>
@@ -50,13 +49,15 @@ describe("the wall in a forest world", { timeout: 120_000 }, () => {
         }
         world.state.players.delete(p.id);
       }
-      // Standing against the car's inland face is inside the win radius.
+      // Standing against the car's inland face leaves the wall between the
+      // player and the pavement, and puts them within arm's reach of the car:
+      // whatever ends the match at the car has to be reachable from here.
       const car = world.register!.car;
       const p = spawnPlayer(world);
       p.pos = { x: car.x + CAR_HALF.x + PLAYER_HALF.x + 0.05, y: elevationAt(seed, car.x, car.z) + PLAYER_HALF.y, z: car.z };
       for (let t = 0; t < 60; t++) tickWorld(world, new Map([[p.id, input({ seq: t + 1 })]]));
       const dx = p.pos.x - car.x, dz = p.pos.z - car.z;
-      expect(Math.sqrt(dx * dx + dz * dz), `seed ${seed} car`).toBeLessThan(CAR_RADIUS);
+      expect(Math.sqrt(dx * dx + dz * dz), `seed ${seed} car`).toBeLessThan(4);
       expect(p.pos.x - roadX(p.pos.z)).toBeGreaterThanOrEqual(ROAD_WALL_U - 1e-6);
       expect(CAR_ROAD_U - CAR_HALF.x).toBeCloseTo(ROAD_BED_HALF + 0.5, 9);
     }

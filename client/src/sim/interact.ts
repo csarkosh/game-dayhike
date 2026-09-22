@@ -16,14 +16,11 @@ export type Interactable = {
   radius: number;
   kind: number;
   /**
-   * What the prompt says, when the verb depends on the thing ("Pick up Dana
-   * Whitcombe") rather than only on its kind. Absent: the kind's own label.
+   * What the prompt says, when the verb depends on the thing ("Read the
+   * poster") rather than only on its kind. Absent: the kind's own label.
    */
   label?: string;
-  /**
-   * False while the thing cannot be acted on — an item somebody is carrying,
-   * an item already signed out. Absent means enabled.
-   */
+  /** False while the thing cannot be acted on. Absent means enabled. */
   enabled?: boolean;
   onInteract: (playerId: number) => void;
 };

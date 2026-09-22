@@ -64,7 +64,6 @@ import { createMistMeshes } from "./mistMeshes.js";
 import { createRain } from "./rain.js";
 import { createMotes } from "./motes.js";
 import { createPropMeshes } from "./propMeshes.js";
-import { NO_ITEM } from "../sim/types.js";
 
 const MATERIAL_COLORS: Record<string, [number, number, number]> = {
   concrete: [0.42, 0.44, 0.47],
@@ -74,7 +73,6 @@ const MATERIAL_COLORS: Record<string, [number, number, number]> = {
   crate: [0.55, 0.42, 0.26],
   pillar: [0.48, 0.36, 0.36],
   signpost: [0.45, 0.33, 0.2],
-  item: [0.85, 0.8, 0.7],
   default: [0.5, 0.5, 0.5],
 };
 
@@ -657,15 +655,6 @@ export function createRenderer(
   localLamp.position.set(0, 0, 0);
   localLamp.direction.set(0, 0, 1);
 
-  // What this player carries, held low in view and riding the camera — and so
-  // the walking cue — like the lamp does. Enabled only while `carrying` is set.
-  const carried = MeshBuilder.CreateBox("carried_item", { width: 0.5, height: 0.35, depth: 0.35 }, scene);
-  carried.parent = camera;
-  carried.position.set(0.28, -0.32, 0.6);
-  carried.rotation.set(0.15, -0.35, 0);
-  carried.material = terrainMaterialFor(scene, "item");
-  carried.setEnabled(false);
-
   // The walking cue (`viewBob.ts`). Render-only: it offsets the eye, never the
   // sim position Interact traces from.
   const bob = createViewBob();
@@ -938,7 +927,6 @@ export function createRenderer(
         camera.position.set(freecam.x, freecam.y, freecam.z);
         camera.rotation.set(freecam.pitch, freecam.yaw, 0);
         setLamp(localLamp, false);
-        carried.setEnabled(false);
         // Flying is not walking. Dropping the stride here also means the jump
         // back to the player's own position is never read as one enormous step.
         bob.reset();
@@ -983,7 +971,6 @@ export function createRenderer(
         // Roll goes on z — the only thing that ever writes it.
         camera.rotation.set(local.pitch, local.yaw, offset.roll);
         setLamp(localLamp, local.lamp.on, lampState);
-        carried.setEnabled(local.carrying !== NO_ITEM);
         rain.update(camera.position, weather, wind);
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
       }
@@ -1036,7 +1023,6 @@ export function createRenderer(
     dispose() {
       views.dispose();
       localLamp.dispose();
-      carried.dispose();
       for (const m of brushMeshes) m.dispose();
       clipmap?.dispose();
       water?.dispose();

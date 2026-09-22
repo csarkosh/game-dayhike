@@ -44,7 +44,6 @@ export function spawnEnemy(world: World, at: Vec3): EnemyState {
     unstickTimer: 0,
     route: [],
     routeAt: 0,
-    stemDir: -1,
     approach: false,
     seen: false,
   };

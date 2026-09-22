@@ -56,14 +56,14 @@ import { isDesktop, isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { createRegisterPanel, registerPanelModel } from "./game/registerPanel.js";
 import { DEATH_LINE, LOSS_LANDING_MS, LOSS_LINE, roadLine, WIN_LINE } from "./game/registerHud.js";
-import { InteractKind, SIGN_OUT_TICKS } from "./sim/register.js";
+import { InteractKind } from "./sim/register.js";
 import { signPosts } from "./sim/signs.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
 import { PROPS, propSite, type RoadProp } from "./sim/passes/trailhead.js";
 import { afterNextPaint } from "./game/paint.js";
 import { connectFailureMessage, createConnectPanel } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
-import { Button, NO_CARRIER, NO_ITEM, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
+import { Button, Outcome, Phase, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
 import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
@@ -384,19 +384,17 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     }
     const target = resolveInteract(world, self);
     const projected = target === null ? null : renderer.project(target.pos);
-    const carrying =
-      self.carrying === NO_ITEM ? null : (world.register?.hikers[self.carrying]?.name ?? null);
     prompt.sync(
       promptModel(target, projected, { width: canvas.clientWidth, height: canvas.clientHeight }, touchStart, {
-        carrying,
-        hold: self.signOutTicks / SIGN_OUT_TICKS,
+        carrying: null,
+        hold: 0,
       }),
     );
   }
 
   /**
    * The world answering the game (escalation.ts): on a forest world with a
-   * register, the sun, the weather, the ambient gains and the wildlife's
+   * poster, the sun, the weather, the ambient gains and the wildlife's
    * presence follow the escalation every frame — the renderer's own weather
    * fade is bypassed (0 s) because the model carries the easing. Elsewhere the
    * console's base stands and this does nothing. Both loops, before
@@ -404,7 +402,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
    */
   function syncAtmosphere(world: World, state: WorldState, localId: number, dt: number): void {
     if (world.register === null || world.trail === null) return;
-    const targets = escalationTargets(state, localId, world.register, world.trail, world.boxes, world.ground);
+    const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground);
     escalation = stepEscalation(escalation, targets, dt);
     const a = atmosphereUnder(base, escalation);
     wildlifePresence = wildlifePresenceUnder(a.weather);
@@ -439,8 +437,8 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     const facing = { dx: 0, dz: sign.z > graph.trailhead.z ? -1 : 1 };
     return createSignMeshes(
       renderer.scene,
-      signPosts(graph, register.hikers.map((h) => h.site)),
-      { x: sign.x, z: sign.z, facing, lines: ["TRAILHEAD REGISTER", ...register.hikers.map((h) => `${h.name} — ${h.site.name}`)] },
+      signPosts(graph, [{ name: "the summit", x: register.body.pos.x, z: register.body.pos.z }]),
+      { x: sign.x, z: sign.z, facing, lines: ["MISSING", register.hiker.name, "Last seen on the summit trail."] },
       (x, z) => elevationAt(seed, x, z),
     );
   }
@@ -448,11 +446,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   const registerPanel = createRegisterPanel(container);
   let lastButtons = 0;
   /**
-   * The book is this player's own screen: it opens on an Interact press at
-   * the box with empty hands, and closes on the next press or the first step.
-   * Local only — the host resolves the same press and does nothing with it.
+   * The poster is this player's own screen: it opens on an Interact press at
+   * the box, and closes on the next press or the first step. Local only —
+   * the host resolves the same press and does nothing with it.
    */
-  function syncBook(world: World, self: PlayerState | undefined, cmd: InputCommand, state: WorldState): void {
+  function syncBook(world: World, self: PlayerState | undefined, cmd: InputCommand): void {
     const edges = pressedEdges(lastButtons, cmd.buttons);
     lastButtons = cmd.buttons;
     if (self === undefined || self.health <= 0 || world.register === null) return;
@@ -460,53 +458,32 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       if ((edges & Button.Interact) !== 0 || cmd.moveX !== 0 || cmd.moveZ !== 0) registerPanel.hide();
       return;
     }
-    if ((edges & Button.Interact) === 0 || self.carrying !== NO_ITEM) return;
+    if ((edges & Button.Interact) === 0) return;
     const target = resolveInteract(world, self);
     if (target === null || target.kind !== InteractKind.Register) return;
-    // No carrier names yet: lobby members are keyed by signaling peer id and
-    // the items by entity id, and nothing in the game maps one to the other.
-    // A carried item reads "carried"; naming the carrier is a follow-up.
-    registerPanel.show(registerPanelModel(world.register, state.items, new Map()));
+    registerPanel.show(registerPanelModel(world.register));
   }
 
   let roadLineAt = -Infinity;
   /** The line at the wall, at most once every four seconds. */
   function syncRoadLine(self: PlayerState | undefined, state: WorldState): void {
     const roadCenterX = activeTerrainVariant().roadCenterX;
-    if (self === undefined || roadCenterX === undefined || state.items.length === 0) return;
+    if (self === undefined || roadCenterX === undefined) return;
     const u = self.pos.x - roadCenterX(seed, self.pos.z);
-    const line = roadLine(u, state.items.every((it) => it.signedOut));
+    const line = roadLine(u, state.phase === Phase.Chase);
     const now = performance.now();
     if (line === null || now - roadLineAt < 4000) return;
     roadLineAt = now;
     hud.flash(line, 3000);
   }
 
-  let lastCarriers: number[] = [];
-  /** Item carrier transitions become sounds; the pen runs while this player's hold does. */
-  function syncRegisterAudio(state: WorldState, self: PlayerState | undefined): void {
-    for (const item of state.items) {
-      const was = lastCarriers[item.id];
-      if (was === undefined) continue;
-      if (was === NO_CARRIER && item.carrier !== NO_CARRIER) {
-        const p = state.players.get(item.carrier);
-        // Web Audio's frame is right-handed: -z, as wildlifeAudio.ts mirrors it.
-        if (p !== undefined) ambient.objectSound("pickup", p.pos.x, p.pos.y, -p.pos.z);
-      } else if (was !== NO_CARRIER && item.carrier === NO_CARRIER && !item.signedOut) {
-        ambient.objectSound("putdown", item.pos.x, item.pos.y, -item.pos.z);
-      }
-    }
-    lastCarriers = state.items.map((it) => it.carrier);
-    ambient.setPen(self !== undefined && self.signOutTicks > 0);
-  }
-
   let dead = false;
   /**
-   * Death, once: the book closed, the view faded onto the passage. Input
+   * Death, once: the poster closed, the view faded onto the passage. Input
    * stays live — the sim already ignores a dead player's movement and
-   * Interact (`tickWorld`'s dead branch, `pickUp`'s `dead(player)` check),
-   * so nothing needs suppressing, their view angles keep tracking under the
-   * fade, and Escape keeps opening the pause menu on every platform.
+   * Interact (`tickWorld`'s dead branch), so nothing needs suppressing,
+   * their view angles keep tracking under the fade, and Escape keeps opening
+   * the pause menu on every platform.
    */
   function syncDeath(self: PlayerState | undefined): void {
     if (dead || self === undefined || self.health > 0) return;
@@ -790,9 +767,8 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       syncWind();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(host.world, self);
-      if (cmd !== null) syncBook(host.world, self, cmd, state);
+      if (cmd !== null) syncBook(host.world, self, cmd);
       syncRoadLine(self, state);
-      syncRegisterAudio(state, self);
       syncDeath(self);
       syncOutcome(state);
       // True exactly when `sync` took its player-following branch, which is
@@ -901,9 +877,8 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       syncWind();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(client.world, self);
-      if (cmd !== null) syncBook(client.world, self, cmd, state);
+      if (cmd !== null) syncBook(client.world, self, cmd);
       syncRoadLine(self, state);
-      syncRegisterAudio(state, self);
       syncDeath(self);
       syncOutcome(state);
       // See the host loop: a pending freecam waits for this.

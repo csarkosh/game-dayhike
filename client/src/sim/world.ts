@@ -1,22 +1,22 @@
 import type { Interactable } from "./interact.js";
 import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "./types.js";
-import { AiState, NO_ITEM, Outcome, cloneVec3 } from "./types.js";
+import { Outcome, Phase, cloneVec3 } from "./types.js";
 import type { Level } from "./level.js";
 import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
-import type { TrailGraph, TrailNode } from "./trail.js";
+import type { TrailGraph } from "./trail.js";
 import { spiralSpawn } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
-import { buildRegister, installRegister, putDown, stepRegister, type Register } from "./register.js";
+import { buildRegister, installRegister, type Register } from "./register.js";
 import { PROPS, propSite, type RoadProp } from "./passes/trailhead.js";
 import { containAtRoad } from "./containment.js";
 import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
 import { updateDirector } from "./director.js";
-import { spawnHollow, stepHollows, updateHollows, updateLoss } from "./hollow.js";
-import { ENEMY_HALF, ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
+import { stepHollows, updateHollows, updateLoss } from "./hollow.js";
+import { ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
 
 export type World = {
   state: WorldState;
@@ -66,7 +66,7 @@ export type World = {
    */
   interactables: Map<number, Interactable>;
   /**
-   * The book, the box and the car for a forest world (`register.ts`); null
+   * The poster, the box and the car for a forest world (`register.ts`); null
    * for a hand-authored level, which has no trail to lose anybody on.
    */
   register: Register | null;
@@ -93,8 +93,8 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
       tick: 0,
       players: new Map(),
       enemies: new Map(),
-      items: [],
       outcome: Outcome.Playing,
+      phase: Phase.Climb,
       nextEntityId: 1,
       rngSeed: seed | 0,
     },
@@ -126,14 +126,14 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
       tick: 0,
       players: new Map(),
       enemies: new Map(),
-      items: [],
       outcome: Outcome.Playing,
+      phase: Phase.Climb,
       nextEntityId: 1,
       rngSeed: forest.seed | 0,
     },
   };
-  // The register stands where the trailhead pass put its post and its car,
-  // and the book comes from the same seed on every peer.
+  // The post and the car stand where the trailhead pass put them, and the
+  // poster comes from the same seed on every peer.
   const roadCenterX = variant.roadCenterX;
   if (graph !== undefined && roadCenterX !== undefined) {
     const post = propSite(graph, roadCenterX, forest.seed, PROPS[0] as RoadProp);
@@ -143,22 +143,10 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
       buildRegister({
         seed: forest.seed,
         graph,
-        landmarks: variant.sceneryLandmarks?.(forest.seed) ?? [],
         groundH: (x, z) => elevationAt(forest.seed, x, z),
         box: post,
         car,
       }),
-    );
-  }
-  // The Hollow starts on the crest, crawling down. Every world with a trail
-  // has one, road or no road, because that is what the tick keys on. Host
-  // only: a client's predicted world takes every enemy from snapshots.
-  if (graph !== undefined && authoritative) {
-    const crest = graph.nodes[graph.summit] as TrailNode;
-    spawnHollow(
-      world,
-      { x: crest.x, y: elevationAt(forest.seed, crest.x, crest.z) + ENEMY_HALF.y, z: crest.z },
-      AiState.Crawl,
     );
   }
   return world;
@@ -194,12 +182,9 @@ export function spawnPlayer(world: World): PlayerState {
     health: PLAYER_MAX_HEALTH,
     grounded: false,
     lastProcessedInput: 0,
-    respawnTimer: 0,
     lamp: { on: false, charge: 1 },
-    carrying: NO_ITEM,
-    signOutTicks: 0,
     stare: 0,
-    signedOut: false,
+    safe: false,
     deathPos: null,
   };
   world.state.players.set(id, player);
@@ -257,17 +242,12 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
     stepHollows(world, TICK_DT);
     updateHollows(world);
   } else {
-    for (const enemy of world.state.enemies.values()) {
-      stepEnemy(enemy, world, TICK_DT);
-    }
-    for (const [id, enemy] of world.state.enemies) {
-      if (isExpiredCorpse(enemy)) world.state.enemies.delete(id);
-    }
+    for (const enemy of world.state.enemies.values()) stepEnemy(enemy, world, TICK_DT);
+    for (const [id, enemy] of world.state.enemies) if (isExpiredCorpse(enemy)) world.state.enemies.delete(id);
     updateDirector(world);
   }
   updateDeaths(world);
   updateLoss(world);
-  stepRegister(world, inputs);
 }
 
 export function isDead(player: PlayerState): boolean {
@@ -279,15 +259,13 @@ export function isDead(player: PlayerState): boolean {
  * had it revoked by the next snapshot would be far worse than a 100 ms delay
  * before the screen changes, so this never runs during reconciliation replay.
  *
- * Death is permanent. On the tick a player's health first reads 0 what they
- * carried drops where they stand (the register's rule) and the spot is
- * recorded; `deathPos` staying set is what stops this running twice, and
+ * Death is permanent. On the tick a player's health first reads 0 the spot
+ * is recorded; `deathPos` staying set is what stops this running twice, and
  * nothing anywhere restores health.
  */
 function updateDeaths(world: World): void {
   for (const player of world.state.players.values()) {
     if (player.health > 0 || player.deathPos !== null) continue;
-    putDown(world, player);
     player.vel = { x: 0, y: 0, z: 0 };
     player.deathPos = cloneVec3(player.pos);
   }
@@ -350,13 +328,12 @@ export function cloneWorldState(state: WorldState): WorldState {
   for (const [id, e] of state.enemies) {
     enemies.set(id, { ...e, pos: cloneVec3(e.pos), vel: cloneVec3(e.vel), route: [...e.route] });
   }
-  const items = state.items.map((it) => ({ ...it, pos: cloneVec3(it.pos) }));
   return {
     tick: state.tick,
     players,
     enemies,
-    items,
     outcome: state.outcome,
+    phase: state.phase,
     nextEntityId: state.nextEntityId,
     rngSeed: state.rngSeed,
   };
@@ -368,24 +345,19 @@ export function cloneWorldState(state: WorldState): WorldState {
  * see exactly which entity and which field drifted.
  */
 export function serializeWorldState(state: WorldState): string {
-  const parts: string[] = [`t:${state.tick}`, `n:${state.nextEntityId}`, `r:${state.rngSeed}`, `o:${state.outcome}`];
+  const parts: string[] = [`t:${state.tick}`, `n:${state.nextEntityId}`, `r:${state.rngSeed}`, `o:${state.outcome}`, `ph:${state.phase}`];
 
   for (const [id, p] of [...state.players.entries()].sort((a, b) => a[0] - b[0])) {
     parts.push(
       `P${id}:${p.pos.x},${p.pos.y},${p.pos.z},${p.vel.x},${p.vel.y},${p.vel.z},` +
-        `${p.yaw},${p.pitch},${p.health},${p.grounded ? 1 : 0},${p.lastProcessedInput},${p.respawnTimer}` +
-        `,${p.lamp.on ? 1 : 0},${Math.round(p.lamp.charge * 127)},${p.carrying},${p.signOutTicks},${p.stare}`,
+        `${p.yaw},${p.pitch},${p.health},${p.grounded ? 1 : 0},${p.lastProcessedInput}` +
+        `,${p.lamp.on ? 1 : 0},${Math.round(p.lamp.charge * 127)},${p.safe ? 1 : 0},${p.stare}`,
     );
   }
   for (const [id, e] of [...state.enemies.entries()].sort((a, b) => a[0] - b[0])) {
     parts.push(
       `E${id}:${e.pos.x},${e.pos.y},${e.pos.z},${e.vel.x},${e.vel.y},${e.vel.z},` +
         `${e.yaw},${e.health},${e.ai},${e.targetId},${e.stateTimer}`,
-    );
-  }
-  for (const it of state.items) {
-    parts.push(
-      `I${it.id}:${it.pos.x},${it.pos.y},${it.pos.z},${it.carrier},${it.pickedUp ? 1 : 0},${it.signedOut ? 1 : 0}`,
     );
   }
   return parts.join("|");

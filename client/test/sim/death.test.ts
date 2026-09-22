@@ -14,13 +14,12 @@ function input(over: Partial<InputCommand> = {}): InputCommand {
 }
 
 describe("death is permanent", () => {
-  it("marks where they fell on the tick health reaches zero, and starts no timer", () => {
+  it("marks where they fell on the tick health reaches zero", () => {
     const w = createWorld(level, 1);
     const p = spawnPlayer(w);
     p.health = 0;
     tickWorld(w, new Map());
     expect(isDead(p)).toBe(true);
-    expect(p.respawnTimer).toBe(0);
     expect(p.deathPos).toEqual(p.pos);
   });
 
@@ -69,7 +68,7 @@ describe("death is permanent", () => {
     p.health = 0;
     for (let i = 0; i < 600; i++) tickWorld(w, new Map());
     expect(p.health).toBe(0);
-    expect(p.deathPos).toBeNull(); // the drop and the mark are the host's
+    expect(p.deathPos).toBeNull(); // the mark is the host's
   });
 
   it("does not simulate enemies in a non-authoritative world", () => {

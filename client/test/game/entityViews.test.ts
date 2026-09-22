@@ -10,8 +10,7 @@ import { LAMP_INTENSITY, LIGHT_BUDGET, budgetLights, createHeadlamp, setLamp } f
 import { AiState } from "../../src/sim/types.js";
 import type { PlayerState, WorldState } from "../../src/sim/types.js";
 import { ENEMY_HALF, MAX_PLAYERS, PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
-import { NO_CARRIER, NO_ITEM, Outcome, type ItemState } from "../../src/sim/types.js";
-import { ITEM_RADIUS } from "../../src/sim/register.js";
+import { Outcome, Phase } from "../../src/sim/types.js";
 import { HOLLOW_HEIGHT } from "../../src/sim/hollow.js";
 
 describe("clipForEnemy", () => {
@@ -65,19 +64,16 @@ function player(id: number, on: boolean, yaw = 0): PlayerState {
     health: 100,
     grounded: true,
     lastProcessedInput: 0,
-    respawnTimer: 0,
     deathPos: null,
     lamp: { on, charge: 1 },
-    carrying: NO_ITEM,
-    signOutTicks: 0,
     stare: 0,
-    signedOut: false,
+    safe: false,
   };
 }
 function state(...players: PlayerState[]): WorldState {
   return {
     tick: 1, players: new Map(players.map((p) => [p.id, p])), enemies: new Map(),
-    items: [], outcome: Outcome.Playing, nextEntityId: 10, rngSeed: 1,
+    outcome: Outcome.Playing, phase: Phase.Climb, nextEntityId: 10, rngSeed: 1,
   };
 }
 
@@ -148,43 +144,14 @@ describe("EntityViews placement", () => {
   });
 });
 
-describe("EntityViews items", () => {
-  const item = (id: number, over: Partial<ItemState> = {}): ItemState =>
-    ({ id, pos: { x: 10 + id, y: 0.35, z: 20 }, carrier: NO_CARRIER, pickedUp: false, signedOut: false, ...over });
-
-  it("draws an item on the ground where it lies, hides a signed-out one, and shows a remote carrier's at their front", () => {
-    const views = new EntityViews(scene);
-    const s = { ...state(player(1, false), { ...player(2, false), pos: { x: 0, y: 0.9, z: 0 }, yaw: 0 }), items: [item(0), item(1, { signedOut: true, pickedUp: true }), item(2, { carrier: 2, pickedUp: true })] };
-    views.sync(s, 1, 1);
-    const onGround = scene.getMeshByName("item_0")!;
-    expect(onGround.isEnabled()).toBe(true);
-    expect(onGround.position.asArray()).toEqual([10, 0.35, 20]);
-    expect(scene.getMeshByName("item_1")!.isEnabled()).toBe(false);
-    const carried = scene.getMeshByName("item_2")!;
-    expect(carried.isEnabled()).toBe(true);
-    // Half a metre ahead of the capsule (yaw 0 faces +z), a little above its centre.
-    expect(carried.position.x).toBeCloseTo(0, 6);
-    expect(carried.position.z).toBeCloseTo(0.5, 6);
-    expect(carried.position.y).toBeCloseTo(0.9 + 0.2, 6);
-    views.dispose();
-  });
-
-  it("hides the local player's own carried item: the camera bundle shows it instead", () => {
-    const views = new EntityViews(scene);
-    const s = { ...state(player(1, false)), items: [item(0, { carrier: 1, pickedUp: true })] };
-    views.sync(s, 1, 1);
-    expect(scene.getMeshByName("item_0")!.isEnabled()).toBe(false);
-    views.dispose();
-    expect(ITEM_RADIUS).toBe(0.35);
-  });
-
+describe("EntityViews Hollows", () => {
   it("draws a Hollow as a black, unlit, fog-free StandardMaterial capsule and never as a chaser", () => {
     const views = new EntityViews(scene);
     const world = state();
     world.enemies.set(7, {
-      id: 7, pos: { x: 1, y: 0.9, z: 2 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0.5, health: 40, ai: AiState.Crawl,
+      id: 7, pos: { x: 1, y: 0.9, z: 2 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0.5, health: 40, ai: AiState.Stand,
       targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
-      route: [], routeAt: 0, stemDir: -1, approach: false, seen: false,
+      route: [], routeAt: 0, approach: false, seen: false,
     });
     views.sync(world, 99, 0);
     const mesh = scene.getMeshByName("hollow_7")!;

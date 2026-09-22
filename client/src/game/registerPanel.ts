@@ -1,28 +1,15 @@
 import type { Register } from "../sim/register.js";
-import type { ItemState } from "../sim/types.js";
-import { NO_CARRIER } from "../sim/types.js";
 
 export type RegisterRow = { name: string; site: string; status: string };
 export type RegisterPanelView = { title: string; rows: RegisterRow[]; footer: string };
 
-/** The book as data: one row per hiker in book order, and the count. */
-export function registerPanelModel(
-  register: Register,
-  items: readonly ItemState[],
-  playerNames: ReadonlyMap<number, string>,
-): RegisterPanelView {
-  const rows = register.hikers.map((h) => {
-    const item = items[h.id];
-    let status = "missing";
-    if (item !== undefined && item.signedOut) status = "signed out";
-    else if (item !== undefined && item.carrier !== NO_CARRIER) {
-      const who = playerNames.get(item.carrier);
-      status = who === undefined ? "carried" : `with ${who}`;
-    }
-    return { name: h.name, site: `last seen at ${h.site.name}`, status };
-  });
-  const signed = rows.filter((r) => r.status === "signed out").length;
-  return { title: "Trailhead register", rows, footer: `${signed} of ${rows.length} signed out` };
+/** The poster as data: the one missing hiker it names. */
+export function registerPanelModel(register: Register): RegisterPanelView {
+  return {
+    title: "Missing",
+    rows: [{ name: register.hiker.name, site: "last seen on the summit trail", status: "missing" }],
+    footer: "",
+  };
 }
 
 const STYLE = `
@@ -45,7 +32,6 @@ const STYLE = `
   .register .name { font-size: 1.05rem; }
   .register .site { font-size: 0.85rem; opacity: 0.7; }
   .register .status { font-size: 0.8rem; opacity: 0.85; }
-  .register li.out .name { text-decoration: line-through; opacity: 0.6; }
   .register .footer { margin-top: 0.9rem; font-size: 0.8rem; opacity: 0.7; }
 `;
 
@@ -57,9 +43,9 @@ export type RegisterPanel = {
 };
 
 /**
- * The book, opened at the box with empty hands. Built with DOM APIs and
- * `textContent`: the names come from the seed today and could come from
- * players tomorrow, and neither may become markup.
+ * The poster, read at the box. Built with DOM APIs and `textContent`: the
+ * name comes from the seed today and could come from a player tomorrow, and
+ * neither may become markup.
  */
 export function createRegisterPanel(container: HTMLElement): RegisterPanel {
   const style = document.createElement("style");
@@ -82,7 +68,6 @@ export function createRegisterPanel(container: HTMLElement): RegisterPanel {
       list.replaceChildren(
         ...view.rows.map((r) => {
           const li = document.createElement("li");
-          li.classList.toggle("out", r.status === "signed out");
           const name = document.createElement("span");
           name.className = "name";
           name.textContent = r.name;

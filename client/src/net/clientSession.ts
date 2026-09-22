@@ -1,5 +1,5 @@
 import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "../sim/types.js";
-import { AiState, Outcome, cloneVec3 } from "../sim/types.js";
+import { AiState, Outcome, Phase, cloneVec3 } from "../sim/types.js";
 import type { Level } from "../sim/level.js";
 import {
   createForestWorld,
@@ -10,7 +10,6 @@ import {
 } from "../sim/world.js";
 import type { Forest } from "../sim/forest.js";
 import { INTERP_DELAY_MS, MAX_UNACKED_INPUTS } from "../sim/constants.js";
-import { syncItemInteractables } from "../sim/register.js";
 import type { Transport } from "./transport.js";
 import {
   MessageType,
@@ -196,23 +195,17 @@ export function createClientSession(
     local.vel = cloneVec3(authoritative.vel);
     local.health = authoritative.health;
     local.grounded = authoritative.grounded;
-    local.respawnTimer = authoritative.respawnTimer;
     // A fresh object, never a reference to the snapshot's: the client never
     // toggles its own lamp locally, so the host's value is the only truth,
     // but the predicted player must own its own object rather than alias
     // one that belongs to a decoded snapshot.
     local.lamp = { on: authoritative.lamp.on, charge: authoritative.lamp.charge };
-    local.carrying = authoritative.carrying;
-    local.signOutTicks = authoritative.signOutTicks;
+    local.safe = authoritative.safe;
     local.stare = authoritative.stare;
     local.lastProcessedInput = snapshot.lastProcessedInput;
     predicted.state.tick = snapshot.tick;
-    predicted.state.items = snapshot.items.map((it) => ({ ...it, pos: cloneVec3(it.pos) }));
     predicted.state.outcome = snapshot.outcome;
-    // The prompt resolves against the predicted world's interactables, so
-    // they follow the host's items: a carried item is not there to reach
-    // for, a dropped one is where it fell.
-    syncItemInteractables(predicted);
+    predicted.state.phase = snapshot.phase;
 
     // ...drop everything the host has already applied...
     while (unacked.length > 0 && (unacked[0] as InputCommand).seq <= snapshot.lastProcessedInput) {
@@ -285,8 +278,7 @@ export function createClientSession(
         yaw: lerpAngle(from.yaw, to.yaw, alpha),
       };
     });
-    // Items are not interpolated: the newer snapshot's are the truth.
-    return { tick: b.tick, lastProcessedInput: b.lastProcessedInput, players, enemies, items: b.items, outcome: b.outcome };
+    return { tick: b.tick, lastProcessedInput: b.lastProcessedInput, players, enemies, outcome: b.outcome, phase: b.phase };
   }
 
   /** Interpolates the short way around the circle, so 359 -> 1 does not spin. */
@@ -351,15 +343,11 @@ export function createClientSession(
             health: p.health,
             grounded: p.grounded,
             lastProcessedInput: 0,
-            respawnTimer: p.respawnTimer,
             lamp: { on: p.lamp.on, charge: p.lamp.charge },
-            carrying: p.carrying,
-            signOutTicks: p.signOutTicks,
+            safe: p.safe,
             stare: p.stare,
-            // Host-only and not in the snapshot. A client has no use for a remote
-            // player's own sign-out flag or where they died: respawn placement
-            // is decided host-side and arrives as a corrected position.
-            signedOut: false,
+            // Host-only and not in the snapshot. A client has no use for where a
+            // remote player died: death is host truth and arrives as health 0.
             deathPos: null,
           });
         }
@@ -382,7 +370,6 @@ export function createClientSession(
             // Host-only Hollow walk state, also absent from the snapshot.
             route: [],
             routeAt: 0,
-            stemDir: -1,
             approach: false,
             seen: false,
           });
@@ -396,8 +383,8 @@ export function createClientSession(
         tick: predicted.state.tick,
         players,
         enemies,
-        items: (latest?.items ?? []).map((it) => ({ ...it, pos: cloneVec3(it.pos) })),
         outcome: latest?.outcome ?? Outcome.Playing,
+        phase: latest?.phase ?? Phase.Climb,
         nextEntityId: predicted.state.nextEntityId,
         rngSeed: predicted.state.rngSeed,
       };

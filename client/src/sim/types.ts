@@ -10,12 +10,12 @@ export const enum AiState {
   Chase = 1,
   Attack = 2,
   Dead = 3,
-  /** The Hollow (hollow.ts), free: walking the stem, pad to crest to pad. */
-  Crawl = 4,
   /** The Hollow bound to `targetId`, a player, and walking at them. */
   Hunt = 5,
-  /** The Hollow released but not the last: walking to `targetId`, another Hollow, to be absorbed. */
-  Merge = 6,
+  /** The Hollow stepping out: still for `stateTimer` seconds, facing `targetId`, then Hunt. */
+  Emerge = 7,
+  /** The Hollow with nobody left to hunt: still where it stands, facing the pad. */
+  Stand = 8,
 }
 
 export const enum Button {
@@ -28,17 +28,6 @@ export const enum Button {
   Lamp = 16,
 }
 
-/**
- * `PlayerState.carrying` when the hands are empty. It rides the wire as one
- * byte, so it is that byte's ceiling rather than -1.
- */
-export const NO_ITEM = 255;
-/**
- * `ItemState.carrier` when the item lies on the ground. Entity ids start at 1
- * (`createWorld`), so 0 can never name a player.
- */
-export const NO_CARRIER = 0;
-
 export const enum Outcome {
   Playing = 0,
   Won = 1,
@@ -46,22 +35,11 @@ export const enum Outcome {
   Lost = 2,
 }
 
-/**
- * One missing hiker's item: what is left of them, lying at their site until
- * somebody carries it to the register. Host state, sent in every snapshot.
- */
-export type ItemState = {
-  /** The hiker's index in the book, 0 to 3. */
-  id: number;
-  /** Where it lies. Meaningless while carried: the carrier's position is the truth then. */
-  pos: Vec3;
-  /** The player holding it, or NO_CARRIER. */
-  carrier: number;
-  /** Set on the first pick-up and never cleared: the escalation count reads this. */
-  pickedUp: boolean;
-  /** Signed out at the register box; the item has left the world. */
-  signedOut: boolean;
-};
+/** The match's two acts (docs/gameplay/2026-09-16-the-summit.md §2). Host truth, one byte on the wire. */
+export const enum Phase {
+  Climb = 0,
+  Chase = 1,
+}
 
 export type InputCommand = {
   seq: number;
@@ -81,22 +59,12 @@ export type PlayerState = {
   health: number;
   grounded: boolean;
   lastProcessedInput: number;
-  /** Always 0 since death became permanent; kept so the snapshot's byte layout stands. */
-  respawnTimer: number;
   /**
    * The headlamp. `on` is toggled by the host on the Lamp press edge;
    * `charge` is carried at 1 for now — draining is not implemented yet. Both
    * ride the snapshot as one byte so peers see each other's lamps.
    */
   lamp: { on: boolean; charge: number };
-  /** The item in this player's hands, or NO_ITEM. Rides the snapshot as one byte. */
-  carrying: number;
-  /**
-   * Ticks of Interact held at the register box while carrying, 0 to
-   * SIGN_OUT_TICKS (register.ts). Back to 0 the moment the hold breaks. Rides
-   * the snapshot as a uint16 so the client can draw the ring.
-   */
-  signOutTicks: number;
   /**
    * The stare, 0 to 1: fills while a Hollow is in this player's view, empties
    * when it is not, and kills at 1 (hollow.ts). Host truth; rides the snapshot
@@ -104,18 +72,19 @@ export type PlayerState = {
    */
   stare: number;
   /**
-   * Set by the register on this player's sign-out, cleared when a hunt binds
-   * to them: a hunt ends on the hunted player's own sign-out. Host-only, never
-   * on the wire, outside the fingerprint.
+   * On the road corridor this tick — within ROAD_CORRIDOR_HALF of the road's
+   * centreline (summit.ts). A safe player is never targeted and never killed,
+   * and steps back into the woods a target again. Host truth; rides the
+   * snapshot as one bit so every peer's end screen agrees.
    */
-  signedOut: boolean;
+  safe: boolean;
   /**
    * Where this player fell. Set once, on the tick health reaches 0, and never
    * cleared: death is permanent, and `updateDeaths` uses it to know the drop
    * has been done.
    *
-   * Host-only. The snapshot carries id, pos, vel, yaw, pitch, health,
-   * respawnTimer and lamp, so this never reaches the wire and the codec is
+   * Host-only. The snapshot carries id, pos, vel, yaw, pitch, health, the
+   * lamp and the safe bit, so this never reaches the wire and the codec is
    * untouched.
    */
   deathPos: Vec3 | null;
@@ -143,16 +112,14 @@ export type EnemyState = {
   unstickTimer: number;
   /**
    * The Hollow's walk (hollow.ts): the node route it is following, the index
-   * of the next node, the stem direction of its crawl (+1 toward the crest,
-   * -1 toward the pad), whether it has left the graph for its target, and
+   * of the next node, whether it has left the graph for its target, and
    * whether a living player had it in view last tick (which slows it).
    *
    * Host-only, like the stuck fields above: absent from the snapshot and the
-   * fingerprint. Unused (empty, 0, -1, false, false) on a sandbox chaser.
+   * fingerprint. Unused (empty, 0, false, false) on a sandbox chaser.
    */
   route: number[];
   routeAt: number;
-  stemDir: number;
   approach: boolean;
   seen: boolean;
 };
@@ -161,9 +128,9 @@ export type WorldState = {
   tick: number;
   players: Map<number, PlayerState>;
   enemies: Map<number, EnemyState>;
-  /** The missing hikers' items, by hiker index. Empty for a world with no register. */
-  items: ItemState[];
   outcome: Outcome;
+  /** Climb until the first living player finds the body; Chase from then on (summit.ts). */
+  phase: Phase;
   nextEntityId: number;
   rngSeed: number;
 };

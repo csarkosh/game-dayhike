@@ -11,8 +11,7 @@ import {
   MessageType,
 } from "../../src/net/protocol.js";
 import { TICKS_PER_SNAPSHOT } from "../../src/sim/constants.js";
-import { Button, NO_ITEM, type InputCommand } from "../../src/sim/types.js";
-import { installRegister, ITEM_INTERACTABLE_BASE } from "../../src/sim/register.js";
+import { Button, type InputCommand } from "../../src/sim/types.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
 const level = parseLevel(sandbox01);
@@ -130,7 +129,7 @@ describe("interact", () => {
     const host = createHostSession(flat, 1);
     const acted = facing(host, host.localEntityId);
     const me = host.world.state.players.get(host.localEntityId)!;
-    me.health = 0; me.respawnTimer = 2;
+    me.health = 0;
     host.tick(input({ buttons: Button.Interact }));
     expect(acted).toEqual([]);
   });
@@ -442,30 +441,5 @@ describe("host session", () => {
     clientSide.sendState(new ArrayBuffer(3));
     net.advance(1);
     expect(() => host.tick(input())).not.toThrow();
-  });
-});
-
-describe("the register on the host", () => {
-  it("puts a carried item down on an Interact press with nothing in reach", () => {
-    const host = createHostSession(flat, 1);
-    installRegister(host.world, {
-      hikers: [{ id: 0, name: "Dana Whitcombe", site: { kind: "summit", name: "the summit", x: 0, y: 0, z: 20, progress: 1 } }],
-      box: { x: 0, y: 1, z: -20 },
-      car: { x: 30, y: 0.8, z: -20 },
-    });
-    const me = host.world.state.players.get(host.localEntityId)!;
-    for (let i = 0; i < 120; i++) host.tick(input());
-    me.pos = { x: 0, y: 0.9, z: 18 }; me.yaw = 0; me.pitch = 0;
-    host.tick(input({ buttons: Button.Interact })); // picks up
-    expect(me.carrying).toBe(0);
-    host.tick(input());
-    me.pos = { x: 5, y: 0.9, z: 5 };
-    host.tick(input({ buttons: Button.Interact })); // nothing ahead: puts down
-    expect(me.carrying).toBe(NO_ITEM);
-    expect(host.world.state.items[0]!.pos.x).toBeCloseTo(5, 6);
-    // The interactables are synced inside the tick, before the press edges
-    // are applied, so the dropped item is reachable from the next tick on.
-    host.tick(input());
-    expect(host.world.interactables.get(ITEM_INTERACTABLE_BASE)!.enabled).toBe(true);
   });
 });

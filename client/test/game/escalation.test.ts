@@ -3,7 +3,6 @@ import { createWorld, spawnPlayer } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { AiState } from "../../src/sim/types.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
-import { installRegister, type Register } from "../../src/sim/register.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { wildlifePresenceUnder } from "../../src/game/wildlifeBehaviour.js";
@@ -19,53 +18,25 @@ const FLOOR: Brush = { min: [-300, -1, -300], max: [300, 0, 300], material: "con
 const level = (...walls: Brush[]) =>
   parseLevel({ id: "flat", brushes: [FLOOR, ...walls], playerSpawns: [[0, 0.9, 0]], enemySpawns: [] });
 
-/** Two hikers, the box and the car off the stem's pad; the one-loop hand graph as the trail. */
-function register(): Register {
-  const site = (name: string, x: number, z: number) => ({ kind: "meadow" as const, name, x, y: 0, z, progress: 1 });
-  return {
-    hikers: [{ id: 0, name: "Owen Marsh", site: site("the meadow", 150, 60) }, { id: 1, name: "Dana Whitcombe", site: site("the summit", 200, 0) }],
-    box: { x: 0, y: 1, z: -20 },
-    car: { x: 30, y: 0.8, z: -20 },
-  };
-}
-
+/** A flat world with the one-loop hand graph as its trail, and a player on the stem. */
 function world(...walls: Brush[]) {
   const w = createWorld(level(...walls), 1);
   w.trail = graph(1);
-  installRegister(w, register());
   const p = spawnPlayer(w);
   p.pos = { x: 100, y: 0.9, z: 0 }; // on the stem's middle node
   return { w, p };
 }
 
 const targetsOf = (w: ReturnType<typeof world>["w"], id: number) =>
-  escalationTargets(w.state, id, w.register!, w.trail!, w.boxes, w.ground);
+  escalationTargets(w.state, id, w.trail!, w.boxes, w.ground);
 
 describe("escalationTargets", () => {
-  it("floors on hikers picked up at least once, and not on a second pick-up or a put-down", () => {
-    const { w, p } = world();
-    expect(targetsOf(w, p.id).world).toBe(0);
-    w.state.items[0]!.pickedUp = true;
-    expect(targetsOf(w, p.id).world).toBeCloseTo(0.5, 9);
-    w.state.items[0]!.carrier = 0; // put down: still picked up once
-    expect(targetsOf(w, p.id).world).toBeCloseTo(0.5, 9);
-    w.state.items[1]!.pickedUp = true;
-    expect(targetsOf(w, p.id).world).toBe(1);
-  });
-
   it("creeps with the furthest Hollow down the stem, a hunting one at its nearest stem point", () => {
     const { w, p } = world();
-    spawnHollow(w, { x: 160, y: ENEMY_HALF.y, z: 0 }, AiState.Crawl);
+    spawnHollow(w, { x: 160, y: ENEMY_HALF.y, z: 0 }, AiState.Stand);
     expect(targetsOf(w, p.id).world).toBeCloseTo(0.2, 9);
     spawnHollow(w, { x: 120, y: ENEMY_HALF.y, z: 50 }, AiState.Hunt, p.id); // beside the stem at x = 120
     expect(targetsOf(w, p.id).world).toBeCloseTo(0.4, 9);
-  });
-
-  it("takes the greater of the floor and the creep", () => {
-    const { w, p } = world();
-    w.state.items[0]!.pickedUp = true; // 0.5
-    spawnHollow(w, { x: 160, y: ENEMY_HALF.y, z: 0 }, AiState.Crawl); // 0.2
-    expect(targetsOf(w, p.id).world).toBeCloseTo(0.5, 9);
   });
 
   it("measures off-trail from the corridor's edge to OFF_TRAIL_FULL", () => {
@@ -83,7 +54,7 @@ describe("escalationTargets", () => {
     const { w, p } = world();
     expect(targetsOf(w, p.id).near).toBe(0);
     // At eye height, so the eye-to-centre distance equals the horizontal one the fixture's z picks.
-    const h = spawnHollow(w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: NEAR_START + 10 }, AiState.Crawl);
+    const h = spawnHollow(w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: NEAR_START + 10 }, AiState.Stand);
     expect(targetsOf(w, p.id).near).toBe(0);
     h.pos.z = (NEAR_START + NEAR_FULL) / 2;
     expect(targetsOf(w, p.id).near).toBeCloseTo(0.5, 9);
@@ -92,11 +63,11 @@ describe("escalationTargets", () => {
 
     const walled = world({ min: [90, 0, 20], max: [110, 4, 21], material: "concrete" });
     const q = walled.p;
-    spawnHollow(walled.w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: (NEAR_START + NEAR_FULL) / 2 }, AiState.Crawl);
+    spawnHollow(walled.w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: (NEAR_START + NEAR_FULL) / 2 }, AiState.Stand);
     expect(targetsOf(walled.w, q.id).near).toBeCloseTo(0.5 * NEAR_BLIND, 9);
 
     const low = world();
-    spawnHollow(low.w, { x: 100, y: ENEMY_HALF.y, z: 45 }, AiState.Crawl);
+    spawnHollow(low.w, { x: 100, y: ENEMY_HALF.y, z: 45 }, AiState.Stand);
     // 0.7 m below the eye: the falloff reads the slant range, not the ground plan.
     expect(targetsOf(low.w, low.p.id).near).toBeCloseTo(
       (NEAR_START - Math.hypot(45, PLAYER_EYE_OFFSET)) / (NEAR_START - NEAR_FULL),
@@ -108,10 +79,10 @@ describe("escalationTargets", () => {
     const walled = world({ min: [90, 0, 20], max: [110, 4, 21], material: "concrete" });
     const q = walled.p;
     // 25 m behind the wall: blind, so its share is halved to (80-25)/70 * 0.5 ≈ 0.393.
-    spawnHollow(walled.w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: 25 }, AiState.Crawl);
+    spawnHollow(walled.w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: 25 }, AiState.Stand);
     // 30 m in the open: the wall spans x 90-110 at z 20-21, and this line never
     // leaves z 0, so it is unobstructed — its share is (80-30)/70 ≈ 0.714, greater.
-    spawnHollow(walled.w, { x: 130, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: 0 }, AiState.Crawl);
+    spawnHollow(walled.w, { x: 130, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: 0 }, AiState.Stand);
     expect(targetsOf(walled.w, q.id).near).toBeCloseTo((NEAR_START - 30) / (NEAR_START - NEAR_FULL), 9);
   });
 

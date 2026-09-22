@@ -33,10 +33,10 @@ describe("promptModel", () => {
 describe("promptModel with the register", () => {
   const at = { x: 100, y: 100, depth: 1.5 };
 
-  it("names the item from the interactable's label, on every device", () => {
-    const target = { kind: InteractKind.Item, label: "Pick up Dana Whitcombe" };
-    expect(promptModel(target, at, VIEW, false, { carrying: null, hold: 0 })?.label).toBe("Pick up Dana Whitcombe");
-    expect(promptModel(target, at, VIEW, true, { carrying: null, hold: 0 })?.label).toBe("Pick up Dana Whitcombe");
+  it("names a labelled interactable from its own label, on every device", () => {
+    const target = { kind: InteractKind.Debug, label: "Read the poster" };
+    expect(promptModel(target, at, VIEW, false, { carrying: null, hold: 0 })?.label).toBe("Read the poster");
+    expect(promptModel(target, at, VIEW, true, { carrying: null, hold: 0 })?.label).toBe("Read the poster");
   });
 
   it("offers the book with empty hands and the sign-out while carrying", () => {
@@ -49,6 +49,6 @@ describe("promptModel with the register", () => {
     const box = { kind: InteractKind.Register, label: "Read the register" };
     expect(promptModel(box, at, VIEW, false, { carrying: "Dana Whitcombe", hold: 0.4 })?.hold).toBe(0.4);
     expect(promptModel(box, at, VIEW, false, { carrying: "Dana Whitcombe", hold: 1.7 })?.hold).toBe(1);
-    expect(promptModel({ kind: InteractKind.Item, label: "Pick up X" }, at, VIEW, false, { carrying: null, hold: 0.4 })?.hold).toBe(0);
+    expect(promptModel({ kind: InteractKind.Debug, label: "Something" }, at, VIEW, false, { carrying: null, hold: 0.4 })?.hold).toBe(0);
   });
 });

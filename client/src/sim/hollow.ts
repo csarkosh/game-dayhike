@@ -1,11 +1,10 @@
 /**
- * The Hollow (docs/gameplay/2026-09-15-the-hollow.md): the figure that walks
- * the trail from the first tick. Free, it crawls the stem pad to crest to pad;
- * bound to a player by their pick-up, it hunts them; released while another
- * Hollow exists, it walks to that one and merges. It cannot be killed. Contact
- * kills, and being looked at slows it at the price of the looker's stare.
+ * The Hollow (docs/gameplay/2026-09-16-the-summit.md §5): the figure that
+ * steps out at the crest when the body is found and hunts the party down the
+ * mountain. It cannot be killed. Contact kills, and being looked at slows it
+ * at the price of the looker's stare.
  *
- * A Hollow is an `EnemyState` whose `ai` is Crawl, Hunt or Merge, so the
+ * A Hollow is an `EnemyState` whose `ai` is Hunt, Emerge or Stand, so the
  * snapshot's enemy channel carries it as it carries any enemy. Everything
  * here runs inside `tickWorld`'s authoritative branch: host-only, never
  * replayed on a client. That is why `Math.atan2` for the facing is allowed
@@ -14,11 +13,11 @@
  * `stepMovement` with yaw 0, so movement needs no trig at all.
  */
 import type { EnemyState, PlayerState, Vec3 } from "./types.js";
-import { AiState, Button, NO_ITEM, Outcome, cloneVec3 } from "./types.js";
+import { AiState, Button, Outcome, cloneVec3 } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { nearestTrailNode } from "./trail.js";
-import { route, stemNodes } from "./trailRoute.js";
+import { route } from "./trailRoute.js";
 import { stepMovement } from "./movement.js";
 import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
@@ -33,9 +32,7 @@ import {
   WALK_SPEED,
 } from "./constants.js";
 
-/** Free: the stem pendulum, m/s. A 600 m stem takes about twelve minutes one way. */
-export const HOLLOW_CRAWL_SPEED = 0.8;
-/** Bound or merging, m/s: above WALK_SPEED 5.25, below SPRINT_SPEED 7. */
+/** Hunting, m/s: above WALK_SPEED 5.25, below SPRINT_SPEED 7. */
 export const HOLLOW_HUNT_SPEED = 6;
 /** Its speed while a living player has it in view. */
 export const HOLLOW_LOOK_FACTOR = 0.35;
@@ -49,8 +46,6 @@ export const HOLLOW_STARE_FILL_S = 6;
 export const HOLLOW_STARE_EMPTY_S = 3;
 /** Added to the two half-widths: the hulls need not interpenetrate to touch. */
 export const HOLLOW_CONTACT_MARGIN = 0.1;
-/** A merging Hollow within this of another is absorbed. */
-export const HOLLOW_MERGE_RADIUS = 1;
 /** Horizontal metres within which a route node counts as reached. */
 export const HOLLOW_WAYPOINT_RADIUS = 1.5;
 /** Within this of its target, with line of sight, it leaves the graph. */
@@ -61,7 +56,7 @@ export const HOLLOW_LOST_SIGHT_S = 3;
 export const HOLLOW_HEIGHT = 2.6;
 
 export function isHollowState(ai: AiState): boolean {
-  return ai === AiState.Crawl || ai === AiState.Hunt || ai === AiState.Merge;
+  return ai === AiState.Hunt || ai === AiState.Emerge || ai === AiState.Stand;
 }
 
 export function isHollow(e: EnemyState): boolean {
@@ -84,7 +79,6 @@ export function spawnHollow(world: World, at: Vec3, ai: AiState, targetId = 0): 
     unstickTimer: 0,
     route: [],
     routeAt: 0,
-    stemDir: -1,
     approach: false,
     seen: false,
   };
@@ -113,23 +107,8 @@ export function clearRoute(h: EnemyState): void {
   h.lastDistSq = Infinity;
 }
 
-/** The nearest Hollow other than `h` by horizontal distance, ties to the lower id; null when alone. */
-export function nearestOtherHollow(world: World, h: EnemyState): EnemyState | null {
-  let best: EnemyState | null = null;
-  let bestSq = Infinity;
-  for (const o of hollowsOf(world)) {
-    if (o === h) continue;
-    const sq = horizontalDistSq(o.pos, h.pos);
-    if (sq < bestSq) {
-      bestSq = sq;
-      best = o;
-    }
-  }
-  return best;
-}
-
 function speedOf(h: EnemyState): number {
-  const base = h.ai === AiState.Crawl ? HOLLOW_CRAWL_SPEED : HOLLOW_HUNT_SPEED;
+  const base = HOLLOW_HUNT_SPEED;
   return h.seen ? base * HOLLOW_LOOK_FACTOR : base;
 }
 
@@ -198,40 +177,10 @@ function followRoute(h: EnemyState, world: World, graph: TrailGraph, dt: number,
   return true;
 }
 
-/** The stem node nearest `h`, as an index into the chain. */
-function nearestStemIndex(h: EnemyState, graph: TrailGraph, chain: number[]): number {
-  let best = 0;
-  let bestSq = Infinity;
-  for (let i = 0; i < chain.length; i++) {
-    const n = graph.nodes[chain[i] as number] as TrailNode;
-    const sq = horizontalDistSq(h.pos, n);
-    if (sq < bestSq) {
-      bestSq = sq;
-      best = i;
-    }
-  }
-  return best;
-}
-
-/** The pendulum: at either end of the stem the direction flips and the chain is walked back. */
-function crawl(h: EnemyState, world: World, graph: TrailGraph, dt: number): void {
-  if (h.routeAt >= h.route.length) {
-    const chain = stemNodes(graph);
-    // A finished route means an end was reached: turn. An empty one is a
-    // fresh start (birth, or a release), which keeps its direction.
-    if (h.route.length > 0) h.stemDir = -h.stemDir;
-    const k = nearestStemIndex(h, graph, chain);
-    h.route = h.stemDir > 0 ? chain.slice(k) : chain.slice(0, k + 1).reverse();
-    h.routeAt = 0;
-    h.lastDistSq = Infinity;
-  }
-  followRoute(h, world, graph, dt, speedOf(h));
-}
-
 /**
- * Hunt and Merge share this: the graph to the node nearest the target, then
- * straight at it. Off the graph, losing sight of the target for
- * HOLLOW_LOST_SIGHT_S drops the approach and re-routes from wherever it is.
+ * The hunt's walk: the graph to the node nearest the target, then straight at
+ * it. Off the graph, losing sight of the target for HOLLOW_LOST_SIGHT_S drops
+ * the approach and re-routes from wherever it is.
  */
 function pursue(h: EnemyState, world: World, graph: TrailGraph, dt: number, target: Vec3): void {
   const speed = speedOf(h);
@@ -279,17 +228,9 @@ function pursue(h: EnemyState, world: World, graph: TrailGraph, dt: number, targ
 
 function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number): void {
   switch (h.ai) {
-    case AiState.Crawl:
-      crawl(h, world, graph, dt);
-      return;
     case AiState.Hunt: {
       const target = world.state.players.get(h.targetId);
       if (target !== undefined) pursue(h, world, graph, dt, target.pos);
-      return;
-    }
-    case AiState.Merge: {
-      const other = nearestOtherHollow(world, h);
-      if (other !== null) pursue(h, world, graph, dt, other.pos);
       return;
     }
     default:
@@ -328,33 +269,11 @@ export function playerSees(player: PlayerState, hollow: EnemyState, world: World
   return hasLineOfSight(eye, hollow.pos, world.boxes, world.ground);
 }
 
-function nearestTo(candidates: EnemyState[], pos: Vec3): EnemyState | null {
-  let best: EnemyState | null = null;
-  let bestSq = Infinity;
-  for (const h of candidates) {
-    const sq = horizontalDistSq(h.pos, pos);
-    // Ties go to the lower id, said outright rather than left to the order
-    // the enemy map happens to be walked in.
-    if (sq < bestSq || (sq === bestSq && best !== null && h.id < best.id)) {
-      bestSq = sq;
-      best = h;
-    }
-  }
-  return best;
-}
-
-function release(world: World, h: EnemyState): void {
-  h.targetId = 0;
-  clearRoute(h);
-  h.ai = hollowsOf(world).length > 1 ? AiState.Merge : AiState.Crawl;
-}
-
 /**
  * The per-tick rules, host only, after every Hollow has moved: contact
- * kills; the look test, which slows a seen Hollow next tick and fills or
- * empties each player's stare; releases; binding on new carriers, with a
- * split when no Hollow is free; and merges. The loss is `updateLoss`,
- * which every world runs, Hollow or not.
+ * kills, and the look test, which slows a seen Hollow next tick and fills or
+ * empties each player's stare. The loss is `updateLoss`, which every world
+ * runs, Hollow or not.
  */
 export function updateHollows(world: World): void {
   if (world.trail === null) return;
@@ -387,51 +306,6 @@ export function updateHollows(world: World): void {
     }
     p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
     if (p.stare >= 1) p.health = 0;
-  }
-
-  // Releases: the hunted player is gone, dead, or signed a hiker out.
-  for (const h of all) {
-    if (h.ai !== AiState.Hunt) continue;
-    const p = state.players.get(h.targetId);
-    if (p === undefined || p.health <= 0 || p.signedOut) release(world, h);
-  }
-
-  // Binding: a living carrier nobody hunts takes the nearest free Hollow, or
-  // a new one steps out of the nearest Hollow of any state.
-  for (const p of state.players.values()) {
-    if (p.health <= 0 || p.carrying === NO_ITEM || isHunted(world, p.id)) continue;
-    p.signedOut = false;
-    const live = hollowsOf(world);
-    const free = nearestTo(live.filter((h) => h.ai !== AiState.Hunt), p.pos);
-    if (free !== null) {
-      free.ai = AiState.Hunt;
-      free.targetId = p.id;
-      clearRoute(free);
-      continue;
-    }
-    const near = nearestTo(live, p.pos);
-    if (near !== null) spawnHollow(world, near.pos, AiState.Hunt, p.id);
-  }
-
-  // Merges: on touch, and never down to none.
-  for (const h of hollowsOf(world)) {
-    if (h.ai !== AiState.Merge) continue;
-    const other = nearestOtherHollow(world, h);
-    if (other === null) {
-      h.ai = AiState.Crawl;
-      clearRoute(h);
-      continue;
-    }
-    if (horizontalDistSq(h.pos, other.pos) <= HOLLOW_MERGE_RADIUS * HOLLOW_MERGE_RADIUS) {
-      state.enemies.delete(h.id);
-      if (hollowsOf(world).length === 1) {
-        const last = hollowsOf(world)[0] as EnemyState;
-        if (last.ai === AiState.Merge) {
-          last.ai = AiState.Crawl;
-          clearRoute(last);
-        }
-      }
-    }
   }
 }
 

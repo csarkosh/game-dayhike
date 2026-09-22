@@ -8,7 +8,7 @@ import {
   serializeWorldState,
 } from "../../src/sim/world.js";
 import { collisionBoxes, parseLevel } from "../../src/sim/level.js";
-import { AiState, NO_ITEM, Outcome, type InputCommand, type ItemState } from "../../src/sim/types.js";
+import { AiState, Outcome, Phase, type InputCommand } from "../../src/sim/types.js";
 import { PLAYER_MAX_HEALTH } from "../../src/sim/constants.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
@@ -165,51 +165,34 @@ describe("determinism", () => {
   });
 });
 
-describe("items in world state", () => {
-  const item = (): ItemState => ({ id: 0, pos: { x: 1, y: 2, z: 3 }, carrier: 0, pickedUp: false, signedOut: false });
-
-  it("starts with no items, a playing outcome and empty hands", () => {
+describe("the phase and safety in world state", () => {
+  it("starts on the climb, playing, unsafe", () => {
     const w = createWorld(level, 1);
     const p = spawnPlayer(w);
-    expect(w.state.items).toEqual([]);
+    expect(w.state.phase).toBe(Phase.Climb);
     expect(w.state.outcome).toBe(Outcome.Playing);
-    expect(p.carrying).toBe(NO_ITEM);
-    expect(p.signOutTicks).toBe(0);
+    expect(p.safe).toBe(false);
   });
 
-  it("clones items deeply and fingerprints them", () => {
-    const w = createWorld(level, 1);
-    w.state.items = [item()];
-    const copy = cloneWorldState(w.state);
-    copy.items[0]!.pos.x = 99;
-    copy.items[0]!.pickedUp = true;
-    expect(w.state.items[0]!.pos.x).toBe(1);
-    expect(w.state.items[0]!.pickedUp).toBe(false);
-    expect(serializeWorldState(copy)).not.toBe(serializeWorldState(w.state));
-    expect(serializeWorldState(w.state)).toContain("I0:1,2,3,0,0,0");
-  });
-
-  it("fingerprints the carry fields and the outcome", () => {
+  it("clones the phase and fingerprints the phase and safety", () => {
     const w = createWorld(level, 1);
     const p = spawnPlayer(w);
-    const before = serializeWorldState(w.state);
-    p.carrying = 2;
-    expect(serializeWorldState(w.state)).not.toBe(before);
-    p.carrying = NO_ITEM;
-    p.signOutTicks = 7;
-    expect(serializeWorldState(w.state)).not.toBe(before);
-    p.signOutTicks = 0;
-    w.state.outcome = Outcome.Won;
-    expect(serializeWorldState(w.state)).not.toBe(before);
+    w.state.phase = Phase.Chase;
+    const copy = cloneWorldState(w.state);
+    expect(copy.phase).toBe(Phase.Chase);
+    const a = serializeWorldState(w.state);
+    p.safe = true;
+    const b = serializeWorldState(w.state);
+    expect(a).not.toBe(b);
+    expect(b).toContain("ph:1");
   });
 });
 
 describe("the stare and the graph", () => {
-  it("starts with an empty stare and no sign-out, and fingerprints the stare", () => {
+  it("starts with an empty stare, and fingerprints the stare", () => {
     const w = createWorld(level, 1);
     const p = spawnPlayer(w);
     expect(p.stare).toBe(0);
-    expect(p.signedOut).toBe(false);
     expect(w.trail).toBeNull();
     const before = serializeWorldState(w.state);
     p.stare = 0.5;
@@ -220,9 +203,9 @@ describe("the stare and the graph", () => {
   it("clones a Hollow's route as its own array", () => {
     const w = createWorld(level, 1);
     w.state.enemies.set(9, {
-      id: 9, pos: { x: 1, y: 2, z: 3 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, health: 40, ai: AiState.Crawl,
+      id: 9, pos: { x: 1, y: 2, z: 3 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, health: 40, ai: AiState.Stand,
       targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
-      route: [0, 1, 2], routeAt: 1, stemDir: -1, approach: false, seen: false,
+      route: [0, 1, 2], routeAt: 1, approach: false, seen: false,
     });
     const copy = cloneWorldState(w.state);
     copy.enemies.get(9)!.route.push(3);
