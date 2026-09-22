@@ -5,7 +5,9 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import "../../src/sim/passes/index.js";
-import { BLADE_ALBEDO, BLADE_CHARACTERS, BLADE_TIER_COUNTS, bladeClumpGeometry } from "../../src/game/bladeClump.js";
+import {
+  BLADE_ALBEDO, BLADE_CHARACTERS, BLADE_TIER_COUNTS, BLADE_VERTS, bladeAlive, bladeClumpGeometry, bladeSecondRandom,
+} from "../../src/game/bladeClump.js";
 import { BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, bladeTierBands, createBladeCollector } from "../../src/game/bladeField.js";
 import {
   BLADE_CANOPY_HEIGHT, BLADE_STRENGTH_HEIGHT, bladeMeshName, createBladeMeshes,
@@ -133,17 +135,30 @@ describe("createBladeMeshes", () => {
     engine.dispose();
   });
 
-  it("collapses a blade to one world point through the cell's matrix", () => {
+  it("collapses a blade to one world point, and leaves it whole, as `bladeAlive` says", () => {
     const g = bladeClumpGeometry(BLADE_CHARACTERS[0]!, 16);
     const cell = { cls: 6, x: 3, z: -7, groundH: 12, groundDx: 0, groundDz: 0, scale: 1, variant: 0, hash: 0.37 };
     const buf = new Float32Array(16);
     instanceMatrixFor(cell, { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } }, buf);
     const m = Matrix.FromArray(buf);
-    const root = Vector3.TransformCoordinates(new Vector3(g.blade[0]!, 0, g.blade[1]!), m);
-    for (let v = 0; v < 7; v++) {
+    // The first blade: its vertices are [0, BLADE_VERTS), and its record names
+    // the root it collapses to, its hand-off random, and (through the root) the
+    // second random the strength cut reads.
+    const rootX = g.blade[0]!, rootZ = g.blade[1]!, random = g.blade[2]!;
+    const second = bladeSecondRandom(rootX, rootZ);
+    const root = Vector3.TransformCoordinates(new Vector3(rootX, 0, rootZ), m);
+    // Past the tier's collapse band (grow and thin both 1), with a strength no
+    // blade is cut by, the blade is gone; inside the tier (thin 0) with a
+    // strength its second random clears, it is whole.
+    const gone = bladeAlive(random, second, 1, 1, 1);
+    const whole = bladeAlive(random, second, second + 1e-3, 1, 0);
+    expect(gone).toBe(0);
+    expect(whole).toBe(1);
+    for (let v = 0; v < BLADE_VERTS; v++) {
       const world = Vector3.TransformCoordinates(new Vector3(g.positions[v * 3]!, g.positions[v * 3 + 1]!, g.positions[v * 3 + 2]!), m);
-      const collapsed = root.add(world.subtract(root).scale(0));
-      expect(collapsed.subtract(root).length()).toBeLessThan(1e-6);
+      // The shader's own mix: worldPos = root + (worldPos - root) * alive.
+      expect(root.add(world.subtract(root).scale(gone)).subtract(root).length()).toBeLessThan(1e-6);
+      expect(root.add(world.subtract(root).scale(whole)).subtract(world).length()).toBeLessThan(1e-6);
     }
   });
 });

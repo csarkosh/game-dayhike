@@ -29,7 +29,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { Rgb } from "./colour.js";
 import {
-  BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, bladeTierBands, createBladeCollector, type BladeCell, type BladeEdges, type BladeTiers,
+  BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, bladeTierBands, createBladeCollector, type BladeCell, type BladeTiers,
 } from "./bladeField.js";
 import { BLADE_ALBEDO, BLADE_CHARACTERS, BLADE_TIER_COUNTS, bladeClumpGeometry, type BladeQuality } from "./bladeClump.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliagePlugin.js";
@@ -133,10 +133,13 @@ function ensureCapacity(bucket: Bucket): void {
 
 /**
  * Pushes a filled bucket to its mesh. A bucket whose buffers were just grown
- * needs the whole GPU buffer recreated; one written in place needs only the
- * live prefix re-uploaded, which is what `thinInstanceBufferUpdated` does once
- * `thinInstanceCount` has been set (it uploads `instancesCount` strides, not
- * the whole array).
+ * needs the whole GPU buffer recreated; one written in place needs only a
+ * re-upload, which is what `thinInstanceBufferUpdated` does. The count is set
+ * first because the matrix buffer's re-upload is bounded by it
+ * (`instancesCount` strides); the two user buffers — `foliage` and
+ * `bladeStrength` — are re-uploaded whole, stale tail past the live count
+ * included. That costs a little bandwidth and nothing else: the tail is never
+ * fetched, since the draw itself is bounded by the same `instancesCount`.
  *
  * The buffers are created UPDATABLE (`staticBuffer` false) for the reason
  * `clutterMeshes.ts` records: `Buffer.updateDirectly` no-ops silently on a
@@ -181,7 +184,7 @@ function createTierMaterial(scene: Scene, tier: number, meshHeight: number): PBR
   mat.backFaceCulling = false;
   attachFoliage(mat, FOLIAGE_PROFILES.BLADES, meshHeight);
   attachFoliageLight(mat);
-  setFoliageBladeEdges(mat, bladeTierBands()[tier] as BladeEdges);
+  setFoliageBladeEdges(mat, bladeTierBands()[tier]!);
   return mat;
 }
 
@@ -197,10 +200,12 @@ function createClumpMesh(scene: Scene, character: number, tier: number, count: n
   data.colors = g.colors;
   data.indices = g.indices;
   data.applyToMesh(mesh, false);
+  // `applyToMesh` already set the bounding box from the positions, and a
+  // custom vertex kind does not move it, so the box the caller reads the
+  // material's height uniform off is correct as it stands — and it must be,
+  // because `prepBucketMesh` pins it (`doNotSyncBoundingInfo`) and nothing
+  // syncs it again for the life of the mesh.
   mesh.setVerticesData("blade", g.blade, false, 4);
-  // Refreshed before `prepBucketMesh` pins the box: the material's own height
-  // uniform is read off it, and afterwards nothing syncs it again.
-  mesh.refreshBoundingInfo();
   prepBucketMesh(mesh);
   // The one clutter that receives shadows, against the rule `prepBucketMesh`
   // just applied: opaque, near the eye and inside the first cascade, a clump
@@ -268,13 +273,15 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
       const heightScale =
         (BLADE_STRENGTH_HEIGHT[0] + (BLADE_STRENGTH_HEIGHT[1] - BLADE_STRENGTH_HEIGHT[0]) * c.strength) *
         (1 + (BLADE_CANOPY_HEIGHT - 1) * c.canopy);
-      // `trampleFrame` returns a SHARED scratch object, so these five reads
-      // and the `instanceMatrixFor` call that consumes them must all happen
-      // before the next `trampleFrame` — and `scratchFrame.tint` aliases the
-      // frame's own tint, which `writeFoliage` below still needs. The order
-      // here (frame, copy, matrix, foliage) is what keeps that safe; moving
-      // `writeFoliage` after the next iteration's frame would read a tint
-      // belonging to the following cell.
+      // `trampleFrame` returns a SHARED scratch object, valid only until the
+      // next call. The copy below exists so the height can be scaled without
+      // writing through to it, and it copies `tint` only to stay a faithful
+      // frame — `instanceMatrixFor` reads height, lean and the axis, never the
+      // tint, so that field is inert here. The live read of the shared frame
+      // is `writeFoliage`'s `frame.tint`, which is why the order (frame,
+      // matrix, foliage) must stay inside one iteration: hoisting
+      // `writeFoliage` past the next `trampleFrame` would stain this cell with
+      // the following cell's bench tint.
       scratchFrame.height = frame.height * heightScale;
       scratchFrame.lean = frame.lean;
       scratchFrame.ax = frame.ax;
