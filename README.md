@@ -11,11 +11,11 @@
 
 <br>
 
-Four hikers signed the trailhead register and haven't been seen since.
+One hiker is missing, last seen on the summit trail, and the poster at the trailhead is the whole briefing.
 
-Play as a park ranger sent to find these missing hikers. Lead a search party of up to five up the trail and follow the register to where each hiker was last seen. Bring back what's left of them and sign their names out of the book.
+Play as a park ranger sent to find them. Lead a search party of up to five up the trail to the crest, where the hiker is waiting — and so is whatever left them there. Then get everyone back down to the road.
 
-Somewhere past the last strip of flagging tape the birds go quiet, and whatever took those hikers is still in the woods. At first light it is only a shape among the far trees. It never hurries, but it draws closer with every name you sign out. By the time the light fails and the whispers start, it is close enough to hear you breathe.
+Somewhere past the last strip of flagging tape the birds go quiet, and the light goes with them. The climb only feels watched. The descent is not a feeling: something comes down off the crest behind you, faster than you walk and slower than you can run, and it does not lose the trail. The road is the only ground it will not cross.
 
 **Play it: [games.csarko.sh/dayhike](https://games.csarko.sh/dayhike)**
 

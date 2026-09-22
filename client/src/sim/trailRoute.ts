@@ -92,9 +92,10 @@ export function route(graph: TrailGraph, from: number, to: number): readonly num
 /**
  * Where (x, z) stands along the stem: the nearest point on the chain, as
  * progress from the crest (0) to the pad (1) by arc length. A point past
- * either end clamps to that end. 0 for a degenerate stem: no crawl has
- * happened. The escalation reads this for the Hollow's crawl
- * (`game/escalation.ts`).
+ * either end clamps to that end. 0 for a degenerate stem — one with no
+ * length, which reads as the crest. The escalation reads this for the
+ * party's climb (`game/escalation.ts`), which takes 1 minus it: the light
+ * goes as the party nears the crest.
  */
 export function stemProgress(graph: TrailGraph, x: number, z: number): number {
   const chain = stemNodes(graph);

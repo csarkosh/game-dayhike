@@ -1,7 +1,7 @@
 # The summit — the core loop, redesigned
 
 **Date:** 2026-09-16
-**Status:** Designed; T2 built 2026-09-16 (see §9). What moved in T2's execution: the top fork sits
+**Status:** Designed; T2 built 2026-09-16, S1 built 2026-09-22 (see §9). What moved in T2's execution: the top fork sits
 below the peak's dome, not in the 0.75–0.85 band, with a floor of 0.5, a three-rung ladder 60 m of
 stem apart tried on both sides, and a least span of 240 m between the forks (§3.2 records why);
 rungs are 2–3 per pair and may end on a loop's bed when their strand target is walled off; a strand
@@ -14,6 +14,30 @@ on 132 (58 %, floor 55 %), and on the rest the guide returns the longest of its 
 571 bed pairs on 142 worlds sit closer than the 16 m corridor gap (never under 4 m, so beds never
 overlap) because the simplifier's gap test works in cell space — a world-space test there is the
 follow-up that would raise every one of these numbers; build time about 400 ms a seed.
+What S1's build ruled, amending the sections below: the Poe passages leave
+`game/registerHud.ts` for a new `game/passages.ts`, which the end screen's three passages join;
+the roster is untouched (it is the lobby's party list and carries no dead-versus-living state), so
+the end panel is the only place the groups show; `PlayerState.respawnTimer` leaves the wire and
+the state with this bump, making the snapshot's player record id, pos, vel, yaw, pitch, health,
+grounded, a lamp byte, a flags byte whose bit 0 is `safe`, and the stare; nothing mapped a lobby
+member to an entity id, so protocol 5 adds a `Named { entityId, peerId }` event that the host
+sends a joining peer for every current pairing (its own and the newcomer's included) and sends
+everyone else for the newcomer, with the local player named "You"; a Hollow with no living,
+unsafe target stands where it is facing the pad, a third `AiState.Stand` rather than an Emerge
+with no timer, and `AiState.Crawl` and `AiState.Merge` are deleted with their numbers 4 and 6 left
+unused; `roadLine` survives with the wall, reading "Not yet. Somebody is still up there." on the
+climb and nothing in the chase, because reaching the corridor is its own line on the end panel;
+and the sign posts stay, reading the summit as their one site, while the trailhead board's lines
+become the poster's. Three more rulings came out of the build itself: the safety pass runs at the
+top of the authoritative tail, before the Hollows step rather than after them, so a player who
+crosses onto the corridor cannot be killed by contact in the tick they reach it (discovery and the
+end rule stay at the tail, which costs the end rule one tick when contact kills the last player); a
+Hollow's step that strictly increases its distance from the road's centreline is allowed even from
+inside the corridor, so one that ever finds itself on safe ground walks out instead of freezing;
+and the stare is unchanged for everyone, safe or not — looking back from the road still costs the
+screen — while contact never touches a safe player. What S1's execution measured: on the seed
+`hollow` the stem node before the crest stands 11.3 m from the body, inside the 12 m discovery
+radius, so the find can come one node short of the crest.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md`. Supersedes its loop (§1 there, the
 count and the sign-out) and the §17 table's F and beyond. Keeps its trailhead, its Hollow's
 lethality and its tone.
@@ -361,7 +385,7 @@ in this order. Each leaves the game playable.
 | # | Sub-project | Sections | Status |
 | --- | --- | --- | --- |
 | T2 | Loops and braids | §3 | Built 2026-09-16 (docs/trail/2026-09-16-loops-and-braids-plan.md) |
-| S1 | The summit loop: phase, poster, body, discovery, the summit Hollow, safety, the end, escalation, protocol 5 | §2, §5.1, §5.2, §6, §7 | Not started |
+| S1 | The summit loop: phase, poster, body, discovery, the summit Hollow, safety, the end, escalation, protocol 5 | §2, §5.1, §5.2, §6, §7 | Built 2026-09-22 (docs/gameplay/2026-09-16-the-summit-loop-plan.md) |
 | S3 | The cut: the guide, the fork cuts, `Emerge`, the fork Hollows | §5.3 | Not started |
 | S2 | The watcher | §4 | Not started |
 
