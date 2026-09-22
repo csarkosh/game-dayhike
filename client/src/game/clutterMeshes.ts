@@ -267,7 +267,7 @@ function geometryMeshes(node: Node): Mesh[] {
  * `assets/palette.json`) rather than a real shadow
  * sample. The blade bucket is the one exception, and turns the flag back on
  * itself right after this call — see `adopt`. */
-function prepBucketMesh(mesh: Mesh): void {
+export function prepBucketMesh(mesh: Mesh): void {
   mesh.isPickable = false;
   // Babylon culls a thin-instance mesh by its own bounding box, and syncing
   // that box would scan every matrix in the buffer on each rebuild
@@ -433,7 +433,7 @@ function writeInstanceMatrix(inst: ClutterInstance, buf: Float32Array, offset: n
 /** Ground colour at the instance (the palette the clipmap bakes into vertex
  * colour, so grass and ground can never disagree) and the canopy shade the
  * bush palette used to carry by hand. slope = |∇h|; canopy = forestDensity. */
-function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Array, offset: number, frame: ReturnType<typeof trampleFrame>): void {
+export function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Array, offset: number, frame: ReturnType<typeof trampleFrame>): void {
   const slope = Math.hypot(inst.groundDx, inst.groundDz);
   const canopy = forestDensity(seed, inst.x, inst.z);
   const c = surfaceAlbedo(seed, inst.x, inst.z, inst.groundH, slope, canopy);
