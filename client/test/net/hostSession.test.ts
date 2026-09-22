@@ -443,3 +443,38 @@ describe("host session", () => {
     expect(() => host.tick(input())).not.toThrow();
   });
 });
+
+describe("names", () => {
+  /** Every Named pairing a peer's transport received, entity id → peer id. */
+  function pairings(side: { onEvent(cb: (d: ArrayBuffer) => void): void }) {
+    const got = new Map<number, string>();
+    side.onEvent((d) => { const e = decodeEvent(d); if (e.t === MessageType.Named) got.set(e.entityId, e.peerId); });
+    return got;
+  }
+
+  it("sends a newcomer its own pairing as well as the host's", () => {
+    const host = createHostSession(level, 42, () => 0, { hostPeerId: "h" });
+    const net = new FakeNetwork(PERFECT_NETWORK, 1);
+    const [hostSide, clientSide] = net.createPair();
+    const got = pairings(clientSide);
+    const id = host.addPeer("p1", hostSide);
+    net.advance(1);
+    expect(got.get(id)).toBe("p1");
+    expect(got.get(host.localEntityId)).toBe("h");
+  });
+
+  it("tells a peer already in the room about the newcomer", () => {
+    const host = createHostSession(level, 42, () => 0, { hostPeerId: "h" });
+    const net = new FakeNetwork(PERFECT_NETWORK, 1);
+    const [aHost, aClient] = net.createPair();
+    const [bHost, bClient] = net.createPair();
+    host.addPeer("a", aHost);
+    net.advance(1);
+    const onA = pairings(aClient);
+    const onB = pairings(bClient);
+    const b = host.addPeer("b", bHost);
+    net.advance(1);
+    expect(onA.get(b)).toBe("b");
+    expect(onB.get(b)).toBe("b");
+  });
+});

@@ -884,6 +884,10 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     registerInteractables(client.world);
     signs = createSigns(client.world);
     body = client.world.register === null ? null : createBodyMesh(renderer.scene, client.world.register.body);
+    // Every peer names itself, host or follower. The host does echo a
+    // newcomer's own pairing back to it, so this is belt and braces — but it
+    // means "You" never depends on that echo arriving.
+    names.set(client.localEntityId, "You");
     // Safe this late: `onNamed` replays the pairings already received.
     client.onNamed((e) => names.set(e.entityId, nameOf(e.peerId)));
     client.onInteracted((e) => {
