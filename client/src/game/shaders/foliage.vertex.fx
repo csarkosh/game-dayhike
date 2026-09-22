@@ -14,6 +14,9 @@ attribute vec4 foliage;
 #endif
 #ifdef FOLIAGE_BLADES
 attribute vec4 blade;
+#ifdef THIN_INSTANCES
+attribute float bladeStrength;
+#endif
 #endif
 varying vec4 vFoliage;
 varying float vFoliageH;

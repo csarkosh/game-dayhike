@@ -34,8 +34,9 @@ import vertexWorldPos from "./shaders/foliageWorldPos.vertex.fx?raw";
 import fragmentDefs from "./shaders/foliage.fragment.fx?raw";
 import fragmentLights from "./shaders/foliageLights.fragment.fx?raw";
 import type { WindRecord } from "./windParams.js";
-import { FADE_NONE_OUT } from "./distanceFadePlugin.js";
+import { FADE_NONE_IN, FADE_NONE_OUT } from "./distanceFadePlugin.js";
 import { BLADE_SOFT } from "./bladeClump.js";
+import type { BladeEdges } from "./bladeField.js";
 
 /** Mirrored in the .fx files; the lockstep test asserts it. */
 export const FOLIAGE_TILT = 0.04;
@@ -114,6 +115,10 @@ export class FoliagePlugin extends MaterialPluginBase {
   private readonly _meshHeight: number;
   /** Outer fade of the bucket, set by the shell; motion reaches zero at .y. */
   edges: readonly [number, number] = FADE_NONE_OUT;
+  /** The blades profile's hand-off: (grow-in start, grow-in end, collapse
+   * start, collapse end) in metres from the eye. The default grows nowhere
+   * and collapses nowhere: every blade whole. */
+  bladeEdges: BladeEdges = [FADE_NONE_IN[0], FADE_NONE_IN[1], FADE_NONE_OUT[0], FADE_NONE_OUT[1]];
 
   constructor(material: Material, profile: FoliageProfile, meshHeight: number) {
     super(material, "Foliage", 200, { FOLIAGE: false, FOLIAGE_TINT: false, FOLIAGE_BLADES: false });
@@ -137,6 +142,7 @@ export class FoliagePlugin extends MaterialPluginBase {
   override getAttributes(attributes: string[], _scene: Scene, _mesh: AbstractMesh): void {
     if (this._profile.groundTint > 0) attributes.push("foliage");
     if (this._profile.blades) attributes.push("blade");
+    if (this._profile.blades) attributes.push("bladeStrength");
   }
 
   override getUniforms(): { ubo: { name: string; size: number; type: string; arraySize?: number }[]; vertex: string; fragment: string } {
@@ -157,6 +163,7 @@ export class FoliagePlugin extends MaterialPluginBase {
         { name: "foliageNormalUp", size: 1, type: "float" },
         { name: "foliageFlags", size: 2, type: "vec2" },
         { name: "foliageEdges", size: 2, type: "vec2" },
+        { name: "foliageBladeEdges", size: 4, type: "vec4" },
       ],
       vertex: `
 #ifdef FOLIAGE
@@ -172,6 +179,7 @@ uniform float foliageHeight;
 uniform float foliageNormalUp;
 uniform vec2 foliageFlags;
 uniform vec2 foliageEdges;
+uniform vec4 foliageBladeEdges;
 #endif
 `,
       fragment: `
@@ -203,6 +211,7 @@ uniform float foliageNormalRoot;
     uniformBuffer.updateFloat("foliageNormalUp", p.normalUp);
     uniformBuffer.updateFloat2("foliageFlags", p.tilt ? 1 : 0, p.bend ? 1 : 0);
     uniformBuffer.updateFloat2("foliageEdges", this.edges[0], this.edges[1]);
+    uniformBuffer.updateFloat4("foliageBladeEdges", this.bladeEdges[0], this.bladeEdges[1], this.bladeEdges[2], this.bladeEdges[3]);
   }
 
   override getCustomCode(shaderType: string): { [pointName: string]: string } | null {
@@ -227,4 +236,11 @@ export function attachFoliage(material: Material, profile: FoliageProfile, meshH
 export function setFoliageEdges(material: Material, edges: readonly [number, number]): void {
   const plugin = material.pluginManager?.getPlugin("Foliage") as FoliagePlugin | undefined;
   if (plugin) plugin.edges = edges;
+}
+
+/** The blade tier's hand-off band: four edges like `fadeBands`. Materials
+ * without the plugin are ignored. */
+export function setFoliageBladeEdges(material: Material, edges: BladeEdges): void {
+  const plugin = material.pluginManager?.getPlugin("Foliage") as FoliagePlugin | undefined;
+  if (plugin) plugin.bladeEdges = edges;
 }

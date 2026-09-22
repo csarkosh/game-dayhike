@@ -3,10 +3,11 @@
 // are in scope. Order: clump hash, the up bias on the world normal, motion
 // weight, lean, gust (phased at the instance origin so a tuft moves as one),
 // flutter (phased at the vertex so blades break up), camera tilt, player
-// bend, far sink, then for the blade clumps the collapse: each blade pulled
-// toward its root by its share of the thinning, last so a collapsed blade's
-// vertices coincide exactly (the root is taken through finalWorld with no
-// displacement).
+// bend, far sink, then for the blade clumps the collapse: a grow-in from the
+// tier inside, the collapse toward the tier outside, and the strength cut,
+// each blade pulled toward its root by its share, last so a collapsed
+// blade's vertices coincide exactly (the root is taken through finalWorld
+// with no displacement).
 //
 // The motion weight carries the instance's own uniform scale — the Y column's
 // length, since thin instances here are uniformly scaled — because
@@ -75,8 +76,16 @@
 #endif
 #ifdef FOLIAGE_BLADES
   vec3 bRoot = (finalWorld * vec4(blade.x, 0.0, blade.y, 1.0)).xyz;
-  float bThin = smoothstep(foliageEdges.x, foliageEdges.y, fDist);
-  float bAlive = clamp((blade.z - bThin * (1.0 + FOLIAGE_BLADE_SOFT)) / FOLIAGE_BLADE_SOFT + 1.0, 0.0, 1.0);
+  float bStrength = 1.0;
+#ifdef THIN_INSTANCES
+  bStrength = bladeStrength;
+#endif
+  float bGrow = smoothstep(foliageBladeEdges.x, foliageBladeEdges.y, fDist);
+  float bThin = smoothstep(foliageBladeEdges.z, foliageBladeEdges.w, fDist);
+  float bIn = clamp(((1.0 + FOLIAGE_BLADE_SOFT) * bGrow - blade.z) / FOLIAGE_BLADE_SOFT, 0.0, 1.0);
+  float bOut = clamp((blade.z - bThin * (1.0 + FOLIAGE_BLADE_SOFT)) / FOLIAGE_BLADE_SOFT + 1.0, 0.0, 1.0);
+  float bR2 = fract(blade.x * 37.31 + blade.y * 91.17 + 0.37);
+  float bAlive = bIn * bOut * step(bR2, bStrength);
   worldPos.xyz = bRoot + (worldPos.xyz - bRoot) * bAlive;
 #endif
   vFoliageH = fH;

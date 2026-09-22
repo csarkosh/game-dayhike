@@ -7,7 +7,7 @@ import vertexDefs from "../../src/game/shaders/foliage.vertex.fx?raw";
 import vertexWorldPos from "../../src/game/shaders/foliageWorldPos.vertex.fx?raw";
 import fragmentLights from "../../src/game/shaders/foliageLights.fragment.fx?raw";
 import {
-  attachFoliage, setFoliageWind, setFoliageEdges, FoliagePlugin, FOLIAGE_PROFILES,
+  attachFoliage, setFoliageWind, setFoliageEdges, setFoliageBladeEdges, FoliagePlugin, FOLIAGE_PROFILES,
   FOLIAGE_TILT, FOLIAGE_BEND, FOLIAGE_BEND_R, FOLIAGE_SINK, FOLIAGE_CLUMP_LUMA, FOLIAGE_CLUMP_CELL,
   FOLIAGE_PLAYER_PARKED, FOLIAGE_BLADE_SOFT,
 } from "../../src/game/foliagePlugin.js";
@@ -16,7 +16,7 @@ import {
   windRecordUnder,
 } from "../../src/game/windParams.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
-import { BLADE_SOFT } from "../../src/game/bladeClump.js";
+import { BLADE_SOFT, bladeAlive, bladeSecondRandom } from "../../src/game/bladeClump.js";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -88,31 +88,42 @@ describe("foliage plugin", () => {
     expect(d).toEqual({ FOLIAGE: true, FOLIAGE_TINT: true, FOLIAGE_BLADES: true });
     const a: string[] = [];
     plugin.getAttributes(a, scene, undefined as never);
-    expect(a).toEqual(["foliage", "blade"]);
+    expect(a).toEqual(["foliage", "blade", "bladeStrength"]);
   });
 
-  it("declares the blade attribute only under FOLIAGE_BLADES, and collapses after the wind", () => {
+  it("declares the blade attributes only under FOLIAGE_BLADES, and collapses after the wind with a grow-in and a strength cut", () => {
     expect((vertexDefs.match(/attribute vec4 blade;/g) ?? []).length).toBe(1);
+    expect((vertexDefs.match(/attribute float bladeStrength;/g) ?? []).length).toBe(1);
     const attr = vertexDefs.indexOf("attribute vec4 blade;");
     const before = vertexDefs.slice(0, attr);
     expect(before.lastIndexOf("#ifdef FOLIAGE_BLADES")).toBeGreaterThan(before.lastIndexOf("#ifdef FOLIAGE\n"));
     expect(before.slice(before.lastIndexOf("#ifdef FOLIAGE_BLADES"))).not.toContain("#endif");
-    // The collapse: the root through finalWorld with no displacement, the
-    // thinning on the edges, the alive window, then the vertex pulled to the root.
+    const strengthAttr = vertexDefs.indexOf("attribute float bladeStrength;");
+    const beforeStrength = vertexDefs.slice(0, strengthAttr);
+    expect(beforeStrength.lastIndexOf("#ifdef THIN_INSTANCES")).toBeGreaterThan(beforeStrength.lastIndexOf("#ifdef FOLIAGE_BLADES"));
     expect(vertexWorldPos).toContain(`const float FOLIAGE_BLADE_SOFT = ${glslFloat(FOLIAGE_BLADE_SOFT)};`);
     expect(FOLIAGE_BLADE_SOFT).toBe(BLADE_SOFT);
     expect(vertexWorldPos).toContain("vec3 bRoot = (finalWorld * vec4(blade.x, 0.0, blade.y, 1.0)).xyz;");
-    expect(vertexWorldPos).toContain("float bThin = smoothstep(foliageEdges.x, foliageEdges.y, fDist);");
-    expect(vertexWorldPos).toContain("float bAlive = clamp((blade.z - bThin * (1.0 + FOLIAGE_BLADE_SOFT)) / FOLIAGE_BLADE_SOFT + 1.0, 0.0, 1.0);");
+    expect(vertexWorldPos).toContain("float bGrow = smoothstep(foliageBladeEdges.x, foliageBladeEdges.y, fDist);");
+    expect(vertexWorldPos).toContain("float bThin = smoothstep(foliageBladeEdges.z, foliageBladeEdges.w, fDist);");
+    expect(vertexWorldPos).toContain("float bIn = clamp(((1.0 + FOLIAGE_BLADE_SOFT) * bGrow - blade.z) / FOLIAGE_BLADE_SOFT, 0.0, 1.0);");
+    expect(vertexWorldPos).toContain("float bOut = clamp((blade.z - bThin * (1.0 + FOLIAGE_BLADE_SOFT)) / FOLIAGE_BLADE_SOFT + 1.0, 0.0, 1.0);");
+    expect(vertexWorldPos).toContain("float bR2 = fract(blade.x * 37.31 + blade.y * 91.17 + 0.37);");
+    expect(vertexWorldPos).toContain("float bAlive = bIn * bOut * step(bR2, bStrength);");
     expect(vertexWorldPos).toContain("worldPos.xyz = bRoot + (worldPos.xyz - bRoot) * bAlive;");
+    // A non-instanced draw has no strength attribute and draws every blade.
+    expect(vertexWorldPos).toContain("float bStrength = 1.0;");
+    expect(vertexWorldPos).toContain("bStrength = bladeStrength;");
     // After every displacement: the bend loop and the flutter precede it.
     expect(vertexWorldPos.indexOf("bAlive")).toBeGreaterThan(vertexWorldPos.indexOf("windPlayers[i]"));
     expect(vertexWorldPos.indexOf("bAlive")).toBeGreaterThan(vertexWorldPos.indexOf("fFlutter"));
     // The motion weight ignores the edge term under the gate, and the sink is skipped.
-    expect(vertexWorldPos).toContain("float fEdge = 1.0 - smoothstep(foliageEdges.x, foliageEdges.y, fDist);");
     expect(vertexWorldPos).toContain("fEdge = 1.0;");
-    expect(vertexWorldPos).toContain("float fM = foliageAmp * fH2 * foliageHeight * fScale * fEdge;");
     expect(vertexWorldPos.indexOf("#ifndef FOLIAGE_BLADES")).toBeLessThan(vertexWorldPos.indexOf("FOLIAGE_SINK * foliageHeight"));
+    // The TypeScript mirror agrees with the GLSL's second random.
+    const r2 = bladeSecondRandom(0.12, -0.2);
+    expect(r2).toBeCloseTo((0.12 * 37.31 + -0.2 * 91.17 + 0.37) - Math.floor(0.12 * 37.31 + -0.2 * 91.17 + 0.37), 12);
+    expect(bladeAlive(0.5, 0.1, 1, 1, 0)).toBe(1);
   });
 
   it("declares the record uniforms, the five-player array and the per-material profile", () => {
@@ -124,11 +135,32 @@ describe("foliage plugin", () => {
     expect(names).toEqual(expect.arrayContaining([
       "windDir", "windLean", "windGust", "windFlutter", "windTime", "windPlayers", "windEye",
       "foliageAmp", "foliageHeight", "foliageTint", "foliageRootAO", "foliageNormalRoot", "foliageNormalUp", "foliageFlags", "foliageEdges",
+      "foliageBladeEdges",
     ]));
     const players = u.ubo!.find((x: { name: string }) => x.name === "windPlayers") as { arraySize?: number };
     expect(players.arraySize).toBe(5);
     expect(u.vertex).toContain("uniform vec3 windPlayers[5];");
     expect(u.vertex).toContain("uniform float foliageNormalUp;");
+    expect(u.vertex).toContain("uniform vec4 foliageBladeEdges;");
+  });
+
+  it("binds the blade edges a shell sets, four numbers, and a no-op pair by default", () => {
+    const mat = new PBRMaterial("m5", scene);
+    attachFoliage(mat, FOLIAGE_PROFILES.BLADES, 0.5);
+    const plugin = mat.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    expect(plugin.bladeEdges).toEqual([-2, -1, 1e8, 2e8]);
+    setFoliageBladeEdges(mat, [2.5, 4, 6.5, 8]);
+    expect(plugin.bladeEdges).toEqual([2.5, 4, 6.5, 8]);
+    const writes: Record<string, number[]> = {};
+    const ub = {
+      updateFloat: (n: string, v: number) => { writes[n] = [v]; },
+      updateFloat2: (n: string, a: number, b: number) => { writes[n] = [a, b]; },
+      updateFloat3: (n: string, a: number, b: number, c: number) => { writes[n] = [a, b, c]; },
+      updateFloat4: (n: string, a: number, b: number, c: number, d: number) => { writes[n] = [a, b, c, d]; },
+      updateFloatArray: (n: string, v: Float32Array) => { writes[n] = Array.from(v); },
+    };
+    plugin.bindForSubMesh(ub as never, scene, undefined as never, undefined as never);
+    expect(writes.foliageBladeEdges).toEqual([2.5, 4, 6.5, 8]);
   });
 
   it("the GLSL constants stay in lockstep with windParams.ts and this module", () => {
@@ -199,6 +231,7 @@ describe("foliage plugin", () => {
       updateFloat: (n: string, v: number) => { writes[n] = v; },
       updateFloat2: (n: string, a: number, b: number) => { writes[n] = [a, b]; },
       updateFloat3: (n: string, a: number, b: number, c: number) => { writes[n] = [a, b, c]; },
+      updateFloat4: (n: string, a: number, b: number, c: number, d: number) => { writes[n] = [a, b, c, d]; },
       updateFloatArray: (n: string, v: Float32Array) => { writes[n] = Array.from(v); },
     };
     plugin.bindForSubMesh(ubo as never, scene, engine, undefined as never);
@@ -228,6 +261,7 @@ describe("foliage plugin", () => {
       updateFloat: (n: string, v: number) => { writes[n] = v; },
       updateFloat2: (n: string, a: number, b: number) => { writes[n] = [a, b]; },
       updateFloat3: (n: string, a: number, b: number, c: number) => { writes[n] = [a, b, c]; },
+      updateFloat4: (n: string, a: number, b: number, c: number, d: number) => { writes[n] = [a, b, c, d]; },
       updateFloatArray: (n: string, v: Float32Array) => { writes[n] = Array.from(v); },
     };
     plugin.bindForSubMesh(ubo as never, scene, engine, undefined as never);
@@ -247,6 +281,7 @@ describe("compiles on both shader paths (the sampler/UBO trap, pinned even with 
     mesh.material = material;
     if (profileKey === "BLADES") {
       mesh.setVerticesData("blade", new Float32Array(mesh.getTotalVertices() * 4), false, 4);
+      mesh.setVerticesData("bladeStrength", new Float32Array(mesh.getTotalVertices()), false, 1);
     }
     const subMesh = mesh.subMeshes[0]!;
     await new Promise<void>((resolve) => {
@@ -275,6 +310,7 @@ describe("compiles on both shader paths (the sampler/UBO trap, pinned even with 
         expect(blades.vertex).toContain("bAlive");
         expect(blades.vertex).toContain("blade");
         expect(blades.vertex).toContain("foliageNormalUp");
+        expect(blades.vertex).toContain("foliageBladeEdges");
         // vertexSourceCode is the raw GLSL text handed to the driver, with every
         // #ifdef branch present verbatim (the real compiler strips them, not
         // Babylon) — so gating is checked on the actual defines the effect
