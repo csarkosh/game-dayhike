@@ -4,6 +4,7 @@ import { parseLevel } from "../../src/sim/level.js";
 import { AiState } from "../../src/sim/types.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
+import { Phase } from "../../src/sim/types.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { wildlifePresenceUnder } from "../../src/game/wildlifeBehaviour.js";
 import {
@@ -42,12 +43,16 @@ const targetsOf = (w: ReturnType<typeof world>["w"], id: number) =>
   escalationTargets(w.state, id, w.trail!, w.boxes, w.ground);
 
 describe("escalationTargets", () => {
-  it("creeps with the furthest Hollow down the stem, a hunting one at its nearest stem point", () => {
+  it("rises with the party's best living climber up the stem, and pins at 1 in the chase", () => {
     const { w, p } = world();
-    standing(w, { x: 160, y: ENEMY_HALF.y, z: 0 });
-    expect(targetsOf(w, p.id).world).toBeCloseTo(0.2, 9);
-    spawnHollow(w, { x: 120, y: ENEMY_HALF.y, z: 50 }, p.id, 0); // beside the stem at x = 120
-    expect(targetsOf(w, p.id).world).toBeCloseTo(0.4, 9);
+    const q = spawnPlayer(w);
+    p.pos = { x: 50, y: 0.9, z: 0 };   // a quarter of the way up the 200 m stem
+    q.pos = { x: 150, y: 0.9, z: 0 };  // three quarters
+    expect(targetsOf(w, p.id).world).toBeCloseTo(0.75, 6);
+    q.health = 0;
+    expect(targetsOf(w, p.id).world).toBeCloseTo(0.25, 6);
+    w.state.phase = Phase.Chase;
+    expect(targetsOf(w, p.id).world).toBe(1);
   });
 
   it("measures off-trail from the corridor's edge to OFF_TRAIL_FULL", () => {
@@ -115,9 +120,10 @@ const stepFor = (seconds: number, t: EscalationTargets, from = ESCALATION_REST, 
 describe("stepEscalation", () => {
   it("ratchets the world target: a Hollow climbing back never lowers it", () => {
     let s = stepEscalation(ESCALATION_REST, T({ world: 0.6 }), 1 / 60);
-    expect(s.creepMax).toBeCloseTo(0.6, 9);
+    expect(s.progressMax).toBeCloseTo(0.6, 9);
     s = stepEscalation(s, T({ world: 0.2 }), 1 / 60);
-    expect(s.creepMax).toBeCloseTo(0.6, 9);
+    expect(s.progressMax).toBeCloseTo(0.6, 9);
+    expect(stepEscalation(ESCALATION_REST, { world: 0.6, offTrail: 0, near: 0, dead: false }, 1).progressMax).toBe(0.6);
   });
 
   it("fills the spike in SPIKE_RISE_S at full rate, twice as long at half, and empties it in SPIKE_DECAY_S", () => {
@@ -179,5 +185,13 @@ describe("atmosphereUnder", () => {
   it("silences the ground animals through the existing ramp at lens 0.5", () => {
     const a = atmosphereUnder(noon, { ...ESCALATION_REST, lens: 0.5 });
     expect(wildlifePresenceUnder(a.weather).ground).toBe(0);
+  });
+
+  it("never lifts dread past 1", () => {
+    const a = atmosphereUnder(
+      { weather: { ...WEATHER_PRESETS.eerie, dread: 1 }, hour: 12 },
+      { progressMax: 1, spike: 1, world: 1, lens: 1.4 },
+    );
+    expect(a.weather.dread).toBe(1);
   });
 });

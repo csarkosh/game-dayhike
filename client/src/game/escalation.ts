@@ -1,13 +1,14 @@
 /**
  * Escalation and atmosphere (docs/gameplay/2026-09-16-escalation-and-atmosphere.md):
  * two numbers computed on every client from state every peer already has.
- * The world — shared, never falling — is the furthest Hollow's progress down
- * the stem, and it takes the sun from the base hour to night and the weather
- * toward the eerie preset. The lens — yours — is being off the trail or the
- * nearest Hollow's closeness, and it lifts the dread the grade and the
- * wildlife read. Nothing here is authoritative; nothing crosses the wire.
+ * The world — shared, never falling — is how far up the stem the party's
+ * best living climber has reached, and 1 once the chase has begun, and it
+ * takes the sun from the base hour to night and the weather toward the
+ * eerie preset. The lens — yours — is being off the trail or the nearest
+ * Hollow's closeness, and it lifts the dread the grade and the wildlife
+ * read. Nothing here is authoritative; nothing crosses the wire.
  */
-import type { WorldState, Vec3 } from "../sim/types.js";
+import { Phase, type WorldState, type Vec3 } from "../sim/types.js";
 import { isHollowState } from "../sim/hollow.js";
 import { trailDistance, type TrailGraph } from "../sim/trail.js";
 import { stemProgress } from "../sim/trailRoute.js";
@@ -42,7 +43,7 @@ export const WORLD_EASE_S = 20;
 export const LENS_EASE_S = 1.5;
 
 export type EscalationTargets = {
-  /** The creep before the ratchet. */
+  /** The party's best living climb up the stem before the ratchet, or 1 in the chase. */
   world: number;
   /** The local player's distance past the corridor, 0 on the trail to 1 at OFF_TRAIL_FULL. */
   offTrail: number;
@@ -54,7 +55,7 @@ export type EscalationTargets = {
 
 export type EscalationState = {
   /** The highest world target seen: the sky never brightens. */
-  creepMax: number;
+  progressMax: number;
   /** The off-trail spike, integrated. */
   spike: number;
   /** The eased world, 0 to 1. */
@@ -63,7 +64,7 @@ export type EscalationState = {
   lens: number;
 };
 
-export const ESCALATION_REST: EscalationState = Object.freeze({ creepMax: 0, spike: 0, world: 0, lens: 0 });
+export const ESCALATION_REST: EscalationState = Object.freeze({ progressMax: 0, spike: 0, world: 0, lens: 0 });
 
 export type AtmosphereBase = { weather: WeatherParams; hour: number };
 
@@ -75,15 +76,21 @@ export function escalationTargets(
   boxes: BoxProvider,
   ground: GroundField | null,
 ): EscalationTargets {
-  let creep = 0;
   const hollows: Vec3[] = [];
   for (const e of state.enemies.values()) {
     if (!isHollowState(e.ai)) continue;
     hollows.push(e.pos);
-    const p = stemProgress(graph, e.pos.x, e.pos.z);
-    if (p > creep) creep = p;
   }
-  const world = creep;
+
+  let world = 0;
+  if (state.phase === Phase.Chase) world = 1;
+  else {
+    for (const p of state.players.values()) {
+      if (p.health <= 0) continue;
+      const progress = 1 - stemProgress(graph, p.pos.x, p.pos.z);
+      if (progress > world) world = progress;
+    }
+  }
 
   const me = state.players.get(localId);
   if (me === undefined) return { world, offTrail: 0, near: 0, dead: false };
@@ -117,15 +124,15 @@ function lag(from: number, to: number, dt: number, tau: number): number {
  */
 export function stepEscalation(prev: EscalationState, t: EscalationTargets, dt: number): EscalationState {
   if (dt <= 0) return prev;
-  const creepMax = Math.max(prev.creepMax, clamp01(t.world));
-  const world = lag(prev.world, creepMax, dt, WORLD_EASE_S);
-  if (t.dead) return { creepMax, spike: prev.spike, world, lens: prev.lens };
+  const progressMax = Math.max(prev.progressMax, clamp01(t.world));
+  const world = lag(prev.world, progressMax, dt, WORLD_EASE_S);
+  if (t.dead) return { progressMax, spike: prev.spike, world, lens: prev.lens };
   const spike =
     t.offTrail > 0
       ? Math.min(1, prev.spike + (t.offTrail / SPIKE_RISE_S) * dt)
       : Math.max(0, prev.spike - dt / SPIKE_DECAY_S);
   const lens = lag(prev.lens, Math.max(spike, clamp01(t.near)), dt, LENS_EASE_S);
-  return { creepMax, spike, world, lens };
+  return { progressMax, spike, world, lens };
 }
 
 function smootherstep(x: number): number {
@@ -144,5 +151,5 @@ export function atmosphereUnder(base: AtmosphereBase, s: EscalationState): Atmos
     base.hour >= NIGHT_HOUR || base.hour <= DAWN_HOUR ? base.hour : base.hour + (NIGHT_HOUR - base.hour) * e;
   const weather = lerpWeather(base.weather, WEATHER_PRESETS.eerie, e);
   const lens = clamp01(s.lens);
-  return { weather: { ...weather, dread: Math.max(weather.dread, lens) }, hour };
+  return { weather: { ...weather, dread: Math.min(1, Math.max(weather.dread, lens)) }, hour };
 }
