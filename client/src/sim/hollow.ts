@@ -21,7 +21,7 @@ import { route } from "./trailRoute.js";
 import { stepMovement } from "./movement.js";
 import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
-import { isOnCorridor } from "./containment.js";
+import { isOnCorridor, roadOffset } from "./containment.js";
 import {
   ENEMY_HALF,
   ENEMY_MAX_HEALTH,
@@ -66,7 +66,13 @@ export function isHollow(e: EnemyState): boolean {
   return isHollowState(e.ai);
 }
 
-/** Spawns a Hollow at `at` in Emerge for `revealS` seconds, then it hunts `targetId`. */
+/**
+ * Spawns a Hollow at `at` in Emerge for `revealS` seconds, then it hunts `targetId`.
+ *
+ * `at` is meant to be off the road corridor, which is the party's safe ground;
+ * the precondition degrades rather than breaks, though — a Hollow spawned on
+ * the corridor walks out rather than freezing (`walkToward`).
+ */
 export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: number): EnemyState {
   const hollow: EnemyState = {
     id: world.state.nextEntityId++,
@@ -189,11 +195,25 @@ function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: num
   // the car. Refusing the step rather than clamping the position keeps it on
   // ground it could have walked to, and the stuck detection above then slides
   // it along the treeline instead of pressing into it.
+  //
+  // The rule is on the road offset, not on the destination alone: a step is
+  // refused only when it ends on the corridor WITHOUT taking the Hollow
+  // further from the centreline. A Hollow that is somehow already inside —
+  // placed there, or spawned on the trail's lower stretch, which runs inside
+  // the corridor on some seeds — therefore walks its way out instead of
+  // freezing where it stands, since the refusal path never reaches
+  // `stepMovement` and not even gravity would move it.
   if (isOnCorridor(world, result.pos.x, result.pos.z)) {
-    h.vel = { x: 0, y: 0, z: 0 };
-    const th = world.trail?.trailhead;
-    if (th !== undefined) faceToward(h, th.x, th.z);
-    return;
+    const before = roadOffset(world, h.pos.x, h.pos.z);
+    const after = roadOffset(world, result.pos.x, result.pos.z);
+    const outward =
+      before !== null && after !== null && (after < 0 ? -after : after) > (before < 0 ? -before : before);
+    if (!outward) {
+      h.vel = { x: 0, y: 0, z: 0 };
+      const th = world.trail?.trailhead;
+      if (th !== undefined) faceToward(h, th.x, th.z);
+      return;
+    }
   }
   h.pos = result.pos;
   h.vel = result.vel;
