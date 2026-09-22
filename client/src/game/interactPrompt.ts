@@ -1,14 +1,7 @@
 import { INTERACT_REACH } from "../sim/interact.js";
-import { InteractKind } from "../sim/register.js";
 
 export type Projected = { x: number; y: number; depth: number };
-export type PromptView = { x: number; y: number; label: string; scale: number; hold: number };
-export type PromptContext = {
-  /** The carried hiker's name, or null with empty hands. */
-  carrying: string | null;
-  /** The sign-out hold, 0 to 1. */
-  hold: number;
-};
+export type PromptView = { x: number; y: number; label: string; scale: number };
 
 /** Kept from the viewport's edges, so a prompt at the corner is still legible. */
 const EDGE_PX = 24;
@@ -27,32 +20,26 @@ export function promptLabel(kind: number): string {
 
 /**
  * Where and what the prompt shows, or null. Pure: the app resolves the target
- * and projects its position; this only decides the label, the size, the
- * clamp and the hold ring.
+ * and projects its position; this only decides the label, the size and the
+ * clamp.
+ *
+ * Every interactable the summit loop has — the box at the trailhead — carries
+ * its own label (`register.ts`), so there is no per-kind special case here:
+ * a labelled target reads out its label, an unlabelled one falls back to its
+ * kind's verb.
  */
 export function promptModel(
   target: { kind: number; label?: string } | null,
   projected: Projected | null,
   viewport: { width: number; height: number },
   touch: boolean,
-  ctx: PromptContext,
 ): PromptView | null {
   if (target === null || projected === null) return null;
-  let label: string;
-  let hold = 0;
-  if (target.kind === InteractKind.Register) {
-    if (ctx.carrying === null) label = target.label ?? "Read the register";
-    else {
-      label = `Sign out ${ctx.carrying} — hold`;
-      hold = Math.min(1, Math.max(0, ctx.hold));
-    }
-  } else if (target.label !== undefined) {
-    // A named thing reads the same on every device: "Click to pick up dana
-    // whitcombe" would lowercase a name.
-    label = target.label;
-  } else {
-    label = touch ? promptLabel(target.kind) : `Click to ${promptLabel(target.kind).toLowerCase()}`;
-  }
+  // A named thing reads the same on every device: "Click to read the poster"
+  // would lowercase a name a label may one day carry.
+  const label = target.label !== undefined
+    ? target.label
+    : touch ? promptLabel(target.kind) : `Click to ${promptLabel(target.kind).toLowerCase()}`;
   const t = Math.min(1, Math.max(0, (projected.depth - NEAR_M) / (INTERACT_REACH - NEAR_M)));
   const scale = 1 - (1 - FAR_SCALE) * t;
   return {
@@ -60,7 +47,6 @@ export function promptModel(
     y: Math.min(viewport.height - EDGE_PX, Math.max(EDGE_PX, projected.y)),
     label,
     scale,
-    hold,
   };
 }
 
@@ -95,21 +81,10 @@ const STYLE = `
    */
   .prompt.pressable.on { pointer-events: auto; touch-action: none; }
   .prompt .dot {
-    width: 12px; height: 12px; border-radius: 50%; position: relative;
+    width: 12px; height: 12px; border-radius: 50%;
     background: rgba(255, 255, 255, 0.85); box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
     animation: prompt-drift 3s ease-in-out infinite;
   }
-  /* The sign-out hold: a ring that fills clockwise round the dot over five
-     seconds and empties the instant the hold breaks — no transition, so an
-     interrupted ritual is unmistakable. */
-  .prompt .dot::after {
-    content: ""; position: absolute; inset: -6px; border-radius: 50%;
-    background: conic-gradient(rgba(255, 255, 255, 0.9) calc(var(--hold, 0) * 360deg), rgba(255, 255, 255, 0.15) 0);
-    -webkit-mask: radial-gradient(circle, transparent 9px, #000 10px);
-    mask: radial-gradient(circle, transparent 9px, #000 10px);
-    opacity: 0;
-  }
-  .prompt.holding .dot::after { opacity: 1; }
   @keyframes prompt-drift {
     0%, 100% { transform: translateY(-2px); }
     50% { transform: translateY(2px); }
@@ -175,8 +150,6 @@ export function createInteractPrompt(
         root.classList.add("on");
       }
       label.textContent = view.label;
-      root.classList.toggle("holding", view.hold > 0);
-      root.style.setProperty("--hold", String(view.hold));
       // The 4 px rise on entry is the `prompt-rise` keyframe on `.on` (an
       // independent `translate`, so it composes with this `transform` rather
       // than fighting it); this is always the exact, steady-state point.

@@ -55,7 +55,9 @@ import type { Transport } from "./net/transport.js";
 import { isDesktop, isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { createPosterPanel, posterModel } from "./game/posterPanel.js";
-import { DEATH_LINE, END_PASSAGES, LOSS_LANDING_MS, roadLine } from "./game/passages.js";
+import { createEndPanel, endPanelModel } from "./game/endPanel.js";
+import { createBodyMesh } from "./game/bodyMesh.js";
+import { DEATH_LINE, LOSS_LANDING_MS, WIN_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/register.js";
 import { signPosts } from "./sim/signs.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
@@ -385,10 +387,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     const target = resolveInteract(world, self);
     const projected = target === null ? null : renderer.project(target.pos);
     prompt.sync(
-      promptModel(target, projected, { width: canvas.clientWidth, height: canvas.clientHeight }, touchStart, {
-        carrying: null,
-        hold: 0,
-      }),
+      promptModel(target, projected, { width: canvas.clientWidth, height: canvas.clientHeight }, touchStart),
     );
   }
 
@@ -425,6 +424,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   }
 
   let signs: SignMeshes | null = null;
+  /**
+   * The crucified hiker at the crest, or null without a summit site. Lives and
+   * dies with the signs: both are seeded scenery placed once and never moved.
+   */
+  let body: { dispose(): void } | null = null;
   /** Junction posts and the trailhead board, from the same seed the sim used. */
   function createSigns(world: World): SignMeshes | null {
     const register = world.register;
@@ -443,25 +447,26 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     );
   }
 
-  const registerPanel = createPosterPanel(container);
+  const posterPanel = createPosterPanel(container);
+  const endPanel = createEndPanel(container);
   let lastButtons = 0;
   /**
    * The poster is this player's own screen: it opens on an Interact press at
    * the box, and closes on the next press or the first step. Local only —
    * the host resolves the same press and does nothing with it.
    */
-  function syncBook(world: World, self: PlayerState | undefined, cmd: InputCommand): void {
+  function syncPoster(world: World, self: PlayerState | undefined, cmd: InputCommand): void {
     const edges = pressedEdges(lastButtons, cmd.buttons);
     lastButtons = cmd.buttons;
     if (self === undefined || self.health <= 0 || world.register === null) return;
-    if (registerPanel.isOpen) {
-      if ((edges & Button.Interact) !== 0 || cmd.moveX !== 0 || cmd.moveZ !== 0) registerPanel.hide();
+    if (posterPanel.isOpen) {
+      if ((edges & Button.Interact) !== 0 || cmd.moveX !== 0 || cmd.moveZ !== 0) posterPanel.hide();
       return;
     }
     if ((edges & Button.Interact) === 0) return;
     const target = resolveInteract(world, self);
     if (target === null || target.kind !== InteractKind.Register) return;
-    registerPanel.show(posterModel(world.register));
+    posterPanel.show(posterModel(world.register));
   }
 
   let roadLineAt = -Infinity;
@@ -488,25 +493,37 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   function syncDeath(self: PlayerState | undefined): void {
     if (dead || self === undefined || self.health > 0) return;
     dead = true;
-    registerPanel.hide();
+    posterPanel.hide();
     hud.fade(true);
     hud.setStatus(DEATH_LINE);
   }
 
   let ended = false;
-  /** The end, once: the view fades to one line and the match returns to the landing. */
+  /**
+   * The end, once: the view fades onto the panel naming who came down and who
+   * did not, and the match returns to the landing. Input is suppressed here
+   * but not on death — a dead player still looks around under the fade, and
+   * once the panel is up there is nothing left in the world to do.
+   */
   function syncOutcome(state: WorldState): void {
     if (ended || state.outcome === Outcome.Playing) return;
     ended = true;
     const won = state.outcome === Outcome.Won;
+    const players = [...state.players.values()]
+      .sort((a, b) => a.id - b.id)
+      // The fallback covers anyone no pairing ever named — a peer whose Named
+      // event has not landed — rather than leaving them off the roll entirely.
+      .map((p) => ({ id: p.id, name: names.get(p.id) ?? `Hiker ${p.id}`, safe: p.safe, dead: p.health <= 0 }));
     input.setSuppressed(true);
-    registerPanel.hide();
+    posterPanel.hide();
     hud.fade(true);
-    // Placeholder: the real end-of-match screen is Task 9's (endPanel.ts);
-    // this keeps the status line legible until that wiring lands.
-    hud.setStatus(won ? END_PASSAGES.all : END_PASSAGES.none);
+    // The death line is this player's last word, the panel the match's:
+    // the HUD's status sits at 55% of the view the panel covers the middle of,
+    // so leaving both up prints one across the other.
+    hud.setStatus(null);
+    endPanel.show(endPanelModel(players));
     if (landingTimer !== null) clearTimeout(landingTimer);
-    landingTimer = setTimeout(navigateToLanding, won ? 5000 : LOSS_LANDING_MS);
+    landingTimer = setTimeout(navigateToLanding, won ? WIN_LANDING_MS : LOSS_LANDING_MS);
   }
 
   /** Advances and paints the touch layer. Both loops, after `renderer.sync`. */
@@ -666,6 +683,21 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   window.addEventListener("keydown", onDebugKey);
 
   const lobby = options.lobby;
+  /**
+   * Who each entity is, for the end panel. Filled from the Named pairings —
+   * by the host as it admits each peer, by a follower through `onNamed` —
+   * never from the snapshot: a name is the lobby's, not the sim's.
+   */
+  const names = new Map<number, string>();
+  /**
+   * The lobby's name for a peer: "You" for this player, whichever side they
+   * are on, and the short peer id for anyone the lobby has not named — at
+   * least stable, and distinct between two strangers.
+   */
+  function nameOf(peerId: string): string {
+    if (lobby !== null && peerId === lobby.peerId) return "You";
+    return lobby?.state.members.find((m) => m.id === peerId)?.name ?? peerId.slice(0, 8);
+  }
   let seq = 0;
   // Populated once we know whether we host or join.
   let stepAndRender: (() => void) | null = null;
@@ -718,13 +750,21 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
    * answered.
    */
   function runAsHost(): void {
-    const host = createHostSession(level, seed, () => performance.now(), { forest });
+    // `hostPeerId` stamps the host's own Named pairing, so a follower can
+    // match it against the lobby. Solo has neither, so the default stands.
+    const host = createHostSession(level, seed, () => performance.now(), {
+      forest,
+      hostPeerId: lobby?.state.hostId ?? "host",
+    });
     session = host;
     escalation = ESCALATION_REST;
     hud.setStatus(null);
+    // The host names itself: its own Named pairing only goes out to followers.
+    names.set(host.localEntityId, "You");
 
     registerInteractables(host.world);
     signs = createSigns(host.world);
+    body = host.world.register === null ? null : createBodyMesh(renderer.scene, host.world.register.body);
     host.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
@@ -737,7 +777,9 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
           if (!data.sdp || data.sdp.type !== "offer") return;
           void acceptAsHost(signaling, from, data.sdp, () => host.removePeer(from))
             .then((transport) => {
-              host.addPeer(from, wrap(transport));
+              // The host sends pairings and never receives one: it records
+              // the entity `addPeer` just spawned for this peer itself.
+              names.set(host.addPeer(from, wrap(transport)), nameOf(from));
             })
             .catch(() => undefined);
         }),
@@ -769,7 +811,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       syncWind();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(host.world, self);
-      if (cmd !== null) syncBook(host.world, self, cmd);
+      if (cmd !== null) syncPoster(host.world, self, cmd);
       syncRoadLine(self, state);
       syncDeath(self);
       syncOutcome(state);
@@ -841,6 +883,9 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     escalation = ESCALATION_REST;
     registerInteractables(client.world);
     signs = createSigns(client.world);
+    body = client.world.register === null ? null : createBodyMesh(renderer.scene, client.world.register.body);
+    // Safe this late: `onNamed` replays the pairings already received.
+    client.onNamed((e) => names.set(e.entityId, nameOf(e.peerId)));
     client.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
@@ -879,7 +924,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       syncWind();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(client.world, self);
-      if (cmd !== null) syncBook(client.world, self, cmd);
+      if (cmd !== null) syncPoster(client.world, self, cmd);
       syncRoadLine(self, state);
       syncDeath(self);
       syncOutcome(state);
@@ -966,8 +1011,10 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       bar.dispose();
       menu.dispose();
       connectPanel.dispose();
-      registerPanel.dispose();
+      posterPanel.dispose();
+      endPanel.dispose();
       signs?.dispose();
+      body?.dispose();
       touchLayer.dispose();
       prompt.dispose();
       input.dispose();

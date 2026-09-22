@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  createAmbientAudio, DEFAULT_VOLUME, OBJECTS_LEVEL, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
+  createAmbientAudio, DEFAULT_VOLUME, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
   WIND_CUTOFF_BASE, WIND_CUTOFF_GUST, WIND_GAIN_FLOOR, WIND_MIST_DEEPEN, WIND_MIST_QUIET,
   WIND_GAIN_DEPTH, WIND_GAIN_RAMP_S, windBedGain,
 } from "../../src/game/ambientAudio.js";
@@ -75,11 +75,11 @@ describe("createAmbientAudio", () => {
     expect(created.oscillators).toBe(0);
     audio.unlock();
     // 2 noise sources (rain, wind), no oscillators, 2 filters (rain, wind),
-    // and gains: master + rain + wind + wildlife + objects = 5.
+    // and gains: master + rain + wind + wildlife = 4.
     expect(created.sources.length).toBe(2);
     expect(created.oscillators).toBe(0);
     expect(created.filters).toBe(2);
-    expect(created.gains.length).toBe(5);
+    expect(created.gains.length).toBe(4);
     audio.dispose();
   });
 
@@ -128,14 +128,14 @@ describe("createAmbientAudio", () => {
 
     // No gain feeds an AudioParam any more (the LFO depth gain is gone —
     // `setWind` drives the wind filter's frequency directly); every
-    // non-master gain is a bus gain (rain/wind/wildlife/objects) and must
-    // reach the master gain directly.
+    // non-master gain is a bus gain (rain/wind/wildlife) and must reach the
+    // master gain directly.
     const isParam = (t: unknown): boolean =>
       Array.isArray((t as { targets?: unknown[] }).targets);
     const layerGains = created.gains.slice(1);
 
     expect(layerGains.some((g) => g.connections.some(isParam))).toBe(false);
-    expect(layerGains.length).toBe(4);
+    expect(layerGains.length).toBe(3);
     for (const g of layerGains) {
       expect(g.connections).toContain(master);
     }
@@ -302,55 +302,6 @@ describe("createAmbientAudio", () => {
     (ctx as unknown as { decodeAudioData: unknown }).decodeAudioData = () =>
       Promise.reject(new Error("not audio"));
     expect(await audio.decode(new ArrayBuffer(8))).toBeNull();
-    audio.dispose();
-  });
-});
-
-describe("the objects bus", () => {
-  it("mixes a pick-up through its own bus under the master, positioned and filtered", () => {
-    const { ctx, created } = fakeCtx();
-    const audio = createAmbientAudio(() => ctx);
-    audio.unlock();
-    const destination = (ctx as unknown as { destination: unknown }).destination;
-    const master = created.gains.find((g) => g.connections.includes(destination))!;
-    const objects = created.gains.find((g) => g.gain.value === OBJECTS_LEVEL)!;
-    expect(objects.connections).toContain(master);
-    const before = { gains: created.gains.length, sources: created.sources.length, panners: created.panners.length, filters: created.filters };
-    expect(audio.objectSound("pickup", 1, 2, 3)).toBe(true);
-    expect(created.sources.length).toBe(before.sources + 1);
-    expect(created.panners.length).toBe(before.panners + 1);
-    expect(created.filters).toBe(before.filters + 1);
-    // The per-call gain feeds the objects bus, never the wildlife one.
-    const g = created.gains[created.gains.length - 1]!;
-    expect(created.gains.length).toBe(before.gains + 1);
-    expect(g.connections).toContain(objects);
-    const panner = created.panners[created.panners.length - 1]!;
-    expect([panner.positionX.value, panner.positionY.value, panner.positionZ.value]).toEqual([1, 2, 3]);
-    audio.dispose();
-  });
-
-  it("does nothing before unlock", () => {
-    const { ctx } = fakeCtx();
-    const audio = createAmbientAudio(() => ctx);
-    expect(audio.objectSound("putdown", 0, 0, 0)).toBe(false);
-    expect(() => audio.setPen(true)).not.toThrow();
-  });
-
-  it("starts the pen on and stops it off, once each", () => {
-    const { ctx, created } = fakeCtx();
-    const audio = createAmbientAudio(() => ctx);
-    audio.unlock();
-    // Rain and wind are looping sources of their own; only the pen is new.
-    const before = created.sources.length;
-    audio.setPen(true);
-    audio.setPen(true);
-    const pens = created.sources.slice(before);
-    expect(pens).toHaveLength(1);
-    expect(pens[0]!.loop).toBe(true);
-    audio.setPen(false);
-    expect(pens[0]!.stopped).toBe(true);
-    audio.setPen(false);
-    expect(created.sources.length).toBe(before + 1);
     audio.dispose();
   });
 });
