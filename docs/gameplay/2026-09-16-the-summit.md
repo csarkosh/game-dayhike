@@ -28,11 +28,12 @@ with no timer, and `AiState.Crawl` and `AiState.Merge` are deleted with their nu
 unused; `roadLine` survives with the wall, reading "Not yet. Somebody is still up there." on the
 climb and nothing in the chase, because reaching the corridor is its own line on the end panel;
 and the sign posts stay, reading the summit as their one site, while the trailhead board's lines
-become the poster's. Three more rulings came out of the build itself: the safety pass runs at the
+become the poster's — the poster's date and the number to call (§7) are deferred, and the
+placeholder shows the name and "last seen" lines only. Three more rulings came out of the build itself: the safety pass runs at the
 top of the authoritative tail, before the Hollows step rather than after them, so a player who
 crosses onto the corridor cannot be killed by contact in the tick they reach it (discovery and the
-end rule stay at the tail, which costs the end rule one tick when contact kills the last player); a
-Hollow's step that strictly increases its distance from the road's centreline is allowed even from
+end rule stay at the tail; deaths are settled before the summit step, so a contact kill and the end
+it causes land on the same tick); a Hollow's step that strictly increases its distance from the road's centreline is allowed even from
 inside the corridor, so one that ever finds itself on safe ground walks out instead of freezing;
 and the stare is unchanged for everyone, safe or not — looking back from the road still costs the
 screen — while contact never touches a safe player. What S1's execution measured: on the seed
@@ -103,6 +104,8 @@ win.
 
 **The end.** The match ends on the first tick with no living, unsafe player. `Outcome.Won` if any
 player is safe, `Outcome.Lost` if none is (everyone died). Mixed is a win with names on the stone.
+A player who leaves the match is removed and appears in neither group: the dead stay as peers,
+leavers are simply gone.
 
 **One player and five play by the same rules.** The trigger is "first onto the crest"; the cut is
 shared; each player's escape is their own.
