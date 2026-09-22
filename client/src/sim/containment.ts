@@ -1,5 +1,7 @@
 import type { Vec3 } from "./types.js";
-import { ROAD_BED_HALF } from "./road.js";
+import type { World } from "./world.js";
+import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "./road.js";
+import { activeTerrainVariant } from "./terrain.js";
 import { PLAYER_HALF } from "./constants.js";
 
 /**
@@ -25,4 +27,22 @@ export function containAtRoad(pos: Vec3, vel: Vec3, roadCenterX: number): boolea
   pos.x = wall;
   if (vel.x < 0) vel.x = 0;
   return true;
+}
+
+/** The road offset of (x, z): `x - roadCenterX(seed, z)`, or null on a world with no road. */
+export function roadOffset(world: World, x: number, z: number): number | null {
+  if (world.forest === null) return null;
+  const roadCenterX = activeTerrainVariant().roadCenterX;
+  if (roadCenterX === undefined) return null;
+  return x - roadCenterX(world.forest.seed, z);
+}
+
+/**
+ * The road corridor: the cleared strip ROAD_CORRIDOR_HALF either side of
+ * the centreline, where the pad and the car stand. Safe ground (summit.ts):
+ * a player on it is never targeted and a Hollow never steps onto it.
+ */
+export function isOnCorridor(world: World, x: number, z: number): boolean {
+  const u = roadOffset(world, x, z);
+  return u !== null && (u < 0 ? -u : u) < ROAD_CORRIDOR_HALF;
 }

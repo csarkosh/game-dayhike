@@ -27,15 +27,26 @@ function world(...walls: Brush[]) {
   return { w, p };
 }
 
+/**
+ * A Hollow standing where it is put. Escalation reads positions off the state
+ * and these tests never tick, so the state is set by hand: a spawn with no
+ * reveal hunts, and hunting is what `escalationTargets` tells apart.
+ */
+function standing(w: ReturnType<typeof world>["w"], at: { x: number; y: number; z: number }) {
+  const h = spawnHollow(w, at, 0, 0);
+  h.ai = AiState.Stand;
+  return h;
+}
+
 const targetsOf = (w: ReturnType<typeof world>["w"], id: number) =>
   escalationTargets(w.state, id, w.trail!, w.boxes, w.ground);
 
 describe("escalationTargets", () => {
   it("creeps with the furthest Hollow down the stem, a hunting one at its nearest stem point", () => {
     const { w, p } = world();
-    spawnHollow(w, { x: 160, y: ENEMY_HALF.y, z: 0 }, AiState.Stand);
+    standing(w, { x: 160, y: ENEMY_HALF.y, z: 0 });
     expect(targetsOf(w, p.id).world).toBeCloseTo(0.2, 9);
-    spawnHollow(w, { x: 120, y: ENEMY_HALF.y, z: 50 }, AiState.Hunt, p.id); // beside the stem at x = 120
+    spawnHollow(w, { x: 120, y: ENEMY_HALF.y, z: 50 }, p.id, 0); // beside the stem at x = 120
     expect(targetsOf(w, p.id).world).toBeCloseTo(0.4, 9);
   });
 
@@ -54,7 +65,7 @@ describe("escalationTargets", () => {
     const { w, p } = world();
     expect(targetsOf(w, p.id).near).toBe(0);
     // At eye height, so the eye-to-centre distance equals the horizontal one the fixture's z picks.
-    const h = spawnHollow(w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: NEAR_START + 10 }, AiState.Stand);
+    const h = standing(w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: NEAR_START + 10 });
     expect(targetsOf(w, p.id).near).toBe(0);
     h.pos.z = (NEAR_START + NEAR_FULL) / 2;
     expect(targetsOf(w, p.id).near).toBeCloseTo(0.5, 9);
@@ -63,11 +74,11 @@ describe("escalationTargets", () => {
 
     const walled = world({ min: [90, 0, 20], max: [110, 4, 21], material: "concrete" });
     const q = walled.p;
-    spawnHollow(walled.w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: (NEAR_START + NEAR_FULL) / 2 }, AiState.Stand);
+    standing(walled.w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: (NEAR_START + NEAR_FULL) / 2 });
     expect(targetsOf(walled.w, q.id).near).toBeCloseTo(0.5 * NEAR_BLIND, 9);
 
     const low = world();
-    spawnHollow(low.w, { x: 100, y: ENEMY_HALF.y, z: 45 }, AiState.Stand);
+    standing(low.w, { x: 100, y: ENEMY_HALF.y, z: 45 });
     // 0.7 m below the eye: the falloff reads the slant range, not the ground plan.
     expect(targetsOf(low.w, low.p.id).near).toBeCloseTo(
       (NEAR_START - Math.hypot(45, PLAYER_EYE_OFFSET)) / (NEAR_START - NEAR_FULL),
@@ -79,10 +90,10 @@ describe("escalationTargets", () => {
     const walled = world({ min: [90, 0, 20], max: [110, 4, 21], material: "concrete" });
     const q = walled.p;
     // 25 m behind the wall: blind, so its share is halved to (80-25)/70 * 0.5 ≈ 0.393.
-    spawnHollow(walled.w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: 25 }, AiState.Stand);
+    standing(walled.w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: 25 });
     // 30 m in the open: the wall spans x 90-110 at z 20-21, and this line never
     // leaves z 0, so it is unobstructed — its share is (80-30)/70 ≈ 0.714, greater.
-    spawnHollow(walled.w, { x: 130, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: 0 }, AiState.Stand);
+    standing(walled.w, { x: 130, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: 0 });
     expect(targetsOf(walled.w, q.id).near).toBeCloseTo((NEAR_START - 30) / (NEAR_START - NEAR_FULL), 9);
   });
 

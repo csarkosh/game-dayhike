@@ -238,7 +238,9 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
   if (!world.authoritative) return;
 
   if (world.trail !== null) {
-    // A forest has the Hollow and no director (hollow.ts).
+    // A forest runs the Hollows it has — none until the body is found — and
+    // never the director: nothing spawns on a mountain but what walked out
+    // of the woods (hollow.ts).
     stepHollows(world, TICK_DT);
     updateHollows(world);
   } else {

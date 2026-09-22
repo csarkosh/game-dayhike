@@ -10,6 +10,7 @@ import {
   HOLLOW_LOST_SIGHT_S,
   HOLLOW_STARE_EMPTY_S,
   HOLLOW_STARE_FILL_S,
+  SUMMIT_REVEAL_S,
   playerSees,
   spawnHollow,
 } from "../../src/sim/hollow.js";
@@ -29,13 +30,20 @@ function world(...walls: Brush[]) {
 }
 const tick = (w: ReturnType<typeof world>, n: number) => { for (let i = 0; i < n; i++) tickWorld(w, new Map()); };
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.sqrt((a.x - b.x) ** 2 + (a.z - b.z) ** 2);
+/**
+ * A reveal longer than any test that uses it: a Hollow that never leaves
+ * Emerge, and so never takes a step. Contact and the stare read every Hollow
+ * whatever its state, so these tests still measure what they are about — and
+ * no other state stands still while a living player is in the world.
+ */
+const STILL = 600;
 
 describe("the hunt", () => {
   it("routes along the graph to the node nearest its target, then walks straight at them", () => {
     const w = world();
     const p = spawnPlayer(w);
     p.pos = { x: 150, y: 0.9, z: 80 }; // nearest node is 3 (120, 50)
-    const h = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 0 }, AiState.Hunt, p.id);
+    const h = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 0 }, p.id, 0);
     tickWorld(w, new Map());
     expect(h.route).toEqual([0, 1, 3]);
     expect(h.approach).toBe(false);
@@ -51,7 +59,7 @@ describe("the hunt", () => {
     const w = world();
     const p = spawnPlayer(w);
     p.pos = { x: 150, y: 0.9, z: 80 };
-    const h = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 0 }, AiState.Hunt, p.id);
+    const h = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 0 }, p.id, 0);
     tickWorld(w, new Map());
     expect(h.route).toEqual([0, 1, 3]);
     p.pos = { x: 240, y: 0.9, z: -20 }; // nearest node is now 2, the crest
@@ -71,7 +79,7 @@ describe("the hunt", () => {
     const g = w.trail!;
     expect(nearestTrailNode(g, here.x, here.z)).not.toBe(nearestTrailNode(g, there.x, there.z));
     const p = spawnPlayer(w);
-    const h = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 0 }, AiState.Hunt, p.id);
+    const h = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 0 }, p.id, 0);
     const budget = Math.ceil((100 / HOLLOW_HUNT_SPEED / TICK_DT) * 1.5);
     let t = 0;
     let behind = h.pos.x;
@@ -93,7 +101,7 @@ describe("the hunt", () => {
     const w = world({ min: [130, 0, 68], max: [170, 4, 70], material: "concrete" });
     const p = spawnPlayer(w);
     p.pos = { x: 150, y: 0.9, z: 80 };
-    const h = spawnHollow(w, { x: 150, y: ENEMY_HALF.y, z: 60 }, AiState.Hunt, p.id);
+    const h = spawnHollow(w, { x: 150, y: ENEMY_HALF.y, z: 60 }, p.id, 0);
     h.approach = true;
     tick(w, Math.ceil(HOLLOW_LOST_SIGHT_S / TICK_DT) + 2);
     expect(h.approach).toBe(false);
@@ -115,7 +123,7 @@ describe("the hunt", () => {
     const p = spawnPlayer(w);
     p.pos = { x: 100, y: 0.9, z: 100 };
     p.yaw = 0;
-    const a = spawnHollow(w, { x: 100, y: ENEMY_HALF.y, z: 0 }, AiState.Hunt, p.id);
+    const a = spawnHollow(w, { x: 100, y: ENEMY_HALF.y, z: 0 }, p.id, 0);
     a.approach = true;
     tick(w, 60);
     const from = a.pos.z;
@@ -138,7 +146,7 @@ describe("contact", () => {
     const other = spawnPlayer(w);
     hunted.pos = { x: 100, y: 0.9, z: 0 };
     other.pos = { x: 100, y: 0.9, z: 1 };
-    spawnHollow(w, { x: 100.5, y: ENEMY_HALF.y, z: 0.5 }, AiState.Hunt, hunted.id);
+    spawnHollow(w, { x: 100.5, y: ENEMY_HALF.y, z: 0.5 }, hunted.id, 0);
     tickWorld(w, new Map());
     expect(hunted.health).toBe(0);
     expect(other.health).toBe(0);
@@ -150,7 +158,7 @@ describe("contact", () => {
     const w = world();
     const p = spawnPlayer(w);
     p.pos = { x: 100, y: 0.9, z: 0 };
-    spawnHollow(w, { x: 102, y: ENEMY_HALF.y, z: 0 }, AiState.Stand); // standing still, out of reach
+    spawnHollow(w, { x: 102, y: ENEMY_HALF.y, z: 0 }, p.id, STILL); // emerging, so it never moves: out of reach
     tickWorld(w, new Map());
     expect(p.health).toBe(100);
   });
@@ -161,7 +169,7 @@ describe("looking", () => {
     const w = world();
     const p = spawnPlayer(w);
     p.pos = { x: 0, y: 0.9, z: 0 }; p.yaw = 0; p.pitch = 0; // facing +z
-    const ahead = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 30 }, AiState.Stand);
+    const ahead = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 30 }, p.id, STILL);
     expect(playerSees(p, ahead, w)).toBe(true);
     ahead.pos.x = 30; // 45° off the aim
     expect(playerSees(p, ahead, w)).toBe(false);
@@ -172,7 +180,7 @@ describe("looking", () => {
     const walled = world({ min: [-5, 0, 10], max: [5, 4, 11], material: "concrete" });
     const q = spawnPlayer(walled);
     q.pos = { x: 0, y: 0.9, z: 0 }; q.yaw = 0; q.pitch = 0;
-    const behind = spawnHollow(walled, { x: 0, y: ENEMY_HALF.y, z: 30 }, AiState.Stand);
+    const behind = spawnHollow(walled, { x: 0, y: ENEMY_HALF.y, z: 30 }, q.id, STILL);
     expect(playerSees(q, behind, walled)).toBe(false);
   });
 
@@ -181,7 +189,7 @@ describe("looking", () => {
     const p = spawnPlayer(w);
     p.pos = { x: 0, y: 0.9, z: 0 };
     // It stands 100 m straight down the player's aim: in range and in the cone throughout.
-    const h = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 100 }, AiState.Stand);
+    const h = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 100 }, p.id, STILL);
     const fillTicks = Math.round(HOLLOW_STARE_FILL_S / TICK_DT);
     tick(w, Math.floor(fillTicks / 2));
     expect(p.stare).toBeCloseTo(0.5, 2);
@@ -200,12 +208,12 @@ describe("looking", () => {
 describe("the loss", () => {
   it("is declared when the last living player dies, and not while one lives, and never with no players", () => {
     const empty = world();
-    spawnHollow(empty, { x: 0, y: ENEMY_HALF.y, z: 0 }, AiState.Stand);
+    spawnHollow(empty, { x: 0, y: ENEMY_HALF.y, z: 0 }, 0, STILL);
     tick(empty, 10);
     expect(empty.state.outcome).toBe(Outcome.Playing);
 
     const w = world();
-    spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 0 }, AiState.Stand);
+    spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 0 }, 0, STILL);
     const a = spawnPlayer(w);
     const b = spawnPlayer(w);
     a.health = 0;
@@ -237,8 +245,8 @@ describe("determinism", () => {
     const pa = spawnPlayer(a);
     const pb = spawnPlayer(b);
     pa.pos = { x: 100, y: 0.9, z: 10 }; pb.pos = { x: 100, y: 0.9, z: 10 };
-    spawnHollow(a, { x: 0, y: ENEMY_HALF.y, z: 0 }, AiState.Hunt, pa.id);
-    spawnHollow(b, { x: 0, y: ENEMY_HALF.y, z: 0 }, AiState.Hunt, pb.id);
+    spawnHollow(a, { x: 0, y: ENEMY_HALF.y, z: 0 }, pa.id, 0);
+    spawnHollow(b, { x: 0, y: ENEMY_HALF.y, z: 0 }, pb.id, 0);
     for (let t = 0; t < 600; t++) {
       const cmd = { seq: t, moveX: t % 90 < 45 ? 1 : -1, moveZ: 1, yaw: t * 0.02, pitch: 0.1, buttons: 0 };
       tickWorld(a, new Map([[pa.id, cmd]]));
@@ -246,5 +254,101 @@ describe("determinism", () => {
     }
     expect(serializeWorldState(a.state)).toBe(serializeWorldState(b.state));
     expect(a.state.enemies.size).toBe(1);
+  });
+});
+
+describe("emerge, hunt, stand", () => {
+  it("stands still for the reveal, facing its target, then hunts", () => {
+    const w = world();
+    const p = spawnPlayer(w);
+    p.pos = { x: 100, y: 0.9, z: 20 };
+    const h = spawnHollow(w, { x: 100, y: ENEMY_HALF.y, z: 0 }, p.id, SUMMIT_REVEAL_S);
+    expect(h.ai).toBe(AiState.Emerge);
+    tick(w, Math.round(SUMMIT_REVEAL_S / TICK_DT) - 2);
+    expect(h.ai).toBe(AiState.Emerge);
+    // Emerging never reaches `stepMovement`, so not even gravity touches it:
+    // the spawn point is exactly where it still stands, y included.
+    expect(h.pos).toEqual({ x: 100, y: ENEMY_HALF.y, z: 0 });
+    expect(Math.abs(h.yaw)).toBeLessThan(0.01); // facing +z, toward the player
+    tick(w, 4);
+    expect(h.ai).toBe(AiState.Hunt);
+    expect(h.targetId).toBe(p.id);
+    tick(w, 30);
+    expect(h.pos.z).toBeGreaterThan(1);
+  });
+
+  it("hunts at the hunt speed, slowed to the look factor while seen", () => {
+    // It starts on the stem's middle node with its target at the summit node,
+    // so its route is the one edge between them and the whole walk is +x —
+    // no leg back to a node behind it to muddy the measurement.
+    const w = world();
+    const p = spawnPlayer(w);
+    p.pos = { x: 200, y: 0.9, z: 0 };
+    const h = spawnHollow(w, { x: 100, y: ENEMY_HALF.y, z: 0 }, p.id, 0);
+    // Each window is measured after a settling quarter-second: neither speed
+    // is reached instantly, and measuring from the moment of the change
+    // compares two ramps rather than two speeds. Settled, a second of walking
+    // is the speed to thirteen decimal places; measured from the change, the
+    // wind-up alone costs the first window 0.30 m of its 6.3.
+    tick(w, 15);
+    const x0 = h.pos.x;
+    tick(w, 60);
+    expect(h.pos.x - x0).toBeCloseTo(HOLLOW_HUNT_SPEED, 3);
+    // Now look straight at it: yaw = atan2(dx, dz) with dx < 0, dz = 0 → -pi/2.
+    p.yaw = -Math.PI / 2;
+    tick(w, 15);
+    const x1 = h.pos.x;
+    tick(w, 60);
+    expect(h.pos.x - x1).toBeCloseTo(HOLLOW_HUNT_SPEED * HOLLOW_LOOK_FACTOR, 3);
+  });
+
+  it("retargets the nearest living, unsafe player when its target dies, and stands when nobody is left", () => {
+    const w = world();
+    const a = spawnPlayer(w), b = spawnPlayer(w);
+    a.pos = { x: 60, y: 0.9, z: 0 };
+    b.pos = { x: 120, y: 0.9, z: 0 };
+    const h = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 0 }, a.id, 0);
+    tick(w, 2);
+    a.health = 0;
+    tick(w, 2);
+    expect(h.ai).toBe(AiState.Hunt);
+    expect(h.targetId).toBe(b.id);
+    b.safe = true;
+    tick(w, 2);
+    expect(h.ai).toBe(AiState.Stand);
+    const standing = { ...h.pos };
+    tick(w, 30);
+    expect(h.pos.x).toBeCloseTo(standing.x, 3);
+    b.safe = false;
+    tick(w, 2);
+    expect(h.ai).toBe(AiState.Hunt);
+    expect(h.targetId).toBe(b.id);
+  });
+
+  it("kills any living, unsafe player it touches — target or not — and never a safe one", () => {
+    const w = world();
+    const a = spawnPlayer(w), b = spawnPlayer(w);
+    a.pos = { x: 200, y: 0.9, z: 0 };
+    b.pos = { x: 0.5, y: 0.9, z: 0 };
+    const h = spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 0 }, a.id, 0);
+    tick(w, 2);
+    expect(b.health).toBe(0);
+    const c = spawnPlayer(w);
+    c.pos = { x: 0.5, y: 0.9, z: 0 };
+    c.safe = true;
+    tick(w, 2);
+    expect(c.health).toBeGreaterThan(0);
+    expect(h.targetId).toBe(a.id);
+  });
+
+  it("fills a safe player's stare all the same: looking back from the road still costs the screen", () => {
+    const w = world();
+    const p = spawnPlayer(w);
+    p.pos = { x: 0, y: 0.9, z: 0 };
+    p.safe = true;
+    // 100 m straight down the player's aim, as the stare test's is.
+    spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 100 }, 0, STILL);
+    tick(w, Math.round(HOLLOW_STARE_FILL_S / TICK_DT / 2));
+    expect(p.stare).toBeCloseTo(0.5, 2);
   });
 });

@@ -164,8 +164,10 @@ describe("layer boundaries", () => {
    *   (`interact.ts`, host-only, so only the host's answer is authoritative)
    *   and the headlamp's direction (`entityViews.ts`, render-only, never
    *   hashed), so an engine difference is unobservable either way.
-   * - `hollow.ts` — the Hollow's facing, written inside the authoritative
-   *   branch (`stepHollows`) and never replayed; render-only downstream.
+   * - `hollow.ts` — the Hollow's two facings, one in `walkToward` and one in
+   *   `faceToward` for the states that do not walk, both written inside the
+   *   authoritative branch (`stepHollows`) and never replayed; render-only
+   *   downstream.
    *
    * Allowlisted by call text rather than by line number, deliberately. An earlier
    * version pinned `ai.ts:58`, and adding the unstick fallback shifted that call
@@ -180,6 +182,7 @@ describe("layer boundaries", () => {
       /\bMath\.(?:sin|cos|tan|asin|acos|atan|atan2|pow|exp|log|log2|log10|cbrt|hypot)\s*\(/g;
     const EXPECTED = [
       "ai.ts Math.atan2(",
+      "hollow.ts Math.atan2(",
       "hollow.ts Math.atan2(",
       "movement.ts Math.cos(",
       "movement.ts Math.sin(",

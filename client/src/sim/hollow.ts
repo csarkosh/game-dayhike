@@ -21,6 +21,7 @@ import { route } from "./trailRoute.js";
 import { stepMovement } from "./movement.js";
 import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
+import { isOnCorridor } from "./containment.js";
 import {
   ENEMY_HALF,
   ENEMY_MAX_HEALTH,
@@ -32,10 +33,12 @@ import {
   WALK_SPEED,
 } from "./constants.js";
 
-/** Hunting, m/s: above WALK_SPEED 5.25, below SPRINT_SPEED 7. */
-export const HOLLOW_HUNT_SPEED = 6;
-/** Its speed while a living player has it in view. */
-export const HOLLOW_LOOK_FACTOR = 0.35;
+/** Hunting, m/s: a touch under SPRINT_SPEED 7, so walking, stopping or turning back is what closes the gap. */
+export const HOLLOW_HUNT_SPEED = 6.3;
+/** Its speed while a living player has it in view: a glance back buys distance and costs the screen. */
+export const HOLLOW_LOOK_FACTOR = 0.6;
+/** Seconds it stands still at the crest as it steps out, before the hunt. */
+export const SUMMIT_REVEAL_S = 2;
 /** cos 20°: it must be near the centre of the view, not the edge. */
 export const HOLLOW_LOOK_COS = 0.9397;
 /** Metres from the eye within which looking counts. */
@@ -63,16 +66,17 @@ export function isHollow(e: EnemyState): boolean {
   return isHollowState(e.ai);
 }
 
-export function spawnHollow(world: World, at: Vec3, ai: AiState, targetId = 0): EnemyState {
+/** Spawns a Hollow at `at` in Emerge for `revealS` seconds, then it hunts `targetId`. */
+export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: number): EnemyState {
   const hollow: EnemyState = {
     id: world.state.nextEntityId++,
     pos: cloneVec3(at),
     vel: { x: 0, y: 0, z: 0 },
     yaw: 0,
     health: ENEMY_MAX_HEALTH,
-    ai,
+    ai: revealS > 0 ? AiState.Emerge : AiState.Hunt,
     targetId,
-    stateTimer: 0,
+    stateTimer: revealS,
     attackCooldown: 0,
     lastDistSq: Infinity,
     stuckTimer: 0,
@@ -90,6 +94,28 @@ export function horizontalDistSq(a: { x: number; z: number }, b: { x: number; z:
   const dx = a.x - b.x;
   const dz = a.z - b.z;
   return dx * dx + dz * dz;
+}
+
+/** The living, unsafe player nearest `pos`, ties to the lower id; null when there is none. */
+export function nearestPrey(world: World, pos: Vec3): PlayerState | null {
+  let best: PlayerState | null = null;
+  let bestSq = Infinity;
+  for (const p of world.state.players.values()) {
+    if (p.health <= 0 || p.safe) continue;
+    const sq = horizontalDistSq(p.pos, pos);
+    if (sq < bestSq || (sq === bestSq && best !== null && p.id < best.id)) {
+      bestSq = sq;
+      best = p;
+    }
+  }
+  return best;
+}
+
+/** The facing toward (tx, tz), for a Hollow that is not walking. Host-only, so atan2 is allowed. */
+function faceToward(h: EnemyState, tx: number, tz: number): void {
+  const dx = tx - h.pos.x;
+  const dz = tz - h.pos.z;
+  if (dx * dx + dz * dz > EPSILON * EPSILON) h.yaw = Math.atan2(dx, dz);
 }
 
 /** Every Hollow, in id order (the map inserts in id order and never reorders). */
@@ -158,6 +184,17 @@ function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: num
     world.waterLevel,
     world.ground,
   );
+  // THE HOLLOW STAYS IN THE WOODS: a step onto the road corridor is refused
+  // and it stands at the treeline facing the pad. Safety is the corridor, not
+  // the car. Refusing the step rather than clamping the position keeps it on
+  // ground it could have walked to, and the stuck detection above then slides
+  // it along the treeline instead of pressing into it.
+  if (isOnCorridor(world, result.pos.x, result.pos.z)) {
+    h.vel = { x: 0, y: 0, z: 0 };
+    const th = world.trail?.trailhead;
+    if (th !== undefined) faceToward(h, th.x, th.z);
+    return;
+  }
   h.pos = result.pos;
   h.vel = result.vel;
 }
@@ -228,9 +265,28 @@ function pursue(h: EnemyState, world: World, graph: TrailGraph, dt: number, targ
 
 function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number): void {
   switch (h.ai) {
+    case AiState.Emerge: {
+      // The reveal: it steps out and looks at whoever found the body, giving
+      // the party SUMMIT_REVEAL_S to see it before it moves at all.
+      const target = world.state.players.get(h.targetId);
+      if (target !== undefined) faceToward(h, target.pos.x, target.pos.z);
+      h.stateTimer -= dt;
+      if (h.stateTimer <= 0) {
+        h.ai = AiState.Hunt;
+        clearRoute(h);
+      }
+      return;
+    }
     case AiState.Hunt: {
       const target = world.state.players.get(h.targetId);
       if (target !== undefined) pursue(h, world, graph, dt, target.pos);
+      return;
+    }
+    case AiState.Stand: {
+      // Nobody left to hunt: it waits where it is, facing the pad, because
+      // that is where the next living player will come from.
+      const th = graph.trailhead;
+      faceToward(h, th.x, th.z);
       return;
     }
     default:
@@ -284,7 +340,7 @@ export function updateHollows(world: World): void {
   const tall = PLAYER_HALF.y + ENEMY_HALF.y;
   for (const h of hollowsOf(world)) {
     for (const p of state.players.values()) {
-      if (p.health <= 0) continue;
+      if (p.health <= 0 || p.safe) continue;
       const dy = p.pos.y - h.pos.y;
       if (horizontalDistSq(p.pos, h.pos) <= reach * reach && Math.abs(dy) <= tall) p.health = 0;
     }
@@ -306,6 +362,31 @@ export function updateHollows(world: World): void {
     }
     p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
     if (p.stare >= 1) p.health = 0;
+  }
+
+  // Prey: a hunting Hollow whose target is dead, gone or safe takes the
+  // nearest living, unsafe player, or stands; a standing one takes the
+  // first prey that appears. A Hollow never merges and never leaves: the
+  // pack only grows (summit.ts spawns; S3 adds the forks).
+  for (const h of all) {
+    if (h.ai === AiState.Emerge) continue;
+    const target = state.players.get(h.targetId);
+    const lost = target === undefined || target.health <= 0 || target.safe;
+    if (h.ai === AiState.Hunt && !lost) continue;
+    const prey = nearestPrey(world, h.pos);
+    if (prey === null) {
+      if (h.ai !== AiState.Stand) {
+        h.ai = AiState.Stand;
+        h.targetId = 0;
+        clearRoute(h);
+      }
+      continue;
+    }
+    if (h.ai !== AiState.Hunt || h.targetId !== prey.id) {
+      h.ai = AiState.Hunt;
+      h.targetId = prey.id;
+      clearRoute(h);
+    }
   }
 }
 
