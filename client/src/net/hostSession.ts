@@ -104,9 +104,9 @@ export function createHostSession(
   level: Level,
   seed: number,
   clock: () => number = () => performance.now(),
-  opts: { forest?: Forest | null } = {},
+  opts: { forest?: Forest | null; hostPeerId?: string } = {},
 ): HostSession {
-  const { forest = null } = opts;
+  const { forest = null, hostPeerId = "host" } = opts;
   // A forest world's `level.id` is the versioned generator identity, which is
   // what the Welcome event below sends and the client validates. No geometry
   // crosses the wire either way, so the codec is untouched.
@@ -239,11 +239,14 @@ export function createHostSession(
           levelId: world.level.id,
         }),
       );
+      // Who is who, for the end screen's names: every pairing so far to the
+      // newcomer (the host's own first), the newcomer's to everyone else.
+      transport.sendEvent(encodeEvent({ t: MessageType.Named, entityId: localPlayer.id, peerId: hostPeerId }));
       for (const other of peers.values()) {
+        transport.sendEvent(encodeEvent({ t: MessageType.Named, entityId: other.entityId, peerId: other.peerId }));
         if (other.peerId === peerId) continue;
-        other.transport.sendEvent(
-          encodeEvent({ t: MessageType.PlayerJoined, entityId: player.id }),
-        );
+        other.transport.sendEvent(encodeEvent({ t: MessageType.PlayerJoined, entityId: player.id }));
+        other.transport.sendEvent(encodeEvent({ t: MessageType.Named, entityId: player.id, peerId }));
       }
       return player.id;
     },

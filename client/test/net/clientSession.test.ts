@@ -6,7 +6,7 @@ import { PERFECT_NETWORK, type NetworkConditions } from "../../src/net/transport
 import { parseLevel } from "../../src/sim/level.js";
 import { createForest } from "../../src/sim/forest.js";
 import { MAX_UNACKED_INPUTS, PLAYER_MAX_HEALTH, TICK_DT } from "../../src/sim/constants.js";
-import { Button, Outcome, type InputCommand } from "../../src/sim/types.js";
+import { Button, Outcome, Phase, type InputCommand } from "../../src/sim/types.js";
 import { encodeEvent, MessageType, PROTOCOL_VERSION } from "../../src/net/protocol.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
@@ -23,17 +23,18 @@ function harness(conditions: NetworkConditions = PERFECT_NETWORK, seed = 4242) {
   const [hostSide, clientSide] = net.createPair();
   const host = createHostSession(level, SEED);
   const client = createClientSession(level, SEED, clientSide, () => net.now);
-  const peerEntityId = host.addPeer("p1", hostSide);
+  const peerId = "p1";
+  const peerEntityId = host.addPeer(peerId, hostSide);
   // Let the Welcome event arrive.
   net.advance(500);
-  return { net, host, client, peerEntityId };
+  return { net, host, client, peerEntityId, peerId };
 }
 
 /** Runs both sides in lockstep for `ticks` sim steps. */
 function drive(
   h: ReturnType<typeof harness>,
   ticks: number,
-  makeInput: (t: number) => InputCommand,
+  makeInput: (t: number) => InputCommand = (t) => input({ seq: t + 1 }),
 ): void {
   for (let t = 0; t < ticks; t++) {
     h.client.tick(makeInput(t));
@@ -508,6 +509,37 @@ describe("the outcome", () => {
   it("starts playing before any snapshot", () => {
     const h = harness();
     expect(h.client.renderState(h.net.now).outcome).toBe(Outcome.Playing);
+  });
+});
+
+describe("the phase and safety", () => {
+  it("carries the phase and each player's safety into the render state and onto the local player", () => {
+    const h = harness();
+    const me = h.client.localEntityId;
+    h.host.world.state.phase = Phase.Chase;
+    h.host.world.state.players.get(me)!.safe = true;
+    // TICKS_PER_SNAPSHOT is 3 (60 Hz sim, 20 Hz snapshot): drive long enough
+    // for at least one snapshot to actually leave the host, matching "the
+    // outcome" tests below.
+    drive(h, 6);
+    const state = h.client.renderState(h.net.now);
+    expect(state.phase).toBe(Phase.Chase);
+    expect(h.client.localPlayer()!.safe).toBe(true);
+    expect(state.players.get(me)!.safe).toBe(true);
+  });
+
+  it("starts on the climb before any snapshot", () => {
+    const h = harness();
+    expect(h.client.renderState(h.net.now).phase).toBe(Phase.Climb);
+  });
+
+  it("learns every peer's name pairing on join, and the next joiner's", () => {
+    const h = harness();
+    const named: Array<{ entityId: number; peerId: string }> = [];
+    h.client.onNamed((e) => named.push(e));
+    drive(h, 1);
+    expect(named).toContainEqual({ entityId: h.host.localEntityId, peerId: "host" });
+    expect(named).toContainEqual({ entityId: h.client.localEntityId, peerId: h.peerId });
   });
 });
 

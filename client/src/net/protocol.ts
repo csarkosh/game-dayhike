@@ -1,18 +1,20 @@
 import type { InputCommand, Vec3 } from "../sim/types.js";
 
 /**
- * Bumped whenever the wire format changes (most recently: the stare, one
- * byte per player; before that, the register — the hikers' items, the match
- * outcome, and each player's carried item and sign-out ticks; before that,
- * positions widened from int16 to int32 so the wire carries the whole forest
- * rather than a 512 m box around the origin, and input sequence numbers
- * widened from uint16 to uint32 so they no longer wrap after 18 minutes;
- * before that, the lamp byte and the Interacted event). `Welcome` carries it;
- * a client on another version is refused in words instead of decoding
- * garbage. The level id does not cover this — it moves with the terrain, not
- * the codec.
+ * Bumped whenever the wire format changes (most recently: the summit loop —
+ * the phase byte; each player's flags byte, whose bit 0 is safety; the items
+ * section, the respawn timer, the carried item and the sign-out ticks gone;
+ * the Named event; before that, the stare, one byte per player; before that,
+ * the register — the hikers' items, the match outcome, and each player's
+ * carried item and sign-out ticks; before that, positions widened from
+ * int16 to int32 so the wire carries the whole forest rather than a 512 m
+ * box around the origin, and input sequence numbers widened from uint16 to
+ * uint32 so they no longer wrap after 18 minutes; before that, the lamp
+ * byte and the Interacted event). `Welcome` carries it; a client on another
+ * version is refused in words instead of decoding garbage. The level id
+ * does not cover this — it moves with the terrain, not the codec.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 export const enum MessageType {
   Input = 1,
@@ -25,6 +27,7 @@ export const enum MessageType {
   Ping = 8,
   Pong = 9,
   SessionEnded = 10,
+  Named = 11,
 }
 
 /**
@@ -157,7 +160,9 @@ export type NetEvent =
   | { t: MessageType.Interacted; entityId: number; targetId: number }
   | { t: MessageType.Ping; stamp: number }
   | { t: MessageType.Pong; stamp: number; hostTick: number }
-  | { t: MessageType.SessionEnded; reason: string };
+  | { t: MessageType.SessionEnded; reason: string }
+  /** Who is who, for the end screen's names: which peer is behind an entity. */
+  | { t: MessageType.Named; entityId: number; peerId: string };
 
 export function messageTypeOf(buffer: ArrayBuffer): number {
   return new DataView(buffer).getUint8(0);
@@ -449,6 +454,17 @@ export function encodeEvent(event: NetEvent): ArrayBuffer {
       new Uint8Array(buffer, 2).set(reason);
       return buffer;
     }
+    case MessageType.Named: {
+      // SessionEnded's shape with the entity id in front: [type][entityId u16][len u8][peerId].
+      const peerId = textEncoder.encode(event.peerId);
+      const buffer = new ArrayBuffer(1 + 2 + 1 + peerId.length);
+      const view = new DataView(buffer);
+      view.setUint8(0, MessageType.Named);
+      view.setUint16(1, event.entityId, true);
+      view.setUint8(3, peerId.length);
+      new Uint8Array(buffer, 4).set(peerId);
+      return buffer;
+    }
   }
 }
 
@@ -491,6 +507,13 @@ export function decodeEvent(buffer: ArrayBuffer): NetEvent {
         t: MessageType.SessionEnded,
         reason: textDecoder.decode(new Uint8Array(buffer, 2, length)),
       };
+    }
+    case MessageType.Named: {
+      const entityId = view.getUint16(1, true);
+      // Bound the length read to the bytes actually present, the way Welcome's is.
+      const length = Math.min(view.getUint8(3), Math.max(0, buffer.byteLength - 4));
+      const peerId = textDecoder.decode(new Uint8Array(buffer, 4, length));
+      return { t: MessageType.Named, entityId, peerId };
     }
     default:
       throw new Error(`unknown message type ${type}`);

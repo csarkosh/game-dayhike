@@ -34,6 +34,7 @@ export type NetStats = {
 };
 
 export type InteractedHandler = (e: { entityId: number; targetId: number }) => void;
+export type NamedHandler = (e: { entityId: number; peerId: string }) => void;
 
 export type ClientSession = {
   readonly ready: boolean;
@@ -50,6 +51,7 @@ export type ClientSession = {
   localPlayer(): PlayerState | undefined;
   onSessionEnd(handler: (reason: string) => void): void;
   onInteracted(handler: InteractedHandler): void;
+  onNamed(handler: NamedHandler): void;
   dispose(): void;
 };
 
@@ -88,6 +90,12 @@ export function createClientSession(
 
   let endHandler: ((reason: string) => void) | null = null;
   let interactedHandler: InteractedHandler | null = null;
+  let namedHandler: NamedHandler | null = null;
+  // A roster or end screen typically wires up onNamed after the session is
+  // already connected, well after the host announced every pairing that
+  // existed at join time — so those are kept and replayed to a late
+  // subscriber rather than lost.
+  const namedSoFar: Array<{ entityId: number; peerId: string }> = [];
 
   transport.onEvent((data) => {
     try {
@@ -146,6 +154,12 @@ export function createClientSession(
         case MessageType.Interacted:
           interactedHandler?.({ entityId: event.entityId, targetId: event.targetId });
           break;
+        case MessageType.Named: {
+          const named = { entityId: event.entityId, peerId: event.peerId };
+          namedSoFar.push(named);
+          namedHandler?.(named);
+          break;
+        }
         default:
           break;
       }
@@ -395,6 +409,10 @@ export function createClientSession(
     },
     onInteracted(handler) {
       interactedHandler = handler;
+    },
+    onNamed(handler) {
+      namedHandler = handler;
+      for (const named of namedSoFar) handler(named);
     },
     dispose() {
       transport.close();

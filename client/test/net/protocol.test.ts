@@ -333,6 +333,11 @@ describe("event codec", () => {
     expect(back).toEqual({ t: MessageType.Interacted, entityId: 3, targetId: 42 });
   });
 
+  it("round-trips Named with a peer id up to 255 bytes", () => {
+    const e = { t: MessageType.Named as const, entityId: 7, peerId: "a0b1c2d3-e4f5-6789-abcd-ef0123456789" };
+    expect(decodeEvent(encodeEvent(e))).toEqual(e);
+  });
+
   it("throws on an unknown message type rather than returning junk", () => {
     const buf = new ArrayBuffer(1);
     new DataView(buf).setUint8(0, 200);
