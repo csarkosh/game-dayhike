@@ -37,8 +37,12 @@ export const BLADE_ROUND = 0.3;
  * the top of the tone curve, so this value is far below what the colour
  * looks like on screen — halving it moves the rendered colour only about
  * 12%. Tuned by comparing the near field's mean colour against the far
- * field's in the same frame, not by eye against a swatch. */
-export const BLADE_ALBEDO: Rgb = { r: 0.075, g: 0.10, b: 0.03 };
+ * field's in the same frame, not by eye against a swatch, and with the sun
+ * pinned: the world clock keeps running, so two stills minutes apart are lit
+ * differently and cannot be compared. Driving this lower does keep closing
+ * the near/far gap, but only because the blades darken until the ground
+ * between them is what the frame measures. */
+export const BLADE_ALBEDO: Rgb = { r: 0.16, g: 0.21, b: 0.065 };
 /** Vertex colour at the tip, from white at the root. */
 export const BLADE_TIP_TINT: Rgb = { r: 0.95, g: 0.95, b: 0.75 };
 /** Per-blade luminance spread: `1 + BLADE_LUMA · (random − 0.5)`. */
@@ -77,9 +81,16 @@ export const FLOWER_PALETTE: readonly Rgb[] = [
   { r: 0.9, g: 0.25, b: 0.2 },
 ];
 /** Seed head: the continuing strip's length (m), from the blade's own tip. */
-export const SEED_HEAD_SIZE = 0.03;
-/** Seed head: the strip's base half-width, as a multiple of the blade's own half-width. */
-export const SEED_HEAD_WIDTH = 2.5;
+export const SEED_HEAD_SIZE = 0.06;
+/** Seed head: the strip's base half-width, as a multiple of the blade's own
+ * half-width. Every strip vertex carries a normal lying flat in the
+ * horizontal plane, and the fragment only tilts a normal toward up near the
+ * root, so geometry high on a blade meets an overhead sun edge-on. A blade
+ * survives that by being a sliver; a head wider than it is long does not —
+ * at 2.5 the head was a squat face that crushed to black against the sward.
+ * Keeping it near the blade's own width makes it a slender continuation,
+ * which is what a seed head is meant to read as. */
+export const SEED_HEAD_WIDTH = 1.2;
 /** Flower head: the stem's half-width (m) and the rosette's reach (m), which scales
  * each petal strip's length and base width; the head sits this high (m). */
 export const FLOWER_STEM_WIDTH = 0.003;
