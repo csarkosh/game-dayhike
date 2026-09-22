@@ -63,7 +63,7 @@ import { PROPS, propSite, type RoadProp } from "./sim/passes/trailhead.js";
 import { afterNextPaint } from "./game/paint.js";
 import { connectFailureMessage, createConnectPanel } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
-import { Button, Outcome, Phase, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
+import { Button, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
 import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
