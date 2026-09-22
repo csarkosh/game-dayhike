@@ -46,12 +46,43 @@ describe("the climb", SUITE, () => {
   });
 });
 
+describe("safe ground", SUITE, () => {
+  it("does not let a Hollow at the treeline kill a player who reached the corridor this tick", () => {
+    const { w, p } = forestWorld();
+    const body = w.register!.body.pos;
+    standAt(p, body.x - 5, body.z);
+    tick(w, 1);
+    const h = [...w.state.enemies.values()][0]!;
+    const th = w.trail!.trailhead;
+    const roadX = activeTerrainVariant().roadCenterX!(seed, th.z);
+    // The player was out in the woods at the end of the last tick, so `safe`
+    // reads false coming in. This tick they are a hand's breadth inside the
+    // corridor with the Hollow standing at the edge, 0.4 m away — well inside
+    // contact reach. Safety has to be read from where they are now, not from
+    // where the last tick left them.
+    h.ai = AiState.Hunt; h.stateTimer = 0; h.targetId = p.id;
+    const hx = roadX + ROAD_CORRIDOR_HALF + 0.3;
+    h.pos = { x: hx, y: elevationAt(seed, hx, th.z) + ENEMY_HALF.y, z: th.z };
+    const px = roadX + ROAD_CORRIDOR_HALF - 0.1;
+    standAt(p, px, th.z);
+    expect(p.safe).toBe(false);
+    tick(w, 1);
+    expect(p.safe).toBe(true);
+    expect(p.health).toBeGreaterThan(0);
+    expect(w.state.outcome).toBe(Outcome.Won);
+  });
+});
+
 describe("the discovery", SUITE, () => {
   it("flips the phase for everyone when the first living player reaches the body, and the Hollow steps out behind it", () => {
     const { w, p } = forestWorld();
     const q = spawnPlayer(w);
     const body = w.register!.body.pos;
+    // Both are in reach on the same tick, and q — the higher id — is both
+    // nearer the body and on the other side of it, so the lower id winning
+    // the tie is what decides the target and the side it steps out on.
     standAt(p, body.x - (DISCOVERY_RADIUS - 1), body.z);
+    standAt(q, body.x + 2, body.z);
     tick(w, 1);
     expect(w.state.phase).toBe(Phase.Chase);
     const hollows = [...w.state.enemies.values()];
@@ -72,11 +103,36 @@ describe("the discovery", SUITE, () => {
     expect(h.ai).toBe(AiState.Hunt);
   });
 
+  it("steps out on the +x fallback when the finder is standing on the body", () => {
+    const { w, p } = forestWorld();
+    const body = w.register!.body.pos;
+    // Exactly on it: the line from the finder through the body is degenerate,
+    // and `emergePoint` falls back to +x rather than dividing by nothing.
+    standAt(p, body.x, body.z);
+    tick(w, 1);
+    const h = [...w.state.enemies.values()][0]!;
+    expect(h.pos.x).toBeCloseTo(body.x + SUMMIT_SPAWN_DIST, 1);
+    expect(h.pos.z).toBeCloseTo(body.z, 1);
+    expect(h.pos.y).toBeCloseTo(elevationAt(seed, h.pos.x, h.pos.z) + ENEMY_HALF.y, 1);
+  });
+
   it("does not flip for a dead player at the body", () => {
     const { w, p } = forestWorld();
     const body = w.register!.body.pos;
     p.health = 0;
     standAt(p, body.x, body.z);
+    tick(w, 1);
+    expect(w.state.phase).toBe(Phase.Climb);
+    expect(w.state.enemies.size).toBe(0);
+  });
+
+  it("does not flip inside a match that is already over", () => {
+    const { w, p } = forestWorld();
+    p.health = 0;
+    tick(w, 1);
+    expect(w.state.outcome).toBe(Outcome.Lost); // the party died on the climb
+    const q = spawnPlayer(w);
+    standAt(q, w.register!.body.pos.x, w.register!.body.pos.z);
     tick(w, 1);
     expect(w.state.phase).toBe(Phase.Climb);
     expect(w.state.enemies.size).toBe(0);
@@ -132,14 +188,35 @@ describe("the end", SUITE, () => {
     const h = [...w.state.enemies.values()][0]!;
     const th = w.trail!.trailhead;
     const roadX = activeTerrainVariant().roadCenterX!(seed, th.z);
-    // Put the Hollow just inside the woods, hunting, and the player on the pad.
-    h.ai = AiState.Hunt; h.stateTimer = 0;
-    h.pos = { x: roadX + ROAD_CORRIDOR_HALF + 3, y: elevationAt(seed, roadX + ROAD_CORRIDOR_HALF + 3, th.z) + ENEMY_HALF.y, z: th.z };
+    const placeH = (u: number) => { h.pos = { x: roadX + u, y: elevationAt(seed, roadX + u, th.z) + ENEMY_HALF.y, z: th.z }; };
+    const uOf = (o: { x: number; z: number }) => o.x - activeTerrainVariant().roadCenterX!(seed, o.z);
+
+    // First it walks at the treeline. Its prey stands just outside the
+    // corridor, which is nearer the road than the Hollow is, so hunting them
+    // IS walking toward the corridor; `approach` puts it on the straight line
+    // rather than on a trail route.
+    h.ai = AiState.Hunt; h.stateTimer = 0; h.targetId = p.id; h.approach = true; h.lastDistSq = Infinity;
+    placeH(ROAD_CORRIDOR_HALF + 2);
+    standAt(p, roadX + ROAD_CORRIDOR_HALF + 0.05, th.z);
+    tick(w, 10);
+    expect(p.safe).toBe(false);
+    expect(p.health).toBeGreaterThan(0); // not caught yet: contact reach is 0.9 m
+    // 0.66 m of the 1.95 m gap in ten ticks — it walks from a standstill, so
+    // the first ticks are the acceleration, not the top speed.
+    const travelled = ROAD_CORRIDOR_HALF + 2 - uOf(h.pos);
+    expect(travelled).toBeGreaterThan(0.5);
+
+    // Now it is within one step of the edge — HOLLOW_HUNT_SPEED carries it
+    // 0.105 m in a tick — and the player reaches the pad. The step it takes
+    // toward them would end on the corridor, so containment is what decides
+    // where it finishes, not the distance it was standing off.
+    placeH(ROAD_CORRIDOR_HALF + 0.02);
     standAt(p, th.x, th.z);
     tick(w, 1);
     expect(p.safe).toBe(true);
     tick(w, 60);
-    expect(h.pos.x - roadX).toBeGreaterThanOrEqual(ROAD_CORRIDOR_HALF - 0.01);
+    expect(uOf(h.pos)).toBeGreaterThanOrEqual(ROAD_CORRIDOR_HALF - 0.01);
+    expect(uOf(h.pos)).toBeLessThan(ROAD_CORRIDOR_HALF + 0.1); // it settled AT the edge
     expect(h.ai).toBe(AiState.Stand);
     expect(w.state.outcome).toBe(Outcome.Won);
   });

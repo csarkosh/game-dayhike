@@ -1,10 +1,11 @@
 /**
  * The summit (docs/gameplay/2026-09-16-the-summit.md §2, §5.1, §5.2): the
  * match's two acts and the rules that turn one into the other. Every tick,
- * host only, after the Hollows have moved: who is on the road corridor (safe
- * ground), whether the first living player has found the body (the phase
- * flips for everyone and the summit Hollow steps out), and whether the match
- * is over (no living player still out).
+ * host only: who is on the road corridor (safe ground), whether the first
+ * living player has found the body (the phase flips for everyone and the
+ * summit Hollow steps out), and whether the match is over (no living player
+ * still out). The first of those runs before the Hollows move and the other
+ * two after them — see each function.
  *
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
@@ -37,8 +38,8 @@ function finder(world: World, body: Vec3): PlayerState | null {
 }
 
 /** Where the Hollow steps out: SUMMIT_SPAWN_DIST past the body along the line from the finder through it. */
-function emergePoint(world: World, body: Vec3, finder: PlayerState): Vec3 {
-  let dx = body.x - finder.pos.x, dz = body.z - finder.pos.z;
+function emergePoint(world: World, body: Vec3, finderPos: Vec3): Vec3 {
+  let dx = body.x - finderPos.x, dz = body.z - finderPos.z;
   const len = Math.sqrt(dx * dx + dz * dz);
   if (len > 1e-9) { dx /= len; dz /= len; } else { dx = 1; dz = 0; }
   const x = body.x + dx * SUMMIT_SPAWN_DIST, z = body.z + dz * SUMMIT_SPAWN_DIST;
@@ -46,23 +47,47 @@ function emergePoint(world: World, body: Vec3, finder: PlayerState): Vec3 {
   return { x, y: groundY + ENEMY_HALF.y, z };
 }
 
+/**
+ * Safe ground, from this tick's positions. Host only, and called at the HEAD
+ * of the tick's authoritative tail, before the Hollows move: players move at
+ * the top of the tick, so a `safe` left over from the previous tick would have
+ * a player who crossed the treeline this tick still reading as prey — and a
+ * Hollow standing at the corridor's edge is within contact reach of someone
+ * a hand's breadth inside it. Contact kills, and death is permanent, so that
+ * one stale tick is a player killed on safe ground.
+ */
+export function updateSafety(world: World): void {
+  // Only a world with a road has safe ground to stand on. A hand-authored
+  // level has neither, so nothing here writes its players' `safe`: on those
+  // worlds the flag stays whatever put it there, which is false unless a
+  // sandbox scenario sets it to exercise the Hollow's rules.
+  if (world.forest === null) return;
+  for (const p of world.state.players.values()) p.safe = isOnCorridor(world, p.pos.x, p.pos.z);
+}
+
+/**
+ * The find and the end, host only, at the TAIL of the tick: both are judged
+ * on everything the tick has already settled, the deaths included. Safety is
+ * not here — it is `updateSafety` above, which the same tick already ran.
+ */
 export function stepSummit(world: World): void {
   const register = world.register;
   const state = world.state;
   if (register === null || world.trail === null) return;
-
-  // Safety is a state of the ground, read fresh every tick.
-  for (const p of state.players.values()) p.safe = isOnCorridor(world, p.pos.x, p.pos.z);
+  // A finished match finds nothing and ends nothing. The guard covers the
+  // climb as well as the chase: a forest party that died on the way up is
+  // already Lost (`updateLoss`), and a player joining that match must not be
+  // able to walk to the body and step a Hollow out into it.
+  if (state.outcome !== Outcome.Playing) return;
 
   if (state.phase === Phase.Climb) {
     const who = finder(world, register.body.pos);
     if (who === null) return;
     state.phase = Phase.Chase;
-    spawnHollow(world, emergePoint(world, register.body.pos, who), who.id, SUMMIT_REVEAL_S);
+    spawnHollow(world, emergePoint(world, register.body.pos, who.pos), who.id, SUMMIT_REVEAL_S);
     return;
   }
 
-  if (state.outcome !== Outcome.Playing) return;
   let out = 0, safe = 0;
   for (const p of state.players.values()) {
     if (dead(p)) continue;

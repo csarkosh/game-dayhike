@@ -16,7 +16,7 @@ import { stepMovement, type MoveState } from "./movement.js";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
 import { updateDirector } from "./director.js";
 import { stepHollows, updateHollows, updateLoss } from "./hollow.js";
-import { stepSummit } from "./summit.js";
+import { stepSummit, updateSafety } from "./summit.js";
 import { ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
 
 export type World = {
@@ -238,6 +238,11 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
 
   if (!world.authoritative) return;
 
+  // Safety first, from the positions this tick just settled: the Hollows read
+  // it as they move and as they pick their prey, so a player who crossed onto
+  // the corridor this tick is out of reach on the same tick (summit.ts).
+  updateSafety(world);
+
   if (world.trail !== null) {
     // A forest runs the Hollows it has — none until the body is found — and
     // never the director: nothing spawns on a mountain but what walked out
@@ -251,8 +256,8 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
   }
   updateDeaths(world);
   updateLoss(world);
-  // The summit last: safety, the find and the end all read the positions and
-  // the deaths this tick already settled (summit.ts).
+  // The find and the end last: both are judged on everything the tick has
+  // settled, the deaths above included (summit.ts).
   stepSummit(world);
 }
 
