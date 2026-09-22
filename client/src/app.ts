@@ -54,8 +54,8 @@ import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
 import { isDesktop, isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
-import { createRegisterPanel, registerPanelModel } from "./game/registerPanel.js";
-import { DEATH_LINE, LOSS_LANDING_MS, LOSS_LINE, roadLine, WIN_LINE } from "./game/registerHud.js";
+import { createPosterPanel, posterModel } from "./game/posterPanel.js";
+import { DEATH_LINE, END_PASSAGES, LOSS_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/register.js";
 import { signPosts } from "./sim/signs.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
@@ -443,7 +443,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     );
   }
 
-  const registerPanel = createRegisterPanel(container);
+  const registerPanel = createPosterPanel(container);
   let lastButtons = 0;
   /**
    * The poster is this player's own screen: it opens on an Interact press at
@@ -461,7 +461,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     if ((edges & Button.Interact) === 0) return;
     const target = resolveInteract(world, self);
     if (target === null || target.kind !== InteractKind.Register) return;
-    registerPanel.show(registerPanelModel(world.register));
+    registerPanel.show(posterModel(world.register));
   }
 
   let roadLineAt = -Infinity;
@@ -470,7 +470,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     const roadCenterX = activeTerrainVariant().roadCenterX;
     if (self === undefined || roadCenterX === undefined) return;
     const u = self.pos.x - roadCenterX(seed, self.pos.z);
-    const line = roadLine(u, state.phase === Phase.Chase);
+    const line = roadLine(u, state.phase);
     const now = performance.now();
     if (line === null || now - roadLineAt < 4000) return;
     roadLineAt = now;
@@ -502,7 +502,9 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     input.setSuppressed(true);
     registerPanel.hide();
     hud.fade(true);
-    hud.setStatus(won ? WIN_LINE : LOSS_LINE);
+    // Placeholder: the real end-of-match screen is Task 9's (endPanel.ts);
+    // this keeps the status line legible until that wiring lands.
+    hud.setStatus(won ? END_PASSAGES.all : END_PASSAGES.none);
     if (landingTimer !== null) clearTimeout(landingTimer);
     landingTimer = setTimeout(navigateToLanding, won ? 5000 : LOSS_LANDING_MS);
   }
