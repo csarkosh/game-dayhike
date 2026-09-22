@@ -1,121 +1,163 @@
 import { describe, expect, it } from "vitest";
 import {
-  BLADE_CLUMP_RADIUS, BLADE_COUNT, BLADE_HEIGHT, BLADE_RINGS, BLADE_SOFT, BLADE_TRIS, BLADE_VERTS, BLADE_WIDTH,
-  bladeAlive, bladeClumpGeometry,
+  BLADE_ALBEDO, BLADE_CHARACTERS, BLADE_CLUMP_RADIUS, BLADE_LUMA, BLADE_RINGS, BLADE_SOFT, BLADE_TIER_COUNTS,
+  BLADE_TIP_TINT, BLADE_TRIS, BLADE_VERTEX_BUDGET, BLADE_VERTS, FLOWER_PALETTE,
+  bladeAlive, bladeClumpGeometry, bladeSecondRandom, bladeVertexCount,
 } from "../../src/game/bladeClump.js";
+import {
+  BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_FINE, BLADE_FLOWER, BLADE_PAD, BLADE_REACH, BLADE_TIER_BAND, BLADE_TIER_EDGE,
+  BLADE_TUSSOCK, BLADE_WEED,
+} from "../../src/game/bladeField.js";
 
-describe("the blade clump geometry", () => {
-  const g = bladeClumpGeometry();
-  const vertexCount = g.positions.length / 3;
-
-  it("has BLADE_COUNT blades of 9 vertices and 7 triangles each", () => {
-    expect(BLADE_VERTS).toBe(BLADE_RINGS * 2 + 1);
-    expect(BLADE_TRIS).toBe((BLADE_RINGS - 1) * 2 + 1);
-    expect(vertexCount).toBe(BLADE_COUNT * BLADE_VERTS);
-    expect(g.indices.length).toBe(BLADE_COUNT * BLADE_TRIS * 3);
-    expect(g.normals.length).toBe(vertexCount * 3);
-    expect(g.colors.length).toBe(vertexCount * 4);
-    expect(g.blade.length).toBe(vertexCount * 4);
-    for (const i of g.indices) expect(i).toBeLessThan(vertexCount);
+describe("the character and tier tables", () => {
+  it("match the spec", () => {
+    expect(BLADE_CHARACTERS.length).toBe(BLADE_CHARACTER_COUNT);
+    expect(BLADE_RINGS).toBe(3);
+    expect(BLADE_VERTS).toBe(7);
+    expect(BLADE_TRIS).toBe(5);
+    expect(BLADE_CLUMP_RADIUS).toBe(0.35);
+    expect(BLADE_ALBEDO).toEqual({ r: 0.3, g: 0.4, b: 0.12 });
+    expect(BLADE_TIP_TINT).toEqual({ r: 0.95, g: 0.95, b: 0.75 });
+    expect(BLADE_LUMA).toBe(0.3);
+    expect(BLADE_SOFT).toBe(0.15);
+    expect(BLADE_TIER_COUNTS.high).toEqual([[100, 40, 16], [80, 28, 12], [12, 8, 4], [100, 32, 12]]);
+    expect(BLADE_TIER_COUNTS.medium).toEqual([[50, 20, 8], [40, 14, 6], [6, 4, 2], [50, 16, 6]]);
+    expect(BLADE_CHARACTERS[BLADE_FINE]!.tip).toBe("none");
+    expect(BLADE_CHARACTERS[BLADE_TUSSOCK]!.tip).toBe("seed");
+    expect(BLADE_CHARACTERS[BLADE_WEED]!.width).toBe(0.03);
+    expect(BLADE_CHARACTERS[BLADE_FLOWER]!.tip).toBe("flower");
+    expect(BLADE_CHARACTERS[BLADE_FLOWER]!.heads).toEqual([1, 3]);
+    expect(FLOWER_PALETTE.length).toBe(4);
   });
 
-  it("roots every blade at y = 0 inside the clump radius, and the attribute carries that root", () => {
-    for (let b = 0; b < BLADE_COUNT; b++) {
-      const v0 = b * BLADE_VERTS;
-      for (const v of [v0, v0 + 1]) {
-        expect(g.positions[v * 3 + 1]).toBe(0);
-        const rx = g.blade[v * 4]!, rz = g.blade[v * 4 + 1]!;
-        expect(Math.hypot(rx, rz)).toBeLessThanOrEqual(BLADE_CLUMP_RADIUS + 1e-9);
-        // The two root vertices straddle the root by the half-width. The two
-        // roots are stored as float32 at magnitudes up to 0.3 m, whose ULP
-        // (about 2e-8) is far larger than a 9-digit tolerance (5e-10), so this
-        // pins the half-width to 6 digits (5e-7), still well above the
-        // measured worst case (about 2e-8).
-        expect(Math.hypot(g.positions[v * 3]! - rx, g.positions[v * 3 + 2]! - rz)).toBeCloseTo(BLADE_WIDTH, 6);
-      }
-      // Every vertex of the blade names the same root.
-      for (let v = v0; v < v0 + BLADE_VERTS; v++) {
-        expect(g.blade[v * 4]).toBe(g.blade[v0 * 4]);
-        expect(g.blade[v * 4 + 1]).toBe(g.blade[v0 * 4 + 1]);
-        expect(g.blade[v * 4 + 2]).toBe(g.blade[v0 * 4 + 2]);
-      }
-    }
-  });
-
-  it("puts the tip at the blade's own height inside BLADE_HEIGHT, with the height fraction rising ring by ring", () => {
-    const heights = new Set<number>();
-    for (let b = 0; b < BLADE_COUNT; b++) {
-      const v0 = b * BLADE_VERTS;
-      const tip = v0 + BLADE_VERTS - 1;
-      const h = g.positions[tip * 3 + 1]!;
-      expect(h).toBeGreaterThanOrEqual(BLADE_HEIGHT[0]);
-      expect(h).toBeLessThanOrEqual(BLADE_HEIGHT[1]);
-      heights.add(Math.round(h * 1e6));
-      for (let k = 0; k < BLADE_RINGS; k++) {
-        expect(g.blade[(v0 + 2 * k) * 4 + 3]).toBeCloseTo(k / BLADE_RINGS, 9);
-        expect(g.blade[(v0 + 2 * k + 1) * 4 + 3]).toBeCloseTo(k / BLADE_RINGS, 9);
-      }
-      expect(g.blade[tip * 4 + 3]).toBe(1);
-      // The tip tapers to a point: the tip is one vertex, not a pair.
-      expect(g.positions[tip * 3]).not.toBeNaN();
-    }
-    expect(heights.size).toBeGreaterThan(BLADE_COUNT / 2);
-  });
-
-  it("gives every blade a random in [0, 1), spread across the clump", () => {
-    const randoms: number[] = [];
-    for (let b = 0; b < BLADE_COUNT; b++) randoms.push(g.blade[b * BLADE_VERTS * 4 + 2]!);
-    for (const r of randoms) { expect(r).toBeGreaterThanOrEqual(0); expect(r).toBeLessThan(1); }
-    expect(Math.min(...randoms)).toBeLessThan(0.2);
-    expect(Math.max(...randoms)).toBeGreaterThan(0.8);
-  });
-
-  it("has unit normals rolled to both sides of the strip", () => {
-    for (let v = 0; v < vertexCount; v++) {
-      const n = Math.hypot(g.normals[v * 3]!, g.normals[v * 3 + 1]!, g.normals[v * 3 + 2]!);
-      expect(n).toBeCloseTo(1, 6);
-    }
-    // The two root vertices of a blade carry different normals (the roll).
-    const dot = g.normals[0]! * g.normals[3]! + g.normals[1]! * g.normals[4]! + g.normals[2]! * g.normals[5]!;
-    expect(dot).toBeLessThan(0.999);
-    expect(dot).toBeGreaterThan(0);
-  });
-
-  it("tints the tip paler and yellower than the root, with a per-blade luma spread", () => {
-    const rootB = g.colors.subarray(0, 4), tipB = g.colors.subarray((BLADE_VERTS - 1) * 4, BLADE_VERTS * 4);
-    expect(tipB[2]! / tipB[0]!).toBeLessThan(rootB[2]! / rootB[0]!);
-    expect(rootB[3]).toBe(1);
-    const lumas = new Set<number>();
-    for (let b = 0; b < BLADE_COUNT; b++) lumas.add(Math.round(g.colors[b * BLADE_VERTS * 4]! * 1e6));
-    expect(lumas.size).toBeGreaterThan(BLADE_COUNT / 2);
-  });
-
-  it("is deterministic", () => {
-    const h = bladeClumpGeometry();
-    expect(Array.from(h.positions)).toEqual(Array.from(g.positions));
-    expect(Array.from(h.blade)).toEqual(Array.from(g.blade));
+  it("keeps the high tier's field under the vertex budget", () => {
+    const fine = BLADE_CHARACTERS[BLADE_FINE]!;
+    const counts = BLADE_TIER_COUNTS.high[BLADE_FINE]!;
+    const [e0, e1] = BLADE_TIER_EDGE;
+    const cells = (rOut: number, rIn: number) => Math.PI * (rOut * rOut - rIn * rIn) / (BLADE_CELL * BLADE_CELL);
+    const clumps = [
+      cells(e0 + BLADE_PAD, 0),
+      cells(e1 + BLADE_PAD, Math.max(0, e0 - BLADE_TIER_BAND - BLADE_PAD)),
+      cells(BLADE_REACH + BLADE_PAD, Math.max(0, e1 - BLADE_TIER_BAND - BLADE_PAD)),
+    ];
+    let total = 0;
+    for (let t = 0; t < 3; t++) total += clumps[t]! * bladeVertexCount(fine, counts[t]!);
+    expect(total).toBeLessThan(BLADE_VERTEX_BUDGET);
+    expect(total).toBeGreaterThan(BLADE_VERTEX_BUDGET * 0.5); // the budget is a real bound, not a formality
   });
 });
 
-describe("bladeAlive, the mirror of the collapse", () => {
-  it("keeps every blade whole at thin 0 and collapses every blade at thin 1", () => {
+describe("one clump per character and tier", () => {
+  for (let ch = 0; ch < BLADE_CHARACTER_COUNT; ch++) {
+    for (let t = 0; t < 3; t++) {
+      const character = BLADE_CHARACTERS[ch]!;
+      const count = BLADE_TIER_COUNTS.high[ch]![t]!;
+      const g = bladeClumpGeometry(character, count);
+      const vertexCount = g.positions.length / 3;
+
+      it(`${character.name} tier ${t}: counts, roots, heights, normals, attribute, determinism`, () => {
+        expect(vertexCount).toBe(bladeVertexCount(character, count));
+        expect(g.normals.length).toBe(vertexCount * 3);
+        expect(g.colors.length).toBe(vertexCount * 4);
+        expect(g.blade.length).toBe(vertexCount * 4);
+        for (const i of g.indices) expect(i).toBeLessThan(vertexCount);
+        // Every blade's first two vertices sit at y = 0 inside the disc and
+        // straddle their root; every vertex of a blade names the same root
+        // and random; the height fraction rises to 1 at the tip.
+        for (let b = 0; b < count; b++) {
+          const v0 = b * BLADE_VERTS;
+          for (const v of [v0, v0 + 1]) {
+            expect(g.positions[v * 3 + 1]).toBe(0);
+            const rx = g.blade[v * 4]!, rz = g.blade[v * 4 + 1]!;
+            expect(Math.hypot(rx, rz)).toBeLessThanOrEqual(BLADE_CLUMP_RADIUS + 1e-9);
+            expect(Math.hypot(g.positions[v * 3]! - rx, g.positions[v * 3 + 2]! - rz)).toBeCloseTo(character.width, 6);
+          }
+          for (let v = v0; v < v0 + BLADE_VERTS; v++) {
+            expect(g.blade[v * 4]).toBe(g.blade[v0 * 4]);
+            expect(g.blade[v * 4 + 1]).toBe(g.blade[v0 * 4 + 1]);
+            expect(g.blade[v * 4 + 2]).toBe(g.blade[v0 * 4 + 2]);
+          }
+          const tip = v0 + BLADE_VERTS - 1;
+          expect(g.blade[tip * 4 + 3]).toBe(1);
+          const h = g.positions[tip * 3 + 1]!;
+          expect(h).toBeGreaterThanOrEqual(character.height[0]);
+          expect(h).toBeLessThanOrEqual(character.height[1]);
+        }
+        for (let v = 0; v < vertexCount; v++) {
+          expect(Math.hypot(g.normals[v * 3]!, g.normals[v * 3 + 1]!, g.normals[v * 3 + 2]!)).toBeCloseTo(1, 6);
+          expect(g.colors[v * 4 + 3]).toBe(1);
+        }
+        const again = bladeClumpGeometry(character, count);
+        expect(Array.from(again.positions)).toEqual(Array.from(g.positions));
+      });
+
+      it(`${character.name} tier ${t}: the tip feature`, () => {
+        const bladeVerts = count * BLADE_VERTS;
+        if (character.tip === "none") {
+          expect(vertexCount).toBe(bladeVerts);
+        } else if (character.tip === "seed") {
+          // One 4-vertex diamond per blade, straw-tinted, above the blade's tip.
+          expect(vertexCount).toBe(bladeVerts + count * 4);
+          const v = bladeVerts; // the first seed head's first vertex
+          expect(g.colors[v * 4]).toBeGreaterThan(g.colors[v * 4 + 2]!); // straw: red above blue
+          expect(g.blade[v * 4 + 3]).toBe(1); // heads collapse with their blade, at full height fraction
+        } else {
+          // Heads: 1–3 per clump, each a stem strip (BLADE_VERTS vertices) plus a 5-quad rosette (20 vertices).
+          const heads = (vertexCount - bladeVerts) / (BLADE_VERTS + 20);
+          expect(Number.isInteger(heads)).toBe(true);
+          expect(heads).toBeGreaterThanOrEqual(character.heads![0]);
+          expect(heads).toBeLessThanOrEqual(character.heads![1]);
+          const rosette = bladeVerts + BLADE_VERTS; // the first head's first petal vertex
+          const c = [g.colors[rosette * 4]!, g.colors[rosette * 4 + 1]!, g.colors[rosette * 4 + 2]!];
+          expect(FLOWER_PALETTE.some((p) => Math.abs(p.r - c[0]!) < 1e-6 && Math.abs(p.g - c[1]!) < 1e-6 && Math.abs(p.b - c[2]!) < 1e-6)).toBe(true);
+          const y = g.positions[rosette * 3 + 1]!;
+          expect(y).toBeGreaterThanOrEqual(0.3 - 0.04);
+          expect(y).toBeLessThanOrEqual(0.45 + 0.04);
+        }
+      });
+    }
+  }
+
+  it("tints by character and spreads the luma per blade", () => {
+    const fine = bladeClumpGeometry(BLADE_CHARACTERS[BLADE_FINE]!, 40);
+    const weed = bladeClumpGeometry(BLADE_CHARACTERS[BLADE_WEED]!, 12);
+    // The weed's tint is bluer than the fine grass's at the root.
+    expect(weed.colors[2]! / weed.colors[0]!).toBeGreaterThan(fine.colors[2]! / fine.colors[0]!);
+    const lumas = new Set<number>();
+    for (let b = 0; b < 40; b++) lumas.add(Math.round(fine.colors[b * BLADE_VERTS * 4]! * 1e6));
+    expect(lumas.size).toBeGreaterThan(20);
+  });
+});
+
+describe("bladeAlive, the mirror of the grow-in, the collapse and the strength cut", () => {
+  it("is whole between the bands, absent before the grow-in and after the collapse", () => {
     for (const r of [0, 0.01, 0.5, 0.85, 0.999]) {
-      expect(bladeAlive(r, 0)).toBe(1);
-      expect(bladeAlive(r, 1)).toBe(0);
+      expect(bladeAlive(r, 0.5, 1, 1, 0)).toBe(1);
+      expect(bladeAlive(r, 0.5, 1, 0, 0)).toBe(0);
+      expect(bladeAlive(r, 0.5, 1, 1, 1)).toBe(0);
     }
   });
-  it("is non-increasing in thin and later for a larger random", () => {
-    for (const r of [0.2, 0.6]) {
-      let prev = 1;
-      for (let t = 0; t <= 1.0001; t += 0.01) {
-        const a = bladeAlive(r, t);
-        expect(a).toBeLessThanOrEqual(prev + 1e-12);
-        prev = a;
+  it("hands off complementary halves across a band: the inner keeps the high randoms, the outer the low", () => {
+    for (let t = 0; t <= 1.0001; t += 0.05) {
+      let inner = 0, outer = 0, both = 0;
+      const n = 200;
+      for (let i = 0; i < n; i++) {
+        const r = i / n;
+        const a = bladeAlive(r, 0, 1, 1, t); // the inner tier: no grow-in, collapsing at t
+        const b = bladeAlive(r, 0, 1, t, 0); // the outer tier: growing at t, no collapse
+        inner += a; outer += b; if (a > 0 && b > 0) both++;
       }
+      // Together they carry one clump's worth, within the soft window's width.
+      expect((inner + outer) / n).toBeGreaterThan(1 - BLADE_SOFT);
+      expect((inner + outer) / n).toBeLessThan(1 + BLADE_SOFT);
+      expect(both / n).toBeLessThan(BLADE_SOFT + 0.01);
     }
-    expect(bladeAlive(0.6, 0.5)).toBeGreaterThan(bladeAlive(0.2, 0.5));
-    // A blade begins to shrink at thin = random / (1 + BLADE_SOFT).
-    expect(bladeAlive(0.5, 0.5 / (1 + BLADE_SOFT) - 1e-6)).toBe(1);
-    expect(bladeAlive(0.5, 0.5 / (1 + BLADE_SOFT) + 1e-6)).toBeLessThan(1);
+  });
+  it("cuts blades by the strength on the second random, not the hand-off random", () => {
+    expect(bladeAlive(0.9, 0.2, 0.25, 1, 0)).toBe(1);
+    expect(bladeAlive(0.9, 0.3, 0.25, 1, 0)).toBe(0);
+    expect(bladeSecondRandom(0.1, 0.2)).toBeGreaterThanOrEqual(0);
+    expect(bladeSecondRandom(0.1, 0.2)).toBeLessThan(1);
+    expect(bladeSecondRandom(0.1, 0.2)).not.toBe(bladeSecondRandom(0.11, 0.2));
   });
 });
