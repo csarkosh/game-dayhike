@@ -528,6 +528,29 @@ describe("the phase and safety", () => {
     expect(state.players.get(me)!.safe).toBe(true);
   });
 
+  it("reads a remote player's safety from the snapshot that ended the match, not the pair behind it", () => {
+    const h = harness();
+    const hostId = h.host.localEntityId;
+    // Let a few snapshots land while the match is still playing, so the
+    // interpolated pair has history to sit INTERP_DELAY_MS behind.
+    drive(h, 12);
+    // The last player reaches the road and the match ends on the same tick.
+    h.host.world.state.players.get(hostId)!.safe = true;
+    h.host.world.state.outcome = Outcome.Won;
+    let first: ReturnType<typeof h.client.renderState> | null = null;
+    for (let t = 0; t < 30 && first === null; t++) {
+      drive(h, 1, () => input({ seq: 100 + t }));
+      const state = h.client.renderState(h.net.now);
+      if (state.outcome === Outcome.Won) first = state;
+    }
+    expect(first).not.toBeNull();
+    // The end screen is built on this very frame: the player who ended the
+    // match must already read as the host sees them.
+    const remote = first!.players.get(hostId)!;
+    expect(remote.safe).toBe(true);
+    expect(remote.health).toBeGreaterThan(0);
+  });
+
   it("starts on the climb before any snapshot", () => {
     const h = harness();
     expect(h.client.renderState(h.net.now).phase).toBe(Phase.Climb);

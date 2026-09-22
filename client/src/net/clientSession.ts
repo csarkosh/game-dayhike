@@ -348,18 +348,28 @@ export function createClientSession(
       if (view !== null) {
         for (const p of view.players) {
           if (p.id === localId) continue; // local player is predicted, not interpolated
+          // Only the continuous fields come from the interpolated pair, which
+          // sits INTERP_DELAY_MS behind. The discrete, host-truth fields are
+          // read from the newest snapshot — the one `outcome` and `phase`
+          // below are read from — because an outcome and the state that
+          // decided it must come from the same snapshot: the match ends on
+          // the tick the last player reaches the road, so on the first frame
+          // that reads Won the pair still has that player unsafe, and an end
+          // screen built from it contradicts the host. A player in the pair
+          // but not in the newest snapshot keeps the pair's values.
+          const truth = latest?.players.find((q) => q.id === p.id) ?? p;
           players.set(p.id, {
             id: p.id,
             pos: cloneVec3(p.pos),
             vel: cloneVec3(p.vel),
             yaw: p.yaw,
             pitch: p.pitch,
-            health: p.health,
+            health: truth.health,
             grounded: p.grounded,
             lastProcessedInput: 0,
-            lamp: { on: p.lamp.on, charge: p.lamp.charge },
-            safe: p.safe,
-            stare: p.stare,
+            lamp: { on: truth.lamp.on, charge: truth.lamp.charge },
+            safe: truth.safe,
+            stare: truth.stare,
             // Host-only and not in the snapshot. A client has no use for where a
             // remote player died: death is host truth and arrives as health 0.
             deathPos: null,

@@ -509,11 +509,15 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     if (ended || state.outcome === Outcome.Playing) return;
     ended = true;
     const won = state.outcome === Outcome.Won;
-    const players = [...state.players.values()]
-      .sort((a, b) => a.id - b.id)
-      // The fallback covers anyone no pairing ever named — a peer whose Named
-      // event has not landed — rather than leaving them off the roll entirely.
-      .map((p) => ({ id: p.id, name: names.get(p.id) ?? `Hiker ${p.id}`, safe: p.safe, dead: p.health <= 0 }));
+    // Names resolve here, as the panel is built, so a pairing that landed
+    // before the lobby's state did still gets the lobby's name. Unsorted:
+    // `endPanelModel` orders by id, and one sort is enough. The fallback
+    // covers anyone no pairing ever named — a peer whose Named event has not
+    // landed — rather than leaving them off the roll entirely.
+    const players = [...state.players.values()].map((p) => {
+      const peerId = names.get(p.id);
+      return { id: p.id, name: peerId === undefined ? `Hiker ${p.id}` : nameOf(peerId), safe: p.safe, dead: p.health <= 0 };
+    });
     input.setSuppressed(true);
     posterPanel.hide();
     hud.fade(true);
@@ -684,18 +688,23 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
   const lobby = options.lobby;
   /**
-   * Who each entity is, for the end panel. Filled from the Named pairings —
-   * by the host as it admits each peer, by a follower through `onNamed` —
-   * never from the snapshot: a name is the lobby's, not the sim's.
+   * Which peer each entity is, for the end panel. Filled from the Named
+   * pairings — by the host as it admits each peer, by a follower through
+   * `onNamed` — never from the snapshot: a name is the lobby's, not the
+   * sim's. The peer id is stored, not the display name: a pairing can land
+   * before the lobby's state broadcast does, and a name resolved then would
+   * stick at the peer-id prefix for good. `nameOf` resolves it when needed.
    */
   const names = new Map<number, string>();
+  /** This player's peer id: the lobby's, or solo's stand-in (the host's default `hostPeerId`). */
+  const selfPeerId = lobby?.peerId ?? "host";
   /**
    * The lobby's name for a peer: "You" for this player, whichever side they
    * are on, and the short peer id for anyone the lobby has not named — at
    * least stable, and distinct between two strangers.
    */
   function nameOf(peerId: string): string {
-    if (lobby !== null && peerId === lobby.peerId) return "You";
+    if (peerId === selfPeerId) return "You";
     return lobby?.state.members.find((m) => m.id === peerId)?.name ?? peerId.slice(0, 8);
   }
   let seq = 0;
@@ -760,7 +769,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     escalation = ESCALATION_REST;
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
-    names.set(host.localEntityId, "You");
+    names.set(host.localEntityId, selfPeerId);
 
     registerInteractables(host.world);
     signs = createSigns(host.world);
@@ -779,7 +788,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
             .then((transport) => {
               // The host sends pairings and never receives one: it records
               // the entity `addPeer` just spawned for this peer itself.
-              names.set(host.addPeer(from, wrap(transport)), nameOf(from));
+              names.set(host.addPeer(from, wrap(transport)), from);
             })
             .catch(() => undefined);
         }),
@@ -887,9 +896,9 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     // Every peer names itself, host or follower. The host does echo a
     // newcomer's own pairing back to it, so this is belt and braces — but it
     // means "You" never depends on that echo arriving.
-    names.set(client.localEntityId, "You");
+    names.set(client.localEntityId, selfPeerId);
     // Safe this late: `onNamed` replays the pairings already received.
-    client.onNamed((e) => names.set(e.entityId, nameOf(e.peerId)));
+    client.onNamed((e) => names.set(e.entityId, e.peerId));
     client.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
