@@ -20,8 +20,6 @@ import {
   clutterCell,
   CLUTTER_CLASS_COUNT,
   CLUTTER_GRASS_CELL,
-  CLUTTER_MEADOW,
-  CLUTTER_MEADOW_CELL,
   type ClutterInstance,
 } from "../sim/clutter.js";
 
@@ -211,37 +209,6 @@ export const CLUTTER_FADE_FRACTION: readonly number[] = [0.2, 0.2, 0.2, 0.2, 0.2
  */
 export const CLUTTER_FADE_MIN_RAMP = Math.SQRT2 * CLUTTER_GRASS_CELL;
 
-/** The blade clumps (bladeClump.ts) draw the meadow's instances inside this
- * distance (m) of the eye, on the tiers that create the bucket; the cards
- * take over across the last BLADE_BAND metres. */
-export const BLADE_RADIUS = 12;
-/** Width (m) of the hand-off band: each blade shrinks to its root and the
- * card at the same cell dithers in across it. Wider than
- * CLUTTER_FADE_MIN_RAMP, as every fade here must be. */
-export const BLADE_BAND = 4.5;
-/** How far (m) the true eye can sit from the origin the blade distances were
- * measured against: the bucket is rebuilt only on a 3 m grass-cell crossing
- * and its origin is floored to the meadow's own 0.7 m cell, so the worst
- * offset is the diagonal of both. A clump collected out to
- * BLADE_RADIUS + BLADE_PAD is present for every eye inside the rebuild cell,
- * so a blade never pops at the eye; clumps past BLADE_RADIUS are fully
- * collapsed by the shader and cost vertices only. */
-export const BLADE_PAD = Math.SQRT2 * (CLUTTER_GRASS_CELL + CLUTTER_MEADOW_CELL);
-
-/** The coupling this pad relies on: `BLADE_RADIUS + BLADE_PAD` (≈ 17.2 m)
- * must stay under the meadow's near split (`CLUTTER_RADII[CLUTTER_MEADOW] ·
- * CLUTTER_FAR_SPLIT` = 18 m), so every instance the blade bucket reaches is
- * also a near-card instance — the card the blade hands off to at
- * `bladeEdges().end` is always drawn. Neither side of this scales with
- * `radiusScale`: blades exist only at scale 1, so the reach and the band are
- * fixed while the near split they must clear moves with the tier. */
-
-/** The hand-off band (m of true eye distance): blades whole at `start`, gone
- * at `end`; the meadow near card bucket's in-band is the same pair. */
-export function bladeEdges(): { start: number; end: number } {
-  return { start: BLADE_RADIUS - BLADE_BAND, end: BLADE_RADIUS };
-}
-
 /** The fade's edges for a class: end at the tier-scaled radius, start a
  * fraction inside it, but never closer to `end` than `CLUTTER_FADE_MIN_RAMP`
  * — and never below zero for a disc smaller than the
@@ -262,10 +229,7 @@ export function clutterSeamEdges(cls: number, radiusScale = 1): { start: number;
   return { start, end };
 }
 
-/** Per class: the near and far LOD lists, and — for the meadow class only,
- * when a blade reach was given — the instances the blade bucket draws,
- * nearest first. Empty otherwise. */
-export type ClutterBands = { near: ClutterInstance[]; far: ClutterInstance[]; blades: ClutterInstance[] }[];
+export type ClutterBands = { near: ClutterInstance[]; far: ClutterInstance[] }[];
 
 /** The cell-snapped anchor class `cls`'s distances are measured from — the
  * forestField `bandsOrigin` idiom, but keyed to that class's own cell size
@@ -291,7 +255,6 @@ function collectClutterCore(
   radiusScale: number,
   budgets: readonly number[],
   sample: (cls: number, cx: number, cz: number) => ClutterInstance | null,
-  bladeReach: number,
 ): ClutterBands {
   const bands: ClutterBands = [];
   for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
@@ -305,10 +268,6 @@ function collectClutterCore(
     const seamHi = seam.end + CLUTTER_FADE_MIN_RAMP;
     const seamLo2 = seamLo * seamLo;
     const seamHi2 = seamHi * seamHi;
-    // The blade list: the meadow's instances within the reach of the snapped
-    // origin, gathered on the same walk. Squared like the rest.
-    const bladeReach2 = cls === CLUTTER_MEADOW && bladeReach > 0 ? bladeReach * bladeReach : 0;
-    const blades: { inst: ClutterInstance; d2: number }[] = [];
     const { x: ax, z: az } = clutterOrigin(camX, camZ, cell);
 
     // The cell square circumscribing the disc — every cell that could hold
@@ -329,7 +288,6 @@ function collectClutterCore(
         const dz = inst.z - az;
         const d2 = dx * dx + dz * dz;
         if (d2 >= r2) continue;
-        if (d2 < bladeReach2) blades.push({ inst, d2 });
         // Seam duplication: an instance inside the seam
         // band, padded by the snap jitter on each side, is emitted to BOTH
         // LOD buckets — the shader fades one out and the other in from the
@@ -376,9 +334,7 @@ function collectClutterCore(
       unique.length = Math.min(unique.length, budget);
       near.length = 0;
       far.length = 0;
-      blades.length = 0;
       for (const p of unique) {
-        if (p.d2 < bladeReach2) blades.push(p);
         if (p.d2 < split2) {
           near.push(p);
           if (p.d2 >= seamLo2) far.push(p);
@@ -389,10 +345,7 @@ function collectClutterCore(
       }
     }
 
-    // Nearest first, so the single-draw blade bucket resolves its own
-    // overdraw by the depth test rather than by shading every layer.
-    blades.sort((a, b) => a.d2 - b.d2);
-    bands.push({ near: near.map((p) => p.inst), far: far.map((p) => p.inst), blades: blades.map((p) => p.inst) });
+    bands.push({ near: near.map((p) => p.inst), far: far.map((p) => p.inst) });
   }
   return bands;
 }
@@ -401,23 +354,11 @@ function collectClutterCore(
  * Every clutter instance the renderer should draw around the camera, banded
  * near/far per class and clamped to CLUTTER_BUDGETS. `radiusScale` shrinks
  * every class radius together — the quality-tier hook, mirroring
- * forestField's `nearRadius` parameter on `collectBands`. `bladeReach` (m, 0
- * for none) also fills the meadow class's `blades` list; see `BLADE_PAD`.
+ * forestField's `nearRadius` parameter on `collectBands`.
  */
-export function collectClutter(
-  seed: number,
-  camX: number,
-  camZ: number,
-  radiusScale: number = 1,
-  bladeReach: number = 0,
-): ClutterBands {
-  return collectClutterCore(
-    camX,
-    camZ,
-    radiusScale,
-    CLUTTER_BUDGETS,
-    (cls, cx, cz) => clutterInCell(seed, cls, cx, cz),
-    bladeReach,
+export function collectClutter(seed: number, camX: number, camZ: number, radiusScale: number = 1): ClutterBands {
+  return collectClutterCore(camX, camZ, radiusScale, CLUTTER_BUDGETS, (cls, cx, cz) =>
+    clutterInCell(seed, cls, cx, cz),
   );
 }
 
@@ -435,21 +376,13 @@ export function collectClutterWithBudgets(
   camZ: number,
   budgets: readonly number[],
   radiusScale: number = 1,
-  bladeReach: number = 0,
 ): ClutterBands {
-  return collectClutterCore(
-    camX,
-    camZ,
-    radiusScale,
-    budgets,
-    (cls, cx, cz) => clutterInCell(seed, cls, cx, cz),
-    bladeReach,
-  );
+  return collectClutterCore(camX, camZ, radiusScale, budgets, (cls, cx, cz) => clutterInCell(seed, cls, cx, cz));
 }
 
 export type ClutterCollector = {
-  /** Identical output to `collectClutter(seed, camX, camZ, radiusScale, bladeReach)`. */
-  collect(camX: number, camZ: number, radiusScale?: number, bladeReach?: number): ClutterBands;
+  /** Identical output to `collectClutter(seed, camX, camZ, radiusScale)`. */
+  collect(camX: number, camZ: number, radiusScale?: number): ClutterBands;
   /** Cached cell count — exposed so tests can pin the eviction bound (the
    * `forestField.ts` `BandCollector.size` idiom). */
   readonly size: number;
@@ -517,23 +450,16 @@ export const COLLECTOR_SWEEP_SIZE = 110000;
 export function createClutterCollector(seed: number): ClutterCollector {
   const cache = new Map<number, ClutterInstance | null>();
   return {
-    collect(camX: number, camZ: number, radiusScale: number = 1, bladeReach: number = 0): ClutterBands {
-      const bands = collectClutterCore(
-        camX,
-        camZ,
-        radiusScale,
-        CLUTTER_BUDGETS,
-        (cls, cx, cz) => {
-          const key = cls * CELL_KEY_CLASS_SPAN + (cx + CELL_KEY_HALF) * CELL_KEY_SPAN + (cz + CELL_KEY_HALF);
-          let inst = cache.get(key);
-          if (inst === undefined) {
-            inst = clutterInCell(seed, cls, cx, cz);
-            cache.set(key, inst);
-          }
-          return inst;
-        },
-        bladeReach,
-      );
+    collect(camX: number, camZ: number, radiusScale: number = 1): ClutterBands {
+      const bands = collectClutterCore(camX, camZ, radiusScale, CLUTTER_BUDGETS, (cls, cx, cz) => {
+        const key = cls * CELL_KEY_CLASS_SPAN + (cx + CELL_KEY_HALF) * CELL_KEY_SPAN + (cz + CELL_KEY_HALF);
+        let inst = cache.get(key);
+        if (inst === undefined) {
+          inst = clutterInCell(seed, cls, cx, cz);
+          cache.set(key, inst);
+        }
+        return inst;
+      });
       // Evict everything every class's disc can no longer reach, but only
       // once enough stale growth has accumulated — see COLLECTOR_SWEEP_SIZE.
       if (cache.size > COLLECTOR_SWEEP_SIZE) {

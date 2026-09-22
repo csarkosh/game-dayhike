@@ -22,8 +22,7 @@
  * Draw-call budget ("one draw per model per LOD"): every clutter GLB
  * is single-primitive and single-material, so each bucket is exactly one draw
  * call — 17 models × 2 LOD levels = 34, all of them ground cover the forest's
- * own 29 sit on top of, plus one opaque blade-clump draw for the meadow on
- * the tiers that create it.
+ * own 29 sit on top of.
  *
  * Allocation discipline ("no per-frame allocation on the hot path"):
  * `update` allocates NOTHING while the camera stays inside its 3 m grass cell,
@@ -41,18 +40,13 @@
 import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
-import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { Color3 } from "@babylonjs/core/Maths/math.color.js";
-import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import type { Material } from "@babylonjs/core/Materials/material.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 
-import { bladeEdges, BLADE_PAD, BLADE_RADIUS, clutterFadeEdges, clutterSeamEdges, createClutterCollector } from "./clutterField.js";
-import { bladeClumpGeometry } from "./bladeClump.js";
+import { clutterFadeEdges, clutterSeamEdges, createClutterCollector } from "./clutterField.js";
 import {
   CLUTTER_BOULDER,
   CLUTTER_BUSH,
@@ -69,11 +63,11 @@ import {
 import { activeTerrainVariant } from "../sim/terrain.js";
 import { attachFoliage, setFoliageEdges, FOLIAGE_PROFILES, type FoliageProfile } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
-import { attachDistanceFade, fadeBands, FADE_ALWAYS, writeFadeBands, type FadeBands } from "./distanceFadePlugin.js";
+import { attachDistanceFade, fadeBands, writeFadeBands, type FadeBands } from "./distanceFadePlugin.js";
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
 import { surfaceAlbedo } from "./terrainSurface.js";
-import { macroNoise, macroTint, TUFT_ALBEDO } from "./groundHexParams.js";
+import { macroNoise, macroTint } from "./groundHexParams.js";
 import { forestDensity } from "../sim/vegetation.js";
 import type { Rgb } from "./colour.js";
 import { trampleAt, TRAMPLE_BAND } from "./trailBenchParams.js";
@@ -150,12 +144,6 @@ const TILTED = new Set<number>([CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_DRIFTWOOD
  * 0.25–0.6 are pebbles already; driftwood needs another 0.3 to be a twig. */
 export const LITTER_VARIANT_SCALE: readonly number[] = [1, 1, 0.3];
 
-/** The blade clump mesh's name, and its bucket's index in the meadow class's
- * variant-0 list, after the two LOD buckets. The bucket exists only when
- * `ClutterMeshesOptions.blades` is set (the tiers above low). */
-export const BLADE_MESH_NAME = "clutter_blades";
-export const BLADE_BUCKET = 2;
-
 /** The classes the bench tramples: the swaying ground layer. */
 const TRAMPLED = new Set<number>([CLUTTER_GRASS, CLUTTER_MEADOW, CLUTTER_FLOWER]);
 
@@ -174,10 +162,11 @@ export type ClutterMeshesOptions = {
   /** Scales every class radius together — the quality-tier knob, passed
    * straight to the collector (low ≈ 60% radii). */
   radiusScale?: number;
-  /** Draw the meadow's near instances as blade clumps (bladeClump.ts) inside
-   * BLADE_RADIUS, handing off to the cards across `bladeEdges()`. Off on the
+  /** The blade field (bladeMeshes.ts) draws the grass inside the meadow's
+   * near/far seam on this tier, so the meadow's near cards are never filled
+   * and the grass class's near cards dither in across that seam. Off on the
    * low tier, which keeps the cards alone. */
-  blades?: boolean;
+  nearBlades?: boolean;
   /** NullEngine escape hatch: bucket meshes per class → variant → LOD in
    * place of the seventeen production GLBs (the forestMeshes `assets` idiom).
    * `adopt` runs synchronously on them. */
@@ -221,9 +210,6 @@ type Bucket = {
    * which is exactly the classes whose `foliage` buffer this file writes and
    * uploads. */
   tints: boolean;
-  /** Set for every GLB bucket, which dithers and so uploads `fadeBands`; the
-   * blade bucket is opaque, carries no fade plugin, and uploads none. */
-  fades: boolean;
   /** Instances this rebuild — counted in pass 1, then reused as the write
    * cursor in pass 2, so it is the live count again when the fill ends. */
   count: number;
@@ -265,8 +251,9 @@ function geometryMeshes(node: Node): Mesh[] {
  * deep-forest frame past the 16.7 ms vsync cliff. Bushes read as
  * canopy-shadowed instead via a pre-darkened palette colour (`bush` in
  * `assets/palette.json`) rather than a real shadow
- * sample. The blade bucket is the one exception, and turns the flag back on
- * itself right after this call — see `adopt`. */
+ * sample. The blade field's buckets (`bladeMeshes.ts`), which share this
+ * helper, are the one exception, and turn the flag back on themselves right
+ * after this call. */
 export function prepBucketMesh(mesh: Mesh): void {
   mesh.isPickable = false;
   // Babylon culls a thin-instance mesh by its own bounding box, and syncing
@@ -325,14 +312,14 @@ function applyBucket(bucket: Bucket): void {
       // Sets `thinInstanceCount` to the full CAPACITY as a side effect, which
       // the assignment below immediately trims to the live count.
       mesh.thinInstanceSetBuffer("matrix", bucket.buf, 16, false);
-      if (bucket.fades) mesh.thinInstanceSetBuffer("fadeBands", bucket.bands, 4, false);
+      mesh.thinInstanceSetBuffer("fadeBands", bucket.bands, 4, false);
       if (bucket.tints) mesh.thinInstanceSetBuffer("foliage", bucket.foliage, 4, false);
       mesh.thinInstanceCount = count;
     } else {
       mesh.thinInstanceCount = count;
       if (count > 0) {
         mesh.thinInstanceBufferUpdated("matrix");
-        if (bucket.fades) mesh.thinInstanceBufferUpdated("fadeBands");
+        mesh.thinInstanceBufferUpdated("fadeBands");
         if (bucket.tints) mesh.thinInstanceBufferUpdated("foliage");
       }
     }
@@ -450,38 +437,6 @@ export function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Ar
 }
 
 /**
- * The blade clump as a Babylon mesh: the pure geometry through `VertexData`,
- * the `blade` record as a custom vertex buffer (set after `applyToMesh`,
- * which rebuilds the mesh's buffers), and an opaque two-sided PBR material
- * in the tuft colour whose vertex colours carry the per-blade tint. No
- * texture and no alpha, so the material never alpha-tests and never carries
- * a discard: early depth rejection stays on for the whole draw. The foliage
- * plugins attach here with the BLADES profile; the bucket flags and the
- * plugin's edges are the shell's.
- */
-export function createBladeMesh(scene: Scene): Mesh {
-  const g = bladeClumpGeometry();
-  const mesh = new Mesh(BLADE_MESH_NAME, scene);
-  const data = new VertexData();
-  data.positions = g.positions;
-  data.normals = g.normals;
-  data.colors = g.colors;
-  data.indices = g.indices;
-  data.applyToMesh(mesh, false);
-  mesh.setVerticesData("blade", g.blade, false, 4);
-  const mat = new PBRMaterial(`${BLADE_MESH_NAME}_mat`, scene);
-  mat.albedoColor = new Color3(TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b);
-  mat.metallic = 0;
-  mat.roughness = 0.8;
-  mat.backFaceCulling = false;
-  mesh.material = mat;
-  mesh.refreshBoundingInfo();
-  attachFoliage(mat, FOLIAGE_PROFILES.BLADES, mesh.getBoundingInfo().boundingBox.maximum.y);
-  attachFoliageLight(mat);
-  return mesh;
-}
-
-/**
  * The clutter's Babylon shell. Production loads the seventeen shipped GLBs
  * asynchronously and builds buckets when they arrive; the returned object is
  * complete immediately — an `update` before the assets exist just remembers
@@ -493,8 +448,7 @@ export function createClutterMeshes(
   options: ClutterMeshesOptions = {},
 ): ClutterMeshes {
   const radiusScale = options.radiusScale ?? 1;
-  const blades = options.blades ?? false;
-  const bladeReach = blades ? BLADE_RADIUS + BLADE_PAD : 0;
+  const nearBlades = options.nearBlades ?? false;
   // Memoizing collector, not the pure `collectClutter`: a rebuild happens on
   // every 3 m grass-cell crossing, and re-sampling all eight discs from cold
   // each time would pay fresh density and terrain samples for thousands of
@@ -505,7 +459,6 @@ export function createClutterMeshes(
   const containers: AssetContainer[] = [];
   /** `buckets[class][variant][lod]`, or null until the GLBs land. */
   let buckets: Bucket[][][] | null = null;
-  let bladeMesh: Mesh | null = null;
   let disposed = false;
 
   // Last camera seen and last origin built. Split so an `update` that arrives
@@ -534,7 +487,7 @@ export function createClutterMeshes(
    */
   function rebuild(x: number, z: number): void {
     const all = buckets as Bucket[][][];
-    const bands = collector.collect(x, z, radiusScale, bladeReach);
+    const bands = collector.collect(x, z, radiusScale);
 
     for (const variants of all) {
       for (const perLod of variants) {
@@ -543,12 +496,13 @@ export function createClutterMeshes(
     }
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       const variants = all[cls] as Bucket[][];
-      const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[]; blades: ClutterInstance[] };
-      for (const inst of band.near) bucketFor(variants, inst, NEAR_LOD).count++;
+      const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
+      // With the blade field on, every meadow near instance lies inside the
+      // field's reach, so its card would be pure fill behind the blades: the
+      // bucket's count stays 0 and `applyBucket` disables it.
+      const nearList = nearBlades && cls === CLUTTER_MEADOW ? [] : band.near;
+      for (const inst of nearList) bucketFor(variants, inst, NEAR_LOD).count++;
       for (const inst of band.far) bucketFor(variants, inst, FAR_LOD).count++;
-      if (cls === CLUTTER_MEADOW && bladeMesh !== null) {
-        (variants[0] as Bucket[])[BLADE_BUCKET]!.count += band.blades.length;
-      }
     }
 
     for (const variants of all) {
@@ -561,8 +515,10 @@ export function createClutterMeshes(
     }
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       const variants = all[cls] as Bucket[][];
-      const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[]; blades: ClutterInstance[] };
-      for (const inst of band.near) {
+      const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
+      // The same skip the count pass above made, for the same reason.
+      const nearList = nearBlades && cls === CLUTTER_MEADOW ? [] : band.near;
+      for (const inst of nearList) {
         const bucket = bucketFor(variants, inst, NEAR_LOD);
         const frame = trampleFrame(seed, inst);
         writeInstanceMatrix(inst, bucket.buf, bucket.count * 16, frame);
@@ -577,15 +533,6 @@ export function createClutterMeshes(
         writeFadeBands(bucket.bands, bucket.count * 4, bucket.fade);
         if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4, frame);
         bucket.count++;
-      }
-      if (cls === CLUTTER_MEADOW && bladeMesh !== null) {
-        const bucket = (variants[0] as Bucket[])[BLADE_BUCKET] as Bucket;
-        for (const inst of band.blades) {
-          const frame = trampleFrame(seed, inst);
-          writeInstanceMatrix(inst, bucket.buf, bucket.count * 16, frame);
-          if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4, frame);
-          bucket.count++;
-        }
       }
     }
 
@@ -717,11 +664,14 @@ export function createClutterMeshes(
               }
             }
           }
-          // With blades on, the meadow's near cards dither IN across the
-          // blade band: inside it the clumps are the grass, and a card
-          // fragment there is discarded before any fetch.
+          // With the blade field on, the grass class's near cards are the one
+          // card set still drawn inside the field's reach, so they dither IN
+          // where the field's coarse tier collapses — the meadow's own seam,
+          // which is that reach. Inside it the blades are the grass, and a
+          // card fragment there is discarded before any fetch.
+          const meadowSeam = clutterSeamEdges(CLUTTER_MEADOW, radiusScale);
           const fade: FadeBands = lod === NEAR_LOD
-            ? fadeBands(blades && cls === CLUTTER_MEADOW ? [bladeEdges().start, bladeEdges().end] : null, [seam.start, seam.end])
+            ? fadeBands(nearBlades && cls === CLUTTER_GRASS ? [meadowSeam.start, meadowSeam.end] : null, [seam.start, seam.end])
             : fadeBands([seam.start, seam.end], [edge.start, edge.end]);
           for (const mesh of meshes) {
             if (mesh.material) attachDistanceFade(mesh.material);
@@ -735,40 +685,10 @@ export function createClutterMeshes(
             grown: false,
             fade,
             tints: profile !== undefined,
-            fades: true,
           };
         }),
       ),
     );
-    if (blades) {
-      // The meadow's third bucket: the clump mesh on the near instances. Its
-      // material's edge band is the hand-off band, and the meadow's near CARD
-      // bucket dithers in across the same band (above), so the two sides of
-      // the hand-off read one pair of numbers.
-      bladeMesh = createBladeMesh(scene);
-      prepBucketMesh(bladeMesh);
-      // The one clutter bucket that RECEIVES shadows, against the rule
-      // `prepBucketMesh` just applied: the clumps are opaque, a few metres
-      // from the eye and inside the first cascade, so a clump under the
-      // canopy has to sit in the same shadow as the turf it stands in — lit
-      // geometry on shadowed ground reads as a glow at this range, where a
-      // card's could hide behind its size and its cutout. It still never
-      // casts; no clutter does.
-      bladeMesh.receiveShadows = true;
-      const band = bladeEdges();
-      setFoliageEdges(bladeMesh.material as Material, [band.start, band.end]);
-      (buckets[CLUTTER_MEADOW]![0] as Bucket[])[BLADE_BUCKET] = {
-        meshes: [bladeMesh],
-        buf: EMPTY_BUFFER,
-        bands: EMPTY_BUFFER,
-        foliage: EMPTY_BUFFER,
-        count: 0,
-        grown: false,
-        fade: FADE_ALWAYS,
-        tints: true,
-        fades: false,
-      };
-    }
     maybeBuild();
   }
 
@@ -814,11 +734,6 @@ export function createClutterMeshes(
     dispose() {
       if (disposed) return;
       disposed = true;
-      // The blade mesh and its material are ours, not a container's, so the
-      // material has to be disposed here rather than left to a container;
-      // captured before the bucket loop below disposes the mesh itself,
-      // since that loop already reaches this mesh through its own bucket.
-      const bladeMat = bladeMesh?.material ?? null;
       if (buckets !== null) {
         for (const variants of buckets) {
           for (const perLod of variants) {
@@ -828,8 +743,6 @@ export function createClutterMeshes(
           }
         }
       }
-      bladeMat?.dispose();
-      bladeMesh = null;
       // Containers own whatever the buckets did not adopt (materials, LOD2
       // meshes, wrapper nodes); mesh.dispose is idempotent, so the overlap
       // with the loop above is harmless.

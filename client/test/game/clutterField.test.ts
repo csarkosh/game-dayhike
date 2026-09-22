@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import {
-  BLADE_BAND, BLADE_PAD, BLADE_RADIUS, bladeEdges, CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION,
+  CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION,
   CLUTTER_FADE_MIN_RAMP, CLUTTER_FAR_SPLIT, CLUTTER_RADII, COLLECTOR_SWEEP_SIZE, clutterFadeEdges,
   clutterSeamEdges, collectClutter, collectClutterWithBudgets, createClutterCollector,
 } from "../../src/game/clutterField.js";
 import {
   CLUTTER_CLASS_COUNT, clutterCell, CLUTTER_DRIFTWOOD, CLUTTER_GRASS, CLUTTER_GRASS_CELL, CLUTTER_JITTER,
-  CLUTTER_MEADOW, CLUTTER_MEADOW_CELL,
+  CLUTTER_MEADOW,
 } from "../../src/sim/clutter.js";
 
 const SEED = 0x5eed;
@@ -317,111 +317,9 @@ describe("clutter bands", () => {
     // of headroom remains before the threshold binds.
     expect(COLLECTOR_SWEEP_SIZE - collector.size).toBeGreaterThan(50 * 770);
   });
-});
 
-describe("the blade list", () => {
-  const REACH = BLADE_RADIUS + BLADE_PAD;
-  // CAM ("inland mixed ground") is a fine, dense stand for grass and the
-  // other classes it was picked for, but the meadow carpet only opens up in
-  // patches: at CAM the whole 40 m meadow disc holds a handful of instances,
-  // none within a blade's short reach. Reuse the location clutter.test.ts's
-  // "meadow occupancy saturates on open field ground" census already found —
-  // a wide, flat, canopy-clear patch where the shared grass/meadow gate
-  // reads near 1 — so the reach-filtered list actually has something to hold.
-  const MEADOW_CAM = { x: 35, z: 21335 };
-
-  it("spans a band at least the snap floor wide, ending at BLADE_RADIUS", () => {
-    const e = bladeEdges();
-    expect(e.end).toBe(BLADE_RADIUS);
-    expect(e.start).toBe(BLADE_RADIUS - BLADE_BAND);
-    expect(e.end - e.start).toBeGreaterThanOrEqual(CLUTTER_FADE_MIN_RAMP);
-    expect(BLADE_PAD).toBeCloseTo(Math.SQRT2 * (CLUTTER_GRASS_CELL + CLUTTER_MEADOW_CELL), 12);
-    // The reach/near-split coupling BLADE_PAD relies on: every instance the
-    // blade bucket reaches must also be a near-card instance.
-    expect(BLADE_RADIUS + BLADE_PAD).toBeLessThan(CLUTTER_RADII[CLUTTER_MEADOW]! * CLUTTER_FAR_SPLIT);
-  });
-
-  it("is empty for every class when the reach is 0, and for every class but the meadow otherwise", () => {
-    const off = collectClutter(SEED, MEADOW_CAM.x, MEADOW_CAM.z);
-    for (const band of off) expect(band.blades).toEqual([]);
-    const on = collectClutter(SEED, MEADOW_CAM.x, MEADOW_CAM.z, 1, REACH);
-    for (let cls = 0; cls < on.length; cls++) {
-      if (cls !== CLUTTER_MEADOW) expect(on[cls]!.blades).toEqual([]);
-    }
-    expect(on[CLUTTER_MEADOW]!.blades.length).toBeGreaterThan(100);
-  });
-
-  it("holds exactly the meadow instances within the reach of the snapped origin, nearest first", () => {
-    const on = collectClutter(SEED, MEADOW_CAM.x, MEADOW_CAM.z, 1, REACH);
-    const meadow = on[CLUTTER_MEADOW]!;
-    const ox = Math.floor(MEADOW_CAM.x / CLUTTER_MEADOW_CELL) * CLUTTER_MEADOW_CELL;
-    const oz = Math.floor(MEADOW_CAM.z / CLUTTER_MEADOW_CELL) * CLUTTER_MEADOW_CELL;
-    const d2 = (i: { x: number; z: number }) => (i.x - ox) ** 2 + (i.z - oz) ** 2;
-    const all = new Set([...meadow.near, ...meadow.far]);
-    const want = [...all].filter((i) => d2(i) < REACH * REACH);
-    expect(meadow.blades.length).toBe(want.length);
-    for (const i of meadow.blades) expect(want).toContain(i);
-    for (let k = 1; k < meadow.blades.length; k++) {
-      expect(d2(meadow.blades[k]!)).toBeGreaterThanOrEqual(d2(meadow.blades[k - 1]!));
-    }
-  });
-
-  it("holds the reach-filtered survivors through the over-budget clamp, nearest first", () => {
-    // Force the meadow class's own clamp to bind at MEADOW_CAM, through the
-    // SAME clamp logic collectClutter runs (collectClutterWithBudgets is
-    // exported test-only for exactly this) — the brief's own "holds exactly
-    // the meadow instances" test never trips this path, since MEADOW_CAM's
-    // real load sits under CLUTTER_BUDGETS[CLUTTER_MEADOW] (10600).
-    const budgets = CLUTTER_BUDGETS.map((b, cls) => (cls === CLUTTER_MEADOW ? 200 : b));
-    const clamped = collectClutterWithBudgets(SEED, MEADOW_CAM.x, MEADOW_CAM.z, budgets, 1, REACH);
-    const meadow = clamped[CLUTTER_MEADOW]!;
-    const survivors = [...new Set([...meadow.near, ...meadow.far])];
-    // (a) the clamp actually fired: MEADOW_CAM's unclamped unique count is in
-    // the thousands (see the "holds exactly" test above), so a clamp that
-    // fired keeps exactly the tiny budget, not merely at-or-under it.
-    expect(survivors.length).toBe(200);
-
-    // (b) blades is exactly the reach-filtered subset of the survivors —
-    // same membership test as the "holds exactly" test above, but now
-    // against the post-clamp population, not the unclamped one.
-    const ox = Math.floor(MEADOW_CAM.x / CLUTTER_MEADOW_CELL) * CLUTTER_MEADOW_CELL;
-    const oz = Math.floor(MEADOW_CAM.z / CLUTTER_MEADOW_CELL) * CLUTTER_MEADOW_CELL;
-    const d2 = (i: { x: number; z: number }) => (i.x - ox) ** 2 + (i.z - oz) ** 2;
-    const want = survivors.filter((i) => d2(i) < REACH * REACH);
-    expect(meadow.blades.length).toBe(want.length);
-    for (const i of meadow.blades) expect(want).toContain(i);
-
-    // (c) still sorted nearest-first.
-    for (let k = 1; k < meadow.blades.length; k++) {
-      expect(d2(meadow.blades[k]!)).toBeGreaterThanOrEqual(d2(meadow.blades[k - 1]!));
-    }
-  });
-
-  it("never lets a blade pop: every meadow instance under BLADE_RADIUS of any eye in the rebuild cell is present", () => {
-    const collector = createClutterCollector(SEED);
-    const bands = collector.collect(MEADOW_CAM.x, MEADOW_CAM.z, 1, REACH);
-    const meadow = bands[CLUTTER_MEADOW]!;
-    const present = new Set(meadow.blades);
-    const cx = Math.floor(MEADOW_CAM.x / CLUTTER_GRASS_CELL) * CLUTTER_GRASS_CELL;
-    const cz = Math.floor(MEADOW_CAM.z / CLUTTER_GRASS_CELL) * CLUTTER_GRASS_CELL;
-    const eyes = [[0, 0], [2.999, 0], [0, 2.999], [2.999, 2.999], [1.5, 1.5]];
-    let checked = 0;
-    for (const [ex, ez] of eyes) {
-      const eyeX = cx + ex!, eyeZ = cz + ez!;
-      for (const inst of [...meadow.near, ...meadow.far]) {
-        if (Math.hypot(inst.x - eyeX, inst.z - eyeZ) < BLADE_RADIUS) {
-          expect(present.has(inst), `${inst.x},${inst.z} from eye ${eyeX},${eyeZ}`).toBe(true);
-          checked++;
-        }
-      }
-    }
-    expect(checked).toBeGreaterThan(100);
-  });
-
-  it("the memoized collector agrees with the pure function on the blade list", () => {
-    const collector = createClutterCollector(SEED);
-    const a = collector.collect(MEADOW_CAM.x, MEADOW_CAM.z, 1, REACH)[CLUTTER_MEADOW]!.blades;
-    const b = collectClutter(SEED, MEADOW_CAM.x, MEADOW_CAM.z, 1, REACH)[CLUTTER_MEADOW]!.blades;
-    expect(a.map((i) => [i.x, i.z])).toEqual(b.map((i) => [i.x, i.z]));
+  it("carries only the near and far lists per class", () => {
+    const bands = collectClutter(SEED, CAM.x, CAM.z);
+    for (const band of bands) expect(Object.keys(band).sort()).toEqual(["far", "near"]);
   });
 });

@@ -56,6 +56,7 @@ import { POND_DEPTH } from "../sim/features.js";
 import { createForestMeshes } from "./forestMeshes.js";
 import { NEAR_RADIUS } from "./forestField.js";
 import { createClutterMeshes } from "./clutterMeshes.js";
+import { createBladeMeshes } from "./bladeMeshes.js";
 import { createWildlifeMeshes } from "./wildlifeMeshes.js";
 import type { PlayerPoint, WildlifeEvent } from "./wildlifeBehaviour.js";
 import type { ListenerPose } from "./ambientAudio.js";
@@ -779,13 +780,16 @@ export function createRenderer(
   // Ground clutter rides the same guard as the forest above it: hand-authored
   // levels have no forest and get no grass, rocks, boulders, driftwood or
   // fungus. Low tier shrinks every class radius to 60%, the clutter analogue
-  // of the forest's near-band tier rule. High and medium draw the meadow's
-  // near instances as blade clumps; low keeps the cards, whose 1.5× scaling
-  // is where blades resolve worst.
+  // of the forest's near-band tier rule. High and medium draw the blade field
+  // inside the meadow's seam; low keeps the cards, whose 1.5× scaling is
+  // where blades resolve worst.
   const clutterMeshes =
     forest !== null
-      ? createClutterMeshes(scene, forest.seed, { radiusScale: tier === "low" ? 0.6 : undefined, blades: tier !== "low" })
+      ? createClutterMeshes(scene, forest.seed, { radiusScale: tier === "low" ? 0.6 : undefined, nearBlades: tier !== "low" })
       : null;
+  // The near field of blade grass, on the tiers that can afford it; it
+  // rebuilds on its own 1 m crossing and takes the meadow's near cards' place.
+  const bladeMeshes = forest !== null && tier !== "low" ? createBladeMeshes(scene, forest.seed, { quality: tier }) : null;
   // Same late-registration story as the forest's casters: the eleven clutter
   // GLBs load asynchronously, so the boulder buckets appear in `casterMeshes`
   // some frames after creation.
@@ -928,6 +932,7 @@ export function createRenderer(
         propMeshes?.update(freecam.x, freecam.z);
         forestMeshes?.update(freecam.x, freecam.z);
         clutterMeshes?.update(freecam.x, freecam.z);
+        bladeMeshes?.update(freecam.x, freecam.z);
         wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour);
         mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour(), wind, seconds);
         camera.position.set(freecam.x, freecam.y, freecam.z);
@@ -949,6 +954,7 @@ export function createRenderer(
         propMeshes?.update(local.pos.x, local.pos.z);
         forestMeshes?.update(local.pos.x, local.pos.z);
         clutterMeshes?.update(local.pos.x, local.pos.z);
+        bladeMeshes?.update(local.pos.x, local.pos.z);
         wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour);
         mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour(), wind, seconds);
         const offset = bob.update(
@@ -1037,6 +1043,7 @@ export function createRenderer(
       propMeshes?.dispose();
       forestMeshes?.dispose();
       clutterMeshes?.dispose();
+      bladeMeshes?.dispose();
       wildlife?.dispose();
       mist?.dispose();
       rain.dispose();
