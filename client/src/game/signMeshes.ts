@@ -7,7 +7,7 @@ import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { SignPost } from "../sim/signs.js";
 import { SIGN_POST_HALF } from "../sim/signs.js";
 
-/** The trailhead board: the sign beside the car, with the book painted on the face toward the pad. */
+/** The trailhead board: the sign beside the car, with the poster's lines on the face toward the pad. */
 export type SignBoard = { x: number; z: number; facing: { dx: number; dz: number }; lines: string[] };
 
 export type SignMeshes = { dispose(): void };
@@ -74,7 +74,7 @@ export function createSignMeshes(
       meshes.push(mesh);
     }
   }
-  // The board: a plane a hair off the sign's face, the book painted on it.
+  // The board: a plane a hair off the sign's face, the poster's lines painted on it.
   const boardMesh = MeshBuilder.CreatePlane("sign_board", { width: 1.15, height: 1.9 }, scene);
   boardMesh.position.set(board.x + board.facing.dx * 0.11, groundH(board.x, board.z) + 1.0, board.z + board.facing.dz * 0.11);
   // A plane faces -z by default; turn it to face along `facing`.

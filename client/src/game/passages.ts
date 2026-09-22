@@ -19,9 +19,8 @@ export const END_PASSAGES = {
   none: "Nobody came down. The woods went back to counting, and the road ran on to a car that nobody drove home.",
 } as const;
 
-/** After the loss, the return to the landing. The win takes the same time. */
-export const LOSS_LANDING_MS = 8000;
-export const WIN_LANDING_MS = 8000;
+/** After the end, win or loss, the panel holds this long before the return to the landing. */
+export const END_LANDING_MS = 8000;
 
 /**
  * What a player at road offset `u` is told at the wall, or null: on the

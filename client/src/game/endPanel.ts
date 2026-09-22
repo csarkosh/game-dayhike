@@ -80,7 +80,11 @@ export function createEndPanel(container: HTMLElement): EndPanel {
   root.append(page);
   container.append(style, root);
 
-  function fill(list: HTMLUListElement, names: readonly string[]): void {
+  // An empty group hides its section: a total loss has nobody under "Came
+  // down", and a heading over nothing reads as a mistake. `hidden`, not a
+  // display toggle, is how this UI shows and hides.
+  function fill(section: HTMLElement, list: HTMLUListElement, names: readonly string[]): void {
+    section.hidden = names.length === 0;
     list.replaceChildren(
       ...names.map((name) => {
         const li = document.createElement("li");
@@ -93,8 +97,8 @@ export function createEndPanel(container: HTMLElement): EndPanel {
   return {
     show(view) {
       passage.textContent = view.passage;
-      fill(survivedList, view.survived);
-      fill(perishedList, view.perished);
+      fill(survivedSection, survivedList, view.survived);
+      fill(perishedSection, perishedList, view.perished);
       root.classList.add("open");
     },
     hide() {

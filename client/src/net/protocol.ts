@@ -456,7 +456,9 @@ export function encodeEvent(event: NetEvent): ArrayBuffer {
     }
     case MessageType.Named: {
       // SessionEnded's shape with the entity id in front: [type][entityId u16][len u8][peerId].
-      const peerId = textEncoder.encode(event.peerId);
+      // The length is a u8: an id over 255 bytes is cut, not wrapped (ids are 36 characters today).
+      const bytes = textEncoder.encode(event.peerId);
+      const peerId = bytes.subarray(0, Math.min(255, bytes.length));
       const buffer = new ArrayBuffer(1 + 2 + 1 + peerId.length);
       const view = new DataView(buffer);
       view.setUint8(0, MessageType.Named);

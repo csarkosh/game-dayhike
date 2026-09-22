@@ -321,14 +321,6 @@ export function stepHollows(world: World, dt: number): void {
   for (const h of hollowsOf(world)) stepHollow(h, world, graph, dt);
 }
 
-/** Whether any Hollow hunts this player. */
-export function isHunted(world: World, playerId: number): boolean {
-  for (const e of world.state.enemies.values()) {
-    if (e.ai === AiState.Hunt && e.targetId === playerId) return true;
-  }
-  return false;
-}
-
 /**
  * The look test: the Hollow's centre within HOLLOW_LOOK_COS of the player's
  * aim ray, within HOLLOW_LOOK_RANGE of the eye, and nothing in between.

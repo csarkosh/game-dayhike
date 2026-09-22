@@ -118,7 +118,7 @@ const stepFor = (seconds: number, t: EscalationTargets, from = ESCALATION_REST, 
 };
 
 describe("stepEscalation", () => {
-  it("ratchets the world target: a Hollow climbing back never lowers it", () => {
+  it("ratchets the world target: the party dropping back down the stem never lowers it", () => {
     let s = stepEscalation(ESCALATION_REST, T({ world: 0.6 }), 1 / 60);
     expect(s.progressMax).toBeCloseTo(0.6, 9);
     s = stepEscalation(s, T({ world: 0.2 }), 1 / 60);

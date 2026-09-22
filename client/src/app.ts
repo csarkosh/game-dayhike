@@ -57,7 +57,7 @@ import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { createEndPanel, endPanelModel } from "./game/endPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
-import { DEATH_LINE, LOSS_LANDING_MS, WIN_LANDING_MS, roadLine } from "./game/passages.js";
+import { DEATH_LINE, END_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/register.js";
 import { signPosts } from "./sim/signs.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
@@ -498,6 +498,27 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     hud.setStatus(DEATH_LINE);
   }
 
+  const lobby = options.lobby;
+  /**
+   * Which peer each entity is, for the end panel. Filled from the Named
+   * pairings — by the host as it admits each peer, by a follower through
+   * `onNamed` — never from the snapshot: a name is the lobby's, not the
+   * sim's. The peer id is stored, not the display name: a pairing can land
+   * before the lobby's state broadcast does, and a name resolved then would
+   * stick at the peer-id prefix for good. `nameOf` resolves it when needed.
+   */
+  const names = new Map<number, string>();
+  /** This player's peer id: the lobby's, or solo's stand-in (the host's default `hostPeerId`). */
+  const selfPeerId = lobby?.peerId ?? "host";
+  /**
+   * The lobby's name for a peer: "You" for this player, whichever side they
+   * are on, and the short peer id for anyone the lobby has not named — at
+   * least stable, and distinct between two strangers.
+   */
+  function nameOf(peerId: string): string {
+    if (peerId === selfPeerId) return "You";
+    return lobby?.state.members.find((m) => m.id === peerId)?.name ?? peerId.slice(0, 8);
+  }
   let ended = false;
   /**
    * The end, once: the view fades onto the panel naming who came down and who
@@ -508,7 +529,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   function syncOutcome(state: WorldState): void {
     if (ended || state.outcome === Outcome.Playing) return;
     ended = true;
-    const won = state.outcome === Outcome.Won;
     // Names resolve here, as the panel is built, so a pairing that landed
     // before the lobby's state did still gets the lobby's name. Unsorted:
     // `endPanelModel` orders by id, and one sort is enough. The fallback
@@ -527,7 +547,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     hud.setStatus(null);
     endPanel.show(endPanelModel(players));
     if (landingTimer !== null) clearTimeout(landingTimer);
-    landingTimer = setTimeout(navigateToLanding, won ? WIN_LANDING_MS : LOSS_LANDING_MS);
+    landingTimer = setTimeout(navigateToLanding, END_LANDING_MS);
   }
 
   /** Advances and paints the touch layer. Both loops, after `renderer.sync`. */
@@ -686,27 +706,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   };
   window.addEventListener("keydown", onDebugKey);
 
-  const lobby = options.lobby;
-  /**
-   * Which peer each entity is, for the end panel. Filled from the Named
-   * pairings — by the host as it admits each peer, by a follower through
-   * `onNamed` — never from the snapshot: a name is the lobby's, not the
-   * sim's. The peer id is stored, not the display name: a pairing can land
-   * before the lobby's state broadcast does, and a name resolved then would
-   * stick at the peer-id prefix for good. `nameOf` resolves it when needed.
-   */
-  const names = new Map<number, string>();
-  /** This player's peer id: the lobby's, or solo's stand-in (the host's default `hostPeerId`). */
-  const selfPeerId = lobby?.peerId ?? "host";
-  /**
-   * The lobby's name for a peer: "You" for this player, whichever side they
-   * are on, and the short peer id for anyone the lobby has not named — at
-   * least stable, and distinct between two strangers.
-   */
-  function nameOf(peerId: string): string {
-    if (peerId === selfPeerId) return "You";
-    return lobby?.state.members.find((m) => m.id === peerId)?.name ?? peerId.slice(0, 8);
-  }
   let seq = 0;
   // Populated once we know whether we host or join.
   let stepAndRender: (() => void) | null = null;

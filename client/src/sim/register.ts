@@ -46,16 +46,12 @@ export type RegisterInput = {
 
 /**
  * The body faces the way a climber arrives: from the crest back down the
- * stem's last edge. A facing needs no trig: `yaw` is what `aimDirection`
- * inverts, so it is written as atan2 would give it — but atan2 is trig, and
- * this runs on every peer. The direction is stored as a unit vector's yaw
- * computed by the caller-free rule below: yaw = 0 faces +z, and a quarter
- * turn per axis; on a stem the last edge is never degenerate.
+ * stem's last edge. A piecewise-linear atan2 over eight octants, exact at
+ * the axes and within 0.07 rad between them — enough for a body to read as
+ * facing the trail — and bit-identical everywhere because it uses no trig;
+ * yaw = 0 faces +z, and on a stem the last edge is never degenerate.
  */
 function facingYaw(dx: number, dz: number): number {
-  // A piecewise-linear atan2 over eight octants is exact at the axes and
-  // within 0.07 rad between them — enough for a body to read as facing the
-  // trail, and bit-identical everywhere.
   const ax = dx < 0 ? -dx : dx, az = dz < 0 ? -dz : dz;
   const t = ax + az === 0 ? 0 : ax / (ax + az); // 0 on +z, 1 on +x
   const quarter = Math.PI / 2;
