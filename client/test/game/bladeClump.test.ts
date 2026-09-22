@@ -16,7 +16,7 @@ describe("the character and tier tables", () => {
     expect(BLADE_VERTS).toBe(7);
     expect(BLADE_TRIS).toBe(5);
     expect(BLADE_CLUMP_RADIUS).toBe(0.35);
-    expect(BLADE_ALBEDO).toEqual({ r: 0.3, g: 0.4, b: 0.12 });
+    expect(BLADE_ALBEDO).toEqual({ r: 0.075, g: 0.10, b: 0.03 });
     expect(BLADE_TIP_TINT).toEqual({ r: 0.95, g: 0.95, b: 0.75 });
     expect(BLADE_LUMA).toBe(0.3);
     expect(BLADE_SOFT).toBe(0.15);
@@ -96,18 +96,41 @@ describe("one clump per character and tier", () => {
         if (character.tip === "none") {
           expect(vertexCount).toBe(bladeVerts);
         } else if (character.tip === "seed") {
-          // One 4-vertex diamond per blade, straw-tinted, above the blade's tip.
-          expect(vertexCount).toBe(bladeVerts + count * 4);
+          // One more strip per blade, continuing from its tip, straw-tinted.
+          expect(vertexCount).toBe(bladeVerts + count * BLADE_VERTS);
+          for (let b = 0; b < count; b++) {
+            const parent = b * BLADE_VERTS;
+            const parentTip = parent + BLADE_VERTS - 1;
+            const head = bladeVerts + b * BLADE_VERTS;
+            // The head's own first ring starts exactly at its blade's tip,
+            // and every one of its vertices still names that blade's root
+            // and random, so it collapses with it.
+            expect(g.positions[head * 3 + 1]).toBeCloseTo(g.positions[parentTip * 3 + 1]!, 6);
+            for (let k = 0; k < BLADE_VERTS; k++) {
+              expect(g.blade[(head + k) * 4]).toBe(g.blade[parent * 4]);
+              expect(g.blade[(head + k) * 4 + 1]).toBe(g.blade[parent * 4 + 1]);
+              expect(g.blade[(head + k) * 4 + 2]).toBe(g.blade[parent * 4 + 2]);
+            }
+          }
           const v = bladeVerts; // the first seed head's first vertex
           expect(g.colors[v * 4]).toBeGreaterThan(g.colors[v * 4 + 2]!); // straw: red above blue
-          expect(g.blade[v * 4 + 3]).toBe(1); // heads collapse with their blade, at full height fraction
         } else {
-          // Heads: 1–3 per clump, each a stem strip (BLADE_VERTS vertices) plus a 5-quad rosette (20 vertices).
-          const heads = (vertexCount - bladeVerts) / (BLADE_VERTS + 20);
+          // Heads: 1–3 per clump, each a stem strip plus five petal strips
+          // (BLADE_VERTS vertices apiece, six strips a head).
+          const perHead = 6 * BLADE_VERTS;
+          const heads = (vertexCount - bladeVerts) / perHead;
           expect(Number.isInteger(heads)).toBe(true);
           expect(heads).toBeGreaterThanOrEqual(character.heads![0]);
           expect(heads).toBeLessThanOrEqual(character.heads![1]);
-          const rosette = bladeVerts + BLADE_VERTS; // the first head's first petal vertex
+          const stem = bladeVerts; // the first head's stem
+          const rosette = stem + BLADE_VERTS; // the first head's first petal strip
+          // The petal names the same root and random as its own stem, so the
+          // whole head collapses together.
+          for (let k = 0; k < BLADE_VERTS; k++) {
+            expect(g.blade[(rosette + k) * 4]).toBe(g.blade[stem * 4]);
+            expect(g.blade[(rosette + k) * 4 + 1]).toBe(g.blade[stem * 4 + 1]);
+            expect(g.blade[(rosette + k) * 4 + 2]).toBe(g.blade[stem * 4 + 2]);
+          }
           const c = [g.colors[rosette * 4]!, g.colors[rosette * 4 + 1]!, g.colors[rosette * 4 + 2]!];
           expect(FLOWER_PALETTE.some((p) => Math.abs(p.r - c[0]!) < 1e-6 && Math.abs(p.g - c[1]!) < 1e-6 && Math.abs(p.b - c[2]!) < 1e-6)).toBe(true);
           const y = g.positions[rosette * 3 + 1]!;

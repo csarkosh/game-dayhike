@@ -13,8 +13,10 @@ import { BLADE_CHARACTER_COUNT } from "./bladeField.js";
  * root on a disc of BLADE_CLUMP_RADIUS at y = 0 (the model convention: origin
  * at the base). It droops outward as a parabola, tapers to the tip, and
  * carries its face normal rolled to either side so it shades as a
- * half-cylinder. A character may add a tip feature: a seed head (one diamond
- * quad above the tip) or flower heads (a stem with a five-petal rosette).
+ * half-cylinder. A character may add a tip feature, built from the same
+ * strip so it shades like a blade rather than a flat card: a seed head (a
+ * second, shorter strip continuing from the tip) or flower heads (a stem
+ * strip with five petal strips fanned from its tip).
  * One static vec4 per vertex, `blade`, names the root the blade collapses to,
  * the blade's random (its place in the hand-off order) and the vertex's
  * fraction of its own blade's height; a feature's vertices carry their
@@ -31,8 +33,12 @@ export const BLADE_TRIS = (BLADE_RINGS - 1) * 2 + 1;
 export const BLADE_CLUMP_RADIUS = 0.35;
 /** The face normal is rolled this far (rad) about the blade's axis, one way per side. */
 export const BLADE_ROUND = 0.3;
-/** The material's base albedo, linear: a meadow green. */
-export const BLADE_ALBEDO: Rgb = { r: 0.3, g: 0.4, b: 0.12 };
+/** The material's base albedo, linear: a meadow green. The blades sit near
+ * the top of the tone curve, so this value is far below what the colour
+ * looks like on screen — halving it moves the rendered colour only about
+ * 12%. Tuned by comparing the near field's mean colour against the far
+ * field's in the same frame, not by eye against a swatch. */
+export const BLADE_ALBEDO: Rgb = { r: 0.075, g: 0.10, b: 0.03 };
 /** Vertex colour at the tip, from white at the root. */
 export const BLADE_TIP_TINT: Rgb = { r: 0.95, g: 0.95, b: 0.75 };
 /** Per-blade luminance spread: `1 + BLADE_LUMA · (random − 0.5)`. */
@@ -70,9 +76,12 @@ export const FLOWER_PALETTE: readonly Rgb[] = [
   { r: 0.6, g: 0.45, b: 0.9 },
   { r: 0.9, g: 0.25, b: 0.2 },
 ];
-/** Seed head: a diamond this long (m) along the blade's axis, half this wide. */
+/** Seed head: the continuing strip's length (m), from the blade's own tip. */
 export const SEED_HEAD_SIZE = 0.03;
-/** Flower head: the stem's half-width and the rosette's radius (m); the head sits this high (m). */
+/** Seed head: the strip's base half-width, as a multiple of the blade's own half-width. */
+export const SEED_HEAD_WIDTH = 2.5;
+/** Flower head: the stem's half-width (m) and the rosette's reach (m), which scales
+ * each petal strip's length and base width; the head sits this high (m). */
 export const FLOWER_STEM_WIDTH = 0.003;
 export const FLOWER_ROSETTE = 0.018;
 export const FLOWER_HEIGHT: readonly [number, number] = [0.3, 0.45];
@@ -114,18 +123,22 @@ function headCount(character: BladeCharacter): number {
   return lo + Math.floor(draw(7, 11) * (hi - lo + 1));
 }
 
-/** Vertices a clump of this character and blade count carries. */
+/** Vertices a clump of this character and blade count carries. A seed head
+ * is one more strip (BLADE_VERTS); a flower head is a stem strip plus five
+ * petal strips, six strips of BLADE_VERTS each. */
 export function bladeVertexCount(character: BladeCharacter, count: number): number {
   let n = count * BLADE_VERTS;
-  if (character.tip === "seed") n += count * 4;
-  if (character.tip === "flower") n += headCount(character) * (BLADE_VERTS + 20);
+  if (character.tip === "seed") n += count * BLADE_VERTS;
+  if (character.tip === "flower") n += headCount(character) * 6 * BLADE_VERTS;
   return n;
 }
 
 export function bladeClumpGeometry(character: BladeCharacter, count: number): BladeClumpGeometry {
   const heads = headCount(character);
   const n = bladeVertexCount(character, count);
-  const tris = count * BLADE_TRIS + (character.tip === "seed" ? count * 2 : 0) + heads * (2 * (BLADE_RINGS - 1) + 1 + 10);
+  // Matches bladeVertexCount: a seed head is one more strip's worth of
+  // triangles, a flower head is six strips' worth (the stem plus five petals).
+  const tris = count * BLADE_TRIS + (character.tip === "seed" ? count * BLADE_TRIS : 0) + heads * 6 * BLADE_TRIS;
   const positions = new Float32Array(n * 3);
   const normals = new Float32Array(n * 3);
   const colors = new Float32Array(n * 4);
@@ -149,20 +162,27 @@ export function bladeClumpGeometry(character: BladeCharacter, count: number): Bl
   };
   const tri = (a: number, b: number, c: number): void => { indices[ii++] = a; indices[ii++] = b; indices[ii++] = c; };
 
-  // One strip: `rings` cross-sections of half-width `hw(h)` plus a tip, drooping
-  // outward along (outX, outZ) by a parabola of the height fraction. Returns
-  // the index of its first vertex.
+  // One strip: `rings` cross-sections of half-width `hw(h)` plus a tip, rising
+  // from (baseX, baseY, baseZ) by `height` and drooping outward along (outX,
+  // outZ) by a parabola of the height fraction — the bend uses |height| so a
+  // strip that dips (a negative height, for a petal curling down) still
+  // bends outward rather than back on itself. A tip feature's strip starts
+  // its own base past its parent's tip but still names the parent's root and
+  // random in `blade`, via (rootX, rootZ), so it collapses with its blade.
+  // Returns the index of its first vertex.
   const strip = (
-    rootX: number, rootZ: number, height: number, droop: number, hw: number,
+    baseX: number, baseY: number, baseZ: number, height: number, droop: number, hw: number,
     outX: number, outZ: number, yaw: number, random: number, tintR: number, tintG: number, tintB: number,
+    rootX: number, rootZ: number,
   ): number => {
     const wX = Math.cos(yaw), wZ = Math.sin(yaw);
     const nX = -wZ, nZ = wX;
     const first = v;
     const ring = (h: number, side: number): void => {
-      const cx = rootX + outX * height * droop * h * h;
-      const cy = height * h;
-      const cz = rootZ + outZ * height * droop * h * h;
+      const bend = Math.abs(height) * droop * h * h;
+      const cx = baseX + outX * bend;
+      const cy = baseY + height * h;
+      const cz = baseZ + outZ * bend;
       const w = hw * (1 - h);
       const c = Math.cos(BLADE_ROUND * side), s = Math.sin(BLADE_ROUND * side);
       put(
@@ -186,7 +206,7 @@ export function bladeClumpGeometry(character: BladeCharacter, count: number): Bl
 
   // Every blade's strip first, so the blades' vertices are contiguous from 0
   // (the tests index them as b · BLADE_VERTS); the tip features follow.
-  const seedHeads: { first: number; height: number; droop: number; outX: number; outZ: number; yaw: number; rootX: number; rootZ: number; random: number }[] = [];
+  const seedHeads: { first: number; droop: number; outX: number; outZ: number; yaw: number; rootX: number; rootZ: number; random: number }[] = [];
   for (let b = 0; b < count; b++) {
     const random = draw(b, 1);
     const rho = BLADE_CLUMP_RADIUS * Math.sqrt(draw(b, 2));
@@ -198,32 +218,25 @@ export function bladeClumpGeometry(character: BladeCharacter, count: number): Bl
     const outX = rho > 1e-6 ? Math.cos(phi) : Math.cos(yaw);
     const outZ = rho > 1e-6 ? Math.sin(phi) : Math.sin(yaw);
     const luma = 1 + BLADE_LUMA * (random - 0.5);
-    const first = strip(rootX, rootZ, height, droop, character.width, outX, outZ, yaw,
-      random, character.tint.r * luma, character.tint.g * luma, character.tint.b * luma);
-    if (character.tip === "seed") seedHeads.push({ first, height, droop, outX, outZ, yaw, rootX, rootZ, random });
+    const first = strip(rootX, 0, rootZ, height, droop, character.width, outX, outZ, yaw,
+      random, character.tint.r * luma, character.tint.g * luma, character.tint.b * luma, rootX, rootZ);
+    if (character.tip === "seed") seedHeads.push({ first, droop, outX, outZ, yaw, rootX, rootZ, random });
   }
   for (const s of seedHeads) {
-    // A diamond in the blade's own plane, from the tip up along the droop's tangent.
+    // A second, shorter strip continuing from the blade's tip: the same
+    // droop and lean the blade itself just used, so it reads as the blade
+    // thickening into a head rather than a card stuck on top.
     const tip = s.first + BLADE_VERTS - 1;
     const tx = positions[tip * 3]!, ty = positions[tip * 3 + 1]!, tz = positions[tip * 3 + 2]!;
-    const ax = s.outX * s.height * s.droop * 2, ay = s.height, az = s.outZ * s.height * s.droop * 2;
-    const al = Math.hypot(ax, ay, az);
-    const ux = ax / al, uy = ay / al, uz = az / al;
-    const wX = Math.cos(s.yaw), wZ = Math.sin(s.yaw);
-    const size = SEED_HEAD_SIZE;
-    const n0x = -wZ, n0z = wX;
     const c = SEED_HEAD_TINT;
-    const p0 = put(tx, ty, tz, n0x, 0, n0z, c.r, c.g, c.b, s.rootX, s.rootZ, s.random, 1);
-    const p1 = put(tx + ux * size * 0.5 + wX * size * 0.5, ty + uy * size * 0.5, tz + uz * size * 0.5 + wZ * size * 0.5, n0x, 0, n0z, c.r, c.g, c.b, s.rootX, s.rootZ, s.random, 1);
-    const p2 = put(tx + ux * size * 0.5 - wX * size * 0.5, ty + uy * size * 0.5, tz + uz * size * 0.5 - wZ * size * 0.5, n0x, 0, n0z, c.r, c.g, c.b, s.rootX, s.rootZ, s.random, 1);
-    const p3 = put(tx + ux * size, ty + uy * size, tz + uz * size, n0x, 0, n0z, c.r, c.g, c.b, s.rootX, s.rootZ, s.random, 1);
-    tri(p0, p1, p2);
-    tri(p1, p3, p2);
+    strip(tx, ty, tz, SEED_HEAD_SIZE, s.droop, character.width * SEED_HEAD_WIDTH, s.outX, s.outZ, s.yaw,
+      s.random, c.r, c.g, c.b, s.rootX, s.rootZ);
   }
 
   for (let f = 0; f < heads; f++) {
-    // A head: a thin stem strip on its own root, then five petals around the
-    // stem's tip, each a quad tilted outward, in one palette colour.
+    // A head: a thin stem strip on its own root, then five short, wide petal
+    // strips fanned from the stem's tip, each with its own small droop so it
+    // curls outward and down, in one palette colour.
     const random = draw(100 + f, 1);
     const rho = BLADE_CLUMP_RADIUS * 0.8 * Math.sqrt(draw(100 + f, 2));
     const phi = 2 * Math.PI * draw(100 + f, 3);
@@ -231,21 +244,19 @@ export function bladeClumpGeometry(character: BladeCharacter, count: number): Bl
     const height = FLOWER_HEIGHT[0] + (FLOWER_HEIGHT[1] - FLOWER_HEIGHT[0]) * draw(100 + f, 4);
     const yaw = 2 * Math.PI * draw(100 + f, 6);
     const stemTint = { r: 0.7, g: 0.9, b: 0.5 };
-    const first = strip(rootX, rootZ, height, 0.15, FLOWER_STEM_WIDTH, Math.cos(phi), Math.sin(phi), yaw, random, stemTint.r, stemTint.g, stemTint.b);
+    const first = strip(rootX, 0, rootZ, height, 0.15, FLOWER_STEM_WIDTH, Math.cos(phi), Math.sin(phi), yaw,
+      random, stemTint.r, stemTint.g, stemTint.b, rootX, rootZ);
     const tip = first + BLADE_VERTS - 1;
     const tx = positions[tip * 3]!, ty = positions[tip * 3 + 1]!, tz = positions[tip * 3 + 2]!;
     const colour = FLOWER_PALETTE[Math.floor(draw(100 + f, 9) * FLOWER_PALETTE.length) % FLOWER_PALETTE.length] as Rgb;
+    // Negative so each petal dips below the stem's tip as it reaches out.
+    const petalLength = -FLOWER_ROSETTE * 0.7;
+    const petalDroop = 1.2;
+    const petalWidth = FLOWER_ROSETTE * 0.5;
     for (let p = 0; p < 5; p++) {
       const a = (p / 5) * 2 * Math.PI + yaw;
-      const dx = Math.cos(a), dz = Math.sin(a);
-      const r = FLOWER_ROSETTE;
-      // A petal quad: from the head centre outward, tilted 30° down at the outer edge.
-      const q0 = put(tx, ty, tz, 0, 1, 0, colour.r, colour.g, colour.b, rootX, rootZ, random, 1);
-      const q1 = put(tx + dx * r * 0.5 - dz * r * 0.35, ty, tz + dz * r * 0.5 + dx * r * 0.35, 0, 1, 0, colour.r, colour.g, colour.b, rootX, rootZ, random, 1);
-      const q2 = put(tx + dx * r, ty - r * 0.5, tz + dz * r, 0, 1, 0, colour.r, colour.g, colour.b, rootX, rootZ, random, 1);
-      const q3 = put(tx + dx * r * 0.5 + dz * r * 0.35, ty, tz + dz * r * 0.5 - dx * r * 0.35, 0, 1, 0, colour.r, colour.g, colour.b, rootX, rootZ, random, 1);
-      tri(q0, q1, q2);
-      tri(q0, q2, q3);
+      strip(tx, ty, tz, petalLength, petalDroop, petalWidth, Math.cos(a), Math.sin(a), a,
+        random, colour.r, colour.g, colour.b, rootX, rootZ);
     }
   }
   return { positions, normals, colors, indices, blade };
