@@ -51,7 +51,7 @@
 
 **Interfaces:**
 - Consumes: `smoothstep` (module-local in `clutter.ts`), `fbm2`, `forestDensity`, `grassTrailGate`, the existing grass constants.
-- Produces: `export type GroundCover = { grass: number; duff: number }`; `export function groundCover(seed: number, x: number, z: number, sample?: TerrainSample): GroundCover`; constants `CLUTTER_GRASS_CANOPY_FLOOR = 0.15`, `CLUTTER_GRASS_PATCH_FLOOR = 0.6`, `CLUTTER_GRASS_BOOST = 1.5`, `CLUTTER_GRASS_BOOST_LO = 0.5`, `CLUTTER_DUFF_OPEN = 0.15`, `CLUTTER_DUFF_ROAD_CLEAR = 2`. `grass` is in `[0, CLUTTER_GRASS_BOOST]`; `duff` in `[0, 1]`.
+- Produces: `export type GroundCover = { grass: number; duff: number }`; `export function groundCover(seed: number, x: number, z: number, sample?: TerrainSample): GroundCover`; constants `CLUTTER_GRASS_CANOPY_FLOOR = 0.15`, `CLUTTER_GRASS_PATCH_FLOOR = 0.6`, `CLUTTER_GRASS_BOOST = 1.5`, `CLUTTER_GRASS_BOOST_LO = 0.5`, `CLUTTER_DUFF_OPEN = 0.15`, `CLUTTER_DUFF_ROAD_CLEAR = 2`; the trail's terms `CLUTTER_GRASS_TRAIL_CORE = 0.35`, `CLUTTER_GRASS_TRAIL_REACH: readonly [number, number] = [0.35, 1.3]`, `CLUTTER_GRASS_TRAIL_REACH_WAVE = 9`, `CLUTTER_DUFF_BED_MAX = 0.8`, `CLUTTER_DUFF_BED_FADE = 0.5`, `CLUTTER_DUFF_DRIFT_WAVE = 6`, `CLUTTER_DUFF_DRIFT_BAND: readonly [number, number] = [0.35, 0.65]`; `export function trailReach(seed: number, x: number, z: number): number` (the ramp scale `k` in `[0.35, 1.3]`); `export function grassTrailRamp(rt: number, k: number): number` (with `grassTrailGate(rt)` kept as `grassTrailRamp(rt, 1)`); `export function trailDriftNoise(seed: number, x: number, z: number): number` in `[0, 1]`. `grass` is in `[0, CLUTTER_GRASS_BOOST]`; `duff` in `[0, 1]`. The trail sub-project reads `duff` at the terrain vertex (Task 7) for its drift paint and defines nothing of its own in the field.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -80,9 +80,66 @@ describe("groundCover", () => {
     expect(CLUTTER_GRASS_BOOST_LO).toBe(0.5);
     expect(CLUTTER_DUFF_OPEN).toBe(0.15);
     expect(CLUTTER_DUFF_ROAD_CLEAR).toBe(2);
-    for (const key of ["CLUTTER_GRASS_CANOPY_FLOOR", "CLUTTER_GRASS_PATCH_FLOOR", "CLUTTER_GRASS_BOOST", "CLUTTER_GRASS_BOOST_LO", "CLUTTER_DUFF_OPEN", "CLUTTER_DUFF_ROAD_CLEAR"]) {
+    expect(CLUTTER_GRASS_TRAIL_CORE).toBe(0.35);
+    expect(CLUTTER_GRASS_TRAIL_REACH).toEqual([0.35, 1.3]);
+    expect(CLUTTER_GRASS_TRAIL_REACH_WAVE).toBe(9);
+    expect(CLUTTER_DUFF_BED_MAX).toBe(0.8);
+    expect(CLUTTER_DUFF_BED_FADE).toBe(0.5);
+    expect(CLUTTER_DUFF_DRIFT_WAVE).toBe(6);
+    expect(CLUTTER_DUFF_DRIFT_BAND).toEqual([0.35, 0.65]);
+    for (const key of [
+      "CLUTTER_GRASS_CANOPY_FLOOR", "CLUTTER_GRASS_PATCH_FLOOR", "CLUTTER_GRASS_BOOST", "CLUTTER_GRASS_BOOST_LO", "CLUTTER_DUFF_OPEN", "CLUTTER_DUFF_ROAD_CLEAR",
+      "CLUTTER_GRASS_TRAIL_CORE", "CLUTTER_GRASS_TRAIL_REACH_LO", "CLUTTER_GRASS_TRAIL_REACH_HI", "CLUTTER_GRASS_TRAIL_REACH_WAVE",
+      "CLUTTER_DUFF_BED_MAX", "CLUTTER_DUFF_BED_FADE", "CLUTTER_DUFF_DRIFT_WAVE", "CLUTTER_DUFF_DRIFT_LO", "CLUTTER_DUFF_DRIFT_HI",
+    ]) {
       expect(CLUTTER_TUNABLES[key]).toBeTypeOf("number");
     }
+  });
+
+  it("keeps the path readable: no grass inside the bed's core, and the ramp's reach varies along the trail", () => {
+    // A 200 m square around the trailside pose, scanned at 1 m; the bed's
+    // core (rt < CORE) is a few hundred points of it.
+    const v = variant();
+    let core = 0, near = 0, nearGrass = 0;
+    const reaches = new Set<number>();
+    for (let x = 164; x <= 364; x += 1) {
+      for (let z = 18; z <= 218; z += 1) {
+        const rt = v.trailDistance?.(SEED, x, z) ?? Infinity;
+        if (rt < CLUTTER_GRASS_TRAIL_CORE) { expect(groundCover(SEED, x, z).grass).toBe(0); core++; }
+        if (rt >= CLUTTER_GRASS_TRAIL_CORE && rt < 0.75) { near++; if (groundCover(SEED, x, z).grass > 0) nearGrass++; }
+        if (rt < 3) reaches.add(Math.round(trailReach(SEED, x, z) * 20) / 20);
+      }
+    }
+    expect(core).toBeGreaterThan(300);
+    // Where the default ramp would still be closed (rt < 0.75), the modulated
+    // one opens in places: encroachment exists, and is not everywhere.
+    expect(nearGrass).toBeGreaterThan(0);
+    expect(nearGrass).toBeLessThan(near);
+    expect(reaches.size).toBeGreaterThan(6);
+    for (const k of reaches) { expect(k).toBeGreaterThanOrEqual(0.35 - 1e-9); expect(k).toBeLessThanOrEqual(1.3 + 1e-9); }
+    // The old gate is the ramp at k = 1.
+    expect(grassTrailGate(1.5)).toBe(grassTrailRamp(1.5, 1));
+  });
+
+  it("gathers duff on the bed in drifts, and only there past the core", () => {
+    const v = variant();
+    let onBed = 0, drifted = 0;
+    for (let x = 164; x <= 364; x += 1) {
+      for (let z = 18; z <= 218; z += 1) {
+        const rt = v.trailDistance?.(SEED, x, z) ?? Infinity;
+        if (rt > 0.75) continue;
+        onBed++;
+        const d = groundCover(SEED, x, z).duff;
+        expect(d).toBeLessThanOrEqual(CLUTTER_DUFF_BED_MAX + 1e-9);
+        const drift = trailDriftNoise(SEED, x, z);
+        expect(drift).toBeGreaterThanOrEqual(0);
+        expect(drift).toBeLessThanOrEqual(1);
+        if (drift > CLUTTER_DUFF_DRIFT_BAND[1]) { expect(d).toBeGreaterThan(0.5 * CLUTTER_DUFF_BED_MAX); drifted++; }
+        if (drift < CLUTTER_DUFF_DRIFT_BAND[0]) expect(d).toBeLessThan(0.2);
+      }
+    }
+    expect(onBed).toBeGreaterThan(300);
+    expect(drifted).toBeGreaterThan(30);
   });
 
   it("is the grass gate: the grass class and the meadow class read it", () => {
@@ -158,19 +215,25 @@ describe("groundCover", () => {
     expect(checked).toBeGreaterThan(20);
   });
 
-  it("puts no duff on sand, rock, the road or the trail bed", () => {
+  it("puts no duff on sand or rock, and on the bed's core only the drifts", () => {
     const v = variant();
-    let sandChecked = 0, benchChecked = 0;
+    let sandChecked = 0, coreChecked = 0;
     for (let x = -600; x <= 600; x += 6) {
       for (let z = -600; z <= 600; z += 6) {
         const s = v.sample(SEED, x, z);
         if (s.h < CLUTTER_GRASS_ALT_LO) { expect(groundCover(SEED, x, z, s).duff).toBe(0); sandChecked++; }
         const rt = v.trailDistance?.(SEED, x, z) ?? Infinity;
-        if (rt < 0.1) { expect(groundCover(SEED, x, z, s).duff).toBeLessThan(0.05); benchChecked++; }
+        if (rt < 0.1) {
+          // Inside the core the floor duff is closed; whatever remains is the bed drift.
+          const d = groundCover(SEED, x, z, s).duff;
+          expect(d).toBeLessThanOrEqual(CLUTTER_DUFF_BED_MAX + 1e-9);
+          if (trailDriftNoise(SEED, x, z) < CLUTTER_DUFF_DRIFT_LO) expect(d).toBe(0);
+          coreChecked++;
+        }
       }
     }
     expect(sandChecked).toBeGreaterThan(100);
-    expect(benchChecked).toBeGreaterThan(0);
+    expect(coreChecked).toBeGreaterThan(0);
   });
 
   it("grows grass wherever the floor is grass: the census share tracks the grass-ground share", () => {
@@ -230,9 +293,51 @@ export const CLUTTER_GRASS_BOOST_LO = 0.5;
 export const CLUTTER_DUFF_OPEN = 0.15;
 /** Duff clears the road over this many metres inside the grass's own road edge. */
 export const CLUTTER_DUFF_ROAD_CLEAR = 2;
+/** The bed's core (m from the centreline) never opens to grass, so the
+ * path always reads however far the margins are overgrown. */
+export const CLUTTER_GRASS_TRAIL_CORE = 0.35;
+/** The trail ramp's reach varies along the trail between these multiples
+ * of its default, by a value noise of this wavelength (m): in places grass
+ * creeps across the margin and stands in islands, elsewhere it hangs back. */
+export const CLUTTER_GRASS_TRAIL_REACH_LO = 0.35;
+export const CLUTTER_GRASS_TRAIL_REACH_HI = 1.3;
+export const CLUTTER_GRASS_TRAIL_REACH: readonly [number, number] = [CLUTTER_GRASS_TRAIL_REACH_LO, CLUTTER_GRASS_TRAIL_REACH_HI];
+export const CLUTTER_GRASS_TRAIL_REACH_WAVE = 9;
+/** Duff on the bed: at most this, gathered where the drift noise is inside
+ * its band, fading out this far past the bed's edge. */
+export const CLUTTER_DUFF_BED_MAX = 0.8;
+export const CLUTTER_DUFF_BED_FADE = 0.5;
+export const CLUTTER_DUFF_DRIFT_WAVE = 6;
+export const CLUTTER_DUFF_DRIFT_LO = 0.35;
+export const CLUTTER_DUFF_DRIFT_HI = 0.65;
+export const CLUTTER_DUFF_DRIFT_BAND: readonly [number, number] = [CLUTTER_DUFF_DRIFT_LO, CLUTTER_DUFF_DRIFT_HI];
+const CLUTTER_TRAIL_REACH_SALT = 0x5a17;
+const CLUTTER_DUFF_DRIFT_SALT = 0x6d1f;
 
 export type GroundCover = { grass: number; duff: number };
+
+/** The trail ramp's reach at a point, in [REACH_LO, REACH_HI]: continuous, so the grass it gates is too. */
+export function trailReach(seed: number, x: number, z: number): number {
+  const n = valueNoise2(x / CLUTTER_GRASS_TRAIL_REACH_WAVE, z / CLUTTER_GRASS_TRAIL_REACH_WAVE, seed ^ CLUTTER_TRAIL_REACH_SALT);
+  return CLUTTER_GRASS_TRAIL_REACH_LO + (CLUTTER_GRASS_TRAIL_REACH_HI - CLUTTER_GRASS_TRAIL_REACH_LO) * n;
+}
+
+/** The grass trail ramp at reach scale `k`: closed inside the core, open
+ * past `near + (FAR − NEAR)·k`, where `near` is the core plus `k` times the
+ * default margin. `grassTrailGate(rt)` is this ramp at k = 1. */
+export function grassTrailRamp(rt: number, k: number): number {
+  const near = CLUTTER_GRASS_TRAIL_CORE + (CLUTTER_GRASS_TRAIL_NEAR - CLUTTER_GRASS_TRAIL_CORE) * k;
+  const far = near + (CLUTTER_GRASS_TRAIL_FAR - CLUTTER_GRASS_TRAIL_NEAR) * k;
+  return smoothstep(near, far, rt);
+}
+
+/** Where litter gathers on the bed: a value noise in [0, 1] the duff reads. */
+export function trailDriftNoise(seed: number, x: number, z: number): number {
+  return valueNoise2(x / CLUTTER_DUFF_DRIFT_WAVE, z / CLUTTER_DUFF_DRIFT_WAVE, seed ^ CLUTTER_DUFF_DRIFT_SALT);
+}
 ```
+
+`grassTrailGate` becomes `export function grassTrailGate(rt: number): number { return grassTrailRamp(rt, 1); }`; its existing tests hold. Import `valueNoise2` from `./field.js` beside `fbm2, hash3`.
 
 Replace `grassGateProduct` with:
 
@@ -256,7 +361,8 @@ function groundCoverAt(seed: number, x: number, z: number, s: TerrainSample, r: 
   const shade = smoothstep(CLUTTER_GRASS_CANOPY_LO, CLUTTER_GRASS_CANOPY_HI, rho);
   const canopy = CLUTTER_GRASS_CANOPY_FLOOR + (1 - CLUTTER_GRASS_CANOPY_FLOOR) * (1 - shade);
   const road = smoothstep(CLUTTER_GRASS_ROAD_NEAR, CLUTTER_GRASS_ROAD_FAR, r);
-  const trail = grassTrailGate(rt);
+  // The ramp's reach varies along the trail (encroachment); the core never opens.
+  const trail = grassTrailRamp(rt, trailReach(seed, x, z));
   const patch = CLUTTER_GRASS_PATCH_FLOOR + (1 - CLUTTER_GRASS_PATCH_FLOOR) * smoothstep(
     CLUTTER_GRASS_PATCH_LO,
     CLUTTER_GRASS_PATCH_HI,
@@ -266,11 +372,17 @@ function groundCoverAt(seed: number, x: number, z: number, s: TerrainSample, r: 
   const boost = 1 + (CLUTTER_GRASS_BOOST - 1) * smoothstep(CLUTTER_GRASS_BOOST_LO, 1, edge);
   const grass = edge * patch * boost;
   // Duff fills what the thinning takes: strongest under dense canopy, a
-  // trace in thin open grass, and clear of the trail bed and the asphalt —
-  // those surfaces are painted by their own systems.
-  const bench = smoothstep(0, CLUTTER_GRASS_TRAIL_NEAR, rt) * smoothstep(CLUTTER_GRASS_ROAD_NEAR - CLUTTER_DUFF_ROAD_CLEAR, CLUTTER_GRASS_ROAD_NEAR, r);
-  const duff = onGrass * Math.max(0, 1 - grass / CLUTTER_GRASS_BOOST) * (CLUTTER_DUFF_OPEN + (1 - CLUTTER_DUFF_OPEN) * shade) * bench;
-  return { grass, duff };
+  // trace in thin open grass, and clear of the asphalt, which is painted by
+  // its own system. Off the bed it also clears the bed's core; on the bed
+  // it gathers in drifts where the drift noise says litter has collected,
+  // fading out past the bed's edge. `max` keeps both continuous.
+  const road2 = smoothstep(CLUTTER_GRASS_ROAD_NEAR - CLUTTER_DUFF_ROAD_CLEAR, CLUTTER_GRASS_ROAD_NEAR, r);
+  const offBed = smoothstep(0, CLUTTER_GRASS_TRAIL_CORE, rt);
+  const floorDuff = onGrass * Math.max(0, 1 - grass / CLUTTER_GRASS_BOOST) * (CLUTTER_DUFF_OPEN + (1 - CLUTTER_DUFF_OPEN) * shade) * offBed * road2;
+  const onBed = 1 - smoothstep(CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_NEAR + CLUTTER_DUFF_BED_FADE, rt);
+  const drift = smoothstep(CLUTTER_DUFF_DRIFT_LO, CLUTTER_DUFF_DRIFT_HI, trailDriftNoise(seed, x, z));
+  const bedDuff = onGrass * onBed * drift * CLUTTER_DUFF_BED_MAX * road2;
+  return { grass, duff: Math.max(floorDuff, bedDuff) };
 }
 
 export function groundCover(seed: number, x: number, z: number, sample?: TerrainSample): GroundCover {
@@ -291,6 +403,8 @@ Add the six new constants to `CLUTTER_TUNABLES` on the line after the `CLUTTER_G
 ```ts
   CLUTTER_GRASS_CANOPY_FLOOR, CLUTTER_GRASS_PATCH_FLOOR, CLUTTER_GRASS_BOOST, CLUTTER_GRASS_BOOST_LO,
   CLUTTER_DUFF_OPEN, CLUTTER_DUFF_ROAD_CLEAR,
+  CLUTTER_GRASS_TRAIL_CORE, CLUTTER_GRASS_TRAIL_REACH_LO, CLUTTER_GRASS_TRAIL_REACH_HI, CLUTTER_GRASS_TRAIL_REACH_WAVE,
+  CLUTTER_DUFF_BED_MAX, CLUTTER_DUFF_BED_FADE, CLUTTER_DUFF_DRIFT_WAVE, CLUTTER_DUFF_DRIFT_LO, CLUTTER_DUFF_DRIFT_HI,
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -950,7 +1064,7 @@ In `clipmap.ts` pass `groundCover(seed, x, z, s).duff` as the seventh argument (
 - Modify: `docs/rendering/2026-09-23-ground-cover-design.md` (amendments)
 - Create: `docs/rendering/2026-09-23-ground-cover-verification.md`
 
-- [ ] **Step 1: Amend the spec** — add a short "Amendments" section at the end: the leaves-and-twigs layer is `duff` in code because `CLUTTER_LITTER` already names the trail pebbles; the canopy ramp bottoms at `CLUTTER_GRASS_CANOPY_FLOOR = 0.15` (the census showed 96 % of grass ground under canopy on the `atmo` world, so a zero floor would have left the near field duff-only there); the interior boost is realised as a third clump size (thin / base / full) chosen per cell from its cover with dithered bands, which generalises the spec's thin-cell rule; duff clears the road by `CLUTTER_DUFF_ROAD_CLEAR`.
+- [ ] **Step 1: Amend the spec** — append to its "12. Amendments" section (the naming and the trail's terms are already there): the canopy ramp bottoms at `CLUTTER_GRASS_CANOPY_FLOOR = 0.15` (a census showed 96 % of grass ground under canopy on one world, so a zero floor would have left the near field duff-only there); the interior boost is realised as a third clump size (thin / base / full) chosen per cell from its cover with dithered bands, which generalises the spec's thin-cell rule; duff clears the road by `CLUTTER_DUFF_ROAD_CLEAR`.
 - [ ] **Step 2: `ARCHITECTURE.md`** — in the rendering paragraph, after the blade-field sentences, add: the near field reads one ground-cover field in the sim (`groundCover`, `sim/clutter.ts`) that thins grass toward every non-grass neighbour and thickens it inside, and where it thins a second lattice (`duffField.ts`, `duffMeshes.ts`, `duffClump.ts`) lays code-built dead leaves, twigs and branches on the floor, whose paint follows the same field; a cell buys the clump size its cover earns, dithered so no contour forms. The low tier gets the paint only.
 - [ ] **Step 3: Run the gates** from the spec's section 9 and record them in the verification note, in the format of `docs/rendering/2026-09-22-blade-field-verification.md`: method (sun pinned, pages blanked, 8 s samples), the stills with before/after clump counts at MEADOW, an edge to sand, an edge to the trail, DEEP under canopy, and the seam pose, under clear noon and mist; the frame pairs at 4× pixels (two pairs, both orders) at MEADOW, DEEP and TRAILSIDE against current `main`, and the native p95; the fallback taken if any; the gaps left open.
 - [ ] **Step 4: Run the whole suite** with `npx vitest run --root client --maxWorkers=3` and the server and tools roots, then `npm run typecheck && npm run lint`.

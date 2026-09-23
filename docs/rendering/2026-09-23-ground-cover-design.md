@@ -229,7 +229,25 @@ interface now and its run merges after this one.
 
 **Merge order: ground cover → trail; rocks and wildlife at any point.**
 
-## 12. Follow-ups
+## 12. Amendments
+
+Made after the trail's own design settled what it needs from this field, so
+the two are built once:
+
+- **Encroachment.** The grass trail ramp's reach varies along the trail: a
+  9 m value noise scales the ramp between 0.35 and 1.3 of its default, so in
+  places grass (and with it the cards and the duff) creeps across the margin
+  and stands in islands on the bed, and elsewhere hangs well back. The inner
+  `CLUTTER_GRASS_TRAIL_CORE = 0.35` m never opens, so the path always reads.
+  The scale is continuous, so the grass stays continuous.
+- **Bed litter.** `duff` gains a bed term: a 6 m drift noise, defined in the
+  sim, raises duff on the bed and its margins in drifts, combined with the
+  off-bed duff by `max`. The paint reads the same `duff` at the vertex (§6),
+  so a painted drift always has pieces lying on it.
+- **Naming.** In code the layer is `duff`, because `CLUTTER_LITTER` already
+  names the trail-margin pebble class.
+
+## 13. Follow-ups
 
 - Litter that responds to the player: pieces disturbed underfoot, as the grass
   is trampled.
