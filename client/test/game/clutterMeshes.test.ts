@@ -547,6 +547,22 @@ describe("rock relief in the shell", () => {
     engine.dispose();
   });
 
+  it("keys the plane list on a model index unique across cut classes, not just within one", () => {
+    const { engine, scene, assets } = buildCutAssets();
+    const clutter = createClutterMeshes(scene, 1, { assets });
+
+    // Rock's and boulder's first variant are each that class's own "model 0";
+    // a plane list keyed only on the per-class variant index would hand both
+    // the exact same cut-plane directions (the synthetic assets share one
+    // half-extent, so nothing else could mask the collision).
+    const rock = scene.getMeshByName(`shell-c${CLUTTER_ROCK}v0l0_cut0`) as Mesh;
+    const boulder = scene.getMeshByName(`shell-c${CLUTTER_BOULDER}v0l0_cut0`) as Mesh;
+    expect((rock.metadata as { planes: unknown }).planes).not.toEqual((boulder.metadata as { planes: unknown }).planes);
+
+    clutter.dispose();
+    engine.dispose();
+  });
+
   it("pushes the cut boulder meshes, not the originals, to casterMeshes", () => {
     const { engine, scene, assets } = buildCutAssets();
     const clutter = createClutterMeshes(scene, 1, { assets });

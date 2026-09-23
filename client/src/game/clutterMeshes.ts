@@ -720,12 +720,19 @@ export function createClutterMeshes(
    * since a rock cut with two different plane lists would change shape the
    * moment its LOD swaps. Classes outside `CUT_CLASSES` pass through
    * untouched, so this is a no-op for the other seven.
+   *
+   * The model index handed to `rockPlanes`/`reliefMesh` is `cls * 16 +
+   * variant`, not the bare per-class variant: rock's and boulder's own first
+   * variant are both "variant 0", and a plane list keyed on the variant alone
+   * would hand both the exact same cut-plane directions. 16 is comfortably
+   * above the two variants either class ships today.
    */
   function expandCutVariants(cls: number, variants: Mesh[][][]): Mesh[][][] {
     if (!CUT_CLASSES.has(cls)) return variants;
     const expanded: Mesh[][][] = [];
-    for (let model = 0; model < variants.length; model++) {
-      const perLod = variants[model] as Mesh[][];
+    for (let variant = 0; variant < variants.length; variant++) {
+      const model = cls * 16 + variant;
+      const perLod = variants[variant] as Mesh[][];
       const lod0 = perLod[NEAR_LOD] as Mesh[];
       const lod1 = perLod[FAR_LOD] as Mesh[];
       const halfExtent = rockHalfExtent(lod0[0]!.getVerticesData(VertexBuffer.PositionKind) as Float32Array);
