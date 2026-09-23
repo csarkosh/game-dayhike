@@ -8,8 +8,8 @@ The shape is smooth, so there is nothing for shading to work against. This
 design cuts the shape at load — planar fractures, flat facets, a little
 roughness — in code, on the meshes as they are.
 
-It is the third of four concurrent world-richness sub-projects and touches
-nothing the other three do.
+It changes how the rock and boulder meshes are built at load and nothing
+else: no other clutter class, no ground paint, no collision.
 
 ## 1. Rulings
 
@@ -61,8 +61,6 @@ LOD1 and LOD2 with the same planes:
 - **Skip rule.** A plane whose cap would hold fewer than 3 % or more than
   35 % of the vertices is skipped. That keeps the silhouette the artist made
   and avoids sliver caps.
-- **Shrink** by `ROCK_ROUGH = 0.02` of the half-extent toward the centroid,
-  so the roughening below never leaves the original hull.
 - **Unweld.** Every triangle gets its own three vertices; positions, UVs and
   the original-position key are copied.
 - **Face normals.** Each triangle's geometric normal, unit, on all three of
@@ -83,8 +81,7 @@ indices.
 ## 5. LODs, colliders and buckets
 
 The same plane list cuts a model's three LODs, so a swap changes detail, not
-shape, and the existing dither seam hides it. Bounding info is refreshed on
-each cut mesh for culling.
+shape, and the existing dither seam hides it.
 
 In `clutterMeshes.ts` the rock and boulder classes gain a cut dimension: an
 instance's cut is `hash & 3`; its bucket is `[class][variant][cut][lod]` —
@@ -106,7 +103,7 @@ the same path the tests already use for GLB-backed classes):
   its triangle's geometric normal; the roughening keeps shared-edge vertices
   coincident;
 - the same (model, cut) yields identical arrays twice; two cuts differ;
-- LOD1 and LOD2 are cut with LOD0's plane list;
+- LOD1 is cut with LOD0's plane list;
 - facet luma stays within ±8 % and is equal on a triangle's three vertices;
 - in `clutterMeshes`: one model's instances spread across four cuts by hash
   and each cut bucket's count equals its share; the materials carry vertex
@@ -177,3 +174,41 @@ What the build settled that this spec's earlier sections stated differently:
   classes' different geometry, but less variety than intended. The shell
   keys the plane list on `cls * 16 + variant` instead, so every model across
   every cut class draws its own seeded planes.
+- **A plane's depth is measured along its own normal, not against one global
+  radius.** §4 offsets a plane by `ROCK_DEPTH` of "the model's half-extent
+  along that normal", and the build read that as the half-extent — the largest
+  distance from the centroid to any vertex, whichever direction it lay in.
+  Those two readings agree only on a sphere. On the shipped models, which run
+  two to three times longer on one axis than another, the global reading put
+  nearly every plane outside the surface, left its cap empty, and had the
+  cap-share floor drop it: 7 of 160 candidates survived at the near LOD and
+  ten of the sixteen cut buckets kept none at all. A plane is now offset by
+  the model's support distance along that plane's own normal, which is the
+  same bite on any shape and the same plane as before on a sphere. 135 of 160
+  survive; the weakest bucket keeps six.
+- **The cap-share floor is 2 %, not 3 %.** With the offsets measured
+  per direction, 3 % still left `boulder_a` with four and five facet planes in
+  two of its cuts, under the six §6 asks for. At 2 % it keeps six to nine and
+  every model clears the six.
+- **The cap-share rule runs once, on LOD0, and both LODs are cut with what
+  survives it.** §5 shares "the same plane list" between a model's LODs, and
+  the build shared the CANDIDATE list while each LOD applied the rule to its
+  own vertices. Two levels of one rock carry different vertex counts and
+  different distributions, so one plane could fall either side of the floor
+  for the two of them, and the rock changed shape rather than detail when its
+  LOD swapped. `rockPlanes` now returns the survivors and the shell hands that
+  list to both levels.
+- **The roughening displaces inward only; there is no shrink step.** §4 shrank
+  the whole model by `ROCK_ROUGH` toward the centroid so that a two-sided
+  roughening could push back out without leaving the original hull. The shrink
+  cost every model 2 % of its reach in every direction — enough to lift a
+  prop's flat underside out of the 2 cm of ground it is sunk into, and to pull
+  a boulder's top away from the collider box sized around the uncut mesh. A
+  one-sided inward displacement needs no shrink, keeps the extremes where the
+  artist put them wherever the noise is quiet, and roughens by the same
+  amplitude. A final clamp returns any vertex to its own starting radius,
+  which matters because "inward along the vertex normal" is only "inward
+  toward the centroid" where the surface is convex.
+- **Plane offsets are absolute, not centroid-relative.** A plane carries its
+  distance from the model's origin, so one list cuts a model's two LODs
+  identically however their centroids differ.

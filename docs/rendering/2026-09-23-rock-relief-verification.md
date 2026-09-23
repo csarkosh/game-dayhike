@@ -18,15 +18,24 @@ page, a real GPU and a control build at the commit this work started from.
 
 ## 2. What was built
 
-`rockRelief.ts` cuts a model's vertex arrays with up to `ROCK_PLANES = 10`
-seeded planes per (model, cut), skips a plane whose cap would take too few or
-too many vertices, shrinks the whole model slightly, unwelds every triangle
-to its own three vertices, roughens each along the input's own vertex normal,
-and writes a per-facet luma as vertex colour. `clutterMeshes.ts` runs this on
-each rock and boulder model's near and far LOD as its GLB lands, four cuts
-per model, and spreads an instance across its class's four cuts by its own
-hash. Two decisions the design's earlier sections did not settle are recorded
-in the spec's Amendments section and explained here.
+`rockRelief.ts` seeds `ROCK_PLANES = 10` candidate planes per (model, cut),
+each offset so that it slices off the outermost `ROCK_DEPTH` fraction of the
+model's reach along that plane's own normal; drops the candidates whose cap
+would take too few or too many vertices; projects everything beyond the
+survivors onto them; unwelds every triangle to its own three vertices;
+roughens each vertex inward along the input's own vertex normal; and writes a
+per-facet luma as vertex colour. `clutterMeshes.ts` runs this on each rock and
+boulder model's near and far LOD as its GLB lands, four cuts per model, and
+spreads an instance across its class's four cuts by its own hash. The
+decisions the design's earlier sections did not settle are recorded in the
+spec's Amendments section and explained here.
+
+On the four shipped models, 135 of the 160 candidates survive the cap-share
+rule, the weakest bucket keeping six and most keeping ten. That number is
+worth stating because it was 7 for most of this work: the offsets were keyed
+to the model's largest reach in any direction rather than to its reach in the
+plane's own, which is the same thing only on a sphere, and the sphere was the
+only fixture the geometry tests used. §12 records what closed that.
 
 ## 3. Why roughening moves along the vertex normal, not the face normal
 
@@ -46,36 +55,50 @@ stored (flat) face normal is no longer exactly the geometric normal of the
 triangle's own roughened output positions, because the three vertices of a
 triangle now move along three different (vertex) directions rather than one
 shared one. Measured on a subdivision-4 icosphere, the peak relative
-difference between the stored and the recomputed normal is about 1.47%; the
-test's tolerance was set at 5%, comfortably above that peak and still far
-below the error a genuinely wrong normal (flipped sign, wrong plane,
-non-unit length) would produce.
+difference between the stored and the recomputed normal is about 0.51%; the
+test's tolerance is 5%, comfortably above that peak and still far below the
+error a genuinely wrong normal (flipped sign, wrong plane, non-unit length)
+would produce.
 
-## 4. Why the roughening amplitude scales by each vertex's own distance from the centroid
+## 4. Why the roughening moves inward only, and is scaled by each vertex's own distance from the centroid
 
-The shrink step pulls every vertex toward the centroid by `ROCK_ROUGH` of
-*that vertex's own* distance from the centroid. The roughening step then
-pushes it back out by up to the same fraction, along its vertex normal. For
-these two steps to guarantee "a cut only removes material" — no output
-vertex ends up farther from the centroid than the input vertex it came
-from — the push-back has to be scaled by the same per-vertex distance the
-shrink used. Scaling it by the model's half-extent instead (a single global
-number) works only when every vertex sits at that same distance from the
-centroid, which is true for a sphere and false for almost any real rock: a
-vertex nearer the centroid than the model's most extreme point would be
-shrunk by less than the half-extent-scaled roughening could push it back
-out, letting it finish outside its own starting distance. Since a boulder's
-mesh is what the sim's collision box is sized against, that failure mode is
-exactly what the box cannot tolerate.
+A cut has to remove material and never add it — a boulder's mesh is what the
+sim's collision box is sized against, and the box is a constant the renderer
+must not move. Two things hold that.
 
-This was caught by a test, not by inspection: an anisotropic fixture (the
-same icosphere scaled unevenly on its three axes, spreading vertex distances
-from the centroid far more widely than a uniform sphere does) failed against
-the half-extent-scaled version, with a vertex measured about 0.003 units
-farther from the centroid than it started. Scaling by each vertex's own
-distance instead makes the bound provable by the triangle inequality — for
-any displacement direction, not only a radial one — rather than true only by
-coincidence of a sphere-shaped test fixture.
+The displacement is **inward only**: the noise runs `[0, 1)` and is subtracted,
+so a vertex is pushed toward the surface's inside or left where it is, never
+pushed out. An earlier version instead shrank the whole model by `ROCK_ROUGH`
+first and let a two-sided noise push back out by as much again. That held the
+bound, but it held it by spending 2 % of the model's reach in every direction:
+enough to lift a prop's flat underside — which the artist puts at y = 0 and
+the shell sinks 2 cm to stop it z-fighting the terrain — out of most of that
+2 cm at the largest instance scale the sim draws, and enough to pull a
+boulder's top away from a collider box sized around the uncut mesh. One-sided
+displacement costs neither, because the extremes stay exactly where they were
+wherever the noise happens to be quiet, and a real surface has plenty of such
+places along any one edge of it.
+
+The amplitude is scaled by **each vertex's own distance** from the centroid
+rather than by any single number for the model, so the bound is about that
+vertex rather than about the model's most distant point.
+
+Neither is quite enough on its own, and the gap is worth recording: "inward
+along the vertex normal" is not the same as "inward toward the centroid".
+They agree where the surface is convex. On the concave stretches every real
+rock has, the normal runs partly sideways, and a sideways step can carry a
+vertex slightly farther from the centroid than it began — measured at 21 µm
+on the shipped boulders. A final clamp returns any such vertex to its own
+starting radius, which makes the bound exact on any mesh rather than exact
+only on a convex one. Measured after it, over all thirty-two cut meshes at
+both LODs, the largest excess is 27 nm, which is float32 store rounding and
+nothing else.
+
+The per-vertex scaling was caught by a test rather than by inspection: an
+anisotropic fixture (the icosphere scaled unevenly on its three axes,
+spreading vertex distances from the centroid far more widely than a uniform
+sphere does) failed against a version scaled by the model's half-extent, with
+a vertex measured about 0.003 units farther from the centroid than it started.
 
 ## 5. The model index
 
@@ -93,13 +116,16 @@ rock's and boulder's own first variant and asserted their plane lists differ.
 
 ## 6. Test evidence
 
-- `rockRelief.ts`'s own test file plus the Babylon-free architecture check:
-  15 tests passing, including the anisotropic hull-bound fixture (§4), the
-  facet-normal tolerance (§3), and a cut of a reversed-wound copy of the
-  fixture asserting no facet ends up facing inward (§11).
-- `clutterMeshes.test.ts` (rock relief in the shell, `cutsFor`/`cutOf`,
-  `reliefMesh`) plus `renderer.test.ts`, `bladeMeshes.test.ts`,
-  `rockRelief.test.ts` and the architecture check together: 57 tests passing.
+- `rockRelief.test.ts` (the pure module on synthetic fixtures) 9 tests,
+  `rockReliefModels.test.ts` (the same cut on the four shipped GLBs) 9,
+  `clutterMeshes.test.ts` (rock relief in the shell, `cutsFor`/`cutOf`,
+  `reliefMesh`) 18, `architecture.test.ts` (the Babylon-free check among
+  others) 8, `bladeMeshes.test.ts` 5 — 49 passing together.
+- `rockRelief.test.ts` covers the anisotropic hull-bound fixture (§4), the
+  facet-normal tolerance (§3), a cut of a reversed-wound copy of the fixture
+  asserting no facet ends up facing inward (§11), and a coin fixture built
+  square to a seeded plane direction, which is what it takes to make the
+  cap-share ceiling fire at all (§12).
 - The `cutOf` hash-to-cut routing was confirmed red against the naive
   `hash & (cuts - 1)` (which coerces the unit-float hash to 0 via `ToInt32`
   and puts every instance in cut 0) before the fix that scales the hash into
@@ -108,9 +134,8 @@ rock's and boulder's own first variant and asserted their plane lists differ.
   synthetic assets sharing a half-extent for rock's and boulder's first
   variant produced identical plane lists — then green after keying the plane
   list on `cls * 16 + variant`.
-- `npx vitest run --root client --maxWorkers=3`, `--root server`, and
-  `--root tools`, plus `npm run typecheck` and `npm run lint`: see the commit
-  history for the exact pass counts recorded at each step of this work.
+- `npm run typecheck` and `npm run lint`: both clean. `npx vitest run --root
+  tools`: 70 passing.
 
 ## 7. Stills: a rock at 2 m and a boulder at 4 m
 
@@ -199,6 +224,14 @@ The deltas rule out a regression large enough to show through that noise, and
 their mean is negative, but the gate needs a repeat on an otherwise idle
 machine before it can be called passed.
 
+Two things for that repeat to look for, neither of which this pass could
+resolve. Boulders are the only clutter that casts a shadow, and the cut turns
+their four caster meshes into sixteen, so the same boulders are drawn into the
+shadow map across four times as many draws. And these samples were taken
+before the geometry fix in §12, when almost no plane was cutting; the pass now
+projects six to ten planes per model where it projected none, which is more
+work per frame only at load but a different mesh every frame after it.
+
 ## 10. Load time
 
 `performance.now()` around the cut pass in `expandCutVariants`, summed over
@@ -216,6 +249,12 @@ all — the count `clutterMeshes.test.ts` asserts.
 Against the 50 ms bar, with roughly 2.5× headroom at the worst run. The pass
 runs once per class as that class's GLBs land, before its first draw, so it
 costs nothing per frame afterwards.
+
+These three runs predate the geometry fix in §12 and understate the work: the
+pass was projecting almost no planes at the time. Timed since on the same
+arrays outside a browser, all thirty-two cut meshes take 23 ms on a cold run
+and 10 to 11 ms warm, so the order is unchanged and the bar should still hold
+with room — but the browser figure is owed a re-measurement.
 
 ## 11. Why the cut declares its own front face
 
@@ -249,3 +288,61 @@ in `reliefMesh`, where `sideOrientation` must be set before `material`.
 Those are held by comments in the code, not by tests. Credit this coverage
 with catching one specific authoring mistake in one function; the only
 evidence that the rocks are lit is a frame, and the frames are in §7.
+
+## 12. Why the planes were not cutting anything
+
+For most of this work the cut was seeding ten planes per model and cutting
+with almost none of them, and every test passed. It is worth setting out
+exactly how, because the shape of the mistake is more interesting than the
+mistake.
+
+A plane needs an offset: how far from the middle of the model to put it. The
+design says `ROCK_DEPTH` of "the model's half-extent along that normal", and
+the build read half-extent as the model's largest distance from its centroid
+to any vertex — one number, whichever direction that vertex lay in. On a
+sphere the two readings are the same number, because every vertex of a sphere
+is at that distance in its own direction too. On anything else they are not,
+and a rock is emphatically not a sphere: the shipped models run two to three
+times longer on one axis than another. Offsetting by the global number put
+each plane out at the model's longest reach no matter which way it faced, so
+in every direction but the longest it sat outside the surface entirely, its
+cap came out empty, and the cap-share floor dropped it as too small.
+
+Measured across the four shipped models at the near LOD: **7 of 160 candidate
+planes survived**. Ten of the sixteen cut buckets kept none at all. Three of
+`boulder_a`'s four cuts were the same solid, differing only in the seed of
+their roughening noise — four cuts per model, spread across a field of rocks
+by hash, delivering one silhouette. What made the rocks read as angular in §7
+was the unwelding and the flat face normals, which is real and is most of the
+look, but it is not the fracture the planes were there to cut.
+
+The fix is to offset a plane by the model's reach **along that plane's own
+normal** — its support distance — which is the same proportional bite on any
+shape and the identical plane on a sphere. After it, 135 of the 160 survive,
+the weakest bucket keeps six, and no two cuts of one model agree on their
+outline to closer than 6.3 % of the model's largest dimension.
+
+**Why nothing caught it.** Every geometry test ran on a synthetic icosphere.
+The icosphere is not merely a poor stand-in here; it is the single shape on
+which the bug is invisible, because it is the shape where the two readings of
+"half-extent" coincide. All ten candidates survive on it, in all four cuts,
+under either version of the code. A reviewer reading the tests would see the
+cut working. `rockReliefModels.test.ts` now runs the same cut on the four
+shipped GLBs, loaded through the path the game loads them by, and asserts
+there what the design promises: that planes survive, that a model's four cuts
+are four different solids, that both LODs cut to one shape, that the
+only-removes-material bound holds on real geometry, and that every cut shows
+the six distinct facet planes §6 asks for.
+
+**Two things the fix turned up.** `boulder_a`'s top is untouched in all four
+of its cuts — no seeded plane faces steeply enough upward to clear the floor
+there — while `boulder_b` is genuinely cleaved, losing 11.3 % of its height in
+its first cut and 2.5 to 2.8 % in two others. That cleave is the look the
+design asked for, and it is also the one place the cut can be seen from the
+simulation: a boulder's collider box is sized from the UNCUT mesh's height,
+a constant in `sim/passes/clutter.ts` that a renderer-only pass must not move,
+so whatever a cut takes off the top is box standing above stone — up to 0.29 m
+at the largest instance scale. It is inside the tolerance the box's own
+comment already accepts for ground tilt, and a 2.6 m boulder is not something
+a hiker stands on, but it is a real consequence of making the planes bite and
+a test now holds the cleave under 15 % of a boulder's height.
