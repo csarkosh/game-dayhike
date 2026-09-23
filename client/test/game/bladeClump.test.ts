@@ -23,7 +23,7 @@ describe("the character and tier tables", () => {
     expect(BLADE_TIER_COUNTS.high).toEqual([[100, 40, 16], [80, 28, 12], [12, 8, 4], [100, 32, 12]]);
     expect(BLADE_TIER_COUNTS.medium).toEqual([[50, 20, 8], [40, 14, 6], [6, 4, 2], [50, 16, 6]]);
     expect(BLADE_CHARACTERS[BLADE_FINE]!.tip).toBe("none");
-    expect(BLADE_CHARACTERS[BLADE_TUSSOCK]!.tip).toBe("seed");
+    expect(BLADE_CHARACTERS[BLADE_TUSSOCK]!.tip).toBe("none");
     expect(BLADE_CHARACTERS[BLADE_WEED]!.width).toBe(0.03);
     expect(BLADE_CHARACTERS[BLADE_FLOWER]!.tip).toBe("flower");
     expect(BLADE_CHARACTERS[BLADE_FLOWER]!.heads).toEqual([1, 3]);
