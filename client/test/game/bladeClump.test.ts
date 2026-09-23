@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   BLADE_ALBEDO, BLADE_CHARACTERS, BLADE_CLUMP_RADIUS, BLADE_LUMA, BLADE_RINGS, BLADE_SIZE_FACTOR, BLADE_SOFT,
   BLADE_TIER_COUNTS, BLADE_TIP_TINT, BLADE_TRIS, BLADE_VERTEX_BUDGET, BLADE_VERTS, FLOWER_PALETTE,
-  bladeAlive, bladeClumpGeometry, bladeCountFor, bladeSecondRandom, bladeVertexCount,
+  bladeAlive, bladeClumpGeometry, bladeCountFor, bladeSecondRandom, bladeVertexCount, createStripWriter,
 } from "../../src/game/bladeClump.js";
 import {
   BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_FINE, BLADE_FLOWER, BLADE_PAD, BLADE_REACH, BLADE_SIZE_FULL,
   BLADE_TIER_BAND, BLADE_TIER_EDGE, BLADE_TUSSOCK, BLADE_WEED,
 } from "../../src/game/bladeField.js";
+import { latticeHash } from "../../src/game/groundHexParams.js";
 
 describe("the character and tier tables", () => {
   it("match the spec", () => {
@@ -186,5 +187,56 @@ describe("bladeAlive, the mirror of the grow-in, the collapse and the strength c
     expect(bladeSecondRandom(0.1, 0.2)).toBeGreaterThanOrEqual(0);
     expect(bladeSecondRandom(0.1, 0.2)).toBeLessThan(1);
     expect(bladeSecondRandom(0.1, 0.2)).not.toBe(bladeSecondRandom(0.11, 0.2));
+  });
+});
+
+describe("createStripWriter", () => {
+  it("writes one strip as BLADE_VERTS vertices and BLADE_TRIS triangles, identically to the clump generator", () => {
+    const w = createStripWriter(BLADE_VERTS, BLADE_TRIS);
+    const first = w.strip(0.1, 0, 0.2, 0.4, 0.5, 0.01, 1, 0, 0.3, 0.42, 1, 1, 1, 0.1, 0.2);
+    expect(first).toBe(0);
+    expect(w.cursor).toBe(BLADE_VERTS);
+    // The tip is the last vertex, at the strip's full height, bent outward
+    // by droop. Precision 6, not the exact float64 value: positions is a
+    // Float32Array, and storing 0.4 there already costs ~6e-9 to rounding —
+    // the same slack this file allows elsewhere for a Float32Array position
+    // (e.g. the `character.width` check above).
+    const tip = BLADE_VERTS - 1;
+    expect(w.positions[tip * 3 + 1]).toBeCloseTo(0.4, 6);
+    expect(w.positions[tip * 3]).toBeCloseTo(0.1 + 0.4 * 0.5, 6);
+    expect(w.blade[tip * 4 + 3]).toBe(1);
+
+    // A one-blade fine-grass clump has no tip feature, so bladeClumpGeometry
+    // draws exactly one strip for it — the same draws a hand-rolled call to
+    // `strip` on a bare writer can reproduce (bladeClumpGeometry's own draws
+    // for blade index 0, via the same latticeHash the field's lattice hash
+    // uses). Comparing arrays by length alone would pass for a writer that
+    // produced entirely different geometry, so every array is compared
+    // element-wise instead.
+    const character = BLADE_CHARACTERS[BLADE_FINE]!;
+    const draw = (salt: number) => latticeHash(0, salt);
+    const random = draw(1);
+    const rho = BLADE_CLUMP_RADIUS * Math.sqrt(draw(2));
+    const phi = 2 * Math.PI * draw(3);
+    const rootX = rho * Math.cos(phi), rootZ = rho * Math.sin(phi);
+    const height = character.height[0] + (character.height[1] - character.height[0]) * draw(4);
+    const droop = character.droop[0] + (character.droop[1] - character.droop[0]) * draw(5);
+    const yaw = 2 * Math.PI * draw(6);
+    const outX = rho > 1e-6 ? Math.cos(phi) : Math.cos(yaw);
+    const outZ = rho > 1e-6 ? Math.sin(phi) : Math.sin(yaw);
+    const luma = 1 + BLADE_LUMA * (random - 0.5);
+    const w2 = createStripWriter(BLADE_VERTS, BLADE_TRIS);
+    w2.strip(
+      rootX, 0, rootZ, height, droop, character.width, outX, outZ, yaw, random,
+      character.tint.r * luma, character.tint.g * luma, character.tint.b * luma, rootX, rootZ,
+    );
+    const g = bladeClumpGeometry(character, 1);
+    expect(g.positions.length).toBe(BLADE_VERTS * 3);
+    expect(g.indices.length).toBe(BLADE_TRIS * 3);
+    expect(Array.from(w2.positions)).toEqual(Array.from(g.positions));
+    expect(Array.from(w2.normals)).toEqual(Array.from(g.normals));
+    expect(Array.from(w2.colors)).toEqual(Array.from(g.colors));
+    expect(Array.from(w2.indices)).toEqual(Array.from(g.indices));
+    expect(Array.from(w2.blade)).toEqual(Array.from(g.blade));
   });
 });
