@@ -154,9 +154,11 @@ describe("cues", () => {
     const large = [SPECIES_DEER, SPECIES_ELK, SPECIES_EAGLE].reduce((a, sp) => a + (counts.get(sp) ?? 0), 0);
     expect(small / large).toBeGreaterThan(SMALL_TO_LARGE * 0.9);
     expect(small / large).toBeLessThan(SMALL_TO_LARGE * 1.1);
-    // The roost is the one small species a cue never draws: it is bolted to its snag, so
-    // there is no mark the director could send it to.
+    // Two species a cue never draws, for two different reasons: the roost is bolted to its
+    // snag, so there is no mark to send it to, and the eagle flies higher than anything can
+    // be made out from, so a cue for one would be a beat spent on nothing the player sees.
     expect(counts.get(SPECIES_RAVEN_ROOST) ?? 0).toBe(0);
+    expect(counts.get(SPECIES_EAGLE) ?? 0).toBe(0);
     s.lastSpecies = SPECIES_RABBIT;
     for (let i = 0; i < 1000; i++) expect(pickSpecies(s, (i + 0.5) / 1000)).not.toBe(SPECIES_RABBIT);
   });
@@ -199,7 +201,7 @@ describe("cues", () => {
     // the table; the loop fliers, which are never placed, have their own case in the sweep.
     const tick = tickDrawing(s, 3, 100, (sp) => !LOOP_FLIERS.includes(sp));
     const chosen = pickSpecies(s, hash3(3, tick, 2, 0));
-    const behind = { id: 9, species: chosen, x: 0, y: 0.3, z: -10, onScreen: false, phase: PHASE_REST };
+    const behind = { id: 9, species: chosen, x: 0, y: 0.3, z: -10, moveX: 0, moveZ: -10, onScreen: false, phase: PHASE_REST };
 
     expect(stageCue(s, view(), flat, [behind], day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("drive");
@@ -214,13 +216,13 @@ describe("cues", () => {
 
     // Nor is one of the right species that is too far away to walk in.
     out.length = 0;
-    const distant = { ...behind, z: -(RECYCLE + 10) };
+    const distant = { ...behind, z: -(RECYCLE + 10), moveZ: -(RECYCLE + 10) };
     expect(stageCue(s, view(), flat, [distant], day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("place");
 
     // Nor is one the player is looking straight at.
     out.length = 0;
-    const inFrame = { ...behind, z: 10, onScreen: true };
+    const inFrame = { ...behind, z: 10, moveZ: 10, onScreen: true };
     expect(stageCue(s, view(), flat, [inFrame], day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("place");
 
@@ -230,7 +232,7 @@ describe("cues", () => {
     // away exactly as badly as one that appears out of nothing.
     out.length = 0;
     const halfW = Math.tan(1.4 / 2) * (16 / 9);
-    const inMargin = { ...behind, x: halfW * 10, z: 10, y: 1 };
+    const inMargin = { ...behind, x: halfW * 10, z: 10, y: 1, moveX: halfW * 10, moveZ: 10 };
     expect(onScreen(view(), flat, inMargin, 0)).toBe(false);
     expect(placementValid(view(), flat, inMargin.x, inMargin.y, inMargin.z, 0)).toBe(false);
     expect(stageCue(s, view(), flat, [inMargin], day, tick, 3, out)).toBe(true);
@@ -259,28 +261,27 @@ describe("cues", () => {
       drawn.add(species);
       staged.add(stagingFor(species));
 
-      // With an off-screen one of its own species in reach, every cue drives.
+      // With an off-screen one of its own species in reach, every cue drives. Sixty metres
+      // UP and thirty back: within reach across the ground, which is the only distance a
+      // cue has to cover, though further than that through the air.
       out.length = 0;
-      const nearby: Candidate = { id: 4, species, x: v.x, y: 20, z: v.z - 30, onScreen: false, phase: PHASE_REST };
+      const nearby: Candidate = { id: 4, species, x: v.x, y: 60, z: v.z - 30, moveX: v.x, moveZ: v.z - 30, onScreen: false, phase: PHASE_REST };
+      expect(Math.hypot(nearby.y - v.y, 30)).toBeGreaterThan(RECYCLE);
       expect(placementValid(v, flat, nearby.x, nearby.y, nearby.z, 0)).toBe(true);
       expect(stageCue(s, v, flat, [nearby], day, tick, 5, out)).toBe(true);
       expect(out[0]!.kind).toBe("drive");
 
-      // With none, only what can be put into the world unseen is placed. A loop flier's
-      // circle is tens of metres across and cannot be, so its beat is given up instead.
+      // With none in reach, the beat redraws until it finds a species it can put into the
+      // world unseen. A loop flier's circle is tens of metres across and never can be, so
+      // one is never placed — and with only two of them among seven cueable species and
+      // four distinct draws to spend, a beat always finds something it can hide.
       out.length = 0;
-      const placed = stageCue(s, v, flat, [], day, tick, 5, out);
-      if (LOOP_FLIERS.includes(species)) {
-        expect(placed).toBe(false);
-        expect(out).toHaveLength(0);
-        continue;
-      }
-      expect(placed).toBe(true);
+      expect(stageCue(s, v, flat, [], day, tick, 5, out)).toBe(true);
       const e = out[0]!;
       expect(e.kind).toBe("place");
       if (e.kind !== "place") continue;
-      expect(e.species).toBe(species);
-      placedSpecies.add(species);
+      expect(LOOP_FLIERS).not.toContain(e.species);
+      placedSpecies.add(e.species);
       // At the height the event itself names — the director validated that point, so that
       // is the point the shell must seat the animal at.
       expect(e.y).toBe(PLACE_BODY_H);
@@ -289,20 +290,54 @@ describe("cues", () => {
       // an animal marched to a spot the director itself would not count as seen is a cue
       // that cannot land. A crossing ends at the far edge on purpose: the flier passes
       // through the frame and out of it.
-      if (stagingFor(species) !== STAGING_CROSS) {
-        expect(onScreen(v, flat, { id: 0, species, x: e.goalX, y: e.y, z: e.goalZ }, 0)).toBe(true);
+      if (stagingFor(e.species) !== STAGING_CROSS) {
+        expect(onScreen(v, flat, { id: 0, species: e.species, x: e.goalX, y: e.y, z: e.goalZ }, 0)).toBe(true);
       }
       expect(Math.hypot(e.goalX - v.x, e.goalZ - v.z)).toBeLessThanOrEqual(hideRange(0));
     }
     // Every species a cue can draw, and all three stagings.
     expect([...drawn].sort((a, b) => a - b)).toEqual(
-      [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE, SPECIES_BUTTERFLY].sort((a, b) => a - b),
+      [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_BUTTERFLY].sort((a, b) => a - b),
     );
     expect(staged.size).toBe(3);
     // The butterfly is the one flier with no loop, so it is the one flier that is placed.
     expect([...placedSpecies].sort((a, b) => a - b)).toEqual(
       [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_BUTTERFLY].sort((a, b) => a - b),
     );
+  });
+
+  it("measures a flier's mark from the circle it flies, not from the bird on it", () => {
+    // The two are not the same place and the gap between them is the loop's radius — up to
+    // fifty metres for a gull. The goal replaces the ANCHOR, so a mark measured off the
+    // bird would put the circle that far from where the cue aimed it.
+    const s = createDirectorState(3);
+    s.sinceSighting = 20; s.targetGap = 5;
+    const tick = tickDrawing(s, 3, 100, (sp) => sp === SPECIES_GULL);
+    const at = (bearing: number, range: number) => ({ x: range * Math.sin(bearing), z: range * Math.cos(bearing) });
+    const centre = at(2.09, 50);   // 120 degrees round, behind the right shoulder
+    const bird = at(-1.75, 20);    // 100 degrees the other way, and much nearer
+    const gull: Candidate = {
+      id: 9, species: SPECIES_GULL, x: bird.x, y: 30, z: bird.z,
+      moveX: centre.x, moveZ: centre.z, onScreen: false, phase: PHASE_REST,
+    };
+    const out: CueEvent[] = [];
+    expect(stageCue(s, view(), flat, [gull], day, tick, 3, out)).toBe(true);
+    const e = out[0]!;
+    expect(e.kind).toBe("drive");
+    if (e.kind !== "drive") return;
+    // At the CIRCLE's range and across from the CIRCLE's side. Measured off the bird the
+    // mark would come back at 20 m and on the other side of the frame, so both halves of
+    // the convention are pinned here.
+    expect(Math.hypot(e.goalX, e.goalZ)).toBeCloseTo(50, 6);
+    expect(e.goalX).toBeLessThan(0);
+    // And the bird, not the circle, is what the invariant was judged on: the circle's
+    // centre is out of sight here too, so make the bird the only thing that could have
+    // disqualified it — put the centre in plain view and the cue must refuse.
+    out.length = 0;
+    const seenCentre: Candidate = { ...gull, moveX: 0, moveZ: 30 };
+    expect(placementValid(view(), flat, seenCentre.moveX, 30, seenCentre.moveZ, 0)).toBe(false);
+    expect(stageCue(s, view(), flat, [seenCentre], day, tick, 3, out)).toBe(true);
+    expect(out[0]!.kind).toBe("drive");
   });
 
   it("waits out the retry and the quiet states before arranging anything", () => {
@@ -331,7 +366,7 @@ describe("cues", () => {
     const out: CueEvent[] = [];
     const s = createDirectorState(3);
     // A hundred metres behind the player: well past 1.5x the fifteen a rabbit reads at.
-    const gone: Candidate = { id: DIRECTOR_ID_BASE + 1, species: SPECIES_RABBIT, x: 0, y: 0.3, z: -100, onScreen: false, phase: PHASE_REST };
+    const gone: Candidate = { id: DIRECTOR_ID_BASE + 1, species: SPECIES_RABBIT, x: 0, y: 0.3, z: -100, moveX: 0, moveZ: -100, onScreen: false, phase: PHASE_REST };
     expect(Math.abs(gone.z)).toBeGreaterThan(REMOVE_FACTOR * NOTICE[SPECIES_RABBIT]!);
     for (let i = 0; i < REMOVE_SECONDS * 10 - 1; i++) step(s, view(), flat, [gone], day, 0.1, 100, 3, out);
     expect(out.filter((e) => e.kind === "remove")).toHaveLength(0);
@@ -348,76 +383,86 @@ describe("cues", () => {
     }
   });
 
-  it("never places, drives or removes on screen: a thousand seeded frames with a walking, turning player", () => {
-    const s = createDirectorState(11);
-    type Unit = Candidate & { goalX: number; goalZ: number; speed: number };
-    const units: Unit[] = [];
-    const out: CueEvent[] = [];
-    let violations = 0, cues = 0, x = 0, z = 0, nextId = DIRECTOR_ID_BASE;
-    const stagings = new Set<number>();
-    const kinds = new Set<string>();
-    for (let tick = 0; tick < 1000 * 6; tick += 6) { // 1000 steps of 0.1 s
-      // A hiker, not a carousel: 1.4 m/s along a trail that weaves, with the head swinging
-      // side to side over it. A player who only ever turned would circle a fixed patch of
-      // woods and never leave anything behind, which is the one walk that never exercises
-      // the recycling half of the invariant.
-      const t = tick / 60;
-      const yaw = 0.8 * Math.sin(t * 0.07) + 0.35 * Math.sin(t * 0.23);
-      x += 0.14 * Math.sin(yaw); z += 0.14 * Math.cos(yaw);
-      const v = view(yaw, x, z);
-      out.length = 0;
-      step(s, v, flat, units, day, 0.1, tick, 11, out);
-      for (const e of out) {
-        cues++;
-        kinds.add(e.kind);
-        if (e.kind === "place") {
-          // At the height the event names: the director validated that exact point, and
-          // the shell is required to seat the animal there.
-          if (!placementValid(v, flat, e.x, e.y, e.z, 0)) violations++;
-          units.push({ id: nextId++, species: e.species, x: e.x, y: e.y, z: e.z, onScreen: false, phase: PHASE_CUE, goalX: e.goalX, goalZ: e.goalZ, speed: cueSpeed(e.species, e.run) });
-          stagings.add(stagingFor(e.species));
+  it("never places, drives or removes on screen: seven seeds, a thousand seconds each, with a walking, turning player", () => {
+    for (const SEED of [3, 5, 11, 17, 23, 29, 31]) {
+      const s = createDirectorState(SEED);
+      type Unit = Candidate & { goalX: number; goalZ: number; speed: number };
+      const units: Unit[] = [];
+      const out: CueEvent[] = [];
+      let violations = 0, cues = 0, x = 0, z = 0, nextId = DIRECTOR_ID_BASE;
+      const stagings = new Set<number>();
+      const kinds = new Set<string>();
+      for (let tick = 0; tick < 1000 * 60; tick += 6) { // a thousand seconds, in steps of 0.1 s
+        // A hiker, not a carousel: 1.4 m/s along a trail that weaves, with the head swinging
+        // side to side over it. A player who only ever turned would circle a fixed patch of
+        // woods and never leave anything behind, which is the one walk that never exercises
+        // the recycling half of the invariant.
+        const t = tick / 60;
+        const yaw = 0.8 * Math.sin(t * 0.07) + 0.35 * Math.sin(t * 0.23);
+        x += 0.14 * Math.sin(yaw); z += 0.14 * Math.cos(yaw);
+        const v = view(yaw, x, z);
+        out.length = 0;
+        step(s, v, flat, units, day, 0.1, tick, SEED, out);
+        for (const e of out) {
+          cues++;
+          kinds.add(e.kind);
+          if (e.kind === "place") {
+            // At the height the event names: the director validated that exact point, and
+            // the shell is required to seat the animal there.
+            if (!placementValid(v, flat, e.x, e.y, e.z, 0)) violations++;
+            units.push({ id: nextId++, species: e.species, x: e.x, y: e.y, z: e.z, moveX: e.x, moveZ: e.z, onScreen: false, phase: PHASE_CUE, goalX: e.goalX, goalZ: e.goalZ, speed: cueSpeed(e.species, e.run) });
+            stagings.add(stagingFor(e.species));
+          }
+          if (e.kind === "drive") {
+            const u = units.find((c) => c.id === e.id)!;
+            // The strict predicate, not merely "not on screen": an animal a degree outside
+            // the frame must not be seen turning either.
+            if (!placementValid(v, flat, u.x, u.y, u.z, 0)) violations++;
+            u.goalX = e.goalX; u.goalZ = e.goalZ; u.phase = PHASE_CUE; u.speed = cueSpeed(u.species, e.run);
+            stagings.add(stagingFor(u.species));
+          }
+          if (e.kind === "remove") {
+            const i = units.findIndex((c) => c.id === e.id);
+            // Against THIS frame's view, like the other two arms — the cached flag is a
+            // frame stale, and a stale flag is exactly what an invariant test must not trust.
+            if (onScreen(v, flat, units[i]!, 0)) violations++;
+            units.splice(i, 1);
+          }
         }
-        if (e.kind === "drive") {
-          const u = units.find((c) => c.id === e.id)!;
-          // The strict predicate, not merely "not on screen": an animal a degree outside
-          // the frame must not be seen turning either.
-          if (!placementValid(v, flat, u.x, u.y, u.z, 0)) violations++;
-          u.goalX = e.goalX; u.goalZ = e.goalZ; u.phase = PHASE_CUE; u.speed = cueSpeed(u.species, e.run);
-          stagings.add(stagingFor(u.species));
+        // Walk every cued unit toward its mark, then refresh the on-screen flags.
+        for (const u of units) {
+          if (u.phase !== PHASE_CUE) continue;
+          const dx = u.goalX - u.x, dz = u.goalZ - u.z, d = Math.hypot(dx, dz), stepD = u.speed * 0.1;
+          if (d <= stepD) { u.x = u.goalX; u.z = u.goalZ; u.phase = PHASE_REST; }
+          else { u.x += (dx / d) * stepD; u.z += (dz / d) * stepD; }
+          // These animals are their own anchor; a flier's would not be (see `Candidate`).
+          u.moveX = u.x; u.moveZ = u.z;
         }
-        if (e.kind === "remove") {
-          const i = units.findIndex((c) => c.id === e.id);
-          if (units[i]!.onScreen) violations++;
-          units.splice(i, 1);
-        }
-      }
-      // Walk every cued unit toward its mark, then refresh the on-screen flags.
-      for (const u of units) {
-        if (u.phase !== PHASE_CUE) continue;
-        const dx = u.goalX - u.x, dz = u.goalZ - u.z, d = Math.hypot(dx, dz), stepD = u.speed * 0.1;
-        if (d <= stepD) { u.x = u.goalX; u.z = u.goalZ; u.phase = PHASE_REST; }
-        else { u.x += (dx / d) * stepD; u.z += (dz / d) * stepD; }
-      }
-      for (const u of units) u.onScreen = onScreen(v, flat, u, 0);
+        for (const u of units) u.onScreen = onScreen(v, flat, u, 0);
     }
     expect(violations).toBe(0);
     // A floor, not a target: at one animal per five to ten seconds the woods owe the
-    // player a dozen or so cues over this walk, and the point of the number is that the
+    // player a hundred or so cues over this walk, and the point of the number is that the
     // invariant above was checked against a real stream of events rather than an empty one.
-    expect(cues).toBeGreaterThan(8);
+    expect(cues).toBeGreaterThan(50);
     expect(stagings.size).toBeGreaterThanOrEqual(2);
     // Every kind of event the director can emit was actually exercised — an invariant test
     // that never staged anything would prove nothing.
     expect([...kinds].sort()).toEqual(["drive", "place", "remove"]);
-    // The gaps' median lies inside the band (the log holds (tick, species) pairs). Room
-    // above it because a cue takes time to walk in and the gap is measured from the last
-    // animal seen, not from the moment the next one was arranged.
+    // The gaps' median lies inside the band itself (the log holds (tick, species) pairs) —
+    // the cadence the whole feature is for, measured rather than assumed.
     const gaps: number[] = [];
     for (let i = 1; i < s.logCount; i++) gaps.push((s.log[i * 2]! - s.log[(i - 1) * 2]!) / 60);
     gaps.sort((a, b) => a - b);
     expect(gaps.length).toBeGreaterThan(5);
     const med = gaps[Math.floor(gaps.length / 2)]!;
     expect(med).toBeGreaterThanOrEqual(GAP[0]);
-    expect(med).toBeLessThanOrEqual(GAP[1] * 2);
+    // Above the band's top, and known to be: measured 9.2 to 12.1 s over these seven
+    // seeds. A logged gap is not the target gap — it is the target gap less `LEAD`, plus
+    // however long the staged animal takes to walk into frame, plus the second of
+    // `SIGHTING_DWELL` before the look counts. That sum is what the bound spells out, and
+    // `LEAD` is the lever that would close it; it has deliberately not been pulled.
+    expect(med).toBeLessThanOrEqual(GAP[1] + LEAD + SIGHTING_DWELL);
+    }
   });
 });
