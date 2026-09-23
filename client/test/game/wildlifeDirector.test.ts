@@ -9,7 +9,7 @@ import {
   DIRECTOR_ID_BASE, GAP, HIDE_RANGE, HOLLOW_QUIET, LEAD, NIGHT_RELAX, NOTICE, PLACE_BODY_H, RECYCLE,
   REMOVE_FACTOR, REMOVE_SECONDS, SIGHTING_DWELL, SMALL_TO_LARGE, STAGING_COVER, STAGING_CROSS, STAGING_TREELINE, STILL_RELAX, STILL_SECONDS, VIEW_MARGIN,
   createDirectorState, hideRange, inCone, lineOfSight, observe, onScreen, pickSpecies, placementValid, relaxFor,
-  stageCue, stagingFor, step, type Candidate, type CueEvent, type MatchState, type View,
+  stageCue, stagingFor, step, type Candidate, type CueEvent, type DirectorState, type MatchState, type View,
 } from "../../src/game/wildlifeDirector.js";
 
 const flat = (): number => 0;
@@ -33,6 +33,17 @@ const cueSpeed = (species: number, run: boolean): number => {
     case SPECIES_EAGLE: return 8;
     default: return 10;
   }
+};
+// The three species whose "position" is a circle tens of metres across rather than a
+// point: there is no spot the director could drop one of these where every bird of it
+// starts out of frame, so it never places them.
+const LOOP_FLIERS: readonly number[] = [SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE];
+/** The first tick from `from` whose species draw satisfies `want`. The draw is a pure
+ * function of (seed, tick), so this is a lookup for the tick that asks the question the
+ * test is about — not a hunt for a seed that happens to answer it. */
+const tickDrawing = (s: DirectorState, seed: number, from: number, want: (sp: number) => boolean): number => {
+  for (let tick = from; tick < from + 100; tick++) if (want(pickSpecies(s, hash3(seed, tick, 2, 0)))) return tick;
+  throw new Error("no tick in range draws such a species");
 };
 const day: MatchState = { phase: 0, hollowDistance: Infinity, hollowHunting: false, inWorld: true, hour: 12, mist: 0 };
 
@@ -183,31 +194,34 @@ describe("cues", () => {
     s.sinceSighting = 20; s.targetGap = 5;
     const out: CueEvent[] = [];
     // The cue's species is a pure draw on (seed, tick), so the test can ask for it rather
-    // than hunting for a seed whose draw happens to land where it wants.
-    const chosen = pickSpecies(s, hash3(3, 100, 2, 0));
+    // than hunting for a seed whose draw happens to land where it wants. A tick drawing a
+    // placeable species, so that both halves — drive and the fall-back to place — are on
+    // the table; the loop fliers, which are never placed, have their own case in the sweep.
+    const tick = tickDrawing(s, 3, 100, (sp) => !LOOP_FLIERS.includes(sp));
+    const chosen = pickSpecies(s, hash3(3, tick, 2, 0));
     const behind = { id: 9, species: chosen, x: 0, y: 0.3, z: -10, onScreen: false, phase: PHASE_REST };
 
-    expect(stageCue(s, view(), flat, [behind], day, 100, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [behind], day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("drive");
     expect(out[0]).toMatchObject({ id: 9 });
 
     // Another species is no use to this cue, so it places one of its own instead.
     out.length = 0;
     const other = { ...behind, species: chosen === SPECIES_ELK ? SPECIES_DEER : SPECIES_ELK };
-    expect(stageCue(s, view(), flat, [other], day, 100, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [other], day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("place");
     expect(out[0]).toMatchObject({ species: chosen });
 
     // Nor is one of the right species that is too far away to walk in.
     out.length = 0;
     const distant = { ...behind, z: -(RECYCLE + 10) };
-    expect(stageCue(s, view(), flat, [distant], day, 100, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [distant], day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("place");
 
     // Nor is one the player is looking straight at.
     out.length = 0;
     const inFrame = { ...behind, z: 10, onScreen: true };
-    expect(stageCue(s, view(), flat, [inFrame], day, 100, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [inFrame], day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("place");
 
     // Nor — and this is the whole margin — one sitting in the slack just past the frame's
@@ -219,18 +233,18 @@ describe("cues", () => {
     const inMargin = { ...behind, x: halfW * 10, z: 10, y: 1 };
     expect(onScreen(view(), flat, inMargin, 0)).toBe(false);
     expect(placementValid(view(), flat, inMargin.x, inMargin.y, inMargin.z, 0)).toBe(false);
-    expect(stageCue(s, view(), flat, [inMargin], day, 100, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [inMargin], day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("place");
 
     // With nothing at all, a placement — and it starts somewhere the player cannot see.
     out.length = 0;
-    expect(stageCue(s, view(), flat, [], day, 100, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [], day, tick, 3, out)).toBe(true);
     const placed = out[0]!;
     expect(placed.kind).toBe("place");
-    if (placed.kind === "place") expect(placementValid(view(), flat, placed.x, 1, placed.z, 0)).toBe(true);
+    if (placed.kind === "place") expect(placementValid(view(), flat, placed.x, placed.y, placed.z, 0)).toBe(true);
   });
 
-  it("starts every species out of sight and marks it somewhere it will read as seen", () => {
+  it("starts every species out of sight, at the height it says, and marks it where it will read as seen", () => {
     // A sweep over ticks rather than a hunt for a seed: the species is a pure draw on
     // (seed, tick), so four hundred ticks walk the whole weight table and put every
     // staging through the invariant, not just the two a single seed happens to pick.
@@ -239,23 +253,44 @@ describe("cues", () => {
     const out: CueEvent[] = [];
     const drawn = new Set<number>();
     const staged = new Set<number>();
+    const placedSpecies = new Set<number>();
     for (let tick = 0; tick < 400; tick++) {
-      out.length = 0;
       const species = pickSpecies(s, hash3(5, tick, 2, 0));
-      expect(stageCue(s, v, flat, [], day, tick, 5, out)).toBe(true);
+      drawn.add(species);
+      staged.add(stagingFor(species));
+
+      // With an off-screen one of its own species in reach, every cue drives.
+      out.length = 0;
+      const nearby: Candidate = { id: 4, species, x: v.x, y: 20, z: v.z - 30, onScreen: false, phase: PHASE_REST };
+      expect(placementValid(v, flat, nearby.x, nearby.y, nearby.z, 0)).toBe(true);
+      expect(stageCue(s, v, flat, [nearby], day, tick, 5, out)).toBe(true);
+      expect(out[0]!.kind).toBe("drive");
+
+      // With none, only what can be put into the world unseen is placed. A loop flier's
+      // circle is tens of metres across and cannot be, so its beat is given up instead.
+      out.length = 0;
+      const placed = stageCue(s, v, flat, [], day, tick, 5, out);
+      if (LOOP_FLIERS.includes(species)) {
+        expect(placed).toBe(false);
+        expect(out).toHaveLength(0);
+        continue;
+      }
+      expect(placed).toBe(true);
       const e = out[0]!;
       expect(e.kind).toBe("place");
       if (e.kind !== "place") continue;
       expect(e.species).toBe(species);
-      drawn.add(species);
-      staged.add(stagingFor(species));
-      expect(placementValid(v, flat, e.x, 1, e.z, 0)).toBe(true);
+      placedSpecies.add(species);
+      // At the height the event itself names — the director validated that point, so that
+      // is the point the shell must seat the animal at.
+      expect(e.y).toBe(PLACE_BODY_H);
+      expect(placementValid(v, flat, e.x, e.y, e.z, 0)).toBe(true);
       // Breaking cover and walking out of the tree line both end in frame and in range —
       // an animal marched to a spot the director itself would not count as seen is a cue
       // that cannot land. A crossing ends at the far edge on purpose: the flier passes
       // through the frame and out of it.
       if (stagingFor(species) !== STAGING_CROSS) {
-        expect(onScreen(v, flat, { id: 0, species, x: e.goalX, y: 1, z: e.goalZ }, 0)).toBe(true);
+        expect(onScreen(v, flat, { id: 0, species, x: e.goalX, y: e.y, z: e.goalZ }, 0)).toBe(true);
       }
       expect(Math.hypot(e.goalX - v.x, e.goalZ - v.z)).toBeLessThanOrEqual(hideRange(0));
     }
@@ -264,26 +299,31 @@ describe("cues", () => {
       [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE, SPECIES_BUTTERFLY].sort((a, b) => a - b),
     );
     expect(staged.size).toBe(3);
+    // The butterfly is the one flier with no loop, so it is the one flier that is placed.
+    expect([...placedSpecies].sort((a, b) => a - b)).toEqual(
+      [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_BUTTERFLY].sort((a, b) => a - b),
+    );
   });
 
   it("waits out the retry and the quiet states before arranging anything", () => {
     const out: CueEvent[] = [];
     const s = createDirectorState(3);
     s.sinceSighting = 20; s.targetGap = 5;
+    const tick = tickDrawing(s, 3, 100, (sp) => !LOOP_FLIERS.includes(sp));
     // Quiet: the chase owns the player's attention, so nothing is staged however overdue.
-    step(s, view(), flat, [], { ...day, phase: 1 }, 1 / 60, 100, 3, out);
+    step(s, view(), flat, [], { ...day, phase: 1 }, 1 / 60, tick, 3, out);
     expect(out).toHaveLength(0);
     // Due, but the previous beat's wait has not run out yet.
     s.nextTry = 10_000;
-    step(s, view(), flat, [], day, 1 / 60, 100, 3, out);
+    step(s, view(), flat, [], day, 1 / 60, tick, 3, out);
     expect(out).toHaveLength(0);
     // Due and free.
     s.nextTry = 0;
-    step(s, view(), flat, [], day, 1 / 60, 100, 3, out);
+    step(s, view(), flat, [], day, 1 / 60, tick, 3, out);
     expect(out).toHaveLength(1);
     // And having arranged one, it does not arrange another on the very next frame.
     out.length = 0;
-    step(s, view(), flat, [], day, 1 / 60, 101, 3, out);
+    step(s, view(), flat, [], day, 1 / 60, tick + 1, 3, out);
     expect(out).toHaveLength(0);
   });
 
@@ -331,9 +371,10 @@ describe("cues", () => {
         cues++;
         kinds.add(e.kind);
         if (e.kind === "place") {
-          // At the body height the director itself assumed when it validated the start.
-          if (!placementValid(v, flat, e.x, PLACE_BODY_H, e.z, 0)) violations++;
-          units.push({ id: nextId++, species: e.species, x: e.x, y: PLACE_BODY_H, z: e.z, onScreen: false, phase: PHASE_CUE, goalX: e.goalX, goalZ: e.goalZ, speed: cueSpeed(e.species, e.run) });
+          // At the height the event names: the director validated that exact point, and
+          // the shell is required to seat the animal there.
+          if (!placementValid(v, flat, e.x, e.y, e.z, 0)) violations++;
+          units.push({ id: nextId++, species: e.species, x: e.x, y: e.y, z: e.z, onScreen: false, phase: PHASE_CUE, goalX: e.goalX, goalZ: e.goalZ, speed: cueSpeed(e.species, e.run) });
           stagings.add(stagingFor(e.species));
         }
         if (e.kind === "drive") {

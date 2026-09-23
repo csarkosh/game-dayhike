@@ -15,8 +15,8 @@ import { hash3 } from "../sim/field.js";
 import { SIM_TICK_HZ } from "../sim/constants.js";
 import { DAWN_DUSK_WINDOW, DAWN_HOUR, DUSK_HOUR, PHASE_CUE } from "./wildlifeBehaviour.js";
 import {
-  SPECIES_BUTTERFLY, SPECIES_DEER, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RABBIT,
-  SPECIES_RAVEN_PAIR, SPECIES_SQUIRREL,
+  FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_DEER, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL,
+  SPECIES_RABBIT, SPECIES_RAVEN_PAIR, SPECIES_SQUIRREL,
 } from "./wildlifeField.js";
 
 /** Half-width (rad) added to the cone before something counts as "off to the
@@ -95,12 +95,11 @@ export const TREELINE_MARK_SHARE = 0.5;
 export const MARK_NOTICE_SHARE = 0.7;
 export const MARK_MIN_RANGE = 5;
 /**
- * Height above the ground (m) the placement test reads a would-be animal at. The event
- * carries a ground point and the shell seats the unit on it, so this is the director's
- * assumption about where that unit's body will be when the line of sight is drawn to it —
- * a standing mammal's chest. A flier's altitude is the shell's to choose and is well above
- * this, so the cross staging leans on BEARING instead — twice the margin clear of the
- * frame's edge, which at a level view holds however high the bird ends up.
+ * Height above the ground (m) a placed animal's body is taken to sit at — a standing
+ * mammal's chest, and near enough the middle of the band a butterfly wanders in. The
+ * `place` event carries the resulting height outright rather than leaving it to the shell:
+ * the whole placement test is a line of sight to a POINT, and a point whose height the
+ * director guessed and the shell then chose differently is a test of nothing.
  */
 export const PLACE_BODY_H = 1;
 /** A pool unit off screen and beyond this multiple of the range it could be seen at, held
@@ -133,6 +132,13 @@ export type Seen = { id: number; species: number; x: number; y: number; z: numbe
  * director's work and is left alone). */
 export type Candidate = Seen & { onScreen: boolean; phase: number };
 /**
+ * `x/y/z` on a candidate is where the ANIMAL is, not where its bookkeeping lives: for a
+ * flier that means the bird itself, not the centre of the circle it happens to be flying,
+ * which can be a hundred metres and more from any of its birds. Every judgement the
+ * director makes about a unit — seen, out of sight, safe to turn, far enough gone to
+ * recycle — is a judgement about that point.
+ */
+/**
  * What the director asks the shell to do. `drive` re-targets a unit that already exists,
  * `place` asks for one of the pool at a start point, and `remove` gives one back. Every
  * one of the three is emitted only where `placementValid` holds (or, for `remove`, where
@@ -141,7 +147,7 @@ export type Candidate = Seen & { onScreen: boolean; phase: number };
  */
 export type CueEvent =
   | { kind: "drive"; id: number; goalX: number; goalZ: number; run: boolean }
-  | { kind: "place"; species: number; x: number; z: number; goalX: number; goalZ: number; run: boolean }
+  | { kind: "place"; species: number; x: number; y: number; z: number; goalX: number; goalZ: number; run: boolean }
   | { kind: "remove"; id: number };
 
 function clamp01(t: number): number {
@@ -475,7 +481,7 @@ function bearingOf(view: View, x: number, z: number): number {
 /** Written into, and read straight back out of, within a single call — a cue's mark and
  * its start point, kept across frames so `step` allocates nothing. */
 const markScratch = { x: 0, z: 0 };
-const startScratch = { x: 0, z: 0 };
+const startScratch = { x: 0, y: 0, z: 0 };
 /** The point at `range` metres and `bearing` radians from the eye, written into `out`.
  * Forward is (sin yaw, cos yaw), so a bearing is simply added to the yaw. */
 function pointAt(view: View, bearing: number, range: number, out: { x: number; z: number }): void {
@@ -518,7 +524,7 @@ function markFor(view: View, species: number, staging: number, fromX: number, fr
  */
 function startFor(
   view: View, ground: Ground, match: MatchState, staging: number, seed: number, tick: number, i: number,
-  out: { x: number; z: number },
+  out: { x: number; y: number; z: number },
 ): boolean {
   const a = hash3(seed, tick, SALT_BEARING + i, 0);
   const b = hash3(seed, tick, SALT_RANGE + i, 0);
@@ -532,8 +538,8 @@ function startFor(
       : (a * 2 - 1) * Math.PI / 2;
     pointAt(view, bearing, COVER_RANGE[0] + b * (COVER_RANGE[1] - COVER_RANGE[0]), out);
   } else if (staging === STAGING_CROSS) {
-    // Twice the margin outside the frame, so the flier is clear of the edge by more than
-    // the slack the sighting test allows — whatever altitude the shell gives it.
+    // Twice the margin outside the frame: a crossing is the one staging that ends by
+    // leaving the frame again, so it gets the widest berth going in as well.
     pointAt(view, outsideBearing(coneHalfAngle(view, 2 * VIEW_MARGIN), a), CROSS_RANGE[0] + b * (CROSS_RANGE[1] - CROSS_RANGE[0]), out);
   } else if (i < PLACE_TRIES - 2) {
     pointAt(view, outsideBearing(coneHalfAngle(view, VIEW_MARGIN), a), TREELINE_RANGE[0] + b * (TREELINE_RANGE[1] - TREELINE_RANGE[0]), out);
@@ -546,7 +552,25 @@ function startFor(
     if (hide > TREELINE_RANGE[1]) return false;
     pointAt(view, (a * 2 - 1) * coneHalfAngle(view, -VIEW_MARGIN), hide + 5 + b * 5, out);
   }
-  return placementValid(view, ground, out.x, ground(out.x, out.z) + PLACE_BODY_H, out.z, match.mist);
+  out.y = ground(out.x, out.z) + PLACE_BODY_H;
+  return placementValid(view, ground, out.x, out.y, out.z, match.mist);
+}
+
+/**
+ * Whether a unit of this species can be put into the world unseen at all.
+ *
+ * The three loop fliers cannot. A raven pair, a gull flock or an eagle is not a point: it
+ * is a circle of 20 to 140 metres with birds spread around it, and the frame is 118 degrees
+ * wide. For every bird on such a circle to start outside that frame, the circle's centre
+ * has to sit several times its own radius away — hundreds of metres for an eagle, which is
+ * a speck in the sky rather than a cue, and further than the mist lets anything be seen
+ * anyway. There is no placement for them that the invariant allows, so there is none: a
+ * flier cue drives a bird that is already flying, and gives the beat up when there is none
+ * in reach. The butterfly is a point at head height with no loop, and is placed like any
+ * mammal.
+ */
+function placeable(species: number): boolean {
+  return species < FIRST_BIRD_SPECIES || species === SPECIES_BUTTERFLY;
 }
 /** A bearing drawn just outside the cone's edge, `OUTSIDE_ARC` at most past it, on
  * whichever side the draw's own half picks. */
@@ -579,7 +603,10 @@ function driveable(view: View, ground: Ground, candidates: readonly Candidate[],
  * Arrange one sighting: draw the species, then prefer to re-target an animal that already
  * exists over asking for a new one — it is cheaper, and an animal that was already there
  * cannot be seen arriving. Returns whether an event was emitted; a beat that could find
- * nowhere out of sight to start from is simply dropped and retried after `RETRY`.
+ * nowhere out of sight to start from, or that drew one of the loop fliers with none in
+ * reach to drive (see `placeable`), is simply dropped and retried after `RETRY` — with a
+ * fresh species drawn from the next tick, so a beat is never spent twice on the same
+ * animal the woods cannot produce.
  *
  * `RETRY` is also the floor between two cues that DID work, and it is only a floor: what
  * really keeps the director from arranging a second animal on top of the first is that
@@ -607,10 +634,14 @@ export function stageCue(
     out.push({ kind: "drive", id: driven.id, goalX: markScratch.x, goalZ: markScratch.z, run });
     return true;
   }
+  if (!placeable(species)) return false;
   for (let i = 0; i < PLACE_TRIES; i++) {
     if (!startFor(view, ground, match, staging, seed, tick, i, startScratch)) continue;
     markFor(view, species, staging, startScratch.x, startScratch.z, markScratch);
-    out.push({ kind: "place", species, x: startScratch.x, z: startScratch.z, goalX: markScratch.x, goalZ: markScratch.z, run });
+    out.push({
+      kind: "place", species, x: startScratch.x, y: startScratch.y, z: startScratch.z,
+      goalX: markScratch.x, goalZ: markScratch.z, run,
+    });
     return true;
   }
   return false;
