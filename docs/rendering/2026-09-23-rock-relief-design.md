@@ -134,3 +134,46 @@ off.
   facet normal.
 - Cut the ground's scree paint to match, so a boulder and the scree it sits
   in agree.
+
+## Amendments
+
+What the build settled that this spec's earlier sections stated differently:
+
+- **Two LODs, not three.** The clutter shell only ever draws `LOD0` (near) and
+  `LOD1` (far) for any class — `LOD2` is loaded with every GLB but never
+  bucketed, the same as for every other clutter class. The cut runs on the
+  two LODs the shell actually draws; §5's "the same plane list cuts a model's
+  three LODs" should read "two".
+- **Roughening moves along the vertex normal, not the face normal.** §4 said
+  roughening displaces "along its face normal". It displaces along the
+  *input's own vertex normal* instead: two triangles sharing an edge disagree
+  on their face normal but agree exactly on the vertex normal at the vertex
+  they share, so moving both triangles' copies of that vertex by the same
+  amount in the same direction keeps them coincident and no crack opens. The
+  face normal is still what is written to the output for shading, unchanged.
+- **The roughening amplitude scales by each vertex's own distance from the
+  centroid, not the model's half-extent.** A rock is rarely a sphere, so
+  vertices sit at widely different distances from the centroid. Scaling the
+  push-back by the model's half-extent (a single global number) let a vertex
+  closer in than the model's extreme point come out farther from the
+  centroid than it started — the shrink pulled it in by less than the
+  roughening could push it back out. Scaling by that vertex's own distance
+  makes the shrink and the push-back bound each other by the triangle
+  inequality, for every vertex, proving "a cut only removes material" for an
+  irregular mesh rather than only for a sphere (where the two scales
+  happen to agree).
+- **A cut is `Math.floor(hash * cuts)`, not a bitmask on the hash itself.**
+  §5 wrote an instance's cut as `hash & 3`. The instance's hash is a unit
+  float in `[0, 1)`, and bitwise operators coerce their operands to 32-bit
+  integers first, so masking the float directly would coerce every hash to 0
+  and put every instance in cut 0. Scaling the hash up into the cut range
+  before taking the floor is what actually spreads instances across the four
+  cuts; a trailing mask against `cuts - 1` is kept as a cheap, harmless clamp
+  since `cuts` is a power of two.
+- **The plane list is keyed on a model index unique across both cut classes,
+  not on the per-class variant alone.** Rock's and boulder's own first
+  variant are each "variant 0", and keying `rockPlanes` on the bare variant
+  handed both the same cut-plane directions — a coincidence hidden by the two
+  classes' different geometry, but less variety than intended. The shell
+  keys the plane list on `cls * 16 + variant` instead, so every model across
+  every cut class draws its own seeded planes.
