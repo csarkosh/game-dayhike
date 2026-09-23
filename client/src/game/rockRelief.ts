@@ -7,8 +7,11 @@ import { latticeHash, valueNoise2 } from "./groundHexParams.js";
  * the input's vertex normal roughens the facets without opening a seam at a
  * shared edge; a per-facet luma is written as vertex colour. A cut only
  * removes material — no output vertex ends up farther from the model's
- * centroid than the input vertex it came from — so the sim's collision boxes
- * for boulders stay right. Babylon-free: arrays in, arrays out.
+ * centroid than the input vertex it came from — so a cut mesh stays inside
+ * the collision box the sim sized for the uncut one. Inside it, not flush
+ * with it: a plane that cleaves a boulder's top leaves the box standing above
+ * the stone, which the design records and accepts (see its §3). Babylon-free:
+ * arrays in, arrays out.
  */
 
 export const ROCK_PLANES = 10;

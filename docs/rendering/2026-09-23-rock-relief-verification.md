@@ -64,7 +64,9 @@ would produce.
 
 A cut has to remove material and never add it — a boulder's mesh is what the
 sim's collision box is sized against, and the box is a constant the renderer
-must not move. Two things hold that.
+must not move. (Removing material keeps the mesh inside the box; it does not
+keep the mesh flush with it, and §12 records the one place the two come
+apart.) Two things hold that.
 
 The displacement is **inward only**: the noise runs `[0, 1)` and is subtracted,
 so a vertex is pushed toward the surface's inside or left where it is, never
@@ -322,27 +324,84 @@ shape and the identical plane on a sphere. After it, 135 of the 160 survive,
 the weakest bucket keeps six, and no two cuts of one model agree on their
 outline to closer than 6.3 % of the model's largest dimension.
 
-**Why nothing caught it.** Every geometry test ran on a synthetic icosphere.
-The icosphere is not merely a poor stand-in here; it is the single shape on
-which the bug is invisible, because it is the shape where the two readings of
-"half-extent" coincide. All ten candidates survive on it, in all four cuts,
-under either version of the code. A reviewer reading the tests would see the
-cut working. `rockReliefModels.test.ts` now runs the same cut on the four
-shipped GLBs, loaded through the path the game loads them by, and asserts
-there what the design promises: that planes survive, that a model's four cuts
-are four different solids, that both LODs cut to one shape, that the
-only-removes-material bound holds on real geometry, and that every cut shows
-the six distinct facet planes §6 asks for.
+**Why nothing caught it, which is the part worth remembering.**
+
+Every geometry test ran on a synthetic icosphere, and the icosphere is not
+merely a convenient stand-in for a rock. It is *the one shape on which this
+mechanism is perfect*. The bug was that two readings of "the model's reach"
+had been confused — the reach in a particular direction, and the largest reach
+in any direction — and a sphere is precisely the shape where those two numbers
+are equal. Under either version of the code, all ten candidate planes survive
+on a sphere, in all four cuts. A reviewer reading the tests, or the tests
+themselves, would see the cut working perfectly. It was working perfectly, on
+the only shape it was ever shown.
+
+The visual gate did not catch it either; it confirmed the wrong thing. The
+stills in §7 are real — the rocks genuinely did stop looking like smooth
+loaves and start looking like broken stone. What produced that was the
+unwelding and the flat face normals, which are most of the look and which
+worked from the first commit. So the gate asked "does it look like fractured
+rock?", answered yes, and said nothing whatever about whether the fractures
+existed. A green suite and a set of before-and-after stills both passed over a
+mechanism that was seeded, judged and discarded without ever cutting
+anything.
+
+The general lesson, stated plainly for whoever reads this next:
+
+- **A fixture that cannot fail is not a test.** Ask of every geometric fixture
+  which property of it the code under test depends on, and whether that
+  property is one the real inputs share. A sphere is isotropic, uniformly
+  sampled and convex; a rock is none of those. Every one of those three
+  differences hid a separate defect here — the anisotropy hid this one, the
+  concavity hid a 21 µm bound violation (§4), and the uniform sampling hid the
+  fact that the cap-share ceiling can never fire on a sphere at all.
+- **A look gate confirms the look, not the mechanism.** When a change is meant
+  to work by a specific mechanism, something has to measure that the mechanism
+  ran. "It looks right" is compatible with the named cause contributing
+  nothing, and here it was.
+- **Run it on the shipped asset.** `rockReliefModels.test.ts` exists for this.
+  It cuts the four real GLBs, loaded through the path the game loads them by,
+  and asserts what the design promises *there*: that planes survive, that a
+  model's four cuts are four different solids, that both LODs cut to one
+  shape, that the only-removes-material bound holds on real geometry, that a
+  prop keeps enough of its sink, and that every cut shows the six distinct
+  facet planes §6 asks for. It is slower than the sphere tests and it is the
+  only thing standing between this mechanism and a silent return to doing
+  nothing.
 
 **Two things the fix turned up.** `boulder_a`'s top is untouched in all four
 of its cuts — no seeded plane faces steeply enough upward to clear the floor
 there — while `boulder_b` is genuinely cleaved, losing 11.3 % of its height in
-its first cut and 2.5 to 2.8 % in two others. That cleave is the look the
-design asked for, and it is also the one place the cut can be seen from the
-simulation: a boulder's collider box is sized from the UNCUT mesh's height,
-a constant in `sim/passes/clutter.ts` that a renderer-only pass must not move,
-so whatever a cut takes off the top is box standing above stone — up to 0.29 m
-at the largest instance scale. It is inside the tolerance the box's own
-comment already accepts for ground tilt, and a 2.6 m boulder is not something
-a hiker stands on, but it is a real consequence of making the planes bite and
-a test now holds the cleave under 15 % of a boulder's height.
+its first cut and 2.5 to 2.8 % in two others.
+
+That cleave is the look the design asked for, and it is also the one place
+this pass can be seen from the simulation. A boulder's collider box runs from
+the ground to `BASE_H · scale · (1 − BOULDER_SINK)`, sized from the UNCUT
+mesh's height — a constant in `sim/passes/clutter.ts` that a renderer-only
+pass must not move, and does not. But whatever a cut takes off the top is box
+left standing above stone: **up to 0.29 m at the largest instance scale the
+sim draws.** Nothing in `sim/` changed and the mesh is still wholly inside its
+box, so "renderer-only, colliders untouched" remains literally true — and a
+reader should not take it to mean that what the player sees and what they
+collide with still agree everywhere on a boulder, because at the top of
+`boulder_b` they do not. It was accepted rather than fixed: the divergence is
+inside the ~0.15 m at model scale that the box's own comment already allows
+for ground tilt, a 2.6 m boulder is not something a hiker can climb, and the
+obvious lever — narrowing `ROCK_DEPTH` — would spend the cut-to-cut variety
+this whole fix exists to buy. A test holds the cleave under 15 % of a
+boulder's height so it cannot quietly grow.
+
+## 13. Follow-ups
+
+- **Close the boulder cleave without touching `ROCK_DEPTH`.** Refuse a
+  candidate plane whose normal points steeply upward, so a cut takes flanks
+  and undersides but never the crown. That leaves the box and the visible top
+  in agreement, costs none of the cut-to-cut difference measured above, and is
+  a few lines in `rockPlanes`. The reason it is not done here is that it is a
+  new rule with its own look consequences — a boulder that can never be
+  cleaved is a boulder that keeps its dome — and that is a design question,
+  not a bug fix.
+- Moss and lichen on the north faces of facets, as a vertex-colour tint by
+  facet normal (from the design's own follow-ups).
+- Cut the ground's scree paint to match, so a boulder and the scree it sits in
+  agree (likewise).

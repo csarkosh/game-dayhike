@@ -29,7 +29,9 @@ Goals:
   angular silhouette, a normal map with faces to sit on.
 - The artist's silhouettes stay recognisable; a cut removes material and
   never adds it.
-- No pop at a LOD swap, no change to collision.
+- No pop at a LOD swap, and no change to collision. The sim's boxes are not
+  touched — but see §3 for the one place the cut moves the MESH away from a
+  box that stays where it was.
 
 Non-goals:
 
@@ -44,9 +46,25 @@ Non-goals:
 | `rockRelief.ts` (new, Babylon-free) | game | the cut: planes, projection, unweld, face normals, roughening, facet luma — on plain vertex arrays |
 | `clutterMeshes.ts` (changed) | game | runs the pass on each rock and boulder LOD mesh as its GLB lands, four cuts per model; a cut dimension in the rock and boulder buckets; vertex colours on for those materials |
 
-The sim is untouched. Boulder collision boxes are constants the clutter pass
-declares, and a mesh that only shrinks and cuts inward stays inside them; small
-rocks are not colliders. No level-id change.
+The sim is untouched and no level id changes. Small rocks are not colliders at
+all. Boulder collision boxes are constants the clutter pass declares, and a
+mesh that only removes material stays inside them.
+
+Staying inside them is not the same as still matching them, and the difference
+is worth stating rather than leaving for a reader to infer. A boulder's box
+runs from the ground to `BASE_H · scale · (1 − BOULDER_SINK)` — the height of
+the UNCUT mesh's visible top. Whatever a cut takes off the top is therefore
+box standing above stone. Measured on the shipped models: `boulder_a`'s top is
+untouched in all four of its cuts, and `boulder_b` loses 11.3 % of its height
+in cut 0 and 2.5–2.8 % in two others, which at the largest instance scale the
+sim draws is **up to 0.29 m of collider above visible rock**. Accepted rather
+than fixed: it is inside the ~0.15 m the box's own comment already allows for
+ground tilt at model scale, a 2.6 m boulder is not something a hiker climbs,
+and the alternative — narrowing `ROCK_DEPTH` — would spend the cut variety
+this pass exists to buy. So "renderer-only" here means the simulation is
+unchanged, NOT that what the player sees and what they collide with still
+agree everywhere. See the verification note's follow-ups for the cheap way to
+close it.
 
 ## 4. The cut
 
@@ -186,10 +204,15 @@ What the build settled that this spec's earlier sections stated differently:
   the model's support distance along that plane's own normal, which is the
   same bite on any shape and the same plane as before on a sphere. 135 of 160
   survive; the weakest bucket keeps six.
-- **The cap-share floor is 2 %, not 3 %.** With the offsets measured
-  per direction, 3 % still left `boulder_a` with four and five facet planes in
-  two of its cuts, under the six §6 asks for. At 2 % it keeps six to nine and
-  every model clears the six.
+- **The cap-share floor is 2 %, not 3 %.** With the offsets measured per
+  direction, a 3 % floor still left `boulder_a` under the six distinct facet
+  planes §6 asks for. Planes kept per cut, out of ten candidates, at 3 % and
+  then at 2 %: `boulder_a` 4→6, 5→8, 5→7, 7→8; every other model was already
+  clear and barely moves — `rock_a` 10/9/10/10 → 10/10/10/10, `rock_b`
+  9/8/10/10 → 10/9/10/10, `boulder_b` 9/10/9/10 → 10/10/9/10. The change is
+  confined to the three `boulder_a` buckets that were failing the design's own
+  floor; a 2 % cap on the smallest of these models is still eleven vertices,
+  which is a facet and not a sliver.
 - **The cap-share rule runs once, on LOD0, and both LODs are cut with what
   survives it.** §5 shares "the same plane list" between a model's LODs, and
   the build shared the CANDIDATE list while each LOD applied the rule to its
