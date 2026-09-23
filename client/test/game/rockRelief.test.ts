@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ROCK_CAP_SHARE, ROCK_CUTS, ROCK_DEPTH, ROCK_LUMA, ROCK_PLANES, ROCK_ROUGH,
-  rockHalfExtent, rockPlanes, rockRelief, type RockArrays,
+  rockHalfExtent, rockPlanes, rockRelief, type RockArrays, type RockCut,
 } from "../../src/game/rockRelief.js";
 
 /** A unit icosphere with `sub` subdivisions, as the arrays a GLB mesh hands over. */
@@ -27,6 +27,59 @@ function icosphere(sub: number): RockArrays {
   };
 }
 const SPHERE = icosphere(4); // 2,562 vertices, 5,120 triangles
+
+/** The icosphere stretched ×1/×0.45/×2.2 on its three axes, so its vertices
+ * sit at widely different distances from the centroid. A uniform sphere
+ * cannot expose a roughening amplitude scaled by the model's global
+ * half-extent rather than each vertex's own distance from the centroid,
+ * because every one of its vertices IS at the half-extent; this fixture
+ * has plenty that aren't. */
+function anisoSphere(): RockArrays {
+  const [sx, sy, sz] = [1, 0.45, 2.2];
+  const n = SPHERE.positions.length / 3;
+  const positions = new Float32Array(n * 3);
+  const normals = new Float32Array(n * 3);
+  for (let v = 0; v < n; v++) {
+    const x = SPHERE.positions[v * 3]!, y = SPHERE.positions[v * 3 + 1]!, z = SPHERE.positions[v * 3 + 2]!;
+    positions[v * 3] = x * sx; positions[v * 3 + 1] = y * sy; positions[v * 3 + 2] = z * sz;
+    // A sphere's own normal is its (unit) position; an anisotropic scale
+    // carries a surface normal by the INVERSE scale, not the scale itself.
+    const nx = x / sx, ny = y / sy, nz = z / sz;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    normals[v * 3] = nx / nl; normals[v * 3 + 1] = ny / nl; normals[v * 3 + 2] = nz / nl;
+  }
+  return { positions, normals, uvs: SPHERE.uvs, indices: SPHERE.indices };
+}
+const ANISO = anisoSphere();
+
+/** The centroid rockRelief itself computes: the mean of the input vertices. */
+function centroidOf(positions: Float32Array): [number, number, number] {
+  const n = positions.length / 3;
+  let cx = 0, cy = 0, cz = 0;
+  for (let v = 0; v < n; v++) { cx += positions[v * 3]!; cy += positions[v * 3 + 1]!; cz += positions[v * 3 + 2]!; }
+  return [cx / n, cy / n, cz / n];
+}
+
+/** The load-bearing bound a cut must never break: no output vertex may end up
+ * farther from the centroid than the input vertex it came from was. Checked
+ * per vertex, not against the model's global half-extent — a bound scaled by
+ * the half-extent is looser than this everywhere except at the half-extent
+ * itself, so it would miss a vertex that started closer in and got pushed
+ * past its own starting distance without ever reaching the model's overall
+ * extreme. */
+function expectOnlyRemovesMaterial(input: RockArrays, cut: RockCut): void {
+  const [cx, cy, cz] = centroidOf(input.positions);
+  const tris = cut.indices.length / 3;
+  for (let t = 0; t < tris; t++) {
+    for (let k = 0; k < 3; k++) {
+      const v = t * 3 + k;
+      const src = input.indices[t * 3 + k]!;
+      const d = Math.hypot(input.positions[src * 3]! - cx, input.positions[src * 3 + 1]! - cy, input.positions[src * 3 + 2]! - cz);
+      const pd = Math.hypot(cut.positions[v * 3]! - cx, cut.positions[v * 3 + 1]! - cy, cut.positions[v * 3 + 2]! - cz);
+      expect(pd).toBeLessThanOrEqual(d + 1e-6);
+    }
+  }
+}
 
 describe("rockPlanes", () => {
   it("gives ROCK_PLANES unit normals with depths inside the band, deterministic per (model, cut), different across cuts", () => {
@@ -65,25 +118,33 @@ describe("rockRelief", () => {
       for (const k of i) {
         const n = [cut.normals[k * 3]!, cut.normals[k * 3 + 1]!, cut.normals[k * 3 + 2]!];
         expect(Math.hypot(...n)).toBeCloseTo(1, 6);
-        // The stored normal is the FLAT triangle's face normal (computed before
-        // roughening moved any vertex), so it only equals the roughened
-        // triangle's own geometric normal up to the small tilt roughening can
-        // introduce: each vertex is displaced along its own input vertex
-        // normal, not this triangle's face normal, so the three displacements
-        // are not parallel and can tip the triangle slightly off its original
-        // plane. A 5% relative tolerance passes any real facet (measured peak
-        // here is under 1.5%) while still catching a normal that is flatly
-        // wrong (a different plane, a flipped sign, a non-unit length).
+        // The stored normal is deliberately the FLAT facet's normal from
+        // before roughening, not the roughened triangle's own geometric
+        // normal: each vertex is displaced along its own input vertex
+        // normal rather than this triangle's face normal, so the three
+        // displacements aren't parallel and can tip the roughened triangle
+        // slightly off the plane it was cut to. Recomputing the normal after
+        // roughening would shade each roughened triangle by its own tilt
+        // instead, which would show as neighbouring facets no longer reading
+        // as one flat plane — exactly the look this is meant to produce. So
+        // this checks the two stay close (a 5% relative tolerance; the
+        // measured peak here is under 1.5%), not that they're ever meant to
+        // match exactly, while still catching a normal that is flatly wrong
+        // (a different plane, a flipped sign, a non-unit length).
         const dot = n[0]! * g[0]! + n[1]! * g[1]! + n[2]! * g[2]!;
         expect(Math.abs(dot - gl)).toBeLessThanOrEqual(gl * 0.05 + 1e-9);
       }
     }
   });
-  it("only removes material: every output vertex lies inside the input hull", () => {
-    const he = rockHalfExtent(SPHERE.positions);
-    for (let v = 0; v < cut.positions.length / 3; v++) {
-      expect(Math.hypot(cut.positions[v * 3]!, cut.positions[v * 3 + 1]!, cut.positions[v * 3 + 2]!)).toBeLessThanOrEqual(he + 1e-6);
-    }
+  it("only removes material: every output vertex is no farther from the centroid than the input vertex it came from", () => {
+    expectOnlyRemovesMaterial(SPHERE, cut);
+    // A sphere is the one shape where every vertex sits at the half-extent,
+    // so it cannot tell a global-half-extent-scaled roughening apart from a
+    // per-vertex-distance-scaled one. This fixture can: its vertices sit at
+    // widely different distances from the centroid.
+    const anisoPlanes = rockPlanes(0, 0, rockHalfExtent(ANISO.positions));
+    const anisoCut = rockRelief(ANISO, anisoPlanes, 0, 0);
+    expectOnlyRemovesMaterial(ANISO, anisoCut);
   });
   it("cuts facets: at least six distinct face normals, and the skip rule holds", () => {
     const tris = cut.indices.length / 3;

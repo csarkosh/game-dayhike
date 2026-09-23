@@ -6,8 +6,9 @@ import { latticeHash, valueNoise2 } from "./groundHexParams.js";
  * unwelded so each shades by its own face normal; a small noise along the
  * input's vertex normal roughens the facets without opening a seam at a
  * shared edge; a per-facet luma is written as vertex colour. A cut only
- * removes material — nothing leaves the input hull — so the sim's collision
- * boxes for boulders stay right. Babylon-free: arrays in, arrays out.
+ * removes material — no output vertex ends up farther from the model's
+ * centroid than the input vertex it came from — so the sim's collision boxes
+ * for boulders stay right. Babylon-free: arrays in, arrays out.
  */
 
 export const ROCK_PLANES = 10;
@@ -15,7 +16,10 @@ export const ROCK_PLANES = 10;
 export const ROCK_DEPTH: readonly [number, number] = [0.08, 0.28];
 /** A plane is skipped if its cap would take fewer than the first or more than the second share of the vertices. */
 export const ROCK_CAP_SHARE: readonly [number, number] = [0.03, 0.35];
-/** Roughening amplitude as a fraction of the half-extent; the model is shrunk by it first. */
+/** Roughening amplitude as a fraction of each vertex's own distance from the
+ * centroid (not the model's half-extent, so the same fraction shrinks and
+ * pushes back every vertex by its own scale and none can end up farther out
+ * than it started); the model is shrunk by it first. */
 export const ROCK_ROUGH = 0.02;
 /** Wavelength (m) of the roughening noise, in the model's own units. */
 export const ROCK_ROUGH_WAVE = 0.35;
@@ -62,7 +66,6 @@ export function rockRelief(input: RockArrays, planes: RockPlane[], model: number
   let cx = 0, cy = 0, cz = 0;
   for (let v = 0; v < n; v++) { cx += input.positions[v * 3]!; cy += input.positions[v * 3 + 1]!; cz += input.positions[v * 3 + 2]!; }
   cx /= n; cy /= n; cz /= n;
-  const he = rockHalfExtent(input.positions);
   const p = new Float32Array(n * 3);
   const shrink = 1 - ROCK_ROUGH;
   for (let v = 0; v < n; v++) {
@@ -110,7 +113,17 @@ export function rockRelief(input: RockArrays, planes: RockPlane[], model: number
       // copies draw the same noise value too.
       const ox = input.positions[s * 3]!, oy = input.positions[s * 3 + 1]!, oz = input.positions[s * 3 + 2]!;
       const vnx = input.normals[s * 3]!, vny = input.normals[s * 3 + 1]!, vnz = input.normals[s * 3 + 2]!;
-      const r = ROCK_ROUGH * he * (2 * valueNoise2(ox / ROCK_ROUGH_WAVE + oy * 0.37, oz / ROCK_ROUGH_WAVE + oy * 0.61, 1 + model * 4 + cut) - 1);
+      // Scaled by THIS vertex's own distance `d` from the centroid, not the
+      // model's half-extent: the shrink above already pulled it in by
+      // ROCK_ROUGH · d, so pushing it back out by at most that same amount
+      // can never carry it past where it started, by the triangle
+      // inequality — for any direction, not only a radial one. A rock is
+      // rarely a sphere, so `d` varies a lot across its vertices; scaling by
+      // the half-extent instead would under-shrink a vertex closer in than
+      // the model's extreme and let roughening push it out past its own
+      // starting distance.
+      const d = Math.hypot(ox - cx, oy - cy, oz - cz);
+      const r = ROCK_ROUGH * d * (2 * valueNoise2(ox / ROCK_ROUGH_WAVE + oy * 0.37, oz / ROCK_ROUGH_WAVE + oy * 0.61, 1 + model * 4 + cut) - 1);
       positions[v * 3] = p[s * 3]! + vnx * r; positions[v * 3 + 1] = p[s * 3 + 1]! + vny * r; positions[v * 3 + 2] = p[s * 3 + 2]! + vnz * r;
       normals[v * 3] = fx; normals[v * 3 + 1] = fy; normals[v * 3 + 2] = fz;
       colors[v * 4] = luma; colors[v * 4 + 1] = luma; colors[v * 4 + 2] = luma; colors[v * 4 + 3] = 1;
