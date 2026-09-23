@@ -32,6 +32,12 @@ export const SPECIES_EAGLE = 7;
 export const SPECIES_COUNT = 8;
 /** Ground species are < this; the rest fly and are culled rather than faded. */
 export const FIRST_BIRD_SPECIES = SPECIES_RAVEN_ROOST;
+/**
+ * Reserved for the butterfly, not yet placed by `wildlifeUnitInCell` — no unit
+ * of this species exists while `SPECIES_COUNT` stays at 8, so the id is inert
+ * until a later placement pass raises the count and gives it a habitat.
+ */
+export const SPECIES_BUTTERFLY = 8;
 
 /** Cell sides (m). A roost cell scans its 4×4 tree cells for a snag. */
 export const WILDLIFE_CELL: readonly number[] = [96, 64, 32, 24, 4 * TREE_CELL, 160, 120, 512];
