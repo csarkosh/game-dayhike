@@ -3,7 +3,7 @@ import { hash3 } from "../../src/sim/field.js";
 import { PHASE_CUE, PHASE_REST } from "../../src/game/wildlifeBehaviour.js";
 import {
   SPECIES_BUTTERFLY, SPECIES_DEER, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RABBIT,
-  SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL,
+  SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, WILDLIFE_RADIUS, WILDLIFE_SPREAD,
 } from "../../src/game/wildlifeField.js";
 import {
   DIRECTOR_ID_BASE, GAP, HIDE_RANGE, HOLLOW_QUIET, LEAD, NIGHT_RELAX, NOTICE, PLACE_BODY_H, RECYCLE,
@@ -88,7 +88,7 @@ describe("the clock", () => {
     const beforeOffScreen = s.sinceSighting;
     for (let i = 0; i < 300; i++) observe(s, view(), flat, [], day, 1 / 60, 7);
     expect(s.sinceSighting - beforeOffScreen).toBeCloseTo(5, 1);
-    expect(SIGHTING_DWELL).toBe(1); expect(LEAD).toBe(2); expect(SMALL_TO_LARGE).toBe(6);
+    expect(SIGHTING_DWELL).toBe(1); expect(LEAD).toBe(4.5); expect(SMALL_TO_LARGE).toBe(6);
   });
   it("keeps the current candidate while it stays on screen, even once another arrives", () => {
     const s = createDirectorState(7);
@@ -170,6 +170,23 @@ describe("cues", () => {
     expect(stagingFor(SPECIES_SQUIRREL)).toBe(STAGING_COVER);
     expect(stagingFor(SPECIES_ELK)).toBe(STAGING_TREELINE);
     expect(stagingFor(SPECIES_DEER)).toBe(STAGING_TREELINE);
+  });
+
+  it("gives every species a cue can produce an entry in every table read per unit", () => {
+    // The field's own scans stop at SPECIES_COUNT, so a table with eight entries looks
+    // complete right up until the director puts a butterfly in the world and something
+    // reads index eight off the end of it.
+    for (const species of [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_BUTTERFLY]) {
+      expect(NOTICE[species]).toBeDefined();
+      expect(WILDLIFE_RADIUS[species]).toBeDefined();
+      expect(WILDLIFE_SPREAD[species]).toBeDefined();
+    }
+    // A butterfly is eight centimetres of wing: it stops reading as an animal nearer than
+    // a rabbit does, and its disc has to outreach that so it is never culled while it
+    // could still count.
+    expect(NOTICE[SPECIES_BUTTERFLY]!).toBeLessThan(NOTICE[SPECIES_RABBIT]!);
+    expect(WILDLIFE_RADIUS[SPECIES_BUTTERFLY]!).toBeGreaterThan(NOTICE[SPECIES_BUTTERFLY]!);
+    expect(WILDLIFE_RADIUS[SPECIES_BUTTERFLY]!).toBeLessThan(WILDLIFE_RADIUS[SPECIES_SQUIRREL]!);
   });
 
   it("holds the invariant's predicate: in frame and in range is the only place a cue may not start", () => {
@@ -384,12 +401,14 @@ describe("cues", () => {
   });
 
   it("never places, drives or removes on screen: seven seeds, a thousand seconds each, with a walking, turning player", () => {
+    type Unit = Candidate & { goalX: number; goalZ: number; speed: number };
+    const medians: number[] = [];
     for (const SEED of [3, 5, 11, 17, 23, 29, 31]) {
       const s = createDirectorState(SEED);
-      type Unit = Candidate & { goalX: number; goalZ: number; speed: number };
       const units: Unit[] = [];
       const out: CueEvent[] = [];
-      let violations = 0, cues = 0, x = 0, z = 0, nextId = DIRECTOR_ID_BASE;
+      const stagedSinceSighting = new Set<number>();
+      let violations = 0, doubleStaged = 0, cues = 0, x = 0, z = 0, nextId = DIRECTOR_ID_BASE;
       const stagings = new Set<number>();
       const kinds = new Set<string>();
       for (let tick = 0; tick < 1000 * 60; tick += 6) { // a thousand seconds, in steps of 0.1 s
@@ -402,7 +421,14 @@ describe("cues", () => {
         x += 0.14 * Math.sin(yaw); z += 0.14 * Math.cos(yaw);
         const v = view(yaw, x, z);
         out.length = 0;
+        const logged = s.logCount;
         step(s, v, flat, units, day, 0.1, tick, SEED, out);
+        // One unpaid cue at a time. A cue that has already been seen may be walked over the
+        // top of — that is the whole point of `LEAD` being wide — but a second animal must
+        // never be sent out while the first has yet to put anything in front of the player.
+        if (out.some((e) => e.kind !== "remove")) {
+          if (units.some((u) => u.phase === PHASE_CUE && stagedSinceSighting.has(u.id))) doubleStaged++;
+        }
         for (const e of out) {
           cues++;
           kinds.add(e.kind);
@@ -410,7 +436,11 @@ describe("cues", () => {
             // At the height the event names: the director validated that exact point, and
             // the shell is required to seat the animal there.
             if (!placementValid(v, flat, e.x, e.y, e.z, 0)) violations++;
-            units.push({ id: nextId++, species: e.species, x: e.x, y: e.y, z: e.z, moveX: e.x, moveZ: e.z, onScreen: false, phase: PHASE_CUE, goalX: e.goalX, goalZ: e.goalZ, speed: cueSpeed(e.species, e.run) });
+            units.push({
+              id: nextId, species: e.species, x: e.x, y: e.y, z: e.z, moveX: e.x, moveZ: e.z,
+              onScreen: false, phase: PHASE_CUE, goalX: e.goalX, goalZ: e.goalZ, speed: cueSpeed(e.species, e.run),
+            });
+            stagedSinceSighting.add(nextId++);
             stagings.add(stagingFor(e.species));
           }
           if (e.kind === "drive") {
@@ -419,6 +449,7 @@ describe("cues", () => {
             // the frame must not be seen turning either.
             if (!placementValid(v, flat, u.x, u.y, u.z, 0)) violations++;
             u.goalX = e.goalX; u.goalZ = e.goalZ; u.phase = PHASE_CUE; u.speed = cueSpeed(u.species, e.run);
+            stagedSinceSighting.add(u.id);
             stagings.add(stagingFor(u.species));
           }
           if (e.kind === "remove") {
@@ -429,6 +460,7 @@ describe("cues", () => {
             units.splice(i, 1);
           }
         }
+        if (s.logCount > logged) stagedSinceSighting.clear();
         // Walk every cued unit toward its mark, then refresh the on-screen flags.
         for (const u of units) {
           if (u.phase !== PHASE_CUE) continue;
@@ -439,30 +471,34 @@ describe("cues", () => {
           u.moveX = u.x; u.moveZ = u.z;
         }
         for (const u of units) u.onScreen = onScreen(v, flat, u, 0);
+      }
+      expect(violations).toBe(0);
+      expect(doubleStaged).toBe(0);
+      // A floor, not a target: at one animal per five to ten seconds the woods owe the
+      // player a hundred or so cues over this walk, and the point of the number is that the
+      // invariant above was checked against a real stream of events rather than an empty one.
+      expect(cues).toBeGreaterThan(50);
+      expect(stagings.size).toBeGreaterThanOrEqual(2);
+      // Every kind of event the director can emit was actually exercised — an invariant test
+      // that never staged anything would prove nothing.
+      expect([...kinds].sort()).toEqual(["drive", "place", "remove"]);
+      const gaps: number[] = [];
+      for (let i = 1; i < s.logCount; i++) gaps.push((s.log[i * 2]! - s.log[(i - 1) * 2]!) / 60);
+      gaps.sort((a, b) => a - b);
+      expect(gaps.length).toBeGreaterThan(5);
+      medians.push(gaps[Math.floor(gaps.length / 2)]!);
     }
-    expect(violations).toBe(0);
-    // A floor, not a target: at one animal per five to ten seconds the woods owe the
-    // player a hundred or so cues over this walk, and the point of the number is that the
-    // invariant above was checked against a real stream of events rather than an empty one.
-    expect(cues).toBeGreaterThan(50);
-    expect(stagings.size).toBeGreaterThanOrEqual(2);
-    // Every kind of event the director can emit was actually exercised — an invariant test
-    // that never staged anything would prove nothing.
-    expect([...kinds].sort()).toEqual(["drive", "place", "remove"]);
-    // The gaps' median lies inside the band itself (the log holds (tick, species) pairs) —
-    // the cadence the whole feature is for, measured rather than assumed.
-    const gaps: number[] = [];
-    for (let i = 1; i < s.logCount; i++) gaps.push((s.log[i * 2]! - s.log[(i - 1) * 2]!) / 60);
-    gaps.sort((a, b) => a - b);
-    expect(gaps.length).toBeGreaterThan(5);
-    const med = gaps[Math.floor(gaps.length / 2)]!;
-    expect(med).toBeGreaterThanOrEqual(GAP[0]);
-    // Above the band's top, and known to be: measured 9.2 to 12.1 s over these seven
-    // seeds. A logged gap is not the target gap — it is the target gap less `LEAD`, plus
-    // however long the staged animal takes to walk into frame, plus the second of
-    // `SIGHTING_DWELL` before the look counts. That sum is what the bound spells out, and
-    // `LEAD` is the lever that would close it; it has deliberately not been pulled.
-    expect(med).toBeLessThanOrEqual(GAP[1] + LEAD + SIGHTING_DWELL);
+    // The cadence the whole feature is for, measured rather than assumed — and measured
+    // across seven seeds, not one. Every seed's median sits inside the band (6.6 to 8.1 s
+    // when this was written), and so does the median of them, which is the figure a lucky
+    // seed cannot carry on its own.
+    for (const med of medians) {
+      expect(med).toBeGreaterThanOrEqual(GAP[0]);
+      expect(med).toBeLessThanOrEqual(GAP[1]);
     }
+    const ordered = medians.slice().sort((a, b) => a - b);
+    const middle = ordered[Math.floor(ordered.length / 2)]!;
+    expect(middle).toBeGreaterThanOrEqual(GAP[0]);
+    expect(middle).toBeLessThanOrEqual(GAP[1]);
   });
 });

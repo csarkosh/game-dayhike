@@ -41,13 +41,23 @@ export const SPECIES_BUTTERFLY = 8;
 
 /** Cell sides (m). A roost cell scans its 4×4 tree cells for a snag. */
 export const WILDLIFE_CELL: readonly number[] = [96, 64, 32, 24, 4 * TREE_CELL, 160, 120, 512];
-/** Visible disc per species (m); low tier scales by 0.6. */
-export const WILDLIFE_RADIUS: readonly number[] = [150, 150, 60, 50, 400, 400, 400, 400];
+/**
+ * Visible disc per species (m); low tier scales by 0.6. Index 8 is the butterfly's, and it
+ * is the smallest by a distance: the card is eight centimetres across, so it is a few
+ * pixels well before anything else is, and 40 m is comfortably more than three times the
+ * twelve it can be made out at while staying under the squirrel's fifty. Unlike the eight
+ * before it this entry is never walked by the disc scan — which stops at `SPECIES_COUNT` —
+ * but it IS read per unit by the renderer's cull, which would otherwise find nothing there.
+ */
+export const WILDLIFE_RADIUS: readonly number[] = [150, 150, 60, 50, 400, 400, 400, 400, 40];
 /** Seeded presence draw per gated cell — starting points. */
 export const WILDLIFE_D: readonly number[] = [0.35, 0.5, 0.6, 0.5, 0.25, 0.4, 0.7, 0.6];
 export const WILDLIFE_MEMBERS: readonly (readonly [number, number])[] = [[4, 8], [1, 2], [2, 4], [1, 1], [3, 7], [2, 2], [3, 6], [1, 2]];
-/** Member spread around the anchor (m) for ground species. */
-export const WILDLIFE_SPREAD: readonly number[] = [12, 6, 5, 0, 0, 0, 0, 0];
+/** Member spread around the anchor (m) for ground species. Zero for everything that flies,
+ * the butterfly at index 8 included: a flier's members are spread around its loop rather
+ * than around a point on the ground. Read per unit when a unit's state is built, so this
+ * is the second of the two tables a unit of species 8 reaches. */
+export const WILDLIFE_SPREAD: readonly number[] = [12, 6, 5, 0, 0, 0, 0, 0, 0];
 
 export const ELK_MEADOW_FLOOR = 0.6;
 export const ELK_ROAD_CLEAR = 25;

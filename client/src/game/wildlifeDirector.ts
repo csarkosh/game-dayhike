@@ -27,9 +27,26 @@ export const VIEW_MARGIN = 5 * Math.PI / 180;
 export const SIGHTING_DWELL = 1;
 /** Band (s) the gap until the next sighting is redrawn from once one lands. */
 export const GAP: readonly [number, number] = [5, 10];
-/** How far ahead (s) the director should start arranging the next sighting, and
- * how long (s) a failed arrangement waits before it is retried. */
-export const LEAD = 2;
+/**
+ * How far ahead (s) the director starts arranging the next sighting. `targetGap` is meant
+ * to describe what the PLAYER gets — the interval between animals appearing — so `LEAD`
+ * has to cover everything between the director deciding it wants one and the player
+ * actually seeing it, or every gap comes out that much longer than the band says.
+ *
+ * MEASURED, not chosen. Over seven seeds of a thousand seconds each, the walk from a cue
+ * being STAGED to its sighting being logged runs a median of 1.75 s — but the walk from
+ * the beat falling DUE to that sighting runs 3.5 to 6.8 s, median of medians 4.2. The
+ * difference is the beats spent on cues that never land: a cue is arranged, the animal
+ * reaches its mark without the player ever looking that way, and the beat waits for the
+ * next one. That whole delay is what the lead has to buy, so it is the larger figure that
+ * sets this, rounded up to the half second.
+ *
+ * It is under `GAP[0]`, so the director is not permanently mid-cue; and it could be over
+ * it safely anyway, because what stops two cues going out at once is `cueUnpaid`, not the
+ * width of this window.
+ */
+export const LEAD = 4.5;
+/** How long (s) a beat that could arrange nothing waits before trying again. */
 export const RETRY = 1;
 /** A small species close enough counts as the large ones' equivalent for gap
  * purposes — the ratio a "big herd far off" and "one rabbit up close" trade at. */
@@ -50,11 +67,17 @@ export const HIDE_RANGE: readonly [number, number] = [200, 40];
 /**
  * How far away (m) each species still reads as noticed, before the hide range
  * even applies. Elk and deer are large enough to pick out at a real distance;
- * rabbits and squirrels are not. Birds have no ceiling of their own — flying
- * species are bounded by the hide range alone. Index 8 is the butterfly's:
- * inert until a unit of that species exists (see `wildlifeField.ts`).
+ * rabbits and squirrels are not. The birds have no ceiling of their own — a flying
+ * species is bounded by the hide range alone.
+ *
+ * The butterfly at index 8 is the exception among the fliers, and the shortest range here:
+ * eight centimetres of wing is gone as a thing you could name well before a rabbit is, so
+ * it sits under the rabbit's and the squirrel's fifteen. Left at the fliers' unbounded
+ * range it would have counted as a sighting out to the two hundred metres of the hide
+ * range, which is not a sighting of a butterfly — and, since the director measures its own
+ * cadence off these, would have quietly flattered every gap it reports.
  */
-export const NOTICE: readonly number[] = [45, 45, 15, 15, Infinity, Infinity, Infinity, Infinity, Infinity];
+export const NOTICE: readonly number[] = [45, 45, 15, 15, Infinity, Infinity, Infinity, Infinity, 12];
 /** Points sampled along the ray to a unit, checking for terrain in the way. */
 export const LOS_SAMPLES = 4;
 const LOS_FRACTIONS: readonly number[] = [0.2, 0.4, 0.6, 0.8];
