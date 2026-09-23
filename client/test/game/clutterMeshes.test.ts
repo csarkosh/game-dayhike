@@ -470,8 +470,8 @@ function windingOrientation(mesh: Mesh): number {
 /** A stand-in for a loaded GLB mesh: the glTF loader's meshes wind with their
  * normals and declare `ClockWiseSideOrientation`, where a builder's mesh does
  * neither, so a box has to be turned inside out to stand in for one. */
-function glbLikeBox(name: string, scene: Scene): Mesh {
-  const mesh = CreateBox(name, { size: 1 }, scene);
+function glbLikeBox(name: string, scene: Scene, size = 1): Mesh {
+  const mesh = CreateBox(name, { size }, scene);
   const indices = mesh.getIndices() as number[];
   for (let t = 0; t < indices.length / 3; t++) {
     const swap = indices[t * 3 + 1] as number;
@@ -533,14 +533,27 @@ describe("rock relief in the shell", () => {
    * normals, indices) for rockRelief.ts to cut — the same NullEngine
    * escape hatch `buildWithAssets` above uses, but with names that spell out
    * class/variant/LOD so a cut mesh's `_cut${n}` suffix is easy to find
-   * again by name after `adopt` has rearranged the bucket dimensions. */
+   * again by name after `adopt` has rearranged the bucket dimensions.
+   *
+   * The two cut classes get OPPOSITE windings on purpose, and the choice is
+   * load-bearing for the side-orientation assertion below. Rock stands in for
+   * a loaded GLB (wound with its normals, declaring clockwise), which is what
+   * the shipped rock and boulder actually are and the only shape in which
+   * "the cut kept `new Mesh`'s default instead of the source's declaration"
+   * can show up at all. Boulder stays a plain builder box, wound the other
+   * way, so the same assertion also refuses a hardcoded constant that happens
+   * to suit the loaded case. Held to one `size` either way: the model-index
+   * test below needs rock's and boulder's half-extents equal, so that nothing
+   * but the plane keying can explain their cuts differing.
+   */
   function buildCutAssets(): { engine: NullEngine; scene: Scene; assets: Mesh[][][][] } {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const assets: Mesh[][][][] = [];
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       assets.push([0, 1].map((variant) => [0, 1].map((lod) => {
-        const mesh = CreateBox(`shell-c${cls}v${variant}l${lod}`, { size: 0.5 }, scene);
+        const name = `shell-c${cls}v${variant}l${lod}`;
+        const mesh = cls === CLUTTER_ROCK ? glbLikeBox(name, scene, 0.5) : CreateBox(name, { size: 0.5 }, scene);
         mesh.material = new PBRMaterial(mesh.name, scene);
         return [mesh];
       })));
@@ -561,6 +574,10 @@ describe("rock relief in the shell", () => {
       expect((m as Mesh).getTotalIndices(), m.name).toBe((m as Mesh).getTotalVertices());
       // Every cut the shell makes lights by the side its normals call out:
       // the front face it declares is the one its winding actually draws.
+      // Rock's sources are GLB-shaped and boulder's are builder boxes (see
+      // `buildCutAssets`), so this one line covers both windings: it catches
+      // a cut that kept the default instead of inheriting, and a cut that
+      // hardcoded whichever value suits the other kind of source.
       expect((m as Mesh).sideOrientation, m.name).toBe(windingOrientation(m as Mesh));
     }
 

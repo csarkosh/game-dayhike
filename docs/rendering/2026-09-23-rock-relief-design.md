@@ -18,7 +18,7 @@ nothing the other three do.
 | The kind of rock | Fractured and angular: planar facets and sharp edges, as rock split along joints |
 | Variety | Four cuts per model, instances spread across them by hash |
 | Approach | Planar cuts with flat shading, run once at load in code; no new assets, no material change beyond vertex colour |
-| Cost | No per-frame bar of its own: a 4× pixel pair at TRAILSIDE and EDGE against `main` within noise (≤ +0.3 ms); the load-time pass under 50 ms for all sixteen meshes |
+| Cost | No per-frame bar of its own: a 4× pixel pair at TRAILSIDE and EDGE against `main` within noise (≤ +0.3 ms); the load-time pass under 50 ms for all thirty-two cut meshes (sixteen buckets, each at the near and the far LOD) |
 
 ## 2. Goals and non-goals
 

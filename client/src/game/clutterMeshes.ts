@@ -166,6 +166,22 @@ export function cutOf(inst: ClutterInstance): number {
  * (these materials draw both sides), but `twoSidedLighting` negates the
  * shading normal on a back face, so every facet would light by a normal
  * pointing into the rock and the whole model would render near-black.
+ *
+ * Two things about that assignment are quieter than they look, and neither is
+ * visible to a `NullEngine` test, which has no rasterizer to disagree with:
+ *
+ * - It must come BEFORE the material is assigned. Setting `sideOrientation`
+ *   raises Babylon's `_sideOrientationHint`, and it is the MATERIAL setter
+ *   that reads the hint and clears the material's own overriding
+ *   `sideOrientation` — a material's value wins over a mesh's wherever it is
+ *   set. Assigning the material first skips that, and today gets away with it
+ *   only because the material's value already defaults to null.
+ * - Babylon only recomputes a mesh's effective side orientation each frame
+ *   when the material culls back faces, overrides the orientation itself, or
+ *   lights both sides. Here it is the last of those that keeps the recompute
+ *   alive, so turning `twoSidedLighting` off on a rock material would need
+ *   this revisited — it is the same flag that made the wrong value render
+ *   black rather than merely inside-out.
  */
 export function reliefMesh(source: Mesh, model: number, cut: number, planes: RockPlane[]): Mesh {
   const positions = source.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
@@ -181,6 +197,7 @@ export function reliefMesh(source: Mesh, model: number, cut: number, planes: Roc
   data.indices = geometry.indices;
   if (geometry.uvs) data.uvs = geometry.uvs;
   data.applyToMesh(mesh, false);
+  // Order matters — see the note above: the orientation before the material.
   mesh.sideOrientation = source.sideOrientation;
   mesh.material = source.material;
   mesh.useVertexColors = true;

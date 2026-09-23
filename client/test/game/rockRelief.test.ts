@@ -237,7 +237,11 @@ describe("rockRelief", () => {
       expect(inward).toBe(0);
     }
     // Reversing the winding reverses nothing else: the same solid comes out.
-    expect(Array.from(reversed.positions).sort()).toEqual(Array.from(cut.positions).sort());
+    // Compared as a multiset of coordinates, since reversing a triangle's last
+    // two corners reorders the unwelded output without moving anything. The
+    // comparator is explicit because the default `sort` orders as strings.
+    const byValue = (a: number, b: number): number => a - b;
+    expect(Array.from(reversed.positions).sort(byValue)).toEqual(Array.from(cut.positions).sort(byValue));
   });
   it("is deterministic, and two cuts of one model differ", () => {
     const again = rockRelief(SPHERE, planes, 0, 0);

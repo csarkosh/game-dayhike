@@ -10,7 +10,7 @@ against a control build at the commit this work started from.
 
 `rockRelief.ts` is Babylon-free: plain vertex arrays in, plain vertex arrays
 out, exercised directly by its own test file on a synthetic icosphere (and an
-anisotropic stretch of one — see §3) rather than through the engine.
+anisotropic stretch of one — see §4) rather than through the engine.
 `clutterMeshes.ts` is exercised through a `NullEngine` scene, the same escape
 hatch the rest of the clutter shell's tests use. Both are unit-level and run
 in milliseconds; neither substitutes for the gates below, which need a real
@@ -94,12 +94,12 @@ rock's and boulder's own first variant and asserted their plane lists differ.
 ## 6. Test evidence
 
 - `rockRelief.ts`'s own test file plus the Babylon-free architecture check:
-  14 tests passing, including the anisotropic hull-bound fixture (§4) and the
-  facet-normal tolerance (§3).
+  15 tests passing, including the anisotropic hull-bound fixture (§4), the
+  facet-normal tolerance (§3), and a cut of a reversed-wound copy of the
+  fixture asserting no facet ends up facing inward.
 - `clutterMeshes.test.ts` (rock relief in the shell, `cutsFor`/`cutOf`,
   `reliefMesh`) plus `renderer.test.ts`, `bladeMeshes.test.ts`,
-  `rockRelief.test.ts` and the architecture check together: 54 tests passing
-  before the model-index fix below; 55 after (the new test added with it).
+  `rockRelief.test.ts` and the architecture check together: 57 tests passing.
 - The `cutOf` hash-to-cut routing was confirmed red against the naive
   `hash & (cuts - 1)` (which coerces the unit-float hash to 0 via `ToInt32`
   and puts every instance in cut 0) before the fix that scales the hash into
@@ -162,18 +162,24 @@ blanked before each sample:
 | control first | EDGE | 48.56 ms | 51.00 ms | −2.44 |
 | control first | TRAILSIDE | 56.76 ms | 56.72 ms | +0.04 |
 
-**This pass does not settle the gate and is recorded as inconclusive.** The
-second round's readings are 40 % slower than the first on BOTH builds
-(TRAILSIDE control 34.79 → 56.72 ms), which is machine load moving under the
-measurement, not either build changing. A ±8 ms swing cannot resolve a
-±0.3 ms bar. The deltas do rule out a large regression — their mean is
-negative — but the gate needs a repeat on an otherwise idle machine before it
-can be called passed.
+**This pass does not settle the gate and is recorded as inconclusive.** Every
+series is slower in the second round than in the first, on both builds and by
+quite different amounts: TRAILSIDE branch +54 %, TRAILSIDE control +63 %,
+EDGE branch +21 %, EDGE control +5 %. A drift that large and that uneven is
+machine load moving under the measurement, not either build changing, and a
+±20 ms swing cannot resolve a ≤ +0.3 ms bar. It also undercuts the reason for
+sampling in both orders, which is to cancel a drift that is at least steady.
+The deltas rule out a regression large enough to show through that noise, and
+their mean is negative, but the gate needs a repeat on an otherwise idle
+machine before it can be called passed.
 
 ## 10. Load time
 
 `performance.now()` around the cut pass in `expandCutVariants`, summed over
-both cut classes (all sixteen meshes), on three cold page loads:
+both cut classes, on three cold page loads. That pass builds every cut mesh
+the two classes draw: two classes × two variants × four cuts is sixteen
+buckets, each cut at both the near and the far LOD, so thirty-two meshes in
+all — the count `clutterMeshes.test.ts` asserts.
 
 | run | rock class | boulder class | total |
 | --- | --- | --- | --- |
