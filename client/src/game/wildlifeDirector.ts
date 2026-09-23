@@ -13,7 +13,7 @@
  */
 import { hash3 } from "../sim/field.js";
 import { SIM_TICK_HZ } from "../sim/constants.js";
-import { DAWN_DUSK_WINDOW, DAWN_HOUR, DUSK_HOUR, PHASE_CUE } from "./wildlifeBehaviour.js";
+import { DAWN_DUSK_WINDOW, DAWN_HOUR, DUSK_HOUR, PHASE_CUE, cueSpeedFor } from "./wildlifeBehaviour.js";
 import {
   FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_DEER, SPECIES_ELK, SPECIES_GULL,
   SPECIES_RABBIT, SPECIES_RAVEN_PAIR, SPECIES_SQUIRREL,
@@ -28,24 +28,37 @@ export const SIGHTING_DWELL = 1;
 /** Band (s) the gap until the next sighting is redrawn from once one lands. */
 export const GAP: readonly [number, number] = [5, 10];
 /**
+ * The longest (s) the woods may go without showing the player an animal while they are
+ * walking. Not a lever — the ceiling the whole feature exists to keep under, from the
+ * design's own gate: the gaps' median inside `GAP` AND nothing over this while moving.
+ * The band on its own says nothing about the tail, and it was the tail that read as
+ * lifeless: a median of seven seconds is no comfort in the ninety-six a player once spent
+ * walking through empty woods.
+ */
+export const GAP_CEILING = 20;
+/**
  * How far ahead (s) the director starts arranging the next sighting. `targetGap` is meant
  * to describe what the PLAYER gets — the interval between animals appearing — so `LEAD`
  * has to cover everything between the director deciding it wants one and the player
  * actually seeing it, or every gap comes out that much longer than the band says.
  *
- * MEASURED, not chosen. Over seven seeds of a thousand seconds each, the walk from a cue
- * being STAGED to its sighting being logged runs a median of 1.75 s — but the walk from
- * the beat falling DUE to that sighting runs 3.5 to 6.8 s, median of medians 4.2. The
- * difference is the beats spent on cues that never land: a cue is arranged, the animal
- * reaches its mark without the player ever looking that way, and the beat waits for the
- * next one. That whole delay is what the lead has to buy, so it is the larger figure that
- * sets this, rounded up to the half second.
+ * MEASURED, not chosen, and measured on the RIGHT quantity: the walk from a cue being
+ * staged to its sighting being logged, which over seven seeds of a thousand seconds each
+ * runs 1.5 to 1.8 s — a cue reaches the frame in about 0.7 s and the player then has to
+ * hold it for `SIGHTING_DWELL`.
+ *
+ * It is NOT the walk from the beat falling due to the next sighting, which used to be much
+ * longer because it also counted the beats spent on cues that never landed. Setting the
+ * lead from that figure buys the failures instead of the walk: it fires every successful
+ * cue far too early — a quarter of all gaps came out under the band's floor — while doing
+ * nothing at all for the runs of failures that made the long ones. Cues now land; if they
+ * ever stop, the fix is the cue, not this.
  *
  * It is under `GAP[0]`, so the director is not permanently mid-cue; and it could be over
  * it safely anyway, because what stops two cues going out at once is `cueUnpaid`, not the
  * width of this window.
  */
-export const LEAD = 4.5;
+export const LEAD = 2;
 /** How long (s) a beat that could arrange nothing waits before trying again. */
 export const RETRY = 1;
 /** A small species close enough counts as the large ones' equivalent for gap
@@ -113,11 +126,57 @@ const OUTSIDE_ARC = 0.25;
  * edge, which is a move of a few metres.
  */
 const COVER_MARK_SHARE = -0.4;
-const TREELINE_MARK_SHARE = 0.5;
+const TREELINE_MARK_SHARE = 0.75;
+/**
+ * The longest walk (s) a cue may be: a mark the animal is still on its way to when the
+ * player has looked elsewhere is not a sighting, it is an animal standing in an empty
+ * frame.
+ *
+ * MEASURED. A cue that the player did see took a median of 2.9 s from staging to the
+ * frame; one that missed took 12.5 s, and 94 % of the misses arrived OUTSIDE the cone —
+ * not hidden, not too far, simply aimed at where the frame used to be. The frame is not a
+ * fixed target: the player walks at 1.4 m/s and turns, so a mark thirty metres out slides
+ * sideways several metres a second, and an elk walking at two will never catch a frame it
+ * set off after twelve seconds ago. Anything that cannot make it inside this budget is not
+ * cued from where it stands — the beat redraws and finds an animal that can.
+ *
+ * Set at the bottom of the gap band rather than the top: a cue that takes longer than the
+ * beat it was arranged for is late before it starts.
+ */
+const CUE_FLIGHT = 5;
+/**
+ * How long (s) the beat waits on a cue that has yet to be seen before arranging another.
+ *
+ * The ceiling on the tail. A cue holds the beat so the woods do not empty their whole pool
+ * into the player's back, but held without a deadline that interlock turns every miss into
+ * a silence as long as the animal's walk, and a run of misses into a minute and a half of
+ * dead woods. `CUE_FLIGHT` is how long a cue may take; this is that plus the dwell the
+ * player has to hold it for, so a cue that has used its whole budget and the look that was
+ * supposed to follow has had its chance.
+ */
+export const CUE_PATIENCE = CUE_FLIGHT + SIGHTING_DWELL;
+/**
+ * How far ahead (s) a mark is aimed, and the most (rad) that aim may swing the frame.
+ *
+ * A mark is a point on the ground, but the frame it has to be inside is attached to a
+ * player who is walking and turning. Aim at the frame as it stands and the animal arrives
+ * at where the player WAS looking: measured over seven thousand seconds, that was the
+ * whole miss — 94 % of cues the player never saw reached their mark outside the cone,
+ * rather than hidden or too far. So the mark is taken against the view carried forward by
+ * however the player has been moving, over about the walk it takes to get there.
+ *
+ * The cap is on how much of that carry-forward is trusted. A flick of the mouse says
+ * nothing about where the player will be looking in four seconds, and an uncapped
+ * extrapolation of one would throw the mark round behind them.
+ */
+const AIM_AHEAD = 3;
+const AIM_YAW_CAP = 0.5;
 /** A mark sits no further out than this share of what the species can be made out at —
  * walking an animal to a spot it reads as a speck at is not a sighting — and never closer
  * to the eye than this, which is a cue, not an ambush. */
 const MARK_NOTICE_SHARE = 0.7;
+/** The near end of a crossing's range band, as a share of what the species reads at. */
+const CROSS_NOTICE_SHARE = 0.5;
 const MARK_MIN_RANGE = 5;
 /**
  * Height above the ground (m) a placed animal's body is taken to sit at — a standing
@@ -163,16 +222,21 @@ export type Seen = { id: number; species: number; x: number; y: number; z: numbe
  *   `x/z`; for a flier it is the loop centre, because a cue moves the whole circle and
  *   cannot move a bird along it. In the running game both are `UnitState.x/z`, while
  *   `x/y/z` comes off the lead pose.
+ * - `moveR` is how far the unit's OTHER members reach from that anchor: the loop radius for
+ *   a flier, zero for anything the player sees as one body. A cue moves the anchor, so it
+ *   moves every metre of `moveR` with it, and the invariant has to hold over all of it —
+ *   see `extentHidden`. In the running game it is `UnitState.unit.radius`.
  *
- * A `drive` goal is in `moveX/moveZ`'s space, so the mark is computed there too. Mixing
- * the two is the bug this split exists to prevent: a mark aimed at a gull and applied to
- * its loop centre lands the bird up to fifty metres from where it was aimed.
+ * A `drive` goal is in `moveX/moveZ`'s space, so the mark is computed there too, and so is
+ * the reach that decides whether the unit is close enough to be worth cueing. Mixing the
+ * two is the bug this split exists to prevent: a mark aimed at a gull and applied to its
+ * loop centre lands the bird up to fifty metres from where it was aimed.
  *
  * `onScreen` and `phase` are what the shell already knows — the first a cheap pre-filter
  * the director would otherwise re-derive, the second so a unit already mid-cue is left to
  * finish it.
  */
-export type Candidate = Seen & { onScreen: boolean; phase: number; moveX: number; moveZ: number };
+export type Candidate = Seen & { onScreen: boolean; phase: number; moveX: number; moveZ: number; moveR: number };
 /**
  * What the director asks the shell to do. `drive` re-targets a unit that already exists,
  * `place` asks for one of the pool at a start point, and `remove` gives one back. Every
@@ -280,14 +344,22 @@ export type DirectorState = {
  * off to the side, keyed by the state object itself, so `DirectorState`
  * stays exactly the fields callers and tests actually read. */
 type Clockwork = {
-  tick: number; haveView: boolean; viewX: number; viewZ: number;
-  /** Whether the sighting now being watched has already been written to the log — see
-   * `observe`. Cleared whenever the watched unit changes. */
-  counted: boolean;
+  tick: number; haveView: boolean; viewX: number; viewZ: number; viewYaw: number;
+  /** The view's own drift, per second, smoothed over the last frame: where the player is
+   * walking and how fast they are turning. `markFor` carries the frame forward by it. */
+  driftX: number; driftZ: number; driftYaw: number;
+  /** The units on screen the player has already been credited with seeing, and how many of
+   * the slots are in use. An id stays here only while its unit stays in view, so coming
+   * back later is a fresh look. See `observe`. */
+  counted: Int32Array;
+  countedOn: Uint8Array;
+  countedN: number;
   /** `DirectorState.logCount` as it stood when the cue now under way was arranged. While
    * it has not moved, that cue has yet to put anything in front of the player and still
    * holds the beat; the moment it does, the beat is free again. See `cueUnpaid`. */
   logAtStage: number;
+  /** `tick` when that cue was arranged, so the beat can give up on it. See `cueUnpaid`. */
+  stageTick: number;
   /** Per pool unit, how long (s) it has been continuously out of sight and out of range —
    * the clock `REMOVE_SECONDS` runs on. Keyed by id and cleared the moment a unit comes
    * back within range or starts a cue, so it is bounded by the size of the pool, and the
@@ -298,10 +370,28 @@ const clockworks = new WeakMap<DirectorState, Clockwork>();
 function clockworkFor(state: DirectorState): Clockwork {
   let c = clockworks.get(state);
   if (c === undefined) {
-    c = { tick: 0, haveView: false, viewX: 0, viewZ: 0, counted: false, logAtStage: -1, farFor: new Map() };
+    c = {
+      tick: 0, haveView: false, viewX: 0, viewZ: 0, viewYaw: 0, driftX: 0, driftZ: 0, driftYaw: 0,
+      counted: new Int32Array(SEEN_SLOTS), countedOn: new Uint8Array(SEEN_SLOTS), countedN: 0,
+      logAtStage: -1, stageTick: 0, farFor: new Map(),
+    };
     clockworks.set(state, c);
   }
   return c;
+}
+/** Animals the player may be looking at at once before the director stops keeping track of
+ * which it has already counted. More than this in frame is not a cadence problem. */
+const SEEN_SLOTS = 16;
+function countedSlot(clock: Clockwork, id: number): number {
+  for (let i = 0; i < clock.countedN; i++) if (clock.counted[i] === id) return i;
+  return -1;
+}
+function markCounted(clock: Clockwork, id: number): void {
+  if (clock.countedN >= SEEN_SLOTS) {
+    for (let i = 1; i < SEEN_SLOTS; i++) clock.counted[i - 1] = clock.counted[i]!;
+    clock.countedN = SEEN_SLOTS - 1;
+  }
+  clock.counted[clock.countedN++] = id;
 }
 
 function drawGap(seed: number, tick: number): number {
@@ -359,14 +449,17 @@ export function observe(
   clock.tick += Math.max(1, Math.round(dt * SIM_TICK_HZ));
 
   if (clock.haveView) {
-    const speed = Math.hypot(view.x - clock.viewX, view.z - clock.viewZ) / dt;
-    state.stillFor = speed < STILL_SPEED ? state.stillFor + dt : 0;
+    clock.driftX = (view.x - clock.viewX) / dt;
+    clock.driftZ = (view.z - clock.viewZ) / dt;
+    clock.driftYaw = wrapPi(view.yaw - clock.viewYaw) / dt;
+    state.stillFor = Math.hypot(clock.driftX, clock.driftZ) < STILL_SPEED ? state.stillFor + dt : 0;
   } else {
     state.stillFor += dt;
     clock.haveView = true;
   }
   clock.viewX = view.x;
   clock.viewZ = view.z;
+  clock.viewYaw = view.yaw;
 
   // Keep dwelling on the same unit for as long as it stays on screen — checked
   // by id, first, regardless of where it sits in `units` — so a second animal
@@ -374,34 +467,53 @@ export function observe(
   // CURRENT candidate leaving does. Without that rule, two animals trading
   // places on screen faster than either holds it alone would restart the
   // dwell forever and never record a sighting, even though something was
-  // visible the entire time. Once the current candidate does leave, the
-  // nearest on-screen unit becomes the new one — nearest rather than
-  // whichever happens to come first in `units`, since a caller has no reason
-  // to keep that order stable frame to frame. A unit that leaves loses its
-  // dwell outright rather than banking it for a later return: a sighting is
-  // a continuous look, not an accumulated one, and discarding a briefly
-  // occluded candidate's partial progress is the conservative direction —
-  // it can only make the director stage more cues later, never fewer.
+  // visible the entire time. Once the current candidate leaves — or has been
+  // counted, and so owes the player nothing more — the watch passes to the
+  // nearest unit still uncounted: nearest rather than whichever happens to
+  // come first in `units`, since a caller has no reason to keep that order
+  // stable frame to frame. A unit that leaves loses its dwell outright rather
+  // than banking it for a later return: a sighting is a continuous look, not
+  // an accumulated one, and discarding a briefly occluded candidate's partial
+  // progress is the conservative direction — it can only make the director
+  // stage more cues later, never fewer.
   //
-  // `onScreen` runs the line-of-sight sampling, so the current candidate is
-  // tested at most once a frame rather than re-checked once per branch below.
+  // One pass over the units, and one only: it finds the current candidate, marks
+  // which of the already-counted are still in view, and picks the nearest that
+  // is not among them. `onScreen` runs the line-of-sight sampling, so no unit
+  // pays for it twice. The pass no longer stops at the current candidate the way
+  // it used to, because the director now has to know what ELSE is in frame to
+  // credit it — a cone test per unit, and the ray only for the few it lets past.
   let candidate: Seen | undefined;
   let candidateOnScreen = false;
+  let best: Seen | undefined;
+  let bestDistance = Infinity;
+  for (let i = 0; i < clock.countedN; i++) clock.countedOn[i] = 0;
   for (const u of units) {
-    if (u.id === state.lastSeenId) { candidate = u; candidateOnScreen = onScreen(view, ground, u, match.mist); break; }
+    const visible = onScreen(view, ground, u, match.mist);
+    if (u.id === state.lastSeenId) { candidate = u; candidateOnScreen = visible; }
+    if (!visible) continue;
+    const slot = countedSlot(clock, u.id);
+    if (slot >= 0) { clock.countedOn[slot] = 1; continue; }
+    const distance = Math.hypot(u.x - view.x, u.y - view.y, u.z - view.z);
+    if (distance < bestDistance) { bestDistance = distance; best = u; }
   }
-  if (!candidateOnScreen) {
-    candidate = undefined;
-    let bestDistance = Infinity;
-    for (const u of units) {
-      if (!onScreen(view, ground, u, match.mist)) continue;
-      const distance = Math.hypot(u.x - view.x, u.y - view.y, u.z - view.z);
-      if (distance < bestDistance) { bestDistance = distance; candidate = u; }
+  // An id that has left the screen drops out, so the same animal coming back is a fresh
+  // look rather than one the player is never credited with again.
+  let kept = 0;
+  for (let i = 0; i < clock.countedN; i++) if (clock.countedOn[i] === 1) clock.counted[kept++] = clock.counted[i]!;
+  clock.countedN = kept;
+
+  if (!candidateOnScreen || countedSlot(clock, state.lastSeenId) >= 0) {
+    if (best !== undefined) {
+      candidate = best;
+      candidateOnScreen = true;
+      state.lastSeenId = best.id;
+      state.dwell = 0;
+    } else if (!candidateOnScreen) {
+      candidate = undefined;
+      state.lastSeenId = -1;
+      state.dwell = 0;
     }
-    candidateOnScreen = candidate !== undefined;
-    state.lastSeenId = candidate === undefined ? -1 : candidate.id;
-    state.dwell = 0;
-    clock.counted = false;
   }
 
   // A sighting is a look, and a look is counted ONCE: the clock resets and the gap is
@@ -411,14 +523,21 @@ export function observe(
   // have emptied — and holding the clock at zero for as long as the player keeps watching
   // pushes every gap out by however long they watched.
   //
-  // Counted once, though. The log is there to be histogrammed into "how long between
-  // animals", and a deer grazing in view for a minute writing sixty entries a second apart
-  // would put that histogram's median at the dwell rather than at the gap.
+  // Counted once PER ANIMAL, though, for as long as that animal stays in view. A deer
+  // grazing in frame for a minute writing sixty entries a second apart would put the
+  // histogram's median at the dwell rather than at the gap — but the deer standing there
+  // must not silence the log either, because an elk that walks in beside it is a second
+  // animal the player saw and the histogram is supposed to say so. Counting only the one
+  // unit the director happened to latch onto first left the log reading twenty seconds of
+  // empty woods over stretches when two and three animals came and went in frame.
   let recorded = false;
-  if (candidateOnScreen && candidate !== undefined && !clock.counted) {
+  if (candidateOnScreen && candidate !== undefined && countedSlot(clock, candidate.id) < 0) {
     state.dwell += dt;
     if (state.dwell >= SIGHTING_DWELL) {
-      clock.counted = true;
+      // Clamped, not left wherever the last frame's dt put it: `dwell` is a public field
+      // and "the dwell was met" is the only thing its value at rest should say.
+      state.dwell = SIGHTING_DWELL;
+      markCounted(clock, candidate.id);
       recorded = true;
       state.sinceSighting = 0;
       state.lastSpecies = candidate.species;
@@ -521,20 +640,42 @@ function coneHalfAngle(view: View, margin: number): number {
   const halfY = view.fov / 2;
   return Math.atan(Math.tan(halfY) * (1 + margin / halfY) * view.aspect);
 }
-/** Bearing (rad) of a point from the view's forward direction, positive toward the right
- * of the frame, wrapped to (-pi, pi]. */
-function bearingOf(view: View, x: number, z: number): number {
-  let b = Math.atan2(x - view.x, z - view.z) - view.yaw;
+/** An angle folded into (-pi, pi], so a difference of headings is the short way round. */
+function wrapPi(a: number): number {
   const twoPi = 2 * Math.PI;
-  b %= twoPi;
+  let b = a % twoPi;
   if (b > Math.PI) b -= twoPi;
   else if (b <= -Math.PI) b += twoPi;
   return b;
 }
-/** Written into, and read straight back out of, within a single call — a cue's mark and
- * its start point, kept across frames so `step` allocates nothing. */
+/** Bearing (rad) of a point from the view's forward direction, positive toward the right
+ * of the frame, wrapped to (-pi, pi]. */
+function bearingOf(view: View, x: number, z: number): number {
+  return wrapPi(Math.atan2(x - view.x, z - view.z) - view.yaw);
+}
+/** Written into, and read straight back out of, within a single call — a cue's mark, its
+ * start point and the frame it is aimed at, kept across frames so `step` allocates nothing. */
 const markScratch = { x: 0, z: 0 };
 const startScratch = { x: 0, y: 0, z: 0 };
+const aimScratch: View = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, fov: 1, aspect: 1 };
+/**
+ * The frame as it will stand about `AIM_AHEAD` from now, if the player keeps walking and
+ * turning the way they have been. Marks are measured against this rather than against the
+ * frame at staging — see `AIM_AHEAD`. Everything the INVARIANT is judged on stays on the
+ * real view: only where a cue is sent is predicted, never where it is allowed to start.
+ */
+function aimFrame(state: DirectorState, view: View): View {
+  const clock = clockworkFor(state);
+  const swing = Math.max(-AIM_YAW_CAP, Math.min(AIM_YAW_CAP, clock.driftYaw * AIM_AHEAD));
+  aimScratch.x = view.x + clock.driftX * AIM_AHEAD;
+  aimScratch.y = view.y;
+  aimScratch.z = view.z + clock.driftZ * AIM_AHEAD;
+  aimScratch.yaw = view.yaw + swing;
+  aimScratch.pitch = view.pitch;
+  aimScratch.fov = view.fov;
+  aimScratch.aspect = view.aspect;
+  return aimScratch;
+}
 /** The point at `range` metres and `bearing` radians from the eye, written into `out`.
  * Forward is (sin yaw, cos yaw), so a bearing is simply added to the yaw. */
 function pointAt(view: View, bearing: number, range: number, out: { x: number; z: number }): void {
@@ -543,59 +684,183 @@ function pointAt(view: View, bearing: number, range: number, out: { x: number; z
 }
 
 /**
- * Where a cue sends its animal, given where the animal is now. Every mark lies inside the
- * frame or straight through it: a cue that ends off screen was not a cue.
+ * Which way across the frame a cue sends its animal, for an animal currently on `side` of
+ * it. The range is `markFor`'s half of the answer; this is the bearing, on its own because
+ * the start draw needs it too — a start is only worth drawing where the walk back to the
+ * mark is one the animal can make.
  *
- * - Cross: the far edge of the frame at the flier's own range, so the flight runs through
- *   the middle of it and out the other side.
- * - Cover: over the centre line to the other side, at the animal's own range — a dash
- *   across the frame rather than a pop-out that stops.
- * - Tree line: in from the edge on the animal's OWN side. A herd sent down the view axis
- *   would be walking at the player, which is the one approach elk and deer flee from.
+ * - Cross: the far edge, so the flight runs through the middle of the frame and out the
+ *   other side.
+ * - Cover: over the centre line to the other side — a dash across the frame rather than a
+ *   pop-out that stops.
+ * - Tree line: in from the edge on the animal's OWN side, and not far in. A herd sent down
+ *   the view axis would be walking at the player, which is the one approach elk and deer
+ *   flee from; and a herd sent to the middle of the frame is a herd walking for half a
+ *   minute, by which time the player is looking somewhere else.
+ */
+function markBearing(view: View, staging: number, side: number): number {
+  // The STRICT frame, the one `onScreen` reads: a mark parked in the margin would leave the
+  // animal standing where the director itself does not count it as seen.
+  if (staging === STAGING_CROSS) return -side * coneHalfAngle(view, VIEW_MARGIN);
+  const share = staging === STAGING_COVER ? COVER_MARK_SHARE : TREELINE_MARK_SHARE;
+  return side * share * coneHalfAngle(view, -VIEW_MARGIN);
+}
+/**
+ * Where a cue sends its animal, given where the animal is now. Every mark lies inside the
+ * frame or straight through it: a cue that ends off screen was not a cue. Measured against
+ * whatever frame the caller hands in, which at staging is the one carried forward — see
+ * `aimFrame`.
  */
 function markFor(view: View, species: number, staging: number, fromX: number, fromZ: number, out: { x: number; z: number }): void {
   const bearing = bearingOf(view, fromX, fromZ);
   const side = bearing < 0 ? -1 : 1;
   const range = Math.hypot(fromX - view.x, fromZ - view.z);
+  const notice = NOTICE[species] ?? Infinity;
   if (staging === STAGING_CROSS) {
-    pointAt(view, -side * coneHalfAngle(view, VIEW_MARGIN), Math.max(CROSS_RANGE[0], range), out);
+    // Flown at the animal's own range, so the crossing is all sideways and none of it
+    // toward or away — but never further out than the species reads at. A butterfly is
+    // gone as a thing you could name at twelve metres, and sending one out to the twenty
+    // this floor was written for the gulls at spent the whole cue on a crossing the player
+    // could not have seen if they had been staring straight at it.
+    const crossRange = Math.min(Math.max(CROSS_RANGE[0], range), notice);
+    pointAt(view, markBearing(view, staging, side), Math.max(MARK_MIN_RANGE, crossRange), out);
     return;
   }
-  // The STRICT frame, the one `onScreen` reads: a mark parked in the margin would leave the
-  // animal standing where the director itself does not count it as seen.
-  const half = coneHalfAngle(view, -VIEW_MARGIN);
-  const share = staging === STAGING_COVER ? COVER_MARK_SHARE : TREELINE_MARK_SHARE;
-  const notice = NOTICE[species] ?? Infinity;
   const markRange = Math.max(MARK_MIN_RANGE, Math.min(range, notice * MARK_NOTICE_SHARE));
-  pointAt(view, side * share * half, markRange, out);
+  pointAt(view, markBearing(view, staging, side), markRange, out);
+}
+
+/** Points sampled along a cue's path, checking that some part of it is in frame. */
+const PATH_SAMPLES = 6;
+/**
+ * Whether the cue lands: whether the animal, somewhere between where it starts and the
+ * mark, is a thing the player is looking at — in frame, close enough for its species, and
+ * not behind the ground.
+ *
+ * The one question a cue exists to answer, and until now it was only ever answered by
+ * proxy. A mark inside the frame implies it for the two stagings that end in frame, but a
+ * CROSSING ends at the far edge on purpose and is seen on the way, so nothing checked it
+ * at all: a butterfly driven from behind the player's shoulder was sent to the far edge
+ * along a line that passes BEHIND them, sweeping from out of frame one way to out of frame
+ * the other without once being in it. That was a fifth of every crossing staged.
+ *
+ * Judged against the frame the mark was aimed at, since that is where the player is
+ * expected to be looking by the time the animal is there.
+ */
+function cueLands(
+  aim: View, ground: Ground, species: number, y: number, mist: number,
+  fromX: number, fromZ: number, mark: { x: number; z: number },
+): boolean {
+  const notice = Math.min(NOTICE[species] ?? Infinity, hideRange(mist));
+  for (let i = 0; i <= PATH_SAMPLES; i++) {
+    const f = i / PATH_SAMPLES;
+    const x = fromX + (mark.x - fromX) * f, z = fromZ + (mark.z - fromZ) * f;
+    if (!inCone(aim, x, y, z, -VIEW_MARGIN)) continue;
+    if (Math.hypot(x - aim.x, y - aim.y, z - aim.z) > notice) continue;
+    if (lineOfSight(ground, aim, x, y, z)) return true;
+  }
+  return false;
+}
+
+/** Whether the animal can cover the ground between where it is and the mark inside
+ * `CUE_FLIGHT`, at the gait this cue asked for. */
+function reachable(species: number, run: boolean, fromX: number, fromZ: number, mark: { x: number; z: number }): boolean {
+  return Math.hypot(mark.x - fromX, mark.z - fromZ) <= cueSpeedFor(species, run) * CUE_FLIGHT;
+}
+/**
+ * The furthest out (m) an animal on this bearing may start and still reach its mark inside
+ * the budget. The mark sits on the same circle about the eye, so the two are `sweep`
+ * radians apart on a circle of radius `r` and the walk between them is the chord
+ * `2 r sin(sweep / 2)` — which is linear in `r`, so the budget reads straight back as a
+ * range.
+ *
+ * Without this the draw spends its tries on starts that are simply too far round, or too
+ * far out, for the animal that has to walk in from them: an elk covers ten metres in the
+ * budget, and a quarter of a radian at forty metres is ten on its own before the frame's
+ * edge is even crossed. Capping the draw instead of rejecting it afterwards is what keeps
+ * the slow species cueable at all — every try that comes back is one the animal can make.
+ */
+function reachRange(species: number, run: boolean, sweep: number): number {
+  const chordPerMetre = 2 * Math.sin(Math.min(Math.PI, Math.abs(sweep)) / 2);
+  if (chordPerMetre <= 0) return Infinity;
+  return cueSpeedFor(species, run) * CUE_FLIGHT / chordPerMetre;
+}
+/** Draws a range in [lo, hi] capped at what `reachRange` allows — negative when nothing in
+ * the band is close enough to walk in from. */
+function drawRange(lo: number, hi: number, cap: number, b: number): number {
+  const top = Math.min(hi, cap);
+  return top < lo ? -1 : lo + b * (top - lo);
+}
+/**
+ * How far past the frame's edge (rad) this species may usefully be started, given that it
+ * has to walk back in. `OUTSIDE_ARC` at most — and, for a slow animal, much less: an elk
+ * covers ten metres, which at the twenty-five it starts from is four tenths of a radian
+ * all in, and the mark is already most of that away. Drawing across the full arc regardless
+ * spends three quarters of a beat's tries on starts no elk could walk in from, which is
+ * how the large species came to be cued half as often as their share of the draw.
+ */
+function outsideArcFor(aim: View, species: number, run: boolean, staging: number, edge: number, nearRange: number): number {
+  const budget = cueSpeedFor(species, run) * CUE_FLIGHT;
+  const sweepMax = 2 * Math.asin(Math.min(1, budget / (2 * nearRange)));
+  return Math.max(0, Math.min(OUTSIDE_ARC, markBearing(aim, staging, 1) + sweepMax - edge));
 }
 
 /**
  * The `i`-th seeded start position for a staging, written into `out`; false when that try
- * is not available or would be seen appearing. Every try is put through `placementValid`,
- * so the invariant holds by construction however the geometry below is drawn.
+ * is not available, would be seen appearing, or is somewhere this species could not walk
+ * in from in time. Every try is put through `placementValid`, so the invariant holds by
+ * construction however the geometry below is drawn.
  */
 function startFor(
-  view: View, ground: Ground, match: MatchState, staging: number, seed: number, tick: number, i: number,
+  view: View, aim: View, ground: Ground, match: MatchState, species: number, staging: number, run: boolean,
+  seed: number, tick: number, i: number,
   out: { x: number; y: number; z: number },
 ): boolean {
   const a = hash3(seed, tick, SALT_BEARING + i, 0);
   const b = hash3(seed, tick, SALT_RANGE + i, 0);
+  // Every start below is drawn on a bearing first and a range second, so the range can be
+  // held to what the animal can walk from there — see `reachRange`.
+  // Both ends as world headings, because the mark is measured against the frame carried
+  // forward and the start against the frame as it stands.
+  const sweepTo = (bearing: number): number => {
+    const fromWorld = view.yaw + bearing;
+    const rel = wrapPi(fromWorld - aim.yaw);
+    return wrapPi(fromWorld - (aim.yaw + markBearing(aim, staging, rel < 0 ? -1 : 1)));
+  };
   if (staging === STAGING_COVER) {
     // Just past the frame's edge, or — for the last two tries — anywhere in front of the
     // player that the ground happens to hide, which is the other half of "break cover".
     // `placementValid` is what decides whether it really is hidden, so the draw does not
     // have to guess where the dips are.
+    const edge = coneHalfAngle(view, VIEW_MARGIN);
     const bearing = i < PLACE_TRIES - 2
-      ? outsideBearing(coneHalfAngle(view, VIEW_MARGIN), a)
+      ? outsideBearing(edge, outsideArcFor(aim, species, run, staging, edge, COVER_RANGE[0]), a)
       : (a * 2 - 1) * Math.PI / 2;
-    pointAt(view, bearing, COVER_RANGE[0] + b * (COVER_RANGE[1] - COVER_RANGE[0]), out);
+    const range = drawRange(COVER_RANGE[0], COVER_RANGE[1], reachRange(species, run, sweepTo(bearing)), b);
+    if (range < 0) return false;
+    pointAt(view, bearing, range, out);
   } else if (staging === STAGING_CROSS) {
     // Twice the margin outside the frame: a crossing is the one staging that ends by
     // leaving the frame again, so it gets the widest berth going in as well.
-    pointAt(view, outsideBearing(coneHalfAngle(view, 2 * VIEW_MARGIN), a), CROSS_RANGE[0] + b * (CROSS_RANGE[1] - CROSS_RANGE[0]), out);
+    const notice = NOTICE[species] ?? Infinity;
+    const crossLo = Math.min(CROSS_RANGE[0], notice * CROSS_NOTICE_SHARE);
+    const edge = coneHalfAngle(view, 2 * VIEW_MARGIN);
+    const bearing = outsideBearing(edge, outsideArcFor(aim, species, run, staging, edge, crossLo), a);
+    // A crossing is the one staging whose sighting happens on the way rather than at the
+    // mark, so what matters is how close the flight passes: in and out across a frame this
+    // wide, the nearest the path comes to the eye is about half the range it is flown at.
+    // Drawn further out than the species reads at, the whole crossing is a speck the
+    // player never registers — which is what a butterfly, noticeable at twelve metres,
+    // did on a fifth of its cues while the gulls beside it were fine.
+    const range = drawRange(crossLo, Math.min(CROSS_RANGE[1], notice), reachRange(species, run, sweepTo(bearing)), b);
+    if (range < 0) return false;
+    pointAt(view, bearing, range, out);
   } else if (i < PLACE_TRIES - 2) {
-    pointAt(view, outsideBearing(coneHalfAngle(view, VIEW_MARGIN), a), TREELINE_RANGE[0] + b * (TREELINE_RANGE[1] - TREELINE_RANGE[0]), out);
+    const edge = coneHalfAngle(view, VIEW_MARGIN);
+    const bearing = outsideBearing(edge, outsideArcFor(aim, species, run, staging, edge, TREELINE_RANGE[0]), a);
+    const range = drawRange(TREELINE_RANGE[0], TREELINE_RANGE[1], reachRange(species, run, sweepTo(bearing)), b);
+    if (range < 0) return false;
+    pointAt(view, bearing, range, out);
   } else {
     // The last two tries walk a herd in out of the fog instead of in from the side. Only
     // worth anything when the fog is close enough that the walk is a cue rather than a
@@ -617,39 +882,81 @@ function startFor(
  * wide. For every bird on such a circle to start outside that frame, the circle's centre
  * has to sit several times its own radius away — hundreds of metres for an eagle, which is
  * a speck in the sky rather than a cue, and further than the mist lets anything be seen
- * anyway. There is no placement for them that the invariant allows, so there is none: a
- * flier cue drives a bird that is already flying, and gives the beat up when there is none
- * in reach. The butterfly is a point at head height with no loop, and is placed like any
- * mammal.
+ * anyway. There is no placement for them that the invariant allows, so there is none.
+ *
+ * Nor, as it turns out, is there a DRIVE: the same arithmetic run over every altitude and
+ * loop radius the field draws, at every bearing out to three hundred metres, finds nowhere
+ * a flock can be turned unseen and still cross the frame — a circle far enough out to hide
+ * whole is further than `RECYCLE`, and one inside `RECYCLE` always has a bird in view. See
+ * `extentHidden`, and the sweep over it in the tests. So a loop flier draw always redraws,
+ * and the crossing the player actually gets is the butterfly's: a point at head height with
+ * no loop, placed like any mammal.
  */
 function placeable(species: number): boolean {
   return species < FIRST_BIRD_SPECIES || species === SPECIES_BUTTERFLY;
 }
-/** A bearing drawn just outside the cone's edge, `OUTSIDE_ARC` at most past it, on
- * whichever side the draw's own half picks. */
-function outsideBearing(edge: number, draw: number): number {
+/** A bearing drawn just outside the cone's edge, `arc` at most past it, on whichever side
+ * the draw's own half picks. */
+function outsideBearing(edge: number, arc: number, draw: number): number {
   const side = draw < 0.5 ? 1 : -1;
-  return side * (edge + (draw < 0.5 ? draw : draw - 0.5) * 2 * OUTSIDE_ARC);
+  return side * (edge + (draw < 0.5 ? draw : draw - 0.5) * 2 * arc);
+}
+
+/** Points probed around a loop flier's circle, on top of its centre and its lead bird. */
+const EXTENT_PROBES = 8;
+/**
+ * Whether EVERY part of a unit is somewhere the player could not see it move.
+ *
+ * For an animal the player reads as one body that is just its own position. For a loop
+ * flier it is not: `moveR` metres of circle carry birds too, a cue moves the anchor, and
+ * the anchor takes the whole circle with it. Checking the lead bird alone would clear a
+ * flock whose far side is dead ahead — the player watches that patch of sky and the whole
+ * formation swings. This is the same argument `placeable` makes about starting a flier
+ * from nothing, and it holds just as hard for turning one that is already flying; the
+ * difference is only that here the circle is where it already is, so it can be measured
+ * rather than ruled out.
+ *
+ * The circle is probed at the lead bird's height: every bird of a loop flies the one
+ * altitude, so the bird the shell reports is the right height for all of them.
+ */
+function extentHidden(view: View, ground: Ground, c: Candidate, mist: number): boolean {
+  if (!placementValid(view, ground, c.x, c.y, c.z, mist)) return false;
+  if (c.moveR <= 0) return true;
+  if (!placementValid(view, ground, c.moveX, c.y, c.moveZ, mist)) return false;
+  for (let i = 0; i < EXTENT_PROBES; i++) {
+    const a = (i / EXTENT_PROBES) * 2 * Math.PI;
+    if (!placementValid(view, ground, c.moveX + c.moveR * Math.cos(a), c.y, c.moveZ + c.moveR * Math.sin(a), mist)) return false;
+  }
+  return true;
 }
 
 /**
  * The nearest unit of `species` the director may re-target: off screen, inside `RECYCLE`,
- * not already running a cue, and — the invariant — somewhere the player could not see it
- * turn. Null when there is none, which is what sends `stageCue` to the pool.
+ * not already running a cue, able to reach a mark inside `CUE_FLIGHT`, and — the invariant
+ * — somewhere the player could not see any part of it turn. Null when there is none, which
+ * is what sends `stageCue` to the pool.
  */
-function driveable(view: View, ground: Ground, candidates: readonly Candidate[], species: number, mist: number): Candidate | null {
+function driveable(
+  view: View, aim: View, ground: Ground, candidates: readonly Candidate[], species: number, staging: number, run: boolean, mist: number,
+): Candidate | null {
   let best: Candidate | null = null;
   let bestDistance = RECYCLE;
   for (let i = 0; i < candidates.length; i++) {
     const c = candidates[i]!;
     if (c.species !== species || c.onScreen || c.phase === PHASE_CUE) continue;
-    // Reach is measured ACROSS THE GROUND, not through the air. A raven pair forty metres
-    // up and ten metres away is right on top of the player in the only sense a cue cares
-    // about — how far it has to travel to cross their view — and a straight-line distance
-    // would rule it out for being high rather than for being far.
-    const distance = Math.hypot(c.x - view.x, c.z - view.z);
+    // From the ANCHOR, because the anchor is the thing that travels — the same point the
+    // mark is measured from and against. A gull's bird can sit fifty metres from its loop
+    // centre, so reading the reach off the bird asks how far the wrong thing has to go.
+    //
+    // And measured ACROSS THE GROUND, not through the air: a raven pair forty metres up and
+    // ten metres away is right on top of the player in the only sense a cue cares about,
+    // and a straight-line distance would rule it out for being high rather than for being far.
+    const distance = Math.hypot(c.moveX - view.x, c.moveZ - view.z);
     if (distance >= bestDistance) continue;
-    if (!placementValid(view, ground, c.x, c.y, c.z, mist)) continue;
+    if (!extentHidden(view, ground, c, mist)) continue;
+    markFor(aim, species, staging, c.moveX, c.moveZ, markScratch);
+    if (!reachable(species, run, c.moveX, c.moveZ, markScratch)) continue;
+    if (!cueLands(aim, ground, species, c.y, mist, c.moveX, c.moveZ, markScratch)) continue;
     bestDistance = distance;
     best = c;
   }
@@ -684,6 +991,7 @@ export function stageCue(
 ): boolean {
   state.nextTry = tick + Math.round(RETRY * SIM_TICK_HZ);
   const clock = clockworkFor(state);
+  const aim = aimFrame(state, view);
   let tried = 0;
   for (let attempt = 0; attempt < CUE_DRAWS; attempt++) {
     const species = pickSpeciesExcept(state, hash3(seed, tick, SALT_SPECIES + attempt, 0), tried);
@@ -692,25 +1000,32 @@ export function stageCue(
     const staging = stagingFor(species);
     // Breaking cover is a bolt; a flier's crossing and a herd's walk-in are not.
     const run = staging === STAGING_COVER;
-    const driven = driveable(view, ground, candidates, species, match.mist);
+    const driven = driveable(view, aim, ground, candidates, species, staging, run, match.mist);
     if (driven !== null) {
       // From the ANCHOR, not from the animal: the goal replaces the anchor, so a mark
       // measured anywhere else is a mark the mover cannot honour.
-      markFor(view, species, staging, driven.moveX, driven.moveZ, markScratch);
+      markFor(aim, species, staging, driven.moveX, driven.moveZ, markScratch);
       out.push({ kind: "drive", id: driven.id, goalX: markScratch.x, goalZ: markScratch.z, run });
       clock.logAtStage = state.logCount;
+      clock.stageTick = clock.tick;
       return true;
     }
     if (!placeable(species)) continue;
     for (let i = 0; i < PLACE_TRIES; i++) {
-      if (!startFor(view, ground, match, staging, seed, tick, i, startScratch)) continue;
+      if (!startFor(view, aim, ground, match, species, staging, run, seed, tick, i, startScratch)) continue;
       // A placed animal is its own anchor, so the two spaces coincide here.
-      markFor(view, species, staging, startScratch.x, startScratch.z, markScratch);
+      markFor(aim, species, staging, startScratch.x, startScratch.z, markScratch);
+      // A start the animal cannot walk in from in time is no better than no start at all —
+      // the next try draws one closer in, or shallower against the frame's edge. Nor is one
+      // whose whole walk stays out of frame.
+      if (!reachable(species, run, startScratch.x, startScratch.z, markScratch)) continue;
+      if (!cueLands(aim, ground, species, startScratch.y, match.mist, startScratch.x, startScratch.z, markScratch)) continue;
       out.push({
         kind: "place", species, x: startScratch.x, y: startScratch.y, z: startScratch.z,
         goalX: markScratch.x, goalZ: markScratch.z, run,
       });
       clock.logAtStage = state.logCount;
+      clock.stageTick = clock.tick;
       return true;
     }
   }
@@ -744,7 +1059,8 @@ function sweepRemovals(
 }
 
 /**
- * Whether a cue is still walking AND has yet to pay for itself. One UNPAID cue at a time:
+ * Whether a cue is still walking AND has yet to pay for itself, AND is still young enough
+ * to be worth waiting on. One UNPAID cue at a time, for at most `CUE_PATIENCE`:
  * the staging condition only clears once something has been seen, so with no gate at all
  * the director would arrange a fresh animal every frame the last one spent on its way in
  * and empty its whole pool into the player's back.
@@ -757,9 +1073,18 @@ function sweepRemovals(
  * the cadence was not being set by the gap at all, but by how long animals took to stop
  * walking. Once a sighting lands the cue has delivered and the next beat may be arranged
  * over the top of it, which is what the woods look like when they are busy.
+ *
+ * And for at most `CUE_PATIENCE`, which is the ceiling on the whole tail. Waiting on a cue
+ * with no deadline means a cue that misses costs its entire walk in silence, and two or
+ * three misses running cost a minute and a half — the woods fall dead for exactly as long
+ * as the player keeps looking somewhere else. Past the deadline the beat stops waiting and
+ * arranges another animal; the one still walking is welcome to arrive and be seen, it just
+ * no longer holds the floor.
  */
 function cueUnpaid(state: DirectorState, candidates: readonly Candidate[]): boolean {
-  if (state.logCount !== clockworkFor(state).logAtStage) return false;
+  const clock = clockworkFor(state);
+  if (state.logCount !== clock.logAtStage) return false;
+  if (clock.tick - clock.stageTick > CUE_PATIENCE * SIM_TICK_HZ) return false;
   for (let i = 0; i < candidates.length; i++) if (candidates[i]!.phase === PHASE_CUE) return true;
   return false;
 }

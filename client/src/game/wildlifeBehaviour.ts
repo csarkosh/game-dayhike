@@ -680,18 +680,27 @@ function stepRoost(u: UnitState, tick: number, players: readonly PlayerPoint[], 
   }
 }
 
-/** How fast a cue covers the ground: the species' own walk, or the speed it flees at when
- * the director asked for a bolt. A flier has one airspeed and ignores `cueRun`; the
- * fall-through is the corvids', and any flier added beside them states its own. */
-function cueSpeed(u: UnitState): number {
-  switch (u.unit.species) {
-    case SPECIES_ELK: case SPECIES_DEER: return u.cueRun ? ELK_FLEE_SPEED : ELK_WALK_SPEED;
-    case SPECIES_RABBIT: return u.cueRun ? RABBIT_BOLT_SPEED : RABBIT_RETURN_SPEED;
-    case SPECIES_SQUIRREL: return u.cueRun ? SQUIRREL_RUN_SPEED : SQUIRREL_FORAGE_SPEED;
+/**
+ * How fast a cue covers the ground: the species' own walk, or the speed it flees at when
+ * the director asked for a bolt. A flier has one airspeed and ignores `run`; the
+ * fall-through is the corvids', and any flier added beside them states its own.
+ *
+ * Exported because the director has to know it before it picks a mark. A mark the animal
+ * cannot reach while the player is still looking that way is not a cue, so the director
+ * budgets the walk in seconds — and seconds are metres only once the speed is known here.
+ */
+export function cueSpeedFor(species: number, run: boolean): number {
+  switch (species) {
+    case SPECIES_ELK: case SPECIES_DEER: return run ? ELK_FLEE_SPEED : ELK_WALK_SPEED;
+    case SPECIES_RABBIT: return run ? RABBIT_BOLT_SPEED : RABBIT_RETURN_SPEED;
+    case SPECIES_SQUIRREL: return run ? SQUIRREL_RUN_SPEED : SQUIRREL_FORAGE_SPEED;
     case SPECIES_GULL: return GULL_SPEED;
     case SPECIES_EAGLE: return EAGLE_SPEED;
     default: return RAVEN_SPEED;
   }
+}
+function cueSpeed(u: UnitState): number {
+  return cueSpeedFor(u.unit.species, u.cueRun);
 }
 
 /**
