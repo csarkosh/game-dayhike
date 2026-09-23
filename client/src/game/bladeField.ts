@@ -88,8 +88,11 @@ export function bladeSizeFor(draw: number, cover: number): 0 | 1 | 2 {
 /** Four numbers like `fadeBands`: grow-in start and end, collapse start and end. */
 export type BladeEdges = readonly [number, number, number, number];
 
-/** A no-op grow-in: two distinct negative edges every distance is past. */
-const GROW_NONE: readonly [number, number] = [-2, -1];
+/** A no-op grow-in: two distinct negative edges every distance is past.
+ * Exported so `duffField.ts`'s own near tier — which likewise has no
+ * grow-in — can share this exact pair rather than each field carrying its
+ * own copy that a later edit could drift out of step with. */
+export const GROW_NONE: readonly [number, number] = [-2, -1];
 
 /** The three tiers' hand-off edges, in true eye distance. The fine tier has
  * no grow-in; each tier collapses over the band the next one grows over; the
