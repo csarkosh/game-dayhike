@@ -150,22 +150,40 @@ describe("rockRelief", () => {
     const tris = cut.indices.length / 3;
     const clusters: number[][] = [];
     const cosTol = Math.cos((5 * Math.PI) / 180);
+    // Which candidate planes actually produced a facet: evidenced by some cut
+    // triangle's normal matching that plane, so the check below can hold each
+    // one to the floor share, not just the cap.
+    const kept = planes.map(() => false);
     let flat = 0;
     for (let t = 0; t < tris; t++) {
       const n = [cut.normals[t * 9]!, cut.normals[t * 9 + 1]!, cut.normals[t * 9 + 2]!];
       // A facet triangle: all three input positions were projected onto one plane, so
       // its normal matches that plane's within tolerance.
-      for (const p of planes) {
-        if (n[0]! * p.nx + n[1]! * p.ny + n[2]! * p.nz > cosTol) { flat++; if (!clusters.some((c) => c[0]! * p.nx + c[1]! * p.ny + c[2]! * p.nz > cosTol)) clusters.push([p.nx, p.ny, p.nz]); break; }
+      for (let pi = 0; pi < planes.length; pi++) {
+        const p = planes[pi]!;
+        if (n[0]! * p.nx + n[1]! * p.ny + n[2]! * p.nz > cosTol) {
+          flat++; kept[pi] = true;
+          if (!clusters.some((c) => c[0]! * p.nx + c[1]! * p.ny + c[2]! * p.nz > cosTol)) clusters.push([p.nx, p.ny, p.nz]);
+          break;
+        }
       }
     }
     expect(clusters.length).toBeGreaterThanOrEqual(6);
-    // No single plane took more than the cap share, and every kept plane took at least the floor.
-    for (const p of planes) {
+    // No single plane took more than the cap share, and every plane that was
+    // actually kept took at least the floor. Share is recomputed here on the
+    // ORIGINAL, unshrunk sphere, where the implementation itself judges the
+    // skip rule on the shrunk one; shrinking pulls every vertex toward the
+    // centroid, which can only shrink a plane's cap, never grow it, so this
+    // unshrunk share is always ≥ the implementation's own share. A floor
+    // check against this larger number is still sound for a plane the
+    // implementation kept — its true share clears the floor by even more.
+    for (let pi = 0; pi < planes.length; pi++) {
+      const p = planes[pi]!;
       let took = 0;
       for (let v = 0; v < SPHERE.positions.length / 3; v++) if (SPHERE.positions[v * 3]! * p.nx + SPHERE.positions[v * 3 + 1]! * p.ny + SPHERE.positions[v * 3 + 2]! * p.nz > p.d) took++;
       const share = took / (SPHERE.positions.length / 3);
       if (share > 0) expect(share).toBeLessThanOrEqual(ROCK_CAP_SHARE[1] + 1e-9);
+      if (kept[pi]) expect(share).toBeGreaterThanOrEqual(ROCK_CAP_SHARE[0] - 1e-9);
     }
     expect(flat).toBeGreaterThan(0);
   });
