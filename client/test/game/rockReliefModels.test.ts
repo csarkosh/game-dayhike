@@ -24,12 +24,12 @@ import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../../src/sim/
  * so a plane offset by that one global distance slices the same cap in every
  * direction and all ten candidates survive. A real rock is strongly
  * anisotropic, and against an earlier version that offset its planes by that
- * single global number, only 17 of 320 candidate planes across these four
- * models survived the cap-share rule — ten of the sixteen shipped cut buckets
- * kept none at all, and a boulder's four "cuts" came out as one solid with
- * four different noise seeds. The suite was green throughout. Nothing short of
- * the shipped geometry can hold the cut to what the design promises, so this
- * file asserts those promises on the shipped geometry.
+ * single global number, only 22 of 320 candidate planes across these four
+ * models survived the cap-share rule — seven of the sixteen shipped cut
+ * buckets kept none at all, and `boulder_a`'s four "cuts" came out as one
+ * solid with four different noise seeds. The suite was green throughout.
+ * Nothing short of the shipped geometry can hold the cut to what the design
+ * promises, so this file asserts those promises on the shipped geometry.
  *
  * The arrays come through the same path production uses — the glTF loader into
  * a `NullEngine` scene, then the LOD root's world matrix baked into the
@@ -282,7 +282,7 @@ describe("the cut on the shipped rock and boulder models", () => {
               const now = Math.hypot(out.positions[v * 3]! - cx, out.positions[v * 3 + 1]! - cy, out.positions[v * 3 + 2]! - cz);
               // The slack is float32 store rounding and nothing else — the
               // worst excess measured over all thirty-two combinations is
-              // 27 nm, on a boulder 2.5 m across.
+              // 35.7 nm, on a boulder 2.5 m across.
               expect(now, `${name} ${lod} cut${cut}`).toBeLessThanOrEqual(was + 1e-6);
             }
           }

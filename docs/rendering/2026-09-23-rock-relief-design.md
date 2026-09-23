@@ -56,8 +56,9 @@ runs from the ground to `BASE_H · scale · (1 − BOULDER_SINK)` — the height
 the UNCUT mesh's visible top. Whatever a cut takes off the top is therefore
 box standing above stone. Measured on the shipped models: `boulder_a`'s top is
 untouched in all four of its cuts, and `boulder_b` loses 11.3 % of its height
-in cut 0 and 2.5–2.8 % in two others, which at the largest instance scale the
-sim draws is **up to 0.29 m of collider above visible rock**. Accepted rather
+in cut 0 and 2.5–2.8 % in two others — 0.2135 m in model space, which at the
+largest instance scale the sim draws (`CLUTTER_BOULDER_SCALE_MAX = 1.39`) is
+**up to 0.30 m of collider above visible rock**. Accepted rather
 than fixed: it is inside the ~0.15 m the box's own comment already allows for
 ground tilt at model scale, a 2.6 m boulder is not something a hiker climbs,
 and the alternative — narrowing `ROCK_DEPTH` — would spend the cut variety
@@ -69,7 +70,7 @@ close it.
 ## 4. The cut
 
 For each model and each of the four cuts, on the LOD0 vertex arrays, then
-LOD1 and LOD2 with the same planes:
+LOD1 with the same planes:
 
 - **Planes.** `ROCK_PLANES = 10` seeded planes: a random unit normal from the
   (model, cut, plane) hash and a depth between `ROCK_DEPTH = [0.08, 0.28]` of
@@ -103,7 +104,9 @@ shape, and the existing dither seam hides it.
 
 In `clutterMeshes.ts` the rock and boulder classes gain a cut dimension: an
 instance's cut is `hash & 3`; its bucket is `[class][variant][cut][lod]` —
-32 buckets where there are 8. The GLB's mesh is cut four ways as it lands and
+sixteen buckets where there were four, each at the near and the far LOD, so
+thirty-two meshes where there were eight, the same counting §1's cost ruling
+and the load-time pass use. The GLB's mesh is cut four ways as it lands and
 the four results become the four cut buckets' meshes, sharing the model's
 material with `useVertexColors` on. Every other class is untouched.
 
@@ -115,7 +118,8 @@ the same path the tests already use for GLB-backed classes):
 - every output vertex lies inside the original hull (its distance from the
   centroid along its own direction never exceeds the input's);
 - the planes' count and depths are inside their bands and the skip rule
-  holds (no cap under 3 % or over 35 %);
+  holds (no cap under the floor or over 35 % — the floor is 2 %, see the
+  Amendments);
 - a cut produces at least six distinct facet normals (clustered at 5°);
 - vertices = 3 × triangles after unwelding; every normal is unit and equals
   its triangle's geometric normal; the roughening keeps shared-edge vertices
@@ -199,20 +203,24 @@ What the build settled that this spec's earlier sections stated differently:
   Those two readings agree only on a sphere. On the shipped models, which run
   two to three times longer on one axis than another, the global reading put
   nearly every plane outside the surface, left its cap empty, and had the
-  cap-share floor drop it: 7 of 160 candidates survived at the near LOD and
-  ten of the sixteen cut buckets kept none at all. A plane is now offset by
+  cap-share floor drop it: 11 of 160 candidates survived at the near LOD and
+  seven of the sixteen cut buckets kept none at all. A plane is now offset by
   the model's support distance along that plane's own normal, which is the
-  same bite on any shape and the same plane as before on a sphere. 135 of 160
-  survive; the weakest bucket keeps six.
+  same bite on any shape and the same plane as before on a sphere. 148 of 160
+  survive at the near LOD and 295 of 320 across both; the weakest bucket
+  keeps six.
 - **The cap-share floor is 2 %, not 3 %.** With the offsets measured per
   direction, a 3 % floor still left `boulder_a` under the six distinct facet
   planes §6 asks for. Planes kept per cut, out of ten candidates, at 3 % and
   then at 2 %: `boulder_a` 4→6, 5→8, 5→7, 7→8; every other model was already
   clear and barely moves — `rock_a` 10/9/10/10 → 10/10/10/10, `rock_b`
-  9/8/10/10 → 10/9/10/10, `boulder_b` 9/10/9/10 → 10/10/9/10. The change is
-  confined to the three `boulder_a` buckets that were failing the design's own
-  floor; a 2 % cap on the smallest of these models is still eleven vertices,
-  which is a facet and not a sliver.
+  9/8/10/10 → 10/9/10/10, `boulder_b` 9/10/9/10 → 10/10/10/10. Nine of the
+  sixteen buckets gain a plane in all, thirteen planes between them, but
+  only `boulder_a`'s three were failing the design's own floor, and they are
+  what the change is for: at 3 % those three show 4, 5 and 5 distinct facet
+  planes against the six §6 asks, and at 2 % they show 6, 8 and 7. A 2 % cap
+  on the smallest of these models is still eleven vertices, which is a facet
+  and not a sliver.
 - **The cap-share rule runs once, on LOD0, and both LODs are cut with what
   survives it.** §5 shares "the same plane list" between a model's LODs, and
   the build shared the CANDIDATE list while each LOD applied the rule to its

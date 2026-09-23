@@ -30,9 +30,11 @@ spreads an instance across its class's four cuts by its own hash. The
 decisions the design's earlier sections did not settle are recorded in the
 spec's Amendments section and explained here.
 
-On the four shipped models, 135 of the 160 candidates survive the cap-share
-rule, the weakest bucket keeping six and most keeping ten. That number is
-worth stating because it was 7 for most of this work: the offsets were keyed
+On the four shipped models, 148 of the 160 candidates survive the cap-share
+rule at the near LOD — `rock_a` 10/10/10/10, `rock_b` 10/9/10/10, `boulder_a`
+6/8/7/8, `boulder_b` 10/10/10/10 — so the weakest bucket keeps six and eleven
+of the sixteen keep all ten. Across both LODs it is 295 of 320. That number is
+worth stating because it was 11 for most of this work: the offsets were keyed
 to the model's largest reach in any direction rather than to its reach in the
 plane's own, which is the same thing only on a sphere, and the sphere was the
 only fixture the geometry tests used. §12 records what closed that.
@@ -93,8 +95,8 @@ vertex slightly farther from the centroid than it began — measured at 21 µm
 on the shipped boulders. A final clamp returns any such vertex to its own
 starting radius, which makes the bound exact on any mesh rather than exact
 only on a convex one. Measured after it, over all thirty-two cut meshes at
-both LODs, the largest excess is 27 nm, which is float32 store rounding and
-nothing else.
+both LODs, the largest excess is 35.7 nm (on `boulder_b`'s far LOD, cut 3),
+which is float32 store rounding and nothing else.
 
 The per-vertex scaling was caught by a test rather than by inspection: an
 anisotropic fixture (the icosphere scaled unevenly on its three axes,
@@ -205,7 +207,7 @@ and it is worth being exact about what each one buys:
 
   The number that makes this meaningful is the control: the **uncut** pairs,
   which share geometry by definition, disagree by **0.64 %–1.09 %**. That is
-  decimation's own contribution. So the cut adds at most **1.87 %** to a gap
+  decimation's own contribution. So the cut adds at most **1.86 %** to a gap
   that was already there.
 
   Read on bounding extents instead, the same pairs give 0.00–3.71 %. Both
@@ -233,10 +235,25 @@ went first so drift could not load onto one side:
 | 2 | 35.85 ms | 35.80 ms | **+0.05** |
 | 3 | 37.39 ms | 36.48 ms | +0.91 |
 
-**The gate passes.** The first two pairs are +0.10 and +0.05 ms against a
-≤ +0.3 ms bar; the third was taken as the machine's load climbed and both
-builds rose with it. An earlier run at EDGE, taken the same way, read −0.05
-and +0.14 ms.
+**No evidence of a regression, and the strongest reason is structural rather
+than measured.** The cut does not change the triangle count the GPU draws each
+frame. What multiplied it is the unweld — three vertices per triangle instead
+of a shared mesh — and the unweld has been there since the first commit of
+this work, in the control and the branch alike once the planes started biting.
+Projecting a vertex onto a plane moves it; it does not add one. So a frame-time
+difference between the two builds would have to come from something other than
+the geometry the pass exists to make, which is the same argument §10 makes for
+load time and the same reason both instruments are poor detectors of whether
+the planes cut at all.
+
+What the timings say, and no more: two interleaved pairs at +0.10 and +0.05 ms
+against a ≤ +0.3 ms bar, and a third at +0.91 ms taken as the machine's load
+climbed, with both builds rising together. The third exceeds the bar and is
+discounted for drift — which is the same reasoning this section says below
+cannot be relied on, so it is offered as a reading to set aside rather than as
+a pass. EDGE read −0.05 and +0.14 ms, but on an **earlier** build, before the
+geometry fix in §12; it has not been re-run on the finished cut, and by the
+argument above it would not be expected to move if it were.
 
 Getting here took three attempts and the two failures are worth recording,
 because both would have been reported as findings.
@@ -345,19 +362,26 @@ each plane out at the model's longest reach no matter which way it faced, so
 in every direction but the longest it sat outside the surface entirely, its
 cap came out empty, and the cap-share floor dropped it as too small.
 
-Measured across the four shipped models at the near LOD: **7 of 160 candidate
-planes survived**. Ten of the sixteen cut buckets kept none at all. Three of
-`boulder_a`'s four cuts were the same solid, differing only in the seed of
-their roughening noise — four cuts per model, spread across a field of rocks
-by hash, delivering one silhouette. What made the rocks read as angular in §7
-was the unwelding and the flat face normals, which is real and is most of the
-look, but it is not the fracture the planes were there to cut.
+Measured across the four shipped models at the near LOD: **11 of 160 candidate
+planes survived** (22 of 320 across both LODs). Seven of the sixteen cut
+buckets kept none at all. All four of `boulder_a`'s cuts were the same solid,
+differing only in the seed of their roughening noise — four cuts per model,
+spread across a field of rocks by hash, delivering one silhouette. What made
+the rocks read as angular in §7 was the unwelding and the flat face normals,
+which is real and is most of the look, but it is not the fracture the planes
+were there to cut.
+
+Those pre-fix figures were re-derived against the removed code rather than
+carried forward from the first reading of it, which reported 7, ten and three.
+A section whose subject is a measurement that looked right and was not is the
+last place to quote a number nobody re-took.
 
 The fix is to offset a plane by the model's reach **along that plane's own
 normal** — its support distance — which is the same proportional bite on any
-shape and the identical plane on a sphere. After it, 135 of the 160 survive,
-the weakest bucket keeps six, and no two cuts of one model agree on their
-outline to closer than 6.3 % of the model's largest dimension.
+shape and the identical plane on a sphere. After it, 148 of the 160 survive at
+the near LOD and 295 of 320 across both, the weakest bucket keeps six, and no
+two cuts of one model agree on their outline to closer than 6.3 % of the
+model's largest dimension.
 
 **Why nothing caught it, which is the part worth remembering.**
 
@@ -414,7 +438,8 @@ this pass can be seen from the simulation. A boulder's collider box runs from
 the ground to `BASE_H · scale · (1 − BOULDER_SINK)`, sized from the UNCUT
 mesh's height — a constant in `sim/passes/clutter.ts` that a renderer-only
 pass must not move, and does not. But whatever a cut takes off the top is box
-left standing above stone: **up to 0.29 m at the largest instance scale the
+left standing above stone: 0.2135 m in model space, which at
+`CLUTTER_BOULDER_SCALE_MAX` is **up to 0.30 m at the largest instance scale the
 sim draws.** Nothing in `sim/` changed and the mesh is still wholly inside its
 box, so "renderer-only, colliders untouched" remains literally true — and a
 reader should not take it to mean that what the player sees and what they
@@ -436,6 +461,11 @@ boulder's height so it cannot quietly grow.
   new rule with its own look consequences — a boulder that can never be
   cleaved is a boulder that keeps its dome — and that is a design question,
   not a bug fix.
+- **Retire or rewrite `2026-09-23-rock-relief-plan.md`.** It predates the work
+  this note records, it is written as a sequence of tasks rather than as a
+  description of the game, and its code sketch calls `rockHalfExtent` eight
+  times — a function the cut no longer has. A reader who finds it first will
+  be reading a shape the code left behind.
 - Moss and lichen on the north faces of facets, as a vertex-colour tint by
   facet normal (from the design's own follow-ups).
 - Cut the ground's scree paint to match, so a boulder and the scree it sits in

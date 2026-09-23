@@ -205,7 +205,6 @@ export function reliefMesh(source: Mesh, model: number, cut: number, planes: Roc
   // pair was cut with the exact same plane list — the shell's own
   // responsibility, since rockRelief.ts has no notion of LOD at all.
   mesh.metadata = { planes };
-  mesh.refreshBoundingInfo();
   return mesh;
 }
 
