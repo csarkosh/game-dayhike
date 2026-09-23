@@ -240,9 +240,10 @@ describe("the cut on the shipped rock and boulder models", () => {
       const lod0 = arraysFor(name, "LOD0");
       const lod1 = arraysFor(name, "LOD1");
       expect(lod1.positions.length).toBeLessThan(lod0.positions.length);
-      // How far apart the two levels already are before anything is cut. LOD1
-      // is a decimation, so it is never zero, and the cut cannot be asked to
-      // do better than the geometry it was handed.
+      // How far apart the two levels already are before anything is cut.
+      // LOD1 carries 40 % to 52 % of LOD0's vertices across these four
+      // models, so this is never zero, and the cut cannot be asked to do
+      // better than the geometry it was handed.
       let uncut = 0;
       for (const dir of PROBE_DIRS) uncut = Math.max(uncut, Math.abs(supportIn(lod0.positions, dir) - supportIn(lod1.positions, dir)));
       const size = Math.max(...extentOf(lod0.positions));
@@ -255,9 +256,9 @@ describe("the cut on the shipped rock and boulder models", () => {
         const far = rockRelief(lod1, planes, model, cut);
         let delta = 0;
         for (const dir of PROBE_DIRS) delta = Math.max(delta, Math.abs(supportIn(near.positions, dir) - supportIn(far.positions, dir)));
-        // Cutting may widen the gap decimation already left — the two levels
-        // carry different vertices, so a plane lands on a different sample of
-        // the surface — but only by a little. Measured: the cut adds at most
+        // Cutting may widen the gap the two levels already had — they carry
+        // different vertices, so a plane lands on a different sample of the
+        // surface — but only by a little. Measured: the cut adds at most
         // 1.9 % of the model's size to a 0.6-1.1 % starting gap. A pair of
         // levels cut by DIFFERENT plane lists, the failure this guards, ran
         // several times that.

@@ -206,9 +206,11 @@ and it is worth being exact about what each one buys:
   counts drop 2400 → 1080 for a rock and 6450 → 2898 for a boulder.
 
   The number that makes this meaningful is the control: the **uncut** pairs,
-  which share geometry by definition, disagree by **0.64 %–1.09 %**. That is
-  decimation's own contribution. So the cut adds at most **1.86 %** to a gap
-  that was already there.
+  measured the same way, disagree by **0.64 %–1.09 %**. The two levels of a
+  model are not the same mesh — LOD1 carries about 45 % of LOD0's vertices —
+  so their outlines differ a little before anything is cut, and that range is
+  by how much. So the cut adds at most **1.86 %** to a gap that was already
+  there.
 
   Read on bounding extents instead, the same pairs give 0.00–3.71 %. Both
   numbers are correct; an extent is a difference of two extremes and so
