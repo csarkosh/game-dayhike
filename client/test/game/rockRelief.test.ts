@@ -206,6 +206,39 @@ describe("rockRelief", () => {
       if (had) { for (let i = 0; i < 3; i++) expect(p[i]).toBeCloseTo(had[i]!, 5); } else byKey.set(k, p);
     }
   });
+  it("takes the side the input's vertex normals call out, whichever way the input winds", () => {
+    // The same sphere with every triangle's last two corners swapped: an
+    // identical solid with identical outward vertex normals, wound the other
+    // way. Models ship with either winding — the glTF loader's meshes wind
+    // with their normals, a mesh built in Babylon against them — so a facet
+    // normal taken straight from the cross product of the triangle's edges
+    // points OUT of one and INTO the other. A rock whose facets all face
+    // inward is not invisible: with two-sided lighting it lights by an
+    // inward normal, which is to say it renders black.
+    const indices = new Uint32Array(SPHERE.indices);
+    for (let t = 0; t < indices.length / 3; t++) {
+      const swap = indices[t * 3 + 1]!;
+      indices[t * 3 + 1] = indices[t * 3 + 2]!;
+      indices[t * 3 + 2] = swap;
+    }
+    const reversed = rockRelief({ ...SPHERE, indices }, planes, 0, 0);
+    for (const c of [cut, reversed]) {
+      const tris = c.indices.length / 3;
+      let inward = 0;
+      for (let t = 0; t < tris; t++) {
+        const src = t * 3;
+        // A sphere's vertex normal is its own unit position, and a cut only
+        // ever moves a vertex inward, so "outward" here is just the facet
+        // normal agreeing with the vertex it was cut from.
+        const i = c.indices[src]!;
+        const d = c.normals[i * 3]! * c.positions[i * 3]! + c.normals[i * 3 + 1]! * c.positions[i * 3 + 1]! + c.normals[i * 3 + 2]! * c.positions[i * 3 + 2]!;
+        if (d < 0) inward++;
+      }
+      expect(inward).toBe(0);
+    }
+    // Reversing the winding reverses nothing else: the same solid comes out.
+    expect(Array.from(reversed.positions).sort()).toEqual(Array.from(cut.positions).sort());
+  });
   it("is deterministic, and two cuts of one model differ", () => {
     const again = rockRelief(SPHERE, planes, 0, 0);
     expect(Array.from(again.positions)).toEqual(Array.from(cut.positions));

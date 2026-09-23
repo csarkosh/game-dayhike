@@ -156,6 +156,16 @@ export function cutOf(inst: ClutterInstance): number {
  * per-facet luma written as vertex colour. Keeps the source's material — a
  * `PBRMaterial` reads vertex colour from the MESH's own `useVertexColors`
  * flag, so there is nothing to set on the material itself.
+ *
+ * It also keeps the source's SIDE ORIENTATION, which is not cosmetic. That
+ * value picks the winding the rasterizer calls a front face, and the cut
+ * keeps the source's triangle order, so the two must agree. A glTF mesh comes
+ * out of the loader clockwise, while a mesh built here defaults to
+ * counter-clockwise in this left-handed scene — so leaving it at the default
+ * would declare the cut's every triangle a BACK face. Nothing would be culled
+ * (these materials draw both sides), but `twoSidedLighting` negates the
+ * shading normal on a back face, so every facet would light by a normal
+ * pointing into the rock and the whole model would render near-black.
  */
 export function reliefMesh(source: Mesh, model: number, cut: number, planes: RockPlane[]): Mesh {
   const positions = source.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
@@ -171,6 +181,7 @@ export function reliefMesh(source: Mesh, model: number, cut: number, planes: Roc
   data.indices = geometry.indices;
   if (geometry.uvs) data.uvs = geometry.uvs;
   data.applyToMesh(mesh, false);
+  mesh.sideOrientation = source.sideOrientation;
   mesh.material = source.material;
   mesh.useVertexColors = true;
   // Stamped on the mesh so a test can confirm every LOD of one (model, cut)

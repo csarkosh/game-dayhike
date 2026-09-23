@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
+import { Material } from "@babylonjs/core/Materials/material.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
@@ -426,7 +427,84 @@ describe("cutsFor and cutOf", () => {
   });
 });
 
+/**
+ * The side orientation `mesh` MUST declare for the side its own normals call
+ * outward to rasterize as the FRONT face — derived from the geometry rather
+ * than read off the mesh, so it can be compared with what the mesh declares.
+ *
+ * A NullEngine has no rasterizer, so this is the front-face rule written out
+ * as arithmetic: in Babylon's default LEFT-handed scene, a triangle whose
+ * outward normal agrees with the right-handed cross product of its edges is
+ * drawn CLOCKWISE on screen, so such a mesh must declare
+ * `ClockWiseSideOrientation`, and one wound the other way the counter-
+ * clockwise value. Both of Babylon's own conventions confirm it: a mesh from
+ * a builder (`CreateBox` below) winds against its normals and defaults to
+ * counter-clockwise here, while the glTF loader hands back clockwise meshes
+ * whose triangles wind with their normals.
+ *
+ * Getting this wrong does not hide the mesh — clutter materials draw both
+ * sides — but `twoSidedLighting` negates the shading normal on a back face,
+ * so every triangle would light by a normal pointing into the solid.
+ */
+function windingOrientation(mesh: Mesh): number {
+  expect(mesh.getScene().useRightHandedSystem).toBe(false);
+  const p = mesh.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
+  const n = mesh.getVerticesData(VertexBuffer.NormalKind) as Float32Array;
+  const indices = mesh.getIndices() as number[];
+  let vote = 0;
+  for (let t = 0; t < indices.length / 3; t++) {
+    const [a, b, c] = [indices[t * 3] as number, indices[t * 3 + 1] as number, indices[t * 3 + 2] as number];
+    const e1 = [p[b * 3]! - p[a * 3]!, p[b * 3 + 1]! - p[a * 3 + 1]!, p[b * 3 + 2]! - p[a * 3 + 2]!];
+    const e2 = [p[c * 3]! - p[a * 3]!, p[c * 3 + 1]! - p[a * 3 + 1]!, p[c * 3 + 2]! - p[a * 3 + 2]!];
+    const g = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!];
+    // Summed over the three corners so one stray normal cannot swing a facet.
+    const s = [0, 1, 2].map((k) => n[a * 3 + k]! + n[b * 3 + k]! + n[c * 3 + k]!);
+    const d = g[0]! * s[0]! + g[1]! * s[1]! + g[2]! * s[2]!;
+    if (d > 0) vote++;
+    else if (d < 0) vote--;
+  }
+  expect(vote).not.toBe(0);
+  return vote > 0 ? Material.ClockWiseSideOrientation : Material.CounterClockWiseSideOrientation;
+}
+
+/** A stand-in for a loaded GLB mesh: the glTF loader's meshes wind with their
+ * normals and declare `ClockWiseSideOrientation`, where a builder's mesh does
+ * neither, so a box has to be turned inside out to stand in for one. */
+function glbLikeBox(name: string, scene: Scene): Mesh {
+  const mesh = CreateBox(name, { size: 1 }, scene);
+  const indices = mesh.getIndices() as number[];
+  for (let t = 0; t < indices.length / 3; t++) {
+    const swap = indices[t * 3 + 1] as number;
+    indices[t * 3 + 1] = indices[t * 3 + 2] as number;
+    indices[t * 3 + 2] = swap;
+  }
+  mesh.setIndices(indices);
+  mesh.sideOrientation = Material.ClockWiseSideOrientation;
+  return mesh;
+}
+
 describe("reliefMesh", () => {
+  it("declares the front face its own winding produces, not a new mesh's default", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const source = glbLikeBox("clutter.rock_a.LOD0", scene);
+    source.material = new PBRMaterial("rock_a", scene);
+    // The fixture is a GLB stand-in only if it really is wound the way the
+    // loader's meshes are — otherwise the cut below is cut from the wrong shape.
+    expect(windingOrientation(source)).toBe(Material.ClockWiseSideOrientation);
+    expect(source.sideOrientation).toBe(Material.ClockWiseSideOrientation);
+    const halfExtent = rockHalfExtent(source.getVerticesData(VertexBuffer.PositionKind) as Float32Array);
+
+    const mesh = reliefMesh(source, 0, 2, rockPlanes(0, 2, halfExtent));
+
+    // The cut keeps the source's triangle order, so it must keep the source's
+    // declared front face too. A `new Mesh` defaults to the opposite value in
+    // this left-handed scene, which would make every facet a back face.
+    expect(mesh.sideOrientation).toBe(windingOrientation(mesh));
+    expect(mesh.sideOrientation).toBe(source.sideOrientation);
+    engine.dispose();
+  });
+
   it("wraps rockRelief's cut geometry as a mesh on the source's own material", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
@@ -481,6 +559,9 @@ describe("rock relief in the shell", () => {
       expect((m as Mesh).useVertexColors, m.name).toBe(true);
       expect((m as Mesh).getVerticesData("color"), m.name).not.toBeNull();
       expect((m as Mesh).getTotalIndices(), m.name).toBe((m as Mesh).getTotalVertices());
+      // Every cut the shell makes lights by the side its normals call out:
+      // the front face it declares is the one its winding actually draws.
+      expect((m as Mesh).sideOrientation, m.name).toBe(windingOrientation(m as Mesh));
     }
 
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {

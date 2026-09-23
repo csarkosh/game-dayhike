@@ -99,6 +99,16 @@ export function rockRelief(input: RockArrays, planes: RockPlane[], model: number
     let fz = (bx - ax) * (qy - ay) - (by - ay) * (qx - ax);
     const fl = Math.hypot(fx, fy, fz);
     if (fl > 1e-12) { fx /= fl; fy /= fl; fz /= fl; } else { fx = input.normals[i0 * 3]!; fy = input.normals[i0 * 3 + 1]!; fz = input.normals[i0 * 3 + 2]!; }
+    // Which side is "out" is the input's to say, not the index order's: the
+    // cross product above points one way for a triangle wound one way and the
+    // other way for the same triangle wound the other, and models do ship
+    // with either winding. Take the side the input's own vertex normals agree
+    // with — summed over the three corners, so one corner whose normal a cut
+    // has swung far from the facet cannot decide it alone.
+    const sx = input.normals[i0 * 3]! + input.normals[i1 * 3]! + input.normals[i2 * 3]!;
+    const sy = input.normals[i0 * 3 + 1]! + input.normals[i1 * 3 + 1]! + input.normals[i2 * 3 + 1]!;
+    const sz = input.normals[i0 * 3 + 2]! + input.normals[i1 * 3 + 2]! + input.normals[i2 * 3 + 2]!;
+    if (fx * sx + fy * sy + fz * sz < 0) { fx = -fx; fy = -fy; fz = -fz; }
     const luma = 1 + ROCK_LUMA * (2 * hash(model, cut, t, 5) - 1);
     const src = [i0, i1, i2];
     for (let k = 0; k < 3; k++) {
