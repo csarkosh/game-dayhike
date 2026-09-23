@@ -7,6 +7,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import "../../src/sim/passes/index.js";
 import { CLUTTER_CLASS_COUNT, CLUTTER_GRASS, CLUTTER_LITTER, CLUTTER_MEADOW, CLUTTER_ROCK } from "../../src/sim/clutter.js";
+import { bladeFieldCovers } from "../../src/game/bladeField.js";
 import { clutterFadeEdges, clutterSeamEdges } from "../../src/game/clutterField.js";
 import { CLUTTER_SINK, createClutterMeshes, instanceMatrixFor, LITTER_VARIANT_SCALE, trampleFrame } from "../../src/game/clutterMeshes.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
@@ -331,7 +332,15 @@ describe("the cards beside the blade field", () => {
     return null;
   }
 
-  it("leaves the meadow's near cards unfilled and dithers the grass near cards in over the seam when the blade field draws", () => {
+  // The blade field may only ADD cover to the near field, never take it away.
+  // It grows on the GRASS gate while the meadow's cards were placed by the
+  // MEADOW gate, so a card is only redundant where the field actually covers
+  // it — and the grass cards, which the field does not replace at all, have to
+  // keep drawing the whole way in. Suppressing either on reach alone strips
+  // the near field bare wherever the grass gate is under the field's floor,
+  // which is most of the world: the player walks forward and the ground in
+  // front of them empties out.
+  it("only drops a near card where the blade field actually covers it", () => {
     // An open-field point where the meadow carpet is dense.
     for (const nearBlades of [true, false]) {
       const { assets, clutter, engine } = build(nearBlades);
@@ -342,21 +351,29 @@ describe("the cards beside the blade field", () => {
       const grassNear = assets[CLUTTER_GRASS]![0]![0]![0]!;
       expect(meadowFar.thinInstanceCount).toBeGreaterThan(0);
       if (nearBlades) {
-        expect(meadowNear.thinInstanceCount).toBe(0);
-        expect(meadowNear.isEnabled()).toBe(false);
+        // Every meadow near card still standing must sit on ground the field
+        // does not cover; the field takes the rest.
+        const buf = bufferFor(spy, meadowNear, "matrix")!;
+        for (let i = 0; i < meadowNear.thinInstanceCount; i++) {
+          const x = buf[i * 16 + 12] as number;
+          const z = buf[i * 16 + 14] as number;
+          expect(bladeFieldCovers(1, x, z)).toBe(false);
+        }
       } else {
         expect(meadowNear.thinInstanceCount).toBeGreaterThan(0);
       }
+      // The grass near cards draw all the way in either way: same fade, no
+      // in-band cut-out that the blades would have to fill and often cannot.
       expect(grassNear.thinInstanceCount).toBeGreaterThan(0);
-      const seam = clutterSeamEdges(CLUTTER_MEADOW);
       const grassSeam = clutterSeamEdges(CLUTTER_GRASS);
-      const want = (nearBlades ? [seam.start, seam.end, grassSeam.start, grassSeam.end] : [-2, -1, grassSeam.start, grassSeam.end]).map(Math.fround);
+      const want = [-2, -1, grassSeam.start, grassSeam.end].map(Math.fround);
       expect(Array.from(bufferFor(spy, grassNear, "fadeBands")!.subarray(0, 4))).toEqual(want);
       spy.mockRestore();
       clutter.dispose();
       engine.dispose();
     }
   });
+
 
   it("has no blade bucket of its own any more", () => {
     const { scene, clutter, engine } = build(true);

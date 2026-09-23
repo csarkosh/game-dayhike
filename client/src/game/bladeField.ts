@@ -110,6 +110,20 @@ function cellDraw(ci: number, cj: number, salt: number): number {
   return latticeHash(ci + 131 * salt, cj + 173 * salt);
 }
 
+/**
+ * Whether the field grows anything at (x, z) — the same gate `bladeCellAt`
+ * applies, exported so the clutter rebuild can ask before it drops a card.
+ *
+ * Lying inside the field's reach is not the same as being covered by it. The
+ * field is gated on the GRASS class; the meadow's cards were placed by the
+ * MEADOW class, and the two gates disagree over a lot of ground. Suppressing
+ * a card on reach alone therefore strips cover the field never replaces, and
+ * leaves bare floor out to the seam.
+ */
+export function bladeFieldCovers(seed: number, x: number, z: number): boolean {
+  return clutterDensity(seed, CLUTTER_GRASS, x, z) >= BLADE_STRENGTH_FLOOR;
+}
+
 /** The cell at lattice indices (ci, cj), or null where the gate is under the
  * floor. Pure in (seed, ci, cj): every rebuild sees the same cell. */
 export function bladeCellAt(seed: number, ci: number, cj: number): BladeCell | null {

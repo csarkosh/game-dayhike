@@ -46,6 +46,7 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 
+import { bladeFieldCovers } from "./bladeField.js";
 import { clutterFadeEdges, clutterSeamEdges, createClutterCollector } from "./clutterField.js";
 import {
   CLUTTER_BOULDER,
@@ -494,14 +495,25 @@ export function createClutterMeshes(
         for (const bucket of perLod) bucket.count = 0;
       }
     }
+    // With the blade field on, a meadow near card is redundant only where the
+    // field actually grows blades over it. Reach is not coverage: the field is
+    // gated on the GRASS class and these cards were placed by the MEADOW
+    // class, so dropping them on reach alone leaves bare floor wherever the
+    // grass gate sits under the field's own floor. Filtered once here and
+    // reused by the write pass, so the gate is sampled once per instance.
+    const nearLists: ClutterInstance[][] = [];
+    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+      const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
+      nearLists.push(
+        nearBlades && cls === CLUTTER_MEADOW
+          ? band.near.filter((inst) => !bladeFieldCovers(seed, inst.x, inst.z))
+          : band.near,
+      );
+    }
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       const variants = all[cls] as Bucket[][];
       const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
-      // With the blade field on, every meadow near instance lies inside the
-      // field's reach, so its card would be pure fill behind the blades: the
-      // bucket's count stays 0 and `applyBucket` disables it.
-      const nearList = nearBlades && cls === CLUTTER_MEADOW ? [] : band.near;
-      for (const inst of nearList) bucketFor(variants, inst, NEAR_LOD).count++;
+      for (const inst of nearLists[cls] as ClutterInstance[]) bucketFor(variants, inst, NEAR_LOD).count++;
       for (const inst of band.far) bucketFor(variants, inst, FAR_LOD).count++;
     }
 
@@ -516,9 +528,7 @@ export function createClutterMeshes(
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       const variants = all[cls] as Bucket[][];
       const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
-      // The same skip the count pass above made, for the same reason.
-      const nearList = nearBlades && cls === CLUTTER_MEADOW ? [] : band.near;
-      for (const inst of nearList) {
+      for (const inst of nearLists[cls] as ClutterInstance[]) {
         const bucket = bucketFor(variants, inst, NEAR_LOD);
         const frame = trampleFrame(seed, inst);
         writeInstanceMatrix(inst, bucket.buf, bucket.count * 16, frame);
@@ -664,14 +674,14 @@ export function createClutterMeshes(
               }
             }
           }
-          // With the blade field on, the grass class's near cards are the one
-          // card set still drawn inside the field's reach, so they dither IN
-          // where the field's coarse tier collapses — the meadow's own seam,
-          // which is that reach. Inside it the blades are the grass, and a
-          // card fragment there is discarded before any fetch.
-          const meadowSeam = clutterSeamEdges(CLUTTER_MEADOW, radiusScale);
+          // The grass class's near cards keep drawing all the way in, blade
+          // field or not. They used to dither in only past the meadow's seam,
+          // on the reasoning that inside it the blades are the grass — but the
+          // blades only grow where the grass gate clears the field's floor,
+          // so under that floor the fade took away the last cover standing and
+          // left bare ground. The field may only ever ADD to the near field.
           const fade: FadeBands = lod === NEAR_LOD
-            ? fadeBands(nearBlades && cls === CLUTTER_GRASS ? [meadowSeam.start, meadowSeam.end] : null, [seam.start, seam.end])
+            ? fadeBands(null, [seam.start, seam.end])
             : fadeBands([seam.start, seam.end], [edge.start, edge.end]);
           for (const mesh of meshes) {
             if (mesh.material) attachDistanceFade(mesh.material);
