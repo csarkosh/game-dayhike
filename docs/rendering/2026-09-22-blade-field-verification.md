@@ -42,27 +42,34 @@ the cost of blades over bare ground.
 
 ## 3. Colour
 
-The near field should not read as a different material from the distance. The
-measure is the mean colour of a band near the bottom of the frame against one
-a third of the way up, at eye level in open meadow, with the near/far ratio of
-the green channel as the single number.
+The near field should not read as a different material from the distance.
+The first attempt measured it as the mean colour of a band near the bottom
+of the frame against one a third of the way up, with the near/far ratio of
+the green channel as the single number, and tuned `BLADE_ALBEDO` against
+that. It settled on 0.16 and shipped. It was wrong, for reasons worth
+keeping:
 
-With the sun pinned identically across every rung:
+- **A band mean measures whatever fills the band.** Driving the albedo
+  down kept "improving" the ratio, but only because the blades were going
+  dark and the pale ground between them was what the band measured. The
+  near field read as soil while the number said the colours matched.
+- **The difference is not a brightness.** Isolating layers at one pose,
+  cards-only and bare-ground-only came out pixel-identical: up close the
+  frame is mostly ground between sparse blades, while the distant band is
+  dense cover hiding its ground. The band the player sees as "darker" is
+  brighter on every percentile; what the eye tracks is the dark tuft
+  silhouettes against fog-brightened ground.
+- **A match made at noon opens up in mist.** Under fog the bare ground
+  itself brightens from 61 to 88 (green) between 8 m and 20 m, and the
+  blades track their own ground within five either way. So a value matched
+  under sun is far too dark under mist at the seam, and one matched under
+  mist is too light at noon. Even at the exact card albedo the seam did
+  not close in fog.
 
-| `BLADE_ALBEDO` | near | far | near / far |
-| --- | --- | --- | --- |
-| 0.30 | (117, 122, 89) | (80, 85, 77) | 1.44 |
-| 0.22 | (111, 116, 84) | (79, 85, 76) | 1.36 |
-| **0.16 (shipped)** | **(106, 111, 81)** | (79, 84, 76) | **1.32** |
-| 0.075 | (97, 102, 75) | (78, 83, 76) | 1.23 |
-| the shipped game, same spot | (101, 106, 80) | (74, 79, 74) | 1.34 |
-
-The ratio keeps improving below 0.16, and that is a trap rather than a result:
-past that point the blades are going dark and the ratio closes because the
-pale ground between them is what the band measures. The near field reads as
-soil, not grass, while the number says the colours match. 0.16 puts the near
-field on the same brightness the game already shipped and still beats its
-near/far ratio, with the grass still reading as grass.
+The colour that shipped, (0.03, 0.04, 0.013), was chosen by eye against
+the far cards once the hand-off (section 6) was wide enough to hide the
+texture change. It is dark; with the band a fade rather than a line, it
+reads as continuous with the tufts under both sun and mist.
 
 ## 4. Seed heads
 
@@ -93,16 +100,74 @@ which is what it was always meant to read as. The normal-up bias stays where
 it was — raising it to 2 or 3 flattens blade shading and measurably worsens the
 near/far ratio (1.32, then 1.34, then 1.35).
 
-## 5. Known gaps
+With the blades as dark as they now are, even the slender heads read as
+dark spikes standing in rings, so the tussock ships with no head at all
+(`tip: "none"`). The head geometry and its constants stay for a character
+that can carry them.
+
+## 5. The near field went bare
+
+The field shipped with a regression the meadow stills could not show: walking
+forward, the ground in front of the player emptied out to a hard line about
+fourteen metres away that moved with the player.
+
+The field had taken over the near field on the assumption that inside its
+reach the blades are the grass. So the rebuild dropped every meadow near card
+outright, and gave the grass near cards a fade that let them dither in only
+beyond the meadow's seam. But the field only grows where the sim's grass gate
+clears its floor — 8.4 % of the ground on a 6 m grid over 1.2 km square — and
+everywhere else both card sets were suppressed and nothing replaced them.
+
+The rule now is that the field may only add cover: a meadow near card is
+dropped only where the field actually covers it, and the grass near cards
+draw the whole way in. Measured at one pose against the build before the
+field, the fixed build draws the same 2,944 card instances plus its 2,320
+blade clumps.
+
+Two things about how this got through. The test asserted the bug as a
+guarantee — `expect(meadowNear.thinInstanceCount).toBe(0)` — so it passed
+review; it now checks that every surviving card sits on uncovered ground. And
+the meadow-card half of the fix is close to a no-op: the meadow and grass
+gates track each other so nearly that no point on seed 1 has meadow cards the
+field does not cover. The grass-card fade was the bug.
+
+## 6. The hand-off reads as a line
+
+With the near field restored, the join between blades and cards showed as a
+line across the meadow, brighter or darker than the near field depending on
+the weather. Blades and cards are not the same picture of grass — fine
+strokes against chunky opaque tufts — and they handed over inside a band
+4.2 m wide (13.8–18 m). At a hiker's eye height that band compresses to a
+thin strip of screen, so the change of texture read as an edge. Section 3
+records why no colour could hide it.
+
+The meadow's near/far seam is the field's hand-off: the coarsest blade tier
+thins out across it and the far cards dither in across it, and the collector
+already duplicates instances through it. `CLUTTER_BLADE_HANDOFF` opens that
+one seam to 10 m (8–18 m) and both sides follow; no other class's seam moved.
+At the pose where the line was worst, mist and clear noon both now show tufts
+sprinkled into the blades from mid-distance and thickening with distance.
+
+Native frame time, meadow, high, paired both orders across two runs:
+
+| pair | deltas (branch − control) | mean |
+| --- | --- | --- |
+| 1 | −0.92, +2.39 | +0.73 ms |
+| 2 | +1.64, +1.00 | +1.32 ms |
+
+About +1.0 ms against the +2 ms bar — measured with the machine's load
+between 8 and 16, so both builds ran near 48 ms and the deltas, though
+paired, deserve a repeat on a quiet machine. Density at 3× the shipped counts
+gave the fullest near field and cost +3.74 ms; 2× cost +1.86 ms; the shipped
+counts are 1×.
+
+## 7. Known gaps
 
 These were not measured and are open:
 
-- Stills at the forest edge, on the trail, deep in the woods and trailside, and
-  under the 16:00, mist and rain conditions. Only the meadow was shot.
+- Stills at the forest edge, on the trail, deep in the woods and trailside,
+  and under the 16:00 and rain conditions. Mist and clear noon were shot at
+  the meadow only.
 - The three hand-off walks across the tier seams.
 - Frame pairs at reduced hardware scaling, on the medium tier, and on low.
-- Coverage where the grass gate falls between 0.025 and 0.05: the meadow's near
-  cards are unfilled there while the field's own strength floor draws nothing,
-  and meadow density can run to twice the grass density inside a flat. If a
-  bare band shows up in that range, the fix is to floor on the meadow gate or
-  to lower the field's floor.
+- The frame pair on a quiet machine.
