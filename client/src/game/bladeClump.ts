@@ -56,7 +56,7 @@ export const BLADE_SOFT = 0.15;
  * a rare corner: the boost that earns a cell BLADE_SIZE_FULL is common
  * ground there, not an edge condition, so most of a census's fine
  * (near-distance) tier already draws at full size. Measured at 1,543,239
- * vertices for this budget's own worst-case sum, against 1,232,644 before
+ * vertices for this budget's own worst-case sum, against 1,232,391 before
  * clump sizes existed — about 25% more — the real bar for that rise is a
  * frame-time measurement, not this constant. */
 export const BLADE_VERTEX_BUDGET = 1_600_000;
