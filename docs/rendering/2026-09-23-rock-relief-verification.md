@@ -96,7 +96,7 @@ rock's and boulder's own first variant and asserted their plane lists differ.
 - `rockRelief.ts`'s own test file plus the Babylon-free architecture check:
   15 tests passing, including the anisotropic hull-bound fixture (§4), the
   facet-normal tolerance (§3), and a cut of a reversed-wound copy of the
-  fixture asserting no facet ends up facing inward.
+  fixture asserting no facet ends up facing inward (§11).
 - `clutterMeshes.test.ts` (rock relief in the shell, `cutsFor`/`cutOf`,
   `reliefMesh`) plus `renderer.test.ts`, `bladeMeshes.test.ts`,
   `rockRelief.test.ts` and the architecture check together: 57 tests passing.
@@ -115,18 +115,27 @@ rock's and boulder's own first variant and asserted their plane lists differ.
 ## 7. Stills: a rock at 2 m and a boulder at 4 m
 
 Both builds were driven to the same poses on the forest slope east of the
-trail, where rock and boulder ground actually is, on seed `atmo` under clear
-weather. The subjects are a rock at 2.2 m — camera `(371.9, 136.4, 593.8)`
-looking west — and a boulder at 4.3 m — camera `(364.0, 135.6, 592.0)`,
-yaw 1.15 — each shot at 12:00 and at 16:00.
+trail, where rock and boulder ground actually is — the meadow has no rock
+within 60 m, so the pose has to follow the stone. The subjects are a rock at
+2.2 m — camera `(371.9, 136.4, 593.8)` looking west — and a boulder at 4.3 m
+— camera `(364.0, 135.6, 592.0)`, yaw 1.15. Each was shot on seed `atmo` at
+12:00 clear, 16:00 clear, and 12:00 in mist.
 
-The change is unambiguous at both distances and both hours. Before, the rock
-reads as a smooth rounded loaf: one soft silhouette, no internal edges, the
-whole surface shading as a single curve. After, it reads as broken stone —
-planar faces each taking the light at its own angle, hard creases between
-them, and a silhouette with corners in it. The boulder behaves the same way
-at 4 m, where the larger model's cuts give it a flat cleaved top rather than
-a dome.
+The change is unambiguous at both distances and in all three conditions.
+Before, the rock reads as a smooth rounded loaf: one soft silhouette, no
+internal edges, the whole surface shading as a single curve. After, it reads
+as broken stone — planar faces each taking the light at its own angle, hard
+creases between them, and a silhouette with corners in it. The boulder
+behaves the same way at 4 m, where the larger model's cuts give it a flat
+cleaved top rather than a dome.
+
+**Mist is the condition that shows this best**, which was not obvious before
+the shots were taken. Direct sun gives a rounded surface its own bright and
+dark sides, so an uncut rock still looks like it has form; mist removes the
+directional shading and leaves nothing but the geometry to carry the read.
+Under it the uncut rock reads as a soft organic mound — at a glance, closer
+to a root ball than to stone — while the cut one is plainly crystalline. Any
+later change to this geometry should be judged in mist first.
 
 The cut rock's silhouette is slightly smaller than the uncut one, which is
 the shrink the cut applies before roughening (§4); at 2 m the difference is
@@ -136,19 +145,36 @@ not readable as a size change, only as a sharper outline.
 
 The concern this gate exists for is that a rock could change SHAPE, not just
 detail, at the moment its LOD swaps — which is what the one-plane-list-per-
-model rule in `expandCutVariants` prevents. Two measurements, both taken on
-the live page:
+model rule in `expandCutVariants` prevents.
 
-- **The two LOD levels agree on shape.** For all sixteen cut meshes, LOD0's
-  and LOD1's bounding extents agree to within 1.5 % on every axis (worst
-  case: `boulder_a` at 1.5 %, best: `rock_a_cut3` at 0.1 %), while the vertex
-  counts drop 2400 → 1080 for a rock and 6450 → 2898 for a boulder. Detail
-  falls by more than half; the outline does not move.
+**The gate was specified as three stills at the boulder, and stills do not
+answer it.** They were taken — backing away along +x from the boulder at
+`(367.9, 135.2, 593.8)` to 30 m, 60 m and 90 m — and they show nothing
+usable: at the first station a tree trunk stands in the line of sight, and by
+the third a 2 m boulder is a handful of pixels, well under the size at which
+a change of shape could be seen. Re-framing would not rescue the method. A
+pop is a temporal event between two frames, and a still is one frame.
+
+What stands in its place is two measurements, both taken on the live page,
+and it is worth being exact about what each one buys:
+
+- **The two LOD levels agree on bounding extent.** Across all sixteen
+  LOD0/LOD1 pairs, the extents agree to within 1.5 % on every axis (worst:
+  `boulder_a` at 1.5 %; best: `rock_a_cut3` at 0.1 %), while the vertex
+  counts drop 2400 → 1080 for a rock and 6450 → 2898 for a boulder. This is
+  **necessary and not sufficient**: two solids can share a bounding box and
+  differ in outline, and LOD1 is a decimation to 45 % of LOD0's vertices, so
+  its silhouette does move a little by construction. What the measurement
+  rules out is the failure this gate was written for — a cut whose two levels
+  were derived from different plane lists, which would disagree grossly, not
+  by 1.5 %.
 - **The hand-off is a wide dithered band, not a line.** Walking away from a
   cut rock, LOD0 instances span 2.2–157.1 m from the eye and LOD1 instances
   span 35.4–391.2 m — a shared band roughly 120 m deep in which both levels
-  draw, each instance picking its own side by hash. There is no distance at
-  which a row of rocks switches together, which is what would read as a pop.
+  draw, each instance picking its own side by hash. This rules out a *row* of
+  rocks switching together at one distance, which is the conspicuous form of
+  a pop. It does not rule out a single rock changing slightly at its own
+  swap; the first measurement bounds that instead.
 
 ## 9. Frame time: the 4× pixel pair at TRAILSIDE and EDGE
 
@@ -190,3 +216,36 @@ all — the count `clutterMeshes.test.ts` asserts.
 Against the 50 ms bar, with roughly 2.5× headroom at the worst run. The pass
 runs once per class as that class's GLBs land, before its first draw, so it
 costs nothing per frame afterwards.
+
+## 11. Why the cut declares its own front face
+
+A mesh built from another mesh's vertex data inherits its triangle order but
+not its winding declaration. `reliefMesh` builds each cut with `new Mesh`,
+which in this left-handed scene defaults to counter-clockwise, while the
+glTF loader declares its meshes clockwise. The cut therefore kept the
+source's triangle order and announced the opposite front face, so every
+facet rasterized as a back face — and because these materials set
+`twoSidedLighting`, a back face's shading normal is negated, leaving the
+rock lit by ambient alone. The cuts still drew, because back-face culling is
+off; they drew dark.
+
+The fix is one line, and the important part is which line: the cut takes
+`sideOrientation` from the mesh it was built from rather than from a
+constant. A constant that happened to suit the four shipped GLBs would be
+the same authoring mistake in a new place. A second instance of that mistake
+was fixed in the same pass — `rockRelief` derived its facet normals assuming
+one winding, a no-op on the shipped assets and black rocks on any model
+wound the other way.
+
+**What the tests for this can and cannot do.** Every one of the suite's
+tests passed while the rocks rendered black, and that is not a gap that was
+closed: nothing in the suite rasterizes, shades, or reads a pixel, because
+its scenes run on a `NullEngine`. The tests added here pin the declaration —
+that a cut's front face matches its source's, on a source of either winding,
+and that no facet ends up facing inward. Two things they provably cannot
+see, each confirmed by putting the defect back and watching the suite stay
+green: a material that overrides the mesh's value, and the assignment order
+in `reliefMesh`, where `sideOrientation` must be set before `material`.
+Those are held by comments in the code, not by tests. Credit this coverage
+with catching one specific authoring mistake in one function; the only
+evidence that the rocks are lit is a frame, and the frames are in §7.
