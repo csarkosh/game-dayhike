@@ -479,14 +479,17 @@ function groundCoverAt(seed: number, x: number, z: number, s: TerrainSample, r: 
   const grass = edge * patch * boost;
   // Duff fills what the thinning takes: strongest under dense canopy, a
   // trace in thin open grass, and clear of the asphalt, which is painted by
-  // its own system. `onBed` — the same [NEAR, NEAR+FADE] ramp the bed drift
-  // fades out over — is what the floor term clears on: past the whole bed
-  // (core and loose margin both) the floor takes over; on the bed only the
-  // drift shows, so the two terms never overlap and neither can push the
-  // total over its own cap. `max` keeps the handoff between them continuous.
+  // its own system. Inside the core only the bed's own drift shows — the
+  // path stays readable — so the floor term ramps in from the core out to
+  // the bed's near edge, not from zero: past CORE it climbs while `onBed`
+  // (the same [NEAR, NEAR+FADE] ramp the bed drift fades out over) is still
+  // fully open, so the two terms genuinely overlap on the margin
+  // (rt ∈ (CORE, NEAR+FADE)) and `max` is what keeps the handoff continuous
+  // and bounded — never a bare band between "only drift" and "only floor".
   const road2 = smoothstep(CLUTTER_GRASS_ROAD_NEAR - CLUTTER_DUFF_ROAD_CLEAR, CLUTTER_GRASS_ROAD_NEAR, r);
   const onBed = 1 - smoothstep(CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_NEAR + CLUTTER_DUFF_BED_FADE, rt);
-  const floorDuff = onGrass * Math.max(0, 1 - grass / CLUTTER_GRASS_BOOST) * (CLUTTER_DUFF_OPEN + (1 - CLUTTER_DUFF_OPEN) * shade) * (1 - onBed) * road2;
+  const offCore = smoothstep(CLUTTER_GRASS_TRAIL_CORE, CLUTTER_GRASS_TRAIL_NEAR, rt);
+  const floorDuff = onGrass * Math.max(0, 1 - grass / CLUTTER_GRASS_BOOST) * (CLUTTER_DUFF_OPEN + (1 - CLUTTER_DUFF_OPEN) * shade) * offCore * road2;
   const drift = smoothstep(CLUTTER_DUFF_DRIFT_LO, CLUTTER_DUFF_DRIFT_HI, trailDriftNoise(seed, x, z));
   const bedDuff = onGrass * onBed * drift * CLUTTER_DUFF_BED_MAX * road2;
   return { grass, duff: Math.max(floorDuff, bedDuff) };
@@ -501,9 +504,13 @@ export function groundCover(seed: number, x: number, z: number, sample?: Terrain
 }
 
 /**
- * Gate product in [0, 1] for class `cls` at a point (a composed
- * smoothstep chain) — not itself a presence probability. `clutterInCell`
- * turns it into one via `min(1, gateProduct · CELL² · D_class)`, where
+ * Gate product for class `cls` at a point (a composed smoothstep chain) —
+ * not itself a presence probability. In [0, 1] for every class except
+ * `CLUTTER_GRASS`, `CLUTTER_MEADOW` and `CLUTTER_FLOWER`, which read the
+ * ground-cover field's `grass` (in [0, CLUTTER_GRASS_BOOST]) and, for meadow
+ * and flower, carry a further `(1 + fm.meadow)` inside a made meadow's flat
+ * — up to roughly `2 · CLUTTER_GRASS_BOOST` there. `clutterInCell`
+ * turns it into a probability via `min(1, gateProduct · CELL² · D_class)`, where
  * `D_class` is the per-class `cfg.density` (the per-m² peak-density
  * tunable). When `sample` is provided it is trusted (tests pass synthetic
  * ground); otherwise the active variant is sampled here. Variants without a
