@@ -98,6 +98,11 @@ describe("one cell", () => {
     const c = a as BladeCell;
     expect(c.cover).toBeCloseTo(groundCover(SEED, c.x, c.z).grass, 9);
     expect(c.strength).toBe(Math.min(1, c.cover));
+    // Ties the cell's strength straight back to the sim's own field (rather
+    // than only to the cell's own `cover`), so the two can never drift apart
+    // unnoticed, and pins the clamp directly: a fully boosted cell's gate
+    // (1.5) is not its strength (1).
+    expect(c.strength).toBe(Math.min(1, groundCover(SEED, c.x, c.z).grass));
     expect(c.size).toBe(bladeSizeFor(c.sizeDraw, c.cover));
     expect(c.strength).toBeGreaterThanOrEqual(BLADE_STRENGTH_FLOOR);
     // Jittered inside its own cell.
