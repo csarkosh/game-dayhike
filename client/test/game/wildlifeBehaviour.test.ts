@@ -15,7 +15,8 @@ import {
   ELK_BUGLE_INTERVAL, RAVEN_CROAK_INTERVAL, DAWN_HOUR, DAWN_DUSK_WINDOW,
   ELK_FLEE_AWAY, ELK_REFUGE_ARRIVE, SQUIRREL_FORAGE_RADIUS, SQUIRREL_CLIMB, SQUIRREL_CLING_CLEARANCE,
   RAVEN_BLEND_SECONDS, RAVEN_CLIMB_MPS, ravenBlendSeconds, clipForPhase,
-  createUnitState, stepUnit, wildlifePresenceUnder, type PlayerPoint, type WildlifeEvent,
+  PHASE_CUE, RABBIT_RETURN_SPEED, GULL_SPEED, startCue,
+  createUnitState, stepUnit, wildlifePresenceUnder, type PlayerPoint, type WildlifeEvent, type UnitState,
 } from "../../src/game/wildlifeBehaviour.js";
 
 setActiveTerrainVariant("olympic");
@@ -53,6 +54,20 @@ function run(species: number, path: (tick: number) => PlayerPoint[], ticks: numb
   return { u, events, trace };
 }
 const far: PlayerPoint[] = [{ x: 1e6, z: 1e6 }];
+
+/** Seconds a cued rabbit takes to cover eight metres; asserts it ends resting ON the mark. */
+function cueSeconds(run: boolean): number {
+  const rabbit = firstOf(SPECIES_RABBIT);
+  const u: UnitState = createUnitState(rabbit, 1000, SEED);
+  startCue(u, u.x, u.z + 8, run, 1000);
+  let t = 1001;
+  for (; t <= 1001 + 10 * SIM_TICK_HZ && u.phase === PHASE_CUE; t++) stepUnit(u, t, far, SEED, 12, [], []);
+  expect(u.phase).toBe(PHASE_REST);
+  expect(u.x).toBeCloseTo(rabbit.x, 6);
+  expect(u.z).toBeCloseTo(rabbit.z + 8, 6);
+  return (t - 1001) / SIM_TICK_HZ;
+}
+
 
 /**
  * A unit vector PERPENDICULAR to the herd's anchor→refuge line. The approach
@@ -390,7 +405,7 @@ describe("rabbit and squirrel", () => {
     expect(clipForPhase(SPECIES_SQUIRREL, PHASE_REST, false)).toBe("graze");
     // Nothing the squirrel can ask for is a role its own file does not carry — `idle` in
     // particular, which is what made the clip resolve to `graze` in the first place.
-    for (const phase of [PHASE_REST, PHASE_ALERT, PHASE_FLEE, PHASE_SETTLE, PHASE_RETURN]) {
+    for (const phase of [PHASE_REST, PHASE_ALERT, PHASE_FLEE, PHASE_SETTLE, PHASE_RETURN, PHASE_CUE]) {
       for (const moving of [false, true]) {
         expect(["graze", "walk", "run", "alert"]).toContain(clipForPhase(SPECIES_SQUIRREL, phase, moving));
       }
@@ -768,6 +783,55 @@ describe("calls and presence", () => {
     void DAWN_DUSK_WINDOW;
     void RAVEN_CROAK_INTERVAL;
   });
+  it("walks a cued animal to its mark at the gait it was asked for, then hands it back to rest", () => {
+    // Eight metres due north of where it stands, with the player nowhere near: a cue is a
+    // walk to a mark, and nothing about the species' own state machine interrupts it.
+    expect(cueSeconds(false)).toBeCloseTo(8 / RABBIT_RETURN_SPEED, 1);
+    expect(cueSeconds(true)).toBeCloseTo(8 / RABBIT_BOLT_SPEED, 1);
+  });
+
+  it("plays the walk clip for a stroll and the run clip for a bolt", () => {
+    expect(clipForPhase(SPECIES_RABBIT, PHASE_CUE, true)).toBe("walk");
+    expect(clipForPhase(SPECIES_RABBIT, PHASE_CUE, true, true)).toBe("run");
+    // Every species, including the squirrel, whose clip is otherwise chosen by whether it
+    // is moving at all rather than by its phase.
+    expect(clipForPhase(SPECIES_SQUIRREL, PHASE_CUE, true)).toBe("walk");
+    expect(clipForPhase(SPECIES_SQUIRREL, PHASE_CUE, true, true)).toBe("run");
+    expect(clipForPhase(SPECIES_ELK, PHASE_CUE, false, true)).toBe("run");
+  });
+
+  it("keeps a cued squirrel on the ground rather than clinging to a trunk it has left", () => {
+    // PHASE_CUE sorts above PHASE_RETURN, so every "on the trunk" test that reads as an
+    // inequality would put a squirrel crossing the forest floor belly-first against bark.
+    const squirrel = firstOf(SPECIES_SQUIRREL);
+    const u = createUnitState(squirrel, 1000, SEED);
+    startCue(u, squirrel.homeX + 8, squirrel.homeZ, false, 1000);
+    for (let t = 1001; t <= 1030; t++) stepUnit(u, t, far, SEED, 12, [], []);
+    expect(u.phase).toBe(PHASE_CUE);
+    expect(u.poses[0]!.pitch).toBe(0);
+    expect(Math.hypot(u.poses[0]!.x - u.x, u.poses[0]!.z - u.z)).toBeLessThan(0.01);
+  });
+
+  it("glides a cued flier's whole circle to the mark and leaves it flying there", () => {
+    // A bird has no walk: its position is a loop around a centre, so the cue moves the
+    // centre and the bird keeps circling from wherever it ends up — no snap back to the
+    // anchor the moment the cue ends.
+    const gull = firstOf(SPECIES_GULL);
+    const u = createUnitState(gull, 1000, SEED);
+    const markX = gull.homeX + 40, markZ = gull.homeZ + 30; // 50 m away
+    startCue(u, markX, markZ, false, 1000);
+    let t = 1001;
+    for (; t <= 1001 + 10 * SIM_TICK_HZ && u.phase === PHASE_CUE; t++) stepUnit(u, t, far, SEED, 12, [], []);
+    expect(u.phase).toBe(PHASE_REST);
+    expect((t - 1001) / SIM_TICK_HZ).toBeCloseTo(50 / GULL_SPEED, 1);
+    expect(u.x).toBeCloseTo(markX, 6);
+    expect(u.z).toBeCloseTo(markZ, 6);
+    // Still flying its own circle, now centred on the mark rather than on the anchor.
+    for (let k = 0; k < 120; k++) stepUnit(u, t + k, far, SEED, 12, [], []);
+    expect(u.x).toBeCloseTo(markX, 6);
+    for (const pose of u.poses) expect(Math.hypot(pose.x - markX, pose.z - markZ)).toBeLessThan(gull.radius * 1.2);
+  });
+
   it("clear is the identity; rain grounds birds; dread keeps only ravens", () => {
     const clear = wildlifePresenceUnder(WEATHER_PRESETS.clear);
     expect(clear.ground).toBe(1); expect(clear.aloft).toBe(1); expect(clear.raven).toBe(1);

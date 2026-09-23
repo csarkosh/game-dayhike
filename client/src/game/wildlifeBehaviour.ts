@@ -33,6 +33,14 @@ export const PHASE_ALERT = 1;  // alert · freeze · alarm run
 export const PHASE_FLEE = 2;   // flee · bolt · climb · circle
 export const PHASE_SETTLE = 3; // graze at refuge · hidden · treed
 export const PHASE_RETURN = 4; // walk back · hop back · descend · land
+/**
+ * Walking (or flying) to a mark the wildlife director picked, then handing back to REST
+ * there. It sorts ABOVE PHASE_RETURN numerically, so every `phase >= PHASE_FLEE` test in
+ * this file — all of which mean "the squirrel is on the trunk" — is written out as the
+ * three phases it actually means (see `squirrelOnTrunk`) rather than as an inequality a
+ * cued animal would fall into.
+ */
+export const PHASE_CUE = 5;   // walk to the director's mark
 
 export const CALL_RAVEN_CROAK = 0;
 export const CALL_GULL_CRY = 1;
@@ -171,6 +179,9 @@ export type UnitState = {
   /** Elk/deer only. The phase ALERT interrupted (REST or RETURN) — resumed, not reset to
    * REST, when the alert expires without the player closing. */
   resumePhase: number;
+  /** PHASE_CUE only: whether this cue is a bolt rather than a stroll — it picks both the
+   * speed the mark is reached at and the clip played on the way. */
+  cueRun: boolean;
   slot: number; prevD: number; poses: MemberPose[];
   /** False until a pose pass has written `poses` at least once. Bird poses are seated on
    * the GROUND at creation (`createUnitState` has no loop geometry to seat them on and
@@ -268,7 +279,19 @@ function restWander(u: UnitState, tick: number, seed: number, gridSeconds: numbe
   u.goalZ = u.unit.z + r * Math.sin(a);
 }
 
-export function clipForPhase(species: number, phase: number, moving: boolean): ClipRole {
+/**
+ * The three phases a squirrel spends clinging to its trunk. Written out rather than left
+ * as `phase >= PHASE_FLEE`, which PHASE_CUE (5) also satisfies — a cued squirrel is
+ * crossing the forest floor, not hanging off the bark.
+ */
+function squirrelOnTrunk(phase: number): boolean {
+  return phase === PHASE_FLEE || phase === PHASE_SETTLE || phase === PHASE_RETURN;
+}
+
+export function clipForPhase(species: number, phase: number, moving: boolean, running = false): ClipRole {
+  // A cue is the one phase whose gait the phase alone does not give away: the same walk to
+  // the same mark is a stroll or a bolt depending on which the director asked for.
+  if (phase === PHASE_CUE) return running ? "run" : "walk";
   // The squirrel file carries {graze, walk, run, alert} and no `idle`, and role `idle`
   // falls back to `graze` — so the old {run, idle} special-case made `alert` unreachable
   // and left a squirrel clinging head-up to the bark playing the grazing clip, neck down
@@ -295,7 +318,7 @@ export function createUnitState(unit: WildlifeUnit, tick: number, seed: number):
   const u: UnitState = {
     unit, phase: PHASE_REST, episode: 0, phaseStart: tick, lastTick: tick,
     x: unit.x, z: unit.z, y: unit.h, yaw: 0, goalX: unit.x, goalZ: unit.z, dwell: 0, leg: 0, legs: 0,
-    climbTarget: 0, climb: 0, alertD: Infinity, resumePhase: PHASE_REST, slot: -1, prevD: Infinity, poses: [],
+    climbTarget: 0, climb: 0, alertD: Infinity, resumePhase: PHASE_REST, cueRun: false, slot: -1, prevD: Infinity, poses: [],
     posed: false, memberOffsets: [],
   };
   const offsets: { a: number; r: number; delay: number }[] = [];
@@ -371,7 +394,7 @@ function scheduledCall(u: UnitState, tick: number, seed: number, hour: number, o
   if (!calls) return;
   // A treed squirrel's mouth is at the climbed height, not the trunk's base — u.x/u.z/u.y
   // stay pinned near the base while climbing.
-  const y = s === SPECIES_SQUIRREL && u.phase >= PHASE_FLEE ? u.unit.homeH + u.climb : u.y;
+  const y = s === SPECIES_SQUIRREL && squirrelOnTrunk(u.phase) ? u.unit.homeH + u.climb : u.y;
   // A flier calls from the BIRD, not from the centre of the circle it is flying.
   // `u.x/u.z` is the loop centre for every aloft species, and an eagle's loop
   // radius reaches 140 m — its cry originated up to that far from the only eagle on screen.
@@ -605,7 +628,7 @@ function stepSquirrel(u: UnitState, tick: number, players: readonly PlayerPoint[
   // On the trunk the squirrel sits on the side away from the nearest player. `p` can be
   // null with an empty `players` array; the yaw is simply left as whatever it last was
   // (harmless — it only decides which side of the trunk to render on) rather than reset.
-  if (u.phase >= PHASE_FLEE && p) u.yaw = Math.atan2(u.unit.homeX - p.x, u.unit.homeZ - p.z);
+  if (squirrelOnTrunk(u.phase) && p) u.yaw = Math.atan2(u.unit.homeX - p.x, u.unit.homeZ - p.z);
 }
 
 /** True if any disturbance point lies within `maxD` of (x, z). A plain indexed loop, not
@@ -657,20 +680,58 @@ function stepRoost(u: UnitState, tick: number, players: readonly PlayerPoint[], 
   }
 }
 
+/** How fast a cue covers the ground: the species' own walk, or the speed it flees at when
+ * the director asked for a bolt. A flier has one airspeed and ignores `cueRun`; the
+ * fall-through is the corvids', and any flier added beside them states its own. */
+function cueSpeed(u: UnitState): number {
+  switch (u.unit.species) {
+    case SPECIES_ELK: case SPECIES_DEER: return u.cueRun ? ELK_FLEE_SPEED : ELK_WALK_SPEED;
+    case SPECIES_RABBIT: return u.cueRun ? RABBIT_BOLT_SPEED : RABBIT_RETURN_SPEED;
+    case SPECIES_SQUIRREL: return u.cueRun ? SQUIRREL_RUN_SPEED : SQUIRREL_FORAGE_SPEED;
+    case SPECIES_GULL: return GULL_SPEED;
+    case SPECIES_EAGLE: return EAGLE_SPEED;
+    default: return RAVEN_SPEED;
+  }
+}
+
+/**
+ * Hand a unit a mark to make for. The one door into PHASE_CUE — the shell that applies the
+ * director's events comes through here rather than reaching into the phase fields, so the
+ * goal, the gait and the phase can never be set half-way.
+ */
+export function startCue(u: UnitState, goalX: number, goalZ: number, run: boolean, tick: number): void {
+  u.goalX = goalX;
+  u.goalZ = goalZ;
+  u.cueRun = run;
+  enter(u, PHASE_CUE, tick);
+}
+
+/**
+ * A cue overrides the species' own state machine for as long as it lasts: the animal is
+ * making for a mark, not reacting to the player. On arrival it hands back to REST — with
+ * the wander slot cleared, exactly as PHASE_RETURN does, so the next slot draws a fresh
+ * goal instead of resuming one from before the cue. For a ground species the mark is
+ * walked to; for a flier `u.x/u.z` IS the loop centre (see `poseBirds`), so the same
+ * `moveToward` glides the whole circle across and the bird keeps flying it on arrival.
+ */
+function stepCue(u: UnitState, tick: number): void {
+  if (moveToward(u, cueSpeed(u))) { enter(u, PHASE_REST, tick); u.slot = -1; }
+}
+
 /** Members of a ground unit follow the lead's motion with their seeded offset and delay. */
 function poseGround(u: UnitState, tick: number, seed: number): void {
   // The squirrel's ALERT is the dash to the trunk at SQUIRREL_RUN_SPEED, not the freeze
   // every other ground species holds there, so for this species it
   // counts as moving — which is what keeps the dash on the `run` clip now that a STILL
   // ALERT resolves to the held `alert` pose.
-  const moving = u.phase === PHASE_FLEE || u.phase === PHASE_RETURN
+  const moving = u.phase === PHASE_FLEE || u.phase === PHASE_RETURN || u.phase === PHASE_CUE
     || (u.unit.species === SPECIES_SQUIRREL && u.phase === PHASE_ALERT)
     || (u.phase === PHASE_REST && (u.x !== u.goalX || u.z !== u.goalZ));
-  const clip = clipForPhase(u.unit.species, u.phase, moving);
+  const clip = clipForPhase(u.unit.species, u.phase, moving, u.cueRun);
   for (let m = 0; m < u.poses.length; m++) {
     const pose = u.poses[m]!;
     if (u.unit.species === SPECIES_SQUIRREL) {
-      const onTrunk = u.phase >= PHASE_FLEE;
+      const onTrunk = squirrelOnTrunk(u.phase);
       // Outside the bark, not inside it: the trunk's own radius at this tree's drawn scale
       // plus a fixed clearance. The old flat 0.35 m was less than the radius alone on most
       // giants.
@@ -692,7 +753,10 @@ function poseGround(u: UnitState, tick: number, seed: number): void {
     const tz = u.z + r * Math.sin(a);
     if (tick - u.phaseStart >= delay || m === 0) {
       const dx = tx - pose.x, dz = tz - pose.z, dd = Math.hypot(dx, dz);
-      const speed = u.phase === PHASE_FLEE ? (u.unit.species === SPECIES_RABBIT ? RABBIT_BOLT_SPEED : ELK_FLEE_SPEED) : ELK_WALK_SPEED * 1.5;
+      // A bolting cue moves the lead at the flee speed, so the members have to be allowed to
+      // keep up with it — otherwise the herd strings out behind a rabbit crossing at 8 m/s.
+      const bolting = u.phase === PHASE_FLEE || (u.phase === PHASE_CUE && u.cueRun);
+      const speed = bolting ? (u.unit.species === SPECIES_RABBIT ? RABBIT_BOLT_SPEED : ELK_FLEE_SPEED) : ELK_WALK_SPEED * 1.5;
       const step = speed * TICK_DT;
       if (dd <= step) { pose.x = tx; pose.z = tz; } else { pose.x += (dx / dd) * step; pose.z += (dz / dd) * step; pose.yaw = Math.atan2(dx, dz); }
     }
@@ -722,7 +786,12 @@ function poseBirds(u: UnitState, tick: number, seed: number): void {
     const breathe = 1 + 0.15 * Math.sin(t * 0.05 + phase0);
     const r = u.unit.radius * breathe;
     const a = phase0 + omega * t;
-    const cx = u.unit.homeX, cz = u.unit.homeZ;
+    // The loop's CENTRE is carried on the state, not read back off the immutable field
+    // unit, so a cued flier can glide its whole circle toward the director's mark and then
+    // simply keep flying it from wherever it got to. It starts at the anchor
+    // (`createUnitState` seats `u.x/u.z` there for every bird) and nothing but a cue ever
+    // moves it, so an uncued bird flies exactly the circle it always did.
+    const cx = u.x, cz = u.z;
     let x = cx + r * Math.cos(a), z = cz + r * Math.sin(a);
     let y = u.unit.homeH + u.unit.altitude + 2 * Math.sin(t * 0.3 + phase0);
     // Take-off and landing are the same blend run in opposite directions: `perchWeight`
@@ -762,7 +831,11 @@ function poseBirds(u: UnitState, tick: number, seed: number): void {
     else wing = 1;
     pose.wing = wing * (1 - perchWeight);
   }
-  u.x = u.unit.homeX; u.z = u.unit.homeZ; u.y = u.unit.homeH + (u.phase === PHASE_REST && s === SPECIES_RAVEN_ROOST ? RAVEN_PERCH_HEIGHT : u.unit.altitude);
+  // `homeH` stays the height reference even for a flier that has glided away from its
+  // anchor: the ground a flier is over is not sampled anywhere on this path, and at 15 m
+  // (a gull) to 250 m (an eagle) of altitude a cue's worth of terrain relief is nothing
+  // against a per-bird terrain read every frame.
+  u.y = u.unit.homeH + (u.phase === PHASE_REST && s === SPECIES_RAVEN_ROOST ? RAVEN_PERCH_HEIGHT : u.unit.altitude);
 }
 
 /**
@@ -774,7 +847,10 @@ export function stepUnit(u: UnitState, tick: number, players: readonly PlayerPoi
   if (tick <= u.lastTick) return;
   const from = Math.max(u.lastTick + 1, tick - MAX_CATCHUP_TICKS + 1);
   for (let t = from; t <= tick; t++) {
-    switch (u.unit.species) {
+    // A cue is the same walk for every species, so it is dispatched before the per-species
+    // machines rather than repeated as a case inside each of them.
+    if (u.phase === PHASE_CUE) stepCue(u, t);
+    else switch (u.unit.species) {
       case SPECIES_ELK: case SPECIES_DEER: stepElk(u, t, players, seed, out); break;
       case SPECIES_RABBIT: stepRabbit(u, t, players, seed, out); break;
       case SPECIES_SQUIRREL: stepSquirrel(u, t, players, seed, out); break;
