@@ -49,13 +49,41 @@ describe("the clock", () => {
     expect(s.logCount).toBe(1);
     expect(s.sinceSighting).toBeLessThan(0.2);
     expect(s.lastSpecies).toBe(SPECIES_RABBIT);
-    // Off screen the clock runs. The dwell that just fired the sighting used up
-    // 60 of these 70 frames; the other 10 (1/6 s) are already on the clock
-    // before this loop's 5 s even starts, so the total lands a little past 5 —
-    // within half a second of it is the property this checks, not the tenth.
+    // Off screen the clock runs: measure the INCREASE over these 5 s, not the
+    // absolute value — the dwell that just fired the sighting used up 60 of
+    // the previous 70 frames, leaving a ~1/6 s remainder already on the
+    // clock, and the delta is what isolates "sinceSighting advances by dt
+    // while nothing is on screen" from that remainder.
+    const beforeOffScreen = s.sinceSighting;
     for (let i = 0; i < 300; i++) observe(s, view(), flat, [], day, 1 / 60, 7);
-    expect(s.sinceSighting).toBeCloseTo(5, 0);
+    expect(s.sinceSighting - beforeOffScreen).toBeCloseTo(5, 1);
     expect(SIGHTING_DWELL).toBe(1); expect(LEAD).toBe(2); expect(SMALL_TO_LARGE).toBe(6);
+  });
+  it("keeps the current candidate while it stays on screen, even once another arrives", () => {
+    const s = createDirectorState(7);
+    const rabbit = { id: 1, species: SPECIES_RABBIT, x: 0, y: 0.3, z: 10 };
+    const elk = { id: 2, species: SPECIES_ELK, x: 0, y: 1.2, z: 40 };
+    for (let i = 0; i < 30; i++) observe(s, view(), flat, [rabbit], day, 1 / 60, 7); // 0.5 s on the rabbit alone
+    expect(s.logCount).toBe(0);
+    // The elk arrives and stays visible alongside the rabbit for the rest of
+    // the dwell — it must not steal or reset the rabbit's accumulating dwell.
+    for (let i = 0; i < 40; i++) observe(s, view(), flat, [rabbit, elk], day, 1 / 60, 7);
+    expect(s.logCount).toBe(1);
+    expect(s.lastSpecies).toBe(SPECIES_RABBIT);
+  });
+  it("switches to the nearest already-on-screen unit once the current candidate leaves", () => {
+    const s = createDirectorState(7);
+    const elk = { id: 2, species: SPECIES_ELK, x: 0, y: 1.2, z: 40 };
+    const rabbit = { id: 1, species: SPECIES_RABBIT, x: 0, y: 0.3, z: 8 }; // nearer
+    const deer = { id: 3, species: SPECIES_DEER, x: 0, y: 1.2, z: 20 }; // farther
+    for (let i = 0; i < 10; i++) observe(s, view(), flat, [elk], day, 1 / 60, 7); // elk dwells, partial
+    expect(s.logCount).toBe(0);
+    // The elk leaves; the rabbit and the deer are both already on screen the
+    // very frame it does — the nearer of the two becomes the new candidate,
+    // with a fresh dwell (the elk's partial dwell is discarded, not banked).
+    for (let i = 0; i < 60; i++) observe(s, view(), flat, [rabbit, deer], day, 1 / 60, 7);
+    expect(s.logCount).toBe(1);
+    expect(s.lastSpecies).toBe(SPECIES_RABBIT);
   });
   it("relaxes when still, at night, and goes quiet for the chase, the Hollow and other screens", () => {
     const s = createDirectorState(7);
@@ -64,6 +92,13 @@ describe("the clock", () => {
     expect(relaxFor(s, day)).toBe(STILL_RELAX);
     s.stillFor = 0;
     expect(relaxFor(s, { ...day, hour: 2 })).toBe(NIGHT_RELAX);
+    // Both at once: the larger relaxation wins rather than compounding — a
+    // still player at night getting the product (1.8 x 2.5 = 4.5) would
+    // stretch the 5-10 s GAP band to as much as 45 s, which reads as empty
+    // woods rather than a relaxed cadence.
+    s.stillFor = STILL_SECONDS + 0.1;
+    expect(relaxFor(s, { ...day, hour: 2 })).toBe(NIGHT_RELAX);
+    s.stillFor = 0;
     expect(relaxFor(s, { ...day, phase: 1 })).toBe(Infinity);
     expect(relaxFor(s, { ...day, hollowDistance: HOLLOW_QUIET - 1 })).toBe(Infinity);
     expect(relaxFor(s, { ...day, hollowHunting: true })).toBe(Infinity);

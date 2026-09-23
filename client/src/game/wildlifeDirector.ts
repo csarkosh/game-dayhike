@@ -240,12 +240,23 @@ export function observe(
   clock.viewX = view.x;
   clock.viewZ = view.z;
 
-  // Keep dwelling on the same unit while it stays on screen; otherwise pick
-  // whichever on-screen unit comes first. A unit that leaves the screen loses
-  // its dwell outright rather than banking it — a sighting is a continuous
-  // look, not an accumulated one. `onScreen` runs the line-of-sight sampling,
-  // so each unit is tested at most once a frame rather than re-checked once
-  // per branch below.
+  // Keep dwelling on the same unit for as long as it stays on screen — checked
+  // by id, first, regardless of where it sits in `units` — so a second animal
+  // merely being visible can never interrupt an accumulating dwell; only the
+  // CURRENT candidate leaving does. Without that rule, two animals trading
+  // places on screen faster than either holds it alone would restart the
+  // dwell forever and never record a sighting, even though something was
+  // visible the entire time. Once the current candidate does leave, the
+  // nearest on-screen unit becomes the new one — nearest rather than
+  // whichever happens to come first in `units`, since a caller has no reason
+  // to keep that order stable frame to frame. A unit that leaves loses its
+  // dwell outright rather than banking it for a later return: a sighting is
+  // a continuous look, not an accumulated one, and discarding a briefly
+  // occluded candidate's partial progress is the conservative direction —
+  // it can only make the director stage more cues later, never fewer.
+  //
+  // `onScreen` runs the line-of-sight sampling, so the current candidate is
+  // tested at most once a frame rather than re-checked once per branch below.
   let candidate: Seen | undefined;
   let candidateOnScreen = false;
   for (const u of units) {
@@ -253,9 +264,13 @@ export function observe(
   }
   if (!candidateOnScreen) {
     candidate = undefined;
+    let bestDistance = Infinity;
     for (const u of units) {
-      if (onScreen(view, ground, u, match.mist)) { candidate = u; candidateOnScreen = true; break; }
+      if (!onScreen(view, ground, u, match.mist)) continue;
+      const distance = Math.hypot(u.x - view.x, u.y - view.y, u.z - view.z);
+      if (distance < bestDistance) { bestDistance = distance; candidate = u; }
     }
+    candidateOnScreen = candidate !== undefined;
     state.lastSeenId = candidate === undefined ? -1 : candidate.id;
     state.dwell = 0;
   }
