@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { CLUTTER_GRASS, CLUTTER_MEADOW, clutterDensity } from "../../src/sim/clutter.js";
+import { CLUTTER_MEADOW, groundCover } from "../../src/sim/clutter.js";
 import { CLUTTER_FAR_SPLIT, CLUTTER_RADII, clutterSeamEdges } from "../../src/game/clutterField.js";
 import {
   BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_CHARACTER_WEIGHTS, BLADE_FINE, BLADE_FLOWER, BLADE_FLOWER_MIN_STRENGTH,
-  BLADE_PAD, BLADE_REACH, BLADE_REBUILD_CELL, BLADE_STRENGTH_FLOOR, BLADE_TIER_BAND, BLADE_TIER_EDGE,
-  bladeCellAt, bladeCharacterFor, bladeTierBands, collectBladeCells, createBladeCollector, type BladeCell,
+  BLADE_FULL_BAND, BLADE_PAD, BLADE_REACH, BLADE_REBUILD_CELL, BLADE_SIZE_BASE, BLADE_SIZE_FULL, BLADE_SIZE_THIN,
+  BLADE_STRENGTH_FLOOR, BLADE_THIN_BAND, BLADE_TIER_BAND, BLADE_TIER_EDGE,
+  bladeCellAt, bladeCharacterFor, bladeSizeFor, bladeTierBands, collectBladeCells, createBladeCollector, type BladeCell,
 } from "../../src/game/bladeField.js";
 
 // An open-field point where the grass gate is high across a wide neighbourhood
@@ -50,6 +51,43 @@ describe("the blade field's constants", () => {
     expect(bladeCharacterFor(0.99, 1)).toBe(BLADE_FLOWER);
     expect(bladeCharacterFor(0.1, 0.1)).toBe(BLADE_FINE);
   });
+
+  it("sizes a clump by its cover, dithered across the spec's bands so no contour forms", () => {
+    expect(BLADE_THIN_BAND).toEqual([0.4, 0.6]);
+    expect(BLADE_FULL_BAND).toEqual([1.0, 1.25]);
+    // Outside both bands the choice is certain.
+    for (let d = 0; d < 1; d += 0.05) {
+      expect(bladeSizeFor(d, 0.2)).toBe(BLADE_SIZE_THIN);
+      expect(bladeSizeFor(d, 0.8)).toBe(BLADE_SIZE_BASE);
+      expect(bladeSizeFor(d, 1.5)).toBe(BLADE_SIZE_FULL);
+    }
+    // Inside a band the thin (or full) share falls (rises) monotonically and
+    // continuously with cover: over 200 draws per step, no step of the share
+    // is larger than 0.15.
+    const share = (cover: number, size: number): number => {
+      let n = 0;
+      for (let i = 0; i < 200; i++) if (bladeSizeFor((i + 0.5) / 200, cover) === size) n++;
+      return n / 200;
+    };
+    let prev = share(0.35, BLADE_SIZE_THIN);
+    expect(prev).toBe(1);
+    for (let c = 0.36; c <= 0.65; c += 0.01) {
+      const cur = share(c, BLADE_SIZE_THIN);
+      expect(cur).toBeLessThanOrEqual(prev + 1e-9);
+      expect(prev - cur).toBeLessThan(0.15);
+      prev = cur;
+    }
+    expect(prev).toBe(0);
+    prev = share(0.95, BLADE_SIZE_FULL);
+    expect(prev).toBe(0);
+    for (let c = 0.96; c <= 1.3; c += 0.01) {
+      const cur = share(c, BLADE_SIZE_FULL);
+      expect(cur).toBeGreaterThanOrEqual(prev - 1e-9);
+      expect(cur - prev).toBeLessThan(0.15);
+      prev = cur;
+    }
+    expect(prev).toBe(1);
+  });
 });
 
 describe("one cell", () => {
@@ -58,7 +96,9 @@ describe("one cell", () => {
     const a = bladeCellAt(SEED, ci, cj);
     expect(a).not.toBeNull();
     const c = a as BladeCell;
-    expect(c.strength).toBeCloseTo(clutterDensity(SEED, CLUTTER_GRASS, c.x, c.z), 12);
+    expect(c.cover).toBeCloseTo(groundCover(SEED, c.x, c.z).grass, 9);
+    expect(c.strength).toBe(Math.min(1, c.cover));
+    expect(c.size).toBe(bladeSizeFor(c.sizeDraw, c.cover));
     expect(c.strength).toBeGreaterThanOrEqual(BLADE_STRENGTH_FLOOR);
     // Jittered inside its own cell.
     expect(c.x).toBeGreaterThanOrEqual(ci * BLADE_CELL);
@@ -87,7 +127,7 @@ describe("one cell", () => {
           nulls++;
           // The jitter moves the sample by at most 0.2 m from the cell centre.
           const x = (ci + 0.5) * BLADE_CELL, z = (cj + 0.5) * BLADE_CELL;
-          expect(clutterDensity(SEED, CLUTTER_GRASS, x, z)).toBeLessThan(0.5);
+          expect(groundCover(SEED, x, z).grass).toBeLessThan(0.5);
         } else {
           cells++;
           expect(c.strength).toBeGreaterThanOrEqual(BLADE_STRENGTH_FLOOR);

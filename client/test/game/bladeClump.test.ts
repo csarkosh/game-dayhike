@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  BLADE_ALBEDO, BLADE_CHARACTERS, BLADE_CLUMP_RADIUS, BLADE_LUMA, BLADE_RINGS, BLADE_SOFT, BLADE_TIER_COUNTS,
-  BLADE_TIP_TINT, BLADE_TRIS, BLADE_VERTEX_BUDGET, BLADE_VERTS, FLOWER_PALETTE,
-  bladeAlive, bladeClumpGeometry, bladeSecondRandom, bladeVertexCount,
+  BLADE_ALBEDO, BLADE_CHARACTERS, BLADE_CLUMP_RADIUS, BLADE_LUMA, BLADE_RINGS, BLADE_SIZE_FACTOR, BLADE_SOFT,
+  BLADE_TIER_COUNTS, BLADE_TIP_TINT, BLADE_TRIS, BLADE_VERTEX_BUDGET, BLADE_VERTS, FLOWER_PALETTE,
+  bladeAlive, bladeClumpGeometry, bladeCountFor, bladeSecondRandom, bladeVertexCount,
 } from "../../src/game/bladeClump.js";
 import {
-  BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_FINE, BLADE_FLOWER, BLADE_PAD, BLADE_REACH, BLADE_TIER_BAND, BLADE_TIER_EDGE,
-  BLADE_TUSSOCK, BLADE_WEED,
+  BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_FINE, BLADE_FLOWER, BLADE_PAD, BLADE_REACH, BLADE_SIZE_FULL,
+  BLADE_TIER_BAND, BLADE_TIER_EDGE, BLADE_TUSSOCK, BLADE_WEED,
 } from "../../src/game/bladeField.js";
 
 describe("the character and tier tables", () => {
@@ -20,8 +20,13 @@ describe("the character and tier tables", () => {
     expect(BLADE_TIP_TINT).toEqual({ r: 0.95, g: 0.95, b: 0.75 });
     expect(BLADE_LUMA).toBe(0.3);
     expect(BLADE_SOFT).toBe(0.15);
-    expect(BLADE_TIER_COUNTS.high).toEqual([[100, 40, 16], [80, 28, 12], [12, 8, 4], [100, 32, 12]]);
-    expect(BLADE_TIER_COUNTS.medium).toEqual([[50, 20, 8], [40, 14, 6], [6, 4, 2], [50, 16, 6]]);
+    expect(BLADE_TIER_COUNTS.high).toEqual([[100, 40, 10], [80, 28, 8], [12, 8, 4], [100, 32, 8]]);
+    expect(BLADE_TIER_COUNTS.medium).toEqual([[50, 20, 5], [40, 14, 4], [6, 4, 2], [50, 16, 4]]);
+    expect(BLADE_SIZE_FACTOR).toEqual([0.4, 1, 1.5]);
+    expect(bladeCountFor("high", 0, 0, 0)).toBe(40);
+    expect(bladeCountFor("high", 0, 0, 1)).toBe(100);
+    expect(bladeCountFor("high", 0, 0, 2)).toBe(150);
+    expect(bladeCountFor("high", 2, 2, 0)).toBe(4); // never under 4
     expect(BLADE_CHARACTERS[BLADE_FINE]!.tip).toBe("none");
     expect(BLADE_CHARACTERS[BLADE_TUSSOCK]!.tip).toBe("none");
     expect(BLADE_CHARACTERS[BLADE_WEED]!.width).toBe(0.03);
@@ -30,9 +35,8 @@ describe("the character and tier tables", () => {
     expect(FLOWER_PALETTE.length).toBe(4);
   });
 
-  it("keeps the high tier's field under the vertex budget", () => {
+  it("keeps the high tier's field under the vertex budget with every cell at full size", () => {
     const fine = BLADE_CHARACTERS[BLADE_FINE]!;
-    const counts = BLADE_TIER_COUNTS.high[BLADE_FINE]!;
     const [e0, e1] = BLADE_TIER_EDGE;
     const cells = (rOut: number, rIn: number) => Math.PI * (rOut * rOut - rIn * rIn) / (BLADE_CELL * BLADE_CELL);
     const clumps = [
@@ -41,7 +45,7 @@ describe("the character and tier tables", () => {
       cells(BLADE_REACH + BLADE_PAD, Math.max(0, e1 - BLADE_TIER_BAND - BLADE_PAD)),
     ];
     let total = 0;
-    for (let t = 0; t < 3; t++) total += clumps[t]! * bladeVertexCount(fine, counts[t]!);
+    for (let t = 0; t < 3; t++) total += clumps[t]! * bladeVertexCount(fine, bladeCountFor("high", BLADE_FINE, t, BLADE_SIZE_FULL));
     expect(total).toBeLessThan(BLADE_VERTEX_BUDGET);
     expect(total).toBeGreaterThan(BLADE_VERTEX_BUDGET * 0.5); // the budget is a real bound, not a formality
   });

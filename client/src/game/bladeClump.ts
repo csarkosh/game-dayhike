@@ -50,9 +50,11 @@ export const BLADE_LUMA = 0.3;
 /** Width of one blade's shrink window in units of a hand-off ramp;
  * FOLIAGE_BLADE_SOFT in the GLSL. */
 export const BLADE_SOFT = 0.15;
-/** The high tier's whole field at full strength must stay under this many
- * vertices (a test computes it from the reach, the pad and the counts). */
-export const BLADE_VERTEX_BUDGET = 1_400_000;
+/** The high tier's whole field, every cell at BLADE_SIZE_FULL, must stay
+ * under this many vertices (a test computes it from the reach, the pad and
+ * the counts) — the budget covers the field's worst case, not its typical
+ * one; the real bar is a frame-time measurement. */
+export const BLADE_VERTEX_BUDGET = 1_600_000;
 
 export type BladeTip = "none" | "seed" | "flower";
 
@@ -107,11 +109,24 @@ export const BLADE_CHARACTERS: readonly BladeCharacter[] = [
 
 export type BladeQuality = "high" | "medium";
 
-/** Blades per clump, by quality tier, character and distance tier (fine, mid, coarse). */
+/** Blades per clump at BLADE_SIZE_BASE, by quality tier, character and
+ * distance tier (fine, mid, coarse). A cell's actual count also scales by
+ * its `size` through `BLADE_SIZE_FACTOR` (`bladeCountFor`). */
 export const BLADE_TIER_COUNTS: Record<BladeQuality, readonly (readonly [number, number, number])[]> = {
-  high: [[100, 40, 16], [80, 28, 12], [12, 8, 4], [100, 32, 12]],
-  medium: [[50, 20, 8], [40, 14, 6], [6, 4, 2], [50, 16, 6]],
+  high: [[100, 40, 10], [80, 28, 8], [12, 8, 4], [100, 32, 8]],
+  medium: [[50, 20, 5], [40, 14, 4], [6, 4, 2], [50, 16, 4]],
 };
+/** Blades per clump as a multiple of the tier's count, by size (thin, base, full). */
+export const BLADE_SIZE_FACTOR: readonly [number, number, number] = [0.4, 1, 1.5];
+/** A clump never carries fewer than this many blades. */
+export const BLADE_COUNT_MIN = 4;
+/** Blades a cell's clump carries: the tier's base count for its character,
+ * scaled by its size and floored at `BLADE_COUNT_MIN` so even a thin,
+ * coarse-tier clump reads as something rather than a stray blade or two. */
+export function bladeCountFor(quality: BladeQuality, character: number, tier: number, size: number): number {
+  const base = BLADE_TIER_COUNTS[quality][character]![tier]!;
+  return Math.max(BLADE_COUNT_MIN, Math.round(base * (BLADE_SIZE_FACTOR[size] as number)));
+}
 
 export type BladeClumpGeometry = {
   positions: Float32Array;
