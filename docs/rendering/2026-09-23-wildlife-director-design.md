@@ -70,18 +70,33 @@ line of sight that samples the sim's ground height at four points along the
 ray from the eye to the unit's chest height and fails if any lies above the
 ray. Trees do not occlude for this purpose. A unit on screen for
 `SIGHTING_DWELL = 1` s counts as a sighting; the clock resets and the target
-gap is redrawn.
+gap is redrawn. Each animal counts once for as long as it stays in view — a
+deer grazing in frame for a minute is one sighting, not sixty — but a second
+animal in view at the same time is a second sighting, because it is a second
+animal the player saw.
 
 ## 5. The scheduler
 
 - `targetGap` is drawn from `GAP = [5, 10]` s by seeded jitter after every
   sighting.
 - When `sinceSighting > targetGap · relax − LEAD (2 s)` the director stages a
-  cue. If no cue can be placed it retries after `RETRY = 1` s and the gap
-  grows; a missed beat is never forced.
+  cue. `LEAD` is the walk from staging to the sighting landing, so what the
+  band describes is the interval the player gets. If no cue can be placed it
+  retries after `RETRY = 1` s and the gap grows; a missed beat is never
+  forced, but a cue the player has not seen within `CUE_PATIENCE` stops
+  holding the beat, so a cue that misses cannot cost more than that in
+  silence.
+- A cue is only arranged where it can land: the animal has to reach its mark
+  within `CUE_FLIGHT = 5` s at its own gait, and some part of the walk has to
+  pass through the frame, close enough for its species to read. Both are
+  judged against the frame carried forward by however the player has been
+  walking and turning, not the frame as it stands — an elk aimed at where the
+  player was looking five seconds ago arrives in an empty view.
 - Species: small (rabbit, squirrel, raven, gull, butterfly) weighted
-  `SMALL_TO_LARGE = 6` to one over large (deer, elk); the eagle is a large
-  cue at range. The last species is excluded from the next draw.
+  `SMALL_TO_LARGE = 6` to one over large (deer, elk). The eagle is not cued:
+  it cruises above the distance anything registers as a sighting at. Nor, in
+  practice, are the raven pair and the gull flock — see §6. The last species
+  is excluded from the next draw.
 - `relax` is a multiplier: `STILL = 1.8` once the player has moved under
   0.3 m/s for 3 s; `NIGHT = 2.5` by the hour the calls already use; and
   **quiet** — no cues — during the chase phase, whenever the Hollow is within
@@ -93,8 +108,12 @@ gap is redrawn.
 Three stagings, by species and availability:
 
 - **Cross** — birds and the butterfly start outside the view cone by the
-  margin and fly across it; for birds this is the existing card path given a
-  heading through the view.
+  margin and fly across it, inside the range their species reads at; for birds
+  this is the existing card path given a heading through the view. A loop
+  flier is a circle twenty to a hundred and forty metres across rather than a
+  point, and a cue moves the whole circle: there is no placement that hides
+  every bird of one, and no reach from which one can be turned unseen either,
+  so in practice the butterfly is the crossing the player gets.
 - **Break cover** — rabbit and squirrel start behind terrain or beyond a
   lateral edge of the cone, within 15 m, then take `PHASE_CUE` to a goal
   across or away from the view and resume rest. Cover is a point the line of
@@ -146,9 +165,13 @@ files:
 - each relaxation multiplier and each quiet state;
 - each staging's start position satisfying the invariant on a synthetic
   world; the eight-candidate cover search giving up cleanly;
-- the thousand-frame seeded drive: a player walking and turning, the
-  invariant asserted on every event, the sighting gaps' median inside the
-  band, and at least one cue of each staging;
+- the thousand-second seeded drive, over seven seeds: a player walking and
+  turning, the invariant asserted on every event, at least one cue of each
+  staging, and the gaps' WHOLE distribution against §10's gate — the median
+  inside the band, most gaps inside it, nothing over `GAP_CEILING`, and no
+  stretch longer than that with nothing on screen at all. A median alone is
+  not the gate: one has sat inside the band over a distribution with a quarter
+  of its gaps past twenty seconds and a worst case of ninety-six;
 - recycling preferred over spawning when a unit is available; removal only
   off screen;
 - `PHASE_CUE` entering, walking to its goal, and resuming rest;
