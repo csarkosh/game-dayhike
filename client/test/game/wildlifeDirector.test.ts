@@ -75,6 +75,8 @@ const standingStill = (s: DirectorState): boolean => s.stillFor > STILL_SECONDS;
  * The players the cadence is measured against. `aimFrame` predicts where someone will be
  * looking, so the only honest way to grade it is against more than one kind of head.
  *
+ * The first two are `graded` — every cadence assertion below runs on them.
+ *
  * The first is a hiker on a trail: 1.4 m/s along a line that weaves, the head swinging
  * gently over it, peaking at 0.14 rad/s. A player who only ever turned would circle a
  * fixed patch of woods and never leave anything behind, which is the one walk that never
@@ -82,24 +84,32 @@ const standingStill = (s: DirectorState): boolean => s.stillFor > STILL_SECONDS;
  *
  * The second is a hiker who actually looks around: nine seconds of walking, then five
  * standing still and turning most of a right angle toward something and back, over and
- * over. It peaks at 0.44 rad/s — three times the first — and it is much the harder of the
- * two on a predictor, because the stops break the constant-velocity guess the aim is built
- * on. Its medians run 6.6 to 7.4 s where the first runs 7.3 to 7.9, so it has real margin
- * to lose before the band's floor: if a change hurts the prediction, this is the walk that
- * says so.
+ * over. It peaks at 0.44 rad/s — three times the first — and 35.5 % of its frames are
+ * standing, which is what makes it hard on a predictor: the stops break the
+ * constant-velocity guess the aim is built on. Its medians run 6.6 to 7.4 s where the
+ * first runs 7.3 to 7.9, so it has real margin to lose before the band's floor.
  *
- * Heavier heads than this were measured and deliberately NOT asserted on — see the design's
- * gates section. A head sweeping without pause for a thousand seconds is a stress input
- * rather than a player, and the failure direction under one is busy rather than empty.
+ * Neither is uniformly harder than the other, which is why both are kept: halving
+ * `AIM_AHEAD` to 1.5 fails the first and not the second, while the second is the one with
+ * the tighter median. A change that hurts the prediction shows up in one or the other.
+ *
+ * The last two are NOT graded, and must not be. A head sweeping through most of a circle
+ * without pause for a thousand seconds is a stress input rather than a player, and an
+ * assertion on one would either fail honestly or force a tune that makes the real cases
+ * worse. They are here so the figures the design's gates section quotes can be reproduced
+ * by whoever runs the gate later, and because the invariant IS asserted on them — it is
+ * the promise that must hold under any head at all, not just a plausible one.
  */
-type Walk = { name: string; pose: (t: number) => { yaw: number; step: number } };
+type Walk = { name: string; graded: boolean; pose: (t: number) => { yaw: number; step: number } };
 const WALKS: readonly Walk[] = [
   {
     name: "a hiker on a weaving trail",
+    graded: true,
     pose: (t) => ({ yaw: 0.8 * Math.sin(t * 0.07) + 0.35 * Math.sin(t * 0.23), step: 0.14 }),
   },
   {
     name: "a hiker who stops and looks around",
+    graded: true,
     pose: (t) => {
       const cycle = t % 14;
       const walking = cycle < 9;
@@ -109,6 +119,8 @@ const WALKS: readonly Walk[] = [
       return { yaw: drift + look, step: walking ? 0.14 : 0 };
     },
   },
+  { name: "scanning sweeps, never pausing (ungraded)", graded: false, pose: (t) => ({ yaw: 1.4 * Math.sin(t * 0.57), step: 0.14 }) },
+  { name: "fast mouse turns (ungraded)", graded: false, pose: (t) => ({ yaw: 3.0 * Math.sin(t * 0.8), step: 0.14 }) },
 ];
 const day: MatchState = { phase: 0, hollowDistance: Infinity, hollowHunting: false, inWorld: true, hour: 12, mist: 0 };
 
@@ -598,6 +610,11 @@ describe("cues", () => {
       // Every kind of event the director can emit was actually exercised — an invariant test
       // that never staged anything would prove nothing.
       expect([...kinds].sort()).toEqual(["drive", "place", "remove"]);
+      // Everything above is asserted on every player, graded or not: the invariant is the
+      // promise that has to hold under any head at all. What follows is the cadence, and a
+      // cadence measured against a head nobody has is a number to record, not a bound to
+      // hold code to — see `WALKS`.
+      if (!walk.graded) continue;
       // The most direct statement of the promise there is, and the one no summary statistic
       // can flatter: this player walked the whole thousand seconds and was never without an
       // animal in frame for longer than the design's ceiling. (9.9 to 11.4 s when written.)
@@ -617,17 +634,31 @@ describe("cues", () => {
       // - MOST gaps inside it, not merely half of them either side of the middle — the
       //   promise is an animal every five to ten seconds, not an average of one. (81 to 87 %
       //   when written.)
-      // - and nothing over `GAP_CEILING` among the gaps the player WALKED through, which is
-      //   the design's second half word for word. (Up to 16.3 s on the first walk, 11.8 on
-      //   the second, when written; the first never stops, so there the two sets are one.)
+      // - and nothing over `GAP_CEILING`, asserted twice over. Once on the gaps the player
+      //   WALKED through, which is the design's second half word for word — standing still
+      //   relaxes the cadence by `STILL_RELAX` on purpose, so a long gap while someone
+      //   stands and looks around is the feature working. And once over EVERY gap, which
+      //   is the stricter line and passes with room today (16.30 s on the first walk, 15.10
+      //   on the second, against a ceiling of 20). The strict line is kept because it is
+      //   free and because it is the one that catches a tail the walked filter would let
+      //   through: before the crossing's range band was scaled to each species, the second
+      //   walk's worst gap overall was 20.5 s while its worst walked gap was 11.8.
+      //
+      //   That filter is deliberately BROAD, and the gap between those two numbers is how
+      //   broad: it drops a gap if the player stood at any point during it, not if the
+      //   relaxed cadence was actually in force when the beat fell due. On the second walk
+      //   35.5 % of frames are standing and that removes 64.1 % of the gaps. Narrowing it
+      //   would be a better filter; keeping the strict line alongside is a better test.
       const median = ordered[Math.floor(ordered.length / 2)]!;
       expect(median).toBeGreaterThanOrEqual(GAP[0]);
       expect(median).toBeLessThanOrEqual(GAP[1]);
       const inBand = gaps.filter((g) => g >= GAP[0] && g <= GAP[1]).length;
       expect(inBand / gaps.length).toBeGreaterThan(0.5);
       expect(Math.max(...walked)).toBeLessThanOrEqual(GAP_CEILING);
+      expect(ordered[ordered.length - 1]!).toBeLessThanOrEqual(GAP_CEILING);
       medians.push(median);
     }
+    if (!walk.graded) return;
     // And the median of the medians, which is the figure a lucky seed cannot carry alone.
     const ordered = medians.slice().sort((a, b) => a - b);
     const middle = ordered[Math.floor(ordered.length / 2)]!;

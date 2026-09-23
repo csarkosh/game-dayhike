@@ -170,13 +170,14 @@ files:
 - each relaxation multiplier and each quiet state;
 - each staging's start position satisfying the invariant on a synthetic
   world; the eight-candidate cover search giving up cleanly;
-- the thousand-second seeded drive, over seven seeds: a player walking and
-  turning, the invariant asserted on every event, at least one cue of each
-  staging, and the gaps' WHOLE distribution against §10's gate — the median
-  inside the band, most gaps inside it, nothing over `GAP_CEILING`, and no
-  stretch longer than that with nothing on screen at all. A median alone is
-  not the gate: one has sat inside the band over a distribution with a quarter
-  of its gaps past twenty seconds and a worst case of ninety-six;
+- the thousand-second seeded drive, over seven seeds and four player models:
+  the invariant asserted on every event of all four, and on the two graded
+  models the gaps' WHOLE distribution against §10's gate — the median inside
+  the band, most gaps inside it, nothing over `GAP_CEILING` either among the
+  gaps the player walked through or among all of them, and no stretch longer
+  than that with nothing on screen at all. A median alone is not the gate: one
+  has sat inside the band over a distribution with a quarter of its gaps past
+  twenty seconds and a worst case of ninety-six;
 - recycling preferred over spawning when a unit is available; removal only
   off screen;
 - `PHASE_CUE` entering, walking to its goal, and resuming rest;
@@ -199,11 +200,14 @@ In the game, against `main`:
 - a three-minute daytime walk along the stem from TRAIL toward EDGE, the
   director's log read back through the wildlife events: the gap histogram's
   median inside 5–10 s and no gap over 20 s while moving; species share
-  small:large within 6:1 ± 30 %. **Expect the in-game median to read lower than
-  the harness's** — a real player turns far more than the gentle model does, and
-  the harness measures 7.7 s at 0.14 rad/s against 6.8 at 0.44 and 3.8 at 0.8.
-  A median of 4 to 7 s with a lively player is the gate passing, not a
-  regression;
+  small:large within 6:1 ± 30 %. Read the log's yaw rate alongside the median,
+  because the two are not independent: the harness measures 7.7 s at
+  0.14 rad/s, 6.8 at 0.44 and 3.8 at 0.8, so a player who turns a lot gets a
+  shorter median from unchanged code. A median under the band is therefore only
+  excused **if the same log shows a high yaw rate** — at an ordinary one it is
+  over-cueing, and it is a regression. This is a condition on the gate, not a
+  second band: 5–10 s remains the number, and "a lively player" is not an
+  explanation anyone may reach for without the yaw rate to back it;
 - the same walk at night showing the gaps stretched by about 2.5;
 - a chase segment with zero cues in the log;
 - the log reviewed for any event the invariant flagged — there must be none;
@@ -217,21 +221,32 @@ In the game, against `main`:
 against matters as much as the numbers. Over seven seeds of a thousand seconds
 each, on a flat world:
 
-| player | peak yaw rate | median gap | inside 5–10 s | longest gap | over 20 s |
-|---|---|---|---|---|---|
-| hiker on a weaving trail | 0.14 rad/s | 7.7 s | 85 % | 16.3 s | 0 |
-| hiker who stops and looks around | 0.44 rad/s | 6.8 s | 67 % | 15.1 s | 0 |
-| scanning sweeps, never pausing | 0.80 rad/s | 3.8 s | 33 % | 21.1 s | 1 |
-| fast mouse turns | 2.40 rad/s | 3.7 s | 16 % | 31.9 s | 6 |
+| player | peak yaw rate | standing | median gap | inside 5–10 s | longest gap | over 20 s |
+|---|---|---|---|---|---|---|
+| hiker on a weaving trail | 0.14 rad/s | 0 % | 7.7 s | 85 % | 16.3 s | 0 |
+| hiker who stops and looks around | 0.44 rad/s | 36 % | 6.8 s | 67 % | 15.1 s | 0 |
+| scanning sweeps, never pausing | 0.80 rad/s | 0 % | 3.8 s | 33 % | 21.1 s | 1 |
+| fast mouse turns | 2.40 rad/s | 0 % | 3.7 s | 16 % | 31.9 s | 6 |
 
-The first two are asserted on. The last two are stress inputs rather than
-players — a head sweeping through most of a circle without pause for a thousand
-seconds is nobody — and the point of recording them is the direction they fail
-in: **busy, not empty**. More turning sweeps more animals through the frame and
-each is credited, so the median falls below the band rather than above it, and
-the long gaps that do appear are the few moments the player's head was
-somewhere the prediction could not follow. The invariant held at zero
-violations under every one of the four.
+All four are in `wildlifeDirector.test.ts`, so these figures can be measured
+again rather than taken on trust. The first two are graded; the last two are
+stress inputs rather than players — a head sweeping through most of a circle
+without pause for a thousand seconds is nobody — and grading one would either
+fail honestly or force a tune that makes the real cases worse. The invariant is
+asserted on all four and held at zero violations under every one.
+
+The standing column matters for reading the second row. Those 36 % of frames
+are why the ceiling assertion on the gaps the player *walked* covers only a
+third of that walk's gaps: the filter drops a gap if the player stood at any
+point during it, so a third of the time standing removes about two thirds of
+the gaps. That is why the ceiling is also asserted over every gap, which on
+both graded walks passes with room.
+
+The point of recording the last two rows is the direction they fail in:
+**busy, not empty**. More turning sweeps more animals through the frame and
+each is credited, so the median falls below the band rather than above it. That
+is also the reason §10's caveat is conditional — the same movement that excuses
+a low median is the movement that produces one.
 
 ## 11. Fallbacks
 
@@ -245,3 +260,13 @@ staging restricted to beyond-fog starts; the butterfly off.
   is never seen appearing either.
 - Sightings that react to the player's look direction, once the director is
   measured.
+- **Settle whether `aimFrame` should predict the head turn at all.** Setting
+  `AIM_YAW_CAP` to 0 deletes that half of the prediction, leaving only the
+  walk, and it passes every test in the suite. It is genuinely mixed rather
+  than better: the share of gaps inside the band improves on every turning
+  player (the hiker who stops and looks 67 → 71 %, scanning sweeps 33 → 41 %)
+  and gets worse on the gentle one (85 → 81 %), while the heaviest head
+  degrades sharply — its gaps over twenty seconds go from 6 to 18. Nothing in
+  the suite decides it, and the walk added most recently prefers the term
+  absent, so it wants a measurement of its own rather than a snap call. Noted
+  so that it is a known open question rather than a rediscovery.
