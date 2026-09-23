@@ -26,7 +26,7 @@ import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
 import { macroNoise, macroTint } from "../../src/game/groundHexParams.js";
-import { ROCK_CUTS, rockHalfExtent, rockPlanes } from "../../src/game/rockRelief.js";
+import { ROCK_CUTS, rockPlanes } from "../../src/game/rockRelief.js";
 import { activeTerrainVariant, elevationSampleAt } from "../../src/sim/terrain.js";
 import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { trampleAt } from "../../src/game/trailBenchParams.js";
@@ -493,9 +493,9 @@ describe("reliefMesh", () => {
     // loader's meshes are — otherwise the cut below is cut from the wrong shape.
     expect(windingOrientation(source)).toBe(Material.ClockWiseSideOrientation);
     expect(source.sideOrientation).toBe(Material.ClockWiseSideOrientation);
-    const halfExtent = rockHalfExtent(source.getVerticesData(VertexBuffer.PositionKind) as Float32Array);
+    const positions = source.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
 
-    const mesh = reliefMesh(source, 0, 2, rockPlanes(0, 2, halfExtent));
+    const mesh = reliefMesh(source, 0, 2, rockPlanes(0, 2, positions));
 
     // The cut keeps the source's triangle order, so it must keep the source's
     // declared front face too. A `new Mesh` defaults to the opposite value in
@@ -511,8 +511,8 @@ describe("reliefMesh", () => {
     const source = CreateBox("clutter.rock_a.LOD0", { size: 1 }, scene);
     const material = new PBRMaterial("rock_a", scene);
     source.material = material;
-    const halfExtent = rockHalfExtent(source.getVerticesData(VertexBuffer.PositionKind) as Float32Array);
-    const planes = rockPlanes(0, 2, halfExtent);
+    const positions = source.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
+    const planes = rockPlanes(0, 2, positions);
 
     const mesh = reliefMesh(source, 0, 2, planes);
 

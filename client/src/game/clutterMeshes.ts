@@ -78,7 +78,7 @@ import { macroNoise, macroTint } from "./groundHexParams.js";
 import { forestDensity } from "../sim/vegetation.js";
 import type { Rgb } from "./colour.js";
 import { trampleAt, TRAMPLE_BAND } from "./trailBenchParams.js";
-import { ROCK_CUTS, rockHalfExtent, rockPlanes, rockRelief, type RockPlane } from "./rockRelief.js";
+import { ROCK_CUTS, rockPlanes, rockRelief, type RockPlane } from "./rockRelief.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
 // exactly BOULDER_SINK · (that variant's own BASE_H) · scale shows a visible
@@ -552,7 +552,9 @@ export function createClutterMeshes(
 
   const casterMeshes: Mesh[] = [];
   const containers: AssetContainer[] = [];
-  /** `buckets[class][variant][lod]`, or null until the GLBs land. */
+  /** `buckets[class][variant * cutsFor(class) + cut][lod]`, or null until the
+   * GLBs land — plain `[class][variant][lod]` for every class outside
+   * `CUT_CLASSES`, where `cutsFor` is 1 and the cut is always 0. */
   let buckets: Bucket[][][] | null = null;
   let disposed = false;
 
@@ -742,12 +744,15 @@ export function createClutterMeshes(
   /**
    * For a cut class, splits each loaded model's `[lod]` mesh group into
    * `ROCK_CUTS` cut copies, laid out as `[variant * ROCK_CUTS + cut][lod]` so
-   * `bucketFor` above can find them. The plane list is derived once per
-   * model from LOD0's half-extent and handed to BOTH LOD0 and LOD1's
-   * `reliefMesh` call — the one thing this function exists to guarantee,
-   * since a rock cut with two different plane lists would change shape the
-   * moment its LOD swaps. Classes outside `CUT_CLASSES` pass through
-   * untouched, so this is a no-op for the other seven.
+   * `bucketFor` above can find them. The plane list is derived once per model
+   * from LOD0's own vertices and handed to BOTH LOD0 and LOD1's `reliefMesh`
+   * call — the one thing this function exists to guarantee, since a rock cut
+   * with two different plane lists would change shape the moment its LOD
+   * swaps. `rockPlanes` returns the planes that survive its cap-share rule,
+   * not the candidates it started from, so what both LODs share is the set
+   * that actually cuts and not merely the set that was considered. Classes
+   * outside `CUT_CLASSES` pass through untouched, so this is a no-op for the
+   * other seven.
    *
    * The model index handed to `rockPlanes`/`reliefMesh` is `cls * 16 +
    * variant`, not the bare per-class variant: rock's and boulder's own first
@@ -763,9 +768,9 @@ export function createClutterMeshes(
       const perLod = variants[variant] as Mesh[][];
       const lod0 = perLod[NEAR_LOD] as Mesh[];
       const lod1 = perLod[FAR_LOD] as Mesh[];
-      const halfExtent = rockHalfExtent(lod0[0]!.getVerticesData(VertexBuffer.PositionKind) as Float32Array);
+      const lod0Positions = lod0[0]!.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
       for (let cut = 0; cut < ROCK_CUTS; cut++) {
-        const planes = rockPlanes(model, cut, halfExtent);
+        const planes = rockPlanes(model, cut, lod0Positions);
         expanded.push([
           lod0.map((mesh) => reliefMesh(mesh, model, cut, planes)),
           lod1.map((mesh) => reliefMesh(mesh, model, cut, planes)),
