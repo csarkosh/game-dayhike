@@ -39,6 +39,11 @@ export type DuffCharacter = {
   tintSpread: number;
   /** Lift of the far end above the ground (rad), by the piece's draw. */
   lift: readonly [number, number];
+  /** Whether a piece also writes a fork strip (the branch). An explicit
+   * field rather than an identity check against `DUFF_CHARACTERS`, so a
+   * caller that clones or maps a character (the trail litter is the second
+   * one) still gets its fork. */
+  forked: boolean;
 };
 
 /** Roots lie on a disc of this radius (m). */
@@ -53,10 +58,19 @@ export const DUFF_TIER_COUNTS: Record<"high" | "medium", readonly [number, numbe
   medium: [1, 1],
 };
 
+/** The fork's attachment point, as a fraction along the branch's own length. */
+const DUFF_FORK_OFFSET = 0.6;
+/** The fork's own length, as a fraction of the branch's own length. */
+const DUFF_FORK_LENGTH = 0.45;
+/** The fork's half-width, as a fraction of the branch's own half-width. */
+const DUFF_FORK_WIDTH = 0.7;
+/** The fork's angle (rad) off the branch's own line. */
+const DUFF_FORK_ANGLE = 0.61;
+
 export const DUFF_CHARACTERS: readonly DuffCharacter[] = [
-  { name: "twig", pieces: [2, 3], length: [0.10, 0.25], width: 0.005, tint: { r: 1.0, g: 0.85, b: 0.65 }, tintSpread: 0.25, lift: [0.05, 0.25] },
-  { name: "leaf cluster", pieces: [4, 6], length: [0.04, 0.07], width: 0.022, tint: { r: 1.15, g: 0.80, b: 0.45 }, tintSpread: 0.3, lift: [0.0, 0.12] },
-  { name: "small branch", pieces: [1, 1], length: [0.30, 0.60], width: 0.010, tint: { r: 0.85, g: 0.70, b: 0.55 }, tintSpread: 0.2, lift: [0.02, 0.15] },
+  { name: "twig", pieces: [2, 3], length: [0.10, 0.25], width: 0.005, tint: { r: 1.0, g: 0.85, b: 0.65 }, tintSpread: 0.25, lift: [0.05, 0.25], forked: false },
+  { name: "leaf cluster", pieces: [4, 6], length: [0.04, 0.07], width: 0.022, tint: { r: 1.15, g: 0.80, b: 0.45 }, tintSpread: 0.3, lift: [0.0, 0.12], forked: false },
+  { name: "small branch", pieces: [1, 1], length: [0.30, 0.60], width: 0.010, tint: { r: 0.85, g: 0.70, b: 0.55 }, tintSpread: 0.2, lift: [0.02, 0.15], forked: true },
 ];
 
 export type DuffClumpGeometry = StripArrays;
@@ -70,13 +84,66 @@ function pieceCount(character: DuffCharacter, count: number): number {
   return count * (lo + Math.floor(draw(7, 11) * (hi - lo + 1)));
 }
 
-/** A branch is one strip plus a fork strip; every other piece is one strip. */
+/** A forked piece (the branch) is one strip plus a fork strip; every other
+ * piece is one strip. */
 function stripsPer(character: DuffCharacter): number {
-  return character === DUFF_CHARACTERS[DUFF_BRANCH] ? 2 : 1;
+  return character.forked ? 2 : 1;
 }
 
 export function duffVertexCount(character: DuffCharacter, count: number): number {
   return pieceCount(character, count) * stripsPer(character) * BLADE_VERTS;
+}
+
+/**
+ * The farthest a clump of this character can reach from its own center (m),
+ * derived from the same numbers the geometry uses — the root disc, the
+ * piece's own length range, half-width and lift range — rather than
+ * measured off a sample and rounded, so it moves automatically when a
+ * character is retuned. A later renderer task uses this for culling and for
+ * how far a clump can extend past its cell.
+ *
+ * A plain piece's farthest vertex is either its tip (at the shallowest lift
+ * in the character's range, since cosine is largest there) or a root-ring
+ * vertex at its full half-width; whichever is farther from the root sets the
+ * local reach. A forked piece (the branch) also has to account for the
+ * fork's own tip and root-ring vertices, each reached by two piece segments
+ * at a fixed angle to one another (`DUFF_FORK_ANGLE`) rather than lying on
+ * one line, so those two candidates are combined by the law of cosines
+ * (`a² + b² + 2ab·cos/sin(angle)`) rather than simply summed, which would
+ * overstate the reach.
+ */
+export function duffClumpReach(character: DuffCharacter): number {
+  const cl = Math.cos(character.lift[0]);
+  const length = character.length[1];
+  let local = Math.max(cl * length, character.width);
+  if (character.forked) {
+    const toFork = cl * length * DUFF_FORK_OFFSET;
+    const forkTip = cl * length * DUFF_FORK_LENGTH;
+    const forkRoot = character.width * DUFF_FORK_WIDTH;
+    const cosA = Math.cos(DUFF_FORK_ANGLE), sinA = Math.sin(DUFF_FORK_ANGLE);
+    const throughTip = Math.sqrt(toFork * toFork + forkTip * forkTip + 2 * toFork * forkTip * cosA);
+    const throughRoot = Math.sqrt(toFork * toFork + forkRoot * forkRoot + 2 * toFork * forkRoot * sinA);
+    local = Math.max(local, throughTip, throughRoot);
+  }
+  return DUFF_CLUMP_RADIUS + local;
+}
+
+/**
+ * The highest a clump of this character's vertices can rise (m) before the
+ * generator's own safety clamp to `DUFF_HEIGHT_MAX`, derived the same way as
+ * `duffClumpReach`: a plain piece's tip rises `length · sin(lift)` at most,
+ * and a forked piece's fork tip carries the branch's own rise to the fork's
+ * base as well as the fork's own, so it rises `length · sin(lift) ·
+ * (DUFF_FORK_OFFSET + DUFF_FORK_LENGTH)` at most. Both assume the piece's
+ * own maximum length and lift, the combination that rises highest. A test
+ * asserts this stays under `DUFF_HEIGHT_MAX` with real margin, so the clamp
+ * — kept as a last-resort safety — cannot quietly start firing and go
+ * unnoticed.
+ */
+export function duffClumpMaxHeight(character: DuffCharacter): number {
+  const rise = character.length[1] * Math.sin(character.lift[1]);
+  const factor = character.forked ? Math.max(1, DUFF_FORK_OFFSET + DUFF_FORK_LENGTH) : 1;
+  return rise * factor;
 }
 
 /** Rotates the vertices [first, first + n) about the piece's root so the
@@ -98,6 +165,12 @@ function layDown(g: StripArrays, first: number, n: number, rootX: number, rootZ:
     const ux = nx * sl, uy = cl, uz = nz * sl;
     const l = Math.hypot(ux, uy, uz) || 1;
     g.normals[v * 3] = ux / l; g.normals[v * 3 + 1] = uy / l; g.normals[v * 3 + 2] = uz / l;
+    // This is exact at lift = 0 (a flat piece's true normal is straight up)
+    // but blends toward the upright strip's own rolled-cylinder normal
+    // rather than the true flat-ribbon normal as lift rises, off by no more
+    // than sin(lift) — at most sin(0.25) ≈ 0.247, the twig's own largest
+    // declared lift. Kept: the visible error is small, and computing the
+    // exact flat normal would need its own path through the strip writer.
     void ny;
   }
 }
@@ -121,15 +194,15 @@ export function duffClumpGeometry(character: DuffCharacter, count: number): Duff
       random, character.tint.r * luma, character.tint.g * luma, character.tint.b * luma, rootX, rootZ);
     layDown(w, first, BLADE_VERTS, rootX, rootZ, dirX, dirZ, lift);
     if (strips === 2) {
-      // The fork: a shorter strip from 60 % along the branch, 35° off its line.
-      const fx = rootX + dirX * length * 0.6 * Math.cos(lift), fz = rootZ + dirZ * length * 0.6 * Math.cos(lift);
-      const fyaw = yaw + (draw(p, 9) < 0.5 ? 0.61 : -0.61);
+      // The fork: a shorter strip from partway along the branch, at an angle off its line.
+      const fx = rootX + dirX * length * DUFF_FORK_OFFSET * Math.cos(lift), fz = rootZ + dirZ * length * DUFF_FORK_OFFSET * Math.cos(lift);
+      const fyaw = yaw + (draw(p, 9) < 0.5 ? DUFF_FORK_ANGLE : -DUFF_FORK_ANGLE);
       const fdx = Math.cos(fyaw), fdz = Math.sin(fyaw);
-      const f2 = w.strip(fx, 0, fz, length * 0.45, 0, character.width * 0.7, fdx, fdz, fyaw + Math.PI / 2,
+      const f2 = w.strip(fx, 0, fz, length * DUFF_FORK_LENGTH, 0, character.width * DUFF_FORK_WIDTH, fdx, fdz, fyaw + Math.PI / 2,
         random, character.tint.r * luma, character.tint.g * luma, character.tint.b * luma, rootX, rootZ);
       layDown(w, f2, BLADE_VERTS, fx, fz, fdx, fdz, lift);
       // The fork's base sits at the branch's height there.
-      const baseY = length * 0.6 * Math.sin(lift);
+      const baseY = length * DUFF_FORK_OFFSET * Math.sin(lift);
       for (let v = f2; v < f2 + BLADE_VERTS; v++) w.positions[v * 3 + 1] = Math.min(DUFF_HEIGHT_MAX, w.positions[v * 3 + 1]! + baseY);
     }
     for (let v = first; v < first + BLADE_VERTS; v++) w.positions[v * 3 + 1] = Math.min(DUFF_HEIGHT_MAX, w.positions[v * 3 + 1]!);

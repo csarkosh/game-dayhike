@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DUFF_ALBEDO, DUFF_BRANCH, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_CLUMP_RADIUS, DUFF_HEIGHT_MAX, DUFF_LEAF, DUFF_TIER_COUNTS, DUFF_TWIG,
-  duffClumpGeometry, duffVertexCount,
+  duffClumpGeometry, duffClumpMaxHeight, duffClumpReach, duffVertexCount,
 } from "../../src/game/duffClump.js";
 import { BLADE_TIP_TINT } from "../../src/game/bladeClump.js";
 
@@ -39,15 +39,49 @@ describe("duffClumpGeometry", () => {
     }
   });
 
-  it("lies on the ground: every vertex inside the clump disc and under the height cap, and lifted at most a little", () => {
+  it("lies on the ground: every vertex inside the clump's derived reach and under the height cap, and lifted at most a little", () => {
     for (const ch of DUFF_CHARACTERS) {
+      const reach = duffClumpReach(ch);
       const g = duffClumpGeometry(ch, 3);
       for (let v = 0; v < g.positions.length / 3; v++) {
         const x = g.positions[v * 3]!, y = g.positions[v * 3 + 1]!, z = g.positions[v * 3 + 2]!;
-        expect(Math.hypot(x, z)).toBeLessThanOrEqual(DUFF_CLUMP_RADIUS + ch.length[1] + 1e-9);
+        expect(Math.hypot(x, z)).toBeLessThanOrEqual(reach + 1e-9);
         expect(y).toBeGreaterThanOrEqual(-1e-9);
         expect(y).toBeLessThanOrEqual(DUFF_HEIGHT_MAX + 1e-9);
       }
+    }
+  });
+
+  it("bounds a real sample: duffClumpReach and duffClumpMaxHeight are true bounds, with margin to spare", () => {
+    // A large sample (a tier multiplier, not a piece count — see the vertex-
+    // budget test below) so a piece's parameters approach their own extremes
+    // many times over; the assertions must hold regardless of how close a
+    // sample happens to get, since duffClumpReach and duffClumpMaxHeight are
+    // derived analytically from the character's own numbers, not fitted to
+    // a sample. `worstHeight` is checked with a strict `<`, not `<=` plus a
+    // tolerance: the generator clamps to DUFF_HEIGHT_MAX, so a permissive
+    // bound on the clamped output can never fail even once the clamp starts
+    // firing — only a strict bound on the achieved value catches that.
+    const SAMPLE = 20_000;
+    for (const ch of DUFF_CHARACTERS) {
+      const reach = duffClumpReach(ch);
+      const maxHeight = duffClumpMaxHeight(ch);
+      expect(maxHeight).toBeLessThan(DUFF_HEIGHT_MAX);
+
+      const g = duffClumpGeometry(ch, SAMPLE);
+      let worstReach = 0, worstHeight = 0;
+      for (let v = 0; v < g.positions.length / 3; v++) {
+        const x = g.positions[v * 3]!, y = g.positions[v * 3 + 1]!, z = g.positions[v * 3 + 2]!;
+        worstReach = Math.max(worstReach, Math.hypot(x, z));
+        worstHeight = Math.max(worstHeight, y);
+      }
+      expect(worstReach).toBeLessThanOrEqual(reach + 1e-9);
+      expect(worstHeight).toBeLessThan(DUFF_HEIGHT_MAX);
+      console.log(
+        `duff ${ch.name}: reach ${reach.toFixed(6)} m (sampled ${worstReach.toFixed(6)} m, ` +
+        `margin ${(reach - worstReach).toFixed(6)} m); height-cap margin ${(DUFF_HEIGHT_MAX - maxHeight).toFixed(6)} m ` +
+        `analytic, ${(DUFF_HEIGHT_MAX - worstHeight).toFixed(6)} m sampled`,
+      );
     }
   });
 
@@ -80,10 +114,14 @@ describe("duffClumpGeometry", () => {
     }
   });
 
-  it("is deterministic", () => {
+  it("is deterministic: positions, normals, colours, the collapse attribute and the index buffer all repeat", () => {
     const a = duffClumpGeometry(DUFF_CHARACTERS[DUFF_TWIG]!, 3);
     const b = duffClumpGeometry(DUFF_CHARACTERS[DUFF_TWIG]!, 3);
     expect(Array.from(a.positions)).toEqual(Array.from(b.positions));
+    expect(Array.from(a.normals)).toEqual(Array.from(b.normals));
+    expect(Array.from(a.colors)).toEqual(Array.from(b.colors));
+    expect(Array.from(a.blade)).toEqual(Array.from(b.blade));
+    expect(Array.from(a.indices)).toEqual(Array.from(b.indices));
   });
 
   it("stays under the vertex budget over the high tier's reach at full strength", () => {
