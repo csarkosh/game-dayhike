@@ -862,6 +862,77 @@ describe("the terrain feature mask", () => {
     const x = pond.x + pond.radius + 1;
     expect(clutterDensity(MASK_SEED, CLUTTER_GRASS, x, pond.z)).toBe(0);
   });
+
+  // The bug this guards: `groundCover` (unlike `clutterDensity`) used to
+  // skip the feature mask entirely, so a caller reading it directly — the
+  // blade field, since it stopped going through `clutterDensity` — grew
+  // grass, and stood clumps, on ground the mask marks bare (a pond's shore,
+  // the peak's crest). Both fields now apply `fm.clutter` inside
+  // `groundCoverAt`, so this must be true of `groundCover` itself, not only
+  // of the class this repo happened to already gate correctly.
+  it("zeroes grass AND duff at a real masked point, through groundCover directly", () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    const { features } = bowlFor(MASK_SEED);
+    const pond = features.find((f) => f.kind === "pond")!;
+    const x = pond.x + pond.radius + 1, z = pond.z;
+    const v = activeTerrainVariant();
+    const h = v.sample(MASK_SEED, x, z).h;
+    expect(v.featureMask?.(MASK_SEED, x, z, h).clutter).toBe(0); // the point really is masked
+    const cover = groundCover(MASK_SEED, x, z);
+    expect(cover.grass).toBe(0);
+    expect(cover.duff).toBe(0);
+  });
+
+  // The fix moves fm.clutter INSIDE the shared field (groundCoverAt) so that
+  // `groundCover` picks it up too, rather than leaving it as something only
+  // `clutterDensity`'s own call sites remembered to multiply by. That must
+  // not perturb a single bit of what `clutterDensity` already returned for
+  // GRASS, MEADOW or FLOWER — pin all three across the pond's 2 m mask fade
+  // (fm.clutter running from 0 to 1), where any reordering of the
+  // composition would show up first.
+  it("leaves clutterDensity's grass, meadow and flower classes bitwise unchanged across the mask's fade", () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    const { features } = bowlFor(MASK_SEED);
+    const pond = features.find((f) => f.kind === "pond")!;
+    const v = activeTerrainVariant();
+    let fractional = 0;
+    for (let d = 0; d <= 8; d += 0.25) {
+      const x = pond.x + pond.radius + d, z = pond.z;
+      const h = v.sample(MASK_SEED, x, z).h;
+      const fm = v.featureMask?.(MASK_SEED, x, z, h);
+      if (fm === undefined) continue;
+      if (fm.clutter > 0 && fm.clutter < 1) fractional++;
+      const grass = clutterDensity(MASK_SEED, CLUTTER_GRASS, x, z);
+      const meadow = clutterDensity(MASK_SEED, CLUTTER_MEADOW, x, z);
+      // fm.meadow is 0 this far from the made meadow, so meadow's own
+      // "(1 + fm.meadow)" is an exact no-op and it must equal grass exactly.
+      expect(meadow).toBe(grass);
+      // The field now applies the real mask itself, so the class and the
+      // field it reads must agree exactly — not just away from every
+      // feature (the old comment's caveat), but everywhere, mask included.
+      expect(grass).toBe(groundCover(MASK_SEED, x, z).grass);
+    }
+    // A vacuity guard: the walk actually crossed the fade, not just its ends.
+    expect(fractional).toBeGreaterThan(3);
+    // A flower-bearing point inside the same fade, found by a quick scan
+    // (2026-09-23): its own drift happens to clear the patch gate here, so
+    // this is a genuine, non-vacuous flower value, not 0 === 0.
+    const a = (204 * Math.PI) / 180;
+    const fx = pond.x + (pond.radius + 4.25) * Math.cos(a);
+    const fz = pond.z + (pond.radius + 4.25) * Math.sin(a);
+    const fh = v.sample(MASK_SEED, fx, fz).h;
+    const ffm = v.featureMask?.(MASK_SEED, fx, fz, fh);
+    expect(ffm?.clutter).toBeGreaterThan(0);
+    expect(ffm?.clutter).toBeLessThan(1);
+    const flower = clutterDensity(MASK_SEED, CLUTTER_FLOWER, fx, fz);
+    expect(flower).toBeGreaterThan(0);
+    // Measured before and after moving fm.clutter into groundCoverAt: the
+    // flower class still composes base · drift · fm.clutter · (1 + fm.meadow)
+    // in that exact order (it asks the field for the RAW, unmasked grass and
+    // keeps applying fm.clutter itself — see the CLUTTER_FLOWER case), so
+    // this stayed bit-for-bit the same value across the change.
+    expect(flower).toBe(0.0004611562793366643);
+  });
 });
 
 describe("groundCover", () => {
@@ -1005,10 +1076,11 @@ describe("groundCover", () => {
       expect(cover.grass).toBeLessThanOrEqual(CLUTTER_GRASS_BOOST);
       expect(cover.duff).toBeGreaterThanOrEqual(0);
       expect(cover.duff).toBeLessThanOrEqual(1);
-      // clutterDensity multiplies the field by the feature mask, which is 1
-      // away from every feature; at these points the two agree exactly.
+      // The class and the field both apply the feature mask now (see "the
+      // terrain feature mask" above for the masked case), so they agree
+      // exactly everywhere, not only away from every feature.
       const g = clutterDensity(SEED, CLUTTER_GRASS, x, z);
-      expect(g).toBeLessThanOrEqual(cover.grass + 1e-12);
+      expect(g).toBe(cover.grass);
     }
   });
 

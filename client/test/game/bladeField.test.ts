@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { CLUTTER_MEADOW, groundCover } from "../../src/sim/clutter.js";
+import { bowlFor } from "../../src/sim/olympic.js";
 import { CLUTTER_FAR_SPLIT, CLUTTER_RADII, clutterSeamEdges } from "../../src/game/clutterField.js";
 import {
   BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_CHARACTER_WEIGHTS, BLADE_FINE, BLADE_FLOWER, BLADE_FLOWER_MIN_STRENGTH,
@@ -143,6 +144,22 @@ describe("one cell", () => {
     // Not asserted > 0: whether a null cell falls inside this window is the
     // world's business; the gate test above is what matters.
     void nulls;
+  });
+
+  // The bug this guards: `bladeCellAt` reads `groundCover` directly, so if
+  // that field ever again forgot the trail-system feature mask, a clump
+  // would stand on ground the mask marks bare — a pond's shore, the peak's
+  // crest — with nothing else in this file able to notice. Found from the
+  // seed's own world (never a hardcoded coordinate a terrain change could
+  // move): a point on a real pond's shore, where `fm.clutter` is 0.
+  it("grows nothing on a real masked point (a pond's shore band)", () => {
+    const MASK_SEED = 12345;
+    const { features } = bowlFor(MASK_SEED);
+    const pond = features.find((f) => f.kind === "pond")!;
+    const x = pond.x + pond.radius + 1, z = pond.z;
+    expect(groundCover(MASK_SEED, x, z).grass).toBe(0);
+    const ci = Math.floor(x / BLADE_CELL), cj = Math.floor(z / BLADE_CELL);
+    expect(bladeCellAt(MASK_SEED, ci, cj)).toBeNull();
   });
 });
 

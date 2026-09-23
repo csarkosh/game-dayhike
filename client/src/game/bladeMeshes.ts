@@ -1,7 +1,7 @@
 /**
  * The Babylon shell over `bladeField.ts`: one thin-instance bucket per clump
- * character and distance tier, on one opaque material per tier, filled from
- * the field's tier lists with the cards' own matrix, trample and tint writers
+ * character, distance tier and size, on one opaque material per tier, filled
+ * from the field's tier lists with the cards' own matrix, trample and tint writers
  * (clutterMeshes.ts) plus a per-instance strength. Rebuilt on the field's own
  * 1 m crossing; no per-frame allocation on the hot path, the clutter shell's
  * discipline. Nothing here dithers: every hand-off is geometric, so no bucket
@@ -57,8 +57,8 @@ export type BladeMeshesOptions = { quality: BladeQuality };
 export type BladeMeshes = {
   update(camX: number, camZ: number): void;
   /**
-   * Every bucket mesh, in tier-then-character order. Unlike the clutter
-   * shell's `casterMeshes` this array is complete the moment
+   * Every bucket mesh, in tier-then-character-then-size order. Unlike the
+   * clutter shell's `casterMeshes` this array is complete the moment
    * `createBladeMeshes` returns and never grows: the clumps are generated
    * geometry, not a GLB that has to land first, so there is no deferred
    * adoption and no contract to watch the length.
@@ -94,10 +94,10 @@ type Bucket = {
 };
 
 /** Instances a bucket's first real allocation covers. A tier's cells are
- * split four ways by character, and the fine tier's disc (4 m + pad) holds a
- * few hundred cells at full strength, so the common bucket settles after one
- * or two doublings and only the coarse tier's fine-grass bucket — the 0.6
- * weight over an 18 m disc — climbs further. */
+ * split twelve ways by character and size, and the fine tier's disc (4 m +
+ * pad) holds a few hundred cells at full strength, so the common bucket
+ * settles after one or two doublings and only the coarse tier's fine-grass
+ * bucket — the 0.6 weight over an 18 m disc — climbs further. */
 const BUCKET_MIN_INSTANCES = 64;
 
 /** Shared zero-length placeholder for a bucket that has never held an

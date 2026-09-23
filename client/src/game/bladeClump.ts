@@ -52,8 +52,13 @@ export const BLADE_LUMA = 0.3;
 export const BLADE_SOFT = 0.15;
 /** The high tier's whole field, every cell at BLADE_SIZE_FULL, must stay
  * under this many vertices (a test computes it from the reach, the pad and
- * the counts) — the budget covers the field's worst case, not its typical
- * one; the real bar is a frame-time measurement. */
+ * the counts). In the open interior this is close to the ordinary case, not
+ * a rare corner: the boost that earns a cell BLADE_SIZE_FULL is common
+ * ground there, not an edge condition, so most of a census's fine
+ * (near-distance) tier already draws at full size. Measured at 1,543,239
+ * vertices for this budget's own worst-case sum, against 1,232,644 before
+ * clump sizes existed — about 25% more — the real bar for that rise is a
+ * frame-time measurement, not this constant. */
 export const BLADE_VERTEX_BUDGET = 1_600_000;
 
 export type BladeTip = "none" | "seed" | "flower";
@@ -118,7 +123,16 @@ export const BLADE_TIER_COUNTS: Record<BladeQuality, readonly (readonly [number,
 };
 /** Blades per clump as a multiple of the tier's count, by size (thin, base, full). */
 export const BLADE_SIZE_FACTOR: readonly [number, number, number] = [0.4, 1, 1.5];
-/** A clump never carries fewer than this many blades. */
+/** A clump never carries fewer than this many blades. This floor is above
+ * several buckets' own scaled count (their base table entry times
+ * `BLADE_SIZE_FACTOR` rounds under 4), so those buckets draw more blades
+ * than their table says, and some sizes of the same bucket end up drawing
+ * the identical count — 5 of the 24 (quality, character, tier) combinations
+ * have two of their three sizes collide on one floored count, sharing that
+ * size's geometry. `medium`'s weed-coarse bucket (base 2) floors to 4 at
+ * every size, so "medium draws half of high" is not true of that one
+ * bucket read straight off `BLADE_TIER_COUNTS` — this is by design (a
+ * clump this sparse still has to read as a clump), not a bug. */
 export const BLADE_COUNT_MIN = 4;
 /** Blades a cell's clump carries: the tier's base count for its character,
  * scaled by its size and floored at `BLADE_COUNT_MIN` so even a thin,

@@ -11,7 +11,7 @@
 import { fbm2, hash3, valueNoise2 } from "./field.js";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./terrain.js";
 import { forestDensity, SLOPE_HI, SLOPE_LO } from "./vegetation.js";
-import { NO_FEATURE_MASK } from "./features.js";
+import { NO_FEATURE_MASK, type FeatureMask } from "./features.js";
 
 // ---- Class ids (not tunables) ---------------------------------------------
 export const CLUTTER_GRASS = 0;
@@ -451,8 +451,15 @@ export function clutterCell(cls: number): number {
 /** The ground-cover field at a point: `grass` in [0, CLUTTER_GRASS_BOOST],
  * `duff` in [0, 1] — dead leaves, twigs and branches wherever grass thins on
  * grass ground. Every factor is a smoothstep of a continuous field, so both
- * numbers are continuous; nothing decides per cell. */
-function groundCoverAt(seed: number, x: number, z: number, s: TerrainSample, r: number, rt: number, slopeSq: number): GroundCover {
+ * numbers are continuous; nothing decides per cell. `fm.clutter` is the
+ * trail-system feature mask (a pond's shore, the peak's crest): it is the
+ * LAST factor applied to both outputs, so a caller that needs its own
+ * factors (meadow's density bonus, flower's drift) interposed between the
+ * raw field and the mask — in the exact order it already multiplied them in
+ * — must apply `fm.clutter` itself and pass `NO_FEATURE_MASK` here instead,
+ * rather than let this function fold the mask in earlier than that order
+ * allows. */
+function groundCoverAt(seed: number, x: number, z: number, s: TerrainSample, r: number, rt: number, slopeSq: number, fm: FeatureMask): GroundCover {
   const alt =
     smoothstep(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, s.h) *
     (1 - smoothstep(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h));
@@ -492,7 +499,7 @@ function groundCoverAt(seed: number, x: number, z: number, s: TerrainSample, r: 
   const floorDuff = onGrass * Math.max(0, 1 - grass / CLUTTER_GRASS_BOOST) * (CLUTTER_DUFF_OPEN + (1 - CLUTTER_DUFF_OPEN) * shade) * offCore * road2;
   const drift = smoothstep(CLUTTER_DUFF_DRIFT_LO, CLUTTER_DUFF_DRIFT_HI, trailDriftNoise(seed, x, z));
   const bedDuff = onGrass * onBed * drift * CLUTTER_DUFF_BED_MAX * road2;
-  return { grass, duff: Math.max(floorDuff, bedDuff) };
+  return { grass: grass * fm.clutter, duff: Math.max(floorDuff, bedDuff) * fm.clutter };
 }
 
 export function groundCover(seed: number, x: number, z: number, sample?: TerrainSample): GroundCover {
@@ -500,14 +507,16 @@ export function groundCover(seed: number, x: number, z: number, sample?: Terrain
   const s = sample ?? variant.sample(seed, x, z);
   const r = variant.roadDistance?.(seed, x, z) ?? Infinity;
   const rt = variant.trailDistance?.(seed, x, z) ?? Infinity;
-  return groundCoverAt(seed, x, z, s, r, rt, s.dx * s.dx + s.dz * s.dz);
+  const fm = variant.featureMask?.(seed, x, z, s.h) ?? NO_FEATURE_MASK;
+  return groundCoverAt(seed, x, z, s, r, rt, s.dx * s.dx + s.dz * s.dz, fm);
 }
 
 /**
  * Gate product for class `cls` at a point (a composed smoothstep chain) —
  * not itself a presence probability. In [0, 1] for every class except
  * `CLUTTER_GRASS`, `CLUTTER_MEADOW` and `CLUTTER_FLOWER`, which read the
- * ground-cover field's `grass` (in [0, CLUTTER_GRASS_BOOST]) and, for meadow
+ * ground-cover field's `grass` (in [0, CLUTTER_GRASS_BOOST], already carrying
+ * the feature mask's own `fm.clutter` — see `groundCoverAt`) and, for meadow
  * and flower, carry a further `(1 + fm.meadow)` inside a made meadow's flat
  * — up to roughly `2 · CLUTTER_GRASS_BOOST` there. `clutterInCell`
  * turns it into a probability via `min(1, gateProduct · CELL² · D_class)`, where
@@ -531,7 +540,9 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
   const fm = variant.featureMask?.(seed, x, z, s.h) ?? NO_FEATURE_MASK;
   switch (cls) {
     case CLUTTER_GRASS:
-      return groundCoverAt(seed, x, z, s, r, rt, slopeSq).grass * fm.clutter;
+      // The field applies fm.clutter itself now (it is the class's only
+      // factor beyond the field), so this no longer multiplies by it again.
+      return groundCoverAt(seed, x, z, s, r, rt, slopeSq, fm).grass;
     case CLUTTER_ROCK: {
       if (s.h < CLUTTER_ROCK_ALT_LO || r < CLUTTER_ROCK_ROAD_NEAR) return 0;
       const alt = smoothstep(CLUTTER_ROCK_ALT_LO, CLUTTER_ROCK_ALT_LO + CLUTTER_ROCK_ALT_LO_FADE, s.h);
@@ -612,9 +623,23 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       // A meadow's own carpet reads denser inside its flat (1 + fm.meadow,
       // up to 2×) BEFORE clutterInCell's ceiling clamp — the ceiling shapes
       // the field, not this multiplier (the grass-class convention above).
-      return groundCoverAt(seed, x, z, s, r, rt, slopeSq).grass * fm.clutter * (1 + fm.meadow);
+      // The field applies fm.clutter as its own last step, immediately
+      // before this multiplies in (1 + fm.meadow) — the same two-step order
+      // this case always used, so moving the fm.clutter factor into the
+      // field changes nothing about how it composes here.
+      return groundCoverAt(seed, x, z, s, r, rt, slopeSq, fm).grass * (1 + fm.meadow);
     case CLUTTER_FLOWER: {
-      const base = groundCoverAt(seed, x, z, s, r, rt, slopeSq).grass;
+      // Unlike grass and meadow, this case interposes `drift` between the
+      // raw field and fm.clutter (`base * drift * fm.clutter`, in that
+      // order) — a grouping the field's own internal application of
+      // fm.clutter cannot reproduce, since it would have to fold the mask in
+      // before `drift` ever multiplies. Floating-point multiplication is not
+      // associative, so that reordering would not generally return the same
+      // bits. This case therefore asks the field for the RAW, unmasked grass
+      // (NO_FEATURE_MASK is the identity mask: multiplying by its `clutter`
+      // of 1 changes no bit) and keeps applying fm.clutter itself, in the
+      // field's original order, so this class's output is untouched.
+      const base = groundCoverAt(seed, x, z, s, r, rt, slopeSq, NO_FEATURE_MASK).grass;
       if (base === 0) return 0;
       // Drift gating: flowers come in 8-20 m
       // patches on roughly a quarter to a third of open ground, not as a

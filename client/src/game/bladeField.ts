@@ -77,7 +77,7 @@ function smooth01(e0: number, e1: number, x: number): number {
  * cover split between sizes in the band's proportion rather than all picking
  * the same one — the dither that keeps a size choice from drawing a visible
  * contour across the field. */
-export function bladeSizeFor(draw: number, cover: number): number {
+export function bladeSizeFor(draw: number, cover: number): 0 | 1 | 2 {
   const pThin = 1 - smooth01(BLADE_THIN_BAND[0], BLADE_THIN_BAND[1], cover);
   if (draw < pThin) return BLADE_SIZE_THIN;
   const pFull = smooth01(BLADE_FULL_BAND[0], BLADE_FULL_BAND[1], cover);
@@ -143,7 +143,7 @@ export type BladeCell = ClutterInstance & {
   /** The uniform draw the character came from, kept so a test can re-derive it. */
   characterDraw: number;
   /** The clump size this cell buys: BLADE_SIZE_THIN, _BASE or _FULL. */
-  size: number;
+  size: 0 | 1 | 2;
   /** The uniform draw `size` came from, kept so a test can re-derive it. */
   sizeDraw: number;
 };

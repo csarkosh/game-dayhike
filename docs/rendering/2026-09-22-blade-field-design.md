@@ -141,12 +141,14 @@ shader.
 metallic 0, roughness 0.8, two-sided, no texture, no alpha, never the distance-fade plugin;
 `receiveShadows = true` on every tier mesh; casts nothing.
 
-**Budget as a test.** `BLADE_VERTEX_BUDGET = 1_000_000`: the test computes, for the high tier
+**Budget as a test.** `BLADE_VERTEX_BUDGET = 1_600_000`: the test computes, for the high tier
 at full strength, the clumps per tier from the reach and pad (fine π·(4+2.1)²/0.25, mid the
 annulus to 8+2.1, coarse the annulus to 18+2.1) times the fine-grass vertices per clump and
 asserts the sum is under the budget (about 0.98 M at the starting counts: fine 467 clumps ×
-700, mid 815 × 280, coarse 3,795 × 112). A retune that doubles the field fails in the suite
-before it reaches a browser.
+700, mid 815 × 280, coarse 3,795 × 112 — a later revision let a cell buy a larger clump where
+its cover earns one, which raised the worst case to about 1.54 M and the budget with it; see
+the ground-cover design doc). A retune that doubles the field fails in the suite before it
+reaches a browser.
 
 ## 6. The hand-offs in the shader
 

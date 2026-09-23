@@ -154,14 +154,20 @@ The bill at 4× pixels against current `main`, bar +2.0 ms:
 
 That sums past the bar, so the design pays:
 
-- **A thin cell buys a thin clump.** `bladeMeshes.ts` chooses a cell's bucket
-  by tier *and* strength band: below the band a fine-tier cell draws the
-  mid-tier clump and a mid-tier cell the coarse one, so a cell at strength 0.1
-  no longer submits 100 blades to collapse 90. The band is `THIN_BAND =
-  [0.4, 0.6]`, and a cell inside it picks by comparing its own random to
-  `smoothstep(0.4, 0.6, strength)`, so the choice never forms a contour.
+- **A cell buys the clump size its cover earns.** `bladeMeshes.ts` chooses a
+  cell's bucket by tier *and* a size — thin, base or full — that its own
+  cover picks. Below a thin band a cell draws a thinner clump (roughly 0.4×
+  the blades), so a nearly bare cell no longer submits a full clump only to
+  collapse most of it. Above a full band — inside the interior boost — a
+  cell draws a fuller clump instead (1.5× the blades): the boost raises the
+  field's own density there, and the third size is what makes that read on
+  screen as fuller clumps standing in richer ground, rather than only more
+  of the same clump crowding the same spot. A cell inside either band picks
+  by comparing its own random against a smoothstep of its cover, so neither
+  choice ever forms a visible contour across the field.
 - **Coarse counts trimmed:** `BLADE_TIER_COUNTS.high` coarse column
-  16/12/4/12 → 10/8/4/8. It is the tier the 10 m hand-off already fades out.
+  16/12/4/12 → 10/8/4/8 (the base-size table the sizes above scale). It is
+  the tier the 10 m hand-off already fades out.
 
 | tier | blades | litter | paint coupling |
 | --- | --- | --- | --- |
