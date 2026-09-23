@@ -4,16 +4,28 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import "../../src/sim/passes/index.js";
-import { CLUTTER_CLASS_COUNT, CLUTTER_GRASS, CLUTTER_LITTER, CLUTTER_MEADOW, CLUTTER_ROCK } from "../../src/sim/clutter.js";
+import { CLUTTER_BOULDER, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS, CLUTTER_GRASS, CLUTTER_LITTER, CLUTTER_MEADOW, CLUTTER_ROCK } from "../../src/sim/clutter.js";
 import { bladeFieldCovers } from "../../src/game/bladeField.js";
-import { clutterFadeEdges, clutterSeamEdges } from "../../src/game/clutterField.js";
-import { CLUTTER_SINK, createClutterMeshes, instanceMatrixFor, LITTER_VARIANT_SCALE, trampleFrame } from "../../src/game/clutterMeshes.js";
+import { clutterFadeEdges, clutterSeamEdges, collectClutter } from "../../src/game/clutterField.js";
+import {
+  CLUTTER_SINK,
+  createClutterMeshes,
+  cutOf,
+  cutsFor,
+  CUT_CLASSES,
+  instanceMatrixFor,
+  LITTER_VARIANT_SCALE,
+  reliefMesh,
+  trampleFrame,
+} from "../../src/game/clutterMeshes.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
 import { macroNoise, macroTint } from "../../src/game/groundHexParams.js";
+import { ROCK_CUTS, rockHalfExtent, rockPlanes } from "../../src/game/rockRelief.js";
 import { activeTerrainVariant, elevationSampleAt } from "../../src/sim/terrain.js";
 import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { trampleAt } from "../../src/game/trailBenchParams.js";
@@ -27,15 +39,18 @@ describe("createClutterMeshes attaches the distance fade", () => {
     // every real clutter material with an alpha-cutout card is (foliage,
     // grass, flower, bush) — so the "plugin on every bucket material"
     // assertion below keeps meaning something given that opaque materials
-    // skip the plugin entirely. One bucket (class 1, variant 1,
-    // LOD 0) is left OPAQUE on purpose: it proves the opaque skip still
-    // uploads that bucket's fadeBands buffer even with no plugin attached.
+    // skip the plugin entirely. One bucket (fungus's second variant, LOD 0 —
+    // picked outside CUT_CLASSES, and populated at this test's camera unlike
+    // most other classes, so it stays a plain one-mesh bucket that actually
+    // draws rather than being replaced by rock relief's cut meshes) is left
+    // OPAQUE on purpose: it proves the opaque skip still uploads that
+    // bucket's fadeBands buffer even with no plugin attached.
     const assets: Mesh[][][][] = [];
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       assets.push([0, 1].map((variant) => [0, 1].map((lod) => {
         const mesh = CreateBox(`c${cls}v${variant}l${lod}`, { size: 0.5 }, scene);
         mesh.material = new PBRMaterial(mesh.name, scene);
-        if (!(cls === 1 && variant === 1 && lod === 0)) {
+        if (!(cls === CLUTTER_FUNGUS && variant === 1 && lod === 0)) {
           mesh.material.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST;
         }
         return [mesh];
@@ -73,7 +88,7 @@ describe("createClutterMeshes attaches the distance fade", () => {
       const seam = clutterSeamEdges(cls, 0.6);
       for (const [variant, perLod] of assets[cls]!.entries()) {
         perLod.forEach((meshes, lod) => {
-          const isOpaqueBucket = cls === 1 && variant === 1 && lod === 0;
+          const isOpaqueBucket = cls === CLUTTER_FUNGUS && variant === 1 && lod === 0;
           for (const mesh of meshes) {
             const plugin = mesh.material!.pluginManager?.getPlugin("DistanceFade");
             if (isOpaqueBucket) {
@@ -379,6 +394,164 @@ describe("the cards beside the blade field", () => {
     const { scene, clutter, engine } = build(true);
     clutter.update(35, 21335);
     expect(scene.meshes.some((m) => m.name.includes("clutter_blades"))).toBe(false);
+    clutter.dispose();
+    engine.dispose();
+  });
+});
+
+describe("cutsFor and cutOf", () => {
+  it("gives the cut classes ROCK_CUTS and every other class exactly one", () => {
+    expect(cutsFor(CLUTTER_ROCK)).toBe(ROCK_CUTS);
+    expect(cutsFor(CLUTTER_BOULDER)).toBe(ROCK_CUTS);
+    expect(cutsFor(CLUTTER_GRASS)).toBe(1);
+    expect(cutsFor(CLUTTER_DRIFTWOOD)).toBe(1);
+    expect(CUT_CLASSES.has(CLUTTER_ROCK)).toBe(true);
+    expect(CUT_CLASSES.has(CLUTTER_BOULDER)).toBe(true);
+    expect(CUT_CLASSES.has(CLUTTER_GRASS)).toBe(false);
+  });
+
+  it("reads the cut from the hash's own low end, spread across the whole range", () => {
+    // inst.hash is a float in [0, 1) (sim/clutter.ts), not an integer: a
+    // naive `hash & (cuts - 1)` would coerce every one of these to 0 via
+    // ToInt32 and put every rock in cut 0, which is exactly the bug this
+    // test is here to catch.
+    const base = { x: 0, z: 0, groundH: 0, groundDx: 0, groundDz: 0, scale: 1, variant: 0, cls: CLUTTER_ROCK };
+    expect(cutOf({ ...base, hash: 0 })).toBe(0);
+    expect(cutOf({ ...base, hash: 0.24 })).toBe(0);
+    expect(cutOf({ ...base, hash: 0.26 })).toBe(1);
+    expect(cutOf({ ...base, hash: 0.51 })).toBe(2);
+    expect(cutOf({ ...base, hash: 0.99 })).toBe(3);
+    // A non-cut class always reads cut 0, whatever the hash.
+    expect(cutOf({ ...base, cls: CLUTTER_GRASS, hash: 0.99 })).toBe(0);
+  });
+});
+
+describe("reliefMesh", () => {
+  it("wraps rockRelief's cut geometry as a mesh on the source's own material", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const source = CreateBox("clutter.rock_a.LOD0", { size: 1 }, scene);
+    const material = new PBRMaterial("rock_a", scene);
+    source.material = material;
+    const halfExtent = rockHalfExtent(source.getVerticesData(VertexBuffer.PositionKind) as Float32Array);
+    const planes = rockPlanes(0, 2, halfExtent);
+
+    const mesh = reliefMesh(source, 0, 2, planes);
+
+    expect(mesh.name).toBe("clutter.rock_a.LOD0_cut2");
+    expect(mesh.material).toBe(material);
+    expect(mesh.useVertexColors).toBe(true);
+    expect(mesh.metadata).toEqual({ planes });
+    expect(mesh.getVerticesData(VertexBuffer.PositionKind)).not.toBeNull();
+    expect(mesh.getVerticesData("color")).not.toBeNull();
+    // rockRelief unwelds every triangle, so there is one index per vertex.
+    expect(mesh.getTotalIndices()).toBe(mesh.getTotalVertices());
+    engine.dispose();
+  });
+});
+
+describe("rock relief in the shell", () => {
+  /** One synthetic box per class/variant/LOD, real enough (positions,
+   * normals, indices) for rockRelief.ts to cut — the same NullEngine
+   * escape hatch `buildWithAssets` above uses, but with names that spell out
+   * class/variant/LOD so a cut mesh's `_cut${n}` suffix is easy to find
+   * again by name after `adopt` has rearranged the bucket dimensions. */
+  function buildCutAssets(): { engine: NullEngine; scene: Scene; assets: Mesh[][][][] } {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const assets: Mesh[][][][] = [];
+    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+      assets.push([0, 1].map((variant) => [0, 1].map((lod) => {
+        const mesh = CreateBox(`shell-c${cls}v${variant}l${lod}`, { size: 0.5 }, scene);
+        mesh.material = new PBRMaterial(mesh.name, scene);
+        return [mesh];
+      })));
+    }
+    return { engine, scene, assets };
+  }
+
+  it("cuts the rock and boulder LOD meshes four ways and leaves every other class alone", () => {
+    const { engine, scene, assets } = buildCutAssets();
+    const clutter = createClutterMeshes(scene, 1, { assets });
+
+    const cutMeshes = scene.meshes.filter((m) => /_cut\d$/.test(m.name));
+    // Two cut classes × two variants × two LODs × ROCK_CUTS cuts each.
+    expect(cutMeshes.length).toBe(CUT_CLASSES.size * 2 * 2 * ROCK_CUTS);
+    for (const m of cutMeshes) {
+      expect((m as Mesh).useVertexColors, m.name).toBe(true);
+      expect((m as Mesh).getVerticesData("color"), m.name).not.toBeNull();
+      expect((m as Mesh).getTotalIndices(), m.name).toBe((m as Mesh).getTotalVertices());
+    }
+
+    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+      for (const variant of [0, 1]) {
+        for (const lod of [0, 1]) {
+          const name = `shell-c${cls}v${variant}l${lod}`;
+          const source = scene.getMeshByName(name) as Mesh;
+          expect(source, name).not.toBeNull();
+          expect(source.isDisposed(), name).toBe(false);
+          if (CUT_CLASSES.has(cls)) {
+            // Replaced by its four cuts: disabled, never disposed (the
+            // loader's own container still owns it — see `loadBucketed`).
+            expect(source.isEnabled(false), name).toBe(false);
+          } else {
+            // Every other class's original mesh is exactly what the bucket
+            // still draws — untouched, unrenamed, no cut suffix anywhere.
+            expect(scene.getMeshByName(`${name}_cut0`), name).toBeNull();
+          }
+        }
+      }
+    }
+
+    expect(scene.meshes.filter((m) => m.name.startsWith("shell-c0") && /_cut/.test(m.name)).length).toBe(0);
+    clutter.dispose();
+    engine.dispose();
+  });
+
+  it("routes each rock instance to the cut its own hash names, spread across the four", () => {
+    const { engine, scene, assets } = buildCutAssets();
+    const clutter = createClutterMeshes(scene, 1, { assets });
+    clutter.update(35, 21335);
+
+    const counts: number[] = [];
+    for (let cut = 0; cut < ROCK_CUTS; cut++) {
+      const m = scene.getMeshByName(`shell-c${CLUTTER_ROCK}v0l0_cut${cut}`) as Mesh;
+      counts.push(m.thinInstanceCount);
+    }
+    const total = counts.reduce((a, b) => a + b, 0);
+    expect(total).toBeGreaterThan(0);
+    // With a uniform hash no single cut should hold the great majority of
+    // the instances — the naive always-cut-0 bug would put 100% in one cut.
+    for (const c of counts) expect(c).toBeLessThanOrEqual(total * 0.7);
+    // Each instance's cut is exactly its hash's own low end.
+    const insts = collectClutter(1, 35, 21335)[CLUTTER_ROCK]!.near.filter((i) => i.variant === 0);
+    for (let cut = 0; cut < ROCK_CUTS; cut++) {
+      expect(counts[cut]).toBe(insts.filter((i) => cutOf(i) === cut).length);
+    }
+    clutter.dispose();
+    engine.dispose();
+  });
+
+  it("gives every LOD of one model's cut the same plane list, and a different model its own", () => {
+    const { engine, scene, assets } = buildCutAssets();
+    const clutter = createClutterMeshes(scene, 1, { assets });
+
+    const near = scene.getMeshByName(`shell-c${CLUTTER_BOULDER}v0l0_cut2`) as Mesh;
+    const far = scene.getMeshByName(`shell-c${CLUTTER_BOULDER}v0l1_cut2`) as Mesh;
+    expect((near.metadata as { planes: unknown }).planes).toEqual((far.metadata as { planes: unknown }).planes);
+
+    const otherModel = scene.getMeshByName(`shell-c${CLUTTER_BOULDER}v1l0_cut2`) as Mesh;
+    expect((otherModel.metadata as { planes: unknown }).planes).not.toEqual((near.metadata as { planes: unknown }).planes);
+
+    clutter.dispose();
+    engine.dispose();
+  });
+
+  it("pushes the cut boulder meshes, not the originals, to casterMeshes", () => {
+    const { engine, scene, assets } = buildCutAssets();
+    const clutter = createClutterMeshes(scene, 1, { assets });
+    expect(clutter.casterMeshes.length).toBe(2 * 2 * ROCK_CUTS); // two variants × two LODs × four cuts
+    for (const m of clutter.casterMeshes) expect(/_cut\d$/.test(m.name), m.name).toBe(true);
     clutter.dispose();
     engine.dispose();
   });

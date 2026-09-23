@@ -22,7 +22,11 @@
  * Draw-call budget ("one draw per model per LOD"): every clutter GLB
  * is single-primitive and single-material, so each bucket is exactly one draw
  * call — 17 models × 2 LOD levels = 34, all of them ground cover the forest's
- * own 29 sit on top of.
+ * own 29 sit on top of. Rock and boulder spend more of that budget than their
+ * model count alone suggests: each of their four model-url slots is cut into
+ * ROCK_CUTS (rockRelief.ts) separate meshes, one bucket apiece, so those two
+ * classes contribute 16 model-url slots' worth of buckets rather than 4 — 58
+ * draws overall, not 34.
  *
  * Allocation discipline ("no per-frame allocation on the hot path"):
  * `update` allocates NOTHING while the camera stays inside its 3 m grass cell,
@@ -40,6 +44,8 @@
 import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
@@ -72,6 +78,7 @@ import { macroNoise, macroTint } from "./groundHexParams.js";
 import { forestDensity } from "../sim/vegetation.js";
 import type { Rgb } from "./colour.js";
 import { trampleAt, TRAMPLE_BAND } from "./trailBenchParams.js";
+import { ROCK_CUTS, rockHalfExtent, rockPlanes, rockRelief, type RockPlane } from "./rockRelief.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
 // exactly BOULDER_SINK · (that variant's own BASE_H) · scale shows a visible
@@ -114,6 +121,65 @@ const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
 const LOD_NAMES = ["LOD0", "LOD1"] as const;
 const NEAR_LOD = 0;
 const FAR_LOD = 1;
+
+/** Rock and boulder are the only classes cut into fractured, angular stone at
+ * load (rockRelief.ts): a rounded model gets ROCK_CUTS distinct fractures so
+ * a whole field of rocks doesn't repeat one silhouette. Every other class's
+ * models ship pre-modelled and pass through untouched. */
+export const CUT_CLASSES: ReadonlySet<number> = new Set([CLUTTER_ROCK, CLUTTER_BOULDER]);
+
+/** Cuts per model for `cls`: ROCK_CUTS for the cut classes, one — meaning
+ * "no cutting" — for every other class, so `bucketFor` below can treat both
+ * uniformly as `variant * cutsFor(cls) + cutOf(inst)`. */
+export function cutsFor(cls: number): number {
+  return CUT_CLASSES.has(cls) ? ROCK_CUTS : 1;
+}
+
+/**
+ * Which cut an instance draws, taken from its own hash rather than a fresh
+ * random draw, so neighbouring rocks spread across the cuts without the sim
+ * needing to know cutting exists. `inst.hash` is a float in [0, 1) (see
+ * `clutterInCell` in sim/clutter.ts), so it has to be scaled up into the cut
+ * range before any bit-masking makes sense: masking the float directly
+ * (`inst.hash & (cuts - 1)`) would coerce every hash to 0 first and put
+ * every instance in cut 0. `cuts` is a power of two, so the mask after
+ * scaling is just a cheap belt-and-braces clamp on the floor's rounding.
+ */
+export function cutOf(inst: ClutterInstance): number {
+  const cuts = cutsFor(inst.cls);
+  return Math.floor(inst.hash * cuts) & (cuts - 1);
+}
+
+/**
+ * A new mesh carrying `source`'s geometry cut by `planes` (rockRelief.ts):
+ * flattened facets, unwelded so each shades by its own flat normal, and a
+ * per-facet luma written as vertex colour. Keeps the source's material — a
+ * `PBRMaterial` reads vertex colour from the MESH's own `useVertexColors`
+ * flag, so there is nothing to set on the material itself.
+ */
+export function reliefMesh(source: Mesh, model: number, cut: number, planes: RockPlane[]): Mesh {
+  const positions = source.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
+  const normals = source.getVerticesData(VertexBuffer.NormalKind) as Float32Array;
+  const uvs = source.getVerticesData(VertexBuffer.UVKind) as Float32Array | null;
+  const indices = source.getIndices() as Uint32Array | Uint16Array;
+  const geometry = rockRelief({ positions, normals, uvs, indices }, planes, model, cut);
+  const mesh = new Mesh(`${source.name}_cut${cut}`, source.getScene());
+  const data = new VertexData();
+  data.positions = geometry.positions;
+  data.normals = geometry.normals;
+  data.colors = geometry.colors;
+  data.indices = geometry.indices;
+  if (geometry.uvs) data.uvs = geometry.uvs;
+  data.applyToMesh(mesh, false);
+  mesh.material = source.material;
+  mesh.useVertexColors = true;
+  // Stamped on the mesh so a test can confirm every LOD of one (model, cut)
+  // pair was cut with the exact same plane list — the shell's own
+  // responsibility, since rockRelief.ts has no notion of LOD at all.
+  mesh.metadata = { planes };
+  mesh.refreshBoundingInfo();
+  return mesh;
+}
 
 /**
  * How far every non-boulder prop is sunk below its sampled ground height (m).
@@ -471,12 +537,18 @@ export function createClutterMeshes(
 
   /**
    * The bucket an instance belongs in. Indexing by the sim's own `variant`
-   * draw is the whole variant mechanism; the `?? variants[0]` fallback covers
-   * only a model table that has fallen behind the sim's per-class `variants`
-   * count, where crashing the frame would be the worse failure.
+   * draw is the whole variant mechanism; for the cut classes each model also
+   * spreads across `cutsFor(inst.cls)` fractures, so the bucket dimension is
+   * `variant * cuts + cut` (matching how `adopt` below lays the cut buckets
+   * out) — for every other class `cuts` is 1 and `cutOf` is always 0, so this
+   * collapses back to plain `variant` indexing. The `?? variants[0]`
+   * fallback covers only a model table that has fallen behind the sim's
+   * per-class `variants` count, where crashing the frame would be the worse
+   * failure.
    */
   function bucketFor(variants: Bucket[][], inst: ClutterInstance, lod: number): Bucket {
-    const perLod = variants[inst.variant] ?? (variants[0] as Bucket[]);
+    const cuts = cutsFor(inst.cls);
+    const perLod = variants[inst.variant * cuts + cutOf(inst)] ?? (variants[0] as Bucket[]);
     return perLod[lod] as Bucket;
   }
 
@@ -639,11 +711,46 @@ export function createClutterMeshes(
     return groups;
   }
 
+  /**
+   * For a cut class, splits each loaded model's `[lod]` mesh group into
+   * `ROCK_CUTS` cut copies, laid out as `[variant * ROCK_CUTS + cut][lod]` so
+   * `bucketFor` above can find them. The plane list is derived once per
+   * model from LOD0's half-extent and handed to BOTH LOD0 and LOD1's
+   * `reliefMesh` call — the one thing this function exists to guarantee,
+   * since a rock cut with two different plane lists would change shape the
+   * moment its LOD swaps. Classes outside `CUT_CLASSES` pass through
+   * untouched, so this is a no-op for the other seven.
+   */
+  function expandCutVariants(cls: number, variants: Mesh[][][]): Mesh[][][] {
+    if (!CUT_CLASSES.has(cls)) return variants;
+    const expanded: Mesh[][][] = [];
+    for (let model = 0; model < variants.length; model++) {
+      const perLod = variants[model] as Mesh[][];
+      const lod0 = perLod[NEAR_LOD] as Mesh[];
+      const lod1 = perLod[FAR_LOD] as Mesh[];
+      const halfExtent = rockHalfExtent(lod0[0]!.getVerticesData(VertexBuffer.PositionKind) as Float32Array);
+      for (let cut = 0; cut < ROCK_CUTS; cut++) {
+        const planes = rockPlanes(model, cut, halfExtent);
+        expanded.push([
+          lod0.map((mesh) => reliefMesh(mesh, model, cut, planes)),
+          lod1.map((mesh) => reliefMesh(mesh, model, cut, planes)),
+        ]);
+      }
+      // The uncut source meshes are replaced in every bucket above, so they
+      // must stop drawing and stop being evaluated as active meshes; they are
+      // NOT disposed here, because the container that loaded them (see
+      // `loadBucketed`) still owns them for final cleanup, the same way it
+      // already owns the unused LOD2 meshes and wrapper nodes.
+      for (const mesh of [...lod0, ...lod1]) mesh.setEnabled(false);
+    }
+    return expanded;
+  }
+
   /** Turns the loaded mesh groups into buckets and replays any update that
    * arrived while they were loading. */
   function adopt(loaded: Mesh[][][][]): void {
     buckets = loaded.map((variants, cls) =>
-      variants.map((perLod) =>
+      expandCutVariants(cls, variants).map((perLod) =>
         perLod.map((meshes, lod) => {
           for (const mesh of meshes) prepBucketMesh(mesh);
           // Boulders are the only clutter that casts — see `casterMeshes`.
