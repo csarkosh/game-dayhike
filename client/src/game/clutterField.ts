@@ -20,6 +20,7 @@ import {
   clutterCell,
   CLUTTER_CLASS_COUNT,
   CLUTTER_GRASS_CELL,
+  CLUTTER_MEADOW,
   type ClutterInstance,
 } from "../sim/clutter.js";
 
@@ -220,12 +221,30 @@ export function clutterFadeEdges(cls: number, radiusScale = 1): { start: number;
   return { start, end };
 }
 
+/**
+ * How far inside the meadow's seam the blade field starts handing over to
+ * the cards (m, at radiusScale 1). The blades' coarsest tier thins out across
+ * the meadow seam and the far cards dither in across the same band, so this
+ * is the width of the stretch where both draw.
+ *
+ * At the default 15 % the band is 4.2 m wide, and blades and cards are not
+ * the same picture of grass: fine strokes on one side, chunky opaque tufts on
+ * the other. Seen at a hiker's eye height that 4 m compresses to a thin
+ * strip of screen, and the texture change reads as a line drawn across the
+ * meadow. Ten metres is wide enough that the swap plays out as a fade.
+ */
+export const CLUTTER_BLADE_HANDOFF = 10;
+
 /** The near/far LOD seam for a class: ends at the split,
  * starts 15% of the near disc inside it, floored at the snap-jitter width
- * like the edge fade. The far LOD dithers IN across it, the near LOD OUT. */
+ * like the edge fade — except the meadow, whose seam is also the blade
+ * field's hand-off and opens to `CLUTTER_BLADE_HANDOFF`. The far LOD dithers
+ * IN across it, the near LOD OUT. */
 export function clutterSeamEdges(cls: number, radiusScale = 1): { start: number; end: number } {
   const end = (CLUTTER_RADII[cls] as number) * radiusScale * CLUTTER_FAR_SPLIT;
-  const start = Math.max(0, Math.min(end * 0.85, end - CLUTTER_FADE_MIN_RAMP));
+  // Zero for every other class, so `end - handoff` is `end` and never binds.
+  const handoff = cls === CLUTTER_MEADOW ? CLUTTER_BLADE_HANDOFF * radiusScale : 0;
+  const start = Math.max(0, Math.min(end * 0.85, end - CLUTTER_FADE_MIN_RAMP, end - handoff));
   return { start, end };
 }
 

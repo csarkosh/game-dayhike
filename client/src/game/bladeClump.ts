@@ -42,7 +42,7 @@ export const BLADE_ROUND = 0.3;
  * differently and cannot be compared. Driving this lower does keep closing
  * the near/far gap, but only because the blades darken until the ground
  * between them is what the frame measures. */
-export const BLADE_ALBEDO: Rgb = { r: 0.16, g: 0.21, b: 0.065 };
+export const BLADE_ALBEDO: Rgb = { r: 0.03, g: 0.04, b: 0.013 };
 /** Vertex colour at the tip, from white at the root. */
 export const BLADE_TIP_TINT: Rgb = { r: 0.95, g: 0.95, b: 0.75 };
 /** Per-blade luminance spread: `1 + BLADE_LUMA · (random − 0.5)`. */
@@ -100,7 +100,7 @@ export const FLOWER_HEIGHT: readonly [number, number] = [0.3, 0.45];
 /** Indexed by the character ids of bladeField.ts (fine, tussock, weed, flower). */
 export const BLADE_CHARACTERS: readonly BladeCharacter[] = [
   { name: "fine grass", height: [0.2, 0.45], width: 0.01, droop: [0.3, 0.9], tint: { r: 1, g: 1, b: 1 }, tip: "none" },
-  { name: "tussock", height: [0.35, 0.5], width: 0.008, droop: [0.2, 0.6], tint: { r: 1.05, g: 1.0, b: 0.85 }, tip: "seed" },
+  { name: "tussock", height: [0.35, 0.5], width: 0.008, droop: [0.2, 0.6], tint: { r: 1.05, g: 1.0, b: 0.85 }, tip: "none" },
   { name: "broad-leaf weed", height: [0.15, 0.25], width: 0.03, droop: [0.6, 1.1], tint: { r: 0.8, g: 0.9, b: 1.0 }, tip: "none" },
   { name: "flower-bearing", height: [0.2, 0.45], width: 0.01, droop: [0.3, 0.9], tint: { r: 1, g: 1, b: 1 }, tip: "flower", heads: [1, 3] },
 ];

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import {
-  CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION,
+  CLUTTER_BLADE_HANDOFF, CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION,
   CLUTTER_FADE_MIN_RAMP, CLUTTER_FAR_SPLIT, CLUTTER_RADII, COLLECTOR_SWEEP_SIZE, clutterFadeEdges,
   clutterSeamEdges, collectClutter, collectClutterWithBudgets, createClutterCollector,
 } from "../../src/game/clutterField.js";
@@ -114,6 +114,15 @@ describe("near/far seam", () => {
     }
     const grass = clutterSeamEdges(CLUTTER_GRASS);
     expect(grass.start).toBeCloseTo(grass.end * 0.85, 9); // 15% of a 33.75 m near disc clears the floor
+    // The meadow's seam is the blade field's hand-off: it opens to
+    // CLUTTER_BLADE_HANDOFF so the swap from blades to card tufts plays out
+    // as a fade rather than a line, and it scales with the tier's disc.
+    const meadow = clutterSeamEdges(CLUTTER_MEADOW);
+    expect(meadow.end).toBeCloseTo(18, 9);
+    expect(meadow.start).toBeCloseTo(meadow.end - CLUTTER_BLADE_HANDOFF, 9);
+    const meadowLow = clutterSeamEdges(CLUTTER_MEADOW, 0.6);
+    expect(meadowLow.start).toBeCloseTo(meadowLow.end - CLUTTER_BLADE_HANDOFF * 0.6, 9);
+    expect(meadowLow.start).toBeGreaterThan(0);
   });
 
   it("emits an instance inside the padded seam to BOTH bands, and nothing else twice", () => {
