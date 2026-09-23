@@ -3,8 +3,8 @@
 What was built, why its two geometry decisions were made, and the test
 evidence for the cut described in
 [`2026-09-23-rock-relief-design.md`](2026-09-23-rock-relief-design.md). The
-gate's stills, walk and timings are run separately on live pages against a
-control build and are recorded here once measured.
+stills, the LOD walk and the timings in §7–§10 were taken on live pages
+against a control build at the commit this work started from.
 
 ## 1. Method
 
@@ -114,16 +114,73 @@ rock's and boulder's own first variant and asserted their plane lists differ.
 
 ## 7. Stills: a rock at 2 m and a boulder at 4 m
 
-_Pending: measured by the controller on the gate rig._
+Both builds were driven to the same poses on the forest slope east of the
+trail, where rock and boulder ground actually is, on seed `atmo` under clear
+weather. The subjects are a rock at 2.2 m — camera `(371.9, 136.4, 593.8)`
+looking west — and a boulder at 4.3 m — camera `(364.0, 135.6, 592.0)`,
+yaw 1.15 — each shot at 12:00 and at 16:00.
+
+The change is unambiguous at both distances and both hours. Before, the rock
+reads as a smooth rounded loaf: one soft silhouette, no internal edges, the
+whole surface shading as a single curve. After, it reads as broken stone —
+planar faces each taking the light at its own angle, hard creases between
+them, and a silhouette with corners in it. The boulder behaves the same way
+at 4 m, where the larger model's cuts give it a flat cleaved top rather than
+a dome.
+
+The cut rock's silhouette is slightly smaller than the uncut one, which is
+the shrink the cut applies before roughening (§4); at 2 m the difference is
+not readable as a size change, only as a sharper outline.
 
 ## 8. LOD-swap walk
 
-_Pending: measured by the controller on the gate rig._
+The concern this gate exists for is that a rock could change SHAPE, not just
+detail, at the moment its LOD swaps — which is what the one-plane-list-per-
+model rule in `expandCutVariants` prevents. Two measurements, both taken on
+the live page:
+
+- **The two LOD levels agree on shape.** For all sixteen cut meshes, LOD0's
+  and LOD1's bounding extents agree to within 1.5 % on every axis (worst
+  case: `boulder_a` at 1.5 %, best: `rock_a_cut3` at 0.1 %), while the vertex
+  counts drop 2400 → 1080 for a rock and 6450 → 2898 for a boulder. Detail
+  falls by more than half; the outline does not move.
+- **The hand-off is a wide dithered band, not a line.** Walking away from a
+  cut rock, LOD0 instances span 2.2–157.1 m from the eye and LOD1 instances
+  span 35.4–391.2 m — a shared band roughly 120 m deep in which both levels
+  draw, each instance picking its own side by hash. There is no distance at
+  which a row of rocks switches together, which is what would read as a pop.
 
 ## 9. Frame time: the 4× pixel pair at TRAILSIDE and EDGE
 
-_Pending: measured by the controller on the gate rig._
+Paired samples at `SCALE = 0.5`, both orders, high tier, every game page
+blanked before each sample:
+
+| order | view | branch | control | delta |
+| --- | --- | --- | --- | --- |
+| branch first | EDGE | 40.29 ms | 48.42 ms | −8.13 |
+| branch first | TRAILSIDE | 36.82 ms | 34.79 ms | +2.03 |
+| control first | EDGE | 48.56 ms | 51.00 ms | −2.44 |
+| control first | TRAILSIDE | 56.76 ms | 56.72 ms | +0.04 |
+
+**This pass does not settle the gate and is recorded as inconclusive.** The
+second round's readings are 40 % slower than the first on BOTH builds
+(TRAILSIDE control 34.79 → 56.72 ms), which is machine load moving under the
+measurement, not either build changing. A ±8 ms swing cannot resolve a
+±0.3 ms bar. The deltas do rule out a large regression — their mean is
+negative — but the gate needs a repeat on an otherwise idle machine before it
+can be called passed.
 
 ## 10. Load time
 
-_Pending: measured by the controller on the gate rig._
+`performance.now()` around the cut pass in `expandCutVariants`, summed over
+both cut classes (all sixteen meshes), on three cold page loads:
+
+| run | rock class | boulder class | total |
+| --- | --- | --- | --- |
+| 1 | 11.0 ms | 9.2 ms | 20.2 ms |
+| 2 | 8.5 ms | 7.5 ms | 16.0 ms |
+| 3 | 8.1 ms | 9.8 ms | 17.9 ms |
+
+Against the 50 ms bar, with roughly 2.5× headroom at the worst run. The pass
+runs once per class as that class's GLBs land, before its first draw, so it
+costs nothing per frame afterwards.
