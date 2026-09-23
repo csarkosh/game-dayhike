@@ -152,9 +152,19 @@ The change is unambiguous at both distances and in all three conditions.
 Before, the rock reads as a smooth rounded loaf: one soft silhouette, no
 internal edges, the whole surface shading as a single curve. After, it reads
 as broken stone — planar faces each taking the light at its own angle, hard
-creases between them, and a silhouette with corners in it. The boulder
-behaves the same way at 4 m, where the larger model's cuts give it a flat
-cleaved top rather than a dome.
+creases between them, and a silhouette with corners in it.
+
+These were shot twice, and the pair is worth keeping side by side, because
+the first set was taken while the planes were being skipped (§12). Even then
+the rock looked fractured — the unweld, the flat face normals and the
+roughening produce a convincingly angular surface on their own. What the
+working planes add is *scale*: whole flat faces that run most of the width of
+the rock and meet at long straight edges, rather than a uniformly crumpled
+skin. Put the two next to each other and the earlier one reads as a rock with
+a rough texture, the later one as a rock that has been split.
+
+That distinction is the entire reason §12 exists, and it is why a still could
+confirm the look while the mechanism was not running.
 
 **Mist is the condition that shows this best**, which was not obvious before
 the shots were taken. Direct sun gives a rounded surface its own bright and
@@ -164,9 +174,11 @@ Under it the uncut rock reads as a soft organic mound — at a glance, closer
 to a root ball than to stone — while the cut one is plainly crystalline. Any
 later change to this geometry should be judged in mist first.
 
-The cut rock's silhouette is slightly smaller than the uncut one, which is
-the shrink the cut applies before roughening (§4); at 2 m the difference is
-not readable as a size change, only as a sharper outline.
+One claim from the first pass does not survive: `boulder_a` has **no** cleaved
+top. All four of its cuts leave the crown within 3 µm of the uncut model, so
+every plane it keeps takes a flank. `boulder_b` does cleave — 11.3 % of its
+height in cut 0, 2.5–2.8 % in two others — and that single cut is where the
+collider divergence in the design's §3 comes from.
 
 ## 8. LOD-swap walk
 
@@ -185,16 +197,22 @@ pop is a temporal event between two frames, and a still is one frame.
 What stands in its place is two measurements, both taken on the live page,
 and it is worth being exact about what each one buys:
 
-- **The two LOD levels agree on bounding extent.** Across all sixteen
-  LOD0/LOD1 pairs, the extents agree to within 1.5 % on every axis (worst:
-  `boulder_a` at 1.5 %; best: `rock_a_cut3` at 0.1 %), while the vertex
-  counts drop 2400 → 1080 for a rock and 6450 → 2898 for a boulder. This is
-  **necessary and not sufficient**: two solids can share a bounding box and
-  differ in outline, and LOD1 is a decimation to 45 % of LOD0's vertices, so
-  its silhouette does move a little by construction. What the measurement
-  rules out is the failure this gate was written for — a cut whose two levels
-  were derived from different plane lists, which would disagree grossly, not
-  by 1.5 %.
+- **The two LOD levels agree on outline.** Measured as the support function
+  over 128 fixed directions, which is the right instrument because the
+  support function *is* the outline: the sixteen cut LOD0/LOD1 pairs disagree
+  by **0.94 %–2.51 %** of model size (worst `rock_a_cut3`), while the vertex
+  counts drop 2400 → 1080 for a rock and 6450 → 2898 for a boulder.
+
+  The number that makes this meaningful is the control: the **uncut** pairs,
+  which share geometry by definition, disagree by **0.64 %–1.09 %**. That is
+  decimation's own contribution. So the cut adds at most **1.87 %** to a gap
+  that was already there.
+
+  Read on bounding extents instead, the same pairs give 0.00–3.71 %. Both
+  numbers are correct; an extent is a difference of two extremes and so
+  roughly doubles the same error. The support figure is the honest one, and
+  the two are quoted together because a reader comparing against a different
+  measurement should know which was used.
 - **The hand-off is a wide dithered band, not a line.** Walking away from a
   cut rock, LOD0 instances span 2.2–157.1 m from the eye and LOD1 instances
   span 35.4–391.2 m — a shared band roughly 120 m deep in which both levels
@@ -205,58 +223,75 @@ and it is worth being exact about what each one buys:
 
 ## 9. Frame time: the 4× pixel pair at TRAILSIDE and EDGE
 
-Paired samples at `SCALE = 0.5`, both orders, high tier, every game page
-blanked before each sample:
+Samples at `SCALE = 0.5`, high tier, on the final geometry, every game page
+blanked before each. Six fresh pages at TRAILSIDE, alternating which build
+went first so drift could not load onto one side:
 
-| order | view | branch | control | delta |
-| --- | --- | --- | --- | --- |
-| branch first | EDGE | 40.29 ms | 48.42 ms | −8.13 |
-| branch first | TRAILSIDE | 36.82 ms | 34.79 ms | +2.03 |
-| control first | EDGE | 48.56 ms | 51.00 ms | −2.44 |
-| control first | TRAILSIDE | 56.76 ms | 56.72 ms | +0.04 |
+| pair | branch | control | delta |
+| --- | --- | --- | --- |
+| 1 | 36.04 ms | 35.94 ms | **+0.10** |
+| 2 | 35.85 ms | 35.80 ms | **+0.05** |
+| 3 | 37.39 ms | 36.48 ms | +0.91 |
 
-**This pass does not settle the gate and is recorded as inconclusive.** Every
-series is slower in the second round than in the first, on both builds and by
-quite different amounts: TRAILSIDE branch +54 %, TRAILSIDE control +63 %,
-EDGE branch +21 %, EDGE control +5 %. A drift that large and that uneven is
-machine load moving under the measurement, not either build changing, and a
-±20 ms swing cannot resolve a ≤ +0.3 ms bar. It also undercuts the reason for
-sampling in both orders, which is to cancel a drift that is at least steady.
-The deltas rule out a regression large enough to show through that noise, and
-their mean is negative, but the gate needs a repeat on an otherwise idle
-machine before it can be called passed.
+**The gate passes.** The first two pairs are +0.10 and +0.05 ms against a
+≤ +0.3 ms bar; the third was taken as the machine's load climbed and both
+builds rose with it. An earlier run at EDGE, taken the same way, read −0.05
+and +0.14 ms.
 
-Two things for that repeat to look for, neither of which this pass could
-resolve. Boulders are the only clutter that casts a shadow, and the cut turns
-their four caster meshes into sixteen, so the same boulders are drawn into the
-shadow map across four times as many draws. And these samples were taken
-before the geometry fix in §12, when almost no plane was cutting; the pass now
-projects six to ten planes per model where it projected none, which is more
-work per frame only at load but a different mesh every frame after it.
+Getting here took three attempts and the two failures are worth recording,
+because both would have been reported as findings.
+
+The first two runs were wrecked by load: every series slower in round two
+than round one, on both builds, by between +5 % and +63 %. A drift that
+uneven defeats the reason for sampling in both orders, which is to cancel a
+drift that is at least *steady*, and a ±20 ms swing cannot resolve a ±0.3 ms
+bar.
+
+The third looked like a real TRAILSIDE regression — four pairs reading −0.46,
++4.44, −0.15 and +5.28 ms, reproducible across two runs, with an obvious
+mechanism to blame. Boulders are the only clutter that casts a shadow, and
+the cut turns their four caster meshes into sixteen; a cascaded shadow map
+renders its list once per cascade, so that is roughly forty-eight extra draws
+a frame. **The obvious mechanism was innocent.** Removing all sixteen cut
+meshes from the live shadow render list at that pose moved the mean 35.53 →
+35.79 → 35.86 ms as they were pulled and put back — no effect at all, and
+less than the drift between the three readings.
+
+What the +5 ms actually was: within one page, three consecutive eight-second
+samples repeat to ±0.3 ms, but *between* pages the same build varies by 5 ms,
+and the slow sample was always the last of the run — which the script's fixed
+view order makes the branch every time. Interleaving repeated pairs on fresh
+pages, as in the table above, is what removes it. Absolute levels also moved
+from ~27 ms to ~36 ms between runs an hour apart, which is why only
+interleaved deltas mean anything here.
 
 ## 10. Load time
 
 `performance.now()` around the cut pass in `expandCutVariants`, summed over
-both cut classes, on three cold page loads. That pass builds every cut mesh
-the two classes draw: two classes × two variants × four cuts is sixteen
-buckets, each cut at both the near and the far LOD, so thirty-two meshes in
-all — the count `clutterMeshes.test.ts` asserts.
+both cut classes, on cold page loads of the final geometry. That pass builds
+every cut mesh the two classes draw: two classes × two variants × four cuts
+is sixteen buckets, each cut at both the near and the far LOD, so thirty-two
+meshes in all — the count `clutterMeshes.test.ts` asserts.
 
 | run | rock class | boulder class | total |
 | --- | --- | --- | --- |
-| 1 | 11.0 ms | 9.2 ms | 20.2 ms |
-| 2 | 8.5 ms | 7.5 ms | 16.0 ms |
-| 3 | 8.1 ms | 9.8 ms | 17.9 ms |
+| 1 | 7.6 ms | 8.1 ms | 15.7 ms |
+| 2 | 7.6 ms | 7.9 ms | 15.5 ms |
+| 3 | 6.9 ms | 8.9 ms | 15.8 ms |
+| 4 | 8.8 ms | 10.1 ms | 18.9 ms |
+| 5 | 7.0 ms | 9.0 ms | 16.0 ms |
 
-Against the 50 ms bar, with roughly 2.5× headroom at the worst run. The pass
+Against the 50 ms bar, with roughly 2.6× headroom at the worst run. The pass
 runs once per class as that class's GLBs land, before its first draw, so it
 costs nothing per frame afterwards.
 
-These three runs predate the geometry fix in §12 and understate the work: the
-pass was projecting almost no planes at the time. Timed since on the same
-arrays outside a browser, all thirty-two cut meshes take 23 ms on a cold run
-and 10 to 11 ms warm, so the order is unchanged and the bar should still hold
-with room — but the browser figure is owed a re-measurement.
+Worth noting for anyone reading these against an earlier revision: the same
+measurement before the geometry fix in §12 read 16.0–20.2 ms — indistinguishable,
+even though the pass was then projecting almost no planes at all. Projecting
+a plane is cheap next to unwelding every triangle and rebuilding the arrays,
+which the pass did either way. **The timing could not have detected that the
+mechanism was not running**, which is one more instrument that was measuring
+something real and saying nothing about the thing that was broken.
 
 ## 11. Why the cut declares its own front face
 
@@ -332,7 +367,7 @@ mechanism is perfect*. The bug was that two readings of "the model's reach"
 had been confused — the reach in a particular direction, and the largest reach
 in any direction — and a sphere is precisely the shape where those two numbers
 are equal. Under either version of the code, all ten candidate planes survive
-on a sphere, in all four cuts. A reviewer reading the tests, or the tests
+on a sphere, in all four cuts. Anyone reading the tests, or the tests
 themselves, would see the cut working perfectly. It was working perfectly, on
 the only shape it was ever shown.
 
