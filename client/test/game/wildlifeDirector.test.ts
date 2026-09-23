@@ -54,17 +54,62 @@ const at = (bearing: number, range: number, v = view()) => ({
  * walking the array from index zero instead splices the newest run onto the oldest and
  * reads one gap as a large negative number. It does not bite over a thousand seconds; it
  * bites at four, which is exactly where a cadence measurement would want to go. */
-const gapsOf = (s: DirectorState): number[] => {
+const gapsOf = (s: DirectorState, relaxed?: readonly boolean[]): number[] => {
   const slots = s.log.length / 2;
   const kept = Math.min(s.logCount, slots);
   const first = s.logCount - kept;
   const gaps: number[] = [];
   for (let i = 1; i < kept; i++) {
+    // With `relaxed` given, only the gaps the player walked the whole of.
+    if (relaxed !== undefined && relaxed[first + i] === true) continue;
     const now = s.log[((first + i) % slots) * 2]!, prev = s.log[((first + i - 1) % slots) * 2]!;
     gaps.push((now - prev) / 60);
   }
   return gaps;
 };
+/** Whether the director's own stillness clock has passed the point where `relaxFor`
+ * stretches the cadence — read off the director rather than re-derived from the walk. */
+const standingStill = (s: DirectorState): boolean => s.stillFor > STILL_SECONDS;
+
+/**
+ * The players the cadence is measured against. `aimFrame` predicts where someone will be
+ * looking, so the only honest way to grade it is against more than one kind of head.
+ *
+ * The first is a hiker on a trail: 1.4 m/s along a line that weaves, the head swinging
+ * gently over it, peaking at 0.14 rad/s. A player who only ever turned would circle a
+ * fixed patch of woods and never leave anything behind, which is the one walk that never
+ * exercises the recycling half of the invariant, so this one covers ground.
+ *
+ * The second is a hiker who actually looks around: nine seconds of walking, then five
+ * standing still and turning most of a right angle toward something and back, over and
+ * over. It peaks at 0.44 rad/s — three times the first — and it is much the harder of the
+ * two on a predictor, because the stops break the constant-velocity guess the aim is built
+ * on. Its medians run 6.6 to 7.4 s where the first runs 7.3 to 7.9, so it has real margin
+ * to lose before the band's floor: if a change hurts the prediction, this is the walk that
+ * says so.
+ *
+ * Heavier heads than this were measured and deliberately NOT asserted on — see the design's
+ * gates section. A head sweeping without pause for a thousand seconds is a stress input
+ * rather than a player, and the failure direction under one is busy rather than empty.
+ */
+type Walk = { name: string; pose: (t: number) => { yaw: number; step: number } };
+const WALKS: readonly Walk[] = [
+  {
+    name: "a hiker on a weaving trail",
+    pose: (t) => ({ yaw: 0.8 * Math.sin(t * 0.07) + 0.35 * Math.sin(t * 0.23), step: 0.14 }),
+  },
+  {
+    name: "a hiker who stops and looks around",
+    pose: (t) => {
+      const cycle = t % 14;
+      const walking = cycle < 9;
+      const drift = 0.5 * Math.sin(t * 0.05) + 0.3 * Math.sin(t * 0.35);
+      const look = walking ? 0
+        : (t % 28 < 14 ? 1 : -1) * 0.5 * (1 - Math.cos(2 * Math.PI * (cycle - 9) / 5)) / 2;
+      return { yaw: drift + look, step: walking ? 0.14 : 0 };
+    },
+  },
+];
 const day: MatchState = { phase: 0, hollowDistance: Infinity, hollowHunting: false, inWorld: true, hour: 12, mist: 0 };
 
 describe("the on-screen predicate", () => {
@@ -365,20 +410,21 @@ describe("cues", () => {
 
   it("never cues a loop flier at all: the whole circle has to be hidden and no such place is in reach", () => {
     // `placeable` already refuses to PLACE a raven pair, a gull flock or an eagle, because a
-    // circle twenty to a hundred and forty metres across has nowhere to appear unseen. The
-    // same arithmetic rules out DRIVING one, and this sweeps the whole space to show it: a
-    // circle can only be turned unseen if every bird on it is hidden, which needs the centre
-    // several times its own radius away, and anything that far off is past `RECYCLE` and not
-    // a cue any more. Over every altitude and loop radius the field draws, at every bearing
-    // and out to three hundred metres, there is no flock the director will move.
+    // circle twenty to a hundred and forty metres across has nowhere to appear unseen. No
+    // flock can be DRIVEN either, and this sweeps the whole space to show it: over every
+    // altitude and loop radius the field draws, at every bearing and out to four hundred
+    // metres, there is no flock the director will move. The zero-radius rows are the
+    // interesting ones — a bird with no circle at all is refused too, so what rules a
+    // crossing out is the flight budget rather than the circle or the reach (see
+    // `placeable`), and this pins that by covering the case the circle cannot explain.
     //
     // So the two loop fliers left in the cue table are draws that always redraw. If this
     // ever goes red — a longer reach for fliers, a crossing that does not have to leave by
     // the far edge — that is the day a flier cue becomes possible, and the day the mark's
     // anchor space (see `Candidate`) gets an end-to-end fixture again.
     const shapes: [number, number[], number[]][] = [
-      [SPECIES_GULL, [15, 25, 40], [20, 35, 50]],
-      [SPECIES_RAVEN_PAIR, [40, 60, 80], [30, 45, 60]],
+      [SPECIES_GULL, [15, 25, 40], [0, 20, 35, 50]],
+      [SPECIES_RAVEN_PAIR, [40, 60, 80], [0, 30, 45, 60]],
     ];
     for (const [species, altitudes, radii] of shapes) {
       const s = createDirectorState(3);
@@ -386,7 +432,7 @@ describe("cues", () => {
       const tick = tickDrawing(s, 3, 100, (sp) => sp === species);
       const out: CueEvent[] = [];
       for (const y of altitudes) for (const moveR of radii) {
-        for (let bearing = 0; bearing < Math.PI; bearing += 0.2) for (let r = 10; r <= 300; r += 10) {
+        for (let bearing = 0; bearing < Math.PI; bearing += 0.2) for (let r = 10; r <= 400; r += 10) {
           const x = r * Math.sin(bearing), z = r * Math.cos(bearing);
           const flock: Candidate = { id: 9, species, x, y, z, moveX: x, moveZ: z, moveR, onScreen: false, phase: PHASE_REST };
           out.length = 0;
@@ -462,7 +508,7 @@ describe("cues", () => {
     }
   });
 
-  it("never places, drives or removes on screen, and keeps the cadence's whole distribution: seven seeds, a thousand seconds each", () => {
+  it.each(WALKS)("never places, drives or removes on screen, and keeps the cadence's whole distribution: $name, seven seeds, a thousand seconds each", (walk) => {
     type Unit = Candidate & { goalX: number; goalZ: number; speed: number };
     const medians: number[] = [];
     for (const SEED of [3, 5, 11, 17, 23, 29, 31]) {
@@ -474,15 +520,17 @@ describe("cues", () => {
       let emptyRun = 0, longestEmpty = 0;
       const stagings = new Set<number>();
       const kinds = new Set<string>();
+      // Which gaps the player walked through the whole of. The design's ceiling is on those:
+      // once someone has stood still for `STILL_SECONDS` the cadence is SUPPOSED to stretch
+      // by `STILL_RELAX`, so a long gap while they stand and look around is the feature
+      // working, not the woods going quiet on a hiker.
+      const relaxed: boolean[] = [];
+      let relaxedThisGap = false;
       for (let tick = 0; tick < 1000 * 60; tick += 6) { // a thousand seconds, in steps of 0.1 s
-        // A hiker, not a carousel: 1.4 m/s along a trail that weaves, with the head swinging
-        // side to side over it. A player who only ever turned would circle a fixed patch of
-        // woods and never leave anything behind, which is the one walk that never exercises
-        // the recycling half of the invariant.
         const t = tick / 60;
-        const yaw = 0.8 * Math.sin(t * 0.07) + 0.35 * Math.sin(t * 0.23);
-        x += 0.14 * Math.sin(yaw); z += 0.14 * Math.cos(yaw);
-        const v = view(yaw, x, z);
+        const p = walk.pose(t);
+        x += p.step * Math.sin(p.yaw); z += p.step * Math.cos(p.yaw);
+        const v = view(p.yaw, x, z);
         out.length = 0;
         const logged = s.logCount;
         step(s, v, flat, units, day, 0.1, tick, SEED, out);
@@ -523,6 +571,8 @@ describe("cues", () => {
             units.splice(i, 1);
           }
         }
+        if (standingStill(s)) relaxedThisGap = true;
+        while (relaxed.length < s.logCount) { relaxed.push(relaxedThisGap); relaxedThisGap = false; }
         if (s.logCount > logged) stagedSinceSighting.clear();
         // Walk every cued unit toward its mark, then refresh the on-screen flags.
         for (const u of units) {
@@ -554,7 +604,9 @@ describe("cues", () => {
       expect(longestEmpty).toBeLessThanOrEqual(GAP_CEILING);
 
       const gaps = gapsOf(s);
+      const walked = gapsOf(s, relaxed);
       expect(gaps.length).toBeGreaterThan(5);
+      expect(walked.length).toBeGreaterThan(5);
       const ordered = gaps.slice().sort((a, b) => a - b);
       // THE WHOLE DISTRIBUTION, not a median. A median inside the band says nothing about
       // the tail, and the tail is what reads as lifeless: this same walk once had a median
@@ -565,14 +617,15 @@ describe("cues", () => {
       // - MOST gaps inside it, not merely half of them either side of the middle — the
       //   promise is an animal every five to ten seconds, not an average of one. (81 to 87 %
       //   when written.)
-      // - and nothing over `GAP_CEILING`, the design's second half, with the player walking
-      //   every frame of it. (11.9 to 14.8 s when written.)
+      // - and nothing over `GAP_CEILING` among the gaps the player WALKED through, which is
+      //   the design's second half word for word. (Up to 16.3 s on the first walk, 11.8 on
+      //   the second, when written; the first never stops, so there the two sets are one.)
       const median = ordered[Math.floor(ordered.length / 2)]!;
       expect(median).toBeGreaterThanOrEqual(GAP[0]);
       expect(median).toBeLessThanOrEqual(GAP[1]);
       const inBand = gaps.filter((g) => g >= GAP[0] && g <= GAP[1]).length;
       expect(inBand / gaps.length).toBeGreaterThan(0.5);
-      expect(ordered[ordered.length - 1]!).toBeLessThanOrEqual(GAP_CEILING);
+      expect(Math.max(...walked)).toBeLessThanOrEqual(GAP_CEILING);
       medians.push(median);
     }
     // And the median of the medians, which is the figure a lucky seed cannot carry alone.
@@ -587,9 +640,13 @@ describe("cues", () => {
     // module could break that are observable from outside: an event object made on a frame
     // that arranged nothing, and bookkeeping that grows with the length of the match. The
     // cue geometry's own scratch is module-level so that neither `markFor` nor `startFor`
-    // makes a vector per try; that part is a code property, not something a caller can see,
-    // and heap measurement around a loop this cheap is swamped by the runner's own churn —
-    // so it is pinned by review rather than claimed here.
+    // makes a vector per try, and every loop on a per-frame path is indexed rather than
+    // `for…of` so none of them makes an iterator. Neither of those is visible to a caller,
+    // and no heap oracle here can stand in for them: `heapUsed` measures what the nursery
+    // is holding rather than what was allocated, so a transient object per frame moves it
+    // less than the runner's own churn does, and GC-event counts and the sampling heap
+    // profiler both read zero either way. They are properties of the source, and the
+    // comments at those loops say so. What follows is the part a caller CAN check.
     const s = createDirectorState(5);
     const log = s.log;
     const units: Candidate[] = [

@@ -147,12 +147,19 @@ const CUE_FLIGHT = 5;
 /**
  * How long (s) the beat waits on a cue that has yet to be seen before arranging another.
  *
- * The ceiling on the tail. A cue holds the beat so the woods do not empty their whole pool
- * into the player's back, but held without a deadline that interlock turns every miss into
- * a silence as long as the animal's walk, and a run of misses into a minute and a half of
- * dead woods. `CUE_FLIGHT` is how long a cue may take; this is that plus the dwell the
- * player has to hold it for, so a cue that has used its whole budget and the look that was
- * supposed to follow has had its chance.
+ * A BACKSTOP, not the fix, and it should not be read as one. A cue holds the beat so the
+ * woods do not empty their whole pool into the player's back; held without a deadline,
+ * that interlock turns every miss into a silence as long as the animal's walk, and a run
+ * of misses into a minute and a half of dead woods. That is what the tail used to be made
+ * of. What removed it was the miss rate going to about one cue in a thousand, and the
+ * proof is that raising this to a billion reproduces the whole distribution to the decimal
+ * on both committed walks: nothing waits this long any more.
+ *
+ * It stays because the day something does — a species that cannot reach its mark, a
+ * heightfield that hides one mid-walk — the beat should move on rather than stand still.
+ * `CUE_FLIGHT` is how long a cue may take; this is that plus the dwell the player has to
+ * hold it for, so a cue that has used its whole budget and the look that was supposed to
+ * follow has had its chance.
  */
 export const CUE_PATIENCE = CUE_FLIGHT + SIGHTING_DWELL;
 /**
@@ -294,7 +301,12 @@ export function inCone(view: View, x: number, y: number, z: number, margin: numb
  * (x, y, z) at any of `LOS_SAMPLES` points along it. */
 export function lineOfSight(ground: Ground, view: View, x: number, y: number, z: number): boolean {
   const dx = x - view.x, dy = y - view.y, dz = z - view.z;
-  for (const f of LOS_FRACTIONS) {
+  // Indexed, like every other loop on a per-frame path here: this one runs for each unit
+  // the eye test looks at, on every frame, and an iterator object per call is exactly the
+  // allocation the director is not allowed to make. (The two `for…of` loops left in this
+  // file build the weight table once, at module load.)
+  for (let i = 0; i < LOS_FRACTIONS.length; i++) {
+    const f = LOS_FRACTIONS[i]!;
     const rayHeight = view.y + dy * f;
     if (ground(view.x + dx * f, view.z + dz * f) > rayHeight) return false;
   }
@@ -488,7 +500,8 @@ export function observe(
   let best: Seen | undefined;
   let bestDistance = Infinity;
   for (let i = 0; i < clock.countedN; i++) clock.countedOn[i] = 0;
-  for (const u of units) {
+  for (let i = 0; i < units.length; i++) {
+    const u = units[i]!;
     const visible = onScreen(view, ground, u, match.mist);
     if (u.id === state.lastSeenId) { candidate = u; candidateOnScreen = visible; }
     if (!visible) continue;
@@ -718,12 +731,15 @@ function markFor(view: View, species: number, staging: number, fromX: number, fr
   const notice = NOTICE[species] ?? Infinity;
   if (staging === STAGING_CROSS) {
     // Flown at the animal's own range, so the crossing is all sideways and none of it
-    // toward or away — but never further out than the species reads at. A butterfly is
-    // gone as a thing you could name at twelve metres, and sending one out to the twenty
-    // this floor was written for the gulls at spent the whole cue on a crossing the player
-    // could not have seen if they had been staring straight at it.
-    const crossRange = Math.min(Math.max(CROSS_RANGE[0], range), notice);
-    pointAt(view, markBearing(view, staging, side), Math.max(MARK_MIN_RANGE, crossRange), out);
+    // toward or away — inside the same band the start was drawn from, which is scaled to
+    // what the species reads at. The near end has to be scaled too, not just the far one:
+    // `CROSS_RANGE[0]` is twenty metres because that is where a gull crosses, and a
+    // butterfly is gone as a thing you could name at twelve, so a bare floor of twenty
+    // sent every butterfly OUTWARD to the one range it could still just be seen at — the
+    // opposite of all sideways, on the only species that gets a crossing at all.
+    const near = Math.max(MARK_MIN_RANGE, Math.min(CROSS_RANGE[0], notice * CROSS_NOTICE_SHARE));
+    const far = Math.max(near, notice);
+    pointAt(view, markBearing(view, staging, side), Math.min(Math.max(near, range), far), out);
     return;
   }
   const markRange = Math.max(MARK_MIN_RANGE, Math.min(range, notice * MARK_NOTICE_SHARE));
@@ -884,13 +900,21 @@ function startFor(
  * a speck in the sky rather than a cue, and further than the mist lets anything be seen
  * anyway. There is no placement for them that the invariant allows, so there is none.
  *
- * Nor, as it turns out, is there a DRIVE: the same arithmetic run over every altitude and
- * loop radius the field draws, at every bearing out to three hundred metres, finds nowhere
- * a flock can be turned unseen and still cross the frame — a circle far enough out to hide
- * whole is further than `RECYCLE`, and one inside `RECYCLE` always has a bird in view. See
- * `extentHidden`, and the sweep over it in the tests. So a loop flier draw always redraws,
- * and the crossing the player actually gets is the butterfly's: a point at head height with
- * no loop, placed like any mammal.
+ * Nor, as it turns out, is there a DRIVE — but for a different reason than the circle, and
+ * it is worth being exact about which, because the obvious guess is wrong. Swept over every
+ * altitude and loop radius the field draws, at every bearing out to four hundred metres,
+ * there are no drives at all; and the predicate that refuses them is `reachable`, not
+ * `extentHidden` and not the reach against `RECYCLE`. A crossing's mark is the far edge of
+ * the frame, so the walk is a chord right across it — a hundred metres at the range a
+ * flier flies at — and `CUE_FLIGHT` buys a gull sixty. Raising `RECYCLE` to 250 changes
+ * nothing whatever; raising `CUE_FLIGHT` is what makes flier drives appear, and only then
+ * does `RECYCLE` start to bind. The loop radius is not the cause either: a bird with no
+ * circle at all, `moveR` zero, is refused under the same constants.
+ *
+ * So do NOT lengthen the reach hoping to get flier cues back; it is the flight budget or
+ * the shape of the crossing. A loop flier draw always redraws, and the crossing the player
+ * actually gets is the butterfly's: a point at head height with no loop, placed like any
+ * mammal.
  */
 function placeable(species: number): boolean {
   return species < FIRST_BIRD_SPECIES || species === SPECIES_BUTTERFLY;

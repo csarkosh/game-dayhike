@@ -111,9 +111,13 @@ Three stagings, by species and availability:
   margin and fly across it, inside the range their species reads at; for birds
   this is the existing card path given a heading through the view. A loop
   flier is a circle twenty to a hundred and forty metres across rather than a
-  point, and a cue moves the whole circle: there is no placement that hides
-  every bird of one, and no reach from which one can be turned unseen either,
-  so in practice the butterfly is the crossing the player gets.
+  point, and a cue moves the whole circle, so there is no placement that hides
+  every bird of one. Nor is there in practice a drive: a crossing's mark is the
+  far edge of the frame, which at the range a flier flies at is a walk of a
+  hundred metres or so, and `CUE_FLIGHT` buys a gull sixty — so the butterfly
+  is the crossing the player gets. The binding constraint there is the flight
+  budget, not the reach and not the circle: a bird with no circle at all is
+  refused under the same constants, and lengthening `RECYCLE` changes nothing.
 - **Break cover** — rabbit and squirrel start behind terrain or beyond a
   lateral edge of the cone, within 15 m, then take `PHASE_CUE` to a goal
   across or away from the view and resume rest. Cover is a point the line of
@@ -127,8 +131,9 @@ unit is outside the view cone by the margin, *or* behind terrain, *or* beyond
 the fog. A unit is never moved by more than its own speed allows, and never
 removed while on screen: removal waits until it is off screen and beyond 1.5
 times its notice distance. The director asserts this on every event it emits,
-and a test drives it through a thousand seeded frames with a moving, turning
-player and checks the invariant on every one.
+and a test drives it through a thousand seeded SECONDS — ten thousand frames of
+0.1 s — for each of two player models over seven seeds each, checking the
+invariant on every event.
 
 ## 7. Budget and recycling
 
@@ -177,8 +182,15 @@ files:
 - `PHASE_CUE` entering, walking to its goal, and resuming rest;
 - the butterfly's geometry (two quads, size, beat) and its daylight, open,
   no-rain gate;
-- no allocation in the director's per-frame path (the existing allocation
-  test pattern).
+- the two halves of the per-frame allocation rule a caller can actually check:
+  no event object on a frame that arranged nothing, and no storage that grows
+  with the length of the match. The other half — no scratch vector per cue try,
+  no iterator per loop — is a property of the source, kept by module-level
+  scratch and indexed loops with the reason written at each. There is no
+  trustworthy heap oracle for it here: `heapUsed` measures nursery residency
+  rather than allocation, so injecting a real per-frame allocation moves it
+  less than the runner's own churn, and GC-event counts and the sampling heap
+  profiler both read zero either way.
 
 ## 10. Gates
 
@@ -187,13 +199,39 @@ In the game, against `main`:
 - a three-minute daytime walk along the stem from TRAIL toward EDGE, the
   director's log read back through the wildlife events: the gap histogram's
   median inside 5–10 s and no gap over 20 s while moving; species share
-  small:large within 6:1 ± 30 %;
+  small:large within 6:1 ± 30 %. **Expect the in-game median to read lower than
+  the harness's** — a real player turns far more than the gentle model does, and
+  the harness measures 7.7 s at 0.14 rad/s against 6.8 at 0.44 and 3.8 at 0.8.
+  A median of 4 to 7 s with a lively player is the gate passing, not a
+  regression;
 - the same walk at night showing the gaps stretched by about 2.5;
 - a chase segment with zero cues in the log;
 - the log reviewed for any event the invariant flagged — there must be none;
 - stills: a butterfly over the meadow, a squirrel breaking cover, a deer at
   the tree line;
 - the 4× pixel pair at TRAIL and MEADOW within noise; the native cap check.
+
+### How the cadence moves with the player
+
+`aimFrame` predicts where the player will be looking, so what it is graded
+against matters as much as the numbers. Over seven seeds of a thousand seconds
+each, on a flat world:
+
+| player | peak yaw rate | median gap | inside 5–10 s | longest gap | over 20 s |
+|---|---|---|---|---|---|
+| hiker on a weaving trail | 0.14 rad/s | 7.7 s | 85 % | 16.3 s | 0 |
+| hiker who stops and looks around | 0.44 rad/s | 6.8 s | 67 % | 15.1 s | 0 |
+| scanning sweeps, never pausing | 0.80 rad/s | 3.8 s | 33 % | 21.1 s | 1 |
+| fast mouse turns | 2.40 rad/s | 3.7 s | 16 % | 31.9 s | 6 |
+
+The first two are asserted on. The last two are stress inputs rather than
+players — a head sweeping through most of a circle without pause for a thousand
+seconds is nobody — and the point of recording them is the direction they fail
+in: **busy, not empty**. More turning sweeps more animals through the frame and
+each is credited, so the median falls below the band rather than above it, and
+the long gaps that do appear are the few moments the player's head was
+somewhere the prediction could not follow. The invariant held at zero
+violations under every one of the four.
 
 ## 11. Fallbacks
 
