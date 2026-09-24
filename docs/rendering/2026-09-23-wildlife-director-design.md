@@ -70,18 +70,38 @@ line of sight that samples the sim's ground height at four points along the
 ray from the eye to the unit's chest height and fails if any lies above the
 ray. Trees do not occlude for this purpose. A unit on screen for
 `SIGHTING_DWELL = 1` s counts as a sighting; the clock resets and the target
-gap is redrawn.
+gap is redrawn. Each animal counts once for as long as it stays in view — a
+deer grazing in frame for a minute is one sighting, not sixty — but a second
+animal in view at the same time is a second sighting, because it is a second
+animal the player saw.
 
 ## 5. The scheduler
 
 - `targetGap` is drawn from `GAP = [5, 10]` s by seeded jitter after every
   sighting.
 - When `sinceSighting > targetGap · relax − LEAD (2 s)` the director stages a
-  cue. If no cue can be placed it retries after `RETRY = 1` s and the gap
-  grows; a missed beat is never forced.
-- Species: small (rabbit, squirrel, raven, gull, butterfly) weighted
-  `SMALL_TO_LARGE = 6` to one over large (deer, elk); the eagle is a large
-  cue at range. The last species is excluded from the next draw.
+  cue. `LEAD` is the walk from staging to the sighting landing, so what the
+  band describes is the interval the player gets. If no cue can be placed it
+  retries after `RETRY = 1` s and the gap grows; a missed beat is never
+  forced, but a cue the player has not seen within `CUE_PATIENCE` stops
+  holding the beat, so a cue that misses cannot cost more than that in
+  silence.
+- A cue is only arranged where it can land: the animal has to reach its mark
+  within `CUE_FLIGHT = 5` s at its own gait, and some part of the walk has to
+  pass through the frame, close enough for its species to read. Both are
+  judged against the frame carried forward by however the player has been
+  walking and turning, not the frame as it stands — an elk aimed at where the
+  player was looking five seconds ago arrives in an empty view.
+- Species: small (rabbit, squirrel, raven, gull) weighted `SMALL_TO_LARGE = 6`
+  to one over large (deer, elk). The eagle is not cued: it cruises above the
+  distance anything registers as a sighting at. Nor, in practice, are the
+  raven pair and the gull flock — see §6. Nor, at all, is the butterfly for
+  now: nothing can render one yet, so it stays out of the weighted draw
+  entirely rather than spend a beat every few sightings on a `place` the pool
+  has to refuse (`wildlifeField.ts`'s `DIRECTOR_POOL[SPECIES_BUTTERFLY]` is 0
+  for the same reason) — its share splits across the other four small species
+  until the same commit that gives it a shipped model restores it. The last
+  species is excluded from the next draw.
 - `relax` is a multiplier: `STILL = 1.8` once the player has moved under
   0.3 m/s for 3 s; `NIGHT = 2.5` by the hour the calls already use; and
   **quiet** — no cues — during the chase phase, whenever the Hollow is within
@@ -93,8 +113,16 @@ gap is redrawn.
 Three stagings, by species and availability:
 
 - **Cross** — birds and the butterfly start outside the view cone by the
-  margin and fly across it; for birds this is the existing card path given a
-  heading through the view.
+  margin and fly across it, inside the range their species reads at; for birds
+  this is the existing card path given a heading through the view. A loop
+  flier is a circle twenty to a hundred and forty metres across rather than a
+  point, and a cue moves the whole circle, so there is no placement that hides
+  every bird of one. Nor is there in practice a drive: a crossing's mark is the
+  far edge of the frame, which at the range a flier flies at is a walk of a
+  hundred metres or so, and `CUE_FLIGHT` buys a gull sixty — so the butterfly
+  is the crossing the player gets. The binding constraint there is the flight
+  budget, not the reach and not the circle: a bird with no circle at all is
+  refused under the same constants, and lengthening `RECYCLE` changes nothing.
 - **Break cover** — rabbit and squirrel start behind terrain or beyond a
   lateral edge of the cone, within 15 m, then take `PHASE_CUE` to a goal
   across or away from the view and resume rest. Cover is a point the line of
@@ -108,8 +136,9 @@ unit is outside the view cone by the margin, *or* behind terrain, *or* beyond
 the fog. A unit is never moved by more than its own speed allows, and never
 removed while on screen: removal waits until it is off screen and beyond 1.5
 times its notice distance. The director asserts this on every event it emits,
-and a test drives it through a thousand seeded frames with a moving, turning
-player and checks the invariant on every one.
+and a test drives it through a thousand seeded SECONDS — ten thousand frames of
+0.1 s — for each of two player models over seven seeds each, checking the
+invariant on every event.
 
 ## 7. Budget and recycling
 
@@ -146,16 +175,28 @@ files:
 - each relaxation multiplier and each quiet state;
 - each staging's start position satisfying the invariant on a synthetic
   world; the eight-candidate cover search giving up cleanly;
-- the thousand-frame seeded drive: a player walking and turning, the
-  invariant asserted on every event, the sighting gaps' median inside the
-  band, and at least one cue of each staging;
+- the thousand-second seeded drive, over seven seeds and four player models:
+  the invariant asserted on every event of all four, and on the two graded
+  models the gaps' WHOLE distribution against §10's gate — the median inside
+  the band, most gaps inside it, nothing over `GAP_CEILING` either among the
+  gaps the player walked through or among all of them, and no stretch longer
+  than that with nothing on screen at all. A median alone is not the gate: one
+  has sat inside the band over a distribution with a quarter of its gaps past
+  twenty seconds and a worst case of ninety-six;
 - recycling preferred over spawning when a unit is available; removal only
   off screen;
 - `PHASE_CUE` entering, walking to its goal, and resuming rest;
 - the butterfly's geometry (two quads, size, beat) and its daylight, open,
   no-rain gate;
-- no allocation in the director's per-frame path (the existing allocation
-  test pattern).
+- the two halves of the per-frame allocation rule a caller can actually check:
+  no event object on a frame that arranged nothing, and no storage that grows
+  with the length of the match. The other half — no scratch vector per cue try,
+  no iterator per loop — is a property of the source, kept by module-level
+  scratch and indexed loops with the reason written at each. There is no
+  trustworthy heap oracle for it here: `heapUsed` measures nursery residency
+  rather than allocation, so injecting a real per-frame allocation moves it
+  less than the runner's own churn, and GC-event counts and the sampling heap
+  profiler both read zero either way.
 
 ## 10. Gates
 
@@ -164,13 +205,53 @@ In the game, against `main`:
 - a three-minute daytime walk along the stem from TRAIL toward EDGE, the
   director's log read back through the wildlife events: the gap histogram's
   median inside 5–10 s and no gap over 20 s while moving; species share
-  small:large within 6:1 ± 30 %;
+  small:large within 6:1 ± 30 %. Read the log's yaw rate alongside the median,
+  because the two are not independent: the harness measures 7.7 s at
+  0.14 rad/s, 6.8 at 0.44 and 3.8 at 0.8, so a player who turns a lot gets a
+  shorter median from unchanged code. A median under the band is therefore only
+  excused **if the same log shows a high yaw rate** — at an ordinary one it is
+  over-cueing, and it is a regression. This is a condition on the gate, not a
+  second band: 5–10 s remains the number, and "a lively player" is not an
+  explanation anyone may reach for without the yaw rate to back it;
 - the same walk at night showing the gaps stretched by about 2.5;
 - a chase segment with zero cues in the log;
 - the log reviewed for any event the invariant flagged — there must be none;
 - stills: a butterfly over the meadow, a squirrel breaking cover, a deer at
   the tree line;
 - the 4× pixel pair at TRAIL and MEADOW within noise; the native cap check.
+
+### How the cadence moves with the player
+
+`aimFrame` predicts where the player will be looking, so what it is graded
+against matters as much as the numbers. Over seven seeds of a thousand seconds
+each, on a flat world:
+
+| player | peak yaw rate | standing | median gap | inside 5–10 s | longest gap | over 20 s |
+|---|---|---|---|---|---|---|
+| hiker on a weaving trail | 0.14 rad/s | 0 % | 7.7 s | 85 % | 16.3 s | 0 |
+| hiker who stops and looks around | 0.44 rad/s | 36 % | 6.8 s | 67 % | 15.1 s | 0 |
+| scanning sweeps, never pausing | 0.80 rad/s | 0 % | 3.8 s | 33 % | 21.1 s | 1 |
+| fast mouse turns | 2.40 rad/s | 0 % | 3.7 s | 16 % | 31.9 s | 6 |
+
+All four are in `wildlifeDirector.test.ts`, so these figures can be measured
+again rather than taken on trust. The first two are graded; the last two are
+stress inputs rather than players — a head sweeping through most of a circle
+without pause for a thousand seconds is nobody — and grading one would either
+fail honestly or force a tune that makes the real cases worse. The invariant is
+asserted on all four and held at zero violations under every one.
+
+The standing column matters for reading the second row. Those 36 % of frames
+are why the ceiling assertion on the gaps the player *walked* covers only a
+third of that walk's gaps: the filter drops a gap if the player stood at any
+point during it, so a third of the time standing removes about two thirds of
+the gaps. That is why the ceiling is also asserted over every gap, which on
+both graded walks passes with room.
+
+The point of recording the last two rows is the direction they fail in:
+**busy, not empty**. More turning sweeps more animals through the frame and
+each is credited, so the median falls below the band rather than above it. That
+is also the reason §10's caveat is conditional — the same movement that excuses
+a low median is the movement that produces one.
 
 ## 11. Fallbacks
 
@@ -184,3 +265,13 @@ staging restricted to beyond-fog starts; the butterfly off.
   is never seen appearing either.
 - Sightings that react to the player's look direction, once the director is
   measured.
+- **Settle whether `aimFrame` should predict the head turn at all.** Setting
+  `AIM_YAW_CAP` to 0 deletes that half of the prediction, leaving only the
+  walk, and it passes every test in the suite. It is genuinely mixed rather
+  than better: the share of gaps inside the band improves on every turning
+  player (the hiker who stops and looks 67 → 71 %, scanning sweeps 33 → 41 %)
+  and gets worse on the gentle one (85 → 81 %), while the heaviest head
+  degrades sharply — its gaps over twenty seconds go from 6 to 18. Nothing in
+  the suite decides it, and the walk added most recently prefers the term
+  absent, so it wants a measurement of its own rather than a snap call. Noted
+  so that it is a known open question rather than a rediscovery.

@@ -1,4 +1,29 @@
 import { describe, expect, it, vi } from "vitest";
+
+/**
+ * Every other case in this file hands `createWildlifeMeshes` its bird buckets through
+ * `options.birds`, which skips `loadBirdAssets` outright. One case does not — the butterfly
+ * is the only species whose bucket that function BUILDS rather than fetches, so it is the
+ * only species whose production asset path a test can reach at all — and that case needs the
+ * fetch half stubbed: the four GLB birds it walks past first are real catalog entries, and
+ * `loadAssetContainerAsync` against a bundler URL under NullEngine either hangs or fails
+ * slowly. Rejecting immediately is what a missing asset already does (`loadBirdAssets`
+ * catches per asset and carries on: "one bad asset costs its own bird and nothing else"), so
+ * the stub exercises the real control flow rather than a special one, and the recorded urls
+ * are how that case proves nothing was fetched for the butterfly.
+ */
+const loaderStub = vi.hoisted(() => ({ urls: [] as string[] }));
+vi.mock("@babylonjs/core/Loading/sceneLoader.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@babylonjs/core/Loading/sceneLoader.js")>();
+  return {
+    ...actual,
+    loadAssetContainerAsync: (url: unknown) => {
+      loaderStub.urls.push(String(url));
+      return Promise.reject(new Error("the suite fetches no models"));
+    },
+  };
+});
+
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
@@ -7,8 +32,10 @@ import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import catalog from "../../assets/catalog.json" with { type: "json" };
 import "../../src/sim/passes/index.js";
-import { elevationSampleAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { elevationAt, elevationSampleAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { SIM_TICK_HZ } from "../../src/sim/constants.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import type { WeatherParams } from "../../src/game/weather.js";
 import { fadeWeight } from "../../src/game/distanceFadePlugin.js";
@@ -16,13 +43,19 @@ import { WING_TIME_WRAP, WingPlugin } from "../../src/game/wingPlugin.js";
 import { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import { TransformNode as BabylonTransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import {
-  FIRST_BIRD_SPECIES, SPECIES_COUNT, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RAVEN_PAIR,
-  SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, WILDLIFE_RADIUS, wildlifeUnitsInDisc,
+  DIRECTOR_POOL, FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL,
+  SPECIES_RABBIT, SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, WILDLIFE_CELL, WILDLIFE_D, WILDLIFE_RADIUS,
+  WILDLIFE_SPREAD, wildlifeUnitsInDisc,
 } from "../../src/game/wildlifeField.js";
 import {
-  BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, birdBucketOmega, birdLodMeshes, createWildlifeMeshes,
-  SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
+  BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, BUTTERFLY_BODY_HALF, BUTTERFLY_COLOURWAYS, BUTTERFLY_OMEGA,
+  BUTTERFLY_WING_CHORD, BUTTERFLY_WING_SPAN, birdBucketOmega, birdLodMeshes, butterflyColourway, butterflyGeometry,
+  createWildlifeMeshes, PRESENCE_RAMP_SECONDS, SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
 } from "../../src/game/wildlifeMeshes.js";
+import { wildlifePresenceUnder } from "../../src/game/wildlifeBehaviour.js";
+import {
+  CUE_WEIGHT, GAP, LEAD, NOTICE, onScreen, STILL_RELAX, type Ground, type MatchState, type View,
+} from "../../src/game/wildlifeDirector.js";
 import type { ClipRole, CreatureInstance, CreaturePool } from "../../src/game/creatureModel.js";
 
 setActiveTerrainVariant("olympic");
@@ -38,6 +71,19 @@ const CAM_Z = -500;
 /** One player, parked far enough away that nothing ever reacts to it. */
 const FAR_AWAY = [{ x: 1e6, z: 1e6 }];
 const GROUND_ASSETS = ["wildlife.elk", "wildlife.deer", "wildlife.rabbit", "wildlife.squirrel"];
+/**
+ * A point with no ground-species unit anywhere in any species' disc — flat
+ * water far from the trail. The director's own field of candidates is empty
+ * here, so any sighting the tests below see can only be a unit the director
+ * itself placed or drove: nothing natural is ever already sitting in frame to
+ * confuse the two.
+ */
+const QUIET_X = -10000;
+const QUIET_Z = -8000;
+const DAY_MATCH: MatchState = { phase: 0, hollowDistance: Infinity, hollowHunting: false, inWorld: true, hour: 12, mist: 0 };
+/** Weather that takes every placeable species' presence to exactly zero at once — full
+ * dread empties the ground and the sky, full rain finishes the butterfly. */
+const GONE: WeatherParams = { cloudCover: 1, mist: 0, rain: 1, wetness: 1, dread: 1 };
 
 /**
  * A pool that records what the shell asks of it and hands back bare nodes.
@@ -342,6 +388,327 @@ describe("createWildlifeMeshes", () => {
   });
 });
 
+describe("the wildlife director", () => {
+  it("never runs, and never creates a pool unit, without a seventh argument", () => {
+    // The negative made unambiguous: not "the log happened to stay empty this
+    // run" (which also passes with the director wired up but simply unlucky)
+    // but "the director is never called at all" — checked the only two ways
+    // that is externally visible, however long the shell is driven.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool, acquired } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    for (let tick = 0; tick < 900; tick++) {
+      w.update(CAM_X, CAM_Z, tick, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    }
+    // The natural field itself is still fully alive here (real ground units at
+    // CAM_X/CAM_Z are acquired every frame) — it is specifically the POOL that
+    // never gains a unit, not the whole shell going idle.
+    expect(acquired.size).toBeGreaterThan(0);
+    expect(w.directorLog()).toHaveLength(0);
+    expect(w.poolCount()).toBe(0);
+    w.dispose();
+    engine.dispose();
+  });
+
+  it("relaxes for a still player: the first sighting lands no earlier than the relaxed floor", () => {
+    // The positive that replaces "the log stayed empty for 900 ticks" — which
+    // cannot tell a quiet cadence from a director that never ran at all, and
+    // whose 900 ticks (15 s) sit inside the very band ([9, 18] s relaxed) the
+    // test is trying to say something about, so whether anything fires is a
+    // coin flip on the jittered draw. This drives a genuinely still player
+    // (the view never moves) at the quiet point, where nothing natural is
+    // ever already on screen, so the first log entry can only be the
+    // director's own cue landing — and asserts its tick is at or beyond the
+    // floor the relaxation can least be: GAP[0] * STILL_RELAX - LEAD, the
+    // smallest the staging threshold can ever be once the player is credited
+    // as still (stillFor and sinceSighting climb in lockstep from a fresh
+    // director, so the still relaxation is already in force by the time
+    // sinceSighting could reach even this floor). Without STILL_RELAX the
+    // same floor is GAP[0] - LEAD = 3 s, so a broken relaxation fails this
+    // comfortably rather than by luck.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    const view: View = { x: QUIET_X, y: elevationAt(SEED, QUIET_X, QUIET_Z) + 1.7, z: QUIET_Z, yaw: 0, pitch: 0, fov: 1.4, aspect: 16 / 9 };
+    let tick = 0;
+    for (; tick < 6000 && w.directorLog().length === 0; tick++) {
+      w.update(QUIET_X, QUIET_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    }
+    const log = w.directorLog();
+    expect(log.length).toBeGreaterThan(0);
+    const floor = GAP[0] * STILL_RELAX - LEAD;
+    expect(log[0]! / SIM_TICK_HZ).toBeGreaterThanOrEqual(floor);
+    w.dispose();
+    engine.dispose();
+  });
+
+  it("places a unit where none is in reach, keeps it through a rebuild, logs it once seen, and gives it back once far and done", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool, acquired } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    const view: View = { x: QUIET_X, y: elevationAt(SEED, QUIET_X, QUIET_Z) + 1.7, z: QUIET_Z, yaw: 0, pitch: 0, fov: 1.4, aspect: 16 / 9 };
+    let tick = 0;
+    // Nothing natural exists here to drive, so the first thing the director
+    // ever does is place one — the only path exercised by this test, and the
+    // only way `acquired` ever gains an entry at all at this empty point. A
+    // placed unit is only added to `states` at the END of the frame that
+    // places it (see `update`'s own doc), so its first render — and so its
+    // first appearance in `acquired` — is one frame later; hence the extra
+    // update below once `poolCount` first turns positive.
+    for (; tick < 3600 && w.poolCount() === 0; tick++) {
+      w.update(QUIET_X, QUIET_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    }
+    expect(w.poolCount()).toBeGreaterThan(0);
+    w.update(QUIET_X, QUIET_Z, tick++, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    expect(acquired.size).toBeGreaterThan(0);
+    const placedKey = [...acquired.keys()][0]!;
+
+    // A disc rebuild (past WILDLIFE_REBUILD_STEP of camera travel) must not
+    // drop it — it is not part of the seeded field the rebuild's `keep` set
+    // is built from, and dropping it here would vanish it mid-cue.
+    w.update(QUIET_X + WILDLIFE_REBUILD_STEP + 0.5, QUIET_Z, tick++, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    expect(acquired.has(placedKey)).toBe(true);
+
+    // Sweep the view onto exactly where it was rendered and hold it there
+    // until the log records it — the shell's own candidate, not a guess at
+    // the director's private event.
+    const pos = acquired.get(placedKey)!.root.position;
+    const before = w.directorLog().length;
+    for (let t = 0; t < 600 && w.directorLog().length === before; t++, tick++) {
+      view.yaw = Math.atan2(pos.x - view.x, pos.z - view.z);
+      w.update(QUIET_X, QUIET_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    }
+    expect(w.directorLog().length).toBeGreaterThan(before);
+
+    // Walk the view far away and hold it there: past REMOVE_FACTOR times what
+    // the species reads at, for REMOVE_SECONDS, and the pool slot comes back.
+    view.x = QUIET_X + 2000;
+    view.z = QUIET_Z + 2000;
+    let removedAt = -1;
+    for (let t = 0; t < 3600 && removedAt < 0; t++, tick++) {
+      w.update(view.x, view.z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+      if (!acquired.has(placedKey)) removedAt = tick;
+    }
+    expect(removedAt).toBeGreaterThan(0);
+    w.dispose();
+    engine.dispose();
+  });
+
+  it("credits no sighting for an animal the presence gate has faded out", () => {
+    // The third door onto "credited for an animal the player never saw", after a species
+    // with no model and a species with no pool slot. An animal at zero presence is drawn at
+    // scale 0 (a mammal) or skipped outright (anything on a card) — yet nothing in the
+    // director reads presence, so before this gate an invisible animal sitting in frame
+    // still reset `sinceSighting` and still went into the log.
+    //
+    // Standing eight metres off a real natural RABBIT, found by scanning the seed: well
+    // inside the fifteen metres it reads at, and a unit the field made rather than one the
+    // director placed, so the pool hand-back below cannot quietly remove the subject. The
+    // view is re-aimed at the nearest rendered animal every frame — which under the fade
+    // means aiming squarely at something drawn at scale 0. An empty point, or a camera with
+    // every animal beyond its notice range, proves nothing here: with nothing creditable in
+    // view the assertion holds whether the gate exists or not, which is how two earlier
+    // drafts of this test passed without it.
+    const NEAR_X = 1997.07, NEAR_Z = -519.63;
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool, acquired } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    const view: View = { x: NEAR_X, y: elevationAt(SEED, NEAR_X, NEAR_Z) + 1.7, z: NEAR_Z, yaw: 0, pitch: 0, fov: 1.4, aspect: 16 / 9 };
+    /**
+     * Two seconds staring at the nearest animal, one second turned away, over and over.
+     * The turn away is essential, not decoration: the director counts each animal ONCE for
+     * as long as it stays in frame and only drops the mark when it leaves, so a camera held
+     * still credits its rabbit a single time and then goes quiet whatever the presence gate
+     * does. Cycling makes every return a fresh, creditable look — about forty of them over
+     * the two minutes below.
+     */
+    const cycle = (t: number): void => {
+      let best = Infinity;
+      for (const rec of acquired.values()) {
+        const d = Math.hypot(rec.root.position.x - view.x, rec.root.position.z - view.z);
+        if (d >= best) continue;
+        best = d;
+        view.yaw = Math.atan2(rec.root.position.x - view.x, rec.root.position.z - view.z);
+      }
+      if ((t / SIM_TICK_HZ) % 3 >= 2) view.yaw += Math.PI;
+    };
+    let tick = 0;
+    // The control: in clear daylight this camera credits a GROUND animal, which is the
+    // species class the fade below silences.
+    for (let t = 0; t < 120 * SIM_TICK_HZ; t++, tick++) {
+      cycle(t);
+      w.update(NEAR_X, NEAR_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    }
+    const control = new Set<number>();
+    const controlLog = w.directorLog();
+    for (let i = 1; i < controlLog.length; i += 2) control.add(controlLog[i]!);
+    expect([...control].some((s) => s < FIRST_BIRD_SPECIES)).toBe(true);
+
+    // Now fade every species that CAN fade. Full dread and full rain together take the
+    // ground, the sky and the butterfly to zero at once, so the case does not rest on which
+    // animals this disc happens to hold. Ravens are the exception in the other direction —
+    // dread makes MORE of them, and they stay fully drawn — so the assertion cannot be "the
+    // log stops growing"; it is that every sighting still recorded belongs to a species the
+    // player could actually see. That is the promise in its exact words, and it is what the
+    // gate delivers: the ravens croaking overhead are real, the elk standing in frame at
+    // scale 0 are not.
+    const presence = wildlifePresenceUnder(GONE, 12);
+    expect(presence.ground).toBe(0);
+    expect(presence.aloft).toBe(0);
+    expect(presence.butterfly).toBe(0);
+    expect(presence.raven).toBeGreaterThan(0);
+    for (let t = 0; t < PRESENCE_RAMP_SECONDS * SIM_TICK_HZ * 2; t++, tick++) {
+      cycle(t);
+      w.update(NEAR_X, NEAR_Z, tick, [], GONE, 12, { view, match: DAY_MATCH });
+    }
+    const logged = w.directorLog().length;
+    const groundAt: Ground = (x, z) => elevationAt(SEED, x, z);
+    // Frames on which a faded animal was squarely creditable: inside the range it reads at
+    // and geometrically in frame by the director's own `onScreen`. Counted as it happens
+    // rather than sampled at the end, where the cycle's own phase decides the answer.
+    let creditableFrames = 0;
+    let fadedSeen = 0;
+    for (let t = 0; t < 120 * SIM_TICK_HZ; t++, tick++) {
+      cycle(t); // the same forty fresh looks, now at a rabbit drawn at scale 0
+      w.update(NEAR_X, NEAR_Z, tick, [], GONE, 12, { view, match: DAY_MATCH });
+      let here = false;
+      for (const rec of acquired.values()) {
+        const p = rec.root.position;
+        if (rec.root.scaling.x !== 0) continue; // only the faded ones are the point
+        fadedSeen++;
+        const seen = { id: 1, species: SPECIES_RABBIT, x: p.x, y: p.y, z: p.z };
+        if (Math.hypot(p.x - view.x, p.z - view.z) > NOTICE[SPECIES_RABBIT]!) continue;
+        if (onScreen(view, groundAt, seen, 0)) here = true;
+      }
+      if (here) creditableFrames++;
+    }
+    expect(fadedSeen).toBeGreaterThan(0);
+    // Long enough, and often enough, to have cleared `SIGHTING_DWELL` many times over.
+    expect(creditableFrames).toBeGreaterThan(10 * SIM_TICK_HZ);
+    // Nothing new was credited at all — and that is not because the woods emptied. The
+    // animal is still there, still inside the range it reads at, and still geometrically in
+    // frame by the director's own `onScreen`: every condition for a sighting is met except
+    // the one that matters, which is that the player can see it.
+    const after = w.directorLog().slice(logged);
+    const credited = new Set<number>();
+    for (let i = 1; i < after.length; i += 2) credited.add(after[i]!);
+    for (const species of credited) {
+      expect(presence.callGain[species], `species ${species} was credited at presence 0`).toBeGreaterThan(0);
+    }
+    expect(acquired.size).toBeGreaterThan(0);
+    w.dispose();
+    engine.dispose();
+  });
+
+  it("hands a placed unit's pool slot back when the presence gate fades it out", () => {
+    // The cost of the gate above, paid for here. `sweepRemovals` can only give back a slot
+    // for a unit it can SEE in `candidates`, and an invisible unit is no longer offered —
+    // so without the shell handing it back itself the slot would be held for the rest of
+    // the match, and three dusks would leave the butterfly unable to place another. Safe
+    // because an animal drawn at scale 0 is one nobody can watch leave, which is the whole
+    // of the never-on-screen invariant.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    const view: View = { x: QUIET_X, y: elevationAt(SEED, QUIET_X, QUIET_Z) + 1.7, z: QUIET_Z, yaw: 0, pitch: 0, fov: 1.4, aspect: 16 / 9 };
+    let tick = 0;
+    // Nothing natural here, so every unit in play is one the director placed.
+    for (; tick < 3600 && w.poolCount() === 0; tick++) {
+      w.update(QUIET_X, QUIET_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    }
+    expect(w.poolCount()).toBeGreaterThan(0);
+    for (let t = 0; t < PRESENCE_RAMP_SECONDS * SIM_TICK_HZ * 2; t++, tick++) {
+      w.update(QUIET_X, QUIET_Z, tick, [], GONE, 12, { view, match: DAY_MATCH });
+    }
+    expect(w.poolCount()).toBe(0);
+    w.dispose();
+    engine.dispose();
+  });
+
+  it("never asks to remove a real, natural unit, driven at a camera with real wildlife nearby", () => {
+    // The exact regression `Candidate.owned` exists to prevent, caught directly: set wrong
+    // (e.g. always true) makes the director believe every natural unit
+    // nearby is its own to recycle. Watching RELEASES rather than REQUESTS
+    // would miss that — this shell's own `poolIds` guard in
+    // `applyDirectorEvent` absorbs a bad request before anything is actually
+    // released, so `acquired`/`poolCount` alone can look clean even when the
+    // director is reasoning from a false premise. `directorRemovals()` is
+    // recorded before that guard runs, specifically so a test can see the
+    // request itself.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    const naturalIds = new Set(wildlifeUnitsInDisc(SEED, CAM_X, CAM_Z).map((u) => u.id));
+    expect(naturalIds.size).toBeGreaterThan(0);
+    const view: View = { x: CAM_X, y: elevationAt(SEED, CAM_X, CAM_Z) + 1.7, z: CAM_Z, yaw: 0, pitch: 0, fov: 1.4, aspect: 16 / 9 };
+    for (let tick = 0; tick < 3600; tick++) {
+      w.update(CAM_X, CAM_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    }
+    // Sanity: this population is genuinely mixed and genuinely active — a
+    // drive with nothing natural nearby, or nothing ever cued, would pass
+    // this test for the wrong reason.
+    expect(w.directorLog().length).toBeGreaterThan(0);
+    const requestedNatural = w.directorRemovals().filter((id) => naturalIds.has(id));
+    expect(requestedNatural).toEqual([]);
+    w.dispose();
+    engine.dispose();
+  });
+
+  it("holds every per-species table to SPECIES_COUNT entries, and gives every cueable species an asset and a pool slot or neither", () => {
+    // A table indexed by species that stops short of SPECIES_COUNT does not throw when a
+    // new species raises the count — it silently hands back `undefined`, and the bug shows
+    // up downstream as a NaN or a null pose, not here. This sub-project hit that shape
+    // three times over (`WILDLIFE_RADIUS`, `WILDLIFE_SPREAD`, and the asset/pool pair this
+    // test already checked below), the last two caught only because someone went looking
+    // after the first — so every per-species table the renderer or the director reads by
+    // index is held to SPECIES_COUNT here, in one place, rather than trusted individually.
+    // `WILDLIFE_MEMBERS` is the one exception, left out on purpose: nothing reads it
+    // generically over every species (only `membersFor`'s explicit callers do), so a
+    // shorter table there is not the same defect — see its own doc in wildlifeField.ts.
+    const perSpeciesTables: readonly (readonly unknown[])[] = [
+      WILDLIFE_CELL, WILDLIFE_D, WILDLIFE_RADIUS, WILDLIFE_SPREAD, DIRECTOR_POOL,
+      SPECIES_ASSET, BIRD_ASSET, BIRD_OMEGA, NOTICE, CUE_WEIGHT,
+    ];
+    for (const table of perSpeciesTables) {
+      expect(table).toHaveLength(SPECIES_COUNT);
+      for (let s = 0; s < SPECIES_COUNT; s++) expect(table[s]).not.toBeUndefined();
+    }
+
+    // The shape of the bug this guards: a species the cue table can still draw
+    // (`CUE_WEIGHT[s] > 0`) but that neither `SPECIES_ASSET` nor `BIRD_ASSET`
+    // can render is a `place` that holds a pool slot for life, is logged as a
+    // sighting, and is never actually seen — crediting the cadence promise
+    // for an animal that was not there. The butterfly WAS exactly this case
+    // until it shipped a model: `DIRECTOR_POOL[SPECIES_BUTTERFLY]` held at 0
+    // while nothing could draw one, and this is what holds the two facts
+    // (asset shipped, pool slot given) to changing together — giving a
+    // species its asset without also giving `DIRECTOR_POOL` its slot back
+    // fails this exactly as loudly as the reverse would.
+    //
+    // Bounded by SPECIES_COUNT, not by `CUE_WEIGHT.length`: a table's own
+    // length is exactly the thing under test above, so a short one must not
+    // also be what decides how far this loop reaches. It once did, and a
+    // species past the end of a short `CUE_WEIGHT` would have gone unchecked
+    // here on top of never being drawn for a cue at all.
+    const hasAsset = (species: number): boolean =>
+      (SPECIES_ASSET[species] ?? null) !== null || (BIRD_ASSET[species] ?? null) !== null;
+    let checked = 0;
+    for (let species = 0; species < SPECIES_COUNT; species++) {
+      if (CUE_WEIGHT[species]! <= 0) continue; // not cueable at all — nothing to check
+      checked++;
+      expect(hasAsset(species), `species ${species}: asset vs. DIRECTOR_POOL slot`).toBe((DIRECTOR_POOL[species] ?? 0) > 0);
+    }
+    // Guards the loop above against a `CUE_WEIGHT` that quietly went empty.
+    expect(checked).toBeGreaterThan(0);
+  });
+});
+
 /**
  * A camera whose 400 m bird disc holds all four bird species at once — raven
  * roosts, raven pairs, a gull flock band along the coast and a pair of eagles.
@@ -394,13 +761,16 @@ function instanceScale(buf: Float32Array, i: number): number {
  * tick renders those placeholders, and only the second update shows birds on
  * their loops. Every bird case below therefore runs two updates.
  */
-function flying(scene: Scene, weather = WEATHER_PRESETS.clear, ids: readonly string[] = BIRD_IDS) {
+function flying(
+  scene: Scene, weather = WEATHER_PRESETS.clear, ids: readonly string[] = BIRD_IDS,
+  camX = BIRD_CAM_X, camZ = BIRD_CAM_Z,
+) {
   const birds = fakeBirds(scene, ids);
   const spies = new Map<string, BufferSpy>();
   for (const id of ids) spies.set(id, vi.spyOn(birds[id]!, "thinInstanceSetBuffer"));
   const w = createWildlifeMeshes(scene, SEED, { birds });
-  w.update(BIRD_CAM_X, BIRD_CAM_Z, 1000, FAR_AWAY, weather, 12);
-  w.update(BIRD_CAM_X, BIRD_CAM_Z, 1001, FAR_AWAY, weather, 12);
+  w.update(camX, camZ, 1000, FAR_AWAY, weather, 12);
+  w.update(camX, camZ, 1001, FAR_AWAY, weather, 12);
   return { w, birds, spies };
 }
 
@@ -415,11 +785,11 @@ describe("bird thin instances", () => {
     expect(BIRD_OMEGA).toHaveLength(SPECIES_COUNT);
     expect(BIRD_ASSET.slice(0, FIRST_BIRD_SPECIES).every((id) => id === null)).toBe(true);
     expect(BIRD_ASSET.slice(FIRST_BIRD_SPECIES)).toEqual([
-      "wildlife.raven", "wildlife.raven", "wildlife.gull", "wildlife.eagle",
+      "wildlife.raven", "wildlife.raven", "wildlife.gull", "wildlife.eagle", "wildlife.butterfly",
     ]);
     // Every ω is an exact multiple of 2π / WING_TIME_WRAP, which is what makes
     // the shader's time wrap phase-continuous — a raven at 3 Hz, a gull at 2.5,
-    // an eagle that soars.
+    // an eagle that soars, a butterfly at 12.
     for (const omega of BIRD_OMEGA) {
       expect(((omega * WING_TIME_WRAP) / (2 * Math.PI)) % 1).toBeCloseTo(0, 9);
     }
@@ -427,9 +797,221 @@ describe("bird thin instances", () => {
     expect(BIRD_OMEGA[SPECIES_RAVEN_PAIR]).toBe(BIRD_OMEGA[SPECIES_RAVEN_ROOST]);
     expect(BIRD_OMEGA[SPECIES_GULL]).toBeCloseTo((2 * Math.PI * 750) / WING_TIME_WRAP, 9);
     expect(BIRD_OMEGA[SPECIES_EAGLE]).toBe(0);
+    expect(BIRD_OMEGA[SPECIES_BUTTERFLY]).toBe(BUTTERFLY_OMEGA);
     // The perched bucket is nobody's flight model, so it takes no beat.
     expect(birdBucketOmega(BIRD_PERCHED_ASSET)).toBe(0);
     expect(birdBucketOmega("wildlife.raven")).toBe(BIRD_OMEGA[SPECIES_RAVEN_PAIR]);
+    expect(birdBucketOmega(BIRD_ASSET[SPECIES_BUTTERFLY]!)).toBe(BUTTERFLY_OMEGA);
+  });
+
+  it("resolves the butterfly's model to code-built geometry, not a catalog entry", async () => {
+    // `wildlifeField.ts`'s `SPECIES_BUTTERFLY` is the one bird-numbered species with no
+    // shipped GLB behind its `BIRD_ASSET` id at all — so there is nothing in the catalog for
+    // `loadBirdAssets` to fetch, and it has to build one instead.
+    const assets = (catalog as { assets: { id: string }[] }).assets;
+    expect(assets.some((a) => a.id === BIRD_ASSET[SPECIES_BUTTERFLY])).toBe(false);
+
+    // That is a fact about the DATA, and on its own it is worth very little: it stays true
+    // whether or not the code that builds the butterfly exists. What follows runs the real
+    // production path — no `options.birds`, so `createWildlifeMeshes` calls `loadBirdAssets`
+    // for itself — and that is the only test in this file that does. Without it the whole
+    // branch resolving this id to code-built geometry can be deleted with every wildlife
+    // test still green, while `DIRECTOR_POOL` goes on handing out slots for an animal that
+    // draws nothing and the director goes on logging each one as a sighting: exactly the
+    // "credited for an animal never seen" defect the asset/pool check above exists to stop,
+    // one layer underneath it.
+    loaderStub.urls.length = 0;
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool } = fakePool(scene, []);
+    // A camera over a real flower drift, so the bucket is not merely built but filled.
+    const bx = -372.65448356345297, bz = 691.559469884634;
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    // `loadBirdAssets` awaits each catalog bird in turn before it reaches the butterfly.
+    await vi.waitFor(() => expect(scene.getMeshByName("wildlife_butterfly")).not.toBeNull());
+    const mesh = scene.getMeshByName("wildlife_butterfly") as Mesh;
+
+    // The geometry is the code-built card, and it is wearing the wing beat the bucket path
+    // hands every bird — which is the whole claim this species makes: it rides that path.
+    expect(mesh.getTotalVertices()).toBe(8);
+    expect(mesh.getTotalIndices()).toBe(4 * 3);
+    const plugin = mesh.material?.pluginManager?.getPlugin("Wing") as WingPlugin | undefined;
+    expect(plugin?.omega).toBe(BUTTERFLY_OMEGA);
+    expect(plugin?.halfSpan).toBeCloseTo(BUTTERFLY_BODY_HALF + BUTTERFLY_WING_SPAN, 6);
+
+    // And it was ADOPTED, not merely constructed: the shell drives instances through it.
+    w.update(bx, bz, 1000, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    w.update(bx, bz, 1001, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    expect(mesh.thinInstanceCount).toBeGreaterThan(0);
+
+    // The loader really did run, for the four birds that do have catalog entries — which is
+    // what makes "built in code" a statement about this path rather than about a function
+    // that was never reached. The companion check below is a DATA fact in the same shape as
+    // the catalog one at the top, not a guard: the branch `continue`s before the fetch, so
+    // no butterfly url can be recorded while the branch exists, and once it is gone the
+    // `waitFor` above has already failed. It is here to be read alongside the count.
+    expect(loaderStub.urls.length).toBeGreaterThan(0);
+    expect(loaderStub.urls.some((u) => u.includes("butterfly"))).toBe(false);
+
+    // The material is created here rather than by a container, so nothing else would ever
+    // free it: teardown has to, or every shell leaves one behind with its compiled effect.
+    const material = mesh.material!;
+    expect(scene.materials).toContain(material);
+    w.dispose();
+    expect(scene.materials).not.toContain(material);
+    engine.dispose();
+  });
+
+  it("builds two 4 cm quads hinged on a 1 cm body, eight vertices, carrying a wing pattern", () => {
+    const geo = butterflyGeometry();
+    expect(geo.positions).toHaveLength(8 * 3);
+    expect(geo.normals).toHaveLength(8 * 3);
+    expect(geo.colors).toHaveLength(8 * 4);
+    // Two quads, two triangles each.
+    expect(geo.indices).toHaveLength(4 * 3);
+    // The actual corners, not a range they happen to fall inside: four vertices on the hinge
+    // at exactly half the body's width, four at the wingtip a full span beyond it, four on
+    // each side of the body, and every one of them on the front or the back of the 3 cm
+    // chord in the y = 0 plane. A bound of the form `|x| between hinge and tip` would be
+    // just as happy with all eight vertices bunched in the middle of a wing.
+    // A Float32Array epsilon, not a Float64 one: 0.045 itself is not exactly representable.
+    const EPS = 1e-6;
+    const near = (v: number, want: number): boolean => Math.abs(v - want) <= EPS;
+    const tip = BUTTERFLY_BODY_HALF + BUTTERFLY_WING_SPAN;
+    const halfChord = BUTTERFLY_WING_CHORD / 2;
+    let hinges = 0, tips = 0, right = 0, front = 0;
+    for (let i = 0; i < 8; i++) {
+      const x = geo.positions[i * 3]!, y = geo.positions[i * 3 + 1]!, z = geo.positions[i * 3 + 2]!;
+      if (near(Math.abs(x), BUTTERFLY_BODY_HALF)) hinges++;
+      else if (near(Math.abs(x), tip)) tips++;
+      else expect.fail(`vertex ${i} sits at x = ${x}, neither the hinge nor the tip`);
+      if (x > 0) right++;
+      expect(near(y, 0)).toBe(true);
+      expect(near(Math.abs(z), halfChord)).toBe(true);
+      if (z > 0) front++;
+      // The wing plugin divides by the half span and the card faces up: both are the
+      // geometry's job to supply.
+      expect(geo.normals[i * 3 + 1]).toBe(1);
+    }
+    expect([hinges, tips, right, front]).toEqual([4, 4, 4, 4]);
+
+    // The pattern: a real gradient across each wing, not one flat colour delivered through a
+    // vertex buffer. Both wings wear it, mirrored, and it is colourless — the hue arrives
+    // per instance, so a pattern with a cast of its own would tint the tips twice.
+    const shade = (i: number): number => geo.colors[i * 4]!;
+    for (let i = 0; i < 8; i++) {
+      expect(geo.colors[i * 4 + 1]).toBe(shade(i)); // grey: r = g = b
+      expect(geo.colors[i * 4 + 2]).toBe(shade(i));
+      expect(geo.colors[i * 4 + 3]).toBe(1);
+      expect(shade(i)).toBe(shade((i + 4) % 8)); // the left wing repeats the right one's
+    }
+    // Hinge darker than tip, trailing half darker than leading, by a margin a player could
+    // actually see rather than a rounding error.
+    expect(shade(1) - shade(0)).toBeGreaterThan(0.2); // tip-front over hinge-front
+    expect(shade(2) - shade(3)).toBeGreaterThan(0.2); // tip-back over hinge-back
+    expect(shade(1) - shade(2)).toBeGreaterThan(0.1); // front over back at the tip
+  });
+
+  it("offers three colourways that differ by more than a rounding error, and wraps on the index", () => {
+    expect(BUTTERFLY_COLOURWAYS).toHaveLength(3);
+    for (let i = 0; i < BUTTERFLY_COLOURWAYS.length; i++) {
+      for (let j = i + 1; j < BUTTERFLY_COLOURWAYS.length; j++) {
+        const a = BUTTERFLY_COLOURWAYS[i]!, b = BUTTERFLY_COLOURWAYS[j]!;
+        // Distinct CREATURES, which is a visible distance apart, not `not.toEqual` — that
+        // would pass on one ulp. The nearest pair here is about 0.79 apart in RGB.
+        const distance = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+        expect(distance, `colourways ${i} and ${j}`).toBeGreaterThan(0.4);
+        // And no pair may hide its whole difference in one channel.
+        const perChannel = [Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2])].sort((p, q) => q - p);
+        expect(perChannel[1]!, `colourways ${i} and ${j}, second channel`).toBeGreaterThan(0.05);
+      }
+    }
+    // Wraps rather than throwing on an out-of-range index — a caller drawing one need not
+    // know how many there are, in either direction.
+    expect(butterflyColourway(3)).toEqual(BUTTERFLY_COLOURWAYS[0]);
+    expect(butterflyColourway(-1)).toEqual(BUTTERFLY_COLOURWAYS[2]);
+    expect(butterflyColourway(2.9)).toEqual(BUTTERFLY_COLOURWAYS[2]);
+  });
+
+  it("draws a natural butterfly through the same bird card path as a real bird", () => {
+    // A real flower-cell butterfly at seed 388817 — found by a census, not guessed, so this
+    // exercises the field's own habitat gate together with the render path rather than a
+    // hand-placed stand-in for one.
+    const bx = -372.65448356345297, bz = 691.559469884634;
+    const natural = wildlifeUnitsInDisc(SEED, bx, bz).filter((u) => u.species === SPECIES_BUTTERFLY);
+    expect(natural.length).toBeGreaterThan(0);
+
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const butterflyId = BIRD_ASSET[SPECIES_BUTTERFLY]!;
+    const { birds, spies } = flying(scene, WEATHER_PRESETS.clear, [...BIRD_IDS, butterflyId], bx, bz);
+    // It rides the bucket its own asset id names — not the raven's, not the gull's.
+    expect(birds[butterflyId]!.thinInstanceCount).toBeGreaterThan(0);
+    const buf = uploaded(spies.get(butterflyId)!, "matrix")!;
+    const wing = uploaded(spies.get(butterflyId)!, "wing")!;
+    for (let i = 0; i < birds[butterflyId]!.thinInstanceCount; i++) {
+      const x = buf[i * 16 + 12]!, y = buf[i * 16 + 13]!, z = buf[i * 16 + 14]!;
+      const groundH = elevationAt(SEED, x, z);
+      // The pose stays inside BUTTERFLY_ALT above the ground it is currently over.
+      expect(y - groundH).toBeGreaterThanOrEqual(0.3 - 1e-6);
+      expect(y - groundH).toBeLessThanOrEqual(1.5 + 1e-6);
+      // Inside its own disc, like every other bird bucket.
+      expect(Math.hypot(x - bx, z - bz)).toBeLessThanOrEqual(WILDLIFE_RADIUS[SPECIES_BUTTERFLY]!);
+      // The wing plugin's per-instance amplitude — always fluttering, never a glide.
+      expect(wing[i * 2 + 1]).toBe(1);
+    }
+  });
+
+  it("gives each butterfly one of the three colourways, per instance over the shared bucket", () => {
+    // Every butterfly in the world rides ONE bucket built from ONE geometry, so a colour in
+    // the vertices would be the colour of all of them. The colourway travels as a
+    // per-instance tint instead — Babylon's own `color` thin-instance kind, which reaches
+    // the shader as `instanceColor` and multiplies the pattern in the vertex colours.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const butterflyId = BIRD_ASSET[SPECIES_BUTTERFLY]!;
+    // A real flower meadow that holds EIGHT natural butterflies inside one 40 m disc, all
+    // eight of them inside the cull too, so eight units are eight instances here — found by
+    // scanning the seed for them, not guessed. Butterflies are the sparsest species in the
+    // world (`WILDLIFE_D`'s census: nine discs in ten hold none at all), so a camera dropped
+    // somewhere plausible would most often see one insect or none, and a population is what
+    // this case needs. The bound below is deliberately looser than eight: the point is a
+    // sample big enough to show all three colourways, not this meadow's exact roll.
+    const { birds, spies } = flying(scene, WEATHER_PRESETS.clear, [...BIRD_IDS, butterflyId], 305, 215);
+    const count = birds[butterflyId]!.thinInstanceCount;
+    expect(count).toBeGreaterThan(3);
+    // The two facts Babylon reads to switch on `INSTANCESCOLOR` — the define that declares
+    // the `instanceColor` attribute and multiplies the vertex colour by it. A buffer
+    // uploaded under a kind the shader never binds would satisfy every other assertion here
+    // and still leave every butterfly the colour of its bare pattern.
+    expect(birds[butterflyId]!.isVerticesDataPresent("instanceColor")).toBe(true);
+    expect(birds[butterflyId]!.hasThinInstances).toBe(true);
+    const tint = uploaded(spies.get(butterflyId)!, "color")!;
+    expect(tint).toBeDefined();
+    const seen = new Set<number>();
+    for (let i = 0; i < count; i++) {
+      const rgb = [tint[i * 4]!, tint[i * 4 + 1]!, tint[i * 4 + 2]!];
+      expect(tint[i * 4 + 3]).toBe(1); // opaque: the tint is a hue, never a fade
+      const which = BUTTERFLY_COLOURWAYS.findIndex((c) => c.every((v, k) => Math.abs(v - rgb[k]!) < 1e-6));
+      expect(which, `instance ${i} tint ${rgb.join(",")} is not one of the colourways`).toBeGreaterThanOrEqual(0);
+      seen.add(which);
+    }
+    // All three actually reach the world. Before the tint buffer existed the geometry carried
+    // one baked colour and two unreachable alternatives, and every butterfly in the world was
+    // the same orange — which no assertion on the colour table alone can tell apart from this.
+    expect([...seen].sort()).toEqual([0, 1, 2]);
+    expect(butterflyColourway(0)).toEqual(BUTTERFLY_COLOURWAYS[0]);
+    engine.dispose();
+  });
+
+  it("gives the birds no tint buffer at all — only the butterfly needs one", () => {
+    // A raven is the colour its model says it is, and a per-instance buffer nothing reads is
+    // still a buffer uploaded and bound every frame the flock grows.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { spies } = flying(scene);
+    for (const id of BIRD_IDS) expect(uploaded(spies.get(id)!, "color")).toBeUndefined();
+    engine.dispose();
   });
 
   it("emits one instance per bird pose in the disc and culls the rest at its edge", () => {

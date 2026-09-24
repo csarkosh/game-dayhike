@@ -12,7 +12,9 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 
 import type { Level } from "../sim/level.js";
 import type { Vec3, WorldState } from "../sim/types.js";
+import { AiState } from "../sim/types.js";
 import type { Forest } from "../sim/forest.js";
+import { isHollow } from "../sim/hollow.js";
 import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
@@ -60,6 +62,7 @@ import { createBladeMeshes } from "./bladeMeshes.js";
 import { createDuffMeshes } from "./duffMeshes.js";
 import { createWildlifeMeshes } from "./wildlifeMeshes.js";
 import type { PlayerPoint, WildlifeEvent } from "./wildlifeBehaviour.js";
+import type { MatchState, View } from "./wildlifeDirector.js";
 import type { ListenerPose } from "./ambientAudio.js";
 import { createMistMeshes } from "./mistMeshes.js";
 import { createRain } from "./rain.js";
@@ -573,6 +576,13 @@ export type Renderer = {
    */
   wildlifeEvents(): readonly WildlifeEvent[];
   /**
+   * The wildlife director's own sighting log — `wildlifeMeshes.ts`'s
+   * `directorLog()`, read straight through. Empty for a hand-authored level
+   * (no wildlife shell at all) and empty for as long as nothing has been
+   * arranged for the player to see; a test seam, not something `app.ts` reads.
+   */
+  wildlifeDirectorLog(): readonly number[];
+  /**
    * Whether this world has a wildlife shell at all. False for a hand-authored
    * level, which has no forest and therefore no animals — and so nothing for the
    * audio shell to voice, no reason to fetch its clips, and no reason to write
@@ -836,6 +846,42 @@ export function createRenderer(
   const wildlifeEventDrain: WildlifeEvent[] = [];
   const listenerPose: ListenerPose = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 1, ux: 0, uy: 1, uz: 0 };
 
+  // The wildlife director's view of this frame, reused across both camera
+  // paths below rather than a fresh object built at each call site — the
+  // `wildlifePlayers` idiom again. `view` is filled from whichever position
+  // is authoritative this frame (the sim's `local.pos`/`local.yaw`/`local.pitch`,
+  // never the camera's own transform, which for the player path is still last
+  // frame's until the view-bob offset below is computed); `match` from the
+  // world state and the nearest Hollow.
+  const wildlifeView: View = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, fov: 0, aspect: 0 };
+  const wildlifeMatch: MatchState = { phase: 0, hollowDistance: Infinity, hollowHunting: false, inWorld: true, hour: 0, mist: 0 };
+  const wildlifeDirectorArg = { view: wildlifeView, match: wildlifeMatch };
+  /**
+   * Finds the nearest Hollow (`isHollow`: `AiState` Emerge, Hunt or Stand) to
+   * (x, z) and writes its distance and hunting state into `wildlifeMatch` —
+   * `Infinity`/`false` when there is none. The woods go quiet near it and
+   * fall silent outright while it hunts (`wildlifeDirector.ts`'s `relaxFor`):
+   * a fiction requirement, not an optimisation, so a cue is never staged
+   * competing with the one thing the player is supposed to be looking at.
+   *
+   * Nearest only: a second, farther Hollow actually hunting is masked by a
+   * nearer one merely standing or emerging, which only relaxes the cadence
+   * rather than silencing it outright. In practice there is one Hollow at a
+   * time, so this is a known shape of the single-Hollow match rather than an
+   * oversight, not a case this needs to handle today.
+   */
+  function findHollow(state: WorldState, x: number, z: number): void {
+    let distance = Infinity;
+    let hunting = false;
+    for (const e of state.enemies.values()) {
+      if (!isHollow(e)) continue;
+      const d = Math.hypot(e.pos.x - x, e.pos.z - z);
+      if (d < distance) { distance = d; hunting = e.ai === AiState.Hunt; }
+    }
+    wildlifeMatch.hollowDistance = distance;
+    wildlifeMatch.hollowHunting = hunting;
+  }
+
   // Mist rides the same guard as the forest: hand-authored levels get no
   // valley haze, and a forest world seeds the bank placement with the same
   // seed the forest and clipmap use.
@@ -928,7 +974,19 @@ export function createRenderer(
         clutterMeshes?.update(freecam.x, freecam.z);
         bladeMeshes?.update(freecam.x, freecam.z);
         duffMeshes?.update(freecam.x, freecam.z);
-        wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour);
+        wildlifeView.x = freecam.x;
+        wildlifeView.y = freecam.y;
+        wildlifeView.z = freecam.z;
+        wildlifeView.yaw = freecam.yaw;
+        wildlifeView.pitch = freecam.pitch;
+        wildlifeView.fov = camera.fov;
+        wildlifeView.aspect = engine.getAspectRatio(camera);
+        findHollow(state, freecam.x, freecam.z);
+        wildlifeMatch.phase = state.phase;
+        wildlifeMatch.inWorld = true;
+        wildlifeMatch.hour = lighting.hour;
+        wildlifeMatch.mist = weather.mist;
+        wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);
         mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour(), wind, seconds);
         camera.position.set(freecam.x, freecam.y, freecam.z);
         camera.rotation.set(freecam.pitch, freecam.yaw, 0);
@@ -950,7 +1008,25 @@ export function createRenderer(
         clutterMeshes?.update(local.pos.x, local.pos.z);
         bladeMeshes?.update(local.pos.x, local.pos.z);
         duffMeshes?.update(local.pos.x, local.pos.z);
-        wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour);
+        // The sim's own eye, not the camera's: the camera's position/rotation
+        // below still hold last frame's transform at this point in `sync`
+        // (the view-bob offset is computed after this), and the bob's own
+        // wobble is cosmetic — a few centimetres well inside the invariant's
+        // margin — not the sim-authoritative position the director should
+        // judge visibility against.
+        wildlifeView.x = local.pos.x;
+        wildlifeView.y = local.pos.y + PLAYER_EYE_OFFSET;
+        wildlifeView.z = local.pos.z;
+        wildlifeView.yaw = local.yaw;
+        wildlifeView.pitch = local.pitch;
+        wildlifeView.fov = camera.fov;
+        wildlifeView.aspect = engine.getAspectRatio(camera);
+        findHollow(state, local.pos.x, local.pos.z);
+        wildlifeMatch.phase = state.phase;
+        wildlifeMatch.inWorld = true;
+        wildlifeMatch.hour = lighting.hour;
+        wildlifeMatch.mist = weather.mist;
+        wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);
         mist?.update(local.pos.x, local.pos.z, weather, atmosphere.midColour(), wind, seconds);
         const offset = bob.update(
           {
@@ -992,6 +1068,9 @@ export function createRenderer(
       }
       wildlifeEventDrain.length = n;
       return wildlifeEventDrain;
+    },
+    wildlifeDirectorLog() {
+      return wildlife?.directorLog() ?? [];
     },
     listener() {
       // `camera.rotation` rather than the sim's yaw/pitch: it is set on both of

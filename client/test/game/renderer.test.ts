@@ -64,7 +64,9 @@ import {
 } from "../../src/game/clipmap.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import type { Level } from "../../src/sim/level.js";
-import { Outcome, Phase, type PlayerState, type WorldState } from "../../src/sim/types.js";
+import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
+import { createForest } from "../../src/sim/forest.js";
+import { elevationAt } from "../../src/sim/terrain.js";
 
 let engine: NullEngine | null = null;
 
@@ -391,12 +393,23 @@ describe("world shell wiring", () => {
     const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
     expect(freecamBranch.match(/wildlife\?\.update\(/g)).toHaveLength(1);
     expect(playerBranch.match(/wildlife\?\.update\(/g)).toHaveLength(1);
+    // Both branches pass a seventh, director argument — the sibling of this
+    // exact trap in `wildlifeMeshes.ts`'s own `update`: without it the
+    // director never runs at all, on that branch, for the life of the shell.
     expect(freecamBranch).toContain(
-      "wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour);",
+      "wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);",
     );
     expect(playerBranch).toContain(
-      "wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour);",
+      "wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);",
     );
+    // Each branch builds that argument's `view` from its own camera-to-be —
+    // the freecam's own fields, or the sim's local pos/yaw/pitch rather than
+    // `camera`'s still-stale-this-frame transform — and both look up the
+    // nearest Hollow before calling.
+    expect(freecamBranch).toContain("wildlifeView.x = freecam.x;");
+    expect(playerBranch).toContain("wildlifeView.x = local.pos.x;");
+    expect(freecamBranch).toContain("findHollow(state, freecam.x, freecam.z);");
+    expect(playerBranch).toContain("findHollow(state, local.pos.x, local.pos.z);");
     expect(src.match(/wildlife\?\.dispose\(\)/g)).toHaveLength(1);
   });
 
@@ -439,6 +452,134 @@ describe("world shell wiring", () => {
     expect(playerBranch).toContain("bladeMeshes?.update(local.pos.x, local.pos.z);\n        duffMeshes?.update(local.pos.x, local.pos.z);");
     expect(src.match(/duffMeshes\?\.dispose\(\)/g)).toHaveLength(1);
   });
+});
+
+describe("the wildlife director goes quiet near the Hollow", () => {
+  // A real forest and a real renderer — the wind test's `forest: null` shortcut
+  // skips exactly the branch this checks, so there is no way to stay on the
+  // source-slicing side of this file for it.
+  const SEED = 388817;
+  // A point with no ground-species unit anywhere in any species' disc —
+  // `wildlifeMeshes.test.ts`'s own quiet point, at the same seed. The
+  // "stays empty" claim below needs this specifically: `observe`
+  // (wildlifeDirector.ts) credits a sighting off whatever the camera can
+  // already see, entirely independent of the Hollow gate, which only ever
+  // stops the director ARRANGING something new — so at a real, populated
+  // position a natural animal already in frame gets logged on its own
+  // schedule regardless of any Hollow, and the test would be checking
+  // nothing. Here, nothing is ever already in frame, so any log entry can
+  // only be the director's own doing.
+  const QUIET_X = -10000, QUIET_Z = -8000;
+  // A real, populated point (`wildlifeMeshes.test.ts` uses the same one)
+  // for the positive control, which does not care which of the two sources
+  // — an already-visible natural animal or the director's own cue — is
+  // what puts the first entry in the log.
+  const BUSY_X = 2000, BUSY_Z = -500;
+  const LEVEL: Level = { id: "wildlife-hollow-test", brushes: [], playerSpawns: [], enemySpawns: [] };
+  // A bare `{}` canvas (the wind test's shortcut above) leaves
+  // `engine.getRenderWidth`/`getRenderHeight` undefined, so
+  // `engine.getAspectRatio(camera)` — and so `wildlifeView.aspect` — comes
+  // out NaN. `inCone`'s horizontal bound is `boundY * aspect`, and every
+  // comparison against a NaN bound is false, so nothing is ever on screen
+  // however long the scene runs: not a bug either test below is checking
+  // for, so both need a canvas shaped enough to give the camera a real one.
+  const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
+
+  // `pos.y` is the sim's own absolute world height, not a height above the
+  // ground — a literal small constant buries the player and its camera
+  // however far under this point's real terrain, with every real animal's
+  // ground-level position far outside the vertical frustum no matter how
+  // long the scene runs.
+  function standingPlayerAt(id: number, x: number, z: number): PlayerState {
+    return {
+      id, pos: { x, y: elevationAt(SEED, x, z), z }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0,
+      health: 100, grounded: true, lastProcessedInput: 0, deathPos: null,
+      lamp: { on: false, charge: 1 }, stare: 0, safe: false,
+    };
+  }
+
+  function huntingHollowNear(id: number, x: number, z: number): EnemyState {
+    return {
+      // 20 m from the player: within HOLLOW_QUIET (60 m) and well under 50 m.
+      // `y` plays no part — `findHollow` (renderer.ts) measures on X/Z alone.
+      id, pos: { x: x + 20, y: 0, z }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, health: 100,
+      ai: AiState.Hunt, targetId: 1, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity,
+      stuckTimer: 0, unstickTimer: 0, route: [], routeAt: 0, approach: false, seen: false,
+    };
+  }
+
+  it("logs nothing while a hunting Hollow stands within 50 m, however many frames pass", () => {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED));
+    renderer.setWeather(WEATHER_PRESETS.clear, 0);
+    try {
+      const player = standingPlayerAt(1, QUIET_X, QUIET_Z);
+      const hollow = huntingHollowNear(2, QUIET_X, QUIET_Z);
+      const state: WorldState = {
+        tick: 0,
+        players: new Map([[player.id, player]]),
+        enemies: new Map([[hollow.id, hollow]]),
+        outcome: Outcome.Playing,
+        phase: Phase.Climb,
+        nextEntityId: 10,
+        rngSeed: 1,
+      };
+      // `relaxFor` (wildlifeDirector.ts) reads `hollowDistance < HOLLOW_QUIET`
+      // OR `hollowHunting` as an unconditional "arrange nothing", and this
+      // scene satisfies both at once (20 m, hunting) — so it does NOT tell
+      // the two fields apart: a wiring defect that dropped just one of them
+      // (say, `findHollow` always writing `hollowHunting = false`) would
+      // leave this test passing regardless, since the other field alone
+      // already forces quiet. What actually catches a whole call site's
+      // wiring going missing is the source-slicing "world shell wiring" test
+      // above (which requires the literal view/hollow-lookup lines in both
+      // branches) and the positive control below (which would start logging
+      // sightings if the whole director argument vanished). 1800 frames
+      // (30 s) is comfortably past the ~12-14 s this exact point otherwise
+      // takes to place its first animal (`wildlifeMeshes.test.ts`'s own
+      // "places a unit" test, off the same shell, at the same point).
+      for (let tick = 0; tick < 1800; tick++) {
+        state.tick = tick;
+        renderer.sync(state, 1, 0);
+      }
+      expect(renderer.wildlifeDirectorLog()).toHaveLength(0);
+    } finally {
+      renderer.dispose();
+    }
+  }, 60000);
+
+  it("logs a sighting within a reasonable window with no Hollow around", () => {
+    // The positive control the test above needs and did not have: without
+    // this, deleting the player branch's director argument entirely — no
+    // `wildlifeDirectorArg`, no wiring at all — would ALSO log nothing near
+    // the Hollow, and pass just the same. A still player at a real,
+    // populated position relaxes the cadence by `STILL_RELAX`
+    // (`wildlifeMeshes.test.ts`'s own "relaxed floor" test measures the same
+    // shape of wait, off the same shell, at the same point), so 1800 frames
+    // (30 s) is comfortably past even the relaxed floor and proves the
+    // director is actually running when the scene gives it nothing to go
+    // quiet for.
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(SEED));
+    renderer.setWeather(WEATHER_PRESETS.clear, 0);
+    try {
+      const player = standingPlayerAt(1, BUSY_X, BUSY_Z);
+      const state: WorldState = {
+        tick: 0,
+        players: new Map([[player.id, player]]),
+        enemies: new Map(),
+        outcome: Outcome.Playing,
+        phase: Phase.Climb,
+        nextEntityId: 10,
+        rngSeed: 1,
+      };
+      for (let tick = 0; tick < 1800 && renderer.wildlifeDirectorLog().length === 0; tick++) {
+        state.tick = tick;
+        renderer.sync(state, 1, 0);
+      }
+      expect(renderer.wildlifeDirectorLog().length).toBeGreaterThan(0);
+    } finally {
+      renderer.dispose();
+    }
+  }, 60000);
 });
 
 describe("writeListenerPose", () => {
