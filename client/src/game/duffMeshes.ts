@@ -251,15 +251,19 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
       // (2 cm) below its sampled ground height, on the reasoning that "two
       // centimetres is under a blade's width, so nothing visibly shortens"
       // (clutterMeshes.ts). That holds for a blade root, a rock's flattened
-      // underside or a grass card's base edge — all taller than the sink by
-      // at least an order of magnitude — but not for duff: the leaf-cluster
-      // character's own geometry never rises above 6 mm (duffClump.ts), so
-      // the 2 cm sink would bury it, and the whole clump, entirely below the
-      // terrain. Cancelled here, per-instance, rather than by changing
+      // underside or a grass card's base edge, whose own root sits well
+      // clear of the ground it is meant to settle into — but not for duff,
+      // whose root ring is built to lie exactly at the sampled ground
+      // height, y = 0 (duffClump.ts: "Roots lie on a disc... at y = 0"), even
+      // though a piece's own far vertices rise well above that: the leaf
+      // character's own geometry rises to about 96 mm (80% of
+      // `DUFF_HEIGHT_MAX`, duffClump.ts). Sinking the root 2 cm would still
+      // settle it into the terrain rather than leave it lying on top, so the
+      // sink is cancelled here, per-instance, rather than by changing
       // `instanceMatrixFor` itself, which every other clutter class still
       // relies on. This restores the piece's root ring to sit exactly at the
       // sampled ground height, the same plane its own vertices are built
-      // against (duffClump.ts: "Roots lie on a disc... at y = 0").
+      // against.
       scratchMat[MATRIX_TY] = scratchMat[MATRIX_TY]! + CLUTTER_SINK;
       bucket.buf.set(scratchMat, bucket.count * 16);
       writeFoliage(seed, c, bucket.foliage, bucket.count * 4, frame);

@@ -317,21 +317,21 @@ build, at a pinned seed, from the instance buffers rather than the code:
 This amendment supersedes the piece sizes and weights in section 5, the
 reach in section 7, and the 0.15 floor of the canopy-floor amendment.
 
-**Litter.** Leaves become leaves: 12–20 cm long, 8 cm wide, **14–22 per
-clump**, three quarters of every draw. Twigs go to 1.2 cm wide, three to
-five per clump, 15 %. Branches stay as they were, 10 %. The clump disc grows
-from 0.3 m to 0.5 m so the pieces spread rather than stack. At the measured
-1.8 clumps/m² that is about **31 %** of the ground under litter, against
-0.7 %. The reach widens from 8/12 m to **16/24 m** (medium/high): visible
-litter would turn the old 8 m edge into a line the eye follows, the lesson
-the blade-to-card hand-off already taught. The cost is small, and two numbers
-describe it. The bound the budget test holds — the worst single character
-over the high tier's padded 24 m reach, every cell at full strength — measures
-about 346 k vertices, against a `DUFF_VERTEX_BUDGET` of 480 k computed over
-the reach constants rather than literals. The expected cost in play is far
-lower: the field's real mix of characters over the cells that actually carry
-litter comes to roughly 115 k vertices at the widest reach, 7 % of the blade
-budget.
+**Litter.** Leaves become leaves: 12–20 cm long and 8 cm across (a half-width
+of 4 cm), **14–22 per clump**, three quarters of every draw. Twigs go to
+1.2 cm across, three to five per clump, 15 %. Branches stay as they were,
+10 %. The clump disc grows from 0.3 m to 0.5 m so the pieces spread rather
+than stack. At the measured 1.8 clumps/m² that is about **31 %** of the
+ground under litter, against 0.7 %. The reach widens from 8/12 m to
+**16/24 m** (medium/high): visible litter would turn the old 8 m edge into a
+line the eye follows, the lesson the blade-to-card hand-off already taught.
+The cost is small, and two numbers describe it. The bound the budget test
+holds — the worst single character over the high tier's padded 24 m reach,
+every cell at full strength — measures about 346 k vertices, against a
+`DUFF_VERTEX_BUDGET` of 480 k computed over the reach constants rather than
+literals. The expected cost in play is far lower: about 240 k vertices under
+a closed canopy at the widest reach, 15 % of the blade budget; far less in
+open woodland, where fewer cells carry litter.
 
 **Canopy grass.** `CLUTTER_GRASS_CANOPY_FLOOR` rises from 0.15 to **0.5** —
 the level id moves with it. The two height cuts stop compounding:
@@ -354,6 +354,6 @@ and at native.
 
 - Litter that responds to the player: pieces disturbed underfoot, as the grass
   is trampled.
-- A mid-tier of litter between 12 m and the fog, as paint density rather than
+- A mid-tier of litter between 24 m and the fog, as paint density rather than
   geometry, if the far floor reads bare in stills.
 - Seasonal palettes for the leaf clusters.

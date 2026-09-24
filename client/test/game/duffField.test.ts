@@ -121,10 +121,10 @@ describe("one cell", () => {
 
   it("ties the strength at a cell whose duff sits strictly between the floor and its own local plateau", () => {
     // (400, -484) is deliberately off both rails: `duffCellAt(1, 400, -484)`
-    // measures strength 0.5696670769831574, comfortably clear of
-    // DUFF_STRENGTH_FLOOR (0.05) and of the 0.9 plateau above, and stable
-    // across its own neighbourhood (measured 0.5274270440059553 to
-    // 0.6127564247950195 over the ±1 m square around the cell's own
+    // measures strength 0.40994507745996644, comfortably clear of
+    // DUFF_STRENGTH_FLOOR (0.05) and of the two-thirds plateau above, and
+    // stable across its own neighbourhood (measured 0.37194061844900844 to
+    // 0.44758359971092576 over the ±1 m square around the cell's own
     // jittered point) — so the tie holds for a representative mid-band
     // cell, not only a pinned extreme.
     const ci = 400, cj = -484;

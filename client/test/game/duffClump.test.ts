@@ -5,19 +5,19 @@ import {
   duffClumpGeometry, duffClumpMaxHeight, duffClumpReach, duffVertexCount,
 } from "../../src/game/duffClump.js";
 import { DUFF_PAD, DUFF_REACH, DUFF_TIER_BAND, DUFF_TIER_EDGE } from "../../src/game/duffField.js";
-import { BLADE_TIP_TINT } from "../../src/game/bladeClump.js";
+import { BLADE_TIP_TINT, BLADE_VERTS } from "../../src/game/bladeClump.js";
 
 describe("the duff characters", () => {
   it("match the spec", () => {
     expect(DUFF_CHARACTER_COUNT).toBe(3);
     expect(DUFF_CHARACTERS[DUFF_TWIG]!.length).toEqual([0.10, 0.25]);
     expect(DUFF_CHARACTERS[DUFF_TWIG]!.pieces).toEqual([3, 5]);
-    expect(DUFF_CHARACTERS[DUFF_TWIG]!.width).toBe(0.012);
+    expect(DUFF_CHARACTERS[DUFF_TWIG]!.width).toBe(0.006);
     expect(DUFF_CHARACTERS[DUFF_BRANCH]!.length).toEqual([0.30, 0.60]);
     expect(DUFF_CHARACTERS[DUFF_BRANCH]!.pieces).toEqual([1, 1]);
     expect(DUFF_CHARACTERS[DUFF_LEAF]!.pieces).toEqual([14, 22]);
     expect(DUFF_CHARACTERS[DUFF_LEAF]!.length).toEqual([0.12, 0.20]);
-    expect(DUFF_CHARACTERS[DUFF_LEAF]!.width).toBe(0.08);
+    expect(DUFF_CHARACTERS[DUFF_LEAF]!.width).toBe(0.04);
     expect(DUFF_CLUMP_RADIUS).toBe(0.5);
     expect(DUFF_HEIGHT_MAX).toBe(0.12);
     expect(DUFF_ALBEDO).toEqual({ r: 0.16, g: 0.11, b: 0.06 });
@@ -41,6 +41,30 @@ describe("duffClumpGeometry", () => {
           expect(l).toBeCloseTo(1, 6);
         }
       }
+    }
+  });
+
+  it("spans exactly twice its declared width at the base: width is a half-width", () => {
+    // `width` on DuffCharacter is documented as a half-width (the strip
+    // writer places a ring's two side vertices at ±width from the root), so
+    // the base ring's own two vertices — the first two a piece's strip
+    // writes, at height fraction 0 — sit exactly `2 * width` apart
+    // horizontally, before any lift or yaw touches them (layDown leaves a
+    // root vertex untouched, since its "along" component is zero). A leaf
+    // piece is unforked, so every BLADE_VERTS-vertex block in the clump's
+    // geometry is one piece's own strip, root-first.
+    const leaf = DUFF_CHARACTERS[DUFF_LEAF]!;
+    const g = duffClumpGeometry(leaf, 1);
+    const pieces = g.positions.length / 3 / BLADE_VERTS;
+    expect(Number.isInteger(pieces)).toBe(true);
+    for (let p = 0; p < pieces; p++) {
+      const first = p * BLADE_VERTS;
+      const x0 = g.positions[first * 3]!, z0 = g.positions[first * 3 + 2]!;
+      const x1 = g.positions[(first + 1) * 3]!, z1 = g.positions[(first + 1) * 3 + 2]!;
+      const span = Math.hypot(x1 - x0, z1 - z0);
+      expect(span).toBeGreaterThanOrEqual(leaf.width - 1e-9);
+      expect(span).toBeLessThanOrEqual(2 * leaf.width + 0.001);
+      expect(span).toBeCloseTo(2 * leaf.width, 6); // positions are float32
     }
   });
 
