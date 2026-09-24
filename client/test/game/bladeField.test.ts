@@ -5,9 +5,10 @@ import { bowlFor } from "../../src/sim/olympic.js";
 import { CLUTTER_FAR_SPLIT, CLUTTER_RADII, clutterSeamEdges } from "../../src/game/clutterField.js";
 import {
   BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_CHARACTER_WEIGHTS, BLADE_FINE, BLADE_FLOWER, BLADE_FLOWER_MIN_STRENGTH,
-  BLADE_FULL_BAND, BLADE_PAD, BLADE_REACH, BLADE_REBUILD_CELL, BLADE_SIZE_BASE, BLADE_SIZE_FULL, BLADE_SIZE_THIN,
-  BLADE_STRENGTH_FLOOR, BLADE_THIN_BAND, BLADE_TIER_BAND, BLADE_TIER_EDGE,
-  bladeCellAt, bladeCharacterFor, bladeSizeFor, bladeTierBands, collectBladeCells, createBladeCollector, type BladeCell,
+  BLADE_FULL_BAND, BLADE_JITTER, BLADE_PAD, BLADE_REACH, BLADE_REBUILD_CELL, BLADE_SIZE_BASE, BLADE_SIZE_FULL,
+  BLADE_SIZE_THIN, BLADE_STRENGTH_FLOOR, BLADE_THIN_BAND, BLADE_TIER_BAND, BLADE_TIER_EDGE,
+  bladeCellAt, bladeCharacterFor, bladeSizeFor, bladeTierBands, cellDraw, collectBladeCells, createBladeCollector,
+  type BladeCell,
 } from "../../src/game/bladeField.js";
 
 // An open-field point where the grass gate is high across a wide neighbourhood
@@ -54,7 +55,7 @@ describe("the blade field's constants", () => {
   });
 
   it("sizes a clump by its cover, dithered across the spec's bands so no contour forms", () => {
-    expect(BLADE_THIN_BAND).toEqual([0.4, 0.6]);
+    expect(BLADE_THIN_BAND).toEqual([0.25, 0.45]);
     expect(BLADE_FULL_BAND).toEqual([1.0, 1.25]);
     // Outside both bands the choice is certain.
     for (let d = 0; d < 1; d += 0.05) {
@@ -62,6 +63,9 @@ describe("the blade field's constants", () => {
       expect(bladeSizeFor(d, 0.8)).toBe(BLADE_SIZE_BASE);
       expect(bladeSizeFor(d, 1.5)).toBe(BLADE_SIZE_FULL);
     }
+    // A cell at the canopy floor draws the base clump, not the thin one.
+    expect(bladeSizeFor(0.5, 0.5)).toBe(1);
+    expect(bladeSizeFor(0.99, 0.5)).toBe(1);
     // Inside a band the thin (or full) share falls (rises) monotonically and
     // continuously with cover: over 200 draws per step, no step of the share
     // is larger than 0.15.
@@ -70,9 +74,9 @@ describe("the blade field's constants", () => {
       for (let i = 0; i < 200; i++) if (bladeSizeFor((i + 0.5) / 200, cover) === size) n++;
       return n / 200;
     };
-    let prev = share(0.35, BLADE_SIZE_THIN);
+    let prev = share(0.2, BLADE_SIZE_THIN);
     expect(prev).toBe(1);
-    for (let c = 0.36; c <= 0.65; c += 0.01) {
+    for (let c = 0.21; c <= 0.5; c += 0.01) {
       const cur = share(c, BLADE_SIZE_THIN);
       expect(cur).toBeLessThanOrEqual(prev + 1e-9);
       expect(prev - cur).toBeLessThan(0.15);
@@ -131,9 +135,11 @@ describe("one cell", () => {
         const c = bladeCellAt(SEED, ci, cj);
         if (c === null) {
           nulls++;
-          // The jitter moves the sample by at most 0.2 m from the cell centre.
-          const x = (ci + 0.5) * BLADE_CELL, z = (cj + 0.5) * BLADE_CELL;
-          expect(groundCover(SEED, x, z).grass).toBeLessThan(0.5);
+          // The gate is checked at the cell's own jittered sample point, not
+          // its centre — reproduce it exactly as bladeCellAt does.
+          const x = (ci + 0.5 + BLADE_JITTER * (cellDraw(ci, cj, 1) - 0.5)) * BLADE_CELL;
+          const z = (cj + 0.5 + BLADE_JITTER * (cellDraw(ci, cj, 2) - 0.5)) * BLADE_CELL;
+          expect(groundCover(SEED, x, z).grass).toBeLessThan(BLADE_STRENGTH_FLOOR);
         } else {
           cells++;
           expect(c.strength).toBeGreaterThanOrEqual(BLADE_STRENGTH_FLOOR);
