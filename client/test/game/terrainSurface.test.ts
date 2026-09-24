@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Rgb } from "../../src/game/colour.js";
 import {
   classifySurface,
+  DUFF_FLOOR_MAX,
   GRASS_SLOPE,
   SCREE_SLOPE,
   SNOW_LINE,
@@ -236,6 +237,27 @@ describe("canopy tint", () => {
       expect(forested).toEqual(bare);
       expect(Math.abs(forested.g - forested.r)).toBeLessThan(0.02); // achromatic rock
     }
+  });
+});
+
+describe("duff", () => {
+  it("pulls the floor weight and colour toward leaf litter with duff, and leaves duff = 0 bitwise identical", () => {
+    const [x, z, altitude, slope, canopy] = [35, 21335, 40, 0.1, 0.7];
+    const base = classifySurface(SEED, x, z, altitude, slope, canopy);
+    const same = classifySurface(SEED, x, z, altitude, slope, canopy, 0);
+    expect(same).toEqual(base);
+    let prev = base.weights.forestFloor;
+    for (let d = 0.1; d <= 1; d += 0.1) {
+      const cur = classifySurface(SEED, x, z, altitude, slope, canopy, d);
+      expect(cur.weights.forestFloor).toBeGreaterThanOrEqual(prev - 1e-12);
+      expect(cur.weights.forestFloor).toBeLessThanOrEqual(1);
+      prev = cur.weights.forestFloor;
+    }
+    const full = classifySurface(SEED, x, z, altitude, slope, canopy, 1);
+    expect(full.weights.forestFloor).toBeGreaterThan(base.weights.forestFloor);
+    expect(full.weights.forestFloor - base.weights.forestFloor).toBeLessThanOrEqual(DUFF_FLOOR_MAX + 1e-12);
+    // Under canopy the duff colour leans toward the needle bed: darker and browner than the base.
+    expect(full.albedo.g).toBeLessThan(base.albedo.g);
   });
 });
 

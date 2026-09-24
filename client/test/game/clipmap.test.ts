@@ -21,7 +21,8 @@ import {
   snapOrigin,
   updateRingSamples,
 } from "../../src/game/clipmap.js";
-import { GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo, surfaceWeights } from "../../src/game/terrainSurface.js";
+import { classifySurface, GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo } from "../../src/game/terrainSurface.js";
+import { groundCover } from "../../src/sim/clutter.js";
 import { forestDensity, treesInRect } from "../../src/sim/vegetation.js";
 
 const SEED = 0x717e;
@@ -291,9 +292,11 @@ describe("ringGeometry", () => {
     const s = elevationSampleAt(SEED, x, z);
     const slope = Math.hypot(s.dx, s.dz);
     // The baked colour is the TINTED albedo, not the bare palette: it must
-    // match surfaceAlbedo fed the vertex's density bit-for-bit (modulo the
-    // Float32Array's rounding) and differ from the canopy-less call.
-    const tinted = surfaceAlbedo(SEED, x, z, s.h, slope, densest);
+    // match classifySurface fed the vertex's density and duff bit-for-bit
+    // (modulo the Float32Array's rounding) and differ from the canopy-less,
+    // duff-less call.
+    const duff = groundCover(SEED, x, z, s).duff;
+    const tinted = classifySurface(SEED, x, z, s.h, slope, densest, duff).albedo;
     const bare = surfaceAlbedo(SEED, x, z, s.h, slope);
     for (const [channel, key] of [[0, "r"], [1, "g"], [2, "b"]] as const) {
       expect(ring.colors[at * 4 + channel]).toBe(Math.fround(tinted[key]));
@@ -373,13 +376,18 @@ describe("terrain weight attributes", () => {
     expect(geo.weights2[0]).toBe(ring.weights2[0]);
   });
 
-  it("agrees with surfaceWeights at the ring's own sample positions", () => {
+  it("agrees with classifySurface, fed the ring's own canopy and duff, at the ring's own sample positions", () => {
+    // Tied to classifySurface fed groundCover's own duff, rather than to a
+    // captured number, so the paint and the litter pieces cannot drift apart.
     const ring = createRingSamples(SEED, 0, 0, 0);
     const ix = 40, iz = 61, at = iz * SIDE + ix;
     const x = ring.originX + ix * ring.spacing;
     const z = ring.originZ + iz * ring.spacing;
     const s = elevationSampleAt(SEED, x, z);
-    const w = surfaceWeights(SEED, x, z, s.h, Math.hypot(s.dx, s.dz), forestDensity(SEED, x, z, s));
+    const slope = Math.hypot(s.dx, s.dz);
+    const canopy = forestDensity(SEED, x, z, s);
+    const duff = groundCover(SEED, x, z, s).duff;
+    const w = classifySurface(SEED, x, z, s.h, slope, canopy, duff).weights;
     expect(ring.weights[at * 4]).toBeCloseTo(w.grass, 6);
     expect(ring.weights[at * 4 + 1]).toBeCloseTo(w.forestFloor, 6);
     expect(ring.weights[at * 4 + 2]).toBeCloseTo(w.rock, 6);
