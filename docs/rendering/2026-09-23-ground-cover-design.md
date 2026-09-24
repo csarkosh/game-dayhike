@@ -293,6 +293,59 @@ the two are built once:
   per-piece rise against the twig's 26.1 mm and the branch's 40 mm — so the
   widening reads as litter finding the eye line, not as leaves standing up.
 
+### 2026-09-24 — the forest floor: litter you can see, grass that stands
+
+What shipped from sections 5 and 7 and from the canopy-floor amendment above
+put the forest floor's cover where nobody could see it. Measured on the live
+build, at a pinned seed, from the instance buffers rather than the code:
+
+- The litter pieces were slivers. A twig 10–25 cm long was **5 mm** wide, a
+  leaf cluster **4–7 cm by 2.2 cm**, and twigs were 55 % of every clump. At
+  5 m a twig is 1.2 px wide and a leaf 5 px; the litter covered about
+  **0.7 %** of the ground. Nine hundred pieces stood within 8 m of the eye
+  and read as a few brown specks.
+- Under a closed canopy the grass was drawn at the 0.15 floor as
+  per-instance strength, which chose the thin clump size (0.4 of the blades)
+  and a height of `(0.5 + 0.5 × 0.15) × 0.6 = 0.345`. Short, sparse grass is
+  a grazing-angle phenomenon: bare at the feet, a dark band some 5–20 m out
+  that recedes as the player walks — reported as grass disappearing on
+  approach. It was not the near-field hand-off: at an interior cell with
+  cover 1.5 the near ring drew 7.8 clumps/m², all full size.
+- The two are one decision. The canopy ramp moved the forest floor's cover
+  from grass to duff, and the duff could not be seen.
+
+This amendment supersedes the piece sizes and weights in section 5, the
+reach in section 7, and the 0.15 floor of the canopy-floor amendment.
+
+**Litter.** Leaves become leaves: 12–20 cm long, 8 cm wide, **14–22 per
+clump**, three quarters of every draw. Twigs go to 1.2 cm wide, three to
+five per clump, 15 %. Branches stay as they were, 10 %. The clump disc grows
+from 0.3 m to 0.5 m so the pieces spread rather than stack. At the measured
+1.8 clumps/m² that is about **31 %** of the ground under litter, against
+0.7 %. The reach widens from 8/12 m to **16/24 m** (medium/high): visible
+litter would turn the old 8 m edge into a line the eye follows, the lesson
+the blade-to-card hand-off already taught. The cost is small: about 115 k
+vertices over the widest reach for the worst character, 7 % of the blade
+budget; the budget test moves from a literal to a named `DUFF_VERTEX_BUDGET`
+computed over the reach constants.
+
+**Canopy grass.** `CLUTTER_GRASS_CANOPY_FLOOR` rises from 0.15 to **0.5** —
+the level id moves with it. The two height cuts stop compounding:
+`BLADE_CANOPY_HEIGHT` goes to 1, so the strength curve alone sets height,
+**0.75** at the floor against 0.345. The thin band moves down to
+`[0.25, 0.45]` so a floor cell draws the base clump, not the thin one. Duff
+under the canopy falls by about a quarter as grass rises (the field's
+`1 − grass / boost` term), which is right: the leaves are visible now and
+the sward is back.
+
+**Gates, before any deploy.** Paired stills against the `main` this branches
+from at two poses found from the field — a full-canopy floor and an
+interior grass cell — eye level and looking down; the near-field blade
+histogram at both (clumps per square metre by distance ring, which must not
+dip at the feet); the litter coverage from the instance buffers; frame
+pairs at DEEP (the litter's worst case) and MEADOW at 4× pixels, +2.0 ms,
+and at native.
+
 ## 13. Follow-ups
 
 - Litter that responds to the player: pieces disturbed underfoot, as the grass
