@@ -16,9 +16,9 @@ import { SIM_TICK_HZ, TICK_DT } from "../sim/constants.js";
 import { clamp01 } from "./colour.js";
 import type { WeatherParams } from "./weather.js";
 import {
-  FIRST_BIRD_SPECIES, GIANT_TRUNK_RADIUS_PER_SCALE, SPECIES_COUNT, SPECIES_DEER, SPECIES_EAGLE, SPECIES_ELK,
-  SPECIES_GULL, SPECIES_RABBIT, SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, RAVEN_PERCH_HEIGHT,
-  WILDLIFE_SPREAD, type WildlifeUnit,
+  FIRST_BIRD_SPECIES, GIANT_TRUNK_RADIUS_PER_SCALE, SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_DEER, SPECIES_EAGLE,
+  SPECIES_ELK, SPECIES_GULL, SPECIES_RABBIT, SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL,
+  RAVEN_PERCH_HEIGHT, WILDLIFE_SPREAD, type WildlifeUnit,
 } from "./wildlifeField.js";
 
 /**
@@ -150,6 +150,39 @@ export const RAVEN_SPEED = 10;
 export const GULL_SPEED = 12;
 export const EAGLE_SPEED = 8;
 export const GULL_GLIDE: readonly [number, number] = [2, 5];
+// Butterfly. It flies no loop — a wander around wherever it last settled, the same shape
+// a rabbit's rest hop takes — and bobs inside a fixed altitude band rather than a
+// species-drawn one, since it is one insect rather than a herd with a home to graze around.
+export const BUTTERFLY_ALT: readonly [number, number] = [0.3, 1.5];
+export const BUTTERFLY_SPEED = 1;
+/** Absolute-tick grid (s) and wander radius (m) for the butterfly's REST — `restWander`'s
+ * own two knobs, sized for something that drifts around a flower patch rather than grazes
+ * a meadow: the squirrel's own forage grid and radius are the nearest precedent in scale. */
+export const BUTTERFLY_REST_GRID = 4;
+export const BUTTERFLY_WANDER_RADIUS = 3;
+/**
+ * The speed a director's cue actually walks a butterfly at — `BUTTERFLY_SPEED` itself is too
+ * slow for any of the three stagings' geometry to ever place one.
+ *
+ * MEASURED, not guessed: `wildlifeDirector.ts`'s `startFor` treats every placeable species'
+ * cue as a straight walk of up to `CUE_FLIGHT` (5 s) covering the angular gap its staging
+ * requires between a hidden start and a mark the player will read as in frame — a gap fixed
+ * by the view's own geometry (`coneHalfAngle`, `VIEW_MARGIN`), not by the animal. At
+ * `BUTTERFLY_SPEED` (1 m/s, a 5 m budget) that gap is unreachable at ANY range every one of
+ * `STAGING_CROSS`, `STAGING_COVER` and `STAGING_TREELINE` allows — a sweep over eight views,
+ * ten seeds and a thousand draws each placed 0 of 13,776 attempts. Elk and deer clear the
+ * same geometry at `ELK_WALK_SPEED` (2 m/s); a butterfly at half that cannot, and the design's
+ * "1 m/s" describes the ordinary wander (`stepButterfly`), not a promise that a cue moves it
+ * at that speed too — nothing in the brief ties the two together, and holding the cue to the
+ * wander's speed is what left it undrawable in the first place.
+ *
+ * 3 m/s (a 15 m budget) is not the floor (2.5 already clears the same sweep with room to
+ * spare) but a round number with real margin over it, and it stayed at 100% across the same
+ * sweep. A real butterfly darting when startled is not a stretch, and the wander it returns
+ * to on arrival (`stepCue`'s hand-back to `PHASE_REST`) is unaffected — this speed exists
+ * only inside a cue, exactly the way `ELK_FLEE_SPEED` exists only inside a flee.
+ */
+export const BUTTERFLY_CUE_SPEED = 3;
 // Calls, seconds
 export const RAVEN_CROAK_INTERVAL: readonly [number, number] = [20, 60];
 export const GULL_CRY_INTERVAL: readonly [number, number] = [8, 25];
@@ -681,6 +714,19 @@ function stepRoost(u: UnitState, tick: number, players: readonly PlayerPoint[], 
 }
 
 /**
+ * The butterfly never reacts to a player — an 8 cm insect has nothing to flee to and
+ * nothing worth fleeing from — so its only behaviour, in and out of a director's cue, is
+ * the same REST wander every ground species already draws its own from: a fresh nearby
+ * goal on `BUTTERFLY_REST_GRID`'s absolute-tick grid, walked at `BUTTERFLY_SPEED`. `phase`
+ * simply never leaves `PHASE_REST` on its own; only `startCue` ever moves it out, and
+ * `stepCue`'s own arrival hands it straight back.
+ */
+function stepButterfly(u: UnitState, tick: number, seed: number): void {
+  restWander(u, tick, seed, BUTTERFLY_REST_GRID, BUTTERFLY_WANDER_RADIUS);
+  moveToward(u, BUTTERFLY_SPEED);
+}
+
+/**
  * How fast a cue covers the ground: the species' own walk, or the speed it flees at when
  * the director asked for a bolt. A flier has one airspeed and ignores `run`; the
  * fall-through is the corvids', and any flier added beside them states its own.
@@ -696,6 +742,7 @@ export function cueSpeedFor(species: number, run: boolean): number {
     case SPECIES_SQUIRREL: return run ? SQUIRREL_RUN_SPEED : SQUIRREL_FORAGE_SPEED;
     case SPECIES_GULL: return GULL_SPEED;
     case SPECIES_EAGLE: return EAGLE_SPEED;
+    case SPECIES_BUTTERFLY: return BUTTERFLY_CUE_SPEED;
     default: return RAVEN_SPEED;
   }
 }
@@ -777,9 +824,35 @@ function poseGround(u: UnitState, tick: number, seed: number): void {
   u.y = elevationAt(seed, u.x, u.z);
 }
 
+/**
+ * The butterfly's single pose: not a point on a loop (its `radius` is always 0, which
+ * `poseBirds`' `speed / u.unit.radius` would divide by zero on), but a point on the ground
+ * — `u.x/u.z`, wherever `stepButterfly` or a cue's `moveToward` last carried it — lifted
+ * into `BUTTERFLY_ALT` and bobbing inside that band on its own seeded phase. Card and wing
+ * beat are the only things it shares with a real bird; its motion is a mammal's.
+ */
+function poseButterfly(u: UnitState, tick: number, seed: number): void {
+  const pose = u.poses[0]!;
+  const phase0 = hash3(u.unit.id, 0, SALT_MEMBER, seed) * 2 * Math.PI;
+  const bob = 0.5 + 0.5 * Math.sin(tick * TICK_DT * 0.9 + phase0);
+  const groundH = elevationAt(seed, u.x, u.z);
+  pose.x = u.x;
+  pose.z = u.z;
+  pose.y = groundH + BUTTERFLY_ALT[0] + bob * (BUTTERFLY_ALT[1] - BUTTERFLY_ALT[0]);
+  pose.yaw = u.yaw;
+  pose.pitch = 0;
+  pose.scale = 1;
+  pose.clip = "idle";
+  pose.wing = 1;
+  // The director's non-flier candidate reads this field directly (`Candidate.y` off
+  // `UnitState.y`, not off a pose) — see `pushCandidateFor` in wildlifeMeshes.ts.
+  u.y = pose.y;
+}
+
 /** Birds on a loop: angle advances at speed/radius; roost members perch or circle. */
 function poseBirds(u: UnitState, tick: number, seed: number): void {
   const s = u.unit.species;
+  if (s === SPECIES_BUTTERFLY) { poseButterfly(u, tick, seed); return; }
   const speed = s === SPECIES_GULL ? GULL_SPEED : s === SPECIES_EAGLE ? EAGLE_SPEED : RAVEN_SPEED;
   const omega = speed / u.unit.radius;
   const t = tick * TICK_DT;
@@ -864,6 +937,7 @@ export function stepUnit(u: UnitState, tick: number, players: readonly PlayerPoi
       case SPECIES_RABBIT: stepRabbit(u, t, players, seed, out); break;
       case SPECIES_SQUIRREL: stepSquirrel(u, t, players, seed, out); break;
       case SPECIES_RAVEN_ROOST: stepRoost(u, t, players, seed, disturbances, out); break;
+      case SPECIES_BUTTERFLY: stepButterfly(u, t, seed); break;
       default: break; // loop fliers never react
     }
     scheduledCall(u, t, seed, hour, out);
@@ -873,23 +947,38 @@ export function stepUnit(u: UnitState, tick: number, players: readonly PlayerPoi
   u.posed = true;
 }
 
-export type Presence = { ground: number; aloft: number; raven: number; callGain: readonly number[] };
+export type Presence = { ground: number; aloft: number; raven: number; butterfly: number; callGain: readonly number[] };
 
-/** `clear` is the identity: every factor is 1 at rain 0, dread 0. The dread ramp
+/**
+ * `clear` is the identity: every factor is 1 at rain 0, dread 0, daylight. The dread ramp
  * runs 0.3→0.5 (not 0.4→0.6) so `dread === 0.5` lands exactly on the threshold row
- * (ground 0 / aloft 0 / raven 2) rather than the ramp's midpoint. */
-export function wildlifePresenceUnder(w: WeatherParams): Presence {
+ * (ground 0 / aloft 0 / raven 2) rather than the ramp's midpoint.
+ *
+ * `hour` gates the butterfly alone — nothing else here reads time of day, which is why it
+ * defaults to noon rather than joining `WeatherParams`: every existing caller that never
+ * cared about a butterfly keeps getting one exactly as present as `clear` always made it.
+ * Full dark and full rain each zero it independently ("0 at night and in rain" is two
+ * conditions, not one blended factor); the two never compound because `wildlifeMeshes.ts`
+ * is the only caller that has an hour worth passing, and rain there ramps the same way
+ * `aloft` already does.
+ */
+export function wildlifePresenceUnder(w: WeatherParams, hour = 12): Presence {
   const rain = clamp01(w.rain);
   const dread = clamp01(w.dread);
   const k = clamp01((dread - 0.3) / 0.2);
   const ground = 1 - k;
   const aloft = (1 - k) * (1 - 0.7 * rain);
   const raven = (1 + k) * (1 - 0.5 * rain * (1 - k));
+  const night = hour < DAWN_HOUR - DAWN_DUSK_WINDOW || hour > DUSK_HOUR + DAWN_DUSK_WINDOW;
+  const butterfly = night ? 0 : 1 - rain;
   // One array per call — this function runs once per frame, not once per unit, so that
   // allocation is acceptable; index-assigned rather than push()ed.
   const callGain = new Array<number>(SPECIES_COUNT);
   for (let s = 0; s < SPECIES_COUNT; s++) {
-    callGain[s] = s === SPECIES_RAVEN_ROOST || s === SPECIES_RAVEN_PAIR ? raven : s >= FIRST_BIRD_SPECIES ? aloft : ground;
+    callGain[s] =
+      s === SPECIES_RAVEN_ROOST || s === SPECIES_RAVEN_PAIR ? raven :
+      s === SPECIES_BUTTERFLY ? butterfly :
+      s >= FIRST_BIRD_SPECIES ? aloft : ground;
   }
-  return { ground, aloft, raven, callGain };
+  return { ground, aloft, raven, butterfly, callGain };
 }

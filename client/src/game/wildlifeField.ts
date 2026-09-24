@@ -16,7 +16,7 @@ import { hash3 } from "../sim/field.js";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "../sim/terrain.js";
 import { COHORT_GIANT, COHORT_SNAG, forestDensity, TREE_CELL, treeInCell } from "../sim/vegetation.js";
 import {
-  CLUTTER_BUSH, CLUTTER_GRASS, CLUTTER_MEADOW, clutterDensity, clutterInRect,
+  CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_GRASS, CLUTTER_GRASS_CANOPY_LO, CLUTTER_MEADOW, clutterDensity, clutterInRect,
 } from "../sim/clutter.js";
 import { MAX_WALKABLE_GRADIENT } from "../sim/ground.js";
 import { SAND_TOP } from "./terrainSurface.js";
@@ -29,29 +29,36 @@ export const SPECIES_RAVEN_ROOST = 4;
 export const SPECIES_RAVEN_PAIR = 5;
 export const SPECIES_GULL = 6;
 export const SPECIES_EAGLE = 7;
-export const SPECIES_COUNT = 8;
-/** Ground species are < this; the rest fly and are culled rather than faded. */
-export const FIRST_BIRD_SPECIES = SPECIES_RAVEN_ROOST;
 /**
- * Reserved for the butterfly, not yet placed by `wildlifeUnitInCell` — no unit
- * of this species exists while `SPECIES_COUNT` stays at 8, so the id is inert
- * until a later placement pass raises the count and gives it a habitat.
+ * A butterfly, numbered among the birds because it rides their thin-instance card path
+ * (the wing beat, the buffers) rather than a pooled creature — but it flies no loop of its
+ * own, so `wildlifeMeshes.ts`'s `isLoopFlier` names it out of the four true fliers above it,
+ * and it is placed in the open near flower cover rather than scanned for a snag or a coast.
  */
 export const SPECIES_BUTTERFLY = 8;
+export const SPECIES_COUNT = 9;
+/** Ground species are < this; the rest fly and are culled rather than faded. */
+export const FIRST_BIRD_SPECIES = SPECIES_RAVEN_ROOST;
 
-/** Cell sides (m). A roost cell scans its 4×4 tree cells for a snag. */
-export const WILDLIFE_CELL: readonly number[] = [96, 64, 32, 24, 4 * TREE_CELL, 160, 120, 512];
+/**
+ * Cell sides (m). A roost cell scans its 4×4 tree cells for a snag. The butterfly's is
+ * smaller than any ground species' — flower drift patches run 8-20 m
+ * (`CLUTTER_FLOWER_PATCH_WAVELENGTH`), so a coarser cell would average a patch and its gaps
+ * into one presence draw instead of letting the two read differently.
+ */
+export const WILDLIFE_CELL: readonly number[] = [96, 64, 32, 24, 4 * TREE_CELL, 160, 120, 512, 16];
 /**
  * Visible disc per species (m); low tier scales by 0.6. Index 8 is the butterfly's, and it
  * is the smallest by a distance: the card is eight centimetres across, so it is a few
  * pixels well before anything else is, and 40 m is comfortably more than three times the
- * twelve it can be made out at while staying under the squirrel's fifty. Unlike the eight
- * before it this entry is never walked by the disc scan — which stops at `SPECIES_COUNT` —
- * but it IS read per unit by the renderer's cull, which would otherwise find nothing there.
+ * twelve it can be made out at while staying under the squirrel's fifty.
  */
 export const WILDLIFE_RADIUS: readonly number[] = [150, 150, 60, 50, 400, 400, 400, 400, 40];
-/** Seeded presence draw per gated cell — starting points. */
-export const WILDLIFE_D: readonly number[] = [0.35, 0.5, 0.6, 0.5, 0.25, 0.4, 0.7, 0.6];
+/** Seeded presence draw per gated cell — starting points. The butterfly's is a coin flip:
+ * flower cover already does the scarcity work (`clutterDensity(seed, CLUTTER_FLOWER, …)`
+ * gates most cells to zero), so this only has to thin what is left, not carry the whole
+ * habitat test on its own the way the ground species' floors do. */
+export const WILDLIFE_D: readonly number[] = [0.35, 0.5, 0.6, 0.5, 0.25, 0.4, 0.7, 0.6, 0.5];
 /**
  * How many pool slots the shell reserves per species for the wildlife director's placed
  * animals — the resource the director's `place` events draw from, since the director itself
@@ -60,21 +67,29 @@ export const WILDLIFE_D: readonly number[] = [0.35, 0.5, 0.6, 0.5, 0.25, 0.4, 0.
  * butterfly (`placeable` in wildlifeDirector.ts) ever draw from theirs — a loop flier is only
  * ever driven, never placed, so its slots stand unused until a future change lets one be.
  *
- * The butterfly's own entry is 0, not the 3 its placeable species mates each get: it is
- * cueable (`wildlifeDirector.ts`'s cue table weights it, at roughly a sixth of every cue
- * drawn) but has no shipped asset yet in `wildlifeMeshes.ts`'s `SPECIES_ASSET` or
- * `BIRD_ASSET` — `poolSlotFor` would otherwise gladly hand out a slot for an animal nothing
- * can render, spending it for the rest of its life on a sighting the player is credited with
- * seeing and never does. Raise this back to 3 the same commit that gives the butterfly a
- * real asset, and `wildlifeMeshes.test.ts`'s asset/pool consistency test will hold it to
- * doing both together.
+ * The butterfly's own entry matches its placeable mates now that `wildlifeMeshes.ts` ships
+ * it a real asset (`BIRD_ASSET`'s code-built entry): while that was still missing this held
+ * at 0 rather than 3, so `poolSlotFor` never handed out a slot for an animal nothing could
+ * render — `wildlifeMeshes.test.ts`'s asset/pool consistency test holds the two facts
+ * (asset shipped, pool slot given) to changing together in either direction.
  */
-export const DIRECTOR_POOL: readonly number[] = [1, 1, 2, 2, 2, 2, 2, 2, 0];
+export const DIRECTOR_POOL: readonly number[] = [1, 1, 2, 2, 2, 2, 2, 2, 3];
+/**
+ * `[lo, hi]` members per unit, by species — read only for the species that actually vary
+ * (`membersFor`'s explicit callers: the four ground species and the roost/gull/eagle among
+ * the birds). The raven pair's own entry is never read (its two members are fixed in code),
+ * and the butterfly needs none at all: it is always a single insect, set directly where its
+ * unit is built rather than through this table, so this stays the eight entries those seven
+ * callers actually reach.
+ */
 export const WILDLIFE_MEMBERS: readonly (readonly [number, number])[] = [[4, 8], [1, 2], [2, 4], [1, 1], [3, 7], [2, 2], [3, 6], [1, 2]];
-/** Member spread around the anchor (m) for ground species. Zero for everything that flies,
- * the butterfly at index 8 included: a flier's members are spread around its loop rather
- * than around a point on the ground. Read per unit when a unit's state is built, so this
- * is the second of the two tables a unit of species 8 reaches. */
+/** Member spread around the anchor (m) for ground species. Zero for everything that flies —
+ * a flier's members are spread around its loop rather than around a point on the ground —
+ * and zero for the butterfly too, at index 8, though for a different reason: it has no loop
+ * of its own and no herd either, just the one insect its `members: 1` already says. Read per
+ * unit when a unit's state is built, so this is the second of the two tables a unit of
+ * species 8 reaches (`NOTICE` and `WILDLIFE_RADIUS`, read by the renderer's cull and the
+ * director rather than per unit, are the other two nine-entry tables). */
 export const WILDLIFE_SPREAD: readonly number[] = [12, 6, 5, 0, 0, 0, 0, 0, 0];
 
 export const ELK_MEADOW_FLOOR = 0.6;
@@ -177,12 +192,38 @@ export type WildlifeUnit = {
   presenceDraw: number;
 };
 
-/** The i-th independent draw for a cell of one species, in [0, 1). Index 4 is
+/**
+ * The width `i * width + species` used to pack the eight species that existed before the
+ * butterfly — frozen here rather than read live off `SPECIES_COUNT`, which is exactly the
+ * bug this constant exists to stop happening again. `SPECIES_COUNT` moving from 8 to 9
+ * changed `i * SPECIES_COUNT + species` for every (species, i) pair with i ≥ 1, across every
+ * species already shipped: elk, deer, rabbit, squirrel, both ravens, gulls and eagles all
+ * silently drew a DIFFERENT cell for the same seed the moment the butterfly raised the
+ * count — caught only because three tests happened to pin exact numbers to a specific unit
+ * for this seed (`wildlifeBehaviour.test.ts`'s elk alert range, two hand-picked cameras in
+ * `wildlifeMeshes.test.ts`) and started finding a different one. A species this cosmetic is
+ * allowed to look different after a balance change; it must not look different after one
+ * that has nothing to do with it.
+ */
+const LEGACY_SPECIES_SALT_WIDTH = 8;
+/**
+ * The i-th independent draw for a cell of one species, in [0, 1). Index 4 is
  * retired (it was the old drawn `unitId`) and deliberately left unused: the
  * indices are independent streams, so a gap keeps every other draw
- * bit-identical to what it was before the id became positional. */
+ * bit-identical to what it was before the id became positional.
+ *
+ * Species below `LEGACY_SPECIES_SALT_WIDTH` (elk through eagle) keep the exact salt they
+ * always had. A species at or past it (the butterfly, and whatever comes after) gets a
+ * private band far above anything `i * LEGACY_SPECIES_SALT_WIDTH + species` reaches — the
+ * highest `i` any legacy species draws is the eagle's high-sample loop, comfortably under a
+ * hundred — so a new species can never collide with a legacy one's stream, and two new
+ * species can never collide with EACH OTHER's either.
+ */
 function draw(seed: number, species: number, cellX: number, cellZ: number, i: number): number {
-  return hash3(cellX, cellZ, i * SPECIES_COUNT + species, seed ^ SALT);
+  const salt = species < LEGACY_SPECIES_SALT_WIDTH
+    ? i * LEGACY_SPECIES_SALT_WIDTH + species
+    : 1_000_000 + (species - LEGACY_SPECIES_SALT_WIDTH) * 10_000 + i;
+  return hash3(cellX, cellZ, salt, seed ^ SALT);
 }
 function range(t: number, lo: number, hi: number): number {
   return lo + t * (hi - lo);
@@ -193,7 +234,7 @@ function membersFor(seed: number, species: number, cx: number, cz: number): numb
 }
 /**
  * A unit's identity, PACKED rather than drawn: 14 bits of `cellX + CELL_ID_BIAS`,
- * 14 bits of `cellZ + CELL_ID_BIAS`, 3 bits of species — 31 bits, so it is always
+ * 13 bits of `cellZ + CELL_ID_BIAS_Z`, 4 bits of species — 31 bits, so it is always
  * a positive int32.
  *
  * It used to be a `hash3` draw, which collides: `hash3` is structurally weak on
@@ -209,18 +250,32 @@ function membersFor(seed: number, species: number, cx: number, cz: number): numb
  * the other its dwell, wander, refuge and call schedule. The (species, cell)
  * triple that generated the unit is unique by construction, so it IS the id.
  *
+ * Species held 3 bits (0-7) until the butterfly raised `SPECIES_COUNT` to 9: at species 8
+ * the third bit above the 3-bit field is the low bit `cellZ` is shifted into, so every
+ * butterfly cell aliased the id its own `cellZ + 1` neighbour would have drawn — measured
+ * directly on this census: cell (110, -116) and (110, -115) packed to the same id, one of
+ * the two exact symptoms this whole scheme exists to prevent. Species now takes 4 bits (0-15,
+ * room for eight more species before this has to be revisited), taken out of `cellZ` rather
+ * than `cellX` so only one axis's alias bound halves rather than both — it did not have to
+ * be `cellZ`, but a positive int32 has exactly 31 bits to spend and something had to give.
+ *
  * Consequences worth stating: the id is now the same for every seed (it names a
  * cell, not a draw — behaviour still varies by seed because `hash3` there mixes
- * the seed in), and cells outside +/- CELL_ID_BIAS alias. That bound is 196 km at
- * the smallest cell (the squirrel's 24 m) and 786 km at the largest — orders of
- * magnitude beyond anywhere a player reaches.
+ * the seed in), and cells outside +/- `CELL_ID_BIAS` (on x) or +/- `CELL_ID_BIAS_Z` (on z)
+ * alias. At the smallest cell (the butterfly's 16 m) that bound is 131 km on x and 65.5 km
+ * on z; at the largest (the eagle's 512 m) it is 4,194 km on x and 2,097 km on z — orders of
+ * magnitude beyond anywhere a player reaches, on both axes, at every species' own cell size.
  */
 export const CELL_ID_BIAS = 8192;
+/** As `CELL_ID_BIAS`, for the 13-bit `cellZ` field — one bit narrower than `cellX`'s so
+ * species has the 4th bit it needs; see `unitId`'s own doc for why `cellZ` is the one that
+ * gave it up. */
+export const CELL_ID_BIAS_Z = 4096;
 /** Exported as a test seam: a caller that needs a realistic field id — one shaped the way a
  * real unit's actually comes out, not a small placeholder — builds it the same way this
  * module does rather than guessing at the packing. */
 export function unitId(species: number, cx: number, cz: number): number {
-  return ((((cx + CELL_ID_BIAS) & 0x3fff) << 17) | (((cz + CELL_ID_BIAS) & 0x3fff) << 3) | species);
+  return ((((cx + CELL_ID_BIAS) & 0x3fff) << 17) | (((cz + CELL_ID_BIAS_Z) & 0x1fff) << 4) | (species & 0xf));
 }
 function walkable(s: TerrainSample): boolean {
   return s.h > SAND_TOP && Math.hypot(s.dx, s.dz) <= MAX_WALKABLE_GRADIENT;
@@ -422,6 +477,17 @@ function birdUnit(seed: number, species: number, cx: number, cz: number): Wildli
         if (h > bestH) { bestH = h; bx = sx; bz = sz; }
       }
       return unit({ seed, presenceDraw, species, cellX: cx, cellZ: cz, x: bx, z: bz, h: bestH, members: membersFor(seed, species, cx, cz), refugeX: bx, refugeZ: bz, homeX: bx, homeZ: bz, homeH: bestH, altitude: range(draw(seed, species, cx, cz, 6), ...EAGLE_ALT), radius: range(draw(seed, species, cx, cz, 7), ...EAGLE_RADIUS) });
+    }
+    case SPECIES_BUTTERFLY: {
+      // Open ground with flowers on it — the same "open" a meadow reads as, not merely
+      // "not a dense stand": `CLUTTER_GRASS_CANOPY_LO` is the canopy fraction below which
+      // grass and rabbits already treat the ground as clear.
+      const s = elevationSampleAt(seed, x, z);
+      if (forestDensity(seed, x, z, s) >= CLUTTER_GRASS_CANOPY_LO) return null;
+      if (clutterDensity(seed, CLUTTER_FLOWER, x, z, s) <= 0) return null;
+      // Always one insect — the raven pair's own fixed `members: 2` precedent — so no ninth
+      // entry is owed to `WILDLIFE_MEMBERS` for a count that never varies.
+      return unit({ seed, presenceDraw, species, cellX: cx, cellZ: cz, x, z, h: s.h, members: 1, refugeX: x, refugeZ: z, homeX: x, homeZ: z, homeH: s.h, altitude: 0, radius: 0 });
     }
     default:
       return null;

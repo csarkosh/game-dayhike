@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { hash3 } from "../../src/sim/field.js";
-import { PHASE_CUE, PHASE_REST } from "../../src/game/wildlifeBehaviour.js";
+import { BUTTERFLY_CUE_SPEED, PHASE_CUE, PHASE_REST } from "../../src/game/wildlifeBehaviour.js";
 import {
   SPECIES_BUTTERFLY, SPECIES_DEER, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RABBIT,
   SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, unitId, WILDLIFE_RADIUS, WILDLIFE_SPREAD,
@@ -31,6 +31,7 @@ const cueSpeed = (species: number, run: boolean): number => {
     case SPECIES_SQUIRREL: return run ? 6 : 2.5;
     case SPECIES_GULL: return 12;
     case SPECIES_EAGLE: return 8;
+    case SPECIES_BUTTERFLY: return BUTTERFLY_CUE_SPEED;
     default: return 10;
   }
 };
@@ -317,12 +318,16 @@ describe("cues", () => {
     // than hunting for a seed whose draw happens to land where it wants. A tick drawing a
     // placeable species, so that both halves — drive and the fall-back to place — are on
     // the table; the loop fliers, which are never placed, have their own case in the sweep.
-    const tick = tickDrawing(s, 3, 100, (sp) => !LOOP_FLIERS.includes(sp));
+    // The butterfly is excluded too, for the same reason as the twenty-metre edge below: at
+    // BUTTERFLY_SPEED (1 m/s) it cannot cover that distance in the cue's budget at all, which
+    // is a real property of the species, not a gap in this test — see the "starts every
+    // species" test for the actual reach-budgeted draw.
+    const tick = tickDrawing(s, 3, 100, (sp) => !LOOP_FLIERS.includes(sp) && sp !== SPECIES_BUTTERFLY);
     const chosen = pickSpecies(s, hash3(3, tick, 2, 0));
     // Just past the frame's right edge at twenty metres: close enough that even an elk,
-    // the slowest thing a cue can draw, can walk to its mark inside the cue's budget. An
-    // animal DIRECTLY BEHIND the player is not a candidate however near it is — it cannot
-    // get anywhere the player is looking in the time the beat has.
+    // the slowest GROUND species a cue can draw, can walk to its mark inside the cue's
+    // budget. An animal DIRECTLY BEHIND the player is not a candidate however near it is —
+    // it cannot get anywhere the player is looking in the time the beat has.
     const edge = at(1.1, 20);
     const behind = { id: 9, species: chosen, x: edge.x, y: 1, z: edge.z, moveX: edge.x, moveZ: edge.z, moveR: 0, onScreen: false, phase: PHASE_REST, owned: false };
 
@@ -409,18 +414,17 @@ describe("cues", () => {
       }
       expect(Math.hypot(e.goalX - v.x, e.goalZ - v.z)).toBeLessThanOrEqual(hideRange(0));
     }
-    // Every species a cue can draw, and all three stagings. The butterfly is not among them:
-    // nothing can render one yet (`wildlifeField.ts`'s `DIRECTOR_POOL[SPECIES_BUTTERFLY]`
-    // is held at 0 for the same reason), so it is out of `CUE_SMALL` until a shipped asset
-    // brings it back — see the ruling recorded above `CUE_LARGE`/`CUE_SMALL`.
+    // Every species a cue can draw, and all three stagings — the butterfly among them now
+    // that it ships a real asset (see the ruling recorded above `CUE_LARGE`/`CUE_SMALL`).
     expect([...drawn].sort((a, b) => a - b)).toEqual(
-      [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL].sort((a, b) => a - b),
+      [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_BUTTERFLY].sort((a, b) => a - b),
     );
     expect(staged.size).toBe(3);
-    // With the butterfly gone, no flier is ever placed at all — the roost, pair, gull and
-    // eagle all fail `placeable`'s loop test, so every placement here is a ground mammal.
+    // The raven pair, the gull and the eagle still fail `placeable`'s loop test, so every
+    // placement here is a ground mammal or the butterfly — the one flier-numbered species
+    // `placeable` lets through, because it carries no loop of its own to hide.
     expect([...placedSpecies].sort((a, b) => a - b)).toEqual(
-      [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL].sort((a, b) => a - b),
+      [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_BUTTERFLY].sort((a, b) => a - b),
     );
   });
 

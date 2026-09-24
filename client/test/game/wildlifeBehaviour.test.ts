@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { SPRINT_SPEED, SIM_TICK_HZ } from "../../src/sim/constants.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { treeInCell, TREE_CELL, COHORT_GIANT } from "../../src/sim/vegetation.js";
 import {
-  SPECIES_ELK, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST, SPECIES_GULL, SPECIES_EAGLE, SPECIES_COUNT,
-  RAVEN_PERCH_HEIGHT, GIANT_TRUNK_RADIUS_PER_SCALE, wildlifeUnitsInDisc, type WildlifeUnit,
+  SPECIES_ELK, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST, SPECIES_GULL, SPECIES_EAGLE, SPECIES_BUTTERFLY,
+  SPECIES_COUNT, RAVEN_PERCH_HEIGHT, GIANT_TRUNK_RADIUS_PER_SCALE, wildlifeUnitsInDisc, type WildlifeUnit,
 } from "../../src/game/wildlifeField.js";
 import {
   PHASE_REST, PHASE_ALERT, PHASE_FLEE, PHASE_SETTLE, PHASE_RETURN, CALL_ELK_BUGLE, CALL_RAVEN_CROAK,
@@ -15,7 +15,7 @@ import {
   ELK_BUGLE_INTERVAL, RAVEN_CROAK_INTERVAL, DAWN_HOUR, DAWN_DUSK_WINDOW,
   ELK_FLEE_AWAY, ELK_REFUGE_ARRIVE, SQUIRREL_FORAGE_RADIUS, SQUIRREL_CLIMB, SQUIRREL_CLING_CLEARANCE,
   RAVEN_BLEND_SECONDS, RAVEN_CLIMB_MPS, ravenBlendSeconds, clipForPhase,
-  PHASE_CUE, RABBIT_RETURN_SPEED, GULL_SPEED, startCue,
+  PHASE_CUE, RABBIT_RETURN_SPEED, GULL_SPEED, startCue, BUTTERFLY_ALT, BUTTERFLY_SPEED, BUTTERFLY_CUE_SPEED,
   createUnitState, stepUnit, wildlifePresenceUnder, type PlayerPoint, type WildlifeEvent, type UnitState,
 } from "../../src/game/wildlifeBehaviour.js";
 
@@ -101,7 +101,13 @@ describe("elk", () => {
     const fleeAt = trace.findIndex((p) => p.phase === PHASE_FLEE);
     expect(alertAt).toBeGreaterThan(0);
     expect(fleeAt).toBeGreaterThan(alertAt);
-    const dAtAlert = 60 - (alertAt + 1) * 0.05;
+    // The REST wander (up to ELK_WANDER off the anchor) means the herd is not exactly at
+    // `unit.x/z` by the time the approach schedule's nominal distance crosses the alert
+    // range — this seed's own herd wanders enough that the nominal figure alone reads a
+    // couple of metres wide of the range it actually alerted at. The trace already carries
+    // where the lead really was that tick, so the check is against that, not the schedule.
+    const alertPlayer = approach(1001 + alertAt)[0]!;
+    const dAtAlert = Math.hypot(trace[alertAt]!.x - alertPlayer.x, trace[alertAt]!.z - alertPlayer.z);
     expect(dAtAlert).toBeLessThanOrEqual(ELK_ALERT_RANGE);
     expect(ELK_FLEE_SPEED).toBeGreaterThan(SPRINT_SPEED);
     // After the flee the lead is nearer the refuge than the anchor was.
@@ -833,19 +839,101 @@ describe("calls and presence", () => {
   });
 
   it("clear is the identity; rain grounds birds; dread keeps only ravens", () => {
+    // Daylight (the default hour) throughout this test: it is `wildlifePresenceUnder`'s
+    // weather axis under test here, not its time-of-day one — see the next test for that.
     const clear = wildlifePresenceUnder(WEATHER_PRESETS.clear);
     expect(clear.ground).toBe(1); expect(clear.aloft).toBe(1); expect(clear.raven).toBe(1);
+    expect(clear.butterfly).toBe(1);
     expect(clear.callGain).toEqual(new Array(SPECIES_COUNT).fill(1));
     const rain = wildlifePresenceUnder(WEATHER_PRESETS.rain);
     expect(rain.aloft).toBeCloseTo(0.3, 5); expect(rain.ground).toBe(1); expect(rain.raven).toBeCloseTo(0.5, 5);
+    expect(rain.butterfly).toBe(0);
     const eerie = wildlifePresenceUnder(WEATHER_PRESETS.eerie);
     expect(eerie.ground).toBe(0); expect(eerie.aloft).toBe(0); expect(eerie.raven).toBe(2);
     expect(eerie.callGain[SPECIES_ELK]).toBe(0); expect(eerie.callGain[SPECIES_RAVEN_ROOST]).toBe(2);
+    // eerie's own rain (0.3) thins the butterfly the same linear way clear rain does — it is
+    // not swept up in the dread ramp the way ground/aloft/raven are.
+    expect(eerie.butterfly).toBeCloseTo(0.7, 5);
   });
   it("dread crosses the threshold exactly at 0.5", () => {
     const half = wildlifePresenceUnder({ cloudCover: 0, mist: 0, rain: 0, wetness: 0, dread: 0.5 });
     expect(half.ground).toBe(0);
     expect(half.aloft).toBe(0);
     expect(half.raven).toBe(2);
+  });
+  it("the butterfly is present in daylight and clear weather, and 0 at night and in rain", () => {
+    // Daylight, no rain: fully present, whatever the hour reads as inside the day.
+    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 6).butterfly).toBeCloseTo(1, 9);
+    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 12).butterfly).toBeCloseTo(1, 9);
+    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 19).butterfly).toBeCloseTo(1, 9);
+    // Full dark, clear skies: gone, on the clock alone.
+    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 0).butterfly).toBe(0);
+    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 2).butterfly).toBe(0);
+    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 23).butterfly).toBe(0);
+    // Full rain at noon: gone, on the weather alone.
+    expect(wildlifePresenceUnder(WEATHER_PRESETS.rain, 12).butterfly).toBe(0);
+    // Both at once is still just 0, not doubly so.
+    expect(wildlifePresenceUnder(WEATHER_PRESETS.rain, 2).butterfly).toBe(0);
+    // A caller with no hour to give gets the noon default — every existing weather-only
+    // caller keeps seeing exactly the butterfly `clear` always implied.
+    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear).butterfly).toBe(1);
+  });
+});
+
+describe("the butterfly", () => {
+  const HOME_X = 1000, HOME_Z = -2000;
+  const butterflyUnit: WildlifeUnit = {
+    species: SPECIES_BUTTERFLY, id: 424242, cellX: 0, cellZ: 0,
+    x: HOME_X, z: HOME_Z, h: elevationAt(SEED, HOME_X, HOME_Z),
+    members: 1, refugeX: HOME_X, refugeZ: HOME_Z, homeX: HOME_X, homeZ: HOME_Z,
+    homeH: elevationAt(SEED, HOME_X, HOME_Z), homeScale: 1, altitude: 0, radius: 0,
+    hash: 0, presenceDraw: 0,
+  };
+
+  it("never moves faster than BUTTERFLY_SPEED, and its pose stays inside BUTTERFLY_ALT above the ground", () => {
+    const u = createUnitState(butterflyUnit, 0, SEED);
+    let prevX = u.x, prevZ = u.z;
+    for (let tick = 1; tick <= 20 * SIM_TICK_HZ; tick++) {
+      stepUnit(u, tick, [], SEED, 12, [], []);
+      const stepD = Math.hypot(u.x - prevX, u.z - prevZ);
+      // A generous epsilon over one tick's budget: `stepUnit` can catch up several ticks at
+      // once after a gap, but never advances any one of them faster than the speed allows.
+      expect(stepD).toBeLessThanOrEqual((BUTTERFLY_SPEED / SIM_TICK_HZ) * 1.001);
+      prevX = u.x; prevZ = u.z;
+      const pose = u.poses[0]!;
+      const groundH = elevationAt(SEED, pose.x, pose.z);
+      expect(pose.y - groundH).toBeGreaterThanOrEqual(BUTTERFLY_ALT[0] - 1e-9);
+      expect(pose.y - groundH).toBeLessThanOrEqual(BUTTERFLY_ALT[1] + 1e-9);
+    }
+    // It actually wanders — otherwise the speed bound above would hold vacuously.
+    expect(Math.hypot(u.x - HOME_X, u.z - HOME_Z)).toBeGreaterThan(0);
+  });
+
+  it("never reacts to a player — no flee, no alert, just the same wander", () => {
+    const alone = createUnitState(butterflyUnit, 0, SEED);
+    const crowded = createUnitState(butterflyUnit, 0, SEED);
+    const player = [{ x: HOME_X, z: HOME_Z }]; // standing right on top of it
+    for (let tick = 1; tick <= 5 * SIM_TICK_HZ; tick++) {
+      stepUnit(alone, tick, [], SEED, 12, [], []);
+      stepUnit(crowded, tick, player, SEED, 12, [], []);
+      expect(crowded.phase).toBe(PHASE_REST);
+      expect(crowded.x).toBeCloseTo(alone.x, 9);
+      expect(crowded.z).toBeCloseTo(alone.z, 9);
+    }
+  });
+
+  it("takes a director's cue at BUTTERFLY_CUE_SPEED, faster than its own wander, and hands back to its wander on arrival", () => {
+    // Not BUTTERFLY_SPEED: see BUTTERFLY_CUE_SPEED's own doc for why a cue has to move it
+    // faster than its ordinary drift — the wander speed alone cannot cover any staging's
+    // gap between a hidden start and a mark inside the cue's budget.
+    const u = createUnitState(butterflyUnit, 1000, SEED);
+    const markX = HOME_X + 4, markZ = HOME_Z + 3; // 5 m away
+    startCue(u, markX, markZ, false, 1000);
+    let t = 1001;
+    for (; t <= 1001 + 20 * SIM_TICK_HZ && u.phase === PHASE_CUE; t++) stepUnit(u, t, [], SEED, 12, [], []);
+    expect(u.phase).toBe(PHASE_REST);
+    expect((t - 1001) / SIM_TICK_HZ).toBeCloseTo(5 / BUTTERFLY_CUE_SPEED, 1);
+    expect(u.x).toBeCloseTo(markX, 6);
+    expect(u.z).toBeCloseTo(markZ, 6);
   });
 });

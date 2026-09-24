@@ -7,6 +7,7 @@ import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import catalog from "../../assets/catalog.json" with { type: "json" };
 import "../../src/sim/passes/index.js";
 import { elevationAt, elevationSampleAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { SIM_TICK_HZ } from "../../src/sim/constants.js";
@@ -17,14 +18,15 @@ import { WING_TIME_WRAP, WingPlugin } from "../../src/game/wingPlugin.js";
 import { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import { TransformNode as BabylonTransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import {
-  DIRECTOR_POOL, FIRST_BIRD_SPECIES, SPECIES_COUNT, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RAVEN_PAIR,
-  SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, WILDLIFE_RADIUS, wildlifeUnitsInDisc,
+  DIRECTOR_POOL, FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL,
+  SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, WILDLIFE_CELL, WILDLIFE_D, WILDLIFE_RADIUS,
+  WILDLIFE_SPREAD, wildlifeUnitsInDisc,
 } from "../../src/game/wildlifeField.js";
 import {
-  BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, birdBucketOmega, birdLodMeshes, createWildlifeMeshes,
-  SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
+  BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, BUTTERFLY_OMEGA, birdBucketOmega, birdLodMeshes, butterflyGeometry,
+  createWildlifeMeshes, SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
 } from "../../src/game/wildlifeMeshes.js";
-import { CUE_WEIGHT, GAP, LEAD, STILL_RELAX, type MatchState, type View } from "../../src/game/wildlifeDirector.js";
+import { CUE_WEIGHT, GAP, LEAD, NOTICE, STILL_RELAX, type MatchState, type View } from "../../src/game/wildlifeDirector.js";
 import type { ClipRole, CreatureInstance, CreaturePool } from "../../src/game/creatureModel.js";
 
 setActiveTerrainVariant("olympic");
@@ -493,17 +495,37 @@ describe("the wildlife director", () => {
     engine.dispose();
   });
 
-  it("gives every cueable species an asset and a pool slot, or neither of the two", () => {
+  it("holds every per-species table to SPECIES_COUNT entries, and gives every cueable species an asset and a pool slot or neither", () => {
+    // A table indexed by species that stops short of SPECIES_COUNT does not throw when a
+    // new species raises the count — it silently hands back `undefined`, and the bug shows
+    // up downstream as a NaN or a null pose, not here. This sub-project hit that shape
+    // three times over (`WILDLIFE_RADIUS`, `WILDLIFE_SPREAD`, and the asset/pool pair this
+    // test already checked below), the last two caught only because someone went looking
+    // after the first — so every per-species table the renderer or the director reads by
+    // index is held to SPECIES_COUNT here, in one place, rather than trusted individually.
+    // `WILDLIFE_MEMBERS` is the one exception, left out on purpose: nothing reads it
+    // generically over every species (only `membersFor`'s explicit callers do), so a
+    // shorter table there is not the same defect — see its own doc in wildlifeField.ts.
+    const perSpeciesTables: readonly (readonly unknown[])[] = [
+      WILDLIFE_CELL, WILDLIFE_D, WILDLIFE_RADIUS, WILDLIFE_SPREAD, DIRECTOR_POOL,
+      SPECIES_ASSET, BIRD_ASSET, BIRD_OMEGA, NOTICE,
+    ];
+    for (const table of perSpeciesTables) {
+      expect(table).toHaveLength(SPECIES_COUNT);
+      for (let s = 0; s < SPECIES_COUNT; s++) expect(table[s]).not.toBeUndefined();
+    }
+
     // The shape of the bug this guards: a species the cue table can still draw
     // (`CUE_WEIGHT[s] > 0`) but that neither `SPECIES_ASSET` nor `BIRD_ASSET`
     // can render is a `place` that holds a pool slot for life, is logged as a
     // sighting, and is never actually seen — crediting the cadence promise
-    // for an animal that was not there. The butterfly is exactly this case
-    // until it ships a model: `DIRECTOR_POOL[SPECIES_BUTTERFLY]` is 0 rather
-    // than the 3 its placeable species mates get, and this is what holds the
-    // two facts (asset shipped, pool slot given) to changing together —
-    // giving the butterfly its asset without also giving `DIRECTOR_POOL` its
-    // slot back fails this exactly as loudly as the reverse would.
+    // for an animal that was not there. The butterfly WAS exactly this case
+    // until it shipped a model: `DIRECTOR_POOL[SPECIES_BUTTERFLY]` held at 0
+    // rather than the 3 its placeable species mates get, and this is what
+    // holds the two facts (asset shipped, pool slot given) to changing
+    // together — giving a species its asset without also giving
+    // `DIRECTOR_POOL` its slot back fails this exactly as loudly as the
+    // reverse would.
     const hasAsset = (species: number): boolean =>
       (SPECIES_ASSET[species] ?? null) !== null || (BIRD_ASSET[species] ?? null) !== null;
     let checked = 0;
@@ -569,13 +591,16 @@ function instanceScale(buf: Float32Array, i: number): number {
  * tick renders those placeholders, and only the second update shows birds on
  * their loops. Every bird case below therefore runs two updates.
  */
-function flying(scene: Scene, weather = WEATHER_PRESETS.clear, ids: readonly string[] = BIRD_IDS) {
+function flying(
+  scene: Scene, weather = WEATHER_PRESETS.clear, ids: readonly string[] = BIRD_IDS,
+  camX = BIRD_CAM_X, camZ = BIRD_CAM_Z,
+) {
   const birds = fakeBirds(scene, ids);
   const spies = new Map<string, BufferSpy>();
   for (const id of ids) spies.set(id, vi.spyOn(birds[id]!, "thinInstanceSetBuffer"));
   const w = createWildlifeMeshes(scene, SEED, { birds });
-  w.update(BIRD_CAM_X, BIRD_CAM_Z, 1000, FAR_AWAY, weather, 12);
-  w.update(BIRD_CAM_X, BIRD_CAM_Z, 1001, FAR_AWAY, weather, 12);
+  w.update(camX, camZ, 1000, FAR_AWAY, weather, 12);
+  w.update(camX, camZ, 1001, FAR_AWAY, weather, 12);
   return { w, birds, spies };
 }
 
@@ -590,11 +615,11 @@ describe("bird thin instances", () => {
     expect(BIRD_OMEGA).toHaveLength(SPECIES_COUNT);
     expect(BIRD_ASSET.slice(0, FIRST_BIRD_SPECIES).every((id) => id === null)).toBe(true);
     expect(BIRD_ASSET.slice(FIRST_BIRD_SPECIES)).toEqual([
-      "wildlife.raven", "wildlife.raven", "wildlife.gull", "wildlife.eagle",
+      "wildlife.raven", "wildlife.raven", "wildlife.gull", "wildlife.eagle", "wildlife.butterfly",
     ]);
     // Every ω is an exact multiple of 2π / WING_TIME_WRAP, which is what makes
     // the shader's time wrap phase-continuous — a raven at 3 Hz, a gull at 2.5,
-    // an eagle that soars.
+    // an eagle that soars, a butterfly at 12.
     for (const omega of BIRD_OMEGA) {
       expect(((omega * WING_TIME_WRAP) / (2 * Math.PI)) % 1).toBeCloseTo(0, 9);
     }
@@ -602,9 +627,75 @@ describe("bird thin instances", () => {
     expect(BIRD_OMEGA[SPECIES_RAVEN_PAIR]).toBe(BIRD_OMEGA[SPECIES_RAVEN_ROOST]);
     expect(BIRD_OMEGA[SPECIES_GULL]).toBeCloseTo((2 * Math.PI * 750) / WING_TIME_WRAP, 9);
     expect(BIRD_OMEGA[SPECIES_EAGLE]).toBe(0);
+    expect(BIRD_OMEGA[SPECIES_BUTTERFLY]).toBe(BUTTERFLY_OMEGA);
     // The perched bucket is nobody's flight model, so it takes no beat.
     expect(birdBucketOmega(BIRD_PERCHED_ASSET)).toBe(0);
     expect(birdBucketOmega("wildlife.raven")).toBe(BIRD_OMEGA[SPECIES_RAVEN_PAIR]);
+    expect(birdBucketOmega(BIRD_ASSET[SPECIES_BUTTERFLY]!)).toBe(BUTTERFLY_OMEGA);
+  });
+
+  it("resolves the butterfly's model to code-built geometry, not a catalog entry", () => {
+    // `wildlifeField.ts`'s `SPECIES_BUTTERFLY` is the one bird-numbered species with no
+    // shipped GLB behind its `BIRD_ASSET` id at all — proof, at the data level, that
+    // `loadBirdAssets` cannot be fetching one: there is nothing in the catalog to fetch.
+    const assets = (catalog as { assets: { id: string }[] }).assets;
+    expect(assets.some((a) => a.id === BIRD_ASSET[SPECIES_BUTTERFLY])).toBe(false);
+  });
+
+  it("builds two 4 cm quads hinged on a 1 cm body, eight vertices, in three colourways that actually differ", () => {
+    const geo = butterflyGeometry(0);
+    expect(geo.positions).toHaveLength(8 * 3);
+    expect(geo.normals).toHaveLength(8 * 3);
+    expect(geo.colors).toHaveLength(8 * 4);
+    expect(geo.uvs).toHaveLength(8 * 2);
+    // Two quads, two triangles each.
+    expect(geo.indices).toHaveLength(4 * 3);
+    // Every vertex sits within a 1 cm body plus two 4 cm wings of the hinge, on one side or
+    // the other — nothing floats past the wingtip and nothing sits inside the other wing.
+    for (let i = 0; i < 8; i++) {
+      const x = geo.positions[i * 3]!;
+      // A Float32Array epsilon, not a Float64 one: 0.045 itself is not exactly representable.
+      expect(Math.abs(x)).toBeGreaterThanOrEqual(0.005 - 1e-6);
+      expect(Math.abs(x)).toBeLessThanOrEqual(0.045 + 1e-6);
+    }
+    const a = butterflyGeometry(0).colors;
+    const b = butterflyGeometry(1).colors;
+    const c = butterflyGeometry(2).colors;
+    expect(a).not.toEqual(b);
+    expect(a).not.toEqual(c);
+    expect(b).not.toEqual(c);
+    // Wraps rather than throwing on an out-of-range index — a caller need not know how many
+    // colourways there are to pick one.
+    expect(butterflyGeometry(3).colors).toEqual(a);
+  });
+
+  it("draws a natural butterfly through the same bird card path as a real bird", () => {
+    // A real flower-cell butterfly at seed 388817 — found by a census, not guessed, so this
+    // exercises the field's own habitat gate together with the render path rather than a
+    // hand-placed stand-in for one.
+    const bx = -372.65448356345297, bz = 691.559469884634;
+    const natural = wildlifeUnitsInDisc(SEED, bx, bz).filter((u) => u.species === SPECIES_BUTTERFLY);
+    expect(natural.length).toBeGreaterThan(0);
+
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const butterflyId = BIRD_ASSET[SPECIES_BUTTERFLY]!;
+    const { birds, spies } = flying(scene, WEATHER_PRESETS.clear, [...BIRD_IDS, butterflyId], bx, bz);
+    // It rides the bucket its own asset id names — not the raven's, not the gull's.
+    expect(birds[butterflyId]!.thinInstanceCount).toBeGreaterThan(0);
+    const buf = uploaded(spies.get(butterflyId)!, "matrix")!;
+    const wing = uploaded(spies.get(butterflyId)!, "wing")!;
+    for (let i = 0; i < birds[butterflyId]!.thinInstanceCount; i++) {
+      const x = buf[i * 16 + 12]!, y = buf[i * 16 + 13]!, z = buf[i * 16 + 14]!;
+      const groundH = elevationAt(SEED, x, z);
+      // The pose stays inside BUTTERFLY_ALT above the ground it is currently over.
+      expect(y - groundH).toBeGreaterThanOrEqual(0.3 - 1e-6);
+      expect(y - groundH).toBeLessThanOrEqual(1.5 + 1e-6);
+      // Inside its own disc, like every other bird bucket.
+      expect(Math.hypot(x - bx, z - bz)).toBeLessThanOrEqual(WILDLIFE_RADIUS[SPECIES_BUTTERFLY]!);
+      // The wing plugin's per-instance amplitude — always fluttering, never a glide.
+      expect(wing[i * 2 + 1]).toBe(1);
+    }
   });
 
   it("emits one instance per bird pose in the disc and culls the rest at its edge", () => {

@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import "../../src/sim/passes/index.js";
 import { setActiveTerrainVariant, activeTerrainVariant, elevationSampleAt } from "../../src/sim/terrain.js";
 import { forestDensity, treeInCell, TREE_CELL, COHORT_GIANT, COHORT_SNAG } from "../../src/sim/vegetation.js";
-import { clutterInRect, CLUTTER_BUSH } from "../../src/sim/clutter.js";
+import { clutterInRect, clutterDensity, CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_GRASS_CANOPY_LO } from "../../src/sim/clutter.js";
 import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
 import { SAND_TOP } from "../../src/game/terrainSurface.js";
 import {
   SPECIES_COUNT, SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST,
-  SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE, WILDLIFE_CELL, WILDLIFE_RADIUS, ELK_ROAD_CLEAR,
+  SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE, SPECIES_BUTTERFLY, WILDLIFE_CELL, WILDLIFE_RADIUS, ELK_ROAD_CLEAR,
   RABBIT_COVER_RADIUS, GULL_BAND, GIANT_MODEL_HEIGHT, RAVEN_ROOST_ALT_FLOOR, RAVEN_ROOST_CLEARANCE,
   wildlifeUnitInCell, wildlifeUnitsInDisc, createWildlifeCollector,
   groundAnchor,
@@ -338,6 +338,24 @@ describe("wildlife placement census", () => {
     expect(c.cellsSampled - before).toBeLessThan(before / 4);
   });
   it("names every species once", () => {
-    expect(new Set([SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE]).size).toBe(SPECIES_COUNT);
+    expect(new Set([
+      SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST,
+      SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE, SPECIES_BUTTERFLY,
+    ]).size).toBe(SPECIES_COUNT);
   });
+  for (const seed of SEEDS) {
+    it(`seed ${seed}: every butterfly sits over open ground with flowers on it`, () => {
+      const butterflies = census(seed, SPECIES_BUTTERFLY);
+      // A census this fine (16 m cells) over 4 km × 4 km is ~250,000 cells; the two habitat
+      // gates plus the coin-flip density leave a modest fraction of them occupied, which is
+      // the point of a lower bound here — an empty result would mean the gates never pass.
+      expect(butterflies.length).toBeGreaterThan(0);
+      for (const b of butterflies) {
+        expect(b.members).toBe(1);
+        const s = elevationSampleAt(seed, b.x, b.z);
+        expect(forestDensity(seed, b.x, b.z, s)).toBeLessThan(CLUTTER_GRASS_CANOPY_LO);
+        expect(clutterDensity(seed, CLUTTER_FLOWER, b.x, b.z, s)).toBeGreaterThan(0);
+      }
+    });
+  }
 });

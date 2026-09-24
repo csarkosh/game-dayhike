@@ -208,7 +208,7 @@ export const REMOVE_SECONDS = 5;
  * 2^30 — comfortably past this constant on its own, which is what `sweepRemovals` used to test
  * with a bare `>=`. Measured on the disc around (2000, -500): every one of 54 real units came
  * out between 1.075 and 1.085 billion. But the field's id range still touches this one at its
- * far edge: `unitId(SPECIES_SQUIRREL, -6144, -8186)` packs to exactly `DIRECTOR_ID_BASE + 3 *
+ * far edge: `unitId(SPECIES_SQUIRREL, -6144, -4093)` packs to exactly `DIRECTOR_ID_BASE + 3 *
  * 16 + 3` — a squirrel cell 6144 cells (147 km, at the squirrel's 24 m cell) out on X alone —
  * "orders of magnitude beyond anywhere a player reaches" per `unitId`'s own doc, but not
  * impossible on the number line, and this comment should not claim otherwise. Ownership is
@@ -598,7 +598,7 @@ export function observe(
  * species at `SMALL_TO_LARGE` instead would put the groups at twice that, because there
  * are twice as many small species as large ones.
  *
- * Three species are absent on purpose, and all three would otherwise look like oversights.
+ * Two species are absent on purpose, and both would otherwise look like oversights.
  *
  * The raven ROOST, because a roost IS its snag — perched on it, lifting off it, landing
  * back on it — so there is no mark in the world the director could send one to.
@@ -611,22 +611,19 @@ export function observe(
  * being scenery rather than a cue is the correct reading of how high it flies. Its share
  * of the large group goes to the elk and the deer.
  *
- * The BUTTERFLY, because nothing can draw one yet: `wildlifeMeshes.ts`'s `SPECIES_ASSET` and
- * `BIRD_ASSET` both stop short of it, and `DIRECTOR_POOL[SPECIES_BUTTERFLY]` is held at 0
- * for exactly this reason (`wildlifeField.ts`'s own comment on that table). Weighting it here
- * anyway once cost the beat itself: `placeable()` still let a butterfly be drawn, `poolSlotFor`
- * then always declined it, and `applyPlace` returned having done nothing — but the beat had
- * already recorded itself as staged (`logAtStage`/`stageTick`), so `cueUnpaid` held it idle
- * for the rest of `CUE_PATIENCE` regardless. That was roughly one draw in six spent on
- * nothing: measured, `longestEmpty` ran 11.50 to 14.00 s on the weaving-trail walk and
- * 11.20 to 13.10 s on the stops-and-looks walk, against the 20 s ceiling — every graded
- * assertion still passed, but a real cost with nothing in the suite that would have caught it
- * getting worse. Its share of the small group goes to the rabbit, the squirrel, the raven
- * pair and the gull; restore it here the same commit that gives it a shipped asset, alongside
- * `DIRECTOR_POOL`'s own reversal.
+ * The BUTTERFLY was a third, briefly, for exactly as long as nothing could render one:
+ * `wildlifeMeshes.ts`'s `SPECIES_ASSET` and `BIRD_ASSET` both stopped short of it, and
+ * `DIRECTOR_POOL[SPECIES_BUTTERFLY]` held at 0 for the same reason. Weighting it here
+ * anyway once cost the beat itself: `placeable()` still let a butterfly be drawn,
+ * `poolSlotFor` then always declined it, and `applyPlace` returned having done nothing —
+ * but the beat had already recorded itself as staged (`logAtStage`/`stageTick`), so
+ * `cueUnpaid` held it idle for the rest of `CUE_PATIENCE` regardless. That was roughly one
+ * draw in six spent on nothing until it shipped a real, code-built asset alongside
+ * `DIRECTOR_POOL`'s own reversal — it now takes its share of the small group like any of
+ * the other four.
  */
 const CUE_LARGE: readonly number[] = [SPECIES_ELK, SPECIES_DEER];
-const CUE_SMALL: readonly number[] = [SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL];
+const CUE_SMALL: readonly number[] = [SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_BUTTERFLY];
 /** Exported as a test seam: `CUE_WEIGHT[s] > 0` is exactly "the director may draw this
  * species for a cue", which a table-consistency check needs without duplicating
  * `CUE_LARGE`/`CUE_SMALL` (and so risking drifting out of step with them) elsewhere. */

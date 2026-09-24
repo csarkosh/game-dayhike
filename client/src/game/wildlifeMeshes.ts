@@ -18,6 +18,9 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { Node } from "@babylonjs/core/node.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
@@ -53,7 +56,7 @@ import {
  * rendering nothing.
  */
 export const SPECIES_ASSET: readonly (string | null)[] = [
-  "wildlife.elk", "wildlife.deer", "wildlife.rabbit", "wildlife.squirrel", null, null, null, null,
+  "wildlife.elk", "wildlife.deer", "wildlife.rabbit", "wildlife.squirrel", null, null, null, null, null,
 ];
 /**
  * The FLYING model each bird species renders as, indexed by species; null for
@@ -62,10 +65,14 @@ export const SPECIES_ASSET: readonly (string | null)[] = [
  * bucket — the bucket is the MODEL, not the species, so two species that fly
  * the same model share its geometry, its material and its wing plugin.
  *
+ * The butterfly's own entry is the one asset id in this table with no catalog
+ * output behind it at all: `loadBirdAssets` recognises it and builds
+ * `butterflyGeometry` in code instead of fetching a GLB — see there.
+ *
  * Held to SPECIES_COUNT entries by a test, like `SPECIES_ASSET`.
  */
 export const BIRD_ASSET: readonly (string | null)[] = [
-  null, null, null, null, "wildlife.raven", "wildlife.raven", "wildlife.gull", "wildlife.eagle",
+  null, null, null, null, "wildlife.raven", "wildlife.raven", "wildlife.gull", "wildlife.eagle", "wildlife.butterfly",
 ];
 /**
  * The one bucket that is not a flight pose: a roost in PHASE_REST is sitting on
@@ -80,12 +87,20 @@ export const BIRD_PERCHED_ASSET = "wildlife.crow_perched";
 const RAVEN_WING_OMEGA = (2 * Math.PI * 900) / WING_TIME_WRAP; // 3 Hz
 const GULL_WING_OMEGA = (2 * Math.PI * 750) / WING_TIME_WRAP;  // 2.5 Hz
 /**
+ * The butterfly's wing rate (rad/s), exported rather than kept as a private local like the
+ * two above — `wildlifeMeshes.test.ts` checks the wing plugin receives exactly this value.
+ * 12 Hz: a butterfly's wings beat far faster than any bird's, which is most of what makes
+ * the card read as a different kind of motion at a glance, before its small size even
+ * registers.
+ */
+export const BUTTERFLY_OMEGA = (2 * Math.PI * 3600) / WING_TIME_WRAP; // 12 Hz
+/**
  * Wing-beat rate per species (rad/s). Eagles are zero: an eagle at 120–250 m
  * soars, and `poseBirds` gives it amp 0 as well, so both halves of the product
  * agree that it never flaps.
  */
 export const BIRD_OMEGA: readonly number[] = [
-  0, 0, 0, 0, RAVEN_WING_OMEGA, RAVEN_WING_OMEGA, GULL_WING_OMEGA, 0,
+  0, 0, 0, 0, RAVEN_WING_OMEGA, RAVEN_WING_OMEGA, GULL_WING_OMEGA, 0, BUTTERFLY_OMEGA,
 ];
 
 /**
@@ -99,6 +114,97 @@ export function birdBucketOmega(assetId: string): number {
     if (BIRD_ASSET[s] === assetId) return BIRD_OMEGA[s] ?? 0;
   }
   return 0;
+}
+
+/**
+ * Three vertex-colour patterns a butterfly's wings can take — a warm monarch orange, a cool
+ * morpho blue, a pale cabbage white — chosen to read as distinct creatures rather than one
+ * animal under three lighting accidents. `butterflyGeometry` always builds from this table,
+ * so a new colourway is one more row here, not a second geometry function.
+ */
+const BUTTERFLY_COLOURWAYS: readonly (readonly [number, number, number])[] = [
+  [0.82, 0.42, 0.05],
+  [0.12, 0.32, 0.62],
+  [0.86, 0.83, 0.72],
+];
+/** Half the body's width (m) — the gap the two wings hinge across, so the body itself is
+ * this doubled: 1 cm. */
+const BUTTERFLY_BODY_HALF = 0.005;
+/** Wing span (m), body to tip — the "4 cm" of the two 4 cm quads. */
+const BUTTERFLY_WING_SPAN = 0.04;
+/** Wing chord (m), front to back. */
+const BUTTERFLY_WING_CHORD = 0.03;
+
+/**
+ * The butterfly's geometry, built in code rather than loaded from a file — the design's
+ * cheapest small cue there is: two 4 cm quads, one per wing, hinged on the 1 cm gap
+ * between them where the body sits (drawn by nothing — at the range the butterfly is ever
+ * noticed at, an unmodelled centimetre is not a gap a player could name). Eight vertices in
+ * all, no ninth for a body.
+ *
+ * Flat in the XZ plane, wings running out along ±X from the hinge: `wingPlugin.ts` rotates
+ * a vertex about that same axis by `|x| / halfSpan`, so this is exactly the shape a bird's
+ * wing card already takes, just two of them meeting at the body instead of one continuous
+ * span — the one thing the bird card path gains for this species is which geometry sits
+ * inside it, not a second kind of hinge.
+ *
+ * `colourway` wraps into the three rows of `BUTTERFLY_COLOURWAYS`; production always builds
+ * colourway 0 (see `buildButterflyMesh`), and the other two exist so a future change that
+ * wants more than one look per butterfly has real, differing patterns ready rather than a
+ * function that only ever produces the one it shipped with.
+ */
+export function butterflyGeometry(colourway: number): {
+  positions: Float32Array; normals: Float32Array; colors: Float32Array; uvs: Float32Array; indices: Uint16Array;
+} {
+  const [r, g, b] = BUTTERFLY_COLOURWAYS[((colourway % 3) + 3) % 3]!;
+  const innerR = BUTTERFLY_BODY_HALF;
+  const outerR = BUTTERFLY_BODY_HALF + BUTTERFLY_WING_SPAN;
+  const halfChord = BUTTERFLY_WING_CHORD / 2;
+  // Right wing (+x), then left (-x, mirrored) — 4 vertices each, 8 in all: hinge-front,
+  // tip-front, tip-back, hinge-back, wound so both wings' front faces point +Y.
+  const positions = new Float32Array([
+    innerR, 0, halfChord, outerR, 0, halfChord, outerR, 0, -halfChord, innerR, 0, -halfChord,
+    -innerR, 0, halfChord, -outerR, 0, halfChord, -outerR, 0, -halfChord, -innerR, 0, -halfChord,
+  ]);
+  const normals = new Float32Array(8 * 3);
+  for (let i = 0; i < 8; i++) normals[i * 3 + 1] = 1; // a flat card, facing up
+  const colors = new Float32Array(8 * 4);
+  for (let i = 0; i < 8; i++) {
+    colors[i * 4] = r; colors[i * 4 + 1] = g; colors[i * 4 + 2] = b; colors[i * 4 + 3] = 1;
+  }
+  const uvs = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1]);
+  // The left wing's winding is mirrored to match — moot once the material draws both faces
+  // (see `buildButterflyMesh`), but a consistent +Y-facing normal on both wings is one less
+  // thing to wonder about later.
+  const indices = new Uint16Array([0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6]);
+  return { positions, normals, colors, uvs, indices };
+}
+
+/**
+ * The mesh `loadBirdAssets` adopts for `BIRD_ASSET[SPECIES_BUTTERFLY]` — white albedo over
+ * vertex colour (`terrainMaterialFor`'s convention in renderer.ts: PBR multiplies the two,
+ * so tinting the material as well would apply the pattern twice), two-sided because a flat
+ * card is seen from both sides as it wanders, and never a shadow caster for the same reason
+ * no other clutter-scale card is (see `adoptBirdBucket`'s own note on birds).
+ */
+function buildButterflyMesh(scene: Scene): Mesh {
+  const mesh = new Mesh("wildlife_butterfly", scene);
+  const geo = butterflyGeometry(0);
+  const data = new VertexData();
+  data.positions = geo.positions;
+  data.normals = geo.normals;
+  data.colors = geo.colors;
+  data.uvs = geo.uvs;
+  data.indices = geo.indices;
+  data.applyToMesh(mesh, false);
+  mesh.useVertexColors = true;
+  const material = new PBRMaterial("wildlife_butterfly_mat", scene);
+  material.albedoColor = new Color3(1, 1, 1);
+  material.metallic = 0;
+  material.roughness = 1;
+  material.backFaceCulling = false;
+  mesh.material = material;
+  return mesh;
 }
 
 /** Instances a bird bucket's first real allocation covers, then doubling —
@@ -461,6 +567,7 @@ export function createWildlifeMeshes(
   let presenceGround = 1;
   let presenceAloft = 1;
   let presenceRaven = 1;
+  let presenceButterfly = 1;
   let lastPresenceTick = -1;
   let disposed = false;
 
@@ -515,8 +622,11 @@ export function createWildlifeMeshes(
   }
 
   /** Production path: one GLB per distinct bird model, `clutterMeshes.ts`'s
-   * loading idiom. A species whose asset is not in the catalog — which is all
-   * four today — simply has no bucket and emits nothing. */
+   * loading idiom. A species whose asset is not in the catalog simply has no
+   * bucket and emits nothing, EXCEPT the butterfly's: that id names no catalog
+   * output on purpose (`birdOutputFor` returns null for it, same as a
+   * shipped-but-missing asset would), so it is built in code instead of skipped
+   * — the one asset id in `wanted` this loop never fetches. */
   async function loadBirdAssets(): Promise<void> {
     const wanted = new Set<string>([BIRD_PERCHED_ASSET]);
     for (let s = FIRST_BIRD_SPECIES; s < SPECIES_COUNT; s++) {
@@ -525,6 +635,10 @@ export function createWildlifeMeshes(
     }
     registerBuiltInLoaders();
     for (const assetId of wanted) {
+      if (assetId === BIRD_ASSET[SPECIES_BUTTERFLY]) {
+        adoptBirdBucket(assetId, [buildButterflyMesh(scene)]);
+        continue;
+      }
       const output = birdOutputFor(assetId);
       if (output === null) continue;
       try {
@@ -776,6 +890,7 @@ export function createWildlifeMeshes(
    */
   function birdPresenceFor(u: UnitState): number {
     const s = u.unit.species;
+    if (s === SPECIES_BUTTERFLY) return presenceButterfly;
     if (s !== SPECIES_RAVEN_ROOST && s !== SPECIES_RAVEN_PAIR) return presenceAloft;
     return ravenHidden(u) ? -1 : presenceRaven;
   }
@@ -946,21 +1061,23 @@ export function createWildlifeMeshes(
         lastX = camX;
         lastZ = camZ;
       }
-      // All three presences ramp on the same clock (see `rampTo`): the sky has
+      // All four presences ramp on the same clock (see `rampTo`): the sky has
       // to thin out at the same rate the ground does, or a weather change shows
       // the herd fading while the gulls snap out.
       // The very first update adopts the weather outright rather than fading in
       // from a full world the player never saw.
-      const target = wildlifePresenceUnder(weather);
+      const target = wildlifePresenceUnder(weather, hour);
       if (lastPresenceTick === -1) {
         presenceGround = target.ground;
         presenceAloft = target.aloft;
         presenceRaven = target.raven;
+        presenceButterfly = target.butterfly;
       } else {
         const step = Math.max(0, tick - lastPresenceTick) / (PRESENCE_RAMP_SECONDS * SIM_TICK_HZ);
         presenceGround = rampTo(presenceGround, target.ground, step);
         presenceAloft = rampTo(presenceAloft, target.aloft, step);
         presenceRaven = rampTo(presenceRaven, target.raven, step);
+        presenceButterfly = rampTo(presenceButterfly, target.butterfly, step);
       }
       lastPresenceTick = tick;
 
