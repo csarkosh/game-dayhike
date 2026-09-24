@@ -230,6 +230,29 @@ export type MatchState = {
   hour: number;
   mist: number;
 };
+/**
+ * How visible each species is right now, indexed by species, `SPECIES_COUNT` long: 0 means
+ * an animal of that species would not be drawn at all, whatever else is true of it.
+ *
+ * The director cannot work this out for itself. Presence is a function of the weather and
+ * the time of day, and the director is handed neither — so the caller that DOES draw the
+ * animals has to say, and it is a required argument rather than an optional field for a
+ * reason worth stating plainly. Four separate defects in this feature have had the same
+ * shape: the director staging, or taking credit for, an animal the player cannot see. A
+ * species with no model. A species whose pool slot was always declined. A faded unit still
+ * offered as a candidate. And a faded species still placed. Each of the first three was
+ * fixed by bounding its damage, which is why there was a fourth. A presence table that
+ * could be left out — and so read as "everything is visible" — would be the fifth.
+ *
+ * This is one of TWO channels the caller answers visibility on, and they say different
+ * things. `Candidate` is the per-UNIT channel: an animal the caller does not draw must not
+ * be in that list at all, which is what stops a faded animal being driven or counted as a
+ * sighting. This is the per-SPECIES channel, and it is the one that stops a fresh animal
+ * being placed into a world where its whole kind is invisible. A caller must keep both
+ * honest; the director trusts them and checks neither against the other, because it has
+ * nothing to check with.
+ */
+export type SpeciesPresence = readonly number[];
 /** However the caller wants to answer "how high is the ground here" — the
  * real heightfield in play, a flat plane or a wall in a test. */
 export type Ground = (x: number, z: number) => number;
@@ -1055,6 +1078,7 @@ export function stageCue(
   view: View,
   ground: Ground,
   candidates: readonly Candidate[],
+  presence: SpeciesPresence,
   match: MatchState,
   tick: number,
   seed: number,
@@ -1068,6 +1092,14 @@ export function stageCue(
     const species = pickSpeciesExcept(state, hash3(seed, tick, SALT_SPECIES + attempt, 0), tried);
     if (species < 0) break;
     tried |= 1 << species;
+    // Nothing of this kind can be seen right now, so nothing of this kind is worth
+    // arranging: a placement would put an animal nobody can see into a pool slot and spend
+    // the beat that was owed the player. This sits before BOTH halves — the drive and the
+    // place — rather than inside `placeable`, because it is the same answer for each and
+    // because `placeable` says what a species IS, not what the weather is doing to it. A
+    // short or absent entry reads as invisible, never as visible: erring that way costs a
+    // redraw, and erring the other way is the defect (see `SpeciesPresence`).
+    if (!((presence[species] ?? 0) > 0)) continue;
     const staging = stagingFor(species);
     // Breaking cover is a bolt; a flier's crossing and a herd's walk-in are not.
     const run = staging === STAGING_COVER;
@@ -1178,6 +1210,7 @@ export function step(
   view: View,
   ground: Ground,
   candidates: readonly Candidate[],
+  presence: SpeciesPresence,
   match: MatchState,
   dt: number,
   tick: number,
@@ -1189,7 +1222,7 @@ export function step(
   const relax = relaxFor(state, match);
   if (relax < Infinity && state.sinceSighting > state.targetGap * relax - LEAD && tick >= state.nextTry && !cueUnpaid(state, candidates)) {
     const before = out.length;
-    if (stageCue(state, view, ground, candidates, match, tick, seed, out)) {
+    if (stageCue(state, view, ground, candidates, presence, match, tick, seed, out)) {
       // A unit told to move this frame is not also given back this frame.
       const event = out[before]!;
       if (event.kind === "drive") drivenId = event.id;

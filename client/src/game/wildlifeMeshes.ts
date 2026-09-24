@@ -630,6 +630,17 @@ export function createWildlifeMeshes(
   let presenceAloft = 1;
   let presenceRaven = 1;
   let presenceButterfly = 1;
+  /**
+   * The four ramps above, spread over every species and handed to the director
+   * each frame. Refilled in place, never rebuilt: this is a per-frame path.
+   *
+   * The director cannot work this out for itself — presence is a function of the
+   * weather and the clock, and the director is given neither — so it has to be
+   * told, and it is told EXPLICITLY rather than through a field that could be
+   * left out and read as "everything is visible". That default is the shape this
+   * whole class of defect keeps coming back in.
+   */
+  const speciesPresence: number[] = new Array<number>(SPECIES_COUNT).fill(1);
   let lastPresenceTick = -1;
   let disposed = false;
 
@@ -926,7 +937,7 @@ export function createWildlifeMeshes(
    * player never saw. That is the same defect as a species with no model and a
    * species with no pool slot, reached through a third door, and this is where
    * it is shut for all three of dread, rain and the butterfly's own clock.
-   * (The raven gate is folded in here too: `birdPresenceFor` already returns -1
+   * (The raven gate is folded in here too: `presenceFor` already returns -1
    * for a roost the draw is hiding, which used to be a candidate on the
    * argument that the presence gate was not the director's business. It is: a
    * hidden raven is not drawn either.)
@@ -958,19 +969,24 @@ export function createWildlifeMeshes(
   }
 
   /**
-   * How present a unit is this frame, whatever kind of animal it is: the ground
-   * ramp for a mammal, `birdPresenceFor` for everything numbered among the
-   * birds. Zero or less means it is not in the world at all — not merely
-   * undrawn — and that is the single question `pushCandidateFor` and the pool
-   * hand-back in `update` both ask.
+   * Which of the four live ramps a species is drawn at — the ONE mapping from
+   * species to presence in this file. Everything that needs to know how visible
+   * something is goes through here: `presenceFor` for a single unit, and
+   * `speciesPresence` for the table the director is handed. Two hand-written
+   * copies of this mapping would be a fifth way for the same defect to come
+   * back, with the shell hiding an animal the director still thought was there.
    */
-  function presenceFor(u: UnitState): number {
-    return u.unit.species < FIRST_BIRD_SPECIES ? presenceGround : birdPresenceFor(u);
+  function presenceOfSpecies(s: number): number {
+    if (s === SPECIES_BUTTERFLY) return presenceButterfly;
+    if (s === SPECIES_RAVEN_ROOST || s === SPECIES_RAVEN_PAIR) return presenceRaven;
+    return s >= FIRST_BIRD_SPECIES ? presenceAloft : presenceGround;
   }
 
   /**
-   * How present a bird unit is, in [0, ∞): `aloft` for gulls and eagles,
-   * `raven` for both raven species. Negative means "not here at all".
+   * How present a unit is, in [0, ∞), whatever kind of animal it is. Negative
+   * means "not here at all". Zero or less means it is not in the world this
+   * frame — not merely undrawn — and that is the single question `updateBirds`,
+   * `pushCandidateFor` and the pool hand-back in `update` all ask.
    *
    * Ravens carry their presence entirely in COUNT:
    * `wildlifeField.ts` places roosts to twice their density and
@@ -986,12 +1002,14 @@ export function createWildlifeMeshes(
    * gated by this same draw, which thins them correctly under rain, but
    * `wildlifeField.ts` rejects a pair at `presenceDraw >= 1` rather than 2, so
    * dread buys extra roosts and nothing else. Inherited by design.
+   *
+   * The raven draw is the one thing here that is per UNIT rather than per
+   * species, which is why this wraps `presenceOfSpecies` rather than being it:
+   * two roosts of the same species in the same weather can differ, one hidden
+   * and one not.
    */
-  function birdPresenceFor(u: UnitState): number {
-    const s = u.unit.species;
-    if (s === SPECIES_BUTTERFLY) return presenceButterfly;
-    if (s !== SPECIES_RAVEN_ROOST && s !== SPECIES_RAVEN_PAIR) return presenceAloft;
-    return ravenHidden(u) ? -1 : presenceRaven;
+  function presenceFor(u: UnitState): number {
+    return ravenHidden(u) ? -1 : presenceOfSpecies(u.unit.species);
   }
 
   /**
@@ -1059,7 +1077,7 @@ export function createWildlifeMeshes(
       // gone, not shrunk. The ground path draws its animals at scale 0 to keep
       // a pooled slot warm; a thin instance has no slot to keep, so emitting
       // one buys a degenerate triangle and a buffer stride for nothing.
-      if (birdPresenceFor(u) <= 0) continue;
+      if (presenceFor(u) <= 0) continue;
       const bucket = birdBucketFor(u);
       if (bucket === null) continue;
       const r2 = birdCullRadiusSquared(u);
@@ -1080,7 +1098,7 @@ export function createWildlifeMeshes(
 
     for (let i = 0; i < birdList.length; i++) {
       const u = birdList[i]!;
-      const p = birdPresenceFor(u);
+      const p = presenceFor(u);
       if (p <= 0) continue;
       const bucket = birdBucketFor(u);
       if (bucket === null) continue;
@@ -1195,6 +1213,7 @@ export function createWildlifeMeshes(
         presenceButterfly = rampTo(presenceButterfly, target.butterfly, step);
       }
       lastPresenceTick = tick;
+      for (let s = 0; s < SPECIES_COUNT; s++) speciesPresence[s] = presenceOfSpecies(s);
 
       if (director !== undefined) resetCandidates();
       for (const u of states.values()) {
@@ -1279,7 +1298,7 @@ export function createWildlifeMeshes(
         // long from `pushCandidateFor`'s own indexed writes.
         candidates.length = candidateCount;
         directorEvents.length = 0;
-        stepDirector(directorState, director.view, ground, candidates, director.match, dt, tick, seed, directorEvents);
+        stepDirector(directorState, director.view, ground, candidates, speciesPresence, director.match, dt, tick, seed, directorEvents);
         for (let i = 0; i < directorEvents.length; i++) applyDirectorEvent(directorEvents[i]!, tick);
       }
     },

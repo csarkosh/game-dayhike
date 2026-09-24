@@ -2,14 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import { hash3 } from "../../src/sim/field.js";
 import { BUTTERFLY_CUE_SPEED, PHASE_CUE, PHASE_REST } from "../../src/game/wildlifeBehaviour.js";
 import {
-  SPECIES_BUTTERFLY, SPECIES_DEER, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RABBIT,
+  SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_DEER, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RABBIT,
   SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, unitId, WILDLIFE_RADIUS, WILDLIFE_SPREAD,
 } from "../../src/game/wildlifeField.js";
 import {
   CUE_PATIENCE, DIRECTOR_ID_BASE, GAP, GAP_CEILING, HIDE_RANGE, HOLLOW_QUIET, LEAD, NIGHT_RELAX, NOTICE, PLACE_BODY_H, RECYCLE,
   REMOVE_FACTOR, REMOVE_SECONDS, SIGHTING_DWELL, SMALL_TO_LARGE, STAGING_COVER, STAGING_CROSS, STAGING_TREELINE, STILL_RELAX, STILL_SECONDS, VIEW_MARGIN,
   createDirectorState, hideRange, inCone, lineOfSight, observe, onScreen, pickSpecies, placementValid, relaxFor,
-  stageCue, stagingFor, step, type Candidate, type CueEvent, type DirectorState, type MatchState, type View,
+  stageCue, stagingFor, step, type Candidate, type CueEvent, type DirectorState, type MatchState,
+  type SpeciesPresence, type View,
 } from "../../src/game/wildlifeDirector.js";
 
 const flat = (): number => 0;
@@ -124,6 +125,19 @@ const WALKS: readonly Walk[] = [
   { name: "fast mouse turns (ungraded)", graded: false, pose: (t) => ({ yaw: 3.0 * Math.sin(t * 0.8), step: 0.14 }) },
 ];
 const day: MatchState = { phase: 0, hollowDistance: Infinity, hollowHunting: false, inWorld: true, hour: 12, mist: 0 };
+/**
+ * Clear noon: every species fully in the world. Spelled out at every call rather than
+ * defaulted inside the director, which is the point of the argument existing — a caller
+ * that forgets to say is a compile error, not a director quietly assuming the woods are
+ * full. `GONE_FOR` below is the other end of it.
+ */
+const PRESENT: SpeciesPresence = new Array<number>(SPECIES_COUNT).fill(1);
+/** As `PRESENT`, but with one species faded out of the world entirely. */
+function goneFor(species: number): SpeciesPresence {
+  const p = [...PRESENT];
+  p[species] = 0;
+  return p;
+}
 
 describe("the on-screen predicate", () => {
   it("is inside the cone with a margin, within notice, nearer than the hide range, and not behind terrain", () => {
@@ -332,14 +346,14 @@ describe("cues", () => {
     const edge = at(1.1, 20);
     const behind = { id: 9, species: chosen, x: edge.x, y: 1, z: edge.z, moveX: edge.x, moveZ: edge.z, moveR: 0, onScreen: false, phase: PHASE_REST, owned: false };
 
-    expect(stageCue(s, view(), flat, [behind], day, tick, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [behind], PRESENT, day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("drive");
     expect(out[0]).toMatchObject({ id: 9 });
 
     // Another species is no use to this cue, so it places one of its own instead.
     out.length = 0;
     const other = { ...behind, species: chosen === SPECIES_ELK ? SPECIES_DEER : SPECIES_ELK };
-    expect(stageCue(s, view(), flat, [other], day, tick, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [other], PRESENT, day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("place");
     expect(out[0]).toMatchObject({ species: chosen });
 
@@ -347,13 +361,13 @@ describe("cues", () => {
     out.length = 0;
     const far = at(1.1, RECYCLE + 10);
     const distant = { ...behind, x: far.x, z: far.z, moveX: far.x, moveZ: far.z };
-    expect(stageCue(s, view(), flat, [distant], day, tick, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [distant], PRESENT, day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("place");
 
     // Nor is one the player is looking straight at.
     out.length = 0;
     const inFrame = { ...behind, x: 0, z: 10, moveX: 0, moveZ: 10, onScreen: true };
-    expect(stageCue(s, view(), flat, [inFrame], day, tick, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [inFrame], PRESENT, day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("place");
 
     // Nor — and this is the whole margin — one sitting in the slack just past the frame's
@@ -365,12 +379,12 @@ describe("cues", () => {
     const inMargin = { ...behind, x: halfW * 10, z: 10, y: 1, moveX: halfW * 10, moveZ: 10 };
     expect(onScreen(view(), flat, inMargin, 0)).toBe(false);
     expect(placementValid(view(), flat, inMargin.x, inMargin.y, inMargin.z, 0)).toBe(false);
-    expect(stageCue(s, view(), flat, [inMargin], day, tick, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [inMargin], PRESENT, day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("place");
 
     // With nothing at all, a placement — and it starts somewhere the player cannot see.
     out.length = 0;
-    expect(stageCue(s, view(), flat, [], day, tick, 3, out)).toBe(true);
+    expect(stageCue(s, view(), flat, [], PRESENT, day, tick, 3, out)).toBe(true);
     const placed = out[0]!;
     expect(placed.kind).toBe("place");
     if (placed.kind === "place") expect(placementValid(view(), flat, placed.x, placed.y, placed.z, 0)).toBe(true);
@@ -396,7 +410,7 @@ describe("cues", () => {
       // one is never placed — and with only two of them among six cueable species and
       // four distinct draws to spend, a beat always finds something it can hide.
       out.length = 0;
-      expect(stageCue(s, v, flat, [], day, tick, 5, out)).toBe(true);
+      expect(stageCue(s, v, flat, [], PRESENT, day, tick, 5, out)).toBe(true);
       const e = out[0]!;
       expect(e.kind).toBe("place");
       if (e.kind !== "place") continue;
@@ -429,6 +443,68 @@ describe("cues", () => {
     );
   });
 
+  it("stages nothing of a species that cannot be seen right now, and redraws onto one that can", () => {
+    // The fourth and last of the ways this director could stage, or take credit for, an
+    // animal nobody can see — the other three being a species with no model, a species
+    // whose pool slot is always declined, and a faded unit still offered as a candidate.
+    // This is the one the other three do not cover: a species faded out of the world
+    // entirely can still be PLACED, because a placement invents a fresh animal and so needs
+    // no candidate. The butterfly is the case that made it reachable in clear weather,
+    // since it is the only species with a time-of-day axis of its own.
+    const s = createDirectorState(3);
+    s.sinceSighting = 20; s.targetGap = 5;
+    // A tick whose first draw IS the butterfly, so the beat has to deal with it rather than
+    // sidestepping it. Nothing is in view, so a placement is the only way to satisfy it.
+    const tick = tickDrawing(s, 3, 100, (sp) => sp === SPECIES_BUTTERFLY);
+    expect(pickSpecies(s, hash3(3, tick, 2, 0))).toBe(SPECIES_BUTTERFLY);
+
+    // With every species present, the beat places the butterfly it drew.
+    const out: CueEvent[] = [];
+    expect(stageCue(s, view(), flat, [], PRESENT, day, tick, 3, out)).toBe(true);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ kind: "place", species: SPECIES_BUTTERFLY });
+
+    // With the butterfly faded out — night, or rain — the same beat at the same tick
+    // stages something else instead. Not nothing: a species the woods cannot produce right
+    // now costs a REDRAW, not the beat, which is the whole reason `CUE_DRAWS` exists.
+    const s2 = createDirectorState(3);
+    s2.sinceSighting = 20; s2.targetGap = 5;
+    const out2: CueEvent[] = [];
+    expect(stageCue(s2, view(), flat, [], goneFor(SPECIES_BUTTERFLY), day, tick, 3, out2)).toBe(true);
+    expect(out2).toHaveLength(1);
+    expect(out2[0]).not.toMatchObject({ species: SPECIES_BUTTERFLY });
+
+    // And it is not merely the butterfly: fade every species and the beat stages nothing at
+    // all rather than putting an invisible animal into a pool slot.
+    const s3 = createDirectorState(3);
+    s3.sinceSighting = 20; s3.targetGap = 5;
+    const out3: CueEvent[] = [];
+    const none: SpeciesPresence = new Array<number>(SPECIES_COUNT).fill(0);
+    expect(stageCue(s3, view(), flat, [], none, day, tick, 3, out3)).toBe(false);
+    expect(out3).toHaveLength(0);
+
+    // A DRIVE is refused on the same grounds, not just a place. In the running game a faded
+    // unit never reaches the candidate list at all, so this is the second lock on the same
+    // door rather than the only one — but a caller that offered one anyway must not get an
+    // invisible animal walked across the frame for it.
+    const s4 = createDirectorState(3);
+    s4.sinceSighting = 20; s4.targetGap = 5;
+    const rabbitTick = tickDrawing(s4, 3, 100, (sp) => sp === SPECIES_RABBIT);
+    const near = at(1.1, 12);
+    const hidden: Candidate = {
+      id: 9, species: SPECIES_RABBIT, x: near.x, y: 0.3, z: near.z,
+      moveX: near.x, moveZ: near.z, moveR: 0, onScreen: false, phase: PHASE_REST, owned: false,
+    };
+    const out4: CueEvent[] = [];
+    expect(stageCue(s4, view(), flat, [hidden], PRESENT, day, rabbitTick, 3, out4)).toBe(true);
+    expect(out4[0]).toMatchObject({ kind: "drive", id: 9 });
+    const s5 = createDirectorState(3);
+    s5.sinceSighting = 20; s5.targetGap = 5;
+    const out5: CueEvent[] = [];
+    stageCue(s5, view(), flat, [hidden], goneFor(SPECIES_RABBIT), day, rabbitTick, 3, out5);
+    for (const e of out5) expect(e).not.toMatchObject({ kind: "drive", id: 9 });
+  });
+
   it("never cues a loop flier at all: the whole circle has to be hidden and no such place is in reach", () => {
     // `placeable` already refuses to PLACE a raven pair, a gull flock or an eagle, because a
     // circle twenty to a hundred and forty metres across has nowhere to appear unseen. No
@@ -457,7 +533,7 @@ describe("cues", () => {
           const x = r * Math.sin(bearing), z = r * Math.cos(bearing);
           const flock: Candidate = { id: 9, species, x, y, z, moveX: x, moveZ: z, moveR, onScreen: false, phase: PHASE_REST, owned: false };
           out.length = 0;
-          stageCue(s, view(), flat, [flock], day, tick, 3, out);
+          stageCue(s, view(), flat, [flock], PRESENT, day, tick, 3, out);
           for (const event of out) expect(event.kind).not.toBe("drive");
         }
       }
@@ -482,7 +558,7 @@ describe("cues", () => {
     expect(placementValid(view(), flat, flock.x, flock.y, flock.z, 0)).toBe(true);
     expect(placementValid(view(), flat, flock.moveX, flock.y, flock.moveZ, 0)).toBe(false);
     const out: CueEvent[] = [];
-    stageCue(s, view(), flat, [flock], day, tick, 3, out);
+    stageCue(s, view(), flat, [flock], PRESENT, day, tick, 3, out);
     for (const event of out) expect(event).not.toMatchObject({ kind: "drive", id: 9 });
   });
 
@@ -492,19 +568,19 @@ describe("cues", () => {
     s.sinceSighting = 20; s.targetGap = 5;
     const tick = tickDrawing(s, 3, 100, (sp) => !LOOP_FLIERS.includes(sp));
     // Quiet: the chase owns the player's attention, so nothing is staged however overdue.
-    step(s, view(), flat, [], { ...day, phase: 1 }, 1 / 60, tick, 3, out);
+    step(s, view(), flat, [], PRESENT, { ...day, phase: 1 }, 1 / 60, tick, 3, out);
     expect(out).toHaveLength(0);
     // Due, but the previous beat's wait has not run out yet.
     s.nextTry = 10_000;
-    step(s, view(), flat, [], day, 1 / 60, tick, 3, out);
+    step(s, view(), flat, [], PRESENT, day, 1 / 60, tick, 3, out);
     expect(out).toHaveLength(0);
     // Due and free.
     s.nextTry = 0;
-    step(s, view(), flat, [], day, 1 / 60, tick, 3, out);
+    step(s, view(), flat, [], PRESENT, day, 1 / 60, tick, 3, out);
     expect(out).toHaveLength(1);
     // And having arranged one, it does not arrange another on the very next frame.
     out.length = 0;
-    step(s, view(), flat, [], day, 1 / 60, tick + 1, 3, out);
+    step(s, view(), flat, [], PRESENT, day, 1 / 60, tick + 1, 3, out);
     expect(out).toHaveLength(0);
   });
 
@@ -514,9 +590,9 @@ describe("cues", () => {
     // A hundred metres behind the player: well past 1.5x the fifteen a rabbit reads at.
     const gone: Candidate = { id: DIRECTOR_ID_BASE + 1, species: SPECIES_RABBIT, x: 0, y: 0.3, z: -100, moveX: 0, moveZ: -100, moveR: 0, onScreen: false, phase: PHASE_REST, owned: true };
     expect(Math.abs(gone.z)).toBeGreaterThan(REMOVE_FACTOR * NOTICE[SPECIES_RABBIT]!);
-    for (let i = 0; i < REMOVE_SECONDS * 10 - 1; i++) step(s, view(), flat, [gone], day, 0.1, 100, 3, out);
+    for (let i = 0; i < REMOVE_SECONDS * 10 - 1; i++) step(s, view(), flat, [gone], PRESENT, day, 0.1, 100, 3, out);
     expect(out.filter((e) => e.kind === "remove")).toHaveLength(0);
-    for (let i = 0; i < 2; i++) step(s, view(), flat, [gone], day, 0.1, 100, 3, out);
+    for (let i = 0; i < 2; i++) step(s, view(), flat, [gone], PRESENT, day, 0.1, 100, 3, out);
     expect(out.filter((e) => e.kind === "remove")).toEqual([{ kind: "remove", id: gone.id }]);
 
     // A unit of the field's own making is never the director's to take away, and a pool
@@ -534,7 +610,7 @@ describe("cues", () => {
     for (const held of [fieldMade, { ...gone, phase: PHASE_CUE }]) {
       const s2 = createDirectorState(3);
       const out2: CueEvent[] = [];
-      for (let i = 0; i < REMOVE_SECONDS * 120; i++) step(s2, view(), flat, [held], day, 1 / 60, 100, 3, out2);
+      for (let i = 0; i < REMOVE_SECONDS * 120; i++) step(s2, view(), flat, [held], PRESENT, day, 1 / 60, 100, 3, out2);
       expect(out2.filter((e) => e.kind === "remove")).toHaveLength(0);
     }
   });
@@ -571,7 +647,7 @@ describe("cues", () => {
         const v = view(p.yaw, x, z);
         out.length = 0;
         const logged = s.logCount;
-        step(s, v, flat, units, day, 0.1, tick, SEED, out);
+        step(s, v, flat, units, PRESENT, day, 0.1, tick, SEED, out);
         // One unpaid cue at a time. A cue that has already been seen may be walked over the
         // top of, and so may one the beat has given up waiting on — but while a fresh cue is
         // still on its way in, a second animal must not be sent out on top of it.
@@ -722,7 +798,7 @@ describe("cues", () => {
     // The chase owns the player's attention, so `step` observes and sweeps but never stages:
     // this is the path every frame of a real match takes between cues.
     const chase: MatchState = { ...day, phase: 1 };
-    for (let i = 0; i < 20_000; i++) step(s, view(), flat, units, chase, 1 / 60, i, 5, out);
+    for (let i = 0; i < 20_000; i++) step(s, view(), flat, units, PRESENT, chase, 1 / 60, i, 5, out);
     expect(pushed).not.toHaveBeenCalled();
     expect(out).toHaveLength(0);
     pushed.mockRestore();
@@ -734,7 +810,7 @@ describe("cues", () => {
     for (let tick = 0; tick < 2000 * 60; tick += 6) {
       rabbit.z = (tick / 60) % 4 < 2 ? 8 : 500;
       out.length = 0;
-      step(s, view(), flat, units, day, 0.1, tick, 5, out);
+      step(s, view(), flat, units, PRESENT, day, 0.1, tick, 5, out);
     }
     expect(s.logCount).toBeGreaterThan(s.log.length / 2);
     expect(s.log).toBe(log);
