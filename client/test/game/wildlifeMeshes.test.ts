@@ -8,7 +8,8 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import "../../src/sim/passes/index.js";
-import { elevationSampleAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { elevationAt, elevationSampleAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { SIM_TICK_HZ } from "../../src/sim/constants.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import type { WeatherParams } from "../../src/game/weather.js";
 import { fadeWeight } from "../../src/game/distanceFadePlugin.js";
@@ -21,8 +22,9 @@ import {
 } from "../../src/game/wildlifeField.js";
 import {
   BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, birdBucketOmega, birdLodMeshes, createWildlifeMeshes,
-  SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
+  isDirectorPoolId, SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
 } from "../../src/game/wildlifeMeshes.js";
+import { GAP, LEAD, STILL_RELAX, type MatchState, type View } from "../../src/game/wildlifeDirector.js";
 import type { ClipRole, CreatureInstance, CreaturePool } from "../../src/game/creatureModel.js";
 
 setActiveTerrainVariant("olympic");
@@ -38,6 +40,16 @@ const CAM_Z = -500;
 /** One player, parked far enough away that nothing ever reacts to it. */
 const FAR_AWAY = [{ x: 1e6, z: 1e6 }];
 const GROUND_ASSETS = ["wildlife.elk", "wildlife.deer", "wildlife.rabbit", "wildlife.squirrel"];
+/**
+ * A point with no ground-species unit anywhere in any species' disc — flat
+ * water far from the trail. The director's own field of candidates is empty
+ * here, so any sighting the tests below see can only be a unit the director
+ * itself placed or drove: nothing natural is ever already sitting in frame to
+ * confuse the two.
+ */
+const QUIET_X = -10000;
+const QUIET_Z = -8000;
+const DAY_MATCH: MatchState = { phase: 0, hollowDistance: Infinity, hollowHunting: false, inWorld: true, hour: 12, mist: 0 };
 
 /**
  * A pool that records what the shell asks of it and hands back bare nodes.
@@ -337,6 +349,108 @@ describe("createWildlifeMeshes", () => {
     // negative and inflate the animals inside out on the way back.
     w.update(herd!.x, herd!.z, 1200, FAR_AWAY, WEATHER_PRESETS.eerie, 12);
     for (const rec of acquired.values()) expect(rec.root.scaling.x).toBe(0);
+    w.dispose();
+    engine.dispose();
+  });
+});
+
+describe("the wildlife director", () => {
+  it("never runs, and never creates a pool unit, without a seventh argument", () => {
+    // The negative made unambiguous: not "the log happened to stay empty this
+    // run" (which also passes with the director wired up but simply unlucky)
+    // but "the director is never called at all" — checked the only two ways
+    // that is externally visible, however long the shell is driven.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool, acquired } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    for (let tick = 0; tick < 900; tick++) {
+      w.update(CAM_X, CAM_Z, tick, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    }
+    expect(w.directorLog()).toHaveLength(0);
+    for (const key of acquired.keys()) expect(isDirectorPoolId(Math.floor(key / SLOT_STRIDE))).toBe(false);
+    w.dispose();
+    engine.dispose();
+  });
+
+  it("relaxes for a still player: the first sighting lands no earlier than the relaxed floor", () => {
+    // The positive that replaces "the log stayed empty for 900 ticks" — which
+    // cannot tell a quiet cadence from a director that never ran at all, and
+    // whose 900 ticks (15 s) sit inside the very band ([9, 18] s relaxed) the
+    // test is trying to say something about, so whether anything fires is a
+    // coin flip on the jittered draw. This drives a genuinely still player
+    // (the view never moves) at the quiet point, where nothing natural is
+    // ever already on screen, so the first log entry can only be the
+    // director's own cue landing — and asserts its tick is at or beyond the
+    // floor the relaxation can least be: GAP[0] * STILL_RELAX - LEAD, the
+    // smallest the staging threshold can ever be once the player is credited
+    // as still (stillFor and sinceSighting climb in lockstep from a fresh
+    // director, so the still relaxation is already in force by the time
+    // sinceSighting could reach even this floor). Without STILL_RELAX the
+    // same floor is GAP[0] - LEAD = 3 s, so a broken relaxation fails this
+    // comfortably rather than by luck.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    const view: View = { x: QUIET_X, y: elevationAt(SEED, QUIET_X, QUIET_Z) + 1.7, z: QUIET_Z, yaw: 0, pitch: 0, fov: 1.4, aspect: 16 / 9 };
+    let tick = 0;
+    for (; tick < 6000 && w.directorLog().length === 0; tick++) {
+      w.update(QUIET_X, QUIET_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    }
+    const log = w.directorLog();
+    expect(log.length).toBeGreaterThan(0);
+    const floor = GAP[0] * STILL_RELAX - LEAD;
+    expect(log[0]! / SIM_TICK_HZ).toBeGreaterThanOrEqual(floor);
+    w.dispose();
+    engine.dispose();
+  });
+
+  it("places a unit where none is in reach, keeps it through a rebuild, logs it once seen, and gives it back once far and done", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool, acquired } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    const view: View = { x: QUIET_X, y: elevationAt(SEED, QUIET_X, QUIET_Z) + 1.7, z: QUIET_Z, yaw: 0, pitch: 0, fov: 1.4, aspect: 16 / 9 };
+    let tick = 0;
+    let placedKey = -1;
+    // Nothing natural exists here to drive, so the first thing the director
+    // ever does is place one — the only path exercised by this test.
+    for (; tick < 3600 && placedKey < 0; tick++) {
+      w.update(QUIET_X, QUIET_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+      for (const key of acquired.keys()) {
+        if (isDirectorPoolId(Math.floor(key / SLOT_STRIDE))) { placedKey = key; break; }
+      }
+    }
+    expect(placedKey).toBeGreaterThan(0);
+
+    // A disc rebuild (past WILDLIFE_REBUILD_STEP of camera travel) must not
+    // drop it — it is not part of the seeded field the rebuild's `keep` set
+    // is built from, and dropping it here would vanish it mid-cue.
+    w.update(QUIET_X + WILDLIFE_REBUILD_STEP + 0.5, QUIET_Z, tick++, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    expect(acquired.has(placedKey)).toBe(true);
+
+    // Sweep the view onto exactly where it was rendered and hold it there
+    // until the log records it — the shell's own candidate, not a guess at
+    // the director's private event.
+    const pos = acquired.get(placedKey)!.root.position;
+    const before = w.directorLog().length;
+    for (let t = 0; t < 600 && w.directorLog().length === before; t++, tick++) {
+      view.yaw = Math.atan2(pos.x - view.x, pos.z - view.z);
+      w.update(QUIET_X, QUIET_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    }
+    expect(w.directorLog().length).toBeGreaterThan(before);
+
+    // Walk the view far away and hold it there: past REMOVE_FACTOR times what
+    // the species reads at, for REMOVE_SECONDS, and the pool slot comes back.
+    view.x = QUIET_X + 2000;
+    view.z = QUIET_Z + 2000;
+    let removedAt = -1;
+    for (let t = 0; t < 3600 && removedAt < 0; t++, tick++) {
+      w.update(view.x, view.z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+      if (!acquired.has(placedKey)) removedAt = tick;
+    }
+    expect(removedAt).toBeGreaterThan(0);
     w.dispose();
     engine.dispose();
   });

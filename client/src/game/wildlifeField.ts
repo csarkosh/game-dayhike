@@ -52,6 +52,16 @@ export const WILDLIFE_CELL: readonly number[] = [96, 64, 32, 24, 4 * TREE_CELL, 
 export const WILDLIFE_RADIUS: readonly number[] = [150, 150, 60, 50, 400, 400, 400, 400, 40];
 /** Seeded presence draw per gated cell — starting points. */
 export const WILDLIFE_D: readonly number[] = [0.35, 0.5, 0.6, 0.5, 0.25, 0.4, 0.7, 0.6];
+/**
+ * How many pool slots the shell reserves per species for the wildlife director's placed
+ * animals — the resource the director's `place` events draw from, since the director itself
+ * only decides WHAT to place, never how many units of it may exist at once. Indexed like
+ * every other per-species table here, the butterfly's ninth entry included, though only
+ * elk, deer, rabbit, squirrel and the butterfly (`placeable` in wildlifeDirector.ts) ever
+ * draw from theirs — a loop flier is only ever driven, never placed, so its slots stand
+ * unused until a future change lets one be.
+ */
+export const DIRECTOR_POOL: readonly number[] = [1, 1, 2, 2, 2, 2, 2, 2, 3];
 export const WILDLIFE_MEMBERS: readonly (readonly [number, number])[] = [[4, 8], [1, 2], [2, 4], [1, 1], [3, 7], [2, 2], [3, 6], [1, 2]];
 /** Member spread around the anchor (m) for ground species. Zero for everything that flies,
  * the butterfly at index 8 included: a flier's members are spread around its loop rather

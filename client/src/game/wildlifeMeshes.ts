@@ -24,22 +24,26 @@ import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 import { hash3 } from "../sim/field.js";
-import { elevationSampleAt } from "../sim/terrain.js";
-import { SIM_TICK_HZ } from "../sim/constants.js";
+import { elevationAt, elevationSampleAt } from "../sim/terrain.js";
+import { SIM_TICK_HZ, TICK_DT } from "../sim/constants.js";
 import type { WeatherParams } from "./weather.js";
 import { modelUrl } from "./assetUrls.js";
 import { seatOnGround } from "./groundTilt.js";
 import { fadeWeight } from "./distanceFadePlugin.js";
 import { attachWing, WING_TIME_WRAP } from "./wingPlugin.js";
 import {
-  createWildlifeCollector, FIRST_BIRD_SPECIES, SPECIES_COUNT, SPECIES_DEER, SPECIES_ELK,
-  SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, WILDLIFE_RADIUS,
+  createWildlifeCollector, DIRECTOR_POOL, FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_DEER,
+  SPECIES_ELK, SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, WILDLIFE_RADIUS, type WildlifeUnit,
 } from "./wildlifeField.js";
 import {
-  createUnitState, PHASE_REST, stepUnit, wildlifePresenceUnder,
+  createUnitState, PHASE_REST, startCue, stepUnit, wildlifePresenceUnder,
   type PlayerPoint, type UnitState, type WildlifeEvent,
 } from "./wildlifeBehaviour.js";
 import { createCreaturePool, type CreatureInstance, type CreaturePool } from "./creatureModel.js";
+import {
+  createDirectorState, DIRECTOR_ID_BASE, onScreen, PLACE_BODY_H, step as stepDirector,
+  type Candidate, type CueEvent, type Ground, type MatchState, type View,
+} from "./wildlifeDirector.js";
 
 /**
  * Catalog ids per species; null for the four bird species, which render as
@@ -148,6 +152,36 @@ export const PRESENCE_RAMP_SECONDS = 3;
  */
 export const SLOT_STRIDE = 16;
 /**
+ * Stride between one species' director-pool ids and the next, above
+ * `DIRECTOR_ID_BASE`: `id = DIRECTOR_ID_BASE + species * DIRECTOR_POOL_STRIDE + slot`.
+ * Comfortably above the largest `DIRECTOR_POOL` entry (3), the same margin
+ * `SLOT_STRIDE` keeps over the largest member count, so no species' pool
+ * slots ever reach into the next species' ids.
+ */
+const DIRECTOR_POOL_STRIDE = 16;
+/**
+ * One past the highest id any director pool unit can ever take —
+ * `DIRECTOR_ID_BASE` plus every species' worth of `DIRECTOR_POOL_STRIDE`
+ * slots. NOT the same test as `id >= DIRECTOR_ID_BASE`, and the difference
+ * matters: `wildlifeField.ts`'s packed unit id carries `cellX`/`cellZ` biased
+ * by `CELL_ID_BIAS` (8192) before the species bits, so a natural unit
+ * anywhere near the world's own origin already has an id north of 2^30 —
+ * comfortably PAST `DIRECTOR_ID_BASE` (2^28) on its own, `>=` alone cannot
+ * tell it apart from a placed animal. Measured on the disc around (2000,
+ * -500): every one of 54 natural units carries an id between 1.075 and
+ * 1.085 billion. `isDirectorPoolId` narrows the test to the ~150-wide window
+ * the shell itself ever hands out, which no real cell's packed id lands
+ * inside without the camera standing some 500+ km from the origin — "orders
+ * of magnitude beyond anywhere a player reaches" (wildlifeField.ts's own
+ * words about the packing's alias bound).
+ */
+const DIRECTOR_POOL_ID_CEILING = DIRECTOR_ID_BASE + DIRECTOR_POOL.length * DIRECTOR_POOL_STRIDE;
+/** Whether `id` is one this shell's own director pool could have handed out — see
+ * `DIRECTOR_POOL_ID_CEILING`. */
+export function isDirectorPoolId(id: number): boolean {
+  return id >= DIRECTOR_ID_BASE && id < DIRECTOR_POOL_ID_CEILING;
+}
+/**
  * An undrained `events` backlog is dropped at this length rather than grown
  * without bound. `events` is cleared by its consumer (the audio shell),
  * never here — see `update` — so a build with no consumer wired would otherwise
@@ -189,6 +223,14 @@ export type WildlifeMeshes = {
     players: readonly PlayerPoint[],
     weather: WeatherParams,
     hour: number,
+    /**
+     * The wildlife director's view of this frame, when the caller has one:
+     * the camera it judges visibility against and the match state it goes
+     * quiet under. Omitted — every test that does not pass it, and any world
+     * with no camera to speak of — the director never runs at all: no cue is
+     * ever staged and no pool unit is ever created. See wildlifeDirector.ts.
+     */
+    director?: { view: View; match: MatchState },
   ): void;
   /**
    * Calls, lifts and flee starts, appended as they happen and never cleared
@@ -198,6 +240,14 @@ export type WildlifeMeshes = {
    * `stepUnit` out of the events IT appended, before returning.
    */
   readonly events: WildlifeEvent[];
+  /**
+   * The director's own sighting log, read straight off its `DirectorState`:
+   * `(tick, species)` pairs in the order they were recorded, oldest first, up
+   * to the ring's own capacity (see wildlifeDirector.ts's `createDirectorState`)
+   * — a test seam, and empty for as long as `update` has never been given a
+   * seventh argument.
+   */
+  directorLog(): readonly number[];
   dispose(): void;
 };
 
@@ -341,6 +391,22 @@ export function createWildlifeMeshes(
   // reuses the same point objects instead of allocating on the per-frame path.
   const disturbPool: { x: number; z: number }[] = [];
   const disturbances: PlayerPoint[] = [];
+  // The wildlife director: its own state (the sighting clock and log), the
+  // ground function it judges line of sight against (closed over `seed` once,
+  // never rebuilt), and the candidate list `update` rebuilds from `states`
+  // each frame it runs at all. `candidatePool` holds the actual objects,
+  // grown by need and never shrunk — the `disturbPool` idiom above, applied
+  // to a list rebuilt from a Map instead of an events array — so a steady
+  // disc allocates nothing here once it has grown to its high-water mark.
+  // `directorEvents` is reused the same way. `lastDirectorTick` starts at -1
+  // so the first director frame takes a sane default `dt` instead of reading
+  // a nonsensical span back from before the shell existed.
+  const directorState = createDirectorState(seed);
+  const ground: Ground = (x, z) => elevationAt(seed, x, z);
+  const candidatePool: Candidate[] = [];
+  const candidates: Candidate[] = [];
+  const directorEvents: CueEvent[] = [];
+  let lastDirectorTick = -1;
   const scratchQ = new Quaternion();
   const scratchScale = new Vector3();
   const scratchPos = new Vector3();
@@ -483,11 +549,144 @@ export function createWildlifeMeshes(
     }
     for (const [id, u] of [...states]) {
       if (keep.has(id)) continue;
+      // A director pool unit is not part of the seeded field the collector
+      // walks, so it is never in `keep` — that is not the same as having left
+      // the disc. It lives until the director's own `remove` event gives it
+      // back (see `applyDirectorEvent`), or a cue mid-flight staged out of the
+      // fog would vanish the moment the camera crossed a rebuild step. Tested
+      // with `isDirectorPoolId`, not a bare `id >= DIRECTOR_ID_BASE`: a real
+      // field id is routinely north of that on its own (see the constant's
+      // own comment), and the broad test would keep every far natural unit
+      // alive forever instead of only the shell's own placed ones.
+      if (isDirectorPoolId(id)) continue;
       releaseUnit(u);
       states.delete(id);
     }
     birdList.length = 0;
     for (const u of states.values()) if (u.unit.species >= FIRST_BIRD_SPECIES) birdList.push(u);
+  }
+
+  /** True for the four species whose members are spread around a flown loop rather than a
+   * point on the ground — the ones `poseBirds` runs for and whose full circle the
+   * never-on-screen invariant has to cover (see `Candidate` in wildlifeDirector.ts). The
+   * butterfly is species-numbered among the birds but has no loop of its own — placed and
+   * driven like a mammal — so it is named out here explicitly rather than by the
+   * `FIRST_BIRD_SPECIES` cutoff alone. */
+  function isLoopFlier(species: number): boolean {
+    return species >= FIRST_BIRD_SPECIES && species !== SPECIES_BUTTERFLY;
+  }
+
+  /**
+   * The lowest free director-pool slot for `species`, or -1 once every slot
+   * `DIRECTOR_POOL` allows it is already a live id in `states`. Read straight
+   * off `states` rather than a separate count, so a slot freed by a `remove`
+   * event is immediately available again with nothing else to keep in sync.
+   */
+  function poolSlotFor(species: number): number {
+    const capacity = DIRECTOR_POOL[species] ?? 0;
+    for (let slot = 0; slot < capacity; slot++) {
+      if (!states.has(DIRECTOR_ID_BASE + species * DIRECTOR_POOL_STRIDE + slot)) return slot;
+    }
+    return -1;
+  }
+
+  /**
+   * Carries out a director `place` event: takes the lowest free pool slot for
+   * the species, builds it a `WildlifeUnit` at the event's own point — `h` is
+   * recovered from the `y` the director validated line of sight to, since
+   * `PLACE_BODY_H` is the fixed offset `startFor` added going the other way —
+   * and sends the new unit straight into its cue. Silently declines when the
+   * species' pool is already full: `RECYCLE`/`REMOVE_SECONDS` keep pool churn
+   * low enough that this should not bind in practice, and a beat that cannot
+   * be carried out is no worse than one the director never staged.
+   */
+  function applyPlace(e: Extract<CueEvent, { kind: "place" }>, tick: number): void {
+    const slot = poolSlotFor(e.species);
+    if (slot < 0) return;
+    const id = DIRECTOR_ID_BASE + e.species * DIRECTOR_POOL_STRIDE + slot;
+    const h = e.y - PLACE_BODY_H;
+    const unit: WildlifeUnit = {
+      species: e.species, id, cellX: 0, cellZ: 0,
+      x: e.x, z: e.z, h,
+      members: 1,
+      refugeX: e.x, refugeZ: e.z,
+      homeX: e.x, homeZ: e.z, homeH: h,
+      homeScale: 1, altitude: 0, radius: 0,
+      hash: 0, presenceDraw: 0,
+    };
+    const u = createUnitState(unit, tick, seed);
+    startCue(u, e.goalX, e.goalZ, e.run, tick);
+    states.set(id, u);
+  }
+
+  /**
+   * Carries out one of the director's three event kinds against `states`.
+   *
+   * A `remove` is honoured only for an id `isDirectorPoolId` recognises as
+   * the shell's own — a defensive floor under `DIRECTOR_ID_BASE`'s own gap
+   * from the real field (see `DIRECTOR_POOL_ID_CEILING`): every packed field
+   * id near any position a player actually reaches already sits well past
+   * `DIRECTOR_ID_BASE`, so wildlifeDirector.ts's own `sweepRemovals` — which
+   * knows only the bare threshold, not this shell's tighter window — can name
+   * a natural unit that has simply wandered off screen. Releasing THAT unit's
+   * pool slot would be a no-op (it never had one), but deleting it from
+   * `states` would erase a real animal's whole behaviour outright: gone until
+   * the next disc rebuild recreates it from scratch, at its ORIGINAL spawn
+   * point rather than wherever it had gotten to — which, if the player is
+   * looking anywhere near there when the disc next rebuilds, is exactly the
+   * appearing-from-nowhere this feature exists to prevent. A `drive` carries
+   * no matching risk and is deliberately not guarded the same way: driving a
+   * natural unit into view is the preferred half of every cue, not a bug.
+   */
+  function applyDirectorEvent(e: CueEvent, tick: number): void {
+    if (e.kind === "place") { applyPlace(e, tick); return; }
+    const u = states.get(e.id);
+    if (u === undefined) return; // the unit it named already left some other way
+    if (e.kind === "drive") { startCue(u, e.goalX, e.goalZ, e.run, tick); return; }
+    if (!isDirectorPoolId(e.id)) return;
+    releaseUnit(u);
+    states.delete(e.id);
+  }
+
+  /**
+   * Rebuilds `candidates` from `states` for the director to look at this
+   * frame — reusing the objects in `candidatePool` rather than allocating new
+   * ones, the `disturbPool` idiom. A loop flier is seated on its LEAD BIRD's
+   * pose, not its loop centre: `x/y/z` is what the invariant judges, and for a
+   * flock that is the nearest bird, not a point that can sit a hundred metres
+   * from any of them. Everything else — a mammal, the butterfly, a placed
+   * pool unit — has no loop, so its own position IS its anchor and `moveR` is
+   * zero. A flier not yet posed (the one tick between `createUnitState` and
+   * its first `stepUnit`) is skipped outright rather than read off its
+   * ground-seated placeholder, which would report it at ground level: the
+   * same call this file already makes for a bird's very first scheduled call.
+   */
+  function buildCandidates(view: View, mist: number): void {
+    candidates.length = 0;
+    let i = 0;
+    for (const u of states.values()) {
+      const flier = isLoopFlier(u.unit.species);
+      if (flier && !u.posed) continue;
+      let c = candidatePool[i];
+      if (c === undefined) {
+        c = { id: 0, species: 0, x: 0, y: 0, z: 0, onScreen: false, phase: 0, moveX: 0, moveZ: 0, moveR: 0 };
+        candidatePool[i] = c;
+      }
+      c.id = u.unit.id;
+      c.species = u.unit.species;
+      c.phase = u.phase;
+      if (flier) {
+        const lead = u.poses[0]!;
+        c.x = lead.x; c.y = lead.y; c.z = lead.z;
+        c.moveX = u.x; c.moveZ = u.z; c.moveR = u.unit.radius;
+      } else {
+        c.x = u.x; c.y = u.y; c.z = u.z;
+        c.moveX = u.x; c.moveZ = u.z; c.moveR = 0;
+      }
+      c.onScreen = onScreen(view, ground, c, mist);
+      candidates.push(c);
+      i++;
+    }
   }
 
   /**
@@ -671,7 +870,7 @@ export function createWildlifeMeshes(
 
   return {
     events,
-    update(camX, camZ, tick, players, weather, hour) {
+    update(camX, camZ, tick, players, weather, hour, director) {
       if (events.length > EVENT_BACKLOG_CAP) events.length = 0;
       const eventsBefore = events.length;
       const dx = camX - lastX;
@@ -737,6 +936,33 @@ export function createWildlifeMeshes(
       // `events` between updates cannot silently break the one cross-species
       // reaction wildlife has.
       captureDisturbances(eventsBefore);
+
+      // The director, last: it reads this frame's freshly stepped `states`
+      // to build its candidates, and any unit it places or re-targets is
+      // picked up by `stepUnit`/`ensureSlot` starting next frame — the same
+      // one-tick lag `createUnitState`'s ground-seated placeholder already
+      // carries for a brand new bird. Without a seventh argument this whole
+      // block never runs: no candidate is built, `stepDirector` is never
+      // called, and no pool unit is ever created.
+      if (director !== undefined) {
+        const dt = lastDirectorTick === -1 ? TICK_DT : Math.max(TICK_DT, (tick - lastDirectorTick) / SIM_TICK_HZ);
+        lastDirectorTick = tick;
+        buildCandidates(director.view, director.match.mist);
+        directorEvents.length = 0;
+        stepDirector(directorState, director.view, ground, candidates, director.match, dt, tick, seed, directorEvents);
+        for (let i = 0; i < directorEvents.length; i++) applyDirectorEvent(directorEvents[i]!, tick);
+      }
+    },
+    directorLog() {
+      // The ring's own capacity, read off the log array rather than a second
+      // constant kept in step with wildlifeDirector.ts's private `RECYCLE_LOG`.
+      // Exact and in order for as long as fewer sightings than that capacity
+      // have ever been recorded, which is every caller of this test seam so
+      // far; past it the ring has begun overwriting its oldest entries, which
+      // `DirectorState.log`'s own doc already says.
+      const capacity = directorState.log.length / 2;
+      const n = Math.min(directorState.logCount, capacity);
+      return Array.from(directorState.log.subarray(0, n * 2));
     },
     dispose() {
       for (const [key, inst] of slots) {

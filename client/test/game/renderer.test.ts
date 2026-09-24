@@ -64,7 +64,8 @@ import {
 } from "../../src/game/clipmap.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import type { Level } from "../../src/sim/level.js";
-import { Outcome, Phase, type PlayerState, type WorldState } from "../../src/sim/types.js";
+import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
+import { createForest } from "../../src/sim/forest.js";
 
 let engine: NullEngine | null = null;
 
@@ -391,12 +392,23 @@ describe("world shell wiring", () => {
     const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
     expect(freecamBranch.match(/wildlife\?\.update\(/g)).toHaveLength(1);
     expect(playerBranch.match(/wildlife\?\.update\(/g)).toHaveLength(1);
+    // Both branches pass a seventh, director argument — the sibling of this
+    // exact trap in `wildlifeMeshes.ts`'s own `update`: without it the
+    // director never runs at all, on that branch, for the life of the shell.
     expect(freecamBranch).toContain(
-      "wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour);",
+      "wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);",
     );
     expect(playerBranch).toContain(
-      "wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour);",
+      "wildlife?.update(local.pos.x, local.pos.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);",
     );
+    // Each branch builds that argument's `view` from its own camera-to-be —
+    // the freecam's own fields, or the sim's local pos/yaw/pitch rather than
+    // `camera`'s still-stale-this-frame transform — and both look up the
+    // nearest Hollow before calling.
+    expect(freecamBranch).toContain("wildlifeView.x = freecam.x;");
+    expect(playerBranch).toContain("wildlifeView.x = local.pos.x;");
+    expect(freecamBranch).toContain("findHollow(state, freecam.x, freecam.z);");
+    expect(playerBranch).toContain("findHollow(state, local.pos.x, local.pos.z);");
     expect(src.match(/wildlife\?\.dispose\(\)/g)).toHaveLength(1);
   });
 
@@ -412,6 +424,64 @@ describe("world shell wiring", () => {
     // previous frame's tail.
     expect(drain).toContain("wildlifeEventDrain.length = n;");
   });
+});
+
+describe("the wildlife director goes quiet near the Hollow", () => {
+  // A real forest and a real renderer — the wind test's `forest: null` shortcut
+  // skips exactly the branch this checks, so there is no way to stay on the
+  // source-slicing side of this file for it. `PX`/`PZ` is a real position with
+  // real elk, deer, rabbit and squirrel units nearby (`wildlifeMeshes.test.ts`
+  // drives the same seed and point and gets sightings inside a minute of
+  // stillness), so a broken quiet gate has real wildlife right there to cue.
+  const SEED = 388817;
+  const PX = 2000, PZ = -500;
+  const LEVEL: Level = { id: "wildlife-hollow-test", brushes: [], playerSpawns: [], enemySpawns: [] };
+
+  function standingPlayer(id: number): PlayerState {
+    return {
+      id, pos: { x: PX, y: 1.8, z: PZ }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0,
+      health: 100, grounded: true, lastProcessedInput: 0, deathPos: null,
+      lamp: { on: false, charge: 1 }, stare: 0, safe: false,
+    };
+  }
+
+  function huntingHollowNear(id: number): EnemyState {
+    return {
+      // Within HOLLOW_QUIET (60 m) of the player, well under the brief's 50 m.
+      id, pos: { x: PX + 20, y: 0, z: PZ }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, health: 100,
+      ai: AiState.Hunt, targetId: 1, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity,
+      stuckTimer: 0, unstickTimer: 0, route: [], routeAt: 0, approach: false, seen: false,
+    };
+  }
+
+  it("logs nothing while a hunting Hollow stands within 50 m, however many frames pass", () => {
+    const canvas = {} as unknown as HTMLCanvasElement;
+    const renderer = createRenderer(canvas, LEVEL, createForest(SEED));
+    try {
+      const player = standingPlayer(1);
+      const hollow = huntingHollowNear(2);
+      const state: WorldState = {
+        tick: 0,
+        players: new Map([[player.id, player]]),
+        enemies: new Map([[hollow.id, hollow]]),
+        outcome: Outcome.Playing,
+        phase: Phase.Climb,
+        nextEntityId: 10,
+        rngSeed: 1,
+      };
+      // `relaxFor` (wildlifeDirector.ts) reads `hollowDistance < HOLLOW_QUIET`
+      // OR `hollowHunting` as an unconditional "arrange nothing" — either one
+      // alone already accounts for this scene, so a wiring defect that
+      // dropped just one of the two would still be caught here.
+      for (let tick = 0; tick < 600; tick++) {
+        state.tick = tick;
+        renderer.sync(state, 1, 0);
+      }
+      expect(renderer.wildlifeDirectorLog()).toHaveLength(0);
+    } finally {
+      renderer.dispose();
+    }
+  }, 30000);
 });
 
 describe("writeListenerPose", () => {
