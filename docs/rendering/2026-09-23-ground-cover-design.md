@@ -252,6 +252,38 @@ the two are built once:
   so a painted drift always has pieces lying on it.
 - **Naming.** In code the layer is `duff`, because `CLUTTER_LITTER` already
   names the trail-margin pebble class.
+- **The canopy floor.** The canopy ramp bottoms at
+  `CLUTTER_GRASS_CANOPY_FLOOR = 0.15`, not zero: most grass ground sits under
+  canopy, so a zero floor would have left the near field duff-only across
+  most of it instead of carrying a thin sward under even the densest trees.
+- **The interior boost's own clump size.** Section 7's thin-cell rule
+  generalises to three sizes rather than two: the blade field
+  (`bladeField.ts`'s `bladeSizeFor`) chooses a cell's clump as thin, base or
+  full from its own cover, with the choice inside each band dithered by the
+  cell's draw so no contour of clump size ever forms across the field. Thin
+  realises the section 7 rule; full is the new size the interior boost
+  earns, so a boosted cell reads as fuller clumps standing in richer ground
+  rather than only more of the same clump crowding the same spot.
+- **Duff clears the road.** The floor duff term ramps out over
+  `CLUTTER_DUFF_ROAD_CLEAR` metres inside the grass's own road edge, so the
+  litter never reaches the asphalt, which is painted by its own system.
+- **The duff clumps' analytic bounds.** `duffClumpReach` and
+  `duffClumpMaxHeight` (`duffClump.ts`) are exported functions of a
+  character's own numbers — the root disc, its length range, half-width and
+  lift range — rather than a measured-and-rounded constant, so a further
+  retune of a character moves the bound with it instead of silently
+  outrunning it.
+- **The leaf's lift range.** A flat piece sitting exactly at the ground-cover
+  field's sampled height can be occluded outright by the true ground surface
+  between the eye and it on a downhill sightline — ordinary grazing-angle
+  blockage, nothing to do with z-fighting — and a piece too short to rise
+  clear of that reads as nothing at all. The leaf cluster's `lift` range
+  widened from a near-flat `[0.0, 0.12]` rad to `[0.10, 0.50]` rad for
+  exactly this reason: at the old range 0 of 20,000 sampled leaf pieces rose
+  10 mm above the ground, against 78% at the new range. The leaf remains the
+  lowest-lying character in the field by a wide margin — a 16.1 mm mean
+  per-piece rise against the twig's 26.1 mm and the branch's 40 mm — so the
+  widening reads as litter finding the eye line, not as leaves standing up.
 
 ## 13. Follow-ups
 
