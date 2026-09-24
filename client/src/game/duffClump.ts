@@ -10,10 +10,30 @@ import { BLADE_TRIS, BLADE_VERTS, createStripWriter, type StripArrays } from "./
  * (a separate piece of work) calls `duffClumpGeometry` with its own strength.
  *
  * A piece is a strip written upright by the writer, then laid down: rotated
- * about its root so its length runs along a ground direction with a small
- * lift at the far end, so twigs rest on the ground and leaves lie flat. The
+ * about its root so its length runs along a ground direction with a lift at
+ * the far end, drawn per piece from the character's own `lift` range. The
  * `blade` attribute keeps the piece's root, so the field's collapse pulls the
  * whole piece to a point exactly as it does a blade.
+ *
+ * A character's `lift` range is not free to tune by eye: a flat piece sitting
+ * exactly at the ground-cover field's sampled height can be occluded outright
+ * by the true (correctly rendered) ground surface between the eye and it —
+ * ordinary grazing-angle line-of-sight blockage on a curved slope, nothing to
+ * do with z-fighting — and a piece too short to rise clear of that reads as
+ * nothing at all rather than as litter. The leaf character's own range
+ * ([0.1, 0.5] rad) was raised from a near-flat [0.0, 0.12] for exactly this
+ * reason: at its previous range it was invisible from an ordinary downhill
+ * eye line despite every other property being correct, and only widening
+ * `lift` (not lifting its placement) fixed it, since real leaf litter reads
+ * as a lumpy scatter rather than a flat film for the same reason it survives
+ * that sightline — chosen by re-measuring visible-instance counts at a fixed
+ * pose across candidate ranges, not by arithmetic: still short of standing
+ * (twig's own `lift[1]` is 0.25 rad and reads as lying down), and the
+ * shorter, lighter leaf piece needs the extra angle to reach a comparable
+ * rise. `duffClumpReach` and `duffClumpMaxHeight` below are re-derived from
+ * this array, not hand-adjusted, so a further retune here cannot silently
+ * violate either bound — the test suite the bound holds against is the
+ * check, not this comment.
  */
 
 export const DUFF_TWIG = 0;
@@ -69,7 +89,7 @@ const DUFF_FORK_ANGLE = 0.61;
 
 export const DUFF_CHARACTERS: readonly DuffCharacter[] = [
   { name: "twig", pieces: [2, 3], length: [0.10, 0.25], width: 0.005, tint: { r: 1.0, g: 0.85, b: 0.65 }, tintSpread: 0.25, lift: [0.05, 0.25], forked: false },
-  { name: "leaf cluster", pieces: [4, 6], length: [0.04, 0.07], width: 0.022, tint: { r: 1.15, g: 0.80, b: 0.45 }, tintSpread: 0.3, lift: [0.0, 0.12], forked: false },
+  { name: "leaf cluster", pieces: [4, 6], length: [0.04, 0.07], width: 0.022, tint: { r: 1.15, g: 0.80, b: 0.45 }, tintSpread: 0.3, lift: [0.1, 0.5], forked: false },
   { name: "small branch", pieces: [1, 1], length: [0.30, 0.60], width: 0.010, tint: { r: 0.85, g: 0.70, b: 0.55 }, tintSpread: 0.2, lift: [0.02, 0.15], forked: true },
 ];
 
