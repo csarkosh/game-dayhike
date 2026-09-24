@@ -76,6 +76,15 @@ describe("terrain texture plugin", () => {
     ]));
   });
 
+  it("declares the second weight attribute and varying as vec3, duff in z", () => {
+    const plugin = pluginFor("t2b");
+    const vert = plugin.getCustomCode("vertex")!;
+    expect(vert.CUSTOM_VERTEX_DEFINITIONS).toContain("attribute vec3 terrainWeights2;");
+    expect(vert.CUSTOM_VERTEX_DEFINITIONS).toContain("varying vec3 vTerrainW2;");
+    const frag = plugin.getCustomCode("fragment")!;
+    expect(frag.CUSTOM_FRAGMENT_DEFINITIONS).toContain("varying vec3 vTerrainW2;");
+  });
+
   it("injects at the albedo hook and nowhere that would overwrite lighting", () => {
     const mat = new PBRMaterial("t3", scene);
     attachTerrainTexture(scene, mat, { groundArrays: stubArrays });
