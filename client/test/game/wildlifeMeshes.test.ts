@@ -510,7 +510,7 @@ describe("the wildlife director", () => {
     for (let species = 0; species < CUE_WEIGHT.length; species++) {
       if (CUE_WEIGHT[species]! <= 0) continue; // not cueable at all — nothing to check
       checked++;
-      expect(hasAsset(species)).toBe((DIRECTOR_POOL[species] ?? 0) > 0);
+      expect(hasAsset(species), `species ${species}: asset vs. DIRECTOR_POOL slot`).toBe((DIRECTOR_POOL[species] ?? 0) > 0);
     }
     // Guards the loop above against a `CUE_WEIGHT` that quietly went empty.
     expect(checked).toBeGreaterThan(0);

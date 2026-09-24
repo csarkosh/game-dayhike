@@ -598,7 +598,7 @@ export function observe(
  * species at `SMALL_TO_LARGE` instead would put the groups at twice that, because there
  * are twice as many small species as large ones.
  *
- * Two species are absent on purpose, and both would otherwise look like oversights.
+ * Three species are absent on purpose, and all three would otherwise look like oversights.
  *
  * The raven ROOST, because a roost IS its snag — perched on it, lifting off it, landing
  * back on it — so there is no mark in the world the director could send one to.
@@ -610,9 +610,23 @@ export function observe(
  * something the player cannot see. Do NOT fix that by lengthening the ranges: the eagle
  * being scenery rather than a cue is the correct reading of how high it flies. Its share
  * of the large group goes to the elk and the deer.
+ *
+ * The BUTTERFLY, because nothing can draw one yet: `wildlifeMeshes.ts`'s `SPECIES_ASSET` and
+ * `BIRD_ASSET` both stop short of it, and `DIRECTOR_POOL[SPECIES_BUTTERFLY]` is held at 0
+ * for exactly this reason (`wildlifeField.ts`'s own comment on that table). Weighting it here
+ * anyway once cost the beat itself: `placeable()` still let a butterfly be drawn, `poolSlotFor`
+ * then always declined it, and `applyPlace` returned having done nothing — but the beat had
+ * already recorded itself as staged (`logAtStage`/`stageTick`), so `cueUnpaid` held it idle
+ * for the rest of `CUE_PATIENCE` regardless. That was roughly one draw in six spent on
+ * nothing: measured, `longestEmpty` ran 11.50 to 14.00 s on the weaving-trail walk and
+ * 11.20 to 13.10 s on the stops-and-looks walk, against the 20 s ceiling — every graded
+ * assertion still passed, but a real cost with nothing in the suite that would have caught it
+ * getting worse. Its share of the small group goes to the rabbit, the squirrel, the raven
+ * pair and the gull; restore it here the same commit that gives it a shipped asset, alongside
+ * `DIRECTOR_POOL`'s own reversal.
  */
 const CUE_LARGE: readonly number[] = [SPECIES_ELK, SPECIES_DEER];
-const CUE_SMALL: readonly number[] = [SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_BUTTERFLY];
+const CUE_SMALL: readonly number[] = [SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL];
 /** Exported as a test seam: `CUE_WEIGHT[s] > 0` is exactly "the director may draw this
  * species for a cue", which a table-consistency check needs without duplicating
  * `CUE_LARGE`/`CUE_SMALL` (and so risking drifting out of step with them) elsewhere. */

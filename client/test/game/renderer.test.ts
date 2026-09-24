@@ -497,9 +497,16 @@ describe("the wildlife director goes quiet near the Hollow", () => {
         rngSeed: 1,
       };
       // `relaxFor` (wildlifeDirector.ts) reads `hollowDistance < HOLLOW_QUIET`
-      // OR `hollowHunting` as an unconditional "arrange nothing" — either one
-      // alone already accounts for this scene, so a wiring defect that
-      // dropped just one of the two would still be caught here. 1800 frames
+      // OR `hollowHunting` as an unconditional "arrange nothing", and this
+      // scene satisfies both at once (20 m, hunting) — so it does NOT tell
+      // the two fields apart: a wiring defect that dropped just one of them
+      // (say, `findHollow` always writing `hollowHunting = false`) would
+      // leave this test passing regardless, since the other field alone
+      // already forces quiet. What actually catches a whole call site's
+      // wiring going missing is the source-slicing "world shell wiring" test
+      // above (which requires the literal view/hollow-lookup lines in both
+      // branches) and the positive control below (which would start logging
+      // sightings if the whole director argument vanished). 1800 frames
       // (30 s) is comfortably past the ~12-14 s this exact point otherwise
       // takes to place its first animal (`wildlifeMeshes.test.ts`'s own
       // "places a unit" test, off the same shell, at the same point).

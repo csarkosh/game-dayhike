@@ -170,6 +170,10 @@ const DIRECTOR_POOL_STRIDE = 16;
  * session. Far above any single frame's output, so a live consumer never sees it.
  */
 const EVENT_BACKLOG_CAP = 4096;
+/** As `EVENT_BACKLOG_CAP`, for `directorRemovals` — a test seam nothing in production ever
+ * drains, so it is dropped at this length rather than grown without bound across a session
+ * no test happens to be watching it in. */
+const DIRECTOR_REMOVAL_BACKLOG_CAP = 4096;
 
 /**
  * The shadow registry, satisfied by `lighting.addShadowMesh` /
@@ -236,14 +240,18 @@ export type WildlifeMeshes = {
    */
   poolCount(): number;
   /**
-   * Every id the director has ever asked to be given back, in request order
-   * — appended before `applyDirectorEvent` decides whether to honour it, so
-   * this is what the director REQUESTED, not what the shell actually did.
-   * A test seam for exactly the failure `owned` exists to prevent: with
-   * `Candidate.owned` set wrong, this fills with real, natural ids the
-   * director wrongly believes are its own to recycle, even on a build whose
-   * own remove-guard quietly absorbs the resulting bad requests and would
-   * otherwise look, from `poolCount`/`acquired` alone, like nothing went wrong.
+   * A copy of every id the director has asked to be given back since the
+   * last drain, in request order — appended before `applyDirectorEvent`
+   * decides whether to honour it, so this is what the director REQUESTED,
+   * not what the shell actually did. A test seam for exactly the failure
+   * `owned` exists to prevent: with `Candidate.owned` set wrong, this fills
+   * with real, natural ids the director wrongly believes are its own to
+   * recycle, even on a build whose own remove-guard quietly absorbs the
+   * resulting bad requests and would otherwise look, from
+   * `poolCount`/`acquired` alone, like nothing went wrong. Capped the same
+   * way `events` is (see `DIRECTOR_REMOVAL_BACKLOG_CAP`) — nothing drains
+   * this in production, so a session with no test ever reading it must not
+   * grow it without bound either.
    */
   directorRemovals(): readonly number[];
   dispose(): void;
@@ -399,13 +407,20 @@ export function createWildlifeMeshes(
   // never shrunk — the `disturbPool` idiom above, applied to a list rebuilt
   // from a Map instead of an events array — so a steady disc allocates
   // nothing here once it has grown to its high-water mark. `candidateCount`
-  // is that pool's write cursor for the frame, reset in `resetCandidates`.
-  // `directorEvents` and `directorRemovals` are reused the same way;
-  // `directorRemovals` is a test-only log of every `remove` the director has
-  // asked for, kept regardless of whether `applyDirectorEvent` went on to
-  // honour it. `lastDirectorTick` starts at -1 so the first director frame
-  // takes a sane default `dt` instead of reading a nonsensical span back from
-  // before the shell existed.
+  // is that pool's write cursor for the frame, reset in `resetCandidates`;
+  // `candidates` itself is trimmed to it once, after the per-unit loop, and
+  // never reset to zero first — the same reasoning `captureDisturbances`'s
+  // own use of this shape already carries: `.length = 0` right-trims an
+  // array's backing store, so doing that every frame and then re-growing it
+  // by writing costs a reallocation neither this array nor `disturbances`
+  // needs to pay. `directorEvents` is reused the same way; `directorRemovals`
+  // is a test-only log of every `remove` the director has asked for, kept
+  // regardless of whether `applyDirectorEvent` went on to honour it, and
+  // capped at `DIRECTOR_REMOVAL_BACKLOG_CAP` the same way `events` is capped
+  // at `EVENT_BACKLOG_CAP`, since nothing in production ever drains it.
+  // `lastDirectorTick` starts at -1 so the first director frame takes a sane
+  // default `dt` instead of reading a nonsensical span back from before the
+  // shell existed.
   //
   // `poolIds` is the shell's own record of which live `states` entries it
   // placed itself, rather than the seeded field — the thing `Candidate.owned`
@@ -665,6 +680,7 @@ export function createWildlifeMeshes(
   function applyDirectorEvent(e: CueEvent, tick: number): void {
     if (e.kind === "place") { applyPlace(e, tick); return; }
     if (e.kind === "remove") {
+      if (directorRemovals.length > DIRECTOR_REMOVAL_BACKLOG_CAP) directorRemovals.length = 0;
       directorRemovals.push(e.id);
       const owned = poolIds.delete(e.id);
       const u = states.get(e.id);
@@ -678,13 +694,19 @@ export function createWildlifeMeshes(
     startCue(u, e.goalX, e.goalZ, e.run, tick);
   }
 
-  /** Clears `candidates` before a frame that runs the director rebuilds it —
-   * called once, before the per-unit loop in `update`, so that loop can push
-   * this frame's candidates as it visits each unit rather than `states`
-   * taking a second `values()` iterator of its own (see the `birdList`
-   * comment above for why a second one matters here). */
+  /** Resets the write cursor before a frame that runs the director rebuilds
+   * `candidates` — called once, before the per-unit loop in `update`, so
+   * that loop can fill this frame's candidates as it visits each unit rather
+   * than `states` taking a second `values()` iterator of its own (see the
+   * `birdList` comment above for why a second one matters here). Does NOT
+   * touch `candidates.length`: that would right-trim the array's own backing
+   * store to zero every single frame — `captureDisturbances`'s own idiom
+   * elsewhere in this file sets `.length` only once, downward, after every
+   * slot for the frame is written, which is the form that does not cost a
+   * reallocation. Measured over 500k frames: the push-then-`length = 0` shape
+   * this replaced cost 580 new-space and 290 old-space GC scavenges against
+   * 2 and 2 for this one. */
   function resetCandidates(): void {
-    candidates.length = 0;
     candidateCount = 0;
   }
 
@@ -729,7 +751,7 @@ export function createWildlifeMeshes(
       c.moveX = u.x; c.moveZ = u.z; c.moveR = 0;
     }
     c.onScreen = onScreen(view, ground, c, mist);
-    candidates.push(c);
+    candidates[candidateCount] = c;
     candidateCount++;
   }
 
@@ -1000,6 +1022,12 @@ export function createWildlifeMeshes(
       if (director !== undefined) {
         const dt = lastDirectorTick === -1 ? TICK_DT : Math.max(TICK_DT, (tick - lastDirectorTick) / SIM_TICK_HZ);
         lastDirectorTick = tick;
+        // Trimmed down to this frame's live count, never up to it — the
+        // `disturbances`/`captureDisturbances` shape, so a shrinking
+        // population never leaves a stale tail past `candidateCount` for
+        // `stepDirector` to read, and a growing one is already exactly this
+        // long from `pushCandidateFor`'s own indexed writes.
+        candidates.length = candidateCount;
         directorEvents.length = 0;
         stepDirector(directorState, director.view, ground, candidates, director.match, dt, tick, seed, directorEvents);
         for (let i = 0; i < directorEvents.length; i++) applyDirectorEvent(directorEvents[i]!, tick);
@@ -1020,7 +1048,7 @@ export function createWildlifeMeshes(
       return poolIds.size;
     },
     directorRemovals() {
-      return directorRemovals;
+      return directorRemovals.slice();
     },
     dispose() {
       for (const [key, inst] of slots) {

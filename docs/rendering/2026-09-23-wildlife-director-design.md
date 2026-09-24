@@ -92,11 +92,16 @@ animal the player saw.
   judged against the frame carried forward by however the player has been
   walking and turning, not the frame as it stands — an elk aimed at where the
   player was looking five seconds ago arrives in an empty view.
-- Species: small (rabbit, squirrel, raven, gull, butterfly) weighted
-  `SMALL_TO_LARGE = 6` to one over large (deer, elk). The eagle is not cued:
-  it cruises above the distance anything registers as a sighting at. Nor, in
-  practice, are the raven pair and the gull flock — see §6. The last species
-  is excluded from the next draw.
+- Species: small (rabbit, squirrel, raven, gull) weighted `SMALL_TO_LARGE = 6`
+  to one over large (deer, elk). The eagle is not cued: it cruises above the
+  distance anything registers as a sighting at. Nor, in practice, are the
+  raven pair and the gull flock — see §6. Nor, at all, is the butterfly for
+  now: nothing can render one yet, so it stays out of the weighted draw
+  entirely rather than spend a beat every few sightings on a `place` the pool
+  has to refuse (`wildlifeField.ts`'s `DIRECTOR_POOL[SPECIES_BUTTERFLY]` is 0
+  for the same reason) — its share splits across the other four small species
+  until the same commit that gives it a shipped model restores it. The last
+  species is excluded from the next draw.
 - `relax` is a multiplier: `STILL = 1.8` once the player has moved under
   0.3 m/s for 3 s; `NIGHT = 2.5` by the hour the calls already use; and
   **quiet** — no cues — during the chase phase, whenever the Hollow is within

@@ -387,7 +387,7 @@ describe("cues", () => {
 
       // With nothing to drive, the beat redraws until it finds a species it can put into the
       // world unseen. A loop flier's circle is tens of metres across and never can be, so
-      // one is never placed — and with only two of them among seven cueable species and
+      // one is never placed — and with only two of them among six cueable species and
       // four distinct draws to spend, a beat always finds something it can hide.
       out.length = 0;
       expect(stageCue(s, v, flat, [], day, tick, 5, out)).toBe(true);
@@ -409,14 +409,18 @@ describe("cues", () => {
       }
       expect(Math.hypot(e.goalX - v.x, e.goalZ - v.z)).toBeLessThanOrEqual(hideRange(0));
     }
-    // Every species a cue can draw, and all three stagings.
+    // Every species a cue can draw, and all three stagings. The butterfly is not among them:
+    // nothing can render one yet (`wildlifeField.ts`'s `DIRECTOR_POOL[SPECIES_BUTTERFLY]`
+    // is held at 0 for the same reason), so it is out of `CUE_SMALL` until a shipped asset
+    // brings it back — see the ruling recorded above `CUE_LARGE`/`CUE_SMALL`.
     expect([...drawn].sort((a, b) => a - b)).toEqual(
-      [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_BUTTERFLY].sort((a, b) => a - b),
+      [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL].sort((a, b) => a - b),
     );
     expect(staged.size).toBe(3);
-    // The butterfly is the one flier with no loop, so it is the one flier that is placed.
+    // With the butterfly gone, no flier is ever placed at all — the roost, pair, gull and
+    // eagle all fail `placeable`'s loop test, so every placement here is a ground mammal.
     expect([...placedSpecies].sort((a, b) => a - b)).toEqual(
-      [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_BUTTERFLY].sort((a, b) => a - b),
+      [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL].sort((a, b) => a - b),
     );
   });
 
@@ -531,6 +535,13 @@ describe("cues", () => {
   });
 
   it.each(WALKS)("never places, drives or removes on screen, and keeps the cadence's whole distribution: $name, seven seeds, a thousand seconds each", (walk) => {
+    // This harness fabricates a `Unit` for every `place` event unconditionally — it has no
+    // idea `DIRECTOR_POOL` exists, let alone that a species' pool could be full, so it will
+    // happily create a unit the real shell would have refused with `poolSlotFor` returning
+    // -1. That is a deliberate scope line, not an oversight: this measures the DIRECTOR's
+    // intent — the cadence and the invariant it is asking for — not whether the shell has
+    // the capacity to carry it out. A species the shell cannot place at all belongs out of
+    // `CUE_WEIGHT` entirely (see the ruling above `CUE_LARGE`/`CUE_SMALL`), not modelled here.
     type Unit = Candidate & { goalX: number; goalZ: number; speed: number };
     const medians: number[] = [];
     for (const SEED of [3, 5, 11, 17, 23, 29, 31]) {
