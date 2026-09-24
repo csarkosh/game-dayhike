@@ -139,7 +139,12 @@ export const ELK_MEADOW_FLOOR = 0.6;
 export const ELK_ROAD_CLEAR = 25;
 export const DEER_DENSITY_LO = 0.15;
 export const DEER_DENSITY_HI = 0.5;
-export const RABBIT_GRASS_FLOOR = 0.4;
+/** A rabbit needs real grass under it. The forest floor now keeps half its
+ * sward under a closed canopy (`CLUTTER_GRASS_CANOPY_FLOOR` 0.5), so the
+ * floor sits just above that: rabbits stay on open and lightly shaded
+ * grass, as before, rather than filling every bush-side cell in the woods
+ * (at 0.4 the census rose to 4,079 / 4,572 / 3,145 units). */
+export const RABBIT_GRASS_FLOOR = 0.55;
 export const RABBIT_COVER_RADIUS = 15;
 export const SQUIRREL_DENSITY_FLOOR = 0.5;
 export const RAVEN_PAIR_DENSITY_FLOOR = 0.6;

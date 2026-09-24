@@ -121,6 +121,8 @@ describe("wildlife placement census", () => {
       const units = census(seed, SPECIES_RABBIT);
       // Measured 2026-09-02: seeds 1, 388817, -1117907922 gave 1168, 1132, 974
       // rabbit units over the 4 km × 4 km census. [floor(0.5·min), ceil(1.5·max)].
+      // Re-measured 2026-09-24 at RABBIT_GRASS_FLOOR 0.55, after the forest floor
+      // put grass under the canopy: 1441, 1343, 1136 — inside the same band.
       expect(units.length).toBeGreaterThanOrEqual(487);
       expect(units.length).toBeLessThanOrEqual(1752);
       for (const r of units) {
