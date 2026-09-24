@@ -3,7 +3,7 @@ import { hash3 } from "../../src/sim/field.js";
 import { PHASE_CUE, PHASE_REST } from "../../src/game/wildlifeBehaviour.js";
 import {
   SPECIES_BUTTERFLY, SPECIES_DEER, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RABBIT,
-  SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, WILDLIFE_RADIUS, WILDLIFE_SPREAD,
+  SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, unitId, WILDLIFE_RADIUS, WILDLIFE_SPREAD,
 } from "../../src/game/wildlifeField.js";
 import {
   CUE_PATIENCE, DIRECTOR_ID_BASE, GAP, GAP_CEILING, HIDE_RANGE, HOLLOW_QUIET, LEAD, NIGHT_RELAX, NOTICE, PLACE_BODY_H, RECYCLE,
@@ -324,7 +324,7 @@ describe("cues", () => {
     // animal DIRECTLY BEHIND the player is not a candidate however near it is — it cannot
     // get anywhere the player is looking in the time the beat has.
     const edge = at(1.1, 20);
-    const behind = { id: 9, species: chosen, x: edge.x, y: 1, z: edge.z, moveX: edge.x, moveZ: edge.z, moveR: 0, onScreen: false, phase: PHASE_REST };
+    const behind = { id: 9, species: chosen, x: edge.x, y: 1, z: edge.z, moveX: edge.x, moveZ: edge.z, moveR: 0, onScreen: false, phase: PHASE_REST, owned: false };
 
     expect(stageCue(s, view(), flat, [behind], day, tick, 3, out)).toBe(true);
     expect(out[0]!.kind).toBe("drive");
@@ -446,7 +446,7 @@ describe("cues", () => {
       for (const y of altitudes) for (const moveR of radii) {
         for (let bearing = 0; bearing < Math.PI; bearing += 0.2) for (let r = 10; r <= 400; r += 10) {
           const x = r * Math.sin(bearing), z = r * Math.cos(bearing);
-          const flock: Candidate = { id: 9, species, x, y, z, moveX: x, moveZ: z, moveR, onScreen: false, phase: PHASE_REST };
+          const flock: Candidate = { id: 9, species, x, y, z, moveX: x, moveZ: z, moveR, onScreen: false, phase: PHASE_REST, owned: false };
           out.length = 0;
           stageCue(s, view(), flat, [flock], day, tick, 3, out);
           for (const event of out) expect(event.kind).not.toBe("drive");
@@ -467,7 +467,7 @@ describe("cues", () => {
     const tick = tickDrawing(s, 3, 100, (sp) => sp === SPECIES_GULL);
     const flock: Candidate = {
       id: 9, species: SPECIES_GULL, x: -48, y: 20, z: 12,
-      moveX: 0, moveZ: 28, moveR: Math.hypot(48, 16), onScreen: false, phase: PHASE_REST,
+      moveX: 0, moveZ: 28, moveR: Math.hypot(48, 16), onScreen: false, phase: PHASE_REST, owned: false,
     };
     // The bird alone would have cleared the invariant; the centre plainly does not.
     expect(placementValid(view(), flat, flock.x, flock.y, flock.z, 0)).toBe(true);
@@ -503,7 +503,7 @@ describe("cues", () => {
     const out: CueEvent[] = [];
     const s = createDirectorState(3);
     // A hundred metres behind the player: well past 1.5x the fifteen a rabbit reads at.
-    const gone: Candidate = { id: DIRECTOR_ID_BASE + 1, species: SPECIES_RABBIT, x: 0, y: 0.3, z: -100, moveX: 0, moveZ: -100, moveR: 0, onScreen: false, phase: PHASE_REST };
+    const gone: Candidate = { id: DIRECTOR_ID_BASE + 1, species: SPECIES_RABBIT, x: 0, y: 0.3, z: -100, moveX: 0, moveZ: -100, moveR: 0, onScreen: false, phase: PHASE_REST, owned: true };
     expect(Math.abs(gone.z)).toBeGreaterThan(REMOVE_FACTOR * NOTICE[SPECIES_RABBIT]!);
     for (let i = 0; i < REMOVE_SECONDS * 10 - 1; i++) step(s, view(), flat, [gone], day, 0.1, 100, 3, out);
     expect(out.filter((e) => e.kind === "remove")).toHaveLength(0);
@@ -512,7 +512,17 @@ describe("cues", () => {
 
     // A unit of the field's own making is never the director's to take away, and a pool
     // unit still walking its cue is exempt however far off it started.
-    for (const held of [{ ...gone, id: 7 }, { ...gone, phase: PHASE_CUE }]) {
+    //
+    // The field-made one carries an id shaped the way `unitId()` actually draws one — not a
+    // small placeholder — and is unowned rather than merely differently numbered. `owned` is
+    // what `sweepRemovals` reads now; a synthetic id chosen to sit anywhere on the number
+    // line proves nothing about that, and a real field id is routinely FAR larger than
+    // `DIRECTOR_ID_BASE` (a cell no distance from the origin already packs to north of 2^30 —
+    // see `DIRECTOR_ID_BASE`'s own doc), which is exactly the shape of id that once read as
+    // director-owned under the bare `id >= DIRECTOR_ID_BASE` this replaced.
+    const fieldMade = { ...gone, owned: false, id: unitId(SPECIES_RABBIT, 40, -60) };
+    expect(fieldMade.id).toBeGreaterThan(DIRECTOR_ID_BASE);
+    for (const held of [fieldMade, { ...gone, phase: PHASE_CUE }]) {
       const s2 = createDirectorState(3);
       const out2: CueEvent[] = [];
       for (let i = 0; i < REMOVE_SECONDS * 120; i++) step(s2, view(), flat, [held], day, 1 / 60, 100, 3, out2);
@@ -561,7 +571,11 @@ describe("cues", () => {
             if (!placementValid(v, flat, e.x, e.y, e.z, 0)) violations++;
             units.push({
               id: nextId, species: e.species, x: e.x, y: e.y, z: e.z, moveX: e.x, moveZ: e.z, moveR: 0,
-              onScreen: false, phase: PHASE_CUE, goalX: e.goalX, goalZ: e.goalZ, speed: cueSpeed(e.species, e.run),
+              // Every unit this drive ever creates comes from a `place` event, so `owned` is
+              // true for the whole population here — this harness has no field-generated
+              // units of its own at all; the dedicated removal test above is where an
+              // unowned, realistically-numbered candidate is exercised.
+              onScreen: false, phase: PHASE_CUE, owned: true, goalX: e.goalX, goalZ: e.goalZ, speed: cueSpeed(e.species, e.run),
             });
             stagedSinceSighting.set(nextId++, t);
             stagings.add(stagingFor(e.species));
@@ -681,8 +695,8 @@ describe("cues", () => {
     const s = createDirectorState(5);
     const log = s.log;
     const units: Candidate[] = [
-      { id: 1, species: SPECIES_RABBIT, x: 0, y: 0.3, z: 8, moveX: 0, moveZ: 8, moveR: 0, onScreen: false, phase: PHASE_REST },
-      { id: DIRECTOR_ID_BASE, species: SPECIES_ELK, x: 30, y: 1.2, z: 5, moveX: 30, moveZ: 5, moveR: 0, onScreen: false, phase: PHASE_REST },
+      { id: 1, species: SPECIES_RABBIT, x: 0, y: 0.3, z: 8, moveX: 0, moveZ: 8, moveR: 0, onScreen: false, phase: PHASE_REST, owned: false },
+      { id: DIRECTOR_ID_BASE, species: SPECIES_ELK, x: 30, y: 1.2, z: 5, moveX: 30, moveZ: 5, moveR: 0, onScreen: false, phase: PHASE_REST, owned: true },
     ];
     const out: CueEvent[] = [];
     const pushed = vi.spyOn(out, "push");

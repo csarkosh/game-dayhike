@@ -22,7 +22,7 @@ import {
 } from "../../src/game/wildlifeField.js";
 import {
   BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, birdBucketOmega, birdLodMeshes, createWildlifeMeshes,
-  isDirectorPoolId, SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
+  SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
 } from "../../src/game/wildlifeMeshes.js";
 import { GAP, LEAD, STILL_RELAX, type MatchState, type View } from "../../src/game/wildlifeDirector.js";
 import type { ClipRole, CreatureInstance, CreaturePool } from "../../src/game/creatureModel.js";
@@ -367,8 +367,12 @@ describe("the wildlife director", () => {
     for (let tick = 0; tick < 900; tick++) {
       w.update(CAM_X, CAM_Z, tick, FAR_AWAY, WEATHER_PRESETS.clear, 12);
     }
+    // The natural field itself is still fully alive here (real ground units at
+    // CAM_X/CAM_Z are acquired every frame) — it is specifically the POOL that
+    // never gains a unit, not the whole shell going idle.
+    expect(acquired.size).toBeGreaterThan(0);
     expect(w.directorLog()).toHaveLength(0);
-    for (const key of acquired.keys()) expect(isDirectorPoolId(Math.floor(key / SLOT_STRIDE))).toBe(false);
+    expect(w.poolCount()).toBe(0);
     w.dispose();
     engine.dispose();
   });
@@ -413,16 +417,20 @@ describe("the wildlife director", () => {
     const w = createWildlifeMeshes(scene, SEED, { pool });
     const view: View = { x: QUIET_X, y: elevationAt(SEED, QUIET_X, QUIET_Z) + 1.7, z: QUIET_Z, yaw: 0, pitch: 0, fov: 1.4, aspect: 16 / 9 };
     let tick = 0;
-    let placedKey = -1;
     // Nothing natural exists here to drive, so the first thing the director
-    // ever does is place one — the only path exercised by this test.
-    for (; tick < 3600 && placedKey < 0; tick++) {
+    // ever does is place one — the only path exercised by this test, and the
+    // only way `acquired` ever gains an entry at all at this empty point. A
+    // placed unit is only added to `states` at the END of the frame that
+    // places it (see `update`'s own doc), so its first render — and so its
+    // first appearance in `acquired` — is one frame later; hence the extra
+    // update below once `poolCount` first turns positive.
+    for (; tick < 3600 && w.poolCount() === 0; tick++) {
       w.update(QUIET_X, QUIET_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
-      for (const key of acquired.keys()) {
-        if (isDirectorPoolId(Math.floor(key / SLOT_STRIDE))) { placedKey = key; break; }
-      }
     }
-    expect(placedKey).toBeGreaterThan(0);
+    expect(w.poolCount()).toBeGreaterThan(0);
+    w.update(QUIET_X, QUIET_Z, tick++, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    expect(acquired.size).toBeGreaterThan(0);
+    const placedKey = [...acquired.keys()][0]!;
 
     // A disc rebuild (past WILDLIFE_REBUILD_STEP of camera travel) must not
     // drop it — it is not part of the seeded field the rebuild's `keep` set

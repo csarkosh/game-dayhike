@@ -208,7 +208,10 @@ function membersFor(seed: number, species: number, cx: number, cz: number): numb
  * magnitude beyond anywhere a player reaches.
  */
 export const CELL_ID_BIAS = 8192;
-function unitId(species: number, cx: number, cz: number): number {
+/** Exported as a test seam: a caller that needs a realistic field id — one shaped the way a
+ * real unit's actually comes out, not a small placeholder — builds it the same way this
+ * module does rather than guessing at the packing. */
+export function unitId(species: number, cx: number, cz: number): number {
   return ((((cx + CELL_ID_BIAS) & 0x3fff) << 17) | (((cz + CELL_ID_BIAS) & 0x3fff) << 3) | species);
 }
 function walkable(s: TerrainSample): boolean {

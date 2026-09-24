@@ -198,9 +198,17 @@ export const PLACE_BODY_H = 1;
 export const REMOVE_FACTOR = 1.5;
 export const REMOVE_SECONDS = 5;
 /**
- * Ids at or above this mark a unit the director owns rather than one the field generated:
- * only these are ever recycled, because only these are the director's to take away. The
- * pool behind them belongs to the shell.
+ * The id namespace the shell draws a placed unit's id from — `DIRECTOR_ID_BASE + species *
+ * stride + slot` — kept apart from the field's own so the two can never collide on one
+ * `states` map key. NOT a boundary the director itself tests any unit's id against: an id is
+ * a name, not a magnitude, and reading ownership off it was the bug. `wildlifeField.ts`'s
+ * packed field id biases every cell by `CELL_ID_BIAS` (8192) before the species bits, so a
+ * unit anywhere near the world's own origin already carries an id north of 2^30 — comfortably
+ * past this constant on its own, which is what `sweepRemovals` used to test with a bare `>=`.
+ * Measured on the disc around (2000, -500): every one of 54 real units came out between 1.075
+ * and 1.085 billion. Ownership is carried explicitly on `Candidate.owned` instead — the shell
+ * knows exactly which units it placed, and the director is told rather than left to guess
+ * from a number that was never a reliable signal of it.
  */
 export const DIRECTOR_ID_BASE = 1 << 28;
 
@@ -242,8 +250,18 @@ export type Seen = { id: number; species: number; x: number; y: number; z: numbe
  * `onScreen` and `phase` are what the shell already knows — the first a cheap pre-filter
  * the director would otherwise re-derive, the second so a unit already mid-cue is left to
  * finish it.
+ *
+ * `owned` is told, not inferred: true for a unit the shell itself placed from its pool,
+ * false for one the field generated. `sweepRemovals` is the one place this matters — only an
+ * owned unit is ever the director's to take back — and it used to read `id >= DIRECTOR_ID_BASE`
+ * as a stand-in for this, which real ids do not support: a field-generated id is a packed
+ * (species, cell) name that can land anywhere in a 31-bit range, routinely well past
+ * `DIRECTOR_ID_BASE` for a cell no distance from the origin at all. That let the director
+ * believe an ordinary elk grazing off screen was a pool unit and ask for it back outright,
+ * which the shell would have had no way to refuse without a guess of its own — the shell
+ * knows which units came from its pool, so it says so here instead.
  */
-export type Candidate = Seen & { onScreen: boolean; phase: number; moveX: number; moveZ: number; moveR: number };
+export type Candidate = Seen & { onScreen: boolean; phase: number; moveX: number; moveZ: number; moveR: number; owned: boolean };
 /**
  * What the director asks the shell to do. `drive` re-targets a unit that already exists,
  * `place` asks for one of the pool at a start point, and `remove` gives one back. Every
@@ -1063,6 +1081,10 @@ export function stageCue(
  * with half the range again as slack against a player who turns back. A unit still
  * running its cue is exempt whatever its distance: a herd staged out of the fog is
  * supposed to be far away, and is on its way in.
+ *
+ * Only a unit `owned` marks as the shell's own is ever a candidate for this at all — a
+ * field-generated animal is never the director's to take away, however far off screen it
+ * wanders, however this frame's caller happened to number it.
  */
 function sweepRemovals(
   state: DirectorState, view: View, candidates: readonly Candidate[], match: MatchState, dt: number,
@@ -1071,7 +1093,7 @@ function sweepRemovals(
   const farFor = clockworkFor(state).farFor;
   for (let i = 0; i < candidates.length; i++) {
     const c = candidates[i]!;
-    if (c.id < DIRECTOR_ID_BASE || c.id === skipId) continue;
+    if (!c.owned || c.id === skipId) continue;
     const seeable = Math.min(NOTICE[c.species] ?? Infinity, hideRange(match.mist));
     const distance = Math.hypot(c.x - view.x, c.y - view.y, c.z - view.z);
     if (c.phase === PHASE_CUE || distance <= REMOVE_FACTOR * seeable) { farFor.delete(c.id); continue; }

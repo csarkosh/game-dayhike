@@ -156,31 +156,12 @@ export const SLOT_STRIDE = 16;
  * `DIRECTOR_ID_BASE`: `id = DIRECTOR_ID_BASE + species * DIRECTOR_POOL_STRIDE + slot`.
  * Comfortably above the largest `DIRECTOR_POOL` entry (3), the same margin
  * `SLOT_STRIDE` keeps over the largest member count, so no species' pool
- * slots ever reach into the next species' ids.
+ * slots ever reach into the next species' ids. Purely a namespace offset —
+ * kept apart from the field's own ids so the two can never collide on one
+ * `states` map key — and never read back as a test of ownership: see
+ * `poolIds` and `DIRECTOR_ID_BASE`'s own doc in wildlifeDirector.ts.
  */
 const DIRECTOR_POOL_STRIDE = 16;
-/**
- * One past the highest id any director pool unit can ever take —
- * `DIRECTOR_ID_BASE` plus every species' worth of `DIRECTOR_POOL_STRIDE`
- * slots. NOT the same test as `id >= DIRECTOR_ID_BASE`, and the difference
- * matters: `wildlifeField.ts`'s packed unit id carries `cellX`/`cellZ` biased
- * by `CELL_ID_BIAS` (8192) before the species bits, so a natural unit
- * anywhere near the world's own origin already has an id north of 2^30 —
- * comfortably PAST `DIRECTOR_ID_BASE` (2^28) on its own, `>=` alone cannot
- * tell it apart from a placed animal. Measured on the disc around (2000,
- * -500): every one of 54 natural units carries an id between 1.075 and
- * 1.085 billion. `isDirectorPoolId` narrows the test to the ~150-wide window
- * the shell itself ever hands out, which no real cell's packed id lands
- * inside without the camera standing some 500+ km from the origin — "orders
- * of magnitude beyond anywhere a player reaches" (wildlifeField.ts's own
- * words about the packing's alias bound).
- */
-const DIRECTOR_POOL_ID_CEILING = DIRECTOR_ID_BASE + DIRECTOR_POOL.length * DIRECTOR_POOL_STRIDE;
-/** Whether `id` is one this shell's own director pool could have handed out — see
- * `DIRECTOR_POOL_ID_CEILING`. */
-export function isDirectorPoolId(id: number): boolean {
-  return id >= DIRECTOR_ID_BASE && id < DIRECTOR_POOL_ID_CEILING;
-}
 /**
  * An undrained `events` backlog is dropped at this length rather than grown
  * without bound. `events` is cleared by its consumer (the audio shell),
@@ -248,6 +229,12 @@ export type WildlifeMeshes = {
    * seventh argument.
    */
   directorLog(): readonly number[];
+  /**
+   * How many units the director currently has out of its pool — a test seam
+   * for "no pool unit was ever created" that does not lean on the shape of
+   * an id, since ownership is no longer something an id encodes at all.
+   */
+  poolCount(): number;
   dispose(): void;
 };
 
@@ -401,11 +388,20 @@ export function createWildlifeMeshes(
   // `directorEvents` is reused the same way. `lastDirectorTick` starts at -1
   // so the first director frame takes a sane default `dt` instead of reading
   // a nonsensical span back from before the shell existed.
+  //
+  // `poolIds` is the shell's own record of which live `states` entries it
+  // placed itself, rather than the seeded field — the thing `Candidate.owned`
+  // tells the director, and the thing `rebuild`'s cleanup and a `remove`
+  // event both have to ask before touching a unit. Not a range check against
+  // the id: a real field id can land anywhere in its 31 bits (see
+  // `DIRECTOR_ID_BASE`'s own doc in wildlifeDirector.ts), so the only
+  // trustworthy record of "did I place this" is one this shell keeps itself.
   const directorState = createDirectorState(seed);
   const ground: Ground = (x, z) => elevationAt(seed, x, z);
   const candidatePool: Candidate[] = [];
   const candidates: Candidate[] = [];
   const directorEvents: CueEvent[] = [];
+  const poolIds = new Set<number>();
   let lastDirectorTick = -1;
   const scratchQ = new Quaternion();
   const scratchScale = new Vector3();
@@ -554,11 +550,10 @@ export function createWildlifeMeshes(
       // the disc. It lives until the director's own `remove` event gives it
       // back (see `applyDirectorEvent`), or a cue mid-flight staged out of the
       // fog would vanish the moment the camera crossed a rebuild step. Tested
-      // with `isDirectorPoolId`, not a bare `id >= DIRECTOR_ID_BASE`: a real
-      // field id is routinely north of that on its own (see the constant's
-      // own comment), and the broad test would keep every far natural unit
-      // alive forever instead of only the shell's own placed ones.
-      if (isDirectorPoolId(id)) continue;
+      // against `poolIds`, the shell's own record of what it placed — not a
+      // range check on the id, which a real field id can land inside of just
+      // as easily as a placed one's.
+      if (poolIds.has(id)) continue;
       releaseUnit(u);
       states.delete(id);
     }
@@ -617,33 +612,32 @@ export function createWildlifeMeshes(
     const u = createUnitState(unit, tick, seed);
     startCue(u, e.goalX, e.goalZ, e.run, tick);
     states.set(id, u);
+    poolIds.add(id);
   }
 
   /**
    * Carries out one of the director's three event kinds against `states`.
    *
-   * A `remove` is honoured only for an id `isDirectorPoolId` recognises as
-   * the shell's own — a defensive floor under `DIRECTOR_ID_BASE`'s own gap
-   * from the real field (see `DIRECTOR_POOL_ID_CEILING`): every packed field
-   * id near any position a player actually reaches already sits well past
-   * `DIRECTOR_ID_BASE`, so wildlifeDirector.ts's own `sweepRemovals` — which
-   * knows only the bare threshold, not this shell's tighter window — can name
-   * a natural unit that has simply wandered off screen. Releasing THAT unit's
-   * pool slot would be a no-op (it never had one), but deleting it from
-   * `states` would erase a real animal's whole behaviour outright: gone until
-   * the next disc rebuild recreates it from scratch, at its ORIGINAL spawn
-   * point rather than wherever it had gotten to — which, if the player is
-   * looking anywhere near there when the disc next rebuilds, is exactly the
-   * appearing-from-nowhere this feature exists to prevent. A `drive` carries
-   * no matching risk and is deliberately not guarded the same way: driving a
-   * natural unit into view is the preferred half of every cue, not a bug.
+   * A `remove` is honoured only for an id `poolIds` still holds — the shell's
+   * own record of what it placed, checked rather than assumed: the director
+   * decides `remove` only for a `Candidate` `buildCandidates` itself marked
+   * `owned`, so this should always hold, but a stale id from a unit that left
+   * some other way this same frame costs nothing to rule out and a mistaken
+   * one costs a real animal's whole state — gone until the next disc rebuild
+   * recreates it from scratch, at its ORIGINAL spawn point rather than
+   * wherever it had gotten to, which if the player is looking anywhere near
+   * there is exactly the appearing-from-nowhere this feature exists to
+   * prevent. A `drive` carries no matching risk and is deliberately not
+   * guarded the same way: driving a natural unit into view is the preferred
+   * half of every cue, not a bug.
    */
   function applyDirectorEvent(e: CueEvent, tick: number): void {
     if (e.kind === "place") { applyPlace(e, tick); return; }
     const u = states.get(e.id);
     if (u === undefined) return; // the unit it named already left some other way
     if (e.kind === "drive") { startCue(u, e.goalX, e.goalZ, e.run, tick); return; }
-    if (!isDirectorPoolId(e.id)) return;
+    if (!poolIds.has(e.id)) return;
+    poolIds.delete(e.id);
     releaseUnit(u);
     states.delete(e.id);
   }
@@ -660,6 +654,10 @@ export function createWildlifeMeshes(
    * its first `stepUnit`) is skipped outright rather than read off its
    * ground-seated placeholder, which would report it at ground level: the
    * same call this file already makes for a bird's very first scheduled call.
+   *
+   * `owned` is read straight off `poolIds` — told to the director rather than
+   * left for it to infer from the id, which is the whole point of carrying
+   * the flag at all (see `Candidate`'s own doc in wildlifeDirector.ts).
    */
   function buildCandidates(view: View, mist: number): void {
     candidates.length = 0;
@@ -669,12 +667,13 @@ export function createWildlifeMeshes(
       if (flier && !u.posed) continue;
       let c = candidatePool[i];
       if (c === undefined) {
-        c = { id: 0, species: 0, x: 0, y: 0, z: 0, onScreen: false, phase: 0, moveX: 0, moveZ: 0, moveR: 0 };
+        c = { id: 0, species: 0, x: 0, y: 0, z: 0, onScreen: false, phase: 0, moveX: 0, moveZ: 0, moveR: 0, owned: false };
         candidatePool[i] = c;
       }
       c.id = u.unit.id;
       c.species = u.unit.species;
       c.phase = u.phase;
+      c.owned = poolIds.has(u.unit.id);
       if (flier) {
         const lead = u.poses[0]!;
         c.x = lead.x; c.y = lead.y; c.z = lead.z;
@@ -964,6 +963,9 @@ export function createWildlifeMeshes(
       const n = Math.min(directorState.logCount, capacity);
       return Array.from(directorState.log.subarray(0, n * 2));
     },
+    poolCount() {
+      return poolIds.size;
+    },
     dispose() {
       for (const [key, inst] of slots) {
         if (shadows !== undefined) for (const mesh of inst.root.getChildMeshes()) shadows.remove(mesh);
@@ -971,6 +973,7 @@ export function createWildlifeMeshes(
       }
       slots.clear();
       states.clear();
+      poolIds.clear();
       birdList.length = 0;
       events.length = 0;
       if (ownsBirds) {
