@@ -45,7 +45,9 @@ const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
   // flower: 105 -> 281 on 2026-09-23 (its base is the same field's grass reading).
   [600, -3000, 281, 754694327],
   // litter: along the stem near the trailhead, not near the world origin.
-  [-500, -100, 111, -621225397],
+  // 111 -> 164 on 2026-09-24 (CLUTTER_LITTER_D 0.6 -> 0.9: a neglected trail
+  // carries more stray stone and twig litter along its margin).
+  [-500, -100, 164, 952976979],
 ];
 
 describe("instances carry the ground gradient", () => {
@@ -625,6 +627,9 @@ describe("the level id does not move", () => {
     // duff terms, the trail ramp's reach and its own salt, and the drift
     // noise's wavelength and salt — join CLUTTER_TUNABLES, so a peer without
     // them scatters grass differently at every canopy, trail and road edge.
-    expect(passHash()).toBe(-1219139371);
+    // Re-baselined 2026-09-24 from -1219139371: CLUTTER_LITTER_D 0.6 -> 0.9
+    // is a CLUTTER_TUNABLES value, so a peer on the old density scatters
+    // litter along every trail's margin differently.
+    expect(passHash()).toBe(-608564206);
   });
 });

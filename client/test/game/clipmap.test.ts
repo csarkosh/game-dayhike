@@ -20,6 +20,7 @@ import {
   ringSpacing,
   snapOrigin,
   updateRingSamples,
+  WEIGHTS2_STRIDE,
 } from "../../src/game/clipmap.js";
 import { classifySurface, GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { groundCover } from "../../src/sim/clutter.js";
@@ -329,14 +330,14 @@ describe("terrain weight attributes", () => {
   it("fills one weight entry per vertex, summing to 1", () => {
     const ring = createRingSamples(SEED, 0, 0, 0);
     expect(ring.weights.length).toBe(SIDE * SIDE * 4);
-    expect(ring.weights2.length).toBe(SIDE * SIDE * 2);
+    expect(ring.weights2.length).toBe(SIDE * SIDE * WEIGHTS2_STRIDE);
     for (let at = 0; at < SIDE * SIDE; at += 37) {
       const sum =
         (ring.weights[at * 4] as number) +
         (ring.weights[at * 4 + 1] as number) +
         (ring.weights[at * 4 + 2] as number) +
         (ring.weights[at * 4 + 3] as number) +
-        (ring.weights2[at * 2] as number);
+        (ring.weights2[at * WEIGHTS2_STRIDE] as number);
       expect(sum, `vertex ${at}`).toBeCloseTo(1, 4);
     }
   });
@@ -352,14 +353,14 @@ describe("terrain weight attributes", () => {
     // in step with colors — a scroll that forgets weights would leave stale or
     // zeroed material at the trailing edge.
     expect(ring.weights.length).toBe(SIDE * SIDE * 4);
-    expect(ring.weights2.length).toBe(SIDE * SIDE * 2);
+    expect(ring.weights2.length).toBe(SIDE * SIDE * WEIGHTS2_STRIDE);
     for (let at = 0; at < SIDE * SIDE; at += 53) {
       const sum =
         (ring.weights[at * 4] as number) +
         (ring.weights[at * 4 + 1] as number) +
         (ring.weights[at * 4 + 2] as number) +
         (ring.weights[at * 4 + 3] as number) +
-        (ring.weights2[at * 2] as number);
+        (ring.weights2[at * WEIGHTS2_STRIDE] as number);
       expect(sum, `vertex ${at} after scroll`).toBeCloseTo(1, 4);
     }
     expect(before.length).toBe(4);
@@ -370,10 +371,11 @@ describe("terrain weight attributes", () => {
     const ring = createRingSamples(SEED, 0, 0, 0);
     const geo = ringGeometry(ring, null, null);
     expect(geo.weights.length).toBe(SIDE * SIDE * 4);
-    expect(geo.weights2.length).toBe(SIDE * SIDE * 2);
+    expect(geo.weights2.length).toBe(SIDE * SIDE * WEIGHTS2_STRIDE);
     // Vertex 0's geometry weights are vertex 0's ring weights.
     expect(geo.weights[0]).toBe(ring.weights[0]);
     expect(geo.weights2[0]).toBe(ring.weights2[0]);
+    expect(geo.weights2[2]).toBe(ring.weights2[2]);
   });
 
   it("agrees with classifySurface, fed the ring's own canopy and duff, at the ring's own sample positions", () => {
@@ -392,8 +394,23 @@ describe("terrain weight attributes", () => {
     expect(ring.weights[at * 4 + 1]).toBeCloseTo(w.forestFloor, 6);
     expect(ring.weights[at * 4 + 2]).toBeCloseTo(w.rock, 6);
     expect(ring.weights[at * 4 + 3]).toBeCloseTo(w.sand, 6);
-    expect(ring.weights2[at * 2]).toBeCloseTo(w.pebble, 6);
-    expect(ring.weights2[at * 2 + 1]).toBeCloseTo(w.detail, 6);
+    expect(ring.weights2[at * WEIGHTS2_STRIDE]).toBeCloseTo(w.pebble, 6);
+    expect(ring.weights2[at * WEIGHTS2_STRIDE + 1]).toBeCloseTo(w.detail, 6);
+  });
+
+  it("carries the ground-cover duff as the third weight of every ring vertex", () => {
+    const ring = createRingSamples(SEED, 0, 0, 0);
+    for (let at = 0; at < SIDE * SIDE; at += 41) {
+      const ix = at % SIDE;
+      const iz = (at / SIDE) | 0;
+      const x = ring.originX + ix * ring.spacing;
+      const z = ring.originZ + iz * ring.spacing;
+      const s = elevationSampleAt(SEED, x, z);
+      const want = groundCover(SEED, x, z, s).duff;
+      expect(ring.weights2[at * WEIGHTS2_STRIDE + 2]).toBeCloseTo(want, 6);
+      expect(ring.weights2[at * WEIGHTS2_STRIDE + 1]).toBeGreaterThanOrEqual(0); // detail still second
+    }
+    expect(WEIGHTS2_STRIDE).toBe(3);
   });
 });
 

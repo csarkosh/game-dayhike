@@ -4,7 +4,7 @@ import {
   CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS, CLUTTER_GRASS, CLUTTER_ROCK,
   CLUTTER_MEADOW, CLUTTER_FLOWER, CLUTTER_LITTER,
   grassTrailGate, CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_FAR,
-  CLUTTER_LITTER_CORE, CLUTTER_LITTER_FADE, CLUTTER_LITTER_CELL, litterBand,
+  CLUTTER_LITTER_CORE, CLUTTER_LITTER_FADE, CLUTTER_LITTER_CELL, CLUTTER_LITTER_D, litterBand,
   CLUTTER_CLASS_COUNT,
   CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO_FADE,
   CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI_FADE,
@@ -348,6 +348,11 @@ describe("clutter instances", () => {
 });
 
 describe("the litter class", () => {
+  it("pins the density constant, declared in CLUTTER_TUNABLES", () => {
+    expect(CLUTTER_LITTER_D).toBe(0.9);
+    expect(CLUTTER_TUNABLES.CLUTTER_LITTER_D).toBe(0.9);
+  });
+
   it("follows its band of the trail distance", () => {
     expect(litterBand(0)).toBe(CLUTTER_LITTER_CORE);
     expect(litterBand(0.44)).toBe(CLUTTER_LITTER_CORE);

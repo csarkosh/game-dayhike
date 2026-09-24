@@ -29,6 +29,7 @@ import {
   ringGeometry,
   updateRingSamples,
   RING_COUNT,
+  WEIGHTS2_STRIDE,
   type RingGeometry,
   type RingSamples,
 } from "./clipmap.js";
@@ -213,7 +214,7 @@ export function applyRingGeometry(mesh: Mesh, geometry: RingGeometry): void {
   // mesh's vertex buffers, so a setVerticesData call placed before it would
   // be discarded rather than merged.
   mesh.setVerticesData("terrainWeights", geometry.weights, true, 4);
-  mesh.setVerticesData("terrainWeights2", geometry.weights2, true, 2);
+  mesh.setVerticesData("terrainWeights2", geometry.weights2, true, WEIGHTS2_STRIDE);
 }
 
 export type Clipmap = {

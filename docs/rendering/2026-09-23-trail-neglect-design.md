@@ -136,10 +136,10 @@ as blocking.
 ## 8. Ownership and order
 
 - The ground cover builds: `trailReach`, `grassTrailRamp`, `trailDriftNoise`,
-  the bed-duff term, their constants and tests, and carries `duff` to the
-  terrain vertex.
-- This design builds: the two paint modulations and the core darkening with
-  their mirror tests; `CLUTTER_LITTER_D`; the trample strength; a verification
+  the bed-duff term, their constants and tests.
+- This design builds: the third terrain weight channel carrying `duff` to the
+  fragment; the two paint modulations and the core darkening with their
+  mirror tests; `CLUTTER_LITTER_D`; the trample strength; a verification
   note; an `ARCHITECTURE.md` sentence. Three tasks.
 - It runs after the ground cover lands and merges on top of it. Rock relief
   and wildlife touch none of these files and run at any point.

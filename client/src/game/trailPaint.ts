@@ -45,6 +45,7 @@ import {
   TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE,
   TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT, TRAIL_BENCH_SHADE,
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE,
+  TRAIL_DRIFT_BAND, TRAIL_DRIFT_TINT, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_DARK, TRAIL_WASH_ROUGH,
   trailWear, trailEdgeNoise, trailBands,
 } from "./trailBenchParams.js";
 
@@ -405,6 +406,18 @@ export const TRAIL_FRAGMENT_PAINT = `
     float tAo = mix(1.0, tGravelRAH.g / 0.5, tk);
     vec3 tCoreCol = vec3(${f(TRAIL_CORE_TINT.r)}, ${f(TRAIL_CORE_TINT.g)}, ${f(TRAIL_CORE_TINT.b)}) * tDarkK * tGravelTex * ${f(TRAIL_CORE_GAIN)} * tAo * tBenchBase;
     vec3 tMarginCol = vec3(${f(TRAIL_MARGIN_TINT.r)}, ${f(TRAIL_MARGIN_TINT.g)}, ${f(TRAIL_MARGIN_TINT.b)}) * tGravelTex * ${f(TRAIL_MARGIN_GAIN)} * tAo * tBenchBase;
+    // Neglect: leaf and needle drifts where the ground cover says litter lies
+    // (the vertex's own duff weight, so a painted drift always has pieces
+    // standing on it), and gravel washed out to bare dirt in patches of the
+    // bed's own noise. Both are smoothsteps and neither touches the band
+    // weights above: the bed's core stays traceable however much lies on it.
+    float tDrift = smoothstep(${f(TRAIL_DRIFT_BAND[0])}, ${f(TRAIL_DRIFT_BAND[1])}, clamp(vTerrainW2.z, 0.0, 1.0));
+    float tWash = smoothstep(${f(TRAIL_WASH_BAND[0])}, ${f(TRAIL_WASH_BAND[1])}, macroValueNoise(vPositionW.xz, ${f(TRAIL_WASH_WAVE)}));
+    tDrift *= 1.0 - tWash;
+    vec3 tDriftCol = tFloorTex * vec3(${f(TRAIL_DRIFT_TINT.r)}, ${f(TRAIL_DRIFT_TINT.g)}, ${f(TRAIL_DRIFT_TINT.b)}) * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;
+    vec3 tWashCol = tFloorTex * ${f(TRAIL_WASH_DARK)} * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;
+    tCoreCol = mix(mix(tCoreCol, tDriftCol, tDrift), tWashCol, tWash);
+    tMarginCol = mix(mix(tMarginCol, tDriftCol, tDrift), tWashCol, tWash);
     float tPuddleLow = smoothstep(${f(TRAIL_PUDDLE_LOW[0])}, ${f(TRAIL_PUDDLE_LOW[1])}, 1.0 - macroValueNoise(vPositionW.xz, ${f(TRAIL_PUDDLE_WAVE)}));
     float tPuddle = smoothstep(${f(TRAIL_PUDDLE_WET[0])}, ${f(TRAIL_PUDDLE_WET[1])}, terrainWet) * tPuddleLow * tCore;
     tCoreCol *= 1.0 - ${f(TRAIL_WET_DARK)} * terrainWet;
@@ -414,7 +427,7 @@ export const TRAIL_FRAGMENT_PAINT = `
     float tOnBench = tInMargin;
     tCol = mix(tCol, mix(mix(tMarginCol, tCoreCol, tInCore), tPacked, tSnow), tOnBench);
     float tGravel = tOnBench * (1.0 - tSnow);
-    vec3 tBenchN = normalize(normalW + vec3(tGravelN.x, 0.0, tGravelN.y) * mix(1.0, 0.5, tInCore));
+    vec3 tBenchN = normalize(normalW + vec3(tGravelN.x, 0.0, tGravelN.y) * mix(1.0, 0.5, tInCore) * (1.0 - tDrift) * (1.0 - tWash) + vec3(tFloorN.x, 0.0, tFloorN.y) * tDrift);
     // The lip: over the sink ramp outside the bench the normal tilts outward
     // and down by the ramp's slope, so a low sun draws the edge as a line.
     // Reads the width-scaled distance, like the bands above it, so the drawn
@@ -427,6 +440,8 @@ export const TRAIL_FRAGMENT_PAINT = `
     vec3 tLipN = normalize(normalW - vec3(tAway.x, 0.0, tAway.y) * ${f(TRAIL_SINK / TRAIL_SINK_RAMP)} * tLip);
     normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), vec3(0.0, 1.0, 0.0), tPuddle));
     float tRoughBench = clamp(terrainLayerRough2.x * mix(1.0, tGravelRAH.r / 0.5, tk), 0.0, 1.0);
+    tRoughBench = mix(tRoughBench, clamp(terrainLayerRough.y * mix(1.0, tFloorRAH.r / 0.5, tk), 0.0, 1.0), tDrift);
+    tRoughBench = mix(tRoughBench, clamp(tRoughBench * ${f(TRAIL_WASH_ROUGH)}, 0.0, 1.0), tWash);
     tRoughBench *= 1.0 - ${f(TRAIL_WET_GLOSS)} * terrainWet * mix(0.5, 1.0, tInCore);
     terrainRough = mix(mix(terrainRough, tRoughBench, tGravel), 0.05, tPuddle);
     terrainF0 = mix(terrainF0, terrainLayerF02.x, tGravel);

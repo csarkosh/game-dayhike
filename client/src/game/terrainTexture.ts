@@ -309,7 +309,7 @@ export function rockParallaxOffset(
 const TERRAIN_FRAGMENT_DEFS = `
 #ifdef TERRAINTEX
 varying vec4 vTerrainW;
-varying vec2 vTerrainW2;
+varying vec3 vTerrainW2;
 uniform sampler2D terrainGrass;
 uniform sampler2D terrainFloor;
 uniform sampler2D terrainRock;
@@ -341,14 +341,14 @@ ${groundHexFx}
 const TERRAIN_VERTEX_DEFS = `
 #ifdef TERRAINTEX
 attribute vec4 terrainWeights;
-attribute vec2 terrainWeights2;
+attribute vec3 terrainWeights2;
 varying vec4 vTerrainW;
-varying vec2 vTerrainW2;
+varying vec3 vTerrainW2;
 #endif
 `;
 
 /** A ring that never got the attributes uploaded reads the WebGL default
- * (0, 0, 0, 1) for a vec4 and (0, 0) for a vec2, so `vTerrainW2.y` — the
+ * (0, 0, 0, 1) for a vec4 and (0, 0, 0) for a vec3, so `vTerrainW2.y` — the
  * detail strength — is 0: albedo, normal perturbation and AO are all true
  * no-ops there (every `mix(..., strength)` collapses to the untouched
  * value). Roughness/F0 are the one exception — they run

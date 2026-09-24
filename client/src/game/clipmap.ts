@@ -18,6 +18,11 @@ import { classifySurface } from "./terrainSurface.js";
 export const RING_CELLS = 128;
 export const RING_COUNT = 7;
 export const BASE_SPACING = 1;
+/** Components per vertex in `weights2`/`terrainWeights2`: pebble, detail,
+ * duff. Every allocation, write and copy of that buffer is sized off this
+ * constant so a stride change cannot silently corrupt the vertex stream at a
+ * site this file forgot. */
+export const WEIGHTS2_STRIDE = 3;
 /** Cells of a ring covered by the next finer ring: 64 coarse = 128 fine. */
 export const HOLE_CELLS = RING_CELLS / 2;
 const SIDE = RING_CELLS + 1;
@@ -45,8 +50,10 @@ export type RingSamples = {
   /** (grass, forestFloor, rock, sand) per vertex, from classifySurface's
    * weights half. */
   weights: Float32Array;
-  /** (pebble, detail) per vertex — the rest of TerrainWeights, split out so
-   * the GPU attribute pair matches a fixed (vec4, vec2) layout. */
+  /** (pebble, detail, duff) per vertex — the rest of TerrainWeights, split out
+   * so the GPU attribute pair matches a fixed (vec4, vec3) layout. Duff is
+   * groundCover's own duff fraction, riding along unclassified so the paint
+   * agrees with where the litter pieces themselves stand. */
   weights2: Float32Array;
 };
 
@@ -58,7 +65,7 @@ export type RingGeometry = {
   colors: Float32Array;
   /** (grass, forestFloor, rock, sand) per vertex — see RingSamples.weights. */
   weights: Float32Array;
-  /** (pebble, detail) per vertex — see RingSamples.weights2. */
+  /** (pebble, detail, duff) per vertex — see RingSamples.weights2. */
   weights2: Float32Array;
 };
 
@@ -92,9 +99,11 @@ function sampleInto(ring: RingSamples, seed: number, ix: number, iz: number): vo
   ring.hh[2 * iz * HALF_SIDE + 2 * ix] = s.h;
   // Passing the sample skips forestDensity and groundCover re-deriving the
   // terrain field. groundCover's own duff fraction rides along so the paint
-  // agrees with where the duff pieces themselves stand.
+  // agrees with where the duff pieces themselves stand — kept in a local so
+  // it can also be written to weights2 below, unclassified.
+  const duff = groundCover(seed, x, z, s).duff;
   const { albedo, weights } = classifySurface(
-    seed, x, z, s.h, Math.hypot(s.dx, s.dz), forestDensity(seed, x, z, s), groundCover(seed, x, z, s).duff,
+    seed, x, z, s.h, Math.hypot(s.dx, s.dz), forestDensity(seed, x, z, s), duff,
   );
   const c = at * 4;
   ring.colors[c] = albedo.r;
@@ -107,8 +116,10 @@ function sampleInto(ring: RingSamples, seed: number, ix: number, iz: number): vo
   ring.weights[c + 1] = weights.forestFloor;
   ring.weights[c + 2] = weights.rock;
   ring.weights[c + 3] = weights.sand;
-  ring.weights2[at * 2] = weights.pebble;
-  ring.weights2[at * 2 + 1] = weights.detail;
+  const w2 = at * WEIGHTS2_STRIDE;
+  ring.weights2[w2] = weights.pebble;
+  ring.weights2[w2 + 1] = weights.detail;
+  ring.weights2[w2 + 2] = duff;
 }
 
 /** One half-lattice point that is NOT a vertex: a midpoint or a cell centre.
@@ -131,7 +142,7 @@ export function createRingSamples(seed: number, level: number, camX: number, cam
     dz: new Float32Array(SIDE * SIDE),
     colors: new Float32Array(SIDE * SIDE * 4),
     weights: new Float32Array(SIDE * SIDE * 4),
-    weights2: new Float32Array(SIDE * SIDE * 2),
+    weights2: new Float32Array(SIDE * SIDE * WEIGHTS2_STRIDE),
   };
   for (let jz = 0; jz < HALF_SIDE; jz++) {
     for (let jx = 0; jx < HALF_SIDE; jx++) {
@@ -171,7 +182,7 @@ export function updateRingSamples(ring: RingSamples, seed: number, camX: number,
   ring.dz = new Float32Array(SIDE * SIDE);
   ring.colors = new Float32Array(SIDE * SIDE * 4);
   ring.weights = new Float32Array(SIDE * SIDE * 4);
-  ring.weights2 = new Float32Array(SIDE * SIDE * 2);
+  ring.weights2 = new Float32Array(SIDE * SIDE * WEIGHTS2_STRIDE);
   ring.originX = ox;
   ring.originZ = oz;
   // One walk over the half-lattice. A vertex shift of k cells is 2k half
@@ -198,8 +209,11 @@ export function updateRingSamples(ring: RingSamples, seed: number, camX: number,
           ring.weights[to * 4 + 1] = oldWeights[from * 4 + 1] as number;
           ring.weights[to * 4 + 2] = oldWeights[from * 4 + 2] as number;
           ring.weights[to * 4 + 3] = oldWeights[from * 4 + 3] as number;
-          ring.weights2[to * 2] = oldWeights2[from * 2] as number;
-          ring.weights2[to * 2 + 1] = oldWeights2[from * 2 + 1] as number;
+          const toW2 = to * WEIGHTS2_STRIDE;
+          const fromW2 = from * WEIGHTS2_STRIDE;
+          ring.weights2[toW2] = oldWeights2[fromW2] as number;
+          ring.weights2[toW2 + 1] = oldWeights2[fromW2 + 1] as number;
+          ring.weights2[toW2 + 2] = oldWeights2[fromW2 + 2] as number;
         }
       } else if (vertex) {
         sampleInto(ring, seed, jx >> 1, jz >> 1);
@@ -338,7 +352,7 @@ export function ringGeometry(
   const normals = new Float32Array(SIDE * SIDE * 3);
   const colors = new Float32Array(SIDE * SIDE * 4);
   const weights = new Float32Array(SIDE * SIDE * 4);
-  const weights2 = new Float32Array(SIDE * SIDE * 2);
+  const weights2 = new Float32Array(SIDE * SIDE * WEIGHTS2_STRIDE);
   const outer = coarser === null ? null : holeCellsFor(coarser, ring);
 
   for (let iz = 0; iz < SIDE; iz++) {
@@ -382,8 +396,10 @@ export function ringGeometry(
       weights[at * 4 + 1] = ring.weights[at * 4 + 1] as number;
       weights[at * 4 + 2] = ring.weights[at * 4 + 2] as number;
       weights[at * 4 + 3] = ring.weights[at * 4 + 3] as number;
-      weights2[at * 2] = ring.weights2[at * 2] as number;
-      weights2[at * 2 + 1] = ring.weights2[at * 2 + 1] as number;
+      const w2 = at * WEIGHTS2_STRIDE;
+      weights2[w2] = ring.weights2[w2] as number;
+      weights2[w2 + 1] = ring.weights2[w2 + 1] as number;
+      weights2[w2 + 2] = ring.weights2[w2 + 2] as number;
     }
   }
 
