@@ -324,10 +324,14 @@ from 0.3 m to 0.5 m so the pieces spread rather than stack. At the measured
 1.8 clumps/m² that is about **31 %** of the ground under litter, against
 0.7 %. The reach widens from 8/12 m to **16/24 m** (medium/high): visible
 litter would turn the old 8 m edge into a line the eye follows, the lesson
-the blade-to-card hand-off already taught. The cost is small: about 115 k
-vertices over the widest reach for the worst character, 7 % of the blade
-budget; the budget test moves from a literal to a named `DUFF_VERTEX_BUDGET`
-computed over the reach constants.
+the blade-to-card hand-off already taught. The cost is small, and two numbers
+describe it. The bound the budget test holds — the worst single character
+over the high tier's padded 24 m reach, every cell at full strength — measures
+about 346 k vertices, against a `DUFF_VERTEX_BUDGET` of 480 k computed over
+the reach constants rather than literals. The expected cost in play is far
+lower: the field's real mix of characters over the cells that actually carry
+litter comes to roughly 115 k vertices at the widest reach, 7 % of the blade
+budget.
 
 **Canopy grass.** `CLUTTER_GRASS_CANOPY_FLOOR` rises from 0.15 to **0.5** —
 the level id moves with it. The two height cuts stop compounding:
