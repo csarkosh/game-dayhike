@@ -8,6 +8,7 @@ import vertexWorldPos from "../../src/game/shaders/foliageWorldPos.vertex.fx?raw
 import fragmentLights from "../../src/game/shaders/foliageLights.fragment.fx?raw";
 import {
   attachFoliage, setFoliageWind, setFoliageEdges, setFoliageBladeEdges, FoliagePlugin, FOLIAGE_PROFILES,
+  FOLIAGE_PLAYERS,
   FOLIAGE_TILT, FOLIAGE_BEND, FOLIAGE_BEND_R, FOLIAGE_SINK, FOLIAGE_CLUMP_LUMA, FOLIAGE_CLUMP_CELL,
   FOLIAGE_PLAYER_PARKED, FOLIAGE_BLADE_SOFT,
 } from "../../src/game/foliagePlugin.js";
@@ -35,7 +36,33 @@ describe("foliage plugin", () => {
       UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
       TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false, blades: false, normalUp: 0 },
       BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: true, normalUp: 1.0 },
+      DUFF: { amp: 0, groundTint: 0.7, rootAO: 0.6, normalRoot: 0, tilt: false, bend: false, blades: true, normalUp: 0.5 },
     });
+  });
+
+  it("binds the DUFF profile's amp as a zero wind uniform, not merely a zero constant", () => {
+    // amp governs the motion weight the vertex shader multiplies the whole
+    // wind displacement by (foliageWorldPos.vertex.fx's `fM`); reading
+    // FOLIAGE_PROFILES.DUFF.amp only proves the constant is 0, not that the
+    // material the renderer actually draws with receives it. Bound here with
+    // a gusty, leaning wind record in play, so a wrong wire-up (binding some
+    // other profile's amp, or a stale one) would show up as a non-zero write.
+    const mat = new PBRMaterial("m-duff-amp", scene);
+    attachFoliage(mat, FOLIAGE_PROFILES.DUFF, 0.1);
+    const plugin = mat.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+    setFoliageWind({ dirX: 1, dirZ: 0, speed: 1, lean: 0.4, gustAmp: 0.9, flutterAmp: 0.7, time: 3 }, new Float32Array(FOLIAGE_PLAYERS * 3));
+    const writes: Record<string, number[]> = {};
+    const ub = {
+      updateFloat: (n: string, v: number) => { writes[n] = [v]; },
+      updateFloat2: (n: string, a: number, b: number) => { writes[n] = [a, b]; },
+      updateFloat3: (n: string, a: number, b: number, c: number) => { writes[n] = [a, b, c]; },
+      updateFloat4: (n: string, a: number, b: number, c: number, d: number) => { writes[n] = [a, b, c, d]; },
+      updateFloatArray: (n: string, v: Float32Array) => { writes[n] = Array.from(v); },
+    };
+    plugin.bindForSubMesh(ub as never, scene, undefined as never, undefined as never);
+    expect(writes.foliageAmp).toEqual([0]);
+    // The wind itself is live (not accidentally zeroed too) — amp alone gates duff.
+    expect(writes.windGust).toEqual([0.9]);
   });
 
   it("attaches once, idempotently, and activates", () => {

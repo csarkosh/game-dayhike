@@ -412,6 +412,31 @@ describe("world shell wiring", () => {
     // previous frame's tail.
     expect(drain).toContain("wildlifeEventDrain.length = n;");
   });
+
+  it("creates the duff field beside the blade field, both guarded to the same tiers", () => {
+    const creation = slice("const bladeMeshes =", "// Same late-registration story");
+    // Hand-authored levels have no forest, and low tier cannot afford either
+    // field — both guards must agree, or one draws where the other does not.
+    expect(creation).toMatch(/forest !== null && tier !== "low" \? createBladeMeshes\(/);
+    expect(creation).toMatch(/forest !== null && tier !== "low" \? createDuffMeshes\(/);
+    expect(creation).toContain("createBladeMeshes(scene, forest.seed, { quality: tier })");
+    expect(creation).toContain("createDuffMeshes(scene, forest.seed, { quality: tier })");
+  });
+
+  it("updates duff in the freecam branch AND the player branch, with the blades' own eye position", () => {
+    // The blade shell has no wiring test of its own (this file's head comment:
+    // the forest, clutter and blade/duff shells get no smoke test here at
+    // all), so this is the first thing to catch a duff update wired into only
+    // one of the two camera branches, or missing from the dispose list —
+    // exactly the failure a shell "constructed and never updated" produces.
+    const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
+    const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
+    expect(freecamBranch.match(/duffMeshes\?\.update\(/g)).toHaveLength(1);
+    expect(playerBranch.match(/duffMeshes\?\.update\(/g)).toHaveLength(1);
+    expect(freecamBranch).toContain("bladeMeshes?.update(freecam.x, freecam.z);\n        duffMeshes?.update(freecam.x, freecam.z);");
+    expect(playerBranch).toContain("bladeMeshes?.update(local.pos.x, local.pos.z);\n        duffMeshes?.update(local.pos.x, local.pos.z);");
+    expect(src.match(/duffMeshes\?\.dispose\(\)/g)).toHaveLength(1);
+  });
 });
 
 describe("writeListenerPose", () => {

@@ -87,6 +87,10 @@ export const FOLIAGE_PROFILES = {
   UNDERSTORY: { amp: 0.67, groundTint: 0.4, rootAO: 0.55, normalRoot: 0, tilt: false, bend: true, blades: false, normalUp: 0 },
   TREE: { amp: 0.33, groundTint: 0, rootAO: 1, normalRoot: 0.6, tilt: false, bend: false, blades: false, normalUp: 0 },
   BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: true, normalUp: 1.0 },
+  /** Dead leaves, twigs and small branches: no wind (amp 0 — litter does not
+   * sway), no tilt or bend, but still the per-piece `blades` cut so a thin
+   * cell's clump can lose pieces the way a thin sward loses blades. */
+  DUFF: { amp: 0, groundTint: 0.7, rootAO: 0.6, normalRoot: 0, tilt: false, bend: false, blades: true, normalUp: 0.5 },
 } as const satisfies Record<string, FoliageProfile>;
 
 // Module-level like skin.ts: every material's plugin instance reads one truth,
