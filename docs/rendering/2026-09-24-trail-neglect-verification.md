@@ -70,8 +70,10 @@ identically before judging because the scenes are dark.
   was moved here.
 - **The drifts do not read as leaves.** They read as smooth packed dirt. The
   drift tint as first written carried the forest floor's own hue rather than
-  the needle bed's, and is now derived from `NEEDLE_BED` instead. Beyond
-  that, it is the litter pieces meant to lie on a painted drift that cannot
+  the needle bed's, and is now derived from `NEEDLE_BED` instead; re-shot at
+  the same pose, the drift reads as needle-brown where it read as dimmed
+  floor, at the same brightness. Beyond that, it is the litter pieces meant
+  to lie on a painted drift that cannot
   be seen, because the ground cover's duff characters are millimetres wide
   (a twig is 5 mm, a leaf cluster 2.2 cm): sub-pixel at a few metres. That is
   a defect in the ground cover, not in this paint, and it is recorded here
