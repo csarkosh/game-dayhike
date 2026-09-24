@@ -424,11 +424,13 @@ describe("world shell wiring", () => {
   });
 
   it("updates duff in the freecam branch AND the player branch, with the blades' own eye position", () => {
-    // The blade shell has no wiring test of its own (this file's head comment:
-    // the forest, clutter and blade/duff shells get no smoke test here at
-    // all), so this is the first thing to catch a duff update wired into only
-    // one of the two camera branches, or missing from the dispose list —
-    // exactly the failure a shell "constructed and never updated" produces.
+    // This file's head comment names the forest, clutter and mist shells as
+    // having no smoke test here at all — the blade and duff shells share
+    // that same gap (neither was named because neither existed when the
+    // comment was written), so this is the first thing to catch a duff
+    // update wired into only one of the two camera branches, or missing from
+    // the dispose list — exactly the failure a shell "constructed and never
+    // updated" produces.
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
     expect(freecamBranch.match(/duffMeshes\?\.update\(/g)).toHaveLength(1);

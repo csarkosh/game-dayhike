@@ -4,10 +4,10 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import "../../src/sim/passes/index.js";
-import { DUFF_ALBEDO, DUFF_CHARACTER_COUNT, DUFF_CHARACTERS, DUFF_TIER_COUNTS, duffClumpGeometry } from "../../src/game/duffClump.js";
+import { activeTerrainVariant } from "../../src/sim/terrain.js";
+import { DUFF_ALBEDO, DUFF_CHARACTER_COUNT, DUFF_CHARACTERS, DUFF_HEIGHT_MAX, DUFF_TIER_COUNTS, duffClumpGeometry } from "../../src/game/duffClump.js";
 import { DUFF_REACH, DUFF_REBUILD_CELL, createDuffCollector, duffTierBands } from "../../src/game/duffField.js";
 import { createDuffMeshes, duffMeshName } from "../../src/game/duffMeshes.js";
-import { instanceMatrixFor, trampleFrame } from "../../src/game/clutterMeshes.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
 
 // The forest-interior census point duffField.test.ts uses: deep under
@@ -65,7 +65,7 @@ describe("createDuffMeshes", () => {
     engine.dispose();
   });
 
-  it("fills each bucket with its tier's cells of its character, nearest first, with the cards' matrix and tint and the strength", () => {
+  it("fills each bucket with its tier's cells of its character, nearest first, with the cards' XZ, tint and strength", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const duff = createDuffMeshes(scene, SEED, { quality: "high" });
@@ -84,17 +84,63 @@ describe("createDuffMeshes", () => {
         const tints = bufferFor(spy, mesh, "foliage")!;
         const strengths = bufferFor(spy, mesh, "bladeStrength")!;
         expect(bufferFor(spy, mesh, "fadeBands")).toBeNull();
-        const buf = new Float32Array(16);
         for (let i = 0; i < Math.min(cells.length, 20); i++) {
           const c = cells[i]!;
           expect(strengths[i]).toBe(Math.fround(c.strength));
           expect(c.strength).toBeLessThanOrEqual(1);
-          // The litter class is not trampled, so the frame is the identity —
-          // the matrix is exactly the cards' own, with no height scaling.
-          const frame = trampleFrame(SEED, c);
-          instanceMatrixFor(c, frame, buf);
-          for (let k = 0; k < 16; k++) expect(matrices[i * 16 + k]).toBeCloseTo(buf[k]!, 5);
+          // XZ placement only — not the matrix's Y translation, which the
+          // next test ties to the sim's own ground height rather than to
+          // `instanceMatrixFor`'s own output (see there for why).
+          expect(matrices[i * 16 + 12]).toBeCloseTo(c.x, 4);
+          expect(matrices[i * 16 + 14]).toBeCloseTo(c.z, 4);
           expect(tints[i * 4 + 3]).toBeCloseTo(1 - 0.5 * c.canopy, 5);
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+    spy.mockRestore();
+    duff.dispose();
+    engine.dispose();
+  });
+
+  it("never sinks an instance below the sim's own ground height at its exact x/z", () => {
+    // The regression this guards: `instanceMatrixFor` sinks every non-boulder
+    // instance CLUTTER_SINK (2 cm) below ground, a margin `bladeMeshes.ts`'s
+    // own blades and a rock's flattened underside absorb invisibly, but the
+    // leaf-cluster character never rises above 6 mm (duffClump.ts) — sunk
+    // by the full 2 cm, the whole clump used to render entirely underground.
+    // Deliberately does NOT call `instanceMatrixFor` or re-derive the
+    // expectation from any code in `duffMeshes.ts`: it samples the terrain
+    // the same way `duffField.ts` did when it built the cell, an oracle
+    // outside the module under test, so a defect in how `duffMeshes.ts` uses
+    // the sink cannot also be baked into the check that is supposed to catch
+    // it — the exact way the matrix-equality version of this test agreed
+    // with the bug it should have caught.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const duff = createDuffMeshes(scene, SEED, { quality: "high" });
+    const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    duff.update(CAM.x, CAM.z);
+    const tiers = createDuffCollector(SEED).collect(CAM.x, CAM.z, DUFF_REACH.high);
+    const lists = [tiers.near, tiers.far];
+    const variant = activeTerrainVariant();
+    let checked = 0;
+    for (let t = 0; t < 2; t++) {
+      for (let ch = 0; ch < DUFF_CHARACTER_COUNT; ch++) {
+        const cells = lists[t]!.filter((c) => c.character === ch);
+        if (cells.length === 0) continue;
+        const mesh = scene.getMeshByName(duffMeshName(ch, t)) as Mesh;
+        const matrices = bufferFor(spy, mesh, "matrix")!;
+        for (let i = 0; i < Math.min(cells.length, 20); i++) {
+          const c = cells[i]!;
+          const groundH = variant.sample(SEED, c.x, c.z).h;
+          const worldY = matrices[i * 16 + 13]!;
+          expect(worldY).toBeGreaterThanOrEqual(groundH - 1e-4);
+          // Root ring sits exactly at ground, not lifted an arbitrary amount:
+          // the whole clump (root through its own DUFF_HEIGHT_MAX ceiling)
+          // must stay above ground without floating clear of it either.
+          expect(worldY).toBeLessThan(groundH + DUFF_HEIGHT_MAX);
           checked++;
         }
       }
@@ -142,13 +188,22 @@ describe("createDuffMeshes", () => {
     engine.dispose();
   });
 
-  it("uses the medium counts on medium", () => {
+  it("uses the medium counts and the medium tier's own 6→8 m hand-off band on medium", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const duff = createDuffMeshes(scene, SEED, { quality: "medium" });
     const mesh = scene.getMeshByName(duffMeshName(0, 0)) as Mesh;
     const g = duffClumpGeometry(DUFF_CHARACTERS[0]!, DUFF_TIER_COUNTS.medium[0]!);
     expect(mesh.getTotalVertices()).toBe(g.positions.length / 3);
+    // `high` and `medium` reach different distances (12 m / 8 m), so each
+    // quality's own material must carry ITS reach's bands, not high's —
+    // unasserted before this case, which only ever built `quality: "high"`.
+    const bands = duffTierBands(DUFF_REACH.medium);
+    for (let t = 0; t < 2; t++) {
+      const tierMesh = scene.getMeshByName(duffMeshName(0, t)) as Mesh;
+      const foliage = (tierMesh.material as PBRMaterial).pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+      expect(foliage.bladeEdges).toEqual(bands[t]);
+    }
     duff.dispose();
     engine.dispose();
   });

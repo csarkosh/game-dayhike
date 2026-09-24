@@ -26,7 +26,7 @@ import {
 import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, duffClumpGeometry } from "./duffClump.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
-import { instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
+import { CLUTTER_SINK, instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 
 export const DUFF_MESH_PREFIX = "duff_clumps";
 export function duffMeshName(character: number, tier: number): string {
@@ -89,6 +89,12 @@ const EMPTY_BUFFER = new Float32Array(0);
  * copy it into a bucket buffer at any offset without a per-instance subarray
  * view — `writeInstanceMatrix`'s trick in the clutter shell. */
 const scratchMat = new Float32Array(16);
+/** The Y translation's index in a Babylon `Matrix`'s flat 16-float array
+ * (`Matrix.copyToArray`'s own layout: translation occupies indices 12-14,
+ * column-major). Verified directly against `Matrix.ComposeToRef`'s output
+ * rather than assumed, since getting this wrong would silently move every
+ * duff piece sideways instead of up. */
+const MATRIX_TY = 13;
 
 /**
  * Grows a bucket's buffers to hold `bucket.count` instances if they do not
@@ -174,7 +180,12 @@ function createClumpMesh(scene: Scene, character: number, tier: number, count: n
   // glow `bladeMeshes.ts` calls out for its own clumps — opaque, near the eye,
   // inside the first cascade — and the argument is stronger here than for a
   // standing blade, since duff is floor rather than something standing above
-  // the ground it shares a shadow with.
+  // the ground it shares a shadow with. Argued, not measured: the ~4 ms
+  // `prepBucketMesh` cites for bush-scale receivers is a real number against
+  // a real frame budget, and these six buckets add shadow-receiving draws of
+  // their own inside a 12 m disc with no frame-time reading behind them yet.
+  // The frame-time gate for this ground-cover work must isolate that cost
+  // rather than assume this argument already accounts for it.
   mesh.receiveShadows = true;
   return mesh;
 }
@@ -236,6 +247,20 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
       // flatten near the trail and does not.
       const frame = trampleFrame(seed, c);
       instanceMatrixFor(c, frame, scratchMat);
+      // `instanceMatrixFor` sinks every non-boulder instance CLUTTER_SINK
+      // (2 cm) below its sampled ground height, on the reasoning that "two
+      // centimetres is under a blade's width, so nothing visibly shortens"
+      // (clutterMeshes.ts). That holds for a blade root, a rock's flattened
+      // underside or a grass card's base edge — all taller than the sink by
+      // at least an order of magnitude — but not for duff: the leaf-cluster
+      // character's own geometry never rises above 6 mm (duffClump.ts), so
+      // the 2 cm sink would bury it, and the whole clump, entirely below the
+      // terrain. Cancelled here, per-instance, rather than by changing
+      // `instanceMatrixFor` itself, which every other clutter class still
+      // relies on. This restores the piece's root ring to sit exactly at the
+      // sampled ground height, the same plane its own vertices are built
+      // against (duffClump.ts: "Roots lie on a disc... at y = 0").
+      scratchMat[MATRIX_TY] = scratchMat[MATRIX_TY]! + CLUTTER_SINK;
       bucket.buf.set(scratchMat, bucket.count * 16);
       writeFoliage(seed, c, bucket.foliage, bucket.count * 4, frame);
       bucket.bladeStrength[bucket.count] = c.strength;
