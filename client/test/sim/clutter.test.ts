@@ -993,12 +993,16 @@ describe("groundCover", () => {
       if (forestDensity(seed, x, z, s) > 0.95 && activeTerrainVariant().trailDistance!(seed, x, z) > 30) found = { x, z };
     }
     expect(found).not.toBeNull();
+    expect(found).toEqual({ x: 0, z: 168 });
     const s = elevationSampleAt(seed, found!.x, found!.z);
     const c = groundCover(seed, found!.x, found!.z, s);
-    // grass is at least the floor's share of what the open field would give,
-    // and the duff there is what the field's own share term says
-    expect(c.grass).toBeGreaterThanOrEqual(CLUTTER_GRASS_CANOPY_FLOOR * CLUTTER_GRASS_PATCH_FLOOR);
-    expect(c.duff).toBeLessThanOrEqual(1);
+    // At this cell onGrass, road and trail are all 1 and shade is 1, so
+    // grass is the floor itself, exactly.
+    expect(c.grass).toBeGreaterThan(0.3);
+    expect(c.grass).toBeCloseTo(0.5, 6);
+    // Duff is 1 - 0.5 / 1.5, the field's own share term at the new floor.
+    expect(c.duff).toBeLessThan(0.8);
+    expect(c.duff).toBeCloseTo(2 / 3, 6);
   });
 
   it("keeps the path readable: no grass inside the bed's core, and the ramp's reach varies along the trail", () => {
