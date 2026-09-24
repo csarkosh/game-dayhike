@@ -199,16 +199,25 @@ export const REMOVE_FACTOR = 1.5;
 export const REMOVE_SECONDS = 5;
 /**
  * The id namespace the shell draws a placed unit's id from — `DIRECTOR_ID_BASE + species *
- * stride + slot` — kept apart from the field's own so the two can never collide on one
- * `states` map key. NOT a boundary the director itself tests any unit's id against: an id is
- * a name, not a magnitude, and reading ownership off it was the bug. `wildlifeField.ts`'s
- * packed field id biases every cell by `CELL_ID_BIAS` (8192) before the species bits, so a
- * unit anywhere near the world's own origin already carries an id north of 2^30 — comfortably
- * past this constant on its own, which is what `sweepRemovals` used to test with a bare `>=`.
- * Measured on the disc around (2000, -500): every one of 54 real units came out between 1.075
- * and 1.085 billion. Ownership is carried explicitly on `Candidate.owned` instead — the shell
- * knows exactly which units it placed, and the director is told rather than left to guess
- * from a number that was never a reliable signal of it.
+ * stride + slot` — kept apart from the field's own so that any position a player could
+ * plausibly reach never produces a colliding `states` map key. NOT literally disjoint from
+ * the field's own range, though, and not a boundary the director itself tests any unit's id
+ * against: an id is a name, not a magnitude, and reading ownership off it was the bug.
+ * `wildlifeField.ts`'s packed field id biases every cell by `CELL_ID_BIAS` (8192) before the
+ * species bits, so a unit anywhere near the world's own origin already carries an id north of
+ * 2^30 — comfortably past this constant on its own, which is what `sweepRemovals` used to test
+ * with a bare `>=`. Measured on the disc around (2000, -500): every one of 54 real units came
+ * out between 1.075 and 1.085 billion. But the field's id range still touches this one at its
+ * far edge: `unitId(SPECIES_SQUIRREL, -6144, -8186)` packs to exactly `DIRECTOR_ID_BASE + 3 *
+ * 16 + 3` — a squirrel cell 6144 cells (147 km, at the squirrel's 24 m cell) out on X alone —
+ * "orders of magnitude beyond anywhere a player reaches" per `unitId`'s own doc, but not
+ * impossible on the number line, and this comment should not claim otherwise. Ownership is
+ * carried explicitly on `Candidate.owned` instead — the shell knows exactly which units it
+ * placed, and the director is told rather than left to guess from a number that was never a
+ * reliable signal of it, collision or none. If this ever needs to be exact rather than
+ * practically safe, the clean fix is drawing pool ids negative: a real field id is always a
+ * positive int32 (`unitId`'s own doc), so a negative one would make the two namespaces provably
+ * disjoint instead of merely improbable to collide.
  */
 export const DIRECTOR_ID_BASE = 1 << 28;
 
@@ -604,7 +613,10 @@ export function observe(
  */
 const CUE_LARGE: readonly number[] = [SPECIES_ELK, SPECIES_DEER];
 const CUE_SMALL: readonly number[] = [SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_BUTTERFLY];
-const CUE_WEIGHT: readonly number[] = buildCueWeights();
+/** Exported as a test seam: `CUE_WEIGHT[s] > 0` is exactly "the director may draw this
+ * species for a cue", which a table-consistency check needs without duplicating
+ * `CUE_LARGE`/`CUE_SMALL` (and so risking drifting out of step with them) elsewhere. */
+export const CUE_WEIGHT: readonly number[] = buildCueWeights();
 function buildCueWeights(): number[] {
   const w = new Array<number>(SPECIES_BUTTERFLY + 1).fill(0);
   for (const s of CUE_LARGE) w[s] = 1 / CUE_LARGE.length;

@@ -235,6 +235,17 @@ export type WildlifeMeshes = {
    * an id, since ownership is no longer something an id encodes at all.
    */
   poolCount(): number;
+  /**
+   * Every id the director has ever asked to be given back, in request order
+   * — appended before `applyDirectorEvent` decides whether to honour it, so
+   * this is what the director REQUESTED, not what the shell actually did.
+   * A test seam for exactly the failure `owned` exists to prevent: with
+   * `Candidate.owned` set wrong, this fills with real, natural ids the
+   * director wrongly believes are its own to recycle, even on a build whose
+   * own remove-guard quietly absorbs the resulting bad requests and would
+   * otherwise look, from `poolCount`/`acquired` alone, like nothing went wrong.
+   */
+  directorRemovals(): readonly number[];
   dispose(): void;
 };
 
@@ -380,14 +391,21 @@ export function createWildlifeMeshes(
   const disturbances: PlayerPoint[] = [];
   // The wildlife director: its own state (the sighting clock and log), the
   // ground function it judges line of sight against (closed over `seed` once,
-  // never rebuilt), and the candidate list `update` rebuilds from `states`
-  // each frame it runs at all. `candidatePool` holds the actual objects,
-  // grown by need and never shrunk — the `disturbPool` idiom above, applied
-  // to a list rebuilt from a Map instead of an events array — so a steady
-  // disc allocates nothing here once it has grown to its high-water mark.
-  // `directorEvents` is reused the same way. `lastDirectorTick` starts at -1
-  // so the first director frame takes a sane default `dt` instead of reading
-  // a nonsensical span back from before the shell existed.
+  // never rebuilt), and the candidate list `update`'s own per-unit loop fills
+  // as it goes (see `pushCandidateFor`) rather than walking `states` a second
+  // time — a second `values()` iterator per frame is exactly what the
+  // `birdList` comment above rules out, and candidate-building is no
+  // exception. `candidatePool` holds the actual objects, grown by need and
+  // never shrunk — the `disturbPool` idiom above, applied to a list rebuilt
+  // from a Map instead of an events array — so a steady disc allocates
+  // nothing here once it has grown to its high-water mark. `candidateCount`
+  // is that pool's write cursor for the frame, reset in `resetCandidates`.
+  // `directorEvents` and `directorRemovals` are reused the same way;
+  // `directorRemovals` is a test-only log of every `remove` the director has
+  // asked for, kept regardless of whether `applyDirectorEvent` went on to
+  // honour it. `lastDirectorTick` starts at -1 so the first director frame
+  // takes a sane default `dt` instead of reading a nonsensical span back from
+  // before the shell existed.
   //
   // `poolIds` is the shell's own record of which live `states` entries it
   // placed itself, rather than the seeded field — the thing `Candidate.owned`
@@ -401,7 +419,9 @@ export function createWildlifeMeshes(
   const candidatePool: Candidate[] = [];
   const candidates: Candidate[] = [];
   const directorEvents: CueEvent[] = [];
+  const directorRemovals: number[] = [];
   const poolIds = new Set<number>();
+  let candidateCount = 0;
   let lastDirectorTick = -1;
   const scratchQ = new Quaternion();
   const scratchScale = new Vector3();
@@ -618,74 +638,99 @@ export function createWildlifeMeshes(
   /**
    * Carries out one of the director's three event kinds against `states`.
    *
-   * A `remove` is honoured only for an id `poolIds` still holds — the shell's
-   * own record of what it placed, checked rather than assumed: the director
-   * decides `remove` only for a `Candidate` `buildCandidates` itself marked
-   * `owned`, so this should always hold, but a stale id from a unit that left
-   * some other way this same frame costs nothing to rule out and a mistaken
-   * one costs a real animal's whole state — gone until the next disc rebuild
-   * recreates it from scratch, at its ORIGINAL spawn point rather than
-   * wherever it had gotten to, which if the player is looking anywhere near
-   * there is exactly the appearing-from-nowhere this feature exists to
-   * prevent. A `drive` carries no matching risk and is deliberately not
-   * guarded the same way: driving a natural unit into view is the preferred
-   * half of every cue, not a bug.
+   * Every `remove` the director ever asks for is recorded into
+   * `directorRemovals` FIRST, before anything below has a chance to decide
+   * whether to honour it — a test seam that watches what the director
+   * REQUESTS rather than what the shell actually did with it, so a guard
+   * that quietly swallowed a bad request (as this one does) cannot also hide
+   * the request from a test written to catch it.
+   *
+   * A `remove` is then honoured only for an id `poolIds` still holds — the
+   * shell's own record of what it placed, checked rather than assumed: the
+   * director decides `remove` only for a `Candidate` `buildCandidates` itself
+   * marked `owned`, so this should always hold, but a stale id from a unit
+   * that left some other way this same frame costs nothing to rule out and a
+   * mistaken one costs a real animal's whole state — gone until the next disc
+   * rebuild recreates it from scratch, at its ORIGINAL spawn point rather
+   * than wherever it had gotten to, which if the player is looking anywhere
+   * near there is exactly the appearing-from-nowhere this feature exists to
+   * prevent. `Set.delete` reports whether the id was there, which both
+   * answers that question and clears the bookkeeping in one call — done
+   * before the `states` lookup below, so an id that names a unit gone some
+   * other way is never left stranded in `poolIds` just because this function
+   * returned early. A `drive` carries no matching risk and is deliberately
+   * not guarded the same way: driving a natural unit into view is the
+   * preferred half of every cue, not a bug.
    */
   function applyDirectorEvent(e: CueEvent, tick: number): void {
     if (e.kind === "place") { applyPlace(e, tick); return; }
+    if (e.kind === "remove") {
+      directorRemovals.push(e.id);
+      const owned = poolIds.delete(e.id);
+      const u = states.get(e.id);
+      if (u === undefined || !owned) return;
+      releaseUnit(u);
+      states.delete(e.id);
+      return;
+    }
     const u = states.get(e.id);
     if (u === undefined) return; // the unit it named already left some other way
-    if (e.kind === "drive") { startCue(u, e.goalX, e.goalZ, e.run, tick); return; }
-    if (!poolIds.has(e.id)) return;
-    poolIds.delete(e.id);
-    releaseUnit(u);
-    states.delete(e.id);
+    startCue(u, e.goalX, e.goalZ, e.run, tick);
+  }
+
+  /** Clears `candidates` before a frame that runs the director rebuilds it —
+   * called once, before the per-unit loop in `update`, so that loop can push
+   * this frame's candidates as it visits each unit rather than `states`
+   * taking a second `values()` iterator of its own (see the `birdList`
+   * comment above for why a second one matters here). */
+  function resetCandidates(): void {
+    candidates.length = 0;
+    candidateCount = 0;
   }
 
   /**
-   * Rebuilds `candidates` from `states` for the director to look at this
-   * frame — reusing the objects in `candidatePool` rather than allocating new
-   * ones, the `disturbPool` idiom. A loop flier is seated on its LEAD BIRD's
-   * pose, not its loop centre: `x/y/z` is what the invariant judges, and for a
-   * flock that is the nearest bird, not a point that can sit a hundred metres
-   * from any of them. Everything else — a mammal, the butterfly, a placed
-   * pool unit — has no loop, so its own position IS its anchor and `moveR` is
-   * zero. A flier not yet posed (the one tick between `createUnitState` and
-   * its first `stepUnit`) is skipped outright rather than read off its
-   * ground-seated placeholder, which would report it at ground level: the
-   * same call this file already makes for a bird's very first scheduled call.
+   * Candidate-fills the next slot of `candidatePool` from `u` and appends it
+   * to `candidates` — called once per unit from inside `update`'s own
+   * per-unit loop, immediately after that unit's `stepUnit` (or, for a unit
+   * the presence gate is hiding this frame, in its place), so every candidate
+   * reflects this frame's freshest pose rather than last frame's. A loop
+   * flier is seated on its LEAD BIRD's pose, not its loop centre: `x/y/z` is
+   * what the invariant judges, and for a flock that is the nearest bird, not
+   * a point that can sit a hundred metres from any of them. Everything else
+   * — a mammal, the butterfly, a placed pool unit — has no loop, so its own
+   * position IS its anchor and `moveR` is zero. A flier not yet posed (the
+   * one tick between `createUnitState` and its first `stepUnit`) is skipped
+   * outright rather than read off its ground-seated placeholder, which would
+   * report it at ground level: the same call this file already makes for a
+   * bird's very first scheduled call.
    *
    * `owned` is read straight off `poolIds` — told to the director rather than
    * left for it to infer from the id, which is the whole point of carrying
    * the flag at all (see `Candidate`'s own doc in wildlifeDirector.ts).
    */
-  function buildCandidates(view: View, mist: number): void {
-    candidates.length = 0;
-    let i = 0;
-    for (const u of states.values()) {
-      const flier = isLoopFlier(u.unit.species);
-      if (flier && !u.posed) continue;
-      let c = candidatePool[i];
-      if (c === undefined) {
-        c = { id: 0, species: 0, x: 0, y: 0, z: 0, onScreen: false, phase: 0, moveX: 0, moveZ: 0, moveR: 0, owned: false };
-        candidatePool[i] = c;
-      }
-      c.id = u.unit.id;
-      c.species = u.unit.species;
-      c.phase = u.phase;
-      c.owned = poolIds.has(u.unit.id);
-      if (flier) {
-        const lead = u.poses[0]!;
-        c.x = lead.x; c.y = lead.y; c.z = lead.z;
-        c.moveX = u.x; c.moveZ = u.z; c.moveR = u.unit.radius;
-      } else {
-        c.x = u.x; c.y = u.y; c.z = u.z;
-        c.moveX = u.x; c.moveZ = u.z; c.moveR = 0;
-      }
-      c.onScreen = onScreen(view, ground, c, mist);
-      candidates.push(c);
-      i++;
+  function pushCandidateFor(u: UnitState, view: View, mist: number): void {
+    const flier = isLoopFlier(u.unit.species);
+    if (flier && !u.posed) return;
+    let c = candidatePool[candidateCount];
+    if (c === undefined) {
+      c = { id: 0, species: 0, x: 0, y: 0, z: 0, onScreen: false, phase: 0, moveX: 0, moveZ: 0, moveR: 0, owned: false };
+      candidatePool[candidateCount] = c;
     }
+    c.id = u.unit.id;
+    c.species = u.unit.species;
+    c.phase = u.phase;
+    c.owned = poolIds.has(u.unit.id);
+    if (flier) {
+      const lead = u.poses[0]!;
+      c.x = lead.x; c.y = lead.y; c.z = lead.z;
+      c.moveX = u.x; c.moveZ = u.z; c.moveR = u.unit.radius;
+    } else {
+      c.x = u.x; c.y = u.y; c.z = u.z;
+      c.moveX = u.x; c.moveZ = u.z; c.moveR = 0;
+    }
+    c.onScreen = onScreen(view, ground, c, mist);
+    candidates.push(c);
+    candidateCount++;
   }
 
   /**
@@ -897,11 +942,20 @@ export function createWildlifeMeshes(
       }
       lastPresenceTick = tick;
 
+      if (director !== undefined) resetCandidates();
       for (const u of states.values()) {
         // A raven the presence gate hides is not here this frame — it neither
-        // moves nor croaks (see `ravenHidden`).
-        if (ravenHidden(u)) continue;
+        // moves nor croaks (see `ravenHidden`) — but it is still a candidate,
+        // at whatever pose it was frozen at: the director's own view of the
+        // world is not the presence gate's to narrow.
+        if (ravenHidden(u)) {
+          if (director !== undefined) pushCandidateFor(u, director.view, director.match.mist);
+          continue;
+        }
         stepUnit(u, tick, players, seed, hour, disturbances, events);
+        // After this unit's own `stepUnit`, not before: a candidate has to
+        // reflect this frame's freshest pose, never last frame's.
+        if (director !== undefined) pushCandidateFor(u, director.view, director.match.mist);
         if (u.unit.species >= FIRST_BIRD_SPECIES) continue; // thin instances — `updateBirds` below
         const r = WILDLIFE_RADIUS[u.unit.species]! * radiusScale;
         const edgeStart = Math.max(0, r - WILDLIFE_FADE_BAND);
@@ -936,17 +990,16 @@ export function createWildlifeMeshes(
       // reaction wildlife has.
       captureDisturbances(eventsBefore);
 
-      // The director, last: it reads this frame's freshly stepped `states`
-      // to build its candidates, and any unit it places or re-targets is
+      // The director, last: `candidates` is already this frame's, filled by
+      // the per-unit loop above, and any unit it places or re-targets is
       // picked up by `stepUnit`/`ensureSlot` starting next frame — the same
       // one-tick lag `createUnitState`'s ground-seated placeholder already
       // carries for a brand new bird. Without a seventh argument this whole
-      // block never runs: no candidate is built, `stepDirector` is never
-      // called, and no pool unit is ever created.
+      // block never runs: `candidates` is never even filled, `stepDirector`
+      // is never called, and no pool unit is ever created.
       if (director !== undefined) {
         const dt = lastDirectorTick === -1 ? TICK_DT : Math.max(TICK_DT, (tick - lastDirectorTick) / SIM_TICK_HZ);
         lastDirectorTick = tick;
-        buildCandidates(director.view, director.match.mist);
         directorEvents.length = 0;
         stepDirector(directorState, director.view, ground, candidates, director.match, dt, tick, seed, directorEvents);
         for (let i = 0; i < directorEvents.length; i++) applyDirectorEvent(directorEvents[i]!, tick);
@@ -966,6 +1019,9 @@ export function createWildlifeMeshes(
     poolCount() {
       return poolIds.size;
     },
+    directorRemovals() {
+      return directorRemovals;
+    },
     dispose() {
       for (const [key, inst] of slots) {
         if (shadows !== undefined) for (const mesh of inst.root.getChildMeshes()) shadows.remove(mesh);
@@ -974,6 +1030,7 @@ export function createWildlifeMeshes(
       slots.clear();
       states.clear();
       poolIds.clear();
+      directorRemovals.length = 0;
       birdList.length = 0;
       events.length = 0;
       if (ownsBirds) {

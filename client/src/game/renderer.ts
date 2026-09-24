@@ -858,6 +858,12 @@ export function createRenderer(
    * fall silent outright while it hunts (`wildlifeDirector.ts`'s `relaxFor`):
    * a fiction requirement, not an optimisation, so a cue is never staged
    * competing with the one thing the player is supposed to be looking at.
+   *
+   * Nearest only: a second, farther Hollow actually hunting is masked by a
+   * nearer one merely standing or emerging, which only relaxes the cadence
+   * rather than silencing it outright. In practice there is one Hollow at a
+   * time, so this is a known shape of the single-Hollow match rather than an
+   * oversight, not a case this needs to handle today.
    */
   function findHollow(state: WorldState, x: number, z: number): void {
     let distance = Infinity;

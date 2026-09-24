@@ -17,14 +17,14 @@ import { WING_TIME_WRAP, WingPlugin } from "../../src/game/wingPlugin.js";
 import { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import { TransformNode as BabylonTransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import {
-  FIRST_BIRD_SPECIES, SPECIES_COUNT, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RAVEN_PAIR,
+  DIRECTOR_POOL, FIRST_BIRD_SPECIES, SPECIES_COUNT, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RAVEN_PAIR,
   SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, WILDLIFE_RADIUS, wildlifeUnitsInDisc,
 } from "../../src/game/wildlifeField.js";
 import {
   BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, birdBucketOmega, birdLodMeshes, createWildlifeMeshes,
   SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
 } from "../../src/game/wildlifeMeshes.js";
-import { GAP, LEAD, STILL_RELAX, type MatchState, type View } from "../../src/game/wildlifeDirector.js";
+import { CUE_WEIGHT, GAP, LEAD, STILL_RELAX, type MatchState, type View } from "../../src/game/wildlifeDirector.js";
 import type { ClipRole, CreatureInstance, CreaturePool } from "../../src/game/creatureModel.js";
 
 setActiveTerrainVariant("olympic");
@@ -461,6 +461,59 @@ describe("the wildlife director", () => {
     expect(removedAt).toBeGreaterThan(0);
     w.dispose();
     engine.dispose();
+  });
+
+  it("never asks to remove a real, natural unit, driven at a camera with real wildlife nearby", () => {
+    // The exact regression `Candidate.owned` exists to prevent, caught directly: set wrong
+    // (e.g. always true) makes the director believe every natural unit
+    // nearby is its own to recycle. Watching RELEASES rather than REQUESTS
+    // would miss that — this shell's own `poolIds` guard in
+    // `applyDirectorEvent` absorbs a bad request before anything is actually
+    // released, so `acquired`/`poolCount` alone can look clean even when the
+    // director is reasoning from a false premise. `directorRemovals()` is
+    // recorded before that guard runs, specifically so a test can see the
+    // request itself.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    const naturalIds = new Set(wildlifeUnitsInDisc(SEED, CAM_X, CAM_Z).map((u) => u.id));
+    expect(naturalIds.size).toBeGreaterThan(0);
+    const view: View = { x: CAM_X, y: elevationAt(SEED, CAM_X, CAM_Z) + 1.7, z: CAM_Z, yaw: 0, pitch: 0, fov: 1.4, aspect: 16 / 9 };
+    for (let tick = 0; tick < 3600; tick++) {
+      w.update(CAM_X, CAM_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    }
+    // Sanity: this population is genuinely mixed and genuinely active — a
+    // drive with nothing natural nearby, or nothing ever cued, would pass
+    // this test for the wrong reason.
+    expect(w.directorLog().length).toBeGreaterThan(0);
+    const requestedNatural = w.directorRemovals().filter((id) => naturalIds.has(id));
+    expect(requestedNatural).toEqual([]);
+    w.dispose();
+    engine.dispose();
+  });
+
+  it("gives every cueable species an asset and a pool slot, or neither of the two", () => {
+    // The shape of the bug this guards: a species the cue table can still draw
+    // (`CUE_WEIGHT[s] > 0`) but that neither `SPECIES_ASSET` nor `BIRD_ASSET`
+    // can render is a `place` that holds a pool slot for life, is logged as a
+    // sighting, and is never actually seen — crediting the cadence promise
+    // for an animal that was not there. The butterfly is exactly this case
+    // until it ships a model: `DIRECTOR_POOL[SPECIES_BUTTERFLY]` is 0 rather
+    // than the 3 its placeable species mates get, and this is what holds the
+    // two facts (asset shipped, pool slot given) to changing together —
+    // giving the butterfly its asset without also giving `DIRECTOR_POOL` its
+    // slot back fails this exactly as loudly as the reverse would.
+    const hasAsset = (species: number): boolean =>
+      (SPECIES_ASSET[species] ?? null) !== null || (BIRD_ASSET[species] ?? null) !== null;
+    let checked = 0;
+    for (let species = 0; species < CUE_WEIGHT.length; species++) {
+      if (CUE_WEIGHT[species]! <= 0) continue; // not cueable at all — nothing to check
+      checked++;
+      expect(hasAsset(species)).toBe((DIRECTOR_POOL[species] ?? 0) > 0);
+    }
+    // Guards the loop above against a `CUE_WEIGHT` that quietly went empty.
+    expect(checked).toBeGreaterThan(0);
   });
 });
 
