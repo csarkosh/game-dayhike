@@ -1,21 +1,23 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { CLUTTER_GRASS, CLUTTER_LITTER, groundCover } from "../../src/sim/clutter.js";
+import { CLUTTER_GRASS, CLUTTER_GRASS_BOOST, CLUTTER_GRASS_CANOPY_FLOOR, CLUTTER_LITTER, groundCover } from "../../src/sim/clutter.js";
 import { instanceMatrixFor, LITTER_VARIANT_SCALE } from "../../src/game/clutterMeshes.js";
 import { bladeCellAt } from "../../src/game/bladeField.js";
 import { DUFF_CHARACTER_COUNT } from "../../src/game/duffClump.js";
 import {
   DUFF_CELL, DUFF_CHARACTER_WEIGHTS, DUFF_COLLAPSE_BAND, DUFF_JITTER, DUFF_PAD, DUFF_REACH, DUFF_REBUILD_CELL,
-  DUFF_STRENGTH_FLOOR, DUFF_TIER_BAND, DUFF_TIER_EDGE,
+  DUFF_STRENGTH_FLOOR, DUFF_SWEEP_SIZE, DUFF_TIER_BAND, DUFF_TIER_EDGE,
   collectDuffCells, createDuffCollector, duffCellAt, duffCharacterFor, duffTierBands, type DuffCell,
 } from "../../src/game/duffField.js";
 
 const SEED = 1;
 // A point deep under forest canopy, well off the trail: measured, the
-// ground-cover field's duff is 0.9 at 1680 of the 1681 points of its 40 m
-// neighbourhood at 1 m spacing — the one exception, (460, -615), is
-// 0.8891893787719652 — so every cell the tests below touch is non-null,
-// and all but that one exception carry the same strength.
+// ground-cover field's duff sits at its full-canopy plateau — the share
+// term `1 - CLUTTER_GRASS_CANOPY_FLOOR / CLUTTER_GRASS_BOOST`, two thirds —
+// at 1680 of the 1681 points of its 40 m neighbourhood at 1 m spacing — the
+// one exception, (460, -615), is 0.6621091594767639 — so every cell the
+// tests below touch is non-null, and all but that one exception carry the
+// same strength.
 const CAM = { x: 480, z: -600 };
 const REACH = DUFF_REACH.high;
 
@@ -31,7 +33,7 @@ describe("the duff field's constants", () => {
     expect(DUFF_CELL).toBe(1);
     expect(DUFF_REBUILD_CELL).toBe(1);
     expect(DUFF_PAD).toBeCloseTo(Math.SQRT2 * (DUFF_REBUILD_CELL + DUFF_CELL), 12);
-    expect(DUFF_REACH).toEqual({ high: 12, medium: 8 });
+    expect(DUFF_REACH).toEqual({ high: 24, medium: 16 });
     expect(DUFF_TIER_EDGE).toBe(6);
     expect(DUFF_TIER_BAND).toBe(1.5);
     expect(DUFF_COLLAPSE_BAND).toBe(2);
@@ -54,25 +56,30 @@ describe("the duff field's constants", () => {
     expect(far).toEqual([DUFF_TIER_EDGE - DUFF_TIER_BAND, DUFF_TIER_EDGE, REACH - DUFF_COLLAPSE_BAND, REACH]);
   });
 
-  it("picks characters by the spec's weights: 0.55 twig, 0.35 leaf, 0.10 branch", () => {
-    expect(DUFF_CHARACTER_WEIGHTS).toEqual([0.55, 0.35, 0.1]);
+  it("picks characters by the spec's weights: 0.15 twig, 0.75 leaf, 0.10 branch", () => {
+    expect(DUFF_CHARACTER_WEIGHTS).toEqual([0.15, 0.75, 0.1]);
     expect(DUFF_CHARACTER_COUNT).toBe(3);
     const counts = new Array<number>(DUFF_CHARACTER_COUNT).fill(0);
     const n = 10000;
     for (let i = 0; i < n; i++) counts[duffCharacterFor(i / n)]!++;
     for (let c = 0; c < DUFF_CHARACTER_COUNT; c++) expect(counts[c]! / n).toBeCloseTo(DUFF_CHARACTER_WEIGHTS[c]!, 2);
     // The three named examples.
-    expect(duffCharacterFor(0.5)).toBe(0); // twig
+    expect(duffCharacterFor(0.1)).toBe(0); // twig
     expect(duffCharacterFor(0.7)).toBe(1); // leaf
     expect(duffCharacterFor(0.95)).toBe(2); // branch
-    // The cumulative boundaries themselves (0.55, 0.90, 1.00): just under a
+    // The cumulative boundaries themselves (0.15, 0.90, 1.00): just under a
     // boundary is the lower tier, just at or over it is the next.
-    expect(duffCharacterFor(0.549999)).toBe(0);
-    expect(duffCharacterFor(0.55)).toBe(1);
+    expect(duffCharacterFor(0.149999)).toBe(0);
+    expect(duffCharacterFor(0.15)).toBe(1);
     expect(duffCharacterFor(0.899999)).toBe(1);
     expect(duffCharacterFor(0.9)).toBe(2);
     expect(duffCharacterFor(0.999999)).toBe(2);
     expect(duffCharacterFor(0)).toBe(0);
+  });
+
+  it("keeps the widest padded reach inside the collector's cache", () => {
+    const cells = (Math.PI * (DUFF_REACH.high + DUFF_PAD) ** 2) / (DUFF_CELL * DUFF_CELL);
+    expect(cells).toBeLessThan(DUFF_SWEEP_SIZE);
   });
 });
 
@@ -99,12 +106,17 @@ describe("one cell", () => {
     expect(c.hash).toBeLessThan(1);
     expect(c.character).toBe(duffCharacterFor(c.characterDraw));
     expect(duffCellAt(SEED, Math.floor(c.x / DUFF_CELL), Math.floor(c.z / DUFF_CELL))).toEqual(c);
-    // This point's own local plateau — 0.9 at all but one of the 1681
-    // points across its 40 m neighbourhood at 1 m spacing (see the comment
-    // on CAM above) — not a hard ceiling the field enforces: rarer points
-    // elsewhere on this same seed run well above it, toward the field's
-    // true mathematical bound of 1.
-    expect(c.strength).toBeCloseTo(0.9, 6);
+    // This point's own local plateau — the field's share term at the
+    // canopy floor, `1 - CLUTTER_GRASS_CANOPY_FLOOR / CLUTTER_GRASS_BOOST`
+    // (two thirds) — holds at all but one of the 1681 points across its
+    // 40 m neighbourhood at 1 m spacing (see the comment on CAM above) — not
+    // a hard ceiling the field enforces: rarer points elsewhere on this same
+    // seed run well above it, toward the field's true mathematical bound of
+    // 1. Pinned both ways: the derivation, so it moves with the constants,
+    // and a literal bound below the old canopy floor's plateau (0.9), so a
+    // revert of the floor is caught even if the derivation is reverted too.
+    expect(c.strength).toBeCloseTo(1 - CLUTTER_GRASS_CANOPY_FLOOR / CLUTTER_GRASS_BOOST, 6);
+    expect(c.strength).toBeLessThan(0.8); // the old 0.15 floor's 0.9 plateau fails this
   });
 
   it("ties the strength at a cell whose duff sits strictly between the floor and its own local plateau", () => {

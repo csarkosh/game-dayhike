@@ -1,19 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
   DUFF_ALBEDO, DUFF_BRANCH, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_CLUMP_RADIUS, DUFF_HEIGHT_MAX, DUFF_LEAF, DUFF_TIER_COUNTS, DUFF_TWIG,
+  DUFF_VERTEX_BUDGET,
   duffClumpGeometry, duffClumpMaxHeight, duffClumpReach, duffVertexCount,
 } from "../../src/game/duffClump.js";
+import { DUFF_PAD, DUFF_REACH, DUFF_TIER_BAND, DUFF_TIER_EDGE } from "../../src/game/duffField.js";
 import { BLADE_TIP_TINT } from "../../src/game/bladeClump.js";
 
 describe("the duff characters", () => {
   it("match the spec", () => {
     expect(DUFF_CHARACTER_COUNT).toBe(3);
     expect(DUFF_CHARACTERS[DUFF_TWIG]!.length).toEqual([0.10, 0.25]);
-    expect(DUFF_CHARACTERS[DUFF_TWIG]!.pieces).toEqual([2, 3]);
+    expect(DUFF_CHARACTERS[DUFF_TWIG]!.pieces).toEqual([3, 5]);
+    expect(DUFF_CHARACTERS[DUFF_TWIG]!.width).toBe(0.012);
     expect(DUFF_CHARACTERS[DUFF_BRANCH]!.length).toEqual([0.30, 0.60]);
     expect(DUFF_CHARACTERS[DUFF_BRANCH]!.pieces).toEqual([1, 1]);
-    expect(DUFF_CHARACTERS[DUFF_LEAF]!.pieces).toEqual([4, 6]);
-    expect(DUFF_CLUMP_RADIUS).toBe(0.3);
+    expect(DUFF_CHARACTERS[DUFF_LEAF]!.pieces).toEqual([14, 22]);
+    expect(DUFF_CHARACTERS[DUFF_LEAF]!.length).toEqual([0.12, 0.20]);
+    expect(DUFF_CHARACTERS[DUFF_LEAF]!.width).toBe(0.08);
+    expect(DUFF_CLUMP_RADIUS).toBe(0.5);
     expect(DUFF_HEIGHT_MAX).toBe(0.12);
     expect(DUFF_ALBEDO).toEqual({ r: 0.16, g: 0.11, b: 0.06 });
   });
@@ -125,14 +130,15 @@ describe("duffClumpGeometry", () => {
   });
 
   it("stays under the vertex budget over the high tier's reach at full strength", () => {
-    // 1 m lattice, near disc to 6 m + pad, far annulus to 12 m + pad, both padded 2.83 m.
+    // 1 m lattice, near disc to the tier edge + pad, far annulus to the reach + pad.
     // `count` is the tier multiplier (DUFF_TIER_COUNTS), not a piece count.
-    const pad = Math.SQRT2 * 2;
-    const near = Math.PI * (6 + pad) ** 2, far = Math.PI * ((12 + pad) ** 2 - Math.max(0, 6 - 1.5 - pad) ** 2);
+    const e = DUFF_TIER_EDGE, r = DUFF_REACH.high, pad = DUFF_PAD;
+    const near = Math.PI * (e + pad) ** 2, far = Math.PI * ((r + pad) ** 2 - Math.max(0, e - DUFF_TIER_BAND - pad) ** 2);
     let worst = 0;
     for (const ch of DUFF_CHARACTERS) {
       worst = Math.max(worst, near * duffVertexCount(ch, DUFF_TIER_COUNTS.high[0]) + far * duffVertexCount(ch, DUFF_TIER_COUNTS.high[1]));
     }
-    expect(worst).toBeLessThan(120_000);
+    expect(worst).toBeLessThan(DUFF_VERTEX_BUDGET);
+    expect(worst).toBeGreaterThan(DUFF_VERTEX_BUDGET * 0.5); // the budget is a real bound, not a formality
   });
 });

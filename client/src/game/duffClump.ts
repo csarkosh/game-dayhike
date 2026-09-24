@@ -31,11 +31,15 @@ import { BLADE_TRIS, BLADE_VERTS, createStripWriter, type StripArrays } from "./
  * visibility count taken from a 0.28 m, 10 cm-eye-height pose (far lower and
  * closer than a standing player ever gets) stopped improving meaningfully
  * past this range, and a standing eye needs less rise than that pose did to
- * begin with. After the widening the leaf is still the lowest-lying
- * character in the field by a wide margin — mean per-piece rise ≈16 mm
- * against the twig's ≈26 mm and the branch's ≈38 mm, and its own analytic
- * ceiling (`duffClumpMaxHeight`) sits at just 28% of `DUFF_HEIGHT_MAX` — so
- * it still reads as litter, not something standing. `duffClumpReach` and
+ * begin with. Litter later grew leaf-sized: a leaf is now 12–20 cm long and
+ * 8 cm wide, fourteen to twenty-two to a clump (three quarters of every
+ * draw), and a twig 1.2 cm wide, three to five to a clump — sized and
+ * populous enough to read as ground cover rather than a few brown specks.
+ * The longer leaf raised its own analytic ceiling (`duffClumpMaxHeight`) to
+ * about 80% of `DUFF_HEIGHT_MAX`, the most headroom used of the three
+ * characters, but a 20 cm leaf at the top of its 0.5 rad lift range still
+ * reaches only 0.2 × sin(0.5) ≈ 0.096 m — comfortably under the 0.12 m cap,
+ * so it still reads as litter, not something standing. `duffClumpReach` and
  * `duffClumpMaxHeight` below are re-derived from this array, not
  * hand-adjusted, so a further retune here cannot silently violate either
  * bound — the test suite the bound holds against is the check, not this
@@ -72,10 +76,16 @@ export type DuffCharacter = {
   forked: boolean;
 };
 
-/** Roots lie on a disc of this radius (m). */
-export const DUFF_CLUMP_RADIUS = 0.3;
-/** No vertex rises above this (m): duff is floor, never cover. */
+/** Roots lie on a disc of this radius (m), so pieces spread rather than stack. */
+export const DUFF_CLUMP_RADIUS = 0.5;
+/** No vertex rises above this (m): duff is floor, never cover. A 20 cm leaf
+ * at the top of its lift range reaches 0.2 × sin(0.5) ≈ 0.096 m, comfortably
+ * under this. */
 export const DUFF_HEIGHT_MAX = 0.12;
+/** The worst single character's vertex count over the high tier's padded
+ * reach at full strength (see the budget test in duffClump.test.ts), with
+ * headroom: measured ~346 k. */
+export const DUFF_VERTEX_BUDGET = 480_000;
 /** The material's base albedo, linear: a dead-leaf brown. */
 export const DUFF_ALBEDO: Rgb = { r: 0.16, g: 0.11, b: 0.06 };
 /** Piece-count multiplier per tier (near, far). */
@@ -94,8 +104,8 @@ const DUFF_FORK_WIDTH = 0.7;
 const DUFF_FORK_ANGLE = 0.61;
 
 export const DUFF_CHARACTERS: readonly DuffCharacter[] = [
-  { name: "twig", pieces: [2, 3], length: [0.10, 0.25], width: 0.005, tint: { r: 1.0, g: 0.85, b: 0.65 }, tintSpread: 0.25, lift: [0.05, 0.25], forked: false },
-  { name: "leaf cluster", pieces: [4, 6], length: [0.04, 0.07], width: 0.022, tint: { r: 1.15, g: 0.80, b: 0.45 }, tintSpread: 0.3, lift: [0.1, 0.5], forked: false },
+  { name: "twig", pieces: [3, 5], length: [0.10, 0.25], width: 0.012, tint: { r: 1.0, g: 0.85, b: 0.65 }, tintSpread: 0.25, lift: [0.05, 0.25], forked: false },
+  { name: "leaf", pieces: [14, 22], length: [0.12, 0.20], width: 0.08, tint: { r: 1.15, g: 0.80, b: 0.45 }, tintSpread: 0.3, lift: [0.1, 0.5], forked: false },
   { name: "small branch", pieces: [1, 1], length: [0.30, 0.60], width: 0.010, tint: { r: 0.85, g: 0.70, b: 0.55 }, tintSpread: 0.2, lift: [0.02, 0.15], forked: true },
 ];
 
