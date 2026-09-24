@@ -63,9 +63,6 @@ describe("the blade field's constants", () => {
       expect(bladeSizeFor(d, 0.8)).toBe(BLADE_SIZE_BASE);
       expect(bladeSizeFor(d, 1.5)).toBe(BLADE_SIZE_FULL);
     }
-    // A cell at the canopy floor draws the base clump, not the thin one.
-    expect(bladeSizeFor(0.5, 0.5)).toBe(1);
-    expect(bladeSizeFor(0.99, 0.5)).toBe(1);
     // Inside a band the thin (or full) share falls (rises) monotonically and
     // continuously with cover: over 200 draws per step, no step of the share
     // is larger than 0.15.
@@ -92,6 +89,18 @@ describe("the blade field's constants", () => {
       prev = cur;
     }
     expect(prev).toBe(1);
+  });
+
+  it("never draws the thin clump for a cell at the canopy floor", () => {
+    // Half the draws were thin here under the old band; the new band sits wholly below 0.5.
+    let thin = 0;
+    for (let d = 0; d <= 1; d += 0.001) if (bladeSizeFor(d, 0.5) === BLADE_SIZE_THIN) thin++;
+    expect(thin).toBe(0);
+    // and the band still bites below it: some draws at cover 0.35 are thin, some are not
+    let thinLow = 0, n = 0;
+    for (let d = 0; d <= 1; d += 0.001) { n++; if (bladeSizeFor(d, 0.35) === BLADE_SIZE_THIN) thinLow++; }
+    expect(thinLow).toBeGreaterThan(0);
+    expect(thinLow).toBeLessThan(n);
   });
 });
 
