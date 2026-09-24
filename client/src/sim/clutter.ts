@@ -369,10 +369,10 @@ export const CLUTTER_FLOWER_SCALE_MIN = 0.81;
 export const CLUTTER_FLOWER_SCALE_MAX = 1.61;
 /** Litter lives on a 1 m cell along the trail: a few proud stones on the
  * compacted core, the most over the loose margin and its lip, gone by
- * CLUTTER_LITTER_FADE. D = 0.6 puts about one piece per 1.5 m per side on
+ * CLUTTER_LITTER_FADE. D = 0.9 puts about one piece per 1.1 m per side on
  * the margin (presence = min(1, band · 1 · D) per cell). */
 export const CLUTTER_LITTER_CELL = 1;
-export const CLUTTER_LITTER_D = 0.6;
+export const CLUTTER_LITTER_D = 0.9;
 export const CLUTTER_LITTER_CORE = 0.15;
 export const CLUTTER_LITTER_MARGIN_LO = 0.45;
 export const CLUTTER_LITTER_MARGIN_HI = 0.9;

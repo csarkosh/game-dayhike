@@ -31,7 +31,7 @@ describe("constants", () => {
     expect(TRAIL_BENCH_SHADE).toBe(0.6);
     expect([TRAIL_WET_DARK, TRAIL_WET_GLOSS]).toEqual([0.35, 0.5]);
     expect(TRAIL_PUDDLE_WET).toEqual([0.55, 0.8]); expect(TRAIL_PUDDLE_LOW).toEqual([0.62, 0.75]); expect(TRAIL_PUDDLE_WAVE).toBe(6);
-    expect([TRAMPLE_HEIGHT, TRAMPLE_LEAN]).toEqual([0.55, 0.35]); expect(TRAMPLE_TINT).toEqual({ r: 0.85, g: 0.8, b: 0.65 });
+    expect([TRAMPLE_HEIGHT, TRAMPLE_LEAN]).toEqual([0.73, 0.21]); expect(TRAMPLE_TINT).toEqual({ r: 0.85, g: 0.8, b: 0.65 });
     expect(TRAMPLE_BAND).toEqual([0.75, 1.6]);
   });
 });
@@ -75,6 +75,7 @@ describe("bands and trampling", () => {
     expect(trailBands(1.5)).toEqual({ core: 0, margin: 0, trample: 0 });
   });
   it("trampleAt reaches the constants at the bench edge and is the identity past the band", () => {
+    expect(trampleAt(0)).toEqual({ height: 0.73, lean: 0.21, tint: TRAMPLE_TINT });
     const at = trampleAt(0.75);
     expect(at.height).toBeCloseTo(TRAMPLE_HEIGHT, 9); expect(at.lean).toBeCloseTo(TRAMPLE_LEAN, 9);
     expect(at.tint).toEqual(TRAMPLE_TINT);

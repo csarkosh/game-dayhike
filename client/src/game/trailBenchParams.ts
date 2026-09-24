@@ -51,8 +51,8 @@ export const TRAIL_PUDDLE_WET: readonly [number, number] = [0.55, 0.8];
 export const TRAIL_PUDDLE_LOW: readonly [number, number] = [0.62, 0.75];
 export const TRAIL_PUDDLE_WAVE = 6;
 /** The trampled cards beside the bench. */
-export const TRAMPLE_HEIGHT = 0.55;
-export const TRAMPLE_LEAN = 0.35;
+export const TRAMPLE_HEIGHT = 0.73;
+export const TRAMPLE_LEAN = 0.21;
 export const TRAMPLE_TINT: Rgb = { r: 0.85, g: 0.8, b: 0.65 };
 export const TRAMPLE_BAND: readonly [number, number] = [0.75, 1.6];
 
