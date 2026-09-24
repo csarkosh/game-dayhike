@@ -34,6 +34,16 @@ export const SPECIES_EAGLE = 7;
  * (the wing beat, the buffers) rather than a pooled creature — but it flies no loop of its
  * own, so `wildlifeMeshes.ts`'s `isLoopFlier` names it out of the four true fliers above it,
  * and it is placed in the open near flower cover rather than scanned for a snag or a coast.
+ *
+ * Numbering a non-flier above `FIRST_BIRD_SPECIES` has a cost worth naming before a second
+ * one is added: every `>= FIRST_BIRD_SPECIES` test in the tree now needs a hand-written
+ * `!== SPECIES_BUTTERFLY` beside it, and there are six of them (`isLoopFlier` and
+ * `birdPresenceFor` here, `poseBirds`, `cueSpeedFor` and `callGain` in wildlifeBehaviour.ts,
+ * `placeable` in wildlifeDirector.ts). A second boundary constant — the last LOOP flier, so
+ * the true fliers are a closed range and the card species sit above it — would turn all six
+ * back into range tests that a new species joins for free. Worth doing when there is a
+ * second card species and not before: one exception written out six times is still readable,
+ * and the refactor is only correct once there is something to draw the boundary between.
  */
 export const SPECIES_BUTTERFLY = 8;
 export const SPECIES_COUNT = 9;
@@ -54,10 +64,23 @@ export const WILDLIFE_CELL: readonly number[] = [96, 64, 32, 24, 4 * TREE_CELL, 
  * twelve it can be made out at while staying under the squirrel's fifty.
  */
 export const WILDLIFE_RADIUS: readonly number[] = [150, 150, 60, 50, 400, 400, 400, 400, 40];
-/** Seeded presence draw per gated cell — starting points. The butterfly's is a coin flip:
- * flower cover already does the scarcity work (`clutterDensity(seed, CLUTTER_FLOWER, …)`
- * gates most cells to zero), so this only has to thin what is left, not carry the whole
- * habitat test on its own the way the ground species' floors do. */
+/**
+ * Seeded presence draw per gated cell — starting points.
+ *
+ * The butterfly's coin flip sits on top of a habitat gate that has already rejected most of
+ * the world (`clutterDensity(seed, CLUTTER_FLOWER, …)` plus the open-ground test), and the
+ * two together make it the SPARSEST species in the world by a wide margin. Measured over 289
+ * camera positions on a 120 m grid, three seeds: a butterfly is somewhere in the disc at only
+ * 9–14 % of them, at 0.19–0.30 per disc, against the rabbit's 0.71–1.21 and the squirrel's
+ * 1.67–2.74 — and per square metre the gap is wider still, since its disc is 40 m against
+ * their 60 and 50.
+ *
+ * So the design's "the most frequent small cue there is" is delivered by the DIRECTOR, not by
+ * the world: the butterfly takes a fifth of the small group's cue weight, and the field
+ * underneath it is nearly empty. That is the whole of the reasoning — this number is not
+ * trying to make butterflies common, and nothing downstream reads it as if they were. The
+ * one thing that does depend on the sparsity is `DIRECTOR_POOL`'s entry: see there.
+ */
 export const WILDLIFE_D: readonly number[] = [0.35, 0.5, 0.6, 0.5, 0.25, 0.4, 0.7, 0.6, 0.5];
 /**
  * How many pool slots the shell reserves per species for the wildlife director's placed
@@ -67,11 +90,31 @@ export const WILDLIFE_D: readonly number[] = [0.35, 0.5, 0.6, 0.5, 0.25, 0.4, 0.
  * butterfly (`placeable` in wildlifeDirector.ts) ever draw from theirs — a loop flier is only
  * ever driven, never placed, so its slots stand unused until a future change lets one be.
  *
- * The butterfly's own entry matches its placeable mates now that `wildlifeMeshes.ts` ships
- * it a real asset (`BIRD_ASSET`'s code-built entry): while that was still missing this held
- * at 0 rather than 3, so `poolSlotFor` never handed out a slot for an animal nothing could
- * render — `wildlifeMeshes.test.ts`'s asset/pool consistency test holds the two facts
- * (asset shipped, pool slot given) to changing together in either direction.
+ * The butterfly's 3 is the largest entry in the table, and deliberately so — it does NOT
+ * match its placeable mates (elk and deer take 1, rabbit and squirrel 2). Two measurements
+ * put it there.
+ *
+ * Its cues are almost all PLACES. Over the director's own thousand-second sweep the
+ * butterfly runs 18–43 placements against 0–2 drives, while the rabbit runs the other way
+ * round, 4–20 placements against 9–31 drives. That follows straight from `WILDLIFE_D`'s
+ * census: the natural butterfly population is the sparsest in the world, so there is almost
+ * never one already out there to be driven into frame, and the pool carries the whole
+ * species rather than topping it up.
+ *
+ * And the director asks for three at once. Peak concurrent placed butterflies over that
+ * sweep reaches 3 on half of the graded seed-runs (7 of 14) and 4–5 under an ungraded
+ * fast-turning head — so a pool of 2 would have had `poolSlotFor` decline placements on
+ * half of them. (Those peaks are demand, not what the shell granted: the sweep's own
+ * harness models no pool at all.) Elk and deer show as much demand and still take 1,
+ * because that is a different trade: an elk is a pooled GLB with a shadow, and several
+ * standing about at once reads as a herd rather than as a sighting. Three butterflies is
+ * three 8 cm cards in a bucket that already exists.
+ *
+ * The entry also has to stay non-zero for as long as the species can be cued at all: while
+ * `wildlifeMeshes.ts` shipped it no asset this held at 0, so `poolSlotFor` never handed out
+ * a slot for an animal nothing could render. `wildlifeMeshes.test.ts`'s asset/pool
+ * consistency check holds the two facts (asset shipped, pool slot given) to changing
+ * together in either direction.
  */
 export const DIRECTOR_POOL: readonly number[] = [1, 1, 2, 2, 2, 2, 2, 2, 3];
 /**

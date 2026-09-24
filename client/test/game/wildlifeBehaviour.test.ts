@@ -12,7 +12,8 @@ import {
   PHASE_REST, PHASE_ALERT, PHASE_FLEE, PHASE_SETTLE, PHASE_RETURN, CALL_ELK_BUGLE, CALL_RAVEN_CROAK,
   CALL_SQUIRREL_CHATTER, ELK_FLEE_SPEED, RABBIT_BOLT_SPEED, RABBIT_HIDDEN_SECONDS, SQUIRREL_RUN_SPEED,
   ELK_FLEE_RANGE, ELK_ALERT_RANGE, RAVEN_DISTURB_RANGE, RABBIT_FREEZE_SECONDS,
-  ELK_BUGLE_INTERVAL, RAVEN_CROAK_INTERVAL, DAWN_HOUR, DAWN_DUSK_WINDOW,
+  ELK_BUGLE_INTERVAL, RAVEN_CROAK_INTERVAL, DAWN_HOUR, DAWN_DUSK_WINDOW, DUSK_HOUR,
+  BUTTERFLY_BOB_OMEGA, BUTTERFLY_DAY_RAMP,
   ELK_FLEE_AWAY, ELK_REFUGE_ARRIVE, SQUIRREL_FORAGE_RADIUS, SQUIRREL_CLIMB, SQUIRREL_CLING_CLEARANCE,
   RAVEN_BLEND_SECONDS, RAVEN_CLIMB_MPS, ravenBlendSeconds, clipForPhase,
   PHASE_CUE, RABBIT_RETURN_SPEED, GULL_SPEED, startCue, BUTTERFLY_ALT, BUTTERFLY_SPEED, BUTTERFLY_CUE_SPEED,
@@ -861,18 +862,46 @@ describe("calls and presence", () => {
     expect(half.aloft).toBe(0);
     expect(half.raven).toBe(2);
   });
-  it("the butterfly is present in daylight and clear weather, and 0 at night and in rain", () => {
-    // Daylight, no rain: fully present, whatever the hour reads as inside the day.
-    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 6).butterfly).toBeCloseTo(1, 9);
-    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 12).butterfly).toBeCloseTo(1, 9);
-    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 19).butterfly).toBeCloseTo(1, 9);
-    // Full dark, clear skies: gone, on the clock alone.
-    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 0).butterfly).toBe(0);
-    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 2).butterfly).toBe(0);
-    expect(wildlifePresenceUnder(WEATHER_PRESETS.clear, 23).butterfly).toBe(0);
-    // Full rain at noon: gone, on the weather alone.
+  it("the butterfly fills the middle of the day and ramps away to nothing at dawn, dusk and rain", () => {
+    const at = (hour: number): number => wildlifePresenceUnder(WEATHER_PRESETS.clear, hour).butterfly;
+    // Full in the middle of the day, and its whole day sits INSIDE daylight: nothing flies
+    // before the sun is up or after it is down. (The call schedule's own dawn/dusk window is
+    // a wider span for a different purpose; reading it here put butterflies up at 04:30.)
+    expect(at(12)).toBeCloseTo(1, 9);
+    expect(at(DAWN_HOUR + BUTTERFLY_DAY_RAMP)).toBeCloseTo(1, 9);
+    expect(at(DUSK_HOUR - BUTTERFLY_DAY_RAMP)).toBeCloseTo(1, 9);
+    expect(at(DAWN_HOUR)).toBe(0);
+    expect(at(DUSK_HOUR)).toBe(0);
+    for (const hour of [0, 2, 5, 21, 23]) expect(at(hour)).toBe(0);
+
+    // A RAMP, not a threshold — the constraint every other factor in this function already
+    // meets. Both edges rise and fall smoothly, are strictly between 0 and 1 across their
+    // span, and never step by more than a hair in a tenth of an hour: a switch on the clock
+    // would empty the air of butterflies between one frame and the next.
+    for (const [lo, hi, rising] of [[DAWN_HOUR, DAWN_HOUR + BUTTERFLY_DAY_RAMP, true], [DUSK_HOUR - BUTTERFLY_DAY_RAMP, DUSK_HOUR, false]] as const) {
+      expect(at((lo + hi) / 2)).toBeCloseTo(0.5, 6);
+      let prev = at(lo);
+      let biggestStep = 0;
+      for (let hour = lo; hour <= hi + 1e-9; hour += 0.01) {
+        const here = at(hour);
+        expect(here).toBeGreaterThanOrEqual(-1e-12);
+        expect(here).toBeLessThanOrEqual(1 + 1e-12);
+        if (rising) expect(here).toBeGreaterThanOrEqual(prev - 1e-12);
+        else expect(here).toBeLessThanOrEqual(prev + 1e-12);
+        biggestStep = Math.max(biggestStep, Math.abs(here - prev));
+        prev = here;
+      }
+      // A hard cut-over would show up here as a step of 1 in a hundredth of an hour.
+      expect(biggestStep).toBeLessThan(0.02);
+    }
+
+    // Full rain at noon: gone, on the weather alone, and that half ramps too.
     expect(wildlifePresenceUnder(WEATHER_PRESETS.rain, 12).butterfly).toBe(0);
-    // Both at once is still just 0, not doubly so.
+    expect(wildlifePresenceUnder({ ...WEATHER_PRESETS.clear, rain: 0.4 }, 12).butterfly).toBeCloseTo(0.6, 9);
+    // The two factors multiply, so dusk in the rain is thinner than either alone.
+    const duskish = DUSK_HOUR - BUTTERFLY_DAY_RAMP / 2;
+    expect(wildlifePresenceUnder({ ...WEATHER_PRESETS.clear, rain: 0.4 }, duskish).butterfly)
+      .toBeCloseTo(at(duskish) * 0.6, 9);
     expect(wildlifePresenceUnder(WEATHER_PRESETS.rain, 2).butterfly).toBe(0);
     // A caller with no hour to give gets the noon default — every existing weather-only
     // caller keeps seeing exactly the butterfly `clear` always implied.
@@ -890,23 +919,45 @@ describe("the butterfly", () => {
     hash: 0, presenceDraw: 0,
   };
 
-  it("never moves faster than BUTTERFLY_SPEED, and its pose stays inside BUTTERFLY_ALT above the ground", () => {
+  it("wanders over the ground at no more than BUTTERFLY_SPEED, bobs no faster than its own bob, and stays inside BUTTERFLY_ALT", () => {
+    // Two speeds, because the card has two. `BUTTERFLY_SPEED` is the HORIZONTAL one, the
+    // wander `stepUnit` walks; the pose adds a bob across the whole of `BUTTERFLY_ALT` on
+    // `BUTTERFLY_BOB_OMEGA`, which peaks at 0.54 m/s vertically and takes the rendered card's
+    // real speed through the air to about 1.14 m/s. Bounding only the horizontal and calling
+    // the test "never moves faster than BUTTERFLY_SPEED" would be a claim the code does not
+    // make — so both are bounded, each against its own constant.
+    const bobPeak = 0.5 * (BUTTERFLY_ALT[1] - BUTTERFLY_ALT[0]) * BUTTERFLY_BOB_OMEGA;
     const u = createUnitState(butterflyUnit, 0, SEED);
+    // From the first STEPPED pose, not from the one `createUnitState` seeds: that placeholder
+    // sits on the ground until the first step lifts it into the band, and the lift is the
+    // spawn, not the animal moving.
+    stepUnit(u, 1, [], SEED, 12, [], []);
     let prevX = u.x, prevZ = u.z;
-    for (let tick = 1; tick <= 20 * SIM_TICK_HZ; tick++) {
+    let prevLift = u.poses[0]!.y - elevationAt(SEED, u.poses[0]!.x, u.poses[0]!.z);
+    let fastestStep = 0, fastestBob = 0;
+    for (let tick = 2; tick <= 20 * SIM_TICK_HZ; tick++) {
       stepUnit(u, tick, [], SEED, 12, [], []);
       const stepD = Math.hypot(u.x - prevX, u.z - prevZ);
       // A generous epsilon over one tick's budget: `stepUnit` can catch up several ticks at
       // once after a gap, but never advances any one of them faster than the speed allows.
       expect(stepD).toBeLessThanOrEqual((BUTTERFLY_SPEED / SIM_TICK_HZ) * 1.001);
+      fastestStep = Math.max(fastestStep, stepD);
       prevX = u.x; prevZ = u.z;
       const pose = u.poses[0]!;
       const groundH = elevationAt(SEED, pose.x, pose.z);
-      expect(pose.y - groundH).toBeGreaterThanOrEqual(BUTTERFLY_ALT[0] - 1e-9);
-      expect(pose.y - groundH).toBeLessThanOrEqual(BUTTERFLY_ALT[1] + 1e-9);
+      const lift = pose.y - groundH;
+      expect(lift).toBeGreaterThanOrEqual(BUTTERFLY_ALT[0] - 1e-9);
+      expect(lift).toBeLessThanOrEqual(BUTTERFLY_ALT[1] + 1e-9);
+      // The card's own climb, measured clear of the terrain it is passing over: the ground
+      // rising under a butterfly is not the butterfly moving.
+      expect(Math.abs(lift - prevLift)).toBeLessThanOrEqual((bobPeak / SIM_TICK_HZ) * 1.001);
+      fastestBob = Math.max(fastestBob, Math.abs(lift - prevLift));
+      prevLift = lift;
     }
-    // It actually wanders — otherwise the speed bound above would hold vacuously.
+    // It actually wanders and actually bobs — otherwise both bounds hold vacuously.
     expect(Math.hypot(u.x - HOME_X, u.z - HOME_Z)).toBeGreaterThan(0);
+    expect(fastestStep).toBeGreaterThan(BUTTERFLY_SPEED / SIM_TICK_HZ / 2);
+    expect(fastestBob).toBeGreaterThan(bobPeak / SIM_TICK_HZ / 2);
   });
 
   it("never reacts to a player — no flee, no alert, just the same wander", () => {

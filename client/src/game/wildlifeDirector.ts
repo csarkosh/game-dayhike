@@ -15,7 +15,7 @@ import { hash3 } from "../sim/field.js";
 import { SIM_TICK_HZ } from "../sim/constants.js";
 import { DAWN_DUSK_WINDOW, DAWN_HOUR, DUSK_HOUR, PHASE_CUE, cueSpeedFor } from "./wildlifeBehaviour.js";
 import {
-  FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_DEER, SPECIES_ELK, SPECIES_GULL,
+  FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_DEER, SPECIES_ELK, SPECIES_GULL,
   SPECIES_RABBIT, SPECIES_RAVEN_PAIR, SPECIES_SQUIRREL,
 } from "./wildlifeField.js";
 
@@ -626,10 +626,16 @@ const CUE_LARGE: readonly number[] = [SPECIES_ELK, SPECIES_DEER];
 const CUE_SMALL: readonly number[] = [SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_BUTTERFLY];
 /** Exported as a test seam: `CUE_WEIGHT[s] > 0` is exactly "the director may draw this
  * species for a cue", which a table-consistency check needs without duplicating
- * `CUE_LARGE`/`CUE_SMALL` (and so risking drifting out of step with them) elsewhere. */
+ * `CUE_LARGE`/`CUE_SMALL` (and so risking drifting out of step with them) elsewhere.
+ *
+ * Sized by `SPECIES_COUNT`, and that is the whole point: `pickSpecies` walks this array's
+ * own length, so a table pinned to whichever species happened to be last when it was
+ * written would silently stop drawing the next one added — no throw, no failing test, just
+ * a species the woods never show. It is held to `SPECIES_COUNT` by the same
+ * per-species-table check in `wildlifeMeshes.test.ts` that holds the other nine. */
 export const CUE_WEIGHT: readonly number[] = buildCueWeights();
 function buildCueWeights(): number[] {
-  const w = new Array<number>(SPECIES_BUTTERFLY + 1).fill(0);
+  const w = new Array<number>(SPECIES_COUNT).fill(0);
   for (const s of CUE_LARGE) w[s] = 1 / CUE_LARGE.length;
   for (const s of CUE_SMALL) w[s] = SMALL_TO_LARGE / CUE_SMALL.length;
   return w;

@@ -161,8 +161,36 @@ export const BUTTERFLY_SPEED = 1;
 export const BUTTERFLY_REST_GRID = 4;
 export const BUTTERFLY_WANDER_RADIUS = 3;
 /**
+ * The bob's angular rate (rad/s) — the card rises and falls across the whole of
+ * `BUTTERFLY_ALT` on this, which is what makes a butterfly read as fluttering rather than
+ * gliding. Exported because it is the only thing that sets the pose's VERTICAL speed, and a
+ * test that bounds how fast the card may move has no other way to know it: the peak is
+ * `0.5 * (BUTTERFLY_ALT[1] - BUTTERFLY_ALT[0]) * BUTTERFLY_BOB_OMEGA` = 0.54 m/s, over half
+ * the horizontal `BUTTERFLY_SPEED` again — so the rendered card's real speed through the air
+ * peaks near 1.14 m/s, not at the 1 m/s the wander alone suggests.
+ */
+export const BUTTERFLY_BOB_OMEGA = 0.9;
+/**
+ * Hours the butterfly's presence takes to come up after `DAWN_HOUR` and to go back down
+ * before `DUSK_HOUR` — a smoothstep at each end rather than a switch, the rule every other
+ * factor in `wildlifePresenceUnder` already follows.
+ *
+ * The ramp sits INSIDE daylight, not astride it: presence is exactly 0 at dawn and at dusk
+ * and only reaches 1 an hour and a half after sunrise. That is the right way round for this
+ * animal — a butterfly needs the morning to warm up before it flies at all — and it keeps
+ * the whole of its day inside `DAWN_HOUR..DUSK_HOUR`, which is what "daylight" means here.
+ * (`DAWN_DUSK_WINDOW` is the CALL schedule's boost half-window, a different span for a
+ * different purpose; borrowing it here would put butterflies in the air from 04:30, an hour
+ * and a half before the sun.)
+ */
+export const BUTTERFLY_DAY_RAMP = 1.5;
+/**
  * The speed a director's cue actually walks a butterfly at — `BUTTERFLY_SPEED` itself is too
  * slow for any of the three stagings' geometry to ever place one.
+ *
+ * A DELIBERATE DEPARTURE from the design's single stated butterfly speed of 1 m/s, recorded
+ * here rather than left to be rediscovered: the design gives one number, this file ships two,
+ * and the reason is below. The wander keeps the design's figure; only a cue moves faster.
  *
  * MEASURED, not guessed: `wildlifeDirector.ts`'s `startFor` treats every placeable species'
  * cue as a straight walk of up to `CUE_FLIGHT` (5 s) covering the angular gap its staging
@@ -834,7 +862,7 @@ function poseGround(u: UnitState, tick: number, seed: number): void {
 function poseButterfly(u: UnitState, tick: number, seed: number): void {
   const pose = u.poses[0]!;
   const phase0 = hash3(u.unit.id, 0, SALT_MEMBER, seed) * 2 * Math.PI;
-  const bob = 0.5 + 0.5 * Math.sin(tick * TICK_DT * 0.9 + phase0);
+  const bob = 0.5 + 0.5 * Math.sin(tick * TICK_DT * BUTTERFLY_BOB_OMEGA + phase0);
   const groundH = elevationAt(seed, u.x, u.z);
   pose.x = u.x;
   pose.z = u.z;
@@ -949,6 +977,13 @@ export function stepUnit(u: UnitState, tick: number, players: readonly PlayerPoi
 
 export type Presence = { ground: number; aloft: number; raven: number; butterfly: number; callGain: readonly number[] };
 
+/** Hermite ramp, flat at both ends — the repo's own file-local `smoothstep` (trailPaint.ts,
+ * mistMeshes.ts, distanceFadePlugin.ts and the rest each carry their own copy). */
+function smoothstep(e0: number, e1: number, x: number): number {
+  const t = clamp01((x - e0) / (e1 - e0));
+  return t * t * (3 - 2 * t);
+}
+
 /**
  * `clear` is the identity: every factor is 1 at rain 0, dread 0, daylight. The dread ramp
  * runs 0.3→0.5 (not 0.4→0.6) so `dread === 0.5` lands exactly on the threshold row
@@ -957,10 +992,12 @@ export type Presence = { ground: number; aloft: number; raven: number; butterfly
  * `hour` gates the butterfly alone — nothing else here reads time of day, which is why it
  * defaults to noon rather than joining `WeatherParams`: every existing caller that never
  * cared about a butterfly keeps getting one exactly as present as `clear` always made it.
- * Full dark and full rain each zero it independently ("0 at night and in rain" is two
- * conditions, not one blended factor); the two never compound because `wildlifeMeshes.ts`
- * is the only caller that has an hour worth passing, and rain there ramps the same way
- * `aloft` already does.
+ * Daylight and rain are two independent factors multiplied together, each of them a RAMP:
+ * night and full rain both reach 0, but neither gets there in one step. A threshold on the
+ * clock would empty the air of butterflies between one frame and the next at a fixed time
+ * of day — the shared `PRESENCE_RAMP_SECONDS` fade in `wildlifeMeshes.ts` would only turn
+ * that into a three-second population-wide shrink, which is a different artefact rather
+ * than a fix. Every transition here is a smoothstep for that reason.
  */
 export function wildlifePresenceUnder(w: WeatherParams, hour = 12): Presence {
   const rain = clamp01(w.rain);
@@ -969,8 +1006,10 @@ export function wildlifePresenceUnder(w: WeatherParams, hour = 12): Presence {
   const ground = 1 - k;
   const aloft = (1 - k) * (1 - 0.7 * rain);
   const raven = (1 + k) * (1 - 0.5 * rain * (1 - k));
-  const night = hour < DAWN_HOUR - DAWN_DUSK_WINDOW || hour > DUSK_HOUR + DAWN_DUSK_WINDOW;
-  const butterfly = night ? 0 : 1 - rain;
+  const daylight =
+    smoothstep(DAWN_HOUR, DAWN_HOUR + BUTTERFLY_DAY_RAMP, hour) *
+    (1 - smoothstep(DUSK_HOUR - BUTTERFLY_DAY_RAMP, DUSK_HOUR, hour));
+  const butterfly = daylight * (1 - rain);
   // One array per call — this function runs once per frame, not once per unit, so that
   // allocation is acceptable; index-assigned rather than push()ed.
   const callGain = new Array<number>(SPECIES_COUNT);

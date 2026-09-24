@@ -20,6 +20,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import type { Material } from "@babylonjs/core/Materials/material.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
@@ -117,23 +118,41 @@ export function birdBucketOmega(assetId: string): number {
 }
 
 /**
- * Three vertex-colour patterns a butterfly's wings can take — a warm monarch orange, a cool
- * morpho blue, a pale cabbage white — chosen to read as distinct creatures rather than one
- * animal under three lighting accidents. `butterflyGeometry` always builds from this table,
- * so a new colourway is one more row here, not a second geometry function.
+ * The three looks a butterfly can wear — a warm monarch orange, a cool morpho blue, a pale
+ * cabbage white — chosen to read as distinct creatures rather than one animal under three
+ * lighting accidents. Each is a whole-animal TINT, multiplied over the wing pattern
+ * `butterflyGeometry` bakes into the vertex colours; the two together are what reaches the
+ * screen. Which one an individual wears is drawn per instance from its own unit id (see
+ * `SALT_BUTTERFLY_COLOURWAY`), so a meadow shows all three at once out of one bucket.
  */
-const BUTTERFLY_COLOURWAYS: readonly (readonly [number, number, number])[] = [
+export const BUTTERFLY_COLOURWAYS: readonly (readonly [number, number, number])[] = [
   [0.82, 0.42, 0.05],
   [0.12, 0.32, 0.62],
   [0.86, 0.83, 0.72],
 ];
+/** The colourway at `i`, wrapping (negatives included) — a caller drawing one need not know
+ * how many there are. */
+export function butterflyColourway(i: number): readonly [number, number, number] {
+  const n = BUTTERFLY_COLOURWAYS.length;
+  return BUTTERFLY_COLOURWAYS[((Math.trunc(i) % n) + n) % n]!;
+}
 /** Half the body's width (m) — the gap the two wings hinge across, so the body itself is
  * this doubled: 1 cm. */
-const BUTTERFLY_BODY_HALF = 0.005;
+export const BUTTERFLY_BODY_HALF = 0.005;
 /** Wing span (m), body to tip — the "4 cm" of the two 4 cm quads. */
-const BUTTERFLY_WING_SPAN = 0.04;
+export const BUTTERFLY_WING_SPAN = 0.04;
 /** Wing chord (m), front to back. */
-const BUTTERFLY_WING_CHORD = 0.03;
+export const BUTTERFLY_WING_CHORD = 0.03;
+/**
+ * The wing PATTERN, as a brightness per vertex in the order each wing's four are built:
+ * hinge-front, tip-front, tip-back, hinge-back. Two gradients at once — dark at the hinge
+ * running bright to the tip, and the trailing half a shade under the leading half — which
+ * across a four-vertex quad is as much marking as eight vertices can carry, and is the
+ * shape a real forewing has. It is deliberately COLOURLESS: the hue arrives per instance
+ * from `BUTTERFLY_COLOURWAYS`, and a pattern that carried its own would multiply the two
+ * and tint the tips twice.
+ */
+const BUTTERFLY_PATTERN: readonly number[] = [0.45, 1, 0.75, 0.34];
 
 /**
  * The butterfly's geometry, built in code rather than loaded from a file — the design's
@@ -148,15 +167,17 @@ const BUTTERFLY_WING_CHORD = 0.03;
  * span — the one thing the bird card path gains for this species is which geometry sits
  * inside it, not a second kind of hinge.
  *
- * `colourway` wraps into the three rows of `BUTTERFLY_COLOURWAYS`; production always builds
- * colourway 0 (see `buildButterflyMesh`), and the other two exist so a future change that
- * wants more than one look per butterfly has real, differing patterns ready rather than a
- * function that only ever produces the one it shipped with.
+ * ONE geometry serves every butterfly in the world, because they all ride one thin-instance
+ * bucket. That is why it takes no colourway: a colour baked in here would be the colour of
+ * every butterfly there is. It carries the pattern, which is the same on all of them, and
+ * the colourway rides the per-instance buffer instead (`bucket.tint`).
+ *
+ * No UVs: nothing samples a texture on this material, and an unread buffer is still a
+ * buffer uploaded per bucket.
  */
-export function butterflyGeometry(colourway: number): {
-  positions: Float32Array; normals: Float32Array; colors: Float32Array; uvs: Float32Array; indices: Uint16Array;
+export function butterflyGeometry(): {
+  positions: Float32Array; normals: Float32Array; colors: Float32Array; indices: Uint16Array;
 } {
-  const [r, g, b] = BUTTERFLY_COLOURWAYS[((colourway % 3) + 3) % 3]!;
   const innerR = BUTTERFLY_BODY_HALF;
   const outerR = BUTTERFLY_BODY_HALF + BUTTERFLY_WING_SPAN;
   const halfChord = BUTTERFLY_WING_CHORD / 2;
@@ -170,14 +191,14 @@ export function butterflyGeometry(colourway: number): {
   for (let i = 0; i < 8; i++) normals[i * 3 + 1] = 1; // a flat card, facing up
   const colors = new Float32Array(8 * 4);
   for (let i = 0; i < 8; i++) {
-    colors[i * 4] = r; colors[i * 4 + 1] = g; colors[i * 4 + 2] = b; colors[i * 4 + 3] = 1;
+    const shade = BUTTERFLY_PATTERN[i % 4]!; // the two wings wear the same pattern, mirrored
+    colors[i * 4] = shade; colors[i * 4 + 1] = shade; colors[i * 4 + 2] = shade; colors[i * 4 + 3] = 1;
   }
-  const uvs = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1]);
   // The left wing's winding is mirrored to match — moot once the material draws both faces
   // (see `buildButterflyMesh`), but a consistent +Y-facing normal on both wings is one less
   // thing to wonder about later.
   const indices = new Uint16Array([0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6]);
-  return { positions, normals, colors, uvs, indices };
+  return { positions, normals, colors, indices };
 }
 
 /**
@@ -186,15 +207,18 @@ export function butterflyGeometry(colourway: number): {
  * so tinting the material as well would apply the pattern twice), two-sided because a flat
  * card is seen from both sides as it wanders, and never a shadow caster for the same reason
  * no other clutter-scale card is (see `adoptBirdBucket`'s own note on birds).
+ *
+ * The material is created HERE rather than coming out of a loaded container, which makes
+ * this bucket the one whose material nothing else owns — `dispose` has to free it by hand
+ * (see `ownedMaterials`).
  */
 function buildButterflyMesh(scene: Scene): Mesh {
   const mesh = new Mesh("wildlife_butterfly", scene);
-  const geo = butterflyGeometry(0);
+  const geo = butterflyGeometry();
   const data = new VertexData();
   data.positions = geo.positions;
   data.normals = geo.normals;
   data.colors = geo.colors;
-  data.uvs = geo.uvs;
   data.indices = geo.indices;
   data.applyToMesh(mesh, false);
   mesh.useVertexColors = true;
@@ -215,6 +239,10 @@ const BIRD_MIN_INSTANCES = 64;
 const EMPTY_BUFFER = new Float32Array(0);
 /** Salt for the per-instance wing phase draw; local to this file's hash3 use. */
 const SALT_WING_PHASE = 41;
+/** Salt for the per-instance colourway draw. Kept clear of `SALT_WING_PHASE` so an
+ * individual's colour and the beat of its wings are independent — one hash driving both
+ * would tie every orange butterfly to the same point in its flap. */
+const SALT_BUTTERFLY_COLOURWAY = 43;
 
 /**
  * One bird model's thin-instance bucket: EVERY geometry-bearing mesh of its
@@ -235,6 +263,19 @@ type BirdBucket = {
   matrices: Float32Array;
   /** Per-instance (phase, amp) pairs, stride 2, in lockstep with `matrices`. */
   wing: Float32Array;
+  /**
+   * Per-instance RGBA albedo tint, stride 4, in lockstep with `matrices` — or null for a
+   * bucket whose model needs none, which is every bird: a raven is the colour its GLB
+   * says it is and one buffer per bucket is not free.
+   *
+   * Only the butterfly carries one, and it is what makes its three colourways reachable at
+   * all: the geometry is shared by every instance, so a colour baked into the vertices
+   * would be the colour of every butterfly in the world. Uploaded under Babylon's own
+   * `color` thin-instance kind, which becomes the `instanceColor` attribute and multiplies
+   * the vertex colour the pattern is in — so pattern × colourway is what lands on screen,
+   * with no plugin of ours in the path.
+   */
+  tint: Float32Array | null;
   /** Instances this frame — counted in pass 1, reused as the write cursor in pass 2. */
   count: number;
   /** Set when the buffers were replaced this frame, so the GPU buffers need a
@@ -377,10 +418,10 @@ function rampTo(current: number, target: number, step: number): number {
 /**
  * Grows a bucket's buffers to hold `count` instances, doubling from
  * BIRD_MIN_INSTANCES. Old contents are dropped rather than copied: every live
- * instance is rewritten immediately afterwards. The two buffers grow together
+ * instance is rewritten immediately afterwards. The buffers grow together
  * under one `grown` flag so their capacities can never disagree — a `wing`
- * buffer shorter than the matrix buffer would leave Babylon reading past its
- * end for the tail instances.
+ * or `tint` buffer shorter than the matrix buffer would leave Babylon reading
+ * past its end for the tail instances.
  */
 function ensureBirdCapacity(bucket: BirdBucket): void {
   const needed = bucket.count * 16;
@@ -392,6 +433,7 @@ function ensureBirdCapacity(bucket: BirdBucket): void {
   while (capacity < needed) capacity *= 2;
   bucket.matrices = new Float32Array(capacity);
   bucket.wing = new Float32Array((capacity / 16) * 2);
+  if (bucket.tint !== null) bucket.tint = new Float32Array((capacity / 16) * 4);
   bucket.grown = true;
 }
 
@@ -415,12 +457,17 @@ function applyBirdBucket(bucket: BirdBucket): void {
       // the assignment below immediately trims to the live count.
       mesh.thinInstanceSetBuffer("matrix", bucket.matrices, 16, false);
       mesh.thinInstanceSetBuffer("wing", bucket.wing, 2, false);
+      // "color" is Babylon's own kind name; it registers the buffer under
+      // `instanceColor`, the attribute its shaders multiply the vertex colour
+      // by. Nothing of ours declares it.
+      if (bucket.tint !== null) mesh.thinInstanceSetBuffer("color", bucket.tint, 4, false);
       mesh.thinInstanceCount = count;
     } else {
       mesh.thinInstanceCount = count;
       if (count > 0) {
         mesh.thinInstanceBufferUpdated("matrix");
         mesh.thinInstanceBufferUpdated("wing");
+        if (bucket.tint !== null) mesh.thinInstanceBufferUpdated("color");
       }
     }
     mesh.setEnabled(count > 0);
@@ -558,6 +605,14 @@ export function createWildlifeMeshes(
   /** `bucketForSpecies[species]` is the FLYING bucket; null while unloaded. */
   const bucketForSpecies: (BirdBucket | null)[] = new Array<BirdBucket | null>(SPECIES_COUNT).fill(null);
   const birdContainers: AssetContainer[] = [];
+  /**
+   * Materials this shell created itself rather than adopting from a container — today just
+   * the butterfly's. `Mesh.dispose()` leaves a material alone by default, which is right for
+   * every GLB bird (its container owns the material and frees it), and wrong for exactly
+   * this one: nothing else holds it, so without this list it would outlive every teardown,
+   * still in `scene.materials` with its wing plugin and its compiled effect.
+   */
+  const ownedMaterials: Material[] = [];
   // Meshes handed in through `options.birds` belong to the caller; only ones
   // this loaded are disposed — the `ownsPool` rule, for the sky.
   const ownsBirds = options.birds === undefined;
@@ -611,7 +666,12 @@ export function createWildlifeMeshes(
     for (const mesh of meshes) {
       if (mesh.material !== null) attachWing(mesh.material, halfSpan, birdBucketOmega(assetId));
     }
-    const bucket: BirdBucket = { meshes: [...meshes], matrices: EMPTY_BUFFER, wing: EMPTY_BUFFER, count: 0, grown: false };
+    // Keyed on the ASSET, like the wing beat above it: the bucket is the model, and it is
+    // the butterfly's model — the one built in code from a single shared geometry — that
+    // needs a per-instance colour. `EMPTY_BUFFER` rather than null marks "this bucket wants
+    // a tint but has never held an instance"; `ensureBirdCapacity` sizes it on first use.
+    const tint = assetId === BIRD_ASSET[SPECIES_BUTTERFLY] ? EMPTY_BUFFER : null;
+    const bucket: BirdBucket = { meshes: [...meshes], matrices: EMPTY_BUFFER, wing: EMPTY_BUFFER, tint, count: 0, grown: false };
     birdBuckets.push(bucket);
     bucketByAsset.set(assetId, bucket);
     perchedBucket = bucketByAsset.get(BIRD_PERCHED_ASSET) ?? null;
@@ -636,7 +696,14 @@ export function createWildlifeMeshes(
     registerBuiltInLoaders();
     for (const assetId of wanted) {
       if (assetId === BIRD_ASSET[SPECIES_BUTTERFLY]) {
-        adoptBirdBucket(assetId, [buildButterflyMesh(scene)]);
+        // Disposed while an earlier asset was in flight: the same check the container
+        // branch below makes, for the same reason — nothing should be built into a scene
+        // this shell has already torn down.
+        if (disposed) return;
+        const mesh = buildButterflyMesh(scene);
+        // No container brought this material, so nothing but `dispose` will ever free it.
+        if (mesh.material !== null) ownedMaterials.push(mesh.material);
+        adoptBirdBucket(assetId, [mesh]);
         continue;
       }
       const output = birdOutputFor(assetId);
@@ -1004,6 +1071,22 @@ export function createWildlifeMeshes(
         // 0 is a glide — an eagle always, a gull between beats, a perched raven.
         bucket.wing[bucket.count * 2] = hash3(u.unit.id, m, SALT_WING_PHASE, seed) * 2 * Math.PI;
         bucket.wing[bucket.count * 2 + 1] = pose.wing;
+        if (bucket.tint !== null) {
+          // Drawn per (unit, member) off the same hash every other per-individual property
+          // uses, so an individual keeps its colour for life and two peers agree on it
+          // without exchanging anything — and rewritten every frame rather than cached,
+          // because an instance's slot in the buffer is whatever the cull left it this
+          // frame, not a property of the animal.
+          //
+          // Indexed, not destructured: `const [r, g, b] = …` goes through the iterator
+          // protocol and makes an iterator per instance per frame, which is the one thing
+          // this whole update path is written not to do.
+          const draw = hash3(u.unit.id, m, SALT_BUTTERFLY_COLOURWAY, seed);
+          const colourway = butterflyColourway(draw * BUTTERFLY_COLOURWAYS.length);
+          const at = bucket.count * 4;
+          bucket.tint[at] = colourway[0]; bucket.tint[at + 1] = colourway[1];
+          bucket.tint[at + 2] = colourway[2]; bucket.tint[at + 3] = 1;
+        }
         bucket.count++;
       }
     }
@@ -1184,7 +1267,10 @@ export function createWildlifeMeshes(
         // `mesh.dispose` is idempotent, so the overlap is harmless.
         for (const bucket of birdBuckets) for (const mesh of bucket.meshes) mesh.dispose();
         for (const container of birdContainers) container.dispose();
+        // What no container covers: see `ownedMaterials`.
+        for (const material of ownedMaterials) material.dispose();
       }
+      ownedMaterials.length = 0;
       birdContainers.length = 0;
       birdBuckets.length = 0;
       bucketByAsset.clear();

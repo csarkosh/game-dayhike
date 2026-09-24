@@ -318,10 +318,11 @@ describe("cues", () => {
     // than hunting for a seed whose draw happens to land where it wants. A tick drawing a
     // placeable species, so that both halves — drive and the fall-back to place — are on
     // the table; the loop fliers, which are never placed, have their own case in the sweep.
-    // The butterfly is excluded too, for the same reason as the twenty-metre edge below: at
-    // BUTTERFLY_SPEED (1 m/s) it cannot cover that distance in the cue's budget at all, which
-    // is a real property of the species, not a gap in this test — see the "starts every
-    // species" test for the actual reach-budgeted draw.
+    // The butterfly is excluded too, for the same reason as the twenty-metre edge below: a
+    // cue walks it at BUTTERFLY_CUE_SPEED (3 m/s), which over the budget's five seconds is
+    // fifteen metres — short of the twenty this case puts between it and its mark, whatever
+    // the geometry. That is a real property of the species, not a gap in this test; see the
+    // "starts every species" test for the actual reach-budgeted draw.
     const tick = tickDrawing(s, 3, 100, (sp) => !LOOP_FLIERS.includes(sp) && sp !== SPECIES_BUTTERFLY);
     const chosen = pickSpecies(s, hash3(3, tick, 2, 0));
     // Just past the frame's right edge at twenty metres: close enough that even an elk,
@@ -646,7 +647,8 @@ describe("cues", () => {
       if (!walk.graded) continue;
       // The most direct statement of the promise there is, and the one no summary statistic
       // can flatter: this player walked the whole thousand seconds and was never without an
-      // animal in frame for longer than the design's ceiling. (9.9 to 11.4 s when written.)
+      // animal in frame for longer than the design's ceiling. (Measured: 9.3 to 11.0 s on the
+      // first walk, 8.3 to 12.0 on the second, against a ceiling of 20.)
       expect(longestEmpty).toBeLessThanOrEqual(GAP_CEILING);
 
       const gaps = gapsOf(s);
@@ -661,14 +663,16 @@ describe("cues", () => {
       //
       // - the median inside the band, which is the design's first half;
       // - MOST gaps inside it, not merely half of them either side of the middle — the
-      //   promise is an animal every five to ten seconds, not an average of one. (81 to 87 %
-      //   when written.)
+      //   promise is an animal every five to ten seconds, not an average of one. (Measured:
+      //   79.7 to 85.5 % on the first walk, 62.8 to 70.9 % on the second, which stands still
+      //   often enough for the relaxed cadence to push a share of its gaps past ten seconds.)
       // - and nothing over `GAP_CEILING`, asserted twice over. Once on the gaps the player
       //   WALKED through, which is the design's second half word for word — standing still
       //   relaxes the cadence by `STILL_RELAX` on purpose, so a long gap while someone
       //   stands and looks around is the feature working. And once over EVERY gap, which
-      //   is the stricter line and passes with room today (16.30 s on the first walk, 15.10
-      //   on the second, against a ceiling of 20). The strict line is kept because it is
+      //   is the stricter line and passes with room today (worst gap 16.90 s on the first
+      //   walk, 14.70 on the second, against a ceiling of 20; and the medians of the seed
+      //   medians are 8.10 and 7.30). The strict line is kept because it is
       //   free and because it is the one that catches a tail the walked filter would let
       //   through: before the crossing's range band was scaled to each species, the second
       //   walk's worst gap overall was 20.5 s while its worst walked gap was 11.8.

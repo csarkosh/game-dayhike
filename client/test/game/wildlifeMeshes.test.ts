@@ -1,4 +1,29 @@
 import { describe, expect, it, vi } from "vitest";
+
+/**
+ * Every other case in this file hands `createWildlifeMeshes` its bird buckets through
+ * `options.birds`, which skips `loadBirdAssets` outright. One case does not — the butterfly
+ * is the only species whose bucket that function BUILDS rather than fetches, so it is the
+ * only species whose production asset path a test can reach at all — and that case needs the
+ * fetch half stubbed: the four GLB birds it walks past first are real catalog entries, and
+ * `loadAssetContainerAsync` against a bundler URL under NullEngine either hangs or fails
+ * slowly. Rejecting immediately is what a missing asset already does (`loadBirdAssets`
+ * catches per asset and carries on: "one bad asset costs its own bird and nothing else"), so
+ * the stub exercises the real control flow rather than a special one, and the recorded urls
+ * are how that case proves nothing was fetched for the butterfly.
+ */
+const loaderStub = vi.hoisted(() => ({ urls: [] as string[] }));
+vi.mock("@babylonjs/core/Loading/sceneLoader.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@babylonjs/core/Loading/sceneLoader.js")>();
+  return {
+    ...actual,
+    loadAssetContainerAsync: (url: unknown) => {
+      loaderStub.urls.push(String(url));
+      return Promise.reject(new Error("the suite fetches no models"));
+    },
+  };
+});
+
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
@@ -23,7 +48,8 @@ import {
   WILDLIFE_SPREAD, wildlifeUnitsInDisc,
 } from "../../src/game/wildlifeField.js";
 import {
-  BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, BUTTERFLY_OMEGA, birdBucketOmega, birdLodMeshes, butterflyGeometry,
+  BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, BUTTERFLY_BODY_HALF, BUTTERFLY_COLOURWAYS, BUTTERFLY_OMEGA,
+  BUTTERFLY_WING_CHORD, BUTTERFLY_WING_SPAN, birdBucketOmega, birdLodMeshes, butterflyColourway, butterflyGeometry,
   createWildlifeMeshes, SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
 } from "../../src/game/wildlifeMeshes.js";
 import { CUE_WEIGHT, GAP, LEAD, NOTICE, STILL_RELAX, type MatchState, type View } from "../../src/game/wildlifeDirector.js";
@@ -508,7 +534,7 @@ describe("the wildlife director", () => {
     // shorter table there is not the same defect — see its own doc in wildlifeField.ts.
     const perSpeciesTables: readonly (readonly unknown[])[] = [
       WILDLIFE_CELL, WILDLIFE_D, WILDLIFE_RADIUS, WILDLIFE_SPREAD, DIRECTOR_POOL,
-      SPECIES_ASSET, BIRD_ASSET, BIRD_OMEGA, NOTICE,
+      SPECIES_ASSET, BIRD_ASSET, BIRD_OMEGA, NOTICE, CUE_WEIGHT,
     ];
     for (const table of perSpeciesTables) {
       expect(table).toHaveLength(SPECIES_COUNT);
@@ -521,15 +547,20 @@ describe("the wildlife director", () => {
     // sighting, and is never actually seen — crediting the cadence promise
     // for an animal that was not there. The butterfly WAS exactly this case
     // until it shipped a model: `DIRECTOR_POOL[SPECIES_BUTTERFLY]` held at 0
-    // rather than the 3 its placeable species mates get, and this is what
-    // holds the two facts (asset shipped, pool slot given) to changing
-    // together — giving a species its asset without also giving
-    // `DIRECTOR_POOL` its slot back fails this exactly as loudly as the
-    // reverse would.
+    // while nothing could draw one, and this is what holds the two facts
+    // (asset shipped, pool slot given) to changing together — giving a
+    // species its asset without also giving `DIRECTOR_POOL` its slot back
+    // fails this exactly as loudly as the reverse would.
+    //
+    // Bounded by SPECIES_COUNT, not by `CUE_WEIGHT.length`: a table's own
+    // length is exactly the thing under test above, so a short one must not
+    // also be what decides how far this loop reaches. It once did, and a
+    // species past the end of a short `CUE_WEIGHT` would have gone unchecked
+    // here on top of never being drawn for a cue at all.
     const hasAsset = (species: number): boolean =>
       (SPECIES_ASSET[species] ?? null) !== null || (BIRD_ASSET[species] ?? null) !== null;
     let checked = 0;
-    for (let species = 0; species < CUE_WEIGHT.length; species++) {
+    for (let species = 0; species < SPECIES_COUNT; species++) {
       if (CUE_WEIGHT[species]! <= 0) continue; // not cueable at all — nothing to check
       checked++;
       expect(hasAsset(species), `species ${species}: asset vs. DIRECTOR_POOL slot`).toBe((DIRECTOR_POOL[species] ?? 0) > 0);
@@ -634,39 +665,129 @@ describe("bird thin instances", () => {
     expect(birdBucketOmega(BIRD_ASSET[SPECIES_BUTTERFLY]!)).toBe(BUTTERFLY_OMEGA);
   });
 
-  it("resolves the butterfly's model to code-built geometry, not a catalog entry", () => {
+  it("resolves the butterfly's model to code-built geometry, not a catalog entry", async () => {
     // `wildlifeField.ts`'s `SPECIES_BUTTERFLY` is the one bird-numbered species with no
-    // shipped GLB behind its `BIRD_ASSET` id at all — proof, at the data level, that
-    // `loadBirdAssets` cannot be fetching one: there is nothing in the catalog to fetch.
+    // shipped GLB behind its `BIRD_ASSET` id at all — so there is nothing in the catalog for
+    // `loadBirdAssets` to fetch, and it has to build one instead.
     const assets = (catalog as { assets: { id: string }[] }).assets;
     expect(assets.some((a) => a.id === BIRD_ASSET[SPECIES_BUTTERFLY])).toBe(false);
+
+    // That is a fact about the DATA, and on its own it is worth very little: it stays true
+    // whether or not the code that builds the butterfly exists. What follows runs the real
+    // production path — no `options.birds`, so `createWildlifeMeshes` calls `loadBirdAssets`
+    // for itself — and that is the only test in this file that does. Without it the whole
+    // branch resolving this id to code-built geometry can be deleted with every wildlife
+    // test still green, while `DIRECTOR_POOL` goes on handing out slots for an animal that
+    // draws nothing and the director goes on logging each one as a sighting: exactly the
+    // "credited for an animal never seen" defect the asset/pool check above exists to stop,
+    // one layer underneath it.
+    loaderStub.urls.length = 0;
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool } = fakePool(scene, []);
+    // A camera over a real flower drift, so the bucket is not merely built but filled.
+    const bx = -372.65448356345297, bz = 691.559469884634;
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    // `loadBirdAssets` awaits each catalog bird in turn before it reaches the butterfly.
+    await vi.waitFor(() => expect(scene.getMeshByName("wildlife_butterfly")).not.toBeNull());
+    const mesh = scene.getMeshByName("wildlife_butterfly") as Mesh;
+
+    // The geometry is the code-built card, and it is wearing the wing beat the bucket path
+    // hands every bird — which is the whole claim this species makes: it rides that path.
+    expect(mesh.getTotalVertices()).toBe(8);
+    expect(mesh.getTotalIndices()).toBe(4 * 3);
+    const plugin = mesh.material?.pluginManager?.getPlugin("Wing") as WingPlugin | undefined;
+    expect(plugin?.omega).toBe(BUTTERFLY_OMEGA);
+    expect(plugin?.halfSpan).toBeCloseTo(BUTTERFLY_BODY_HALF + BUTTERFLY_WING_SPAN, 6);
+
+    // And it was ADOPTED, not merely constructed: the shell drives instances through it.
+    w.update(bx, bz, 1000, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    w.update(bx, bz, 1001, FAR_AWAY, WEATHER_PRESETS.clear, 12);
+    expect(mesh.thinInstanceCount).toBeGreaterThan(0);
+
+    // No GLB was fetched for it — the other four birds went down the fetch path (which is
+    // what makes the absence meaningful rather than a loader that never ran at all).
+    expect(loaderStub.urls.length).toBeGreaterThan(0);
+    expect(loaderStub.urls.some((u) => u.includes("butterfly"))).toBe(false);
+
+    // The material is created here rather than by a container, so nothing else would ever
+    // free it: teardown has to, or every shell leaves one behind with its compiled effect.
+    const material = mesh.material!;
+    expect(scene.materials).toContain(material);
+    w.dispose();
+    expect(scene.materials).not.toContain(material);
+    engine.dispose();
   });
 
-  it("builds two 4 cm quads hinged on a 1 cm body, eight vertices, in three colourways that actually differ", () => {
-    const geo = butterflyGeometry(0);
+  it("builds two 4 cm quads hinged on a 1 cm body, eight vertices, carrying a wing pattern", () => {
+    const geo = butterflyGeometry();
     expect(geo.positions).toHaveLength(8 * 3);
     expect(geo.normals).toHaveLength(8 * 3);
     expect(geo.colors).toHaveLength(8 * 4);
-    expect(geo.uvs).toHaveLength(8 * 2);
     // Two quads, two triangles each.
     expect(geo.indices).toHaveLength(4 * 3);
-    // Every vertex sits within a 1 cm body plus two 4 cm wings of the hinge, on one side or
-    // the other — nothing floats past the wingtip and nothing sits inside the other wing.
+    // The actual corners, not a range they happen to fall inside: four vertices on the hinge
+    // at exactly half the body's width, four at the wingtip a full span beyond it, four on
+    // each side of the body, and every one of them on the front or the back of the 3 cm
+    // chord in the y = 0 plane. A bound of the form `|x| between hinge and tip` would be
+    // just as happy with all eight vertices bunched in the middle of a wing.
+    // A Float32Array epsilon, not a Float64 one: 0.045 itself is not exactly representable.
+    const EPS = 1e-6;
+    const near = (v: number, want: number): boolean => Math.abs(v - want) <= EPS;
+    const tip = BUTTERFLY_BODY_HALF + BUTTERFLY_WING_SPAN;
+    const halfChord = BUTTERFLY_WING_CHORD / 2;
+    let hinges = 0, tips = 0, right = 0, front = 0;
     for (let i = 0; i < 8; i++) {
-      const x = geo.positions[i * 3]!;
-      // A Float32Array epsilon, not a Float64 one: 0.045 itself is not exactly representable.
-      expect(Math.abs(x)).toBeGreaterThanOrEqual(0.005 - 1e-6);
-      expect(Math.abs(x)).toBeLessThanOrEqual(0.045 + 1e-6);
+      const x = geo.positions[i * 3]!, y = geo.positions[i * 3 + 1]!, z = geo.positions[i * 3 + 2]!;
+      if (near(Math.abs(x), BUTTERFLY_BODY_HALF)) hinges++;
+      else if (near(Math.abs(x), tip)) tips++;
+      else expect.fail(`vertex ${i} sits at x = ${x}, neither the hinge nor the tip`);
+      if (x > 0) right++;
+      expect(near(y, 0)).toBe(true);
+      expect(near(Math.abs(z), halfChord)).toBe(true);
+      if (z > 0) front++;
+      // The wing plugin divides by the half span and the card faces up: both are the
+      // geometry's job to supply.
+      expect(geo.normals[i * 3 + 1]).toBe(1);
     }
-    const a = butterflyGeometry(0).colors;
-    const b = butterflyGeometry(1).colors;
-    const c = butterflyGeometry(2).colors;
-    expect(a).not.toEqual(b);
-    expect(a).not.toEqual(c);
-    expect(b).not.toEqual(c);
-    // Wraps rather than throwing on an out-of-range index — a caller need not know how many
-    // colourways there are to pick one.
-    expect(butterflyGeometry(3).colors).toEqual(a);
+    expect([hinges, tips, right, front]).toEqual([4, 4, 4, 4]);
+
+    // The pattern: a real gradient across each wing, not one flat colour delivered through a
+    // vertex buffer. Both wings wear it, mirrored, and it is colourless — the hue arrives
+    // per instance, so a pattern with a cast of its own would tint the tips twice.
+    const shade = (i: number): number => geo.colors[i * 4]!;
+    for (let i = 0; i < 8; i++) {
+      expect(geo.colors[i * 4 + 1]).toBe(shade(i)); // grey: r = g = b
+      expect(geo.colors[i * 4 + 2]).toBe(shade(i));
+      expect(geo.colors[i * 4 + 3]).toBe(1);
+      expect(shade(i)).toBe(shade((i + 4) % 8)); // the left wing repeats the right one's
+    }
+    // Hinge darker than tip, trailing half darker than leading, by a margin a player could
+    // actually see rather than a rounding error.
+    expect(shade(1) - shade(0)).toBeGreaterThan(0.2); // tip-front over hinge-front
+    expect(shade(2) - shade(3)).toBeGreaterThan(0.2); // tip-back over hinge-back
+    expect(shade(1) - shade(2)).toBeGreaterThan(0.1); // front over back at the tip
+  });
+
+  it("offers three colourways that differ by more than a rounding error, and wraps on the index", () => {
+    expect(BUTTERFLY_COLOURWAYS).toHaveLength(3);
+    for (let i = 0; i < BUTTERFLY_COLOURWAYS.length; i++) {
+      for (let j = i + 1; j < BUTTERFLY_COLOURWAYS.length; j++) {
+        const a = BUTTERFLY_COLOURWAYS[i]!, b = BUTTERFLY_COLOURWAYS[j]!;
+        // Distinct CREATURES, which is a visible distance apart, not `not.toEqual` — that
+        // would pass on one ulp. The nearest pair here is about 0.79 apart in RGB.
+        const distance = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+        expect(distance, `colourways ${i} and ${j}`).toBeGreaterThan(0.4);
+        // And no pair may hide its whole difference in one channel.
+        const perChannel = [Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2])].sort((p, q) => q - p);
+        expect(perChannel[1]!, `colourways ${i} and ${j}, second channel`).toBeGreaterThan(0.05);
+      }
+    }
+    // Wraps rather than throwing on an out-of-range index — a caller drawing one need not
+    // know how many there are, in either direction.
+    expect(butterflyColourway(3)).toEqual(BUTTERFLY_COLOURWAYS[0]);
+    expect(butterflyColourway(-1)).toEqual(BUTTERFLY_COLOURWAYS[2]);
+    expect(butterflyColourway(2.9)).toEqual(BUTTERFLY_COLOURWAYS[2]);
   });
 
   it("draws a natural butterfly through the same bird card path as a real bird", () => {
@@ -696,6 +817,56 @@ describe("bird thin instances", () => {
       // The wing plugin's per-instance amplitude — always fluttering, never a glide.
       expect(wing[i * 2 + 1]).toBe(1);
     }
+  });
+
+  it("gives each butterfly one of the three colourways, per instance over the shared bucket", () => {
+    // Every butterfly in the world rides ONE bucket built from ONE geometry, so a colour in
+    // the vertices would be the colour of all of them. The colourway travels as a
+    // per-instance tint instead — Babylon's own `color` thin-instance kind, which reaches
+    // the shader as `instanceColor` and multiplies the pattern in the vertex colours.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const butterflyId = BIRD_ASSET[SPECIES_BUTTERFLY]!;
+    // A real flower meadow that holds six natural butterflies inside one 40 m disc — found
+    // by scanning the seed for them, not guessed. Butterflies are the sparsest species in
+    // the world (`WILDLIFE_D`'s census: nine discs in ten hold none at all), so a camera
+    // dropped somewhere plausible would most often see one insect or zero, and a population
+    // is what this case needs.
+    const { birds, spies } = flying(scene, WEATHER_PRESETS.clear, [...BIRD_IDS, butterflyId], 305, 215);
+    const count = birds[butterflyId]!.thinInstanceCount;
+    expect(count).toBeGreaterThan(3);
+    // The two facts Babylon reads to switch on `INSTANCESCOLOR` — the define that declares
+    // the `instanceColor` attribute and multiplies the vertex colour by it. A buffer
+    // uploaded under a kind the shader never binds would satisfy every other assertion here
+    // and still leave every butterfly the colour of its bare pattern.
+    expect(birds[butterflyId]!.isVerticesDataPresent("instanceColor")).toBe(true);
+    expect(birds[butterflyId]!.hasThinInstances).toBe(true);
+    const tint = uploaded(spies.get(butterflyId)!, "color")!;
+    expect(tint).toBeDefined();
+    const seen = new Set<number>();
+    for (let i = 0; i < count; i++) {
+      const rgb = [tint[i * 4]!, tint[i * 4 + 1]!, tint[i * 4 + 2]!];
+      expect(tint[i * 4 + 3]).toBe(1); // opaque: the tint is a hue, never a fade
+      const which = BUTTERFLY_COLOURWAYS.findIndex((c) => c.every((v, k) => Math.abs(v - rgb[k]!) < 1e-6));
+      expect(which, `instance ${i} tint ${rgb.join(",")} is not one of the colourways`).toBeGreaterThanOrEqual(0);
+      seen.add(which);
+    }
+    // All three actually reach the world. Before the tint buffer existed the geometry carried
+    // one baked colour and two unreachable alternatives, and every butterfly in the world was
+    // the same orange — which no assertion on the colour table alone can tell apart from this.
+    expect([...seen].sort()).toEqual([0, 1, 2]);
+    expect(butterflyColourway(0)).toEqual(BUTTERFLY_COLOURWAYS[0]);
+    engine.dispose();
+  });
+
+  it("gives the birds no tint buffer at all — only the butterfly needs one", () => {
+    // A raven is the colour its model says it is, and a per-instance buffer nothing reads is
+    // still a buffer uploaded and bound every frame the flock grows.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { spies } = flying(scene);
+    for (const id of BIRD_IDS) expect(uploaded(spies.get(id)!, "color")).toBeUndefined();
+    engine.dispose();
   });
 
   it("emits one instance per bird pose in the disc and culls the rest at its edge", () => {
