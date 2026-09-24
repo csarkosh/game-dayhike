@@ -44,15 +44,18 @@ import { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import { TransformNode as BabylonTransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import {
   DIRECTOR_POOL, FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL,
-  SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, WILDLIFE_CELL, WILDLIFE_D, WILDLIFE_RADIUS,
+  SPECIES_RABBIT, SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, WILDLIFE_CELL, WILDLIFE_D, WILDLIFE_RADIUS,
   WILDLIFE_SPREAD, wildlifeUnitsInDisc,
 } from "../../src/game/wildlifeField.js";
 import {
   BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, BUTTERFLY_BODY_HALF, BUTTERFLY_COLOURWAYS, BUTTERFLY_OMEGA,
   BUTTERFLY_WING_CHORD, BUTTERFLY_WING_SPAN, birdBucketOmega, birdLodMeshes, butterflyColourway, butterflyGeometry,
-  createWildlifeMeshes, SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
+  createWildlifeMeshes, PRESENCE_RAMP_SECONDS, SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_FADE_BAND, WILDLIFE_REBUILD_STEP,
 } from "../../src/game/wildlifeMeshes.js";
-import { CUE_WEIGHT, GAP, LEAD, NOTICE, STILL_RELAX, type MatchState, type View } from "../../src/game/wildlifeDirector.js";
+import { wildlifePresenceUnder } from "../../src/game/wildlifeBehaviour.js";
+import {
+  CUE_WEIGHT, GAP, LEAD, NOTICE, onScreen, STILL_RELAX, type Ground, type MatchState, type View,
+} from "../../src/game/wildlifeDirector.js";
 import type { ClipRole, CreatureInstance, CreaturePool } from "../../src/game/creatureModel.js";
 
 setActiveTerrainVariant("olympic");
@@ -78,6 +81,9 @@ const GROUND_ASSETS = ["wildlife.elk", "wildlife.deer", "wildlife.rabbit", "wild
 const QUIET_X = -10000;
 const QUIET_Z = -8000;
 const DAY_MATCH: MatchState = { phase: 0, hollowDistance: Infinity, hollowHunting: false, inWorld: true, hour: 12, mist: 0 };
+/** Weather that takes every placeable species' presence to exactly zero at once — full
+ * dread empties the ground and the sky, full rain finishes the butterfly. */
+const GONE: WeatherParams = { cloudCover: 1, mist: 0, rain: 1, wetness: 1, dread: 1 };
 
 /**
  * A pool that records what the shell asks of it and hands back bare nodes.
@@ -491,6 +497,139 @@ describe("the wildlife director", () => {
     engine.dispose();
   });
 
+  it("credits no sighting for an animal the presence gate has faded out", () => {
+    // The third door onto "credited for an animal the player never saw", after a species
+    // with no model and a species with no pool slot. An animal at zero presence is drawn at
+    // scale 0 (a mammal) or skipped outright (anything on a card) — yet nothing in the
+    // director reads presence, so before this gate an invisible animal sitting in frame
+    // still reset `sinceSighting` and still went into the log.
+    //
+    // Standing eight metres off a real natural RABBIT, found by scanning the seed: well
+    // inside the fifteen metres it reads at, and a unit the field made rather than one the
+    // director placed, so the pool hand-back below cannot quietly remove the subject. The
+    // view is re-aimed at the nearest rendered animal every frame — which under the fade
+    // means aiming squarely at something drawn at scale 0. An empty point, or a camera with
+    // every animal beyond its notice range, proves nothing here: with nothing creditable in
+    // view the assertion holds whether the gate exists or not, which is how two earlier
+    // drafts of this test passed without it.
+    const NEAR_X = 1997.07, NEAR_Z = -519.63;
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool, acquired } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    const view: View = { x: NEAR_X, y: elevationAt(SEED, NEAR_X, NEAR_Z) + 1.7, z: NEAR_Z, yaw: 0, pitch: 0, fov: 1.4, aspect: 16 / 9 };
+    /**
+     * Two seconds staring at the nearest animal, one second turned away, over and over.
+     * The turn away is essential, not decoration: the director counts each animal ONCE for
+     * as long as it stays in frame and only drops the mark when it leaves, so a camera held
+     * still credits its rabbit a single time and then goes quiet whatever the presence gate
+     * does. Cycling makes every return a fresh, creditable look — about forty of them over
+     * the two minutes below.
+     */
+    const cycle = (t: number): void => {
+      let best = Infinity;
+      for (const rec of acquired.values()) {
+        const d = Math.hypot(rec.root.position.x - view.x, rec.root.position.z - view.z);
+        if (d >= best) continue;
+        best = d;
+        view.yaw = Math.atan2(rec.root.position.x - view.x, rec.root.position.z - view.z);
+      }
+      if ((t / SIM_TICK_HZ) % 3 >= 2) view.yaw += Math.PI;
+    };
+    let tick = 0;
+    // The control: in clear daylight this camera credits a GROUND animal, which is the
+    // species class the fade below silences.
+    for (let t = 0; t < 120 * SIM_TICK_HZ; t++, tick++) {
+      cycle(t);
+      w.update(NEAR_X, NEAR_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    }
+    const control = new Set<number>();
+    const controlLog = w.directorLog();
+    for (let i = 1; i < controlLog.length; i += 2) control.add(controlLog[i]!);
+    expect([...control].some((s) => s < FIRST_BIRD_SPECIES)).toBe(true);
+
+    // Now fade every species that CAN fade. Full dread and full rain together take the
+    // ground, the sky and the butterfly to zero at once, so the case does not rest on which
+    // animals this disc happens to hold. Ravens are the exception in the other direction —
+    // dread makes MORE of them, and they stay fully drawn — so the assertion cannot be "the
+    // log stops growing"; it is that every sighting still recorded belongs to a species the
+    // player could actually see. That is the promise in its exact words, and it is what the
+    // gate delivers: the ravens croaking overhead are real, the elk standing in frame at
+    // scale 0 are not.
+    const presence = wildlifePresenceUnder(GONE, 12);
+    expect(presence.ground).toBe(0);
+    expect(presence.aloft).toBe(0);
+    expect(presence.butterfly).toBe(0);
+    expect(presence.raven).toBeGreaterThan(0);
+    for (let t = 0; t < PRESENCE_RAMP_SECONDS * SIM_TICK_HZ * 2; t++, tick++) {
+      cycle(t);
+      w.update(NEAR_X, NEAR_Z, tick, [], GONE, 12, { view, match: DAY_MATCH });
+    }
+    const logged = w.directorLog().length;
+    const groundAt: Ground = (x, z) => elevationAt(SEED, x, z);
+    // Frames on which a faded animal was squarely creditable: inside the range it reads at
+    // and geometrically in frame by the director's own `onScreen`. Counted as it happens
+    // rather than sampled at the end, where the cycle's own phase decides the answer.
+    let creditableFrames = 0;
+    let fadedSeen = 0;
+    for (let t = 0; t < 120 * SIM_TICK_HZ; t++, tick++) {
+      cycle(t); // the same forty fresh looks, now at a rabbit drawn at scale 0
+      w.update(NEAR_X, NEAR_Z, tick, [], GONE, 12, { view, match: DAY_MATCH });
+      let here = false;
+      for (const rec of acquired.values()) {
+        const p = rec.root.position;
+        if (rec.root.scaling.x !== 0) continue; // only the faded ones are the point
+        fadedSeen++;
+        const seen = { id: 1, species: SPECIES_RABBIT, x: p.x, y: p.y, z: p.z };
+        if (Math.hypot(p.x - view.x, p.z - view.z) > NOTICE[SPECIES_RABBIT]!) continue;
+        if (onScreen(view, groundAt, seen, 0)) here = true;
+      }
+      if (here) creditableFrames++;
+    }
+    expect(fadedSeen).toBeGreaterThan(0);
+    // Long enough, and often enough, to have cleared `SIGHTING_DWELL` many times over.
+    expect(creditableFrames).toBeGreaterThan(10 * SIM_TICK_HZ);
+    // Nothing new was credited at all — and that is not because the woods emptied. The
+    // animal is still there, still inside the range it reads at, and still geometrically in
+    // frame by the director's own `onScreen`: every condition for a sighting is met except
+    // the one that matters, which is that the player can see it.
+    const after = w.directorLog().slice(logged);
+    const credited = new Set<number>();
+    for (let i = 1; i < after.length; i += 2) credited.add(after[i]!);
+    for (const species of credited) {
+      expect(presence.callGain[species], `species ${species} was credited at presence 0`).toBeGreaterThan(0);
+    }
+    expect(acquired.size).toBeGreaterThan(0);
+    w.dispose();
+    engine.dispose();
+  });
+
+  it("hands a placed unit's pool slot back when the presence gate fades it out", () => {
+    // The cost of the gate above, paid for here. `sweepRemovals` can only give back a slot
+    // for a unit it can SEE in `candidates`, and an invisible unit is no longer offered —
+    // so without the shell handing it back itself the slot would be held for the rest of
+    // the match, and three dusks would leave the butterfly unable to place another. Safe
+    // because an animal drawn at scale 0 is one nobody can watch leave, which is the whole
+    // of the never-on-screen invariant.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, SEED, { pool });
+    const view: View = { x: QUIET_X, y: elevationAt(SEED, QUIET_X, QUIET_Z) + 1.7, z: QUIET_Z, yaw: 0, pitch: 0, fov: 1.4, aspect: 16 / 9 };
+    let tick = 0;
+    // Nothing natural here, so every unit in play is one the director placed.
+    for (; tick < 3600 && w.poolCount() === 0; tick++) {
+      w.update(QUIET_X, QUIET_Z, tick, [], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+    }
+    expect(w.poolCount()).toBeGreaterThan(0);
+    for (let t = 0; t < PRESENCE_RAMP_SECONDS * SIM_TICK_HZ * 2; t++, tick++) {
+      w.update(QUIET_X, QUIET_Z, tick, [], GONE, 12, { view, match: DAY_MATCH });
+    }
+    expect(w.poolCount()).toBe(0);
+    w.dispose();
+    engine.dispose();
+  });
+
   it("never asks to remove a real, natural unit, driven at a camera with real wildlife nearby", () => {
     // The exact regression `Candidate.owned` exists to prevent, caught directly: set wrong
     // (e.g. always true) makes the director believe every natural unit
@@ -705,8 +844,12 @@ describe("bird thin instances", () => {
     w.update(bx, bz, 1001, FAR_AWAY, WEATHER_PRESETS.clear, 12);
     expect(mesh.thinInstanceCount).toBeGreaterThan(0);
 
-    // No GLB was fetched for it — the other four birds went down the fetch path (which is
-    // what makes the absence meaningful rather than a loader that never ran at all).
+    // The loader really did run, for the four birds that do have catalog entries — which is
+    // what makes "built in code" a statement about this path rather than about a function
+    // that was never reached. The companion check below is a DATA fact in the same shape as
+    // the catalog one at the top, not a guard: the branch `continue`s before the fetch, so
+    // no butterfly url can be recorded while the branch exists, and once it is gone the
+    // `waitFor` above has already failed. It is here to be read alongside the count.
     expect(loaderStub.urls.length).toBeGreaterThan(0);
     expect(loaderStub.urls.some((u) => u.includes("butterfly"))).toBe(false);
 
@@ -827,11 +970,13 @@ describe("bird thin instances", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const butterflyId = BIRD_ASSET[SPECIES_BUTTERFLY]!;
-    // A real flower meadow that holds six natural butterflies inside one 40 m disc — found
-    // by scanning the seed for them, not guessed. Butterflies are the sparsest species in
-    // the world (`WILDLIFE_D`'s census: nine discs in ten hold none at all), so a camera
-    // dropped somewhere plausible would most often see one insect or zero, and a population
-    // is what this case needs.
+    // A real flower meadow that holds EIGHT natural butterflies inside one 40 m disc, all
+    // eight of them inside the cull too, so eight units are eight instances here — found by
+    // scanning the seed for them, not guessed. Butterflies are the sparsest species in the
+    // world (`WILDLIFE_D`'s census: nine discs in ten hold none at all), so a camera dropped
+    // somewhere plausible would most often see one insect or none, and a population is what
+    // this case needs. The bound below is deliberately looser than eight: the point is a
+    // sample big enough to show all three colourways, not this meadow's exact roll.
     const { birds, spies } = flying(scene, WEATHER_PRESETS.clear, [...BIRD_IDS, butterflyId], 305, 215);
     const count = birds[butterflyId]!.thinInstanceCount;
     expect(count).toBeGreaterThan(3);

@@ -858,6 +858,16 @@ function poseGround(u: UnitState, tick: number, seed: number): void {
  * — `u.x/u.z`, wherever `stepButterfly` or a cue's `moveToward` last carried it — lifted
  * into `BUTTERFLY_ALT` and bobbing inside that band on its own seeded phase. Card and wing
  * beat are the only things it shares with a real bird; its motion is a mammal's.
+ *
+ * Known and not fixed here: on the ONE frame between `createUnitState` and its first
+ * `stepUnit`, a unit still wears the ground-anchored placeholder pose that function seeds,
+ * so a brand-new butterfly is both drawn and offered to the director sitting on the dirt
+ * before the next frame lifts it. Pre-existing and shared with every flier — it is far
+ * worse for a gull, which spends that frame on the ground instead of at 40 m — and the
+ * renderer already names the same one-tick lag where it runs the director. The butterfly is
+ * the case most likely to be near enough for it to read, which is why it is written down
+ * here; fixing it means posing a unit at creation rather than on its first step, and that
+ * is a change to every species at once, not to this function.
  */
 function poseButterfly(u: UnitState, tick: number, seed: number): void {
   const pose = u.poses[0]!;

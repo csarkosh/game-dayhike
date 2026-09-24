@@ -274,6 +274,13 @@ type BirdBucket = {
    * `color` thin-instance kind, which becomes the `instanceColor` attribute and multiplies
    * the vertex colour the pattern is in — so pattern × colourway is what lands on screen,
    * with no plugin of ours in the path.
+   *
+   * The ALPHA must stay 1, and that is load-bearing rather than tidy. Declaring this
+   * attribute is what turns on PBR's `INSTANCESCOLOR`, and under that define the fragment
+   * stage starts reading `vColor.a` into the surface alpha — a channel this material never
+   * consulted before the tint existed. Both alphas are exactly 1 (the pattern's and this
+   * one's), so the product is 1 and nothing changes; a colourway given a fractional alpha
+   * would quietly turn every butterfly wearing it translucent.
    */
   tint: Float32Array | null;
   /** Instances this frame — counted in pass 1, reused as the write cursor in pass 2. */
@@ -910,8 +917,22 @@ export function createWildlifeMeshes(
    * `owned` is read straight off `poolIds` — told to the director rather than
    * left for it to infer from the id, which is the whole point of carrying
    * the flag at all (see `Candidate`'s own doc in wildlifeDirector.ts).
+   *
+   * A unit at zero presence is NOT a candidate, for any species. It is not in
+   * the world this frame at all — a ground animal drawn at scale 0, a bird
+   * `updateBirds` skips outright — so offering it to the director would let it
+   * be driven somewhere nobody can see it arrive and, worse, be counted as a
+   * sighting the moment it sat in frame: the cadence credited for an animal the
+   * player never saw. That is the same defect as a species with no model and a
+   * species with no pool slot, reached through a third door, and this is where
+   * it is shut for all three of dread, rain and the butterfly's own clock.
+   * (The raven gate is folded in here too: `birdPresenceFor` already returns -1
+   * for a roost the draw is hiding, which used to be a candidate on the
+   * argument that the presence gate was not the director's business. It is: a
+   * hidden raven is not drawn either.)
    */
   function pushCandidateFor(u: UnitState, view: View, mist: number): void {
+    if (presenceFor(u) <= 0) return;
     const flier = isLoopFlier(u.unit.species);
     if (flier && !u.posed) return;
     let c = candidatePool[candidateCount];
@@ -934,6 +955,17 @@ export function createWildlifeMeshes(
     c.onScreen = onScreen(view, ground, c, mist);
     candidates[candidateCount] = c;
     candidateCount++;
+  }
+
+  /**
+   * How present a unit is this frame, whatever kind of animal it is: the ground
+   * ramp for a mammal, `birdPresenceFor` for everything numbered among the
+   * birds. Zero or less means it is not in the world at all — not merely
+   * undrawn — and that is the single question `pushCandidateFor` and the pool
+   * hand-back in `update` both ask.
+   */
+  function presenceFor(u: UnitState): number {
+    return u.unit.species < FIRST_BIRD_SPECIES ? presenceGround : birdPresenceFor(u);
   }
 
   /**
@@ -1166,10 +1198,28 @@ export function createWildlifeMeshes(
 
       if (director !== undefined) resetCandidates();
       for (const u of states.values()) {
+        // A PLACED unit the presence gate has taken to zero goes straight back
+        // to the pool. It has to happen here rather than through the director's
+        // own `remove`, because `pushCandidateFor` no longer offers an
+        // invisible unit at all and `sweepRemovals` can only give back what it
+        // can see in `candidates` — so without this the slot would be held for
+        // the rest of the match, and three dusks would leave the butterfly
+        // unable to place another. Releasing it cannot break the
+        // never-on-screen invariant the other way either: an animal drawn at
+        // scale 0, or not drawn at all, is one nobody can watch leave. Deleting
+        // the current key from a Map mid-iteration is defined behaviour and the
+        // iterator carries on from the next entry.
+        if (presenceFor(u) <= 0 && poolIds.has(u.unit.id)) {
+          releaseUnit(u);
+          poolIds.delete(u.unit.id);
+          states.delete(u.unit.id);
+          continue;
+        }
         // A raven the presence gate hides is not here this frame — it neither
-        // moves nor croaks (see `ravenHidden`) — but it is still a candidate,
-        // at whatever pose it was frozen at: the director's own view of the
-        // world is not the presence gate's to narrow.
+        // moves nor croaks (see `ravenHidden`). It is not a candidate either;
+        // `pushCandidateFor`'s own gate drops it, and this call is kept only so
+        // that the one place deciding what the director may act on stays the
+        // one place.
         if (ravenHidden(u)) {
           if (director !== undefined) pushCandidateFor(u, director.view, director.match.mist);
           continue;
