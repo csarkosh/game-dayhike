@@ -42,7 +42,8 @@ export type DuffMeshes = {
   update(camX: number, camZ: number): void;
   /** Every bucket mesh, in tier-then-character order. Complete the moment
    * `createDuffMeshes` returns — the blade shell's own contract, since the
-   * clumps are generated geometry rather than a GLB that lands later. */
+   * clumps are built here from vertex arrays rather than loaded from a GLB
+   * that lands later. */
   readonly meshes: readonly Mesh[];
   dispose(): void;
 };
