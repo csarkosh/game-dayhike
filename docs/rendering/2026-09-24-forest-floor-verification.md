@@ -60,7 +60,7 @@ identically before judging because the canopy scenes are dark.
   albedo — the shared duff albedo times the leaf tint, about (0.18, 0.09,
   0.03) — is far darker than dry litter, so under canopy shade the pieces
   read near-black against a floor painted nearly as dark. Coverage at the
-  designed width is about 35 % by the amendment's own arithmetic; the
+  designed width is about 31 % by the amendment's own arithmetic; the
   colour of the pieces and of the painted floor under them is the next
   piece of work, and is not changed here.
 
@@ -94,7 +94,7 @@ nine tenths — and stays there, 0.90, after the pieces were halved to their
 designed width, which is the tell that this measure tracks each clump's
 scatter disc and piece length, not its cover. It is reported because it
 was measured; the honest cover figure is the amendment's own arithmetic at
-the designed width, about 35 %, and the honest reading of the stills is
+the designed width, about 31 %, and the honest reading of the stills is
 "most of the ground now has a piece on it".
 
 At the interior cell the height scale rises from 0.833 to 0.997 with no
