@@ -1,5 +1,6 @@
 import { latticeHash, valueNoise2 } from "./groundHexParams.js";
-import type { Rgb } from "./colour.js";
+import { luma, type Rgb } from "./colour.js";
+import { NEEDLE_BED } from "./terrainSurface.js";
 import { TRAIL_BED_HALF } from "../sim/trail.js";
 
 /**
@@ -53,7 +54,10 @@ export const TRAIL_PUDDLE_WAVE = 6;
 /** The trampled cards beside the bench. */
 export const TRAMPLE_HEIGHT = 0.73;
 export const TRAMPLE_LEAN = 0.21;
-export const TRAMPLE_TINT: Rgb = { r: 0.85, g: 0.8, b: 0.65 };
+/** Weakened to 0.6 of its former strength { r: 0.85, g: 0.8, b: 0.65 }, the
+ * same 0.6 TRAMPLE_HEIGHT and TRAMPLE_LEAN are already at: a tint's strength
+ * is its distance from white, so each channel is `1 - 0.6 * (1 - c)`. */
+export const TRAMPLE_TINT: Rgb = { r: 0.91, g: 0.88, b: 0.79 };
 export const TRAMPLE_BAND: readonly [number, number] = [0.75, 1.6];
 
 function smoothstep(e0: number, e1: number, x: number): number {
@@ -103,8 +107,18 @@ export function trampleAt(rt: number): { height: number; lean: number; tint: Rgb
  * duff lies thick, and gravel washed out to bare dirt in patches of the
  * bed's own noise. Both are smoothsteps of a continuous field — no thresholds. */
 export const TRAIL_DRIFT_BAND: readonly [number, number] = [0.25, 0.7];
-/** Needle-and-leaf bed over the floor texture. */
-export const TRAIL_DRIFT_TINT: Rgb = { r: 0.62, g: 0.5, b: 0.36 };
+/** The drift's brightness relative to the floor texture, the value the
+ * paired stills were judged at. */
+export const TRAIL_DRIFT_LUM = 0.5154;
+/** Needle-and-leaf bed over the floor texture: the needle bed's own hue
+ * (`NEEDLE_BED`) at TRAIL_DRIFT_LUM's brightness, so a retune of NEEDLE_BED
+ * carries through here automatically. */
+const TRAIL_DRIFT_K = TRAIL_DRIFT_LUM / luma(NEEDLE_BED);
+export const TRAIL_DRIFT_TINT: Rgb = {
+  r: NEEDLE_BED.r * TRAIL_DRIFT_K,
+  g: NEEDLE_BED.g * TRAIL_DRIFT_K,
+  b: NEEDLE_BED.b * TRAIL_DRIFT_K,
+};
 export const TRAIL_WASH_WAVE = 4;
 export const TRAIL_WASH_BAND: readonly [number, number] = [0.55, 0.8];
 export const TRAIL_WASH_DARK = 0.7;

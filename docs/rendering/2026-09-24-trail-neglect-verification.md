@@ -69,15 +69,16 @@ identically before judging because the scenes are dark.
   knob is `TRAIL_WASH_DARK` (0.7) with the band `TRAIL_WASH_BAND`; neither
   was moved here.
 - **The drifts do not read as leaves.** They read as smooth packed dirt. The
-  paint is doing what the design asks — it is the litter pieces meant to lie
-  on a painted drift that cannot be seen, because the ground cover's duff
-  characters are millimetres wide (a twig is 5 mm, a leaf cluster 2.2 cm):
-  sub-pixel at a few metres. That is a defect in the ground cover, not in
-  this paint, and it is recorded here as the reason the bed currently reads
-  "dirty" rather than "leafy". The drift tint was deliberately not pushed to
-  fake litter with paint alone; the design's goal is paint and pieces
-  agreeing, and that is what the vertex channel guarantees once the pieces
-  are visible.
+  drift tint as first written carried the forest floor's own hue rather than
+  the needle bed's, and is now derived from `NEEDLE_BED` instead. Beyond
+  that, it is the litter pieces meant to lie on a painted drift that cannot
+  be seen, because the ground cover's duff characters are millimetres wide
+  (a twig is 5 mm, a leaf cluster 2.2 cm): sub-pixel at a few metres. That is
+  a defect in the ground cover, not in this paint, and it is recorded here
+  as the reason the bed currently reads "dirty" rather than "leafy". The
+  drift tint was deliberately not pushed to fake litter with paint alone;
+  the design's goal is paint and pieces agreeing, and that is what the
+  vertex channel guarantees once the pieces are visible.
 
 ## 4. Frame time
 
