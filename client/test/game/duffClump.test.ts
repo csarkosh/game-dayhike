@@ -1,19 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
   DUFF_ALBEDO, DUFF_BRANCH, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_CLUMP_RADIUS, DUFF_HEIGHT_MAX, DUFF_LEAF, DUFF_TIER_COUNTS, DUFF_TWIG,
+  DUFF_VERTEX_BUDGET,
   duffClumpGeometry, duffClumpMaxHeight, duffClumpReach, duffVertexCount,
 } from "../../src/game/duffClump.js";
-import { BLADE_TIP_TINT } from "../../src/game/bladeClump.js";
+import { DUFF_PAD, DUFF_REACH, DUFF_TIER_BAND, DUFF_TIER_EDGE } from "../../src/game/duffField.js";
+import { BLADE_TIP_TINT, BLADE_VERTS } from "../../src/game/bladeClump.js";
 
 describe("the duff characters", () => {
   it("match the spec", () => {
     expect(DUFF_CHARACTER_COUNT).toBe(3);
     expect(DUFF_CHARACTERS[DUFF_TWIG]!.length).toEqual([0.10, 0.25]);
-    expect(DUFF_CHARACTERS[DUFF_TWIG]!.pieces).toEqual([2, 3]);
+    expect(DUFF_CHARACTERS[DUFF_TWIG]!.pieces).toEqual([3, 5]);
+    expect(DUFF_CHARACTERS[DUFF_TWIG]!.width).toBe(0.006);
     expect(DUFF_CHARACTERS[DUFF_BRANCH]!.length).toEqual([0.30, 0.60]);
     expect(DUFF_CHARACTERS[DUFF_BRANCH]!.pieces).toEqual([1, 1]);
-    expect(DUFF_CHARACTERS[DUFF_LEAF]!.pieces).toEqual([4, 6]);
-    expect(DUFF_CLUMP_RADIUS).toBe(0.3);
+    expect(DUFF_CHARACTERS[DUFF_LEAF]!.pieces).toEqual([14, 22]);
+    expect(DUFF_CHARACTERS[DUFF_LEAF]!.length).toEqual([0.12, 0.20]);
+    expect(DUFF_CHARACTERS[DUFF_LEAF]!.width).toBe(0.04);
+    expect(DUFF_CLUMP_RADIUS).toBe(0.5);
     expect(DUFF_HEIGHT_MAX).toBe(0.12);
     expect(DUFF_ALBEDO).toEqual({ r: 0.16, g: 0.11, b: 0.06 });
   });
@@ -36,6 +41,30 @@ describe("duffClumpGeometry", () => {
           expect(l).toBeCloseTo(1, 6);
         }
       }
+    }
+  });
+
+  it("spans exactly twice its declared width at the base: width is a half-width", () => {
+    // `width` on DuffCharacter is documented as a half-width (the strip
+    // writer places a ring's two side vertices at ±width from the root), so
+    // the base ring's own two vertices — the first two a piece's strip
+    // writes, at height fraction 0 — sit exactly `2 * width` apart
+    // horizontally, before any lift or yaw touches them (layDown leaves a
+    // root vertex untouched, since its "along" component is zero). A leaf
+    // piece is unforked, so every BLADE_VERTS-vertex block in the clump's
+    // geometry is one piece's own strip, root-first.
+    const leaf = DUFF_CHARACTERS[DUFF_LEAF]!;
+    const g = duffClumpGeometry(leaf, 1);
+    const pieces = g.positions.length / 3 / BLADE_VERTS;
+    expect(Number.isInteger(pieces)).toBe(true);
+    for (let p = 0; p < pieces; p++) {
+      const first = p * BLADE_VERTS;
+      const x0 = g.positions[first * 3]!, z0 = g.positions[first * 3 + 2]!;
+      const x1 = g.positions[(first + 1) * 3]!, z1 = g.positions[(first + 1) * 3 + 2]!;
+      const span = Math.hypot(x1 - x0, z1 - z0);
+      expect(span).toBeGreaterThanOrEqual(leaf.width - 1e-9);
+      expect(span).toBeLessThanOrEqual(2 * leaf.width + 0.001);
+      expect(span).toBeCloseTo(2 * leaf.width, 6); // positions are float32
     }
   });
 
@@ -125,14 +154,15 @@ describe("duffClumpGeometry", () => {
   });
 
   it("stays under the vertex budget over the high tier's reach at full strength", () => {
-    // 1 m lattice, near disc to 6 m + pad, far annulus to 12 m + pad, both padded 2.83 m.
+    // 1 m lattice, near disc to the tier edge + pad, far annulus to the reach + pad.
     // `count` is the tier multiplier (DUFF_TIER_COUNTS), not a piece count.
-    const pad = Math.SQRT2 * 2;
-    const near = Math.PI * (6 + pad) ** 2, far = Math.PI * ((12 + pad) ** 2 - Math.max(0, 6 - 1.5 - pad) ** 2);
+    const e = DUFF_TIER_EDGE, r = DUFF_REACH.high, pad = DUFF_PAD;
+    const near = Math.PI * (e + pad) ** 2, far = Math.PI * ((r + pad) ** 2 - Math.max(0, e - DUFF_TIER_BAND - pad) ** 2);
     let worst = 0;
     for (const ch of DUFF_CHARACTERS) {
       worst = Math.max(worst, near * duffVertexCount(ch, DUFF_TIER_COUNTS.high[0]) + far * duffVertexCount(ch, DUFF_TIER_COUNTS.high[1]));
     }
-    expect(worst).toBeLessThan(120_000);
+    expect(worst).toBeLessThan(DUFF_VERTEX_BUDGET);
+    expect(worst).toBeGreaterThan(DUFF_VERTEX_BUDGET * 0.5); // the budget is a real bound, not a formality
   });
 });

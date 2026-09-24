@@ -38,6 +38,7 @@ import { TRAIL_WEAR_W1, TRAIL_JUNCTION_W } from "../../src/game/trailBenchParams
 import { fbm2 } from "../../src/sim/field.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
 import { ROAD_BED_HALF } from "../../src/sim/road.js";
+import { elevationSampleAt } from "../../src/sim/terrain.js";
 import { bowlFor } from "../../src/sim/olympic.js";
 import { variantOrThrow, DERIV_SEED } from "./helpers/derivatives.js";
 import { centerlineX } from "./helpers/roadLine.js";
@@ -960,7 +961,7 @@ describe("groundCover", () => {
   }
 
   it("exports the spec's constants and joins them to the level id", () => {
-    expect(CLUTTER_GRASS_CANOPY_FLOOR).toBe(0.15);
+    expect(CLUTTER_GRASS_CANOPY_FLOOR).toBe(0.5);
     expect(CLUTTER_GRASS_PATCH_FLOOR).toBe(0.6);
     expect(CLUTTER_GRASS_BOOST).toBe(1.5);
     expect(CLUTTER_GRASS_BOOST_LO).toBe(0.5);
@@ -980,6 +981,28 @@ describe("groundCover", () => {
     ]) {
       expect(CLUTTER_TUNABLES[key]).toBeTypeOf("number");
     }
+  });
+
+  it("keeps half the sward under a closed canopy, and the duff yields to it", () => {
+    // A cell under full canopy, away from every non-grass neighbour: the
+    // canopy multiplier is the floor itself.
+    const seed = 1;
+    let found: { x: number; z: number } | null = null;
+    for (let x = 0; x < 600 && !found; x += 3) for (let z = 0; z < 600 && !found; z += 3) {
+      const s = elevationSampleAt(seed, x, z);
+      if (forestDensity(seed, x, z, s) > 0.95 && activeTerrainVariant().trailDistance!(seed, x, z) > 30) found = { x, z };
+    }
+    expect(found).not.toBeNull();
+    expect(found).toEqual({ x: 0, z: 168 });
+    const s = elevationSampleAt(seed, found!.x, found!.z);
+    const c = groundCover(seed, found!.x, found!.z, s);
+    // At this cell onGrass, road and trail are all 1 and shade is 1, so
+    // grass is the floor itself, exactly.
+    expect(c.grass).toBeGreaterThan(0.3);
+    expect(c.grass).toBeCloseTo(0.5, 6);
+    // Duff is 1 - 0.5 / 1.5, the field's own share term at the new floor.
+    expect(c.duff).toBeLessThan(0.8);
+    expect(c.duff).toBeCloseTo(2 / 3, 6);
   });
 
   it("keeps the path readable: no grass inside the bed's core, and the ramp's reach varies along the trail", () => {

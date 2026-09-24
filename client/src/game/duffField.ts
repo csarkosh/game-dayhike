@@ -29,8 +29,10 @@ export const DUFF_REBUILD_CELL = 1;
  * and rebuild sizes. */
 export const DUFF_PAD = Math.SQRT2 * (DUFF_REBUILD_CELL + DUFF_CELL);
 /** The outer reach (m) by quality tier: how far duff pieces stand from the
- * eye before the field gives out. */
-export const DUFF_REACH: Record<"high" | "medium", number> = { high: 12, medium: 8 };
+ * eye before the field gives out. Wide enough that a leaf-sized piece's own
+ * edge is never a line the eye can follow, the lesson the blade-to-card
+ * hand-off already taught. */
+export const DUFF_REACH: Record<"high" | "medium", number> = { high: 24, medium: 16 };
 /** Outer edge (m) of the near tier. */
 export const DUFF_TIER_EDGE = 6;
 /** Width (m) of the near→far hand-off band, ending at the tier edge. */
@@ -43,8 +45,9 @@ export const DUFF_STRENGTH_FLOOR = 0.05;
 export const DUFF_JITTER = 0.4;
 
 /** Share of cells per character at full strength, in index order (twig,
- * leaf cluster, small branch) — cumulative 0.55 / 0.90 / 1.00. */
-export const DUFF_CHARACTER_WEIGHTS: readonly number[] = [0.55, 0.35, 0.10];
+ * leaf, small branch) — cumulative 0.15 / 0.90 / 1.00. Leaves are three
+ * quarters of every draw. */
+export const DUFF_CHARACTER_WEIGHTS: readonly number[] = [0.15, 0.75, 0.10];
 
 /**
  * One cell of the field. Shaped as a `ClutterInstance` of the litter class
@@ -174,9 +177,13 @@ export type DuffCollector = {
 // Numeric cell key: exact for |index| < 2^20 (±524 km on a 1 m lattice).
 const KEY_HALF = 1 << 20;
 const KEY_SPAN = 1 << 21;
-/** A cold disc at the high-tier reach (12 m) is about π·(12 + 2.83)²/1 ≈
- * 700 cells; a 1 m crossing adds a small fraction of that ring. The sweep
- * runs once this many are cached, so it is periodic, never per crossing. */
+/** A cold disc at the high-tier reach (24 m) is about π·(24 + 2.83)²/1 ≈
+ * 2,261 cells; a 1 m crossing adds a small fraction of that ring. The
+ * collector does not evict until the cache holds this many cells, and even
+ * then only down to the retained disc at the eviction radius (reach +
+ * DUFF_PAD + 8 · DUFF_CELL ≈ 34.83 m) — about π·34.83²/1 ≈ 3,811 cells — so
+ * the sweep runs well inside the 8,000 threshold and is periodic, never per
+ * crossing. */
 export const DUFF_SWEEP_SIZE = 8000;
 
 /** The memoising collector the shell uses: `duffCellAt` is pure in its cell,

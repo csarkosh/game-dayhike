@@ -33,7 +33,10 @@ const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
   // grass: 366 -> 987 on 2026-09-23 (the ground-cover field: grass now
   // grows wherever the floor is grass, thinning toward every edge instead
   // of gating shut, so this rect's occupancy rises with it).
-  [600, -3000, 987, -1291840350],
+  // grass: 987 -> 2491 on 2026-09-24 (the canopy floor rose from 0.15 to
+  // 0.5, so grass now clears this class's threshold under closed canopy
+  // where it used to thin below it).
+  [600, -3000, 2491, 1727801207],
   [-200, -3000, 325, -601764019],
   [1800, -2200, 7, 570987439],
   [-600, -1400, 3, 956292241],
@@ -43,7 +46,9 @@ const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
   // meadow: 48 -> 51 on 2026-09-23 (shares the ground-cover field's grass reading).
   [-600, -3000, 51, 932472230],
   // flower: 105 -> 281 on 2026-09-23 (its base is the same field's grass reading).
-  [600, -3000, 281, 754694327],
+  // flower: 281 -> 586 on 2026-09-24 (the canopy floor rose from 0.15 to
+  // 0.5, raising the same field's grass reading flower is based on).
+  [600, -3000, 586, -1819412639],
   // litter: along the stem near the trailhead, not near the world origin.
   // 111 -> 164 on 2026-09-24 (CLUTTER_LITTER_D 0.6 -> 0.9: a neglected trail
   // carries more stray stone and twig litter along its margin).
@@ -630,6 +635,9 @@ describe("the level id does not move", () => {
     // Re-baselined 2026-09-24 from -1219139371: CLUTTER_LITTER_D 0.6 -> 0.9
     // is a CLUTTER_TUNABLES value, so a peer on the old density scatters
     // litter along every trail's margin differently.
-    expect(passHash()).toBe(-608564206);
+    // Re-baselined again 2026-09-24 from -608564206: CLUTTER_GRASS_CANOPY_FLOOR
+    // rose from 0.15 to 0.5, an existing CLUTTER_TUNABLES value, so a peer on
+    // the old floor scatters grass differently under every closed canopy.
+    expect(passHash()).toBe(-1330924340);
   });
 });

@@ -83,9 +83,9 @@ export const CLUTTER_GRASS_PATCH_WAVELENGTH = 60;
 export const CLUTTER_GRASS_PATCH_OCTAVES = 2;
 export const CLUTTER_GRASS_PATCH_LO = 0.1;
 export const CLUTTER_GRASS_PATCH_HI = 0.3;
-/** The canopy ramp bottoms here, not at zero: a forest floor keeps a thin
- * sward under the densest canopy, and the duff fills the rest. */
-export const CLUTTER_GRASS_CANOPY_FLOOR = 0.15;
+/** The canopy ramp bottoms here, not at zero: the forest floor keeps half
+ * its sward under the densest canopy, and the litter fills the rest. */
+export const CLUTTER_GRASS_CANOPY_FLOOR = 0.5;
 /** The patch noise modulates between this and 1 instead of gating: grass
  * is everywhere the floor is grass, with the meadow-shaped variation kept. */
 export const CLUTTER_GRASS_PATCH_FLOOR = 0.6;

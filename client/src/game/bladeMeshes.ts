@@ -47,8 +47,16 @@ export function bladeMeshName(character: number, tier: number, size: number): st
 /** A cell's height scale at strength 0 and 1 (`strength`, the clamped
  * [0, 1] cut — never the unclamped `cover` a cell's `size` was chosen from). */
 export const BLADE_STRENGTH_HEIGHT: readonly [number, number] = [0.5, 1];
-/** A cell's height scale under full canopy: forest-floor grass is short as well as thin. */
-export const BLADE_CANOPY_HEIGHT = 0.6;
+/** A cell's height scale under full canopy: 1, so the canopy no longer
+ * shortens the sward on its own — a cell's strength alone carries the height. */
+export const BLADE_CANOPY_HEIGHT = 1;
+
+/** A cell's height scale: the strength cut between BLADE_STRENGTH_HEIGHT's
+ * ends, then the canopy's own scale toward BLADE_CANOPY_HEIGHT. */
+export function bladeHeightScale(strength: number, canopy: number): number {
+  return (BLADE_STRENGTH_HEIGHT[0] + (BLADE_STRENGTH_HEIGHT[1] - BLADE_STRENGTH_HEIGHT[0]) * strength) *
+    (1 + (BLADE_CANOPY_HEIGHT - 1) * canopy);
+}
 /** The material's roughness. */
 const BLADE_ROUGHNESS = 0.8;
 
@@ -276,12 +284,8 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
     for (const c of list) {
       const bucket = row[c.character]![c.size]!;
       const frame = trampleFrame(seed, c);
-      // A thin sward is short as well as sparse, and so is grass under a
-      // canopy: the gate scales the height between BLADE_STRENGTH_HEIGHT's
-      // ends, and the canopy scales what is left toward BLADE_CANOPY_HEIGHT.
-      const heightScale =
-        (BLADE_STRENGTH_HEIGHT[0] + (BLADE_STRENGTH_HEIGHT[1] - BLADE_STRENGTH_HEIGHT[0]) * c.strength) *
-        (1 + (BLADE_CANOPY_HEIGHT - 1) * c.canopy);
+      // A thin sward is short as well as sparse: bladeHeightScale carries that.
+      const heightScale = bladeHeightScale(c.strength, c.canopy);
       // `trampleFrame` returns a SHARED scratch object, valid only until the
       // next call. The copy below exists so the height can be scaled without
       // writing through to it, and it copies `tint` only to stay a faithful

@@ -64,7 +64,9 @@ export const BLADE_SIZE_THIN = 0;
 export const BLADE_SIZE_BASE = 1;
 export const BLADE_SIZE_FULL = 2;
 export const BLADE_SIZE_COUNT = 3;
-export const BLADE_THIN_BAND: readonly [number, number] = [0.4, 0.6];
+/** A cell at the canopy floor sits above this band, so it draws the base
+ * clump rather than the thin one. */
+export const BLADE_THIN_BAND: readonly [number, number] = [0.25, 0.45];
 export const BLADE_FULL_BAND: readonly [number, number] = [1.0, 1.25];
 
 function smooth01(e0: number, e1: number, x: number): number {
@@ -151,8 +153,9 @@ export type BladeCell = ClutterInstance & {
   sizeDraw: number;
 };
 
-/** One of a cell's draws: the lattice hash on salted cell indices. */
-function cellDraw(ci: number, cj: number, salt: number): number {
+/** One of a cell's draws: the lattice hash on salted cell indices. Exported
+ * so tests can reproduce a cell's own sample point. */
+export function cellDraw(ci: number, cj: number, salt: number): number {
   return latticeHash(ci + 131 * salt, cj + 173 * salt);
 }
 

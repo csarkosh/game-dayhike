@@ -14,7 +14,7 @@ import {
   bladeTierBands, createBladeCollector,
 } from "../../src/game/bladeField.js";
 import {
-  BLADE_CANOPY_HEIGHT, BLADE_STRENGTH_HEIGHT, bladeMeshName, createBladeMeshes,
+  BLADE_CANOPY_HEIGHT, BLADE_STRENGTH_HEIGHT, bladeHeightScale, bladeMeshName, createBladeMeshes,
 } from "../../src/game/bladeMeshes.js";
 import { instanceMatrixFor, trampleFrame } from "../../src/game/clutterMeshes.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
@@ -30,6 +30,18 @@ function bufferFor(spy: { mock: { calls: unknown[][]; instances: unknown[] } }, 
   }
   return null;
 }
+
+describe("bladeHeightScale", () => {
+  it("draws floor grass under a closed canopy at three-quarter height, from one cut not two", () => {
+    expect(BLADE_CANOPY_HEIGHT).toBe(1);
+    expect(BLADE_STRENGTH_HEIGHT).toEqual([0.5, 1]);
+    expect(bladeHeightScale(0.5, 1)).toBeCloseTo(0.75, 6);
+    expect(bladeHeightScale(1, 1)).toBeCloseTo(1, 6);
+    expect(bladeHeightScale(0, 0)).toBeCloseTo(0.5, 6);
+    // the canopy no longer scales height on its own
+    expect(bladeHeightScale(0.5, 0)).toBeCloseTo(bladeHeightScale(0.5, 1), 6);
+  });
+});
 
 describe("createBladeMeshes", () => {
   it("builds one mesh per character and tier on three tier materials, opaque, shadowed, plugged", () => {
@@ -103,7 +115,7 @@ describe("createBladeMeshes", () => {
             expect(c.strength).toBeLessThanOrEqual(1);
             // The matrix is the cards' own, with the strength's and the canopy's height folded in.
             const frame = trampleFrame(SEED, c);
-            const heightScale = (BLADE_STRENGTH_HEIGHT[0] + (BLADE_STRENGTH_HEIGHT[1] - BLADE_STRENGTH_HEIGHT[0]) * c.strength) * (1 + (BLADE_CANOPY_HEIGHT - 1) * c.canopy);
+            const heightScale = bladeHeightScale(c.strength, c.canopy);
             instanceMatrixFor(c, { height: frame.height * heightScale, lean: frame.lean, ax: frame.ax, az: frame.az, tint: frame.tint }, buf);
             for (let k = 0; k < 16; k++) expect(matrices[i * 16 + k]).toBeCloseTo(buf[k]!, 5);
             expect(tints[i * 4 + 3]).toBeCloseTo(1 - 0.5 * c.canopy, 5);
