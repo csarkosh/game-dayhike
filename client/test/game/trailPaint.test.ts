@@ -15,6 +15,7 @@ import {
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_HEIGHT_SHIFT, TRAIL_EDGE_NOISE,
   TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
   TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE, TRAIL_WEAR_WAVE, TRAIL_EDGE_WAVE,
+  TRAIL_DRIFT_BAND, TRAIL_WASH_WAVE, TRAIL_WASH_BAND,
   trailWear, trailEdgeNoise,
 } from "../../src/game/trailBenchParams.js";
 
@@ -236,6 +237,19 @@ describe("the bank", () => {
     // The gate that actually carries tGravel into the normal and roughness mixes.
     expect(TRAIL_FRAGMENT_PAINT).toContain("mix(tLipN, tBenchN, tGravel * tk)");
     expect(TRAIL_FRAGMENT_PAINT).toContain("mix(terrainRough, tRoughBench, tGravel)");
+  });
+});
+
+describe("the neglect patches", () => {
+  it("paints drifts from the vertex's duff and wash-outs from its own noise, and keeps the core readable", () => {
+    expect(TRAIL_FRAGMENT_PAINT).toContain(`float tDrift = smoothstep(${glslFloat(TRAIL_DRIFT_BAND[0])}, ${glslFloat(TRAIL_DRIFT_BAND[1])}, clamp(vTerrainW2.z, 0.0, 1.0));`);
+    expect(TRAIL_FRAGMENT_PAINT).toContain(`float tWash = smoothstep(${glslFloat(TRAIL_WASH_BAND[0])}, ${glslFloat(TRAIL_WASH_BAND[1])}, macroValueNoise(vPositionW.xz, ${glslFloat(TRAIL_WASH_WAVE)}));`);
+    expect(TRAIL_FRAGMENT_PAINT).toContain("tDrift *= 1.0 - tWash;");
+    expect(TRAIL_FRAGMENT_PAINT).toContain(`* ${glslFloat(TRAIL_CORE_GAIN)} *`);
+    // The patches tint and re-normal the bench but never zero the band weights:
+    // tOnBench and tInCore are formed before the patches and are not multiplied by them.
+    const onBench = TRAIL_FRAGMENT_PAINT.split("\n").find((l) => l.includes("float tOnBench = "))!;
+    expect(onBench).not.toContain("tDrift"); expect(onBench).not.toContain("tWash");
   });
 });
 

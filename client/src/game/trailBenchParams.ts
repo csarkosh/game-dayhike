@@ -32,7 +32,7 @@ export const TRAIL_MARGIN_HALF: number = TRAIL_BED_HALF;
 export const TRAIL_TRAMPLE_HALF = 1.35;
 /** Boundary softness (m), widened to the fragment footprint in the shader. */
 export const TRAIL_PAINT_EDGE = 0.08;
-export const TRAIL_CORE_GAIN = 0.5;
+export const TRAIL_CORE_GAIN = 0.45;
 /** The bench's darker band, compacted by footfall. About half the margin's brightness. */
 export const TRAIL_CORE_TINT: Rgb = { r: 0.3, g: 0.26, b: 0.21 };
 export const TRAIL_MARGIN_GAIN = 0.75;
@@ -97,4 +97,36 @@ export function trampleAt(rt: number): { height: number; lean: number; tint: Rgb
     lean: TRAMPLE_LEAN * (1 - s),
     tint: { r: TRAMPLE_TINT.r + (1 - TRAMPLE_TINT.r) * s, g: TRAMPLE_TINT.g + (1 - TRAMPLE_TINT.g) * s, b: TRAMPLE_TINT.b + (1 - TRAMPLE_TINT.b) * s },
   };
+}
+
+/** Neglect: leaf-and-needle drifts on the bed where the ground cover's own
+ * duff lies thick, and gravel washed out to bare dirt in patches of the
+ * bed's own noise. Both are smoothsteps of a continuous field — no thresholds. */
+export const TRAIL_DRIFT_BAND: readonly [number, number] = [0.25, 0.7];
+/** Needle-and-leaf bed over the floor texture. */
+export const TRAIL_DRIFT_TINT: Rgb = { r: 0.62, g: 0.5, b: 0.36 };
+export const TRAIL_WASH_WAVE = 4;
+export const TRAIL_WASH_BAND: readonly [number, number] = [0.55, 0.8];
+export const TRAIL_WASH_DARK = 0.7;
+export const TRAIL_WASH_ROUGH = 1.15;
+
+/** Drift weight from the vertex's duff: the same smoothstep the shader applies. */
+export function trailDriftWeight(duff: number): number {
+  return smoothstep(TRAIL_DRIFT_BAND[0], TRAIL_DRIFT_BAND[1], Math.min(1, Math.max(0, duff)));
+}
+
+/** Gravel washed out to dirt: a 4 m value noise, the shader's macroValueNoise at the same wave. */
+export function trailWashoutNoise(x: number, z: number): number {
+  return valueNoise2(x, z, TRAIL_WASH_WAVE);
+}
+
+export function trailWashoutWeight(x: number, z: number): number {
+  return smoothstep(TRAIL_WASH_BAND[0], TRAIL_WASH_BAND[1], trailWashoutNoise(x, z));
+}
+
+/** Both patches at a point; where both are high the wash-out wins — dirt
+ * under leaves is still dirt at the drift's edge. */
+export function trailPatches(duff: number, x: number, z: number): { drift: number; wash: number } {
+  const wash = trailWashoutWeight(x, z);
+  return { drift: trailDriftWeight(duff) * (1 - wash), wash };
 }

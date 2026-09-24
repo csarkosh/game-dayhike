@@ -7,8 +7,15 @@ import {
   TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT, TRAIL_BENCH_SHADE,
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE,
   TRAMPLE_HEIGHT, TRAMPLE_LEAN, TRAMPLE_TINT, TRAMPLE_BAND,
+  TRAIL_DRIFT_BAND, TRAIL_DRIFT_TINT, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_DARK, TRAIL_WASH_ROUGH,
   valueNoise1, trailWear, trailEdgeNoise, trailBands, trampleAt,
+  trailDriftWeight, trailWashoutNoise, trailWashoutWeight, trailPatches,
 } from "../../src/game/trailBenchParams.js";
+
+function smoothstepT(e0: number, e1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
 
 describe("constants", () => {
   it("are the spec's values", () => {
@@ -18,7 +25,7 @@ describe("constants", () => {
     expect(TRAIL_EDGE_NOISE).toBe(0.25); expect(TRAIL_EDGE_WAVE).toEqual([1.5, 0.4]); expect(TRAIL_EDGE_WEIGHT).toEqual([0.6, 0.4]);
     expect(TRAIL_HEIGHT_SHIFT).toBe(0.3);
     expect([TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE]).toEqual([0.45, 0.75, 1.35, 0.08]);
-    expect(TRAIL_CORE_GAIN).toBe(0.5); expect(TRAIL_CORE_TINT).toEqual({ r: 0.3, g: 0.26, b: 0.21 });
+    expect(TRAIL_CORE_GAIN).toBe(0.45); expect(TRAIL_CORE_TINT).toEqual({ r: 0.3, g: 0.26, b: 0.21 });
     expect(TRAIL_MARGIN_GAIN).toBe(0.75); expect(TRAIL_MARGIN_TINT).toEqual({ r: 0.4, g: 0.36, b: 0.3 });
     expect(TRAIL_TRAMPLE_TINT).toEqual({ r: 0.9, g: 0.88, b: 0.8 });
     expect(TRAIL_BENCH_SHADE).toBe(0.6);
@@ -76,5 +83,42 @@ describe("bands and trampling", () => {
     expect(trampleAt(Infinity)).toEqual(far);
     const mid = trampleAt(1.0);
     expect(mid.height).toBeGreaterThan(TRAMPLE_HEIGHT); expect(mid.height).toBeLessThan(1);
+  });
+});
+
+describe("the neglect patches", () => {
+  it("match the spec and rise only through their smoothsteps", () => {
+    expect(TRAIL_DRIFT_BAND).toEqual([0.25, 0.7]);
+    expect(TRAIL_WASH_WAVE).toBe(4);
+    expect(TRAIL_WASH_BAND).toEqual([0.55, 0.8]);
+    expect(TRAIL_WASH_DARK).toBe(0.7);
+    expect(TRAIL_WASH_ROUGH).toBe(1.15);
+    expect(TRAIL_CORE_GAIN).toBe(0.45);
+    expect(trailDriftWeight(0)).toBe(0);
+    expect(trailDriftWeight(0.25)).toBe(0);
+    expect(trailDriftWeight(0.7)).toBe(1);
+    expect(trailDriftWeight(1)).toBe(1);
+    let prev = 0;
+    for (let d = 0; d <= 1; d += 0.01) { const w = trailDriftWeight(d); expect(w).toBeGreaterThanOrEqual(prev); expect(w - prev).toBeLessThan(0.05); prev = w; }
+    for (const [x, z] of [[0, 0], [12.3, -7.7], [301, 118]] as const) {
+      const n = trailWashoutNoise(x, z);
+      expect(n).toBeGreaterThanOrEqual(0); expect(n).toBeLessThanOrEqual(1);
+      expect(trailWashoutWeight(x, z)).toBe(smoothstepT(TRAIL_WASH_BAND[0], TRAIL_WASH_BAND[1], n));
+    }
+  });
+  it("lets the wash-out win where both are high, and never sums past one", () => {
+    // Find a point whose wash-out weight is high, then feed full duff.
+    let found = false;
+    for (let x = 0; x < 400 && !found; x += 0.5) {
+      if (trailWashoutWeight(x, 3) > 0.9) {
+        const p = trailPatches(1, x, 3);
+        expect(p.wash).toBeGreaterThan(0.9);
+        expect(p.drift).toBeLessThan(0.1);
+        expect(p.drift + p.wash).toBeLessThanOrEqual(1 + 1e-12);
+        found = true;
+      }
+    }
+    expect(found).toBe(true);
+    for (let x = 0; x < 100; x += 0.7) { const p = trailPatches(0.6, x, 9); expect(p.drift + p.wash).toBeLessThanOrEqual(1 + 1e-12); }
   });
 });
