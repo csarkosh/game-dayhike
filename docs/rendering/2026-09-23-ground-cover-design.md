@@ -253,9 +253,17 @@ the two are built once:
 - **Naming.** In code the layer is `duff`, because `CLUTTER_LITTER` already
   names the trail-margin pebble class.
 - **The canopy floor.** The canopy ramp bottoms at
-  `CLUTTER_GRASS_CANOPY_FLOOR = 0.15`, not zero: most grass ground sits under
-  canopy, so a zero floor would have left the near field duff-only across
-  most of it instead of carrying a thin sward under even the densest trees.
+  `CLUTTER_GRASS_CANOPY_FLOOR = 0.15`, not zero, so that even the densest
+  trees keep a thin sward under them rather than bare duff.
+
+  How much ground that covers depends on the world and on how far out you
+  measure. Sampling every point where the field grows any grass at all, the
+  share sitting under enough canopy to zero the ramp on its own runs from
+  **46.5 %** (seed 1, within 600 m of the origin) to **85.6 %** (seed `atmo`,
+  same radius), with the two 2 km samples both near 60 %; mean shade over the
+  same points runs 0.57 to 0.91. The floor earns its place at the bottom of
+  that range, not the top — losing the grass on roughly half the ground the
+  field covers would be enough on its own.
 - **The interior boost's own clump size.** Section 7's thin-cell rule
   generalises to three sizes rather than two: the blade field
   (`bladeField.ts`'s `bladeSizeFor`) chooses a cell's clump as thin, base or
