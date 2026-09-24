@@ -50,12 +50,19 @@ identically before judging because the canopy scenes are dark.
   The measured ring density is in section 4.
 - **Nothing else moved.** The interior grass cell, eye level and floor, is
   the same picture on both builds.
-- **The leaves read as dark flat triangles.** This is the one look finding.
-  The leaf is a tapered strip, which reads as a triangle at 12–20 cm, and
-  its albedo — the shared duff albedo times the leaf tint, about (0.18,
-  0.09, 0.03) — is far darker than dry litter, so under canopy shade the
-  pieces read near-black. Coverage is achieved; the colour and the profile
-  are look calls and are not changed here.
+- **The leaves first read as dark flat triangles, and half of that was a
+  width error.** The character's `width` is a half-width, and the first
+  cut of this work set the leaf to 8 cm as if it were the full width, so
+  the pieces stood 16 cm across — as wide as they were long, which is a
+  triangle. At the designed 8 cm across (a half-width of 4 cm) and the
+  twig's 1.2 cm, re-shot at the same poses, the pieces read as elongated
+  leaf-shaped slivers rather than triangles. They are still dark: the
+  albedo — the shared duff albedo times the leaf tint, about (0.18, 0.09,
+  0.03) — is far darker than dry litter, so under canopy shade the pieces
+  read near-black against a floor painted nearly as dark. Coverage at the
+  designed width is about 35 % by the amendment's own arithmetic; the
+  colour of the pieces and of the painted floor under them is the next
+  piece of work, and is not changed here.
 
 ## 4. The near field
 
@@ -82,9 +89,13 @@ ring is where the near and mid tiers overlap — so that is the trail and the
 tiering, not a hand-off dip; the interior cell, with no bed near it, shows
 the same ring profile on both builds to the hundredth. The litter's
 placement is unchanged (384 pieces within 8 m on both) and its footprint
-share of the ground rises from about a quarter to about nine tenths; the
-box measure overstates cover for scattered pieces, so the honest reading
-is "most of the ground now has a piece on it", not a percentage.
+share of the ground by bounding box rises from about a quarter to about
+nine tenths — and stays there, 0.90, after the pieces were halved to their
+designed width, which is the tell that this measure tracks each clump's
+scatter disc and piece length, not its cover. It is reported because it
+was measured; the honest cover figure is the amendment's own arithmetic at
+the designed width, about 35 %, and the honest reading of the stills is
+"most of the ground now has a piece on it".
 
 At the interior cell the height scale rises from 0.833 to 0.997 with no
 other change: the canopy's own height multiplier is gone, so grass under
