@@ -1,4 +1,4 @@
-import { CLUTTER_GRASS, CLUTTER_MEADOW, clutterDensity, type ClutterInstance } from "../sim/clutter.js";
+import { CLUTTER_MEADOW, groundCover, type ClutterInstance } from "../sim/clutter.js";
 import { activeTerrainVariant } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { latticeHash } from "./groundHexParams.js";
@@ -6,14 +6,16 @@ import { CLUTTER_FAR_SPLIT, CLUTTER_RADII, clutterSeamEdges } from "./clutterFie
 
 /**
  * The blade field: the near-field lattice the blade clumps stand on, walked
- * around the eye and gated by the sim's own grass gate. Pure and
+ * around the eye and gated by the sim's own ground-cover field. Pure and
  * Babylon-free like `clutterField.ts`, whose walk this mirrors: cells of
  * BLADE_CELL on a fixed world grid, squared distances from a snapped origin,
  * a memoising collector keyed by cell. Where the clutter classes decide
  * presence by a coin flip per cell, this field draws a clump in every cell
- * whose gate clears a floor and lets the gate set how much grass the clump
- * shows (`strength`), so a thin spot is a thin sward rather than bare floor
- * with tufts.
+ * whose cover clears a floor and lets the cover set both how much grass the
+ * clump shows (`strength`, clamped to [0, 1]) and how large a clump the cell
+ * can afford (`size`, from the unclamped `cover`), so a thin spot is a thin
+ * sward rather than bare floor with tufts, and a boosted patch stands taller
+ * clumps rather than merely more of the same one.
  *
  * Renderer-only: nothing here may migrate into sim/ or a tunables registry.
  * The sim is read (its gate, terrain sample, trail distance and forest
@@ -54,11 +56,43 @@ export const BLADE_CHARACTER_WEIGHTS: readonly number[] = [0.6, 0.2, 0.12, 0.08]
  * their share goes to fine grass. */
 export const BLADE_FLOWER_MIN_STRENGTH = 0.5;
 
+/** Clump sizes a cell can buy, by its cover: thin below the thin band, full
+ * above the full band, base between. Inside a band the choice is dithered by
+ * the cell's own draw, so the share of each size is a smoothstep of cover
+ * and no contour of clump size ever forms across the field. */
+export const BLADE_SIZE_THIN = 0;
+export const BLADE_SIZE_BASE = 1;
+export const BLADE_SIZE_FULL = 2;
+export const BLADE_SIZE_COUNT = 3;
+export const BLADE_THIN_BAND: readonly [number, number] = [0.4, 0.6];
+export const BLADE_FULL_BAND: readonly [number, number] = [1.0, 1.25];
+
+function smooth01(e0: number, e1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+
+/** The clump size a cell buys: `draw` (the cell's own uniform draw) decides
+ * where it falls inside the thin or full band, so nearby cells with the same
+ * cover split between sizes in the band's proportion rather than all picking
+ * the same one — the dither that keeps a size choice from drawing a visible
+ * contour across the field. */
+export function bladeSizeFor(draw: number, cover: number): 0 | 1 | 2 {
+  const pThin = 1 - smooth01(BLADE_THIN_BAND[0], BLADE_THIN_BAND[1], cover);
+  if (draw < pThin) return BLADE_SIZE_THIN;
+  const pFull = smooth01(BLADE_FULL_BAND[0], BLADE_FULL_BAND[1], cover);
+  if (draw < pFull) return BLADE_SIZE_FULL;
+  return BLADE_SIZE_BASE;
+}
+
 /** Four numbers like `fadeBands`: grow-in start and end, collapse start and end. */
 export type BladeEdges = readonly [number, number, number, number];
 
-/** A no-op grow-in: two distinct negative edges every distance is past. */
-const GROW_NONE: readonly [number, number] = [-2, -1];
+/** A no-op grow-in: two distinct negative edges every distance is past.
+ * Exported so `duffField.ts`'s own near tier — which likewise has no
+ * grow-in — can share this exact pair rather than each field carrying its
+ * own copy that a later edit could drift out of step with. */
+export const GROW_NONE: readonly [number, number] = [-2, -1];
 
 /** The three tiers' hand-off edges, in true eye distance. The fine tier has
  * no grow-in; each tier collapses over the band the next one grows over; the
@@ -90,11 +124,19 @@ export function bladeCharacterFor(draw: number, strength: number): number {
 /**
  * One cell of the field. It is shaped as a `ClutterInstance` of the meadow
  * class (unit scale, variant 0) so the cards' matrix, trample and tint
- * writers in clutterMeshes.ts serve it unchanged, plus the field's own:
- * the gate strength, the canopy, the trail distance and the character.
+ * writers in clutterMeshes.ts serve it unchanged, plus the field's own: the
+ * cover and its clamped strength, the canopy, the trail distance, the
+ * character and the size.
  */
 export type BladeCell = ClutterInstance & {
-  /** The sim's grass gate at the clump, in [BLADE_STRENGTH_FLOOR, 1]. */
+  /** The ground-cover field's grass at the clump: how much grass this ground
+   * earns, unclamped, in [BLADE_STRENGTH_FLOOR, CLUTTER_GRASS_BOOST]. Drives
+   * which clump size the cell buys (`size`) — the boosted edge is where a
+   * cell can afford a full clump. */
+  cover: number;
+  /** The alive cut the shader applies, in [0, 1]: `min(1, cover)`. `cover`
+   * can run past 1 where the field boosts a patch; `strength` never does, so
+   * it stays the number the per-blade cut and the height interpolation want. */
   strength: number;
   /** forestDensity at the clump, for the shade and the height. */
   canopy: number;
@@ -103,6 +145,10 @@ export type BladeCell = ClutterInstance & {
   character: number;
   /** The uniform draw the character came from, kept so a test can re-derive it. */
   characterDraw: number;
+  /** The clump size this cell buys: BLADE_SIZE_THIN, _BASE or _FULL. */
+  size: 0 | 1 | 2;
+  /** The uniform draw `size` came from, kept so a test can re-derive it. */
+  sizeDraw: number;
 };
 
 /** One of a cell's draws: the lattice hash on salted cell indices. */
@@ -121,7 +167,7 @@ function cellDraw(ci: number, cj: number, salt: number): number {
  * leaves bare floor out to the seam.
  */
 export function bladeFieldCovers(seed: number, x: number, z: number): boolean {
-  return clutterDensity(seed, CLUTTER_GRASS, x, z) >= BLADE_STRENGTH_FLOOR;
+  return groundCover(seed, x, z).grass >= BLADE_STRENGTH_FLOOR;
 }
 
 /** The cell at lattice indices (ci, cj), or null where the gate is under the
@@ -131,9 +177,11 @@ export function bladeCellAt(seed: number, ci: number, cj: number): BladeCell | n
   const z = (cj + 0.5 + BLADE_JITTER * (cellDraw(ci, cj, 2) - 0.5)) * BLADE_CELL;
   const variant = activeTerrainVariant();
   const s = variant.sample(seed, x, z);
-  const strength = clutterDensity(seed, CLUTTER_GRASS, x, z, s);
-  if (strength < BLADE_STRENGTH_FLOOR) return null;
+  const cover = groundCover(seed, x, z, s).grass;
+  if (cover < BLADE_STRENGTH_FLOOR) return null;
+  const strength = Math.min(1, cover);
   const characterDraw = cellDraw(ci, cj, 4);
+  const sizeDraw = cellDraw(ci, cj, 5);
   return {
     cls: CLUTTER_MEADOW,
     x,
@@ -144,11 +192,14 @@ export function bladeCellAt(seed: number, ci: number, cj: number): BladeCell | n
     scale: 1,
     variant: 0,
     hash: cellDraw(ci, cj, 3),
+    cover,
     strength,
     canopy: forestDensity(seed, x, z, s),
     rt: variant.trailDistance?.(seed, x, z) ?? Infinity,
     character: bladeCharacterFor(characterDraw, strength),
     characterDraw,
+    size: bladeSizeFor(sizeDraw, cover),
+    sizeDraw,
   };
 }
 

@@ -85,6 +85,14 @@ const ROCK: Rgb = { r: 0.17, g: 0.16, b: 0.15 };
 const SCREE: Rgb = { r: 0.24, g: 0.23, b: 0.21 };
 const SNOW: Rgb = { r: 0.78, g: 0.8, b: 0.84 };
 
+/** Where dead leaves and twigs take over from grass, the floor colour leans
+ * toward this needle bed the denser the canopy overhead — see the `duff`
+ * blend in `classifySurface`. */
+export const NEEDLE_BED: Rgb = { r: 0.1, g: 0.07, b: 0.04 };
+/** Blend cap for the duff overlay: even at duff = 1 a grass remnant survives,
+ * the same way `CANOPY_MAX` leaves a floor-litter remnant under full canopy. */
+export const DUFF_FLOOR_MAX = 0.75;
+
 /** Altitude at which sand starts yielding to the forest floor.
  * Safe to key on altitude alone: nothing inland of the blend window sits below
  * +12 m, so these bands can only paint the shore. */
@@ -147,9 +155,12 @@ function mixW(a: W, b: W, t: number): W {
 
 /**
  * `canopy` is the forest density ρ ∈ [0, 1] at (x, z) — `clipmap.ts` passes
- * `forestDensity` so forested ground bakes darker and greener. Defaults to 0,
- * and `mixRgb` returns its endpoint untouched at t = 0, so every pre-canopy
- * call site gets bitwise-identical colours.
+ * `forestDensity` so forested ground bakes darker and greener. `duff` is the
+ * ground-cover field's own litter fraction (`sim/clutter.ts` `groundCover`) —
+ * `clipmap.ts` passes it so the paint agrees with where the duff pieces
+ * actually stand. Both default to 0, and `mixRgb`/`mixW` return their
+ * untouched endpoint at t = 0, so every pre-canopy, pre-duff call site gets
+ * bitwise-identical results.
  */
 export function classifySurface(
   seed: number,
@@ -158,6 +169,7 @@ export function classifySurface(
   altitude: number,
   slope: number,
   canopy = 0,
+  duff = 0,
 ): { albedo: Rgb; weights: TerrainWeights } {
   // Gentle ground is a mottle of leaf litter and grass rather than one flat
   // green, which is most of what stops it reading as a painted plane.
@@ -190,6 +202,15 @@ export function classifySurface(
   // forest still turns to rock.
   colour = mixRgb(colour, CANOPY, canopy * CANOPY_MAX);
   // Canopy is a tint over whatever material is beneath — no weight change.
+
+  // Duff: where the ground-cover field says the grass has thinned into dead
+  // leaves and twigs, the floor paints as leaf litter under them, leaning to
+  // a needle bed the denser the canopy, so the gaps between pieces read as
+  // full rather than as painted grass with twigs on it. A smoothstep of the
+  // field, never a threshold; zero duff leaves every value bitwise unchanged.
+  const litter = clamp01(duff) * DUFF_FLOOR_MAX;
+  w = mixW(w, W_FLOOR, litter);
+  colour = mixRgb(colour, mixRgb(FOREST_FLOOR, NEEDLE_BED, canopy), litter);
 
   // Every transition is a smoothstep, never a threshold. A threshold draws a
   // visible line across the hillside at exactly one gradient.

@@ -10,6 +10,7 @@
  *
  * Pure and Babylon-free; `renderer.ts` is the shell that uploads the output.
  */
+import { groundCover } from "../sim/clutter.js";
 import { elevationSampleAt } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { classifySurface } from "./terrainSurface.js";
@@ -89,9 +90,11 @@ function sampleInto(ring: RingSamples, seed: number, ix: number, iz: number): vo
   ring.dx[at] = s.dx;
   ring.dz[at] = s.dz;
   ring.hh[2 * iz * HALF_SIDE + 2 * ix] = s.h;
-  // Passing the sample skips forestDensity re-deriving the terrain field.
+  // Passing the sample skips forestDensity and groundCover re-deriving the
+  // terrain field. groundCover's own duff fraction rides along so the paint
+  // agrees with where the duff pieces themselves stand.
   const { albedo, weights } = classifySurface(
-    seed, x, z, s.h, Math.hypot(s.dx, s.dz), forestDensity(seed, x, z, s),
+    seed, x, z, s.h, Math.hypot(s.dx, s.dz), forestDensity(seed, x, z, s), groundCover(seed, x, z, s).duff,
   );
   const c = at * 4;
   ring.colors[c] = albedo.r;

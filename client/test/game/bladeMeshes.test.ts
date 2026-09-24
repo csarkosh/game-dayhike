@@ -6,9 +6,13 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import "../../src/sim/passes/index.js";
 import {
-  BLADE_ALBEDO, BLADE_CHARACTERS, BLADE_TIER_COUNTS, BLADE_VERTS, bladeAlive, bladeClumpGeometry, bladeSecondRandom,
+  BLADE_ALBEDO, BLADE_CHARACTERS, BLADE_VERTS, bladeAlive, bladeClumpGeometry, bladeCountFor,
+  bladeSecondRandom,
 } from "../../src/game/bladeClump.js";
-import { BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, bladeTierBands, createBladeCollector } from "../../src/game/bladeField.js";
+import {
+  BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_BASE, BLADE_SIZE_COUNT, BLADE_SIZE_FULL, BLADE_SIZE_THIN,
+  bladeTierBands, createBladeCollector,
+} from "../../src/game/bladeField.js";
 import {
   BLADE_CANOPY_HEIGHT, BLADE_STRENGTH_HEIGHT, bladeMeshName, createBladeMeshes,
 } from "../../src/game/bladeMeshes.js";
@@ -32,36 +36,42 @@ describe("createBladeMeshes", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const blades = createBladeMeshes(scene, SEED, { quality: "high" });
-    expect(blades.meshes.length).toBe(BLADE_CHARACTER_COUNT * 3);
+    expect(blades.meshes.length).toBe(BLADE_CHARACTER_COUNT * 3 * BLADE_SIZE_COUNT);
     const materials = new Set<PBRMaterial>();
     const bands = bladeTierBands();
     for (let ch = 0; ch < BLADE_CHARACTER_COUNT; ch++) {
       for (let t = 0; t < 3; t++) {
-        const mesh = scene.getMeshByName(bladeMeshName(ch, t)) as Mesh;
-        expect(mesh).toBeInstanceOf(Mesh);
-        const g = bladeClumpGeometry(BLADE_CHARACTERS[ch]!, BLADE_TIER_COUNTS.high[ch]![t]!);
-        expect(mesh.getTotalVertices()).toBe(g.positions.length / 3);
-        expect(mesh.getVerticesData("blade")).not.toBeNull();
-        expect(mesh.receiveShadows).toBe(true);
-        expect(mesh.isPickable).toBe(false);
-        expect(mesh.alwaysSelectAsActiveMesh).toBe(true);
-        const mat = mesh.material as PBRMaterial;
-        materials.add(mat);
-        expect(mat.needAlphaTesting()).toBe(false);
-        expect(mat.needAlphaBlending()).toBe(false);
-        expect(mat.backFaceCulling).toBe(false);
-        expect([mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b]).toEqual([BLADE_ALBEDO.r, BLADE_ALBEDO.g, BLADE_ALBEDO.b]);
-        const foliage = mat.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
-        expect(foliage).toBeInstanceOf(FoliagePlugin);
-        expect(foliage.bladeEdges).toEqual(bands[t]);
-        expect(mat.pluginManager!.getPlugin("FoliageLight")).not.toBeNull();
-        expect(mat.pluginManager!.getPlugin("DistanceFade") ?? null).toBeNull();
+        for (let size = 0; size < BLADE_SIZE_COUNT; size++) {
+          const mesh = scene.getMeshByName(bladeMeshName(ch, t, size)) as Mesh;
+          expect(mesh).toBeInstanceOf(Mesh);
+          const g = bladeClumpGeometry(BLADE_CHARACTERS[ch]!, bladeCountFor("high", ch, t, size));
+          expect(mesh.getTotalVertices()).toBe(g.positions.length / 3);
+          expect(mesh.getVerticesData("blade")).not.toBeNull();
+          expect(mesh.receiveShadows).toBe(true);
+          expect(mesh.isPickable).toBe(false);
+          expect(mesh.alwaysSelectAsActiveMesh).toBe(true);
+          const mat = mesh.material as PBRMaterial;
+          materials.add(mat);
+          expect(mat.needAlphaTesting()).toBe(false);
+          expect(mat.needAlphaBlending()).toBe(false);
+          expect(mat.backFaceCulling).toBe(false);
+          expect([mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b]).toEqual([BLADE_ALBEDO.r, BLADE_ALBEDO.g, BLADE_ALBEDO.b]);
+          const foliage = mat.pluginManager!.getPlugin("Foliage") as FoliagePlugin;
+          expect(foliage).toBeInstanceOf(FoliagePlugin);
+          expect(foliage.bladeEdges).toEqual(bands[t]);
+          expect(mat.pluginManager!.getPlugin("FoliageLight")).not.toBeNull();
+          expect(mat.pluginManager!.getPlugin("DistanceFade") ?? null).toBeNull();
+        }
       }
     }
-    // One material per tier, shared by its four characters.
+    // One material per tier, shared by its twelve character-size buckets.
     expect(materials.size).toBe(3);
     blades.dispose();
-    for (let ch = 0; ch < BLADE_CHARACTER_COUNT; ch++) for (let t = 0; t < 3; t++) expect(scene.getMeshByName(bladeMeshName(ch, t))).toBeNull();
+    for (let ch = 0; ch < BLADE_CHARACTER_COUNT; ch++) {
+      for (let t = 0; t < 3; t++) {
+        for (let size = 0; size < BLADE_SIZE_COUNT; size++) expect(scene.getMeshByName(bladeMeshName(ch, t, size))).toBeNull();
+      }
+    }
     for (const mat of materials) expect(scene.getMaterialByName(mat.name)).toBeNull();
     engine.dispose();
   });
@@ -77,30 +87,57 @@ describe("createBladeMeshes", () => {
     let checked = 0;
     for (let t = 0; t < 3; t++) {
       for (let ch = 0; ch < BLADE_CHARACTER_COUNT; ch++) {
-        const cells = lists[t]!.filter((c) => c.character === ch);
-        const mesh = scene.getMeshByName(bladeMeshName(ch, t)) as Mesh;
-        expect(mesh.thinInstanceCount).toBe(cells.length);
-        if (cells.length === 0) continue;
-        const matrices = bufferFor(spy, mesh, "matrix")!;
-        const tints = bufferFor(spy, mesh, "foliage")!;
-        const strengths = bufferFor(spy, mesh, "bladeStrength")!;
-        expect(bufferFor(spy, mesh, "fadeBands")).toBeNull();
-        const buf = new Float32Array(16);
-        for (let i = 0; i < Math.min(cells.length, 20); i++) {
-          const c = cells[i]!;
-          expect(strengths[i]).toBe(Math.fround(c.strength));
-          // The matrix is the cards' own, with the strength's and the canopy's height folded in.
-          const frame = trampleFrame(SEED, c);
-          const heightScale = (BLADE_STRENGTH_HEIGHT[0] + (BLADE_STRENGTH_HEIGHT[1] - BLADE_STRENGTH_HEIGHT[0]) * c.strength) * (1 + (BLADE_CANOPY_HEIGHT - 1) * c.canopy);
-          instanceMatrixFor(c, { height: frame.height * heightScale, lean: frame.lean, ax: frame.ax, az: frame.az, tint: frame.tint }, buf);
-          for (let k = 0; k < 16; k++) expect(matrices[i * 16 + k]).toBeCloseTo(buf[k]!, 5);
-          expect(tints[i * 4 + 3]).toBeCloseTo(1 - 0.5 * c.canopy, 5);
-          checked++;
+        for (let size = 0; size < BLADE_SIZE_COUNT; size++) {
+          const cells = lists[t]!.filter((c) => c.character === ch && c.size === size);
+          const mesh = scene.getMeshByName(bladeMeshName(ch, t, size)) as Mesh;
+          expect(mesh.thinInstanceCount).toBe(cells.length);
+          if (cells.length === 0) continue;
+          const matrices = bufferFor(spy, mesh, "matrix")!;
+          const tints = bufferFor(spy, mesh, "foliage")!;
+          const strengths = bufferFor(spy, mesh, "bladeStrength")!;
+          expect(bufferFor(spy, mesh, "fadeBands")).toBeNull();
+          const buf = new Float32Array(16);
+          for (let i = 0; i < Math.min(cells.length, 20); i++) {
+            const c = cells[i]!;
+            expect(strengths[i]).toBe(Math.fround(c.strength));
+            expect(c.strength).toBeLessThanOrEqual(1);
+            // The matrix is the cards' own, with the strength's and the canopy's height folded in.
+            const frame = trampleFrame(SEED, c);
+            const heightScale = (BLADE_STRENGTH_HEIGHT[0] + (BLADE_STRENGTH_HEIGHT[1] - BLADE_STRENGTH_HEIGHT[0]) * c.strength) * (1 + (BLADE_CANOPY_HEIGHT - 1) * c.canopy);
+            instanceMatrixFor(c, { height: frame.height * heightScale, lean: frame.lean, ax: frame.ax, az: frame.az, tint: frame.tint }, buf);
+            for (let k = 0; k < 16; k++) expect(matrices[i * 16 + k]).toBeCloseTo(buf[k]!, 5);
+            expect(tints[i * 4 + 3]).toBeCloseTo(1 - 0.5 * c.canopy, 5);
+            checked++;
+          }
         }
       }
     }
     expect(checked).toBeGreaterThan(40);
     spy.mockRestore();
+    blades.dispose();
+    engine.dispose();
+  });
+
+  it("routes each cell to the bucket of its character, tier and size", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const blades = createBladeMeshes(scene, SEED, { quality: "high" });
+    blades.update(CAM.x, CAM.z);
+    const tiers = createBladeCollector(SEED).collect(CAM.x, CAM.z);
+    const lists = [tiers.fine, tiers.mid, tiers.coarse];
+    for (let t = 0; t < 3; t++) {
+      for (let ch = 0; ch < BLADE_CHARACTER_COUNT; ch++) {
+        for (let size = 0; size < BLADE_SIZE_COUNT; size++) {
+          const want = lists[t]!.filter((c) => c.character === ch && c.size === size).length;
+          const mesh = scene.getMeshByName(bladeMeshName(ch, t, size)) as Mesh;
+          expect(mesh.thinInstanceCount).toBe(want);
+        }
+      }
+    }
+    // At the census point the interior is boosted: full clumps outnumber thin ones in the fine tier.
+    const full = tiers.fine.filter((c) => c.size === BLADE_SIZE_FULL).length;
+    const thin = tiers.fine.filter((c) => c.size === BLADE_SIZE_THIN).length;
+    expect(full).toBeGreaterThan(thin);
     blades.dispose();
     engine.dispose();
   });
@@ -128,8 +165,8 @@ describe("createBladeMeshes", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const blades = createBladeMeshes(scene, SEED, { quality: "medium" });
-    const mesh = scene.getMeshByName(bladeMeshName(0, 0)) as Mesh;
-    const g = bladeClumpGeometry(BLADE_CHARACTERS[0]!, BLADE_TIER_COUNTS.medium[0]![0]!);
+    const mesh = scene.getMeshByName(bladeMeshName(0, 0, BLADE_SIZE_BASE)) as Mesh;
+    const g = bladeClumpGeometry(BLADE_CHARACTERS[0]!, bladeCountFor("medium", 0, 0, BLADE_SIZE_BASE));
     expect(mesh.getTotalVertices()).toBe(g.positions.length / 3);
     blades.dispose();
     engine.dispose();

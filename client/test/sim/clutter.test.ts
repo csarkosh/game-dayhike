@@ -6,10 +6,17 @@ import {
   grassTrailGate, CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_FAR,
   CLUTTER_LITTER_CORE, CLUTTER_LITTER_FADE, CLUTTER_LITTER_CELL, litterBand,
   CLUTTER_CLASS_COUNT,
-  CLUTTER_GRASS_ALT_LO,
+  CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO_FADE,
   CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI_FADE,
-  CLUTTER_GRASS_CANOPY_LO,
+  CLUTTER_GRASS_SLOPE_LO, CLUTTER_GRASS_SLOPE_HI,
+  CLUTTER_GRASS_CANOPY_LO, CLUTTER_GRASS_CANOPY_HI,
+  CLUTTER_GRASS_ROAD_FAR,
   CLUTTER_GRASS_CELL,
+  groundCover, trailReach, grassTrailRamp, trailDriftNoise,
+  CLUTTER_GRASS_CANOPY_FLOOR, CLUTTER_GRASS_PATCH_FLOOR, CLUTTER_GRASS_BOOST, CLUTTER_GRASS_BOOST_LO,
+  CLUTTER_DUFF_OPEN, CLUTTER_DUFF_ROAD_CLEAR,
+  CLUTTER_GRASS_TRAIL_CORE, CLUTTER_GRASS_TRAIL_REACH, CLUTTER_GRASS_TRAIL_REACH_WAVE,
+  CLUTTER_DUFF_BED_MAX, CLUTTER_DUFF_BED_FADE, CLUTTER_DUFF_DRIFT_WAVE, CLUTTER_DUFF_DRIFT_BAND, CLUTTER_DUFF_DRIFT_LO,
   CLUTTER_BOULDER_SCALE_MIN, CLUTTER_BOULDER_SCALE_MAX, CLUTTER_BOULDER_ROAD_NEAR, CLUTTER_BOULDER_CELL,
   CLUTTER_ROCK_SCALE_MIN, CLUTTER_ROCK_SCALE_MAX, CLUTTER_ROCK_ROAD_NEAR, CLUTTER_ROCK_CELL,
   CLUTTER_GRASS_SCALE_MIN, CLUTTER_GRASS_SCALE_MAX,
@@ -155,12 +162,20 @@ describe("clutter density gates", () => {
     }
   });
 
-  it("stays in [0, 1] for every class across a broad sweep", () => {
+  it("stays in [0, 1] for every class across a broad sweep, except the ground-cover boost", () => {
+    // Grass, meadow and flower read the ground-cover field's `grass`, which
+    // the interior boost carries up to CLUTTER_GRASS_BOOST — every other
+    // class stays a gate product, so it never leaves [0, 1]. Meadow and
+    // flower can climb further still, up to roughly 2 · CLUTTER_GRASS_BOOST
+    // inside a made meadow's flat (the `(1 + fm.meadow)` term); none of this
+    // sweep's points land in one, so CLUTTER_GRASS_BOOST is what these
+    // specific points measure, not a hard ceiling on the two classes.
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+      const boosted = cls === CLUTTER_GRASS || cls === CLUTTER_MEADOW || cls === CLUTTER_FLOWER;
       for (let i = 0; i < 200; i++) {
         const d = clutterDensity(SEED, cls, i * 173.3 - 8000, i * 311.9 - 12000);
         expect(d).toBeGreaterThanOrEqual(0);
-        expect(d).toBeLessThanOrEqual(1);
+        expect(d).toBeLessThanOrEqual(boosted ? CLUTTER_GRASS_BOOST : 1);
       }
     }
   });
@@ -847,4 +862,378 @@ describe("the terrain feature mask", () => {
     const x = pond.x + pond.radius + 1;
     expect(clutterDensity(MASK_SEED, CLUTTER_GRASS, x, pond.z)).toBe(0);
   });
+
+  // The bug this guards: `groundCover` (unlike `clutterDensity`) used to
+  // skip the feature mask entirely, so a caller reading it directly — the
+  // blade field, since it stopped going through `clutterDensity` — grew
+  // grass, and stood clumps, on ground the mask marks bare (a pond's shore,
+  // the peak's crest). Both fields now apply `fm.clutter` inside
+  // `groundCoverAt`, so this must be true of `groundCover` itself, not only
+  // of the class this repo happened to already gate correctly.
+  it("zeroes grass AND duff at a real masked point, through groundCover directly", () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    const { features } = bowlFor(MASK_SEED);
+    const pond = features.find((f) => f.kind === "pond")!;
+    const x = pond.x + pond.radius + 1, z = pond.z;
+    const v = activeTerrainVariant();
+    const h = v.sample(MASK_SEED, x, z).h;
+    expect(v.featureMask?.(MASK_SEED, x, z, h).clutter).toBe(0); // the point really is masked
+    const cover = groundCover(MASK_SEED, x, z);
+    expect(cover.grass).toBe(0);
+    expect(cover.duff).toBe(0);
+  });
+
+  // The fix moves fm.clutter INSIDE the shared field (groundCoverAt) so that
+  // `groundCover` picks it up too, rather than leaving it as something only
+  // `clutterDensity`'s own call sites remembered to multiply by. This test
+  // mixes two different jobs, called out below as they occur: assertions
+  // that GUARD the fix (they fail if it is reverted, because they check
+  // something that only became true by moving the mask inside the field),
+  // and assertions that PIN pre-existing behaviour against future drift
+  // (they held before this fix too, so a revert would not trip them — they
+  // exist to catch some later, unrelated change instead).
+  it("agrees with groundCover's own grass across the mask's fade, and leaves meadow and flower composing it the same way", () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    const { features } = bowlFor(MASK_SEED);
+    const pond = features.find((f) => f.kind === "pond")!;
+    const v = activeTerrainVariant();
+    let fractional = 0;
+    for (let d = 0; d <= 8; d += 0.25) {
+      const x = pond.x + pond.radius + d, z = pond.z;
+      const h = v.sample(MASK_SEED, x, z).h;
+      const fm = v.featureMask?.(MASK_SEED, x, z, h);
+      if (fm === undefined) continue;
+      if (fm.clutter > 0 && fm.clutter < 1) fractional++;
+      const grass = clutterDensity(MASK_SEED, CLUTTER_GRASS, x, z);
+      const meadow = clutterDensity(MASK_SEED, CLUTTER_MEADOW, x, z);
+      // PIN, not a guard on this fix: fm.meadow is 0 this far from the made
+      // meadow, so meadow's own "(1 + fm.meadow)" is an exact no-op here
+      // regardless of the mask fix, and this would equal grass either way.
+      expect(meadow).toBe(grass);
+      // GUARD: this is the assertion the fix is for. Before it, `grass`
+      // (through clutterDensity's own `* fm.clutter`) and `groundCover`'s
+      // own value (which skipped the mask entirely) disagreed at every
+      // point in this fade band; only moving fm.clutter inside the shared
+      // field makes them equal everywhere, not just away from every feature.
+      expect(grass).toBe(groundCover(MASK_SEED, x, z).grass);
+    }
+    // A vacuity guard: the walk actually crossed the fade, not just its ends.
+    expect(fractional).toBeGreaterThan(3);
+    // PIN, not a guard on this fix: flower's own arithmetic never changed
+    // (it keeps applying fm.clutter itself — see the CLUTTER_FLOWER case),
+    // so this constant would hold whether or not the fix above landed. It
+    // exists to catch a future change to flower's own composition, found at
+    // a flower-bearing point inside the same fade (a quick scan, 2026-09-23:
+    // its own drift happens to clear the patch gate here, so this is a
+    // genuine, non-vacuous flower value, not 0 === 0).
+    const a = (204 * Math.PI) / 180;
+    const fx = pond.x + (pond.radius + 4.25) * Math.cos(a);
+    const fz = pond.z + (pond.radius + 4.25) * Math.sin(a);
+    const fh = v.sample(MASK_SEED, fx, fz).h;
+    const ffm = v.featureMask?.(MASK_SEED, fx, fz, fh);
+    expect(ffm?.clutter).toBeGreaterThan(0);
+    expect(ffm?.clutter).toBeLessThan(1);
+    const flower = clutterDensity(MASK_SEED, CLUTTER_FLOWER, fx, fz);
+    expect(flower).toBeGreaterThan(0);
+    expect(flower).toBe(0.0004611562793366643);
+  });
 });
+
+describe("groundCover", () => {
+  const SEED = 1;
+  const variant = () => activeTerrainVariant();
+  // A point whose ground is grass (altitude and slope gates open) but far
+  // from any road or trail, so the only edge in play is the canopy.
+  function openGround(seed: number, x: number, z: number): boolean {
+    const v = variant();
+    const s = v.sample(seed, x, z);
+    const alt = s.h > CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE && s.h < CLUTTER_GRASS_ALT_HI;
+    const gentle = s.dx * s.dx + s.dz * s.dz < CLUTTER_GRASS_SLOPE_LO * CLUTTER_GRASS_SLOPE_LO * 0.5;
+    const r = v.roadDistance?.(seed, x, z) ?? Infinity;
+    const rt = v.trailDistance?.(seed, x, z) ?? Infinity;
+    return alt && gentle && r > CLUTTER_GRASS_ROAD_FAR + 5 && rt > CLUTTER_GRASS_TRAIL_FAR + 5;
+  }
+
+  it("exports the spec's constants and joins them to the level id", () => {
+    expect(CLUTTER_GRASS_CANOPY_FLOOR).toBe(0.15);
+    expect(CLUTTER_GRASS_PATCH_FLOOR).toBe(0.6);
+    expect(CLUTTER_GRASS_BOOST).toBe(1.5);
+    expect(CLUTTER_GRASS_BOOST_LO).toBe(0.5);
+    expect(CLUTTER_DUFF_OPEN).toBe(0.15);
+    expect(CLUTTER_DUFF_ROAD_CLEAR).toBe(2);
+    expect(CLUTTER_GRASS_TRAIL_CORE).toBe(0.35);
+    expect(CLUTTER_GRASS_TRAIL_REACH).toEqual([0.35, 1.3]);
+    expect(CLUTTER_GRASS_TRAIL_REACH_WAVE).toBe(9);
+    expect(CLUTTER_DUFF_BED_MAX).toBe(0.8);
+    expect(CLUTTER_DUFF_BED_FADE).toBe(0.5);
+    expect(CLUTTER_DUFF_DRIFT_WAVE).toBe(6);
+    expect(CLUTTER_DUFF_DRIFT_BAND).toEqual([0.35, 0.65]);
+    for (const key of [
+      "CLUTTER_GRASS_CANOPY_FLOOR", "CLUTTER_GRASS_PATCH_FLOOR", "CLUTTER_GRASS_BOOST", "CLUTTER_GRASS_BOOST_LO", "CLUTTER_DUFF_OPEN", "CLUTTER_DUFF_ROAD_CLEAR",
+      "CLUTTER_GRASS_TRAIL_CORE", "CLUTTER_GRASS_TRAIL_REACH_LO", "CLUTTER_GRASS_TRAIL_REACH_HI", "CLUTTER_GRASS_TRAIL_REACH_WAVE",
+      "CLUTTER_DUFF_BED_MAX", "CLUTTER_DUFF_BED_FADE", "CLUTTER_DUFF_DRIFT_WAVE", "CLUTTER_DUFF_DRIFT_LO", "CLUTTER_DUFF_DRIFT_HI",
+    ]) {
+      expect(CLUTTER_TUNABLES[key]).toBeTypeOf("number");
+    }
+  });
+
+  it("keeps the path readable: no grass inside the bed's core, and the ramp's reach varies along the trail", () => {
+    // A 200 m square around the trailside pose, scanned at 1 m; the bed's
+    // core (rt < CORE) is a few hundred points of it. Measured on seed 1
+    // over this exact window: 247 core points.
+    const v = variant();
+    let core = 0, near = 0, nearGrass = 0;
+    const reaches = new Set<number>();
+    for (let x = 164; x <= 364; x += 1) {
+      for (let z = 18; z <= 218; z += 1) {
+        const rt = v.trailDistance?.(SEED, x, z) ?? Infinity;
+        if (rt < CLUTTER_GRASS_TRAIL_CORE) { expect(groundCover(SEED, x, z).grass).toBe(0); core++; }
+        if (rt >= CLUTTER_GRASS_TRAIL_CORE && rt < 0.75) { near++; if (groundCover(SEED, x, z).grass > 0) nearGrass++; }
+        if (rt < 3) reaches.add(Math.round(trailReach(SEED, x, z) * 20) / 20);
+      }
+    }
+    expect(core).toBeGreaterThan(200);
+    // Where the default ramp would still be closed (rt < 0.75), the modulated
+    // one opens in places: encroachment exists, and is not everywhere.
+    expect(nearGrass).toBeGreaterThan(0);
+    expect(nearGrass).toBeLessThan(near);
+    expect(reaches.size).toBeGreaterThan(6);
+    for (const k of reaches) { expect(k).toBeGreaterThanOrEqual(0.35 - 1e-9); expect(k).toBeLessThanOrEqual(1.3 + 1e-9); }
+    // The old gate is the ramp at k = 1.
+    expect(grassTrailGate(1.5)).toBe(grassTrailRamp(1.5, 1));
+  });
+
+  it("gathers duff on the bed in drifts, and only there inside the core", () => {
+    // Inside the core the canopy floor is shut (only the drift shows), so
+    // the drift's own BED_MAX cap holds there. On the loose margin the
+    // floor has started ramping in alongside the still-live bed drift —
+    // deliberately, so nothing reads as a bare gap beside the tread — so
+    // only the field's general [0, 1] duff contract holds there, not
+    // BED_MAX specifically.
+    const v = variant();
+    let core = 0, margin = 0, drifted = 0;
+    for (let x = 164; x <= 364; x += 1) {
+      for (let z = 18; z <= 218; z += 1) {
+        const rt = v.trailDistance?.(SEED, x, z) ?? Infinity;
+        if (rt > 0.75) continue;
+        const d = groundCover(SEED, x, z).duff;
+        const drift = trailDriftNoise(SEED, x, z);
+        expect(drift).toBeGreaterThanOrEqual(0);
+        expect(drift).toBeLessThanOrEqual(1);
+        if (rt < CLUTTER_GRASS_TRAIL_CORE) {
+          core++;
+          expect(d).toBeLessThanOrEqual(CLUTTER_DUFF_BED_MAX + 1e-9);
+          if (drift < CLUTTER_DUFF_DRIFT_BAND[0]) expect(d).toBeLessThan(0.2);
+        } else {
+          margin++;
+          expect(d).toBeLessThanOrEqual(1 + 1e-9);
+        }
+        if (drift > CLUTTER_DUFF_DRIFT_BAND[1]) { expect(d).toBeGreaterThan(0.5 * CLUTTER_DUFF_BED_MAX); drifted++; }
+      }
+    }
+    expect(core).toBeGreaterThan(200);
+    expect(margin).toBeGreaterThan(0);
+    expect(drifted).toBeGreaterThan(30);
+  });
+
+  it("leaves no bare band beside the tread: past the core, grass and duff are never both poor", () => {
+    // The bug this guards: floorDuff used to clear only inside the core, so
+    // the loose margin (rt just past CORE, out to the bed's near edge) could
+    // sit with the trail ramp still shut (grass near 0) AND the canopy floor
+    // not yet engaged (duff near 0) — a visible bare strip beside the path.
+    // Walk real grass ground (alt · grade the domain census's own gate)
+    // outward from the core in fine steps and check the width of any
+    // "both poor" run stays a sliver, not the old gap's real width.
+    const v = variant();
+    const POOR = 0.05;
+    let maxPoorRun = 0;
+    for (let z = 18; z <= 218; z += 5) {
+      let run = 0;
+      for (let xi = 1640; xi <= 3640; xi++) {
+        const x = xi / 10;
+        const s = v.sample(SEED, x, z);
+        const alt = smoothstepT(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, s.h) *
+          (1 - smoothstepT(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h));
+        const grade = 1 - smoothstepT(CLUTTER_GRASS_SLOPE_LO ** 2, CLUTTER_GRASS_SLOPE_HI ** 2, s.dx * s.dx + s.dz * s.dz);
+        const rt = v.trailDistance?.(SEED, x, z) ?? Infinity;
+        // Only real, unconfounded grass ground past the tread itself: the
+        // core is deliberately bare (the path stays readable), so it is
+        // excluded, not part of the bug this guards.
+        if (alt * grade < 0.95 || rt < CLUTTER_GRASS_TRAIL_CORE) { run = 0; continue; }
+        const { grass, duff } = groundCover(SEED, x, z);
+        run = (grass < POOR && duff < POOR) ? run + 0.1 : 0;
+        maxPoorRun = Math.max(maxPoorRun, run);
+      }
+    }
+    // Measured on seed 1 over this exact walk: 0.2 m (a sliver right at the
+    // core's own edge, where a continuous ramp must start near zero) —
+    // nothing like the old gap's real width (rt 0.35 to 0.75, ~0.4 m of
+    // flat zero before the old formula's sudden duff wall).
+    expect(maxPoorRun).toBeLessThan(0.3);
+  });
+
+  it("is the grass gate: the grass class and the meadow class read it", () => {
+    const points: [number, number][] = [[35, 21335], [-216, 414], [160, -234], [264, 118]];
+    for (const [x, z] of points) {
+      const cover = groundCover(SEED, x, z);
+      expect(cover.grass).toBeGreaterThanOrEqual(0);
+      expect(cover.grass).toBeLessThanOrEqual(CLUTTER_GRASS_BOOST);
+      expect(cover.duff).toBeGreaterThanOrEqual(0);
+      expect(cover.duff).toBeLessThanOrEqual(1);
+      // The class and the field both apply the feature mask now (see "the
+      // terrain feature mask" above for the masked case), so they agree
+      // exactly everywhere, not only away from every feature.
+      const g = clutterDensity(SEED, CLUTTER_GRASS, x, z);
+      expect(g).toBe(cover.grass);
+    }
+  });
+
+  it("is continuous: no step larger than the bound along lines that cross every edge kind", () => {
+    // Lines found by scanning seed 1 for gentle, valid-altitude ground that
+    // actually crosses each named edge (a fixed offset can miss its target
+    // entirely on this terrain's own hills and ridges, which the slope gate
+    // — unrelated to this field — reads at metre scale): a canopy edge (the
+    // forestDensity rho band, verified genuinely crossing CANOPY_LO to
+    // CANOPY_HI, not just brushing one of them), an open interior with none
+    // of the field's edges in play, the trail's bed, a road verge, and the
+    // coast's altitude fade. Sampled at a true fixed 0.25 m step along each
+    // line's own span (not span / 240, which was as fine as 0.083 m on the
+    // trail and road lines — the two that actually constrain anything).
+    const lines: [number, number, number, number][] = [
+      [1030, -200, 1150, -200],     // a canopy edge (rho: 0.31 -> 0.92, crossing both LO and HI)
+      [2375, -700, 2435, -700],     // open interior, no edge in play
+      [-349, 16, -329, 16],         // across the trail
+      [-306, 1000.5, -276, 1000.5], // across a road verge
+      [-260, 380, -180, 440],       // toward the coast fade
+    ];
+    const STEP = 0.25;
+    let maxGrassStep = 0, maxDuffStep = 0;
+    for (const [x0, z0, x1, z1] of lines) {
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      const n = Math.floor(len / STEP);
+      let prev = groundCover(SEED, x0, z0);
+      for (let i = 1; i <= n; i++) {
+        const t = (i * STEP) / len;
+        const cur = groundCover(SEED, x0 + (x1 - x0) * t, z0 + (z1 - z0) * t);
+        maxGrassStep = Math.max(maxGrassStep, Math.abs(cur.grass - prev.grass));
+        maxDuffStep = Math.max(maxDuffStep, Math.abs(cur.duff - prev.duff));
+        prev = cur;
+      }
+    }
+    // Measured on seed 1 at the true 0.25 m step: maxGrassStep ~ 0.131 (the
+    // road line), maxDuffStep ~ 0.024 — real margin under the bound, not the
+    // inflated one the finer, span/240 sampling used to report.
+    expect(maxGrassStep).toBeLessThan(0.15);
+    expect(maxDuffStep).toBeLessThan(0.15);
+  });
+
+  it("is continuous across the slope gate itself, stepping synthetic ground from flat to past SLOPE_HI", () => {
+    // No real hillside on seed 1 offers a long, gentle run all the way
+    // through the slope band untouched by its own local roughness (see the
+    // comment above) — so the field's steepest legitimate transition, the
+    // grade ramp, goes untested by the lines above. Test it directly: fix
+    // an open, canopy-clear position (verified above) and sweep only the
+    // sample's slope, at the same 0.25 m-equivalent resolution and the same
+    // bound as the position-based lines.
+    const [x, z] = [2375, -700];
+    const STEP = 0.25, SPAN = 60;
+    const n = Math.floor(SPAN / STEP);
+    const slopeSpan = CLUTTER_GRASS_SLOPE_HI + 0.15;
+    let maxGrassStep = 0, maxDuffStep = 0;
+    let prev = groundCover(SEED, x, z, { h: 100, dx: 0, dz: 0 });
+    for (let i = 1; i <= n; i++) {
+      const slope = (i / n) * slopeSpan;
+      const cur = groundCover(SEED, x, z, { h: 100, dx: slope, dz: 0 });
+      maxGrassStep = Math.max(maxGrassStep, Math.abs(cur.grass - prev.grass));
+      maxDuffStep = Math.max(maxDuffStep, Math.abs(cur.duff - prev.duff));
+      prev = cur;
+    }
+    expect(maxGrassStep).toBeLessThan(0.15);
+    expect(maxDuffStep).toBeLessThan(0.15);
+  });
+
+  it("keeps the floor full: grass/BOOST + duff stays in band wherever the only edge is the canopy", () => {
+    let checked = 0;
+    for (let x = -600; x <= 600; x += 12) {
+      for (let z = 21000; z <= 22200; z += 12) {
+        if (!openGround(SEED, x, z)) continue;
+        const { grass, duff } = groundCover(SEED, x, z);
+        const fullness = grass / CLUTTER_GRASS_BOOST + duff;
+        expect(fullness).toBeGreaterThan(0.55);
+        expect(fullness).toBeLessThan(1.05);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(200);
+  });
+
+  it("boosts only inside: never above edge · patch where the edge product is under the boost start", () => {
+    // Under dense canopy the edge product is small, so no boost may apply.
+    let checked = 0;
+    for (let x = -600; x <= 600; x += 12) {
+      for (let z = 21000; z <= 22200; z += 12) {
+        if (!openGround(SEED, x, z)) continue;
+        const s = variant().sample(SEED, x, z);
+        const rho = forestDensity(SEED, x, z, s);
+        if (rho < CLUTTER_GRASS_CANOPY_HI) continue; // dense canopy only
+        const { grass } = groundCover(SEED, x, z);
+        // canopy ramp is at its floor, patch is at most 1
+        expect(grass).toBeLessThanOrEqual(CLUTTER_GRASS_CANOPY_FLOOR + 1e-9);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+  });
+
+  it("puts no duff on sand or rock, and on the bed's core only the drifts", () => {
+    const v = variant();
+    let sandChecked = 0, coreChecked = 0;
+    for (let x = -600; x <= 600; x += 6) {
+      for (let z = -600; z <= 600; z += 6) {
+        const s = v.sample(SEED, x, z);
+        if (s.h < CLUTTER_GRASS_ALT_LO) { expect(groundCover(SEED, x, z, s).duff).toBe(0); sandChecked++; }
+        const rt = v.trailDistance?.(SEED, x, z) ?? Infinity;
+        if (rt < 0.1) {
+          // Inside the core the floor duff is closed; whatever remains is the bed drift.
+          const d = groundCover(SEED, x, z, s).duff;
+          expect(d).toBeLessThanOrEqual(CLUTTER_DUFF_BED_MAX + 1e-9);
+          if (trailDriftNoise(SEED, x, z) < CLUTTER_DUFF_DRIFT_LO) expect(d).toBe(0);
+          coreChecked++;
+        }
+      }
+    }
+    expect(sandChecked).toBeGreaterThan(100);
+    expect(coreChecked).toBeGreaterThan(0);
+  });
+
+  it("grows grass wherever the floor is grass: the census share tracks the grass-ground share", () => {
+    // Ground whose altitude and slope gates are open (alt · grade ≥ 0.9) is
+    // grass ground; the field must clear the blade floor on nearly all of it.
+    const v = variant();
+    let onGrass = 0, covered = 0;
+    for (let x = -600; x <= 600; x += 6) {
+      for (let z = -600; z <= 600; z += 6) {
+        const s = v.sample(SEED, x, z);
+        const alt = smoothstepT(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, s.h) *
+          (1 - smoothstepT(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h));
+        const grade = 1 - smoothstepT(CLUTTER_GRASS_SLOPE_LO ** 2, CLUTTER_GRASS_SLOPE_HI ** 2, s.dx * s.dx + s.dz * s.dz);
+        if (alt * grade < 0.9) continue;
+        onGrass++;
+        if (groundCover(SEED, x, z, s).grass >= 0.05) covered++;
+      }
+    }
+    expect(onGrass).toBeGreaterThan(5000);
+    expect(covered / onGrass).toBeGreaterThan(0.85);
+  });
+
+  it("is deterministic", () => {
+    const a = groundCover(SEED, 35, 21335);
+    const b = groundCover(SEED, 35, 21335);
+    expect(a).toEqual(b);
+  });
+});
+
+function smoothstepT(e0: number, e1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}

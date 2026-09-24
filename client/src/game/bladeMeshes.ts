@@ -1,7 +1,7 @@
 /**
  * The Babylon shell over `bladeField.ts`: one thin-instance bucket per clump
- * character and distance tier, on one opaque material per tier, filled from
- * the field's tier lists with the cards' own matrix, trample and tint writers
+ * character, distance tier and size, on one opaque material per tier, filled
+ * from the field's tier lists with the cards' own matrix, trample and tint writers
  * (clutterMeshes.ts) plus a per-instance strength. Rebuilt on the field's own
  * 1 m crossing; no per-frame allocation on the hot path, the clutter shell's
  * discipline. Nothing here dithers: every hand-off is geometric, so no bucket
@@ -9,14 +9,17 @@
  *
  * The split is `clutterMeshes.ts`'s and for the same reason: all band and
  * placement maths is the pure field, and what lives here is buffers, matrices
- * and dispose. The twelve buckets are the product of two axes that cannot be
- * collapsed — a character is a different MESH (its own blade table and tip
- * feature, so its own vertex data), a tier is a different blade COUNT of the
- * same character and a different hand-off band. Tier is the material axis
- * because the band is a material uniform on the foliage plugin; character is
- * not, since four characters of one tier share that band exactly.
+ * and dispose. The thirty-six buckets are the product of three axes that
+ * cannot be collapsed — a character is a different MESH (its own blade table
+ * and tip feature, so its own vertex data), a tier is a different blade COUNT
+ * of the same character and a different hand-off band, and a size is a
+ * further COUNT scaling of the same character and tier (`bladeCountFor`), so
+ * a cell that buys a bigger clump gets a mesh with more blades rather than a
+ * scaled-up one. Tier is the material axis because the band is a material
+ * uniform on the foliage plugin; neither character nor size is, since all
+ * twelve of a tier's character-size buckets share that band exactly.
  *
- * Draw-call budget: 4 characters × 3 tiers = 12 draws, opaque and
+ * Draw-call budget: 4 characters × 3 tiers × 3 sizes = 36 draws, opaque and
  * single-material, standing where the meadow's near cards used to.
  */
 // Side-effect import, load-bearing: `thinInstanceSetBuffer` and friends are
@@ -29,18 +32,20 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { Rgb } from "./colour.js";
 import {
-  BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, bladeTierBands, createBladeCollector, type BladeCell, type BladeTiers,
+  BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_COUNT, bladeTierBands, createBladeCollector,
+  type BladeCell, type BladeTiers,
 } from "./bladeField.js";
-import { BLADE_ALBEDO, BLADE_CHARACTERS, BLADE_TIER_COUNTS, bladeClumpGeometry, type BladeQuality } from "./bladeClump.js";
+import { BLADE_ALBEDO, BLADE_CHARACTERS, bladeClumpGeometry, bladeCountFor, type BladeQuality } from "./bladeClump.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 
 export const BLADE_MESH_PREFIX = "blade_clumps";
-export function bladeMeshName(character: number, tier: number): string {
-  return `${BLADE_MESH_PREFIX}_c${character}_t${tier}`;
+export function bladeMeshName(character: number, tier: number, size: number): string {
+  return `${BLADE_MESH_PREFIX}_c${character}_t${tier}_s${size}`;
 }
-/** A cell's height scale at strength 0 and 1. */
+/** A cell's height scale at strength 0 and 1 (`strength`, the clamped
+ * [0, 1] cut — never the unclamped `cover` a cell's `size` was chosen from). */
 export const BLADE_STRENGTH_HEIGHT: readonly [number, number] = [0.5, 1];
 /** A cell's height scale under full canopy: forest-floor grass is short as well as thin. */
 export const BLADE_CANOPY_HEIGHT = 0.6;
@@ -52,8 +57,8 @@ export type BladeMeshesOptions = { quality: BladeQuality };
 export type BladeMeshes = {
   update(camX: number, camZ: number): void;
   /**
-   * Every bucket mesh, in tier-then-character order. Unlike the clutter
-   * shell's `casterMeshes` this array is complete the moment
+   * Every bucket mesh, in tier-then-character-then-size order. Unlike the
+   * clutter shell's `casterMeshes` this array is complete the moment
    * `createBladeMeshes` returns and never grows: the clumps are generated
    * geometry, not a GLB that has to land first, so there is no deferred
    * adoption and no contract to watch the length.
@@ -62,10 +67,10 @@ export type BladeMeshes = {
   dispose(): void;
 };
 
-/** One character's bucket inside one tier: its mesh and the three buffers it
- * uploads, reused across rebuilds and grown geometrically. No `bands` and no
- * `fade` — the tier hand-off is the shader's geometric collapse, so nothing
- * here ever writes `fadeBands`. */
+/** One character-and-size bucket inside one tier: its mesh and the three
+ * buffers it uploads, reused across rebuilds and grown geometrically. No
+ * `bands` and no `fade` — the tier hand-off is the shader's geometric
+ * collapse, so nothing here ever writes `fadeBands`. */
 type Bucket = {
   mesh: Mesh;
   /** Matrix data; capacity is `buf.length / 16`. */
@@ -76,7 +81,8 @@ type Bucket = {
    * that leaves this one empty. */
   foliage: Float32Array;
   /** One float per instance, the `bladeStrength` attribute the BLADES profile
-   * declares: the cell's grass gate, which cuts blades inside the clump. */
+   * declares: the cell's clamped `strength` (never the unclamped `cover`),
+   * which cuts blades inside the clump. */
   strength: Float32Array;
   /** Instances this rebuild — counted in pass 1, then reused as the write
    * cursor in pass 2, so it is the live count again when the fill ends. */
@@ -88,10 +94,10 @@ type Bucket = {
 };
 
 /** Instances a bucket's first real allocation covers. A tier's cells are
- * split four ways by character, and the fine tier's disc (4 m + pad) holds a
- * few hundred cells at full strength, so the common bucket settles after one
- * or two doublings and only the coarse tier's fine-grass bucket — the 0.6
- * weight over an 18 m disc — climbs further. */
+ * split twelve ways by character and size, and the fine tier's disc (4 m +
+ * pad) holds a few hundred cells at full strength, so the common bucket
+ * settles after one or two doublings and only the coarse tier's fine-grass
+ * bucket — the 0.6 weight over an 18 m disc — climbs further. */
 const BUCKET_MIN_INSTANCES = 64;
 
 /** Shared zero-length placeholder for a bucket that has never held an
@@ -188,12 +194,12 @@ function createTierMaterial(scene: Scene, tier: number, meshHeight: number): PBR
   return mat;
 }
 
-/** The clump mesh for one character and tier: the pure geometry through
+/** The clump mesh for one character, tier and size: the pure geometry through
  * `VertexData`, the `blade` record as a custom vertex buffer (set after
  * `applyToMesh`, which rebuilds the mesh's buffers). */
-function createClumpMesh(scene: Scene, character: number, tier: number, count: number): Mesh {
+function createClumpMesh(scene: Scene, character: number, tier: number, size: number, count: number): Mesh {
   const g = bladeClumpGeometry(BLADE_CHARACTERS[character]!, count);
-  const mesh = new Mesh(bladeMeshName(character, tier), scene);
+  const mesh = new Mesh(bladeMeshName(character, tier, size), scene);
   const data = new VertexData();
   data.positions = g.positions;
   data.normals = g.normals;
@@ -217,31 +223,34 @@ function createClumpMesh(scene: Scene, character: number, tier: number, count: n
 }
 
 export function createBladeMeshes(scene: Scene, seed: number, options: BladeMeshesOptions): BladeMeshes {
-  const counts = BLADE_TIER_COUNTS[options.quality];
   // Memoizing collector, not the pure `collectBladeCells`: a rebuild happens
   // on every 1 m crossing, and re-sampling the whole disc from cold each time
   // would pay fresh gate, terrain and density samples for thousands of cells
   // that have not moved (see bladeField.ts).
   const collector = createBladeCollector(seed);
-  /** `buckets[tier][character]`. */
-  const buckets: Bucket[][] = [];
+  /** `buckets[tier][character][size]`. */
+  const buckets: Bucket[][][] = [];
   const materials: PBRMaterial[] = [];
   const meshes: Mesh[] = [];
   for (let tier = 0; tier < 3; tier++) {
-    const row: Bucket[] = [];
+    const row: Bucket[][] = [];
     // The tier's tallest clump sets the material's height uniform, which the
     // plugin divides the vertex's height by to weight the sway. One material
-    // serves four characters of different heights, so the tallest is the only
-    // choice that never drives a weight past 1.
+    // serves all twelve of the tier's character-size buckets, so the tallest
+    // of them is the only choice that never drives a weight past 1.
     let tallest = 0;
     for (let ch = 0; ch < BLADE_CHARACTER_COUNT; ch++) {
-      const mesh = createClumpMesh(scene, ch, tier, counts[ch]![tier]!);
-      tallest = Math.max(tallest, mesh.getBoundingInfo().boundingBox.maximum.y);
-      row.push({ mesh, buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER, count: 0, grown: false });
-      meshes.push(mesh);
+      const sizes: Bucket[] = [];
+      for (let size = 0; size < BLADE_SIZE_COUNT; size++) {
+        const mesh = createClumpMesh(scene, ch, tier, size, bladeCountFor(options.quality, ch, tier, size));
+        tallest = Math.max(tallest, mesh.getBoundingInfo().boundingBox.maximum.y);
+        sizes.push({ mesh, buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER, count: 0, grown: false });
+        meshes.push(mesh);
+      }
+      row.push(sizes);
     }
     const mat = createTierMaterial(scene, tier, tallest);
-    for (const bucket of row) bucket.mesh.material = mat;
+    for (const sizes of row) for (const bucket of sizes) bucket.mesh.material = mat;
     materials.push(mat);
     buckets.push(row);
   }
@@ -257,15 +266,15 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
    * arrives nearest-first from the field and is walked in order, so each
    * bucket's instances stay sorted by distance.
    */
-  function fill(list: BladeCell[], row: Bucket[]): void {
-    for (const bucket of row) bucket.count = 0;
-    for (const c of list) row[c.character]!.count++;
-    for (const bucket of row) {
+  function fill(list: BladeCell[], row: Bucket[][]): void {
+    for (const sizes of row) for (const bucket of sizes) bucket.count = 0;
+    for (const c of list) row[c.character]![c.size]!.count++;
+    for (const sizes of row) for (const bucket of sizes) {
       ensureCapacity(bucket);
       bucket.count = 0;
     }
     for (const c of list) {
-      const bucket = row[c.character]!;
+      const bucket = row[c.character]![c.size]!;
       const frame = trampleFrame(seed, c);
       // A thin sward is short as well as sparse, and so is grass under a
       // canopy: the gate scales the height between BLADE_STRENGTH_HEIGHT's
@@ -293,7 +302,7 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
       bucket.strength[bucket.count] = c.strength;
       bucket.count++;
     }
-    for (const bucket of row) applyBucket(bucket);
+    for (const sizes of row) for (const bucket of sizes) applyBucket(bucket);
   }
 
   function rebuild(x: number, z: number): void {

@@ -154,14 +154,20 @@ The bill at 4× pixels against current `main`, bar +2.0 ms:
 
 That sums past the bar, so the design pays:
 
-- **A thin cell buys a thin clump.** `bladeMeshes.ts` chooses a cell's bucket
-  by tier *and* strength band: below the band a fine-tier cell draws the
-  mid-tier clump and a mid-tier cell the coarse one, so a cell at strength 0.1
-  no longer submits 100 blades to collapse 90. The band is `THIN_BAND =
-  [0.4, 0.6]`, and a cell inside it picks by comparing its own random to
-  `smoothstep(0.4, 0.6, strength)`, so the choice never forms a contour.
+- **A cell buys the clump size its cover earns.** `bladeMeshes.ts` chooses a
+  cell's bucket by tier *and* a size — thin, base or full — that its own
+  cover picks. Below a thin band a cell draws a thinner clump (roughly 0.4×
+  the blades), so a nearly bare cell no longer submits a full clump only to
+  collapse most of it. Above a full band — inside the interior boost — a
+  cell draws a fuller clump instead (1.5× the blades): the boost raises the
+  field's own density there, and the third size is what makes that read on
+  screen as fuller clumps standing in richer ground, rather than only more
+  of the same clump crowding the same spot. A cell inside either band picks
+  by comparing its own random against a smoothstep of its cover, so neither
+  choice ever forms a visible contour across the field.
 - **Coarse counts trimmed:** `BLADE_TIER_COUNTS.high` coarse column
-  16/12/4/12 → 10/8/4/8. It is the tier the 10 m hand-off already fades out.
+  16/12/4/12 → 10/8/4/8 (the base-size table the sizes above scale). It is
+  the tier the 10 m hand-off already fades out.
 
 | tier | blades | litter | paint coupling |
 | --- | --- | --- | --- |
@@ -246,6 +252,46 @@ the two are built once:
   so a painted drift always has pieces lying on it.
 - **Naming.** In code the layer is `duff`, because `CLUTTER_LITTER` already
   names the trail-margin pebble class.
+- **The canopy floor.** The canopy ramp bottoms at
+  `CLUTTER_GRASS_CANOPY_FLOOR = 0.15`, not zero, so that even the densest
+  trees keep a thin sward under them rather than bare duff.
+
+  How much ground that covers depends on the world and on how far out you
+  measure. Sampling every point where the field grows any grass at all, the
+  share sitting under enough canopy to zero the ramp on its own runs from
+  **46.5 %** (seed 1, within 600 m of the origin) to **85.6 %** (seed `atmo`,
+  same radius), with the two 2 km samples both near 60 %; mean shade over the
+  same points runs 0.57 to 0.91. The floor earns its place at the bottom of
+  that range, not the top — losing the grass on roughly half the ground the
+  field covers would be enough on its own.
+- **The interior boost's own clump size.** Section 7's thin-cell rule
+  generalises to three sizes rather than two: the blade field
+  (`bladeField.ts`'s `bladeSizeFor`) chooses a cell's clump as thin, base or
+  full from its own cover, with the choice inside each band dithered by the
+  cell's draw so no contour of clump size ever forms across the field. Thin
+  realises the section 7 rule; full is the new size the interior boost
+  earns, so a boosted cell reads as fuller clumps standing in richer ground
+  rather than only more of the same clump crowding the same spot.
+- **Duff clears the road.** The floor duff term ramps out over
+  `CLUTTER_DUFF_ROAD_CLEAR` metres inside the grass's own road edge, so the
+  litter never reaches the asphalt, which is painted by its own system.
+- **The duff clumps' analytic bounds.** `duffClumpReach` and
+  `duffClumpMaxHeight` (`duffClump.ts`) are exported functions of a
+  character's own numbers — the root disc, its length range, half-width and
+  lift range — rather than a measured-and-rounded constant, so a further
+  retune of a character moves the bound with it instead of silently
+  outrunning it.
+- **The leaf's lift range.** A flat piece sitting exactly at the ground-cover
+  field's sampled height can be occluded outright by the true ground surface
+  between the eye and it on a downhill sightline — ordinary grazing-angle
+  blockage, nothing to do with z-fighting — and a piece too short to rise
+  clear of that reads as nothing at all. The leaf cluster's `lift` range
+  widened from a near-flat `[0.0, 0.12]` rad to `[0.10, 0.50]` rad for
+  exactly this reason: at the old range 0 of 20,000 sampled leaf pieces rose
+  10 mm above the ground, against 78% at the new range. The leaf remains the
+  lowest-lying character in the field by a wide margin — a 16.1 mm mean
+  per-piece rise against the twig's 26.1 mm and the branch's 40 mm — so the
+  widening reads as litter finding the eye line, not as leaves standing up.
 
 ## 13. Follow-ups
 

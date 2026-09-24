@@ -8,12 +8,12 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 
 // `terrainTexture.ts`'s plugin constructor calls the real `loadGroundArrays`
-// whenever `renderer.ts`'s `attachTerrainTexture(scene, mat)` call sites (no
-// factory option — that call site is out of scope for this task) don't
-// supply one, and the real loader builds a `RawTexture2DArray`, which
-// NullEngine cannot create (the same gap `groundMaps.test.ts` documents and
-// works around with its own factory injection). Mocked here, at the module
-// boundary, rather than by touching `renderer.ts`.
+// whenever it isn't handed a factory, and `renderer.ts`'s own
+// `attachTerrainTexture(scene, mat)` call site never passes one — so the real
+// loader builds a `RawTexture2DArray`, which NullEngine cannot create (the
+// same gap `groundMaps.test.ts` documents and works around with its own
+// factory injection). Mocked here, at the module boundary, rather than by
+// touching `renderer.ts`.
 vi.mock("../../src/game/groundMaps.js", () => ({
   loadGroundArrays: () => ({
     normals: { isReady: () => true, dispose() {} },
@@ -411,6 +411,33 @@ describe("world shell wiring", () => {
     // The reused array is truncated to this frame's count, not left holding the
     // previous frame's tail.
     expect(drain).toContain("wildlifeEventDrain.length = n;");
+  });
+
+  it("creates the duff field beside the blade field, both guarded to the same tiers", () => {
+    const creation = slice("const bladeMeshes =", "// Same late-registration story");
+    // Hand-authored levels have no forest, and low tier cannot afford either
+    // field — both guards must agree, or one draws where the other does not.
+    expect(creation).toMatch(/forest !== null && tier !== "low" \? createBladeMeshes\(/);
+    expect(creation).toMatch(/forest !== null && tier !== "low" \? createDuffMeshes\(/);
+    expect(creation).toContain("createBladeMeshes(scene, forest.seed, { quality: tier })");
+    expect(creation).toContain("createDuffMeshes(scene, forest.seed, { quality: tier })");
+  });
+
+  it("updates duff in the freecam branch AND the player branch, with the blades' own eye position", () => {
+    // This file's head comment names the forest, clutter and mist shells as
+    // having no smoke test here at all — the blade and duff shells share
+    // that same gap (neither was named because neither existed when the
+    // comment was written), so this is the first thing to catch a duff
+    // update wired into only one of the two camera branches, or missing from
+    // the dispose list — exactly the failure a shell "constructed and never
+    // updated" produces.
+    const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
+    const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
+    expect(freecamBranch.match(/duffMeshes\?\.update\(/g)).toHaveLength(1);
+    expect(playerBranch.match(/duffMeshes\?\.update\(/g)).toHaveLength(1);
+    expect(freecamBranch).toContain("bladeMeshes?.update(freecam.x, freecam.z);\n        duffMeshes?.update(freecam.x, freecam.z);");
+    expect(playerBranch).toContain("bladeMeshes?.update(local.pos.x, local.pos.z);\n        duffMeshes?.update(local.pos.x, local.pos.z);");
+    expect(src.match(/duffMeshes\?\.dispose\(\)/g)).toHaveLength(1);
   });
 });
 

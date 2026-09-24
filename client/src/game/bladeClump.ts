@@ -50,9 +50,16 @@ export const BLADE_LUMA = 0.3;
 /** Width of one blade's shrink window in units of a hand-off ramp;
  * FOLIAGE_BLADE_SOFT in the GLSL. */
 export const BLADE_SOFT = 0.15;
-/** The high tier's whole field at full strength must stay under this many
- * vertices (a test computes it from the reach, the pad and the counts). */
-export const BLADE_VERTEX_BUDGET = 1_400_000;
+/** The high tier's whole field, every cell at BLADE_SIZE_FULL, must stay
+ * under this many vertices (a test computes it from the reach, the pad and
+ * the counts). In the open interior this is close to the ordinary case, not
+ * a rare corner: the boost that earns a cell BLADE_SIZE_FULL is common
+ * ground there, not an edge condition, so most of a census's fine
+ * (near-distance) tier already draws at full size. Measured at 1,543,239
+ * vertices for this budget's own worst-case sum, against 1,232,391 before
+ * clump sizes existed — about 25% more — the real bar for that rise is a
+ * frame-time measurement, not this constant. */
+export const BLADE_VERTEX_BUDGET = 1_600_000;
 
 export type BladeTip = "none" | "seed" | "flower";
 
@@ -107,11 +114,33 @@ export const BLADE_CHARACTERS: readonly BladeCharacter[] = [
 
 export type BladeQuality = "high" | "medium";
 
-/** Blades per clump, by quality tier, character and distance tier (fine, mid, coarse). */
+/** Blades per clump at BLADE_SIZE_BASE, by quality tier, character and
+ * distance tier (fine, mid, coarse). A cell's actual count also scales by
+ * its `size` through `BLADE_SIZE_FACTOR` (`bladeCountFor`). */
 export const BLADE_TIER_COUNTS: Record<BladeQuality, readonly (readonly [number, number, number])[]> = {
-  high: [[100, 40, 16], [80, 28, 12], [12, 8, 4], [100, 32, 12]],
-  medium: [[50, 20, 8], [40, 14, 6], [6, 4, 2], [50, 16, 6]],
+  high: [[100, 40, 10], [80, 28, 8], [12, 8, 4], [100, 32, 8]],
+  medium: [[50, 20, 5], [40, 14, 4], [6, 4, 2], [50, 16, 4]],
 };
+/** Blades per clump as a multiple of the tier's count, by size (thin, base, full). */
+export const BLADE_SIZE_FACTOR: readonly [number, number, number] = [0.4, 1, 1.5];
+/** A clump never carries fewer than this many blades. This floor is above
+ * several buckets' own scaled count (their base table entry times
+ * `BLADE_SIZE_FACTOR` rounds under 4), so those buckets draw more blades
+ * than their table says, and some sizes of the same bucket end up drawing
+ * the identical count — 5 of the 24 (quality, character, tier) combinations
+ * have two of their three sizes collide on one floored count, sharing that
+ * size's geometry. `medium`'s weed-coarse bucket (base 2) floors to 4 at
+ * every size, so "medium draws half of high" is not true of that one
+ * bucket read straight off `BLADE_TIER_COUNTS` — this is by design (a
+ * clump this sparse still has to read as a clump), not a bug. */
+export const BLADE_COUNT_MIN = 4;
+/** Blades a cell's clump carries: the tier's base count for its character,
+ * scaled by its size and floored at `BLADE_COUNT_MIN` so even a thin,
+ * coarse-tier clump reads as something rather than a stray blade or two. */
+export function bladeCountFor(quality: BladeQuality, character: number, tier: number, size: number): number {
+  const base = BLADE_TIER_COUNTS[quality][character]![tier]!;
+  return Math.max(BLADE_COUNT_MIN, Math.round(base * (BLADE_SIZE_FACTOR[size] as number)));
+}
 
 export type BladeClumpGeometry = {
   positions: Float32Array;
@@ -122,39 +151,49 @@ export type BladeClumpGeometry = {
   blade: Float32Array;
 };
 
-/** One of a blade's draws: the lattice hash on (blade index, salt). */
-function draw(i: number, salt: number): number {
-  return latticeHash(i, salt);
-}
+export type StripArrays = {
+  positions: Float32Array;
+  normals: Float32Array;
+  colors: Float32Array;
+  indices: Uint16Array;
+  /** (rootX, rootZ, random, heightFraction) per vertex. */
+  blade: Float32Array;
+};
 
-/** How many flower heads a flower-bearing clump carries: by the clump's own draw. */
-function headCount(character: BladeCharacter): number {
-  if (character.tip !== "flower" || character.heads === undefined) return 0;
-  const [lo, hi] = character.heads;
-  return lo + Math.floor(draw(7, 11) * (hi - lo + 1));
-}
+export type StripWriter = StripArrays & {
+  /** Vertices written so far. */
+  readonly cursor: number;
+  put(
+    px: number, py: number, pz: number, nx: number, ny: number, nz: number,
+    r: number, g: number, b: number, rootX: number, rootZ: number, random: number, h: number,
+  ): number;
+  tri(a: number, b: number, c: number): void;
+  strip(
+    baseX: number, baseY: number, baseZ: number, height: number, droop: number, hw: number,
+    outX: number, outZ: number, yaw: number, random: number, tintR: number, tintG: number, tintB: number,
+    rootX: number, rootZ: number,
+  ): number;
+};
 
-/** Vertices a clump of this character and blade count carries. A seed head
- * is one more strip (BLADE_VERTS); a flower head is a stem strip plus five
- * petal strips, six strips of BLADE_VERTS each. */
-export function bladeVertexCount(character: BladeCharacter, count: number): number {
-  let n = count * BLADE_VERTS;
-  if (character.tip === "seed") n += count * BLADE_VERTS;
-  if (character.tip === "flower") n += headCount(character) * 6 * BLADE_VERTS;
-  return n;
-}
-
-export function bladeClumpGeometry(character: BladeCharacter, count: number): BladeClumpGeometry {
-  const heads = headCount(character);
-  const n = bladeVertexCount(character, count);
-  // Matches bladeVertexCount: a seed head is one more strip's worth of
-  // triangles, a flower head is six strips' worth (the stem plus five petals).
-  const tris = count * BLADE_TRIS + (character.tip === "seed" ? count * BLADE_TRIS : 0) + heads * 6 * BLADE_TRIS;
-  const positions = new Float32Array(n * 3);
-  const normals = new Float32Array(n * 3);
-  const colors = new Float32Array(n * 4);
-  const blade = new Float32Array(n * 4);
-  const indices = new Uint16Array(tris * 3);
+/**
+ * Backs the arrays a clump's strips write into: `vertexCount` vertices and
+ * `triangleCount` triangles, allocated once and filled by `put` (one
+ * vertex), `tri` (one triangle) and `strip` (one blade or tip-feature strip:
+ * `BLADE_RINGS` cross-sections of half-width `hw(h)` plus a tip, rising from
+ * (baseX, baseY, baseZ) by `height` and drooping outward along (outX, outZ)
+ * by a parabola of the height fraction — the bend uses |height| so a strip
+ * that dips, such as a petal curling down, still bends outward rather than
+ * back on itself). A tip feature's strip starts its own base past its
+ * parent's tip but still names the parent's root and random in `blade`, via
+ * (rootX, rootZ), so it collapses with its blade. `strip` returns the index
+ * of its first vertex.
+ */
+export function createStripWriter(vertexCount: number, triangleCount: number): StripWriter {
+  const positions = new Float32Array(vertexCount * 3);
+  const normals = new Float32Array(vertexCount * 3);
+  const colors = new Float32Array(vertexCount * 4);
+  const blade = new Float32Array(vertexCount * 4);
+  const indices = new Uint16Array(triangleCount * 3);
   let ii = 0;
   let v = 0;
 
@@ -173,14 +212,6 @@ export function bladeClumpGeometry(character: BladeCharacter, count: number): Bl
   };
   const tri = (a: number, b: number, c: number): void => { indices[ii++] = a; indices[ii++] = b; indices[ii++] = c; };
 
-  // One strip: `rings` cross-sections of half-width `hw(h)` plus a tip, rising
-  // from (baseX, baseY, baseZ) by `height` and drooping outward along (outX,
-  // outZ) by a parabola of the height fraction — the bend uses |height| so a
-  // strip that dips (a negative height, for a petal curling down) still
-  // bends outward rather than back on itself. A tip feature's strip starts
-  // its own base past its parent's tip but still names the parent's root and
-  // random in `blade`, via (rootX, rootZ), so it collapses with its blade.
-  // Returns the index of its first vertex.
   const strip = (
     baseX: number, baseY: number, baseZ: number, height: number, droop: number, hw: number,
     outX: number, outZ: number, yaw: number, random: number, tintR: number, tintG: number, tintB: number,
@@ -214,6 +245,44 @@ export function bladeClumpGeometry(character: BladeCharacter, count: number): Bl
     tri(last, first + BLADE_VERTS - 1, last + 1);
     return first;
   };
+
+  return {
+    positions, normals, colors, indices, blade,
+    get cursor() { return v; },
+    put, tri, strip,
+  };
+}
+
+/** One of a blade's draws: the lattice hash on (blade index, salt). */
+function draw(i: number, salt: number): number {
+  return latticeHash(i, salt);
+}
+
+/** How many flower heads a flower-bearing clump carries: by the clump's own draw. */
+function headCount(character: BladeCharacter): number {
+  if (character.tip !== "flower" || character.heads === undefined) return 0;
+  const [lo, hi] = character.heads;
+  return lo + Math.floor(draw(7, 11) * (hi - lo + 1));
+}
+
+/** Vertices a clump of this character and blade count carries. A seed head
+ * is one more strip (BLADE_VERTS); a flower head is a stem strip plus five
+ * petal strips, six strips of BLADE_VERTS each. */
+export function bladeVertexCount(character: BladeCharacter, count: number): number {
+  let n = count * BLADE_VERTS;
+  if (character.tip === "seed") n += count * BLADE_VERTS;
+  if (character.tip === "flower") n += headCount(character) * 6 * BLADE_VERTS;
+  return n;
+}
+
+export function bladeClumpGeometry(character: BladeCharacter, count: number): BladeClumpGeometry {
+  const heads = headCount(character);
+  const n = bladeVertexCount(character, count);
+  // Matches bladeVertexCount: a seed head is one more strip's worth of
+  // triangles, a flower head is six strips' worth (the stem plus five petals).
+  const tris = count * BLADE_TRIS + (character.tip === "seed" ? count * BLADE_TRIS : 0) + heads * 6 * BLADE_TRIS;
+  const w = createStripWriter(n, tris);
+  const { positions, strip } = w;
 
   // Every blade's strip first, so the blades' vertices are contiguous from 0
   // (the tests index them as b · BLADE_VERTS); the tip features follow.
@@ -270,7 +339,7 @@ export function bladeClumpGeometry(character: BladeCharacter, count: number): Bl
         random, colour.r, colour.g, colour.b, rootX, rootZ);
     }
   }
-  return { positions, normals, colors, indices, blade };
+  return { positions: w.positions, normals: w.normals, colors: w.colors, indices: w.indices, blade: w.blade };
 }
 
 /** The second per-blade random the strength cut uses, derived from the root

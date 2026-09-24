@@ -30,15 +30,20 @@ function mix(h: number, v: number): number {
  * classes (boulder, driftwood, flower) are empty near the world origin, and a
  * checksum over an empty list asserts nothing. */
 const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
-  [600, -3000, 366, -1605166568],
+  // grass: 366 -> 987 on 2026-09-23 (the ground-cover field: grass now
+  // grows wherever the floor is grass, thinning toward every edge instead
+  // of gating shut, so this rect's occupancy rises with it).
+  [600, -3000, 987, -1291840350],
   [-200, -3000, 325, -601764019],
   [1800, -2200, 7, 570987439],
   [-600, -1400, 3, 956292241],
   // fungus: 553 -> 544 on 2026-09-10 (the trees' slope gate; hash re-pinned below).
   [-200, -3000, 544, 1329983015],
   [-200, -3000, 2128, -12565656],
-  [-600, -3000, 48, 1190728742],
-  [600, -3000, 105, -346855702],
+  // meadow: 48 -> 51 on 2026-09-23 (shares the ground-cover field's grass reading).
+  [-600, -3000, 51, 932472230],
+  // flower: 105 -> 281 on 2026-09-23 (its base is the same field's grass reading).
+  [600, -3000, 281, 754694327],
   // litter: along the stem near the trailhead, not near the world origin.
   [-500, -100, 111, -621225397],
 ];
@@ -615,6 +620,11 @@ describe("the level id does not move", () => {
     // in the level id, and the strands and rungs they add carry more trail
     // for the litter and grass gates to scatter along. Both move this on
     // purpose.
-    expect(passHash()).toBe(309897140);
+    // Re-baselined 2026-09-23 from 309897140: the ground-cover field's new
+    // constants — the canopy floor, the patch floor, the interior boost, the
+    // duff terms, the trail ramp's reach and its own salt, and the drift
+    // noise's wavelength and salt — join CLUTTER_TUNABLES, so a peer without
+    // them scatters grass differently at every canopy, trail and road edge.
+    expect(passHash()).toBe(-1219139371);
   });
 });

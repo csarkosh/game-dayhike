@@ -345,9 +345,9 @@ function geometryMeshes(node: Node): Mesh[] {
  * deep-forest frame past the 16.7 ms vsync cliff. Bushes read as
  * canopy-shadowed instead via a pre-darkened palette colour (`bush` in
  * `assets/palette.json`) rather than a real shadow
- * sample. The blade field's buckets (`bladeMeshes.ts`), which share this
- * helper, are the one exception, and turn the flag back on themselves right
- * after this call. */
+ * sample. The blade field's buckets (`bladeMeshes.ts`) and the duff field's
+ * (`duffMeshes.ts`), which share this helper, are the exceptions, and turn
+ * the flag back on themselves right after this call. */
 export function prepBucketMesh(mesh: Mesh): void {
   mesh.isPickable = false;
   // Babylon culls a thin-instance mesh by its own bounding box, and syncing

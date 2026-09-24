@@ -8,10 +8,10 @@
  *
  * sim/ determinism rules apply: no trig, no Math.pow, no `**`, no hypot.
  */
-import { fbm2, hash3 } from "./field.js";
+import { fbm2, hash3, valueNoise2 } from "./field.js";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./terrain.js";
 import { forestDensity, SLOPE_HI, SLOPE_LO } from "./vegetation.js";
-import { NO_FEATURE_MASK } from "./features.js";
+import { NO_FEATURE_MASK, type FeatureMask } from "./features.js";
 
 // ---- Class ids (not tunables) ---------------------------------------------
 export const CLUTTER_GRASS = 0;
@@ -83,6 +83,65 @@ export const CLUTTER_GRASS_PATCH_WAVELENGTH = 60;
 export const CLUTTER_GRASS_PATCH_OCTAVES = 2;
 export const CLUTTER_GRASS_PATCH_LO = 0.1;
 export const CLUTTER_GRASS_PATCH_HI = 0.3;
+/** The canopy ramp bottoms here, not at zero: a forest floor keeps a thin
+ * sward under the densest canopy, and the duff fills the rest. */
+export const CLUTTER_GRASS_CANOPY_FLOOR = 0.15;
+/** The patch noise modulates between this and 1 instead of gating: grass
+ * is everywhere the floor is grass, with the meadow-shaped variation kept. */
+export const CLUTTER_GRASS_PATCH_FLOOR = 0.6;
+/** Interior density multiplier, engaged only where every edge ramp is near 1. */
+export const CLUTTER_GRASS_BOOST = 1.5;
+/** The edge product at which the boost starts rising toward its full value at 1. */
+export const CLUTTER_GRASS_BOOST_LO = 0.5;
+/** Duff in thin OPEN grass, as a share of the duff under full canopy. */
+export const CLUTTER_DUFF_OPEN = 0.15;
+/** Duff clears the road over this many metres inside the grass's own road edge. */
+export const CLUTTER_DUFF_ROAD_CLEAR = 2;
+/** The bed's core (m from the centreline) never opens to grass, so the
+ * path always reads however far the margins are overgrown. */
+export const CLUTTER_GRASS_TRAIL_CORE = 0.35;
+/** The trail ramp's reach varies along the trail between these multiples
+ * of its default, by a value noise of this wavelength (m): in places grass
+ * creeps across the margin and stands in islands, elsewhere it hangs back. */
+export const CLUTTER_GRASS_TRAIL_REACH_LO = 0.35;
+export const CLUTTER_GRASS_TRAIL_REACH_HI = 1.3;
+export const CLUTTER_GRASS_TRAIL_REACH: readonly [number, number] = [CLUTTER_GRASS_TRAIL_REACH_LO, CLUTTER_GRASS_TRAIL_REACH_HI];
+export const CLUTTER_GRASS_TRAIL_REACH_WAVE = 9;
+/** Duff on the bed: at most this, gathered where the drift noise is inside
+ * its band, fading out this far past the bed's edge. */
+export const CLUTTER_DUFF_BED_MAX = 0.8;
+export const CLUTTER_DUFF_BED_FADE = 0.5;
+export const CLUTTER_DUFF_DRIFT_WAVE = 6;
+export const CLUTTER_DUFF_DRIFT_LO = 0.35;
+export const CLUTTER_DUFF_DRIFT_HI = 0.65;
+export const CLUTTER_DUFF_DRIFT_BAND: readonly [number, number] = [CLUTTER_DUFF_DRIFT_LO, CLUTTER_DUFF_DRIFT_HI];
+/** DECLARED, the CLUTTER_MEADOW_SALT convention: a salt change reshuffles
+ * every drift, and peers running different shuffles must refuse each other. */
+export const CLUTTER_TRAIL_REACH_SALT = 0x5a17;
+export const CLUTTER_DUFF_DRIFT_SALT = 0x6d1f;
+
+export type GroundCover = { grass: number; duff: number };
+
+/** The trail ramp's reach at a point, in [REACH_LO, REACH_HI]: continuous, so the grass it gates is too. */
+export function trailReach(seed: number, x: number, z: number): number {
+  const n = valueNoise2(x / CLUTTER_GRASS_TRAIL_REACH_WAVE, z / CLUTTER_GRASS_TRAIL_REACH_WAVE, seed ^ CLUTTER_TRAIL_REACH_SALT);
+  return CLUTTER_GRASS_TRAIL_REACH_LO + (CLUTTER_GRASS_TRAIL_REACH_HI - CLUTTER_GRASS_TRAIL_REACH_LO) * n;
+}
+
+/** The grass trail ramp at reach scale `k`: closed inside the core, open
+ * past `near + (FAR − NEAR)·k`, where `near` is the core plus `k` times the
+ * default margin. `grassTrailGate(rt)` is this ramp at k = 1. */
+export function grassTrailRamp(rt: number, k: number): number {
+  const near = CLUTTER_GRASS_TRAIL_CORE + (CLUTTER_GRASS_TRAIL_NEAR - CLUTTER_GRASS_TRAIL_CORE) * k;
+  const far = near + (CLUTTER_GRASS_TRAIL_FAR - CLUTTER_GRASS_TRAIL_NEAR) * k;
+  return smoothstep(near, far, rt);
+}
+
+/** Where litter gathers on the bed: a value noise in [0, 1] the duff reads. */
+export function trailDriftNoise(seed: number, x: number, z: number): number {
+  return valueNoise2(x / CLUTTER_DUFF_DRIFT_WAVE, z / CLUTTER_DUFF_DRIFT_WAVE, seed ^ CLUTTER_DUFF_DRIFT_SALT);
+}
+
 /** Rocks: everywhere above the sand, keener on slopes and altitude. */
 export const CLUTTER_ROCK_ALT_LO = 7;
 export const CLUTTER_ROCK_ALT_LO_FADE = 4;
@@ -190,8 +249,9 @@ export const CLUTTER_BUSH_PATCH_LO = 0.35;
 export const CLUTTER_BUSH_PATCH_HI = 0.65;
 /** Meadow carpet: the coverage lattice. One clump per
  * 0.7 m cell at saturation ≈ 2.0/m², which with a ~0.5 m clump footprint closes
- * the ground inside the class radius. Gates are `grassGateProduct` verbatim
- * — shared code, not a copy, so the two classes cannot drift. */
+ * the ground inside the class radius. Gates are the ground-cover field's
+ * `grass` reading verbatim — shared code, not a copy, so the two classes
+ * cannot drift. */
 export const CLUTTER_MEADOW_CELL = 0.7;
 /** 0.49 · 2.05 > 1: presence saturates wherever the (shared grass) gates are
  * open — the gates shape the field, not D. The grass-class convention. */
@@ -357,7 +417,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 /** The trail factor of the grass gate, pure: 0 on the bed, 1 from FAR out and
  * for Infinity (outside the bowl, or a variant without a trail). */
 export function grassTrailGate(rt: number): number {
-  return smoothstep(CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_FAR, rt);
+  return grassTrailRamp(rt, 1);
 }
 
 type ClassConfig = {
@@ -388,11 +448,18 @@ export function clutterCell(cls: number): number {
   return (CLASSES[cls] as ClassConfig).cell;
 }
 
-/** The grass class's full gate product (alt · grade · canopy · road · patch) —
- * shared verbatim by CLUTTER_MEADOW: the carpet
- * appears exactly where grass tufts do, at its own lattice and density. */
-function grassGateProduct(seed: number, x: number, z: number, s: TerrainSample, r: number, rt: number, slopeSq: number): number {
-  if (s.h < CLUTTER_GRASS_ALT_LO || r < CLUTTER_GRASS_ROAD_NEAR || rt < CLUTTER_GRASS_TRAIL_NEAR) return 0;
+/** The ground-cover field at a point: `grass` in [0, CLUTTER_GRASS_BOOST],
+ * `duff` in [0, 1] — dead leaves, twigs and branches wherever grass thins on
+ * grass ground. Every factor is a smoothstep of a continuous field, so both
+ * numbers are continuous; nothing decides per cell. `fm.clutter` is the
+ * trail-system feature mask (a pond's shore, the peak's crest): it is the
+ * LAST factor applied to both outputs, so a caller that needs its own
+ * factors (meadow's density bonus, flower's drift) interposed between the
+ * raw field and the mask — in the exact order it already multiplied them in
+ * — must apply `fm.clutter` itself and pass `NO_FEATURE_MASK` here instead,
+ * rather than let this function fold the mask in earlier than that order
+ * allows. */
+function groundCoverAt(seed: number, x: number, z: number, s: TerrainSample, r: number, rt: number, slopeSq: number, fm: FeatureMask): GroundCover {
   const alt =
     smoothstep(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, s.h) *
     (1 - smoothstep(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h));
@@ -401,21 +468,58 @@ function grassGateProduct(seed: number, x: number, z: number, s: TerrainSample, 
     CLUTTER_GRASS_SLOPE_HI * CLUTTER_GRASS_SLOPE_HI,
     slopeSq,
   );
-  if (grade === 0) return 0;
-  const canopy = 1 - smoothstep(CLUTTER_GRASS_CANOPY_LO, CLUTTER_GRASS_CANOPY_HI, forestDensity(seed, x, z, s));
+  const onGrass = alt * grade;
+  if (onGrass === 0) return { grass: 0, duff: 0 };
+  const rho = forestDensity(seed, x, z, s);
+  const shade = smoothstep(CLUTTER_GRASS_CANOPY_LO, CLUTTER_GRASS_CANOPY_HI, rho);
+  const canopy = CLUTTER_GRASS_CANOPY_FLOOR + (1 - CLUTTER_GRASS_CANOPY_FLOOR) * (1 - shade);
   const road = smoothstep(CLUTTER_GRASS_ROAD_NEAR, CLUTTER_GRASS_ROAD_FAR, r);
-  const patch = smoothstep(
+  // The ramp's reach varies along the trail (encroachment); the core never opens.
+  const trail = grassTrailRamp(rt, trailReach(seed, x, z));
+  const patch = CLUTTER_GRASS_PATCH_FLOOR + (1 - CLUTTER_GRASS_PATCH_FLOOR) * smoothstep(
     CLUTTER_GRASS_PATCH_LO,
     CLUTTER_GRASS_PATCH_HI,
     0.5 + 0.5 * fbm2(x / CLUTTER_GRASS_PATCH_WAVELENGTH, z / CLUTTER_GRASS_PATCH_WAVELENGTH, seed ^ CLUTTER_PATCH_SALT, CLUTTER_GRASS_PATCH_OCTAVES),
   );
-  return alt * grade * canopy * road * grassTrailGate(rt) * patch;
+  const edge = onGrass * canopy * road * trail;
+  const boost = 1 + (CLUTTER_GRASS_BOOST - 1) * smoothstep(CLUTTER_GRASS_BOOST_LO, 1, edge);
+  const grass = edge * patch * boost;
+  // Duff fills what the thinning takes: strongest under dense canopy, a
+  // trace in thin open grass, and clear of the asphalt, which is painted by
+  // its own system. Inside the core only the bed's own drift shows — the
+  // path stays readable — so the floor term ramps in from the core out to
+  // the bed's near edge, not from zero: past CORE it climbs while `onBed`
+  // (the same [NEAR, NEAR+FADE] ramp the bed drift fades out over) is still
+  // fully open, so the two terms genuinely overlap on the margin
+  // (rt ∈ (CORE, NEAR+FADE)) and `max` is what keeps the handoff continuous
+  // and bounded — never a bare band between "only drift" and "only floor".
+  const road2 = smoothstep(CLUTTER_GRASS_ROAD_NEAR - CLUTTER_DUFF_ROAD_CLEAR, CLUTTER_GRASS_ROAD_NEAR, r);
+  const onBed = 1 - smoothstep(CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_NEAR + CLUTTER_DUFF_BED_FADE, rt);
+  const offCore = smoothstep(CLUTTER_GRASS_TRAIL_CORE, CLUTTER_GRASS_TRAIL_NEAR, rt);
+  const floorDuff = onGrass * Math.max(0, 1 - grass / CLUTTER_GRASS_BOOST) * (CLUTTER_DUFF_OPEN + (1 - CLUTTER_DUFF_OPEN) * shade) * offCore * road2;
+  const drift = smoothstep(CLUTTER_DUFF_DRIFT_LO, CLUTTER_DUFF_DRIFT_HI, trailDriftNoise(seed, x, z));
+  const bedDuff = onGrass * onBed * drift * CLUTTER_DUFF_BED_MAX * road2;
+  return { grass: grass * fm.clutter, duff: Math.max(floorDuff, bedDuff) * fm.clutter };
+}
+
+export function groundCover(seed: number, x: number, z: number, sample?: TerrainSample): GroundCover {
+  const variant = activeTerrainVariant();
+  const s = sample ?? variant.sample(seed, x, z);
+  const r = variant.roadDistance?.(seed, x, z) ?? Infinity;
+  const rt = variant.trailDistance?.(seed, x, z) ?? Infinity;
+  const fm = variant.featureMask?.(seed, x, z, s.h) ?? NO_FEATURE_MASK;
+  return groundCoverAt(seed, x, z, s, r, rt, s.dx * s.dx + s.dz * s.dz, fm);
 }
 
 /**
- * Gate product in [0, 1] for class `cls` at a point (a composed
- * smoothstep chain) — not itself a presence probability. `clutterInCell`
- * turns it into one via `min(1, gateProduct · CELL² · D_class)`, where
+ * Gate product for class `cls` at a point (a composed smoothstep chain) —
+ * not itself a presence probability. In [0, 1] for every class except
+ * `CLUTTER_GRASS`, `CLUTTER_MEADOW` and `CLUTTER_FLOWER`, which read the
+ * ground-cover field's `grass` (in [0, CLUTTER_GRASS_BOOST], already carrying
+ * the feature mask's own `fm.clutter` — see `groundCoverAt`) and, for meadow
+ * and flower, carry a further `(1 + fm.meadow)` inside a made meadow's flat
+ * — up to roughly `2 · CLUTTER_GRASS_BOOST` there. `clutterInCell`
+ * turns it into a probability via `min(1, gateProduct · CELL² · D_class)`, where
  * `D_class` is the per-class `cfg.density` (the per-m² peak-density
  * tunable). When `sample` is provided it is trusted (tests pass synthetic
  * ground); otherwise the active variant is sampled here. Variants without a
@@ -436,7 +540,9 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
   const fm = variant.featureMask?.(seed, x, z, s.h) ?? NO_FEATURE_MASK;
   switch (cls) {
     case CLUTTER_GRASS:
-      return grassGateProduct(seed, x, z, s, r, rt, slopeSq) * fm.clutter;
+      // The field applies fm.clutter itself now (it is the class's only
+      // factor beyond the field), so this no longer multiplies by it again.
+      return groundCoverAt(seed, x, z, s, r, rt, slopeSq, fm).grass;
     case CLUTTER_ROCK: {
       if (s.h < CLUTTER_ROCK_ALT_LO || r < CLUTTER_ROCK_ROAD_NEAR) return 0;
       const alt = smoothstep(CLUTTER_ROCK_ALT_LO, CLUTTER_ROCK_ALT_LO + CLUTTER_ROCK_ALT_LO_FADE, s.h);
@@ -517,9 +623,23 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       // A meadow's own carpet reads denser inside its flat (1 + fm.meadow,
       // up to 2×) BEFORE clutterInCell's ceiling clamp — the ceiling shapes
       // the field, not this multiplier (the grass-class convention above).
-      return grassGateProduct(seed, x, z, s, r, rt, slopeSq) * fm.clutter * (1 + fm.meadow);
+      // The field applies fm.clutter as its own last step, immediately
+      // before this multiplies in (1 + fm.meadow) — the same two-step order
+      // this case always used, so moving the fm.clutter factor into the
+      // field changes nothing about how it composes here.
+      return groundCoverAt(seed, x, z, s, r, rt, slopeSq, fm).grass * (1 + fm.meadow);
     case CLUTTER_FLOWER: {
-      const base = grassGateProduct(seed, x, z, s, r, rt, slopeSq);
+      // Unlike grass and meadow, this case interposes `drift` between the
+      // raw field and fm.clutter (`base * drift * fm.clutter`, in that
+      // order) — a grouping the field's own internal application of
+      // fm.clutter cannot reproduce, since it would have to fold the mask in
+      // before `drift` ever multiplies. Floating-point multiplication is not
+      // associative, so that reordering would not generally return the same
+      // bits. This case therefore asks the field for the RAW, unmasked grass
+      // (NO_FEATURE_MASK is the identity mask: multiplying by its `clutter`
+      // of 1 changes no bit) and keeps applying fm.clutter itself, in the
+      // field's original order, so this class's output is untouched.
+      const base = groundCoverAt(seed, x, z, s, r, rt, slopeSq, NO_FEATURE_MASK).grass;
       if (base === 0) return 0;
       // Drift gating: flowers come in 8-20 m
       // patches on roughly a quarter to a third of open ground, not as a
@@ -655,6 +775,12 @@ export const CLUTTER_TUNABLES: Readonly<Record<string, number>> = {
   CLUTTER_GRASS_ROAD_NEAR, CLUTTER_GRASS_ROAD_FAR,
   CLUTTER_GRASS_TRAIL_NEAR, CLUTTER_GRASS_TRAIL_FAR,
   CLUTTER_GRASS_PATCH_WAVELENGTH, CLUTTER_GRASS_PATCH_OCTAVES, CLUTTER_GRASS_PATCH_LO, CLUTTER_GRASS_PATCH_HI,
+  CLUTTER_GRASS_CANOPY_FLOOR, CLUTTER_GRASS_PATCH_FLOOR, CLUTTER_GRASS_BOOST, CLUTTER_GRASS_BOOST_LO,
+  CLUTTER_DUFF_OPEN, CLUTTER_DUFF_ROAD_CLEAR,
+  CLUTTER_GRASS_TRAIL_CORE, CLUTTER_GRASS_TRAIL_REACH_LO, CLUTTER_GRASS_TRAIL_REACH_HI, CLUTTER_GRASS_TRAIL_REACH_WAVE,
+  CLUTTER_TRAIL_REACH_SALT,
+  CLUTTER_DUFF_BED_MAX, CLUTTER_DUFF_BED_FADE, CLUTTER_DUFF_DRIFT_WAVE, CLUTTER_DUFF_DRIFT_LO, CLUTTER_DUFF_DRIFT_HI,
+  CLUTTER_DUFF_DRIFT_SALT,
   CLUTTER_ROCK_ALT_LO, CLUTTER_ROCK_ALT_LO_FADE, CLUTTER_ROCK_SLOPE_LO, CLUTTER_ROCK_SLOPE_HI,
   CLUTTER_ROCK_BASE, CLUTTER_ROCK_ROAD_NEAR, CLUTTER_ROCK_ROAD_FAR,
   CLUTTER_BOULDER_ALT_LO, CLUTTER_BOULDER_ALT_HI, CLUTTER_BOULDER_SLOPE_LO, CLUTTER_BOULDER_SLOPE_HI,
