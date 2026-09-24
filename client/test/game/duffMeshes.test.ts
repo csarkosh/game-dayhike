@@ -5,9 +5,10 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import "../../src/sim/passes/index.js";
 import { activeTerrainVariant } from "../../src/sim/terrain.js";
-import { DUFF_ALBEDO, DUFF_CHARACTER_COUNT, DUFF_CHARACTERS, DUFF_HEIGHT_MAX, DUFF_TIER_COUNTS, duffClumpGeometry } from "../../src/game/duffClump.js";
+import { DUFF_ALBEDO, DUFF_CHARACTER_COUNT, DUFF_CHARACTERS, DUFF_TIER_COUNTS, duffClumpGeometry } from "../../src/game/duffClump.js";
 import { DUFF_REACH, DUFF_REBUILD_CELL, createDuffCollector, duffTierBands } from "../../src/game/duffField.js";
 import { createDuffMeshes, duffMeshName } from "../../src/game/duffMeshes.js";
+import { instanceMatrixFor, trampleFrame } from "../../src/game/clutterMeshes.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
 
 // The forest-interior census point duffField.test.ts uses: deep under
@@ -65,7 +66,7 @@ describe("createDuffMeshes", () => {
     engine.dispose();
   });
 
-  it("fills each bucket with its tier's cells of its character, nearest first, with the cards' XZ, tint and strength", () => {
+  it("fills each bucket with its tier's cells of its character, nearest first, with the cards' rotation, scale, XZ, tint and strength", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const duff = createDuffMeshes(scene, SEED, { quality: "high" });
@@ -73,6 +74,8 @@ describe("createDuffMeshes", () => {
     duff.update(CAM.x, CAM.z);
     const tiers = createDuffCollector(SEED).collect(CAM.x, CAM.z, DUFF_REACH.high);
     const lists = [tiers.near, tiers.far];
+    const variant = activeTerrainVariant();
+    const buf = new Float32Array(16);
     let checked = 0;
     for (let t = 0; t < 2; t++) {
       for (let ch = 0; ch < DUFF_CHARACTER_COUNT; ch++) {
@@ -88,11 +91,23 @@ describe("createDuffMeshes", () => {
           const c = cells[i]!;
           expect(strengths[i]).toBe(Math.fround(c.strength));
           expect(c.strength).toBeLessThanOrEqual(1);
-          // XZ placement only — not the matrix's Y translation, which the
-          // next test ties to the sim's own ground height rather than to
-          // `instanceMatrixFor`'s own output (see there for why).
+          // Rotation, ground-normal seating and scale (indices 0-11 and the
+          // homogeneous 15) still come straight from the cards' own
+          // `instanceMatrixFor` — only the Y translation (13) was ever the
+          // sink bug's own territory, so only it is checked against the sim's
+          // ground height instead, below. Checking every OTHER element
+          // against the helper here is what the matrix-equality version of
+          // this test used to buy and what dropping to XZ-only quietly gave
+          // up — litter is in `TILTED`, so a wrong ground normal or a wrong
+          // scale would pass unnoticed without this.
+          const frame = trampleFrame(SEED, c);
+          instanceMatrixFor(c, frame, buf);
+          for (let k = 0; k < 12; k++) expect(matrices[i * 16 + k]).toBeCloseTo(buf[k]!, 5);
+          expect(matrices[i * 16 + 15]).toBeCloseTo(buf[15]!, 5);
           expect(matrices[i * 16 + 12]).toBeCloseTo(c.x, 4);
           expect(matrices[i * 16 + 14]).toBeCloseTo(c.z, 4);
+          const groundH = variant.sample(SEED, c.x, c.z).h;
+          expect(matrices[i * 16 + 13]).toBeCloseTo(groundH, 4);
           expect(tints[i * 4 + 3]).toBeCloseTo(1 - 0.5 * c.canopy, 5);
           checked++;
         }
@@ -136,11 +151,10 @@ describe("createDuffMeshes", () => {
           const c = cells[i]!;
           const groundH = variant.sample(SEED, c.x, c.z).h;
           const worldY = matrices[i * 16 + 13]!;
-          expect(worldY).toBeGreaterThanOrEqual(groundH - 1e-4);
-          // Root ring sits exactly at ground, not lifted an arbitrary amount:
-          // the whole clump (root through its own DUFF_HEIGHT_MAX ceiling)
-          // must stay above ground without floating clear of it either.
-          expect(worldY).toBeLessThan(groundH + DUFF_HEIGHT_MAX);
+          // Exactly at ground, not merely "not sunk": `groundH + DUFF_HEIGHT_MAX`
+          // as an upper bound would admit any spurious lift up to 12 cm and
+          // never fail, which is not the invariant this test is named for.
+          expect(worldY).toBeCloseTo(groundH, 4);
           checked++;
         }
       }
@@ -188,7 +202,7 @@ describe("createDuffMeshes", () => {
     engine.dispose();
   });
 
-  it("uses the medium counts and the medium tier's own 6→8 m hand-off band on medium", () => {
+  it("uses the medium counts and medium's own tier bands, not high's, on medium", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const duff = createDuffMeshes(scene, SEED, { quality: "medium" });

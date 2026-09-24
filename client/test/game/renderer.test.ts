@@ -8,12 +8,12 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 
 // `terrainTexture.ts`'s plugin constructor calls the real `loadGroundArrays`
-// whenever `renderer.ts`'s `attachTerrainTexture(scene, mat)` call sites (no
-// factory option — that call site is out of scope for this task) don't
-// supply one, and the real loader builds a `RawTexture2DArray`, which
-// NullEngine cannot create (the same gap `groundMaps.test.ts` documents and
-// works around with its own factory injection). Mocked here, at the module
-// boundary, rather than by touching `renderer.ts`.
+// whenever it isn't handed a factory, and `renderer.ts`'s own
+// `attachTerrainTexture(scene, mat)` call site never passes one — so the real
+// loader builds a `RawTexture2DArray`, which NullEngine cannot create (the
+// same gap `groundMaps.test.ts` documents and works around with its own
+// factory injection). Mocked here, at the module boundary, rather than by
+// touching `renderer.ts`.
 vi.mock("../../src/game/groundMaps.js", () => ({
   loadGroundArrays: () => ({
     normals: { isReady: () => true, dispose() {} },

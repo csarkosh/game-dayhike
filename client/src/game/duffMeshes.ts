@@ -183,9 +183,8 @@ function createClumpMesh(scene: Scene, character: number, tier: number, count: n
   // the ground it shares a shadow with. Argued, not measured: the ~4 ms
   // `prepBucketMesh` cites for bush-scale receivers is a real number against
   // a real frame budget, and these six buckets add shadow-receiving draws of
-  // their own inside a 12 m disc with no frame-time reading behind them yet.
-  // The frame-time gate for this ground-cover work must isolate that cost
-  // rather than assume this argument already accounts for it.
+  // their own inside a 12 m disc with no frame-time reading behind them yet —
+  // this comment states a case, not a result.
   mesh.receiveShadows = true;
   return mesh;
 }

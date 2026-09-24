@@ -22,18 +22,24 @@ import { BLADE_TRIS, BLADE_VERTS, createStripWriter, type StripArrays } from "./
  * do with z-fighting — and a piece too short to rise clear of that reads as
  * nothing at all rather than as litter. The leaf character's own range
  * ([0.1, 0.5] rad) was raised from a near-flat [0.0, 0.12] for exactly this
- * reason: at its previous range it was invisible from an ordinary downhill
- * eye line despite every other property being correct, and only widening
- * `lift` (not lifting its placement) fixed it, since real leaf litter reads
- * as a lumpy scatter rather than a flat film for the same reason it survives
- * that sightline — chosen by re-measuring visible-instance counts at a fixed
- * pose across candidate ranges, not by arithmetic: still short of standing
- * (twig's own `lift[1]` is 0.25 rad and reads as lying down), and the
- * shorter, lighter leaf piece needs the extra angle to reach a comparable
- * rise. `duffClumpReach` and `duffClumpMaxHeight` below are re-derived from
- * this array, not hand-adjusted, so a further retune here cannot silently
- * violate either bound — the test suite the bound holds against is the
- * check, not this comment.
+ * reason: at its previous range not one sampled piece in 100,000 rose 10 mm,
+ * and it was invisible from an ordinary downhill eye line despite every
+ * other property being correct. Only widening `lift` (not lifting its
+ * placement) fixed it, since real leaf litter reads as a lumpy scatter
+ * rather than a flat film for the same reason it survives that sightline.
+ * The range is a deliberately conservative pick on a plateau, not a peak: a
+ * visibility count taken from a 0.28 m, 10 cm-eye-height pose (far lower and
+ * closer than a standing player ever gets) stopped improving meaningfully
+ * past this range, and a standing eye needs less rise than that pose did to
+ * begin with. After the widening the leaf is still the lowest-lying
+ * character in the field by a wide margin — mean per-piece rise ≈16 mm
+ * against the twig's ≈26 mm and the branch's ≈38 mm, and its own analytic
+ * ceiling (`duffClumpMaxHeight`) sits at just 28% of `DUFF_HEIGHT_MAX` — so
+ * it still reads as litter, not something standing. `duffClumpReach` and
+ * `duffClumpMaxHeight` below are re-derived from this array, not
+ * hand-adjusted, so a further retune here cannot silently violate either
+ * bound — the test suite the bound holds against is the check, not this
+ * comment.
  */
 
 export const DUFF_TWIG = 0;
@@ -119,8 +125,10 @@ export function duffVertexCount(character: DuffCharacter, count: number): number
  * derived from the same numbers the geometry uses — the root disc, the
  * piece's own length range, half-width and lift range — rather than
  * measured off a sample and rounded, so it moves automatically when a
- * character is retuned. A later renderer task uses this for culling and for
- * how far a clump can extend past its cell.
+ * character is retuned: the analytic bound `duffClump.test.ts` checks every
+ * sampled clump against, and the number this file's own comments cite
+ * whenever a `lift` retune's effect on reach needs stating precisely rather
+ * than approximately.
  *
  * A plain piece's farthest vertex is either its tip (at the shallowest lift
  * in the character's range, since cosine is largest there) or a root-ring
@@ -174,7 +182,9 @@ function layDown(g: StripArrays, first: number, n: number, rootX: number, rootZ:
   for (let v = first; v < first + n; v++) {
     const px = g.positions[v * 3]! - rootX, py = g.positions[v * 3 + 1]!, pz = g.positions[v * 3 + 2]! - rootZ;
     // Local frame: y (length) → along dir with lift; the strip's own width
-    // axis stays horizontal, so a leaf lies flat and a twig rests on its side.
+    // axis stays horizontal at every lift, so a piece turns about that axis
+    // as it rises rather than rolling around its own length — true of every
+    // character, not only one drawn near lift = 0.
     const along = py * cl, up = py * sl;
     g.positions[v * 3] = rootX + px + dirX * along;
     g.positions[v * 3 + 1] = up;
