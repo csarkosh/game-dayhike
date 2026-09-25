@@ -1,6 +1,6 @@
 /**
  * The cliff modules' Babylon shell: rock-wall models instanced along the
- * steep rock faces the field (`cliffField.ts`) picks, in three LOD buckets
+ * steep rock faces the field (`sim/cliffField.ts`) picks, in three LOD buckets
  * per model out to the tier's reach. LOD0 → LOD1 → LOD2 hand off
  * geometrically at fixed rings, the opaque path the rock props take (a
  * discard on an opaque material costs frame time scene-wide — see
@@ -10,9 +10,9 @@
  * that range are few. Every instance carries the ground colour under it for
  * the tint plugin (`cliffTintPlugin.ts`). The near buckets cast shadows.
  *
- * Renderer-only. Nothing here may migrate into sim/: the field reads the
- * simulation and writes nothing back, so the world and the level id are
- * untouched.
+ * Where a module stands is the simulation's, and in the level id; this
+ * shell only draws what the field placed. Nothing here may migrate into
+ * sim/.
  */
 // Side-effect import, load-bearing: `thinInstanceSetBuffer` and friends are
 // patched onto `Mesh.prototype` by this module (the clutterMeshes.ts note).
@@ -28,10 +28,8 @@ import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 
 import { modelUrl } from "./assetUrls.js";
-import {
-  CLIFF_FADE_BAND, CLIFF_MODEL_HEIGHT, CLIFF_MODELS, CLIFF_RINGS, CLIFF_SINK, CLIFF_TILT_MAX,
-  cliffBands, cliffOrigin, createCliffCollector,
-} from "./cliffField.js";
+import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, createCliffCollector } from "./cliffField.js";
+import { CLIFF_MODEL_HEIGHT, CLIFF_MODELS, CLIFF_SINK, CLIFF_TILT_MAX, cliffFacing } from "../sim/cliffField.js";
 import { attachCliffTint } from "./cliffTintPlugin.js";
 import { prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { attachDistanceFade, fadeBands, type FadeBands } from "./distanceFadePlugin.js";
@@ -88,19 +86,37 @@ const scratchPos = new Vector3();
 const scratchWorld = new Matrix();
 
 /**
+ * A module's rotation, written into `out`: its facing turned back into a yaw,
+ * then the CAPPED lean.
+ *
+ * The field carries the facing as a unit vector pair drawn without trig
+ * (`cliffFacing`, from the ground's gradient and the yaw jitter in `hash`),
+ * because a placement must agree to the bit on every peer; Babylon wants an
+ * angle, and the renderer may take one — forward is `(sin yaw, cos yaw)`, so
+ * the yaw is `atan2(fx, fz)`. The lean is `seatOnGroundCapped`'s quaternion,
+ * which is the rotation the field writes out as `leanPoint`; the two agree to
+ * 1e-9 (`test/game/cliffField.test.ts`), so the solid the probes cleared is
+ * the solid that is drawn.
+ */
+export function cliffSeat(inst: ClutterInstance, out: Quaternion): void {
+  const f = cliffFacing(inst.groundDx, inst.groundDz, inst.hash);
+  seatOnGroundCapped(Math.atan2(f.fx, f.fz), inst.groundDx, inst.groundDz, CLIFF_TILT_MAX, out);
+}
+
+/**
  * A module's world matrix, written into `out` (16 floats): uniform scale, the
- * yaw in `hash` seated by the CAPPED lean, and the origin the field chose.
+ * seat above (`cliffSeat`), and the origin the field chose.
  *
  * Not the clutter's `instanceMatrixFor`, which seats its tilted classes on the
  * full ground normal: a wall laid back with a 45° face throws its top metres
  * out over the ground at its foot, which is ground the field's probes have not
- * cleared (`cliffField.ts`'s `CLIFF_TILT_MAX`). The sink is vertical and
+ * cleared (`sim/cliffField.ts`'s `CLIFF_TILT_MAX`). The sink is vertical and
  * already inside `groundH`, so there is no `CLUTTER_SINK` here either — that
  * two-centimetre nudge breaks coplanarity for cards lying on the surface, and
  * a module buried a third of its height needs no such help.
  */
 export function cliffInstanceMatrix(inst: ClutterInstance, out: Float32Array): void {
-  seatOnGroundCapped(inst.hash * Math.PI * 2, inst.groundDx, inst.groundDz, CLIFF_TILT_MAX, scratchQ);
+  cliffSeat(inst, scratchQ);
   scratchScale.copyFromFloats(inst.scale, inst.scale, inst.scale);
   scratchPos.copyFromFloats(inst.x, inst.groundH, inst.z);
   Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchWorld);
@@ -159,8 +175,9 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
   const farBands: FadeBands = fadeBands(null, [reach - CLIFF_FADE_BAND, reach]);
   const load = options.loader ?? ((output: string) => loadAssetContainerAsync(modelUrl(output), scene));
   // Memoising, not the pure `collectCliffs`: a rebuild happens on every
-  // `CLIFF_CELL` crossing, and a cell costs a terrain sample and a surface
-  // classification (about twenty more for the half that qualify).
+  // `CLIFF_CELL` crossing, and a qualifying cell costs dozens of terrain
+  // samples (its gate, four neighbours, and the probes of every module along
+  // its run).
   const collector = createCliffCollector(seed);
   /**
    * The ground tint per instance, kept for as long as the collector keeps the

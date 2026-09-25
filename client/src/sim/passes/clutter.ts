@@ -1,6 +1,7 @@
 import { registerPass } from "../chunk.js";
 import { CHUNK_SIZE } from "../forestConstants.js";
 import { clutterInRect, CLUTTER_BOULDER, CLUTTER_TUNABLES } from "../clutter.js";
+import { CLIFF_TUNABLES } from "../cliffField.js";
 
 /** Boulder collider shape at scale 1, PER VARIANT: half-extent (m), height
  * (m), and the fraction of that height buried for visual seating. The
@@ -73,6 +74,12 @@ registerPass({
   get tunables() {
     return {
       ...CLUTTER_TUNABLES,
+      // The cliff modules stand on these constants: where a module stands is
+      // part of the world every peer must agree on, so a peer that places
+      // them differently must refuse to join rather than see a wall where
+      // another sees none. They ride on this pass until the cliff pass that
+      // emits the modules' colliders exists; that pass will carry them.
+      ...CLIFF_TUNABLES,
       BOULDER_A_BASE_HALF,
       BOULDER_A_BASE_H,
       BOULDER_B_BASE_HALF,

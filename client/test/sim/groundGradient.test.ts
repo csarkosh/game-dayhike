@@ -638,6 +638,17 @@ describe("the level id does not move", () => {
     // Re-baselined again 2026-09-24 from -608564206: CLUTTER_GRASS_CANOPY_FLOOR
     // rose from 0.15 to 0.5, an existing CLUTTER_TUNABLES value, so a peer on
     // the old floor scatters grass differently under every closed canopy.
-    expect(passHash()).toBe(-1330924340);
+    // Re-baselined 2026-09-25 from -1330924340: the cliff modules' placement
+    // moved into the simulation, and every constant that steers where a
+    // module stands — CLIFF_CELL, CLIFF_JITTER, CLIFF_STAND_MARGIN,
+    // CLIFF_ROCK_MIN, CLIFF_DENSITY, the scale band, the yaw jitter and its
+    // tangent, CLIFF_SINK, CLIFF_LONG_NEIGHBOURS, the lean cap and its cosine
+    // and sine, CLIFF_PROBE_SPAN, the run's spacing, length and reach, the
+    // field's salt and draw index, and the two models' sizes — joins the
+    // clutter pass's tunables as CLIFF_TUNABLES. probeDigest does not move
+    // (no pass emits a cliff collider yet); registryDigest does. Deliberate:
+    // a wall one peer sees and another does not is a different world, so an
+    // old client cannot join a new host.
+    expect(passHash()).toBe(-1705178804);
   });
 });

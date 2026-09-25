@@ -13,10 +13,10 @@ import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import "../../src/sim/passes/index.js";
 import type { ClutterInstance } from "../../src/sim/clutter.js";
 import {
-  CLIFF_CELL, CLIFF_FADE_BAND, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT,
-  CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH, CLIFF_MODELS,
-  CLIFF_RINGS, CLIFF_SINK, CLIFF_TILT_MAX, cliffBands, cliffOrigin, collectCliffs,
-} from "../../src/game/cliffField.js";
+  CLIFF_CELL, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT,
+  CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH, CLIFF_MODELS, CLIFF_SINK, CLIFF_TILT_MAX, cliffFacing,
+} from "../../src/sim/cliffField.js";
+import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, collectCliffs } from "../../src/game/cliffField.js";
 import { CLIFF_LOD_NODES, cliffMeshName, createCliffMeshes } from "../../src/game/cliffMeshes.js";
 import { trampleFrame, writeFoliage } from "../../src/game/clutterMeshes.js";
 import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
@@ -144,14 +144,11 @@ describe("createCliffMeshes", () => {
     const o = cliffOrigin(CAM.x, CAM.z);
     const bands = cliffBands(collectCliffs(SEED, CAM.x, CAM.z, rings[2]), o.x, o.z, rings);
     // Measured at this scarp, and the same split cliffField.test.ts pins for
-    // this origin: 17 modules in the near ring, 51 in the mid, 101 in the far.
-    expect(bands.map((b) => b.length)).toEqual([17, 51, 101]);
-    // Measured here too, by [model][lod]. wall_a is the short module the field
-    // falls back to only where a long face would overhang walkable ground, so
-    // it is the rarer of the two on this scarp and its near bucket is empty —
-    // pinned as a zero rather than skipped, so an empty bucket is a fact of
-    // the fixture and not a hole in the case.
-    const COUNTS: readonly (readonly [number, number, number])[] = [[0, 7, 11], [17, 44, 90]];
+    // this origin.
+    expect(bands.map((b) => b.length)).toEqual([38, 77, 142]);
+    // Measured here too, by [model][lod]. Runs alternate the two models, so
+    // both stand in every ring the face reaches.
+    const COUNTS: readonly (readonly [number, number, number])[] = [[17, 35, 64], [21, 42, 78]];
     // Teeth: each of the three rings is exercised by at least one model.
     for (let lod = 0; lod < 3; lod++) expect(COUNTS.some((row) => (row[lod] as number) > 0)).toBe(true);
     const mat = new Float32Array(16);
@@ -174,7 +171,10 @@ describe("createCliffMeshes", () => {
         for (const [i, m] of want.entries()) {
           // Uniform scale, the capped lean, and the origin's own height — the
           // sink already rides in `groundH`, so no `CLUTTER_SINK` here.
-          seatOnGroundCapped(m.hash * Math.PI * 2, m.groundDx, m.groundDz, CLIFF_TILT_MAX, rot);
+          // The yaw is the field's facing turned back into an angle: forward
+          // is (sin yaw, cos yaw).
+          const f = cliffFacing(m.groundDx, m.groundDz, m.hash);
+          seatOnGroundCapped(Math.atan2(f.fx, f.fz), m.groundDx, m.groundDz, CLIFF_TILT_MAX, rot);
           scale.copyFromFloats(m.scale, m.scale, m.scale);
           pos.copyFromFloats(m.x, m.groundH, m.z);
           Matrix.ComposeToRef(scale, rot, pos, world);
@@ -232,19 +232,19 @@ describe("createCliffMeshes", () => {
     spied.foliage = 0;
     cliffs.update(CAM.x, CAM.z);
     const first = inReach(CAM.x, CAM.z);
-    // Measured at this scarp: 169 modules across the three rings.
-    expect(first.size).toBe(169);
-    expect(spied.foliage).toBe(169);
+    // Measured at this scarp: the modules across the three rings.
+    expect(first.size).toBe(257);
+    expect(spied.foliage).toBe(257);
     // Four cells north: the collector hands back the very same instance
     // objects for every cell it already holds, so only what the move brought
-    // into the rings is tinted — measured here, 11 modules of the 176.
+    // into the rings is tinted — measured here.
     spied.foliage = 0;
     cliffs.update(CAM.x, CAM.z - 4 * CLIFF_CELL);
     const second = inReach(CAM.x, CAM.z - 4 * CLIFF_CELL);
     const fresh = [...second].filter((k) => !first.has(k));
-    expect(second.size).toBe(176);
-    expect(fresh.length).toBe(11);
-    expect(spied.foliage).toBe(11);
+    expect(second.size).toBe(274);
+    expect(fresh.length).toBe(17);
+    expect(spied.foliage).toBe(17);
     cliffs.dispose();
     engine.dispose();
   }, 300_000);
