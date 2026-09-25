@@ -52,8 +52,7 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 
-import { bladeFieldCovers } from "./bladeField.js";
-import { clutterFadeEdges, clutterSeamEdges, createClutterCollector } from "./clutterField.js";
+import { CLUTTER_MEADOW_NEAR_IN, clutterFadeEdges, clutterSeamEdges, createClutterCollector } from "./clutterField.js";
 import {
   CLUTTER_BOULDER,
   CLUTTER_BUSH,
@@ -256,10 +255,10 @@ export type ClutterMeshesOptions = {
   /** Scales every class radius together — the quality-tier knob, passed
    * straight to the collector (low ≈ 60% radii). */
   radiusScale?: number;
-  /** The blade field (bladeMeshes.ts) draws the grass inside the meadow's
-   * near/far seam on this tier, so the meadow's near cards are never filled
-   * and the grass class's near cards dither in across that seam. Off on the
-   * low tier, which keeps the cards alone. */
+  /** The blade field (bladeMeshes.ts) draws over the meadow's near cards on
+   * this tier, so those cards dither in from the eye over
+   * `CLUTTER_MEADOW_NEAR_IN` rather than standing at the feet. Off on the low
+   * tier, which draws no blades. */
   nearBlades?: boolean;
   /** NullEngine escape hatch: bucket meshes per class → variant → LOD in
    * place of the seventeen production GLBs (the forestMeshes `assets` idiom).
@@ -596,25 +595,10 @@ export function createClutterMeshes(
         for (const bucket of perLod) bucket.count = 0;
       }
     }
-    // With the blade field on, a meadow near card is redundant only where the
-    // field actually grows blades over it. Reach is not coverage: the field is
-    // gated on the GRASS class and these cards were placed by the MEADOW
-    // class, so dropping them on reach alone leaves bare floor wherever the
-    // grass gate sits under the field's own floor. Filtered once here and
-    // reused by the write pass, so the gate is sampled once per instance.
-    const nearLists: ClutterInstance[][] = [];
-    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
-      const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
-      nearLists.push(
-        nearBlades && cls === CLUTTER_MEADOW
-          ? band.near.filter((inst) => !bladeFieldCovers(seed, inst.x, inst.z))
-          : band.near,
-      );
-    }
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       const variants = all[cls] as Bucket[][];
       const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
-      for (const inst of nearLists[cls] as ClutterInstance[]) bucketFor(variants, inst, NEAR_LOD).count++;
+      for (const inst of band.near) bucketFor(variants, inst, NEAR_LOD).count++;
       for (const inst of band.far) bucketFor(variants, inst, FAR_LOD).count++;
     }
 
@@ -629,7 +613,7 @@ export function createClutterMeshes(
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       const variants = all[cls] as Bucket[][];
       const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
-      for (const inst of nearLists[cls] as ClutterInstance[]) {
+      for (const inst of band.near) {
         const bucket = bucketFor(variants, inst, NEAR_LOD);
         const frame = trampleFrame(seed, inst);
         writeInstanceMatrix(inst, bucket.buf, bucket.count * 16, frame);
@@ -820,14 +804,17 @@ export function createClutterMeshes(
               }
             }
           }
-          // The grass class's near cards keep drawing all the way in, blade
-          // field or not. They used to dither in only past the meadow's seam,
-          // on the reasoning that inside it the blades are the grass — but the
+          // The meadow's near cards stand under the blade field on the tiers
+          // that draw it, and dither in from the eye there so none stands as
+          // a flat plane at the feet. Every other near bucket draws all the
+          // way in, as does the meadow's on the low tier, which has no blades.
+          // The grass class's near cards in particular are never cut: the
           // blades only grow where the grass gate clears the field's floor,
-          // so under that floor the fade took away the last cover standing and
-          // left bare ground. The field may only ever ADD to the near field.
+          // so an in-band there would take away the last cover standing. The
+          // field may only ever ADD to the near field.
+          const nearIn = nearBlades && cls === CLUTTER_MEADOW ? CLUTTER_MEADOW_NEAR_IN : null;
           const fade: FadeBands = lod === NEAR_LOD
-            ? fadeBands(null, [seam.start, seam.end])
+            ? fadeBands(nearIn, [seam.start, seam.end])
             : fadeBands([seam.start, seam.end], [edge.start, edge.end]);
           for (const mesh of meshes) {
             if (mesh.material) attachDistanceFade(mesh.material);

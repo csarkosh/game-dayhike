@@ -20,7 +20,7 @@
  * twelve of a tier's character-size buckets share that band exactly.
  *
  * Draw-call budget: 4 characters × 3 tiers × 3 sizes = 36 draws, opaque and
- * single-material, standing where the meadow's near cards used to.
+ * single-material, drawn over the meadow's near cards.
  */
 // Side-effect import, load-bearing: `thinInstanceSetBuffer` and friends are
 // patched onto `Mesh.prototype` by this module (the clutterMeshes.ts note).

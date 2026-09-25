@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import {
-  CLUTTER_BLADE_HANDOFF, CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION,
+  CLUTTER_BLADE_HANDOFF, CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION, CLUTTER_MEADOW_NEAR_IN,
   CLUTTER_FADE_MIN_RAMP, CLUTTER_FAR_SPLIT, CLUTTER_RADII, COLLECTOR_SWEEP_SIZE, clutterFadeEdges,
   clutterSeamEdges, collectClutter, collectClutterWithBudgets, createClutterCollector,
 } from "../../src/game/clutterField.js";
@@ -17,6 +17,15 @@ describe("clutter band properties", () => {
   it("carries a radius and a budget for every class", () => {
     expect(CLUTTER_RADII.length).toBe(CLUTTER_CLASS_COUNT);
     expect(CLUTTER_BUDGETS.length).toBe(CLUTTER_CLASS_COUNT);
+  });
+
+  it("dithers the meadow's near cards in from the eye, clear of the seam", () => {
+    // Under the blade field the meadow's near cards are the cover and the
+    // blades the detail. Inside 1 m a card would stand as a flat plane at the
+    // feet, so it is absent there and thickens in by 2.5 m, where the fine
+    // blade tier is densest. The in-band ends well inside the seam's start.
+    expect(CLUTTER_MEADOW_NEAR_IN).toEqual([1, 2.5]);
+    expect(clutterSeamEdges(CLUTTER_MEADOW).start).toBeGreaterThan(2.5);
   });
 
   it("budget clears the hard geometric ceiling for every class but driftwood", () => {

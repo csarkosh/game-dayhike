@@ -783,14 +783,16 @@ export function createRenderer(
   // levels have no forest and get no grass, rocks, boulders, driftwood or
   // fungus. Low tier shrinks every class radius to 60%, the clutter analogue
   // of the forest's near-band tier rule. High and medium draw the blade field
-  // inside the meadow's seam; low keeps the cards, whose 1.5× scaling is
-  // where blades resolve worst.
+  // over the meadow's near cards, which dither in from the eye beneath it;
+  // low keeps the cards alone, whose 1.5× scaling is where blades resolve
+  // worst.
   const clutterMeshes =
     forest !== null
       ? createClutterMeshes(scene, forest.seed, { radiusScale: tier === "low" ? 0.6 : undefined, nearBlades: tier !== "low" })
       : null;
   // The near field of blade grass, on the tiers that can afford it; it
-  // rebuilds on its own 1 m crossing and takes the meadow's near cards' place.
+  // rebuilds on its own 1 m crossing and draws over the meadow's near cards
+  // as detail rather than taking their place.
   const bladeMeshes = forest !== null && tier !== "low" ? createBladeMeshes(scene, forest.seed, { quality: tier }) : null;
   // The near field of dead leaves, twigs and small branches, on the same
   // tiers as the blades beside it: what the grass field thins out, this fills
