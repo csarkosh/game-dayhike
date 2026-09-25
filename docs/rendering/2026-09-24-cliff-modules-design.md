@@ -385,3 +385,79 @@ Three ways to close the rest, none of them chosen here:
 
 Until one is taken, the three measured numbers are pinned in the test, so the
 residue can shrink but cannot quietly grow.
+
+## 12. Amendment (2026-09-25): walls, and solid ones
+
+Two rulings after the second gate (`2026-09-25-cliff-modules-verification.md`
+§13). Standing plumb and coloured like the hill, the modules still read as
+outcrops in rows — one per 12 m cell with smooth ground between — not as a
+face. And §11's residual (31 of 399 modules with some above-ground point
+over ground a player can stand on) is closed by making the modules solid
+rather than by probing further. Both change where placement lives.
+
+### 12.1 Placement moves into the simulation
+
+A solid module is part of the world every peer must agree on, so the
+placement field moves from `game/cliffField.ts` to `sim/cliffs`-adjacent
+code (`sim/cliffField.ts`), Babylon-free: the capped lean becomes a plain
+rotation about the axis `UP × normal` (the same quaternion the shell
+composes, written out), and the rock weight is the simulation's own slope
+band for rock (`CLUTTER_ROCK_SLOPE_LO/HI`, the band the rock props already
+stand on) instead of the paint's `classifySurface`. Every constant that
+steers placement is declared in the pass's tunables, so the level id moves
+with them and an old client cannot share a world with a new host. The shell
+reads instances from the simulation field and keeps the LOD buckets, the
+tint and the far dither exactly as they are.
+
+### 12.2 Walls: several modules along a contour
+
+A cell that qualifies no longer places one module at its jittered point.
+It lays modules **along the contour** — the direction perpendicular to the
+gradient — at a spacing of `CLIFF_RUN_SPACING = 0.7` of the placed module's
+width, so neighbours overlap by a third and a run reads as one wall with
+no lattice between; the run extends from the cell's point in both
+directions while each next spot passes the same 15-probe rule, up to
+`CLIFF_RUN_MAX = 4` modules per cell per side (a cell contributes at most
+nine). Each module in a run draws its own scale from a wider band,
+`CLIFF_SCALE = [0.7, 1.6]`, and its own yaw jitter, so a wall is not a row
+of copies; every second module along a run is the *other* model. The
+density draw stays first and stays at 0.5 per cell, so faces keep real
+gaps between runs. Runs are deterministic: the spots along a contour are a
+function of the cell and the terrain, not of any neighbour cell's outcome,
+so two cells can place overlapping modules — overlap is the point.
+
+The budget re-measures with the census discs; the bar and fallbacks of §8
+stand, and `CLIFF_RUN_MAX` is the first fallback (4 → 2) before the reach.
+
+### 12.3 Solid modules
+
+A chunk pass (`sim/passes/cliffs.ts`, the boulder pass's idiom) emits
+collision brushes for every module whose solid intersects the chunk —
+modules are collected from the cells within the chunk expanded by the
+largest module's reach (`CLIFF_MODEL_WIDTH[1] · 1.6 / 2 + CLIFF_CELL`), so
+a wall straddling a chunk border is found from either side. A module's
+collider is a **row of axis-aligned boxes along its yawed length**: the
+wall's length at scale is cut into pieces no longer than `CLIFF_BOX_STEP =
+4` m, each piece an `Aabb` of the piece's own x/z extent (its four rotated
+corners' bounds), from the sunk base up to the module's full height above
+its origin (`H · s · (1 − CLIFF_SINK)` above ground at the origin, the lean
+ignored — it leans into the hill, and the plumb box over-covers the
+downhill side by at most the lean's 2.5 m at the top, which a player
+cannot reach). Boxes are what the movement code already collides with
+(`depenetrate`, `sweepBox`, `tryStepUp`), so a wall stops a hiker the way a
+boulder does, and blocks line of sight the way a large boulder does.
+
+The invariant of §6 (1) is replaced: **the drawn solid lies inside its
+collision boxes** — every point of the module's above-ground box (the same
+lattice §11's residual sweeps) projects into the union of its boxes'
+horizontal extents, and the boxes reach at least its height; asserted on
+the 200-world sweep. The residual of §11 is retired with it.
+
+### 12.4 Gates
+
+The scarp stills (10 / 30 / 80 m, along, crest) at noon and 16:00: the
+face reads as runs of wall rather than rows of outcrops; nothing walks
+through a module (a scripted walk into a wall at the scarp foot stops at
+the box); the trail seam pose unchanged; frame pairs and native p95 as
+§8, and the level-id pin in `client/test/sim/groundGradient.test.ts`
+re-pinned to the new digest with the tunables named.

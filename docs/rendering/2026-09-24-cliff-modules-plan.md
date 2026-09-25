@@ -1714,3 +1714,29 @@ Expected: docs name test green; `0 failing`.
 - [ ] **Step 4: Run the tests** — cliffField, cliffMeshes, groundTilt, cliffTintPlugin green; typecheck; eslint.
 
 - [ ] **Step 5: Commit** — subject under 72 chars (e.g. `fix: stand the cliff modules nearly plumb and probe their whole solid`), the usual body naming every moved literal, the trailers.
+
+---
+
+### Task 8: Placement moves into the simulation, and lays runs along the contour
+
+**Files:**
+- Create: `client/src/sim/cliffField.ts` (Babylon-free; moves `cliffCell`, `cliffCellPoint`, `cliffGate`, `cliffYaw`, `cliffLean`, the model tables and constants from `game/cliffField.ts`; adds `cliffRun`, `CLIFF_RUN_SPACING = 0.7`, `CLIFF_RUN_MAX = 4`, `CLIFF_SCALE = [0.7, 1.6]`; the capped lean's point transform written as a rotation about `UP × normal` with plain math — `leanPoint(px, py, pz, dx, dz, maxTilt) → {x, y, z}`; the rock weight `smoothstep(CLUTTER_ROCK_SLOPE_LO², CLUTTER_ROCK_SLOPE_HI², dx² + dz²)` — read how `sim/clutter.ts` computes the rock class's slope band and use the same expression by reference)
+- Modify: `client/src/game/cliffField.ts` → keeps only the collector and bands, importing the field from `../sim/cliffField.js`; `cliffMeshes.ts` composes `seatOnGroundCapped` as before (its quaternion must agree with `leanPoint` — a test proves it on random gradients to 1e-9)
+- Modify: `client/src/sim/clutter.ts` or the new pass's `tunables` (Task 9) — every placement constant registered so the level id moves; until Task 9 lands, register them in `CLUTTER_TUNABLES` with a comment
+- Test: `client/test/sim/cliffField.test.ts` (the moved cases; runs; determinism of runs across neighbouring cells; the lean-point transform vs `seatOnGroundCapped`), `client/test/game/cliffField.test.ts` (collector/bands only), `client/test/sim/groundGradient.test.ts` (the digest re-pinned, the moved tunables named)
+
+Steps as the earlier tasks: failing tests first (the run test: on the atmo scarp, at least one cell yields more than one module and consecutive modules along a run overlap by `0.7·width` within 5 %; the rock band test: a gradient inside the sim band opens, outside closes, and the game's `classifySurface` rock weight agrees at 200 random steep points to within 0.1 — a measured tolerance you state); then the move; then the digest pin. Measure and pin the new counts (scarp bands, worst disc, residual sweep) as literals; list every moved literal in the commit. Subject under 72 chars.
+
+---
+
+### Task 9: Solid modules — the chunk pass and the containment invariant
+
+**Files:**
+- Create: `client/src/sim/passes/cliffs.ts` (registered in `sim/passes/index.ts`; `id` new and never reused; `name` "cliffs"; `tunables` = every placement constant; emits one `Brush` per box with a material the renderer can tell from trunks and boulders — read `level.ts`'s `Brush` and the boulder pass; the row-of-boxes rule of §12.3 with `CLIFF_BOX_STEP = 4`; modules gathered from cells in the chunk expanded by the largest reach)
+- Test: `client/test/sim/passes/cliffs.test.ts` (a placed module's boxes contain its above-ground box's projected lattice and reach its height — the containment invariant on the 200-world sweep, RED before the pass exists; a wall straddling a chunk border yields boxes in both chunks; `sweepBox` of a hiker's half-extents into a wall stops before the box; boxes are deterministic per chunk), the level-id pin re-pinned again if the tunables moved.
+
+---
+
+### Task 10: The gate, with walls and walls that stop you
+
+§12.4's stills and checks; the scripted walk (freecam off — the player capsule — via the sim's `__tp` helper if the page exposes one, else a `__fcSet` sequence with the player mode); frame pairs and native p95; `## 15` in the verification note; `CLIFF_RUN_MAX` 4 → 2 as the first fallback if a bar is missed.
