@@ -466,3 +466,62 @@ verification note with the new ratio table, the frame medians and the read.
 The allowance for a retune is the same as Task 3's — gains ±0.08, then the
 shade — and, new, `TRAIL_DRIFT_LUM` ±0.15 for the canopy end alone. Commit
 the note alone, as in Task 3.
+
+---
+
+### Task 6: The wash-out's darkness follows the litter
+
+**Files:**
+- Modify: `client/src/game/trailBenchParams.ts` (`TRAIL_WASH_DARK` → `TRAIL_WASH_DARK_OPEN`, `TRAIL_WASH_DARK_LITTER`)
+- Modify: `client/src/game/trailPaint.ts` (the `tWashCol` line)
+- Test: `client/test/game/trailPaint.test.ts`, `client/test/game/trailBenchParams.test.ts`
+
+- [ ] **Step 1: Write the failing tests**
+
+In `client/test/game/trailPaint.test.ts` replace the `TRAIL_WASH_DARK` import and pin with `TRAIL_WASH_DARK_OPEN`, `TRAIL_WASH_DARK_LITTER`, and add:
+
+```ts
+  it("darkens the wash-out by the litter the bed lies in: bare earth in the open, the litter floor's earth under it", () => {
+    expect(TRAIL_WASH_DARK_OPEN).toBe(0.4);
+    expect(TRAIL_WASH_DARK_LITTER).toBe(0.75);
+    expect(TRAIL_FRAGMENT_PAINT).toContain("float tWashDark = mix(0.4, 0.75, clamp(vTerrainW2.z, 0.0, 1.0));");
+    const wash = TRAIL_FRAGMENT_PAINT.match(/vec3 tWashCol = [^\n]*/)![0];
+    expect(wash).toContain("tFloorTex * tWashDark *");
+  });
+```
+
+and update the "every constant appears as a literal" loop to carry the two new constants in place of the old one. In `client/test/game/trailBenchParams.test.ts` replace the `TRAIL_WASH_DARK` import and its `0.55` pin with the two new pins (`0.4`, `0.75`).
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `cd client && npx vitest run test/game/trailPaint.test.ts test/game/trailBenchParams.test.ts` — FAIL on the missing exports.
+
+- [ ] **Step 3: Split the constant and blend it**
+
+`client/src/game/trailBenchParams.ts` — replace `TRAIL_WASH_DARK` with:
+
+```ts
+/**
+ * The wash-out's darkness, by the litter the bed lies in. In the open the
+ * washed bed is bare earth that must come down toward the grass beside it;
+ * where litter lies, the bare earth between the drifts is the same floor's
+ * earth and must not fall below it. Blended in the paint by the vertex's
+ * own litter weight — the field the drifts already read.
+ */
+export const TRAIL_WASH_DARK_OPEN = 0.4;
+export const TRAIL_WASH_DARK_LITTER = 0.75;
+```
+
+`client/src/game/trailPaint.ts` — import the two in place of the old one, and above the `tWashCol` line add `float tWashDark = mix(${f(TRAIL_WASH_DARK_OPEN)}, ${f(TRAIL_WASH_DARK_LITTER)}, clamp(vTerrainW2.z, 0.0, 1.0));`, then change the `tWashCol` line to `vec3 tWashCol = tFloorTex * tWashDark * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;`. Every other `TRAIL_WASH_DARK` reference (the import list, any comment) follows.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `cd client && npx vitest run test/game/trailPaint.test.ts test/game/trailBenchParams.test.ts test/game/terrainTexture.test.ts` — all pass.
+
+- [ ] **Step 5: Commit** — subject under 72 characters, e.g. `feat: darken the trail's wash-outs by the litter they lie in`, the usual body and trailers; the four files only.
+
+---
+
+### Task 7: The gate, a third time
+
+Repeat Task 5 for the six trail stills (a new crop pair for `trail-along`, beside on ground not bed) and the two canopy floor stills; one frame pair at TRAIL. Append `## 8. Third gate` to the verification note. No retune allowance beyond `TRAIL_WASH_DARK_OPEN` ±0.08.

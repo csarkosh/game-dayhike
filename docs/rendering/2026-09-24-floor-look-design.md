@@ -147,3 +147,32 @@ The canopy floor's other miss — the carpet reads sparse and the pieces dark
 against the photographs — is a lighting and density matter (the canopy shade
 on the ground, the litter's 15 % coverage) outside this design; it is
 recorded for the next one.
+
+## 8. Amendment (2026-09-24, after the second gate)
+
+The second gate (`2026-09-24-floor-look-verification.md` §7) closed the
+canopy litter end (canopy-floor 1.14) and left the open end high (1.43,
+1.60) and the canopy gravel beds low (0.83, 0.64). Two measurements
+changed the picture: the gains are almost not a lever — at the full
+remaining allowance the open beds moved ×0.93–0.96, because only about an
+eighth of an open bed is gain-scaled — and what carries the open bed is
+the wash-out, `tFloorTex × TRAIL_WASH_DARK × …`, which has no gain in it.
+So the wash-out is the open end's lever, and the same constant darkens the
+canopy gravel beds that are already low.
+
+One constant becomes two, blended by the litter the bed lies in: the
+wash-out's darkness is `mix(TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER,
+clamp(vTerrainW2.z, 0, 1))` — `0.40` in the open, where the bed must come
+down toward the grass, and `0.75` where litter lies, where the bare earth
+between drifts is the same litter floor's earth and must not fall below it.
+`vTerrainW2.z` is the vertex's own litter weight, the field the drifts
+already read, so the two ends separate on the same term. `TRAIL_WASH_DARK`
+is retired; the gains stay at 0.24 / 0.47 and the drift at 0.66.
+
+Gate: the same crops, plus a replacement crop pair for `trail-along` (its
+beside rectangle lay on drifted bed). The frame pair at TRAIL is repeated
+once.
+
+Recorded for the next design, not this one: the meadow earth reads cooler
+and greyer than the photograph's tan (a hue on the wash-out); the canopy
+carpet's density and lighting.
