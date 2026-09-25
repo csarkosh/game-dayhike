@@ -399,3 +399,17 @@ so runs of them merge into a continuous band with real gaps elsewhere; after
 that, a wider scale band and mirrored variants to break the repetition, and
 only then the lighting, which at midday is the sun's angle on a near-vertical
 wall rather than anything the material is doing wrong.
+
+## 14. Counts after the probed box was corrected
+
+The placement moved once more after §13 was written: the probed box now
+follows each model's own off-centre extents (`CLIFF_MODEL_RIGHT` beside
+`CLIFF_MODEL_FRONT`), which admits a few cells the symmetric box refused.
+The figures above that name counts are superseded by these, measured at the
+same places: the scarp collects **174** (169 inside the reach, five in the pad; rings
+17 / 51 / 101; per model and level [[0, 7, 11], [17, 44, 90]]); seed 1's
+worst disc places **91 of 555** qualifying cells (16.4 %) and the collector
+returns **92**; the 200-world sweep holds 399 modules, of which 69 have an
+above-ground point over ground the gate refuses and 31 over ground a
+player can stand on. Every still and frame reading in §13 was taken before
+this change; nothing it shows depends on the handful of cells that moved.
