@@ -117,3 +117,33 @@ If the ratio misses: gains first (±0.08), then `TRAIL_BENCH_SHADE` (0.8 →
 - The leaf's lobed profile.
 - Leaves lying on the trail itself, as the canopy photographs show (the
   drift mechanism carries paint only; pieces on the bed are a field change).
+
+## 7. Amendment (2026-09-24, after the first gate)
+
+The first stills (`2026-09-24-floor-look-verification.md`) missed the ratio
+gate in both directions: canopy beds 0.63–0.86, meadow beds 1.38–1.46. The
+two ends move for different reasons, and the levers §5 allowed move every
+bed by the same factor, so no permitted retune could close both. Two
+mechanisms, two levers of their own:
+
+- **The canopy beds are mostly drift.** Under the canopy the litter drift
+  covers most of the bed, and the drift's brightness is pinned by
+  `TRAIL_DRIFT_LUM` — so when §3.1 lifted the floor paint 1.5× the ground
+  beside the bed rose and the bed did not. §3.1's claim that the drifts
+  "keep their brightness" was the wrong call: a drift is the same litter as
+  the floor beside it and must rise with it. `TRAIL_DRIFT_LUM` 0.5154 →
+  0.77 (×1.5, the floor's own lift).
+- **The meadow beds still read as cobbles.** The colour mix of §3.2 left the
+  bed's relief — its normal map, ambient occlusion and roughness — on the
+  pebble texture, so the cobble mosaic still shades as cobbles under a
+  brown tint. The same `TRAIL_BED_EARTH` share now mixes the normal
+  (`tGravelN` → `tFloorN`), the RAH occlusion and the roughness toward the
+  floor texture's, so the bed's relief is earth too. And the open end's
+  brightness comes down by the allowance §5 named: `TRAIL_CORE_GAIN` 0.32 →
+  0.24, `TRAIL_MARGIN_GAIN` 0.55 → 0.47.
+
+The gate stands as written; the measurement is repeated at the same crops.
+The canopy floor's other miss — the carpet reads sparse and the pieces dark
+against the photographs — is a lighting and density matter (the canopy shade
+on the ground, the litter's 15 % coverage) outside this design; it is
+recorded for the next one.

@@ -346,3 +346,123 @@ Co-Authored-By: <model> <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01JbDze4ef9icFkvYw2Ryws1
 EOF
 ```
+
+---
+
+### Task 4: The drifts rise with the floor, and the bed's relief is earth
+
+**Files:**
+- Modify: `client/src/game/trailBenchParams.ts` (`TRAIL_DRIFT_LUM`, `TRAIL_CORE_GAIN`, `TRAIL_MARGIN_GAIN`)
+- Modify: `client/src/game/trailPaint.ts` (the bed's normal, occlusion and roughness)
+- Test: `client/test/game/trailPaint.test.ts`, `client/test/game/trailBenchParams.test.ts`
+
+**Interfaces:**
+- Consumes: `TRAIL_BED_EARTH`, `TRAIL_FRAGMENT_PAINT`, `glslFloat`.
+- Produces: nothing new.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `client/test/game/trailPaint.test.ts`, extend the earth test from Task 2 (or add beside it):
+
+```ts
+  it("shades the bed's relief as earth too: normal, occlusion and roughness follow the same mix", () => {
+    // A brown tint over a cobble mosaic still shades as cobbles: the normal
+    // map, the ambient occlusion and the roughness were the pebble texture's.
+    // The same share that mixes the colour mixes them.
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec3 tBedN = mix(tGravelN, tFloorN, 0.7);");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec3 tBedRAH = mix(tGravelRAH, tFloorRAH, 0.7);");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("float tAo = mix(1.0, tBedRAH.g / 0.5, tk);");
+    const bench = TRAIL_FRAGMENT_PAINT.match(/vec3 tBenchN = [^\n]*/)![0];
+    expect(bench).toContain("tBedN.x, 0.0, tBedN.y");
+    expect(bench).not.toContain("tGravelN");
+    const rough = TRAIL_FRAGMENT_PAINT.match(/float tRoughBench = [^\n]*/)![0];
+    expect(rough).toContain("tBedRAH.r / 0.5");
+    expect(rough).not.toContain("tGravelRAH");
+    // The open end's brightness, down by the allowance.
+    expect(TRAIL_CORE_GAIN).toBe(0.24);
+    expect(TRAIL_MARGIN_GAIN).toBe(0.47);
+  });
+```
+
+In `client/test/game/trailBenchParams.test.ts`, update the pinned literals for `TRAIL_CORE_GAIN` (0.24), `TRAIL_MARGIN_GAIN` (0.47) and `TRAIL_DRIFT_LUM` (0.77), and where `TRAIL_DRIFT_TINT` is checked against `NEEDLE_BED`'s hue at `TRAIL_DRIFT_LUM`, keep that check — it is the derivation this task relies on.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `cd client && npx vitest run test/game/trailPaint.test.ts test/game/trailBenchParams.test.ts`
+Expected: FAIL on the new `toContain`s and the three literals.
+
+- [ ] **Step 3: Move the constants and mix the relief**
+
+`client/src/game/trailBenchParams.ts`:
+
+```ts
+export const TRAIL_CORE_GAIN = 0.24;
+export const TRAIL_MARGIN_GAIN = 0.47;
+/** The drift's brightness relative to the floor texture. A drift is the
+ * same litter as the floor beside the bed, so it rises with the floor
+ * paint: 0.77 is the earlier 0.5154 at the floor's own 1.5× lift. */
+export const TRAIL_DRIFT_LUM = 0.77;
+```
+
+`client/src/game/trailPaint.ts`: after the line that defines `tFloorRAH`, add
+
+```glsl
+    // The bed's relief is earth too: a brown tint over a cobble mosaic still
+    // shades as cobbles if the normal, the occlusion and the roughness stay
+    // the pebble texture's. The same share that mixes the colour mixes them.
+    vec3 tBedN = mix(tGravelN, tFloorN, ${f(TRAIL_BED_EARTH)});
+    vec3 tBedRAH = mix(tGravelRAH, tFloorRAH, ${f(TRAIL_BED_EARTH)});
+```
+
+then change `float tAo = mix(1.0, tGravelRAH.g / 0.5, tk);` to read `tBedRAH.g`; in the `tBenchN` line replace `vec3(tGravelN.x, 0.0, tGravelN.y)` with `vec3(tBedN.x, 0.0, tBedN.y)`; in the first `tRoughBench` line replace `tGravelRAH.r` with `tBedRAH.r`. `tGravelN` and `tGravelRAH` stay defined: they are the mix's inputs. Keep every comment free of `#` directives.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `cd client && npx vitest run test/game/trailPaint.test.ts test/game/trailBenchParams.test.ts test/game/terrainTexture.test.ts`
+Expected: all pass (the plugin still compiles under `NullEngine`).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add client/src/game/trailBenchParams.ts client/src/game/trailPaint.ts client/test/game/trailPaint.test.ts client/test/game/trailBenchParams.test.ts
+git commit -F - <<'EOF2'
+feat: let the trail's drifts rise with the floor and shade its bed as earth
+
+## What
+
+The first stills missed the bed / beside ratio in both directions. Under
+the canopy the bed is mostly litter drift, whose brightness was pinned, so
+the floor beside it rose with the floor paint and the bed did not; in the
+open the bed still shaded as cobbles, because only its colour had been
+mixed toward earth while its normal, occlusion and roughness stayed the
+pebble texture's. The drift now rises with the floor, the bed's relief
+follows the same earth mix, and the open bed's gains come down by the
+design's allowance.
+
+## How
+
+- `client/src/game/trailBenchParams.ts` — `TRAIL_DRIFT_LUM` 0.5154 → 0.77
+  (the floor's own 1.5× lift); `TRAIL_CORE_GAIN` 0.32 → 0.24;
+  `TRAIL_MARGIN_GAIN` 0.55 → 0.47.
+- `client/src/game/trailPaint.ts` — `tBedN` and `tBedRAH` mix the pebble
+  and floor maps by `TRAIL_BED_EARTH`; the bench normal, the occlusion and
+  the roughness read them.
+- `client/test/game/trailPaint.test.ts`, `trailBenchParams.test.ts` — the
+  mixes and the literals pinned.
+
+Co-Authored-By: <model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01JbDze4ef9icFkvYw2Ryws1
+EOF2
+```
+
+---
+
+### Task 5: The gate, again
+
+Repeat Task 3's Steps 1–2 and 4 at the same poses and the same crops (the
+verification note's table), plus the side-by-side of Step 3 for the meadow
+and one canopy still; append a `## 7. Second gate` section to the existing
+verification note with the new ratio table, the frame medians and the read.
+The allowance for a retune is the same as Task 3's — gains ±0.08, then the
+shade — and, new, `TRAIL_DRIFT_LUM` ±0.15 for the canopy end alone. Commit
+the note alone, as in Task 3.
