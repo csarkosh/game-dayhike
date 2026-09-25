@@ -297,3 +297,105 @@ because a run that straddles an edit measures neither build.)*
 - The design's own follow-ups, none of them attempted: the block field at the
   foot of the face, mirrored variants, the snowy faces above the snow line,
   and a crest-only band beyond the reach.
+
+## 13. After the fix
+
+Everything in this section was read against `ffa5e2d`, which caps the lean at
+20° and probes the whole above-ground solid instead of the base plane. The
+control is unchanged (`d07a2cc`). Ten pairs: the five face poses at `time 12`
+and again at `time 16`, control then branch at each. No console error on any
+page, at any pose, at either hour.
+
+### The buckets
+
+At face-10m, by ring (LOD0 / LOD1 / LOD2), `wall_a` + `wall_b` together:
+**17 / 50 / 100**, 167 in the 400 m disc against a budget of 700 — the same
+shape as before the fix, six fewer modules. Across the other poses the totals
+run 163–174. `wall_a`'s LOD0 bucket is empty and disabled at most poses; no
+*enabled* bucket is ever empty. The counts are identical at 12:00 and 16:00,
+as they must be: the hour changes the light, not the field.
+
+### What the pairs show
+
+- **They stand up out of the hill now.** This is the clearest change. Before,
+  a module lay back with the slope and its body reached downhill; now it
+  stands, and at face-10m the consequence is visible in the ground rather
+  than in the rock — the near field is lit exactly as the control is, where
+  before it lay in the shadow the leaning modules threw over the camera.
+- **The skyline is broken at every pose that shows a crest.** At 30 m the
+  crest reads as a continuous jagged rim rather than the three or four
+  separate blocks it was; along the face a rock spine runs the length of the
+  ridge with lit tops and deep shadowed clefts. At 16:00 the along-face pose
+  is the best picture the modules have produced: an eroded rocky arête.
+- **Nothing floats, nothing is buried, nothing pops.** Every module's shadow
+  starts at its own base. No ring is visible at the 400 m reach.
+- **The road is back.** From the crest the control's carriageway and its
+  markings are legible across the frame on the branch too, where before the
+  whole road was hidden under rock. A run of modules stands along the road's
+  downhill shoulder and, from this near-vertical angle, projects across the
+  near lane in screen space — but the gate check below finds no module
+  standing on ground a foot could occupy, so what the pose shows is a tall
+  rock on the slope below the road seen from almost directly above, not a
+  slab over the bench.
+- **At noon they are still dark; at 16:00 they are not.** Section 5 explains
+  why and the pairs confirm it at full scale. At `time 12` the modules read
+  as dark slabs against a pale hillside. At `time 16` they are warm tan at
+  essentially the hillside's own value — at 30 m and 80 m they read as the
+  same rock as the ground they stand on, which is what §1 asked for.
+- **What is left is spacing, not colour.** The 16:00 80 m pair is the honest
+  one: with the colour no longer wrong, the eye goes straight to the layout —
+  regular rows of similar-sized lumps, one per 12 m cell, with unbroken smooth
+  ground between them. It reads as rocks placed on a slope, not as a face that
+  is made of rock.
+
+### The gate, re-derived
+
+Every thin-instance translation at face-10m was read off the page and the
+gate re-derived offline from the simulation's own functions: **167 checked, 0
+violations** — all below `GROUND_NORMAL_Y − 0.03` and on rock ≥ 0.8.
+
+The fix also changed how much the field places, because the extra probes
+reject more: the atmo scarp disc goes 178 → **172**, and seed 1's worst disc
+132 → **89**. Section 10's density figures describe the field before the fix.
+
+### Frame time
+
+Four pairs per view at 4× pixels (two runs, both orders each), then native at
+the scarp, both orders. Deltas are branch − control in the order taken. Load
+average 1.7–2.5 throughout, no other page open.
+
+| view | 4× pair deltas (ms) | 4× median | bar | verdict |
+| --- | --- | --- | --- | --- |
+| scarp | −0.21, +0.14, +1.26, +1.23 | **+0.69** | ≤ +1.5 | **pass** |
+| trailside | +0.26, +0.18, −0.11, −0.55 | **+0.04** | within noise | **pass** |
+
+| native, scarp | branch p95 | control p95 | delta |
+| --- | --- | --- | --- |
+| branch-first | 19.1 | 19.1 | 0.0 |
+| control-first | 19.2 | 19.0 | +0.2 |
+
+The native bar (≤ +1.0 ms) is met, but it should be read for what it is: the
+mean is 16.66–16.67 ms on all four samples, which is the 60 Hz cap to the
+hundredth. Native at this pose has no headroom in which a difference could
+appear, so the pass is the cap's and not the field's. The 4× numbers are the
+ones with power, and there the two runs disagree — the first found no cost at
+the scarp, the second about +1.25 ms — so the honest reading is "somewhere
+between nothing and +1.3 ms, median +0.7, inside the bar".
+
+No fallback was applied; none was needed.
+
+### Does the face read as ledged rock?
+
+Not yet, but it is much closer than it was, and what is missing is now a
+single thing. The modules stand correctly, they break the skyline wherever
+one is in view, they cast their own shadows, and by late afternoon their
+colour belongs to the hill. What defeats them is the lattice: one module per
+12 m cell, each drawn from the same two shapes at a similar scale, leaves
+regular rows of separate lumps with untouched smooth ground between them, and
+the eye reads that as objects placed on a slope rather than as a rock face.
+The change that would matter most is letting modules crowd and overlap along
+a contour — several per cell where the face is long, none where it is short —
+so runs of them merge into a continuous band with real gaps elsewhere; after
+that, a wider scale band and mirrored variants to break the repetition, and
+only then the lighting, which at midday is the sun's angle on a near-vertical
+wall rather than anything the material is doing wrong.
