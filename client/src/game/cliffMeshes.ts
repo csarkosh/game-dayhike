@@ -269,9 +269,13 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
       if (meshes.length === 0) return;
       const { x: ox, z: oz } = cliffOrigin(x, z);
       if (ox === builtX && oz === builtZ) return;
+      // Recorded only once the rebuild has returned: a throw part way through
+      // must not leave the shell claiming an origin it never built, which
+      // would freeze the field at the half-filled buckets for as long as the
+      // eye stayed in that cell.
+      rebuild(x, z);
       builtX = ox;
       builtZ = oz;
-      rebuild(x, z);
     },
     meshes,
     casterMeshes,
@@ -282,7 +286,13 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
       // The far buckets' materials are this shell's own clones; the meshes
       // and everything else came out of the containers, so disposing those
       // takes them and the shipped materials with them.
-      for (const material of farMaterials) material.dispose();
+      //
+      // `true` for the textures: `Material.clone()` makes the clone its own
+      // `Texture` wrappers (they share the source's internal GPU texture, so
+      // the clone costs no texture memory), and those wrappers are owned
+      // exclusively by this shell — the forest's per-mesh clones are disposed
+      // the same way, and without it they outlive the level.
+      for (const material of farMaterials) material.dispose(false, true);
       farMaterials.length = 0;
       for (const container of containers) container.dispose();
       containers.length = 0;

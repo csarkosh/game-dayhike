@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -8,8 +8,8 @@ import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js"
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import "../../src/sim/passes/index.js";
 import {
-  CLIFF_CELL, CLIFF_FADE_BAND, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_WIDTH, CLIFF_MODELS, CLIFF_RINGS,
-  cliffBands, cliffOrigin, collectCliffs,
+  CLIFF_CELL, CLIFF_FADE_BAND, CLIFF_MODEL_DEPTH, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_WIDTH, CLIFF_MODELS,
+  CLIFF_RINGS, cliffBands, cliffOrigin, collectCliffs,
 } from "../../src/game/cliffField.js";
 import { CLIFF_LOD_NODES, cliffMeshName, createCliffMeshes } from "../../src/game/cliffMeshes.js";
 import { instanceMatrixFor, trampleFrame, writeFoliage } from "../../src/game/clutterMeshes.js";
@@ -39,6 +39,12 @@ function bufferFor(spy: { mock: { calls: unknown[][]; instances: unknown[] } }, 
   }
   return null;
 }
+
+// The thin-instance spy below is on `Mesh.prototype`, so a case that fails
+// before its own `mockRestore` would hand the next case a spy already holding
+// its calls — and the next case's first assertion is that nothing has been
+// called yet. Restored here so one real failure stays one failure.
+afterEach(() => { vi.restoreAllMocks(); });
 
 describe("createCliffMeshes", () => {
   it("builds three buckets per model from the GLBs' LOD roots, tinted, shadowed, the far one dithering", async () => {
@@ -89,6 +95,7 @@ describe("createCliffMeshes", () => {
       const b = mesh.getBoundingInfo().boundingBox;
       expect(b.maximum.x - b.minimum.x).toBeCloseTo(CLIFF_MODEL_WIDTH[model] as number, 1);
       expect(b.maximum.y - b.minimum.y).toBeCloseTo(CLIFF_MODEL_HEIGHT[model] as number, 1);
+      expect(b.maximum.z - b.minimum.z).toBeCloseTo(CLIFF_MODEL_DEPTH[model] as number, 1);
     }
     cliffs.dispose();
     engine.dispose();
@@ -104,17 +111,26 @@ describe("createCliffMeshes", () => {
     const rings = CLIFF_RINGS.high;
     const o = cliffOrigin(CAM.x, CAM.z);
     const bands = cliffBands(collectCliffs(SEED, CAM.x, CAM.z, rings[2]), o.x, o.z, rings);
-    expect(bands[0].length).toBeGreaterThan(0);
-    expect(bands[2].length).toBeGreaterThan(0);
+    // Measured at this scarp, and the same split cliffField.test.ts pins for
+    // this origin: 17 modules in the near ring, 53 in the mid, 103 in the far.
+    expect(bands.map((b) => b.length)).toEqual([17, 53, 103]);
+    // Measured here too, by [model][lod]. wall_a is the short module the field
+    // falls back to only where a long face would overhang walkable ground, so
+    // it is the rarer of the two on this scarp and its near bucket is empty —
+    // pinned as a zero rather than skipped, so an empty bucket is a fact of
+    // the fixture and not a hole in the case.
+    const COUNTS: readonly (readonly [number, number, number])[] = [[0, 2, 6], [17, 51, 97]];
+    // Teeth: each of the three rings is exercised by at least one model.
+    for (let lod = 0; lod < 3; lod++) expect(COUNTS.some((row) => (row[lod] as number) > 0)).toBe(true);
     const mat = new Float32Array(16);
     const fol = new Float32Array(4);
     for (const [model] of CLIFF_MODELS.entries()) {
       for (let lod = 0; lod < 3; lod++) {
         const mesh = scene.getMeshByName(cliffMeshName(model, lod)) as Mesh;
         const want = bands[lod]!.filter((m) => m.variant === model);
+        expect(want.length).toBe(COUNTS[model]![lod] as number);
         expect(mesh.thinInstanceCount).toBe(want.length);
         expect(mesh.isEnabled()).toBe(want.length > 0);
-        if (want.length === 0) continue;
         const matrices = bufferFor(spy, mesh, "matrix")!;
         const tints = bufferFor(spy, mesh, "foliage")!;
         expect(matrices.length).toBe(want.length * 16);

@@ -25,8 +25,10 @@ export const CLIFF_GROUND_TINT = 0.5;
 
 export class CliffTintPlugin extends MaterialPluginBase {
   constructor(material: Material) {
-    // 210: after the foliage plugin's 200 and the fade's 205 — never on the
-    // same material as either, but the order is fixed anyway.
+    // 210: after the foliage plugin's 200 and the fade's 205. The far LOD
+    // bucket's material carries this and the fade together (cliffMeshes.ts),
+    // so that ordering is real and not hypothetical; the priorities are
+    // fixed, so the two always splice in the same order.
     super(material, "CliffTint", 210, { CLIFFTINT: false });
     this._enable(true);
   }
