@@ -48,6 +48,7 @@ export function createHostAdmission(
   const accept = options.accept ?? acceptAsHost;
   const wrap = options.wrap ?? ((t: Transport) => t);
   let detach: (() => void) | null = null;
+  let disposed = false;
 
   return {
     attach(lobby) {
@@ -58,6 +59,13 @@ export function createHostAdmission(
         if (!data.sdp || data.sdp.type !== "offer") return;
         void accept(signaling, from, data.sdp, () => host.removePeer(from))
           .then((transport) => {
+            // The handshake takes up to the ICE timeout, and the game can end
+            // while one is in flight: a peer admitted then would be spawned
+            // into a session already disposed, over a channel nobody closes.
+            if (disposed) {
+              transport.close();
+              return;
+            }
             // The host sends pairings and never receives one: it records the
             // entity `addPeer` just spawned for this peer itself. Spawned
             // before the callback is looked up: an optional call skips its
@@ -80,6 +88,7 @@ export function createHostAdmission(
       };
     },
     dispose() {
+      disposed = true;
       detach?.();
     },
   };

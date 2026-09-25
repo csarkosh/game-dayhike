@@ -248,6 +248,32 @@ describe("host admission", () => {
     expect(host.retained.length).toBe(0);
   });
 
+  it("closes a transport whose handshake finishes after dispose", async () => {
+    const { lobby, signaling } = await hostedLobby();
+    const host = new FakeHost();
+    const transport = fakeTransport("late");
+    let closed = 0;
+    transport.close = () => {
+      closed++;
+    };
+    let answer: ((t: Transport) => void) | null = null;
+    const accept = (): Promise<Transport> =>
+      new Promise<Transport>((resolve) => {
+        answer = resolve;
+      });
+    const admission = createHostAdmission(host, { accept });
+    admission.attach(lobby);
+
+    signaling.deliver(JOINER, OFFER);
+    await settle();
+    admission.dispose();
+    (answer as ((t: Transport) => void) | null)?.(transport);
+    await settle();
+
+    expect(host.added.length).toBe(0);
+    expect(closed).toBe(1);
+  });
+
   it("lets go of an earlier lobby when a later one is attached", async () => {
     const first = await hostedLobby();
     const second = await hostedLobby();

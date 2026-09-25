@@ -739,8 +739,8 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // indistinguishable from a network hiccup and costs an ICE timeout to
   // resolve — a client ends the session at once instead.
   let lobbyEnded = false;
-  // Everything this game registered on the lobby's socket, undone on dispose:
-  // the socket outlives the game.
+  // What this game registered on the lobby's socket outside the admission
+  // below, undone on dispose: the socket outlives the game.
   const unsubscribe: (() => void)[] = [];
   // How a host game takes in a lobby's members; null for a follower. Held
   // outside `runAsHost` because the lobby it answers offers over can arrive
