@@ -33,10 +33,13 @@ placeholder shows the name and "last seen" lines only. Three more rulings came o
 top of the authoritative tail, before the Hollows step rather than after them, so a player who
 crosses onto the corridor cannot be killed by contact in the tick they reach it (discovery and the
 end rule stay at the tail; deaths are settled before the summit step, so a contact kill and the end
-it causes land on the same tick); a Hollow's step that strictly increases its distance from the road's centreline is allowed even from
-inside the corridor, so one that ever finds itself on safe ground walks out instead of freezing;
+it causes land on the same tick); a Hollow that ever finds itself on safe ground walks out instead of freezing;
 and the stare is unchanged for everyone, safe or not — looking back from the road still costs the
-screen — while contact never touches a safe player. What S1's execution measured: on the seed
+screen — while contact never touches a safe player. As first built, the walk out allowed a step that strictly
+increased the Hollow's distance from the road's centreline even from inside the corridor, which froze a Hollow
+whose route began at the trailhead, deeper inside; since 2026-09-25 a Hollow inside ignores its route and walks
+straight across to its own side's edge, and a route node on the corridor is passed for the next, when there is one,
+once the treeline refuses a step toward it. What S1's execution measured: on the seed
 `hollow` the stem node before the crest stands 11.3 m from the body, inside the 12 m discovery
 radius, so the find can come one node short of the crest.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md`. Supersedes its loop (§1 there, the
@@ -268,8 +271,9 @@ body: `phase` → Chase; the watcher is removed; the **summit Hollow** spawns `S
 ### 5.2 Safety (S1)
 
 A Hollow never crosses the treeline. Its movement clamps at the road corridor's edge: a step that
-would put it within `ROAD_CORRIDOR_HALF` of the road centreline is refused, and a Hollow whose
-target is safe retargets as above or stands at the edge, facing the pad. `safe` is computed per
+would put it within `ROAD_CORRIDOR_HALF` of the road centreline is refused; one that is already
+inside walks straight across to its own side's edge, ignoring its route until it is clear; and a
+Hollow whose target is safe retargets as above or stands at the edge, facing the pad. `safe` is computed per
 player per tick from the road distance (§2), rides the snapshot as a bit beside the lamp, and is
 what the roster and the end rule read.
 
