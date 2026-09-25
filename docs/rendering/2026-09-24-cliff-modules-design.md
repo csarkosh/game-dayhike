@@ -597,3 +597,21 @@ onto the top, and walking along that line keeps the two in contention. Any
 box whose top meets the hillside has such a line, and burial guarantees one,
 so no box shape removes it. It belongs to the ground stick, which would have
 to leave a hull on a box top it is already standing on.
+
+(2026-09-25) The stick now respects box tops. Its target is the higher of
+the hillside and the top of any box under the hull's footprint between the
+two, so the hull no longer sinks into a box along that line (0.107 m
+before, under a millimetre after). The same crest walk still counts about
+100 reversals, but they come from somewhere else. They all fall after the
+walk is blocked by a higher wall's front, where the hull is pressed into the
+corner between that face and hillside too steep to stand on. It steps onto
+the hillside, loses its footing and slides back, within a few centimetres.
+That is the stand limit's own dither, and it does the same wherever a hiker
+walks into ground too steep to stand on, boxes or none: 118 reversals within
+5 cm at the bench at the scarp's foot. While the hull is walking the run,
+there are 3.
+
+**Next work.** The wider shelves behind the walls and the low box tops
+standing over walkable ground near crests (40 metre cells over 40 worlds)
+are accepted for this release. They are the first item for the next round
+on the cliff colliders.

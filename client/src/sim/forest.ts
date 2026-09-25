@@ -8,9 +8,16 @@ const FNV_PRIME = 0x01000193;
 const FNV_OFFSET = 0x811c9dc5;
 
 /**
- * Escape hatch, not the main defence. Bumped to 5 for the wall at the road
- * (`containment.ts`): the ground is untouched, and a peer without the wall
- * would walk straight through it.
+ * Escape hatch, not the main defence. Bumped to 6 when the ground's stick
+ * learned to stand a hull on a box top rather than snap it onto the hillside
+ * under that top (`movement.ts`, `resolveGround`): the world is generated the
+ * same, and two peers on either side of the change would still resolve the
+ * same step to different heights. The cliff colliders move `passHash` in the
+ * same release, but this does not lean on that — a later build could carry
+ * the movement change alone.
+ *
+ * Bumped to 5 for the wall at the road (`containment.ts`): the ground is
+ * untouched, and a peer without the wall would walk straight through it.
  *
  * `passHash` below derives version skew from the generated world and from the
  * constants that steer it, so an ordinary change to a pass invalidates the levelId
@@ -30,7 +37,7 @@ const FNV_OFFSET = 0x811c9dc5;
  * change, and yet a peer on the old build resolves every step against a
  * different surface. This is exactly the case the escape hatch exists for.
  */
-export const GEN_VERSION = 5;
+export const GEN_VERSION = 6;
 
 export type Forest = {
   seed: number;

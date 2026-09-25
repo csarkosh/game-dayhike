@@ -1759,3 +1759,16 @@ Steps as the earlier tasks: failing tests first (the run test: on the atmo scarp
 
 Diagnose the crest-run jitter from the movement code and the box geometry. Fix it only if the cause is the collider's shape; otherwise record the mechanism in §12.5.
 
+---
+
+### Task 12: The ground's stick respects box tops
+
+**Files:**
+- Modify: `client/src/sim/movement.ts` (`resolveGround`). The stick's target is the higher of the terrain and the top of any box under the hull's footprint that lies between the terrain and the feet, found through the same box query the sweeps use.
+- Modify: `client/src/sim/forest.ts`. Bump `GEN_VERSION`, because collision resolution changed.
+- Test: `client/test/sim/passes/cliffs.test.ts`. The crest-run walk:
+  - the hull is never inside a box by more than 1 mm;
+  - reversals are counted while walking and while blocked;
+  - the blocked dither is bounded.
+- Every existing movement test passes unchanged.
+

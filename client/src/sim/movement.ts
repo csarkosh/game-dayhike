@@ -1,6 +1,6 @@
 import type { Vec3, InputCommand } from "./types.js";
 import { Button } from "./types.js";
-import type { BoxProvider } from "./boxSource.js";
+import { boxesNear, type BoxProvider } from "./boxSource.js";
 import { MAX_WALKABLE_GRADIENT, type GroundField } from "./ground.js";
 import { depenetrate, sweepBox } from "./collision.js";
 import {
@@ -157,6 +157,27 @@ const GROUND_NORMAL_SCRATCH: Vec3 = { x: 0, y: 0, z: 0 };
  *
  * `normal` is caller-owned scratch, so the per-tick path allocates nothing.
  */
+/**
+ * The highest box top under the hull's footprint that lies between the
+ * ground `h` and the hull's feet (a box the hull stands on, not one beside
+ * it), or −Infinity if there is none.
+ */
+function supportingTop(pos: Vec3, half: Vec3, boxes: BoxProvider, h: number, feet: number): number {
+  let top = -Infinity;
+  const near = boxesNear(
+    boxes,
+    { x: pos.x - half.x, y: h, z: pos.z - half.z },
+    { x: pos.x + half.x, y: feet, z: pos.z + half.z },
+  );
+  for (const b of near) {
+    if (b.max.x <= pos.x - half.x || b.min.x >= pos.x + half.x) continue;
+    if (b.max.z <= pos.z - half.z || b.min.z >= pos.z + half.z) continue;
+    if (b.max.y <= h || b.max.y > feet + EPSILON) continue;
+    if (b.max.y > top) top = b.max.y;
+  }
+  return top;
+}
+
 function resolveGround(
   pos: Vec3,
   vel: Vec3,
@@ -166,6 +187,7 @@ function resolveGround(
   wasGrounded: boolean,
   jumped: boolean,
   horizontalDistance: number,
+  boxes: BoxProvider,
 ): boolean {
   const h = ground.heightAt(pos.x, pos.z);
   const feet = pos.y - half.y;
@@ -179,6 +201,19 @@ function resolveGround(
     // are still falls and a jump is still a jump.
     if (!wasGrounded || jumped || vel.y > 0) return false;
     if (feet - h > horizontalDistance * MAX_WALKABLE_GRADIENT + GROUND_SNAP_MARGIN) return false;
+    // The stick pulls the hull down to the ground, but a box's top can stand
+    // between the two — where a hillside passes a few centimetres under a
+    // cliff box's top, inside its footprint. Snapping to the ground there
+    // would sink the hull into the box, and the next tick's depenetrate
+    // would lift it out again, every tick along that line. So the stick
+    // stands the hull on the higher of the two: a box top under its
+    // footprint holds it, the way a floor does.
+    const top = supportingTop(pos, half, boxes, h, feet);
+    if (top > h) {
+      if (feet > top + SKIN) pos.y = top + SKIN + half.y;
+      if (vel.y < 0) vel.y = 0;
+      return true;
+    }
   }
 
   ground.normalAt(pos.x, pos.z, normal);
@@ -313,6 +348,7 @@ export function stepMovement(
       state.grounded,
       jumped,
       travelled,
+      boxes,
     );
     if (onGround) grounded = true;
   }

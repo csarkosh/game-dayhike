@@ -401,6 +401,74 @@ describe("a hiker behind a wall", () => {
   }, 300_000);
 });
 
+describe("a hiker along a wall's top", () => {
+  // The gate's crest walk: from a rest on the top of a crest run at the
+  // scarp, walking along the contour for ten seconds. Two things showed as
+  // jitter there.
+  //
+  // The first was the ground's stick. It snapped the grounded hull down
+  // onto the hillside where that passes a few centimetres under a box's top,
+  // inside the box, and the next tick's depenetrate lifted it back out: the
+  // hull went up to 0.107 m inside a box. The stick now stands the hull on
+  // the higher of the hillside and the box top under it.
+  //
+  // The second is not a box at all. After about 2.7 s the walk is blocked by
+  // the front of a higher wall, and the hull, pressed into the corner
+  // between that face and hillside too steep to stand on, steps onto the
+  // hillside, loses its footing and slides back, every few ticks, in a patch
+  // a few centimetres across. It is the stand limit's own dither, and it does
+  // the same wherever a hiker walks into ground too steep to stand on, with
+  // no box in sight: at the bench at the scarp's foot, 118 reversals in ten
+  // seconds within 5 cm. So it is counted apart, and bounded, not zeroed.
+  it("walks along a crest run's top without sinking into a box, and dithers only where it is blocked", () => {
+    const run = hikerOn(ATMO);
+    const boxes = cliffBoxesInRect(ATMO, -500, -1100, -200, -700).flatMap((e) => e.boxes);
+    const g = [1.54, -0.577] as const;
+    const gl = Math.hypot(g[0], g[1]);
+    const ux = g[0] / gl, uz = g[1] / gl;
+    const tx = -uz, tz = ux;
+    const yaw = Math.atan2(tx, tz);
+    const [x0, y0, z0] = run([-289.34, 142.903, -900.898], yaw, 0, 60)[59]!;
+    const tr = run([x0, y0, z0], yaw, 1, 600);
+    let walking = 0, blocked = 0, lastPerp = 0, along = 0, deepest = 0, stopped = -1;
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (let i = 1; i < tr.length; i++) {
+      const a = tr[i - 1]!, b = tr[i]!;
+      const vx = (b[0] - a[0]) * 60, vz = (b[2] - a[2]) * 60;
+      const perp = vx * ux + vz * uz;
+      const reversed = i > 30 && Math.abs(perp) > 0.3 && lastPerp !== 0 && Math.sign(perp) !== Math.sign(lastPerp);
+      if (Math.abs(perp) > 0.3) lastPerp = perp;
+      if (stopped < 0 && i > 30 && Math.abs(vx * tx + vz * tz) <= 1) stopped = i;
+      if (reversed) {
+        if (stopped < 0) walking++;
+        else blocked++;
+      }
+      if (stopped >= 0) {
+        for (let k = 0; k < 3; k++) {
+          lo[k] = Math.min(lo[k]!, b[k] as number);
+          hi[k] = Math.max(hi[k]!, b[k] as number);
+        }
+      }
+      along += (b[0] - a[0]) * tx + (b[2] - a[2]) * tz;
+      for (const bx of boxes) {
+        const ox = Math.min(b[0] + PLAYER_HALF.x, bx.max.x) - Math.max(b[0] - PLAYER_HALF.x, bx.min.x);
+        const oy = Math.min(b[1] + PLAYER_HALF.y, bx.max.y) - Math.max(b[1] - PLAYER_HALF.y, bx.min.y);
+        const oz = Math.min(b[2] + PLAYER_HALF.z, bx.max.z) - Math.max(b[2] - PLAYER_HALF.z, bx.min.z);
+        if (ox > 0 && oy > 0 && oz > 0) deepest = Math.max(deepest, Math.min(ox, oy, oz));
+      }
+    }
+    // Inside a box by no more than a millimetre: the skin the sweeps keep,
+    // and float error, but never the stick's snap (0.107 m before).
+    expect(deepest).toBeLessThan(0.001);
+    expect({ walking, blocked, stopped }).toEqual({ walking: 3, blocked: 96, stopped: 160 });
+    // Where it is blocked, the hull stays within a few centimetres on every
+    // axis.
+    const span = Math.max(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!);
+    expect(span).toBeLessThan(0.1);
+    expect(along).toBeCloseTo(13.018, 2);
+  }, 60_000);
+});
+
 describe("what the colliders claim", () => {
   it("stand over walkable ground rarely: 40 worlds, counted with and without the buried volume", () => {
     // Every metre cell under a box's footprint, over every module within
