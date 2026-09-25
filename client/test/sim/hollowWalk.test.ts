@@ -88,19 +88,20 @@ describe("the Hollow walks the stem on real terrain", () => {
   }, 300_000);
 
   /**
-   * The corridor rule is on the road offset, not on the destination alone, so
-   * a Hollow that finds itself inside walks out instead of freezing: the
-   * refusal path never reaches `stepMovement`, so a Hollow refused every step
-   * would not move at all — not even fall.
+   * A Hollow that finds itself inside the corridor walks straight out to the
+   * nearest edge, ignoring its route until it is clear, instead of freezing:
+   * the refusal path never reaches `stepMovement`, so a Hollow refused every
+   * step would not move at all — not even fall.
    *
    * It cannot walk in today, but the trail's lower stretch is inside the
    * corridor on many seeds (the trailhead is at u = 9), so anything that
    * spawns a Hollow on the trail can put one there.
    *
-   * It walks out along the trail rather than making a beeline, so the time is
-   * the trail's: 4.8 s on `hollow0`, 14.4 s on `hollow29` and 15.2 s on
-   * `hollow18`, the slowest of the 50 — those two are the seeds whose trails
-   * hug the corridor. Over all 50, half are out within 4.9 s.
+   * From the centreline the walk out is the corridor's half-width, 30 m at
+   * 6.3 m/s: 4.8 s on each of these three, `hollow29` and `hollow18` being
+   * the seeds whose trails hug the corridor longest, which no longer matters
+   * to the time. `hollowCorridor.test.ts` walks the case that used to freeze —
+   * a route into the woods that starts at the trailhead, deeper inside.
    */
   it("walks out of the road corridor instead of freezing on it", () => {
     for (const token of ["hollow0", "hollow29", "hollow18"]) {

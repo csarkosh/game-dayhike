@@ -33,8 +33,11 @@ placeholder shows the name and "last seen" lines only. Three more rulings came o
 top of the authoritative tail, before the Hollows step rather than after them, so a player who
 crosses onto the corridor cannot be killed by contact in the tick they reach it (discovery and the
 end rule stay at the tail; deaths are settled before the summit step, so a contact kill and the end
-it causes land on the same tick); a Hollow's step that strictly increases its distance from the road's centreline is allowed even from
-inside the corridor, so one that ever finds itself on safe ground walks out instead of freezing;
+it causes land on the same tick); a Hollow that ever finds itself on safe ground walks out instead of freezing — as first
+built, a step that strictly increased its distance from the road's centreline was allowed from inside the corridor, which
+froze a Hollow whose route began at the trailhead, deeper inside (2026-09-25: inside, it now ignores its route and walks
+straight for the nearest edge, and a route node the treeline refuses a step toward is passed for the next, when there
+is one);
 and the stare is unchanged for everyone, safe or not — looking back from the road still costs the
 screen — while contact never touches a safe player. What S1's execution measured: on the seed
 `hollow` the stem node before the crest stands 11.3 m from the body, inside the 12 m discovery

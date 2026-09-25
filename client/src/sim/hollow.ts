@@ -22,6 +22,7 @@ import { stepMovement } from "./movement.js";
 import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
 import { isOnCorridor, roadOffset } from "./containment.js";
+import { ROAD_CORRIDOR_HALF } from "./road.js";
 import {
   ENEMY_HALF,
   ENEMY_MAX_HEALTH,
@@ -57,6 +58,8 @@ export const HOLLOW_APPROACH_RANGE = 25;
 export const HOLLOW_LOST_SIGHT_S = 3;
 /** The placeholder's height, metres (entityViews.ts). */
 export const HOLLOW_HEIGHT = 2.6;
+/** Metres past the corridor's edge a Hollow inside it walks for, so its last step lands clear of the line. */
+export const HOLLOW_EXIT_MARGIN = 1;
 
 export function isHollowState(ai: AiState): boolean {
   return ai === AiState.Hunt || ai === AiState.Emerge || ai === AiState.Stand;
@@ -71,7 +74,8 @@ export function isHollow(e: EnemyState): boolean {
  *
  * `at` is meant to be off the road corridor, which is the party's safe ground;
  * the precondition degrades rather than breaks, though — a Hollow spawned on
- * the corridor walks out rather than freezing (`walkToward`).
+ * the corridor walks straight out to the nearest edge before it takes up its
+ * route (`walkToward`), rather than freezing.
  */
 export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: number): EnemyState {
   const hollow: EnemyState = {
@@ -153,19 +157,60 @@ function speedOf(h: EnemyState): number {
  *
  * Stuck handling is `ai.ts`'s: no progress on the squared distance for
  * STUCK_SECONDS starts a sidestep that holds until progress resumes.
+ *
+ * THE HOLLOW STAYS IN THE WOODS. The road corridor is the party's safe
+ * ground, and the rule has two halves, split on where the Hollow stands
+ * BEFORE the step:
+ *
+ * - Outside, a step that would end on the corridor is refused, and it stands
+ *   at the treeline facing the pad. Refusing the step rather than clamping the
+ *   position keeps it on ground it could have walked to, and the stuck
+ *   handling then slides it along the treeline instead of pressing into it.
+ *
+ * - Inside — placed there, or spawned on the trail's lower stretch, which runs
+ *   inside the corridor on some seeds — it ignores where it was asked to go
+ *   and walks straight for the nearest edge, HOLLOW_EXIT_MARGIN past it so the
+ *   last step lands clear rather than on the line, taking every step it gets.
+ *   Its route waits (`followRoute`), and the hunt resumes from wherever it
+ *   comes out. It cannot follow the route out, because a route into the woods
+ *   can start at the trailhead, which is deeper inside: every step toward it
+ *   would be refused, the sidestep the stuck handling offers runs along the
+ *   road and never out of it, and a Hollow refused every step never reaches
+ *   `stepMovement` at all — not even gravity would move it.
+ *
+ *   The edge it heads for sits at its own z, so it moves along with it, and a
+ *   sidestep along the road can never read as progress toward it. Inside,
+ *   therefore, the sidestep is timed rather than held: UNSTICK_SECONDS of
+ *   strafe — enough to clear the widest thing that stands in the corridor —
+ *   and then straight for the edge again.
+ *
+ * Returns whether it moved (or had nowhere to move to): false is a step
+ * refused at the treeline, which `followRoute` reads.
  */
-function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: number, speed: number): void {
+function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: number, speed: number): boolean {
+  const u = roadOffset(world, h.pos.x, h.pos.z);
+  const inside = u !== null && (u < 0 ? -u : u) < ROAD_CORRIDOR_HALF;
+  if (inside) {
+    // The edge on its own side; on the centreline itself, the forest's (+x).
+    const side = u < 0 ? -1 : 1;
+    tx = h.pos.x - u + side * (ROAD_CORRIDOR_HALF + HOLLOW_EXIT_MARGIN);
+    tz = h.pos.z;
+  }
+
   const dx = tx - h.pos.x;
   const dz = tz - h.pos.z;
   const distSq = dx * dx + dz * dz;
   const dist = Math.sqrt(distSq);
-  if (dist < EPSILON) return;
+  if (dist < EPSILON) return true;
   h.yaw = Math.atan2(dx, dz);
 
   if (distSq < h.lastDistSq - STUCK_EPSILON) h.stuckTimer = 0;
   else h.stuckTimer += dt;
   h.lastDistSq = distSq;
-  if (h.stuckTimer > STUCK_SECONDS) h.unstickTimer = UNSTICK_SECONDS;
+  if (h.stuckTimer > STUCK_SECONDS) {
+    h.unstickTimer = UNSTICK_SECONDS;
+    if (inside) h.stuckTimer = 0;
+  }
 
   let ux = dx / dist;
   let uz = dz / dist;
@@ -190,36 +235,34 @@ function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: num
     world.waterLevel,
     world.ground,
   );
-  // THE HOLLOW STAYS IN THE WOODS: a step onto the road corridor is refused
-  // and it stands at the treeline facing the pad. Safety is the corridor, not
-  // the car. Refusing the step rather than clamping the position keeps it on
-  // ground it could have walked to, and the stuck detection above then slides
-  // it along the treeline instead of pressing into it.
-  //
-  // The rule is on the road offset, not on the destination alone: a step is
-  // refused only when it ends on the corridor WITHOUT taking the Hollow
-  // further from the centreline. A Hollow that is somehow already inside —
-  // placed there, or spawned on the trail's lower stretch, which runs inside
-  // the corridor on some seeds — therefore walks its way out instead of
-  // freezing where it stands, since the refusal path never reaches
-  // `stepMovement` and not even gravity would move it.
-  if (isOnCorridor(world, result.pos.x, result.pos.z)) {
-    const before = roadOffset(world, h.pos.x, h.pos.z);
-    const after = roadOffset(world, result.pos.x, result.pos.z);
-    const outward =
-      before !== null && after !== null && (after < 0 ? -after : after) > (before < 0 ? -before : before);
-    if (!outward) {
-      h.vel = { x: 0, y: 0, z: 0 };
-      const th = world.trail?.trailhead;
-      if (th !== undefined) faceToward(h, th.x, th.z);
-      return;
-    }
+  // The treeline: from outside, a step onto the corridor is refused. Safety is
+  // the corridor, not the car.
+  if (!inside && isOnCorridor(world, result.pos.x, result.pos.z)) {
+    h.vel = { x: 0, y: 0, z: 0 };
+    const th = world.trail?.trailhead;
+    if (th !== undefined) faceToward(h, th.x, th.z);
+    return false;
   }
   h.pos = result.pos;
   h.vel = result.vel;
+  return true;
 }
 
-/** Walks the current route; true once every node has been reached. */
+/**
+ * Walks the current route; true once every node has been reached.
+ *
+ * A node the treeline refuses a step toward is passed, not reached, when the
+ * route goes on: the trailhead is inside the corridor (TRAILHEAD_U is 9), and
+ * on some seeds so is the trail's lower stretch, and a Hollow that came out
+ * of the corridor by the pad, or was routed from the node nearest its feet,
+ * can hold a route into the woods that starts there. Walking that leg would
+ * have it refused at the treeline for good. Only the refused step passes a
+ * node — not the node's being on the corridor — because the leg toward such
+ * a node is usually the trail itself, and the trail is what brings the Hollow
+ * to the treeline where its prey stands; leaving it early for a straight line
+ * to the node beyond would trade the trail for the forest. The last node it
+ * stands for, at the treeline, facing the pad, as it always has.
+ */
 function followRoute(h: EnemyState, world: World, graph: TrailGraph, dt: number, speed: number): boolean {
   while (h.routeAt < h.route.length) {
     const node = graph.nodes[h.route[h.routeAt] as number] as TrailNode;
@@ -228,8 +271,12 @@ function followRoute(h: EnemyState, world: World, graph: TrailGraph, dt: number,
       h.lastDistSq = Infinity;
       continue;
     }
-    walkToward(h, world, dt, node.x, node.z, speed);
-    return false;
+    if (walkToward(h, world, dt, node.x, node.z, speed) || h.routeAt + 1 >= h.route.length) return false;
+    // Refused at the treeline with the route going on: the next node, from
+    // here, this tick — a refused step moved nothing, so the one move a
+    // Hollow makes per tick is still to come.
+    h.routeAt++;
+    h.lastDistSq = Infinity;
   }
   return true;
 }
