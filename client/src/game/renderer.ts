@@ -61,6 +61,7 @@ import { NEAR_RADIUS } from "./forestField.js";
 import { createClutterMeshes } from "./clutterMeshes.js";
 import { createBladeMeshes } from "./bladeMeshes.js";
 import { createDuffMeshes } from "./duffMeshes.js";
+import { createCliffMeshes } from "./cliffMeshes.js";
 import { createWildlifeMeshes } from "./wildlifeMeshes.js";
 import type { PlayerPoint, WildlifeEvent } from "./wildlifeBehaviour.js";
 import type { MatchState, View } from "./wildlifeDirector.js";
@@ -795,10 +796,23 @@ export function createRenderer(
   // tiers as the blades beside it: what the grass field thins out, this fills
   // in, so the ground reads full rather than bare. Low tier draws neither.
   const duffMeshes = forest !== null && tier !== "low" ? createDuffMeshes(scene, forest.seed, { quality: tier }) : null;
+  // Rock-wall modules on the faces too steep to stand on, on every tier —
+  // the field carries a ring set per tier. Renderer-only: it reads the
+  // simulation and touches nothing in it.
+  const cliffMeshes = forest !== null ? createCliffMeshes(scene, forest.seed, { quality: tier }) : null;
+  // A failed GLB fetch rejects `ready`; log it once here so it is not an
+  // unhandled rejection. The shell keeps working with whatever loaded — a
+  // partial load just leaves the loaded model's buckets rebuilding, the
+  // other model's buckets never appearing.
+  cliffMeshes?.ready.catch((error: unknown) => {
+    console.error(`cliff modules: keeping whatever loaded — ${String(error)}`);
+  });
   // Same late-registration story as the forest's casters: the eleven clutter
   // GLBs load asynchronously, so the boulder buckets appear in `casterMeshes`
   // some frames after creation.
   let clutterCastersRegistered = 0;
+  // The cliff modules' own GLBs, loaded independently of the clutter's.
+  let cliffCastersRegistered = 0;
 
   // Wildlife rides the forest guard like the clutter above it: hand-authored
   // levels have no forest and get no animals. Low tier scales every species'
@@ -958,6 +972,12 @@ export function createRenderer(
           lighting.addShadowMesh(clutterMeshes.casterMeshes[clutterCastersRegistered] as Mesh);
         }
       }
+      // The cliff modules' near buckets, once their two GLBs have loaded.
+      if (cliffMeshes !== null) {
+        for (; cliffCastersRegistered < cliffMeshes.casterMeshes.length; cliffCastersRegistered++) {
+          lighting.addShadowMesh(cliffMeshes.casterMeshes[cliffCastersRegistered] as Mesh);
+        }
+      }
 
       applyWetness(scene, weather);
       setTerrainWetness(scene, terrainMaterialFor(scene, "terrain"), weather.wetness);
@@ -972,6 +992,7 @@ export function createRenderer(
         water?.update(freecam.x, freecam.z);
         propMeshes?.update(freecam.x, freecam.z);
         forestMeshes?.update(freecam.x, freecam.z);
+        cliffMeshes?.update(freecam.x, freecam.z);
         clutterMeshes?.update(freecam.x, freecam.z);
         bladeMeshes?.update(freecam.x, freecam.z);
         duffMeshes?.update(freecam.x, freecam.z);
@@ -1006,6 +1027,7 @@ export function createRenderer(
         water?.update(local.pos.x, local.pos.z);
         propMeshes?.update(local.pos.x, local.pos.z);
         forestMeshes?.update(local.pos.x, local.pos.z);
+        cliffMeshes?.update(local.pos.x, local.pos.z);
         clutterMeshes?.update(local.pos.x, local.pos.z);
         bladeMeshes?.update(local.pos.x, local.pos.z);
         duffMeshes?.update(local.pos.x, local.pos.z);
@@ -1118,6 +1140,7 @@ export function createRenderer(
       clutterMeshes?.dispose();
       bladeMeshes?.dispose();
       duffMeshes?.dispose();
+      cliffMeshes?.dispose();
       wildlife?.dispose();
       mist?.dispose();
       rain.dispose();
