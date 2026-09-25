@@ -163,13 +163,13 @@ export function cliffSeatedBoxes(m: ClutterInstance): Aabb[] {
 
 /** Which side face of a module's boxes lies uphill: the one its uphill
  * direction, `−(fx, fz)`, points through most nearly — the axis with the
- * larger component (x on a tie), signed — as `{ sx, sz }` with one of the two
- * zero. */
-export function cliffBuryFaces(m: ClutterInstance): { sx: number; sz: number } {
+ * larger component (`axis` 0 for x, 1 for z; x on a tie) and the side of the
+ * box it is on (`sign` +1 for the max face, −1 for the min). */
+export function cliffBuryFace(m: ClutterInstance): { axis: number; sign: number } {
   const f = cliffFacing(m.groundDx, m.groundDz, m.hash);
   const ux = -f.fx, uz = -f.fz;
-  if (Math.abs(ux) >= Math.abs(uz)) return { sx: ux >= 0 ? 1 : -1, sz: 0 };
-  return { sx: 0, sz: uz >= 0 ? 1 : -1 };
+  if (Math.abs(ux) >= Math.abs(uz)) return { axis: 0, sign: ux >= 0 ? 1 : -1 };
+  return { axis: 1, sign: uz >= 0 ? 1 : -1 };
 }
 
 /** Whether the terrain along one side face of `b` stands at or above its top
@@ -188,32 +188,27 @@ function faceBuried(seed: number, b: Aabb, axis: number, at: number): boolean {
 }
 
 /**
- * Moves `b`'s uphill faces into the hill, in `CLIFF_BURY_STEP`s, until the
- * terrain along each stands at or above the box's top, or the face has moved
- * `CLIFF_BURY_MAX`. Returns whether a face stopped at the cap. Grows `b` in
- * place, and only grows it.
+ * Moves `b`'s uphill face — on `axis` (0 for x, 1 for z), at the max side
+ * for `sign` +1 or the min for −1 — into the hill, in `CLIFF_BURY_STEP`s,
+ * until the terrain along it stands at or above the box's top, or the face
+ * has moved `CLIFF_BURY_MAX`. Returns whether it stopped at the cap. Grows
+ * `b` in place, and only grows it.
  */
-function buryBox(seed: number, b: Aabb, sx: number, sz: number): boolean {
-  const x0 = sx > 0 ? b.max.x : b.min.x;
-  const z0 = sz > 0 ? b.max.z : b.min.z;
-  let ex = 0, ez = 0;
-  for (;;) {
-    const xOk = sx === 0 || faceBuried(seed, b, 0, sx > 0 ? b.max.x : b.min.x);
-    const zOk = sz === 0 || faceBuried(seed, b, 1, sz > 0 ? b.max.z : b.min.z);
-    if (xOk && zOk) return false;
-    let moved = false;
-    if (!xOk && ex < CLIFF_BURY_MAX) {
-      ex = Math.min(CLIFF_BURY_MAX, ex + CLIFF_BURY_STEP);
-      if (sx > 0) b.max.x = x0 + ex; else b.min.x = x0 - ex;
-      moved = true;
-    }
-    if (!zOk && ez < CLIFF_BURY_MAX) {
-      ez = Math.min(CLIFF_BURY_MAX, ez + CLIFF_BURY_STEP);
-      if (sz > 0) b.max.z = z0 + ez; else b.min.z = z0 - ez;
-      moved = true;
-    }
-    if (!moved) return true;
+function buryBox(seed: number, b: Aabb, axis: number, sign: number): boolean {
+  const face = (): number => (axis === 0 ? (sign > 0 ? b.max.x : b.min.x) : (sign > 0 ? b.max.z : b.min.z));
+  const setFace = (v: number): void => {
+    if (axis === 0) { if (sign > 0) b.max.x = v; else b.min.x = v; }
+    else if (sign > 0) b.max.z = v;
+    else b.min.z = v;
+  };
+  const start = face();
+  let moved = 0;
+  while (!faceBuried(seed, b, axis, face())) {
+    if (moved >= CLIFF_BURY_MAX) return true;
+    moved = Math.min(CLIFF_BURY_MAX, moved + CLIFF_BURY_STEP);
+    setFace(start + sign * moved);
   }
+  return false;
 }
 
 /** A module with its colliders, and how many of its boxes stopped at the
@@ -228,9 +223,9 @@ export type CliffModuleBoxes = { m: ClutterInstance; boxes: Aabb[]; capped: numb
  */
 export function cliffModuleBoxes(seed: number, m: ClutterInstance): CliffModuleBoxes {
   const boxes = cliffSeatedBoxes(m);
-  const { sx, sz } = cliffBuryFaces(m);
+  const { axis, sign } = cliffBuryFace(m);
   let capped = 0;
-  for (const b of boxes) if (buryBox(seed, b, sx, sz)) capped++;
+  for (const b of boxes) if (buryBox(seed, b, axis, sign)) capped++;
   return { m, boxes, capped };
 }
 
@@ -246,9 +241,10 @@ export type CliffCellSource = (seed: number, ci: number, cj: number) => readonly
 
 /** Cells the pass keeps, across every world and terrain variant together,
  * before it forgets them all and starts again. A chunk's gather window is
- * about 18 cells on a side and a walk adds a row or column of them per chunk
- * crossed, so this holds the neighbourhood of a long walk. */
-export const CLIFF_RUN_CACHE_MAX = 32768;
+ * 32 m plus twice `CLIFF_GATHER_REACH` (101.42 m) across, about 20 cells on
+ * a side, and a walk adds a row or column of them per chunk crossed, so this
+ * holds the neighbourhood of a long walk. */
+export const CLIFF_BOX_CACHE_MAX = 32768;
 
 /** Cells already read, by world and terrain variant, then by cell. */
 const cellCache = new Map<string, Map<number, readonly CliffModuleBoxes[]>>();
@@ -259,7 +255,7 @@ const KEY_SPAN = 1 << 21;
 
 /**
  * `cliffCellBoxes`, remembered. A chunk gathers every cell within
- * `CLIFF_GATHER_REACH` of it, so each cell is asked for by some forty chunks,
+ * `CLIFF_GATHER_REACH` of it, so each cell is asked for by some fifty chunks,
  * and building the level id's probe alone reads hundreds of cells at
  * start-up; burying a box reads the terrain along its face several times
  * over. The cell's modules and boxes are a pure function of the world seed,
@@ -280,7 +276,7 @@ export function cachedCliffCellBoxes(seed: number, ci: number, cj: number): read
   let cell = cells.get(key);
   if (cell === undefined) {
     cell = cliffCellBoxes(seed, ci, cj);
-    if (cellCacheSize >= CLIFF_RUN_CACHE_MAX) {
+    if (cellCacheSize >= CLIFF_BOX_CACHE_MAX) {
       cellCache.clear();
       cellCacheSize = 0;
       cells = new Map();
@@ -294,7 +290,7 @@ export function cachedCliffCellBoxes(seed: number, ci: number, cj: number): read
 
 /** Forgets every remembered cell. For tests that compare a cold build with a
  * warm one. */
-export function clearCliffRunCache(): void {
+export function clearCliffCellBoxCache(): void {
   cellCache.clear();
   cellCacheSize = 0;
 }
@@ -351,7 +347,8 @@ export function cliffBoxesInRect(
  * it whole from every chunk would duplicate it in every query that spans the
  * border and still leave boxes hanging outside their chunk.
  *
- * The cells' runs are remembered across chunks (`cachedCliffCellRuns`), but
+ * The cells' modules and boxes are remembered across chunks
+ * (`cachedCliffCellBoxes`), but
  * the field is pure, so a chunk's boxes still depend on nothing but the world
  * seed, the terrain variant and its own coordinates.
  */

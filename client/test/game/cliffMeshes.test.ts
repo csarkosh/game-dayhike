@@ -279,7 +279,20 @@ describe("createCliffMeshes", () => {
     engine.dispose();
   });
 
-  it("names the LOD roots the models ship", () => {
+  it("names the LOD roots the models ship", async () => {
+    // Read from the shipped GLBs themselves: each model's root nodes named
+    // LOD0, LOD1 and LOD2 are what the shell looks up by these names.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const load = loader(scene);
     expect(CLIFF_LOD_NODES).toEqual(["LOD0", "LOD1", "LOD2"]);
+    for (const output of CLIFF_MODELS) {
+      const container = await load(output);
+      const names = container.getNodes().map((n) => n.name);
+      for (const lod of ["LOD0", "LOD1", "LOD2"]) expect(names, `${output} ${lod}`).toContain(lod);
+      container.dispose();
+    }
+    scene.dispose();
+    engine.dispose();
   });
 });

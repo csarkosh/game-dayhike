@@ -15,7 +15,7 @@ import {
 } from "../../../src/sim/cliffField.js";
 import {
   CLIFF_BOX_STEP, CLIFF_BURY_MAX, CLIFF_BURY_SAMPLE, CLIFF_BURY_STEP, CLIFF_GATHER_REACH, CLIFF_MATERIAL,
-  CLIFF_SOLID_REACH, cliffBoxesInRect, cliffBuryFaces, cliffCellBoxes, cliffModuleBoxes, clearCliffRunCache,
+  CLIFF_SOLID_REACH, cliffBoxesInRect, cliffBuryFace, cliffCellBoxes, cliffModuleBoxes, clearCliffCellBoxCache,
 } from "../../../src/sim/passes/cliffs.js";
 import { drawnShell, seat } from "../helpers/cliffSolid.js";
 
@@ -180,7 +180,8 @@ describe("the colliders", () => {
             const own = built.boxes;
             boxes += own.length;
             capped += built.capped;
-            const { sx, sz } = cliffBuryFaces(m);
+            const { axis, sign } = cliffBuryFace(m);
+            const sx = axis === 0 ? sign : 0, sz = axis === 1 ? sign : 0;
             for (const b of own) {
               const lo = sx !== 0 ? b.min.z : b.min.x, hi = sx !== 0 ? b.max.z : b.max.x;
               const at = sx > 0 ? b.max.x : sx < 0 ? b.min.x : sz > 0 ? b.max.z : b.min.z;
@@ -264,7 +265,7 @@ describe("the colliders", () => {
 
 describe("the remembered runs", () => {
   it("change no output: a chunk built cold, warm, and from the field directly is the same", () => {
-    clearCliffRunCache();
+    clearCliffCellBoxCache();
     const cold = cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz);
     // Warm: every cell the chunk gathers is remembered now, and so are the
     // neighbours' shared cells when they are built.
