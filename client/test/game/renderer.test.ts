@@ -452,6 +452,26 @@ describe("world shell wiring", () => {
     expect(playerBranch).toContain("bladeMeshes?.update(local.pos.x, local.pos.z);\n        duffMeshes?.update(local.pos.x, local.pos.z);");
     expect(src.match(/duffMeshes\?\.dispose\(\)/g)).toHaveLength(1);
   });
+
+  it("creates the cliff field on every tier with the world seed", () => {
+    const creation = slice("const duffMeshes =", "// Same late-registration story");
+    // Every tier: the field has a ring set per tier (`CLIFF_RINGS`), and the
+    // faces need their modules on the low tier as much as the high.
+    expect(creation).toContain('const cliffMeshes = forest !== null ? createCliffMeshes(scene, forest.seed, { quality: tier }) : null;');
+  });
+
+  it("registers cliff casters late, updates cliffs in both camera branches after the forest, and disposes them", () => {
+    const casters = slice("// Late caster registration", "applyWetness(scene, weather);");
+    expect(casters).toContain("for (; cliffCastersRegistered < cliffMeshes.casterMeshes.length; cliffCastersRegistered++) {");
+    expect(casters).toContain("lighting.addShadowMesh(cliffMeshes.casterMeshes[cliffCastersRegistered] as Mesh);");
+    const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
+    const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
+    expect(freecamBranch.match(/cliffMeshes\?\.update\(/g)).toHaveLength(1);
+    expect(playerBranch.match(/cliffMeshes\?\.update\(/g)).toHaveLength(1);
+    expect(freecamBranch).toContain("forestMeshes?.update(freecam.x, freecam.z);\n        cliffMeshes?.update(freecam.x, freecam.z);");
+    expect(playerBranch).toContain("forestMeshes?.update(local.pos.x, local.pos.z);\n        cliffMeshes?.update(local.pos.x, local.pos.z);");
+    expect(src.match(/cliffMeshes\?\.dispose\(\)/g)).toHaveLength(1);
+  });
 });
 
 describe("the wildlife director goes quiet near the Hollow", () => {

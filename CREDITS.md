@@ -44,6 +44,20 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC0-1.0
 - **URL:** https://freesound.org/people/philberts/sounds/111393/
 
+## cliff.wall_a
+
+- **Source:** Poly Haven: Namaqualand Cliff 01
+- **Author:** Jenelle van Heerden, Rico Cilliers
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/namaqualand_cliff_01
+
+## cliff.wall_b
+
+- **Source:** Poly Haven: Namaqualand Cliff 02
+- **Author:** Dario Barresi, Rico Cilliers
+- **Licence:** CC0-1.0
+- **URL:** https://polyhaven.com/a/namaqualand_cliff_02
+
 ## clutter.boulder_a
 
 - **Source:** Poly Haven: Boulder 01

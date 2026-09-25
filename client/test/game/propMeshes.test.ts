@@ -8,6 +8,7 @@ import { bowlFor } from "../../src/sim/olympic.js";
 import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
 import { createPropMeshes, PROP_DRAWN_ELSEWHERE, PROP_MESH_RADIUS_CHUNKS } from "../../src/game/propMeshes.js";
+import { CLIFF_MATERIAL } from "../../src/sim/passes/cliffs.js";
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
 let engine: NullEngine; let scene: Scene;
@@ -53,6 +54,14 @@ describe("chunk props are drawn", () => {
   // clutter.boulder_a/b.glb for that class from the same deterministic
   // siting), but the old name — "every prop material is drawn here or
   // elsewhere" — read as if the test had been out and looked.
+  // The cliff pass's boxes bound a leaning wall the cliff meshes already
+  // draw; painted here they would stand as grey blocks around every module.
+  // Asserted by name because the scan below, round the origin of one world,
+  // need not meet a cliff at all.
+  it("leaves the cliff colliders to the cliff meshes", () => {
+    expect(PROP_DRAWN_ELSEWHERE.has(CLIFF_MATERIAL)).toBe(true);
+  });
+
   it("leaves no collider without a mesh: every prop material is drawn here, or is on the declared exemption list", () => {
     const grid = createChunkGrid(12345);
     const seen = new Set<string>();

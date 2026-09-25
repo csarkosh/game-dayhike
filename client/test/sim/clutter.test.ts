@@ -30,7 +30,7 @@ import {
   CLUTTER_JITTER,
   CLUTTER_TUNABLES,
   CLUTTER_FUNGUS_TRAIL_CLEAR, CLUTTER_FUNGUS_SLOPE_LO, CLUTTER_FUNGUS_SLOPE_HI,
-  clutterCell, clutterDensity, clutterInCell, clutterInRect,
+  clutterCell, clutterDensity, clutterInCell, clutterInRect, rockSlopeBand,
 } from "../../src/sim/clutter.js";
 import { SLOPE_HI, SLOPE_LO } from "../../src/sim/vegetation.js";
 import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
@@ -345,6 +345,32 @@ describe("clutter instances", () => {
         expect(CLUTTER_TUNABLES[k], k).toBe(v);
       }
     }
+  });
+});
+
+describe("the rock class's slope band", () => {
+  it("is the smoothstep of the squared gradient over the rock slope band", () => {
+    expect(rockSlopeBand(0)).toBe(0);
+    expect(rockSlopeBand(0.0225)).toBe(0);
+    expect(rockSlopeBand(0.1)).toBe(0.13397266676827727);
+    expect(rockSlopeBand(0.2)).toBe(0.5388540364781792);
+    expect(rockSlopeBand(0.36)).toBe(1);
+    expect(rockSlopeBand(1)).toBe(1);
+  });
+
+  it("leaves the rock density where it was, to the bit", () => {
+    // Measured before the band was split out of the rock case, so a change to
+    // how the case reads it cannot move a rock anywhere: the floor on flat
+    // ground, three slopes up the band, one past it, and three real points.
+    const at = (dx: number, dz: number): number => clutterDensity(SEED, CLUTTER_ROCK, 300.5, 40.5, { h: 50, dx, dz });
+    expect(at(0, 0)).toBe(0.4);
+    expect(at(0.2, 0.1)).toBe(0.41130144795000767);
+    expect(at(0.3, -0.25)).toBe(0.5984829141899102);
+    expect(at(0.5, 0)).toBe(0.850336960829142);
+    expect(at(1.2, 0.4)).toBe(1);
+    expect(clutterDensity(SEED, CLUTTER_ROCK, 120.5, -310.5)).toBe(0.4);
+    expect(clutterDensity(SEED, CLUTTER_ROCK, -640.25, 777.75)).toBe(0);
+    expect(clutterDensity(SEED, CLUTTER_ROCK, 1500.5, -900.5)).toBe(0.4);
   });
 });
 

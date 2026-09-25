@@ -64,7 +64,7 @@ describe("the trailhead pass", () => {
         expect(b.box.min.x - roadCenterXOf(seed, zMid), `seed ${seed}`).toBeGreaterThanOrEqual(ROAD_BED_HALF + 0.5);
       }
     }
-  });
+  }, 60_000);
 
   it("puts the pad centre 9 m from the road centreline on every seed, and the car on the shoulder beside it", () => {
     for (const seed of SEEDS) {

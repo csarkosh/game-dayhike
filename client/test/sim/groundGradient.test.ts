@@ -638,6 +638,47 @@ describe("the level id does not move", () => {
     // Re-baselined again 2026-09-24 from -608564206: CLUTTER_GRASS_CANOPY_FLOOR
     // rose from 0.15 to 0.5, an existing CLUTTER_TUNABLES value, so a peer on
     // the old floor scatters grass differently under every closed canopy.
-    expect(passHash()).toBe(-1330924340);
+    // Re-baselined 2026-09-25 from -1330924340: the cliff modules' placement
+    // moved into the simulation, and every constant that steers where a
+    // module stands — CLIFF_CELL, CLIFF_JITTER, CLIFF_STAND_MARGIN,
+    // CLIFF_ROCK_MIN, CLIFF_DENSITY, the scale band, the yaw jitter and its
+    // tangent, CLIFF_SINK, CLIFF_LONG_NEIGHBOURS, the lean cap and its cosine
+    // and sine, CLIFF_PROBE_SPAN, the run's spacing, length and reach, the
+    // field's salt and draw index, and the two models' sizes — joins the
+    // clutter pass's tunables as CLIFF_TUNABLES. probeDigest does not move
+    // (no pass emits a cliff collider yet); registryDigest does. Deliberate:
+    // a wall one peer sees and another does not is a different world, so an
+    // old client cannot join a new host.
+    // Re-baselined 2026-09-25 from -1705178804: the cliff modules became
+    // solid. Both halves move. registryDigest: CLIFF_TUNABLES left the
+    // clutter pass for the new pass 10, cliffs, which declares them with
+    // CLIFF_BOX_STEP; the field's salt CLIFF_SALT moved 0xc11f -> 0xc1f0 (it
+    // had duplicated the terrain's CLIFF_PHASE_SALT); and the draw slots
+    // CLIFF_DRAW_DENSITY, CLIFF_DRAW_X and CLIFF_DRAW_Z joined
+    // CLIFF_DRAW_RUN in the table. probeDigest: pass 10 emits a row of
+    // collision boxes per module, and the probe gained chunk [-1, -15],
+    // which holds three of them for PROBE_SEED. Deliberate: a peer without
+    // the colliders walks through walls another peer stops at, so an old
+    // client cannot join a new host.
+    // Re-baselined 2026-09-25 from 149824213: each cliff box now bounds the
+    // module's whole drawn solid, from the model's base up, not only the
+    // part above the sink line — the lean drops the front of the base below
+    // the sunk origin, into the open where the ground falls away. No
+    // tunable moves, so registryDigest is unchanged; probeDigest moves,
+    // because every box in probe chunk [-1, -15] starts lower.
+    // Re-baselined 2026-09-25 from 1586641572: the cliff models' base sits a
+    // little below their origin, and the colliders now bound the model from
+    // there (CLIFF_MODEL_BASE_A = -0.42, CLIFF_MODEL_BASE_B = -0.16, new
+    // CLIFF_TUNABLES keys, so registryDigest moves) to its true top rather
+    // than from the origin to the full extent above it (so every cliff box
+    // in probe chunk [-1, -15] moves, and probeDigest with it).
+    // Re-baselined 2026-09-25 from 466850785: each cliff box's uphill face is
+    // moved into the hill until the hillside along it stands at or above the
+    // box's top, so a hiker sliding down behind a wall lands on its top
+    // rather than in the V against its back. The pass declares
+    // CLIFF_BURY_STEP, CLIFF_BURY_MAX and CLIFF_BURY_SAMPLE (registryDigest
+    // moves), and the boxes in probe chunk [-1, -15] grow uphill
+    // (probeDigest moves).
+    expect(passHash()).toBe(923719637);
   });
 });

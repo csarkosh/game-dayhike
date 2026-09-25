@@ -61,6 +61,8 @@ describe("the wall in a forest world", { timeout: 120_000 }, () => {
       expect(p.pos.x - roadX(p.pos.z)).toBeGreaterThanOrEqual(ROAD_WALL_U - 1e-6);
       expect(CAR_ROAD_U - CAR_HALF.x).toBeCloseTo(ROAD_BED_HALF + 0.5, 9);
     }
-    expect(GEN_VERSION).toBe(5);
+    // 5 was the wall at the road; 6, the ground's stick standing a hull on a
+    // box top. Either way no peer from before the wall can join.
+    expect(GEN_VERSION).toBe(6);
   });
 });

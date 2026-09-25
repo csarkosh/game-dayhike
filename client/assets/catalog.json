@@ -68,6 +68,16 @@
       "output": "models/clutter.boulder_b.glb"
     },
     {
+      "id": "cliff.wall_a",
+      "kind": "environment",
+      "output": "models/cliff.wall_a.glb"
+    },
+    {
+      "id": "cliff.wall_b",
+      "kind": "environment",
+      "output": "models/cliff.wall_b.glb"
+    },
+    {
       "id": "clutter.rock_a",
       "kind": "prop",
       "output": "models/clutter.rock_a.glb"

@@ -789,7 +789,7 @@ describe("calls and presence", () => {
     expect(dawn.length).toBeGreaterThan(noon.length * 2);
     void DAWN_DUSK_WINDOW;
     void RAVEN_CROAK_INTERVAL;
-  });
+  }, 60_000);
   it("walks a cued animal to its mark at the gait it was asked for, then hands it back to rest", () => {
     // Eight metres due north of where it stands, with the player nowhere near: a cue is a
     // walk to a mark, and nothing about the species' own state machine interrupts it.

@@ -414,6 +414,15 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/** How far up the rock class's slope band a squared gradient `dx² + dz²`
+ * stands: 0 at `CLUTTER_ROCK_SLOPE_LO` and below, 1 at `CLUTTER_ROCK_SLOPE_HI`
+ * and above, a smoothstep between. The rock props scale their density by it
+ * (over the `CLUTTER_ROCK_BASE` floor), and the cliff modules read it as the
+ * rock their ground needs (`cliffField.ts`), so the two stand on one band. */
+export function rockSlopeBand(slopeSq: number): number {
+  return smoothstep(CLUTTER_ROCK_SLOPE_LO * CLUTTER_ROCK_SLOPE_LO, CLUTTER_ROCK_SLOPE_HI * CLUTTER_ROCK_SLOPE_HI, slopeSq);
+}
+
 /** The trail factor of the grass gate, pure: 0 on the bed, 1 from FAR out and
  * for Infinity (outside the bowl, or a variant without a trail). */
 export function grassTrailGate(rt: number): number {
@@ -546,11 +555,7 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
     case CLUTTER_ROCK: {
       if (s.h < CLUTTER_ROCK_ALT_LO || r < CLUTTER_ROCK_ROAD_NEAR) return 0;
       const alt = smoothstep(CLUTTER_ROCK_ALT_LO, CLUTTER_ROCK_ALT_LO + CLUTTER_ROCK_ALT_LO_FADE, s.h);
-      const grade = CLUTTER_ROCK_BASE + (1 - CLUTTER_ROCK_BASE) * smoothstep(
-        CLUTTER_ROCK_SLOPE_LO * CLUTTER_ROCK_SLOPE_LO,
-        CLUTTER_ROCK_SLOPE_HI * CLUTTER_ROCK_SLOPE_HI,
-        slopeSq,
-      );
+      const grade = CLUTTER_ROCK_BASE + (1 - CLUTTER_ROCK_BASE) * rockSlopeBand(slopeSq);
       const road = smoothstep(CLUTTER_ROCK_ROAD_NEAR, CLUTTER_ROCK_ROAD_FAR, r);
       return alt * grade * road;
     }
