@@ -190,10 +190,10 @@ function speedOf(h: EnemyState): number {
  *   sidestep along the road can never read as progress toward it. Inside,
  *   therefore, the sidestep is timed rather than held: UNSTICK_SECONDS of
  *   strafe, then straight for the edge again. Boulders and cliffs are kept
- *   off the corridor, so the only things to be pinned on are the three road
- *   props, the widest being the car, 4.6 m along the road; one strafe from a
- *   standstill covers about 4.1 m, and the side never changes, so the second
- *   clears it where the first did not.
+ *   off the corridor, so what stands in it is trunks from 12 m out, sign
+ *   posts and the three road props, the widest being the car, 4.6 m along
+ *   the road; one strafe from a standstill covers about 4.1 m, and the side
+ *   never changes, so the second clears it where the first did not.
  *
  * Returns whether it moved (or had nowhere to move to): false is a step
  * refused at the treeline, which `followRoute` reads.
