@@ -12,7 +12,7 @@ export default tseslint.config(
   // preload must be CommonJS, which the repo's no-require-imports rule forbids.
   // desktop/** is the standalone desktop shell package: Electron's main is
   // CommonJS, same as above, and the shell has its own node --test suite.
-  { ignores: ["**/dist/**", "**/node_modules/**", ".claude/worktrees/**", "client/public/libs/**", "tools/electron-spike/**", "desktop/**"] },
+  { ignores: ["**/dist/**", "**/node_modules/**", "site/**", ".claude/worktrees/**", "client/public/libs/**", "tools/electron-spike/**", "desktop/**"] },
   ...tseslint.configs.recommended,
   {
     files: ["client/src/sim/**/*.ts"],
