@@ -5,16 +5,24 @@
  * and no paint breaks a silhouette. This field seats rock-wall models on
  * ground that is BOTH rock and too steep to stand on, so the faces grow
  * ledges and the skyline breaks. The one rule everything here serves: a
- * module never stands where a foot can go. The gate is the simulation's own
- * stand limit (`GROUND_NORMAL_Y`) with a margin, read at the module's centre
- * and at the four corners of its footprint, so sight and collision never
- * disagree underfoot. Renderer-only: it reads the simulation and writes
- * nothing back. Nothing here may migrate into sim/.
+ * module never stands where a foot can go — and a module is a solid, not a
+ * base plane. The gate is the simulation's own stand limit
+ * (`GROUND_NORMAL_Y`) with a margin, read at the module's centre and then
+ * under its whole above-ground body — the corners of that box, and the edge
+ * midpoints of its longer axes, the top edge among them, which the lean
+ * throws furthest downhill; so sight and collision never disagree underfoot.
+ * The probes bound the solid at their own spacing and no finer, and what is
+ * left over is measured rather than assumed (`cliffField.test.ts`, and §11 of
+ * the design). Renderer-only: it reads the simulation and writes nothing
+ * back. Nothing here may migrate into sim/.
  */
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+
 import { GROUND_NORMAL_Y } from "../sim/constants.js";
 import { CLUTTER_ROCK, groundCover, type ClutterInstance } from "../sim/clutter.js";
 import { elevationSampleAt, type TerrainSample } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
+import { seatOnGroundCapped } from "./groundTilt.js";
 import { latticeHash } from "./groundHexParams.js";
 import type { QualityTier } from "./quality.js";
 import { classifySurface } from "./terrainSurface.js";
@@ -57,6 +65,99 @@ export const CLIFF_MODELS: readonly string[] = ["models/cliff.wall_a.glb", "mode
 export const CLIFF_MODEL_WIDTH: readonly number[] = [8.27, 20.23];
 export const CLIFF_MODEL_DEPTH: readonly number[] = [4.38, 6.58];
 export const CLIFF_MODEL_HEIGHT: readonly number[] = [4.96, 7.17];
+/** How far the scanned face itself reaches from the model's origin along +Z
+ * at scale 1 — the front of the depth, which the origin does not sit in the
+ * middle of. The lean throws the top of this face downhill, so it is what the
+ * top-edge probes are measured from. */
+export const CLIFF_MODEL_FRONT: readonly number[] = [0.77, 2.19];
+
+/** How far a module may lean toward the ground normal (rad). A cliff face
+ * stands AGAINST a steep hillside rather than lying on it, and the lean is
+ * what throws the module's upper body out over ground its base never touched:
+ * seated on the full normal, the long model at the top of its scale band puts
+ * its top-front edge 8.5 m horizontally downhill of its origin on a 45° face,
+ * out past its own footprint and over any bench at the foot of the riser. A
+ * 20° lean is still enough to bed a wall into the hill, and it keeps the
+ * solid close enough to its own footprint for the probes below to follow. */
+export const CLIFF_TILT_MAX = 0.35;
+
+/** The lean a module takes on ground of gradient (dx, dz): the slope's own
+ * angle, capped. The field and the shell both seat by `seatOnGroundCapped`
+ * at `CLIFF_TILT_MAX`, so the solid the probes bound is the solid that is
+ * drawn; this is that angle on its own, for anything that needs to reason
+ * about the reach rather than the rotation. */
+export function cliffLean(dx: number, dz: number): number {
+  return Math.min(Math.acos(1 / Math.sqrt(1 + dx * dx + dz * dz)), CLIFF_TILT_MAX);
+}
+
+/** How far apart the probes over a module's solid may be, as a fraction of
+ * the model's own longest dimension: every local axis is sampled at both ends
+ * and again wherever that would leave a wider gap, which is the eight corners
+ * of the solid plus a midpoint on its longer axes. */
+export const CLIFF_PROBE_SPAN = 0.5;
+
+const probeRotation = new Quaternion();
+const probeLocal = new Vector3();
+const probeWorld = new Vector3();
+
+/**
+ * The ground under every probe point of a module's above-ground solid is
+ * steep rock: the box `x ∈ [−W/2, W/2]`, `y ∈ [CLIFF_SINK·H, H]`,
+ * `z ∈ [−(D − F), F]` at `scale`, seated exactly as the shell seats it
+ * (`seatOnGroundCapped`) and dropped straight down.
+ *
+ * The origin sits at the model's base and inside its depth, not at the centre
+ * of either: the footprint runs from `−(D − F)` behind the origin to the
+ * scanned face's own reach `F` in front, and the lean turns the solid about
+ * that origin, which the sink buries `CLIFF_SINK·H·scale` below the ground —
+ * so the top of the box swings `H·scale·sin θc` downhill, not
+ * `(1 − CLIFF_SINK)·H·scale·sin θc`. Probing the box itself keeps both facts
+ * in one place instead of in a formula that has to restate them.
+ *
+ * The probes bound the solid at their own spacing and no finer: the gate is a
+ * per-point reading of terrain that can dip in and out of the stand limit
+ * inside a footprint metres across, so ground between two open probes is not
+ * guaranteed open. `cliffField.test.ts` sweeps the whole box at 1 m and pins
+ * how much of it still overhangs; §11 of the design records what closing that
+ * would cost.
+ */
+function solidOpen(
+  seed: number,
+  x: number,
+  z: number,
+  yaw: number,
+  dx: number,
+  dz: number,
+  scale: number,
+  variant: number,
+): boolean {
+  const w = (CLIFF_MODEL_WIDTH[variant] as number) * scale;
+  const h = (CLIFF_MODEL_HEIGHT[variant] as number) * scale;
+  const d = (CLIFF_MODEL_DEPTH[variant] as number) * scale;
+  const f = (CLIFF_MODEL_FRONT[variant] as number) * scale;
+  const step = Math.max(w, h, d) * CLIFF_PROBE_SPAN;
+  const x0 = -w / 2, xSpan = w / 2 - x0;
+  const y0 = CLIFF_SINK * h, ySpan = h - y0;
+  const z0 = -(d - f), zSpan = f - z0;
+  const nx = Math.max(1, Math.ceil(xSpan / step));
+  const ny = Math.max(1, Math.ceil(ySpan / step));
+  const nz = Math.max(1, Math.ceil(zSpan / step));
+  seatOnGroundCapped(yaw, dx, dz, CLIFF_TILT_MAX, probeRotation);
+  for (let i = 0; i <= nx; i++) {
+    for (let j = 0; j <= ny; j++) {
+      for (let k = 0; k <= nz; k++) {
+        // The faces of the box only: a point with every index strictly inside
+        // is inside the solid, and the ground under it is bounded by the face
+        // points around it.
+        if (i > 0 && i < nx && j > 0 && j < ny && k > 0 && k < nz) continue;
+        probeLocal.copyFromFloats(x0 + (xSpan * i) / nx, y0 + (ySpan * j) / ny, z0 + (zSpan * k) / nz);
+        probeLocal.applyRotationQuaternionToRef(probeRotation, probeWorld);
+        if (!cliffGate(seed, x + probeWorld.x, z + probeWorld.z).open) return false;
+      }
+    }
+  }
+  return true;
+}
 
 /** One of a cell's draws: the lattice hash on salted indices. The salts
  * (307, 331) are this field's own, so its draws never correlate with the
@@ -100,12 +201,12 @@ const NEIGHBOURS: readonly (readonly [number, number])[] = [
 
 /**
  * The module in cell (ci, cj), or null. Shaped as a `ClutterInstance` of the
- * rock class so `instanceMatrixFor` serves it unchanged: rock is in that
- * file's tilted set, so the module is seated on the ground normal — a wall
- * bedded into a 45° face leans back with it, as an outcrop does — and it is
- * outside the trampled set, so the trample frame is the identity. The yaw
- * rides in `hash` as a fraction of a turn, which is how that function reads
- * it. `groundH` already carries the sink.
+ * rock class so the clutter's own per-instance writers serve it, with the yaw
+ * riding in `hash` as a fraction of a turn and the sink already in `groundH`.
+ * The matrix is NOT the clutter's: a lying rock is seated on the full ground
+ * normal, and a wall that lay back with a 45° face would overhang the ground
+ * at its foot, so the shell composes the capped lean instead
+ * (`cliffInstanceMatrix`, the same `cliffLean` the probes above use).
  */
 export function cliffCell(seed: number, ci: number, cj: number): ClutterInstance | null {
   if (cellDraw(ci, cj, 6) >= CLIFF_DENSITY) return null;
@@ -119,29 +220,15 @@ export function cliffCell(seed: number, ci: number, cj: number): ClutterInstance
   const scale = CLIFF_SCALE[0] + (CLIFF_SCALE[1] - CLIFF_SCALE[0]) * cellDraw(ci, cj, 3);
   const yaw = cliffYaw(g.s) + CLIFF_YAW_JITTER * (2 * cellDraw(ci, cj, 4) - 1);
   const hash = ((yaw / (Math.PI * 2)) % 1 + 1) % 1;
-  /** All four corners of a module of `variant` at this scale and yaw pass
-   * the gate — the module's extent, since the sink keeps the rest of it
-   * below the surface it stands on. */
-  const footprintOpen = (variant: number): boolean => {
-    const hw = (CLIFF_MODEL_WIDTH[variant] as number) * scale / 2;
-    const hd = (CLIFF_MODEL_DEPTH[variant] as number) * scale / 2;
-    const rx = Math.cos(yaw), rz = -Math.sin(yaw);
-    const fx = Math.sin(yaw), fz = Math.cos(yaw);
-    return (
-      cliffGate(seed, x + rx * hw, z + rz * hw).open &&
-      cliffGate(seed, x - rx * hw, z - rz * hw).open &&
-      cliffGate(seed, x + fx * hd, z + fz * hd).open &&
-      cliffGate(seed, x - fx * hd, z - fz * hd).open
-    );
-  };
-  // The long module where the face is long; where its own corners would
+  const fits = (variant: number): boolean => solidOpen(seed, x, z, yaw, g.s.dx, g.s.dz, scale, variant);
+  // The long module where the face is long; where its own solid would
   // overhang walkable ground, the short one instead, and where even that
   // would, nothing.
   let variant = steepNeighbours >= CLIFF_LONG_NEIGHBOURS ? CLIFF_WALL_B : CLIFF_WALL_A;
-  if (!footprintOpen(variant)) {
+  if (!fits(variant)) {
     if (variant === CLIFF_WALL_A) return null;
     variant = CLIFF_WALL_A;
-    if (!footprintOpen(variant)) return null;
+    if (!fits(variant)) return null;
   }
   return {
     cls: CLUTTER_ROCK,
@@ -231,7 +318,8 @@ const COLLECTOR_SWEEP_SIZE = 16384;
  * Memoising counterpart to `collectCliffs`: `cliffCell` is pure in (seed,
  * ci, cj), so a rebuild after a one-cell move re-reads only the disc's
  * leading edge instead of every cell in reach — a cell costs a terrain
- * sample and a surface classification, five more for the half that qualify.
+ * sample and a surface classification, about twenty more for the half that
+ * qualify (four neighbours and a dozen-odd probes over the solid).
  */
 export function createCliffCollector(seed: number): CliffCollector {
   const cache = new Map<number, ClutterInstance | null>();

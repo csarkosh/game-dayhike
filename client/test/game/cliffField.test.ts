@@ -1,14 +1,18 @@
 import { describe, it, expect } from "vitest";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import "../../src/sim/passes/index.js";
 import { GROUND_NORMAL_Y } from "../../src/sim/constants.js";
 import { CLUTTER_ROCK, type ClutterInstance } from "../../src/sim/clutter.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
 import {
-  CLIFF_BUDGET, CLIFF_CELL, CLIFF_MODEL_DEPTH, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_WIDTH, CLIFF_PAD,
-  CLIFF_RINGS, CLIFF_ROCK_MIN, CLIFF_SCALE, CLIFF_SINK, CLIFF_STAND_MARGIN, CLIFF_WALL_A,
-  CLIFF_WALL_B, CLIFF_YAW_JITTER, cliffBands, cliffCell, cliffCellPoint, cliffGate, cliffOrigin,
-  cliffYaw, collectCliffs, createCliffCollector,
+  CLIFF_BUDGET, CLIFF_CELL, CLIFF_DENSITY, CLIFF_LONG_NEIGHBOURS, CLIFF_MODEL_DEPTH,
+  CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_WIDTH, CLIFF_PAD, CLIFF_PROBE_SPAN,
+  CLIFF_RINGS, CLIFF_ROCK_MIN, CLIFF_SCALE, CLIFF_SINK, CLIFF_STAND_MARGIN, CLIFF_TILT_MAX, CLIFF_WALL_A,
+  CLIFF_WALL_B, CLIFF_YAW_JITTER, cliffBands, cliffCell, cliffCellPoint, cliffGate, cliffLean,
+  cliffOrigin, cliffYaw, collectCliffs, createCliffCollector,
 } from "../../src/game/cliffField.js";
+import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
+import { latticeHash } from "../../src/game/groundHexParams.js";
 
 /** Seed 1's worst 400 m disc for steep rock (5,549 four-metre cells), from
  * the census in the design's §5. */
@@ -53,33 +57,193 @@ describe("cliffGate", () => {
   });
 });
 
+/** Points on the faces of the module's above-ground box, in the model's own
+ * frame at `scale`, no further apart than `step`: x across the width, y from
+ * the sink line to the top, z from the back of the depth to the scanned
+ * face's own reach (`CLIFF_MODEL_FRONT`), which is where the origin sits
+ * inside the depth. */
+function boxShell(variant: number, scale: number, step: number): Vector3[] {
+  const w = (CLIFF_MODEL_WIDTH[variant] as number) * scale;
+  const h = (CLIFF_MODEL_HEIGHT[variant] as number) * scale;
+  const d = (CLIFF_MODEL_DEPTH[variant] as number) * scale;
+  const f = (CLIFF_MODEL_FRONT[variant] as number) * scale;
+  const span = (a: number, b: number): number[] => {
+    const n = Math.max(1, Math.ceil((b - a) / step));
+    const out: number[] = [];
+    for (let i = 0; i <= n; i++) out.push(a + ((b - a) * i) / n);
+    return out;
+  };
+  const xs = span(-w / 2, w / 2), ys = span(CLIFF_SINK * h, h), zs = span(-(d - f), f);
+  const pts: Vector3[] = [];
+  for (const [i, x] of xs.entries()) {
+    for (const [j, y] of ys.entries()) {
+      for (const [k, z] of zs.entries()) {
+        const onFace = i === 0 || i === xs.length - 1 || j === 0 || j === ys.length - 1
+          || k === 0 || k === zs.length - 1;
+        if (onFace) pts.push(new Vector3(x, y, z));
+      }
+    }
+  }
+  return pts;
+}
+
+/** The 1 m sweep grid: what the invariant is measured on. */
+function solidBoxFaceGrid(variant: number, scale: number): Vector3[] {
+  return boxShell(variant, scale, 1);
+}
+
+/** The lattice the field itself probes: `CLIFF_PROBE_SPAN` of the model's
+ * longest dimension, which is its corners plus a midpoint on its longer
+ * axes. */
+function solidProbeLattice(variant: number, scale: number): Vector3[] {
+  const longest = Math.max(
+    (CLIFF_MODEL_WIDTH[variant] as number),
+    (CLIFF_MODEL_HEIGHT[variant] as number),
+    (CLIFF_MODEL_DEPTH[variant] as number),
+  ) * scale;
+  return boxShell(variant, scale, longest * CLIFF_PROBE_SPAN);
+}
+
 describe("cliffCell", () => {
-  it("never stands where a foot can go: every footprint probe is steep rock", () => {
-    // 200 worlds, every module within 400 m of the origin's neighbourhood
-    // on each, probed at its centre and its four footprint points with the
-    // gate itself. Red until the footprint check exists: a module a cell
-    // wide can straddle the edge of a face.
-    let modules = 0;
+  it("measures how much of the solid the probes leave uncovered", () => {
+    // 200 worlds, every module within 400 m of the origin's neighbourhood on
+    // each, swept on a 1 m grid over the faces of its above-ground box,
+    // seated exactly as the field probes and the shell draw it.
+    //
+    // These three numbers are a MEASUREMENT, not a bound the placement meets
+    // by construction. The probes read the box's corners and the midpoints of
+    // its longer axes; the ground between two open probes can still dip back
+    // over the stand limit, and where it does, part of the module's solid
+    // hangs over ground the probes never cleared. `overhanging` counts the
+    // modules with any such point; `overWalkable` counts the ones where that
+    // ground is at or above the simulation's own stand limit — the modules
+    // whose solid is over ground a player can stand on, which is the part
+    // that matters to "sight and collision never disagree underfoot".
+    //
+    // Pinned so the residue cannot grow unnoticed: a placement change that
+    // drives any of them up fails here and has to say why. Driving them to
+    // zero is a placement-or-collision decision, open in §11 of
+    // `docs/rendering/2026-09-24-cliff-modules-design.md` — probing this
+    // finely at rebuild costs about forty times what the field pays now.
+    let modules = 0, overhanging = 0, overWalkable = 0;
+    const rotated = new Vector3();
+    const q = new Quaternion();
     for (let seed = 1; seed <= 200; seed++) {
       for (const m of modulesIn(seed, 0, 0, 400)) {
         modules++;
-        const yaw = m.hash * Math.PI * 2;
-        const hw = (CLIFF_MODEL_WIDTH[m.variant] as number) * m.scale / 2;
-        const hd = (CLIFF_MODEL_DEPTH[m.variant] as number) * m.scale / 2;
-        const rx = Math.cos(yaw), rz = -Math.sin(yaw);
-        const fx = Math.sin(yaw), fz = Math.cos(yaw);
-        const probes: [number, number][] = [
-          [m.x, m.z],
-          [m.x + rx * hw, m.z + rz * hw], [m.x - rx * hw, m.z - rz * hw],
-          [m.x + fx * hd, m.z + fz * hd], [m.x - fx * hd, m.z - fz * hd],
-        ];
-        for (const [px, pz] of probes) expect(cliffGate(seed, px, pz).open, `seed ${seed} at ${px},${pz}`).toBe(true);
+        seatOnGroundCapped(m.hash * Math.PI * 2, m.groundDx, m.groundDz, CLIFF_TILT_MAX, q);
+        let hangs = false, walkable = false;
+        for (const p of solidBoxFaceGrid(m.variant, m.scale)) {
+          p.applyRotationQuaternionToRef(q, rotated);
+          const g = cliffGate(seed, m.x + rotated.x, m.z + rotated.z);
+          if (g.open) continue;
+          hangs = true;
+          if (normalY(g.s.dx, g.s.dz) >= GROUND_NORMAL_Y) walkable = true;
+        }
+        if (hangs) overhanging++;
+        if (walkable) overWalkable++;
       }
     }
-    // Teeth: the sweep found faces to test (measured: 839 modules across
-    // 200 worlds at a 12 m lattice and density 0.5).
-    expect(modules).toBeGreaterThan(300);
+    expect(modules).toBe(406);
+    expect(overhanging).toBe(65);
+    expect(overWalkable).toBe(31);
   }, 300_000);
+
+  it("stands on ground that is steep rock under every probe of its solid", () => {
+    // What the placement does guarantee, asserted over the probe set itself:
+    // every point of the box lattice the field reads — its corners and the
+    // midpoints of its longer axes — is open under the same seating the shell
+    // draws with. 40 worlds; the residue between those probes is the case
+    // above.
+    let modules = 0, probes = 0;
+    const rotated = new Vector3();
+    const q = new Quaternion();
+    for (let seed = 1; seed <= 40; seed++) {
+      for (const m of modulesIn(seed, 0, 0, 400)) {
+        modules++;
+        seatOnGroundCapped(m.hash * Math.PI * 2, m.groundDx, m.groundDz, CLIFF_TILT_MAX, q);
+        for (const p of solidProbeLattice(m.variant, m.scale)) {
+          p.applyRotationQuaternionToRef(q, rotated);
+          const px = m.x + rotated.x, pz = m.z + rotated.z;
+          probes++;
+          expect(cliffGate(seed, px, pz).open, `seed ${seed} module ${m.x},${m.z} at ${px},${pz}`).toBe(true);
+        }
+      }
+    }
+    // Teeth: the probe lattice is the dozen-odd points it claims to be, on
+    // enough modules to mean something (measured: 109 modules, 1,632 probes,
+    // 14.97 apiece).
+    expect(modules).toBeGreaterThan(40);
+    expect(probes / modules).toBeGreaterThan(10);
+    expect(probes / modules).toBeLessThan(20);
+  }, 300_000);
+
+  it("the base probes alone would hang a top edge over walkable ground", () => {
+    // Why the solid is probed at all, counted on one disc. The old rule — the
+    // centre and the four base edge midpoints — is recomputed here from the
+    // field's own draws, and each module it would place is asked where its
+    // top-front edge lands: `s · (H·sin θc + F·cos θc)` straight ahead of the
+    // origin, the lean turning about the sunk origin so the whole height
+    // swings forward. Some of those points are ground a player can stand on,
+    // which is the overhang the solid's own probes now refuse.
+    const cellDraw = (ci: number, cj: number, salt: number): number => latticeHash(ci + 307 * salt, cj + 331 * salt);
+    let placedByOldRule = 0, overWalkable = 0;
+    const r = 400;
+    for (let cj = Math.floor((WORST.z - r) / CLIFF_CELL); cj <= Math.floor((WORST.z + r) / CLIFF_CELL); cj++) {
+      for (let ci = Math.floor((WORST.x - r) / CLIFF_CELL); ci <= Math.floor((WORST.x + r) / CLIFF_CELL); ci++) {
+        if (cellDraw(ci, cj, 6) >= CLIFF_DENSITY) continue;
+        const { x, z } = cliffCellPoint(ci, cj);
+        if (Math.hypot(x - WORST.x, z - WORST.z) >= r) continue;
+        const g = cliffGate(WORST.seed, x, z);
+        if (!g.open) continue;
+        let steepNeighbours = 0;
+        for (const [ox, oz] of [[CLIFF_CELL, 0], [-CLIFF_CELL, 0], [0, CLIFF_CELL], [0, -CLIFF_CELL]] as const) {
+          if (cliffGate(WORST.seed, x + ox, z + oz).open) steepNeighbours++;
+        }
+        const scale = CLIFF_SCALE[0] + (CLIFF_SCALE[1] - CLIFF_SCALE[0]) * cellDraw(ci, cj, 3);
+        const yaw = cliffYaw(g.s) + CLIFF_YAW_JITTER * (2 * cellDraw(ci, cj, 4) - 1);
+        const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+        const fx = Math.sin(yaw), fz = Math.cos(yaw);
+        const baseOpen = (variant: number): boolean => {
+          const hw = (CLIFF_MODEL_WIDTH[variant] as number) * scale / 2;
+          const hd = (CLIFF_MODEL_DEPTH[variant] as number) * scale / 2;
+          return (
+            cliffGate(WORST.seed, x + rx * hw, z + rz * hw).open
+            && cliffGate(WORST.seed, x - rx * hw, z - rz * hw).open
+            && cliffGate(WORST.seed, x + fx * hd, z + fz * hd).open
+            && cliffGate(WORST.seed, x - fx * hd, z - fz * hd).open
+          );
+        };
+        let variant = steepNeighbours >= CLIFF_LONG_NEIGHBOURS ? CLIFF_WALL_B : CLIFF_WALL_A;
+        if (!baseOpen(variant)) {
+          if (variant === CLIFF_WALL_A) continue;
+          variant = CLIFF_WALL_A;
+          if (!baseOpen(variant)) continue;
+        }
+        placedByOldRule++;
+        const lean = cliffLean(g.s.dx, g.s.dz);
+        const height = (CLIFF_MODEL_HEIGHT[variant] as number);
+        const front = (CLIFF_MODEL_FRONT[variant] as number);
+        const reach = scale * (height * Math.sin(lean) + front * Math.cos(lean));
+        const s = elevationSampleAt(WORST.seed, x + fx * reach, z + fz * reach);
+        if (normalY(s.dx, s.dz) >= GROUND_NORMAL_Y) overWalkable++;
+      }
+    }
+    expect(placedByOldRule).toBeGreaterThan(50);
+    expect(overWalkable).toBeGreaterThan(0);
+  }, 300_000);
+
+  it("leans no further than the cap, and by the slope itself below it", () => {
+    expect(CLIFF_TILT_MAX).toBe(0.35);
+    for (const [dx, dz] of [[0, 0], [0.1, -0.05], [0.4, 0], [1, 0], [-1.4, 0.9]] as const) {
+      const slope = Math.acos(normalY(dx, dz));
+      expect(cliffLean(dx, dz)).toBeCloseTo(Math.min(slope, CLIFF_TILT_MAX), 12);
+    }
+    // Every module the field places is seated within the cap.
+    for (const m of modulesIn(WORST.seed, WORST.x, WORST.z, 300)) {
+      expect(cliffLean(m.groundDx, m.groundDz)).toBeLessThanOrEqual(CLIFF_TILT_MAX);
+    }
+  });
 
   it("is a pure function of (seed, cell) and differs by world", () => {
     let placed = 0, differ = 0;
@@ -151,15 +315,16 @@ describe("cliffCell", () => {
         if (cliffCell(WORST.seed, ci, cj) !== null) placed++;
       }
     }
-    // The density draw alone keeps half of them; the footprint check then
-    // drops the rest, and drops far more than a density-only estimate would
-    // suggest, because much of this disc's steep-rock area is narrow ridges
-    // rather than one broad face — a footprint half-width of a few metres
-    // already overruns a ridge that narrow on one side or the other.
-    // Measured on this disc: 128 placed of 555 qualifying (≈ 0.23).
+    // The density draw alone keeps half of them; the eight probes then drop
+    // the rest, and drop far more than a density-only estimate would suggest,
+    // because much of this disc's steep-rock area is narrow ridges rather
+    // than one broad face — a footprint half-width of a few metres already
+    // overruns a ridge that narrow on one side or the other, and the top
+    // edge reaches metres further downhill again.
+    // Measured on this disc: 88 placed of 555 qualifying (≈ 0.16).
     expect(qualifying).toBeGreaterThan(200);
-    expect(placed / qualifying).toBeGreaterThan(0.2);
-    expect(placed / qualifying).toBeLessThan(0.28);
+    expect(placed / qualifying).toBeGreaterThan(0.14);
+    expect(placed / qualifying).toBeLessThan(0.18);
   });
 });
 
@@ -200,12 +365,13 @@ describe("collectCliffs and the collector", () => {
     // collectCliffs's own pad (CLIFF_PAD) reaches past rings[2] so the cache
     // is warm before a module needs a band; cliffBands drops anything at or
     // past rings[2] instead of putting it in the far bucket early. Measured
-    // on this disc: collectCliffs(seed, x, z, rings[2]) returns 132 modules,
-    // 4 of them sitting in that [rings[2], rings[2] + CLIFF_PAD) collar, so
-    // the three bands hold 128, not all 132.
+    // on this disc: collectCliffs(seed, x, z, rings[2]) returns 89 modules and
+    // none of them falls in that [rings[2], rings[2] + CLIFF_PAD) collar this
+    // time, so the three bands hold all 89 — the collar is a property of the
+    // reach, not of the disc, and the filter below is what pins it.
     const inReach = all.filter((m) => Math.hypot(m.x - o.x, m.z - o.z) < rings[2]);
-    expect(all.length).toBe(132);
-    expect(inReach.length).toBe(128);
+    expect(all.length).toBe(89);
+    expect(inReach.length).toBe(89);
     expect(bands[0].length + bands[1].length + bands[2].length).toBe(inReach.length);
     const seen = new Set<ClutterInstance>();
     for (const [lod, band] of bands.entries()) {
@@ -267,7 +433,7 @@ describe("collectCliffs and the collector", () => {
     const got = c.collect(1100, z, reach);
     expect(c.size - beforeFar).toBe(4900);
     expect(got).toEqual(collectCliffs(seed, 1100, z, reach));
-    expect(got.length).toBe(132);
+    expect(got.length).toBe(89);
   }, 300_000);
 
   it("exercises the near LOD ring at a scarp with steep rock close to the eye", () => {
@@ -279,9 +445,9 @@ describe("collectCliffs and the collector", () => {
     const o = cliffOrigin(x, z);
     const all = collectCliffs(seed, x, z, rings[2]);
     const bands = cliffBands(all, o.x, o.z, rings);
-    expect(all.length).toBe(178);
+    expect(all.length).toBe(172);
     expect(bands[0].length).toBe(17);
-    expect(bands[1].length).toBe(53);
-    expect(bands[2].length).toBe(103);
+    expect(bands[1].length).toBe(50);
+    expect(bands[2].length).toBe(100);
   }, 300_000);
 });

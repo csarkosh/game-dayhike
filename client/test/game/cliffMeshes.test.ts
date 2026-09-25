@@ -3,18 +3,38 @@ import { readFileSync } from "node:fs";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { AssetContainer } from "@babylonjs/core/assetContainer.js";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import "../../src/sim/passes/index.js";
+import type { ClutterInstance } from "../../src/sim/clutter.js";
 import {
   CLIFF_CELL, CLIFF_FADE_BAND, CLIFF_MODEL_DEPTH, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_WIDTH, CLIFF_MODELS,
-  CLIFF_RINGS, cliffBands, cliffOrigin, collectCliffs,
+  CLIFF_RINGS, CLIFF_SINK, CLIFF_TILT_MAX, cliffBands, cliffOrigin, collectCliffs,
 } from "../../src/game/cliffField.js";
 import { CLIFF_LOD_NODES, cliffMeshName, createCliffMeshes } from "../../src/game/cliffMeshes.js";
-import { instanceMatrixFor, trampleFrame, writeFoliage } from "../../src/game/clutterMeshes.js";
+import { trampleFrame, writeFoliage } from "../../src/game/clutterMeshes.js";
+import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
 import { CliffTintPlugin } from "../../src/game/cliffTintPlugin.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
+
+/** Counts the shell's tint writes, so the per-instance memo is observable:
+ * the wrapper stands between `cliffMeshes.ts` and the real writer. */
+const spied = vi.hoisted(() => ({ foliage: 0 }));
+vi.mock("../../src/game/clutterMeshes.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/game/clutterMeshes.js")>();
+  return {
+    ...actual,
+    writeFoliage: (...args: Parameters<typeof actual.writeFoliage>) => {
+      spied.foliage++;
+      return actual.writeFoliage(...args);
+    },
+  };
+});
 
 /** The scarp fixture, not one of the census worlds' worst discs: those have
  * no steep rock within 60 m of their own centres, so their LOD0 band is
@@ -30,6 +50,12 @@ function loader(scene: Scene) {
     const bytes = readFileSync(new URL(`../../assets/${output}`, import.meta.url));
     return loadAssetContainerAsync(new Uint8Array(bytes), scene, { pluginExtension: ".glb" });
   };
+}
+
+/** The same instance with the sink taken back out of `groundH`: the height
+ * of the ground the module stands on, which is what its tint is read at. */
+function unsunk(m: ClutterInstance): ClutterInstance {
+  return { ...m, groundH: m.groundH + CLIFF_SINK * m.scale * (CLIFF_MODEL_HEIGHT[m.variant] as number) };
 }
 
 function bufferFor(spy: { mock: { calls: unknown[][]; instances: unknown[] } }, mesh: Mesh, kind: string): Float32Array | null {
@@ -101,7 +127,7 @@ describe("createCliffMeshes", () => {
     engine.dispose();
   });
 
-  it("fills each bucket with its band, matrices seated through the clutter writer, with tint and fade bands", async () => {
+  it("fills each bucket with its band, matrices seated nearly plumb, with tint and fade bands", async () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
@@ -112,18 +138,22 @@ describe("createCliffMeshes", () => {
     const o = cliffOrigin(CAM.x, CAM.z);
     const bands = cliffBands(collectCliffs(SEED, CAM.x, CAM.z, rings[2]), o.x, o.z, rings);
     // Measured at this scarp, and the same split cliffField.test.ts pins for
-    // this origin: 17 modules in the near ring, 53 in the mid, 103 in the far.
-    expect(bands.map((b) => b.length)).toEqual([17, 53, 103]);
+    // this origin: 17 modules in the near ring, 50 in the mid, 100 in the far.
+    expect(bands.map((b) => b.length)).toEqual([17, 50, 100]);
     // Measured here too, by [model][lod]. wall_a is the short module the field
     // falls back to only where a long face would overhang walkable ground, so
     // it is the rarer of the two on this scarp and its near bucket is empty —
     // pinned as a zero rather than skipped, so an empty bucket is a fact of
     // the fixture and not a hole in the case.
-    const COUNTS: readonly (readonly [number, number, number])[] = [[0, 2, 6], [17, 51, 97]];
+    const COUNTS: readonly (readonly [number, number, number])[] = [[0, 6, 9], [17, 44, 91]];
     // Teeth: each of the three rings is exercised by at least one model.
     for (let lod = 0; lod < 3; lod++) expect(COUNTS.some((row) => (row[lod] as number) > 0)).toBe(true);
     const mat = new Float32Array(16);
     const fol = new Float32Array(4);
+    const rot = new Quaternion();
+    const scale = new Vector3();
+    const pos = new Vector3();
+    const world = new Matrix();
     for (const [model] of CLIFF_MODELS.entries()) {
       for (let lod = 0; lod < 3; lod++) {
         const mesh = scene.getMeshByName(cliffMeshName(model, lod)) as Mesh;
@@ -136,9 +166,17 @@ describe("createCliffMeshes", () => {
         expect(matrices.length).toBe(want.length * 16);
         expect(tints.length).toBe(want.length * 4);
         for (const [i, m] of want.entries()) {
-          instanceMatrixFor(m, trampleFrame(SEED, m), mat);
+          // Uniform scale, the capped lean, and the origin's own height — the
+          // sink already rides in `groundH`, so no `CLUTTER_SINK` here.
+          seatOnGroundCapped(m.hash * Math.PI * 2, m.groundDx, m.groundDz, CLIFF_TILT_MAX, rot);
+          scale.copyFromFloats(m.scale, m.scale, m.scale);
+          pos.copyFromFloats(m.x, m.groundH, m.z);
+          Matrix.ComposeToRef(scale, rot, pos, world);
+          world.copyToArray(mat);
           expect(Array.from(matrices.subarray(i * 16, i * 16 + 16))).toEqual(Array.from(mat));
-          writeFoliage(SEED, m, fol, 0, trampleFrame(SEED, m));
+          // The tint reads the ground's OWN height, not the sunk one.
+          const onGround = unsunk(m);
+          writeFoliage(SEED, onGround, fol, 0, trampleFrame(SEED, onGround));
           expect(Array.from(tints.subarray(i * 4, i * 4 + 4))).toEqual(Array.from(fol));
         }
         const fade = bufferFor(spy, mesh, "fadeBands");
@@ -170,6 +208,64 @@ describe("createCliffMeshes", () => {
     cliffs.update(CAM.x + CLIFF_CELL, CAM.z);
     expect(spy.mock.calls.length).toBeGreaterThan(afterLoad);
     spy.mockRestore();
+    cliffs.dispose();
+    engine.dispose();
+  });
+
+  it("tints an instance once and re-uses it when the next rebuild meets it again", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: loader(scene) });
+    await cliffs.ready;
+    const rings = CLIFF_RINGS.high;
+    const inReach = (x: number, z: number): Set<string> => {
+      const o = cliffOrigin(x, z);
+      const bands = cliffBands(collectCliffs(SEED, x, z, rings[2]), o.x, o.z, rings);
+      return new Set(bands.flat().map((m) => `${m.x},${m.z}`));
+    };
+    spied.foliage = 0;
+    cliffs.update(CAM.x, CAM.z);
+    const first = inReach(CAM.x, CAM.z);
+    // Measured at this scarp: 167 modules across the three rings.
+    expect(first.size).toBe(167);
+    expect(spied.foliage).toBe(167);
+    // Four cells north: the collector hands back the very same instance
+    // objects for every cell it already holds, so only what the move brought
+    // into the rings is tinted — measured here, 11 modules of the 174.
+    spied.foliage = 0;
+    cliffs.update(CAM.x, CAM.z - 4 * CLIFF_CELL);
+    const second = inReach(CAM.x, CAM.z - 4 * CLIFF_CELL);
+    const fresh = [...second].filter((k) => !first.has(k));
+    expect(second.size).toBe(174);
+    expect(fresh.length).toBe(11);
+    expect(spied.foliage).toBe(11);
+    cliffs.dispose();
+    engine.dispose();
+  }, 300_000);
+
+  it("refuses a LOD root that holds more than one geometry mesh", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const twoMeshLod = (): Promise<AssetContainer> => {
+      const container = new AssetContainer(scene);
+      for (const name of CLIFF_LOD_NODES) {
+        const root = new TransformNode(name, scene);
+        container.transformNodes.push(root);
+        // LOD0 holds two geometry meshes: the shape a GLB must never ship,
+        // because only the first would ever be drawn.
+        for (let i = 0; i < (name === "LOD0" ? 2 : 1); i++) {
+          const part = CreateBox(`${name}_part${i}`, { size: 1 }, scene);
+          part.parent = root;
+          container.meshes.push(part);
+        }
+      }
+      // Built in the scene, as any node must be; handed over the way a loaded
+      // container arrives, with the shell's `addAllToScene` putting them back.
+      container.removeAllFromScene();
+      return Promise.resolve(container);
+    };
+    const cliffs = createCliffMeshes(scene, SEED, { quality: "high", loader: twoMeshLod });
+    await expect(cliffs.ready).rejects.toThrow(/LOD0/);
     cliffs.dispose();
     engine.dispose();
   });

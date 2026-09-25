@@ -310,3 +310,57 @@ more than one geometry mesh is refused at load rather than half-drawn.
 The placement counts move: fewer cells pass eight probes than five, and
 the first count (23 % of qualifying cells on the worst face) is superseded
 by the verification note's.
+
+## 11. What the probes cannot reach (open)
+
+§10 asked for two things that turn out not to meet: a fixed handful of probes,
+and an invariant that every point of the module's above-ground box is over
+steep rock. They do not meet because the gate is a per-point reading of
+terrain that dips in and out of the stand limit inside a footprint 8–26 m
+across: a probe bounds the ground it reads and nothing between. Two smaller
+errors in §10's own formula were corrected on the way — the lean turns about
+the sunk origin, so the top of the box swings `H·sin θc` downhill, not
+`0.65·H·sin θc`; and the base probes sat at `±D/2` while the footprint runs
+`−(D − F)` to `+F`, so the back of the box and all four corners were outside
+them.
+
+The field now probes the box itself: the corners of the above-ground box plus
+a midpoint on any axis longer than half the model's longest dimension
+(`CLIFF_PROBE_SPAN`), seated exactly as the shell seats the module — about
+fifteen reads per candidate. What that leaves is measured, not assumed. Each
+rule below was run over its own placements, swept on a 1 m grid over the box's
+faces, across 60 worlds (792 qualifying cells; the shipped rule's own figures
+over the full 200 worlds are 406 modules, 65 with a point over ground the gate
+refuses, 31 of those over ground a player can stand on, pinned in
+`cliffField.test.ts`):
+
+| probe rule | reads per placement | placed | with a bad point | over walkable ground |
+|---|---|---|---|---|
+| §10's eight, as written | 8 | 179 | 83 | 28 |
+| the box's eight corners | 8 | 142 | 37 | 17 |
+| **corners + midpoints (shipped)** | **15** | **126** | **21** | **7** |
+| corners + midpoints, stand margin 0.10 | 15 | 46 | 0 | 0 |
+| 2 m lattice over the box | 108 | 113 | 4 | 1 |
+| 1 m lattice — the sweep itself | 375 | 109 | 0 | 0 |
+
+Exempting the points buried in the hillside does not rescue the cheaper rules:
+77 % of the swept points stand proud of the ground they project onto, and the
+corner rule still leaves 34 modules bad, 17 over walkable ground.
+
+Three ways to close the rest, none of them chosen here:
+
+- **Probe densely.** Read the 1 m lattice at placement — about 375 gate reads
+  per placement against fifteen today, and on the worst 400 m disc (555
+  qualifying cells) roughly 208,000 reads for a cold build, seconds rather
+  than a frame. It would have to be spread across frames to be payable.
+- **Widen the stand margin at the probes.** 0.10 instead of 0.03 closes the
+  residue with the probes we have, and empties about two thirds of the faces:
+  46 modules where the shipped rule places 126. The margin is a continuous
+  lever, and the ground between 0.03 and 0.10 has not been measured.
+- **Make the modules solid.** A collider under the module removes the
+  disagreement instead of avoiding it, and the question stops being where a
+  module may stand. That is a `sim/` change and a level-id move, which is why
+  it is not a rendering decision.
+
+Until one is taken, the three measured numbers are pinned in the test, so the
+residue can shrink but cannot quietly grow.

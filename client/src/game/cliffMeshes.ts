@@ -25,14 +25,19 @@ import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+
 import { modelUrl } from "./assetUrls.js";
 import {
-  CLIFF_FADE_BAND, CLIFF_MODELS, CLIFF_RINGS, cliffBands, cliffOrigin, createCliffCollector,
+  CLIFF_FADE_BAND, CLIFF_MODEL_HEIGHT, CLIFF_MODELS, CLIFF_RINGS, CLIFF_SINK, CLIFF_TILT_MAX,
+  cliffBands, cliffOrigin, createCliffCollector,
 } from "./cliffField.js";
 import { attachCliffTint } from "./cliffTintPlugin.js";
-import { instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
+import { prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { attachDistanceFade, fadeBands, type FadeBands } from "./distanceFadePlugin.js";
+import { seatOnGroundCapped } from "./groundTilt.js";
 import type { QualityTier } from "./quality.js";
+import type { ClutterInstance } from "../sim/clutter.js";
 
 /** The LOD roots inside each GLB, by bucket. */
 export const CLIFF_LOD_NODES: readonly [string, string, string] = ["LOD0", "LOD1", "LOD2"];
@@ -77,6 +82,30 @@ type Bucket = {
 
 const EMPTY_BUFFER = new Float32Array(0);
 const scratchMat = new Float32Array(16);
+const scratchQ = new Quaternion();
+const scratchScale = new Vector3();
+const scratchPos = new Vector3();
+const scratchWorld = new Matrix();
+
+/**
+ * A module's world matrix, written into `out` (16 floats): uniform scale, the
+ * yaw in `hash` seated by the CAPPED lean, and the origin the field chose.
+ *
+ * Not the clutter's `instanceMatrixFor`, which seats its tilted classes on the
+ * full ground normal: a wall laid back with a 45° face throws its top metres
+ * out over the ground at its foot, which is ground the field's probes have not
+ * cleared (`cliffField.ts`'s `CLIFF_TILT_MAX`). The sink is vertical and
+ * already inside `groundH`, so there is no `CLUTTER_SINK` here either — that
+ * two-centimetre nudge breaks coplanarity for cards lying on the surface, and
+ * a module buried a third of its height needs no such help.
+ */
+export function cliffInstanceMatrix(inst: ClutterInstance, out: Float32Array): void {
+  seatOnGroundCapped(inst.hash * Math.PI * 2, inst.groundDx, inst.groundDz, CLIFF_TILT_MAX, scratchQ);
+  scratchScale.copyFromFloats(inst.scale, inst.scale, inst.scale);
+  scratchPos.copyFromFloats(inst.x, inst.groundH, inst.z);
+  Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchWorld);
+  scratchWorld.copyToArray(out);
+}
 
 /** A buffer big enough for `needed` floats, doubling from 64 instances' worth
  * so a bucket allocates a bounded number of times over a session and never
@@ -99,24 +128,29 @@ function grow(buf: Float32Array, needed: number, stride: number): Float32Array {
  * `bakeTransformIntoVertices` flips triangle winding when the determinant is
  * negative, so the loader's right-handed → left-handed mirror on `__root__`
  * keeps faces outward.
+ *
+ * A root holding more than ONE geometry mesh is refused outright rather than
+ * half-drawn: only the first would ever reach a bucket, so the model would
+ * silently lose a part of itself at that distance.
  */
 function lodMesh(container: AssetContainer, name: string): Mesh | null {
   const nodes: Node[] = [...container.transformNodes, ...container.meshes];
   const root = nodes.find((n) => n.name === name);
   if (root === undefined) return null;
   const all: Node[] = [root, ...root.getChildMeshes(false)];
-  for (const n of all) {
-    if (n instanceof Mesh && n.getTotalVertices() > 0) {
-      n.bakeTransformIntoVertices(n.computeWorldMatrix(true).clone());
-      n.position.setAll(0);
-      n.rotationQuaternion = null;
-      n.rotation.setAll(0);
-      n.scaling.setAll(1);
-      n.parent = null;
-      return n;
-    }
+  const geometry = all.filter((n): n is Mesh => n instanceof Mesh && n.getTotalVertices() > 0);
+  if (geometry.length > 1) {
+    throw new Error(`cliff model root ${name} holds ${geometry.length} geometry meshes; expected one`);
   }
-  return null;
+  const mesh = geometry[0];
+  if (mesh === undefined) return null;
+  mesh.bakeTransformIntoVertices(mesh.computeWorldMatrix(true).clone());
+  mesh.position.setAll(0);
+  mesh.rotationQuaternion = null;
+  mesh.rotation.setAll(0);
+  mesh.scaling.setAll(1);
+  mesh.parent = null;
+  return mesh;
 }
 
 export function createCliffMeshes(scene: Scene, seed: number, options: CliffMeshesOptions): CliffMeshes {
@@ -126,8 +160,36 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
   const load = options.loader ?? ((output: string) => loadAssetContainerAsync(modelUrl(output), scene));
   // Memoising, not the pure `collectCliffs`: a rebuild happens on every
   // `CLIFF_CELL` crossing, and a cell costs a terrain sample and a surface
-  // classification (five more for the half that qualify).
+  // classification (about twenty more for the half that qualify).
   const collector = createCliffCollector(seed);
+  /**
+   * The ground tint per instance, kept for as long as the collector keeps the
+   * instance. The tint costs a terrain sample, a surface classification and a
+   * canopy read, and the collector hands back the SAME instance object for
+   * every cell it still holds — so without this the whole field in reach was
+   * re-sampled on each 12 m crossing, on the same frame as the clutter's own
+   * rebuild. A `WeakMap` because the collector's eviction is the lifetime
+   * that matters: an instance it drops takes its tint with it.
+   */
+  const tints = new WeakMap<ClutterInstance, Float32Array>();
+  function tintFor(m: ClutterInstance): Float32Array {
+    let tint = tints.get(m);
+    if (tint === undefined) {
+      tint = new Float32Array(4);
+      // The ground's OWN height, not the sunk one `groundH` carries: the tint
+      // is the colour of the surface the module stands on, and read a third
+      // of a module's height lower a sea cliff would be tinted from a band it
+      // never touches. Rock is outside the trampled set, so the frame is the
+      // identity — asked for rather than assumed, as every other writer does.
+      const onGround: ClutterInstance = {
+        ...m,
+        groundH: m.groundH + CLIFF_SINK * m.scale * (CLIFF_MODEL_HEIGHT[m.variant] as number),
+      };
+      writeFoliage(seed, onGround, tint, 0, trampleFrame(seed, onGround));
+      tints.set(m, tint);
+    }
+    return tint;
+  }
   const containers: AssetContainer[] = [];
   /** The far buckets' material clones — this shell's own, so nothing else
    * disposes them. */
@@ -163,10 +225,9 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
       for (const m of band) {
         const b = buckets[m.variant]?.[lod];
         if (!b) continue;
-        const frame = trampleFrame(seed, m);
-        instanceMatrixFor(m, frame, scratchMat);
+        cliffInstanceMatrix(m, scratchMat);
         b.buf.set(scratchMat, b.count * 16);
-        writeFoliage(seed, m, b.tint, b.count * 4, frame);
+        b.tint.set(tintFor(m), b.count * 4);
         if (lod === FAR_LOD) b.fade.set(farBands, b.count * 4);
         b.count++;
       }
