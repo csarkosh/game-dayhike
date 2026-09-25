@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { GROUND_NORMAL_Y } from "../../src/sim/constants.js";
-import { CLUTTER_ROCK } from "../../src/sim/clutter.js";
+import { CLUTTER_ROCK, type ClutterInstance } from "../../src/sim/clutter.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
 import {
-  CLIFF_CELL, CLIFF_MODEL_DEPTH, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_WIDTH, CLIFF_ROCK_MIN,
-  CLIFF_SCALE, CLIFF_SINK, CLIFF_STAND_MARGIN, CLIFF_WALL_A, CLIFF_WALL_B, CLIFF_YAW_JITTER,
-  cliffCell, cliffCellPoint, cliffGate, cliffYaw,
+  CLIFF_BUDGET, CLIFF_CELL, CLIFF_MODEL_DEPTH, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_WIDTH, CLIFF_PAD,
+  CLIFF_RINGS, CLIFF_ROCK_MIN, CLIFF_SCALE, CLIFF_SINK, CLIFF_STAND_MARGIN, CLIFF_WALL_A,
+  CLIFF_WALL_B, CLIFF_YAW_JITTER, cliffBands, cliffCell, cliffCellPoint, cliffGate, cliffOrigin,
+  cliffYaw, collectCliffs, createCliffCollector,
 } from "../../src/game/cliffField.js";
 
 /** Seed 1's worst 400 m disc for steep rock (5,549 four-metre cells), from
@@ -160,4 +161,69 @@ describe("cliffCell", () => {
     expect(placed / qualifying).toBeGreaterThan(0.2);
     expect(placed / qualifying).toBeLessThan(0.28);
   });
+});
+
+describe("collectCliffs and the collector", () => {
+  it("returns every module within reach plus the pad of the snapped origin, nearest first", () => {
+    const reach = CLIFF_RINGS.high[2];
+    const o = cliffOrigin(WORST.x, WORST.z);
+    const got = collectCliffs(WORST.seed, WORST.x, WORST.z, reach);
+    const want = modulesIn(WORST.seed, o.x, o.z, reach + CLIFF_PAD);
+    expect(got.length).toBe(want.length);
+    for (let i = 1; i < got.length; i++) {
+      const a = got[i - 1]!, b = got[i]!;
+      expect(Math.hypot(a.x - o.x, a.z - o.z)).toBeLessThanOrEqual(Math.hypot(b.x - o.x, b.z - o.z) + 1e-9);
+    }
+    expect(got.length).toBeGreaterThan(50);
+    expect(got.length).toBeLessThanOrEqual(CLIFF_BUDGET);
+  }, 300_000);
+
+  it("memoises cells across rebuilds and matches the pure walk", () => {
+    const reach = CLIFF_RINGS.high[2];
+    const c = createCliffCollector(WORST.seed);
+    const first = c.collect(WORST.x, WORST.z, reach);
+    expect(first).toEqual(collectCliffs(WORST.seed, WORST.x, WORST.z, reach));
+    const size = c.size;
+    // One cell over: the disc's leading edge is new, the rest is cached.
+    const second = c.collect(WORST.x + CLIFF_CELL, WORST.z, reach);
+    expect(second).toEqual(collectCliffs(WORST.seed, WORST.x + CLIFF_CELL, WORST.z, reach));
+    const cells = Math.ceil((2 * (reach + CLIFF_PAD)) / CLIFF_CELL) + 1;
+    expect(c.size - size).toBeLessThanOrEqual(cells + 2);
+    expect(c.size - size).toBeGreaterThan(0);
+  }, 300_000);
+
+  it("partitions the modules across the three LOD buckets by distance, exactly once each", () => {
+    const rings = CLIFF_RINGS.high;
+    const o = cliffOrigin(WORST.x, WORST.z);
+    const all = collectCliffs(WORST.seed, WORST.x, WORST.z, rings[2]);
+    const bands = cliffBands(all, o.x, o.z, rings);
+    // collectCliffs's own pad (CLIFF_PAD) reaches past rings[2] so the cache
+    // is warm before a module needs a band; cliffBands drops anything at or
+    // past rings[2] instead of putting it in the far bucket early. Measured
+    // on this disc: collectCliffs(seed, x, z, rings[2]) returns 132 modules,
+    // 4 of them sitting in that [rings[2], rings[2] + CLIFF_PAD) collar, so
+    // the three bands hold 128, not all 132.
+    const inReach = all.filter((m) => Math.hypot(m.x - o.x, m.z - o.z) < rings[2]);
+    expect(all.length).toBe(132);
+    expect(inReach.length).toBe(128);
+    expect(bands[0].length + bands[1].length + bands[2].length).toBe(inReach.length);
+    const seen = new Set<ClutterInstance>();
+    for (const [lod, band] of bands.entries()) {
+      for (const m of band) {
+        expect(seen.has(m)).toBe(false);
+        seen.add(m);
+        const d = Math.hypot(m.x - o.x, m.z - o.z);
+        expect(d).toBeLessThan(rings[lod] as number);
+        if (lod > 0) expect(d).toBeGreaterThanOrEqual(rings[lod - 1] as number);
+      }
+    }
+    // Teeth: the far band is where most of a 400 m disc lives.
+    expect(bands[2].length).toBeGreaterThan(bands[0].length);
+  }, 300_000);
+
+  it("stays under the budget on the three census worlds' worst discs", () => {
+    for (const [seed, x, z] of [[627994160, -200, -1000], [388817, -100, -500], [1, 1100, -1200]] as const) {
+      expect(collectCliffs(seed, x, z, CLIFF_RINGS.high[2]).length).toBeLessThanOrEqual(CLIFF_BUDGET);
+    }
+  }, 300_000);
 });

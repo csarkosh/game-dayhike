@@ -16,6 +16,7 @@ import { CLUTTER_ROCK, groundCover, type ClutterInstance } from "../sim/clutter.
 import { elevationSampleAt, type TerrainSample } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { latticeHash } from "./groundHexParams.js";
+import type { QualityTier } from "./quality.js";
 import { classifySurface } from "./terrainSurface.js";
 
 /** Lattice cell (m). One module at most per cell. */
@@ -153,4 +154,137 @@ export function cliffCell(seed: number, ci: number, cj: number): ClutterInstance
     variant,
     hash,
   };
+}
+
+/** The worst offset (m) between the eye and the origin the distances are
+ * measured against: the rebuild snaps to `CLIFF_CELL`, so the reach edge is
+ * padded by a cell's diagonal and a module at the edge is collected before
+ * its band needs it — the tree field's `SEAM_PAD`. */
+export const CLIFF_PAD = Math.SQRT2 * CLIFF_CELL;
+/** The three LOD rings (m from the rebuild origin) per quality tier: LOD0 to
+ * the first, LOD1 to the second, LOD2 to the third, which is the reach. The
+ * low tier has no LOD0 ring. */
+export const CLIFF_RINGS: Record<QualityTier, readonly [number, number, number]> = {
+  high: [60, 160, 400],
+  medium: [60, 140, 250],
+  low: [0, 80, 200],
+};
+/** Width (m) of the far bucket's dither-out at the reach. */
+export const CLIFF_FADE_BAND = 40;
+/** Modules a reach may hold at most; the worst 400 m disc of the census
+ * worlds sits well under it. */
+export const CLIFF_BUDGET = 700;
+
+/** The eye's origin snapped to the lattice: the rebuild trigger and the
+ * point every band distance is measured from. */
+export function cliffOrigin(camX: number, camZ: number): { x: number; z: number } {
+  return { x: Math.floor(camX / CLIFF_CELL) * CLIFF_CELL, z: Math.floor(camZ / CLIFF_CELL) * CLIFF_CELL };
+}
+
+function collectWith(
+  camX: number,
+  camZ: number,
+  reach: number,
+  cellAt: (ci: number, cj: number) => ClutterInstance | null,
+): ClutterInstance[] {
+  const { x: ox, z: oz } = cliffOrigin(camX, camZ);
+  const r = reach + CLIFF_PAD;
+  const r2 = r * r;
+  const found: { m: ClutterInstance; d2: number }[] = [];
+  const c0x = Math.floor((ox - r) / CLIFF_CELL), c1x = Math.floor((ox + r) / CLIFF_CELL);
+  const c0z = Math.floor((oz - r) / CLIFF_CELL), c1z = Math.floor((oz + r) / CLIFF_CELL);
+  for (let cj = c0z; cj <= c1z; cj++) {
+    for (let ci = c0x; ci <= c1x; ci++) {
+      const m = cellAt(ci, cj);
+      if (m === null) continue;
+      const dx = m.x - ox, dz = m.z - oz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < r2) found.push({ m, d2 });
+    }
+  }
+  found.sort((a, b) => a.d2 - b.d2);
+  return found.map((p) => p.m);
+}
+
+/** Every module within `reach` (plus the pad) of the snapped origin,
+ * nearest first. Pure; the collector below is its memoising twin. */
+export function collectCliffs(seed: number, camX: number, camZ: number, reach: number): ClutterInstance[] {
+  return collectWith(camX, camZ, reach, (ci, cj) => cliffCell(seed, ci, cj));
+}
+
+export type CliffCollector = {
+  /** Identical output to `collectCliffs(seed, camX, camZ, reach)`. */
+  collect(camX: number, camZ: number, reach: number): ClutterInstance[];
+  /** Cached cell count — exposed so tests can pin the growth per crossing. */
+  readonly size: number;
+};
+
+// Numeric cell key, exact for |cell index| < 2^20 — the tree field's packing.
+const KEY_HALF = 1 << 20;
+const KEY_SPAN = 1 << 21;
+/** Cells this far past the reach are evicted once the cache outgrows
+ * `COLLECTOR_SWEEP_SIZE`. */
+const COLLECTOR_EVICT_MARGIN = 4 * CLIFF_CELL;
+const COLLECTOR_SWEEP_SIZE = 16384;
+
+/**
+ * Memoising counterpart to `collectCliffs`: `cliffCell` is pure in (seed,
+ * ci, cj), so a rebuild after a one-cell move re-reads only the disc's
+ * leading edge instead of every cell in reach — a cell costs a terrain
+ * sample and a surface classification, five more for the half that qualify.
+ */
+export function createCliffCollector(seed: number): CliffCollector {
+  const cache = new Map<number, ClutterInstance | null>();
+  return {
+    collect(camX, camZ, reach) {
+      const out = collectWith(camX, camZ, reach, (ci, cj) => {
+        const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);
+        let m = cache.get(key);
+        if (m === undefined) {
+          m = cliffCell(seed, ci, cj);
+          cache.set(key, m);
+        }
+        return m;
+      });
+      if (cache.size > COLLECTOR_SWEEP_SIZE) {
+        const { x: ox, z: oz } = cliffOrigin(camX, camZ);
+        const evict = reach + CLIFF_PAD + COLLECTOR_EVICT_MARGIN;
+        const evict2 = evict * evict;
+        for (const key of cache.keys()) {
+          const cjPart = key % KEY_SPAN;
+          const cj = cjPart - KEY_HALF;
+          const ci = (key - cjPart) / KEY_SPAN - KEY_HALF;
+          const cx = (ci + 0.5) * CLIFF_CELL - ox, cz = (cj + 0.5) * CLIFF_CELL - oz;
+          if (cx * cx + cz * cz >= evict2) cache.delete(key);
+        }
+      }
+      return out;
+    },
+    get size(): number {
+      return cache.size;
+    },
+  };
+}
+
+/**
+ * Splits nearest-first `instances` into the three LOD buckets by distance
+ * from the origin against `rings`: [0, rings[0]) → LOD0, [rings[0],
+ * rings[1]) → LOD1, [rings[1], rings[2]) → LOD2. Anything at or past the
+ * reach is dropped (the pad collected it for the next rebuild, not this
+ * one). Every instance lands in exactly one bucket.
+ */
+export function cliffBands(
+  instances: readonly ClutterInstance[],
+  ox: number,
+  oz: number,
+  rings: readonly [number, number, number],
+): [ClutterInstance[], ClutterInstance[], ClutterInstance[]] {
+  const out: [ClutterInstance[], ClutterInstance[], ClutterInstance[]] = [[], [], []];
+  for (const m of instances) {
+    const d = Math.hypot(m.x - ox, m.z - oz);
+    if (d < rings[0]) out[0].push(m);
+    else if (d < rings[1]) out[1].push(m);
+    else if (d < rings[2]) out[2].push(m);
+  }
+  return out;
 }
