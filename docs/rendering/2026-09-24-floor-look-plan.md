@@ -1,6 +1,6 @@
 # Floor Look Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The canopy floor reads as a tan/rust leaf carpet on a mid-brown ground, and the trail reads as packed earth in the hue of its surroundings at 0.9–1.3× their brightness.
 
@@ -14,7 +14,6 @@
 
 - No file under `client/src/sim/` changes; the `CLUTTER_TUNABLES` digest pinned in `client/test/sim/groundGradient.test.ts` is unchanged.
 - The trail's core stays traceable (the neglect design's rule): no band weight changes, only colours.
-- Never write how any asset was produced, or process vocabulary (sessions, agents, reviews, briefs, tasks, plans, rulings, "the owner"), in code, comments, docs or commit messages. The repository is public.
 - Stage explicit paths only (never `git add -A` / `git add .`). The repository's pre-push scan must pass on every commit; run it after each one, not only before the push.
 - Before every commit: `npm run typecheck`, the touched test files under `client/` (`npx vitest run <files>`), and `npx eslint <touched files>` green.
 - Commit format: type-prefixed subject under 72 characters, a `## What` paragraph, a `## How` list led by backticked paths, a blank line, then `Co-Authored-By: <your model name> <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01JbDze4ef9icFkvYw2Ryws1`.
@@ -290,10 +289,10 @@ EOF
 
 **Files:**
 - Create: `docs/rendering/<today>-floor-look-verification.md` (dated the day it is written)
-- Read: `docs/rendering/2026-09-24-forest-floor-verification.md` (the canopy litter poses), `docs/rendering/2026-09-24-trail-neglect-verification.md` (the TRAIL / TRAILSIDE / drift poses and the frame rig)
+- Read: `docs/rendering/2026-09-24-forest-floor-verification.md` (the canopy litter poses), `docs/rendering/2026-09-24-trail-neglect-verification.md` (the TRAIL / TRAILSIDE / drift poses and the frame pair)
 
 **Interfaces:**
-- Consumes: the gate rig at `~/Projects/fps-sdd-archive/2026-09-22-blade-field/scripts/` (`apply-hooks.py <worktree> <port> <ws-port>`, `apply-tier-hook.py <worktree>`, `stills.sh`, `frametime.sh`); the control worktree `.claude/worktrees/forest-control` — re-point it at `origin/main` (`git -C .claude/worktrees/forest-control checkout --detach d07a2cc`) before any pair, since it still sits at f276f25; the reference photographs under the scratchpad's `refs/` (`canopy-1.jpg`, `canopy-2.jpg`, `meadow-1.jpg`, `meadow-2.jpg`).
+- Consumes: the gate scripts, kept outside the repository (`apply-hooks.py <worktree> <port> <ws-port>`, `apply-tier-hook.py <worktree>`, `stills.sh`, `frametime.sh`); the control worktree `.claude/worktrees/forest-control` — re-point it at `origin/main` (`git -C .claude/worktrees/forest-control checkout --detach d07a2cc`) before any pair, since it still sits at f276f25; the reference photographs under the scratchpad's `refs/` (`canopy-1.jpg`, `canopy-2.jpg`, `meadow-1.jpg`, `meadow-2.jpg`).
 - Produces: the verification note and the numbers in it.
 
 - [ ] **Step 1: Stills, paired**

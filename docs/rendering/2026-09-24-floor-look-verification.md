@@ -185,7 +185,7 @@ is up to 1.6 ms, larger than either difference, so both views are within
 noise and under the +0.3 ms bar. Load average was 1.15 at the start of the run
 and 2.45 at the end.
 
-## 7. What missed
+## 6.1 What missed at the first gate
 
 - The bed / beside ratio, in five of six trail stills, in both directions —
   section 4, with its mechanism and the reason no permitted retune closes it.
@@ -218,8 +218,9 @@ the retune. Crops as in section 4.
 | drift-along | 0.98 | 0.63 | 0.69 | 0.64 |
 
 The control reproduced to three decimal places at every crop (1.807, 1.403,
-1.256, 2.268, 2.207, 0.975), which is the evidence that the rig is repeatable
-and that the differences below are the builds' and not the day's.
+1.256, 2.268, 2.207, 0.975), which is the evidence that the paired servers
+are repeatable and that the differences below are the builds' and not the
+day's.
 
 **The gate is still not met**: one of six in 0.9–1.3, and the branch now spans
 0.64–1.60 where the first gate spanned 0.63–1.46.

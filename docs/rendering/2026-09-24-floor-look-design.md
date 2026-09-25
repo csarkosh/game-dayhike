@@ -1,5 +1,21 @@
 # Floor look: a tan leaf carpet and a trail of earth
 
+**As built.** Where litter lies, the floor paint mixes by `DUFF_FLOOR_MAX`
+0.75 of the litter weight toward a litter colour that leans with the canopy
+from `FOREST_FLOOR` to `NEEDLE_BED` (0.15, 0.105, 0.06), and the leaf pieces
+are tan. The trail bed is
+earth: the forest-floor texture at `TRAIL_BED_EARTH` 0.7 over the pebbles, in
+colour, normal, occlusion and roughness, on a bench base that takes
+`TRAIL_BENCH_SHADE` 0.8 of the ground colour, at gains 0.24 (core) and 0.47
+(margin). Drifts on the bed are `NEEDLE_BED`'s hue at `TRAIL_DRIFT_LUM` 0.66,
+so they rise with the floor paint. The terrain's second weight attribute is a
+`vec4` whose fourth component is the canopy density ρ (`forestDensity` at the
+vertex). Under the canopy the bed's base lifts toward `NEEDLE_BED` by
+`TRAIL_BED_FLOOR · ρ` (0.75 · ρ; the bank beside it does not), and the
+wash-out's darkness is `mix(0.40, 0.75, ρ)`, open to litter. The sections below
+are the design as it was written and then amended; §10 is the last word on
+the two canopy-keyed mixes.
+
 The forest floor and the trail are both in the game now — the litter is
 leaf-sized and dense enough to see, the trail is drifted over and washed
 out — but neither looks like the reference photographs the look is judged
@@ -14,9 +30,9 @@ gravel texture at all. An abandoned trail blends in; this one sticks out.
 This design moves colour and one material mix. No geometry, no field, no
 `sim/` change, no level-id move.
 
-## 1. Rulings
+## 1. Decisions
 
-| question | ruling |
+| question | decision |
 | --- | --- |
 | Reference | The four photographs the direction gave: two hardwood-canopy trails (a continuous tan/rust leaf carpet, the trail as packed brown earth), a coastal grassland trail and a subalpine one (a smooth dirt ribbon, darker or lighter than the grass by at most ~30 %, soft edges) |
 | Leaf colour | Hue first, then brightness: leaf pieces go from red-brown (g/r 0.48 in linear) to tan (g/r ≈ 0.67, b/r ≈ 0.35), the photographs' litter in linear terms |
@@ -95,7 +111,7 @@ Non-goals:
 - `trailPaint.test.ts`: `plugin.getCustomCode` carries the earth mix with
   the literal 0.7 in both the core and the margin colour lines; the bench
   shade literal 0.8; the gains as literals.
-- `duffMeshes.test.ts`: the litter profile's `groundTint` pinned at 0.5.
+- `foliagePlugin.test.ts`: the litter profile's `groundTint` pinned at 0.5.
 - The level-id pin (`groundGradient.test.ts`) unchanged.
 
 ## 5. Gates
