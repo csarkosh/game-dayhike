@@ -224,6 +224,10 @@ ordered by what they cost the look.
    exceeds `CLIFF_BUDGET = 700` modules on the three census worlds' worst
    discs.
 
+Invariant 1 is superseded: §10 restated it over the module's whole solid,
+and §11 settles what that can and cannot be — the probes are the lattice
+over that solid, and what falls between them is measured, not forbidden.
+
 ## 7. Tests
 
 - `cliffField.test.ts`: invariant 1 on real terrain, a 200-seed sweep of
@@ -275,7 +279,7 @@ reach 300 m; lattice 16 m; density 0.4.
 its four edges, not its corners — and §6's invariant was stated over those
 five points. But a module seated fully on the ground normal lies back on
 the slope, and its upper body then reaches out over ground the base never
-touched: `wall_b` at scale 1.3 on a 45° face puts its top-front edge 8.5 m
+touched: `wall_b` at scale 1.3 on a 45° face puts its top-front edge 8.6 m
 horizontally downhill of its origin, 4 m past the front probe. The
 terrain's own cliff bands are staircases — a riser with a walkable bench
 at its foot — so a module low on a riser could hang a slab over the bench
@@ -311,6 +315,12 @@ The placement counts move: fewer cells pass eight probes than five, and
 the first count (23 % of qualifying cells on the worst face) is superseded
 by the verification note's.
 
+§11 supersedes this section in two places: the `0.65·H` in the top-edge
+formula is wrong (the lean turns about the sunk origin, so the whole height
+swings forward), and the box invariant as written above cannot be met by any
+handful of probes at a cost the rebuild can pay. What shipped is the lattice
+over the solid, with the remainder measured.
+
 ## 11. What the probes cannot reach (open)
 
 §10 asked for two things that turn out not to meet: a fixed handful of probes,
@@ -320,9 +330,9 @@ terrain that dips in and out of the stand limit inside a footprint 8–26 m
 across: a probe bounds the ground it reads and nothing between. Two smaller
 errors in §10's own formula were corrected on the way — the lean turns about
 the sunk origin, so the top of the box swings `H·sin θc` downhill, not
-`0.65·H·sin θc`; and the base probes sat at `±D/2` while the footprint runs
-`−(D − F)` to `+F`, so the back of the box and all four corners were outside
-them.
+`0.65·H·sin θc`; and the base probes sat at `±D/2` and `±W/2` while the
+footprint runs `−(D − F)` to `+F` and `−(W − R)` to `+R`, so the back of the
+box and all four of its corners were outside them.
 
 The field now probes the box itself: the corners of the above-ground box plus
 a midpoint on any axis longer than half the model's longest dimension
@@ -330,32 +340,43 @@ a midpoint on any axis longer than half the model's longest dimension
 fifteen reads per candidate. What that leaves is measured, not assumed. Each
 rule below was run over its own placements, swept on a 1 m grid over the box's
 faces, across 60 worlds (792 qualifying cells; the shipped rule's own figures
-over the full 200 worlds are 406 modules, 65 with a point over ground the gate
+over the full 200 worlds are 399 modules, 69 with a point over ground the gate
 refuses, 31 of those over ground a player can stand on, pinned in
 `cliffField.test.ts`):
 
 | probe rule | reads per placement | placed | with a bad point | over walkable ground |
 |---|---|---|---|---|
-| §10's eight, as written | 8 | 179 | 83 | 28 |
-| the box's eight corners | 8 | 142 | 37 | 17 |
-| **corners + midpoints (shipped)** | **15** | **126** | **21** | **7** |
-| corners + midpoints, stand margin 0.10 | 15 | 46 | 0 | 0 |
-| 2 m lattice over the box | 108 | 113 | 4 | 1 |
-| 1 m lattice — the sweep itself | 375 | 109 | 0 | 0 |
+| §10's eight, as written | 8 | 179 | 86 | 53 |
+| the box's eight corners | 8 | 140 | 42 | 24 |
+| **corners + midpoints (shipped)** | **15** | **121** | **23** | **7** |
+| corners + midpoints, stand margin 0.10 | 15 | 45 | 0 | 0 |
+| 2 m lattice over the box | 112 | 109 | 5 | 0 |
+| 1 m lattice — the sweep itself | 379 | 107 | 0 | 0 |
 
 Exempting the points buried in the hillside does not rescue the cheaper rules:
 77 % of the swept points stand proud of the ground they project onto, and the
-corner rule still leaves 34 modules bad, 17 over walkable ground.
+corner rule still leaves 35 modules bad, 19 over walkable ground.
+
+The box is the model's own, not a centred one: both models sit off-centre in
+their own extents, `wall_a` reaching 4.40 m along +X of its origin and 3.87 m
+the other way, `wall_b` 10.55 m and 9.68 m, in the frame the instance matrix
+works in (the loader's handedness mirror already baked in). `CLIFF_MODEL_RIGHT`
+and `CLIFF_MODEL_FRONT` carry those, and `cliffMeshes.test.ts` pins both
+against the loaded meshes, so a re-export cannot move the solid out from under
+the probes.
 
 Three ways to close the rest, none of them chosen here:
 
-- **Probe densely.** Read the 1 m lattice at placement — about 375 gate reads
+- **Probe densely.** Read the 1 m lattice at placement — about 379 gate reads
   per placement against fifteen today, and on the worst 400 m disc (555
-  qualifying cells) roughly 208,000 reads for a cold build, seconds rather
-  than a frame. It would have to be spread across frames to be payable.
+  qualifying cells) roughly 210,000 reads for a cold build, seconds rather
+  than a frame. It would have to be spread across frames to be payable. The
+  2 m lattice is the cheaper half of the same idea: 112 reads, nothing left
+  over walkable ground in the scan, five modules still over ground inside the
+  margin.
 - **Widen the stand margin at the probes.** 0.10 instead of 0.03 closes the
   residue with the probes we have, and empties about two thirds of the faces:
-  46 modules where the shipped rule places 126. The margin is a continuous
+  45 modules where the shipped rule places 121. The margin is a continuous
   lever, and the ground between 0.03 and 0.10 has not been measured.
 - **Make the modules solid.** A collider under the module removes the
   disagreement instead of avoiding it, and the question stops being where a

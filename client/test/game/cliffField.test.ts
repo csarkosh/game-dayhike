@@ -6,7 +6,7 @@ import { CLUTTER_ROCK, type ClutterInstance } from "../../src/sim/clutter.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
 import {
   CLIFF_BUDGET, CLIFF_CELL, CLIFF_DENSITY, CLIFF_LONG_NEIGHBOURS, CLIFF_MODEL_DEPTH,
-  CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_WIDTH, CLIFF_PAD, CLIFF_PROBE_SPAN,
+  CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH, CLIFF_PAD, CLIFF_PROBE_SPAN,
   CLIFF_RINGS, CLIFF_ROCK_MIN, CLIFF_SCALE, CLIFF_SINK, CLIFF_STAND_MARGIN, CLIFF_TILT_MAX, CLIFF_WALL_A,
   CLIFF_WALL_B, CLIFF_YAW_JITTER, cliffBands, cliffCell, cliffCellPoint, cliffGate, cliffLean,
   cliffOrigin, cliffYaw, collectCliffs, createCliffCollector,
@@ -58,22 +58,24 @@ describe("cliffGate", () => {
 });
 
 /** Points on the faces of the module's above-ground box, in the model's own
- * frame at `scale`, no further apart than `step`: x across the width, y from
- * the sink line to the top, z from the back of the depth to the scanned
- * face's own reach (`CLIFF_MODEL_FRONT`), which is where the origin sits
- * inside the depth. */
+ * frame at `scale`, no further apart than `step`: x from the left of the
+ * width to the model's own reach along +X (`CLIFF_MODEL_RIGHT`), y from the
+ * sink line to the top, z from the back of the depth to the scanned face's
+ * own reach (`CLIFF_MODEL_FRONT`) — the origin sits off-centre in both, so
+ * neither runs `±half`. */
 function boxShell(variant: number, scale: number, step: number): Vector3[] {
   const w = (CLIFF_MODEL_WIDTH[variant] as number) * scale;
   const h = (CLIFF_MODEL_HEIGHT[variant] as number) * scale;
   const d = (CLIFF_MODEL_DEPTH[variant] as number) * scale;
   const f = (CLIFF_MODEL_FRONT[variant] as number) * scale;
+  const rt = (CLIFF_MODEL_RIGHT[variant] as number) * scale;
   const span = (a: number, b: number): number[] => {
     const n = Math.max(1, Math.ceil((b - a) / step));
     const out: number[] = [];
     for (let i = 0; i <= n; i++) out.push(a + ((b - a) * i) / n);
     return out;
   };
-  const xs = span(-w / 2, w / 2), ys = span(CLIFF_SINK * h, h), zs = span(-(d - f), f);
+  const xs = span(-(w - rt), rt), ys = span(CLIFF_SINK * h, h), zs = span(-(d - f), f);
   const pts: Vector3[] = [];
   for (const [i, x] of xs.entries()) {
     for (const [j, y] of ys.entries()) {
@@ -124,7 +126,7 @@ describe("cliffCell", () => {
     // drives any of them up fails here and has to say why. Driving them to
     // zero is a placement-or-collision decision, open in §11 of
     // `docs/rendering/2026-09-24-cliff-modules-design.md` — probing this
-    // finely at rebuild costs about forty times what the field pays now.
+    // finely at rebuild costs about twenty-five times what the field pays now.
     let modules = 0, overhanging = 0, overWalkable = 0;
     const rotated = new Vector3();
     const q = new Quaternion();
@@ -144,8 +146,8 @@ describe("cliffCell", () => {
         if (walkable) overWalkable++;
       }
     }
-    expect(modules).toBe(406);
-    expect(overhanging).toBe(65);
+    expect(modules).toBe(399);
+    expect(overhanging).toBe(69);
     expect(overWalkable).toBe(31);
   }, 300_000);
 
@@ -170,12 +172,10 @@ describe("cliffCell", () => {
         }
       }
     }
-    // Teeth: the probe lattice is the dozen-odd points it claims to be, on
-    // enough modules to mean something (measured: 109 modules, 1,632 probes,
-    // 14.97 apiece).
-    expect(modules).toBeGreaterThan(40);
-    expect(probes / modules).toBeGreaterThan(10);
-    expect(probes / modules).toBeLessThan(20);
+    // The lattice is the dozen-odd points it claims to be, on enough modules
+    // to mean something: 12 for the long model, 18 for the short one.
+    expect(modules).toBe(107);
+    expect(probes).toBe(1590);
   }, 300_000);
 
   it("the base probes alone would hang a top edge over walkable ground", () => {
@@ -321,7 +321,7 @@ describe("cliffCell", () => {
     // than one broad face — a footprint half-width of a few metres already
     // overruns a ridge that narrow on one side or the other, and the top
     // edge reaches metres further downhill again.
-    // Measured on this disc: 88 placed of 555 qualifying (≈ 0.16).
+    // Measured on this disc: 91 placed of 555 qualifying (≈ 0.16).
     expect(qualifying).toBeGreaterThan(200);
     expect(placed / qualifying).toBeGreaterThan(0.14);
     expect(placed / qualifying).toBeLessThan(0.18);
@@ -365,13 +365,13 @@ describe("collectCliffs and the collector", () => {
     // collectCliffs's own pad (CLIFF_PAD) reaches past rings[2] so the cache
     // is warm before a module needs a band; cliffBands drops anything at or
     // past rings[2] instead of putting it in the far bucket early. Measured
-    // on this disc: collectCliffs(seed, x, z, rings[2]) returns 89 modules and
+    // on this disc: collectCliffs(seed, x, z, rings[2]) returns 92 modules and
     // none of them falls in that [rings[2], rings[2] + CLIFF_PAD) collar this
-    // time, so the three bands hold all 89 — the collar is a property of the
+    // time, so the three bands hold all 92 — the collar is a property of the
     // reach, not of the disc, and the filter below is what pins it.
     const inReach = all.filter((m) => Math.hypot(m.x - o.x, m.z - o.z) < rings[2]);
-    expect(all.length).toBe(89);
-    expect(inReach.length).toBe(89);
+    expect(all.length).toBe(92);
+    expect(inReach.length).toBe(92);
     expect(bands[0].length + bands[1].length + bands[2].length).toBe(inReach.length);
     const seen = new Set<ClutterInstance>();
     for (const [lod, band] of bands.entries()) {
@@ -433,7 +433,7 @@ describe("collectCliffs and the collector", () => {
     const got = c.collect(1100, z, reach);
     expect(c.size - beforeFar).toBe(4900);
     expect(got).toEqual(collectCliffs(seed, 1100, z, reach));
-    expect(got.length).toBe(89);
+    expect(got.length).toBe(92);
   }, 300_000);
 
   it("exercises the near LOD ring at a scarp with steep rock close to the eye", () => {
@@ -445,9 +445,9 @@ describe("collectCliffs and the collector", () => {
     const o = cliffOrigin(x, z);
     const all = collectCliffs(seed, x, z, rings[2]);
     const bands = cliffBands(all, o.x, o.z, rings);
-    expect(all.length).toBe(172);
+    expect(all.length).toBe(174);
     expect(bands[0].length).toBe(17);
-    expect(bands[1].length).toBe(50);
-    expect(bands[2].length).toBe(100);
+    expect(bands[1].length).toBe(51);
+    expect(bands[2].length).toBe(101);
   }, 300_000);
 });

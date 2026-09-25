@@ -70,12 +70,19 @@ export const CLIFF_MODEL_HEIGHT: readonly number[] = [4.96, 7.17];
  * middle of. The lean throws the top of this face downhill, so it is what the
  * top-edge probes are measured from. */
 export const CLIFF_MODEL_FRONT: readonly number[] = [0.77, 2.19];
+/** How far the model reaches from its origin along +X at scale 1, in the
+ * frame the instance matrix works in — the loader's right-handed to
+ * left-handed mirror is already baked into the vertices, so this is the
+ * mirror of the model's own +X. The origin is off-centre across the width as
+ * well as through the depth, so the body runs from `−(W − R)` to `+R`, not
+ * `±W/2`. */
+export const CLIFF_MODEL_RIGHT: readonly number[] = [4.40, 10.55];
 
 /** How far a module may lean toward the ground normal (rad). A cliff face
  * stands AGAINST a steep hillside rather than lying on it, and the lean is
  * what throws the module's upper body out over ground its base never touched:
  * seated on the full normal, the long model at the top of its scale band puts
- * its top-front edge 8.5 m horizontally downhill of its origin on a 45° face,
+ * its top-front edge 8.6 m horizontally downhill of its origin on a 45° face,
  * out past its own footprint and over any bench at the foot of the riser. A
  * 20° lean is still enough to bed a wall into the hill, and it keeps the
  * solid close enough to its own footprint for the probes below to follow. */
@@ -93,7 +100,9 @@ export function cliffLean(dx: number, dz: number): number {
 /** How far apart the probes over a module's solid may be, as a fraction of
  * the model's own longest dimension: every local axis is sampled at both ends
  * and again wherever that would leave a wider gap, which is the eight corners
- * of the solid plus a midpoint on its longer axes. */
+ * of the solid plus a midpoint on each of its longer axes — and, where two
+ * axes both earn a midpoint, the centre of the face they share (`wall_a`
+ * takes 18 points, `wall_b` 12). */
 export const CLIFF_PROBE_SPAN = 0.5;
 
 const probeRotation = new Quaternion();
@@ -102,14 +111,15 @@ const probeWorld = new Vector3();
 
 /**
  * The ground under every probe point of a module's above-ground solid is
- * steep rock: the box `x ∈ [−W/2, W/2]`, `y ∈ [CLIFF_SINK·H, H]`,
+ * steep rock: the box `x ∈ [−(W − R), R]`, `y ∈ [CLIFF_SINK·H, H]`,
  * `z ∈ [−(D − F), F]` at `scale`, seated exactly as the shell seats it
  * (`seatOnGroundCapped`) and dropped straight down.
  *
- * The origin sits at the model's base and inside its depth, not at the centre
- * of either: the footprint runs from `−(D − F)` behind the origin to the
- * scanned face's own reach `F` in front, and the lean turns the solid about
- * that origin, which the sink buries `CLIFF_SINK·H·scale` below the ground —
+ * The origin sits at the model's base and off-centre both across the width
+ * and through the depth: the footprint runs from `−(W − R)` to `+R` across
+ * and from `−(D − F)` behind the origin to the scanned face's own reach `F`
+ * in front. The lean turns the solid about that origin, which the sink
+ * buries `CLIFF_SINK·H·scale` below the ground —
  * so the top of the box swings `H·scale·sin θc` downhill, not
  * `(1 − CLIFF_SINK)·H·scale·sin θc`. Probing the box itself keeps both facts
  * in one place instead of in a formula that has to restate them.
@@ -135,8 +145,9 @@ function solidOpen(
   const h = (CLIFF_MODEL_HEIGHT[variant] as number) * scale;
   const d = (CLIFF_MODEL_DEPTH[variant] as number) * scale;
   const f = (CLIFF_MODEL_FRONT[variant] as number) * scale;
+  const rt = (CLIFF_MODEL_RIGHT[variant] as number) * scale;
   const step = Math.max(w, h, d) * CLIFF_PROBE_SPAN;
-  const x0 = -w / 2, xSpan = w / 2 - x0;
+  const x0 = -(w - rt), xSpan = rt - x0;
   const y0 = CLIFF_SINK * h, ySpan = h - y0;
   const z0 = -(d - f), zSpan = f - z0;
   const nx = Math.max(1, Math.ceil(xSpan / step));
@@ -206,7 +217,8 @@ const NEIGHBOURS: readonly (readonly [number, number])[] = [
  * The matrix is NOT the clutter's: a lying rock is seated on the full ground
  * normal, and a wall that lay back with a 45° face would overhang the ground
  * at its foot, so the shell composes the capped lean instead
- * (`cliffInstanceMatrix`, the same `cliffLean` the probes above use).
+ * (`cliffInstanceMatrix`, seating by `seatOnGroundCapped` at
+ * `CLIFF_TILT_MAX` — the same rotation the probes above are taken through).
  */
 export function cliffCell(seed: number, ci: number, cj: number): ClutterInstance | null {
   if (cellDraw(ci, cj, 6) >= CLIFF_DENSITY) return null;
