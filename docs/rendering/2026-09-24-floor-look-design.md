@@ -214,3 +214,40 @@ stands.
 The ratio window stands at 0.9–1.3 for every pose. The residual look
 questions — the meadow earth's hue against the photographs, the canopy
 carpet's density and lighting — remain the next design's.
+
+## 10. Amendment (2026-09-25): the key is the canopy, not the floor weight
+
+§9 keyed the bed's lift and the wash-out's darkness on `vTerrainW.y`, calling it
+"the forest-floor ground class, near zero in the open". The code says otherwise
+(`terrainSurface.ts`, `classifySurface`): that weight is `1 − ground`, the 34 m
+floor-to-grass mottle noise, averaging about a half on open ground, and the duff
+overlay raises it further by `0.75 · duff` everywhere duff lies — beside meadow
+trails included. The canopy only tints the vertex colour; no weight carries it. So
+§9's two changes barely separate the canopy from the open: a meadow bed's wash
+darkens to 0.66–0.75 instead of 0.40, and meadow beds take up to three quarters
+of the needle-bed lift.
+
+The right key is the canopy density itself, ρ — the value `classifySurface`
+already receives (`forestDensity`, passed by `clipmap.ts`) to choose the needle
+bed over the forest floor. It is carried to the fragment as a fourth component
+of `terrainWeights2` (`WEIGHTS2_STRIDE` 3 → 4; the attribute and `vTerrainW2`
+become `vec4`; the vertex fill in `clipmap.ts` writes it, and the scroll copy and
+the geometry copy carry it), and both of §9's mixes key on
+`clamp(vTerrainW2.w, 0.0, 1.0)`:
+
+- the bed's lift toward `NEEDLE_BED` by `TRAIL_BED_FLOOR · ρ`, applied to the
+  **bed's** base only — a separate `tBedBase` feeds `tBenchBase`; the uphill
+  bank line keeps the raw `tBankBase`, because the bank is ground beside the bed
+  and its vertex colour already carries the litter mix. Drifts ride `tBenchBase`
+  as before, so they take the lift under the canopy (the drift-along pose is
+  gated and reports it);
+- the wash-out's darkness, `mix(TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER, ρ)`.
+
+In a meadow ρ is near zero, so nothing changes there — which is what §9 claimed
+and could not deliver. Two consequences the fourth gate reports rather than
+tunes: a washed-out bed under canopy takes both the 0.75 wash constant and the
+lifted base, multiplied (about +10 % on the bench base), and the two canopy poses
+already in band (1.14, 1.17) take the same lift, so their margin against 1.3 is
+reported explicitly. The comments in `trailPaint.ts` and `trailBenchParams.ts`
+that describe the weight as near zero in the open are corrected. The ratio
+window and the frame bar stand.

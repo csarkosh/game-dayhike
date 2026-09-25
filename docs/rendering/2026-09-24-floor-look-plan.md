@@ -569,3 +569,17 @@ Repeat the TRAIL frame pair (high, 4× pixels, both orders, two rounds, medians)
 ### Task 10: The gate, a fourth time
 
 Task 7's stills and crops at Task 8+9's tip; the ratio table across all four gates; the frame pair at TRAIL and TRAILSIDE; `## 9. Fourth gate` in the verification note. No retune allowance — a miss is reported with its mechanism.
+
+---
+
+### Task 11: Key the bed's lift and the wash-out on the canopy density
+
+**Files:**
+- Modify: `client/src/game/clipmap.ts` (`WEIGHTS2_STRIDE = 4`; the fourth component is ρ, the `forestDensity` value already computed for `classifySurface` in the vertex fill — captured once per vertex rather than calling `forestDensity` twice — and carried by the scroll copy and the geometry copy)
+- Modify: `client/src/game/terrainTexture.ts` (`attribute vec4 terrainWeights2; varying vec4 vTerrainW2;` and the assignment; every existing `.x/.y/.z` read unchanged; the comment about the default of an attribute that was never uploaded updated for the `vec4`)
+- Modify: `client/src/game/trailPaint.ts` (a `vec3 tBedBase = mix(tBankBase, vec3(NEEDLE_BED), TRAIL_BED_FLOOR * clamp(vTerrainW2.w, 0.0, 1.0));` feeding `tBenchBase` only; the bank line stays on `tBankBase`; `tWashDark` keys on `vTerrainW2.w`; the three comments corrected; the stale bench comment reworded)
+- Modify: `client/src/game/trailBenchParams.ts` (the `TRAIL_BED_FLOOR` comment: keyed on the canopy density, not the ground class)
+- Test: `client/test/game/clipmap.test.ts` (stride 4 as a literal; the fourth component equals `forestDensity` at that vertex on a seed, at a forested and an open vertex — literal values), `client/test/game/terrainTexture.test.ts` (the vec4 declarations pinned), `client/test/game/trailPaint.test.ts` (the `tBedBase` line pinned as a literal, positioned after the `#endif` and before `tBenchBase`; the bank line proven to read `tBankBase` not `tBedBase`; `tWashDark` on `vTerrainW2.w`; the old `vTerrainW.y` keys gone), `client/test/game/trailBenchParams.test.ts` unchanged unless the constant moves
+- `client/src/game/renderer.ts` passes `WEIGHTS2_STRIDE` already; verify no other reader assumes 3 (grep `weights2`).
+
+Steps as the earlier tasks: failing tests first; the plumbing; the shader; typecheck, eslint, the focused files (`clipmap`, `terrainTexture`, `trailPaint`, `trailBenchParams`), then the full suite on a quiet machine. Two commits: `docs:` (the §10 and Task 11 text) then `fix:` (subject under 72). The level id does not move (no `sim/` change) — say so in the commit. Frame cost of one more float per vertex is expected to be nil; the fourth gate's pair (Task 10) measures it.
