@@ -109,6 +109,15 @@ export const CLIFF_MODEL_FRONT: readonly number[] = [0.77, 2.19];
  * well as through the depth, so the body runs from `−(W − R)` to `+R`, not
  * `±W/2`. */
 export const CLIFF_MODEL_RIGHT: readonly number[] = [4.40, 10.55];
+/** Where the model's lowest point sits on its own y axis at scale 1: the
+ * base is a little below the origin, not at it, so the model runs from
+ * `BASE` to `BASE + CLIFF_MODEL_HEIGHT` (`CLIFF_MODEL_HEIGHT` is the extent,
+ * not the top: the tops are 4.54 m and 7.01 m). The colliders bound the whole
+ * model and use both ends. The probes do not: their box runs from the ground
+ * at the origin (`CLIFF_SINK · H` above it) to `H`, which stands `|BASE|`
+ * above the drawn top, so they read a slightly taller box than is drawn and
+ * err on the side of refusing a spot. */
+export const CLIFF_MODEL_BASE: readonly number[] = [-0.42, -0.16];
 
 /** How far a module may lean toward the ground normal (rad). A cliff face
  * stands AGAINST a steep hillside rather than lying on it, and the lean is
@@ -541,4 +550,6 @@ export const CLIFF_TUNABLES: Readonly<Record<string, number>> = {
   CLIFF_MODEL_FRONT_B: CLIFF_MODEL_FRONT[CLIFF_WALL_B] as number,
   CLIFF_MODEL_RIGHT_A: CLIFF_MODEL_RIGHT[CLIFF_WALL_A] as number,
   CLIFF_MODEL_RIGHT_B: CLIFF_MODEL_RIGHT[CLIFF_WALL_B] as number,
+  CLIFF_MODEL_BASE_A: CLIFF_MODEL_BASE[CLIFF_WALL_A] as number,
+  CLIFF_MODEL_BASE_B: CLIFF_MODEL_BASE[CLIFF_WALL_B] as number,
 };

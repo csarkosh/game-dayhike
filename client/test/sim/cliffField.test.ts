@@ -9,7 +9,7 @@ import * as cliffField from "../../src/sim/cliffField.js";
 import { boxShell, seat } from "./helpers/cliffSolid.js";
 import {
   CLIFF_CELL, CLIFF_DENSITY, CLIFF_LONG_NEIGHBOURS, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT,
-  CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH, CLIFF_PROBE_SPAN, CLIFF_ROCK_MIN, CLIFF_RUN_MAX, CLIFF_RUN_REACH,
+  CLIFF_MODEL_BASE, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH, CLIFF_PROBE_SPAN, CLIFF_ROCK_MIN, CLIFF_RUN_MAX, CLIFF_RUN_REACH,
   CLIFF_RUN_SPACING, CLIFF_SCALE, CLIFF_SINK, CLIFF_STAND_MARGIN, CLIFF_TILT_COS, CLIFF_TILT_MAX, CLIFF_TILT_SIN,
   CLIFF_TUNABLES, CLIFF_WALL_A, CLIFF_WALL_B, CLIFF_YAW_JITTER, CLIFF_YAW_TAN,
   cliffCellPoint, cliffCellRuns, cliffFacing, cliffGate, cliffGround, cliffLeanTrig, leanPoint, type CliffPoint,
@@ -431,7 +431,7 @@ describe("the level id", () => {
     // The tables, per model.
     for (const [name, table] of [
       ["WIDTH", CLIFF_MODEL_WIDTH], ["DEPTH", CLIFF_MODEL_DEPTH], ["HEIGHT", CLIFF_MODEL_HEIGHT],
-      ["FRONT", CLIFF_MODEL_FRONT], ["RIGHT", CLIFF_MODEL_RIGHT],
+      ["FRONT", CLIFF_MODEL_FRONT], ["RIGHT", CLIFF_MODEL_RIGHT], ["BASE", CLIFF_MODEL_BASE],
     ] as const) {
       expect(CLIFF_TUNABLES[`CLIFF_MODEL_${name}_A`], name).toBe(table[CLIFF_WALL_A]);
       expect(CLIFF_TUNABLES[`CLIFF_MODEL_${name}_B`], name).toBe(table[CLIFF_WALL_B]);

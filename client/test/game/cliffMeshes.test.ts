@@ -13,7 +13,7 @@ import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import "../../src/sim/passes/index.js";
 import type { ClutterInstance } from "../../src/sim/clutter.js";
 import {
-  CLIFF_CELL, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT,
+  CLIFF_CELL, CLIFF_MODEL_BASE, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT,
   CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH, CLIFF_MODELS, CLIFF_SINK, CLIFF_TILT_MAX, cliffFacing,
 } from "../../src/sim/cliffField.js";
 import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, collectCliffs } from "../../src/game/cliffField.js";
@@ -128,6 +128,9 @@ describe("createCliffMeshes", () => {
       // or mirrored a model would move the solid out from under them.
       expect(b.maximum.z).toBeCloseTo(CLIFF_MODEL_FRONT[model] as number, 1);
       expect(b.maximum.x).toBeCloseTo(CLIFF_MODEL_RIGHT[model] as number, 1);
+      // And where the base sits: a little below the origin, which the
+      // colliders bound from.
+      expect(b.minimum.y).toBeCloseTo(CLIFF_MODEL_BASE[model] as number, 1);
     }
     cliffs.dispose();
     engine.dispose();

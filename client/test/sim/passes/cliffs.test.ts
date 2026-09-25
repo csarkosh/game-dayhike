@@ -14,7 +14,7 @@ import {
   CLIFF_BOX_STEP, CLIFF_GATHER_REACH, CLIFF_MATERIAL, CLIFF_SOLID_REACH, cliffBoxesInRect, cliffModuleBoxes,
   clearCliffRunCache,
 } from "../../../src/sim/passes/cliffs.js";
-import { boxShell, seat } from "../helpers/cliffSolid.js";
+import { drawnShell, seat } from "../helpers/cliffSolid.js";
 
 /** The atmo scarp the gates are shot at, and the chunk holding it. */
 const ATMO = 627994160;
@@ -103,10 +103,11 @@ describe("the cliff pass", () => {
 describe("the colliders", () => {
   it("contain the drawn solid: every point of the model's box lies inside one of its module's boxes", () => {
     // The lattice §11's residual was swept on (`cliffField.test.ts`),
-    // extended from the sink line down to the model's base: the faces of
-    // each module's whole drawn box at 1 m, the buried part included, seated
-    // as the renderer seats it, over every module within 400 m of the origin
-    // on 200 worlds. The lean drops the front of the base below the sunk
+    // extended from the sink line down to the model's base (which sits a
+    // little below its origin, `CLIFF_MODEL_BASE`) and up to its true top:
+    // the faces of each module's whole drawn box at 1 m, the buried part
+    // included, seated as the renderer seats it, over every module within
+    // 400 m of the origin on 200 worlds. The lean drops the front of the base below the sunk
     // origin, where the downhill ground can lie lower still, so the part the
     // sink was meant to bury can stand in the open. Each point must lie
     // inside one of the module's own boxes, in all three axes, so nothing
@@ -124,7 +125,7 @@ describe("the colliders", () => {
             modules++;
             const own = cliffModuleBoxes(m);
             boxes += own.length;
-            for (const [lx, ly, lz] of boxShell(m.variant, m.scale, 1, 0)) {
+            for (const [lx, ly, lz] of drawnShell(m.variant, m.scale, 1)) {
               seat(m, lx, ly, lz, p);
               points++;
               const x = m.x + p.x, y = m.groundH + p.y, z = m.z + p.z;
@@ -208,7 +209,7 @@ describe("the remembered runs", () => {
     const fresh = cliffBoxesInRect(ATMO, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE, cliffCellRuns);
     const cached = cliffBoxesInRect(ATMO, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE);
     expect(cached).toEqual(fresh);
-    expect(cold.length).toBe(66);
+    expect(cold.length).toBe(65);
   }, 60_000);
 });
 
@@ -250,7 +251,7 @@ describe("a wall stops a hiker", () => {
 
 describe("what the colliders cost", () => {
   it("pins the boxes per chunk on the scarp and at the census worlds' worst chunks", () => {
-    expect(cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz).length).toBe(66);
+    expect(cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz).length).toBe(65);
     // The chunk with the most boxes on each census world's worst 400 m disc,
     // counted as the pass counts them (a box reaching into two chunks counts
     // in each).
@@ -270,6 +271,6 @@ describe("what the colliders cost", () => {
       }
       worst.push([most, at]);
     }
-    expect(worst).toEqual([[87, "-10,-27"], [36, "-6,-21"], [69, "39,-40"]]);
+    expect(worst).toEqual([[88, "-10,-27"], [36, "-6,-21"], [68, "39,-40"]]);
   }, 300_000);
 });

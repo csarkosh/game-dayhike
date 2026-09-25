@@ -456,17 +456,15 @@ no further cell term is needed, and a wall straddling a chunk border is
 found from either side. A module's collider is a **row of axis-aligned
 boxes along its yawed length**: the wall's length at scale is cut into
 pieces no longer than `CLIFF_BOX_STEP = 4` m, each piece an `Aabb` of the
-piece's own x/z extent, from the seated solid's lowest point up to the
-module's full height above its origin (`H · s · (1 − CLIFF_SINK)` above
-ground at the origin) or the seated solid's highest point, whichever is
-higher. Boxes are what the
+piece's own x/z extent, from the seated solid's lowest point up to its
+highest. Boxes are what the
 movement code already collides with (`depenetrate`, `sweepBox`,
 `tryStepUp`), so a wall stops a hiker the way a boulder does, and blocks
 line of sight the way a large boulder does.
 
 The extent is the bounds of the piece's eight corners **seated** — turned to
-the facing, then leant — over the model's whole height, from its base
-(`y = 0`) to its top, not of its four yawed corners with the lean ignored,
+the facing, then leant — over the model's whole height, from its base to
+its top, not of its four yawed corners with the lean ignored,
 as this section first read. The lean does not lean into the hill: it turns
 about the sunk origin and tips the top downslope, out over the foot of the
 face, by up to `H · s · sin θc` (3.9 m for the long model at the top of the
@@ -478,7 +476,16 @@ downhill ground can lie lower still, so the part the sink was meant to bury
 can stand in the open; boxes that started at the sunk origin and bounded
 only the part above the sink line left 15,274 of the 106,996 points of the
 whole model's box outside them. The boxes therefore bound the whole drawn
-solid, buried part included.
+solid, buried part included. The base is not at the origin: both models
+reach a little below it (`CLIFF_MODEL_BASE`, −0.42 m for `wall_a` and
+−0.16 m for `wall_b` at scale 1, pinned against the loaded meshes), so the
+model runs from `BASE` to `BASE + H` and the corners are taken there. The
+placement's probes keep their box from the ground at the origin to `H`: its
+bottom is the ground whatever the base, and its top stands `|BASE|` above
+the drawn top, so the probes read a slightly taller box than is drawn and
+err toward refusing a spot. The sink stays measured from the origin, which
+buries `|BASE|` more of each model than `CLIFF_SINK` of its height — a
+matter of look, since the renderer seats from the same `groundH`.
 
 The price of the seated bounds is that each box stands plumb over the
 lean's whole reach, so at the foot of the face it claims a few metres of
@@ -504,11 +511,13 @@ to its top (the lattice §11's residual sweeps, extended below the sink
 line), lies inside one of its boxes; asserted on the 200-world sweep. The
 residual of §11 is retired with it.
 
-Cost: 66 boxes on the atmo scarp chunk, and at most 87 in a chunk on
-the census worlds' worst discs. Building the scarp chunk's boxes takes about
-2.3–2.4 ms on a quiet machine, once the world's terrain is warm (the pass
-keeps no cache, so every build is cold); across a 7 × 7 window at the scarp
-the pass costs about 1.4 times all the other passes together.
+Cost: 65 boxes on the atmo scarp chunk, and at most 88 in a
+chunk on the census worlds' worst discs. The pass remembers each cell's run
+per world and terrain variant (the field is pure, so this changes no
+output), since a chunk's gather window is about 203 m across and each cell
+is asked for by some forty chunks. Across a 7 × 7 window at the scarp the
+pass costs 8.9–10.4 ms against 53–57 ms for all the other passes together,
+about 0.18 of them; read cold, before the cache, it cost about 79 ms.
 
 ### 12.4 Gates
 

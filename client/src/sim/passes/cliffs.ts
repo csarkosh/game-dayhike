@@ -4,7 +4,7 @@ import type { Aabb } from "../level.js";
 import type { ClutterInstance } from "../clutter.js";
 import { activeTerrainVariantName } from "../terrain.js";
 import {
-  CLIFF_CELL, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH,
+  CLIFF_CELL, CLIFF_MODEL_BASE, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH,
   CLIFF_RUN_REACH, CLIFF_SCALE, CLIFF_TUNABLES, cliffCellRuns, cliffFacing, leanPoint,
   type CliffPoint,
 } from "../cliffField.js";
@@ -21,7 +21,8 @@ import {
  * own part of the seated solid.
  *
  * The bounds are of the SEATED solid — the eight corners of the piece's
- * whole drawn box (`y` from the model's base to its top, the part the sink
+ * whole drawn box (`y` from the model's base, `CLIFF_MODEL_BASE` — a little
+ * below the origin — to its top, `BASE + CLIFF_MODEL_HEIGHT`, the part the sink
  * buries included; `z` from the back of the depth to the face's reach),
  * turned to the module's facing and then leant exactly as the renderer leans
  * it. The lean turns about the sunk origin: it tips the top downslope, out
@@ -33,8 +34,7 @@ import {
  * combination of the piece's seated corners, so it lies inside their bounds:
  * the boxes contain the whole drawn solid, above the ground and below it.
  *
- * Each box runs from the lowest of its seated corners to the higher of the
- * module's full height above the sunk origin and its highest seated corner.
+ * Each box runs from the lowest of its seated corners to the highest.
  *
  * Two consequences of standing axis-aligned boxes round a leaning slab. At
  * the foot of the face each box stands plumb over the whole of the lean's
@@ -57,7 +57,10 @@ export const CLIFF_MATERIAL = "cliff";
 /**
  * The farthest (m) any point of a seated module's solid stands from the
  * module's origin: the distance of the model's farthest corner at the top of
- * the scale band, `CLIFF_SCALE[1] · sqrt(max(R, W − R)² + H² + max(F, D − F)²)`.
+ * the scale band, bounded by `CLIFF_SCALE[1] · sqrt(max(R, W − R)² + H² +
+ * max(F, D − F)²)`. The model runs from `CLIFF_MODEL_BASE` to `BASE + H` on
+ * its own y axis, a little below the origin to a little short of `H`, so `H`
+ * bounds its reach along y from either end.
  * Yaw and lean are rotations about the origin and keep every distance from
  * it, so no seating carries the solid further — horizontally or otherwise.
  * 21.58 m at the shipped constants (the long model: 1.6 · sqrt(10.55² +
@@ -101,6 +104,7 @@ export function cliffModuleBoxes(m: ClutterInstance): Aabb[] {
   const d = (CLIFF_MODEL_DEPTH[v] as number) * s;
   const f = (CLIFF_MODEL_FRONT[v] as number) * s;
   const rt = (CLIFF_MODEL_RIGHT[v] as number) * s;
+  const y0 = (CLIFF_MODEL_BASE[v] as number) * s;
   const facing = cliffFacing(m.groundDx, m.groundDz, m.hash);
   const x0 = -(w - rt), z0 = -(d - f);
   const n = Math.max(1, Math.ceil(w / CLIFF_BOX_STEP));
@@ -108,9 +112,9 @@ export function cliffModuleBoxes(m: ClutterInstance): Aabb[] {
   for (let i = 0; i < n; i++) {
     const a = x0 + (w * i) / n;
     const b = i === n - 1 ? rt : x0 + (w * (i + 1)) / n;
-    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity, minY = Infinity, maxY = h;
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity, minY = Infinity, maxY = -Infinity;
     for (let c = 0; c < 8; c++) {
-      const lx = c & 1 ? b : a, ly = c & 2 ? h : 0, lz = c & 4 ? f : z0;
+      const lx = c & 1 ? b : a, ly = c & 2 ? y0 + h : y0, lz = c & 4 ? f : z0;
       // Yaw first, then the lean — the order the placement probes and the
       // renderer both seat in.
       leanPoint(lx * facing.rx + lz * facing.fx, ly, lx * facing.rz + lz * facing.fz, m.groundDx, m.groundDz, corner);

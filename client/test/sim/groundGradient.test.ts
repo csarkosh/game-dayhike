@@ -666,6 +666,12 @@ describe("the level id does not move", () => {
     // the sunk origin, into the open where the ground falls away. No
     // tunable moves, so registryDigest is unchanged; probeDigest moves,
     // because every box in probe chunk [-1, -15] starts lower.
-    expect(passHash()).toBe(1586641572);
+    // Re-baselined 2026-09-25 from 1586641572: the cliff models' base sits a
+    // little below their origin, and the colliders now bound the model from
+    // there (CLIFF_MODEL_BASE_A = -0.42, CLIFF_MODEL_BASE_B = -0.16, new
+    // CLIFF_TUNABLES keys, so registryDigest moves) to its true top rather
+    // than from the origin to the full extent above it (so every cliff box
+    // in probe chunk [-1, -15] moves, and probeDigest with it).
+    expect(passHash()).toBe(466850785);
   });
 });
