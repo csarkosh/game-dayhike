@@ -1740,3 +1740,22 @@ Steps as the earlier tasks: failing tests first (the run test: on the atmo scarp
 ### Task 10: The gate, with walls and walls that stop you
 
 §12.4's stills and checks; the scripted walk (freecam off — the player capsule — via the sim's `__tp` helper if the page exposes one, else a `__fcSet` sequence with the player mode), both into a wall at the scarp foot and a slide onto a wall from above, to see where a flat box top holds the hiker above the drawn top edge (§12.3); frame pairs and native p95; `## 15` in the verification note; `CLIFF_RUN_MAX` 4 → 2 as the first fallback if a bar is missed.
+
+---
+
+### Task 11: Bury the uphill face of every cliff box
+
+**Files:**
+- Modify: `client/src/sim/passes/cliffs.ts`. After the seated-corner bounds, move each box's uphill face into the hill until the hillside along it stands at or above the box's top, as in design §12.5:
+  - `CLIFF_BURY_STEP = 1` m, `CLIFF_BURY_SAMPLE = 1` m, `CLIFF_BURY_MAX` measured and set with margin.
+  - All three constants are tunables, and the gather reach grows by the cap.
+  - Cache each cell's modules with their boxes, not only its runs.
+- Test: `client/test/sim/passes/cliffs.test.ts`:
+  - the burial invariant on the 200-world sweep, with the capped count pinned (RED before the change);
+  - the seven trap points of verification §15 as literals, where the hull lands on a box top or slides more than 2 m, then walks off;
+  - the scarp slide census, re-run;
+  - box tops over walkable ground, counted with and without the volume below the terrain.
+- Test: `client/test/sim/groundGradient.test.ts`: the level id re-pinned.
+
+Diagnose the crest-run jitter from the movement code and the box geometry. Fix it only if the cause is the collider's shape; otherwise record the mechanism in §12.5.
+

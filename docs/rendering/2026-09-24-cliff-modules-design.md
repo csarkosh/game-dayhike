@@ -528,3 +528,72 @@ the box, and a slide onto a wall from above shows where the flat box tops
 of §12.3 hold a hiker); the trail seam pose unchanged; frame pairs and
 native p95 as §8, and the level-id pin in `client/test/sim/groundGradient.test.ts`
 re-pinned to the new digest with the tunables named.
+
+### 12.5 Amendment (2026-09-25): the uphill face goes into the hill
+
+The third gate (`2026-09-25-cliff-modules-verification.md` §15) found seven
+places behind the scarp's walls where a hiker comes to rest and cannot
+leave. Walking, jumping or sprinting for five seconds in any of eight
+directions moves them less than 0.35 m; without the colliders the same
+points slide 31–80 m down the face.
+
+**The mechanism.** A box's uphill (back) face stands where the seated
+corners put it, plumb, and above it the hillside behind the wall is below
+the box's top. The ground there is too steep to stand on (normal 0.48–0.65),
+so a hull resting on it is never grounded. It cannot jump, friction never
+applies, and air control (`AIR_ACCEL`) is too weak to climb. Only gravity's
+downhill share moves it, and that points straight into the back face, which
+cancels it. The hull sits in the V between hillside and face with nothing to
+push off.
+
+**The rule.** After the seated-corner bounds, each box's uphill face is
+moved back into the hill, `CLIFF_BURY_STEP` (1 m) at a time, until the
+hillside along the face, read at most `CLIFF_BURY_SAMPLE` (1 m) apart, stands
+at or above the box's top everywhere. It moves at most `CLIFF_BURY_MAX`
+(16 m), and a face that stops there is counted.
+- **Which face moves:** the side face the module's uphill direction
+  `−(fx, fz)` points through most nearly, the axis with the larger component.
+- **Why only one:** moving the other face as well, where the uphill direction
+  is near a diagonal, would try to bury a face that runs down the slope. Its
+  downhill end stands in front of the wall, where the hillside never reaches
+  the top. Tried with both faces moving whenever the lesser component is at
+  least `sin 22.5°`, 7 of 362 boxes over 40 worlds stopped at a 40 m cap, and
+  the median face moved 6 m.
+- **What changes:** a hiker sliding down behind a wall now meets the box's
+  top, which is flat and holds a foot, and walks forward off the front.
+  `movement.ts` is unchanged, and the collider stays a row of axis-aligned
+  boxes.
+
+**The invariant.** Along every box's uphill face, read every quarter metre,
+the hillside stands at or above the box's top, less a 5 cm tolerance for
+curvature between the rule's own readings. No face stops at the cap. Both
+are asserted on the 200-world sweep. The boxes only grow, so the drawn solid
+still lies inside them (§12.3).
+
+**What it costs.**
+- **How far faces move:** over the same sweep, a face moves a median of 1 m
+  and at most 14 m. The seven trap boxes needed 1–5 m.
+- **Gather reach:** the pass gathers `CLIFF_BURY_MAX` further, 101.42 m in all.
+- **Build time:** building a chunk reads the hillside along every face, so
+  the 7 × 7 window at the scarp costs about 18 ms against 9–10 ms before.
+- **Standing boxes:** box tops over walkable ground, counted over 40 worlds,
+  go from 17 cells in 4 modules to 40 cells in 9. Some of these cells are
+  crests the buried volume now runs under; they count only where a box's top
+  stands above the ground there. Counting every walkable cell under a
+  footprint, including where the box lies wholly under the ground, gives 305
+  cells in 19 modules. That count says nothing about play.
+- **Shelves:** the flat tops of §12.3 reach further back over the hill,
+  which is the point: the ledge a hiker lands on now meets the hillside, so
+  nothing is left between them to be caught in.
+
+**The crest-run jitter is not a collider shape.** Walking along a crest
+run's top, the hull shows about 100 reversals in 10 s and sits up to 0.11 m
+inside a box. The cause is the ground's stick in `stepMovement`. A grounded
+hull whose feet end a tick just above the terrain is snapped down onto it
+when the drop is within one tick's walkable descent. That terrain can lie
+inside a box, a few centimetres under its top, along the line where the
+hillside meets the top. The next tick's `depenetrate` lifts the hull back
+onto the top, and walking along that line keeps the two in contention. Any
+box whose top meets the hillside has such a line, and burial guarantees one,
+so no box shape removes it. It belongs to the ground stick, which would have
+to leave a hull on a box top it is already standing on.
