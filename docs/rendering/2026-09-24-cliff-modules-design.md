@@ -268,3 +268,45 @@ reach 300 m; lattice 16 m; density 0.4.
   visibly on long faces.
 - The snowy faces above the snow line.
 - A crest-only far band beyond the reach, if the 400 m edge shows.
+
+## 10. Amendment (2026-09-24): the solid, not the base
+
+§4.1's footprint probes bound the module's base plane — the midpoints of
+its four edges, not its corners — and §6's invariant was stated over those
+five points. But a module seated fully on the ground normal lies back on
+the slope, and its upper body then reaches out over ground the base never
+touched: `wall_b` at scale 1.3 on a 45° face puts its top-front edge 8.5 m
+horizontally downhill of its origin, 4 m past the front probe. The
+terrain's own cliff bands are staircases — a riser with a walkable bench
+at its foot — so a module low on a riser could hang a slab over the bench
+at head height, with no collider under it. §1's "sight and collision never
+disagree underfoot" would fail there. Two changes close it, together:
+
+- **The wall stands nearly plumb.** A module leans toward the ground normal
+  by at most `CLIFF_TILT_MAX = 0.35` rad (20°), not by the slope's full
+  angle: a cliff face stands against a steep hillside rather than lying on
+  it, and a 20° lean is enough to bed it. The shell composes this itself
+  (`seatOnGroundCapped` in `groundTilt.ts`) instead of the lying-rock
+  seating of `instanceMatrixFor`; the sink stays vertical and in `groundH`.
+- **The probes bound the solid.** To the five base probes are added three
+  at the ground projection of the module's top-front edge — at the centre
+  and at ±half the width — a forward distance `s · (0.65·H·sin θc +
+  F·cos θc)` from the origin, where `θc` is the capped lean, `0.65·H` the
+  height that stands above the sink, and `F` the scanned face's reach from
+  the origin along +Z at scale 1 (`CLIFF_MODEL_FRONT`: 0.77 m for `wall_a`,
+  2.19 m for `wall_b`). At the cap the farthest point of the solid is inside
+  the outermost probe for both models at every scale in the band. The
+  invariant in §6 now reads: every point of the module's above-ground
+  bounding box, projected to the ground, is steep rock past the margin — and
+  the test sweeps that box on a 1 m grid across 200 worlds.
+
+Two smaller corrections from the same read: the per-instance ground tint
+is memoised per instance (it re-sampled the terrain for every module in
+reach on every 12 m crossing, on the same frame as the clutter's rebuild),
+and it reads the ground's own height rather than the sunk one, so a
+sea-cliff module is not tinted from 3 m below its base. A LOD root with
+more than one geometry mesh is refused at load rather than half-drawn.
+
+The placement counts move: fewer cells pass eight probes than five, and
+the first count (23 % of qualifying cells on the worst face) is superseded
+by the verification note's.

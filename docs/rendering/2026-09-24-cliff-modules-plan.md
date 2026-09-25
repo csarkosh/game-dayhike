@@ -1683,3 +1683,34 @@ Expected: docs name test green; `0 failing`.
 - **Spec coverage.** §1 rulings: modules (Task 4 loads the two committed GLBs), collision none and `sim/` untouched (Global Constraints, Task 5 Step 6), gate with margin at centre and four probes (Task 1), rings per tier (Task 2 `CLIFF_RINGS`), geometric seams with a far dither (Task 4), tint 0.5 (Task 3), cost bars (Task 6). §4.1 steps 1–6 → Task 1 (`cliffCellPoint`, `cliffGate`, module choice, frame, footprint, density draw first). §4.2 → Task 2 collector + `cliffBands`, `CLIFF_PAD`. §4.3 → Task 4 far material clone. §4.4 → Task 3 + `writeFoliage` in Task 4; casters in Task 4/5. §4.5 → Task 5. §5 budget → Task 2 test. §6 invariants 1–5 → Task 1 (1, 3), Task 2 (4, 5), Global Constraints (2). §7 tests → Tasks 1–5. §8 gates and fallbacks → Task 6.
 - **Placeholder scan.** No TBD/TODO. The only deferred values are the verification doc's date and measured numbers, which the task says to fill from the runs.
 - **Type consistency.** `cliffCell` returns `ClutterInstance | null` everywhere; `cliffBands` takes `readonly [number, number, number]` and `CLIFF_RINGS` values are that tuple type; `CliffMeshesOptions.loader` returns `Promise<AssetContainer>` and the test's loader does; `cliffMeshName(model, lod)` ends `_l<lod>`, which the caster-name regex and the dispose check rely on; `fadeBands(null, [a, b])` returns `[-2, -1, a, b]`, which the shell test asserts.
+
+---
+
+### Task 7: The wall stands nearly plumb and the probes bound the solid
+
+**Files:**
+- Modify: `client/src/game/groundTilt.ts` (`seatOnGroundCapped`)
+- Modify: `client/src/game/cliffField.ts` (`CLIFF_TILT_MAX`, `CLIFF_MODEL_FRONT`, `cliffLean`, the three top-edge probes, wording)
+- Modify: `client/src/game/cliffMeshes.ts` (`cliffInstanceMatrix`, the tint memo, the height passed to the tint, the one-mesh-per-root guard)
+- Modify: `ARCHITECTURE.md` (the sentence: edge midpoints and the top edge, not corners)
+- Test: `client/test/game/groundTilt.test.ts` (or the file that covers `seatOnGround`), `client/test/game/cliffField.test.ts`, `client/test/game/cliffMeshes.test.ts`
+
+**Interfaces:**
+- Produces: `seatOnGroundCapped(yaw, dx, dz, maxTilt, out)` — yaw about world Y, then a tilt toward the ground normal of at most `maxTilt` radians about the same axis `groundNormalTilt` would use (the axis is `UP × normal`; the angle is `min(acos(ny), maxTilt)`); `cliffLean(dx, dz): number` — the capped lean angle the field and the shell both use; `CLIFF_TILT_MAX = 0.35`; `CLIFF_MODEL_FRONT: readonly number[] = [0.77, 2.19]`.
+- The instance shape is unchanged (`ClutterInstance`, yaw in `hash`, sink in `groundH`).
+
+- [ ] **Step 1: Write the failing tests**
+
+`cliffField.test.ts` — replace the "never stands where a foot can go" case's probe list with the solid's above-ground box: for each placed module, with `θc = cliffLean(s.dx, s.dz)`, yaw from `hash`, scale `s`, build the module's local box `x ∈ [−W/2, W/2]`, `y ∈ [0.35·H, H]`, `z ∈ [−(D − F), F]` at scale (W/D/H/F from the tables), rotate each point of a 1 m grid on the box's faces by yaw about Y and then by the capped lean about the axis `UP × normal`, add the origin, and assert `cliffGate(seed, px, pz).open` at every point's (x, z) — 200 worlds, 400 m. Also add a targeted case: on seed 1's worst disc, count modules whose top-front edge projection (`s·(0.65·H·sin θc + F·cos θc)` forward) lands on walkable ground with the OLD five probes only (recompute the old rule in the test) — it must be > 0 (this is the teeth: the old rule let them through). Pin the new placed / qualifying with literals you measure. Update the literal counts in the collector, partition and scarp cases to what the new rule measures (say in the commit which numbers moved and why).
+
+`groundTilt.test.ts` — `seatOnGroundCapped` with `maxTilt = π` equals `seatOnGround` for a few gradients; with `maxTilt = 0` equals the plain yaw; with `maxTilt = 0.35` on a 45° gradient the rotated UP has `y = cos 0.35` to 1e-6 and lies in the plane of UP and the normal.
+
+`cliffMeshes.test.ts` — the matrix case compares to a matrix composed with `seatOnGroundCapped(yaw, dx, dz, CLIFF_TILT_MAX)`, uniform scale, translation `(x, groundH, z)` (no `CLUTTER_SINK`); the tint case asserts the `foliage` entry equals `writeFoliage` for an instance whose `groundH` is the UNSUNK ground (`groundH + 0.35·H·s`); a case that a second rebuild at the same origin re-uses the tint (spy on `writeFoliage`'s dependency or count calls of a wrapper — or assert via a stub loader that `forestDensity` is not re-called: pick the seam that exists); a case that a root with two geometry meshes makes `ready` reject.
+
+- [ ] **Step 2: Run the tests to verify they fail** (the box sweep goes red on the overhang; the others on missing exports).
+
+- [ ] **Step 3: Implement** — `groundTilt.ts`: `seatOnGroundCapped`; `cliffField.ts`: `CLIFF_TILT_MAX`, `CLIFF_MODEL_FRONT`, `cliffLean`, the three extra probes inside `footprintOpen` (forward `s·(0.65·H·sinθc + F·cosθc)` at the centre and at ±hw along the right vector), comments saying "edge midpoints and the top edge"; `cliffMeshes.ts`: `cliffInstanceMatrix` replacing `instanceMatrixFor`, a `WeakMap<ClutterInstance, Float32Array>` tint memo filled with `writeFoliage` on an instance copy whose `groundH` is the ground's own height, and a guard in `lodMesh` that throws when a root holds more than one geometry mesh; `ARCHITECTURE.md`: the wording.
+
+- [ ] **Step 4: Run the tests** — cliffField, cliffMeshes, groundTilt, cliffTintPlugin green; typecheck; eslint.
+
+- [ ] **Step 5: Commit** — subject under 72 chars (e.g. `fix: stand the cliff modules nearly plumb and probe their whole solid`), the usual body naming every moved literal, the trailers.
