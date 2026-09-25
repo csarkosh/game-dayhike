@@ -672,6 +672,13 @@ describe("the level id does not move", () => {
     // CLIFF_TUNABLES keys, so registryDigest moves) to its true top rather
     // than from the origin to the full extent above it (so every cliff box
     // in probe chunk [-1, -15] moves, and probeDigest with it).
-    expect(passHash()).toBe(466850785);
+    // Re-baselined 2026-09-25 from 466850785: each cliff box's uphill face is
+    // moved into the hill until the hillside along it stands at or above the
+    // box's top, so a hiker sliding down behind a wall lands on its top
+    // rather than in the V against its back. The pass declares
+    // CLIFF_BURY_STEP, CLIFF_BURY_MAX and CLIFF_BURY_SAMPLE (registryDigest
+    // moves), and the boxes in probe chunk [-1, -15] grow uphill
+    // (probeDigest moves).
+    expect(passHash()).toBe(923719637);
   });
 });
