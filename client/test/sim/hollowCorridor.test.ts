@@ -97,6 +97,8 @@ describe("a Hollow on the road corridor", SUITE, () => {
     const h = spawnHollow(w, { x: hx, y: elevationAt(seed, hx, th.z) + ENEMY_HALF.y, z: th.z }, p.id, 0);
     h.approach = true;
     const spawn = { ...h.pos };
+    // 120 ticks: under the 3 s after which an approach that cannot see its
+    // prey — this one cannot, 200 m off — drops back to routing.
     for (let t = 0; t < 120; t++) {
       tickWorld(w, new Map());
       expect(p.safe, `tick ${t}`).toBe(false);

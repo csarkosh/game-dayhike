@@ -58,7 +58,12 @@ export const HOLLOW_APPROACH_RANGE = 25;
 export const HOLLOW_LOST_SIGHT_S = 3;
 /** The placeholder's height, metres (entityViews.ts). */
 export const HOLLOW_HEIGHT = 2.6;
-/** Metres past the corridor's edge a Hollow inside it walks for, so its last step lands clear of the line. */
+/**
+ * Metres past the corridor's edge a Hollow inside it walks for. The margin
+ * keeps the destination ahead of it for as long as it is inside: aimed at the
+ * line itself, a Hollow a hair short of it would have nowhere left to walk
+ * and report a move without making one (`walkToward`).
+ */
 export const HOLLOW_EXIT_MARGIN = 1;
 
 export function isHollowState(ai: AiState): boolean {
@@ -169,8 +174,11 @@ function speedOf(h: EnemyState): number {
  *
  * - Inside — placed there, or spawned on the trail's lower stretch, which runs
  *   inside the corridor on some seeds — it ignores where it was asked to go
- *   and walks straight for the nearest edge, HOLLOW_EXIT_MARGIN past it so the
- *   last step lands clear rather than on the line, taking every step it gets.
+ *   and walks straight across to its own side's edge, the point at its own z
+ *   (not the nearest point of the line, which on a skewed road is off along
+ *   it), and HOLLOW_EXIT_MARGIN past it, so the destination stays ahead of it
+ *   for as long as it is inside, taking every step it gets. Its road offset
+ *   then grows by exactly the ground it covers, so the walk cannot stall.
  *   Its route waits (`followRoute`), and the hunt resumes from wherever it
  *   comes out. It cannot follow the route out, because a route into the woods
  *   can start at the trailhead, which is deeper inside: every step toward it
@@ -181,8 +189,11 @@ function speedOf(h: EnemyState): number {
  *   The edge it heads for sits at its own z, so it moves along with it, and a
  *   sidestep along the road can never read as progress toward it. Inside,
  *   therefore, the sidestep is timed rather than held: UNSTICK_SECONDS of
- *   strafe — enough to clear the widest thing that stands in the corridor —
- *   and then straight for the edge again.
+ *   strafe, then straight for the edge again. Boulders and cliffs are kept
+ *   off the corridor, so the only things to be pinned on are the three road
+ *   props, the widest being the car, 4.6 m along the road; one strafe from a
+ *   standstill covers about 4.1 m, and the side never changes, so the second
+ *   clears it where the first did not.
  *
  * Returns whether it moved (or had nowhere to move to): false is a step
  * refused at the treeline, which `followRoute` reads.
@@ -251,17 +262,23 @@ function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: num
 /**
  * Walks the current route; true once every node has been reached.
  *
- * A node the treeline refuses a step toward is passed, not reached, when the
- * route goes on: the trailhead is inside the corridor (TRAILHEAD_U is 9), and
- * on some seeds so is the trail's lower stretch, and a Hollow that came out
- * of the corridor by the pad, or was routed from the node nearest its feet,
- * can hold a route into the woods that starts there. Walking that leg would
- * have it refused at the treeline for good. Only the refused step passes a
- * node — not the node's being on the corridor — because the leg toward such
- * a node is usually the trail itself, and the trail is what brings the Hollow
- * to the treeline where its prey stands; leaving it early for a straight line
- * to the node beyond would trade the trail for the forest. The last node it
- * stands for, at the treeline, facing the pad, as it always has.
+ * A node on the road corridor is passed, not reached, once the treeline
+ * refuses a step toward it and the route goes on: the trailhead is inside the
+ * corridor (TRAILHEAD_U is 9), and on some seeds so is the trail's lower
+ * stretch, and a Hollow that came out of the corridor by the pad, or was
+ * routed from the node nearest its feet, can hold a route into the woods that
+ * starts there. Walking that leg would have it refused at the treeline for
+ * good. Both conditions are needed. A node's merely being on the corridor
+ * does not pass it, because the leg toward such a node is usually the trail
+ * itself, and the trail is what brings the Hollow to the treeline where its
+ * prey stands; leaving it early for a straight line to the node beyond would
+ * trade the trail for the forest. And a refusal alone does not pass a node,
+ * because the treeline also refuses a grazing step — a Hollow within one
+ * step of the edge whose heading toward a node OUTSIDE the corridor loses a
+ * little road offset, off a leg that hugs the edge, a box slide or the road's
+ * slope — and that node is still the one to walk for: the stuck handling
+ * slides it along the treeline until the leg clears, as it always has. The
+ * last node it stands for, at the treeline, facing the pad.
  */
 function followRoute(h: EnemyState, world: World, graph: TrailGraph, dt: number, speed: number): boolean {
   while (h.routeAt < h.route.length) {
@@ -271,10 +288,11 @@ function followRoute(h: EnemyState, world: World, graph: TrailGraph, dt: number,
       h.lastDistSq = Infinity;
       continue;
     }
-    if (walkToward(h, world, dt, node.x, node.z, speed) || h.routeAt + 1 >= h.route.length) return false;
-    // Refused at the treeline with the route going on: the next node, from
-    // here, this tick — a refused step moved nothing, so the one move a
-    // Hollow makes per tick is still to come.
+    const refused = !walkToward(h, world, dt, node.x, node.z, speed);
+    if (!refused || h.routeAt + 1 >= h.route.length || !isOnCorridor(world, node.x, node.z)) return false;
+    // Refused toward a node on the corridor, with the route going on: the
+    // next node, from here, this tick — a refused step moved nothing, so the
+    // one move a Hollow makes per tick is still to come.
     h.routeAt++;
     h.lastDistSq = Infinity;
   }
