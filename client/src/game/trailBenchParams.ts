@@ -57,10 +57,10 @@ export const TRAIL_BED_EARTH = 0.7;
  * The litter floor's own share (`DUFF_FLOOR_MAX`) applied to the bed under
  * the canopy. The bed carries no litter of its own — the trail run keeps
  * pieces off the core — so the paint's vertex-colour mix never lifted it the
- * way the floor beside it lifted; this mixes the bank base toward the same
- * NEEDLE_BED colour by the vertex's own forest-floor weight, so the bed
- * reads as the litter floor continuing under it. In the open the weight is
- * near zero and nothing changes.
+ * way the floor beside it lifted; this mixes the bed's base (not the bank's)
+ * toward the same NEEDLE_BED colour by the vertex's canopy density, so the
+ * bed reads as the litter floor continuing under the trees. In the open the
+ * density is zero and nothing changes.
  */
 export const TRAIL_BED_FLOOR = 0.75;
 /** Wet: the core's albedo loss and roughness loss at wetness 1; puddles. */

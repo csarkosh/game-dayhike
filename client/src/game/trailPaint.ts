@@ -397,16 +397,18 @@ export const TRAIL_FRAGMENT_PAINT = `
     vec3 tBankBase = vAlbedoColor.rgb;
 #endif
     // The bed carries no litter of its own, so the vertex-colour mix above
-    // never lifted it the way the litter floor beside it rose: mix the same
-    // NEEDLE_BED colour in by the vertex's own forest-floor weight, so the
-    // bed under the canopy reads as the floor continuing under it. In the
-    // open the weight is near zero and nothing changes.
-    tBankBase = mix(tBankBase, vec3(${f(NEEDLE_BED.r)}, ${f(NEEDLE_BED.g)}, ${f(NEEDLE_BED.b)}), ${f(TRAIL_BED_FLOOR)} * clamp(vTerrainW.y, 0.0, 1.0));
-    // The bench takes 80 % of the ground's own vertex colour rather than the
-    // material's flat white, so it wears the hue of the ground it runs
-    // through — brown under canopy, tan in the meadow — the way packed
-    // earth does.
-    vec3 tBenchBase = mix(vec3(1.0), tBankBase, ${f(TRAIL_BENCH_SHADE)});
+    // never lifted it the way the litter floor beside it rose: the bed's
+    // base mixes the same NEEDLE_BED colour in by the canopy density (the
+    // fourth weight, forestDensity at the vertex), so the bed under the
+    // trees reads as the floor continuing under it. In the open the density
+    // is zero and nothing changes. The bank keeps the raw base: it is ground
+    // beside the bed, and its vertex colour already carries the litter mix.
+    vec3 tBedBase = mix(tBankBase, vec3(${f(NEEDLE_BED.r)}, ${f(NEEDLE_BED.g)}, ${f(NEEDLE_BED.b)}), ${f(TRAIL_BED_FLOOR)} * clamp(vTerrainW2.w, 0.0, 1.0));
+    // The bench takes 80 % of the bed's base, the ground's own vertex colour
+    // with that canopy lift, rather than the material's flat white, so it
+    // wears the hue of the ground it runs through — brown under canopy, tan
+    // in the meadow — the way packed earth does.
+    vec3 tBenchBase = mix(vec3(1.0), tBedBase, ${f(TRAIL_BENCH_SHADE)});
     // The trampled band: this ground, dried and stained toward the bench.
     vec3 tCol = surfaceAlbedo * mix(vec3(1.0), vec3(${f(TRAIL_TRAMPLE_TINT.r)}, ${f(TRAIL_TRAMPLE_TINT.g)}, ${f(TRAIL_TRAMPLE_TINT.b)}), tTrample);
     // The bank: bare forest floor on the uphill side, under the vertex colour.
@@ -431,11 +433,13 @@ export const TRAIL_FRAGMENT_PAINT = `
     float tWash = smoothstep(${f(TRAIL_WASH_BAND[0])}, ${f(TRAIL_WASH_BAND[1])}, macroValueNoise(vPositionW.xz, ${f(TRAIL_WASH_WAVE)}));
     tDrift *= 1.0 - tWash;
     vec3 tDriftCol = tFloorTex * vec3(${f(TRAIL_DRIFT_TINT.r)}, ${f(TRAIL_DRIFT_TINT.g)}, ${f(TRAIL_DRIFT_TINT.b)}) * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;
-    // Keyed on the ground class, not the litter weight: the litter weight is
-    // high beside a meadow trail too (drifts reach every bed margin there),
-    // which would lift the meadow's wash-out toward the litter floor's
-    // darkness. vTerrainW.y is the forest-floor class itself.
-    float tWashDark = mix(${f(TRAIL_WASH_DARK_OPEN)}, ${f(TRAIL_WASH_DARK_LITTER)}, clamp(vTerrainW.y, 0.0, 1.0));
+    // Keyed on the canopy density, not the litter weight or the forest-floor
+    // weight: the litter weight is high beside a meadow trail too (drifts
+    // reach every bed margin there), and the forest-floor weight is the
+    // floor-to-grass mottle raised by that litter, about a half on open
+    // ground. Either would lift the meadow's wash-out toward the litter
+    // floor's darkness. The canopy density is zero in the open.
+    float tWashDark = mix(${f(TRAIL_WASH_DARK_OPEN)}, ${f(TRAIL_WASH_DARK_LITTER)}, clamp(vTerrainW2.w, 0.0, 1.0));
     vec3 tWashCol = tFloorTex * tWashDark * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;
     tCoreCol = mix(mix(tCoreCol, tDriftCol, tDrift), tWashCol, tWash);
     tMarginCol = mix(mix(tMarginCol, tDriftCol, tDrift), tWashCol, tWash);

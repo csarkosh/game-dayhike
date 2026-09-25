@@ -240,14 +240,32 @@ describe("the bank", () => {
     expect(TRAIL_FRAGMENT_PAINT).toContain("vec3 tBankBase = vColor.rgb;");
     expect(bank).toContain("tBankBase");
     expect(bank).not.toContain("vAlbedoColor");
+    // The bank is ground beside the bed, and its vertex colour already carries
+    // the litter mix: it reads the raw bank base, never the bed's lifted one.
+    expect(bank).toContain("tFloorTex * mix(1.0, tFloorRAH.g / 0.5, tk) * tBankBase, tBank);");
+    expect(bank).not.toContain("tBedBase");
   });
-  it("paints the bed under the canopy as if the litter floor continued under it, and keys the wash-out on the ground class", () => {
+  it("paints the bed under the canopy as if the litter floor continued under it, and keys the wash-out on the canopy density", () => {
     expect(TRAIL_BED_FLOOR).toBe(0.75);
-    // Both #ifdef branches of the bank base take the same lift.
-    const lifts = TRAIL_FRAGMENT_PAINT.match(/tBankBase = mix\(tBankBase, vec3\(0\.15, 0\.105, 0\.06\), 0\.75 \* clamp\(vTerrainW\.y, 0\.0, 1\.0\)\);/g) ?? [];
-    expect(lifts).toHaveLength(1);
-    expect(TRAIL_FRAGMENT_PAINT).toContain("float tWashDark = mix(0.4, 0.75, clamp(vTerrainW.y, 0.0, 1.0));");
-    expect(TRAIL_FRAGMENT_PAINT).not.toContain("mix(0.4, 0.75, clamp(vTerrainW2.z");
+    const g = TRAIL_FRAGMENT_PAINT;
+    // One bed base, lifted toward NEEDLE_BED by the canopy density (the
+    // fourth weight), declared once after the #endif that closes both
+    // branches of the bank base, so both take it, and before the bench base
+    // that reads it.
+    const bedLine = "vec3 tBedBase = mix(tBankBase, vec3(0.15, 0.105, 0.06), 0.75 * clamp(vTerrainW2.w, 0.0, 1.0));";
+    expect(g.split(bedLine)).toHaveLength(2);
+    const bed = g.indexOf(bedLine);
+    const endif = g.indexOf("#endif", g.indexOf("vec3 tBankBase = vAlbedoColor.rgb;"));
+    expect(endif).toBeGreaterThan(0);
+    expect(bed).toBeGreaterThan(endif);
+    expect(bed).toBeLessThan(g.indexOf("vec3 tBenchBase = "));
+    expect(g).toContain("vec3 tBenchBase = mix(vec3(1.0), tBedBase, 0.8);");
+    // The bank base itself is never lifted in place.
+    expect(g).not.toMatch(/tBankBase = mix\(tBankBase/);
+    expect(g).toContain("float tWashDark = mix(0.4, 0.75, clamp(vTerrainW2.w, 0.0, 1.0));");
+    // Neither mix keys on the forest-floor weight or the litter weight.
+    expect(g).not.toContain("clamp(vTerrainW.y, 0.0, 1.0)");
+    expect(g).not.toContain("mix(0.4, 0.75, clamp(vTerrainW2.z");
   });
   it("is packed snow, not dirt, above the snow line", () => {
     // vTerrainW2.y is the ground blend's detail weight: 1 on bare ground, 0
@@ -307,13 +325,13 @@ describe("the neglect patches", () => {
     expect(TRAIL_CORE_GAIN).toBe(0.24);
     expect(TRAIL_MARGIN_GAIN).toBe(0.47);
     expect(TRAIL_BENCH_SHADE).toBe(0.8);
-    expect(TRAIL_FRAGMENT_PAINT).toContain(`vec3 tBenchBase = mix(vec3(1.0), tBankBase, ${glslFloat(0.8)});`);
+    expect(TRAIL_FRAGMENT_PAINT).toContain(`vec3 tBenchBase = mix(vec3(1.0), tBedBase, ${glslFloat(0.8)});`);
   });
 
-  it("darkens the wash-out by the ground class it lies in: bare earth in the open, the litter floor's earth under it", () => {
+  it("darkens the wash-out by the canopy it lies under: bare earth in the open, the litter floor's earth under it", () => {
     expect(TRAIL_WASH_DARK_OPEN).toBe(0.4);
     expect(TRAIL_WASH_DARK_LITTER).toBe(0.75);
-    expect(TRAIL_FRAGMENT_PAINT).toContain("float tWashDark = mix(0.4, 0.75, clamp(vTerrainW.y, 0.0, 1.0));");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("float tWashDark = mix(0.4, 0.75, clamp(vTerrainW2.w, 0.0, 1.0));");
     const wash = TRAIL_FRAGMENT_PAINT.match(/vec3 tWashCol = [^\n]*/)![0];
     expect(wash).toContain("tFloorTex * tWashDark *");
   });
@@ -365,7 +383,7 @@ describe("the GLSL", () => {
     expect(g).toContain("trailValueNoise1(tU, 12.0)");
     expect(g).toContain("trailValueNoise1(tU, 3.0)");
     expect(g).toContain("macroValueNoise(vPositionW.xz, 6.0)");
-    expect(g).toContain("mix(vec3(1.0), tBankBase, 0.8)");
+    expect(g).toContain("mix(vec3(1.0), tBedBase, 0.8)");
     expect(g).toContain("texture2D(trailSegs, vec2(tu, 0.25))");
     expect(g.split("texture2D(trailSegs, vec2(tuBest, 0.75))").length).toBe(2);
     for (const term of ["trailValueNoise1(", "macroValueNoise(", "terrainWet", "tPuddle", "tLip", "tWidthK", "tDarkK", "tdN"]) expect(g).toContain(term);
