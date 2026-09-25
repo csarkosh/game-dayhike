@@ -39,10 +39,15 @@ export type NamedHandler = (e: { entityId: number; peerId: string }) => void;
 /**
  * Why a session ended, as far as the client can tell from the host's messages.
  *
- * - `version_skew`: the host's Welcome carried another protocol version or
- *   level id, so the two pages are running different builds. Nothing on this
- *   page can join that host; a reload that fetches the current build can.
- *   `message` names what each side runs, for the console.
+ * - `version_skew`: the host's Welcome carried another protocol version, or a
+ *   level id for the same world built by different generator code, so the
+ *   two pages are running different builds. Nothing on this page can join
+ *   that host; a reload that fetches the current build can. `message` names
+ *   what each side runs, for the console.
+ * - `world_changed`: the host's level id names another world (another seed
+ *   or terrain variant) — typically a follower still connecting to a game
+ *   the host has already left. Following the host's route fixes it; a
+ *   reload would not.
  * - `host_ended`: the host sent SessionEnded. `message` is its reason,
  *   possibly empty.
  *
@@ -51,7 +56,32 @@ export type NamedHandler = (e: { entityId: number; peerId: string }) => void;
  */
 export type SessionEnd =
   | { kind: "version_skew"; message: string }
+  | { kind: "world_changed"; message: string }
   | { kind: "host_ended"; message: string };
+
+const STALE_CLIENT_ADVICE = "Reload the page to update.";
+
+/**
+ * Why two forest level ids disagree. An id reads
+ * `forest/<generation>/<variant>/<seed>/<fieldHash>/<passHash>` (sim/forest.ts):
+ * the variant and seed choose the world, and the rest digest the code that
+ * builds it. Only a difference in the choice, at the same generation, is a
+ * different world; anything else, including an id that does not parse, is a
+ * different build.
+ */
+export function classifyLevelMismatch(
+  hostLevelId: string,
+  ownLevelId: string,
+): "version_skew" | "world_changed" {
+  const host = hostLevelId.split("/");
+  const own = ownLevelId.split("/");
+  const isForest = (parts: string[]) => parts.length === 6 && parts[0] === "forest";
+  if (!isForest(host) || !isForest(own)) return "version_skew";
+  // Another generation is another build whatever else differs: the ids are
+  // not comparable segment by segment across generator versions.
+  if (host[1] !== own[1]) return "version_skew";
+  return host[2] !== own[2] || host[3] !== own[3] ? "world_changed" : "version_skew";
+}
 
 export type ClientSession = {
   readonly ready: boolean;
@@ -79,9 +109,9 @@ export function createClientSession(
   seed: number,
   transport: Transport,
   clock: () => number,
-  opts: { expectedLevelId?: string; forest?: Forest | null; staleClientAdvice?: string } = {},
+  opts: { expectedLevelId?: string; forest?: Forest | null } = {},
 ): ClientSession {
-  const { expectedLevelId, forest = null, staleClientAdvice = "Reload the page to update." } = opts;
+  const { expectedLevelId, forest = null } = opts;
 
   // The predicted world holds ONLY the local player. Remote entities are
   // interpolated from snapshots instead: the client has no authority over
@@ -129,7 +159,7 @@ export function createClientSession(
               kind: "version_skew",
               message:
                 `Protocol mismatch: the host is running protocol ${event.protocolVersion}, this client has ` +
-                `${PROTOCOL_VERSION}. ${staleClientAdvice}`,
+                `${PROTOCOL_VERSION}. ${STALE_CLIENT_ADVICE}`,
             });
             return;
           }
@@ -139,15 +169,24 @@ export function createClientSession(
           // bundle cached from before a deploy, simulating a different forest and
           // desyncing invisibly. Refusing loudly beats that.
           if (expectedLevelId !== undefined && event.levelId !== expectedLevelId) {
-            // The advice is the caller's: on the web a reload fetches the
-            // current bundle; in the desktop shell the bundle is the app, and
-            // the way out is a new download.
-            endHandler?.({
-              kind: "version_skew",
-              message:
-                `Level mismatch: the host is running ${event.levelId}, this client has ` +
-                `${expectedLevelId}. ${staleClientAdvice}`,
-            });
+            // A reload fetches the current bundle, on the web and in the
+            // desktop shell alike: the shell loads the live site.
+            const kind = classifyLevelMismatch(event.levelId, expectedLevelId);
+            endHandler?.(
+              kind === "world_changed"
+                ? {
+                    kind,
+                    message:
+                      `World mismatch: the host is running ${event.levelId}, this client has ` +
+                      `${expectedLevelId}.`,
+                  }
+                : {
+                    kind,
+                    message:
+                      `Level mismatch: the host is running ${event.levelId}, this client has ` +
+                      `${expectedLevelId}. ${STALE_CLIENT_ADVICE}`,
+                  },
+            );
             return;
           }
           localId = event.entityId;

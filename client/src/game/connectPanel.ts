@@ -7,8 +7,9 @@ const STYLE = `
     background: rgba(16, 16, 20, 0.82);
     font-family: ui-monospace, monospace;
     /* Above the pause menu (pauseMenu.ts, 18), which opens underneath whenever
-       the pointer is not engaged — and it never is in a game that failed to
-       connect — and below the roster (roster.ts, 20), which still shows the
+       the pointer is not engaged — and app.ts releases the pointer before
+       showing this panel, since a player can resume into the game while it
+       connects — and below the roster (roster.ts, 20), which still shows the
        party this player is deciding whether to stay in. */
     z-index: 19;
   }
@@ -66,6 +67,10 @@ export function sessionEndOutcome(end: SessionEnd): SessionEndOutcome {
   switch (end.kind) {
     case "version_skew":
       return { panel: { message: STALE_PAGE_MESSAGE, retry: "reload" } };
+    case "world_changed":
+      // The host has moved to another game; the lobby's route update takes
+      // this page there, or the landing page is the fallback.
+      return { status: end.message };
     case "host_ended":
       return { status: end.message.length > 0 ? end.message : "The host ended this session." };
   }

@@ -52,7 +52,7 @@ import { createHostSession } from "./net/hostSession.js";
 import { createClientSession } from "./net/clientSession.js";
 import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
-import { isDesktop, isTouchDevice } from "./game/platform.js";
+import { isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { createEndPanel, endPanelModel } from "./game/endPanel.js";
@@ -885,9 +885,6 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     const client = createClientSession(level, seed, transport, () => performance.now(), {
       expectedLevelId: forest.levelId,
       forest,
-      ...(isDesktop()
-        ? { staleClientAdvice: "Download the latest desktop version from the landing page." }
-        : {}),
     });
     session = client;
     escalation = ESCALATION_REST;
@@ -903,9 +900,10 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     client.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
-    // Show the reason the session actually gave. Hardcoding one message here
-    // made every failure read as a deliberate host shutdown, including the
-    // level-mismatch check, whose whole purpose is to say what went wrong.
+    // Each end is explained where the player can act on it: the host's own
+    // reason, or a move to another world, on the status line on the way to
+    // the landing page; a different build on the panel, in plain words, with
+    // the ids each side runs in the console.
     client.onSessionEnd((end) => {
       if (disposed) return;
       const outcome = sessionEndOutcome(end);
@@ -923,6 +921,9 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       // explicit close is not a peer leaving, so no reconnect starts here.
       client.dispose();
       hud.setStatus(null);
+      // The player may have resumed into the game while it connected; a
+      // locked pointer cannot reach the panel's buttons.
+      input.disengage();
       connectPanel.show(outcome.panel);
     });
     // Not unconditionally: the lobby can end while the handshake is in flight,
@@ -1000,6 +1001,8 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       void runAsClient(active).catch((err: unknown) => {
         if (disposed) return;
         hud.setStatus(null);
+        // As for a different build above: the buttons need the pointer.
+        input.disengage();
         connectPanel.show(connectFailure(err));
       });
     };

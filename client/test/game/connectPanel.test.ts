@@ -40,9 +40,9 @@ describe("sessionEndOutcome", () => {
     expect(outcome).toEqual({ panel: { message: STALE_PAGE_MESSAGE, retry: "reload" } });
   });
 
-  it("says in plain words that a reload is the way to join", () => {
-    expect(STALE_PAGE_MESSAGE).toContain("different versions");
-    expect(STALE_PAGE_MESSAGE).toContain("Reload");
+  it("keeps a host that moved to another world on the status line", () => {
+    const message = "World mismatch: the host is running forest/5/olympic/222/-17/9, this client has forest/5/olympic/111/-16/9.";
+    expect(sessionEndOutcome({ kind: "world_changed", message })).toEqual({ status: message });
   });
 
   it("keeps the host's own ending on the status line, reason verbatim", () => {
