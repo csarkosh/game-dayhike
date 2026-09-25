@@ -7,12 +7,14 @@ format of
 [`2026-09-24-forest-floor-verification.md`](2026-09-24-forest-floor-verification.md).
 The gates are the design's §8; the bars are its §1.
 
-Everything below was read against the client code at `7ce02f2` (unchanged by
-the docs-only commit `b95071d` that followed it). The design's §10 amendment —
-the capped lean and the probes over the whole solid — is **not** in anything
-measured here, and the two findings in section 7 are what that amendment
-exists to fix. The stills, the seam and the frame numbers are owed again on
-the amended code.
+The stills, the bucket counts, the seam and the invariant check were read
+against the client code at `7ce02f2` (unchanged by the docs-only commit
+`b95071d` that followed it). The design's §10 amendment — the capped lean and
+the probes over the whole solid — is **not** in any of that, and the overhang
+in section 7 is what the amendment exists to fix; those readings are owed
+again on the amended code. Section 5's tint and lighting work was done later,
+against the amended shell as it stood in the working tree, and does not
+depend on the placement either way.
 
 ## 1. Method
 
@@ -90,11 +92,12 @@ and the face does not read as a cliff.**
   is there is scattered blocks. The honest verdict at 30 m and beyond is that
   the face does **not** read as ledged rock.
 - **They are far darker than the ground they stand on.** On the lit slope the
-  module pixels average about (25, 30, 35) of 255 while the hillside around
-  them averages (113, 112, 111) in shade and (150, 150, 141) in sun. §1 asks
-  that "a brown granite module and a pale cobble hillside read as one
-  material". They do not; they read as a different rock dropped onto the
-  hill. Section 5 measures why.
+  module pixels average about (31, 34, 38) of 255 while the hillside around
+  them averages (117, …) in the same frame. §1 asks that "a brown granite
+  module and a pale cobble hillside read as one material". At noon they do
+  not. Section 5 establishes why, and it is not the material: a near-vertical
+  wall under a sun 76° up is lit almost entirely by the sky fill. At 16:00
+  the same modules read at twice the value and the gap halves.
 - **Nothing floats and nothing is buried wrongly.** Every module is bedded
   with its shadow starting at its own base; none hangs in the air, and none
   is sunk so far that only a nub shows. At the near pose the camera stands in
@@ -112,19 +115,74 @@ and the face does not read as a cliff.**
   rock with the same litter on it; the only differences are the wind's phase
   in the canopy dapple and a different hiker name in the corner.
 
-## 5. The tint
+## 5. The tint, and why the walls are dark
 
-The per-instance tint (`CLIFF_GROUND_TINT = 0.5`) was toggled on and off on
-**one page at one pose** — no reload, so the sun does not move — at the lit
-80 m view, and the two frames compared.
+**The tint works.** An earlier reading in this note said it did not; that
+reading was wrong and the way it was wrong is worth keeping. It switched the
+plugin off with `plugin.isEnabled = false` and found the module pixels moved
+by 0.04 of 255. But `MaterialPluginBase` defines no `isEnabled` — the
+property simply does not exist on this plugin, so the assignment added a
+stray field to a JavaScript object and the plugin went on running. The
+experiment never turned anything off.
 
-Toggling the plugin off changes the module pixels by **0.04 of 255** in each
-channel (module body, 451,118 pixels: (24.96, 30.11, 35.33) with the tint on
-against (24.99, 30.15, 35.38) with it off). The frame-to-frame animation
-noise over the same five seconds is about 2.7 of 255, seventy times larger.
-The plugin is attached to all six materials and reports itself enabled; its
-effect on what is drawn is below the noise floor. Half the ground's albedo is
-not reaching the wall. That is the second finding in section 7.
+Three readings on the live page say the path is whole, end to end:
+
+- `foliage` is in the effect's own attribute list —
+  `position, normal, tangent, uv, world0..3, foliage`.
+- The compiled defines carry both `CLIFFTINT` and `THIN_INSTANCES`, which is
+  what the vertex stage needs before it will read the attribute at all.
+- Writing `(1, 0, 0, 1)` into every bucket's `foliage` buffer turns the
+  modules visibly **pink**. Half the instance colour reaches the albedo, as
+  designed.
+
+**The walls are dark because of the sun, not the material.** With
+`unlit = true` — the raw base colour, no lighting — the same pixels render
+**(96, 92, 86)**: ordinary mid-grey granite. Lit at noon they render
+**(31, 34, 38)**, about a third of that, and blue-shifted so that blue
+exceeds red although the albedo has red exceeding blue. That is the
+signature of a surface the sun is missing: the only light of consequence
+reaching it is the hemispheric fill, intensity 0.15 and diffuse
+(0.42, 0.58, 0.82), while the directional sun runs at intensity 3.95 and
+points (0, −0.970, 0.243) — 76° above the horizon. A near-vertical wall
+catches almost none of a sun that is nearly overhead.
+
+Everything else was ruled out by experiment on one page at one pose:
+
+| change | module mean RGB |
+| --- | --- |
+| as shipped, noon | (30.8, 34.4, 38.2) |
+| `albedoTexture = null`, `albedoColor` white | (45.6, 52.5, 60.3) |
+| …and `receiveShadows = false` | (49.0, 55.6, 63.0) |
+| …and `twoSidedLighting = true` | (49.0, 55.6, 63.0) |
+| `unlit = true` (raw albedo) | (96.1, 92.0, 86.4) |
+
+A pure white material still renders at a third of the hillside's value, so
+it is not the base-colour texture and not `albedoColor`. Shadow receipt is
+worth about 3 of 255. Two-sided lighting changes nothing, because
+`twoSidedLighting` is already true and `backFaceCulling` already false. The
+shipped boulders carry the same material fields — white `albedoColor`, the
+same base-colour texture setup, metallic 0, roughness 1, both intensities 1 —
+so nothing about the cliff material is unusual.
+
+The sun angle settles it. The same pose at 16:00, sun at 29° instead of 76°:
+
+| | module | ground | module / ground |
+| --- | --- | --- | --- |
+| noon, sun 76° up | 34.5 | 116.8 | **0.295** |
+| 16:00, sun 29° up | 75.5 | 123.2 | **0.613** |
+
+The modules more than double in brightness while the ground barely moves.
+Every gate pose in this note was shot at `time 12`, which is the worst hour
+in the day for a near-vertical face. The walls being dark at noon is the
+scene lighting working, not a fault — but it is still how the game looks at
+noon, and if they should read lighter the levers are the fill light, the
+tint share, or seating the modules further back, not the texture.
+
+One loose end: raising the material's `environmentIntensity` and
+`directIntensity` to 4 lifted the mean only from 30.9 to 51.4, far less than
+fourfold. A constant that does not scale with the material's light terms is
+contributing most of the remainder at this distance, most likely the
+atmosphere's in-scatter. It is noted, not chased.
 
 ## 6. The invariants
 
@@ -150,7 +208,7 @@ not reaching the wall. That is the second finding in section 7.
   alone. The one bucket reporting not-ready is `wall_a`'s LOD0, which is
   disabled and holds no instances.
 
-## 7. Two defects
+## 7. One defect, and one thing that is not one
 
 - **A module can lean out over walkable ground.** Seated fully on the ground
   normal, a wall lies back on the slope and its upper body reaches downhill
@@ -160,10 +218,11 @@ not reaching the wall. That is the second finding in section 7.
   the base plane. The design's §10 amendment — the lean capped at 20° and
   three more probes at the ground projection of the top edge — is the fix;
   none of it is in the code measured here.
-- **The tint does not reach the wall.** Section 5: switching the plugin off
-  moves the modules by 0.04 of 255. Whatever the fragment stage is mixing
-  toward, it is not the ground albedo under the instance, and the result is
-  a near-black wall on a pale hillside at every distance.
+- **The tint is not a defect.** An earlier pass in this note recorded it as
+  one, on a measurement that never switched the plugin off. It works: the
+  attribute is bound, the defines are set, and a forced red instance colour
+  turns the modules pink. Section 5 has the correction and the reason the
+  walls are dark anyway.
 
 ## 8. The rebuild is not a hitch
 
@@ -226,10 +285,15 @@ because a run that straddles an edit measures neither build.)*
 - All the face stills again after the §10 amendment lands, since the capped
   lean changes where every module sits and how it stands.
 - The look itself. The skyline breaks, and that is the win. But the face
-  between the modules is unchanged, the lattice shows in their spacing, and
-  their colour does not belong to the hill. Ledges rather than scattered
-  blocks is a placement question — a run of modules that overlaps along a
-  contour rather than one per 12 m cell — and it is not answered here.
+  between the modules is unchanged and the lattice shows in their spacing.
+  Ledges rather than scattered blocks is a placement question — a run of
+  modules that overlaps along a contour rather than one per 12 m cell — and
+  it is not answered here.
+- A decision about the walls at midday. They are lit correctly and they are
+  dark; whether a near-vertical face should read this dark under a high sun
+  is a judgement, and the levers are the fill light, `CLIFF_GROUND_TINT` and
+  the seating angle. Worth judging on a mid-morning or late-afternoon pose
+  as well as noon, since the difference is a factor of two.
 - The design's own follow-ups, none of them attempted: the block field at the
   foot of the face, mirrored variants, the snowy faces above the snow line,
   and a crest-only band beyond the reach.
