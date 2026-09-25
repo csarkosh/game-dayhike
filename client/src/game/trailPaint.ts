@@ -38,12 +38,13 @@
  * preprocessor keyword inside a comment there.
  */
 import { TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, TRAIL_SINK, TRAIL_SINK_RAMP, type TrailGraph } from "../sim/trail.js";
+import { NEEDLE_BED } from "./terrainSurface.js";
 import {
   TRAIL_JUNCTION_W,
   TRAIL_WEAR_WAVE, TRAIL_WEAR_WEIGHT, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
   TRAIL_EDGE_NOISE, TRAIL_EDGE_WAVE, TRAIL_EDGE_WEIGHT, TRAIL_HEIGHT_SHIFT,
   TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE,
-  TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT, TRAIL_BENCH_SHADE, TRAIL_BED_EARTH,
+  TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT, TRAIL_BENCH_SHADE, TRAIL_BED_EARTH, TRAIL_BED_FLOOR,
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE,
   TRAIL_DRIFT_BAND, TRAIL_DRIFT_TINT, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER, TRAIL_WASH_ROUGH,
   trailWear, trailEdgeNoise, trailBands,
@@ -395,6 +396,12 @@ export const TRAIL_FRAGMENT_PAINT = `
 #else
     vec3 tBankBase = vAlbedoColor.rgb;
 #endif
+    // The bed carries no litter of its own, so the vertex-colour mix above
+    // never lifted it the way the litter floor beside it rose: mix the same
+    // NEEDLE_BED colour in by the vertex's own forest-floor weight, so the
+    // bed under the canopy reads as the floor continuing under it. In the
+    // open the weight is near zero and nothing changes.
+    tBankBase = mix(tBankBase, vec3(${f(NEEDLE_BED.r)}, ${f(NEEDLE_BED.g)}, ${f(NEEDLE_BED.b)}), ${f(TRAIL_BED_FLOOR)} * clamp(vTerrainW.y, 0.0, 1.0));
     // The bench takes 80 % of the ground's own vertex colour rather than the
     // material's flat white, so it wears the hue of the ground it runs
     // through — brown under canopy, tan in the meadow — the way packed
@@ -424,7 +431,11 @@ export const TRAIL_FRAGMENT_PAINT = `
     float tWash = smoothstep(${f(TRAIL_WASH_BAND[0])}, ${f(TRAIL_WASH_BAND[1])}, macroValueNoise(vPositionW.xz, ${f(TRAIL_WASH_WAVE)}));
     tDrift *= 1.0 - tWash;
     vec3 tDriftCol = tFloorTex * vec3(${f(TRAIL_DRIFT_TINT.r)}, ${f(TRAIL_DRIFT_TINT.g)}, ${f(TRAIL_DRIFT_TINT.b)}) * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;
-    float tWashDark = mix(${f(TRAIL_WASH_DARK_OPEN)}, ${f(TRAIL_WASH_DARK_LITTER)}, clamp(vTerrainW2.z, 0.0, 1.0));
+    // Keyed on the ground class, not the litter weight: the litter weight is
+    // high beside a meadow trail too (drifts reach every bed margin there),
+    // which would lift the meadow's wash-out toward the litter floor's
+    // darkness. vTerrainW.y is the forest-floor class itself.
+    float tWashDark = mix(${f(TRAIL_WASH_DARK_OPEN)}, ${f(TRAIL_WASH_DARK_LITTER)}, clamp(vTerrainW.y, 0.0, 1.0));
     vec3 tWashCol = tFloorTex * tWashDark * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;
     tCoreCol = mix(mix(tCoreCol, tDriftCol, tDrift), tWashCol, tWash);
     tMarginCol = mix(mix(tMarginCol, tDriftCol, tDrift), tWashCol, tWash);

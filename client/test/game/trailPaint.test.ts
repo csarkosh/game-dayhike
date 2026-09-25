@@ -16,7 +16,7 @@ import {
   TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
   TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE, TRAIL_WEAR_WAVE, TRAIL_EDGE_WAVE,
   TRAIL_DRIFT_BAND, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_ROUGH, TRAIL_BED_EARTH,
-  TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER,
+  TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER, TRAIL_BED_FLOOR,
   trailWear, trailEdgeNoise, trailPatches,
 } from "../../src/game/trailBenchParams.js";
 
@@ -241,6 +241,14 @@ describe("the bank", () => {
     expect(bank).toContain("tBankBase");
     expect(bank).not.toContain("vAlbedoColor");
   });
+  it("paints the bed under the canopy as if the litter floor continued under it, and keys the wash-out on the ground class", () => {
+    expect(TRAIL_BED_FLOOR).toBe(0.75);
+    // Both #ifdef branches of the bank base take the same lift.
+    const lifts = TRAIL_FRAGMENT_PAINT.match(/tBankBase = mix\(tBankBase, vec3\(0\.15, 0\.105, 0\.06\), 0\.75 \* clamp\(vTerrainW\.y, 0\.0, 1\.0\)\);/g) ?? [];
+    expect(lifts).toHaveLength(1);
+    expect(TRAIL_FRAGMENT_PAINT).toContain("float tWashDark = mix(0.4, 0.75, clamp(vTerrainW.y, 0.0, 1.0));");
+    expect(TRAIL_FRAGMENT_PAINT).not.toContain("mix(0.4, 0.75, clamp(vTerrainW2.z");
+  });
   it("is packed snow, not dirt, above the snow line", () => {
     // vTerrainW2.y is the ground blend's detail weight: 1 on bare ground, 0
     // under full snow, and snow is the only thing that lowers it. The bed
@@ -302,10 +310,10 @@ describe("the neglect patches", () => {
     expect(TRAIL_FRAGMENT_PAINT).toContain(`vec3 tBenchBase = mix(vec3(1.0), tBankBase, ${glslFloat(0.8)});`);
   });
 
-  it("darkens the wash-out by the litter the bed lies in: bare earth in the open, the litter floor's earth under it", () => {
+  it("darkens the wash-out by the ground class it lies in: bare earth in the open, the litter floor's earth under it", () => {
     expect(TRAIL_WASH_DARK_OPEN).toBe(0.4);
     expect(TRAIL_WASH_DARK_LITTER).toBe(0.75);
-    expect(TRAIL_FRAGMENT_PAINT).toContain("float tWashDark = mix(0.4, 0.75, clamp(vTerrainW2.z, 0.0, 1.0));");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("float tWashDark = mix(0.4, 0.75, clamp(vTerrainW.y, 0.0, 1.0));");
     const wash = TRAIL_FRAGMENT_PAINT.match(/vec3 tWashCol = [^\n]*/)![0];
     expect(wash).toContain("tFloorTex * tWashDark *");
   });

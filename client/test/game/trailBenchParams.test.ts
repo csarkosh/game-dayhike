@@ -10,7 +10,7 @@ import {
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE,
   TRAMPLE_HEIGHT, TRAMPLE_LEAN, TRAMPLE_TINT, TRAMPLE_BAND,
   TRAIL_DRIFT_BAND, TRAIL_DRIFT_TINT, TRAIL_DRIFT_LUM, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_ROUGH, TRAIL_BED_EARTH,
-  TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER,
+  TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER, TRAIL_BED_FLOOR,
   valueNoise1, trailWear, trailEdgeNoise, trailBands, trampleAt,
   trailDriftWeight, trailWashoutNoise, trailWashoutWeight, trailPatches,
 } from "../../src/game/trailBenchParams.js";
@@ -33,6 +33,7 @@ describe("constants", () => {
     expect(TRAIL_TRAMPLE_TINT).toEqual({ r: 0.9, g: 0.88, b: 0.8 });
     expect(TRAIL_BENCH_SHADE).toBe(0.8);
     expect(TRAIL_BED_EARTH).toBe(0.7);
+    expect(TRAIL_BED_FLOOR).toBe(0.75);
     expect([TRAIL_WET_DARK, TRAIL_WET_GLOSS]).toEqual([0.35, 0.5]);
     expect(TRAIL_PUDDLE_WET).toEqual([0.55, 0.8]); expect(TRAIL_PUDDLE_LOW).toEqual([0.62, 0.75]); expect(TRAIL_PUDDLE_WAVE).toBe(6);
     expect([TRAMPLE_HEIGHT, TRAMPLE_LEAN]).toEqual([0.73, 0.21]);
