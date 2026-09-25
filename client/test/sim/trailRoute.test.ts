@@ -178,4 +178,35 @@ describe("guideWalk", () => {
   it("measures a path's length by arc", () => {
     expect(pathLength(ladder(), [3, 2, 1, 0])).toBeCloseTo(300, 6);
   });
+
+  it("visits no node twice, even where a loop off a hub would let it", () => {
+    // A four-way hub (1) between the crest (4) and the pad (0), with a loop
+    // 1→2→3→1 hanging off it. Walking the loop and coming back through the
+    // hub repeats no EDGE — 4→1→2→3→1→0 is 100 + 64 + 80 + 64 + 100 = 408 m,
+    // 2.04 × the 200 m shortest and squarely in band — but it stands on the
+    // hub twice, and the cut needs one edge into every fork and one out. So
+    // the walk refuses it: at 3 the only onward edge leads to a node already
+    // on the walk, that try dies, and the one crest-to-pad walk left is the
+    // 200 m stem, out of band.
+    const nodes = [
+      { x: 0, z: 0, h: 0, u: 0 }, { x: 100, z: 0, h: 0, u: 0 }, { x: 150, z: 40, h: 0, u: 0 },
+      { x: 150, z: -40, h: 0, u: 0 }, { x: 200, z: 0, h: 0, u: 0 },
+    ];
+    const edge = (a: number, b: number): TrailEdge =>
+      ({ a, b, kind: "loop", profile: new Float64Array([0, 0]), progress0: 0, progress1: 0 });
+    const edges = [edge(0, 1), edge(1, 2), edge(2, 3), edge(3, 1), edge(1, 4)];
+    const homeDist = homeDistances(nodes, edges);
+    const g: TrailGraph = {
+      nodes, edges, trailhead: { x: 0, z: 0, u: 0 }, summit: 4, stem: [0, 4], loops: [], features: [], stemLen: 200,
+      fallbacks: 0, forks: forksOf(nodes.length, edges), homeDist, shortestHome: homeDist[4]!,
+    };
+    expect(g.forks).toEqual([1]);
+    for (const seed of [1, 7, 99, 2024]) {
+      const rng = { rngSeed: seed };
+      const walk = guideWalk(g, () => nextRandom(rng), GUIDE_MIN, GUIDE_MAX, 64);
+      expect(new Set(walk.path).size, `seed ${seed}`).toBe(walk.path.length);
+      expect(walk.path, `seed ${seed}`).toEqual([4, 1, 0]);
+      expect(walk.inBand, `seed ${seed}`).toBe(false);
+    }
+  });
 });
