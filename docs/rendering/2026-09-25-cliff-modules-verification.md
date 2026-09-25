@@ -27,7 +27,7 @@ waits, shoots, and closes. Control and branch are shot back to back at each
 pose. The bucket instance counts and the material state are read off the
 branch page at the pose, before the shot.
 
-Two rig faults are worth stating because they change what the stills can
+Two faults in the paired servers are worth stating because they change what the stills can
 prove. A page is selected by its own port, not by "the newest game page" —
 another measurement running beside this one put its page on top and the first
 attempt read that page's (empty) scene instead. And the scene is animated:
@@ -240,7 +240,7 @@ rebuild lands, and so found nothing; the numbers above keep it.)
 ## 9. The seam
 
 The design asks the trail-over-rock pose at (−147, 53, 42) to be pixel
-identical. It cannot be proved that way with this rig, and the reason is
+identical. It cannot be proved that way with the paired servers, and the reason is
 worth recording. Between control and branch the two poses score **32.7 dB**
 and **33.8 dB** PSNR — but between *two shots of the control alone*, same
 pose, same build, minutes apart, they score **14.7 dB** and **18.7 dB**. The
@@ -647,13 +647,16 @@ of nine and is the lever that acts on exactly this; it was not applied.
 | 4× at the trailside within noise | **met**, +0.54 against a 2.2 ms floor |
 | Native p95 at the scarp ≤ +1.0 ms | **met**, at the vsync cap |
 
-Two things need deciding before the walls can ship. The frame bar is missed
-by a little, and §8 names the first fallback. The trap is a new way to lose
-a hiker: a wall's uphill face, on ground a foot cannot hold, makes a V with
-no exit, which the smooth hillside never had. It is the solid modules'
-consequence, not the placement's, and nothing measured here says which
-lever — a back face that slopes, grounding against a box face, or a jump
-from one — is the right one.
+What was decided on these findings:
+- **The frame miss is accepted, with `CLIFF_RUN_MAX` left at 4.** The miss
+  is 0.18 ms over the bar. That is inside this measurement's order asymmetry
+  (2.5 ms between the two orders) and its same-code floor (up to 1.06 ms).
+- **The trap is closed by §16.** Each box's uphill face is buried in the
+  hill, so a hiker sliding down behind a wall lands on its top (design
+  §12.5).
+- **The shelves and the crest curbs are the next work's first item.** The
+  shelves are the flat tops a sliding hiker stands on above the hillside.
+  The curbs are the rare low box tops over walkable ground near a crest.
 
 ## 16. The walk again, with the uphill faces buried
 
@@ -773,7 +776,7 @@ ever has the hull more than 1 cm inside one.
 | The slide census matches the simulation | **met**, 119 / 115 / 4 / 0 / 0 |
 | Crest-run jitter | resolved as a collider matter (under 1 mm inside). The reversals left are the stand limit's own, measured identically 40 m from any wall |
 | Nothing falls through the ground | **met** |
-| Frame bars | not measured again. The scarp's +1.68 ms miss from §15 still stands, and so does the open fallback. |
+| Frame bars | not measured again. The scarp's +1.68 ms miss from §15 stands, accepted with `CLIFF_RUN_MAX` at 4 (§15). |
 
 The walk bar of §12.4 is met. Two things are left, both named in §12.5 as
 next work: the shelves, where a sliding hiker stands a metre or two above

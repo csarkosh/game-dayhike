@@ -1,7 +1,5 @@
 # Cliff Modules Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Dress ground that is both rock and too steep to stand on with instanced rock-wall modules drawn at three LODs out to 400 m, renderer-only, so the steep faces read as ledged rock with a broken skyline.
 
 **Architecture:** A pure placement field (`cliffField.ts`: cell → instance, gate, footprint, bands, memoising collector) feeds a Babylon shell (`cliffMeshes.ts`: six thin-instance buckets from the two GLBs' three LOD roots, a far bucket that dithers out, ground tint through a small fragment-only plugin). The renderer creates it beside the other fields, registers its casters, and updates it at both per-frame sites. Nothing under `sim/` changes.
@@ -13,14 +11,13 @@
 ## Global Constraints
 
 - No file under `client/src/sim/` changes. The `CLUTTER_TUNABLES` digest pinned in `client/test/sim/groundGradient.test.ts` is unchanged (the level id does not move).
-- Never mention how the models were produced, and never use process vocabulary (sessions, agents, reviews, briefs, tasks, plans, rulings, "the owner") in code, comments, docs or commit messages. The repository is public.
 - Stage explicit paths only — never `git add -A` or `git add .`.
 - The repository's pre-push scan must pass on every commit; run it after each one, not only before the push.
 - Before every commit: `npm run typecheck` green, the touched test files green (`cd client && npx vitest run <files>`), and `npx eslint <touched files>` clean.
 - `scale` is a multiplier on the model's own size, never a length. The metre bands in the spec become scale factors only through `CLIFF_MODEL_WIDTH` / `CLIFF_MODEL_HEIGHT`.
 - Commit message format: `<type>: <subject under 72 chars>`, blank line, `## What` paragraph, `## How` list with each entry led by a backticked path, blank line, then `Co-Authored-By: <your model name> <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01JbDze4ef9icFkvYw2Ryws1`.
 - Never run a rendering game page while the suite runs (a rendering page starves vitest).
-- Work in `/Users/csarko/Projects/game-dayhike/.claude/worktrees/cliff-modules` on `worktree-cliff-modules`; the models are already committed there (`001e7bc`).
+- Work on this branch; the models are already committed there (`001e7bc`).
 
 Measured facts the code relies on (from the built GLBs, `LOD0` root): `cliff.wall_a` spans x −3.87..4.40, y −0.42..4.54, z −3.61..0.77 (8.27 × 4.96 × 4.38 m); `cliff.wall_b` spans x −9.68..10.55, y −0.16..7.01, z −4.39..2.19 (20.23 × 7.17 × 6.58 m). The face points +Z on both. Each LOD root holds exactly one geometry mesh with one material.
 
@@ -1592,19 +1589,19 @@ Expected: `0 failing`.
 
 **Files:**
 - Create: `docs/rendering/<YYYY-MM-DD>-cliff-modules-verification.md` (dated the day it is written)
-- Scratch (never committed): a stills script and a frame-time run under the scratchpad directory.
+- Scratch (never committed): a stills script and a frame-time run, kept outside the repository.
 
 **Interfaces:**
-- Consumes: the rig in `~/Projects/fps-sdd-archive/2026-09-22-blade-field/scripts/` — `apply-hooks.py <worktree> <vitePort> <wsPort> [revert]` (exposes `window.__fcSet(x, y, z, yaw, pitch)`, `__engine`, `__scene`, `__tier`, and moves vite to the port), `apply-tier-hook.py <worktree> [revert]` (reads `?tier=` from the URL), `stills.sh` and `frametime.sh` as templates. The chrome-devtools CLI (`chrome-devtools start --isolated=true --allowUnrestrictedPaths=true`, `new_page`, `evaluate_script`, `take_screenshot`, `close_page`, `stop`).
+- Consumes: the paired servers' page-hook scripts, kept outside the repository — `apply-hooks.py <checkout> <vitePort> <wsPort> [revert]` (exposes `window.__fcSet(x, y, z, yaw, pitch)`, `__engine`, `__scene`, `__tier`, and moves vite to the port), `apply-tier-hook.py <checkout> [revert]` (reads `?tier=` from the URL), `stills.sh` and `frametime.sh` as templates. The chrome-devtools CLI (`chrome-devtools start --isolated=true --allowUnrestrictedPaths=true`, `new_page`, `evaluate_script`, `take_screenshot`, `close_page`, `stop`).
 
-Control: the worktree `.claude/worktrees/forest-control` is at f276f25, which is NOT current `origin/main` (d07a2cc). Re-point it first: `git -C .claude/worktrees/forest-control checkout --detach d07a2cc` (it is a detached worktree; confirm with `git worktree list`). The branch serves on 5174, the control on 5175.
+Control: a second checkout, detached at the `main` this branch left (`d07a2cc`). The branch serves on 5174, the control on 5175.
 
 - [ ] **Step 1: Stand up both builds, hooked**
 
 ```bash
-R=~/Projects/fps-sdd-archive/2026-09-22-blade-field/scripts
-P=/Users/csarko/Projects/game-dayhike/.claude/worktrees/cliff-modules
-C=/Users/csarko/Projects/game-dayhike/.claude/worktrees/forest-control
+R=<the page-hook scripts, kept outside the repository>
+P=<this branch's checkout>
+C=<the control checkout>
 git -C $C checkout --detach d07a2cc
 python3 $R/apply-hooks.py $P 5174 8081 && python3 $R/apply-tier-hook.py $P
 python3 $R/apply-hooks.py $C 5175 8081 && python3 $R/apply-tier-hook.py $C
@@ -1634,7 +1631,7 @@ Judge against the spec §8: the face reads as ledged rock with a broken skyline 
 
 - [ ] **Step 3: Frame pairs**
 
-Copy `frametime.sh` to the scratchpad, add a `cliff` view line `"cliff|seed%20atmo;freecam;weather%20clear;time%2012|-345.5|41.8|-896.9|1.882|-0.75|false"`, and run `frametime.sh high $SCRATCH/cliff-frames.tsv cliff trailside`. Expected: the `cliff` view's branch − control mean, median of the two orders, ≤ +1.5 ms at 4× pixels; `trailside` within noise (≤ +0.3 ms). Then native (`SCALE=1`) at the cliff pose only, on a quiet machine (`uptime` load under 2): p95 branch − control ≤ +1.0 ms.
+Copy `frametime.sh` to a scratch directory outside the repository, add a `cliff` view line `"cliff|seed%20atmo;freecam;weather%20clear;time%2012|-345.5|41.8|-896.9|1.882|-0.75|false"`, and run `frametime.sh high $SCRATCH/cliff-frames.tsv cliff trailside`. Expected: the `cliff` view's branch − control mean, median of the two orders, ≤ +1.5 ms at 4× pixels; `trailside` within noise (≤ +0.3 ms). Then native (`SCALE=1`) at the cliff pose only, on a quiet machine (`uptime` load under 2): p95 branch − control ≤ +1.0 ms.
 
 If the bar is missed, apply the spec's fallbacks in order (LOD0 targets are a model rebuild and out of this repo's scope — report it; then `CLIFF_RINGS.high[2]` 400 → 300; then `CLIFF_CELL` 12 → 16; then `CLIFF_DENSITY` 0.5 → 0.4), each as its own commit with the tests' literals updated, and re-measure.
 
@@ -1680,7 +1677,7 @@ Expected: docs name test green; `0 failing`.
 
 ## Self-review
 
-- **Spec coverage.** §1 rulings: modules (Task 4 loads the two committed GLBs), collision none and `sim/` untouched (Global Constraints, Task 5 Step 6), gate with margin at centre and four probes (Task 1), rings per tier (Task 2 `CLIFF_RINGS`), geometric seams with a far dither (Task 4), tint 0.5 (Task 3), cost bars (Task 6). §4.1 steps 1–6 → Task 1 (`cliffCellPoint`, `cliffGate`, module choice, frame, footprint, density draw first). §4.2 → Task 2 collector + `cliffBands`, `CLIFF_PAD`. §4.3 → Task 4 far material clone. §4.4 → Task 3 + `writeFoliage` in Task 4; casters in Task 4/5. §4.5 → Task 5. §5 budget → Task 2 test. §6 invariants 1–5 → Task 1 (1, 3), Task 2 (4, 5), Global Constraints (2). §7 tests → Tasks 1–5. §8 gates and fallbacks → Task 6.
+- **Spec coverage.** §1 decisions: modules (Task 4 loads the two committed GLBs), collision none and `sim/` untouched (Global Constraints, Task 5 Step 6), gate with margin at centre and four probes (Task 1), rings per tier (Task 2 `CLIFF_RINGS`), geometric seams with a far dither (Task 4), tint 0.5 (Task 3), cost bars (Task 6). §4.1 steps 1–6 → Task 1 (`cliffCellPoint`, `cliffGate`, module choice, frame, footprint, density draw first). §4.2 → Task 2 collector + `cliffBands`, `CLIFF_PAD`. §4.3 → Task 4 far material clone. §4.4 → Task 3 + `writeFoliage` in Task 4; casters in Task 4/5. §4.5 → Task 5. §5 budget → Task 2 test. §6 invariants 1–5 → Task 1 (1, 3), Task 2 (4, 5), Global Constraints (2). §7 tests → Tasks 1–5. §8 gates and fallbacks → Task 6.
 - **Placeholder scan.** No TBD/TODO. The only deferred values are the verification doc's date and measured numbers, which the task says to fill from the runs.
 - **Type consistency.** `cliffCell` returns `ClutterInstance | null` everywhere; `cliffBands` takes `readonly [number, number, number]` and `CLIFF_RINGS` values are that tuple type; `CliffMeshesOptions.loader` returns `Promise<AssetContainer>` and the test's loader does; `cliffMeshName(model, lod)` ends `_l<lod>`, which the caster-name regex and the dispose check rely on; `fadeBands(null, [a, b])` returns `[-2, -1, a, b]`, which the shell test asserts.
 

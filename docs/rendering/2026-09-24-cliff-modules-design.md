@@ -1,5 +1,22 @@
 # Cliff modules: rock-wall models on the steep faces
 
+> **As built (2026-09-25).**
+> - **Placement** runs in the simulation (`sim/cliffField.ts`) on ground that is too steep to stand on by a margin and is rock. The stand test is `ny < GROUND_NORMAL_Y − CLIFF_STAND_MARGIN` = 0.7 − 0.03. The rock test is the rock class's slope band (`CLUTTER_ROCK_SLOPE_LO/HI` = 0.15 / 0.6) at `CLIFF_ROCK_MIN` 0.8.
+> - **Runs:** on a `CLIFF_CELL` 12 m lattice (jitter 0.5), one cell in ten (`CLIFF_DENSITY` 0.1) lays a run along the contour.
+>   - Spacing is `CLIFF_RUN_SPACING` 0.7 of the neighbours' mean width, up to `CLIFF_RUN_MAX` 4 modules per side, reaching at most `CLIFF_RUN_REACH` 63.84 m.
+>   - Each module draws its own scale in `CLIFF_SCALE` 0.7–1.6 and yaw jitter 0.3 rad, and the two models alternate.
+>   - The long model starts a run where 3 of 4 neighbours qualify. The salt is `CLIFF_SALT` 0xc1f0.
+> - **Seating:** a module is sunk `CLIFF_SINK` 0.35 of its height and leans toward the ground normal by at most `CLIFF_TILT_MAX` 0.35 rad. It stands only where every probe of its above-ground box is open: 18 probes for `wall_a` and 12 for `wall_b`, at `CLIFF_PROBE_SPAN` 0.5.
+> - **Solid:** a chunk pass (`sim/passes/cliffs.ts`, id 10) lays one axis-aligned box for each piece of at most `CLIFF_BOX_STEP` 4 m of a module's width.
+>   - Each box bounds the piece seated from the model's own base (`CLIFF_MODEL_BASE`) to its top.
+>   - Its uphill face is then buried: it moves into the hill `CLIFF_BURY_STEP` 1 m at a time, reading the terrain `CLIFF_BURY_SAMPLE` 1 m apart, up to `CLIFF_BURY_MAX` 16 m.
+>   - Modules are gathered from `CLIFF_GATHER_REACH` 101.42 m around each chunk, and each cell's boxes are cached (`CLIFF_BOX_CACHE_MAX` 32,768 cells).
+>   - The ground's stick stands a hull on a box top rather than on the hillside under it (`GEN_VERSION` 6).
+> - **Shell:** three LOD buckets per model out to 60 / 160 / 400 m on the high tier (60 / 140 / 250 medium, – / 80 / 200 low), each tinted 0.5 toward the ground under it. The far bucket dithers out over its last 40 m, within a budget of 700 modules.
+> - **Level id:** every placement and collider constant is a tunable of the cliffs pass, so a change to any of them moves the level id.
+>
+> The sections below are the design as written and then amended; §12 is the last word.
+
 The steep rock hillsides read as a smooth sheet with a cobble texture on
 it. The rock relief work (`2026-09-23-rock-relief-design.md`) cut the loose
 rock *props* into angular stone, but the surface in the complaint is the
@@ -26,9 +43,9 @@ skyline breaks where the player actually sees these scarps. It is
 renderer-only. Nothing in `sim/` changes, no collider is added, and the
 level id is untouched.
 
-## 1. Rulings
+## 1. Decisions
 
-| question | ruling |
+| question | decision |
 | --- | --- |
 | What the faces get | Two cliff models (CC0, from the same collection as the shipped boulders), instanced along ground that is both rock and too steep to stand on |
 | Collision | None. Modules stand only where a foot cannot go, so sight and collision never disagree underfoot; the simulation is untouched and mixed-version matches stay safe |
@@ -392,7 +409,7 @@ contain the whole drawn solid; the test that pinned it is gone.
 
 ## 12. Amendment (2026-09-25): walls, and solid ones
 
-Two rulings after the second gate (`2026-09-25-cliff-modules-verification.md`
+Two decisions after the second gate (`2026-09-25-cliff-modules-verification.md`
 §13). Standing plumb and coloured like the hill, the modules still read as
 outcrops in rows — one per 12 m cell with smooth ground between — not as a
 face. And §11's residual (31 of 399 modules with some above-ground point
@@ -514,8 +531,8 @@ residual of §11 is retired with it.
 Cost: 65 boxes on the atmo scarp chunk, and at most 88 in a
 chunk on the census worlds' worst discs. The pass remembers each cell's run
 per world and terrain variant (the field is pure, so this changes no
-output), since a chunk's gather window is about 203 m across and each cell
-is asked for by some forty chunks. Across a 7 × 7 window at the scarp the
+output), since a chunk's gather window is about 235 m across and each cell
+is asked for by some fifty chunks. Across a 7 × 7 window at the scarp the
 pass costs 8.9–10.4 ms against 53–57 ms for all the other passes together,
 about 0.18 of them; read cold, before the cache, it cost about 79 ms.
 
