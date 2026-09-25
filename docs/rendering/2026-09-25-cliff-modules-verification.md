@@ -413,3 +413,244 @@ returns **92**; the 200-world sweep holds 399 modules, of which 69 have an
 above-ground point over ground the gate refuses and 31 over ground a
 player can stand on. Every still and frame reading in §13 was taken before
 this change; nothing it shows depends on the handful of cells that moved.
+
+## 15. Walls, and walls that stop you
+
+Everything in this section was read against `e22023d`: placement in the
+simulation, runs along the contour at density 0.1 (design §12.2), and every
+module solid as a row of boxes (§12.3). The control is unchanged (`d07a2cc`).
+Twelve pairs: the five face poses at `time 12` and again at `time 16`, and the
+two seam poses, control then branch at each, every page fresh.
+
+### The pages
+
+No console error on any of the 26 pages, nor on the branch page the walk
+stills below were shot from. The console was read for this section by
+message type; the counts in §13 were not — its reads never reached the page,
+so its "no console error" was not a measurement. All six cliff buckets are
+enabled and report their material ready wherever they hold instances; the
+two LOD0 buckets are empty, disabled and not ready at face-80m, as §3 found
+for an empty bucket before. At face-10m the six buckets hold
+[[27, 32, 79], [32, 38, 94]] — 302 modules in the 400 m disc against a
+budget of 700 — which is the collector's count for that disc exactly.
+
+### What the pairs show
+
+- **The face reads as runs of wall now, not rows of outcrops.** This is the
+  change, and it is plainest at 80 m: where §13 saw regular rows of separate
+  lumps one per 12 m cell, the branch shows long bands of rock running along
+  the contour — two or three stacked strata across the upper face, each tens
+  of metres long, with bare slope between the bands and real gaps along
+  them where one run ends and the next has not begun. No lattice shows.
+  It reads as ledged rock at 16:00, where the rock is the hill's own tan;
+  at noon the same bands read as dark ledges on a pale face, which is §5's
+  sun angle and not a change.
+- **At 0.1 the faces are not sparse where they are steep, and are bare where
+  they are not.** The bands fill the steep upper two thirds of the scarp.
+  The lower third, where the slope eases toward the road, carries nothing
+  in either build — the gate refuses it, as it should. The gaps between
+  runs read as the face's own structure rather than as missing modules.
+- **Along the face the wall is continuous.** The along-face pose shows one
+  mass of jointed rock stepping down the slope, where §13 saw a spine of
+  separate blocks; the undersides of its lowest modules show over the slope
+  below them, the lean's downhill tip, each bedded at its uphill edge.
+- **At 10 m the crest is one wall against the sky**, not the specks and
+  blocks of before; one run's end module spans a dip in the crest and shows
+  sky beneath it, which reads as a small natural arch rather than as
+  something hanging.
+- **At 30 m the crest band is busy.** Seen from below at a steep angle, the
+  upper runs overlap in depth and read as a jumble of boulders along the
+  skyline more than as a face; from 80 m and along the face the same rock
+  reads as bands.
+- **From the crest** the runs along the road's downhill shoulder project
+  across the near lane from this almost vertical view, as in §13; the
+  check below finds no box and no module over the road.
+- **Nothing floats, nothing is buried, nothing pops.** Every module's shadow
+  starts at its own base. Walking the free camera along the face at 30 m in
+  eight-metre steps from z = −860 to −948 at 16:00, no module appears or
+  vanishes between consecutive stills; the runs slide across the frame as
+  the camera moves and leave it at the top edge as the crest turns away. No
+  ring is visible at the 400 m reach in any pose.
+
+### The seam
+
+Not pixel-identical, and not expected to be: two control pages at the same
+pose differ as much as control and branch do. Cropping off the name
+panel, PSNR control–branch is 32.8 dB at seam-a and 38.8 dB at seam-b;
+control–control 33.1 dB and 40.7 dB; 10.8 % and 2.4 % of pixels differ by
+more than 8 of 255 control–branch against 9.8 % and 1.1 % control–control.
+Mapped, the differing pixels are grass blades, canopy and one mote — the
+wind and the wildlife — and not one of them lies on the trail or its rock.
+The branch draws zero cliff instances in all six buckets at both seam poses.
+The seam is unchanged; §9's reasoning about why a still cannot prove it
+stands.
+
+### The boxes against walkable ground
+
+Every module in the 400 m disc around the scarp — 302 modules, 1,418 boxes —
+had each box's footprint walked on a 1 m lattice, 58,582 cells, and each
+cell asked three questions: is the ground there walkable
+(`ny ≥ GROUND_NORMAL_Y`), is it on the trail bed (within `TRAIL_BED_HALF` of
+an edge), is it on the road (within the bed and half a metre of shoulder).
+**6 of 302 modules** have a box over walkable ground, 13 cells between
+them, the nearest 56 m from the scarp; **0 of 302** over the trail bed;
+**0 of 302** over the road. This replaces gate 2's "0 / 167" (which asked
+the same of the base plane only); the boxes are larger than the drawn rock
+by design, and this is what that costs here.
+
+### The scripted walk
+
+The page cannot move its own player to the scarp: there is no teleport,
+the player spawns at the trailhead, and the keys only reach the sampler
+under pointer lock. So the walk runs the host's own tick in the page —
+`createForestWorld` on the page's own `createForest(627994160)`, one
+spawned player, `tickWorld` at 60 Hz with scripted input — against the same
+chunk grid, ground field and cliff pass the game uses, with the real hull
+(`PLAYER_HALF` 0.4 × 0.9 × 0.4). Positions were recorded every tick.
+
+- **Into a wall from the bench: there is nothing to walk into.** From the
+  bench at the scarp foot (−371, 19.7, −977), walking at the face for 5 s,
+  the hiker gains 1.1 m and stops where the ground's normal reads 0.701 —
+  the edge of what a foot holds. The lowest wall's box starts 15 m higher
+  and 4 m further on. Walls stand only on ground too steep to stand on, so
+  from below the slope stops a hiker before any wall can; within 150 m of
+  the scarp there are four walkable metres within 6 m of a box that spans a
+  hiker's height, and every walk from them leaves.
+- **Into a wall from above, it stops at the box.** Started 3 m uphill of
+  each of the 131 box pieces within 90 m of the scarp and walked downhill at
+  its back for 5 s: 9 end pressed against the box, at **0.400 m** from its
+  face — the hull's half-width, to the millimetre — and still; the rest walk
+  onto the top and off the front. For example from (−298.06, 150.92,
+  −989.42) the hiker comes to rest at (−300.892, 148.694, −988.027), feet
+  0.05 m below the box top.
+- **Sliding onto a wall from above, the flat tops hold.** From the same 131
+  starts with no input, **117 come to rest on a box top**, 8 against a back
+  face, 4 at rest on the slope and 2 are still sliding after 5 s. On a
+  top the feet stand **0.1–4.0 m above the hillside beneath (median 1.8 m)**,
+  and relative to the plane of the drawn top from 1.9 m below it to 1.0 m
+  above (median 0.25 m below). Only **21 of the 117** stand over the drawn
+  top at all; the other 96 stand where the flat top reaches back over the
+  hill behind the rock. What that looks like: a hiker sliding down the face
+  stops in mid-slope, level with the top of the wall below, on nothing that
+  is drawn — standing a metre or two above the hillside, just behind the
+  rock's crest, with the wall's top in front of their feet.
+- **Along a wall: clean on the low run, rough on the crest.** Walking along
+  the contour for 10 s from a rest on the lowest run's top, the hiker walks
+  40 m along the tops at a steady height (46.7–48.1 m) with no stall and no
+  jitter, or in the other direction 28 m and then off the run's end, falling
+  cleanly to the road. From a rest on a crest run's top, the same walk makes
+  13 m in 10 s with 100 reversals of the across-slope velocity, 95 ticks
+  stalled and 66 ticks with the hull inside a box by up to 0.11 m; the
+  other way it is blocked after 1.3 m. Nothing falls through: across all 268
+  walks in this section, no tick puts the feet below the ground.
+- **The hull dips into a box for a tick or two.** 17 of the 262 walks
+  above had the hull inside a box on 22 ticks between them, by up to 0.16 m, for one or
+  two ticks each. The ground resolves last in a step (`stepMovement`), and
+  where the hillside runs inside a box's back corner it sets the hull on
+  that hillside, inside the box; the next tick's `depenetrate` lifts it out.
+  On the crest top above, the same fight, every few ticks, is the jitter.
+- **A hiker can be trapped behind a wall.** Of the 17 walks that ended
+  still but not on a top, the rests fall at 9 distinct places; from **7 of
+  them** no input frees the hiker — five seconds of walking in each of
+  eight directions, plain, jumping and sprinting, moves them less than
+  0.35 m, and idle they do not move at all. The ground there is too steep
+  to stand on (normal 0.48–0.65), so the hull is never grounded: no jump,
+  no friction, only air control (`AIR_ACCEL` 1.2) against gravity's
+  downhill share, which the wall's back face cancels. The hiker sits in the
+  V between hill and wall with nothing to push off. On the control, from
+  the same seven points, the hiker slides 31–80 m down the face within
+  5 s. One of the seven, at (−276.3, 156.1, −892.9), lies about 10 m
+  below the walkable crest: a hiker stepping off the crest above the scarp
+  can end there.
+
+### Frame time
+
+One two-page round per start of the browser, each after a discarded warm-up
+page, the order alternating round by round; same-code rounds first, to show
+what the page position alone is worth. High tier; 4× pixels (hardware
+scaling 0.5), then native at the scarp. 3 s settle, 8 s sample, frame
+intervals from `onAfterRenderObservable`. Load average 1.0–2.6 at every
+page; one native round that met a load of 40–58 was discarded and redone.
+Deltas are branch − control, in ms.
+
+| round | view | order | mean, first | mean, second | Δ mean | Δ p95 |
+| --- | --- | --- | --- | --- | --- | --- |
+| N1 | scarp | control, control | 33.16 | 34.22 | +1.06 | +1.6 |
+| N3 | scarp | branch, branch | 38.62 | 39.59 | +0.97 | +0.1 |
+| N4 | scarp | control, control | 32.11 | 32.11 | 0.00 | −0.1 |
+| 1 | scarp | branch first | 38.89 | 38.48 | +0.41 | +1.0 |
+| 3 | scarp | branch first | 38.05 | 37.24 | +0.81 | +0.7 |
+| 9 | scarp | branch first | 35.20 | 35.72 | −0.52 | −0.6 |
+| 11 | scarp | branch first | 37.20 | 36.13 | +1.07 | +1.3 |
+| 2 | scarp | control first | 36.36 | 39.32 | +2.96 | +3.5 |
+| 4 | scarp | control first | 36.07 | 38.89 | +2.82 | +3.2 |
+| 10 | scarp | control first | 35.45 | 38.52 | +3.07 | +2.9 |
+| 12 | scarp | control first | 35.22 | 38.01 | +2.79 | +3.0 |
+| N2 | trailside | control, control | 58.74 | 60.95 | +2.21 | −0.4 |
+| 6 | trailside | branch first | 58.39 | 57.75 | +0.64 | +4.4 |
+| 8 | trailside | branch first | 56.26 | 58.03 | −1.77 | −3.2 |
+| 5 | trailside | control first | 56.65 | 59.02 | +2.37 | +3.2 |
+| 7 | trailside | control first | 56.51 | 57.42 | +0.91 | +1.0 |
+
+Averaged over the two orders, so that whatever the second page pays for
+being second falls out:
+
+| view | branch first | control first | order-averaged Δ mean | bar | verdict |
+| --- | --- | --- | --- | --- | --- |
+| scarp, 4× | +0.44 | +2.91 | **+1.68** | ≤ +1.5 | **missed, by 0.18** |
+| trailside, 4× | −0.57 | +1.64 | **+0.54** | within noise | **pass** |
+
+The control-first rounds agree to within 0.3 ms and the branch-first to
+within 1.6 ms; the first four rounds alone average +1.75 and the second
+four +1.60, so the miss is not one bad round. The split between the orders is
+large — 2.5 ms, where same-code rounds put the second page at 0 to 1.1 ms —
+and it is the same in every round, which is what the averaging is for. At
+the trailside, where no module is in view, the per-round deltas scatter
+over 4 ms and their order-averaged +0.54 sits well inside the 2.2 ms the
+same code shows against itself.
+
+| native, scarp | first | second | Δ p95 |
+| --- | --- | --- | --- |
+| N1 control, control | 18.9 | 19.5 | +0.6 |
+| 1 branch first | 18.8 | 18.8 | 0.0 |
+| 3 branch first | 18.5 | 18.2 | +0.3 |
+| 2 control first | 18.5 | 18.5 | 0.0 |
+| 4 control first | 18.4 | 18.3 | −0.1 |
+
+Native p95 is met (order-averaged +0.05 ms against ≤ +1.0), and it means as
+little as it did in §13: the mean is 16.66–16.67 ms on every one of the ten
+pages, the 60 Hz cap to the hundredth. Native has no headroom at this pose
+in which the branch could show a cost; the 4× pairs are the measurement.
+
+**The mechanism of the miss is the number of modules drawn.** The scarp
+pose draws 302 modules against §13's 167, and 59 at LOD0 against 17 — the
+runs lay several modules where a cell laid one, and the near ring, which
+carries the full meshes, fills fastest. §13 measured +0.69 ms on the old
+count (by a method this section does not trust: the branch was always the
+fourth page), and the cost has grown about as the drawn count has. §8's
+first fallback, `CLIFF_RUN_MAX` 4 → 2, caps a run at five modules instead
+of nine and is the lever that acts on exactly this; it was not applied.
+
+### Verdicts
+
+| bar | verdict |
+| --- | --- |
+| The face reads as runs of wall, not rows of outcrops | **met** at 80 m and along the face, at both hours; at 30 m the crest band reads as jumbled boulders |
+| Nothing floats, buried or pops | **met** |
+| The seam unchanged | **met** — zero instances; the stills differ only where the scene moves |
+| Console clean, materials ready | **met** on every page |
+| Boxes off walkable ground | 6 of 302 modules, 13 cells; 0 on the trail bed or the road |
+| A walk into a wall stops at the box | **met** from above (0.400 m, still); from the bench no wall is reachable |
+| A slide from above: where the flat tops hold | 117 of 131 slides stand on a top, a median 1.8 m over the hillside, 96 of them on no drawn rock |
+| No snag, no jitter, no falling through | **not met**: clean along a low run, jitter along a crest run, and 7 places behind walls that trap a hiker; nothing falls through |
+| 4× at the scarp ≤ +1.5 ms | **missed**, +1.68 |
+| 4× at the trailside within noise | **met**, +0.54 against a 2.2 ms floor |
+| Native p95 at the scarp ≤ +1.0 ms | **met**, at the vsync cap |
+
+Two things need deciding before the walls can ship. The frame bar is missed
+by a little, and §8 names the first fallback. The trap is a new way to lose
+a hiker: a wall's uphill face, on ground a foot cannot hold, makes a V with
+no exit, which the smooth hillside never had. It is the solid modules'
+consequence, not the placement's, and nothing measured here says which
+lever — a back face that slopes, grounding against a box face, or a jump
+from one — is the right one.
