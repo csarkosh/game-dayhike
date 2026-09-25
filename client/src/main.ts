@@ -14,6 +14,7 @@ import {
 } from "./game/router.js";
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
 import { afterNextPaint } from "./game/paint.js";
+import { createRouteAnnouncer } from "./game/routeAnnounce.js";
 import { createLandingScene } from "./game/landingScene.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
@@ -225,6 +226,11 @@ function announceRoute(): void {
   if (lobby !== null && lobby.state.role === "host") lobby.setRoute(currentRoutePath());
 }
 
+// Landing routes are announced at once; the game route only after its first
+// frame has painted, so no follower is invited while the world build still
+// holds this page's thread (see routeAnnounce.ts).
+const announcer = createRouteAnnouncer(announceRoute);
+
 async function openLobby(): Promise<void> {
   if (lobby !== null || joining) return;
   joining = true;
@@ -402,7 +408,7 @@ function render(container: HTMLDivElement): void {
   // running on, and it would also tear down and re-create the backdrop scene.
   if (isLandingRoute(route) && landing !== null) {
     landing.setPanel(panelFor(route));
-    announceRoute();
+    announcer.now();
     paintRoster();
     return;
   }
@@ -461,7 +467,7 @@ function render(container: HTMLDivElement): void {
         handle.dispose();
       },
     };
-    announceRoute();
+    announcer.now();
     paintRoster();
     return;
   }
@@ -477,7 +483,7 @@ function render(container: HTMLDivElement): void {
       paintRoster();
     },
   });
-  announceRoute();
+  announcer.afterPaint();
   paintRoster();
 }
 
