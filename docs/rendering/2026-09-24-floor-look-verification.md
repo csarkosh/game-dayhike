@@ -193,3 +193,113 @@ and 2.45 at the end.
   not — section 5. Coverage and piece colour are what is left.
 - `trail-along` keeps its traceable core with little margin; any further
   darkening of the bed under canopy would break the readability rule.
+
+## 7. Second gate
+
+The amendment (design section 7) lifted the litter drift on the bed by the
+floor paint's own 1.5× and mixed the bed's normal, occlusion and roughness
+toward the floor texture by the same earth share, and brought the core and
+margin gains down to 0.24 and 0.47. The same poses were shot again against the
+same control, and the ratio measured at exactly the rectangles of section 4.
+One retune followed, and the table below is after it.
+
+### The table
+
+Branch values at the first gate, at the amendment as first written, and after
+the retune. Crops as in section 4.
+
+| still | main | first gate | amended | after retune |
+| --- | --- | --- | --- | --- |
+| canopy-floor | 1.81 | 0.86 | 1.35 | **1.14** |
+| trail-down | 1.40 | 0.82 | 0.85 | 0.83 |
+| trail-along | 1.26 | 0.94 | 0.67 | 0.76 |
+| meadow-trail-down | 2.27 | 1.38 | 1.47 | 1.43 |
+| meadow-trail-along | 2.20 | 1.46 | 1.69 | 1.60 |
+| drift-along | 0.98 | 0.63 | 0.69 | 0.64 |
+
+The control reproduced to three decimal places at every crop (1.807, 1.403,
+1.256, 2.268, 2.207, 0.975), which is the evidence that the rig is repeatable
+and that the differences below are the builds' and not the day's.
+
+**The gate is still not met**: one of six in 0.9–1.3, and the branch now spans
+0.64–1.60 where the first gate spanned 0.63–1.46.
+
+### What the amendment did, and the retune
+
+- **The drift lift worked, and overshot.** `canopy-floor` went 0.86 → 1.35: the
+  drifted bed under canopy had been the clearest failure and is now the
+  clearest success, but at 0.77 the bed read 1.35× the litter floor beside it,
+  and a drift is the same litter as that floor. `TRAIL_DRIFT_LUM` 0.77 → 0.66
+  (inside the ±0.15 the amendment allowed) puts it at **1.14**, in band, and
+  moves nothing else in the set by more than 0.03. That is the retune, and it
+  is the one made.
+- **The relief mix brightened the bed, and the gain cut did not cancel it.**
+  The open beds went the wrong way — 1.38 → 1.47 and 1.46 → 1.69 — although
+  the gains came down by a third. Taking the gains' own effect out (below),
+  the normal, occlusion and roughness mix is worth about 1.4–1.55× on the
+  open bed's brightness, which is more than the gain cut took off.
+- **The gains are not the lever the amendment took them for.** A probe at
+  `TRAIL_CORE_GAIN` 0.16 and `TRAIL_MARGIN_GAIN` 0.39 — a third off the core,
+  the whole of the remaining allowance — moved the open beds by ×0.96 and
+  ×0.93, not the ×0.67 the core's own factor implies. Only about an eighth of
+  the open bed's brightness is scaled by the gains at all. It cost the canopy
+  beds more than it bought in the open (`trail-down` 0.85 → 0.79,
+  `drift-along` 0.69 → 0.63), so it was not kept.
+
+The reason is in how the bed's colour is assembled: the gain-scaled core and
+margin colours are mixed out again by the drift and by the wash-out, and the
+wash-out's colour is the floor texture at `TRAIL_WASH_DARK` on the bench base,
+with no gain in it. Where the bed's 4 m wash noise is high — which is much of
+the open bed — the gains do not reach the pixel. `TRAIL_WASH_DARK` (0.55) is
+what sets that brightness, and neither the colour change nor the relief change
+touched it. It is the lever the open end needs, and it is outside this
+design's allowance.
+
+One measurement has to be withdrawn. `trail-along`'s beside rectangle turns
+out to sit on drifted bed, not on the ground beside it: its value moved by
+1.48× when the drift was lifted, while every other beside crop in the table
+was unchanged to five decimal places. Its ratios are a bed-over-bed reading
+and should not be read as the gate. Excluding it, the branch spans 0.64–1.43
+below and 1.60 above.
+
+### Beside the reference photographs
+
+- `meadow-trail-down` beside the grassland photograph: the tread now reads as
+  earth rather than as pale sand, and its value against the grass is close.
+  It is cooler and greyer than the photograph's, which is a damp warm brown,
+  and it is smooth where the photograph's carries small stones and ruts.
+- `canopy-floor` beside the hardwood-canopy photograph: the bed and the floor
+  beside it are now at nearly the same value, which is the relationship the
+  photograph shows, and the bed reads as leaf-drifted earth. The floor itself
+  still does not read as the photograph's carpet — sparse dark flecks on a
+  smooth grey-tan plane against a continuous rust-brown mass of leaves. That
+  is the coverage-and-lighting matter the amendment set outside this design.
+
+### Frame pairs
+
+`high` tier, hardware scaling 0.5, 3 s warm-up and an 8 s sample, one page at a
+time, both orders. The machine was shared during this run and the readings say
+so, so only the pairs taken at a settled load are quoted as measurements:
+
+| round | view | branch | control | difference |
+| --- | --- | --- | --- | --- |
+| 1 (load 1.50) | trail | 53.26 (p95 56.3) | 53.31 (p95 56.7) | −0.05 ms |
+| 1 (load 1.50) | trailside | 52.57 (p95 55.0) | 52.51 (p95 55.2) | +0.06 ms |
+| 2 (load rising) | trailside | 62.43 (p95 66.0) | 62.58 (p95 67.1) | −0.15 ms |
+
+The second round's trail pair (branch 60.81 against control 54.09, the branch's
+own sample count falling from 147 to 131) is contention, not cost, and is
+discarded; so is a later trail-only run that returned one empty sample and one
+reading at half the frame cost. Three pairs taken under matched conditions
+differ by −0.15, −0.05 and +0.06 ms, all inside the +0.3 ms bar. Load average
+was 1.50 at the start of the run and 2.65 at the end.
+
+### What still misses
+
+- The open end of the ratio, by more than the first gate: 1.43 and 1.60. Its
+  lever is `TRAIL_WASH_DARK`, not the gains.
+- The canopy gravel beds, unchanged at 0.83 and 0.64 — the amendment's drift
+  lift does not reach them because they are washed-out bed, not drift.
+- The canopy floor against the photographs: coverage and piece colour, as
+  before.
+- `trail-along`'s crop pair, withdrawn: its beside rectangle is on the bed.
