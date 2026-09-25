@@ -413,16 +413,22 @@ tint and the far dither exactly as they are.
 
 A cell that qualifies no longer places one module at its jittered point.
 It lays modules **along the contour** — the direction perpendicular to the
-gradient — at a spacing of `CLIFF_RUN_SPACING = 0.7` of the placed module's
-width, so neighbours overlap by a third and a run reads as one wall with
-no lattice between; the run extends from the cell's point in both
+gradient — at a spacing of `CLIFF_RUN_SPACING = 0.7` of the mean of the two
+neighbours' placed widths, so neighbours overlap by about a third and a run
+reads as one wall with no lattice between; the run extends from the cell's point in both
 directions while each next spot passes the same 15-probe rule, up to
 `CLIFF_RUN_MAX = 4` modules per cell per side (a cell contributes at most
 nine). Each module in a run draws its own scale from a wider band,
 `CLIFF_SCALE = [0.7, 1.6]`, and its own yaw jitter, so a wall is not a row
-of copies; every second module along a run is the *other* model. The
-density draw stays first and stays at 0.5 per cell, so faces keep real
-gaps between runs. Runs are deterministic: the spots along a contour are a
+of copies; every second module along a run is the *other* model, and the
+spacing is the mean of the two neighbours' widths so a long module stepping
+to a short one leaves no gap. The density draw stays first, before any
+terrain sample, but falls from 0.5 to `CLIFF_DENSITY = 0.1` per cell: a run
+reaches up to `CLIFF_RUN_REACH` (63.84 m) either side of its cell, so at 0.5
+every 12 m cell along a face laid its own run over the same stretch and
+modules stood two and three deep. At 0.1 a stretch of wall is laid about
+once, faces keep real gaps between runs, and the census discs sit under the
+budget. Runs are deterministic: the spots along a contour are a
 function of the cell and the terrain, not of any neighbour cell's outcome,
 so two cells can place overlapping modules — overlap is the point.
 
@@ -434,7 +440,9 @@ stand, and `CLIFF_RUN_MAX` is the first fallback (4 → 2) before the reach.
 A chunk pass (`sim/passes/cliffs.ts`, the boulder pass's idiom) emits
 collision brushes for every module whose solid intersects the chunk —
 modules are collected from the cells within the chunk expanded by the
-largest module's reach (`CLIFF_MODEL_WIDTH[1] · 1.6 / 2 + CLIFF_CELL`), so
+farthest a run carries a module from its cell (`CLIFF_RUN_REACH`) plus the
+largest module's own reach from its origin (`CLIFF_MODEL_WIDTH[1] · 1.6 / 2`)
+and a cell, so
 a wall straddling a chunk border is found from either side. A module's
 collider is a **row of axis-aligned boxes along its yawed length**: the
 wall's length at scale is cut into pieces no longer than `CLIFF_BOX_STEP =
