@@ -525,3 +525,47 @@ Run: `cd client && npx vitest run test/game/trailPaint.test.ts test/game/trailBe
 ### Task 7: The gate, a third time
 
 Repeat Task 5 for the six trail stills (a new crop pair for `trail-along`, beside on ground not bed) and the two canopy floor stills; one frame pair at TRAIL. Append `## 8. Third gate` to the verification note. No retune allowance beyond `TRAIL_WASH_DARK_OPEN` ±0.08.
+
+---
+
+### Task 8: The bed under the canopy takes the litter floor, and the wash keys on the ground class
+
+**Files:**
+- Modify: `client/src/game/trailBenchParams.ts` (`TRAIL_BED_FLOOR = 0.75`; `TRAIL_BED_FLOOR_TINT` = `NEEDLE_BED` re-exported for the paint)
+- Modify: `client/src/game/trailPaint.ts` (`tBankBase`, `tWashDark`)
+- Test: `client/test/game/trailPaint.test.ts`, `client/test/game/trailBenchParams.test.ts`
+
+- [ ] **Step 1: Write the failing tests** — in `trailPaint.test.ts`:
+
+```ts
+  it("paints the bed under the canopy as if the litter floor continued under it, and keys the wash-out on the ground class", () => {
+    expect(TRAIL_BED_FLOOR).toBe(0.75);
+    // Both #ifdef branches of the bank base take the same lift.
+    const lifts = TRAIL_FRAGMENT_PAINT.match(/tBankBase = mix\(tBankBase, vec3\(0\.15, 0\.105, 0\.06\), 0\.75 \* clamp\(vTerrainW\.y, 0\.0, 1\.0\)\);/g) ?? [];
+    expect(lifts).toHaveLength(1);
+    expect(TRAIL_FRAGMENT_PAINT).toContain("float tWashDark = mix(0.4, 0.75, clamp(vTerrainW.y, 0.0, 1.0));");
+    expect(TRAIL_FRAGMENT_PAINT).not.toContain("mix(0.4, 0.75, clamp(vTerrainW2.z");
+  });
+```
+
+(`0.15, 0.105, 0.06` are `NEEDLE_BED`'s components as `glslFloat` renders them — check the helper's formatting and match it exactly.) In `trailBenchParams.test.ts` pin `TRAIL_BED_FLOOR` at `0.75`.
+
+- [ ] **Step 2: Run to verify they fail.**
+
+- [ ] **Step 3: Implement** — `trailBenchParams.ts`: `export const TRAIL_BED_FLOOR = 0.75;` with a comment (the litter paint's own share, `DUFF_FLOOR_MAX`, applied to the bed by the ground class because the bed carries no litter of its own). `trailPaint.ts`: directly after the `#endif` that closes the two `tBankBase` declarations, add one line `tBankBase = mix(tBankBase, vec3(${f(NEEDLE_BED.r)}, ${f(NEEDLE_BED.g)}, ${f(NEEDLE_BED.b)}), ${f(TRAIL_BED_FLOOR)} * clamp(vTerrainW.y, 0.0, 1.0));` (import `NEEDLE_BED` from `terrainSurface.ts` as `trailBenchParams.ts` already does); change the wash blend's `vTerrainW2.z` to `vTerrainW.y`. Comments say why; no `#` in a comment.
+
+- [ ] **Step 4: Run** `trailPaint`, `trailBenchParams`, `terrainTexture` tests; typecheck; eslint.
+
+- [ ] **Step 5: Commit** — subject under 72 chars, the usual body and trailers.
+
+---
+
+### Task 9: Attribute the frame cost and confine it
+
+Repeat the TRAIL frame pair (high, 4× pixels, both orders, two rounds, medians) for the builds at `120991a` (earth mix), `184a7fc` (relief mix), `e690713` (wash blend) and the Task 8 commit, each against `main`, using a second worktree checked out at each commit in turn (`git worktree add --detach .claude/worktrees/floor-bisect <sha>`, hooked on a third port). Report the delta per step. Then, for the step that carries the cost: if it is the relief or earth mixes, wrap `tBedTex`, `tBedN`, `tBedRAH` and everything that reads them in the bench (`tOnBench > 0.0` — read the shader to find the right existing gate) so the mixes cost nothing on the ground outside the trail; re-measure; the bar is ≤ +0.3 ms at TRAIL and TRAILSIDE. Commit the confinement with its tests (`TRAIL_FRAGMENT_PAINT` contains the gate around the mixes).
+
+---
+
+### Task 10: The gate, a fourth time
+
+Task 7's stills and crops at Task 8+9's tip; the ratio table across all four gates; the frame pair at TRAIL and TRAILSIDE; `## 9. Fourth gate` in the verification note. No retune allowance — a miss is reported with its mechanism.

@@ -176,3 +176,41 @@ once.
 Recorded for the next design, not this one: the meadow earth reads cooler
 and greyer than the photograph's tan (a hue on the wash-out); the canopy
 carpet's density and lighting.
+
+## 9. Amendment (2026-09-25): the bed under the canopy, and the cost
+
+Three gates (`2026-09-24-floor-look-verification.md` §4, §7, §8) settled
+what the levers of §3, §7 and §8 could and could not do. Two beds never
+moved, whatever the lever, and the reason is structural:
+
+- **The bed under the canopy never received the floor's lift.** §3.1 lifted
+  the canopy floor by moving `NEEDLE_BED`, but the paint mixes that colour
+  in by the vertex's *litter* weight, and the bed's core carries no litter
+  by design (the trail run keeps pieces off the core). So the ground beside
+  the bed rose 1.5× and the bed — painted from the same vertex colour
+  through `tBankBase` — did not. Under the canopy the bed is now painted as
+  if the litter floor continued under it: `tBankBase` mixes toward
+  `NEEDLE_BED` by `TRAIL_BED_FLOOR = 0.75` (the litter paint's own
+  `DUFF_FLOOR_MAX`) times the vertex's forest-floor weight `vTerrainW.y`,
+  the ground class the litter floor belongs to. In the open `vTerrainW.y` is
+  near zero and nothing changes.
+- **The wash-out keyed on the wrong field.** §8 blended the wash-out's
+  darkness by the litter weight, which is high beside a meadow trail too
+  (the neglect design drifts litter onto every bed margin), so the meadow
+  beds took the litter constant and rose. The blend keys on the ground
+  class instead: `mix(TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER,
+  vTerrainW.y)`, the same weight as above.
+
+The third gate also measured **+0.55 ms at TRAIL** (4× pixels, both
+orders averaged), over the +0.3 ms bar, and the first two gates' pairs
+were single un-averaged rounds, so the cost was never attributed. Before
+any further look work the cost is attributed per commit — the earth mix
+(Task 2), the relief mix (Task 4), the wash blend (Task 6) — at TRAIL with
+averaged orders; whichever step carries it is either confined to fragments
+inside the bench (`tOnBench > 0`, where the mixes are needed) or its
+texture reads are shared with the reads the bank already makes. The bar
+stands.
+
+The ratio window stands at 0.9–1.3 for every pose. The residual look
+questions — the meadow earth's hue against the photographs, the canopy
+carpet's density and lighting — remain the next design's.
