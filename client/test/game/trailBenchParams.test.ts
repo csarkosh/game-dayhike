@@ -45,8 +45,10 @@ describe("constants", () => {
 
 describe("the drift tint", () => {
   it("is NEEDLE_BED's own hue, scaled to the brightness the drift was tuned at", () => {
-    // The drift rises with the floor paint: the floor's own 1.5× lift.
-    expect(TRAIL_DRIFT_LUM).toBe(0.77);
+    // The drift rises with the floor paint, but not by the floor's full 1.5×:
+    // at 0.77 the drifted bed measured 1.35× the litter floor beside it, and a
+    // drift is the same litter as that floor. 0.66 measures 1.14×.
+    expect(TRAIL_DRIFT_LUM).toBe(0.66);
     // The assertion that would have caught the drift tint carrying the
     // forest floor's hue instead of the needle bed's: same ratios, not just
     // the same brightness.

@@ -116,9 +116,11 @@ export function trampleAt(rt: number): { height: number; lean: number; tint: Rgb
  * bed's own noise. Both are smoothsteps of a continuous field — no thresholds. */
 export const TRAIL_DRIFT_BAND: readonly [number, number] = [0.25, 0.7];
 /** The drift's brightness relative to the floor texture. A drift is the
- * same litter as the floor beside the bed, so it rises with the floor
- * paint: 0.77 is the earlier 0.5154 at the floor's own 1.5× lift. */
-export const TRAIL_DRIFT_LUM = 0.77;
+ * same litter as the floor beside the bed, so it rises with the floor paint,
+ * but not by the floor's full 1.5×: at 0.77 the drifted bed measured 1.35×
+ * the litter floor beside it, and the bed's other terms had already risen
+ * with it. 0.66 measures 1.14×. */
+export const TRAIL_DRIFT_LUM = 0.66;
 /** Needle-and-leaf bed over the floor texture: the needle bed's own hue
  * (`NEEDLE_BED`) at TRAIL_DRIFT_LUM's brightness, so a retune of NEEDLE_BED
  * carries through here automatically. */
