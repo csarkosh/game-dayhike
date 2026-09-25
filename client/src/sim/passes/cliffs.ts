@@ -2,6 +2,7 @@ import { registerPass } from "../chunk.js";
 import { CHUNK_SIZE } from "../forestConstants.js";
 import type { Aabb } from "../level.js";
 import type { ClutterInstance } from "../clutter.js";
+import { activeTerrainVariantName } from "../terrain.js";
 import {
   CLIFF_CELL, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH,
   CLIFF_RUN_REACH, CLIFF_SCALE, CLIFF_TUNABLES, cliffCellRuns, cliffFacing, leanPoint,
@@ -128,10 +129,63 @@ export function cliffModuleBoxes(m: ClutterInstance): Aabb[] {
   return out;
 }
 
-/** A cell's run, for `cliffBoxesInRect`; the pass reads `cliffCellRuns`
- * itself, and a test sweeping many chunks of one world can hand in a
- * memoised one. */
+/** A cell's run, for `cliffBoxesInRect`: the remembered field by default,
+ * or `cliffCellRuns` itself for a build that must read every cell cold. */
 export type CliffRunSource = (seed: number, ci: number, cj: number) => readonly ClutterInstance[];
+
+/** Cells whose runs the pass keeps, across every world and terrain variant
+ * together, before it forgets them all and starts again. A chunk's gather
+ * window is about 17 cells on a side and a walk adds a row or column of them
+ * per chunk crossed, so this holds the neighbourhood of a long walk. */
+export const CLIFF_RUN_CACHE_MAX = 32768;
+
+/** Runs already read, by world and terrain variant, then by cell. */
+const runCache = new Map<string, Map<number, readonly ClutterInstance[]>>();
+let runCacheSize = 0;
+// Numeric cell key, exact for |cell index| < 2^20 — the collector's packing.
+const KEY_HALF = 1 << 20;
+const KEY_SPAN = 1 << 21;
+
+/**
+ * `cliffCellRuns`, remembered. A chunk gathers every cell within
+ * `CLIFF_GATHER_REACH` of it — a window about 203 m across for a 32 m chunk —
+ * so each cell's run is asked for by some forty chunks, and building the
+ * level id's probe alone reads hundreds of cells at start-up. The field is a
+ * pure function of the world seed, the active terrain variant and the cell,
+ * so remembering it changes no output: a chunk's boxes are the same whether
+ * its cells were read cold or come from here (`passes/cliffs.test.ts`). The
+ * variant is part of the key because `/terrain` can swap it at runtime.
+ * Nothing here is mutated after it is stored; readers only read.
+ */
+export function cachedCliffCellRuns(seed: number, ci: number, cj: number): readonly ClutterInstance[] {
+  const world = `${activeTerrainVariantName()}|${seed}`;
+  let cells = runCache.get(world);
+  if (cells === undefined) {
+    cells = new Map();
+    runCache.set(world, cells);
+  }
+  const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);
+  let run = cells.get(key);
+  if (run === undefined) {
+    run = cliffCellRuns(seed, ci, cj);
+    if (runCacheSize >= CLIFF_RUN_CACHE_MAX) {
+      runCache.clear();
+      runCacheSize = 0;
+      cells = new Map();
+      runCache.set(world, cells);
+    }
+    cells.set(key, run);
+    runCacheSize++;
+  }
+  return run;
+}
+
+/** Forgets every remembered run. For tests that compare a cold build with a
+ * warm one. */
+export function clearCliffRunCache(): void {
+  runCache.clear();
+  runCacheSize = 0;
+}
 
 /**
  * Every module with a box reaching into the rectangle (strictly — a box that
@@ -145,7 +199,7 @@ export function cliffBoxesInRect(
   minZ: number,
   maxX: number,
   maxZ: number,
-  runs: CliffRunSource = cliffCellRuns,
+  runs: CliffRunSource = cachedCliffCellRuns,
 ): { m: ClutterInstance; boxes: Aabb[] }[] {
   const out: { m: ClutterInstance; boxes: Aabb[] }[] = [];
   const g = CLIFF_GATHER_REACH;
@@ -186,8 +240,9 @@ export function cliffBoxesInRect(
  * it whole from every chunk would duplicate it in every query that spans the
  * border and still leave boxes hanging outside their chunk.
  *
- * The cells are gathered afresh per chunk; nothing is cached, so a chunk's
- * boxes depend on nothing but the world seed and its own coordinates.
+ * The cells' runs are remembered across chunks (`cachedCliffCellRuns`), but
+ * the field is pure, so a chunk's boxes still depend on nothing but the world
+ * seed, the terrain variant and its own coordinates.
  */
 registerPass({
   id: 10,

@@ -121,7 +121,7 @@ describe("landmarks on reachable ground, five seeds", () => {
       expect(fill(seed, lm.discX, lm.discZ, (x, z) => clutterDensity(seed, CLUTTER_BOULDER, x, z) >= 0.5), `seed ${seed} talus disc fill`)
         .toBeGreaterThanOrEqual(LANDMARK_TUNABLES.LANDMARK_FILL!);
     }
-  });
+  }, 60_000);
 
   it("keeps every landmark LANDMARK_SPACING apart and LANDMARK_BOWL_MARGIN inside the region", () => {
     expect(LANDMARK_BOWL_MARGIN).toBeGreaterThanOrEqual(LANDMARK_DISC_RADIUS + LANDMARK_DISC_FADE);

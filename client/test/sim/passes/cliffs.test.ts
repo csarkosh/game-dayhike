@@ -12,6 +12,7 @@ import {
 } from "../../../src/sim/cliffField.js";
 import {
   CLIFF_BOX_STEP, CLIFF_GATHER_REACH, CLIFF_MATERIAL, CLIFF_SOLID_REACH, cliffBoxesInRect, cliffModuleBoxes,
+  clearCliffRunCache,
 } from "../../../src/sim/passes/cliffs.js";
 import { boxShell, seat } from "../helpers/cliffSolid.js";
 
@@ -187,6 +188,27 @@ describe("the colliders", () => {
     const second = grid.chunkAt(SCARP_CHUNK.cx, SCARP_CHUNK.cz).props
       .filter((p) => p.material === CLIFF_MATERIAL).map((p) => p.box);
     expect(second).toEqual(first);
+  }, 60_000);
+});
+
+describe("the remembered runs", () => {
+  it("change no output: a chunk built cold, warm, and from the field directly is the same", () => {
+    clearCliffRunCache();
+    const cold = cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz);
+    // Warm: every cell the chunk gathers is remembered now, and so are the
+    // neighbours' shared cells when they are built.
+    const warm = cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz);
+    expect(warm).toEqual(cold);
+    // Built by another world in between, then back: the worlds are kept
+    // apart.
+    cliffProps(ATMO + 1, SCARP_CHUNK.cx, SCARP_CHUNK.cz);
+    expect(cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz)).toEqual(cold);
+    // And the same modules as reading every cell afresh.
+    const minX = SCARP_CHUNK.cx * CHUNK_SIZE, minZ = SCARP_CHUNK.cz * CHUNK_SIZE;
+    const fresh = cliffBoxesInRect(ATMO, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE, cliffCellRuns);
+    const cached = cliffBoxesInRect(ATMO, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE);
+    expect(cached).toEqual(fresh);
+    expect(cold.length).toBe(66);
   }, 60_000);
 });
 
