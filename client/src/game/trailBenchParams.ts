@@ -33,18 +33,26 @@ export const TRAIL_MARGIN_HALF: number = TRAIL_BED_HALF;
 export const TRAIL_TRAMPLE_HALF = 1.35;
 /** Boundary softness (m), widened to the fragment footprint in the shader. */
 export const TRAIL_PAINT_EDGE = 0.08;
-export const TRAIL_CORE_GAIN = 0.45;
+export const TRAIL_CORE_GAIN = 0.32;
 /** The bench's darker band, compacted by footfall. About half the margin's brightness. */
 export const TRAIL_CORE_TINT: Rgb = { r: 0.3, g: 0.26, b: 0.21 };
-export const TRAIL_MARGIN_GAIN = 0.75;
+export const TRAIL_MARGIN_GAIN = 0.55;
 /** The bench's loose, pale band. About twice the core's brightness. */
 export const TRAIL_MARGIN_TINT: Rgb = { r: 0.4, g: 0.36, b: 0.3 };
 export const TRAIL_TRAMPLE_TINT: Rgb = { r: 0.9, g: 0.88, b: 0.8 };
-/** The fraction of the ground's vertex colour (the palette's darkness and
- * canopy tint) the bench colours take: at 1 the bench goes black under
- * canopy and the core/margin contrast is lost, at 0 the margin reads as a
- * chalk line in the open. */
-export const TRAIL_BENCH_SHADE = 0.6;
+/**
+ * How much of the bank's shade the bed takes. At 0.6 the bed kept 40 % of
+ * its own pale gravel brightness whatever ran beside it; at 0.8 it wears the
+ * colour of the ground it runs through — brown under the canopy, tan in the
+ * meadow — which is what packed earth does.
+ */
+export const TRAIL_BENCH_SHADE = 0.8;
+/**
+ * The bed's material: the forest-floor texture at this share over the pebble
+ * texture. Packed earth with grit in it, not a gravel band. Both textures are
+ * already sampled for the bank and the drifts, so the mix is the only cost.
+ */
+export const TRAIL_BED_EARTH = 0.7;
 /** Wet: the core's albedo loss and roughness loss at wetness 1; puddles. */
 export const TRAIL_WET_DARK = 0.35;
 export const TRAIL_WET_GLOSS = 0.5;
@@ -121,7 +129,9 @@ export const TRAIL_DRIFT_TINT: Rgb = {
 };
 export const TRAIL_WASH_WAVE = 4;
 export const TRAIL_WASH_BAND: readonly [number, number] = [0.55, 0.8];
-export const TRAIL_WASH_DARK = 0.7;
+/** Wash-outs at 0.7 read as pale sand; at 0.55 they read as the bare earth
+ * the drift has left. */
+export const TRAIL_WASH_DARK = 0.55;
 export const TRAIL_WASH_ROUGH = 1.15;
 
 /** Drift weight from the vertex's duff: the same smoothstep the shader applies. */

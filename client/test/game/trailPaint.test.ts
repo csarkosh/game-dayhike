@@ -15,7 +15,7 @@ import {
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_HEIGHT_SHIFT, TRAIL_EDGE_NOISE,
   TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
   TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE, TRAIL_WEAR_WAVE, TRAIL_EDGE_WAVE,
-  TRAIL_DRIFT_BAND, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_ROUGH,
+  TRAIL_DRIFT_BAND, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_ROUGH, TRAIL_BED_EARTH, TRAIL_WASH_DARK,
   trailWear, trailEdgeNoise, trailPatches,
 } from "../../src/game/trailBenchParams.js";
 
@@ -278,6 +278,29 @@ describe("the neglect patches", () => {
     expect(TRAIL_FRAGMENT_PAINT).toContain("tRoughBench = mix(tRoughBench, clamp(terrainLayerRough.y * mix(1.0, tFloorRAH.r / 0.5, tk), 0.0, 1.0), tDrift);");
     expect(TRAIL_FRAGMENT_PAINT).toContain(`tRoughBench = mix(tRoughBench, clamp(tRoughBench * ${glslFloat(TRAIL_WASH_ROUGH)}, 0.0, 1.0), tWash);`);
   });
+
+  it("lays the bed as earth: the floor texture over the pebbles, and the bed wears the bank's shade", () => {
+    // The bed texture is the forest-floor texture at TRAIL_BED_EARTH over
+    // the pebble texture, so the trail is packed earth with grit in it
+    // rather than a pale gravel band. Both textures were already sampled
+    // for the bank and the drifts; this is one mix, inside the trail only.
+    expect(TRAIL_BED_EARTH).toBe(0.7);
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec3 tBedTex = mix(tGravelTex, tFloorTex, 0.7);");
+    // The core and margin colours are built on the earth, not the gravel.
+    const core = TRAIL_FRAGMENT_PAINT.match(/vec3 tCoreCol = [^\n]*/)![0];
+    const margin = TRAIL_FRAGMENT_PAINT.match(/vec3 tMarginCol = [^\n]*/)![0];
+    expect(core).toContain("* tBedTex *");
+    expect(margin).toContain("* tBedTex *");
+    expect(core).not.toContain("tGravelTex");
+    expect(margin).not.toContain("tGravelTex");
+    // The bed's brightness: gains down to where the bed / beside ratio
+    // lands in 0.9–1.3, and the bed takes 80 % of the bank's shade.
+    expect(TRAIL_CORE_GAIN).toBe(0.32);
+    expect(TRAIL_MARGIN_GAIN).toBe(0.55);
+    expect(TRAIL_BENCH_SHADE).toBe(0.8);
+    expect(TRAIL_WASH_DARK).toBe(0.55);
+    expect(TRAIL_FRAGMENT_PAINT).toContain(`vec3 tBenchBase = mix(vec3(1.0), tBankBase, ${glslFloat(0.8)});`);
+  });
 });
 
 describe("shader strings", () => {
@@ -297,7 +320,7 @@ describe("shader strings", () => {
 describe("the GLSL", () => {
   it("prints the mirror's constants, reads row 1 once for the best segment, and carries every term", () => {
     const g = TRAIL_FRAGMENT_PAINT;
-    for (const v of [TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE, TRAIL_CORE_GAIN, TRAIL_MARGIN_GAIN, TRAIL_BENCH_SHADE, TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_HEIGHT_SHIFT, TRAIL_EDGE_NOISE, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1, TRAIL_PUDDLE_WAVE, ...TRAIL_WEAR_WAVE, ...TRAIL_EDGE_WAVE, ...TRAIL_PUDDLE_WET, ...TRAIL_PUDDLE_LOW]) {
+    for (const v of [TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE, TRAIL_CORE_GAIN, TRAIL_MARGIN_GAIN, TRAIL_BENCH_SHADE, TRAIL_BED_EARTH, TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_HEIGHT_SHIFT, TRAIL_EDGE_NOISE, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1, TRAIL_PUDDLE_WAVE, ...TRAIL_WEAR_WAVE, ...TRAIL_EDGE_WAVE, ...TRAIL_PUDDLE_WET, ...TRAIL_PUDDLE_LOW]) {
       expect(g).toContain(glslFloat(v));
     }
     for (const c of [TRAIL_CORE_TINT, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT]) expect(g).toContain(`vec3(${c.r}, ${c.g}, ${c.b})`);
@@ -308,7 +331,7 @@ describe("the GLSL", () => {
     expect(g).toContain("trailValueNoise1(tU, 12.0)");
     expect(g).toContain("trailValueNoise1(tU, 3.0)");
     expect(g).toContain("macroValueNoise(vPositionW.xz, 6.0)");
-    expect(g).toContain("mix(vec3(1.0), tBankBase, 0.6)");
+    expect(g).toContain("mix(vec3(1.0), tBankBase, 0.8)");
     expect(g).toContain("texture2D(trailSegs, vec2(tu, 0.25))");
     expect(g.split("texture2D(trailSegs, vec2(tuBest, 0.75))").length).toBe(2);
     for (const term of ["trailValueNoise1(", "macroValueNoise(", "terrainWet", "tPuddle", "tLip", "tWidthK", "tDarkK", "tdN"]) expect(g).toContain(term);
