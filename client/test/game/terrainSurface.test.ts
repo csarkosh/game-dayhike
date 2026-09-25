@@ -4,6 +4,7 @@ import {
   classifySurface,
   DUFF_FLOOR_MAX,
   GRASS_SLOPE,
+  NEEDLE_BED,
   SCREE_SLOPE,
   SNOW_LINE,
   SNOW_LINE_VARIATION,
@@ -258,6 +259,21 @@ describe("duff", () => {
     expect(full.weights.forestFloor - base.weights.forestFloor).toBeLessThanOrEqual(DUFF_FLOOR_MAX + 1e-12);
     // Under canopy the duff colour leans toward the needle bed: darker and browner than the base.
     expect(full.albedo.g).toBeLessThan(base.albedo.g);
+  });
+
+  it("paints the canopy litter as a mid-brown floor, not a black one", () => {
+    // The reference floor is a tan/brown carpet at linear ≈ (0.15, 0.10,
+    // 0.06); the previous NEEDLE_BED (0.10, 0.07, 0.04) was 1.5× darker
+    // and read as black under the canopy. Same hue, 1.5× the luminance.
+    expect(NEEDLE_BED).toEqual({ r: 0.15, g: 0.105, b: 0.06 });
+    const lum = (c: Rgb) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    // Under full canopy at full duff the litter paint carries the bed, but a
+    // quarter of the colour is still the pre-litter (canopy-tinted) ground, so
+    // this measures a hair under the pure bed's own 1.5×: luminance in
+    // [0.10, 0.13], well above the previous bed's 0.0742.
+    const full = classifySurface(SEED, 35, 21335, 40, 0.1, 1, 1);
+    expect(lum(full.albedo)).toBeGreaterThanOrEqual(0.10);
+    expect(lum(full.albedo)).toBeLessThanOrEqual(0.13);
   });
 });
 

@@ -8,6 +8,22 @@ import { DUFF_PAD, DUFF_REACH, DUFF_TIER_BAND, DUFF_TIER_EDGE } from "../../src/
 import { BLADE_TIP_TINT, BLADE_VERTS } from "../../src/game/bladeClump.js";
 
 describe("the duff characters", () => {
+  it("tints the leaf tan, not red: the litter's own hue in linear terms", () => {
+    // A leaf's albedo is DUFF_ALBEDO × the leaf character's tint. The
+    // litter in the reference photographs is tan/rust: linear g/r ≈ 0.67
+    // and b/r ≈ 0.33. The previous tint (1.15, 0.80, 0.45) gave g/r 0.48,
+    // which read as red-brown on a black floor.
+    const leaf = DUFF_CHARACTERS[DUFF_LEAF]!;
+    expect(leaf.tint).toEqual({ r: 1.05, g: 1.05, b: 0.9 });
+    const r = DUFF_ALBEDO.r * leaf.tint.r;
+    const g = DUFF_ALBEDO.g * leaf.tint.g;
+    const b = DUFF_ALBEDO.b * leaf.tint.b;
+    expect(g / r).toBeGreaterThanOrEqual(0.6);
+    expect(g / r).toBeLessThanOrEqual(0.8);
+    expect(b / r).toBeGreaterThanOrEqual(0.25);
+    expect(b / r).toBeLessThanOrEqual(0.45);
+  });
+
   it("match the spec", () => {
     expect(DUFF_CHARACTER_COUNT).toBe(3);
     expect(DUFF_CHARACTERS[DUFF_TWIG]!.length).toEqual([0.10, 0.25]);

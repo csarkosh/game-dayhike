@@ -87,8 +87,10 @@ const SNOW: Rgb = { r: 0.78, g: 0.8, b: 0.84 };
 
 /** Where dead leaves and twigs take over from grass, the floor colour leans
  * toward this needle bed the denser the canopy overhead — see the `duff`
- * blend in `classifySurface`. */
-export const NEEDLE_BED: Rgb = { r: 0.1, g: 0.07, b: 0.04 };
+ * blend in `classifySurface`. A mid tan-brown floor, not a dark one: the
+ * paint carries the leaf carpet itself, and the litter pieces (duffClump.ts)
+ * only add relief on top of it. */
+export const NEEDLE_BED: Rgb = { r: 0.15, g: 0.105, b: 0.06 };
 /** Blend cap for the duff overlay: even at duff = 1 a grass remnant survives,
  * the same way `CANOPY_MAX` leaves a floor-litter remnant under full canopy. */
 export const DUFF_FLOOR_MAX = 0.75;

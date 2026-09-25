@@ -104,9 +104,12 @@ const DUFF_FORK_WIDTH = 0.7;
 /** The fork's angle (rad) off the branch's own line. */
 const DUFF_FORK_ANGLE = 0.61;
 
+// The leaf's tint is near-neutral on DUFF_ALBEDO so a leaf comes out tan
+// (linear g/r ≈ 0.69, b/r ≈ 0.32), which is the litter's own hue; the
+// earlier red-brown tint read as rust on a dark floor.
 export const DUFF_CHARACTERS: readonly DuffCharacter[] = [
   { name: "twig", pieces: [3, 5], length: [0.10, 0.25], width: 0.006, tint: { r: 1.0, g: 0.85, b: 0.65 }, tintSpread: 0.25, lift: [0.05, 0.25], forked: false },
-  { name: "leaf", pieces: [14, 22], length: [0.12, 0.20], width: 0.04, tint: { r: 1.15, g: 0.80, b: 0.45 }, tintSpread: 0.3, lift: [0.1, 0.5], forked: false },
+  { name: "leaf", pieces: [14, 22], length: [0.12, 0.20], width: 0.04, tint: { r: 1.05, g: 1.05, b: 0.9 }, tintSpread: 0.3, lift: [0.1, 0.5], forked: false },
   { name: "small branch", pieces: [1, 1], length: [0.30, 0.60], width: 0.010, tint: { r: 0.85, g: 0.70, b: 0.55 }, tintSpread: 0.2, lift: [0.02, 0.15], forked: true },
 ];
 
