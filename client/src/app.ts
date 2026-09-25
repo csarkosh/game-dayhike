@@ -47,8 +47,9 @@ import {
   setActiveTerrainVariant,
   terrainVariantNames,
 } from "./sim/terrain.js";
-import { acceptAsHost, connectAsClient } from "./net/peer.js";
+import { connectAsClient } from "./net/peer.js";
 import { createHostSession } from "./net/hostSession.js";
+import { createHostAdmission, type HostAdmission } from "./net/hostAdmission.js";
 import { createClientSession } from "./net/clientSession.js";
 import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
@@ -70,10 +71,26 @@ import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
 
-export type GameHandle = { dispose(): void };
+export type GameHandle = {
+  dispose(): void;
+  /**
+   * A lobby opened after the game started — Invite pressed mid-match by a
+   * player who pressed Play with no party. A host game starts answering
+   * offers over it; a follower's game is never given one, because joining a
+   * party goes through the landing page, which tears the game down first.
+   */
+  attachLobby(lobby: Lobby): void;
+};
 
 export type GameOptions = {
   lobby: Lobby | null;
+  /**
+   * This page's peer id on the signaling server, the same for the whole
+   * visit whether or not a lobby exists yet. The host stamps its own Named
+   * pairing with it, so a lobby that opens mid-game still lets followers
+   * put the host's name to the host's figure.
+   */
+  peerId: string;
   onExit(): void;
   /** A follower whose connection to the host failed chose to play alone:
    * leave the party and start a fresh world. */
@@ -498,7 +515,8 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     hud.setStatus(DEATH_LINE);
   }
 
-  const lobby = options.lobby;
+  // Not const: a host with no party can open a lobby mid-game (`attachLobby`).
+  let lobby = options.lobby;
   /**
    * Which peer each entity is, for the end panel. Filled from the Named
    * pairings — by the host as it admits each peer, by a follower through
@@ -508,8 +526,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
    * stick at the peer-id prefix for good. `nameOf` resolves it when needed.
    */
   const names = new Map<number, string>();
-  /** This player's peer id: the lobby's, or solo's stand-in (the host's default `hostPeerId`). */
-  const selfPeerId = lobby?.peerId ?? "host";
+  const selfPeerId = options.peerId;
   /**
    * The lobby's name for a peer: "You" for this player, whichever side they
    * are on, and the short peer id for anyone the lobby has not named — at
@@ -725,6 +742,10 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // Everything this game registered on the lobby's socket, undone on dispose:
   // the socket outlives the game.
   const unsubscribe: (() => void)[] = [];
+  // How a host game takes in a lobby's members; null for a follower. Held
+  // outside `runAsHost` because the lobby it answers offers over can arrive
+  // after the game started.
+  let admission: HostAdmission | null = null;
 
   const wrap = (t: Transport): Transport =>
     degradation === null ? t : degradeTransport(t, degradation);
@@ -757,14 +778,14 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   /**
    * Hosting covers solo play too: a host session with zero peers is exactly a
    * local game, so the only difference a lobby makes is whether offers are
-   * answered.
+   * answered — and the lobby can arrive at any time.
    */
   function runAsHost(): void {
     // `hostPeerId` stamps the host's own Named pairing, so a follower can
-    // match it against the lobby. Solo has neither, so the default stands.
+    // match it against the lobby.
     const host = createHostSession(level, seed, () => performance.now(), {
       forest,
-      hostPeerId: lobby?.state.hostId ?? "host",
+      hostPeerId: selfPeerId,
     });
     session = host;
     escalation = ESCALATION_REST;
@@ -779,29 +800,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       if (debugOn) console.info("[debug] interacted", e);
     });
 
-    if (lobby !== null) {
-      const signaling = lobby.signaling;
-      unsubscribe.push(
-        signaling.onSignal((from, payload) => {
-          const data = payload as { sdp?: RTCSessionDescriptionInit };
-          if (!data.sdp || data.sdp.type !== "offer") return;
-          void acceptAsHost(signaling, from, data.sdp, () => host.removePeer(from))
-            .then((transport) => {
-              // The host sends pairings and never receives one: it records
-              // the entity `addPeer` just spawned for this peer itself.
-              names.set(host.addPeer(from, wrap(transport)), from);
-            })
-            .catch(() => undefined);
-        }),
-      );
-      // A data channel only closes when the other side closes it. A closed tab
-      // or a dead phone never does, and the lobby is told at once either way
-      // (`pagehide` says goodbye; the server reaps a silent socket), so the
-      // lobby's list decides who is still in the world.
-      unsubscribe.push(
-        lobby.onChange((s) => host.retainPeers(new Set(s.members.map((m) => m.id)))),
-      );
-    }
+    admission = createHostAdmission(host, {
+      wrap,
+      onAdmitted: (entityId, peerId) => names.set(entityId, peerId),
+    });
+    if (lobby !== null) admission.attach(lobby);
 
     stepAndRender = () => {
       const dt = frameSeconds();
@@ -1028,6 +1031,14 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   window.addEventListener("resize", onResize);
 
   return {
+    attachLobby(next) {
+      // A follower's game has no admission to attach to, and a lobby this
+      // page follows never reaches a running game (see `GameHandle`); the
+      // role check is the belt to that brace.
+      if (disposed || admission === null || next.state.role !== "host") return;
+      lobby = next;
+      admission.attach(next);
+    },
     dispose() {
       disposed = true;
       options.onPauseChange(false);
@@ -1039,6 +1050,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       if (landingTimer !== null) clearTimeout(landingTimer);
       renderer.engine.stopRenderLoop();
       session?.dispose();
+      admission?.dispose();
       for (const off of unsubscribe) off();
       hud.dispose();
       bar.dispose();
