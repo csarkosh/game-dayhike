@@ -649,6 +649,17 @@ describe("the level id does not move", () => {
     // (no pass emits a cliff collider yet); registryDigest does. Deliberate:
     // a wall one peer sees and another does not is a different world, so an
     // old client cannot join a new host.
-    expect(passHash()).toBe(-1705178804);
+    // Re-baselined 2026-09-25 from -1705178804: the cliff modules became
+    // solid. Both halves move. registryDigest: CLIFF_TUNABLES left the
+    // clutter pass for the new pass 10, cliffs, which declares them with
+    // CLIFF_BOX_STEP; the field's salt CLIFF_SALT moved 0xc11f -> 0xc1f0 (it
+    // had duplicated the terrain's CLIFF_PHASE_SALT); and the draw slots
+    // CLIFF_DRAW_DENSITY, CLIFF_DRAW_X and CLIFF_DRAW_Z joined
+    // CLIFF_DRAW_RUN in the table. probeDigest: pass 10 emits a row of
+    // collision boxes per module, and the probe gained chunk [-1, -15],
+    // which holds three of them for PROBE_SEED. Deliberate: a peer without
+    // the colliders walks through walls another peer stops at, so an old
+    // client cannot join a new host.
+    expect(passHash()).toBe(149824213);
   });
 });

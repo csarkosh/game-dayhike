@@ -227,6 +227,7 @@ ordered by what they cost the look.
 Invariant 1 is superseded: §10 restated it over the module's whole solid,
 and §11 settles what that can and cannot be — the probes are the lattice
 over that solid, and what falls between them is measured, not forbidden.
+§12.3 replaces it: the drawn solid lies inside the module's colliders.
 
 ## 7. Tests
 
@@ -386,6 +387,9 @@ Three ways to close the rest, none of them chosen here:
 Until one is taken, the three measured numbers are pinned in the test, so the
 residue can shrink but cannot quietly grow.
 
+(2026-09-25) The residual is retired by the colliders of §12.3, which
+contain the whole drawn solid; the test that pinned it is gone.
+
 ## 12. Amendment (2026-09-25): walls, and solid ones
 
 Two rulings after the second gate (`2026-09-25-cliff-modules-verification.md`
@@ -416,7 +420,8 @@ It lays modules **along the contour** — the direction perpendicular to the
 gradient — at a spacing of `CLIFF_RUN_SPACING = 0.7` of the mean of the two
 neighbours' placed widths, so neighbours overlap by about a third and a run
 reads as one wall with no lattice between; the run extends from the cell's point in both
-directions while each next spot passes the same 15-probe rule, up to
+directions while each next spot passes the same probe rule (18 probes for
+`wall_a`, 12 for `wall_b`), up to
 `CLIFF_RUN_MAX = 4` modules per cell per side (a cell contributes at most
 nine). Each module in a run draws its own scale from a wider band,
 `CLIFF_SCALE = [0.7, 1.6]`, and its own yaw jitter, so a wall is not a row
@@ -430,7 +435,9 @@ modules stood two and three deep. At 0.1 a stretch of wall is laid about
 once, faces keep real gaps between runs, and the census discs sit under the
 budget. Runs are deterministic: the spots along a contour are a
 function of the cell and the terrain, not of any neighbour cell's outcome,
-so two cells can place overlapping modules — overlap is the point.
+so two cells' runs can cross the same stretch of face. The density keeps
+that rare: a stretch is laid about once, and modules overlap only within a
+run, where the spacing sets them a third of a width into each other.
 
 The budget re-measures with the census discs; the bar and fallbacks of §8
 stand, and `CLIFF_RUN_MAX` is the first fallback (4 → 2) before the reach.
@@ -440,20 +447,42 @@ stand, and `CLIFF_RUN_MAX` is the first fallback (4 → 2) before the reach.
 A chunk pass (`sim/passes/cliffs.ts`, the boulder pass's idiom) emits
 collision brushes for every module whose solid intersects the chunk —
 modules are collected from the cells within the chunk expanded by the
-farthest a run carries a module from its cell (`CLIFF_RUN_REACH`) plus the
-largest module's own reach from its origin (`CLIFF_MODEL_WIDTH[1] · 1.6 / 2`)
-and a cell, so
-a wall straddling a chunk border is found from either side. A module's
-collider is a **row of axis-aligned boxes along its yawed length**: the
-wall's length at scale is cut into pieces no longer than `CLIFF_BOX_STEP =
-4` m, each piece an `Aabb` of the piece's own x/z extent (its four rotated
-corners' bounds), from the sunk base up to the module's full height above
-its origin (`H · s · (1 − CLIFF_SINK)` above ground at the origin, the lean
-ignored — it leans into the hill, and the plumb box over-covers the
-downhill side by at most the lean's 2.5 m at the top, which a player
-cannot reach). Boxes are what the movement code already collides with
-(`depenetrate`, `sweepBox`, `tryStepUp`), so a wall stops a hiker the way a
-boulder does, and blocks line of sight the way a large boulder does.
+farthest a run carries a module from its cell (`CLIFF_RUN_REACH`, 63.84 m)
+plus the farthest the module's solid reaches from its origin
+(`CLIFF_SOLID_REACH`, 21.58 m: the long model's farthest corner at the top
+of the scale band, `1.6 · sqrt(R² + H² + (D − F)²)`, which no yaw or lean
+can lengthen), 85.42 m in all. A cell's point lies inside its own cell, so
+no further cell term is needed, and a wall straddling a chunk border is
+found from either side. A module's collider is a **row of axis-aligned
+boxes along its yawed length**: the wall's length at scale is cut into
+pieces no longer than `CLIFF_BOX_STEP = 4` m, each piece an `Aabb` of the
+piece's own x/z extent, from the sunk base up to the module's full height
+above its origin (`H · s · (1 − CLIFF_SINK)` above ground at the origin) or
+the seated solid's highest point, whichever is higher. Boxes are what the
+movement code already collides with (`depenetrate`, `sweepBox`,
+`tryStepUp`), so a wall stops a hiker the way a boulder does, and blocks
+line of sight the way a large boulder does.
+
+The extent is the bounds of the piece's eight corners **seated** — turned to
+the facing, then leant — not of its four yawed corners with the lean
+ignored, as this section first read. The lean does not lean into the hill:
+it turns about the sunk origin and tips the top downslope, out over the foot
+of the face, by up to `H · s · sin θc` (3.9 m for the long model at the top
+of the band), and lifts the back of the top edge above the plumb height
+(by up to 2.58 m in a 40-world sweep). Plumb boxes around the unleant piece left 41,499 of the 85,780
+swept points outside them. The price of the seated bounds is that each box
+stands plumb over the lean's whole reach, so at the foot of the face it
+claims a few metres of ground in front of the drawn rock — ground the
+placement's probes have already found too steep to stand on. Measured over
+40 worlds, 4 of 84 modules have a box standing over walkable ground (17 of
+13,746 metre cells under their footprints).
+
+A wall straddling a chunk border is emitted by every chunk it reaches into,
+each emitting its own share of each box: the box clipped to the chunk's
+footprint. The chunk grid's broadphase surfaces only the props of the chunks
+a query overlaps, which is why the trees and boulders clamp to their chunk;
+a wall cannot lose its overhang the way a trunk can, so it is split across
+chunks instead, and the shares tile each box exactly.
 
 The invariant of §6 (1) is replaced: **the drawn solid lies inside its
 collision boxes** — every point of the module's above-ground box (the same

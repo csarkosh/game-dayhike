@@ -96,7 +96,7 @@ export type CliffCollector = {
 // Numeric cell key, exact for |cell index| < 2^20 — the tree field's packing.
 const KEY_HALF = 1 << 20;
 const KEY_SPAN = 1 << 21;
-/** Cells this far past the walked square's reach are evicted once the cache
+/** Cells this far past the walked disc's reach are evicted once the cache
  * outgrows `COLLECTOR_SWEEP_SIZE`. */
 const COLLECTOR_EVICT_MARGIN = 4 * CLIFF_CELL;
 const COLLECTOR_SWEEP_SIZE = 16384;
@@ -104,7 +104,7 @@ const COLLECTOR_SWEEP_SIZE = 16384;
 /**
  * Memoising counterpart to `collectCliffs`: `cliffCellRuns` is pure in
  * (seed, ci, cj), so a rebuild after a one-cell move re-reads only the walk's
- * leading edge instead of every cell in it. Half the cells stop at the
+ * leading edge instead of every cell in it. Nine cells in ten stop at the
  * density draw; the rest cost a terrain sample, and the ones that qualify
  * four neighbour samples, a dozen-odd probes over each module's solid, and
  * a gate and the probes again for every further spot along the run.

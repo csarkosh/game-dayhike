@@ -133,6 +133,7 @@ describe("passHash", () => {
       [7, "clutter"],
       [8, "trailhead"],
       [9, "signs"],
+      [10, "cliffs"],
     ]);
   });
 

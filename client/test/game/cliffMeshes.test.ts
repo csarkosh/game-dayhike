@@ -145,10 +145,10 @@ describe("createCliffMeshes", () => {
     const bands = cliffBands(collectCliffs(SEED, CAM.x, CAM.z, rings[2]), o.x, o.z, rings);
     // Measured at this scarp, and the same split cliffField.test.ts pins for
     // this origin.
-    expect(bands.map((b) => b.length)).toEqual([38, 77, 142]);
+    expect(bands.map((b) => b.length)).toEqual([59, 70, 173]);
     // Measured here too, by [model][lod]. Runs alternate the two models, so
     // both stand in every ring the face reaches.
-    const COUNTS: readonly (readonly [number, number, number])[] = [[17, 35, 64], [21, 42, 78]];
+    const COUNTS: readonly (readonly [number, number, number])[] = [[27, 32, 79], [32, 38, 94]];
     // Teeth: each of the three rings is exercised by at least one model.
     for (let lod = 0; lod < 3; lod++) expect(COUNTS.some((row) => (row[lod] as number) > 0)).toBe(true);
     const mat = new Float32Array(16);
@@ -233,8 +233,8 @@ describe("createCliffMeshes", () => {
     cliffs.update(CAM.x, CAM.z);
     const first = inReach(CAM.x, CAM.z);
     // Measured at this scarp: the modules across the three rings.
-    expect(first.size).toBe(257);
-    expect(spied.foliage).toBe(257);
+    expect(first.size).toBe(302);
+    expect(spied.foliage).toBe(302);
     // Four cells north: the collector hands back the very same instance
     // objects for every cell it already holds, so only what the move brought
     // into the rings is tinted — measured here.
@@ -242,7 +242,7 @@ describe("createCliffMeshes", () => {
     cliffs.update(CAM.x, CAM.z - 4 * CLIFF_CELL);
     const second = inReach(CAM.x, CAM.z - 4 * CLIFF_CELL);
     const fresh = [...second].filter((k) => !first.has(k));
-    expect(second.size).toBe(274);
+    expect(second.size).toBe(316);
     expect(fresh.length).toBe(17);
     expect(spied.foliage).toBe(17);
     cliffs.dispose();

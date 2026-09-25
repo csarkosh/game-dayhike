@@ -139,6 +139,11 @@ const PROBE_CHUNKS: readonly (readonly [number, number])[] = [
   // [2, -6], two more in [8, -9] and one in [13, -10]; one chunk is enough for
   // the coverage case, and the cheapest is taken.
   [2, -6],
+  // Extended 2026-09-25 for pass 10 (cliffs): the chunk nearest the origin
+  // holding a cliff module's collider for PROBE_SEED. Measured by a ring
+  // scan outward from [0, 0]: chunk [-1, -15] holds three boxes (and
+  // [-2, -15] two).
+  [-1, -15],
 ];
 
 /**

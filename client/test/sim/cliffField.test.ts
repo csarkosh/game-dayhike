@@ -6,6 +6,7 @@ import { CLUTTER_ROCK, rockSlopeBand, type ClutterInstance } from "../../src/sim
 import { hash3 } from "../../src/sim/field.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
 import * as cliffField from "../../src/sim/cliffField.js";
+import { boxShell, seat } from "./helpers/cliffSolid.js";
 import {
   CLIFF_CELL, CLIFF_DENSITY, CLIFF_LONG_NEIGHBOURS, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT,
   CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH, CLIFF_PROBE_SPAN, CLIFF_ROCK_MIN, CLIFF_RUN_MAX, CLIFF_RUN_REACH,
@@ -40,46 +41,6 @@ function modulesIn(seed: number, x: number, z: number, r: number): Placed[] {
     }
   }
   return out;
-}
-
-/** A point in the module's own frame, seated as the field seats it: turned
- * to the module's facing, then leant by the capped lean, relative to the
- * origin. */
-function seat(m: ClutterInstance, lx: number, ly: number, lz: number, out: CliffPoint): CliffPoint {
-  const f = cliffFacing(m.groundDx, m.groundDz, m.hash);
-  return leanPoint(lx * f.rx + lz * f.fx, ly, lx * f.rz + lz * f.fz, m.groundDx, m.groundDz, out);
-}
-
-/** Points on the faces of the module's above-ground box, in the model's own
- * frame at `scale`, no further apart than `step`: x from the left of the
- * width to the model's own reach along +X (`CLIFF_MODEL_RIGHT`), y from the
- * sink line to the top, z from the back of the depth to the scanned face's
- * own reach (`CLIFF_MODEL_FRONT`) — the origin sits off-centre in both, so
- * neither runs `±half`. */
-function boxShell(variant: number, scale: number, step: number): [number, number, number][] {
-  const w = (CLIFF_MODEL_WIDTH[variant] as number) * scale;
-  const h = (CLIFF_MODEL_HEIGHT[variant] as number) * scale;
-  const d = (CLIFF_MODEL_DEPTH[variant] as number) * scale;
-  const f = (CLIFF_MODEL_FRONT[variant] as number) * scale;
-  const rt = (CLIFF_MODEL_RIGHT[variant] as number) * scale;
-  const span = (a: number, b: number): number[] => {
-    const n = Math.max(1, Math.ceil((b - a) / step));
-    const out: number[] = [];
-    for (let i = 0; i <= n; i++) out.push(a + ((b - a) * i) / n);
-    return out;
-  };
-  const xs = span(-(w - rt), rt), ys = span(CLIFF_SINK * h, h), zs = span(-(d - f), f);
-  const pts: [number, number, number][] = [];
-  for (const [i, x] of xs.entries()) {
-    for (const [j, y] of ys.entries()) {
-      for (const [k, z] of zs.entries()) {
-        const onFace = i === 0 || i === xs.length - 1 || j === 0 || j === ys.length - 1
-          || k === 0 || k === zs.length - 1;
-        if (onFace) pts.push([x, y, z]);
-      }
-    }
-  }
-  return pts;
 }
 
 /** The lattice the field itself probes: `CLIFF_PROBE_SPAN` of the model's
@@ -211,32 +172,15 @@ describe("the lean and the facing, without trig", () => {
 });
 
 describe("the placement", () => {
-  it("measures how much of the solid the probes leave uncovered, and how far a run carries a module", () => {
-    // WORLDS worlds, every module within 400 m of the origin on each, swept on
-    // a 1 m grid over the faces of its above-ground box, seated exactly as the
-    // field probes it (the shell's seating agrees with it to 1e-9,
-    // `test/game/cliffField.test.ts`).
-    //
-    // These three numbers are a MEASUREMENT, not a bound the placement meets
-    // by construction. The probes read the box's corners and the midpoints of
-    // its longer axes; the ground between two open probes can still dip back
-    // over the stand limit, and where it does, part of the module's solid
-    // hangs over ground the probes never cleared. `overhanging` counts the
-    // modules with any such point; `overWalkable` counts the ones where that
-    // ground is at or above the simulation's own stand limit.
-    //
-    // Pinned so the residue cannot grow unnoticed: a placement change that
-    // drives any of them up fails here and has to say why. §12.3 of
-    // `docs/rendering/2026-09-24-cliff-modules-design.md` retires the residue
-    // with a collider under every module.
-    //
-    // The same walk checks `CLIFF_RUN_REACH` against every module every
-    // walked cell lays, inside the disc or not.
+  it("carries no module further from its cell than CLIFF_RUN_REACH", () => {
+    // Every module every cell lays within 463.84 m of the origin, on 200
+    // worlds, against the bound the chunk pass and the collector walk by.
+    // The residual this walk once also measured — solid hanging over ground
+    // the probes never cleared — is retired by the colliders of the cliff
+    // pass (`passes/cliffs.test.ts`), which contain the whole solid.
     const WORLDS = 200;
-    let modules = 0, overhanging = 0, overWalkable = 0, laid = 0, farthest = 0;
-    const p: CliffPoint = { x: 0, y: 0, z: 0 };
-    const r = 400;
-    const w = r + CLIFF_RUN_REACH;
+    let laid = 0, farthest = 0;
+    const w = 400 + CLIFF_RUN_REACH;
     for (let seed = 1; seed <= WORLDS; seed++) {
       for (let cj = Math.floor(-w / CLIFF_CELL); cj <= Math.floor(w / CLIFF_CELL); cj++) {
         for (let ci = Math.floor(-w / CLIFF_CELL); ci <= Math.floor(w / CLIFF_CELL); ci++) {
@@ -248,29 +192,14 @@ describe("the placement", () => {
             const reach = Math.hypot(m.x - home.x, m.z - home.z);
             farthest = Math.max(farthest, reach);
             expect(reach).toBeLessThanOrEqual(CLIFF_RUN_REACH);
-            if (Math.hypot(m.x, m.z) >= r) continue;
-            modules++;
-            let hangs = false, walkable = false;
-            for (const [lx, ly, lz] of boxShell(m.variant, m.scale, 1)) {
-              seat(m, lx, ly, lz, p);
-              const g = cliffGate(seed, m.x + p.x, m.z + p.z);
-              if (g.open) continue;
-              hangs = true;
-              if (normalY(g.s.dx, g.s.dz) >= GROUND_NORMAL_Y) walkable = true;
-            }
-            if (hangs) overhanging++;
-            if (walkable) overWalkable++;
           }
         }
       }
     }
-    expect(modules).toBe(251);
-    expect(overhanging).toBe(34);
-    expect(overWalkable).toBe(11);
-    expect(laid).toBe(586);
+    expect(laid).toBe(405);
     // Measured: the farthest a run carried a module across these worlds,
-    // 56.33 m of the 63.84 the constants allow.
-    expect(farthest).toBeCloseTo(56.333746804377284, 9);
+    // 50.59 m of the 63.84 the constants allow.
+    expect(farthest).toBeCloseTo(50.594476156076325, 9);
   }, 300_000);
 
   it("pins the run's reach to the arithmetic of its constants", () => {
@@ -287,7 +216,8 @@ describe("the placement", () => {
   it("stands on ground that is steep rock under every probe of its solid", () => {
     // What the placement does guarantee, asserted over the probe set itself:
     // every point of the box lattice the field reads is open under the same
-    // seating. 40 worlds; the residue between those probes is the case above.
+    // seating. 40 worlds; what lies between those probes is covered by the
+    // module's colliders (`passes/cliffs.test.ts`).
     let modules = 0, probes = 0;
     const p: CliffPoint = { x: 0, y: 0, z: 0 };
     for (let seed = 1; seed <= 40; seed++) {
@@ -302,8 +232,8 @@ describe("the placement", () => {
       }
     }
     // 12 probes for the long model, 18 for the short one.
-    expect(modules).toBe(90);
-    expect(probes).toBe(1386);
+    expect(modules).toBe(84);
+    expect(probes).toBe(1284);
   }, 300_000);
 
   it("the base probes alone would hang a top edge over walkable ground", () => {
@@ -342,8 +272,8 @@ describe("the placement", () => {
         }
       }
     }
-    expect(placedByOldRule).toBeGreaterThan(50);
-    expect(overWalkable).toBeGreaterThan(0);
+    expect(placedByOldRule).toBe(410);
+    expect(overWalkable).toBe(10);
   }, 300_000);
 
   it("is a pure function of (seed, cell), whatever order the cells are read in, and differs by world", () => {
@@ -368,10 +298,10 @@ describe("the placement", () => {
       if (!other.some((m) => m.x === first.x && m.z === first.z && m.hash === first.hash)) differ++;
     }
     // Measured on this disc; runs longer than one module are among them.
-    expect(runs).toBe(17);
-    expect(multi).toBe(16);
+    expect(runs).toBe(14);
+    expect(multi).toBe(12);
     expect(differ).toBe(runs);
-  });
+  }, 300_000);
 
   it("faces downslope, within the yaw jitter, and is shaped as a lying rock instance", () => {
     for (const { m } of modulesIn(WORST.seed, WORST.x, WORST.z, 300)) {
@@ -396,7 +326,7 @@ describe("the placement", () => {
       expect(cliffGate(WORST.seed, m.x, m.z).open).toBe(true);
       expect(cliffLeanTrig(m.groundDx, m.groundDz).c).toBeGreaterThanOrEqual(CLIFF_TILT_COS);
     }
-  });
+  }, 300_000);
 
   it("starts a run with the long module where three neighbours are steep rock, the short one elsewhere", () => {
     let long = 0, short = 0;
@@ -415,9 +345,9 @@ describe("the placement", () => {
       }
     }
     // Both models start runs on this disc. Measured.
-    expect(long).toBe(12);
-    expect(short).toBe(5);
-  });
+    expect(long).toBe(10);
+    expect(short).toBe(3);
+  }, 300_000);
 
   it("lays runs along the contour on the scarp, spaced by the neighbours' mean width, the models alternating", () => {
     const r = 150;
@@ -457,14 +387,14 @@ describe("the placement", () => {
         }
       }
     }
-    expect(cells).toBe(14);
-    expect(multi).toBe(14);
-    expect(pairs).toBe(105);
+    expect(cells).toBe(17);
+    expect(multi).toBe(16);
+    expect(pairs).toBe(111);
     expect(longest).toBe(9);
     // Stepping by the previous module's width alone left 133 of 541 pairs
     // here with a gap, where a long module stepped to a short one.
     expect(gaps).toBe(0);
-  });
+  }, 300_000);
 
   it("starts a run on about one qualifying cell in ten, before any terrain sample", () => {
     let qualifying = 0, placed = 0, modules = 0;
@@ -486,10 +416,10 @@ describe("the placement", () => {
     // then drop more, because much of this disc's steep-rock area is narrow
     // ridges rather than one broad face.
     expect(CLIFF_DENSITY).toBe(0.1);
-    expect(qualifying).toBe(541);
-    expect(placed).toBe(17);
-    expect(modules).toBe(109);
-  });
+    expect(qualifying).toBe(542);
+    expect(placed).toBe(13);
+    expect(modules).toBe(78);
+  }, 300_000);
 });
 
 describe("the level id", () => {

@@ -54,7 +54,7 @@ describe("collectCliffs and the collector", () => {
       const a = got[i - 1]!, b = got[i]!;
       expect(Math.hypot(a.x - o.x, a.z - o.z)).toBeLessThanOrEqual(Math.hypot(b.x - o.x, b.z - o.z) + 1e-9);
     }
-    expect(got.length).toBe(109);
+    expect(got.length).toBe(78);
     expect(got.length).toBeLessThanOrEqual(CLIFF_BUDGET);
   }, 300_000);
 
@@ -71,7 +71,7 @@ describe("collectCliffs and the collector", () => {
       const home = cliffCellPoint(COLLAR.seed, ci, cj);
       return Math.hypot(home.x - o.x, home.z - o.z) >= reach + CLIFF_PAD;
     });
-    expect(fromOutside.length).toBe(3);
+    expect(fromOutside.length).toBe(4);
     for (const { m } of fromOutside) expect(got.has(key(m))).toBe(true);
   }, 300_000);
 
@@ -86,7 +86,8 @@ describe("collectCliffs and the collector", () => {
     expect(second).toEqual(collectCliffs(WORST.seed, WORST.x + CLIFF_CELL, WORST.z, reach));
     const cells = Math.ceil((2 * (reach + CLIFF_PAD + CLIFF_RUN_REACH)) / CLIFF_CELL) + 1;
     expect(c.size - size).toBeLessThanOrEqual(cells + 2);
-    expect(c.size - size).toBeGreaterThan(0);
+    // Measured: the walk's leading chord, 2 · 485.05 / 12 ≈ 80.8 cells.
+    expect(c.size - size).toBe(80);
   }, 300_000);
 
   it("partitions the modules across the three LOD buckets by distance, exactly once each", () => {
@@ -98,8 +99,8 @@ describe("collectCliffs and the collector", () => {
     // is warm before a module needs a band; cliffBands drops anything at or
     // past rings[2] instead of putting it in the far bucket early.
     const inReach = all.filter((m) => Math.hypot(m.x - o.x, m.z - o.z) < rings[2]);
-    expect(all.length).toBe(109);
-    expect(inReach.length).toBe(109);
+    expect(all.length).toBe(78);
+    expect(inReach.length).toBe(78);
     expect(bands[0].length + bands[1].length + bands[2].length).toBe(inReach.length);
     const seen = new Set<ClutterInstance>();
     for (const [lod, band] of bands.entries()) {
@@ -121,7 +122,7 @@ describe("collectCliffs and the collector", () => {
       counts.push(collectCliffs(seed, x, z, CLIFF_RINGS.high[2]).length);
     }
     expect(CLIFF_BUDGET).toBe(700);
-    expect(counts).toEqual([299, 22, 109]);
+    expect(counts).toEqual([333, 29, 78]);
     for (const n of counts) expect(n).toBeLessThanOrEqual(CLIFF_BUDGET);
   }, 300_000);
 
@@ -162,7 +163,7 @@ describe("collectCliffs and the collector", () => {
     const got = c.collect(1100, z, reach);
     expect(c.size - beforeFar).toBe(sizes[0]!);
     expect(got).toEqual(collectCliffs(seed, 1100, z, reach));
-    expect(got.length).toBe(109);
+    expect(got.length).toBe(78);
   }, 300_000);
 
   it("exercises the near LOD ring at a scarp with steep rock close to the eye", () => {
@@ -174,8 +175,8 @@ describe("collectCliffs and the collector", () => {
     const o = cliffOrigin(x, z);
     const all = collectCliffs(seed, x, z, rings[2]);
     const bands = cliffBands(all, o.x, o.z, rings);
-    expect(all.length).toBe(261);
-    expect(bands.map((b) => b.length)).toEqual([38, 77, 142]);
+    expect(all.length).toBe(308);
+    expect(bands.map((b) => b.length)).toEqual([59, 70, 173]);
     // A stretch of wall is laid about once: for each module in the near ring,
     // the other modules whose origins stand within a quarter of its own
     // width. At a density of 0.5 per cell this averaged 2.1 — runs from
@@ -185,7 +186,7 @@ describe("collectCliffs and the collector", () => {
       const lim = 0.25 * (CLIFF_MODEL_WIDTH[m.variant] as number) * m.scale;
       for (const n of all) if (n !== m && Math.hypot(n.x - m.x, n.z - m.z) < lim) crowd++;
     }
-    expect(crowd).toBe(14);
+    expect(crowd).toBe(49);
     expect(crowd / bands[0].length).toBeLessThanOrEqual(1);
   }, 300_000);
 });
@@ -255,5 +256,5 @@ describe("the simulation's rock band against the paint's", () => {
     expect(n).toBe(200);
     expect(tries).toBeGreaterThan(n);
     expect(worst).toBeLessThanOrEqual(TOLERANCE);
-  });
+  }, 300_000);
 });

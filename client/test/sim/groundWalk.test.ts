@@ -133,7 +133,7 @@ describe("walking the generated ground", () => {
         }
       }
     }
-  });
+  }, 300_000);
 
   it("stands on exactly the surface the renderer draws", () => {
     // The clipmap samples `elevationAt` directly, so any gap here is a gap

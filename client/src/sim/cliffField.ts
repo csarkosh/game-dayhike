@@ -11,8 +11,9 @@
  * under its whole above-ground body — the corners of that box, and the edge
  * midpoints of its longer axes, the top edge among them, which the lean
  * throws furthest downhill; so sight and collision never disagree underfoot.
- * The probes bound the solid at their own spacing and no finer, and what is
- * left over is measured rather than assumed (`test/sim/cliffField.test.ts`).
+ * The probes bound the solid at their own spacing and no finer; what falls
+ * between them is covered by the module's own colliders, which contain the
+ * whole drawn solid (`passes/cliffs.ts`).
  *
  * A qualifying cell lays a RUN along the contour rather than one module: the
  * face reads as a wall instead of a row of outcrops (`cliffRun`).
@@ -163,8 +164,11 @@ export const CLIFF_RUN_MAX = 4;
  *           (W[(v0 + k − 1) mod 2] + W[(v0 + k) mod 2]) / 2 · CLIFF_SCALE[1]
  *
  * — at the shipped constants 4 · 0.7 · 1.6 · (20.23 + 8.27) / 2 = 63.84 m,
- * met only by a run on a straight contour at the top of the scale band. It bounds the ORIGIN; a module's solid reaches its own width past
- * that, which a consumer that needs the solid adds itself.
+ * met only by a run on a straight contour at the top of the scale band.
+ *
+ * It bounds the ORIGIN. A module's solid reaches further than that from its
+ * origin, which a consumer that needs the solid adds itself (the cliff pass's
+ * `CLIFF_SOLID_REACH`).
  */
 export const CLIFF_RUN_REACH = runReach();
 
@@ -182,14 +186,19 @@ function runReach(): number {
   return worst;
 }
 
-/** This field's own hash salts. The cell draws are salted apart from the
- * tree, blade and litter lattices beside them, and each module along a run
- * takes its own pair of draws (`CLIFF_DRAW_RUN` onward), so two modules in
- * one run never share a scale or a jitter. */
-export const CLIFF_SALT = 0xc11f;
-const CLIFF_DRAW_DENSITY = 0;
-const CLIFF_DRAW_X = 1;
-const CLIFF_DRAW_Z = 2;
+/** This field's own hash salt. The cell draws are salted apart from the
+ * tree, blade and litter lattices beside them and from every other salt in
+ * the simulation (the terrain's cliff-phase noise among them). */
+export const CLIFF_SALT = 0xc1f0;
+/** Which of a cell's draws feeds what: the density draw, the jitter of the
+ * run's first module in x and z, and from `CLIFF_DRAW_RUN` onward a pair per
+ * module along the run, so two modules in one run never share a scale or a
+ * jitter. Renumbering a slot re-deals every module in every world, so the
+ * slots are declared in the level id with the rest of the field's
+ * constants. */
+export const CLIFF_DRAW_DENSITY = 0;
+export const CLIFF_DRAW_X = 1;
+export const CLIFF_DRAW_Z = 2;
 export const CLIFF_DRAW_RUN = 3;
 
 /** One of a cell's draws, in [0, 1). */
@@ -224,6 +233,11 @@ function normalY(dx: number, dz: number): number {
  * already claim — and reads 0 wherever the stand gate has already refused.
  */
 export function cliffGround(dx: number, dz: number): { rock: number; open: boolean } {
+  // `GROUND_NORMAL_Y` is a movement constant — the steepest ground a foot
+  // holds (`movement.ts`, `ground.ts`) — and rides in no pass's tunables. A
+  // change to it changes how every peer walks, which a pass digest cannot
+  // see; that is what `GEN_VERSION` in `forest.ts` exists for, and bumping
+  // it moves the level id for this gate too.
   if (normalY(dx, dz) >= GROUND_NORMAL_Y - CLIFF_STAND_MARGIN) return { rock: 0, open: false };
   const rock = rockSlopeBand(dx * dx + dz * dz);
   return { rock, open: rock >= CLIFF_ROCK_MIN };
@@ -336,9 +350,11 @@ const probePoint: CliffPoint = { x: 0, y: 0, z: 0 };
  * The probes bound the solid at their own spacing and no finer: the gate is a
  * per-point reading of terrain that can dip in and out of the stand limit
  * inside a footprint metres across, so ground between two open probes is not
- * guaranteed open. `test/sim/cliffField.test.ts` sweeps the whole box at 1 m
- * and pins how much of it still overhangs; §11 of the design records what
- * closing that would cost, and §12.3 retires it with a collider instead.
+ * guaranteed open. §11 of the design records what closing that by probing
+ * would cost; §12.3 closes it with a collider instead (`passes/cliffs.ts`),
+ * whose boxes contain the whole drawn solid, so the ground between two
+ * probes can no longer hold a foot under an overhang the simulation does not
+ * know about.
  */
 function solidOpen(
   seed: number,
@@ -476,8 +492,10 @@ function cliffRunSide(
  *
  * Pure in (seed, ci, cj) and independent of any neighbour cell's OUTCOME: the
  * variant reads four neighbouring gates, which is terrain, not placement. Two
- * cells can therefore lay modules over each other, and on a broad face they
- * do — the overlap is what makes a wall.
+ * cells' runs can therefore cross the same stretch of face; `CLIFF_DENSITY`
+ * keeps that rare, so a stretch is laid about once, and modules overlap only
+ * within a run, where the spacing puts them a third of a width into each
+ * other.
  */
 export function cliffCellRuns(seed: number, ci: number, cj: number): ClutterInstance[] {
   if (cellDraw(seed, ci, cj, CLIFF_DRAW_DENSITY) >= CLIFF_DENSITY) return [];
@@ -511,7 +529,8 @@ export const CLIFF_TUNABLES: Readonly<Record<string, number>> = {
   CLIFF_SCALE_MIN: CLIFF_SCALE[0], CLIFF_SCALE_MAX: CLIFF_SCALE[1],
   CLIFF_YAW_JITTER, CLIFF_YAW_TAN, CLIFF_SINK, CLIFF_LONG_NEIGHBOURS,
   CLIFF_TILT_MAX, CLIFF_TILT_COS, CLIFF_TILT_SIN, CLIFF_PROBE_SPAN,
-  CLIFF_RUN_SPACING, CLIFF_RUN_MAX, CLIFF_RUN_REACH, CLIFF_SALT, CLIFF_DRAW_RUN,
+  CLIFF_RUN_SPACING, CLIFF_RUN_MAX, CLIFF_RUN_REACH, CLIFF_SALT,
+  CLIFF_DRAW_DENSITY, CLIFF_DRAW_X, CLIFF_DRAW_Z, CLIFF_DRAW_RUN,
   CLIFF_MODEL_WIDTH_A: CLIFF_MODEL_WIDTH[CLIFF_WALL_A] as number,
   CLIFF_MODEL_WIDTH_B: CLIFF_MODEL_WIDTH[CLIFF_WALL_B] as number,
   CLIFF_MODEL_DEPTH_A: CLIFF_MODEL_DEPTH[CLIFF_WALL_A] as number,
