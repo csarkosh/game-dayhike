@@ -226,4 +226,62 @@ describe("collectCliffs and the collector", () => {
       expect(collectCliffs(seed, x, z, CLIFF_RINGS.high[2]).length).toBeLessThanOrEqual(CLIFF_BUDGET);
     }
   }, 300_000);
+
+  it("evicts cells left behind by a long walk once the cache outgrows its sweep size", () => {
+    // Walk away from the WORST census disc in 400 m strides (one reach's
+    // width) at a fixed z, collecting at the high reach each time. Each
+    // stride's leading edge adds a few thousand cells (each visited cell is
+    // cached, hit or miss); measured on this walk: sizes grow to 14,210,
+    // then a stride crosses the sweep size and the cache drops to 4,466
+    // before growing again to 7,106 — the sweep fired exactly once, between
+    // the fifth and sixth stride.
+    const seed = 1;
+    const reach = CLIFF_RINGS.high[2];
+    const z = -1200;
+    const xs = [1100, 700, 300, -100, -500, -900, -1300];
+    const c = createCliffCollector(seed);
+    const sizes: number[] = [];
+    for (const x of xs) {
+      c.collect(x, z, reach);
+      sizes.push(c.size);
+    }
+    expect(sizes).toEqual([4900, 7210, 9520, 11900, 14210, 4466, 7106]);
+    // Teeth: the sweep actually fired (a stride that shrank the cache).
+    expect(sizes[5]!).toBeLessThan(sizes[4]!);
+    // Never left holding more than the sweep size plus one stride's own
+    // worth of cells (measured: a fresh 400 m disc costs 4,900 cells here).
+    for (const s of sizes) expect(s).toBeLessThan(16384 + 4900);
+
+    // Near side of the boundary: re-issuing the walk's own last call is a
+    // clean cache hit — every cell that call needed is still there.
+    const lastOrigin = xs[xs.length - 1]!;
+    const beforeSame = c.size;
+    c.collect(lastOrigin, z, reach);
+    expect(c.size).toBe(beforeSame);
+
+    // Far side: the WORST disc the walk started from is long past the
+    // eviction margin of the last origin, so revisiting it must re-read
+    // every cell from scratch (the same cost as the walk's first, cold
+    // stride) and still return exactly what the pure walk would.
+    const beforeFar = c.size;
+    const got = c.collect(1100, z, reach);
+    expect(c.size - beforeFar).toBe(4900);
+    expect(got).toEqual(collectCliffs(seed, 1100, z, reach));
+    expect(got.length).toBe(132);
+  }, 300_000);
+
+  it("exercises the near LOD ring at a scarp with steep rock close to the eye", () => {
+    // The three census discs above have no steep rock within 60 m of their
+    // own centres (LOD0 is empty for all three), so this scarp is the one
+    // fixture that puts modules in the near ring. Measured at this origin.
+    const rings = CLIFF_RINGS.high;
+    const seed = 627994160, x = -340, z = -897;
+    const o = cliffOrigin(x, z);
+    const all = collectCliffs(seed, x, z, rings[2]);
+    const bands = cliffBands(all, o.x, o.z, rings);
+    expect(all.length).toBe(178);
+    expect(bands[0].length).toBe(17);
+    expect(bands[1].length).toBe(53);
+    expect(bands[2].length).toBe(103);
+  }, 300_000);
 });
