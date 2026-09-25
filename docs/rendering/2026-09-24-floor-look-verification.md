@@ -303,3 +303,115 @@ was 1.50 at the start of the run and 2.65 at the end.
 - The canopy floor against the photographs: coverage and piece colour, as
   before.
 - `trail-along`'s crop pair, withdrawn: its beside rectangle is on the bed.
+
+## 8. Third gate
+
+The second amendment (design section 8) split the wash-out's darkness in two,
+blended by the litter the bed lies in: `mix(TRAIL_WASH_DARK_OPEN,
+TRAIL_WASH_DARK_LITTER, clamp(vTerrainW2.z, 0, 1))`, 0.40 in the open and 0.75
+where litter lies. Same poses, same control, same crops — except `trail-along`,
+whose beside rectangle was withdrawn in section 7 and is replaced here.
+
+### The replacement crop for `trail-along`
+
+The bed and the ground beside it are told apart by measurement rather than by
+eye: only the bed's own constants changed between the gates, so a rectangle
+whose value moves between two shoots is on trail paint. Scanning across the
+still at the bed's row band, the paint reaches to about x = 590 and the ground
+beside begins at x = 600. The replacement pair is bed `170:170:400:1480` and
+beside `170:170:600:1480` — adjacent, at the same depth, in the same dappled
+light, and the beside rectangle reads 0.02098 at all three gates, unchanged to
+five decimal places, which is the evidence that it is off the paint. The
+withdrawn rectangle (`170:170:120:1480`) moved by 1.48× when the drift was
+lifted; it was drifted bed.
+
+### The table
+
+Branch values at the three gates, control unchanged throughout. `trail-along`
+is on the replacement crops at every gate, so its column is comparable.
+
+| still | main | gate 1 | gate 2 | gate 3 | verdict |
+| --- | --- | --- | --- | --- | --- |
+| canopy-floor | 1.81 | 0.86 | 1.14 | **1.14** | in band |
+| trail-along | 2.47 | 0.90 | 0.91 | **1.17** | in band |
+| trail-down | 1.40 | 0.82 | 0.83 | **0.83** | below, unmoved |
+| drift-along | 0.98 | 0.63 | 0.64 | **0.64** | below, unmoved |
+| meadow-trail-down | 2.27 | 1.38 | 1.43 | **1.56** | above, and rising |
+| meadow-trail-along | 2.20 | 1.46 | 1.60 | **1.67** | above, and rising |
+
+Two of six in 0.9–1.3. The control reproduced to five decimal places at every
+crop across all three shoots.
+
+### What the split did, and why the open end rose again
+
+The split was meant to bring the open bed down and hold the littered bed up. It
+held the littered bed up — `trail-along` 0.91 → 1.17, into the window, and the
+canopy beds unchanged — but the open bed went **up**, 1.43 → 1.56 and
+1.60 → 1.67, the opposite of the intent.
+
+The reason is that the open poses are not open to `vTerrainW2.z`. Three
+measurements say so:
+
+- At `canopy-floor`, `trail-down` and `drift-along` the branch's numbers are
+  identical to the previous gate to five decimal places. The wash-out
+  contributes nothing at those pixels, so neither constant reaches them.
+- At the two meadow poses the bed rose by 1.09× and 1.05×. The wash went from
+  a flat 0.55 to 0.75 on the litter side, a factor of 1.36, which is what a
+  bed about a quarter wash would do — so those pixels took the **litter**
+  value, not the open one.
+- Probed at `TRAIL_WASH_DARK_OPEN` 0.32 — the whole of the allowed ±0.08 — the
+  two meadow beds moved by ×0.983 and ×0.987, and `trail-along` by ×0.997.
+  The open constant is worth under 2 % at every pose in the set.
+
+So the vertex litter weight at the meadow poses is already near 1: the bed in
+the grass still reads as litter ground to the field the blend separates on, and
+takes the higher of the two constants. **No retune was made**: the allowance is
+the open constant alone, and it is measurably inert here. The lever that would
+work is the litter constant, or the term the blend separates on.
+
+### Beside the photographs, and the stills
+
+- **Meadow, main against gate 2 against gate 3**: main is a near-white gravel
+  band with a stony rim; gate 2 is tan earth; gate 3 is the same tan a shade
+  paler. All three read as the same *kind* of surface from gate 2 onward, and
+  the rim is gone. Against the grassland photograph the tread is still paler
+  and greyer than the photograph's damp brown, and the gap widened slightly.
+- **Canopy floor**: unchanged from gate 2, as the numbers say. The bed reads as
+  leaf-drifted earth at nearly the value of the floor beside it, which is the
+  photograph's relationship. The floor itself is still sparse dark flecks on a
+  smooth grey-tan plane where the photograph is a continuous rust carpet.
+
+### The frame pair
+
+`trail`, high tier, hardware scaling 0.5, both orders, twice, on a quiet
+machine (load 1.74 and 2.33 at the two starts, cliff gates and test runs all
+finished):
+
+| run | order | branch | control |
+| --- | --- | --- | --- |
+| A | branch first | 54.61 | 54.27 |
+| A | control first | 55.19 | 54.37 |
+| B | branch first | 52.46 | 54.27 |
+| B | control first | 57.98 | 55.14 |
+
+Whichever build is sampled second is the slower one in three of the four
+rounds, so the orders are averaged: run A gives branch 54.90 against control
+54.32 (**+0.58 ms**), run B gives 55.22 against 54.71 (**+0.51 ms**). Two
+independent runs agree at about **+0.55 ms**, which is **over the +0.3 ms
+bar**. Section 6's −0.01 ms and section 7's −0.05 ms were single rounds that
+were not order-averaged, and this pair supersedes them. The wash split itself
+is one `mix` of two constants; the likelier cost is the bed's normal,
+occlusion and roughness mixes added with the first amendment, which no pair has
+yet measured on its own.
+
+### Verdict per pose
+
+| pose | verdict |
+| --- | --- |
+| canopy-floor | passes; the bed sits just above the litter floor, as the photograph does |
+| trail-along | passes; the replacement crops show the littered bed at 1.17 |
+| trail-down | fails low at 0.83, unmoved by either amendment — its bed is neither drift nor wash |
+| drift-along | fails low at 0.64, likewise unmoved; the worst reading in the set |
+| meadow-trail-down | fails high at 1.56, and worse than at the first gate |
+| meadow-trail-along | fails high at 1.67, and worse than at the first gate |
+| frame cost | fails; about +0.55 ms at TRAIL against a +0.3 ms bar |
