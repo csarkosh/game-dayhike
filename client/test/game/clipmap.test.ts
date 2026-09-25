@@ -376,6 +376,7 @@ describe("terrain weight attributes", () => {
     expect(geo.weights[0]).toBe(ring.weights[0]);
     expect(geo.weights2[0]).toBe(ring.weights2[0]);
     expect(geo.weights2[2]).toBe(ring.weights2[2]);
+    expect(geo.weights2[3]).toBe(ring.weights2[3]);
   });
 
   it("agrees with classifySurface, fed the ring's own canopy and duff, at the ring's own sample positions", () => {
@@ -410,7 +411,27 @@ describe("terrain weight attributes", () => {
       expect(ring.weights2[at * WEIGHTS2_STRIDE + 2]).toBeCloseTo(want, 6);
       expect(ring.weights2[at * WEIGHTS2_STRIDE + 1]).toBeGreaterThanOrEqual(0); // detail still second
     }
-    expect(WEIGHTS2_STRIDE).toBe(3);
+    expect(WEIGHTS2_STRIDE).toBe(4);
+  });
+
+  it("carries the canopy density the classification was fed as the fourth weight", () => {
+    // The trail paint keys its canopy-only mixes on this component, so it must
+    // be forestDensity at the vertex itself: 1 under full canopy, 0 in the
+    // open, and the partial value at a forest edge.
+    expect(WEIGHTS2_STRIDE).toBe(4);
+    const ring = createRingSamples(SEED, 0, 0, 0);
+    const cases: [number, number, number][] = [
+      [40, 61, 1],
+      [102, 4, 0],
+      [77, 3, 0.6708885941871319],
+    ];
+    for (const [ix, iz, want] of cases) {
+      const at = iz * SIDE + ix;
+      const x = ring.originX + ix * ring.spacing;
+      const z = ring.originZ + iz * ring.spacing;
+      expect(forestDensity(SEED, x, z, elevationSampleAt(SEED, x, z)), `vertex ${ix},${iz}`).toBeCloseTo(want, 12);
+      expect(ring.weights2[at * WEIGHTS2_STRIDE + 3], `vertex ${ix},${iz}`).toBeCloseTo(want, 6);
+    }
   });
 });
 

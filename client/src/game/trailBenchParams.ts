@@ -1,6 +1,6 @@
 import { latticeHash, valueNoise2 } from "./groundHexParams.js";
 import { luma, type Rgb } from "./colour.js";
-import { NEEDLE_BED } from "./terrainSurface.js";
+import { DUFF_FLOOR_MAX, NEEDLE_BED } from "./terrainSurface.js";
 import { TRAIL_BED_HALF } from "../sim/trail.js";
 
 /**
@@ -33,18 +33,37 @@ export const TRAIL_MARGIN_HALF: number = TRAIL_BED_HALF;
 export const TRAIL_TRAMPLE_HALF = 1.35;
 /** Boundary softness (m), widened to the fragment footprint in the shader. */
 export const TRAIL_PAINT_EDGE = 0.08;
-export const TRAIL_CORE_GAIN = 0.45;
+export const TRAIL_CORE_GAIN = 0.24;
 /** The bench's darker band, compacted by footfall. About half the margin's brightness. */
 export const TRAIL_CORE_TINT: Rgb = { r: 0.3, g: 0.26, b: 0.21 };
-export const TRAIL_MARGIN_GAIN = 0.75;
+export const TRAIL_MARGIN_GAIN = 0.47;
 /** The bench's loose, pale band. About twice the core's brightness. */
 export const TRAIL_MARGIN_TINT: Rgb = { r: 0.4, g: 0.36, b: 0.3 };
 export const TRAIL_TRAMPLE_TINT: Rgb = { r: 0.9, g: 0.88, b: 0.8 };
-/** The fraction of the ground's vertex colour (the palette's darkness and
- * canopy tint) the bench colours take: at 1 the bench goes black under
- * canopy and the core/margin contrast is lost, at 0 the margin reads as a
- * chalk line in the open. */
-export const TRAIL_BENCH_SHADE = 0.6;
+/**
+ * How much of the bank's shade the bed takes. At 0.6 the bed kept 40 % of
+ * its own pale gravel brightness whatever ran beside it; at 0.8 it wears the
+ * colour of the ground it runs through — brown under the canopy, tan in the
+ * meadow — which is what packed earth does.
+ */
+export const TRAIL_BENCH_SHADE = 0.8;
+/**
+ * The bed's material: the forest-floor texture at this share over the pebble
+ * texture. Packed earth with grit in it, not a gravel band. Both textures are
+ * already sampled for the bank and the drifts, so the mix is the only cost.
+ */
+export const TRAIL_BED_EARTH = 0.7;
+/**
+ * The litter floor's own share, applied to the bed under the canopy. The
+ * bed's core carries no litter of its own — the trail run keeps pieces off
+ * it, and only drifted stretches carry duff — so the paint's vertex-colour
+ * mix never lifted the core the way the floor beside it lifted; this mixes
+ * the bed's base (not the bank's) toward the same NEEDLE_BED colour by the
+ * vertex's canopy density, so the bed reads as the litter floor continuing
+ * under the trees. In the open the density is zero and nothing changes.
+ * Tied to the litter paint's share so the two move together.
+ */
+export const TRAIL_BED_FLOOR = DUFF_FLOOR_MAX;
 /** Wet: the core's albedo loss and roughness loss at wetness 1; puddles. */
 export const TRAIL_WET_DARK = 0.35;
 export const TRAIL_WET_GLOSS = 0.5;
@@ -107,9 +126,12 @@ export function trampleAt(rt: number): { height: number; lean: number; tint: Rgb
  * duff lies thick, and gravel washed out to bare dirt in patches of the
  * bed's own noise. Both are smoothsteps of a continuous field — no thresholds. */
 export const TRAIL_DRIFT_BAND: readonly [number, number] = [0.25, 0.7];
-/** The drift's brightness relative to the floor texture, the value the
- * paired stills were judged at. */
-export const TRAIL_DRIFT_LUM = 0.5154;
+/** The drift's brightness relative to the floor texture. A drift is the
+ * same litter as the floor beside the bed, so it rises with the floor paint,
+ * but not by the floor's full 1.5×: at 0.77 the drifted bed measured 1.35×
+ * the litter floor beside it, and the bed's other terms had already risen
+ * with it. 0.66 measures 1.14×. */
+export const TRAIL_DRIFT_LUM = 0.66;
 /** Needle-and-leaf bed over the floor texture: the needle bed's own hue
  * (`NEEDLE_BED`) at TRAIL_DRIFT_LUM's brightness, so a retune of NEEDLE_BED
  * carries through here automatically. */
@@ -121,7 +143,16 @@ export const TRAIL_DRIFT_TINT: Rgb = {
 };
 export const TRAIL_WASH_WAVE = 4;
 export const TRAIL_WASH_BAND: readonly [number, number] = [0.55, 0.8];
-export const TRAIL_WASH_DARK = 0.7;
+/**
+ * The wash-out's darkness, open ground to litter floor. In the open the
+ * washed bed is bare earth that must come down toward the grass beside it;
+ * under the canopy, the bare earth between the drifts is the litter floor's
+ * earth and must not fall below it. Blended in the paint by the vertex's
+ * canopy density (`vTerrainW2.w`), which is zero in the open — not by the
+ * litter weight, which runs high beside meadow trails too.
+ */
+export const TRAIL_WASH_DARK_OPEN = 0.4;
+export const TRAIL_WASH_DARK_LITTER = 0.75;
 export const TRAIL_WASH_ROUGH = 1.15;
 
 /** Drift weight from the vertex's duff: the same smoothstep the shader applies. */

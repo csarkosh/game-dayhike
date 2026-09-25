@@ -89,8 +89,10 @@ export const FOLIAGE_PROFILES = {
   BLADES: { amp: 1.0, groundTint: 0.7, rootAO: 0.5, normalRoot: 0, tilt: true, bend: true, blades: true, normalUp: 1.0 },
   /** Dead leaves, twigs and small branches: no wind (amp 0 — litter does not
    * sway), no tilt or bend, but still the per-piece `blades` cut so a thin
-   * cell's clump can lose pieces the way a thin sward loses blades. */
-  DUFF: { amp: 0, groundTint: 0.7, rootAO: 0.6, normalRoot: 0, tilt: false, bend: false, blades: true, normalUp: 0.5 },
+   * cell's clump can lose pieces the way a thin sward loses blades. Ground
+   * tint at half, not 0.7: on the mid-brown floor (NEEDLE_BED) half seats the
+   * pieces into it, where 0.7 pulled them fully into the ground colour. */
+  DUFF: { amp: 0, groundTint: 0.5, rootAO: 0.6, normalRoot: 0, tilt: false, bend: false, blades: true, normalUp: 0.5 },
 } as const satisfies Record<string, FoliageProfile>;
 
 // Module-level like skin.ts: every material's plugin instance reads one truth,

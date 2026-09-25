@@ -76,13 +76,16 @@ describe("terrain texture plugin", () => {
     ]));
   });
 
-  it("declares the second weight attribute and varying as vec3, duff in z", () => {
+  it("declares the second weight attribute and varying as vec4, duff in z and canopy in w", () => {
     const plugin = pluginFor("t2b");
     const vert = plugin.getCustomCode("vertex")!;
-    expect(vert.CUSTOM_VERTEX_DEFINITIONS).toContain("attribute vec3 terrainWeights2;");
-    expect(vert.CUSTOM_VERTEX_DEFINITIONS).toContain("varying vec3 vTerrainW2;");
+    expect(vert.CUSTOM_VERTEX_DEFINITIONS).toContain("attribute vec4 terrainWeights2;");
+    expect(vert.CUSTOM_VERTEX_DEFINITIONS).toContain("varying vec4 vTerrainW2;");
+    expect(vert.CUSTOM_VERTEX_DEFINITIONS).not.toContain("vec3 terrainWeights2");
+    expect(vert.CUSTOM_VERTEX_DEFINITIONS).not.toContain("vec3 vTerrainW2");
     const frag = plugin.getCustomCode("fragment")!;
-    expect(frag.CUSTOM_FRAGMENT_DEFINITIONS).toContain("varying vec3 vTerrainW2;");
+    expect(frag.CUSTOM_FRAGMENT_DEFINITIONS).toContain("varying vec4 vTerrainW2;");
+    expect(frag.CUSTOM_FRAGMENT_DEFINITIONS).not.toContain("vec3 vTerrainW2");
   });
 
   it("injects at the albedo hook and nowhere that would overwrite lighting", () => {

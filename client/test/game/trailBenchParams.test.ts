@@ -9,7 +9,8 @@ import {
   TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT, TRAIL_BENCH_SHADE,
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE,
   TRAMPLE_HEIGHT, TRAMPLE_LEAN, TRAMPLE_TINT, TRAMPLE_BAND,
-  TRAIL_DRIFT_BAND, TRAIL_DRIFT_TINT, TRAIL_DRIFT_LUM, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_DARK, TRAIL_WASH_ROUGH,
+  TRAIL_DRIFT_BAND, TRAIL_DRIFT_TINT, TRAIL_DRIFT_LUM, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_ROUGH, TRAIL_BED_EARTH,
+  TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER, TRAIL_BED_FLOOR,
   valueNoise1, trailWear, trailEdgeNoise, trailBands, trampleAt,
   trailDriftWeight, trailWashoutNoise, trailWashoutWeight, trailPatches,
 } from "../../src/game/trailBenchParams.js";
@@ -27,10 +28,12 @@ describe("constants", () => {
     expect(TRAIL_EDGE_NOISE).toBe(0.25); expect(TRAIL_EDGE_WAVE).toEqual([1.5, 0.4]); expect(TRAIL_EDGE_WEIGHT).toEqual([0.6, 0.4]);
     expect(TRAIL_HEIGHT_SHIFT).toBe(0.3);
     expect([TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE]).toEqual([0.45, 0.75, 1.35, 0.08]);
-    expect(TRAIL_CORE_GAIN).toBe(0.45); expect(TRAIL_CORE_TINT).toEqual({ r: 0.3, g: 0.26, b: 0.21 });
-    expect(TRAIL_MARGIN_GAIN).toBe(0.75); expect(TRAIL_MARGIN_TINT).toEqual({ r: 0.4, g: 0.36, b: 0.3 });
+    expect(TRAIL_CORE_GAIN).toBe(0.24); expect(TRAIL_CORE_TINT).toEqual({ r: 0.3, g: 0.26, b: 0.21 });
+    expect(TRAIL_MARGIN_GAIN).toBe(0.47); expect(TRAIL_MARGIN_TINT).toEqual({ r: 0.4, g: 0.36, b: 0.3 });
     expect(TRAIL_TRAMPLE_TINT).toEqual({ r: 0.9, g: 0.88, b: 0.8 });
-    expect(TRAIL_BENCH_SHADE).toBe(0.6);
+    expect(TRAIL_BENCH_SHADE).toBe(0.8);
+    expect(TRAIL_BED_EARTH).toBe(0.7);
+    expect(TRAIL_BED_FLOOR).toBe(0.75);
     expect([TRAIL_WET_DARK, TRAIL_WET_GLOSS]).toEqual([0.35, 0.5]);
     expect(TRAIL_PUDDLE_WET).toEqual([0.55, 0.8]); expect(TRAIL_PUDDLE_LOW).toEqual([0.62, 0.75]); expect(TRAIL_PUDDLE_WAVE).toBe(6);
     expect([TRAMPLE_HEIGHT, TRAMPLE_LEAN]).toEqual([0.73, 0.21]);
@@ -44,6 +47,10 @@ describe("constants", () => {
 
 describe("the drift tint", () => {
   it("is NEEDLE_BED's own hue, scaled to the brightness the drift was tuned at", () => {
+    // The drift rises with the floor paint, but not by the floor's full 1.5×:
+    // at 0.77 the drifted bed measured 1.35× the litter floor beside it, and a
+    // drift is the same litter as that floor. 0.66 measures 1.14×.
+    expect(TRAIL_DRIFT_LUM).toBe(0.66);
     // The assertion that would have caught the drift tint carrying the
     // forest floor's hue instead of the needle bed's: same ratios, not just
     // the same brightness.
@@ -114,9 +121,10 @@ describe("the neglect patches", () => {
     expect(TRAIL_DRIFT_BAND).toEqual([0.25, 0.7]);
     expect(TRAIL_WASH_WAVE).toBe(4);
     expect(TRAIL_WASH_BAND).toEqual([0.55, 0.8]);
-    expect(TRAIL_WASH_DARK).toBe(0.7);
+    expect(TRAIL_WASH_DARK_OPEN).toBe(0.4);
+    expect(TRAIL_WASH_DARK_LITTER).toBe(0.75);
     expect(TRAIL_WASH_ROUGH).toBe(1.15);
-    expect(TRAIL_CORE_GAIN).toBe(0.45);
+    expect(TRAIL_CORE_GAIN).toBe(0.24);
     expect(trailDriftWeight(0)).toBe(0);
     expect(trailDriftWeight(0.25)).toBe(0);
     expect(trailDriftWeight(0.7)).toBe(1);
