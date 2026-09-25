@@ -36,6 +36,23 @@ export type NetStats = {
 export type InteractedHandler = (e: { entityId: number; targetId: number }) => void;
 export type NamedHandler = (e: { entityId: number; peerId: string }) => void;
 
+/**
+ * Why a session ended, as far as the client can tell from the host's messages.
+ *
+ * - `version_skew`: the host's Welcome carried another protocol version or
+ *   level id, so the two pages are running different builds. Nothing on this
+ *   page can join that host; a reload that fetches the current build can.
+ *   `message` names what each side runs, for the console.
+ * - `host_ended`: the host sent SessionEnded. `message` is its reason,
+ *   possibly empty.
+ *
+ * A transport that drops, or a lobby that ends, is noticed by whoever owns
+ * those (app.ts), not here.
+ */
+export type SessionEnd =
+  | { kind: "version_skew"; message: string }
+  | { kind: "host_ended"; message: string };
+
 export type ClientSession = {
   readonly ready: boolean;
   readonly localEntityId: number;
@@ -49,7 +66,7 @@ export type ClientSession = {
   tick(input: InputCommand): void;
   renderState(nowMs: number): WorldState;
   localPlayer(): PlayerState | undefined;
-  onSessionEnd(handler: (reason: string) => void): void;
+  onSessionEnd(handler: (end: SessionEnd) => void): void;
   onInteracted(handler: InteractedHandler): void;
   onNamed(handler: NamedHandler): void;
   dispose(): void;
@@ -88,7 +105,7 @@ export function createClientSession(
     bytesReceived: 0,
   };
 
-  let endHandler: ((reason: string) => void) | null = null;
+  let endHandler: ((end: SessionEnd) => void) | null = null;
   let interactedHandler: InteractedHandler | null = null;
   let namedHandler: NamedHandler | null = null;
   // A roster or end screen typically wires up onNamed after the session is
@@ -108,10 +125,12 @@ export function createClientSession(
           // and refuses on its own level check — both directions fail in words,
           // neither decodes garbage.
           if (event.protocolVersion !== PROTOCOL_VERSION) {
-            endHandler?.(
-              `Protocol mismatch: the host is running protocol ${event.protocolVersion}, this client has ` +
+            endHandler?.({
+              kind: "version_skew",
+              message:
+                `Protocol mismatch: the host is running protocol ${event.protocolVersion}, this client has ` +
                 `${PROTOCOL_VERSION}. ${staleClientAdvice}`,
-            );
+            });
             return;
           }
           // Nothing about the world crosses the wire, so this string is the only
@@ -123,10 +142,12 @@ export function createClientSession(
             // The advice is the caller's: on the web a reload fetches the
             // current bundle; in the desktop shell the bundle is the app, and
             // the way out is a new download.
-            endHandler?.(
-              `Level mismatch: the host is running ${event.levelId}, this client has ` +
+            endHandler?.({
+              kind: "version_skew",
+              message:
+                `Level mismatch: the host is running ${event.levelId}, this client has ` +
                 `${expectedLevelId}. ${staleClientAdvice}`,
-            );
+            });
             return;
           }
           localId = event.entityId;
@@ -149,7 +170,7 @@ export function createClientSession(
           );
           break;
         case MessageType.SessionEnded:
-          endHandler?.(event.reason);
+          endHandler?.({ kind: "host_ended", message: event.reason });
           break;
         case MessageType.Interacted:
           interactedHandler?.({ entityId: event.entityId, targetId: event.targetId });

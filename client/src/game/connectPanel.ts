@@ -1,3 +1,5 @@
+import type { SessionEnd } from "../net/clientSession.js";
+
 const STYLE = `
   .connectfail {
     position: absolute; inset: 0; display: none;
@@ -33,23 +35,67 @@ export function connectFailureMessage(err: unknown): string {
     : "Could not reach the host.";
 }
 
+/**
+ * What the panel's first button does. `reconnect` runs the handshake again,
+ * which can succeed once a network hiccup has passed. `reload` reloads the
+ * page: the site is a single-page app that never refetches its own code, so a
+ * page running an older build than the host can only catch up by reloading.
+ */
+export type RetryMode = "reconnect" | "reload";
+
+export type ConnectFailure = { message: string; retry: RetryMode };
+
+/** Shown when the host turns this page away for running a different build. */
+export const STALE_PAGE_MESSAGE =
+  "You and the host are running different versions of Day Hike. " +
+  "Reload this page to get the latest version, then join again. " +
+  "If that does not work, the host needs to reload too.";
+
+/** A handshake that failed or threw: worth another try from the same page. */
+export function connectFailure(err: unknown): ConnectFailure {
+  return { message: connectFailureMessage(err), retry: "reconnect" };
+}
+
+/**
+ * Where a session end is explained: the panel, when the player has something
+ * to do about it, or the status line on the way back to the landing page.
+ */
+export type SessionEndOutcome = { panel: ConnectFailure } | { status: string };
+
+export function sessionEndOutcome(end: SessionEnd): SessionEndOutcome {
+  switch (end.kind) {
+    case "version_skew":
+      return { panel: { message: STALE_PAGE_MESSAGE, retry: "reload" } };
+    case "host_ended":
+      return { status: end.message.length > 0 ? end.message : "The host ended this session." };
+  }
+}
+
+/** Runs the recovery the panel is currently offering. */
+export function runRetry(mode: RetryMode, hooks: { reconnect(): void; reload(): void }): void {
+  if (mode === "reload") hooks.reload();
+  else hooks.reconnect();
+}
+
 export type ConnectPanel = {
-  show(message: string): void;
+  show(failure: ConnectFailure): void;
   hide(): void;
   dispose(): void;
 };
 
 /**
- * The overlay shown when a follower's connection to the host fails. It offers
- * the two ways out that a stranded player actually has: try the handshake
- * again, or give up on the party and play alone in a fresh world.
+ * The overlay shown when a follower's connection to the host fails, or when
+ * the host turns this page away for running a different build. It offers the
+ * two ways out that a stranded player actually has: try again (the handshake,
+ * or a reload, whichever can help), or give up on the party and play alone in
+ * a fresh world — which an older build can still do perfectly well.
  *
  * Built with DOM APIs and `textContent`, matching the HUD's rule that anything
  * dynamic cannot become markup.
  */
 export function createConnectPanel(
   container: HTMLElement,
-  options: { onRetry(): void; onOffline(): void },
+  options: { onReconnect(): void; onReload(): void; onOffline(): void },
 ): ConnectPanel {
   const style = document.createElement("style");
   style.textContent = STYLE;
@@ -61,11 +107,14 @@ export function createConnectPanel(
   panel.className = "panel";
 
   const message = document.createElement("p");
+  let mode: RetryMode = "reconnect";
 
   const retry = document.createElement("button");
   retry.type = "button";
   retry.textContent = "Retry";
-  retry.addEventListener("click", () => options.onRetry());
+  retry.addEventListener("click", () =>
+    runRetry(mode, { reconnect: options.onReconnect, reload: options.onReload }),
+  );
 
   const offline = document.createElement("button");
   offline.type = "button";
@@ -77,8 +126,11 @@ export function createConnectPanel(
   container.append(style, root);
 
   return {
-    show(text) {
-      message.textContent = text;
+    show(failure) {
+      mode = failure.retry;
+      message.textContent = failure.message;
+      // The button says what it will do: a reload drops this page's world.
+      retry.textContent = failure.retry === "reload" ? "Reload" : "Retry";
       root.classList.add("open");
     },
     hide() {

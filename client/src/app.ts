@@ -63,7 +63,7 @@ import { signPosts } from "./sim/signs.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
 import { PROPS, propSite, type RoadProp } from "./sim/passes/trailhead.js";
 import { afterNextPaint } from "./game/paint.js";
-import { connectFailureMessage, createConnectPanel } from "./game/connectPanel.js";
+import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
 import type { World } from "./sim/world.js";
@@ -661,10 +661,12 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // Set once a follower's first handshake is wired up (below); Retry re-runs it.
   let connectClient: (() => void) | null = null;
   const connectPanel = createConnectPanel(container, {
-    onRetry: () => {
+    onReconnect: () => {
       connectPanel.hide();
       connectClient?.();
     },
+    // The one way a page running an older build catches up with the host.
+    onReload: () => location.reload(),
     onOffline: () => options.onContinueOffline(),
   });
 
@@ -904,9 +906,25 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     // Show the reason the session actually gave. Hardcoding one message here
     // made every failure read as a deliberate host shutdown, including the
     // level-mismatch check, whose whole purpose is to say what went wrong.
-    client.onSessionEnd((reason) =>
-      endSession(reason.length > 0 ? reason : "The host ended this session."),
-    );
+    client.onSessionEnd((end) => {
+      if (disposed) return;
+      const outcome = sessionEndOutcome(end);
+      if ("status" in outcome) {
+        endSession(outcome.status);
+        return;
+      }
+      // Different builds: a status line that vanishes into the landing page
+      // left the player nothing to click, and joining again from this page
+      // is refused the same way. The panel stays until they reload or play
+      // alone. Which build each side runs goes to the console.
+      console.warn(end.message);
+      // Hang up so the host drops the player it spawned for this page
+      // rather than keeping a figure at the trailhead that never moves. An
+      // explicit close is not a peer leaving, so no reconnect starts here.
+      client.dispose();
+      hud.setStatus(null);
+      connectPanel.show(outcome.panel);
+    });
     // Not unconditionally: the lobby can end while the handshake is in flight,
     // and clearing the status here would wipe the explanation it just wrote.
     if (!lobbyEnded) hud.setStatus(null);
@@ -982,7 +1000,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       void runAsClient(active).catch((err: unknown) => {
         if (disposed) return;
         hud.setStatus(null);
-        connectPanel.show(connectFailureMessage(err));
+        connectPanel.show(connectFailure(err));
       });
     };
     connectClient();
