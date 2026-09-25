@@ -251,7 +251,7 @@ describe("the bank", () => {
     expect(TRAIL_FRAGMENT_PAINT).toContain("vec3 tPacked = surfaceAlbedo * vec3(0.86, 0.88, 0.94);");
     expect(TRAIL_FRAGMENT_PAINT).toContain("tPacked, tSnow), tOnBench);");
     expect(TRAIL_FRAGMENT_PAINT).toContain("float tGravel = tOnBench * (1.0 - tSnow);");
-    const gravelSwaps = TRAIL_FRAGMENT_PAINT.split("\n").filter((l) => l.includes("tGravelN.x") || l.includes("terrainLayerRough2.x") || l.includes("terrainLayerF02.x"));
+    const gravelSwaps = TRAIL_FRAGMENT_PAINT.split("\n").filter((l) => l.includes("tBedN.x") || l.includes("terrainLayerRough2.x") || l.includes("terrainLayerF02.x"));
     expect(gravelSwaps).toHaveLength(3);
     // The gate that actually carries tGravel into the normal and roughness mixes.
     expect(TRAIL_FRAGMENT_PAINT).toContain("mix(tLipN, tBenchN, tGravel * tk)");
@@ -274,7 +274,7 @@ describe("the neglect patches", () => {
   it("keeps the drift and wash-out paint, normal and roughness folds in the shader", () => {
     expect(TRAIL_FRAGMENT_PAINT).toContain("tCoreCol = mix(mix(tCoreCol, tDriftCol, tDrift), tWashCol, tWash);");
     expect(TRAIL_FRAGMENT_PAINT).toContain("tMarginCol = mix(mix(tMarginCol, tDriftCol, tDrift), tWashCol, tWash);");
-    expect(TRAIL_FRAGMENT_PAINT).toContain("vec3 tBenchN = normalize(normalW + vec3(tGravelN.x, 0.0, tGravelN.y) * mix(1.0, 0.5, tInCore) * (1.0 - tDrift) * (1.0 - tWash) + vec3(tFloorN.x, 0.0, tFloorN.y) * tDrift);");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec3 tBenchN = normalize(normalW + vec3(tBedN.x, 0.0, tBedN.y) * mix(1.0, 0.5, tInCore) * (1.0 - tDrift) * (1.0 - tWash) + vec3(tFloorN.x, 0.0, tFloorN.y) * tDrift);");
     expect(TRAIL_FRAGMENT_PAINT).toContain("tRoughBench = mix(tRoughBench, clamp(terrainLayerRough.y * mix(1.0, tFloorRAH.r / 0.5, tk), 0.0, 1.0), tDrift);");
     expect(TRAIL_FRAGMENT_PAINT).toContain(`tRoughBench = mix(tRoughBench, clamp(tRoughBench * ${glslFloat(TRAIL_WASH_ROUGH)}, 0.0, 1.0), tWash);`);
   });
@@ -295,11 +295,29 @@ describe("the neglect patches", () => {
     expect(margin).not.toContain("tGravelTex");
     // The bed's brightness: gains down to where the bed / beside ratio
     // lands in 0.9–1.3, and the bed takes 80 % of the bank's shade.
-    expect(TRAIL_CORE_GAIN).toBe(0.32);
-    expect(TRAIL_MARGIN_GAIN).toBe(0.55);
+    expect(TRAIL_CORE_GAIN).toBe(0.24);
+    expect(TRAIL_MARGIN_GAIN).toBe(0.47);
     expect(TRAIL_BENCH_SHADE).toBe(0.8);
     expect(TRAIL_WASH_DARK).toBe(0.55);
     expect(TRAIL_FRAGMENT_PAINT).toContain(`vec3 tBenchBase = mix(vec3(1.0), tBankBase, ${glslFloat(0.8)});`);
+  });
+
+  it("shades the bed's relief as earth too: normal, occlusion and roughness follow the same mix", () => {
+    // A brown tint over a cobble mosaic still shades as cobbles: the normal
+    // map, the ambient occlusion and the roughness were the pebble texture's.
+    // The same share that mixes the colour mixes them.
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec3 tBedN = mix(tGravelN, tFloorN, 0.7);");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec3 tBedRAH = mix(tGravelRAH, tFloorRAH, 0.7);");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("float tAo = mix(1.0, tBedRAH.g / 0.5, tk);");
+    const bench = TRAIL_FRAGMENT_PAINT.match(/vec3 tBenchN = [^\n]*/)![0];
+    expect(bench).toContain("tBedN.x, 0.0, tBedN.y");
+    expect(bench).not.toContain("tGravelN");
+    const rough = TRAIL_FRAGMENT_PAINT.match(/float tRoughBench = [^\n]*/)![0];
+    expect(rough).toContain("tBedRAH.r / 0.5");
+    expect(rough).not.toContain("tGravelRAH");
+    // The open end's brightness, down by the allowance.
+    expect(TRAIL_CORE_GAIN).toBe(0.24);
+    expect(TRAIL_MARGIN_GAIN).toBe(0.47);
   });
 });
 

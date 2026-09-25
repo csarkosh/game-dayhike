@@ -378,6 +378,11 @@ export const TRAIL_FRAGMENT_PAINT = `
     vec3 tGravelRAH = texture2D(terrainRAH, vec3(tuvP, 4.0)).rgb;
     vec3 tFloorN = texture2D(terrainNormals, vec3(tuvF, 1.0)).rgb * 2.0 - 1.0;
     vec3 tFloorRAH = texture2D(terrainRAH, vec3(tuvF, 1.0)).rgb;
+    // The bed's relief is earth too: a brown tint over a cobble mosaic still
+    // shades as cobbles if the normal, the occlusion and the roughness stay
+    // the pebble texture's. The same share that mixes the colour mixes them.
+    vec3 tBedN = mix(tGravelN, tFloorN, ${f(TRAIL_BED_EARTH)});
+    vec3 tBedRAH = mix(tGravelRAH, tFloorRAH, ${f(TRAIL_BED_EARTH)});
     float tdB = tdN / tWidthK - ${f(TRAIL_HEIGHT_SHIFT)} * (mix(0.5, tGravelRAH.b, tk) - 0.5);
     float tE = max(${f(TRAIL_PAINT_EDGE)}, taa / tWidthK);
     float tInCore = 1.0 - smoothstep(${f(TRAIL_CORE_HALF)}, ${f(TRAIL_CORE_HALF)} + tE, tdB);
@@ -407,7 +412,7 @@ export const TRAIL_FRAGMENT_PAINT = `
     // and pale at about twice the core's brightness. Wet: the core darkens
     // and glosses, the margin half as much; puddles sit in the low spots of
     // the 6 m noise inside the core.
-    float tAo = mix(1.0, tGravelRAH.g / 0.5, tk);
+    float tAo = mix(1.0, tBedRAH.g / 0.5, tk);
     vec3 tCoreCol = vec3(${f(TRAIL_CORE_TINT.r)}, ${f(TRAIL_CORE_TINT.g)}, ${f(TRAIL_CORE_TINT.b)}) * tDarkK * tBedTex * ${f(TRAIL_CORE_GAIN)} * tAo * tBenchBase;
     vec3 tMarginCol = vec3(${f(TRAIL_MARGIN_TINT.r)}, ${f(TRAIL_MARGIN_TINT.g)}, ${f(TRAIL_MARGIN_TINT.b)}) * tBedTex * ${f(TRAIL_MARGIN_GAIN)} * tAo * tBenchBase;
     // Neglect: leaf and needle drifts where the ground cover says litter lies
@@ -431,7 +436,7 @@ export const TRAIL_FRAGMENT_PAINT = `
     float tOnBench = tInMargin;
     tCol = mix(tCol, mix(mix(tMarginCol, tCoreCol, tInCore), tPacked, tSnow), tOnBench);
     float tGravel = tOnBench * (1.0 - tSnow);
-    vec3 tBenchN = normalize(normalW + vec3(tGravelN.x, 0.0, tGravelN.y) * mix(1.0, 0.5, tInCore) * (1.0 - tDrift) * (1.0 - tWash) + vec3(tFloorN.x, 0.0, tFloorN.y) * tDrift);
+    vec3 tBenchN = normalize(normalW + vec3(tBedN.x, 0.0, tBedN.y) * mix(1.0, 0.5, tInCore) * (1.0 - tDrift) * (1.0 - tWash) + vec3(tFloorN.x, 0.0, tFloorN.y) * tDrift);
     // The lip: over the sink ramp outside the bench the normal tilts outward
     // and down by the ramp's slope, so a low sun draws the edge as a line.
     // Reads the width-scaled distance, like the bands above it, so the drawn
@@ -443,7 +448,7 @@ export const TRAIL_FRAGMENT_PAINT = `
     float tLip = 4.0 * tRamp * (1.0 - tRamp) * (1.0 - tSnow);
     vec3 tLipN = normalize(normalW - vec3(tAway.x, 0.0, tAway.y) * ${f(TRAIL_SINK / TRAIL_SINK_RAMP)} * tLip);
     normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), vec3(0.0, 1.0, 0.0), tPuddle));
-    float tRoughBench = clamp(terrainLayerRough2.x * mix(1.0, tGravelRAH.r / 0.5, tk), 0.0, 1.0);
+    float tRoughBench = clamp(terrainLayerRough2.x * mix(1.0, tBedRAH.r / 0.5, tk), 0.0, 1.0);
     tRoughBench = mix(tRoughBench, clamp(terrainLayerRough.y * mix(1.0, tFloorRAH.r / 0.5, tk), 0.0, 1.0), tDrift);
     tRoughBench = mix(tRoughBench, clamp(tRoughBench * ${f(TRAIL_WASH_ROUGH)}, 0.0, 1.0), tWash);
     tRoughBench *= 1.0 - ${f(TRAIL_WET_GLOSS)} * terrainWet * mix(0.5, 1.0, tInCore);

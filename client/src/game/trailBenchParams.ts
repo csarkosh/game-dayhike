@@ -33,10 +33,10 @@ export const TRAIL_MARGIN_HALF: number = TRAIL_BED_HALF;
 export const TRAIL_TRAMPLE_HALF = 1.35;
 /** Boundary softness (m), widened to the fragment footprint in the shader. */
 export const TRAIL_PAINT_EDGE = 0.08;
-export const TRAIL_CORE_GAIN = 0.32;
+export const TRAIL_CORE_GAIN = 0.24;
 /** The bench's darker band, compacted by footfall. About half the margin's brightness. */
 export const TRAIL_CORE_TINT: Rgb = { r: 0.3, g: 0.26, b: 0.21 };
-export const TRAIL_MARGIN_GAIN = 0.55;
+export const TRAIL_MARGIN_GAIN = 0.47;
 /** The bench's loose, pale band. About twice the core's brightness. */
 export const TRAIL_MARGIN_TINT: Rgb = { r: 0.4, g: 0.36, b: 0.3 };
 export const TRAIL_TRAMPLE_TINT: Rgb = { r: 0.9, g: 0.88, b: 0.8 };
@@ -115,9 +115,10 @@ export function trampleAt(rt: number): { height: number; lean: number; tint: Rgb
  * duff lies thick, and gravel washed out to bare dirt in patches of the
  * bed's own noise. Both are smoothsteps of a continuous field — no thresholds. */
 export const TRAIL_DRIFT_BAND: readonly [number, number] = [0.25, 0.7];
-/** The drift's brightness relative to the floor texture, the value the
- * paired stills were judged at. */
-export const TRAIL_DRIFT_LUM = 0.5154;
+/** The drift's brightness relative to the floor texture. A drift is the
+ * same litter as the floor beside the bed, so it rises with the floor
+ * paint: 0.77 is the earlier 0.5154 at the floor's own 1.5× lift. */
+export const TRAIL_DRIFT_LUM = 0.77;
 /** Needle-and-leaf bed over the floor texture: the needle bed's own hue
  * (`NEEDLE_BED`) at TRAIL_DRIFT_LUM's brightness, so a retune of NEEDLE_BED
  * carries through here automatically. */

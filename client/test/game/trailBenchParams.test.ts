@@ -27,8 +27,8 @@ describe("constants", () => {
     expect(TRAIL_EDGE_NOISE).toBe(0.25); expect(TRAIL_EDGE_WAVE).toEqual([1.5, 0.4]); expect(TRAIL_EDGE_WEIGHT).toEqual([0.6, 0.4]);
     expect(TRAIL_HEIGHT_SHIFT).toBe(0.3);
     expect([TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE]).toEqual([0.45, 0.75, 1.35, 0.08]);
-    expect(TRAIL_CORE_GAIN).toBe(0.32); expect(TRAIL_CORE_TINT).toEqual({ r: 0.3, g: 0.26, b: 0.21 });
-    expect(TRAIL_MARGIN_GAIN).toBe(0.55); expect(TRAIL_MARGIN_TINT).toEqual({ r: 0.4, g: 0.36, b: 0.3 });
+    expect(TRAIL_CORE_GAIN).toBe(0.24); expect(TRAIL_CORE_TINT).toEqual({ r: 0.3, g: 0.26, b: 0.21 });
+    expect(TRAIL_MARGIN_GAIN).toBe(0.47); expect(TRAIL_MARGIN_TINT).toEqual({ r: 0.4, g: 0.36, b: 0.3 });
     expect(TRAIL_TRAMPLE_TINT).toEqual({ r: 0.9, g: 0.88, b: 0.8 });
     expect(TRAIL_BENCH_SHADE).toBe(0.8);
     expect(TRAIL_BED_EARTH).toBe(0.7);
@@ -45,6 +45,8 @@ describe("constants", () => {
 
 describe("the drift tint", () => {
   it("is NEEDLE_BED's own hue, scaled to the brightness the drift was tuned at", () => {
+    // The drift rises with the floor paint: the floor's own 1.5× lift.
+    expect(TRAIL_DRIFT_LUM).toBe(0.77);
     // The assertion that would have caught the drift tint carrying the
     // forest floor's hue instead of the needle bed's: same ratios, not just
     // the same brightness.
@@ -117,7 +119,7 @@ describe("the neglect patches", () => {
     expect(TRAIL_WASH_BAND).toEqual([0.55, 0.8]);
     expect(TRAIL_WASH_DARK).toBe(0.55);
     expect(TRAIL_WASH_ROUGH).toBe(1.15);
-    expect(TRAIL_CORE_GAIN).toBe(0.32);
+    expect(TRAIL_CORE_GAIN).toBe(0.24);
     expect(trailDriftWeight(0)).toBe(0);
     expect(trailDriftWeight(0.25)).toBe(0);
     expect(trailDriftWeight(0.7)).toBe(1);
