@@ -4,7 +4,7 @@ import type { Aabb } from "../level.js";
 import type { ClutterInstance } from "../clutter.js";
 import {
   CLIFF_CELL, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH,
-  CLIFF_RUN_REACH, CLIFF_SCALE, CLIFF_SINK, CLIFF_TUNABLES, cliffCellRuns, cliffFacing, leanPoint,
+  CLIFF_RUN_REACH, CLIFF_SCALE, CLIFF_TUNABLES, cliffCellRuns, cliffFacing, leanPoint,
   type CliffPoint,
 } from "../cliffField.js";
 
@@ -20,23 +20,29 @@ import {
  * own part of the seated solid.
  *
  * The bounds are of the SEATED solid — the eight corners of the piece's
- * above-ground box (`y` from the sink line to the top, `z` from the back of
- * the depth to the scanned face's reach), turned to the module's facing and
- * then leant exactly as the renderer leans it. The lean turns about the sunk
- * origin and tips the top downslope, out over the foot of the face, by up to
- * `H · scale · sin 20°` (3.9 m for the long model at the top of the band), and
- * lifts the back of the top edge above the plumb height; bounding the plumb,
- * unleant box instead leaves nearly half the drawn solid outside
+ * whole drawn box (`y` from the model's base to its top, the part the sink
+ * buries included; `z` from the back of the depth to the face's reach),
+ * turned to the module's facing and then leant exactly as the renderer leans
+ * it. The lean turns about the sunk origin: it tips the top downslope, out
+ * over the foot of the face, by up to `H · scale · sin 20°` (3.9 m for the
+ * long model at the top of the band), drops the front of the base below the
+ * origin, and lifts the back of the top edge above the plumb height. Bounding
+ * the plumb, unleant box instead leaves nearly half the drawn solid outside
  * (`test/sim/passes/cliffs.test.ts`). A seated point of the piece is a convex
  * combination of the piece's seated corners, so it lies inside their bounds:
- * the boxes contain everything drawn above the ground. The price is that each
- * box stands plumb over the whole of that reach, so at the foot of the face
- * it claims up to the lean's reach of ground in front of the rock — ground the
- * placement's probes have already found too steep to stand on.
+ * the boxes contain the whole drawn solid, above the ground and below it.
  *
- * Each box runs from the sunk base (the module's `groundH`, the height of its
- * origin) to the higher of the module's full height above it and its seated
- * corners' highest point.
+ * Each box runs from the lowest of its seated corners to the higher of the
+ * module's full height above the sunk origin and its highest seated corner.
+ *
+ * Two consequences of standing axis-aligned boxes round a leaning slab. At
+ * the foot of the face each box stands plumb over the whole of the lean's
+ * reach, so it claims a few metres of ground in front of the drawn rock —
+ * ground that is mostly too steep to stand on, though only the probe points
+ * are guaranteed to be. And a box's top is flat and level with the highest
+ * corner of its piece, so where the hillside behind a wall comes up to that
+ * top, a hiker sliding down from above can land on a ledge that stands above
+ * the drawn top edge.
  */
 
 /** Longest piece of a module's width (m) that one box covers. */
@@ -95,15 +101,15 @@ export function cliffModuleBoxes(m: ClutterInstance): Aabb[] {
   const f = (CLIFF_MODEL_FRONT[v] as number) * s;
   const rt = (CLIFF_MODEL_RIGHT[v] as number) * s;
   const facing = cliffFacing(m.groundDx, m.groundDz, m.hash);
-  const x0 = -(w - rt), y0 = CLIFF_SINK * h, z0 = -(d - f);
+  const x0 = -(w - rt), z0 = -(d - f);
   const n = Math.max(1, Math.ceil(w / CLIFF_BOX_STEP));
   const out: Aabb[] = [];
   for (let i = 0; i < n; i++) {
     const a = x0 + (w * i) / n;
     const b = i === n - 1 ? rt : x0 + (w * (i + 1)) / n;
-    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity, maxY = h;
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity, minY = Infinity, maxY = h;
     for (let c = 0; c < 8; c++) {
-      const lx = c & 1 ? b : a, ly = c & 2 ? h : y0, lz = c & 4 ? f : z0;
+      const lx = c & 1 ? b : a, ly = c & 2 ? h : 0, lz = c & 4 ? f : z0;
       // Yaw first, then the lean — the order the placement probes and the
       // renderer both seat in.
       leanPoint(lx * facing.rx + lz * facing.fx, ly, lx * facing.rz + lz * facing.fz, m.groundDx, m.groundDz, corner);
@@ -111,10 +117,11 @@ export function cliffModuleBoxes(m: ClutterInstance): Aabb[] {
       if (corner.x > maxX) maxX = corner.x;
       if (corner.z < minZ) minZ = corner.z;
       if (corner.z > maxZ) maxZ = corner.z;
+      if (corner.y < minY) minY = corner.y;
       if (corner.y > maxY) maxY = corner.y;
     }
     out.push({
-      min: { x: m.x + minX, y: m.groundH, z: m.z + minZ },
+      min: { x: m.x + minX, y: m.groundH + minY, z: m.z + minZ },
       max: { x: m.x + maxX, y: m.groundH + maxY, z: m.z + maxZ },
     });
   }

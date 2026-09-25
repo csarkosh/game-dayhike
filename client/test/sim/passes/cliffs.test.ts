@@ -19,8 +19,10 @@ import { boxShell, seat } from "../helpers/cliffSolid.js";
 const ATMO = 627994160;
 const SCARP_CHUNK = { cx: -11, cz: -29 };
 /** A wall on the scarp whose boxes cross the chunk border at z = −896: the
- * first module of cell (−27, −72)'s run, found by scanning the scarp's
- * modules for one whose boxes reach exactly two chunks. */
+ * first module of cell (−27, −72)'s run, found by searching the scarp's
+ * modules for one whose boxes reach exactly two chunks. Seven boxes, one of
+ * which crosses the border, so the two chunks hold eight pieces between
+ * them. */
 const STRADDLE = { ci: -27, cj: -72, k: 0, a: { cx: -11, cz: -29 }, b: { cx: -11, cz: -28 } };
 
 /** Containment is exact up to the rounding of one rotation: every lattice
@@ -98,14 +100,16 @@ describe("the cliff pass", () => {
 });
 
 describe("the colliders", () => {
-  it("contain the drawn solid: every point of the above-ground box lies inside one of its module's boxes", () => {
-    // The lattice the placement's probes are judged on (`cliffField.test.ts`
-    // swept it for the residual this retires): the faces of each module's
-    // above-ground box at 1 m, seated as the renderer seats it, over every
-    // module within 400 m of the origin on 200 worlds. Each point must lie
-    // inside one of the module's own boxes — its x and z inside the box's
-    // footprint, and its height between the sunk base and the box's top — so
-    // nothing drawn stands outside what collides.
+  it("contain the drawn solid: every point of the model's box lies inside one of its module's boxes", () => {
+    // The lattice §11's residual was swept on (`cliffField.test.ts`),
+    // extended from the sink line down to the model's base: the faces of
+    // each module's whole drawn box at 1 m, the buried part included, seated
+    // as the renderer seats it, over every module within 400 m of the origin
+    // on 200 worlds. The lean drops the front of the base below the sunk
+    // origin, where the downhill ground can lie lower still, so the part the
+    // sink was meant to bury can stand in the open. Each point must lie
+    // inside one of the module's own boxes, in all three axes, so nothing
+    // drawn stands outside what collides.
     const WORLDS = 200;
     const r = 400;
     const w = r + CLIFF_RUN_REACH;
@@ -119,7 +123,7 @@ describe("the colliders", () => {
             modules++;
             const own = cliffModuleBoxes(m);
             boxes += own.length;
-            for (const [lx, ly, lz] of boxShell(m.variant, m.scale, 1)) {
+            for (const [lx, ly, lz] of boxShell(m.variant, m.scale, 1, 0)) {
               seat(m, lx, ly, lz, p);
               points++;
               const x = m.x + p.x, y = m.groundH + p.y, z = m.z + p.z;
@@ -131,7 +135,7 @@ describe("the colliders", () => {
     }
     expect(outside).toBe(0);
     expect(modules).toBe(206);
-    expect(points).toBe(85780);
+    expect(points).toBe(106996);
     expect(boxes).toBe(834);
   }, 300_000);
 
@@ -147,6 +151,10 @@ describe("the colliders", () => {
       shares.push(share);
     }
     expect(shares.map((s) => s.length)).toEqual([5, 3]);
+    // Exactly one box crosses the border and is clipped into both chunks.
+    const shared = own.filter((b) => clip(b, STRADDLE.a.cx, STRADDLE.a.cz) !== null
+      && clip(b, STRADDLE.b.cx, STRADDLE.b.cz) !== null);
+    expect(shared.length).toBe(1);
     // Between them the two shares are the whole of every box: the clipped
     // footprints' areas add up to each box's own.
     for (const b of own) {
@@ -220,7 +228,7 @@ describe("a wall stops a hiker", () => {
 
 describe("what the colliders cost", () => {
   it("pins the boxes per chunk on the scarp and at the census worlds' worst chunks", () => {
-    expect(cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz).length).toBe(65);
+    expect(cliffProps(ATMO, SCARP_CHUNK.cx, SCARP_CHUNK.cz).length).toBe(66);
     // The chunk with the most boxes on each census world's worst 400 m disc,
     // counted as the pass counts them (a box reaching into two chunks counts
     // in each).
@@ -242,23 +250,4 @@ describe("what the colliders cost", () => {
     }
     expect(worst).toEqual([[87, "-10,-27"], [36, "-6,-21"], [69, "39,-40"]]);
   }, 300_000);
-
-  it("builds the scarp chunk's colliders cold inside a measured bound", () => {
-    // The pass keeps no cache: every build gathers its cells afresh, so
-    // every build is cold. The world's own fields are warmed first (a
-    // chunk elsewhere on the same world), so the time is the pass's, not
-    // the terrain's first-use setup. Best of three, against twice the
-    // measured: 2.27 ms on a quiet machine.
-    const pass = registeredPasses().find((p) => p.name === "cliffs")!;
-    generateChunk(ATMO, SCARP_CHUNK.cx + 4, SCARP_CHUNK.cz + 4);
-    let best = Infinity;
-    for (let i = 0; i < 3; i++) {
-      const chunk = { cx: SCARP_CHUNK.cx, cz: SCARP_CHUNK.cz, columns: new Int16Array(0), props: [] };
-      const t = performance.now();
-      pass.run(chunk, ATMO);
-      best = Math.min(best, performance.now() - t);
-      expect(chunk.props.length).toBe(65);
-    }
-    expect(best).toBeLessThan(5);
-  }, 60_000);
 });

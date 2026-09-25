@@ -80,8 +80,8 @@ the edges of a face. LOD0 targets are set well under the caps: modules draw
 by the hundred, and the LOD2 cap is what decides the far cost (§5).
 
 Conventions the shell relies on, as for every model: metres, origin at the
-footprint base, `+Z` forward. For a cliff module forward is the **scanned
-face** — the side with the ledges — so a module seated with `+Z` downslope
+footprint base, `+Z` forward. For a cliff module forward is the **face** —
+the side with the ledges — so a module seated with `+Z` downslope
 looks out of the hill. The model's own width and height at scale 1 are
 recorded as constants in the field (`CLIFF_MODEL_WIDTH`,
 `CLIFF_MODEL_HEIGHT`), because an instance `scale` is a multiplier on the
@@ -297,7 +297,7 @@ disagree underfoot" would fail there. Two changes close it, together:
   at the ground projection of the module's top-front edge — at the centre
   and at ±half the width — a forward distance `s · (0.65·H·sin θc +
   F·cos θc)` from the origin, where `θc` is the capped lean, `0.65·H` the
-  height that stands above the sink, and `F` the scanned face's reach from
+  height that stands above the sink, and `F` the face's reach from
   the origin along +Z at scale 1 (`CLIFF_MODEL_FRONT`: 0.77 m for `wall_a`,
   2.19 m for `wall_b`). At the cap the farthest point of the solid is inside
   the outermost probe for both models at every scale in the band. The
@@ -456,26 +456,40 @@ no further cell term is needed, and a wall straddling a chunk border is
 found from either side. A module's collider is a **row of axis-aligned
 boxes along its yawed length**: the wall's length at scale is cut into
 pieces no longer than `CLIFF_BOX_STEP = 4` m, each piece an `Aabb` of the
-piece's own x/z extent, from the sunk base up to the module's full height
-above its origin (`H · s · (1 − CLIFF_SINK)` above ground at the origin) or
-the seated solid's highest point, whichever is higher. Boxes are what the
+piece's own x/z extent, from the seated solid's lowest point up to the
+module's full height above its origin (`H · s · (1 − CLIFF_SINK)` above
+ground at the origin) or the seated solid's highest point, whichever is
+higher. Boxes are what the
 movement code already collides with (`depenetrate`, `sweepBox`,
 `tryStepUp`), so a wall stops a hiker the way a boulder does, and blocks
 line of sight the way a large boulder does.
 
 The extent is the bounds of the piece's eight corners **seated** — turned to
-the facing, then leant — not of its four yawed corners with the lean
-ignored, as this section first read. The lean does not lean into the hill:
-it turns about the sunk origin and tips the top downslope, out over the foot
-of the face, by up to `H · s · sin θc` (3.9 m for the long model at the top
-of the band), and lifts the back of the top edge above the plumb height
-(by up to 2.58 m in a 40-world sweep). Plumb boxes around the unleant piece left 41,499 of the 85,780
-swept points outside them. The price of the seated bounds is that each box
-stands plumb over the lean's whole reach, so at the foot of the face it
-claims a few metres of ground in front of the drawn rock — ground the
-placement's probes have already found too steep to stand on. Measured over
-40 worlds, 4 of 84 modules have a box standing over walkable ground (17 of
-13,746 metre cells under their footprints).
+the facing, then leant — over the model's whole height, from its base
+(`y = 0`) to its top, not of its four yawed corners with the lean ignored,
+as this section first read. The lean does not lean into the hill: it turns
+about the sunk origin and tips the top downslope, out over the foot of the
+face, by up to `H · s · sin θc` (3.9 m for the long model at the top of the
+band), and lifts the back of the top edge above the plumb height (by up to
+2.58 m in a 40-world sweep). Plumb boxes around the unleant piece left
+41,499 of the 85,780 swept points of the above-ground box outside them. The
+lean also drops the front of the base below the sunk origin, where the
+downhill ground can lie lower still, so the part the sink was meant to bury
+can stand in the open; boxes that started at the sunk origin and bounded
+only the part above the sink line left 15,274 of the 106,996 points of the
+whole model's box outside them. The boxes therefore bound the whole drawn
+solid, buried part included.
+
+The price of the seated bounds is that each box stands plumb over the
+lean's whole reach, so at the foot of the face it claims a few metres of
+ground in front of the drawn rock — ground that is mostly too steep to stand
+on, though only at the probe points is that guaranteed. Measured over 40
+worlds, 4 of 84 modules have a box standing over walkable ground (17 of
+13,746 metre cells under their footprints). The box tops are a second
+consequence of axis-aligned boxes: each is flat and level with its piece's
+highest seated corner, so where the hillside behind a wall rises to it (255
+of 362 tops over 40 worlds lie within a step of it), a hiker sliding down
+from above can land on a ledge up to 3.74 m above the drawn top edge.
 
 A wall straddling a chunk border is emitted by every chunk it reaches into,
 each emitting its own share of each box: the box clipped to the chunk's
@@ -485,16 +499,23 @@ a wall cannot lose its overhang the way a trunk can, so it is split across
 chunks instead, and the shares tile each box exactly.
 
 The invariant of §6 (1) is replaced: **the drawn solid lies inside its
-collision boxes** — every point of the module's above-ground box (the same
-lattice §11's residual sweeps) projects into the union of its boxes'
-horizontal extents, and the boxes reach at least its height; asserted on
-the 200-world sweep. The residual of §11 is retired with it.
+collision boxes** — every point of the module's box, from the model's base
+to its top (the lattice §11's residual sweeps, extended below the sink
+line), lies inside one of its boxes; asserted on the 200-world sweep. The
+residual of §11 is retired with it.
+
+Cost: 66 boxes on the atmo scarp chunk, and at most 87 in a chunk on
+the census worlds' worst discs. Building the scarp chunk's boxes takes about
+2.3–2.4 ms on a quiet machine, once the world's terrain is warm (the pass
+keeps no cache, so every build is cold); across a 7 × 7 window at the scarp
+the pass costs about 1.4 times all the other passes together.
 
 ### 12.4 Gates
 
 The scarp stills (10 / 30 / 80 m, along, crest) at noon and 16:00: the
 face reads as runs of wall rather than rows of outcrops; nothing walks
 through a module (a scripted walk into a wall at the scarp foot stops at
-the box); the trail seam pose unchanged; frame pairs and native p95 as
-§8, and the level-id pin in `client/test/sim/groundGradient.test.ts`
+the box, and a slide onto a wall from above shows where the flat box tops
+of §12.3 hold a hiker); the trail seam pose unchanged; frame pairs and
+native p95 as §8, and the level-id pin in `client/test/sim/groundGradient.test.ts`
 re-pinned to the new digest with the tunables named.

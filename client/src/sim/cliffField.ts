@@ -97,7 +97,7 @@ export const CLIFF_MODELS: readonly string[] = ["models/cliff.wall_a.glb", "mode
 export const CLIFF_MODEL_WIDTH: readonly number[] = [8.27, 20.23];
 export const CLIFF_MODEL_DEPTH: readonly number[] = [4.38, 6.58];
 export const CLIFF_MODEL_HEIGHT: readonly number[] = [4.96, 7.17];
-/** How far the scanned face itself reaches from the model's origin along +Z
+/** How far the model's front itself reaches from the model's origin along +Z
  * at scale 1 — the front of the depth, which the origin does not sit in the
  * middle of. The lean throws the top of this face downhill, so it is the
  * furthest the solid reaches out over the hill. */
@@ -253,7 +253,7 @@ export function cliffGate(seed: number, x: number, z: number): { s: TerrainSampl
 
 /** A direction in the ground plane: the scene's own (x, z), unit length. */
 export type CliffFacing = {
-  /** The way the scanned face looks out of the hill — the renderer's forward,
+  /** The way the face looks out of the hill — the renderer's forward,
    * `(sin yaw, cos yaw)`. */
   fx: number;
   fz: number;
@@ -340,7 +340,7 @@ const probePoint: CliffPoint = { x: 0, y: 0, z: 0 };
  *
  * The origin sits at the model's base and off-centre both across the width
  * and through the depth: the footprint runs from `−(W − R)` to `+R` across
- * and from `−(D − F)` behind the origin to the scanned face's own reach `F`
+ * and from `−(D − F)` behind the origin to the face's own reach `F`
  * in front. The lean turns the solid about that origin, which the sink
  * buries `CLIFF_SINK·H·scale` below the ground — so the top of the box swings
  * `H·scale·sin θc` downhill, not `(1 − CLIFF_SINK)·H·scale·sin θc`. Probing

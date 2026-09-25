@@ -660,6 +660,12 @@ describe("the level id does not move", () => {
     // which holds three of them for PROBE_SEED. Deliberate: a peer without
     // the colliders walks through walls another peer stops at, so an old
     // client cannot join a new host.
-    expect(passHash()).toBe(149824213);
+    // Re-baselined 2026-09-25 from 149824213: each cliff box now bounds the
+    // module's whole drawn solid, from the model's base up, not only the
+    // part above the sink line — the lean drops the front of the base below
+    // the sunk origin, into the open where the ground falls away. No
+    // tunable moves, so registryDigest is unchanged; probeDigest moves,
+    // because every box in probe chunk [-1, -15] starts lower.
+    expect(passHash()).toBe(1586641572);
   });
 });

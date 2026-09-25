@@ -22,7 +22,7 @@
 - Never run a rendering game page while the suite runs (a rendering page starves vitest).
 - Work in `/Users/csarko/Projects/game-dayhike/.claude/worktrees/cliff-modules` on `worktree-cliff-modules`; the models are already committed there (`001e7bc`).
 
-Measured facts the code relies on (from the built GLBs, `LOD0` root): `cliff.wall_a` spans x −3.87..4.40, y −0.42..4.54, z −3.61..0.77 (8.27 × 4.96 × 4.38 m); `cliff.wall_b` spans x −9.68..10.55, y −0.16..7.01, z −4.39..2.19 (20.23 × 7.17 × 6.58 m). The scanned face points +Z on both. Each LOD root holds exactly one geometry mesh with one material.
+Measured facts the code relies on (from the built GLBs, `LOD0` root): `cliff.wall_a` spans x −3.87..4.40, y −0.42..4.54, z −3.61..0.77 (8.27 × 4.96 × 4.38 m); `cliff.wall_b` spans x −9.68..10.55, y −0.16..7.01, z −4.39..2.19 (20.23 × 7.17 × 6.58 m). The face points +Z on both. Each LOD root holds exactly one geometry mesh with one material.
 
 Yaw convention (from `client/src/game/freecam.ts` and `groundTilt.ts`): yaw 0 faces +Z; the forward vector is `(sin yaw, cos yaw)` in XZ and the right vector is `(cos yaw, −sin yaw)`. `instanceMatrixFor` derives yaw as `inst.hash · 2π`, so a cliff instance stores its yaw in `hash` as a fraction of a turn.
 
@@ -303,7 +303,7 @@ export function cliffGate(seed: number, x: number, z: number): { s: TerrainSampl
 }
 
 /** Straight downslope, in the scene's yaw (yaw 0 faces +Z, forward is
- * (sin yaw, cos yaw)): the direction the scanned face looks out of the hill. */
+ * (sin yaw, cos yaw)): the direction the face looks out of the hill. */
 export function cliffYaw(s: TerrainSample): number {
   return Math.atan2(-s.dx, -s.dz);
 }
@@ -1739,4 +1739,4 @@ Steps as the earlier tasks: failing tests first (the run test: on the atmo scarp
 
 ### Task 10: The gate, with walls and walls that stop you
 
-§12.4's stills and checks; the scripted walk (freecam off — the player capsule — via the sim's `__tp` helper if the page exposes one, else a `__fcSet` sequence with the player mode); frame pairs and native p95; `## 15` in the verification note; `CLIFF_RUN_MAX` 4 → 2 as the first fallback if a bar is missed.
+§12.4's stills and checks; the scripted walk (freecam off — the player capsule — via the sim's `__tp` helper if the page exposes one, else a `__fcSet` sequence with the player mode), both into a wall at the scarp foot and a slide onto a wall from above, to see where a flat box top holds the hiker above the drawn top edge (§12.3); frame pairs and native p95; `## 15` in the verification note; `CLIFF_RUN_MAX` 4 → 2 as the first fallback if a bar is missed.
