@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createHostSession } from "../../src/net/hostSession.js";
-import { createClientSession } from "../../src/net/clientSession.js";
+import { classifyLevelMismatch, createClientSession, type SessionEnd } from "../../src/net/clientSession.js";
 import { FakeNetwork } from "../../src/net/fakeNetwork.js";
 import { PERFECT_NETWORK, type NetworkConditions } from "../../src/net/transport.js";
 import { parseLevel } from "../../src/sim/level.js";
@@ -318,7 +318,7 @@ describe("level agreement", () => {
     const client = createClientSession(level, SEED, clientSide, () => net.now, {
       expectedLevelId,
     });
-    const reasons: string[] = [];
+    const reasons: SessionEnd[] = [];
     client.onSessionEnd((r) => reasons.push(r));
     host.addPeer("p1", hostSide);
     net.advance(500);
@@ -338,7 +338,8 @@ describe("level agreement", () => {
     // this string is the only agreement check there is.
     const { client, reasons } = pair("forest/2/5/999");
     expect(reasons.length).toBe(1);
-    expect(reasons[0]).toContain("forest/2/5/999");
+    expect(reasons[0]?.kind).toBe("version_skew");
+    expect(reasons[0]?.message).toContain("forest/2/5/999");
     expect(client.ready).toBe(false);
   });
 
@@ -353,17 +354,33 @@ describe("level agreement", () => {
     const net = new FakeNetwork(PERFECT_NETWORK, 7);
     const [hostSide, clientSide] = net.createPair();
     const client = createClientSession(level, SEED, clientSide, () => net.now, {});
-    const reasons: string[] = [];
+    const reasons: SessionEnd[] = [];
     client.onSessionEnd((r) => reasons.push(r));
     // A hand-built Welcome one version ahead: the shape a newer host would send.
     hostSide.sendEvent(encodeEvent({ t: MessageType.Welcome, entityId: 5, tick: 1, protocolVersion: PROTOCOL_VERSION + 1, levelId: level.id }));
     net.advance(50);
     expect(reasons).toHaveLength(1);
-    expect(reasons[0]).toContain("Protocol mismatch");
-    expect(reasons[0]).toContain(`${PROTOCOL_VERSION + 1}`);
-    expect(reasons[0]).toContain("Reload");
+    expect(reasons[0]?.kind).toBe("version_skew");
+    expect(reasons[0]?.message).toContain("Protocol mismatch");
+    expect(reasons[0]?.message).toContain(`${PROTOCOL_VERSION + 1}`);
+    expect(reasons[0]?.message).toContain("Reload");
     expect(client.ready).toBe(false);
   });
+  it("reports a host's own SessionEnded as the host ending the session, reason verbatim", () => {
+    const { client, hostSide, net, reasons } = pairWithHostSide();
+    hostSide.sendEvent(encodeEvent({ t: MessageType.SessionEnded, reason: "Closing up." }));
+    net.advance(50);
+    expect(reasons).toEqual([{ kind: "host_ended", message: "Closing up." }]);
+    expect(client.ready).toBe(false);
+  });
+  function pairWithHostSide() {
+    const net = new FakeNetwork(PERFECT_NETWORK, 7);
+    const [hostSide, clientSide] = net.createPair();
+    const client = createClientSession(level, SEED, clientSide, () => net.now, {});
+    const reasons: SessionEnd[] = [];
+    client.onSessionEnd((r) => reasons.push(r));
+    return { client, hostSide, net, reasons };
+  }
   it("accepts a Welcome on its own protocol version", () => {
     const { client, reasons } = pair(level.id);
     expect(reasons).toEqual([]);
@@ -395,15 +412,16 @@ describe("level agreement", () => {
     const net = new FakeNetwork(PERFECT_NETWORK, 7);
     const [hostSide, clientSide] = net.createPair();
     const client = createClientSession(level, SEED, clientSide, () => net.now, {});
-    const reasons: string[] = [];
+    const reasons: SessionEnd[] = [];
     client.onSessionEnd((r) => reasons.push(r));
 
     hostSide.sendEvent(buildLegacyWelcome(5, 1, levelId));
     net.advance(50);
 
     expect(reasons).toHaveLength(1);
-    expect(reasons[0]).toContain("Protocol mismatch");
-    expect(reasons[0]).toContain("Reload");
+    expect(reasons[0]?.kind).toBe("version_skew");
+    expect(reasons[0]?.message).toContain("Protocol mismatch");
+    expect(reasons[0]?.message).toContain("Reload");
     expect(client.ready).toBe(false);
   });
 });
@@ -426,7 +444,7 @@ describe("host and client agree on a generated forest", () => {
       expectedLevelId: forest.levelId,
       forest,
     });
-    const reasons: string[] = [];
+    const reasons: SessionEnd[] = [];
     client.onSessionEnd((r) => reasons.push(r));
     host.addPeer("p1", hostSide);
     net.advance(500);
@@ -455,27 +473,27 @@ describe("host and client agree on a generated forest", () => {
       expectedLevelId: other.levelId,
       forest: other,
     });
-    const reasons: string[] = [];
+    const reasons: SessionEnd[] = [];
     client.onSessionEnd((r) => reasons.push(r));
     host.addPeer("p1", hostSide);
     net.advance(500);
 
     expect(reasons.length).toBe(1);
-    expect(reasons[0]).toContain(forest.levelId);
+    expect(reasons[0]?.kind).toBe("world_changed");
+    expect(reasons[0]?.message).toContain(forest.levelId);
     expect(client.ready).toBe(false);
   });
 });
 
 describe("level mismatch", () => {
-  function mismatch(advice?: string): string | null {
+  function mismatch(): SessionEnd | null {
     const net = new FakeNetwork(PERFECT_NETWORK, 7);
     const [hostSide, clientSide] = net.createPair();
     const host = createHostSession(level, SEED);
     const client = createClientSession(level, SEED, clientSide, () => net.now, {
       expectedLevelId: "not-the-level-the-host-runs",
-      ...(advice === undefined ? {} : { staleClientAdvice: advice }),
     });
-    let reason: string | null = null;
+    let reason: SessionEnd | null = null;
     client.onSessionEnd((r) => {
       reason = r;
     });
@@ -484,17 +502,62 @@ describe("level mismatch", () => {
     return reason;
   }
 
-  it("refuses the welcome and says how to recover, defaulting to a reload", () => {
+  it("refuses the welcome and says how to recover with a reload", () => {
     const reason = mismatch();
-    expect(reason).not.toBeNull();
-    expect(reason).toContain("Level mismatch");
-    expect(reason).toContain("Reload the page to update.");
+    expect(reason?.kind).toBe("version_skew");
+    expect(reason?.message).toContain("Level mismatch");
+    expect(reason?.message).toContain("Reload the page to update.");
   });
 
-  it("uses the caller's recovery advice when given — the desktop app cannot reload its way out", () => {
-    const reason = mismatch("Download the latest desktop version from the landing page.");
-    expect(reason).toContain("Download the latest desktop version from the landing page.");
-    expect(reason).not.toContain("Reload the page");
+  /** A client expecting `own` that receives a Welcome for `hostLevelId`. */
+  function welcomeFor(hostLevelId: string, own: string): SessionEnd[] {
+    const net = new FakeNetwork(PERFECT_NETWORK, 7);
+    const [hostSide, clientSide] = net.createPair();
+    const client = createClientSession(level, SEED, clientSide, () => net.now, {
+      expectedLevelId: own,
+    });
+    const reasons: SessionEnd[] = [];
+    client.onSessionEnd((r) => reasons.push(r));
+    hostSide.sendEvent(
+      encodeEvent({ t: MessageType.Welcome, entityId: 5, tick: 1, protocolVersion: PROTOCOL_VERSION, levelId: hostLevelId }),
+    );
+    net.advance(50);
+    expect(client.ready).toBe(false);
+    return reasons;
+  }
+
+  it("calls a host on another seed a different world, not a different build", () => {
+    // A follower still loading the host's previous game: a reload would not
+    // help, and following the host's route will.
+    const reasons = welcomeFor("forest/5/olympic/222/-17/-1330924340", "forest/5/olympic/111/-16/-1330924340");
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]?.kind).toBe("world_changed");
+    expect(reasons[0]?.message).toContain("forest/5/olympic/222/-17/-1330924340");
+    expect(reasons[0]?.message).not.toContain("Reload");
+  });
+
+  it("calls a host on the same world with another pass digest a different build", () => {
+    // The deploy-day case: same seed, same variant, a pass whose tunables moved.
+    const reasons = welcomeFor("forest/5/olympic/111/-16/309897140", "forest/5/olympic/111/-16/-1330924340");
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]?.kind).toBe("version_skew");
+    expect(reasons[0]?.message).toContain("Reload the page to update.");
+  });
+});
+
+describe("classifyLevelMismatch", () => {
+  it.each([
+    ["variant differs", "forest/5/cascade/111/-16/9", "forest/5/olympic/111/-16/9", "world_changed"],
+    ["seed differs", "forest/5/olympic/222/-16/9", "forest/5/olympic/111/-16/9", "world_changed"],
+    ["generation differs", "forest/4/olympic/111/-16/9", "forest/5/olympic/111/-16/9", "version_skew"],
+    ["generation and seed differ", "forest/4/olympic/222/-17/9", "forest/5/olympic/111/-16/9", "version_skew"],
+    ["field digest differs", "forest/5/olympic/111/-99/9", "forest/5/olympic/111/-16/9", "version_skew"],
+    ["pass digest differs", "forest/5/olympic/111/-16/8", "forest/5/olympic/111/-16/9", "version_skew"],
+    ["host id malformed", "sandbox01", "forest/5/olympic/111/-16/9", "version_skew"],
+    ["own id malformed", "forest/5/olympic/111/-16/9", "forest/2/5/999", "version_skew"],
+    ["too many segments", "forest/5/olympic/111/-16/9/x", "forest/5/olympic/222/-16/9", "version_skew"],
+  ])("%s", (_label, host, own, kind) => {
+    expect(classifyLevelMismatch(host, own)).toBe(kind);
   });
 });
 
