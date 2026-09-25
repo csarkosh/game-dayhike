@@ -19,9 +19,9 @@ export const RING_CELLS = 128;
 export const RING_COUNT = 7;
 export const BASE_SPACING = 1;
 /** Components per vertex in `weights2`/`terrainWeights2`: pebble, detail,
- * duff, canopy density. Every allocation, write and copy of that buffer is sized off this
- * constant so a stride change cannot silently corrupt the vertex stream at a
- * site this file forgot. */
+ * duff, canopy density. Every allocation, write and copy of that buffer is
+ * sized off this constant so a stride change cannot silently corrupt the
+ * vertex stream at a site this file forgot. */
 export const WEIGHTS2_STRIDE = 4;
 /** Cells of a ring covered by the next finer ring: 64 coarse = 128 fine. */
 export const HOLE_CELLS = RING_CELLS / 2;

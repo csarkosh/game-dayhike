@@ -1,6 +1,6 @@
 import { latticeHash, valueNoise2 } from "./groundHexParams.js";
 import { luma, type Rgb } from "./colour.js";
-import { NEEDLE_BED } from "./terrainSurface.js";
+import { DUFF_FLOOR_MAX, NEEDLE_BED } from "./terrainSurface.js";
 import { TRAIL_BED_HALF } from "../sim/trail.js";
 
 /**
@@ -54,15 +54,16 @@ export const TRAIL_BENCH_SHADE = 0.8;
  */
 export const TRAIL_BED_EARTH = 0.7;
 /**
- * The litter floor's own share (`DUFF_FLOOR_MAX`) applied to the bed under
- * the canopy. The bed carries no litter of its own — the trail run keeps
- * pieces off the core — so the paint's vertex-colour mix never lifted it the
- * way the floor beside it lifted; this mixes the bed's base (not the bank's)
- * toward the same NEEDLE_BED colour by the vertex's canopy density, so the
- * bed reads as the litter floor continuing under the trees. In the open the
- * density is zero and nothing changes.
+ * The litter floor's own share, applied to the bed under the canopy. The
+ * bed's core carries no litter of its own — the trail run keeps pieces off
+ * it, and only drifted stretches carry duff — so the paint's vertex-colour
+ * mix never lifted the core the way the floor beside it lifted; this mixes
+ * the bed's base (not the bank's) toward the same NEEDLE_BED colour by the
+ * vertex's canopy density, so the bed reads as the litter floor continuing
+ * under the trees. In the open the density is zero and nothing changes.
+ * Tied to the litter paint's share so the two move together.
  */
-export const TRAIL_BED_FLOOR = 0.75;
+export const TRAIL_BED_FLOOR = DUFF_FLOOR_MAX;
 /** Wet: the core's albedo loss and roughness loss at wetness 1; puddles. */
 export const TRAIL_WET_DARK = 0.35;
 export const TRAIL_WET_GLOSS = 0.5;
@@ -143,11 +144,12 @@ export const TRAIL_DRIFT_TINT: Rgb = {
 export const TRAIL_WASH_WAVE = 4;
 export const TRAIL_WASH_BAND: readonly [number, number] = [0.55, 0.8];
 /**
- * The wash-out's darkness, by the litter the bed lies in. In the open the
+ * The wash-out's darkness, open ground to litter floor. In the open the
  * washed bed is bare earth that must come down toward the grass beside it;
- * where litter lies, the bare earth between the drifts is the same floor's
+ * under the canopy, the bare earth between the drifts is the litter floor's
  * earth and must not fall below it. Blended in the paint by the vertex's
- * own litter weight — the field the drifts already read.
+ * canopy density (`vTerrainW2.w`), which is zero in the open — not by the
+ * litter weight, which runs high beside meadow trails too.
  */
 export const TRAIL_WASH_DARK_OPEN = 0.4;
 export const TRAIL_WASH_DARK_LITTER = 0.75;

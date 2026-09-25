@@ -269,8 +269,8 @@ describe("duff", () => {
     const lum = (c: Rgb) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
     // Under full canopy at full duff the litter paint carries the bed, but a
     // quarter of the colour is still the pre-litter (canopy-tinted) ground, so
-    // this measures a hair under the pure bed's own 1.5×: luminance in
-    // [0.10, 0.13], well above the previous bed's 0.0742.
+    // this measures a hair under the pure bed's own 1.5× (measured 0.1036):
+    // luminance in [0.10, 0.13], well above the previous bed's 0.0742.
     const full = classifySurface(SEED, 35, 21335, 40, 0.1, 1, 1);
     expect(lum(full.albedo)).toBeGreaterThanOrEqual(0.10);
     expect(lum(full.albedo)).toBeLessThanOrEqual(0.13);

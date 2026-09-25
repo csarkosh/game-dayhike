@@ -396,18 +396,19 @@ export const TRAIL_FRAGMENT_PAINT = `
 #else
     vec3 tBankBase = vAlbedoColor.rgb;
 #endif
-    // The bed carries no litter of its own, so the vertex-colour mix above
-    // never lifted it the way the litter floor beside it rose: the bed's
-    // base mixes the same NEEDLE_BED colour in by the canopy density (the
-    // fourth weight, forestDensity at the vertex), so the bed under the
-    // trees reads as the floor continuing under it. In the open the density
-    // is zero and nothing changes. The bank keeps the raw base: it is ground
-    // beside the bed, and its vertex colour already carries the litter mix.
+    // The bed's core carries no litter of its own (only drifted stretches
+    // carry duff), so the vertex-colour mix above never lifted the core the
+    // way the litter floor beside it rose: the bed's base mixes the same
+    // NEEDLE_BED colour in by the canopy density (the fourth weight,
+    // forestDensity at the vertex), so the bed under the trees reads as the
+    // floor continuing under it. In the open the density is zero and nothing
+    // changes. The bank keeps the raw base: it is ground beside the bed, and
+    // its vertex colour already carries the litter mix.
     vec3 tBedBase = mix(tBankBase, vec3(${f(NEEDLE_BED.r)}, ${f(NEEDLE_BED.g)}, ${f(NEEDLE_BED.b)}), ${f(TRAIL_BED_FLOOR)} * clamp(vTerrainW2.w, 0.0, 1.0));
-    // The bench takes 80 % of the bed's base, the ground's own vertex colour
-    // with that canopy lift, rather than the material's flat white, so it
-    // wears the hue of the ground it runs through — brown under canopy, tan
-    // in the meadow — the way packed earth does.
+    // The bench takes TRAIL_BENCH_SHADE of the bed's base, the ground's own
+    // vertex colour with that canopy lift, rather than the material's flat
+    // white, so it wears the hue of the ground it runs through — brown under
+    // canopy, tan in the meadow — the way packed earth does.
     vec3 tBenchBase = mix(vec3(1.0), tBedBase, ${f(TRAIL_BENCH_SHADE)});
     // The trampled band: this ground, dried and stained toward the bench.
     vec3 tCol = surfaceAlbedo * mix(vec3(1.0), vec3(${f(TRAIL_TRAMPLE_TINT.r)}, ${f(TRAIL_TRAMPLE_TINT.g)}, ${f(TRAIL_TRAMPLE_TINT.b)}), tTrample);
