@@ -415,3 +415,208 @@ yet measured on its own.
 | meadow-trail-down | fails high at 1.56, and worse than at the first gate |
 | meadow-trail-along | fails high at 1.67, and worse than at the first gate |
 | frame cost | fails; about +0.55 ms at TRAIL against a +0.3 ms bar |
+
+## 9. Fourth gate
+
+The third amendment (design section 10) keys the bed's lift and the wash-out's
+darkness on the canopy density ρ, carried to the fragment as the fourth
+terrain-weight component: the bed's base is mixed toward the needle bed by
+`0.75 · ρ`, the bank beside the bed keeps the unlifted base, drifts ride the
+lifted bench base, and the wash-out is `mix(0.40, 0.75, ρ)`. The branch is at
+`6dd92d7`; same control (`d07a2cc`), same poses, same hour, weather, tier and
+still size, and the same crops as section 8, `trail-along`'s replacement pair
+included.
+
+### The table
+
+| still | main | gate 1 | gate 2 | gate 3 | gate 4 | verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| canopy-floor | 1.81 | 0.86 | 1.14 | 1.14 | **1.19** | in band, 0.11 under the ceiling |
+| trail-along | 2.47 | 0.90 | 0.91 | 1.17 | **1.24** | in band, 0.06 under the ceiling |
+| meadow-trail-down | 2.27 | 1.38 | 1.43 | 1.56 | **1.27** | in band, 0.03 under the ceiling |
+| trail-down | 1.40 | 0.82 | 0.83 | 0.83 | **0.86** | below, by 0.04 |
+| drift-along | 0.98 | 0.63 | 0.64 | 0.64 | **0.65** | below, by 0.25 |
+| meadow-trail-along | 2.20 | 1.46 | 1.60 | 1.67 | **1.52** | above, by 0.22 |
+
+Three of six in 0.9–1.3, where the third gate had two. The control reproduced
+to five decimal places at every crop but one: `meadow-trail-down`'s bed read
+0.30818 against 0.30925, 0.3 % lower, with no pixel in the rectangle moving by
+more than 12 levels in 255 — grass sway, not a change. On the branch every
+**beside** crop is unchanged from the third gate to five decimal places, so the
+ground beside the bed, the bank included, did not move; every difference below
+is the bed's.
+
+| still | bed, gate 3 | bed, gate 4 | factor |
+| --- | --- | --- | --- |
+| canopy-floor | 0.01304 | 0.01364 | ×1.046 |
+| trail-along | 0.02449 | 0.02601 | ×1.062 |
+| trail-down | 0.11374 | 0.11815 | ×1.039 |
+| drift-along | 0.00641 | 0.00651 | ×1.016 |
+| meadow-trail-down | 0.21616 | 0.17669 | ×0.817 |
+| meadow-trail-along | 0.20711 | 0.18822 | ×0.909 |
+
+### What the canopy key did
+
+The two ends moved for the two halves of the change, as intended.
+
+- **In the open the wash-out took its open value, for the first time.** The
+  meadow beds fell by ×0.82 and ×0.91. The lift does not reach them — ρ is near
+  zero there — but the wash-out's darkness went from the litter value 0.75 to
+  the open value 0.40, a factor of 0.53 on the washed part of the bed. The
+  measured factors put the wash-out at about two fifths of
+  `meadow-trail-down`'s bed and one fifth of `meadow-trail-along`'s. So the
+  meadow bed is **not** unchanged from the third gate: it is darker, and that
+  is the section 8 split finally separating the open from the litter, now that
+  it keys on a field that is low in the open.
+- **Under the canopy the bed took the lift, and it is small.** The four canopy
+  beds rose by 2–6 %, where about 10 % was expected. The bench base is
+  `mix(1.0, bed base, 0.8)`, so a fifth of it is fixed; and under full canopy
+  the vertex colour is already 85 % of the way to the dark canopy green, about
+  0.08 in linear luminance against the needle bed's 0.11. Mixing three
+  quarters of the way raises the base by about a third and the bench base by at
+  most about 8 %. The lift is mostly a move in hue: `canopy-floor`'s bed went
+  from sRGB (36, 29, 20) to (39, 29, 21), red up and green unchanged.
+
+### The three consequences design section 10 asked to be reported
+
+- **The washed-out bed under the canopy.** `trail-along` is that bed — section 8
+  showed it rising with the wash-out's litter constant. Its wash constant
+  now keys on ρ, which is near 1 there — had it fallen well short of the litter
+  weight the wash keyed on before, the bed would have darkened, as the meadow
+  beds did — so it stays near 0.75 and now multiplies the lifted bench base.
+  The product is worth ×1.062, 1.17 → 1.24: the largest move under the
+  canopy, and the canopy pose now nearest the ceiling.
+- **The drifts.** Drifts ride the lifted bench base, and moved by what the lift
+  is worth: `canopy-floor`, whose bed is drifted (section 7), ×1.046, 1.14 →
+  1.19; `drift-along` ×1.016, 0.64 → 0.65, one level in 255, in the red, at the
+  bottom of the 8-bit range. The drift under the canopy at `drift-along` is
+  still darker than the floor beside it.
+- **The two canopy poses already in band.** Both took the lift and both stay in
+  band: `canopy-floor` at 1.19, 0.11 under 1.3, and `trail-along` at 1.24, 0.06
+  under. The 1.25–1.29 anticipated for them assumed a lift of about 10 %; the
+  measured lift is 5–6 % at these two poses.
+
+### The stills
+
+Control, gate 3 and gate 4 side by side, and the canopy poses also brightened
+identically on all three.
+
+- **canopy-floor**: the bed is the same tan earth as at the third gate, a shade
+  warmer; the green-grey floor beside it and every piece on it are unchanged.
+  The bed still reads as leaf-drifted earth a little lighter than the floor,
+  not yet as the litter floor running on under it — the floor beside the bed
+  is green-grey and the bed is tan, so continuity of hue is not there, only
+  closeness of value.
+- **canopy-ahead** (no crop, against the control only): the control's bed is a
+  pale grey band with a pebbled rim; the branch's is a warm brown band with a
+  soft rim, reading as earth through the canopy.
+- **drift-along**: indistinguishable from the third gate by eye; the drifted
+  bed is the same dark band against the lighter floor.
+- **trail-down**: the bed under the tree's shadow a shade warmer and lighter;
+  the lit bank and the grass unchanged.
+- **trail-along**: the littered bed in dappled light a shade warmer and
+  lighter; still easy to trace, and no longer faint as at the first gate.
+- **meadow-trail-down**: the tread a clear step darker and browner than the
+  third gate's — tan earth against the grass rather than pale sand — the grass
+  and the bank unchanged.
+- **meadow-trail-along**: the ribbon a shade darker and more even than the
+  third gate's; still visibly lighter than the grass either side of it.
+
+### Frame pairs, and a correction to section 8
+
+Section 8's **+0.55 ms at TRAIL was an artefact of the measurement, not a cost.**
+The script took both orders in one browser, four pages in a row, and put the
+branch fourth in its second round; a later count found that the fourth page
+opened in a run is 1.4–3 ms slow whatever it serves. With identical code on
+both ports the fourth page read +2.26 ms and the first two +0.07 ms; swapping
+the order moved the slow page onto the control (−3.79 ms). Order-averaging
+does not cancel a slowdown that falls on one page position, and that position
+was always the branch's, so the average charged the branch about half the
+penalty. Measured per commit at TRAIL, both orders averaged, the branch's
+steps carry no resolvable cost:
+
+| step | run | round/order | branch mean (p95) | control mean (p95) | d mean | d p95 |
+|---|---|---|---|---|---|---|
+| 120991a earth mix | A | 1 branch-first | 51.16 (53.7) | 51.12 (53.2) | +0.04 | +0.5 |
+| | A | 2 control-first | 51.18 (53.4) | 51.05 (53.0) | +0.13 | +0.4 |
+| | | **avg** | | | **+0.09** | **+0.45** |
+| 184a7fc relief mix | A | 1 branch-first | 52.51 (55.7) | 52.82 (54.2) | -0.31 | +1.5 |
+| | A | 2 control-first | 50.90 (52.9) | 50.97 (52.9) | -0.07 | 0.0 |
+| | | **avg** | | | **-0.19** | **+0.75** |
+| e690713 wash blend | A | 1 branch-first | 51.25 (53.3) | 53.54 (55.9) | -2.29 | -2.6 |
+| | A | 2 control-first | 52.60 (55.1) | 52.50 (54.9) | +0.10 | +0.2 |
+| | B | 1 branch-first | 52.59 (54.7) | 53.19 (56.2) | -0.60 | -1.5 |
+| | B | 2 control-first | 53.73 (57.0) | 54.66 (57.6) | -0.93 | -0.6 |
+| | | **avg (4)** | | | **-0.93** | **-1.13** |
+| 948138d tip | A | 1 branch-first | 52.46 (54.6) | 52.58 (54.6) | -0.12 | 0.0 |
+| | A | 2 control-first | 52.67 (54.8) | 52.49 (54.7) | +0.18 | +0.1 |
+| | B | 1 branch-first | 51.33 (53.4) | 51.34 (53.3) | -0.01 | +0.1 |
+| | B | 2 control-first | 51.04 (53.0) | 51.00 (53.2) | +0.04 | -0.2 |
+| | | **avg (4)** | | | **+0.02** | **0.0** |
+
+This gate's pairs use the corrected method: every round starts a fresh
+browser, opens and discards a warm-up page, then samples the two builds in two
+pages, with the order alternating from round to round; same-code rounds (the
+control against itself) run among them to show the noise floor. `high` tier,
+hardware scaling 0.5, 3 s warm-up and an 8 s sample per page, as before; a
+round taken while a test run was going, or at a load average over 3.5, was
+thrown away and repeated.
+
+The machine spent much of the run in a slower state — every page, the
+warm-up included, at 55–63 ms where a settled page reads 49–53 ms — and in
+that state the second page of a round is 1.5–4 ms slower than the first
+whatever it serves: the same-code rounds taken in it read +3.90, +1.50, +3.03
+and +3.92 ms. Eighteen rounds fell in that state, four of them same-code; the
+fourteen pairs among them scatter from −5.9 to +7.9 ms, and they are kept in
+the record but not quoted as measurements. The
+rounds in which all three pages ran settled (at least 150 frames in the
+sample) are these:
+
+| round | view | order | branch | control | difference (p95) |
+| --- | --- | --- | --- | --- | --- |
+| same code | trail | — | 50.96 (52.9) | 51.07 (53.1) | −0.11 (−0.2) |
+| same code | trail | — | 51.90 (54.9) | 52.94 (55.8) | −1.04 (−0.9) |
+| same code | trail | — | 52.48 (54.9) | 52.51 (55.0) | −0.03 (−0.1) |
+| same code | trailside | — | 49.74 (52.2) | 50.96 (53.3) | −1.22 (−1.1) |
+| 1 | trail | branch first | 50.93 (53.4) | 50.93 (52.8) | 0.00 (+0.6) |
+| 2 | trail | control first | 52.05 (55.2) | 51.02 (53.1) | +1.03 (+2.1) |
+| 3 | trail | control first | 52.41 (54.6) | 52.49 (54.6) | −0.08 (0.0) |
+| 4 | trailside | control first | 49.54 (51.3) | 49.49 (51.6) | +0.05 (−0.3) |
+| 5 | trailside | control first | 49.65 (51.3) | 49.44 (51.1) | +0.21 (+0.2) |
+| 6 | trailside | branch first | 51.34 (53.9) | 51.04 (53.0) | +0.30 (+0.9) |
+
+(In the same-code rows the "branch" column is the second page and the
+"control" column the first.) Averaging each order and then the two orders:
+**TRAIL +0.24 ms** (branch first 0.00; control first +0.48), **TRAILSIDE
++0.22 ms** (branch first +0.30; control first +0.13). Both are under the
++0.3 ms bar. The same-code rounds put a single round's noise at about ±1 ms,
+so a cost of a few tenths cannot be excluded from these pairs alone; with the
+per-commit table above (the previous tip at +0.02 ms over four rounds) and the
+change since being one more float per vertex, nothing in the evidence points
+to a cost.
+
+### Verdict per pose
+
+| pose | verdict |
+| --- | --- |
+| canopy-floor | passes at 1.19; took the lift, 0.11 under the ceiling |
+| trail-along | passes at 1.24; the washed bed under the canopy, 0.06 under the ceiling |
+| meadow-trail-down | passes at 1.27, from 1.56; the wash-out's open value reaches it |
+| trail-down | fails low at 0.86; plain core bed in shade, which the lift raises by only 4 % |
+| drift-along | fails low at 0.65; the drift took the lift at 2 %, and the drift under the canopy stays darker than the floor beside it |
+| meadow-trail-along | fails high at 1.52, from 1.67; only a fifth of its bed is wash-out |
+| frame cost | passes on the settled, order-averaged pairs: +0.24 ms at TRAIL, +0.22 ms at TRAILSIDE |
+
+The mechanisms of the three misses:
+
+- **`trail-down` and `drift-along`** are the canopy beds that neither the wash
+  nor section 7's drift lift reached, and the canopy lift is too weak to carry
+  them: the bench base keeps a fixed fifth and the base under full canopy is
+  already near the needle bed's value, so `0.75 · ρ` is worth under 8 % there.
+  `trail-down` needs about another 5 %; `drift-along` about another 40 %, which
+  no lift on the base can give.
+- **`meadow-trail-along`**: section 8 found the litter weight near 1 at the
+  meadow poses, so the part of the bed the wash-out does not cover — here about
+  four fifths — is drift, and the drift's colour is one tint for the canopy and
+  the open. The wash-out's open value has done what it can at this pose; the
+  remaining brightness is the drift's.
