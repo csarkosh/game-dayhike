@@ -654,3 +654,127 @@ no exit, which the smooth hillside never had. It is the solid modules'
 consequence, not the placement's, and nothing measured here says which
 lever — a back face that slopes, grounding against a box face, or a jump
 from one — is the right one.
+
+## 16. The walk again, with the uphill faces buried
+
+Everything in this section was read against `a7c8be0`. Two things have
+changed since §15, both in the simulation. Each box's uphill face is now
+buried in the hill (design §12.5). The ground's stick now holds a hull on
+the top of a box beneath it, instead of snapping the hull down onto
+hillside that lies inside the box. The walk is the same as §15's: the host's own tick, run in
+a fresh branch page on world 627994160, with the real hull. The page reports
+level id `forest/6/olympic/627994160/-1044110476/923719637`, which is the new
+generator version and pass digest. Only the walk was measured again.
+Rendering is unchanged, because the collider change is simulation only, so
+the stills and the frame pairs of §15 stand as measured and were not
+repeated. The five pages opened for this section logged no console error.
+
+### The seven trap points
+
+Each hull was set down at its §15 rest point, left idle for 5 s, and then
+tried in eight directions for 5 s each, walking, jumping and sprinting. The
+best of the three is given per direction, in metres from the rest point, with
+directions a quarter turn apart starting at +z.
+
+| point | where it settles | feet above the hillside | best per direction (m) |
+| --- | --- | --- | --- |
+| (−300.9, 148.7, −988.0) | on a box top, in place | 0.05 | 31.8, 32.5, 3.5, 26.1, 23.1, 30.7, 34.5, 34.0 |
+| (−302.0, 145.5, −960.3) | on a box top, 0.7 m away | 0.90 | 31.9, 27.9, 1.9, 1.2, 0.9, 33.4, 34.5, 34.0 |
+| (−334.8, 83.5, −932.8) | on a box top, in place | 0.39 | 32.3, 30.4, 10.4, 29.6, 32.0, 34.3, 33.7, 34.3 |
+| (−276.3, 156.1, −892.9) | on a box top, in place | 1.25 | 42.8, 53.3, 21.3, 27.0, 37.5, 34.2, 34.5, 34.3 |
+| (−290.2, 144.9, −907.7) | on a box top, in place | 0.03 | 19.2, 19.9, 18.7, 20.5, 28.3, 34.5, 34.5, 32.8 |
+| (−277.3, 142.4, −863.0) | slides 15.4 m, onto a lower top | 3.08 | 34.5, 27.9, 22.3, 26.3, 31.0, 34.5, 36.1, 34.5 |
+| (−305.2, 77.7, −823.6) | on a box top, in place | 0.12 | 34.5, 19.9, 19.9, 28.8, 33.4, 33.9, 34.5, 37.5 |
+
+All seven rest on a top, and every one gets away: at least five of the eight
+directions carry the hiker 19 m or more. The short directions at the second
+point run into the wall behind, which is what a wall is for.
+
+All seven §15 rest points now lie inside the enlarged boxes, by 0.03 to
+0.8 m, because the burial grew the boxes over them. That is an artifact of
+setting a hull down at an old coordinate, and six of the seven hulls are
+lifted out on the first tick.
+One is not. At (−277.3, 142.4, −863.0) the hull starts wholly inside a box.
+It stays there for 80 ticks while it slides down through the box, and it
+leaves by the underside. `depenetrate` does not eject a hull that sits
+entirely within a box. No walk that starts outside a box ever gets that far
+in, but the behaviour is worth knowing.
+
+### The slide census
+
+Every box piece of every module within 90 m of the scarp was tested the same
+way. A hiker was set down 3 m uphill of the piece, skipping any start within
+0.6 m of a box, and given no input for 5 s. Rests that were neither on a top
+nor still sliding were then tried for escape in eight directions.
+
+| | starts | on a top | still elsewhere | sliding | trapped |
+| --- | --- | --- | --- | --- | --- |
+| §15, faces in place | 131 | 117 | 12 | 2 | 6 |
+| sim test at this tip | 119 | 115 | 4 | 0 | 0 |
+| **this gate, in the page** | **119** | **115** | **4** | **0** | **0** |
+
+The page agrees with the test exactly. The four other rests are all grounded,
+on ground at the stand limit (normal 0.701–0.708), and they walk away 35–57 m.
+There are fewer starts than in §15 because the boxes are larger, so more
+start points fall within 0.6 m of one. The hiker on a top stands 0.7–4.0 m
+above the hillside beneath (median 1.9 m). §15 measured 0.1–4.0 m, median
+1.8. The shelves are the ledge §12.5 accepts.
+
+### Along a crest run, and into steep ground with no wall near
+
+This repeats the walk along the contour from §15's crest top at
+(−289.3, 142.9, −900.9) for 10 s.
+- **Uphill end:** it counts **99 reversals** of the across-slope velocity,
+  as before. Only 13 of them fall before the walk is blocked, at tick 218,
+  by a higher wall's front. The other 86 fall after it, where the hull goes
+  back and forth within **2.1 cm**. The hull is inside a box by **less than
+  1 mm** at every tick, where §15 measured 0.11 m.
+- **Downhill end:** it runs 18.5 m along the tops and off the end of the run,
+  with no reversal.
+
+The back-and-forth is the stand limit's own dither, not the walls'. A hiker
+walking uphill into steep ground at six places on the atmo world, each
+40–46 m from the nearest box, counts 100–116 reversals in 10 s. Over the
+last 5 s the hull moves back and forth within 4.7–6.9 cm. It steps onto
+ground too steep to hold, loses its footing and slides back. That happens
+wherever ground turns too steep, with or without a wall.
+
+### The low curbs
+
+Within the 400 m disc around the scarp, 8 boxes in 6 modules have a top that
+stands above walkable ground, over 21 one-metre cells. The nearest is 57 m
+from the scarp, on a module at (−285.4, −873.4) near the crest. There the
+buried piece runs under a strip of walkable ground, and its top stands up to
+1.6 m above that ground at one corner and below it elsewhere. Walks were run across it from 4 m
+out in sixteen directions, starting from every walkable cell in its footprint:
+- **Where the top is within the 0.5 m step:** the hiker steps up onto it
+  without a hitch and walks on.
+- **Where the top is higher:** the hiker is stopped. Walking south from
+  (−274, −853), the hiker stops at (−274.0, 142.9, −856.2). That is 0.401 m
+  from the box's face, in front of a top 0.84 m above the ground there. The
+  nearest rock the module draws above the ground is 5.5 m away.
+
+So yes: near crests a hiker can meet an invisible curb up to about a metre
+high on otherwise walkable ground. It is rare at the scarp: 8 boxes in 302
+modules, and none on the trail or the road. §12.5 accepts it for now.
+
+### Falling through
+
+There is none. Across the 119,400 ticks of this section's walks, no tick puts
+the feet more than 5 cm below the hillside. No walk that starts outside a box
+ever has the hull more than 1 cm inside one.
+
+### Verdict
+
+| bar (§12.4) | verdict |
+| --- | --- |
+| Nothing walks through a module | **met** from every start outside a box: under 1 mm inside at worst, where §15 measured 0.16 m. A hull set down wholly inside a box can slide down through it, which play cannot reach. |
+| No permanent trap | **met**: the seven points rest on tops and leave, and the census traps 0 of 119 |
+| The slide census matches the simulation | **met**, 119 / 115 / 4 / 0 / 0 |
+| Crest-run jitter | resolved as a collider matter (under 1 mm inside). The reversals left are the stand limit's own, measured identically 40 m from any wall |
+| Nothing falls through the ground | **met** |
+| Frame bars | not measured again. The scarp's +1.68 ms miss from §15 still stands, and so does the open fallback. |
+
+The walk bar of §12.4 is met. Two things are left, both named in §12.5 as
+next work: the shelves, where a sliding hiker stands a metre or two above
+the hillside on a flat top, and the rare invisible curb near a crest.
