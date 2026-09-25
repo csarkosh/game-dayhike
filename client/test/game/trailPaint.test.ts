@@ -15,7 +15,8 @@ import {
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_HEIGHT_SHIFT, TRAIL_EDGE_NOISE,
   TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
   TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE, TRAIL_WEAR_WAVE, TRAIL_EDGE_WAVE,
-  TRAIL_DRIFT_BAND, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_ROUGH, TRAIL_BED_EARTH, TRAIL_WASH_DARK,
+  TRAIL_DRIFT_BAND, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_ROUGH, TRAIL_BED_EARTH,
+  TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER,
   trailWear, trailEdgeNoise, trailPatches,
 } from "../../src/game/trailBenchParams.js";
 
@@ -298,8 +299,15 @@ describe("the neglect patches", () => {
     expect(TRAIL_CORE_GAIN).toBe(0.24);
     expect(TRAIL_MARGIN_GAIN).toBe(0.47);
     expect(TRAIL_BENCH_SHADE).toBe(0.8);
-    expect(TRAIL_WASH_DARK).toBe(0.55);
     expect(TRAIL_FRAGMENT_PAINT).toContain(`vec3 tBenchBase = mix(vec3(1.0), tBankBase, ${glslFloat(0.8)});`);
+  });
+
+  it("darkens the wash-out by the litter the bed lies in: bare earth in the open, the litter floor's earth under it", () => {
+    expect(TRAIL_WASH_DARK_OPEN).toBe(0.4);
+    expect(TRAIL_WASH_DARK_LITTER).toBe(0.75);
+    expect(TRAIL_FRAGMENT_PAINT).toContain("float tWashDark = mix(0.4, 0.75, clamp(vTerrainW2.z, 0.0, 1.0));");
+    const wash = TRAIL_FRAGMENT_PAINT.match(/vec3 tWashCol = [^\n]*/)![0];
+    expect(wash).toContain("tFloorTex * tWashDark *");
   });
 
   it("shades the bed's relief as earth too: normal, occlusion and roughness follow the same mix", () => {

@@ -9,7 +9,8 @@ import {
   TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT, TRAIL_BENCH_SHADE,
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE,
   TRAMPLE_HEIGHT, TRAMPLE_LEAN, TRAMPLE_TINT, TRAMPLE_BAND,
-  TRAIL_DRIFT_BAND, TRAIL_DRIFT_TINT, TRAIL_DRIFT_LUM, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_DARK, TRAIL_WASH_ROUGH, TRAIL_BED_EARTH,
+  TRAIL_DRIFT_BAND, TRAIL_DRIFT_TINT, TRAIL_DRIFT_LUM, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_ROUGH, TRAIL_BED_EARTH,
+  TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER,
   valueNoise1, trailWear, trailEdgeNoise, trailBands, trampleAt,
   trailDriftWeight, trailWashoutNoise, trailWashoutWeight, trailPatches,
 } from "../../src/game/trailBenchParams.js";
@@ -119,7 +120,8 @@ describe("the neglect patches", () => {
     expect(TRAIL_DRIFT_BAND).toEqual([0.25, 0.7]);
     expect(TRAIL_WASH_WAVE).toBe(4);
     expect(TRAIL_WASH_BAND).toEqual([0.55, 0.8]);
-    expect(TRAIL_WASH_DARK).toBe(0.55);
+    expect(TRAIL_WASH_DARK_OPEN).toBe(0.4);
+    expect(TRAIL_WASH_DARK_LITTER).toBe(0.75);
     expect(TRAIL_WASH_ROUGH).toBe(1.15);
     expect(TRAIL_CORE_GAIN).toBe(0.24);
     expect(trailDriftWeight(0)).toBe(0);

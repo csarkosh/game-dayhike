@@ -132,9 +132,15 @@ export const TRAIL_DRIFT_TINT: Rgb = {
 };
 export const TRAIL_WASH_WAVE = 4;
 export const TRAIL_WASH_BAND: readonly [number, number] = [0.55, 0.8];
-/** Wash-outs at 0.7 read as pale sand; at 0.55 they read as the bare earth
- * the drift has left. */
-export const TRAIL_WASH_DARK = 0.55;
+/**
+ * The wash-out's darkness, by the litter the bed lies in. In the open the
+ * washed bed is bare earth that must come down toward the grass beside it;
+ * where litter lies, the bare earth between the drifts is the same floor's
+ * earth and must not fall below it. Blended in the paint by the vertex's
+ * own litter weight — the field the drifts already read.
+ */
+export const TRAIL_WASH_DARK_OPEN = 0.4;
+export const TRAIL_WASH_DARK_LITTER = 0.75;
 export const TRAIL_WASH_ROUGH = 1.15;
 
 /** Drift weight from the vertex's duff: the same smoothstep the shader applies. */

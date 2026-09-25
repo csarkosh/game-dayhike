@@ -45,7 +45,7 @@ import {
   TRAIL_CORE_HALF, TRAIL_MARGIN_HALF, TRAIL_TRAMPLE_HALF, TRAIL_PAINT_EDGE,
   TRAIL_CORE_GAIN, TRAIL_CORE_TINT, TRAIL_MARGIN_GAIN, TRAIL_MARGIN_TINT, TRAIL_TRAMPLE_TINT, TRAIL_BENCH_SHADE, TRAIL_BED_EARTH,
   TRAIL_WET_DARK, TRAIL_WET_GLOSS, TRAIL_PUDDLE_WET, TRAIL_PUDDLE_LOW, TRAIL_PUDDLE_WAVE,
-  TRAIL_DRIFT_BAND, TRAIL_DRIFT_TINT, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_DARK, TRAIL_WASH_ROUGH,
+  TRAIL_DRIFT_BAND, TRAIL_DRIFT_TINT, TRAIL_WASH_WAVE, TRAIL_WASH_BAND, TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER, TRAIL_WASH_ROUGH,
   trailWear, trailEdgeNoise, trailBands,
 } from "./trailBenchParams.js";
 
@@ -424,7 +424,8 @@ export const TRAIL_FRAGMENT_PAINT = `
     float tWash = smoothstep(${f(TRAIL_WASH_BAND[0])}, ${f(TRAIL_WASH_BAND[1])}, macroValueNoise(vPositionW.xz, ${f(TRAIL_WASH_WAVE)}));
     tDrift *= 1.0 - tWash;
     vec3 tDriftCol = tFloorTex * vec3(${f(TRAIL_DRIFT_TINT.r)}, ${f(TRAIL_DRIFT_TINT.g)}, ${f(TRAIL_DRIFT_TINT.b)}) * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;
-    vec3 tWashCol = tFloorTex * ${f(TRAIL_WASH_DARK)} * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;
+    float tWashDark = mix(${f(TRAIL_WASH_DARK_OPEN)}, ${f(TRAIL_WASH_DARK_LITTER)}, clamp(vTerrainW2.z, 0.0, 1.0));
+    vec3 tWashCol = tFloorTex * tWashDark * mix(1.0, tFloorRAH.g / 0.5, tk) * tBenchBase;
     tCoreCol = mix(mix(tCoreCol, tDriftCol, tDrift), tWashCol, tWash);
     tMarginCol = mix(mix(tMarginCol, tDriftCol, tDrift), tWashCol, tWash);
     float tPuddleLow = smoothstep(${f(TRAIL_PUDDLE_LOW[0])}, ${f(TRAIL_PUDDLE_LOW[1])}, 1.0 - macroValueNoise(vPositionW.xz, ${f(TRAIL_PUDDLE_WAVE)}));
