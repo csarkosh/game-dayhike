@@ -6,6 +6,7 @@ import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
 import type { TrailGraph } from "./trail.js";
 import type { CutRecord } from "./cut.js";
+import { createWatcherRecord, type WatcherRecord } from "./watcher.js";
 import { spiralSpawn } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
@@ -86,6 +87,16 @@ export type World = {
    * the host's alone, like `register` and `trail` beside it.
    */
   cut: CutRecord | null;
+  /**
+   * The watcher (`watcher.ts`): whether the climb's Hollow is shown, the rest
+   * until it shows again and its own random stream, host only. Set for a
+   * forest world that built a trail, null for a hand-authored level. It
+   * lives here and not on `WorldState` for the same reason `cut` does: the
+   * record is the host's alone, and `WorldState` is what is cloned,
+   * fingerprinted and sent. The watcher entity itself is an enemy like any
+   * other and reaches every peer through the snapshot.
+   */
+  watcher: WatcherRecord | null;
 };
 
 export function createWorld(level: Level, seed: number, authoritative = true): World {
@@ -101,6 +112,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
     register: null,
     trail: null,
     cut: null,
+    watcher: null,
     state: {
       tick: 0,
       players: new Map(),
@@ -135,6 +147,7 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
     register: null,
     trail: graph ?? null,
     cut: null,
+    watcher: graph === undefined ? null : createWatcherRecord(forest.seed),
     state: {
       tick: 0,
       players: new Map(),

@@ -4,11 +4,12 @@
  * mountain. It cannot be killed. Contact kills, and being looked at slows it
  * at the price of the looker's stare.
  *
- * A Hollow is an `EnemyState` whose `ai` is Hunt, Emerge or Stand, so the
- * snapshot's enemy channel carries it as it carries any enemy. Everything
- * here runs inside `tickWorld`'s authoritative branch: host-only, never
- * replayed on a client. That is why `Math.atan2` for the facing is allowed
- * (architecture.test.ts) — an engine difference cannot diverge two peers.
+ * A Hollow is an `EnemyState` whose `ai` is Hunt, Emerge, Stand or Watch (the
+ * climb's watcher, watcher.ts), so the snapshot's enemy channel carries it as
+ * it carries any enemy. Everything here runs inside `tickWorld`'s
+ * authoritative branch: host-only, never replayed on a client. That is why
+ * `Math.atan2` for the facing is allowed (architecture.test.ts) — an engine
+ * difference cannot diverge two peers.
  * The walk itself passes its direction as a world-axis wish through
  * `stepMovement` with yaw 0, so movement needs no trig at all.
  */
@@ -71,7 +72,7 @@ export const HOLLOW_HEIGHT = 2.6;
 export const HOLLOW_EXIT_MARGIN = 1;
 
 export function isHollowState(ai: AiState): boolean {
-  return ai === AiState.Hunt || ai === AiState.Emerge || ai === AiState.Stand;
+  return ai === AiState.Hunt || ai === AiState.Emerge || ai === AiState.Stand || ai === AiState.Watch;
 }
 
 export function isHollow(e: EnemyState): boolean {
@@ -416,6 +417,14 @@ function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number):
       faceToward(h, th.x, th.z);
       return;
     }
+    case AiState.Watch: {
+      // The watcher: it stands where it was placed and faces the lead it was
+      // shown to, and that is all it ever does. Never `walkToward`, so not
+      // even gravity moves it; whether it stays shown is watcher.ts's.
+      const target = world.state.players.get(h.targetId);
+      if (target !== undefined && target.health > 0) faceToward(h, target.pos.x, target.pos.z);
+      return;
+    }
     default:
       return;
   }
@@ -429,10 +438,12 @@ export function stepHollows(world: World, dt: number): void {
 }
 
 /**
- * The look test: the Hollow's centre within HOLLOW_LOOK_COS of the player's
- * aim ray, within HOLLOW_LOOK_RANGE of the eye, and nothing in between.
+ * The look test with the cone as a parameter: the Hollow's centre within
+ * `cosLimit` of the player's aim ray, within HOLLOW_LOOK_RANGE of the eye,
+ * and nothing in between. The stare uses the 20° cone (`playerSees`); the
+ * watcher stays shown inside a wide one (watcher.ts WATCH_VIEW_COS).
  */
-export function playerSees(player: PlayerState, hollow: EnemyState, world: World): boolean {
+export function playerHasInView(player: PlayerState, hollow: EnemyState, world: World, cosLimit: number): boolean {
   const eye: Vec3 = { x: player.pos.x, y: player.pos.y + PLAYER_EYE_OFFSET, z: player.pos.z };
   const dx = hollow.pos.x - eye.x;
   const dy = hollow.pos.y - eye.y;
@@ -440,8 +451,13 @@ export function playerSees(player: PlayerState, hollow: EnemyState, world: World
   const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (dist < EPSILON || dist > HOLLOW_LOOK_RANGE) return false;
   const dir = aimDirection(player.yaw, player.pitch);
-  if ((dx * dir.x + dy * dir.y + dz * dir.z) / dist < HOLLOW_LOOK_COS) return false;
+  if ((dx * dir.x + dy * dir.y + dz * dir.z) / dist < cosLimit) return false;
   return hasLineOfSight(eye, hollow.pos, world.boxes, world.ground);
+}
+
+/** The look test the stare uses: `playerHasInView` with the HOLLOW_LOOK_COS cone. */
+export function playerSees(player: PlayerState, hollow: EnemyState, world: World): boolean {
+  return playerHasInView(player, hollow, world, HOLLOW_LOOK_COS);
 }
 
 /**
@@ -454,10 +470,12 @@ export function updateHollows(world: World): void {
   if (world.trail === null) return;
   const state = world.state;
 
-  // Contact.
+  // Contact. The watcher never touches: it hides when anyone comes near
+  // (watcher.ts), and a player who reaches it first is not killed for it.
   const reach = PLAYER_HALF.x + ENEMY_HALF.x + HOLLOW_CONTACT_MARGIN;
   const tall = PLAYER_HALF.y + ENEMY_HALF.y;
   for (const h of hollowsOf(world)) {
+    if (h.ai === AiState.Watch) continue;
     for (const p of state.players.values()) {
       if (p.health <= 0 || p.safe) continue;
       const dy = p.pos.y - h.pos.y;
@@ -486,9 +504,10 @@ export function updateHollows(world: World): void {
   // Prey: a hunting Hollow whose target is dead, gone or safe takes the
   // nearest living, unsafe player, or stands; a standing one takes the
   // first prey that appears. A Hollow never merges and never leaves: the
-  // pack only grows (summit.ts spawns; S3 adds the forks).
+  // pack only grows (summit.ts spawns; S3 adds the forks). The watcher is
+  // never prey-driven: it would otherwise be a hunt on its first tick.
   for (const h of all) {
-    if (h.ai === AiState.Emerge) continue;
+    if (h.ai === AiState.Emerge || h.ai === AiState.Watch) continue;
     const target = state.players.get(h.targetId);
     const lost = target === undefined || target.health <= 0 || target.safe;
     if (h.ai === AiState.Hunt && !lost) continue;
