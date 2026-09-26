@@ -14,12 +14,12 @@ import { defaultModelLoader, instantiateStaticModel, type ModelLoader, type Plac
 
 export const SIGN_POST_OUTPUT = "models/sign.post.glb";
 export const SIGN_ARM_OUTPUT = "models/sign.arm.glb";
-/** One arm's label texture: two names on one line across a 1 m board, so wide and short. */
+/** One plank's label texture: one name on one line across a 1 m board, so wide and short. */
 export const LABEL_TEXTURE = { width: 1024, height: 192 } as const;
 
 /** Makes the painted material for the trailhead poster: `paintedMaterial`, or a stand-in where there is no canvas. */
 export type Painter = (scene: Scene, name: string, lines: readonly string[], width: number, height: number) => Material;
-/** Makes the see-through lettering for one arm face: `paintedLabel`, or a stand-in where there is no canvas. */
+/** Makes the see-through lettering for one plank face: `paintedLabel`, or a stand-in where there is no canvas. */
 export type LabelPainter = (scene: Scene, name: string, text: string, width: number, height: number) => Material;
 
 /** The yaw that turns +z onto a unit direction, in the sim's convention (yaw 0 faces +z, PI/2 faces +x). */
@@ -40,18 +40,21 @@ const POST_HALF_WIDTH = 0.065;
 /** Clearance between an arm's post end and the post's face. */
 const ARM_SEAT_GAP = 0.005;
 /**
- * Height of an arm's centre above the post's foot. The arms have no collider,
- * so the lowest one's bottom edge (1.698 m) sits above a hiker's eye (1.6 m)
- * and the camera never passes through a board; one step up (`ARM_STACK`), a
- * raised arm's top edge (2.112 m) stays under the 2.221 m post's top.
+ * Height of the bottom plank's centre above the post's foot. The planks have
+ * no collider, so the bottom one's lower edge (1.648 m) sits above a hiker's
+ * eye (1.6 m) and the camera never passes through a board.
  */
-export const ARM_ABOVE_GROUND = 1.8;
-/** How far an arm is raised when it points nearly the same way as one below it. */
-export const ARM_STACK = 0.21;
-/** The highest step: the post has room for two arms one above the other, no more. */
-const ARM_TOP_LEVEL = 1;
-/** Arms closer than this in direction (cos 30 degrees) would cross; the later one is raised. */
-const ARM_CROSSING_COS = Math.cos(Math.PI / 6);
+export const PLANK_BASE = 1.75;
+/**
+ * The rise from one plank to the next: the 0.204 m board and 11 mm of air, so
+ * every plank of a post has a height of its own and no two boards cross,
+ * whichever ways their arms point.
+ */
+export const PLANK_STEP = 0.215;
+/** The post model's natural height, foot to top. */
+export const POST_HEIGHT = 2.221;
+/** How far the post's top stands above its highest plank's top edge. */
+export const POST_CLEARANCE = 0.1;
 /**
  * One label plane: a little wider than the arm's full-height board (0.95 m)
  * and a little shorter than its height; the texture's margin keeps the
@@ -100,8 +103,8 @@ export function paintedMaterial(scene: Scene, name: string, lines: readonly stri
  * ground, so the arm's own wood shows around and between them and the text
  * reads as cut into the board rather than stuck on it. One line, centred,
  * set as large as the height allows and then shrunk until it fits the width
- * inside a margin — two place names joined by a dot fit at a size that reads
- * from a few paces with a lamp.
+ * inside a margin — one place name to a board reads from a few paces with a
+ * lamp.
  */
 export function paintedLabel(scene: Scene, name: string, text: string, width: number, height: number): PBRMaterial {
   // Mipmapped: the board is read from a few metres, where a 1024-wide texture
@@ -160,34 +163,39 @@ export type SignDeps = {
   loader?: ModelLoader;
 };
 
+/** How many planks a post carries: one per name, across all its arms. */
+export function plankCount(post: SignPost): number {
+  let n = 0;
+  for (const arm of post.arms) n += arm.names.length;
+  return n;
+}
+
 /**
- * How far above `ARM_ABOVE_GROUND` each arm of one post sits, in steps. The
- * sim gives an arm per branch, so two branches leaving a junction a few
- * degrees apart would put two boards through each other; an arm pointing
- * within 30 degrees of a lower one goes up a step. There is room for one
- * step: a third arm in the same direction, rare at a real junction, shares
- * the raised one's height.
+ * The centre height of the plank `rank` places from the top of a post with
+ * `count` planks: the top plank highest, the last at `PLANK_BASE`.
  */
-export function armLevels(arms: readonly { dx: number; dz: number }[]): number[] {
-  const levels: number[] = [];
-  for (const [i, arm] of arms.entries()) {
-    let level = 0;
-    for (let j = 0; j < i; j++) {
-      const other = arms[j] as { dx: number; dz: number };
-      if (arm.dx * other.dx + arm.dz * other.dz >= ARM_CROSSING_COS) level = Math.max(level, (levels[j] as number) + 1);
-    }
-    levels.push(Math.min(level, ARM_TOP_LEVEL));
-  }
-  return levels;
+export function plankHeight(rank: number, count: number): number {
+  return PLANK_BASE + PLANK_STEP * (count - 1 - rank);
+}
+
+/**
+ * How tall a post with `count` planks is drawn: its top `POST_CLEARANCE`
+ * above the highest plank's top edge, and never shorter than the model.
+ */
+export function postHeight(count: number): number {
+  if (count === 0) return POST_HEIGHT;
+  return Math.max(POST_HEIGHT, plankHeight(0, count) + ARM_HEIGHT / 2 + POST_CLEARANCE);
 }
 
 /**
  * The fingerposts at every junction: a wooden post with one arrow board per
- * branch, each board lettered on both faces with the places that branch leads
- * to. The two models load once and every post and arm is a copy sharing their
- * geometry. Until the post arrives (or for good, if it never does) the
- * collider box the sim emits is drawn in its place, so no post is ever an
- * invisible wall; an arm that never arrives is simply not drawn.
+ * place, each pointing down the branch the sim chose for it and lettered on
+ * both faces with that one name. Every plank of a post has a height of its
+ * own, in the post's order from the top, and the post is stretched to stand
+ * above the highest. The two models load once and every post and plank is a
+ * copy sharing their geometry. Until the post arrives (or for good, if it
+ * never does) the collider box the sim emits is drawn in its place, so no post
+ * is ever an invisible wall; a plank that never arrives is simply not drawn.
  */
 export function createSignMeshes(
   scene: Scene,
@@ -236,12 +244,15 @@ export function createSignMeshes(
 
   function placePosts(container: AssetContainer): void {
     for (const [p, footing] of footings.entries()) {
-      keep(instantiateStaticModel(container, `sign_${p}_post`, 0, 0, 0, 0), footing);
+      const model = instantiateStaticModel(container, `sign_${p}_post`, 0, 0, 0, 0);
+      // Stretched up from its foot, which sits at the model's origin.
+      model.node.scaling.y = postHeight(plankCount(posts[p] as SignPost)) / POST_HEIGHT;
+      keep(model, footing);
       dropBox(boxes[p] as Mesh);
     }
   }
 
-  /** One face's lettering: `side` is +1 for the arm's +X face, -1 for its -X face. */
+  /** One face's lettering: `side` is +1 for the plank's +X face, -1 for its -X face. */
   function label(name: string, arm: TransformNode, side: 1 | -1, material: Material): void {
     const plane = MeshBuilder.CreatePlane(name, { width: LABEL_SIZE.width, height: LABEL_SIZE.height }, scene);
     plane.parent = arm;
@@ -257,29 +268,28 @@ export function createSignMeshes(
     labels.push(plane);
   }
 
-  function placeArms(container: AssetContainer): void {
+  function placePlanks(container: AssetContainer): void {
     for (const [p, post] of posts.entries()) {
       const footing = footings[p] as TransformNode;
-      const levels = armLevels(post.arms);
-      for (const [a, arm] of post.arms.entries()) {
-        const name = `sign_${p}_arm_${a}`;
-        // The arm's post end seated against the post: the square post reaches
-        // 0.065 (|dx| + |dz|) from its axis along the arm's direction — its face
-        // square on, a corner on the diagonal — so the arm meets it in every
-        // direction without cutting into it.
+      const count = plankCount(post);
+      for (const arm of post.arms) {
+        // The plank's post end seated against the post: the square post
+        // reaches 0.065 (|dx| + |dz|) from its axis along the arm's direction —
+        // its face square on, a corner on the diagonal — so the plank meets it
+        // in every direction without cutting into it.
         const seat = POST_HALF_WIDTH * (Math.abs(arm.dx) + Math.abs(arm.dz)) + ARM_SEAT_GAP;
-        const model = instantiateStaticModel(
-          container, name,
-          arm.dx * seat, ARM_ABOVE_GROUND + ARM_STACK * (levels[a] as number), arm.dz * seat,
-          armYaw(arm),
-        );
-        keep(model, footing);
-        const text = arm.names.join(" · ");
-        if (text === "") continue;
-        const material = paint(scene, `${name}_label`, text, LABEL_TEXTURE.width, LABEL_TEXTURE.height);
-        painted.push(material);
-        label(`${name}_label_px`, model.node, 1, material);
-        label(`${name}_label_nx`, model.node, -1, material);
+        for (const [k, text] of arm.names.entries()) {
+          const rank = arm.ranks[k] as number;
+          const name = `sign_${p}_plank_${rank}`;
+          const model = instantiateStaticModel(
+            container, name, arm.dx * seat, plankHeight(rank, count), arm.dz * seat, armYaw(arm),
+          );
+          keep(model, footing);
+          const material = paint(scene, `${name}_label`, text, LABEL_TEXTURE.width, LABEL_TEXTURE.height);
+          painted.push(material);
+          label(`${name}_label_px`, model.node, 1, material);
+          label(`${name}_label_nx`, model.node, -1, material);
+        }
       }
     }
   }
@@ -311,7 +321,7 @@ export function createSignMeshes(
     }
   }
 
-  const ready = Promise.all([settle(SIGN_POST_OUTPUT, placePosts), settle(SIGN_ARM_OUTPUT, placeArms)]).then(() => undefined);
+  const ready = Promise.all([settle(SIGN_POST_OUTPUT, placePosts), settle(SIGN_ARM_OUTPUT, placePlanks)]).then(() => undefined);
 
   return {
     ready,

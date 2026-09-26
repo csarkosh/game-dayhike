@@ -14,58 +14,79 @@ describe("signPosts", () => {
     expect(SUMMIT_LABEL).toBe("Summit");
   });
 
-  it("stands one post at every junction, and on a loop both arms of the fork name the loop's place", () => {
+  it("stands one post at every junction, a plank per place on the arm nearest it, the Summit on top", () => {
     const g = graph(1);
     const posts = signPosts(g, sites(g));
     // Only node 1 has three branches: the loop rejoins at the summit node,
     // whose degree is two.
     expect(posts).toHaveLength(1);
     const atJunction = posts.find((p) => Math.abs(p.x - 100) < SIGN_POST_OFFSET + 0.01 && Math.abs(p.z) < SIGN_POST_OFFSET + 0.01)!;
-    expect(atJunction.arms).toHaveLength(3);
-    // Keyed by the nearest name: the loop rejoins the stem, so the stem arm
-    // also reaches the meadow and the loop arm also reaches the summit.
-    const byFirst = new Map(atJunction.arms.map((a) => [a.names[0], a]));
-    expect(byFirst.get("Trailhead")!.names).toEqual(["Trailhead"]);
-    expect(byFirst.get("Summit")!.names).toEqual(["Summit", "the meadow"]);
-    expect(byFirst.get("the meadow")!.names).toEqual(["the meadow", "Summit"]);
-    expect(byFirst.get("the meadow")!.dz).toBeGreaterThan(0.7); // the loop leaves toward +z
-    expect(byFirst.get("Trailhead")!.dx).toBeCloseTo(-1, 6);
-  });
-
-  it("names at most two places per arm, the nearest by trail distance", () => {
-    const g = graph(2);
-    const posts = signPosts(g, [
-      { name: "Summit", x: 200, z: 0 },
-      { name: "the lower meadow", x: 150, z: 50 },
-      { name: "the upper meadow", x: 150, z: -50 },
+    // The loop reaches the Summit too, and the stem the meadow, but each
+    // place goes only on the arm with the shorter way there: the Summit 100
+    // m up the stem, the meadow 54 m round the loop, the trailhead 100 m back.
+    expect(atJunction.arms.map((a) => ({ names: a.names, ranks: a.ranks }))).toEqual([
+      { names: ["Trailhead"], ranks: [2] },
+      { names: ["Summit"], ranks: [0] },
+      { names: ["the meadow"], ranks: [1] },
     ]);
-    expect(posts).toHaveLength(2);
-    const atFork = posts.find((p) => Math.abs(p.x - 100) < 3)!;
-    const stem = atFork.arms.find((a) => a.dx > 0.99)!;
-    expect(stem.names).toEqual(["Summit", "the lower meadow"]);
-    for (const p of posts) for (const a of p.arms) expect(a.names.length).toBeLessThanOrEqual(2);
+    expect(atJunction.arms[2]!.dz).toBeGreaterThan(0.7); // the loop leaves toward +z
+    expect(atJunction.arms[0]!.dx).toBeCloseTo(-1, 6);
   });
 
-  it("breaks a tie in trail distance toward the lower node, whichever edge is walked first", () => {
-    // A fork at node 1 (a stub spur to node 2 makes it a junction); past node
-    // 3 the trail splits into two equal branches. The edge to node 5 is
-    // listed first, so node 5 is found first, yet node 4 (the lower id, at
-    // exactly the same distance) takes the arm's second name.
+  it("names a place once, on the nearer arm; tops the post with the Summit; repeats a place only on an arm that wins none, and names one down a dead end", () => {
+    // A junction at node 1 with five branches: back to the trailhead (0);
+    // east over the bridge (2) to the Summit (3); north (4) to North Lake
+    // (5), with a long way round from 4 to the Summit; south (6), which only
+    // loops back to the trailhead; and a spur (7) that goes nowhere.
     const node = (x: number, z: number) => ({ x, z, h: 0, u: 0 });
     const edge = (a: number, b: number): TrailEdge => ({ a, b, kind: "stem", profile: new Float64Array([0, 0]), progress0: 0, progress1: 0 });
     const g = {
-      nodes: [node(0, 0), node(100, 0), node(100, 50), node(200, 0), node(250, -50), node(250, 50)],
-      edges: [edge(0, 1), edge(1, 2), edge(1, 3), edge(3, 5), edge(3, 4)],
+      nodes: [node(0, 0), node(100, 0), node(180, 0), node(300, 0), node(100, 100), node(100, 150), node(100, -60), node(130, -40)],
+      edges: [edge(0, 1), edge(1, 2), edge(2, 3), edge(1, 4), edge(4, 3), edge(4, 5), edge(1, 6), edge(6, 0), edge(1, 7)],
     } as unknown as TrailGraph;
     const posts = signPosts(g, [
-      { name: "the bridge", x: 200, z: 0 },
-      { name: "North Lake", x: 250, z: 50 },
-      { name: "South Lake", x: 250, z: -50 },
+      { name: SUMMIT_LABEL, x: 300, z: 0 },
+      { name: "the bridge", x: 180, z: 0 },
+      { name: "North Lake", x: 100, z: 150 },
     ]);
-    // Nodes 1 and 3 are both junctions; the fork at node 1 is the one read.
+    // Node 4 is a junction too; the post read is node 1's.
     expect(posts).toHaveLength(2);
-    const out = posts.find((p) => Math.abs(p.x - 100) < 3)!.arms.find((a) => a.dx > 0.99)!;
-    expect(out.names).toEqual(["the bridge", "South Lake"]);
+    const post = posts.find((p) => Math.abs(p.x - 100) < 3 && Math.abs(p.z) < 3)!;
+    expect(post.arms.map((a) => ({ names: a.names, ranks: a.ranks }))).toEqual([
+      // Back to the trailhead: 100 m.
+      { names: ["Trailhead"], ranks: [2] },
+      // The Summit is 200 m this way and 323.6 m by the north arm, so it is
+      // here and on top; the bridge (80 m) is the post's nearest place.
+      { names: ["Summit", "the bridge"], ranks: [0, 1] },
+      // North Lake: 150 m this way, 473.6 m by the bridge.
+      { names: ["North Lake"], ranks: [3] },
+      // South reaches only the trailhead, 176.6 m round, and wins nothing:
+      // it names the trailhead anyway.
+      { names: ["Trailhead"], ranks: [4] },
+      // The spur reaches nothing without coming back: its nearest place by
+      // way of the junction is the bridge, 50 + 50 + 80 m.
+      { names: ["the bridge"], ranks: [5] },
+    ]);
+  });
+
+  it("breaks a tie in trail distance toward the arm with the lower neighbour, whichever edge is walked first", () => {
+    // From the junction at node 1, two equal branches (via 3 and via 2, the
+    // edge to 3 listed first) meet again at the Summit, 161.8 m either way.
+    const node = (x: number, z: number) => ({ x, z, h: 0, u: 0 });
+    const edge = (a: number, b: number): TrailEdge => ({ a, b, kind: "stem", profile: new Float64Array([0, 0]), progress0: 0, progress1: 0 });
+    const g = {
+      nodes: [node(-100, 0), node(0, 0), node(0, 50), node(0, -50), node(100, 0)],
+      edges: [edge(0, 1), edge(1, 3), edge(1, 2), edge(3, 4), edge(2, 4)],
+    } as unknown as TrailGraph;
+    const posts = signPosts(g, [{ name: SUMMIT_LABEL, x: 100, z: 0 }]);
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.arms.map((a) => ({ dz: a.dz, names: a.names, ranks: a.ranks }))).toEqual([
+      { dz: 0, names: ["Trailhead"], ranks: [1] },
+      // The arm by node 3 loses the tie, so it wins nothing and names its
+      // nearest place, the Summit, below the trailhead's 100 m.
+      { dz: -1, names: ["Summit"], ranks: [2] },
+      { dz: 1, names: ["Summit"], ranks: [0] },
+    ]);
   });
 
   it("stands the posts where signPostSites says, names or no names", () => {
@@ -76,27 +97,31 @@ describe("signPosts", () => {
     expect(posts.map((p) => ({ x: p.x, z: p.z }))).toEqual(sites.map((s) => ({ x: s.x, z: s.z })));
   });
 
-  it("counts the trailhead as a place like any other, and nearer places win over it", () => {
+  it("counts the trailhead as a place like any other, orders a post nearest first below the Summit, and never names a post's own node", () => {
     const g = graph(2);
     const posts = signPosts(g, [
       { name: "Summit", x: 200, z: 0 },
       { name: "the lower meadow", x: 150, z: 50 },
       { name: "the upper meadow", x: 150, z: -50 },
     ]);
-    // Both loops rejoin at the crest, so it is a junction too.
-    const atCrest = posts.find((p) => Math.abs(p.x - 200) < 3)!;
-    expect(atCrest.arms).toHaveLength(3);
-    // Straight down the stem the trailhead is 100 m off; each meadow is 54 m
-    // round its loop from node 1, so they are the two names.
-    const down = atCrest.arms.find((a) => a.dx < -0.99)!;
-    expect(down.names).toEqual(["the lower meadow", "the upper meadow"]);
-    const lower = atCrest.arms.find((a) => a.dz > 0.9)!;
-    expect(lower.names).toEqual(["the lower meadow", "the upper meadow"]);
-    const upper = atCrest.arms.find((a) => a.dz < -0.9)!;
-    expect(upper.names).toEqual(["the upper meadow", "the lower meadow"]);
-    // From the fork, the arm back toward the pad reads the trailhead alone.
+    // At the fork: the Summit up the stem on top, then the two meadows 53.9
+    // m round their loops (the lower meadow's arm has the lower neighbour),
+    // then the trailhead 100 m back.
     const atFork = posts.find((p) => Math.abs(p.x - 100) < 3)!;
-    expect(atFork.arms.find((a) => a.dx < -0.99)!.names).toEqual(["Trailhead"]);
+    expect(atFork.arms.map((a) => ({ names: a.names, ranks: a.ranks }))).toEqual([
+      { names: ["Trailhead"], ranks: [3] },
+      { names: ["Summit"], ranks: [0] },
+      { names: ["the lower meadow"], ranks: [1] },
+      { names: ["the upper meadow"], ranks: [2] },
+    ]);
+    // Both loops rejoin at the crest, so it is a junction too, and it stands
+    // on the Summit's own node: its post names only the places away from it.
+    const atCrest = posts.find((p) => Math.abs(p.x - 200) < 3)!;
+    expect(atCrest.arms.map((a) => ({ names: a.names, ranks: a.ranks }))).toEqual([
+      { names: ["Trailhead"], ranks: [2] },
+      { names: ["the lower meadow"], ranks: [0] },
+      { names: ["the upper meadow"], ranks: [1] },
+    ]);
   });
 
   it("stands the post off the bed", () => {

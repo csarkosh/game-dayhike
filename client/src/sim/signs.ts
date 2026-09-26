@@ -1,8 +1,9 @@
 /**
- * Wooden sign posts at every junction of the trail graph, one arm per branch,
- * each arm naming the two nearest places that branch leads to (B §2.5). Pure
- * geometry over the graph: the pass emits the post's collision box,
- * `game/signMeshes.ts` paints the arms.
+ * Wooden sign posts at every junction of the trail graph, one arm per branch
+ * and one plank per place (B §2.5): each place named once on a post, on the
+ * arm with the shortest trail to it, the Summit on top. Pure geometry over the
+ * graph: the pass emits the post's collision box, `game/signMeshes.ts` paints
+ * the planks.
  *
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot. Arms carry
  * unit directions, never angles.
@@ -15,15 +16,19 @@ export type SignArm = {
   /** Unit direction the arm points, from the post. */
   dx: number;
   dz: number;
-  /** At most ARM_NAMES of them, nearest by trail distance first. */
+  /** One place per plank, in the post's order (`ranks`), top plank first. */
   names: string[];
+  /**
+   * Each plank's place on its post, counted from the top across every arm:
+   * 0 is the post's top plank. Parallel to `names`; a post's ranks run 0, 1,
+   * 2, ... with no gaps.
+   */
+  ranks: number[];
 };
 export type SignPost = { x: number; z: number; arms: SignArm[] };
 
 export const TRAILHEAD_LABEL = "Trailhead";
 export const SUMMIT_LABEL = "Summit";
-/** How many places one arm names: two fit an arm's face legibly. */
-export const ARM_NAMES = 2;
 /** Metres from the junction node to the post: off the bed, on the shoulder. */
 export const SIGN_POST_OFFSET = TRAIL_BED_HALF + 1;
 export const SIGN_POST_HALF: Vec3 = { x: 0.1, y: 1.1, z: 0.1 };
@@ -50,7 +55,7 @@ function nodeGap(a: TrailNode, b: TrailNode): number {
  */
 function nearestFirst(
   links: readonly (readonly Link[])[], start: number, avoid: number,
-  visit: (node: number) => boolean,
+  visit: (node: number, dist: number) => boolean,
 ): void {
   const dist = new Map<number, number>([[start, 0]]);
   const done = new Set<number>([avoid]);
@@ -89,7 +94,7 @@ function nearestFirst(
     const [d, node] = pop();
     if (done.has(node)) continue;
     done.add(node);
-    if (visit(node)) return;
+    if (visit(node, d)) return;
     for (const { to, len } of links[node] ?? []) {
       if (done.has(to)) continue;
       const nd = d + len;
@@ -135,13 +140,22 @@ export function signPostSites(graph: TrailGraph): SignPostSite[] {
   return out;
 }
 
+/** One plank: a place, the arm it hangs on, and the trail distance to it that way. */
+type Plank = { arm: number; name: string; dist: number };
+
 /**
- * One post per junction (`signPostSites`). Each arm names the ARM_NAMES places
- * nearest by trail distance beyond it: the walk starts at the arm's neighbour
- * and never crosses back through the junction, and "Trailhead" (node 0) is a
- * place like any other, so on a loop both arms of the fork name the loop's
- * place. A site is read at its nearest node; two sites at one node keep their
- * order in `sites`.
+ * One post per junction (`signPostSites`), one arm per branch, one plank per
+ * place. The trail distance to a place by an arm is the arm's edge plus the
+ * shortest walk from its neighbour that never crosses back through the
+ * junction; "Trailhead" (node 0) is a place like any other, and a site is read
+ * at its nearest node. Every place reachable that way goes on the post once,
+ * on the arm with the shortest distance to it (ties to the arm whose
+ * neighbour has the lower node id). An arm that wins nothing still gets one
+ * plank, naming the nearest place down it — the one way a name repeats on a
+ * post — and a dead-end arm, with nothing named beyond it, names the nearest
+ * place found by a walk from its neighbour that may cross back through the
+ * junction. A place at the junction's own node is never named on its post.
+ * The Summit's plank is the post's top one; the rest follow nearest first.
  */
 export function signPosts(graph: TrailGraph, sites: readonly NamedSite[]): SignPost[] {
   const links: Link[][] = graph.nodes.map(() => []);
@@ -159,21 +173,70 @@ export function signPosts(graph: TrailGraph, sites: readonly NamedSite[]): SignP
   nameAt(0, TRAILHEAD_LABEL);
   for (const s of sites) nameAt(nearestTrailNode(graph, s.x, s.z), s.name);
 
+  /**
+   * The places a walk from `start` finds, nearest first, each at its first
+   * (shortest) distance plus `lead`, never one standing at `junction`; `stop`
+   * of them at most.
+   */
+  const reach = (start: number, avoid: number, junction: number, lead: number, stop: number): { name: string; dist: number }[] => {
+    const found: { name: string; dist: number }[] = [];
+    const seen = new Set<string>(namesAt.get(junction) ?? []);
+    nearestFirst(links, start, avoid, (node, d) => {
+      if (node !== junction) {
+        for (const name of namesAt.get(node) ?? []) {
+          if (seen.has(name)) continue;
+          seen.add(name);
+          found.push({ name, dist: lead + d });
+        }
+      }
+      return found.length >= stop;
+    });
+    return found;
+  };
+
   return signPostSites(graph).map(({ node: j, x, z }) => {
     const here = graph.nodes[j] as TrailNode;
-    const arms: SignArm[] = [];
-    for (const { to: n } of links[j] as Link[]) {
+    const out = links[j] as Link[];
+    const elsewhere = new Set<string>();
+    for (const [node, names] of namesAt) if (node !== j) for (const name of names) elsewhere.add(name);
+    for (const name of namesAt.get(j) ?? []) elsewhere.delete(name);
+    // Every place each arm reaches, nearest first.
+    const byArm = out.map(({ to, len }) => reach(to, j, j, len, elsewhere.size));
+    // Each place to the arm with the shortest way there.
+    const best = new Map<string, Plank>();
+    for (const [a, found] of byArm.entries()) {
+      for (const { name, dist } of found) {
+        const held = best.get(name);
+        if (
+          held === undefined || dist < held.dist ||
+          (dist === held.dist && (out[a] as Link).to < (out[held.arm] as Link).to)
+        ) best.set(name, { arm: a, name, dist });
+      }
+    }
+    const planks: Plank[] = [...best.values()];
+    const summit = best.get(SUMMIT_LABEL);
+    // An arm that wins nothing names its nearest place anyway, however far
+    // round, so no board points down a branch in silence.
+    for (const [a, { to, len }] of out.entries()) {
+      if (planks.some((p) => p.arm === a)) continue;
+      const nearest = (byArm[a] as { name: string; dist: number }[])[0] ?? reach(to, -1, j, len, 1)[0];
+      if (nearest !== undefined) planks.push({ arm: a, name: nearest.name, dist: nearest.dist });
+    }
+    planks.sort((p, q) => {
+      if (p === summit || q === summit) return p === summit ? -1 : 1;
+      if (p.dist !== q.dist) return p.dist - q.dist;
+      return (out[p.arm] as Link).to - (out[q.arm] as Link).to;
+    });
+    const arms: SignArm[] = out.map(({ to: n }) => {
       const there = graph.nodes[n] as TrailNode;
       const ex = there.x - here.x, ez = there.z - here.z;
       const len = Math.sqrt(ex * ex + ez * ez);
-      const names: string[] = [];
-      nearestFirst(links, n, j, (node) => {
-        for (const name of namesAt.get(node) ?? []) {
-          if (names.length < ARM_NAMES && !names.includes(name)) names.push(name);
-        }
-        return names.length >= ARM_NAMES;
-      });
-      arms.push({ dx: len > 0 ? ex / len : 1, dz: len > 0 ? ez / len : 0, names });
+      return { dx: len > 0 ? ex / len : 1, dz: len > 0 ? ez / len : 0, names: [], ranks: [] };
+    });
+    for (const [rank, { arm, name }] of planks.entries()) {
+      const onArm = arms[arm] as SignArm;
+      onArm.names.push(name);
+      onArm.ranks.push(rank);
     }
     return { x, z, arms };
   });
