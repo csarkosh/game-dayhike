@@ -104,8 +104,8 @@ async function verify() {
   // of correct hosting would help.
   //
   // `clutter.fungus_b` rides along with the two characters for a second reason: at
-  // 4,212 bytes it is the model closest to Vite's 4,096-byte `assetsInlineLimit`,
-  // and `client/vite.config.ts` opts .glb out of inlining by only 116 bytes of
+  // 4,236 bytes it is the model closest to Vite's 4,096-byte `assetsInlineLimit`,
+  // and `client/vite.config.ts` opts .glb out of inlining by only 140 bytes of
   // margin. Nothing else in the repo guards that opt-out — deleting it passes
   // typecheck, lint, the suite and the build today. An inlined model has no
   // `/assets/<id>-<hash>.glb` in the bundle at all, so the "does not reference"
