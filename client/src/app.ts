@@ -468,6 +468,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       renderer.scene,
       signPosts(graph, signSites(seed, graph.features, hikerFirst, register.body.pos)),
       groundH,
+      { materialFor: (name) => terrainMaterialFor(renderer.scene, name), shadows: renderer.shadows },
     );
     const trailhead = createTrailheadMeshes(
       renderer.scene,

@@ -25,6 +25,23 @@ export function defaultModelLoader(scene: Scene): ModelLoader {
 /** The LOD roots a static model carries; only the first is ever drawn here. */
 const LOD_ROOTS = ["LOD0", "LOD1", "LOD2"] as const;
 
+/**
+ * Enables the `LOD0` root among `nodes` and disables the others, returning
+ * every mesh with geometry under `LOD0`, made unpickable. `named` maps a root's
+ * name in the file to the name it carries among `nodes`.
+ */
+function enableFirstLod(nodes: readonly TransformNode[], named: (lod: string) => string): Mesh[] {
+  let meshes: Mesh[] = [];
+  for (const lod of LOD_ROOTS) {
+    const root = nodes.find((n) => n.name === named(lod));
+    if (root === undefined) continue;
+    root.setEnabled(lod === "LOD0");
+    if (lod === "LOD0") meshes = root.getChildMeshes(false).filter((m): m is Mesh => m instanceof Mesh && m.getTotalVertices() > 0);
+  }
+  for (const m of meshes) m.isPickable = false;
+  return meshes;
+}
+
 export type PlacedModel = {
   /** The node that carries the placement; the model's origin sits at it. */
   node: TransformNode;
@@ -60,19 +77,48 @@ export function placeStaticModel(
   node.position.set(x, y, z);
   node.rotation.y = yaw;
 
-  let meshes: Mesh[] = [];
-  for (const lod of LOD_ROOTS) {
-    const root = [...container.transformNodes, ...container.meshes].find((n) => n.name === lod);
-    if (root === undefined) continue;
-    root.setEnabled(lod === "LOD0");
-    if (lod === "LOD0") meshes = root.getChildMeshes(false).filter((m): m is Mesh => m instanceof Mesh && m.getTotalVertices() > 0);
-  }
-  for (const m of meshes) m.isPickable = false;
+  const meshes = enableFirstLod([...container.transformNodes, ...container.meshes], (lod) => lod);
   return {
     node,
     meshes,
     dispose() {
       container.dispose();
+      node.dispose();
+    },
+  };
+}
+
+/**
+ * Puts one more copy of a loaded static model into the scene, for a model that
+ * stands in many places — a fingerpost at every junction, an arm on every
+ * branch. The copies share the container's geometry and materials, so a
+ * hundred arms cost one upload; only `LOD0` is copied at all, for the same
+ * reason `placeStaticModel` draws only it. The container stays out of the
+ * scene as the template and is the caller's to dispose after the last copy.
+ */
+export function instantiateStaticModel(
+  container: AssetContainer,
+  name: string,
+  x: number, y: number, z: number, yaw: number,
+): PlacedModel {
+  const skipped = new Set<string>(LOD_ROOTS.filter((lod) => lod !== "LOD0"));
+  const entries = container.instantiateModelsToScene((n) => `${name}_${n}`, false, {
+    predicate: (entity: { name?: string }) => !skipped.has(entity.name ?? ""),
+  });
+  const loaded = entries.rootNodes[0] as TransformNode | undefined;
+  if (loaded === undefined) {
+    entries.dispose();
+    throw new Error(`model ${name} has no root node`);
+  }
+  const node = orientationRoot(loaded, name);
+  node.position.set(x, y, z);
+  node.rotation.y = yaw;
+  const meshes = enableFirstLod(loaded.getDescendants(false) as TransformNode[], (lod) => `${name}_${lod}`);
+  return {
+    node,
+    meshes,
+    dispose() {
+      entries.dispose();
       node.dispose();
     },
   };

@@ -72,6 +72,10 @@ describe("chunk props are drawn", () => {
     expect(PROP_DRAWN_ELSEWHERE.has("kiosk")).toBe(true);
   });
 
+  it("leaves the fingerpost colliders to the sign meshes", () => {
+    expect(PROP_DRAWN_ELSEWHERE.has("signpost")).toBe(true);
+  });
+
   // The trailhead's props (kiosk, car) and clutter's rock sites are not
   // near the world origin (measured for seed 12345: kiosk/car at chunk
   // cx=-8, rock at [-1,-11]) — a single `update(0, 0)` window of radius
