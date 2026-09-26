@@ -170,6 +170,17 @@ describe("near/far seam", () => {
 });
 
 describe("clutter bands", () => {
+  it("draws the canopy pose's sward at three quarters and leaves the meadow pose's alone", () => {
+    // Seed atmo. Under the closed canopy at (123, -105.5) the field's grass
+    // is 0.9375 and the meadow class's presence follows it (1,400 near and
+    // 4,619 far with the canopy floor at 0.5). In the open meadow at
+    // (369, -855) the grass is 1.5 whatever the floor.
+    const canopy = collectClutter(627994160, 123, -105.5)[CLUTTER_MEADOW]!;
+    expect([canopy.near.length, canopy.far.length]).toEqual([2674, 8719]);
+    const meadow = collectClutter(627994160, 369, -855)[CLUTTER_MEADOW]!;
+    expect([meadow.near.length, meadow.far.length]).toEqual([3168, 10166]);
+  }, 30_000);
+
   it("assigns every instance to the right band by distance", () => {
     const bands = collectClutter(SEED, CAM.x, CAM.z);
     expect(bands.length).toBe(CLUTTER_CLASS_COUNT);

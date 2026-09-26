@@ -36,7 +36,10 @@ const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
   // grass: 987 -> 2491 on 2026-09-24 (the canopy floor rose from 0.15 to
   // 0.5, so grass now clears this class's threshold under closed canopy
   // where it used to thin below it).
-  [600, -3000, 2491, 1727801207],
+  // grass: 2491 -> 4089 on 2026-09-26 (the canopy floor rose from 0.5 to
+  // 0.75, and the interior boost starts under a closed canopy: the grass
+  // there reads 0.9375 where it read 0.5).
+  [600, -3000, 4089, -967803690],
   [-200, -3000, 325, -601764019],
   [1800, -2200, 7, 570987439],
   [-600, -1400, 3, 956292241],
@@ -48,7 +51,9 @@ const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
   // flower: 105 -> 281 on 2026-09-23 (its base is the same field's grass reading).
   // flower: 281 -> 586 on 2026-09-24 (the canopy floor rose from 0.15 to
   // 0.5, raising the same field's grass reading flower is based on).
-  [600, -3000, 586, -1819412639],
+  // flower: 586 -> 958 on 2026-09-26 (the canopy floor rose from 0.5 to
+  // 0.75, raising the same reading again under closed canopy).
+  [600, -3000, 958, 1295794979],
   // litter: along the stem near the trailhead, not near the world origin.
   // 111 -> 164 on 2026-09-24 (CLUTTER_LITTER_D 0.6 -> 0.9: a neglected trail
   // carries more stray stone and twig litter along its margin).
@@ -679,6 +684,13 @@ describe("the level id does not move", () => {
     // CLIFF_BURY_STEP, CLIFF_BURY_MAX and CLIFF_BURY_SAMPLE (registryDigest
     // moves), and the boxes in probe chunk [-1, -15] grow uphill
     // (probeDigest moves).
-    expect(passHash()).toBe(923719637);
+    // Re-baselined 2026-09-26 from 923719637: CLUTTER_GRASS_CANOPY_FLOOR
+    // rose from 0.5 to 0.75, an existing CLUTTER_TUNABLES value, so
+    // registryDigest moves; probeDigest does not, since no pass emits a
+    // collider from the grass. Under a closed canopy the ground cover's
+    // grass now reads 0.9375 where it read 0.5, so a peer on the old floor
+    // scatters grass, meadow cards and flowers differently under every
+    // closed canopy. Deliberate: an old client cannot join a new host.
+    expect(passHash()).toBe(1907808213);
   });
 });

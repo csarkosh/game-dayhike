@@ -354,7 +354,8 @@ describe("the cards beside the blade field", () => {
   it("keeps every meadow near card under the blade field, dithering in from the eye", () => {
     const want = collectClutter(1, 35, 21335)[CLUTTER_MEADOW]!.near.length;
     expect(want).toBeGreaterThan(0);
-    expect(want).toBe(2800);
+    // 2800 while the canopy floor was 0.5: one more card under the canopy.
+    expect(want).toBe(2801);
     for (const nearBlades of [true, false]) {
       const { scene, assets, clutter, engine } = build(nearBlades);
       const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");

@@ -62,8 +62,8 @@ export const SWARD_FLOOR: Rgb = { r: 0.05, g: 0.065, b: 0.03 };
 /** The pull toward SWARD_FLOOR at full cover. */
 export const SWARD_MAX = 0.6;
 /** The ground cover (the blade field's strength, min(1, grass)) the pull
- * ramps over: nothing where the field stops growing, full at the canopy
- * floor's half sward. */
+ * ramps over: nothing where the field stops growing, full from half cover,
+ * which every closed canopy's sward is above. */
 export const SWARD_COVER: readonly [number, number] = [0.05, 0.5];
 /** Eye distance (m) the pull fades out over: gone by the blade field's
  * reach, so the open floor beyond 18 m is unchanged. */

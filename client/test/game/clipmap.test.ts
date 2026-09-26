@@ -448,10 +448,13 @@ describe("terrain cover channel", () => {
     // sward stands on floor-textured ground.
     const ring = createRingSamples(SEED, 0, 0, 0);
     expect(ring.cover.length).toBe(16641);
+    // (102, 4) is under a closed canopy and (60, 0) under a thinning one:
+    // 0.9375 and 0.463… there (0.5 and 0.3087129490878816 while the canopy
+    // floor was 0.5).
     const cases: [number, number, number][] = [
       [40, 61, 0],
-      [102, 4, 0.5],
-      [60, 0, 0.3087129490878816],
+      [102, 4, 0.9375],
+      [60, 0, 0.4630694091320038],
     ];
     for (const [ix, iz, want] of cases) {
       expect(ring.cover[iz * SIDE + ix], `vertex ${ix},${iz}`).toBeCloseTo(want, 6);

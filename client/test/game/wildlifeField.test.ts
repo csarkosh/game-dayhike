@@ -9,7 +9,7 @@ import { SAND_TOP } from "../../src/game/terrainSurface.js";
 import {
   SPECIES_COUNT, SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST,
   SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE, SPECIES_BUTTERFLY, WILDLIFE_CELL, WILDLIFE_RADIUS, ELK_ROAD_CLEAR,
-  RABBIT_COVER_RADIUS, GULL_BAND, GIANT_MODEL_HEIGHT, RAVEN_ROOST_ALT_FLOOR, RAVEN_ROOST_CLEARANCE,
+  RABBIT_COVER_RADIUS, RABBIT_GRASS_FLOOR, GULL_BAND, GIANT_MODEL_HEIGHT, RAVEN_ROOST_ALT_FLOOR, RAVEN_ROOST_CLEARANCE,
   wildlifeUnitInCell, wildlifeUnitsInDisc, createWildlifeCollector,
   groundAnchor,
   type WildlifeUnit,
@@ -123,6 +123,11 @@ describe("wildlife placement census", () => {
       // rabbit units over the 4 km × 4 km census. [floor(0.5·min), ceil(1.5·max)].
       // Re-measured 2026-09-24 at RABBIT_GRASS_FLOOR 0.55, after the forest floor
       // put grass under the canopy: 1441, 1343, 1136 — inside the same band.
+      // Re-measured 2026-09-26 at RABBIT_GRASS_FLOOR 0.95, after the canopy
+      // floor rose to 0.75 and a closed canopy's grass to 0.9375: 1472, 1392,
+      // 1172 — inside the same band. At 0.55 the census rose to 4084, 4576,
+      // 3158, most of them under closed canopy, and this band caught it.
+      expect(RABBIT_GRASS_FLOOR).toBe(0.95);
       expect(units.length).toBeGreaterThanOrEqual(487);
       expect(units.length).toBeLessThanOrEqual(1752);
       for (const r of units) {

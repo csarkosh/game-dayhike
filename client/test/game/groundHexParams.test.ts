@@ -130,7 +130,7 @@ describe("the sward floor", () => {
 
   it("pulls by the cover inside the reach and not at all past it", () => {
     expect(swardWeight(1, 5)).toBeCloseTo(0.6, 10);
-    expect(swardWeight(0.5, 5)).toBeCloseTo(0.6, 10); // the canopy floor's half sward is full cover
+    expect(swardWeight(0.5, 5)).toBeCloseTo(0.6, 10); // half cover is already full pull
     expect(swardWeight(0.275, 5)).toBeCloseTo(0.3, 10);
     expect(swardWeight(0.05, 5)).toBe(0); // where the blade field stops growing
     expect(swardWeight(0, 5)).toBe(0);

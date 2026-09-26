@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { CLUTTER_GRASS, CLUTTER_GRASS_BOOST, CLUTTER_GRASS_CANOPY_FLOOR, CLUTTER_LITTER, groundCover } from "../../src/sim/clutter.js";
+import { CLUTTER_GRASS, CLUTTER_LITTER, groundCover } from "../../src/sim/clutter.js";
 import { instanceMatrixFor, LITTER_VARIANT_SCALE } from "../../src/game/clutterMeshes.js";
 import { bladeCellAt } from "../../src/game/bladeField.js";
 import { DUFF_CHARACTER_COUNT } from "../../src/game/duffClump.js";
@@ -13,11 +13,11 @@ import {
 const SEED = 1;
 // A point deep under forest canopy, well off the trail: measured, the
 // ground-cover field's duff sits at its full-canopy plateau — the share
-// term `1 - CLUTTER_GRASS_CANOPY_FLOOR / CLUTTER_GRASS_BOOST`, two thirds —
-// at 1680 of the 1681 points of its 40 m neighbourhood at 1 m spacing — the
-// one exception, (460, -615), is 0.6621091594767639 — so every cell the
-// tests below touch is non-null, and all but that one exception carry the
-// same strength.
+// term `1 - grass / CLUTTER_GRASS_BOOST` at the closed canopy's grass of
+// 0.9375, three eighths — at 1680 of the 1681 points of its 40 m
+// neighbourhood at 1 m spacing — the one exception, (460, -615), is
+// 0.38563991224989613 — so every cell the tests below touch is non-null, and
+// all but that one exception carry the same strength.
 const CAM = { x: 480, z: -600 };
 const REACH = DUFF_REACH.high;
 
@@ -106,34 +106,33 @@ describe("one cell", () => {
     expect(c.hash).toBeLessThan(1);
     expect(c.character).toBe(duffCharacterFor(c.characterDraw));
     expect(duffCellAt(SEED, Math.floor(c.x / DUFF_CELL), Math.floor(c.z / DUFF_CELL))).toEqual(c);
-    // This point's own local plateau — the field's share term at the
-    // canopy floor, `1 - CLUTTER_GRASS_CANOPY_FLOOR / CLUTTER_GRASS_BOOST`
-    // (two thirds) — holds at all but one of the 1681 points across its
-    // 40 m neighbourhood at 1 m spacing (see the comment on CAM above) — not
-    // a hard ceiling the field enforces: rarer points elsewhere on this same
-    // seed run well above it, toward the field's true mathematical bound of
-    // 1. Pinned both ways: the derivation, so it moves with the constants,
-    // and a literal bound below the old canopy floor's plateau (0.9), so a
-    // revert of the floor is caught even if the derivation is reverted too.
-    expect(c.strength).toBeCloseTo(1 - CLUTTER_GRASS_CANOPY_FLOOR / CLUTTER_GRASS_BOOST, 6);
+    // This point's own local plateau — the field's share term under a
+    // closed canopy, `1 - 0.9375 / CLUTTER_GRASS_BOOST` (three eighths; two
+    // thirds while the canopy floor was 0.5 and the boost had not started) —
+    // holds at all but one of the 1681 points across its 40 m neighbourhood
+    // at 1 m spacing (see the comment on CAM above) — not a hard ceiling the
+    // field enforces: rarer points elsewhere on this same seed run well above
+    // it, toward the field's true mathematical bound of 1. Pinned as a
+    // literal, and with a bound below the 0.15 floor's 0.9 plateau.
+    expect(c.strength).toBe(0.375);
     expect(c.strength).toBeLessThan(0.8); // the old 0.15 floor's 0.9 plateau fails this
   });
 
   it("ties the strength at a cell whose duff sits strictly between the floor and its own local plateau", () => {
     // (400, -484) is deliberately off both rails: `duffCellAt(1, 400, -484)`
-    // measures strength 0.40994507745996644, comfortably clear of
-    // DUFF_STRENGTH_FLOOR (0.05) and of the two-thirds plateau above, and
-    // stable across its own neighbourhood (measured 0.37194061844900844 to
-    // 0.44758359971092576 over the ±1 m square around the cell's own
-    // jittered point) — so the tie holds for a representative mid-band
-    // cell, not only a pinned extreme.
+    // measures strength 0.20112063523691187, clear of DUFF_STRENGTH_FLOOR
+    // (0.05) and of the three-eighths plateau above, and stable across its
+    // own neighbourhood (measured 0.17975068155818372 to 0.22346091792616454
+    // over the ±1 m square around the cell's own jittered point) — so the tie
+    // holds for a representative mid-band cell, not only a pinned extreme.
+    // With the canopy floor at 0.5 it read 0.40994507745996644.
     const ci = 400, cj = -484;
     const c = duffCellAt(SEED, ci, cj);
     expect(c).not.toBeNull();
     const cell = c as DuffCell;
     expect(cell.strength).toBe(groundCover(SEED, cell.x, cell.z).duff);
-    expect(cell.strength).toBeGreaterThan(0.2);
-    expect(cell.strength).toBeLessThan(0.8);
+    expect(cell.strength).toBeGreaterThan(0.1);
+    expect(cell.strength).toBeLessThan(0.3);
   });
 
   it("emits nothing where the gate is under the floor, and every emitted cell clears it", () => {
