@@ -16,12 +16,13 @@ import type { QualityTier } from "./quality.js";
 export type EngineName = "webgl2" | "webgpu";
 
 /** WebGPU as the default on the tiers below. Off until the parity and frame
- * gates pass; until then only `?engine=webgpu` reaches it. */
-export const WEBGPU_ON_HIGH = false;
+ * gates pass on each of them; until then only `?engine=webgpu` reaches it. */
+export const WEBGPU_ENABLED = false;
 
-/** The tiers the WebGPU default applies to. Medium, low and the landing
+/** The tiers the WebGPU default applies to: high, and medium, where detection
+ * puts most desktop Chromium players (`quality.ts`). Low and the landing
  * backdrop stay WebGL2. */
-export const WEBGPU_TIERS: readonly QualityTier[] = ["high"];
+export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"];
 
 /**
  * What the device is created with, and what an adapter must reach to be
@@ -94,7 +95,7 @@ export type EngineInput = {
   override: EngineName | null;
   /** The remembered fallback holds (`fallbackHolds`). */
   remembered: boolean;
-  /** `WEBGPU_ON_HIGH`, passed in so the rule can be tested both ways. */
+  /** `WEBGPU_ENABLED`, passed in so the rule can be tested both ways. */
   on: boolean;
   /** The adapter's verdict, or null before it has been asked. */
   fits: boolean | null;

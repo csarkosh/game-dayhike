@@ -44,7 +44,7 @@ import {
   safeStorage,
   withEngine,
   writeFallback,
-  WEBGPU_ON_HIGH,
+  WEBGPU_ENABLED,
   type EngineEnv,
   type EngineInput,
 } from "./game/engineChoice.js";
@@ -567,7 +567,7 @@ function render(container: HTMLDivElement): void {
     tier,
     override: parseEngineOverride(location.search),
     remembered: fallbackHolds(readFallback(localStore()), engineEnv(), Date.now()),
-    on: WEBGPU_ON_HIGH,
+    on: WEBGPU_ENABLED,
     fits: null,
   };
   if (chooseEngine(input) === "webgl2") {

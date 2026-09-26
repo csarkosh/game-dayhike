@@ -3,7 +3,7 @@ import {
   adapterFits, browserMajor, chooseEngine, createStartupWindow, failureAction, fallbackHolds, parseEngineOverride,
   parseTierOverride, readFallback, recordFailure, safeStorage, takeNotice, leaveNotice, withEngine, writeFallback,
   FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
-  NOTICE_SWITCHED, STARTUP_MAX_MS, STARTUP_QUIET_MS, WEBGPU_ON_HIGH, WEBGPU_REQUIRED_LIMITS, WEBGPU_START_MS,
+  NOTICE_SWITCHED, STARTUP_MAX_MS, STARTUP_QUIET_MS, WEBGPU_ENABLED, WEBGPU_REQUIRED_LIMITS, WEBGPU_START_MS,
   WEBGPU_TIERS,
 } from "../../src/game/engineChoice.js";
 
@@ -30,8 +30,10 @@ describe("chooseEngine", () => {
     expect(chooseEngine(high)).toBe("probe");
     expect(chooseEngine({ ...high, fits: true })).toBe("webgpu");
     expect(chooseEngine({ ...high, fits: false })).toBe("webgl2");
-    expect(chooseEngine({ ...high, tier: "medium" })).toBe("webgl2");
+    expect(chooseEngine({ ...high, tier: "medium" })).toBe("probe");
+    expect(chooseEngine({ ...high, tier: "medium", fits: true })).toBe("webgpu");
     expect(chooseEngine({ ...high, tier: "low" })).toBe("webgl2");
+    expect(chooseEngine({ ...high, tier: "low", fits: true })).toBe("webgl2");
     expect(chooseEngine({ ...high, on: false })).toBe("webgl2");
     expect(chooseEngine({ ...high, remembered: true })).toBe("webgl2");
     expect(chooseEngine({ ...high, override: "webgl2", fits: true })).toBe("webgl2");
@@ -43,15 +45,15 @@ describe("chooseEngine", () => {
     expect(chooseEngine({ ...forced, fits: false })).toBe("webgl2");
   });
   it("ships switched off", () => {
-    expect(WEBGPU_ON_HIGH).toBe(false);
+    expect(WEBGPU_ENABLED).toBe(false);
   });
-  it("applies to the tiers one constant names, the high tier alone", () => {
-    expect(WEBGPU_TIERS).toEqual(["high"]);
-    // Taking medium in is a change to that constant alone: the rule reads it.
+  it("applies to the tiers one constant names: high and medium, never low", () => {
+    expect(WEBGPU_TIERS).toEqual(["high", "medium"]);
+    // A change of tiers is a change to that constant alone: the rule reads it.
     const medium = { ...high, tier: "medium" as const };
-    expect(chooseEngine(medium, ["medium", "high"])).toBe("probe");
-    expect(chooseEngine({ ...medium, fits: true }, ["medium", "high"])).toBe("webgpu");
-    expect(chooseEngine({ ...high, tier: "low" }, ["medium", "high"])).toBe("webgl2");
+    expect(chooseEngine(medium, ["high"])).toBe("webgl2");
+    expect(chooseEngine({ ...medium, fits: true }, ["high"])).toBe("webgl2");
+    expect(chooseEngine(high, ["high"])).toBe("probe");
     expect(chooseEngine(high, [])).toBe("webgl2");
   });
 });
