@@ -69,7 +69,7 @@ describe("signPosts", () => {
     ]);
   });
 
-  it("breaks a tie in trail distance toward the arm with the lower neighbour, whichever edge is walked first", () => {
+  it("breaks a tie in trail distance toward the arm with the lower neighbour, and fills the losing arm with a place other than the Summit", () => {
     // From the junction at node 1, two equal branches (via 3 and via 2, the
     // edge to 3 listed first) meet again at the Summit, 161.8 m either way.
     const node = (x: number, z: number) => ({ x, z, h: 0, u: 0 });
@@ -82,10 +82,23 @@ describe("signPosts", () => {
     expect(posts).toHaveLength(1);
     expect(posts[0]!.arms.map((a) => ({ dz: a.dz, names: a.names, ranks: a.ranks }))).toEqual([
       { dz: 0, names: ["Trailhead"], ranks: [1] },
-      // The arm by node 3 loses the tie, so it wins nothing and names its
-      // nearest place, the Summit, below the trailhead's 100 m.
-      { dz: -1, names: ["Summit"], ranks: [2] },
+      // The arm by node 3 loses the tie and wins nothing. The Summit is the
+      // only place down it, so it names the nearest other place by way of
+      // the junction: the trailhead, 50 + 50 + 100 m.
+      { dz: -1, names: ["Trailhead"], ranks: [2] },
       { dz: 1, names: ["Summit"], ranks: [0] },
+    ]);
+
+    // With a lake past the Summit, the losing arm names the lake down its own
+    // branch (161.8 + 100 m), not the nearer Summit; the lake itself goes to
+    // the winning arm, tied at the same distance.
+    g.nodes.push(node(200, 0));
+    g.edges.push(edge(4, 5));
+    const withLake = signPosts(g, [{ name: SUMMIT_LABEL, x: 100, z: 0 }, { name: "Far Lake", x: 200, z: 0 }]);
+    expect(withLake[0]!.arms.map((a) => ({ names: a.names, ranks: a.ranks }))).toEqual([
+      { names: ["Trailhead"], ranks: [1] },
+      { names: ["Far Lake"], ranks: [3] },
+      { names: ["Summit", "Far Lake"], ranks: [0, 2] },
     ]);
   });
 

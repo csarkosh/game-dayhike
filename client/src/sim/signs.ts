@@ -151,10 +151,11 @@ type Plank = { arm: number; name: string; dist: number };
  * at its nearest node. Every place reachable that way goes on the post once,
  * on the arm with the shortest distance to it (ties to the arm whose
  * neighbour has the lower node id). An arm that wins nothing still gets one
- * plank, naming the nearest place down it — the one way a name repeats on a
- * post — and a dead-end arm, with nothing named beyond it, names the nearest
- * place found by a walk from its neighbour that may cross back through the
- * junction. A place at the junction's own node is never named on its post.
+ * plank, naming the nearest place down it other than the Summit — the one way
+ * a name repeats on a post — and an arm with no such place beyond it names the
+ * nearest one found by a walk from its neighbour that may cross back through
+ * the junction; only where no other place can be reached at all does it name
+ * the Summit a second time. A place at the junction's own node is never named on its post.
  * The Summit's plank is the post's top one; the rest follow nearest first.
  */
 export function signPosts(graph: TrailGraph, sites: readonly NamedSite[]): SignPost[] {
@@ -216,10 +217,18 @@ export function signPosts(graph: TrailGraph, sites: readonly NamedSite[]): SignP
     const planks: Plank[] = [...best.values()];
     const summit = best.get(SUMMIT_LABEL);
     // An arm that wins nothing names its nearest place anyway, however far
-    // round, so no board points down a branch in silence.
+    // round, so no board points down a branch in silence — but never the
+    // Summit, which points only down its shortest way while any other place
+    // can stand in for it.
+    const notSummit = (found: readonly { name: string; dist: number }[]) => found.find((f) => f.name !== SUMMIT_LABEL);
     for (const [a, { to, len }] of out.entries()) {
       if (planks.some((p) => p.arm === a)) continue;
-      const nearest = (byArm[a] as { name: string; dist: number }[])[0] ?? reach(to, -1, j, len, 1)[0];
+      const down = byArm[a] as { name: string; dist: number }[];
+      let nearest = notSummit(down);
+      if (nearest === undefined) {
+        const round = reach(to, -1, j, len, elsewhere.size);
+        nearest = notSummit(round) ?? down[0] ?? round[0];
+      }
       if (nearest !== undefined) planks.push({ arm: a, name: nearest.name, dist: nearest.dist });
     }
     planks.sort((p, q) => {

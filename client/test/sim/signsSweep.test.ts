@@ -69,13 +69,11 @@ describe("sign posts on real worlds", { timeout: 120_000 }, () => {
         // Ranks run 0, 1, 2, ... down the post.
         expect(p.arms.flatMap((a) => a.ranks).sort((x, y) => x - y), at).toEqual(all.map((_, k) => k));
         for (const a of p.arms) expect(a.names.length, at).toBeGreaterThanOrEqual(1);
-        // A name twice only when one of its arms carries nothing else.
+        // A name repeats only on arms that carry nothing else: of the arms
+        // naming it, at most one has another plank.
         for (const name of new Set(all)) {
           const on = p.arms.filter((a) => a.names.includes(name));
-          if (on.length > 1) {
-            expect(on, `${at} ${name}`).toHaveLength(2);
-            expect(on.some((a) => a.names.length === 1), `${at} ${name}`).toBe(true);
-          }
+          expect(on.filter((a) => a.names.length > 1).length, `${at} ${name}`).toBeLessThanOrEqual(1);
         }
       }
       const grid = createChunkGrid(seed);
