@@ -120,6 +120,25 @@ const UNDERSTORY_URLS = [
 /** Impostor bake resolution — a quad this far away needs no more. */
 const IMPOSTOR_BAKE_SIZE = 256;
 
+/** A bake still waiting on its shaders this long says so, once, and goes on
+ * waiting: late is better than never, but late must be visible. */
+export const IMPOSTOR_BAKE_WARN_MS = 30_000;
+
+/** How a bake is told to stop, and when it should say it is still waiting. */
+export type BakeOptions = {
+  /** Aborted when the forest is disposed: the bake then stops polling,
+   * disposes its target and resolves null without a word. */
+  signal?: AbortSignal;
+  /** When to say the bake is still waiting; `IMPOSTOR_BAKE_WARN_MS` if unset. */
+  warnMs?: number;
+};
+
+/** One billboard's bake, as the forest last saw it: still baking, landed
+ * (`ready`, its bucket drawing once filled), or `failed` (null, or rejected:
+ * the bucket stays off, and the console has said so). `ms` is how long it
+ * took to settle, null while baking. */
+export type ImpostorBake = { name: string; state: "baking" | "ready" | "failed"; ms: number | null };
+
 /** The snag billboard bakes from an UPRIGHT clone. `deadwood.snag` is
  * modelled lying down (long axis on local X — see `deadwoodMatrixBuffer`), so
  * an un-posed bake would billboard a felled trunk against standing ones; this
@@ -147,14 +166,15 @@ export type ForestMeshesOptions = {
   } | null;
   /** NullEngine escape hatch: render targets lie under NullEngine, so tests
    * inject a stub. A null bake (sync or resolved) DISABLES that billboard's
-   * bucket — far trees drop out rather than draw grey quads. The production
-   * default is async: it must wait out shader compilation. Same parameter
-   * order as `defaultBakeImpostor`, trailing options and all: `timeoutMs`
-   * third, the optional bake `pose` (the snag's upright roll) fourth. */
+   * bucket — far trees drop out rather than draw grey quads — and says so in
+   * the console. The production default is async: it must wait out shader
+   * compilation. Same parameter order as `defaultBakeImpostor`: the bake
+   * options (the forest's abort signal) third, the optional bake `pose` (the
+   * snag's upright roll) fourth. */
   bakeImpostor?: (
     mesh: Mesh,
     scene: Scene,
-    timeoutMs?: number,
+    options?: BakeOptions,
     pose?: Quaternion,
   ) => Texture | null | Promise<Texture | null>;
   /** Near-band radius override — the quality-tier knob (low = 140). */
@@ -172,6 +192,10 @@ export type ForestMeshes = {
    * must watch its length, not snapshot it at creation.
    */
   readonly casterMeshes: readonly Mesh[];
+  /** Every billboard's bake as it stands, in the order the billboards were
+   * made: what a far forest missing from view can be traced to. Empty until
+   * the models have loaded. */
+  impostorBakes(): readonly ImpostorBake[];
   dispose(): void;
 };
 
@@ -193,6 +217,10 @@ type Impostor = {
   /** Vertical centre of the quad in tree-local metres — the quad is
    * origin-centred, the tree origin is at its footprint base. */
   centreY: number;
+  /** Its bake as the forest last saw it (`ForestMeshes.impostorBakes`). */
+  bake: ImpostorBake;
+  /** When that bake was kicked off (`performance.now()`), for its `ms`. */
+  bakeStartedAt: number;
   /** True once a bake texture landed on the material. Until then — and
    * forever, if the bake returned null or failed — the bucket stays
    * disabled: an untextured alpha-test material draws opaque grey. */
@@ -613,9 +641,20 @@ const IMPOSTOR_BAKE_LAYER = 0x10000000;
  * browser; the readiness-gate ordering is unit-tested by spying the RTT
  * prototype. Exported for those tests.
  *
- * A bake that never becomes ready (`timeoutMs`, test hook) resolves null,
- * which disables that billboard's bucket — far trees drop out instead of
- * drawing 3,200 opaque grey quads.
+ * There is no deadline. A budget would be a guess per engine and per machine:
+ * the old 5 s one timed out, silently, under WebGPU's run-time shader
+ * translation, and a slow machine on WebGL2 can miss it too, and either way the
+ * far forest was gone for the life of the page with nothing said. The bake
+ * ends in one of three ways:
+ * - ready: it renders once and resolves the texture;
+ * - failed: a bake clone's effect reports a compilation error, which it logs
+ *   (one `console.error` naming the model) before resolving null, which
+ *   disables that billboard's bucket (far trees drop out rather than draw
+ *   3,200 opaque grey quads);
+ * - aborted: `options.signal` fires (the forest was disposed), and it disposes
+ *   its target and resolves null without a word.
+ * Still waiting at `options.warnMs` (`IMPOSTOR_BAKE_WARN_MS`), it says so once
+ * and waits on.
  *
  * `pose` rotates the bake clone before anything is measured, for a model
  * whose rest orientation is not how it stands in the world: `deadwood.snag`
@@ -628,7 +667,7 @@ const IMPOSTOR_BAKE_LAYER = 0x10000000;
 export async function defaultBakeImpostor(
   mesh: Mesh,
   scene: Scene,
-  timeoutMs = 5000,
+  options: BakeOptions = {},
   pose?: Quaternion,
 ): Promise<Texture | null> {
   // Clones share geometry and materials with the source; identical vertex
@@ -700,13 +739,27 @@ export async function defaultBakeImpostor(
 
     // Readiness under the BAKE pass and camera (see the function comment):
     // each poll triggers the missing compiles and texture loads, so this
-    // normally settles in a few frames' worth of 16 ms hops.
-    const deadline = performance.now() + timeoutMs;
-    while (!rtt.isReadyForRendering()) {
-      if (performance.now() >= deadline) {
-        camera.dispose();
-        rtt.dispose();
-        return null;
+    // normally settles in a few frames' worth of 16 ms hops. No deadline: it
+    // ends ready, failed or aborted.
+    const warnMs = options.warnMs ?? IMPOSTOR_BAKE_WARN_MS;
+    const warnAt = performance.now() + warnMs;
+    let warned = false;
+    const stop = (): null => {
+      camera.dispose();
+      rtt.dispose();
+      return null;
+    };
+    for (;;) {
+      if (options.signal?.aborted) return stop();
+      const error = compilationError(bakeMeshes, rtt.renderPassId);
+      if (error !== null) {
+        console.error(`forest impostor bake failed: ${mesh.name}: ${error}`);
+        return stop();
+      }
+      if (rtt.isReadyForRendering()) break;
+      if (!warned && performance.now() >= warnAt) {
+        warned = true;
+        console.error(`forest impostor bake still waiting after ${Math.round(warnMs / 1000)} s: ${mesh.name}`);
       }
       await new Promise((resolve) => setTimeout(resolve, 16));
     }
@@ -720,6 +773,19 @@ export async function defaultBakeImpostor(
     // exclusively by this bake, never shared with the live buckets.
     clone.dispose(false, true);
   }
+}
+
+/** The first compilation error any of `meshes` reports under render pass
+ * `renderPassId`, or null. Reads the pass's draw wrapper without creating one,
+ * so a poll changes nothing. */
+function compilationError(meshes: readonly Mesh[], renderPassId: number): string | null {
+  for (const mesh of meshes) {
+    for (const subMesh of mesh.subMeshes ?? []) {
+      const error = subMesh._getDrawWrapper(renderPassId)?.effect?.getCompilationError();
+      if (error) return error;
+    }
+  }
+  return null;
 }
 
 /**
@@ -751,6 +817,10 @@ export function createForestMeshes(
   const ringOutBand = (s: readonly [number, number]): readonly [number, number] =>
     s[1] <= nearRadius ? s : nearSeamBand;
   const bakeImpostor = options.bakeImpostor ?? defaultBakeImpostor;
+  // One signal for every bake: `dispose` aborts it first thing, so a bake
+  // still waiting on its shaders stops polling and lets its target go.
+  const bakes = new AbortController();
+  const bakeOptions: BakeOptions = { signal: bakes.signal };
   // Memoizing collector, not the pure collectBands: a rebuild happens on every
   // 12 m tree-cell crossing, and re-sampling the whole ~112k-cell impostor
   // disc each time stalls the main thread 25–33 ms. The collector re-samples
@@ -761,6 +831,8 @@ export function createForestMeshes(
   const containers: AssetContainer[] = [];
   const materials: Material[] = [];
   const textures: Texture[] = [];
+  /** Every billboard, in the order made, for `impostorBakes`. */
+  const impostors: Impostor[] = [];
   let species: SpeciesBuckets[] | null = null;
   // Regeneration saplings, per species (index-aligned with `species`): the
   // same shape the giants get, once they got their own billboard.
@@ -794,14 +866,24 @@ export function createForestMeshes(
   /**
    * A bake landing on a billboard. A null texture — or a bake that failed —
    * leaves `ready` false forever, so the bucket never enables: far trees drop
-   * out rather than draw opaque grey quads.
+   * out rather than draw opaque grey quads. Never silently: the console names
+   * the billboard, and its record says `failed`. A null after `dispose` is the
+   * abort, and says nothing.
    */
   function adoptBake(imp: Impostor, mat: PBRMaterial, texture: Texture | null): void {
-    if (texture === null) return;
+    if (texture === null) {
+      if (disposed) return;
+      imp.bake.state = "failed";
+      imp.bake.ms = performance.now() - imp.bakeStartedAt;
+      console.error(`forest impostor: no bake for ${imp.bake.name}`);
+      return;
+    }
     if (disposed) {
       texture.dispose();
       return;
     }
+    imp.bake.state = "ready";
+    imp.bake.ms = performance.now() - imp.bakeStartedAt;
     textures.push(texture);
     mat.albedoTexture = texture;
     mat.useAlphaFromAlbedoTexture = true;
@@ -851,8 +933,11 @@ export function createForestMeshes(
       // not silently wrong.
       bucket: { meshes: [plane], fade: fadeBands(seamNear(nearRadius), SEAM_FAR) },
       centreY,
+      bake: { name: plane.name, state: "baking", ms: null },
+      bakeStartedAt: performance.now(),
       ready: false,
     };
+    impostors.push(impostor);
 
     // A synchronous bake (the NullEngine stubs) lands before this function
     // returns; the async production bake lands whenever its shaders finish
@@ -883,7 +968,7 @@ export function createForestMeshes(
     // the meshes as loaded — enabled and free of thin instances. Impostor
     // texture from LOD1 — detailed enough for a 256² bake, cheaper than LOD0.
     const lod1First = lods[1][0];
-    const bake = lod1First === undefined ? null : bakeImpostor(lod1First, scene);
+    const bake = lod1First === undefined ? null : bakeImpostor(lod1First, scene, bakeOptions);
 
     for (const mesh of [...lods.flat(), ...(understory ?? [])]) prepBucketMesh(mesh);
 
@@ -1054,11 +1139,10 @@ export function createForestMeshes(
     // The snag's bake, kicked BEFORE `adoptBucket` disables the deadwood
     // meshes — the same rule `adoptSpecies` records for the tree bakes — and
     // posed upright, because the asset is modelled lying down (`SNAG_POSE`).
-    // `timeoutMs` stays defaulted; it is the third parameter, the pose the
-    // fourth.
+    // The bake options are the third parameter, the pose the fourth.
     const snagSource = loaded.deadwood[0];
     const snagBake =
-      snagSource === undefined ? null : bakeImpostor(snagSource, scene, undefined, SNAG_POSE);
+      snagSource === undefined ? null : bakeImpostor(snagSource, scene, bakeOptions, SNAG_POSE);
 
     // Both dead-tree roles end at the near seam: the SNAG half cross-fades
     // into its billboard there, and a ~1 m log is sub-pixel beyond it and
@@ -1405,9 +1489,14 @@ export function createForestMeshes(
       maybeBuild();
     },
     casterMeshes,
+    impostorBakes() {
+      return impostors.map((imp) => ({ ...imp.bake }));
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
+      // First: a bake still waiting stops polling and releases its target.
+      bakes.abort();
       for (const sp of [...(species ?? []), ...(saplingSpecies ?? [])]) {
         for (const bucket of [...sp.lods, sp.understory, sp.impostor.bucket]) {
           if (bucket === null) continue;

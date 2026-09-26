@@ -1,4 +1,7 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
@@ -48,6 +51,8 @@ import { attachFoliage, FOLIAGE_PROFILES, FoliagePlugin } from "../../src/game/f
 import {
   createForestMeshes,
   defaultBakeImpostor,
+  IMPOSTOR_BAKE_WARN_MS,
+  type BakeOptions,
   type SpeciesMeshes,
 } from "../../src/game/forestMeshes.js";
 import { macroNoise, macroTint } from "../../src/game/groundHexParams.js";
@@ -173,6 +178,12 @@ type BufferSpy = { mock: { calls: unknown[][]; instances: unknown[] } };
 
 describe("createForestMeshes under NullEngine", () => {
   const engines: NullEngine[] = [];
+  // The harness's default bake is null (NullEngine render targets lie), and
+  // a null bake now reports itself; kept out of the output here, and read
+  // back by the tests about it.
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
   afterEach(() => {
     // Prototype-level spies (`uploadedBuffer`'s) MUST be torn down even when
     // the test that installed one failed first: `vi.spyOn` on an inherited
@@ -186,15 +197,15 @@ describe("createForestMeshes under NullEngine", () => {
 
   function build(
     nearRadius?: number,
-    // Same shape as `ForestMeshesOptions.bakeImpostor`: `timeoutMs` is the
-    // third parameter (the readiness-gate tests below pass it positionally)
-    // and the optional bake pose is the fourth — the snag's billboard is baked
-    // from an upright clone. Defaults to a null bake, which disables the
-    // bucket: NullEngine render targets lie, so no test may rely on pixels.
+    // Same shape as `ForestMeshesOptions.bakeImpostor`: the bake options (the
+    // forest's abort signal) third and the optional bake pose fourth — the
+    // snag's billboard is baked from an upright clone. Defaults to a null
+    // bake, which disables the bucket: NullEngine render targets lie, so no
+    // test may rely on pixels.
     bakeImpostor: (
       mesh: Mesh,
       scene: Scene,
-      timeoutMs?: number,
+      options?: BakeOptions,
       pose?: Quaternion,
     ) => Texture | null | Promise<Texture | null> = () => null,
   ) {
@@ -578,6 +589,68 @@ describe("createForestMeshes under NullEngine", () => {
     }
   });
 
+  it("never lets a bake drop the far forest without a word: a null bake names its billboard, and is recorded", () => {
+    const errors = vi.mocked(console.error);
+    errors.mockClear();
+    let call = 0;
+    // The first bake is the first giant species' (giant_0); it alone fails.
+    const { scene, forest } = build(undefined, (_mesh, s) => (call++ === 0 ? null : stubBakeTexture(s)));
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+    expect(errors.mock.calls.map((c) => String(c[0]))).toEqual(["forest impostor: no bake for forest_impostor_giant_0"]);
+    expect(forest.impostorBakes().map((b) => [b.name, b.state])).toEqual([
+      ["forest_impostor_giant_0", "failed"],
+      ["forest_impostor_giant_1", "ready"],
+      ["forest_impostor_sapling_0", "ready"],
+      ["forest_impostor_sapling_1", "ready"],
+      ["forest_impostor_snag", "ready"],
+    ]);
+    const planes = impostorPlanes(scene);
+    expect(planes.find((p) => p.name === "forest_impostor_giant_0")!.isEnabled()).toBe(false);
+    expect(planes.find((p) => p.name === "forest_impostor_giant_1")!.isEnabled()).toBe(true);
+  });
+
+  it("lands a slow bake whenever it comes, and records it as baking until then", async () => {
+    const errors = vi.mocked(console.error);
+    errors.mockClear();
+    let land: (() => void) | null = null;
+    const { scene, forest } = build(undefined, (_mesh, s) =>
+      new Promise<Texture | null>((resolve) => {
+        const previous = land;
+        land = () => {
+          previous?.();
+          resolve(stubBakeTexture(s));
+        };
+      }),
+    );
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+    expect(forest.impostorBakes().map((b) => b.state)).toEqual(["baking", "baking", "baking", "baking", "baking"]);
+    for (const plane of impostorPlanes(scene)) expect(plane.isEnabled()).toBe(false);
+    land!();
+    await Promise.resolve();
+    expect(forest.impostorBakes().map((b) => b.state)).toEqual(["ready", "ready", "ready", "ready", "ready"]);
+    for (const plane of impostorPlanes(scene)) expect(plane.isEnabled()).toBe(true);
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("aborts a bake still pending when the forest is disposed, and says nothing of it", async () => {
+    const errors = vi.mocked(console.error);
+    errors.mockClear();
+    const signals: (AbortSignal | undefined)[] = [];
+    const resolvers: ((t: Texture | null) => void)[] = [];
+    const { forest } = build(undefined, (_mesh, _s, options) => {
+      signals.push(options?.signal);
+      return new Promise<Texture | null>((resolve) => resolvers.push(resolve));
+    });
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+    expect(signals.length).toBe(5);
+    expect(signals.every((sg) => sg !== undefined && !sg.aborted)).toBe(true);
+    forest.dispose();
+    expect(signals.every((sg) => sg!.aborted)).toBe(true);
+    for (const resolve of resolvers) resolve(null);
+    await Promise.resolve();
+    expect(errors).not.toHaveBeenCalled();
+  });
+
   it("dispose leaves the scene meshless and is idempotent", () => {
     const { scene, forest } = build();
     forest.update(FOREST_CAM.x, FOREST_CAM.z);
@@ -928,7 +1001,7 @@ describe("createForestMeshes under NullEngine", () => {
 
   it("bakes an impostor per sapling species and one for the snag, standing up", () => {
     const poses: (Quaternion | null)[] = [];
-    const { scene, forest } = build(undefined, (_mesh, s, _timeoutMs, pose) => {
+    const { scene, forest } = build(undefined, (_mesh, s, _options, pose) => {
       poses.push(pose ?? null);
       return stubBakeTexture(s);
     });
@@ -1222,7 +1295,7 @@ describe("defaultBakeImpostor readiness gate", () => {
     // framing must read the CLONE's bounds after the pose, not the source
     // mesh's, or the standing snag's billboard is a felled one squashed into
     // a landscape quad.
-    await defaultBakeImpostor(snag, scene, 5000, Quaternion.FromEulerAngles(0, 0, Math.PI / 2));
+    await defaultBakeImpostor(snag, scene, undefined, Quaternion.FromEulerAngles(0, 0, Math.PI / 2));
 
     expect(cameras.length).toBe(2);
     const extents = cameras.map((c) => [c.orthoRight! - c.orthoLeft!, c.orthoTop! - c.orthoBottom!]);
@@ -1273,16 +1346,60 @@ describe("defaultBakeImpostor readiness gate", () => {
     }
   });
 
-  it("a gate that never opens times out to null and disposes the blank RTT", async () => {
+  it("waits past the old five seconds, warns once at thirty, and bakes when the gate opens", async () => {
+    expect(IMPOSTOR_BAKE_WARN_MS).toBe(30_000);
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     const { scene, mesh } = bakeScene();
-    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockImplementation(() => false);
-    const renderSpy = vi.spyOn(RenderTargetTexture.prototype, "render");
+    let polls = 0;
+    // A compile as slow as the translated shaders were: 2,500 polls of 16 ms.
+    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockImplementation(() => ++polls > 2_500);
+    vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => undefined);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const pending = defaultBakeImpostor(mesh, scene);
+    await vi.advanceTimersByTimeAsync(41_000);
+    expect(await pending).not.toBeNull();
+    expect(errors).toHaveBeenCalledTimes(1);
+    expect(String(errors.mock.calls[0]![0])).toBe("forest impostor bake still waiting after 30 s: s0_lod1");
+    vi.useRealTimers();
+  });
 
-    const texture = await defaultBakeImpostor(mesh, scene, 40);
-
-    // Null (bucket stays disabled) beats baking — and shipping — a blank.
-    expect(texture).toBeNull();
-    expect(renderSpy).not.toHaveBeenCalled();
+  it("resolves null on a shader error, and says so", async () => {
+    const { scene, mesh } = bakeScene();
+    const gate = vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(false);
+    vi.spyOn(SubMesh.prototype, "_getDrawWrapper").mockReturnValue(
+      { effect: { getCompilationError: () => "ERROR: 0:1: 'x' : undeclared identifier" } } as never,
+    );
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await defaultBakeImpostor(mesh, scene)).toBeNull();
+    expect(errors.mock.calls.map((c) => String(c[0]))).toEqual([
+      "forest impostor bake failed: s0_lod1: ERROR: 0:1: 'x' : undeclared identifier",
+    ]);
+    expect(gate).not.toHaveBeenCalled();
     expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
+  });
+
+  it("stops polling when aborted, disposes the target, and logs nothing", async () => {
+    const { scene, mesh } = bakeScene();
+    const gate = vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(false);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const abort = new AbortController();
+    const pending = defaultBakeImpostor(mesh, scene, { signal: abort.signal });
+    await new Promise((r) => setTimeout(r, 50));
+    abort.abort();
+    expect(await pending).toBeNull();
+    const calls = gate.mock.calls.length;
+    await new Promise((r) => setTimeout(r, 50));
+    expect(gate.mock.calls.length).toBe(calls);
+    expect(errors).not.toHaveBeenCalled();
+    expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
+  });
+
+  it("reads a compile failure where Babylon keeps it (a canary on the installed engine)", () => {
+    const require = createRequire(import.meta.url);
+    const subMesh = readFileSync(require.resolve("@babylonjs/core/Meshes/subMesh.pure.js"), "utf8");
+    // The per-pass draw wrapper, looked up without creating one.
+    expect(subMesh).toContain("    _getDrawWrapper(passId, createIfNotExisting = false) {");
+    const effect = readFileSync(require.resolve("@babylonjs/core/Materials/effect.pure.js"), "utf8");
+    expect(effect).toContain("    getCompilationError() {\n        return this._compilationError;");
   });
 });
