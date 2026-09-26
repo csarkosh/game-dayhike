@@ -8,11 +8,11 @@
 
 | Id | Kind | Origin, size, facing | Clips / roots |
 |---|---|---|---|
-| `ranger.nathan`, `ranger.eric`, `ranger.sophia`, `ranger.carla`, `ranger.claudia` | character | feet at the origin, ~1.8 m tall, faces +Z | `idle`, `walk`, `attack`, `death`; the walk is in place |
+| `ranger.nathan`, `ranger.eric`, `ranger.sophia`, `ranger.carla`, `ranger.claudia` | character | feet at the origin, 1.7–1.9 m tall, faces +Z | `idle`, `walk`, `attack`, `death`; the walk is in place |
 | `hollow.antlered` | character | feet at the origin, 1.80 m tall (player height; the game scales it), faces +Z; its eye material is the one whose emissive factor is non-zero | `idle`, `walk`, `attack`, `death`; the walk is in place |
-| `summit.body` | environment | pole base at the origin, 4.0 m tall, the hiker's front faces +Z | static, `LOD0`–`LOD2` roots |
-| `trailhead.car` | environment | footprint centre at the origin on the ground, 4.17 long (+Z forward) × 1.88 wide × 1.5 tall | static, `LOD0`–`LOD2` roots |
-| `trailhead.kiosk` | prop | footprint centre at the origin, 2.2 wide × 2.5 tall × 1.1 deep, the poster faces +Z; the poster is its own mesh whose material has no base colour texture and whose UVs span 0–1 across the 2 × 1 m board (aspect 2:1) | static, `LOD0`–`LOD2` roots |
+| `summit.body` | environment | pole base at the origin, about 4.3 m tall on a 4.0 m pole, the hiker's front faces +Z | static, `LOD0`–`LOD2` roots |
+| `trailhead.car` | environment | footprint centre at the origin on the ground, 4.36 long (+Z forward) × 1.88 wide × 1.70 tall | static, `LOD0`–`LOD2` roots |
+| `trailhead.kiosk` | prop | footprint centre at the origin, 2.2 wide × 2.5 tall × 1.1 deep, the poster faces +Z; the poster's material is the one with no base colour texture, and its primitive's UVs span 0–1 across the 2 × 1 m board (u across the width, v up the height) | static, `LOD0`–`LOD2` roots |
 | `sign.post` | prop | base at the origin, 2.21 m tall, 0.13 m square | static, `LOD0`–`LOD2` roots |
 | `sign.arm` | prop | post end at the origin, 1.095 m long along +Z (arrow tip at +Z), 0.204 m tall, 0.038 m thick, faces normal ±X | static, `LOD0`–`LOD2` roots |
 
