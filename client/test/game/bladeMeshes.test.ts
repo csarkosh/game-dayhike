@@ -18,6 +18,10 @@ import {
 } from "../../src/game/bladeMeshes.js";
 import { instanceMatrixFor, trampleFrame } from "../../src/game/clutterMeshes.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
+import { cullPlanes, type CullPose } from "../../src/game/grassCull.js";
+import { seedFromToken } from "../../src/game/seed.js";
+import { inCone } from "../../src/game/wildlifeDirector.js";
+import { elevationSampleAt } from "../../src/sim/terrain.js";
 
 // The open-field census point: every tier and every character is present.
 const SEED = 1;
@@ -94,6 +98,7 @@ describe("createBladeMeshes", () => {
     const blades = createBladeMeshes(scene, SEED, { quality: "high" });
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
     blades.update(CAM.x, CAM.z);
+    blades.cull(null);
     const tiers = createBladeCollector(SEED).collect(CAM.x, CAM.z);
     const lists = [tiers.fine, tiers.mid, tiers.coarse];
     let checked = 0;
@@ -135,6 +140,7 @@ describe("createBladeMeshes", () => {
     const scene = new Scene(engine);
     const blades = createBladeMeshes(scene, SEED, { quality: "high" });
     blades.update(CAM.x, CAM.z);
+    blades.cull(null);
     const tiers = createBladeCollector(SEED).collect(CAM.x, CAM.z);
     const lists = [tiers.fine, tiers.mid, tiers.coarse];
     for (let t = 0; t < 3; t++) {
@@ -158,14 +164,17 @@ describe("createBladeMeshes", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const blades = createBladeMeshes(scene, SEED, { quality: "medium" });
-    const spy = vi.spyOn(Mesh.prototype, "thinInstanceBufferUpdated");
+    const spy = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
     const set = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
     blades.update(CAM.x, CAM.z);
-    const afterFirst = set.mock.calls.length;
-    expect(afterFirst).toBeGreaterThan(0);
+    blades.cull(null);
+    const afterFirst = set.mock.calls.length + spy.mock.calls.length;
+    expect(set.mock.calls.length).toBeGreaterThan(0);
     blades.update(CAM.x + 0.4, CAM.z + 0.4);
+    blades.cull(null);
     expect(set.mock.calls.length + spy.mock.calls.length).toBe(afterFirst);
     blades.update(CAM.x + BLADE_REBUILD_CELL, CAM.z);
+    blades.cull(null);
     expect(set.mock.calls.length + spy.mock.calls.length).toBeGreaterThan(afterFirst);
     spy.mockRestore();
     set.mockRestore();
@@ -210,4 +219,185 @@ describe("createBladeMeshes", () => {
       expect(root.add(world.subtract(root).scale(whole)).subtract(world).length()).toBeLessThan(1e-6);
     }
   });
+});
+
+/** The gate's portrait still: 1200 × 2029 at a vertical field of view of 1.4 rad. */
+const PORTRAIT = 1200 / 2029;
+/** The two gate poses (`__fcSet(x, y, z, yaw, pitch)` on the `atmo` seed). */
+const GATE_SEED = seedFromToken("atmo");
+const CANOPY: CullPose = { x: 123, y: 110.87, z: -105.5, yaw: 1.571, pitch: 0.3, fov: 1.4, aspect: PORTRAIT };
+const MEADOW: CullPose = { x: 369, y: 51.01, z: -855, yaw: 0, pitch: 0.3, fov: 1.4, aspect: PORTRAIT };
+
+/** A bucket mesh's tier, character and size, from its name. */
+function bucketOf(mesh: Mesh): { c: number; t: number; s: number } {
+  const [, c, t, s] = /_c(\d)_t(\d)_s(\d)$/.exec(mesh.name)!.map(Number);
+  return { c: c!, t: t!, s: s! };
+}
+
+describe("the blade field culled to the frustum", () => {
+  const POSE = { x: CAM.x, y: 0, z: CAM.z, yaw: 1.571, pitch: 0.3, fov: 1.4, aspect: PORTRAIT };
+
+  it("draws each bucket's kept prefix, uploads only it, and adds no mesh", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const blades = createBladeMeshes(scene, SEED, { quality: "high" });
+    const set = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    blades.update(CAM.x, CAM.z);
+    const meshCount = scene.meshes.length;
+    const pose = { ...POSE, y: elevationSampleAt(SEED, CAM.x, CAM.z).h + 1.6 };
+    const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
+    const whole = vi.spyOn(Mesh.prototype, "thinInstanceBufferUpdated");
+    blades.cull(pose);
+    const planes = new Float32Array(20);
+    cullPlanes(pose, planes);
+    const tiers = createBladeCollector(SEED).collect(CAM.x, CAM.z);
+    const lists = [tiers.fine, tiers.mid, tiers.coarse];
+    let drawn = 0, collected = 0, enabled = 0;
+    for (const mesh of blades.meshes) {
+      const { c, t, s } = bucketOf(mesh);
+      const cells = lists[t]!.filter((cell) => cell.character === c && cell.size === s);
+      collected += cells.length;
+      // The kept cells are those whose translation the planes keep, in list order.
+      const want = cells.filter((cell) => {
+        const y = cell.groundH - 0.02; // the translation instanceMatrixFor writes: the ground less the sink
+        for (let p = 0; p < 20; p += 4) if (planes[p]! * cell.x + planes[p + 1]! * y + planes[p + 2]! * cell.z + planes[p + 3]! < -0.75) return false;
+        return true;
+      });
+      expect(mesh.isEnabled() ? mesh.thinInstanceCount : 0).toBe(want.length);
+      if (!mesh.isEnabled()) continue;
+      enabled++;
+      drawn += want.length;
+      const matrices = bufferFor(set, mesh, "matrix")!;
+      const got: number[][] = [];
+      for (let i = 0; i < mesh.thinInstanceCount; i++) got.push([matrices[i * 16 + 12]!, matrices[i * 16 + 14]!]);
+      expect(got).toEqual(want.map((cell) => [cell.x, cell.z].map(Math.fround)));
+      // The strength and the foliage prefixes are the kept cells' own.
+      const strengths = bufferFor(set, mesh, "bladeStrength")!;
+      const foliage = bufferFor(set, mesh, "foliage")!;
+      want.forEach((cell, i) => {
+        expect(strengths[i]).toBe(Math.fround(cell.strength));
+        expect(foliage[i * 4 + 3]).toBeCloseTo(1 - 0.5 * cell.canopy, 5);
+      });
+    }
+    // The prefix is a fraction of what was collected: about a fifth at this pose.
+    expect(collected).toBe(6319);
+    expect(drawn).toBe(1496);
+    expect(drawn / collected).toBeLessThan(0.35);
+    // Only prefixes are uploaded, never more than the kept count, never whole.
+    expect(partial.mock.calls.length).toBe(enabled * 3);
+    for (let k = 0; k < partial.mock.calls.length; k++) {
+      const [, len, offset] = partial.mock.calls[k]!;
+      expect(offset).toBe(0);
+      expect(len as number).toBeLessThanOrEqual((partial.mock.instances[k] as unknown as Mesh).thinInstanceCount);
+    }
+    expect(whole).not.toHaveBeenCalled();
+    // A second call at the same pose does nothing, nor does a look-around inside the thresholds.
+    partial.mockClear();
+    blades.cull(pose);
+    blades.cull({ ...pose, yaw: pose.yaw + 0.05, pitch: pose.pitch - 0.05, x: pose.x + 0.3 });
+    expect(partial).not.toHaveBeenCalled();
+    // The draw count is the buckets' own: no mesh is added, and none that drew
+    // the collected set whole is enabled that was not before.
+    expect(scene.meshes.length).toBe(meshCount);
+    blades.cull(null);
+    const wholeEnabled = blades.meshes.filter((m) => m.isEnabled()).length;
+    expect(wholeEnabled).toBe(26);
+    expect(enabled).toBe(24);
+    expect(enabled).toBeLessThanOrEqual(wholeEnabled);
+    partial.mockRestore(); whole.mockRestore(); set.mockRestore();
+    blades.dispose(); engine.dispose();
+  }, 60_000);
+
+  it("refilters after every rebuild, even with the camera still", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const blades = createBladeMeshes(scene, SEED, { quality: "high" });
+    const pose = { ...POSE, y: elevationSampleAt(SEED, CAM.x, CAM.z).h + 1.6 };
+    blades.update(CAM.x, CAM.z);
+    blades.cull(pose);
+    const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
+    blades.update(CAM.x + BLADE_REBUILD_CELL, CAM.z);
+    blades.cull(pose);
+    expect(partial.mock.calls.length).toBeGreaterThan(0);
+    partial.mockClear();
+    blades.cull(pose);
+    expect(partial).not.toHaveBeenCalled();
+    partial.mockRestore();
+    blades.dispose(); engine.dispose();
+  }, 60_000);
+
+  it("keeps, at the two gate poses, the cells the widened frustum holds, and pins how many", () => {
+    const counts: number[] = [];
+    const draws: number[] = [];
+    for (const pose of [CANOPY, MEADOW]) {
+      const engine = new NullEngine();
+      const scene = new Scene(engine);
+      const blades = createBladeMeshes(scene, GATE_SEED, { quality: "high" });
+      blades.update(pose.x, pose.z);
+      blades.cull(null);
+      const all = blades.meshes.reduce((n, m) => n + (m.isEnabled() ? m.thinInstanceCount : 0), 0);
+      const drawsAll = blades.meshes.filter((m) => m.isEnabled()).length;
+      blades.cull(pose);
+      const kept = blades.meshes.reduce((n, m) => n + (m.isEnabled() ? m.thinInstanceCount : 0), 0);
+      const drawsKept = blades.meshes.filter((m) => m.isEnabled()).length;
+      counts.push(kept, all);
+      draws.push(drawsKept, drawsAll);
+      // One pass's JS, forced by alternating two poses past the threshold. Reported, not asserted.
+      const t0 = performance.now();
+      const N = 40;
+      for (let i = 0; i < N; i++) blades.cull({ ...pose, yaw: pose.yaw + (i % 2 === 0 ? 0.1 : 0) });
+      console.log(`blade cull pass at (${pose.x}, ${pose.z}): ${((performance.now() - t0) / N).toFixed(3)} ms, kept ${kept} of ${all}`);
+      blades.dispose(); engine.dispose();
+    }
+    // Canopy: the profile counted 6,131 collected and 1,063 inside the exact frustum.
+    expect(counts).toEqual([1388, 6131, 1514, 6587]);
+    // Blade draws, culled and whole: the profile counted 20 live buckets at the canopy pose.
+    expect(draws).toEqual([20, 20, 12, 12]);
+  }, 60_000);
+
+  it("never leaves out a cell the camera can see, on a walk of random poses at both gate fields", () => {
+    let seen = 0;
+    for (const base of [CANOPY, MEADOW]) {
+      const engine = new NullEngine();
+      const scene = new Scene(engine);
+      const set = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+      const blades = createBladeMeshes(scene, GATE_SEED, { quality: "high" });
+      blades.update(base.x, base.z);
+      const tiers = createBladeCollector(GATE_SEED).collect(base.x, base.z);
+      const lists = [tiers.fine, tiers.mid, tiers.coarse];
+      const cellsOf = blades.meshes.map((mesh) => {
+        const { c, t, s } = bucketOf(mesh);
+        return lists[t]!.filter((cell) => cell.character === c && cell.size === s);
+      });
+      let r = 12345;
+      const rand = (): number => { r = (Math.imul(r, 1103515245) + 12345) >>> 0; return r / 4294967296; };
+      const view = { ...base };
+      for (let step = 0; step < 60; step++) {
+        // Mostly small steps under the thresholds, now and then a jump.
+        const jump = step % 7 === 0;
+        view.yaw += (rand() - 0.5) * (jump ? 3 : 0.12);
+        view.pitch = Math.max(-0.8, Math.min(1.2, view.pitch + (rand() - 0.5) * (jump ? 1 : 0.12)));
+        view.x = base.x + (rand() - 0.5) * 1.6;
+        view.z = base.z + (rand() - 0.5) * 1.6;
+        view.aspect = step % 11 < 5 ? PORTRAIT : 16 / 9;
+        blades.cull(view);
+        blades.meshes.forEach((mesh, b) => {
+          const drawnKeys = new Set<string>();
+          if (mesh.isEnabled()) {
+            const m = bufferFor(set, mesh, "matrix")!;
+            for (let i = 0; i < mesh.thinInstanceCount; i++) drawnKeys.add(`${m[i * 16 + 12]},${m[i * 16 + 14]}`);
+          }
+          for (const cell of cellsOf[b]!) {
+            if (inCone(view, cell.x, cell.groundH, cell.z, 0) || inCone(view, cell.x, cell.groundH + 0.5, cell.z, 0)) {
+              seen++;
+              expect(drawnKeys.has(`${Math.fround(cell.x)},${Math.fround(cell.z)}`)).toBe(true);
+            }
+          }
+        });
+      }
+      set.mockRestore();
+      blades.dispose(); engine.dispose();
+    }
+    expect(seen).toBeGreaterThan(20000);
+  }, 120_000);
 });

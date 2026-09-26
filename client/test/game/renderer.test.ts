@@ -455,6 +455,25 @@ describe("world shell wiring", () => {
     expect(src.match(/duffMeshes\?\.dispose\(\)/g)).toHaveLength(1);
   });
 
+  it("culls the blades and the grass class to the render camera's view once its pose is final, off the low tier", () => {
+    const creation = slice("const clutterMeshes =", "const bladeMeshes =");
+    expect(creation).toContain('cull: tier !== "low",');
+    const hook = slice("const cullPose: CullPose =", "// Same late-registration story");
+    // Before Babylon picks the active meshes, after the camera's transform
+    // (the view bob, the freecam) is final for the frame.
+    expect(hook).toContain("scene.onBeforeActiveMeshesEvaluationObservable.add(() => {");
+    // The render camera's own pose, never a field's centre.
+    expect(hook).toContain("const p = camera.globalPosition;");
+    expect(hook).toContain("cullPose.yaw = camera.rotation.y;");
+    expect(hook).toContain("cullPose.pitch = camera.rotation.x;");
+    expect(hook).toContain("cullPose.fov = camera.fov;");
+    expect(hook).toContain("cullPose.aspect = engine.getAspectRatio(camera);");
+    expect(hook).toContain("bladeMeshes?.cull(cullPose);");
+    expect(hook).toContain("clutterMeshes?.cull(cullPose);");
+    // Once per frame, from the hook alone.
+    expect(src.match(/\.cull\(/g)).toHaveLength(2);
+  });
+
   it("creates the cliff field on every tier with the world seed", () => {
     const creation = slice("const duffMeshes =", "// Same late-registration story");
     // Every tier: the field has a ring set per tier (`CLIFF_RINGS`), and the
