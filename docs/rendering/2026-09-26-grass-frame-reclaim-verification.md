@@ -299,3 +299,230 @@ outside the band itself on all three. The filter's "on" windows add no JS
 Step 1a alone is expected to fall about 0.3 ms short of the 0.8 ms bar. Its
 gate measures it; what can close the rest is step 1b (the meadow's buckets, if
 worth 0.15 ms) and step 2's far trim.
+
+## 5. First gate: the frustum prefix
+
+Measured 2026-09-26: the branch at `418e755` against the control, `main` at
+`0b957a6`, by §1's method. The branch builds step 1a with its as-built
+constants: the blade field's 36 buckets and the grass class's 4 draw each frame
+the prefix of their collected instances inside the camera's frustum widened by
+6° and pushed back 1 m, each instance a 1.5 m sphere, refiltered when the view
+turns 4° or moves 0.5 m; the meadow's buckets are untouched. The branch was
+served from a checkout of that commit with §1's patches and one more, for the
+gate only: `__cull(on)`, which hands both shells `null` (the whole collected
+set) when off, and a timer around every filter pass. Renderer as §4; zero
+console errors on every page. The browser was started once for the gate, not
+once per round; every round still opened with a discarded warm-up page.
+
+### 5.1 What is drawn
+
+| pose | layer | kept / collected | meshes drawing |
+| --- | --- | --- | --- |
+| canopy | blades | 1,614 / 6,131 (0.26) | 20 |
+| canopy | grass class | 870 / 4,559 (0.19) | 4 |
+| meadow | blades | 1,752 / 6,587 (0.27) | 12 |
+| meadow | grass class | 891 / 4,731 (0.19) | 4 |
+
+The kept counts are the plan's to the instance. **Draw calls do not move**: at
+the canopy pose 159–163 a frame on both builds, at the meadow pose 201–205 on
+both, and 169–172 on both in a 1920 × 1080 window.
+
+### 5.2 Fullness
+
+Two pages per build per pose, the crops and thresholds of §2:
+
+| pose | build | near cover | mid cover | cover ratio | lum ratio | far mean | far cover |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| canopy | control | 0.453, 0.458 | 0.732, 0.735 | 0.619, 0.624 | 1.247, 1.249 | — | — |
+| canopy | branch | 0.458, 0.458 | 0.740, 0.735 | 0.619, 0.623 | 1.247, 1.249 | — | — |
+| meadow | control | 0.473, 0.465 | 0.506, 0.503 | 0.935, 0.923 | 0.962, 0.968 | 0.0621, 0.0621 | 0.030, 0.032 |
+| meadow | branch | 0.469, 0.469 | 0.505, 0.510 | 0.930, 0.919 | 0.969, 0.972 | 0.0620, 0.0622 | 0.027, 0.033 |
+
+The branch matches the control within the page-to-page spread at both poses,
+in every column; the layer isolation stills agree to 0.01 as well. The meadow's
+cover ratio sits at 0.92–0.94 on both builds today: the 0.94 of design §12.1 is
+at the top of the control's own spread, and the filter does not move it.
+
+**Invisible culling** (plan Task 2, gate item 2). At each still pose, the
+filtered and the whole set drawn back to back on one page:
+
+- With the wind held still (`/wind 0`), per 6 × 6 pixel block of mean luma,
+  the switch changes 0, 0 and 0 blocks at the canopy pose and 0, 0 and 14 at
+  the meadow pose (the last against 12 changed with no switch), in-page and
+  frame-matched. By screenshot, the mean absolute difference across the
+  switch is 0.47 and 0.54 (×10⁻³) at the canopy pose against 0.51 and 0.55
+  between two whole frames, and 0.49 and 0.62 against 0.52 and 0.53 at the
+  meadow pose: three of four within 10 %, the fourth +17 % at the grain floor
+  with 1 block changed against 2.
+- With the weather's wind, the screenshots' differences are the wind's (8–14
+  against 8–10); the switch's pair spans more time than the reference pair,
+  so the plan's 10 % rule cannot be read there, and the frame-matched in-page
+  count is lower across the switch than without it at every still.
+
+### 5.3 Frame
+
+At the canopy pose, native pixels, four pair rounds with 30 s of rest before
+each page, all quiet:
+
+| round | first page | second page | delta |
+| --- | --- | --- | --- |
+| same code | control 24.15 / 26.5 | control 24.16 / 26.6 | +0.01 |
+| 1 | control 24.19 / 26.7 | branch 23.76 / 25.6 | −0.43 |
+| 2 | branch 23.77 / 25.7 | control 24.20 / 26.4 | −0.43 |
+| 3 | control 24.20 / 26.8 | branch 23.74 / 25.9 | −0.46 |
+| 4 | branch 23.79 / 26.0 | control 24.13 / 26.3 | −0.34 |
+
+An earlier set of six rounds without the rest read the same: same-code +0.02
+(control) and +0.01 (branch), then −0.40, −0.51, −0.63 and −0.45 in its last
+four rounds, where both builds sat about 0.7 ms over their same-code floors
+(not quiet by the rule, so not read).
+
+| view | same code | control first | branch first | **order-averaged delta** | p95 delta |
+| --- | --- | --- | --- | --- | --- |
+| canopy, native | +0.01 | −0.43, −0.46 | −0.43, −0.34 | **−0.42** | −0.7 |
+| canopy, 4× | +0.05 | −0.34, −0.44 | −0.31, −0.38 | **−0.37** | −0.5 |
+| canopy, 1920 × 1080 | — | −0.42, −0.45 | −0.32, −0.35 | **−0.39** | −0.8 |
+| meadow, native | +0.04 | −0.92, −1.00 | −0.97 | **−0.96** | −3.1 |
+| meadow, 4× | — | −0.52, −0.70 | −0.60, −0.60 | **−0.61** | −0.5 |
+
+The build floors: canopy native 24.13 (control) and 23.74 (branch); canopy 4×
+55.12 and 54.78; meadow native 19.18 and 18.23; meadow 4× 48.08 and 47.44;
+canopy 1920 × 1080 24.96 and 24.54. One meadow round is not quiet (the branch
+page at 21.46 ms with 7.5 ms of JS, another process's load) and is not read.
+
+**The JS frame is unchanged** at a still pose: 4.33 ms (control) and 4.34 ms
+(branch) over every canopy page at native, 4.96 and 5.11 at 4×; no pass runs
+while the view holds still.
+
+### 5.4 The filter's own JS
+
+Timed around both shells' `cull` on the frames whose pose crossed a threshold,
+at the canopy pose with the weather's wind (the page's timer resolves 0.1 ms):
+
+| motion, 10 s | passes per second | median | p95 | max |
+| --- | --- | --- | --- | --- |
+| turning 90° a second | 17.8 | 0.5 ms | 1.0 | 1.1 |
+| turning 3.9° a frame | 23.2 | 0.5 | 0.8 | 1.1 |
+| turning 20° a frame | 43.1 (every frame) | 0.5 | 0.8 | 1.1 |
+| turning 3.9° a frame at pitch 0.9 | 26.2 | 0.4 | 0.5 | 0.6 |
+| walking 1.4 m/s with a 3 cm bob | 2.7 | — | — | 0.5 |
+| still | 0.1 | 0.4 | — | — |
+| meadow, turning 90° a second | 17.8 | 0.4 | 0.5 | 0.5 |
+
+A pass costs about **0.4–0.5 ms**, twice the 0.1–0.25 ms estimated (design
+§5.2): the plane tests and copies of about 10,700 instances and the upload of
+the prefix. Averaged over a 90°-a-second turn it is about 0.2 ms a frame; in a
+fast turn that refilters every frame, 0.5 ms a frame. On this machine the frame
+is GPU-bound (JS 4.3 of 24 ms), so it does not show in the frame; on a machine
+whose frame is set by JS it would, while turning, be about the size of the
+saving. (The walk's passes were timed through a mirror of the thresholds that a
+rebuild's own refilter desynchronises, so its median is not read.)
+
+### 5.5 What culling leaves
+
+The toggle method of §1 on branch pages at the canopy pose, native:
+
+| condition | page 1 | page 2 | control (§4) |
+| --- | --- | --- | --- |
+| hide blades | −0.94 ± 0.07 (lifted base) | −0.88 ± 0.10 (lifted base) | −1.20 |
+| hide grass-class cards | +0.23 ± 0.13 (noisy) | **−0.11 ± 0.02** | −0.43 |
+| filter the meadow's cards | −0.05 ± 0.04 (lifted base) | −0.07 ± 0.14 (lifted base) | — |
+
+The grass class keeps a quarter of its cost; the blades keep three quarters of
+theirs. The blades drawn in view carry most of what the blade field costs, and
+culling cannot reach them. **The meadow's filter is worth about 0.05 ms**, under
+step 1b's 0.15 ms.
+
+### 5.6 Pops
+
+**Method.** On a branch page, with the wind held still so that nothing but the
+filter can change what is drawn at a fixed pose, the camera steps through a
+sequence; at each step the prefix held is the one cut at the previous step's
+pose, so each step is a turn or move just under the thresholds from the last
+cut, the worst case. Five frames are grabbed at the step, three with the prefix
+held and two with the whole collected set, and each is reduced to 6 × 6 pixel
+blocks of mean luma. A block counts as changed when it moves by more than 0.04.
+The switch's count (held against whole) is set against the largest count between
+two frames of the same state, which carries the grass grain, the motes and the
+animals. The filter is switched back on after each step, which cuts at that
+step's pose.
+
+**Its sensitivity**, on the control: the blades and the grass class filtered
+once to the exact frustum with a 0.75 m sphere (the profile's filter) and held
+while the camera turns. At 11.7° a step the switch changes 236 blocks, 122 of
+them in the 48-pixel edge bands, against 1 without a switch: a strip of
+blades missing at the entering edge. At 7.8° it changes 29 edge blocks against
+20. At 3.9° the exact filter shows nothing measurable at this pose.
+
+**On the branch** (steps, switch count against the same-state count, edge
+bands in brackets):
+
+| pose | sequence | steps | switch | same state |
+| --- | --- | --- | --- | --- |
+| canopy | full turn right, 3.9° steps, pitch 0.3 | 92 | 178 (4) | 245 (16) |
+| canopy | full turn right, 3.9° steps, pitch 0.9 | 92 | 208 (0) | 72 (3) |
+| canopy | turn left, 3.9° steps | 23 | 261 (24) | 543 (158) |
+| canopy | full turn, 20° steps (a refilter each) | 18 | 0 (0) | 1 (0) |
+| canopy | pitch −0.4 → 1.2 and back, 3.9° steps | 48 | 328 (71) | 579 (130) |
+| canopy | walk 0.49 m steps; walk and turn; walk at pitch 0.9 | 36 | 18 (0) | 67 (1) |
+| meadow | full turn, 3.9° steps, pitch 0.3 | 92 | 5,599 (348) | 7,248 (604) |
+| meadow | half turn, 3.9° steps, pitch 0.9 | 46 | 478 (85) | 676 (85) |
+| meadow | turn left; 20° steps; pitch sweep; walks | 89 | 445 (72) | 588 (125) |
+| canopy, the weather's wind | full turn at 0.3, a quarter at 0.9, 20° steps | 133 | 24,295 (3,512) | 31,807 (5,740) |
+| meadow, the weather's wind | half turn at 0.3, a quarter at 0.9 | 69 | 2,731 (120) | 3,949 (273) |
+
+In the edge bands the switch changes no more blocks than the same state does in
+any sequence, and in the whole frame fewer in every sequence but one. That one,
+the canopy's turn at pitch 0.9, owes 202 of its 208 blocks to one step, mid-frame
+and away from every edge; read again from screenshots, it is a bird taking off
+between the frames. The other steps with an edge count carry the same count at
+the same edge between frames of one state: animals and motes, not the filter.
+With the weather's wind the switch reads below the same state everywhere, the
+wind's motion dominating both.
+
+**Mid-turn stills.** At the canopy pose turned 45° (pitch 0.3) and 135° (pitch
+0.9), the branch held 3.9° past its last cut, beside the control at the same
+pose, with the weather's wind: the two read the same to the frame edges, the
+only differences the wind's.
+
+No pop was found. What the method cannot see is a single blade or card at the
+very edge that changes fewer than a few blocks; the positive control puts the
+threshold of what it sees near a turn of 8° past an exact cut.
+
+### 5.7 Verdict
+
+| bar | result |
+| --- | --- |
+| canopy frame at native ≤ −0.8 ms (design §12.3) | **missed**: −0.42 ms |
+| canopy frame at 4× (reported) | −0.37 ms |
+| canopy frame at 1920 × 1080 (reported; design expected about −0.60) | −0.39 ms |
+| meadow frame (reported) | −0.96 ms native, −0.61 ms at 4× |
+| fullness: cover ratios, canopy near cover, luminance ratios as the control's | met: every figure within the control's page spread |
+| canopy near cover ≥ 0.45 | met: 0.458 |
+| draw calls unchanged | met: 159–163 (canopy), 201–205 (meadow) on both |
+| JS frame at a still pose | unchanged: 4.33 against 4.34 ms |
+| filter pass JS (expected 0.1–0.25 ms) | 0.4–0.5 ms a pass; hidden on this machine |
+| no pop at a frame edge | met |
+| meadow filter worth ≥ 0.15 ms (step 1b) | not: about 0.05 ms |
+
+**The filter works as built and takes back 0.42 ms at the canopy pose at native,
+half the bar.** It is below design §5.4's redone expectation (0.52, §4) by 0.1
+ms, and it is invisible. What culling leaves at the pose is the in-view blades
+(about 0.9 ms of the 1.2 they cost unculled) and the in-view grass class (about
+0.1 ms).
+
+What the plan names to close the rest (design §5.4, §13), measured against the
+0.38 ms still missing:
+
+- **Step 1b, the meadow's buckets:** about 0.05 ms at native (§5.5). Not worth
+  its own step by the plan's 0.15 ms rule, and not enough to close the gap.
+- **Step 2's far trim:** expected about 0.12 ms while the meadow is not
+  filtered (design §6.3). With it the frame is expected near −0.55 ms.
+- **Narrowed margins** are no longer among the design's closers (§5.4 as
+  built: the 1.5 m radius is what keeps a swaying instance in the prefix), and
+  the confirmation (§4) puts the whole exact-frustum saving at 0.58 ms: no
+  margin setting of this filter reaches 0.8 ms at this pose.
+
+The rest of the bar is not in culling. It is in what the blades in view cost,
+which the filter leaves untouched: the bar at 0.8 ms rested on a filter figure
+(0.82) that the confirmation measured at 0.58 on this machine.
