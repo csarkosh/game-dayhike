@@ -36,14 +36,24 @@ const ARM_THICKNESS = 0.038;
 /** Where the arrow's point begins: the full-height board runs from the post end to here. */
 const ARM_BOARD_END = 0.95;
 /**
- * How far out along the plank its lettering is moved from the board's middle.
- * A plank's post end sits on the post's centre line, so its first few
- * centimetres are inside the post, which is at most 0.067 m from its axis
- * (0.095 m at a corner, measured at its foot and narrower above): moved out
- * this far, with the texture's margin, the letters start 0.095 m out and none
- * is buried in the post.
+ * How far past the post's axis a plank's post end reaches. That end is a V
+ * notch 0.1285 m deep, its corners at the end and its apex on the board's
+ * centre line; the post's shaft is a 20-sided section about 0.054 m from its
+ * axis, which stands up to 7 mm off the footing's origin. Pushed in this far,
+ * the apex is at least 5 mm inside the post whichever way the plank points,
+ * so no sky shows through the notch beside the post. The shaft is narrower
+ * than the notch is deep, so the notch's two points come out of the post's
+ * far side by up to 0.049 m along the plank, the last 0.039 m of their height.
  */
-const LABEL_OUT = 0.07;
+export const PLANK_SEAT_IN = 0.092;
+/** How far from its axis the post reaches at most: a corner of its foot. */
+const POST_REACH = 0.095;
+/**
+ * Where the lettering is centred along the plank from the post's axis: the
+ * middle of the board seen between the post and the arrow's point (0.858 m
+ * out, the plank pushed in), 0.4765 m.
+ */
+const LABEL_CENTRE = (POST_REACH + ARM_BOARD_END - PLANK_SEAT_IN) / 2;
 /**
  * Height of the bottom plank's centre above the post's foot. The planks have
  * no collider, so the bottom one's lower edge (1.648 m) sits above a hiker's
@@ -61,11 +71,11 @@ export const POST_HEIGHT = 2.221;
 /** How far the post's top stands above its highest plank's top edge. */
 export const POST_CLEARANCE = 0.1;
 /**
- * One label plane: a little wider than the arm's full-height board (0.95 m)
- * and a little shorter than its height; the texture's margin keeps the
- * letters on the wood.
+ * One label plane: as long as the board seen between the post and the arrow's
+ * point (0.76 m), in the texture's own 1024 : 192 shape so the letters are not
+ * stretched; the texture's margin keeps the letters on the wood.
  */
-const LABEL_SIZE = { width: 1.0, height: 0.19 } as const;
+const LABEL_SIZE = { width: 0.76, height: 0.1425 } as const;
 /** The gap between a label and the arm face it sits on: enough to never fight it for depth. */
 const LABEL_LIFT = 0.001;
 const WOOD = "#6b4f2a";
@@ -271,7 +281,7 @@ export function createSignMeshes(
     const plane = MeshBuilder.CreatePlane(name, { width: LABEL_SIZE.width, height: LABEL_SIZE.height }, scene);
     plane.parent = arm;
     // Along the board, clear of the post it runs into.
-    plane.position.set(side * (ARM_THICKNESS / 2 + LABEL_LIFT), 0, ARM_BOARD_END / 2 + LABEL_OUT);
+    plane.position.set(side * (ARM_THICKNESS / 2 + LABEL_LIFT), 0, PLANK_SEAT_IN + LABEL_CENTRE);
     // A plane faces -Z; a quarter turn one way or the other points it out of its face.
     plane.rotation.y = -side * (Math.PI / 2);
     plane.material = material;
@@ -287,15 +297,15 @@ export function createSignMeshes(
       const footing = footings[p] as TransformNode;
       const count = plankCount(post);
       for (const arm of post.arms) {
-        // The plank's post end on the post's centre line, the footing's
-        // origin: whichever way it points, its end is buried in the post
-        // (whose axis is within 6 mm of the origin), so it reads as fixed to
-        // it with no gap, square on or on the diagonal.
+        // The plank's post end pushed PLANK_SEAT_IN past the footing's
+        // origin, the post's axis to within 7 mm: whichever way it points,
+        // its notch is closed inside the post, so it reads as fixed to it
+        // with no gap, square on or on the diagonal.
         for (const [k, text] of arm.names.entries()) {
           const rank = arm.ranks[k] as number;
           const name = `sign_${p}_plank_${rank}`;
           const model = instantiateStaticModel(
-            container, name, 0, plankHeight(rank, count), 0, armYaw(arm),
+            container, name, -arm.dx * PLANK_SEAT_IN, plankHeight(rank, count), -arm.dz * PLANK_SEAT_IN, armYaw(arm),
           );
           keep(model, footing);
           const material = lettering(text);
