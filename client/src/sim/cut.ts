@@ -78,6 +78,9 @@ function joins(e: TrailEdge, u: number, v: number): boolean {
   return (e.a === u && e.b === v) || (e.a === v && e.b === u);
 }
 
+/** Nothing closed: `triggerEdge`'s default, for a rule judged on its own. */
+const NONE: ReadonlySet<number> = new Set();
+
 /**
  * The incident edge of `fork` a player at (x, z) is on: the nearest open one
  * by segmentDistance, ties to the lower edge index, within
@@ -102,7 +105,6 @@ export function triggerEdge(graph: TrailGraph, fork: number, x: number, z: numbe
   }
   return bestD > TRAIL_CORRIDOR_HALF || nearest < bestD ? -1 : best;
 }
-const NONE: ReadonlySet<number> = new Set();
 
 /** Metres along `path` from its first node to the first node on the guide; Infinity when the path is empty or meets none. */
 function metresToGuide(graph: TrailGraph, path: readonly number[], onGuide: ReadonlySet<number>): number {
@@ -179,10 +181,11 @@ function bestBranch(graph: TrailGraph, record: CutRecord, fork: number, arrival:
  * On the guide, arriving by the guide's edge into the fork, the open edge is
  * the guide's edge out of it — while that edge is still open (one joining two
  * forks can have been closed at the other one) and the guide beyond it still
- * reaches the pad on the residual graph: a fork cut before the guide came to
- * it, by a stray or by a player on another branch, can have closed the
- * guide's own way on, and the guide's edge out would then lead only to
- * Hollows. Either way the fork is judged like a stray's instead.
+ * reaches the pad on the residual graph without coming back through the
+ * fork: a fork cut before the guide came to it, by a stray or by a player on
+ * another branch, can have closed the guide's own way on, and the guide's
+ * edge out would then lead only to Hollows, or home only by this fork and
+ * the arrival. Either way the fork is judged like a stray's instead.
  * Otherwise the candidate branches are costed on the residual graph with the
  * fork's own edges removed: a branch's way home must not come back through
  * the fork it leaves, or "the open branch reaches the pad" would be true of

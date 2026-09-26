@@ -314,9 +314,9 @@ recorded as judged the first time a player reaches it, with nothing closed (2026
 
 - if the fork is on the guide and the arrival branch is the guide's edge into it, the **open**
   branch is the guide's edge out of it — while that edge is still open and the guide beyond it
-  still reaches the pad on the residual graph (since 2026-09-25: a fork cut before the guide came
-  to it, by a stray or by a player on another branch, can have closed the guide's own way on, and
-  then the fork is judged as below);
+  still reaches the pad on the residual graph without coming back through the fork (since
+  2026-09-25: a fork cut before the guide came to it, by a stray or by a player on another
+  branch, can have closed the guide's own way on, and then the fork is judged as below);
 - otherwise — the player strayed, or is a straggler still climbing — the open branch is the
   non-arrival branch whose route to the pad on the **residual** graph (every closed branch of every
   cut fork removed) is shortest, with ties, and near-ties within `GUIDE_REJOIN_SLACK` (60 m),

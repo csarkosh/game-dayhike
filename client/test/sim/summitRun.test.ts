@@ -117,8 +117,10 @@ describe("one run on the seed `hollow`", SUITE, () => {
     expect(w.state.enemies.size).toBe(7);
     // The walk is far faster than any Hollow, so fork 2's is still stepping
     // out: the player waits at node 1, off the corridor, until the whole pack
-    // hunts them. That Hollow has 12 m to the mouth at 6.3 m/s, then a second's
-    // reveal: 164 ticks from its spawn, four of them already spent on the walk.
+    // hunts them. The wait is measured on the terrain, not derived: that Hollow
+    // walked 104 ticks to the mouth on real ground (a flat 12 m at 6.3 m/s to
+    // the 1.5 m waypoint radius would be 100), stood 60, and four of those
+    // ticks had already gone by on the walk down.
     let waited = 0;
     while (waited < Math.round((FORK_EMERGE_MAX_S + FORK_REVEAL_S) / TICK_DT) && [...w.state.enemies.values()].some((e) => e.ai === AiState.Emerge)) {
       step("waiting at 1");

@@ -85,6 +85,8 @@ function descend(token: string): Descent {
     }
   };
 
+  /** The last guide node the player stood on. */
+  let reached = 0;
   for (let i = 1; i < guide.length && w.state.outcome === Outcome.Playing; i++) {
     const prev = g.nodes[guide[i - 1]!]!, node = g.nodes[guide[i]!]!;
     const len = dist(prev, node);
@@ -94,9 +96,18 @@ function descend(token: string): Descent {
     if (w.state.outcome !== Outcome.Playing) break;
     at(node.x, node.z);
     step(`at node ${guide[i]}`);
+    reached = i;
   }
   expect(w.state.outcome, token).toBe(Outcome.Won);
   expect(p.health, token).toBeGreaterThan(0);
+  // And the converse: every fork the walk stood on, off the corridor, was
+  // cut — a trigger that refused a player standing on the fork itself would
+  // otherwise only show as a slightly smaller pack.
+  for (let k = 1; k <= reached; k++) {
+    const node = guide[k]!;
+    if (!g.forks.includes(node) || corridorForks.includes(node)) continue;
+    expect(w.cut!.cuts.has(node), `seed ${token}: guide fork ${node} never cut`).toBe(true);
+  }
   return { inBand, corridorForks, pack: w.state.enemies.size };
 }
 
@@ -116,15 +127,14 @@ describe("the cut on fifty seeds", () => {
     const median = packs[24]!;
     const largest = packs[49]!;
     const corridor = runs.map((r, i) => (r.corridorForks.length > 0 ? `hollow${i}` : null)).filter((t) => t !== null);
-    console.info(`[cutSweep] guide in band ${inBand}/50; pack at the pad median ${median}, largest ${largest}; a fork on the corridor: ${corridor.join(", ") || "none"}`);
     // The guide lands in its band on 29 of the 50; the rest walk the longest
     // route found under the cap, as the summit design's §3.5 allows.
-    expect(inBand).toBeGreaterThanOrEqual(29);
+    expect(inBand, `guide in band on ${inBand} of 50`).toBeGreaterThanOrEqual(29);
     // The pack at the pad, the summit Hollow counted: the median world sends
     // five, the busiest eleven. One seed, `hollow29`, stands a fork on the
     // corridor, and that fork is never cut.
-    expect(median).toBeGreaterThanOrEqual(5);
-    expect(largest).toBeGreaterThanOrEqual(11);
-    expect(corridor).toEqual(["hollow29"]);
+    expect(median, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(5);
+    expect(largest, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(11);
+    expect(corridor, `a fork on the corridor on ${corridor.join(", ") || "no seed"}`).toEqual(["hollow29"]);
   }, 300_000);
 });
