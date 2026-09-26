@@ -5,6 +5,7 @@ import type { Level } from "./level.js";
 import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
 import type { TrailGraph } from "./trail.js";
+import type { CutRecord } from "./cut.js";
 import { spiralSpawn } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
@@ -76,6 +77,15 @@ export type World = {
    * what `app.ts` paints signs from. Null for a hand-authored level.
    */
   trail: TrailGraph | null;
+  /**
+   * The cut (`cut.ts`): the guide route and the forks cut so far, host only.
+   * Null until the discovery tick draws the guide, and null forever on a
+   * client's predicted world. It lives here and not on `WorldState` because
+   * `WorldState` is what `cloneWorldState` copies, `serializeWorldState`
+   * fingerprints and the snapshot carries to every peer — and the record is
+   * the host's alone, like `register` and `trail` beside it.
+   */
+  cut: CutRecord | null;
 };
 
 export function createWorld(level: Level, seed: number, authoritative = true): World {
@@ -90,6 +100,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
     interactables: new Map(),
     register: null,
     trail: null,
+    cut: null,
     state: {
       tick: 0,
       players: new Map(),
@@ -123,6 +134,7 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
     interactables: new Map(),
     register: null,
     trail: graph ?? null,
+    cut: null,
     state: {
       tick: 0,
       players: new Map(),
@@ -337,7 +349,13 @@ export function cloneWorldState(state: WorldState): WorldState {
   }
   const enemies = new Map<number, EnemyState>();
   for (const [id, e] of state.enemies) {
-    enemies.set(id, { ...e, pos: cloneVec3(e.pos), vel: cloneVec3(e.vel), route: [...e.route] });
+    enemies.set(id, {
+      ...e,
+      pos: cloneVec3(e.pos),
+      vel: cloneVec3(e.vel),
+      route: [...e.route],
+      emergeTo: e.emergeTo === null ? null : cloneVec3(e.emergeTo),
+    });
   }
   return {
     tick: state.tick,

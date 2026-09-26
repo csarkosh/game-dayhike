@@ -4,7 +4,6 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { clipForEnemy, EntityViews } from "../../src/game/entityViews.js";
 import { LAMP_INTENSITY, LIGHT_BUDGET, budgetLights, createHeadlamp, setLamp } from "../../src/game/headlamp.js";
 import { AiState } from "../../src/sim/types.js";
@@ -145,23 +144,35 @@ describe("EntityViews placement", () => {
 });
 
 describe("EntityViews Hollows", () => {
-  it("draws a Hollow as a black, unlit, fog-free StandardMaterial capsule and never as a chaser", () => {
+  it("draws a Hollow as a near-black, lit, fog-free PBR capsule and never as a chaser", async () => {
     const views = new EntityViews(scene);
     const world = state();
     world.enemies.set(7, {
       id: 7, pos: { x: 1, y: 0.9, z: 2 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0.5, health: 40, ai: AiState.Stand,
       targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
-      route: [], routeAt: 0, approach: false, seen: false,
+      route: [], routeAt: 0, approach: false, seen: false, emergeTo: null,
     });
     views.sync(world, 99, 0);
     const mesh = scene.getMeshByName("hollow_7")!;
     expect(mesh).not.toBeNull();
     expect(scene.getMeshByName("enemy_7")).toBeNull();
-    const material = mesh.material as StandardMaterial;
+    // A PBRMaterial, so the headlamp's 400 lights it on the same falloff as
+    // the world; a StandardMaterial under that lamp blows out white.
+    expect(mesh.material).toBeInstanceOf(PBRMaterial);
+    const material = mesh.material as PBRMaterial;
+    expect(material.name).toBe("mat_hollow");
     expect(material.fogEnabled).toBe(false);
-    expect(material.disableLighting).toBe(true);
-    expect(material.diffuseColor.equals(new Color3(0, 0, 0))).toBe(true);
-    expect(material.emissiveColor.equals(new Color3(0, 0, 0))).toBe(true);
+    expect(material.disableLighting).toBe(false);
+    expect(material.metallic).toBe(0);
+    expect(material.roughness).toBe(1);
+    expect(material.albedoColor.equals(new Color3(0.03, 0.03, 0.035))).toBe(true);
+    expect(material.emissiveColor.equals(new Color3(0.006, 0.007, 0.009))).toBe(true);
+    // The material readies for its capsule. NullEngine compiles no GLSL, so
+    // this proves the material goes through Babylon's pipeline to a ready
+    // effect, not that the shader links on a GPU; no material is ready
+    // synchronously here, hence the forced compilation.
+    await material.forceCompilationAsync(mesh);
+    expect(material.isReady(mesh)).toBe(true);
     expect(mesh.rotation.y).toBeCloseTo(0.5, 9);
     // The hull centre is 0.9 m up; the 2.6 m capsule's centre sits 0.4 m higher so its feet meet the hull's.
     expect(mesh.position.y).toBeCloseTo(0.9 + (HOLLOW_HEIGHT / 2 - ENEMY_HALF.y), 6);

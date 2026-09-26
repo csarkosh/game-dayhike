@@ -16,6 +16,7 @@ import {
 } from "@babylonjs/core/Materials/materialPluginManager.js";
 import atmosphereFragment from "./shaders/atmosphereFog.fragment.fx?raw";
 import type { Rgb } from "./colour.js";
+import { HOLLOW_MATERIAL } from "./hollowLook.js";
 import { WEATHER_PRESETS, type WeatherParams } from "./weather.js";
 import {
   atmosphereUnder, fogGradientUnder, GRADIENT_STEPS, type AtmosphereRecord,
@@ -129,14 +130,19 @@ function gradientTexels(gradient: Rgb[]): Uint8Array {
 /**
  * Registers the plugin factory. MUST run before any PBR material exists —
  * RegisterMaterialPlugin only reaches materials created afterwards. The
- * factory declines non-PBR materials (sky, mist, particles) by returning null.
+ * factory declines non-PBR materials (sky, mist, particles) by returning null,
+ * and declines the Hollow's PBR material by name: it keeps fog off, and the
+ * plugin's spliced code reads `vFogColor`, which Babylon declares only while
+ * the FOG define is set, so with the plugin attached that material would fail
+ * to compile on an undeclared identifier (entityViews.ts says why fog stays
+ * off).
  *
  * The gradient is a 256x1 RGBA8 strip in LINEAR space (the grade pass
  * tone-maps after it); the finish pass's dither hides its 8-bit steps.
  */
 export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere {
   RegisterMaterialPlugin("Atmosphere", (material) =>
-    material instanceof PBRMaterial ? new AtmospherePlugin(material) : null,
+    material instanceof PBRMaterial && material.name !== HOLLOW_MATERIAL ? new AtmospherePlugin(material) : null,
   );
   let record = atmosphereUnder(WEATHER_PRESETS.clear, 12, viewDistance);
   let gradient: Rgb[] = [];

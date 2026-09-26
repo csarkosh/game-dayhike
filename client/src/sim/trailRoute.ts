@@ -184,14 +184,16 @@ function reachesPad(graph: TrailGraph, from: number, used: ReadonlySet<number>):
 }
 
 /**
- * The guide: a seeded random walk crest → pad that never repeats an edge,
- * choosing at each node uniformly among the unused edges whose far node can
- * still reach the pad without a repeated edge, abandoned once it exceeds
- * `max` × shortestHome. The first walk whose length lands in
- * [min, max] × shortestHome is returned with `inBand: true`; otherwise the
- * longest walk found under the cap; otherwise the shortest path (the 227-seed
- * sweep shows the shortest-path case does not arise). Deterministic in
- * `rand` (the host passes `() => nextRandom(state)`).
+ * The guide: a seeded random walk crest → pad that never repeats an edge and
+ * never stands on a node twice, choosing at each node uniformly among the
+ * unused edges whose far node is not yet on the walk and can still reach the
+ * pad without a repeated edge, abandoned once it exceeds `max` × shortestHome
+ * or runs out of such edges. The node rule is the cut's (cut.ts): a fork the
+ * guide passed twice would have two edges into it and two out. The first
+ * walk whose length lands in [min, max] × shortestHome is returned with
+ * `inBand: true`; otherwise the longest walk found under the cap; otherwise
+ * the shortest path (the 227-seed sweep shows the shortest-path case does not
+ * arise). Deterministic in `rand` (the host passes `() => nextRandom(state)`).
  */
 export function guideWalk(
   graph: TrailGraph, rand: () => number, min = GUIDE_MIN, max = GUIDE_MAX, tries = GUIDE_TRIES,
@@ -200,6 +202,7 @@ export function guideWalk(
   let best: { path: number[]; length: number } | null = null;
   for (let t = 0; t < tries; t++) {
     const used = new Set<number>();
+    const seen = new Set<number>([graph.summit]);
     const path = [graph.summit];
     let at = graph.summit, length = 0, dead = false;
     while (at !== 0) {
@@ -208,7 +211,7 @@ export function guideWalk(
         if (used.has(ei)) continue;
         const e = graph.edges[ei] as TrailEdge;
         const to = e.a === at ? e.b : e.b === at ? e.a : -1;
-        if (to === -1) continue;
+        if (to === -1 || seen.has(to)) continue;
         const trial = new Set(used);
         trial.add(ei);
         if (!reachesPad(graph, to, trial)) continue;
@@ -219,6 +222,7 @@ export function guideWalk(
       if (options.length === 0) { dead = true; break; }
       const pick = options[Math.min(options.length - 1, Math.floor(rand() * options.length))] as { ei: number; to: number; len: number };
       used.add(pick.ei);
+      seen.add(pick.to);
       length += pick.len;
       at = pick.to;
       path.push(at);

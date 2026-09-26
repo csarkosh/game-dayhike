@@ -456,6 +456,7 @@ export function createClientSession(
             routeAt: 0,
             approach: false,
             seen: false,
+            emergeTo: null,
           });
         }
       }
