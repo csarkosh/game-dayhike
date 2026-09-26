@@ -1,26 +1,95 @@
 {
   "assets": [
     {
-      "id": "enemy.grunt",
+      "id": "ranger.nathan",
       "kind": "character",
-      "output": "models/enemy.grunt.glb",
+      "output": "models/ranger.nathan.glb",
       "animations": {
-        "idle": "Idle",
-        "walk": "Walk",
-        "attack": "Attack",
-        "death": "Death"
+        "idle": "idle",
+        "walk": "walk",
+        "attack": "attack",
+        "death": "death"
       }
     },
     {
-      "id": "enemy.skeleton",
+      "id": "ranger.eric",
       "kind": "character",
-      "output": "models/enemy.skeleton.glb",
+      "output": "models/ranger.eric.glb",
       "animations": {
-        "idle": "Skeletons_Idle",
-        "walk": "Skeletons_Walking",
-        "attack": "Melee_Unarmed_Attack_Punch_A",
-        "death": "Skeletons_Death"
+        "idle": "idle",
+        "walk": "walk",
+        "attack": "attack",
+        "death": "death"
       }
+    },
+    {
+      "id": "ranger.sophia",
+      "kind": "character",
+      "output": "models/ranger.sophia.glb",
+      "animations": {
+        "idle": "idle",
+        "walk": "walk",
+        "attack": "attack",
+        "death": "death"
+      }
+    },
+    {
+      "id": "ranger.carla",
+      "kind": "character",
+      "output": "models/ranger.carla.glb",
+      "animations": {
+        "idle": "idle",
+        "walk": "walk",
+        "attack": "attack",
+        "death": "death"
+      }
+    },
+    {
+      "id": "ranger.claudia",
+      "kind": "character",
+      "output": "models/ranger.claudia.glb",
+      "animations": {
+        "idle": "idle",
+        "walk": "walk",
+        "attack": "attack",
+        "death": "death"
+      }
+    },
+    {
+      "id": "hollow.antlered",
+      "kind": "character",
+      "output": "models/hollow.antlered.glb",
+      "animations": {
+        "idle": "idle",
+        "walk": "walk",
+        "attack": "attack",
+        "death": "death"
+      }
+    },
+    {
+      "id": "summit.body",
+      "kind": "environment",
+      "output": "models/summit.body.glb"
+    },
+    {
+      "id": "trailhead.car",
+      "kind": "environment",
+      "output": "models/trailhead.car.glb"
+    },
+    {
+      "id": "trailhead.kiosk",
+      "kind": "prop",
+      "output": "models/trailhead.kiosk.glb"
+    },
+    {
+      "id": "sign.post",
+      "kind": "prop",
+      "output": "models/sign.post.glb"
+    },
+    {
+      "id": "sign.arm",
+      "kind": "prop",
+      "output": "models/sign.arm.glb"
     },
     {
       "id": "tree.conifer_a",

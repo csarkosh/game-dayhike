@@ -18,7 +18,7 @@ import { isHollow } from "../sim/hollow.js";
 import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
-import { EntityViews } from "./entityViews.js";
+import { CHARACTER_IDS, EntityViews } from "./entityViews.js";
 import { budgetLights, createHeadlamp, setLamp } from "./headlamp.js";
 import { lampUnder } from "./lampParams.js";
 import { windRecordUnder, type WindRecord } from "./windParams.js";
@@ -69,7 +69,7 @@ import type { ListenerPose } from "./ambientAudio.js";
 import { createMistMeshes } from "./mistMeshes.js";
 import { createRain } from "./rain.js";
 import { createMotes } from "./motes.js";
-import { createPropMeshes } from "./propMeshes.js";
+import { createPropMeshes, type PropShadows } from "./propMeshes.js";
 
 const MATERIAL_COLORS: Record<string, [number, number, number]> = {
   concrete: [0.42, 0.44, 0.47],
@@ -78,6 +78,10 @@ const MATERIAL_COLORS: Record<string, [number, number, number]> = {
   step: [0.4, 0.46, 0.54],
   crate: [0.55, 0.42, 0.26],
   pillar: [0.48, 0.36, 0.36],
+  // The trailhead's car and kiosk, in the crate's and the pillar's colours
+  // wherever their boxes are drawn.
+  car: [0.55, 0.42, 0.26],
+  kiosk: [0.48, 0.36, 0.36],
   signpost: [0.45, 0.33, 0.2],
   default: [0.5, 0.5, 0.5],
 };
@@ -561,6 +565,8 @@ export type Renderer = {
   engine: Engine;
   camera: UniversalCamera;
   views: EntityViews;
+  /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
+  shadows: PropShadows;
   /**
    * `frame` carries this frame's local, non-simulated view inputs — its
    * duration in seconds and whether sprint is held. Only the walking cue reads
@@ -915,9 +921,10 @@ export function createRenderer(
   const motes = createMotes(scene, tier);
 
   const views = new EntityViews(scene);
-  // Fire and forget: enemies render as capsules until this resolves, and stay
-  // capsules forever if there is no shipped model or it fails to load.
-  void views.models.load(scene);
+  // Fire and forget: the other hikers and the Hollow render as capsules until
+  // this resolves, and a model that fails to load stays a capsule for good.
+  // Only the rangers and the Hollow are fetched, not every character listed.
+  void views.models.load(scene, CHARACTER_IDS);
 
   let freecam: FreecamView | null = null;
 
@@ -935,6 +942,7 @@ export function createRenderer(
     engine,
     camera,
     views,
+    shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
       // of materials x four property writes: cheap enough to do every frame.
@@ -963,7 +971,7 @@ export function createRenderer(
         n++;
       }
       setFoliageWind(wind, windPlayers);
-      views.sync(state, localId, alpha, lampState);
+      views.sync(state, localId, alpha, lampState, frame.dt);
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once
       // its GLBs have loaded, so new entries are picked up here.

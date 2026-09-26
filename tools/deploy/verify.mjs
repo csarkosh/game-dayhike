@@ -94,7 +94,7 @@ async function verify() {
   }
 
   // 4. The models are real geometry, not LFS pointers. This is the check that
-  // catches a deploy which looks perfect and has no enemies in it.
+  // catches a deploy which looks perfect and has no rangers or Hollow in it.
   //
   // Their URLs are content-hashed, so they cannot be spelled out here. They are
   // discovered out of the bundle source check 3 already fetched — the same
@@ -103,15 +103,15 @@ async function verify() {
   // that means the model map did not make it into the entry chunk and no amount
   // of correct hosting would help.
   //
-  // `clutter.fungus_b` rides along with the two enemies for a second reason: at
-  // 4,212 bytes it is the model closest to Vite's 4,096-byte `assetsInlineLimit`,
-  // and `client/vite.config.ts` opts .glb out of inlining by only 116 bytes of
+  // `clutter.fungus_b` rides along with the two characters for a second reason: at
+  // 4,236 bytes it is the model closest to Vite's 4,096-byte `assetsInlineLimit`,
+  // and `client/vite.config.ts` opts .glb out of inlining by only 140 bytes of
   // margin. Nothing else in the repo guards that opt-out — deleting it passes
   // typecheck, lint, the suite and the build today. An inlined model has no
   // `/assets/<id>-<hash>.glb` in the bundle at all, so the "does not reference"
   // failure below catches a lost guard for free, in production, which is where it
   // would actually matter.
-  const modelIds = ['enemy.grunt', 'enemy.skeleton', 'clutter.fungus_b'];
+  const modelIds = ['ranger.nathan', 'hollow.antlered', 'clutter.fungus_b'];
   if (!bundleSource) {
     // Check 3 already reported why. Running the loop here would add one
     // "the bundle does not reference …" line per id, all blaming the model map

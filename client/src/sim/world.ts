@@ -11,7 +11,7 @@ import { spiralSpawn } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
 import { buildRegister, installRegister, type Register } from "./register.js";
-import { PROPS, propSite, type RoadProp } from "./passes/trailhead.js";
+import { CAR_MATERIAL, KIOSK_MATERIAL, propSite, roadProp } from "./passes/trailhead.js";
 import { containAtRoad } from "./containment.js";
 import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
@@ -159,19 +159,19 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
       rngSeed: forest.seed | 0,
     },
   };
-  // The post and the car stand where the trailhead pass put them, and the
+  // The kiosk and the car stand where the trailhead pass put them, and the
   // poster comes from the same seed on every peer.
   const roadCenterX = variant.roadCenterX;
   if (graph !== undefined && roadCenterX !== undefined) {
-    const post = propSite(graph, roadCenterX, forest.seed, PROPS[0] as RoadProp);
-    const car = propSite(graph, roadCenterX, forest.seed, PROPS[2] as RoadProp);
+    const kiosk = propSite(graph, roadCenterX, forest.seed, roadProp(KIOSK_MATERIAL));
+    const car = propSite(graph, roadCenterX, forest.seed, roadProp(CAR_MATERIAL));
     installRegister(
       world,
       buildRegister({
         seed: forest.seed,
         graph,
         groundH: (x, z) => elevationAt(forest.seed, x, z),
-        box: post,
+        kiosk,
         car,
       }),
     );

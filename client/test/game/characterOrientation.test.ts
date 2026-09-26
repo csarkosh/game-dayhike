@@ -4,7 +4,7 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 
-import { orientationRoot } from "../../src/game/enemyModel.js";
+import { orientationRoot } from "../../src/game/characterModel.js";
 
 let engine: NullEngine | null = null;
 
@@ -58,7 +58,7 @@ describe("orientationRoot", () => {
   it("returns a node whose yaw actually reaches the world matrix", () => {
     const s = scene();
     const loaded = loaderRoot(s);
-    const root = orientationRoot(loaded, "enemy_1");
+    const root = orientationRoot(loaded, "character_1");
 
     root.rotation.y = Math.PI / 2;
     const dir = facing(loaded);
@@ -72,7 +72,7 @@ describe("orientationRoot", () => {
   it("faces +Z at yaw 0, so the sim and the model agree on forward", () => {
     const s = scene();
     const loaded = loaderRoot(s);
-    const root = orientationRoot(loaded, "enemy_1");
+    const root = orientationRoot(loaded, "character_1");
 
     root.rotation.y = 0;
     const dir = facing(loaded);
@@ -84,7 +84,7 @@ describe("orientationRoot", () => {
   it("leaves the loader's own conversion untouched", () => {
     const s = scene();
     const loaded = loaderRoot(s);
-    orientationRoot(loaded, "enemy_1");
+    orientationRoot(loaded, "character_1");
 
     // The wrapper must not clear the quaternion or unmirror the scale: those are how
     // the loader reconciles glTF's handedness with Babylon's, not incidental state.
@@ -95,7 +95,7 @@ describe("orientationRoot", () => {
   it("moves with the wrapper, so position and yaw share one node", () => {
     const s = scene();
     const loaded = loaderRoot(s);
-    const root = orientationRoot(loaded, "enemy_1");
+    const root = orientationRoot(loaded, "character_1");
 
     root.position.set(3, 1, -2);
     loaded.computeWorldMatrix(true);

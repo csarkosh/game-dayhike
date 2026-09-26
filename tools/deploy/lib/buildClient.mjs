@@ -5,8 +5,8 @@ import { runLoud, tfOutput, requireLfsMaterialized } from './preconditions.mjs';
 // Checked before the build, not after: vite build would happily emit pointer
 // files into dist under a content hash and report success.
 export const LFS_MODELS = [
-  'client/assets/models/enemy.grunt.glb',
-  'client/assets/models/enemy.skeleton.glb',
+  'client/assets/models/ranger.nathan.glb',
+  'client/assets/models/hollow.antlered.glb',
 ];
 
 /** Every address the bundle bakes in, read from Terraform (or production.json). */
