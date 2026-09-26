@@ -35,10 +35,15 @@ export const ARM_HEIGHT = 0.204;
 const ARM_THICKNESS = 0.038;
 /** Where the arrow's point begins: the full-height board runs from the post end to here. */
 const ARM_BOARD_END = 0.95;
-/** Half the post model's square section. */
-const POST_HALF_WIDTH = 0.065;
-/** Clearance between an arm's post end and the post's face. */
-const ARM_SEAT_GAP = 0.005;
+/**
+ * How far out along the plank its lettering is moved from the board's middle.
+ * A plank's post end sits on the post's centre line, so its first few
+ * centimetres are inside the post, which is at most 0.067 m from its axis
+ * (0.095 m at a corner, measured at its foot and narrower above): moved out
+ * this far, with the texture's margin, the letters start 0.095 m out and none
+ * is buried in the post.
+ */
+const LABEL_OUT = 0.07;
 /**
  * Height of the bottom plank's centre above the post's foot. The planks have
  * no collider, so the bottom one's lower edge (1.648 m) sits above a hiker's
@@ -265,8 +270,8 @@ export function createSignMeshes(
   function label(name: string, arm: TransformNode, side: 1 | -1, material: Material): void {
     const plane = MeshBuilder.CreatePlane(name, { width: LABEL_SIZE.width, height: LABEL_SIZE.height }, scene);
     plane.parent = arm;
-    // Centred on the full-height board, clear of the arrow's point.
-    plane.position.set(side * (ARM_THICKNESS / 2 + LABEL_LIFT), 0, ARM_BOARD_END / 2);
+    // Along the board, clear of the post it runs into.
+    plane.position.set(side * (ARM_THICKNESS / 2 + LABEL_LIFT), 0, ARM_BOARD_END / 2 + LABEL_OUT);
     // A plane faces -Z; a quarter turn one way or the other points it out of its face.
     plane.rotation.y = -side * (Math.PI / 2);
     plane.material = material;
@@ -282,16 +287,15 @@ export function createSignMeshes(
       const footing = footings[p] as TransformNode;
       const count = plankCount(post);
       for (const arm of post.arms) {
-        // The plank's post end seated against the post: the square post
-        // reaches 0.065 (|dx| + |dz|) from its axis along the arm's direction —
-        // its face square on, a corner on the diagonal — so the plank meets it
-        // in every direction without cutting into it.
-        const seat = POST_HALF_WIDTH * (Math.abs(arm.dx) + Math.abs(arm.dz)) + ARM_SEAT_GAP;
+        // The plank's post end on the post's centre line, the footing's
+        // origin: whichever way it points, its end is buried in the post
+        // (whose axis is within 6 mm of the origin), so it reads as fixed to
+        // it with no gap, square on or on the diagonal.
         for (const [k, text] of arm.names.entries()) {
           const rank = arm.ranks[k] as number;
           const name = `sign_${p}_plank_${rank}`;
           const model = instantiateStaticModel(
-            container, name, arm.dx * seat, plankHeight(rank, count), arm.dz * seat, armYaw(arm),
+            container, name, 0, plankHeight(rank, count), 0, armYaw(arm),
           );
           keep(model, footing);
           const material = lettering(text);

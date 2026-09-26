@@ -51,11 +51,12 @@ function gatedLoader(scene: Scene) {
 }
 
 const C20 = Math.cos(Math.PI / 9), S20 = Math.sin(Math.PI / 9);
+const R2 = Math.SQRT1_2;
 /**
  * A three-way post at (100, 50) with four planks: two east, one west, and one
  * on an arm 20 degrees off the east one, close enough that two boards at one
  * height would cross. A two-way post at the origin with three planks, and a
- * one-plank post at (-50, 0).
+ * one-plank post at (-50, 0) pointing on the diagonal.
  */
 const POSTS: SignPost[] = [
   {
@@ -71,7 +72,7 @@ const POSTS: SignPost[] = [
       { dx: 0, dz: -1, names: ["Trailhead", "Fern Meadow"], ranks: [1, 2] },
     ],
   },
-  { x: -50, z: 0, arms: [{ dx: 0, dz: 1, names: ["Trailhead"], ranks: [0] }] },
+  { x: -50, z: 0, arms: [{ dx: R2, dz: R2, names: ["Trailhead"], ranks: [0] }] },
 ];
 /** Every plank's node, post by post, top plank first. */
 const PLANKS = [
@@ -217,7 +218,7 @@ describe("createSignMeshes", () => {
     expect(scene.meshes.filter((m) => m.getTotalVertices() > 0)).toHaveLength(0);
   });
 
-  it("turns each plank's tip along its branch, its post end seated on the post's face", async () => {
+  it("turns each plank's tip along its branch, its post end on the post's centre line", async () => {
     const scene = freshScene();
     const { signs } = setup(scene, diskLoader(scene));
     await signs.ready;
@@ -227,30 +228,92 @@ describe("createSignMeshes", () => {
     expect(east.rotation.y).toBeCloseTo(1.5707963, 4);
     east.computeWorldMatrix(true);
     const at = east.getAbsolutePosition();
-    // 0.065 to the post's face and 5 mm clear of it.
-    expect(at.x).toBeCloseTo(100.07, 4);
+    // On the post's axis: the footing's origin.
+    expect(at.x).toBeCloseTo(100, 4);
     expect(at.y).toBeCloseTo(4.395, 4);
     expect(at.z).toBeCloseTo(50, 4);
     // The arrow's tip 1.095 m on from the post end, at the arm's centre height.
     const verts = drawn(east).flatMap((m) => worldVertices(m).map(({ p }) => p));
     const tip = verts.reduce((a, b) => (b.x > a.x ? b : a));
-    expect(tip.x).toBeCloseTo(101.166, 2);
+    expect(tip.x).toBeCloseTo(101.096, 2);
     expect(tip.y).toBeCloseTo(4.395, 2);
     // The point is an edge across the board's thickness, 0.019 m either side of the centre line.
     expect(Math.abs(tip.z - 50)).toBeLessThanOrEqual(0.02);
     // The post end square across the arm, 0.204 m tall and 0.038 m thick.
-    expect(Math.min(...verts.map((p) => p.x))).toBeCloseTo(100.07, 3);
+    expect(Math.min(...verts.map((p) => p.x))).toBeCloseTo(100, 3);
     expect(Math.max(...verts.map((p) => p.y)) - Math.min(...verts.map((p) => p.y))).toBeCloseTo(0.204, 2);
     expect(Math.max(...verts.map((p) => p.z)) - Math.min(...verts.map((p) => p.z))).toBeCloseTo(0.038, 2);
 
     const west = node(scene, "sign_0_plank_1");
     expect(west.rotation.y).toBeCloseTo(-1.5707963, 4);
     const westVerts = drawn(west).flatMap((m) => worldVertices(m).map(({ p }) => p));
-    expect(Math.min(...westVerts.map((p) => p.x))).toBeCloseTo(98.834, 2);
+    expect(Math.min(...westVerts.map((p) => p.x))).toBeCloseTo(98.904, 2);
 
-    // The post at the origin points its top plank north: its tip at z = 0.07 + 1.096.
+    // The post at the origin points its top plank north: its tip at z = 1.096.
     const north = drawn(node(scene, "sign_1_plank_0")).flatMap((m) => worldVertices(m).map(({ p }) => p));
-    expect(Math.max(...north.map((p) => p.z))).toBeCloseTo(1.166, 2);
+    expect(Math.max(...north.map((p) => p.z))).toBeCloseTo(1.096, 2);
+    // The diagonal plank at (-50, 0): its tip 1.096 / sqrt 2 = 0.775 m out on each axis.
+    const diagonal = drawn(node(scene, "sign_2_plank_0")).flatMap((m) => worldVertices(m).map(({ p }) => p));
+    const out = diagonal.map((p) => (p.x + 50) * R2 + p.z * R2);
+    expect(Math.max(...out)).toBeCloseTo(1.096, 2);
+    const far = diagonal[out.indexOf(Math.max(...out))]!;
+    // The tip edge runs across the board's thickness, 0.019 m either side of the diagonal.
+    expect((far.x + 50 + far.z) / 2).toBeCloseTo(0.775, 2);
+    signs.dispose();
+  });
+
+  it("buries every plank's post end inside the post, square on or on the diagonal", async () => {
+    const scene = freshScene();
+    const { signs } = setup(scene, diskLoader(scene));
+    await signs.ready;
+    // The post model as drawn: 0.134 m by 0.126 m at its foot, its axis
+    // within 6 mm of the footing's origin, narrowing up the shaft.
+    const post = drawn(node(scene, "sign_2_post")).flatMap((m) => worldVertices(m).map(({ p }) => p));
+    const foot = post.filter((p) => p.y < 2.3);
+    expect([Math.min(...foot.map((p) => p.x)), Math.max(...foot.map((p) => p.x))].map((v) => +(v + 50).toFixed(3))).toEqual([-0.067, 0.061]);
+    expect([Math.min(...foot.map((p) => p.z)), Math.max(...foot.map((p) => p.z))].map((v) => +v.toFixed(3))).toEqual([-0.063, 0.063]);
+    for (const [p, where] of POSTS.entries()) {
+      // The post's surface as world-space triangles.
+      const triangles = drawn(node(scene, `sign_${p}_post`)).flatMap((m) => {
+        const verts = worldVertices(m).map(({ p: v }) => v);
+        const index = m.getIndices() ?? [];
+        const out: [Vector3, Vector3, Vector3][] = [];
+        for (let i = 0; i + 2 < index.length; i += 3) out.push([verts[index[i]!]!, verts[index[i + 1]!]!, verts[index[i + 2]!]!]);
+        return out;
+      });
+      const hits = (from: Vector3, dir: Vector3): boolean =>
+        triangles.some(([a, b, c]) => {
+          const e1 = b.subtract(a), e2 = c.subtract(a);
+          const h = Vector3.Cross(dir, e2);
+          const det = Vector3.Dot(e1, h);
+          if (Math.abs(det) < 1e-12) return false;
+          const q = from.subtract(a);
+          const u = Vector3.Dot(q, h) / det;
+          if (u < 0 || u > 1) return false;
+          const r = Vector3.Cross(q, e1);
+          const v = Vector3.Dot(dir, r) / det;
+          return v >= 0 && u + v <= 1 && Vector3.Dot(e2, r) / det > 0;
+        });
+      // Inside the post: a level ray from the point meets its surface
+      // whichever of eight ways it leaves.
+      const inside = (at: Vector3): boolean =>
+        [[1, 0], [R2, R2], [0, 1], [-R2, R2], [-1, 0], [-R2, -R2], [0, -1], [R2, -R2]].every(([x, z]) => hits(at, new Vector3(x, 0, z)));
+      expect(inside(new Vector3(where.x, 3, where.z))).toBe(true);
+      expect(inside(new Vector3(where.x + 0.2, 3, where.z))).toBe(false);
+      for (const arm of where.arms) {
+        for (const rank of arm.ranks) {
+          const plank = drawn(node(scene, `sign_${p}_plank_${rank}`)).flatMap((m) => worldVertices(m).map(({ p: v }) => v));
+          const reach = plank.map((v) => (v.x - where.x) * arm.dx + (v.z - where.z) * arm.dz);
+          const nearest = Math.min(...reach);
+          // The post end on the axis, 0 m out.
+          expect(nearest, `sign_${p}_plank_${rank}`).toBeCloseTo(0, 3);
+          // Every vertex of the post end inside the post.
+          const ends = plank.filter((_, i) => reach[i]! < nearest + 1e-3);
+          expect(ends.length).toBeGreaterThan(0);
+          for (const v of ends) expect(inside(v), `sign_${p}_plank_${rank} at ${v.asArray()}`).toBe(true);
+        }
+      }
+    }
     signs.dispose();
   });
 
@@ -276,11 +339,10 @@ describe("createSignMeshes", () => {
     expect(Math.abs(node(scene, "sign_1_plank_2").rotation.y)).toBeCloseTo(3.1415927, 4);
     // One plank alone at the base.
     expect(heightOf("sign_2_plank_0")).toBeCloseTo(3.75, 4);
-    // The east arm's second plank sits under the plank 20 degrees off it, not through it.
+    // The east arm's second plank sits under the plank 20 degrees off it, not through it,
+    // both on the post's axis.
     const off = node(scene, "sign_0_plank_2");
-    // 20 degrees off square, the post reaches further along it: 0.065 (cos 20 + sin 20) + 0.005.
-    const seat = off.getAbsolutePosition().subtract(new Vector3(100, 3.965, 50)).length();
-    expect(seat).toBeCloseTo(0.0883, 4);
+    expect(off.getAbsolutePosition().subtract(new Vector3(100, 3.965, 50)).length()).toBeCloseTo(0, 4);
     expect(off.rotation.y).toBeCloseTo(1.2217305, 4);
     expect(node(scene, "sign_0_plank_3").rotation.y).toBeCloseTo(1.5707963, 4);
     signs.dispose();
@@ -329,8 +391,8 @@ describe("createSignMeshes", () => {
         const offset = centre.subtract(armAt);
         expect(Vector3.Dot(normal, offset)).toBeCloseTo(0.02, 4);
         expect(Vector3.Dot(normal, along)).toBeCloseTo(0, 4);
-        // Centred on the full-height board, 0.475 m out from the post end.
-        expect(Vector3.Dot(offset, along)).toBeCloseTo(0.475, 4);
+        // The board's middle (0.475 m) moved 0.07 m out, so no letter is in the post.
+        expect(Vector3.Dot(offset, along)).toBeCloseTo(0.545, 4);
         // Seen from outside, looking back along -normal: u runs to the
         // viewer's right and v up, where a painted canvas's top row lands.
         const right = Vector3.Cross(Vector3.Up(), normal.scale(-1));
