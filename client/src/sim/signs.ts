@@ -232,6 +232,7 @@ export function signPosts(graph: TrailGraph, sites: readonly NamedSite[]): SignP
       if (nearest !== undefined) planks.push({ arm: a, name: nearest.name, dist: nearest.dist });
     }
     planks.sort((p, q) => {
+      if (p === q) return 0;
       if (p === summit || q === summit) return p === summit ? -1 : 1;
       if (p.dist !== q.dist) return p.dist - q.dist;
       return (out[p.arm] as Link).to - (out[q.arm] as Link).to;

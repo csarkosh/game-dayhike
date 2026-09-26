@@ -209,7 +209,16 @@ export function createSignMeshes(
   const containers: AssetContainer[] = [];
   const placed: PlacedModel[] = [];
   const labels: Mesh[] = [];
-  const painted: Material[] = [];
+  /** One lettering per place name, shared by every plank that names it on every post. */
+  const painted = new Map<string, Material>();
+  function lettering(text: string): Material {
+    let material = painted.get(text);
+    if (material === undefined) {
+      material = paint(scene, `sign_label_${painted.size}`, text, LABEL_TEXTURE.width, LABEL_TEXTURE.height);
+      painted.set(text, material);
+    }
+    return material;
+  }
 
   // Each post's footing: the post and its arms hang off it.
   const footings = posts.map((post, p) => {
@@ -285,8 +294,7 @@ export function createSignMeshes(
             container, name, arm.dx * seat, plankHeight(rank, count), arm.dz * seat, armYaw(arm),
           );
           keep(model, footing);
-          const material = paint(scene, `${name}_label`, text, LABEL_TEXTURE.width, LABEL_TEXTURE.height);
-          painted.push(material);
+          const material = lettering(text);
           label(`${name}_label_px`, model.node, 1, material);
           label(`${name}_label_nx`, model.node, -1, material);
         }
@@ -336,8 +344,8 @@ export function createSignMeshes(
         model.dispose();
       }
       placed.length = 0;
-      for (const m of painted) m.dispose(true, true);
-      painted.length = 0;
+      for (const m of painted.values()) m.dispose(true, true);
+      painted.clear();
       for (const c of containers) c.dispose();
       containers.length = 0;
       for (const node of footings) node.dispose();

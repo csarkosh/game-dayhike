@@ -290,16 +290,22 @@ describe("createSignMeshes", () => {
     const scene = freshScene();
     const { signs, painted, shadowed } = setup(scene, diskLoader(scene));
     await signs.ready;
+    // One lettering per place name, painted once and shared by every plank
+    // naming it, on every post.
     expect(painted.map(({ name, text, width, height }) => ({ name, text, width, height }))).toEqual([
-      { name: "sign_0_plank_0_label", text: "Summit", width: 1024, height: 192 },
-      { name: "sign_0_plank_3_label", text: "Trailhead", width: 1024, height: 192 },
-      { name: "sign_0_plank_1_label", text: "Old Lake", width: 1024, height: 192 },
-      { name: "sign_0_plank_2_label", text: "Bear Meadow", width: 1024, height: 192 },
-      { name: "sign_1_plank_0_label", text: "Summit", width: 1024, height: 192 },
-      { name: "sign_1_plank_1_label", text: "Trailhead", width: 1024, height: 192 },
-      { name: "sign_1_plank_2_label", text: "Fern Meadow", width: 1024, height: 192 },
-      { name: "sign_2_plank_0_label", text: "Trailhead", width: 1024, height: 192 },
+      { name: "sign_label_0", text: "Summit", width: 1024, height: 192 },
+      { name: "sign_label_1", text: "Trailhead", width: 1024, height: 192 },
+      { name: "sign_label_2", text: "Old Lake", width: 1024, height: 192 },
+      { name: "sign_label_3", text: "Bear Meadow", width: 1024, height: 192 },
+      { name: "sign_label_4", text: "Fern Meadow", width: 1024, height: 192 },
     ]);
+    const textOf = new Map<string, string>(POSTS.flatMap((post, p) => post.arms.flatMap((a) => a.names.map((n, k) => [`sign_${p}_plank_${a.ranks[k]}`, n] as const))));
+    const materialOf = (plank: string): Material => scene.getMeshByName(`${plank}_label_px`)!.material!;
+    // Trailhead on three posts, the Summit on two: each one material.
+    expect(materialOf("sign_0_plank_3")).toBe(materialOf("sign_1_plank_1"));
+    expect(materialOf("sign_0_plank_3")).toBe(materialOf("sign_2_plank_0"));
+    expect(materialOf("sign_0_plank_0")).toBe(materialOf("sign_1_plank_0"));
+    expect(materialOf("sign_0_plank_0")).not.toBe(materialOf("sign_0_plank_3"));
 
     for (const arm of PLANKS) {
       const labels = scene.meshes.filter((m) => m.name.startsWith(`${arm}_label_`));
@@ -307,7 +313,7 @@ describe("createSignMeshes", () => {
       const armNode = node(scene, arm);
       const along = new Vector3(Math.sin(armNode.rotation.y), 0, Math.cos(armNode.rotation.y));
       for (const label of labels) {
-        expect(label.material).toBe(painted.find((p) => p.name === `${arm}_label`)!.material);
+        expect(label.material).toBe(painted.find((p) => p.text === textOf.get(arm))!.material);
         expect(label.material!.backFaceCulling).toBe(true);
         expect(shadowed.has(label)).toBe(false);
         expect(label.receiveShadows).toBe(true);
@@ -336,8 +342,11 @@ describe("createSignMeshes", () => {
         expect(Math.min(...v1) - Math.max(...v0)).toBeCloseTo(0.19, 4);
       }
     }
+    for (const { material } of painted) expect(scene.materials).toContain(material);
     signs.dispose();
     expect(scene.meshes.filter((m) => m.name.includes("_label_"))).toHaveLength(0);
+    // Each shared lettering disposed once, with its planks gone.
+    for (const { material } of painted) expect(scene.materials).not.toContain(material);
   });
 
   it("raises the post's and the arms' light cap to one lamp per hiker plus the sun and fill", async () => {
@@ -374,7 +383,7 @@ describe("createSignMeshes", () => {
     expect(scene.getMeshByName("sign_0_box")).not.toBeNull();
     expect(scene.getTransformNodeByName("sign_0_post")).toBeNull();
     expect(scene.getTransformNodeByName("sign_0_plank_0")).not.toBeNull();
-    expect(painted).toHaveLength(8);
+    expect(painted).toHaveLength(5);
     signs.dispose();
   });
 
