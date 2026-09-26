@@ -71,6 +71,22 @@ Where the code differs from the text below, or adds to it:
 - **The startup window** is kept as the times of the first frame and the last
   compile, and read when a failure arrives, rather than by timers.
 
+**Task 3, as built.** `offsetKeyedVertexBuffer` (`webgpuVertexBuffer.ts`) keys
+the hash by the offset through an accessor on the vertex buffer instead of a
+replaced `_computeHashCode` (§10). Babylon 9.18 recomputes the hash only by
+assigning `hashCode`, from the constructor and from the `instanceDivisor`
+setter when instancing flips; the accessor's setter keeps what Babylon assigns
+and its getter adds `byteOffset × 2^24`, so neither of those paths, nor any
+later direct assignment, can drop the term. The cache keeps its keys in a plain
+array, so a key above 2^31 is exact. Three canaries in
+`webgpuVertexBuffer.test.ts` say when a Babylon upgrade changes the ground:
+two plain vertex buffers at different offsets still hash alike; the cache still
+keys by `hashCode + (location << 7)`; and the hash is still recomputed by that
+assignment, from those two places only. The source scan of §10 lives in the
+same test file and is stricter: no other file under `client/src` makes a vertex
+buffer at all. Nothing on `main` calls the workaround yet; Task 7 is its first
+caller. Appendix A stays the draft as written, and nothing is filed.
+
 The spike ran the game on Babylon's `WebGPUEngine` with every existing material
 and plugin, to measure a compute cull of the blade field, and found the engine
 itself worth more than the cull it was built to test. At the canopy pose, high
