@@ -39,6 +39,7 @@ describe("probeAdapter", () => {
     const adapter = {
       limits: browserLimits({ maxInterStageShaderVariables: 28, maxVertexBuffers: 8 }),
       info: { isFallbackAdapter: false },
+      features: new Set(["texture-compression-bc", "timestamp-query"]),
     };
     vi.stubGlobal("navigator", {
       gpu: {
@@ -52,6 +53,7 @@ describe("probeAdapter", () => {
     expect(await probeAdapter()).toEqual({
       limits: { maxInterStageShaderVariables: 28, maxVertexBuffers: 8 },
       isFallbackAdapter: false,
+      features: ["texture-compression-bc", "timestamp-query"],
     });
     expect(asked.at(-1)).toEqual({ powerPreference: "high-performance" });
   });
@@ -59,20 +61,36 @@ describe("probeAdapter", () => {
   it("reports a fallback adapter as one", async () => {
     const adapter = { limits: browserLimits({ maxVertexBuffers: 8 }), info: { isFallbackAdapter: true } };
     vi.stubGlobal("navigator", { gpu: { requestAdapter: () => Promise.resolve(adapter) } });
-    expect(await probeAdapter()).toEqual({ limits: { maxVertexBuffers: 8 }, isFallbackAdapter: true });
+    expect(await probeAdapter()).toEqual({ limits: { maxVertexBuffers: 8 }, isFallbackAdapter: true, features: [] });
   });
 });
 
 describe("watchWebGpu", () => {
   const effectError = { effect: null as unknown as Effect, errors: "FRAGMENT SHADER ERROR" };
 
-  it("reports a failed effect or an uncaptured error as pipeline and a lost device as lost, each once", () => {
+  it("reports an uncaptured error Babylon logs as pipeline, by the log alone", () => {
     const engine = new NullEngine();
     const seen: [string, boolean][] = [];
     const stop = watchWebGpu(engine, (reason, inStartup) => seen.push([reason, inStartup]), () => 0);
     try {
       Logger.Warn("[Frame 3] WebGPU uncaptured error (1): [object GPUValidationError] - binding missing");
+      expect(seen).toEqual([["pipeline", true]]);
+      // The same reason again, by another road, is not reported twice.
       engine.onEffectErrorObservable.notifyObservers(effectError);
+      expect(seen).toEqual([["pipeline", true]]);
+    } finally {
+      stop();
+      engine.dispose();
+    }
+  });
+
+  it("reports a failed effect as pipeline and a lost device as lost, each once", () => {
+    const engine = new NullEngine();
+    const seen: [string, boolean][] = [];
+    const stop = watchWebGpu(engine, (reason, inStartup) => seen.push([reason, inStartup]), () => 0);
+    try {
+      engine.onEffectErrorObservable.notifyObservers(effectError);
+      expect(seen).toEqual([["pipeline", true]]);
       engine.onContextLostObservable.notifyObservers(engine);
       engine.onContextLostObservable.notifyObservers(engine);
       expect(seen).toEqual([["pipeline", true], ["lost", true]]);

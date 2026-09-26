@@ -18,6 +18,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
+import { Tools } from "@babylonjs/core/Misc/tools.js";
 import glslangJs from "@babylonjs/core/assets/glslang/glslang.js?url";
 import glslangWasm from "@babylonjs/core/assets/glslang/glslang.wasm?url";
 import twgslJs from "@babylonjs/core/assets/twgsl/twgsl.js?url";
@@ -29,9 +30,10 @@ import { createStartupWindow, WEBGPU_REQUIRED_LIMITS, WEBGPU_START_MS, type Adap
 const UNCAPTURED = "WebGPU uncaptured error";
 
 /**
- * The high-performance adapter's limits and whether it is a fallback
- * (software) adapter, or null where the browser has no WebGPU, offers no
- * adapter, or the request fails. Never rejects.
+ * The high-performance adapter's limits and features, and whether it is a
+ * fallback (software) adapter, or null where the browser has no WebGPU, offers
+ * no adapter, or the request fails. Never rejects; a request that never
+ * answers is bounded by the caller (`resolveWebGpu`).
  */
 export async function probeAdapter(): Promise<AdapterReport | null> {
   const gpu = (globalThis.navigator as { gpu?: GPU } | undefined)?.gpu;
@@ -49,7 +51,8 @@ export async function probeAdapter(): Promise<AdapterReport | null> {
       if (typeof value === "number") limits[name] = value;
     }
     const legacy = (adapter as unknown as { isFallbackAdapter?: boolean }).isFallbackAdapter;
-    return { limits, isFallbackAdapter: adapter.info?.isFallbackAdapter ?? legacy ?? false };
+    const features = adapter.features ? [...adapter.features] : [];
+    return { limits, isFallbackAdapter: adapter.info?.isFallbackAdapter ?? legacy ?? false, features };
   } catch {
     return null;
   }
@@ -58,46 +61,65 @@ export async function probeAdapter(): Promise<AdapterReport | null> {
 /**
  * A WebGPU engine on `canvas`, made with the WebGL2 engine's own options
  * (antialiased, a stencil buffer, adapted to the device ratio), the
- * high-performance adapter, and exactly `WEBGPU_REQUIRED_LIMITS`. The
- * translators are loaded here too, so a failure to fetch them is a failure to
- * start. Rejects on any failure, or when `WEBGPU_START_MS` pass first (Babylon's
- * translator loader never rejects: it waits), having disposed what it made; the
- * canvas may then hold a WebGPU context, so the caller draws WebGL2 on a fresh
- * one.
+ * high-performance adapter, exactly `WEBGPU_REQUIRED_LIMITS`, and the optional
+ * `features` it is given (`featuresToRequest`; Babylon also drops any the
+ * adapter lacks). The translators are loaded here too, so a failure to fetch
+ * them is a failure to start. Rejects on any failure, or when `ms` pass first,
+ * having disposed what it made; the canvas may then hold a WebGPU context, so
+ * the caller draws WebGL2 on a fresh one.
  */
-export async function createWebGpuEngine(canvas: HTMLCanvasElement): Promise<WebGPUEngine> {
-  const engine = new WebGPUEngine(canvas, {
-    antialias: true,
-    stencil: true,
-    adaptToDeviceRatio: true,
-    powerPreference: "high-performance",
-    deviceDescriptor: { requiredLimits: { ...WEBGPU_REQUIRED_LIMITS } },
-  });
+export async function createWebGpuEngine(
+  canvas: HTMLCanvasElement,
+  options: { ms?: number; features?: readonly string[] } = {},
+): Promise<WebGPUEngine> {
+  const ms = options.ms ?? WEBGPU_START_MS;
+  const made: { engine: WebGPUEngine | null; over: boolean } = { engine: null, over: false };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`the WebGPU engine was not ready in ${WEBGPU_START_MS} ms`)), WEBGPU_START_MS);
+    timer = setTimeout(() => reject(new Error(`the WebGPU engine was not ready in ${ms} ms`)), ms);
   });
-  const start = async (): Promise<void> => {
+  const start = async (): Promise<WebGPUEngine> => {
+    // The translators' loaders first, through Babylon's own script loader,
+    // which rejects when a script does not load: Babylon's translator setup,
+    // handed only their URLs, waits for good instead. Loaded here, they are the
+    // globals Babylon then takes. Before the engine, so a missing loader leaves
+    // the canvas without a WebGPU context.
+    await Promise.all([Tools.LoadScriptAsync(glslangJs), Tools.LoadScriptAsync(twgslJs)]);
+    if (made.over) throw new Error("the WebGPU start was abandoned");
+    const engine = new WebGPUEngine(canvas, {
+      antialias: true,
+      stencil: true,
+      adaptToDeviceRatio: true,
+      powerPreference: "high-performance",
+      deviceDescriptor: {
+        requiredLimits: { ...WEBGPU_REQUIRED_LIMITS },
+        requiredFeatures: [...(options.features ?? [])] as GPUFeatureName[],
+      },
+    });
+    made.engine = engine;
     await engine.initAsync({ jsPath: glslangJs, wasmPath: glslangWasm }, { jsPath: twgslJs, wasmPath: twgslWasm });
     await engine.prepareGlslangAndTintAsync();
+    return engine;
   };
   try {
-    await Promise.race([start(), deadline]);
+    const engine = await Promise.race([start(), deadline]);
+    // Only once the engine stands: a failed start leaves Babylon's defaults,
+    // and neither switch changes anything on WebGL2, where every material is
+    // GLSL.
+    PBRBaseMaterial.ForceGLSL = true;
+    StandardMaterial.ForceGLSL = true;
+    return engine;
   } catch (err) {
     try {
-      engine.dispose();
+      made.engine?.dispose();
     } catch {
       /* a half-made engine may not dispose cleanly; it is dropped either way */
     }
     throw err;
   } finally {
+    made.over = true;
     clearTimeout(timer);
   }
-  // Only once the engine stands: a failed start leaves Babylon's defaults, and
-  // neither switch changes anything on WebGL2, where every material is GLSL.
-  PBRBaseMaterial.ForceGLSL = true;
-  StandardMaterial.ForceGLSL = true;
-  return engine;
 }
 
 /**

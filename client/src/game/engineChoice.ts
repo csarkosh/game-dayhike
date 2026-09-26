@@ -37,6 +37,20 @@ export const WEBGPU_REQUIRED_LIMITS: Readonly<Record<string, number>> = {
   maxVertexBuffers: 8,
 };
 
+/**
+ * The texture compression the device is asked for, where the adapter has it:
+ * the three features Babylon's WebGPU engine reads its compressed-format caps
+ * from (`bc` gives `s3tc` and `bptc`, then `etc2` and `astc`), which the KTX2
+ * transcoder picks a target from. Without them the characters' KTX2 textures
+ * would be transcoded to uncompressed RGBA on WebGPU and stay compressed on
+ * WebGL2.
+ */
+export const WEBGPU_TEXTURE_FEATURES: readonly string[] = [
+  "texture-compression-bc",
+  "texture-compression-etc2",
+  "texture-compression-astc",
+];
+
 /** The remembered fallback, in `localStorage`. */
 export const FALLBACK_KEY = "dayhike.engine";
 /** The HUD line carried across a fallback reload, in `sessionStorage`. */
@@ -73,7 +87,18 @@ export function parseTierOverride(search: string): QualityTier | null {
 }
 
 /** What `gpuEngine.ts` learns of the high-performance adapter. */
-export type AdapterReport = { limits: Readonly<Record<string, number>>; isFallbackAdapter: boolean };
+export type AdapterReport = {
+  limits: Readonly<Record<string, number>>;
+  isFallbackAdapter: boolean;
+  /** The adapter's optional features, where it was asked for them. */
+  features?: readonly string[];
+};
+
+/** Of `WEBGPU_TEXTURE_FEATURES`, those the adapter has, in that order. */
+export function featuresToRequest(adapterFeatures: Iterable<string>): string[] {
+  const have = new Set(adapterFeatures);
+  return WEBGPU_TEXTURE_FEATURES.filter((feature) => have.has(feature));
+}
 
 /** Whether the adapter can run the scene, and if not, why, in a few words. A
  * limit the adapter does not report counts as zero. */
@@ -134,13 +159,16 @@ export function browserMajor(userAgent: string): number {
 }
 
 /** The record after a failure. A lost device inside `LOSS_WINDOW_MS` of the
- * last one counts up; any other starts the count again. */
+ * last one counts up; any other starts the count again. A lost device never
+ * replaces a record of another reason that still holds: the fault that record
+ * remembers has not gone away, and a lone loss would retry WebGPU. */
 export function recordFailure(
   prev: FallbackRecord | null,
   reason: FallbackReason,
   env: EngineEnv,
   now: number,
 ): FallbackRecord {
+  if (reason === "lost" && prev !== null && prev.reason !== "lost" && fallbackHolds(prev, env, now)) return prev;
   let losses = 0;
   if (reason === "lost") {
     losses = prev !== null && prev.reason === "lost" && now - prev.at < LOSS_WINDOW_MS ? prev.losses + 1 : 1;
@@ -258,6 +286,125 @@ export function failureAction(input: {
   if (!toWebGl2) return { reload: "reload", notice: NOTICE_RESTARTED };
   const pinned = !input.stored || input.override === "webgpu";
   return { reload: pinned ? "webgl2" : "reload", notice: NOTICE_SWITCHED };
+}
+
+/** The line one GPU error after the startup window logs: what the next load
+ * will do, which is WebGL2 only where the record was stored and no
+ * `?engine=webgpu` outranks it, or where this tab's URL was pinned instead. */
+export function lateFailureLine(stored: boolean, override: EngineName | null): string {
+  const head = "WebGPU: a GPU error after startup; ";
+  if (!stored) return `${head}storage refused the record, so this tab's URL now asks for WebGL2.`;
+  if (override === "webgpu") return `${head}remembered, but ?engine=webgpu in this URL still asks for WebGPU.`;
+  return `${head}the next load draws with WebGL2.`;
+}
+
+/** The query parameters that belong to this page alone (design §5.3). */
+const OVERRIDES = ["engine", "tier"] as const;
+
+/**
+ * `route` (a path and query, as a lobby host announces it) without `engine=`
+ * and `tier=`, so a test override or a pinned fallback never follows a host
+ * onto a follower's machine. A route with neither comes back byte for byte.
+ */
+export function stripOverrides(route: string): string {
+  const at = route.indexOf("?");
+  if (at < 0) return route;
+  const params = new URLSearchParams(route.slice(at));
+  if (!OVERRIDES.some((name) => params.has(name))) return route;
+  for (const name of OVERRIDES) params.delete(name);
+  const query = params.toString();
+  return query === "" ? route.slice(0, at) : `${route.slice(0, at)}?${query}`;
+}
+
+/** `route` with this page's own `engine=` and `tier=` (from `ownSearch`)
+ * carried onto it: where a follower goes, its own overrides go too. */
+export function keepOverrides(route: string, ownSearch: string): string {
+  const own = new URLSearchParams(ownSearch);
+  if (!OVERRIDES.some((name) => own.has(name))) return route;
+  const at = route.indexOf("?");
+  const params = new URLSearchParams(at < 0 ? "" : route.slice(at));
+  for (const name of OVERRIDES) {
+    const value = own.get(name);
+    if (value !== null) params.set(name, value);
+  }
+  return `${at < 0 ? route : route.slice(0, at)}?${params.toString()}`;
+}
+
+const TIMED_OUT = Symbol("timed out");
+
+/** `promise`, or `TIMED_OUT` once `ms` pass first. */
+function withinTime<T>(promise: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
+/** How `resolveWebGpu` reaches the WebGPU module and the page, passed in so
+ * the order, the budget and every failure can be tested without either. */
+export type WebGpuSteps<E> = {
+  /** The WebGPU module: `import("./gpuEngine.js")`, adapted. */
+  load(): Promise<{
+    probe(): Promise<AdapterReport | null>;
+    /** The engine, given what is left of the budget and the features to ask for. */
+    create(ms: number, features: string[]): Promise<E>;
+  }>;
+  /** Writes the remembered fallback. */
+  remember(reason: "init"): void;
+  warn(message: string, detail?: unknown): void;
+};
+
+/**
+ * The WebGPU engine, or null for WebGL2, within one budget of `budgetMs` for
+ * the module, the adapter and the engine together, so nothing on the way can
+ * leave the page waiting for good. Never rejects. A module that does not load
+ * is not remembered (nothing of the GPU failed); an adapter that does not
+ * answer, or an engine that does not start, is (`init`). An adapter that does
+ * not fit is WebGL2 with no record, and a word in the console only where
+ * `?engine=webgpu` asked for it.
+ */
+export async function resolveWebGpu<E>(
+  input: EngineInput,
+  steps: WebGpuSteps<E>,
+  budgetMs: number = WEBGPU_START_MS,
+  now: () => number = () => Date.now(),
+): Promise<E | null> {
+  const start = now();
+  const left = (): number => Math.max(0, budgetMs - (now() - start));
+
+  let gpu: Awaited<ReturnType<WebGpuSteps<E>["load"]>>;
+  try {
+    const loaded = await withinTime(steps.load(), left());
+    if (loaded === TIMED_OUT) {
+      steps.warn(`WebGPU: the engine's module did not load in ${budgetMs} ms; drawing with WebGL2.`);
+      return null;
+    }
+    gpu = loaded;
+  } catch (err) {
+    steps.warn("WebGPU: the engine's module did not load; drawing with WebGL2.", err);
+    return null;
+  }
+
+  const report = await withinTime(gpu.probe().catch(() => null), left());
+  if (report === TIMED_OUT) {
+    steps.remember("init");
+    steps.warn(`WebGPU: the adapter did not answer in ${budgetMs} ms; drawing with WebGL2.`);
+    return null;
+  }
+  const fit = adapterFits(report);
+  if (chooseEngine({ ...input, fits: fit.fits }) !== "webgpu") {
+    if (input.override === "webgpu") steps.warn(`WebGPU: not on this browser (${fit.why}); drawing with WebGL2.`);
+    return null;
+  }
+
+  try {
+    return await gpu.create(left(), featuresToRequest(report?.features ?? []));
+  } catch (err) {
+    steps.remember("init");
+    steps.warn("WebGPU: the engine did not start; drawing with WebGL2.", err);
+    return null;
+  }
 }
 
 /** `href` with `engine=` set, everything else kept. */

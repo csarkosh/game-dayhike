@@ -31,17 +31,20 @@ import { startGame, type GameHandle } from "./app.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { detectTier, type QualityTier } from "./game/quality.js";
 import {
-  adapterFits,
   browserMajor,
   chooseEngine,
   failureAction,
   fallbackHolds,
+  keepOverrides,
+  lateFailureLine,
   leaveNotice,
   parseEngineOverride,
   parseTierOverride,
   readFallback,
   recordFailure,
+  resolveWebGpu,
   safeStorage,
+  stripOverrides,
   withEngine,
   writeFallback,
   WEBGPU_ENABLED,
@@ -241,17 +244,20 @@ function detach(): void {
   lobby = null;
 }
 
-/** A follower goes where the host is. The host's route is "" until known. */
+/** A follower goes where the host is. The host's route is "" until known.
+ * `?engine=` and `?tier=` are each page's own (`stripOverrides`): they neither
+ * make a route differ nor leave the follower's URL when it moves. */
 function follow(active: Lobby): void {
   if (active.state.role !== "client") return;
   const target = active.state.route;
-  if (target === "" || target === currentRoutePath()) return;
-  navigateTo(target);
+  if (target === "" || stripOverrides(target) === stripOverrides(currentRoutePath())) return;
+  navigateTo(keepOverrides(target, location.search));
 }
 
-/** Host side: tell the lobby where we are now. Called from render(). */
+/** Host side: tell the lobby where we are now, without this page's own
+ * overrides. Called from render(). */
 function announceRoute(): void {
-  if (lobby !== null && lobby.state.role === "host") lobby.setRoute(currentRoutePath());
+  if (lobby !== null && lobby.state.role === "host") lobby.setRoute(stripOverrides(currentRoutePath()));
 }
 
 // Landing routes are announced at once; the game route only after its first
@@ -441,40 +447,45 @@ function engineEnv(): EngineEnv {
   return { browser: browserMajor(navigator.userAgent), babylon: AbstractEngine.Version };
 }
 
-/** Remembers a failure, and returns what `failureAction` needs of it. */
-function rememberFailure(reason: "init" | "pipeline" | "lost"): { stored: boolean; holds: boolean } {
+/**
+ * Remembers a failure, and returns what `failureAction` needs of it. Where
+ * storage refuses the record and `pin` is set, this tab's URL is pinned to
+ * `engine=webgl2` instead, so a reload of it stays on WebGL2 even when the
+ * failure itself did not reload.
+ */
+function rememberFailure(reason: "init" | "pipeline" | "lost", pin = true): { stored: boolean; holds: boolean } {
   const local = localStore();
   const env = engineEnv();
   const now = Date.now();
   const record = recordFailure(readFallback(local), reason, env, now);
-  return { stored: writeFallback(local, record), holds: fallbackHolds(record, env, now) };
+  const stored = writeFallback(local, record);
+  if (!stored && pin) history.replaceState(history.state, "", withEngine(location.href, "webgl2"));
+  return { stored, holds: fallbackHolds(record, env, now) };
 }
 
 /**
- * The WebGPU engine for `canvas`, or null for WebGL2: the module is loaded,
- * the adapter asked, and the engine made, each step's failure caught. A `?engine=webgpu`
- * the adapter cannot honour says why, once; a start that fails is remembered.
+ * The WebGPU engine for `canvas`, or null for WebGL2, by `resolveWebGpu`: the
+ * module, the adapter and the engine within one budget, every failure caught.
+ * The URL is pinned only while this render is still the page's.
  */
-async function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput): Promise<MadeEngine | null> {
-  let gpu: GpuModule;
-  try {
-    gpu = await import("./game/gpuEngine.js");
-  } catch (err) {
-    console.warn("WebGPU: the engine's module did not load; drawing with WebGL2.", err);
-    return null;
-  }
-  const fit = adapterFits(await gpu.probeAdapter());
-  if (chooseEngine({ ...input, fits: fit.fits }) !== "webgpu") {
-    if (input.override === "webgpu") console.warn(`WebGPU: not on this browser (${fit.why}); drawing with WebGL2.`);
-    return null;
-  }
-  try {
-    return { engine: await gpu.createWebGpuEngine(canvas), watch: gpu.watchWebGpu };
-  } catch (err) {
-    rememberFailure("init");
-    console.warn("WebGPU: the engine did not start; drawing with WebGL2.", err);
-    return null;
-  }
+function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput, token: number): Promise<MadeEngine | null> {
+  return resolveWebGpu<MadeEngine>(input, {
+    load: async () => {
+      const gpu: GpuModule = await import("./game/gpuEngine.js");
+      return {
+        probe: gpu.probeAdapter,
+        create: async (ms, features) => ({
+          engine: await gpu.createWebGpuEngine(canvas, { ms, features }),
+          watch: gpu.watchWebGpu,
+        }),
+      };
+    },
+    remember: (reason) => void rememberFailure(reason, token === renderToken),
+    warn: (message, detail) => {
+      if (detail === undefined) console.warn(message);
+      else console.warn(message, detail);
+    },
+  });
 }
 
 // `app` is passed in rather than closed over: the null check above does not
@@ -576,7 +587,7 @@ function render(container: HTMLDivElement): void {
   }
   // WebGPU could be the answer, which takes the adapter and a moment. A render
   // that superseded this one while it was made wins.
-  void makeWebGpu(canvas, input).then((made) => {
+  void makeWebGpu(canvas, input, token).then((made) => {
     if (token !== renderToken) {
       made?.engine.dispose();
       return;
@@ -604,12 +615,12 @@ function render(container: HTMLDivElement): void {
 function launch(canvas: HTMLCanvasElement, worldToken: string, tier: QualityTier, made: MadeEngine | null): void {
   let stopWatching = (): void => undefined;
   const onGpuFailure = (reason: "pipeline" | "lost", inStartup: boolean): void => {
+    // Read before the record: a refused one pins `engine=webgl2` in the URL.
+    const override = parseEngineOverride(location.search);
     const { stored, holds } = rememberFailure(reason);
-    const action = failureAction({ stored, holds, reason, inStartup, override: parseEngineOverride(location.search) });
+    const action = failureAction({ stored, holds, reason, inStartup, override });
     if (action.reload === "none") {
-      console.error(
-        `WebGPU: a GPU error after startup; ${stored ? "the next load draws with WebGL2" : "it could not be remembered"}.`,
-      );
+      console.error(lateFailureLine(stored, override));
       return;
     }
     stopWatching();
