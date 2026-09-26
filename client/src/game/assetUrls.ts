@@ -3,7 +3,7 @@
  *
  * Shipped .glb output used to live in `client/public/assets/models/`. Vite copies
  * `public/` through verbatim, so those files shipped at fixed, unhashed URLs —
- * `/assets/models/enemy.grunt.glb` — and Firebase could only cache them for an
+ * `/assets/models/ranger.nathan.glb` — and Firebase could only cache them for an
  * hour (a longer cache on an unhashed URL means a redeployed model is stale
  * until the cache expires, with no way to bust it). Every model in the game was
  * therefore re-fetched hourly, and for the first hour after a deploy a warm

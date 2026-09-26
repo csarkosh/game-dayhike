@@ -273,6 +273,38 @@ describe("createCharacterPool", () => {
     pool.dispose();
   });
 
+  it("raises every loaded material's light cap to one lamp per hiker plus the sun and fill", async () => {
+    // Container materials never reach the scene's new-material observable,
+    // so without this they keep Babylon's 4 and drop the third hiker's lamp.
+    const s = scene();
+    const pool = createCharacterPool(catalog, fromDisk);
+    await pool.load(s, ["ranger.nathan", "hollow.antlered"]);
+    for (const key of [1, 2] as const) {
+      const instance = pool.acquire(key, key === 1 ? "ranger.nathan" : "hollow.antlered")!;
+      const materials = instance.root.getChildMeshes(false).flatMap((m) => (m.material === null ? [] : [m.material]));
+      expect(materials.length).toBeGreaterThan(0);
+      for (const m of materials) expect((m as PBRMaterial).maxSimultaneousLights).toBe(7);
+    }
+    pool.dispose();
+  });
+
+  it("shares one load between two calls naming the same asset", async () => {
+    const s = scene();
+    let calls = 0;
+    const counting: CharacterLoader = (asset, sc) => {
+      calls++;
+      return fromDisk(asset, sc);
+    };
+    const pool = createCharacterPool(catalog, counting);
+    await Promise.all([pool.load(s, ["ranger.nathan"]), pool.load(s, ["ranger.nathan", "ranger.eric"])]);
+    expect(calls).toBe(2);
+    expect(pool.has("ranger.nathan")).toBe(true);
+    expect(pool.has("ranger.eric")).toBe(true);
+    await pool.load(s, ["ranger.nathan"]);
+    expect(calls).toBe(2);
+    pool.dispose();
+  });
+
   it("keeps a model that failed to load out, and the rest in", async () => {
     const s = scene();
     const failing: CharacterLoader = (asset, sc) =>

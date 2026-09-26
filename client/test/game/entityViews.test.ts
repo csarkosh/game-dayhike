@@ -292,4 +292,33 @@ describe("EntityViews the Hollow", () => {
     expect(playing("character_7_").map((g) => g.name)).toEqual(["character_7_idle"]);
     views.dispose();
   });
+
+  it("counts a jump for at most 10 m/s, so it is standing again half a second later", async () => {
+    const views = new EntityViews(scene, await loadedPool());
+    const world = state();
+    world.enemies.set(7, hollow(7, 0, 0));
+    views.sync(world, 99, 1, undefined, 1 / 30);
+    // 50 m in one frame; uncapped that is 1500 m/s and a walk for 1.6 s.
+    world.enemies.set(7, hollow(7, 50, 0));
+    views.sync(world, 99, 1, undefined, 1 / 30);
+    for (let frame = 0; frame < 15; frame++) views.sync(world, 99, 1, undefined, 1 / 30);
+    expect(playing("character_7_").map((g) => g.name)).toEqual(["character_7_idle"]);
+    views.dispose();
+  });
+
+  it("draws the capsule until the model loads, then hides it", async () => {
+    const pool = createCharacterPool(catalog, fromDisk);
+    const views = new EntityViews(scene, pool);
+    const world = state();
+    world.enemies.set(7, hollow(7, 1, 2));
+    views.sync(world, 99, 1);
+    const capsule = scene.getMeshByName("hollow_7")!;
+    expect(capsule.isEnabled()).toBe(true);
+    expect(scene.getTransformNodeByName("character_7_orientation")).toBeNull();
+    await pool.load(scene, ["hollow.antlered"]);
+    views.sync(world, 99, 1);
+    expect(capsule.isEnabled()).toBe(false);
+    expect(scene.getTransformNodeByName("character_7_orientation")!.isEnabled()).toBe(true);
+    views.dispose();
+  });
 });

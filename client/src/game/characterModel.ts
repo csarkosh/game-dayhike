@@ -7,6 +7,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import "./ktx2.js";
 import { attachSkinToMaterials } from "./skin.js";
+import { budgetMaterial } from "./headlamp.js";
 
 import catalog from "../../assets/catalog.json" with { type: "json" };
 import { modelUrl } from "./assetUrls.js";
@@ -211,10 +212,25 @@ export function createCharacterPool(
 ): CharacterPool {
   const assets = new Map(resolveCharacterAssets(source).map((a) => [a.id, a]));
   const loaded = new Map<string, LoadedCharacter>();
+  const inFlight = new Map<string, Promise<void>>();
   const instances = new Map<number, { assetId: string; instance: CharacterInstance }>();
   let disposed = false;
 
-  async function loadOne(scene: Scene, id: string): Promise<void> {
+  /**
+   * One load per asset however many callers ask: a second `load` naming an
+   * id still in flight waits on the first rather than fetching and
+   * registering the model twice.
+   */
+  function loadOne(scene: Scene, id: string): Promise<void> {
+    let pending = inFlight.get(id);
+    if (pending === undefined) {
+      pending = fetchOne(scene, id);
+      inFlight.set(id, pending);
+    }
+    return pending;
+  }
+
+  async function fetchOne(scene: Scene, id: string): Promise<void> {
     const asset = assets.get(id);
     if (asset === undefined || loaded.has(id)) return;
     try {
@@ -227,6 +243,7 @@ export function createCharacterPool(
       // Stop the source clips: only the instantiated copies should animate.
       for (const group of container.animationGroups) group.stop();
       attachSkinToContainer(container);
+      for (const material of container.materials) budgetMaterial(material);
       loaded.set(id, { asset, container, clipNames: container.animationGroups.map((g) => g.name) });
     } catch {
       // An asset problem degrades the visuals; it must never block the match.

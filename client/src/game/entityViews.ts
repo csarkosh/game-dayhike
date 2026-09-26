@@ -40,6 +40,8 @@ export const WALK_RATIO_MIN = 0.5;
 export const WALK_RATIO_MAX = 2.5;
 /** Seconds over which the Hollow's measured speed settles, so one uneven frame does not flick its clip. */
 export const HOLLOW_SPEED_SMOOTHING = 0.25;
+/** The most, m/s, one frame's displacement may count for in the Hollow's pace. */
+export const HOLLOW_MAX_MEASURED_SPEED = 10;
 
 type View = { node: TransformNode; previous: Vector3; target: Vector3 };
 type ModelView = { instance: CharacterInstance; view: View };
@@ -211,7 +213,10 @@ export class EntityViews {
         if (dt > 0) {
           const dx = at.x - pace.x;
           const dz = at.z - pace.z;
-          const measured = Math.sqrt(dx * dx + dz * dz) / dt;
+          // Capped so a jump (a respawn, a snapshot catching up) reads as a
+          // brisk stride for a moment, not a full-rate walk for over a second.
+          const raw = Math.sqrt(dx * dx + dz * dz) / dt;
+          const measured = raw > HOLLOW_MAX_MEASURED_SPEED ? HOLLOW_MAX_MEASURED_SPEED : raw;
           pace.speed += (measured - pace.speed) * (1 - Math.exp(-dt / HOLLOW_SPEED_SMOOTHING));
         }
         pace.x = at.x;
