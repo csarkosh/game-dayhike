@@ -1,6 +1,7 @@
 # WebGPU on the high tier: design
 
-**As built.** Nothing yet. This is the design as written on 2026-09-26, from
+**As built.** Task 1 so far, shipped switched off (the next paragraph). This
+is the design as written on 2026-09-26, from
 the WebGPU blade culling spike (`docs/rendering/2026-09-26-grass-webgpu-spike.md`,
 on the spike's branch `worktree-grass-webgpu-spike` until the plan's Task 1
 brings it over, and its code commit `781e4a2`). The plan
@@ -9,6 +10,26 @@ builds it in eight tasks on a fresh branch from `origin/main` (`ba0fd95`); the
 engine reaches a player by default only at Task 6, after the parity and frame
 gates. When the work lands this paragraph is rewritten to say what shipped and
 with what values; the sections below stay the design as written.
+
+**Task 1, as built.** The rule, the overrides and the fallback of §5, with
+`WEBGPU_ON_HIGH = false`, so WebGPU is reached only with `?engine=webgpu`.
+Five things differ from the text below. The tiers the rule applies to are one
+constant, `WEBGPU_TIERS = ["high"]` in `engineChoice.ts`, which `chooseEngine`
+reads (and takes as a parameter in its tests), so taking the medium tier in is
+a one-line change with its test; read §5.1's `tier ≠ high` as
+`tier ∉ WEBGPU_TIERS`. Babylon 9.18 loads the translators on the first GLSL
+effect, not in `initAsync`, and its loader waits rather than rejecting when a
+fetch fails, so `createWebGpuEngine` also awaits
+`prepareGlslangAndTintAsync()` inside the 15 s budget: a translator that does
+not load is a failure before the game starts, found by that budget, and the
+materials are switched to GLSL only once the engine stands. A throw while the
+game is built on WebGPU (the painted signs, until §6.6 lands) counts as a
+failure in the startup window: remembered (`pipeline`) and reloaded onto
+WebGL2. And the reload onto WebGL2 carries `?engine=webgl2` wherever a plain
+reload would start WebGPU again: where storage throws, as §5.6 says, and also
+where the URL carries `?engine=webgpu`, which outranks the record. The startup
+window is kept as the times of the first frame and the last compile, and read
+when a failure arrives, rather than by timers.
 
 The spike ran the game on Babylon's `WebGPUEngine` with every existing material
 and plugin, to measure a compute cull of the blade field, and found the engine
