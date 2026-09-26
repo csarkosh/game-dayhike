@@ -111,7 +111,7 @@ Applying a piece of `781e4a2` to one file: `git show 781e4a2 -- <path> | git app
   - `export function chooseEngine(input: EngineInput, tiers = WEBGPU_TIERS): EngineName | "probe"` (`"probe"`: the answer needs the adapter)
   - `export type FallbackReason = "init" | "pipeline" | "lost"`
   - `export type FallbackRecord = { reason: FallbackReason; browser: number; babylon: string; at: number; losses: number }`
-  - `export const FALLBACK_KEY = "dayhike.engine"`, `FALLBACK_NOTICE_KEY = "dayhike.engine.notice"`, `FALLBACK_DAYS = 30`, `LOSS_WINDOW_MS = 86_400_000`, `WEBGPU_START_MS = 15_000`, `STARTUP_QUIET_MS = 10_000`, `STARTUP_MAX_MS = 60_000`
+  - `export const FALLBACK_KEY = "dayhike.engine"`, `FALLBACK_NOTICE_KEY = "dayhike.engine.notice"`, `FALLBACK_DAYS = 30`, `LOSS_WINDOW_MS = 86_400_000`, `WEBGPU_FETCH_MS = 10_000`, `WEBGPU_START_MS = 10_000` (as built; first written as one 15 s budget), `STARTUP_QUIET_MS = 10_000`, `STARTUP_MAX_MS = 60_000`
   - `export function browserMajor(userAgent: string): number`
   - `export function recordFailure(prev: FallbackRecord | null, reason: FallbackReason, env: { browser: number; babylon: string }, now: number): FallbackRecord`
   - `export function fallbackHolds(record: FallbackRecord | null, env: { browser: number; babylon: string }, now: number): boolean`
@@ -261,7 +261,7 @@ describe("the remembered fallback", () => {
 
 ```ts
   it("detects medium at best on a desktop that reports 8 GB, and low where memory goes unreported", () => {
-    // Chromium caps deviceMemory at 8, so tierFor's high branch is out of reach.
+    // An 8 GB report (all Chromium gave before Chrome 147) is medium at most.
     expect(detectTier({ hardwareConcurrency: 12, deviceMemory: 8, userAgent: "Chrome/153" })).toBe("medium");
     // No deviceMemory at all (the API is Chromium's alone) reads the default 4.
     expect(detectTier({ hardwareConcurrency: 12, userAgent: "Version/26.0 Safari/605.1.15" })).toBe("low");
@@ -788,7 +788,7 @@ The canopy pose's bed and sky crops and the four trail poses of design §7.1, bo
 
 ### Task 6: The full gates, and the switch turned on
 
-**Prerequisite: the live renderer swap.** Before the switch goes on, a WebGPU failure after the game has started must fall back without reloading: the renderer rebuilt live onto a fresh WebGL2 canvas, the world, the session and the lobby kept (design §5.5), because a fallback reload in the startup window ends a host's room and strands a follower. The tier-detection work, its own design, is building that rebuild (tier changes applied mid-hike without a reload, a change of engine on a fresh canvas included). Task 6 starts only once it has landed, with a commit that routes `main.ts`'s reload paths (`failureAction`'s `reload` and `webgl2`) through it, with its test; the record, the lost-device count and the pin in the URL stay as Task 1 built them. Steps 1–4 may be measured before it lands; Step 6 may not be taken before.
+**Prerequisite: the live renderer swap.** Before the switch goes on, a WebGPU failure after the game has started must fall back without reloading: the renderer rebuilt live onto a fresh WebGL2 canvas, the world, the session and the lobby kept (design §5.5), because a fallback reload in the startup window ends a host's room and strands a follower. The tier-detection work, its own design, is building that rebuild (tier changes applied mid-hike without a reload, a change of engine on a fresh canvas included). Task 6 starts only once it has landed, with a commit that routes `main.ts`'s failure paths through it, with its test, as design §5.5 says: a pipeline failure or an uncaptured error, in the startup window or after it, swaps now onto a fresh WebGL2 canvas and is remembered; a first lost device in 24 h rebuilds on a new WebGPU engine on a fresh canvas (one retry, counted); a second swaps onto WebGL2 and is remembered. The record, the lost-device count and the pin in the URL stay as Task 1 built them. Steps 1–3 may be measured before it lands; Step 4 runs after it; Step 6 may not be taken before.
 
 **Files:**
 - Modify: `client/src/game/engineChoice.ts` (`WEBGPU_ENABLED`), `client/test/game/engineChoice.test.ts`, `ARCHITECTURE.md`, the verification note
@@ -799,7 +799,7 @@ The canopy pose's bed and sky crops and the four trail poses of design §7.1, bo
 
 - [ ] **Step 3: Startup, memory, console** — design §13.3, §13.4, §13.5; the console bar on every page of both tiers.
 
-- [ ] **Step 4: The fallback** — design §13.6, items 1–5, on the branch as it now stands.
+- [ ] **Step 4: The fallback** — after the live swap has landed: design §13.6, items 1, 2, 3′–5′ (the swap, each with a second page following as a party member), 7 and 8, on the branch as it now stands.
 
 - [ ] **Step 5: Record** — append `## 7. The gates` to the note with every table, and commit the note alone. If a startup, memory, console or fallback bar is missed, design §16's fallback for it, in its own commit with its test, and the affected gate re-run; the switch is not turned on with one of those missed. The frame and parity gates decide per tier (Step 2).
 

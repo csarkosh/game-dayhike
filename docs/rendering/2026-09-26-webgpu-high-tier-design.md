@@ -11,34 +11,65 @@ engine reaches a player by default only at Task 6, after the parity and frame
 gates. When the work lands this paragraph is rewritten to say what shipped and
 with what values; the sections below stay the design as written.
 
-**Task 1, as built.** The rule, the overrides and the fallback of §5, with
-the switch `WEBGPU_ENABLED = false`, so WebGPU is reached only with
-`?engine=webgpu`. The rule covers the **high and medium** tiers: they are one
-constant, `WEBGPU_TIERS = ["high", "medium"]` in `engineChoice.ts`, which
-`chooseEngine` reads (and takes as a parameter in its tests), so a change of
-tiers is one line with its test. Low and the landing backdrop stay WebGL2.
-Medium was taken in on 2026-09-26, because detection puts a desktop Chromium
-on medium at best (§4) and is being redesigned on its own; §1, §2, §4, §5.1,
-§5.7, §7.1, §13.1 and §14–§16 below are amended to match, and the gates are
-measured on both tiers. Two decisions of the same day are written into the
-sections too: one frame bar for both tiers, a gain above the same-code floor
-at the canopy pose, with no pose slower than its floor and parity, and 1.5 ms
-on high the expectation, not the gate (§1, §3.2, §13.1, §16); and before Task 6
-a failure after the game starts falls back by a
-live renderer swap, not a reload, which the tier-detection work provides (§1,
-§5.5). Four things differ from the text below. Babylon 9.18
-loads the translators on the first GLSL effect, not in `initAsync`, and its
-loader waits rather than rejecting when a fetch fails, so `createWebGpuEngine`
-also awaits `prepareGlslangAndTintAsync()` inside the 15 s budget: a translator that does
-not load is a failure before the game starts, found by that budget, and the
-materials are switched to GLSL only once the engine stands. A throw while the
-game is built on WebGPU (the painted signs, until §6.6 lands) counts as a
-failure in the startup window: remembered (`pipeline`) and reloaded onto
-WebGL2. And the reload onto WebGL2 carries `?engine=webgl2` wherever a plain
-reload would start WebGPU again: where storage throws, as §5.6 says, and also
-where the URL carries `?engine=webgpu`, which outranks the record. The startup
-window is kept as the times of the first frame and the last compile, and read
-when a failure arrives, rather than by timers.
+**Task 1, as built.** The rule, the overrides and the fallback of §5, switched
+off (`WEBGPU_ENABLED = false`), so WebGPU is reached only with
+`?engine=webgpu`. Three decisions of 2026-09-26 are written into the sections
+below:
+
+- The rule covers the **high and medium** tiers: one constant,
+  `WEBGPU_TIERS = ["high", "medium"]` in `engineChoice.ts`, which
+  `chooseEngine` reads (and takes as a parameter in its tests), so a change of
+  tiers is one line with its test. Low and the landing backdrop stay WebGL2.
+  Tier detection is being redesigned on its own (§4). §1, §2, §4, §5.1, §5.7,
+  §7.1, §13.1 and §14–§16 are amended, and the gates are measured on both
+  tiers.
+- One frame bar for both tiers: a gain above the same-code floor at the canopy
+  pose, no standard pose slower than its floor, and parity; 1.5 ms on high is
+  the expectation, reported, not the gate (§1, §3.2, §13.1, §16).
+- Before Task 6, a failure after the game starts falls back by a live renderer
+  swap onto a fresh WebGL2 canvas, not a reload; the tier-detection work
+  provides the swap (§1, §5.5, §13.6).
+
+Where the code differs from the text below, or adds to it:
+
+- **Two budgets, measured apart** (`resolveWebGpu`), in place of §5.4's 15 s:
+  10 s (`WEBGPU_FETCH_MS`) to fetch the engine's module and the translators,
+  then 10 s (`WEBGPU_START_MS`), from the end of the fetch, for the adapter
+  probe and making the engine. A fetch that fails or runs out is WebGL2 for
+  this load and is not remembered, since nothing of the GPU failed; a probe
+  that does not answer, or an engine that fails or runs out, is remembered
+  (`init`). A probe that fails, or finds no adapter that fits, is WebGL2 with
+  no record.
+- **The translators, fetched first and checked.** Babylon 9.18 loads them on
+  the first GLSL effect, not in `initAsync`, and its loader waits rather than
+  rejecting when a fetch fails. So the fetch step runs both loaders through
+  Babylon's `Tools.LoadScriptAsync` and fetches both `.wasm` files whole (so
+  Babylon's own fetch of them comes from the HTTP cache), and fails at once
+  where a loader ran but defined no `glslang` or `twgsl` on the page (this host
+  answers a missing script with its HTML page, status 200) or a translator is
+  not WebAssembly. `createWebGpuEngine` then awaits
+  `prepareGlslangAndTintAsync()`, and switches the materials to GLSL only once
+  the engine stands.
+- **Texture compression.** The device asks for `texture-compression-bc`,
+  `-etc2` and `-astc` where the adapter has them (`featuresToRequest`): the
+  features Babylon reads its compressed-format caps from, so KTX2 textures stay
+  compressed on WebGPU. §5.4 step 3 lists none.
+- **A throw while the game is built on WebGPU** (the painted signs, until §6.6
+  lands) counts as a failure in the startup window: remembered (`pipeline`) and
+  reloaded onto WebGL2.
+- **The reload onto WebGL2** carries `?engine=webgl2` wherever a plain reload
+  would start WebGPU again: where storage throws, as §5.6 says, and where the
+  URL carries `?engine=webgpu`, which outranks the record. Where storage refuses
+  the record, the tab's URL is pinned to `engine=webgl2` by
+  `history.replaceState` even when nothing reloads.
+- **A lost device never replaces a record of another reason that still
+  holds**, so a remembered fault is not retried after a loss.
+- **The overrides stay on their page** (§5.3, now true by construction): the
+  route a host announces drops `engine=` and `tier=`, and a follower compares
+  routes in one canonical form, the path and the other parameters decoded and
+  sorted (`sameRoute`), and keeps its own overrides when it moves.
+- **The startup window** is kept as the times of the first frame and the last
+  compile, and read when a failure arrives, rather than by timers.
 
 The spike ran the game on Babylon's `WebGPUEngine` with every existing material
 and plugin, to measure a compute cull of the blade field, and found the engine
@@ -132,10 +163,14 @@ reported, but it is not the gate: the gate (§13.1) is a gain above the same-cod
 floor, the same on both tiers, with no pose slower than its floor and parity,
 and §16 says in advance what each outcome turns on.
 
-The native window renders 2.4 million pixels. A high-tier player on a laptop
-panel at its own device ratio renders between that and the 4× figure's 9.7
-million (Babylon's engine is made with `adaptToDeviceRatio`), so the 4× delta
-is at least as close to what such a player sees as the native one.
+The native window renders 2.4 million pixels. Every tier renders at CSS
+pixels, not device pixels: `lighting.ts` sets the hardware scaling level to 1
+(1.5 on low), which overrides the engine's `adaptToDeviceRatio`, so a Retina
+panel does not double the cost, and a player's pixel count follows the window,
+not the panel's density. (Babylon's `resize()` does rescale by a change of
+device ratio when a window moves between displays.) So the native figure is the
+one closest to what a player sees; the 4× figure stands for a window with four
+times the pixels.
 
 ### 3.3 The six WebGPU-only changes the spike needed
 
@@ -207,18 +242,18 @@ Until Task 1, `createRenderer` detected the tier itself, since `app.ts` gave
 it none; now `main.ts` resolves the tier before the game starts (`?tier=` where
 valid, else `detectTier` in `quality.ts`, the same body) and passes it through
 `app.ts` to the renderer. Detection is `tierFor` (`quality.ts`): high needs
-more than eight cores **and** more than 8 GB of `navigator.deviceMemory`. As the
-near-grass design found, a desktop browser reports at most 8 GB, so detection
-lands on medium at best; and a browser that exposes no `deviceMemory` reads the
-default 4 and lands on low. No player reaches the high tier except through an
-override; until Task 1 committed `?tier=`, there was none.
+more than eight threads **and** more than 8 GB of `navigator.deviceMemory`.
+Chromium capped `deviceMemory` at 8 GB until Chrome 147, which is what the
+near-grass design found; since then desktop Chrome reports 2, 4, 8, 16 or 32 GB,
+so current Chrome, Edge, and the desktop launcher (Electron 44, Chromium 152)
+send any machine with more than eight threads and 16 GB or more to high,
+whatever its GPU, and one with more than four threads and more than 4 GB to
+medium. Safari and Firefox expose no `deviceMemory`, read the default 4 GB, and
+land on low.
 
-So the rule covers the medium tier as well as high. Detection puts a desktop
-Chromium (Chrome, Edge, and the desktop launcher, §5.7) with more than four
-cores and more than 4 GB reported on medium, so once the switch is on, most of
-today's desktop players reach WebGPU with no action of theirs; high is still
-reached only through `?tier=high`, and Safari and Firefox, which report no
-memory, land on low and stay on WebGL2. Changing detection moves every player it
+So the rule covers both tiers a desktop Chromium is detected as: once the
+switch is on, desktop Chrome, Edge and launcher players reach WebGPU on high or
+medium with no action of theirs, and Safari and Firefox stay on WebGL2 on low. Changing detection moves every player it
 promotes onto a higher tier's costs (on high: the scene pass, halation, two
 2048² cascades, 400 m of cliff rings), which is a design of its own with its own
 frame gate, being written separately (§17). The engine rule is written against
@@ -353,7 +388,19 @@ without reloading: the renderer is rebuilt live onto a fresh WebGL2 canvas,
 the world, the session and the lobby kept. The tier-detection work, a design
 of its own, is building exactly that rebuild (a tier change applied mid-hike
 without a reload, a change of engine on a fresh canvas included); it is Task
-6's prerequisite, so the WebGPU switch waits on that work. Until then the
+6's prerequisite, so the WebGPU switch waits on that work. With the swap:
+
+- **A shader or pipeline failure, or an uncaptured WebGPU error**, inside the
+  startup window or after it, swaps now onto a fresh WebGL2 canvas and is
+  remembered (`pipeline`), with the HUD line "Graphics switched to WebGL2 after
+  a GPU error." A late error no longer waits for the next load, so the startup
+  window stops deciding anything.
+- **A first lost device** in 24 h is one retry on WebGPU: the renderer is
+  rebuilt on a new WebGPU engine on a fresh canvas, the loss counted, with the
+  line "Graphics restarted after a GPU error." **A second** within 24 h swaps
+  onto WebGL2 and is remembered (`lost`), as the reload does today.
+- Where storage refuses the record, the tab's URL is pinned to
+  `engine=webgl2` as today, so a reload stays on WebGL2. Until then the
 reload paths stay as built, reachable only with `?engine=webgpu` behind the off
 switch; the record, the lost-device count and the pin in the URL are kept as
 they are, and only what happens after them changes. Babylon's own device-loss
@@ -382,10 +429,10 @@ is no copy of the game in it. Its Electron (44.1.1) exposes WebGPU as the
 Chromium inside it does, on macOS and Windows, with no switch in
 `webPreferences`. So the launcher follows the page's rule unchanged, and its
 `localStorage` persists in the app's own profile, so a remembered fallback
-survives relaunches. The launcher's URL carries no query; detection puts a
-launcher on a machine with more than four cores and 8 GB on medium (§4), so once
-the switch is on, launcher players draw with WebGPU where the adapter fits, and
-fall back as the page does. No launcher change and no launcher release are
+survives relaunches. The launcher's URL carries no query; its Chromium reports
+memory above 8 GB, so detection sends a launcher to high or medium by its
+threads and memory (§4), and once the switch is on, launcher players draw with
+WebGPU where the adapter fits, and fall back as the page does. No launcher change and no launcher release are
 needed. Its Windows smoke runs on a hosted runner without a GPU; whatever tier
 it detects there, it must keep reaching the game, and a runner whose browser
 offers no hardware adapter with the required limits draws with WebGL2, so the
@@ -933,7 +980,10 @@ which Babylon logs as warnings, not errors (`webgpuEngine.pure.js:451–467`).
 ### 13.6 The fallback, exercised
 
 Each on the branch, with the measuring browser injecting what it needs before
-the page's own scripts run; nothing of it is committed:
+the page's own scripts run; nothing of it is committed. Items 3–5 are the
+reload paths as built behind the off switch, and belong to Task 1's gate; the
+live swap (§5.5) replaces them with 3′–5′, which Task 6 runs once the swap has
+landed. The rest hold on either path.
 
 1. `navigator.gpu` hidden: WebGL2, no error; `?engine=webgpu` gives WebGL2 and
    one warning.
@@ -946,8 +996,27 @@ the page's own scripts run; nothing of it is committed:
    window: the record written, a reload onto WebGL2, the HUD line.
 5. `localStorage` throwing, then (4): the reload's URL carries `?engine=webgl2`;
    no second reload.
+
+   With the swap in place of 3–5, and a second page following as a party
+   member in each:
+
+   - **3′.** A lost device, as in 3: the renderer rebuilt on a new WebGPU
+     engine on a fresh canvas, the hike going on and the loss counted, the
+     line "Graphics restarted after a GPU error."; a second loss: rebuilt on
+     WebGL2, the record written, the switched line; the next load WebGL2.
+   - **4′.** An uncaptured validation error, inside the startup window and, on
+     another page, after it: rebuilt on WebGL2 on a fresh canvas at once, the
+     record written, the switched line, no reload; the party kept in both cases
+     (the host's room open, the follower connected).
+   - **5′.** `localStorage` throwing, then (4′): WebGL2 at once, the tab's URL
+     pinned to `engine=webgl2`; a reload of it stays on WebGL2.
 6. Before Task 2 lands, the real failures of §3.3 on `?engine=webgpu`: the game
    ends on WebGL2 every time. Task 1's gate is this.
+7. A `requestAdapter` that never answers: WebGL2 once `WEBGPU_START_MS` have
+   passed, `init` recorded. A translator fetch that stalls: WebGL2 once
+   `WEBGPU_FETCH_MS` have passed, nothing recorded.
+8. A translator loader served as the host's HTML page (a missing asset): WebGL2
+   at once, nothing recorded.
 
 ## 14. Tests
 
@@ -1025,8 +1094,9 @@ Pre-stated, in order:
 ## 17. Follow-ups
 
 - **Tier detection.** A desktop browser with a qualifying WebGPU adapter is a
-  better signal for the high tier than `deviceMemory`, which Chromium caps and
-  the others do not expose. A design of its own, with a frame gate on
+  better signal for the high tier than `deviceMemory`, which says nothing of
+  the GPU, which Chromium capped at 8 GB until Chrome 147, and which the others
+  do not expose. A design of its own, being written, with a frame gate on
   medium-class machines, since everyone it promotes pays the high tier's costs.
 - **The plugins in WGSL.** It would remove the 2.7 MB of translators, their
   startup cost and the synchronous translation hitch, and every §6 change with
