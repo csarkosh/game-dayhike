@@ -18,8 +18,9 @@ export const BOX_RADIUS = 0.4;
 /** Height above the kiosk's ground of the poster's centre: the middle of the
  * 1 m tall board on the 2.5 m kiosk, a little under a hiker's eye. */
 export const BOX_HEIGHT = 1.4;
-/** How far in front of the kiosk's face the poster's point stands: just off
- * the board, so the hand reaches the paper and not the box behind it. */
+/** How far the poster's point stands in front of the kiosk's collision face:
+ * just off the box a hiker stands against. The painted paper is about 0.4 m
+ * behind that face, under the kiosk's roof, and still well within reach. */
 export const POSTER_STANDOFF = 0.05;
 export const BOX_INTERACTABLE_ID = 2;
 

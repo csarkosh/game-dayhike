@@ -43,7 +43,8 @@ import type { Vec3 } from "../types.js";
  * places their centres. Props are found by material (`roadProp`), never by
  * their place in PROPS. */
 export const CAR_HALF: Vec3 = { x: 0.9, y: 0.8, z: 2.3 };
-/** The kiosk: 2.2 m wide along the road, 2.5 m tall to the roof, 1.1 m deep. */
+/** The kiosk: 2.2 m wide along world x (across the road, which runs along
+ * z), 2.5 m tall to the roof, 1.1 m deep along z, the way its poster faces. */
 export const KIOSK_HALF: Vec3 = { x: 1.1, y: 1.25, z: 0.55 };
 
 /** The car: parked on the shoulder, parallel to the
