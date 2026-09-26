@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { QUALITY, tierFor, type Capabilities, type QualityTier } from "../../src/game/quality.js";
+import { QUALITY, detectTier, tierFor, type Capabilities, type QualityTier } from "../../src/game/quality.js";
 
 describe("QUALITY", () => {
   it("matches the quality tier table", () => {
@@ -78,5 +78,14 @@ describe("tierFor", () => {
   it("is deterministic", () => {
     const caps: Capabilities = { cores: 8, memoryGb: 8, mobile: false };
     expect(tierFor(caps)).toBe(tierFor(caps));
+  });
+
+  it("detects medium at best on a desktop that reports 8 GB, and low where memory goes unreported", () => {
+    // Chromium caps deviceMemory at 8, so tierFor's high branch is out of reach.
+    expect(detectTier({ hardwareConcurrency: 12, deviceMemory: 8, userAgent: "Chrome/153" })).toBe("medium");
+    // No deviceMemory at all (the API is Chromium's alone) reads the default 4.
+    expect(detectTier({ hardwareConcurrency: 12, userAgent: "Version/26.0 Safari/605.1.15" })).toBe("low");
+    expect(detectTier({ hardwareConcurrency: 12, deviceMemory: 8, userAgent: "iPhone" })).toBe("low");
+    expect(detectTier(undefined)).toBe("low");
   });
 });

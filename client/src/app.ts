@@ -1,6 +1,9 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
 import { createRenderer, terrainMaterialFor } from "./game/renderer.js";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import type { QualityTier } from "./game/quality.js";
+import { FALLBACK_NOTICE_MS, safeStorage, takeNotice } from "./game/engineChoice.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
@@ -99,6 +102,12 @@ export type GameOptions = {
   onContinueOffline(): void;
   /** The pause menu opened (true) or closed (false); false again on dispose. */
   onPauseChange(paused: boolean): void;
+  /** An engine already made for the canvas (WebGPU, where `main.ts` chose
+   * it); absent, the renderer makes the WebGL2 one. */
+  engine?: AbstractEngine;
+  /** The tier `main.ts` resolved (`?tier=`, else detected); absent, the
+   * renderer detects it. */
+  tier?: QualityTier;
 };
 
 export function startGame(canvas: HTMLCanvasElement, token: string, options: GameOptions): GameHandle {
@@ -150,7 +159,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   );
 
   const forest = createForest(seed);
-  const renderer = createRenderer(canvas, level, forest);
+  const renderer = createRenderer(canvas, level, forest, { engine: options.engine, tier: options.tier });
   const ambient = createAmbientAudio();
   // Shares the ambient context — one AudioContext for the whole game, gated on
   // the same unlock gesture. Constructed here rather than inside the renderer
@@ -1035,6 +1044,12 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     };
     connectClient();
   }
+
+  // After a reload that followed a GPU error (`main.ts`), the line saying so,
+  // once. Below the session's start, whose `setStatus(null)` would wipe it; a
+  // reload leaves any party, so the start before it is the host's.
+  const notice = takeNotice(safeStorage(() => sessionStorage));
+  if (notice !== null) hud.flash(notice, FALLBACK_NOTICE_MS);
 
   renderer.engine.runRenderLoop(() => {
     if (stepAndRender === null) {

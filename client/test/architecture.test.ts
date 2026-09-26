@@ -89,6 +89,31 @@ describe("layer boundaries", () => {
     expect(violations(join(SRC, "net"), [/^@babylonjs/, /game\//])).toEqual([]);
   });
 
+  it("reaches the WebGPU engine from main.ts only through a dynamic import", () => {
+    const staticImports = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*import\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const seen = new Set<string>();
+    const stack = [join(SRC, "main.ts")];
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of staticImports(file)) {
+        if (/^@babylonjs\/core\/Engines\/(?:webgpuEngine|WebGPU\/)/.test(spec)) bad.push(`${file} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(20);
+    expect(bad).toEqual([]);
+  });
+
+  it("keeps the engine choice out of sim/ and net/", () => {
+    const named = [/engineChoice/, /gpuEngine/, /webgpuVertexBuffer/];
+    expect(violations(join(SRC, "sim"), named)).toEqual([]);
+    expect(violations(join(SRC, "net"), named)).toEqual([]);
+  });
+
   /**
    * `game/` is deliberately split: `colour.ts`, `sky.ts`, `quality.ts` and
    * `terrainSurface.ts` are pure arithmetic, tested under
@@ -106,6 +131,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "colour.ts"),
       join(SRC, "game", "sky.ts"),
       join(SRC, "game", "quality.ts"),
+      join(SRC, "game", "engineChoice.ts"),
       join(SRC, "game", "terrainSurface.ts"),
       join(SRC, "game", "atmosphereParams.ts"),
       join(SRC, "game", "clipmap.ts"),

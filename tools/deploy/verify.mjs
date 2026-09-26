@@ -14,7 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { fail, tfOutput } from './lib/preconditions.mjs';
 import { validateLatest } from './lib/desktopRelease.mjs';
-import { findModelUrls, findTextureUrls } from './lib/modelUrls.mjs';
+import { findChunkName, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
 
 const siteUrl = tfOutput('site_url');
 const signalingUrl = tfOutput('signaling_url');
@@ -187,6 +187,50 @@ async function verify() {
       check(
         (res.headers.get('cache-control') ?? '').includes('immutable'),
         `${id} is served immutable`,
+        `cache-control: ${res.headers.get('cache-control')}`,
+      );
+    }
+  }
+
+  // 4c. The WebGPU engine's translators shipped whole and are served as
+  // WebAssembly. `client/src/game/gpuEngine.ts` imports glslang and twgsl with
+  // `?url`, so, like the models, their names are hashed and have to be read
+  // out of the build: here out of the WebGPU chunk, which only a dynamic
+  // import reaches, so the entry chunk is read for that chunk's name first.
+  // The MIME type is checked, not just the bytes: a browser compiles a
+  // WebAssembly response while it streams only when it is `application/wasm`.
+  // Nothing here fails while WebGPU is only reached by `?engine=webgpu`, which
+  // is exactly when a broken translator would go unnoticed.
+  const translatorIds = ['glslang', 'twgsl'];
+  const gpuChunk = bundleSource ? findChunkName(bundleSource, 'gpuEngine') : null;
+  if (!bundleSource) {
+    failures.push('skipped the WebGPU translator checks — no bundle source to find the WebGPU chunk in');
+  } else if (!gpuChunk) {
+    failures.push('the bundle does not reference the gpuEngine chunk — was the WebGPU engine split out?');
+  } else {
+    const chunkUrl = new URL(gpuChunk, `${siteOrigin}${bundle}`).href;
+    const chunk = await fetch(chunkUrl);
+    const chunkSource = chunk.status === 200 ? await chunk.text() : '';
+    if (!chunkSource) failures.push(`${chunkUrl} — got ${chunk.status}`);
+    const wasmUrls = findWasmUrls(chunkSource, translatorIds);
+    for (const id of chunkSource ? translatorIds : []) {
+      const url = wasmUrls[id];
+      if (!url) {
+        failures.push(`the WebGPU chunk does not reference ${id}.wasm — was it inlined, or not imported with ?url?`);
+        continue;
+      }
+      const res = await fetch(`${siteOrigin}${url}`);
+      if (res.status !== 200) {
+        failures.push(`${url} — got ${res.status}`);
+        continue;
+      }
+      const type = res.headers.get('content-type') ?? '';
+      check(type.startsWith('application/wasm'), `${id}.wasm is served as application/wasm`, `content-type: ${type}`);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      check(isWasm(bytes), `${id}.wasm is a real WebAssembly module`, `magic was ${bytes.subarray(0, 4).toString('hex')}`);
+      check(
+        (res.headers.get('cache-control') ?? '').includes('immutable'),
+        `${id}.wasm is served immutable`,
         `cache-control: ${res.headers.get('cache-control')}`,
       );
     }

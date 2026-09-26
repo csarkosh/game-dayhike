@@ -100,3 +100,36 @@ export function findModelUrls(source, ids) {
 export function findTextureUrls(source, ids) {
   return findAssetUrls(source, ids, 'webp');
 }
+
+/**
+ * The URLs a built chunk references for the WebGPU engine's translators
+ * (`.wasm`): `glslang` and `twgsl`, the builds `@babylonjs/core` ships, which
+ * `client/src/game/gpuEngine.ts` imports with `?url`. Same matching rules as
+ * `findModelUrls`. They are named by the WebGPU chunk, not the entry chunk:
+ * `findChunkName` finds that first.
+ */
+export function findWasmUrls(source, ids) {
+  return findAssetUrls(source, ids, 'wasm');
+}
+
+/**
+ * The file name (`<name>-<hash>.js`) of a chunk the entry chunk splits out, or
+ * null. Only the file name: the entry names a dynamic chunk both as
+ * `./gpuEngine-<hash>.js` (the import itself) and as
+ * `assets/gpuEngine-<hash>.js` (Vite's preload map, relative to the base), so
+ * the caller resolves the name against the entry chunk's own URL, which sits
+ * in the same directory. The character before the name must be a `/` or a
+ * quote, so `gpuEngine` cannot match inside a longer chunk's name.
+ */
+export function findChunkName(source, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = source.match(
+    new RegExp(`[/"'\`](${escaped}-[A-Za-z0-9_-]{${HASH_LENGTH}}\\.js)["'\`]`),
+  );
+  return match ? match[1] : null;
+}
+
+/** Whether `bytes` begin with the WebAssembly magic, `00 61 73 6d` (`\0asm`). */
+export function isWasm(bytes) {
+  return bytes.length >= 4 && bytes[0] === 0x00 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d;
+}

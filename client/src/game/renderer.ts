@@ -1,4 +1,5 @@
 import { Engine } from "@babylonjs/core/Engines/engine.js";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
@@ -41,7 +42,7 @@ import { createSkinShading } from "./skin.js";
 import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
 import type { WeatherParams } from "./weather.js";
 import { wetSurfaceUnder } from "./weather.js";
-import { tierFor, type QualityTier } from "./quality.js";
+import { detectTier, type QualityTier } from "./quality.js";
 import { activeTerrainVariant } from "../sim/terrain.js";
 import { fbm2 } from "../sim/field.js";
 import {
@@ -509,22 +510,6 @@ export function createWater(
   };
 }
 
-/**
- * Reads what the browser will admit to. Deliberately conservative and
- * deliberately overridable — the detected tier is meant to be a default,
- * not a verdict.
- */
-function detectTier(): QualityTier {
-  const nav = globalThis.navigator as
-    | { hardwareConcurrency?: number; deviceMemory?: number; userAgent?: string }
-    | undefined;
-  return tierFor({
-    cores: nav?.hardwareConcurrency ?? 4,
-    memoryGb: nav?.deviceMemory ?? 4,
-    mobile: /Mobi|Android|iPhone|iPad/.test(nav?.userAgent ?? ""),
-  });
-}
-
 export type FreecamView = { x: number; y: number; z: number; yaw: number; pitch: number };
 
 /** This frame's view inputs that come from neither the world nor the clock. */
@@ -562,7 +547,7 @@ export function writeListenerPose(
 
 export type Renderer = {
   scene: Scene;
-  engine: Engine;
+  engine: AbstractEngine;
   camera: UniversalCamera;
   views: EntityViews;
   /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
@@ -629,7 +614,13 @@ export type Renderer = {
   setWindOverride(level: number | null): void;
 };
 
-export type RendererOptions = { tier?: QualityTier };
+export type RendererOptions = {
+  tier?: QualityTier;
+  /** An engine already made for `canvas`: WebGPU on the tiers where it fits
+   * (`engineChoice.ts`, `gpuEngine.ts`). Absent, the WebGL2 engine is made
+   * here as always. Either way the renderer owns it and disposes it. */
+  engine?: AbstractEngine;
+};
 
 /**
  * `forest` is null for hand-authored levels. Passing it alongside `level` rather
@@ -644,7 +635,7 @@ export function createRenderer(
   forest: Forest | null = null,
   options: RendererOptions = {},
 ): Renderer {
-  const engine = new Engine(canvas, true, { stencil: true }, true);
+  const engine = options.engine ?? new Engine(canvas, true, { stencil: true }, true);
   const scene = new Scene(engine);
   // Sun + fill already occupy two of every material's default four light
   // slots; without raising the cap, only the first two of the local lamp and
@@ -687,7 +678,7 @@ export function createRenderer(
   // Fog, clear colour, the sun and the ambient fill all live there now, for the
   // brush path as well as the forest — one lit world is worth more than the
   // sandbox's old dark clear colour.
-  const tier = options.tier ?? detectTier();
+  const tier = options.tier ?? detectTier(globalThis.navigator);
   // Who owns colour is decided once, before lighting and the post chain are
   // built, from the tier and the float-target capability.
   const postFeatures = postFeaturesFor(tier, fxSupportedBy(engine));

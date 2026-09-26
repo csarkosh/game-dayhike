@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Engine } from "@babylonjs/core/Engines/engine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
@@ -351,6 +352,36 @@ describe("renderer.wind()", () => {
   });
 });
 
+describe("the renderer's engine", () => {
+  // `Engine` here is this file's module mock (NullEngine standing in for the
+  // WebGL2 engine), so an instance of it is what the WebGL2 path constructs.
+  it("makes the WebGL2 Engine itself when it is given none", () => {
+    const before = EngineStore.Instances.length;
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low" });
+    try {
+      expect(renderer.engine).toBeInstanceOf(Engine);
+      expect(renderer.scene.getEngine()).toBe(renderer.engine);
+      expect(EngineStore.Instances.length - before).toBe(1);
+    } finally {
+      renderer.dispose();
+    }
+  });
+
+  it("draws on an engine it is given, makes none of its own, and disposes it with itself", () => {
+    const given = new NullEngine();
+    const before = EngineStore.Instances.length;
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low", engine: given });
+    try {
+      expect(renderer.engine).toBe(given);
+      expect(renderer.scene.getEngine()).toBe(given);
+      expect(EngineStore.Instances.length - before).toBe(0);
+    } finally {
+      renderer.dispose();
+    }
+    expect(given.isDisposed).toBe(true);
+  });
+});
+
 describe("world shell wiring", () => {
   // `createRenderer` needs a real canvas and a WebGL context; the wind test
   // above works around that with a `NullEngine` substitution (see the
@@ -426,6 +457,12 @@ describe("world shell wiring", () => {
     // The reused array is truncated to this frame's count, not left holding the
     // previous frame's tail.
     expect(drain).toContain("wildlifeEventDrain.length = n;");
+  });
+
+  it("draws on an engine it is given, and makes WebGL2's own otherwise", () => {
+    expect(src).toContain("const engine = options.engine ?? new Engine(canvas, true, { stencil: true }, true);");
+    expect(src).toMatch(/engine: AbstractEngine;/);
+    expect(src).not.toContain("function detectTier(");
   });
 
   it("creates the duff field beside the blade field, both guarded to the same tiers", () => {

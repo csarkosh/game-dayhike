@@ -28,6 +28,26 @@ import { createSignalingClient, type SignalingClient } from "./net/signaling.js"
 import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
+import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import { detectTier, type QualityTier } from "./game/quality.js";
+import {
+  adapterFits,
+  browserMajor,
+  chooseEngine,
+  failureAction,
+  fallbackHolds,
+  leaveNotice,
+  parseEngineOverride,
+  parseTierOverride,
+  readFallback,
+  recordFailure,
+  safeStorage,
+  withEngine,
+  writeFallback,
+  WEBGPU_ON_HIGH,
+  type EngineEnv,
+  type EngineInput,
+} from "./game/engineChoice.js";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("#app not found");
@@ -399,9 +419,68 @@ function onPlay(): void {
   });
 }
 
+// ---- the engine ----------------------------------------------------------------
+// WebGL2 unless `engineChoice.ts`'s rule says WebGPU and the adapter agrees.
+// Every way WebGPU can fail ends on WebGL2: before the game starts, in the same
+// load; after, by a reload the page remembers (`dayhike.engine`), or by
+// `?engine=webgl2` in the URL where storage refuses the record.
+
+/** Bumped by every render, so an engine made asynchronously for a page that
+ * has since been left is disposed rather than started. */
+let renderToken = 0;
+
+type GpuModule = typeof import("./game/gpuEngine.js");
+/** A WebGPU engine made for the canvas, and the watcher from its module. */
+type MadeEngine = { engine: AbstractEngine; watch: GpuModule["watchWebGpu"] };
+
+function localStore(): Storage | null {
+  return safeStorage(() => localStorage);
+}
+
+function engineEnv(): EngineEnv {
+  return { browser: browserMajor(navigator.userAgent), babylon: AbstractEngine.Version };
+}
+
+/** Remembers a failure, and returns what `failureAction` needs of it. */
+function rememberFailure(reason: "init" | "pipeline" | "lost"): { stored: boolean; holds: boolean } {
+  const local = localStore();
+  const env = engineEnv();
+  const now = Date.now();
+  const record = recordFailure(readFallback(local), reason, env, now);
+  return { stored: writeFallback(local, record), holds: fallbackHolds(record, env, now) };
+}
+
+/**
+ * The WebGPU engine for `canvas`, or null for WebGL2: the module is loaded,
+ * the adapter asked, and the engine made, each step's failure caught. A `?engine=webgpu`
+ * the adapter cannot honour says why, once; a start that fails is remembered.
+ */
+async function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput): Promise<MadeEngine | null> {
+  let gpu: GpuModule;
+  try {
+    gpu = await import("./game/gpuEngine.js");
+  } catch (err) {
+    console.warn("WebGPU: the engine's module did not load; drawing with WebGL2.", err);
+    return null;
+  }
+  const fit = adapterFits(await gpu.probeAdapter());
+  if (chooseEngine({ ...input, fits: fit.fits }) !== "webgpu") {
+    if (input.override === "webgpu") console.warn(`WebGPU: not on this browser (${fit.why}); drawing with WebGL2.`);
+    return null;
+  }
+  try {
+    return { engine: await gpu.createWebGpuEngine(canvas), watch: gpu.watchWebGpu };
+  } catch (err) {
+    rememberFailure("init");
+    console.warn("WebGPU: the engine did not start; drawing with WebGL2.", err);
+    return null;
+  }
+}
+
 // `app` is passed in rather than closed over: the null check above does not
 // narrow inside a hoisted function declaration, which could be called first.
 function render(container: HTMLDivElement): void {
+  const token = ++renderToken;
   const route = parseRoute(location.pathname);
 
   // An invite: consume it (so back/forward never re-join), show the landing
@@ -483,17 +562,93 @@ function render(container: HTMLDivElement): void {
 
   const canvas = document.createElement("canvas");
   container.appendChild(canvas);
-  game = startGame(canvas, route.token, {
-    lobby,
-    peerId: selfId,
-    onExit: exitGame,
-    onContinueOffline: continueOffline,
-    onPauseChange: (next) => {
-      paused = next;
-      paintRoster();
-    },
+  const tier = parseTierOverride(location.search) ?? detectTier(navigator);
+  const input: EngineInput = {
+    tier,
+    override: parseEngineOverride(location.search),
+    remembered: fallbackHolds(readFallback(localStore()), engineEnv(), Date.now()),
+    on: WEBGPU_ON_HIGH,
+    fits: null,
+  };
+  if (chooseEngine(input) === "webgl2") {
+    launch(canvas, route.token, tier, null);
+    return;
+  }
+  // WebGPU could be the answer, which takes the adapter and a moment. A render
+  // that superseded this one while it was made wins.
+  void makeWebGpu(canvas, input).then((made) => {
+    if (token !== renderToken) {
+      made?.engine.dispose();
+      return;
+    }
+    if (made !== null) {
+      launch(canvas, route.token, tier, made);
+      return;
+    }
+    // A start that failed may have taken this canvas's context for WebGPU,
+    // and a canvas holds one kind of context for life.
+    const fresh = document.createElement("canvas");
+    canvas.replaceWith(fresh);
+    launch(fresh, route.token, tier, null);
   });
-  running = game;
+}
+
+/**
+ * Starts the game on `canvas`: on WebGL2 when `made` is null, as always;
+ * otherwise on the WebGPU engine, watched. A failure on WebGPU inside the
+ * startup window, a lost device, or a throw while the game is built on it
+ * reloads the page, remembered, and it ends on WebGL2 (a first lost device
+ * gets one retry on WebGPU). A throw on WebGL2 is not the engine's and goes
+ * up as it always has.
+ */
+function launch(canvas: HTMLCanvasElement, worldToken: string, tier: QualityTier, made: MadeEngine | null): void {
+  let stopWatching = (): void => undefined;
+  const onGpuFailure = (reason: "pipeline" | "lost", inStartup: boolean): void => {
+    const { stored, holds } = rememberFailure(reason);
+    const action = failureAction({ stored, holds, reason, inStartup, override: parseEngineOverride(location.search) });
+    if (action.reload === "none") {
+      console.error(
+        `WebGPU: a GPU error after startup; ${stored ? "the next load draws with WebGL2" : "it could not be remembered"}.`,
+      );
+      return;
+    }
+    stopWatching();
+    if (action.notice !== null) leaveNotice(safeStorage(() => sessionStorage), action.notice);
+    if (action.reload === "webgl2") location.replace(withEngine(location.href, "webgl2"));
+    else location.reload();
+  };
+  if (made !== null) stopWatching = made.watch(made.engine, onGpuFailure);
+
+  let handle: GameHandle;
+  try {
+    handle = startGame(canvas, worldToken, {
+      lobby,
+      peerId: selfId,
+      onExit: exitGame,
+      onContinueOffline: continueOffline,
+      onPauseChange: (next) => {
+        paused = next;
+        paintRoster();
+      },
+      engine: made?.engine,
+      tier,
+    });
+  } catch (err) {
+    if (made === null) throw err;
+    console.error("WebGPU: the game could not be built on it.", err);
+    onGpuFailure("pipeline", true);
+    return;
+  }
+  game = handle;
+  running =
+    made === null
+      ? handle
+      : {
+          dispose: () => {
+            stopWatching();
+            handle.dispose();
+          },
+        };
   announcer.afterPaint();
   paintRoster();
 }

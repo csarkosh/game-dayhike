@@ -77,3 +77,19 @@ export function tierFor(caps: Capabilities): QualityTier {
   if (caps.cores <= 8 || caps.memoryGb <= 8) return "medium";
   return "high";
 }
+
+/**
+ * Reads what the browser will admit to. Deliberately conservative and
+ * deliberately overridable — the detected tier is meant to be a default,
+ * not a verdict. `nav` is `globalThis.navigator` in the page; a plain object
+ * in a test.
+ */
+export function detectTier(
+  nav: { hardwareConcurrency?: number; deviceMemory?: number; userAgent?: string } | undefined,
+): QualityTier {
+  return tierFor({
+    cores: nav?.hardwareConcurrency ?? 4,
+    memoryGb: nav?.deviceMemory ?? 4,
+    mobile: /Mobi|Android|iPhone|iPad/.test(nav?.userAgent ?? ""),
+  });
+}

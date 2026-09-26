@@ -1,0 +1,144 @@
+/**
+ * The WebGPU engine: the adapter probe, the engine itself, and the watcher
+ * that turns a failure on it into WebGL2. Only `main.ts`'s dynamic `import()`
+ * loads this module, on the path where WebGPU could be the answer
+ * (`engineChoice.ts`), so the WebGL2 bundle carries none of it, nor the
+ * translators.
+ *
+ * Every material and plugin in this project is GLSL. A Babylon material on a
+ * WebGPU engine generates WGSL unless told otherwise, and a GLSL
+ * `MaterialPluginBase` refuses a WGSL material, so once the engine is made the
+ * PBR and standard materials are switched to GLSL by Babylon's own
+ * `ForceGLSL`, before the game makes any material. The engine translates that
+ * GLSL at run time with the glslang and twgsl builds `@babylonjs/core` ships,
+ * which the build content-hashes and serves with the game, never from a CDN.
+ */
+import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.js";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import { Logger } from "@babylonjs/core/Misc/logger.js";
+import glslangJs from "@babylonjs/core/assets/glslang/glslang.js?url";
+import glslangWasm from "@babylonjs/core/assets/glslang/glslang.wasm?url";
+import twgslJs from "@babylonjs/core/assets/twgsl/twgsl.js?url";
+import twgslWasm from "@babylonjs/core/assets/twgsl/twgsl.wasm?url";
+import { createStartupWindow, WEBGPU_REQUIRED_LIMITS, WEBGPU_START_MS, type AdapterReport } from "./engineChoice.js";
+
+/** How Babylon words an uncaptured WebGPU error, which it logs as a warning
+ * (`webgpuEngine.pure.js`, the device's `uncapturederror` listener). */
+const UNCAPTURED = "WebGPU uncaptured error";
+
+/**
+ * The high-performance adapter's limits and whether it is a fallback
+ * (software) adapter, or null where the browser has no WebGPU, offers no
+ * adapter, or the request fails. Never rejects.
+ */
+export async function probeAdapter(): Promise<AdapterReport | null> {
+  const gpu = (globalThis.navigator as { gpu?: GPU } | undefined)?.gpu;
+  if (!gpu) return null;
+  try {
+    if (!(await WebGPUEngine.IsSupportedAsync)) return null;
+    const adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
+    if (!adapter) return null;
+    // Every limit, read with `for…in`: a browser's limits are getters on the
+    // prototype, so `Object.keys` finds none of them.
+    const limits: Record<string, number> = {};
+    const source = adapter.limits as unknown as Record<string, unknown>;
+    for (const name in source) {
+      const value = source[name];
+      if (typeof value === "number") limits[name] = value;
+    }
+    const legacy = (adapter as unknown as { isFallbackAdapter?: boolean }).isFallbackAdapter;
+    return { limits, isFallbackAdapter: adapter.info?.isFallbackAdapter ?? legacy ?? false };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A WebGPU engine on `canvas`, made with the WebGL2 engine's own options
+ * (antialiased, a stencil buffer, adapted to the device ratio), the
+ * high-performance adapter, and exactly `WEBGPU_REQUIRED_LIMITS`. The
+ * translators are loaded here too, so a failure to fetch them is a failure to
+ * start. Rejects on any failure, or when `WEBGPU_START_MS` pass first (Babylon's
+ * translator loader never rejects: it waits), having disposed what it made; the
+ * canvas may then hold a WebGPU context, so the caller draws WebGL2 on a fresh
+ * one.
+ */
+export async function createWebGpuEngine(canvas: HTMLCanvasElement): Promise<WebGPUEngine> {
+  const engine = new WebGPUEngine(canvas, {
+    antialias: true,
+    stencil: true,
+    adaptToDeviceRatio: true,
+    powerPreference: "high-performance",
+    deviceDescriptor: { requiredLimits: { ...WEBGPU_REQUIRED_LIMITS } },
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`the WebGPU engine was not ready in ${WEBGPU_START_MS} ms`)), WEBGPU_START_MS);
+  });
+  const start = async (): Promise<void> => {
+    await engine.initAsync({ jsPath: glslangJs, wasmPath: glslangWasm }, { jsPath: twgslJs, wasmPath: twgslWasm });
+    await engine.prepareGlslangAndTintAsync();
+  };
+  try {
+    await Promise.race([start(), deadline]);
+  } catch (err) {
+    try {
+      engine.dispose();
+    } catch {
+      /* a half-made engine may not dispose cleanly; it is dropped either way */
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+  // Only once the engine stands: a failed start leaves Babylon's defaults, and
+  // neither switch changes anything on WebGL2, where every material is GLSL.
+  PBRBaseMaterial.ForceGLSL = true;
+  StandardMaterial.ForceGLSL = true;
+  return engine;
+}
+
+/**
+ * Watches a running WebGPU engine for the failures that end on WebGL2: an
+ * effect that fails to translate or compile, or an uncaptured WebGPU error
+ * (`"pipeline"`), and a lost device Babylon did not cause (`"lost"`). Each is
+ * reported once, with whether it came inside the startup window
+ * (`createStartupWindow`), whose clock starts now. Returns a function that
+ * removes every observer and hands Babylon's log hook back.
+ */
+export function watchWebGpu(
+  engine: AbstractEngine,
+  onFailure: (reason: "pipeline" | "lost", inStartup: boolean) => void,
+  now: () => number = () => performance.now(),
+): () => void {
+  const startup = createStartupWindow(now());
+  const reported = new Set<"pipeline" | "lost">();
+  const report = (reason: "pipeline" | "lost"): void => {
+    if (reported.has(reason)) return;
+    reported.add(reason);
+    onFailure(reason, startup.open(now()));
+  };
+
+  const frame = engine.onEndFrameObservable.addOnce(() => startup.frame(now()));
+  const compiled = engine.onAfterShaderCompilationObservable.add(() => startup.compiled(now()));
+  const effectError = engine.onEffectErrorObservable.add(() => report("pipeline"));
+  const lost = engine.onContextLostObservable.add(() => report("lost"));
+
+  // Chained, not replaced: whatever held the hook still hears every entry.
+  const previous = Logger.OnNewCacheEntry as ((entry: string) => void) | undefined;
+  const onEntry = (entry: string): void => {
+    previous?.(entry);
+    if (entry.includes(UNCAPTURED)) report("pipeline");
+  };
+  Logger.OnNewCacheEntry = onEntry;
+
+  return () => {
+    engine.onEndFrameObservable.remove(frame);
+    engine.onAfterShaderCompilationObservable.remove(compiled);
+    engine.onEffectErrorObservable.remove(effectError);
+    engine.onContextLostObservable.remove(lost);
+    if (Logger.OnNewCacheEntry === onEntry) Logger.OnNewCacheEntry = previous as (entry: string) => void;
+  };
+}
