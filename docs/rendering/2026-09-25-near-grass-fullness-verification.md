@@ -338,3 +338,136 @@ fallback for step 1 over the frame bar is, in order, the near cards on LOD1
 
 **The feet.** No card reads as a plane at the feet, so the in-band [1.0, 2.5]
 stands and its fallback [1.5, 3.0] is not needed on that count.
+
+## 5. Second gate: the near cards on LOD1
+
+Measured 2026-09-25 on the branch at `7dd5f29` against the control at
+`9c97483`, the method of §1 unchanged. `7dd5f29` draws the meadow's near cards
+on the model's LOD1 (5 cards, 20 vertices) on the tiers that draw blades, in
+place of LOD0 (40 vertices): the near cards' vertex work halves, from 56,000 to
+28,000 at the canopy pose and from 126,720 to 63,360 at the meadow. The in-band
+[1.0, 2.5] m is unchanged. Zero console errors on every page that took a still.
+
+### 5.1 Fullness
+
+| pose | build | near mean | mid mean | lum ratio | near cover | mid cover | cover ratio |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| canopy | control | 0.0337 | 0.0290 | 1.16 | 0.129 | 0.499 | 0.26 |
+| canopy | gate 1 (§4) | 0.0308 | 0.0288 | 1.07 | 0.224 | 0.500 | 0.45 |
+| canopy | gate 2 | 0.0317 | 0.0289 | **1.10** | 0.196 | 0.501 | **0.39** |
+| meadow | control | 0.0344 | 0.0297 | 1.16 | 0.242 | 0.496 | 0.49 |
+| meadow | gate 1 (§4) | 0.0277 | 0.0295 | 0.94 | 0.518 | 0.502 | 1.03 |
+| meadow | gate 2 | 0.0295 | 0.0295 | **1.00** | 0.449 | 0.500 | **0.90** |
+
+The control reproduces §3 to within 0.02 of cover ratio. **The meadow pose still
+meets the bar**, with 0.10 of margin where §4 had 0.23. **The canopy pose still
+misses it on cover**, further than at the first gate. Both meet it on luminance.
+
+### 5.2 Layer isolation
+
+On the branch, same thresholds:
+
+| pose | layers drawn | near mean | near cover | mid mean | mid cover |
+| --- | --- | --- | --- | --- | --- |
+| canopy | all | 0.0317 | 0.196 | 0.0289 | 0.501 |
+| canopy | no blades | 0.0365 | 0.089 | 0.0292 | 0.503 |
+| canopy | no cards | 0.0336 | 0.135 | 0.0649 | 0.008 |
+| canopy | bare ground | 0.0398 | 0.001 | 0.0724 | 0.000 |
+| meadow | all | 0.0295 | 0.449 | 0.0295 | 0.500 |
+| meadow | no blades | 0.0332 | 0.345 | 0.0292 | 0.512 |
+| meadow | no cards | 0.0342 | 0.253 | 0.0743 | 0.001 |
+| meadow | bare ground | 0.0434 | 0.004 | 0.0753 | 0.000 |
+
+LOD1 costs the near crop a quarter of the cards' cover: 0.345 against LOD0's
+0.455 at the meadow pose, 0.089 against 0.119 at the canopy. The cards stand
+where they stood; each tuft is five cards rather than ten, and more floor shows
+through it. The blades, the ground and the mid crop are as in §4.2 (the mid
+crop's cards were LOD1 already).
+
+### 5.3 The look
+
+**Meadow.** The near field still reads as the same sward as the mid field, with
+no line or density step at 8–18 m. Side by side with §4's still, the same tufts
+stand in the same places, each with fewer dark strokes and a little more of the
+grey floor between them: the near field reads slightly lighter and more open
+than at the first gate, still well fuller than the control.
+
+**Canopy.** As in §4.3, single tufts on a pale floor, now a shade thinner; the
+band past 18 m is unchanged.
+
+**At the feet.** At pitch 0.9 at both poses, and turned 90°, the nearest cards
+stand where they did, 2–3 m out: the choice of LOD does not move a card, and
+the in-band still starts at 1.0 m. The nearest ones read as small upright tufts
+of a few strokes, thinner than LOD0's; none stands as a flat plane, and a card
+dissolving under 2.5 m reads as the same stipple as before. No bare patch
+inside 1 m.
+
+### 5.4 Frame
+
+§4.5's method and quiet rule, unchanged: 16 rounds at 4× pixels, of which
+rounds with a 1-minute load over 3.5 on any page (three) were discarded and run
+again, and a round started only when its warm-up page sat within 0.6 ms of the
+control's floor. Of the 16 kept, 11 are quiet — every page within 0.5 ms of its
+build's lowest mean at that pose — and are read; in the other five one control
+page was lifted by 0.6 to 3.1 ms by other work on the same GPU.
+
+| canopy round | first page | second page | delta | quiet |
+| --- | --- | --- | --- | --- |
+| same code 1 | control 53.65 / 55.4 | control 53.63 / 54.9 | −0.02 | yes |
+| same code 2 | control 53.65 / 55.7 | control 54.29 / 56.8 | +0.64 |  |
+| 1 | control 53.76 / 55.6 | gate 2 54.37 / 56.3 | +0.61 | yes |
+| 2 | gate 2 54.33 / 56.3 | control 56.18 / 58.3 | −1.85 |  |
+| 3 | control 53.72 / 55.8 | gate 2 54.35 / 56.2 | +0.63 | yes |
+| 4 | gate 2 54.31 / 56.1 | control 56.34 / 58.7 | −2.03 |  |
+| 5 | control 53.72 / 55.4 | gate 2 54.31 / 56.2 | +0.59 | yes |
+| 6 | gate 2 54.37 / 56.0 | control 53.77 / 55.4 | +0.60 | yes |
+
+| meadow round | first page | second page | delta | quiet |
+| --- | --- | --- | --- | --- |
+| same code 1 | control 47.45 / 50.0 | control 50.49 / 53.4 | +3.04 |  |
+| same code 2 | control 47.39 / 49.5 | control 47.38 / 49.6 | −0.01 | yes |
+| 1 | control 47.36 / 49.8 | gate 2 47.95 / 50.0 | +0.59 | yes |
+| 2 | gate 2 47.97 / 50.4 | control 47.52 / 50.3 | +0.45 | yes |
+| 3 | control 47.37 / 49.9 | gate 2 47.89 / 50.4 | +0.52 | yes |
+| 4 | gate 2 47.96 / 50.7 | control 49.70 / 53.2 | −1.74 |  |
+| 5 | control 47.41 / 50.0 | gate 2 47.87 / 50.1 | +0.46 | yes |
+| 6 | gate 2 47.93 / 50.7 | control 47.45 / 49.8 | +0.48 | yes |
+
+| pose | quiet same-code delta | quiet rounds, control first | quiet rounds, gate 2 first | order-averaged delta | lowest mean, control / gate 2 |
+| --- | --- | --- | --- | --- | --- |
+| canopy | −0.02 | +0.61, +0.63, +0.59 (mean +0.61) | +0.60 | **+0.60** | 53.63 / 54.31 (+0.68) |
+| meadow | −0.01 | +0.59, +0.52, +0.46 (mean +0.52) | +0.45, +0.48 (mean +0.47) | **+0.49** | 47.36 / 47.87 (+0.51) |
+
+The branch's pages sit within 0.06 ms of one another at each pose (54.31–54.37,
+47.87–47.97). The delta has halved from §4's +1.19 and +1.48 with the vertex
+work, which is what §4.5 found the cost to be.
+
+**Native p95**, the canopy pose at scaling 1, four rounds. Only the first had
+both pages on the control's floor (22.94 ms): control 22.98 / 25.0, gate 2
+23.80 / 26.0, delta +0.82 ms, p95 +1.0 ms. In the other three the control page
+was lifted to 23.6–23.8 ms and the deltas (−0.26, +0.18, +0.39) do not read.
+Not capped by vsync.
+
+### 5.5 Verdict
+
+| bar | canopy | meadow |
+| --- | --- | --- |
+| near cover ≥ 0.8 × mid cover | **missed**, 0.39 | **met**, 0.90 |
+| luminance ratio 0.8–1.25 | met, 1.10 | met, 1.00 |
+| frame ≤ +1.0 ms at 4× pixels | **met**, +0.60 | **met**, +0.49 |
+| no card as a plane at the feet | met | met |
+| zero console errors | met | met |
+
+**Frame.** LOD1 brings both poses under the bar, with 0.4 and 0.5 ms to spare,
+so design §9's second fallback for step 1 over the frame bar — LOD0 with the
+in-band from 1.5 m — is not needed for the frame.
+
+**Fullness.** The meadow pose passes on LOD1, with less margin. The canopy pose
+misses as at the first gate, now at 0.39, and for the same reason (§4.2): its
+cards stand at 0.44 the meadow's density and the floor shows between them.
+Neither fallback of step 1 reaches that — the second (LOD0 from 1.5 m) would
+give back LOD1's quarter of the cards' cover but take the cards out of the
+nearest 1.5 m, and would put the frame back over the bar — so the canopy's
+cover goes to step 2, the sward floor (design §5.2), which the design takes
+when either pose still misses. Step 2 darkens the near crop's floor at both
+poses, so it has the meadow's luminance ratio, 1.00, to keep at or above 0.8.
