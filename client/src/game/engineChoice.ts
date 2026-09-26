@@ -19,8 +19,8 @@ export type EngineName = "webgl2" | "webgpu";
  * gates pass on each of them; until then only `?engine=webgpu` reaches it. */
 export const WEBGPU_ENABLED = false;
 
-/** The tiers the WebGPU default applies to: high, and medium, where detection
- * puts most desktop Chromium players (`quality.ts`). Low and the landing
+/** The tiers the WebGPU default applies to: high and medium, the two that
+ * desktop Chromium's detection gives (`quality.ts`). Low and the landing
  * backdrop stay WebGL2. */
 export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"];
 
@@ -59,8 +59,13 @@ export const FALLBACK_NOTICE_KEY = "dayhike.engine.notice";
 export const FALLBACK_DAYS = 30;
 /** A second lost device inside this window remembers WebGL2. */
 export const LOSS_WINDOW_MS = 86_400_000;
-/** Making the WebGPU engine, translators included, gets this long. */
-export const WEBGPU_START_MS = 15_000;
+/** Fetching what the WebGPU path needs, the engine's module and the two
+ * translators, gets this long. A fetch that runs out is WebGL2 for this load
+ * and is not remembered: nothing of the GPU failed. */
+export const WEBGPU_FETCH_MS = 10_000;
+/** The GPU's part, the adapter probe and making the engine, gets this long,
+ * measured apart from the fetch. Running out is remembered (`init`). */
+export const WEBGPU_START_MS = 10_000;
 /** The startup window closes once no effect has compiled for this long after
  * the first frame… */
 export const STARTUP_QUIET_MS = 10_000;
@@ -316,6 +321,25 @@ export function stripOverrides(route: string): string {
   return query === "" ? route.slice(0, at) : `${route.slice(0, at)}?${query}`;
 }
 
+/**
+ * Whether two routes (a path and query each) are the same place: the same
+ * path and the same parameters in any order, each decoded, with `engine=` and
+ * `tier=` left out. A follower compares the host's route with its own this
+ * way, since the two sides encode one query differently (`%20` or `+` for a
+ * space, `;` or `%3B`), and a route that reads as changed makes the follower
+ * rebuild its game.
+ */
+export function sameRoute(a: string, b: string): boolean {
+  const canonical = (route: string): string => {
+    const at = route.indexOf("?");
+    const params = new URLSearchParams(at < 0 ? "" : route.slice(at));
+    const entries = [...params].filter(([name]) => !(OVERRIDES as readonly string[]).includes(name));
+    entries.sort(([n1, v1], [n2, v2]) => (n1 === n2 ? (v1 < v2 ? -1 : v1 > v2 ? 1 : 0) : n1 < n2 ? -1 : 1));
+    return JSON.stringify([at < 0 ? route : route.slice(0, at), entries]);
+  };
+  return canonical(a) === canonical(b);
+}
+
 /** `route` with this page's own `engine=` and `tier=` (from `ownSearch`)
  * carried onto it: where a follower goes, its own overrides go too. */
 export function keepOverrides(route: string, ownSearch: string): string {
@@ -342,9 +366,10 @@ function withinTime<T>(promise: Promise<T>, ms: number): Promise<T | typeof TIME
 }
 
 /** How `resolveWebGpu` reaches the WebGPU module and the page, passed in so
- * the order, the budget and every failure can be tested without either. */
+ * the order, the budgets and every failure can be tested without either. */
 export type WebGpuSteps<E> = {
-  /** The WebGPU module: `import("./gpuEngine.js")`, adapted. */
+  /** Everything the path fetches: the module (`import("./gpuEngine.js")`)
+   * and the translators (`loadTranslators`), adapted. */
   load(): Promise<{
     probe(): Promise<AdapterReport | null>;
     /** The engine, given what is left of the budget and the features to ask for. */
@@ -356,40 +381,41 @@ export type WebGpuSteps<E> = {
 };
 
 /**
- * The WebGPU engine, or null for WebGL2, within one budget of `budgetMs` for
- * the module, the adapter and the engine together, so nothing on the way can
- * leave the page waiting for good. Never rejects. A module that does not load
- * is not remembered (nothing of the GPU failed); an adapter that does not
- * answer, or an engine that does not start, is (`init`). An adapter that does
- * not fit is WebGL2 with no record, and a word in the console only where
+ * The WebGPU engine, or null for WebGL2, within two budgets, so nothing on the
+ * way can leave the page waiting for good: `fetchMs` for what the path fetches
+ * (the module and the translators), then `startMs`, from the end of the fetch,
+ * for the GPU's part (the adapter and the engine). Never rejects. A fetch that
+ * fails or runs out is not remembered: nothing of the GPU failed, and a slow
+ * network must not keep WebGPU off for the next 30 days. An adapter that does
+ * not answer, or an engine that does not start, is (`init`). An adapter that
+ * does not fit is WebGL2 with no record, and a word in the console only where
  * `?engine=webgpu` asked for it.
  */
 export async function resolveWebGpu<E>(
   input: EngineInput,
   steps: WebGpuSteps<E>,
-  budgetMs: number = WEBGPU_START_MS,
+  budgets: { fetchMs: number; startMs: number } = { fetchMs: WEBGPU_FETCH_MS, startMs: WEBGPU_START_MS },
   now: () => number = () => Date.now(),
 ): Promise<E | null> {
-  const start = now();
-  const left = (): number => Math.max(0, budgetMs - (now() - start));
-
   let gpu: Awaited<ReturnType<WebGpuSteps<E>["load"]>>;
   try {
-    const loaded = await withinTime(steps.load(), left());
+    const loaded = await withinTime(steps.load(), budgets.fetchMs);
     if (loaded === TIMED_OUT) {
-      steps.warn(`WebGPU: the engine's module did not load in ${budgetMs} ms; drawing with WebGL2.`);
+      steps.warn(`WebGPU: its module and translators did not load in ${budgets.fetchMs} ms; drawing with WebGL2.`);
       return null;
     }
     gpu = loaded;
   } catch (err) {
-    steps.warn("WebGPU: the engine's module did not load; drawing with WebGL2.", err);
+    steps.warn("WebGPU: its module and translators did not load; drawing with WebGL2.", err);
     return null;
   }
 
+  const start = now();
+  const left = (): number => Math.max(0, budgets.startMs - (now() - start));
   const report = await withinTime(gpu.probe().catch(() => null), left());
   if (report === TIMED_OUT) {
     steps.remember("init");
-    steps.warn(`WebGPU: the adapter did not answer in ${budgetMs} ms; drawing with WebGL2.`);
+    steps.warn(`WebGPU: the adapter did not answer in ${budgets.startMs} ms; drawing with WebGL2.`);
     return null;
   }
   const fit = adapterFits(report);

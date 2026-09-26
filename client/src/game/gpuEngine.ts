@@ -58,34 +58,68 @@ export async function probeAdapter(): Promise<AdapterReport | null> {
   }
 }
 
+/** The globals the two translator loaders define on the page, where Babylon
+ * looks for them (`self.glslang`, `self.twgsl`). */
+const TRANSLATOR_GLOBALS = ["glslang", "twgsl"] as const;
+
+function missingTranslators(): string[] {
+  const page = globalThis as unknown as Record<string, unknown>;
+  return TRANSLATOR_GLOBALS.filter((name) => typeof page[name] !== "function");
+}
+
+/** Fetches `url` whole, so Babylon's own fetch of it comes from the HTTP
+ * cache (the build serves these immutable), and checks it is WebAssembly. */
+async function prefetchWasm(url: string): Promise<void> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url}: ${response.status}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes[0] !== 0x00 || bytes[1] !== 0x61 || bytes[2] !== 0x73 || bytes[3] !== 0x6d) {
+    throw new Error(`${url}: not WebAssembly`);
+  }
+}
+
+/**
+ * Everything the WebGPU engine fetches, before any GPU work, so the network's
+ * time is measured apart from the GPU's (`resolveWebGpu`): the two translator
+ * loaders, run through Babylon's own script loader, which rejects when a script
+ * does not load (Babylon's translator setup, handed only their URLs, waits for
+ * good instead), and the two translators' WebAssembly. Rejects at once where a
+ * loader ran but defined nothing, as it does when this host answers a missing
+ * script with its HTML page, or where a translator is not WebAssembly.
+ */
+export async function loadTranslators(): Promise<void> {
+  await Promise.all([
+    Tools.LoadScriptAsync(glslangJs),
+    Tools.LoadScriptAsync(twgslJs),
+    prefetchWasm(glslangWasm),
+    prefetchWasm(twgslWasm),
+  ]);
+  const missing = missingTranslators();
+  if (missing.length > 0) throw new Error(`the WebGPU translators did not load: ${missing.join(", ")}`);
+}
+
 /**
  * A WebGPU engine on `canvas`, made with the WebGL2 engine's own options
  * (antialiased, a stencil buffer, adapted to the device ratio), the
  * high-performance adapter, exactly `WEBGPU_REQUIRED_LIMITS`, and the optional
  * `features` it is given (`featuresToRequest`; Babylon also drops any the
- * adapter lacks). The translators are loaded here too, so a failure to fetch
- * them is a failure to start. Rejects on any failure, or when `ms` pass first,
- * having disposed what it made; the canvas may then hold a WebGPU context, so
- * the caller draws WebGL2 on a fresh one.
+ * adapter lacks). `loadTranslators` comes first; with them on the page, Babylon
+ * takes them rather than fetching. Rejects on any failure, or when `ms` pass
+ * first, having disposed what it made; the canvas may then hold a WebGPU
+ * context, so the caller draws WebGL2 on a fresh one.
  */
 export async function createWebGpuEngine(
   canvas: HTMLCanvasElement,
   options: { ms?: number; features?: readonly string[] } = {},
 ): Promise<WebGPUEngine> {
+  if (missingTranslators().length > 0) throw new Error("load the WebGPU translators first");
   const ms = options.ms ?? WEBGPU_START_MS;
-  const made: { engine: WebGPUEngine | null; over: boolean } = { engine: null, over: false };
+  const made: { engine: WebGPUEngine | null } = { engine: null };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`the WebGPU engine was not ready in ${ms} ms`)), ms);
   });
   const start = async (): Promise<WebGPUEngine> => {
-    // The translators' loaders first, through Babylon's own script loader,
-    // which rejects when a script does not load: Babylon's translator setup,
-    // handed only their URLs, waits for good instead. Loaded here, they are the
-    // globals Babylon then takes. Before the engine, so a missing loader leaves
-    // the canvas without a WebGPU context.
-    await Promise.all([Tools.LoadScriptAsync(glslangJs), Tools.LoadScriptAsync(twgslJs)]);
-    if (made.over) throw new Error("the WebGPU start was abandoned");
     const engine = new WebGPUEngine(canvas, {
       antialias: true,
       stencil: true,
@@ -117,7 +151,6 @@ export async function createWebGpuEngine(
     }
     throw err;
   } finally {
-    made.over = true;
     clearTimeout(timer);
   }
 }

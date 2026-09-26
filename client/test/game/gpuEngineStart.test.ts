@@ -36,13 +36,30 @@ vi.mock("@babylonjs/core/Engines/webgpuEngine.js", () => {
   return { WebGPUEngine };
 });
 
-import { createWebGpuEngine } from "../../src/game/gpuEngine.js";
+import { createWebGpuEngine, loadTranslators } from "../../src/game/gpuEngine.js";
 
 const canvas = {} as HTMLCanvasElement;
+
+const WASM = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+/** `fetch` answering every URL with `bytes`, and the URLs it was asked for. */
+function stubFetch(bytes: number[]): string[] {
+  const asked: string[] = [];
+  vi.stubGlobal("fetch", (url: string) => {
+    asked.push(url);
+    return Promise.resolve(new Response(new Uint8Array(bytes)));
+  });
+  return asked;
+}
+/** The two loaders' globals, as their scripts define them on the page. */
+function stubTranslators(): void {
+  vi.stubGlobal("glslang", () => Promise.resolve({}));
+  vi.stubGlobal("twgsl", () => Promise.resolve({}));
+}
 
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   made.options.length = 0;
   made.disposed = 0;
   made.init = () => Promise.resolve();
@@ -51,25 +68,61 @@ afterEach(() => {
   StandardMaterial.ForceGLSL = false;
 });
 
-describe("createWebGpuEngine", () => {
-  it("loads both translator scripts first, and a missing one fails at once, before any engine is made", async () => {
+describe("loadTranslators", () => {
+  // No timer is advanced in any of these: a failure does not wait for a budget.
+  it("runs both loaders and fetches both translators, and a script that does not load fails at once", async () => {
     vi.useFakeTimers();
-    const asked: string[] = [];
+    const fetched = stubFetch(WASM);
+    const ran: string[] = [];
     vi.spyOn(Tools, "LoadScriptAsync").mockImplementation((url: string) => {
-      asked.push(url);
-      return url.includes("twgsl") ? Promise.reject(new Error("twgsl.js: 404")) : Promise.resolve();
+      ran.push(url);
+      return url.includes("twgsl") ? Promise.reject(new Error("twgsl.js: blocked")) : Promise.resolve();
     });
-    // No timer is advanced: the failure does not wait for the budget.
-    await expect(createWebGpuEngine(canvas)).rejects.toThrow("twgsl.js: 404");
-    expect(asked).toHaveLength(2);
-    expect(asked[0]).toMatch(/glslang[^/]*\.js$/);
-    expect(asked[1]).toMatch(/twgsl[^/]*\.js$/);
+    await expect(loadTranslators()).rejects.toThrow("twgsl.js: blocked");
+    expect(ran).toHaveLength(2);
+    expect(ran[0]).toMatch(/glslang[^/]*\.js$/);
+    expect(ran[1]).toMatch(/twgsl[^/]*\.js$/);
+    expect(fetched).toHaveLength(2);
+    expect(fetched[0]).toMatch(/glslang[^/]*\.wasm$/);
+    expect(fetched[1]).toMatch(/twgsl[^/]*\.wasm$/);
+  });
+
+  it("fails at once when a loader ran but defined nothing, as this host's HTML page for a missing script does", async () => {
+    vi.useFakeTimers();
+    stubFetch(WASM);
+    vi.spyOn(Tools, "LoadScriptAsync").mockResolvedValue(undefined);
+    await expect(loadTranslators()).rejects.toThrow("the WebGPU translators did not load: glslang, twgsl");
+    vi.stubGlobal("glslang", () => Promise.resolve({}));
+    await expect(loadTranslators()).rejects.toThrow("the WebGPU translators did not load: twgsl");
+  });
+
+  it("fails at once when a translator is not WebAssembly", async () => {
+    vi.useFakeTimers();
+    stubTranslators();
+    stubFetch([...Buffer.from("<!doctype html>")]);
+    vi.spyOn(Tools, "LoadScriptAsync").mockResolvedValue(undefined);
+    await expect(loadTranslators()).rejects.toThrow(/glslang[^/]*\.wasm: not WebAssembly/);
+  });
+
+  it("resolves when both loaders define their functions and both translators are WebAssembly", async () => {
+    stubFetch(WASM);
+    vi.spyOn(Tools, "LoadScriptAsync").mockImplementation((url: string) => {
+      vi.stubGlobal(url.includes("glslang") ? "glslang" : "twgsl", () => Promise.resolve({}));
+      return Promise.resolve();
+    });
+    await expect(loadTranslators()).resolves.toBeUndefined();
+  });
+});
+
+describe("createWebGpuEngine", () => {
+  it("refuses to start before the translators are loaded, and makes no engine", async () => {
+    await expect(createWebGpuEngine(canvas)).rejects.toThrow("load the WebGPU translators first");
     expect(made.options).toEqual([]);
     expect(PBRBaseMaterial.ForceGLSL).toBe(false);
   });
 
   it("asks the device for exactly the required limits and the texture formats it is given", async () => {
-    vi.spyOn(Tools, "LoadScriptAsync").mockResolvedValue(undefined);
+    stubTranslators();
     await createWebGpuEngine(canvas, { features: ["texture-compression-bc"] });
     expect(made.options).toEqual([
       {
@@ -88,13 +141,13 @@ describe("createWebGpuEngine", () => {
   });
 
   it("asks for no optional feature when it is given none", async () => {
-    vi.spyOn(Tools, "LoadScriptAsync").mockResolvedValue(undefined);
+    stubTranslators();
     await createWebGpuEngine(canvas);
     expect((made.options[0] as { deviceDescriptor: { requiredFeatures: string[] } }).deviceDescriptor.requiredFeatures).toEqual([]);
   });
 
   it("disposes what it made and leaves the materials alone when the start fails", async () => {
-    vi.spyOn(Tools, "LoadScriptAsync").mockResolvedValue(undefined);
+    stubTranslators();
     made.init = () => Promise.reject(new Error("device refused"));
     await expect(createWebGpuEngine(canvas)).rejects.toThrow("device refused");
     expect(made.disposed).toBe(1);
@@ -104,7 +157,7 @@ describe("createWebGpuEngine", () => {
 
   it("gives up once the time it is given has passed", async () => {
     vi.useFakeTimers();
-    vi.spyOn(Tools, "LoadScriptAsync").mockResolvedValue(undefined);
+    stubTranslators();
     made.prepare = () => new Promise<void>(() => undefined);
     const start = createWebGpuEngine(canvas, { ms: 9_000 });
     const settled = expect(start).rejects.toThrow("the WebGPU engine was not ready in 9000 ms");
@@ -129,7 +182,15 @@ describe("the installed engine (canaries)", () => {
     expect(source).toContain('bptc: this._deviceEnabledExtensions.indexOf("texture-compression-bc"');
   });
 
-  it("takes an already loaded glslang instead of loading its script again", () => {
+  it("takes an already loaded glslang and twgsl from the page's globals", () => {
     expect(source).toContain("if (self.glslang) {");
+    const tint = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js"), "utf8");
+    expect(tint).toContain("if (self.twgsl) {");
+  });
+
+  it("finds the globals where the shipped loaders put them", () => {
+    const resolve = createRequire(import.meta.url).resolve;
+    expect(readFileSync(resolve("@babylonjs/core/assets/glslang/glslang.js"), "utf8")).toContain('root["glslang"] = factory();');
+    expect(readFileSync(resolve("@babylonjs/core/assets/twgsl/twgsl.js"), "utf8")).toContain('root["twgsl"] = factory();');
   });
 });

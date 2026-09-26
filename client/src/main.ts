@@ -44,6 +44,7 @@ import {
   recordFailure,
   resolveWebGpu,
   safeStorage,
+  sameRoute,
   stripOverrides,
   withEngine,
   writeFallback,
@@ -245,12 +246,13 @@ function detach(): void {
 }
 
 /** A follower goes where the host is. The host's route is "" until known.
- * `?engine=` and `?tier=` are each page's own (`stripOverrides`): they neither
- * make a route differ nor leave the follower's URL when it moves. */
+ * `?engine=` and `?tier=` are each page's own: they neither make a route
+ * differ (`sameRoute`, which also reads past how each side encoded the query)
+ * nor leave the follower's URL when it moves. */
 function follow(active: Lobby): void {
   if (active.state.role !== "client") return;
   const target = active.state.route;
-  if (target === "" || stripOverrides(target) === stripOverrides(currentRoutePath())) return;
+  if (target === "" || sameRoute(target, currentRoutePath())) return;
   navigateTo(keepOverrides(target, location.search));
 }
 
@@ -465,13 +467,15 @@ function rememberFailure(reason: "init" | "pipeline" | "lost", pin = true): { st
 
 /**
  * The WebGPU engine for `canvas`, or null for WebGL2, by `resolveWebGpu`: the
- * module, the adapter and the engine within one budget, every failure caught.
- * The URL is pinned only while this render is still the page's.
+ * module and the translators within the fetch's budget, then the adapter and
+ * the engine within the GPU's, every failure caught. The URL is pinned only
+ * while this render is still the page's.
  */
 function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput, token: number): Promise<MadeEngine | null> {
   return resolveWebGpu<MadeEngine>(input, {
     load: async () => {
       const gpu: GpuModule = await import("./game/gpuEngine.js");
+      await gpu.loadTranslators();
       return {
         probe: gpu.probeAdapter,
         create: async (ms, features) => ({

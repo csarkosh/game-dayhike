@@ -81,7 +81,7 @@ describe("tierFor", () => {
   });
 
   it("detects medium at best on a desktop that reports 8 GB, and low where memory goes unreported", () => {
-    // Chromium caps deviceMemory at 8, so tierFor's high branch is out of reach.
+    // An 8 GB report (all Chromium gave before Chrome 147) is medium at most.
     expect(detectTier({ hardwareConcurrency: 12, deviceMemory: 8, userAgent: "Chrome/153" })).toBe("medium");
     // No deviceMemory at all (the API is Chromium's alone) reads the default 4.
     expect(detectTier({ hardwareConcurrency: 12, userAgent: "Version/26.0 Safari/605.1.15" })).toBe("low");
