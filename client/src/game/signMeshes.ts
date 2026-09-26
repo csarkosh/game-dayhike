@@ -1,5 +1,7 @@
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -37,24 +39,19 @@ const ARM_THICKNESS = 0.038;
 /** Where the arrow's point begins: the full-height board runs from the post end to here. */
 const ARM_BOARD_END = 0.95;
 /**
- * How far past the post's axis a plank's post end reaches. That end is a V
- * notch 0.1285 m deep, its corners at the end and its apex on the board's
- * centre line; the post's shaft is a 20-sided section about 0.054 m from its
- * axis, which stands up to 7 mm off the footing's origin. Pushed in this far,
- * the apex is at least 5 mm inside the post whichever way the plank points,
- * so no sky shows through the notch beside the post. The shaft is narrower
- * than the notch is deep, so the notch's two points come out of the post's
- * far side by up to 0.049 m along the plank, the last 0.039 m of their height.
+ * How far from the footing's origin the post's shaft reaches at plank height,
+ * with a few millimetres of air: a 20-sided section about 0.054 m from its
+ * axis, the axis up to 7 mm off the origin.
  */
-export const PLANK_SEAT_IN = 0.092;
-/** How far from its axis the post reaches at most: a corner of its foot. */
-const POST_REACH = 0.095;
+const POST_REACH = 0.065;
 /**
- * Where the lettering is centred along the plank from the post's axis: the
- * middle of the board seen between the post and the arrow's point (0.858 m
- * out, the plank pushed in), 0.4765 m.
+ * One label plane, in the texture's own 1024 : 192 shape so the letters are
+ * not stretched. The texture keeps a 5% margin each side, so the letters
+ * span 0.9 of its width: 0.756 m, the board seen between the post's reach and
+ * where the arrow's point begins once the plank's squared end is on the
+ * post's axis (0.8215 m out).
  */
-const LABEL_CENTRE = (POST_REACH + ARM_BOARD_END - PLANK_SEAT_IN) / 2;
+const LABEL_SIZE = { width: 0.84, height: 0.1575 } as const;
 /**
  * Height of the bottom plank's centre above the post's foot. The planks have
  * no collider, so the bottom one's lower edge (1.648 m) sits above a hiker's
@@ -71,12 +68,6 @@ export const PLANK_STEP = 0.215;
 export const POST_HEIGHT = 2.221;
 /** How far the post's top stands above its highest plank's top edge. */
 export const POST_CLEARANCE = 0.1;
-/**
- * One label plane: as long as the board seen between the post and the arrow's
- * point (0.76 m), in the texture's own 1024 : 192 shape so the letters are not
- * stretched; the texture's margin keeps the letters on the wood.
- */
-const LABEL_SIZE = { width: 0.76, height: 0.1425 } as const;
 /** The gap between a label and the arm face it sits on: enough to never fight it for depth. */
 const LABEL_LIFT = 0.001;
 const WOOD = "#6b4f2a";
@@ -235,6 +226,71 @@ export type SignDeps = {
   loader?: ModelLoader;
 };
 
+/**
+ * Cuts the plank's inner end square so it meets the post cleanly: the end
+ * the model comes with is a V notch, whose two points would stand out beside
+ * a post as thin as this one. Every vertex behind the notch's apex (the
+ * nearest point on the board's centre line) moves forward to it, so the end
+ * becomes flat; the faces that turn to face the post get their normals
+ * worked out again, and the texture coordinates stay as they were. Done once
+ * on the loaded model, before any copy shares its geometry. Returns the
+ * apex's distance along the plank, where the flat end now is.
+ */
+export function squareInnerEnd(container: AssetContainer): number {
+  let apex = 0;
+  for (const mesh of container.meshes) {
+    const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
+    const indices = mesh.getIndices();
+    if (positions === null || indices === null || positions.length === 0) continue;
+    // The apex: the nearest vertex to the post end on the centre line (y = 0).
+    let cut = Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+      if (Math.abs(positions[i + 1] as number) < 1e-4) cut = Math.min(cut, positions[i + 2] as number);
+    }
+    if (!Number.isFinite(cut)) continue;
+    apex = Math.max(apex, cut);
+    const moved = new Set<number>();
+    const next = Array.from(positions);
+    for (let v = 0; v < next.length / 3; v++) {
+      if ((next[3 * v + 2] as number) < cut) {
+        next[3 * v + 2] = cut;
+        moved.add(v);
+      }
+    }
+    if (moved.size === 0) continue;
+    mesh.setVerticesData(VertexBuffer.PositionKind, next, false);
+    // Fresh normals for every face that moved; the rest keep the model's own.
+    const oldNormals = mesh.getVerticesData(VertexBuffer.NormalKind);
+    if (oldNormals !== null) {
+      const fresh: number[] = [];
+      VertexData.ComputeNormals(next, indices, fresh);
+      // The file's triangles may wind the other way from the computation's
+      // own convention: take the sign that agrees with the model's normals
+      // on the faces that did not move.
+      let agree = 0;
+      for (let v = 0; v < next.length / 3; v++) {
+        if (moved.has(v)) continue;
+        for (let k = 0; k < 3; k++) agree += (fresh[3 * v + k] as number) * (oldNormals[3 * v + k] as number);
+      }
+      const sign = agree < 0 ? -1 : 1;
+      const normals = Array.from(oldNormals);
+      for (let t = 0; t < indices.length; t += 3) {
+        const tri = [indices[t], indices[t + 1], indices[t + 2]] as number[];
+        if (!tri.some((v) => moved.has(v))) continue;
+        for (const v of tri) {
+          const n = [fresh[3 * v] as number, fresh[3 * v + 1] as number, fresh[3 * v + 2] as number];
+          // A vertex left only on faces the cut flattened to nothing keeps its own.
+          if (Math.hypot(n[0] as number, n[1] as number, n[2] as number) < 0.5) continue;
+          for (let k = 0; k < 3; k++) normals[3 * v + k] = sign * (n[k] as number);
+        }
+      }
+      mesh.setVerticesData(VertexBuffer.NormalKind, normals, false);
+    }
+    mesh.refreshBoundingInfo({});
+  }
+  return apex;
+}
+
 /** How many planks a post carries: one per name, across all its arms. */
 export function plankCount(post: SignPost): number {
   let n = 0;
@@ -333,12 +389,16 @@ export function createSignMeshes(
     }
   }
 
-  /** One face's lettering: `side` is +1 for the plank's +X face, -1 for its -X face. */
-  function label(name: string, arm: TransformNode, side: 1 | -1, material: Material): void {
+  /**
+   * One face's lettering: `side` is +1 for the plank's +X face, -1 for its
+   * -X face; `along` is how far along the plank from its origin the plane's
+   * middle sits.
+   */
+  function label(name: string, arm: TransformNode, side: 1 | -1, material: Material, along: number): void {
     const plane = MeshBuilder.CreatePlane(name, { width: LABEL_SIZE.width, height: LABEL_SIZE.height }, scene);
     plane.parent = arm;
     // Along the board, clear of the post it runs into.
-    plane.position.set(side * (ARM_THICKNESS / 2 + LABEL_LIFT), 0, PLANK_SEAT_IN + LABEL_CENTRE);
+    plane.position.set(side * (ARM_THICKNESS / 2 + LABEL_LIFT), 0, along);
     // A plane faces -Z; a quarter turn one way or the other points it out of its face.
     plane.rotation.y = -side * (Math.PI / 2);
     plane.material = material;
@@ -350,24 +410,27 @@ export function createSignMeshes(
   }
 
   function placePlanks(container: AssetContainer): void {
+    const end = squareInnerEnd(container);
+    // The lettering centred on the board seen between the post and the
+    // arrow's point, measured from the post's axis, where the squared end is.
+    const along = end + (POST_REACH + ARM_BOARD_END - end) / 2;
     for (const [p, post] of posts.entries()) {
       const footing = footings[p] as TransformNode;
       const count = plankCount(post);
       for (const arm of post.arms) {
-        // The plank's post end pushed PLANK_SEAT_IN past the footing's
-        // origin, the post's axis to within 7 mm: whichever way it points,
-        // its notch is closed inside the post, so it reads as fixed to it
-        // with no gap, square on or on the diagonal.
+        // The plank's squared end on the footing's origin, the post's axis to
+        // within 7 mm: whichever way it points, it meets the post with no
+        // gap and nothing comes out of the far side.
         for (const [k, text] of arm.names.entries()) {
           const rank = arm.ranks[k] as number;
           const name = `sign_${p}_plank_${rank}`;
           const model = instantiateStaticModel(
-            container, name, -arm.dx * PLANK_SEAT_IN, plankHeight(rank, count), -arm.dz * PLANK_SEAT_IN, armYaw(arm),
+            container, name, -arm.dx * end, plankHeight(rank, count), -arm.dz * end, armYaw(arm),
           );
           keep(model, footing);
           const material = lettering(text);
-          label(`${name}_label_px`, model.node, 1, material);
-          label(`${name}_label_nx`, model.node, -1, material);
+          label(`${name}_label_px`, model.node, 1, material, along);
+          label(`${name}_label_nx`, model.node, -1, material, along);
         }
       }
     }

@@ -14,7 +14,7 @@ import type { Material } from "@babylonjs/core/Materials/material.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import type { SignPost } from "../../src/sim/signs.js";
-import { armYaw, createSignMeshes, plankCount, plankHeight, postHeight } from "../../src/game/signMeshes.js";
+import { armYaw, createSignMeshes, plankCount, plankHeight, postHeight, squareInnerEnd } from "../../src/game/signMeshes.js";
 
 registerBuiltInLoaders();
 
@@ -157,6 +157,38 @@ describe("plank heights", () => {
   });
 });
 
+describe("squareInnerEnd", () => {
+  it("cuts the plank's V end square at the notch's apex, with sound normals and the texture coordinates kept", async () => {
+    const scene = freshScene();
+    const container = await diskLoader(scene)("models/sign.arm.glb");
+    const meshes = container.meshes.filter((m) => m.getTotalVertices() > 0);
+    const uvs = meshes.map((m) => Array.from(m.getVerticesData(VertexBuffer.UVKind) ?? []));
+    // Before: the notch's corners at the end, its apex 0.1285 m in.
+    const before = meshes.flatMap((m) => Array.from(m.getVerticesData(VertexBuffer.PositionKind)!).filter((_, i) => i % 3 === 2));
+    expect(Math.min(...before)).toBe(0);
+    expect(squareInnerEnd(container)).toBeCloseTo(0.1285, 4);
+    let facing = 0;
+    for (const [k, m] of meshes.entries()) {
+      const pos = m.getVerticesData(VertexBuffer.PositionKind)!;
+      const normals = m.getVerticesData(VertexBuffer.NormalKind)!;
+      for (let i = 0; i < pos.length; i += 3) {
+        expect(pos[i + 2]).toBeGreaterThanOrEqual(0.1285 - 1e-4);
+        // Every normal a unit vector: no face turned black by a zero or a NaN.
+        expect(Math.hypot(normals[i]!, normals[i + 1]!, normals[i + 2]!)).toBeCloseTo(1, 4);
+        // The flat end faces the post: its normals point back along -z (the
+        // board's faces and edges there keep theirs, across x or y).
+        if (Math.abs(pos[i + 2]! - 0.1285) < 1e-4 && Math.abs(normals[i]!) < 0.5 && Math.abs(normals[i + 1]!) < 0.5) {
+          facing++;
+          expect(normals[i + 2]).toBeLessThan(-0.99);
+        }
+      }
+      expect(Array.from(m.getVerticesData(VertexBuffer.UVKind) ?? [])).toEqual(uvs[k]);
+    }
+    expect(facing).toBeGreaterThan(0);
+    container.dispose();
+  });
+});
+
 describe("createSignMeshes", () => {
   it("draws each post's collider box until the models arrive, then a post per junction and a plank per name", async () => {
     const scene = freshScene();
@@ -218,7 +250,7 @@ describe("createSignMeshes", () => {
     expect(scene.meshes.filter((m) => m.getTotalVertices() > 0)).toHaveLength(0);
   });
 
-  it("turns each plank's tip along its branch, its post end pushed 0.092 m past the post's axis", async () => {
+  it("turns each plank's tip along its branch, its squared end on the post's axis", async () => {
     const scene = freshScene();
     const { signs } = setup(scene, diskLoader(scene));
     await signs.ready;
@@ -228,41 +260,41 @@ describe("createSignMeshes", () => {
     expect(east.rotation.y).toBeCloseTo(1.5707963, 4);
     east.computeWorldMatrix(true);
     const at = east.getAbsolutePosition();
-    // Pushed back through the post's axis, the footing's origin.
-    expect(at.x).toBeCloseTo(99.908, 4);
+    // The model's origin 0.1285 m back, so its squared end is on the post's axis.
+    expect(at.x).toBeCloseTo(99.8715, 4);
     expect(at.y).toBeCloseTo(4.395, 4);
     expect(at.z).toBeCloseTo(50, 4);
     // The arrow's tip 1.095 m on from the post end, at the arm's centre height.
     const verts = drawn(east).flatMap((m) => worldVertices(m).map(({ p }) => p));
     const tip = verts.reduce((a, b) => (b.x > a.x ? b : a));
-    expect(tip.x).toBeCloseTo(101.004, 2);
+    expect(tip.x).toBeCloseTo(100.967, 2);
     expect(tip.y).toBeCloseTo(4.395, 2);
     // The point is an edge across the board's thickness, 0.019 m either side of the centre line.
     expect(Math.abs(tip.z - 50)).toBeLessThanOrEqual(0.02);
     // The post end square across the arm, 0.204 m tall and 0.038 m thick.
-    expect(Math.min(...verts.map((p) => p.x))).toBeCloseTo(99.908, 3);
+    expect(Math.min(...verts.map((p) => p.x))).toBeCloseTo(100, 3);
     expect(Math.max(...verts.map((p) => p.y)) - Math.min(...verts.map((p) => p.y))).toBeCloseTo(0.204, 2);
     expect(Math.max(...verts.map((p) => p.z)) - Math.min(...verts.map((p) => p.z))).toBeCloseTo(0.038, 2);
 
     const west = node(scene, "sign_0_plank_1");
     expect(west.rotation.y).toBeCloseTo(-1.5707963, 4);
     const westVerts = drawn(west).flatMap((m) => worldVertices(m).map(({ p }) => p));
-    expect(Math.min(...westVerts.map((p) => p.x))).toBeCloseTo(98.996, 2);
+    expect(Math.min(...westVerts.map((p) => p.x))).toBeCloseTo(99.033, 2);
 
-    // The post at the origin points its top plank north: its tip at z = 1.096 - 0.092.
+    // The post at the origin points its top plank north: its tip at z = 1.096 - 0.1285.
     const north = drawn(node(scene, "sign_1_plank_0")).flatMap((m) => worldVertices(m).map(({ p }) => p));
-    expect(Math.max(...north.map((p) => p.z))).toBeCloseTo(1.004, 2);
-    // The diagonal plank at (-50, 0): its tip 1.004 m out, 0.71 m on each axis.
+    expect(Math.max(...north.map((p) => p.z))).toBeCloseTo(0.967, 2);
+    // The diagonal plank at (-50, 0): its tip 0.967 m out, 0.684 m on each axis.
     const diagonal = drawn(node(scene, "sign_2_plank_0")).flatMap((m) => worldVertices(m).map(({ p }) => p));
     const out = diagonal.map((p) => (p.x + 50) * R2 + p.z * R2);
-    expect(Math.max(...out)).toBeCloseTo(1.004, 2);
+    expect(Math.max(...out)).toBeCloseTo(0.967, 2);
     const far = diagonal[out.indexOf(Math.max(...out))]!;
     // The tip edge runs across the board's thickness, 0.019 m either side of the diagonal.
-    expect((far.x + 50 + far.z) / 2).toBeCloseTo(0.71, 2);
+    expect((far.x + 50 + far.z) / 2).toBeCloseTo(0.684, 2);
     signs.dispose();
   });
 
-  it("closes every plank's notch inside the post, square on or on the diagonal", async () => {
+  it("meets the post with every plank's squared end, nothing out of the far side, square on or on the diagonal", async () => {
     const scene = freshScene();
     const { signs } = setup(scene, diskLoader(scene));
     await signs.ready;
@@ -305,29 +337,18 @@ describe("createSignMeshes", () => {
           const plank = drawn(node(scene, `sign_${p}_plank_${rank}`)).flatMap((m) => worldVertices(m).map(({ p: v }) => v));
           const reach = plank.map((v) => (v.x - where.x) * arm.dx + (v.z - where.z) * arm.dz);
           const at = `sign_${p}_plank_${rank}`;
-          // The notch's corners 0.092 m back through the post's axis, its
-          // apex 0.1285 m on from them, on the board's centre line.
-          expect(Math.min(...reach), at).toBeCloseTo(-0.092, 3);
+          // The squared end on the post's axis, and no vertex behind it: nothing
+          // reaches the post's far side.
+          expect(Math.min(...reach), at).toBeCloseTo(0, 4);
+          expect(Math.min(...reach), at).toBeGreaterThan(-1e-4);
+          // The flat end's points (its four corners and the old notch's apex on
+          // each face, now all in one plane) inside the post.
+          const end = plank.filter((_, i) => reach[i]! < 1e-4);
+          const points = new Set(end.map((v) => v.asArray().map((c) => c.toFixed(4)).join()));
+          expect(points.size, at).toBe(6);
+          for (const v of end) expect(inside(v), at).toBe(true);
           const centre = 2 + plankHeight(rank, plankCount(where));
-          const apex = plank.filter((v, i) => Math.abs(reach[i]! - 0.0365) < 1e-3 && Math.abs(v.y - centre) < 1e-3);
-          // Two points, one on each face, each shared by several of the model's vertices.
-          expect(new Set(apex.map((v) => v.asArray().map((c) => c.toFixed(4)).join())).size, at).toBe(2);
-          const corners = plank.filter((_, i) => reach[i]! < -0.091);
-          expect(corners.length, at).toBeGreaterThan(0);
-          const toward = new Vector3(arm.dx, 0, arm.dz);
-          for (const v of apex) {
-            // At least 5 mm inside the post, whichever way the surface is.
-            expect(inside(v), at).toBe(true);
-            for (const [x, z] of [[1, 0], [R2, R2], [0, 1], [-R2, R2], [-1, 0], [-R2, -R2], [0, -1], [R2, -R2]]) {
-              expect(inside(v.add(new Vector3(x! * 0.005, 0, z! * 0.005))), at).toBe(true);
-            }
-          }
-          // The notch is deeper than the post is wide, so its points come out
-          // of the far face, but by no more than 0.05 m along the plank.
-          for (const v of corners) {
-            expect(inside(v), at).toBe(false);
-            expect(inside(v.add(toward.scale(0.05))), at).toBe(true);
-          }
+          expect(inside(new Vector3(where.x, centre, where.z)), at).toBe(true);
         }
       }
     }
@@ -357,9 +378,9 @@ describe("createSignMeshes", () => {
     // One plank alone at the base.
     expect(heightOf("sign_2_plank_0")).toBeCloseTo(3.75, 4);
     // The east arm's second plank sits under the plank 20 degrees off it, not through it,
-    // both pushed the same 0.092 m through the post.
+    // both with their squared ends on the post's axis.
     const off = node(scene, "sign_0_plank_2");
-    expect(off.getAbsolutePosition().subtract(new Vector3(100, 3.965, 50)).length()).toBeCloseTo(0.092, 4);
+    expect(off.getAbsolutePosition().subtract(new Vector3(100, 3.965, 50)).length()).toBeCloseTo(0.1285, 4);
     expect(off.rotation.y).toBeCloseTo(1.2217305, 4);
     expect(node(scene, "sign_0_plank_3").rotation.y).toBeCloseTo(1.5707963, 4);
     signs.dispose();
@@ -397,9 +418,9 @@ describe("createSignMeshes", () => {
         expect(shadowed.has(label)).toBe(false);
         expect(label.receiveShadows).toBe(true);
         const verts = worldVertices(label);
-        // 0.76 m by 0.1425 m.
+        // 0.84 m by 0.1575 m.
         const ys = verts.map(({ p }) => p.y);
-        expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(0.1425, 4);
+        expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(0.1575, 4);
         const centre = verts.reduce((s, { p }) => s.addInPlace(p), Vector3.Zero()).scaleInPlace(1 / verts.length);
         const normals = label.getVerticesData(VertexBuffer.NormalKind)!;
         const normal = Vector3.TransformNormal(new Vector3(normals[0], normals[1], normals[2]), label.computeWorldMatrix(true)).normalize();
@@ -408,18 +429,19 @@ describe("createSignMeshes", () => {
         const offset = centre.subtract(armAt);
         expect(Vector3.Dot(normal, offset)).toBeCloseTo(0.02, 4);
         expect(Vector3.Dot(normal, along)).toBeCloseTo(0, 4);
-        // 0.4765 m out from the post's axis, 0.5685 m from the plank's pushed-in end:
-        // the middle of the board seen between the post and the arrow's point.
-        expect(Vector3.Dot(offset, along)).toBeCloseTo(0.5685, 4);
+        // 0.44325 m out from the post's axis, 0.57175 m from the model's origin:
+        // the middle of the board seen between the post (0.065 m) and the
+        // arrow's point (0.8215 m), the letters' 0.756 m filling it.
+        expect(Vector3.Dot(offset, along)).toBeCloseTo(0.57175, 4);
         // Seen from outside, looking back along -normal: u runs to the
         // viewer's right and v up, where a painted canvas's top row lands.
         const right = Vector3.Cross(Vector3.Up(), normal.scale(-1));
         const u0 = verts.filter(({ u }) => u === 0).map(({ p }) => p);
         const u1 = verts.filter(({ u }) => u === 1).map(({ p }) => p);
-        expect(Vector3.Dot(u1[0]!.subtract(u0[0]!), right)).toBeCloseTo(0.76, 4);
+        expect(Vector3.Dot(u1[0]!.subtract(u0[0]!), right)).toBeCloseTo(0.84, 4);
         const v0 = verts.filter(({ v }) => v === 0).map(({ p }) => p.y);
         const v1 = verts.filter(({ v }) => v === 1).map(({ p }) => p.y);
-        expect(Math.min(...v1) - Math.max(...v0)).toBeCloseTo(0.1425, 4);
+        expect(Math.min(...v1) - Math.max(...v0)).toBeCloseTo(0.1575, 4);
       }
     }
     for (const { material } of painted) expect(scene.materials).toContain(material);
