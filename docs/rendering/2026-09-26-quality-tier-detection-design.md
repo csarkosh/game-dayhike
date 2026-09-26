@@ -1,0 +1,903 @@
+# Quality tier detection: design
+
+**As built.** Nothing yet. This is the design as written on 2026-09-26, against
+`main` at `ba0fd95`. The plan
+([2026-09-26-quality-tier-detection-plan](2026-09-26-quality-tier-detection-plan.md))
+builds it in seven tasks, the last of them the gate. When the work lands this
+paragraph is rewritten to say what shipped and with what values; the sections
+below stay the design as written.
+
+Day Hike picks a quality tier once, when the renderer is made, from the number
+of logical cores and the memory the browser reports. Neither says anything about
+the GPU, which is what the tier spends, and the browsers now report them in ways
+that put the same machine on three different tiers: a desktop Chrome from
+version 147 on reports memory up to 32 GB, which sends every machine with more
+than eight threads and 16 GB to **high** whatever its GPU (the reference machine
+qualifies, and its high-tier frame at the canopy pose is 24 ms); a Chrome before
+147 never reports more than 8 GB and so never reaches high; Safari and Firefox
+report no memory at all, read the default of 4 GB, and put every Mac and every
+Firefox player on **low**, with no blades, no litter, no shadows and a 0.6
+radius scale. The comment above the rule says the player can override it, and
+nothing lets them: there is no setting, and the `?tier=` override every
+rendering note used was an uncommitted patch.
+
+The goal is one sentence: **start every player on the highest tier their GPU
+holds at 60 Hz, confirm it with the frame where the GPU cannot be named, let
+the player see and change it, and apply a change without leaving the hike.**
+
+Renderer-side only. No `sim/` change, no level-id move (`passHash` stays
+−311867473), no protocol change (`PROTOCOL_VERSION` stays 5), no asset change.
+Peers on different tiers share one world (§11).
+
+## 1. Decisions
+
+| question | decision |
+| --- | --- |
+| The signals | One function, `gatherSignals` (`gpuSignals.ts`), reads the WebGL renderer string (`RENDERER`, else `UNMASKED_RENDERER_WEBGL`, from a throwaway WebGL2 context it then loses), the high-performance WebGPU adapter's `info` and limits (one `requestAdapter`, shared with the engine rule), the reported cores and memory, and whether the device is mobile. Every one may be missing; the result says which (§5.1) |
+| The classes | The signals map to one of thirteen GPU classes by an ordered rule table (`gpuClass.ts`, §5.2): mobile, software, three Apple classes by what the string names, discrete and integrated by vendor and generation, and "unknown" classes where a browser buckets or masks the string. Cores and memory only cap: two or fewer of either caps the tier at low |
+| Class to tier | Each class has a **start** tier, a **ceiling**, and whether it is **probed** (§6.1). Named classes go straight to their tier; the unknown ones start one step down and are probed from their ceiling |
+| The probe | Only for a probed class with no valid verdict, before the game is built: the standard canopy pose (seed `atmo`, mist, noon) rendered behind a "Setting up graphics…" screen on the player's own window, at the ceiling, 60 frames discarded and 120 measured after the scene is ready; the tier **holds** when the mean frame interval is ≤ **17.5 ms**; a miss at high measures medium once, a miss at medium settles on low. Bounded at 30 s; three attempts per GPU (§7) |
+| The verdict | `localStorage["dayhike.quality.auto"]`: the tier, whether a probe or the governor set it, the GPU it was measured on, the browser major, the window area and the time. Holds for 30 days on the same GPU and browser; a probe verdict only while the window is at most 1.5 times the area it was measured at (§6.2) |
+| The setting | A **Settings** entry on the title screen (Play → Downloads → **Settings** → Credits) and on the pause screen (Resume → **Settings** → Exit), both opening one shared Settings screen: **Auto (Recommended)** (the default), **High**, **Medium**, **Low**, with a line naming what Auto picked. Saved in `localStorage["dayhike.quality"]`; a storage that throws means Auto, and a choice made then lasts the page (§8) |
+| Applying it | On the title screen a choice takes effect when Play starts the hike. On the pause screen a choice is applied by **Apply**, live, without a reload: the renderer is disposed and rebuilt on a fresh canvas behind an "Applying…" screen while the session, the data channels, the player's state and the HUD carry on (§9) |
+| Overrides | `?tier=low\|medium\|high` wins over everything, for testing, and the Settings screen says so; `?probe=high\|medium` forces a probe from that tier and logs it, for the gate |
+| The governor | Auto only. After 30 s, in 10 s windows of frame intervals (any over 250 ms voids its window): three windows in a row with a mean over **20.8 ms** (48 fps) drop the tier one step, once, remembered as a governor verdict. Never raises. Applied at the next hike's start, or at once from the pause screen's Apply; the HUD says so once (§10) |
+| Determinism | The tier is read by `game/` only. A test steps one world under renderers on each tier and under none, and finds one serialised state and one `passHash` (§11) |
+| Gate | On the reference machine: the probe, forced from high, picks the tier the frame at both standard poses confirms holds 60 Hz, and the class table's own row for the machine agrees; the literal matrix of §6.4 as unit tests; the settings, the live swap and the governor in the browser (§13) |
+| Unchanged | What each tier draws (`QUALITY` and every consumer); the landing backdrop's low tier; the WebGPU rule's own conditions; `sim/`; the protocol |
+
+## 2. Goals and non-goals
+
+**Goals.**
+
+- The starting tier follows the GPU, in every browser the game supports, and is
+  the same on the second visit as on the first unless the frame says otherwise.
+- Where the browser will not name the GPU, a few seconds of the heaviest
+  standard view decide, once per machine, before the hike starts.
+- No player is kept on a tier their machine cannot hold: a sustained low frame
+  rate lowers the next hike's tier by itself.
+- The player can see which tier they are on and change it from the title screen
+  or mid-hike, and a mid-hike change never drops a co-op session.
+
+**Non-goals.**
+
+- What a tier draws. `QUALITY` (`quality.ts:35–57`) and every tier consumer stay
+  as they are; making high cheaper is the grass-frame work's, and making it
+  faster the WebGPU work's.
+- Which engine a tier gets. The WebGPU rule (`engineChoice.ts` on its branch)
+  is applied to whatever tier this design resolves, unchanged.
+- Render resolution as its own setting (§15).
+- Any change to the landing backdrop, which renders low on every machine.
+
+## 3. What detection does today, and why it fails
+
+### 3.1 The rule
+
+`tierFor` (`quality.ts:74–79`) returns low for a mobile device or `cores <= 4
+|| memoryGb <= 4`, medium for `cores <= 8 || memoryGb <= 8`, and high
+otherwise. `detectTier` (`renderer.ts:517–526`) feeds it
+`navigator.hardwareConcurrency ?? 4`, `navigator.deviceMemory ?? 4` and a user
+agent test, `/Mobi|Android|iPhone|iPad/`. `createRenderer` calls it when no
+tier is passed (`renderer.ts:690`), and `app.ts:153` passes none. The landing
+backdrop passes `{ tier: "low" }` (`landingScene.ts:55`). The tier is read once,
+at construction; nothing in the renderer changes it afterwards.
+
+### 3.2 What the browsers report in 2026
+
+| signal | Chrome, Edge, the launcher | Safari | Firefox |
+| --- | --- | --- | --- |
+| `navigator.deviceMemory` | GiB rounded down to a power of two; from Chrome 147 on the desktop **2, 4, 8, 16 or 32**, before it 0.25–8 [1][2] | not implemented [3] | not implemented [3] |
+| `navigator.hardwareConcurrency` | logical cores | clamped to 4 or 8 [4] | logical cores; 2 under `resistFingerprinting` [5] |
+| WebGL renderer | `RENDERER` is `WebKit WebGL`; `WEBGL_debug_renderer_info` gives the ANGLE string, e.g. `ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)` [6] | `Apple GPU` for every GPU since 2020 [7] | `RENDERER` itself carries a sanitised string, bucketed to a representative model with `, or similar` appended (every Apple GPU reads `Apple M1`, every NVIDIA from the 900 series on `GeForce GTX 980`); the extension is deprecated there [7][8][9] |
+| WebGPU adapter `info` | `vendor` and `architecture` filled from Dawn's table (`nvidia`/`ampere`, `intel`/`gen-12lp`, `amd`/`rdna-3`; Apple as its highest Metal "common" family), `device` and `description` empty [10][11]; `isFallbackAdapter` on the info object | shipped in Safari 26 [12]; what it fills is not documented and is treated as possibly empty | shipped on Windows in 141 and on Apple silicon in 145 [13]; the info is reported blank [14] and treated as possibly empty |
+| user-agent client hints | `navigator.userAgentData.mobile` | none | none [15] |
+| iPad | — | the user agent is a Mac's since iPadOS 13; `maxTouchPoints > 1` tells them apart [16] | — |
+
+The launcher is Electron 44.1.1 (`desktop/package.json`), which carries Chromium
+152 [17], so it reports what Chrome 147 and later report.
+
+### 3.3 Who lands where today
+
+| browser | machine | reads | tier today |
+| --- | --- | --- | --- |
+| Chrome ≥ 147, Edge, launcher | the reference machine (Apple M4, 8-core GPU, 10 threads, 16 GB) | 10 cores, 16 GB | **high**, at 24 ms a frame at the canopy pose (§4.2) |
+| Chrome ≥ 147 | a laptop with an Intel UHD GPU, 12 threads, 16 GB | 12, 16 | **high** |
+| Chrome ≥ 147 | the same GPU, 8 threads | 8, 16 | medium |
+| Chrome < 147 | any desktop | ≤ 8 GB | medium at best |
+| Safari | any Mac | 4 or 8 cores, no memory (4) | **low** |
+| Firefox | any machine | no memory (4) | **low** |
+| Safari on iPad | an iPad, Mac user agent | 4 or 8, no memory | low, by memory rather than as mobile |
+| any | a phone | — | low |
+
+The near-grass notes say "a desktop browser reports at most 8 GB of device
+memory, so detection alone lands on medium"; that was true before Chrome 147.
+The gate reads both values in the reference machine's Chrome and records them
+(§13.1).
+
+### 3.4 The setting that does not exist
+
+`quality.ts:66` says "The player can override it". Nothing in the HUD, the pause
+menu (`pauseMenu.ts`: Resume, Exit), the command bar or the landing page names a
+tier. `?tier=` exists only as the measurement patch three rendering notes applied
+and reverted, and, on the WebGPU branch, as `parseTierOverride` in
+`engineChoice.ts`, committed there because that design needed it.
+
+### 3.5 Two settings nothing reads
+
+`QUALITY` carries `lodBias` (1 on low) and `textureMipCap` (512, 1024, none), and
+`quality.test.ts` pins them, but no code reads either: the only consumer of
+`QUALITY` is `lighting.ts` (`:154`, `:163`, `:198–202`), which takes the hardware
+scaling and the shadow settings. This design leaves them as they are and records
+them as a follow-up (§15); the tier cost tables below do not count them.
+
+## 4. What a tier costs
+
+### 4.1 What each tier draws
+
+From the code, per tier:
+
+| | low | medium | high |
+| --- | --- | --- | --- |
+| hardware scaling (`lighting.ts:163`) | 1.5: render at 1/1.5 of the CSS size each way, 0.44 of the pixels | 1: the CSS size | 1 |
+| shadows (`lighting.ts:198–202`) | none | one 1024² cascade | two 2048² cascades |
+| post chain (`postParams.ts:18–21`) | none; the material colour path | from the grade, MSAA 4 on it | scene pass, halation, MSAA 4 on the scene pass |
+| forest near band (`renderer.ts:778–782`) | 70 m | 120 m | 120 m |
+| clutter and wildlife radii (`:796–799`, `:834–845`) | 0.6× | 1× | 1× |
+| blade field (`:803`, `bladeClump.ts:120–123`) | none, nor the sward floor | half counts | full counts |
+| litter (`:811`, `duffClump.ts:93–96`) | none | near × 1 | near × 2 |
+| cliff rings (`cliffField.ts:23–27`) | 0, 80, 200 m | 60, 140, 250 m | 60, 160, 400 m |
+| mist quads, rain, motes | 6, 600, 0 | 12, 1200, 600 | 12, 2000, 1500 |
+| engine, once the WebGPU rule is on | WebGL2 | WebGPU where the adapter fits | WebGPU where the adapter fits |
+
+### 4.2 What it costs, measured
+
+Every current figure is the high tier's, at the canopy pose (seed `atmo`, mist,
+noon, `(123, 110.87, −105.5)`, yaw 1.571, pitch 0.3), on the reference machine
+in Chrome, in a 1200 × 2029 window at device pixel ratio 1 (2.43 million
+pixels):
+
+| engine | native | 4× pixels | source |
+| --- | --- | --- | --- |
+| WebGL2 | 24.0 ms (near-grass tip); 24.22 lowest quiet page | 54.8; 55.14 | [grass-frame] §3.2; [WebGPU] §3.1 |
+| WebGPU, blades as shipped | 22.69 lowest page | 45.21 | [WebGPU] §3.1 |
+
+[grass-frame] is `2026-09-26-grass-frame-reclaim-verification.md` and
+[WebGPU] `2026-09-26-webgpu-high-tier-design.md`, both in this folder once their
+work lands. JavaScript is 3.8 ms of the 24.0 ([grass-frame] §3.2); the frame is
+GPU-bound.
+A line through the two WebGL2 points gives **13.9 ms + 4.23 ms per million
+pixels**, and through the two WebGPU points 15.2 + 3.08. By that line, high at the
+canopy pose on the reference machine takes about 22.7 ms in a 1920 × 1080 window
+and 19.9 ms in a full-screen 1470 × 956 laptop window on WebGL2 (21.6 and 19.5
+on WebGPU): **high does not hold 60 Hz on the reference machine at any common
+window size**, and the grass-frame work's expected 0.5 ms does not change that.
+The two-point line is an estimate, not a measurement; the gate measures the
+1920 × 1080 window.
+
+There is **no current figure for medium or low**. The last ones are from
+2026-09-16, before the blade field, the ground cover, the litter, the cliffs and
+the near-grass work: at 4× pixels, medium 41.2 ms at a meadow pose and 41.1 at a
+deep-forest one, low 30.8 at the meadow, on the build that added the blade
+clumps (`2026-09-16-blade-clumps-verification.md`). They are not comparable. What medium saves over high is known in kind: the
+second cascade and the doubled shadow map (four cascades once cost about 5 ms at
+a deep-forest camera, `quality.ts:30–33`), the scene pass and halation, half the
+blades (1.36 ms at native at high, [grass-frame] §3.2), half the near litter. The
+gate measures all three tiers at both standard poses before the one class-table
+row that depends on them ships (§6.1, Apple base).
+
+### 4.3 Resolution: CSS pixels, not device pixels
+
+The engine is made with `adaptToDeviceRatio` (`renderer.ts:647`), which sets the
+hardware scaling to 1/devicePixelRatio (`abstractEngine.pure.js:1214`); but
+`lighting.ts:163` then sets it to the tier's value, 1 or 1.5
+(`setHardwareScalingLevel`, `abstractEngine.pure.js:905–908`). The render size
+is the canvas's CSS size divided by that, so a Retina panel does **not** double
+the cost: a full-screen game on a 2560 × 1664 panel at the default 1470 × 956
+renders 1.41 million pixels on medium and high. One exception: `resize()`
+multiplies the scaling by the old ratio over the new when the device pixel ratio
+changes (`abstractEngine.pure.js:1226–1231`), so a window dragged from a 1×
+monitor to a 2× panel renders at twice the CSS size each way from then on. The
+probe measures the canvas the player has; the governor catches the rest.
+
+### 4.4 The engine
+
+On the WebGPU branch the tier decides the engine: high and medium use Babylon's
+`WebGPUEngine` where the high-performance adapter fits and nothing remembered
+says otherwise, low stays WebGL2 (`engineChoice.ts`, `WEBGPU_TIERS`). So every
+tier this design picks is also an engine choice, and a tier change can be an
+engine change (§9.4). This design does not change the engine rule; it hands it
+the tier, and it shares the adapter request (§5.1).
+
+## 5. The signals
+
+### 5.1 One function
+
+`gatherSignals(env): Promise<GpuSignals>` in `client/src/game/gpuSignals.ts`,
+Babylon-free, with the browser behind `env` so every branch is tested with plain
+objects:
+
+```ts
+type AdapterInfo = { vendor: string; architecture: string; device: string; description: string; isFallbackAdapter: boolean };
+type GpuSignals = {
+  renderer: string | null;          // the WebGL renderer string, or null without a WebGL2 context
+  adapter: AdapterInfo | null;      // null without navigator.gpu, an adapter, or within 2 s
+  limits: Readonly<Record<string, number>> | null;  // the same adapter's limits, for the engine rule
+  cores: number | null;             // null where not reported
+  memoryGb: number | null;
+  mobile: boolean;
+  browser: number;                  // the major version, as engineChoice.ts's browserMajor reads it
+};
+```
+
+- **Renderer.** A throwaway canvas and WebGL2 context. `gl.getParameter(gl.RENDERER)`
+  is taken as it is unless it reads `WebKit WebGL` (Chrome and Safari's masked
+  value); only then is `WEBGL_debug_renderer_info` asked for, so Firefox, where
+  `RENDERER` already carries the sanitised string, never logs the extension's
+  deprecation warning. The context is lost at once with `WEBGL_lose_context`, so
+  it does not count against the browser's live-context limit.
+- **Adapter.** `navigator.gpu.requestAdapter({ powerPreference:
+  "high-performance" })`, raced against 2 s; `adapter.info` (`vendor`,
+  `architecture`, `device`, `description`, `isFallbackAdapter`, with the legacy
+  `adapter.isFallbackAdapter` as the WebGPU branch reads it) and every limit, read
+  with `for…in` as `gpuEngine.ts`'s `probeAdapter` does. This is the one adapter
+  request of the page: the WebGPU rule's `adapterFits` takes its
+  `{ limits, isFallbackAdapter }` from here, and `probeAdapter` keeps only the
+  `WebGPUEngine.IsSupportedAsync` check.
+- **Cores and memory.** The numbers where they are numbers, else null. Never
+  defaulted: a missing value is not a small one.
+- **Mobile.** `navigator.userAgentData.mobile` where it exists; else the user
+  agent matches `/Mobi|Android|iPhone|iPad/`; or the user agent says
+  `Macintosh` and `maxTouchPoints > 1` (an iPad). `platform.ts`'s
+  `isTouchDevice` is a different question and stays so: a touch-screen Windows
+  laptop keeps its GPU's tier.
+
+It runs once per page, at load, in `main.ts`; the title screen repaints when it
+resolves (tens of milliseconds), and a page opened straight on a game route
+awaits it before the game is built.
+
+### 5.2 The class table
+
+`classifyGpu(signals): GpuClass` in `client/src/game/gpuClass.ts`, pure. First
+match wins, top to bottom:
+
+| # | when | class |
+| --- | --- | --- |
+| 1 | `mobile` | `mobile` |
+| 2 | renderer matches `/swiftshader\|llvmpipe\|softpipe\|lavapipe\|basic render driver\|\bwarp\b/i` | `software` |
+| 3 | renderer ends `, or similar` (Firefox's bucket) and names `Apple M1` | `apple-unknown` |
+| 4 | … a bucket naming `GeForce GTX 980` | `discrete-unknown` (every NVIDIA from the 900 series on, RTX 5090 included) |
+| 5 | … a bucket naming `GeForce GTX 480`, `GeForce 8800`, `Radeon HD 5850` or `Radeon HD 3200` | `discrete-legacy` |
+| 6 | … a bucket naming `Arc(TM) A750` | `discrete-modern` |
+| 7 | … a bucket naming `Intel` | `integrated-unknown` |
+| 8 | … any other bucket (`Radeon R9 200 Series` covers Vega, Fury and the Renoir and Rembrandt APUs alike) | `unknown` |
+| 9 | `/Apple M\d+ (Pro\|Max\|Ultra)/` | `apple-large` |
+| 10 | `/Apple M\d+/` | `apple-base` |
+| 11 | `/Apple GPU/` | `apple-unknown` |
+| 12 | `/\bRTX\b/` (GeForce RTX, RTX A-series, Quadro RTX) | `discrete-modern` |
+| 13 | `/GTX (9\d\d\|10\d\d\|16\d\d)\|TITAN X\|\bMX ?\d{3}/` | `discrete-older` |
+| 14 | `/GeForce\|Quadro\|NVIDIA/` | `discrete-legacy` |
+| 15 | `/Radeon RX (5\|6\|7\|9)\d{3}\|Radeon Pro W(5\|6\|7)\d{3}/` (RDNA 1–4) | `discrete-modern` |
+| 16 | `/Radeon (RX (4\|5)\d\d\b\|RX Vega\|VII\|Pro)/` (Polaris, Vega, the Macs' Radeon Pro) | `discrete-older` |
+| 17 | `/Radeon \d{3}M\|Radeon 8\d{2}0S/` (680M, 780M, 880M, 890M, 8060S) | `integrated-modern` |
+| 18 | `/Radeon\(TM\) Graphics\|Radeon Graphics/` (an APU that does not say which) | by the adapter's architecture: `rdna-*` → `integrated-modern`, `gcn-*` → `integrated-older`, else `integrated-unknown` |
+| 19 | `/Vega \d+\|Radeon (R9\|R7\|R5\|HD)/` | `integrated-older` for Vega, `discrete-legacy` for the rest |
+| 20 | `/Arc.*\b[AB][5-9]\d\d\b/` | `discrete-modern` |
+| 21 | `/Arc.*\b[AB]3\d\d\b/` | `discrete-older` |
+| 22 | `/Arc\(TM\) Graphics\|Arc \d{3}[VT]\b/` (Meteor, Lunar and Arrow Lake) | `integrated-modern` |
+| 23 | `/Iris\(R\) Xe\|Iris Xe/` | `integrated-unknown` (80 to 96 execution units, and among the commonest laptop GPUs; the probe decides) |
+| 24 | `/UHD Graphics\|HD Graphics\|Iris\(TM\) Plus\|Iris Plus\|Iris Pro/` | `integrated-older` |
+| 25 | `/Adreno.*X\d/` (Snapdragon X laptops) | `integrated-modern` |
+| 26 | renderer null or unmatched, adapter present: `isFallbackAdapter` → `software`; vendor `apple` → `apple-unknown`; `nvidia` with `ampere`, `lovelace`, `blackwell` → `discrete-modern`, `turing` → `discrete-unknown` (GTX 16 and RTX 20 alike), `pascal`, `maxwell` → `discrete-older`; `intel` with `xe-lpg`, `xe-2lpg`, `xe-3lpg` → `integrated-modern`, `gen-12lp` → `integrated-unknown`, `gen-9`, `gen-11` → `integrated-older`, `gen-12hp`, `xe-2hpg` → `discrete-modern`; vendor `google` with `swiftshader`, `mesa` with `software`, `microsoft` with `warp` → `software` | as listed |
+| 27 | anything else | `unknown` |
+
+The adapter is the second signal on purpose: the WebGL renderer names the GPU
+the WebGL path draws with, and a fallback WebGPU adapter says only that WebGPU
+would be software, which the engine rule already refuses. Rows 12–25 run on the
+ANGLE string whole; the PCI id in it (`(0x00002503)`) is not used.
+
+**The caps.** After the class: `cores !== null && cores <= 2`, or `memoryGb !==
+null && memoryGb <= 2`, caps the tier at low. Firefox under
+`resistFingerprinting` reports two cores and is capped; that is the price of
+asking for sameness, and the setting overrides it.
+
+## 6. From class to tier
+
+### 6.1 The class-to-tier table
+
+`CLASS_TIERS` in `gpuClass.ts`:
+
+| class | start | ceiling | probed | why |
+| --- | --- | --- | --- | --- |
+| `mobile` | low | low | no | thermals, not the GPU, are the limit (`quality.ts:69–72`) |
+| `software` | low | low | no | a CPU rasteriser |
+| `discrete-legacy` | low | low | no | Kepler and older, pre-Polaris Radeon |
+| `integrated-older` | low | low | no | Intel Gen 9–11, Vega APUs |
+| `integrated-unknown` | low | medium | yes | Iris Xe, a bare "Radeon Graphics", Firefox's Intel buckets |
+| `integrated-modern` | medium | medium | no | Arc integrated, RDNA 2+ APUs, Snapdragon X |
+| `apple-base` | medium | medium | no | the reference machine's class: high is 24 ms at the canopy pose (§4.2) |
+| `discrete-older` | medium | medium | no | Maxwell to Turing GTX, Polaris, Vega, Arc A3xx |
+| `unknown` | medium | high | yes | nothing recognisable |
+| `apple-unknown` | medium | high | yes | Safari's `Apple GPU`, Firefox's `Apple M1` bucket: an M1 or an M4 Max |
+| `discrete-unknown` | medium | high | yes | Firefox's `GTX 980` bucket, WebGPU's `turing` |
+| `apple-large` | high | high | no | Pro, Max and Ultra |
+| `discrete-modern` | high | high | no | RTX, RDNA 1+, Arc A5xx and up |
+
+Only the `apple-base` row rests on a measurement of this machine class, and its
+medium is still unmeasured (§4.2): the gate confirms it or moves it (§13.1). The
+other named rows are set from the GPUs' throughput relative to the reference
+machine's; no one's hardware but the governor's checks them, and each is one
+literal in one test, so a later measurement moves one row.
+
+### 6.2 The Auto verdict
+
+`localStorage["dayhike.quality.auto"]`, one record per profile:
+
+```ts
+type AutoRecord = {
+  v: number;            // DETECT_VERSION, 1; bumped when what a tier costs moves enough to redo every verdict
+  gpu: string;          // the renderer string, else "vendor/architecture", else ""
+  browser: number;      // the browser major
+  attempts: number;     // probes started for this gpu and browser since the last verdict
+  verdict: AutoVerdict | null;
+};
+type AutoVerdict = {
+  tier: QualityTier;
+  source: "probe" | "governor";
+  pixels: number;       // the game container's CSS area when it was set
+  at: number;           // Date.now()
+  readings?: ProbeReading[];
+};
+```
+
+The record **matches** while `v`, `gpu` and `browser` equal the running ones;
+one that does not is replaced, attempts and all. Its verdict **holds** while
+`at` is less than 30 days old, and a `probe` verdict only while the container's
+area is at most 1.5 times `pixels` (it certifies a size, and a bigger window
+costs more); a `governor` verdict holds at any size. A tier is never taken above
+the class's ceiling or past the caps, whatever the verdict says.
+
+### 6.3 Precedence
+
+```
+tier = ?tier=…                          (the override, for testing)
+     | the player's choice, if not Auto (§8)
+     | Auto:
+         the verdict, if it holds                          (§6.2)
+         else the class's start tier, and a probe from the class's ceiling
+              if the class is probed and fewer than 3 attempts were made   (§7)
+```
+
+`autoTier(input): { tier, probeFrom }` in `quality.ts` (pure; `tierFor` and
+`Capabilities` go, with their tests). `resolveTier({ override, choice, auto })`
+in `tierChoice.ts` returns the tier and its source (`override`, `choice`, `auto`),
+which the page logs once per renderer build:
+`quality: medium (auto, apple-base), engine webgl2`.
+
+### 6.4 The literal matrix
+
+The plan's Task 2 pins, as a table of literals, the class and the Auto tier for
+33 inputs: every row of §5.2 by a real renderer string (Chrome's ANGLE strings
+for Apple M4, M3 Max, M2 Pro, RTX 3060, GTX 1060, GT 730, RX 6700 XT, RX 580,
+Radeon 780M, a bare Radeon Graphics under three adapters, UHD 620, Iris Xe, Arc
+integrated, Arc A770, an Intel Mac's Iris Plus 655 and SwiftShader; Safari's
+`Apple GPU`; Firefox's buckets for Apple, NVIDIA, Intel and AMD; `llvmpipe`),
+the adapter-only rows, the missing-everything row, the mobile and iPad rows,
+and both caps; then the verdict cases of §6.2 (holds, a bigger window, another
+GPU, 31 days old, an old version, a governor drop, three attempts spent). A
+monotonic check runs beside them: over a grid of cores and memory, less of
+either never raises the tier of any class.
+
+## 7. The startup probe
+
+### 7.1 When it runs
+
+When the page is about to start a hike on **Auto**, with no override, and
+`autoTier` returns a `probeFrom`: a probed class with no verdict that holds and
+fewer than three attempts. Also, on Auto, with `?probe=high|medium` in the
+address, from that tier, whatever the class and the record, for the gate. It runs in `main.ts`'s game
+route, **before** `startGame`: nothing of the hike exists yet, so it cannot
+stall a session or pop anything a player is looking at, and a follower simply
+arrives a few seconds after the host.
+
+### 7.2 What it renders
+
+The canopy pose of every rendering note: seed `atmo` (627994160), the default
+terrain variant, weather `mist`, hour 12, the free camera at `(123,
+elevationAt(atmo, 123, −105.5) + 1.6, −105.5)` (110.87), yaw 1.571, pitch 0.3.
+It is the heaviest standard view (§4.2), the same on every machine, and every
+measurement in the repository is at it, so a probe reading reads against them.
+The forest and a non-authoritative world are built as the landing backdrop builds
+its own (`landingScene.ts`), the renderer at the tier being measured, on a
+**fresh canvas** filling the game's container, under an opaque screen: the
+landing's dark ground with one status line, "Setting up graphics…". On the
+WebGPU branch the canvas gets the engine the rule gives that tier. Each measured
+tier gets its own canvas; the renderer is disposed and its engine made with
+`loseContextOnDispose` (`thinEngine.pure.js:3386`) so no context outlives it.
+
+### 7.3 Ready, warm, measured
+
+1. **Ready**: `scene.isReady()`, `scene.getWaitingItemsCount() === 0`, and no
+   effect compiled for 1.5 s (`engine.onAfterShaderCompilationObservable`); at
+   most 15 s, after which the probe gives up (§7.6).
+2. **Warm**: 60 frames discarded (the fields' first rebuilds, the reflection
+   probe, the first shadow renders).
+3. **Measured**: 120 frame intervals, `performance.now()` between render-loop
+   callbacks. Intervals over 250 ms are dropped; fewer than 100 left is no
+   reading.
+
+The reading: `{ tier, frames, meanMs, p95Ms, pixels, engine }`.
+
+### 7.4 The budget, and a capped reading
+
+The budget is 60 Hz, 16.67 ms, and every tier is asked the same question of
+it. A tier **holds** when the mean interval is at most **17.5 ms**: the budget
+plus 5 %, room for a timer's jitter and one garbage collection in 120 frames (a
+single 50 ms hitch lifts the mean 0.28 ms).
+
+The browser delivers frames at the display's refresh, never faster. On a 60 Hz
+display a tier with room to spare reads 16.67 ms, the same as one with no room:
+**a capped reading says "at least 60 Hz here", and that is all the probe asks.**
+It never infers headroom from a reading, and so never steps up from one; it
+starts at the class's ceiling instead (§7.5). On a 120 or 144 Hz display the
+reading is uncapped below the budget, which changes nothing. A frame that misses
+a 60 Hz vsync shows as a 33 ms interval, so a GPU that needs 18 ms reads a mean
+between 18 and 33 ms and misses. A display refreshing below 60 Hz reads as a miss at
+every tier and lands on low; the setting overrides it (§14).
+
+### 7.5 Steps
+
+`nextProbeStep(ceiling, readings)`, pure:
+
+- no reading yet: measure the ceiling;
+- the last reading holds: the verdict is its tier;
+- a miss at high with no medium reading: measure medium;
+- any other miss: the verdict is low. Low is the floor and is never measured.
+
+So at most two measurements and one rebuild. The verdict is written (§6.2,
+`source: "probe"`, every reading kept), and the hike starts at it.
+
+### 7.6 What the player sees, and its bounds
+
+A dark screen and "Setting up graphics…", once per machine and browser, on the
+first hike that needs it: a world build (one blocks the page "for a second or
+more", `main.ts:391`), the models from the HTTP cache after the first visit,
+compilation, about 3 s of frames per tier. The whole probe is capped at 30 s; on
+the cap, or on a throw anywhere in it, the probe is abandoned, the hike starts at
+the class's start tier, and the attempt counts. After three attempts without a
+verdict the start tier stands and only the governor acts.
+
+### 7.7 The log
+
+One `console.info` per measured tier and one for the verdict:
+`quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses`
+and `quality probe: verdict medium (apple-unknown)`.
+
+## 8. The player setting
+
+### 8.1 Where it is
+
+- **Title screen.** A **Settings** button on the home panel, a secondary button
+  like Downloads and Credits, in the order Play → Downloads → Settings →
+  Credits (on the launcher, which has no Downloads: Play, the join form,
+  Settings, Credits). It opens a Settings panel beside the Credits and
+  Downloads panels, at the route `/settings`, entered and left exactly as
+  `/credits` is
+  (`router.ts`'s `Panel`, `navigateToPanel`, `leavePanel`; `landing.ts`'s class
+  toggle; the browser's Back button pops it). Present in every build, and for a
+  follower too: the setting is the player's own.
+- **Pause screen.** Resume → **Settings** → Exit. Settings swaps the pause
+  panel for the Settings panel in place, with the same fade the landing's panels
+  use; Back and Escape return to the pause panel.
+
+### 8.2 The Settings screen
+
+One component, `client/src/game/settings.ts`, as `credits.ts` is: a pure
+`settingsModel(input): SettingsView` that decides everything, and
+`renderSettings(root, view, handlers)` that paints it with DOM calls and
+`textContent` only, into whichever panel hosts it. Its buttons are plain
+`<button>`s, so they take the host's own rules (`.landing button`,
+`.pausemenu button`) and the host's tokens; `settings.ts` owns one small style
+literal for what is its own, the lit state of the chosen button
+(`[aria-pressed="true"]`: `--btn-fill-lit`, `--btn-edge-lit`) and the caption
+lines. Keyboard and touch are the hosts': Tab moves, Enter and Space press, a
+tap presses.
+
+```
+SETTINGS
+Graphics
+[ AUTO (RECOMMENDED) ]  [ HIGH ]  [ MEDIUM ]  [ LOW ]
+Auto picks Medium on this computer.
+This hike is using Medium.                      (pause only)
+[ APPLY ]                                        (pause only)
+[ BACK ]
+```
+
+The lines, in order, each only when it applies:
+
+| when | line |
+| --- | --- |
+| `?tier=` is in the address | `The address sets High (?tier=high), which overrides this setting.` |
+| Auto's pick is known | `Auto picks Medium on this computer.` |
+| Auto will probe at the next hike | `Auto tests this computer when your next hike starts.` |
+| pause | `This hike is using Medium.` |
+| storage throws | `This browser is not keeping settings, so this choice lasts until the page closes.` |
+
+The choices are in the order Auto, High, Medium, Low; Auto is chosen when
+nothing is saved.
+
+### 8.3 Title and pause
+
+- **Title**: pressing a choice saves it at once. The next Play builds the hike at
+  it; the landing's backdrop stays low.
+- **Pause**: pressing a choice selects it without saving; **Apply** saves it and
+  applies it live (§9); **Back** or Escape discards an unapplied selection.
+  Apply is disabled when the selection resolves to the tier already running,
+  while `?tier=` is in the address, and while applying. While applying the
+  panel's ground goes opaque, Apply reads "Applying…", and Back and Escape do
+  nothing; when the new scene is ready the ground returns to the pause vignette
+  and the running line names the new tier.
+
+### 8.4 Persistence
+
+`localStorage["dayhike.quality"]` holds `auto`, `high`, `medium` or `low`,
+read and written through `tierChoice.ts` with every access in `try`/`catch`
+(`playerName.ts`'s pattern, `safeStorage` on the WebGPU branch). Anything else
+there reads as Auto. Where the storage accessor or a write throws, the page keeps
+the choice in memory for its own life and says so (§8.2).
+
+## 9. Applying a tier mid-hike
+
+### 9.1 Why it can be done
+
+The session does not depend on the renderer. Each frame, the loop (`app.ts`,
+host `:833–876`, client `:967–1002`) steps the fixed-tick session, then hands
+the renderer the state (`renderer.sync`, `:846`, `:980`) and renders. The
+session, the transports, the player's input sampler and the HUD hold no
+reference into the scene. So `renderer` can become a replaceable reference in
+`startGame`: on a tier change the old one is disposed, a new one built on a new
+canvas, and every loop callback, which reads `renderer` when it runs, draws with
+the new one from the next frame.
+
+### 9.2 What is bound to the renderer, its scene or its canvas
+
+Every binding in `app.ts` and `main.ts`, and what a swap does with it:
+
+| binding | where | on a swap |
+| --- | --- | --- |
+| the render loop | `renderer.engine.runRenderLoop(loop)`, `app.ts:1039` | the loop body becomes a named function; `stopRenderLoop()` on the old engine, `runRenderLoop(loop)` on the new |
+| signs, trailhead car, kiosk and poster | `createSigns(world)`, `app.ts:453–488`, into `renderer.scene` with `renderer.shadows` | disposed before the old scene, rebuilt against the new from the session's world |
+| the body at the crest | `createBodyMesh(renderer.scene, …)`, `app.ts:822`, `:920` | the same |
+| interactables | `registerInteractables(world)`, `app.ts:380–392` | untouched: they live in the sim's world, not the scene |
+| the interact prompt | `renderer.project(target.pos)`, `app.ts:407` | untouched: read through `renderer` each frame |
+| wildlife audio | `renderer.hasWildlife`, `app.ts:161`; `renderer.wildlifeEvents()`, `renderer.listener()` each frame | kept: `hasWildlife` depends on the forest, not the tier; the old shell's undrained events are dropped with it |
+| ambient listener and wind | `renderer.listener()`, `renderer.wind()`, `app.ts:368–369` | untouched: read each frame |
+| hour and weather | `renderer.setHour`, `setWeather` from the console and the escalation, mirrored in `appliedHour`, `appliedWeather` | re-applied at once, weather with no fade |
+| wireframe, skin shading | mirrored in `wireframe`, `skin` | re-applied; `createSkinShading` resets skin to on (`skin.ts:126`), so this matters |
+| walking cue, unsettle, wind override | `renderer.setBobScale`, `setUnsettle`, `setWindOverride` from `applyView`, not mirrored today | mirrored (`bobScale`, `unsettleLevel`, `windOverride`) and re-applied |
+| the free camera | pushed each frame by `stepFreecamView`, but not while input is suppressed (`app.ts:629`), as it is under the pause menu | the last pushed view is mirrored and re-applied, or the camera would drop to the player behind the menu |
+| `cameraOnPlayer` | `app.ts:223` | set false: the new camera is not on the player until its first `sync` |
+| the input sampler | `createInputSampler(canvas, …)`: `pointerdown` and `click` on the canvas, pointer-lock identity `document.pointerLockElement === canvas` (`input.ts:119`, `:160–161`) | `rebind(fresh)`: the two listeners move, the lock identity follows; held keys and the accumulated aim are kept (recreating it would reset the player's view) |
+| the touch layer | four pointer listeners and `setPointerCapture` on the canvas (`touchControls.ts:542–557`) | `rebind(fresh)` |
+| touch model size, prompt size, resize | `canvas.clientWidth` / `clientHeight`, `app.ts:193`, `:409`, `:1052` | `canvas` becomes a `let`; `touchModel.resize` after the swap |
+| `canvas.style.touchAction` | `app.ts:188` | set on the fresh canvas |
+| the WebGPU watcher (WebGPU branch) | `watchWebGpu(engine, onGpuFailure)` in `main.ts`'s `launch` | moves into the swap: removed from the old engine, attached to a new WebGPU one (§9.4) |
+| observers on the scene or the engine | none in `app.ts`; on the WebGPU branch, the watcher's four on the engine (`gpuEngine.ts`) | the watcher's, as above; the renderer's own go with its scene |
+| everything else in the container | HUD, command bar, pause menu, connect panel, poster, end panel, netgraph, prompt | untouched: DOM over the canvas, no scene reference |
+
+Inside the renderer everything is rebuilt by construction: entity views (remote
+players' figures come back on the next `sync`, as capsules until their models
+load), wildlife (the director starts again, so the animals near the player may
+change; they are per-peer and never shared), the forest, clutter, blades, litter,
+cliffs, water, mist, rain and motes. `terrainMaterialFor`'s cache is keyed by
+scene (`renderer.ts:106`), so it cannot hand the new scene a disposed material.
+
+### 9.3 The order, and why the old renderer goes first
+
+In `rendererSwap.ts`, `swapRenderer(current, target, bindings)`, synchronous:
+
+1. `stopRenderLoop()` on the old engine;
+2. dispose the scene extras (signs, body) while their scene is alive;
+3. `renderer.dispose()`, the engine created with `loseContextOnDispose: true`, so
+   every GPU object of the old context goes with it, including any the scene
+   forgot;
+4. a fresh canvas replaces the old one in the container (`replaceWith`), with
+   `touchAction: none`;
+5. `createRenderer(fresh, level, forest, { tier, engine })`, the same `level` and
+   `forest` objects the session holds;
+6. re-apply the view state of §9.2; rebuild the scene extras against the new
+   scene; rebind the input sampler and the touch layer; resize the touch model;
+7. `runRenderLoop(loop)` on the new engine.
+
+**Always a fresh canvas**, whether the engine changes or not. A canvas that held
+a WebGL2 context can never give a WebGPU one or the reverse, so the engine
+change needs the fresh canvas anyway; using it for every swap means one path,
+tested once, and a lost old context frees every GPU object wholesale, where
+reusing a context leaves whatever the scene failed to delete alive in it.
+
+**Dispose first, not build first.** Building the new renderer while the old one
+stands would keep the old one as the fallback, but the renderer is written for
+one live instance per page and breaks with two:
+
+- `createAtmosphere` registers its material plugin globally by name
+  (`atmosphere.ts:144`); Babylon replaces a registration of the same name
+  (`materialPluginManager.pure.js:390–409`), and the old atmosphere's dispose
+  unregisters it by name (`atmosphere.ts:191`;
+  `materialPluginManager.pure.js:413–425`), which removes the new one's:
+  every material the new scene makes after the swap (the models still loading)
+  would have no atmosphere.
+- `atmosphere.ts:35–36` keeps the record and the gradient texture in module
+  variables that the old dispose sets to null under the new scene.
+- `skin.ts:143` resets the skin switches on dispose.
+- Two scenes' textures, shadow maps and buffers in GPU memory at once, on the
+  machine that is lowering its tier because it is short of GPU.
+
+The landing-to-game path already disposes one renderer before it builds the
+next (`main.ts:424`), so dispose-first is the order everything is written for.
+
+**Failures.** The previous renderer is gone once step 3 runs, so falling back
+means rebuilding the previous configuration, not keeping the previous object:
+
+- `createRenderer` throws at step 5: logged; a second fresh canvas is built at
+  the tier that was running, on WebGL2; if that throws too, the error goes up as
+  a throw in `startGame` does today.
+- The screen is never blank: the "Applying…" ground stays until a renderer
+  stands (§9.6).
+
+### 9.4 The engine
+
+On the WebGPU branch, a target tier the rule gives WebGPU needs a WebGPU engine,
+and making one is asynchronous (`createWebGpuEngine`: `initAsync`, the
+translators, up to `WEBGPU_START_MS` 15 s). It is made **before** step 1, on the
+fresh canvas the swap will use, while the old renderer keeps drawing under the
+"Applying…" ground:
+
+- it rejects: `rememberFailure("init")` as today, and the swap goes ahead on
+  WebGL2 at the target tier, on another fresh canvas (the rejected one may hold a
+  WebGPU context);
+- it stands: the swap uses it, and the WebGPU watcher is attached to it.
+
+After the swap, a shader or pipeline error inside the new engine's startup
+window (`createStartupWindow`), which the rule answers with a reload at page
+start, is answered with a **live swap onto WebGL2 at the same tier** instead, with
+the fallback remembered (`pipeline`) and the HUD line the rule already has,
+"Graphics switched to WebGL2 after a GPU error." A reload mid-hike would drop a
+co-op session; a swap does not. A lost device keeps the rule's own answer. The
+remembered fallback (`dayhike.engine`) is read for every swap as for every page
+start, so a failed engine is not tried again by the next swap.
+
+### 9.5 The hitch, and the simulation
+
+The loop is the engine's render loop, so steps 1–7 run with no frame and no tick:
+JavaScript runs one thing at a time, and the rebuild is one synchronous job. For
+its length the page does nothing else: the host's world does not advance, no
+snapshot is sent, no input is read. What is known of its length: the page's own
+comments say a world build blocks "for a second or more" (`main.ts:391`,
+`app.ts:688`); a renderer rebuild does less (no `createForest`, no session), and
+more on WebGPU, where pipelines compile on first draw. The gate measures it
+(§13.4). After it:
+
+- The first frame's `dt` is the whole stall; `FixedStepAccumulator` runs at most
+  15 ticks (0.25 s) and drops the rest (`loop.ts:4`, `:12–17`): the world takes a
+  quarter of a second's ticks at once and resumes about where it stopped.
+- **A host with peers** stalls them: their predicted players keep moving, their
+  inputs queue at the host (`INPUT_BUFFER_TARGET` 2, drained at up to two a
+  tick, `constants.ts:14–16`), remote figures hold still while no snapshot comes, and
+  then everything reconciles. The data channels stay open: their keep-alive runs
+  in the browser, not the page, and nothing in the game times a peer out
+  (`CLIENT_TIMEOUT_MS` is declared and read by nothing). A host whose tab is hidden
+  already stops the world for everyone for as long as it is hidden, so peers
+  already live with a longer stall than this one.
+- **A follower** stalls only itself: the host goes on, the follower's queued
+  snapshots arrive at once after it, and its prediction reconciles.
+
+The sim is not kept ticking through the rebuild, because nothing can run
+during a synchronous job; splitting `createRenderer` into steps that yield would
+be a rewrite of the renderer's construction for a second of stall on a choice the
+player makes from the pause screen.
+
+### 9.6 What the player sees
+
+Apply → the pause panel's ground goes opaque and Apply reads "Applying…" → after
+that has painted (`afterNextPaint`) the synchronous swap runs → the loop resumes
+on the new renderer under the opaque ground while the models load and the
+shaders compile → when the new scene is ready (`scene.executeWhenReady` and no
+waiting items, at most 10 s) the ground fades back to the pause vignette. The
+player is on the pause screen throughout, so a pop-in behind it is not seen, and
+Resume puts them back where they were, looking where they looked.
+
+## 10. The governor
+
+`createGovernor(now)` in `client/src/game/governor.ts`, pure, fed each frame's
+interval from both loops' `dt` (`app.ts:834`, `:968`):
+
+- nothing before **30 s** after the hike starts or after a swap;
+- intervals gathered in **10 s** windows; an interval over **250 ms** (a hidden
+  tab, a stall) voids its window, which then neither counts nor breaks a run;
+- a window whose mean interval is over **20.8 ms** (1.25 × the 60 Hz budget, 48
+  fps) counts; one at or under resets the run;
+- **three** counting windows in a row: the verdict is a drop, once, latched.
+
+On a drop, on Auto only, above low only: the Auto record is written with the
+running tier one step down and `source: "governor"`; one `console.info`; one HUD
+line for 6 s, "Running slowly: your next hike uses Medium. Settings can switch
+now."; and the Settings screen's Auto line names the new pick, so Apply is enabled
+and switches now. It never applies itself mid-hike (a stall the player did not
+ask for, and for a host one every peer shares), never raises, and never acts on
+a chosen tier or under `?tier=`.
+
+## 11. Determinism
+
+The tier is a `game/` value. `sim/` imports nothing but itself and `net/`
+nothing from `game/` (`client/test/architecture.test.ts:74`, `:88`), so no tier
+can reach the simulation or the wire, and `protocol.ts` has no field for one.
+What differs between two peers on different tiers is only drawn: the
+wildlife's visible disc (0.6× on low) and the director's sightings, which are
+per-peer already; the clutter radius (boulders are drawn later on low, never
+moved); shadows. `renderer.sync` reads the world state and writes none of it.
+
+A test pins it (`client/test/game/tierDeterminism.test.ts`): one forest world,
+one player, 120 ticks of a scripted walk, stepped four times, with no renderer
+and with a `NullEngine` renderer on each tier calling `sync` after every tick;
+the four `serializeWorldState` strings are equal, and every run's
+`forest.passHash` is −311867473. Beside it the architecture test gains the
+new modules by name: no file under `sim/` or `net/` imports `quality`,
+`gpuSignals`, `gpuClass`, `tierChoice`, `frameProbe`, `governor`,
+`rendererSwap` or `settings`.
+
+## 12. Rollout and safety
+
+### 12.1 Who moves, and what it costs them
+
+| who | today | after | cost |
+| --- | --- | --- | --- |
+| Chrome ≥ 147 and the launcher, ≥ 16 GB, > 8 threads, integrated or base Apple GPU | high | medium or low by class | cheaper: they were on high by memory alone |
+| the same, discrete RTX, RDNA or Apple Pro, Max, Ultra | high | high | none |
+| Chrome < 147, discrete modern | medium | high | dearer: the second cascade, the scene pass and halation, full blades and litter; the GPU margin and the governor carry it |
+| Safari on a Mac | low | probed from high: high, medium or low | dearer where the probe confirms it, at the heaviest pose before the first hike |
+| Firefox | low | by bucket; the unknown buckets probed | dearer where the probe confirms it; the Intel buckets stay at low unless it does |
+| a player with a choice | — | their choice | theirs |
+| phones, tablets, software rasterisers | low | low | none |
+
+### 12.2 The engine
+
+Moving a Safari or Firefox player to medium or high moves them onto WebGPU where
+the WebGPU rule is on and their adapter fits: Safari 26, Firefox 141 on Windows,
+145 on Apple silicon. The WebGPU design's parity and frame gates run in Chrome.
+Whether the rule should wait for those browsers is that design's call; this
+design flags that the tier change widens who reaches it, and the fallback rules
+of §9.4 apply to them as to everyone.
+
+### 12.3 The nets
+
+- The probe confirms every promotion that is not a named GPU, at the heaviest
+  standard pose, on the player's own window.
+- The governor lowers a named class that turns out not to hold, from the next
+  hike, and offers the switch now.
+- The setting lets any player overrule both, and says what Auto would pick.
+- `DETECT_VERSION` retires every stored verdict at once when the tiers' costs
+  move (the grass-frame and WebGPU work may).
+
+## 13. Gates
+
+On the reference machine (Apple M4, 8-core GPU, 16 GB), in Chrome, headless for
+the frame rounds as every earlier note, seed `atmo`, mist, noon. The standard
+poses are the canopy pose and the meadow pose `(369, 51.01, −855)`, yaw 0,
+pitch 0.3. Frames by the near-grass pair method's page rule (the pose, 3 s to
+settle, 8 s of intervals, mean and p95; quiet pages only), in two windows:
+1920 × 1080 (a common full-screen viewport; the table row follows it) and 1200 ×
+2029 (every earlier note's), device pixel ratio 1.
+
+### 13.1 Detection on the reference machine
+
+- `navigator.deviceMemory`, `hardwareConcurrency`, the renderer string and the
+  adapter info as read, recorded; the class (`apple-base` expected) and Auto's
+  tier (`medium` expected).
+- `?probe=high`, three page loads per window: every reading and the verdict from
+  the log. **Bar:** the verdict is the same on all three loads, and equals the
+  class table's tier for the machine at 1920 × 1080; where it does not, the
+  `apple-base` row moves to the verdict, with its test literal, before anything
+  ships.
+- The probe's reading against the pair method's figure for the same tier, pose
+  and window: **within 1.0 ms**, which shows the opaque screen over the canvas
+  does not change what is measured.
+
+### 13.2 The frame per tier
+
+Each tier at both poses in both windows, WebGL2, and WebGPU where the rule
+reaches it. **Bar:** the tier Auto picks holds at both poses (mean ≤ 16.7 ms)
+at 1920 × 1080; the next tier up does not (or Auto should have picked it).
+Recorded as the first current medium and low figures (§4.2).
+
+### 13.3 The settings
+
+- Both entries open the one screen; its four choices in order, Auto chosen on a
+  fresh profile, and the Auto line naming the machine's tier.
+- A choice on the title screen survives a reload; Play then starts at it (the
+  log line), and at High and Medium on the engine the WebGPU rule picks, WebGL2
+  at Low.
+- `?tier=high` shows the override line and disables Apply.
+- A private window (storage refused): the storage line, Auto, a choice that
+  lasts the page.
+
+### 13.4 The live swap
+
+In a solo hike and in a two-page party (host and follower, two browser
+profiles on the same machine): pause, Settings, High → Apply, Low → Apply,
+Medium → Apply, on the host and then on the follower; on WebGL2, and with
+`?engine=webgpu` where the WebGPU work has landed. **Bars:**
+
+- the synchronous stall (the long task around the swap) and the time to scene
+  ready, each swap, at 1× and at 6× CPU throttling: reported;
+- after each swap: `EngineStore.Instances.length` 1; the scene's meshes,
+  materials, textures and observers equal to a fresh page's at that tier (± the
+  instances the streaming rebuilt), read from `__scene` by the measurement
+  patch;
+- stills 1 s apart after the ground lifts: nothing appears or vanishes;
+- Resume: the pointer locks on the first click, the view is where it was;
+  under Chrome's touch emulation, the stick and look work;
+- the follower stays connected through the host's three swaps (no
+  "Reconnecting…", no session end) and its figure moves on the host's screen
+  within 1 s of the ground lifting;
+- zero console errors.
+
+### 13.5 The governor
+
+On Auto at medium with the measurement patch's `__engine.setHardwareScalingLevel(0.5)`
+at the canopy pose: the drop is logged between 60 and 61 s after the hike
+starts, the HUD line shows once, Settings' Auto line says Low, Apply switches;
+a reload starts at low from the verdict. Without the scaling, at a pose §13.2
+found holding 60 Hz, nothing happens in 5 min.
+
+### 13.6 The rest
+
+- Safari and Firefox on the reference machine: the class (`apple-unknown`), the
+  probe on the first hike, its verdict, and the second hike starting at it with
+  no probe. Not a frame gate: the pages cannot be run headless there.
+- The unit suite: the matrix of §6.4, the probe's steps, the governor's windows,
+  the model tests of §8, the swap tests of §9, the determinism pin of §11.
+
+## 14. Fallbacks
+
+- The `apple-base` row moves to what §13.1's probe verdict says, low included.
+- The probe's opaque screen distorts its reading (§13.1 over 1.0 ms): the probe
+  renders visibly under a 50 % dark overlay instead.
+- A display under 60 Hz reads as a miss everywhere: if reports show it, the hold
+  bar becomes the display's own period, estimated as the median interval of a
+  steady run of the landing backdrop (low tier, cheap enough to be capped).
+- The swap's stall is over 3 s at 1× CPU on the reference machine: the pause
+  Settings screen says so before Apply ("Applying pauses the hike for everyone
+  for a few seconds.") when a host has peers.
+- The governor fires on a machine the gate holds at 60 Hz: the limit 20.8 →
+  22.2 ms (45 fps) and the windows 3 → 4.
+
+## 15. Follow-ups
+
+- `lodBias` and `textureMipCap`: wire them or delete them from `QUALITY`.
+- Render scale as its own axis: a tier chosen for its features could run at a
+  lower render scale rather than dropping a whole tier, and a scale is the one
+  change a governor could make live without a rebuild.
+- The WebGPU rule's reload after a lost device could become a live swap (§9.4).
+- The device pixel ratio's change on a window moved between displays (§4.3): hold
+  the tier's scaling against it.
+- Once medium and low figures exist (§13.2), the named classes' rows can be
+  checked against a second machine.
+
+## Sources
+
+1. Chrome Platform Status, "Update Device Memory API limits", shipping in 147: https://chromestatus.com/feature/6330376953921536
+2. MDN browser-compat-data, `api/Navigator.json`, `deviceMemory` note: "From Chrome 147, reported values are 2, 4, 8, 16, and 32": https://github.com/mdn/browser-compat-data/blob/main/api/Navigator.json ; the blink-dev intent to ship and its move to 147: https://www.mail-archive.com/blink-dev@chromium.org/msg15917.html
+3. MDN, `Navigator.deviceMemory` (limited availability): https://developer.mozilla.org/en-US/docs/Web/API/Navigator/deviceMemory
+4. MDN browser-compat-data, `hardwareConcurrency`, Safari: "clamped to 4 or 8 cores": https://github.com/mdn/browser-compat-data/blob/main/api/Navigator.json ; WebKit PR 74374: https://github.com/WebKit/WebKit/pull/74374
+5. Mozilla bug 1360039, `hardwareConcurrency` spoofed to 2 under `resistFingerprinting`: https://bugzilla.mozilla.org/show_bug.cgi?id=1360039
+6. Renderer strings by browser and platform: https://deviceandbrowserinfo.com/learning_zone/articles/webgl_renderer_values ; this repository's `2026-09-16-grass-floor-verification.md` records `ANGLE (Apple, ANGLE Metal Renderer: Apple M4)`
+7. Mozilla bug 1722113, "Expose sanitized UNMASKED_RENDERER as RENDERER" (Safari's "Apple GPU" since February 2020; bucketing since Firefox 91): https://bugzilla.mozilla.org/show_bug.cgi?id=1722113
+8. Firefox's sanitiser, `dom/canvas/SanitizeRenderer.cpp`: https://searchfox.org/mozilla-central/source/dom/canvas/SanitizeRenderer.cpp
+9. `WEBGL_debug_renderer_info` deprecated in Firefox: https://github.com/ruffle-rs/ruffle/issues/5279
+10. WebGPU adapter identifiers design (vendor and architecture exposed, device and description empty by default): https://github.com/gpuweb/gpuweb/blob/main/design/AdapterIdentifiers.md
+11. Dawn's `gpu_info.json` (architecture names; Apple reported as its highest "common" family): https://github.com/google/dawn/blob/main/src/dawn/gpu_info.json ; MDN `GPUAdapterInfo`: https://developer.mozilla.org/en-US/docs/Web/API/GPUAdapterInfo
+12. WebKit, "WebKit Features in Safari 26.0": https://webkit.org/blog/17333/webkit-features-in-safari-26-0/
+13. Mozilla Gfx, "Shipping WebGPU on Windows in Firefox 141": https://mozillagfx.wordpress.com/2025/07/15/shipping-webgpu-on-windows-in-firefox-141/ ; MDN browser-compat-data issue 28555 (Firefox 145, macOS 26 on Apple silicon): https://github.com/mdn/browser-compat-data/issues/28555
+14. Firefox leaves `GPUAdapterInfo` blank: https://github.com/utof/repulsive-test2/issues/53
+15. `navigator.userAgentData` is Chromium-only: https://caniuse.com/mdn-api_navigator_useragentdata
+16. iPadOS's Mac user agent and `maxTouchPoints`: https://developer.apple.com/forums/thread/119186
+17. Electron 44 (Chromium 152.0.7977.54): https://www.electronjs.org/blog/electron-44-0
