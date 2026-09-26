@@ -1,7 +1,7 @@
 # The summit — the core loop, redesigned
 
 **Date:** 2026-09-16
-**Status:** Designed; T2 built 2026-09-16, S1 built 2026-09-22, S3 built 2026-09-25 (see §9). What moved in T2's execution: the top fork sits
+**Status:** Designed; T2 built 2026-09-16, S1 built 2026-09-22, S3 built 2026-09-25, S2 built 2026-09-26 (see §9). What moved in T2's execution: the top fork sits
 below the peak's dome, not in the 0.75–0.85 band, with a floor of 0.5, a three-rung ladder 60 m of
 stem apart tried on both sides, and a least span of 240 m between the forks (§3.2 records why);
 rungs are 2–3 per pair and may end on a loop's bed when their strand target is walled off; a strand
@@ -50,7 +50,16 @@ guide runs 36 → 0 over 54 nodes and 2013 m, meets its forks in the order 37, 2
 walking it closes six branches: a pack of seven. That walk sharpened two rules (§5.3): a fork's
 trigger has to be on one of its branches with no other open edge nearer, and never on a closed
 one; and the guide's edge out of a fork is opened only while the guide beyond it still reaches
-the pad on the residual graph.
+the pad on the residual graph. What S2's build measured, on the same fifty seeds, one player
+standing at the stem nodes nearest climb 0, 0.25, 0.5 and 0.75 and at the top fork, facing up the
+stem, down it and across it each way, the rest run out: the watcher showed within 120 ticks on 881
+of 936 stands (94 %) — 157 of 200 at the pad, where 34 of the 55 stands it never showed on face
+down the stem into the road, and every one of 192 at the top fork; 42 % of the placements tried
+were admitted (16 % at the pad, 63 % at the top fork), and of the refusals the sightline took 55 %
+(59 506), the ground — water or a prop — 22 % (24 179), the trail clearance 16 % (17 378), the road
+corridor 6 % (5 985), the slope 1 % (888) and the flee radius none, so the sightline is the number
+to read when the 90 m range is tuned. On `hollow` it stands 68.6 m out a quarter of the way up and
+25 m out at the top fork, and the guide is what it was before it was stalked.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md`. Supersedes its loop (§1 there, the
 count and the sign-out) and the §17 table's F and beyond. Keeps its trailhead, its Hollow's
 lethality and its tone.
@@ -218,14 +227,28 @@ stem, the Hollow's crawl and `stemProgress` read the stem, and both still exist.
 One Hollow in a new `AiState.Watch`. It exists only while it can be seen: it is spawned when it
 shows and removed when it hides, so peers get it through the enemy snapshot they already receive.
 
-**Where it shows.** Relative to the **lead**: the living player with the greatest `stemProgress`.
-It stands off the trail bed — at least `WATCH_TRAIL_CLEAR` (6 m) from any edge — on walkable
-ground, at a range that shrinks with the lead's progress: `WATCH_RANGE_FAR` (90 m) at progress 0
-to `WATCH_RANGE_NEAR` (25 m) at the top fork's progress, linear between. Its bearing is
+**Where it shows.** Relative to the **lead**: the living player with the greatest progress.
+Progress here, since 2026-09-26, is the climb, `1 − stemProgress`, 0 at the pad and 1 at the
+crest, as §6 was built (`stemProgress` itself runs the other way); the lead is the living player
+with the greatest climb, ties to the lower id, and the **reach** the range shrinks with is the
+lead's climb over the top fork's, clamped to [0, 1] — 1 everywhere on a trail with no fork.
+It stands off the trail bed — at least `WATCH_TRAIL_CLEAR` (6 m) from every trail centreline, so
+just inside the 7 m cleared strip — on walkable ground, at a range that shrinks with the reach:
+`WATCH_RANGE_FAR` (90 m) at reach 0 to `WATCH_RANGE_NEAR` (25 m) at reach 1, linear between.
+Walkable ground is what a hull can stand on: not in water, not inside a prop, the ground's normal's
+y at least `WATCH_SLOPE_NY` (0.74, the 0.9 gradient the trail treats as hard), and never the
+road corridor — safe ground is not stalked from. Its bearing is
 `WATCH_BEARING_MIN`–`WATCH_BEARING_MAX` (30°–70°) off the lead's look direction, in the forward
-hemisphere, on a seeded side. It must have a clear sightline from the lead's eye — `playerSees`,
-the test the stare uses. Never within `WATCH_FLEE_RADIUS` (15 m) of any player. Up to
-`WATCH_PLACE_TRIES` (8) placements per tick from the world RNG; if none fits, it waits a tick.
+hemisphere, on a seeded side; the bearing is drawn without sine or cosine, as a normalised mix of
+the band's two edges, which are the look direction turned by 30° and by 70° through constant
+cosines and sines — every mix lands inside the band, and none is uniform in angle, which nothing
+needs. It must have a clear sightline from the lead's eye to its centre: the sightline alone, not
+`playerSees`, because it stands outside the stare's 20° cone by construction. Never within
+`WATCH_FLEE_RADIUS` (15 m) of any player. Up to `WATCH_PLACE_TRIES` (8) placements per tick; if
+none fits, it waits a tick. Every draw the watcher makes — the side, the bearing, the rests — comes
+from its own random stream, seeded from the world's seed, not the world's (since 2026-09-26):
+the guide is drawn from the world's stream on the tick the body is found, and a watcher drawing
+from it would have moved the guide by however long the climb took.
 
 **What it does.** Nothing. It stands and faces the lead. It never walks, never touches, never
 leaves its spot. It is the shipped placeholder model.
@@ -235,15 +258,22 @@ This is the climb's whole danger: it stays as long as you keep looking, and it k
 don't stop.
 
 **When it hides.** On the first tick no living player has it in view, or a player is within
-`WATCH_FLEE_RADIUS`. Then a rest drawn from `WATCH_REST_MIN`–`WATCH_REST_MAX` (20–60 s at the pad),
-both scaled down to `WATCH_REST_NEAR_SCALE` (0.4) of themselves at the top fork's progress, so
-sightings get frequent near the top. Then it shows again. From the player's side: you see it, you
-look away, it's gone when you look back — closer next time.
+`WATCH_FLEE_RADIUS`. In view, for the hide, is a wide cone — `WATCH_VIEW_COS`, cos 80° (0.1736)
+of the player's aim, within the stare's 120 m and with a clear sightline — not the stare's 20°,
+which it stands outside of the moment it shows and would hide from on its first tick; the stare
+keeps its 20° (since 2026-09-26). So on a straight climb it goes when a trunk crosses the
+sightline, when the lead walks abeam of it, or when someone comes close; a sighting you never
+centre never costs you. Then a rest drawn from `WATCH_REST_MIN`–`WATCH_REST_MAX` (20–60 s at the
+pad), both scaled down to `WATCH_REST_NEAR_SCALE` (0.4) of themselves at reach 1, so sightings get
+frequent near the top. Then it shows again. The first rest is drawn from the same band when the
+world is made, so it never shows on the first tick. From the player's side: you see it, you look
+away, it's gone when you look back — closer next time.
 
 **On discovery** it is removed for good. The summit Hollow is a separate spawn.
 
-**Levers** (all in `hollow.ts`): the ranges, the bearing band, the flee radius, the rest bounds and
-their near scale, the tries.
+**Levers** (all in `watcher.ts`, since 2026-09-26; `hollow.ts` keeps the stare's): the ranges, the
+bearing band, the flee radius, the rest bounds and their near scale, the tries, the wide view cone,
+the slope.
 
 **Tests.** Placement obeys every constraint on a seeded sweep; hides on look-away and on approach;
 the stare fills only while in view and never on the tick after it hides; it never spawns once the
@@ -411,8 +441,11 @@ the shipped placeholder model. The poster is drawn on the register post that exi
 lamp byte gains the `safe` bit. `stare` stays. `AiState` gains `Watch` and `Emerge`; the enemy byte
 carries them. Old-protocol peers are refused at the lobby, as every bump has been.
 
-**Determinism.** Every draw the loop makes — watcher placement, the guide, the order of cuts —
-comes from `nextRandom(state)`, so a seed and an input log replay the same match on the host.
+**Determinism.** Every draw the loop makes on the world's stream — the guide, the order of cuts —
+comes from `nextRandom(state)`, so a seed and an input log replay the same match on the host. The
+watcher's placement and its rests draw from the watcher's own stream, seeded from the world's seed
+(since 2026-09-26): host truth like the rest, but off the world's stream so that the length of the
+climb never moves the guide.
 `serializeWorldState` adds `phase`, `safe` and the new enemy states and leaves the guide and the
 cuts out, as it leaves the Hollow's route out today.
 
@@ -446,10 +479,10 @@ in this order. Each leaves the game playable.
 | T2 | Loops and braids | §3 | Built 2026-09-16 (docs/trail/2026-09-16-loops-and-braids-plan.md) |
 | S1 | The summit loop: phase, poster, body, discovery, the summit Hollow, safety, the end, escalation, protocol 5 | §2, §5.1, §5.2, §6, §7 | Built 2026-09-22 (docs/gameplay/2026-09-16-the-summit-loop-plan.md) |
 | S3 | The cut: the guide, the fork cuts, `Emerge`, the fork Hollows | §5.3 | Built 2026-09-25 (docs/gameplay/2026-09-25-the-cut-plan.md) |
-| S2 | The watcher | §4 | Not started |
+| S2 | The watcher | §4 | Built 2026-09-26 (docs/gameplay/2026-09-26-the-watcher-plan.md) |
 
 After S1 the game is: climb unstalked, find the body, one Hollow chases you home. S3 makes the
-descent the maze; S2 gives the climb its stalker. S3 goes before S2 because the chase is the heart
+descent the maze; S2 gives the climb its stalker. S3 went before S2 because the chase is the heart
 of the loop.
 
 ## 10. Verification

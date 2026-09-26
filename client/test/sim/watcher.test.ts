@@ -382,7 +382,7 @@ describe("the tick", SUITE, () => {
 
   it("is removed on the flip tick, and the guide is drawn from the world's stream untouched", () => {
     const { w, p } = forestWorld();
-    // A second player finds the body while the lead, at the top fork, keeps
+    // A second player finds the body while the player at the top fork keeps
     // the watcher in view: it is shown into the flip tick, and only the flip
     // can remove it. Spawned before the showing, so the ids below hold.
     const q = spawnPlayer(w);
