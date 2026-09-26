@@ -87,8 +87,8 @@ export class EntityViews {
     //
     // Fog stays off so it remains a silhouette at any distance in mist,
     // findable in hindsight from far off. That is also why the Atmosphere
-    // plugin above must leave this one material alone (it declines it by
-    // name): the plugin's spliced shader code reads Babylon's `vFogColor`,
+    // plugin (atmosphere.ts) must leave this one material alone (it declines
+    // it by name): the plugin's spliced shader code reads Babylon's `vFogColor`,
     // which the shader declares only while the material's FOG define is set.
     // With fog off the fragment shader fails on an undeclared identifier and
     // the material silently never draws.

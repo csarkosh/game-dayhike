@@ -6,14 +6,14 @@ import type { World } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt } from "../../src/sim/terrain.js";
-import { AiState, Outcome, Phase } from "../../src/sim/types.js";
+import { AiState, Button, Outcome, Phase } from "../../src/sim/types.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
 import { homeDistances, forksOf, pathLength } from "../../src/sim/trailRoute.js";
 import { segmentDistance } from "../../src/sim/trail.js";
 import type { TrailEdge, TrailGraph, TrailNode } from "../../src/sim/trail.js";
 import { FORK_EMERGE_MAX_S, FORK_REVEAL_S } from "../../src/sim/hollow.js";
 import {
-  FORK_CUT_RADIUS, FORK_SPAWN_CLEAR, FORK_SPAWN_DIST, FORK_SPAWN_MIN,
+  FORK_CUT_RADIUS, FORK_MOUTH_DIST, FORK_SPAWN_CLEAR, FORK_SPAWN_DIST, FORK_SPAWN_MIN,
   FORK_SPAWN_PLAYER_CLEAR, GUIDE_REJOIN_SLACK, drawGuide, forkSpawn, openBranch, stepCuts, triggerEdge,
 } from "../../src/sim/cut.js";
 import type { CutRecord } from "../../src/sim/cut.js";
@@ -70,8 +70,9 @@ const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.
 
 describe("the constants", () => {
   it("are the spec's", () => {
-    expect(FORK_CUT_RADIUS).toBe(30);
+    expect(FORK_CUT_RADIUS).toBe(9);
     expect(FORK_SPAWN_DIST).toBe(12);
+    expect(FORK_MOUTH_DIST).toBe(3);
     expect(FORK_SPAWN_CLEAR).toBe(1);
     expect(FORK_SPAWN_MIN).toBe(2);
     expect(FORK_SPAWN_PLAYER_CLEAR).toBe(2);
@@ -415,7 +416,8 @@ describe("forkSpawn on the seed `hollow`", SUITE, () => {
  * The cut in the tick: the flip draws the guide, and every Chase tick judges
  * the forks. The player is teleported, and every approach stands on the
  * fork's in-edge FORK_CUT_RADIUS − 1 m short of it for one tick before the
- * node, because on the node every incident edge ties at distance 0.
+ * node, because on the node every incident edge ties at distance 0. The
+ * last three cases drive a player with real input instead.
  */
 describe("the cut in the tick", SUITE, () => {
   const tick = (w: World, n = 1) => { for (let i = 0; i < n; i++) tickWorld(w, new Map()); };
@@ -443,10 +445,11 @@ describe("the cut in the tick", SUITE, () => {
   const before = (w: World, fork: number) => { const g = w.cut!.guide; return g[g.indexOf(fork) - 1]!; };
   /** Every Hollow but the summit's, in id order. */
   const forkHollows = (w: World) => [...w.state.enemies.values()].slice(1);
-  /** The Hollow's centre over the bed at `node`. */
-  const mouthAt = (w: World, node: number) => {
-    const n = w.trail!.nodes[node]!;
-    return { x: n.x, y: expect.closeTo(w.ground!.heightAt(n.x, n.z) + 0.9, 9), z: n.z };
+  /** The Hollow's centre over the bed FORK_MOUTH_DIST in from `fork` along edge `ei`: its branch's mouth. */
+  const mouthAt = (w: World, fork: number, ei: number) => {
+    const e = w.trail!.edges[ei]!;
+    const at = along(w, fork, e.a === fork ? e.b : e.a, 3);
+    return { x: at.x, y: expect.closeTo(at.y, 9), z: at.z };
   };
   const onEdge = (w: World, ei: number, at: { x: number; z: number }) => {
     const g = w.trail!;
@@ -473,18 +476,18 @@ describe("the cut in the tick", SUITE, () => {
     expect(w.cut).toBe(rec);
   });
 
-  it("cuts fork 37 the first tick a living, unsafe player is 29 m up its guide branch, not at 31 m, and only once", () => {
+  it("cuts fork 37 the first tick a living, unsafe player is 8 m up its guide branch, not at 10 m, and only once", () => {
     const { w, p } = chase();
     const g = w.trail!;
     // The guide reaches 37 from 29 by edge 36, 56.7 m long.
     expect(before(w, 37)).toBe(29);
     expect(edgeBetween(g, 29, 37)).toBe(36);
-    p.pos = along(w, 37, 29, 31);
+    p.pos = along(w, 37, 29, 10);
     tick(w);
     expect(p.safe).toBe(false);
     expect(w.cut!.cuts.size).toBe(0);
     expect(w.state.enemies.size).toBe(1);
-    p.pos = along(w, 37, 29, 29);
+    p.pos = along(w, 37, 29, 8);
     tick(w);
     expect([...w.cut!.cuts]).toEqual([[37, 43]]);
     expect([...w.cut!.closed]).toEqual([28]);
@@ -497,10 +500,10 @@ describe("the cut in the tick", SUITE, () => {
     expect(w.state.enemies.size).toBe(2);
   });
 
-  it("closes edge 28 at fork 37 with one Hollow stepping out of it toward the trigger", () => {
+  it("closes edge 28 at fork 37 with one Hollow stepping out of it toward its mouth", () => {
     const { w, p } = chase();
     const node = w.trail!.nodes[37]!;
-    p.pos = along(w, 37, 29, 29);
+    p.pos = along(w, 37, 29, 8);
     tick(w);
     const hs = forkHollows(w);
     expect(hs).toHaveLength(1);
@@ -508,7 +511,9 @@ describe("the cut in the tick", SUITE, () => {
     expect(h.ai).toBe(AiState.Emerge);
     expect(h.targetId).toBe(p.id);
     expect(h.stateTimer).toBe(6);
-    expect(h.emergeTo).toEqual(mouthAt(w, 37));
+    expect(h.emergeTo).toEqual(mouthAt(w, 37, 28));
+    expect(dist(h.emergeTo!, node)).toBeCloseTo(3, 9);
+    expect(onEdge(w, 28, h.emergeTo!)).toBeCloseTo(0, 9);
     expect(isOnCorridor(w, h.pos.x, h.pos.z)).toBe(false);
     expect(dist(h.pos, node)).toBeCloseTo(12, 9);
     expect(onEdge(w, 28, h.pos)).toBeCloseTo(0, 9);
@@ -522,14 +527,14 @@ describe("the cut in the tick", SUITE, () => {
   it("takes the nearest player on a branch as the trigger, ties to the lower id", () => {
     const near = chase();
     const q = spawnPlayer(near.w);
-    near.p.pos = along(near.w, 37, 29, 29);
-    q.pos = along(near.w, 37, 29, 20);
+    near.p.pos = along(near.w, 37, 29, 8);
+    q.pos = along(near.w, 37, 29, 5);
     tick(near.w);
     expect(forkHollows(near.w).map((h) => h.targetId)).toEqual([q.id]);
     const tie = chase();
     const r = spawnPlayer(tie.w);
-    tie.p.pos = along(tie.w, 37, 29, 29);
-    r.pos = along(tie.w, 37, 29, 29);
+    tie.p.pos = along(tie.w, 37, 29, 8);
+    r.pos = along(tie.w, 37, 29, 8);
     tick(tie.w);
     expect(forkHollows(tie.w).map((h) => h.targetId)).toEqual([tie.p.id]);
   });
@@ -537,10 +542,10 @@ describe("the cut in the tick", SUITE, () => {
   it("closes two branches at the hub 22, with a Hollow in each", () => {
     const { w, p } = chase();
     const g = w.trail!;
-    // The guide reaches 22 from 38 by edge 37, only 22.8 m long: the approach stands 21 m out.
+    // The guide reaches 22 from 38 by edge 37, 22.8 m long.
     expect(before(w, 22)).toBe(38);
     expect(edgeBetween(g, 38, 22)).toBe(37);
-    p.pos = along(w, 22, 38, 21);
+    p.pos = along(w, 22, 38, 8);
     tick(w);
     expect([...w.cut!.cuts]).toEqual([[22, 54]]);
     expect([...w.cut!.closed]).toEqual([21, 22]);
@@ -550,13 +555,14 @@ describe("the cut in the tick", SUITE, () => {
     for (const h of hs) {
       expect(h.ai).toBe(AiState.Emerge);
       expect(h.targetId).toBe(p.id);
-      expect(h.emergeTo).toEqual(mouthAt(w, 22));
       expect(isOnCorridor(w, h.pos.x, h.pos.z)).toBe(false);
       expect(dist(h.pos, node)).toBeCloseTo(12, 9);
     }
-    // One in each closed branch, in edge order.
+    // One in each closed branch, in edge order, each bound for its own branch's mouth.
     expect(onEdge(w, 21, hs[0]!.pos)).toBeCloseTo(0, 9);
     expect(onEdge(w, 22, hs[1]!.pos)).toBeCloseTo(0, 9);
+    expect(hs[0]!.emergeTo).toEqual(mouthAt(w, 22, 21));
+    expect(hs[1]!.emergeTo).toEqual(mouthAt(w, 22, 22));
     p.pos = onNode(w, 22);
     tick(w, 3);
     expect(w.cut!.cuts.size).toBe(1);
@@ -575,8 +581,8 @@ describe("the cut in the tick", SUITE, () => {
     const q = spawnPlayer(w);
     expect(edgeBetween(g, 7, 78)).toBe(7);
     expect(before(w, 79)).toBe(71);
-    p.pos = along(w, 78, 7, 29);
-    q.pos = along(w, 79, 71, 29);
+    p.pos = along(w, 78, 7, 8);
+    q.pos = along(w, 79, 71, 8);
     tick(w);
     expect([...w.cut!.cuts]).toEqual([[78, 79], [79, 78]]);
     expect([...w.cut!.closed]).toEqual([79, 80]);
@@ -590,11 +596,16 @@ describe("the cut in the tick", SUITE, () => {
     const { w, p } = chase();
     const g = w.trail!;
     const node = g.nodes[37]!;
-    // 25 m east of fork 37: 20 m from the nearest of its three branches, in the woods.
-    p.pos = { x: node.x + 25, y: w.ground!.heightAt(node.x + 25, node.z) + 0.9, z: node.z };
+    // 8 m west of fork 37, inside the radius: none of its three branches
+    // comes within 7 m of the point — beside the fork, in the woods.
+    p.pos = { x: node.x - 8, y: w.ground!.heightAt(node.x - 8, node.z) + 0.9, z: node.z };
     tick(w);
     expect(p.safe).toBe(false);
-    expect(dist(p.pos, node)).toBeCloseTo(25, 1);
+    expect(dist(p.pos, node)).toBeCloseTo(8, 9);
+    for (let ei = 0; ei < g.edges.length; ei++) {
+      const e = g.edges[ei]!;
+      if (e.a === 37 || e.b === 37) expect(onEdge(w, ei, p.pos), `edge ${ei}`).toBeGreaterThan(7);
+    }
     expect(triggerEdge(g, 37, p.pos.x, p.pos.z)).toBe(-1);
     expect(w.cut!.cuts.size).toBe(0);
     expect(w.state.enemies.size).toBe(1);
@@ -604,7 +615,7 @@ describe("the cut in the tick", SUITE, () => {
     const { w, p } = chase();
     const q = spawnPlayer(w);
     q.health = 0;
-    q.pos = along(w, 37, 29, 29);
+    q.pos = along(w, 37, 29, 8);
     tick(w);
     // The match goes on: p is alive at the crest, out of every fork's reach.
     expect(w.state.outcome).toBe(Outcome.Playing);
@@ -623,18 +634,24 @@ describe("the cut in the tick", SUITE, () => {
     // the match goes on while p stands on safe ground.
     const q = spawnPlayer(w);
     q.pos = { ...p.pos };
-    // Its branch to node 14 runs along the road: 10 m out is safe ground, and
+    // Its branch to node 14 runs along the road: 8 m out is safe ground, and
     // a safe player is nobody's trigger — the fork is not even judged.
-    p.pos = along(w, 1, 14, 10);
+    p.pos = along(w, 1, 14, 8);
     tick(w);
     expect(p.safe).toBe(true);
     expect(w.state.outcome).toBe(Outcome.Playing);
     expect(w.cut!.cuts.size).toBe(0);
-    // Its branch to node 2 leaves the corridor after 22 m: 29 m out is prey,
-    // and the fork is recorded with nothing closed, no Hollow on safe ground.
-    p.pos = along(w, 1, 2, 29);
+    // Its branch to node 2 leaves the corridor after 22 m, well past the
+    // trigger's 9: nobody within reach of this fork is ever prey. Were one —
+    // a corridor fork within nine metres of the treeline — the fork is
+    // recorded with nothing closed and no Hollow on safe ground: the rule
+    // run by hand, the player marked prey where they stand.
+    p.pos = along(w, 1, 2, 8);
     tick(w);
-    expect(p.safe).toBe(false);
+    expect(p.safe).toBe(true);
+    expect(w.cut!.cuts.size).toBe(0);
+    p.safe = false;
+    stepCuts(w);
     expect([...w.cut!.cuts]).toEqual([[1, -1]]);
     expect(w.cut!.closed.size).toBe(0);
     expect(w.state.enemies.size).toBe(1);
@@ -653,7 +670,7 @@ describe("the cut in the tick", SUITE, () => {
     // Handed the host's state, it still never judges a fork.
     w.state.phase = Phase.Chase;
     w.cut = drawGuide(w);
-    p.pos = along(w, 37, 29, 29);
+    p.pos = along(w, 37, 29, 8);
     tick(w, 3);
     expect(w.cut.cuts.size).toBe(0);
     expect(w.state.enemies.size).toBe(0);
@@ -671,10 +688,81 @@ describe("the cut in the tick", SUITE, () => {
     const spur = { x: node.x, z: node.z + 2.9, h: node.h, u: node.u };
     w.trail = { ...g, nodes: [...g.nodes, spur], edges: [...g.edges, edge(37, g.nodes.length)] };
     expect(forkSpawn(w, 37, g.edges.length)).toBeNull();
-    p.pos = along(w, 37, 29, 29);
+    p.pos = along(w, 37, 29, 8);
     tick(w);
     expect([...w.cut!.cuts]).toEqual([[37, 43]]);
     expect([...w.cut!.closed]).toEqual([28]);
     expect(w.state.enemies.size).toBe(2);
+  });
+
+  /**
+   * A player driven by real input down the guide through fork 37: in by edge
+   * 36 from 10 m out, aimed at the node, then at node 43 down edge 42. The
+   * summit Hollow is removed after the flip so the only Hollow is the fork's.
+   * Returns the tick the cut fired, the first tick the Hollow was behind the
+   * player (farther from node 43 than they are) once they had passed the node,
+   * the first tick it hunted, and the tick the player was touched, each
+   * counted from the drive's first tick; -1 for what never came.
+   */
+  const drive = (mode: "sprint" | "walk" | "stop") => {
+    const { w, p } = chase();
+    const g = w.trail!;
+    w.state.enemies.clear();
+    const fork = g.nodes[37]!, next = g.nodes[43]!;
+    p.pos = along(w, 37, 29, 10);
+    let cut = -1, passed = -1, behind = -1, hunt = -1, touched = -1;
+    let target = fork, moving = true;
+    for (let t = 1; t <= 300 && touched < 0 && (mode === "stop" || hunt < 0 || t <= hunt + 1); t++) {
+      if (mode === "stop" && dist(p.pos, fork) < 0.5) moving = false;
+      // The one atan2 here is the test's own aim, not the sim's.
+      const yaw = Math.atan2(target.x - p.pos.x, target.z - p.pos.z);
+      tickWorld(w, new Map([[p.id, { seq: t, moveX: 0, moveZ: moving ? 1 : 0, yaw, pitch: 0.2, buttons: mode === "sprint" ? Button.Sprint : 0 }]]));
+      if (cut < 0 && w.cut!.cuts.size > 0) cut = t;
+      if (passed < 0 && dist(p.pos, fork) < 1) { passed = t; target = next; }
+      const h = forkHollows(w)[0] ?? [...w.state.enemies.values()][0];
+      if (h !== undefined && passed >= 0 && behind < 0 && dist(h.pos, next) > dist(p.pos, next)) behind = t;
+      if (h !== undefined && hunt < 0 && h.ai === AiState.Hunt) hunt = t;
+      if (p.health <= 0) touched = t;
+    }
+    return { cut, passed, behind, hunt, touched, health: p.health, cuts: [...w.cut!.cuts] };
+  };
+
+  // The arithmetic behind the three cases below, measured on the terrain:
+  // the cut fires at 9 m; the Hollow steps out 12 m down edge 28 and walks
+  // 9 m to its mouth, 3 m in — 7.5 m to the 1.5 m waypoint radius at 6.3 m/s
+  // is 71 ticks, 76 on the ground — stands 60, and hunts 136 ticks after the
+  // cut. A sprinter (7 m/s) is on the node 68 ticks after the cut, a walker
+  // (5.25 m/s) 91; both are down edge 42 before the Hollow stands, and it is
+  // behind them from the moment they are farther down that edge than its
+  // mouth is: 95 ticks after the cut for the sprinter, 127 for the walker.
+
+  it("a sprinter through fork 37 passes the node alive and has the Hollow behind them before it hunts", () => {
+    const r = drive("sprint");
+    expect(r.cuts).toEqual([[37, 43]]);
+    expect(r.passed - r.cut).toBe(68);
+    expect(r.behind - r.cut).toBe(95);
+    expect(r.hunt - r.cut).toBe(136);
+    expect(r.touched).toBe(-1);
+    expect(r.health).toBe(100);
+  });
+
+  it("a walker through fork 37 passes the node alive too, the Hollow behind them as it starts to hunt", () => {
+    const r = drive("walk");
+    expect(r.cuts).toEqual([[37, 43]]);
+    expect(r.passed - r.cut).toBe(91);
+    expect(r.behind - r.cut).toBe(127);
+    expect(r.hunt - r.cut).toBe(136);
+    expect(r.touched).toBe(-1);
+    expect(r.health).toBe(100);
+  });
+
+  it("a player who stops on fork 37 is touched from its mouth, 3 m away, once it hunts", () => {
+    // Standing at the node, 3 m from the mouth: the hunt closes the 2.1 m to
+    // contact reach from a standstill, 38 ticks after it starts.
+    const r = drive("stop");
+    expect(r.cuts).toEqual([[37, 43]]);
+    expect(r.hunt - r.cut).toBe(136);
+    expect(r.touched - r.cut).toBe(174);
+    expect(r.health).toBe(0);
   });
 });

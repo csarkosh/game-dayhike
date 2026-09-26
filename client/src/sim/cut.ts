@@ -28,10 +28,22 @@ import { isOnCorridor } from "./containment.js";
 import { horizontalDistSq, spawnForkHollow } from "./hollow.js";
 import { ENEMY_HALF } from "./constants.js";
 
-/** Metres from an uncut fork within which a living, unsafe player on one of its branches cuts it. */
-export const FORK_CUT_RADIUS = 30;
+/**
+ * Metres from an uncut fork within which a living, unsafe player on one of
+ * its branches cuts it. Its Hollow needs about two seconds to reach its
+ * mouth; nine metres is under two seconds at a walk, so a player who keeps
+ * moving through the fork is past it before it stands, and it hunts them
+ * from behind.
+ */
+export const FORK_CUT_RADIUS = 9;
 /** Metres into a closed branch, along the bed, where its Hollow steps out. */
 export const FORK_SPAWN_DIST = 12;
+/**
+ * Metres into a closed branch where its Hollow stands its reveal: the mouth
+ * of the branch, not the fork node itself, so a player passing the fork is
+ * outside contact reach of a Hollow that is standing there.
+ */
+export const FORK_MOUTH_DIST = 3;
 /** Metres a spawn keeps short of the branch's far node and of the road corridor. */
 export const FORK_SPAWN_CLEAR = 1;
 /** The least a spawn may stand from the fork: a branch with no room for that cannot close. */
@@ -184,8 +196,8 @@ function bestBranch(graph: TrailGraph, record: CutRecord, fork: number, arrival:
  * reaches the pad on the residual graph without coming back through the
  * fork: a fork cut before the guide came to it, by a stray or by a player on
  * another branch, can have closed the guide's own way on, and the guide's
- * edge out would then lead only to Hollows, or home only by this fork and
- * the arrival. Either way the fork is judged like a stray's instead.
+ * edge out would then lead only to Hollows, or home only back through this
+ * fork. Either way the fork is judged like a stray's instead.
  * Otherwise the candidate branches are costed on the residual graph with the
  * fork's own edges removed: a branch's way home must not come back through
  * the fork it leaves, or "the open branch reaches the pad" would be true of
@@ -228,6 +240,15 @@ export function openBranch(graph: TrailGraph, record: CutRecord, fork: number, a
   }
   const judged: CutRecord = { guide, cuts: record.cuts, closed: deadEnds };
   return bestBranch(graph, judged, fork, arrival, residualEdges(graph, judged, -1));
+}
+
+/** The Hollow's centre over the bed `at` metres from node `a` toward node `b`, the bed straight in XZ between them. */
+function bedPoint(world: World, a: TrailNode, b: TrailNode, at: number): Vec3 {
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const len = Math.sqrt(dx * dx + dz * dz);
+  const x = a.x + (dx / len) * at, z = a.z + (dz / len) * at;
+  const bed = world.ground !== null ? world.ground.heightAt(x, z) : a.h + (b.h - a.h) * (at / len);
+  return { x, y: bed + ENEMY_HALF.y, z };
 }
 
 /** Whether a living player stands within FORK_SPAWN_PLAYER_CLEAR (horizontal) of (x, z). */
@@ -281,10 +302,7 @@ export function forkSpawn(world: World, fork: number, edge: number): Vec3 | null
   let at = Math.min(FORK_SPAWN_DIST, limit);
   while (at <= limit && onAPlayer(world, a.x + ux * at, a.z + uz * at)) at += FORK_SPAWN_STEP;
   if (at > limit) return null;
-
-  const x = a.x + ux * at, z = a.z + uz * at;
-  const bed = world.ground !== null ? world.ground.heightAt(x, z) : a.h + (b.h - a.h) * (at / len);
-  return { x, y: bed + ENEMY_HALF.y, z };
+  return bedPoint(world, a, b, at);
 }
 
 /** The living, unsafe player nearest `fork` within FORK_CUT_RADIUS and on one of its branches, ties to the lower id; null when none. */
@@ -313,8 +331,10 @@ function triggerOf(world: World, graph: TrailGraph, record: CutRecord, fork: num
  * nearest such player (ties to the lower id) is the trigger; their arrival
  * edge is never closed, one more branch stays open (`openBranch`), and every
  * other branch not already closed closes with a Hollow stepping out of it
- * (`forkSpawn`, `spawnForkHollow`) that walks to the fork and hunts the
- * trigger. A fork on the corridor — safe ground, where nobody is hunted —
+ * (`forkSpawn`, `spawnForkHollow`) that walks to its branch's mouth,
+ * FORK_MOUTH_DIST in from the fork (or where it stepped out, on a branch
+ * with less room than that), stands there and hunts the trigger. A fork on
+ * the corridor — safe ground, where nobody is hunted —
  * or one where nothing but the arrival reaches the pad is recorded with -1
  * and closes nothing; a branch with no room for a Hollow stays open and is
  * not counted closed.
@@ -344,14 +364,15 @@ export function stepCuts(world: World): void {
     }
     const openEdge = graph.edges[open] as TrailEdge;
     record.cuts.set(fork, openEdge.a === fork ? openEdge.b : openEdge.a);
-    const bed = world.ground !== null ? world.ground.heightAt(node.x, node.z) : node.h;
-    const mouth: Vec3 = { x: node.x, y: bed + ENEMY_HALF.y, z: node.z };
     for (let ei = 0; ei < graph.edges.length; ei++) {
       if (ei === trigger.arrival || ei === open || record.closed.has(ei)) continue;
       const e = graph.edges[ei] as TrailEdge;
       if (e.a !== fork && e.b !== fork) continue;
       const at = forkSpawn(world, fork, ei);
       if (at === null) continue;
+      const far = graph.nodes[e.a === fork ? e.b : e.a] as TrailNode;
+      const dx = at.x - node.x, dz = at.z - node.z;
+      const mouth = bedPoint(world, node, far, Math.min(FORK_MOUTH_DIST, Math.sqrt(dx * dx + dz * dz)));
       spawnForkHollow(world, at, mouth, trigger.player.id);
       record.closed.add(ei);
     }

@@ -31,7 +31,8 @@ type Descent = {
  * the pad that is the treeline, and the match is won there.
  *
  * On every tick: every Hollow that stepped out this tick is Emerge, off the
- * corridor, at least 2 m from the player, and 2–12 m from its fork; every
+ * corridor, at least 2 m from the player, 2–12 m from its fork, and bound
+ * for a mouth 2–3 m in from that fork; every
  * fork cut this tick that is on the guide opened the guide's next node, and
  * the open branch's far node reaches the pad on the residual graph as it
  * stands after the cut. A fork off the guide is never reached by this walk,
@@ -58,16 +59,22 @@ function descend(token: string): Descent {
   const judged = new Set<number>();
   const step = (where: string) => {
     const label = `seed ${token}, ${where}`;
-    const before = w.state.enemies.size;
+    const before = w.state.enemies.size, judgedBefore = w.cut!.cuts.size;
     tickWorld(w, new Map());
+    // The forks cut this tick: each newcomer stepped out of one of them, the nearest.
+    const cutNow = [...w.cut!.cuts.keys()].slice(judgedBefore).map((f) => g.nodes[f]!);
     for (const h of [...w.state.enemies.values()].slice(before)) {
       expect(h.ai, label).toBe(AiState.Emerge);
       expect(isOnCorridor(w, h.pos.x, h.pos.z), label).toBe(false);
       expect(dist(h.pos, p.pos), label).toBeGreaterThanOrEqual(2);
+      const fork = cutNow.sort((a, b) => dist(h.pos, a) - dist(h.pos, b))[0]!;
       // 12 m in, to rounding: the spawn is a point on the bed measured back.
-      const fromFork = dist(h.pos, h.emergeTo!);
+      const fromFork = dist(h.pos, fork);
       expect(fromFork, label).toBeGreaterThanOrEqual(2);
       expect(fromFork, label).toBeLessThanOrEqual(12 + 1e-9);
+      const mouth = dist(h.emergeTo!, fork);
+      expect(mouth, label).toBeGreaterThanOrEqual(2);
+      expect(mouth, label).toBeLessThanOrEqual(3 + 1e-9);
     }
     const residual = g.edges.filter((_, ei) => !w.cut!.closed.has(ei));
     const home = homeDistances(g.nodes, residual);

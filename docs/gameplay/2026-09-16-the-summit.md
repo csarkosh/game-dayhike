@@ -301,8 +301,11 @@ which way is "the one path", and it is what makes the way home medium-to-long ra
 stem.
 
 **Cutting a fork.** During Chase, when any living, unsafe player comes within `FORK_CUT_RADIUS`
-(30 m) of an uncut fork, that fork is cut, once, for the whole party, for the rest of the match.
-The **arrival** branch is the edge that player is on (nearest by `segmentDistance`). Sharpened
+(9 m; 30 m as designed, moved 2026-09-25) of an uncut fork, that fork is cut, once, for the whole
+party, for the rest of the match. Nine metres, because the fork Hollow takes about two seconds to
+reach its mouth and nine metres is under two seconds at a walk: a player who keeps moving through
+the fork is past it before the Hollow stands, and it hunts them from behind; at thirty metres it
+met them at the fork head-on, sprinting or not. The **arrival** branch is the edge that player is on (nearest by `segmentDistance`). Sharpened
 2026-09-25: the player has to be on one of the fork's branches, not merely near the fork — within
 `TRAIL_CORRIDOR_HALF` (7 m) of the branch, with no other open edge of the trail strictly nearer,
 because the next edge along comes within the half-width of a branch wherever the two share a
@@ -338,10 +341,11 @@ that route — two players on different branches can arrange it — never remove
 branch is walkable (reworded 2026-09-25).
 
 **The fork Hollow.** One per closed branch (a 4-way hub gets two). It spawns `FORK_SPAWN_DIST`
-(12 m) into the closed branch on the bed, walks to the fork's mouth at hunt speed in
-`AiState.Emerge`, stands `FORK_REVEAL_S` (1 s) facing the player who triggered the cut, then hunts
-them under §5.1's rules. If they have already passed, it is behind them; if they hesitate, it is on
-them. No Hollow ever steps out on safe ground, or on a player (2026-09-25): when the branch enters
+(12 m) into the closed branch on the bed, walks to the mouth of its branch — `FORK_MOUTH_DIST`
+(3 m) in from the fork, since 2026-09-25, so a player passing the fork is out of its contact reach
+— at hunt speed in `AiState.Emerge`, stands `FORK_REVEAL_S` (1 s) there facing the player who
+triggered the cut, then hunts them under §5.1's rules. If they have already passed, it is behind
+them; if they hesitate, it is on them. No Hollow ever steps out on safe ground, or on a player (2026-09-25): when the branch enters
 the road corridor sooner, or ends sooner at another node, it steps out `FORK_SPAWN_CLEAR` (1 m)
 short of that, and never within `FORK_SPAWN_PLAYER_CLEAR` (2 m) of a living player — it moves on
 along the bed until it is clear, within the same limits; a branch with no such point at least

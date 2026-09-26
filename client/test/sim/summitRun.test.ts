@@ -73,12 +73,11 @@ describe("one run on the seed `hollow`", SUITE, () => {
 
     // Down the guide, node by node, the way the seed sweep walks every seed
     // (cutSweep.test.ts): for every guide node one tick on the edge into it,
-    // FORK_CUT_RADIUS − 1 m short of the node — or on the node before, when
-    // the edge is shorter: the hub 22's edge in is 22.8 m and fork 2's 25.4 m,
-    // so those two are cut from the node before — then one tick on the node.
-    // The pad's edge in is the road's: 29 m short of the pad is inside the
-    // corridor, so the last stride is the pad itself, below. The player is
-    // prey the whole way down, and no Hollow ever stands on the corridor.
+    // FORK_CUT_RADIUS − 1 m short of the node (or on the node before, when
+    // the edge is shorter; none of this guide's is), then one tick on the
+    // node. The pad's edge in is the road's: 8 m short of the pad is inside
+    // the corridor, so the last stride is the pad itself, below. The player
+    // is prey the whole way down, and no Hollow ever stands on the corridor.
     const guide = w.cut!.guide;
     expect(guide[0]).toBe(chain[chain.length - 1]);
     expect(guide.length).toBe(54);
@@ -94,10 +93,12 @@ describe("one run on the seed `hollow`", SUITE, () => {
       for (const e of w.state.enemies.values()) expect(isOnCorridor(w, e.pos.x, e.pos.z), where).toBe(false);
       const forks = [...w.cut!.cuts.keys()].slice(judged);
       for (const f of forks) fired.push([f, where]);
-      // Whoever stepped out this tick is emerging, and bound for one of the forks just cut.
+      // Whoever stepped out this tick is emerging, and bound for the mouth of
+      // a branch of one of the forks just cut, 3 m in from it.
       for (const e of [...w.state.enemies.values()].slice(hollows)) {
         expect(e.ai, where).toBe(AiState.Emerge);
-        expect(forks.some((f) => graph.nodes[f]!.x === e.emergeTo!.x && graph.nodes[f]!.z === e.emergeTo!.z), where).toBe(true);
+        const mouth = e.emergeTo!;
+        expect(forks.some((f) => { const n = graph.nodes[f]!; return Math.abs(Math.sqrt((n.x - mouth.x) ** 2 + (n.z - mouth.z) ** 2) - 3) < 1e-9; }), where).toBe(true);
       }
     };
     for (let i = 1; i + 1 < guide.length; i++) {
@@ -111,22 +112,22 @@ describe("one run on the seed `hollow`", SUITE, () => {
     }
     // Every fork on the guide, cut as the guide reaches it, opening the
     // guide's next node; six branches closed, a Hollow in each.
-    expect(fired).toEqual([[37, "on the way to 37"], [22, "at 38"], [79, "on the way to 79"], [78, "on the way to 78"], [2, "at 3"]]);
+    expect(fired).toEqual([[37, "on the way to 37"], [22, "on the way to 22"], [79, "on the way to 79"], [78, "on the way to 78"], [2, "on the way to 2"]]);
     expect([...w.cut!.cuts]).toEqual([[37, 43], [22, 54], [79, 78], [78, 7], [2, 1]]);
     expect([...w.cut!.closed]).toEqual([28, 21, 22, 80, 79, 78]);
     expect(w.state.enemies.size).toBe(7);
     // The walk is far faster than any Hollow, so fork 2's is still stepping
     // out: the player waits at node 1, off the corridor, until the whole pack
     // hunts them. The wait is measured on the terrain, not derived: that Hollow
-    // walked 104 ticks to the mouth on real ground (a flat 12 m at 6.3 m/s to
-    // the 1.5 m waypoint radius would be 100), stood 60, and four of those
+    // walked 77 ticks to its mouth on real ground (a flat 9 m at 6.3 m/s to
+    // the 1.5 m waypoint radius would be 71), stood 60, and four of those
     // ticks had already gone by on the walk down.
     let waited = 0;
     while (waited < Math.round((FORK_EMERGE_MAX_S + FORK_REVEAL_S) / TICK_DT) && [...w.state.enemies.values()].some((e) => e.ai === AiState.Emerge)) {
       step("waiting at 1");
       waited++;
     }
-    expect(waited).toBe(160);
+    expect(waited).toBe(133);
     for (const e of w.state.enemies.values()) {
       expect(e.ai).toBe(AiState.Hunt);
       expect(e.targetId).toBe(p.id);
