@@ -18,7 +18,7 @@ import { isHollow } from "../sim/hollow.js";
 import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
-import { EntityViews } from "./entityViews.js";
+import { CHARACTER_IDS, EntityViews } from "./entityViews.js";
 import { budgetLights, createHeadlamp, setLamp } from "./headlamp.js";
 import { lampUnder } from "./lampParams.js";
 import { windRecordUnder, type WindRecord } from "./windParams.js";
@@ -919,9 +919,10 @@ export function createRenderer(
   const motes = createMotes(scene, tier);
 
   const views = new EntityViews(scene);
-  // Fire and forget: enemies render as capsules until this resolves, and stay
-  // capsules forever if there is no shipped model or it fails to load.
-  void views.models.load(scene);
+  // Fire and forget: the other hikers and the Hollow render as capsules until
+  // this resolves, and a model that fails to load stays a capsule for good.
+  // Only the rangers and the Hollow are fetched, not every character listed.
+  void views.models.load(scene, CHARACTER_IDS);
 
   let freecam: FreecamView | null = null;
 
@@ -967,7 +968,7 @@ export function createRenderer(
         n++;
       }
       setFoliageWind(wind, windPlayers);
-      views.sync(state, localId, alpha, lampState);
+      views.sync(state, localId, alpha, lampState, frame.dt);
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once
       // its GLBs have loaded, so new entries are picked up here.

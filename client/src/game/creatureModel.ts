@@ -1,10 +1,10 @@
 /**
  * The `creature` asset kind at runtime: the
- * EnemyModelPool pattern generalised to wildlife roles. One cloned container
+ * character pool (`createCharacterPool`) generalised to wildlife roles. One cloned container
  * per visible animal with its own clip playback; the pool is keyed by the
  * caller's integer (unit id × 16 + member), and a species whose asset is not
  * in the catalog simply has no animals — there is no capsule fallback for
- * wildlife, because an ambient elk that renders as a violet capsule is worse
+ * wildlife, because an ambient elk that renders as a capsule is worse
  * than no elk.
  */
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
@@ -15,7 +15,7 @@ import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 import { modelUrl } from "./assetUrls.js";
-import { orientationRoot } from "./enemyModel.js";
+import { orientationRoot } from "./characterModel.js";
 import type { ClipRole } from "./wildlifeBehaviour.js";
 
 export type { ClipRole } from "./wildlifeBehaviour.js";
@@ -49,7 +49,7 @@ export type CreaturePool = {
 
 /**
  * Every `creature` asset in the catalog, in catalog order, with its clip-role
- * map. Mirrors `resolveEnemyAssets` in enemyModel.ts: reading the catalog here
+ * map. Mirrors `resolveCharacterAssets` in characterModel.ts: reading the catalog here
  * means adding a species needs no code change, and going through `urlFor`
  * (defaulting to `modelUrl`) means a catalog entry with no shipped file behind
  * it throws at startup rather than 404ing at runtime.
@@ -95,7 +95,7 @@ function tokensOf(name: string): string[] {
 
 /**
  * Matches a synonym against whole tokens, not substrings. Plain `.includes()`
- * (this file's first pass, and `enemyModel.ts`'s `pickClip` today) treats a
+ * (this file's first pass, and `characterModel.ts`'s `pickClip` today) treats a
  * synonym as a substring of the whole clip name, so `"eat"` matches inside
  * `"Death"` and `"run"` matches inside `"Trunk_Idle"` or `"Grunt"` — false
  * positives that get more likely here than in the enemy list, because
@@ -151,7 +151,7 @@ export function creatureClipFor(
  * `` `${prefix}${original}` ``. Preferring that over a substring scan matters
  * because `includes` maps `Walk_Fast` onto `Walk` whenever `Walk` comes first in
  * the file's clip list — one group under two names and the real `Walk` lost
- * (inherited from `enemyModel.ts`'s `pickClip`; the same fix applies there
+ * (inherited from `characterModel.ts`'s `pickClip`; the same fix applies there
  * someday). The scan stays as the fallback for a loader that renames some other
  * way.
  *
@@ -201,7 +201,7 @@ type Loaded = { asset: CreatureAsset; container: AssetContainer; clipNames: stri
 
 /**
  * One cloned instance per visible animal, keyed by the caller's integer key
- * (unit id × 16 + member — see wildlifeField.ts). Mirrors `EnemyModelPool`:
+ * (unit id × 16 + member — see wildlifeField.ts). Mirrors `createCharacterPool`:
  * `instantiateModelsToScene` shares geometry and skeleton data across copies,
  * `orientationRoot` wraps the loader's converted root so callers can drive yaw
  * without fighting its `rotationQuaternion`, and a variant that fails to load
@@ -253,7 +253,7 @@ export function createCreaturePool(): CreaturePool {
           // alert is a held pose (head up), not a cycle — PHASE_ALERT is
           // a freeze, and looping it would show a repeating
           // head-raise instead of a held one. Every other role loops, mirroring
-          // enemyModel.ts's `next.play(kind !== "death")` holding death's final
+          // characterModel.ts's `next.play(kind !== "death")` holding death's final
           // frame instead of looping it.
           next.play(role !== "alert");
           current = next;

@@ -7,17 +7,44 @@ import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 
-import type { EnemyState, Vec3, WorldState } from "../sim/types.js";
-import { AiState } from "../sim/types.js";
+import type { Vec3, WorldState } from "../sim/types.js";
 import { ENEMY_HALF, PLAYER_HALF, PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { aimDirection } from "../sim/view.js";
-import { HOLLOW_HEIGHT, isHollowState } from "../sim/hollow.js";
-import { EnemyModelPool, type ClipKind, type EnemyInstance } from "./enemyModel.js";
+import { HOLLOW_HEIGHT } from "../sim/hollow.js";
+import { createCharacterPool, variantForId, type CharacterInstance, type CharacterPool } from "./characterModel.js";
 import { createHeadlamp, setLamp } from "./headlamp.js";
 import { LAMP_DEFAULT, type LampState } from "./lampParams.js";
-import { HOLLOW_ALBEDO, HOLLOW_EMISSIVE, HOLLOW_MATERIAL, HOLLOW_ROUGHNESS } from "./hollowLook.js";
+import {
+  HOLLOW_ALBEDO, HOLLOW_EMISSIVE, HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_MATERIAL, HOLLOW_ROUGHNESS,
+  HOLLOW_SCALE, HOLLOW_WALK_CLIP_SPEED, RANGER_WALK_CLIP_SPEED,
+} from "./hollowLook.js";
+
+/**
+ * The rangers other hikers are drawn as, in a fixed order indexed by player
+ * id, never by what loaded or by catalog order: every peer then sees the same
+ * ranger for the same player, and a download that fails on one machine turns
+ * that ranger into a capsule there rather than into a different ranger.
+ */
+export const RANGER_IDS: readonly string[] = [
+  "ranger.nathan", "ranger.eric", "ranger.sophia", "ranger.carla", "ranger.claudia",
+];
+/** The Hollow's model. */
+export const HOLLOW_MODEL = "hollow.antlered";
+/** Every model this file draws, which is all `models.load` needs to fetch. */
+export const CHARACTER_IDS: readonly string[] = [...RANGER_IDS, HOLLOW_MODEL];
+
+/** Below this horizontal speed, m/s, a character stands; above it, it walks. */
+export const WALK_THRESHOLD = 0.3;
+/** The walk clip's playback rate never leaves this range, so a sprint or a lurch never shows a blur or a crawl. */
+export const WALK_RATIO_MIN = 0.5;
+export const WALK_RATIO_MAX = 2.5;
+/** Seconds over which the Hollow's measured speed settles, so one uneven frame does not flick its clip. */
+export const HOLLOW_SPEED_SMOOTHING = 0.25;
 
 type View = { node: TransformNode; previous: Vector3; target: Vector3 };
+type ModelView = { instance: CharacterInstance; view: View };
+/** The Hollow's measured pace: where its feet were last frame, and a smoothed speed. */
+type Pace = { x: number; z: number; speed: number };
 
 /**
  * A view's first frame is drawn where the entity is, not on the way there.
@@ -32,34 +59,32 @@ function placeView(node: TransformNode, x: number, y: number, z: number): View {
   return { node, previous: new Vector3(x, y, z), target: new Vector3(x, y, z) };
 }
 
-/**
- * Which clip an enemy should be playing, derived entirely from simulation
- * state — nothing about animation crosses the wire.
- *
- * Deliberately keyed off `ai` rather than velocity. Enemy velocity is not in
- * the snapshot: `clientSession.renderState` hands every remote enemy a zeroed
- * vector, so a speed test would leave every enemy on a joining client standing
- * still while the host alone saw them walk. `ai` is transmitted, and it maps
- * cleanly because an idle enemy holds position and only a chasing one moves.
- */
-export function clipForEnemy(enemy: Pick<EnemyState, "health" | "ai">): ClipKind {
-  if (enemy.health <= 0 || enemy.ai === AiState.Dead) return "death";
-  if (enemy.ai === AiState.Attack) return "attack";
-  if (enemy.ai === AiState.Chase) return "walk";
-  return "idle";
+/** Walk or stand, and at what rate, for a character moving at `speed` m/s whose walk clip covers `clipSpeed` at rate 1. */
+function stride(instance: CharacterInstance, speed: number, clipSpeed: number): void {
+  if (speed > WALK_THRESHOLD) {
+    const ratio = speed / clipSpeed;
+    instance.setSpeed(ratio < WALK_RATIO_MIN ? WALK_RATIO_MIN : ratio > WALK_RATIO_MAX ? WALK_RATIO_MAX : ratio);
+    instance.play("walk");
+  } else {
+    instance.setSpeed(1);
+    instance.play("idle");
+  }
 }
 
 export class EntityViews {
+  /** Capsules, drawn for a player or a Hollow whose model is not (yet) in the pool. */
   private readonly players = new Map<number, View>();
   private readonly enemies = new Map<number, View>();
-  private readonly enemyModels = new Map<number, { instance: EnemyInstance; view: View }>();
+  private readonly playerModels = new Map<number, ModelView>();
+  private readonly enemyModels = new Map<number, ModelView & { pace: Pace }>();
   private readonly lamps = new Map<number, SpotLight>();
   private readonly playerMaterial: PBRMaterial;
-  private readonly enemyMaterial: PBRMaterial;
   private readonly hollowMaterial: PBRMaterial;
-  readonly models = new EnemyModelPool();
 
-  constructor(private readonly scene: Scene) {
+  constructor(
+    private readonly scene: Scene,
+    readonly models: CharacterPool = createCharacterPool(),
+  ) {
     // PBRMaterial, not StandardMaterial: a StandardMaterial ignores
     // `scene.environmentTexture` entirely and takes the full sun intensity
     // (4.0 at noon), so a remote player's capsule would read blown-out and
@@ -70,15 +95,7 @@ export class EntityViews {
     this.playerMaterial.albedoColor = new Color3(0.3, 0.7, 0.95);
     this.playerMaterial.metallic = 0;
     this.playerMaterial.roughness = 0.85;
-    this.enemyMaterial = new PBRMaterial("mat_enemy", scene);
-    // Violet, matching the enemy-reserved band in client/assets/palette.json.
-    // ARCHITECTURE.md, Model conventions reserves hue 280-340 for enemies so
-    // they never camouflage against a wall, and the fallback capsule has to
-    // honour that too.
-    this.enemyMaterial.albedoColor = new Color3(0.54, 0.18, 0.69);
-    this.enemyMaterial.metallic = 0;
-    this.enemyMaterial.roughness = 0.85;
-    // The Hollow's placeholder: a very dark shape the lights can touch, outside
+    // The Hollow's fallback: a very dark shape the lights can touch, outside
     // the fog. It must be lit, because it hunts in the dark: a pure black,
     // unlit shape is invisible at full dark, whatever the lamp does. And lit
     // as PBR, because the headlamp's 400 is tuned for PBR's physical falloff;
@@ -91,7 +108,8 @@ export class EntityViews {
     // it by name): the plugin's spliced shader code reads Babylon's `vFogColor`,
     // which the shader declares only while the material's FOG define is set.
     // With fog off the fragment shader fails on an undeclared identifier and
-    // the material silently never draws.
+    // the material silently never draws. The model's own materials keep fog
+    // on and take the plugin like every other lit surface.
     this.hollowMaterial = new PBRMaterial(HOLLOW_MATERIAL, scene);
     this.hollowMaterial.albedoColor = new Color3(HOLLOW_ALBEDO.r, HOLLOW_ALBEDO.g, HOLLOW_ALBEDO.b);
     this.hollowMaterial.emissiveColor = new Color3(HOLLOW_EMISSIVE.r, HOLLOW_EMISSIVE.g, HOLLOW_EMISSIVE.b);
@@ -103,38 +121,70 @@ export class EntityViews {
   /**
    * `lamp` is this frame's headlamp state (`lampUnder(weather, t)`), shared
    * by every remote player's lamp: dread dims and flickers all of them alike.
-   * Defaults to the tuned lamp for callers without weather.
+   * Defaults to the tuned lamp for callers without weather. `dt` is the
+   * frame's seconds, from which the Hollow's pace is measured; 0 leaves its
+   * pace where it was.
    */
-  sync(state: WorldState, localId: number, alpha: number, lampState: LampState = LAMP_DEFAULT): void {
+  sync(
+    state: WorldState,
+    localId: number,
+    alpha: number,
+    lampState: LampState = LAMP_DEFAULT,
+    dt = 0,
+  ): void {
     const clamped = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
 
     for (const [id, player] of state.players) {
-      // The local player is the camera; drawing their own capsule would fill
+      // The local player is the camera; drawing their own body would fill
       // the screen from the inside.
       if (id === localId) {
         this.players.get(id)?.node.setEnabled(false);
+        this.playerModels.get(id)?.view.node.setEnabled(false);
         continue;
       }
-      const view = this.ensure(this.players, id, player.pos, () =>
-        this.makeCapsule(`player_${id}`, this.playerMaterial),
-      );
-      view.node.setEnabled(true);
-      this.advance(view, player.pos.x, player.pos.y, player.pos.z, clamped);
-      view.node.rotation.y = player.yaw;
 
-      // Unparented: a child of the capsule would inherit its yaw and turn
+      // The model's origin is at its feet (ARCHITECTURE.md, Model
+      // conventions), the sim's position at the centre of the hull.
+      const feet = player.pos.y - PLAYER_HALF.y;
+      let node: TransformNode;
+      let feetY: number;
+      const instance = this.models.acquire(id, variantForId(RANGER_IDS, id) as string);
+      if (instance !== null) {
+        const entry = this.ensureModel(this.playerModels, id, instance, player.pos.x, feet, player.pos.z);
+        // Hide the fallback capsule if one was made before the model loaded.
+        this.players.get(id)?.node.setEnabled(false);
+        entry.view.node.setEnabled(true);
+        this.advance(entry.view, player.pos.x, feet, player.pos.z, clamped);
+        // Sprint reuses the walk clip, played faster; `vel` is on the wire,
+        // so every peer sees the same stride.
+        stride(instance, Math.sqrt(player.vel.x * player.vel.x + player.vel.z * player.vel.z), RANGER_WALK_CLIP_SPEED);
+        node = entry.view.node;
+        feetY = node.position.y;
+      } else {
+        const view = this.ensure(this.players, id, player.pos, () =>
+          this.makeCapsule(`player_${id}`, this.playerMaterial),
+        );
+        view.node.setEnabled(true);
+        this.advance(view, player.pos.x, player.pos.y, player.pos.z, clamped);
+        node = view.node;
+        feetY = node.position.y - PLAYER_HALF.y;
+      }
+      node.rotation.y = player.yaw;
+
+      // Unparented: a child of the body would inherit its yaw and turn
       // `direction` into a local vector, so position and direction are written
-      // in world space every sync instead.
+      // in world space every sync instead. At the eyes, whichever body is drawn.
       let lamp = this.lamps.get(id);
       if (lamp === undefined) {
         lamp = createHeadlamp(this.scene, `lamp_player_${id}`);
         this.lamps.set(id, lamp);
       }
-      lamp.position.set(view.node.position.x, view.node.position.y + PLAYER_EYE_OFFSET, view.node.position.z);
+      lamp.position.set(node.position.x, feetY + PLAYER_HALF.y + PLAYER_EYE_OFFSET, node.position.z);
       const d = aimDirection(player.yaw, player.pitch);
       lamp.direction.set(d.x, d.y, d.z);
       setLamp(lamp, player.lamp.on, lampState);
     }
+    this.pruneModels(this.playerModels, state.players);
     this.prune(this.players, state.players);
     for (const [id, lamp] of this.lamps) {
       if (!state.players.has(id) || id === localId) {
@@ -143,62 +193,86 @@ export class EntityViews {
       }
     }
 
+    // Every enemy the game spawns is a Hollow, so every enemy is drawn as one:
+    // there is no other shape to give an entity that can still collide.
     for (const [id, enemy] of state.enemies) {
-      if (isHollowState(enemy.ai)) {
-        // The capsule is taller than the hull: lift it so both stand on the same feet.
-        const hollowY = enemy.pos.y + (HOLLOW_HEIGHT / 2 - ENEMY_HALF.y);
-        const view = this.ensure(
-          this.enemies,
-          id,
-          { x: enemy.pos.x, y: hollowY, z: enemy.pos.z },
-          () => this.makeHollow(`hollow_${id}`),
-        );
-        view.node.setEnabled(true);
-        this.advance(view, enemy.pos.x, hollowY, enemy.pos.z, clamped);
-        view.node.rotation.y = enemy.yaw;
-        continue;
-      }
-
-      const instance = this.models.acquire(id);
+      const feet = enemy.pos.y - ENEMY_HALF.y;
+      const instance = this.models.acquire(id, HOLLOW_MODEL);
       if (instance !== null) {
-        const entry = this.ensureModel(id, instance, enemy.pos.x, enemy.pos.y - ENEMY_HALF.y, enemy.pos.z);
-        // Hide the fallback capsule if one was made before the model loaded.
+        const entry = this.ensureHollowModel(id, instance, enemy.pos.x, feet, enemy.pos.z);
         this.enemies.get(id)?.node.setEnabled(false);
-        // Model origins sit at the feet (ARCHITECTURE.md, Model conventions),
-        // sim positions at the centre of the hull.
-        this.advance(entry.view, enemy.pos.x, enemy.pos.y - ENEMY_HALF.y, enemy.pos.z, clamped);
+        this.advance(entry.view, enemy.pos.x, feet, enemy.pos.z, clamped);
         entry.view.node.rotation.y = enemy.yaw;
-        instance.play(clipForEnemy(enemy));
+        // Enemy velocity never reaches a client (it is zeroed there), so the
+        // pace is measured from how far the drawn body moved: the same on
+        // every peer, and it walks through Emerge as well as the hunt.
+        const pace = entry.pace;
+        const at = entry.view.node.position;
+        if (dt > 0) {
+          const dx = at.x - pace.x;
+          const dz = at.z - pace.z;
+          const measured = Math.sqrt(dx * dx + dz * dz) / dt;
+          pace.speed += (measured - pace.speed) * (1 - Math.exp(-dt / HOLLOW_SPEED_SMOOTHING));
+        }
+        pace.x = at.x;
+        pace.z = at.z;
+        stride(instance, pace.speed, HOLLOW_WALK_CLIP_SPEED * HOLLOW_SCALE);
         continue;
       }
 
-      const view = this.ensure(this.enemies, id, enemy.pos, () =>
-        this.makeCapsule(`enemy_${id}`, this.enemyMaterial),
+      // The capsule is taller than the hull: lift it so both stand on the same feet.
+      const hollowY = feet + HOLLOW_HEIGHT / 2;
+      const view = this.ensure(
+        this.enemies,
+        id,
+        { x: enemy.pos.x, y: hollowY, z: enemy.pos.z },
+        () => this.makeHollow(`hollow_${id}`),
       );
       view.node.setEnabled(true);
-      this.advance(view, enemy.pos.x, enemy.pos.y, enemy.pos.z, clamped);
+      this.advance(view, enemy.pos.x, hollowY, enemy.pos.z, clamped);
       view.node.rotation.y = enemy.yaw;
     }
-
-    for (const [id] of this.enemyModels) {
-      if (!state.enemies.has(id)) {
-        this.models.release(id);
-        this.enemyModels.delete(id);
-      }
-    }
+    this.pruneModels(this.enemyModels, state.enemies);
     this.prune(this.enemies, state.enemies);
   }
 
   private ensureModel(
+    map: Map<number, ModelView>,
     id: number,
-    instance: EnemyInstance,
+    instance: CharacterInstance,
     x: number,
     y: number,
     z: number,
-  ): { instance: EnemyInstance; view: View } {
-    const existing = this.enemyModels.get(id);
-    if (existing) return existing;
+  ): ModelView {
+    const existing = map.get(id);
+    if (existing !== undefined && existing.instance === instance) return existing;
     const entry = { instance, view: placeView(instance.root, x, y, z) };
+    map.set(id, entry);
+    return entry;
+  }
+
+  private ensureHollowModel(
+    id: number,
+    instance: CharacterInstance,
+    x: number,
+    y: number,
+    z: number,
+  ): ModelView & { pace: Pace } {
+    const existing = this.enemyModels.get(id);
+    if (existing !== undefined && existing.instance === instance) return existing;
+    // Only the picture grows: the hull, the stare and the contact are the sim's.
+    instance.root.scaling.setAll(HOLLOW_SCALE);
+    // The eyes are the materials that glow in the file. Materials are shared
+    // by every instance of the model, so this settles them for all Hollows.
+    for (const mesh of instance.root.getChildMeshes(false)) {
+      const material = mesh.material;
+      if (!(material instanceof PBRMaterial)) continue;
+      const e = material.emissiveColor;
+      if (e.r === 0 && e.g === 0 && e.b === 0) continue;
+      material.emissiveColor = new Color3(HOLLOW_EYE_COLOR.r, HOLLOW_EYE_COLOR.g, HOLLOW_EYE_COLOR.b);
+      material.emissiveIntensity = HOLLOW_EYE_INTENSITY;
+    }
+    const entry = { instance, view: placeView(instance.root, x, y, z), pace: { x, z, speed: 0 } };
     this.enemyModels.set(id, entry);
     return entry;
   }
@@ -228,6 +302,15 @@ export class EntityViews {
     }
   }
 
+  private pruneModels(map: Map<number, ModelView>, live: Map<number, unknown>): void {
+    for (const id of map.keys()) {
+      if (!live.has(id)) {
+        this.models.release(id);
+        map.delete(id);
+      }
+    }
+  }
+
   private makeCapsule(name: string, material: PBRMaterial): Mesh {
     const mesh = MeshBuilder.CreateCapsule(
       name,
@@ -250,9 +333,11 @@ export class EntityViews {
     for (const lamp of this.lamps.values()) lamp.dispose();
     this.players.clear();
     this.enemies.clear();
+    this.playerModels.clear();
     this.enemyModels.clear();
     this.lamps.clear();
     this.models.dispose();
+    this.playerMaterial.dispose();
     this.hollowMaterial.dispose();
   }
 }

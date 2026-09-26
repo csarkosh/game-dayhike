@@ -4,43 +4,19 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { clipForEnemy, EntityViews } from "../../src/game/entityViews.js";
+import { readFileSync } from "node:fs";
+import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
+import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { EntityViews } from "../../src/game/entityViews.js";
+import { createCharacterPool, type CharacterLoader, type CharacterPool } from "../../src/game/characterModel.js";
+import type { EnemyState } from "../../src/sim/types.js";
 import { LAMP_INTENSITY, LIGHT_BUDGET, budgetLights, createHeadlamp, setLamp } from "../../src/game/headlamp.js";
 import { AiState } from "../../src/sim/types.js";
+import catalog from "../../assets/catalog.json" with { type: "json" };
 import type { PlayerState, WorldState } from "../../src/sim/types.js";
-import { ENEMY_HALF, MAX_PLAYERS, PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
+import { MAX_PLAYERS } from "../../src/sim/constants.js";
 import { Outcome, Phase } from "../../src/sim/types.js";
-import { HOLLOW_HEIGHT } from "../../src/sim/hollow.js";
-
-describe("clipForEnemy", () => {
-  it("plays idle when standing around", () => {
-    expect(clipForEnemy({ health: 40, ai: AiState.Idle })).toBe("idle");
-  });
-
-  it("plays walk while chasing", () => {
-    expect(clipForEnemy({ health: 40, ai: AiState.Chase })).toBe("walk");
-  });
-
-  it("plays attack while attacking", () => {
-    expect(clipForEnemy({ health: 40, ai: AiState.Attack })).toBe("attack");
-  });
-
-  it("plays death once dead", () => {
-    expect(clipForEnemy({ health: 0, ai: AiState.Dead })).toBe("death");
-  });
-
-  it("plays death on zero health even before the state machine catches up", () => {
-    expect(clipForEnemy({ health: 0, ai: AiState.Chase })).toBe("death");
-  });
-
-  // Enemy velocity is not in the snapshot, so a joining client sees every
-  // remote enemy with a zeroed vector. Selecting on speed would leave them all
-  // standing still on every machine except the host's.
-  it("does not depend on velocity, which is never networked", () => {
-    expect(clipForEnemy({ health: 40, ai: AiState.Chase })).toBe("walk");
-    expect(clipForEnemy({ health: 40, ai: AiState.Idle })).toBe("idle");
-  });
-});
 
 let engine: NullEngine;
 let scene: Scene;
@@ -67,6 +43,13 @@ function player(id: number, on: boolean, yaw = 0): PlayerState {
     lamp: { on, charge: 1 },
     stare: 0,
     safe: false,
+  };
+}
+function hollow(id: number, x: number, z: number, yaw = 0): EnemyState {
+  return {
+    id, pos: { x, y: 0.9, z }, vel: { x: 0, y: 0, z: 0 }, yaw, health: 40, ai: AiState.Stand,
+    targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
+    route: [], routeAt: 0, approach: false, seen: false, emergeTo: null,
   };
 }
 function state(...players: PlayerState[]): WorldState {
@@ -135,7 +118,10 @@ describe("EntityViews placement", () => {
     const mesh = scene.getMeshByName("player_2")!;
     expect(mesh.position.asArray()).toEqual([7, 0.9, -3]);
     const lamp = scene.lights.find((l) => l.name === "lamp_player_2") as SpotLight;
-    expect(lamp.position.asArray()).toEqual([7, 0.9 + PLAYER_EYE_OFFSET, -3]);
+    // A capsule's centre is the hull's, so the eyes are 0.7 m above it.
+    expect(lamp.position.x).toBe(7);
+    expect(lamp.position.y).toBeCloseTo(1.6, 9);
+    expect(lamp.position.z).toBe(-3);
     // And still there while they keep standing, whatever the frame's alpha.
     views.sync(state(player(1, false), still), 1, 0.2);
     expect(mesh.position.asArray()).toEqual([7, 0.9, -3]);
@@ -144,14 +130,10 @@ describe("EntityViews placement", () => {
 });
 
 describe("EntityViews Hollows", () => {
-  it("draws a Hollow as a near-black, lit, fog-free PBR capsule and never as a chaser", async () => {
+  it("falls back to a near-black, lit, fog-free PBR capsule while there is no model", async () => {
     const views = new EntityViews(scene);
     const world = state();
-    world.enemies.set(7, {
-      id: 7, pos: { x: 1, y: 0.9, z: 2 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0.5, health: 40, ai: AiState.Stand,
-      targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
-      route: [], routeAt: 0, approach: false, seen: false, emergeTo: null,
-    });
+    world.enemies.set(7, hollow(7, 1, 2, 0.5));
     views.sync(world, 99, 0);
     const mesh = scene.getMeshByName("hollow_7")!;
     expect(mesh).not.toBeNull();
@@ -175,7 +157,139 @@ describe("EntityViews Hollows", () => {
     expect(material.isReady(mesh)).toBe(true);
     expect(mesh.rotation.y).toBeCloseTo(0.5, 9);
     // The hull centre is 0.9 m up; the 2.6 m capsule's centre sits 0.4 m higher so its feet meet the hull's.
-    expect(mesh.position.y).toBeCloseTo(0.9 + (HOLLOW_HEIGHT / 2 - ENEMY_HALF.y), 6);
+    expect(mesh.position.y).toBeCloseTo(1.3, 6);
+    views.dispose();
+  });
+});
+
+/** The real GLBs, read from disk the way catalogModels.test.ts does. */
+const fromDisk: CharacterLoader = (asset, s) => {
+  registerBuiltInLoaders();
+  const bytes = readFileSync(new URL(`../../assets/${asset.output}`, import.meta.url));
+  return loadAssetContainerAsync(new Uint8Array(bytes), s, { pluginExtension: ".glb" });
+};
+
+/** Player 1 wears ranger.eric and player 2 ranger.sophia (ids 1 and 2 of the fixed five). */
+async function loadedPool(): Promise<CharacterPool> {
+  const pool = createCharacterPool(catalog, fromDisk);
+  await pool.load(scene, ["ranger.eric", "ranger.sophia", "hollow.antlered"]);
+  return pool;
+}
+
+function playing(prefix: string): { name: string; speedRatio: number }[] {
+  return scene.animationGroups.filter((g) => g.name.startsWith(prefix) && g.isPlaying);
+}
+
+describe("EntityViews rangers", () => {
+  it("draws a ranger for a remote player and nothing for the local one", async () => {
+    const views = new EntityViews(scene, await loadedPool());
+    views.sync(state(player(1, false), { ...player(2, false), pos: { x: 7, y: 0.9, z: -3 } }), 1, 1);
+    const root = scene.getTransformNodeByName("character_2_orientation")!;
+    expect(root).not.toBeNull();
+    expect(root.isEnabled()).toBe(true);
+    expect(scene.getTransformNodeByName("character_1_orientation")).toBeNull();
+    // The model's origin is at its feet, 0.9 m under the hull's centre.
+    expect(root.position.asArray()).toEqual([7, 0, -3]);
+    // No capsule for a player who has a ranger.
+    expect(scene.getMeshByName("player_2")).toBeNull();
+    // The lamp stays at the eyes: feet + 0.9 + 0.7.
+    const lamp = scene.lights.find((l) => l.name === "lamp_player_2") as SpotLight;
+    expect(lamp.position.y).toBeCloseTo(1.6, 9);
+    views.dispose();
+  });
+
+  it("turns the ranger to the player's yaw", async () => {
+    const views = new EntityViews(scene, await loadedPool());
+    views.sync(state(player(1, false), player(2, false, 1.2)), 1, 1);
+    expect(scene.getTransformNodeByName("character_2_orientation")!.rotation.y).toBe(1.2);
+    views.dispose();
+  });
+
+  it("walks above 0.3 m/s at speed ÷ 1.5, and stands at or below it", async () => {
+    const views = new EntityViews(scene, await loadedPool());
+    const at = (vx: number, vz: number) => ({ ...player(2, false), vel: { x: vx, y: -3, z: vz } });
+    views.sync(state(player(1, false), at(0.3, 0)), 1, 1);
+    expect(playing("character_2_").map((g) => g.name)).toEqual(["character_2_idle"]);
+    expect(playing("character_2_")[0]!.speedRatio).toBe(1);
+    // 1.8 and 2.4 horizontal is 3 m/s; the fall speed does not count.
+    views.sync(state(player(1, false), at(1.8, 2.4)), 1, 1);
+    expect(playing("character_2_").map((g) => g.name)).toEqual(["character_2_walk"]);
+    expect(playing("character_2_")[0]!.speedRatio).toBeCloseTo(2, 9);
+    // A slow shuffle and a sprint both stay inside [0.5, 2.5].
+    views.sync(state(player(1, false), at(0.4, 0)), 1, 1);
+    expect(playing("character_2_")[0]!.speedRatio).toBe(0.5);
+    views.sync(state(player(1, false), at(0, 9)), 1, 1);
+    expect(playing("character_2_")[0]!.speedRatio).toBe(2.5);
+    views.dispose();
+  });
+
+  it("draws a capsule until the ranger loads, then hides it", async () => {
+    const pool = createCharacterPool(catalog, fromDisk);
+    const views = new EntityViews(scene, pool);
+    views.sync(state(player(1, false), player(2, false)), 1, 1);
+    const capsule = scene.getMeshByName("player_2")!;
+    expect(capsule.isEnabled()).toBe(true);
+    expect(scene.getTransformNodeByName("character_2_orientation")).toBeNull();
+    await pool.load(scene, ["ranger.sophia"]);
+    views.sync(state(player(1, false), player(2, false)), 1, 1);
+    expect(capsule.isEnabled()).toBe(false);
+    expect(scene.getTransformNodeByName("character_2_orientation")!.isEnabled()).toBe(true);
+    views.dispose();
+  });
+
+  it("releases a ranger whose player left", async () => {
+    const views = new EntityViews(scene, await loadedPool());
+    views.sync(state(player(1, false), player(2, false)), 1, 1);
+    const root = scene.getTransformNodeByName("character_2_orientation")!;
+    views.sync(state(player(1, false)), 1, 1);
+    expect(root.isDisposed()).toBe(true);
+    views.dispose();
+  });
+});
+
+describe("EntityViews the Hollow", () => {
+  it("draws the antlered model at its feet, twice the model's size, with red eyes", async () => {
+    const views = new EntityViews(scene, await loadedPool());
+    const world = state();
+    world.enemies.set(7, hollow(7, 1, 2, 0.5));
+    views.sync(world, 99, 1);
+    const root = scene.getTransformNodeByName("character_7_orientation") as TransformNode;
+    expect(root).not.toBeNull();
+    expect(scene.getMeshByName("hollow_7")).toBeNull();
+    expect(root.position.asArray()).toEqual([1, 0, 2]);
+    expect(root.scaling.asArray()).toEqual([2, 2, 2]);
+    expect(root.rotation.y).toBe(0.5);
+    const materials = new Set(root.getChildMeshes(false).flatMap((m) => (m.material === null ? [] : [m.material])));
+    const eyes = [...materials].filter((m): m is PBRMaterial => m instanceof PBRMaterial && m.emissiveIntensity !== 1);
+    expect(eyes).toHaveLength(1);
+    expect(eyes[0]!.emissiveColor.equals(new Color3(1, 0.04, 0.02))).toBe(true);
+    expect(eyes[0]!.emissiveIntensity).toBe(4);
+    // The body keeps its own maps and takes the fog like any lit surface.
+    for (const m of materials) {
+      if (m === eyes[0]) continue;
+      expect((m as PBRMaterial).fogEnabled).toBe(true);
+      expect((m as PBRMaterial).emissiveColor.equals(new Color3(0, 0, 0))).toBe(true);
+    }
+    views.dispose();
+  });
+
+  it("walks at the pace it is measured to move, and stands when it stops", async () => {
+    const views = new EntityViews(scene, await loadedPool());
+    const world = state();
+    world.enemies.set(7, hollow(7, 0, 0));
+    views.sync(world, 99, 1, undefined, 1 / 30);
+    expect(playing("character_7_").map((g) => g.name)).toEqual(["character_7_idle"]);
+    // 0.1 m a frame at 30 frames a second is 3 m/s: two seconds of it
+    // settles the smoothed pace, and 3 ÷ (1.5 × 2) is a walk at rate 1.
+    for (let frame = 1; frame <= 60; frame++) {
+      world.enemies.set(7, hollow(7, frame * 0.1, 0));
+      views.sync(world, 99, 1, undefined, 1 / 30);
+    }
+    expect(playing("character_7_").map((g) => g.name)).toEqual(["character_7_walk"]);
+    expect(playing("character_7_")[0]!.speedRatio).toBeCloseTo(1, 3);
+    // Stopped, the pace decays under 0.3 m/s within the next second.
+    for (let frame = 0; frame < 30; frame++) views.sync(world, 99, 1, undefined, 1 / 30);
+    expect(playing("character_7_").map((g) => g.name)).toEqual(["character_7_idle"]);
     views.dispose();
   });
 });

@@ -59,7 +59,7 @@ const GLOB_PREFIX = "../../assets/";
  * `Object.create(null)` rather than a plain object literal because a plain one
  * inherits `Object.prototype`: `MODEL_URLS["toString"]` would then be an
  * inherited FUNCTION, not `undefined`, and `modelUrl("toString")` would return it
- * typed as a string instead of throwing. `resolveEnemyAssets` accepts any
+ * typed as a string instead of throwing. `resolveCharacterAssets` accepts any
  * `output` that is merely a non-empty string, so the throw below is the only
  * thing standing between a malformed catalog entry and a function object handed
  * to Babylon as a URL.

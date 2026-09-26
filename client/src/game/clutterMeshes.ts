@@ -873,7 +873,7 @@ export function createClutterMeshes(
   }
 
   /** Production path: the seventeen clutter GLBs, `forestMeshes.ts`'s loading
-   * idiom (itself `enemyModel.ts`'s). */
+   * idiom (itself `characterModel.ts`'s). */
   async function loadAssets(): Promise<void> {
     registerBuiltInLoaders();
     try {

@@ -1144,7 +1144,7 @@ export function createForestMeshes(
   }
 
   /** Production path: the seven GLBs (2 giants, 2 understory, 2 saplings, 1
-   * deadwood), `enemyModel.ts`'s loading idiom. */
+   * deadwood), `characterModel.ts`'s loading idiom. */
   async function loadAssets(): Promise<void> {
     registerBuiltInLoaders();
     try {
@@ -1203,7 +1203,7 @@ export function createForestMeshes(
       adopt({ giants, saplings, deadwood });
     } catch {
       // A missing or broken asset costs the trees, never the match — the same
-      // degrade-don't-block rule as `EnemyModelPool.load`.
+      // degrade-don't-block rule as the character pool's `load`.
     }
   }
 
