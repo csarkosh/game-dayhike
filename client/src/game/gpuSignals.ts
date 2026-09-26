@@ -7,7 +7,8 @@
  * Babylon-free, with the browser behind `SignalEnv`, so every branch is tested
  * with plain objects. Nothing here throws: a missing API, a refused extension,
  * no WebGL2, no WebGPU, or an adapter request that fails or never answers each
- * leave their field null, which the class table reads as not knowing.
+ * leave their field null (`adapterStatus` says which of the last three), which
+ * the class table reads as not knowing.
  *
  * What the browsers admit to:
  *
@@ -30,6 +31,16 @@
 /** The WebGPU adapter's `GPUAdapterInfo`, with every missing string as "". */
 export type AdapterInfo = { vendor: string; architecture: string; device: string; description: string; isFallbackAdapter: boolean };
 
+/**
+ * How the adapter request ended: `"ok"`, an adapter read; `"none"`, no
+ * `navigator.gpu` or an answer with no adapter; `"rejected"`, the request
+ * threw, rejected, or answered with an adapter that could not be read;
+ * `"timed-out"`, no answer within `ADAPTER_TIMEOUT_MS`. The WebGPU engine rule
+ * reads the difference: an adapter that hangs is a failure worth remembering,
+ * a browser without one is not.
+ */
+export type AdapterStatus = "ok" | "none" | "rejected" | "timed-out";
+
 export type GpuSignals = {
   /** The WebGL renderer string, or null without a WebGL2 context or with only the masked value. */
   renderer: string | null;
@@ -37,6 +48,8 @@ export type GpuSignals = {
   adapter: AdapterInfo | null;
   /** The same adapter's limits, every one, for the WebGPU engine rule; null with `adapter`. */
   limits: Readonly<Record<string, number>> | null;
+  /** Why `adapter` is null, or `"ok"`. */
+  adapterStatus: AdapterStatus;
   /** Logical cores, or null where not reported. */
   cores: number | null;
   /** Device memory in GiB, or null where not reported. */
@@ -132,19 +145,23 @@ export function browserMajor(userAgent: string): number {
 
 /**
  * Every signal, each on its own guard. The adapter request starts first and
- * runs beside the WebGL read; it is the page's one `requestAdapter`, and its
- * `limits` and `adapter.isFallbackAdapter` are what the WebGPU engine rule
- * reads of the adapter.
+ * runs beside the WebGL read. Whatever else needs the adapter (the WebGPU
+ * engine rule reads its `limits` and `isFallbackAdapter`) should read it from
+ * here rather than ask again: Babylon's `WebGPUEngine.IsSupportedAsync` is
+ * itself a `requestAdapter`.
  */
 export async function gatherSignals(env: SignalEnv): Promise<GpuSignals> {
   const nav = env.navigator;
   const pending = requestAdapter(nav);
   const renderer = rendererOf(env);
-  const found = readAdapter(await pending);
+  const answer = await pending;
+  const found = answer.adapter === null ? null : readAdapter(answer.adapter);
+  const adapterStatus: AdapterStatus = answer.adapter !== null && found === null ? "rejected" : answer.status;
   return {
     renderer,
     adapter: found?.info ?? null,
     limits: found?.limits ?? null,
+    adapterStatus,
     cores: reported(() => nav?.hardwareConcurrency),
     memoryGb: reported(() => nav?.deviceMemory),
     mobile: isMobile(nav),
@@ -171,24 +188,27 @@ function rendererOf(env: SignalEnv): string | null {
   }
 }
 
-/** The high-performance adapter, or null on no WebGPU, no adapter, a failure,
- * or no answer within `ADAPTER_TIMEOUT_MS`. Never rejects. */
-function requestAdapter(nav: NavigatorLike | undefined): Promise<object | null> {
+type AdapterAnswer = { status: AdapterStatus; adapter: object | null };
+
+/** The high-performance adapter and how the request ended; the adapter is
+ * null unless the status is `"ok"`. Never rejects. */
+function requestAdapter(nav: NavigatorLike | undefined): Promise<AdapterAnswer> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const gpu = nav?.gpu;
-    if (typeof gpu?.requestAdapter !== "function") return Promise.resolve(null);
+    if (typeof gpu?.requestAdapter !== "function") return Promise.resolve({ status: "none", adapter: null });
     const answer = Promise.resolve(gpu.requestAdapter({ powerPreference: "high-performance" })).then(
-      (adapter) => (typeof adapter === "object" && adapter !== null ? adapter : null),
-      () => null,
+      (adapter): AdapterAnswer =>
+        typeof adapter === "object" && adapter !== null ? { status: "ok", adapter } : { status: "none", adapter: null },
+      (): AdapterAnswer => ({ status: "rejected", adapter: null }),
     );
-    const deadline = new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), ADAPTER_TIMEOUT_MS);
+    const deadline = new Promise<AdapterAnswer>((resolve) => {
+      timer = setTimeout(() => resolve({ status: "timed-out", adapter: null }), ADAPTER_TIMEOUT_MS);
     });
     return Promise.race([answer, deadline]).finally(() => clearTimeout(timer));
   } catch {
     clearTimeout(timer);
-    return Promise.resolve(null);
+    return Promise.resolve({ status: "rejected", adapter: null });
   }
 }
 
@@ -198,8 +218,7 @@ function requestAdapter(nav: NavigatorLike | undefined): Promise<object | null> 
  * `isFallbackAdapter` is the info's, else the adapter's own older attribute,
  * which is read only when the info has none.
  */
-function readAdapter(adapter: object | null): { info: AdapterInfo; limits: Record<string, number> } | null {
-  if (adapter === null) return null;
+function readAdapter(adapter: object): { info: AdapterInfo; limits: Record<string, number> } | null {
   try {
     const source = adapter as { info?: unknown; limits?: unknown; isFallbackAdapter?: unknown };
     const info = (typeof source.info === "object" && source.info !== null ? source.info : {}) as Record<string, unknown>;

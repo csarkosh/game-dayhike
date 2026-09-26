@@ -1,5 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
-import { ADAPTER_TIMEOUT_MS, browserMajor, gatherSignals, isMobile, readRenderer, type WebGLLike } from "../../src/game/gpuSignals.js";
+import {
+  ADAPTER_TIMEOUT_MS,
+  browserMajor,
+  gatherSignals,
+  isMobile,
+  readRenderer,
+  type NavigatorLike,
+  type WebGLLike,
+} from "../../src/game/gpuSignals.js";
 
 /** A WebGL2 context answering RENDERER (0x1F01) and, if given, the debug extension's 0x9246. */
 function gl(renderer: string, unmasked: string | null) {
@@ -32,8 +40,33 @@ describe("readRenderer", () => {
     expect(g.lost()).toBe(1);
   });
 
-  it("says nothing when RENDERER is generic and the extension is absent", () => {
-    expect(readRenderer(gl("WebKit WebGL", null).ctx)).toBe(null);
+  it("says nothing when RENDERER is generic and the extension is absent, and still loses the context", () => {
+    const g = gl("WebKit WebGL", null);
+    expect(readRenderer(g.ctx)).toBe(null);
+    expect(g.lost()).toBe(1);
+  });
+
+  it("asks the extension when RENDERER is empty", () => {
+    const g = gl("", "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)");
+    expect(readRenderer(g.ctx)).toBe("ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)");
+    expect(g.asked).toContain("WEBGL_debug_renderer_info");
+    expect(g.lost()).toBe(1);
+  });
+
+  it("says nothing when getParameter throws, and still loses the context", () => {
+    const g = gl("WebKit WebGL", null);
+    const ctx: WebGLLike = { ...g.ctx, getParameter: () => { throw new Error("context lost"); } };
+    expect(readRenderer(ctx)).toBe(null);
+    expect(g.lost()).toBe(1);
+  });
+
+  it("survives a context whose lose extension throws", () => {
+    const ctx: WebGLLike = {
+      RENDERER: 0x1f01,
+      getParameter: () => "Apple M1, or similar",
+      getExtension: () => { throw new Error("gone"); },
+    };
+    expect(readRenderer(ctx)).toBe("Apple M1, or similar");
   });
 });
 
@@ -90,6 +123,7 @@ describe("gatherSignals", () => {
       renderer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
       adapter: { vendor: "apple", architecture: "common-3", device: "", description: "", isFallbackAdapter: false },
       limits: { maxInterStageShaderVariables: 16, maxVertexBuffers: 8 },
+      adapterStatus: "ok",
       cores: 10,
       memoryGb: 16,
       mobile: false,
@@ -102,7 +136,9 @@ describe("gatherSignals", () => {
       navigator: { userAgent: "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/26.0 Safari/605.1.15" },
       webgl: () => null,
     });
-    expect(signals).toEqual({ renderer: null, adapter: null, limits: null, cores: null, memoryGb: null, mobile: false, browser: 26 });
+    expect(signals).toEqual({
+      renderer: null, adapter: null, limits: null, adapterStatus: "none", cores: null, memoryGb: null, mobile: false, browser: 26,
+    });
   });
 
   it("reads a fallback adapter from the legacy attribute when the info has none", async () => {
@@ -120,6 +156,7 @@ describe("gatherSignals", () => {
       webgl: () => null,
     });
     expect(signals.adapter).toEqual({ vendor: "google", architecture: "swiftshader", device: "", description: "", isFallbackAdapter: true });
+    expect(signals.adapterStatus).toBe("ok");
   });
 
   it("gives up on an adapter that never answers", async () => {
@@ -130,7 +167,9 @@ describe("gatherSignals", () => {
         webgl: () => null,
       });
       await vi.advanceTimersByTimeAsync(2000);
-      expect((await pending).adapter).toBe(null);
+      const signals = await pending;
+      expect(signals.adapter).toBe(null);
+      expect(signals.adapterStatus).toBe("timed-out");
       expect(ADAPTER_TIMEOUT_MS).toBe(2000);
     } finally {
       vi.useRealTimers();
@@ -144,5 +183,54 @@ describe("gatherSignals", () => {
       expect(signals.adapter).toBe(null);
       expect(signals.limits).toBe(null);
     }
+    const rejected = await gatherSignals({ navigator: { userAgent: "", gpu: { requestAdapter: answers[0]! } }, webgl: () => null });
+    expect(rejected.adapterStatus).toBe("rejected");
+    const none = await gatherSignals({ navigator: { userAgent: "", gpu: { requestAdapter: answers[1]! } }, webgl: () => null });
+    expect(none.adapterStatus).toBe("none");
+  });
+
+  it("survives a requestAdapter that throws before it returns a promise", async () => {
+    const signals = await gatherSignals({
+      navigator: { userAgent: "", gpu: { requestAdapter: () => { throw new Error("not allowed"); } } },
+      webgl: () => null,
+    });
+    expect(signals.adapter).toBe(null);
+    expect(signals.limits).toBe(null);
+    expect(signals.adapterStatus).toBe("rejected");
+  });
+
+  it("survives an adapter whose info cannot be read", async () => {
+    const adapter = Object.defineProperty({}, "info", { get() { throw new Error("denied"); } });
+    const signals = await gatherSignals({ navigator: { userAgent: "", gpu: { requestAdapter: async () => adapter } }, webgl: () => null });
+    expect(signals.adapter).toBe(null);
+    expect(signals.limits).toBe(null);
+    expect(signals.adapterStatus).toBe("rejected");
+  });
+
+  it("survives a webgl() that throws", async () => {
+    const signals = await gatherSignals({ navigator: { userAgent: "" }, webgl: () => { throw new Error("no context"); } });
+    expect(signals.renderer).toBe(null);
+  });
+
+  it("survives a navigator whose every getter throws", async () => {
+    const refuse = { get() { throw new Error("denied"); } };
+    const nav = Object.defineProperties({}, {
+      userAgent: refuse, hardwareConcurrency: refuse, deviceMemory: refuse, maxTouchPoints: refuse, userAgentData: refuse, gpu: refuse,
+    }) as NavigatorLike;
+    const signals = await gatherSignals({ navigator: nav, webgl: () => null });
+    expect(signals).toEqual({
+      renderer: null, adapter: null, limits: null, adapterStatus: "rejected", cores: null, memoryGb: null, mobile: false, browser: 0,
+    });
+  });
+
+  it("reads zero, negative and non-finite cores and memory as not reported", async () => {
+    for (const value of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const signals = await gatherSignals({ navigator: { userAgent: "", hardwareConcurrency: value, deviceMemory: value }, webgl: () => null });
+      expect(signals.cores).toBe(null);
+      expect(signals.memoryGb).toBe(null);
+    }
+    const small = await gatherSignals({ navigator: { userAgent: "", hardwareConcurrency: 2, deviceMemory: 0.25 }, webgl: () => null });
+    expect(small.cores).toBe(2);
+    expect(small.memoryGb).toBe(0.25);
   });
 });

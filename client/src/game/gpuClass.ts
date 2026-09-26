@@ -50,9 +50,9 @@ export const CLASS_TIERS: Readonly<Record<GpuClass, ClassTiers>> = {
   "discrete-legacy": { start: "low", ceiling: "low", probe: false },
   // Intel Gen 9 to 11, Vega APUs.
   "integrated-older": { start: "low", ceiling: "low", probe: false },
-  // Iris Xe, a bare "Radeon Graphics", Firefox's Intel buckets.
+  // Iris Xe, a bare "Radeon Graphics", the smallest RDNA APUs, Firefox's Intel buckets.
   "integrated-unknown": { start: "low", ceiling: "medium", probe: true },
-  // Arc integrated, RDNA 2 and later APUs, Snapdragon X.
+  // Arc integrated, the larger RDNA 2 and later APUs by name, Snapdragon X.
   "integrated-modern": { start: "medium", ceiling: "medium", probe: false },
   // An M-series base GPU: high does not hold 60 Hz at the canopy pose.
   "apple-base": { start: "medium", ceiling: "medium", probe: false },
@@ -62,7 +62,7 @@ export const CLASS_TIERS: Readonly<Record<GpuClass, ClassTiers>> = {
   unknown: { start: "medium", ceiling: "high", probe: true },
   // Safari's "Apple GPU", Firefox's "Apple M1" bucket: an M1 or an M4 Max.
   "apple-unknown": { start: "medium", ceiling: "high", probe: true },
-  // Firefox's "GTX 980" bucket, WebGPU's "turing".
+  // Firefox's "GTX 980" and Arc buckets, WebGPU's "turing".
   "discrete-unknown": { start: "medium", ceiling: "high", probe: true },
   // Pro, Max and Ultra.
   "apple-large": { start: "high", ceiling: "high", probe: false },
@@ -77,21 +77,27 @@ const SOFTWARE = /swiftshader|llvmpipe|softpipe|lavapipe|basic render driver|\bw
 const BUCKET = ", or similar";
 
 /** Firefox's buckets by the model they name, first match wins; any other bucket is `unknown`
- * ("Radeon R9 200 Series" stands for Vega, Fury and the Renoir and Rembrandt APUs alike). */
+ * ("Radeon R9 200 Series" stands for Vega, Fury and the Renoir and Rembrandt APUs alike). The
+ * Arc bucket stands for every Intel Arc, the integrated Meteor, Lunar, Arrow and Panther Lake
+ * GPUs as well as the discrete cards, so it is a range to probe, not a card to trust. */
 const BUCKETS: readonly (readonly [readonly string[], GpuClass])[] = [
   [["Apple M1"], "apple-unknown"],
   [["GeForce GTX 980"], "discrete-unknown"],
   [["GeForce GTX 480", "GeForce 8800", "Radeon HD 5850", "Radeon HD 3200"], "discrete-legacy"],
-  [["Arc(TM) A750"], "discrete-modern"],
+  [["Arc(TM) A750"], "discrete-unknown"],
   [["Intel"], "integrated-unknown"],
 ];
 
-/** An APU that names no model: its adapter's architecture, where there is one. */
+/**
+ * An APU that names no model. Its adapter's GCN architecture marks a Vega APU
+ * or older. An RDNA one does not mark a modern APU: Chrome's AMD architecture
+ * groups are coarse ranges of device ids, and put Barcelo (a Vega APU) under
+ * RDNA 2 and the two-compute-unit Mendocino and Raphael under RDNA 3 and 2, so
+ * the frame decides.
+ */
 function radeonApu(adapter: AdapterInfo | null): GpuClass {
   const architecture = adapter?.architecture.toLowerCase() ?? "";
-  if (architecture.startsWith("rdna-")) return "integrated-modern";
-  if (architecture.startsWith("gcn-")) return "integrated-older";
-  return "integrated-unknown";
+  return architecture.startsWith("gcn-") ? "integrated-older" : "integrated-unknown";
 }
 
 /** The named GPUs, first match wins. */
@@ -103,23 +109,32 @@ const NAMED: readonly (readonly [RegExp, GpuClass | ((adapter: AdapterInfo | nul
   [/\bRTX\b/, "discrete-modern"],
   // Maxwell to Turing without RTX.
   [/GTX (9\d\d|10\d\d|16\d\d)|TITAN X|\bMX ?\d{3}/, "discrete-older"],
+  // Pascal and Turing workstation cards.
+  [/Quadro [PT][1-6]\d{3}|NVIDIA T(1000|1200)/, "discrete-older"],
   [/GeForce|Quadro|NVIDIA/, "discrete-legacy"],
   // RDNA 1 to 4; AMD writes its workstation line both "Pro" and "PRO".
   [/Radeon RX (5|6|7|9)\d{3}|Radeon P(ro|RO) W(5|6|7)\d{3}/, "discrete-modern"],
-  // Polaris, Vega, and the Intel Macs' Radeon Pro.
-  [/Radeon (RX (4|5)\d\d\b|RX Vega|VII|Pro|PRO)/, "discrete-older"],
-  // 680M, 780M, 880M, 890M, 8060S.
-  [/Radeon \d{3}M|Radeon 8\d{2}0S/, "integrated-modern"],
-  [/Radeon\(TM\) Graphics|Radeon Graphics/, radeonApu],
+  // Polaris, Vega, and the Intel Macs' Radeon Pro; Polaris also as "Radeon (TM) RX 470",
+  // "Radeon(TM) RX 560", "RX550/550" and "RX590".
+  [/Radeon (RX (4|5)\d\d\b|RX Vega|VII|Pro|PRO)|\bRX ?(4|5)\d0\b/, "discrete-older"],
+  // 680M, 760M, 780M, 860M to 890M, 8060S.
+  [/Radeon (680|7[68]0|8[6-9]0)M|Radeon 8\d{2}0S/, "integrated-modern"],
+  // The smaller ones, from two compute units (610M, 820M) to six (660M): the frame decides.
+  [/Radeon \d{3}M/, "integrated-unknown"],
+  [/Radeon ?\(TM\) Graphics|Radeon Graphics/, radeonApu],
   [/Vega \d+/, "integrated-older"],
-  [/Radeon (R9|R7|R5|HD)/, "discrete-legacy"],
-  [/Arc.*\b[AB][5-9]\d\d\b/, "discrete-modern"],
-  [/Arc.*\b[AB]3\d\d\b/, "discrete-older"],
+  [/Radeon(\(TM\))? (R[4579]|HD)/, "discrete-legacy"],
+  // A laptop part carries an M ("A370M").
+  [/Arc.*\b[AB][5-9]\d\dM?\b/, "discrete-modern"],
+  [/Arc.*\b[AB]3\d\dM?\b/, "discrete-older"],
   // Meteor, Lunar and Arrow Lake, as Windows ("Arc(TM) 140V GPU") and Mesa ("Arc(tm) Graphics") name them.
   [/Arc\((TM|tm)\) Graphics|Arc(\((TM|tm)\))? \d{3}[VT]\b/, "integrated-modern"],
-  // 80 to 96 execution units and among the commonest laptop GPUs: the frame decides.
-  [/Iris\(R\) Xe|Iris Xe/, "integrated-unknown"],
-  [/UHD Graphics|HD Graphics|Iris\(TM\) Plus|Iris Plus|Iris Pro/, "integrated-older"],
+  // 80 to 96 execution units and among the commonest laptop GPUs: the frame decides. Mesa
+  // names Tiger Lake's "Intel(R) Xe Graphics", without the Iris.
+  [/Iris\(R\) Xe|Iris Xe|\bXe Graphics/, "integrated-unknown"],
+  // Gen 9 to 11 by any of their names: "Iris(R) Plus" (Ice Lake), "Iris(TM) Graphics 6100"
+  // and "Iris OpenGL Engine" (the older Macs).
+  [/UHD Graphics|HD Graphics|Iris(\((TM|R)\))? (Plus|Pro|Graphics|OpenGL)/, "integrated-older"],
   // Snapdragon X laptops.
   [/Adreno.*X\d/, "integrated-modern"],
 ];
