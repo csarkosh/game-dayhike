@@ -1,12 +1,23 @@
 # Near grass fullness: design
 
-**As built.** Nothing yet. This is the design as written on 2026-09-25, with the
-control measured on `main` at `9c97483`; the plan
-([2026-09-25-near-grass-fullness-plan](2026-09-25-near-grass-fullness-plan.md))
-builds its four steps in order, each behind its own gate, and a later step is
-taken only if the bar is still missed after the earlier ones. When the work
-lands, this paragraph is rewritten to say which steps shipped and with what
-values; the sections below stay the design as written.
+**As built.** Steps 1 and 2 and the §11 amendment shipped; the sections below
+stay the design as written, and the
+[verification note](2026-09-25-near-grass-fullness-verification.md) has every
+measurement. Step 1: on high and medium the meadow's near cards stay under the
+blade field, drawn on the model's LOD1 and dithered in from the eye over
+`CLUTTER_MEADOW_NEAR_IN` [1, 2.5] m. Step 2: inside the blade field's reach the
+terrain is pulled toward `SWARD_FLOOR` (0.05, 0.065, 0.03) by `SWARD_MAX` 0.6,
+ramped over `SWARD_COVER` [0.05, 0.5] of a new per-vertex `terrainCover` (the
+ground cover's grass, clamped to 1) and faded over `SWARD_FADE` [12, 18] m; off
+on the low tier, which draws no blades. Steps 3 and 4 were not taken: the
+meadow pose met every bar after step 2, and neither acts on the canopy pose's
+near crop (step 3 works at 8–18 m, step 4 on a luminance miss). §11:
+`CLUTTER_GRASS_CANOPY_FLOOR` 0.5 → 0.75, so a closed canopy's grass is 0.9375,
+and the rabbits are kept off closed canopy by `RABBIT_CANOPY_MAX` 0.85. That is
+a simulation change: the level id moved (`passHash` 1907808213), and an old
+client cannot join a new host. The canopy pose ships at an absolute near cover
+of 0.46, equal to the meadow pose's, with a +1.35 ms frame miss at 4× pixels
+that §12 carries.
 
 At a hiker's eye on a misty day, standing in a grass sward beside a trail under
 the canopy, the ground two to six metres out reads as a pale sward with a few
@@ -24,8 +35,8 @@ design puts the cards back under the blades, darkens the ground between them,
 closes a thin stretch at 8–18 m, and — only if all that still misses — lifts the
 blades' colour.
 
-Renderer-only. No `sim/` change, no level-id move, no engine change, no asset
-change.
+As written, steps 1–4 are renderer-only: no `sim/` change, no level-id move,
+no engine change, no asset change. §11 is the one simulation change.
 
 ## 1. Decisions
 

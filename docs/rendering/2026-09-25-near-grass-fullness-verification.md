@@ -76,7 +76,7 @@ The eye is the ground plus 1.6 m.
 
 | pose | camera | ground in view |
 | --- | --- | --- |
-| canopy | `__fcSet(123, 110.87, -105.5, 1.571, 0.3)` | in the sward 2.5 m left of a straight trail centreline, looking along it (+X); canopy 1.0, grass 0.5 — the most a closed canopy allows |
+| canopy | `__fcSet(123, 110.87, -105.5, 1.571, 0.3)` | in the sward 2.5 m left of a straight trail centreline, looking along it (+X); canopy 1.0, grass 0.5 — the most a closed canopy allowed until design §11 (0.9375 with `CLUTTER_GRASS_CANOPY_FLOOR` at 0.75, §7) |
 | meadow | `__fcSet(369, 51.01, -855, 0, 0.3)` | open meadow looking +Z; canopy 0.00–0.04 to 26 m, grass 1.5, flat to ±0.5 m |
 
 ## 3. Control
@@ -544,10 +544,11 @@ The floor-look design's bed/beside ratio (`2026-09-24-floor-look-verification.md
 | meadow-trail-along | `__fcSet(258, 85.7, 120, 1.6, 0.15)` | `160:120:520:1280` | `160:120:120:1280` | 1.54 | **2.61** |
 | meadow-trail-along, cards hidden | same | same | same | 1.54 | 1.78 |
 | trail-down | `__fcSet(283, 85.7, 134, 0.6, 0.55)` | `260:110:70:1450` | `260:110:60:1250` | 0.84 | **0.85** |
-| trail-along | `__fcSet(283, 85.7, 134, 1.892, 0.12)` | `170:170:400:1480` | `170:170:120:1480` | 1.14 | 1.14 |
+| trail-along, withdrawn beside crop | `__fcSet(283, 85.7, 134, 1.892, 0.12)` | `170:170:400:1480` | `170:170:120:1480` | 1.14 | 1.14 |
 
 The control reproduces that note's fourth-gate figures (1.52, 0.86, 1.24 there
-against `d07a2cc`; 1.54, 0.84 and 1.14 here against the `main` since merged).
+against `d07a2cc`; 1.54, 0.84 and 1.14 here against the `main` since merged;
+the 1.14 on the withdrawn beside crop, see below).
 The bed crops are unchanged to five places on every still: the trail paint does
 not read the pulled albedo.
 
@@ -563,8 +564,11 @@ not read the pulled albedo.
 - **trail-down** is unmoved (0.84 → 0.85), below the window as before: its beside
   crop is on the thinning edge of the grass beside the trail, at cover
   0.03–0.13, where the ramp gives almost no pull.
-- **trail-along** is unchanged: its beside crop is on ground at cover 0, which
-  the pull does not reach.
+- **trail-along** was measured here on the beside crop `170:170:120:1480`,
+  which the floor-look note had withdrawn as drifted bed (its §8, "The
+  replacement crop for `trail-along`"), so its 1.14 is not evidence about that
+  pose's bar. It is re-measured on the current crops in §7.4: outside the
+  window on `main` already.
 
 **The look.** At `meadow-trail-along` the trail still reads as earth beside
 grass, not as a pale strip in a dark sward: the tan bed runs between two green
@@ -641,7 +645,7 @@ the control's floor (22.95 ms): control 22.95 / 25.0, gate 3 23.35 / 25.5, delta
 | luminance ratio 0.8–1.25 | met, 1.00 | met, 0.97 |
 | frame ≤ +1.0 ms at 4× pixels | met, +0.75 | met, +0.63 |
 | no card as a plane at the feet | met | met |
-| floor-look bed/beside (design §8.2) | trail-down 0.85 and trail-along 1.14, unmoved | meadow-trail-along 2.61, out of 0.9–1.3 and further out than the control's 1.54 |
+| floor-look bed/beside (design §8.2) | trail-down 0.85, unmoved; trail-along on the withdrawn crop, see §7.4 | meadow-trail-along 2.61, out of 0.9–1.3 and further out than the control's 1.54 |
 | zero console errors | met | met |
 
 **Luminance.** Met at both poses, the meadow at 0.97: on the rendered meadow ground
@@ -675,7 +679,10 @@ unchanged. Design §11 raises `CLUTTER_GRASS_CANOPY_FLOOR` 0.5 → 0.75
 - **A**, `464ad6d` as committed: floor 0.75. Grass under a closed canopy is
   0.9375, with 2,674 / 8,719 meadow cards at the canopy pose.
 - **B**, the same tree with the floor at the design's fallback 0.65: grass
-  0.72, with 2,029 / 6,686 cards. `RABBIT_GRASS_FLOOR` stays at A's 0.95.
+  0.72, with 2,029 / 6,686 cards. `RABBIT_GRASS_FLOOR` stays at A's 0.95,
+  as `464ad6d` had it; the shipped branch keeps it at 0.55 and keeps rabbits
+  off closed canopy with `RABBIT_CANOPY_MAX` 0.85 instead (design §11.3), which
+  touches no rendering this gate measures.
 
 The branch before the change, `fa08c72` (§6's build plus the tier guard on the
 sward pull, called **P** below), is measured for the canopy stills and the
@@ -770,6 +777,11 @@ are about half as many as on P, and the floor between tufts reads greyer and
 less rust. The canopy floor becomes grass with leaves in it rather than leaves
 with grass in them.
 
+**Flowers.** The flower class under a closed canopy rises with the grass (the
+census row 586 → 958, design §11.3), but in the canopy stills under mist no
+bloom is distinguishable on P or on A: at this pose the rise does not show, and
+nothing reads as a meadow's flowers in the dark woods.
+
 **At the feet** (pitch 0.9, and turned 90°), on both builds, nothing stands as
 a flat plane. The nearest cards are 2–3 m out, as before, since the in-band is
 unchanged. The blades at the feet are taller and denser on A. There is no bare
@@ -784,19 +796,35 @@ crops. The window is 0.9–1.3.
 | still | camera | bed crop | beside crop | control | P | B | A |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | canopy-floor (seed `ypeqauxk`) | `__fcSet(-291.4, 22.9, 58.5, 1.06, 0.85)` | `380:700:700:850` | `380:700:120:850` | 1.07 | 1.13 | **1.19** | **1.25** |
-| trail-along (seed `atmo`) | `__fcSet(283, 85.7, 134, 1.892, 0.12)` | `170:170:400:1480` | `170:170:120:1480` | 1.14 | 1.14 | **1.14** | **1.14** |
+| trail-along (seed `atmo`), withdrawn beside crop | `__fcSet(283, 85.7, 134, 1.892, 0.12)` | `170:170:400:1480` | `170:170:120:1480` | 1.14 | 1.14 | 1.14 | 1.14 |
+| trail-along (seed `atmo`), current crops | same | `170:170:400:1480` | `170:170:600:1480` | **1.372** | — | — | **1.441** (the tip, `0d98014`) |
 
-All four builds are inside the window at both poses.
+`canopy-floor` is inside the window on all four builds. `trail-along` is not,
+on any build, once it is measured on the right crop.
 - **Beds.** The beds are unchanged to four places in every build.
 - **canopy-floor.** Its beside crop darkens step by step: 0.01253 on the control,
   0.01181 on P (steps 1 and 2), 0.01117 on B and 0.01060 on A. As design §11.4
   says, the thinning edge beside the trail gains grass, loses litter and comes
   into the sward pull. A is 0.05 under the ceiling.
-- **trail-along.** Its beside crop is unchanged to five places in all four
-  builds: that ground carries no blades or cards in any of them.
+- **trail-along.** The first row used the beside crop `170:170:120:1480`,
+  which the floor-look note had withdrawn as drifted bed; it is kept only to
+  say which figure it was. Re-measured on that note's current crops (bed
+  `170:170:400:1480`, beside `170:170:600:1480`), two page loads per build,
+  both loads identical: the control (`main` at `9c97483`) reads bed 0.02994
+  over beside 0.02182, **1.372**, and the branch tip bed 0.02993–0.02994 over
+  beside 0.02077, **1.441**. The bed is unchanged; the beside ground darkens
+  ×0.95 with the sward pull and the fuller sward, +0.07 on the ratio. The pose
+  is **outside the window on `main` already**: the floor-look note's 1.24 was
+  measured on that work's branch against an older `main`, with the beside at
+  0.02098 where today's `main` reads 0.02182. The row is carried to the
+  floor-look's next design, not to this one; the design's lever
+  `SWARD_COVER[0]` 0.05 → 0.3 is not applied. By eye the bed still reads as
+  pale earth beside grass, and on the tip the verge is a denser, darker sward,
+  so the path stands out a little more rather than less.
 - **Against the earlier figures.** The 1.19 and 1.24 of the floor-look note
   were measured on that work's branch against an earlier `main`. On today's
-  `main` the control reads 1.07 and 1.14.
+  `main` the control reads 1.07 (`canopy-floor`) and 1.372 (`trail-along`, on
+  the current crops).
 
 ### 7.5 Frame at the canopy pose
 
@@ -855,7 +883,7 @@ B by 0.06 ms against a same-code floor of ±0.03.
 | canopy luminance ratio 0.8–1.25 | **missed**, 1.28 | met, 1.25 (1.248) |
 | canopy frame ≤ +1.0 ms at 4× pixels | **missed**, +1.06 | **missed**, +1.35 |
 | floor-look `canopy-floor` in 0.9–1.3 | met, 1.19 | met, 1.25 |
-| floor-look `trail-along` in 0.9–1.3 | met, 1.14 | met, 1.14 |
+| floor-look `trail-along` in 0.9–1.3 | (withdrawn crop only) | **outside**, 1.441 on the tip; `main` 1.372, outside already |
 | meadow pose unchanged | (not measured) | met, 0.94 / 0.96 |
 | no card as a plane at the feet | met | met |
 | zero console errors | met | met |
@@ -871,5 +899,30 @@ frame bar by 0.35 ms and sits on the luminance ceiling.
 luminance ceiling, because its mid field darkens more than its near field. Its
 cover ratio does not move. At 2–6 m it still reads as tufts on a floor.
 
-By design §11.5, when 0.65 misses too, the floor returns to 0.5, the rabbit
-floor to 0.55, and the canopy pose's miss is recorded as the simulation's rule.
+**The decision.** A ships: `CLUTTER_GRASS_CANOPY_FLOOR` 0.75 (design §11.5).
+The canopy pose's cover ratio reads its near field against a mid field of the
+same canopy floor, which fills with the change, so the reading that stands is
+the absolute near cover, 0.459 against the meadow's 0.472, and the look: a
+sward, the same kind of field as the meadow's. The frame miss at that pose is
+accepted for this release and carried by design §12. The rabbits are kept off
+closed canopy by a canopy gate, with the open-ground census unchanged unit for
+unit (design §11.3). `trail-along` is outside the floor-look window on `main`
+already and goes to that design.
+
+## 8. Close
+
+Both poses, `main` at `9c97483` against the branch as it ships (its rendering
+is gate 4's build A):
+
+| pose | build | cover ratio | near cover | luminance ratio | frame, 4× pixels | frame, native |
+| --- | --- | --- | --- | --- | --- | --- |
+| canopy | `main` | 0.26 | 0.130 | 1.16 | — | — |
+| canopy | branch | 0.62 | **0.459** | 1.25 | +1.35 ms (§7.5) | +1.23 ms (§7.5) |
+| meadow | `main` | 0.49 | 0.238 | 1.15 | — | — |
+| meadow | branch | **0.94** | **0.472** | 0.96 | +0.63 ms (§6.5; §11 does not move the meadow's cards) | not measured |
+
+Shipped: step 1 (the near cards under the blades, on LOD1), step 2 (the sward
+floor), and design §11 (three quarters of the sward under the canopy). Steps 3
+and 4 were not taken (§6.6). The plan's closing TRAILSIDE frame round is
+dropped: the canopy and meadow frame rounds above cover the near field this
+work changed, and TRAILSIDE shows less of it.
