@@ -115,8 +115,8 @@ export function reachOf(world: World, lead: PlayerState): number;
  */
 export function placeWatcher(world: World, lead: PlayerState, reach: number): Vec3 | null;
 
-/** Spawns the watcher at `at`, facing `leadId`, and records its id. */
-export function spawnWatcher(world: World, at: Vec3, leadId: number): EnemyState;
+/** Spawns the watcher at `at`, facing `leadId`, and records its id; null, and nothing spawned, on a world without a record. */
+export function spawnWatcher(world: World, at: Vec3, leadId: number): EnemyState | null;
 /** Removes the watcher entity, if shown, and clears the id. */
 export function hideWatcher(world: World): void;
 ```

@@ -65,6 +65,9 @@ describe("the Hollow walks the stem on real terrain", () => {
       const token = `hollow${i}`;
       const seed = seedFromToken(token);
       const w = createForestWorld(createForest(seed));
+      // The chase is on, as it is whenever a Hollow hunts: on the climb the
+      // watcher would show behind this walk once its rest ran out (watcher.ts).
+      w.state.phase = Phase.Chase;
       const p = spawnPlayer(w);
       p.pitch = 1.4;
       const graph = w.trail!;

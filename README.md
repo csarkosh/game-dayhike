@@ -15,7 +15,7 @@ One hiker is missing, last seen on the summit trail, and the poster at the trail
 
 Play as a park ranger sent to find them. Lead a search party of up to five up the trail to the crest, where the hiker is waiting — and so is whatever left them there. Then get everyone back down to the road.
 
-Somewhere past the last strip of flagging tape the birds go quiet, and the light goes with them. The climb only feels watched. The descent is not a feeling: something comes down off the crest behind you, faster than you walk and slower than you can run, and it does not lose the trail. The road is the only ground it will not cross.
+Somewhere past the last strip of flagging tape the birds go quiet, and the light goes with them. The climb is watched, and only watched: something stands off the trail at the edge of sight, closer each time you look, and it costs you only if you keep looking. The descent is not a feeling: something comes down off the crest behind you, faster than you walk and slower than you can run, and it does not lose the trail. The road is the only ground it will not cross.
 
 **Play it: [games.csarko.sh/dayhike](https://games.csarko.sh/dayhike)**
 

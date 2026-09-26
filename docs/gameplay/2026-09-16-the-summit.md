@@ -244,7 +244,7 @@ the band's two edges, which are the look direction turned by 30° and by 70° th
 cosines and sines — every mix lands inside the band, and none is uniform in angle, which nothing
 needs. It must have a clear sightline from the lead's eye to its centre: the sightline alone, not
 `playerSees`, because it stands outside the stare's 20° cone by construction. Never within
-`WATCH_FLEE_RADIUS` (15 m) of any player. Up to `WATCH_PLACE_TRIES` (8) placements per tick; if
+`WATCH_FLEE_RADIUS` (15 m) of any living player. Up to `WATCH_PLACE_TRIES` (8) placements per tick; if
 none fits, it waits a tick. Every draw the watcher makes — the side, the bearing, the rests — comes
 from its own random stream, seeded from the world's seed, not the world's (since 2026-09-26):
 the guide is drawn from the world's stream on the tick the body is found, and a watcher drawing
@@ -257,7 +257,7 @@ leaves its spot. It is the shipped placeholder model.
 This is the climb's whole danger: it stays as long as you keep looking, and it kills you if you
 don't stop.
 
-**When it hides.** On the first tick no living player has it in view, or a player is within
+**When it hides.** On the first tick no living player has it in view, or a living player is within
 `WATCH_FLEE_RADIUS`. In view, for the hide, is a wide cone — `WATCH_VIEW_COS`, cos 80° (0.1736)
 of the player's aim, within the stare's 120 m and with a clear sightline — not the stare's 20°,
 which it stands outside of the moment it shows and would hide from on its first tick; the stare
@@ -445,7 +445,8 @@ carries them. Old-protocol peers are refused at the lobby, as every bump has bee
 comes from `nextRandom(state)`, so a seed and an input log replay the same match on the host. The
 watcher's placement and its rests draw from the watcher's own stream, seeded from the world's seed
 (since 2026-09-26): host truth like the rest, but off the world's stream so that the length of the
-climb never moves the guide.
+climb never moves the guide. The record, like the cut, is off the wire and outside the fingerprint;
+the watcher entity is in both, like any enemy.
 `serializeWorldState` adds `phase`, `safe` and the new enemy states and leaves the guide and the
 cuts out, as it leaves the Hollow's route out today.
 
@@ -493,6 +494,9 @@ every fork on the guide, and the end rule for all three group shapes. The sim is
 this is a plain vitest.
 
 **Sweep.** §3.5's trail gates and the guide-length band, ~200 seeds, red before and green after.
+Two fifty-seed gates stand beside it, each with its floors pinned as the numbers it measured: the cut
+walked home on every seed (`cutSweep.test.ts`, S3), and the watcher at five stands facing four ways on
+every seed (`watcherSweep.test.ts`, S2).
 
 **Wiring.** The source-text tests on `app.ts` are updated, not deleted.
 

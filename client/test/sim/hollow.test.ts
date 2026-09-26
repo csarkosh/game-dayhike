@@ -563,6 +563,26 @@ describe("the watcher's state", () => {
     expect(h.ai).toBe(AiState.Watch);
   });
 
+  it("fills the stare only for whoever centres it: two players, one looking, one not", () => {
+    const w = world();
+    const p = spawnPlayer(w), q = spawnPlayer(w);
+    p.pos = { x: 100, y: 0.9, z: 0 };
+    p.yaw = 0; // straight at it
+    q.pos = { x: 105, y: 0.9, z: 0 };
+    q.yaw = Math.PI; // away from it
+    watching(w, { x: 100, y: ENEMY_HALF.y, z: 5 }, p.id);
+    tick(w, 60);
+    expect(p.stare).toBeCloseTo(60 / 360, 12);
+    expect(q.stare).toBe(0);
+    // Swapped: the other centres it (from +x, it stands at yaw −π/4) and the
+    // first looks away, whose stare is empty again after 60 of its 180 ticks.
+    p.yaw = Math.PI;
+    q.yaw = -Math.PI / 4;
+    tick(w, 60);
+    expect(p.stare).toBe(0);
+    expect(q.stare).toBeCloseTo(60 / 360, 12);
+  });
+
   it("stays a watcher when its target dies or is safe, and when nobody is left", () => {
     const w = world();
     const p = spawnPlayer(w);

@@ -98,7 +98,8 @@ const FACINGS: Array<[string, number]> = [["up", 0], ["down", Math.PI], ["left",
  * seed with no fork has no fifth stand), facing up the stem, down it, and the
  * two perpendiculars. At each stand the record's rest is zero and the tick
  * runs until the watcher shows or 120 ticks (960 tries) have gone; a showing
- * is checked against every rule. Then 200 placements are tried from a fresh
+ * is checked against every rule and must survive the tick after it. Then 200
+ * placements are tried from a fresh
  * stream, each judged here too, and the two verdicts must agree.
  */
 function sweep(token: string): Case[] {
@@ -140,6 +141,10 @@ function sweep(token: string): Case[] {
           check(w, p, h.pos, range, label);
           shownAt = t;
           shownRange = horizontal(p.pos, h.pos);
+          // And the hide rule keeps it the next tick: its 3-D range and the
+          // wide cone against the lead's aim agree with the placement's 90 m.
+          stepWatcher(w, TICK_DT);
+          expect(w.watcher.id, `${label}: gone on the tick after it showed`).not.toBe(-1);
           break;
         }
       }
