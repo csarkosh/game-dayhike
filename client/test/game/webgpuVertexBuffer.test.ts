@@ -25,11 +25,39 @@ describe("Babylon's WebGPU pipeline cache (canaries: when one fails, a fixed Bab
     expect(a.hashCode).toBe(b.hashCode);
   });
 
-  it("still keys an attribute's vertex state by that hash and its location only", () => {
+  it("still keys an attribute's vertex state by that hash and its location only, one state entry each", () => {
     const src = readFileSync(require.resolve("@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js"), "utf8");
-    expect(src).toContain("const vid = vertexBuffer.hashCode + (location << 7);");
-    // A plain array, so a key above 2^31 (the workaround's) is kept exactly.
-    expect(src).toContain("this._states = new Array(30);");
+    // The whole key block, so that any change to how the key is built fails
+    // here, the fix the draft upstream issue suggests included (it keeps the
+    // `vid` line and adds a second entry after it).
+    const block = [
+      "            const vid = vertexBuffer.hashCode + (location << 7);",
+      "            this._isDirty = this._isDirty || this._states[newNumStates] !== vid;",
+      "            this._states[newNumStates++] = vid;",
+      "        }",
+      "        this.vertexBuffers.length = numVertexBuffers;",
+      "",
+    ].join("\n");
+    expect(src).toContain(block);
+    const suggested = src.replace(
+      "            this._states[newNumStates++] = vid;\n",
+      "            this._states[newNumStates++] = vid;\n            this._states[newNumStates++] = oid;\n",
+    );
+    expect(suggested).not.toContain(block);
+  });
+
+  it("still looks a key up as a plain object's property, exact for any integer below 2^53", () => {
+    // The engine walks the tree cache, and each node keys its children by the
+    // state value on a plain object: ToString of an integer is exact and
+    // unique, however far above 2^32 the workaround's keys go. An int32 hash
+    // here would truncate them.
+    const resolve = require.resolve;
+    const engineSrc = readFileSync(resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
+    expect(engineSrc).toContain("this._cacheRenderPipeline = new WebGPUCacheRenderPipelineTree(this._device, this._emptyVertexBuffer);");
+    const tree = readFileSync(resolve("@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree.js"), "utf8");
+    expect(tree).toContain("        this.values = {};");
+    expect(tree).toContain("            let nn = node.values[this._states[i]];");
+    expect(tree).toContain("                node.values[this._states[i]] = nn;");
   });
 
   it("still recomputes the hash by assigning the public hashCode, from the constructor and the divisor setter only", () => {

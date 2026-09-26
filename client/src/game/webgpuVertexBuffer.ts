@@ -20,12 +20,17 @@
  * constructor and from the `instanceDivisor` setter whenever instancing flips,
  * which would drop a term added once. The accessor keeps whatever Babylon
  * assigns as the base and adds the term on every read, so no recompute, nor any
- * later direct assignment, can lose it. The cache keeps its keys in a plain
- * array, so a key above 2^31 is kept exactly.
+ * later direct assignment, can lose it. The key stays exact: the cache looks it
+ * up as a property of a plain object (`webgpuCacheRenderPipelineTree.js`),
+ * where an integer's string is exact and unique below 2^53, and a byte offset
+ * under WebGPU's default 2^28 buffer size keeps every key below 2^52 + 2^24.
  *
  * Not covered: whether consecutive attributes share one GPU buffer also shapes
- * the vertex layout and is not in the key either (a mismatch there fails
- * validation rather than drawing wrong data), and a vertex buffer Babylon copies
+ * the vertex layout and is not in the key either. A mismatch goes one of two
+ * ways, by draw order: a mesh that binds two buffers drawn with a pipeline
+ * built for one reads its second attribute from its first buffer, silently;
+ * the reverse fails validation. So meshes that share a material must bind their
+ * attributes to buffers in the same pattern. And a vertex buffer Babylon copies
  * (a cloned geometry) is a plain one again.
  *
  * The canaries in `webgpuVertexBuffer.test.ts` fail when an installed Babylon
