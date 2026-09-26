@@ -22,6 +22,7 @@ import {
   POSITION_PRECISION,
   type Snapshot,
 } from "../../src/net/protocol.js";
+import { AiState } from "../../src/sim/types.js";
 import type { InputCommand } from "../../src/sim/types.js";
 
 describe("quantization", () => {
@@ -147,7 +148,8 @@ function sampleSnapshot(): Snapshot {
       pos: { x: Math.sin(i) * 25, y: 1, z: Math.cos(i) * 25 },
       yaw: i * 0.21,
       health: 40 - (i % 40),
-      ai: i % 7,
+      // Every state byte the enemy channel carries, the watcher's 9 included.
+      ai: i % 10,
     })),
     outcome: 2,
     phase: 1,
@@ -188,6 +190,8 @@ describe("snapshot codec", () => {
       expect(actual.ai).toBe(expected.ai);
       expect(actual.health).toBe(expected.health);
     }
+    expect(snap.enemies[9]!.ai).toBe(AiState.Watch);
+    expect(back.enemies[9]!.ai).toBe(9);
   });
 
   it("stays within the bandwidth budget", () => {

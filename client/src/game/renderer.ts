@@ -879,7 +879,7 @@ export function createRenderer(
   const wildlifeMatch: MatchState = { phase: 0, hollowDistance: Infinity, hollowHunting: false, inWorld: true, hour: 0, mist: 0 };
   const wildlifeDirectorArg = { view: wildlifeView, match: wildlifeMatch };
   /**
-   * Finds the nearest Hollow (`isHollow`: `AiState` Emerge, Hunt or Stand) to
+   * Finds the nearest Hollow (`isHollow`: `AiState` Emerge, Hunt, Stand or Watch) to
    * (x, z) and writes its distance and hunting state into `wildlifeMatch` —
    * `Infinity`/`false` when there is none. The woods go quiet near it and
    * fall silent outright while it hunts (`wildlifeDirector.ts`'s `relaxFor`):

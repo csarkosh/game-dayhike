@@ -91,6 +91,17 @@ describe("escalationTargets", () => {
     );
   });
 
+  it("nears with a watcher exactly as with a hunting Hollow", () => {
+    const { w, p } = world();
+    const h = spawnHollow(w, { x: 100, y: ENEMY_HALF.y + PLAYER_EYE_OFFSET, z: (NEAR_START + NEAR_FULL) / 2 }, 0, 0);
+    expect(h.ai).toBe(AiState.Hunt);
+    expect(targetsOf(w, p.id).near).toBeCloseTo(0.5, 9);
+    h.ai = AiState.Watch;
+    expect(targetsOf(w, p.id).near).toBeCloseTo(0.5, 9);
+    h.pos.z = NEAR_FULL - 2;
+    expect(targetsOf(w, p.id).near).toBe(1);
+  });
+
   it("outranks a blind near Hollow with a visible far one", () => {
     const walled = world({ min: [90, 0, 20], max: [110, 4, 21], material: "concrete" });
     const q = walled.p;

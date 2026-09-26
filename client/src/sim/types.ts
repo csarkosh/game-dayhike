@@ -16,6 +16,8 @@ export const enum AiState {
   Emerge = 7,
   /** The Hollow with nobody left to hunt: still where it stands, facing the pad. */
   Stand = 8,
+  /** The watcher: stands off the trail facing the lead, never walks, never touches; the stare still fills. */
+  Watch = 9,
 }
 
 export const enum Button {
@@ -122,6 +124,13 @@ export type EnemyState = {
   routeAt: number;
   approach: boolean;
   seen: boolean;
+  /**
+   * Where an emerging Hollow walks before its reveal — a fork Hollow's mouth
+   * (cut.ts) — or null for one that stands where it spawned, as the summit's
+   * does. Host-only, like `route`: absent from the snapshot and the
+   * fingerprint. Null on every enemy that is not a Hollow.
+   */
+  emergeTo: Vec3 | null;
 };
 
 export type WorldState = {

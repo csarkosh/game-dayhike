@@ -205,7 +205,7 @@ describe("the stare and the graph", () => {
     w.state.enemies.set(9, {
       id: 9, pos: { x: 1, y: 2, z: 3 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, health: 40, ai: AiState.Stand,
       targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
-      route: [0, 1, 2], routeAt: 1, approach: false, seen: false,
+      route: [0, 1, 2], routeAt: 1, approach: false, seen: false, emergeTo: null,
     });
     const copy = cloneWorldState(w.state);
     copy.enemies.get(9)!.route.push(3);

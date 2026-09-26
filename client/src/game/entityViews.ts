@@ -1,7 +1,6 @@
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
@@ -16,6 +15,7 @@ import { HOLLOW_HEIGHT, isHollowState } from "../sim/hollow.js";
 import { EnemyModelPool, type ClipKind, type EnemyInstance } from "./enemyModel.js";
 import { createHeadlamp, setLamp } from "./headlamp.js";
 import { LAMP_DEFAULT, type LampState } from "./lampParams.js";
+import { HOLLOW_ALBEDO, HOLLOW_EMISSIVE, HOLLOW_MATERIAL, HOLLOW_ROUGHNESS } from "./hollowLook.js";
 
 type View = { node: TransformNode; previous: Vector3; target: Vector3 };
 
@@ -56,7 +56,7 @@ export class EntityViews {
   private readonly lamps = new Map<number, SpotLight>();
   private readonly playerMaterial: PBRMaterial;
   private readonly enemyMaterial: PBRMaterial;
-  private readonly hollowMaterial: StandardMaterial;
+  private readonly hollowMaterial: PBRMaterial;
   readonly models = new EnemyModelPool();
 
   constructor(private readonly scene: Scene) {
@@ -78,20 +78,25 @@ export class EntityViews {
     this.enemyMaterial.albedoColor = new Color3(0.54, 0.18, 0.69);
     this.enemyMaterial.metallic = 0;
     this.enemyMaterial.roughness = 0.85;
-    // The Hollow's placeholder: black, unlit, and outside the fog, so it stays
-    // a silhouette at any distance in mist — findable in hindsight from far off.
-    // StandardMaterial, not PBRMaterial: the Atmosphere plugin above attaches to
-    // every PBRMaterial and rewrites its fog line through a fixed anchor in
-    // Babylon's own fog code; a PBR material with `fogEnabled = false` never
-    // emits that line, so the anchor never matches and the plugin's effect never
-    // finishes compiling — the material silently never draws. A StandardMaterial
-    // is outside the plugin and outside the fog, which is the point: a
-    // silhouette at any distance.
-    this.hollowMaterial = new StandardMaterial("mat_hollow", scene);
-    this.hollowMaterial.diffuseColor = new Color3(0, 0, 0);
-    this.hollowMaterial.emissiveColor = new Color3(0, 0, 0);
-    this.hollowMaterial.specularColor = new Color3(0, 0, 0);
-    this.hollowMaterial.disableLighting = true;
+    // The Hollow's placeholder: a very dark shape the lights can touch, outside
+    // the fog. It must be lit, because it hunts in the dark: a pure black,
+    // unlit shape is invisible at full dark, whatever the lamp does. And lit
+    // as PBR, because the headlamp's 400 is tuned for PBR's physical falloff;
+    // a lit StandardMaterial under that lamp blows out white. The albedo, the
+    // emissive floor and the roughness are the knobs in hollowLook.ts.
+    //
+    // Fog stays off so it remains a silhouette at any distance in mist,
+    // findable in hindsight from far off. That is also why the Atmosphere
+    // plugin (atmosphere.ts) must leave this one material alone (it declines
+    // it by name): the plugin's spliced shader code reads Babylon's `vFogColor`,
+    // which the shader declares only while the material's FOG define is set.
+    // With fog off the fragment shader fails on an undeclared identifier and
+    // the material silently never draws.
+    this.hollowMaterial = new PBRMaterial(HOLLOW_MATERIAL, scene);
+    this.hollowMaterial.albedoColor = new Color3(HOLLOW_ALBEDO.r, HOLLOW_ALBEDO.g, HOLLOW_ALBEDO.b);
+    this.hollowMaterial.emissiveColor = new Color3(HOLLOW_EMISSIVE.r, HOLLOW_EMISSIVE.g, HOLLOW_EMISSIVE.b);
+    this.hollowMaterial.metallic = 0;
+    this.hollowMaterial.roughness = HOLLOW_ROUGHNESS;
     this.hollowMaterial.fogEnabled = false;
   }
 

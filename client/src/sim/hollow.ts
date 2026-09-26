@@ -4,11 +4,12 @@
  * mountain. It cannot be killed. Contact kills, and being looked at slows it
  * at the price of the looker's stare.
  *
- * A Hollow is an `EnemyState` whose `ai` is Hunt, Emerge or Stand, so the
- * snapshot's enemy channel carries it as it carries any enemy. Everything
- * here runs inside `tickWorld`'s authoritative branch: host-only, never
- * replayed on a client. That is why `Math.atan2` for the facing is allowed
- * (architecture.test.ts) — an engine difference cannot diverge two peers.
+ * A Hollow is an `EnemyState` whose `ai` is Hunt, Emerge, Stand or Watch (the
+ * climb's watcher, watcher.ts), so the snapshot's enemy channel carries it as
+ * it carries any enemy. Everything here runs inside `tickWorld`'s
+ * authoritative branch: host-only, never replayed on a client. That is why
+ * `Math.atan2` for the facing is allowed (architecture.test.ts) — an engine
+ * difference cannot diverge two peers.
  * The walk itself passes its direction as a world-axis wish through
  * `stepMovement` with yaw 0, so movement needs no trig at all.
  */
@@ -22,6 +23,7 @@ import { stepMovement } from "./movement.js";
 import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
 import { isOnCorridor, roadOffset } from "./containment.js";
+import { ROAD_CORRIDOR_HALF } from "./road.js";
 import {
   ENEMY_HALF,
   ENEMY_MAX_HEALTH,
@@ -39,6 +41,10 @@ export const HOLLOW_HUNT_SPEED = 6.3;
 export const HOLLOW_LOOK_FACTOR = 0.6;
 /** Seconds it stands still at the crest as it steps out, before the hunt. */
 export const SUMMIT_REVEAL_S = 2;
+/** Seconds a fork Hollow stands at the mouth of its branch, facing its trigger, before it hunts. */
+export const FORK_REVEAL_S = 1;
+/** Seconds a fork Hollow may spend walking to the mouth before it reveals where it stands. */
+export const FORK_EMERGE_MAX_S = 6;
 /** cos 20°: it must be near the centre of the view, not the edge. */
 export const HOLLOW_LOOK_COS = 0.9397;
 /** Metres from the eye within which looking counts. */
@@ -57,9 +63,16 @@ export const HOLLOW_APPROACH_RANGE = 25;
 export const HOLLOW_LOST_SIGHT_S = 3;
 /** The placeholder's height, metres (entityViews.ts). */
 export const HOLLOW_HEIGHT = 2.6;
+/**
+ * Metres past the corridor's edge a Hollow inside it walks for. The margin
+ * keeps the destination ahead of it for as long as it is inside: aimed at the
+ * line itself, a Hollow a hair short of it would have nowhere left to walk
+ * and report a move without making one (`walkToward`).
+ */
+export const HOLLOW_EXIT_MARGIN = 1;
 
 export function isHollowState(ai: AiState): boolean {
-  return ai === AiState.Hunt || ai === AiState.Emerge || ai === AiState.Stand;
+  return ai === AiState.Hunt || ai === AiState.Emerge || ai === AiState.Stand || ai === AiState.Watch;
 }
 
 export function isHollow(e: EnemyState): boolean {
@@ -71,7 +84,8 @@ export function isHollow(e: EnemyState): boolean {
  *
  * `at` is meant to be off the road corridor, which is the party's safe ground;
  * the precondition degrades rather than breaks, though — a Hollow spawned on
- * the corridor walks out rather than freezing (`walkToward`).
+ * the corridor walks straight out to the nearest edge before it takes up its
+ * route (`walkToward`), rather than freezing.
  */
 export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: number): EnemyState {
   const hollow: EnemyState = {
@@ -91,8 +105,22 @@ export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: n
     routeAt: 0,
     approach: false,
     seen: false,
+    emergeTo: null,
   };
   world.state.enemies.set(hollow.id, hollow);
+  return hollow;
+}
+
+/**
+ * A Hollow stepping out of a closed branch (cut.ts `stepCuts`): spawned at `at` in
+ * Emerge, it walks to `mouth` at the hunt speed, stands FORK_REVEAL_S there
+ * facing `targetId`, then hunts them. The walk ends early, where it stands,
+ * once it has been stuck STUCK_SECONDS or has walked FORK_EMERGE_MAX_S: a
+ * branch it cannot walk out of is still a Hollow in that branch.
+ */
+export function spawnForkHollow(world: World, at: Vec3, mouth: Vec3, targetId: number): EnemyState {
+  const hollow = spawnHollow(world, at, targetId, FORK_EMERGE_MAX_S);
+  hollow.emergeTo = cloneVec3(mouth);
   return hollow;
 }
 
@@ -153,19 +181,66 @@ function speedOf(h: EnemyState): number {
  *
  * Stuck handling is `ai.ts`'s: no progress on the squared distance for
  * STUCK_SECONDS starts a sidestep that holds until progress resumes.
+ *
+ * THE HOLLOW STAYS IN THE WOODS. The road corridor is the party's safe
+ * ground, and the rule has two halves, split on where the Hollow stands
+ * BEFORE the step:
+ *
+ * - Outside, a step that would end on the corridor is refused, and it stands
+ *   at the treeline facing the pad. Refusing the step rather than clamping the
+ *   position keeps it on ground it could have walked to, and the stuck
+ *   handling then slides it along the treeline instead of pressing into it.
+ *
+ * - Inside — placed there, or spawned on the trail's lower stretch, which runs
+ *   inside the corridor on some seeds — it ignores where it was asked to go
+ *   and walks straight across to its own side's edge, the point at its own z
+ *   (not the nearest point of the line, which on a skewed road is off along
+ *   it), and HOLLOW_EXIT_MARGIN past it, so the destination stays ahead of it
+ *   for as long as it is inside, taking every step it gets. Its road offset
+ *   then grows by exactly the ground it covers, so the walk cannot stall.
+ *   Its route waits (`followRoute`), and the hunt resumes from wherever it
+ *   comes out. It cannot follow the route out, because a route into the woods
+ *   can start at the trailhead, which is deeper inside: every step toward it
+ *   would be refused, the sidestep the stuck handling offers runs along the
+ *   road and never out of it, and a Hollow refused every step never reaches
+ *   `stepMovement` at all — not even gravity would move it.
+ *
+ *   The edge it heads for sits at its own z, so it moves along with it, and a
+ *   sidestep along the road can never read as progress toward it. Inside,
+ *   therefore, the sidestep is timed rather than held: UNSTICK_SECONDS of
+ *   strafe, then straight for the edge again. Boulders and cliffs are kept
+ *   off the corridor, so what stands in it is trunks from 12 m out, sign
+ *   posts and the three road props, the widest being the car, 4.6 m along
+ *   the road; one strafe from a standstill covers about 4.1 m, and the side
+ *   never changes, so the second clears it where the first did not.
+ *
+ * Returns whether it moved (or had nowhere to move to): false is a step
+ * refused at the treeline, which `followRoute` reads.
  */
-function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: number, speed: number): void {
+function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: number, speed: number): boolean {
+  const u = roadOffset(world, h.pos.x, h.pos.z);
+  const inside = u !== null && (u < 0 ? -u : u) < ROAD_CORRIDOR_HALF;
+  if (inside) {
+    // The edge on its own side; on the centreline itself, the forest's (+x).
+    const side = u < 0 ? -1 : 1;
+    tx = h.pos.x - u + side * (ROAD_CORRIDOR_HALF + HOLLOW_EXIT_MARGIN);
+    tz = h.pos.z;
+  }
+
   const dx = tx - h.pos.x;
   const dz = tz - h.pos.z;
   const distSq = dx * dx + dz * dz;
   const dist = Math.sqrt(distSq);
-  if (dist < EPSILON) return;
+  if (dist < EPSILON) return true;
   h.yaw = Math.atan2(dx, dz);
 
   if (distSq < h.lastDistSq - STUCK_EPSILON) h.stuckTimer = 0;
   else h.stuckTimer += dt;
   h.lastDistSq = distSq;
-  if (h.stuckTimer > STUCK_SECONDS) h.unstickTimer = UNSTICK_SECONDS;
+  if (h.stuckTimer > STUCK_SECONDS) {
+    h.unstickTimer = UNSTICK_SECONDS;
+    if (inside) h.stuckTimer = 0;
+  }
 
   let ux = dx / dist;
   let uz = dz / dist;
@@ -190,36 +265,40 @@ function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: num
     world.waterLevel,
     world.ground,
   );
-  // THE HOLLOW STAYS IN THE WOODS: a step onto the road corridor is refused
-  // and it stands at the treeline facing the pad. Safety is the corridor, not
-  // the car. Refusing the step rather than clamping the position keeps it on
-  // ground it could have walked to, and the stuck detection above then slides
-  // it along the treeline instead of pressing into it.
-  //
-  // The rule is on the road offset, not on the destination alone: a step is
-  // refused only when it ends on the corridor WITHOUT taking the Hollow
-  // further from the centreline. A Hollow that is somehow already inside —
-  // placed there, or spawned on the trail's lower stretch, which runs inside
-  // the corridor on some seeds — therefore walks its way out instead of
-  // freezing where it stands, since the refusal path never reaches
-  // `stepMovement` and not even gravity would move it.
-  if (isOnCorridor(world, result.pos.x, result.pos.z)) {
-    const before = roadOffset(world, h.pos.x, h.pos.z);
-    const after = roadOffset(world, result.pos.x, result.pos.z);
-    const outward =
-      before !== null && after !== null && (after < 0 ? -after : after) > (before < 0 ? -before : before);
-    if (!outward) {
-      h.vel = { x: 0, y: 0, z: 0 };
-      const th = world.trail?.trailhead;
-      if (th !== undefined) faceToward(h, th.x, th.z);
-      return;
-    }
+  // The treeline: from outside, a step onto the corridor is refused. Safety is
+  // the corridor, not the car.
+  if (!inside && isOnCorridor(world, result.pos.x, result.pos.z)) {
+    h.vel = { x: 0, y: 0, z: 0 };
+    const th = world.trail?.trailhead;
+    if (th !== undefined) faceToward(h, th.x, th.z);
+    return false;
   }
   h.pos = result.pos;
   h.vel = result.vel;
+  return true;
 }
 
-/** Walks the current route; true once every node has been reached. */
+/**
+ * Walks the current route; true once every node has been reached.
+ *
+ * A node on the road corridor is passed, not reached, once the treeline
+ * refuses a step toward it and the route goes on: the trailhead is inside the
+ * corridor (TRAILHEAD_U is 9), and on some seeds so is the trail's lower
+ * stretch, and a Hollow that came out of the corridor by the pad, or was
+ * routed from the node nearest its feet, can hold a route into the woods that
+ * starts there. Walking that leg would have it refused at the treeline for
+ * good. Both conditions are needed. A node's merely being on the corridor
+ * does not pass it, because the leg toward such a node is usually the trail
+ * itself, and the trail is what brings the Hollow to the treeline where its
+ * prey stands; leaving it early for a straight line to the node beyond would
+ * trade the trail for the forest. And a refusal alone does not pass a node,
+ * because the treeline also refuses a grazing step — a Hollow within one
+ * step of the edge whose heading toward a node OUTSIDE the corridor loses a
+ * little road offset, off a leg that hugs the edge, a box slide or the road's
+ * slope — and that node is still the one to walk for: the stuck handling
+ * slides it along the treeline until the leg clears, as it always has. The
+ * last node it stands for, at the treeline, facing the pad.
+ */
 function followRoute(h: EnemyState, world: World, graph: TrailGraph, dt: number, speed: number): boolean {
   while (h.routeAt < h.route.length) {
     const node = graph.nodes[h.route[h.routeAt] as number] as TrailNode;
@@ -228,8 +307,13 @@ function followRoute(h: EnemyState, world: World, graph: TrailGraph, dt: number,
       h.lastDistSq = Infinity;
       continue;
     }
-    walkToward(h, world, dt, node.x, node.z, speed);
-    return false;
+    const refused = !walkToward(h, world, dt, node.x, node.z, speed);
+    if (!refused || h.routeAt + 1 >= h.route.length || !isOnCorridor(world, node.x, node.z)) return false;
+    // Refused toward a node on the corridor, with the route going on: the
+    // next node, from here, this tick — a refused step moved nothing, so the
+    // one move a Hollow makes per tick is still to come.
+    h.routeAt++;
+    h.lastDistSq = Infinity;
   }
   return true;
 }
@@ -286,8 +370,32 @@ function pursue(h: EnemyState, world: World, graph: TrailGraph, dt: number, targ
 function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number): void {
   switch (h.ai) {
     case AiState.Emerge: {
-      // The reveal: it steps out and looks at whoever found the body, giving
-      // the party SUMMIT_REVEAL_S to see it before it moves at all.
+      // One timer, two meanings in sequence, and `emergeTo` says which.
+      if (h.emergeTo !== null) {
+        // The walk: a fork Hollow steps out of its branch to the mouth at the
+        // raw hunt speed — being looked at does not slow it, because this is
+        // the reveal, not the hunt — while the timer counts down its bound.
+        // Arrival, a stuck walk or the bound ends it where it stands, and the
+        // reveal's stillness starts from there. The walk's end carries neither
+        // the stuck sidestep nor the walk's momentum into the reveal — a
+        // sidestep step can land on the very tick the bound trips — so it
+        // stops dead, and hunts from a standstill.
+        h.stateTimer -= dt;
+        walkToward(h, world, dt, h.emergeTo.x, h.emergeTo.z, HOLLOW_HUNT_SPEED);
+        const arrived = horizontalDistSq(h.pos, h.emergeTo) <= HOLLOW_WAYPOINT_RADIUS * HOLLOW_WAYPOINT_RADIUS;
+        if (arrived || h.stuckTimer > STUCK_SECONDS || h.stateTimer <= 0) {
+          h.emergeTo = null;
+          h.stateTimer = FORK_REVEAL_S;
+          h.vel = { x: 0, y: 0, z: 0 };
+          h.stuckTimer = 0;
+          h.unstickTimer = 0;
+          h.lastDistSq = Infinity;
+        }
+        return;
+      }
+      // The reveal: it stands and looks at whoever found the body, or
+      // triggered the cut, giving the party the timer's seconds to see it
+      // before it moves at all.
       const target = world.state.players.get(h.targetId);
       if (target !== undefined) faceToward(h, target.pos.x, target.pos.z);
       h.stateTimer -= dt;
@@ -309,6 +417,14 @@ function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number):
       faceToward(h, th.x, th.z);
       return;
     }
+    case AiState.Watch: {
+      // The watcher: it stands where it was placed and faces the lead it was
+      // shown to, and that is all it ever does. Never `walkToward`, so not
+      // even gravity moves it; whether it stays shown is watcher.ts's.
+      const target = world.state.players.get(h.targetId);
+      if (target !== undefined && target.health > 0) faceToward(h, target.pos.x, target.pos.z);
+      return;
+    }
     default:
       return;
   }
@@ -322,10 +438,12 @@ export function stepHollows(world: World, dt: number): void {
 }
 
 /**
- * The look test: the Hollow's centre within HOLLOW_LOOK_COS of the player's
- * aim ray, within HOLLOW_LOOK_RANGE of the eye, and nothing in between.
+ * The look test with the cone as a parameter: the Hollow's centre within
+ * `cosLimit` of the player's aim ray, within HOLLOW_LOOK_RANGE of the eye,
+ * and nothing in between. The stare uses the 20° cone (`playerSees`); the
+ * watcher stays shown inside a wide one (watcher.ts WATCH_VIEW_COS).
  */
-export function playerSees(player: PlayerState, hollow: EnemyState, world: World): boolean {
+export function playerHasInView(player: PlayerState, hollow: EnemyState, world: World, cosLimit: number): boolean {
   const eye: Vec3 = { x: player.pos.x, y: player.pos.y + PLAYER_EYE_OFFSET, z: player.pos.z };
   const dx = hollow.pos.x - eye.x;
   const dy = hollow.pos.y - eye.y;
@@ -333,8 +451,13 @@ export function playerSees(player: PlayerState, hollow: EnemyState, world: World
   const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (dist < EPSILON || dist > HOLLOW_LOOK_RANGE) return false;
   const dir = aimDirection(player.yaw, player.pitch);
-  if ((dx * dir.x + dy * dir.y + dz * dir.z) / dist < HOLLOW_LOOK_COS) return false;
+  if ((dx * dir.x + dy * dir.y + dz * dir.z) / dist < cosLimit) return false;
   return hasLineOfSight(eye, hollow.pos, world.boxes, world.ground);
+}
+
+/** The look test the stare uses: `playerHasInView` with the HOLLOW_LOOK_COS cone. */
+export function playerSees(player: PlayerState, hollow: EnemyState, world: World): boolean {
+  return playerHasInView(player, hollow, world, HOLLOW_LOOK_COS);
 }
 
 /**
@@ -347,10 +470,12 @@ export function updateHollows(world: World): void {
   if (world.trail === null) return;
   const state = world.state;
 
-  // Contact.
+  // Contact. The watcher never touches: it hides when anyone comes near
+  // (watcher.ts), and a player who reaches it first is not killed for it.
   const reach = PLAYER_HALF.x + ENEMY_HALF.x + HOLLOW_CONTACT_MARGIN;
   const tall = PLAYER_HALF.y + ENEMY_HALF.y;
   for (const h of hollowsOf(world)) {
+    if (h.ai === AiState.Watch) continue;
     for (const p of state.players.values()) {
       if (p.health <= 0 || p.safe) continue;
       const dy = p.pos.y - h.pos.y;
@@ -379,9 +504,10 @@ export function updateHollows(world: World): void {
   // Prey: a hunting Hollow whose target is dead, gone or safe takes the
   // nearest living, unsafe player, or stands; a standing one takes the
   // first prey that appears. A Hollow never merges and never leaves: the
-  // pack only grows (summit.ts spawns; S3 adds the forks).
+  // pack only grows (summit.ts spawns; S3 adds the forks). The watcher is
+  // never prey-driven: it would otherwise be a hunt on its first tick.
   for (const h of all) {
-    if (h.ai === AiState.Emerge) continue;
+    if (h.ai === AiState.Emerge || h.ai === AiState.Watch) continue;
     const target = state.players.get(h.targetId);
     const lost = target === undefined || target.health <= 0 || target.safe;
     if (h.ai === AiState.Hunt && !lost) continue;

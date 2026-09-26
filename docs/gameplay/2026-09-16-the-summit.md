@@ -1,7 +1,7 @@
 # The summit — the core loop, redesigned
 
 **Date:** 2026-09-16
-**Status:** Designed; T2 built 2026-09-16, S1 built 2026-09-22 (see §9). What moved in T2's execution: the top fork sits
+**Status:** Designed; T2 built 2026-09-16, S1 built 2026-09-22, S3 built 2026-09-25, S2 built 2026-09-26 (see §9). What moved in T2's execution: the top fork sits
 below the peak's dome, not in the 0.75–0.85 band, with a floor of 0.5, a three-rung ladder 60 m of
 stem apart tried on both sides, and a least span of 240 m between the forks (§3.2 records why);
 rungs are 2–3 per pair and may end on a loop's bed when their strand target is walled off; a strand
@@ -33,12 +33,33 @@ placeholder shows the name and "last seen" lines only. Three more rulings came o
 top of the authoritative tail, before the Hollows step rather than after them, so a player who
 crosses onto the corridor cannot be killed by contact in the tick they reach it (discovery and the
 end rule stay at the tail; deaths are settled before the summit step, so a contact kill and the end
-it causes land on the same tick); a Hollow's step that strictly increases its distance from the road's centreline is allowed even from
-inside the corridor, so one that ever finds itself on safe ground walks out instead of freezing;
+it causes land on the same tick); a Hollow that ever finds itself on safe ground walks out instead of freezing;
 and the stare is unchanged for everyone, safe or not — looking back from the road still costs the
-screen — while contact never touches a safe player. What S1's execution measured: on the seed
+screen — while contact never touches a safe player. As first built, the walk out allowed a step that strictly
+increased the Hollow's distance from the road's centreline even from inside the corridor, which froze a Hollow
+whose route began at the trailhead, deeper inside; since 2026-09-25 a Hollow inside ignores its route and walks
+straight across to its own side's edge, and a route node on the corridor is passed for the next, when there is one,
+once the treeline refuses a step toward it. What S1's execution measured: on the seed
 `hollow` the stem node before the crest stands 11.3 m from the body, inside the 12 m discovery
-radius, so the find can come one node short of the crest.
+radius, so the find can come one node short of the crest. What S3's build measured, on the fifty
+seeds `hollow0..49` walked crest → pad along the guide: the pack at the pad is the summit Hollow
+plus 0–10 — five in all on the median seed, eleven at most; the guide lands in its 1.5–2.5× band
+on 29 of the 50 (58 %), the same share as before the walk was told to visit no node twice; one
+seed (`hollow29`) stands a fork on the road corridor, and that fork is never cut. On `hollow` the
+guide runs 36 → 0 over 54 nodes and 2013 m, meets its forks in the order 37, 22, 79, 78, 2, and
+walking it closes six branches: a pack of seven. That walk sharpened two rules (§5.3): a fork's
+trigger has to be on one of its branches with no other open edge nearer, and never on a closed
+one; and the guide's edge out of a fork is opened only while the guide beyond it still reaches
+the pad on the residual graph. What S2's build measured, on the same fifty seeds, one player
+standing at the stem nodes nearest climb 0, 0.25, 0.5 and 0.75 and at the top fork, facing up the
+stem, down it and across it each way, the rest run out: the watcher showed within 120 ticks on 881
+of 936 stands (94 %) — 157 of 200 at the pad, where 34 of the 55 stands it never showed on face
+down the stem into the road, and every one of 192 at the top fork; 42 % of the placements tried
+were admitted (16 % at the pad, 63 % at the top fork), and of the refusals the sightline took 55 %
+(59 506), the ground — water or a prop — 22 % (24 179), the trail clearance 16 % (17 378), the road
+corridor 6 % (5 985), the slope 1 % (888) and the flee radius none, so the sightline is the number
+to read when the 90 m range is tuned. On `hollow` it stands 68.6 m out a quarter of the way up and
+25 m out at the top fork, and the guide is what it was before it was stalked.
 **Parent:** `docs/gameplay/2026-09-08-register-and-hollow.md`. Supersedes its loop (§1 there, the
 count and the sign-out) and the §17 table's F and beyond. Keeps its trailhead, its Hollow's
 lethality and its tone.
@@ -206,14 +227,28 @@ stem, the Hollow's crawl and `stemProgress` read the stem, and both still exist.
 One Hollow in a new `AiState.Watch`. It exists only while it can be seen: it is spawned when it
 shows and removed when it hides, so peers get it through the enemy snapshot they already receive.
 
-**Where it shows.** Relative to the **lead**: the living player with the greatest `stemProgress`.
-It stands off the trail bed — at least `WATCH_TRAIL_CLEAR` (6 m) from any edge — on walkable
-ground, at a range that shrinks with the lead's progress: `WATCH_RANGE_FAR` (90 m) at progress 0
-to `WATCH_RANGE_NEAR` (25 m) at the top fork's progress, linear between. Its bearing is
+**Where it shows.** Relative to the **lead**: the living player with the greatest progress.
+Progress here, since 2026-09-26, is the climb, `1 − stemProgress`, 0 at the pad and 1 at the
+crest, as §6 was built (`stemProgress` itself runs the other way); the lead is the living player
+with the greatest climb, ties to the lower id, and the **reach** the range shrinks with is the
+lead's climb over the top fork's, clamped to [0, 1] — 1 everywhere on a trail with no fork.
+It stands off the trail bed — at least `WATCH_TRAIL_CLEAR` (6 m) from every trail centreline, so
+just inside the 7 m cleared strip — on walkable ground, at a range that shrinks with the reach:
+`WATCH_RANGE_FAR` (90 m) at reach 0 to `WATCH_RANGE_NEAR` (25 m) at reach 1, linear between.
+Walkable ground is what a hull can stand on: not in water, not inside a prop, the ground's normal's
+y at least `WATCH_SLOPE_NY` (0.74, the 0.9 gradient the trail treats as hard), and never the
+road corridor — safe ground is not stalked from. Its bearing is
 `WATCH_BEARING_MIN`–`WATCH_BEARING_MAX` (30°–70°) off the lead's look direction, in the forward
-hemisphere, on a seeded side. It must have a clear sightline from the lead's eye — `playerSees`,
-the test the stare uses. Never within `WATCH_FLEE_RADIUS` (15 m) of any player. Up to
-`WATCH_PLACE_TRIES` (8) placements per tick from the world RNG; if none fits, it waits a tick.
+hemisphere, on a seeded side; the bearing is drawn without sine or cosine, as a normalised mix of
+the band's two edges, which are the look direction turned by 30° and by 70° through constant
+cosines and sines — every mix lands inside the band, and none is uniform in angle, which nothing
+needs. It must have a clear sightline from the lead's eye to its centre: the sightline alone, not
+`playerSees`, because it stands outside the stare's 20° cone by construction. Never within
+`WATCH_FLEE_RADIUS` (15 m) of any living player. Up to `WATCH_PLACE_TRIES` (8) placements per tick; if
+none fits, it waits a tick. Every draw the watcher makes — the side, the bearing, the rests — comes
+from its own random stream, seeded from the world's seed, not the world's (since 2026-09-26):
+the guide is drawn from the world's stream on the tick the body is found, and a watcher drawing
+from it would have moved the guide by however long the climb took.
 
 **What it does.** Nothing. It stands and faces the lead. It never walks, never touches, never
 leaves its spot. It is the shipped placeholder model.
@@ -222,16 +257,23 @@ leaves its spot. It is the shipped placeholder model.
 This is the climb's whole danger: it stays as long as you keep looking, and it kills you if you
 don't stop.
 
-**When it hides.** On the first tick no living player has it in view, or a player is within
-`WATCH_FLEE_RADIUS`. Then a rest drawn from `WATCH_REST_MIN`–`WATCH_REST_MAX` (20–60 s at the pad),
-both scaled down to `WATCH_REST_NEAR_SCALE` (0.4) of themselves at the top fork's progress, so
-sightings get frequent near the top. Then it shows again. From the player's side: you see it, you
-look away, it's gone when you look back — closer next time.
+**When it hides.** On the first tick no living player has it in view, or a living player is within
+`WATCH_FLEE_RADIUS`. In view, for the hide, is a wide cone — `WATCH_VIEW_COS`, cos 80° (0.1736)
+of the player's aim, within the stare's 120 m and with a clear sightline — not the stare's 20°,
+which it stands outside of the moment it shows and would hide from on its first tick; the stare
+keeps its 20° (since 2026-09-26). So on a straight climb it goes when a trunk crosses the
+sightline, when the lead walks abeam of it, or when someone comes close; a sighting you never
+centre never costs you. Then a rest drawn from `WATCH_REST_MIN`–`WATCH_REST_MAX` (20–60 s at the
+pad), both scaled down to `WATCH_REST_NEAR_SCALE` (0.4) of themselves at reach 1, so sightings get
+frequent near the top. Then it shows again. The first rest is drawn from the same band when the
+world is made, so it never shows on the first tick. From the player's side: you see it, you look
+away, it's gone when you look back — closer next time.
 
 **On discovery** it is removed for good. The summit Hollow is a separate spawn.
 
-**Levers** (all in `hollow.ts`): the ranges, the bearing band, the flee radius, the rest bounds and
-their near scale, the tries.
+**Levers** (all in `watcher.ts`, since 2026-09-26; `hollow.ts` keeps the stare's): the ranges, the
+bearing band, the flee radius, the rest bounds and their near scale, the tries, the wide view cone,
+the slope.
 
 **Tests.** Placement obeys every constraint on a seeded sweep; hides on look-away and on approach;
 the stare fills only while in view and never on the tick after it hides; it never spawns once the
@@ -268,8 +310,9 @@ body: `phase` → Chase; the watcher is removed; the **summit Hollow** spawns `S
 ### 5.2 Safety (S1)
 
 A Hollow never crosses the treeline. Its movement clamps at the road corridor's edge: a step that
-would put it within `ROAD_CORRIDOR_HALF` of the road centreline is refused, and a Hollow whose
-target is safe retargets as above or stands at the edge, facing the pad. `safe` is computed per
+would put it within `ROAD_CORRIDOR_HALF` of the road centreline is refused; one that is already
+inside walks straight across to its own side's edge, ignoring its route until it is clear; and a
+Hollow whose target is safe retargets as above or stands at the edge, facing the pad. `safe` is computed per
 player per tick from the road distance (§2), rides the snapshot as a bit beside the lamp, and is
 what the roster and the end rule read.
 
@@ -281,38 +324,81 @@ loop's far side, choosing at each fork uniformly among the branches that can sti
 without a repeated edge. A walk is accepted when its length lands in
 [`GUIDE_MIN`, `GUIDE_MAX`] × `shortestHome` (1.5, 2.5). Up to `GUIDE_TRIES` (64) walks; failing
 that, the longest found under `GUIDE_MAX`; failing that, the shortest path (the sweep shows this
-does not arise on the 227-seed set). No one sees the guide. It is how the cuts know which way is
-"the one path", and it is what makes the way home medium-to-long rather than the stem.
+does not arise on the 227-seed set). Since 2026-09-25 the walk also never visits a node twice: a
+try with no move left under that rule simply fails, and the guide's edge into a fork and out of
+it are each one edge, as the cut below assumes. No one sees the guide. It is how the cuts know
+which way is "the one path", and it is what makes the way home medium-to-long rather than the
+stem.
 
 **Cutting a fork.** During Chase, when any living, unsafe player comes within `FORK_CUT_RADIUS`
-(30 m) of an uncut fork, that fork is cut, once, for the whole party, for the rest of the match.
-The **arrival** branch is the edge that player is on (nearest by `segmentDistance`). Then:
+(9 m; 30 m as designed, moved 2026-09-25) of an uncut fork, that fork is cut, once, for the whole
+party, for the rest of the match. Nine metres, because the fork Hollow takes about two seconds to
+reach its mouth and nine metres is under two seconds at a walk: a player who keeps moving through
+the fork is past it before the Hollow stands, and it hunts them from behind; at thirty metres it
+met them at the fork head-on, sprinting or not. The **arrival** branch is the edge that player is on (nearest by `segmentDistance`). Sharpened
+2026-09-25: the player has to be on one of the fork's branches, not merely near the fork — within
+`TRAIL_CORRIDOR_HALF` (7 m) of the branch, with no other open edge of the trail strictly nearer,
+because the next edge along comes within the half-width of a branch wherever the two share a
+node — and a closed branch is nobody's arrival: the Hollow that closed it is the fork's answer to
+whoever walks it. On the node itself every branch ties, and the tie goes to the lower edge index.
+When two players qualify, the nearer one is the trigger, ties to the lower id. A fork that itself
+stands on the road corridor is never cut: it is safe ground, and nobody is hunted there; it is
+recorded as judged the first time a player reaches it, with nothing closed (2026-09-25). Then:
 
 - if the fork is on the guide and the arrival branch is the guide's edge into it, the **open**
-  branch is the guide's edge out of it;
+  branch is the guide's edge out of it — while that edge is still open and the guide beyond it
+  still reaches the pad on the residual graph without coming back through the fork (since
+  2026-09-25: a fork cut before the guide came to it, by a stray or by a player on another
+  branch, can have closed the guide's own way on, and then the fork is judged as below);
 - otherwise — the player strayed, or is a straggler still climbing — the open branch is the
   non-arrival branch whose route to the pad on the **residual** graph (every closed branch of every
   cut fork removed) is shortest, with ties, and near-ties within `GUIDE_REJOIN_SLACK` (60 m),
-  broken toward a branch that rejoins the guide. Straying costs the extra Hollow behind you; the
-  maze funnels you back, it never traps you.
+  broken toward the branch whose way home reaches its first guide node in the fewest metres from
+  the fork (amended 2026-09-25: every way home ends on the guide's tail, so "rejoins the guide"
+  alone cannot tell them apart), then the cheaper, then the lower edge index. The branches are
+  costed with the fork's own edges left out, so a way home never comes back through the fork it
+  leaves; for a straggler at a fork the whole upper trail hangs on, they are costed once more
+  through the fork and the arrival, skipping any branch that is itself a dead end. Straying costs
+  the extra Hollow behind you; the maze funnels you back, it never traps you.
 
 Every other branch is **closed**. A closed branch is a Hollow, not a wall: a player can still enter
-it, and it hunts them if they do. The crest stays the world's only dead end. Because the open
-branch reaches the pad on the residual graph at cut time and arrival branches are never closed, a
-route home free of closed branches exists from every fork the moment it is cut; a later cut
-elsewhere can only add a Hollow to someone's way, never remove the way.
+it, and it hunts them if they do. The crest stays the world's only dead end. A closed branch is
+closed at both ends: an edge joining two forks, closed at the first, is not a candidate at the
+second and is never closed twice (2026-09-25). A fork is never a trap at the moment it is cut: the
+open branch reaches the pad on the residual graph at cut time, and if no branch but the arrival
+does, the fork is recorded as cut with nothing closed. Later cuts elsewhere can put a Hollow on
+that route — two players on different branches can arrange it — never remove the trail: a closed
+branch is walkable (reworded 2026-09-25).
 
 **The fork Hollow.** One per closed branch (a 4-way hub gets two). It spawns `FORK_SPAWN_DIST`
-(12 m) into the closed branch on the bed, walks to the fork's mouth at hunt speed in
-`AiState.Emerge`, stands `FORK_REVEAL_S` (1 s) facing the player who triggered the cut, then hunts
-them under §5.1's rules. If they have already passed, it is behind them; if they hesitate, it is on
-them.
+(12 m) into the closed branch on the bed, walks to the mouth of its branch — `FORK_MOUTH_DIST`
+(3 m) in from the fork, since 2026-09-25, so a player passing the fork is out of its contact reach
+— at hunt speed in `AiState.Emerge`, stands `FORK_REVEAL_S` (1 s) there facing the player who
+triggered the cut, then hunts them under §5.1's rules. If they have already passed, it is behind
+them; if they hesitate, it is on them. No Hollow ever steps out on safe ground, or on a player (2026-09-25): when the branch enters
+the road corridor sooner, or ends sooner at another node, it steps out `FORK_SPAWN_CLEAR` (1 m)
+short of that, and never within `FORK_SPAWN_PLAYER_CLEAR` (2 m) of a living player — it moves on
+along the bed until it is clear, within the same limits; a branch with no such point at least
+`FORK_SPAWN_MIN` (2 m) in cannot be closed and stays open. The walk to the mouth is the reveal,
+not the hunt: being looked at does not slow it, and it is bounded — on reaching the mouth, or once
+stuck for `STUCK_SECONDS`, or after `FORK_EMERGE_MAX_S` (6 s) of walking, the Hollow stands where
+it is (2026-09-25). Contact and the stare apply throughout, as to any Hollow.
 
-**Pack size.** On a typical guide, the summit Hollow plus 5–8. §5.1's pacing is what keeps that a
+**The look (2026-09-25).** The Hollow is drawn as a very dark, lit shape rather than an unlit
+black one: near-black, fully rough, with a faint emissive floor so it has an edge against a black
+sky, and fog off, so the headlamp, the sun and the sky light catch its form on the same falloff as
+everything else. The colours are knobs in `game/hollowLook.ts`.
+
+**Pack size.** On a typical guide, the summit Hollow plus 5–8 was the estimate. Measured
+2026-09-25 on the fifty seeds `hollow0..49`, walked crest → pad along the guide on today's trails:
+the summit Hollow plus 0–10, five in all on the median seed, eleven at most; seven on `hollow`.
+Raising the fork count is the density follow-up (§3.5). §5.1's pacing is what keeps the pack a
 wall of pressure rather than a race lost.
 
-**State.** `cuts: Map<number, number>` (fork node → open neighbour node) and `guide: number[]` on
-the world, host-only, off the wire and outside the fingerprint, like the Hollow's route.
+**State.** `cuts: Map<number, number>` (fork node → open neighbour node, or -1 for a fork judged
+with nothing open), `guide: number[]` and `closed: Set<number>` (the edges closed so far) on the
+world, host-only, off the wire and outside the fingerprint, like the Hollow's route; the fork
+Hollow's destination, `EnemyState.emergeTo`, likewise.
 
 ## 6. Escalation, re-derived (S1)
 
@@ -355,8 +441,12 @@ the shipped placeholder model. The poster is drawn on the register post that exi
 lamp byte gains the `safe` bit. `stare` stays. `AiState` gains `Watch` and `Emerge`; the enemy byte
 carries them. Old-protocol peers are refused at the lobby, as every bump has been.
 
-**Determinism.** Every draw the loop makes — watcher placement, the guide, the order of cuts —
-comes from `nextRandom(state)`, so a seed and an input log replay the same match on the host.
+**Determinism.** Every draw the loop makes on the world's stream — the guide, the order of cuts —
+comes from `nextRandom(state)`, so a seed and an input log replay the same match on the host. The
+watcher's placement and its rests draw from the watcher's own stream, seeded from the world's seed
+(since 2026-09-26): host truth like the rest, but off the world's stream so that the length of the
+climb never moves the guide. The record, like the cut, is off the wire and outside the fingerprint;
+the watcher entity is in both, like any enemy.
 `serializeWorldState` adds `phase`, `safe` and the new enemy states and leaves the guide and the
 cuts out, as it leaves the Hollow's route out today.
 
@@ -389,11 +479,11 @@ in this order. Each leaves the game playable.
 | --- | --- | --- | --- |
 | T2 | Loops and braids | §3 | Built 2026-09-16 (docs/trail/2026-09-16-loops-and-braids-plan.md) |
 | S1 | The summit loop: phase, poster, body, discovery, the summit Hollow, safety, the end, escalation, protocol 5 | §2, §5.1, §5.2, §6, §7 | Built 2026-09-22 (docs/gameplay/2026-09-16-the-summit-loop-plan.md) |
-| S3 | The cut: the guide, the fork cuts, `Emerge`, the fork Hollows | §5.3 | Not started |
-| S2 | The watcher | §4 | Not started |
+| S3 | The cut: the guide, the fork cuts, `Emerge`, the fork Hollows | §5.3 | Built 2026-09-25 (docs/gameplay/2026-09-25-the-cut-plan.md) |
+| S2 | The watcher | §4 | Built 2026-09-26 (docs/gameplay/2026-09-26-the-watcher-plan.md) |
 
 After S1 the game is: climb unstalked, find the body, one Hollow chases you home. S3 makes the
-descent the maze; S2 gives the climb its stalker. S3 goes before S2 because the chase is the heart
+descent the maze; S2 gives the climb its stalker. S3 went before S2 because the chase is the heart
 of the loop.
 
 ## 10. Verification
@@ -404,6 +494,9 @@ every fork on the guide, and the end rule for all three group shapes. The sim is
 this is a plain vitest.
 
 **Sweep.** §3.5's trail gates and the guide-length band, ~200 seeds, red before and green after.
+Two fifty-seed gates stand beside it, each with its floors pinned as the numbers it measured: the cut
+walked home on every seed (`cutSweep.test.ts`, S3), and the watcher at five stands facing four ways on
+every seed (`watcherSweep.test.ts`, S2).
 
 **Wiring.** The source-text tests on `app.ts` are updated, not deleted.
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWorld, serializeWorldState, spawnPlayer, tickWorld } from "../../src/sim/world.js";
+import { cloneWorldState, createWorld, serializeWorldState, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { AiState, Outcome } from "../../src/sim/types.js";
 import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
@@ -11,7 +11,9 @@ import {
   HOLLOW_STARE_EMPTY_S,
   HOLLOW_STARE_FILL_S,
   SUMMIT_REVEAL_S,
+  playerHasInView,
   playerSees,
+  spawnForkHollow,
   spawnHollow,
 } from "../../src/sim/hollow.js";
 import { nearestTrailNode } from "../../src/sim/trail.js";
@@ -33,8 +35,10 @@ const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.
 /**
  * A reveal longer than any test that uses it: a Hollow that never leaves
  * Emerge, and so never takes a step. Contact and the stare read every Hollow
- * whatever its state, so these tests still measure what they are about — and
- * no other state stands still while a living player is in the world.
+ * whatever its state, so these tests still measure what they are about. Watch
+ * stands still too, but it never touches, so it cannot stand in for a Hollow
+ * whose contact is the point; Hunt walks, and Stand is turned into Hunt by
+ * the prey pass the moment a living player is off the road.
  */
 const STILL = 600;
 
@@ -264,6 +268,7 @@ describe("emerge, hunt, stand", () => {
     p.pos = { x: 100, y: 0.9, z: 20 };
     const h = spawnHollow(w, { x: 100, y: ENEMY_HALF.y, z: 0 }, p.id, SUMMIT_REVEAL_S);
     expect(h.ai).toBe(AiState.Emerge);
+    expect(h.emergeTo).toBeNull();
     tick(w, Math.round(SUMMIT_REVEAL_S / TICK_DT) - 2);
     expect(h.ai).toBe(AiState.Emerge);
     // Emerging never reaches `stepMovement`, so not even gravity touches it:
@@ -350,5 +355,270 @@ describe("emerge, hunt, stand", () => {
     spawnHollow(w, { x: 0, y: ENEMY_HALF.y, z: 100 }, 0, STILL);
     tick(w, Math.round(HOLLOW_STARE_FILL_S / TICK_DT / 2));
     expect(p.stare).toBeCloseTo(0.5, 2);
+  });
+});
+
+describe("a fork Hollow's emerge", () => {
+  // Road-less and flat: it spawns 12 m into a branch that runs along -x from
+  // the mouth at (12, 0), and its trigger stands 20 m up the z axis from the
+  // mouth, off the walk's line and out of its own view of the Hollow.
+  const AT = { x: 0, y: ENEMY_HALF.y, z: 0 };
+  const MOUTH = { x: 12, y: ENEMY_HALF.y, z: 0 };
+  const walkUntilRevealed = (w: ReturnType<typeof world>, h: { emergeTo: unknown }, budget: number) => {
+    let t = 0;
+    while (t < budget && h.emergeTo !== null) { tickWorld(w, new Map()); t++; }
+    return t;
+  };
+
+  it("walks to the mouth at the hunt speed, still emerging, stands one second facing its trigger, then hunts", () => {
+    const w = world();
+    const p = spawnPlayer(w);
+    p.pos = { x: 12, y: 0.9, z: 20 };
+    const h = spawnForkHollow(w, AT, MOUTH, p.id);
+    expect(h.ai).toBe(AiState.Emerge);
+    expect(h.targetId).toBe(p.id);
+    expect(h.emergeTo).toEqual({ x: 12, y: 0.9, z: 0 });
+    // Measured after the same settling quarter-second as the hunt's speed.
+    tick(w, 15);
+    const x0 = h.pos.x;
+    tick(w, 60);
+    expect(h.pos.x - x0).toBeCloseTo(6.3, 3);
+    expect(h.yaw).toBeCloseTo(Math.PI / 2, 3); // walking +x, facing the mouth
+    expect(h.ai).toBe(AiState.Emerge);
+    // On arrival it is still emerging, within the waypoint radius of the mouth.
+    expect(walkUntilRevealed(w, h, 300)).toBeLessThan(300);
+    expect(h.ai).toBe(AiState.Emerge);
+    expect(dist(h.pos, MOUTH)).toBeLessThanOrEqual(1.5);
+    const stood = { ...h.pos };
+    tick(w, 58);
+    expect(h.ai).toBe(AiState.Emerge);
+    expect(h.pos).toEqual(stood);
+    // Facing its trigger, up the z axis: yaw 0 with a little +x, not the walk's pi/2.
+    expect(h.yaw).toBeGreaterThanOrEqual(0);
+    expect(h.yaw).toBeLessThan(0.1);
+    tick(w, 4);
+    expect(h.ai).toBe(AiState.Hunt);
+    expect(h.targetId).toBe(p.id);
+    const apart = dist(stood, p.pos);
+    tick(w, 60);
+    expect(dist(h.pos, p.pos)).toBeLessThan(apart - 3);
+  });
+
+  it("is not slowed by a player looking at it: the walk is the reveal, not the hunt", () => {
+    const w = world();
+    const p = spawnPlayer(w);
+    // 40 m down the walk's line, turned round to look straight back at it.
+    p.pos = { x: 40, y: 0.9, z: 0 };
+    p.yaw = -Math.PI / 2;
+    const h = spawnForkHollow(w, AT, MOUTH, p.id);
+    tick(w, 15);
+    expect(h.seen).toBe(true);
+    const x0 = h.pos.x;
+    tick(w, 60);
+    expect(h.seen).toBe(true);
+    expect(h.pos.x - x0).toBeCloseTo(6.3, 3);
+    expect(h.emergeTo).not.toBeNull();
+  });
+
+  it("kills a player it touches on the way to the mouth", () => {
+    const w = world();
+    const trigger = spawnPlayer(w);
+    trigger.pos = { x: 12, y: 0.9, z: 20 };
+    const other = spawnPlayer(w);
+    other.pos = { x: 6, y: 0.9, z: 0 };
+    const h = spawnForkHollow(w, AT, MOUTH, trigger.id);
+    let t = 0;
+    while (t < 120 && other.health > 0) { tickWorld(w, new Map()); t++; }
+    expect(other.health).toBe(0);
+    expect(h.ai).toBe(AiState.Emerge);
+    expect(h.emergeTo).not.toBeNull();
+    expect(trigger.health).toBe(100);
+  });
+
+  it("stuck on the way, it reveals where it stands after the stuck time and hunts from there", () => {
+    // A wall a step ahead of the spawn, so the walk is nearly all stuck time:
+    // ten ticks to cover the 0.6 m to the wall, one more that still reads as
+    // progress (the stuck check compares the last two pre-step positions, and
+    // tick 10's step moved it), then the 91 it takes the stuck timer to pass
+    // 1.5 s standing against it: 10 + 1 + 91, and it reveals on tick 102 where
+    // it is, well short of the mouth, for the fork's second.
+    const w = world({ min: [1, 0, -5], max: [2, 4, 5], material: "concrete" });
+    const p = spawnPlayer(w);
+    p.pos = { x: 12, y: 0.9, z: 20 };
+    const h = spawnForkHollow(w, AT, MOUTH, p.id);
+    expect(walkUntilRevealed(w, h, 200)).toBe(102);
+    expect(h.ai).toBe(AiState.Emerge);
+    expect(h.pos.x).toBeLessThan(1);
+    expect(dist(h.pos, MOUTH)).toBeGreaterThan(11);
+    const stood = { ...h.pos };
+    tick(w, 58);
+    expect(h.ai).toBe(AiState.Emerge);
+    expect(h.pos).toEqual(stood);
+    tick(w, 4);
+    expect(h.ai).toBe(AiState.Hunt);
+    expect(h.targetId).toBe(p.id);
+  });
+
+  it("with the mouth 100 m off, it reveals after six seconds of walking, wherever it has got to", () => {
+    const w = world();
+    const p = spawnPlayer(w);
+    p.pos = { x: 100, y: 0.9, z: 20 };
+    const h = spawnForkHollow(w, AT, { x: 100, y: ENEMY_HALF.y, z: 0 }, p.id);
+    tick(w, 358);
+    expect(h.ai).toBe(AiState.Emerge);
+    expect(h.emergeTo).not.toBeNull();
+    tick(w, 4);
+    expect(h.ai).toBe(AiState.Emerge);
+    expect(h.emergeTo).toBeNull();
+    // Six seconds at 6.3 m/s, less the wind-up from rest.
+    expect(h.pos.x).toBeGreaterThan(37);
+    expect(h.pos.x).toBeLessThan(38);
+    tick(w, 62);
+    expect(h.ai).toBe(AiState.Hunt);
+  });
+
+  it("is cloned with a destination of its own, and a summit Hollow's stays null", () => {
+    const w = world();
+    const fork = spawnForkHollow(w, AT, MOUTH, 0);
+    const summit = spawnHollow(w, { x: 200, y: ENEMY_HALF.y, z: 0 }, 0, SUMMIT_REVEAL_S);
+    const copy = cloneWorldState(w.state);
+    const forkCopy = copy.enemies.get(fork.id)!;
+    expect(forkCopy.emergeTo).toEqual({ x: 12, y: 0.9, z: 0 });
+    expect(forkCopy.emergeTo).not.toBe(fork.emergeTo);
+    forkCopy.emergeTo!.x = 99;
+    expect(fork.emergeTo!.x).toBe(12);
+    expect(copy.enemies.get(summit.id)!.emergeTo).toBeNull();
+  });
+
+  it("keeps its destination out of the fingerprint", () => {
+    const w = world();
+    const h = spawnForkHollow(w, AT, MOUTH, 0);
+    const withDestination = serializeWorldState(w.state);
+    h.emergeTo = null;
+    expect(serializeWorldState(w.state)).toBe(withDestination);
+  });
+});
+
+describe("the watcher's state", () => {
+  // The record and the placement live in watcher.ts; here a Hollow is simply
+  // put into Watch by hand, which is the state the tick reads.
+  const watching = (w: ReturnType<typeof world>, at: { x: number; y: number; z: number }, targetId: number) => {
+    const h = spawnHollow(w, at, targetId, 0);
+    h.ai = AiState.Watch;
+    return h;
+  };
+
+  it("never moves, never kills and is never turned into a hunt while the player stands still", () => {
+    const w = world();
+    const p = spawnPlayer(w);
+    p.pos = { x: 100, y: 0.9, z: 0 };
+    p.yaw = Math.PI; // facing -z, away from it
+    const h = watching(w, { x: 100, y: ENEMY_HALF.y, z: 5 }, p.id);
+    tick(w, 300);
+    expect(h.pos).toEqual({ x: 100, y: ENEMY_HALF.y, z: 5 });
+    expect(h.ai).toBe(AiState.Watch);
+    expect(h.targetId).toBe(p.id);
+    expect(p.health).toBe(100);
+    expect(p.stare).toBe(0);
+  });
+
+  it("does not touch a player inside contact reach", () => {
+    const w = world();
+    const p = spawnPlayer(w);
+    p.pos = { x: 100, y: 0.9, z: 0 };
+    p.yaw = Math.PI;
+    watching(w, { x: 100.5, y: ENEMY_HALF.y, z: 0 }, p.id);
+    tick(w, 10);
+    expect(p.health).toBe(100);
+  });
+
+  it("faces its target, and keeps facing them as they move", () => {
+    const w = world();
+    const p = spawnPlayer(w);
+    p.pos = { x: 100, y: 0.9, z: 0 };
+    p.yaw = Math.PI;
+    const h = watching(w, { x: 100, y: ENEMY_HALF.y, z: 5 }, p.id);
+    tick(w, 1);
+    expect(Math.abs(h.yaw - Math.PI)).toBeLessThan(0.001); // toward -z
+    p.pos = { x: 105, y: 0.9, z: 5 };
+    tick(w, 1);
+    expect(h.yaw).toBeCloseTo(Math.PI / 2, 3); // toward +x
+  });
+
+  it("fills the stare while the player looks at it and empties it when they look away", () => {
+    const w = world();
+    const p = spawnPlayer(w);
+    p.pos = { x: 100, y: 0.9, z: 0 };
+    p.yaw = 0; // facing +z, straight at it
+    const h = watching(w, { x: 100, y: ENEMY_HALF.y, z: 5 }, p.id);
+    const fillTicks = Math.round(HOLLOW_STARE_FILL_S / TICK_DT);
+    tick(w, Math.floor(fillTicks / 2));
+    expect(p.stare).toBeCloseTo(0.5, 2);
+    expect(h.seen).toBe(true);
+    expect(h.ai).toBe(AiState.Watch);
+    p.yaw = Math.PI;
+    tick(w, Math.round((HOLLOW_STARE_EMPTY_S / TICK_DT) / 2));
+    expect(p.stare).toBeCloseTo(0, 2);
+    expect(h.seen).toBe(false);
+    expect(h.ai).toBe(AiState.Watch);
+  });
+
+  it("fills the stare only for whoever centres it: two players, one looking, one not", () => {
+    const w = world();
+    const p = spawnPlayer(w), q = spawnPlayer(w);
+    p.pos = { x: 100, y: 0.9, z: 0 };
+    p.yaw = 0; // straight at it
+    q.pos = { x: 105, y: 0.9, z: 0 };
+    q.yaw = Math.PI; // away from it
+    watching(w, { x: 100, y: ENEMY_HALF.y, z: 5 }, p.id);
+    tick(w, 60);
+    expect(p.stare).toBeCloseTo(60 / 360, 12);
+    expect(q.stare).toBe(0);
+    // Swapped: the other centres it (from +x, it stands at yaw −π/4) and the
+    // first looks away, whose stare is empty again after 60 of its 180 ticks.
+    p.yaw = Math.PI;
+    q.yaw = -Math.PI / 4;
+    tick(w, 60);
+    expect(p.stare).toBe(0);
+    expect(q.stare).toBeCloseTo(60 / 360, 12);
+  });
+
+  it("stays a watcher when its target dies or is safe, and when nobody is left", () => {
+    const w = world();
+    const p = spawnPlayer(w);
+    p.pos = { x: 100, y: 0.9, z: 0 };
+    p.yaw = Math.PI;
+    const h = watching(w, { x: 100, y: ENEMY_HALF.y, z: 5 }, p.id);
+    p.safe = true;
+    tick(w, 2);
+    expect(h.ai).toBe(AiState.Watch);
+    expect(h.targetId).toBe(p.id);
+    p.health = 0;
+    tick(w, 2);
+    expect(h.ai).toBe(AiState.Watch);
+    expect(h.targetId).toBe(p.id);
+  });
+
+  it("sees a Hollow inside a wider cone through playerHasInView, and playerSees stays the 20° one", () => {
+    const w = world();
+    const p = spawnPlayer(w);
+    p.pos = { x: 0, y: 0.9, z: 0 }; p.yaw = 0; p.pitch = 0;
+    // 45° off the aim: outside the stare's cone, inside an 80° one.
+    const h = watching(w, { x: 30, y: ENEMY_HALF.y, z: 30 }, p.id);
+    expect(playerSees(p, h, w)).toBe(false);
+    expect(playerHasInView(p, h, w, 0.1736)).toBe(true);
+    expect(playerHasInView(p, h, w, 0.9397)).toBe(false);
+    // 85° off: outside both.
+    h.pos.x = 30; h.pos.z = 30 * Math.tan(Math.PI / 36);
+    expect(playerHasInView(p, h, w, 0.1736)).toBe(false);
+    // Straight ahead but out of range: neither.
+    h.pos.x = 0; h.pos.z = HOLLOW_LOOK_RANGE + 5;
+    expect(playerHasInView(p, h, w, 0.1736)).toBe(false);
+    // Behind a wall: neither.
+    const walled = world({ min: [-5, 0, 10], max: [5, 4, 11], material: "concrete" });
+    const q = spawnPlayer(walled);
+    q.pos = { x: 0, y: 0.9, z: 0 }; q.yaw = 0; q.pitch = 0;
+    const behind = watching(walled, { x: 0, y: ENEMY_HALF.y, z: 30 }, q.id);
+    expect(playerHasInView(q, behind, walled, 0.1736)).toBe(false);
   });
 });

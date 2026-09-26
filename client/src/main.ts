@@ -32,7 +32,10 @@ import { startGame, type GameHandle } from "./app.js";
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("#app not found");
 
-let running: GameHandle | null = null;
+let running: { dispose(): void } | null = null;
+// The match on this page, when the route is the game's: what a lobby opened
+// mid-game is handed to. Null on the landing page.
+let game: GameHandle | null = null;
 let landing: LandingHandle | null = null;
 // Whether the game's pause menu is open. Only the game sets it; leaving the
 // game route resets it, so the roster never stays "full" on a stale flag.
@@ -185,6 +188,11 @@ function retryAttempt(): void {
 function attachLobby(next: Lobby): void {
   lobby = next;
   lobbyError = undefined;
+  // A game already running started without this lobby, so it has not heard
+  // that there is one to answer offers over. Without this the joiner the
+  // roster shows never connects: their offer reaches a host with no handler
+  // for it, and they time out with the wrong explanation.
+  game?.attachLobby(next);
   const offChange = next.onChange(() => {
     paintRoster();
     follow(next);
@@ -415,6 +423,7 @@ function render(container: HTMLDivElement): void {
 
   running?.dispose();
   running = null;
+  game = null;
   paused = false;
   landing = null;
   container.replaceChildren();
@@ -474,8 +483,9 @@ function render(container: HTMLDivElement): void {
 
   const canvas = document.createElement("canvas");
   container.appendChild(canvas);
-  running = startGame(canvas, route.token, {
+  game = startGame(canvas, route.token, {
     lobby,
+    peerId: selfId,
     onExit: exitGame,
     onContinueOffline: continueOffline,
     onPauseChange: (next) => {
@@ -483,6 +493,7 @@ function render(container: HTMLDivElement): void {
       paintRoster();
     },
   });
+  running = game;
   announcer.afterPaint();
   paintRoster();
 }
