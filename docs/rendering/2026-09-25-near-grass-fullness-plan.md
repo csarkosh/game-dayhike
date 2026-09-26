@@ -39,7 +39,7 @@
 | `client/test/game/groundHexParams.test.ts`, `clipmap.test.ts`, `terrainTexture.test.ts` | 3 | Constants, cover channel, attribute, uniforms, the pull's GLSL |
 | `client/test/game/bladeClump.test.ts` | 4B, 5 | Counts, budget, albedo |
 | `client/src/sim/clutter.ts` | 7 | `CLUTTER_GRASS_CANOPY_FLOOR` 0.5 → 0.75 (design §11; the level id moves) |
-| `client/src/game/wildlifeField.ts` | 7 | `RABBIT_GRASS_FLOOR` 0.55 → 0.95 |
+| `client/src/game/wildlifeField.ts` | 7 | `RABBIT_CANOPY_MAX` 0.85 (new); `RABBIT_GRASS_FLOOR` stays 0.55 |
 | `client/src/game/groundHexParams.ts` | 7 | `SWARD_COVER`'s comment |
 | `client/test/sim/clutter.test.ts`, `groundGradient.test.ts` | 7 | The floor, the closed-canopy and open-ground pins, the census rows and `passHash` |
 | `client/test/game/clutterField.test.ts`, `clutterMeshes.test.ts`, `clipmap.test.ts`, `duffField.test.ts`, `wildlifeField.test.ts` | 7 | The card counts at both poses; the literals that read the closed canopy's grass or duff |
@@ -727,7 +727,7 @@ exception to the first Global Constraint: it changes a file under
 
 **Files:**
 - Modify: `client/src/sim/clutter.ts` (`CLUTTER_GRASS_CANOPY_FLOOR` and its comment)
-- Modify: `client/src/game/wildlifeField.ts` (`RABBIT_GRASS_FLOOR` and its comment)
+- Modify: `client/src/game/wildlifeField.ts` (`RABBIT_CANOPY_MAX`, the rabbit gate, and `RABBIT_GRASS_FLOOR`'s comment)
 - Modify: `client/src/game/groundHexParams.ts` (`SWARD_COVER`'s comment only)
 - Test: `client/test/sim/clutter.test.ts`, `client/test/sim/groundGradient.test.ts`, `client/test/game/clutterField.test.ts`, `client/test/game/clutterMeshes.test.ts`, `client/test/game/clipmap.test.ts`, `client/test/game/duffField.test.ts`, `client/test/game/wildlifeField.test.ts`, `client/test/game/groundHexParams.test.ts` (a comment)
 
@@ -809,9 +809,12 @@ pass emits a collider from the grass); a peer on the old floor scatters grass
 differently under every closed canopy, so an old client cannot join a new host,
 deliberately.
 
-`client/test/game/wildlifeField.test.ts`: `RABBIT_GRASS_FLOOR` pinned at 0.95
-in the rabbit census test, whose comment gains the re-measure (1,472 / 1,392 /
-1,172); the band is unchanged, and at 0.55 it fails (4,084 / 4,576 / 3,158).
+`client/test/game/wildlifeField.test.ts`: `RABBIT_GRASS_FLOOR` 0.55 and
+`RABBIT_CANOPY_MAX` 0.85 pinned in the rabbit census test, whose band is
+unchanged (without the canopy gate it fails: 4,084 / 4,576 / 3,158); and the
+census split by the canopy at each rabbit's anchor, per seed: open (ρ ≤ 0.4)
+705 / 634 / 556, the same as before the change; partial 959 / 934 / 793 (736 /
+709 / 580 before); closed 0.
 
 Run: `cd client && npx vitest run test/sim/clutter.test.ts test/sim/groundGradient.test.ts test/game/clutterField.test.ts test/game/clutterMeshes.test.ts test/game/clipmap.test.ts test/game/duffField.test.ts`
 Expected: FAIL on every literal above except the open-ground pin.
@@ -823,10 +826,13 @@ the comment: the forest floor keeps three quarters of its sward's edge under
 the densest canopy, which the interior boost lifts to 0.9375 there, and the
 litter fills the rest.
 
-`client/src/game/wildlifeField.ts`: `RABBIT_GRASS_FLOOR = 0.95`, the comment:
-the grass under a closed canopy now reaches 0.9375, so the floor sits just
-above that; at 0.55 the census rose to 4,084 / 4,576 / 3,158 units, most under
-closed canopy.
+`client/src/game/wildlifeField.ts`: `RABBIT_GRASS_FLOOR` stays 0.55, so the
+thinner open grass at trail and road margins keeps its rabbits (a floor of 0.95
+would take 705 / 634 / 556 open-ground rabbits to 672 / 602 / 533). A new
+`RABBIT_CANOPY_MAX = 0.85` excludes closed canopy directly: the rabbit gate
+returns no rabbit where `forestDensity` at the anchor is at or above it,
+because the grass there now reaches 0.9375 and at the grass floor alone the
+census rose to 4,084 / 4,576 / 3,158 units, most under closed canopy.
 
 `client/src/game/groundHexParams.ts`: `SWARD_COVER`'s comment says the pull is
 full from half cover; it no longer names the canopy floor.
@@ -882,7 +888,7 @@ against `main`:
 
 Append `## 7. Fourth gate: three quarters of the sward` to the verification
 note; commit the note alone. If either floor-look pose leaves its window or
-the frame bar is missed: `CLUTTER_GRASS_CANOPY_FLOOR` 0.65 and
-`RABBIT_GRASS_FLOOR` 0.75 in their own commit, every literal above re-measured
-and re-pinned the same way, and the gate re-run. If 0.65 misses too, revert
-both to 0.5 and 0.55 and record the canopy pose's miss as the sim's rule.
+the frame bar is missed: `CLUTTER_GRASS_CANOPY_FLOOR` 0.65 in its own commit,
+every literal above re-measured and re-pinned the same way, and the gate
+re-run. If 0.65 misses too, revert to 0.5 and record the canopy pose's miss as
+the sim's rule. (As decided, 0.75 ships: design §11.5.)
