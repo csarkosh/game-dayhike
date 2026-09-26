@@ -53,10 +53,10 @@ function standOnStem(w: World, p: PlayerState, i: number) {
   p.yaw = Math.atan2(next.x - here.x, next.z - here.z);
   p.pitch = 0;
 }
-/** The record the tests draw from: no first rest spent, so the sequence starts at the seed. */
 /** A hand-authored level: a floor and nothing else, so no forest, ground or trail. */
 const flatWorld = () =>
   createWorld(parseLevel({ id: "flat", brushes: [{ min: [-300, -1, -300], max: [300, 0, 300], material: "concrete" }], playerSpawns: [[0, 0.9, 0]], enemySpawns: [] }), 1);
+/** The record the tests draw from: no first rest spent, so the sequence starts at the seed. */
 const record = (): WatcherRecord => ({ id: -1, rest: 0, rng: { rngSeed: (seed ^ WATCH_SALT) | 0 } });
 const horizontal = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.sqrt((a.x - b.x) ** 2 + (a.z - b.z) ** 2);
 const tick = (w: World, n = 1) => { for (let i = 0; i < n; i++) tickWorld(w, new Map()); };
@@ -382,6 +382,10 @@ describe("the tick", SUITE, () => {
 
   it("is removed on the flip tick, and the guide is drawn from the world's stream untouched", () => {
     const { w, p } = forestWorld();
+    // A second player finds the body while the lead, at the top fork, keeps
+    // the watcher in view: it is shown into the flip tick, and only the flip
+    // can remove it. Spawned before the showing, so the ids below hold.
+    const q = spawnPlayer(w);
     standOnStem(w, p, 37);
     expect(showWatcher(w)).toBe(1);
     const id = w.watcher!.id;
@@ -389,11 +393,14 @@ describe("the tick", SUITE, () => {
     expect(w.state.enemies.has(id)).toBe(true);
     expect(w.state.rngSeed).toBe(2032433950);
     const body = w.register!.body.pos;
-    standAt(p, body.x - 5, body.z);
+    standAt(q, body.x - 5, body.z);
     tick(w);
     expect(w.state.phase).toBe(Phase.Chase);
     expect(w.state.enemies.has(id)).toBe(false);
     expect(w.watcher!.id).toBe(-1);
+    // The rest is what the showing left, one tick under zero: no hide drew a
+    // new one, so it was the flip that took it, not the hide rule.
+    expect(w.watcher!.rest).toBe(-1 / 60);
     const hollows = [...w.state.enemies.values()];
     expect(hollows).toHaveLength(1);
     expect(hollows[0]!.ai).toBe(AiState.Emerge);
@@ -442,16 +449,26 @@ describe("the tick", SUITE, () => {
     tick(w);
     const near = w.watcher!.rest;
     expect(near).toBe(19.658605493605137);
-    // The same stream, the same showing, and the lead dead on the hide tick: no lead, reach 0.
+    // The same stream and the same showing, with the lead back on the pad on
+    // the hide tick: reach 0 exactly, and the watcher far out of view from there.
+    w.watcher!.rng.rngSeed = stream;
+    standOnStem(w, p, 37);
+    expect(showWatcher(w)).toBe(1);
+    standOnStem(w, p, 0);
+    expect(reachOf(w, p)).toBe(0);
+    tick(w);
+    expect(shownWatcher(w)).toBeUndefined();
+    const far = w.watcher!.rest;
+    expect(far).toBe(49.14651373401284);
+    expect(near).toBeCloseTo(0.4 * far, 12);
+    // And with no lead at all: the lead dead on the hide tick reads as reach 0 too.
     w.watcher!.rng.rngSeed = stream;
     standOnStem(w, p, 37);
     expect(showWatcher(w)).toBe(1);
     p.health = 0;
     tick(w);
     expect(shownWatcher(w)).toBeUndefined();
-    const far = w.watcher!.rest;
-    expect(far).toBe(49.14651373401284);
-    expect(near).toBeCloseTo(0.4 * far, 12);
+    expect(w.watcher!.rest).toBe(49.14651373401284);
   });
 
   it("never shows on a world that is not authoritative", () => {

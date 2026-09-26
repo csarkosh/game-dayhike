@@ -37,8 +37,8 @@ const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.
  * Emerge, and so never takes a step. Contact and the stare read every Hollow
  * whatever its state, so these tests still measure what they are about. Watch
  * stands still too, but it never touches, so it cannot stand in for a Hollow
- * whose contact is the point; Hunt and Stand both move once a living player
- * is in the world.
+ * whose contact is the point; Hunt walks, and Stand is turned into Hunt by
+ * the prey pass the moment a living player is off the road.
  */
 const STILL = 600;
 
