@@ -139,12 +139,16 @@ export const ELK_MEADOW_FLOOR = 0.6;
 export const ELK_ROAD_CLEAR = 25;
 export const DEER_DENSITY_LO = 0.15;
 export const DEER_DENSITY_HI = 0.5;
-/** A rabbit needs real grass under it. The forest floor now keeps half its
- * sward under a closed canopy (`CLUTTER_GRASS_CANOPY_FLOOR` 0.5), so the
- * floor sits just above that: rabbits stay on open and lightly shaded
- * grass, as before, rather than filling every bush-side cell in the woods
- * (at 0.4 the census rose to 4,079 / 4,572 / 3,145 units). */
+/** A rabbit needs real grass under it: open and lightly shaded grass,
+ * including the thinner grass at a trail's or an edge's margin. */
 export const RABBIT_GRASS_FLOOR = 0.55;
+/** And no rabbit under a closed canopy (`forestDensity` at or above this, the
+ * top of the grass's own canopy ramp). The forest floor keeps a sward there
+ * (`CLUTTER_GRASS_CANOPY_FLOOR` 0.75, which the interior boost lifts to a
+ * grass of 0.9375), so the grass floor alone would let rabbits fill every
+ * bush-side cell in the woods: the census rose to 4,084 / 4,576 / 3,158
+ * units, most of them under closed canopy. */
+export const RABBIT_CANOPY_MAX = 0.85;
 export const RABBIT_COVER_RADIUS = 15;
 export const SQUIRREL_DENSITY_FLOOR = 0.5;
 export const RAVEN_PAIR_DENSITY_FLOOR = 0.6;
@@ -394,6 +398,7 @@ function groundUnit(seed: number, species: number, cx: number, cz: number): Wild
     }
     case SPECIES_RABBIT: {
       if (clutterDensity(seed, CLUTTER_GRASS, x, z, s) < RABBIT_GRASS_FLOOR) return null;
+      if (forestDensity(seed, x, z, s) >= RABBIT_CANOPY_MAX) return null;
       const bushes = clutterInRect(seed, CLUTTER_BUSH, x - RABBIT_COVER_RADIUS, z - RABBIT_COVER_RADIUS, x + RABBIT_COVER_RADIUS, z + RABBIT_COVER_RADIUS);
       let best: { x: number; z: number; groundH: number } | null = null;
       let bestD = RABBIT_COVER_RADIUS;

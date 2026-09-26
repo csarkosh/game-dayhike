@@ -987,7 +987,7 @@ describe("groundCover", () => {
   }
 
   it("exports the spec's constants and joins them to the level id", () => {
-    expect(CLUTTER_GRASS_CANOPY_FLOOR).toBe(0.5);
+    expect(CLUTTER_GRASS_CANOPY_FLOOR).toBe(0.75);
     expect(CLUTTER_GRASS_PATCH_FLOOR).toBe(0.6);
     expect(CLUTTER_GRASS_BOOST).toBe(1.5);
     expect(CLUTTER_GRASS_BOOST_LO).toBe(0.5);
@@ -1009,7 +1009,30 @@ describe("groundCover", () => {
     }
   });
 
-  it("keeps half the sward under a closed canopy, and the duff yields to it", () => {
+  it("leaves open ground to the bit whatever the canopy floor", () => {
+    // Where rho <= CANOPY_LO the canopy factor is exactly 1, so the floor
+    // never enters. Seed atmo, beside a meadow trail: a point off the
+    // saturated 1.5, then every open point of a 140 m square. Measured with
+    // the floor at 0.5, before it moved.
+    const seed = 627994160;
+    const s = elevationSampleAt(seed, 210, 86);
+    expect(forestDensity(seed, 210, 86, s)).toBeLessThanOrEqual(0.4);
+    const c = groundCover(seed, 210, 86, s);
+    expect(c.grass).toBe(0.8084537679893669);
+    expect(c.duff).toBe(0.0691546232010633);
+    let n = 0, grass = 0, duff = 0;
+    for (let x = 188; x < 328; x += 2) for (let z = 50; z < 190; z += 2) {
+      const p = elevationSampleAt(seed, x, z);
+      if (forestDensity(seed, x, z, p) > 0.4) continue;
+      const g = groundCover(seed, x, z, p);
+      n++; grass += g.grass; duff += g.duff;
+    }
+    expect(n).toBe(1232);
+    expect(grass).toBe(375.3656473161681);
+    expect(duff).toBe(39.97600562428079);
+  }, 30_000);
+
+  it("keeps three quarters of the sward's edge under a closed canopy, and the duff yields to it", () => {
     // A cell under full canopy, away from every non-grass neighbour: the
     // canopy multiplier is the floor itself.
     const seed = 1;
@@ -1022,13 +1045,37 @@ describe("groundCover", () => {
     expect(found).toEqual({ x: 0, z: 168 });
     const s = elevationSampleAt(seed, found!.x, found!.z);
     const c = groundCover(seed, found!.x, found!.z, s);
-    // At this cell onGrass, road and trail are all 1 and shade is 1, so
-    // grass is the floor itself, exactly.
-    expect(c.grass).toBeGreaterThan(0.3);
-    expect(c.grass).toBeCloseTo(0.5, 6);
-    // Duff is 1 - 0.5 / 1.5, the field's own share term at the new floor.
-    expect(c.duff).toBeLessThan(0.8);
-    expect(c.duff).toBeCloseTo(2 / 3, 6);
+    // At this cell onGrass, road, trail and patch are all 1 and shade is 1,
+    // so the edge product is the floor, 0.75. That is past the boost's start
+    // (0.5), so the boost adds 0.5 * smoothstep(0.5, 1, 0.75) = 0.25 and the
+    // grass is 0.75 * 1.25. With the floor at 0.5 it read 0.5, unboosted.
+    expect(c.grass).toBe(0.9375);
+    // Duff is the field's own share term, 1 - 0.9375 / 1.5 (was 2 / 3).
+    expect(c.duff).toBe(0.375);
+  });
+
+  it("raises the sward on the canopy's ramp as well as at its floor", () => {
+    // Seed 1 on the canopy-edge line the continuity test walks, at rho 0.6,
+    // inside the ramp's band: the canopy factor there is 0.75 + 0.25 · (1 -
+    // shade) where it was 0.5 + 0.5 · (1 - shade), and the edge passes the
+    // boost's start earlier. With the floor at 0.5 this point read grass
+    // 1.01756192900345 and duff 0.16682933374894812.
+    const s = elevationSampleAt(1, 1080, -200);
+    expect(forestDensity(1, 1080, -200, s)).toBeCloseTo(0.605, 2);
+    const c = groundCover(1, 1080, -200, s);
+    expect(c.grass).toBe(1.2835231682909276);
+    expect(c.duff).toBe(0.0748586974728327);
+  });
+
+  it("stands the canopy pose's sward at 0.9375 over 0.375 of duff", () => {
+    // The near-grass canopy pose, seed atmo: canopy 1 across the view. With
+    // the floor at 0.5 this point read grass 0.5 and duff 0.6666666666666667.
+    const seed = 627994160;
+    const s = elevationSampleAt(seed, 123, -105.5);
+    expect(forestDensity(seed, 123, -105.5, s)).toBe(1);
+    const c = groundCover(seed, 123, -105.5, s);
+    expect(c.grass).toBe(0.9375);
+    expect(c.duff).toBe(0.375);
   });
 
   it("keeps the path readable: no grass inside the bed's core, and the ramp's reach varies along the trail", () => {
@@ -1221,8 +1268,10 @@ describe("groundCover", () => {
     expect(checked).toBeGreaterThan(200);
   });
 
-  it("boosts only inside: never above edge · patch where the edge product is under the boost start", () => {
-    // Under dense canopy the edge product is small, so no boost may apply.
+  it("lifts a closed canopy's grass by the boost's first quarter and no further", () => {
+    // Under dense canopy the edge product is at most the floor, 0.75, just
+    // past the boost's start: the boost there is at most 1.25, so the grass
+    // is at most 0.75 * 1.25 * patch.
     let checked = 0;
     for (let x = -600; x <= 600; x += 12) {
       for (let z = 21000; z <= 22200; z += 12) {
@@ -1232,7 +1281,7 @@ describe("groundCover", () => {
         if (rho < CLUTTER_GRASS_CANOPY_HI) continue; // dense canopy only
         const { grass } = groundCover(SEED, x, z);
         // canopy ramp is at its floor, patch is at most 1
-        expect(grass).toBeLessThanOrEqual(CLUTTER_GRASS_CANOPY_FLOOR + 1e-9);
+        expect(grass).toBeLessThanOrEqual(0.9375 + 1e-9);
         checked++;
       }
     }

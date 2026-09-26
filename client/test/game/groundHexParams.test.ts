@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   HEX_LATTICE, HEX_SHARPNESS, DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
   MACRO_WAVE, MACRO_WEIGHT, MACRO_SLOPE, MACRO_LUSH, MACRO_DRY, TUFT_ALBEDO, HORIZON, HORIZON_MAX,
+  SWARD_FLOOR, SWARD_MAX, SWARD_COVER, SWARD_FADE,
   HEX_SKEW, HEX_UNSKEW,
-  latticeHash, hexTriangle, hexWeights, macroNoise, macroTint, horizonWeight,
+  latticeHash, hexTriangle, hexWeights, macroNoise, macroTint, horizonWeight, swardWeight,
 } from "../../src/game/groundHexParams.js";
 
 describe("constants are the spec's", () => {
@@ -115,5 +116,26 @@ describe("horizonWeight", () => {
     const mid = horizonWeight(62.5);
     expect(mid).toBeGreaterThan(0.2);
     expect(mid).toBeLessThan(0.3);
+  });
+});
+
+describe("the sward floor", () => {
+  it("pins the thatch colour, the pull and its bands", () => {
+    expect(SWARD_FLOOR).toEqual({ r: 0.05, g: 0.065, b: 0.03 });
+    expect(SWARD_MAX).toBe(0.6);
+    expect(SWARD_COVER).toEqual([0.05, 0.5]);
+    // Gone by the blade field's 18 m reach, so the open floor beyond is unchanged.
+    expect(SWARD_FADE).toEqual([12, 18]);
+  });
+
+  it("pulls by the cover inside the reach and not at all past it", () => {
+    expect(swardWeight(1, 5)).toBeCloseTo(0.6, 10);
+    expect(swardWeight(0.5, 5)).toBeCloseTo(0.6, 10); // half cover is already full pull
+    expect(swardWeight(0.275, 5)).toBeCloseTo(0.3, 10);
+    expect(swardWeight(0.05, 5)).toBe(0); // where the blade field stops growing
+    expect(swardWeight(0, 5)).toBe(0);
+    expect(swardWeight(1, 15)).toBeCloseTo(0.3, 10);
+    expect(swardWeight(1, 18)).toBe(0);
+    expect(swardWeight(1, 40)).toBe(0);
   });
 });

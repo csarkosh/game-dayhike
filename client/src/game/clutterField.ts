@@ -235,6 +235,17 @@ export function clutterFadeEdges(cls: number, radiusScale = 1): { start: number;
  */
 export const CLUTTER_BLADE_HANDOFF = 10;
 
+/**
+ * The meadow's near cards' in-band (m, eye distance to the instance origin)
+ * on the tiers that draw the blade field over them. The cards are the near
+ * field's cover and the blades its detail; inside 1 m a card would stand
+ * across the view at the feet as the flat quads it is, so it is absent there
+ * and dithers in by 2.5 m, where the fine blade tier is densest. It starts
+ * outside FOLIAGE_BEND_R, so the local player's own bend never acts on a
+ * card that can be seen.
+ */
+export const CLUTTER_MEADOW_NEAR_IN: readonly [number, number] = [1, 2.5];
+
 /** The near/far LOD seam for a class: ends at the split,
  * starts 15% of the near disc inside it, floored at the snap-jitter width
  * like the edge fade — except the meadow, whose seam is also the blade

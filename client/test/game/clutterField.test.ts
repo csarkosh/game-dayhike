@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import {
-  CLUTTER_BLADE_HANDOFF, CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION,
+  CLUTTER_BLADE_HANDOFF, CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION, CLUTTER_MEADOW_NEAR_IN,
   CLUTTER_FADE_MIN_RAMP, CLUTTER_FAR_SPLIT, CLUTTER_RADII, COLLECTOR_SWEEP_SIZE, clutterFadeEdges,
   clutterSeamEdges, collectClutter, collectClutterWithBudgets, createClutterCollector,
 } from "../../src/game/clutterField.js";
@@ -17,6 +17,15 @@ describe("clutter band properties", () => {
   it("carries a radius and a budget for every class", () => {
     expect(CLUTTER_RADII.length).toBe(CLUTTER_CLASS_COUNT);
     expect(CLUTTER_BUDGETS.length).toBe(CLUTTER_CLASS_COUNT);
+  });
+
+  it("dithers the meadow's near cards in from the eye, clear of the seam", () => {
+    // Under the blade field the meadow's near cards are the cover and the
+    // blades the detail. Inside 1 m a card would stand as a flat plane at the
+    // feet, so it is absent there and thickens in by 2.5 m, where the fine
+    // blade tier is densest. The in-band ends well inside the seam's start.
+    expect(CLUTTER_MEADOW_NEAR_IN).toEqual([1, 2.5]);
+    expect(clutterSeamEdges(CLUTTER_MEADOW).start).toBeGreaterThan(2.5);
   });
 
   it("budget clears the hard geometric ceiling for every class but driftwood", () => {
@@ -161,6 +170,17 @@ describe("near/far seam", () => {
 });
 
 describe("clutter bands", () => {
+  it("draws the canopy pose's sward at three quarters and leaves the meadow pose's alone", () => {
+    // Seed atmo. Under the closed canopy at (123, -105.5) the field's grass
+    // is 0.9375 and the meadow class's presence follows it (1,400 near and
+    // 4,619 far with the canopy floor at 0.5). In the open meadow at
+    // (369, -855) the grass is 1.5 whatever the floor.
+    const canopy = collectClutter(627994160, 123, -105.5)[CLUTTER_MEADOW]!;
+    expect([canopy.near.length, canopy.far.length]).toEqual([2674, 8719]);
+    const meadow = collectClutter(627994160, 369, -855)[CLUTTER_MEADOW]!;
+    expect([meadow.near.length, meadow.far.length]).toEqual([3168, 10166]);
+  }, 30_000);
+
   it("assigns every instance to the right band by distance", () => {
     const bands = collectClutter(SEED, CAM.x, CAM.z);
     expect(bands.length).toBe(CLUTTER_CLASS_COUNT);

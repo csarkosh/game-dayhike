@@ -14,7 +14,7 @@ import {
 import { FEATURE_PAINT_MAX } from "../../src/game/featurePaint.js";
 import {
   DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
-  HORIZON, HORIZON_MAX, TUFT_ALBEDO,
+  HORIZON, HORIZON_MAX, TUFT_ALBEDO, swardWeight,
 } from "../../src/game/groundHexParams.js";
 import type { Feature } from "../../src/sim/features.js";
 import type { TrailGraph } from "../../src/sim/trail.js";
@@ -67,13 +67,22 @@ describe("terrain texture plugin", () => {
     const plugin = mat.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin;
     const attrs: string[] = [];
     plugin.getAttributes(attrs, scene, undefined as never);
-    expect(attrs).toEqual(expect.arrayContaining(["terrainWeights", "terrainWeights2"]));
+    expect(attrs).toEqual(expect.arrayContaining(["terrainWeights", "terrainWeights2", "terrainCover"]));
     const samplers: string[] = [];
     plugin.getSamplers(samplers);
     expect(samplers).toEqual(expect.arrayContaining([
       "terrainGrass", "terrainFloor", "terrainRock", "terrainSand", "terrainPebble",
       "terrainNormals", "terrainRAH",
     ]));
+  });
+
+  it("declares the cover attribute and its varying as floats", () => {
+    const plugin = pluginFor("tc");
+    const vert = plugin.getCustomCode("vertex")!;
+    expect(vert.CUSTOM_VERTEX_DEFINITIONS).toContain("attribute float terrainCover;");
+    expect(vert.CUSTOM_VERTEX_DEFINITIONS).toContain("varying float vTerrainCover;");
+    expect(vert.CUSTOM_VERTEX_MAIN_END).toContain("vTerrainCover = terrainCover;");
+    expect(plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS).toContain("varying float vTerrainCover;");
   });
 
   it("declares the second weight attribute and varying as vec4, duff in z and canopy in w", () => {
@@ -796,6 +805,60 @@ describe("the grass floor", () => {
     expect(writes.terrainHorizon).toEqual([HORIZON[0], HORIZON[1], HORIZON_MAX]);
     expect(writes.terrainTuft).toEqual([TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b]);
     expect(writes.terrainMacroOn).toEqual([1]);
+  });
+
+  it("pulls the sward floor toward the thatch colour after the horizon tint", () => {
+    const blend = makePlugin().getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
+    const w = "float swardW = terrainSward.w * smoothstep(terrainSwardBand.x, terrainSwardBand.y, vTerrainCover) * (1.0 - smoothstep(terrainSwardBand.z, terrainSwardBand.w, dist));";
+    const mix = "surfaceAlbedo = mix(surfaceAlbedo, terrainSward.rgb, swardW);";
+    expect(blend).toContain(w);
+    expect(blend).toContain(mix);
+    expect(blend.indexOf("horizonWeight(dist)")).toBeLessThan(blend.indexOf(w));
+    expect(blend.indexOf(w)).toBeLessThan(blend.indexOf(mix));
+    // The pull keys on the cover, not on the grass texture weight.
+    expect(w).not.toContain("w0");
+  });
+
+  it("declares and binds the sward uniforms", () => {
+    const plugin = makePlugin();
+    const names = plugin.getUniforms().ubo.map((u: { name: string }) => u.name);
+    expect(names).toEqual(expect.arrayContaining(["terrainSward", "terrainSwardBand"]));
+    expect(plugin.getUniforms().fragment).toMatch(/uniform\s+vec4\s+terrainSward\s*;/);
+    expect(plugin.getUniforms().fragment).toMatch(/uniform\s+vec4\s+terrainSwardBand\s*;/);
+    const defs = plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS!;
+    expect(defs).not.toContain("uniform vec4 terrainSward");
+    const { writes } = makeBoundPlugin();
+    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0.6]);
+    expect(writes.terrainSwardBand).toEqual([0.05, 0.5, 12, 18]);
+  });
+
+  it("binds the pull's strength as 0 while the sward is off, and keeps the rest bound", () => {
+    const { plugin, ubo, writes } = makeBoundPlugin();
+    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0.6]);
+    plugin.setSward(false);
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0]);
+    expect(writes.terrainSwardBand).toEqual([0.05, 0.5, 12, 18]);
+    plugin.setSward(true);
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0.6]);
+  });
+
+  it("rebuilds swardWeight from the bound uniforms, component for component as the GLSL reads them", () => {
+    const { writes } = makeBoundPlugin();
+    const [, , , max] = writes.terrainSward as [number, number, number, number];
+    const [coverLo, coverHi, fadeLo, fadeHi] = writes.terrainSwardBand as [number, number, number, number];
+    // GLSL smoothstep, clamped.
+    const smooth = (e0: number, e1: number, x: number) => {
+      const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+      return t * t * (3 - 2 * t);
+    };
+    // swardW = terrainSward.w * smoothstep(band.x, band.y, cover) * (1 - smoothstep(band.z, band.w, dist))
+    const glsl = (cover: number, dist: number) => max * smooth(coverLo, coverHi, cover) * (1 - smooth(fadeLo, fadeHi, dist));
+    const points: [number, number][] = [[1, 5], [0.3, 5], [0.2, 14], [0.8, 16.5], [0.5, 12], [0.04, 3], [1, 19]];
+    for (const [cover, dist] of points) {
+      expect(Math.abs(glsl(cover, dist) - swardWeight(cover, dist)), `cover ${cover}, dist ${dist}`).toBeLessThan(1e-12);
+    }
   });
 
   it("binds terrainWet from setWet, unconditionally, clamped to [0, 1]", () => {

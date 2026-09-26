@@ -38,7 +38,7 @@ import { createAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
-import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainWetness } from "./terrainTexture.js";
+import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
 import type { WeatherParams } from "./weather.js";
 import { wetSurfaceUnder } from "./weather.js";
 import { tierFor, type QualityTier } from "./quality.js";
@@ -216,6 +216,7 @@ export function applyRingGeometry(mesh: Mesh, geometry: RingGeometry): void {
   // be discarded rather than merged.
   mesh.setVerticesData("terrainWeights", geometry.weights, true, 4);
   mesh.setVerticesData("terrainWeights2", geometry.weights2, true, WEIGHTS2_STRIDE);
+  mesh.setVerticesData("terrainCover", geometry.cover, true, 1);
 }
 
 export type Clipmap = {
@@ -783,15 +784,21 @@ export function createRenderer(
   // levels have no forest and get no grass, rocks, boulders, driftwood or
   // fungus. Low tier shrinks every class radius to 60%, the clutter analogue
   // of the forest's near-band tier rule. High and medium draw the blade field
-  // inside the meadow's seam; low keeps the cards, whose 1.5× scaling is
-  // where blades resolve worst.
+  // over the meadow's near cards, which dither in from the eye beneath it;
+  // low keeps the cards alone, whose 1.5× scaling is where blades resolve
+  // worst.
   const clutterMeshes =
     forest !== null
       ? createClutterMeshes(scene, forest.seed, { radiusScale: tier === "low" ? 0.6 : undefined, nearBlades: tier !== "low" })
       : null;
   // The near field of blade grass, on the tiers that can afford it; it
-  // rebuilds on its own 1 m crossing and takes the meadow's near cards' place.
+  // rebuilds on its own 1 m crossing and draws over the meadow's near cards
+  // as detail rather than taking their place.
   const bladeMeshes = forest !== null && tier !== "low" ? createBladeMeshes(scene, forest.seed, { quality: tier }) : null;
+  // The terrain's sward floor is the shaded ground between those blades, so it
+  // runs exactly where they are drawn: off on the low tier. Without a forest
+  // there is no clipmap, and the terrain material is not built for it.
+  if (forest !== null) setTerrainSward(scene, terrainMaterialFor(scene, "terrain"), bladeMeshes !== null);
   // The near field of dead leaves, twigs and small branches, on the same
   // tiers as the blades beside it: what the grass field thins out, this fills
   // in, so the ground reads full rather than bare. Low tier draws neither.
