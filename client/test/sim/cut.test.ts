@@ -111,6 +111,27 @@ describe("triggerEdge", () => {
     expect(triggerEdge(g, 1, 100, -8)).toBe(-1); // 8 m from the fork, on no branch
     expect(triggerEdge(g, 1, 120, -15)).toBe(-1);
   });
+
+  it("is -1 on the next edge along, which comes within the half-width of a branch at their shared node", () => {
+    // (95, 35) is 5 m from edge 9 (the rung 1–7) and 2.8 m from edge 8 (7–0),
+    // the detour's leg: a player there is on the leg, not on fork 1's rung,
+    // and fork 7 owns the leg.
+    const g = sandbox();
+    expect(triggerEdge(g, 1, 95, 35)).toBe(-1);
+    expect(triggerEdge(g, 7, 95, 35)).toBe(8);
+  });
+
+  it("never reads a closed branch as the arrival", () => {
+    // The rung 1–7 (edge 9) closed: a player on it is nobody's arrival, and a
+    // player on the fork's node arrives by the lowest open edge instead.
+    const g = sandbox();
+    expect(triggerEdge(g, 1, 100, 20, new Set([9]))).toBe(-1);
+    expect(triggerEdge(g, 1, 100, 0, new Set([0]))).toBe(1);
+    // Fork 7 from the rung's far end, node 1: on the rung while it is open,
+    // on nothing of 7's once it is closed.
+    expect(triggerEdge(g, 7, 100, 0)).toBe(9);
+    expect(triggerEdge(g, 7, 100, 0, new Set([9]))).toBe(-1);
+  });
 });
 
 describe("openBranch on the guide", () => {
@@ -124,6 +145,15 @@ describe("openBranch on the guide", () => {
     // 2's detour (edge 7) closed elsewhere: of what is left, only the stem to
     // node 1 reaches the pad without coming back through 2.
     expect(openBranch(sandbox(), guide([7]), 2, 4)).toBe(1);
+  });
+
+  it("judges the fork like a stray's when the guide beyond its edge out no longer reaches the pad", () => {
+    // Node 7's way on (edge 8) and its rung (edge 9) closed by a cut at 7
+    // before the guide came to 2: the detour is still open but leads only to
+    // Hollows, so the stem to node 1 opens instead. With the rung alone
+    // closed the detour still reaches the pad, and stays the guide's.
+    expect(openBranch(sandbox(), guide([8, 9]), 2, 4)).toBe(1);
+    expect(openBranch(sandbox(), guide([9]), 2, 4)).toBe(7);
   });
 });
 

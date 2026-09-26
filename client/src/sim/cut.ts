@@ -79,22 +79,30 @@ function joins(e: TrailEdge, u: number, v: number): boolean {
 }
 
 /**
- * The incident edge of `fork` a player at (x, z) is on: the nearest by
- * segmentDistance, ties to the lower edge index, or -1 when the nearest is
- * farther than TRAIL_CORRIDOR_HALF — the player is near the fork but on
- * trail that is not one of its branches.
+ * The incident edge of `fork` a player at (x, z) is on: the nearest open one
+ * by segmentDistance, ties to the lower edge index, within
+ * TRAIL_CORRIDOR_HALF, and with no other open edge of the trail strictly
+ * nearer; otherwise -1. The player is near the fork but on trail that is not
+ * one of its branches — beside it in the woods, or on the next edge along,
+ * which comes within the half-width of a branch wherever the two share a
+ * node. A closed branch is nobody's arrival: the Hollow that closed it is
+ * the fork's answer to whoever walks it, and a player standing at its far
+ * end, on the fork it was closed from, has not come to this one.
  */
-export function triggerEdge(graph: TrailGraph, fork: number, x: number, z: number): number {
-  let best = -1, bestD = Infinity;
+export function triggerEdge(graph: TrailGraph, fork: number, x: number, z: number, closed: ReadonlySet<number> = NONE): number {
+  let best = -1, bestD = Infinity, nearest = Infinity;
   for (let ei = 0; ei < graph.edges.length; ei++) {
+    if (closed.has(ei)) continue;
     const e = graph.edges[ei] as TrailEdge;
-    if (e.a !== fork && e.b !== fork) continue;
     const a = graph.nodes[e.a] as TrailNode, b = graph.nodes[e.b] as TrailNode;
     const d = segmentDistance(a.x, a.z, b.x, b.z, x, z);
+    if (d < nearest) nearest = d;
+    if (e.a !== fork && e.b !== fork) continue;
     if (d < bestD) { bestD = d; best = ei; }
   }
-  return bestD > TRAIL_CORRIDOR_HALF ? -1 : best;
+  return bestD > TRAIL_CORRIDOR_HALF || nearest < bestD ? -1 : best;
 }
+const NONE: ReadonlySet<number> = new Set();
 
 /** Metres along `path` from its first node to the first node on the guide; Infinity when the path is empty or meets none. */
 function metresToGuide(graph: TrailGraph, path: readonly number[], onGuide: ReadonlySet<number>): number {
@@ -169,8 +177,12 @@ function bestBranch(graph: TrailGraph, record: CutRecord, fork: number, arrival:
  * graph. Never the arrival, never an edge already closed.
  *
  * On the guide, arriving by the guide's edge into the fork, the open edge is
- * the guide's edge out of it (still open — an edge joining two forks can have
- * been closed at the other one, and then the fork is judged like a stray's).
+ * the guide's edge out of it — while that edge is still open (one joining two
+ * forks can have been closed at the other one) and the guide beyond it still
+ * reaches the pad on the residual graph: a fork cut before the guide came to
+ * it, by a stray or by a player on another branch, can have closed the
+ * guide's own way on, and the guide's edge out would then lead only to
+ * Hollows. Either way the fork is judged like a stray's instead.
  * Otherwise the candidate branches are costed on the residual graph with the
  * fork's own edges removed: a branch's way home must not come back through
  * the fork it leaves, or "the open branch reaches the pad" would be true of
@@ -186,13 +198,17 @@ export function openBranch(graph: TrailGraph, record: CutRecord, fork: number, a
   const guide = record.guide;
   const arrivalEdge = graph.edges[arrival];
   const i = guide.indexOf(fork);
+  const beyondFork = residualEdges(graph, record, fork);
   if (i > 0 && i + 1 < guide.length && arrivalEdge !== undefined && joins(arrivalEdge, guide[i - 1] as number, fork)) {
-    for (let ei = 0; ei < graph.edges.length; ei++) {
-      if (ei === arrival || record.closed.has(ei)) continue;
-      if (joins(graph.edges[ei] as TrailEdge, fork, guide[i + 1] as number)) return ei;
+    const next = guide[i + 1] as number;
+    if ((homeDistances(graph.nodes, beyondFork)[next] as number) !== Infinity) {
+      for (let ei = 0; ei < graph.edges.length; ei++) {
+        if (ei === arrival || record.closed.has(ei)) continue;
+        if (joins(graph.edges[ei] as TrailEdge, fork, next)) return ei;
+      }
     }
   }
-  const beyond = bestBranch(graph, record, fork, arrival, residualEdges(graph, record, fork));
+  const beyond = bestBranch(graph, record, fork, arrival, beyondFork);
   if (beyond !== -1) return beyond;
   // The fallback: a dead-end branch is one whose far node cannot reach the
   // pad without the branch itself, and it is closed for the costing rather
@@ -269,7 +285,7 @@ export function forkSpawn(world: World, fork: number, edge: number): Vec3 | null
 }
 
 /** The living, unsafe player nearest `fork` within FORK_CUT_RADIUS and on one of its branches, ties to the lower id; null when none. */
-function triggerOf(world: World, graph: TrailGraph, fork: number): { player: PlayerState; arrival: number } | null {
+function triggerOf(world: World, graph: TrailGraph, record: CutRecord, fork: number): { player: PlayerState; arrival: number } | null {
   const node = graph.nodes[fork] as TrailNode;
   const reach = FORK_CUT_RADIUS * FORK_CUT_RADIUS;
   let best: { player: PlayerState; arrival: number } | null = null;
@@ -279,7 +295,7 @@ function triggerOf(world: World, graph: TrailGraph, fork: number): { player: Pla
     const sq = horizontalDistSq(p.pos, node);
     if (sq > reach) continue;
     if (best !== null && (sq > bestSq || (sq === bestSq && p.id > best.player.id))) continue;
-    const arrival = triggerEdge(graph, fork, p.pos.x, p.pos.z);
+    const arrival = triggerEdge(graph, fork, p.pos.x, p.pos.z, record.closed);
     if (arrival === -1) continue;
     best = { player: p, arrival };
     bestSq = sq;
@@ -311,7 +327,7 @@ export function stepCuts(world: World): void {
   if (graph === null || record === null) return;
   for (const fork of graph.forks) {
     if (record.cuts.has(fork)) continue;
-    const trigger = triggerOf(world, graph, fork);
+    const trigger = triggerOf(world, graph, record, fork);
     if (trigger === null) continue;
     const node = graph.nodes[fork] as TrailNode;
     if (isOnCorridor(world, node.x, node.z)) {
