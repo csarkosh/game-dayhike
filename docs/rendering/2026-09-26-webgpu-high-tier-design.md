@@ -1,0 +1,1015 @@
+# WebGPU on the high tier: design
+
+**As built.** Nothing yet. This is the design as written on 2026-09-26, from
+the WebGPU blade culling spike (`docs/rendering/2026-09-26-grass-webgpu-spike.md`,
+on the spike's branch `worktree-grass-webgpu-spike` until the plan's Task 1
+brings it over, and its code commit `781e4a2`). The plan
+([2026-09-26-webgpu-high-tier-plan](2026-09-26-webgpu-high-tier-plan.md))
+builds it in eight tasks on a fresh branch from `origin/main` (`ba0fd95`); the
+engine reaches a player by default only at Task 6, after the parity and frame
+gates. When the work lands this paragraph is rewritten to say what shipped and
+with what values; the sections below stay the design as written.
+
+The spike ran the game on Babylon's `WebGPUEngine` with every existing material
+and plugin, to measure a compute cull of the blade field, and found the engine
+itself worth more than the cull it was built to test. At the canopy pose, high
+tier, on the reference machine (Chrome 153, Metal), the WebGPU build with the
+blade field as shipped drew a frame in **45.21 ms** against WebGL2's **55.14 ms**
+at four times the pixels, and in **22.69 ms** against **24.22 ms** at native
+pixels (lowest page means; §3.1 says what those numbers are and are not). It
+also left two look and behaviour problems unexplained, and six WebGPU-only
+changes made in a hurry. This design turns that into something players can
+be given. The goal is one sentence: **on the high tier, draw with WebGPU
+wherever the browser can, show the same picture as WebGL2, and fall back to
+WebGL2 by itself when it cannot.**
+
+Renderer-only. No `sim/` change, no level-id move, no protocol change, no
+asset change. Two peers on different engines share one world (§11).
+
+## 1. Decisions
+
+| question | decision |
+| --- | --- |
+| Which engine | The **high** tier uses `WebGPUEngine` when `WebGPUEngine.IsSupportedAsync` holds, the high-performance adapter is not a fallback (software) adapter, and it meets every required limit (§5.2); otherwise WebGL2, as today. Medium, low and the landing backdrop stay WebGL2. The rule ships switched off (`WEBGPU_ON_HIGH = false`) and Task 6 switches it on after its gates |
+| Overrides | `?engine=webgl2` and `?engine=webgpu`, on any tier, for testing; `?tier=low\|medium\|high`, committed (it has been an uncommitted measurement patch in three notes). `?engine=webgpu` on a browser that cannot run it falls back and says so once in the console |
+| How the engine is made | Every PBR and standard material generates GLSL on WebGPU through Babylon's own public switches (`PBRBaseMaterial.ForceGLSL`, `StandardMaterial.ForceGLSL`), the sky material by its constructor flag; the engine translates at run time with the glslang and twgsl builds `@babylonjs/core` ships, content-hashed by the build and cached immutably; the device is asked for the required limits, not the adapter's maximum |
+| Failure before the game starts | WebGL2, in the same page load; the player sees the usual loading and then the game |
+| Failure after it starts | A shader or pipeline error in the startup window, or an uncaptured WebGPU error then: WebGL2 is remembered and the page reloads itself. A lost device: the page reloads on WebGPU once; a second loss within 24 h remembers WebGL2 and reloads. After a fallback reload the HUD says so for 6 s (§5.5) |
+| Remembered fallback | `localStorage` key `dayhike.engine`, holding the reason, the browser's major version, Babylon's version and the time; it holds while both versions are unchanged and for 30 days. Where storage throws, the reload carries `?engine=webgl2`, so a failing engine can never loop |
+| The six changes | Each its own commit with its own test (§6). WebGL2's shader text stays byte-identical, pinned by hash, except the one renamed identifier of §6.3 |
+| Parity | Nine fixed poses (§7.1); per crop, WebGPU's mean linear luminance within ±5 % of WebGL2's and the CIELAB distance of the crop means ≤ 2.0, or twice the same-engine repeat where that is larger; grass cover within 0.02; a verdict in words per pose |
+| The trail bed | Diagnosed before it is fixed (§8). On reading the paint, the snow mix cannot make the glint the spike saw; the likely mechanism is the image-based light the wet bed reflects |
+| The impostor bake | Waits for readiness, not a clock; resolves null only on a shader error, which is logged; logs once if still waiting at 30 s; stops on dispose (§9) |
+| The pipeline-cache bug | A local workaround that survives Babylon recomputing the hash, pinned by a canary test that fails when a fixed Babylon ships; a draft upstream issue (Appendix A). Filing it is a manual step outside this plan |
+| Frame bar | WebGPU at least **1.5 ms** faster than WebGL2 at native pixels at the canopy pose, by quiet pair rounds; 4× reported; no pose slower than its same-code noise floor (§13.1) |
+| Startup, memory, console, fallback | Bars in §13.3–§13.6 |
+| The compute-culled blades | Build I, Task 7, only after the engine path is on `main`; built on the grass frame filter's collected buffers; must beat WebGPU with that filter by **0.3 ms** at native, not the unfiltered field (§12) |
+| Unchanged | Everything under `client/src/sim/` (`passHash` −311867473); `PROTOCOL_VERSION` 5; every asset; the medium and low tiers; WebGL2's pixels |
+
+## 2. Goals and non-goals
+
+**Goals.**
+
+- Players on the high tier get the WebGPU engine's frame time wherever their
+  browser and adapter can run it, with no action of theirs.
+- The picture on WebGPU is the picture on WebGL2 at every pose the gates
+  know, within the tolerance of §7.
+- No player is left with a blank or broken page: every way WebGPU can fail
+  ends on WebGL2, once, without a loop.
+- The WebGL2 path, which every player not on the high tier keeps, does not
+  change by a byte of shader text except where §6 says so.
+
+**Non-goals.**
+
+- Porting the GLSL plugins to WGSL (about 685 lines under
+  `client/src/game/shaders/` and about 640 more inline, the spike's count). The
+  translators carry them; a port is a follow-up (§17).
+- Changing who is detected as high tier (§4, §17).
+- WebGPU on medium or low; WebGPU for the landing backdrop.
+- Snapshot rendering, render bundles, timestamp queries in shipped code.
+- Per-blade GPU culling (the spike's §7); build I culls per clump.
+
+## 3. What the spike measured, and what it did not
+
+### 3.1 The numbers
+
+Babylon.js 9.18.0; Chrome 153, headless, on an Apple adapter (Metal 3); seed
+`atmo`, `weather mist`, `time 12`, high tier; a 1200 × 2029 window at device
+pixel ratio 1; the canopy pose `(123, 110.87, −105.5)`, yaw 1.571, pitch 0.3.
+Frames by the near-grass pair method; a page is *quiet* when it sits within
+0.5 ms of its build's lowest mean; only quiet rounds read. Builds from one
+commit: **GL** WebGL2 as shipped; **B** WebGPU, thin instances as shipped;
+**S** WebGPU with the compute cull, count read back a frame late; **I** the same
+with the count written into the draw's indirect arguments.
+
+| pixels | GL | B | S | I | reading |
+| --- | --- | --- | --- | --- | --- |
+| native | 24.22–24.26 (quiet pages) | 22.77–22.88 (quiet pages), 22.69 lowest | 21.66 lowest | not measured quietly | S − B −1.03 ms, two quiet pair rounds, same-code floor ±0.11 |
+| 4× | 55.14 (same-code, both pages) | 45.21 / 45.23 (same-code) | 44.34 (one GL/S round) | −0.65 against B (one round) | GL/B pair rounds −9.2 and −11.6, both pages lifted |
+
+### 3.2 What the engine alone is worth at native
+
+The spike's summary says the engine alone is about 2.5 ms faster at native.
+That figure is the WebGPU build **with S** (21.66 against 24.22), which the
+spike's own §4 and §6 label correctly. The engine
+alone, B against GL, is **−1.53 ms** by lowest means (22.69 against 24.22), and
+−1.34 to −1.49 ms by the quiet pages' means; no GL/B round was quiet on both
+pages at native. At 4× the engine alone is **−9.93 ms** (45.21 against 55.14),
+and that figure is robust. So the frame bar of §13.1, 1.5 ms at native, sits
+on the only native estimate there is. It is kept, and §16 says in advance what
+happens if it is missed.
+
+The native window renders 2.4 million pixels. A high-tier player on a laptop
+panel at its own device ratio renders between that and the 4× figure's 9.7
+million (Babylon's engine is made with `adaptToDeviceRatio`), so the 4× delta
+is at least as close to what such a player sees as the native one.
+
+### 3.3 The six WebGPU-only changes the spike needed
+
+| what failed | where | the spike's change | this design (§6) |
+| --- | --- | --- | --- |
+| `'textureSample' must only be called from uniform control flow` | the finish pass: a read of the scene after `if (mask > 0.0)` on a varying (`finish.fragment.fx:40–44`) | uniformity analysis off for every translated shader, by replacing the engine's private `_createPipelineStageDescriptor` | off for the named shader only, by Babylon's own define, on WebGPU only |
+| `sampler constructor must appear at point of use` (glslang) | `groundHex.fragment.fx:90–114`: `hexFetch2D` / `hexFetchArray` take a sampler | the include rewritten by string surgery at two markers, on WebGPU only | the include split at the same seams into three files; WebGPU swaps the middle for macros |
+| `'macro' is a reserved keyword` (WGSL) | the terrain blend's local `vec3 macro` (`terrainTexture.ts:558`) | a whole-word regex over all plugin text, on WebGPU only | renamed at source; a reserved-word scan over every plugin |
+| 17 vertex outputs, limit 16 | the blade material: PBR's varyings plus the foliage plugin's four | `setMaximumLimits` (every adapter limit) | the required limits, measured and requested |
+| `atmGradient` not bound | the atmosphere plugin binds no texture while its record is null | bind on WebGPU while off | bind whenever the texture exists |
+| a sign's painted texture throws | the WebGPU dynamic-texture extension is not reached by the WebGL2 imports | import every WebGPU extension | the same import, in the WebGPU-only module |
+
+### 3.4 The two open problems
+
+- **The trail bed** reads cooler and greyer on WebGPU than WebGL2's warm brown,
+  with a pale glint where it meets the horizon; not traced (§8).
+- **The forest impostor bake** waits at most 5 s for its shaders
+  (`forestMeshes.ts:631`, the loop at 704–712); under the slower run-time
+  translation it timed out, resolved null, and `adoptBake` left the far forest's
+  buckets disabled for good (`forestMeshes.ts:799–800`), with nothing in the
+  console. Six times the budget let it bake (§9).
+
+### 3.5 What of the spike's code should not ship
+
+- `forceGlslMaterials` defines an accessor on `Material.prototype._forceGLSL`
+  that reads true and swallows writes. It works only while Babylon assigns the
+  field rather than defining it as an own property, and Babylon already has the
+  public switches this needs (`pbrBaseMaterial.pure.js:270`,
+  `standardMaterial.pure.js:599`).
+- `skipUniformityAnalysis` replaces a private engine method for every shader,
+  which also hides every other uniformity fault the translation would have
+  reported.
+- `setMaximumLimits` asks the device for everything the adapter has, so a
+  pipeline that outgrows the limits every adapter guarantees still runs on the
+  reference machine and fails only on a weaker one.
+- `main.ts` awaits `createWebGpuEngine` with no rejection handler: a device or
+  translator failure leaves a blank canvas and an unhandled rejection. Its own
+  `webGpuRequested` helper is exported and unused.
+- The impostor bake's six-fold budget is still a deadline, still silent past it,
+  and applies only on WebGPU, though a slow machine on WebGL2 can miss the 5 s
+  too.
+- The pipeline-cache workaround adds the offset to `hashCode` once, after
+  construction. Babylon recomputes the hash whenever `instanceDivisor` is set
+  (`buffer.pure.js:234–239`), which silently drops the offset term and brings
+  the collision back.
+- Build S's read-back lags the view: 14 to 484 instance-frames went undrawn per
+  turn. It is not carried forward.
+- Build I reaches three private internals (`engine._renderEncoder`,
+  `engine._endCurrentRenderPass()`, `SubMesh._getDrawWrapper(...).drawContext`)
+  and ends the current render pass to copy the counts; whether that split the
+  multisampled scene pass on a tile-based GPU was not checked (§12.4).
+- The spike branched from `0b957a6`, before the grass frame's frustum filter
+  (`5903706`, `418e755`), so its B draws the whole blade field every frame. S
+  and I were measured against a baseline `main` is about to leave behind.
+- `renderer.ts` reads `?blades=` and `?bladecount=` in shipped code.
+
+### 3.6 What moved on `main` since
+
+The spike's base is `0b957a6`; `main` is `ba0fd95`, eighteen commits later: the
+summit models and their fingerposts with painted labels (`signMeshes.ts`, two
+`DynamicTexture`s), rangers and the antlered Hollow (`characterModel.ts`,
+`staticModel.ts`, `entityViews.ts`), the trailhead's kiosk and SUV
+(`trailheadMeshes.ts`). None of those materials has been compiled on WebGPU.
+Task 2 sweeps the scene from scratch rather than trusting the spike's list.
+
+## 4. Who reaches the high tier
+
+`createRenderer` detects the tier when none is given (`renderer.ts:690`), and
+`app.ts:153` never gives one. Detection is `tierFor` (`quality.ts:74–79`): high
+needs more than eight cores **and** more than 8 GB of `navigator.deviceMemory`.
+As the near-grass design found, a desktop browser reports at most 8 GB, so
+detection lands on medium at best; and a browser that exposes no
+`deviceMemory` reads the default 4 (`renderer.ts:522`) and lands on low. Today
+no player reaches the high tier except through an override, and there has been
+no committed override.
+
+So this design, as it stands, reaches players only through `?tier=high`. That
+is deliberate: changing detection moves every player it promotes onto the high
+tier's costs (the scene pass, halation, two 2048² cascades, 400 m of cliff
+rings), which is a design of its own with its own frame gate on medium-class
+machines (§17). The engine rule is written against the resolved tier, so it
+needs no change when detection does.
+
+## 5. Selection and fallback
+
+### 5.1 The rule
+
+Resolved once, before the game starts, in `main.ts`:
+
+```
+tier   = ?tier=… if valid, else detected
+engine = ?engine=webgl2                          → WebGL2
+       | ?engine=webgpu      and the GPU fits     → WebGPU
+       | tier ≠ high                             → WebGL2
+       | not WEBGPU_ON_HIGH                      → WebGL2   (until Task 6)
+       | the remembered fallback holds           → WebGL2
+       | the GPU fits                            → WebGPU
+       | otherwise                               → WebGL2
+
+the GPU fits = navigator.gpu exists
+             ∧ WebGPUEngine.IsSupportedAsync
+             ∧ requestAdapter({ powerPreference: "high-performance" }) returns an adapter
+             ∧ that adapter's info.isFallbackAdapter is false
+             ∧ every limit of §5.2 ≤ the adapter's
+```
+
+The pure part (the override parsing, the limit comparison, the decision, the
+remembered record) lives in `engineChoice.ts` and is tested with literal
+inputs; the part that touches `navigator.gpu` lives in `gpuEngine.ts`, which is
+loaded only by a dynamic `import()` on the WebGPU path, so the WebGL2 bundle
+gains the selection code and nothing of the WebGPU engine.
+
+### 5.2 Required limits
+
+The device is created with exactly these as `requiredLimits`. Asking for the
+adapter's maximum instead would let a pipeline that needs more than we checked
+for run here and fail elsewhere.
+
+| limit | WebGPU default | required | why |
+| --- | --- | --- | --- |
+| `maxInterStageShaderVariables` | 16 | **17** | the blade material: PBR's varyings plus the foliage plugin's four (`foliage.vertex.fx:21–24`), as the spike measured |
+| `maxSampledTexturesPerShaderStage` | 16 | measured by Task 2 | the terrain's fragment: seven layer maps and arrays, road ×2, trail ×2, the feature table, the atmosphere's gradient, the environment cube, the BRDF lookup and the cascaded shadow map, about 16 |
+| `maxSamplersPerShaderStage` | 16 | measured by Task 2 | the same, plus the shadow map's comparison sampler |
+| `maxUniformBuffersPerShaderStage` | 12 | measured by Task 2 | scene, mesh and material blocks, one per light up to `LIGHT_BUDGET` 7 (`headlamp.ts:70`), and the leftover block: about 11 |
+| `maxVertexBuffers` | 8 | 8 | six on a terrain ring (position, normal, colour and the three of `renderer.ts:221–223`); five on a Task 7 bucket |
+| `maxStorageBuffersPerShaderStage` | 8 | 6 (Task 7 only) | the cull pass: parameters, candidates, counts, three tier outputs |
+
+Task 2 measures the three unmeasured rows from the translated WGSL of every
+pipeline the sweep builds (the highest binding count per stage) and pins them
+as literals. Whether adapters on Windows (Dawn on D3D12) expose more than 16
+inter-stage variables was not measured. If a Windows figure shows they do not,
+the lever is to pack the foliage plugin's three scalar varyings
+(`vFoliageH`, `vFoliageClump`, `vFoliageDist`) into one `vec3`, which brings the
+blade material to 15; that changes WebGL2's shader text and is its own commit
+with its own identity re-pin, taken only if the measurement asks for it.
+
+### 5.3 The overrides
+
+- `?engine=webgl2`: WebGL2 on every tier, whatever is remembered. Also the
+  advice to give a player with a GPU problem.
+- `?engine=webgpu`: WebGPU on any tier if the GPU fits, whatever is remembered;
+  if it does not fit, WebGL2 and one `console.warn` naming why.
+- `?tier=low|medium|high`: the tier, in place of detection. Committed here
+  because every rendering gate needs it and the switch is unreachable without
+  it (§4).
+
+Neither is carried in an invite link; both are read from the page's own URL.
+
+### 5.4 Making the engine
+
+`createWebGpuEngine(canvas)`, in `gpuEngine.ts`:
+
+1. `PBRBaseMaterial.ForceGLSL = true` and `StandardMaterial.ForceGLSL = true`,
+   before any material exists: every material the scene or the glTF loader
+   makes then generates GLSL, which the plugins require (a GLSL
+   `MaterialPluginBase` refuses a WGSL material, `materialPluginBase.pure.js:32`).
+   Neither switch has any effect on WebGL2, where every material is GLSL.
+2. The sky material is constructed with its own `forceGLSL` argument
+   (`lighting.ts:165`), so on both engines the sky is the same GLSL source the
+   spike measured.
+3. `new WebGPUEngine(canvas, { antialias: true, stencil: true,
+   adaptToDeviceRatio: true, powerPreference: "high-performance",
+   deviceDescriptor: { requiredLimits } })`, the WebGL2 engine's own options
+   (`renderer.ts:647`) plus the two WebGPU ones.
+4. `initAsync` with glslang and twgsl from `@babylonjs/core/assets/`, imported
+   with `?url` so Vite content-hashes them under `/dayhike/assets/`, where
+   `firebase.json` already serves `immutable`. Sizes: `glslang.wasm` 943,680 B,
+   `twgsl.wasm` 1,702,916 B, and their loaders 16,030 and 74,555 B; 2,737,181 B
+   in all, 913,730 B at gzip −9. They are fetched only on the WebGPU path.
+5. The WebGPU engine extensions, by one side-effect import (§6.6).
+
+Any throw or rejection in these steps, or no result in 15 s, is a failure
+before the game starts (§5.5).
+
+### 5.5 What fails, and what the player sees
+
+| failure | detected by | action | what the player sees |
+| --- | --- | --- | --- |
+| No WebGPU, a fallback adapter, a limit short | the rule (§5.1) | WebGL2, this load | the game, as today |
+| Translators fail to load, device refused, `initAsync` throws, or 15 s pass | `createWebGpuEngine` rejecting | WebGL2, this load; remembered (reason `init`) | the game, a moment later than usual |
+| A shader fails to translate or compile, or WebGPU reports an uncaptured error, during the startup window | `engine.onEffectErrorObservable`; Babylon's `Logger` entries that begin `WebGPU uncaptured error` (`webgpuEngine.pure.js:451–458`, which logs them as warnings) | remembered (reason `pipeline`); reload | the page reloads to the same route on WebGL2; then, for 6 s, the HUD line "Graphics switched to WebGL2 after a GPU error." |
+| The same, after the startup window | the same | remembered (reason `pipeline`); no reload; one `console.error` | the game continues; the next load is WebGL2 |
+| The device is lost (a GPU process crash, a driver reset) | `engine.onContextLostObservable`, which Babylon fires only for a loss it did not cause | first loss in 24 h: counted, reload on WebGPU; second: remembered (reason `lost`), reload | after the first, a reload and the HUD line "Graphics restarted after a GPU error."; after the second, a reload onto WebGL2 and the line above |
+
+The **startup window** runs from the engine's creation until no effect has
+compiled for 10 s after the first frame (the engine's
+`onAfterShaderCompilationObservable`), or 60 s, whichever comes first. A
+deterministic fault (a shader that does not translate, a pipeline that does not
+validate) shows inside it; after it, a reload in the middle of a hike costs more
+than the fault, so it waits for the next load.
+
+A reload is what pressing reload does today: a solo hike restarts at the
+trailhead in the same world, and a player in a party leaves it and can rejoin
+by the invite. Babylon's own device-loss recovery is not relied on, though it
+starts: it rebuilds buffers and textures, but the forest's impostor bakes and
+the environment probe are one-shot render targets whose contents a lost device
+erases and nothing renders again. The HUD line is carried across the reload by
+a `sessionStorage` marker, dropped silently where that storage throws.
+
+### 5.6 The remembered fallback
+
+`localStorage["dayhike.engine"]` holds `{ reason, browser, babylon, at,
+losses }`: the reason (`init`, `pipeline`, `lost`), the browser's major version
+from `navigator.userAgent`, Babylon's version (`AbstractEngine.Version`), the time, and the
+count of losses in the last 24 h. It **holds** (WebGL2 is chosen) while the
+reason is not a lone loss, `browser` and `babylon` equal the running ones, and
+`at` is less than 30 days old. A browser or Babylon upgrade therefore tries
+WebGPU again, once. Every access is wrapped as `playerName.ts` wraps its own:
+where storage throws, nothing is remembered and the reload URL carries
+`?engine=webgl2` instead, so a failure that recurs on every WebGPU start cannot
+loop.
+
+### 5.7 The desktop launcher
+
+`desktop/main.cjs` opens one window on the live site and nothing else; there
+is no copy of the game in it. Its Electron (44.1.1) exposes WebGPU as the
+Chromium inside it does, on macOS and Windows, with no switch in
+`webPreferences`. So the launcher follows the page's rule unchanged, and its
+`localStorage` persists in the app's own profile, so a remembered fallback
+survives relaunches. The launcher's URL carries no query, and detection never
+yields high (§4), so launcher players stay on WebGL2 until detection changes.
+No launcher change and no launcher release are needed. Its Windows smoke runs
+on a runner without a GPU, detects a lower tier, and keeps exercising the
+WebGL2 path.
+
+### 5.8 The landing backdrop
+
+`landingScene.ts:55` builds its renderer with `{ tier: "low" }`, so it stays
+WebGL2. The landing's engine is disposed before the game's is made
+(`main.ts:424`), so the two never run at once.
+
+## 6. The six compatibility changes
+
+### 6.0 The WebGL2 identity pins
+
+Before the first change, one test pins the WebGL2 shader text as SHA-256
+literals measured at the branch's base: every plugin's `getCustomCode("vertex")`
+and `getCustomCode("fragment")` output on `NullEngine`, with the terrain plugin
+in the state the world builds it (road, trail and features on), the three post
+shaders as stored, and the hex include. `groundHex.fragment.fx` is 5,803 bytes,
+SHA-256 `21a6e1061ff6d1a66c384400f5eae5538cec24b17e7f551c647aa825c710f9bb`;
+`finish.fragment.fx` is `4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5`.
+Every change below leaves every pin as it was except §6.3's, which re-pins one
+hash and proves the only difference is the rename.
+
+### 6.1 Uniformity analysis, per shader
+
+**What failed.** WGSL requires an implicit-derivative texture read in uniform
+control flow. The finish pass reads the scene again inside `if (mask > 0.0)`,
+where `mask` comes from `vUV` (`finish.fragment.fx:40–44`).
+
+**Change.** Babylon turns the analysis off for a shader whose code carries
+`#define DISABLE_UNIFORMITY_ANALYSIS` (`Constants.DISABLEUA`, detected at
+`webgpuEngine.pure.js:1537–1538`), and its own shadow include already carries it
+for every material that receives cascaded shadows
+(`shadowsFragmentFunctions.js:119`). `post.ts` stores the finish shader through
+`finishFragmentFor(isWebGPU)`, which prefixes that line on WebGPU and returns the
+file's bytes untouched on WebGL2. It is safe here for a reason worth stating:
+the finish pass reads a render target with a single mip level, so the implicit
+LOD it can no longer rely on cannot select another level. The global override
+goes. Task 2's sweep then runs with nothing turned off but this and Babylon's
+own include, and every further shader it finds failing gets the same treatment,
+named in the verification note, or a restructure where the read is not on a
+single-level texture.
+
+**Rejected.** `textureLod(textureSampler, echoUv, 0.0)` in the file: the same
+pixels, legal in divergent flow everywhere, but WebGL2's text changes.
+
+**WebGL2.** Byte-identical. **Test.** `finishFragmentFor(false)` hashes to the
+file's literal; `finishFragmentFor(true)` is the define, a newline, then the
+same bytes; no source file under `client/src` names
+`_createPipelineStageDescriptor`.
+
+### 6.2 The hex fetches, as macros on WebGPU
+
+**What failed.** Babylon's WebGPU GLSL path splits each `sampler2D` uniform into
+a texture and a sampler and names the pair with a `sampler2D(tex, samp)`
+constructor at each use; glslang refuses that constructor as a function
+argument, so a function with a sampler parameter cannot be called.
+
+**Change.** `groundHex.fragment.fx` is split at the two seams the spike's
+markers found, into three files whose concatenation is the original file byte
+for byte: `groundHex.fragment.fx` (lines 1–87: header, lattice, `hexSetup`),
+`groundHexFetch.fragment.fx` (lines 88–115: the four sampler-taking functions)
+and `groundHexNoise.fragment.fx` (lines 116–145: `latticeHash`, the macro noise,
+`macroTint`, `horizonWeight`). The terrain plugin assembles head + fetch + noise
+on WebGL2 and head + `HEX_FETCH_MACROS` + noise on WebGPU, choosing by
+`this._material.getScene().getEngine().isWebGPU`. `HEX_FETCH_MACROS` is a
+TypeScript constant beside the plugin, the spike's two macros with the same
+arguments and arithmetic; the one-shot spellings (`hexSample2D`,
+`hexSampleArray`) have no caller in the plugin and are not in it. Every caller
+passes plain variables (`terrainTexture.ts:462, 489, 512, 514, 537`), so a
+macro's repeated argument costs nothing, and each macro body is parenthesised,
+so `hexFetchArray(...).b` still selects from the sum.
+
+Three files rather than the spike's surgery: nothing is cut at run time, no
+marker can go missing in a player's browser, and each file keeps real code, so
+the shader hygiene test (which requires that of every `.fx` file) holds.
+
+**WebGL2.** Byte-identical. **Tests.** The three files joined hash to
+`21a6e106…f9bb`; the WebGPU assembly declares no function with a sampler
+parameter; the six `textureGrad` terms of the macros equal the functions' once
+the macros' parameter parentheses are removed; the lockstep tests read the
+joined include.
+
+### 6.3 A WGSL reserved word, renamed
+
+**What failed.** The translation keeps GLSL identifiers, and `macro` is
+reserved in WGSL.
+
+**Change.** `vec3 macro` becomes `vec3 macroRgb` in the terrain blend
+(`terrainTexture.ts:558–559`), at source, on both engines. The spike's
+alternative, a whole-word regex over every plugin's text on WebGPU only, keeps
+WebGL2 byte-identical, but it is a second spelling of the shader that only one
+engine sees, it rewrites comments and would rewrite a uniform of that name out
+from under its binding, and the next reserved word would need another rule. A
+test scans every plugin's GLSL, on both assemblies, for any declared name in
+WGSL's reserved-word list, so the class is closed rather than the instance.
+
+**WebGL2.** The one place its text changes: one identifier, in its declaration
+and its one use. The compiled program is the same. **Test.** The terrain fragment's hash is re-pinned,
+and the test asserts that the new text with `macroRgb` replaced by `macro`
+hashes to the old literal.
+
+### 6.4 The required limits
+
+**What failed.** The blade material's 17th varying against the default 16.
+
+**Change.** §5.2: the rule checks the adapter against `WEBGPU_REQUIRED_LIMITS`
+and the device is created with exactly those. Task 2 measures the three rows
+the spike did not and pins them.
+
+**WebGL2.** Untouched. **Test.** `adapterFits` on literal limit objects: the
+WebGPU defaults fail (16 inter-stage variables); the reference machine's
+recorded limits pass; a fallback adapter fails whatever its limits;
+`WEBGPU_REQUIRED_LIMITS` pinned as literals.
+
+### 6.5 The atmosphere's gradient, always bound
+
+**What failed.** WebGPU validates every binding a pipeline declares on every
+draw. The atmosphere plugin declares `atmGradient` and binds it only while its
+record exists (`atmosphere.ts:79–95`); before the first `update`, a draw
+declares a sampler nothing bound.
+
+**Change.** Bind the gradient whenever it exists, on both engines, at the top of
+`bindForSubMesh`. The shader already gates every read on `atmOn`, so binding it
+while the effect is off changes no pixel.
+
+**WebGL2.** Shader text identical; one texture bind more on the frames before
+the atmosphere's first update. **Test.** A general one, for the class: for every
+plugin, in every state it can be bound in, every sampler it lists in
+`getSamplers` is set by `bindForSubMesh` (a spy on `UniformBuffer.setTexture`).
+The atmosphere fails it today.
+
+### 6.6 The WebGPU engine's extensions
+
+**What failed.** `new DynamicTexture(...)` in `signMeshes.ts:77` and `:109`
+throws on WebGPU: the engine's dynamic-texture extension is a side-effect
+module the WebGL2 imports never reach.
+
+**Change.** `import "@babylonjs/core/Engines/WebGPU/Extensions/index.js"` in
+`gpuEngine.ts`, every extension at once, so the next one a model needs is
+not found by a player. It is in the dynamically imported module, so it costs the
+WebGL2 bundle nothing.
+
+**WebGL2.** Untouched. **Test.** The side-effect import is in `gpuEngine.ts`, and
+no module reachable by static import from `client/src/main.ts` imports
+`@babylonjs/core/Engines/webgpuEngine` or anything under
+`@babylonjs/core/Engines/WebGPU/`.
+
+## 7. Parity
+
+### 7.1 The poses
+
+Every pose is shot on one build twice, `?engine=webgl2` and `?engine=webgpu`,
+both with `?tier=high`, 1200 × 2029 at device pixel ratio 1, each from a fresh
+page, the two back to back; the pose set by the uncommitted `__fcSet` patch as
+in every earlier note.
+
+| pose | conditions | camera | crops | what it checks |
+| --- | --- | --- | --- | --- |
+| canopy | `atmo`, mist, noon | `__fcSet(123, 110.87, -105.5, 1.571, 0.3)` | near `280:500:420:970`, mid `220:22:400:678`, the trail bed and the sky placed by Task 5 | blades, cards, sward; the bed where the spike saw it |
+| meadow | `atmo`, mist, noon | `__fcSet(369, 51.01, -855, 0, 0.3)` | near `360:500:420:980`, mid `240:22:480:740` | open sward |
+| meadow-trail-along | `atmo`, clear, noon | `__fcSet(258, 85.7, 120, 1.6, 0.15)` | bed `160:120:520:1280`, beside `160:120:120:1280` | a dry bed in the open |
+| trail-down | `atmo`, clear, noon | `__fcSet(283, 85.7, 134, 0.6, 0.55)` | bed `260:110:70:1450`, beside `260:110:60:1250` | the bed from above |
+| trail-along | `atmo`, clear, noon | `__fcSet(283, 85.7, 134, 1.892, 0.12)` | bed `170:170:400:1480`, beside `170:170:600:1480`, sky | the bed toward the horizon |
+| canopy-floor | `ypeqauxk`, clear, noon | `__fcSet(-291.4, 22.9, 58.5, 1.06, 0.85)` | bed `380:700:700:850`, beside `380:700:120:850` | the litter floor and a bed under canopy |
+| cliff face-30m | `atmo`, clear, noon | `__fcSet(-370, 25, -900, 1.571, -0.3)` | the face, placed by Task 6 | the rock modules and their tint |
+| cliff seam-a | `atmo`, clear, noon | `__fcSet(-147, 53.1, 42, 0.0, 0.15)` | the bed over rock, placed by Task 6 | the trail over steep rock |
+| night | `atmo`, `weather eerie`, `time 21`, lamp on | trail-along's camera | the lamp pool, the sky, placed by Task 6 | lights, the dread grade, rain, fog at night |
+
+The grass poses are the near-grass design's (§4.1); the trail poses and their
+crops are the floor-look verification's (§2, §8–§9, its replacement pair for
+trail-along); the cliff poses are the cliff-modules verification's (§2). The
+night pose is new: the earlier lamp checks ran at eerie 20–21 h on the trail
+without a recorded camera. The lamp is switched on by its key (`KeyF`,
+`input.ts:236`) before the free camera is entered, or by an uncommitted hook if
+the free camera takes the key; the local headlamp is parented to the camera
+(`renderer.ts:673–674`), so it lights what the free camera sees.
+
+### 7.2 The measures
+
+Per crop, the pixels are decoded from sRGB to linear. Recorded: the mean
+linear luminance (`0.2126 R + 0.7152 G + 0.0722 B`), the mean linear RGB and
+its CIELAB coordinates (D65), and at the grass poses the cover fraction against
+the near-grass thresholds (0.02058 canopy, 0.02853 meadow). At the trail poses,
+the floor-look bed/beside luminance ratio as well. Whole-frame mean absolute
+difference is reported, never barred: wind, dapple and wildlife move between
+any two stills (the cliff note scored the same build at the same pose 14.7 and
+18.7 dB apart).
+
+### 7.3 The floor and the bar
+
+A crop's noise floor is its same-engine repeat: two WebGL2 page loads at the
+pose, the luminance ratio between them, the CIELAB distance between their crop
+means, the cover difference. **Bar, per crop:**
+
+- WebGPU's mean luminance over WebGL2's in 0.95–1.05, or within twice the
+  floor's ratio where that is wider;
+- ΔE\*ab between the two crop means ≤ 2.0 (about one just-noticeable
+  difference), or twice the floor where that is larger;
+- cover within 0.02 of WebGL2's (a page load moves it by up to 0.015, the
+  spike found), or twice the floor;
+- at the trail poses, the bed/beside ratio inside the floor-look window
+  (0.9–1.3) and within 0.05 of WebGL2's.
+
+### 7.4 The verdict
+
+In words, per pose: are the same things drawn, the same materials, the same
+hue and light, nothing missing, nothing sparkling or banded that the other does
+not have. A pose passes when every crop meets its bar and the verdict reads the
+same picture. A crop that misses its bar while the verdict reads the same may
+be **accepted** only with the reason written beside it in the verification note
+(the wind's phase at a card edge, say); a difference the eye can see is never
+accepted, whatever the numbers.
+
+## 8. The trail bed
+
+### 8.1 What was seen
+
+At the canopy pose in mist, on WebGPU, the bed reads cooler and greyer than
+WebGL2's warm brown, with a pale glint where it meets the horizon. The spike
+read it as the trail paint's snow mix being taken. Near cover and luminance
+matched; the sky was a little greener; a fern at the frame's edge was dimmer.
+
+### 8.2 The paint, read against the symptom
+
+There is no branch on a uniform or define in the paint that could evaluate
+differently: `TRAILPAINT` and `VERTEXCOLOR` are defines computed on the CPU and
+the same on both engines, and every runtime branch (`trailPaint.ts:333, 342,
+349`) is on distances and texture data. Every local is initialised. The
+fragment stage is `highp` on WebGL2 and `f32` on WebGPU, so no precision is lost
+moving to WebGPU. The snow mix is not a branch but a blend by
+`tSnow = 1 − clamp(vTerrainW2.y)` (`trailPaint.ts:362`); for it to act, the
+vertex attribute's second channel would have to reach the fragment as zero.
+A missing attribute would do that, but on both engines alike: WebGL2 reads a
+disabled attribute as (0, 0, 0, 1), and Babylon's WebGPU engine binds a
+one-float dummy of 0 (`webgpuEngine.pure.js:506–511`,
+`webgpuCacheRenderPipeline.js:696–702`), which WebGPU widens to the same
+(0, 0, 0, 1). And every ring uploads the attribute (`renderer.ts:221–223`);
+nothing found by reading draws the terrain material without it.
+
+And the symptom argues against the snow mix. Taken, it sets
+`tGravel = tOnBench × (1 − tSnow)` to zero (`:455`), so the bed keeps the
+ground's own roughness and F0 scale (`:472–473`): grass and floor are 1.0 and
+0.5 in `LAYER_ROUGHNESS` and `LAYER_F0` (`terrainTexture.ts:184, 188`), where the
+bench is the pebble's 0.9 and 0.85, glossed by the wet weather to about three
+quarters of that in the core (`:471`, `TRAIL_WET_GLOSS` 0.5 at the mist
+preset's wetness 0.5). A snow-mixed bed is rougher and less reflective than
+WebGL2's. It cannot glint where WebGL2's does not. Puddles are not it either: at
+wetness 0.5 `smoothstep(0.55, 0.8, 0.5)` is 0 (`:448`) on both engines.
+
+### 8.3 The likely mechanism
+
+The bed is the most specular ground in the mist preset: the pebble's F0 scale
+and a wet-glossed roughness, where the grass beside it is at 1.0 and 0.5. Of
+everything the bed shows, the part that grows with gloss and grazing angle is
+the reflection of the environment: `scene.environmentTexture` is a 128² probe
+cube rendered once from the sky material (`lighting.ts:47, 246–254`), mip-mapped
+and read by PBR through roughness-selected levels, together with Babylon's BRDF
+lookup texture. A difference in that chain between the engines would show on
+the bed before anything else: a cooler, greyer sky in the reflection, and more
+of it at grazing angles, a pale band where the bed meets the horizon. The same
+chain reaches the rest of the frame weakly, which fits the other two
+observations: the sky's own tint (the probe's source) and a dimmer fern (its
+ambient share). Candidate links, each engine-specific: the sky shader's
+arithmetic through the other translator (an edge case of `pow` or `exp` that one
+compiler clamps and the other does not); the probe cube's faces or mip chain
+(WebGL2's `generateMipmap` against Babylon's own WebGPU mip blit); the probe's
+gamma handling (it is made with `linearSpace` false, eight bits per channel);
+the BRDF lookup's RGBD decode.
+
+Ranked: **(1)** the environment light the wet bed reflects; **(2)** a trail input
+reaching the fragment differently (the weights attribute, `terrainWet`); **(3)**
+the post chain, which would move every surface alike and is last for that
+reason.
+
+### 8.4 The first diagnostic step
+
+At the canopy pose in mist, on both engines, on the same build, three stills
+of the bed crop on one page each: as is; with `__scene.environmentIntensity = 0`
+and the probe's reflection removed; and with `weather clear` (wetness 0, so no
+gloss). If the gap closes with the environment off, the chain of §8.3 has it,
+and the next step reads the probe's six faces back on both engines and compares
+the sky crop. If it stays, the trail's inputs are shown in false colour by an
+uncommitted patch that writes `(tSnow, terrainWet, clamp(vTerrainW2.w, 0.0, 1.0))`
+into the bed's albedo, and `WebGPUCacheRenderPipeline.LogErrorIfNoVertexBuffer`
+is set, which makes Babylon name any declared attribute drawn without a buffer.
+
+### 8.5 The fix
+
+The fix is decided by what the diagnosis finds, and each outcome's lever is
+known in advance: for the probe, its format or gamma set explicitly, or its mip
+chain generated the same way on both engines; for the sky, whose shaders are
+Babylon's own, the sky left on Babylon's WGSL port on WebGPU instead of the
+translated GLSL (one constructor argument, §5.4), or the sky parameter whose
+arithmetic diverges clamped where it is set; for an input, the binding. Whatever
+it is, it must not move WebGL2's pixels: a change that only the WebGPU path
+takes is preferred, and a change to shared shader text re-runs the identity
+pins and the WebGL2 stills at the trail poses against `main`. **Bar:** the
+canopy pose's bed crop and every trail pose of §7.1 inside §7.3's bar, and the
+verdict reads the same bed.
+
+## 9. The impostor bake
+
+The bake cannot render until every clone's effect is ready under the bake's own
+pass and camera, and that readiness is the only honest gate
+(`forestMeshes.ts:589–615`). The 5 s deadline was a guard against a gate that
+never opens; its cost is that a slow compile, on either engine, silently
+removes the far forest for the life of the page.
+
+**Change.** `defaultBakeImpostor` waits for `rtt.isReadyForRendering()` with no
+deadline, and ends in exactly three ways: ready, when it renders and resolves
+the texture; failed, when any bake clone's effect reports a compilation error,
+when it logs one `console.error` naming the model and resolves null; or aborted,
+when the forest is disposed, through an `AbortSignal` the forest owns, when it
+disposes the render target and resolves null without logging. At
+`IMPOSTOR_BAKE_WARN_MS` = 30,000 it logs one `console.error` naming the model
+and keeps waiting: late is better than never, but late must be visible. The
+fourth parameter stays the pose; the third, `timeoutMs`, becomes the options
+`{ signal, warnMs }`. `adoptBake` logs a `console.error` for a null that is not
+an abort. The spike's six-fold slack is not taken: a budget per engine is a
+guess per machine, and a slow laptop on WebGL2 hits today's too.
+
+**Tests.** With fake timers: a gate that opens after 40 s of polls resolves a
+texture (today: null at 5 s); a compile error resolves null and logs; the
+warning fires once at 30 s and the wait goes on; an abort stops the polls and
+disposes the target; and through `createForestMeshes`, a bake that resolves null
+logs an error naming the billboard, so a far forest can no longer drop out
+without a word.
+
+**WebGL2.** The same change applies: a bake that took more than 5 s, which
+today drops the far forest, now lands late.
+
+## 10. The pipeline-cache bug
+
+Babylon's WebGPU pipeline cache keys each vertex attribute as
+`vertexBuffer.hashCode + (location << 7)` (`webgpuCacheRenderPipeline.js:720`).
+`VertexBuffer.hashCode` folds the type, normalisation, size, instancing and
+stride (`buffer.pure.js:337–345`), not the byte offset. Yet the offset of an
+attribute that lies inside its stride is baked into the pipeline's vertex
+layout (`webgpuCacheRenderPipeline.js:794–834`). Two meshes that read one
+buffer at different offsets, the same kind and format at the same location,
+therefore share whichever pipeline was built first and read its data. On
+WebGL2 there is no such cache and they draw correctly. The spike met it when
+its twelve interleaved blade buckets vanished.
+
+Nothing on `main` meets it today: every thin-instanced mesh reads its matrix
+at the same four offsets. Build I (Task 7) is the first to. The workaround,
+`offsetKeyedVertexBuffer(buffer, kind, offset, size)` in
+`webgpuVertexBuffer.ts`, creates the vertex buffer, replaces that instance's
+`_computeHashCode` with one that adds `byteOffset × 2^24` above the stride's bits
+(stride ≤ 2,048 bytes occupies bits 12–23), and runs it, so a later recompute
+(the `instanceDivisor` setter) keeps the term. A canary test asserts that two
+plain vertex buffers at different offsets still hash equal; when a fixed
+Babylon ships, the canary fails, and the workaround and its callers go in the
+upgrade's own commit. A source scan asserts that no other file creates a
+vertex buffer over a shared buffer at a non-zero offset.
+
+The draft upstream issue is Appendix A. Filing it is a manual step for whoever
+maintains this repository's account with the Babylon.js project; no task in the
+plan files anything.
+
+## 11. Determinism and the network
+
+The engine is a rendering choice and nothing else. `sim/` imports nothing from
+`game/`, `net/` or `@babylonjs/*` (`client/test/architecture.test.ts:74–86`, and
+the ESLint rule at `eslint.config.js:18–23`), and `net/` imports neither Babylon
+nor `game/` (`architecture.test.ts:88`); the new modules live in `game/`. The
+simulation's state never reads a rendered value: the camera pose, the wind, the
+interact prompt and the wildlife feed audio and the HUD only. The protocol
+carries no engine field and `PROTOCOL_VERSION` stays 5, so a WebGPU host and a
+WebGL2 follower build the same world from the same seed and run the same ticks;
+only their pixels differ, and those within §7. `passHash` stays −311867473
+(`client/test/sim/groundGradient.test.ts:700`). One test is added: the three
+modules this design creates are not imported from `sim/` or `net/`, which the
+existing rules already imply and which is pinned by name so the intent is
+written down.
+
+## 12. The compute-culled blades and the grass frame filter
+
+### 12.1 How the two streams meet
+
+The grass frame reclaim's step 1a (its plan's Task 2A: the blade field's 36
+buckets and the grass class's 4, each frame the view moves, drawing only the
+prefix of their collected buffers inside a widened frustum) is being gated as
+this is written. It is engine-agnostic: pure CPU arithmetic in `grassCull.ts`,
+then `thinInstancePartialBufferUpdate` and `thinInstanceCount`, which Babylon
+implements on both engines. Its hook is
+`scene.onBeforeActiveMeshesEvaluationObservable` in `renderer.ts`; this
+design's contact with `renderer.ts` is the engine passthrough at `:647` and
+`detectTier` moving out (`:517–527`), so the two touch the same file in
+different places.
+
+- **If the filter merges first**, this stream rebases, and Task 6's frame gate
+  measures WebGPU with the filter against WebGL2 with the filter. Task 6 also
+  reruns the filter's own invisibility check (its design §12.1: stills with the
+  filter on and off on one page differ no more than two consecutive filter-off
+  stills) and its turn on WebGPU.
+- **If this stream's Task 6 merges first**, the grass frame's remaining gates
+  add a WebGPU row: the same checks on `?engine=webgpu`.
+
+Either way the filter must hold on both engines before Task 7 starts, and the
+spike's −1.53 ms (§3.2) is re-measured, not assumed: the filter removes vertex
+work the WebGPU engine may have been winning on.
+
+### 12.2 Build I, on the filter's buffers
+
+The spike's cull pass re-packed the CPU fill's buckets into one candidate
+buffer. The filter keeps exactly those buckets on the CPU as its **collected**
+buffers. Build I takes them as its candidates on each rebuild, so the CPU fill
+is shared, and on WebGPU with I on the blade buckets skip the CPU `cull()`; the
+grass class keeps the CPU filter. Per frame, one compute pass per the spike's
+kernel (each tier's band in the foliage plugin's own eye distance, the clump's
+sphere against the camera's six planes, an `atomicAdd` on its bucket's counter,
+the 21 floats written at that slot) into one interleaved output buffer per
+tier, bound as the thin-instance attributes through §10's workaround, and the
+pass's counts copied into each bucket's indirect arguments. The frustum comes
+from the camera's final pose for the frame, the same pose the filter reads, the
+view bob included. No S, no F, no tail pass, and no URL switch in shipped code.
+
+A layout worth trying first, because it avoids §10's bug altogether: one output
+buffer per tier with each bucket's slots contiguous, every bucket mesh bound at
+offset zero, and each bucket's region selected by the indirect arguments' first
+instance. It needs the optional `indirect-first-instance` feature, which would
+join the required set; Task 7 measures whether the reference adapter offers it
+and keeps the interleaved layout if not.
+
+### 12.3 The bar
+
+Against **B′**, WebGPU with the grass frame filter on the blades and the grass
+class, on the same build: at the canopy pose, native pixels, order-averaged over
+quiet rounds, I − B′ ≤ **−0.3 ms**; near cover at both poses at least B′'s less
+0.01; the grass frame's turn (32 steps at pitch 0.3 and 0.9, then a sweep at 90°
+a second) with nothing appearing or vanishing at a frame edge; draw calls not
+above B′'s; JS frame time not above B′'s. 4× reported. Why 0.3: against the
+unfiltered field S saved 1.03 ms; the filter's expected blade share is 0.53 ms
+(grass frame design §5.4, as built); what can be left for I over the filter is
+about half a millisecond, and 0.3 stands clear of the spike's same-code floor
+of ±0.11. If I misses, it does not ship, and the filter stays the blades' path
+on both engines.
+
+### 12.4 What I leans on
+
+Three private internals, each pinned by a canary test against the installed
+Babylon that names it: the engine's render encoder, its render-pass ending, and
+a submesh's draw wrapper and draw context. And one thing the spike did not
+check: the counts are copied after the compute pass and before the draw, and the
+copy ends whatever render pass is current. On a tile-based GPU, ending and
+resuming the multisampled scene pass costs a store and a reload of its
+attachments. The gate confirms, in a WebGPU Inspector capture, that the scene
+target gets one render pass per frame on I as on B′; if not, the pass and the
+copy move to before the camera binds its target.
+
+## 13. Gates
+
+### 13.1 Frame
+
+The near-grass pair method with the spike's quiet rule: one browser start per
+round, a discarded warm-up page, the two builds on fresh pages in alternating
+order, at least two rounds each way; same-code rounds on each engine for its
+noise floor, repeated if over 0.5 ms; only quiet rounds read; per page the pose,
+3 s to settle, 8 s of `onAfterRenderObservable` intervals, mean and p95. The
+"builds" are one commit with `?engine=webgl2` and `?engine=webgpu`, both
+`?tier=high`.
+
+- **Bar:** at the canopy pose at native pixels, WebGPU − WebGL2 ≤ **−1.5 ms**.
+- **Bar:** at every other pose below, WebGPU − WebGL2 no larger than the
+  larger of the two engines' same-code floors there.
+- **Reported:** the canopy and meadow poses at 4×; the canopy pose in a
+  1920 × 1080 window; per page the JS frame time (`onBeginFrameObservable` to
+  `onEndFrameObservable`) and the draw calls.
+
+Poses: canopy, meadow, TRAILSIDE (`__fcSet(263.9, 85.77, 118, 0.6, 0.25)`, mist,
+noon), cliff face-80m (`__fcSet(-420, 60, -900, 1.571, -0.05)`, clear, noon: the
+long view, every LOD ring), night (§7.1), and **spawn**: no free camera, the
+player's own view at the trailhead of seed `atmo` 5 s after the world appears,
+where the summit models, the kiosk, the SUV and the fingerposts put the most
+draw calls in view. WebGPU's per-draw JS in Babylon is not WebGL2's, and the
+spawn view is where a CPU-side cost would show.
+
+Also, once: WebGL2 on the branch against WebGL2 on `main`, at the canopy pose,
+within the same-code floor. The switch must not cost the players who keep
+WebGL2 anything.
+
+### 13.2 Parity
+
+§7, every pose, every crop, with the verdicts.
+
+### 13.3 Startup
+
+Per engine on the same build, three loads **cold** (a fresh browser profile:
+no HTTP cache, no GPU shader cache) and three **warm** (the next load in the
+same profile), recording: the time from navigation to the first frame of the
+game scene; the time to **settled** (the five impostor bakes landed and no effect
+compiled for 5 s); the effects compiled; and, over a scripted minute after
+settling (the canopy walk, a full turn, the lamp on, `weather rain`), the
+longest frame. **Bars:**
+
+- warm first frame on WebGPU no more than **0.5 s** after WebGL2's; cold, no
+  more than **2.5 s** after (the translators' 0.9 MB and their instantiation);
+- settled within **30 s** cold on WebGPU, with all five bakes landed;
+- the scripted minute's longest frame on WebGPU no more than the larger of
+  **100 ms** and WebGL2's longest plus 50 ms.
+
+The third bar is the one most likely to bite. Babylon translates a GLSL effect
+on WebGPU synchronously on the main thread, where WebGL2 compiles in parallel,
+and a headlamp turning on changes every lit material's defines. §16 has the
+lever.
+
+### 13.4 Memory
+
+At the canopy pose after 60 s, per engine: the page's renderer process and the
+GPU process, from the browser's task manager, and `performance.memory`'s used JS
+heap. **Bars:** the renderer process on WebGPU within **96 MB** of WebGL2's (two
+translator instances and their heaps); the GPU process within **20 %**. Over a
+ten-minute walk on WebGPU, no growth past **5 %** after the first minute.
+
+### 13.5 Console
+
+Zero `console.error` on every page of every gate, and on WebGPU pages zero
+Babylon warnings that begin `WebGPU uncaptured error` or `WebGPU context lost`,
+which Babylon logs as warnings, not errors (`webgpuEngine.pure.js:451–467`).
+
+### 13.6 The fallback, exercised
+
+Each on the branch, with the measuring browser injecting what it needs before
+the page's own scripts run; nothing of it is committed:
+
+1. `navigator.gpu` hidden: WebGL2, no error; `?engine=webgpu` gives WebGL2 and
+   one warning.
+2. An adapter reporting `maxInterStageShaderVariables` 16: WebGL2.
+3. A lost device, by crashing the GPU process from another tab
+   (`chrome://gpucrash`): one reload on WebGPU; again, a reload onto WebGL2, the
+   record written, the HUD line shown; the next load WebGL2; `?engine=webgpu`
+   still WebGPU; with the record deleted, WebGPU again.
+4. An uncaptured validation error dispatched on the device inside the startup
+   window: the record written, a reload onto WebGL2, the HUD line.
+5. `localStorage` throwing, then (4): the reload's URL carries `?engine=webgl2`;
+   no second reload.
+6. Before Task 2 lands, the real failures of §3.3 on `?engine=webgpu`: the game
+   ends on WebGL2 every time. Task 1's gate is this.
+
+## 14. Tests
+
+- `engineChoice.test.ts`: the overrides parsed from literal query strings;
+  `chooseEngine` over a literal table (tier × override × fits × remembered ×
+  `WEBGPU_ON_HIGH`); `adapterFits` on literal limits (§6.4); the remembered
+  record holding, lapsing on a new browser major, a new Babylon version and
+  after 30 days, and the lost-device count (one loss does not hold, two within
+  24 h do, two a day apart do not).
+- `renderer.test.ts`: the renderer uses an engine it is given and makes WebGL2's
+  own otherwise, with WebGL2's options unchanged.
+- `webglIdentity.test.ts`: §6.0's pins.
+- `post.test.ts`: `finishFragmentFor` both ways (§6.1).
+- `terrainTexture.test.ts`, `groundHex.test.ts`, `shaderHygiene.test.ts`: the
+  split include (§6.2); the reserved-word scan and the rename (§6.3).
+- `atmosphere.test.ts` and a plugin-wide binding test (§6.5).
+- `architecture.test.ts`: no static route from `main.ts` to the WebGPU engine
+  (§6.6); the new modules absent from `sim/` and `net/` (§11).
+- `forestMeshes.test.ts`: §9's five cases, replacing "a gate that never opens
+  times out to null".
+- `webgpuVertexBuffer.test.ts`: distinct hashes by offset, kept across an
+  `instanceDivisor` write; the canary; the source scan (§10).
+- `bladeGpu.test.ts` (Task 7): the record layout and interleave as literals; the
+  band test against `bladeTierBands`; the kernel's text pinned where it states
+  the band and the sphere; the three private names' canaries.
+
+No test asserts a wall-clock bound; frame, startup and memory are gates.
+
+## 15. What is not changed
+
+- Everything under `client/src/sim/`, the level id and the protocol.
+- Every asset, model and texture.
+- The medium and low tiers, the landing backdrop, and the WebGL2 path's shader
+  text, except §6.3's identifier.
+- The desktop launcher.
+- Tier detection (§4).
+- The blade field, the cards and the grass frame filter, until Task 7, which
+  changes only how the blades are drawn on WebGPU.
+
+## 16. Fallbacks
+
+Pre-stated, in order:
+
+- **The native frame bar missed** (§13.1), with the 4× delta −5 ms or better:
+  the switch does not go on by default. The engine path stays on `main` behind
+  `?engine=webgpu`, Task 7 is measured on it, and the default goes on only when
+  the engine with I meets 1.5 ms at native against WebGL2 with the filter. If
+  the 4× delta misses −5 ms too, the design is revisited with the figures.
+- **A pose slower than its floor**: the pose's JS and draw-call figures say
+  whether it is CPU-side; if so, the first lever is Babylon's WebGPU snapshot
+  rendering for the static buckets (§17) before the switch goes on.
+- **The startup hitch bar missed**: the lit materials' lamp-on variants compiled
+  behind the loading screen, by `forceCompilationAsync` with the lamp enabled
+  for the call, then the startup gate re-run.
+- **A limit that Windows adapters do not reach**: §5.2's varying pack.
+- **Parity missed at a pose after Task 5**: the pose's difference diagnosed as
+  in §8.4 and fixed in its own commit; the switch does not go on with a
+  difference the eye can see.
+- **Build I under its bar**: it does not ship (§12.3).
+
+## 17. Follow-ups
+
+- **Tier detection.** A desktop browser with a qualifying WebGPU adapter is a
+  better signal for the high tier than `deviceMemory`, which Chromium caps and
+  the others do not expose. A design of its own, with a frame gate on
+  medium-class machines, since everyone it promotes pays the high tier's costs.
+- **The plugins in WGSL.** It would remove the 2.7 MB of translators, their
+  startup cost and the synchronous translation hitch, and every §6 change with
+  them. About 1,325 lines.
+- **Snapshot rendering** for the static buckets, if the spawn pose shows a
+  CPU-side cost.
+- **A mesh-level indirect instance count** upstream, the spike's §8 shape, if
+  build I ships on private internals.
+- **A committed pose command**, so every gate here reproduces from a URL alone
+  (the near-grass design's follow-up, still open).
+
+## Appendix A. Draft upstream issue
+
+For the Babylon.js repository's issue tracker. Not filed by this work.
+
+**Title:** WebGPU: render pipeline cache ignores a vertex buffer's byte offset,
+so meshes reading one buffer at different offsets share a pipeline
+
+**Body:**
+
+> **Babylon.js version:** 9.18.0, WebGPU engine (`WebGPUEngine`). WebGL2 is not
+> affected.
+>
+> **What happens.** Two meshes use the same material. Each binds the same
+> custom attribute kind, with the same format, from one shared `Buffer`, at a
+> different byte offset inside the stride. On WebGPU both meshes draw with the
+> offset of whichever mesh was drawn first; on WebGL2 each draws its own data.
+>
+> **Why.** `WebGPUCacheRenderPipeline` keys each attribute's vertex state as
+> `vertexBuffer.hashCode + (location << 7)` (in `_setVertexState`).
+> `VertexBuffer._computeHashCode()` folds the type, `normalized`, the size,
+> `_instanced` and `byteStride`, but not `byteOffset`. When the offset lies inside
+> the stride (`_validOffsetRange`), `_getVertexInputDescriptor()` bakes
+> `effectiveByteOffset` into the pipeline's `GPUVertexAttribute.offset`. So the
+> cache returns a pipeline whose baked offset belongs to another mesh. Whether
+> consecutive attributes share one GPU buffer also shapes the vertex layout and
+> is not in the key either; a mismatch there looks to fail validation rather
+> than draw wrong data.
+>
+> **Minimal reproduction** (a playground on the WebGPU engine):
+>
+> ```js
+> const engine = new BABYLON.WebGPUEngine(canvas);
+> await engine.initAsync();
+> const scene = new BABYLON.Scene(engine);
+> new BABYLON.ArcRotateCamera("c", 0, 1, 6, BABYLON.Vector3.Zero(), scene);
+> const a = BABYLON.MeshBuilder.CreateBox("a", {}, scene);
+> const b = BABYLON.MeshBuilder.CreateBox("b", {}, scene);
+> b.position.x = 2;
+> const n = a.getTotalVertices();
+> // One buffer, 8 floats per vertex: a red vec4, then a green vec4.
+> const data = new Float32Array(n * 8);
+> for (let i = 0; i < n; i++) data.set([1, 0, 0, 1, 0, 1, 0, 1], i * 8);
+> const buffer = new BABYLON.Buffer(engine, data, false, 8);
+> a.setVerticesBuffer(buffer.createVertexBuffer("tint", 0, 4));
+> b.setVerticesBuffer(buffer.createVertexBuffer("tint", 4, 4));
+> const mat = new BABYLON.ShaderMaterial("m", scene, {
+>   vertexSource: `precision highp float;
+>     attribute vec3 position; attribute vec4 tint;
+>     uniform mat4 worldViewProjection; varying vec4 vTint;
+>     void main() { vTint = tint; gl_Position = worldViewProjection * vec4(position, 1.0); }`,
+>   fragmentSource: `precision highp float; varying vec4 vTint;
+>     void main() { gl_FragColor = vTint; }`,
+> }, { attributes: ["position", "tint"], uniforms: ["worldViewProjection"] });
+> a.material = mat;
+> b.material = mat;
+> engine.runRenderLoop(() => scene.render());
+> ```
+>
+> **Expected:** `a` red, `b` green. **Actual on WebGPU:** both red. On WebGL2:
+> red and green.
+>
+> **Suggested fix.** Key the baked offset where it is baked: in
+> `_setVertexState`, include `vertexBuffer.effectiveByteOffset` in the state
+> when `_validOffsetRange` is true (and, for the grouping, whether the
+> attribute shares the previous attribute's GPU buffer). Folding the offset into
+> `_computeHashCode()` would also work (an offset below the stride's 2,048-byte
+> maximum fits above the stride's bits, as `byteOffset * 2 ** 24`), but the hash
+> is used elsewhere, and the cache is where the offset matters.
+>
+> **Workaround.** Replace the vertex buffer instance's `_computeHashCode` with one
+> that adds the offset term, and call it; setting it once is not enough, since
+> the `instanceDivisor` setter recomputes the hash.
