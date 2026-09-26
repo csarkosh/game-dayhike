@@ -20,7 +20,12 @@ tiers is one line with its test. Low and the landing backdrop stay WebGL2.
 Medium was taken in on 2026-09-26, because detection puts a desktop Chromium
 on medium at best (§4) and is being redesigned on its own; §1, §2, §4, §5.1,
 §5.7, §7.1, §13.1 and §14–§16 below are amended to match, and the gates are
-measured on both tiers. Four things differ from the text below. Babylon 9.18
+measured on both tiers. Two decisions of the same day are written into the
+sections too: one frame bar for both tiers, a gain above the same-code floor
+with parity, with 1.5 ms on high the expectation, not the gate (§1, §3.2,
+§13.1, §16); and before Task 6 a failure after the game starts falls back by a
+live renderer swap, not a reload, which the tier-detection work provides (§1,
+§5.5). Four things differ from the text below. Babylon 9.18
 loads the translators on the first GLSL effect, not in `initAsync`, and its
 loader waits rather than rejecting when a fetch fails, so `createWebGpuEngine`
 also awaits `prepareGlslangAndTintAsync()` inside the 15 s budget: a translator that does
@@ -58,14 +63,14 @@ asset change. Two peers on different engines share one world (§11).
 | Overrides | `?engine=webgl2` and `?engine=webgpu`, on any tier, for testing; `?tier=low\|medium\|high`, committed (it has been an uncommitted measurement patch in three notes). `?engine=webgpu` on a browser that cannot run it falls back and says so once in the console |
 | How the engine is made | Every PBR and standard material generates GLSL on WebGPU through Babylon's own public switches (`PBRBaseMaterial.ForceGLSL`, `StandardMaterial.ForceGLSL`), the sky material by its constructor flag; the engine translates at run time with the glslang and twgsl builds `@babylonjs/core` ships, content-hashed by the build and cached immutably; the device is asked for the required limits, not the adapter's maximum |
 | Failure before the game starts | WebGL2, in the same page load; the player sees the usual loading and then the game |
-| Failure after it starts | A shader or pipeline error in the startup window, or an uncaptured WebGPU error then: WebGL2 is remembered and the page reloads itself. A lost device: the page reloads on WebGPU once; a second loss within 24 h remembers WebGL2 and reloads. After a fallback reload the HUD says so for 6 s (§5.5) |
+| Failure after it starts | As built behind the off switch: a shader or pipeline error in the startup window, or an uncaptured WebGPU error then: WebGL2 is remembered and the page reloads itself. A lost device: the page reloads on WebGPU once; a second loss within 24 h remembers WebGL2 and reloads. After a fallback reload the HUD says so for 6 s. Before Task 6 switches WebGPU on, these reloads become a live swap of the renderer onto a fresh WebGL2 canvas, with no reload, which the tier-detection work provides (§5.5) |
 | Remembered fallback | `localStorage` key `dayhike.engine`, holding the reason, the browser's major version, Babylon's version and the time; it holds while both versions are unchanged and for 30 days. Where storage throws, the reload carries `?engine=webgl2`, so a failing engine can never loop |
 | The six changes | Each its own commit with its own test (§6). WebGL2's shader text stays byte-identical, pinned by hash, except the one renamed identifier of §6.3 |
 | Parity | Nine fixed poses (§7.1), on the high tier and again on the medium tier; per crop, WebGPU's mean linear luminance within ±5 % of WebGL2's and the CIELAB distance of the crop means ≤ 2.0, or twice the same-engine repeat where that is larger; grass cover within 0.02; a verdict in words per pose |
 | The trail bed | Diagnosed before it is fixed (§8). On reading the paint, the snow mix cannot make the glint the spike saw; the likely mechanism is the image-based light the wet bed reflects |
 | The impostor bake | Waits for readiness, not a clock; resolves null only on a shader error, which is logged; logs once if still waiting at 30 s; stops on dispose (§9) |
 | The pipeline-cache bug | A local workaround that survives Babylon recomputing the hash, pinned by a canary test that fails when a fixed Babylon ships; a draft upstream issue (Appendix A). Filing it is a manual step outside this plan |
-| Frame bar | On the high tier, WebGPU at least **1.5 ms** faster than WebGL2 at native pixels at the canopy pose, by quiet pair rounds; on the medium tier, faster there by more than the larger of the two engines' same-code floors; 4× reported on both; on either tier no pose slower than its same-code noise floor (§13.1) |
+| Frame bar | One bar, the same for both tiers: a tier's WebGPU path turns on when, at the canopy pose at native pixels on the reference machine, WebGPU is faster than WebGL2 by more than the larger of the two engines' same-code noise floors (quiet pair rounds), **and** that tier passes the parity gate. On the high tier about **1.5 ms** is expected (§3.2): reported, not a gate. 4× and every other pose reported on both (§13.1, §16) |
 | Startup, memory, console, fallback | Bars in §13.3–§13.6 |
 | The compute-culled blades | Build I, Task 7, only after the engine path is on `main`; built on the grass frame filter's collected buffers; must beat WebGPU with that filter by **0.3 ms** at native, not the unfiltered field (§12) |
 | Unchanged | Everything under `client/src/sim/` (`passHash` −311867473); `PROTOCOL_VERSION` 5; every asset; what each tier draws; the low tier's engine; WebGL2's pixels |
@@ -120,9 +125,11 @@ spike's own §4 and §6 label correctly. The engine
 alone, B against GL, is **−1.53 ms** by lowest means (22.69 against 24.22), and
 −1.34 to −1.49 ms by the quiet pages' means; no GL/B round was quiet on both
 pages at native. At 4× the engine alone is **−9.93 ms** (45.21 against 55.14),
-and that figure is robust. So the frame bar of §13.1, 1.5 ms at native, sits
-on the only native estimate there is. It is kept, and §16 says in advance what
-happens if it is missed.
+and that figure is robust. So 1.5 ms at native rests on the only native
+estimate there is. It is kept as the expectation for the high tier, and
+reported, but it is not the gate: the gate (§13.1) is a gain above the same-code
+floor, the same on both tiers, with parity, and §16 says in advance what each
+outcome turns on.
 
 The native window renders 2.4 million pixels. A high-tier player on a laptop
 panel at its own device ratio renders between that and the 4× figure's 9.7
@@ -195,14 +202,15 @@ Task 2 sweeps the scene from scratch rather than trusting the spike's list.
 
 ## 4. Who reaches the WebGPU tiers
 
-`createRenderer` detects the tier when none is given (`renderer.ts:690`), and
-`app.ts:153` never gives one. Detection is `tierFor` (`quality.ts:74–79`): high
-needs more than eight cores **and** more than 8 GB of `navigator.deviceMemory`.
-As the near-grass design found, a desktop browser reports at most 8 GB, so
-detection lands on medium at best; and a browser that exposes no
-`deviceMemory` reads the default 4 (`renderer.ts:522`) and lands on low. Today
-no player reaches the high tier except through an override, and there has been
-no committed override.
+Until Task 1, `createRenderer` detected the tier itself, since `app.ts` gave
+it none; now `main.ts` resolves the tier before the game starts (`?tier=` where
+valid, else `detectTier` in `quality.ts`, the same body) and passes it through
+`app.ts` to the renderer. Detection is `tierFor` (`quality.ts`): high needs
+more than eight cores **and** more than 8 GB of `navigator.deviceMemory`. As the
+near-grass design found, a desktop browser reports at most 8 GB, so detection
+lands on medium at best; and a browser that exposes no `deviceMemory` reads the
+default 4 and lands on low. No player reaches the high tier except through an
+override; until Task 1 committed `?tier=`, there was none.
 
 So the rule covers the medium tier as well as high. Detection puts a desktop
 Chromium (Chrome, Edge, and the desktop launcher, §5.7) with more than four
@@ -324,9 +332,31 @@ validate) shows inside it; after it, a reload in the middle of a hike costs more
 than the fault, so it waits for the next load.
 
 A reload is what pressing reload does today: a solo hike restarts at the
-trailhead in the same world, and a player in a party leaves it and can rejoin
-by the invite. Babylon's own device-loss recovery is not relied on, though it
-starts: it rebuilds buffers and textures, but the forest's impostor bakes and
+trailhead in the same world. In a party it does more harm than that, because
+the startup window is not over before the party connects: the lobby belongs to
+the page and is usually made on the landing page, and the host's admission and
+a follower's handshake both start inside `startGame`, so they run during the
+window. A reload fires `pagehide`, and the page leaves the lobby
+(`main.ts`'s `pagehide` listener):
+
+- A **host**'s leave ends the room: every follower sees "The host ended this
+  session.", and the invite is dead.
+- A **follower** leaves the party, and its page reloads into a solo copy of the
+  host's world, since the game URL keeps the host's token; it can rejoin by the
+  invite.
+
+This happens once per failing machine, since the failure is then remembered,
+but it takes the whole party down when it is the host's. So, **before Task 6
+switches WebGPU on**, a WebGPU failure after the game has started falls back
+without reloading: the renderer is rebuilt live onto a fresh WebGL2 canvas,
+the world, the session and the lobby kept. The tier-detection work, a design
+of its own, is building exactly that rebuild (a tier change applied mid-hike
+without a reload, a change of engine on a fresh canvas included); it is Task
+6's prerequisite, so the WebGPU switch waits on that work. Until then the
+reload paths stay as built, reachable only with `?engine=webgpu` behind the off
+switch; the record, the lost-device count and the pin in the URL are kept as
+they are, and only what happens after them changes. Babylon's own device-loss
+recovery is not relied on, though it starts: it rebuilds buffers and textures, but the forest's impostor bakes and
 the environment probe are one-shot render targets whose contents a lost device
 erases and nothing renders again. The HUD line is carried across the reload by
 a `sessionStorage` marker, dropped silently where that storage throws.
@@ -832,18 +862,18 @@ noise floor, repeated if over 0.5 ms; only quiet rounds read; per page the pose,
 `?tier=high`; then every pose again with both at `?tier=medium` (what that tier
 draws differently is listed in §7.1), with its own same-code floors.
 
-- **Bar, high tier:** at the canopy pose at native pixels, WebGPU − WebGL2 ≤
-  **−1.5 ms**.
-- **Bar, medium tier:** at the canopy pose at native pixels, WebGPU faster than
-  WebGL2 by more than the larger of the two engines' same-code floors there.
-  No spike figure exists for medium, and it draws less on every page (one
-  cascade, half the blades, no scene pass), so the high tier's margin is not
-  asked of it; a measured gain is.
-- **Bar, both tiers:** at every other pose below, WebGPU − WebGL2 no larger
-  than the larger of the two engines' same-code floors there.
-- **Reported, both tiers:** the canopy and meadow poses at 4×; the canopy pose
-  in a 1920 × 1080 window; per page the JS frame time (`onBeginFrameObservable`
-  to `onEndFrameObservable`) and the draw calls.
+- **Bar, the same on each tier:** at the canopy pose at native pixels, on the
+  reference machine, WebGPU faster than WebGL2 by more than the larger of the
+  two engines' same-code floors there. A tier's WebGPU path turns on when it
+  meets this bar **and** passes the parity gate (§7, §13.2) on that tier (§16).
+- **Expected, reported, not a gate:** on the high tier about **−1.5 ms** at that
+  pose (§3.2). No spike figure exists for medium, which draws less on every page
+  (one cascade, half the blades, no scene pass).
+- **Reported, both tiers:** every other pose below against the larger of the
+  two engines' same-code floors there, with its JS and draw-call figures where it
+  is slower (§16); the canopy and meadow poses at 4×; the canopy pose in a
+  1920 × 1080 window; per page the JS frame time (`onBeginFrameObservable` to
+  `onEndFrameObservable`) and the draw calls.
 
 Poses: canopy, meadow, TRAILSIDE (`__fcSet(263.9, 85.77, 118, 0.6, 0.25)`, mist,
 noon), cliff face-80m (`__fcSet(-420, 60, -900, 1.571, -0.05)`, clear, noon: the
@@ -958,18 +988,26 @@ No test asserts a wall-clock bound; frame, startup and memory are gates.
 
 Pre-stated, in order:
 
-- **The high tier's native frame bar missed** (§13.1), with the 4× delta
-  −5 ms or better: the switch does not go on by default. The engine path stays on `main` behind
-  `?engine=webgpu`, Task 7 is measured on it, and the default goes on only when
-  the engine with I meets 1.5 ms at native against WebGL2 with the filter. If
-  the 4× delta misses −5 ms too, the design is revisited with the figures.
-- **The medium tier's bar missed while the high tier's is met**:
-  `WEBGPU_TIERS` goes back to `["high"]` in its own commit with its test, and
-  the switch goes on for the high tier alone; medium is measured again with
-  Task 7.
-- **A pose slower than its floor**: the pose's JS and draw-call figures say
-  whether it is CPU-side; if so, the first lever is Babylon's WebGPU snapshot
-  rendering for the static buckets (§17) before the switch goes on.
+- **The frame bar and parity, per tier** (§13.1, §13.2). Each tier is judged on
+  its own, by the one bar: faster than the same-code floor at the canopy pose at
+  native, and parity passed.
+  - **Both tiers pass:** both on. `WEBGPU_TIERS` stays `["high", "medium"]` and
+    `WEBGPU_ENABLED` goes on.
+  - **One tier passes:** that tier on. `WEBGPU_TIERS` becomes that tier alone,
+    in its own commit with its test, and the switch goes on for it; the other
+    is measured again with Task 7.
+  - **Neither passes:** off. The engine path stays on `main` behind
+    `?engine=webgpu`, Task 7 is measured on it, and a tier goes on when the
+    engine with I passes that tier's bar and parity against WebGL2 with the
+    filter. If the 4× delta is not a gain either, the design is revisited with
+    the figures.
+
+  The high tier's 1.5 ms is reported against its expectation either way; a
+  shortfall there is a finding for the note, not a reason to keep a passing
+  tier off.
+- **A pose slower than its floor** (reported, §13.1): the pose's JS and
+  draw-call figures say whether it is CPU-side; if so, the first lever is
+  Babylon's WebGPU snapshot rendering for the static buckets (§17).
 - **The startup hitch bar missed**: the lit materials' lamp-on variants compiled
   behind the loading screen, by `forceCompilationAsync` with the lamp enabled
   for the call, then the startup gate re-run.

@@ -13,8 +13,9 @@ works and saves about a millisecond, but the version whose saving was measured
 cleanly lets clumps drop out for a frame on a turn, and the version that does
 not has no clean frame measurement. The larger finding is outside the
 criteria: **the WebGPU engine alone draws the canopy pose about 2.5 ms faster
-at native pixels and about 10 ms faster at four times the pixels than WebGL2**,
-more than the whole grass reclaim aims for. That deserves its own design
+at native pixels and about 10 ms faster at four times the pixels than WebGL2**
+(the native figure is the build with the cull; see the dated correction after
+§4), more than the whole grass reclaim aims for. That deserves its own design
 (§7).
 
 ## 1. Conditions
