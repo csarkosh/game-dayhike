@@ -34,13 +34,26 @@ export const ARM_HEIGHT = 0.204;
 const ARM_THICKNESS = 0.038;
 /** Where the arrow's point begins: the full-height board runs from the post end to here. */
 const ARM_BOARD_END = 0.95;
-/** Height of an arm's centre above the post's foot. */
-export const ARM_ABOVE_GROUND = 1.8;
+/** Half the post model's square section. */
+const POST_HALF_WIDTH = 0.065;
+/** Clearance between an arm's post end and the post's face. */
+const ARM_SEAT_GAP = 0.005;
+/**
+ * Height of an arm's centre above the post's foot. Low enough that three
+ * stacked arms end under the 2.221 m post's top (the third's top edge at
+ * 2.142 m), high enough that the lowest clears a hiker's head (its bottom
+ * edge at 1.498 m).
+ */
+export const ARM_ABOVE_GROUND = 1.6;
 /** How far a second arm is raised when it points nearly the same way as one below it. */
 export const ARM_STACK = 0.22;
 /** Arms closer than this in direction (cos 30 degrees) would cross; the later one is raised. */
 const ARM_CROSSING_COS = Math.cos(Math.PI / 6);
-/** One label plane: a little narrower than the arm's board and a little shorter than its height. */
+/**
+ * One label plane: a little wider than the arm's full-height board (0.95 m)
+ * and a little shorter than its height; the texture's margin keeps the
+ * letters on the wood.
+ */
 const LABEL_SIZE = { width: 1.0, height: 0.19 } as const;
 /** The gap between a label and the arm face it sits on: enough to never fight it for depth. */
 const LABEL_LIFT = 0.001;
@@ -116,6 +129,10 @@ export function paintedLabel(scene: Scene, name: string, text: string, width: nu
   material.albedoTexture = texture;
   material.useAlphaFromAlbedoTexture = true;
   material.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+  // The clear ground must stay clear: no reflection or highlight kept where
+  // the alpha is zero, which would lay a sheen over the wood.
+  material.useRadianceOverAlpha = false;
+  material.useSpecularOverAlpha = false;
   // Seen only from the front: from behind, the arm hides it anyway, and a
   // back face would read mirrored.
   material.backFaceCulling = true;
@@ -229,6 +246,9 @@ export function createSignMeshes(
     plane.rotation.y = -side * (Math.PI / 2);
     plane.material = material;
     plane.isPickable = false;
+    // It takes the shadows the arm does, but casts none of its own: the
+    // board under it already does.
+    plane.receiveShadows = true;
     labels.push(plane);
   }
 
@@ -238,11 +258,14 @@ export function createSignMeshes(
       const levels = armLevels(post.arms);
       for (const [a, arm] of post.arms.entries()) {
         const name = `sign_${p}_arm_${a}`;
-        // The arm's post end just off the post's axis along the way it points:
-        // far enough that the post's corners clear it in every direction.
+        // The arm's post end seated against the post: the square post reaches
+        // 0.065 (|dx| + |dz|) from its axis along the arm's direction — its face
+        // square on, a corner on the diagonal — so the arm meets it in every
+        // direction without cutting into it.
+        const seat = POST_HALF_WIDTH * (Math.abs(arm.dx) + Math.abs(arm.dz)) + ARM_SEAT_GAP;
         const model = instantiateStaticModel(
           container, name,
-          arm.dx * SIGN_POST_HALF.x, ARM_ABOVE_GROUND + ARM_STACK * (levels[a] as number), arm.dz * SIGN_POST_HALF.x,
+          arm.dx * seat, ARM_ABOVE_GROUND + ARM_STACK * (levels[a] as number), arm.dz * seat,
           armYaw(arm),
         );
         keep(model, footing);

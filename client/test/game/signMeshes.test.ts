@@ -188,7 +188,7 @@ describe("createSignMeshes", () => {
     expect(scene.meshes.filter((m) => m.getTotalVertices() > 0)).toHaveLength(0);
   });
 
-  it("turns each arm's tip along its branch, its post end just off the post's axis at 1.8 m", async () => {
+  it("turns each arm's tip along its branch, its post end seated on the post's face at 1.6 m", async () => {
     const scene = freshScene();
     const { signs } = setup(scene, diskLoader(scene));
     await signs.ready;
@@ -197,29 +197,30 @@ describe("createSignMeshes", () => {
     expect(east.rotation.y).toBeCloseTo(1.5707963, 4);
     east.computeWorldMatrix(true);
     const at = east.getAbsolutePosition();
-    expect(at.x).toBeCloseTo(100.1, 4);
-    expect(at.y).toBeCloseTo(3.8, 4);
+    // 0.065 to the post's face and 5 mm clear of it.
+    expect(at.x).toBeCloseTo(100.07, 4);
+    expect(at.y).toBeCloseTo(3.6, 4);
     expect(at.z).toBeCloseTo(50, 4);
     // The arrow's tip 1.095 m on from the post end, at the arm's centre height.
     const verts = drawn(east).flatMap((m) => worldVertices(m).map(({ p }) => p));
     const tip = verts.reduce((a, b) => (b.x > a.x ? b : a));
-    expect(tip.x).toBeCloseTo(101.196, 2);
-    expect(tip.y).toBeCloseTo(3.8, 2);
+    expect(tip.x).toBeCloseTo(101.166, 2);
+    expect(tip.y).toBeCloseTo(3.6, 2);
     // The point is an edge across the board's thickness, 0.019 m either side of the centre line.
     expect(Math.abs(tip.z - 50)).toBeLessThanOrEqual(0.02);
     // The post end square across the arm, 0.204 m tall and 0.038 m thick.
-    expect(Math.min(...verts.map((p) => p.x))).toBeCloseTo(100.1, 3);
+    expect(Math.min(...verts.map((p) => p.x))).toBeCloseTo(100.07, 3);
     expect(Math.max(...verts.map((p) => p.y)) - Math.min(...verts.map((p) => p.y))).toBeCloseTo(0.204, 2);
     expect(Math.max(...verts.map((p) => p.z)) - Math.min(...verts.map((p) => p.z))).toBeCloseTo(0.038, 2);
 
     const west = node(scene, "sign_0_arm_1");
     expect(west.rotation.y).toBeCloseTo(-1.5707963, 4);
     const westVerts = drawn(west).flatMap((m) => worldVertices(m).map(({ p }) => p));
-    expect(Math.min(...westVerts.map((p) => p.x))).toBeCloseTo(98.804, 2);
+    expect(Math.min(...westVerts.map((p) => p.x))).toBeCloseTo(98.834, 2);
 
-    // The post at the origin points north: its tip at z = 0.1 + 1.095.
+    // The post at the origin points north: its tip at z = 0.07 + 1.096.
     const north = drawn(node(scene, "sign_1_arm_0")).flatMap((m) => worldVertices(m).map(({ p }) => p));
-    expect(Math.max(...north.map((p) => p.z))).toBeCloseTo(1.196, 2);
+    expect(Math.max(...north.map((p) => p.z))).toBeCloseTo(1.166, 2);
     signs.dispose();
   });
 
@@ -229,10 +230,13 @@ describe("createSignMeshes", () => {
     await signs.ready;
     const raised = node(scene, "sign_0_arm_2");
     raised.computeWorldMatrix(true);
-    expect(raised.getAbsolutePosition().y).toBeCloseTo(4.02, 4);
+    expect(raised.getAbsolutePosition().y).toBeCloseTo(3.82, 4);
+    // 20 degrees off square, the post reaches further along it: 0.065 (cos 20 + sin 20) + 0.005.
+    const seat = raised.getAbsolutePosition().subtract(new Vector3(100, 3.82, 50)).length();
+    expect(seat).toBeCloseTo(0.0883, 4);
     expect(raised.rotation.y).toBeCloseTo(1.2217305, 4);
     node(scene, "sign_0_arm_1").computeWorldMatrix(true);
-    expect(node(scene, "sign_0_arm_1").getAbsolutePosition().y).toBeCloseTo(3.8, 4);
+    expect(node(scene, "sign_0_arm_1").getAbsolutePosition().y).toBeCloseTo(3.6, 4);
     signs.dispose();
   });
 
@@ -256,6 +260,7 @@ describe("createSignMeshes", () => {
         expect(label.material).toBe(painted[i]!.material);
         expect(label.material!.backFaceCulling).toBe(true);
         expect(shadowed.has(label)).toBe(false);
+        expect(label.receiveShadows).toBe(true);
         const verts = worldVertices(label);
         // 1.0 m by 0.19 m.
         const ys = verts.map(({ p }) => p.y);
