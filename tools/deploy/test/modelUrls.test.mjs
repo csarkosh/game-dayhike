@@ -4,14 +4,14 @@ import { findModelUrls } from '../lib/modelUrls.mjs';
 // A slice shaped like the real entry chunk: the model URLs appear as bare string
 // literals inside minified code, which is all `findModelUrls` gets to work with.
 const BUNDLE =
-  'const e={grunt:"/assets/enemy.grunt-BCzVRFA1.glb",skel:"/assets/enemy.skeleton-m6YRToXT.glb"},' +
+  'const e={nathan:"/assets/ranger.nathan-BCzVRFA1.glb",hollow:"/assets/hollow.antlered-m6YRToXT.glb"},' +
   't=["/assets/tree.giant_fir-Bwk1QSVv.glb","/assets/clutter.fungus_b-9_nsqWvr.glb"];';
 
 describe('findModelUrls', () => {
   it('finds the hashed URL a bundle references for each id', () => {
-    expect(findModelUrls(BUNDLE, ['enemy.grunt', 'enemy.skeleton'])).toEqual({
-      'enemy.grunt': '/assets/enemy.grunt-BCzVRFA1.glb',
-      'enemy.skeleton': '/assets/enemy.skeleton-m6YRToXT.glb',
+    expect(findModelUrls(BUNDLE, ['ranger.nathan', 'hollow.antlered'])).toEqual({
+      'ranger.nathan': '/assets/ranger.nathan-BCzVRFA1.glb',
+      'hollow.antlered': '/assets/hollow.antlered-m6YRToXT.glb',
     });
   });
 
@@ -27,16 +27,16 @@ describe('findModelUrls', () => {
   it('omits an id the bundle does not reference rather than guessing a URL', () => {
     // The caller turns an absent id into a loud failure. Returning a plausible
     // path here instead would send it fetching a 404 and blaming hosting.
-    expect(findModelUrls(BUNDLE, ['enemy.grunt', 'enemy.absent'])).toEqual({
-      'enemy.grunt': '/assets/enemy.grunt-BCzVRFA1.glb',
+    expect(findModelUrls(BUNDLE, ['ranger.nathan', 'ranger.absent'])).toEqual({
+      'ranger.nathan': '/assets/ranger.nathan-BCzVRFA1.glb',
     });
-    expect(findModelUrls('', ['enemy.grunt'])).toEqual({});
+    expect(findModelUrls('', ['ranger.nathan'])).toEqual({});
   });
 
   it('treats the dot in an id as a literal, not a wildcard', () => {
     // Catalog ids all contain a `.`. Unescaped it matches any character, so
-    // `enemy.grunt` would happily claim a URL belonging to something else.
-    expect(findModelUrls('"/assets/enemyXgrunt-BCzVRFA1.glb"', ['enemy.grunt'])).toEqual({});
+    // `ranger.nathan` would happily claim a URL belonging to something else.
+    expect(findModelUrls('"/assets/rangerXnathan-BCzVRFA1.glb"', ['ranger.nathan'])).toEqual({});
   });
 
   it('does not match an id that is only a prefix of the emitted name', () => {
@@ -47,12 +47,12 @@ describe('findModelUrls', () => {
 
   it('does not claim a sibling id whose extra segment is separated by a dash', () => {
     // The subtle one, and the reason the hash length is pinned. base64url hashes
-    // contain `-`, so an open `+` quantifier lets `enemy.grunt` swallow the `v2-`
-    // of `enemy.grunt-v2` and return that model's URL instead. `deploy:verify`
+    // contain `-`, so an open `+` quantifier lets `ranger.nathan` swallow the `v2-`
+    // of `ranger.nathan-v2` and return that model's URL instead. `deploy:verify`
     // would fetch the sibling, find a real glTF, and pass the id it never
     // checked. Nothing about an id's shape rules out a `-`, so this is
     // reachable the day someone adds one.
-    expect(findModelUrls('"/assets/enemy.grunt-v2-BCzVRFA1.glb"', ['enemy.grunt'])).toEqual({});
+    expect(findModelUrls('"/assets/ranger.nathan-v2-BCzVRFA1.glb"', ['ranger.nathan'])).toEqual({});
     expect(findModelUrls('"/assets/tree.conifer-a-b-Xy1zzzzz.glb"', ['tree.conifer-a'])).toEqual(
       {},
     );
@@ -60,10 +60,10 @@ describe('findModelUrls', () => {
 
   it('still finds an id that does contain a dash, when it is the real one', () => {
     // The flip side: pinning the length must not make a hyphenated id
-    // undiscoverable. `enemy.grunt-v2` finds its own URL in the same source that
-    // `enemy.grunt` is correctly refused.
-    expect(findModelUrls('"/assets/enemy.grunt-v2-BCzVRFA1.glb"', ['enemy.grunt-v2'])).toEqual({
-      'enemy.grunt-v2': '/assets/enemy.grunt-v2-BCzVRFA1.glb',
+    // undiscoverable. `ranger.nathan-v2` finds its own URL in the same source that
+    // `ranger.nathan` is correctly refused.
+    expect(findModelUrls('"/assets/ranger.nathan-v2-BCzVRFA1.glb"', ['ranger.nathan-v2'])).toEqual({
+      'ranger.nathan-v2': '/assets/ranger.nathan-v2-BCzVRFA1.glb',
     });
   });
 
@@ -72,7 +72,7 @@ describe('findModelUrls', () => {
     // the live site would mean the deploy shipped something that is not a
     // production build — exactly the state this check exists to catch, so it must
     // read as "not found" rather than as a pass.
-    expect(findModelUrls('"/assets/models/enemy.grunt.glb"', ['enemy.grunt'])).toEqual({});
+    expect(findModelUrls('"/assets/models/ranger.nathan.glb"', ['ranger.nathan'])).toEqual({});
   });
 
   it('captures the base-absolute prefix a non-root `base` build carries', () => {
@@ -81,24 +81,24 @@ describe('findModelUrls', () => {
     // bare `/assets/...` path. Returning the bare suffix here would send the
     // caller fetching against the site's origin, which Firebase's `**` rewrite
     // answers with the redirect page's HTML — a 200 that is not the model.
-    const bundle = 'const e={grunt:"/dayhike/assets/enemy.grunt-BCzVRFA1.glb"};';
-    expect(findModelUrls(bundle, ['enemy.grunt'])).toEqual({
-      'enemy.grunt': '/dayhike/assets/enemy.grunt-BCzVRFA1.glb',
+    const bundle = 'const e={nathan:"/dayhike/assets/ranger.nathan-BCzVRFA1.glb"};';
+    expect(findModelUrls(bundle, ['ranger.nathan'])).toEqual({
+      'ranger.nathan': '/dayhike/assets/ranger.nathan-BCzVRFA1.glb',
     });
   });
 
   it('accepts a backtick-delimited URL, which the minifier emits for plain strings', () => {
     // The first production verify after the site move failed here: every model
     // was in the bundle, delimited by backticks rather than quotes.
-    const bundle = 'const e={grunt:`/dayhike/assets/enemy.grunt-BCzVRFA1.glb`};';
-    expect(findModelUrls(bundle, ['enemy.grunt'])).toEqual({
-      'enemy.grunt': '/dayhike/assets/enemy.grunt-BCzVRFA1.glb',
+    const bundle = 'const e={nathan:`/dayhike/assets/ranger.nathan-BCzVRFA1.glb`};';
+    expect(findModelUrls(bundle, ['ranger.nathan'])).toEqual({
+      'ranger.nathan': '/dayhike/assets/ranger.nathan-BCzVRFA1.glb',
     });
   });
 
   it('still returns the bare path a base "/" build emits (the desktop build)', () => {
-    expect(findModelUrls(BUNDLE, ['enemy.grunt'])).toEqual({
-      'enemy.grunt': '/assets/enemy.grunt-BCzVRFA1.glb',
+    expect(findModelUrls(BUNDLE, ['ranger.nathan'])).toEqual({
+      'ranger.nathan': '/assets/ranger.nathan-BCzVRFA1.glb',
     });
   });
 
@@ -107,10 +107,10 @@ describe('findModelUrls', () => {
     // regex that reached backward past the opening quote could bleed one URL's
     // prefix into a neighboring URL for a different id.
     const bundle =
-      '"/legacy/assets/enemy.grunt-AAAAAAAA.glb","/dayhike/assets/enemy.skeleton-BBBBBBBB.glb"';
-    expect(findModelUrls(bundle, ['enemy.grunt', 'enemy.skeleton'])).toEqual({
-      'enemy.grunt': '/legacy/assets/enemy.grunt-AAAAAAAA.glb',
-      'enemy.skeleton': '/dayhike/assets/enemy.skeleton-BBBBBBBB.glb',
+      '"/legacy/assets/ranger.nathan-AAAAAAAA.glb","/dayhike/assets/hollow.antlered-BBBBBBBB.glb"';
+    expect(findModelUrls(bundle, ['ranger.nathan', 'hollow.antlered'])).toEqual({
+      'ranger.nathan': '/legacy/assets/ranger.nathan-AAAAAAAA.glb',
+      'hollow.antlered': '/dayhike/assets/hollow.antlered-BBBBBBBB.glb',
     });
   });
 
@@ -118,9 +118,9 @@ describe('findModelUrls', () => {
     // `[^"']*` is bounded by the quote characters, so it cannot walk back past
     // where the current string literal opened — even when what precedes it is
     // full of `/`-shaped noise that a looser regex might have swallowed.
-    const bundle = 'const x = a/b/c; const y="/dayhike/assets/enemy.grunt-BCzVRFA1.glb";';
-    expect(findModelUrls(bundle, ['enemy.grunt'])).toEqual({
-      'enemy.grunt': '/dayhike/assets/enemy.grunt-BCzVRFA1.glb',
+    const bundle = 'const x = a/b/c; const y="/dayhike/assets/ranger.nathan-BCzVRFA1.glb";';
+    expect(findModelUrls(bundle, ['ranger.nathan'])).toEqual({
+      'ranger.nathan': '/dayhike/assets/ranger.nathan-BCzVRFA1.glb',
     });
   });
 });
