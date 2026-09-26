@@ -12,6 +12,7 @@ import { CLUTTER_BOULDER, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS
 import { clutterFadeEdges, clutterSeamEdges, collectClutter } from "../../src/game/clutterField.js";
 import {
   CLUTTER_SINK,
+  clutterNearLodName,
   createClutterMeshes,
   cutOf,
   cutsFor,
@@ -353,12 +354,23 @@ describe("the cards beside the blade field", () => {
   it("keeps every meadow near card under the blade field, dithering in from the eye", () => {
     const want = collectClutter(1, 35, 21335)[CLUTTER_MEADOW]!.near.length;
     expect(want).toBeGreaterThan(0);
+    expect(want).toBe(2800);
     for (const nearBlades of [true, false]) {
-      const { assets, clutter, engine } = build(nearBlades);
+      const { scene, assets, clutter, engine } = build(nearBlades);
       const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
       clutter.update(35, 21335);
-      const meadowNear = assets[CLUTTER_MEADOW]![0]![0]![0]!;
+      const lod0 = assets[CLUTTER_MEADOW]![0]![0]![0]!;
       const meadowFar = assets[CLUTTER_MEADOW]![0]![1]![0]!;
+      // Under the blades the near band draws a copy of LOD1, on a geometry of
+      // its own; without them, LOD0 itself.
+      const meadowNear = nearBlades ? scene.getMeshByName(`${meadowFar.name}.near`) as Mesh : lod0;
+      expect(meadowNear).not.toBeNull();
+      if (nearBlades) {
+        expect(meadowNear.geometry).not.toBe(meadowFar.geometry);
+        expect(meadowNear.material).toBe(meadowFar.material);
+        expect(lod0.isEnabled()).toBe(false);
+        expect(lod0.thinInstanceCount).toBe(0);
+      }
       const grassNear = assets[CLUTTER_GRASS]![0]![0]![0]!;
       expect(meadowFar.thinInstanceCount).toBeGreaterThan(0);
       // Every near instance the collector returns, blades or not.
@@ -377,6 +389,19 @@ describe("the cards beside the blade field", () => {
       engine.dispose();
     }
   }, 20_000);
+
+  // Under the blades the meadow cards are the cover and the blades the
+  // detail, and every near card costs its vertices whether the dither keeps
+  // it or not: the meadow's near band draws LOD1 there, half of LOD0's.
+  it("draws the meadow's near band on LOD1 under the blades, LOD0 otherwise", () => {
+    expect(clutterNearLodName(CLUTTER_MEADOW, true)).toBe("LOD1");
+    expect(clutterNearLodName(CLUTTER_MEADOW, false)).toBe("LOD0");
+    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+      if (cls === CLUTTER_MEADOW) continue;
+      expect(clutterNearLodName(cls, true)).toBe("LOD0");
+      expect(clutterNearLodName(cls, false)).toBe("LOD0");
+    }
+  });
 
   it("has no blade bucket of its own any more", () => {
     const { scene, clutter, engine } = build(true);

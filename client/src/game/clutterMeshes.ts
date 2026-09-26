@@ -15,7 +15,9 @@
  * readiness gate), NO cohort or species split (a clutter class picks between
  * variant models by the instance's own `variant` field, which the sim already
  * drew), and only two of the three LOD levels each model ships: LOD0 for
- * the `near` band, LOD1 for `far`. LOD2 exists in every file and goes unused —
+ * the `near` band, LOD1 for `far` (and for the meadow's `near` band too on
+ * the tiers that draw blades over it; see `clutterNearLodName`). LOD2 exists
+ * in every file and goes unused —
  * a prop's LOD1 is already 36–230 triangles, and a third ring would buy
  * single-digit triangles per instance at the cost of seventeen more draw calls.
  *
@@ -120,6 +122,18 @@ const CLUTTER_MODEL_URLS: readonly (readonly string[])[] = [
 const LOD_NAMES = ["LOD0", "LOD1"] as const;
 const NEAR_LOD = 0;
 const FAR_LOD = 1;
+
+/**
+ * The LOD root a class's `near` band draws: LOD0, except the meadow's on the
+ * tiers that draw the blade field over it. There the blades carry the fine
+ * detail inside `BLADE_REACH` and the cards only the cover, and every card in
+ * the band is drawn, dithered in and out or not, so its cost is per instance
+ * in the vertex stage; the model's LOD1 carries the same cover on half of
+ * LOD0's vertices.
+ */
+export function clutterNearLodName(cls: number, nearBlades: boolean): (typeof LOD_NAMES)[number] {
+  return nearBlades && cls === CLUTTER_MEADOW ? LOD_NAMES[FAR_LOD] : LOD_NAMES[NEAR_LOD];
+}
 
 /** Rock and boulder are the only classes cut into fractured, angular stone at
  * load (rockRelief.ts): a rounded model gets ROCK_CUTS distinct fractures so
@@ -769,11 +783,30 @@ export function createClutterMeshes(
     return expanded;
   }
 
+  /**
+   * For a class whose `near` band draws LOD1 (`clutterNearLodName`), swaps
+   * each variant's near mesh group for copies of its LOD1 group. Copies, not
+   * the same meshes: a thin-instance buffer lives on the mesh's geometry, so
+   * the near and far buckets need a geometry each. The copies share the LOD1
+   * material, as the two LODs of a model already do. The LOD0 meshes they
+   * replace stop drawing; whatever loaded them still owns them, as with
+   * `expandCutVariants`. Every other class passes through untouched.
+   */
+  function nearLodVariants(cls: number, variants: Mesh[][][]): Mesh[][][] {
+    if (clutterNearLodName(cls, nearBlades) === LOD_NAMES[NEAR_LOD]) return variants;
+    return variants.map((perLod) => {
+      for (const mesh of perLod[NEAR_LOD] as Mesh[]) mesh.setEnabled(false);
+      const far = perLod[FAR_LOD] as Mesh[];
+      const near = far.map((mesh) => mesh.clone(`${mesh.name}.near`, null, true).makeGeometryUnique());
+      return [near, far];
+    });
+  }
+
   /** Turns the loaded mesh groups into buckets and replays any update that
    * arrived while they were loading. */
   function adopt(loaded: Mesh[][][][]): void {
     buckets = loaded.map((variants, cls) =>
-      expandCutVariants(cls, variants).map((perLod) =>
+      expandCutVariants(cls, nearLodVariants(cls, variants)).map((perLod) =>
         perLod.map((meshes, lod) => {
           for (const mesh of meshes) prepBucketMesh(mesh);
           // Boulders are the only clutter that casts — see `casterMeshes`.
@@ -806,12 +839,16 @@ export function createClutterMeshes(
           }
           // The meadow's near cards stand under the blade field on the tiers
           // that draw it, and dither in from the eye there so none stands as
-          // a flat plane at the feet. Every other near bucket draws all the
-          // way in, as does the meadow's on the low tier, which has no blades.
-          // The grass class's near cards in particular are never cut: the
-          // blades only grow where the grass gate clears the field's floor,
-          // so an in-band there would take away the last cover standing. The
-          // field may only ever ADD to the near field.
+          // a flat plane at the feet. They do so on those tiers whether or not
+          // blades grow at a given spot, so where the grass gate sits under
+          // the field's floor the meadow cards thin inside 2.5 m and are gone
+          // inside 1 m with nothing in their place. Every other near bucket
+          // draws all the way in, as does the meadow's on the low tier, which
+          // has no blades. The grass class's near cards in particular are
+          // never cut: the blades only grow where the grass gate clears the
+          // field's floor, so an in-band there would take away the last
+          // cover standing. For the grass class the field may only ever ADD
+          // to the near field.
           const nearIn = nearBlades && cls === CLUTTER_MEADOW ? CLUTTER_MEADOW_NEAR_IN : null;
           const fade: FadeBands = lod === NEAR_LOD
             ? fadeBands(nearIn, [seam.start, seam.end])

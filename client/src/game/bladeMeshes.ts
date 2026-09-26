@@ -187,8 +187,8 @@ function applyBucket(bucket: Bucket): void {
  * blades profile, the sun-only translucency, its tier's hand-off band, and
  * never the distance fade. No texture and no alpha, so the material never
  * alpha-tests and never compiles a discard — early depth rejection stays on
- * for the whole draw, which is what lets a full near field of grass cost what
- * the cards it replaces cost. The hand-off is geometric instead: each blade
+ * for the whole draw, which keeps a full near field of grass cheap over the
+ * cards drawn under it. The hand-off is geometric instead: each blade
  * shrinks to its root across the band, so there is nothing to dither. */
 function createTierMaterial(scene: Scene, tier: number, meshHeight: number): PBRMaterial {
   const mat = new PBRMaterial(`${BLADE_MESH_PREFIX}_t${tier}_mat`, scene);
