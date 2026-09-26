@@ -107,7 +107,26 @@ mismatch of can turn either way by draw order, into a silent wrong read or a
 validation error; Task 7 carries the rule that avoids it. Nothing on `main`
 calls the workaround yet; Task 7 is its first caller. Appendix A stays the
 draft, with two claims corrected (the hash is public API, not read elsewhere;
-the grouping mismatch goes either way), and nothing is filed.
+the grouping mismatch goes either way; the workaround as the accessor built),
+and nothing is filed.
+
+**Task 4, as built.** §9 as written: `defaultBakeImpostor` has no deadline and
+ends ready, failed (a bake clone's effect reports a compilation error: one
+`console.error` naming the model, then null) or aborted (the forest's
+`AbortSignal`, fired first thing in `dispose`: the target disposed, null, and
+nothing logged); still waiting at `IMPOSTOR_BAKE_WARN_MS` (30 s) it logs once
+and waits on. The options `{ signal, warnMs }` replace the third parameter,
+`timeoutMs`. `adoptBake` logs a null that is not an abort, naming the
+billboard. The compilation error is read from each bake clone's draw wrapper
+for the bake's own render pass, without creating one (`SubMesh._getDrawWrapper`,
+an internal member, pinned by a canary with `Effect.getCompilationError`), so a
+poll changes nothing and a fast bake on either engine renders exactly as
+before. One addition: `ForestMeshes.impostorBakes()` records each billboard's
+bake, still baking, ready or failed, with the milliseconds it took to settle,
+so a far forest missing from view can be traced to its billboard, and Task 4's
+gate can read when each landed. What only a browser can show: how long the real
+compiles take on each engine, whether the 30 s warning fires on a cold WebGPU
+start, and the billboards' pixels; Task 4's gate records those.
 
 The spike ran the game on Babylon's `WebGPUEngine` with every existing material
 and plugin, to measure a compute cull of the blade field, and found the engine
@@ -1228,6 +1247,9 @@ so meshes reading one buffer at different offsets share a pipeline
 > maximum fits above the stride's bits, as `byteOffset * 2 ** 24`), but the hash
 > is public API, and the cache is where the offset matters.
 >
-> **Workaround.** Replace the vertex buffer instance's `_computeHashCode` with one
-> that adds the offset term, and call it; setting it once is not enough, since
-> the `instanceDivisor` setter recomputes the hash.
+> **Workaround.** Give the vertex buffer instance its own `hashCode` accessor:
+> the setter keeps whatever Babylon assigns, and the getter adds
+> `byteOffset * 2 ** 24`. Adding the term once is not enough, since
+> `_computeHashCode()` reassigns `hashCode`, and runs again whenever the
+> `instanceDivisor` setter flips instancing; the accessor survives that, and
+> any other assignment.
