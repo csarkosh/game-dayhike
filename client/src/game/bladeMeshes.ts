@@ -216,6 +216,20 @@ function applyGrown(bucket: Bucket): void {
 }
 
 /**
+ * Hands a bucket's drawn buffers, at their full capacity, back to its mesh.
+ * After a WebGL context restore Babylon rebuilds each GPU buffer from the data
+ * it was last given, which a prefix upload leaves as the prefix alone; a later,
+ * longer cut would then write past its end. The bucket draws nothing until the
+ * next cut fills it again.
+ */
+function rehandBucket(bucket: Bucket): void {
+  if (bucket.drawn.buf.length === 0) return;
+  bucket.grown = true;
+  applyGrown(bucket);
+  bucket.grown = false;
+}
+
+/**
  * Cuts one bucket's collected set by `planes` into its drawn buffers, sets
  * the count to the kept cells and uploads only them (Babylon's count form of
  * `thinInstancePartialBufferUpdate`: `kept` strides from offset 0).
@@ -314,6 +328,10 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
   let disposed = false;
   let builtX = NaN;
   let builtZ = NaN;
+  const restoreObserver = scene.getEngine().onContextRestoredObservable.add(() => {
+    for (const row of buckets) for (const sizes of row) for (const bucket of sizes) rehandBucket(bucket);
+    dirty = true;
+  });
   /** Set by a rebuild: the collected sets changed, so the next `cull` cuts
    * whatever the pose. */
   let dirty = false;
@@ -411,6 +429,7 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
     dispose() {
       if (disposed) return;
       disposed = true;
+      scene.getEngine().onContextRestoredObservable.remove(restoreObserver);
       // The meshes and the materials are both ours — generated here, adopted
       // from no container — so both have to be disposed by hand.
       for (const mesh of meshes) mesh.dispose();

@@ -513,6 +513,19 @@ function applyCulled(bucket: Bucket): void {
 }
 
 /**
+ * Hands a culled bucket's drawn buffers, at their full capacity, back to its
+ * meshes, for the reason bladeMeshes.ts's `rehandBucket` gives: after a WebGL
+ * context restore the GPU buffers are rebuilt at the last prefix's size. The
+ * bucket draws nothing until the next cut fills it again.
+ */
+function rehandCulled(bucket: Bucket): void {
+  if (bucket.drawn.buf.length === 0) return;
+  bucket.grown = true;
+  applyCulled(bucket);
+  bucket.grown = false;
+}
+
+/**
  * Cuts one culled bucket's collected set by `planes` into its drawn buffers,
  * sets its meshes' count to the kept cards and uploads only them (Babylon's
  * count form of `thinInstancePartialBufferUpdate`: `kept` strides from
@@ -673,6 +686,10 @@ export function createClutterMeshes(
    * (`cull(null)`), or the cut at `lastPose`. */
   let cutMode: "none" | "all" | "pose" = "none";
   const lastPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, fov: 0, aspect: 0 };
+  const restoreObserver = scene.getEngine().onContextRestoredObservable.add(() => {
+    for (const bucket of culledBuckets) rehandCulled(bucket);
+    dirty = true;
+  });
 
   // Last camera seen and last origin built. Split so an `update` that arrives
   // while the GLBs are still loading is honoured the moment they land.
@@ -1040,6 +1057,7 @@ export function createClutterMeshes(
     dispose() {
       if (disposed) return;
       disposed = true;
+      scene.getEngine().onContextRestoredObservable.remove(restoreObserver);
       if (buckets !== null) {
         for (const variants of buckets) {
           for (const perLod of variants) {

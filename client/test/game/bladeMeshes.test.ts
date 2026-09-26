@@ -18,9 +18,9 @@ import {
 } from "../../src/game/bladeMeshes.js";
 import { instanceMatrixFor, trampleFrame } from "../../src/game/clutterMeshes.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
-import { cullPlanes, type CullPose } from "../../src/game/grassCull.js";
+import { CULL_MOVE, CULL_TURN, cullPlanes, type CullPose } from "../../src/game/grassCull.js";
+import { bladeReach, extentSeen, thresholdWalk } from "./helpers/cullReach.js";
 import { seedFromToken } from "../../src/game/seed.js";
-import { inCone } from "../../src/game/wildlifeDirector.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
 
 // The open-field census point: every tier and every character is present.
@@ -260,7 +260,7 @@ describe("the blade field culled to the frustum", () => {
       // The kept cells are those whose translation the planes keep, in list order.
       const want = cells.filter((cell) => {
         const y = cell.groundH - 0.02; // the translation instanceMatrixFor writes: the ground less the sink
-        for (let p = 0; p < 20; p += 4) if (planes[p]! * cell.x + planes[p + 1]! * y + planes[p + 2]! * cell.z + planes[p + 3]! < -0.75) return false;
+        for (let p = 0; p < 20; p += 4) if (planes[p]! * cell.x + planes[p + 1]! * y + planes[p + 2]! * cell.z + planes[p + 3]! < -1.5) return false;
         return true;
       });
       expect(mesh.isEnabled() ? mesh.thinInstanceCount : 0).toBe(want.length);
@@ -281,7 +281,7 @@ describe("the blade field culled to the frustum", () => {
     }
     // The prefix is a fraction of what was collected: about a fifth at this pose.
     expect(collected).toBe(6319);
-    expect(drawn).toBe(1496);
+    expect(drawn).toBe(1741);
     expect(drawn / collected).toBeLessThan(0.35);
     // Only prefixes are uploaded, never more than the kept count, never whole.
     expect(partial.mock.calls.length).toBe(enabled * 3);
@@ -326,6 +326,48 @@ describe("the blade field culled to the frustum", () => {
     blades.dispose(); engine.dispose();
   }, 60_000);
 
+  // A WebGL context restore rebuilds each GPU buffer from the data it last
+  // took, which after a prefix upload is the prefix alone. The shell hands
+  // every mesh its full drawn buffers again and cuts afresh. NullEngine has no
+  // GL buffers, so this proves the hand-back and the recut, not the GPU sizes.
+  it("hands every mesh its full drawn buffers again after a context restore, and cuts afresh", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const blades = createBladeMeshes(scene, SEED, { quality: "high" });
+    const set = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    const pose = { ...POSE, y: elevationSampleAt(SEED, CAM.x, CAM.z).h + 1.6 };
+    blades.update(CAM.x, CAM.z);
+    blades.cull(pose);
+    const before = blades.meshes.map((m) => (m.isEnabled() ? m.thinInstanceCount : 0));
+    const drawnBufs = blades.meshes.map((m) => bufferFor(set, m, "matrix"));
+    set.mockClear();
+    engine.onContextRestoredObservable.notifyObservers(engine);
+    let handed = 0;
+    blades.meshes.forEach((mesh, b) => {
+      if (drawnBufs[b] === null) return;
+      handed++;
+      // The same full-capacity arrays, every kind.
+      expect(bufferFor(set, mesh, "matrix")).toBe(drawnBufs[b]);
+      expect(bufferFor(set, mesh, "foliage")!.length * 4).toBe(drawnBufs[b]!.length);
+      expect(bufferFor(set, mesh, "bladeStrength")!.length * 16).toBe(drawnBufs[b]!.length);
+      expect(drawnBufs[b]!.length).toBeGreaterThanOrEqual(before[b]! * 16);
+    });
+    expect(handed).toBe(26);
+    // The same pose cuts again, to the same prefixes.
+    const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
+    blades.cull(pose);
+    expect(partial.mock.calls.length).toBe(72);
+    expect(blades.meshes.map((m) => (m.isEnabled() ? m.thinInstanceCount : 0))).toEqual(before);
+    partial.mockRestore();
+    // Disposed, the shell no longer listens.
+    blades.dispose();
+    set.mockClear();
+    engine.onContextRestoredObservable.notifyObservers(engine);
+    expect(set).not.toHaveBeenCalled();
+    set.mockRestore();
+    engine.dispose();
+  }, 60_000);
+
   it("keeps, at the two gate poses, the cells the widened frustum holds, and pins how many", () => {
     const counts: number[] = [];
     const draws: number[] = [];
@@ -350,17 +392,19 @@ describe("the blade field culled to the frustum", () => {
       blades.dispose(); engine.dispose();
     }
     // Canopy: the profile counted 6,131 collected and 1,063 inside the exact frustum.
-    expect(counts).toEqual([1388, 6131, 1514, 6587]);
+    expect(counts).toEqual([1614, 6131, 1752, 6587]);
     // Blade draws, culled and whole: the profile counted 20 live buckets at the canopy pose.
     expect(draws).toEqual([20, 20, 12, 12]);
   }, 60_000);
 
-  it("never leaves out a cell the camera can see, on a walk of random poses at both gate fields", () => {
-    let seen = 0;
+  it("never leaves out a cell any part of which the camera can see, on threshold walks at both gate fields", () => {
+    const reach = bladeReach();
+    let seenCells = 0, holds = 0;
     for (const base of [CANOPY, MEADOW]) {
       const engine = new NullEngine();
       const scene = new Scene(engine);
       const set = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+      const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
       const blades = createBladeMeshes(scene, GATE_SEED, { quality: "high" });
       blades.update(base.x, base.z);
       const tiers = createBladeCollector(GATE_SEED).collect(base.x, base.z);
@@ -369,35 +413,33 @@ describe("the blade field culled to the frustum", () => {
         const { c, t, s } = bucketOf(mesh);
         return lists[t]!.filter((cell) => cell.character === c && cell.size === s);
       });
-      let r = 12345;
-      const rand = (): number => { r = (Math.imul(r, 1103515245) + 12345) >>> 0; return r / 4294967296; };
-      const view = { ...base };
-      for (let step = 0; step < 60; step++) {
-        // Mostly small steps under the thresholds, now and then a jump.
-        const jump = step % 7 === 0;
-        view.yaw += (rand() - 0.5) * (jump ? 3 : 0.12);
-        view.pitch = Math.max(-0.8, Math.min(1.2, view.pitch + (rand() - 0.5) * (jump ? 1 : 0.12)));
-        view.x = base.x + (rand() - 0.5) * 1.6;
-        view.z = base.z + (rand() - 0.5) * 1.6;
-        view.aspect = step % 11 < 5 ? PORTRAIT : 16 / 9;
-        blades.cull(view);
-        blades.meshes.forEach((mesh, b) => {
-          const drawnKeys = new Set<string>();
-          if (mesh.isEnabled()) {
-            const m = bufferFor(set, mesh, "matrix")!;
-            for (let i = 0; i < mesh.thinInstanceCount; i++) drawnKeys.add(`${m[i * 16 + 12]},${m[i * 16 + 14]}`);
-          }
-          for (const cell of cellsOf[b]!) {
-            if (inCone(view, cell.x, cell.groundH, cell.z, 0) || inCone(view, cell.x, cell.groundH + 0.5, cell.z, 0)) {
-              seen++;
-              expect(drawnKeys.has(`${Math.fround(cell.x)},${Math.fround(cell.z)}`)).toBe(true);
+      for (const { cut, views } of thresholdWalk(base, 12, 12345, CULL_TURN, CULL_MOVE)) {
+        blades.cull(cut);
+        for (const view of views) {
+          // Under every threshold: the cut is reused, nothing uploaded.
+          partial.mockClear();
+          blades.cull({ x: view.x, y: view.y, z: view.z, yaw: view.yaw, pitch: view.pitch, fov: view.fov, aspect: view.aspect });
+          expect(partial).not.toHaveBeenCalled();
+          holds++;
+          blades.meshes.forEach((mesh, b) => {
+            const drawnKeys = new Set<string>();
+            if (mesh.isEnabled()) {
+              const m = bufferFor(set, mesh, "matrix")!;
+              for (let i = 0; i < mesh.thinInstanceCount; i++) drawnKeys.add(`${m[i * 16 + 12]},${m[i * 16 + 14]}`);
             }
-          }
-        });
+            for (const cell of cellsOf[b]!) {
+              if (extentSeen(view, cell.x, cell.groundH, cell.z, reach)) {
+                seenCells++;
+                expect(drawnKeys.has(`${Math.fround(cell.x)},${Math.fround(cell.z)}`)).toBe(true);
+              }
+            }
+          });
+        }
       }
-      set.mockRestore();
+      set.mockRestore(); partial.mockRestore();
       blades.dispose(); engine.dispose();
     }
-    expect(seen).toBeGreaterThan(20000);
-  }, 120_000);
+    expect(holds).toBe(96);
+    expect(seenCells).toBeGreaterThan(50000);
+  }, 180_000);
 });

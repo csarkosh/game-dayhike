@@ -382,6 +382,21 @@ of up to 0.5 m stays inside what the 1 m pushback opens at the apex
 (1 m × tan 31.5° ≈ 0.61 m sideways at the gate still, more at 16:9). So an
 instance the camera can see is always in the prefix it is drawing.
 
+**As built** (grass frame reclaim step 1a): `CULL_MARGIN` **6°** and
+`CULL_RADIUS` **1.5 m**, `CULL_PUSHBACK` and the thresholds as above. Two
+things the paragraph above leaves out needed them. A yaw turn while pitched
+is partly a roll about the view, and the view bob rolls the camera by up to
+0.6°, so the frame's corners move further than the turn: at 5° and 0.75 m, a
+sweep of turns, rolls and moves just under the thresholds left extents up to
+1.28 m outside the sphere where the frustum's edges meet the ground. And an
+instance reaches further than 0.75 m: a grass-class card at its largest scale
+spans 0.50 m sideways and 0.60 m up, a blade clump 0.63 m and 0.50 m, and the
+foliage vertex stage adds up to 0.76 of a vertex's drawn height of wind at
+speed 1 (lean, peak gust, flutter), 0.04 m of tilt and 0.25 m of a player's
+bend: 1.38 m for a card, 1.39 m for a clump. At 6° that sweep needs a radius
+of 1.44 m; `grassCull.test.ts` derives both reaches from the models and the
+clump geometry and holds them under `CULL_RADIUS`.
+
 **Where it runs.** From `renderer.ts`, on
 `scene.onBeforeActiveMeshesEvaluationObservable`, after the camera's pose for
 the frame is final (the view bob included), with the camera's world position,
@@ -438,6 +453,16 @@ profile's 0.82. What else can close a shortfall, in order: step 1b if the
 meadow's saving is measured worth taking; step 2's far trim, about 0.12 ms at
 native while the meadow is not filtered (§6.3); the margins narrowed to 3° and
 0.5 m with the thresholds to 2° and 0.25 m.
+
+**As built.** With the 6° margin and the 1.5 m radius (§5.2), the filter
+keeps, at the canopy pose in the gate's still, 1,614 of 6,131 blade cells
+(0.263) and 870 of 4,559 grass-class cards (0.191), against 1,388 and 823
+(0.226, 0.181) at 5° and 0.75 m. Scaled as the table above, with these
+measured shares in place of the derived ones: blades 0.59 × 0.737 / 0.827 =
+**0.53**, grass class 0.23 × 0.809 / 0.853 = **0.22**, together **0.74 ms**
+(0.62–0.87), under the 0.8 ms bar by 0.06. Of the closers listed above, step
+1b and step 2's far trim still apply; narrowing the margins does not, since
+the sweep in §5.2 is what set them.
 
 **16:9.** A landscape window sees a third of the ring where the gate's still
 sees a seventh, so the same filter saves about three quarters as much there.

@@ -31,9 +31,9 @@ import { ROCK_CUTS, rockPlanes } from "../../src/game/rockRelief.js";
 import { activeTerrainVariant, elevationSampleAt } from "../../src/sim/terrain.js";
 import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { trampleAt } from "../../src/game/trailBenchParams.js";
-import { cullPlanes, type CullPose } from "../../src/game/grassCull.js";
+import { CULL_MOVE, CULL_TURN, cullPlanes, type CullPose } from "../../src/game/grassCull.js";
+import { cardReach, extentSeen, thresholdWalk } from "./helpers/cullReach.js";
 import { seedFromToken } from "../../src/game/seed.js";
-import { inCone } from "../../src/game/wildlifeDirector.js";
 import type { ClutterInstance } from "../../src/sim/clutter.js";
 
 describe("createClutterMeshes attaches the distance fade", () => {
@@ -767,7 +767,7 @@ describe("the grass class culled to the frustum", () => {
         const keptIdx: number[] = [];
         cards.forEach((inst, i) => {
           const y = inst.groundH - 0.02;
-          for (let p = 0; p < 20; p += 4) if (planes[p]! * inst.x + planes[p + 1]! * y + planes[p + 2]! * inst.z + planes[p + 3]! < -0.75) return;
+          for (let p = 0; p < 20; p += 4) if (planes[p]! * inst.x + planes[p + 1]! * y + planes[p + 2]! * inst.z + planes[p + 3]! < -1.5) return;
           keptIdx.push(i);
         });
         expect(mesh.isEnabled() ? mesh.thinInstanceCount : 0).toBe(keptIdx.length);
@@ -784,7 +784,7 @@ describe("the grass class culled to the frustum", () => {
       }
     }
     expect(collected).toBe(3831);
-    expect(drawn).toBe(608);
+    expect(drawn).toBe(649);
     // Prefix uploads only, never past the kept count, never whole.
     expect(partial.mock.calls.length).toBeGreaterThan(0);
     for (let k = 0; k < partial.mock.calls.length; k++) {
@@ -805,6 +805,39 @@ describe("the grass class culled to the frustum", () => {
     expect(partial).not.toHaveBeenCalled();
     partial.mockRestore(); updated.mockRestore(); set.mockRestore();
     clutter.dispose(); engine.dispose();
+  }, 60_000);
+
+  // As the blade shell: after a context restore the culled buckets' meshes
+  // take their full drawn buffers again and the next cull cuts afresh.
+  // NullEngine proves the hand-back and the recut, not the GPU buffer sizes.
+  it("hands the grass meshes their full drawn buffers again after a context restore, and cuts afresh", () => {
+    const { assets, clutter, engine } = build(1, true);
+    const set = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    clutter.update(35, 21335);
+    const pose = { x: 35, y: elevationSampleAt(1, 35, 21335).h + 1.6, z: 21335, yaw: 1.571, pitch: 0.3, fov: 1.4, aspect: PORTRAIT };
+    clutter.cull(pose);
+    const grass = [0, 1].flatMap((v) => [0, 1].map((l) => assets[CLUTTER_GRASS]![v]![l]![0]!));
+    const before = grass.map((m) => (m.isEnabled() ? m.thinInstanceCount : 0));
+    const drawn = grass.map((m) => bufferFor(set, m, "matrix"));
+    const meadowFar = assets[CLUTTER_MEADOW]![0]![1]![0]!;
+    set.mockClear();
+    engine.onContextRestoredObservable.notifyObservers(engine);
+    grass.forEach((mesh, b) => {
+      expect(bufferFor(set, mesh, "matrix")).toBe(drawn[b]);
+      expect(bufferFor(set, mesh, "fadeBands").length * 4).toBe(drawn[b]!.length);
+      expect(bufferFor(set, mesh, "foliage").length * 4).toBe(drawn[b]!.length);
+    });
+    // Only the culled buckets: the meadow's buffers are whole already.
+    expect(set.mock.instances.some((m) => (m as unknown as Mesh) === meadowFar)).toBe(false);
+    clutter.cull(pose);
+    expect(grass.map((m) => (m.isEnabled() ? m.thinInstanceCount : 0))).toEqual(before);
+    // Disposed, the shell no longer listens.
+    clutter.dispose();
+    set.mockClear();
+    engine.onContextRestoredObservable.notifyObservers(engine);
+    expect(set).not.toHaveBeenCalled();
+    set.mockRestore();
+    engine.dispose();
   }, 60_000);
 
   it("leaves every bucket whole where the tier does not cull", () => {
@@ -839,47 +872,49 @@ describe("the grass class culled to the frustum", () => {
       clutter.dispose(); engine.dispose();
     }
     // Canopy: the profile counted 4,559 collected and 687 inside the exact frustum.
-    expect(counts).toEqual([823, 4559, 838, 4731]);
+    expect(counts).toEqual([870, 4559, 891, 4731]);
   }, 60_000);
 
-  it("never leaves out a card the camera can see, on a walk of random poses at both gate fields", () => {
-    let seen = 0;
+  it("never leaves out a card any part of which the camera can see, on threshold walks at both gate fields out to 110 m", () => {
+    const reach = cardReach();
+    let seenCards = 0, holds = 0, far = 0;
     for (const base of [CANOPY, MEADOW]) {
       const { assets, clutter, engine } = build(GATE_SEED, true);
       const set = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+      const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
       clutter.update(base.x, base.z);
       const lists = grassBuckets(GATE_SEED, base.x, base.z);
-      let r = 777;
-      const rand = (): number => { r = (Math.imul(r, 1103515245) + 12345) >>> 0; return r / 4294967296; };
-      const view = { ...base };
-      for (let step = 0; step < 40; step++) {
-        const jump = step % 7 === 0;
-        view.yaw += (rand() - 0.5) * (jump ? 3 : 0.12);
-        view.pitch = Math.max(-0.8, Math.min(1.2, view.pitch + (rand() - 0.5) * (jump ? 1 : 0.12)));
-        view.x = base.x + (rand() - 0.5) * 1.6;
-        view.z = base.z + (rand() - 0.5) * 1.6;
-        view.aspect = step % 11 < 5 ? PORTRAIT : 16 / 9;
-        clutter.cull(view);
-        for (let v = 0; v < 2; v++) {
-          for (let l = 0; l < 2; l++) {
-            const mesh = assets[CLUTTER_GRASS]![v]![l]![0]!;
-            const keys = new Set<string>();
-            if (mesh.isEnabled()) {
-              const m = bufferFor(set, mesh, "matrix");
-              for (let i = 0; i < mesh.thinInstanceCount; i++) keys.add(`${m[i * 16 + 12]},${m[i * 16 + 14]}`);
-            }
-            for (const inst of lists[v]![l]!) {
-              if (inCone(view, inst.x, inst.groundH, inst.z, 0) || inCone(view, inst.x, inst.groundH + 0.6, inst.z, 0)) {
-                seen++;
-                expect(keys.has(`${Math.fround(inst.x)},${Math.fround(inst.z)}`)).toBe(true);
+      for (const { cut, views } of thresholdWalk(base, 12, 777, CULL_TURN, CULL_MOVE)) {
+        clutter.cull(cut);
+        for (const view of views) {
+          partial.mockClear();
+          clutter.cull({ x: view.x, y: view.y, z: view.z, yaw: view.yaw, pitch: view.pitch, fov: view.fov, aspect: view.aspect });
+          expect(partial).not.toHaveBeenCalled();
+          holds++;
+          for (let v = 0; v < 2; v++) {
+            for (let l = 0; l < 2; l++) {
+              const mesh = assets[CLUTTER_GRASS]![v]![l]![0]!;
+              const keys = new Set<string>();
+              if (mesh.isEnabled()) {
+                const m = bufferFor(set, mesh, "matrix");
+                for (let i = 0; i < mesh.thinInstanceCount; i++) keys.add(`${m[i * 16 + 12]},${m[i * 16 + 14]}`);
+              }
+              for (const inst of lists[v]![l]!) {
+                if (extentSeen(view, inst.x, inst.groundH, inst.z, reach)) {
+                  seenCards++;
+                  if (Math.hypot(inst.x - view.x, inst.z - view.z) > 60) far++;
+                  expect(keys.has(`${Math.fround(inst.x)},${Math.fround(inst.z)}`)).toBe(true);
+                }
               }
             }
           }
         }
       }
-      set.mockRestore();
+      set.mockRestore(); partial.mockRestore();
       clutter.dispose(); engine.dispose();
     }
-    expect(seen).toBeGreaterThan(10000);
-  }, 120_000);
+    expect(holds).toBe(96);
+    expect(seenCards).toBeGreaterThan(20000);
+    expect(far).toBeGreaterThan(5000);
+  }, 180_000);
 });

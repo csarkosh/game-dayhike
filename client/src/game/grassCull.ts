@@ -14,17 +14,27 @@
  * scene, so the kept set is a function of the pose and the collected set.
  */
 
-/** How far each side plane is opened beyond the camera's own (rad). */
-export const CULL_MARGIN = (5 * Math.PI) / 180;
+/**
+ * How far each side plane is opened beyond the camera's own (rad). Two
+ * degrees past CULL_TURN: a yaw turn while pitched is partly a roll about the
+ * view, which moves the frame's corners further than the turn itself, and the
+ * view bob rolls the camera by up to 0.6°.
+ */
+export const CULL_MARGIN = (6 * Math.PI) / 180;
 /** How far the apex is moved back along the view, behind the eye (m). */
 export const CULL_PUSHBACK = 1;
 /**
  * An instance's reach beyond its translation (m), which is its root on the
- * ground. The tallest filtered instance is a grass-class card at 0.6 m and a
- * blade clump stands under 0.5 m on a cell of 0.5 m, so a 0.75 m sphere about
- * the root holds the whole of either, the wind's lean included.
+ * ground. The furthest a drawn vertex gets from it: a grass-class card at its
+ * largest scale spans 0.50 m sideways and 0.60 m up, a blade clump 0.63 m
+ * sideways and 0.50 m up, and the foliage vertex stage then moves a vertex
+ * sideways by up to 0.76 of its drawn height (the wind's lean, peak gust and
+ * flutter at speed 1), 0.04 m of camera tilt and 0.25 m of a player's bend:
+ * 1.38 m for a card, 1.39 m for a clump. The pinned test
+ * in grassCull.test.ts derives both from the models and the clump geometry,
+ * and fails if a culled class reaches further.
  */
-export const CULL_RADIUS = 0.75;
+export const CULL_RADIUS = 1.5;
 /** A turn (yaw or pitch, rad) past which the prefix is cut again. */
 export const CULL_TURN = (4 * Math.PI) / 180;
 /** A move (m) past which the prefix is cut again. */
