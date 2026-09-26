@@ -1,6 +1,6 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
-import { createRenderer } from "./game/renderer.js";
+import { createRenderer, terrainMaterialFor } from "./game/renderer.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
@@ -62,7 +62,8 @@ import { DEATH_LINE, END_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/register.js";
 import { signPosts } from "./sim/signs.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
-import { KIOSK_MATERIAL, kioskFacing, propSite, roadProp } from "./sim/passes/trailhead.js";
+import { CAR_MATERIAL, KIOSK_MATERIAL, kioskFacing, propSite, roadProp } from "./sim/passes/trailhead.js";
+import { createTrailheadMeshes } from "./game/trailheadMeshes.js";
 import { signSites } from "./sim/placeNames.js";
 import { afterNextPaint } from "./game/paint.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
@@ -441,30 +442,49 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     ambient.setWeather(a.weather);
   }
 
-  let signs: SignMeshes | null = null;
+  let signs: { dispose(): void } | null = null;
   /**
    * The crucified hiker at the crest, or null without a summit site. Lives and
    * dies with the signs: both are seeded scenery placed once and never moved.
    */
   let body: { dispose(): void } | null = null;
-  /** Junction posts and the trailhead board, from the same seed the sim used. */
-  function createSigns(world: World): SignMeshes | null {
+  /**
+   * Junction posts, and the trailhead's car and kiosk with the poster on it,
+   * from the same seed the sim used.
+   */
+  function createSigns(world: World): { dispose(): void } | null {
     const register = world.register;
     const variant = activeTerrainVariant();
     const graph = variant.trailGraph?.(seed);
     const roadCenterX = variant.roadCenterX;
     if (register === null || graph === undefined || roadCenterX === undefined) return null;
-    const sign = propSite(graph, roadCenterX, seed, roadProp(KIOSK_MATERIAL));
-    const facing = kioskFacing(sign, graph.trailhead);
+    const kiosk = propSite(graph, roadCenterX, seed, roadProp(KIOSK_MATERIAL));
+    const car = propSite(graph, roadCenterX, seed, roadProp(CAR_MATERIAL));
+    const groundH = (x: number, z: number): number => elevationAt(seed, x, z);
     // The places the posts name: the summit where the body lies, and every
     // pond and meadow, never under the missing hiker's own first name.
     const hikerFirst = register.hiker.name.split(" ")[0] as string;
-    return createSignMeshes(
+    const posts: SignMeshes = createSignMeshes(
       renderer.scene,
       signPosts(graph, signSites(seed, graph.features, hikerFirst, register.body.pos)),
-      { x: sign.x, z: sign.z, facing, lines: ["MISSING", register.hiker.name, "Last seen on the summit trail."] },
-      (x, z) => elevationAt(seed, x, z),
+      groundH,
     );
+    const trailhead = createTrailheadMeshes(
+      renderer.scene,
+      { car: { site: car, trailhead: graph.trailhead }, kiosk: { site: kiosk, facing: kioskFacing(kiosk, graph.trailhead) } },
+      groundH,
+      {
+        materialFor: (name) => terrainMaterialFor(renderer.scene, name),
+        lines: ["MISSING", register.hiker.name, "Last seen on the summit trail."],
+        shadows: renderer.shadows,
+      },
+    );
+    return {
+      dispose() {
+        posts.dispose();
+        trailhead.dispose();
+      },
+    };
   }
 
   const posterPanel = createPosterPanel(container);
@@ -798,7 +818,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
     registerInteractables(host.world);
     signs = createSigns(host.world);
-    body = host.world.register === null ? null : createBodyMesh(renderer.scene, host.world.register.body);
+    body = host.world.register === null ? null : createBodyMesh(renderer.scene, host.world.register.body, { shadows: renderer.shadows });
     host.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
@@ -896,7 +916,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     escalation = ESCALATION_REST;
     registerInteractables(client.world);
     signs = createSigns(client.world);
-    body = client.world.register === null ? null : createBodyMesh(renderer.scene, client.world.register.body);
+    body = client.world.register === null ? null : createBodyMesh(renderer.scene, client.world.register.body, { shadows: renderer.shadows });
     // Every peer names itself, host or follower. The host does echo a
     // newcomer's own pairing back to it, so this is belt and braces — but it
     // means "You" never depends on that echo arriving.

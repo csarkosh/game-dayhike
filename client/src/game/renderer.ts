@@ -69,7 +69,7 @@ import type { ListenerPose } from "./ambientAudio.js";
 import { createMistMeshes } from "./mistMeshes.js";
 import { createRain } from "./rain.js";
 import { createMotes } from "./motes.js";
-import { createPropMeshes } from "./propMeshes.js";
+import { createPropMeshes, type PropShadows } from "./propMeshes.js";
 
 const MATERIAL_COLORS: Record<string, [number, number, number]> = {
   concrete: [0.42, 0.44, 0.47],
@@ -565,6 +565,8 @@ export type Renderer = {
   engine: Engine;
   camera: UniversalCamera;
   views: EntityViews;
+  /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
+  shadows: PropShadows;
   /**
    * `frame` carries this frame's local, non-simulated view inputs — its
    * duration in seconds and whether sprint is held. Only the walking cue reads
@@ -940,6 +942,7 @@ export function createRenderer(
     engine,
     camera,
     views,
+    shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
       // of materials x four property writes: cheap enough to do every frame.

@@ -7,11 +7,8 @@ import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { SignPost } from "../sim/signs.js";
 import { SIGN_POST_HALF } from "../sim/signs.js";
 
-/** The trailhead board: the sign beside the car, with the poster's lines on the face toward the pad. */
-export type SignBoard = { x: number; z: number; facing: { dx: number; dz: number }; lines: string[] };
-
 export type SignMeshes = { dispose(): void };
-/** Makes the painted material for one arm or the board: `paintedMaterial`, or a stand-in where there is no canvas. */
+/** Makes the painted material for one arm or the trailhead poster: `paintedMaterial`, or a stand-in where there is no canvas. */
 export type Painter = (scene: Scene, name: string, lines: readonly string[], width: number, height: number) => Material;
 
 /** The yaw that turns +z onto a unit direction, in the sim's convention (yaw 0 faces +z, PI/2 faces +x). */
@@ -28,8 +25,9 @@ const PAINT = "#f2ead8";
 /**
  * Painted wood: the words are drawn into a texture on the arm rather than
  * floated in the air, so they are read the way a sign is — by walking up to
- * it with a lamp. One texture per arm and one for the board; a handful per
- * world, never rebuilt.
+ * it with a lamp. One texture per arm and one for the trailhead poster; a
+ * handful per world, never rebuilt. The canvas is uploaded top row at v = 1,
+ * Babylon's own texture convention.
  */
 export function paintedMaterial(scene: Scene, name: string, lines: readonly string[], width: number, height: number): PBRMaterial {
   const texture = new DynamicTexture(name, { width, height }, scene, false);
@@ -56,7 +54,6 @@ export function paintedMaterial(scene: Scene, name: string, lines: readonly stri
 export function createSignMeshes(
   scene: Scene,
   posts: readonly SignPost[],
-  board: SignBoard,
   groundH: (x: number, z: number) => number,
   paint: Painter = paintedMaterial,
 ): SignMeshes {
@@ -74,14 +71,6 @@ export function createSignMeshes(
       meshes.push(mesh);
     }
   }
-  // The board: a plane a hair off the sign's face, the poster's lines painted on it.
-  const boardMesh = MeshBuilder.CreatePlane("sign_board", { width: 1.15, height: 1.9 }, scene);
-  boardMesh.position.set(board.x + board.facing.dx * 0.11, groundH(board.x, board.z) + 1.0, board.z + board.facing.dz * 0.11);
-  // A plane faces -z by default; turn it to face along `facing`.
-  boardMesh.rotation.y = armYaw(board.facing) + Math.PI;
-  boardMesh.material = paint(scene, "sign_board_tex", board.lines, 1024, 1700);
-  boardMesh.isPickable = false;
-  meshes.push(boardMesh);
   return {
     dispose() {
       for (const m of meshes) {
