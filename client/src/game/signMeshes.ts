@@ -9,6 +9,7 @@ import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { SignPost } from "../sim/signs.js";
 import { SIGN_POST_HALF } from "../sim/signs.js";
 import type { PropShadows } from "./propMeshes.js";
+import { budgetMaterial } from "./headlamp.js";
 import { defaultModelLoader, instantiateStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 
 export const SIGN_POST_OUTPUT = "models/sign.post.glb";
@@ -39,14 +40,16 @@ const POST_HALF_WIDTH = 0.065;
 /** Clearance between an arm's post end and the post's face. */
 const ARM_SEAT_GAP = 0.005;
 /**
- * Height of an arm's centre above the post's foot. Low enough that three
- * stacked arms end under the 2.221 m post's top (the third's top edge at
- * 2.142 m), high enough that the lowest clears a hiker's head (its bottom
- * edge at 1.498 m).
+ * Height of an arm's centre above the post's foot. The arms have no collider,
+ * so the lowest one's bottom edge (1.698 m) sits above a hiker's eye (1.6 m)
+ * and the camera never passes through a board; one step up (`ARM_STACK`), a
+ * raised arm's top edge (2.112 m) stays under the 2.221 m post's top.
  */
-export const ARM_ABOVE_GROUND = 1.6;
-/** How far a second arm is raised when it points nearly the same way as one below it. */
-export const ARM_STACK = 0.22;
+export const ARM_ABOVE_GROUND = 1.8;
+/** How far an arm is raised when it points nearly the same way as one below it. */
+export const ARM_STACK = 0.21;
+/** The highest step: the post has room for two arms one above the other, no more. */
+const ARM_TOP_LEVEL = 1;
 /** Arms closer than this in direction (cos 30 degrees) would cross; the later one is raised. */
 const ARM_CROSSING_COS = Math.cos(Math.PI / 6);
 /**
@@ -158,10 +161,12 @@ export type SignDeps = {
 };
 
 /**
- * How far above `ARM_ABOVE_GROUND` each arm of one post sits. The sim gives an
- * arm per branch, so two branches leaving a junction a few degrees apart
- * would put two boards through each other; each arm pointing within 30
- * degrees of a lower one goes up a step.
+ * How far above `ARM_ABOVE_GROUND` each arm of one post sits, in steps. The
+ * sim gives an arm per branch, so two branches leaving a junction a few
+ * degrees apart would put two boards through each other; an arm pointing
+ * within 30 degrees of a lower one goes up a step. There is room for one
+ * step: a third arm in the same direction, rare at a real junction, shares
+ * the raised one's height.
  */
 export function armLevels(arms: readonly { dx: number; dz: number }[]): number[] {
   const levels: number[] = [];
@@ -171,7 +176,7 @@ export function armLevels(arms: readonly { dx: number; dz: number }[]): number[]
       const other = arms[j] as { dx: number; dz: number };
       if (arm.dx * other.dx + arm.dz * other.dz >= ARM_CROSSING_COS) level = Math.max(level, (levels[j] as number) + 1);
     }
-    levels.push(level);
+    levels.push(Math.min(level, ARM_TOP_LEVEL));
   }
   return levels;
 }
@@ -293,6 +298,12 @@ export function createSignMeshes(
       return;
     }
     containers.push(container);
+    // A container's materials are built while the scene takes no new
+    // entities, so the scene's new-material hook does not see them made. Every
+    // copy shares them: raise their light cap once, before the first copy
+    // draws, rather than leave Babylon's default of 4, which drops the third
+    // hiker's lamp.
+    for (const material of container.materials) budgetMaterial(material);
     try {
       place(container);
     } catch {
