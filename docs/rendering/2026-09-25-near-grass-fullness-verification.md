@@ -121,3 +121,220 @@ strokes, and the band beyond 18 m is dark tufts against fog-lit ground — the
 problem as the design describes it. The mean does not show it (the near crop's
 median, 0.0364 at the canopy pose, sits above its mean; the mid crop's, 0.0206,
 far below); the cover fraction does.
+
+## 4. First gate: the near cards under the blades
+
+Measured 2026-09-25 on the branch at `4ec2a67` against the control at
+`9c97483`, the method of §1 unchanged. `4ec2a67` keeps every meadow near card on
+high and medium and dithers the near bucket in over `CLUTTER_MEADOW_NEAR_IN`
+[1.0, 2.5] m (design §5.1). Zero console errors on every page that
+took a still.
+
+### 4.1 Fullness
+
+One page load per build per pose, control and branch back to back. The control
+reproduces §3 to within 0.01 of cover ratio at both poses.
+
+| pose | build | near mean | mid mean | lum ratio | near cover | mid cover | cover ratio |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| canopy | control | 0.0337 | 0.0291 | 1.16 | 0.132 | 0.498 | 0.27 |
+| canopy | gate 1 | 0.0308 | 0.0288 | **1.07** | 0.224 | 0.500 | **0.45** |
+| meadow | control | 0.0344 | 0.0298 | 1.16 | 0.243 | 0.502 | 0.48 |
+| meadow | gate 1 | 0.0277 | 0.0295 | **0.94** | 0.518 | 0.502 | **1.03** |
+
+**The meadow pose meets the bar** on both counts: the near crop now has the mid
+crop's cover, and its mean sits 6 % under the mid's rather than 16 % over it.
+**The canopy pose misses it on cover** — 0.45 against the 0.8 asked, up from
+0.27 — and meets it on luminance.
+
+### 4.2 Layer isolation
+
+On the branch, first load, same thresholds:
+
+| pose | layers drawn | near mean | near cover | mid mean | mid cover |
+| --- | --- | --- | --- | --- | --- |
+| canopy | all | 0.0308 | 0.224 | 0.0288 | 0.500 |
+| canopy | no blades | 0.0355 | 0.119 | 0.0292 | 0.494 |
+| canopy | no cards | 0.0336 | 0.137 | 0.0649 | 0.007 |
+| canopy | bare ground | 0.0397 | 0.001 | 0.0724 | 0.000 |
+| meadow | all | 0.0277 | 0.518 | 0.0295 | 0.502 |
+| meadow | no blades | 0.0297 | 0.455 | 0.0298 | 0.495 |
+| meadow | no cards | 0.0344 | 0.242 | 0.0743 | 0.000 |
+| meadow | bare ground | 0.0434 | 0.003 | 0.0753 | 0.000 |
+
+The near crop's cover is now mostly the cards'. At the meadow pose the cards
+alone give 0.455, nine tenths of what they give the mid crop; the blades alone
+give what they gave before (0.242 against §3's 0.247), and the two overlay
+almost independently (1 − (1 − 0.455)(1 − 0.242) = 0.59 against 0.518
+measured: the blades partly fall on cards). The no-cards rows match §3's to
+0.005: the blades and the ground are unchanged. The mid crop is unchanged.
+
+At the canopy pose the cards alone give the near crop 0.119, a quarter of
+what they give it at the meadow pose. The canopy pose has 1,400 near cards in
+the 18 m disc against the meadow's 3,168, 0.44 as many (design §3.6: under a closed
+canopy the grass reads 0.5, in the open meadow 1.5), and the two crops see that density
+differently. The mid crop looks across 18–26 m at a grazing angle, where the
+tufts overlap on screen: the cards take its mean from bare ground's 0.0724 to
+0.0292 at the canopy pose and from 0.0753 to 0.0298 at the meadow, the same
+60 % at 0.44 the density. The near crop looks down on 2–6 m, where each tuft
+is seen whole with ground between it and the next: the cards take its mean
+down 11 % at the canopy pose (0.0397 to 0.0355) against 32 % at the meadow
+(0.0434 to 0.0297). The mid crop's cover is 0.5 at both poses by construction —
+the threshold is its median — so the bar reads the near field against a mid
+field that looks full whatever the density, and the canopy's thin density shows
+only near. Blades and cards together, 0.224, is what the two give alone
+(1 − (1 − 0.119)(1 − 0.137) = 0.24); what shows between them is the ground,
+0.0397 bare against a threshold of 0.0206.
+
+### 4.3 The look
+
+Stills at both poses as §1 takes them, then on the branch four more per pose on
+one page: looking down (pitch 0.9), and turned 90° (yaw π at the canopy, across
+the trail; π/2 at the meadow) at pitch 0.3 and 0.9.
+
+**Meadow.** The near field now reads as the same sward as the mid field: dark
+tufts standing in the blades from about 2.5 m out, shrinking evenly with
+distance into the dark band past 18 m. There is no line and no density step at
+8–18 m (screen rows 757–890 at pitch 0.3); the near bucket's dither-out and the
+far bucket's dither-in meet without a seam. Inside 2.5 m the tufts thin to a
+stipple under the blades — at pitch 0.3 the bottom third of the frame — and
+there the field is blades over grey ground, as the control was everywhere.
+
+**Canopy.** The near field has gained the tufts, but they read as single dark
+tufts on a pale mid-grey floor, a metre or more apart, while the band past 18 m
+still reads as a continuous dark carpet. The difference is density on screen,
+not a step: the card layer is continuous across 8–18 m and no seam shows. This
+is §4.2's mechanism, seen.
+
+**At the feet.** Looking down at either pose, the nearest cards stand 2–3 m out,
+upright and whole; below them the frame is blades only. No card stands as a
+flat plane at the feet. A card coming inside 2.5 m dissolves by stipple rather
+than shrinking, and a half-dissolved card reads as a translucent, speckled
+tuft if looked at directly. The case §5.1's in-band leaves open — a card whose
+origin is just past 1 m, whose quads reach about 0.55 m from the eye — does not
+show at either pose: there are 12 (canopy) and 35 (meadow) near cards with
+origins in [1, 2.5) m, all well into their dither, and none of them reads as a
+plane in the down-looking or turned stills. No bare patch shows inside 1 m:
+at both poses the grass (0.5 and 1.5) is above the blade field's floor, so the
+blades grow at the feet where the 3 and 6 cards inside 1 m are removed. The
+bare disc remains possible only where the grass is under that floor.
+
+### 4.4 The walk
+
+At the canopy pose, design §8.4's walk on the branch, one page: twelve steps of
+0.25 m along +X at pitch 0.3, then sixteen yaw steps through a full circle at
+pitch 0.6 and again at 0.9, at x = 126, a still 1.5 s after each pose. The
+ground rises 0.04 m over the 3 m (from the simulation's height), so the eye was
+held at y = 110.87.
+
+Over the twelve steps the tufts slide down the frame and thin as they come
+inside 2.5 m, each step continuing the last; no card or blade appears or
+vanishes between consecutive stills. Through both turns no card stands at the
+feet and the ring of cards 2–3 m out stays whole from still to still, across the
+trail and back into the sward. **The walk bar is met.**
+
+### 4.5 Frame
+
+Design §8.3's method at high tier and `setHardwareScalingLevel(0.5)` (2400 × 4058
+pixels): each round a fresh browser, a discarded warm-up page on the control,
+then two pages; mean and p95 in ms over 8 s of `onAfterRenderObservable`
+intervals after 3 s at the pose. Rounds with a 1-minute load over 3.5 on any page
+were discarded and run again. Delta is gate 1 minus control (for a same-code
+round, second minus first).
+
+The machine was not steady: the frame time at either pose sat on a floor
+(control 53.6–53.9 ms at the canopy, 47.4–47.5 at the meadow) for stretches, and
+between them rose by 3 to 11 ms from other work on the same GPU that the load
+average does not show. Rounds where a page was lifted off its floor give deltas
+from −8.3 to +5.3 ms and same-code deltas up to 2.2 ms, above the 0.5 ms the
+method allows. The rounds were repeated, in three sets, the third starting a
+round only when its warm-up page sat on the control's floor. The table marks **quiet** the rounds
+in which every page sat within 0.5 ms of its build's lowest mean at that pose;
+the quiet same-code rounds agree within 0.16 ms, and those rounds are read.
+
+| canopy round | first page | second page | delta | quiet |
+| --- | --- | --- | --- | --- |
+| same code 1 | control 53.73 / 55.5 | control 54.35 / 56.3 | +0.62 |  |
+| same code 2 | control 53.91 / 56.1 | control 53.83 / 55.7 | −0.08 | yes |
+| same code 3 | control 53.90 / 55.7 | control 53.83 / 55.8 | −0.07 | yes |
+| same code 4 | control 53.76 / 55.6 | control 53.81 / 56.0 | +0.05 | yes |
+| same code 5 | control 54.03 / 55.9 | control 53.87 / 56.0 | −0.16 | yes |
+| 1 | control 53.71 / 55.7 | gate 1 55.25 / 57.2 | +1.54 | yes |
+| 2 | gate 1 54.86 / 56.6 | control 53.76 / 55.8 | +1.10 | yes |
+| 3 | control 53.73 / 55.4 | gate 1 58.14 / 60.3 | +4.41 |  |
+| 4 | gate 1 56.55 / 58.9 | control 64.86 / 76.7 | −8.31 |  |
+| 5 | control 59.19 / 62.5 | gate 1 62.45 / 65.1 | +3.26 |  |
+| 6 | gate 1 60.72 / 63.4 | control 61.80 / 66.4 | −1.08 |  |
+| 7 | control 53.64 / 55.4 | gate 1 54.88 / 56.7 | +1.24 | yes |
+| 8 | gate 1 55.75 / 58.0 | control 57.72 / 60.0 | −1.97 |  |
+| 9 | control 53.88 / 56.0 | gate 1 54.91 / 56.8 | +1.03 | yes |
+| 10 | gate 1 54.87 / 56.9 | control 54.98 / 57.3 | −0.11 |  |
+| 11 | control 53.75 / 56.1 | gate 1 55.02 / 57.0 | +1.27 | yes |
+| 12 | gate 1 54.84 / 56.7 | control 54.25 / 56.3 | +0.59 |  |
+
+| meadow round | first page | second page | delta | quiet |
+| --- | --- | --- | --- | --- |
+| same code 1 | control 47.51 / 50.1 | control 47.44 / 49.8 | −0.07 | yes |
+| same code 2 | control 51.87 / 54.7 | control 52.83 / 56.5 | +0.96 |  |
+| same code 3 | control 47.48 / 50.3 | control 47.40 / 49.5 | −0.08 | yes |
+| same code 4 | control 49.42 / 51.8 | control 50.31 / 53.8 | +0.89 |  |
+| same code 5 | control 50.18 / 52.7 | control 48.02 / 50.2 | −2.16 |  |
+| 1 | control 47.47 / 49.7 | gate 1 48.98 / 51.4 | +1.51 | yes |
+| 2 | gate 1 54.19 / 71.2 | control 54.51 / 58.7 | −0.32 |  |
+| 3 | control 53.37 / 58.5 | gate 1 56.41 / 59.7 | +3.04 |  |
+| 4 | gate 1 55.29 / 59.3 | control 54.34 / 58.8 | +0.95 |  |
+| 5 | control 47.47 / 49.9 | gate 1 49.17 / 51.5 | +1.70 | yes |
+| 6 | gate 1 49.79 / 52.5 | control 48.49 / 50.8 | +1.30 |  |
+| 7 | control 53.51 / 58.0 | gate 1 57.81 / 61.2 | +4.30 |  |
+| 8 | gate 1 54.60 / 58.5 | control 54.97 / 59.6 | −0.37 |  |
+| 9 | control 48.81 / 51.2 | gate 1 49.23 / 52.3 | +0.42 |  |
+| 10 | gate 1 48.92 / 51.4 | control 47.56 / 49.9 | +1.36 | yes |
+| 11 | control 48.40 / 51.0 | gate 1 53.71 / 59.6 | +5.31 |  |
+| 12 | gate 1 48.96 / 51.0 | control 47.63 / 50.3 | +1.33 | yes |
+
+| pose | quiet same-code deltas | quiet rounds, control first | quiet rounds, gate 1 first | order-averaged delta | lowest mean, control / gate 1 |
+| --- | --- | --- | --- | --- | --- |
+| canopy | −0.08, −0.07, +0.05, −0.16 | +1.54, +1.24, +1.03, +1.27 (mean +1.27) | +1.10 | **+1.19** | 53.64 / 54.84 (+1.20) |
+| meadow | −0.07, −0.08 | +1.51, +1.70 (mean +1.61) | +1.36, +1.33 (mean +1.35) | **+1.48** | 47.40 / 48.92 (+1.52) |
+
+Over all rounds, quiet or not, the order-averaged delta is +0.25 ms at the
+canopy pose and +1.71 at the meadow: the lifted rounds swing either way by more
+than the bar and do not read.
+
+**Native p95**, the canopy pose at scaling 1 (1200 × 2029), one round in each
+order: control 22.95 / 24.8 and 22.94 / 25.0, gate 1 24.51 / 27.3 and
+23.50 / 25.5; order-averaged delta +1.06 ms, p95 +1.5 ms. The frame is not
+capped by vsync (intervals near 23 ms, none quantised to 16.7).
+
+The delta at the canopy pose is about the same at native pixels (+1.06) as at
+four times as many (+1.19), and is larger at the meadow pose, where there are
+3,168 near cards against 1,400: the cost follows the card count and not the
+pixel count. It is the per-instance work of the near bucket — every LOD0 card
+in the 18 m disc is drawn and vertex-shaded, about 20 triangles each, although
+the dither leaves only 466 (canopy) and 1,095 (meadow) cards' worth visible —
+rather than the alpha-tested overdraw §5.1 expected to dominate.
+
+### 4.6 Verdict
+
+| bar | canopy | meadow |
+| --- | --- | --- |
+| near cover ≥ 0.8 × mid cover | **missed**, 0.45 | **met**, 1.03 |
+| luminance ratio 0.8–1.25 | met, 1.07 | met, 0.94 |
+| frame ≤ +1.0 ms at 4× pixels | **missed**, +1.19 | **missed**, +1.48 |
+| no card as a plane at the feet; nothing appears or vanishes | met | met (still checks) |
+| zero console errors | met | met |
+
+**Fullness.** The meadow pose passes. The canopy pose misses on cover because
+its cards stand at 0.44 the meadow's density and the near crop, looked down
+on, shows the pale floor between them (§4.2). No constant of step 1 reaches
+that: it is step 2's floor, darkening the ground under the sward (design §5.2),
+which the design takes when either pose still misses.
+
+**Frame.** Both poses are over the bar, the canopy by 0.2 ms and the meadow by
+0.5, and the cost is per-instance vertex work (§4.5). The design's named
+fallback for step 1 over the frame bar is, in order, the near cards on LOD1
+(10 triangles) inside `BLADE_REACH` rather than LOD0, then the in-band's start
+1.0 → 1.5 m (design §9); the first acts on exactly this cost.
+
+**The feet.** No card reads as a plane at the feet, so the in-band [1.0, 2.5]
+stands and its fallback [1.5, 3.0] is not needed on that count.
