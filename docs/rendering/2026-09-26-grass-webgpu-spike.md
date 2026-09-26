@@ -178,6 +178,13 @@ floors, −0.65.
 **not established**; it draws fewer vertices than S (no margin, no tail) and
 runs one pass fewer, so it should be no slower than S.
 
+> **Correction, 2026-09-26.** The engine alone at native pixels is B against GL:
+> −1.53 ms by lowest means (22.69 against 24.22) and −1.34 to −1.49 ms by the
+> quiet pages' means, never in a pair round quiet on both pages. The summary's
+> "about 2.5 ms faster at native pixels" for the engine alone is the WebGPU build
+> with S (21.66 against 24.22, §4), as §6's criterion 3 correctly labels it. At
+> four times the pixels the engine alone is −9.93 ms, as stated.
+
 ## 5. Fullness and the turn
 
 Near cover at the note's crops and thresholds, two page loads each (the wind's
