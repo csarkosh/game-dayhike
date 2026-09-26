@@ -10,6 +10,7 @@ import type { SignPost } from "../sim/signs.js";
 import { SIGN_POST_HALF } from "../sim/signs.js";
 import type { PropShadows } from "./propMeshes.js";
 import { budgetMaterial } from "./headlamp.js";
+import { labelWear, type LabelWear } from "./labelWear.js";
 import { defaultModelLoader, instantiateStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 
 export const SIGN_POST_OUTPUT = "models/sign.post.glb";
@@ -114,12 +115,54 @@ export function paintedMaterial(scene: Scene, name: string, lines: readonly stri
 }
 
 /**
- * The lettering for one arm face: dark bold letters on a fully transparent
+ * Takes the wear out of painted lettering: soft patches of fade, then the
+ * flakes, chips and scratches knocked clean through to the clear ground.
+ */
+function scrape(ctx: CanvasRenderingContext2D, wear: LabelWear): void {
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-out";
+  for (const p of wear.patches) {
+    const fade = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+    fade.addColorStop(0, `rgba(0, 0, 0, ${p.strength})`);
+    fade.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(p.x - p.r, p.y - p.r, 2 * p.r, 2 * p.r);
+  }
+  ctx.fillStyle = "#000";
+  ctx.strokeStyle = "#000";
+  for (const s of wear.specks) {
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+  for (const c of wear.chips) {
+    ctx.beginPath();
+    for (const [k, pt] of c.points.entries()) {
+      if (k === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.lineCap = "round";
+  for (const s of wear.scratches) {
+    ctx.lineWidth = s.width;
+    ctx.beginPath();
+    ctx.moveTo(s.x0, s.y0);
+    ctx.lineTo(s.x1, s.y1);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * The lettering for one plank face: dark bold letters on a fully transparent
  * ground, so the arm's own wood shows around and between them and the text
  * reads as cut into the board rather than stuck on it. One line, centred,
  * set as large as the height allows and then shrunk until it fits the width
  * inside a margin — one place name to a board reads from a few paces with a
- * lamp.
+ * lamp. The paint is worn (`labelWear`): faded unevenly, flaked, chipped and
+ * scratched along the grain, the same way for the same name on every peer.
  */
 export function paintedLabel(scene: Scene, name: string, text: string, width: number, height: number): PBRMaterial {
   // Mipmapped: the board is read from a few metres, where a 1024-wide texture
@@ -137,14 +180,28 @@ export function paintedLabel(scene: Scene, name: string, text: string, width: nu
     size = Math.max(12, Math.floor((size * (width - 2 * margin)) / measured));
     ctx.font = `bold ${size}px ${family}`;
   }
-  const x = (width - ctx.measureText(text).width) / 2;
+  const metrics = ctx.measureText(text);
+  const x = (width - metrics.width) / 2;
   // A capital's middle sits about 0.35 em above the baseline.
   const baseline = height / 2 + size * 0.35;
   const lip = Math.max(1, Math.round(size * 0.04));
-  ctx.fillStyle = CARVED_LIP;
-  ctx.fillText(text, x, baseline + lip);
-  ctx.fillStyle = CARVED;
-  ctx.fillText(text, x, baseline);
+  const ascent = metrics.actualBoundingBoxAscent || size * 0.75;
+  const descent = metrics.actualBoundingBoxDescent || size * 0.2;
+  const top = Math.max(0, baseline - ascent);
+  const ink = { x, y: top, width: metrics.width, height: Math.min(height, baseline + descent + lip) - top };
+  const wear = labelWear(text, ink);
+  // Letter by letter, so each carries its own share of the faded ink.
+  const chars = Array.from(text);
+  for (const [i, char] of chars.entries()) {
+    const at = x + ctx.measureText(chars.slice(0, i).join("")).width;
+    ctx.globalAlpha = wear.alpha * (wear.letters[i] as number);
+    ctx.fillStyle = CARVED_LIP;
+    ctx.fillText(char, at, baseline + lip);
+    ctx.fillStyle = CARVED;
+    ctx.fillText(char, at, baseline);
+  }
+  ctx.globalAlpha = 1;
+  scrape(ctx as unknown as CanvasRenderingContext2D, wear);
   texture.update(true);
   const material = new PBRMaterial(`${name}_mat`, scene);
   material.albedoTexture = texture;
