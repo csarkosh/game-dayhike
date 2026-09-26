@@ -81,6 +81,8 @@ describe("updateRingSamples", () => {
     // THE clipmap test. The scroll path copies surviving samples by index and
     // fills only new strips; any off-by-one in the shift produces terrain that
     // is subtly wrong one column wide, invisible to every other assertion here.
+    // Four scrolls and four fresh rings take about 2 s alone, and more than
+    // the default 5 s while the full suite loads every core, hence 30 s.
     for (const [dx, dz] of [[7, 0], [0, -9], [23, 41], [-300, 2]] as const) {
       const scrolled = createRingSamples(SEED, 1, 100, -50);
       const changed = updateRingSamples(scrolled, SEED, 100 + dx, -50 + dz);
@@ -98,7 +100,7 @@ describe("updateRingSamples", () => {
         expect(scrolled.cover).toEqual(fresh.cover);
       }
     }
-  });
+  }, 30_000);
 });
 
 describe("ring nesting", () => {
