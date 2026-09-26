@@ -267,7 +267,7 @@ match wins, top to bottom:
 | 3 | renderer ends `, or similar` (Firefox's bucket) and names `Apple M1` | `apple-unknown` |
 | 4 | … a bucket naming `GeForce GTX 980` | `discrete-unknown` (every NVIDIA from the 900 series on, RTX 5090 included) |
 | 5 | … a bucket naming `GeForce GTX 480`, `GeForce 8800`, `Radeon HD 5850` or `Radeon HD 3200` | `discrete-legacy` |
-| 6 | … a bucket naming `Arc(TM) A750` | `discrete-modern` |
+| 6 | … a bucket naming `Arc(TM) A750` | `discrete-unknown` (Firefox names every `Intel(R) Arc(TM)` this way: the integrated Meteor, Lunar, Arrow and Panther Lake GPUs as well as the discrete cards) |
 | 7 | … a bucket naming `Intel` | `integrated-unknown` |
 | 8 | … any other bucket (`Radeon R9 200 Series` covers Vega, Fury and the Renoir and Rembrandt APUs alike) | `unknown` |
 | 9 | `/Apple M\d+ (Pro\|Max\|Ultra)/` | `apple-large` |
@@ -275,17 +275,19 @@ match wins, top to bottom:
 | 11 | `/Apple GPU/` | `apple-unknown` |
 | 12 | `/\bRTX\b/` (GeForce RTX, RTX A-series, Quadro RTX) | `discrete-modern` |
 | 13 | `/GTX (9\d\d\|10\d\d\|16\d\d)\|TITAN X\|\bMX ?\d{3}/` | `discrete-older` |
+| 13a | `/Quadro [PT][1-6]\d{3}\|NVIDIA T(1000\|1200)/` (Pascal and Turing workstation cards) | `discrete-older` |
 | 14 | `/GeForce\|Quadro\|NVIDIA/` | `discrete-legacy` |
-| 15 | `/Radeon RX (5\|6\|7\|9)\d{3}\|Radeon Pro W(5\|6\|7)\d{3}/` (RDNA 1–4) | `discrete-modern` |
-| 16 | `/Radeon (RX (4\|5)\d\d\b\|RX Vega\|VII\|Pro)/` (Polaris, Vega, the Macs' Radeon Pro) | `discrete-older` |
-| 17 | `/Radeon \d{3}M\|Radeon 8\d{2}0S/` (680M, 780M, 880M, 890M, 8060S) | `integrated-modern` |
-| 18 | `/Radeon\(TM\) Graphics\|Radeon Graphics/` (an APU that does not say which) | by the adapter's architecture: `rdna-*` → `integrated-modern`, `gcn-*` → `integrated-older`, else `integrated-unknown` |
-| 19 | `/Vega \d+\|Radeon (R9\|R7\|R5\|HD)/` | `integrated-older` for Vega, `discrete-legacy` for the rest |
-| 20 | `/Arc.*\b[AB][5-9]\d\d\b/` | `discrete-modern` |
-| 21 | `/Arc.*\b[AB]3\d\d\b/` | `discrete-older` |
-| 22 | `/Arc\(TM\) Graphics\|Arc \d{3}[VT]\b/` (Meteor, Lunar and Arrow Lake) | `integrated-modern` |
-| 23 | `/Iris\(R\) Xe\|Iris Xe/` | `integrated-unknown` (80 to 96 execution units, and among the commonest laptop GPUs; the probe decides) |
-| 24 | `/UHD Graphics\|HD Graphics\|Iris\(TM\) Plus\|Iris Plus\|Iris Pro/` | `integrated-older` |
+| 15 | `/Radeon RX (5\|6\|7\|9)\d{3}\|Radeon P(ro\|RO) W(5\|6\|7)\d{3}/` (RDNA 1–4; AMD writes the workstation line both `Pro` and `PRO`) | `discrete-modern` |
+| 16 | `/Radeon (RX (4\|5)\d\d\b\|RX Vega\|VII\|Pro\|PRO)\|\bRX ?(4\|5)\d0\b/` (Polaris, Vega, the Macs' Radeon Pro; Polaris also as `Radeon (TM) RX 470`, `Radeon(TM) RX 560`, `RX550/550`, `RX590`) | `discrete-older` |
+| 17 | `/Radeon (680\|7[68]0\|8[6-9]0)M\|Radeon 8\d{2}0S/` (680M, 760M, 780M, 860M to 890M, 8060S) | `integrated-modern` |
+| 17a | `/Radeon \d{3}M/` (the smaller RDNA APUs: 610M and 820M have two compute units, 740M and 840M four, 660M six) | `integrated-unknown` |
+| 18 | `/Radeon ?\(TM\) Graphics\|Radeon Graphics/` (an APU that does not say which) | by the adapter's architecture: `gcn-*` → `integrated-older`, else `integrated-unknown`. An `rdna-*` adapter does not make it modern: Chrome's AMD groups are coarse ranges of device ids, and put Barcelo (a Vega APU, 0x15E7) under RDNA 2 and the two-compute-unit Mendocino (0x1506) and Raphael (0x164E) under RDNA 3 and 2 |
+| 19 | `/Vega \d+\|Radeon(\(TM\))? (R[4579]\|HD)/` | `integrated-older` for Vega, `discrete-legacy` for the rest |
+| 20 | `/Arc.*\b[AB][5-9]\d\dM?\b/` (a laptop part carries an M: `A770M`) | `discrete-modern` |
+| 21 | `/Arc.*\b[AB]3\d\dM?\b/` (`A370M`) | `discrete-older` |
+| 22 | `/Arc\((TM\|tm)\) Graphics\|Arc(\((TM\|tm)\))? \d{3}[VT]\b/` (Meteor, Lunar and Arrow Lake, as Windows names them, `Arc(TM) 140V GPU`, and as Mesa does, `Arc(tm) Graphics`) | `integrated-modern` |
+| 23 | `/Iris\(R\) Xe\|Iris Xe\|\bXe Graphics/` (Mesa names Tiger Lake `Intel(R) Xe Graphics`) | `integrated-unknown` (80 to 96 execution units, and among the commonest laptop GPUs; the probe decides) |
+| 24 | `/UHD Graphics\|HD Graphics\|Iris(\((TM\|R)\))? (Plus\|Pro\|Graphics\|OpenGL)/` (with Ice Lake's `Iris(R) Plus`, the older Macs' `Iris(TM) Graphics 6100` and `Iris OpenGL Engine`) | `integrated-older` |
 | 25 | `/Adreno.*X\d/` (Snapdragon X laptops) | `integrated-modern` |
 | 26 | renderer null or unmatched, adapter present: `isFallbackAdapter` → `software`; vendor `apple` → `apple-unknown`; `nvidia` with `ampere`, `lovelace`, `blackwell` → `discrete-modern`, `turing` → `discrete-unknown` (GTX 16 and RTX 20 alike), `pascal`, `maxwell` → `discrete-older`; `intel` with `xe-lpg`, `xe-2lpg`, `xe-3lpg` → `integrated-modern`, `gen-12lp` → `integrated-unknown`, `gen-9`, `gen-11` → `integrated-older`, `gen-12hp`, `xe-2hpg` → `discrete-modern`; vendor `google` with `swiftshader`, `mesa` with `software`, `microsoft` with `warp` → `software` | as listed |
 | 27 | anything else | `unknown` |
@@ -312,13 +314,13 @@ asking for sameness, and the setting overrides it.
 | `software` | low | low | no | a CPU rasteriser |
 | `discrete-legacy` | low | low | no | Kepler and older, pre-Polaris Radeon |
 | `integrated-older` | low | low | no | Intel Gen 9–11, Vega APUs |
-| `integrated-unknown` | low | medium | yes | Iris Xe, a bare "Radeon Graphics", Firefox's Intel buckets |
-| `integrated-modern` | medium | medium | no | Arc integrated, RDNA 2+ APUs, Snapdragon X |
+| `integrated-unknown` | low | medium | yes | Iris Xe, a bare "Radeon Graphics" whatever the adapter says, the smallest RDNA APUs (610M to 840M), Firefox's Intel buckets |
+| `integrated-modern` | medium | medium | no | Arc integrated, the larger RDNA 2+ APUs by name (680M, 760M, 780M, 860M to 890M, 8060S), Snapdragon X |
 | `apple-base` | medium | medium | no | the reference machine's class: high is 24 ms at the canopy pose (§4.2) |
-| `discrete-older` | medium | medium | no | Maxwell to Turing GTX, Polaris, Vega, Arc A3xx |
+| `discrete-older` | medium | medium | no | Maxwell to Turing GTX, Pascal and Turing Quadro, Polaris, Vega, Arc A3xx |
 | `unknown` | medium | high | yes | nothing recognisable |
 | `apple-unknown` | medium | high | yes | Safari's `Apple GPU`, Firefox's `Apple M1` bucket: an M1 or an M4 Max |
-| `discrete-unknown` | medium | high | yes | Firefox's `GTX 980` bucket, WebGPU's `turing` |
+| `discrete-unknown` | medium | high | yes | Firefox's `GTX 980` and Arc buckets, WebGPU's `turing` |
 | `apple-large` | high | high | no | Pro, Max and Ultra |
 | `discrete-modern` | high | high | no | RTX, RDNA 1+, Arc A5xx and up |
 
