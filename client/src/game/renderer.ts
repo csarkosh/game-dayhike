@@ -216,6 +216,7 @@ export function applyRingGeometry(mesh: Mesh, geometry: RingGeometry): void {
   // be discarded rather than merged.
   mesh.setVerticesData("terrainWeights", geometry.weights, true, 4);
   mesh.setVerticesData("terrainWeights2", geometry.weights2, true, WEIGHTS2_STRIDE);
+  mesh.setVerticesData("terrainCover", geometry.cover, true, 1);
 }
 
 export type Clipmap = {

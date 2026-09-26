@@ -128,8 +128,8 @@ const FAR_LOD = 1;
  * tiers that draw the blade field over it. There the blades carry the fine
  * detail inside `BLADE_REACH` and the cards only the cover, and every card in
  * the band is drawn, dithered in and out or not, so its cost is per instance
- * in the vertex stage; the model's LOD1 carries the same cover on half of
- * LOD0's vertices.
+ * in the vertex stage; the model's LOD1 is a coarser cut of the same card
+ * on half of LOD0's vertices.
  */
 export function clutterNearLodName(cls: number, nearBlades: boolean): (typeof LOD_NAMES)[number] {
   return nearBlades && cls === CLUTTER_MEADOW ? LOD_NAMES[FAR_LOD] : LOD_NAMES[NEAR_LOD];

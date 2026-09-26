@@ -58,6 +58,9 @@ export type RingSamples = {
    * it (it only tints the colour), so the trail paint reads it here to tell
    * ground under the trees from open ground. */
   weights2: Float32Array;
+  /** The ground cover's grass at the vertex, clamped to 1 — the blade
+   * field's own strength. The terrain's sward floor keys on it. */
+  cover: Float32Array;
 };
 
 export type RingGeometry = {
@@ -70,6 +73,8 @@ export type RingGeometry = {
   weights: Float32Array;
   /** (pebble, detail, duff, canopy) per vertex — see RingSamples.weights2. */
   weights2: Float32Array;
+  /** One float per vertex, min(1, grass) — see RingSamples.cover. */
+  cover: Float32Array;
 };
 
 export function ringSpacing(level: number): number {
@@ -104,8 +109,10 @@ function sampleInto(ring: RingSamples, seed: number, ix: number, iz: number): vo
   // terrain field. groundCover's own duff fraction rides along so the paint
   // agrees with where the duff pieces themselves stand, and the canopy
   // density rides with it — both kept in locals so they can also be written
-  // to weights2 below, unclassified.
-  const duff = groundCover(seed, x, z, s).duff;
+  // to weights2 below, unclassified. Its grass, clamped to 1, is the cover
+  // channel the terrain's sward floor reads.
+  const gc = groundCover(seed, x, z, s);
+  const duff = gc.duff;
   const canopy = forestDensity(seed, x, z, s);
   const { albedo, weights } = classifySurface(
     seed, x, z, s.h, Math.hypot(s.dx, s.dz), canopy, duff,
@@ -126,6 +133,7 @@ function sampleInto(ring: RingSamples, seed: number, ix: number, iz: number): vo
   ring.weights2[w2 + 1] = weights.detail;
   ring.weights2[w2 + 2] = duff;
   ring.weights2[w2 + 3] = canopy;
+  ring.cover[at] = Math.min(1, gc.grass);
 }
 
 /** One half-lattice point that is NOT a vertex: a midpoint or a cell centre.
@@ -149,6 +157,7 @@ export function createRingSamples(seed: number, level: number, camX: number, cam
     colors: new Float32Array(SIDE * SIDE * 4),
     weights: new Float32Array(SIDE * SIDE * 4),
     weights2: new Float32Array(SIDE * SIDE * WEIGHTS2_STRIDE),
+    cover: new Float32Array(SIDE * SIDE),
   };
   for (let jz = 0; jz < HALF_SIDE; jz++) {
     for (let jx = 0; jx < HALF_SIDE; jx++) {
@@ -182,6 +191,7 @@ export function updateRingSamples(ring: RingSamples, seed: number, camX: number,
   const oldColors = ring.colors;
   const oldWeights = ring.weights;
   const oldWeights2 = ring.weights2;
+  const oldCover = ring.cover;
   ring.h = new Float32Array(SIDE * SIDE);
   ring.hh = new Float32Array(HALF_SIDE * HALF_SIDE);
   ring.dx = new Float32Array(SIDE * SIDE);
@@ -189,6 +199,7 @@ export function updateRingSamples(ring: RingSamples, seed: number, camX: number,
   ring.colors = new Float32Array(SIDE * SIDE * 4);
   ring.weights = new Float32Array(SIDE * SIDE * 4);
   ring.weights2 = new Float32Array(SIDE * SIDE * WEIGHTS2_STRIDE);
+  ring.cover = new Float32Array(SIDE * SIDE);
   ring.originX = ox;
   ring.originZ = oz;
   // One walk over the half-lattice. A vertex shift of k cells is 2k half
@@ -221,6 +232,7 @@ export function updateRingSamples(ring: RingSamples, seed: number, camX: number,
           ring.weights2[toW2 + 1] = oldWeights2[fromW2 + 1] as number;
           ring.weights2[toW2 + 2] = oldWeights2[fromW2 + 2] as number;
           ring.weights2[toW2 + 3] = oldWeights2[fromW2 + 3] as number;
+          ring.cover[to] = oldCover[from] as number;
         }
       } else if (vertex) {
         sampleInto(ring, seed, jx >> 1, jz >> 1);
@@ -360,6 +372,7 @@ export function ringGeometry(
   const colors = new Float32Array(SIDE * SIDE * 4);
   const weights = new Float32Array(SIDE * SIDE * 4);
   const weights2 = new Float32Array(SIDE * SIDE * WEIGHTS2_STRIDE);
+  const cover = new Float32Array(SIDE * SIDE);
   const outer = coarser === null ? null : holeCellsFor(coarser, ring);
 
   for (let iz = 0; iz < SIDE; iz++) {
@@ -408,6 +421,7 @@ export function ringGeometry(
       weights2[w2 + 1] = ring.weights2[w2 + 1] as number;
       weights2[w2 + 2] = ring.weights2[w2 + 2] as number;
       weights2[w2 + 3] = ring.weights2[w2 + 3] as number;
+      cover[at] = ring.cover[at] as number;
     }
   }
 
@@ -439,5 +453,5 @@ export function ringGeometry(
     }
   }
 
-  return { positions, indices, normals, colors, weights, weights2 };
+  return { positions, indices, normals, colors, weights, weights2, cover };
 }

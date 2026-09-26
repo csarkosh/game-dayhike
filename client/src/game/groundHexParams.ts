@@ -54,6 +54,20 @@ export const TUFT_ALBEDO: Rgb = { r: 0.18, g: 0.22, b: 0.11 };
 /** Distance band (m) of the horizon tint, and its cap. */
 export const HORIZON: readonly [number, number] = [35, 90];
 export const HORIZON_MAX = 0.5;
+/** The sward floor: inside the blade field's reach, ground carrying a sward
+ * reads as the shaded thatch between the blades (linear albedo) rather than
+ * as bare ground. Dark and green-brown, between the blades' own albedo and
+ * the grass floor's. */
+export const SWARD_FLOOR: Rgb = { r: 0.05, g: 0.065, b: 0.03 };
+/** The pull toward SWARD_FLOOR at full cover. */
+export const SWARD_MAX = 0.6;
+/** The ground cover (the blade field's strength, min(1, grass)) the pull
+ * ramps over: nothing where the field stops growing, full at the canopy
+ * floor's half sward. */
+export const SWARD_COVER: readonly [number, number] = [0.05, 0.5];
+/** Eye distance (m) the pull fades out over: gone by the blade field's
+ * reach, so the open floor beyond 18 m is unchanged. */
+export const SWARD_FADE: readonly [number, number] = [12, 18];
 
 /** Skew (uv → triangular lattice) and its inverse, column-major as GLSL's mat2. */
 export const HEX_SKEW: readonly [number, number, number, number] = [1, 0, -0.57735027, 1.15470054];
@@ -142,4 +156,9 @@ export function macroTint(noise: number, slope: number): Rgb {
 /** The horizon tint's weight at an eye distance (m), before the grass weight. */
 export function horizonWeight(dist: number): number {
   return HORIZON_MAX * smoothstep(HORIZON[0], HORIZON[1], dist);
+}
+
+/** The sward pull at a fragment, mirroring the terrain blend's swardW. */
+export function swardWeight(cover: number, dist: number): number {
+  return SWARD_MAX * smoothstep(SWARD_COVER[0], SWARD_COVER[1], cover) * (1 - smoothstep(SWARD_FADE[0], SWARD_FADE[1], dist));
 }

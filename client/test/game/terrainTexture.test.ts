@@ -67,13 +67,22 @@ describe("terrain texture plugin", () => {
     const plugin = mat.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin;
     const attrs: string[] = [];
     plugin.getAttributes(attrs, scene, undefined as never);
-    expect(attrs).toEqual(expect.arrayContaining(["terrainWeights", "terrainWeights2"]));
+    expect(attrs).toEqual(expect.arrayContaining(["terrainWeights", "terrainWeights2", "terrainCover"]));
     const samplers: string[] = [];
     plugin.getSamplers(samplers);
     expect(samplers).toEqual(expect.arrayContaining([
       "terrainGrass", "terrainFloor", "terrainRock", "terrainSand", "terrainPebble",
       "terrainNormals", "terrainRAH",
     ]));
+  });
+
+  it("declares the cover attribute and its varying as floats", () => {
+    const plugin = pluginFor("tc");
+    const vert = plugin.getCustomCode("vertex")!;
+    expect(vert.CUSTOM_VERTEX_DEFINITIONS).toContain("attribute float terrainCover;");
+    expect(vert.CUSTOM_VERTEX_DEFINITIONS).toContain("varying float vTerrainCover;");
+    expect(vert.CUSTOM_VERTEX_MAIN_END).toContain("vTerrainCover = terrainCover;");
+    expect(plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS).toContain("varying float vTerrainCover;");
   });
 
   it("declares the second weight attribute and varying as vec4, duff in z and canopy in w", () => {
@@ -796,6 +805,31 @@ describe("the grass floor", () => {
     expect(writes.terrainHorizon).toEqual([HORIZON[0], HORIZON[1], HORIZON_MAX]);
     expect(writes.terrainTuft).toEqual([TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b]);
     expect(writes.terrainMacroOn).toEqual([1]);
+  });
+
+  it("pulls the sward floor toward the thatch colour after the horizon tint", () => {
+    const blend = makePlugin().getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_LIGHTS!;
+    const w = "float swardW = terrainSward.w * smoothstep(terrainSwardBand.x, terrainSwardBand.y, vTerrainCover) * (1.0 - smoothstep(terrainSwardBand.z, terrainSwardBand.w, dist));";
+    const mix = "surfaceAlbedo = mix(surfaceAlbedo, terrainSward.rgb, swardW);";
+    expect(blend).toContain(w);
+    expect(blend).toContain(mix);
+    expect(blend.indexOf("horizonWeight(dist)")).toBeLessThan(blend.indexOf(w));
+    expect(blend.indexOf(w)).toBeLessThan(blend.indexOf(mix));
+    // The pull keys on the cover, not on the grass texture weight.
+    expect(w).not.toContain("w0");
+  });
+
+  it("declares and binds the sward uniforms", () => {
+    const plugin = makePlugin();
+    const names = plugin.getUniforms().ubo.map((u: { name: string }) => u.name);
+    expect(names).toEqual(expect.arrayContaining(["terrainSward", "terrainSwardBand"]));
+    expect(plugin.getUniforms().fragment).toMatch(/uniform\s+vec4\s+terrainSward\s*;/);
+    expect(plugin.getUniforms().fragment).toMatch(/uniform\s+vec4\s+terrainSwardBand\s*;/);
+    const defs = plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS!;
+    expect(defs).not.toContain("uniform vec4 terrainSward");
+    const { writes } = makeBoundPlugin();
+    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0.6]);
+    expect(writes.terrainSwardBand).toEqual([0.05, 0.5, 12, 18]);
   });
 
   it("binds terrainWet from setWet, unconditionally, clamped to [0, 1]", () => {

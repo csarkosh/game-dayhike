@@ -95,6 +95,7 @@ describe("updateRingSamples", () => {
         expect(scrolled.hh).toEqual(fresh.hh);
         expect(scrolled.weights).toEqual(fresh.weights);
         expect(scrolled.weights2).toEqual(fresh.weights2);
+        expect(scrolled.cover).toEqual(fresh.cover);
       }
     }
   });
@@ -116,6 +117,7 @@ describe("ring nesting", () => {
       colors: new Float32Array(0),
       weights: new Float32Array(0),
       weights2: new Float32Array(0),
+      cover: new Float32Array(0),
     });
     for (let level = 1; level < RING_COUNT; level++) {
       for (const [cx, cz] of [[0, 0], [777.3, -412.9], [-6001.2, 3987.4]] as const) {
@@ -377,6 +379,8 @@ describe("terrain weight attributes", () => {
     expect(geo.weights2[0]).toBe(ring.weights2[0]);
     expect(geo.weights2[2]).toBe(ring.weights2[2]);
     expect(geo.weights2[3]).toBe(ring.weights2[3]);
+    expect(geo.cover.length).toBe(16641);
+    expect(geo.cover[102 + 4 * 129]).toBe(ring.cover[102 + 4 * 129]);
   });
 
   it("agrees with classifySurface, fed the ring's own canopy and duff, at the ring's own sample positions", () => {
@@ -432,6 +436,40 @@ describe("terrain weight attributes", () => {
       expect(forestDensity(SEED, x, z, elevationSampleAt(SEED, x, z)), `vertex ${ix},${iz}`).toBeCloseTo(want, 12);
       expect(ring.weights2[at * WEIGHTS2_STRIDE + 3], `vertex ${ix},${iz}`).toBeCloseTo(want, 6);
     }
+  });
+});
+
+// The file's own SEED, not the weight block's: the cases below are vertices of
+// that seed's ring 0 at the origin.
+describe("terrain cover channel", () => {
+  it("carries the ground cover's grass, clamped to 1, as the cover channel", () => {
+    // The blade field's own strength, min(1, grass): the terrain's sward
+    // floor keys on it, not on the grass texture weight, because half a
+    // sward stands on floor-textured ground.
+    const ring = createRingSamples(SEED, 0, 0, 0);
+    expect(ring.cover.length).toBe(16641);
+    const cases: [number, number, number][] = [
+      [40, 61, 0],
+      [102, 4, 0.5],
+      [60, 0, 0.3087129490878816],
+    ];
+    for (const [ix, iz, want] of cases) {
+      expect(ring.cover[iz * SIDE + ix], `vertex ${ix},${iz}`).toBeCloseTo(want, 6);
+    }
+    for (let at = 0; at < SIDE * SIDE; at += 97) {
+      const x = ring.originX + (at % SIDE) * ring.spacing;
+      const z = ring.originZ + ((at / SIDE) | 0) * ring.spacing;
+      const s = elevationSampleAt(SEED, x, z);
+      expect(ring.cover[at]).toBeCloseTo(Math.min(1, groundCover(SEED, x, z, s).grass), 6);
+    }
+  });
+
+  it("clamps the cover at 1 where the field boosts the grass past it", () => {
+    // Seed atmo (627994160), an open meadow at (369, -855) where the grass
+    // reads 1.5.
+    const ring = createRingSamples(627994160, 0, 369, -855);
+    const ix = 369 - ring.originX, iz = -855 - ring.originZ;
+    expect(ring.cover[iz * SIDE + ix]).toBe(1);
   });
 });
 
