@@ -101,13 +101,47 @@ function nearestFirst(
   }
 }
 
+/** Where a post stands: its junction node, and the post's own position. */
+export type SignPostSite = { node: number; x: number; z: number };
+
 /**
- * One post per junction. Each arm names the ARM_NAMES places nearest by trail
- * distance beyond it: the walk starts at the arm's neighbour and never
- * crosses back through the junction, and "Trailhead" (node 0) is a place like
- * any other, so on a loop both arms of the fork name the loop's place. A
- * site is read at its nearest node; two sites at one node keep their order in
- * `sites`.
+ * Where the posts stand, without their names: one per junction (a node with
+ * three or more edges), SIGN_POST_OFFSET from the node in whichever of eight
+ * compass directions is farthest from every edge — never on the bed,
+ * whatever angles the branches leave at. The chunk pass needs only this, so
+ * it never pays for the walks that name the arms.
+ */
+export function signPostSites(graph: TrailGraph): SignPostSite[] {
+  const degree = new Array<number>(graph.nodes.length).fill(0);
+  for (const e of graph.edges) {
+    degree[e.a] = (degree[e.a] as number) + 1;
+    degree[e.b] = (degree[e.b] as number) + 1;
+  }
+  const out: SignPostSite[] = [];
+  for (let j = 0; j < graph.nodes.length; j++) {
+    if ((degree[j] as number) < 3) continue;
+    const here = graph.nodes[j] as TrailNode;
+    let best = COMPASS[0] as readonly [number, number];
+    let bestD = -1;
+    for (const dir of COMPASS) {
+      const d = trailDistance(graph, here.x + dir[0] * SIGN_POST_OFFSET, here.z + dir[1] * SIGN_POST_OFFSET);
+      if (d > bestD) {
+        bestD = d;
+        best = dir;
+      }
+    }
+    out.push({ node: j, x: here.x + best[0] * SIGN_POST_OFFSET, z: here.z + best[1] * SIGN_POST_OFFSET });
+  }
+  return out;
+}
+
+/**
+ * One post per junction (`signPostSites`). Each arm names the ARM_NAMES places
+ * nearest by trail distance beyond it: the walk starts at the arm's neighbour
+ * and never crosses back through the junction, and "Trailhead" (node 0) is a
+ * place like any other, so on a loop both arms of the fork name the loop's
+ * place. A site is read at its nearest node; two sites at one node keep their
+ * order in `sites`.
  */
 export function signPosts(graph: TrailGraph, sites: readonly NamedSite[]): SignPost[] {
   const links: Link[][] = graph.nodes.map(() => []);
@@ -125,13 +159,10 @@ export function signPosts(graph: TrailGraph, sites: readonly NamedSite[]): SignP
   nameAt(0, TRAILHEAD_LABEL);
   for (const s of sites) nameAt(nearestTrailNode(graph, s.x, s.z), s.name);
 
-  const posts: SignPost[] = [];
-  for (let j = 0; j < graph.nodes.length; j++) {
-    const neighbours = links[j] as Link[];
-    if (neighbours.length < 3) continue;
+  return signPostSites(graph).map(({ node: j, x, z }) => {
     const here = graph.nodes[j] as TrailNode;
     const arms: SignArm[] = [];
-    for (const { to: n } of neighbours) {
+    for (const { to: n } of links[j] as Link[]) {
       const there = graph.nodes[n] as TrailNode;
       const ex = there.x - here.x, ez = there.z - here.z;
       const len = Math.sqrt(ex * ex + ez * ez);
@@ -144,19 +175,6 @@ export function signPosts(graph: TrailGraph, sites: readonly NamedSite[]): SignP
       });
       arms.push({ dx: len > 0 ? ex / len : 1, dz: len > 0 ? ez / len : 0, names });
     }
-    // The post stands SIGN_POST_OFFSET from the node in whichever of eight
-    // compass directions is farthest from every edge — never on the bed,
-    // whatever angles the branches leave at.
-    let best = COMPASS[0] as readonly [number, number];
-    let bestD = -1;
-    for (const dir of COMPASS) {
-      const d = trailDistance(graph, here.x + dir[0] * SIGN_POST_OFFSET, here.z + dir[1] * SIGN_POST_OFFSET);
-      if (d > bestD) {
-        bestD = d;
-        best = dir;
-      }
-    }
-    posts.push({ x: here.x + best[0] * SIGN_POST_OFFSET, z: here.z + best[1] * SIGN_POST_OFFSET, arms });
-  }
-  return posts;
+    return { x, z, arms };
+  });
 }

@@ -49,17 +49,19 @@ describe("placeNames", () => {
     }
   });
 
-  it("leaves the world's own random stream where it was", () => {
+  it("moves no other draw: the hiker's name and a fresh world's stream read the same with or without naming", () => {
     const flat = parseLevel({
       id: "flat",
       brushes: [{ min: [-60, -1, -60], max: [60, 0, 60], material: "concrete" }],
       playerSpawns: [[0, 0.9, 0]],
       enemySpawns: [],
     });
-    const world = createWorld(flat, 12345);
-    const before = world.state.rngSeed;
-    placeNames(12345, [feature(1, "pond"), feature(2, "meadow")], "Abel");
-    expect(world.state.rngSeed).toBe(before);
+    const hollow = seedFromToken("hollow");
+    const hikerBefore = hikerNames(hollow, 1);
+    const streamBefore = createWorld(flat, hollow).state.rngSeed;
+    placeNames(hollow, bowlFor(hollow).features, "Hugh");
+    expect(hikerNames(hollow, 1)).toEqual(hikerBefore);
+    expect(createWorld(flat, hollow).state.rngSeed).toBe(streamBefore);
   });
 });
 
