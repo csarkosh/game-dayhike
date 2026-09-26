@@ -1054,6 +1054,19 @@ describe("groundCover", () => {
     expect(c.duff).toBe(0.375);
   });
 
+  it("raises the sward on the canopy's ramp as well as at its floor", () => {
+    // Seed 1 on the canopy-edge line the continuity test walks, at rho 0.6,
+    // inside the ramp's band: the canopy factor there is 0.75 + 0.25 · (1 -
+    // shade) where it was 0.5 + 0.5 · (1 - shade), and the edge passes the
+    // boost's start earlier. With the floor at 0.5 this point read grass
+    // 1.01756192900345 and duff 0.16682933374894812.
+    const s = elevationSampleAt(1, 1080, -200);
+    expect(forestDensity(1, 1080, -200, s)).toBeCloseTo(0.605, 2);
+    const c = groundCover(1, 1080, -200, s);
+    expect(c.grass).toBe(1.2835231682909276);
+    expect(c.duff).toBe(0.0748586974728327);
+  });
+
   it("stands the canopy pose's sward at 0.9375 over 0.375 of duff", () => {
     // The near-grass canopy pose, seed atmo: canopy 1 across the view. With
     // the floor at 0.5 this point read grass 0.5 and duff 0.6666666666666667.

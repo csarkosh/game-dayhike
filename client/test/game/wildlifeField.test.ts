@@ -9,7 +9,7 @@ import { SAND_TOP } from "../../src/game/terrainSurface.js";
 import {
   SPECIES_COUNT, SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST,
   SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE, SPECIES_BUTTERFLY, WILDLIFE_CELL, WILDLIFE_RADIUS, ELK_ROAD_CLEAR,
-  RABBIT_COVER_RADIUS, RABBIT_GRASS_FLOOR, GULL_BAND, GIANT_MODEL_HEIGHT, RAVEN_ROOST_ALT_FLOOR, RAVEN_ROOST_CLEARANCE,
+  RABBIT_COVER_RADIUS, RABBIT_GRASS_FLOOR, RABBIT_CANOPY_MAX, GULL_BAND, GIANT_MODEL_HEIGHT, RAVEN_ROOST_ALT_FLOOR, RAVEN_ROOST_CLEARANCE,
   wildlifeUnitInCell, wildlifeUnitsInDisc, createWildlifeCollector,
   groundAnchor,
   type WildlifeUnit,
@@ -79,6 +79,33 @@ function census(seed: number, species: number): WildlifeUnit[] {
   return units;
 }
 
+describe("the rabbits and the canopy", () => {
+  // Every rabbit unit of the census, split by the canopy density at its
+  // anchor: open (rho <= 0.4, where the grass does not depend on the canopy
+  // floor), partial (0.4 < rho < 0.85) and closed (rho >= 0.85). With the
+  // canopy floor at 0.5 (main before the near-grass work) the split was
+  // open 705 / 634 / 556, partial 736 / 709 / 580, closed 0 / 0 / 0. At
+  // 0.75 the open ground is the same to the unit; partial canopy carries more
+  // grass, so more rabbits (a total of 1664 / 1568 / 1349).
+  const want: Record<number, [number, number, number]> = {
+    1: [705, 959, 0],
+    388817: [634, 934, 0],
+    [-1117907922]: [556, 793, 0],
+  };
+  for (const seed of SEEDS) {
+    it(`seed ${seed}: keeps the open-ground rabbits and none under a closed canopy`, () => {
+      let open = 0, partial = 0, closed = 0;
+      for (const u of census(seed, SPECIES_RABBIT)) {
+        const rho = forestDensity(seed, u.x, u.z, elevationSampleAt(seed, u.x, u.z));
+        if (rho <= 0.4) open++;
+        else if (rho < 0.85) partial++;
+        else closed++;
+      }
+      expect([open, partial, closed]).toEqual(want[seed]);
+    }, 60_000);
+  }
+});
+
 describe("wildlife placement census", () => {
   const variant = activeTerrainVariant();
   for (const seed of SEEDS) {
@@ -123,11 +150,13 @@ describe("wildlife placement census", () => {
       // rabbit units over the 4 km × 4 km census. [floor(0.5·min), ceil(1.5·max)].
       // Re-measured 2026-09-24 at RABBIT_GRASS_FLOOR 0.55, after the forest floor
       // put grass under the canopy: 1441, 1343, 1136 — inside the same band.
-      // Re-measured 2026-09-26 at RABBIT_GRASS_FLOOR 0.95, after the canopy
-      // floor rose to 0.75 and a closed canopy's grass to 0.9375: 1472, 1392,
-      // 1172 — inside the same band. At 0.55 the census rose to 4084, 4576,
+      // Re-measured 2026-09-26 after the canopy floor rose to 0.75 and a
+      // closed canopy's grass to 0.9375, with RABBIT_GRASS_FLOOR kept at 0.55
+      // and closed canopy (RABBIT_CANOPY_MAX 0.85) excluded: see the split
+      // test below. Without the canopy gate the census rose to 4084, 4576,
       // 3158, most of them under closed canopy, and this band caught it.
-      expect(RABBIT_GRASS_FLOOR).toBe(0.95);
+      expect(RABBIT_GRASS_FLOOR).toBe(0.55);
+      expect(RABBIT_CANOPY_MAX).toBe(0.85);
       expect(units.length).toBeGreaterThanOrEqual(487);
       expect(units.length).toBeLessThanOrEqual(1752);
       for (const r of units) {
