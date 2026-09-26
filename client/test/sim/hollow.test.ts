@@ -35,8 +35,10 @@ const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.
 /**
  * A reveal longer than any test that uses it: a Hollow that never leaves
  * Emerge, and so never takes a step. Contact and the stare read every Hollow
- * whatever its state, so these tests still measure what they are about — and
- * no other state stands still while a living player is in the world.
+ * whatever its state, so these tests still measure what they are about. Watch
+ * stands still too, but it never touches, so it cannot stand in for a Hollow
+ * whose contact is the point; Hunt and Stand both move once a living player
+ * is in the world.
  */
 const STILL = 600;
 

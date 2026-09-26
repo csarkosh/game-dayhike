@@ -16,6 +16,7 @@ import type { World } from "./world.js";
 import { isOnCorridor } from "./containment.js";
 import { SUMMIT_REVEAL_S, spawnHollow } from "./hollow.js";
 import { drawGuide, stepCuts } from "./cut.js";
+import { hideWatcher } from "./watcher.js";
 import { ENEMY_HALF } from "./constants.js";
 
 /** Metres from the body within which a living player has found it: inside the 25 m crest disc. */
@@ -73,8 +74,9 @@ export function updateSafety(world: World): void {
  * included. Safety is not here — it is `updateSafety` above, which the same
  * tick already ran.
  *
- * The tick that finds the body steps the summit Hollow out and draws the
- * guide (cut.ts), the one random draw of the chase; every Chase tick after it
+ * The tick that finds the body removes the climb's watcher for good
+ * (watcher.ts), steps the summit Hollow out and draws the guide (cut.ts), the
+ * one draw the chase makes from the world's stream; every Chase tick after it
  * runs the cut, then the end rule. A player on the corridor is safe and
  * triggers nothing, so once the end rule can fire there is nothing left for
  * the cut to do: its Hollows only ever step out into a match still on.
@@ -93,6 +95,10 @@ export function stepSummit(world: World): void {
     const who = finder(world, register.body.pos);
     if (who === null) return;
     state.phase = Phase.Chase;
+    // The watcher first: deleting an enemy here is safe because the deaths
+    // and the loss were judged above, and the snapshot is built after the
+    // tick. The summit Hollow is a separate spawn, never the watcher kept.
+    hideWatcher(world);
     spawnHollow(world, emergePoint(world, register.body.pos, who.pos), who.id, SUMMIT_REVEAL_S);
     world.cut = drawGuide(world);
     return;

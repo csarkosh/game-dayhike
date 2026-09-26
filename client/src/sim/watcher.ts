@@ -32,7 +32,7 @@ import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
 import { aimDirection } from "./view.js";
 import { isOnCorridor } from "./containment.js";
-import { horizontalDistSq } from "./hollow.js";
+import { horizontalDistSq, playerHasInView } from "./hollow.js";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
 
 /** Metres it keeps from every trail centreline: 6 stands just inside the 7 m cleared strip. */
@@ -45,7 +45,9 @@ export const WATCH_RANGE_NEAR = 25;
  * The bearing band off the lead's horizontal look, 30° to 70°, as the
  * cosines and sines of its two edges: the band is drawn by rotating the look
  * direction, so no angle is ever taken. The rounded constants make the 30°
- * edge's length 0.99998, which is why a test bounds the cosine at 0.8661.
+ * edge's length 0.99998 and the 70° edge's 1.00001, so the edges normalise
+ * to cosines of 0.86602 and 0.34199998, a hair either side of the true
+ * values: a test bounds the cosine at 0.8661 above and 0.3419 below.
  */
 export const WATCH_BEARING_MIN_COS = 0.866;
 export const WATCH_BEARING_MIN_SIN = 0.5;
@@ -200,9 +202,12 @@ export function placeWatcher(world: World, lead: PlayerState, reach: number): Ve
 /**
  * Spawns the watcher at `at`, facing `leadId`, and records its id. Its yaw
  * starts at 0 and `stepHollow`'s Watch case turns it to the lead the same
- * tick.
+ * tick. Null, and nothing spawned, on a world without a record: an entity
+ * no record names could never be hidden again.
  */
-export function spawnWatcher(world: World, at: Vec3, leadId: number): EnemyState {
+export function spawnWatcher(world: World, at: Vec3, leadId: number): EnemyState | null {
+  const record = world.watcher;
+  if (record === null) return null;
   const watcher: EnemyState = {
     id: world.state.nextEntityId++,
     pos: cloneVec3(at),
@@ -223,7 +228,7 @@ export function spawnWatcher(world: World, at: Vec3, leadId: number): EnemyState
     emergeTo: null,
   };
   world.state.enemies.set(watcher.id, watcher);
-  if (world.watcher !== null) world.watcher.id = watcher.id;
+  record.id = watcher.id;
   return watcher;
 }
 
@@ -233,4 +238,62 @@ export function hideWatcher(world: World): void {
   if (record === null) return;
   if (record.id !== -1) world.state.enemies.delete(record.id);
   record.id = -1;
+}
+
+/**
+ * The watcher's tick, host only, on a forest world during the climb
+ * (`tickWorld` guards the phase, the outcome and the record). While hidden
+ * the rest counts down and, at zero, up to WATCH_PLACE_TRIES placements are
+ * tried for the lead; the first that fits shows it, and none fitting waits a
+ * tick, the stream having moved on. No lead alive spends no draw. While
+ * shown it hides the first tick a living player is within WATCH_FLEE_RADIUS
+ * or no living player has it in the wide view (WATCH_VIEW_COS,
+ * HOLLOW_LOOK_RANGE, a clear sightline), and a new rest is drawn from the
+ * band and scaled by the lead's reach, to WATCH_REST_NEAR_SCALE of itself at
+ * the top fork; with no lead left the rest is the pad's. Otherwise its
+ * target follows the lead, and its facing follows the target through
+ * `stepHollow`, which runs after this.
+ *
+ * This runs before the Hollows move and before the look pass, so on the tick
+ * it hides the stare is already emptying: nobody stares at what is gone. An
+ * entity that vanished from under the record — the flip removes it at the
+ * tail of the same tick it might have shown — is read as hidden.
+ */
+export function stepWatcher(world: World, dt: number): void {
+  const record = world.watcher;
+  if (record === null) return;
+  const shown = record.id === -1 ? undefined : world.state.enemies.get(record.id);
+
+  if (shown === undefined) {
+    record.id = -1;
+    record.rest -= dt;
+    if (record.rest > 0) return;
+    const lead = leadOf(world);
+    if (lead === null) return;
+    const reach = reachOf(world, lead);
+    for (let i = 0; i < WATCH_PLACE_TRIES; i++) {
+      const at = placeWatcher(world, lead, reach);
+      if (at !== null) {
+        spawnWatcher(world, at, lead.id);
+        return;
+      }
+    }
+    return;
+  }
+
+  let flee = false;
+  let inView = false;
+  for (const p of world.state.players.values()) {
+    if (p.health <= 0) continue;
+    if (horizontalDistSq(p.pos, shown.pos) < WATCH_FLEE_RADIUS * WATCH_FLEE_RADIUS) flee = true;
+    if (playerHasInView(p, shown, world, WATCH_VIEW_COS)) inView = true;
+  }
+  const lead = leadOf(world);
+  if (flee || !inView) {
+    hideWatcher(world);
+    const reach = lead === null ? 0 : reachOf(world, lead);
+    record.rest = drawRest(record.rng) * (1 - (1 - WATCH_REST_NEAR_SCALE) * reach);
+    return;
+  }
+  if (lead !== null) shown.targetId = lead.id;
 }

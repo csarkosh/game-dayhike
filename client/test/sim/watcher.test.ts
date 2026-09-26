@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
-import { createForestWorld, createWorld, spawnPlayer } from "../../src/sim/world.js";
+import { createForestWorld, createWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import type { World } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "../../src/sim/terrain.js";
-import { AiState, nextRandom } from "../../src/sim/types.js";
+import { AiState, Phase, nextRandom } from "../../src/sim/types.js";
 import type { PlayerState, Vec3 } from "../../src/sim/types.js";
-import { ENEMY_HALF, PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
+import { ENEMY_HALF, PLAYER_EYE_OFFSET, TICK_DT } from "../../src/sim/constants.js";
 import { trailDistance } from "../../src/sim/trail.js";
 import type { TrailNode } from "../../src/sim/trail.js";
 import { stemNodes } from "../../src/sim/trailRoute.js";
@@ -24,6 +24,7 @@ import {
   placeWatcher,
   reachOf,
   spawnWatcher,
+  stepWatcher,
   topForkClimb,
 } from "../../src/sim/watcher.js";
 import type { WatcherRecord } from "../../src/sim/watcher.js";
@@ -58,6 +59,27 @@ const flatWorld = () =>
   createWorld(parseLevel({ id: "flat", brushes: [{ min: [-300, -1, -300], max: [300, 0, 300], material: "concrete" }], playerSpawns: [[0, 0.9, 0]], enemySpawns: [] }), 1);
 const record = (): WatcherRecord => ({ id: -1, rest: 0, rng: { rngSeed: (seed ^ WATCH_SALT) | 0 } });
 const horizontal = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.sqrt((a.x - b.x) ** 2 + (a.z - b.z) ** 2);
+const tick = (w: World, n = 1) => { for (let i = 0; i < n; i++) tickWorld(w, new Map()); };
+/** Aims a player's eye straight at `at`, yaw and pitch both. */
+function lookAt(p: PlayerState, at: Vec3) {
+  const dx = at.x - p.pos.x, dz = at.z - p.pos.z, dy = at.y - (p.pos.y + PLAYER_EYE_OFFSET);
+  p.yaw = Math.atan2(dx, dz);
+  p.pitch = -Math.atan2(dy, Math.sqrt(dx * dx + dz * dz));
+}
+/** The shown watcher entity, or undefined. */
+const shownWatcher = (w: World) => (w.watcher!.id === -1 ? undefined : w.state.enemies.get(w.watcher!.id));
+/**
+ * Runs the tick with the rest at zero until the watcher shows, and returns
+ * how many ticks it took. Every caller pins that count.
+ */
+function showWatcher(w: World, limit = 120): number {
+  w.watcher!.rest = 0;
+  for (let i = 1; i <= limit; i++) {
+    tick(w);
+    if (w.watcher!.id !== -1) return i;
+  }
+  return -1;
+}
 
 describe("the climb", SUITE, () => {
   it("is 0 at the pad node and 1 at the crest node", () => {
@@ -131,7 +153,8 @@ describe("the placement", SUITE, () => {
     const d = horizontal(lead.pos, at);
     expect(Math.abs(d - range)).toBeLessThanOrEqual(0.5);
     const cos = ((at.x - lead.pos.x) * Math.sin(lead.yaw) + (at.z - lead.pos.z) * Math.cos(lead.yaw)) / d;
-    expect(cos).toBeGreaterThanOrEqual(0.342);
+    // The 70° edge's rounded constants normalise to 0.34199998, a hair under cos 70°.
+    expect(cos).toBeGreaterThanOrEqual(0.3419);
     expect(cos).toBeLessThanOrEqual(0.8661);
   }
 
@@ -203,7 +226,7 @@ describe("showing and hiding", SUITE, () => {
   it("spawns a Watch Hollow facing nobody yet, records its id, and removes it on hide", () => {
     const { w, p } = forestWorld();
     const at = { x: 10, y: 5, z: 20 };
-    const h = spawnWatcher(w, at, p.id);
+    const h = spawnWatcher(w, at, p.id)!;
     expect(h.ai).toBe(AiState.Watch);
     expect(h.targetId).toBe(p.id);
     expect(h.pos).toEqual(at);
@@ -219,5 +242,232 @@ describe("showing and hiding", SUITE, () => {
     expect(w.state.enemies.has(h.id)).toBe(false);
     hideWatcher(w);
     expect(w.watcher!.id).toBe(-1);
+  });
+
+  it("spawns nothing on a world without a record", () => {
+    const flat = flatWorld();
+    const p = spawnPlayer(flat);
+    expect(spawnWatcher(flat, { x: 10, y: 0.9, z: 20 }, p.id)).toBeNull();
+    expect(flat.state.enemies.size).toBe(0);
+    expect(flat.state.nextEntityId).toBe(2);
+  });
+});
+
+describe("the tick", SUITE, () => {
+  it("shows on the tick the rest runs out and a placement fits, at a point the placement rule admits", () => {
+    const { w, p } = forestWorld();
+    standOnStem(w, p, 37);
+    // Two and a half ticks of rest: two count it down, the third runs it out and tries the placements.
+    w.watcher!.rest = 2.5 * TICK_DT;
+    tick(w, 2);
+    expect(w.state.enemies.size).toBe(0);
+    expect(w.watcher!.id).toBe(-1);
+    tick(w);
+    expect(w.state.enemies.size).toBe(1);
+    const h = shownWatcher(w)!;
+    expect(h.ai).toBe(AiState.Watch);
+    expect(h.targetId).toBe(p.id);
+    expect(h.pos).toEqual({ x: 166.38168084443757, y: 186.96436776923537, z: -93.9021019130009 });
+    expect(horizontal(p.pos, h.pos)).toBeCloseTo(25, 0);
+    expect(trailDistance(w.trail!, h.pos.x, h.pos.z)).toBeGreaterThanOrEqual(6);
+    expect(isOnCorridor(w, h.pos.x, h.pos.z)).toBe(false);
+    expect(groundSpawn(w.boxes, seed, h.pos.x, h.pos.z, ENEMY_HALF)).toEqual(h.pos);
+    // The same tick turned it to face the lead, and it is not in the stare's cone.
+    expect(h.yaw).toBeCloseTo(Math.atan2(p.pos.x - h.pos.x, p.pos.z - h.pos.z), 6);
+    expect(p.stare).toBe(0);
+    // It stays: the lead has it in the wide view and nobody is near.
+    tick(w, 30);
+    expect(shownWatcher(w)).toBe(h);
+    expect(h.pos).toEqual({ x: 166.38168084443757, y: 186.96436776923537, z: -93.9021019130009 });
+  });
+
+  it("keeps trying, a tick at a time, from the pad where most placements fail", () => {
+    const { w, p } = forestWorld();
+    standOnStem(w, p, 0);
+    expect(showWatcher(w)).toBe(2);
+    const h = shownWatcher(w)!;
+    expect(horizontal(p.pos, h.pos)).toBeCloseTo(90, 0);
+    expect(h.targetId).toBe(p.id);
+  });
+
+  it("hides on the first tick the lead turns away, and draws a rest in the band scaled by the reach", () => {
+    const { w, p } = forestWorld();
+    standOnStem(w, p, 37);
+    expect(showWatcher(w)).toBe(1);
+    const h = shownWatcher(w)!;
+    expect(reachOf(w, p)).toBe(1);
+    // A quarter turn toward its side leaves it inside the 80° cone.
+    const side = Math.sign((h.pos.x - p.pos.x) * Math.cos(p.yaw) - (h.pos.z - p.pos.z) * Math.sin(p.yaw));
+    p.yaw += side * Math.PI / 2;
+    tick(w);
+    expect(shownWatcher(w)).toBe(h);
+    // Half a turn puts it behind: gone this tick, and the rest is 20–60 s scaled to 0.4 at the top fork.
+    p.yaw += Math.PI;
+    tick(w);
+    expect(shownWatcher(w)).toBeUndefined();
+    expect(w.state.enemies.size).toBe(0);
+    expect(w.watcher!.id).toBe(-1);
+    expect(w.watcher!.rest).toBeGreaterThanOrEqual(8);
+    expect(w.watcher!.rest).toBeLessThanOrEqual(24);
+    expect(w.watcher!.rest).toBe(19.658605493605137);
+    // And it stays hidden while the rest runs: one tick short of it, nothing.
+    tick(w, Math.floor(w.watcher!.rest / TICK_DT) - 1);
+    expect(w.state.enemies.size).toBe(0);
+  });
+
+  it("hides on the first tick a player comes within 15 m", () => {
+    const { w, p } = forestWorld();
+    standOnStem(w, p, 37);
+    expect(showWatcher(w)).toBe(1);
+    const h = shownWatcher(w)!;
+    const q = spawnPlayer(w);
+    standAt(q, h.pos.x + 16, h.pos.z);
+    tick(w);
+    expect(shownWatcher(w)).toBe(h);
+    standAt(q, h.pos.x + 14, h.pos.z);
+    tick(w);
+    expect(shownWatcher(w)).toBeUndefined();
+    expect(w.state.enemies.size).toBe(0);
+    expect(w.watcher!.rest).toBeGreaterThanOrEqual(8);
+    expect(w.watcher!.rest).toBeLessThanOrEqual(24);
+  });
+
+  it("fills the stare only while the lead looks at it, and the stare is already falling on the hide tick", () => {
+    const { w, p } = forestWorld();
+    standOnStem(w, p, 37);
+    expect(showWatcher(w)).toBe(1);
+    const h = shownWatcher(w)!;
+    // In the wide view but outside the stare's 20° cone: shown, and no stare.
+    tick(w, 30);
+    expect(shownWatcher(w)).toBe(h);
+    expect(p.stare).toBe(0);
+    expect(h.seen).toBe(false);
+    // Centred: the stare fills at 1/360 a tick.
+    lookAt(p, h.pos);
+    tick(w, 60);
+    expect(h.seen).toBe(true);
+    expect(p.stare).toBeCloseTo(60 / 360, 12);
+    const before = p.stare;
+    // Looked away: it hides before the look pass runs, which finds nothing, so
+    // the stare has already fallen by 1/180 on the very tick it went.
+    p.yaw += Math.PI;
+    tick(w);
+    expect(shownWatcher(w)).toBeUndefined();
+    expect(p.stare).toBeCloseTo(before - 1 / 180, 12);
+    let last = p.stare;
+    for (let i = 0; i < 20; i++) {
+      tick(w);
+      expect(p.stare).toBeLessThan(last);
+      last = p.stare;
+    }
+    expect(p.health).toBe(100);
+  });
+
+  it("never shows once the phase has flipped, leaving the summit Hollow alone", () => {
+    const { w, p } = forestWorld();
+    const body = w.register!.body.pos;
+    standAt(p, body.x - 5, body.z);
+    tick(w);
+    expect(w.state.phase).toBe(Phase.Chase);
+    expect(w.state.enemies.size).toBe(1);
+    w.watcher!.rest = 0;
+    for (let i = 0; i < 2000; i++) {
+      tick(w);
+      expect(w.state.enemies.size).toBe(1);
+      for (const e of w.state.enemies.values()) expect(e.ai).not.toBe(AiState.Watch);
+    }
+    expect(w.watcher!.id).toBe(-1);
+    expect(w.watcher!.rest).toBe(0);
+  });
+
+  it("is removed on the flip tick, and the guide is drawn from the world's stream untouched", () => {
+    const { w, p } = forestWorld();
+    standOnStem(w, p, 37);
+    expect(showWatcher(w)).toBe(1);
+    const id = w.watcher!.id;
+    tick(w, 10);
+    expect(w.state.enemies.has(id)).toBe(true);
+    expect(w.state.rngSeed).toBe(2032433950);
+    const body = w.register!.body.pos;
+    standAt(p, body.x - 5, body.z);
+    tick(w);
+    expect(w.state.phase).toBe(Phase.Chase);
+    expect(w.state.enemies.has(id)).toBe(false);
+    expect(w.watcher!.id).toBe(-1);
+    const hollows = [...w.state.enemies.values()];
+    expect(hollows).toHaveLength(1);
+    expect(hollows[0]!.ai).toBe(AiState.Emerge);
+    expect(hollows[0]!.id).toBe(id + 1);
+    expect(w.state.rngSeed).toBe(1201198389);
+    expect(w.cut!.guide.length).toBe(54);
+  });
+
+  it("re-reads the lead when the lead dies: the facing and the next placement follow the survivor", () => {
+    const { w, p } = forestWorld();
+    const q = spawnPlayer(w);
+    standOnStem(w, p, 37);
+    // Two metres behind the lead on the stem, looking the same way: sees what the lead sees.
+    const chain = stemNodes(w.trail!);
+    const here = node(w, 37), below = node(w, chain[chain.indexOf(37) - 1] as number);
+    const dx = below.x - here.x, dz = below.z - here.z, len = Math.sqrt(dx * dx + dz * dz);
+    standAt(q, here.x + (dx / len) * 2, here.z + (dz / len) * 2);
+    q.yaw = p.yaw;
+    expect(leadOf(w)).toBe(p);
+    expect(showWatcher(w)).toBe(1);
+    const h = shownWatcher(w)!;
+    expect(h.targetId).toBe(p.id);
+    p.health = 0;
+    tick(w);
+    expect(leadOf(w)).toBe(q);
+    expect(shownWatcher(w)).toBe(h);
+    expect(h.targetId).toBe(q.id);
+    expect(h.yaw).toBeCloseTo(Math.atan2(q.pos.x - h.pos.x, q.pos.z - h.pos.z), 6);
+    // Hidden by the survivor looking away, then shown again for them.
+    q.yaw += Math.PI;
+    tick(w);
+    expect(shownWatcher(w)).toBeUndefined();
+    q.yaw -= Math.PI;
+    expect(showWatcher(w)).toBe(1);
+    const again = shownWatcher(w)!;
+    expect(again.targetId).toBe(q.id);
+    expect(horizontal(q.pos, again.pos)).toBeCloseTo(25, 0);
+  });
+
+  it("scales the rest by the reach: the same draw is 0.4 of itself at the top fork", () => {
+    const { w, p } = forestWorld();
+    standOnStem(w, p, 37);
+    const stream = w.watcher!.rng.rngSeed;
+    expect(showWatcher(w)).toBe(1);
+    p.yaw += Math.PI;
+    tick(w);
+    const near = w.watcher!.rest;
+    expect(near).toBe(19.658605493605137);
+    // The same stream, the same showing, and the lead dead on the hide tick: no lead, reach 0.
+    w.watcher!.rng.rngSeed = stream;
+    standOnStem(w, p, 37);
+    expect(showWatcher(w)).toBe(1);
+    p.health = 0;
+    tick(w);
+    expect(shownWatcher(w)).toBeUndefined();
+    const far = w.watcher!.rest;
+    expect(far).toBe(49.14651373401284);
+    expect(near).toBeCloseTo(0.4 * far, 12);
+  });
+
+  it("never shows on a world that is not authoritative", () => {
+    const w = createForestWorld(createForest(seed), false);
+    const p = spawnPlayer(w);
+    standOnStem(w, p, 37);
+    expect(w.watcher).toBeNull();
+    tick(w, 100);
+    expect(w.state.enemies.size).toBe(0);
+    expect(w.state.phase).toBe(Phase.Climb);
+    // Handed a record by hand, the tick still refuses it; only the rule itself would show.
+    w.watcher = record();
+    tick(w, 100);
+    expect(w.state.enemies.size).toBe(0);
+    expect(w.watcher.rest).toBe(0);
+    stepWatcher(w, TICK_DT);
+    expect(w.state.enemies.size).toBe(1);
   });
 });
