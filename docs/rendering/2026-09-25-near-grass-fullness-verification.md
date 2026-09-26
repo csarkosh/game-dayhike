@@ -665,3 +665,211 @@ the rest. The design's lever, `SWARD_COVER[0]` 0.05 → 0.3, is inert there — 
 ground under the rectangle is at cover 1.0–1.4 — and its trigger, a ratio
 inside the window leaving it, does not fire: this one was outside before. The
 trail still reads as earth beside grass (§6.3).
+
+## 7. Fourth gate: the sward under the canopy
+
+Measured 2026-09-26 against the control at `9c97483`, the method of §1
+unchanged. Design §11 raises `CLUTTER_GRASS_CANOPY_FLOOR` 0.5 → 0.75
+(`sim/clutter.ts`). Two builds of the branch are measured:
+
+- **A**, `464ad6d` as committed: floor 0.75. Grass under a closed canopy is
+  0.9375, with 2,674 / 8,719 meadow cards at the canopy pose.
+- **B**, the same tree with the floor at the design's fallback 0.65: grass
+  0.72, with 2,029 / 6,686 cards. `RABBIT_GRASS_FLOOR` stays at A's 0.95.
+
+The branch before the change, `fa08c72` (§6's build plus the tier guard on the
+sward pull, called **P** below), is measured for the canopy stills and the
+floor-look poses. In the source it differs from A only in the two constants
+(0.5 and `RABBIT_GRASS_FLOOR` 0.55), so it was served from the same tree with
+both set back. Zero console errors on every page that took a still.
+
+### 7.1 Fullness at the canopy pose
+
+| build | near mean | mid mean | lum ratio | near cover | mid cover | cover ratio |
+| --- | --- | --- | --- | --- | --- | --- |
+| control | 0.0338 | 0.0291 | 1.16 | 0.130 | 0.502 | 0.26 |
+| P (floor 0.5) | 0.0289 | 0.0289 | 1.00 | 0.204 | 0.506 | 0.40 |
+| B (floor 0.65) | 0.0272 | 0.0213 | **1.28** | 0.257 | 0.654 | **0.39** |
+| A (floor 0.75) | 0.0222 | 0.0178 | **1.25** | 0.459 | 0.734 | **0.62** |
+
+P reproduces §6 (0.41 / 1.00) to within 0.01. **Neither build meets the cover
+bar**: A reaches 0.62 and B stays at 0.39. **B misses the luminance bar**, at
+1.28 against the 1.25 ceiling, and A meets it at 1.248, on the ceiling.
+
+Both crops fill together. The mid crop is 18–26 m of the same canopy floor, so
+the extra far cards darken it as the near cards darken the near crop. Its cover
+against the fixed threshold goes from 0.50 to 0.65 (B) and 0.73 (A), and its
+mean falls faster than the near crop's. The ratios therefore rise far less than
+the near crop itself does. In absolute terms, A's near cover, 0.459, is the
+meadow pose's (0.464 in §6, 0.472 on A below): the canopy's near field now
+holds as much dark as the meadow's. But its mid field is darker than the
+meadow's (mean 0.0178 against 0.0295), and the bar reads the near field
+against that. B's near cover, 0.257, is a quarter above P's. Its mid crop gains
+more than that, so its cover ratio does not move and its luminance ratio
+crosses the ceiling.
+
+**The meadow pose on A**, as a regression: near mean 0.0284, mid 0.0296,
+luminance ratio 0.96, near cover 0.472, mid cover 0.503, cover ratio 0.94,
+against §6's 0.97 and 0.92. That is within 0.02, as the rule says: the open
+meadow is unchanged.
+
+### 7.2 Layer isolation at the canopy pose
+
+| build | layers drawn | near mean | near cover | mid mean | mid cover |
+| --- | --- | --- | --- | --- | --- |
+| P | all | 0.0289 | 0.204 | 0.0289 | 0.506 |
+| P | no blades | 0.0326 | 0.090 | 0.0291 | 0.497 |
+| P | no cards | 0.0306 | 0.143 | 0.0648 | 0.007 |
+| P | bare ground | 0.0353 | 0.000 | 0.0724 | 0.000 |
+| B | all | 0.0272 | 0.257 | 0.0213 | 0.654 |
+| B | no blades | 0.0322 | 0.088 | 0.0217 | 0.645 |
+| B | no cards | 0.0285 | 0.200 | 0.0640 | 0.010 |
+| B | bare ground | 0.0347 | 0.000 | 0.0713 | 0.000 |
+| A | all | 0.0222 | 0.459 | 0.0178 | 0.734 |
+| A | no blades | 0.0261 | 0.301 | 0.0181 | 0.728 |
+| A | no cards | 0.0263 | 0.274 | 0.0632 | 0.010 |
+| A | bare ground | 0.0342 | 0.000 | 0.0703 | 0.000 |
+
+What changed is the cards in the near crop and the blades.
+- **Cards.** The cards alone give the near crop 0.090 on P, 0.088 on B and 0.301
+  on A. B's 2,029 near cards, against P's 1,400, do not show in this crop:
+  it covers only a few square metres of ground at 2–6 m, and the cards B adds
+  happen to stand outside it.
+- **Blades.** The blades alone give 0.143, 0.200 and 0.274. The blades now
+  survive the strength cut at 0.69 (B) and 0.89 (A) and stand taller.
+- **Ground.** The bare ground darkens slightly (0.0353 → 0.0347 → 0.0342): the
+  sward pull ramps with the cover, and the litter paint falls with the duff.
+- **Mid crop.** It is all cards, as before.
+
+### 7.3 The look at the canopy pose
+
+**A.** The near field reads as a sward: tufts close enough to touch in the
+middle distance, with blades standing taller and denser between them, and the
+band past 18 m a continuous dark carpet. Side by side with the meadow pose it
+reads as the same kind of field, with bolder tufts and a darker tone. Between the nearest tufts, 2–5 m
+out, the grey-pink floor still shows, but as gaps in a sward rather than as the
+ground the tufts stand on.
+
+**B.** Between P and A, and nearer P. There are more tufts than at §6, but at
+2–6 m they are still separate tufts on a floor. The fuller look is mostly past
+8 m.
+
+**What a player sees less of: the leaf litter.** Under a closed canopy the
+litter share of the ground goes from two thirds to 0.52 (B) and 0.375 (A)
+(design §11.3). Litter pieces are culled by strength, and the floor's mix
+toward the litter colour falls with it. In the stills, the share of the lower
+frame (rows 1300–1950) whose red channel exceeds its green by a quarter is:
+- 9.8 % on the control;
+- 7.8 % on P;
+- 5.5 % on B;
+- 4.2 % on A.
+
+That measure takes in the leaf pieces and the pink-grey floor between the
+blades. At A, the small red-brown leaf triangles among the blades at the feet
+are about half as many as on P, and the floor between tufts reads greyer and
+less rust. The canopy floor becomes grass with leaves in it rather than leaves
+with grass in them.
+
+**At the feet** (pitch 0.9, and turned 90°), on both builds, nothing stands as
+a flat plane. The nearest cards are 2–3 m out, as before, since the in-band is
+unchanged. The blades at the feet are taller and denser on A. There is no bare
+patch inside 1 m: the grass at the pose, 0.72 and 0.94, is far above the blade
+field's floor.
+
+### 7.4 The floor-look canopy poses
+
+The bed/beside ratio at `weather clear`, `time 12`, with the floor-look note's
+crops. The window is 0.9–1.3.
+
+| still | camera | bed crop | beside crop | control | P | B | A |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| canopy-floor (seed `ypeqauxk`) | `__fcSet(-291.4, 22.9, 58.5, 1.06, 0.85)` | `380:700:700:850` | `380:700:120:850` | 1.07 | 1.13 | **1.19** | **1.25** |
+| trail-along (seed `atmo`) | `__fcSet(283, 85.7, 134, 1.892, 0.12)` | `170:170:400:1480` | `170:170:120:1480` | 1.14 | 1.14 | **1.14** | **1.14** |
+
+All four builds are inside the window at both poses.
+- **Beds.** The beds are unchanged to four places in every build.
+- **canopy-floor.** Its beside crop darkens step by step: 0.01253 on the control,
+  0.01181 on P (steps 1 and 2), 0.01117 on B and 0.01060 on A. As design §11.4
+  says, the thinning edge beside the trail gains grass, loses litter and comes
+  into the sward pull. A is 0.05 under the ceiling.
+- **trail-along.** Its beside crop is unchanged to five places in all four
+  builds: that ground carries no blades or cards in any of them.
+- **Against the earlier figures.** The 1.19 and 1.24 of the floor-look note
+  were measured on that work's branch against an earlier `main`. On today's
+  `main` the control reads 1.07 and 1.14.
+
+### 7.5 Frame at the canopy pose
+
+§4.5's method and quiet rule, at 4× pixels: for each build, two same-code rounds
+and six pair rounds, each started only when its warm-up page sat on the
+control's floor. For A, 6 of 8 rounds are quiet. For B, 7 of 8 are quiet. In
+the rest, one control page was lifted by 0.8–2.0 ms.
+
+| round, A | first page | second page | delta | quiet |
+| --- | --- | --- | --- | --- |
+| same code 1 | control 54.49 / 56.6 | control 53.85 / 55.5 | −0.64 |  |
+| same code 2 | control 53.69 / 55.2 | control 53.68 / 55.5 | −0.01 | yes |
+| 1 | control 54.04 / 56.1 | A 55.12 / 56.8 | +1.08 | yes |
+| 2 | A 55.15 / 57.0 | control 53.75 / 55.8 | +1.40 | yes |
+| 3 | control 55.64 / 58.3 | A 55.30 / 57.1 | −0.34 |  |
+| 4 | A 55.20 / 57.1 | control 53.68 / 55.7 | +1.52 | yes |
+| 5 | control 53.76 / 55.7 | A 55.18 / 57.1 | +1.42 | yes |
+| 6 | A 55.18 / 56.9 | control 53.73 / 55.6 | +1.45 | yes |
+
+| round, B | first page | second page | delta | quiet |
+| --- | --- | --- | --- | --- |
+| same code 1 | control 53.71 / 55.4 | control 53.68 / 55.4 | −0.03 | yes |
+| same code 2 | control 53.69 / 55.8 | control 53.72 / 55.7 | +0.03 | yes |
+| 1 | control 53.73 / 55.5 | B 54.88 / 56.7 | +1.15 | yes |
+| 2 | B 55.29 / 57.3 | control 54.66 / 56.4 | +0.63 |  |
+| 3 | control 53.80 / 55.9 | B 54.75 / 56.6 | +0.95 | yes |
+| 4 | B 54.80 / 56.8 | control 53.65 / 55.7 | +1.15 | yes |
+| 5 | control 53.68 / 55.8 | B 54.72 / 56.3 | +1.04 | yes |
+| 6 | B 54.73 / 57.3 | control 53.75 / 55.9 | +0.98 | yes |
+
+| build | quiet same-code | quiet rounds, control first | quiet rounds, branch first | order-averaged delta | lowest mean, control / branch |
+| --- | --- | --- | --- | --- | --- |
+| §6, before the change | +0.05 | +0.67, +0.86 | +0.67, +0.78 | +0.75 | 53.64 / 54.32 |
+| B (floor 0.65) | −0.03, +0.03 | +1.15, +0.95, +1.04 | +1.15, +0.98 | **+1.06** | 53.65 / 54.72 (+1.07) |
+| A (floor 0.75) | −0.01 | +1.08, +1.42 | +1.40, +1.52, +1.45 | **+1.35** | 53.68 / 55.12 (+1.44) |
+
+The frame grows with the grass. Over §6, B adds 0.3 ms and A 0.6 ms: the extra
+cards (+629 and +1,274 near, +2,067 and +4,100 far) and the blades that now
+survive the strength cut at nearly full height. Both builds are over the bar,
+B by 0.06 ms against a same-code floor of ±0.03.
+
+**Native p95**, at scaling 1, four rounds for each build.
+- **A.** Two rounds had the control on its floor (23.00 ms): A 24.25 / 26.7 and
+  24.20 / 26.6. That is a delta of +1.23 ms, with p95 +1.65 ms.
+- **B.** One round had the control near its floor (23.10 ms): B 24.46 / 27.0,
+  +1.36 ms, p95 +1.9. In B's other three rounds the control was lifted to
+  23.6–23.9 ms.
+- At native pixels the two builds are not told apart by these rounds. Neither is
+  capped by vsync.
+
+### 7.6 Verdict
+
+| bar | B (floor 0.65) | A (floor 0.75) |
+| --- | --- | --- |
+| canopy near cover ≥ 0.8 × mid cover | **missed**, 0.39 | **missed**, 0.62 |
+| canopy luminance ratio 0.8–1.25 | **missed**, 1.28 | met, 1.25 (1.248) |
+| canopy frame ≤ +1.0 ms at 4× pixels | **missed**, +1.06 | **missed**, +1.35 |
+| floor-look `canopy-floor` in 0.9–1.3 | met, 1.19 | met, 1.25 |
+| floor-look `trail-along` in 0.9–1.3 | met, 1.14 | met, 1.14 |
+| meadow pose unchanged | (not measured) | met, 0.94 / 0.96 |
+| no card as a plane at the feet | met | met |
+| zero console errors | met | met |
+
+**No build meets everything.**
+
+**A** changes the look under the canopy most. Its near field holds as much dark
+as the meadow's, reads as a sward, and shows about half the litter. But it
+misses the cover bar, because the mid field fills with it. It also misses the
+frame bar by 0.35 ms and sits on the luminance ceiling.
+
+**B**, the design's fallback, misses the frame bar by 0.06 ms. It misses the
+luminance ceiling, because its mid field darkens more than its near field. Its
+cover ratio does not move. At 2–6 m it still reads as tufts on a floor.
+
+By design §11.5, when 0.65 misses too, the floor returns to 0.5, the rabbit
+floor to 0.55, and the canopy pose's miss is recorded as the simulation's rule.
