@@ -1,11 +1,19 @@
 /**
- * The three quality tiers (low, medium, high), as data.
+ * The three quality tiers (low, medium, high), as data, and the rules that
+ * pick one.
  *
  * Pure on purpose: the renderer must read these rather than hard-code shadow
  * resolutions, and a capability probe that takes a plain object can be tested
  * without a browser. Tiers change `game/` state only — never asset content and
  * never the simulation.
+ *
+ * `autoTier` is Auto's rule: the GPU's class (`gpuClass.ts`) gives a start
+ * tier and a ceiling, a stored verdict (a probe's measurement, or a drop after
+ * a sustained low frame rate) moves the tier within them, and two cores or two
+ * gigabytes cap it at low. `tierFor` is the older rule, from cores and memory
+ * alone, which `renderer.ts` applies when it is given no tier.
  */
+import { CLASS_TIERS, type GpuClass } from "./gpuClass.js";
 
 export type QualityTier = "low" | "medium" | "high";
 
@@ -76,4 +84,90 @@ export function tierFor(caps: Capabilities): QualityTier {
   if (caps.cores <= 4 || caps.memoryGb <= 4) return "low";
   if (caps.cores <= 8 || caps.memoryGb <= 8) return "medium";
   return "high";
+}
+
+/** Bumped when what a tier costs moves enough that every stored verdict should be redone. */
+export const DETECT_VERSION = 1;
+/** How long a verdict holds, in days. */
+export const VERDICT_DAYS = 30;
+/** A probe verdict holds while the window is at most this many times the area it was measured at. */
+export const PROBE_PIXEL_SLACK = 1.5;
+/** Probes started for one GPU and browser without a verdict, after which Auto keeps the class's start tier. */
+export const PROBE_ATTEMPTS = 3;
+
+const DAY_MS = 86_400_000;
+const RANK: Readonly<Record<QualityTier, number>> = { low: 0, medium: 1, high: 2 };
+
+/** One tier measured by the startup probe. */
+export type ProbeReading = { tier: QualityTier; frames: number; meanMs: number; p95Ms: number; pixels: number; engine: "webgl2" | "webgpu" };
+
+/**
+ * What the frame decided for one GPU: a probe's tier, or a drop after a
+ * sustained low frame rate. `pixels` is the game container's CSS area when it
+ * was set, and `at` is `Date.now()` then.
+ */
+export type AutoVerdict = { tier: QualityTier; source: "probe" | "governor"; pixels: number; at: number; readings?: ProbeReading[] };
+
+/**
+ * Auto's memory, one per browser profile: the GPU (`gpuIdentity`) and browser
+ * major it was made on, the probes started since the last verdict, and the
+ * verdict. A record for another `DETECT_VERSION`, GPU or browser is ignored,
+ * attempts and all.
+ */
+export type AutoRecord = { v: number; gpu: string; browser: number; attempts: number; verdict: AutoVerdict | null };
+
+export type AutoInput = {
+  cls: GpuClass;
+  cores: number | null;
+  memoryGb: number | null;
+  record: AutoRecord | null;
+  /** The running GPU's `gpuIdentity`. */
+  gpu: string;
+  /** The running browser's major version. */
+  browser: number;
+  /** The game container's CSS area now. */
+  pixels: number;
+  now: number;
+};
+
+/** Whether a stored record was made for this version, GPU and browser. */
+export function recordMatches(record: AutoRecord | null, gpu: string, browser: number): boolean {
+  return record !== null && record.v === DETECT_VERSION && record.gpu === gpu && record.browser === browser;
+}
+
+/**
+ * Whether a verdict still stands: under `VERDICT_DAYS` old, and, for a probe's,
+ * with the window at most `PROBE_PIXEL_SLACK` times the area it certified (a
+ * bigger window costs more). A drop for a low frame rate holds at any size.
+ */
+export function verdictHolds(verdict: AutoVerdict, pixels: number, now: number): boolean {
+  return now - verdict.at < VERDICT_DAYS * DAY_MS && (verdict.source === "governor" || pixels <= verdict.pixels * PROBE_PIXEL_SLACK);
+}
+
+function lower(a: QualityTier, b: QualityTier): QualityTier {
+  return RANK[a] <= RANK[b] ? a : b;
+}
+
+/**
+ * Auto's tier, and the tier to probe from before the first hike, or null. The
+ * class gives a start tier and a ceiling (`CLASS_TIERS`); two cores or two
+ * gigabytes, where reported, cap both at low (a missing value caps nothing).
+ * A matching record's verdict that holds decides, never above the ceiling;
+ * otherwise the start tier, with a probe from the ceiling when the class is
+ * probed, the ceiling is above the start, and fewer than `PROBE_ATTEMPTS`
+ * probes have been started.
+ */
+export function autoTier(input: AutoInput): { tier: QualityTier; probeFrom: QualityTier | null } {
+  const row = CLASS_TIERS[input.cls];
+  const capped = (input.cores !== null && input.cores <= 2) || (input.memoryGb !== null && input.memoryGb <= 2);
+  const ceiling: QualityTier = capped ? "low" : row.ceiling;
+  const start = lower(row.start, ceiling);
+  const record = recordMatches(input.record, input.gpu, input.browser) ? input.record : null;
+  const verdict = record?.verdict ?? null;
+  if (verdict !== null && verdictHolds(verdict, input.pixels, input.now)) {
+    return { tier: lower(verdict.tier, ceiling), probeFrom: null };
+  }
+  const attempts = record?.attempts ?? 0;
+  if (row.probe && ceiling !== start && attempts < PROBE_ATTEMPTS) return { tier: start, probeFrom: ceiling };
+  return { tier: start, probeFrom: null };
 }

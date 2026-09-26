@@ -13,6 +13,7 @@
  * GPU from the 900 series on) each have an "unknown" class of their own.
  */
 import type { AdapterInfo, GpuSignals } from "./gpuSignals.js";
+import type { QualityTier } from "./quality.js";
 
 export type GpuClass =
   | "mobile"
@@ -28,6 +29,46 @@ export type GpuClass =
   | "discrete-unknown"
   | "apple-large"
   | "discrete-modern";
+
+export type ClassTiers = { start: QualityTier; ceiling: QualityTier; probe: boolean };
+
+/**
+ * Each class's tiers: where Auto starts it, the highest it may reach, and
+ * whether a probe measures it from that ceiling before its first hike. A named
+ * class starts at its ceiling; an unknown one starts a step below and is
+ * probed. Only `apple-base` rests on a measurement of its own class (high is
+ * 24 ms a frame at the canopy pose on an M4 with an 8-core GPU); the other
+ * named rows are set from each GPU's throughput relative to that one, and each
+ * is one literal in `gpuClass.test.ts`, so a later measurement moves one row.
+ */
+export const CLASS_TIERS: Readonly<Record<GpuClass, ClassTiers>> = {
+  // Thermals, not the GPU, are a phone's limit.
+  mobile: { start: "low", ceiling: "low", probe: false },
+  // A CPU rasteriser.
+  software: { start: "low", ceiling: "low", probe: false },
+  // Kepler and older, Radeon before Polaris.
+  "discrete-legacy": { start: "low", ceiling: "low", probe: false },
+  // Intel Gen 9 to 11, Vega APUs.
+  "integrated-older": { start: "low", ceiling: "low", probe: false },
+  // Iris Xe, a bare "Radeon Graphics", Firefox's Intel buckets.
+  "integrated-unknown": { start: "low", ceiling: "medium", probe: true },
+  // Arc integrated, RDNA 2 and later APUs, Snapdragon X.
+  "integrated-modern": { start: "medium", ceiling: "medium", probe: false },
+  // An M-series base GPU: high does not hold 60 Hz at the canopy pose.
+  "apple-base": { start: "medium", ceiling: "medium", probe: false },
+  // Maxwell to Turing without RTX, Polaris, Vega, Arc A3xx.
+  "discrete-older": { start: "medium", ceiling: "medium", probe: false },
+  // Nothing recognisable.
+  unknown: { start: "medium", ceiling: "high", probe: true },
+  // Safari's "Apple GPU", Firefox's "Apple M1" bucket: an M1 or an M4 Max.
+  "apple-unknown": { start: "medium", ceiling: "high", probe: true },
+  // Firefox's "GTX 980" bucket, WebGPU's "turing".
+  "discrete-unknown": { start: "medium", ceiling: "high", probe: true },
+  // Pro, Max and Ultra.
+  "apple-large": { start: "high", ceiling: "high", probe: false },
+  // RTX, RDNA 1 and later, Arc A5xx and up.
+  "discrete-modern": { start: "high", ceiling: "high", probe: false },
+};
 
 /** A CPU rasteriser, by any of the names the browsers give one. */
 const SOFTWARE = /swiftshader|llvmpipe|softpipe|lavapipe|basic render driver|\bwarp\b/i;

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { classifyGpu, gpuIdentity, type GpuClass } from "../../src/game/gpuClass.js";
+import { CLASS_TIERS, classifyGpu, gpuIdentity, type GpuClass } from "../../src/game/gpuClass.js";
 import type { AdapterInfo } from "../../src/game/gpuSignals.js";
+import { autoTier, type QualityTier } from "../../src/game/quality.js";
 import * as F from "./gpuFixtures.js";
 
 type Row = [label: string, renderer: string | null, adapter: AdapterInfo | null, mobile: boolean, want: GpuClass];
@@ -99,5 +100,97 @@ describe("gpuIdentity", () => {
     expect(gpuIdentity({ renderer: null, adapter: F.adapter("nvidia", "ampere") })).toBe("nvidia/ampere");
     expect(gpuIdentity({ renderer: null, adapter: null })).toBe("");
     expect(gpuIdentity({ renderer: null, adapter: F.adapter("", "") })).toBe("");
+  });
+});
+
+describe("CLASS_TIERS", () => {
+  it("gives every class its start, ceiling and probe flag", () => {
+    expect(CLASS_TIERS).toEqual({
+      mobile: { start: "low", ceiling: "low", probe: false },
+      software: { start: "low", ceiling: "low", probe: false },
+      "discrete-legacy": { start: "low", ceiling: "low", probe: false },
+      "integrated-older": { start: "low", ceiling: "low", probe: false },
+      "integrated-unknown": { start: "low", ceiling: "medium", probe: true },
+      "integrated-modern": { start: "medium", ceiling: "medium", probe: false },
+      "apple-base": { start: "medium", ceiling: "medium", probe: false },
+      "discrete-older": { start: "medium", ceiling: "medium", probe: false },
+      unknown: { start: "medium", ceiling: "high", probe: true },
+      "apple-unknown": { start: "medium", ceiling: "high", probe: true },
+      "discrete-unknown": { start: "medium", ceiling: "high", probe: true },
+      "apple-large": { start: "high", ceiling: "high", probe: false },
+      "discrete-modern": { start: "high", ceiling: "high", probe: false },
+    });
+  });
+});
+
+/**
+ * Auto's tier and probe start for each CLASS_ROWS input, with no record, keyed
+ * by the row's label: a row inserted, removed or renamed in CLASS_ROWS fails
+ * the key check below rather than shifting every answer after it.
+ */
+const TIER_WANT: Readonly<Record<string, readonly [tier: QualityTier, probeFrom: QualityTier | null]>> = {
+  "Chrome, Apple M4": ["medium", null],
+  "Chrome, Apple M3 Max": ["high", null],
+  "Chrome, Apple M2 Pro": ["high", null],
+  "Safari": ["medium", "high"],
+  "Firefox, any Apple GPU": ["medium", "high"],
+  "RTX 3060": ["high", null],
+  "GTX 1060": ["medium", null],
+  "GT 730": ["low", null],
+  "Firefox, NVIDIA 900 series and up": ["medium", "high"],
+  "RX 6700 XT": ["high", null],
+  "RX 580": ["medium", null],
+  "Radeon 780M": ["medium", null],
+  "bare Radeon Graphics, RDNA 2": ["medium", null],
+  "bare Radeon Graphics, GCN 5": ["low", null],
+  "bare Radeon Graphics, no adapter": ["low", "medium"],
+  "UHD 620": ["low", null],
+  "Iris Xe": ["low", "medium"],
+  "Arc integrated": ["medium", null],
+  "Arc A770": ["high", null],
+  "an Intel Mac's Iris Plus 655": ["low", null],
+  "Firefox, Intel": ["low", "medium"],
+  "Firefox, AMD": ["medium", "high"],
+  "SwiftShader": ["low", null],
+  "llvmpipe": ["low", null],
+  "Snapdragon X": ["medium", null],
+  "adapter only, Ampere": ["high", null],
+  "adapter only, Turing": ["medium", "high"],
+  "adapter only, Apple": ["medium", "high"],
+  "adapter only, fallback": ["low", null],
+  "adapter only, Gen 12 LP": ["low", "medium"],
+  "nothing at all": ["medium", "high"],
+  "a phone": ["low", null],
+  "a fallback adapter beside a real renderer": ["high", null],
+};
+
+function tierWant(label: string): readonly [QualityTier, QualityTier | null] {
+  const want = TIER_WANT[label];
+  if (want === undefined) throw new Error(`no TIER_WANT row for "${label}"`);
+  return want;
+}
+
+describe("the detection matrix, signals to tier", () => {
+  it("has exactly one tier row for each class row, by label", () => {
+    const labels = CLASS_ROWS.map(([label]) => label);
+    expect(labels.length).toBe(33);
+    expect(new Set(labels).size).toBe(33);
+    expect(Object.keys(TIER_WANT).sort()).toEqual([...labels].sort());
+  });
+
+  it.each(CLASS_ROWS.map((row) => [...row, ...tierWant(row[0])] as const))(
+    "%s",
+    (_label, renderer, adapter, mobile, _cls, tier, probeFrom) => {
+      const cls = classifyGpu({ renderer, adapter, mobile });
+      const got = autoTier({ cls, cores: null, memoryGb: null, record: null, gpu: "", browser: 153, pixels: 2_073_600, now: 1_790_000_000_000 });
+      expect(got).toEqual({ tier, probeFrom });
+    },
+  );
+
+  it("caps a class at low on two cores or two gigabytes, and does not probe it", () => {
+    const base = { record: null, gpu: "", browser: 153, pixels: 2_073_600, now: 1_790_000_000_000 };
+    expect(autoTier({ ...base, cls: "discrete-modern", cores: 2, memoryGb: 16 })).toEqual({ tier: "low", probeFrom: null });
+    expect(autoTier({ ...base, cls: "apple-base", cores: 10, memoryGb: 2 })).toEqual({ tier: "low", probeFrom: null });
+    expect(autoTier({ ...base, cls: "apple-unknown", cores: 2, memoryGb: null })).toEqual({ tier: "low", probeFrom: null });
   });
 });

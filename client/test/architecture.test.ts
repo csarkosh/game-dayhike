@@ -89,6 +89,12 @@ describe("layer boundaries", () => {
     expect(violations(join(SRC, "net"), [/^@babylonjs/, /game\//])).toEqual([]);
   });
 
+  it("keeps the quality modules out of sim/ and net/", () => {
+    const quality = /game\/(quality|gpuSignals|gpuClass|tierChoice|frameProbe|governor|rendererSwap|settings)(\.js)?$/;
+    expect(violations(join(SRC, "sim"), [quality])).toEqual([]);
+    expect(violations(join(SRC, "net"), [quality])).toEqual([]);
+  });
+
   /**
    * `game/` is deliberately split: `colour.ts`, `sky.ts`, `quality.ts` and
    * `terrainSurface.ts` are pure arithmetic, tested under
@@ -131,6 +137,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "rockRelief.ts"),
       join(SRC, "game", "gpuSignals.ts"),
       join(SRC, "game", "gpuClass.ts"),
+      join(SRC, "game", "tierChoice.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files

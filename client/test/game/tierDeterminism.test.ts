@@ -1,0 +1,71 @@
+import { describe, it, expect, vi } from "vitest";
+
+// `terrainTexture.ts`'s plugin constructor calls the real `loadGroundArrays`
+// whenever it isn't handed a factory, and `renderer.ts`'s own
+// `attachTerrainTexture(scene, mat)` call site never passes one — so the real
+// loader builds a `RawTexture2DArray`, which NullEngine cannot create (the
+// same gap `groundMaps.test.ts` documents and works around with its own
+// factory injection). Mocked here, at the module boundary, rather than by
+// touching `renderer.ts`.
+vi.mock("../../src/game/groundMaps.js", () => ({
+  loadGroundArrays: () => ({
+    normals: { isReady: () => true, dispose() {} },
+    // `getSize` mirrors the real `BaseTexture` surface `bindForSubMesh` reads
+    // (`terrainReliefOn`'s placeholder-vs-real signature) — present here so a
+    // future test that exercises binding fails on the plugin code, not on a
+    // mock that is missing a method the real texture always has.
+    rah: { isReady: () => true, dispose() {}, getSize: () => ({ width: 1, height: 1 }) },
+    ready: Promise.resolve(),
+    dispose() {},
+  }),
+}));
+
+// `createRenderer` builds a real WebGL `Engine`, which needs a canvas and a
+// context this suite does not have. Substituted with `NullEngine` at the
+// module boundary — same trick as the `groundMaps` mock above — so the test
+// below can build a whole `Renderer` on each tier anyway.
+vi.mock("@babylonjs/core/Engines/engine.js", async () => {
+  const mod = await vi.importActual<typeof import("@babylonjs/core/Engines/nullEngine.js")>(
+    "@babylonjs/core/Engines/nullEngine.js",
+  );
+  return { Engine: mod.NullEngine };
+});
+
+// The terrain field lives behind the variant registry; a test that builds a
+// forest without `app.ts` has to register the passes itself.
+import "../../src/sim/passes/index.js";
+import { createForest } from "../../src/sim/forest.js";
+import { createForestWorld, serializeWorldState, spawnPlayer, tickWorld } from "../../src/sim/world.js";
+import type { Level } from "../../src/sim/level.js";
+import { createRenderer } from "../../src/game/renderer.js";
+import type { QualityTier } from "../../src/game/quality.js";
+
+const LEVEL: Level = { id: "tier-determinism", brushes: [], playerSpawns: [], enemySpawns: [] };
+const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
+const ATMO = 627994160;
+
+/** One forest world, one player walking for 120 ticks, drawn after every tick
+ * by a renderer on `tier`, or by none. */
+function run(tier: QualityTier | null): { state: string; passHash: number } {
+  const forest = createForest(ATMO);
+  const world = createForestWorld(forest);
+  const player = spawnPlayer(world);
+  const renderer = tier === null ? null : createRenderer(FAKE_CANVAS, LEVEL, forest, { tier });
+  try {
+    for (let t = 0; t < 120; t++) {
+      tickWorld(world, new Map([[player.id, { seq: t + 1, moveX: 0, moveZ: 1, yaw: 0.3, pitch: 0, buttons: 0 }]]));
+      renderer?.sync(world.state, player.id, 0.5, { dt: 1 / 60, sprinting: false });
+    }
+    return { state: serializeWorldState(world.state), passHash: forest.passHash };
+  } finally {
+    renderer?.dispose();
+  }
+}
+
+describe("the tier is drawing only", () => {
+  it("steps one world, to the byte, whatever tier draws it or none", () => {
+    const bare = run(null);
+    expect(bare.passHash).toBe(-311867473);
+    for (const tier of ["low", "medium", "high"] as const) expect(run(tier)).toEqual(bare);
+  }, 120_000);
+});
