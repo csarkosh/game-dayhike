@@ -296,8 +296,9 @@ function triggerOf(world: World, graph: TrailGraph, fork: number): { player: Pla
  * other branch not already closed closes with a Hollow stepping out of it
  * (`forkSpawn`, `spawnForkHollow`) that walks to the fork and hunts the
  * trigger. A fork on the corridor — safe ground, where nobody is hunted —
- * or one with nothing to close is recorded with -1 and closes nothing; a
- * branch with no room for a Hollow stays open and is not counted closed.
+ * or one where nothing but the arrival reaches the pad is recorded with -1
+ * and closes nothing; a branch with no room for a Hollow stays open and is
+ * not counted closed.
  *
  * Forks are judged in ascending node order, so two reached on the same tick
  * resolve the same way on every machine, and the second sees the first's

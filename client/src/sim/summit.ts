@@ -3,9 +3,10 @@
  * match's two acts and the rules that turn one into the other. Every tick,
  * host only: who is on the road corridor (safe ground), whether the first
  * living player has found the body (the phase flips for everyone and the
- * summit Hollow steps out), and whether the match is over (no living player
- * still out). The first of those runs before the Hollows move and the other
- * two after them — see each function.
+ * summit Hollow steps out), which forks the descending party has reached
+ * and so cut (cut.ts), and whether the match is over (no living player
+ * still out). The first of those runs before the Hollows move and the
+ * others after them — see each function.
  *
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
