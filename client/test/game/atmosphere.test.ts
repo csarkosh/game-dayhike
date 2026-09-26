@@ -49,6 +49,23 @@ describe("createAtmosphere", () => {
     expect(std.pluginManager?.getPlugin("Atmosphere") ?? null).toBeNull();
   });
 
+  // The Hollow's material keeps fog off, so it never emits the fog line the
+  // plugin rewrites; a plugin waiting on that line would never let the
+  // material compile. The factory leaves it alone by name.
+  it("leaves the Hollow's PBR material alone and attaches to any other", async () => {
+    const hollow = new PBRMaterial("mat_hollow", scene);
+    hollow.fogEnabled = false;
+    const other = new PBRMaterial("mat_other", scene);
+    expect(hollow.pluginManager?.getPlugin("Atmosphere") ?? null).toBeNull();
+    expect(other.pluginManager?.getPlugin("Atmosphere")).toBeTruthy();
+    // And, with the plugin registered, the fog-off material still readies
+    // (NullEngine compiles no GLSL: this is the pipeline, not the GPU).
+    const box = CreateBox("hollow_box", {}, scene);
+    box.material = hollow;
+    await hollow.forceCompilationAsync(box);
+    expect(hollow.isReady(box)).toBe(true);
+  });
+
   it("update writes the record, keeps scene.fogColor on the gradient's far end, and rebuilds the gradient only on change", () => {
     atmosphere.update(WEATHER_PRESETS.clear, 12);
     const far = fogGradientUnder(WEATHER_PRESETS.clear, 12)[GRADIENT_STEPS - 1]!;
