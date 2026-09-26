@@ -103,3 +103,15 @@
 - No sim change moves an existing RNG draw (names use their own stream; the props and signs draw nothing); the level id moves once, on purpose, and is re-pinned.
 - Every model id in the contract is exercised by a test that loads its bytes.
 - No collider is ever invisible: every drawer has a fallback.
+
+## Measured
+
+Two-page pass on seed `hollow`, one host and one follower, 2026-09-26. Screenshots in the archive folder named in the plan's tasks.
+
+- **Rangers.** The follower stands on the pad as a hatted ranger, grounded, and plays the walk clip while strafing (host's view). The follower's own page shows the host as a second ranger with the hat. The five bodies are picked by player id: the host draws as the second body, the follower as the third.
+- **Trailhead.** The kiosk stands at its site with the notice upright and readable from nine metres ("MISSING / Hugh Kowalski / Last seen on the summit trail."), the SUV parked nose to the pad with the green PARK RANGER stripe on its flank, and "Read the poster" appears from the interact point in front of the kiosk face.
+- **Fingerposts.** The post at the first fork carries two arrow boards at 1.8 m reading "Trailhead" and "Old Lake · Summit", legible from three metres.
+- **The body.** From fourteen metres below the crest, the missing hiker hangs folded over the pole against the sky, arms toward the arriving player.
+- **The Hollow.** After the flip it stands seventeen metres off in the rain as a dark antlered silhouette with a faint eye dot. Under the headlamp at nine metres it fills the view at twice a hiker's height: skull, antlers, ribs, claws, and two glowing eyes. At intensity 4 the eye cores bloom to near white close up and read as a small red dot at range; `HOLLOW_EYE_INTENSITY` and `HOLLOW_EYE_COLOR` are the knobs.
+- **Clip speeds.** The walk plays at a believable pace at 5.3 m/s with `RANGER_WALK_CLIP_SPEED` 1.5; a still cannot judge foot sliding, so both clip speeds stay at 1.5 pending play.
+- **Sweeps.** The watcher's fifty-seed sweep shows on 875 of 936 stands instead of 881: the kiosk's wider hull blocks six sightlines from the pad. The pass hash moved once with the trailhead props and is re-pinned.
