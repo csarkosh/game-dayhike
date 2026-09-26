@@ -797,7 +797,7 @@ crops. The window is 0.9–1.3.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | canopy-floor (seed `ypeqauxk`) | `__fcSet(-291.4, 22.9, 58.5, 1.06, 0.85)` | `380:700:700:850` | `380:700:120:850` | 1.07 | 1.13 | **1.19** | **1.25** |
 | trail-along (seed `atmo`), withdrawn beside crop | `__fcSet(283, 85.7, 134, 1.892, 0.12)` | `170:170:400:1480` | `170:170:120:1480` | 1.14 | 1.14 | 1.14 | 1.14 |
-| trail-along (seed `atmo`), current crops | same | `170:170:400:1480` | `170:170:600:1480` | **1.372** | — | — | **1.441** (the tip, `0d98014`) |
+| trail-along (seed `atmo`), current crops | same | `170:170:400:1480` | `170:170:600:1480` | **1.372** | — | — | **1.441** (the tip, `cdda2ae`) |
 
 `canopy-floor` is inside the window on all four builds. `trail-along` is not,
 on any build, once it is measured on the right crop.
