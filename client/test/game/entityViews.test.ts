@@ -151,7 +151,7 @@ describe("EntityViews Hollows", () => {
     world.enemies.set(7, {
       id: 7, pos: { x: 1, y: 0.9, z: 2 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0.5, health: 40, ai: AiState.Stand,
       targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
-      route: [], routeAt: 0, approach: false, seen: false,
+      route: [], routeAt: 0, approach: false, seen: false, emergeTo: null,
     });
     views.sync(world, 99, 0);
     const mesh = scene.getMeshByName("hollow_7")!;

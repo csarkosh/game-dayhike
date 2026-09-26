@@ -122,6 +122,13 @@ export type EnemyState = {
   routeAt: number;
   approach: boolean;
   seen: boolean;
+  /**
+   * Where an emerging Hollow walks before its reveal — a fork Hollow's mouth
+   * (cut.ts) — or null for one that stands where it spawned, as the summit's
+   * does. Host-only, like `route`: absent from the snapshot and the
+   * fingerprint. Null on every enemy that is not a Hollow.
+   */
+  emergeTo: Vec3 | null;
 };
 
 export type WorldState = {

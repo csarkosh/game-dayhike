@@ -349,7 +349,13 @@ export function cloneWorldState(state: WorldState): WorldState {
   }
   const enemies = new Map<number, EnemyState>();
   for (const [id, e] of state.enemies) {
-    enemies.set(id, { ...e, pos: cloneVec3(e.pos), vel: cloneVec3(e.vel), route: [...e.route] });
+    enemies.set(id, {
+      ...e,
+      pos: cloneVec3(e.pos),
+      vel: cloneVec3(e.vel),
+      route: [...e.route],
+      emergeTo: e.emergeTo === null ? null : cloneVec3(e.emergeTo),
+    });
   }
   return {
     tick: state.tick,

@@ -23,6 +23,7 @@ import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
 import { isOnCorridor, roadOffset } from "./containment.js";
 import { ROAD_CORRIDOR_HALF } from "./road.js";
+import { FORK_EMERGE_MAX_S, FORK_REVEAL_S } from "./cut.js";
 import {
   ENEMY_HALF,
   ENEMY_MAX_HEALTH,
@@ -100,8 +101,22 @@ export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: n
     routeAt: 0,
     approach: false,
     seen: false,
+    emergeTo: null,
   };
   world.state.enemies.set(hollow.id, hollow);
+  return hollow;
+}
+
+/**
+ * A Hollow stepping out of a closed branch (cut.ts): spawned at `at` in
+ * Emerge, it walks to `mouth` at the hunt speed, stands FORK_REVEAL_S there
+ * facing `targetId`, then hunts them. The walk ends early, where it stands,
+ * once it has been stuck STUCK_SECONDS or has walked FORK_EMERGE_MAX_S: a
+ * branch it cannot walk out of is still a Hollow in that branch.
+ */
+export function spawnForkHollow(world: World, at: Vec3, mouth: Vec3, targetId: number): EnemyState {
+  const hollow = spawnHollow(world, at, targetId, FORK_EMERGE_MAX_S);
+  hollow.emergeTo = cloneVec3(mouth);
   return hollow;
 }
 
@@ -351,8 +366,30 @@ function pursue(h: EnemyState, world: World, graph: TrailGraph, dt: number, targ
 function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number): void {
   switch (h.ai) {
     case AiState.Emerge: {
-      // The reveal: it steps out and looks at whoever found the body, giving
-      // the party SUMMIT_REVEAL_S to see it before it moves at all.
+      // One timer, two meanings in sequence, and `emergeTo` says which.
+      if (h.emergeTo !== null) {
+        // The walk: a fork Hollow steps out of its branch to the mouth at the
+        // raw hunt speed — being looked at does not slow it, because this is
+        // the reveal, not the hunt — while the timer counts down its bound.
+        // Arrival, a stuck walk or the bound ends it where it stands, and the
+        // reveal's stillness starts from there, without the walk's stuck
+        // sidestep or momentum: it stops, and hunts from a standstill.
+        h.stateTimer -= dt;
+        walkToward(h, world, dt, h.emergeTo.x, h.emergeTo.z, HOLLOW_HUNT_SPEED);
+        const arrived = horizontalDistSq(h.pos, h.emergeTo) <= HOLLOW_WAYPOINT_RADIUS * HOLLOW_WAYPOINT_RADIUS;
+        if (arrived || h.stuckTimer > STUCK_SECONDS || h.stateTimer <= 0) {
+          h.emergeTo = null;
+          h.stateTimer = FORK_REVEAL_S;
+          h.vel = { x: 0, y: 0, z: 0 };
+          h.stuckTimer = 0;
+          h.unstickTimer = 0;
+          h.lastDistSq = Infinity;
+        }
+        return;
+      }
+      // The reveal: it stands and looks at whoever found the body, or
+      // triggered the cut, giving the party the timer's seconds to see it
+      // before it moves at all.
       const target = world.state.players.get(h.targetId);
       if (target !== undefined) faceToward(h, target.pos.x, target.pos.z);
       h.stateTimer -= dt;
