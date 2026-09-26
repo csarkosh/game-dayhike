@@ -29,17 +29,17 @@ describe("chunk props are drawn", () => {
     for (let i = -PROP_MESH_RADIUS_CHUNKS; i <= PROP_MESH_RADIUS_CHUNKS; i++) for (let j = -PROP_MESH_RADIUS_CHUNKS; j <= PROP_MESH_RADIUS_CHUNKS; j++) {
       for (const p of grid.chunkAt(cx + i, cz + j).props) if (!PROP_DRAWN_ELSEWHERE.has(p.material)) expected++;
     }
-    expect(expected).toBeGreaterThanOrEqual(3);              // car, post, sign
+    expect(expected).toBeGreaterThanOrEqual(2);              // car, kiosk
     expect(props.count()).toBe(expected);
-    const car = scene.meshes.find((m) => m.name.startsWith("prop_") && m.name.includes("crate"));
+    const car = scene.meshes.find((m) => m.name.startsWith("prop_") && m.name.endsWith("_car"));
     expect(car).toBeDefined();
     props.update(th.x + 20 * CHUNK_SIZE, th.z);              // far away: the pad's props go
-    expect(scene.meshes.filter((m) => m.name.startsWith("prop_") && m.name.includes("crate"))).toHaveLength(0);
+    expect(scene.meshes.filter((m) => m.name.startsWith("prop_") && m.name.endsWith("_car"))).toHaveLength(0);
     props.dispose();
     expect(scene.meshes.filter((m) => m.name.startsWith("prop_"))).toHaveLength(0);
   });
-  // The trailhead's props (pillar, crate) and clutter's rock sites are not
-  // near the world origin (measured for seed 12345: pillar/crate at chunk
+  // The trailhead's props (kiosk, car) and clutter's rock sites are not
+  // near the world origin (measured for seed 12345: kiosk/car at chunk
   // cx=-8, rock at [-1,-11]) — a single `update(0, 0)` window of radius
   // PROP_MESH_RADIUS_CHUNKS around the origin misses them. Tiling `update`
   // calls across the whole scan window, with a stride equal to the window's

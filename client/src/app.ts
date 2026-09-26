@@ -62,7 +62,8 @@ import { DEATH_LINE, END_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/register.js";
 import { signPosts } from "./sim/signs.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
-import { PROPS, propSite, type RoadProp } from "./sim/passes/trailhead.js";
+import { KIOSK_MATERIAL, kioskFacing, propSite, roadProp } from "./sim/passes/trailhead.js";
+import { signSites } from "./sim/placeNames.js";
 import { afterNextPaint } from "./game/paint.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
@@ -453,12 +454,14 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     const graph = variant.trailGraph?.(seed);
     const roadCenterX = variant.roadCenterX;
     if (register === null || graph === undefined || roadCenterX === undefined) return null;
-    const sign = propSite(graph, roadCenterX, seed, PROPS[1] as RoadProp);
-    // The face toward the pad: the sign stands SIGN_ROAD_Z along the road from the trailhead.
-    const facing = { dx: 0, dz: sign.z > graph.trailhead.z ? -1 : 1 };
+    const sign = propSite(graph, roadCenterX, seed, roadProp(KIOSK_MATERIAL));
+    const facing = kioskFacing(sign, graph.trailhead);
+    // The places the posts name: the summit where the body lies, and every
+    // pond and meadow, never under the missing hiker's own first name.
+    const hikerFirst = register.hiker.name.split(" ")[0] as string;
     return createSignMeshes(
       renderer.scene,
-      signPosts(graph, [{ name: "the summit", x: register.body.pos.x, z: register.body.pos.z }]),
+      signPosts(graph, signSites(seed, graph.features, hikerFirst, register.body.pos)),
       { x: sign.x, z: sign.z, facing, lines: ["MISSING", register.hiker.name, "Last seen on the summit trail."] },
       (x, z) => elevationAt(seed, x, z),
     );
