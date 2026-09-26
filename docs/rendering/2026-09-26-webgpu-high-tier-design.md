@@ -90,15 +90,24 @@ replaced `_computeHashCode` (§10). Babylon 9.18 recomputes the hash only by
 assigning `hashCode`, from the constructor and from the `instanceDivisor`
 setter when instancing flips; the accessor's setter keeps what Babylon assigns
 and its getter adds `byteOffset × 2^24`, so neither of those paths, nor any
-later direct assignment, can drop the term. The cache keeps its keys in a plain
-array, so a key above 2^31 is exact. Three canaries in
-`webgpuVertexBuffer.test.ts` say when a Babylon upgrade changes the ground:
-two plain vertex buffers at different offsets still hash alike; the cache still
-keys by `hashCode + (location << 7)`; and the hash is still recomputed by that
-assignment, from those two places only. The source scan of §10 lives in the
-same test file and is stricter: no other file under `client/src` makes a vertex
-buffer at all. Nothing on `main` calls the workaround yet; Task 7 is its first
-caller. Appendix A stays the draft as written, and nothing is filed.
+later direct assignment, can drop the term. The key stays exact because the
+engine's tree cache looks it up as a property of a plain object
+(`webgpuCacheRenderPipelineTree.js`), where an integer's string is exact below
+2^53, and a byte offset under WebGPU's default 2^28 buffer size keeps every key
+below 2^52 + 2^24. Four canaries in `webgpuVertexBuffer.test.ts` say when a
+Babylon upgrade changes the ground: two plain vertex buffers at different
+offsets still hash alike; the whole vertex-state key block is unchanged (so
+the fix Appendix A suggests, which keeps the key line and adds an entry, fails
+it too, and the test checks that it would); the tree still looks keys up on a
+plain object; and the hash is still recomputed by that assignment, from those
+two places only. The source scan of §10 lives in the same test file and is
+stricter: no other file under `client/src` makes a vertex buffer at all. Not
+covered: the grouping of consecutive attributes into one GPU buffer, which a
+mismatch of can turn either way by draw order, into a silent wrong read or a
+validation error; Task 7 carries the rule that avoids it. Nothing on `main`
+calls the workaround yet; Task 7 is its first caller. Appendix A stays the
+draft, with two claims corrected (the hash is public API, not read elsewhere;
+the grouping mismatch goes either way), and nothing is filed.
 
 The spike ran the game on Babylon's `WebGPUEngine` with every existing material
 and plugin, to measure a compute cull of the blade field, and found the engine
@@ -1173,8 +1182,10 @@ so meshes reading one buffer at different offsets share a pipeline
 > `effectiveByteOffset` into the pipeline's `GPUVertexAttribute.offset`. So the
 > cache returns a pipeline whose baked offset belongs to another mesh. Whether
 > consecutive attributes share one GPU buffer also shapes the vertex layout and
-> is not in the key either; a mismatch there looks to fail validation rather
-> than draw wrong data.
+> is not in the key either; a mismatch there goes one of two ways by draw
+> order: a mesh binding two buffers, drawn with a pipeline built for one, reads
+> its second attribute from its first buffer without an error; the reverse
+> fails validation.
 >
 > **Minimal reproduction** (a playground on the WebGPU engine):
 >
@@ -1215,7 +1226,7 @@ so meshes reading one buffer at different offsets share a pipeline
 > attribute shares the previous attribute's GPU buffer). Folding the offset into
 > `_computeHashCode()` would also work (an offset below the stride's 2,048-byte
 > maximum fits above the stride's bits, as `byteOffset * 2 ** 24`), but the hash
-> is used elsewhere, and the cache is where the offset matters.
+> is public API, and the cache is where the offset matters.
 >
 > **Workaround.** Replace the vertex buffer instance's `_computeHashCode` with one
 > that adds the offset term, and call it; setting it once is not enough, since
