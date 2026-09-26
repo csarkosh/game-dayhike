@@ -434,9 +434,11 @@ describe("a fork Hollow's emerge", () => {
 
   it("stuck on the way, it reveals where it stands after the stuck time and hunts from there", () => {
     // A wall a step ahead of the spawn, so the walk is nearly all stuck time:
-    // ten ticks to cover the 0.6 m to the wall, then the ninety-odd it takes
-    // the stuck timer to pass 1.5 s standing against it, and it reveals on
-    // tick 102 where it is, well short of the mouth, for the fork's second.
+    // ten ticks to cover the 0.6 m to the wall, one more that still reads as
+    // progress (the stuck check compares the last two pre-step positions, and
+    // tick 10's step moved it), then the 91 it takes the stuck timer to pass
+    // 1.5 s standing against it: 10 + 1 + 91, and it reveals on tick 102 where
+    // it is, well short of the mouth, for the fork's second.
     const w = world({ min: [1, 0, -5], max: [2, 4, 5], material: "concrete" });
     const p = spawnPlayer(w);
     p.pos = { x: 12, y: 0.9, z: 20 };

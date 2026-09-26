@@ -40,7 +40,7 @@
 | `client/src/sim/trailRoute.ts` | `guideWalk` visits no node twice. |
 | `client/src/sim/world.ts` | `World.cut: CutRecord \| null` (host-only, null until the flip; not cloned, not fingerprinted); `cloneWorldState` copies `emergeTo`. |
 | `client/src/sim/summit.ts` | Draws the guide on the flip; runs `stepCuts` each Chase tick before the end rule. |
-| `client/src/sim/hollow.ts` | `Emerge` with `emergeTo`, bounded; `spawnForkHollow`. |
+| `client/src/sim/hollow.ts` | `Emerge` with `emergeTo`, bounded; `spawnForkHollow`; `FORK_REVEAL_S` and `FORK_EMERGE_MAX_S` live here beside `SUMMIT_REVEAL_S`, so `cut.ts` depends on `hollow.ts` and never the reverse. |
 | `client/src/sim/types.ts` | `EnemyState.emergeTo`. |
 | `client/src/sim/director.ts`, `client/src/net/clientSession.ts` | Construct enemies with `emergeTo: null`. |
 | `client/src/game/hollowLook.ts` (new) | The Hollow's colours and roughness as knobs. |

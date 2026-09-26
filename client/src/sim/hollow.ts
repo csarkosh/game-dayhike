@@ -23,7 +23,6 @@ import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
 import { isOnCorridor, roadOffset } from "./containment.js";
 import { ROAD_CORRIDOR_HALF } from "./road.js";
-import { FORK_EMERGE_MAX_S, FORK_REVEAL_S } from "./cut.js";
 import {
   ENEMY_HALF,
   ENEMY_MAX_HEALTH,
@@ -41,6 +40,10 @@ export const HOLLOW_HUNT_SPEED = 6.3;
 export const HOLLOW_LOOK_FACTOR = 0.6;
 /** Seconds it stands still at the crest as it steps out, before the hunt. */
 export const SUMMIT_REVEAL_S = 2;
+/** Seconds a fork Hollow stands at the mouth of its branch, facing its trigger, before it hunts. */
+export const FORK_REVEAL_S = 1;
+/** Seconds a fork Hollow may spend walking to the mouth before it reveals where it stands. */
+export const FORK_EMERGE_MAX_S = 6;
 /** cos 20°: it must be near the centre of the view, not the edge. */
 export const HOLLOW_LOOK_COS = 0.9397;
 /** Metres from the eye within which looking counts. */
@@ -108,7 +111,7 @@ export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: n
 }
 
 /**
- * A Hollow stepping out of a closed branch (cut.ts): spawned at `at` in
+ * A Hollow stepping out of a closed branch (cut.ts `stepCuts`): spawned at `at` in
  * Emerge, it walks to `mouth` at the hunt speed, stands FORK_REVEAL_S there
  * facing `targetId`, then hunts them. The walk ends early, where it stands,
  * once it has been stuck STUCK_SECONDS or has walked FORK_EMERGE_MAX_S: a
@@ -372,8 +375,10 @@ function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number):
         // raw hunt speed — being looked at does not slow it, because this is
         // the reveal, not the hunt — while the timer counts down its bound.
         // Arrival, a stuck walk or the bound ends it where it stands, and the
-        // reveal's stillness starts from there, without the walk's stuck
-        // sidestep or momentum: it stops, and hunts from a standstill.
+        // reveal's stillness starts from there. The walk's end carries neither
+        // the stuck sidestep nor the walk's momentum into the reveal — a
+        // sidestep step can land on the very tick the bound trips — so it
+        // stops dead, and hunts from a standstill.
         h.stateTimer -= dt;
         walkToward(h, world, dt, h.emergeTo.x, h.emergeTo.z, HOLLOW_HUNT_SPEED);
         const arrived = horizontalDistSq(h.pos, h.emergeTo) <= HOLLOW_WAYPOINT_RADIUS * HOLLOW_WAYPOINT_RADIUS;

@@ -14,6 +14,7 @@ import { Outcome, Phase } from "./types.js";
 import type { World } from "./world.js";
 import { isOnCorridor } from "./containment.js";
 import { SUMMIT_REVEAL_S, spawnHollow } from "./hollow.js";
+import { drawGuide, stepCuts } from "./cut.js";
 import { ENEMY_HALF } from "./constants.js";
 
 /** Metres from the body within which a living player has found it: inside the 25 m crest disc. */
@@ -66,9 +67,16 @@ export function updateSafety(world: World): void {
 }
 
 /**
- * The find and the end, host only, at the TAIL of the tick: both are judged
- * on everything the tick has already settled, the deaths included. Safety is
- * not here — it is `updateSafety` above, which the same tick already ran.
+ * The find, the cut and the end, host only, at the TAIL of the tick: all
+ * three are judged on everything the tick has already settled, the deaths
+ * included. Safety is not here — it is `updateSafety` above, which the same
+ * tick already ran.
+ *
+ * The tick that finds the body steps the summit Hollow out and draws the
+ * guide (cut.ts), the one random draw of the chase; every Chase tick after it
+ * runs the cut, then the end rule. A player on the corridor is safe and
+ * triggers nothing, so once the end rule can fire there is nothing left for
+ * the cut to do: its Hollows only ever step out into a match still on.
  */
 export function stepSummit(world: World): void {
   const register = world.register;
@@ -85,9 +93,11 @@ export function stepSummit(world: World): void {
     if (who === null) return;
     state.phase = Phase.Chase;
     spawnHollow(world, emergePoint(world, register.body.pos, who.pos), who.id, SUMMIT_REVEAL_S);
+    world.cut = drawGuide(world);
     return;
   }
 
+  stepCuts(world);
   let out = 0, safe = 0;
   for (const p of state.players.values()) {
     if (dead(p)) continue;

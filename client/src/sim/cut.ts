@@ -9,20 +9,23 @@
  *
  * A closed branch is a Hollow, not a wall. The rules never remove trail; they
  * decide where the Hollows stand, and they are pure — the record is the only
- * state, and the Chase tick's trigger is the only thing that writes it.
+ * state, and the Chase tick's trigger (`stepCuts`) is the only thing that
+ * writes it. The fork Hollow's own timing (how long it walks, how long it
+ * stands) is hollow.ts's, with the summit Hollow's: this module depends on
+ * that one, never the other way.
  *
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot; the one
  * random draw is the guide's, from the world RNG on the discovery tick.
  * Every choice among equals goes to the lower edge index.
  */
-import type { Vec3 } from "./types.js";
+import type { PlayerState, Vec3 } from "./types.js";
 import { nextRandom } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailEdge, TrailGraph, TrailNode } from "./trail.js";
 import { TRAIL_CORRIDOR_HALF, segmentDistance } from "./trail.js";
 import { guideWalk, homeDistances, route } from "./trailRoute.js";
 import { isOnCorridor } from "./containment.js";
-import { horizontalDistSq } from "./hollow.js";
+import { horizontalDistSq, spawnForkHollow } from "./hollow.js";
 import { ENEMY_HALF } from "./constants.js";
 
 /** Metres from an uncut fork within which a living, unsafe player on one of its branches cuts it. */
@@ -35,10 +38,6 @@ export const FORK_SPAWN_CLEAR = 1;
 export const FORK_SPAWN_MIN = 2;
 /** Horizontal metres a spawn keeps from every living player. */
 export const FORK_SPAWN_PLAYER_CLEAR = 2;
-/** Seconds a fork Hollow stands at the mouth, facing its trigger, before it hunts. */
-export const FORK_REVEAL_S = 1;
-/** Seconds a fork Hollow may spend walking to the mouth before it reveals where it stands. */
-export const FORK_EMERGE_MAX_S = 6;
 /** Near-ties among a stray's ways home, in metres, are broken toward the one that meets the guide soonest. */
 export const GUIDE_REJOIN_SLACK = 60;
 /** Metres between samples along a branch's bed when placing a spawn. */
@@ -51,7 +50,12 @@ const FORK_SPAWN_STEP = 0.25;
 export type CutRecord = {
   /** Node path crest → pad (`guideWalk`), drawn on the discovery tick; no node twice. */
   guide: readonly number[];
-  /** Fork node → the neighbour node its open branch leads to, or -1 when nothing closed. A fork recorded here is judged once. */
+  /**
+   * Fork node → the neighbour node its open branch leads to, or -1 for a fork
+   * cut with no open branch: one standing on the corridor, or one where
+   * nothing but the arrival reaches the pad. A fork recorded here is judged
+   * once, whatever was closed.
+   */
   cuts: Map<number, number>;
   /** Edge indices closed so far: the residual graph is every other edge. */
   closed: Set<number>;
@@ -262,4 +266,74 @@ export function forkSpawn(world: World, fork: number, edge: number): Vec3 | null
   const x = a.x + ux * at, z = a.z + uz * at;
   const bed = world.ground !== null ? world.ground.heightAt(x, z) : a.h + (b.h - a.h) * (at / len);
   return { x, y: bed + ENEMY_HALF.y, z };
+}
+
+/** The living, unsafe player nearest `fork` within FORK_CUT_RADIUS and on one of its branches, ties to the lower id; null when none. */
+function triggerOf(world: World, graph: TrailGraph, fork: number): { player: PlayerState; arrival: number } | null {
+  const node = graph.nodes[fork] as TrailNode;
+  const reach = FORK_CUT_RADIUS * FORK_CUT_RADIUS;
+  let best: { player: PlayerState; arrival: number } | null = null;
+  let bestSq = Infinity;
+  for (const p of world.state.players.values()) {
+    if (p.health <= 0 || p.safe) continue;
+    const sq = horizontalDistSq(p.pos, node);
+    if (sq > reach) continue;
+    if (best !== null && (sq > bestSq || (sq === bestSq && p.id > best.player.id))) continue;
+    const arrival = triggerEdge(graph, fork, p.pos.x, p.pos.z);
+    if (arrival === -1) continue;
+    best = { player: p, arrival };
+    bestSq = sq;
+  }
+  return best;
+}
+
+/**
+ * The cut, host only, each Chase tick (summit.ts): every uncut fork is
+ * judged once, the first tick a living, unsafe player is within
+ * FORK_CUT_RADIUS of it and on one of its branches (`triggerEdge`). The
+ * nearest such player (ties to the lower id) is the trigger; their arrival
+ * edge is never closed, one more branch stays open (`openBranch`), and every
+ * other branch not already closed closes with a Hollow stepping out of it
+ * (`forkSpawn`, `spawnForkHollow`) that walks to the fork and hunts the
+ * trigger. A fork on the corridor — safe ground, where nobody is hunted —
+ * or one with nothing to close is recorded with -1 and closes nothing; a
+ * branch with no room for a Hollow stays open and is not counted closed.
+ *
+ * Forks are judged in ascending node order, so two reached on the same tick
+ * resolve the same way on every machine, and the second sees the first's
+ * closures in its residual graph. The Hollows spawn here, at the tail of the
+ * tick, and take their first step on the next.
+ */
+export function stepCuts(world: World): void {
+  const graph = world.trail;
+  const record = world.cut;
+  if (graph === null || record === null) return;
+  for (const fork of graph.forks) {
+    if (record.cuts.has(fork)) continue;
+    const trigger = triggerOf(world, graph, fork);
+    if (trigger === null) continue;
+    const node = graph.nodes[fork] as TrailNode;
+    if (isOnCorridor(world, node.x, node.z)) {
+      record.cuts.set(fork, -1);
+      continue;
+    }
+    const open = openBranch(graph, record, fork, trigger.arrival);
+    if (open === -1) {
+      record.cuts.set(fork, -1);
+      continue;
+    }
+    const openEdge = graph.edges[open] as TrailEdge;
+    record.cuts.set(fork, openEdge.a === fork ? openEdge.b : openEdge.a);
+    const bed = world.ground !== null ? world.ground.heightAt(node.x, node.z) : node.h;
+    const mouth: Vec3 = { x: node.x, y: bed + ENEMY_HALF.y, z: node.z };
+    for (let ei = 0; ei < graph.edges.length; ei++) {
+      if (ei === trigger.arrival || ei === open || record.closed.has(ei)) continue;
+      const e = graph.edges[ei] as TrailEdge;
+      if (e.a !== fork && e.b !== fork) continue;
+      const at = forkSpawn(world, fork, ei);
+      if (at === null) continue;
+      spawnForkHollow(world, at, mouth, trigger.player.id);
+      record.closed.add(ei);
+    }
+  }
 }
