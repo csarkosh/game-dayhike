@@ -139,39 +139,38 @@ crop.
 
 ### 3.1 Fullness
 
-The references (near-grass verification §7.1 and §8, build A):
+Measured 2026-09-26 on the control, `main` at `0b957a6`, one page per pose,
+zero console errors; against the references it is held to (near-grass
+verification §7.1 and §8, build A):
 
-| pose | near mean | mid mean | lum ratio | near cover | mid cover | cover ratio |
-| --- | --- | --- | --- | --- | --- | --- |
-| canopy | 0.0222 | 0.0178 | 1.25 (1.248) | 0.459 | 0.734 | 0.62 |
-| meadow | 0.0284 | 0.0296 | 0.96 | 0.472 | 0.503 | 0.94 |
+| pose | build | near mean | mid mean | lum ratio | near cover | mid cover | cover ratio |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| canopy | reference | 0.0222 | 0.0178 | 1.25 (1.248) | 0.459 | 0.734 | 0.62 (0.625) |
+| canopy | `0b957a6` | 0.0222 | 0.0178 | 1.25 (1.247) | 0.453 | 0.732 | **0.62** (0.619) |
+| meadow | reference | 0.0284 | 0.0296 | 0.96 | 0.472 | 0.503 | 0.94 (0.939) |
+| meadow | `0b957a6` | 0.0284 | 0.0295 | 0.96 (0.962) | 0.473 | 0.506 | **0.94** (0.935) |
 
-Re-read with the crops and thresholds above from build A's stills, the arithmetic
-reproduces them exactly (canopy 0.459 / 0.734, cover ratio 0.625, lum ratio
-1.248; meadow 0.472 / 0.503, 0.939, 0.961). A fresh page on `0b957a6` is still
-to be taken: `main` merged work beside the near grass (the watcher, the Hollow's
-fork cut) after build A, so its stills are measured before any gate compares
-with it, and a cover ratio more than 0.02 off those above stops the gate until
-the page, the pose or the crop is found.
+The control reproduces the references to within 0.01 in every figure: the work
+`main` merged beside the near grass after build A (the watcher, the Hollow's
+fork cut) does not move them. The gates read the fresh figures as the control.
 
-**Layer isolation**, build A (near-grass verification §7.2), with the meadow
-pose and the far crop added:
+**Layer isolation** on the control, with the far crop:
 
 | pose | layers drawn | near mean | near cover | mid mean | mid cover | far mean | far cover |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| canopy | all | 0.0222 | 0.459 | 0.0178 | 0.734 | — | — |
-| canopy | no blades | 0.0261 | 0.301 | 0.0181 | 0.728 | — | — |
-| canopy | no cards | 0.0263 | 0.274 | 0.0632 | 0.010 | — | — |
+| canopy | all | 0.0222 | 0.453 | 0.0178 | 0.732 | — | — |
+| canopy | no blades | 0.0261 | 0.301 | 0.0180 | 0.730 | — | — |
+| canopy | no cards | 0.0263 | 0.277 | 0.0631 | 0.010 | — | — |
 | canopy | bare ground | 0.0342 | 0.000 | 0.0703 | 0.000 | — | — |
-| meadow | all | 0.0284 | 0.472 | 0.0296 | 0.503 | 0.0620 | 0.032 |
-| meadow | no blades | 0.0291 | 0.373 | 0.0297 | 0.497 | 0.0616 | 0.033 |
-| meadow | no cards | 0.0329 | 0.264 | 0.0744 | 0.000 | 0.0878 | 0.000 |
-| meadow | bare ground | 0.0368 | 0.011 | 0.0753 | 0.000 | 0.0897 | 0.000 |
+| meadow | all | 0.0284 | 0.473 | 0.0295 | 0.506 | 0.0621 | 0.030 |
+| meadow | no blades | 0.0291 | 0.370 | 0.0297 | 0.489 | 0.0616 | 0.037 |
+| meadow | no cards | 0.0328 | 0.251 | 0.0743 | 0.000 | 0.0878 | 0.000 |
+| meadow | bare ground | 0.0368 | 0.012 | 0.0753 | 0.000 | 0.0897 | 0.000 |
 
 The far crop at the meadow pose is mostly lit ground under the last cards: the
-cards take its mean from 0.088 to 0.062 and leave 3 % of it below the threshold.
-Step 2 is held to that mean within ±10 % and that cover within ±0.05
-(design §6.6).
+cards take its mean from 0.088 to 0.062 and leave 3 % of it below the threshold
+(build A's stills give 0.0620 and 0.032). Step 2 is held to that mean within
+±10 % and that cover within ±0.05 (design §6.6).
 
 ### 3.2 Where the frame goes
 
@@ -248,14 +247,55 @@ reliable in bold; a second figure is the long-page run):
 
 ## 4. Confirmation
 
-One short-page run on `main` (`0b957a6`) at the canopy pose, native pixels, by
-the toggle method of §1, confirms the three figures the step 1 bar rests on,
-each against its profile band: **hide blades** −1.36 ± 0.20, **hide grass-class
-cards** −0.52 ± 0.12, **filter all three to the frustum** −0.82 ± 0.14, with the
-draw calls (about 160) and the JS frame time recorded. A figure outside its band
-by more than 0.3 ms is run on two more pages; if it stays outside, this section
-records the new figure and design §5.4's arithmetic is redone with it before
-step 1's gate reads.
+Measured 2026-09-26 on the control, `main` at `0b957a6`, at the canopy pose,
+native pixels, by the toggle method of §1: three pages, three conditions each in
+a rotated order, six cycles of 1.5 s windows, a discarded warm-up page before
+each page and 60 s of rest between them. The browser was started once for the
+run rather than once per page. Renderer `ANGLE (Apple, ANGLE Metal Renderer:
+Apple M4, Unspecified Version)`, as every earlier gate; the engine rendered
+1200 × 2029; zero console errors.
 
-Not yet taken; this section is filled when it is, with the fresh fullness
-stills of §3.1.
+| condition | page 1 | page 2 | page 3 | mean | profile | inside the band |
+| --- | --- | --- | --- | --- | --- | --- |
+| hide blades | −1.11 ± 0.04 | −1.35 ± 0.16 | −1.14 ± 0.03 | **−1.20** | −1.36 ± 0.20 | yes, at its edge |
+| hide grass-class cards | −0.42 ± 0.04 | −0.44 ± 0.04 | −0.42 ± 0.04 | **−0.43** | −0.52 ± 0.12 | yes |
+| filter all three | −0.67 ± 0.09 | −0.51 ± 0.06 | −0.57 ± 0.09 | **−0.58** | −0.82 ± 0.14 | no: 0.10 short of it |
+
+The same pages, the "off" windows:
+
+| | mean | range |
+| --- | --- | --- |
+| frame (ms) | 23.59 | 23.48–23.79 |
+| p95 (ms) | 25.8 | 25.6–26.2 |
+| JS per frame (ms) | 4.14 | 3.82–4.38 |
+| active-mesh evaluation (ms) | 0.68 | 0.61–0.75 |
+| draw phase, JS (ms) | 1.68 | 1.45–1.93 |
+| draw calls | 164 | 160–166 |
+| GPU timer (ms, a sign only) | 43.4 | 43.0–44.0 |
+
+The instance counts are the profile's to the instance: 2,674 near and 8,719 far
+meadow cards, 6,131 blade cells, 4,559 grass-class cards, 2,483 litter clumps;
+the filter found 9,850, 5,068 and 3,872 of them outside the frustum.
+
+**Read.** The machine runs the pose half a millisecond lower than the profile
+did (a floor of 23.5 ms, not 24.0), and every layer's cost is lower with it.
+The blades and the grass class sit inside their bands, low. The filter's
+saving does not: on three pages it is **0.58 ± 0.08 ms**, against the
+profile's 0.82 ± 0.14, within the plan's 0.3 ms tolerance of the band but
+outside the band itself on all three. The filter's "on" windows add no JS
+(+0.00 to +0.12 ms, inside the pages' noise) and no draw call.
+
+**Design §5.4 redone with it.** Split by the confirmed hide costs (1.20 and
+0.43 ms, 74 % and 26 %) and scaled by the share the filter as built culls
+(6° and 1.5 m: blades 0.737, grass class 0.809) against the exact frustum's
+(0.827 and 0.849):
+
+| layer | share of 0.58 | culled, as built / exact | expected, native |
+| --- | --- | --- | --- |
+| blades | 0.43 | 0.737 / 0.827 | 0.38 |
+| grass class | 0.15 | 0.809 / 0.849 | 0.14 |
+| together | 0.58 ± 0.08 | | **0.52** (0.45–0.59) |
+
+Step 1a alone is expected to fall about 0.3 ms short of the 0.8 ms bar. Its
+gate measures it; what can close the rest is step 1b (the meadow's buckets, if
+worth 0.15 ms) and step 2's far trim.
