@@ -6,6 +6,8 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
+import type { TerrainTexturePlugin } from "../../src/game/terrainTexture.js";
 
 // `terrainTexture.ts`'s plugin constructor calls the real `loadGroundArrays`
 // whenever it isn't handed a factory, and `renderer.ts`'s own
@@ -600,6 +602,39 @@ describe("the wildlife director goes quiet near the Hollow", () => {
       renderer.dispose();
     }
   }, 60000);
+});
+
+describe("the sward floor follows the blade field's tiers", () => {
+  // A real forest and a real renderer per tier, then one bind of the shared
+  // terrain material, reading the pull's strength back from terrainSward.w.
+  const LEVEL: Level = { id: "sward-tier-test", brushes: [], playerSpawns: [], enemySpawns: [] };
+  const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
+
+  function boundSward(tier: "low" | "medium" | "high"): { sward: number[]; band: number[] } {
+    const renderer = createRenderer(FAKE_CANVAS, LEVEL, createForest(388817), { tier });
+    try {
+      const scene = EngineStore.LastCreatedScene!;
+      const plugin = scene.getMaterialByName("mat_terrain")!.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin;
+      const values: Record<string, number[]> = {};
+      const ubo = {
+        updateFloat: (name: string, x: number) => { values[name] = [x]; },
+        updateFloat2: (name: string, x: number, y: number) => { values[name] = [x, y]; },
+        updateFloat3: (name: string, x: number, y: number, z: number) => { values[name] = [x, y, z]; },
+        updateFloat4: (name: string, x: number, y: number, z: number, w: number) => { values[name] = [x, y, z, w]; },
+        setTexture: () => {},
+      };
+      plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+      return { sward: values.terrainSward!, band: values.terrainSwardBand! };
+    } finally {
+      renderer.dispose();
+    }
+  }
+
+  it("binds no pull on the low tier, which draws no blades, and the full pull on the others", () => {
+    expect(boundSward("low")).toEqual({ sward: [0.05, 0.065, 0.03, 0], band: [0.05, 0.5, 12, 18] });
+    expect(boundSward("medium")).toEqual({ sward: [0.05, 0.065, 0.03, 0.6], band: [0.05, 0.5, 12, 18] });
+    expect(boundSward("high")).toEqual({ sward: [0.05, 0.065, 0.03, 0.6], band: [0.05, 0.5, 12, 18] });
+  }, 60_000);
 });
 
 describe("writeListenerPose", () => {

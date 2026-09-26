@@ -14,7 +14,7 @@ import {
 import { FEATURE_PAINT_MAX } from "../../src/game/featurePaint.js";
 import {
   DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
-  HORIZON, HORIZON_MAX, TUFT_ALBEDO,
+  HORIZON, HORIZON_MAX, TUFT_ALBEDO, swardWeight,
 } from "../../src/game/groundHexParams.js";
 import type { Feature } from "../../src/sim/features.js";
 import type { TrailGraph } from "../../src/sim/trail.js";
@@ -830,6 +830,35 @@ describe("the grass floor", () => {
     const { writes } = makeBoundPlugin();
     expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0.6]);
     expect(writes.terrainSwardBand).toEqual([0.05, 0.5, 12, 18]);
+  });
+
+  it("binds the pull's strength as 0 while the sward is off, and keeps the rest bound", () => {
+    const { plugin, ubo, writes } = makeBoundPlugin();
+    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0.6]);
+    plugin.setSward(false);
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0]);
+    expect(writes.terrainSwardBand).toEqual([0.05, 0.5, 12, 18]);
+    plugin.setSward(true);
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(writes.terrainSward).toEqual([0.05, 0.065, 0.03, 0.6]);
+  });
+
+  it("rebuilds swardWeight from the bound uniforms, component for component as the GLSL reads them", () => {
+    const { writes } = makeBoundPlugin();
+    const [, , , max] = writes.terrainSward as [number, number, number, number];
+    const [coverLo, coverHi, fadeLo, fadeHi] = writes.terrainSwardBand as [number, number, number, number];
+    // GLSL smoothstep, clamped.
+    const smooth = (e0: number, e1: number, x: number) => {
+      const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+      return t * t * (3 - 2 * t);
+    };
+    // swardW = terrainSward.w * smoothstep(band.x, band.y, cover) * (1 - smoothstep(band.z, band.w, dist))
+    const glsl = (cover: number, dist: number) => max * smooth(coverLo, coverHi, cover) * (1 - smooth(fadeLo, fadeHi, dist));
+    const points: [number, number][] = [[1, 5], [0.3, 5], [0.2, 14], [0.8, 16.5], [0.5, 12], [0.04, 3], [1, 19]];
+    for (const [cover, dist] of points) {
+      expect(Math.abs(glsl(cover, dist) - swardWeight(cover, dist)), `cover ${cover}, dist ${dist}`).toBeLessThan(1e-12);
+    }
   });
 
   it("binds terrainWet from setWet, unconditionally, clamped to [0, 1]", () => {

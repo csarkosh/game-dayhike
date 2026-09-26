@@ -38,7 +38,7 @@ import { createAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
-import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainWetness } from "./terrainTexture.js";
+import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
 import type { WeatherParams } from "./weather.js";
 import { wetSurfaceUnder } from "./weather.js";
 import { tierFor, type QualityTier } from "./quality.js";
@@ -795,6 +795,10 @@ export function createRenderer(
   // rebuilds on its own 1 m crossing and draws over the meadow's near cards
   // as detail rather than taking their place.
   const bladeMeshes = forest !== null && tier !== "low" ? createBladeMeshes(scene, forest.seed, { quality: tier }) : null;
+  // The terrain's sward floor is the shaded ground between those blades, so it
+  // runs exactly where they are drawn: off on the low tier. Without a forest
+  // there is no clipmap, and the terrain material is not built for it.
+  if (forest !== null) setTerrainSward(scene, terrainMaterialFor(scene, "terrain"), bladeMeshes !== null);
   // The near field of dead leaves, twigs and small branches, on the same
   // tiers as the blades beside it: what the grass field thins out, this fills
   // in, so the ground reads full rather than bare. Low tier draws neither.

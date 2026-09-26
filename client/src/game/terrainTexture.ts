@@ -596,6 +596,7 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   private _trailIndex: RawTexture | null = null;
   private _trailInfo: [number, number, number, number] = [0, 0, 0, 0];
   private _wet = 0;
+  private _swardOn = true;
   private _featureTex: RawTexture | null = null;
   private _featureInfo: [number, number, number, number] = [0, 0, 0, 0];
 
@@ -680,6 +681,11 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
 
   /** The weather's wetness in [0, 1]: the trail's core darkens, glosses and puddles with it. */
   setWet(wetness: number): void { this._wet = Math.min(1, Math.max(0, wetness)); }
+
+  /** Whether the sward floor's pull runs: only where the blade field is drawn,
+   * since the pull stands for the shaded ground between its blades. Off binds
+   * the pull's strength as 0; the colour and bands stay bound. */
+  setSward(on: boolean): void { this._swardOn = on; }
 
   /** Turn feature paint on for this world: bake the (x, z, radius, kind) +
    * treeline table once. Idempotent, same story as `enableRoad`/`enableTrail`. */
@@ -844,7 +850,7 @@ uniform vec4 terrainSwardBand;
     uniformBuffer.updateFloat("terrainMacroOn", 1);
     uniformBuffer.updateFloat3("terrainHorizon", HORIZON[0], HORIZON[1], HORIZON_MAX);
     uniformBuffer.updateFloat3("terrainTuft", TUFT_ALBEDO.r, TUFT_ALBEDO.g, TUFT_ALBEDO.b);
-    uniformBuffer.updateFloat4("terrainSward", SWARD_FLOOR.r, SWARD_FLOOR.g, SWARD_FLOOR.b, SWARD_MAX);
+    uniformBuffer.updateFloat4("terrainSward", SWARD_FLOOR.r, SWARD_FLOOR.g, SWARD_FLOOR.b, this._swardOn ? SWARD_MAX : 0);
     uniformBuffer.updateFloat4("terrainSwardBand", SWARD_COVER[0], SWARD_COVER[1], SWARD_FADE[0], SWARD_FADE[1]);
     uniformBuffer.updateFloat("terrainWet", this._wet);
     uniformBuffer.setTexture("terrainGrass", this._grass);
@@ -1037,6 +1043,17 @@ export function enableTrailPaint(scene: Scene, material: PBRMaterial, seed: numb
 export function setTerrainWetness(_scene: Scene, material: PBRMaterial, wetness: number): void {
   const plugin = material.pluginManager?.getPlugin("TerrainTexture") as TerrainTexturePlugin | undefined;
   plugin?.setWet(wetness);
+}
+
+/**
+ * Turn the sward floor's pull on or off: on where the blade field is drawn,
+ * off on a tier that draws no blades, so the floor there keeps its own
+ * colour under the cards. Defensive on a bare material, like
+ * `setTerrainWetness`.
+ */
+export function setTerrainSward(_scene: Scene, material: PBRMaterial, on: boolean): void {
+  const plugin = material.pluginManager?.getPlugin("TerrainTexture") as TerrainTexturePlugin | undefined;
+  plugin?.setSward(on);
 }
 
 /**
