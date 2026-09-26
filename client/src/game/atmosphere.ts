@@ -131,9 +131,11 @@ function gradientTexels(gradient: Rgb[]): Uint8Array {
  * Registers the plugin factory. MUST run before any PBR material exists —
  * RegisterMaterialPlugin only reaches materials created afterwards. The
  * factory declines non-PBR materials (sky, mist, particles) by returning null,
- * and declines the Hollow's PBR material by name: it keeps fog off, so it never
- * emits the fog line the anchor above rewrites, and a plugin waiting on that
- * line would never let it compile (entityViews.ts says why fog stays off).
+ * and declines the Hollow's PBR material by name: it keeps fog off, and the
+ * plugin's spliced code reads `vFogColor`, which Babylon declares only while
+ * the FOG define is set, so with the plugin attached that material would fail
+ * to compile on an undeclared identifier (entityViews.ts says why fog stays
+ * off).
  *
  * The gradient is a 256x1 RGBA8 strip in LINEAR space (the grade pass
  * tone-maps after it); the finish pass's dither hides its 8-bit steps.

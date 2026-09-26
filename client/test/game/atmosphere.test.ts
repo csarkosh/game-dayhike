@@ -49,17 +49,18 @@ describe("createAtmosphere", () => {
     expect(std.pluginManager?.getPlugin("Atmosphere") ?? null).toBeNull();
   });
 
-  // The Hollow's material keeps fog off, so it never emits the fog line the
-  // plugin rewrites; a plugin waiting on that line would never let the
-  // material compile. The factory leaves it alone by name.
+  // The Hollow's material keeps fog off, and the plugin's spliced code reads
+  // `vFogColor`, declared only while FOG is set, so the plugin would stop it
+  // compiling. The factory leaves it alone by name; that null is the rule.
   it("leaves the Hollow's PBR material alone and attaches to any other", async () => {
     const hollow = new PBRMaterial("mat_hollow", scene);
     hollow.fogEnabled = false;
     const other = new PBRMaterial("mat_other", scene);
     expect(hollow.pluginManager?.getPlugin("Atmosphere") ?? null).toBeNull();
     expect(other.pluginManager?.getPlugin("Atmosphere")).toBeTruthy();
-    // And, with the plugin registered, the fog-off material still readies
-    // (NullEngine compiles no GLSL: this is the pipeline, not the GPU).
+    // And, with the plugin registered, the fog-off material still readies.
+    // NullEngine compiles no GLSL, so this guards the material's own pipeline,
+    // not the skip: the null above is what pins the skip.
     const box = CreateBox("hollow_box", {}, scene);
     box.material = hollow;
     await hollow.forceCompilationAsync(box);

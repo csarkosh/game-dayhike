@@ -88,10 +88,10 @@ export class EntityViews {
     // Fog stays off so it remains a silhouette at any distance in mist,
     // findable in hindsight from far off. That is also why the Atmosphere
     // plugin above must leave this one material alone (it declines it by
-    // name): the plugin rewrites the fog line through a fixed anchor in
-    // Babylon's own fog code, and a material with `fogEnabled = false` never
-    // emits that line, so the anchor never matches and the plugin's effect
-    // never finishes compiling: the material silently never draws.
+    // name): the plugin's spliced shader code reads Babylon's `vFogColor`,
+    // which the shader declares only while the material's FOG define is set.
+    // With fog off the fragment shader fails on an undeclared identifier and
+    // the material silently never draws.
     this.hollowMaterial = new PBRMaterial(HOLLOW_MATERIAL, scene);
     this.hollowMaterial.albedoColor = new Color3(HOLLOW_ALBEDO.r, HOLLOW_ALBEDO.g, HOLLOW_ALBEDO.b);
     this.hollowMaterial.emissiveColor = new Color3(HOLLOW_EMISSIVE.r, HOLLOW_EMISSIVE.g, HOLLOW_EMISSIVE.b);
