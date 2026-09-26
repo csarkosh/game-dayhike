@@ -38,6 +38,11 @@
 | `client/test/game/clutterMeshes.test.ts`, `clutterField.test.ts`, `bladeField.test.ts` | 2, 4 | Filter gone, in-band, seam literals |
 | `client/test/game/groundHexParams.test.ts`, `clipmap.test.ts`, `terrainTexture.test.ts` | 3 | Constants, cover channel, attribute, uniforms, the pull's GLSL |
 | `client/test/game/bladeClump.test.ts` | 4B, 5 | Counts, budget, albedo |
+| `client/src/sim/clutter.ts` | 7 | `CLUTTER_GRASS_CANOPY_FLOOR` 0.5 → 0.75 (design §11; the level id moves) |
+| `client/src/game/wildlifeField.ts` | 7 | `RABBIT_GRASS_FLOOR` 0.55 → 0.95 |
+| `client/src/game/groundHexParams.ts` | 7 | `SWARD_COVER`'s comment |
+| `client/test/sim/clutter.test.ts`, `groundGradient.test.ts` | 7 | The floor, the closed-canopy and open-ground pins, the census rows and `passHash` |
+| `client/test/game/clutterField.test.ts`, `clutterMeshes.test.ts`, `clipmap.test.ts`, `duffField.test.ts`, `wildlifeField.test.ts` | 7 | The card counts at both poses; the literals that read the closed canopy's grass or duff |
 
 ---
 
@@ -710,3 +715,174 @@ fullness at both poses against main, the frame cost and the walk.
 <trailers>
 EOF
 ```
+
+---
+
+### Task 7: Three quarters of the sward under the canopy (design §11)
+
+Taken after Task 3's gate left the canopy pose at a cover ratio of 0.41 and
+steps 3 and 4 were ruled out for it (verification §6.6). This task is the one
+exception to the first Global Constraint: it changes a file under
+`client/src/sim/`, and the level id moves. Every other constraint holds.
+
+**Files:**
+- Modify: `client/src/sim/clutter.ts` (`CLUTTER_GRASS_CANOPY_FLOOR` and its comment)
+- Modify: `client/src/game/wildlifeField.ts` (`RABBIT_GRASS_FLOOR` and its comment)
+- Modify: `client/src/game/groundHexParams.ts` (`SWARD_COVER`'s comment only)
+- Test: `client/test/sim/clutter.test.ts`, `client/test/sim/groundGradient.test.ts`, `client/test/game/clutterField.test.ts`, `client/test/game/clutterMeshes.test.ts`, `client/test/game/clipmap.test.ts`, `client/test/game/duffField.test.ts`, `client/test/game/wildlifeField.test.ts`, `client/test/game/groundHexParams.test.ts` (a comment)
+
+**Interfaces:**
+- Consumes: `groundCover`, `collectClutter`, `wildlifeUnitInCell`.
+- Produces: under a closed canopy (ρ ≥ 0.85), with patch 1, `groundCover` returns grass 0.9375 and duff 0.375 (were 0.5 and 2/3). Where ρ ≤ 0.4 nothing changes.
+
+- [ ] **Step 1: Pin open ground before the change**
+
+`client/test/sim/clutter.test.ts`, in `describe("groundCover")`, a test that passes on the current code and must still pass after it:
+
+```ts
+  it("leaves open ground to the bit whatever the canopy floor", () => {
+    // Where rho <= CANOPY_LO the canopy factor is exactly 1, so the floor
+    // never enters. Seed atmo, beside a meadow trail: a point off the
+    // saturated 1.5, then every open point of a 140 m square.
+    const seed = 627994160;
+    const s = elevationSampleAt(seed, 210, 86);
+    expect(forestDensity(seed, 210, 86, s)).toBeLessThanOrEqual(0.4);
+    const c = groundCover(seed, 210, 86, s);
+    expect(c.grass).toBe(0.8084537679893669);
+    expect(c.duff).toBe(0.0691546232010633);
+    let n = 0, grass = 0, duff = 0;
+    for (let x = 188; x < 328; x += 2) for (let z = 50; z < 190; z += 2) {
+      const p = elevationSampleAt(seed, x, z);
+      if (forestDensity(seed, x, z, p) > 0.4) continue;
+      const g = groundCover(seed, x, z, p);
+      n++; grass += g.grass; duff += g.duff;
+    }
+    expect(n).toBe(1232);
+    expect(grass).toBe(375.3656473161681);
+    expect(duff).toBe(39.97600562428079);
+  }, 30_000);
+```
+
+`client/test/game/clutterField.test.ts`, the meadow pose's cards (which the
+change must not move) beside the canopy pose's (which it must):
+
+```ts
+  it("draws the canopy pose's sward at three quarters and leaves the meadow pose's alone", () => {
+    const canopy = collectClutter(627994160, 123, -105.5)[CLUTTER_MEADOW]!;
+    expect([canopy.near.length, canopy.far.length]).toEqual([2674, 8719]);
+    const meadow = collectClutter(627994160, 369, -855)[CLUTTER_MEADOW]!;
+    expect([meadow.near.length, meadow.far.length]).toEqual([3168, 10166]);
+  }, 30_000);
+```
+
+Run `cd client && npx vitest run test/sim/clutter.test.ts -t "open ground"`:
+PASS on the current code (the before-pin). The clutterField test fails on the
+canopy counts (1,400 / 4,619).
+
+- [ ] **Step 2: Write the failing tests**
+
+`client/test/sim/clutter.test.ts`:
+- `"exports the spec's constants…"`: `expect(CLUTTER_GRASS_CANOPY_FLOOR).toBe(0.75);`
+- `"keeps half the sward under a closed canopy…"` becomes `"keeps three quarters of the sward's edge under a closed canopy, and the duff yields to it"`: the same cell, seed 1 at (0, 168); `expect(c.grass).toBe(0.9375)` and `expect(c.duff).toBe(0.375)`, the comment saying the edge product is the floor, 0.75, which passes the boost's start, so the boost adds `0.5 · smoothstep(0.5, 1, 0.75)` = 0.25 and the grass is 0.75 × 1.25; the duff is `1 − 0.9375 / 1.5`. Before the change these read 0.5 and 0.6666666666666667.
+- a new test at the canopy pose, seed 627994160 at (123, −105.5): `forestDensity` 1, grass 0.9375, duff 0.375.
+- `"boosts only inside…"` becomes `"lifts a closed canopy's grass by the boost's first quarter and no further"`: every dense point's grass ≤ 0.9375 (literal, + 1e-9).
+
+`client/test/game/duffField.test.ts`: the plateau at `CAM` is 0.375 (literal;
+the derivation `1 − FLOOR / BOOST` no longer holds once the boost engages), the
+one exception (460, −615) reads 0.38563991224989613, and the cell at (400, −484)
+0.20112063523691187 (were 2/3, 0.6621091594767639, 0.40994507745996644); that
+cell's bounds move from (0.2, 0.8) to (0.1, 0.3).
+
+`client/test/game/clipmap.test.ts`: of seed 0x717e's ring 0, vertex (102, 4)
+is under a closed canopy, 0.5 → 0.9375, and vertex (60, 0) under a thinning
+one, 0.3087129490878816 → 0.4630694091320038.
+
+`client/test/game/clutterMeshes.test.ts`: `collectClutter(1, 35, 21335)`'s
+meadow near count 2800 → 2801.
+
+`client/test/sim/groundGradient.test.ts`: the census rows grass (2491 →
+4089, hash −967803690) and flower (586 → 958, hash 1295794979), each with a
+dated comment; `passHash` 923719637 → 1907808213, with an entry in the
+running commentary: `CLUTTER_GRASS_CANOPY_FLOOR` 0.5 → 0.75 is a
+`CLUTTER_TUNABLES` value, so registryDigest moves; probeDigest does not (no
+pass emits a collider from the grass); a peer on the old floor scatters grass
+differently under every closed canopy, so an old client cannot join a new host,
+deliberately.
+
+`client/test/game/wildlifeField.test.ts`: `RABBIT_GRASS_FLOOR` pinned at 0.95
+in the rabbit census test, whose comment gains the re-measure (1,472 / 1,392 /
+1,172); the band is unchanged, and at 0.55 it fails (4,084 / 4,576 / 3,158).
+
+Run: `cd client && npx vitest run test/sim/clutter.test.ts test/sim/groundGradient.test.ts test/game/clutterField.test.ts test/game/clutterMeshes.test.ts test/game/clipmap.test.ts test/game/duffField.test.ts`
+Expected: FAIL on every literal above except the open-ground pin.
+
+- [ ] **Step 3: Implement**
+
+`client/src/sim/clutter.ts`: `export const CLUTTER_GRASS_CANOPY_FLOOR = 0.75;`,
+the comment: the forest floor keeps three quarters of its sward's edge under
+the densest canopy, which the interior boost lifts to 0.9375 there, and the
+litter fills the rest.
+
+`client/src/game/wildlifeField.ts`: `RABBIT_GRASS_FLOOR = 0.95`, the comment:
+the grass under a closed canopy now reaches 0.9375, so the floor sits just
+above that; at 0.55 the census rose to 4,084 / 4,576 / 3,158 units, most under
+closed canopy.
+
+`client/src/game/groundHexParams.ts`: `SWARD_COVER`'s comment says the pull is
+full from half cover; it no longer names the canopy floor.
+
+- [ ] **Step 4: Run to verify they pass**
+
+The files of Step 2 plus `wildlifeField.test.ts`, `bladeField.test.ts`,
+`bladeMeshes.test.ts`, `duffMeshes.test.ts`, `terrainTexture.test.ts`,
+`groundHexParams.test.ts`: all pass. `npm run typecheck`; `npx eslint` on the
+touched files; the full suite.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add client/src/sim/clutter.ts client/src/game/wildlifeField.ts client/src/game/groundHexParams.ts client/test/sim/clutter.test.ts client/test/sim/groundGradient.test.ts client/test/game/clutterField.test.ts client/test/game/clutterMeshes.test.ts client/test/game/clipmap.test.ts client/test/game/duffField.test.ts client/test/game/wildlifeField.test.ts client/test/game/groundHexParams.test.ts
+git commit -F - <<'EOF'
+feat: keep three quarters of the sward under the canopy
+
+## What
+
+<the canopy pose's miss, the floor's move, what it gives under a closed
+canopy (grass 0.9375, duff 0.375), the rabbits, the level id>
+
+## How
+
+- `client/src/sim/clutter.ts` — …
+- …
+
+<trailers>
+EOF
+```
+
+- [ ] **Step 6: Gate**
+
+Design §11.5, by the method of verification §1 and §4.5, on the branch
+against `main`:
+
+- **Fullness** at the canopy pose, thresholds unchanged (0.02058), two page
+  loads; the layer isolation. Bar: cover ratio ≥ 0.8, luminance ratio
+  0.8–1.25. The meadow pose once, as a regression (its meadow cards are
+  unchanged; the bar still holds).
+- **Frame** at the canopy pose, ≤ +1.0 ms at 4× pixels, quiet rounds by §4.5's
+  rule, both orders, a same-code round; the meadow pose reported.
+- **Floor-look** (`2026-09-24-floor-look-verification.md` §1's arithmetic,
+  `weather clear`, `time 12`): `canopy-floor`, seed `ypeqauxk`,
+  `__fcSet(-291.4, 22.9, 58.5, 1.06, 0.85)`, bed `380:700:700:850`, beside
+  `380:700:120:850`; `trail-along`, seed `atmo`,
+  `__fcSet(283, 85.7, 134, 1.892, 0.12)`, bed `170:170:400:1480`, beside
+  `170:170:600:1480` (that note's replacement pair). Measured on this task's
+  commit and on its parent, and on `main`. Bar: both inside 0.9–1.3.
+- **The look** at the canopy pose: does the near field read as a sward, and
+  does litter still show; §8.4's walk.
+
+Append `## 7. Fourth gate: three quarters of the sward` to the verification
+note; commit the note alone. If either floor-look pose leaves its window or
+the frame bar is missed: `CLUTTER_GRASS_CANOPY_FLOOR` 0.65 and
+`RABBIT_GRASS_FLOOR` 0.75 in their own commit, every literal above re-measured
+and re-pinned the same way, and the gate re-run. If 0.65 misses too, revert
+both to 0.5 and 0.55 and record the canopy pose's miss as the sim's rule.

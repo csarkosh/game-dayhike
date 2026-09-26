@@ -555,3 +555,156 @@ In order, each one constant:
   change to that rule, with its level-id move.
 - Cards receiving shadows, so the near cards sit under the canopy's shadow as the
   blades do (the blade-field design's §12 follow-up, now closer to the eye).
+
+## 11. Amendment, 2026-09-26: three quarters of the sward under the canopy
+
+This section takes up §10's second follow-up. It is the one change in this
+design that is not renderer-only: it moves a simulation constant, and the
+level id with it. Everything above stays as written.
+
+### 11.1 The gap, and why nothing above closes it
+
+After steps 1 and 2 the meadow pose meets every bar (verification §6: cover
+ratio 0.92, luminance 0.97, frame +0.63 ms). The canopy pose does not: cover
+ratio **0.41** against 0.8, luminance 1.00, frame +0.75 ms. It reads as tufts
+on a darker floor, not a sward.
+
+The mechanism is density, not colour. The canopy pose stands where
+`forestDensity` is 1, so the canopy ramp sits at its floor and the field's
+grass is `CLUTTER_GRASS_CANOPY_FLOOR` × patch = 0.5 across the whole view
+(§3.6). Both layers read that number: the meadow class's presence is
+`min(1, grass · 0.49 · 2.05)`, so there are 1,400 near cards against the
+meadow pose's 3,168 (0.44 as many), and the blade field's `strength =
+min(1, grass)` culls half the blades in every clump and draws the rest at
+0.75 of their height. Looked down on, a near crop of cards at that density
+shows the floor between the tufts, and step 2's pull leaves that floor at
+0.0353, 1.7 times the cover threshold (verification §6.2). `SWARD_MAX` 0.8
+would take it to about 0.034, still 1.6 times. Step 3 acts at 8–18 m, outside
+the near crop. Step 4 is for a luminance miss and cannot add cover. What is
+left is the number both layers read.
+
+### 11.2 The change
+
+`CLUTTER_GRASS_CANOPY_FLOOR` 0.5 → **0.75** (`sim/clutter.ts`): the canopy
+factor of the ground-cover field bottoms out at three quarters under the
+densest canopy, where it bottomed out at a half. The rule is otherwise as it
+was — `canopy = FLOOR + (1 − FLOOR) · (1 − shade)`, `shade` the smoothstep of
+`forestDensity` over `CLUTTER_GRASS_CANOPY_LO` 0.4 to `_HI` 0.85.
+
+**What that gives, from the rule.** The field's grass is
+`edge · patch · boost`, where `edge` is the product of the ground,
+canopy, road and trail factors and `boost = 1 + 0.5 · smoothstep(0.5, 1, edge)`
+is the interior boost (`CLUTTER_GRASS_BOOST` 1.5, from
+`CLUTTER_GRASS_BOOST_LO` 0.5). At a floor of 0.5 a closed canopy held `edge`
+at 0.5, where the boost has not started, so grass was 0.5 × patch. At 0.75
+the edge product passes the boost's start, and the boost adds a quarter:
+`1 + 0.5 · smoothstep(0.5, 1, 0.75)` = 1.25. Under a closed canopy, with patch
+at 1, the grass is therefore **0.9375**, not 0.75 — 1.875 times what it was,
+and 0.625 of the open meadow's 1.5. The card and blade counts follow that
+number, not the constant.
+
+Measured with `groundCover` and `collectClutter` on seed `atmo` (627994160)
+at the canopy pose's XZ (123, −105.5), radius scale 1:
+
+| | floor 0.5 (now) | floor 0.65 (fallback) | floor 0.75 |
+| --- | --- | --- | --- |
+| grass at the pose, ρ = 1 | 0.5 | 0.7202 | **0.9375** |
+| duff at the pose | 0.6667 | 0.5199 | **0.375** |
+| meadow cards, near / far | 1,400 / 4,619 | 2,029 / 6,686 | **2,674 / 8,719** |
+| grass-class cards, near / far | 503 / 1,998 | 729 / 2,830 | 948 / 3,611 |
+| blade cells in the three tiers | 6,119 | 6,130 | 6,131 |
+| mean blade strength | 0.479 | 0.686 | 0.891 |
+| litter cells in the 24 m field | 2,483 | 2,483 | 2,483 |
+| mean litter strength | 0.670 | 0.538 | 0.408 |
+
+The near and mid crops' ground sits at grass 0.5 → 0.9375 and duff 0.667 →
+0.375 at every sampled point. The meadow's near cards at the canopy pose rise
+to 0.84 of the meadow pose's 3,168; the blades stand at 0.89 of full
+strength, so nearly twice as many blades survive the per-blade cut in each
+clump, at 0.97 of their base height where they stood at 0.75.
+
+### 11.3 What it costs
+
+**More cards and blades under the trees.** +1,274 near and +4,100 far meadow
+cards at the canopy pose, and +445 / +1,613 grass-class cards. The blade
+field's cell count barely moves (a cell exists wherever grass ≥ 0.05, and it
+did), so its vertex work is unchanged; what grows is the blades that survive
+the strength cut and their height, which is fragment work. The evidence for
+the frame: step 1's LOD0 cards cost +1.19 ms for 1,400 cards at the canopy pose
+and +1.48 ms for 3,168 at the meadow — 0.29 ms for 1,768 more cards — and
+on LOD1 the two poses sat at +0.60 and +0.49, the card count lost in the
+noise. The meadow pose carries more cards than the canopy pose will (3,168 /
+10,166) and is at +0.63 ms on this branch. The **frame bar is ≤ +1.0 ms at
+the canopy pose against `main`**, by §8.3's method, with 0.25 ms left after
+step 2's +0.75.
+
+**Less litter showing.** The duff the field reports is
+`onGrass · (1 − grass / 1.5) · (0.15 + 0.85 · shade)`, so under a closed canopy
+it is `1 − grass / 1.5`: it falls from 0.667 to **0.375**, a factor 0.56. Both
+of its readers follow. The litter pieces are culled per piece by a cell's
+strength, as the blades are, so about 0.56 as many lie under a closed canopy.
+The floor paint mixes toward the litter colour by `DUFF_FLOOR_MAX · duff`, 0.5 →
+0.28. The forest floor under a closed canopy moves from two thirds litter to
+three eighths: a sward with leaves in it, rather than leaves with a sward in
+them. Where the canopy is partial the duff's shade term is smaller and the
+change is smaller.
+
+**The rabbits.** `RABBIT_GRASS_FLOOR` 0.55 (`wildlifeField.ts`) was set just
+above the old canopy maximum of 0.5 so rabbits stay on open and lightly shaded
+grass. With the new maximum of 0.9375 under it, the census over the
+wildlife test's 4 km square rises from 1,441 / 1,343 / 1,136 units (seeds 1,
+388817, −1117907922) to 4,084 / 4,576 / 3,158, of which 2,406 / 2,988 / 1,777
+stand where ρ ≥ 0.85, outside the census test's band of 487–1,752. The
+floor moves to **0.95**, just above the new maximum, as it was just above
+the old: 1,472 / 1,392 / 1,172, with 1 / 0 / 0 under a closed canopy, as
+before. The flowers (`CLUTTER_FLOWER`, based on the same grass) rise under
+the canopy with the grass; the butterflies are gated on ρ < 0.4 and do not move.
+
+**The level id.** `CLUTTER_GRASS_CANOPY_FLOOR` is in `CLUTTER_TUNABLES`, so
+`registryDigest` and `passHash` move, and the clutter census rows that read
+the field's grass move with it (grass, flower). An old client cannot join a
+new host, and that is deliberate: two peers on different floors scatter grass
+differently under every closed canopy.
+
+### 11.4 What must not change
+
+- **The open meadow.** Where ρ ≤ `CLUTTER_GRASS_CANOPY_LO` 0.4, `shade` is 0
+  and the canopy factor is exactly 1 whatever the floor, so the field is the
+  same to the bit. At the meadow pose the grass is 1.5 and the meadow cards
+  are 3,168 near and 10,166 far, before and after. The grass class's own
+  wider disc reaches a canopy edge there, so its far count moves (3,562 →
+  3,720); the meadow class's does not. A test pins an open point off the
+  saturated value and a grid sum over every open point near a meadow trail,
+  both as literals measured before the change.
+- **The floor-look's canopy poses.** More sward means less litter beside the
+  trail, and the floor-look design's bed/beside ratio must stay inside its
+  0.9–1.3 window at the two canopy poses it passes at: `canopy-floor` (seed
+  `ypeqauxk`, 1.19) and `trail-along` (seed `atmo`, 1.24, on its replacement
+  crops, `2026-09-24-floor-look-verification.md` §8–§9). The beds are on the
+  trail's core, where the field's grass is 0 and the duff is the bed drift;
+  neither moves (duff 0.579 and 0.803 under the two bed crops). The beside
+  crops are on the trail's thinning edge: grass 0.158 → 0.237 and duff 0.895
+  → 0.842 under `canopy-floor`'s, grass 0.085 → 0.127 and duff 0.943 → 0.915
+  under `trail-along`'s. That moves the beside ground a little toward grass
+  and into step 2's pull ramp, which darkens it and raises the ratio;
+  `trail-along` has 0.06 of headroom.
+
+### 11.5 Gates and the fallback
+
+The gate measures, on the branch against `main`, and against this branch
+before the change for the floor-look poses (their 1.19 and 1.24 were measured
+before steps 1 and 2):
+
+- the fullness bar at the canopy pose (§8.1, thresholds unchanged), with the
+  layer isolation; the meadow pose as a regression;
+- the frame at the canopy pose, ≤ +1.0 ms at 4× pixels by §8.3's method; the
+  meadow pose reported;
+- the bed/beside ratio at `canopy-floor` and `trail-along`, inside 0.9–1.3;
+- the look at the canopy pose (does the near field read as a sward, and does
+  litter still show between the grass), and §8.4's walk.
+
+**Fallback: 0.65**, if either floor-look pose leaves its window or the frame
+bar is missed — grass 0.72 and duff 0.52 under a closed canopy, 2,029 / 6,686
+meadow cards at the canopy pose. The rabbit floor then moves to 0.75, just
+above that maximum. If 0.65 misses too, the floor returns to 0.5, the rabbit
+floor to 0.55, and the canopy pose's miss is recorded as the sim's rule.
