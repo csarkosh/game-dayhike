@@ -11,6 +11,7 @@ import { DISCOVERY_RADIUS } from "../../src/sim/summit.js";
 import { FORK_EMERGE_MAX_S, FORK_REVEAL_S, SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
 import { FORK_CUT_RADIUS } from "../../src/sim/cut.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
+import { WATCH_SALT } from "../../src/sim/watcher.js";
 import { escalationTargets } from "../../src/game/escalation.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
@@ -43,7 +44,42 @@ describe("one run on the seed `hollow`", SUITE, () => {
     // Only the last stride or two is the find: the walk below is the match.
     expect(climb).toEqual(chain.slice(0, climb.length));
     expect(climb.length).toBeGreaterThan(chain.length - 4);
+    /**
+     * A sighting where the player stands: facing the next stem node up, with
+     * the record's rest run out, the watcher shows within 120 ticks at the
+     * range the stand's reach sets, the only enemy and a Watch; then a half
+     * turn puts it behind, and it is gone the next tick with a new rest drawn.
+     */
+    const sighting = (n: number, range: number) => {
+      const here = graph.nodes[n]!, next = graph.nodes[chain[chain.indexOf(n) + 1]!]!;
+      p.yaw = Math.atan2(next.x - here.x, next.z - here.z);
+      p.pitch = 0;
+      w.watcher!.rest = 0;
+      let shown = -1;
+      for (let t = 1; t <= 120 && shown < 0; t++) {
+        tickWorld(w, new Map());
+        if (w.watcher!.id !== -1) shown = t;
+      }
+      expect(shown, `at ${n}`).toBeGreaterThan(0);
+      const seen = [...w.state.enemies.values()];
+      expect(seen, `at ${n}`).toHaveLength(1);
+      expect(seen[0]!.ai, `at ${n}`).toBe(AiState.Watch);
+      expect(seen[0]!.targetId, `at ${n}`).toBe(p.id);
+      const d = Math.sqrt((seen[0]!.pos.x - p.pos.x) ** 2 + (seen[0]!.pos.z - p.pos.z) ** 2);
+      expect(Math.abs(d - range), `at ${n}: ${d} m`).toBeLessThanOrEqual(0.5);
+      p.yaw += Math.PI;
+      tickWorld(w, new Map());
+      expect(w.state.enemies.size, `at ${n}`).toBe(0);
+      expect(w.watcher!.id, `at ${n}`).toBe(-1);
+      expect(w.watcher!.rest, `at ${n}`).toBeGreaterThanOrEqual(8);
+      expect(w.watcher!.rest, `at ${n}`).toBeLessThanOrEqual(60);
+      expect(w.state.phase, `at ${n}`).toBe(Phase.Climb);
+    };
     // Up the stem, node by node: the world input rises and nothing hunts.
+    // The only enemy the climb ever has is the watcher, and it is seen twice
+    // on the way: a quarter of the way up at node 6, where its reach puts it
+    // 68 m out, and at the top fork, node 37, 25 m out. Every showing spends
+    // an entity id, which nothing below pins.
     let first = -1;
     let last = -1;
     for (const n of climb) {
@@ -54,8 +90,12 @@ describe("one run on the seed `hollow`", SUITE, () => {
       if (first < 0) first = world;
       last = world;
       expect(w.state.phase).toBe(Phase.Climb);
-      expect(w.state.enemies.size).toBe(0);
+      expect(w.state.enemies.size).toBeLessThanOrEqual(1);
+      for (const e of w.state.enemies.values()) expect(e.ai).toBe(AiState.Watch);
+      if (n === 6) sighting(n, 68.58);
+      if (n === 37) sighting(n, 25);
     }
+    expect(w.watcher!.rng.rngSeed).not.toBe((seed ^ WATCH_SALT) | 0);
     // Rose, not merely never fell: the pad reads nothing, the last node short
     // of the find reads nearly everything.
     expect(first).toBeLessThan(0.05);
@@ -65,6 +105,9 @@ describe("one run on the seed `hollow`", SUITE, () => {
     tickWorld(w, new Map());
     expect(w.state.phase).toBe(Phase.Chase);
     expect(escalationTargets(w.state, p.id, graph, w.boxes, w.ground).world).toBe(1);
+    // No watcher survives the flip: the summit Hollow is the only enemy.
+    expect(w.watcher!.id).toBe(-1);
+    expect(w.state.enemies.size).toBe(1);
     const h = [...w.state.enemies.values()][0]!;
     expect(h.ai).toBe(AiState.Emerge);
     for (let i = 0; i < Math.round(SUMMIT_REVEAL_S / TICK_DT) + 1; i++) tickWorld(w, new Map());

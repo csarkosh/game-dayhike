@@ -16,6 +16,8 @@ export const enum AiState {
   Emerge = 7,
   /** The Hollow with nobody left to hunt: still where it stands, facing the pad. */
   Stand = 8,
+  /** The watcher: stands off the trail facing the lead, never walks, never touches; the stare still fills. */
+  Watch = 9,
 }
 
 export const enum Button {
