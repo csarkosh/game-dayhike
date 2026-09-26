@@ -129,6 +129,8 @@ describe("layer boundaries", () => {
       join(SRC, "game", "bladeClump.ts"),
       join(SRC, "game", "bladeField.ts"),
       join(SRC, "game", "rockRelief.ts"),
+      join(SRC, "game", "gpuSignals.ts"),
+      join(SRC, "game", "gpuClass.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
