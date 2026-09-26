@@ -26,23 +26,36 @@ below:
 - One frame bar for both tiers: a gain above the same-code floor at the canopy
   pose, no standard pose slower than its floor, and parity; 1.5 ms on high is
   the expectation, reported, not the gate (§1, §3.2, §13.1, §16).
-- Before Task 6, a failure after the game starts falls back by a live renderer
-  swap onto a fresh WebGL2 canvas, not a reload; the tier-detection work
-  provides the swap (§1, §5.5, §13.6).
+- Before Task 6, a failure after the game starts is handled by a live
+  renderer swap, never a reload; the tier-detection work provides the swap
+  (§1, §5.5, §13.6). A pipeline failure or an uncaptured WebGPU error, inside
+  the startup window or after it, swaps now onto a fresh WebGL2 canvas and is
+  remembered. A first lost device in 24 h retries once, on a new WebGPU engine
+  on a fresh canvas; a second within 24 h swaps onto WebGL2 and is remembered.
 
 Where the code differs from the text below, or adds to it:
 
-- **Two budgets, measured apart** (`resolveWebGpu`), in place of §5.4's 15 s:
-  10 s (`WEBGPU_FETCH_MS`) to fetch the engine's module and the translators,
-  then 10 s (`WEBGPU_START_MS`), from the end of the fetch, for the adapter
-  probe and making the engine. A fetch that fails or runs out is WebGL2 for
-  this load and is not remembered, since nothing of the GPU failed; a probe
-  that does not answer, or an engine that fails or runs out, is remembered
-  (`init`). A probe that fails, or finds no adapter that fits, is WebGL2 with
-  no record.
-- **The translators, fetched first and checked.** Babylon 9.18 loads them on
-  the first GLSL effect, not in `initAsync`, and its loader waits rather than
-  rejecting when a fetch fails. So the fetch step runs both loaders through
+- **The order, and two budgets measured apart** (`resolveWebGpu`), in place
+  of §5.4's 15 s. A page without `navigator.gpu` fetches nothing. Otherwise the
+  engine's module is imported, the adapter asked, and only where it fits are
+  the translators fetched and the engine made: module, probe, translators,
+  engine. The fetch's 10 s (`WEBGPU_FETCH_MS`) is a running total over the
+  module and the translators; the GPU's 10 s (`WEBGPU_START_MS`) over the probe
+  and the engine. A fetch that fails or runs out is WebGL2 for this load and is
+  not remembered, since nothing of the GPU failed; a probe that does not
+  answer, or an engine that fails or runs out, is remembered (`init`). A probe
+  that fails, or finds no adapter that fits, is WebGL2 with no record, and
+  fetches no translator. "Does not fit" is not remembered: with this order it
+  costs a browser one cached chunk and an adapter request or two, and a stored
+  verdict would outlive a driver update or a changed GPU, which leave the
+  browser's version alone.
+- **The wait is not blank.** While the engine is chosen, the page shows
+  "Loading…" over the canvas in the HUD's status line, the word the landing's
+  Play button showed; on the WebGL2 path there is no wait and no line.
+- **The translators, fetched before the engine and checked.** Babylon 9.18
+  loads them on the first GLSL effect, not in `initAsync`, and its loader waits
+  rather than rejecting when a fetch fails. So the translators' step, once the
+  adapter fits, runs both loaders through
   Babylon's `Tools.LoadScriptAsync` and fetches both `.wasm` files whole (so
   Babylon's own fetch of them comes from the HTTP cache), and fails at once
   where a loader ran but defined no `glslang` or `twgsl` on the page (this host
@@ -111,7 +124,7 @@ asset change. Two peers on different engines share one world (§11).
 | Overrides | `?engine=webgl2` and `?engine=webgpu`, on any tier, for testing; `?tier=low\|medium\|high`, committed (it has been an uncommitted measurement patch in three notes). `?engine=webgpu` on a browser that cannot run it falls back and says so once in the console |
 | How the engine is made | Every PBR and standard material generates GLSL on WebGPU through Babylon's own public switches (`PBRBaseMaterial.ForceGLSL`, `StandardMaterial.ForceGLSL`), the sky material by its constructor flag; the engine translates at run time with the glslang and twgsl builds `@babylonjs/core` ships, content-hashed by the build and cached immutably; the device is asked for the required limits, not the adapter's maximum |
 | Failure before the game starts | WebGL2, in the same page load; the player sees the usual loading and then the game |
-| Failure after it starts | As built behind the off switch: a shader or pipeline error in the startup window, or an uncaptured WebGPU error then: WebGL2 is remembered and the page reloads itself. A lost device: the page reloads on WebGPU once; a second loss within 24 h remembers WebGL2 and reloads. After a fallback reload the HUD says so for 6 s. Before Task 6 switches WebGPU on, these reloads become a live swap of the renderer onto a fresh WebGL2 canvas, with no reload, which the tier-detection work provides (§5.5) |
+| Failure after it starts | As built behind the off switch: a shader or pipeline error in the startup window, or an uncaptured WebGPU error then: WebGL2 is remembered and the page reloads itself. A lost device: the page reloads on WebGPU once; a second loss within 24 h remembers WebGL2 and reloads. After a fallback reload the HUD says so for 6 s. Before Task 6 switches WebGPU on, a live swap of the renderer, which the tier-detection work provides, replaces every reload (§5.5): a pipeline failure or an uncaptured error, in the startup window or after it, swaps now onto a fresh WebGL2 canvas and is remembered; a first lost device in 24 h retries once on a new WebGPU engine on a fresh canvas; a second within 24 h swaps onto WebGL2 and is remembered |
 | Remembered fallback | `localStorage` key `dayhike.engine`, holding the reason, the browser's major version, Babylon's version and the time; it holds while both versions are unchanged and for 30 days. Where storage throws, the reload carries `?engine=webgl2`, so a failing engine can never loop |
 | The six changes | Each its own commit with its own test (§6). WebGL2's shader text stays byte-identical, pinned by hash, except the one renamed identifier of §6.3 |
 | Parity | Nine fixed poses (§7.1), on the high tier and again on the medium tier; per crop, WebGPU's mean linear luminance within ±5 % of WebGL2's and the CIELAB distance of the crop means ≤ 2.0, or twice the same-engine repeat where that is larger; grass cover within 0.02; a verdict in words per pose |
@@ -365,6 +378,16 @@ Neither is carried in an invite link; both are read from the page's own URL.
 
 Any throw or rejection in these steps, or no result in 15 s, is a failure
 before the game starts (§5.5).
+
+As built (Task 1), the order is: the WebGPU module imported (none of it on a
+page without `navigator.gpu`), the adapter probed, and only where the adapter
+fits, the translators fetched and the engine made, within two budgets that each
+run across their two steps: 10 s for the module and the translators, 10 s for
+the probe and the engine. What the player sees meanwhile is the HUD's status
+line, "Loading…", over the canvas (the landing's own word), from the moment the
+landing goes until the game starts on whichever engine was chosen; a normal cold
+WebGPU start shows it for the translators' download and compile and the device,
+and the worst case, a stalled fetch and a stalled adapter, for 20 s.
 
 ### 5.5 What fails, and what the player sees
 
@@ -963,7 +986,8 @@ who keep WebGL2 anything.
 Per engine on the same build, three loads **cold** (a fresh browser profile:
 no HTTP cache, no GPU shader cache) and three **warm** (the next load in the
 same profile), recording: the time from navigation to the first frame of the
-game scene; the time to **settled** (the five impostor bakes landed and no effect
+game scene (on WebGPU it includes the engine's choice, with "Loading…" on screen,
+§5.4); the time to **settled** (the five impostor bakes landed and no effect
 compiled for 5 s); the effects compiled; and, over a scripted minute after
 settling (the canopy walk, a full turn, the lamp on, `weather rain`), the
 longest frame. **Bars:**
