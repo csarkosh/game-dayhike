@@ -1,4 +1,4 @@
-# WebGPU on the high tier: design
+# WebGPU on the high and medium tiers: design
 
 **As built.** Task 1 so far, shipped switched off (the next paragraph). This
 is the design as written on 2026-09-26, from
@@ -12,15 +12,18 @@ gates. When the work lands this paragraph is rewritten to say what shipped and
 with what values; the sections below stay the design as written.
 
 **Task 1, as built.** The rule, the overrides and the fallback of §5, with
-`WEBGPU_ON_HIGH = false`, so WebGPU is reached only with `?engine=webgpu`.
-Five things differ from the text below. The tiers the rule applies to are one
-constant, `WEBGPU_TIERS = ["high"]` in `engineChoice.ts`, which `chooseEngine`
-reads (and takes as a parameter in its tests), so taking the medium tier in is
-a one-line change with its test; read §5.1's `tier ≠ high` as
-`tier ∉ WEBGPU_TIERS`. Babylon 9.18 loads the translators on the first GLSL
-effect, not in `initAsync`, and its loader waits rather than rejecting when a
-fetch fails, so `createWebGpuEngine` also awaits
-`prepareGlslangAndTintAsync()` inside the 15 s budget: a translator that does
+the switch `WEBGPU_ENABLED = false`, so WebGPU is reached only with
+`?engine=webgpu`. The rule covers the **high and medium** tiers: they are one
+constant, `WEBGPU_TIERS = ["high", "medium"]` in `engineChoice.ts`, which
+`chooseEngine` reads (and takes as a parameter in its tests), so a change of
+tiers is one line with its test. Low and the landing backdrop stay WebGL2.
+Medium was taken in on 2026-09-26, because detection puts a desktop Chromium
+on medium at best (§4) and is being redesigned on its own; §1, §2, §4, §5.1,
+§5.7, §7.1, §13.1 and §14–§16 below are amended to match, and the gates are
+measured on both tiers. Four things differ from the text below. Babylon 9.18
+loads the translators on the first GLSL effect, not in `initAsync`, and its
+loader waits rather than rejecting when a fetch fails, so `createWebGpuEngine`
+also awaits `prepareGlslangAndTintAsync()` inside the 15 s budget: a translator that does
 not load is a failure before the game starts, found by that budget, and the
 materials are switched to GLSL only once the engine stands. A throw while the
 game is built on WebGPU (the painted signs, until §6.6 lands) counts as a
@@ -40,7 +43,7 @@ at four times the pixels, and in **22.69 ms** against **24.22 ms** at native
 pixels (lowest page means; §3.1 says what those numbers are and are not). It
 also left two look and behaviour problems unexplained, and six WebGPU-only
 changes made in a hurry. This design turns that into something players can
-be given. The goal is one sentence: **on the high tier, draw with WebGPU
+be given. The goal is one sentence: **on the high and medium tiers, draw with WebGPU
 wherever the browser can, show the same picture as WebGL2, and fall back to
 WebGL2 by itself when it cannot.**
 
@@ -51,42 +54,43 @@ asset change. Two peers on different engines share one world (§11).
 
 | question | decision |
 | --- | --- |
-| Which engine | The **high** tier uses `WebGPUEngine` when `WebGPUEngine.IsSupportedAsync` holds, the high-performance adapter is not a fallback (software) adapter, and it meets every required limit (§5.2); otherwise WebGL2, as today. Medium, low and the landing backdrop stay WebGL2. The rule ships switched off (`WEBGPU_ON_HIGH = false`) and Task 6 switches it on after its gates |
+| Which engine | The **high and medium** tiers (`WEBGPU_TIERS`) use `WebGPUEngine` when `WebGPUEngine.IsSupportedAsync` holds, the high-performance adapter is not a fallback (software) adapter, and it meets every required limit (§5.2); otherwise WebGL2, as today. Low and the landing backdrop stay WebGL2. The rule ships switched off (`WEBGPU_ENABLED = false`) and Task 6 switches it on after its gates, measured on both tiers |
 | Overrides | `?engine=webgl2` and `?engine=webgpu`, on any tier, for testing; `?tier=low\|medium\|high`, committed (it has been an uncommitted measurement patch in three notes). `?engine=webgpu` on a browser that cannot run it falls back and says so once in the console |
 | How the engine is made | Every PBR and standard material generates GLSL on WebGPU through Babylon's own public switches (`PBRBaseMaterial.ForceGLSL`, `StandardMaterial.ForceGLSL`), the sky material by its constructor flag; the engine translates at run time with the glslang and twgsl builds `@babylonjs/core` ships, content-hashed by the build and cached immutably; the device is asked for the required limits, not the adapter's maximum |
 | Failure before the game starts | WebGL2, in the same page load; the player sees the usual loading and then the game |
 | Failure after it starts | A shader or pipeline error in the startup window, or an uncaptured WebGPU error then: WebGL2 is remembered and the page reloads itself. A lost device: the page reloads on WebGPU once; a second loss within 24 h remembers WebGL2 and reloads. After a fallback reload the HUD says so for 6 s (§5.5) |
 | Remembered fallback | `localStorage` key `dayhike.engine`, holding the reason, the browser's major version, Babylon's version and the time; it holds while both versions are unchanged and for 30 days. Where storage throws, the reload carries `?engine=webgl2`, so a failing engine can never loop |
 | The six changes | Each its own commit with its own test (§6). WebGL2's shader text stays byte-identical, pinned by hash, except the one renamed identifier of §6.3 |
-| Parity | Nine fixed poses (§7.1); per crop, WebGPU's mean linear luminance within ±5 % of WebGL2's and the CIELAB distance of the crop means ≤ 2.0, or twice the same-engine repeat where that is larger; grass cover within 0.02; a verdict in words per pose |
+| Parity | Nine fixed poses (§7.1), on the high tier and again on the medium tier; per crop, WebGPU's mean linear luminance within ±5 % of WebGL2's and the CIELAB distance of the crop means ≤ 2.0, or twice the same-engine repeat where that is larger; grass cover within 0.02; a verdict in words per pose |
 | The trail bed | Diagnosed before it is fixed (§8). On reading the paint, the snow mix cannot make the glint the spike saw; the likely mechanism is the image-based light the wet bed reflects |
 | The impostor bake | Waits for readiness, not a clock; resolves null only on a shader error, which is logged; logs once if still waiting at 30 s; stops on dispose (§9) |
 | The pipeline-cache bug | A local workaround that survives Babylon recomputing the hash, pinned by a canary test that fails when a fixed Babylon ships; a draft upstream issue (Appendix A). Filing it is a manual step outside this plan |
-| Frame bar | WebGPU at least **1.5 ms** faster than WebGL2 at native pixels at the canopy pose, by quiet pair rounds; 4× reported; no pose slower than its same-code noise floor (§13.1) |
+| Frame bar | On the high tier, WebGPU at least **1.5 ms** faster than WebGL2 at native pixels at the canopy pose, by quiet pair rounds; on the medium tier, faster there by more than the larger of the two engines' same-code floors; 4× reported on both; on either tier no pose slower than its same-code noise floor (§13.1) |
 | Startup, memory, console, fallback | Bars in §13.3–§13.6 |
 | The compute-culled blades | Build I, Task 7, only after the engine path is on `main`; built on the grass frame filter's collected buffers; must beat WebGPU with that filter by **0.3 ms** at native, not the unfiltered field (§12) |
-| Unchanged | Everything under `client/src/sim/` (`passHash` −311867473); `PROTOCOL_VERSION` 5; every asset; the medium and low tiers; WebGL2's pixels |
+| Unchanged | Everything under `client/src/sim/` (`passHash` −311867473); `PROTOCOL_VERSION` 5; every asset; what each tier draws; the low tier's engine; WebGL2's pixels |
 
 ## 2. Goals and non-goals
 
 **Goals.**
 
-- Players on the high tier get the WebGPU engine's frame time wherever their
-  browser and adapter can run it, with no action of theirs.
+- Players on the high and medium tiers get the WebGPU engine's frame time
+  wherever their browser and adapter can run it, with no action of theirs.
 - The picture on WebGPU is the picture on WebGL2 at every pose the gates
   know, within the tolerance of §7.
 - No player is left with a blank or broken page: every way WebGPU can fail
   ends on WebGL2, once, without a loop.
-- The WebGL2 path, which every player not on the high tier keeps, does not
-  change by a byte of shader text except where §6 says so.
+- The WebGL2 path, which every player on the low tier keeps, and every player
+  whose browser cannot run WebGPU, does not change by a byte of shader text
+  except where §6 says so.
 
 **Non-goals.**
 
 - Porting the GLSL plugins to WGSL (about 685 lines under
   `client/src/game/shaders/` and about 640 more inline, the spike's count). The
   translators carry them; a port is a follow-up (§17).
-- Changing who is detected as high tier (§4, §17).
-- WebGPU on medium or low; WebGPU for the landing backdrop.
+- Changing which tier a device is detected as (§4, §17).
+- WebGPU on low; WebGPU for the landing backdrop.
 - Snapshot rendering, render bundles, timestamp queries in shipped code.
 - Per-blade GPU culling (the spike's §7); build I culls per clump.
 
@@ -189,7 +193,7 @@ summit models and their fingerposts with painted labels (`signMeshes.ts`, two
 (`trailheadMeshes.ts`). None of those materials has been compiled on WebGPU.
 Task 2 sweeps the scene from scratch rather than trusting the spike's list.
 
-## 4. Who reaches the high tier
+## 4. Who reaches the WebGPU tiers
 
 `createRenderer` detects the tier when none is given (`renderer.ts:690`), and
 `app.ts:153` never gives one. Detection is `tierFor` (`quality.ts:74–79`): high
@@ -200,12 +204,16 @@ detection lands on medium at best; and a browser that exposes no
 no player reaches the high tier except through an override, and there has been
 no committed override.
 
-So this design, as it stands, reaches players only through `?tier=high`. That
-is deliberate: changing detection moves every player it promotes onto the high
-tier's costs (the scene pass, halation, two 2048² cascades, 400 m of cliff
-rings), which is a design of its own with its own frame gate on medium-class
-machines (§17). The engine rule is written against the resolved tier, so it
-needs no change when detection does.
+So the rule covers the medium tier as well as high. Detection puts a desktop
+Chromium (Chrome, Edge, and the desktop launcher, §5.7) with more than four
+cores and more than 4 GB reported on medium, so once the switch is on, most of
+today's desktop players reach WebGPU with no action of theirs; high is still
+reached only through `?tier=high`, and Safari and Firefox, which report no
+memory, land on low and stay on WebGL2. Changing detection moves every player it
+promotes onto a higher tier's costs (on high: the scene pass, halation, two
+2048² cascades, 400 m of cliff rings), which is a design of its own with its own
+frame gate, being written separately (§17). The engine rule is written against
+the resolved tier, so it needs no change when detection does.
 
 ## 5. Selection and fallback
 
@@ -217,8 +225,8 @@ Resolved once, before the game starts, in `main.ts`:
 tier   = ?tier=… if valid, else detected
 engine = ?engine=webgl2                          → WebGL2
        | ?engine=webgpu      and the GPU fits     → WebGPU
-       | tier ≠ high                             → WebGL2
-       | not WEBGPU_ON_HIGH                      → WebGL2   (until Task 6)
+       | tier ∉ WEBGPU_TIERS (high, medium)      → WebGL2
+       | not WEBGPU_ENABLED                      → WebGL2   (until Task 6)
        | the remembered fallback holds           → WebGL2
        | the GPU fits                            → WebGPU
        | otherwise                               → WebGL2
@@ -343,11 +351,14 @@ is no copy of the game in it. Its Electron (44.1.1) exposes WebGPU as the
 Chromium inside it does, on macOS and Windows, with no switch in
 `webPreferences`. So the launcher follows the page's rule unchanged, and its
 `localStorage` persists in the app's own profile, so a remembered fallback
-survives relaunches. The launcher's URL carries no query, and detection never
-yields high (§4), so launcher players stay on WebGL2 until detection changes.
-No launcher change and no launcher release are needed. Its Windows smoke runs
-on a runner without a GPU, detects a lower tier, and keeps exercising the
-WebGL2 path.
+survives relaunches. The launcher's URL carries no query; detection puts a
+launcher on a machine with more than four cores and 8 GB on medium (§4), so once
+the switch is on, launcher players draw with WebGPU where the adapter fits, and
+fall back as the page does. No launcher change and no launcher release are
+needed. Its Windows smoke runs on a hosted runner without a GPU; whatever tier
+it detects there, it must keep reaching the game, and a runner whose browser
+offers no hardware adapter with the required limits draws with WebGL2, so the
+smoke keeps exercising that path.
 
 ### 5.8 The landing backdrop
 
@@ -501,7 +512,17 @@ no module reachable by static import from `client/src/main.ts` imports
 Every pose is shot on one build twice, `?engine=webgl2` and `?engine=webgpu`,
 both with `?tier=high`, 1200 × 2029 at device pixel ratio 1, each from a fresh
 page, the two back to back; the pose set by the uncommitted `__fcSet` patch as
-in every earlier note.
+in every earlier note. Then the whole set again with `?tier=medium`: the same
+poses, conditions and crops, its own same-engine floor, its own verdicts.
+
+What the medium tier draws differently, and so what the second set checks: a
+1024² shadow map with one cascade (high: 2048², two); blade clumps at half the high tier's counts, floored at four blades a
+clump (`BLADE_TIER_COUNTS`); the duff out to 16 m (24); cliff rings at 60,
+140 and 250 m (60, 160, 400); no scene pass and no halation, so the grade pass
+is the first pass and the multisampled one; texture mips capped at 1024; rain
+at 1,200 particles (2,000) and motes at 600 (1,500). Hardware scaling is 1 on
+both. The one-cascade shadow and the grade pass owning the scene target are
+shader and pipeline variants the high tier never builds.
 
 | pose | conditions | camera | crops | what it checks |
 | --- | --- | --- | --- | --- |
@@ -808,14 +829,21 @@ order, at least two rounds each way; same-code rounds on each engine for its
 noise floor, repeated if over 0.5 ms; only quiet rounds read; per page the pose,
 3 s to settle, 8 s of `onAfterRenderObservable` intervals, mean and p95. The
 "builds" are one commit with `?engine=webgl2` and `?engine=webgpu`, both
-`?tier=high`.
+`?tier=high`; then every pose again with both at `?tier=medium` (what that tier
+draws differently is listed in §7.1), with its own same-code floors.
 
-- **Bar:** at the canopy pose at native pixels, WebGPU − WebGL2 ≤ **−1.5 ms**.
-- **Bar:** at every other pose below, WebGPU − WebGL2 no larger than the
-  larger of the two engines' same-code floors there.
-- **Reported:** the canopy and meadow poses at 4×; the canopy pose in a
-  1920 × 1080 window; per page the JS frame time (`onBeginFrameObservable` to
-  `onEndFrameObservable`) and the draw calls.
+- **Bar, high tier:** at the canopy pose at native pixels, WebGPU − WebGL2 ≤
+  **−1.5 ms**.
+- **Bar, medium tier:** at the canopy pose at native pixels, WebGPU faster than
+  WebGL2 by more than the larger of the two engines' same-code floors there.
+  No spike figure exists for medium, and it draws less on every page (one
+  cascade, half the blades, no scene pass), so the high tier's margin is not
+  asked of it; a measured gain is.
+- **Bar, both tiers:** at every other pose below, WebGPU − WebGL2 no larger
+  than the larger of the two engines' same-code floors there.
+- **Reported, both tiers:** the canopy and meadow poses at 4×; the canopy pose
+  in a 1920 × 1080 window; per page the JS frame time (`onBeginFrameObservable`
+  to `onEndFrameObservable`) and the draw calls.
 
 Poses: canopy, meadow, TRAILSIDE (`__fcSet(263.9, 85.77, 118, 0.6, 0.25)`, mist,
 noon), cliff face-80m (`__fcSet(-420, 60, -900, 1.571, -0.05)`, clear, noon: the
@@ -825,9 +853,9 @@ where the summit models, the kiosk, the SUV and the fingerposts put the most
 draw calls in view. WebGPU's per-draw JS in Babylon is not WebGL2's, and the
 spawn view is where a CPU-side cost would show.
 
-Also, once: WebGL2 on the branch against WebGL2 on `main`, at the canopy pose,
-within the same-code floor. The switch must not cost the players who keep
-WebGL2 anything.
+Also, once per tier: WebGL2 on the branch against WebGL2 on `main`, at the
+canopy pose, within the same-code floor. The switch must not cost the players
+who keep WebGL2 anything.
 
 ### 13.2 Parity
 
@@ -891,7 +919,8 @@ the page's own scripts run; nothing of it is committed:
 
 - `engineChoice.test.ts`: the overrides parsed from literal query strings;
   `chooseEngine` over a literal table (tier × override × fits × remembered ×
-  `WEBGPU_ON_HIGH`); `adapterFits` on literal limits (§6.4); the remembered
+  `WEBGPU_ENABLED`); `WEBGPU_TIERS` pinned as `["high", "medium"]`, and the
+  rule reading it; `adapterFits` on literal limits (§6.4); the remembered
   record holding, lapsing on a new browser major, a new Babylon version and
   after 30 days, and the lost-device count (one loss does not hold, two within
   24 h do, two a day apart do not).
@@ -918,8 +947,8 @@ No test asserts a wall-clock bound; frame, startup and memory are gates.
 
 - Everything under `client/src/sim/`, the level id and the protocol.
 - Every asset, model and texture.
-- The medium and low tiers, the landing backdrop, and the WebGL2 path's shader
-  text, except §6.3's identifier.
+- What each tier draws, the low tier's engine, the landing backdrop, and the
+  WebGL2 path's shader text, except §6.3's identifier.
 - The desktop launcher.
 - Tier detection (§4).
 - The blade field, the cards and the grass frame filter, until Task 7, which
@@ -929,11 +958,15 @@ No test asserts a wall-clock bound; frame, startup and memory are gates.
 
 Pre-stated, in order:
 
-- **The native frame bar missed** (§13.1), with the 4× delta −5 ms or better:
-  the switch does not go on by default. The engine path stays on `main` behind
+- **The high tier's native frame bar missed** (§13.1), with the 4× delta
+  −5 ms or better: the switch does not go on by default. The engine path stays on `main` behind
   `?engine=webgpu`, Task 7 is measured on it, and the default goes on only when
   the engine with I meets 1.5 ms at native against WebGL2 with the filter. If
   the 4× delta misses −5 ms too, the design is revisited with the figures.
+- **The medium tier's bar missed while the high tier's is met**:
+  `WEBGPU_TIERS` goes back to `["high"]` in its own commit with its test, and
+  the switch goes on for the high tier alone; medium is measured again with
+  Task 7.
 - **A pose slower than its floor**: the pose's JS and draw-call figures say
   whether it is CPU-side; if so, the first lever is Babylon's WebGPU snapshot
   rendering for the static buckets (§17) before the switch goes on.

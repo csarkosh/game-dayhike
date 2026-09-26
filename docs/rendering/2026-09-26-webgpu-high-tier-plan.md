@@ -1,10 +1,12 @@
-# WebGPU High Tier Implementation Plan
+# WebGPU High and Medium Tier Implementation Plan
 
 > Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** On the high tier, draw with Babylon's `WebGPUEngine` wherever the browser offers a hardware adapter with the required limits, show the same picture as WebGL2 at every fixed pose, fall back to WebGL2 by itself on any failure, and be at least 1.5 ms faster than WebGL2 at native pixels at the canopy pose.
+**Goal:** On the high and medium tiers, draw with Babylon's `WebGPUEngine` wherever the browser offers a hardware adapter with the required limits, show the same picture as WebGL2 at every fixed pose on both tiers, fall back to WebGL2 by itself on any failure, and be faster than WebGL2 at native pixels at the canopy pose: by at least 1.5 ms on the high tier, and by more than the same-code floor on the medium tier.
 
-**Architecture:** The engine is chosen once, before the game starts, from the resolved tier, the URL overrides, a remembered fallback and the adapter's limits (`engineChoice.ts`, pure; `gpuEngine.ts`, loaded by dynamic import on the WebGPU path only). Every material generates GLSL, which the engine translates at run time with the glslang and twgsl builds Babylon ships. Six WebGPU-only faults are fixed one commit each, with WebGL2's shader text pinned byte for byte. The impostor bake waits for readiness instead of a clock. The trail bed's colour difference is diagnosed, then fixed. The switch goes on by default only after the parity, frame, startup, memory, console and fallback gates. Then, separately, the blade field is culled per clump by a compute pass on WebGPU, on top of the grass frame filter. Nothing under `sim/`.
+**Scope, amended 2026-09-26:** the rule covers the medium tier as well as high (`WEBGPU_TIERS = ["high", "medium"]`, design §4), and the switch is `WEBGPU_ENABLED`. The low tier and the landing backdrop stay WebGL2. Every compile check, diagnosis and gate from Task 2 on runs at `?tier=high` and again at `?tier=medium`; what medium draws differently is listed in design §7.1.
+
+**Architecture:** The engine is chosen once, before the game starts, from the resolved tier (high or medium), the URL overrides, a remembered fallback and the adapter's limits (`engineChoice.ts`, pure; `gpuEngine.ts`, loaded by dynamic import on the WebGPU path only). Every material generates GLSL, which the engine translates at run time with the glslang and twgsl builds Babylon ships. Six WebGPU-only faults are fixed one commit each, with WebGL2's shader text pinned byte for byte. The impostor bake waits for readiness instead of a clock. The trail bed's colour difference is diagnosed, then fixed. The switch goes on by default only after the parity, frame, startup, memory, console and fallback gates. Then, separately, the blade field is culled per clump by a compute pass on WebGPU, on top of the grass frame filter. Nothing under `sim/`.
 
 **Tech Stack:** TypeScript, Babylon.js 9.18 (`WebGPUEngine`, `MaterialPluginBase`, `ComputeShader`, `StorageBuffer`), GLSL in template strings and `.fx` files, WGSL for the cull kernel, vitest 4 with `NullEngine`.
 
@@ -15,7 +17,7 @@
 - The work is on a fresh branch from `origin/main` (`ba0fd95`). The spike's branch (`worktree-grass-webgpu-spike`, commits `781e4a2` and `996fb07`) is read and never merged; each piece it gives is cherry-picked or rewritten as the table below says.
 - No file under `client/src/sim/` changes; `passHash` stays −311867473 (`client/test/sim/groundGradient.test.ts:700`); `PROTOCOL_VERSION` stays 5.
 - From Task 2 Step 1 on, the WebGL2 identity pins (`client/test/game/webglIdentity.test.ts`) pass on every commit. Only Task 2C changes a pin, and Task 5 only if its finding cannot be fixed on the WebGPU path alone; each such commit carries a test that proves the one difference.
-- `WEBGPU_ON_HIGH` stays `false` until Task 6's gates pass; before that, WebGPU is reached only with `?engine=webgpu`.
+- `WEBGPU_ENABLED` stays `false` until Task 6's gates pass; before that, WebGPU is reached only with `?engine=webgpu`.
 - No private Babylon member is used without a canary test that names it against the installed `@babylonjs/core`.
 - Every numeric expectation in a test is a literal, never the constant it pins. vitest 4 takes a test's timeout as the third argument: `it("…", () => { … }, 20_000)`.
 - GLSL rules (`client/test/game/shaderHygiene.test.ts`): no comment spelling a preprocessor directive, no semicolon inside a trailing comment on a code line; every `.fx` file keeps at least one line of real code; a new uniform goes on both the `getUniforms().ubo` list and the non-UBO `fragment` string.
@@ -57,7 +59,7 @@ Applying a piece of `781e4a2` to one file: `git show 781e4a2 -- <path> | git app
 | --- | --- | --- |
 | `docs/rendering/2026-09-26-grass-webgpu-spike.md` | 1 | Brought over from the spike's branch; one correction appended |
 | `docs/rendering/<date>-webgpu-high-tier-verification.md` (new) | 1–8 | Created by Task 1, dated the day it is written; one section per gate; closed by Task 8 |
-| `client/src/game/engineChoice.ts` (new) | 1, 2D, 6 | Overrides, the rule, the limits check, the remembered fallback; `WEBGPU_ON_HIGH` |
+| `client/src/game/engineChoice.ts` (new) | 1, 2D, 6 | Overrides, the rule, the limits check, the remembered fallback; `WEBGPU_ENABLED` |
 | `client/src/game/gpuEngine.ts` (new) | 1, 2D, 2F | The adapter probe, the engine, the failure watcher; WebGPU only |
 | `client/src/game/quality.ts` | 1 | `detectTier` moved here from `renderer.ts`, unchanged |
 | `client/src/main.ts` | 1 | The engine resolved before `startGame`; failure handling |
@@ -98,14 +100,15 @@ Applying a piece of `781e4a2` to one file: `git show 781e4a2 -- <path> | git app
 - Consumes: `tierFor`, `QualityTier` (`quality.ts`); `WebGPUEngine`, `PBRBaseMaterial`, `StandardMaterial`, `AbstractEngine.Version`, `Logger.OnNewCacheEntry`.
 - Produces (`engineChoice.ts`, pure, no Babylon import):
   - `export type EngineName = "webgl2" | "webgpu"`
-  - `export const WEBGPU_ON_HIGH = false`
+  - `export const WEBGPU_ENABLED = false`
+  - `export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"]`
   - `export const WEBGPU_REQUIRED_LIMITS: Readonly<Record<string, number>> = { maxInterStageShaderVariables: 17, maxVertexBuffers: 8 }` (Task 2D adds the measured rows)
   - `export function parseEngineOverride(search: string): EngineName | null`
   - `export function parseTierOverride(search: string): QualityTier | null`
   - `export type AdapterReport = { limits: Readonly<Record<string, number>>; isFallbackAdapter: boolean }`
   - `export function adapterFits(adapter: AdapterReport | null, required = WEBGPU_REQUIRED_LIMITS): { fits: boolean; why: string | null }`
   - `export type EngineInput = { tier: QualityTier; override: EngineName | null; remembered: boolean; on: boolean; fits: boolean | null }`
-  - `export function chooseEngine(input: EngineInput): EngineName | "probe"` (`"probe"`: the answer needs the adapter)
+  - `export function chooseEngine(input: EngineInput, tiers = WEBGPU_TIERS): EngineName | "probe"` (`"probe"`: the answer needs the adapter)
   - `export type FallbackReason = "init" | "pipeline" | "lost"`
   - `export type FallbackRecord = { reason: FallbackReason; browser: number; babylon: string; at: number; losses: number }`
   - `export const FALLBACK_KEY = "dayhike.engine"`, `FALLBACK_NOTICE_KEY = "dayhike.engine.notice"`, `FALLBACK_DAYS = 30`, `LOSS_WINDOW_MS = 86_400_000`, `WEBGPU_START_MS = 15_000`, `STARTUP_QUIET_MS = 10_000`, `STARTUP_MAX_MS = 60_000`
@@ -165,7 +168,7 @@ EOF_COMMIT
 import { describe, expect, it } from "vitest";
 import {
   adapterFits, browserMajor, chooseEngine, fallbackHolds, parseEngineOverride, parseTierOverride,
-  readFallback, recordFailure, writeFallback, WEBGPU_ON_HIGH, WEBGPU_REQUIRED_LIMITS,
+  readFallback, recordFailure, writeFallback, WEBGPU_ENABLED, WEBGPU_REQUIRED_LIMITS,
 } from "../../src/game/engineChoice.js";
 
 describe("the overrides", () => {
@@ -186,7 +189,7 @@ describe("chooseEngine", () => {
     expect(chooseEngine(high)).toBe("probe");
     expect(chooseEngine({ ...high, fits: true })).toBe("webgpu");
     expect(chooseEngine({ ...high, fits: false })).toBe("webgl2");
-    expect(chooseEngine({ ...high, tier: "medium" })).toBe("webgl2");
+    expect(chooseEngine({ ...high, tier: "medium" })).toBe("probe");
     expect(chooseEngine({ ...high, tier: "low" })).toBe("webgl2");
     expect(chooseEngine({ ...high, on: false })).toBe("webgl2");
     expect(chooseEngine({ ...high, remembered: true })).toBe("webgl2");
@@ -199,7 +202,7 @@ describe("chooseEngine", () => {
     expect(chooseEngine({ ...forced, fits: false })).toBe("webgl2");
   });
   it("ships switched off", () => {
-    expect(WEBGPU_ON_HIGH).toBe(false);
+    expect(WEBGPU_ENABLED).toBe(false);
   });
 });
 
@@ -313,7 +316,7 @@ Expected: FAIL: `engineChoice.js` and `detectTier` do not exist; the renderer ma
 
 - [ ] **Step 4: Implement**
 
-`client/src/game/engineChoice.ts`: the interfaces above. `chooseEngine`, in order: `override === "webgl2"` → `"webgl2"`; `override === "webgpu"` → `fits === null ? "probe" : fits ? "webgpu" : "webgl2"`; `tier !== "high" || !on || remembered` → `"webgl2"`; else as the override case. `adapterFits`: `null` → "no adapter"; `isFallbackAdapter` → "fallback adapter"; else the first required limit the adapter's is under, as `"<name> <have> < <need>"`. `recordFailure`: a `lost` after a `lost` less than `LOSS_WINDOW_MS` old counts up, any other `lost` starts at 1, `init` and `pipeline` carry `losses: 0`. `fallbackHolds`: false for `null`, for a `lost` record under 2 losses, on a browser or Babylon mismatch, and at or past `FALLBACK_DAYS`. `readFallback` and `writeFallback` wrap every access in `try`, as `playerName.ts` does. `browserMajor`: the first of `Chrome/`, `Firefox/`, `Version/` followed by digits, else 0.
+`client/src/game/engineChoice.ts`: the interfaces above. `chooseEngine`, in order: `override === "webgl2"` → `"webgl2"`; `override === "webgpu"` → `fits === null ? "probe" : fits ? "webgpu" : "webgl2"`; `!tiers.includes(tier) || !on || remembered` → `"webgl2"`; else as the override case. `adapterFits`: `null` → "no adapter"; `isFallbackAdapter` → "fallback adapter"; else the first required limit the adapter's is under, as `"<name> <have> < <need>"`. `recordFailure`: a `lost` after a `lost` less than `LOSS_WINDOW_MS` old counts up, any other `lost` starts at 1, `init` and `pipeline` carry `losses: 0`. `fallbackHolds`: false for `null`, for a `lost` record under 2 losses, on a browser or Babylon mismatch, and at or past `FALLBACK_DAYS`. `readFallback` and `writeFallback` wrap every access in `try`, as `playerName.ts` does. `browserMajor`: the first of `Chrome/`, `Firefox/`, `Version/` followed by digits, else 0.
 
 `client/src/game/quality.ts`: `detectTier(nav)` with the body of `renderer.ts:517–527`, reading `nav` instead of `globalThis.navigator`.
 
@@ -323,7 +326,7 @@ Expected: FAIL: `engineChoice.js` and `detectTier` do not exist; the renderer ma
 - `createWebGpuEngine`: `PBRBaseMaterial.ForceGLSL = true; StandardMaterial.ForceGLSL = true;` then `new WebGPUEngine(canvas, { antialias: true, stencil: true, adaptToDeviceRatio: true, powerPreference: "high-performance", deviceDescriptor: { requiredLimits: { ...WEBGPU_REQUIRED_LIMITS } } })` and `await engine.initAsync({ jsPath: glslangJs, wasmPath: glslangWasm }, { jsPath: twgslJs, wasmPath: twgslWasm })`, raced against `WEBGPU_START_MS`; on a timeout or a throw, `engine.dispose()` and reject;
 - `watchWebGpu`: `engine.onEffectErrorObservable` and a chained `Logger.OnNewCacheEntry` (the previous handler still called) whose entry contains `WebGPU uncaptured error` → `onFailure("pipeline", inStartup)`; `engine.onContextLostObservable` → `onFailure("lost", inStartup)`; `inStartup` true until `STARTUP_QUIET_MS` pass after the first frame with no `onAfterShaderCompilationObservable` notification, or `STARTUP_MAX_MS` after creation; returns a function that removes every observer and restores `Logger.OnNewCacheEntry`.
 
-`client/src/game/renderer.ts`: apply the spike's hunks for `createRenderer` (`git show 781e4a2 -- client/src/game/renderer.ts | git apply --3way`), then remove the `BladeGpuCountMode` import, `bladeGpuMode` and the `gpu:` option, and remove `detectTier` in favour of `detectTier(globalThis.navigator)` from `quality.ts`. The `RendererOptions.engine` comment: an engine already made for the canvas, WebGPU on the high tier where it fits (`engineChoice.ts`); absent, WebGL2 is made here as always.
+`client/src/game/renderer.ts`: apply the spike's hunks for `createRenderer` (`git show 781e4a2 -- client/src/game/renderer.ts | git apply --3way`), then remove the `BladeGpuCountMode` import, `bladeGpuMode` and the `gpu:` option, and remove `detectTier` in favour of `detectTier(globalThis.navigator)` from `quality.ts`. The `RendererOptions.engine` comment: an engine already made for the canvas, WebGPU on the tiers of `WEBGPU_TIERS` where it fits (`engineChoice.ts`); absent, WebGL2 is made here as always.
 
 `client/src/game/lighting.ts:165`: `new SkyMaterial("skyMaterial", scene, true)`, with a comment: GLSL on every engine, so the sky is one source on both; a no-op on WebGL2.
 
@@ -584,13 +587,13 @@ Test first, in `architecture.test.ts`: `readFileSync(join(SRC, "game/gpuEngine.t
 
 Taken last of the six, because its measurement needs every other fault out of the way.
 
-Measure first, on the branch at this commit, `?engine=webgpu&tier=high`, with the sweep of Step 8 at every pose of design §7.1 and the spawn view: with `requiredLimits` holding only `maxInterStageShaderVariables: 17` and `maxVertexBuffers: 8`, every validation error names the limit a pipeline exceeds; raise that limit to the smallest value that clears it and repeat until the sweep is clean. Record in the note each limit's required value, the pipeline that sets it, and the reference adapter's own value. If a Windows adapter's `adapter.limits` can be read, record its inter-stage variables too (design §5.2).
+Measure first, on the branch at this commit, `?engine=webgpu&tier=high` and again `?engine=webgpu&tier=medium` (medium builds its own shadow and post-chain variants: one cascade, the grade pass first and multisampled), with the sweep of Step 8 at every pose of design §7.1 and the spawn view: with `requiredLimits` holding only `maxInterStageShaderVariables: 17` and `maxVertexBuffers: 8`, every validation error names the limit a pipeline exceeds; raise that limit to the smallest value that clears it and repeat until the sweep is clean on both tiers, each limit the larger of the two tiers' values. Record in the note each limit's required value, the pipeline and the tier that set it, and the reference adapter's own value. If a Windows adapter's `adapter.limits` can be read, record its inter-stage variables too (design §5.2).
 
 Then the test, in `engineChoice.test.ts`: `WEBGPU_REQUIRED_LIMITS` toEqual the measured object as a literal; the WebGPU defaults fail on the first limit they are short of; the reference adapter's recorded limits pass. Implement: the measured rows in `WEBGPU_REQUIRED_LIMITS`. Run: PASS. Commit (`fix: ask WebGPU for exactly the limits the scene needs`), the note's measurement in the same commit.
 
 - [ ] **Step 8: Gate: the sweep**
 
-A measurement patch, never committed, run once the scene settles on `?engine=webgpu&tier=high`: every mesh with a material is compiled for the main pass with `material.forceCompilationAsync(mesh)`; the lamp is switched on and the compile repeated; `weather rain` and again; `weather eerie`, `time 21` and again. At every pose of design §7.1, the spawn view and the trailhead with the rangers in view. **Bar:** zero `engine.onEffectErrorObservable` notifications, zero `WebGPU uncaptured error` entries, zero console errors; every translated shader that needed the finish pass's treatment named, with its reason. On WebGL2 at the same poses: zero errors, as before.
+A measurement patch, never committed, run once the scene settles on `?engine=webgpu&tier=high`, and all of it again on `?engine=webgpu&tier=medium`: every mesh with a material is compiled for the main pass with `material.forceCompilationAsync(mesh)`; the lamp is switched on and the compile repeated; `weather rain` and again; `weather eerie`, `time 21` and again. At every pose of design §7.1, the spawn view and the trailhead with the rangers in view. **Bar, on each tier:** zero `engine.onEffectErrorObservable` notifications, zero `WebGPU uncaptured error` entries, zero console errors; every translated shader that needed the finish pass's treatment named, with its reason and tier. On WebGL2 at the same poses and tiers: zero errors, as before.
 
 Append `## 3. The six changes` to the note: each change, its commit, its test; the sweep's list; the measured limits. Commit the note alone.
 
@@ -759,7 +762,7 @@ The design gives the reading (§8.2), the ranked mechanisms (§8.3) and the firs
 
 - [ ] **Step 1: The first diagnostic step**
 
-On the branch, one build, canopy pose, mist, noon, `?tier=high`, each engine. Place the **bed crop** on the canopy still on the trail's bed 4–12 m out, and a **sky crop** at the top of the frame, both drawn back onto the still; record them as literals. Three stills per engine, each on its own fresh page: (a) as is; (b) `__scene.environmentIntensity = 0` and every material's `reflectionTexture` and the scene's environment set to null, 1.5 s, then the still; (c) `weather clear`. For each: the bed crop's mean linear RGB, its CIELAB, its luminance; the sky crop's the same. Two WebGL2 loads of (a) give the floor.
+On the branch, one build, canopy pose, mist, noon, `?tier=high`, each engine; then all of this step again at `?tier=medium`, where the environment probe, the one-cascade shadow and the grade pass drawing the scene target are the medium tier's own (design §7.1), so the difference may not be the same size or have the same cause. Place the **bed crop** on the canopy still on the trail's bed 4–12 m out, and a **sky crop** at the top of the frame, both drawn back onto the still; record them as literals. Three stills per engine, each on its own fresh page: (a) as is; (b) `__scene.environmentIntensity = 0` and every material's `reflectionTexture` and the scene's environment set to null, 1.5 s, then the still; (c) `weather clear`. For each: the bed crop's mean linear RGB, its CIELAB, its luminance; the sky crop's the same. Two WebGL2 loads of (a) give the floor.
 
 - If (b) closes the gap to within the design's §7.3 bar: the environment chain. Next, on each engine, read the probe's six faces back (`probe.cubeTexture.readPixels(face, 0)`) and compare them face by face; compare the sky crops; compare the BRDF lookup (`scene.environmentBRDFTexture.readPixels()`).
 - If (b) does not close it: an uncommitted patch replaces the bed's final `surfaceAlbedo = tCol;` (`trailPaint.ts:474`) with `surfaceAlbedo = vec3(tSnow, terrainWet, clamp(vTerrainW2.w, 0.0, 1.0));`, and sets `WebGPUCacheRenderPipeline.LogErrorIfNoVertexBuffer = true` before the scene is built; stills (a) on each engine; the three channels compared.
@@ -779,20 +782,20 @@ Each: write the test, run it to see it fail, make the change, run the file with 
 
 - [ ] **Step 4: Gate**
 
-The canopy pose's bed and sky crops and the four trail poses of design §7.1, both engines, by §7.3's bar, with the verdict in words; the WebGL2 stills at the trail poses against `main`, inside the floor. Append the gate to the note's §6; commit the note alone. If the bar is missed, back to Step 1 with the difference that remains.
+The canopy pose's bed and sky crops and the four trail poses of design §7.1, both engines, at `?tier=high` and at `?tier=medium`, by §7.3's bar on each tier, with the verdict in words; the WebGL2 stills at the trail poses against `main` on both tiers, inside the floor. Append the gate to the note's §6; commit the note alone. If the bar is missed, back to Step 1 with the difference that remains.
 
 ---
 
 ### Task 6: The full gates, and the switch turned on
 
 **Files:**
-- Modify: `client/src/game/engineChoice.ts` (`WEBGPU_ON_HIGH`), `client/test/game/engineChoice.test.ts`, `ARCHITECTURE.md`, the verification note
+- Modify: `client/src/game/engineChoice.ts` (`WEBGPU_ENABLED`), `client/test/game/engineChoice.test.ts`, `ARCHITECTURE.md`, the verification note
 
-- [ ] **Step 1: Parity** — design §7, all nine poses, both engines, one build: every crop's measures and the same-engine floor, every pose's verdict; accepted crops with their reasons. Bar: design §7.3–§7.4.
+- [ ] **Step 1: Parity** — design §7, all nine poses, both engines, one build, at `?tier=high` and again at `?tier=medium` (the same poses and crops; medium draws a 1024² shadow map with one cascade, half the high tier's blades floored at four a clump, the duff to 16 m, cliff rings to 250 m, no scene pass or halation so the grade pass is first and multisampled, mips capped at 1024, and fewer rain and mote particles; design §7.1): every crop's measures and each tier's own same-engine floor, every pose's verdict per tier; accepted crops with their reasons. Bar: design §7.3–§7.4, on each tier.
 
-- [ ] **Step 2: Frame** — design §13.1: the canopy pose at native (the bar), every other pose against its floor, the 4× and 1920 × 1080 rows, JS frame time and draw calls; WebGL2 branch against `main` once. If the grass frame filter is on `main` by now, rebase first: both engines carry it, and its own invisibility check and turn (its design §12.1, §12.4) are rerun on WebGPU at the canopy pose.
+- [ ] **Step 2: Frame** — design §13.1, at `?tier=high` and again at `?tier=medium`, each tier with its own same-code floors: the canopy pose at native against that tier's bar (high: WebGPU − WebGL2 ≤ −1.5 ms; medium: WebGPU faster by more than the larger of the two engines' floors), every other pose against its floor, the 4× and 1920 × 1080 rows, JS frame time and draw calls; WebGL2 branch against `main` once per tier. If the medium bar is missed while the high bar is met, design §16: `WEBGPU_TIERS` back to `["high"]` in its own commit with its test before Step 6. If the grass frame filter is on `main` by now, rebase first: both engines carry it, and its own invisibility check and turn (its design §12.1, §12.4) are rerun on WebGPU at the canopy pose.
 
-- [ ] **Step 3: Startup, memory, console** — design §13.3, §13.4, §13.5.
+- [ ] **Step 3: Startup, memory, console** — design §13.3, §13.4, §13.5; the console bar on every page of both tiers.
 
 - [ ] **Step 4: The fallback** — design §13.6, items 1–5, on the branch as it now stands.
 
@@ -800,25 +803,25 @@ The canopy pose's bed and sky crops and the four trail poses of design §7.1, bo
 
 - [ ] **Step 6: Turn the switch on**
 
-Test first: `expect(WEBGPU_ON_HIGH).toBe(true);` in `engineChoice.test.ts` (was `false`). Run: FAIL. Implement: `export const WEBGPU_ON_HIGH = true;`, its comment naming the note's §7. `ARCHITECTURE.md`, in the rendering section: on the high tier the scene is drawn with Babylon's WebGPU engine where the browser offers a hardware adapter with the limits `engineChoice.ts` names, its GLSL translated at run time, and with WebGL2 everywhere else and after any failure (`gpuEngine.ts`); a failure is remembered per browser and Babylon version. Run: PASS.
+Test first: `expect(WEBGPU_ENABLED).toBe(true);` in `engineChoice.test.ts` (was `false`). Run: FAIL. Implement: `export const WEBGPU_ENABLED = true;`, its comment naming the note's §7. `ARCHITECTURE.md`, in the rendering section: on the tiers of `WEBGPU_TIERS` (the high and medium tiers, unless Step 2 narrowed it) the scene is drawn with Babylon's WebGPU engine where the browser offers a hardware adapter with the limits `engineChoice.ts` names, its GLSL translated at run time, and with WebGL2 everywhere else and after any failure (`gpuEngine.ts`); a failure is remembered per browser and Babylon version. Run: PASS.
 
 ```bash
 git add client/src/game/engineChoice.ts client/test/game/engineChoice.test.ts ARCHITECTURE.md
 git commit -F - <<'EOF_COMMIT'
-feat: draw the high tier with WebGPU where the browser can
+feat: draw the high and medium tiers with WebGPU where it can
 
 ## What
 
-On the high tier the scene now draws with Babylon's WebGPU engine
+On the high and medium tiers the scene now draws with Babylon's WebGPU engine
 wherever the browser offers a hardware adapter with the limits the
 scene needs, and with WebGL2 everywhere else and after any failure. It
-draws the same picture at every pose the gates know, and is faster at
-the canopy pose by the margin the verification note records.
+draws the same picture at every pose the gates know, on both tiers, and is
+faster at the canopy pose by the margins the verification note records.
 
 ## How
 
-- `client/src/game/engineChoice.ts` — `WEBGPU_ON_HIGH` on.
-- `ARCHITECTURE.md` — the engine on the high tier, and the fallback.
+- `client/src/game/engineChoice.ts` — `WEBGPU_ENABLED` on.
+- `ARCHITECTURE.md` — the engine on those tiers, and the fallback.
 - `client/test/game/engineChoice.test.ts` — the switch pinned.
 
 <trailers>
