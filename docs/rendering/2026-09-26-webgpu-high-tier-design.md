@@ -22,8 +22,9 @@ on medium at best (§4) and is being redesigned on its own; §1, §2, §4, §5.1
 §5.7, §7.1, §13.1 and §14–§16 below are amended to match, and the gates are
 measured on both tiers. Two decisions of the same day are written into the
 sections too: one frame bar for both tiers, a gain above the same-code floor
-with parity, with 1.5 ms on high the expectation, not the gate (§1, §3.2,
-§13.1, §16); and before Task 6 a failure after the game starts falls back by a
+at the canopy pose, with no pose slower than its floor and parity, and 1.5 ms
+on high the expectation, not the gate (§1, §3.2, §13.1, §16); and before Task 6
+a failure after the game starts falls back by a
 live renderer swap, not a reload, which the tier-detection work provides (§1,
 §5.5). Four things differ from the text below. Babylon 9.18
 loads the translators on the first GLSL effect, not in `initAsync`, and its
@@ -70,7 +71,7 @@ asset change. Two peers on different engines share one world (§11).
 | The trail bed | Diagnosed before it is fixed (§8). On reading the paint, the snow mix cannot make the glint the spike saw; the likely mechanism is the image-based light the wet bed reflects |
 | The impostor bake | Waits for readiness, not a clock; resolves null only on a shader error, which is logged; logs once if still waiting at 30 s; stops on dispose (§9) |
 | The pipeline-cache bug | A local workaround that survives Babylon recomputing the hash, pinned by a canary test that fails when a fixed Babylon ships; a draft upstream issue (Appendix A). Filing it is a manual step outside this plan |
-| Frame bar | One bar, the same for both tiers: a tier's WebGPU path turns on when, at the canopy pose at native pixels on the reference machine, WebGPU is faster than WebGL2 by more than the larger of the two engines' same-code noise floors (quiet pair rounds), **and** that tier passes the parity gate. On the high tier about **1.5 ms** is expected (§3.2): reported, not a gate. 4× and every other pose reported on both (§13.1, §16) |
+| Frame bar | One bar, the same for both tiers: a tier's WebGPU path turns on when, at the canopy pose at native pixels on the reference machine, WebGPU is faster than WebGL2 by more than the larger of the two engines' same-code noise floors (quiet pair rounds), **and** no standard pose of §13.1 is slower on WebGPU than on WebGL2 by more than the same-code noise floor at that tier, **and** that tier passes the parity gate. On the high tier about **1.5 ms** at the canopy pose is expected (§3.2): reported, not a gate. The other poses' gains and the 4× rows are reported (§13.1, §16) |
 | Startup, memory, console, fallback | Bars in §13.3–§13.6 |
 | The compute-culled blades | Build I, Task 7, only after the engine path is on `main`; built on the grass frame filter's collected buffers; must beat WebGPU with that filter by **0.3 ms** at native, not the unfiltered field (§12) |
 | Unchanged | Everything under `client/src/sim/` (`passHash` −311867473); `PROTOCOL_VERSION` 5; every asset; what each tier draws; the low tier's engine; WebGL2's pixels |
@@ -128,8 +129,8 @@ pages at native. At 4× the engine alone is **−9.93 ms** (45.21 against 55.14)
 and that figure is robust. So 1.5 ms at native rests on the only native
 estimate there is. It is kept as the expectation for the high tier, and
 reported, but it is not the gate: the gate (§13.1) is a gain above the same-code
-floor, the same on both tiers, with parity, and §16 says in advance what each
-outcome turns on.
+floor, the same on both tiers, with no pose slower than its floor and parity,
+and §16 says in advance what each outcome turns on.
 
 The native window renders 2.4 million pixels. A high-tier player on a laptop
 panel at its own device ratio renders between that and the 4× figure's 9.7
@@ -864,14 +865,17 @@ draws differently is listed in §7.1), with its own same-code floors.
 
 - **Bar, the same on each tier:** at the canopy pose at native pixels, on the
   reference machine, WebGPU faster than WebGL2 by more than the larger of the
-  two engines' same-code floors there. A tier's WebGPU path turns on when it
-  meets this bar **and** passes the parity gate (§7, §13.2) on that tier (§16).
+  two engines' same-code floors there.
+- **Guard, the same on each tier:** at every other pose below, WebGPU −
+  WebGL2 no larger than the larger of the two engines' same-code floors there.
+  A regression at any pose blocks that tier.
+- A tier's WebGPU path turns on when it meets the bar **and** the guard **and**
+  passes the parity gate (§7, §13.2) on that tier (§16).
 - **Expected, reported, not a gate:** on the high tier about **−1.5 ms** at that
   pose (§3.2). No spike figure exists for medium, which draws less on every page
   (one cascade, half the blades, no scene pass).
-- **Reported, both tiers:** every other pose below against the larger of the
-  two engines' same-code floors there, with its JS and draw-call figures where it
-  is slower (§16); the canopy and meadow poses at 4×; the canopy pose in a
+- **Reported, both tiers:** every other pose's gain, and a slower pose's JS and
+  draw-call figures (§16); the canopy and meadow poses at 4×; the canopy pose in a
   1920 × 1080 window; per page the JS frame time (`onBeginFrameObservable` to
   `onEndFrameObservable`) and the draw calls.
 
@@ -988,9 +992,9 @@ No test asserts a wall-clock bound; frame, startup and memory are gates.
 
 Pre-stated, in order:
 
-- **The frame bar and parity, per tier** (§13.1, §13.2). Each tier is judged on
-  its own, by the one bar: faster than the same-code floor at the canopy pose at
-  native, and parity passed.
+- **The frame bar, the guard and parity, per tier** (§13.1, §13.2). Each tier
+  is judged on its own: faster than the same-code floor at the canopy pose at
+  native, no standard pose slower than its floor, and parity passed.
   - **Both tiers pass:** both on. `WEBGPU_TIERS` stays `["high", "medium"]` and
     `WEBGPU_ENABLED` goes on.
   - **One tier passes:** that tier on. `WEBGPU_TIERS` becomes that tier alone,
@@ -998,16 +1002,17 @@ Pre-stated, in order:
     is measured again with Task 7.
   - **Neither passes:** off. The engine path stays on `main` behind
     `?engine=webgpu`, Task 7 is measured on it, and a tier goes on when the
-    engine with I passes that tier's bar and parity against WebGL2 with the
-    filter. If the 4× delta is not a gain either, the design is revisited with
-    the figures.
+    engine with I passes that tier's bar, guard and parity against WebGL2 with
+    the filter. If the 4× delta is not a gain either, the design is revisited
+    with the figures.
 
   The high tier's 1.5 ms is reported against its expectation either way; a
   shortfall there is a finding for the note, not a reason to keep a passing
   tier off.
-- **A pose slower than its floor** (reported, §13.1): the pose's JS and
-  draw-call figures say whether it is CPU-side; if so, the first lever is
-  Babylon's WebGPU snapshot rendering for the static buckets (§17).
+- **A pose slower than its floor** (the guard, §13.1): that tier does not go
+  on. The pose's JS and draw-call figures say whether it is CPU-side; if so, the
+  first lever is Babylon's WebGPU snapshot rendering for the static buckets
+  (§17), then the tier is measured again.
 - **The startup hitch bar missed**: the lit materials' lamp-on variants compiled
   behind the loading screen, by `forceCompilationAsync` with the lamp enabled
   for the call, then the startup gate re-run.
