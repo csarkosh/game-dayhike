@@ -189,11 +189,11 @@ function reachesPad(graph: TrailGraph, from: number, used: ReadonlySet<number>):
  * unused edges whose far node is not yet on the walk and can still reach the
  * pad without a repeated edge, abandoned once it exceeds `max` × shortestHome
  * or runs out of such edges. The node rule is the cut's (cut.ts): a fork the
- * guide passed twice would have two edges into it and two out. The first walk whose length lands in
- * [min, max] × shortestHome is returned with `inBand: true`; otherwise the
- * longest walk found under the cap; otherwise the shortest path (the 227-seed
- * sweep shows the shortest-path case does not arise). Deterministic in
- * `rand` (the host passes `() => nextRandom(state)`).
+ * guide passed twice would have two edges into it and two out. The first
+ * walk whose length lands in [min, max] × shortestHome is returned with
+ * `inBand: true`; otherwise the longest walk found under the cap; otherwise
+ * the shortest path (the 227-seed sweep shows the shortest-path case does not
+ * arise). Deterministic in `rand` (the host passes `() => nextRandom(state)`).
  */
 export function guideWalk(
   graph: TrailGraph, rand: () => number, min = GUIDE_MIN, max = GUIDE_MAX, tries = GUIDE_TRIES,

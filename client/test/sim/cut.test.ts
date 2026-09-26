@@ -151,17 +151,32 @@ describe("openBranch off the guide", () => {
   it("breaks an exact tie toward the lower edge index", () => {
     // Fork 3 reached up the stem from 2 (edge 2): the crest is a dead end, and
     // the two strands are mirror images — 128.06 m to 5 or 8, then 128.06 m
-    // back to fork 2 and 200 m home, meeting the guide at 2 either way.
-    expect(openBranch(sandbox(), guide(), 3, 2)).toBe(5);
+    // back to fork 2 and 200 m home. With a guide that runs down the stem and
+    // touches neither strand, both meet it at 2 after 256.1 m: an exact tie in
+    // cost and in rejoin, and the lower index wins.
+    const stem: CutRecord = { guide: [4, 3, 2, 7, 0], cuts: new Map(), closed: new Set() };
+    expect(openBranch(sandbox(), stem, 3, 2)).toBe(5);
+    // With the guide on the lower strand instead, the rejoin decides, not the index.
+    const mirror: CutRecord = { guide: [4, 3, 8, 2, 7, 0], cuts: new Map(), closed: new Set() };
+    expect(openBranch(sandbox(), mirror, 3, 2)).toBe(11);
   });
 
   it("never opens a closed edge, and is -1 once every other edge is closed or unreachable", () => {
     const g = sandbox();
     expect(openBranch(g, guide([9]), 1, 1)).toBe(0);
     expect(openBranch(g, guide([0, 9]), 1, 1)).toBe(-1);
-    // Fork 2 from below (edge 1) with the detour closed: the stem up, both
-    // strands and the spur all lead nowhere but back through 2.
-    expect(openBranch(g, guide([7]), 2, 1)).toBe(-1);
+    // Both ways into the pad closed: nothing anywhere reaches it.
+    expect(openBranch(g, guide([0, 8]), 2, 1)).toBe(-1);
+  });
+
+  it("falls back to a way home through the fork for a climber the upper trail hangs on, never a dead end", () => {
+    // Fork 2 reached from below (edge 1) with the detour closed: the stem up,
+    // both strands and the spur all lead nowhere but back through 2 and down
+    // the arrival. Costed that way the strands tie at 456.1 m; the stem up is
+    // 600 m, past the slack; the 50 m spur would be cheapest of all at 300 m
+    // but is a dead end, and is never a way home. The upper strand meets the
+    // guide at 5 in 128.06 m, the lower only at 2 in 256.1 m.
+    expect(openBranch(sandbox(), guide([7]), 2, 1)).toBe(4);
   });
 
   it("never offers the edge two forks share once the first fork closed it", () => {
@@ -272,6 +287,24 @@ describe("the guide on the seed `hollow`", SUITE, () => {
     expect(closedInOrder).toEqual([28, 21, 22, 80, 79, 78]);
     expect([...rec.cuts]).toEqual([[37, 43], [22, 54], [79, 78], [78, 7], [2, 1]]);
   });
+
+  it("judges a stray's arrival on the residual graph, and a climber's through the fork", () => {
+    const w = forestWorld();
+    const g = w.trail!;
+    const rec = drawGuide(w);
+    // Fork 2 is the stem's lowest fork, and the whole trail above hangs on it.
+    // Reached from the strand (edge 78), the stem down (edge 1) is the way
+    // home; the stem up (edge 2) leads only back through 2. Reached from
+    // below by a climber (edge 1), no branch reaches the pad but through 2:
+    // the stem up to node 3, which is on the guide 25.4 m away, opens over
+    // the strand, whose way home meets the guide only back at 2.
+    expect(openBranch(g, rec, 2, 78)).toBe(1);
+    expect(openBranch(g, rec, 2, 1)).toBe(2);
+    // The hub 22 from the loop edge 54: the stem down (edge 21), never the loop's other side.
+    expect(openBranch(g, rec, 22, 54)).toBe(21);
+    // Fork 78 from the stem below (edge 7): the rung up to 79 (edge 81), not the loop back (edge 79).
+    expect(openBranch(g, rec, 78, 7)).toBe(81);
+  });
 });
 
 describe("forkSpawn on the seed `hollow`", SUITE, () => {
@@ -289,7 +322,7 @@ describe("forkSpawn on the seed `hollow`", SUITE, () => {
         expect(s, `fork ${f} edge ${ei}`).not.toBeNull();
         expect(isOnCorridor(w, s.x, s.z), `fork ${f} edge ${ei}`).toBe(false);
         // Fork 37's loop edge 42 is 9.97 m long: its spawn stands a metre
-        // short of the far node, 8.97 m in.
+        // short of the far node, rounded down to a sample, 8.75 m in.
         expect(Math.abs(dist(s, node) - (f === 37 && ei === 42 ? 9 : 12)), `fork ${f} edge ${ei}`).toBeLessThanOrEqual(0.3);
         expect(s.y, `fork ${f} edge ${ei}`).toBeCloseTo(elevationAt(seed, s.x, s.z) + 0.9, 9);
       }
@@ -320,23 +353,27 @@ describe("forkSpawn on the seed `hollow`", SUITE, () => {
     const g = w.trail!;
     const roadX = activeTerrainVariant().roadCenterX!(seed, 0);
     // A synthetic fork `out` metres east of the corridor's edge, with a branch
-    // running straight west onto the road; the graph's own nodes are untouched.
-    const branch = (out: number) => {
+    // running straight west to a node `inside` metres past that edge, on the
+    // road; the graph's own nodes are untouched.
+    const branch = (out: number, inside: number) => {
       const a = { x: roadX + 30 + out, z: 0, h: elevationAt(seed, roadX + 30 + out, 0), u: 0 };
-      const b = { x: roadX + 10, z: 0, h: elevationAt(seed, roadX + 10, 0), u: 0 };
+      const b = { x: roadX + 30 - inside, z: 0, h: elevationAt(seed, roadX + 30 - inside, 0), u: 0 };
       const nodes = [...g.nodes, a, b];
       const edges = [...g.edges, edge(nodes.length - 2, nodes.length - 1)];
       w.trail = { ...g, nodes, edges };
-      return forkSpawn(w, nodes.length - 2, edges.length - 1);
+      const s = forkSpawn(w, nodes.length - 2, edges.length - 1);
+      return s === null ? null : { in: a.x - s.x, onCorridor: isOnCorridor(w, s.x, s.z) };
     };
     // 8.1 m out: the first sample on the corridor is 8.25 m in, so the spawn stands 7.25 m in.
-    const s = branch(8.1)!;
-    expect(s).not.toBeNull();
-    expect(s.x).toBeCloseTo(roadX + 30 + 8.1 - 7.25, 9);
-    expect(isOnCorridor(w, s.x, s.z)).toBe(false);
+    expect(branch(8.1, 20)).toEqual({ in: expect.closeTo(7.25, 9), onCorridor: false });
     // 1.6 m out: the first sample on the corridor is 1.75 m in, leaving 0.75 m — under FORK_SPAWN_MIN.
-    expect(branch(1.6)).toBeNull();
+    expect(branch(1.6, 20)).toBeNull();
     // A fork standing on the corridor itself.
-    expect(branch(-10)).toBeNull();
+    expect(branch(-10, 20)).toBeNull();
+    // A 12.6 m branch whose far node stands 1.05 m inside the corridor: the
+    // branch's end would cap the spawn at 11.6 m, between samples and 0.05 m
+    // from safe ground. The end rounds down to the 11.5 m sample, and the
+    // corridor, first seen at 11.75 m, pulls the spawn back to 10.75 m.
+    expect(branch(11.55, 1.05)).toEqual({ in: expect.closeTo(10.75, 9), onCorridor: false });
   });
 });

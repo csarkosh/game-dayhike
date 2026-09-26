@@ -106,40 +106,27 @@ function metresToGuide(graph: TrailGraph, path: readonly number[], onGuide: Read
   return Infinity;
 }
 
-/**
- * Which incident edge of `fork` stays open, given the edge the player
- * arrived by, or -1 when no other open edge reaches the pad on the residual
- * graph. Never the arrival, never an edge already closed.
- *
- * On the guide, arriving by the guide's edge into the fork, the open edge is
- * the guide's edge out of it (still open — an edge joining two forks can have
- * been closed at the other one, and then the fork is judged like a stray's).
- * Otherwise the candidate branches are costed on the residual graph with the
- * fork's own edges removed: a branch's way home must not come back through
- * the fork it leaves, or "the open branch reaches the pad" would be true of
- * a branch that leads nowhere but back to the Hollows just placed. The
- * cheapest wins; among near-ties within GUIDE_REJOIN_SLACK the one whose way
- * home meets the guide in the fewest metres from the fork, then the cheaper,
- * then the lower edge index.
- */
-export function openBranch(graph: TrailGraph, record: CutRecord, fork: number, arrival: number): number {
-  const guide = record.guide;
-  const arrivalEdge = graph.edges[arrival];
-  const i = guide.indexOf(fork);
-  if (i > 0 && i + 1 < guide.length && arrivalEdge !== undefined && joins(arrivalEdge, guide[i - 1] as number, fork)) {
-    for (let ei = 0; ei < graph.edges.length; ei++) {
-      if (ei === arrival || record.closed.has(ei)) continue;
-      if (joins(graph.edges[ei] as TrailEdge, fork, guide[i + 1] as number)) return ei;
-    }
-  }
-
-  const residual: TrailEdge[] = [];
+/** The edges not closed in `record`, less those incident to `drop` (none when -1). */
+function residualEdges(graph: TrailGraph, record: CutRecord, drop: number): TrailEdge[] {
+  const out: TrailEdge[] = [];
   for (let ei = 0; ei < graph.edges.length; ei++) {
     if (record.closed.has(ei)) continue;
     const e = graph.edges[ei] as TrailEdge;
-    if (e.a === fork || e.b === fork) continue;
-    residual.push(e);
+    if (e.a === drop || e.b === drop) continue;
+    out.push(e);
   }
+  return out;
+}
+
+/**
+ * The stray's rule on one residual graph: of the incident edges of `fork`
+ * that are neither the arrival nor closed, the cheapest way home (the edge,
+ * then the shortest route from its far node on `residual`); among near-ties
+ * within GUIDE_REJOIN_SLACK the one whose way home meets the guide in the
+ * fewest metres from the fork, then the cheaper, then the lower edge index.
+ * -1 when no candidate's far node reaches the pad on `residual`.
+ */
+function bestBranch(graph: TrailGraph, record: CutRecord, fork: number, arrival: number, residual: TrailEdge[]): number {
   const dist = homeDistances(graph.nodes, residual);
   const candidates: Array<{ ei: number; far: number; cost: number; len: number }> = [];
   let cheapest = Infinity;
@@ -160,7 +147,7 @@ export function openBranch(graph: TrailGraph, record: CutRecord, fork: number, a
   // The residual graph as a graph of its own, so `route` can walk it; a fresh
   // object, so its memo never mixes with the full graph's.
   const sub: TrailGraph = { ...graph, edges: residual };
-  const onGuide = new Set(guide);
+  const onGuide = new Set(record.guide);
   let best: { ei: number; cost: number; rejoin: number } | null = null;
   for (const c of candidates) {
     if (c.cost > cheapest + GUIDE_REJOIN_SLACK) continue;
@@ -170,6 +157,54 @@ export function openBranch(graph: TrailGraph, record: CutRecord, fork: number, a
     }
   }
   return best === null ? -1 : best.ei;
+}
+
+/**
+ * Which incident edge of `fork` stays open, given the edge the player
+ * arrived by, or -1 when no other open edge reaches the pad on the residual
+ * graph. Never the arrival, never an edge already closed.
+ *
+ * On the guide, arriving by the guide's edge into the fork, the open edge is
+ * the guide's edge out of it (still open — an edge joining two forks can have
+ * been closed at the other one, and then the fork is judged like a stray's).
+ * Otherwise the candidate branches are costed on the residual graph with the
+ * fork's own edges removed: a branch's way home must not come back through
+ * the fork it leaves, or "the open branch reaches the pad" would be true of
+ * a branch that leads nowhere but back to the Hollows just placed. When that
+ * leaves nothing — a straggler still climbing has reached a fork the whole
+ * upper trail hangs on, and every branch's way home is back through it and
+ * down the arrival — the branches are costed once more on the residual with
+ * the fork's edges kept (the arrival is never closed, so that way home is
+ * real), skipping any branch that is itself a dead end: the crest's, on a
+ * finished trail, which is nobody's way home. Only then -1.
+ */
+export function openBranch(graph: TrailGraph, record: CutRecord, fork: number, arrival: number): number {
+  const guide = record.guide;
+  const arrivalEdge = graph.edges[arrival];
+  const i = guide.indexOf(fork);
+  if (i > 0 && i + 1 < guide.length && arrivalEdge !== undefined && joins(arrivalEdge, guide[i - 1] as number, fork)) {
+    for (let ei = 0; ei < graph.edges.length; ei++) {
+      if (ei === arrival || record.closed.has(ei)) continue;
+      if (joins(graph.edges[ei] as TrailEdge, fork, guide[i + 1] as number)) return ei;
+    }
+  }
+  const beyond = bestBranch(graph, record, fork, arrival, residualEdges(graph, record, fork));
+  if (beyond !== -1) return beyond;
+  // The fallback: a dead-end branch is one whose far node cannot reach the
+  // pad without the branch itself, and it is closed for the costing rather
+  // than in the record, so it stays a candidate for a Hollow.
+  const kept = residualEdges(graph, record, -1);
+  const deadEnds = new Set(record.closed);
+  for (let ei = 0; ei < graph.edges.length; ei++) {
+    if (ei === arrival || record.closed.has(ei)) continue;
+    const e = graph.edges[ei] as TrailEdge;
+    const far = e.a === fork ? e.b : e.b === fork ? e.a : -1;
+    if (far === -1) continue;
+    const without = kept.filter((k) => k !== e);
+    if ((homeDistances(graph.nodes, without)[far] as number) === Infinity) deadEnds.add(ei);
+  }
+  const judged: CutRecord = { guide, cuts: record.cuts, closed: deadEnds };
+  return bestBranch(graph, judged, fork, arrival, residualEdges(graph, judged, -1));
 }
 
 /** Whether a living player stands within FORK_SPAWN_PLAYER_CLEAR (horizontal) of (x, z). */
@@ -193,7 +228,10 @@ function onAPlayer(world: World, x: number, z: number): boolean {
  * centreline. The spawn stands FORK_SPAWN_DIST in, or FORK_SPAWN_CLEAR short
  * of the far node (which may be another fork) or of the corridor when either
  * comes sooner; a living player under it moves it on along the bed, one
- * sample at a time, within the same limits.
+ * sample at a time, within the same limits. The corridor is looked for along
+ * the whole branch, not only up to the first candidate, and the cap is a
+ * sample too: every point the spawn can stand on is one the scan tested, so
+ * a spawn a player pushed along stays a metre clear of safe ground as well.
  */
 export function forkSpawn(world: World, fork: number, edge: number): Vec3 | null {
   const graph = world.trail;
@@ -209,14 +247,17 @@ export function forkSpawn(world: World, fork: number, edge: number): Vec3 | null
   const ux = dx / len, uz = dz / len;
 
   // How far in the branch admits a spawn at all: short of its end, and short
-  // of the first sample that stands on safe ground.
-  let limit = len - FORK_SPAWN_CLEAR;
-  for (let d = 0; d <= limit; d += FORK_SPAWN_STEP) {
-    if (isOnCorridor(world, a.x + ux * d, a.z + uz * d)) { limit = d - FORK_SPAWN_CLEAR; break; }
+  // of the first sample that stands on safe ground. The end is rounded down
+  // to a sample (exact: the step is a power of two), so the cap is a point
+  // the scan below has tested.
+  let limit = Math.floor((len - FORK_SPAWN_CLEAR) / FORK_SPAWN_STEP) * FORK_SPAWN_STEP;
+  for (let d = 0; d <= len; d += FORK_SPAWN_STEP) {
+    if (isOnCorridor(world, a.x + ux * d, a.z + uz * d)) { limit = Math.min(limit, d - FORK_SPAWN_CLEAR); break; }
   }
+  if (limit < FORK_SPAWN_MIN) return null;
   let at = Math.min(FORK_SPAWN_DIST, limit);
   while (at <= limit && onAPlayer(world, a.x + ux * at, a.z + uz * at)) at += FORK_SPAWN_STEP;
-  if (at > limit || at < FORK_SPAWN_MIN) return null;
+  if (at > limit) return null;
 
   const x = a.x + ux * at, z = a.z + uz * at;
   const bed = world.ground !== null ? world.ground.heightAt(x, z) : a.h + (b.h - a.h) * (at / len);
