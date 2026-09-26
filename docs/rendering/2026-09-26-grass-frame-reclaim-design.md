@@ -28,7 +28,8 @@ frustum. Every clutter and blade bucket is pinned always active, and Babylon
 culls a thin-instanced mesh as one unit anyway, so every blade clump in an 18 m
 disc and every card in a 40 m disc (and every grass-class card in a 110 m one)
 is drawn whatever the view. That is where this design starts, with the blades
-and the grass-class cards, where the profile put the cost. It then ends the meadow's
+and the grass-class cards, where the profile put the cost: drawing each frame
+only the prefix of their buffers the camera can see. It then ends the meadow's
 far cards where the published grass systems end their geometry, on a terrain
 that carries the sward, and spends none of what it saves on new geometry: the
 fullness levers it adds (a lean toward the eye, a base that hugs the ground, a
@@ -43,8 +44,8 @@ its go criteria (§9.5) are met, and then only through its own design.
 
 | question | decision |
 | --- | --- |
-| The bar | At the canopy pose, high tier, native pixels, the frame is at least **0.8 ms** under the near-grass tip by the pair method (§12.3), the profile's measured filter saving; the 4× figure reported beside it; cover ratios not below the near-grass fourth gate's (canopy **0.62**, meadow **0.94**); absolute near cover at the canopy pose ≥ **0.45**; luminance ratio in 0.8–1.25 at both poses; no seam, pop or popping sector on the walks (§12.4) |
-| Step 1 | **Sector meshes.** Each sectored bucket is split into 8 octants × rings about its rebuild origin, one mesh per sector, each with its own bounding box, Babylon's own frustum test (sphere, then box) and `alwaysSelectAsActiveMesh` off. First the blade field's 36 buckets (384 sector meshes) and the grass class's 4 (48); the meadow's two only if then measured worthwhile. Expected **0.59 ms** at native (0.49–0.69); per-frame filtering of the blade buckets is the named fallback for the rest of the bar (§5.2, §5.8) |
+| The bar | At the canopy pose, high tier, native pixels, the frame is at least **0.8 ms** under the near-grass tip by the pair method (§12.3), the profile's measured filter saving; the 4× figure reported beside it; cover ratios not below the near-grass fourth gate's (canopy **0.62**, meadow **0.94**); absolute near cover at the canopy pose ≥ **0.45**; luminance ratio in 0.8–1.25 at both poses; no seam or pop, at a frame edge or anywhere, on the walks (§12.4) |
+| Step 1 | **Cull to the frustum, per frame.** 1a: the blade field's 36 buckets and the grass class's 4 keep their collected buffers and draw a prefix filtered to a frustum widened by 5° and pushed back 1 m, refiltered when the camera turns 4° or moves 0.5 m; only the prefix is uploaded; the draw-call count does not move (about 162). Expected **0.78 ms** at native (0.64–0.92), the profile's measured 0.82 less the margins. 1b: the meadow's two buckets the same way, only if measured at ≥ 0.15 ms. 1c: sector meshes (8 octants × rings) as the fallback if the filter's JS shows (§5) |
 | Step 2 | **The far sward on the terrain.** On the tiers that draw blades the meadow's far cards dither out over **[26, 30] m** (were [28, 40]) and are not collected past 34.24 m. Past 24 m the terrain pulls ground carrying a sward toward a far-sward colour with the cards' own clump mottle, a wind shimmer on the cards' own gust field and a grazing darkening. The mid crop (18–26 m) stays cards |
 | Step 3 | **Lean and hug.** The fixed 4 cm `FOLIAGE_TILT` push becomes a rotation away from the eye by `FOLIAGE_LEAN` 0.5 rad × the sine of the eye's elevation over the instance, so a card seen from above faces up and a card near the horizon keeps its silhouette. Card bases follow the ground plane from the instance's own gradient |
 | Step 4 | **Colour continuity and alpha coverage.** The card root takes the floor's own colour, sward pull included, over the bottom 35 % of its height; the card's alpha is scaled up with its mip level at run time so a card at 5–8 m keeps the coverage it has at 1 m. No texture file changes |
@@ -118,7 +119,7 @@ Two details of Babylon 9.18 matter for any split:
 
 - A mesh's default `cullingStrategy` is `CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY`
   (`abstractMesh.pure.js:684`), which tests only the sphere around the box. A
-  sector's sphere is far looser than its box; §5.4 sets the standard strategy
+  sector's sphere is far looser than its box; §5.7 sets the standard strategy
   (sphere, then box).
 - `thinInstanceRefreshBoundingInfo` transforms the model box's eight corners by
   every instance matrix (`thinInstanceMesh.pure.js:375–414`). A sector's box is
@@ -298,7 +299,7 @@ bold):
 | filter grass-class cards | −1.00 ± 0.66 (noisy) | −1.83 ± 1.47 (noisy) | — | — |
 | filter all three | **−0.82 ± 0.14** | −0.51 ± 0.42 | — | — |
 
-The filter is what §5.2 calls compaction, done once on the page: each bucket's
+The filter is §5.2's mechanism done once on the page: each bucket's
 buffers rewritten to its in-view instances and the count set. It is the most
 culling can give, and the bar is set at its reliable figure.
 
@@ -317,60 +318,152 @@ What the profile could not pin down, and no step here depends on: the blades'
 split between vertex and fragment work, the foliage plugin's own vertex cost,
 and the 4× figures for filtering the blades and the grass class separately.
 
-## 5. Step 1: sector culling
+## 5. Step 1: cull to the frustum
 
 ### 5.1 The change, and the order
 
-A sectored bucket keeps its one collector list and its one fill, but the fill
-writes each instance into one of a fixed set of **sector meshes** chosen by
-where the instance stands relative to the rebuild origin. Each sector mesh is a
-copy of the bucket's mesh with its own geometry, its own instance buffers and
-its own bounding box. Babylon's own per-mesh frustum test, run every frame on
-the sectors' boxes, then decides which sectors draw.
+The profile (§4.4) measured one culling mechanism directly: each layer's
+buffers rewritten so that only the instances inside the frustum are drawn,
+with the count set to them. Applied to the blades, the grass-class cards and
+the meadow cards together it saved **0.82 ± 0.14 ms** at native, the meadow's
+part of it nothing measurable (−0.06 ± 0.09 at 4×), and it added no draw call.
+That mechanism, done every frame the view moves, is step 1:
 
-The profile (§4.4) sets the order. Filtering the blades, the grass-class cards
-and the meadow cards to the frustum together saved **0.82 ± 0.14 ms** at native;
-the meadow cards alone saved nothing measurable at 4× (−0.06 ± 0.09). The
-saving is in the layers whose instances carry many vertices: a grass-class card
-is 172–410 vertices, a live blade clump 28–784, a meadow card 20. So:
+1. **Step 1a: the blade field's 36 buckets and the grass class's 4, filtered
+   to the frustum** (§5.2). Not conditional.
+2. **Step 1b: the meadow's two buckets, by the same filter**, only if Task 2's
+   gate, with 1a in, measures the meadow's filter saving at native at
+   ≥ 0.15 ms by the profile's toggle method.
+3. **Step 1c: sector meshes** (§5.6–§5.9), the fallback, only if the filter's
+   JS shows in the gate: the JS frame time growing by more than the native
+   frame shrinks.
 
-1. **The blade field's buckets** (step 1a) and **the grass-class buckets**
-   (step 1b) are sectored first. Neither is conditional.
-2. **The meadow's two buckets** (step 1c) follow only if Task 2's gate, with 1a
-   and 1b in, measures the meadow's filtered saving at native at ≥ 0.15 ms by the
-   profile's toggle method; otherwise they stay single, always-active buckets.
+**Invariant of 1a and 1b: the draw-call count does not move.** The filter
+changes what each bucket's buffers hold, never how many meshes there are; the
+scene draws 160 calls on the control and 162 on the tip at the gate still
+(§3.3), and the gate holds it there (a bucket whose kept prefix is empty is
+disabled, which can only lower it).
 
-### 5.2 Sectors first, compaction as the fallback for the blades
+### 5.2 The filter
 
-The alternative is one buffer per bucket, re-sorted every frame the view moves
-so that the in-view instances form a prefix, with `thinInstanceCount` set to
-its length. It is exactly what the profile's filter did.
+**Two buffer sets per bucket.** The rebuild writes what it writes today into
+the bucket's **collected** buffers: matrix, `foliage`, and `fadeBands` (cards)
+or `bladeStrength` (blades), for every instance the collector returned, in
+the collector's order (nearest first for the blades). These stay on the CPU
+and are never uploaded. The mesh owns a second, equal-capacity set, the
+**drawn** buffers, handed to `thinInstanceSetBuffer` (updatable, as now).
 
-| | sector meshes | per-frame compaction |
+**The pass.** Pure, in a new `grassCull.ts`, over a bucket's collected
+buffers: for each instance, its translation (`matrix[12..14]`) tested as a
+sphere of radius `CULL_RADIUS` against a **widened frustum** built from the
+camera's pose; each kept instance's matrix and attribute floats copied, in
+order, to the front of the drawn buffers; the kept count returned. The shell
+then sets `thinInstanceCount` to it and uploads only the prefix,
+`thinInstancePartialBufferUpdate(kind, kept, 0)` for every kind (Babylon's
+count form, which uploads `kept × stride` floats from offset 0), never
+`thinInstanceBufferUpdated`, which re-uploads a user buffer whole. Order is
+preserved within the kept set, so the blades stay nearest first.
+
+**The widened frustum.** The camera's own, from its position, yaw, pitch,
+vertical field of view (1.4 rad) and aspect, with each side plane opened by
+`CULL_MARGIN` = **5°** and the apex moved back along the view by
+`CULL_PUSHBACK` = **1 m**. The sphere radius `CULL_RADIUS` = **0.75 m**, the
+profile's, covers a card's half-width at its largest scale, the wind's lean
+and step 3's lean. The planes are built from the pose, not read from
+`scene.frustumPlanes`, so the pass is a pure function of the pose.
+
+**When it runs.** On the first frame after a rebuild (the collected set
+changed), and on any frame where the camera has turned by more than
+`CULL_TURN` = **4°** (yaw or pitch) or moved by more than `CULL_MOVE` =
+**0.5 m** since the pose the current prefix was filtered at. Otherwise the last
+prefix is drawn as it is. The thresholds sit inside the margins: a turn of up to
+4° leaves every edge of the true frustum inside the 5° widened one, and a move
+of up to 0.5 m stays inside what the 1 m pushback opens at the apex
+(1 m × tan 31.5° ≈ 0.61 m sideways at the gate still, more at 16:9). So an
+instance the camera can see is always in the prefix it is drawing.
+
+**Where it runs.** From `renderer.ts`, on
+`scene.onBeforeActiveMeshesEvaluationObservable`, after the camera's pose for
+the frame is final (the view bob included), with the camera's world position,
+yaw, pitch and aspect; the shells expose `cull(pose)`. The blade field and the
+clutter shell keep their rebuilds as they are.
+
+**Cost.** Per pass, a plane test per instance over about 10,700 instances
+(6,131 blade cells, 4,559 grass-class cards), most rejected at the first plane;
+a copy of the kept prefix (about 2,150 instances at the gate still: 21 floats a
+blade, 24 a card); and the upload of that prefix, about 190 KB at the gate
+still and 350 KB at 16:9. An estimated 0.1–0.25 ms of JS per pass. Passes run
+only on frames that cross a threshold: turning at 90° a second at 42 frames a
+second, one frame in two; walking, about one in fifteen; standing and looking,
+none. The gate measures the pass's JS time (a histogram over the walk and the
+turn) and reports it; no test asserts a wall-clock bound.
+
+### 5.3 Why the filter first
+
+| | per-frame filter (1a) | sector meshes (1c) |
 | --- | --- | --- |
-| share drawn, gate still, pitch 0.3 | blades 0.39–0.45, grass class 0.31–0.32 | 0.15 plus a margin |
-| share drawn, 16:9, pitch 0.3 | blades 0.58–0.62, grass class 0.49–0.52 | 0.31 plus a margin |
-| JS per frame | none; a few hundred box tests inside Babylon | a plane test per instance (6,131 blade cells, 4,559 grass-class cards), a copy of the in-view prefix of 36 + 4 buckets and its upload, whenever the view turns |
-| when it runs | on the rebuild, which the shells already do on a 3 m (cards) or 1 m (blades) crossing | after the camera's final pose each frame, inside the render |
-| draw calls | one per visible sector | one per bucket |
-| instance order | kept within a sector | rewritten every frame |
+| measured | 0.82 ± 0.14 ms at native (the profile, exact frustum) | nothing directly |
+| share drawn, gate still, pitch 0.3 | blades 0.22, grass class 0.18 (with the margins) | blades 0.39–0.45, grass class 0.31–0.32 |
+| share drawn, 16:9, pitch 0.3 | blades 0.41, grass class 0.34 | blades 0.58–0.62, grass class 0.49–0.52 |
+| draw calls | unchanged, about 162 | about 250 at the gate still, 300 at 16:9 |
+| JS per frame | 0.1–0.25 ms on frames past a threshold, none otherwise | about 0.9–1.4 ms every frame, for the extra draws |
+| expected saving, native | about 0.78 ms | about 0.59 ms |
 
-Sectors keep both shells' contract: nothing per frame while the eye stays in
-its cell (`clutterMeshes.ts:33–40`, `bladeMeshes.ts`), with the memoising
-collectors carrying the cost of a crossing, and the blade buckets'
-nearest-first order, which the opaque blades lean on for early depth
-rejection, survives inside each sector. Compaction draws less but puts a loop
-over every instance on the main thread on nearly every frame of a first-person
-game and couples the shells to the final camera.
+The contract both shells were built on, nothing per frame while the eye stays
+in its cell, gives way here for a measured reason: the frame is GPU-bound, JS
+is 3–5 ms of it (§3.3), and the filter's JS is a fraction of what the sectors'
+extra draw calls would cost in the same place. What the filter couples to is
+the camera's final pose, which `onBeforeActiveMeshesEvaluationObservable`
+provides.
 
-The profile changes one thing in that trade. The frame is GPU-bound with JS at
-3–5 ms of a 23–55 ms frame (§3.3), so a JS loop has headroom it did not seem to
-have, and sectors fall short of the bar on their own (§5.8). So compaction is
-not rejected: it is **step 1d, the named fallback for the blade buckets**, taken
-if the gate after 1a–1c measures less than 0.8 ms at native. It is not proposed
-for the cards: the grass class's sectors get within 0.17 of the ideal share.
+### 5.4 The expected saving
 
-### 5.3 The layout: octants and rings about the rebuild origin
+The profile's filter, with an exact frustum and a 0.75 m sphere, culled 83 %
+of the blades and 85 % of the grass-class cards and saved **0.82 ± 0.14 ms** at
+native, all of it theirs. Split by their hide costs (1.36 and 0.52 ms, 72 % and
+28 %) and scaled by the share the widened frustum culls, from the geometric
+derivation of §3.4 (which gives 0.827 and 0.853 for the exact frustum):
+
+| layer | share of 0.82 | culled, widened / exact | expected, native |
+| --- | --- | --- | --- |
+| blades | 0.59 | 0.780 / 0.827 | **0.56** |
+| grass class | 0.23 | 0.823 / 0.853 | **0.22** |
+| together, gate still | 0.82 ± 0.14 | | **0.78** (0.64–0.92) |
+| together, 16:9 | | 0.595 and 0.657 culled | **0.60**, reported |
+
+The expected figure sits on the 0.8 ms bar, and the margins are its knob: at
+10° and 2 m the kept shares rise to 0.27 and 0.21 and the saving falls to about
+0.73 ms; at no margin (a pass every frame the view moves at all) it is the
+profile's 0.82. What else can close a shortfall, in order: step 1b if the
+meadow's saving is measured worth taking; step 2's far trim, about 0.12 ms at
+native while the meadow is not filtered (§6.3); the margins narrowed to 3° and
+0.5 m with the thresholds to 2° and 0.25 m.
+
+**16:9.** A landscape window sees a third of the ring where the gate's still
+sees a seventh, so the same filter saves about three quarters as much there.
+The bar is the gate still's; the 16:9 figure is reported.
+
+The comparison the bar reads is the branch filtered against the control as it
+ships, unculled (§12.3).
+
+### 5.5 What does not change
+
+The fade bands are per instance and copied with the instance, and every card
+in a bucket carries its bucket's bands, so the dither-in, the seam and the
+dither-out are as they were. The blade tiers' hand-off bands and the foliage
+plugin's `edges` are material uniforms. The shadow map draws no card and no
+blade. Boulders, flowers, bushes, litter and the forest are not filtered.
+
+### 5.6 Fallback (1c): the sector layout
+
+The rest of §5 specifies step 1c, taken only if the filter's JS shows in the
+gate. A sectored bucket keeps its one collector list and its one fill, but the
+fill writes each instance into one of a fixed set of **sector meshes** chosen
+by where it stands relative to the rebuild origin, each a copy of the bucket's
+mesh with its own geometry, buffers and bounding box, which Babylon's own
+per-mesh frustum test then draws or skips every frame.
+
+#### The layout: octants and rings about the rebuild origin
 
 A sector is an **octant** of the bearing from the bucket's rebuild origin
 (`SECTOR_OCTANTS` 8) crossed with a **ring** of distance from it, with the ring
@@ -383,8 +476,8 @@ edges set per tier or bucket:
 | blades, coarse tier (12 buckets) | 4.38–20.12 | none | 8 |
 | grass-class near, LOD0 (2 models) | 0–53.74 | 18 | 16 |
 | grass-class far, LOD1 (2 models) | 45.26–114.24 | none | 8 |
-| meadow near (1c, if taken) | 0–22.24 | 6, 14 | 24 |
-| meadow far (1c, if taken) | 3.76–40 (34.24 after step 2) | 14, 24 | 24 |
+| meadow near (if 1b was taken) | 0–22.24 | 6, 14 | 24 |
+| meadow far (if 1b was taken) | 3.76–40 (34.24 after step 2) | 14, 24 | 24 |
 
 A disc needs rings; an annulus does not. An octant's box always reaches back to
 the origin, and the origin is within 4.24 m (cards) or 2.12 m (blades) of the
@@ -427,7 +520,7 @@ function of the instance and the snapped origin: what a sector holds depends
 only on where the last rebuild happened, and which sectors draw only on the
 camera.
 
-### 5.4 The sector meshes
+### 5.7 Fallback (1c): the sector meshes
 
 - **Built once**, when the bucket is adopted (cards) or created (blades):
   `sectorCount` copies of the bucket's mesh,
@@ -460,7 +553,7 @@ camera.
   model height, downward). An empty sector is disabled, as an empty bucket is
   today.
 
-### 5.5 What does not change
+#### What does not change
 
 The fade bands are per instance and keyed to the eye, not to the mesh, so every
 sector of a card bucket carries its bucket's bands. The blade tiers' hand-off
@@ -468,13 +561,15 @@ bands are material uniforms, and a tier's sectors share its material. The
 foliage plugin's `edges`, and so the far sink, are per material. The shadow map
 draws no card and no blade. A boulder bucket is never sectored.
 
-### 5.6 The blade field (step 1a)
+### 5.8 Fallback (1c): the blades and the grass class in sectors
+
+#### The blade field
 
 The blade field is thirty-six buckets (four characters × three tiers × three
 sizes, `bladeMeshes.ts`), of which twenty hold instances at the canopy pose; its
 6,131 cells carry 796,159 instance vertices, and hiding it saves **1.36 ± 0.20
 ms** at native, the largest layer in the frame. Every bucket is sectored by its
-tier's layout (§5.3): 12 × 16 + 24 × 8 = **384 sector meshes**, of which only
+tier's layout (§5.6): 12 × 16 + 24 × 8 = **384 sector meshes**, of which only
 those holding cells are enabled.
 
 The fine tier stands around the eye and needed a ring to be worth splitting at
@@ -485,7 +580,7 @@ the field's vertices, about a third each (the budget test's padded clumps:
 of its instances at the gate still and 0.60 at 16:9, against 1.00 today and
 0.15–0.32 in view.
 
-### 5.7 The grass class (step 1b)
+#### The grass class
 
 The grass class's four buckets (`clutter.grass_a` and `_b`, LOD0 near at 330
 and 410 vertices a card, LOD1 far at 172 and 221) hold 4,559 cards and
@@ -496,7 +591,9 @@ keeping 0.31–0.32 at the gate still and 0.49–0.52 at 16:9. The cards were in
 control as well as the near-grass tip, so this reclaims frame the near-grass
 work never spent; that is still frame reclaimed, and the bar counts it.
 
-### 5.8 The expected saving
+### 5.9 Fallback (1c): saving and draw calls
+
+#### The expected saving
 
 Anchored on the profile's one reliable culling figure: filtering all three
 layers to the frustum, which keeps about 0.15 of each, saved **0.82 ± 0.14 ms**
@@ -508,16 +605,15 @@ the off-frustum instances removed:
 
 | layer | ideal saving (native) | culled, sectors / filter | sector saving, native |
 | --- | --- | --- | --- |
-| blades (1a) | 0.59 | 0.58 / 0.85 | **0.40** |
-| grass class (1b) | 0.23 | 0.685 / 0.85 | **0.19** |
+| blades | 0.59 | 0.58 / 0.85 | **0.40** |
+| grass class | 0.23 | 0.685 / 0.85 | **0.19** |
 | together | 0.82 ± 0.14 | | **0.59** (0.49–0.69) |
-| meadow (1c) | about 0 | | not expected |
+| meadow | about 0 | | not expected |
 
-**Sectors alone are expected to fall about 0.2 ms short of the 0.8 ms bar.**
-Finer sectors do not close it: sixteen bearings with the same rings take the
-blades to about 0.47 ms for some 210 blade draws. The gap is closed, if the gate
-confirms it, by step 1d: the blade buckets filtered per frame to the frustum
-(§5.2), which brings them to the profile's filter and the pair to about 0.82 ms.
+**Sectors alone are expected to fall about 0.2 ms short of the 0.8 ms bar**,
+and finer sectors do not close it: sixteen bearings with the same rings take
+the blades to about 0.47 ms for some 210 blade draws. That, with their draw
+calls, is why they are the fallback and the filter is step 1a (§5.3 compares them).
 At 4× the profile's filter figure was 0.51 ± 0.42, not reliable; the sectors'
 4× saving is reported, not barred. Step 2's far trim adds a little more
 (§6.3).
@@ -525,11 +621,11 @@ At 4× the profile's filter figure was 0.51 ± 0.42, not reliable; the sectors'
 This is not a saving against the ideal alone: the comparison the bar reads is
 the branch culled against the control as it ships, unculled (§12.3).
 
-### 5.9 Draw calls
+#### Draw calls
 
 The scene draws 160–164 calls at the canopy pose (§3.3), 20 of them live blade
 buckets and 4 grass-class buckets. Sectored, those become about 95 and 17 draws
-at the gate still and about 137 and 25 at 16:9 (the table in §5.3, with the live
+at the gate still and about 137 and 25 at 16:9 (the table in §5.6, with the live
 blade buckets spread evenly across tiers): **about 250 draws at the gate still
 and 300 at 16:9**, against a knee a Babylon report puts at 400 on a 2019 laptop
 ([Babylon forum](https://forum.babylonjs.com/t/rendering-performance-issues/43140)).
@@ -638,7 +734,7 @@ the low tier (`setTerrainSward`), whose far cards keep their own edges.
 Four uniforms, two `smoothstep`s, a hash, two `sin`s and a `mix` per terrain
 fragment, on the terrain's one draw. The trim takes 27 % of the far bucket,
 whose cost the profile measured at 0.44 ± 0.05 ms at native (§4.4): about
-**0.12 ms** at native if the meadow is not sectored (step 1c not taken), and
+**0.12 ms** at native if the meadow is not filtered (step 1b not taken), and
 the in-view part of that, about 0.04 ms, if it is. Step 2's value is as much
 where it leaves the far field (a sward that reads to the horizon on the
 terrain, not a card disc that ends at 40 m) as what it saves.
@@ -839,8 +935,8 @@ than at 2–3 m.
 
 ### 9.1 What it is for
 
-Culling on the CPU stops at the sector: the drawn share is a third to a half,
-where the geometry says a sixth to a third is in view. The route every shipped
+Culling on the CPU stops at the frustum, at the granularity of a clump, and
+spends main-thread time on every candidate each pass. The route every shipped
 grass system takes past that is a compute pass per frame that culls every
 candidate and packs the survivors for the draw. Babylon 9.18 has two of the
 three pieces: `ComputeShader`, and `StorageBuffer` with
@@ -864,7 +960,7 @@ whether the route pays here, and what it would cost to take.
   queries; any change on `main`.
 
 Its own worktree and branch (`worktree-grass-webgpu`), from `main` after
-step 1 lands, so its control carries the sectors.
+step 1 lands, so its control carries the frustum filter.
 
 ### 9.3 The engine first
 
@@ -950,23 +1046,39 @@ time, as a small patch set applied at install on an exactly pinned
   sink's rule.
 - The blade field's placement, tiers, counts, geometry, budget and materials
   (step 1 only splits or filters buffers).
-- The low tier: no sectors (it has no blade field and the smallest discs), no
+- The low tier: no frustum filter (it has no blade field and the smallest discs), no
   far sward, its own edges.
 - The near sward floor, the horizon pull, the macro tint.
 - Everything under `client/src/sim/`, and so the level id.
 
 ## 11. Tests
 
-- `grassSectors.test.ts` (new): `sectorOf` at literal points, one per octant and
-  ring, including the octant edges; `sectorCount` for the table's layouts; the box
-  builder's padding as literals.
-- `bladeMeshes.test.ts` (step 1a): every bucket of every tier split by its
-  tier's layout (16, 8, 8 sectors); each cell in exactly one sector, the counts
-  summing to the tier list's; nearest-first order within each sector; sectors
-  not always active, standard strategy, receiving shadows; no visible clump
-  culled and the fill independent of the path, as below; and, for step 1d if
-  taken, the per-frame filter keeping every in-view cell and nothing else.
-- `clutterMeshes.test.ts` (step 1b, and 1c if taken):
+- `grassCull.test.ts` (new, step 1a): the constants as literals (5°, 1 m,
+  0.75 m, 4°, 0.5 m); the widened planes at literal poses; the pass keeps
+  exactly the instances inside them, in their collected order, and returns
+  their count;
+  - **the kept set is a pure function of the pose and the collected set:** the
+    same pose and buffers give byte-identical prefixes whatever pose was
+    filtered before;
+  - **no visible instance is dropped:** for a pose filtered and then a camera
+    turned by up to 4° and moved by up to 0.5 m from it, every instance whose
+    translation, lifted 0–0.8 m, is inside that camera's view (`inCone`, margin
+    0) is in the prefix;
+  - **when it refilters:** not below either threshold, always past one, always
+    after a rebuild.
+- `bladeMeshes.test.ts`, `clutterMeshes.test.ts` (step 1a): after `cull(pose)`,
+  each blade and grass-class bucket's `thinInstanceCount` is the pass's kept
+  count; **the upload never exceeds the kept prefix**: every
+  `thinInstancePartialBufferUpdate` in a pass has count ≤ the kept count and
+  offset 0, and no `thinInstanceBufferUpdated` runs in a pass; the drawn
+  buffers' prefix equals the collected buffers' kept instances, matrix and
+  attributes alike, in order; the blades stay nearest first; **the mesh count
+  is unchanged** by any number of passes; a bucket with an empty prefix is
+  disabled.
+- `grassSectors.test.ts`, `bladeMeshes.test.ts` and `clutterMeshes.test.ts`
+  (step 1c, only if taken): every bucket split by its layout; each instance in
+  exactly one sector; nearest-first order within each blade sector; sectors not
+  always active, standard strategy; and, for the card sectors:
   - every grass-class instance (and meadow instance) lands in exactly one sector,
     and the sectors' counts sum to the collector's;
   - each sector's box contains every one of its instances, padded;
@@ -1008,10 +1120,11 @@ time, as a small patch set applied at install on an exactly pinned
 Paired stills, control against branch, at both poses (§4.1), with the
 isolation. **Bar, after every step: cover ratio ≥ 0.62 (canopy) and ≥ 0.94
 (meadow); canopy near cover ≥ 0.45; luminance ratio in 0.8–1.25 at both.** Step
-1's stills are also compared pixel for pixel with the same build's sectors
+1's stills are also compared pixel for pixel with the same build's filter
 switched off on the same page (a gate-only switch): culling must be invisible,
 the mean absolute difference no larger than between two consecutive stills with
-the sectors off.
+the filter off. Step 1's gate also holds the draw-call count at the control's
+160–164 and reports the filter pass's JS time over the walk and the turn.
 
 ### 12.2 Regression stills
 
@@ -1045,8 +1158,9 @@ A verdict in words per pose per gate: does the near field read as the same sward
 as the mid field, does anything read as a card.
 
 - **The turn** (step 1): at the canopy pose, a full turn in place in 32 steps at
-  pitch 0.3 and again at 0.9, a still at each. Bar: nothing appears or vanishes at
-  a frame edge between consecutive stills.
+  pitch 0.3 and again at 0.9, a still at each; then the same turn as a
+  continuous sweep at 90° a second, stills every 0.25 s. Bar: nothing appears or
+  vanishes at a frame edge between consecutive stills.
 - **The walk** (every gate): the near-grass walk (its design §8.4).
 - **The cut** (step 2): at the meadow pose's heading, twelve steps of 1 m toward
   +Z at pitch 0.1, a still at each. Bar: no line where the cards end, no density
@@ -1058,11 +1172,14 @@ as the mid field, does anything read as a card.
 
 In order, each one constant:
 
-- Step 1 under the 0.8 ms bar at native after 1a–1c: step 1d, the blade buckets
-  filtered to the frustum each frame the view turns (§5.2), reaching the
-  profile's filter.
-- The sectors' JS time growing by more than the GPU frame shrinks: the blade
-  fine tier's ring dropped (16 → 8 sectors a bucket, about 30 fewer draws).
+- Step 1 under the 0.8 ms bar at native after 1a (and 1b): the margins narrowed,
+  `CULL_MARGIN` 5° → 3° and `CULL_PUSHBACK` 1 → 0.5 m, with `CULL_TURN` 4° → 2°
+  and `CULL_MOVE` 0.5 → 0.25 m (§5.4).
+- The filter's JS time growing by more than the native frame shrinks: first the
+  margins widened (10° and 2 m, thresholds 8° and 1 m, fewer passes); if it still
+  shows, step 1c, the sectors (§5.6–§5.9).
+- If 1c is taken and its JS time grows by more than the GPU frame shrinks: the
+  blade fine tier's ring dropped (16 → 8 sectors a bucket, about 30 fewer draws).
 - A sector popping at a frame edge: `SECTOR_PAD_XZ` 1.0 → 1.5.
 - Step 2 showing a line at the cut: the far out-band (26, 30) → (24, 30) and the
   terrain band [24, 30] → [22, 30]; a mid crop moved by the change: the reverse.
@@ -1076,9 +1193,9 @@ In order, each one constant:
 ## 14. Follow-ups
 
 - The forest's buckets, pinned always active for the same reason as the clutter's
-  (`forestMeshes.ts:234`), sectored the same way if their measured cost warrants.
-- Compaction for the card buckets, if the gate measures the sectored grass
-  class's saving short of its filtered saving by more than 0.1 ms (§5.2).
+  (`forestMeshes.ts:234`), filtered the same way if their measured cost warrants.
+- The same filter for the flower and bush buckets, if their measured cost
+  warrants.
 - Per-blade compute culling, if the spike goes (§9.4).
 - Shells on the 0–4 m ring, only if the near field still reads thin after steps 3
   and 4.

@@ -4,7 +4,7 @@
 
 **Goal:** At the canopy pose, high tier, native pixels, the frame is at least 0.8 ms under the near-grass tip (the profile's measured filter saving; the 4× figure reported), with cover ratios not below 0.62 (canopy) and 0.94 (meadow), canopy near cover ≥ 0.45, the luminance ratio in 0.8–1.25 at both poses, and nothing that appears, vanishes or reads as a line on a walk or a turn.
 
-**Architecture:** Four steps in order, each behind its own gate, after a baseline pinned from an in-page profile of the canopy pose. (1) Sector meshes: the blade field's 36 buckets and the grass class's 4 are split into octants × rings about their rebuild origin, each a mesh with its own box that Babylon frustum-tests every frame; the meadow's two only if then measured worthwhile, and the blade buckets filtered per frame only if the bar is still missed. (2) The meadow's far cards end at 30 m on the tiers with blades, and the terrain carries the sward past 24 m. (3) Cards lean away from the eye by the eye's elevation over them, and their bases hug the ground. (4) Card roots take the floor's colour, and card alpha is scaled by mip level. A WebGPU spike runs beside them on its own branch and ends in a go or a no-go. Nothing under `sim/`.
+**Architecture:** Four steps in order, each behind its own gate, after a baseline pinned from an in-page profile of the canopy pose. (1) Per-frame frustum filtering: the blade field's 36 buckets and the grass class's 4 keep their collected instances and draw, each frame the view has moved past a threshold, only the prefix inside a slightly widened frustum, with the draw-call count unchanged; the meadow's two buckets only if then measured worthwhile; sector meshes only as the fallback if the filter's JS shows. (2) The meadow's far cards end at 30 m on the tiers with blades, and the terrain carries the sward past 24 m. (3) Cards lean away from the eye by the eye's elevation over them, and their bases hug the ground. (4) Card roots take the floor's colour, and card alpha is scaled by mip level. A WebGPU spike runs beside them on its own branch and ends in a go or a no-go. Nothing under `sim/`.
 
 **Tech Stack:** TypeScript, Babylon.js 9.18 (thin instances, `MaterialPluginBase`, `BoundingInfo`, `AbstractMesh.cullingStrategy`; `WebGPUEngine`, `ComputeShader`, `StorageBuffer` for the spike only), GLSL in `.fx` files and template strings, vitest 4 with `NullEngine`, plain Node ESM under `tools/`.
 
@@ -27,17 +27,19 @@
 | File | Task | Change |
 | --- | --- | --- |
 | `docs/rendering/2026-09-26-grass-frame-reclaim-verification.md` (new) | 1, 2–5, 7 | Created by Task 1 (method, poses, control, the profile pinned, its confirmation); one section per gate; closed by Task 7 |
-| `client/src/game/grassSectors.ts` (new) | 2 | `SECTOR_OCTANTS`, the pads, `sectorCount`, `sectorOf`, the box accumulator |
-| `client/src/game/clutterField.ts` | 2, 3 | `CLUTTER_SECTOR_RINGS` (grass class, then the meadow if taken); `clutterOrigin` exported; `CLUTTER_MEADOW_CARD_END`, `CLUTTER_MEADOW_CARD_RAMP`, the far trim and `clutterMeadowFarEdges` |
-| `client/src/game/clutterMeshes.ts` | 2, 3, 4, 5 | Buckets of parts, the sector meshes and boxes; the far edges on tiers with blades; `foliageGrad`; `foliageCover` |
-| `client/src/game/bladeField.ts`, `bladeMeshes.ts` | 2 | `bladeOrigin` exported; every bucket in its tier's sectors, `BLADE_SECTOR_RINGS`; `cull` (2D, conditional) |
+| `client/src/game/grassCull.ts` (new) | 2 | `CULL_*`, `cullPlanes`, `needsCull`, `cullPrefix`: the per-frame frustum filter |
+| `client/src/game/renderer.ts` | 2, 5 | The per-frame `cull` hook; `setFoliageSward` |
+| `client/src/game/grassSectors.ts` (new, 2C only) | 2 | `SECTOR_OCTANTS`, the pads, `sectorCount`, `sectorOf`, the box accumulator |
+| `client/src/game/clutterField.ts` | 2C, 3 | `CLUTTER_SECTOR_RINGS` (2C only); `clutterOrigin` exported; `CLUTTER_MEADOW_CARD_END`, `CLUTTER_MEADOW_CARD_RAMP`, the far trim and `clutterMeadowFarEdges` |
+| `client/src/game/clutterMeshes.ts` | 2, 3, 4, 5 | `CLUTTER_CULLED`, collected and drawn buffers, `cull` (sectors in 2C only); the far edges on tiers with blades; `foliageGrad`; `foliageCover` |
+| `client/src/game/bladeField.ts`, `bladeMeshes.ts` | 2 | Collected and drawn buffers, `cull`; in 2C only, `bladeOrigin` exported and `BLADE_SECTOR_RINGS` |
 | `client/src/game/groundHexParams.ts` | 3 | `FAR_SWARD`, `FAR_SWARD_MAX`, `FAR_SWARD_COVER`, `FAR_SWARD_BAND`, `FAR_SWARD_CELL`, `FAR_SWARD_CLUMP`, `FAR_SWARD_WIND`, `FAR_SWARD_GRAZE`, `farSwardWeight` |
 | `client/src/game/shaders/sward.fragment.fx` (new) | 3, 5 | `swardGust`, `swardFar`, `swardNearWeight`, `swardFarWeight`: the floor's GLSL, included by the terrain and, from Task 5, the foliage fragment |
 | `client/src/game/terrainTexture.ts` | 3 | Four uniforms, the far pull after the near one |
 | `client/src/game/foliagePlugin.ts`, `shaders/foliage.vertex.fx`, `shaders/foliageWorldPos.vertex.fx`, `shaders/foliageLights.fragment.fx`, `shaders/foliage.fragment.fx`, `shaders/foliageAlpha.fragment.fx` (new) | 3, 4, 5 | `foliageWind()` getter; `FOLIAGE_LEAN`, the hug, `FOLIAGE_TILT` removed; `FOLIAGE_ROOT_BAND`, the root's floor colour, the mip-scaled alpha test |
 | `tools/cardCoverage/cardCoverage.mjs` (new), `tools/cardCoverage/test/cardCoverage.test.mjs` (new) | 5 | Reads a card model's embedded alpha, prints coverage per box mip and the scale |
 | `ARCHITECTURE.md` | 2, 3, 4, 5 | One sentence per step in the Rendering section |
-| Tests: `grassSectors.test.ts` (new), `clutterMeshes.test.ts`, `clutterField.test.ts`, `bladeMeshes.test.ts`, `groundHexParams.test.ts`, `terrainTexture.test.ts`, `foliagePlugin.test.ts` | 2–5 | As each task says |
+| Tests: `grassCull.test.ts` (new), `grassSectors.test.ts` (new, 2C only), `clutterMeshes.test.ts`, `clutterField.test.ts`, `bladeMeshes.test.ts`, `groundHexParams.test.ts`, `terrainTexture.test.ts`, `foliagePlugin.test.ts` | 2–5 | As each task says |
 | Spike branch only: `client/src/app.ts`, `renderer.ts`, `bladeGpu.ts` (new), `client/public/libs/webgpu/` | 6 | Never merged; its report is |
 
 ---
@@ -114,32 +116,343 @@ EOF
 
 ---
 
-### Task 2: Step 1 — sector culling
+### Task 2: Step 1 — cull to the frustum
 
-Four parts, in order: **2A** the blade field (36 buckets), **2B** the grass class (4 buckets), a gate, then **2C** the meadow (2 buckets) only if that gate measures it worthwhile, and **2D** the blade buckets filtered per frame only if the bar is still missed.
+Three parts: **2A** the blade field's 36 buckets and the grass class's 4, filtered to the frustum each frame the view moves (design §5.2); a gate; **2B** the meadow's 2 buckets by the same filter, only if that gate measures them worth it; **2C** sector meshes, the fallback, only if the filter's JS shows in the gate (design §5.6–§5.9).
 
 **Files:**
-- Create: `client/src/game/grassSectors.ts`, `client/test/game/grassSectors.test.ts`
-- Modify: `client/src/game/bladeField.ts` (export `bladeOrigin`), `client/src/game/bladeMeshes.ts` (buckets of sectors; `BLADE_SECTOR_RINGS`)
-- Modify: `client/src/game/clutterField.ts` (export `clutterOrigin`; `CLUTTER_SECTOR_RINGS`)
-- Modify: `client/src/game/clutterMeshes.ts` (`Bucket` → parts; `prepSectorMesh`; the fill, apply and box; `adopt`)
+- Create: `client/src/game/grassCull.ts`, `client/test/game/grassCull.test.ts`
+- Modify: `client/src/game/bladeMeshes.ts` (collected and drawn buffers; `cull`)
+- Modify: `client/src/game/clutterMeshes.ts` (collected and drawn buffers for filtered classes; `cull`; `CLUTTER_CULLED`)
+- Modify: `client/src/game/renderer.ts` (the per-frame hook)
 - Modify: `ARCHITECTURE.md` (the blade and clutter sentences)
-- Test: `client/test/game/bladeMeshes.test.ts`, `client/test/game/clutterMeshes.test.ts`, `client/test/game/clutterField.test.ts`
+- Test: `client/test/game/bladeMeshes.test.ts`, `client/test/game/clutterMeshes.test.ts`
+- 2C only: `client/src/game/grassSectors.ts` and its test, `bladeField.ts`, `clutterField.ts`
 
 **Interfaces:**
-- Consumes: `clutterCell` (`sim/clutter.ts`); `inCone`, `View` (`wildlifeDirector.ts`) in the tests; `Frustum.GetPlanes`, `UniversalCamera`, `AbstractMesh` from Babylon.
+- Consumes: `inCone`, `View` (`wildlifeDirector.ts`) in the tests; the camera's `globalPosition`, `rotation`, `fov` and `engine.getAspectRatio(camera)`.
 - Produces:
-  - `export const SECTOR_OCTANTS = 8`, `SECTOR_PAD_XZ = 1`, `SECTOR_PAD_DOWN = 0.5`, `SECTOR_PAD_UP = 1`
-  - `export function sectorCount(rings: readonly number[]): number`
-  - `export function sectorOf(x: number, z: number, ox: number, oz: number, rings: readonly number[]): number`
-  - `export function resetBoxes(boxes: Float32Array): void`, `growBox(boxes: Float32Array, k: number, x: number, y: number, z: number): void`, `paddedBox(boxes: Float32Array, k: number, out: Float32Array): boolean` (false for an empty sector)
-  - `export function prepSectorMesh(mesh: Mesh): void` (`clutterMeshes.ts`, beside `prepBucketMesh`)
-  - `export const BLADE_SECTOR_RINGS: readonly [readonly number[], readonly number[], readonly number[]] = [[2.5], [], []]` (fine, mid, coarse)
-  - `export function bladeOrigin(v: number): number` (now exported)
-  - `export function clutterOrigin(camX: number, camZ: number, cell: number): { x: number; z: number }` (now exported)
-  - `export const CLUTTER_SECTOR_RINGS: ReadonlyMap<number, readonly [readonly number[], readonly number[]]>` — `[near rings, far rings]` per sectored class: the grass class `[[18], []]` in 2B; the meadow `[[6, 14], [14, 24]]` added in 2C
+  - `export const CULL_MARGIN = (5 * Math.PI) / 180`, `CULL_PUSHBACK = 1`, `CULL_RADIUS = 0.75`, `CULL_TURN = (4 * Math.PI) / 180`, `CULL_MOVE = 0.5`
+  - `export type CullPose = { x: number; y: number; z: number; yaw: number; pitch: number; fov: number; aspect: number }`
+  - `export function cullPlanes(pose: CullPose, out: Float32Array): void` — five planes (four sides and the pushed-back near), four floats each, inward normals, widened by `CULL_MARGIN`
+  - `export function needsCull(last: CullPose | null, pose: CullPose): boolean`
+  - `export type CullStream = { src: Float32Array; dst: Float32Array; stride: number }`
+  - `export function cullPrefix(planes: Float32Array, count: number, matrix: CullStream, attrs: readonly CullStream[]): number` — copies the kept instances, in order, to the front of every `dst`, returns the kept count
+  - `cull(pose: CullPose | null): void` on `BladeMeshes` and `ClutterMeshes`; `null` keeps every instance
+  - `export const CLUTTER_CULLED: ReadonlySet<number>` (`clutterMeshes.ts`): `CLUTTER_GRASS` in 2A; `CLUTTER_MEADOW` added in 2B
 
-- [ ] **Step 1: The pure module, test first**
+- [ ] **Step 1: The pure pass, test first**
+
+`client/test/game/grassCull.test.ts`:
+
+```ts
+import { describe, expect, it } from "vitest";
+import {
+  CULL_MARGIN, CULL_MOVE, CULL_PUSHBACK, CULL_RADIUS, CULL_TURN,
+  cullPlanes, cullPrefix, needsCull, type CullPose,
+} from "../../src/game/grassCull.js";
+import { inCone } from "../../src/game/wildlifeDirector.js";
+
+const POSE: CullPose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0, fov: 1.4, aspect: 1200 / 2029 };
+
+/** n instances on the ground: translations at (x, 0, z), one attribute of stride 4 holding the index. */
+function field(points: [number, number][]) {
+  const n = points.length;
+  const src = new Float32Array(n * 16), attr = new Float32Array(n * 4);
+  points.forEach(([x, z], i) => { src[i * 16] = src[i * 16 + 5] = src[i * 16 + 10] = src[i * 16 + 15] = 1; src[i * 16 + 12] = x; src[i * 16 + 14] = z; attr[i * 4] = i; });
+  return { n, matrix: { src, dst: new Float32Array(n * 16), stride: 16 }, attrs: [{ src: attr, dst: new Float32Array(n * 4), stride: 4 }] };
+}
+function kept(points: [number, number][], pose: CullPose): number[] {
+  const f = field(points);
+  const planes = new Float32Array(20);
+  cullPlanes(pose, planes);
+  const k = cullPrefix(planes, f.n, f.matrix, f.attrs);
+  return Array.from(f.attrs[0]!.dst.subarray(0, k * 4)).filter((_, j) => j % 4 === 0);
+}
+
+describe("grass cull", () => {
+  it("pins the margins and thresholds", () => {
+    expect(CULL_MARGIN).toBeCloseTo(0.0872665, 7);
+    expect([CULL_PUSHBACK, CULL_RADIUS, CULL_MOVE]).toEqual([1, 0.75, 0.5]);
+    expect(CULL_TURN).toBeCloseTo(0.0698132, 7);
+  });
+
+  it("keeps what the widened frustum holds, in order", () => {
+    // Yaw 0 faces +Z. The portrait still's half-width is 26.49°, 31.49° widened,
+    // from an apex 1 m behind the eye.
+    const pts: [number, number][] = [
+      [0, 10],                                   // ahead: kept
+      [10 * Math.tan((30 * Math.PI) / 180), 10], // inside the widened edge: kept
+      [10 * Math.tan((40 * Math.PI) / 180), 10], // 1.41 m past it: dropped
+      [0, -0.5],                                 // just behind the eye, inside the pushback: kept
+      [0, -10],                                  // behind: dropped
+      [-2, 20],                                  // ahead: kept
+    ];
+    expect(kept(pts, POSE)).toEqual([0, 1, 3, 5]);
+  });
+
+  it("is a pure function of the pose and the collected set", () => {
+    const pts: [number, number][] = [];
+    for (let i = 0; i < 400; i++) pts.push([Math.sin(i * 12.9898) * 30, Math.cos(i * 78.233) * 30]);
+    const a = kept(pts, POSE);
+    kept(pts, { ...POSE, yaw: 2 }); // another pose in between changes nothing
+    expect(kept(pts, POSE)).toEqual(a);
+  });
+
+  it("never drops an instance the camera can see within the thresholds", () => {
+    const pts: [number, number][] = [];
+    for (let i = 0; i < 2000; i++) pts.push([Math.sin(i * 12.9898) * 25, Math.cos(i * 78.233) * 25]);
+    for (const base of [POSE, { ...POSE, yaw: 1.571, pitch: 0.3 }, { ...POSE, yaw: 3, pitch: 0.9, aspect: 16 / 9 }]) {
+      const keep = new Set(kept(pts, base));
+      for (const [dyaw, dpitch, dx, dz] of [[0.0698, 0, 0, 0], [-0.0698, 0.0698, 0, 0], [0, 0, 0.5, 0], [0.05, -0.05, -0.35, 0.35]]) {
+        const view = { x: base.x + dx, y: base.y, z: base.z + dz, yaw: base.yaw + dyaw, pitch: base.pitch + dpitch, fov: base.fov, aspect: base.aspect };
+        pts.forEach(([x, z], i) => {
+          if (inCone(view, x, 0, z, 0) || inCone(view, x, 0.8, z, 0)) expect(keep.has(i)).toBe(true);
+        });
+      }
+    }
+  }, 20_000);
+
+  it("refilters past a threshold, not below", () => {
+    expect(needsCull(null, POSE)).toBe(true);
+    expect(needsCull(POSE, { ...POSE, yaw: 0.05 })).toBe(false);
+    expect(needsCull(POSE, { ...POSE, yaw: 0.08 })).toBe(true);
+    expect(needsCull(POSE, { ...POSE, pitch: -0.08 })).toBe(true);
+    expect(needsCull(POSE, { ...POSE, x: 0.4 })).toBe(false);
+    expect(needsCull(POSE, { ...POSE, x: 0.4, z: 0.4 })).toBe(true);
+  });
+});
+```
+
+Run `cd client && npx vitest run test/game/grassCull.test.ts`: FAIL (no module). Then `client/src/game/grassCull.ts`:
+
+```ts
+/**
+ * Per-frame frustum filtering of thin-instance buckets. A bucket's instances
+ * surround the eye and Babylon draws a thin-instanced mesh whole or not at
+ * all, so a bucket of grass is vertex-shaded in full whatever the view; at a
+ * walking gaze five in six of its instances are outside it. The shells keep
+ * each bucket's full collected buffers on the CPU and draw a prefix: the
+ * instances inside a frustum widened by CULL_MARGIN on every side and pushed
+ * back CULL_PUSHBACK behind the eye, copied in order to the front of the
+ * drawn buffers. The prefix is refiltered only when the camera has turned by
+ * CULL_TURN or moved by CULL_MOVE since it was cut, and those sit inside the
+ * margins, so an instance the camera can see is always in the prefix.
+ * Pure and Babylon-free: the planes are built from the pose, not read from the
+ * scene, so the kept set is a function of the pose and the collected set.
+ */
+export const CULL_MARGIN = (5 * Math.PI) / 180;
+export const CULL_PUSHBACK = 1;
+/** An instance's reach beyond its translation: a card's half-width at its
+ * largest scale, the wind's lean and the lean toward the eye. */
+export const CULL_RADIUS = 0.75;
+export const CULL_TURN = (4 * Math.PI) / 180;
+export const CULL_MOVE = 0.5;
+
+export type CullPose = { x: number; y: number; z: number; yaw: number; pitch: number; fov: number; aspect: number };
+export type CullStream = { src: Float32Array; dst: Float32Array; stride: number };
+
+export function cullPlanes(pose: CullPose, out: Float32Array): void {
+  // Forward, right and up as inCone (wildlifeDirector.ts) has them: yaw 0
+  // faces +Z, positive pitch looks down, no roll.
+  const sy = Math.sin(pose.yaw), cy = Math.cos(pose.yaw), sp = Math.sin(pose.pitch), cp = Math.cos(pose.pitch);
+  const fx = sy * cp, fy = -sp, fz = cy * cp;
+  const rx = cy, ry = 0, rz = -sy;
+  const ux = sy * sp, uy = cp, uz = cy * sp;
+  const ax = pose.x - fx * CULL_PUSHBACK, ay = pose.y - fy * CULL_PUSHBACK, az = pose.z - fz * CULL_PUSHBACK;
+  const halfY = pose.fov / 2 + CULL_MARGIN;
+  const halfX = Math.atan(Math.tan(pose.fov / 2) * pose.aspect) + CULL_MARGIN;
+  const side = (k: number, ex: number, ey: number, ez: number, half: number, sign: number) => {
+    // Inward normal of the plane through the apex containing the edge direction.
+    const c = Math.cos(half), s = Math.sin(half);
+    const nx = fx * s - sign * ex * c, ny = fy * s - sign * ey * c, nz = fz * s - sign * ez * c;
+    out[k] = nx; out[k + 1] = ny; out[k + 2] = nz; out[k + 3] = -(nx * ax + ny * ay + nz * az);
+  };
+  side(0, rx, ry, rz, halfX, 1);
+  side(4, rx, ry, rz, halfX, -1);
+  side(8, ux, uy, uz, halfY, 1);
+  side(12, ux, uy, uz, halfY, -1);
+  out[16] = fx; out[17] = fy; out[18] = fz; out[19] = -(fx * ax + fy * ay + fz * az);
+}
+
+export function needsCull(last: CullPose | null, pose: CullPose): boolean {
+  if (last === null) return true;
+  if (Math.abs(pose.yaw - last.yaw) > CULL_TURN || Math.abs(pose.pitch - last.pitch) > CULL_TURN) return true;
+  const dx = pose.x - last.x, dy = pose.y - last.y, dz = pose.z - last.z;
+  return dx * dx + dy * dy + dz * dz > CULL_MOVE * CULL_MOVE;
+}
+
+export function cullPrefix(planes: Float32Array, count: number, matrix: CullStream, attrs: readonly CullStream[]): number {
+  let kept = 0;
+  for (let i = 0; i < count; i++) {
+    const o = i * 16;
+    const x = matrix.src[o + 12]!, y = matrix.src[o + 13]!, z = matrix.src[o + 14]!;
+    let inside = true;
+    for (let p = 0; p < 20; p += 4) {
+      if (planes[p]! * x + planes[p + 1]! * y + planes[p + 2]! * z + planes[p + 3]! < -CULL_RADIUS) { inside = false; break; }
+    }
+    if (!inside) continue;
+    // Always across arrays, collected into drawn, so the collected set survives.
+    matrix.dst.set(matrix.src.subarray(o, o + 16), kept * 16);
+    for (const a of attrs) a.dst.set(a.src.subarray(i * a.stride, (i + 1) * a.stride), kept * a.stride);
+    kept++;
+  }
+  return kept;
+}
+```
+
+(The yaw difference is taken without wrapping; a turn across ±π refilters once, which is harmless. The `subarray` views allocate per kept instance; if the gate's JS histogram shows it, they become index loops.) Run: PASS.
+
+- [ ] **Step 2: The blade shell, test first**
+
+`client/test/game/bladeMeshes.test.ts`:
+
+```ts
+describe("the blade field culled to the frustum", () => {
+  const POSE = { x: CAM.x, y: 0, z: CAM.z, yaw: 1.571, pitch: 0.3, fov: 1.4, aspect: 1200 / 2029 };
+
+  it("draws each bucket's kept prefix, uploads only it, and adds no mesh", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const blades = createBladeMeshes(scene, SEED, { quality: "high" });
+    blades.update(CAM.x, CAM.z);
+    const meshCount = scene.meshes.length;
+    const pose = { ...POSE, y: elevationSampleAt(SEED, CAM.x, CAM.z).h + 1.6 };
+    const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
+    const whole = vi.spyOn(Mesh.prototype, "thinInstanceBufferUpdated");
+    blades.cull(pose);
+    const planes = new Float32Array(20);
+    cullPlanes(pose, planes);
+    const tiers = collectBladeCells(SEED, CAM.x, CAM.z);
+    const lists = [tiers.fine, tiers.mid, tiers.coarse];
+    let drawn = 0, collected = 0;
+    for (const mesh of blades.meshes) {
+      const [, c, t, s] = /_c(\d)_t(\d)_s(\d)$/.exec(mesh.name)!.map(Number);
+      const cells = lists[t!]!.filter((cell) => cell.character === c && cell.size === s);
+      collected += cells.length;
+      // The kept cells are those whose translation the planes keep, in list order.
+      const want = cells.filter((cell) => {
+        const y = cell.groundH - 0.02; // the translation instanceMatrixFor writes: the ground less the sink
+        for (let p = 0; p < 20; p += 4) if (planes[p]! * cell.x + planes[p + 1]! * y + planes[p + 2]! * cell.z + planes[p + 3]! < -0.75) return false;
+        return true;
+      });
+      expect(mesh.isEnabled() ? mesh.thinInstanceCount : 0).toBe(want.length);
+      if (!mesh.isEnabled()) continue;
+      drawn += want.length;
+      expect(mesh.thinInstanceGetWorldMatrices().map((m) => [m.m[12], m.m[14]].map(Math.fround))).toEqual(want.map((cell) => [cell.x, cell.z].map(Math.fround)));
+    }
+    // The prefix is a fraction of what was collected: about a fifth at this pose.
+    expect(drawn / collected).toBeLessThan(0.35);
+    // Only prefixes are uploaded, never more than the kept count, never whole.
+    for (let k = 0; k < partial.mock.calls.length; k++) {
+      const [, len, offset] = partial.mock.calls[k]!;
+      expect(offset).toBe(0);
+      expect(len as number).toBeLessThanOrEqual((partial.mock.instances[k] as Mesh).thinInstanceCount);
+    }
+    expect(whole).not.toHaveBeenCalled();
+    // A second call at the same pose does nothing.
+    partial.mockClear();
+    blades.cull(pose);
+    expect(partial).not.toHaveBeenCalled();
+    expect(scene.meshes.length).toBe(meshCount);
+    partial.mockRestore(); whole.mockRestore();
+    blades.dispose(); engine.dispose();
+  }, 60_000);
+});
+```
+
+Run `cd client && npx vitest run test/game/bladeMeshes.test.ts`: FAIL (`cull` is not a function).
+
+Implement in `client/src/game/bladeMeshes.ts`: a bucket's `buf`, `foliage` and `strength` become its **collected** buffers, written by the rebuild as now; the bucket gains `drawn: { buf, foliage, strength }` of equal capacity, grown with them, and `streams: { matrix: CullStream; attrs: CullStream[] }` rebuilt only on growth. `applyBucket` on a rebuild calls `thinInstanceSetBuffer` with the drawn arrays only when grown, and marks the shell dirty; it no longer uploads. `cull(pose)`: `if (!dirty && !needsCull(last, pose)) return;` then `cullPlanes(pose, planes)` into a module-level `Float32Array(20)`, and per bucket `kept = cullPrefix(planes, count, streams.matrix, streams.attrs)`, `mesh.thinInstanceCount = kept`, and if `kept > 0` `thinInstancePartialBufferUpdate("matrix", kept, 0)`, `("foliage", kept, 0)`, `("bladeStrength", kept, 0)`; `mesh.setEnabled(kept > 0)`; `last = pose` copied into a module-level record, `dirty = false`. The file-head comment gains the filter's paragraph (design §5.2) and says the draw count is the buckets', unchanged. `cull(null)` keeps every instance (the tests' and the gate switch's way to draw the collected set whole). Run: PASS, with the existing `bladeMeshes` tests that read buffers after `update` calling `blades.cull(null)` first, their literals unchanged.
+
+- [ ] **Step 3: The grass class, test first**
+
+`client/test/game/clutterMeshes.test.ts`, inside `describe("the cards beside the blade field", …)` with its `build(nearBlades)`: the same shape as Step 2's test over the grass class's four buckets (`assets[CLUTTER_GRASS][variant][lod][0]`), the kept cards being those of `collectClutter(1, 35, 21335)[CLUTTER_GRASS]` in that bucket whose translation the planes keep, in collector order, with `matrix`, `fadeBands` and `foliage` prefixes matching the collected ones; partial uploads only, never over the kept count; no mesh added; the meadow's buckets untouched by `cull` (their `thinInstanceCount` the collector's full count, 2,801 near). And `expect([...CLUTTER_CULLED]).toEqual([CLUTTER_GRASS])`.
+
+Run: FAIL. Implement in `clutterMeshes.ts`: `CLUTTER_CULLED = new Set([CLUTTER_GRASS])` with a comment (the grass class's cards are 172–410 vertices over a 110 m disc; the meadow's 20-vertex cards measured no saving); for buckets of a culled class, the same collected/drawn split, streams and `cull` as the blades (`fadeBands` and `foliage` as attributes); every other bucket as today. `ClutterMeshes.cull(pose)`. Run: PASS.
+
+- [ ] **Step 4: The hook**
+
+`client/src/game/renderer.ts`, after the shells are created:
+
+```ts
+  // The grass is culled to the frustum here, once the camera's pose for the
+  // frame is final (the view bob included) and before Babylon picks the
+  // active meshes; the shells refilter only when the view has moved past
+  // grassCull.ts's thresholds.
+  const cullPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, fov: 1.4, aspect: 1 };
+  scene.onBeforeActiveMeshesEvaluationObservable.add(() => {
+    const p = camera.globalPosition;
+    cullPose.x = p.x; cullPose.y = p.y; cullPose.z = p.z;
+    cullPose.yaw = camera.rotation.y; cullPose.pitch = camera.rotation.x;
+    cullPose.fov = camera.fov; cullPose.aspect = engine.getAspectRatio(camera);
+    bladeMeshes?.cull(cullPose);
+    clutterMeshes?.cull(cullPose);
+  });
+```
+
+`ARCHITECTURE.md`: the blade and grass-class buckets keep their full instance lists and each frame the view has moved draw only the prefix inside a slightly widened frustum, with the draw count unchanged.
+
+Run: `cd client && npx vitest run test/game/grassCull.test.ts test/game/bladeMeshes.test.ts test/game/clutterMeshes.test.ts test/game/renderer.test.ts` — PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add client/src/game/grassCull.ts client/src/game/bladeMeshes.ts client/src/game/clutterMeshes.ts client/src/game/renderer.ts ARCHITECTURE.md client/test/game/grassCull.test.ts client/test/game/bladeMeshes.test.ts client/test/game/clutterMeshes.test.ts
+git commit -F - <<'EOF'
+feat: draw only the blades and grass cards inside the view
+
+## What
+
+Babylon draws a thin-instanced mesh whole or not at all, and the blade
+and grass-class buckets surround the eye, so every clump and card was
+vertex-shaded every frame, five in six of them outside the view. Each
+bucket now keeps its collected instances on the CPU and draws the
+prefix inside a frustum widened by 5° and pushed back a metre, cut
+again only when the camera has turned 4° or moved half a metre, with
+only that prefix uploaded. The draw calls do not change.
+
+## How
+
+- `client/src/game/grassCull.ts` — the widened planes, the thresholds
+  and the prefix copy; pure in the pose and the collected set.
+- `client/src/game/bladeMeshes.ts`, `client/src/game/clutterMeshes.ts` —
+  collected and drawn buffers, `cull`, partial uploads;
+  `CLUTTER_CULLED` holds the grass class.
+- `client/src/game/renderer.ts` — the per-frame hook before the active
+  meshes are picked.
+- `ARCHITECTURE.md` — the filter.
+- `client/test/game/grassCull.test.ts`, `bladeMeshes.test.ts`,
+  `clutterMeshes.test.ts` — the planes and thresholds as literals, the
+  kept set a function of the pose, nothing visible dropped, uploads
+  never past the kept count, no mesh added.
+
+<trailers>
+EOF
+```
+
+- [ ] **Step 6: Gate for 2A**
+
+Branch against control, the patches of Task 1 applied to both; a gate-only switch on the branch (`globalThis.__cull = (on) => …`; off passes `null` to both shells' `cull`).
+
+1. **Fullness** at both poses with the isolation; bar as design §12.1.
+2. **Invisible culling:** at each pose, on one branch page, two stills 0.5 s apart with `__cull(false)`, then one with `__cull(true)`; the mean absolute difference in linear luminance between the first two and between the second and third. Bar: the second no larger than the first by more than 10 %.
+3. **Frame** (design §12.3): the canopy pose at native, the bar's view; 4× on short, rested pages, reported; the meadow pose and the 16:9 window reported. Expected at the canopy pose at native: **about −0.78 ms (−0.64 to −0.92)** (design §5.4); at 16:9 about −0.60.
+4. **The invariant:** draw calls at the gate still 160–164, as the control's; the JS frame time; and the filter pass's own JS time, timed around each `cull` that refilters, as a histogram over the walk and the continuous turn (design §12.4): passes per second, median and p95 ms. Expected 0.1–0.25 ms a pass.
+5. **The meadow's worth** (for 2B): on a branch page at native, the profile's toggle, filtering the meadow's two buckets to the frustum against not. Record the saving.
+6. **The turn** (step-wise and continuous) and **the walk**. Bar: nothing appears or vanishes at a frame edge.
+
+If the frame misses −0.8 ms, the margins narrow (design §13: 3° and 0.5 m, thresholds 2° and 0.25 m), a commit with its literals, and re-gate. If the JS time grows by more than the native frame shrinks, the margins widen first (10° and 2 m, thresholds 8° and 1 m); if it still shows, 2C. Append `## 5. Step 1: culling the blades and grass cards`; commit the note alone (`docs: gate the frustum filter at both poses`).
+
+- [ ] **Step 7 (2B, only if Step 6's meadow saving is ≥ 0.15 ms at native): the meadow**
+
+Failing test first: `CLUTTER_CULLED` is `[CLUTTER_GRASS, CLUTTER_MEADOW]`; the meadow's two buckets after `cull` draw their kept prefix, with `fadeBands` `[1, 2.5, 8, 18]` (near, on tiers with blades) and `[8, 18, 28, 40]` (far) copied with each card, partial uploads only. Add `CLUTTER_MEADOW` to the set; run; commit `feat: draw only the meadow cards inside the view`; re-run Step 6's frame, invariant and invisible-culling items and append them to §5. If the saving was under 0.15 ms, the note records it and the meadow stays as it is.
+
+- [ ] **Step 8 (2C, only if Step 6 finds the filter's JS showing): sectors**
+
+The fallback of design §5.6–§5.9. The filter is removed from whichever layers it showed on (a revert of those buckets' part of Step 5, kept as its own commit), and those buckets are sectored instead, by the sub-steps below. Gate as Step 6, with the draw calls expected at about 250 and the invariant of item 4 replaced by design §5.9's JS rule.
+
+- [ ] **Step 8a: The pure sector module, test first**
 
 `client/test/game/grassSectors.test.ts`:
 
@@ -291,7 +604,7 @@ export function setSectorBox(mesh: Mesh, boxes: Float32Array, k: number): void {
 
 Run: PASS. Commit (`feat: index grass instances by octant and ring`, `grassSectors.ts`, `clutterMeshes.ts`, the test).
 
-- [ ] **Step 2 (2A): The blade field's sectors — failing tests**
+- [ ] **Step 8b: The blade field's sectors — failing tests**
 
 `client/test/game/bladeMeshes.test.ts`, with the file's `SEED` and `CAM` and a `NullEngine` scene as its other tests build them; imports added: `AbstractMesh`, `UniversalCamera`, `Frustum`, `inCone`, `collectBladeCells`, `BLADE_SECTOR_RINGS`, `elevationSampleAt`:
 
@@ -385,7 +698,7 @@ describe("the blade field's sectors", () => {
 
 Run: `cd client && npx vitest run test/game/bladeMeshes.test.ts` — FAIL: no `*.s0` meshes, `BLADE_SECTOR_RINGS` not exported.
 
-- [ ] **Step 3 (2A): The blade field's sectors — implement**
+- [ ] **Step 8c: The blade field's sectors — implement**
 
 `client/src/game/bladeField.ts`: `export function bladeOrigin(v: number): number` (the body unchanged).
 
@@ -412,7 +725,7 @@ export const BLADE_SECTOR_RINGS: readonly [readonly number[], readonly number[],
 
 Run: `cd client && npx vitest run test/game/bladeMeshes.test.ts test/game/bladeField.test.ts test/game/grassSectors.test.ts test/game/renderer.test.ts` — PASS. The existing `bladeMeshes` tests that read a bucket's buffers off its source mesh read them off its enabled parts, summing counts, their literals unchanged.
 
-- [ ] **Step 4 (2A): Commit**
+- [ ] **Step 8d: Commit**
 
 ```bash
 git add client/src/game/bladeField.ts client/src/game/bladeMeshes.ts ARCHITECTURE.md client/test/game/bladeMeshes.test.ts
@@ -442,7 +755,7 @@ writes the same clumps, nearest first within each sector.
 EOF
 ```
 
-- [ ] **Step 5 (2B): The grass class's sectors — failing tests**
+- [ ] **Step 8e: The grass class's sectors — failing tests**
 
 `client/test/game/clutterField.test.ts`:
 
@@ -517,11 +830,11 @@ EOF
   }, 30_000);
 ```
 
-and the two further tests of the blade step — **no visible card culled** (the same camera poses, `inCone` on each disabled-by-frustum sector's origins lifted 0 and 0.8 m) and **the fill independent of the path** (a rebuild at (65, 21335) first) — over the grass class's four buckets. Imports added: `AbstractMesh`, `UniversalCamera`, `Frustum`, `inCone`.
+and the two further tests of Step 8b — **no visible card culled** (the same camera poses, `inCone` on each disabled-by-frustum sector's origins lifted 0 and 0.8 m) and **the fill independent of the path** (a rebuild at (65, 21335) first) — over the grass class's four buckets. Imports added: `AbstractMesh`, `UniversalCamera`, `Frustum`, `inCone`.
 
 Run: `cd client && npx vitest run test/game/clutterField.test.ts test/game/clutterMeshes.test.ts` — FAIL.
 
-- [ ] **Step 6 (2B): The grass class's sectors — implement**
+- [ ] **Step 8f: The grass class's sectors — implement**
 
 `client/src/game/clutterField.ts`: export `clutterOrigin` (unchanged body), and after `CLUTTER_MEADOW_NEAR_IN`:
 
@@ -550,7 +863,7 @@ export const CLUTTER_SECTOR_RINGS: ReadonlyMap<number, readonly [readonly number
 
 Run: `cd client && npx vitest run test/game/grassSectors.test.ts test/game/clutterField.test.ts test/game/clutterMeshes.test.ts test/game/bladeMeshes.test.ts test/game/renderer.test.ts` — PASS; existing tests that read a grass-class bucket's buffers off its source mesh read its parts instead, literals unchanged.
 
-- [ ] **Step 7 (2B): Commit**
+- [ ] **Step 8g: Commit**
 
 ```bash
 git add client/src/game/clutterField.ts client/src/game/clutterMeshes.ts ARCHITECTURE.md client/test/game/clutterField.test.ts client/test/game/clutterMeshes.test.ts
@@ -579,27 +892,6 @@ that Babylon frustum-tests.
 <trailers>
 EOF
 ```
-
-- [ ] **Step 8: Gate for 2A and 2B**
-
-Branch against control, the patches of Task 1 applied to both; a gate-only switch added to the branch's patch (`globalThis.__sectors = (on) => …` setting every sector mesh's `alwaysSelectAsActiveMesh` to `!on`).
-
-1. **Fullness** at both poses with the isolation; bar as design §12.1.
-2. **Invisible culling:** at each pose, on one branch page, two stills 0.5 s apart with `__sectors(false)`, then one with `__sectors(true)`; the mean absolute difference in linear luminance between the first two and between the second and third. Bar: the second no larger than the first by more than 10 %.
-3. **Frame** (design §12.3): the canopy pose at native, the bar's view; 4× on short, rested pages, reported; the meadow pose and the 16:9 window reported. Expected at the canopy pose at native: **−0.49 to −0.69 ms** (design §5.8: blades about 0.40, grass class about 0.19).
-4. **Draw calls and JS time** from the profile's readouts. Expected about 250 draws (was 162) and JS 4.7–5.2 ms (was 3.8). If the JS time grows by more than the native frame shrinks, drop the fine tier's ring (`BLADE_SECTOR_RINGS` `[[], [], []]`, design §13), a commit with its literals, and re-gate.
-5. **The meadow's worth** (for 2C): on a branch page at native, the profile's toggle, filtering the meadow's two buckets to the frustum against not. Record the saving.
-6. **The turn** (design §12.4) and **the walk**.
-
-Append `## 5. Step 1: blade and grass sectors`: the tables as Task 1's, the invisible-culling figures, the draw calls and JS time, the meadow's filtered saving, the turn and the walk. Commit the note alone (`docs: gate the blade and grass sectors at both poses`).
-
-- [ ] **Step 9 (2C, only if Step 8's meadow saving is ≥ 0.15 ms at native): the meadow**
-
-Failing test first: `CLUTTER_SECTOR_RINGS` keys are `[CLUTTER_GRASS, CLUTTER_MEADOW]`, the meadow `[[6, 14], [14, 24]]`; in `clutterMeshes.test.ts` the meadow's two buckets split into 24 sectors each, their counts summing to the collector's (2,801 near at seed 1, (35, 21335)), each sector carrying `[1, 2.5, 8, 18]` (near, on tiers with blades) or `[8, 18, 28, 40]` (far), no visible card culled. Run, see it fail; add the meadow's entry; run, pass; commit `feat: draw only the meadow card sectors the camera can see`; re-run Step 8's frame and invisible-culling items and append them to §5. If the saving was under 0.15 ms, the note records it and the meadow stays unsectored.
-
-- [ ] **Step 10 (2D, only if the canopy pose at native is still short of −0.8 ms after 2A–2C): the blade buckets filtered per frame**
-
-Design §5.2's fallback. Failing test first, in `bladeMeshes.test.ts`: with `blades.cull(planes)` called after `update`, every enabled sector's instances are exactly the cells whose origin, lifted 0 and 0.6 m, `inCone` of the view with a 0.75 m margin in sphere terms, in nearest-first order, and `cull` with the same planes twice uploads nothing the second time. Implement `cull(frustumPlanes)` on `BladeMeshes`: per part, a second buffer set holding the in-view prefix of the part's rebuild buffers, rewritten and uploaded only when the camera's view matrix has changed since the last call; `renderer.ts` calls it from `scene.onBeforeActiveMeshesEvaluationObservable` with `scene.frustumPlanes`. Commit `feat: filter the blade sectors to the frustum each frame`, re-gate the frame, and record the JS time it costs.
 
 ---
 
@@ -653,7 +945,7 @@ Design §5.2's fallback. Failing test first, in `bladeMeshes.test.ts`: with `bla
   }, 30_000);
 ```
 
-`client/test/game/clutterMeshes.test.ts`: the meadow far bucket's `fadeBands` (its sectors' if Task 2's Step 9 was taken, else its one mesh's) become `[8, 18, 26, 30]` when `nearBlades` is true and stay `[8, 18, 28, 40]` built with `nearBlades: false`; its summed count equals the trimmed collector's.
+`client/test/game/clutterMeshes.test.ts`: the meadow far bucket's `fadeBands` become `[8, 18, 26, 30]` when `nearBlades` is true and stay `[8, 18, 28, 40]` built with `nearBlades: false`; its summed count equals the trimmed collector's.
 
 `client/test/game/groundHexParams.test.ts`:
 
@@ -844,7 +1136,7 @@ EOF
 1. **Fullness** at both poses with the isolation; bar as design §12.1. The mid crop's mean on the branch within 1 % of Task 2's gate (design §6.5).
 2. **The far crop** (design §6.6): control, branch, and branch with the cards hidden, at both poses. Bar: the branch's far mean within ±10 % of the control's and its far cover within ±0.05. If it misses, fit `FAR_SWARD` (the three channels scaled together) on one page by overriding the uniform (`terrainFarSward` through a gate-only setter), re-measure, commit the fitted literal with its test (`fix: fit the far sward to the far crop`), and re-run the gate.
 3. **The cut walk** (design §12.4) and a row profile of the bare-ground still over 20–40 m: no step.
-4. **Frame** as Task 2's gate, reported against the control and against Task 2's gate. Expected at native: about −0.12 ms beyond Task 2 if the meadow is unsectored, about −0.04 if it is (design §6.3).
+4. **Frame** as Task 2's gate, reported against the control and against Task 2's gate. Expected at native: about −0.12 ms beyond Task 2 if the meadow is not filtered, about −0.04 if it is (design §6.3).
 5. Counts: the far bucket's instances at both poses (expected about 6,370 and 7,420).
 
 Append `## 6. Step 2: the far sward`; commit the note alone (`docs: gate the far sward at both poses`).
