@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { landingModel } from "../../src/game/landingModel.js";
 import {
   adapterFits, browserMajor, chooseEngine, createStartupWindow, failureAction, fallbackHolds, featuresToRequest,
   keepOverrides, lateFailureLine, parseEngineOverride, parseTierOverride, readFallback, recordFailure, resolveWebGpu,
@@ -6,7 +7,7 @@ import {
   type AdapterReport, type WebGpuSteps,
   FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
   NOTICE_SWITCHED, STARTUP_MAX_MS, STARTUP_QUIET_MS, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
-  WEBGPU_START_MS, WEBGPU_TIERS, sameRoute,
+  WEBGPU_START_MS, WEBGPU_TIERS, engineWaitLine, sameRoute,
 } from "../../src/game/engineChoice.js";
 
 describe("the overrides", () => {
@@ -329,11 +330,28 @@ describe("sameRoute", () => {
     expect(sameRoute("/game/abc", "/game/abc?tier=medium")).toBe(true);
   });
 
+  it("keeps the order of a parameter's repeated values, which decides what the page reads", () => {
+    // URLSearchParams.get takes the first value, so these build different worlds.
+    expect(sameRoute("/game/abc?cmd=a&cmd=b", "/game/abc?cmd=b&cmd=a")).toBe(false);
+    expect(sameRoute("/game/abc?cmd=a&x=1&cmd=b", "/game/abc?x=1&cmd=a&cmd=b")).toBe(true);
+    expect(sameRoute("/game/abc?cmd=a&cmd=b&tier=high", "/game/abc?cmd=a&engine=webgl2&cmd=b")).toBe(true);
+  });
+
   it("still sees a real change", () => {
     expect(sameRoute(host, "/game/abc?cmd=seed%20other;weather%20mist&tier=high")).toBe(false);
     expect(sameRoute(host, "/game/xyz?cmd=seed%20atmo;weather%20mist")).toBe(false);
     expect(sameRoute("/game/abc", "/game/abc?cmd=x")).toBe(false);
     expect(sameRoute("/", "/credits")).toBe(false);
+  });
+});
+
+describe("the wait while the engine is chosen", () => {
+  it("says Loading…, the word the landing's Play button already showed, only where the choice waits", () => {
+    expect(engineWaitLine("probe")).toBe("Loading…");
+    expect(engineWaitLine("webgl2")).toBeNull();
+    expect(engineWaitLine("webgpu")).toBeNull();
+    const launching = landingModel({ desktop: false, host: "darwin-arm64", latest: null, launching: true });
+    expect(launching.play?.label).toBe(engineWaitLine("probe"));
   });
 });
 
@@ -348,20 +366,35 @@ describe("resolveWebGpu", () => {
     isFallbackAdapter: false,
     features: ["texture-compression-bc", "timestamp-query"],
   };
+  const small: AdapterReport = { limits: { maxInterStageShaderVariables: 16, maxVertexBuffers: 8 }, isFallbackAdapter: false };
   const never = <T,>(): Promise<T> => new Promise<T>(() => undefined);
+  const after = <T,>(ms: number, value: T): Promise<T> => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
   const budgets = { fetchMs: 10_000, startMs: 10_000 };
 
-  function steps(over: Partial<WebGpuSteps<string>> = {}) {
-    const log = { remembered: [] as string[], warned: [] as string[], created: [] as [number, string[]][] };
+  type Module = Awaited<ReturnType<WebGpuSteps<string>["load"]>>;
+  function steps(module: Partial<Module> = {}, over: Partial<WebGpuSteps<string>> = {}) {
+    const log = { calls: [] as string[], remembered: [] as string[], warned: [] as string[], created: [] as [number, string[]][] };
     const s: WebGpuSteps<string> = {
-      load: () =>
-        Promise.resolve({
-          probe: () => Promise.resolve(fitting),
+      available: () => true,
+      load: () => {
+        log.calls.push("load");
+        return Promise.resolve({
+          probe: () => {
+            log.calls.push("probe");
+            return Promise.resolve(fitting);
+          },
+          fetchTranslators: () => {
+            log.calls.push("fetchTranslators");
+            return Promise.resolve();
+          },
           create: (ms: number, features: string[]) => {
+            log.calls.push("create");
             log.created.push([ms, features]);
             return Promise.resolve("engine");
           },
-        }),
+          ...module,
+        });
+      },
       remember: (reason) => void log.remembered.push(reason),
       warn: (message) => void log.warned.push(message),
       ...over,
@@ -369,82 +402,111 @@ describe("resolveWebGpu", () => {
     return { s, log };
   }
 
-  it("makes the engine with the GPU's budget and the adapter's texture formats", async () => {
+  it("asks the adapter before fetching the translators, and makes the engine last", async () => {
     const { s, log } = steps();
     expect(await resolveWebGpu(high, s, budgets, () => 1_000)).toBe("engine");
+    expect(log.calls).toEqual(["load", "probe", "fetchTranslators", "create"]);
     expect(log.created).toEqual([[10_000, ["texture-compression-bc"]]]);
     expect(log.remembered).toEqual([]);
   });
 
-  it("gives up on a fetch that never settles, and remembers nothing", async () => {
+  it("fetches no translator where the adapter does not fit, and says why only under ?engine=webgpu", async () => {
+    const quiet = steps({ probe: () => Promise.resolve(small) });
+    expect(await resolveWebGpu(high, quiet.s, budgets)).toBeNull();
+    expect(quiet.log.calls).toEqual(["load"]);
+    expect(quiet.log.warned).toEqual([]);
+    expect(quiet.log.remembered).toEqual([]);
+    const forced = steps({ probe: () => Promise.resolve(small) });
+    expect(await resolveWebGpu({ ...high, override: "webgpu" }, forced.s, budgets)).toBeNull();
+    expect(forced.log.warned).toEqual(["WebGPU: not on this browser (maxInterStageShaderVariables 16 < 17); drawing with WebGL2."]);
+    const none = steps({ probe: () => Promise.resolve(null) });
+    expect(await resolveWebGpu(high, none.s, budgets)).toBeNull();
+    expect(none.log.calls).toEqual(["load"]);
+  });
+
+  it("fetches nothing at all on a page without WebGPU", async () => {
+    const quiet = steps({}, { available: () => false });
+    expect(await resolveWebGpu(high, quiet.s, budgets)).toBeNull();
+    expect(quiet.log.calls).toEqual([]);
+    expect(quiet.log.warned).toEqual([]);
+    const forced = steps({}, { available: () => false });
+    expect(await resolveWebGpu({ ...high, override: "webgpu" }, forced.s, budgets)).toBeNull();
+    expect(forced.log.calls).toEqual([]);
+    expect(forced.log.warned).toEqual(["WebGPU: not on this browser (no WebGPU); drawing with WebGL2."]);
+  });
+
+  it("gives up on a module import that never settles, and remembers nothing", async () => {
     vi.useFakeTimers();
-    const { s, log } = steps({ load: never });
+    const { s, log } = steps({}, { load: never });
     const result = resolveWebGpu(high, s, budgets);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(await result).toBeNull();
     expect(log.remembered).toEqual([]);
-    expect(log.warned).toEqual(["WebGPU: its module and translators did not load in 10000 ms; drawing with WebGL2."]);
+    expect(log.warned).toEqual(["WebGPU: its module did not load in 10000 ms; drawing with WebGL2."]);
   });
 
   it("gives up on an adapter probe that never settles, and remembers it", async () => {
     vi.useFakeTimers();
-    const { s, log } = steps({
-      load: () => Promise.resolve({ probe: () => never<AdapterReport | null>(), create: () => Promise.resolve("engine") }),
-    });
+    const { s, log } = steps({ probe: () => never<AdapterReport | null>() });
     const result = resolveWebGpu(high, s, budgets);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(await result).toBeNull();
+    expect(log.calls).toEqual(["load"]);
     expect(log.remembered).toEqual(["init"]);
     expect(log.warned).toEqual(["WebGPU: the adapter did not answer in 10000 ms; drawing with WebGL2."]);
   });
 
-  it("does not let a slow fetch eat the GPU's budget", async () => {
+  it("gives up on a translator fetch that never settles, with what the import left of the fetch's budget, and remembers nothing", async () => {
     vi.useFakeTimers();
-    const { s, log } = steps({
-      load: () =>
-        new Promise((resolve) => {
-          setTimeout(() => resolve({
-            probe: () => new Promise((r) => setTimeout(() => r(fitting), 3_000)),
-            create: (ms: number, features: string[]) => {
-              log.created.push([ms, features]);
-              return Promise.resolve("engine");
-            },
-          }), 9_500);
-        }),
-    });
+    const { s, log } = steps({ fetchTranslators: never }, { load: () => after(3_000, undefined).then(() => ({
+      probe: () => after(2_000, fitting),
+      fetchTranslators: () => never<void>(),
+      create: () => Promise.resolve("engine"),
+    })) });
     const result = resolveWebGpu(high, s, budgets);
-    await vi.advanceTimersByTimeAsync(12_500);
+    // 3 s importing, 2 s probing, then the translators get the fetch's other 7 s.
+    await vi.advanceTimersByTimeAsync(11_999);
+    expect(log.warned).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await result).toBeNull();
+    expect(log.remembered).toEqual([]);
+    expect(log.warned).toEqual(["WebGPU: its translators did not load in 10000 ms; drawing with WebGL2."]);
+  });
+
+  it("keeps each budget a running total across its two steps", async () => {
+    vi.useFakeTimers();
+    const created: [number, string[]][] = [];
+    const { s } = steps({}, { load: () => after(3_000, undefined).then(() => ({
+      probe: () => after(2_000, fitting),
+      fetchTranslators: () => after(6_500, undefined),
+      create: (ms: number, features: string[]) => {
+        created.push([ms, features]);
+        return Promise.resolve("engine");
+      },
+    })) });
+    const result = resolveWebGpu(high, s, budgets);
+    await vi.advanceTimersByTimeAsync(11_500);
     expect(await result).toBe("engine");
-    // The probe's 3 s came out of the GPU's 10 s; the fetch's 9.5 s did not.
-    expect(log.created).toEqual([[7_000, ["texture-compression-bc"]]]);
-    expect(log.remembered).toEqual([]);
+    // The fetch's 3 s + 6.5 s fit its 10 s; the probe's 2 s leave the engine 8 s.
+    expect(created).toEqual([[8_000, ["texture-compression-bc"]]]);
   });
 
-  it("falls back without a record where the fetch fails or the adapter does not fit", async () => {
-    const failing = steps({ load: () => Promise.reject(new Error("the WebGPU translators did not load: twgsl")) });
-    expect(await resolveWebGpu(high, failing.s, budgets)).toBeNull();
-    expect(failing.log.remembered).toEqual([]);
-    expect(failing.log.warned).toEqual(["WebGPU: its module and translators did not load; drawing with WebGL2."]);
-
-    const small: AdapterReport = { limits: { maxInterStageShaderVariables: 16, maxVertexBuffers: 8 }, isFallbackAdapter: false };
-    const quiet = steps({ load: () => Promise.resolve({ probe: () => Promise.resolve(small), create: () => Promise.resolve("engine") }) });
-    expect(await resolveWebGpu(high, quiet.s, budgets)).toBeNull();
-    expect(quiet.log.warned).toEqual([]);
-    const forced = steps({ load: () => Promise.resolve({ probe: () => Promise.resolve(small), create: () => Promise.resolve("engine") }) });
-    expect(await resolveWebGpu({ ...high, override: "webgpu" }, forced.s, budgets)).toBeNull();
-    expect(forced.log.warned).toEqual(["WebGPU: not on this browser (maxInterStageShaderVariables 16 < 17); drawing with WebGL2."]);
-    expect(forced.log.remembered).toEqual([]);
+  it("falls back without a record where a fetch fails", async () => {
+    const module = steps({}, { load: () => Promise.reject(new Error("chunk")) });
+    expect(await resolveWebGpu(high, module.s, budgets)).toBeNull();
+    expect(module.log.remembered).toEqual([]);
+    expect(module.log.warned).toEqual(["WebGPU: its module did not load; drawing with WebGL2."]);
+    const translators = steps({ fetchTranslators: () => Promise.reject(new Error("the WebGPU translators did not load: twgsl")) });
+    expect(await resolveWebGpu(high, translators.s, budgets)).toBeNull();
+    expect(translators.log.remembered).toEqual([]);
+    expect(translators.log.warned).toEqual(["WebGPU: its translators did not load; drawing with WebGL2."]);
   });
 
-  it("remembers an engine that fails to start, and never rejects", async () => {
-    const { s, log } = steps({
-      load: () => Promise.resolve({ probe: () => Promise.reject(new Error("gpu")), create: () => Promise.resolve("engine") }),
-    });
-    expect(await resolveWebGpu(high, s, budgets)).toBeNull();
-    expect(log.remembered).toEqual([]);
-    const broken = steps({
-      load: () => Promise.resolve({ probe: () => Promise.resolve(fitting), create: () => Promise.reject(new Error("device")) }),
-    });
+  it("remembers an engine that fails to start, treats a probe that fails as no adapter, and never rejects", async () => {
+    const probing = steps({ probe: () => Promise.reject(new Error("gpu")) });
+    expect(await resolveWebGpu(high, probing.s, budgets)).toBeNull();
+    expect(probing.log.remembered).toEqual([]);
+    const broken = steps({ create: () => Promise.reject(new Error("device")) });
     expect(await resolveWebGpu(high, broken.s, budgets)).toBeNull();
     expect(broken.log.remembered).toEqual(["init"]);
     expect(broken.log.warned).toEqual(["WebGPU: the engine did not start; drawing with WebGL2."]);
@@ -452,7 +514,7 @@ describe("resolveWebGpu", () => {
 
   it("uses the pinned budgets by default", async () => {
     vi.useFakeTimers();
-    const { s, log } = steps({ load: never });
+    const { s, log } = steps({}, { load: never });
     const result = resolveWebGpu(high, s);
     await vi.advanceTimersByTimeAsync(9_999);
     expect(log.warned).toEqual([]);

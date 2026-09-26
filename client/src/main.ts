@@ -28,11 +28,13 @@ import { createSignalingClient, type SignalingClient } from "./net/signaling.js"
 import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
+import { createHud } from "./game/hud.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { detectTier, type QualityTier } from "./game/quality.js";
 import {
   browserMajor,
   chooseEngine,
+  engineWaitLine,
   failureAction,
   fallbackHolds,
   keepOverrides,
@@ -467,17 +469,19 @@ function rememberFailure(reason: "init" | "pipeline" | "lost", pin = true): { st
 
 /**
  * The WebGPU engine for `canvas`, or null for WebGL2, by `resolveWebGpu`: the
- * module and the translators within the fetch's budget, then the adapter and
- * the engine within the GPU's, every failure caught. The URL is pinned only
- * while this render is still the page's.
+ * module, the adapter, and only where it fits the translators and the engine,
+ * within the fetch's budget and the GPU's, every failure caught. A page
+ * without `navigator.gpu` fetches nothing. The URL is pinned only while this
+ * render is still the page's.
  */
 function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput, token: number): Promise<MadeEngine | null> {
   return resolveWebGpu<MadeEngine>(input, {
+    available: () => (navigator as { gpu?: unknown }).gpu !== undefined,
     load: async () => {
       const gpu: GpuModule = await import("./game/gpuEngine.js");
-      await gpu.loadTranslators();
       return {
         probe: gpu.probeAdapter,
+        fetchTranslators: gpu.loadTranslators,
         create: async (ms, features) => ({
           engine: await gpu.createWebGpuEngine(canvas, { ms, features }),
           watch: gpu.watchWebGpu,
@@ -585,13 +589,19 @@ function render(container: HTMLDivElement): void {
     on: WEBGPU_ENABLED,
     fits: null,
   };
-  if (chooseEngine(input) === "webgl2") {
+  const choice = chooseEngine(input);
+  if (choice === "webgl2") {
     launch(canvas, route.token, tier, null);
     return;
   }
-  // WebGPU could be the answer, which takes the adapter and a moment. A render
-  // that superseded this one while it was made wins.
+  // WebGPU could be the answer, which takes the adapter and a moment: the
+  // page says Loading… over the canvas meanwhile, as the landing's Play button
+  // did, rather than standing blank. A render that superseded this one while
+  // the engine was made wins.
+  const wait = createHud(container);
+  wait.setStatus(engineWaitLine(choice));
   void makeWebGpu(canvas, input, token).then((made) => {
+    wait.dispose();
     if (token !== renderToken) {
       made?.engine.dispose();
       return;

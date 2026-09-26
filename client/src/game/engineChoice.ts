@@ -59,13 +59,23 @@ export const FALLBACK_NOTICE_KEY = "dayhike.engine.notice";
 export const FALLBACK_DAYS = 30;
 /** A second lost device inside this window remembers WebGL2. */
 export const LOSS_WINDOW_MS = 86_400_000;
-/** Fetching what the WebGPU path needs, the engine's module and the two
- * translators, gets this long. A fetch that runs out is WebGL2 for this load
- * and is not remembered: nothing of the GPU failed. */
+/** Fetching what the WebGPU path needs, the engine's module and then the two
+ * translators, gets this long between them. A fetch that runs out is WebGL2
+ * for this load and is not remembered: nothing of the GPU failed. */
 export const WEBGPU_FETCH_MS = 10_000;
-/** The GPU's part, the adapter probe and making the engine, gets this long,
- * measured apart from the fetch. Running out is remembered (`init`). */
+/** The GPU's part, the adapter probe and then making the engine, gets this
+ * long between them, measured apart from the fetch. Running out is remembered
+ * (`init`). */
 export const WEBGPU_START_MS = 10_000;
+
+/** What the page shows while the engine is chosen: the landing's own word. */
+const ENGINE_WAIT_LINE = "Loading…";
+
+/** The line to show over the canvas for a choice, or null where there is no
+ * wait: only a `"probe"` answer waits, for the adapter and perhaps the engine. */
+export function engineWaitLine(choice: EngineName | "probe"): string | null {
+  return choice === "probe" ? ENGINE_WAIT_LINE : null;
+}
 /** The startup window closes once no effect has compiled for this long after
  * the first frame… */
 export const STARTUP_QUIET_MS = 10_000;
@@ -334,7 +344,9 @@ export function sameRoute(a: string, b: string): boolean {
     const at = route.indexOf("?");
     const params = new URLSearchParams(at < 0 ? "" : route.slice(at));
     const entries = [...params].filter(([name]) => !(OVERRIDES as readonly string[]).includes(name));
-    entries.sort(([n1, v1], [n2, v2]) => (n1 === n2 ? (v1 < v2 ? -1 : v1 > v2 ? 1 : 0) : n1 < n2 ? -1 : 1));
+    // By name only, and stably: a name's repeated values keep their order,
+    // since the page reads the first of them.
+    entries.sort(([n1], [n2]) => (n1 < n2 ? -1 : n1 > n2 ? 1 : 0));
     return JSON.stringify([at < 0 ? route : route.slice(0, at), entries]);
   };
   return canonical(a) === canonical(b);
@@ -368,11 +380,15 @@ function withinTime<T>(promise: Promise<T>, ms: number): Promise<T | typeof TIME
 /** How `resolveWebGpu` reaches the WebGPU module and the page, passed in so
  * the order, the budgets and every failure can be tested without either. */
 export type WebGpuSteps<E> = {
-  /** Everything the path fetches: the module (`import("./gpuEngine.js")`)
-   * and the translators (`loadTranslators`), adapted. */
+  /** Whether the page has WebGPU at all (`navigator.gpu`); where it does not,
+   * nothing is fetched. */
+  available(): boolean;
+  /** The WebGPU module: `import("./gpuEngine.js")`, adapted. */
   load(): Promise<{
     probe(): Promise<AdapterReport | null>;
-    /** The engine, given what is left of the budget and the features to ask for. */
+    /** The translators (`loadTranslators`), fetched only once the adapter fits. */
+    fetchTranslators(): Promise<void>;
+    /** The engine, given what is left of the GPU's budget and the features to ask for. */
     create(ms: number, features: string[]): Promise<E>;
   }>;
   /** Writes the remembered fallback. */
@@ -381,15 +397,18 @@ export type WebGpuSteps<E> = {
 };
 
 /**
- * The WebGPU engine, or null for WebGL2, within two budgets, so nothing on the
- * way can leave the page waiting for good: `fetchMs` for what the path fetches
- * (the module and the translators), then `startMs`, from the end of the fetch,
- * for the GPU's part (the adapter and the engine). Never rejects. A fetch that
- * fails or runs out is not remembered: nothing of the GPU failed, and a slow
- * network must not keep WebGPU off for the next 30 days. An adapter that does
- * not answer, or an engine that does not start, is (`init`). An adapter that
- * does not fit is WebGL2 with no record, and a word in the console only where
- * `?engine=webgpu` asked for it.
+ * The WebGPU engine, or null for WebGL2. In order: the module is imported, the
+ * adapter asked, and only where it fits are the translators fetched and the
+ * engine made, so a browser that cannot run WebGPU fetches no translator, and
+ * one without WebGPU at all fetches nothing. Two budgets, each a running total
+ * over its two steps and measured apart from the other: `fetchMs` for the
+ * module and then the translators, `startMs` for the probe and then the engine,
+ * so nothing on the way can leave the page waiting for good. Never rejects. A
+ * fetch that fails or runs out is not remembered: nothing of the GPU failed,
+ * and a slow network must not keep WebGPU off for the next 30 days. An adapter
+ * that does not answer, or an engine that does not start, is (`init`). An
+ * adapter that does not fit is WebGL2 with no record, and a word in the
+ * console only where `?engine=webgpu` asked for it.
  */
 export async function resolveWebGpu<E>(
   input: EngineInput,
@@ -397,35 +416,57 @@ export async function resolveWebGpu<E>(
   budgets: { fetchMs: number; startMs: number } = { fetchMs: WEBGPU_FETCH_MS, startMs: WEBGPU_START_MS },
   now: () => number = () => Date.now(),
 ): Promise<E | null> {
+  const unfit = (why: string | null): null => {
+    if (input.override === "webgpu") steps.warn(`WebGPU: not on this browser (${why}); drawing with WebGL2.`);
+    return null;
+  };
+  if (!steps.available()) return unfit("no WebGPU");
+  let fetchLeft = budgets.fetchMs;
+  let startLeft = budgets.startMs;
+  /** `promise` within `left` ms, and the ms it took. */
+  const timed = async <T>(promise: Promise<T>, left: number): Promise<[T | typeof TIMED_OUT, number]> => {
+    const from = now();
+    const value = await withinTime(promise, Math.max(0, left));
+    return [value, now() - from];
+  };
+
   let gpu: Awaited<ReturnType<WebGpuSteps<E>["load"]>>;
   try {
-    const loaded = await withinTime(steps.load(), budgets.fetchMs);
+    const [loaded, took] = await timed(steps.load(), fetchLeft);
     if (loaded === TIMED_OUT) {
-      steps.warn(`WebGPU: its module and translators did not load in ${budgets.fetchMs} ms; drawing with WebGL2.`);
+      steps.warn(`WebGPU: its module did not load in ${budgets.fetchMs} ms; drawing with WebGL2.`);
       return null;
     }
     gpu = loaded;
+    fetchLeft -= took;
   } catch (err) {
-    steps.warn("WebGPU: its module and translators did not load; drawing with WebGL2.", err);
+    steps.warn("WebGPU: its module did not load; drawing with WebGL2.", err);
     return null;
   }
 
-  const start = now();
-  const left = (): number => Math.max(0, budgets.startMs - (now() - start));
-  const report = await withinTime(gpu.probe().catch(() => null), left());
+  const [report, probed] = await timed(gpu.probe().catch(() => null), startLeft);
   if (report === TIMED_OUT) {
     steps.remember("init");
     steps.warn(`WebGPU: the adapter did not answer in ${budgets.startMs} ms; drawing with WebGL2.`);
     return null;
   }
+  startLeft -= probed;
   const fit = adapterFits(report);
-  if (chooseEngine({ ...input, fits: fit.fits }) !== "webgpu") {
-    if (input.override === "webgpu") steps.warn(`WebGPU: not on this browser (${fit.why}); drawing with WebGL2.`);
+  if (chooseEngine({ ...input, fits: fit.fits }) !== "webgpu") return unfit(fit.why);
+
+  try {
+    const [fetched] = await timed(gpu.fetchTranslators(), fetchLeft);
+    if (fetched === TIMED_OUT) {
+      steps.warn(`WebGPU: its translators did not load in ${budgets.fetchMs} ms; drawing with WebGL2.`);
+      return null;
+    }
+  } catch (err) {
+    steps.warn("WebGPU: its translators did not load; drawing with WebGL2.", err);
     return null;
   }
 
   try {
-    return await gpu.create(left(), featuresToRequest(report?.features ?? []));
+    return await gpu.create(Math.max(0, startLeft), featuresToRequest(report?.features ?? []));
   } catch (err) {
     steps.remember("init");
     steps.warn("WebGPU: the engine did not start; drawing with WebGL2.", err);
