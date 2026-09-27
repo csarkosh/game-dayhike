@@ -35,8 +35,9 @@ output "shell_command" {
   description = <<-EOT
     Opens a PowerShell on the machine through Session Manager, as the local
     administrator ssm-user. Needs the Session Manager plugin for the AWS CLI on
-    this side. Reachable once the first-boot set-up has finished: EC2Launch runs
-    it before it starts the Systems Manager agent.
+    this side. Reachable a few minutes after each start, while the first-boot
+    set-up is still running: `Get-Content -Wait C:\ProgramData\test-rig\setup.log`
+    follows it.
   EOT
   value       = local.ssm
 }
@@ -49,6 +50,19 @@ output "dcv_tunnel_command" {
     at localhost:8443, and sign in as desktop_user with the password below.
   EOT
   value       = "${local.ssm} --document-name AWS-StartPortForwardingSession --parameters portNumber=8443,localPortNumber=8443"
+}
+
+output "instance_state" {
+  description = <<-EOT
+    The running/stopped setting as Terraform last applied it, and the id of
+    the resource that applied it (in AWS, the instance id). tests/ runs against
+    a mocked provider, which gives each new resource a new id, and reads this to
+    see the setting applied again after a change to the machine.
+  EOT
+  value = {
+    state = aws_ec2_instance_state.test_rig.state
+    id    = aws_ec2_instance_state.test_rig.id
+  }
 }
 
 output "desktop_user" {

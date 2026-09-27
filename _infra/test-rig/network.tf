@@ -38,6 +38,12 @@ resource "aws_subnet" "test_rig" {
   tags = { Name = local.name }
 
   lifecycle {
+    # The zone is read from AWS's offerings at every plan. Once the subnet
+    # exists, a change there (AWS no longer offering a size in it) must not
+    # replace the subnet and the machine with it; a deliberate move is
+    # `terraform apply -replace=aws_subnet.test_rig`.
+    ignore_changes = [availability_zone]
+
     precondition {
       condition     = local.availability_zone != null
       error_message = "No availability zone in ${var.region} offers every allowed machine size; set availability_zone."
@@ -67,13 +73,17 @@ resource "aws_route_table_association" "test_rig" {
   route_table_id = aws_route_table.test_rig.id
 }
 
-# The machine's only security group. No ingress block: nothing is admitted.
-# Egress is open, because the NVIDIA driver's licence check, Windows Update,
-# the installers and Session Manager do not share one documented set of ports.
+# The machine's only security group. No inbound rule: nothing is admitted.
+# `ingress = []` says so explicitly, so Terraform also removes any inbound rule
+# added outside it. Egress is open, because the NVIDIA driver's licence check,
+# Windows Update, the installers and Session Manager do not share one
+# documented set of ports.
 resource "aws_security_group" "test_rig" {
   name        = local.name
   description = "Rented Windows GPU machine: no inbound, all outbound"
   vpc_id      = aws_vpc.test_rig.id
+
+  ingress = []
 
   egress {
     description = "All outbound"
@@ -91,6 +101,9 @@ resource "aws_security_group" "test_rig" {
 # it cannot be attached by mistake and admit anything.
 resource "aws_default_security_group" "test_rig" {
   vpc_id = aws_vpc.test_rig.id
+
+  ingress = []
+  egress  = []
 
   tags = { Name = "${local.name}-default-unused" }
 }

@@ -6,14 +6,21 @@ variable "region" {
   EOT
   type        = string
   default     = "us-east-1"
+
+  validation {
+    condition     = contains(["us-east-1", "us-west-2"], var.region)
+    error_message = "region is us-east-1 or us-west-2, the two regions whose prices (outputs.tf) and G instance quota were checked."
+  }
 }
 
 variable "availability_zone" {
   description = <<-EOT
     Zone for the subnet and the machine. Null (the default) takes the first
-    zone, in name order, that offers every size in instance_type's list, so a
-    switch of size never moves the machine. Changing it replaces the subnet and
-    the machine.
+    zone, in name order, that offers both allowed sizes, so a switch of size
+    never moves the machine. The zone is fixed once the subnet exists: a later
+    change in what AWS offers never moves it, and neither does a change here
+    (move it on purpose with `terraform apply -replace=aws_subnet.test_rig`,
+    which replaces the machine too).
   EOT
   type        = string
   default     = null
@@ -23,7 +30,9 @@ variable "instance_type" {
   description = <<-EOT
     g4dn.xlarge (default): 4 vCPUs, 16 GiB, one NVIDIA T4 (Turing, 16 GB).
     g6.xlarge: 4 vCPUs, 16 GiB, one NVIDIA L4 (Ada Lovelace, 24 GB). Both are
-    on-demand only. Changing it stops and starts the machine; the disk is kept.
+    on-demand only. Changing it stops the machine, changes it and starts it,
+    keeping the disk; the machine is then left running or stopped as `running`
+    says.
   EOT
   type        = string
   default     = "g4dn.xlarge"
@@ -73,7 +82,10 @@ variable "max_run_hours" {
   description = <<-EOT
     The machine shuts itself down (and so stops) this many hours after each
     boot, so one left running costs at most this many hours. Whole minutes,
-    from 0.25 to 24.
+    from 0.25 to 24. It reaches the machine as the instance tag
+    max-run-minutes, read at every boot: a change is applied to the tag in
+    place, never restarts or replaces the machine, and takes effect at its next
+    start.
   EOT
   type        = number
   default     = 4
@@ -104,7 +116,8 @@ variable "desktop_user" {
   description = <<-EOT
     The local, non-administrator Windows account the machine logs on
     automatically at every boot, whose desktop Chrome runs in and which owns
-    Amazon DCV's console session. Its password is made on the machine.
+    Amazon DCV's console session. Its password is made on the machine. It is
+    written into the start-up script: changing it replaces the machine.
   EOT
   type        = string
   default     = "hiker"
@@ -119,7 +132,8 @@ variable "password_parameter" {
   description = <<-EOT
     Parameter Store name the machine writes the desktop user's password to, as
     a SecureString. Not managed by Terraform, so the password never enters
-    state; `terraform destroy` leaves it (README.md says how to delete it).
+    state; `terraform destroy` leaves it (README.md says how to delete it). It
+    is written into the start-up script: changing it replaces the machine.
   EOT
   type        = string
   default     = "/test-rig/desktop-password"
@@ -131,7 +145,7 @@ variable "password_parameter" {
 }
 
 variable "display_width" {
-  description = "Width in pixels of the display DCV gives the console session at start (DCV's console-session-default-layout)."
+  description = "Width in pixels of the display DCV gives the console session at start (DCV's console-session-default-layout). Written into the start-up script: changing it replaces the machine."
   type        = number
   default     = 1920
 
@@ -142,7 +156,7 @@ variable "display_width" {
 }
 
 variable "display_height" {
-  description = "Height in pixels of the display DCV gives the console session at start."
+  description = "Height in pixels of the display DCV gives the console session at start. Written into the start-up script: changing it replaces the machine."
   type        = number
   default     = 1080
 
@@ -166,19 +180,25 @@ variable "budget_enabled" {
 
 variable "budget_email" {
   description = <<-EOT
-    Address the budget alert emails. No default: set it in the git-ignored
-    terraform.tfvars, never in a committed file. Read only when budget_enabled.
+    Address the budget alert emails. Needed only with budget_enabled; set it in
+    the git-ignored terraform.tfvars, never in a committed file.
   EOT
   type        = string
+  default     = null
 
   validation {
-    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.budget_email))
+    condition     = var.budget_email == null || can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.budget_email))
     error_message = "budget_email is an email address."
   }
 }
 
 variable "monthly_budget_usd" {
-  description = "Monthly amount the budget alerts against, in US dollars."
+  description = <<-EOT
+    Monthly amount the budget alerts against, in US dollars. At the default,
+    $30, the first alert (80 %, $24) is about twice an ordinary month of four
+    three-hour runs ($12.58, or $15.93 on g6.xlarge): reaching it means a
+    machine left running for most of a day, or twice the usual use.
+  EOT
   type        = number
-  default     = 25
+  default     = 30
 }
