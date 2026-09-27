@@ -22,9 +22,10 @@ CPU; the spawn pose is the likeliest and has not been measured.
 
 **The engine's own gain grows with the pixel count.** WebGPU alone read 1.53 ms faster at
 2.4 Mpx and 9.93 ms faster at 9.7 Mpx. A gain that grows 6.5× when the pixels grow 4× is
-per-pixel work: memory traffic, resolves, what each render pass loads and stores. So the
-largest remaining levers are in how the passes are structured, not in culling or in how
-draws are submitted.
+not per-draw work, and it grows faster than the pixels do, which plain per-pixel work would
+not: that points at memory bandwidth or cache effects, in what each render pass loads,
+stores and resolves. So the largest remaining levers are in how the passes are structured,
+not in culling or in how draws are submitted.
 
 **What an API cannot do.** A fragment shader costs the same on either engine. The ground
 (45–80 texture fetches a pixel), the blades (0.84 of their 1.05 ms is raster and fragment
@@ -35,8 +36,8 @@ work), the cards, the duff and the fog have no WebGPU lever for their shading.
 | # | Candidate | Saving | Grade | Work | WebGL2 |
 |---|---|---|---|---|---|
 | 1 | Per-pass GPU timers on measurement builds | none itself; it settles 2, 3, 5 and 9 | — | one feature request | unchanged |
-| 2 | The main pass without 4× multisampling, on tiers that run the post chain | up to 0.9–2.5 ms native, up to 3.5–10 ms at 4× pixels | derived, an upper bound | one engine option | unchanged |
-| 3 | Discard the scene target's samples and depth once resolved | up to 1.1–1.3 ms native, up to 4–5 ms at 4× | derived, an upper bound | small to medium, an engine internal | cannot do it |
+| 2 | The main pass without 4× multisampling, on tiers that run the post chain | up to 0.7–0.9 ms native counting one store, 2.2–2.6 ms counting the three begins' stores; about 4× those at 4× pixels | derived, an upper bound | one engine option | unchanged |
+| 3 | Discard the scene target's samples and depth once resolved | up to 1.1–1.3 ms native, up to 4–5 ms at 4× | derived, an upper bound | small to medium, an engine internal | has the same lever (`invalidateFramebuffer`), unused today |
 | 4 | Keep translated shaders between visits | load time on a return visit | guess | small | unchanged |
 | 5 | A hardware depth clamp for the shadow pass, and a depth-only shadow map | 0.1–0.5 ms | guess | medium, an engine patch | unchanged |
 | 6 | Native shader source for the atmosphere, skin and cliff-tint plugins | 0.2–1.5 s off load, and the same share of the join hitch | guess | small | unchanged |
@@ -55,11 +56,13 @@ the scene's anti-aliasing happens earlier, in the first post-process's own 4-sam
 target, which this option does not touch. Four identical samples resolve to the value a
 single sample would have written.
 
-Two derivations of the ceiling disagree, because they count different traffic:
+The ceiling depends on which traffic is counted:
 
-- 88 MB a frame (the 4-sample colour and depth stored once): 0.73–0.88 ms at native;
-- 302 MB a frame (the pass is begun three times a frame: the scene's clear, the camera's
-  depth clear, the final quad): up to 2.5 ms at native.
+- 88 MB a frame (the 4-sample colour, 39 MB, and the 4-sample depth and stencil, 49 MB,
+  stored once): 0.73–0.88 ms at native;
+- 264 MB a frame (the pass is begun three times a frame, for the scene's clear, the
+  camera's depth clear and the final quad, and each begin ends in a store): 2.2–2.6 ms at
+  native, and more if the second and third begins also load what the one before stored.
 
 Both are bytes moved divided by an assumed 100–120 GB/s, and both are ceilings. The
 traffic is clears and identical samples, which the GPU's framebuffer compression handles
@@ -73,14 +76,22 @@ step along the quad's diagonal.
 
 **The scene target.** Its 4-sample colour (RGBA16F) and 4-sample depth are written to
 memory at the end of the pass every frame, and nothing reads them again: the resolve
-happens inside the pass. The engine hard-codes the store. WebGL2 cannot have this as the
-engine drives it, because there the resolve is a copy made after the pass has ended.
+happens inside the pass. The engine hard-codes the store on every attachment; the one
+reason its source gives, on the canvas pass's colour attachment, is that a pass begun
+several times on one attachment would break, and the render-target path follows the same
+rule without comment.
 
-It is only safe while that pass begins exactly once a frame. By reading it does (one
-rendering group, no render target drawn mid-scene), but a compute dispatch, a mipmap
-generation or a readback in mid-scene would end and restart it and the restart would load
-undefined data. So it ships with a count of begins per frame, checked at run time, and the
-rule that any compute work is dispatched before the scene pass starts.
+This candidate is not WebGPU's alone. WebGL2 has `invalidateFramebuffer` and
+`invalidateSubFramebuffer`, which discard an attachment's contents after the resolve copy,
+and neither the engine (9.18.0) nor the game calls either. So the same saving is open on
+WebGL2, which is what every player runs today.
+
+On WebGPU it is only safe while that pass begins exactly once a frame. By reading it does
+(one rendering group, no render target drawn mid-scene), but a compute dispatch, a mipmap
+generation or a readback in mid-scene would end the pass and begin it again, and a
+discarded attachment is defined to read as zeros, so the second pass would load zeros in
+place of the first pass's samples. So it ships with a count of begins per frame, checked at
+run time, and the rule that any compute work is dispatched before the scene pass starts.
 
 ### 2.2 The shader pipeline (4, 6, 9, 10, 11)
 
@@ -183,7 +194,8 @@ first.
 
 ## 6. The order to measure in
 
-1. Request the timestamp feature on a measurement build and read each pass's GPU time at
+1. Request the timestamp feature on a measurement build (Chrome steps its timestamps by
+   65,536 ns, about 0.07 ms, unless its developer features are on) and read each pass's GPU time at
    the canopy and meadow poses, at native and at 4× pixels, on the high and medium tiers.
 2. Candidate 2: the option off against on, by pass time and by page pairs in both orders;
    the still pair.
