@@ -314,7 +314,7 @@ export function renderLanding(
     onJoin(text: string): void;
     onDownloads(): void;
     onSettings(): void;
-    /** A choice pressed on the Settings panel: kept at once, for the hike Play starts. */
+    /** A choice picked on the Settings panel: kept at once, for the hike Play starts. */
     onChooseTier(choice: TierChoice): void;
     onCredits(): void;
     onBack(): void;
@@ -384,7 +384,7 @@ export function renderLanding(
   const into: Record<LandingPanel, () => HTMLElement | null> = {
     home: () => null,
     downloads: () => downloads.querySelector<HTMLElement>("a.download") ?? downloadsBack,
-    settings: () => settings.querySelector<HTMLElement>('button.choice[aria-pressed="true"]'),
+    settings: () => settings.querySelector<HTMLElement>("select"),
     credits: () => credits.querySelector<HTMLElement>("ul.credits"),
   };
   let showing: LandingPanel | null = null;

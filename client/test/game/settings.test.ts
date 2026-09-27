@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { CAUTION_LIVE, TIER_CHOICES, settingsModel } from "../../src/game/settings.js";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { CAUTION_LIVE, TIER_CHOICES, listOpen, renderSettings, settingsModel, type SettingsInput } from "../../src/game/settings.js";
+import { renderLanding } from "../../src/game/landing.js";
+import { landingModel } from "../../src/game/landingModel.js";
+import type { TierChoice } from "../../src/game/tierChoice.js";
+import { StandInElement, StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
 
 const CHOICES = (selected: string) => [
   { choice: "auto", label: "Auto (Recommended)", selected: selected === "auto", disabled: false },
@@ -55,7 +59,7 @@ describe("settingsModel", () => {
     ]);
   });
 
-  it("has no Apply on the title screen, where a choice is kept as it is pressed", () => {
+  it("has no Apply on the title screen, where a choice is kept as it is picked", () => {
     expect(settingsModel({ context: "title", choice: "high", auto: null, override: null, stored: true }).apply).toBe(undefined);
   });
 
@@ -121,5 +125,188 @@ describe("a choice put back on Auto", () => {
     ]);
     expect(settingsModel({ context: "pause", choice: "auto", selectionTier: "medium", auto, running: "medium", override: null, stored: true, notice }).lines)
       .toEqual(["Auto picks Medium on this computer.", notice, "This hike is using Medium."]);
+  });
+});
+
+describe("the stand-in document these screens are tested against", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("drops the focus from a node taken out of the page, as a browser does", () => {
+    const doc = installStandInDom();
+    const box = doc.createElement("div");
+    const control = doc.createElement("select");
+    doc.body.append(box);
+    box.append(control);
+    control.focus();
+    expect(doc.activeElement).toBe(control);
+    box.replaceChildren();
+    expect(doc.activeElement).toBe(doc.body);
+  });
+
+  it("fires nothing when a script sets a select's value, and input then change when a person picks", () => {
+    const doc = installStandInDom();
+    const select = doc.createElement("select") as StandInSelect;
+    doc.body.append(select);
+    for (const v of ["a", "b"]) {
+      const option = doc.createElement("option") as StandInElement & { value: string };
+      option.value = v;
+      select.append(option);
+    }
+    const heard: string[] = [];
+    select.addEventListener("input", () => heard.push("input"));
+    select.addEventListener("change", () => heard.push("change"));
+    select.value = "b";
+    expect(select.value).toBe("b");
+    expect(heard).toEqual([]);
+    select.choose("a");
+    expect(select.value).toBe("a");
+    expect(heard).toEqual(["input", "change"]);
+  });
+});
+
+describe("the Graphics select", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const title = (over: Partial<SettingsInput> = {}): SettingsInput => ({ context: "title", choice: "auto", auto: null, override: null, stored: true, ...over });
+
+  function mount(input: SettingsInput) {
+    const doc = installStandInDom();
+    const root = doc.createElement("div");
+    doc.body.append(root);
+    const chosen: TierChoice[] = [];
+    const ui = renderSettings(asHtml(root), settingsModel(input), { onChoose: (c) => chosen.push(c), onBack: () => {} });
+    const selects = root.querySelectorAll("select") as StandInSelect[];
+    const select = selects[0]!;
+    const caption = root.descendants().find((el) => el.classList.contains("caution"))!;
+    return { doc, root, ui, chosen, selects, select, caption };
+  }
+
+  it("is one select, not a row of buttons, offering Auto (Recommended), High, Medium and Low in that order", () => {
+    const { root, selects, select } = mount(title());
+    expect(selects.length).toBe(1);
+    expect(root.descendants().filter((el) => el.tagName === "BUTTON" && el.classList.contains("choice")).length).toBe(0);
+    expect(select.options.map((o) => o.value)).toEqual(["auto", "high", "medium", "low"]);
+    expect(select.options.map((o) => o.textContent)).toEqual(["Auto (Recommended)", "High", "Medium", "Low"]);
+    expect(select.value).toBe("auto");
+  });
+
+  it("selects the model's choice, and follows it on a repaint", () => {
+    const { ui, select } = mount(title({ choice: "medium" }));
+    expect(select.value).toBe("medium");
+    expect(select.options.map((o) => o.selected)).toEqual([false, false, true, false]);
+    ui.setView(settingsModel(title({ choice: "low" })));
+    expect(select.value).toBe("low");
+  });
+
+  it("hands a person's pick to onChoose exactly once, and a repaint that moves the selection not at all", () => {
+    const { ui, select, chosen } = mount(title());
+    select.choose("high");
+    expect(chosen).toEqual(["high"]);
+    ui.setView(settingsModel(title({ choice: "low" })));
+    ui.setView(settingsModel(title({ choice: "medium" })));
+    expect(chosen).toEqual(["high"]);
+  });
+
+  it("keeps the same select and options across a repaint, and the keyboard's focus on the select", () => {
+    const { doc, root, ui, select } = mount(title());
+    const options = [...select.options];
+    select.focus();
+    ui.setView(
+      settingsModel(title({ choice: "high", auto: { tier: "medium", probePending: false, ceiling: "medium" }, stored: false })),
+    );
+    expect(root.querySelectorAll("select")).toEqual([select]);
+    expect(select.options.length).toBe(4);
+    select.options.forEach((o, i) => expect(o).toBe(options[i]));
+    expect(select.isConnected).toBe(true);
+    expect(doc.activeElement).toBe(select);
+  });
+
+  it("is held while a choice is applied, and freed after", () => {
+    const pause = (applying: boolean): SettingsInput => ({
+      context: "pause", choice: "high", selectionTier: "high", auto: null, running: "medium", override: null, stored: true, applying,
+    });
+    const { ui, select, chosen } = mount(pause(true));
+    expect(select.disabled).toBe(true);
+    select.choose("low");
+    expect(chosen).toEqual([]);
+    ui.setView(settingsModel(pause(false)));
+    expect(select.disabled).toBe(false);
+    select.choose("low");
+    expect(chosen).toEqual(["low"]);
+  });
+
+  it("is named Graphics by a label for it, has an id and a name, and is described by the caption", () => {
+    const { root, select, caption } = mount(title());
+    const labels = root.querySelectorAll("label");
+    expect(labels.length).toBe(1);
+    expect(labels[0]!.textContent).toBe("Graphics");
+    expect(select.id).toMatch(/^settings-graphics-\d+$/);
+    expect(labels[0]!.htmlFor).toBe(select.id);
+    expect(select.name).toBe("graphics");
+    expect(select.hasAttribute("aria-label")).toBe(false);
+    expect(caption.id).toMatch(/^settings-caution-\d+$/);
+    expect(select.getAttribute("aria-describedby")).toBe(caption.id);
+  });
+
+  it("gives every copy of the screen its own id, so each label names its own select", () => {
+    const first = mount(title()).select.id;
+    const second = mount(title()).select.id;
+    expect(first).not.toBe(second);
+  });
+
+  it("keeps the caption a polite live region, always in the page, empty when there is nothing to say", () => {
+    const auto = { tier: "medium" as const, probePending: false, ceiling: "medium" as const };
+    const { ui, caption } = mount(title({ auto }));
+    expect(caption.getAttribute("aria-live")).toBe("polite");
+    expect(caption.textContent).toBe("");
+    expect(caption.isConnected).toBe(true);
+    ui.setView(settingsModel(title({ auto, choice: "high" })));
+    expect(caption.textContent).toBe("Higher than recommended for this computer.");
+    ui.setView(settingsModel(title({ auto, choice: "medium" })));
+    expect(caption.textContent).toBe("");
+    expect(caption.isConnected).toBe(true);
+    expect(caption.hidden).toBe(false);
+  });
+});
+
+describe("whether a select's list is showing", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("is what the browser says through :open, and no where it cannot say", () => {
+    const doc = installStandInDom();
+    const select = doc.createElement("select");
+    expect(listOpen(null)).toBe(false);
+    expect(listOpen(doc.window as unknown as EventTarget)).toBe(false);
+    select.openState = true;
+    expect(listOpen(select as unknown as EventTarget)).toBe(true);
+    select.openState = false;
+    expect(listOpen(select as unknown as EventTarget)).toBe(false);
+    // A browser without :open throws on the selector: read as closed, so
+    // Escape keeps its one meaning there.
+    select.openState = "unsupported";
+    expect(listOpen(select as unknown as EventTarget)).toBe(false);
+  });
+});
+
+describe("the title screen's Settings panel", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("takes the focus to the select as it opens, and keeps a pick at once", () => {
+    const doc = installStandInDom();
+    const container = doc.createElement("div");
+    doc.body.append(container);
+    const kept: TierChoice[] = [];
+    const noop = () => {};
+    const view = landingModel({ desktop: false, host: "darwin-arm64", latest: null, quality: { choice: "medium", auto: null, override: null, stored: true } });
+    const landing = renderLanding(asHtml(container), view, {
+      onCreate: noop, onJoin: noop, onDownloads: noop, onSettings: noop, onCredits: noop, onBack: noop,
+      onChooseTier: (c) => kept.push(c),
+    });
+    landing.setPanel("settings");
+    const select = container.querySelector("select") as StandInSelect;
+    expect(doc.activeElement).toBe(select);
+    expect(select.value).toBe("medium");
+    select.choose("low");
+    expect(kept).toEqual(["low"]);
   });
 });

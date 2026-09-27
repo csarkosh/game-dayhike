@@ -1,4 +1,4 @@
-import { renderSettings, type SettingsView } from "./settings.js";
+import { listOpen, renderSettings, type SettingsView } from "./settings.js";
 import type { TierChoice } from "./tierChoice.js";
 
 const STYLE = `
@@ -180,7 +180,7 @@ export type PauseEvent =
   | { kind: "escape" };
 
 /** Where the keyboard's focus goes: the main page's Resume or Settings, or
- * the Settings page's chosen choice. */
+ * the Settings page's Graphics select. */
 export type PauseFocus = "resume" | "settings" | "choice";
 
 export type PauseEffect =
@@ -195,7 +195,7 @@ export type PauseEffect =
  * and discard a selection not applied; Escape on the main page resumes. While
  * a choice is being applied nothing but its end is heard, and the menu always
  * opens on the main page. Focus follows: Resume when the menu opens, the
- * chosen choice on entering Settings and once a choice is applied (Apply
+ * Graphics select on entering Settings and once a choice is applied (Apply
  * goes disabled, and a disabled button loses the focus), Settings on leaving.
  */
 export function pauseStep(state: PauseState, event: PauseEvent): { state: PauseState; effect: PauseEffect } {
@@ -322,7 +322,7 @@ export type PauseSettings = {
   /** Apply: save the choice, and apply it where that is possible. A promise
    * holds the page on "Applying…" until it settles. */
   onApply(choice: TierChoice): void | Promise<void>;
-  /** A choice was pressed (the selection changed): what the last Apply said
+  /** A choice was picked (the selection changed): what the last Apply said
    * can be let go. */
   onChoose?(choice: TierChoice): void;
 };
@@ -422,7 +422,7 @@ export function createPauseMenu(
     if (!isOpen) return;
     if (target === "resume") resume.focus();
     else if (target === "settings") settingsButton.focus();
-    else settingsPage.querySelector<HTMLButtonElement>('button.choice[aria-pressed="true"]')?.focus();
+    else settingsPage.querySelector<HTMLSelectElement>("select")?.focus();
   }
 
   function dispatch(event: PauseEvent): void {
@@ -458,6 +458,9 @@ export function createPauseMenu(
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (isOpen && e.code === "Escape") {
+      // A browser that hands the page the Escape closing a select's open list
+      // (and says the list is open, through `:open`) closes only the list.
+      if (listOpen(e.target)) return;
       e.preventDefault();
       dispatch({ kind: "escape" });
     }
