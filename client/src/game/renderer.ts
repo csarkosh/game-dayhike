@@ -34,7 +34,7 @@ import {
   type RingSamples,
 } from "./clipmap.js";
 import { createLighting } from "./lighting.js";
-import { createAtmosphere } from "./atmosphere.js";
+import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
@@ -644,7 +644,24 @@ export function createRenderer(
   forest: Forest | null = null,
   options: RendererOptions = {},
 ): Renderer {
-  const engine = new Engine(canvas, true, { stencil: true }, true);
+  // The context is lost when the engine is disposed, so a renderer that is
+  // replaced (a live tier change, the landing's backdrop giving way to the
+  // game) frees every GPU object of its scene at once, including any the
+  // scene failed to delete.
+  const engine = new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);
+  try {
+    return buildRenderer(engine, level, forest, options);
+  } catch (error) {
+    // A build that throws part-way never hands back a renderer to dispose:
+    // its engine (and the scene on it) and the atmosphere's global plugin
+    // registration would outlive it, and the next renderer would meet them.
+    releaseAtmosphere();
+    engine.dispose();
+    throw error;
+  }
+}
+
+function buildRenderer(engine: Engine, level: Level, forest: Forest | null, options: RendererOptions): Renderer {
   const scene = new Scene(engine);
   // Sun + fill already occupy two of every material's default four light
   // slots; without raising the cap, only the first two of the local lamp and

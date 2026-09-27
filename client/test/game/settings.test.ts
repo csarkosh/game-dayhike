@@ -38,12 +38,20 @@ describe("settingsModel", () => {
     ]);
   });
 
-  it("on the pause screen, names the running tier and when a change applies", () => {
+  it("on the pause screen, names the tier the hike is running on", () => {
     const v = settingsModel({ context: "pause", choice: "auto", auto: { tier: "medium", probePending: false }, running: "high", override: null, stored: true });
+    expect(v.lines).toEqual(["Auto picks Medium on this computer.", "This hike is using High."]);
+  });
+
+  it("says a switch that failed, after the other lines", () => {
+    const v = settingsModel({
+      context: "pause", choice: "high", selectionTier: "high", auto: null, running: "medium", override: null, stored: false,
+      error: "Could not switch; still using Medium.",
+    });
     expect(v.lines).toEqual([
-      "Auto picks Medium on this computer.",
-      "This hike is using High.",
-      "Applies the next time you start a hike.",
+      "This hike is using Medium.",
+      "This browser is not keeping settings, so this choice lasts until the page closes.",
+      "Could not switch; still using Medium.",
     ]);
   });
 
@@ -51,15 +59,21 @@ describe("settingsModel", () => {
     expect(settingsModel({ context: "title", choice: "high", auto: null, override: null, stored: true }).apply).toBe(undefined);
   });
 
-  it("on the pause screen, offers Apply only for a selection that differs from the saved choice", () => {
-    const base = { context: "pause" as const, auto: null, running: "medium" as const, override: null, stored: true };
-    expect(settingsModel({ ...base, choice: "high", saved: "auto" }).apply).toEqual({ label: "Apply", disabled: false });
-    expect(settingsModel({ ...base, choice: "auto", saved: "auto" }).apply).toEqual({ label: "Apply", disabled: true });
-    expect(settingsModel({ ...base, choice: "high", saved: "auto", override: "low" }).apply).toEqual({ label: "Apply", disabled: true });
+  it("on the pause screen, offers Apply only for a selection that changes the running tier", () => {
+    const base = { context: "pause" as const, auto: { tier: "medium" as const, probePending: false }, running: "medium" as const, override: null, stored: true };
+    expect(settingsModel({ ...base, choice: "low", selectionTier: "low" }).apply).toEqual({ label: "Apply", disabled: false });
+    expect(settingsModel({ ...base, choice: "medium", selectionTier: "medium" }).apply).toEqual({ label: "Apply", disabled: true });
+    expect(settingsModel({ ...base, choice: "auto", selectionTier: "medium" }).apply).toEqual({ label: "Apply", disabled: true });
+    // Auto's pick moved under a running hike (the governor): Apply switches to it.
+    expect(settingsModel({ ...base, choice: "auto", auto: { tier: "low", probePending: false }, selectionTier: "low" }).apply).toEqual({
+      label: "Apply", disabled: false,
+    });
+    expect(settingsModel({ ...base, choice: "low", override: "high", selectionTier: "high" }).apply).toEqual({ label: "Apply", disabled: true });
+    expect(settingsModel({ ...base, choice: "low" }).apply).toEqual({ label: "Apply", disabled: true });
   });
 
   it("while applying, reads Applying… and holds every control", () => {
-    const v = settingsModel({ context: "pause", choice: "high", saved: "auto", auto: null, running: "medium", override: null, stored: true, applying: true });
+    const v = settingsModel({ context: "pause", choice: "high", selectionTier: "high", auto: null, running: "medium", override: null, stored: true, applying: true });
     expect(v.apply).toEqual({ label: "Applying…", disabled: true });
     expect(v.back).toEqual({ label: "Back", disabled: true });
     expect(v.choices.every((c) => c.disabled)).toBe(true);
@@ -73,7 +87,7 @@ describe("a choice above what this computer is recommended", () => {
     const high = settingsModel({ context: "title", choice: "high", auto, override: null, stored: true });
     expect(high.choices.find((c) => c.selected)!.choice).toBe("high");
     expect(high.caution).toBe("Higher than recommended for this computer.");
-    const paused = settingsModel({ context: "pause", choice: "high", saved: "auto", auto, running: "medium", override: null, stored: true });
+    const paused = settingsModel({ context: "pause", choice: "high", selectionTier: "high", auto, running: "medium", override: null, stored: true });
     expect(paused.caution).toBe("Higher than recommended for this computer.");
   });
 

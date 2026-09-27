@@ -53,6 +53,16 @@ const STYLE = `
     transition: opacity 220ms ease-out, display 220ms ease-out;
     transition-behavior: allow-discrete;
   }
+  /* While a new tier is applied the ground goes opaque, the vignette's own
+     outer colour, so the rebuild behind it (the scene torn down, built again,
+     its shaders compiling) is never seen; it fades back once the new scene is
+     ready. */
+  .pausemenu::before {
+    content: ""; position: absolute; inset: 0; z-index: -1;
+    background: rgb(8, 9, 12); opacity: 0;
+    transition: opacity 220ms ease-out;
+  }
+  .pausemenu.applying::before { opacity: 1; }
   .pausemenu .panel {
     /* Two pages in one cell: the main page and Settings. They swap in place
        with the landing's panel slide, so the swap never shifts layout. */
@@ -227,6 +237,9 @@ export type PauseSettings = {
   /** Apply: save the choice, and apply it where that is possible. A promise
    * holds the page on "Applying…" until it settles. */
   onApply(choice: TierChoice): void | Promise<void>;
+  /** A choice was pressed (the selection changed): what the last Apply said
+   * can be let go. */
+  onChoose?(choice: TierChoice): void;
 };
 
 export type PauseMenu = {
@@ -312,6 +325,7 @@ export function createPauseMenu(
   function paint(): void {
     const onSettings = state.panel === "settings";
     root.classList.toggle("show-settings", onSettings);
+    root.classList.toggle("applying", state.applying);
     main.inert = onSettings;
     settingsPage.inert = !onSettings;
     if (onSettings && state.selection !== null) settingsUi.setView(options.settings.view(state.selection, state.applying));
@@ -326,7 +340,9 @@ export function createPauseMenu(
 
   function dispatch(event: PauseEvent): void {
     const step = pauseStep(state, event);
+    const chose = step.state !== state && event.kind === "choose" ? event.choice : null;
     state = step.state;
+    if (chose !== null) options.settings.onChoose?.(chose);
     paint();
     const effect = step.effect;
     if (effect === null) return;

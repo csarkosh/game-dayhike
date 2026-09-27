@@ -396,3 +396,72 @@ describe("touch source in sample", () => {
     expect(input.sample(2).yaw).toBe(0);
   });
 });
+
+describe("rebinding to a fresh canvas", () => {
+  /** A canvas of its own: its listeners kept apart from the window's. */
+  function ownCanvas() {
+    const live = new Map<string, Listener>();
+    let locks = 0;
+    return {
+      live,
+      locks: () => locks,
+      addEventListener: (type: string, fn: Listener) => void live.set(type, fn),
+      removeEventListener: (type: string, fn: Listener) => {
+        if (live.get(type) === fn) live.delete(type);
+      },
+      requestPointerLock: () => {
+        locks += 1;
+      },
+    };
+  }
+
+  it("keeps the aim, follows the pointer lock to the new canvas, and moves its listeners there", () => {
+    const old = ownCanvas();
+    const input = createInputSampler(old as unknown as HTMLCanvasElement);
+    lockPointer(old);
+    fire("mousemove", { movementX: 100, movementY: 40 });
+    const before = input.sample(1);
+    expect(before.yaw).not.toBe(0);
+    // The old canvas leaves the page and the browser drops the lock with it.
+    const doc = (globalThis as Record<string, unknown>).document as { pointerLockElement: unknown };
+    doc.pointerLockElement = null;
+    fire("pointerlockchange", {});
+    expect(input.engaged).toBe(false);
+
+    const fresh = ownCanvas();
+    input.rebind(fresh as unknown as HTMLCanvasElement);
+    expect(old.live.size).toBe(0);
+    expect([...fresh.live.keys()].sort()).toEqual(["click", "pointerdown"]);
+    // A click on the new canvas asks for the lock there; the old one is gone.
+    fresh.live.get("pointerdown")!({ pointerType: "mouse" });
+    fresh.live.get("click")!({});
+    expect(fresh.locks()).toBe(1);
+    input.engage();
+    expect(fresh.locks()).toBe(2);
+    expect(old.locks()).toBe(0);
+
+    lockPointer(fresh);
+    expect(input.engaged).toBe(true);
+    lockPointer(old);
+    expect(input.engaged).toBe(false);
+    lockPointer(fresh);
+    const after = input.sample(2);
+    expect(after.yaw).toBe(before.yaw);
+    expect(after.pitch).toBe(before.pitch);
+    fire("keydown", { code: "KeyW", preventDefault() {} });
+    expect(input.sample(3).moveZ).toBe(1);
+  });
+
+  it("announces a lock the new canvas already holds", () => {
+    const old = ownCanvas();
+    const input = createInputSampler(old as unknown as HTMLCanvasElement);
+    const seen: boolean[] = [];
+    input.onEngagedChange((engaged) => seen.push(engaged));
+    const fresh = ownCanvas();
+    const doc = (globalThis as Record<string, unknown>).document as { pointerLockElement: unknown };
+    doc.pointerLockElement = fresh;
+    input.rebind(fresh as unknown as HTMLCanvasElement);
+    expect(input.engaged).toBe(true);
+    expect(seen).toEqual([true]);
+  });
+});

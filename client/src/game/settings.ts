@@ -37,12 +37,15 @@ export type SettingsInput = {
   choice: TierChoice;
   /** Null until the GPU's signals are in. */
   auto: AutoSummary | null;
-  /** Pause: the tier this hike is running on. */
+  /** Pause: the tier this hike is running on now. */
   running?: QualityTier;
-  /** Pause: the saved choice, against which Apply has something to do. */
-  saved?: TierChoice;
+  /** Pause: the tier the selection resolves to (`resolveTier`), against which
+   * Apply has something to do. */
+  selectionTier?: QualityTier;
   /** Pause: a choice is being applied. */
   applying?: boolean;
+  /** Pause: the last switch failed, and says so, after every other line. */
+  error?: string;
   /** `?tier=` in the address. */
   override: QualityTier | null;
   /** Whether the browser keeps the choice across pages. */
@@ -65,8 +68,10 @@ export type SettingsView = {
 /**
  * The screen as data. The lines, each only when it applies and in this order:
  * the override; Auto's pick, or that Auto will test this machine at the next
- * hike; on the pause screen, the tier this hike runs on and when a change
- * applies; that the browser is not keeping settings.
+ * hike; on the pause screen, the tier this hike runs on; that the browser is
+ * not keeping settings; a switch that failed. Apply, on the pause screen only,
+ * switches the running hike: it has something to do when the selection
+ * resolves to another tier than the one running.
  */
 export function settingsModel(input: SettingsInput): SettingsView {
   const applying = input.applying === true;
@@ -81,11 +86,9 @@ export function settingsModel(input: SettingsInput): SettingsView {
         : `Auto picks ${TIER_NAMES[input.auto.tier]} on this computer.`,
     );
   }
-  if (input.context === "pause") {
-    if (input.running !== undefined) lines.push(`This hike is using ${TIER_NAMES[input.running]}.`);
-    lines.push("Applies the next time you start a hike.");
-  }
+  if (input.context === "pause" && input.running !== undefined) lines.push(`This hike is using ${TIER_NAMES[input.running]}.`);
   if (!input.stored) lines.push("This browser is not keeping settings, so this choice lasts until the page closes.");
+  if (input.context === "pause" && input.error !== undefined) lines.push(input.error);
 
   const view: SettingsView = {
     heading: "Settings",
@@ -102,10 +105,10 @@ export function settingsModel(input: SettingsInput): SettingsView {
   const ceiling = input.auto?.ceiling;
   if (input.choice !== "auto" && ceiling !== undefined && RANK[input.choice] > RANK[ceiling]) view.caution = ABOVE_RECOMMENDED;
   if (input.context === "pause") {
-    const saved = input.saved ?? input.choice;
+    const changes = input.selectionTier !== undefined && input.selectionTier !== input.running;
     view.apply = {
       label: applying ? "Applying…" : "Apply",
-      disabled: applying || input.override !== null || input.choice === saved,
+      disabled: applying || input.override !== null || !changes,
     };
   }
   return view;

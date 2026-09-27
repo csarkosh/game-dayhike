@@ -1,3 +1,4 @@
+import { bindCanvas } from "./canvasBinding.js";
 import type { InputCommand } from "../sim/types.js";
 import { Button } from "../sim/types.js";
 import type { TouchSource } from "./touchControls.js";
@@ -36,6 +37,13 @@ export type InputSampler = {
    * observed `engaged` value, exactly once, through `onEngagedChange`.
    */
   setTouchMode(on: boolean): void;
+  /**
+   * Moves the canvas's listeners, and the pointer lock's identity, to a fresh
+   * canvas (a live tier change builds the renderer on one). The aim and every
+   * other piece of state are kept: recreating the sampler would snap the
+   * player's view back to where the hike began.
+   */
+  rebind(canvas: HTMLCanvasElement): void;
   dispose(): void;
 };
 
@@ -116,7 +124,7 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
 
   const onLockChange = () => {
     const was = locked;
-    locked = document.pointerLockElement === canvas;
+    locked = document.pointerLockElement === binding.canvas;
     // Releasing the pointer must not leave keys stuck down.
     if (!locked) {
       keys.clear();
@@ -148,7 +156,7 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
   };
   const onCanvasClick = () => {
     if (lastPointerType === "touch" || lastPointerType === "pen") return;
-    if (!locked) void canvas.requestPointerLock();
+    if (!locked) void binding.canvas.requestPointerLock();
   };
 
   window.addEventListener("keydown", onKeyDown);
@@ -157,8 +165,10 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
   window.addEventListener("mousedown", onMouseDown);
   window.addEventListener("mouseup", onMouseUp);
   document.addEventListener("pointerlockchange", onLockChange);
-  canvas.addEventListener("pointerdown", onCanvasPointerDown);
-  canvas.addEventListener("click", onCanvasClick);
+  const binding = bindCanvas(canvas, {
+    pointerdown: onCanvasPointerDown as EventListener,
+    click: onCanvasClick as EventListener,
+  });
 
   const sampler: InputSampler = {
     get engaged() {
@@ -188,7 +198,7 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
       // is precisely this path: opening the command bar unlocks and closing it
       // locks again. The rejection is not an error worth surfacing — you click
       // the canvas and carry on — but left unhandled it prints as one.
-      void Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
+      void Promise.resolve(binding.canvas.requestPointerLock()).catch(() => undefined);
     },
     disengage() {
       if (touchMode) {
@@ -237,6 +247,12 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
 
       return { seq, moveX, moveZ, yaw, pitch, buttons };
     },
+    rebind(next) {
+      binding.rebind(next);
+      // Whose lock the page holds is now asked of the new canvas; a change is
+      // announced exactly as a lock change is.
+      onLockChange();
+    },
     dispose() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
@@ -244,8 +260,7 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);
       document.removeEventListener("pointerlockchange", onLockChange);
-      canvas.removeEventListener("pointerdown", onCanvasPointerDown);
-      canvas.removeEventListener("click", onCanvasClick);
+      binding.dispose();
     },
   };
   if (opts.touchMode) sampler.setTouchMode(true);

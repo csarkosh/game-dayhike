@@ -1,0 +1,270 @@
+import { describe, it, expect, vi } from "vitest";
+
+// `terrainTexture.ts`'s plugin constructor calls the real `loadGroundArrays`
+// whenever it isn't handed a factory, and `renderer.ts`'s own
+// `attachTerrainTexture(scene, mat)` call site never passes one — so the real
+// loader builds a `RawTexture2DArray`, which NullEngine cannot create (the
+// same gap `groundMaps.test.ts` documents and works around with its own
+// factory injection). Mocked here, at the module boundary, rather than by
+// touching `renderer.ts`.
+vi.mock("../../src/game/groundMaps.js", () => ({
+  loadGroundArrays: () => ({
+    normals: { isReady: () => true, dispose() {} },
+    // `getSize` mirrors the real `BaseTexture` surface `bindForSubMesh` reads
+    // (`terrainReliefOn`'s placeholder-vs-real signature) — present here so a
+    // future test that exercises binding fails on the plugin code, not on a
+    // mock that is missing a method the real texture always has.
+    rah: { isReady: () => true, dispose() {}, getSize: () => ({ width: 1, height: 1 }) },
+    ready: Promise.resolve(),
+    dispose() {},
+  }),
+}));
+
+// `createRenderer` builds a real WebGL `Engine`, which needs a canvas and a
+// context this suite does not have. Substituted with `NullEngine` at the
+// module boundary — same trick as the `groundMaps` mock above — so the test
+// below can build a whole `Renderer` on each tier anyway.
+vi.mock("@babylonjs/core/Engines/engine.js", async () => {
+  const mod = await vi.importActual<typeof import("@babylonjs/core/Engines/nullEngine.js")>(
+    "@babylonjs/core/Engines/nullEngine.js",
+  );
+  return { Engine: mod.NullEngine };
+});
+
+// The terrain field lives behind the variant registry; a test that builds a
+// forest without `app.ts` has to register the passes itself.
+import "../../src/sim/passes/index.js";
+import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import type { Scene } from "@babylonjs/core/scene.js";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
+import { createForest } from "../../src/sim/forest.js";
+import type { Level } from "../../src/sim/level.js";
+import { createRenderer, type Renderer } from "../../src/game/renderer.js";
+import { createBodyMesh } from "../../src/game/bodyMesh.js";
+import { createSignMeshes } from "../../src/game/signMeshes.js";
+import { buildOrUndo, swapRenderer, type SwapBindings } from "../../src/game/rendererSwap.js";
+import type { QualityTier } from "../../src/game/quality.js";
+
+// ---- the order, with stubs --------------------------------------------------
+
+function stubRenderer(id: string, log: string[]): Renderer {
+  return {
+    id,
+    engine: { stopRenderLoop: () => log.push(`stop ${id}`), runRenderLoop: () => log.push(`run ${id}`) },
+    scene: { id },
+    dispose: () => log.push(`dispose ${id}`),
+  } as unknown as Renderer;
+}
+
+function stubCanvas(id: string, log: string[]): HTMLCanvasElement {
+  return {
+    id,
+    style: {},
+    replaceWith: (next: { id: string }) => log.push(`replace ${id} with ${next.id}`),
+  } as unknown as HTMLCanvasElement;
+}
+
+const idOf = (x: unknown): string => (x as { id: string }).id;
+
+function stubBindings(log: string[], failing: ReadonlySet<QualityTier> = new Set()): SwapBindings {
+  let n = 0;
+  return {
+    freshCanvas: () => {
+      n += 1;
+      log.push(`fresh c${n}`);
+      return stubCanvas(`c${n}`, log);
+    },
+    build: (canvas, tier, engine) => {
+      log.push(`build ${idOf(canvas)} ${tier} ${engine === null ? "webgl2" : "given"}`);
+      if (failing.has(tier)) throw new Error(`no ${tier}`);
+      return stubRenderer(`${tier}@${idOf(canvas)}`, log);
+    },
+    extras: { dispose: () => log.push("extras dispose"), build: (r) => log.push(`extras build ${idOf(r)}`) },
+    rebind: (canvas) => log.push(`rebind ${idOf(canvas)}`),
+    restore: (r) => log.push(`restore ${idOf(r)}`),
+    loop: () => undefined,
+  };
+}
+
+describe("swapRenderer's order", () => {
+  it("tears the old renderer down first, then builds on a fresh canvas and rebinds", () => {
+    const log: string[] = [];
+    const got = swapRenderer(
+      { renderer: stubRenderer("medium@c0", log), canvas: stubCanvas("c0", log) },
+      { tier: "high", engine: null, fallbackTier: "medium" },
+      stubBindings(log),
+    );
+    expect(got.tier).toBe("high");
+    expect(got.fellBack).toBe(false);
+    expect((got.canvas as unknown as { style: { touchAction?: string } }).style.touchAction).toBe("none");
+    expect(log).toEqual([
+      "stop medium@c0",
+      "extras dispose",
+      "dispose medium@c0",
+      "fresh c1",
+      "replace c0 with c1",
+      "build c1 high webgl2",
+      "restore high@c1",
+      "extras build high@c1",
+      "rebind c1",
+      "run high@c1",
+    ]);
+  });
+
+  it("rebuilds the running tier on WebGL2 when the new build throws, and throws on a second failure", () => {
+    const log: string[] = [];
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const engine = { dispose: () => log.push("dispose given engine") } as unknown as AbstractEngine;
+      const got = swapRenderer(
+        { renderer: stubRenderer("medium@c0", log), canvas: stubCanvas("c0", log) },
+        { tier: "high", engine, fallbackTier: "medium" },
+        stubBindings(log, new Set<QualityTier>(["high"])),
+      );
+      expect(got.tier).toBe("medium");
+      expect(got.fellBack).toBe(true);
+      expect(log.slice(3)).toEqual([
+        "fresh c1",
+        "replace c0 with c1",
+        "build c1 high given",
+        "dispose given engine",
+        "fresh c2",
+        "replace c1 with c2",
+        "build c2 medium webgl2",
+        "restore medium@c2",
+        "extras build medium@c2",
+        "rebind c2",
+        "run medium@c2",
+      ]);
+      const log2: string[] = [];
+      expect(() =>
+        swapRenderer(
+          { renderer: stubRenderer("medium@c0", log2), canvas: stubCanvas("c0", log2) },
+          { tier: "high", engine: null, fallbackTier: "medium" },
+          stubBindings(log2, new Set<QualityTier>(["high", "medium"])),
+        ),
+      ).toThrow("no medium");
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+});
+
+describe("buildOrUndo", () => {
+  it("undoes what a build made, newest first, when it throws, and nothing when it returns", () => {
+    const undone: string[] = [];
+    expect(() =>
+      buildOrUndo((made) => {
+        made(() => undone.push("engine"));
+        made(() => {
+          undone.push("listener");
+          throw new Error("undo failed");
+        });
+        made(() => undone.push("audio"));
+        throw new Error("build failed");
+      }),
+    ).toThrow("build failed");
+    expect(undone).toEqual(["audio", "listener", "engine"]);
+    const kept: string[] = [];
+    expect(buildOrUndo((made) => {
+      made(() => kept.push("x"));
+      return 7;
+    })).toBe(7);
+    expect(kept).toEqual([]);
+  });
+});
+
+// ---- nothing of the old scene survives, on NullEngine -----------------------
+
+const LEVEL: Level = { id: "swap-leak", brushes: [], playerSpawns: [], enemySpawns: [] };
+const SEED = 388817;
+const BODY = { pos: { x: 10, y: 2, z: 10 }, yaw: 0 };
+const POSTS = [{ x: 0, z: 0, arms: [{ dx: 0, dz: 1, names: ["Trailhead"] }] }];
+const never = (): Promise<AssetContainer> => new Promise(() => undefined);
+
+function nullCanvas(): HTMLCanvasElement {
+  return { renderWidth: 1600, renderHeight: 900, style: {}, replaceWith: () => undefined } as unknown as HTMLCanvasElement;
+}
+
+function census(scene: Scene) {
+  return {
+    meshes: scene.meshes.length,
+    materials: scene.materials.length,
+    textures: scene.textures.length,
+    transformNodes: scene.transformNodes.length,
+    lights: scene.lights.length,
+    particleSystems: scene.particleSystems.length,
+    beforeRender: scene.onBeforeRenderObservable.observers.length,
+    afterRender: scene.onAfterRenderObservable.observers.length,
+  };
+}
+
+/** What app.ts builds into the scene outside the renderer: the body and the signs. */
+function sceneExtras() {
+  let live: { dispose(): void }[] = [];
+  return {
+    build(r: Renderer) {
+      live = [
+        createBodyMesh(r.scene, BODY, { shadows: r.shadows, loader: never }),
+        createSignMeshes(r.scene, POSTS, () => 2, {
+          materialFor: (name) => new StandardMaterial(`box_${name}`, r.scene),
+          paint: (s, name) => new PBRMaterial(name, s),
+          shadows: r.shadows,
+          loader: never,
+        }),
+      ];
+    },
+    dispose() {
+      for (const x of live) x.dispose();
+      live = [];
+    },
+  };
+}
+
+describe("swapRenderer on NullEngine", () => {
+  it("leaves no object, engine or plugin registration of the old renderer alive, swap after swap", () => {
+    const forest = createForest(SEED);
+    const fresh = new Map<QualityTier, ReturnType<typeof census>>();
+    for (const tier of ["high", "low", "medium"] as const) {
+      const r = createRenderer(nullCanvas(), LEVEL, forest, { tier });
+      const x = sceneExtras();
+      x.build(r);
+      fresh.set(tier, census(r.scene));
+      x.dispose();
+      r.dispose();
+    }
+    expect(EngineStore.Instances.length).toBe(0);
+
+    const extras = sceneExtras();
+    let current = { renderer: createRenderer(nullCanvas(), LEVEL, forest, { tier: "medium" }), canvas: nullCanvas() };
+    extras.build(current.renderer);
+    const bindings: SwapBindings = {
+      build: (canvas, tier) => createRenderer(canvas, LEVEL, forest, { tier }),
+      freshCanvas: nullCanvas,
+      extras,
+      rebind: () => undefined,
+      restore: () => undefined,
+      loop: () => undefined,
+    };
+    for (const tier of ["high", "low", "medium"] as const) {
+      const old = current.renderer;
+      const next = swapRenderer(current, { tier, engine: null, fallbackTier: "medium" }, bindings);
+      expect(old.scene.isDisposed).toBe(true);
+      expect(old.engine.isDisposed).toBe(true);
+      expect(EngineStore.Instances.length).toBe(1);
+      expect(census(next.renderer.scene)).toEqual(fresh.get(tier));
+      // A material made after the swap (a model still loading) still gets
+      // the atmosphere, which a build-first order would have unregistered.
+      const late = new PBRMaterial("late", next.renderer.scene);
+      expect(late.pluginManager?.getPlugin("Atmosphere") ?? null).not.toBe(null);
+      late.dispose();
+      current = next;
+    }
+    extras.dispose();
+    current.renderer.dispose();
+    expect(EngineStore.Instances.length).toBe(0);
+  }, 180_000);
+});
