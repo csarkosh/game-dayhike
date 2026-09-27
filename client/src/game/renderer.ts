@@ -636,9 +636,14 @@ export type Renderer = {
 
 export type RendererOptions = { tier?: QualityTier };
 
-/** The longest a renderer's engine is kept past its `dispose` for a scene's
- * BRDF lookup texture to finish expanding (`releaseEngine`). */
-export const BRDF_SETTLE_MAX_MS = 2000;
+/** The most polls a renderer's engine waits, past its `dispose`, for a scene's
+ * BRDF lookup texture to finish expanding (`releaseEngine`). One browser
+ * reading put the end of the expansion about 0.9 s after a renderer's build,
+ * about 56 polls of 16 ms; this is a little over twice that. */
+export const BRDF_SETTLE_POLLS = 125;
+
+/** The wait between two of those polls. */
+const BRDF_POLL_MS = 16;
 
 /** Whether some scene of `engine` has a BRDF lookup texture still being
  * expanded: loading, or decoding from RGBD into half float. */
@@ -653,7 +658,7 @@ function brdfExpanding(engine: Engine): boolean {
 /**
  * Disposes `engine`, and its scenes with it, at once, or, while a scene's
  * BRDF lookup texture is still being expanded, as soon as that has finished,
- * and at most `maxMs` later.
+ * checking every 16 ms, for at most `polls` checks.
  *
  * Every PBR material asks its scene for the BRDF lookup texture, and Babylon
  * makes it on first request, then expands it from RGBD into half float
@@ -665,30 +670,39 @@ function brdfExpanding(engine: Engine): boolean {
  * TypeError inside a promise nothing handles, which prints as "Uncaught (in
  * promise)". That window is the first second or so of a renderer's life.
  *
- * So a renderer torn down inside it keeps only its scene and engine, with
- * nothing drawing, until the expansion has finished; everything else of the
- * renderer is already gone, in order, by the time this runs. It costs a
- * teardown nothing on its own timeline: a live tier change builds the new
- * renderer at once, and the old context stays alive beside it, off the page,
- * for as long as the expansion takes, at most `maxMs`. A teardown outside that
- * window releases the engine at once, as before. Past the bound the engine
- * goes regardless, and anything the expansion then throws is reported, not
- * hidden.
+ * So a renderer torn down inside it keeps its whole scene and its engine
+ * alive until the expansion has finished. The parts the renderer disposes
+ * itself are gone at once, in order, and nothing draws the scene; but what
+ * lives in the scene lives on with it until it goes: model requests still in
+ * flight go on downloading and parsing into it (the shells that asked for them
+ * have already dropped them), and the ground maps go on downloading. A live
+ * tier change builds the new renderer at once, so the old context stays alive
+ * beside it, off the page, for as long as the expansion takes.
+ *
+ * The bound counts polls that run, not time since the dispose: the expansion
+ * advances only while the main thread is free, and during a swap the new
+ * renderer's build holds the thread for seconds on a slow machine, which a
+ * bound in time would spend before the first poll. Once the polls run out the
+ * engine goes regardless, and anything the expansion then throws is reported,
+ * not hidden. An engine something else has already disposed is left alone.
  */
-export function releaseEngine(engine: Engine, maxMs = BRDF_SETTLE_MAX_MS): void {
+export function releaseEngine(engine: Engine, polls = BRDF_SETTLE_POLLS): void {
+  if (engine.isDisposed) return;
   if (!brdfExpanding(engine)) {
     engine.dispose();
     return;
   }
-  const deadline = performance.now() + maxMs;
+  let left = polls;
   const poll = (): void => {
-    if (brdfExpanding(engine) && performance.now() < deadline) {
-      setTimeout(poll, 16);
+    if (engine.isDisposed) return;
+    left--;
+    if (brdfExpanding(engine) && left > 0) {
+      setTimeout(poll, BRDF_POLL_MS);
       return;
     }
     engine.dispose();
   };
-  setTimeout(poll, 16);
+  setTimeout(poll, BRDF_POLL_MS);
 }
 
 /**

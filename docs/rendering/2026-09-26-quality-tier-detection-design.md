@@ -742,10 +742,14 @@ In `rendererSwap.ts`, `swapRenderer(current, target, bindings)`, synchronous:
    every GPU object of the old context goes with it, including any the scene
    forgot. One exception to "at once": while the scene's BRDF lookup texture is
    still being expanded (the first second or so of a renderer's life), the
-   scene and its engine are kept, with nothing drawing, until it finishes, at
-   most `BRDF_SETTLE_MAX_MS` (2 s), because disposing the scene first makes
-   Babylon's expansion callback throw (`releaseEngine`, `renderer.ts`);
-   everything else of the renderer is gone before step 4;
+   whole old scene and its engine are kept until the expansion finishes, for
+   at most `BRDF_SETTLE_POLLS` (125) checks 16 ms apart that actually run, so
+   the new renderer's build in steps 4 to 7 spends none of it; disposing the
+   scene first makes Babylon's expansion callback throw (`releaseEngine`,
+   `renderer.ts`). The renderer's own parts are disposed at once and nothing
+   draws the kept scene, but what lives in it carries on until it goes: model
+   requests still in flight download and parse into it, and the ground maps
+   keep downloading. For that time the old context is alive beside the new;
 4. a fresh canvas replaces the old one in the container (`replaceWith`), with
    `touchAction: none`;
 5. `createRenderer(fresh, level, forest, { tier, engine })`, the same `level` and
