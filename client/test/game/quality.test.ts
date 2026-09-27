@@ -6,6 +6,10 @@ import {
   tierFor,
   verdictFor,
   verdictHolds,
+  withProbeStarted,
+  withVerdict,
+  withinClass,
+  containerPixels,
   type AutoRecord,
   type AutoVerdict,
   type Capabilities,
@@ -214,5 +218,50 @@ describe("autoTier and the verdict", () => {
         expect(RANK[at(c1, m1)]).toBeLessThanOrEqual(RANK[at(c2, m2)]);
       }
     }
+  });
+});
+
+describe("the record through a probe", () => {
+  it("counts a started probe and clears the count with a verdict", () => {
+    const started = withProbeStarted(null, "Apple GPU", 26, "apple-unknown");
+    expect(started).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
+    expect(withProbeStarted(started, "Apple GPU", 26, "apple-unknown").attempts).toBe(2);
+    expect(withProbeStarted(started, "Apple GPU", 27, "apple-unknown").attempts).toBe(1);
+    expect(withProbeStarted(started, "Apple GPU", 26, "apple-base").attempts).toBe(2);
+    const verdict: AutoVerdict = { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000 };
+    expect(withVerdict(started, "Apple GPU", 26, "apple-unknown", verdict)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0, verdict });
+  });
+
+  it("keeps a record's class and verdict while its probe runs", () => {
+    const held = rec({ tier: "medium" }, { attempts: 0 });
+    expect(withProbeStarted(held, SAFARI, 26, "apple-base")).toEqual({ ...held, attempts: 1 });
+  });
+
+  it("carries the count past a verdict that replaces another class's", () => {
+    const verdict: AutoVerdict = { tier: "high", source: "probe", pixels: 2_073_600, at: NOW };
+    const other = rec({ tier: "medium" }, { cls: "apple-base", attempts: 2 });
+    expect(withVerdict(other, SAFARI, 26, "apple-unknown", verdict)).toEqual({ v: 1, gpu: SAFARI, cls: "apple-unknown", browser: 26, attempts: 2, verdict });
+    const same = rec({ tier: "medium" }, { attempts: 2 });
+    expect(withVerdict(same, SAFARI, 26, "apple-unknown", verdict)!.attempts).toBe(0);
+    const empty = rec(null, { cls: "apple-base", attempts: 2 });
+    expect(withVerdict(empty, SAFARI, 26, "apple-unknown", verdict)!.attempts).toBe(0);
+    expect(withVerdict(other, SAFARI, 27, "apple-unknown", verdict)!.attempts).toBe(0);
+  });
+
+  it("refuses a verdict over no area, and measures the window one way", () => {
+    const started = withProbeStarted(null, "Apple GPU", 26, "apple-unknown");
+    expect(withVerdict(started, "Apple GPU", 26, "apple-unknown", { tier: "medium", source: "probe", pixels: 0, at: 1_790_000_000_000 })).toBe(null);
+    expect(containerPixels({ clientWidth: 1920, clientHeight: 1080 })).toBe(2_073_600);
+    expect(containerPixels({ clientWidth: 0, clientHeight: 1080 })).toBe(0);
+    expect(containerPixels({ clientWidth: 1470, clientHeight: -1 })).toBe(0);
+  });
+});
+
+describe("withinClass", () => {
+  it("keeps a tier within the class's ceiling and the low cap", () => {
+    expect(withinClass("high", "apple-base", 10, 16)).toBe("medium");
+    expect(withinClass("high", "discrete-modern", 2, 16)).toBe("low");
+    expect(withinClass("medium", "apple-unknown", 8, null)).toBe("medium");
+    expect(withinClass("low", "discrete-modern", 16, 32)).toBe("low");
   });
 });

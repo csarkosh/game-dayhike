@@ -47,6 +47,13 @@ export function parseTierOverride(search: string): QualityTier | null {
   return isTier(value) ? value : null;
 }
 
+/** `?probe=high|medium`, else null: a probe from that tier on Auto, whatever
+ * the class and the record, for measuring. Low is never measured. */
+export function parseProbeOverride(search: string): QualityTier | null {
+  const value = new URLSearchParams(search).get("probe");
+  return value === "high" || value === "medium" ? value : null;
+}
+
 function asReading(value: unknown): ProbeReading | null {
   if (!isObject(value)) return null;
   const { tier, frames, meanMs, p95Ms, pixels, engine } = value;

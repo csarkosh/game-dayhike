@@ -28,6 +28,9 @@ import { createSignalingClient, type SignalingClient } from "./net/signaling.js"
 import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
+import { browserEnv, gatherSignals } from "./game/gpuSignals.js";
+import { startupTier } from "./game/frameProbe.js";
+import { probeDeps } from "./game/probeScene.js";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("#app not found");
@@ -74,6 +77,12 @@ const latestReady: Promise<void> = latestUrl
 // address — exactly where two-machine testing happens — would take the whole
 // page down rather than one feature.
 const selfId = createLobbyId();
+// What the browser says of the GPU, read once at load: tens of milliseconds,
+// at most 2 s for the WebGPU adapter. A hike's tier is decided from it.
+const signalsReady = gatherSignals(browserEnv());
+// Bumped by every render, so a hike whose tier is still being decided for a
+// page that has since been left is never built.
+let renderToken = 0;
 let selfName = loadName();
 let lobby: Lobby | null = null;
 let lobbyError: string | undefined;
@@ -402,6 +411,7 @@ function onPlay(): void {
 // `app` is passed in rather than closed over: the null check above does not
 // narrow inside a hoisted function declaration, which could be called first.
 function render(container: HTMLDivElement): void {
+  const token = ++renderToken;
   const route = parseRoute(location.pathname);
 
   // An invite: consume it (so back/forward never re-join), show the landing
@@ -481,21 +491,33 @@ function render(container: HTMLDivElement): void {
     return;
   }
 
-  const canvas = document.createElement("canvas");
-  container.appendChild(canvas);
-  game = startGame(canvas, route.token, {
-    lobby,
-    peerId: selfId,
-    onExit: exitGame,
-    onContinueOffline: continueOffline,
-    onPauseChange: (next) => {
-      paused = next;
+  // The tier comes first (`frameProbe.ts`): from the GPU's signals, and on a
+  // machine whose GPU the browser will not name, from a probe of a few seconds
+  // behind its own screen. `running` covers the wait, so a render that moves
+  // on stops the probe, and disposes its renderer, before building its own.
+  const probe = probeDeps(container);
+  running = { dispose: () => probe.abort() };
+  void signalsReady
+    .then((signals) => startupTier(signals, { search: location.search, cancelled: () => token !== renderToken }, probe))
+    .then(({ tier }) => {
+      if (token !== renderToken) return;
+      const canvas = document.createElement("canvas");
+      container.appendChild(canvas);
+      game = startGame(canvas, route.token, {
+        lobby,
+        peerId: selfId,
+        onExit: exitGame,
+        onContinueOffline: continueOffline,
+        onPauseChange: (next) => {
+          paused = next;
+          paintRoster();
+        },
+        tier,
+      });
+      running = game;
+      announcer.afterPaint();
       paintRoster();
-    },
-  });
-  running = game;
-  announcer.afterPaint();
-  paintRoster();
+    });
 }
 
 window.addEventListener("popstate", () => render(app));

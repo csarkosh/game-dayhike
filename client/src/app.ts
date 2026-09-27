@@ -66,6 +66,7 @@ import { CAR_MATERIAL, KIOSK_MATERIAL, kioskFacing, propSite, roadProp } from ".
 import { createTrailheadMeshes } from "./game/trailheadMeshes.js";
 import { signSites } from "./sim/placeNames.js";
 import { afterNextPaint } from "./game/paint.js";
+import type { QualityTier } from "./game/quality.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
@@ -99,6 +100,9 @@ export type GameOptions = {
   onContinueOffline(): void;
   /** The pause menu opened (true) or closed (false); false again on dispose. */
   onPauseChange(paused: boolean): void;
+  /** The tier `main.ts` decided (`startupTier`): `?tier=`, or Auto. Absent,
+   * the renderer picks its own. */
+  tier?: QualityTier;
 };
 
 export function startGame(canvas: HTMLCanvasElement, token: string, options: GameOptions): GameHandle {
@@ -150,7 +154,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   );
 
   const forest = createForest(seed);
-  const renderer = createRenderer(canvas, level, forest);
+  const renderer = createRenderer(canvas, level, forest, { tier: options.tier });
   const ambient = createAmbientAudio();
   // Shares the ambient context — one AudioContext for the whole game, gated on
   // the same unlock gesture. Constructed here rather than inside the renderer

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { pageStorage, parseTierOverride, readAutoRecord, resolveTier, writeAutoRecord } from "../../src/game/tierChoice.js";
+import { pageStorage, parseProbeOverride, parseTierOverride, readAutoRecord, resolveTier, writeAutoRecord } from "../../src/game/tierChoice.js";
 import type { AutoRecord } from "../../src/game/quality.js";
 
 function memoryStorage(): Storage {
@@ -31,6 +31,15 @@ describe("the override", () => {
     expect(parseTierOverride("?cmd=seed%20atmo&tier=low")).toBe("low");
     expect(parseTierOverride("?tier=ultra")).toBe(null);
     expect(parseTierOverride("")).toBe(null);
+  });
+});
+
+describe("the probe override", () => {
+  it("reads ?probe=high or medium", () => {
+    expect(parseProbeOverride("?probe=high")).toBe("high");
+    expect(parseProbeOverride("?probe=medium")).toBe("medium");
+    expect(parseProbeOverride("?probe=low")).toBe(null);
+    expect(parseProbeOverride("")).toBe(null);
   });
 });
 

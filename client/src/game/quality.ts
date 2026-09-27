@@ -172,6 +172,51 @@ function lower(a: QualityTier, b: QualityTier): QualityTier {
   return RANK[a] <= RANK[b] ? a : b;
 }
 
+/** The highest tier a class may take on this machine: its ceiling, or low
+ * where two cores or two gigabytes are reported (a missing value caps
+ * nothing). */
+function ceilingFor(cls: GpuClass, cores: number | null, memoryGb: number | null): QualityTier {
+  const capped = (cores !== null && cores <= 2) || (memoryGb !== null && memoryGb <= 2);
+  return capped ? "low" : CLASS_TIERS[cls].ceiling;
+}
+
+/** `tier`, never above what the class may take on this machine: how a probe's
+ * verdict, which a forced probe may take past the ceiling, is started at. */
+export function withinClass(tier: QualityTier, cls: GpuClass, cores: number | null, memoryGb: number | null): QualityTier {
+  return lower(tier, ceilingFor(cls, cores, memoryGb));
+}
+
+/** The game container's CSS area: the one measure of the window, for a probe
+ * verdict's `pixels` and for `AutoInput.pixels`, so a verdict holds on the
+ * next load at the same window. 0 for a container not laid out. */
+export function containerPixels(container: { clientWidth: number; clientHeight: number }): number {
+  const { clientWidth, clientHeight } = container;
+  return clientWidth > 0 && clientHeight > 0 ? clientWidth * clientHeight : 0;
+}
+
+/**
+ * The record once a probe starts: a matching record (`recordMatches`) with one
+ * more attempt, its class and verdict kept until the probe's own verdict
+ * replaces them, or a fresh one at one attempt.
+ */
+export function withProbeStarted(prev: AutoRecord | null, gpu: string, browser: number, cls: GpuClass): AutoRecord {
+  if (prev !== null && recordMatches(prev, gpu, browser)) return { ...prev, attempts: prev.attempts + 1 };
+  return { v: DETECT_VERSION, gpu, cls, browser, attempts: 1, verdict: null };
+}
+
+/**
+ * The record with a verdict for `cls`, or null for a verdict over no area,
+ * which certifies nothing and would never hold again. The attempts go back to
+ * 0, unless the verdict replaces one made for another class: then the count
+ * is carried, so two classes alternating on one GPU, each ignoring the
+ * other's verdict, cannot probe on every load.
+ */
+export function withVerdict(prev: AutoRecord | null, gpu: string, browser: number, cls: GpuClass, verdict: AutoVerdict): AutoRecord | null {
+  if (!(verdict.pixels > 0)) return null;
+  const carried = prev !== null && recordMatches(prev, gpu, browser) && prev.verdict !== null && prev.cls !== cls;
+  return { v: DETECT_VERSION, gpu, cls, browser, attempts: carried ? prev.attempts : 0, verdict };
+}
+
 /**
  * Auto's tier, and the tier to probe from before the first hike, or null. The
  * class gives a start tier and a ceiling (`CLASS_TIERS`); two cores or two
@@ -184,8 +229,7 @@ function lower(a: QualityTier, b: QualityTier): QualityTier {
  */
 export function autoTier(input: AutoInput): { tier: QualityTier; probeFrom: QualityTier | null } {
   const row = CLASS_TIERS[input.cls];
-  const capped = (input.cores !== null && input.cores <= 2) || (input.memoryGb !== null && input.memoryGb <= 2);
-  const ceiling: QualityTier = capped ? "low" : row.ceiling;
+  const ceiling = ceilingFor(input.cls, input.cores, input.memoryGb);
   const start = lower(row.start, ceiling);
   const record = recordMatches(input.record, input.gpu, input.browser) ? input.record : null;
   const verdict = record === null ? null : verdictFor(record, input.cls);
