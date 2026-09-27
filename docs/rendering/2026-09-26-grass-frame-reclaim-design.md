@@ -1,6 +1,7 @@
 # Grass frame reclaim: design
 
-**As built.** Nothing yet. This is the design as written on 2026-09-26. It
+**As built.** Step 1a is built and gated, and the bar for it re-based on
+what was measured (§5.10); nothing else yet. This is the design as written on 2026-09-26. It
 builds on the near-grass work
 ([2026-09-25-near-grass-fullness-design](2026-09-25-near-grass-fullness-design.md)
 and its verification), which merges to `main` before any code here starts;
@@ -45,7 +46,7 @@ its go criteria (§9.5) are met, and then only through its own design.
 | question | decision |
 | --- | --- |
 | The bar | At the canopy pose, high tier, native pixels, the frame is at least **0.8 ms** under the near-grass tip by the pair method (§12.3), the profile's measured filter saving; the 4× figure reported beside it; cover ratios not below the near-grass fourth gate's (canopy **0.62**, meadow **0.94**); absolute near cover at the canopy pose ≥ **0.45**; luminance ratio in 0.8–1.25 at both poses; no seam or pop, at a frame edge or anywhere, on the walks (§12.4) |
-| Step 1 | **Cull to the frustum, per frame.** 1a: the blade field's 36 buckets and the grass class's 4 keep their collected buffers and draw a prefix filtered to a frustum widened by 5° and pushed back 1 m, refiltered when the camera turns 4° or moves 0.5 m; only the prefix is uploaded; the draw-call count does not move (about 162). Expected **0.78 ms** at native (0.64–0.92), the profile's measured 0.82 less the margins. 1b: the meadow's two buckets the same way, only if measured at ≥ 0.15 ms. 1c: sector meshes (8 octants × rings) as the fallback if the filter's JS shows (§5) |
+| Step 1 | **Cull to the frustum, per frame.** 1a: the blade field's 36 buckets and the grass class's 4 keep their collected buffers and draw a prefix filtered to a frustum widened by 5° and pushed back 1 m, refiltered when the camera turns 4° or moves 0.5 m; only the prefix is uploaded; the draw-call count does not move (about 162). Expected **0.78 ms** at native (0.64–0.92), the profile's measured 0.82 less the margins. 1b: the meadow's two buckets the same way, only if measured at ≥ 0.15 ms. 1c: sector meshes (8 octants × rings) as the fallback if the filter's JS shows (§5). As built and measured: §5.10 |
 | Step 2 | **The far sward on the terrain.** On the tiers that draw blades the meadow's far cards dither out over **[26, 30] m** (were [28, 40]) and are not collected past 34.24 m. Past 24 m the terrain pulls ground carrying a sward toward a far-sward colour with the cards' own clump mottle, a wind shimmer on the cards' own gust field and a grazing darkening. The mid crop (18–26 m) stays cards |
 | Step 3 | **Lean and hug.** The fixed 4 cm `FOLIAGE_TILT` push becomes a rotation away from the eye by `FOLIAGE_LEAN` 0.5 rad × the sine of the eye's elevation over the instance, so a card seen from above faces up and a card near the horizon keeps its silhouette. Card bases follow the ground plane from the instance's own gradient |
 | Step 4 | **Colour continuity and alpha coverage.** The card root takes the floor's own colour, sward pull included, over the bottom 35 % of its height; the card's alpha is scaled up with its mip level at run time so a card at 5–8 m keeps the coverage it has at 1 m. No texture file changes |
@@ -661,6 +662,83 @@ ms, so hidden; on a machine whose frame is CPU-bound, a cost. Each gate reports
 the draw calls and the JS frame time beside the frame, and if the JS time grows
 by more than the GPU frame shrinks at native, the blades' fine-tier ring is
 dropped first (§13). The meadow's sectors, if taken, add about 22 draws.
+
+### 5.10 As built and measured
+
+Step 1a as built (the verification note's §4 and §5 carry the measurements):
+
+- **Constants.** `CULL_MARGIN` 6°, `CULL_PUSHBACK` 1 m, `CULL_RADIUS` 1.5 m,
+  `CULL_TURN` 4°, `CULL_MOVE` 0.5 m (§5.2's as-built note gives why). The
+  meadow's buckets are untouched; on the low tier the grass class draws whole.
+- **What is drawn**, at the gate's still: at the canopy pose 1,614 of 6,131
+  blade cells (0.26) and 870 of 4,559 grass-class cards (0.19); at the meadow
+  pose 1,752 of 6,587 and 891 of 4,731. Draw calls do not move: 159–163 at
+  the canopy pose and 201–205 at the meadow pose, on both builds.
+- **Frame**, against `main` by the pair method: **−0.42 ms** at the canopy pose
+  at native (same-code +0.01), −0.37 ms at 4×, −0.39 ms at 1920 × 1080;
+  −0.96 ms at the meadow pose at native, −0.61 ms at 4×.
+- **Fullness** unchanged: every cover, near-cover and luminance figure inside
+  the control's own page-to-page spread at both poses. **No pop** found on the
+  turn, pitch and walk sequences, each step just under a threshold (note §5.6).
+  The JS frame at a still pose is unchanged (4.33 against 4.34 ms).
+- **The filter's own JS.** As first built, a pass cost 0.4–0.5 ms in the page,
+  twice §5.2's estimate, and a fast turn refilters every frame. The pass was
+  then rebuilt without changing what it keeps: each bucket's translations held
+  apart from its matrices, the five plane tests taken without a branch per
+  instance (a turning view changes which instances pass from cut to cut, and
+  early-out tests paid about as much again in mispredicted branches), the
+  matrix and the vec4 streams moved as float64 pairs, and a bucket whose kept
+  set is the last cut's left alone, neither copied nor uploaded. In Node, at the
+  canopy pose, a pass went from 0.12–0.15 ms (blades 0.07–0.09, grass class
+  0.04–0.06) to **0.05 ms** (0.03 and 0.02), on a turn and on repeated cuts
+  alike, and a turn's blade uploads fell by a quarter (52 to 39 buffer updates a
+  pass). The first build ran 2–4 times slower in the page than in Node (0.45 ms
+  against 0.12–0.22), so a pass is expected at 0.10–0.20 ms in the page; the next
+  gate times it.
+
+**The bar, re-based.** The profile's 0.82 ms did not reproduce on today's
+`main`: filtering the blades, the grass class and the meadow's cards to the
+exact frustum, the most any culling of them can give, measures **0.58 ± 0.08
+ms** at the canopy pose at native (note §4). No margin reaches 0.8 ms. Step
+1a's bar is therefore set against that ceiling: **at least 70 % of the
+exact-frustum saving at native, with no pop and no loss of fullness.** At
+0.42 / 0.58 = 72 % it is met. The 0.8 ms goal of §1 stands for the design as a
+whole, and is now to be reached with what follows.
+
+**Step 1b dropped.** Filtering the meadow's two buckets on top of 1a measures
+0.05 ms (−0.05 ± 0.04 and −0.07 ± 0.14 on two pages), under the 0.15 ms §5.1
+asked of it. Step 1c is not taken either: the filter's JS does not show in the
+frame, and is now a third of what the gate timed.
+
+**What culling leaves: the blades in view.** With the filter on, hiding the
+blades still saves 0.88–0.94 ms at the canopy pose, of the 1.20 ms they cost
+unculled, and hiding the grass class 0.11 of its 0.43. The blades the camera
+sees carry what the frame still spends, and no culling reaches them. The next
+target, before step 2, is those blades, by levers that leave every blade in
+its place (plan Task 2D):
+
+1. **Fewer rings per blade in the mid and coarse tiers.** Every blade is
+   `BLADE_RINGS` = 3 cross-sections below its tip, 7 vertices and 5 triangles,
+   on every tier. Past 4 m a blade is a pixel or two wide and its curve spans a
+   few pixels, so 2 rings on the mid tier (5 vertices, −29 %) and 1 on the
+   coarse tier (3 vertices, −57 %) should hold its outline to about a pixel.
+   The three tiers carry about a third of the field's vertices each, so this
+   is about −29 % of the blade vertices.
+2. **A simpler vertex stage for the coarse tier.** Terms of the foliage vertex
+   stage that cannot move a coarse-tier vertex by a pixel (the per-vertex
+   flutter, at most 0.04 of a 0.5 m blade, is 2 cm at 4–20 m) are dropped under
+   a tier define. Which terms qualify is measured on rendered stills, not
+   assumed; the player bend stays, since a remote player walks through the
+   coarse tier.
+3. **Step 2's far trim.** About 0.12 ms at native while the meadow is not
+   filtered (§6.3). It is not a lever on its own: it ends cards past 26 m that
+   the terrain's far pull (§6.2) is there to replace, so it comes with that
+   pull, and taking it early means taking step 2 early, whole.
+
+Which of the vertex or fragment stage the in-view blades spend is not known
+(§3.3); Task 2D measures that split first, then each lever by the toggle
+method, and keeps a lever only on a measured saving with fullness inside the
+control's spread at both poses.
 
 ## 6. Step 2: the far sward on the terrain
 

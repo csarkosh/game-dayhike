@@ -32,11 +32,12 @@
 | `client/src/game/grassSectors.ts` (new, 2C only) | 2 | `SECTOR_OCTANTS`, the pads, `sectorCount`, `sectorOf`, the box accumulator |
 | `client/src/game/clutterField.ts` | 2C, 3 | `CLUTTER_SECTOR_RINGS` (2C only); `clutterOrigin` exported; `CLUTTER_MEADOW_CARD_END`, `CLUTTER_MEADOW_CARD_RAMP`, the far trim and `clutterMeadowFarEdges` |
 | `client/src/game/clutterMeshes.ts` | 2, 3, 4, 5 | `CLUTTER_CULLED`, collected and drawn buffers, `cull` (sectors in 2C only); the far edges on tiers with blades; `foliageGrad`; `foliageCover` |
-| `client/src/game/bladeField.ts`, `bladeMeshes.ts` | 2 | Collected and drawn buffers, `cull`; in 2C only, `bladeOrigin` exported and `BLADE_SECTOR_RINGS` |
+| `client/src/game/bladeField.ts`, `bladeMeshes.ts` | 2, 2D | Collected and drawn buffers, `cull`; in 2C only, `bladeOrigin` exported and `BLADE_SECTOR_RINGS`; each tier's meshes on its rings (2D) |
+| `client/src/game/bladeClump.ts` | 2D | `BLADE_TIER_RINGS`; `bladeClumpGeometry` takes the rings |
 | `client/src/game/groundHexParams.ts` | 3 | `FAR_SWARD`, `FAR_SWARD_MAX`, `FAR_SWARD_COVER`, `FAR_SWARD_BAND`, `FAR_SWARD_CELL`, `FAR_SWARD_CLUMP`, `FAR_SWARD_WIND`, `FAR_SWARD_GRAZE`, `farSwardWeight` |
 | `client/src/game/shaders/sward.fragment.fx` (new) | 3, 5 | `swardGust`, `swardFar`, `swardNearWeight`, `swardFarWeight`: the floor's GLSL, included by the terrain and, from Task 5, the foliage fragment |
 | `client/src/game/terrainTexture.ts` | 3 | Four uniforms, the far pull after the near one |
-| `client/src/game/foliagePlugin.ts`, `shaders/foliage.vertex.fx`, `shaders/foliageWorldPos.vertex.fx`, `shaders/foliageLights.fragment.fx`, `shaders/foliage.fragment.fx`, `shaders/foliageAlpha.fragment.fx` (new) | 3, 4, 5 | `foliageWind()` getter; `FOLIAGE_LEAN`, the hug, `FOLIAGE_TILT` removed; `FOLIAGE_ROOT_BAND`, the root's floor colour, the mip-scaled alpha test |
+| `client/src/game/foliagePlugin.ts`, `shaders/foliage.vertex.fx`, `shaders/foliageWorldPos.vertex.fx`, `shaders/foliageLights.fragment.fx`, `shaders/foliage.fragment.fx`, `shaders/foliageAlpha.fragment.fx` (new) | 2D, 3, 4, 5 | `foliageWind()` getter; `FOLIAGE_LEAN`, the hug, `FOLIAGE_TILT` removed; `FOLIAGE_ROOT_BAND`, the root's floor colour, the mip-scaled alpha test |
 | `tools/cardCoverage/cardCoverage.mjs` (new), `tools/cardCoverage/test/cardCoverage.test.mjs` (new) | 5 | Reads a card model's embedded alpha, prints coverage per box mip and the scale |
 | `ARCHITECTURE.md` | 2, 3, 4, 5 | One sentence per step in the Rendering section |
 | Tests: `grassCull.test.ts` (new), `grassSectors.test.ts` (new, 2C only), `clutterMeshes.test.ts`, `clutterField.test.ts`, `bladeMeshes.test.ts`, `groundHexParams.test.ts`, `terrainTexture.test.ts`, `foliagePlugin.test.ts` | 2–5 | As each task says |
@@ -119,6 +120,8 @@ EOF
 ### Task 2: Step 1 — cull to the frustum
 
 Three parts: **2A** the blade field's 36 buckets and the grass class's 4, filtered to the frustum each frame the view moves (design §5.2); a gate; **2B** the meadow's 2 buckets by the same filter, only if that gate measures them worth it; **2C** sector meshes, the fallback, only if the filter's JS shows in the gate (design §5.6–§5.9).
+
+**As built** (design §5.10): 2A shipped with `CULL_MARGIN` 6° and `CULL_RADIUS` 1.5 m, and a context-restore hand-back of the drawn buffers. Its pass was then rebuilt for speed, keeping what it keeps: `cullPrefix(planes, count, set: CullSet): boolean` over a `CullSet` (`cullSet`, `cullInvalidate`) that holds each bucket's translations apart, moves the matrix and vec4 streams as float64 pairs and returns false, copying nothing, when a bucket keeps exactly its last cut; the shells upload only buckets that changed. 2B is dropped (0.05 ms measured against its 0.15 ms threshold) and 2C not taken. The bar for 2A was re-based on the measured exact-frustum ceiling: at least 70 % of it at native, no pop, no fullness loss; −0.42 of 0.58 ms met it.
 
 **Files:**
 - Create: `client/src/game/grassCull.ts`, `client/test/game/grassCull.test.ts`
@@ -892,6 +895,44 @@ that Babylon frustum-tests.
 <trailers>
 EOF
 ```
+
+---
+
+### Task 2D: The blades in view
+
+Design §5.10. With 2A in, hiding the blades still saves 0.88–0.94 ms at the canopy pose at native, of the 1.20 ms they cost unculled: the blades the camera sees carry most of what is left above the bar, and no culling reaches them. Two levers that leave every blade where it stands, each kept only on a measured saving with no loss of fullness, after the split of that cost between the vertex and fragment stages is measured. Before Task 3.
+
+**Files:**
+- Modify: `client/src/game/bladeClump.ts` (`BLADE_TIER_RINGS`; `bladeClumpGeometry` takes the rings), `client/src/game/bladeMeshes.ts` (each tier's meshes on its rings)
+- Modify, lever 2 only: `client/src/game/foliagePlugin.ts`, `client/src/game/shaders/foliageWorldPos.vertex.fx` (a define on the coarse tier's material)
+- Test: `client/test/game/bladeClump.test.ts`, `client/test/game/bladeMeshes.test.ts`, `client/test/game/foliagePlugin.test.ts`, `client/test/game/shaderHygiene.test.ts`
+
+**Interfaces:**
+- Produces: `export const BLADE_TIER_RINGS: readonly [number, number, number]` (fine, mid, coarse; `[3, 2, 1]` to start); `bladeClumpGeometry(character, count, rings = BLADE_RINGS)`; `bladeVertsFor(rings)` = `rings * 2 + 1` and `bladeTrisFor(rings)` = `(rings - 1) * 2 + 1`, with `BLADE_VERTS` and `BLADE_TRIS` their values at `BLADE_RINGS`
+- Lever 2: a `FOLIAGE_BLADES_FAR` define, set on the coarse tier's material only
+
+- [ ] **Step 1: Where the in-view blades spend (measurement only)**
+
+On a branch page at the canopy pose at native, by the toggle method of the note's §1, with 2A's filter on: (a) every blade collapsed to its root in the vertex stage, through a gate-only override of the strength cut to 0, which keeps the vertex work and removes what is rasterised; (b) the blades hidden. (b) is the in-view blades' whole cost, (a) the part after the vertex stage, (b) − (a) the vertex stage's. Recorded in the note; lever 1 is aimed at the vertex stage and lever 2 at its per-vertex arithmetic, so a small (b) − (a) says both will save little, and the task stops there with that finding.
+
+- [ ] **Step 2: Lever 1, fewer rings on the far tiers, test first**
+
+`bladeClump.test.ts`: `BLADE_TIER_RINGS` is `[3, 2, 1]`; for each of 1, 2 and 3 rings, a clump of 10 blades has `10 * (rings * 2 + 1)` vertices and `10 * ((rings - 1) * 2 + 1)` triangles; each blade's root and tip vertices, and the `blade` record's root, random and height fraction at them (0 and 1), are the same at every ring count for the same character and count, so a blade on fewer rings keeps its ends, its height, its droop and its place in the hand-off; the seed and flower heads take the tier's rings as their strips do. `bladeMeshes.test.ts`: each tier's meshes carry the vertex count of their tier's rings; the vertex budget test re-pinned with the new total as a literal (measured). Run: FAIL. Implement: the ring count threads from `BLADE_TIER_RINGS[tier]` through `createClumpMesh` into `bladeClumpGeometry`; the ring positions keep their fractions `k / rings` of the blade's height. Run: PASS. Typecheck, eslint, the touched tests; commit `perf: draw the far blades on fewer rings`, `## What` / `## How` as the global constraints, then `<trailers>`.
+
+- [ ] **Step 3: Lever 2, a lighter vertex stage for the coarse tier, test first**
+
+Only the terms of the foliage vertex stage that cannot move a coarse-tier vertex by a pixel at 4.4 m and beyond are candidates: first the per-vertex flutter (at most `WIND_FLUTTER_MAX` × 0.83 of a 0.5 m blade, under 2 cm), then any other the Step 1 split points at. The player bend stays: a remote player walks through the coarse tier. Test first: `FOLIAGE_BLADES_FAR` is on the coarse tier's material and on no other; the GLSL keeps `shaderHygiene.test.ts`'s rules; the dropped term's GLSL sits under `#ifndef FOLIAGE_BLADES_FAR`. Then a still pair at each pose, the define on and off, with the wind held at 0 and at the weather's wind: no changed block past the grain floor (the note's §5.6 method). Commit `perf: a lighter vertex stage for the farthest blades`.
+
+- [ ] **Step 4: Gate**
+
+1. **Frame**: each lever by the toggle method on branch pages at the canopy pose at native (the lever on against off, three pages); the branch against Task 2's tip by the pair method; the meadow pose and 4× reported. A lever is kept only on a reliable saving of at least 0.1 ms at native; a lever that misses is reverted, its commit named in the note.
+2. **Fullness** at both poses with the isolation: cover ratio, canopy near cover and luminance ratio inside the control's page-to-page spread, as 2A's gate read them.
+3. **The walk and the turn** of design §12.4, and the mid crop's stills: no ring of blades that changes as it crosses a tier's band.
+4. **The running total** against the control at the canopy pose at native, against the design's 0.8 ms goal, with what Task 3's far trim is expected to add (design §6.3).
+
+Append `## 6. The blades in view` to the verification note (the sections later tasks append move down by one); commit the note alone (`docs: gate the blades in view`).
+
+The far trim (design §5.10, lever 3) is not taken here: it ends cards past 26 m that the terrain's far pull replaces, so it lands with Task 3 whole.
 
 ---
 
