@@ -248,14 +248,17 @@ describe("layer boundaries", () => {
   it("holds or frees the controls only through the play gate", () => {
     // `createPlayGate` owns suppression outright: the bar, the menu, the
     // match's end and the governor's cover all go through it, so no path can
-    // free the controls one of the others holds.
-    const calls: string[] = [];
+    // free the controls one of the others holds. Every mention of the name is
+    // counted, not only `x.setSuppressed(` calls, so optional chaining,
+    // brackets, a split line, `.bind` or destructuring cannot slip past:
+    // input.ts declares and defines it, pauseMenu.ts declares the gate's
+    // dependency and calls it once, app.ts hands the gate `input`'s.
+    const mentions: Record<string, number> = {};
     for (const file of sourceFiles(SRC)) {
-      const src = stripComments(readFileSync(file, "utf8"));
-      const name = file.slice(SRC.length + 1).split("\\").join("/");
-      for (const m of src.matchAll(/(\w+)\.setSuppressed\(/g)) calls.push(`${name}: ${m[0]}`);
+      const count = [...stripComments(readFileSync(file, "utf8")).matchAll(/\bsetSuppressed\b/g)].length;
+      if (count > 0) mentions[file.slice(SRC.length + 1).split("\\").join("/")] = count;
     }
-    expect(calls.sort()).toEqual(["app.ts: input.setSuppressed(", "game/pauseMenu.ts: deps.setSuppressed("]);
+    expect(mentions).toEqual({ "app.ts": 2, "game/input.ts": 2, "game/pauseMenu.ts": 2 });
     expect(readFileSync(join(SRC, "app.ts"), "utf8")).toContain("setSuppressed: (on) => input.setSuppressed(on),");
   });
 });
