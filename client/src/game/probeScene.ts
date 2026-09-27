@@ -15,16 +15,14 @@ import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../sim/terrain
 import { createWorld } from "../sim/world.js";
 import {
   PROBE_HOUR,
-  PROBE_IDLE_FRAMES,
   PROBE_SEED_TOKEN,
   createProbeMeter,
-  idleCadenceMs,
   probePose,
   probeReadingLine,
   type StartupDeps,
 } from "./frameProbe.js";
 import { afterNextPaint } from "./paint.js";
-import { showProbeScreen } from "./probeScreen.js";
+import { showProbeScreen, timeIdleCadence } from "./probeScreen.js";
 import { containerPixels, type ProbeReading, type QualityTier } from "./quality.js";
 import { createRenderer, type Renderer } from "./renderer.js";
 import { seedFromToken } from "./seed.js";
@@ -180,34 +178,9 @@ export function probeDeps(container: HTMLElement): PageProbe {
         document.addEventListener("visibilitychange", onChange);
         aborts.signal.addEventListener("abort", onAbort);
       }),
-    // The screen's own frames, timed by `requestAnimationFrame` before any
-    // scene is built: the page's cadence with nothing to draw.
-    idleCadence: () =>
-      new Promise<number | null>((resolve) => {
-        const intervals: number[] = [];
-        let last = -1;
-        let id = 0;
-        const onAbort = (): void => {
-          cancelAnimationFrame(id);
-          resolve(null);
-        };
-        const tick = (now: number): void => {
-          if (last >= 0) intervals.push(now - last);
-          last = now;
-          if (intervals.length > PROBE_IDLE_FRAMES) {
-            aborts.signal.removeEventListener("abort", onAbort);
-            resolve(idleCadenceMs(intervals));
-            return;
-          }
-          id = requestAnimationFrame(tick);
-        };
-        if (aborts.signal.aborted) {
-          resolve(null);
-          return;
-        }
-        aborts.signal.addEventListener("abort", onAbort);
-        id = requestAnimationFrame(tick);
-      }),
+    // The screen's own frames, timed before any scene is built: the page's
+    // cadence with nothing to draw.
+    idleCadence: () => timeIdleCadence(aborts.signal),
     log: (line) => console.info(line),
     abort: () => aborts.abort(),
   };

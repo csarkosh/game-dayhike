@@ -78,15 +78,8 @@ import {
   type SwapBindings,
 } from "./game/rendererSwap.js";
 import { releaseAtmosphere } from "./game/atmosphere.js";
-import {
-  GOVERNOR_LIMIT_MS,
-  GOVERNOR_LINE_MS,
-  createGovernor,
-  governorDecision,
-  governorLine,
-  steadyFrame,
-} from "./game/governor.js";
-import { showProbeScreen } from "./game/probeScreen.js";
+import { GOVERNOR_IDLE_MAX_MS, actOnDrop, createGovernor, governorDecision, steadyFrame } from "./game/governor.js";
+import { showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
@@ -236,6 +229,8 @@ function buildGame(
   let governorActed = false;
   /** A tier is being switched: no frame of it is steady play. */
   let switching = false;
+  /** The governor is acting: timing the page's idle frames, then its switch. */
+  let lowering = false;
   /** A shader compiled since the last frame: that frame is a known hitch. */
   let compiledSinceFrame = false;
   let unwatchCompiles: (() => void) | null = null;
@@ -1298,7 +1293,7 @@ function buildGame(
   async function applyTier(choice: TierChoice): Promise<void> {
     const target = tierFor(choice);
     // One switch at a time: the governor's may be under way.
-    if (disposed || broken || switching) return;
+    if (disposed || broken || switching || lowering) return;
     if (target === tier) {
       options.quality.save(choice);
       return;
@@ -1372,29 +1367,45 @@ function buildGame(
   }
 
   /**
-   * The governor's drop, on Auto only and above low only: remembered for the
-   * next hike, then applied now through the live switch, under the probe's
-   * opaque screen with the controls held, so the rebuild and the scene coming
-   * back are not seen mid-play. Once, with a line saying so.
+   * The governor's drop, on Auto only and above low only, under the probe's
+   * opaque screen with the controls held, so neither the rebuild nor the
+   * scene coming back is seen mid-play (`actOnDrop`). The loop stops while the
+   * page's idle frames are timed; a page drawing below 60 Hz by itself is
+   * left as it is. Otherwise the drop is remembered for the next hike and
+   * applied now through the live switch, once, with a line saying so.
    */
   async function lowerTier(): Promise<void> {
     const decision = governorDecision(governor.verdict, tier, tierSource);
-    if (decision === null || disposed || broken || switching) return;
-    const running = tier;
-    options.onGovernorDrop(running);
-    console.info(`quality governor: ${running} → ${decision.next}, 30 s of play under ${1000 / GOVERNOR_LIMIT_MS | 0} fps`);
-    const cover = showProbeScreen(container);
-    input.setSuppressed(true);
-    let now = running;
+    if (decision === null || disposed || broken || switching || lowering) return;
+    lowering = true;
     try {
-      now = await switchTo(decision.next, "auto", null);
-    } catch {
-      /* the switch has ended the hike and said so */
+      await actOnDrop(tier, decision.next, {
+        cover: () => {
+          const screen = showProbeScreen(container);
+          input.setSuppressed(true);
+          return () => {
+            screen.dispose();
+            if (!disposed) input.setSuppressed(bar.isOpen || menu.isOpen);
+          };
+        },
+        stopLoop: () => {
+          const stopped = renderer;
+          stopped.engine.stopRenderLoop();
+          return () => {
+            if (!disposed && !broken && renderer === stopped) stopped.engine.runRenderLoop(loop);
+          };
+        },
+        idleCadence: () => timeIdleCadence(AbortSignal.timeout(GOVERNOR_IDLE_MAX_MS)),
+        record: (running) => options.onGovernorDrop(running),
+        // A switch that builds no tier has ended the hike and said so.
+        switchTo: (next) => switchTo(next, "auto", null),
+        flash: (line, ms) => hud.flash(line, ms),
+        log: (line) => console.info(line),
+        alive: () => !disposed && !broken,
+      });
     } finally {
-      cover.dispose();
-      if (!disposed) input.setSuppressed(bar.isOpen || menu.isOpen);
+      lowering = false;
     }
-    if (!disposed && now === decision.next) hud.flash(governorLine(decision.next), GOVERNOR_LINE_MS);
   }
 
   return {

@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  GOVERNOR_LIMIT_MS, GOVERNOR_LINE_MS, GOVERNOR_START_MS, GOVERNOR_STALL_MS, GOVERNOR_WINDOW_MS, GOVERNOR_WINDOWS,
-  createGovernor, governorDecision, governorLine, steadyFrame, type Governor,
+  GOVERNOR_IDLE_MAX_MS, GOVERNOR_LIMIT_MS, GOVERNOR_LINE_MS, GOVERNOR_START_MS, GOVERNOR_STALL_MS, GOVERNOR_WINDOW_MS, GOVERNOR_WINDOWS,
+  actOnDrop, createGovernor, governorDecision, governorLine, steadyFrame, type DropDeps, type Governor,
 } from "../../src/game/governor.js";
+import type { QualityTier } from "../../src/game/quality.js";
 
 /** Frames of `ms` each, from `from` until the clock reaches `until`; returns the clock. */
 function feed(g: Governor, from: number, until: number, ms: number, steady = true): number {
@@ -121,5 +122,92 @@ describe("governorDecision", () => {
     expect(governorDecision("drop", "high", "choice")).toBe(null);
     expect(governorDecision("drop", "high", "override")).toBe(null);
     expect(governorDecision("none", "high", "auto")).toBe(null);
+  });
+});
+
+describe("acting on a drop", () => {
+  /** Fakes for the page, and what the governor did with them, in order. */
+  function page(cadence: number | null, reached: QualityTier | "throws" = "low", alive = true) {
+    const did: string[] = [];
+    const deps: DropDeps = {
+      cover: () => {
+        did.push("cover");
+        return () => did.push("lift");
+      },
+      stopLoop: () => {
+        did.push("stop");
+        return () => did.push("resume");
+      },
+      idleCadence: async () => {
+        did.push("time");
+        return cadence;
+      },
+      record: (running) => did.push(`record ${running}`),
+      switchTo: async (next) => {
+        did.push(`switch ${next}`);
+        if (reached === "throws") throw new Error("no tier built");
+        return reached;
+      },
+      flash: (line, ms) => did.push(`flash ${line} ${ms}`),
+      log: (line) => did.push(`log ${line}`),
+      alive: () => alive,
+    };
+    return { deps, did };
+  }
+
+  it("bounds its timing of the page's idle frames", () => {
+    expect(GOVERNOR_IDLE_MAX_MS).toBe(2_000);
+  });
+
+  it("stands down on a page that itself draws below 60 Hz: no drop, no verdict, one line", async () => {
+    const { deps, did } = page(33.4);
+    expect(await actOnDrop("medium", "low", deps)).toBe("held");
+    expect(did).toEqual([
+      "cover", "stop", "time",
+      "log quality governor: held at medium, the page itself draws below 60 Hz (33.4 ms a frame)",
+      "resume", "lift",
+    ]);
+  });
+
+  it("stands down when the page's idle frames cannot be timed", async () => {
+    const { deps, did } = page(null);
+    expect(await actOnDrop("high", "medium", deps)).toBe("held");
+    expect(did).toEqual([
+      "cover", "stop", "time",
+      "log quality governor: held at high, the page's idle frames could not be timed",
+      "resume", "lift",
+    ]);
+  });
+
+  it("drops on a page whose idle frames hold 60 Hz: the verdict first, then the switch, then the line", async () => {
+    const { deps, did } = page(16.7);
+    expect(await actOnDrop("medium", "low", deps)).toBe("lowered");
+    expect(did).toEqual([
+      "cover", "stop", "time",
+      "record medium",
+      "log quality governor: medium → low, 30 s of play under 48 fps",
+      "switch low", "lift",
+      "flash Graphics lowered to Low to keep the game smooth. 6000",
+    ]);
+  });
+
+  it("takes the probe's bar for 60 Hz, 17.5 ms, as holding", async () => {
+    expect(await actOnDrop("high", "medium", page(17.5, "medium").deps)).toBe("lowered");
+    expect(await actOnDrop("high", "medium", page(17.6, "medium").deps)).toBe("held");
+  });
+
+  it("shows no line when the switch fell back or ended the hike", async () => {
+    const fellBack = page(16.7, "medium");
+    expect(await actOnDrop("medium", "low", fellBack.deps)).toBe("fell-back");
+    expect(fellBack.did.slice(-2)).toEqual(["switch low", "lift"]);
+    const failed = page(16.7, "throws");
+    expect(await actOnDrop("medium", "low", failed.deps)).toBe("failed");
+    expect(failed.did.slice(-2)).toEqual(["switch low", "lift"]);
+  });
+
+  it("does nothing more once the game has gone while it timed", async () => {
+    const { deps, did } = page(16.7, "low", false);
+    expect(await actOnDrop("medium", "low", deps)).toBe("gone");
+    expect(did).toEqual(["cover", "stop", "time", "lift"]);
   });
 });

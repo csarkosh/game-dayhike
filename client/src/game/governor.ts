@@ -21,7 +21,13 @@
  * Brief spikes cannot trip it: at 60 Hz a 200 ms hitch lifts its 10 s
  * window's mean by about 0.3 ms, against 4.1 ms of room to the limit. Pure:
  * the page feeds it `frame` and reads `verdict`.
+ *
+ * Before a drop is acted on, the page's own frame rate is timed with nothing
+ * drawn (`actOnDrop`): a browser that draws below 60 Hz whatever the GPU
+ * (Safari in Low Power Mode, a Mac running hot) is slow on every tier, and a
+ * lower one would buy nothing.
  */
+import { PROBE_HOLD_MS } from "./frameProbe.js";
 import type { QualityTier } from "./quality.js";
 import type { TierSource } from "./tierChoice.js";
 
@@ -32,6 +38,8 @@ export const GOVERNOR_WINDOWS = 3;
 export const GOVERNOR_STALL_MS = 250;
 /** How long its HUD line shows. */
 export const GOVERNOR_LINE_MS = 6_000;
+/** The longest it times the page's idle frames before it stands down. */
+export const GOVERNOR_IDLE_MAX_MS = 2_000;
 
 const NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium", low: "Low" };
 const BELOW: Record<QualityTier, QualityTier | null> = { high: "medium", medium: "low", low: null };
@@ -128,4 +136,68 @@ export function governorDecision(
 /** The HUD line when it has acted. */
 export function governorLine(next: QualityTier): string {
   return `Graphics lowered to ${NAMES[next]} to keep the game smooth.`;
+}
+
+/** What acting on a drop needs from the page. */
+export type DropDeps = {
+  /** Covers the game with an opaque screen and holds the controls; the
+   * function returned lifts both. */
+  cover(): () => void;
+  /** Stops the render loop; the function returned runs it again. */
+  stopLoop(): () => void;
+  /** The page's idle frame interval with the loop stopped (`timeIdleCadence`,
+   * bounded at `GOVERNOR_IDLE_MAX_MS`), or null when it could not be timed. */
+  idleCadence(): Promise<number | null>;
+  /** Writes the governor's verdict for the next start, from the running tier. */
+  record(running: QualityTier): void;
+  /** The live switch; the tier it reached. Rejects when no tier built, having
+   * ended the hike. */
+  switchTo(next: QualityTier): Promise<QualityTier>;
+  flash(line: string, ms: number): void;
+  log(line: string): void;
+  /** False once the game is gone or its renderer is broken. */
+  alive(): boolean;
+};
+
+/**
+ * Acts on a drop from `running` to `next`, under the cover. The loop stops and
+ * the page's idle frames are timed first: when the page itself draws below
+ * 60 Hz (over `PROBE_HOLD_MS`, the probe's bar), or its frames cannot be
+ * timed, the governor stands down, writing nothing, with one line, and the
+ * loop runs again. Otherwise the verdict is written, then the switch runs,
+ * and the HUD line shows once the cover is lifted, only if the switch reached
+ * `next`.
+ */
+export async function actOnDrop(
+  running: QualityTier,
+  next: QualityTier,
+  deps: DropDeps,
+): Promise<"lowered" | "fell-back" | "failed" | "held" | "gone"> {
+  const lift = deps.cover();
+  let outcome: "lowered" | "fell-back" | "failed" | "held" | "gone";
+  try {
+    const resume = deps.stopLoop();
+    const cadence = await deps.idleCadence();
+    if (!deps.alive()) return "gone";
+    if (cadence === null || cadence > PROBE_HOLD_MS) {
+      deps.log(
+        cadence === null
+          ? `quality governor: held at ${running}, the page's idle frames could not be timed`
+          : `quality governor: held at ${running}, the page itself draws below 60 Hz (${cadence.toFixed(1)} ms a frame)`,
+      );
+      resume();
+      return "held";
+    }
+    deps.record(running);
+    deps.log(`quality governor: ${running} → ${next}, 30 s of play under ${Math.floor(1000 / GOVERNOR_LIMIT_MS)} fps`);
+    try {
+      outcome = (await deps.switchTo(next)) === next ? "lowered" : "fell-back";
+    } catch {
+      outcome = "failed";
+    }
+  } finally {
+    lift();
+  }
+  if (outcome === "lowered" && deps.alive()) deps.flash(governorLine(next), GOVERNOR_LINE_MS);
+  return outcome;
 }

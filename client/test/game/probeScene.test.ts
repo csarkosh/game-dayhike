@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 // `terrainTexture.ts`'s plugin constructor calls the real `loadGroundArrays`
 // whenever it isn't handed a factory, and `renderer.ts`'s own
@@ -36,7 +36,7 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
 import "../../src/sim/passes/index.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { buildProbeScene } from "../../src/game/probeScene.js";
-import { PROBE_SCREEN_LINE } from "../../src/game/probeScreen.js";
+import { PROBE_SCREEN_LINE, timeIdleCadence } from "../../src/game/probeScreen.js";
 
 const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
 
@@ -59,5 +59,44 @@ describe("buildProbeScene", () => {
 describe("the probe screen", () => {
   it("says what the wait is for", () => {
     expect(PROBE_SCREEN_LINE).toBe("Setting up graphics…");
+  });
+});
+
+describe("the page's idle cadence", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A page whose frames come every `ms`, after one first frame `firstMs` late. */
+  function frames(ms: number, firstMs: number): { count(): number } {
+    let t = 1_000;
+    let n = 0;
+    vi.stubGlobal("requestAnimationFrame", (cb: (now: number) => void) => {
+      n += 1;
+      const step = n === 2 ? firstMs : ms;
+      queueMicrotask(() => {
+        t += step;
+        cb(t);
+      });
+      return n;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    return { count: () => n };
+  }
+
+  it("is the median of 30 intervals, the first dropped", async () => {
+    const page = frames(33.25, 100);
+    expect(await timeIdleCadence(new AbortController().signal)).toBe(33.25);
+    expect(page.count()).toBe(32);
+  });
+
+  it("is null when it is stopped before it is done, or was never started", async () => {
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    const stop = new AbortController();
+    const timing = timeIdleCadence(stop.signal);
+    stop.abort();
+    expect(await timing).toBe(null);
+    expect(await timeIdleCadence(stop.signal)).toBe(null);
   });
 });

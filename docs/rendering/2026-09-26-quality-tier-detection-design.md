@@ -832,20 +832,28 @@ instead. A run needs three windows in a row, so one slow window between normal
 ones starts over.
 
 On a drop, on Auto only (never a chosen tier, never under `?tier=`), and above
-low only (`governorDecision`):
+low only (`governorDecision`), `actOnDrop` runs under the probe's opaque
+"Setting up graphics…" screen with the controls held, so neither what follows
+nor the scene coming back is seen mid-play:
 
-1. The Auto record is written first (`withGovernorDrop`): a verdict one step
-   below the running tier, `source: "governor"`, for this GPU, browser and
-   class. It holds at any window size for 30 days, so the next hike starts
-   there, and it is the tier the Settings screen's Auto line now names.
-2. One `console.info`.
-3. The tier is lowered **now**, through the live switch of §9, the same path
-   Apply takes, with the tier's source kept as Auto. The switch runs under the
-   probe's opaque "Setting up graphics…" screen with the controls held, so
-   neither the rebuild nor the scene coming back is seen mid-play; the screen
-   goes once the scene is ready. A switch that falls back or fails is handled
-   as §9.3 says.
-4. Once the switch reaches the lower tier, one HUD line for 6 s: "Graphics
+1. **The page's own frame rate first.** The render loop stops and the page's
+   idle frames are timed as the probe times them (§7.4, `timeIdleCadence`: 30
+   intervals, the first and any stall dropped, the median), bounded at 2 s. A
+   browser that draws below 60 Hz whatever the GPU (Safari in Low Power Mode,
+   a Mac running hot) is slow on every tier, and a lower one would buy nothing
+   but a verdict that holds it down for 30 days. So when the median is over
+   17.5 ms, or the frames cannot be timed, the governor **stands down**: one
+   `console.info`, nothing written, the loop runs again and the screen goes.
+   It does not try again that hike.
+2. The Auto record is written (`withGovernorDrop`): a verdict one step below
+   the running tier, `source: "governor"`, for this GPU, browser and class. It
+   holds at any window size for 30 days, so the next hike starts there, and it
+   is the tier the Settings screen's Auto line now names.
+3. One `console.info`.
+4. The tier is lowered **now**, through the live switch of §9, the same path
+   Apply takes, with the tier's source kept as Auto; the screen goes once the
+   scene is ready. A switch that falls back or fails is handled as §9.3 says.
+5. Once the switch reaches the lower tier, one HUD line for 6 s: "Graphics
    lowered to Medium to keep the game smooth."
 
 The governor never raises, and acts at most once per hike: a later hike that is
@@ -976,7 +984,9 @@ low, the HUD line shows once, and Settings' Auto line says Low with nothing to
 apply; a reload starts at low from the verdict. Opening the pause screen or
 hiding the tab in that minute puts the drop off by at least the window it fell
 in, since that window does not count. Without the scaling, at a pose §13.2
-found holding 60 Hz, nothing happens in 5 min.
+found holding 60 Hz, nothing happens in 5 min. In Safari with Low Power Mode
+on, which draws at 30 fps, the first minute of play ends in the "held" line:
+nothing is written, and the hike goes on at the tier it had.
 
 ### 13.6 The rest
 
@@ -1008,12 +1018,6 @@ found holding 60 Hz, nothing happens in 5 min.
   lower render scale rather than dropping a whole tier, and a scale is the one
   change a governor could make live without a rebuild.
 - The WebGPU rule's reload after a lost device could become a live swap (§9.4).
-- The governor does not know the page's own cadence. A browser that halves its
-  frame rate whatever the GPU (Safari in Low Power Mode, §7.4) reads slow on
-  every tier, so each hike drops a step and the verdict holds 30 days. Before it
-  acts, it could stop the loop under its screen, time the page's idle frames as
-  the probe does, and stand down, writing nothing, when the page itself draws
-  below 60 Hz.
 - The device pixel ratio's change on a window moved between displays (§4.3): hold
   the tier's scaling against it.
 - Once medium and low figures exist (§13.2), the named classes' rows can be
