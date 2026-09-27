@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CULL_MARGIN, CULL_MOVE, CULL_PUSHBACK, CULL_RADIUS, CULL_TURN,
-  cullPlanes, cullPrefix, needsCull, type CullPose,
+  cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose,
 } from "../../src/game/grassCull.js";
 import { inCone } from "../../src/game/wildlifeDirector.js";
 import { CLUTTER_CULLED } from "../../src/game/clutterMeshes.js";
@@ -10,30 +10,40 @@ import { bladeReach, cardReach, CULLED_MODELS, seen, WIND_FRACTION } from "./hel
 const POSE: CullPose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0, fov: 1.4, aspect: 1200 / 2029 };
 
 /** n instances: translations at (x, y, z) (y 0 when a point gives two
- * coordinates), one attribute of stride 4 holding the index. */
+ * coordinates) in the matrix and the origins, a vec4 stream holding the index
+ * and a scalar stream holding it again. */
 function field(points: ([number, number] | [number, number, number])[]) {
   const n = points.length;
-  const src = new Float32Array(n * 16), attr = new Float32Array(n * 4);
+  const cap = n + (n % 2);
+  const src = new Float32Array(cap * 16), origins = new Float32Array(cap * 3), vec = new Float32Array(cap * 4), one = new Float32Array(cap);
   points.forEach((p, i) => {
+    const y = p.length === 3 ? p[1] : 0, z = p.length === 3 ? p[2] : p[1];
     src[i * 16] = src[i * 16 + 5] = src[i * 16 + 10] = src[i * 16 + 15] = 1;
-    src[i * 16 + 12] = p[0];
-    src[i * 16 + 13] = p.length === 3 ? p[1] : 0;
-    src[i * 16 + 14] = p.length === 3 ? p[2] : p[1];
-    attr[i * 4] = i;
+    src[i * 16 + 12] = origins[i * 3] = p[0];
+    src[i * 16 + 13] = origins[i * 3 + 1] = y;
+    src[i * 16 + 14] = origins[i * 3 + 2] = z;
+    vec[i * 4] = i;
+    vec[i * 4 + 1] = -i;
+    one[i] = i + 0.5;
   });
-  return { n, matrix: { src, dst: new Float32Array(n * 16), stride: 16 }, attrs: [{ src: attr, dst: new Float32Array(n * 4), stride: 4 }] };
+  const dst = new Float32Array(cap * 16), vecDst = new Float32Array(cap * 4), oneDst = new Float32Array(cap);
+  const set = cullSet(cap, origins, { src, dst }, [{ src: vec, dst: vecDst }], [{ src: one, dst: oneDst }]);
+  return { n, set, src, dst, vec, vecDst, one, oneDst };
 }
 function kept(points: ([number, number] | [number, number, number])[], pose: CullPose): number[] {
   const f = field(points);
   const planes = new Float32Array(20);
   cullPlanes(pose, planes);
-  const k = cullPrefix(planes, f.n, f.matrix, f.attrs);
-  // The matrix prefix carries the same instances as the attribute prefix.
+  expect(cullPrefix(planes, f.n, f.set)).toBe(true);
+  const k = f.set.kept;
+  // Every stream's prefix carries the same instances, in order.
   for (let j = 0; j < k; j++) {
-    const i = f.attrs[0]!.dst[j * 4]!;
-    expect(Array.from(f.matrix.dst.subarray(j * 16, j * 16 + 16))).toEqual(Array.from(f.matrix.src.subarray(i * 16, i * 16 + 16)));
+    const i = f.vecDst[j * 4]!;
+    expect(Array.from(f.dst.subarray(j * 16, j * 16 + 16))).toEqual(Array.from(f.src.subarray(i * 16, i * 16 + 16)));
+    expect(Array.from(f.vecDst.subarray(j * 4, j * 4 + 4))).toEqual(Array.from(f.vec.subarray(i * 4, i * 4 + 4)));
+    expect(f.oneDst[j]).toBe(i + 0.5);
   }
-  return Array.from(f.attrs[0]!.dst.subarray(0, k * 4)).filter((_, j) => j % 4 === 0);
+  return Array.from(f.vecDst.subarray(0, k * 4)).filter((_, j) => j % 4 === 0);
 }
 
 describe("grass cull", () => {
@@ -63,7 +73,57 @@ describe("grass cull", () => {
 
   it("keeps everything against all-zero planes", () => {
     const f = field([[0, 10], [0, -10], [100, 100]]);
-    expect(cullPrefix(new Float32Array(20), f.n, f.matrix, f.attrs)).toBe(3);
+    expect(cullPrefix(new Float32Array(20), f.n, f.set)).toBe(true);
+    expect(f.set.kept).toBe(3);
+  });
+
+  it("copies every kept float bit for bit, the odd ones included", () => {
+    // Pairs of float32 move as one float64 word: -0, a subnormal, the largest
+    // float, both infinities and the canonical NaN, in every slot of a pair.
+    const special = [-0, 1e-40, -1e-40, 3.4028234663852886e38, Infinity, -Infinity, NaN, 1.5, -2.25];
+    const f = field([[0, 10], [1, 12], [0, -10], [-1, 14]]);
+    // The cut reads the origins, so every stream can hold anything.
+    let s = 0;
+    for (const a of [f.src, f.vec, f.one]) for (let i = 0; i < a.length; i++) a[i] = special[s++ % special.length]!;
+    const planes = new Float32Array(20);
+    cullPlanes(POSE, planes);
+    expect(cullPrefix(planes, f.n, f.set)).toBe(true);
+    const keptIdx = [0, 1, 3];
+    expect(f.set.kept).toBe(3);
+    const bits = (a: Float32Array, from: number, to: number) => Array.from(new Uint32Array(a.buffer, a.byteOffset + from * 4, to - from));
+    keptIdx.forEach((i, j) => {
+      expect(bits(f.dst, j * 16, j * 16 + 16)).toEqual(bits(f.src, i * 16, i * 16 + 16));
+      expect(bits(f.vecDst, j * 4, j * 4 + 4)).toEqual(bits(f.vec, i * 4, i * 4 + 4));
+      expect(bits(f.oneDst, j, j + 1)).toEqual(bits(f.one, i, i + 1));
+    });
+  });
+
+  it("leaves the drawn buffers alone when a cut keeps exactly the last cut's instances", () => {
+    const pts: [number, number][] = [[0, 10], [3, 10], [10, 10], [0, -10], [-2, 20]];
+    const f = field(pts);
+    const planes = new Float32Array(20);
+    cullPlanes(POSE, planes);
+    expect(cullPrefix(planes, f.n, f.set)).toBe(true);
+    expect(f.set.kept).toBe(3);
+    // Mark the drawn buffers: an unchanged cut must not write them.
+    f.dst[0] = 99;
+    expect(cullPrefix(planes, f.n, f.set)).toBe(false);
+    // A slightly turned view that keeps the same three: still nothing to do.
+    cullPlanes({ ...POSE, yaw: 0.02 }, planes);
+    expect(cullPrefix(planes, f.n, f.set)).toBe(false);
+    expect(f.dst[0]).toBe(99);
+    expect(f.set.kept).toBe(3);
+    // A view that keeps others, then the first view again: cut each time.
+    cullPlanes({ ...POSE, yaw: 0.9 }, planes);
+    expect(cullPrefix(planes, f.n, f.set)).toBe(true);
+    expect(f.set.kept).toBe(2);
+    cullPlanes(POSE, planes);
+    expect(cullPrefix(planes, f.n, f.set)).toBe(true);
+    expect(f.dst[0]).toBe(1);
+    // After the collected buffers change, the same cut is a new one.
+    cullInvalidate(f.set);
+    expect(cullPrefix(planes, f.n, f.set)).toBe(true);
+    expect(f.set.kept).toBe(3);
   });
 
   it("is a pure function of the pose and the collected set", () => {

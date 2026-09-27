@@ -51,7 +51,7 @@ import { BLADE_ALBEDO, BLADE_CHARACTERS, bladeClumpGeometry, bladeCountFor, type
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
-import { cullPlanes, cullPrefix, needsCull, type CullPose, type CullStream } from "./grassCull.js";
+import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
 
 export const BLADE_MESH_PREFIX = "blade_clumps";
 export function bladeMeshName(character: number, tier: number, size: number): string {
@@ -117,9 +117,12 @@ type Bucket = {
   /** The drawn buffers, the collected ones' capacity each: what the mesh
    * holds and uploads, the kept prefix at the front. */
   drawn: { buf: Float32Array; foliage: Float32Array; strength: Float32Array };
-  /** The collected → drawn pairs `cullPrefix` walks, rebuilt only on growth. */
-  matrix: CullStream;
-  attrs: CullStream[];
+  /** Each cell's translation, x, y, z, written by the fill beside `buf`:
+   * what the cut tests. */
+  origins: Float32Array;
+  /** The collected and drawn buffers as `cullPrefix` walks them, with the
+   * last cut's indices; rebuilt only on growth. */
+  cull: CullSet;
   /** Instances this rebuild — counted in pass 1, then reused as the write
    * cursor in pass 2, so it is the live count again when the fill ends. */
   count: number;
@@ -131,9 +134,16 @@ type Bucket = {
 function emptyBucket(mesh: Mesh): Bucket {
   const drawn = { buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER };
   return {
-    mesh, buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER, drawn,
-    matrix: { src: EMPTY_BUFFER, dst: EMPTY_BUFFER, stride: 16 }, attrs: [], count: 0, grown: false,
+    mesh, buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER, drawn, origins: EMPTY_BUFFER,
+    cull: bucketCullSet(0, EMPTY_BUFFER, EMPTY_BUFFER, EMPTY_BUFFER, EMPTY_BUFFER, drawn), count: 0, grown: false,
   };
+}
+
+function bucketCullSet(
+  capacity: number, origins: Float32Array, buf: Float32Array, foliage: Float32Array, strength: Float32Array,
+  drawn: Bucket["drawn"],
+): CullSet {
+  return cullSet(capacity, origins, { src: buf, dst: drawn.buf }, [{ src: foliage, dst: drawn.foliage }], [{ src: strength, dst: drawn.strength }]);
 }
 
 /** Instances a bucket's first real allocation covers. A tier's cells are
@@ -182,11 +192,8 @@ function ensureCapacity(bucket: Bucket): void {
   bucket.foliage = new Float32Array(capacity / 4);
   bucket.strength = new Float32Array(capacity / 16);
   bucket.drawn = { buf: new Float32Array(capacity), foliage: new Float32Array(capacity / 4), strength: new Float32Array(capacity / 16) };
-  bucket.matrix = { src: bucket.buf, dst: bucket.drawn.buf, stride: 16 };
-  bucket.attrs = [
-    { src: bucket.foliage, dst: bucket.drawn.foliage, stride: 4 },
-    { src: bucket.strength, dst: bucket.drawn.strength, stride: 1 },
-  ];
+  bucket.origins = new Float32Array((capacity / 16) * 3);
+  bucket.cull = bucketCullSet(capacity / 16, bucket.origins, bucket.buf, bucket.foliage, bucket.strength, bucket.drawn);
   bucket.grown = true;
 }
 
@@ -227,16 +234,20 @@ function rehandBucket(bucket: Bucket): void {
   bucket.grown = true;
   applyGrown(bucket);
   bucket.grown = false;
+  cullInvalidate(bucket.cull);
 }
 
 /**
  * Cuts one bucket's collected set by `planes` into its drawn buffers, sets
  * the count to the kept cells and uploads only them (Babylon's count form of
- * `thinInstancePartialBufferUpdate`: `kept` strides from offset 0).
+ * `thinInstancePartialBufferUpdate`: `kept` strides from offset 0). A bucket
+ * that keeps exactly the cells of its last cut is left as it is: no copy, no
+ * upload.
  */
 function cutBucket(bucket: Bucket, planes: Float32Array): void {
+  if (!cullPrefix(planes, bucket.count, bucket.cull)) return;
   const { mesh } = bucket;
-  const kept = bucket.count > 0 ? cullPrefix(planes, bucket.count, bucket.matrix, bucket.attrs) : 0;
+  const kept = bucket.cull.kept;
   mesh.thinInstanceCount = kept;
   if (kept > 0) {
     mesh.thinInstancePartialBufferUpdate("matrix", kept, 0);
@@ -377,11 +388,19 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
       scratchFrame.tint = frame.tint;
       instanceMatrixFor(c, scratchFrame, scratchMat);
       bucket.buf.set(scratchMat, bucket.count * 16);
+      bucket.origins[bucket.count * 3] = scratchMat[12]!;
+      bucket.origins[bucket.count * 3 + 1] = scratchMat[13]!;
+      bucket.origins[bucket.count * 3 + 2] = scratchMat[14]!;
       writeFoliage(seed, c, bucket.foliage, bucket.count * 4, frame);
       bucket.strength[bucket.count] = c.strength;
       bucket.count++;
     }
-    for (const sizes of row) for (const bucket of sizes) applyGrown(bucket);
+    for (const sizes of row) for (const bucket of sizes) {
+      applyGrown(bucket);
+      // The collected buffers were rewritten: the last cut's indices no
+      // longer name the same cells.
+      cullInvalidate(bucket.cull);
+    }
   }
 
   function rebuild(x: number, z: number): void {

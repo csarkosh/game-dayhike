@@ -90,7 +90,7 @@ import { forestDensity } from "../sim/vegetation.js";
 import type { Rgb } from "./colour.js";
 import { trampleAt, TRAMPLE_BAND } from "./trailBenchParams.js";
 import { ROCK_CUTS, rockPlanes, rockRelief, type RockPlane } from "./rockRelief.js";
-import { cullPlanes, cullPrefix, needsCull, type CullPose, type CullStream } from "./grassCull.js";
+import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
 // exactly BOULDER_SINK · (that variant's own BASE_H) · scale shows a visible
@@ -366,9 +366,13 @@ type Bucket = {
   /** The drawn buffers of a culled bucket, the collected ones' capacity each,
    * the kept prefix at the front; empty for every other bucket. */
   drawn: { buf: Float32Array; bands: Float32Array; foliage: Float32Array };
-  /** The collected → drawn pairs `cullPrefix` walks, rebuilt only on growth. */
-  matrix: CullStream;
-  attrs: CullStream[];
+  /** A culled bucket's card translations, x, y, z, written by the fill
+   * beside `buf`: what the cut tests. */
+  origins: Float32Array;
+  /** A culled bucket's collected and drawn buffers as `cullPrefix` walks
+   * them, with the last cut's indices; rebuilt only on growth. Null for every
+   * other bucket. */
+  cull: CullSet | null;
 };
 
 const UP = Vector3.Up();
@@ -439,9 +443,10 @@ function ensureCapacity(bucket: Bucket): void {
   bucket.foliage = new Float32Array(capacity / 4);
   if (bucket.culled) {
     bucket.drawn = { buf: new Float32Array(capacity), bands: new Float32Array(capacity / 4), foliage: new Float32Array(capacity / 4) };
-    bucket.matrix = { src: bucket.buf, dst: bucket.drawn.buf, stride: 16 };
-    bucket.attrs = [{ src: bucket.bands, dst: bucket.drawn.bands, stride: 4 }];
-    if (bucket.tints) bucket.attrs.push({ src: bucket.foliage, dst: bucket.drawn.foliage, stride: 4 });
+    bucket.origins = new Float32Array((capacity / 16) * 3);
+    const vec4 = [{ src: bucket.bands, dst: bucket.drawn.bands }];
+    if (bucket.tints) vec4.push({ src: bucket.foliage, dst: bucket.drawn.foliage });
+    bucket.cull = cullSet(capacity / 16, bucket.origins, { src: bucket.buf, dst: bucket.drawn.buf }, vec4, []);
   }
   bucket.grown = true;
 }
@@ -519,20 +524,23 @@ function applyCulled(bucket: Bucket): void {
  * bucket draws nothing until the next cut fills it again.
  */
 function rehandCulled(bucket: Bucket): void {
-  if (bucket.drawn.buf.length === 0) return;
+  if (bucket.cull === null || bucket.drawn.buf.length === 0) return;
   bucket.grown = true;
   applyCulled(bucket);
   bucket.grown = false;
+  cullInvalidate(bucket.cull);
 }
 
 /**
  * Cuts one culled bucket's collected set by `planes` into its drawn buffers,
  * sets its meshes' count to the kept cards and uploads only them (Babylon's
  * count form of `thinInstancePartialBufferUpdate`: `kept` strides from
- * offset 0).
+ * offset 0). A bucket that keeps exactly the cards of its last cut is left as
+ * it is: no copy, no upload.
  */
 function cutBucket(bucket: Bucket, planes: Float32Array): void {
-  const kept = bucket.count > 0 ? cullPrefix(planes, bucket.count, bucket.matrix, bucket.attrs) : 0;
+  if (bucket.cull === null || !cullPrefix(planes, bucket.count, bucket.cull)) return;
+  const kept = bucket.cull.kept;
   for (const mesh of bucket.meshes) {
     mesh.thinInstanceCount = kept;
     if (kept > 0) {
@@ -542,6 +550,15 @@ function cutBucket(bucket: Bucket, planes: Float32Array): void {
     }
     mesh.setEnabled(kept > 0);
   }
+}
+
+/** A culled bucket's origin for the instance just written at its cursor:
+ * the matrix's translation, which is what the cut tests. */
+function writeOrigin(bucket: Bucket): void {
+  const m = bucket.count * 16, o = bucket.count * 3;
+  bucket.origins[o] = bucket.buf[m + 12]!;
+  bucket.origins[o + 1] = bucket.buf[m + 13]!;
+  bucket.origins[o + 2] = bucket.buf[m + 14]!;
 }
 
 /** The untrampled identity frame: frozen, and shared by every card the bench
@@ -753,6 +770,7 @@ export function createClutterMeshes(
         const bucket = bucketFor(variants, inst, NEAR_LOD);
         const frame = trampleFrame(seed, inst);
         writeInstanceMatrix(inst, bucket.buf, bucket.count * 16, frame);
+        if (bucket.culled) writeOrigin(bucket);
         writeFadeBands(bucket.bands, bucket.count * 4, bucket.fade);
         if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4, frame);
         bucket.count++;
@@ -761,6 +779,7 @@ export function createClutterMeshes(
         const bucket = bucketFor(variants, inst, FAR_LOD);
         const frame = trampleFrame(seed, inst);
         writeInstanceMatrix(inst, bucket.buf, bucket.count * 16, frame);
+        if (bucket.culled) writeOrigin(bucket);
         writeFadeBands(bucket.bands, bucket.count * 4, bucket.fade);
         if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4, frame);
         bucket.count++;
@@ -772,6 +791,9 @@ export function createClutterMeshes(
         for (const bucket of perLod) applyBucket(bucket);
       }
     }
+    // The collected buffers were rewritten: the last cuts' indices no longer
+    // name the same cards.
+    for (const bucket of culledBuckets) if (bucket.cull !== null) cullInvalidate(bucket.cull);
     dirty = true;
   }
 
@@ -990,8 +1012,10 @@ export function createClutterMeshes(
             tints: profile !== undefined,
             culled: culling && CLUTTER_CULLED.has(cls),
             drawn: { buf: EMPTY_BUFFER, bands: EMPTY_BUFFER, foliage: EMPTY_BUFFER },
-            matrix: { src: EMPTY_BUFFER, dst: EMPTY_BUFFER, stride: 16 },
-            attrs: [],
+            origins: EMPTY_BUFFER,
+            cull: culling && CLUTTER_CULLED.has(cls)
+              ? cullSet(0, EMPTY_BUFFER, { src: EMPTY_BUFFER, dst: EMPTY_BUFFER }, [], [])
+              : null,
           };
         }),
       ),
