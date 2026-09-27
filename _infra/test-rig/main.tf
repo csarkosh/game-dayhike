@@ -1,0 +1,88 @@
+terraform {
+  # 1.7 for the mock providers in tests/.
+  required_version = ">= 1.7"
+
+  # Remote state for the same reason as _infra/main.tf (state kept on disk in a
+  # worktree dies with the worktree), in the same versioned bucket, under its
+  # own prefix. Nothing here reads _infra's state and nothing in _infra reads
+  # this one: the two root modules share a bucket and an AWS account and
+  # nothing else, so a `terraform destroy` run here can only reach the
+  # resources below, never hosting, DNS or the signaling service. The bucket
+  # is Google Cloud Storage, so `init` and `plan` need Google application
+  # default credentials as well as AWS ones.
+  backend "gcs" {
+    bucket = "fps-csarko-tfstate"
+    prefix = "test-rig-aws"
+  }
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.region
+
+  # Every resource that takes tags gets this one, so the machine's cost can be
+  # told apart in billing and the optional budget can filter on it. The
+  # provider also puts it on the instance's root volume.
+  default_tags {
+    tags = local.tags
+  }
+}
+
+locals {
+  tags = {
+    purpose = "test-rig"
+  }
+
+  name = "test-rig"
+}
+
+data "aws_partition" "current" {}
+
+# Read at plan time, never written into a file: the account id appears only in
+# the ARNs below and in state.
+data "aws_caller_identity" "current" {}
+
+# AWS's public parameter for the newest Windows Server 2025 image with the
+# desktop (Full, not Core: Chrome needs a desktop), English. 2025 because the
+# newest GRID driver in AWS's bucket is built for Windows Server 2022 and 2025
+# only (GRID 17 and later dropped 2019), and Amazon DCV server 2025.0 is the
+# first release to support 2025; of the two, 2025 has the longer support life.
+# The instance ignores later changes to it (instance.tf), so a newer monthly
+# image never replaces a machine that exists.
+data "aws_ssm_parameter" "windows" {
+  name = "/aws/service/ami-windows-latest/Windows_Server-2025-English-Full-Base"
+}
+
+# The zones that offer every machine size this module allows. The subnet goes
+# in the first of them, so switching var.instance_type never moves the subnet
+# (which would replace it and the machine with it).
+data "aws_ec2_instance_type_offerings" "allowed" {
+  for_each = toset(local.instance_types)
+
+  location_type = "availability-zone"
+
+  filter {
+    name   = "instance-type"
+    values = [each.key]
+  }
+}
+
+locals {
+  instance_types = keys(local.hourly_usd)
+
+  common_zones = sort(setintersection([
+    for offering in data.aws_ec2_instance_type_offerings.allowed : offering.locations
+  ]...))
+
+  availability_zone = var.availability_zone != null ? var.availability_zone : try(local.common_zones[0], null)
+
+  # Where the machine writes the desktop user's password (setup.ps1). Not a
+  # Terraform resource: Terraform reads a parameter's value back into state.
+  password_parameter_arn = "arn:${data.aws_partition.current.partition}:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${var.password_parameter}"
+}

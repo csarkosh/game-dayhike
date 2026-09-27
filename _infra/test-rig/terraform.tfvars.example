@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars (git-ignored) and fill in. Only budget_email is
+# required; every other value below is the default.
+
+# The address the budget alert emails. Required even with the budget off, so
+# it is never forgotten when the budget is turned on. Never in a committed file.
+budget_email = "someone@example.com"
+
+# budget_enabled     = true
+# monthly_budget_usd = 25
+
+# region        = "us-east-1"
+# instance_type = "g6.xlarge"  # the L4 instead of the T4
+
+# Stop the machine without destroying it (the disk is kept and billed).
+# running = false
+
+# max_run_hours = 4

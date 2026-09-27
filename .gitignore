@@ -22,12 +22,19 @@ coverage/
 *.tgz
 *.dmg
 
-# Terraform
-_infra/.terraform/
+# Terraform. Plan files and state hold every resource attribute in clear;
+# tfvars files hold account-specific values and addresses.
+**/.terraform/
 *.tfstate
 *.tfstate.backup
+.terraform.tfstate.lock.info
+*.tfplan
+tfplan
+plan.out
 *.tfvars
+*.tfvars.json
 !_infra/terraform.tfvars.example
+!_infra/test-rig/terraform.tfvars.example
 
 # Desktop release working state.
 desktop/.cache/
