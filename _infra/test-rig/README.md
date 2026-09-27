@@ -15,11 +15,11 @@ service.
 
 | Resource | Why |
 |---|---|
-| `google_compute_instance.test_rig` | `g2-standard-4` with one NVIDIA L4 in `us-west1-b`, Windows Server 2025, 50 GB `pd-balanced` boot disk, Shielded VM, stops on host maintenance (GPU machines cannot live-migrate), stops itself after `max_run_hours`. |
+| `google_compute_instance.test_rig` | `g2-standard-4` with one NVIDIA L4 in `us-west1-b`, Windows Server 2025, 50 GB `pd-balanced` boot disk, Shielded VM, stops on host maintenance (GPU machines cannot live-migrate) and is not restarted by Google afterwards, stops itself after `max_run_hours`. |
 | `google_compute_network`, `_subnetwork` | Its own VPC and a `/24`, not the project's default network. Private Google Access on. |
 | `google_compute_firewall.iap_ingress` | SSH (22) and RDP (3389) from Google's IAP range `35.235.240.0/20` only. Nothing else gets in. |
 | `google_compute_router`, `_router_nat` | Outbound access for installers, the repository and npm, with no public address on the machine. |
-| `google_service_account.test_rig` + two IAM bindings | The machine's identity: writes logs and metrics, nothing else. |
+| `google_service_account.test_rig` + two IAM bindings | The machine's identity: writes logs and metrics, nothing else. Log writing is project-wide, as Google grants it, so whoever controls the machine could write entries under any log name in the project; accepted, since only IAP reaches it. |
 | `google_project_service` × 3 | Enables Compute Engine, IAP and IAM, none of which this project has enabled today. Never disabled on destroy. |
 | `google_billing_budget` (optional) | A monthly alert, created only when `billing_account_id` is set. |
 | `startup.ps1` | The first-boot set-up, below. |
@@ -38,12 +38,15 @@ set-up machine (the next step, below).
 | CPU, memory | 4 vCPUs, 16 GB | 4 vCPUs, 15 GB |
 | GPU | NVIDIA L4, Ada Lovelace, 24 GB GDDR6 | NVIDIA T4, Turing, 16 GB GDDR6 |
 | Select with | the defaults | `-var machine_type=n1-standard-4 -var gpu_type=nvidia-tesla-t4` |
+| vWS licence (see the probe) | `-var gpu_type=nvidia-l4-vws`, $0.20/h more | `-var gpu_type=nvidia-tesla-t4-vws`, $0.20/h more |
 | Note | | Google ends T4 support on 2027-08-01; after that a T4 machine cannot be created or started. |
 
 Near `us-west1`, G2 is offered in `us-west1-a`, `us-west1-b`, `us-west4-a` and `us-west4-c`; N1
 with T4 in `us-west1-a`, `us-west1-b`, `us-west2-b`, `us-west2-c`, `us-west3-b`, `us-west4-a`
 and `us-west4-b`. `us-west1-b` offers both, so switching between them never means moving
-zones.
+zones. Switching the machine type or the GPU (including to a vWS GPU) **replaces the machine
+and its disk**: the first-boot set-up runs again. A mismatched pair (a G2 type with a T4, say)
+fails at `plan`.
 
 ## What it costs
 
@@ -74,8 +77,17 @@ machine back at any moment, with 30 seconds' notice; this module then has it sto
 deleted, and the run that was in progress starts again from the top. For a measurement that
 is the whole cost of Spot: a reclaimed run is rerun, so Spot pays when reclaims are rare.
 
+With the vWS GPU the licence adds $0.20/h: $0.60 on a three-hour run.
+
+The set-up turns automatic Windows updates off, so updates add no traffic through NAT during a
+run. If they are ever turned back on, a few GiB of updates through NAT cost about $0.10–0.20
+more, and Windows may restart the machine in the middle of a run.
+
 **Forgetting to stop it** would cost about $650 a month. `max_run_hours` (default 4) stops the
-machine that many hours after each start, whatever anyone remembers.
+machine that many hours after each start, whatever anyone remembers. What nothing stops: the
+disk of a stopped machine ($5.00 a month) and any image made by hand (below), which
+`terraform destroy` does not delete. Setting `billing_account_id` turns on the monthly budget
+alert, the one thing here that would notice either.
 
 ## Before the first `apply`
 
@@ -83,14 +95,36 @@ machine that many hours after each start, whatever anyone remembers.
    (`compute.googleapis.com/gpus_all_regions`) is **0**, which blocks any GPU machine.
    The per-region quotas are already 1 (`NVIDIA_L4_GPUS`, `NVIDIA_T4_GPUS` and their
    preemptible versions in `us-west1`). Request `GPUs (all regions)` = 1 in the console, under
-   IAM & Admin → Quotas & System Limits, filtered to Compute Engine API. Google reviews GPU
+   IAM & Admin → Quotas & System Limits, filtered to Compute Engine API. Google decides GPU
    requests by hand and replies by email; its documentation gives no turnaround time.
    The quota page for Compute Engine is available only once the Compute Engine API is
    enabled, which the first `apply` does (or `gcloud services enable
    compute.googleapis.com`).
-2. **Enabling Compute Engine** makes Google create a `default` network with rules open to SSH
-   and RDP from anywhere. Nothing here uses it; it can be deleted.
-3. Application-default credentials: `gcloud auth application-default login`.
+2. Application-default credentials: `gcloud auth application-default login`.
+
+### Straight after the first `apply`: commands to run by hand
+
+Enabling Compute Engine changes the project beyond this module, and `terraform destroy` does
+not undo it: the APIs stay enabled, and Google creates two things this module never uses.
+
+- A `default` network, with firewall rules open to SSH and RDP from anywhere. Nothing is
+  attached to it today. Delete it:
+
+  ```bash
+  gcloud compute firewall-rules delete default-allow-ssh default-allow-rdp \
+    default-allow-icmp default-allow-internal --project=fps-csarko
+  gcloud compute networks delete default --project=fps-csarko
+  ```
+
+- The Compute Engine default service account, granted Editor on the whole project. It could
+  read the state bucket (and so the Mac module's passwords) and change the signaling service.
+  This module's machine uses its own account instead. Remove the role:
+
+  ```bash
+  number=$(gcloud projects describe fps-csarko --format='value(projectNumber)')
+  gcloud projects remove-iam-policy-binding fps-csarko \
+    --member="serviceAccount:${number}-compute@developer.gserviceaccount.com" --role=roles/editor
+  ```
 
 ## Create, stop, start, destroy
 
@@ -125,7 +159,14 @@ gcloud compute start-iap-tunnel test-rig 3389 --local-host-port=localhost:13389 
 ```
 
 Both go through Identity-Aware Proxy, which checks the caller's Google identity; the firewall
-admits nothing else, so no address of the person connecting appears in any file.
+admits nothing else, so no address of the person connecting appears in any file. SSH takes keys
+only; the Windows password is for Remote Desktop.
+
+Google does not document whether `gcloud compute ssh` stores its key in the instance's metadata
+(which this module ignores, so an `apply` does not strip it) or in the project's. After the
+first connection, check: if `gcloud compute project-info describe --project=fps-csarko
+--format='value(commonInstanceMetadata.items)'` lists `ssh-keys`, the key went project-wide,
+which is harmless while no Linux machine exists in the project.
 `direct_access_cidrs` can open SSH and RDP to given addresses for a client that cannot use IAP;
 it is empty by default and belongs only in the git-ignored `terraform.tfvars`.
 
@@ -137,13 +178,18 @@ it is empty by default and belongs only in the git-ignored `terraform.tfvars`.
   `install_gpu_driver.ps1`, pinned to a commit and checked by SHA-256. That commit installs
   NVIDIA's 582.53 RTX Virtual Workstation (GRID) driver, the only kind Google qualifies for
   L4 and T4 on Windows, for compute and display alike.
-- **OpenSSH Server**, which Windows Server 2025 ships installed and disabled: enabled and
-  started. Google's `google-compute-engine-ssh` package, installed during first-boot
-  specialisation from instance metadata, lets `gcloud compute ssh` push keys to it.
+- **OpenSSH Server**, which Windows Server 2025 ships installed and disabled: enabled, started,
+  and set to keys only. Google's `google-compute-engine-ssh` package, installed during
+  first-boot specialisation from instance metadata, lets `gcloud compute ssh` push keys to it.
 - **Chrome** (stable), from Google's enterprise installer, signature-checked. Not pinnable:
   that URL only serves the current release. The installed version is logged.
 - **Node 22.23.3** and **Git 2.55.0 for Windows** (which includes Git LFS; `git lfs install
   --system` is run), both pinned and checked by SHA-256.
+
+It also holds the machine still: Chrome's updater tasks and services are switched off (Google's
+updater ignores its policies outside a domain) and automatic Windows updates are turned off by
+policy, so nothing changes between two runs compared on this machine. A new Chrome or Windows
+patch arrives with a new machine.
 
 It then writes `C:\ProgramData\test-rig\setup-complete` and restarts once. A boot that finds
 that file does nothing. Each step checks for what it installs first, and the marker is written
@@ -256,6 +302,9 @@ script does nothing on it. An image stores at $0.05/GB-month; with one, the mach
 disk could be destroyed between runs instead of stopped, trading the disk's $5.00 a month for
 the image's cost and a fresh machine each time. Creating an image this way does not generalise
 Windows (no sysprep), which is fine for a machine that is only ever run one at a time.
+
+An image is not managed by Terraform: `terraform destroy` leaves it, billing, until
+`gcloud compute images delete <name> --project=fps-csarko`.
 
 ## Budget alert
 
