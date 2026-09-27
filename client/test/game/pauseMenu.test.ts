@@ -217,31 +217,40 @@ describe("the pause screen's Settings page", () => {
     const button = (label: string) => container.querySelectorAll("button").find((b) => b.textContent === label)!;
     const select = container.querySelector("select") as StandInSelect;
     const root = container.descendants().find((el) => el.classList.contains("pausemenu"))!;
+    const heading = container.querySelector("h2")!;
     const onSettings = (): boolean => root.classList.contains("show-settings");
     const escape = () => (doc.activeElement === doc.body ? doc.body : doc.activeElement).dispatch("keydown", { code: "Escape", key: "Escape" });
-    return { doc, menu, select, button, onSettings, escape, applied, resumed: () => resumed, finish: () => finish() };
+    return { doc, menu, select, heading, button, onSettings, escape, applied, resumed: () => resumed, finish: () => finish() };
   }
 
-  it("opens on the saved choice with the select focused", () => {
+  it("opens on the saved choice with the select focused, when a key opened it", () => {
     const page = opened();
-    page.button("Settings").click();
+    page.button("Settings").press();
     expect(page.onSettings()).toBe(true);
     expect(page.select.value).toBe("auto");
     expect(page.doc.activeElement).toBe(page.select);
   });
 
-  it("only selects on a pick; Apply keeps it, and the focus returns to the select once it is applied", async () => {
+  it("opens with the heading focused when a pointer opened it, so no picker opens unasked", () => {
     const page = opened();
     page.button("Settings").click();
+    expect(page.onSettings()).toBe(true);
+    expect(page.doc.activeElement).toBe(page.heading);
+    expect((page.heading as unknown as { tabIndex: number }).tabIndex).toBe(-1);
+  });
+
+  it("only selects on a pick; Apply keeps it, and the focus returns to the select once it is applied", async () => {
+    const page = opened();
+    page.button("Settings").press();
     page.select.choose("low");
     expect(page.applied).toEqual([]);
     expect(page.select.value).toBe("low");
     expect(page.button("Apply").disabled).toBe(false);
-    page.button("Apply").click();
+    page.button("Apply").press();
     expect(page.applied).toEqual(["low"]);
     expect(page.select.disabled).toBe(true);
-    // The click focused Apply, and Apply went disabled with the rest: the
-    // focus is nowhere until the choice is applied.
+    // Apply had the focus, and went disabled with the rest: the focus is
+    // nowhere until the choice is applied.
     expect(page.doc.activeElement).toBe(page.doc.body);
     page.finish();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -249,10 +258,21 @@ describe("the pause screen's Settings page", () => {
     expect(page.doc.activeElement).toBe(page.select);
   });
 
+  it("returns the focus to the heading once applied, when a pointer pressed Apply", async () => {
+    const page = opened();
+    page.button("Settings").press();
+    page.select.choose("low");
+    page.button("Apply").click();
+    expect(page.doc.activeElement).toBe(page.doc.body);
+    page.finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(page.doc.activeElement).toBe(page.heading);
+  });
+
   it("goes back on Escape from the select with its list closed, discarding the pick, as from anywhere else", () => {
     for (const openState of [false, "unsupported"] as const) {
       const page = opened();
-      page.button("Settings").click();
+      page.button("Settings").press();
       page.select.choose("high");
       page.select.openState = openState;
       const key = page.escape();
@@ -267,7 +287,7 @@ describe("the pause screen's Settings page", () => {
 
   it("leaves an Escape that closes the select's open list to the list, and goes back on the next", () => {
     const page = opened();
-    page.button("Settings").click();
+    page.button("Settings").press();
     page.select.openState = true;
     const first = page.escape();
     expect(first.defaultPrevented).toBe(false);

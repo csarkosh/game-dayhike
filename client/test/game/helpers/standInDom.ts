@@ -19,7 +19,16 @@ import { vi } from "vitest";
 
 type Listener = (event: StandInEvent) => void;
 
-export type StandInEvent = { type: string; target: StandInElement; code?: string; key?: string; defaultPrevented: boolean; preventDefault(): void };
+export type StandInEvent = {
+  type: string;
+  target: StandInElement;
+  code?: string;
+  key?: string;
+  /** A click's count: 0 for a click no pointer made (Enter or Space on a button). */
+  detail?: number;
+  defaultPrevented: boolean;
+  preventDefault(): void;
+};
 
 export class StandInElement {
   readonly tagName: string;
@@ -173,11 +182,19 @@ export class StandInElement {
     if (this.isConnected) this.doc.window.fire(event);
     return event;
   }
-  /** A pointer's click: it focuses the control it lands on, then fires. */
+  /** A pointer's click: it focuses the control it lands on, then fires,
+   * counting one click. */
   click(): void {
     if (this.disabled) return;
     if (FOCUSED_BY_CLICK.has(this.tagName)) this.focus();
-    this.dispatch("click");
+    this.dispatch("click", { detail: 1 });
+  }
+  /** Enter or Space on a focused button: the button has the focus, and the
+   * click it fires counts no pointer's clicks. */
+  press(): void {
+    if (this.disabled) return;
+    this.focus();
+    this.dispatch("click", { detail: 0 });
   }
 
   /** As a browser: nothing out of the page, disabled, hidden, or under an
@@ -195,14 +212,17 @@ export class StandInElement {
   descendants(): StandInElement[] {
     return this.children.filter((c) => c.tagName !== "#TEXT").flatMap((c) => [c, ...c.descendants()]);
   }
-  /** Tag names only (`select`, `option`, …): nothing here needs more. */
+  /** A tag name with classes (`select`, `button.secondary.settings`, …):
+   * nothing here needs more, and anything more throws. */
   querySelector(selector: string): StandInElement | null {
-    if (!/^[a-z0-9]+$/.test(selector)) throw new Error(`the stand-in document matches tag names only, not ${selector}`);
-    return this.descendants().find((el) => el.tagName === selector.toUpperCase()) ?? null;
+    return this.querySelectorAll(selector)[0] ?? null;
   }
   querySelectorAll(selector: string): StandInElement[] {
-    if (!/^[a-z0-9]+$/.test(selector)) throw new Error(`the stand-in document matches tag names only, not ${selector}`);
-    return this.descendants().filter((el) => el.tagName === selector.toUpperCase());
+    const m = /^([a-z0-9]+)((?:\.[a-z0-9-]+)*)$/.exec(selector);
+    if (m === null) throw new Error(`the stand-in document matches a tag and classes only, not ${selector}`);
+    const tag = m[1]!.toUpperCase();
+    const classes = m[2]!.split(".").filter((c) => c !== "");
+    return this.descendants().filter((el) => el.tagName === tag && classes.every((c) => el.classList.contains(c)));
   }
 
   /** `:open`, where a test says the browser supports it; otherwise a

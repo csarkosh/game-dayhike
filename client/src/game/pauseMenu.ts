@@ -1,4 +1,4 @@
-import { listOpen, renderSettings, type SettingsView } from "./settings.js";
+import { listOpen, openerOf, renderSettings, type Opener, type SettingsView } from "./settings.js";
 import type { TierChoice } from "./tierChoice.js";
 
 const STYLE = `
@@ -180,7 +180,8 @@ export type PauseEvent =
   | { kind: "escape" };
 
 /** Where the keyboard's focus goes: the main page's Resume or Settings, or
- * the Settings page's Graphics select. */
+ * the Settings page's way in (its Graphics select, or its heading when a
+ * pointer pressed the button that got there). */
 export type PauseFocus = "resume" | "settings" | "choice";
 
 export type PauseEffect =
@@ -195,8 +196,9 @@ export type PauseEffect =
  * and discard a selection not applied; Escape on the main page resumes. While
  * a choice is being applied nothing but its end is heard, and the menu always
  * opens on the main page. Focus follows: Resume when the menu opens, the
- * Graphics select on entering Settings and once a choice is applied (Apply
- * goes disabled, and a disabled button loses the focus), Settings on leaving.
+ * Settings page's way in on entering Settings and once a choice is applied
+ * (Apply goes disabled, and a disabled button loses the focus), Settings on
+ * leaving.
  */
 export function pauseStep(state: PauseState, event: PauseEvent): { state: PauseState; effect: PauseEffect } {
   const stay = { state, effect: null };
@@ -399,7 +401,10 @@ export function createPauseMenu(
   const settingsUi = renderSettings(settingsPage, options.settings.view(options.settings.saved(), false), {
     onChoose: (choice) => dispatch({ kind: "choose", choice }),
     onBack: () => dispatch({ kind: "back" }),
-    onApply: () => dispatch({ kind: "apply" }),
+    onApply: (how) => {
+      opener = how;
+      dispatch({ kind: "apply" });
+    },
   });
 
   panel.append(main, settingsPage);
@@ -408,6 +413,9 @@ export function createPauseMenu(
 
   let isOpen = false;
   let state = PAUSE_START;
+  /** How the last press that leads into the Settings page was made: Settings
+   * on the main page, or Apply. */
+  let opener: Opener = "pointer";
 
   function paint(): void {
     const onSettings = state.panel === "settings";
@@ -422,7 +430,7 @@ export function createPauseMenu(
     if (!isOpen) return;
     if (target === "resume") resume.focus();
     else if (target === "settings") settingsButton.focus();
-    else settingsPage.querySelector<HTMLSelectElement>("select")?.focus();
+    else settingsUi.entry(opener).focus();
   }
 
   function dispatch(event: PauseEvent): void {
@@ -453,7 +461,10 @@ export function createPauseMenu(
   }
 
   resume.addEventListener("click", () => options.onResume());
-  settingsButton.addEventListener("click", () => dispatch({ kind: "settings", saved: options.settings.saved() }));
+  settingsButton.addEventListener("click", (e) => {
+    opener = openerOf(e);
+    dispatch({ kind: "settings", saved: options.settings.saved() });
+  });
   exit.addEventListener("click", () => options.onExit());
 
   const onKeyDown = (e: KeyboardEvent) => {

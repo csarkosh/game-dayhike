@@ -373,22 +373,48 @@ describe("whether a select's list is showing", () => {
 describe("the title screen's Settings panel", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("takes the focus to the select as it opens, and keeps a pick at once", () => {
+  /** The landing on its home panel, whose Settings button opens the panel
+   * at once, as the route change does. */
+  function landing() {
     const doc = installStandInDom();
     const container = doc.createElement("div");
     doc.body.append(container);
     const kept: TierChoice[] = [];
     const noop = () => {};
     const view = landingModel({ desktop: false, host: "darwin-arm64", latest: null, quality: { choice: "medium", auto: null, override: null, stored: true } });
-    const landing = renderLanding(asHtml(container), view, {
-      onCreate: noop, onJoin: noop, onDownloads: noop, onSettings: noop, onCredits: noop, onBack: noop,
+    const page = renderLanding(asHtml(container), view, {
+      onCreate: noop, onJoin: noop, onDownloads: noop, onCredits: noop, onBack: noop,
+      onSettings: () => page.setPanel("settings"),
       onChooseTier: (c) => kept.push(c),
     });
-    landing.setPanel("settings");
-    const select = container.querySelector("select") as StandInSelect;
+    const entry = container.descendants().find((el) => el.tagName === "BUTTON" && el.textContent === "Settings")!;
+    const panel = container.descendants().find((el) => el.classList.contains("panel") && el.classList.contains("settings"))!;
+    const select = panel.querySelector("select") as StandInSelect;
+    const heading = panel.querySelector("h2")!;
+    return { doc, page, entry, select, heading, kept };
+  }
+
+  it("takes the focus to the select when a key opened it, and keeps a pick at once", () => {
+    const { doc, entry, select, kept } = landing();
+    entry.press();
     expect(doc.activeElement).toBe(select);
     expect(select.value).toBe("medium");
     select.choose("low");
     expect(kept).toEqual(["low"]);
+  });
+
+  it("takes the focus to the heading when a pointer opened it, so no picker opens unasked", () => {
+    const { doc, entry, heading } = landing();
+    entry.click();
+    expect(doc.activeElement).toBe(heading);
+    expect((heading as unknown as { tabIndex: number }).tabIndex).toBe(-1);
+  });
+
+  it("takes the focus to the heading when no press on its button opened it (the browser's Forward)", () => {
+    const { doc, page, entry, heading } = landing();
+    entry.press();
+    page.setPanel("home");
+    page.setPanel("settings");
+    expect(doc.activeElement).toBe(heading);
   });
 });

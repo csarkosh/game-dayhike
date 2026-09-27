@@ -136,6 +136,19 @@ export function listOpen(target: EventTarget | null): boolean {
   }
 }
 
+/** How a person reached a control: by a key, or by a pointer (a mouse, a
+ * finger or a pen). */
+export type Opener = "keyboard" | "pointer";
+
+/**
+ * How a click was made. A click no pointer made (Enter or Space on a button)
+ * counts no clicks in `detail`; a pointer's counts one or more. The one read
+ * both hosts use, so the Settings screen is entered the same way from each.
+ */
+export function openerOf(click: Event): Opener {
+  return (click as MouseEvent).detail === 0 ? "keyboard" : "pointer";
+}
+
 let ids = 0;
 
 const STYLE = `
@@ -143,11 +156,15 @@ const STYLE = `
     margin: 0; font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase;
     color: rgba(255, 255, 255, 0.62);
   }
+  /* The heading takes the focus when a pointer opened the screen (see
+     renderSettings): it is not a control, so it shows no ring. */
+  .settings h2[tabindex="-1"]:focus { outline: none; }
   /* The game's input look (the landing's join field), drawn by us rather than
      by the browser, with a caret of its own so it still reads as a drop-down:
      two triangles of the text's colour, clear of the label by the right
-     padding. Sized to its longest option, never under the width of the
-     buttons beneath it, never wider than the panel. */
+     padding. Sized to its longest option, at least 14rem (the width of the
+     pause page's Apply and Back; the title's Back is wider on a phone), and
+     never wider than the panel. */
   .settings select.choice {
     -webkit-appearance: none; appearance: none;
     box-sizing: border-box; min-width: 14rem; max-width: 100%;
@@ -186,17 +203,24 @@ const STYLE = `
  * keeps the keyboard's focus across a repaint; only the lines below are
  * rebuilt. A pick is heard on `change` alone; the select's value set from the
  * view fires nothing, so a repaint never comes back as a choice.
+ *
+ * `entry(opener)` is where the focus goes as the screen opens or a choice is
+ * applied: the select when a key got there, the heading when a pointer did.
+ * On iOS a select focused inside a tap can bring its picker up unasked; the
+ * heading, focusable by script only, still carries a screen reader into the
+ * screen.
  */
 export function renderSettings(
   root: HTMLElement,
   view: SettingsView,
-  handlers: { onChoose(choice: TierChoice): void; onBack(): void; onApply?(): void },
-): { setView(view: SettingsView): void; dispose(): void } {
+  handlers: { onChoose(choice: TierChoice): void; onBack(): void; onApply?(opener: Opener): void },
+): { setView(view: SettingsView): void; entry(opener: Opener): HTMLElement; dispose(): void } {
   const style = document.createElement("style");
   style.textContent = STYLE;
 
   const heading = document.createElement("h2");
   heading.textContent = view.heading;
+  heading.tabIndex = -1;
   const n = ++ids;
   const select = document.createElement("select");
   select.className = "choice";
@@ -234,7 +258,7 @@ export function renderSettings(
   const apply = document.createElement("button");
   apply.type = "button";
   apply.className = "apply";
-  apply.addEventListener("click", () => handlers.onApply?.());
+  apply.addEventListener("click", (e) => handlers.onApply?.(openerOf(e)));
 
   const back = document.createElement("button");
   back.type = "button";
@@ -280,6 +304,7 @@ export function renderSettings(
 
   return {
     setView: paint,
+    entry: (opener) => (opener === "keyboard" ? select : heading),
     dispose() {
       for (const node of [style, heading, group, select, caution, lines, apply, back]) node.remove();
     },
