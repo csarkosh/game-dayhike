@@ -704,11 +704,36 @@ next (`main.ts:424`), so dispose-first is the order everything is written for.
 **Failures.** The previous renderer is gone once step 3 runs, so falling back
 means rebuilding the previous configuration, not keeping the previous object:
 
-- `createRenderer` throws at step 5: logged; a second fresh canvas is built at
-  the tier that was running, on WebGL2; if that throws too, the error goes up as
-  a throw in `startGame` does today.
-- The screen is never blank: the "Applying…" ground stays until a renderer
-  stands (§9.6).
+- **A ladder of three rungs:** the target, then the tier that was running, then
+  low, the tier least likely to fail; the last two on WebGL2, each on a fresh
+  canvas. A rung that fails, in its build or in anything after it (putting the
+  view back, the signs, the rebind), is taken down whole (the renderer it built,
+  with its engine and the atmosphere's registration, or else the engine it was
+  given) before the next is tried. Only when every rung fails does the throw go
+  up, with nothing of any of them alive.
+- **The choice is kept only on success.** A switch that falls back keeps the
+  choice as it was, since the running tier came from it, and says "Could not
+  switch; still using Medium." It never writes the running tier as a choice,
+  which would turn an Auto player into a fixed-tier one the probe and the
+  governor never act for.
+- **The failed tier is remembered** (`recordFallback`), except under
+  `?tier=`. The Auto record gets a verdict of its own source, `build`, at the
+  tier that did build (low when none did): it holds at any window size for 30
+  days like the governor's, so Auto starts there and does not try the failed
+  tier each hike. A stored choice of the failed tier goes back to Auto, since
+  no record can override an explicit choice, and the Settings screen says "High
+  did not start on this computer, so Settings is back on Auto (Recommended)."
+  until the next choice.
+- **When no rung builds**, the hike ends. The Settings page, which is what the
+  player is looking at, says "The graphics could not be restarted; returning to
+  the title screen.", and the landing shows a line saying why once. A follower
+  sent back into the host's game then starts at a tier that builds.
+- **The hike's start has the same fallback** around its first renderer only,
+  not the world: the tier decided, then the class's start tier, then low, each
+  on a fresh canvas (`buildFirstRenderer`), recorded the same way. A start that
+  throws anywhere else undoes everything it made (`buildOrUndo`).
+- The screen is never blank: the "Applying…" ground is opaque at once and stays
+  until a renderer stands (§9.6), and the command bar cannot open over it.
 
 ### 9.4 The engine
 
