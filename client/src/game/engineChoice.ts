@@ -1,9 +1,11 @@
 /**
  * Which engine draws the game: WebGL2, as every tier always has, or Babylon's
  * WebGPU engine on the tiers `WEBGPU_TIERS` names, where the browser offers a
- * hardware adapter with the limits the scene needs. Decided once, before the
- * game starts (`main.ts`), and remembered when WebGPU fails, so a failing
- * engine is tried again only after the browser or Babylon moves on.
+ * hardware adapter with the limits the scene needs. Decided for each renderer
+ * the page builds (`main.ts`'s `engineFor`: the probe's steps, the hike's
+ * start, every switch of tier and every rebuild after a failure), from the
+ * tier it is for, and remembered when WebGPU fails, so a failing engine is
+ * tried again only after the browser or Babylon moves on.
  *
  * Pure on purpose, like `quality.ts`: the parts that touch `navigator.gpu`
  * live in `gpuEngine.ts`, which only the WebGPU path loads, and everything
@@ -54,8 +56,6 @@ export const WEBGPU_TEXTURE_FEATURES: readonly string[] = [
 
 /** The remembered fallback, in `localStorage`. */
 export const FALLBACK_KEY = "dayhike.engine";
-/** The HUD line carried across a fallback reload, in `sessionStorage`. */
-export const FALLBACK_NOTICE_KEY = "dayhike.engine.notice";
 /** How long a remembered fallback holds while nothing else changes. */
 export const FALLBACK_DAYS = 30;
 /** A second lost device inside this window remembers WebGL2. */
@@ -69,12 +69,7 @@ export const WEBGPU_FETCH_MS = 10_000;
  * (`init`). */
 export const WEBGPU_START_MS = 10_000;
 
-/** The startup window closes once no effect has compiled for this long after
- * the first frame… */
-export const STARTUP_QUIET_MS = 10_000;
-/** …or this long after the engine was made, whichever is first. */
-export const STARTUP_MAX_MS = 60_000;
-/** How long the HUD shows the line after a fallback reload. */
+/** How long the HUD shows the line after a swap that answered a failure. */
 export const FALLBACK_NOTICE_MS = 6_000;
 
 export const NOTICE_SWITCHED = "Graphics switched to WebGL2 after a GPU error.";
@@ -246,69 +241,27 @@ export function writeFallback(storage: Storage | null, record: FallbackRecord): 
 }
 
 /**
- * The startup window: from the engine's creation until no effect has compiled
- * for `STARTUP_QUIET_MS` after the first frame, or `STARTUP_MAX_MS`, whichever
- * is first. Once closed it stays closed. A failure inside it reloads onto
- * WebGL2; after it, it waits for the next load.
+ * What a failure of the running WebGPU engine does, after the record has been
+ * written (`stored`) and read back (`holds`): a live swap of the renderer at
+ * the running tier, never a reload, which would end a party (a host's reload
+ * ends the room). A pipeline error or an uncaptured one, whenever it comes,
+ * and a second lost device in `LOSS_WINDOW_MS`, swap onto WebGL2; a first
+ * lost device retries once on a new WebGPU engine. `engine` is what the rule
+ * then gives, which the rebuild takes by the rule: `pin` asks for
+ * `engine=webgl2` in this tab's URL wherever the rule would otherwise give
+ * WebGPU again (storage refused the record, or `?engine=webgpu` outranks it),
+ * so a failing engine can never loop. `notice` is the HUD's line once the
+ * swap is done.
  */
-export function createStartupWindow(created: number): {
-  frame(now: number): void;
-  compiled(now: number): void;
-  open(now: number): boolean;
-} {
-  let firstFrame: number | null = null;
-  let quietFrom = created;
-  let closed = false;
-  const open = (now: number): boolean => {
-    if (!closed && (now - created >= STARTUP_MAX_MS || (firstFrame !== null && now - quietFrom >= STARTUP_QUIET_MS))) {
-      closed = true;
-    }
-    return !closed;
-  };
-  return {
-    frame(now) {
-      if (firstFrame === null && open(now)) {
-        firstFrame = now;
-        quietFrom = now;
-      }
-    },
-    compiled(now) {
-      if (open(now) && firstFrame !== null) quietFrom = now;
-    },
-    open,
-  };
-}
-
-/**
- * What the page does about a failure on WebGPU once the game is running,
- * after the record has been written (`stored`) and read back (`holds`).
- * A failure in the startup window and a lost device reload; any other failure
- * only waits for the next load. The reload carries `engine=webgl2` wherever a
- * plain reload would start WebGPU again: storage refused the record, or
- * `?engine=webgpu`, which outranks it, is in the URL.
- */
-export function failureAction(input: {
+export function failureSwap(input: {
   stored: boolean;
   holds: boolean;
   reason: "pipeline" | "lost";
-  inStartup: boolean;
   override: EngineName | null;
-}): { reload: "none" | "reload" | "webgl2"; notice: string | null } {
-  if (input.reason !== "lost" && !input.inStartup) return { reload: "none", notice: null };
-  const toWebGl2 = !input.stored || input.holds;
-  if (!toWebGl2) return { reload: "reload", notice: NOTICE_RESTARTED };
-  const pinned = !input.stored || input.override === "webgpu";
-  return { reload: pinned ? "webgl2" : "reload", notice: NOTICE_SWITCHED };
-}
-
-/** The line one GPU error after the startup window logs: what the next load
- * will do, which is WebGL2 only where the record was stored and no
- * `?engine=webgpu` outranks it, or where this tab's URL was pinned instead. */
-export function lateFailureLine(stored: boolean, override: EngineName | null): string {
-  const head = "WebGPU: a GPU error after startup; ";
-  if (!stored) return `${head}storage refused the record, so this tab's URL now asks for WebGL2.`;
-  if (override === "webgpu") return `${head}remembered, but ?engine=webgpu in this URL still asks for WebGPU.`;
-  return `${head}the next load draws with WebGL2.`;
+}): { engine: EngineName; pin: boolean; notice: string } {
+  const retry = input.reason === "lost" && input.stored && !input.holds;
+  if (retry) return { engine: "webgpu", pin: false, notice: NOTICE_RESTARTED };
+  return { engine: "webgl2", pin: !input.stored || input.override === "webgpu", notice: NOTICE_SWITCHED };
 }
 
 const TIMED_OUT = Symbol("timed out");
@@ -425,26 +378,4 @@ export function withEngine(href: string, engine: EngineName): string {
   const url = new URL(href);
   url.searchParams.set("engine", engine);
   return url.toString();
-}
-
-/** Leaves the HUD line for the next load; dropped silently where storage
- * throws. */
-export function leaveNotice(storage: Storage | null, line: string): void {
-  try {
-    storage?.setItem(FALLBACK_NOTICE_KEY, line);
-  } catch {
-    /* the reload still happens; only the line is lost */
-  }
-}
-
-/** The line a fallback reload left, once: it is removed as it is read. */
-export function takeNotice(storage: Storage | null): string | null {
-  try {
-    const line = storage?.getItem(FALLBACK_NOTICE_KEY);
-    if (typeof line !== "string") return null;
-    storage?.removeItem(FALLBACK_NOTICE_KEY);
-    return line;
-  } catch {
-    return null;
-  }
 }

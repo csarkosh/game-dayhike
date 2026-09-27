@@ -5,7 +5,8 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import { EffectFallbacks } from "@babylonjs/core/Materials/effectFallbacks.js";
-import { catchTranslationFailures, watchWebGpu } from "../../src/game/gpuEngine.js";
+import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
+import { catchTranslationFailures, watchPipelines, watchWebGpu } from "../../src/game/gpuEngine.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -17,14 +18,14 @@ describe("watchWebGpu", () => {
 
   it("reports an uncaptured error Babylon logs as pipeline, by the log alone", () => {
     const engine = new NullEngine();
-    const seen: [string, boolean][] = [];
-    const stop = watchWebGpu(engine, (reason, inStartup) => seen.push([reason, inStartup]), () => 0);
+    const seen: string[] = [];
+    const stop = watchWebGpu(engine, (reason) => seen.push(reason));
     try {
       Logger.Warn("[Frame 3] WebGPU uncaptured error (1): [object GPUValidationError] - binding missing");
-      expect(seen).toEqual([["pipeline", true]]);
+      expect(seen).toEqual(["pipeline"]);
       // The same reason again, by another road, is not reported twice.
       engine.onEffectErrorObservable.notifyObservers(effectError);
-      expect(seen).toEqual([["pipeline", true]]);
+      expect(seen).toEqual(["pipeline"]);
     } finally {
       stop();
       engine.dispose();
@@ -33,24 +34,24 @@ describe("watchWebGpu", () => {
 
   it("reports a failed effect as pipeline and a lost device as lost, each once", () => {
     const engine = new NullEngine();
-    const seen: [string, boolean][] = [];
-    const stop = watchWebGpu(engine, (reason, inStartup) => seen.push([reason, inStartup]), () => 0);
+    const seen: string[] = [];
+    const stop = watchWebGpu(engine, (reason) => seen.push(reason));
     try {
       engine.onEffectErrorObservable.notifyObservers(effectError);
-      expect(seen).toEqual([["pipeline", true]]);
+      expect(seen).toEqual(["pipeline"]);
       engine.onContextLostObservable.notifyObservers(engine);
       engine.onContextLostObservable.notifyObservers(engine);
-      expect(seen).toEqual([["pipeline", true], ["lost", true]]);
+      expect(seen).toEqual(["pipeline", "lost"]);
     } finally {
       stop();
       engine.dispose();
     }
   });
 
-  it("stops Babylon's own restore after a lost device, since the page reloads instead", () => {
+  it("stops Babylon's own restore after a lost device, since the renderer is rebuilt on a new engine instead", () => {
     vi.useFakeTimers();
     const engine = new NullEngine();
-    const stop = watchWebGpu(engine, () => undefined, () => 0);
+    const stop = watchWebGpu(engine, () => undefined);
     try {
       // Babylon notifies, then calls the restore on the same engine: the
       // watcher answers in between.
@@ -77,25 +78,31 @@ describe("watchWebGpu", () => {
     );
   });
 
-  it("tells a failure in the startup window from one after it", () => {
+  it("reports a failure whenever it comes: no startup window decides anything any more", () => {
     const engine = new NullEngine();
-    let now = 0;
-    const seen: [string, boolean][] = [];
-    const stop = watchWebGpu(engine, (reason, inStartup) => seen.push([reason, inStartup]), () => now);
+    const seen: string[] = [];
+    const stop = watchWebGpu(engine, (reason) => seen.push(reason));
     try {
-      now = 2_000;
       engine.onEndFrameObservable.notifyObservers(engine);
-      now = 8_000;
       engine.onAfterShaderCompilationObservable.notifyObservers(engine);
-      now = 18_000;
       engine.onEffectErrorObservable.notifyObservers(effectError);
-      expect(seen).toEqual([["pipeline", false]]);
       engine.onContextLostObservable.notifyObservers(engine);
-      expect(seen).toEqual([["pipeline", false], ["lost", false]]);
+      expect(seen).toEqual(["pipeline", "lost"]);
     } finally {
       stop();
       engine.dispose();
     }
+  });
+
+  it("hears nothing from a disposed engine: Babylon reports no loss of a device its dispose destroyed (a canary)", () => {
+    const src = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
+    expect(src).toContain("    dispose() {\n        this._isDisposed = true;");
+    expect(src).toContain(
+      "                this._device.lost?.then((info) => {\n" +
+        "                    if (this._isDisposed) {\n" +
+        "                        return;\n" +
+        "                    }",
+    );
   });
 
   it("matches the words Babylon logs an uncaptured error with (a canary on the installed engine)", () => {
@@ -111,7 +118,7 @@ describe("watchWebGpu", () => {
     const engine = new NullEngine();
     try {
       const seen: string[] = [];
-      const stop = watchWebGpu(engine, (reason) => seen.push(reason), () => 0);
+      const stop = watchWebGpu(engine, (reason) => seen.push(reason));
       Logger.OnNewCacheEntry("<div>[10:00:00]: a note</div><br>");
       expect(previous).toHaveBeenCalledWith("<div>[10:00:00]: a note</div><br>");
       expect(seen).toEqual([]);
@@ -143,8 +150,8 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     catchTranslationFailures(engine);
     const reported: string[] = [];
     engine.onEffectErrorObservable.add(({ errors }) => void reported.push(errors));
-    const seen: [string, boolean][] = [];
-    const stop = watchWebGpu(engine, (reason, inStartup) => seen.push([reason, inStartup]), () => 0);
+    const seen: string[] = [];
+    const stop = watchWebGpu(engine, (reason) => seen.push(reason));
     try {
       const effect = engine.createEffect(
         { vertexSource: "void main() {}", fragmentSource: "void main() {}" },
@@ -158,7 +165,7 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
       expect(effect.allFallbacksProcessed()).toBe(true);
       expect(effect.isReady()).toBe(false);
       expect(reported).toHaveLength(1);
-      expect(seen).toEqual([["pipeline", true]]);
+      expect(seen).toEqual(["pipeline"]);
     } finally {
       stop();
       engine.dispose();
@@ -170,7 +177,7 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     translationFails(engine);
     catchTranslationFailures(engine);
     const seen: string[] = [];
-    const stop = watchWebGpu(engine, (reason) => void seen.push(reason), () => 0);
+    const stop = watchWebGpu(engine, (reason) => void seen.push(reason));
     try {
       const prepare = (engine as unknown as { _preparePipelineContextAsync: (context: object) => Promise<void> })
         ._preparePipelineContextAsync;
@@ -196,7 +203,7 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     const reported: string[] = [];
     engine.onEffectErrorObservable.add(({ errors }) => void reported.push(errors));
     const seen: string[] = [];
-    const stop = watchWebGpu(engine, (reason) => void seen.push(reason), () => 0);
+    const stop = watchWebGpu(engine, (reason) => void seen.push(reason));
     try {
       const fallbacks = new EffectFallbacks();
       fallbacks.addFallback(0, "HEAVY");
@@ -264,3 +271,43 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     expect(context).toContain("    get isAsync() {\n        return false;");
   });
 });
+
+describe("the frames that made a render pipeline, for the governor", () => {
+  afterEach(() => {
+    WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame = 0;
+  });
+
+  it("are told after each frame that made one, and no other", () => {
+    const engine = new NullEngine();
+    let told = 0;
+    const stop = watchPipelines(engine, () => void told++);
+    try {
+      WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame = 2;
+      engine.onEndFrameObservable.notifyObservers(engine);
+      WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame = 0;
+      engine.onEndFrameObservable.notifyObservers(engine);
+      expect(told).toBe(1);
+      stop();
+      WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame = 1;
+      engine.onEndFrameObservable.notifyObservers(engine);
+      expect(told).toBe(1);
+    } finally {
+      engine.dispose();
+    }
+  });
+
+  it("are counted before the frame's end is told, and a shader compile is told too (canaries on the installed engine)", () => {
+    const src = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
+    // A pipeline is made at its first draw, counted for the frame…
+    const end = src.slice(src.indexOf("    endFrame() {"), src.indexOf("    flushFramebuffer(_fromEndFrame = false) {"));
+    expect(end.indexOf("this._cacheRenderPipeline.endFrame();")).toBeGreaterThan(0);
+    expect(end.indexOf("super.endFrame();")).toBeGreaterThan(end.indexOf("this._cacheRenderPipeline.endFrame();"));
+    const cache = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js"), "utf8");
+    expect(cache).toContain("WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame = WebGPUCacheRenderPipeline._NumPipelineCreationCurrentFrame;");
+    // …while the observable the governor already reads fires on every effect's
+    // translation, as on WebGL2 at a compile.
+    const compile = src.slice(src.indexOf("    _compilePipelineStageDescriptor(vertexCode, fragmentCode, defines, shaderLanguage) {"), src.indexOf("    createRawShaderProgram() {"));
+    expect(compile).toContain("this.onAfterShaderCompilationObservable.notifyObservers(this);");
+  });
+});
+

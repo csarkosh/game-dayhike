@@ -154,6 +154,19 @@ describe("layer boundaries", () => {
     expect(definitions("pageStorage")).toEqual(["game/tierChoice.ts"]);
     expect(definitions("pageSessionStorage")).toEqual(["game/tierChoice.ts"]);
     expect(definitions("safeStorage")).toEqual([]);
+    // The landing notice's pair: the engine's own reload notice is gone with
+    // the reload.
+    expect(definitions("leaveNotice")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("takeNotice")).toEqual(["game/tierChoice.ts"]);
+  });
+
+  it("answers a WebGPU failure without reloading the page: the one reload left is the player's, on a build mismatch", () => {
+    const calls = (pattern: RegExp): string[] =>
+      sourceFiles(SRC).flatMap((file) =>
+        [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map((m) => `${relative(SRC, file)}: ${m[0]}`),
+      );
+    expect(calls(/location\.replace\(/g)).toEqual([]);
+    expect(calls(/.*location\.reload\(.*/g)).toEqual(["app.ts:     onReload: () => location.reload(),"]);
   });
 
   it("asks for a WebGPU adapter in one place, the GPU's signals, and never through Babylon's support check", () => {
@@ -172,7 +185,7 @@ describe("layer boundaries", () => {
     // the older rule, and the engine from the tier decided.
     expect(main).not.toContain("detectTier");
     expect([...main.matchAll(/\bstartHike</g)].length).toBe(1);
-    expect(main).toContain("engine: (decided, read) => engineFor(decided.tier, read, () => !cancelled()),");
+    expect(main).toContain("      return engineFor(decided.tier, read, () => !cancelled());");
     // Nothing of the start hangs off a promise outside the chain's catch.
     expect(main).not.toMatch(/makeWebGpu\([^)]*\)\.then\(/);
   });

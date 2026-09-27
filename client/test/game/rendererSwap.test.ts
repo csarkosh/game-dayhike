@@ -90,6 +90,7 @@ function stubBindings(
   log: string[],
   failing: ReadonlySet<QualityTier> = new Set(),
   restoreFailing: ReadonlySet<QualityTier> = new Set(),
+  givenFailing: ReadonlySet<QualityTier> = new Set(),
 ): SwapBindings {
   let n = 0;
   return {
@@ -100,9 +101,12 @@ function stubBindings(
     },
     build: (canvas, tier, engine) => {
       log.push(`build ${idOf(canvas)} ${tier} ${engine === null ? "webgl2" : "given"}`);
-      if (failing.has(tier)) throw new Error(`no ${tier}`);
+      if (failing.has(tier) || (engine !== null && givenFailing.has(tier))) throw new Error(`no ${tier}`);
       return stubRenderer(`${tier}@${idOf(canvas)}`, log);
     },
+    unwatch: () => log.push("unwatch"),
+    watch: (r) => log.push(`watch ${idOf(r)}`),
+    engineFailed: (error) => log.push(`engine failed: ${(error as Error).message}`),
     extras: { dispose: () => log.push("extras dispose"), build: (r) => log.push(`extras build ${idOf(r)}`) },
     rebind: (canvas) => log.push(`rebind ${idOf(canvas)}`),
     restore: (r) => {
@@ -127,6 +131,7 @@ describe("swapRenderer's order", () => {
     expect((got.canvas as unknown as { style: { touchAction?: string } }).style.touchAction).toBe("none");
     expect(log).toEqual([
       "stop medium@c0",
+      "unwatch",
       "extras dispose",
       "dispose medium@c0",
       "fresh c1",
@@ -151,18 +156,24 @@ describe("swapRenderer's order", () => {
       );
       expect(got.tier).toBe("medium");
       expect(got.fellBack).toBe(true);
-      expect(log.slice(3)).toEqual([
+      // The given engine's rung failing is the engine's fault first: its tier
+      // is tried again on WebGL2 before the ladder goes down.
+      expect(log.slice(4)).toEqual([
         "fresh c1",
         "replace c0 with c1",
         "build c1 high given",
         "dispose given engine",
+        "engine failed: no high",
         "fresh c2",
         "replace c1 with c2",
-        "build c2 medium webgl2",
-        "restore medium@c2",
-        "extras build medium@c2",
-        "rebind c2",
-        "run medium@c2",
+        "build c2 high webgl2",
+        "fresh c3",
+        "replace c2 with c3",
+        "build c3 medium webgl2",
+        "restore medium@c3",
+        "extras build medium@c3",
+        "rebind c3",
+        "run medium@c3",
       ]);
       // The running tier fails too: one more try at low, the tier least likely to fail.
       const log2: string[] = [];
@@ -188,6 +199,70 @@ describe("swapRenderer's order", () => {
   });
 });
 
+describe("a swap onto a given engine", () => {
+  const engine = (log: string[]) => ({ dispose: () => log.push("dispose given engine") }) as unknown as AbstractEngine;
+  const detector = () => () => undefined;
+
+  it("listens to the new engine once its rung stands, never to a rung that failed", () => {
+    const log: string[] = [];
+    const got = swapRenderer(
+      { renderer: stubRenderer("low@c0", log), canvas: stubCanvas("c0", log) },
+      { tier: "high", engine: engine(log), watch: detector, fallbackTier: "low" },
+      stubBindings(log),
+    );
+    expect([got.tier, got.fellBack, got.engineFellBack]).toEqual(["high", false, false]);
+    expect(log.slice(-3)).toEqual(["rebind c1", "run high@c1", "watch high@c1"]);
+  });
+
+  it("takes a given engine's failure as the engine's: remembered, and the same tier built on WebGL2, no tier fallback", () => {
+    const log: string[] = [];
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const got = swapRenderer(
+        { renderer: stubRenderer("low@c0", log), canvas: stubCanvas("c0", log) },
+        { tier: "high", engine: engine(log), watch: detector, fallbackTier: "low" },
+        stubBindings(log, new Set(), new Set(), new Set<QualityTier>(["high"])),
+      );
+      expect([got.tier, got.fellBack, got.engineFellBack]).toEqual(["high", false, true]);
+      expect(log.filter((line) => line.startsWith("watch"))).toEqual([]);
+      expect(log.filter((line) => line.startsWith("engine failed"))).toEqual(["engine failed: no high"]);
+      expect(log.slice(4)).toEqual([
+        "fresh c1",
+        "replace c0 with c1",
+        "build c1 high given",
+        "dispose given engine",
+        "engine failed: no high",
+        "fresh c2",
+        "replace c1 with c2",
+        "build c2 high webgl2",
+        "restore high@c2",
+        "extras build high@c2",
+        "rebind c2",
+        "run high@c2",
+      ]);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
+  it("starts the hike on a given engine the same way: its failure is the engine's, and the tier is built again on WebGL2", () => {
+    const log: string[] = [];
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const b = stubBindings(log, new Set(), new Set(), new Set<QualityTier>(["high"]));
+      const got = buildFirstRenderer(stubCanvas("c0", log), ["high", "medium", "low"], b, { engine: engine(log), watch: detector });
+      expect([got.tier, got.fellBack, got.engineFellBack, idOf(got.canvas)]).toEqual(["high", false, true, "c1"]);
+      expect(log).toEqual(["build c0 high given", "engine failed: no high", "fresh c1", "replace c0 with c1", "build c1 high webgl2"]);
+      const watched: string[] = [];
+      const standing = buildFirstRenderer(stubCanvas("c0", watched), ["high", "low"], stubBindings(watched), { engine: engine(watched), watch: detector });
+      expect([standing.tier, standing.engineFellBack]).toEqual(["high", false]);
+      expect(watched).toEqual(["build c0 high given", "watch high@c0"]);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+});
+
 describe("a throw after the build", () => {
   it("disposes the renderer just built, with what was built into its scene, and falls back", () => {
     const log: string[] = [];
@@ -199,7 +274,7 @@ describe("a throw after the build", () => {
         stubBindings(log, new Set(), new Set<QualityTier>(["high"])),
       );
       expect(got.tier).toBe("medium");
-      expect(log.slice(3)).toEqual([
+      expect(log.slice(4)).toEqual([
         "fresh c1",
         "replace c0 with c1",
         "build c1 high webgl2",
@@ -351,6 +426,9 @@ describe("swapRenderer on NullEngine", () => {
       rebind: () => undefined,
       restore: () => undefined,
       loop: () => undefined,
+      unwatch: () => undefined,
+      watch: () => undefined,
+      engineFailed: () => undefined,
     };
     for (const tier of ["high", "low", "medium"] as const) {
       const old = current.renderer;
@@ -407,6 +485,9 @@ describe("the grass cull after a swap, on NullEngine", () => {
       rebind: () => undefined,
       restore: () => undefined,
       loop: () => undefined,
+      unwatch: () => undefined,
+      watch: () => undefined,
+      engineFailed: () => undefined,
     };
     const swapped = swapRenderer(current, { tier: "medium", engine: null, fallbackTier: "high" }, bindings).renderer;
     try {
@@ -435,6 +516,9 @@ describe("a swap that fails at every tier, on NullEngine", () => {
           throw new Error("restore failed");
         },
         loop: () => undefined,
+        unwatch: () => undefined,
+        watch: () => undefined,
+        engineFailed: () => undefined,
       };
       expect(() => swapRenderer(current, { tier: "high", engine: null, fallbackTier: "medium" }, bindings)).toThrow("restore failed");
       expect(EngineStore.Instances.length).toBe(0);

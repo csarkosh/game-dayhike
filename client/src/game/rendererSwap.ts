@@ -22,7 +22,18 @@
  * **The engine is the caller's.** `target.engine` is an engine made for the new
  * tier before the swap starts (null: the renderer makes its own WebGL2 one).
  * Nothing here decides the engine: the WebGPU rule, where it applies, makes it
- * on a fresh canvas that `bindings.freshCanvas` then hands out first.
+ * on a fresh canvas that `bindings.freshCanvas` then hands out first. A rung
+ * on a given engine that fails is that engine's fault (`engineFailed`, which
+ * the caller remembers so the rule gives WebGL2 from then on), and its tier is
+ * built again on WebGL2 before the ladder goes down a tier. Every later rung
+ * is WebGL2, which is the rule's engine for it: the rule gives WebGL2 to a
+ * tier below one it gave WebGL2, and to every tier once a failure is
+ * remembered (`engineChoice.test.ts`).
+ *
+ * **Only a standing engine is listened to.** The old engine's watcher is
+ * taken off before anything of it is disposed (`unwatch`), so a disposed
+ * engine is never heard as a failing one, and the new engine's is put on only
+ * once its rung stands (`watch`): a rung that failed is never watched.
  */
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { Scene } from "@babylonjs/core/scene.js";
@@ -34,6 +45,36 @@ import type { TierChoice } from "./tierChoice.js";
 export const SWAP_READY_MAX_MS = 10_000;
 
 export type Swappable = { renderer: Renderer; canvas: HTMLCanvasElement };
+
+/** Listens to a WebGPU engine for the failures the game answers
+ * (`watchWebGpu`, `gpuEngine.ts`); the function returned stops listening. */
+export type WatchEngine = (engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void) => () => void;
+
+/** The WebGPU module's watchers (`gpuEngine.ts`): its failures
+ * (`watchWebGpu`), and the frames that made a render pipeline
+ * (`watchPipelines`). */
+export type EngineWatchers = {
+  failures: WatchEngine;
+  pipelines(engine: AbstractEngine, onCreated: () => void): () => void;
+};
+
+/** A renderer's canvas and the engine made for it: WebGPU with its module's
+ * watchers, or WebGL2 (`engine` and `watchers` null), which the renderer
+ * makes itself. */
+export type EngineOnCanvas = { canvas: HTMLCanvasElement; engine: AbstractEngine | null; watchers: EngineWatchers | null };
+
+/** One rung of a ladder: a tier, and the engine made for it (null: WebGL2). */
+type Rung = { tier: QualityTier; engine: AbstractEngine | null; watch: WatchEngine | null };
+
+/** `first`, then its tier again on WebGL2 when `first` has an engine of its
+ * own, then each of `later` on WebGL2, none twice. */
+function ladderOf(first: Rung, later: readonly QualityTier[]): Rung[] {
+  const rungs = [first];
+  const webgl2 = (tier: QualityTier): Rung => ({ tier, engine: null, watch: null });
+  if (first.engine !== null) rungs.push(webgl2(first.tier));
+  for (const tier of later) if (!rungs.some((r) => r.tier === tier && r.engine === null)) rungs.push(webgl2(tier));
+  return rungs;
+}
 
 /** What the game gives a swap: how to build, where, and what to put back. */
 export type SwapBindings = {
@@ -51,6 +92,14 @@ export type SwapBindings = {
   restore(renderer: Renderer): void;
   /** The render loop, stopped on the old engine and run on the new. */
   loop(): void;
+  /** Stops listening to the running engine, before anything of it goes. */
+  unwatch(): void;
+  /** Starts listening to a renderer's engine, given as its rung's, with that
+   * engine's own detector, once the rung stands. */
+  watch(renderer: Renderer, detector: WatchEngine): void;
+  /** A rung on a given engine failed: the engine's fault, for the caller to
+   * remember. `error` is the rung's throw. */
+  engineFailed(error: unknown): void;
 };
 
 function replaceCanvas(old: HTMLCanvasElement, fresh: HTMLCanvasElement): HTMLCanvasElement {
@@ -79,17 +128,17 @@ const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium"
  */
 export function swapRenderer(
   current: Swappable,
-  target: { tier: QualityTier; engine: AbstractEngine | null; fallbackTier: QualityTier },
+  target: { tier: QualityTier; engine: AbstractEngine | null; watch?: WatchEngine | null; fallbackTier: QualityTier },
   bindings: SwapBindings,
-): Swappable & { tier: QualityTier; fellBack: boolean } {
+): Swappable & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
   current.renderer.engine.stopRenderLoop(bindings.loop);
+  bindings.unwatch();
   bindings.extras.dispose();
   current.renderer.dispose();
-  const ladder = [...new Set<QualityTier>([target.tier, target.fallbackTier, "low"])];
+  const ladder = ladderOf({ tier: target.tier, engine: target.engine, watch: target.watch ?? null }, [target.fallbackTier, "low"]);
   let canvas = current.canvas;
   let failure: unknown = new Error("no tier to build");
-  for (const [rung, tier] of ladder.entries()) {
-    const engine = rung === 0 ? target.engine : null;
+  for (const { tier, engine, watch } of ladder) {
     canvas = replaceCanvas(canvas, bindings.freshCanvas());
     let renderer: Renderer | null = null;
     try {
@@ -98,11 +147,13 @@ export function swapRenderer(
       bindings.extras.build(renderer);
       bindings.rebind(canvas);
       renderer.engine.runRenderLoop(bindings.loop);
-      return { renderer, canvas, tier, fellBack: rung > 0 };
+      if (engine !== null && watch !== null) bindings.watch(renderer, watch);
+      return { renderer, canvas, tier, fellBack: tier !== target.tier, engineFellBack: target.engine !== null && engine === null };
     } catch (error) {
       failure = error;
       console.error(`quality: the ${tier} renderer could not be ${renderer === null ? "built" : "started"}.`, error);
       takeDown(renderer, engine, bindings);
+      if (engine !== null) bindings.engineFailed(error);
     }
   }
   throw failure;
@@ -145,23 +196,31 @@ export function switchOutcome(
  * fresh canvas in the failed one's place. A renderer whose build throws
  * disposes its own engine and registration (`createRenderer`), so a failed
  * rung leaves nothing; the last throw goes up when every rung fails.
- * `engine`, made for `canvas`, is the first rung's; the later ones are WebGL2.
+ * `first` is the engine made for `canvas` for the first tier, with its
+ * detector: where its rung fails, the fault is the engine's (`engineFailed`)
+ * and that tier is built again on WebGL2 before the ladder goes down, as in a
+ * swap; where it stands, it is listened to (`watch`).
  */
 export function buildFirstRenderer(
   canvas: HTMLCanvasElement,
   tiers: readonly QualityTier[],
-  bindings: Pick<SwapBindings, "build" | "freshCanvas">,
-  engine: AbstractEngine | null = null,
-): Swappable & { tier: QualityTier; fellBack: boolean } {
+  bindings: Pick<SwapBindings, "build" | "freshCanvas" | "watch" | "engineFailed">,
+  first: { engine: AbstractEngine; watch: WatchEngine | null } | null = null,
+): Swappable & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
+  const [asked = "low", ...later] = tiers;
+  const ladder = ladderOf({ tier: asked, engine: first?.engine ?? null, watch: first?.watch ?? null }, later);
   let current = canvas;
   let failure: unknown = new Error("no tier to build");
-  for (const [rung, tier] of tiers.entries()) {
+  for (const [rung, { tier, engine, watch }] of ladder.entries()) {
     if (rung > 0) current = replaceCanvas(current, bindings.freshCanvas());
     try {
-      return { renderer: bindings.build(current, tier, rung === 0 ? engine : null), canvas: current, tier, fellBack: rung > 0 };
+      const renderer = bindings.build(current, tier, engine);
+      if (engine !== null && watch !== null) bindings.watch(renderer, watch);
+      return { renderer, canvas: current, tier, fellBack: tier !== asked, engineFellBack: first !== null && engine === null };
     } catch (error) {
       failure = error;
       console.error(`quality: the ${tier} renderer could not be built at the hike's start.`, error);
+      if (engine !== null) bindings.engineFailed(error);
     }
   }
   throw failure;

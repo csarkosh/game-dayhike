@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  adapterFits, adapterFromSignals, chooseEngine, signalsFit, createStartupWindow, failureAction, fallbackHolds, featuresToRequest,
-  lateFailureLine, parseEngineOverride, readFallback, recordFailure, resolveWebGpu,
-  takeNotice, leaveNotice, withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
+  adapterFits, adapterFromSignals, chooseEngine, signalsFit, failureSwap, fallbackHolds, featuresToRequest,
+  parseEngineOverride, readFallback, recordFailure, resolveWebGpu,
+  withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
   type AdapterReport, type WebGpuSteps,
-  FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
-  NOTICE_SWITCHED, STARTUP_MAX_MS, STARTUP_QUIET_MS, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
+  FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
+  NOTICE_SWITCHED, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS, WEBGPU_TIERS,
 } from "../../src/game/engineChoice.js";
 
@@ -101,8 +101,8 @@ describe("the remembered fallback", () => {
     const after = recordFailure(late, "lost", env, t0 + 60_000);
     expect(after).toEqual({ reason: "pipeline", browser: 153, babylon: "9.18.0", at: t0, losses: 0 });
     expect(fallbackHolds(after, env, t0 + 60_000)).toBe(true);
-    expect(failureAction({ stored: true, holds: true, reason: "lost", inStartup: false, override: null }))
-      .toEqual({ reload: "reload", notice: "Graphics switched to WebGL2 after a GPU error." });
+    expect(failureSwap({ stored: true, holds: true, reason: "lost", override: null }))
+      .toEqual({ engine: "webgl2", pin: false, notice: "Graphics switched to WebGL2 after a GPU error." });
     // A record that no longer holds (a new browser) is replaced as before.
     const lapsed = recordFailure(late, "lost", { browser: 154, babylon: "9.18.0" }, t0 + 60_000);
     expect(lapsed).toEqual({ reason: "lost", browser: 154, babylon: "9.18.0", at: t0 + 60_000, losses: 1 });
@@ -134,48 +134,81 @@ describe("the remembered fallback", () => {
 
   it("pins its keys and clocks", () => {
     expect(FALLBACK_KEY).toBe("dayhike.engine");
-    expect(FALLBACK_NOTICE_KEY).toBe("dayhike.engine.notice");
     expect(FALLBACK_DAYS).toBe(30);
     expect(LOSS_WINDOW_MS).toBe(86_400_000);
     expect(WEBGPU_FETCH_MS).toBe(10_000);
     expect(WEBGPU_START_MS).toBe(10_000);
-    expect(STARTUP_QUIET_MS).toBe(10_000);
-    expect(STARTUP_MAX_MS).toBe(60_000);
     expect(FALLBACK_NOTICE_MS).toBe(6_000);
   });
 });
 
-describe("what a failure on WebGPU does", () => {
-  it("reloads in the startup window and after a lost device, and only logs otherwise", () => {
-    const base = { stored: true, holds: true, override: null };
-    expect(failureAction({ ...base, reason: "pipeline", inStartup: true }))
-      .toEqual({ reload: "reload", notice: "Graphics switched to WebGL2 after a GPU error." });
-    expect(failureAction({ ...base, reason: "pipeline", inStartup: false })).toEqual({ reload: "none", notice: null });
-    expect(failureAction({ ...base, reason: "lost", inStartup: false }))
-      .toEqual({ reload: "reload", notice: "Graphics switched to WebGL2 after a GPU error." });
-  });
-
-  it("retries a first lost device on WebGPU", () => {
-    expect(failureAction({ stored: true, holds: false, override: null, reason: "lost", inStartup: false }))
-      .toEqual({ reload: "reload", notice: "Graphics restarted after a GPU error." });
-    expect(failureAction({ stored: true, holds: false, override: "webgpu", reason: "lost", inStartup: true }))
-      .toEqual({ reload: "reload", notice: "Graphics restarted after a GPU error." });
-  });
-
-  it("puts engine=webgl2 in the URL wherever a plain reload would start WebGPU again", () => {
-    // Storage refused: nothing remembers the failure, so the URL must.
-    expect(failureAction({ stored: false, holds: false, override: null, reason: "lost", inStartup: false }))
-      .toEqual({ reload: "webgl2", notice: "Graphics switched to WebGL2 after a GPU error." });
-    expect(failureAction({ stored: false, holds: false, override: null, reason: "pipeline", inStartup: true }))
-      .toEqual({ reload: "webgl2", notice: "Graphics switched to WebGL2 after a GPU error." });
-    // ?engine=webgpu outranks the memory, so it has to go from the URL.
-    expect(failureAction({ stored: true, holds: true, override: "webgpu", reason: "pipeline", inStartup: true }))
-      .toEqual({ reload: "webgl2", notice: "Graphics switched to WebGL2 after a GPU error." });
-  });
-
-  it("says the two lines", () => {
+describe("what a failure of the running WebGPU engine does: a live swap, never a reload", () => {
+  it("says one of two lines on the HUD once the swap is done", () => {
     expect(NOTICE_SWITCHED).toBe("Graphics switched to WebGL2 after a GPU error.");
     expect(NOTICE_RESTARTED).toBe("Graphics restarted after a GPU error.");
+  });
+
+  it("swaps a pipeline error or an uncaptured one onto WebGL2 at once, whenever it comes", () => {
+    expect(failureSwap({ stored: true, holds: true, reason: "pipeline", override: null }))
+      .toEqual({ engine: "webgl2", pin: false, notice: "Graphics switched to WebGL2 after a GPU error." });
+  });
+
+  it("retries a first lost device on a new WebGPU engine, and swaps a second in 24 h onto WebGL2", () => {
+    expect(failureSwap({ stored: true, holds: false, reason: "lost", override: null }))
+      .toEqual({ engine: "webgpu", pin: false, notice: "Graphics restarted after a GPU error." });
+    expect(failureSwap({ stored: true, holds: true, reason: "lost", override: null }))
+      .toEqual({ engine: "webgl2", pin: false, notice: "Graphics switched to WebGL2 after a GPU error." });
+  });
+
+  it("pins engine=webgl2 in the URL wherever the rule would otherwise start WebGPU again", () => {
+    // Storage refused the record, or ?engine=webgpu outranks it.
+    expect(failureSwap({ stored: false, holds: false, reason: "lost", override: null }))
+      .toEqual({ engine: "webgl2", pin: true, notice: "Graphics switched to WebGL2 after a GPU error." });
+    expect(failureSwap({ stored: false, holds: false, reason: "pipeline", override: null }).pin).toBe(true);
+    expect(failureSwap({ stored: true, holds: true, reason: "pipeline", override: "webgpu" }).pin).toBe(true);
+    expect(failureSwap({ stored: true, holds: false, reason: "lost", override: "webgpu" }))
+      .toEqual({ engine: "webgpu", pin: false, notice: "Graphics restarted after a GPU error." });
+  });
+
+  it("asks for the engine the rule then gives: the rebuild takes it by the rule, from the record and the URL", () => {
+    const env = { browser: 153, babylon: "9.18.0" };
+    const t0 = 1_790_000_000_000;
+    for (const reason of ["pipeline", "lost"] as const) {
+      for (const stored of [true, false]) {
+        for (const override of [null, "webgpu"] as const) {
+          for (const earlier of [null, recordFailure(null, "lost", env, t0 - 3_600_000)]) {
+            const record = recordFailure(earlier, reason, env, t0);
+            const holds = fallbackHolds(record, env, t0);
+            const act = failureSwap({ stored, holds, reason, override });
+            const remembered = stored && holds;
+            const url = act.pin ? "webgl2" : override;
+            for (const tier of WEBGPU_TIERS) {
+              expect(chooseEngine({ tier, override: url, remembered, on: true, fits: true })).toBe(act.engine);
+            }
+          }
+        }
+      }
+    }
+  });
+});
+
+describe("the rule's later rungs", () => {
+  it("gives WebGL2 to a tier below one it gave WebGL2, so a ladder's later rungs are WebGL2 by the rule", () => {
+    const order = ["low", "medium", "high"] as const;
+    for (const override of [null, "webgl2", "webgpu"] as const) {
+      for (const remembered of [false, true]) {
+        for (const on of [false, true]) {
+          for (const fits of [false, true]) {
+            for (const [i, upper] of order.entries()) {
+              if (chooseEngine({ tier: upper, override, remembered, on, fits }) !== "webgl2") continue;
+              for (const lower of order.slice(0, i)) {
+                expect(chooseEngine({ tier: lower, override, remembered, on, fits })).toBe("webgl2");
+              }
+            }
+          }
+        }
+      }
+    }
   });
 });
 
@@ -190,67 +223,6 @@ describe("withEngine", () => {
   });
 });
 
-describe("the startup window", () => {
-  it("closes 10 s after the first frame when nothing compiles", () => {
-    const w = createStartupWindow(1_000);
-    expect(w.open(2_000)).toBe(true);
-    w.frame(3_000);
-    expect(w.open(12_999)).toBe(true);
-    expect(w.open(13_000)).toBe(false);
-  });
-
-  it("stays open while effects keep compiling after the first frame, and does not reopen", () => {
-    const w = createStartupWindow(0);
-    w.frame(2_000);
-    w.compiled(9_000);
-    w.compiled(18_000);
-    expect(w.open(27_999)).toBe(true);
-    expect(w.open(28_000)).toBe(false);
-    w.compiled(29_000);
-    expect(w.open(29_001)).toBe(false);
-  });
-
-  it("does not start the quiet clock before the first frame", () => {
-    const w = createStartupWindow(0);
-    w.compiled(1_000);
-    expect(w.open(40_000)).toBe(true);
-    w.frame(40_000);
-    w.frame(45_000);
-    expect(w.open(49_999)).toBe(true);
-    expect(w.open(50_000)).toBe(false);
-  });
-
-  it("closes 60 s after the engine was made, whatever still compiles", () => {
-    const w = createStartupWindow(0);
-    w.frame(1_000);
-    for (let t = 5_000; t < 60_000; t += 5_000) w.compiled(t);
-    expect(w.open(59_999)).toBe(true);
-    expect(w.open(60_000)).toBe(false);
-    w.compiled(65_000);
-    expect(w.open(65_001)).toBe(false);
-  });
-});
-
-describe("the notice across a reload", () => {
-  it("is left once, taken once, and dropped where storage throws", () => {
-    const items = new Map<string, string>();
-    const store = {
-      getItem: (k: string) => items.get(k) ?? null,
-      setItem: (k: string, v: string) => void items.set(k, v),
-      removeItem: (k: string) => void items.delete(k),
-    } as unknown as Storage;
-    expect(takeNotice(store)).toBeNull();
-    leaveNotice(store, "Graphics restarted after a GPU error.");
-    expect([...items.keys()]).toEqual(["dayhike.engine.notice"]);
-    expect(takeNotice(store)).toBe("Graphics restarted after a GPU error.");
-    expect(takeNotice(store)).toBeNull();
-    const throwing = { getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); } } as unknown as Storage;
-    expect(() => leaveNotice(throwing, "x")).not.toThrow();
-    expect(takeNotice(throwing)).toBeNull();
-    expect(takeNotice(null)).toBeNull();
-  });
-});
-
 describe("the texture compression the device asks for", () => {
   it("is the three formats Babylon's KTX2 path reads, and only those the adapter has", () => {
     expect(WEBGPU_TEXTURE_FEATURES).toEqual(["texture-compression-bc", "texture-compression-etc2", "texture-compression-astc"]);
@@ -259,18 +231,6 @@ describe("the texture compression the device asks for", () => {
     expect(featuresToRequest(new Set(["texture-compression-astc", "texture-compression-etc2"])))
       .toEqual(["texture-compression-etc2", "texture-compression-astc"]);
     expect(featuresToRequest([])).toEqual([]);
-  });
-});
-
-describe("the line a late GPU error logs", () => {
-  it("promises WebGL2 on the next load only where that is true", () => {
-    expect(lateFailureLine(true, null)).toBe("WebGPU: a GPU error after startup; the next load draws with WebGL2.");
-    expect(lateFailureLine(true, "webgpu"))
-      .toBe("WebGPU: a GPU error after startup; remembered, but ?engine=webgpu in this URL still asks for WebGPU.");
-    expect(lateFailureLine(false, null))
-      .toBe("WebGPU: a GPU error after startup; storage refused the record, so this tab's URL now asks for WebGL2.");
-    expect(lateFailureLine(false, "webgpu"))
-      .toBe("WebGPU: a GPU error after startup; storage refused the record, so this tab's URL now asks for WebGL2.");
   });
 });
 

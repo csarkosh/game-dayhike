@@ -1,6 +1,6 @@
 /**
  * The WebGPU engine: the translators, the engine itself, and the watcher
- * that turns a failure on it into WebGL2. Only `main.ts`'s dynamic `import()`
+ * that reports a failure on it for the game to answer with a live swap. Only `main.ts`'s dynamic `import()`
  * loads this module, on the path where WebGPU could be the answer
  * (`engineChoice.ts`), so the WebGL2 bundle carries none of it, nor the
  * translators.
@@ -14,6 +14,7 @@
  * which the build content-hashes and serves with the game, never from a CDN.
  */
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.js";
+import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
 // Side-effect import, load-bearing: the WebGPU engine's own extensions (its
 // dynamic texture, compute shader, multi-render, render target and the rest),
 // which the WebGL2 imports the rest of the game makes never reach. Without
@@ -32,7 +33,6 @@ import glslangWasm from "@babylonjs/core/assets/glslang/glslang.wasm?url";
 import twgslJs from "@babylonjs/core/assets/twgsl/twgsl.js?url";
 import twgslWasm from "@babylonjs/core/assets/twgsl/twgsl.wasm?url";
 import {
-  createStartupWindow,
   WEBGPU_FETCH_MS,
   WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS,
@@ -262,35 +262,29 @@ export async function createWebGpuEngine(
 }
 
 /**
- * Watches a running WebGPU engine for the failures that end on WebGL2: an
- * effect that fails to translate or compile (with `catchTranslationFailures`
- * installed, a translation failure is one), or an uncaptured WebGPU error
- * (`"pipeline"`), and a lost device Babylon did not cause (`"lost"`). Each is
- * reported once, with whether it came inside the startup window
- * (`createStartupWindow`), whose clock starts now. Returns a function that
- * removes every observer and hands Babylon's log hook back.
+ * Watches a running WebGPU engine for the failures the game answers with a
+ * live swap of its renderer (`failureSwap`, `engineChoice.ts`): an effect that
+ * fails to translate or compile (with `catchTranslationFailures` installed, a
+ * translation failure is one), or an uncaptured WebGPU error (`"pipeline"`),
+ * and a lost device Babylon did not cause (`"lost"`; Babylon says nothing of
+ * the loss a disposed engine's destroyed device makes). Each is reported
+ * once. Returns a function that removes every observer and hands Babylon's
+ * log hook back; the game calls it before the engine is disposed.
  */
-export function watchWebGpu(
-  engine: AbstractEngine,
-  onFailure: (reason: "pipeline" | "lost", inStartup: boolean) => void,
-  now: () => number = () => performance.now(),
-): () => void {
-  const startup = createStartupWindow(now());
+export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void): () => void {
   const reported = new Set<"pipeline" | "lost">();
   const report = (reason: "pipeline" | "lost"): void => {
     if (reported.has(reason)) return;
     reported.add(reason);
-    onFailure(reason, startup.open(now()));
+    onFailure(reason);
   };
 
-  const frame = engine.onEndFrameObservable.addOnce(() => startup.frame(now()));
-  const compiled = engine.onAfterShaderCompilationObservable.add(() => startup.compiled(now()));
   const effectError = engine.onEffectErrorObservable.add(() => report("pipeline"));
   const lost = engine.onContextLostObservable.add(() => {
-    // The page reloads after a lost device (and, once it lands, swaps
-    // renderers), so Babylon's own restore, which it starts right after this
+    // The renderer is rebuilt on a fresh canvas after a lost device (a new
+    // engine), so Babylon's own restore, which it starts right after this
     // notification on the same engine, has nothing to do: it rebuilds what the
-    // reload is about to throw away, and throws on the way.
+    // swap is about to throw away, and throws on the way.
     (engine as unknown as { _restoreEngineAfterContextLost: (init: unknown) => void })._restoreEngineAfterContextLost =
       () => undefined;
     report("lost");
@@ -305,10 +299,26 @@ export function watchWebGpu(
   Logger.OnNewCacheEntry = onEntry;
 
   return () => {
-    engine.onEndFrameObservable.remove(frame);
-    engine.onAfterShaderCompilationObservable.remove(compiled);
     engine.onEffectErrorObservable.remove(effectError);
     engine.onContextLostObservable.remove(lost);
     if (Logger.OnNewCacheEntry === onEntry) Logger.OnNewCacheEntry = previous as (entry: string) => void;
   };
 }
+
+/**
+ * Calls `onCreated` after each frame of `engine` that made a render pipeline.
+ * On WebGPU an effect's shaders are translated when it is prepared, which
+ * `onAfterShaderCompilationObservable` reports as on WebGL2, but the pipeline
+ * that draws with them is made at their first draw, a frame or more later,
+ * and that is a hitch of its own: the governor voids its window as for a
+ * compile. Babylon counts the pipelines each frame made
+ * (`WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame`) before it tells
+ * the frame's end. Returns a function that stops listening.
+ */
+export function watchPipelines(engine: AbstractEngine, onCreated: () => void): () => void {
+  const observer = engine.onEndFrameObservable.add(() => {
+    if (WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame > 0) onCreated();
+  });
+  return () => engine.onEndFrameObservable.remove(observer);
+}
+
