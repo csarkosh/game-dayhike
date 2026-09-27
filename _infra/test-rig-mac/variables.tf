@@ -52,7 +52,7 @@ variable "macos" {
 variable "ssh_public_key" {
   description = <<-EOT
     The public key to log in with (the contents of an id_*.pub file). No
-    default: it identifies its owner, so it is set in the git-ignored
+    default: it identifies a person, so it is set in the git-ignored
     terraform.tfvars, not in a committed file.
   EOT
   type        = string

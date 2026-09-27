@@ -115,7 +115,7 @@ resource "google_compute_instance" "test_rig" {
 
     # `gcloud compute ssh` and `gcloud compute reset-windows-password` write
     # their keys into instance metadata. Without this, every apply after the
-    # first connection would strip them and lock the key's owner out.
+    # first connection would strip them and lock out whoever connected.
     ignore_changes = [
       metadata["ssh-keys"],
       metadata["windows-keys"],
