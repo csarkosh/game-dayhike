@@ -78,6 +78,15 @@ import {
   type SwapBindings,
 } from "./game/rendererSwap.js";
 import { releaseAtmosphere } from "./game/atmosphere.js";
+import {
+  GOVERNOR_LIMIT_MS,
+  GOVERNOR_LINE_MS,
+  createGovernor,
+  governorDecision,
+  governorLine,
+  steadyFrame,
+} from "./game/governor.js";
+import { showProbeScreen } from "./game/probeScreen.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
@@ -126,6 +135,9 @@ export type GameOptions = {
    * (`recordFallback`) so it is not tried again each hike.
    */
   onTierFallback(fallback: { attempted: QualityTier; built: QualityTier | null; source: TierSource }): void;
+  /** The governor lowered Auto's tier from `running` (`governor.ts`): the page
+   * records it (`withGovernorDrop`) so the next hike starts there too. */
+  onGovernorDrop(running: QualityTier): void;
   /** The graphics setting, for the pause screen's Settings: the player's
    * choice, whether the browser keeps it, Auto's pick, `?tier=`, a line for a
    * choice put back on Auto, and how to keep a new choice. */
@@ -215,8 +227,28 @@ function buildGame(
   let renderer: Renderer = first.renderer;
   canvas = first.canvas;
   made(() => renderer.dispose());
-  /** The tier the running renderer was built at. */
+  /** The tier the running renderer was built at, and where it came from. */
   let tier: QualityTier = first.tier;
+  let tierSource: TierSource = options.tierSource;
+  // The governor (`governor.ts`): fed every frame of play, restarted when the
+  // session starts and after a switch, acting at most once per hike.
+  const governor = createGovernor(performance.now());
+  let governorActed = false;
+  /** A tier is being switched: no frame of it is steady play. */
+  let switching = false;
+  /** A shader compiled since the last frame: that frame is a known hitch. */
+  let compiledSinceFrame = false;
+  let unwatchCompiles: (() => void) | null = null;
+  /** Marks the frames a shader compiled in, on the renderer now running. */
+  function watchCompiles(r: Renderer): void {
+    unwatchCompiles?.();
+    const observer = r.engine.onAfterShaderCompilationObservable.add(() => {
+      compiledSinceFrame = true;
+    });
+    unwatchCompiles = () => r.engine.onAfterShaderCompilationObservable.remove(observer);
+  }
+  watchCompiles(renderer);
+  made(() => unwatchCompiles?.());
   if (first.fellBack) options.onTierFallback({ attempted: options.tier, built: tier, source: options.tierSource });
   /** What the last switch of tier said, until the next choice: a fallback's line. */
   let swapError: string | null = null;
@@ -963,6 +995,7 @@ function buildGame(
       hostPeerId: selfPeerId,
     });
     session = host;
+    governor.restart(performance.now());
     escalation = ESCALATION_REST;
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
@@ -983,6 +1016,7 @@ function buildGame(
 
     stepAndRender = () => {
       const dt = frameSeconds();
+      feedGovernor(dt);
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
@@ -1065,6 +1099,7 @@ function buildGame(
       forest,
     });
     session = client;
+    governor.restart(performance.now());
     escalation = ESCALATION_REST;
     registerInteractables(client.world);
     activeWorld = client.world;
@@ -1117,6 +1152,7 @@ function buildGame(
 
     stepAndRender = () => {
       const dt = frameSeconds();
+      feedGovernor(dt);
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
@@ -1235,6 +1271,7 @@ function buildGame(
     r.setFreecam(lastFreecamView);
     // The new camera is on no one until its first sync.
     cameraOnPlayer = false;
+    watchCompiles(r);
   }
 
   const swapBindings: SwapBindings = {
@@ -1254,48 +1291,110 @@ function buildGame(
   };
 
   /**
-   * Switches the running hike to the tier `choice` resolves to, behind the
-   * pause screen's opaque ground: that paints first, then the synchronous
-   * swap, then the wait for the new scene before the ground lifts. The choice
-   * is kept only when the switch reaches its tier; a fallback keeps the choice
-   * as it was, says so, and reports the tier that failed so it is not tried
-   * again. When no tier builds at all, the Settings page and the landing say
-   * why, and the hike ends.
+   * Switches the running hike to the tier `choice` resolves to, the player's
+   * Apply on the pause screen. The choice is kept only when the switch reaches
+   * its tier (`switchTo`).
    */
   async function applyTier(choice: TierChoice): Promise<void> {
     const target = tierFor(choice);
-    if (disposed || broken) return;
+    // One switch at a time: the governor's may be under way.
+    if (disposed || broken || switching) return;
     if (target === tier) {
       options.quality.save(choice);
       return;
     }
-    swapError = null;
-    await new Promise<void>((resolve) => afterNextPaint(resolve));
-    if (disposed) return;
     const source = resolveTier({ override: options.quality.override, choice, auto: target }).source;
-    let got: ReturnType<typeof swapRenderer>;
+    await switchTo(target, source, choice);
+  }
+
+  /**
+   * Switches the running hike to `target`: the page paints first (the pause
+   * screen's opaque ground, or the governor's cover), then the synchronous
+   * swap, then the wait for the new scene. `save`, when given, is kept only
+   * when the switch reaches `target`; a fallback keeps the choice as it was,
+   * says so, and reports the tier that failed so it is not tried again. When
+   * no tier builds at all, the Settings page and the landing say why, and the
+   * hike ends. Returns the tier now running.
+   */
+  async function switchTo(target: QualityTier, source: TierSource, save: TierChoice | null): Promise<QualityTier> {
+    swapError = null;
+    switching = true;
     try {
-      got = swapRenderer({ renderer, canvas }, { tier: target, engine: null, fallbackTier: tier }, swapBindings);
-    } catch (error) {
-      broken = true;
-      // Each failed rung has taken itself down; this is for a throw from the
-      // old renderer's own dispose, which would leave its registration behind.
-      releaseAtmosphere();
-      console.error("quality: the renderer could not be rebuilt at any tier.", error);
-      swapError = "The graphics could not be restarted; returning to the title screen.";
-      options.onTierFallback({ attempted: target, built: null, source });
-      endSession("The graphics could not be restarted.");
-      throw error;
+      await new Promise<void>((resolve) => afterNextPaint(resolve));
+      if (disposed) return tier;
+      let got: ReturnType<typeof swapRenderer>;
+      try {
+        got = swapRenderer({ renderer, canvas }, { tier: target, engine: null, fallbackTier: tier }, swapBindings);
+      } catch (error) {
+        broken = true;
+        // Each failed rung has taken itself down; this is for a throw from the
+        // old renderer's own dispose, which would leave its registration behind.
+        releaseAtmosphere();
+        console.error("quality: the renderer could not be rebuilt at any tier.", error);
+        swapError = "The graphics could not be restarted; returning to the title screen.";
+        options.onTierFallback({ attempted: target, built: null, source });
+        endSession("The graphics could not be restarted.");
+        throw error;
+      }
+      renderer = got.renderer;
+      canvas = got.canvas;
+      tier = got.tier;
+      const outcome = switchOutcome(save ?? "auto", got);
+      if (save !== null && outcome.save !== null) options.quality.save(outcome.save);
+      swapError = outcome.line;
+      if (got.fellBack) options.onTierFallback({ attempted: target, built: tier, source });
+      else tierSource = source;
+      governor.restart(performance.now());
+      console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine webgl2`);
+      await whenSceneReady(renderer.scene);
+      return tier;
+    } finally {
+      switching = false;
     }
-    renderer = got.renderer;
-    canvas = got.canvas;
-    tier = got.tier;
-    const outcome = switchOutcome(choice, got);
-    if (outcome.save !== null) options.quality.save(outcome.save);
-    swapError = outcome.line;
-    if (got.fellBack) options.onTierFallback({ attempted: target, built: tier, source });
-    console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine webgl2`);
-    await whenSceneReady(renderer.scene);
+  }
+
+  /** Feeds the governor one frame of play, and acts on its verdict once. */
+  function feedGovernor(dt: number): void {
+    const steady = steadyFrame({
+      engaged: input.engaged,
+      menuOpen: menu.isOpen,
+      visible: document.visibilityState === "visible",
+      waitingItems: renderer.scene.getWaitingItemsCount(),
+      compiled: compiledSinceFrame,
+      switching,
+    });
+    compiledSinceFrame = false;
+    governor.frame(dt * 1000, performance.now(), steady);
+    if (governor.verdict === "drop" && !governorActed) {
+      governorActed = true;
+      void lowerTier();
+    }
+  }
+
+  /**
+   * The governor's drop, on Auto only and above low only: remembered for the
+   * next hike, then applied now through the live switch, under the probe's
+   * opaque screen with the controls held, so the rebuild and the scene coming
+   * back are not seen mid-play. Once, with a line saying so.
+   */
+  async function lowerTier(): Promise<void> {
+    const decision = governorDecision(governor.verdict, tier, tierSource);
+    if (decision === null || disposed || broken || switching) return;
+    const running = tier;
+    options.onGovernorDrop(running);
+    console.info(`quality governor: ${running} → ${decision.next}, 30 s of play under ${1000 / GOVERNOR_LIMIT_MS | 0} fps`);
+    const cover = showProbeScreen(container);
+    input.setSuppressed(true);
+    let now = running;
+    try {
+      now = await switchTo(decision.next, "auto", null);
+    } catch {
+      /* the switch has ended the hike and said so */
+    } finally {
+      cover.dispose();
+      if (!disposed) input.setSuppressed(bar.isOpen || menu.isOpen);
+    }
+    if (!disposed && now === decision.next) hud.flash(governorLine(decision.next), GOVERNOR_LINE_MS);
   }
 
   return {

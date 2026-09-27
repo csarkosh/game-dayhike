@@ -6,6 +6,7 @@ import {
   tierFor,
   verdictFor,
   verdictHolds,
+  withGovernorDrop,
   withProbeStarted,
   withVerdict,
   withinClass,
@@ -281,5 +282,24 @@ describe("a build-failure verdict", () => {
   it("is kept whatever the window's area, which it does not certify", () => {
     const verdict: AutoVerdict = { tier: "low", source: "build", pixels: 0, at: NOW };
     expect(withVerdict(null, RTX, 153, "discrete-modern", verdict)).toEqual({ v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0, verdict });
+  });
+});
+
+describe("the record after a governor drop", () => {
+  it("drops the running tier one step, for this class, at any window, and has nothing below low", () => {
+    const got = withGovernorDrop(null, "Apple GPU", 26, "apple-unknown", "high", 2_073_600, 1_790_000_000_000);
+    expect(got).toEqual({
+      v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+      verdict: { tier: "medium", source: "governor", pixels: 2_073_600, at: 1_790_000_000_000 },
+    });
+    expect(withGovernorDrop(null, "Apple GPU", 26, "apple-unknown", "medium", 2_073_600, 1_790_000_000_000)!.verdict!.tier).toBe("low");
+    expect(withGovernorDrop(null, "Apple GPU", 26, "apple-unknown", "low", 2_073_600, 1_790_000_000_000)).toBe(null);
+  });
+
+  it("is honoured by Auto at the next start, at any window, until it is 30 days old", () => {
+    const record = withGovernorDrop(null, SAFARI, 26, "apple-unknown", "high", 500_000, NOW - DAY)!;
+    expect(auto(record, 8_000_000)).toEqual({ tier: "medium", probeFrom: null });
+    expect(autoTier({ cls: "apple-unknown", cores: 8, memoryGb: null, record, gpu: SAFARI, browser: 26, pixels: 2_073_600, now: NOW + 30 * DAY }))
+      .toEqual({ tier: "medium", probeFrom: "high" });
   });
 });

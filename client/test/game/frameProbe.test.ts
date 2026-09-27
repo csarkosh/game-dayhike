@@ -532,3 +532,26 @@ describe("startFallbacks", () => {
     expect(startFallbacks("high", "discrete-modern", 2, 32)).toEqual(["low"]);
   });
 });
+
+describe("a governor's drop at the next start", () => {
+  it("starts the hike one tier down, for Auto only", async () => {
+    const RTX = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)";
+    const signals: GpuSignals = {
+      renderer: RTX, adapter: null, limits: null, adapterStatus: "none", cores: 16, memoryGb: 32, mobile: false, browser: 153,
+    };
+    const s = memoryStorage();
+    writeAutoRecord(s, {
+      v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
+      verdict: { tier: "medium", source: "governor", pixels: 500_000, at: 1_790_000_000_000 - 1 },
+    });
+    const deps: StartupDeps = {
+      storage: s, pixels: () => 8_000_000, now: () => 1_790_000_000_000, runStep: async () => null,
+      showScreen: () => ({ dispose: () => undefined }), setTimer: () => () => undefined,
+      whenVisible: async () => true, idleCadence: async () => 16.7, log: () => undefined,
+    };
+    expect(await startupTier(signals, { search: "", choice: "auto", cancelled: () => false }, deps))
+      .toEqual({ tier: "medium", source: "auto", cls: "discrete-modern" });
+    expect(await startupTier(signals, { search: "", choice: "high", cancelled: () => false }, deps))
+      .toEqual({ tier: "high", source: "choice", cls: "discrete-modern" });
+  });
+});

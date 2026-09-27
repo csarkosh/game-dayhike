@@ -34,7 +34,7 @@ import { browserEnv, gatherSignals, type GpuSignals } from "./game/gpuSignals.js
 import { START_FAILED_LINE, autoPick, startFallbacks, startHike, startupTier } from "./game/frameProbe.js";
 import { createHud } from "./game/hud.js";
 import { probeDeps } from "./game/probeScene.js";
-import { containerPixels, type QualityTier } from "./game/quality.js";
+import { containerPixels, withGovernorDrop, type QualityTier } from "./game/quality.js";
 import type { AutoSummary } from "./game/settings.js";
 import {
   createChoiceKeeper,
@@ -140,6 +140,18 @@ function onTierFallback(fallback: { attempted: QualityTier; built: QualityTier |
     if (out.notice !== null) choiceNotice = out.notice;
   }
   if (fallback.built === null) leaveNotice(pageSessionStorage(), "The last hike ended because the graphics could not be restarted.");
+}
+
+/** The governor lowered Auto's tier: remembered for this GPU, browser and
+ * class, so the next hike starts one step down too (`withGovernorDrop`). */
+function onGovernorDrop(running: QualityTier): void {
+  if (signals === null) return;
+  const pixels = app === null ? 0 : containerPixels(app);
+  const record = readAutoRecord(pageStorage());
+  const now = Date.now();
+  const pick = autoPick(signals, { record, pixels, now });
+  const next = withGovernorDrop(record, pick.gpu, signals.browser, pick.cls, running, pixels, now);
+  if (next !== null) writeAutoRecord(pageStorage(), next);
 }
 
 /** A line left for the landing by the hike that just ended, taken when the landing is built. */
@@ -624,6 +636,7 @@ function render(container: HTMLDivElement): void {
         tierSource: source,
         fallbackTiers: signals === null ? ["low"] : startFallbacks(tier, cls, signals.cores, signals.memoryGb),
         onTierFallback,
+        onGovernorDrop,
         quality: {
           choice: currentChoice,
           stored: choiceStored,

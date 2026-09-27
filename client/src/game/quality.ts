@@ -237,6 +237,26 @@ export function withVerdict(prev: AutoRecord | null, gpu: string, browser: numbe
 }
 
 /**
+ * The record after the governor drops the running tier one step: a verdict of
+ * source `governor` at the tier below, for this class, which holds at any
+ * window for 30 days, so the next hike starts there too. Null on low, which
+ * has nothing below it.
+ */
+export function withGovernorDrop(
+  prev: AutoRecord | null,
+  gpu: string,
+  browser: number,
+  cls: GpuClass,
+  running: QualityTier,
+  pixels: number,
+  now: number,
+): AutoRecord | null {
+  const below: QualityTier | null = running === "high" ? "medium" : running === "medium" ? "low" : null;
+  if (below === null) return null;
+  return withVerdict(prev, gpu, browser, cls, { tier: below, source: "governor", pixels, at: now });
+}
+
+/**
  * Auto's tier, and the tier to probe from before the first hike, or null. The
  * class gives a start tier and a ceiling (`CLASS_TIERS`); two cores or two
  * gigabytes, where reported, cap both at low (a missing value caps nothing).
