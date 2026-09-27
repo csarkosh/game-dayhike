@@ -7,7 +7,7 @@
 # budget_email       = "someone@example.com"
 # monthly_budget_usd = 30
 
-# region        = "us-east-1"  # or us-west-2
+# region        = "us-east-1"  # or us-west-2; chosen once (see README.md)
 # instance_type = "g6.xlarge"  # the L4 instead of the T4
 
 # Stop the machine without destroying it (the disk is kept and billed).

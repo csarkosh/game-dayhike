@@ -65,6 +65,15 @@ output "instance_state" {
   }
 }
 
+output "build" {
+  description = <<-EOT
+    What the machine is built from (its start-up script and network), as the
+    instance tag `build`. A change here replaces the machine, which is refused
+    while running is false (instance.tf).
+  EOT
+  value       = local.build_key
+}
+
 output "desktop_user" {
   description = "The Windows account the machine logs on automatically, and the one to sign in to DCV as."
   value       = var.desktop_user

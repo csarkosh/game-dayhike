@@ -2,7 +2,11 @@ variable "region" {
   description = <<-EOT
     AWS region the machine runs in. us-east-1 and us-west-2 both offer both
     machine sizes, at the same prices, and are where this account's quota for
-    on-demand G instances is set (it is per region).
+    on-demand G instances is set (it is per region). Chosen once: a later
+    change is refused (main.tf, terraform_data.region), because it would leave
+    the machine, its disk and its schedule billing in the old region while
+    Terraform forgot them. To move, `terraform destroy` with the old region
+    first.
   EOT
   type        = string
   default     = "us-east-1"
@@ -57,7 +61,9 @@ variable "image_id" {
 
 variable "disk_size_gb" {
   description = <<-EOT
-    Size of the gp3 boot disk. The public Windows Server 2025 image is 30 GB;
+    Size of the gp3 boot disk. A larger size grows the disk in place (Windows'
+    partition then needs extending by hand); AWS refuses a smaller one. The
+    public Windows Server 2025 image is 30 GB;
     50 leaves room for the NVIDIA driver (0.75 GB download, about 2 GB
     installed), Chrome and its test profiles, Amazon DCV, Node, Git, the
     repository with its LFS objects, and Windows' page file and updates. README.md
@@ -73,7 +79,7 @@ variable "disk_size_gb" {
 }
 
 variable "running" {
-  description = "true runs the machine; false stops it (billing only its disk) without destroying it."
+  description = "true runs the machine; false stops it (billing only its disk) without destroying it. An apply that would replace the machine is refused while this is false: a new machine must finish its first-boot set-up before it is stopped."
   type        = bool
   default     = true
 }
@@ -117,7 +123,8 @@ variable "desktop_user" {
     The local, non-administrator Windows account the machine logs on
     automatically at every boot, whose desktop Chrome runs in and which owns
     Amazon DCV's console session. Its password is made on the machine. It is
-    written into the start-up script: changing it replaces the machine.
+    written into the start-up script: changing it replaces the machine, which is
+    refused while running is false.
   EOT
   type        = string
   default     = "hiker"
@@ -133,7 +140,8 @@ variable "password_parameter" {
     Parameter Store name the machine writes the desktop user's password to, as
     a SecureString. Not managed by Terraform, so the password never enters
     state; `terraform destroy` leaves it (README.md says how to delete it). It
-    is written into the start-up script: changing it replaces the machine.
+    is written into the start-up script: changing it replaces the machine, which is
+    refused while running is false.
   EOT
   type        = string
   default     = "/test-rig/desktop-password"
@@ -145,7 +153,7 @@ variable "password_parameter" {
 }
 
 variable "display_width" {
-  description = "Width in pixels of the display DCV gives the console session at start (DCV's console-session-default-layout). Written into the start-up script: changing it replaces the machine."
+  description = "Width in pixels of the display DCV gives the console session at start (DCV's console-session-default-layout). Written into the start-up script: changing it replaces the machine, which is refused while running is false."
   type        = number
   default     = 1920
 
@@ -156,7 +164,7 @@ variable "display_width" {
 }
 
 variable "display_height" {
-  description = "Height in pixels of the display DCV gives the console session at start. Written into the start-up script: changing it replaces the machine."
+  description = "Height in pixels of the display DCV gives the console session at start. Written into the start-up script: changing it replaces the machine, which is refused while running is false."
   type        = number
   default     = 1080
 
@@ -167,7 +175,7 @@ variable "display_height" {
 }
 
 variable "vpc_cidr" {
-  description = "Private address range of the machine's network (and its one subnet). Any unused range works."
+  description = "Private address range of the machine's network (and its one subnet). Any unused range works. Changing it replaces the network and the machine, which is refused while running is false."
   type        = string
   default     = "10.70.0.0/24"
 }

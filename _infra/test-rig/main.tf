@@ -44,6 +44,26 @@ locals {
 
 data "aws_partition" "current" {}
 
+# The region is chosen once. The provider's region is not an attribute of any
+# resource, so changing var.region does not move or replace anything: every
+# resource is looked for in the new region, not found, and dropped from state,
+# while the machine, its disk and its schedule go on existing, and billing, in
+# the old one. This records the region of the first apply (a later change to
+# the input is ignored), and the network, which every regional resource here
+# is built on, refuses to be planned in another. Moving is `terraform destroy`
+# in the old region first.
+resource "terraform_data" "region" {
+  input = var.region
+
+  lifecycle {
+    ignore_changes = [input]
+  }
+}
+
+locals {
+  region_error = "This state's machine is in ${terraform_data.region.output}, and region is now ${var.region}. The region is chosen once: set it back, or run `terraform destroy` with the old region first and then apply with the new one."
+}
+
 # Read at plan time, never written into a file: the account id appears only in
 # the ARNs below and in state.
 data "aws_caller_identity" "current" {}

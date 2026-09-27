@@ -85,9 +85,10 @@ locals {
 }
 
 resource "aws_iam_role" "test_rig" {
-  name               = local.name
-  description        = "Rented Windows GPU machine"
-  assume_role_policy = local.assume_ec2_policy
+  name                  = local.name
+  description           = "Rented Windows GPU machine"
+  assume_role_policy    = local.assume_ec2_policy
+  force_detach_policies = true
 }
 
 resource "aws_iam_role_policy_attachment" "ssm_core" {
@@ -99,6 +100,18 @@ resource "aws_iam_role_policy" "test_rig" {
   name   = local.name
   role   = aws_iam_role.test_rig.id
   policy = local.instance_policy
+}
+
+# Exactly these policies, and no others: an attachment or inline policy added
+# to the role in any other way is removed at the next apply.
+resource "aws_iam_role_policy_attachments_exclusive" "test_rig" {
+  role_name   = aws_iam_role.test_rig.name
+  policy_arns = [aws_iam_role_policy_attachment.ssm_core.policy_arn]
+}
+
+resource "aws_iam_role_policies_exclusive" "test_rig" {
+  role_name    = aws_iam_role.test_rig.name
+  policy_names = [aws_iam_role_policy.test_rig.name]
 }
 
 resource "aws_iam_instance_profile" "test_rig" {
@@ -114,9 +127,24 @@ resource "aws_iam_instance_profile" "test_rig" {
 resource "aws_iam_role" "backstop" {
   count = var.backstop_stop_schedule != null ? 1 : 0
 
-  name               = "${local.name}-backstop-stop"
-  description        = "Stops the rented Windows GPU machine once a day"
-  assume_role_policy = local.assume_scheduler_policy
+  name                  = "${local.name}-backstop-stop"
+  description           = "Stops the rented Windows GPU machine once a day"
+  assume_role_policy    = local.assume_scheduler_policy
+  force_detach_policies = true
+}
+
+resource "aws_iam_role_policy_attachments_exclusive" "backstop" {
+  count = var.backstop_stop_schedule != null ? 1 : 0
+
+  role_name   = aws_iam_role.backstop[0].name
+  policy_arns = []
+}
+
+resource "aws_iam_role_policies_exclusive" "backstop" {
+  count = var.backstop_stop_schedule != null ? 1 : 0
+
+  role_name    = aws_iam_role.backstop[0].name
+  policy_names = [aws_iam_role_policy.backstop[0].name]
 }
 
 resource "aws_iam_role_policy" "backstop" {

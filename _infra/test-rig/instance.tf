@@ -33,6 +33,16 @@ locals {
   EOT
 
   max_run_minutes = floor(var.max_run_hours * 60)
+
+  # The start-up script's text and the user data around it, without the
+  # compressed payload: a change to either replaces the machine; a Terraform
+  # release that compresses differently does not.
+  setup_hash = sha256(join("\n", [local.setup_script, replace(local.user_data, base64gzip(local.setup_script), "")]))
+
+  # Everything whose change replaces the machine, recorded on it as the tag
+  # `build`, so that a later plan can tell, from the machine that exists, that
+  # it is about to be replaced.
+  build_key = sha256(jsonencode({ setup = local.setup_hash, vpc_cidr = var.vpc_cidr }))
 }
 
 # What a changed start-up script does to a machine that exists: it replaces
@@ -40,20 +50,38 @@ locals {
 # script on the old machine would change nothing a reader could see; replacing
 # is what `plan` shows ("replaced ... triggered by terraform_data.setup_script")
 # and costs a new first-boot set-up (about 40 minutes) and a new desktop
-# password. The trigger is the script's own text, not the user data's bytes, so
-# a Terraform release that compresses differently replaces nothing.
+# password.
 resource "terraform_data" "setup_script" {
-  input = sha256(local.setup_script)
+  input = local.setup_hash
+}
+
+# The machines of this module that exist now, read from AWS at every plan, and
+# the build each was made from.
+data "aws_instances" "existing" {
+  instance_tags        = { Name = local.name, purpose = local.tags.purpose }
+  instance_state_names = ["pending", "running", "stopping", "stopped"]
+}
+
+data "aws_instance" "existing" {
+  for_each    = toset(data.aws_instances.existing.ids)
+  instance_id = each.key
+}
+
+locals {
+  # True when a machine exists whose build differs from this one: this apply
+  # replaces it.
+  replaces_machine = anytrue([for m in data.aws_instance.existing : lookup(m.tags, "build", "") != local.build_key])
 }
 
 resource "aws_instance" "test_rig" {
   ami           = var.image_id != null ? var.image_id : data.aws_ssm_parameter.windows.insecure_value
   instance_type = var.instance_type
 
-  subnet_id                   = aws_subnet.test_rig.id
-  vpc_security_group_ids      = [aws_security_group.test_rig.id]
-  associate_public_ip_address = true
-  iam_instance_profile        = aws_iam_instance_profile.test_rig.name
+  # No associate_public_ip_address: the public address comes from the
+  # subnet's map_public_ip_on_launch (network.tf says why).
+  subnet_id              = aws_subnet.test_rig.id
+  vpc_security_group_ids = [aws_security_group.test_rig.id]
+  iam_instance_profile   = aws_iam_instance_profile.test_rig.name
 
   # A shutdown from inside Windows (setup.ps1's timer, or anyone's) stops the
   # machine and keeps its disk; it never terminates it.
@@ -83,6 +111,8 @@ resource "aws_instance" "test_rig" {
     # machine shuts itself down. A tag, not part of the script, so a change is
     # applied in place and never restarts or replaces the machine.
     max-run-minutes = tostring(local.max_run_minutes)
+    # What the machine was built from (locals above).
+    build = local.build_key
   }
 
   lifecycle {
@@ -100,11 +130,21 @@ resource "aws_instance" "test_rig" {
       condition     = length(local.user_data) <= 16384
       error_message = "The start-up script is ${length(local.user_data)} bytes; EC2 user data is capped at 16384."
     }
+
+    # A new machine must never be stopped before its first set-up has
+    # finished: stopped seconds into Windows' own first boot, it is hard-stopped
+    # by EC2 after a few minutes and may never boot again. So a replacement is
+    # refused while the machine is meant to be stopped.
+    precondition {
+      condition     = var.running || !local.replaces_machine
+      error_message = "This apply replaces the machine (its start-up script, or vpc_cidr, changed), and running is false. A new machine must finish its first-boot set-up before it is stopped: apply with running = true, wait for C:\\ProgramData\\test-rig\\verified, then apply with running = false."
+    }
   }
 
   depends_on = [
     aws_iam_role_policy.test_rig,
-    aws_iam_role_policy_attachment.ssm_core,
+    aws_iam_role_policy_attachments_exclusive.test_rig,
+    aws_iam_role_policies_exclusive.test_rig,
     aws_route_table_association.test_rig,
   ]
 }

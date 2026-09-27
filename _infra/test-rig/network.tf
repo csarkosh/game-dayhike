@@ -28,12 +28,31 @@ resource "aws_vpc" "test_rig" {
   enable_dns_hostnames = true
 
   tags = { Name = local.name }
+
+  # Every resource here that lives in a region is built on this network, and
+  # so is planned only after it (a targeted plan included): this one check
+  # refuses them all in another region (main.tf, terraform_data.region).
+  lifecycle {
+    precondition {
+      condition     = terraform_data.region.output == var.region
+      error_message = local.region_error
+    }
+  }
 }
 
 resource "aws_subnet" "test_rig" {
   vpc_id            = aws_vpc.test_rig.id
   cidr_block        = var.vpc_cidr
   availability_zone = local.availability_zone
+
+  # The machine's public IPv4 address comes from here, not from the instance's
+  # associate_public_ip_address. The AWS provider reads that argument back from
+  # the network interface's public-address association, which a stopped
+  # machine does not have, and the argument forces replacement: set on the
+  # instance, every plan against a stopped machine would replace it. Left
+  # unset there, it is only read, never compared, and the subnet gives every
+  # start its address.
+  map_public_ip_on_launch = true
 
   tags = { Name = local.name }
 
