@@ -586,8 +586,10 @@ takes the look the game's text inputs share (the landing's join field:
 `rgba(255, 255, 255, 0.08)`, a 1 px `rgba(255, 255, 255, 0.25)` border, a 4 px
 radius) in both hosts, with `appearance: none` and a caret of its own: two
 small `linear-gradient` triangles in the text's colour at the right, clear of
-the label by a `2.25rem` right padding. It sizes to its longest option, never
-narrower than the `14rem` of the buttons beneath it nor wider than its panel.
+the label by a `2.25rem` right padding. It sizes to its longest option, at
+least `14rem` (the width of the pause page's Apply and Back; on a phone the
+title screen's Back is full width, so wider than the select) and never wider
+than its panel.
 The open list is the browser's: the select carries `color-scheme: dark` and
 each `option` a dark fill (`#16191c`) and a light text (`#eaf1f1`), so the list
 is not drawn light on the dark page. Keyboard focus shows the ring the
@@ -595,9 +597,12 @@ buttons show (`outline: 2px solid var(--btn-edge-lit)`, offset 3 px); disabled,
 the text, fill and border dim and the pointer stops reading as a hand. Apply
 and Back are plain `<button>`s, so they take the host's own rules
 (`.landing button`, `.pausemenu button`) and the host's tokens. Keyboard and
-touch are the browser's own for a select: Tab reaches it, the arrow keys and
-type-ahead letters change it where the list is closed, a tap opens the
-platform's picker.
+touch are the browser's own for a select, and differ by platform. Tab reaches
+it everywhere. On a closed select, type-ahead letters change it in Chrome,
+Firefox and Safari; the arrow keys step it on Windows and Linux and in Firefox
+everywhere, while on macOS Chrome and Safari open the list on Up, Down and
+Space, and the choice lands on Return or a click in the list. A tap opens the
+platform's picker on Android and iOS.
 
 ```
 SETTINGS
@@ -625,12 +630,12 @@ nothing is saved.
 ### 8.3 Title and pause
 
 - **Title**: choosing an option saves it at once. The next Play builds the hike
-  at it; the landing's backdrop stays low. Opening the panel puts the focus on
-  the select.
+  at it; the landing's backdrop stays low. Opening the panel moves the focus
+  into it (§8.5).
 - **Pause**: choosing an option selects it without saving; **Apply** saves it
   and applies it live (§9); **Back** or Escape discards an unapplied selection.
-  The focus goes to the select on entering Settings and again once a choice is
-  applied (Apply goes disabled and loses it).
+  The focus moves into the page on entering Settings, and again once a choice
+  is applied (Apply goes disabled and loses it), by the rule of §8.5.
   Apply is disabled when the selection resolves to the tier already running,
   while `?tier=` is in the address, and while applying. While applying the
   panel's ground goes opaque, Apply reads "Applying…", and Back and Escape do
@@ -649,6 +654,15 @@ nothing is saved.
   and nothing in the game calls `preventDefault` on them while held, so the
   select still sees every key. `/` still opens the command bar over the pause
   menu, as it does from any control there.
+- **Nothing pressed on a form control stays held.** The game's input
+  (`input.ts`) ignores a keydown or a mousedown aimed at a form control (a
+  select or its options, a text field, a text area, anything editable). A
+  select's open list takes the keyboard and the mouse for itself, so the Space
+  or the click that opened it can lose its release to the list; recorded, it
+  would leave the player jumping, or Interact held, after Resume. Releases are
+  still heard from anywhere, so a key pressed in the game and released over a
+  control is let go, and keys pressed in the game stay tracked through the
+  menu.
 
 ### 8.4 Persistence
 
@@ -657,6 +671,19 @@ read and written through `tierChoice.ts` with every access in `try`/`catch`
 (`playerName.ts`'s pattern, `safeStorage` on the WebGPU branch). Anything else
 there reads as Auto. Where the storage accessor or a write throws, the page keeps
 the choice in memory for its own life and says so (§8.2).
+
+### 8.5 Where the focus goes
+
+As Settings opens, and on the pause screen once a choice is applied, the
+focus goes to the select only when a key made the press that got there
+(Enter or Space on the Settings button, or on Apply). After a mouse, a finger
+or a pen it goes to the screen's heading instead: on iOS a select focused
+inside a tap can bring its picker up unasked. The heading takes focus from
+script only (`tabIndex` -1) and shows no ring; a screen reader is carried
+into the screen either way, and Tab goes on to the select. Both hosts tell the
+two apart the same way, by the click's `detail` (`openerOf` in `settings.ts`):
+a click no pointer made counts 0. The title screen's panel reached with no
+press on its button, by the browser's Forward, opens as for a pointer.
 
 ## 9. Applying a tier mid-hike
 
