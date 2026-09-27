@@ -41,7 +41,7 @@ More in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Assets
 
-Models, ground textures and wildlife calls live under `client/assets/` and are committed through Git LFS. `client/assets/catalog.json` lists every one of them, and [`CREDITS.md`](CREDITS.md) credits the third-party work, which the in-game Credits screen renders. If a model is missing the game falls back to capsules and still runs.
+Models, ground textures and wildlife calls live under `client/assets/` and are committed through Git LFS. `client/assets/catalog.json` lists every one of them, and [`CREDITS.md`](CREDITS.md) credits the third-party work, which the in-game Credits screen renders. If a model is missing the game draws a stand-in and still runs: a capsule for a hiker or the Hollow, a plain box for the car, the kiosk and a sign post, a timber cross for the body at the crest.
 
 ## Stack
 
@@ -65,7 +65,7 @@ npm run lint
 npm run typecheck
 ```
 
-> **Without `git-lfs`** the model files clone as text pointers, and every model silently falls back to a capsule.
+> **Without `git-lfs`** the model files clone as text pointers, and every model silently falls back to its stand-in: capsules for the hikers and the Hollow, plain boxes at the trailhead and the sign posts.
 
 ## Where it lives
 

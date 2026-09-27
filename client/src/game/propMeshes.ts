@@ -11,12 +11,17 @@ import { CHUNK_SIZE } from "../sim/forestConstants.js";
  * collision box and never rendered. Boxes follow the player by chunk, like
  * the collision broadphase; the window is a square of chunks.
  *
- * Three materials are the exception, each already drawn by a mesh elsewhere:
+ * Six materials are the exception, each already drawn by a mesh elsewhere:
  * `trunk` — the forest meshes draw the tree the box belongs to; `rock` — the
  * clutter meshes draw the boulder's own GLB (`clutterMeshes.ts`, sited by the
  * same deterministic function over the same seed); `cliff` — the cliff
  * meshes draw the rock-wall module a row of boxes belongs to
- * (`cliffMeshes.ts`, from the same `cliffCellRuns` the collider pass reads).
+ * (`cliffMeshes.ts`, from the same `cliffCellRuns` the collider pass reads);
+ * `car` and `kiosk` — the trailhead meshes draw the SUV and the kiosk standing
+ * on those two boxes, and the box itself while a model is missing
+ * (`trailheadMeshes.ts`); `signpost` — the sign meshes draw the fingerpost
+ * that stands on it, and the box while the post model is missing
+ * (`signMeshes.ts`).
  * Without this exception a `rock` box would paint a flat-topped grey slab
  * over every boulder in the game: the collider's square footprint and
  * peak-height top do not follow the mesh's true (round, often domed)
@@ -25,7 +30,7 @@ import { CHUNK_SIZE } from "../sim/forestConstants.js";
  * leaning wall, would stand as a grey block around every module.
  */
 export const PROP_MESH_RADIUS_CHUNKS = 3;
-export const PROP_DRAWN_ELSEWHERE: ReadonlySet<string> = new Set(["trunk", "rock", "cliff"]);
+export const PROP_DRAWN_ELSEWHERE: ReadonlySet<string> = new Set(["trunk", "rock", "cliff", "car", "kiosk", "signpost"]);
 
 export type PropMeshes = {
   update(x: number, z: number): void;

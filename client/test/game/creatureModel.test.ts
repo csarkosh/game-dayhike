@@ -20,7 +20,7 @@ describe("resolveCreatureAssets", () => {
     const found = resolveCreatureAssets(
       {
         assets: [
-          { id: "enemy.grunt", kind: "character", output: "models/enemy.grunt.glb", animations: { idle: "I" } },
+          { id: "ranger.nathan", kind: "character", output: "models/ranger.nathan.glb", animations: { idle: "idle" } },
           {
             id: "wildlife.elk",
             kind: "creature",

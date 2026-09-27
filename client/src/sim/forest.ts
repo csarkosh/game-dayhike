@@ -139,6 +139,10 @@ const PROBE_CHUNKS: readonly (readonly [number, number])[] = [
   // still moves when pass 8 is removed, and every prop constant is a pass
   // tunable in `registryDigest` besides. Widening it to [-9, -1] for the post
   // alone would churn every level id for nothing.
+  //
+  // Re-read 2026-09-26: the post is gone and the sign became the kiosk at
+  // the sign's own site, so pass 8 emits two props, the kiosk and the car,
+  // and both still land in [-9, 0]. The window is unchanged.
   [-10, 0],
   [-9, 0],
   // Extended 2026-09-15 for pass 9 (signs): a junction post for PROBE_SEED.

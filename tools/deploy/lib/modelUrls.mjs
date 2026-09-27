@@ -2,7 +2,7 @@
 // longer knowable in advance.
 //
 // Models used to ship from client/public/ at fixed paths, so `deploy:verify`
-// could fetch `/assets/models/enemy.grunt.glb` by name. They now go through
+// could fetch `/assets/models/<id>.glb` by name. They now go through
 // Vite's `?url` pipeline (client/src/game/assetUrls.ts) and land at
 // `/assets/<id>-<hash>.glb`, where the hash changes whenever the bytes do.
 // Ground textures (`client/src/game/groundMaps.ts`, `terrainTexture.ts`) are
@@ -20,7 +20,7 @@
  * prefix of one.
  *
  * The hash alphabet is base64url, so it can itself contain `-`. With an open
- * `+` quantifier that made `enemy.grunt` match `/assets/enemy.grunt-v2-BCzVRFA1.glb`
+ * `+` quantifier that made `ranger.nathan` match `/assets/ranger.nathan-v2-BCzVRFA1.glb`
  * — a DIFFERENT model's URL — because the `+` happily swallowed `v2-` as part of
  * the hash. `deploy:verify` would then have fetched the sibling, found a real
  * glTF behind it, and reported the id it never actually checked as healthy: a
@@ -41,7 +41,7 @@ const HASH_LENGTH = 8;
  * hashed it the same way.
  *
  * @param {string} source  JavaScript source of a deployed chunk.
- * @param {readonly string[]} ids  Catalog ids, e.g. `['enemy.grunt']`.
+ * @param {readonly string[]} ids  Catalog ids, e.g. `['ranger.nathan']`.
  * @param {string} ext  File extension, without the dot (`'glb'`, `'webp'`).
  * @returns {Record<string, string>} id → the full quoted URL, base-absolute
  *   (`/dayhike/assets/<id>-<hash>.<ext>`) when Vite was built with a non-root
@@ -53,8 +53,8 @@ const HASH_LENGTH = 8;
 function findAssetUrls(source, ids, ext) {
   const found = {};
   for (const id of ids) {
-    // The id contains a `.` ("enemy.grunt"), which must not be a wildcard here:
-    // otherwise `enemy.grunt` would also match `enemyXgrunt`, and worse, a
+    // The id contains a `.` ("ranger.nathan"), which must not be a wildcard here:
+    // otherwise `ranger.nathan` would also match `rangerXnathan`, and worse, a
     // shorter id would match inside a longer one's URL.
     const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Anchoring on `/assets/` and requiring `-<hash>` at exactly HASH_LENGTH

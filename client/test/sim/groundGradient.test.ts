@@ -691,6 +691,12 @@ describe("the level id does not move", () => {
     // grass now reads 0.9375 where it read 0.5, so a peer on the old floor
     // scatters grass, meadow cards and flowers differently under every
     // closed canopy. Deliberate: an old client cannot join a new host.
-    expect(passHash()).toBe(1907808213);
+    // Re-baselined 2026-09-26 from 1907808213: the poster post left pass 8
+    // and the trailhead sign became the kiosk. POST_HALF_* and
+    // POST_ROAD_U/Z are gone, SIGN_HALF_* became KIOSK_HALF_* (registryDigest
+    // moves), and in probe chunk [-9, 0] the sign's box of material "pillar"
+    // is now the wider, taller "kiosk" and the car's "crate" is "car"
+    // (probeDigest moves). A peer still drawing the post cannot join.
+    expect(passHash()).toBe(-311867473);
   });
 });

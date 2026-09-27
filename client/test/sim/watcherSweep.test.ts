@@ -182,9 +182,19 @@ function sweep(token: string): Case[] {
  * showed face down the stem from the pad, into the road — and the top fork
  * the easy one, 192 of 192. The range ran 25.00–90.00 m. The sightline is the
  * refusal to read when the 90 m range is next tuned.
+ *
+ * Re-pinned 2026-09-26 from 881 shown and 79 264 admitted: the trailhead's
+ * board became the kiosk, whose hull (2.2 × 2.5 × 1.1 m) is wider and taller
+ * than the 1.2 × 2.0 m board and stands about 7 m from the pad's node. Its
+ * box now cuts the lead's sightline to six placements the board let through
+ * (hollow8, 31 and 46 facing down; hollow12, 24 and 49 facing right), each
+ * the first one admitted at its stand, so those six pad stands no longer
+ * show within 120 ticks: 875 of 936, the pad 151 of 200 (37 of the 61 that
+ * never showed face down from the pad), 78 955 placements admitted and the
+ * sightline refusing 59 815. No other stand moved.
  */
 describe("the watcher on fifty seeds", () => {
-  it("stands only where every rule holds, and shows within 120 ticks on 881 of 936 stands", () => {
+  it("stands only where every rule holds, and shows within 120 ticks on 875 of 936 stands", () => {
     const cases: Case[] = [];
     for (let i = 0; i < 50; i++) cases.push(...sweep(`hollow${i}`));
     const shown = cases.filter((c) => c.shownAt !== -1);
@@ -208,14 +218,14 @@ describe("the watcher on fifty seeds", () => {
       `never shown: ${never.join("; ")}`,
     ].join("\n");
     expect(cases.length, summary).toBe(936);
-    expect(shown.length, summary).toBeGreaterThanOrEqual(881);
-    expect(admitted, summary).toBeGreaterThanOrEqual(79264);
+    expect(shown.length, summary).toBeGreaterThanOrEqual(875);
+    expect(admitted, summary).toBeGreaterThanOrEqual(78955);
     expect(refused.flee, summary).toBe(0);
     expect(Math.abs(ranges[0]! - 25), summary).toBeLessThanOrEqual(0.5);
     expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
     expect(bySlot.map((b) => `${b.slot} ${b.stands}`), summary).toEqual(["climb 0 200", "climb 0.25 200", "climb 0.5 200", "climb 0.75 200", "top fork 192"]);
-    const floors = [157, 196, 192, 200, 192];
-    const admittedFloors = [6531, 12547, 17832, 25745, 24154];
+    const floors = [151, 196, 192, 200, 192];
+    const admittedFloors = [6222, 12547, 17832, 25745, 24154];
     bySlot.forEach((b, i) => {
       expect(b.shown, summary).toBeGreaterThanOrEqual(floors[i]!);
       expect(b.admitted, summary).toBeGreaterThanOrEqual(admittedFloors[i]!);

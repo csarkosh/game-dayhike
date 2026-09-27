@@ -8,7 +8,7 @@ import {
 } from "../../src/sim/terrain.js";
 import type { Brush } from "../../src/sim/level.js";
 import {
-  CAR_HALF, POST_HALF, SIGN_HALF, CAR_ROAD_Z, PROPS, propSite,
+  CAR_HALF, CAR_ROAD_Z, PROPS, propSite, roadProp,
 } from "../../src/sim/passes/trailhead.js";
 import { ROAD_BED_HALF } from "../../src/sim/road.js";
 import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
@@ -44,22 +44,32 @@ describe("the trailhead pass", () => {
   // against the 120 s box once the whole suite competed for the CPU. The tests
   // were not failing, they were running out of clock.
   setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
-  it("emits a post and a sign on the flat, once, in the road frame", () => {
+  it("holds two props, the kiosk and the car, found by material", () => {
+    expect(PROPS.map((p) => p.material)).toEqual(["kiosk", "car"]);
+    expect(roadProp("kiosk").half).toEqual({ x: 1.1, y: 1.25, z: 0.55 });
+    expect(roadProp("car").half).toEqual({ x: 0.9, y: 0.8, z: 2.3 });
+    expect(() => roadProp("pillar")).toThrow();
+  });
+
+  it("emits one kiosk and one car at the trailhead, once, in the road frame", () => {
     for (const seed of [0x5eed, 1, 12345]) {
       const v = terrainVariant("olympic")!;
       const graph = v.trailGraph!(seed);
       const th = graph.trailhead;
       const grid = createChunkGrid(seed);
       const props = propsAround(grid, th.x, th.z);
-      const pillars = props.filter((b) => b.material === "pillar");
-      expect(pillars.length, `seed ${seed}`).toBe(2);
-      const sizes = pillars.map((p) => p.box.max.y - p.box.min.y).sort();
-      expect(sizes[0]).toBeCloseTo(2 * POST_HALF.y, 6);
-      expect(sizes[1]).toBeCloseTo(2 * SIGN_HALF.y, 6);
-      // The EMITTED boxes, not a recomputed centre: each pillar's road-side
+      expect(props.filter((b) => b.material === "pillar" || b.material === "crate"), `seed ${seed}`).toHaveLength(0);
+      const kiosks = props.filter((b) => b.material === "kiosk");
+      expect(kiosks.length, `seed ${seed}`).toBe(1);
+      expect(props.filter((b) => b.material === "car").length, `seed ${seed}`).toBe(1);
+      const k = kiosks[0]!.box;
+      expect(k.max.x - k.min.x).toBeCloseTo(2.2, 6);
+      expect(k.max.y - k.min.y).toBeCloseTo(2.5, 6);
+      expect(k.max.z - k.min.z).toBeCloseTo(1.1, 6);
+      // The EMITTED box, not a recomputed centre: the kiosk's road-side
       // face clears the pavement. The sweep below holds the same
       // predicate on the frame itself over all 227 seeds.
-      for (const b of pillars) {
+      for (const b of kiosks) {
         const zMid = (b.box.min.z + b.box.max.z) / 2;
         expect(b.box.min.x - roadCenterXOf(seed, zMid), `seed ${seed}`).toBeGreaterThanOrEqual(ROAD_BED_HALF + 0.5);
       }
@@ -77,11 +87,11 @@ describe("the trailhead pass", () => {
       // 0.5 off the pavement edge AT ITS OWN z (the centreline curves, so the
       // pass evaluates it at the prop's z, not at the anchor's), on whichever
       // side of the pad `propSite` puts it.
-      const carProp = PROPS.find((p) => p.material === "crate")!;
+      const carProp = roadProp("car");
       const car0 = propSite(graph, v.roadCenterX!, seed, carProp);
       const carRx = roadCenterXOf(seed, car0.z);
       const chunk = chunkHolding(seed, car0.x, car0.z);
-      const car = chunk.props.find((p) => p.material === "crate");
+      const car = chunk.props.find((p) => p.material === "car");
       expect(car, `seed ${seed}`).toBeDefined();
       expect(car!.box.min.x - carRx).toBeCloseTo(ROAD_BED_HALF + 0.5, 6);
       expect(car!.box.max.z - car!.box.min.z).toBeCloseTo(2 * CAR_HALF.z, 6);
@@ -106,7 +116,8 @@ describe("the trailhead pass", () => {
     // moved to 9 the trail leaves the pad inland, so "away" pointed at the
     // highway: 38 of the first 40 sweep seeds measured with the
     // post or the sign standing on the pavement, and this sweep never looked
-    // at the road at all. Both frames are gone; every prop is placed at
+    // at the road at all. (The post has since gone, and the sign is now
+    // the kiosk.) Both frames are gone; every prop is placed at
     // a fixed u in the ROAD frame, and this asserts the consequence — the
     // box's ROAD-SIDE FACE (min.x, the road is at lower x) is at least
     // ROAD_BED_HALF + 0.5 from the centreline at the prop's own z.
@@ -115,7 +126,7 @@ describe("the trailhead pass", () => {
     // prop's centre to every edge's centreline (trailDistance, a plain min
     // over the graph's edges) must clear the bed's half-width plus the prop's
     // own half-extent plus a 0.5 m margin. The car is inside the gate now
-    // that it is one of the same three props; at u ≈ 6.9 it is outside the
+    // that it is one of the same props; at u ≈ 6.9 it is outside the
     // bowl the trail graph is built in, so its own margin is large.
     //
     // NO EXCEPTIONS LIST: track the WORST seed per prop and assert once, the
@@ -141,6 +152,9 @@ describe("the trailhead pass", () => {
       console.info(`[trailhead] ${p.material} u=${p.u}: mirrored on ${mirrored}/${SEEDS.length} seeds, worst road margin ${worstRoad.toFixed(2)} m, worst bed margin ${worstBed.toFixed(2)} m`);
       expect(worstRoad, `${p.material} u=${p.u} off the road bed, worst seed ${worstRoadSeed}`).toBeGreaterThanOrEqual(0);
       expect(worstBed, `${p.material} u=${p.u} clear of the trail bed, worst seed ${worstBedSeed}`).toBeGreaterThanOrEqual(0);
+      // The kiosk is 0.5 m wider than the sign it replaced, at the sign's own
+      // site; the sign was mirrored on 15 seeds, and so is the kiosk.
+      expect(mirrored, `${p.material} mirrored`).toBe(p.material === "kiosk" ? 15 : 7);
     }
   }, 300000);
 });

@@ -10,7 +10,7 @@ describe("modelUrl", () => {
     // The whole point of the indirection: the catalog is the list of models,
     // and each entry's `output` is the key. A catalog entry that `modelUrl`
     // cannot resolve is a model that will not load in the game.
-    expect(OUTPUTS.length).toBe(33);
+    expect(OUTPUTS.length).toBe(42);
     for (const output of OUTPUTS) {
       expect(typeof modelUrl(output)).toBe("string");
       expect(modelUrl(output).length).toBeGreaterThan(0);
@@ -56,7 +56,7 @@ describe("modelUrl", () => {
   });
 
   it("throws on an inherited Object.prototype key instead of returning a function", () => {
-    // `resolveEnemyAssets` admits any non-empty string as an `output`, so a
+    // `resolveCharacterAssets` admits any non-empty string as an `output`, so a
     // malformed catalog can reach here with "toString". On a plain object that
     // resolves to an inherited FUNCTION typed as a string, which Babylon would be
     // handed as a URL — the exact silent failure the throw exists to prevent.

@@ -69,10 +69,18 @@ export function setLamp(
  * measured the falloff arithmetic, not the added light. */
 export const LIGHT_BUDGET = 2 + MAX_PLAYERS;
 
+/**
+ * Raises one material's light cap to the budget. For materials that never
+ * pass through the scene's new-material observable: a model loaded into an
+ * asset container is built while the scene refuses new entities, so
+ * `budgetLights` never sees its materials and they would keep Babylon's
+ * default of 4, dropping headlamps beyond the second hiker.
+ */
+export function budgetMaterial(m: Material): void {
+  if ("maxSimultaneousLights" in m) (m as { maxSimultaneousLights: number }).maxSimultaneousLights = LIGHT_BUDGET;
+}
+
 export function budgetLights(scene: Scene): void {
-  const apply = (m: Material): void => {
-    if ("maxSimultaneousLights" in m) (m as { maxSimultaneousLights: number }).maxSimultaneousLights = LIGHT_BUDGET;
-  };
-  for (const m of scene.materials) apply(m);
-  scene.onNewMaterialAddedObservable.add(apply);
+  for (const m of scene.materials) budgetMaterial(m);
+  scene.onNewMaterialAddedObservable.add(budgetMaterial);
 }

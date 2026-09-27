@@ -84,9 +84,11 @@ class SkinShadingPlugin extends MaterialPluginBase {
  * qualifies — the injected code reads the MR sample, which the shader only
  * declares under REFLECTIVITY. Returns whether it attached.
  *
- * The decline is silent: both shipped enemies (`enemy.grunt`,
- * `enemy.skeleton`) have no metallicRoughness texture, so this is the
- * expected case on every game load, not a fault to surface. `attachSkinShading`
+ * The decline is silent: the rangers ship no metallicRoughness texture, so
+ * this is the expected case on every game load, not a fault to surface. The
+ * Hollow's body does ship one and takes the plugin, but that texture's red
+ * channel (the skin mask) is near zero, so it shades as it would without.
+ * `attachSkinShading`
  * returning `false` is the only signal when an attachment is expected and
  * did not happen.
  */

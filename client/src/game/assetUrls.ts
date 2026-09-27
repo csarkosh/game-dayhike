@@ -3,7 +3,7 @@
  *
  * Shipped .glb output used to live in `client/public/assets/models/`. Vite copies
  * `public/` through verbatim, so those files shipped at fixed, unhashed URLs —
- * `/assets/models/enemy.grunt.glb` — and Firebase could only cache them for an
+ * `/assets/models/ranger.nathan.glb` — and Firebase could only cache them for an
  * hour (a longer cache on an unhashed URL means a redeployed model is stale
  * until the cache expires, with no way to bust it). Every model in the game was
  * therefore re-fetched hourly, and for the first hour after a deploy a warm
@@ -59,7 +59,7 @@ const GLOB_PREFIX = "../../assets/";
  * `Object.create(null)` rather than a plain object literal because a plain one
  * inherits `Object.prototype`: `MODEL_URLS["toString"]` would then be an
  * inherited FUNCTION, not `undefined`, and `modelUrl("toString")` would return it
- * typed as a string instead of throwing. `resolveEnemyAssets` accepts any
+ * typed as a string instead of throwing. `resolveCharacterAssets` accepts any
  * `output` that is merely a non-empty string, so the throw below is the only
  * thing standing between a malformed catalog entry and a function object handed
  * to Babylon as a URL.

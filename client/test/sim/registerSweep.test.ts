@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { bowlFor } from "../../src/sim/olympic.js";
-import { PROPS, propSite } from "../../src/sim/passes/trailhead.js";
+import { CAR_MATERIAL, KIOSK_MATERIAL, propSite, roadProp } from "../../src/sim/passes/trailhead.js";
 import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { buildRegister } from "../../src/sim/register.js";
 import { SEEDS } from "./trailGateSeeds.js";
@@ -20,16 +20,20 @@ setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
  * there to catch a hang, not to fence the run time.
  */
 describe("the register over the 227-seed sweep", { timeout: 600_000 }, () => {
-  it("names one hiker on every world and puts the body on the crest, facing back down the stem", () => {
+  it("names one hiker on every world, puts the body on the crest facing back down the stem, and hangs the poster toward the pad", () => {
     for (const seed of SEEDS) {
       const { graph } = bowlFor(seed);
-      const site = (i: number) => propSite(graph, activeTerrainVariant().roadCenterX!, seed, PROPS[i]!);
-      const r = buildRegister({ seed, graph, groundH: (x, z) => elevationAt(seed, x, z), box: site(0), car: site(2) });
+      const site = (material: string) => propSite(graph, activeTerrainVariant().roadCenterX!, seed, roadProp(material));
+      const r = buildRegister({ seed, graph, groundH: (x, z) => elevationAt(seed, x, z), kiosk: site(KIOSK_MATERIAL), car: site(CAR_MATERIAL) });
       expect(r.hiker.name.length, `seed ${seed}`).toBeGreaterThan(0);
       const crest = graph.nodes[graph.summit]!;
       expect(r.body.pos.x).toBe(crest.x);
       expect(r.body.pos.z).toBe(crest.z);
       expect(Number.isFinite(r.body.yaw)).toBe(true);
+      // The poster hangs on the kiosk's face toward the pad, 0.6 m out from its site.
+      const kiosk = site(KIOSK_MATERIAL);
+      expect(Math.abs(r.box.z - kiosk.z), `seed ${seed}`).toBeCloseTo(0.6, 9);
+      expect(Math.sign(r.box.z - kiosk.z), `seed ${seed}`).toBe(Math.sign(graph.trailhead.z - kiosk.z));
     }
   });
 });

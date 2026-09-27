@@ -5,6 +5,10 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 
 import type { Vec3 } from "../sim/types.js";
+import type { PropShadows } from "./propMeshes.js";
+import { defaultModelLoader, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
+
+export const BODY_OUTPUT = "models/summit.body.glb";
 
 const WOOD = new Color3(0.16, 0.11, 0.07);
 const FIGURE = new Color3(0.72, 0.66, 0.6);
@@ -21,15 +25,29 @@ const CAPSULE_FORWARD = 0.15;
 
 let instanceCount = 0;
 
+export type BodyDeps = { shadows?: PropShadows; loader?: ModelLoader };
+
+export type BodyMesh = {
+  /** The placeholder's node: the timber cross and the figure hang from it until the model arrives. */
+  node: TransformNode;
+  /** Resolves once the model has settled, loaded or failed. */
+  readonly ready: Promise<void>;
+  dispose(): void;
+};
+
 /**
- * The body found at the crest: a placeholder cross of dark timber holding a
- * pale figure, standing where `body.pos` says and facing `body.yaw` — the
- * same facing convention as a player's. `StandardMaterial`, with fog left
- * ON: unlike the Hollow, the body is not a silhouette and should fade into
- * the mist like everything else (a PBR material with `fogEnabled = false`
- * never compiles under the atmosphere plugin — see `entityViews.ts`).
+ * The body found at the crest: the missing hiker, draped over a dead trunk
+ * standing where `body.pos` says, the hiker's front toward `body.yaw` — the
+ * same facing convention as a player's, and the model's own +Z. Placed once.
+ *
+ * Until the model arrives, and for good if it never does, a placeholder cross
+ * of dark timber holding a pale figure stands in its place, so the crest is
+ * never empty. `StandardMaterial`, with fog left ON: unlike the Hollow, the
+ * body is not a silhouette and should fade into the mist like everything else
+ * (a PBR material with `fogEnabled = false` never compiles under the
+ * atmosphere plugin — see `entityViews.ts`).
  */
-export function createBodyMesh(scene: Scene, body: { pos: Vec3; yaw: number }): { node: TransformNode; dispose(): void } {
+export function createBodyMesh(scene: Scene, body: { pos: Vec3; yaw: number }, deps: BodyDeps = {}): BodyMesh {
   const id = instanceCount++;
   const node = new TransformNode(`body_${id}`, scene);
   node.position.set(body.pos.x, body.pos.y, body.pos.z);
@@ -62,12 +80,59 @@ export function createBodyMesh(scene: Scene, body: { pos: Vec3; yaw: number }): 
   figure.material = figureMaterial;
   figure.parent = node;
 
+  const placeholder = [upright, crossbar, figure];
+  for (const m of placeholder) deps.shadows?.add(m);
+  let placeholderGone = false;
+  function dropPlaceholder(): void {
+    if (placeholderGone) return;
+    placeholderGone = true;
+    for (const m of placeholder) {
+      deps.shadows?.remove(m);
+      m.dispose();
+    }
+    woodMaterial.dispose();
+    figureMaterial.dispose();
+  }
+
+  let disposed = false;
+  let model: PlacedModel | null = null;
+  const load = deps.loader ?? defaultModelLoader(scene);
+  const ready = (async () => {
+    let container;
+    try {
+      container = await load(BODY_OUTPUT);
+    } catch {
+      // A missing model costs the look: the placeholder stays.
+      return;
+    }
+    // Disposed while the file was in flight: nothing will ever draw it.
+    if (disposed) {
+      container.dispose();
+      return;
+    }
+    try {
+      model = placeStaticModel(container, `body_${id}_model`, body.pos.x, body.pos.y, body.pos.z, body.yaw);
+    } catch {
+      container.dispose();
+      return;
+    }
+    for (const m of model.meshes) deps.shadows?.add(m);
+    dropPlaceholder();
+  })();
+
   return {
     node,
+    ready,
     dispose() {
+      if (disposed) return;
+      disposed = true;
+      dropPlaceholder();
       node.dispose();
-      woodMaterial.dispose();
-      figureMaterial.dispose();
+      if (model !== null) {
+        for (const m of model.meshes) deps.shadows?.remove(m);
+        model.dispose();
+        model = null;
+      }
     },
   };
 }
