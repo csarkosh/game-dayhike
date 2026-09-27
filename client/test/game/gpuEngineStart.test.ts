@@ -32,6 +32,10 @@ vi.mock("@babylonjs/core/Engines/webgpuEngine.js", () => {
     dispose(): void {
       made.disposed++;
     }
+    _compiledEffects = {};
+    _preparePipelineContextAsync(): Promise<void> {
+      return Promise.resolve();
+    }
   }
   return { WebGPUEngine };
 });
@@ -138,6 +142,13 @@ describe("createWebGpuEngine", () => {
     ]);
     expect(PBRBaseMaterial.ForceGLSL).toBe(true);
     expect(StandardMaterial.ForceGLSL).toBe(true);
+  });
+
+  it("catches the translation failures Babylon's preparation drops, on the engine it makes", async () => {
+    stubTranslators();
+    const engine = await createWebGpuEngine(canvas);
+    const own = Object.getOwnPropertyDescriptor(engine, "_preparePipelineContextAsync");
+    expect(typeof own?.value).toBe("function");
   });
 
   it("asks for no optional feature when it is given none", async () => {

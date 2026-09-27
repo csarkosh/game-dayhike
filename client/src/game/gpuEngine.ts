@@ -18,6 +18,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
+import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import { Tools } from "@babylonjs/core/Misc/tools.js";
 import glslangJs from "@babylonjs/core/assets/glslang/glslang.js?url";
 import glslangWasm from "@babylonjs/core/assets/glslang/glslang.wasm?url";
@@ -28,6 +29,53 @@ import { createStartupWindow, WEBGPU_REQUIRED_LIMITS, WEBGPU_START_MS, type Adap
 /** How Babylon words an uncaptured WebGPU error, which it logs as a warning
  * (`webgpuEngine.pure.js`, the device's `uncapturederror` listener). */
 const UNCAPTURED = "WebGPU uncaptured error";
+
+/** How `catchTranslationFailures` words a failure it cannot trace to an effect. */
+const UNTRANSLATED = "WebGPU shader translation failed";
+
+type Preparing = {
+  _preparePipelineContextAsync: (pipelineContext: unknown, ...rest: unknown[]) => Promise<void>;
+  _compiledEffects: Record<string, Effect>;
+};
+
+/**
+ * Gives a GLSL translation failure on WebGPU the ending a compile error has on
+ * WebGL2. In Babylon 9.18 the WebGPU engine's `_preparePipelineContextAsync` is
+ * async, glslang throws inside it ("GLSL compilation failed"), and its caller
+ * (`createAndPreparePipelineContext`, `effect.functions.js`) neither awaits nor
+ * catches it: the effect is left not-ready for good, with no compilation error,
+ * no fallback tried and nothing on `onEffectErrorObservable`, and the page
+ * gets one unhandled rejection. This replaces the method on the engine
+ * instance (`Effect` looks it up there at every preparation) with one that
+ * catches that rejection and hands it to the effect it belongs to, found
+ * among the engine's compiled effects by its pipeline context, through the
+ * effect's own `_processCompilationErrors`: the error recorded, the next
+ * fallback tried, and `onEffectErrorObservable` told once none is left, just
+ * as on WebGL2. So `watchWebGpu` sees it as a pipeline failure, and the
+ * impostor bake as its failed ending. A failure that belongs to no compiled
+ * effect is logged (`UNTRANSLATED`), which the watcher also reads. A wrapper
+ * rather than a page-wide `unhandledrejection` listener: that would learn of
+ * the failure but not which effect it belongs to, so nothing would be recorded
+ * on the effect. Its canaries are in `gpuEngine.test.ts`.
+ */
+export function catchTranslationFailures(engine: AbstractEngine): void {
+  const own = engine as unknown as Preparing;
+  const prepare = own._preparePipelineContextAsync.bind(engine);
+  own._preparePipelineContextAsync = (pipelineContext, ...rest) => {
+    const pending = prepare(pipelineContext, ...rest);
+    // WebGPU's preparation returns a promise; an engine whose preparation is
+    // synchronous returns none, and has nothing to catch.
+    void Promise.resolve(pending).catch((error: unknown) => {
+      const effect = Object.values(own._compiledEffects).find((e) => e.getPipelineContext() === pipelineContext);
+      if (effect) {
+        (effect as unknown as { _processCompilationErrors(e: unknown): void })._processCompilationErrors(error);
+      } else {
+        Logger.Error(`${UNTRANSLATED}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
+    return pending;
+  };
+}
 
 /**
  * The high-performance adapter's limits and features, and whether it is a
@@ -131,6 +179,7 @@ export async function createWebGpuEngine(
       },
     });
     made.engine = engine;
+    catchTranslationFailures(engine);
     await engine.initAsync({ jsPath: glslangJs, wasmPath: glslangWasm }, { jsPath: twgslJs, wasmPath: twgslWasm });
     await engine.prepareGlslangAndTintAsync();
     return engine;
@@ -157,7 +206,8 @@ export async function createWebGpuEngine(
 
 /**
  * Watches a running WebGPU engine for the failures that end on WebGL2: an
- * effect that fails to translate or compile, or an uncaptured WebGPU error
+ * effect that fails to translate or compile (with `catchTranslationFailures`
+ * installed, a translation failure is one), or an uncaptured WebGPU error
  * (`"pipeline"`), and a lost device Babylon did not cause (`"lost"`). Each is
  * reported once, with whether it came inside the startup window
  * (`createStartupWindow`), whose clock starts now. Returns a function that
@@ -185,7 +235,7 @@ export function watchWebGpu(
   const previous = Logger.OnNewCacheEntry as ((entry: string) => void) | undefined;
   const onEntry = (entry: string): void => {
     previous?.(entry);
-    if (entry.includes(UNCAPTURED)) report("pipeline");
+    if (entry.includes(UNCAPTURED) || entry.includes(UNTRANSLATED)) report("pipeline");
   };
   Logger.OnNewCacheEntry = onEntry;
 

@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
-import { probeAdapter, watchWebGpu } from "../../src/game/gpuEngine.js";
+import { catchTranslationFailures, probeAdapter, watchWebGpu } from "../../src/game/gpuEngine.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -146,5 +146,100 @@ describe("watchWebGpu", () => {
       Logger.OnNewCacheEntry = original;
       engine.dispose();
     }
+  });
+});
+
+describe("a GLSL translation that fails inside Babylon's unawaited pipeline preparation", () => {
+  /** What Babylon 9.18's WebGPU engine does with a shader glslang refuses: its
+   * async preparation rejects, and the caller neither awaits nor catches it. */
+  function translationFails(engine: NullEngine): void {
+    (engine as unknown as { _preparePipelineContextAsync: () => Promise<void> })._preparePipelineContextAsync = () =>
+      Promise.reject(new Error("GLSL compilation failed"));
+  }
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  it("is recorded on its effect and reported, as a compile error is on WebGL2", async () => {
+    const engine = new NullEngine();
+    translationFails(engine);
+    catchTranslationFailures(engine);
+    const reported: string[] = [];
+    engine.onEffectErrorObservable.add(({ errors }) => void reported.push(errors));
+    const seen: [string, boolean][] = [];
+    const stop = watchWebGpu(engine, (reason, inStartup) => seen.push([reason, inStartup]), () => 0);
+    try {
+      const effect = engine.createEffect(
+        { vertexSource: "void main() {}", fragmentSource: "void main() {}" },
+        ["position"],
+        [],
+        [],
+        "",
+      );
+      await settle();
+      expect(effect.getCompilationError()).toContain("GLSL compilation failed");
+      expect(effect.allFallbacksProcessed()).toBe(true);
+      expect(effect.isReady()).toBe(false);
+      expect(reported).toHaveLength(1);
+      expect(seen).toEqual([["pipeline", true]]);
+    } finally {
+      stop();
+      engine.dispose();
+    }
+  });
+
+  it("reports one it cannot trace to an effect through Babylon's log, which the watcher reads", async () => {
+    const engine = new NullEngine();
+    translationFails(engine);
+    catchTranslationFailures(engine);
+    const seen: string[] = [];
+    const stop = watchWebGpu(engine, (reason) => void seen.push(reason), () => 0);
+    try {
+      const prepare = (engine as unknown as { _preparePipelineContextAsync: (context: object) => Promise<void> })
+        ._preparePipelineContextAsync;
+      void prepare({}).catch(() => undefined);
+      await settle();
+      expect(seen).toEqual(["pipeline"]);
+    } finally {
+      stop();
+      engine.dispose();
+    }
+  });
+
+  it("leaves a preparation that succeeds as it was", async () => {
+    const engine = new NullEngine();
+    catchTranslationFailures(engine);
+    const reported: string[] = [];
+    engine.onEffectErrorObservable.add(({ errors }) => void reported.push(errors));
+    try {
+      const effect = engine.createEffect(
+        { vertexSource: "void main() {}", fragmentSource: "void main() {}" },
+        ["position"],
+        [],
+        [],
+        "",
+      );
+      await settle();
+      expect(effect.getCompilationError()).toBe("");
+      expect(reported).toEqual([]);
+    } finally {
+      engine.dispose();
+    }
+  });
+
+  it("is still needed: Babylon still drops the rejection (a canary on the installed engine)", () => {
+    const resolve = createRequire(import.meta.url).resolve;
+    const functions = readFileSync(resolve("@babylonjs/core/Materials/effect.functions.js"), "utf8");
+    // Called as a statement: neither awaited nor caught.
+    expect(functions).toContain(
+      '        _preparePipelineContext(pipelineContext, options.vertex, options.fragment, !!options.createAsRaw, "", "", options.rebuildRebind, options.defines, options.transformFeedbackVaryings, "", () => {',
+    );
+    const webgpu = readFileSync(resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
+    expect(webgpu).toContain("    async _preparePipelineContextAsync(pipelineContext, vertexSourceCode, fragmentSourceCode,");
+    expect(webgpu).toContain("        this._compiledEffects[name] = effect;");
+    const effect = readFileSync(resolve("@babylonjs/core/Materials/effect.pure.js"), "utf8");
+    // Looked up on the engine at every preparation, so an instance's own wins.
+    expect(effect).toContain("this._engine._preparePipelineContextAsync.bind(this._engine)");
+    expect(effect).toContain("    _processCompilationErrors(e, previousPipelineContext = null) {");
   });
 });
