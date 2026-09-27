@@ -7,9 +7,9 @@ name: test
 # differences, both because the runners are shared machines slower than the
 # development one: every test time limit is scaled (TEST_TIME_SCALE), and the
 # tests tagged `wall-clock`, whose assertion is a bar on elapsed time, are left
-# out; they run only on a dedicated machine (`npm run test:wall-clock`). The
-# workflow answers pass or fail, and no time measured here means anything
-# about the game's performance.
+# out here; a local `npm test` runs them, and `npm run test:wall-clock` runs
+# only them. The workflow answers pass or fail, and no time measured here means
+# anything about the game's performance.
 
 on:
   push:
@@ -21,8 +21,10 @@ on:
 # run, whose result nobody will read. On main every commit gets its own group
 # (keyed by sha), so no run there is ever cancelled or left pending behind a
 # newer one; a shared group would still drop a queued run when a third arrives.
+# The event name is in main's group too, so a run started by hand on main never
+# cancels the push run of the same commit, or the other way round.
 concurrency:
-  group: test-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  group: test-${{ github.ref == 'refs/heads/main' && format('{0}-{1}', github.event_name, github.sha) || github.ref }}
   cancel-in-progress: true
 
 # Read the repository and nothing else: no job writes to it, and none needs a
@@ -44,7 +46,7 @@ jobs:
   # than one per shard.
   lfs:
     runs-on: ubuntu-latest
-    # Measured: 9 s with the cache warm. A cold fetch is 77 objects, about 61 MB.
+    # Measured: 9 s with the cache warm. A cold fetch is 77 objects, about 61 MiB.
     timeout-minutes: 5
     outputs:
       key: ${{ steps.key.outputs.key }}
@@ -72,6 +74,11 @@ jobs:
       - name: download lfs objects (cache miss only)
         if: steps.lookup.outputs.cache-hit != 'true'
         run: git lfs fetch
+      # A cache entry cannot be overwritten, so a bad one would stick: check
+      # every object's hash before saving, and save nothing if one is wrong.
+      - name: verify lfs objects before saving (cache miss only)
+        if: steps.lookup.outputs.cache-hit != 'true'
+        run: git lfs fsck --objects
       - if: steps.lookup.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -128,17 +135,22 @@ jobs:
   client:
     needs: lfs
     runs-on: ubuntu-latest
-    # Long enough that a hung test is reported by vitest, naming it, rather
-    # than by this timeout: the longest scaled limit (600 s x 2 = 20 min) on
-    # top of the slowest shard measured (7 min), plus a margin.
-    timeout-minutes: 30
+    # The longest scaled limit (600 s x 3 = 30 min) on top of the slowest shard
+    # measured (7 min), plus a margin, so a test that hangs while awaiting is
+    # still reported by vitest, naming it. vitest's limit is a timer, which
+    # cannot fire while synchronous code runs: a synchronous endless loop, or a
+    # hang in a describe body (collection runs under no limit at all), ends
+    # here instead, and this timeout names only the job.
+    timeout-minutes: 40
     env:
-      # Every test time limit, and vitest's defaults, times two. The smallest
-      # whole factor that kept every test measured on these runners (five full
-      # runs) under two thirds of its limit: the slowest against its limit was
-      # forestField's "two cameras in the same cell yield deeply-equal
-      # bands", 6.3 s against the default 5 s.
-      TEST_TIME_SCALE: 2
+      # Every test time limit, and vitest's defaults, times three: the smallest
+      # whole factor that keeps every test measured on these runners under two
+      # thirds of its scaled limit. Over eight client runs (runs 36328943645,
+      # 36330139236 x3 and 36332634644 x2) the slowest against its limit was
+      # sim/clutter's "keeps bushes off the road bed at the jittered instance",
+      # 6.95 s against the 5 s default in run 36332634644's second attempt:
+      # 0.70 of its limit at a factor of 2, 0.46 at 3.
+      TEST_TIME_SCALE: 3
     strategy:
       # Every shard reports, so one run shows every failing file, not the first.
       fail-fast: false
@@ -156,15 +168,26 @@ jobs:
           key: ${{ needs.lfs.outputs.key }}
           fail-on-cache-miss: true
       # `git lfs checkout` writes the files from .git/lfs/objects and never goes
-      # to the network. Any file still a pointer afterwards means the cache
-      # lacked its object: fail here, naming it, not in whichever test reads it.
+      # to the network. A bad object, or any file still a pointer afterwards,
+      # means the cache entry is bad: fail here, naming the files and the way
+      # out, not in whichever test reads them. `git lfs ls-files -l` prints
+      # `<64-hex oid> <*|-> <path>`, `-` for a pointer, so the match is anchored
+      # on the oid and a path containing " - " cannot pass for one.
       - name: check out lfs files from the cache
+        env:
+          KEY: ${{ needs.lfs.outputs.key }}
         run: |
-          echo "lfs pointers before checkout: $(git lfs ls-files | grep -c ' - ' || true)"
+          pointers() { git lfs ls-files -l | grep -E '^[0-9a-f]{64} - ' || true; }
+          bad() {
+            echo "::error::The cached LFS objects under $KEY are incomplete or corrupt, and a cache entry cannot be overwritten. Delete it with: gh cache delete $KEY --repo ${GITHUB_REPOSITORY}  (or change lfs-v1 to lfs-v2 in this workflow), then re-run."
+            exit 1
+          }
+          echo "lfs pointers before checkout: $(pointers | grep -c . || true)"
+          git lfs fsck --objects || bad
           git lfs checkout
-          missing=$(git lfs ls-files | grep ' - ' || true)
+          missing=$(pointers)
           echo "lfs pointers after checkout: $(printf '%s' "$missing" | grep -c . || true)"
-          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+          if [ -n "$missing" ]; then echo "$missing"; bad; fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -175,6 +198,8 @@ jobs:
   # The one status to require and to read: it fails unless every job above
   # succeeded. `always()` matters: a job skipped because its dependency failed
   # would otherwise skip this one too, and a skipped check reads as passing.
+  # It also runs on a run cancelled by a newer push, and fails there: a red
+  # `gates` on a superseded commit is that cancellation, not a failure to chase.
   gates:
     if: always()
     needs: [lfs, static, server-and-tools, client]
