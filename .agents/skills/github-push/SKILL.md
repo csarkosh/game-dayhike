@@ -5,9 +5,9 @@ description: Use when pushing work to the game-dayhike GitHub repository at gith
 
 # Pushing to GitHub
 
-`github.com/csarkosh/game-dayhike` is a public, open-source repository with no reviewers, and
-nothing in CI runs on a push. The commit message is therefore the only record of why a change
-exists. It is written for the person reading `git log` months later with no memory of this
+`github.com/csarkosh/game-dayhike` is a public, open-source repository with no reviewers. CI
+runs the tests on a push, which says whether a change works but never why it was made, so the
+commit message is the only record of why a change exists. It is written for the person reading `git log` months later with no memory of this
 session — usually the author — and anyone on the internet can read it too, so it describes the
 change and never anything private about how the work was done.
 
@@ -94,8 +94,7 @@ without collateral damage.
 
 ## Before pushing
 
-No CI runs on a push (the one workflow, the Windows desktop smoke test, is started by hand), so
-these are the gates:
+These are the gates:
 
 ```bash
 npm run typecheck && npm run lint && npm test
@@ -103,6 +102,31 @@ npm run typecheck && npm run lint && npm test
 
 Run them and read the output. A failing gate is reported to the user before pushing, not
 after.
+
+The `test` workflow (`.github/workflows/test.yml`) runs the same commands on GitHub's runners
+for every push to `main`, to a `worktree-**` or `ci/**` branch, and for every pull request:
+typecheck and lint in one job, the server and tools suites in another, the client suite split
+across shards, and a final `gates` job that fails unless every other job passed. `gates` is the
+one result to read. What the workflow adds is a clean Linux checkout, and the long client suite
+run somewhere other than this machine, which then stays quiet for frame-time measurements.
+It is a pass-or-fail check; nothing it times means anything, because the runners are shared
+machines.
+
+A work branch may be pushed to run the gates remotely before it is finished. Then:
+
+```bash
+gh run list --branch <branch> --workflow test.yml --limit 3   # the run for the pushed commit
+gh run watch <run-id> --exit-status                          # follow it; exits non-zero on failure
+gh run view <run-id> --log-failed                            # only the failing steps' output
+```
+
+Every push, finished work or not, must pass the repository's pre-push scan first: the
+repository is public, so an unfinished commit is as visible as a finished one. The local
+pre-push hook runs the scan and refuses the push on a hit; never bypass it with `--no-verify`.
+
+The workflow keeps the Git LFS objects in the Actions cache, keyed on their object ids, so a
+run downloads them from LFS only when the set of objects changes (and once more for a branch
+whose set `main` has not cached yet).
 
 ## Never push a large or binary file into git history
 
@@ -155,7 +179,8 @@ the user rather than doing it.
 - `git-lfs` must be installed on any machine that clones, or the working tree gets pointer
   files where the models should be. `brew install git-lfs && git lfs install`.
 
-## Not yet covered
+## Pushing is not shipping
 
-Deployment and rollback belong in this skill and are not written yet. When they are added,
-the commit format above stays as-is — it is what makes a rollback target identifiable.
+A push, to `main` or to a work branch, puts nothing in front of players: nothing reaches them
+until `main` is deployed. Deployment and rollback are the `deploy-production` skill's. The
+commit format above is what makes a rollback target identifiable there.
