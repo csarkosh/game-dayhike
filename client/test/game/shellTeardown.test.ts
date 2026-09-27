@@ -55,6 +55,7 @@ import { createBodyMesh } from "../../src/game/bodyMesh.js";
 import { createSignMeshes } from "../../src/game/signMeshes.js";
 import { createTrailheadMeshes } from "../../src/game/trailheadMeshes.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 // The seam loaders below call Babylon's loader directly, past the shells'
 // own registration.
@@ -106,7 +107,7 @@ describe("a container that lands after its shell was disposed", () => {
     expect(pool.has(first.id)).toBe(false);
     expect(held.calls.length).toBe(1);
     expect(nothingAdopted(scene)).toEqual({ live: 0, inScene: 0 });
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("is not adopted by the cliff modules", async () => {
     held.reset();
@@ -120,7 +121,7 @@ describe("a container that lands after its shell was disposed", () => {
     expect(cliff.meshes.length).toBe(0);
     expect(held.calls.length).toBe(1);
     expect(nothingAdopted(scene)).toEqual({ live: 0, inScene: 0 });
-  }, 60_000);
+  }, timeLimit(60_000));
 });
 
 describe("a placed model disposed with its model in flight", () => {
@@ -163,6 +164,6 @@ describe("a placed model disposed with its model in flight", () => {
       await new Promise((r) => setTimeout(r, 50));
       expect(held.calls.length).toBe(LOADS[which]);
       expect(nothingAdopted(scene)).toEqual({ live: 0, inScene: 0 });
-    }, 60_000);
+    }, timeLimit(60_000));
   }
 });

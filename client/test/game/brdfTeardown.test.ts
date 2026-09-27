@@ -37,6 +37,7 @@ import { RGBDTextureTools } from "@babylonjs/core/Misc/rgbdTextureTools.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import { createRenderer } from "../../src/game/renderer.js";
 import type { Level } from "../../src/sim/level.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 // One brush, so the scene has a PBR material and with it a BRDF texture.
 const LEVEL: Level = {
@@ -93,5 +94,5 @@ describe("a renderer disposed while its scene's BRDF texture is still being expa
     } finally {
       expand.mockRestore();
     }
-  }, 10_000);
+  }, timeLimit(10_000));
 });

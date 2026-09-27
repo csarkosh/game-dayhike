@@ -121,6 +121,7 @@ import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createRenderer } from "../../src/game/renderer.js";
 import type { Level } from "../../src/sim/level.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const LEVEL: Level = { id: "renderer-teardown", brushes: [], playerSpawns: [], enemySpawns: [] };
 const SEED = 12345;
@@ -180,7 +181,7 @@ describe("a renderer disposed while its models load", () => {
     expect(unhandled.length).toBe(0);
     expect(loads.calls.filter((c) => c.afterDispose).map((c) => c.url)).toEqual([]);
     expect(meshesAfter).toBe(0);
-  }, 120_000);
+  }, timeLimit(120_000));
 
   it("aborts each of its six loading shells, and every load they had running ends through the abort", async () => {
     // The forest, the clutter, the cliff modules, the birds, the creature pool
@@ -198,7 +199,7 @@ describe("a renderer disposed while its models load", () => {
     expect(signals.length).toBe(6);
     expect(signals.filter((s) => !s.aborted).length).toBe(0);
     expect(loads.guarded.filter((g) => g.outcome !== "aborted").length).toBe(0);
-  }, 120_000);
+  }, timeLimit(120_000));
 
   it("still reports a load that fails for any other reason", async () => {
     loads.reset();
@@ -212,7 +213,7 @@ describe("a renderer disposed while its models load", () => {
     });
     expect(errors).toEqual(["cliff modules: keeping whatever loaded — Error: HTTP 404"]);
     expect(unhandled.length).toBe(0);
-  }, 120_000);
+  }, timeLimit(120_000));
 });
 
 describe("a renderer whose build throws after its loading shells exist", () => {
@@ -235,5 +236,5 @@ describe("a renderer whose build throws after its loading shells exist", () => {
     const signals = signalsOf(loads.guarded);
     expect(signals.length).toBe(5);
     expect(signals.filter((s) => !s.aborted).length).toBe(0);
-  }, 120_000);
+  }, timeLimit(120_000));
 });
