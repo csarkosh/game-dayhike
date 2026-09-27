@@ -702,7 +702,7 @@ export function createClutterMeshes(
   /** What the drawn buffers hold: nothing cut yet, every card
    * (`cull(null)`), or the cut at `lastPose`. */
   let cutMode: "none" | "all" | "pose" = "none";
-  const lastPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, fov: 0, aspect: 0 };
+  const lastPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 0, aspect: 0 };
   const restoreObserver = scene.getEngine().onContextRestoredObservable.add(() => {
     for (const bucket of culledBuckets) rehandCulled(bucket);
     dirty = true;

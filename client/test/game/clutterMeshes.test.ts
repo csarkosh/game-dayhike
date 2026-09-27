@@ -31,7 +31,8 @@ import { ROCK_CUTS, rockPlanes } from "../../src/game/rockRelief.js";
 import { activeTerrainVariant, elevationSampleAt } from "../../src/sim/terrain.js";
 import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { trampleAt } from "../../src/game/trailBenchParams.js";
-import { CULL_MOVE, CULL_TURN, cullPlanes, type CullPose } from "../../src/game/grassCull.js";
+import { CULL_MOVE, CULL_ROLL, CULL_TURN, cullPlanes, type CullPose } from "../../src/game/grassCull.js";
+import { BOB_ROLL, MAX_BOB_SCALE } from "../../src/game/viewBob.js";
 import { cardReach, extentSeen, thresholdWalk } from "./helpers/cullReach.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import type { ClutterInstance } from "../../src/sim/clutter.js";
@@ -691,9 +692,11 @@ describe("rock relief in the shell", () => {
 
 describe("the grass class culled to the frustum", () => {
   const PORTRAIT = 1200 / 2029;
+  /** The two gate poses: the free camera pinned at (x, y, z, yaw, pitch) on
+   * the `atmo` seed, the verification note's canopy and meadow stills. */
   const GATE_SEED = seedFromToken("atmo");
-  const CANOPY: CullPose = { x: 123, y: 110.87, z: -105.5, yaw: 1.571, pitch: 0.3, fov: 1.4, aspect: PORTRAIT };
-  const MEADOW: CullPose = { x: 369, y: 51.01, z: -855, yaw: 0, pitch: 0.3, fov: 1.4, aspect: PORTRAIT };
+  const CANOPY: CullPose = { x: 123, y: 110.87, z: -105.5, yaw: 1.571, pitch: 0.3, roll: 0, fov: 1.4, aspect: PORTRAIT };
+  const MEADOW: CullPose = { x: 369, y: 51.01, z: -855, yaw: 0, pitch: 0.3, roll: 0, fov: 1.4, aspect: PORTRAIT };
 
   function build(seed: number, cull: boolean): { scene: Scene; assets: Mesh[][][][]; clutter: ReturnType<typeof createClutterMeshes>; engine: NullEngine } {
     const engine = new NullEngine();
@@ -750,7 +753,7 @@ describe("the grass class culled to the frustum", () => {
     const lists = grassBuckets(1, 35, 21335);
     for (let v = 0; v < 2; v++) for (let l = 0; l < 2; l++) expect(whole[v]![l]!.count).toBe(lists[v]![l]!.length);
 
-    const pose = { x: 35, y: elevationSampleAt(1, 35, 21335).h + 1.6, z: 21335, yaw: 1.571, pitch: 0.3, fov: 1.4, aspect: PORTRAIT };
+    const pose = { x: 35, y: elevationSampleAt(1, 35, 21335).h + 1.6, z: 21335, yaw: 1.571, pitch: 0.3, roll: 0, fov: 1.4, aspect: PORTRAIT };
     const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
     const updated = vi.spyOn(Mesh.prototype, "thinInstanceBufferUpdated");
     clutter.cull(pose);
@@ -814,7 +817,7 @@ describe("the grass class culled to the frustum", () => {
     const { assets, clutter, engine } = build(1, true);
     const set = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
     clutter.update(35, 21335);
-    const pose = { x: 35, y: elevationSampleAt(1, 35, 21335).h + 1.6, z: 21335, yaw: 1.571, pitch: 0.3, fov: 1.4, aspect: PORTRAIT };
+    const pose = { x: 35, y: elevationSampleAt(1, 35, 21335).h + 1.6, z: 21335, yaw: 1.571, pitch: 0.3, roll: 0, fov: 1.4, aspect: PORTRAIT };
     clutter.cull(pose);
     const grass = [0, 1].flatMap((v) => [0, 1].map((l) => assets[CLUTTER_GRASS]![v]![l]![0]!));
     const before = grass.map((m) => (m.isEnabled() ? m.thinInstanceCount : 0));
@@ -844,7 +847,7 @@ describe("the grass class culled to the frustum", () => {
     const { assets, clutter, engine } = build(1, false);
     clutter.update(35, 21335);
     const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
-    clutter.cull({ x: 35, y: 0, z: 21335, yaw: 1.571, pitch: 0.3, fov: 1.4, aspect: PORTRAIT });
+    clutter.cull({ x: 35, y: 0, z: 21335, yaw: 1.571, pitch: 0.3, roll: 0, fov: 1.4, aspect: PORTRAIT });
     expect(partial).not.toHaveBeenCalled();
     const lists = grassBuckets(1, 35, 21335);
     for (let v = 0; v < 2; v++) for (let l = 0; l < 2; l++) expect(assets[CLUTTER_GRASS]![v]![l]![0]!.thinInstanceCount).toBe(lists[v]![l]!.length);
@@ -884,11 +887,11 @@ describe("the grass class culled to the frustum", () => {
       const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
       clutter.update(base.x, base.z);
       const lists = grassBuckets(GATE_SEED, base.x, base.z);
-      for (const { cut, views } of thresholdWalk(base, 12, 777, CULL_TURN, CULL_MOVE)) {
+      for (const { cut, views } of thresholdWalk(base, 40, 777, CULL_TURN, CULL_MOVE, CULL_ROLL, MAX_BOB_SCALE * BOB_ROLL)) {
         clutter.cull(cut);
         for (const view of views) {
           partial.mockClear();
-          clutter.cull({ x: view.x, y: view.y, z: view.z, yaw: view.yaw, pitch: view.pitch, fov: view.fov, aspect: view.aspect });
+          clutter.cull(view);
           expect(partial).not.toHaveBeenCalled();
           holds++;
           for (let v = 0; v < 2; v++) {
@@ -913,7 +916,7 @@ describe("the grass class culled to the frustum", () => {
       set.mockRestore(); partial.mockRestore();
       clutter.dispose(); engine.dispose();
     }
-    expect(holds).toBe(96);
+    expect(holds).toBe(320);
     expect(seenCards).toBeGreaterThan(20000);
     expect(far).toBeGreaterThan(5000);
   }, 180_000);

@@ -18,7 +18,8 @@ import {
 } from "../../src/game/bladeMeshes.js";
 import { instanceMatrixFor, trampleFrame } from "../../src/game/clutterMeshes.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
-import { CULL_MOVE, CULL_TURN, cullPlanes, type CullPose } from "../../src/game/grassCull.js";
+import { CULL_MOVE, CULL_ROLL, CULL_TURN, cullPlanes, type CullPose } from "../../src/game/grassCull.js";
+import { BOB_ROLL, MAX_BOB_SCALE } from "../../src/game/viewBob.js";
 import { bladeReach, extentSeen, thresholdWalk } from "./helpers/cullReach.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
@@ -223,10 +224,11 @@ describe("createBladeMeshes", () => {
 
 /** The gate's portrait still: 1200 × 2029 at a vertical field of view of 1.4 rad. */
 const PORTRAIT = 1200 / 2029;
-/** The two gate poses (`__fcSet(x, y, z, yaw, pitch)` on the `atmo` seed). */
+/** The two gate poses: the free camera pinned at (x, y, z, yaw, pitch) on the
+ * `atmo` seed, the verification note's canopy and meadow stills. */
 const GATE_SEED = seedFromToken("atmo");
-const CANOPY: CullPose = { x: 123, y: 110.87, z: -105.5, yaw: 1.571, pitch: 0.3, fov: 1.4, aspect: PORTRAIT };
-const MEADOW: CullPose = { x: 369, y: 51.01, z: -855, yaw: 0, pitch: 0.3, fov: 1.4, aspect: PORTRAIT };
+const CANOPY: CullPose = { x: 123, y: 110.87, z: -105.5, yaw: 1.571, pitch: 0.3, roll: 0, fov: 1.4, aspect: PORTRAIT };
+const MEADOW: CullPose = { x: 369, y: 51.01, z: -855, yaw: 0, pitch: 0.3, roll: 0, fov: 1.4, aspect: PORTRAIT };
 
 /** A bucket mesh's tier, character and size, from its name. */
 function bucketOf(mesh: Mesh): { c: number; t: number; s: number } {
@@ -235,7 +237,7 @@ function bucketOf(mesh: Mesh): { c: number; t: number; s: number } {
 }
 
 describe("the blade field culled to the frustum", () => {
-  const POSE = { x: CAM.x, y: 0, z: CAM.z, yaw: 1.571, pitch: 0.3, fov: 1.4, aspect: PORTRAIT };
+  const POSE = { x: CAM.x, y: 0, z: CAM.z, yaw: 1.571, pitch: 0.3, roll: 0, fov: 1.4, aspect: PORTRAIT };
 
   it("draws each bucket's kept prefix, uploads only it, and adds no mesh", () => {
     const engine = new NullEngine();
@@ -413,12 +415,12 @@ describe("the blade field culled to the frustum", () => {
         const { c, t, s } = bucketOf(mesh);
         return lists[t]!.filter((cell) => cell.character === c && cell.size === s);
       });
-      for (const { cut, views } of thresholdWalk(base, 12, 12345, CULL_TURN, CULL_MOVE)) {
+      for (const { cut, views } of thresholdWalk(base, 40, 12345, CULL_TURN, CULL_MOVE, CULL_ROLL, MAX_BOB_SCALE * BOB_ROLL)) {
         blades.cull(cut);
         for (const view of views) {
           // Under every threshold: the cut is reused, nothing uploaded.
           partial.mockClear();
-          blades.cull({ x: view.x, y: view.y, z: view.z, yaw: view.yaw, pitch: view.pitch, fov: view.fov, aspect: view.aspect });
+          blades.cull(view);
           expect(partial).not.toHaveBeenCalled();
           holds++;
           blades.meshes.forEach((mesh, b) => {
@@ -439,7 +441,7 @@ describe("the blade field culled to the frustum", () => {
       set.mockRestore(); partial.mockRestore();
       blades.dispose(); engine.dispose();
     }
-    expect(holds).toBe(96);
+    expect(holds).toBe(320);
     expect(seenCells).toBeGreaterThan(50000);
   }, 180_000);
 });

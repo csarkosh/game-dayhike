@@ -81,7 +81,7 @@ export function cardReach(): Reach {
 
 /** Whether a point is inside the true frustum of a camera with roll: yaw 0
  * faces +Z, positive pitch looks down, roll turns right and up about forward. */
-export function seen(c: CullPose & { roll: number }, px: number, py: number, pz: number): boolean {
+export function seen(c: CullPose, px: number, py: number, pz: number): boolean {
   const dx = px - c.x, dy = py - c.y, dz = pz - c.z;
   const sy = Math.sin(c.yaw), cy = Math.cos(c.yaw), sp = Math.sin(c.pitch), cp = Math.cos(c.pitch);
   const fx = sy * cp, fy = -sp, fz = cy * cp;
@@ -100,7 +100,7 @@ export function seen(c: CullPose & { roll: number }, px: number, py: number, pz:
 /** Whether any part of an instance rooted at (x, y, z) with `reach` is in the
  * rolled camera's view: its axis, root to top, and eight points around it at
  * its sideways reach, at the root and at the top. */
-export function extentSeen(c: CullPose & { roll: number }, x: number, y: number, z: number, reach: Reach): boolean {
+export function extentSeen(c: CullPose, x: number, y: number, z: number, reach: Reach): boolean {
   if (seen(c, x, y, z) || seen(c, x, y + reach.top, z)) return true;
   for (let k = 0; k < 8; k++) {
     const a = (k * Math.PI) / 4;
@@ -110,14 +110,17 @@ export function extentSeen(c: CullPose & { roll: number }, x: number, y: number,
   return false;
 }
 
-/** A walk for the shells: a cut at a random pose, then steps that stay under
- * every threshold (turns of 0.95 CULL_TURN on both axes at once, moves under
- * CULL_MOVE, the view bob's ±0.6° roll) and so must reuse that cut. */
-export function thresholdWalk(base: CullPose, phases: number, seed: number, turn: number, move: number): { cut: CullPose; views: (CullPose & { roll: number })[] }[] {
+/** A walk for the shells: a cut at a random pose rolled by up to `maxRoll`
+ * either way, then steps that stay under every threshold (turns of 0.95 of
+ * `turn` on both axes at once, a roll of 0.95 of `roll`, moves under `move`)
+ * and so must reuse that cut. */
+export function thresholdWalk(
+  base: CullPose, phases: number, seed: number, turn: number, move: number, roll: number, maxRoll: number,
+): { cut: CullPose; views: CullPose[] }[] {
   let r = seed;
   const rand = (): number => { r = (Math.imul(r, 1103515245) + 12345) >>> 0; return r / 4294967296; };
   const sign = (): number => (rand() < 0.5 ? -1 : 1);
-  const out: { cut: CullPose; views: (CullPose & { roll: number })[] }[] = [];
+  const out: { cut: CullPose; views: CullPose[] }[] = [];
   for (let phase = 0; phase < phases; phase++) {
     const cut: CullPose = {
       ...base,
@@ -125,9 +128,10 @@ export function thresholdWalk(base: CullPose, phases: number, seed: number, turn
       z: base.z + (rand() - 0.5) * 2,
       yaw: (rand() - 0.5) * 2 * Math.PI,
       pitch: -0.8 + rand() * 2,
+      roll: sign() * maxRoll,
       aspect: phase % 2 === 0 ? base.aspect : 16 / 9,
     };
-    const views: (CullPose & { roll: number })[] = [];
+    const views: CullPose[] = [];
     for (let k = 0; k < 4; k++) {
       const a = rand() * 2 * Math.PI, m = 0.95 * move * rand();
       views.push({
@@ -136,7 +140,7 @@ export function thresholdWalk(base: CullPose, phases: number, seed: number, turn
         z: cut.z + m * Math.sin(a),
         yaw: cut.yaw + sign() * 0.95 * turn,
         pitch: cut.pitch + sign() * 0.95 * turn,
-        roll: (sign() * 0.6 * Math.PI) / 180,
+        roll: cut.roll + sign() * 0.95 * roll,
       });
     }
     out.push({ cut, views });

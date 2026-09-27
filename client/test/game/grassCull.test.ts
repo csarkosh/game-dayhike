@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
-  CULL_MARGIN, CULL_MOVE, CULL_PUSHBACK, CULL_RADIUS, CULL_TURN,
-  cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose,
+  CULL_MARGIN, CULL_MOVE, CULL_PUSHBACK, CULL_RADIUS, CULL_ROLL, CULL_TURN,
+  cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, viewPlanes, type CullPose,
 } from "../../src/game/grassCull.js";
+import { BOB_ROLL, MAX_BOB_SCALE } from "../../src/game/viewBob.js";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { inCone } from "../../src/game/wildlifeDirector.js";
 import { CLUTTER_CULLED } from "../../src/game/clutterMeshes.js";
 import { bladeReach, cardReach, CULLED_MODELS, seen, WIND_FRACTION } from "./helpers/cullReach.js";
 
-const POSE: CullPose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0, fov: 1.4, aspect: 1200 / 2029 };
+const POSE: CullPose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 1.4, aspect: 1200 / 2029 };
+/** The most the view bob rolls the camera, sprinting at the largest `/bob`. */
+const BOB_ROLL_MAX = MAX_BOB_SCALE * BOB_ROLL;
 
 /** n instances: translations at (x, y, z) (y 0 when a point gives two
  * coordinates) in the matrix and the origins, a vec4 stream holding the index
@@ -50,7 +58,10 @@ describe("grass cull", () => {
   it("pins the margins and thresholds", () => {
     expect(CULL_MARGIN).toBeCloseTo(0.1047198, 7);
     expect([CULL_PUSHBACK, CULL_RADIUS, CULL_MOVE]).toEqual([1, 1.5, 0.5]);
-    expect(CULL_TURN).toBeCloseTo(0.0698132, 7);
+    expect(CULL_TURN).toBeCloseTo(0.0610865, 7);
+    expect(CULL_ROLL).toBeCloseTo(0.0174533, 7);
+    // The view bob rolls the camera by up to 1.8°.
+    expect(BOB_ROLL_MAX).toBeCloseTo(0.0315, 7);
   });
 
   it("keeps what the widened frustum holds, in order", () => {
@@ -141,7 +152,7 @@ describe("grass cull", () => {
     let checked = 0;
     for (const base of [POSE, { ...POSE, yaw: 1.571, pitch: 0.3 }, { ...POSE, yaw: 3, pitch: 0.9, aspect: 16 / 9 }, { ...POSE, yaw: -2, pitch: -0.6, aspect: 16 / 9 }]) {
       const keep = new Set(kept(pts, base));
-      for (const [dyaw, dpitch, dx, dz] of [[0.0698, 0, 0, 0], [-0.0698, 0.0698, 0, 0], [0.0698, -0.0698, 0, 0], [0, 0, 0.5, 0], [0.05, -0.05, -0.35, 0.35], [-0.0698, -0.0698, 0.35, -0.35]]) {
+      for (const [dyaw, dpitch, dx, dz] of [[0.061, 0, 0, 0], [-0.061, 0.061, 0, 0], [0.061, -0.061, 0, 0], [0, 0, 0.5, 0], [0.05, -0.05, -0.35, 0.35], [-0.061, -0.061, 0.35, -0.35]]) {
         const view = { x: base.x + dx!, y: base.y, z: base.z + dz!, yaw: base.yaw + dyaw!, pitch: base.pitch + dpitch!, fov: base.fov, aspect: base.aspect };
         pts.forEach(([x, z], i) => {
           if (inCone(view, x, 0, z, 0) || inCone(view, x, 0.8, z, 0)) {
@@ -162,6 +173,10 @@ describe("grass cull", () => {
     expect(needsCull(POSE, { ...POSE, pitch: -0.08 })).toBe(true);
     expect(needsCull(POSE, { ...POSE, x: 0.4 })).toBe(false);
     expect(needsCull(POSE, { ...POSE, x: 0.4, z: 0.4 })).toBe(true);
+    // The camera's roll, the view bob's: past a degree, cut again.
+    expect(needsCull(POSE, { ...POSE, roll: 0.017 })).toBe(false);
+    expect(needsCull({ ...POSE, roll: 0.0315 }, { ...POSE, roll: 0.016 })).toBe(false);
+    expect(needsCull({ ...POSE, roll: 0.0315 }, { ...POSE, roll: 0.01 })).toBe(true);
     // A turn across the ±π seam is the small turn it is.
     expect(needsCull({ ...POSE, yaw: 3.13 }, { ...POSE, yaw: -3.13 })).toBe(false);
     // A resized window or a changed field of view reshapes the frustum itself.
@@ -187,7 +202,7 @@ describe("the cull radius", () => {
 describe("the widened frustum against what a moved camera sees", () => {
   it("keeps every instance with any part in view on the ground, after any turn, roll and move under the thresholds, out to 110 m", () => {
     const EPS = 1e-4;
-    const turn = CULL_TURN - EPS, move = CULL_MOVE - 0.01, roll = (0.6 * Math.PI) / 180;
+    const turn = CULL_TURN - EPS, move = CULL_MOVE - 0.01, roll = CULL_ROLL - EPS;
     const planes = new Float32Array(20);
     let checked = 0, dropped = 0, worst = 0;
     for (const reach of [cardReach(), bladeReach()]) {
@@ -200,19 +215,20 @@ describe("the widened frustum against what a moved camera sees", () => {
       }
       for (const aspect of [1200 / 2029, 16 / 9]) {
         for (let pi = -8; pi <= 12; pi++) {
-          for (const yaw of [0.3, 2.2]) {
-            const base: CullPose = { x: 0, y: 1.6, z: 0, yaw, pitch: pi / 10, fov: 1.4, aspect };
+          // The cut at the camera's roll: level, and the view bob's largest either way.
+          for (const [yaw, baseRoll] of [[0.3, 0], [2.2, 0], [0.3, BOB_ROLL_MAX], [2.2, -BOB_ROLL_MAX]] as const) {
+            const base: CullPose = { x: 0, y: 1.6, z: 0, yaw, pitch: pi / 10, roll: baseRoll, fov: 1.4, aspect };
             cullPlanes(base, planes);
             for (const [dyaw, dpitch, rl, mx, mz] of [
               [turn, turn, roll, 0, 0], [turn, -turn, -roll, 0, 0], [-turn, turn, -roll, 0, 0], [-turn, -turn, roll, 0, 0],
               [turn, turn, roll, move, 0], [-turn, -turn, -roll, -move, 0], [turn, -turn, roll, 0, move], [-turn, turn, -roll, 0, -move],
               [0, 0, roll, move * Math.SQRT1_2, move * Math.SQRT1_2],
             ] as const) {
-              const view = { ...base, x: mx, z: mz, yaw: yaw + dyaw, pitch: base.pitch + dpitch, roll: rl };
+              const view = { ...base, x: mx, z: mz, yaw: yaw + dyaw, pitch: base.pitch + dpitch, roll: baseRoll + rl };
               expect(needsCull(base, view)).toBe(false);
               // Points on the four edges of the view's true frustum, at depths out to 110 m.
               const sy = Math.sin(view.yaw), cy = Math.cos(view.yaw), sp = Math.sin(view.pitch), cp = Math.cos(view.pitch);
-              const sr = Math.sin(rl), cr = Math.cos(rl);
+              const sr = Math.sin(view.roll), cr = Math.cos(view.roll);
               const f = [sy * cp, -sp, cy * cp], r0 = [cy, 0, -sy], u0 = [sy * sp, cp, cy * sp];
               const r = r0.map((v, i) => v * cr + u0[i]! * sr), u = u0.map((v, i) => v * cr - r0[i]! * sr);
               const ty = Math.tan(view.fov / 2), tx = ty * view.aspect;
@@ -311,7 +327,7 @@ describe("the pass against a reference", () => {
         for (const yaw of [-2.8, -1.2, 0.3, 1.9]) {
           // A cut, then small steps from it, then one past the thresholds.
           for (const [dyaw, dpitch, dx, dz] of [[0, 0, 0, 0], [0.01, 0, 0, 0], [0.03, -0.02, 0.1, 0], [0.2, 0.1, 1.5, -2]] as const) {
-            const pose: CullPose = { x: 2 + dx, y: 1.6, z: -3 + dz, yaw: yaw + dyaw, pitch: pi / 10 + dpitch, fov: 1.4, aspect };
+            const pose: CullPose = { x: 2 + dx, y: 1.6, z: -3 + dz, yaw: yaw + dyaw, pitch: pi / 10 + dpitch, roll: 0, fov: 1.4, aspect };
             cullPlanes(pose, planes);
             const ref = referenceCut(planes, count, matrix, vec, one);
             const changed = cullPrefix(planes, count, set);
@@ -340,4 +356,50 @@ describe("the pass against a reference", () => {
     // Some small steps keep exactly the last cut and are left alone.
     expect(skipped).toBeGreaterThan(0);
   }, 60_000);
+});
+
+describe("the planes against Babylon's own frustum", () => {
+  it("are the render camera's side planes, rolled or not, at no margin and no pushback", () => {
+    const engine = new NullEngine({ renderWidth: 1200, renderHeight: 2029, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 1 });
+    const scene = new Scene(engine);
+    // The renderer's camera: a UniversalCamera driven by position and rotation (pitch, yaw, roll).
+    const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
+    camera.fov = 1.4;
+    camera.minZ = 0.05;
+    camera.maxZ = 10000;
+    const poses: [number, number, number, number, number, number][] = [
+      [0, 1.6, 0, 0, 0, 0],
+      [123, 110.87, -105.5, 1.571, 0.3, 0],
+      [3, 2, 4, -2.2, 0.9, 0.0315],
+      [-7, 1, 9, 2.8, -0.6, -0.0315],
+      [1, 1, 1, 0.4, 0.2, 0.3],
+    ];
+    let matched = 0;
+    for (const [x, y, z, yaw, pitch, roll] of poses) {
+      camera.position.set(x, y, z);
+      camera.rotation.set(pitch, yaw, roll);
+      camera.getViewMatrix(true);
+      camera.getProjectionMatrix(true);
+      const pose: CullPose = { x, y, z, yaw, pitch, roll, fov: camera.fov, aspect: engine.getAspectRatio(camera) };
+      expect(pose.aspect).toBeCloseTo(0.5914, 4);
+      const ours = new Float32Array(20);
+      viewPlanes(pose, 0, 0, ours);
+      // Babylon's six, inward and normalised: near, far, left, right, top, bottom.
+      const theirs = Frustum.GetPlanes(camera.getTransformationMatrix());
+      for (let k = 0; k < 16; k += 4) {
+        const n = new Vector3(ours[k]!, ours[k + 1]!, ours[k + 2]!);
+        const best = theirs.slice(2).reduce((a, b) => (Vector3.Dot(a.normal, n) > Vector3.Dot(b.normal, n) ? a : b));
+        expect(Vector3.Dot(best.normal, n)).toBeGreaterThan(0.999999);
+        expect(Math.abs(best.d - ours[k + 3]!)).toBeLessThan(0.002);
+        matched++;
+      }
+      // The near plane faces the same way; Babylon's stands minZ in front of the eye.
+      const near = theirs[0]!;
+      expect(Vector3.Dot(near.normal, new Vector3(ours[16]!, ours[17]!, ours[18]!))).toBeGreaterThan(0.999999);
+      expect(Math.abs(near.d - (ours[19]! - 0.05))).toBeLessThan(0.002);
+    }
+    expect(matched).toBe(20);
+    scene.dispose();
+    engine.dispose();
+  });
 });

@@ -349,7 +349,7 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
   /** What the drawn buffers hold: nothing cut yet, every cell (`cull(null)`),
    * or the cut at `lastPose`. */
   let cutMode: "none" | "all" | "pose" = "none";
-  const lastPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, fov: 0, aspect: 0 };
+  const lastPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 0, aspect: 0 };
 
   /**
    * One tier's fill: two passes over its list, so every bucket knows its size

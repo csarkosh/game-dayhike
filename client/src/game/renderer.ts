@@ -831,7 +831,7 @@ export function createRenderer(
   // included) and before Babylon picks the active meshes; the shells refilter
   // only after a rebuild or when the view has moved past grassCull.ts's
   // thresholds. The pose is the render camera's own, not the fields' centre.
-  const cullPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, fov: 1.4, aspect: 1 };
+  const cullPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 1.4, aspect: 1 };
   if (bladeMeshes !== null || clutterMeshes !== null) {
     scene.onBeforeActiveMeshesEvaluationObservable.add(() => {
       const p = camera.globalPosition;
@@ -840,6 +840,8 @@ export function createRenderer(
       cullPose.z = p.z;
       cullPose.yaw = camera.rotation.y;
       cullPose.pitch = camera.rotation.x;
+      // The view bob's roll, which walking and sprinting put on the camera.
+      cullPose.roll = camera.rotation.z;
       cullPose.fov = camera.fov;
       cullPose.aspect = engine.getAspectRatio(camera);
       bladeMeshes?.cull(cullPose);

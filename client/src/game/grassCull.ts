@@ -6,8 +6,9 @@
  * each bucket's full collected buffers on the CPU and draw a prefix: the
  * instances inside a frustum widened by CULL_MARGIN on every side and pushed
  * back CULL_PUSHBACK behind the eye, copied in order to the front of the
- * drawn buffers. The prefix is refiltered only when the camera has turned by
- * CULL_TURN or moved by CULL_MOVE since it was cut, and those sit inside the
+ * drawn buffers. The planes turn with the camera's roll. The prefix is
+ * refiltered only when the camera has turned by CULL_TURN, rolled by
+ * CULL_ROLL or moved by CULL_MOVE since it was cut, and those sit inside the
  * margins, so an instance the camera can see is always in the prefix.
  *
  * Pure and Babylon-free: the planes are built from the pose, not read from the
@@ -15,10 +16,13 @@
  */
 
 /**
- * How far each side plane is opened beyond the camera's own (rad). Two
- * degrees past CULL_TURN: a yaw turn while pitched is partly a roll about the
- * view, which moves the frame's corners further than the turn itself, and the
- * view bob rolls the camera by up to 0.6°.
+ * How far each side plane is opened beyond the camera's own (rad), past
+ * CULL_TURN by enough for what a turn does to the frame's corners: a yaw turn
+ * while pitched is partly a roll about the view, and a roll of up to CULL_ROLL
+ * may come on top of it. The camera's own roll (the view bob's) is in the
+ * pose, so the planes turn with it; CULL_TURN and CULL_ROLL are set so that,
+ * with this margin and CULL_RADIUS, the sweep in grassCull.test.ts keeps every
+ * instance any part of which is in view.
  */
 export const CULL_MARGIN = (6 * Math.PI) / 180;
 /** How far the apex is moved back along the view, behind the eye (m). */
@@ -36,13 +40,21 @@ export const CULL_PUSHBACK = 1;
  */
 export const CULL_RADIUS = 1.5;
 /** A turn (yaw or pitch, rad) past which the prefix is cut again. */
-export const CULL_TURN = (4 * Math.PI) / 180;
+export const CULL_TURN = (3.5 * Math.PI) / 180;
+/**
+ * A change of roll (rad) past which the prefix is cut again. The view bob
+ * rolls the camera by up to `BOB_ROLL × MAX_BOB_SCALE` (1.8°) either way, with
+ * each stride; at the default scale a walk swings it by 0.6° end to end and
+ * never refilters for it, a sprint or a raised `/bob` does.
+ */
+export const CULL_ROLL = (1 * Math.PI) / 180;
 /** A move (m) past which the prefix is cut again. */
 export const CULL_MOVE = 0.5;
 
-/** The render camera's pose: yaw 0 faces +Z, positive pitch looks down, no
- * roll; `fov` is the vertical field of view and `aspect` width over height. */
-export type CullPose = { x: number; y: number; z: number; yaw: number; pitch: number; fov: number; aspect: number };
+/** The render camera's pose, its rotation as `UniversalCamera.rotation` holds
+ * it: yaw 0 faces +Z, positive pitch looks down, roll turns the view about
+ * forward; `fov` is the vertical field of view and `aspect` width over height. */
+export type CullPose = { x: number; y: number; z: number; yaw: number; pitch: number; roll: number; fov: number; aspect: number };
 /** A collected buffer and the drawn buffer of equal capacity it is cut into. */
 export type CullPair = { src: Float32Array; dst: Float32Array };
 /**
@@ -77,14 +89,27 @@ export type CullSet = {
  * plane when n·p + d ≥ 0. No far plane: the buckets' own discs end the field.
  */
 export function cullPlanes(pose: CullPose, out: Float32Array): void {
-  // Forward, right and up as inCone (wildlifeDirector.ts) has them.
+  viewPlanes(pose, CULL_MARGIN, CULL_PUSHBACK, out);
+}
+
+/**
+ * `cullPlanes` with the margin (rad) and the pushback (m) given: at 0 and 0
+ * the camera's own side planes, and a near plane through the eye.
+ */
+export function viewPlanes(pose: CullPose, margin: number, pushback: number, out: Float32Array): void {
+  // Forward, right and up as inCone (wildlifeDirector.ts) has them, then
+  // right and up turned about forward by the roll, as Babylon's
+  // RotationYawPitchRoll turns the camera's own.
   const sy = Math.sin(pose.yaw), cy = Math.cos(pose.yaw), sp = Math.sin(pose.pitch), cp = Math.cos(pose.pitch);
+  const sr = Math.sin(pose.roll), cr = Math.cos(pose.roll);
   const fx = sy * cp, fy = -sp, fz = cy * cp;
-  const rx = cy, ry = 0, rz = -sy;
-  const ux = sy * sp, uy = cp, uz = cy * sp;
-  const ax = pose.x - fx * CULL_PUSHBACK, ay = pose.y - fy * CULL_PUSHBACK, az = pose.z - fz * CULL_PUSHBACK;
-  const halfY = pose.fov / 2 + CULL_MARGIN;
-  const halfX = Math.atan(Math.tan(pose.fov / 2) * pose.aspect) + CULL_MARGIN;
+  const r0x = cy, r0y = 0, r0z = -sy;
+  const u0x = sy * sp, u0y = cp, u0z = cy * sp;
+  const rx = r0x * cr + u0x * sr, ry = r0y * cr + u0y * sr, rz = r0z * cr + u0z * sr;
+  const ux = u0x * cr - r0x * sr, uy = u0y * cr - r0y * sr, uz = u0z * cr - r0z * sr;
+  const ax = pose.x - fx * pushback, ay = pose.y - fy * pushback, az = pose.z - fz * pushback;
+  const halfY = pose.fov / 2 + margin;
+  const halfX = Math.atan(Math.tan(pose.fov / 2) * pose.aspect) + margin;
   const side = (k: number, ex: number, ey: number, ez: number, half: number, sign: number): void => {
     // The plane through the apex holding the edge direction f·cos + sign·e·sin;
     // its inward normal is f·sin − sign·e·cos.
@@ -107,8 +132,9 @@ export function cullPlanes(pose: CullPose, out: Float32Array): void {
 
 /**
  * Whether the prefix cut at `last` may no longer hold everything `pose` sees:
- * no cut yet, a turn past CULL_TURN, a move past CULL_MOVE, or a frustum of
- * another shape (a resized window, a new field of view).
+ * no cut yet, a turn past CULL_TURN, a roll past CULL_ROLL, a move past
+ * CULL_MOVE, or a frustum of another shape (a resized window, a new field of
+ * view).
  */
 export function needsCull(last: CullPose | null, pose: CullPose): boolean {
   if (last === null) return true;
@@ -119,6 +145,7 @@ export function needsCull(last: CullPose | null, pose: CullPose): boolean {
   if (dyaw > Math.PI) dyaw -= 2 * Math.PI;
   else if (dyaw < -Math.PI) dyaw += 2 * Math.PI;
   if (Math.abs(dyaw) > CULL_TURN || Math.abs(pose.pitch - last.pitch) > CULL_TURN) return true;
+  if (Math.abs(pose.roll - last.roll) > CULL_ROLL) return true;
   const dx = pose.x - last.x, dy = pose.y - last.y, dz = pose.z - last.z;
   return dx * dx + dy * dy + dz * dz > CULL_MOVE * CULL_MOVE;
 }

@@ -466,6 +466,8 @@ describe("world shell wiring", () => {
     expect(hook).toContain("const p = camera.globalPosition;");
     expect(hook).toContain("cullPose.yaw = camera.rotation.y;");
     expect(hook).toContain("cullPose.pitch = camera.rotation.x;");
+    // The view bob's roll too, which the planes turn with.
+    expect(hook).toContain("cullPose.roll = camera.rotation.z;");
     expect(hook).toContain("cullPose.fov = camera.fov;");
     expect(hook).toContain("cullPose.aspect = engine.getAspectRatio(camera);");
     expect(hook).toContain("bladeMeshes?.cull(cullPose);");
