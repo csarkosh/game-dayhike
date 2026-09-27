@@ -126,6 +126,19 @@ read before going on.
    Each should answer "cannot be found" (`NoSuchEntity`, `ResourceNotFoundException`). The
    password parameter is not Terraform's: an existing `/test-rig/desktop-password` does not stop
    the `apply`, and the machine overwrites it at its first boot.
+
+   Check also that no machine carries this module's tags already, in the region chosen:
+
+   ```bash
+   aws ec2 describe-instances --region us-east-1 \
+     --filters Name=tag:Name,Values=test-rig Name=tag:purpose,Values=test-rig \
+       Name=instance-state-name,Values=pending,running,stopping,stopped \
+     --query 'Reservations[].Instances[].[InstanceId,State.Name]' --output text
+   ```
+
+   It should print nothing. If it lists a machine, find out what it is before applying (a
+   machine left from a lost state, or someone else's), and never apply with `running = false`
+   while it is there: the refusal would take it for this module's machine.
 5. **The NVIDIA terms.** The first boot downloads the GRID driver from AWS's bucket. AWS: "By
    downloading, … you agree to use the downloaded software only to develop AMIs for use with the
    NVIDIA L4, NVIDIA L40S, NVIDIA A10G, NVIDIA Tesla T4, or NVIDIA Tesla M60 hardware", and "Upon
@@ -216,7 +229,11 @@ What the two refusals cannot stop. The refusal of a new machine while `running =
 the machines AWS reports (the tag `build` on the machine tagged `Name = test-rig`,
 `purpose = test-rig`); it cannot see a `-replace`, the replacement of a tainted machine, a
 machine whose `build` tag was removed or changed by hand (one without the tag counts as the
-current build), or a replacement the provider decides for a reason of its own. The region refusal is a record, in state, of the first apply's region, checked by the
+current build), or a replacement the provider decides for a reason of its own. It knows
+nothing of Terraform's state: if the state were lost or absent while an instance tagged
+`Name = test-rig` and `purpose = test-rig`, without a `build` tag, still existed, it would read
+that as this module's machine, and an apply with `running = false` would create a new machine
+and stop it in its first boot (step 4 before the first apply checks for such an instance). The region refusal is a record, in state, of the first apply's region, checked by the
 network that every regional resource is built on; it cannot stop `terraform destroy` or
 `terraform apply -refresh-only` run with another region (both drop the resources from state
 without touching them), `terraform state rm`, or anything done outside Terraform.
