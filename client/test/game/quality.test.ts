@@ -4,6 +4,7 @@ import {
   autoTier,
   recordMatches,
   tierFor,
+  verdictFor,
   verdictHolds,
   type AutoRecord,
   type AutoVerdict,
@@ -133,9 +134,30 @@ describe("autoTier and the verdict", () => {
     expect(auto(rec({ at: NOW }))).toEqual({ tier: "high", probeFrom: null });
   });
 
-  it("drops a record made for another class of the same GPU, attempts and all", () => {
+  it("ignores a verdict made for another class of the same GPU, and keeps its attempts", () => {
     expect(auto(rec({}, { cls: "apple-base" }))).toEqual({ tier: "medium", probeFrom: "high" });
-    expect(auto(rec(null, { cls: "apple-base", attempts: 3 }))).toEqual({ tier: "medium", probeFrom: "high" });
+    expect(auto(rec({}, { cls: "apple-base", attempts: 3 }))).toEqual({ tier: "medium", probeFrom: null });
+    expect(auto(rec(null, { cls: "apple-base", attempts: 3 }))).toEqual({ tier: "medium", probeFrom: null });
+  });
+
+  it("stops probing a GPU whose class alternates between loads, after three attempts", () => {
+    // An unnamed renderer, classed by its adapter on the loads where the
+    // adapter answers in time and `unknown` where it does not. Each load that
+    // probes writes its attempt as the probe does (the count up by one, on the
+    // record of this GPU and browser, whatever its class).
+    const gpu = "ANGLE (Intel, Intel(R) Graphics (0x00007D67) Direct3D11 vs_5_0 ps_5_0, D3D11)";
+    let record = null as AutoRecord | null;
+    const probed: boolean[] = [];
+    for (let load = 0; load < 8; load++) {
+      const cls = load % 2 === 0 ? "integrated-unknown" : "unknown";
+      const got = autoTier({ cls, cores: 8, memoryGb: 16, record, gpu, browser: 153, pixels: 2_073_600, now: NOW });
+      probed.push(got.probeFrom !== null);
+      if (got.probeFrom !== null) {
+        record = { v: 1, gpu, cls, browser: 153, attempts: (record?.attempts ?? 0) + 1, verdict: record?.verdict ?? null };
+      }
+    }
+    expect(probed).toEqual([true, true, true, false, false, false, false, false]);
+    expect(record!.attempts).toBe(3);
   });
 
   it("stops probing after three attempts without a verdict", () => {
@@ -167,10 +189,12 @@ describe("autoTier and the verdict", () => {
   });
 
   it("matches a record by version, GPU and browser, and holds a verdict by age and size", () => {
-    expect(recordMatches(rec({}), SAFARI, 26, "apple-unknown")).toBe(true);
-    expect(recordMatches(rec({}), SAFARI, 25, "apple-unknown")).toBe(false);
-    expect(recordMatches(rec({}), SAFARI, 26, "apple-base")).toBe(false);
-    expect(recordMatches(null, SAFARI, 26, "apple-unknown")).toBe(false);
+    expect(recordMatches(rec({}), SAFARI, 26)).toBe(true);
+    expect(recordMatches(rec({}), SAFARI, 25)).toBe(false);
+    expect(recordMatches(rec({}, { cls: "apple-base" }), SAFARI, 26)).toBe(true);
+    expect(recordMatches(null, SAFARI, 26)).toBe(false);
+    expect(verdictFor(rec({}), "apple-unknown")).toEqual({ tier: "high", source: "probe", pixels: 2_073_600, at: NOW - DAY });
+    expect(verdictFor(rec({}), "apple-base")).toBe(null);
     const v = rec({})!.verdict!;
     expect(verdictHolds(v, 3_110_400, NOW)).toBe(true);
     expect(verdictHolds(v, 3_110_401, NOW)).toBe(false);

@@ -90,7 +90,7 @@ export function tierFor(caps: Capabilities): QualityTier {
  * Bumped when every stored verdict should be redone: when what a tier costs
  * moves enough, or when `CLASS_TIERS` moves a class's start or ceiling. A
  * classifier change that moves a GPU to another class needs no bump, since
- * the record carries the class it was made for (`recordMatches`).
+ * the record carries the class its verdict was made for (`verdictFor`).
  */
 export const DETECT_VERSION = 1;
 /** How long a verdict holds, in days. */
@@ -114,10 +114,11 @@ export type ProbeReading = { tier: QualityTier; frames: number; meanMs: number; 
 export type AutoVerdict = { tier: QualityTier; source: "probe" | "governor"; pixels: number; at: number; readings?: ProbeReading[] };
 
 /**
- * Auto's memory, one per browser profile: the GPU (`gpuIdentity`), its class
- * and the browser major it was made on, the probes started since the last
- * verdict, and the verdict. A record for another `DETECT_VERSION`, GPU, class
- * or browser is ignored, attempts and all.
+ * Auto's memory, one per browser profile: the GPU (`gpuIdentity`) and browser
+ * major it was made on, the probes started for them, the verdict, and the
+ * class the verdict was made for. A record for another `DETECT_VERSION`, GPU
+ * or browser is ignored, attempts and all (`recordMatches`); one for another
+ * class keeps its attempts but not its verdict (`verdictFor`).
  */
 export type AutoRecord = { v: number; gpu: string; cls: GpuClass; browser: number; attempts: number; verdict: AutoVerdict | null };
 
@@ -136,12 +137,23 @@ export type AutoInput = {
 };
 
 /**
- * Whether a stored record was made for this version, GPU, class and browser.
- * The class is matched as well as the GPU so that a classifier change that
- * moves this GPU to another class retires the verdict made under the old one.
+ * Whether a stored record was made for this version, GPU and browser: the
+ * identity its attempts are counted on. Not the class, which can differ
+ * between loads of one GPU (an unnamed renderer classed by an adapter that
+ * answers on one load and times out on the next); matched on the class, each
+ * load would throw the other's attempts away and probe again without end.
  */
-export function recordMatches(record: AutoRecord | null, gpu: string, browser: number, cls: GpuClass): boolean {
-  return record !== null && record.v === DETECT_VERSION && record.gpu === gpu && record.browser === browser && record.cls === cls;
+export function recordMatches(record: AutoRecord | null, gpu: string, browser: number): boolean {
+  return record !== null && record.v === DETECT_VERSION && record.gpu === gpu && record.browser === browser;
+}
+
+/**
+ * The record's verdict when it was made for `cls`, else null: a classifier
+ * change that moves this GPU to another class retires the verdict made under
+ * the old one, while the attempts stand.
+ */
+export function verdictFor(record: AutoRecord, cls: GpuClass): AutoVerdict | null {
+  return record.cls === cls ? record.verdict : null;
 }
 
 /**
@@ -164,7 +176,8 @@ function lower(a: QualityTier, b: QualityTier): QualityTier {
  * Auto's tier, and the tier to probe from before the first hike, or null. The
  * class gives a start tier and a ceiling (`CLASS_TIERS`); two cores or two
  * gigabytes, where reported, cap both at low (a missing value caps nothing).
- * A matching record's verdict that holds decides, never above the ceiling;
+ * A matching record's verdict for this class that holds decides, never above
+ * the ceiling;
  * otherwise the start tier, with a probe from the ceiling when the class is
  * probed, the ceiling is above the start, and fewer than `PROBE_ATTEMPTS`
  * probes have been started.
@@ -174,8 +187,8 @@ export function autoTier(input: AutoInput): { tier: QualityTier; probeFrom: Qual
   const capped = (input.cores !== null && input.cores <= 2) || (input.memoryGb !== null && input.memoryGb <= 2);
   const ceiling: QualityTier = capped ? "low" : row.ceiling;
   const start = lower(row.start, ceiling);
-  const record = recordMatches(input.record, input.gpu, input.browser, input.cls) ? input.record : null;
-  const verdict = record?.verdict ?? null;
+  const record = recordMatches(input.record, input.gpu, input.browser) ? input.record : null;
+  const verdict = record === null ? null : verdictFor(record, input.cls);
   if (verdict !== null && verdictHolds(verdict, input.pixels, input.now)) {
     return { tier: lower(verdict.tier, ceiling), probeFrom: null };
   }
