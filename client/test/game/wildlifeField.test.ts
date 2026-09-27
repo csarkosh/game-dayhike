@@ -14,6 +14,7 @@ import {
   groundAnchor,
   type WildlifeUnit,
 } from "../../src/game/wildlifeField.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant("olympic");
 const SEEDS = [1, 388817, -1117907922];
@@ -102,7 +103,7 @@ describe("the rabbits and the canopy", () => {
         else closed++;
       }
       expect([open, partial, closed]).toEqual(want[seed]);
-    }, 60_000);
+    }, timeLimit(60_000));
   }
 });
 

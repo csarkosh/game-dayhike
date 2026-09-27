@@ -8,6 +8,7 @@ import { AiState, Outcome, Phase } from "../../src/sim/types.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
 import { GUIDE_MAX, GUIDE_MIN, homeDistances, pathLength } from "../../src/sim/trailRoute.js";
 import { FORK_CUT_RADIUS } from "../../src/sim/cut.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
@@ -143,5 +144,5 @@ describe("the cut on fifty seeds", () => {
     expect(median, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(5);
     expect(largest, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(11);
     expect(corridor, `a fork on the corridor on ${corridor.join(", ") || "no seed"}`).toEqual(["hollow29"]);
-  }, 300_000);
+  }, timeLimit(300_000));
 });

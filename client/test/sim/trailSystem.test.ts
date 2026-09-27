@@ -21,6 +21,7 @@ import {
   planFeatures,
 } from "../../src/sim/features.js";
 import { SEEDS } from "./trailGateSeeds.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /**
  * THE 227-SEED TRAIL-SYSTEM GATE.
@@ -36,7 +37,7 @@ setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
 describe(
   "the trail system over the 227-seed sweep",
-  { timeout: 600_000 },
+  { timeout: timeLimit(600_000) },
   () => {
     const worlds = SEEDS.map((seed) => ({ seed, ...bowlFor(seed) }));
     const v = activeTerrainVariant();
@@ -325,7 +326,7 @@ describe(
       expect(count).toBeLessThanOrEqual(600);
     });
 
-    it("builds a world in budget", () => {
+    it("builds a world in budget", { tags: ["wall-clock"] }, () => {
       // Measured before the braid: ~460 ms/seed. The braid adds up to two strand
       // searches and up to six rung searches; the budget is a mean, printed so a
       // regression is visible before it is a timeout. Measured with the braid on

@@ -14,6 +14,7 @@ import { ROAD_BED_HALF } from "../../src/sim/road.js";
 import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
 import { TRAILHEAD_U, TRAILHEAD_RADIUS } from "../../src/sim/bowl.js";
 import { SEEDS } from "./trailGateSeeds.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /** Every prop brush in the 3×3 chunks around a world point. `chunkAt` is the
  * grid's only surface that keeps `Brush.material`; `allBoxesIn` returns bare
@@ -74,7 +75,7 @@ describe("the trailhead pass", () => {
         expect(b.box.min.x - roadCenterXOf(seed, zMid), `seed ${seed}`).toBeGreaterThanOrEqual(ROAD_BED_HALF + 0.5);
       }
     }
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("puts the pad centre 9 m from the road centreline on every seed, and the car on the shoulder beside it", () => {
     for (const seed of SEEDS) {
@@ -105,7 +106,7 @@ describe("the trailhead pass", () => {
         expect(Math.hypot(cx - graph.trailhead.x, cz - graph.trailhead.z)).toBeGreaterThan(TRAILHEAD_RADIUS);
       }
     }
-  }, 300000);
+  }, timeLimit(300000));
 
   it("keeps every trailhead prop off the road bed AND clear of the trail bed, over the 227-seed sweep", () => {
     // TWO CLAUSES, both over the same 227 seeds trailBed.test.ts requires.
@@ -156,5 +157,5 @@ describe("the trailhead pass", () => {
       // site; the sign was mirrored on 15 seeds, and so is the kiosk.
       expect(mirrored, `${p.material} mirrored`).toBe(p.material === "kiosk" ? 15 : 7);
     }
-  }, 300000);
+  }, timeLimit(300000));
 });

@@ -1,0 +1,214 @@
+name: test
+
+# The same gates as `npm run typecheck && npm run lint && npm test`, split into
+# jobs so each one reports on its own, with the client suite sharded across
+# runners: unsharded it is the longest gate by far. The commands are the root
+# package.json's, so a local run and this one test the same thing, with two
+# differences, both because the runners are shared machines slower than the
+# development one: every test time limit is scaled (TEST_TIME_SCALE), and the
+# tests tagged `wall-clock`, whose assertion is a bar on elapsed time, are left
+# out here; a local `npm test` runs them, and `npm run test:wall-clock` runs
+# only them. The workflow answers pass or fail, and no time measured here means
+# anything about the game's performance.
+
+on:
+  push:
+    branches: [main, "worktree-**", "ci/**"]
+  pull_request:
+  workflow_dispatch:
+
+# One run per ref: a newer push to a branch or pull request cancels the older
+# run, whose result nobody will read. On main every commit gets its own group
+# (keyed by sha), so no run there is ever cancelled or left pending behind a
+# newer one; a shared group would still drop a queued run when a third arrives.
+# The event name is in main's group too, so a run started by hand on main never
+# cancels the push run of the same commit, or the other way round.
+concurrency:
+  group: test-${{ github.ref == 'refs/heads/main' && format('{0}-{1}', github.event_name, github.sha) || github.ref }}
+  cancel-in-progress: true
+
+# Read the repository and nothing else: no job writes to it, and none needs a
+# secret, so a pull request from a fork runs exactly what a push does.
+permissions:
+  contents: read
+
+env:
+  # The 22.x line the development machine runs; package.json's engines says >=22.13.0.
+  NODE_VERSION: 22.13.1
+
+jobs:
+  # The shipped models, textures and sounds are Git LFS objects and the client
+  # suite reads them. LFS bandwidth on the account is capped per month, so the
+  # objects come from the Actions cache, keyed on the object ids themselves:
+  # they are downloaded from LFS once per new set of ids, never per run. This
+  # job fills the cache on a miss; on a hit it only looks the key up. Doing it
+  # once here, before the shards start, keeps a cold run to ONE download rather
+  # than one per shard.
+  lfs:
+    runs-on: ubuntu-latest
+    # Measured: 9 s with the cache warm. A cold fetch is 77 objects, about 61 MiB.
+    timeout-minutes: 5
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      # lfs: false leaves pointer files in the tree; nothing is downloaded yet.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+      - id: key
+        name: key the cache on the lfs object ids
+        # Only the ids (column 1): the second column is `*` or `-` depending on
+        # whether the file is checked out, so hashing whole lines would change
+        # the key between a cold and a warm tree.
+        run: echo "key=lfs-v1-$(git lfs ls-files -l | cut -d' ' -f1 | sort | sha256sum | cut -c1-64)" >> "$GITHUB_OUTPUT"
+      - id: lookup
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git/lfs/objects
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+      # The only step in the workflow that can reach LFS, and it runs only on a
+      # miss. `fetch` is the download half of `pull`: this job needs the objects
+      # in .git/lfs/objects for the cache, not the files in the tree.
+      - name: download lfs objects (cache miss only)
+        if: steps.lookup.outputs.cache-hit != 'true'
+        run: git lfs fetch
+      # A cache entry cannot be overwritten, so a bad one would stick: check
+      # every object's hash before saving, and save nothing if one is wrong.
+      - name: verify lfs objects before saving (cache miss only)
+        if: steps.lookup.outputs.cache-hit != 'true'
+        run: git lfs fsck --objects
+      - if: steps.lookup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git/lfs/objects
+          key: ${{ steps.key.outputs.key }}
+
+  static:
+    runs-on: ubuntu-latest
+    # Measured: 34 s.
+    timeout-minutes: 10
+    steps:
+      # typecheck and lint read no LFS object, so this job skips them entirely.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - id: install
+        run: npm ci
+      - run: npm run typecheck
+      # Lint runs even when typecheck fails, so one run reports both.
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run lint
+
+  server-and-tools:
+    runs-on: ubuntu-latest
+    # Measured: 21 s.
+    timeout-minutes: 10
+    steps:
+      # Neither suite reads an LFS object.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - id: install
+        run: npm ci
+      - run: npx vitest run --root server
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npx vitest run --root tools
+
+  # The client suite whole on one runner took 17 min (vitest's own figure:
+  # 1014 s). Five shards bring the longest to about 5 min: vitest assigns files
+  # to shards by a hash of their path, not by duration, and the longest single
+  # file (test/sim/trailBed.test.ts, ~280 s on a runner) sets a floor that more
+  # shards cannot lower. At four, the hash put four of the six slowest files in
+  # one shard and it took 8 min.
+  client:
+    needs: lfs
+    runs-on: ubuntu-latest
+    # The longest scaled limit (600 s x 3 = 30 min) on top of the slowest shard
+    # measured (7 min), plus a margin, so a test that hangs while awaiting is
+    # still reported by vitest, naming it. vitest's limit is a timer, which
+    # cannot fire while synchronous code runs: a synchronous endless loop, or a
+    # hang in a describe body (collection runs under no limit at all), ends
+    # here instead, and this timeout names only the job.
+    timeout-minutes: 40
+    env:
+      # Every test time limit, and vitest's defaults, times three: the smallest
+      # whole factor that keeps every test measured on these runners under two
+      # thirds of its scaled limit. Over seven client executions (run
+      # 36328943645's unsharded and sharded ones, 36330139236 x3 and
+      # 36332634644 x2) the slowest against its limit was
+      # sim/clutter's "keeps bushes off the road bed at the jittered instance",
+      # 6.95 s against the 5 s default in run 36332634644's second attempt:
+      # 0.70 of its limit at a factor of 2, 0.46 at 3.
+      TEST_TIME_SCALE: 3
+    strategy:
+      # Every shard reports, so one run shows every failing file, not the first.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
+    name: client (${{ matrix.shard }}/${{ strategy.job-total }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git/lfs/objects
+          key: ${{ needs.lfs.outputs.key }}
+          fail-on-cache-miss: true
+      # `git lfs checkout` writes the files from .git/lfs/objects and never goes
+      # to the network. A bad object, or any file still a pointer afterwards,
+      # means the cache entry is bad: fail here, naming the files and the way
+      # out, not in whichever test reads them. `git lfs ls-files -l` prints
+      # `<64-hex oid> <*|-> <path>`, `-` for a pointer, so the match is anchored
+      # on the oid and a path containing " - " cannot pass for one.
+      - name: check out lfs files from the cache
+        env:
+          KEY: ${{ needs.lfs.outputs.key }}
+        run: |
+          pointers() { git lfs ls-files -l | grep -E '^[0-9a-f]{64} - ' || true; }
+          bad() {
+            echo "::error::The cached LFS objects under $KEY are incomplete or corrupt, and a cache entry cannot be overwritten. Delete it with: gh cache delete $KEY --repo ${GITHUB_REPOSITORY}  (or change lfs-v1 to lfs-v2 in this workflow), then re-run ALL jobs (gh run rerun ${GITHUB_RUN_ID} --repo ${GITHUB_REPOSITORY}, not --failed; the lfs job must run again to refill the cache)."
+            exit 1
+          }
+          echo "lfs pointers before checkout: $(pointers | grep -c . || true)"
+          git lfs fsck --objects || bad
+          git lfs checkout
+          missing=$(pointers)
+          echo "lfs pointers after checkout: $(printf '%s' "$missing" | grep -c . || true)"
+          if [ -n "$missing" ]; then echo "$missing"; bad; fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --root client --shard=${{ matrix.shard }}/${{ strategy.job-total }} '--tags-filter=!wall-clock'
+
+  # The one status to require and to read: it fails unless every job above
+  # succeeded. `always()` matters: a job skipped because its dependency failed
+  # would otherwise skip this one too, and a skipped check reads as passing.
+  # It also runs on a run cancelled by a newer push, and fails there: a red
+  # `gates` on a superseded commit is that cancellation, not a failure to chase.
+  gates:
+    if: always()
+    needs: [lfs, static, server-and-tools, client]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do [ "$r" = success ] || exit 1; done

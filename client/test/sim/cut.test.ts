@@ -17,6 +17,7 @@ import {
   FORK_SPAWN_PLAYER_CLEAR, GUIDE_REJOIN_SLACK, drawGuide, forkSpawn, openBranch, stepCuts, triggerEdge,
 } from "../../src/sim/cut.js";
 import type { CutRecord } from "../../src/sim/cut.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
@@ -270,7 +271,7 @@ describe("forkSpawn on a world without ground", () => {
  * suites carry: the first `createForest` on a seed runs past vitest's 5 s
  * default whenever it shares the machine with them.
  */
-const SUITE = { timeout: 120_000 };
+const SUITE = { timeout: timeLimit(120_000) };
 const seed = seedFromToken("hollow");
 const forestWorld = () => createForestWorld(createForest(seed));
 const edgeBetween = (g: TrailGraph, u: number, v: number) =>

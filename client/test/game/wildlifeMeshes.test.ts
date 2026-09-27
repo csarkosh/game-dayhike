@@ -57,6 +57,7 @@ import {
   CUE_WEIGHT, GAP, LEAD, NOTICE, onScreen, STILL_RELAX, type Ground, type MatchState, type View,
 } from "../../src/game/wildlifeDirector.js";
 import type { ClipRole, CreatureInstance, CreaturePool } from "../../src/game/creatureModel.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant("olympic");
 
@@ -828,7 +829,7 @@ describe("bird thin instances", () => {
     const bx = -372.65448356345297, bz = 691.559469884634;
     const w = createWildlifeMeshes(scene, SEED, { pool });
     // `loadBirdAssets` awaits each catalog bird in turn before it reaches the butterfly.
-    await vi.waitFor(() => expect(scene.getMeshByName("wildlife_butterfly")).not.toBeNull());
+    await vi.waitFor(() => expect(scene.getMeshByName("wildlife_butterfly")).not.toBeNull(), { timeout: timeLimit(1_000) });
     const mesh = scene.getMeshByName("wildlife_butterfly") as Mesh;
 
     // The geometry is the code-built card, and it is wearing the wing beat the bucket path

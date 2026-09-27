@@ -362,7 +362,7 @@ describe("createBandCollector", () => {
     expect(c.size).toBeLessThan(homeSize * 1.5);
   });
 
-  it("keeps a warm one-cell-move collect fast — the 25-33 ms rescan must not return", () => {
+  it("keeps a warm one-cell-move collect fast — the 25-33 ms rescan must not return", { tags: ["wall-clock"] }, () => {
     const c = createBandCollector(SEED);
     c.collect(1, 1); // cold pass pays the full-disc terrain sampling once
     let best = Infinity;

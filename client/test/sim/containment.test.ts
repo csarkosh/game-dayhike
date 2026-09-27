@@ -8,6 +8,7 @@ import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.j
 import { activeTerrainVariant, elevationAt } from "../../src/sim/terrain.js";
 import { CAR_HALF, CAR_ROAD_U } from "../../src/sim/passes/trailhead.js";
 import type { InputCommand } from "../../src/sim/types.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const input = (over: Partial<InputCommand> = {}): InputCommand =>
   ({ seq: 1, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, ...over });
@@ -33,7 +34,7 @@ describe("containAtRoad", () => {
   });
 });
 
-describe("the wall in a forest world", { timeout: 120_000 }, () => {
+describe("the wall in a forest world", { timeout: timeLimit(120_000) }, () => {
   it("never lets a player onto the pavement from any direction, and the car stays within reach of the win", () => {
     const v = activeTerrainVariant();
     for (const seed of [0x5eed, 1, 12345]) {

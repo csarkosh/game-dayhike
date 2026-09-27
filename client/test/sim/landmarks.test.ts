@@ -11,6 +11,7 @@ import { forestDensity } from "../../src/sim/vegetation.js";
 import { clutterDensity, CLUTTER_BOULDER } from "../../src/sim/clutter.js";
 import { segmentDistance, TRAIL_CORRIDOR_HALF } from "../../src/sim/trail.js";
 import { BOWL_U_MIN, BOWL_U_MAX, BOWL_Z_HALF, TRAIL_Z_ANCHOR } from "../../src/sim/bowl.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEEDS = [0x5eed, 1, 12345, 777, 4242];
 
@@ -59,7 +60,7 @@ describe("landmarks on reachable ground, five seeds", () => {
     // loops route — over vitest's 5 s default once the whole suite competes for
     // the CPU, and this assertion also walks every node and edge of each graph,
     // which the loops have made bigger.
-  }, 30000);
+  }, timeLimit(30000));
 
   it("satisfies its predicate at every endpoint, found or carved", () => {
     // Measured on the MASKED, composed world — the thing the player sees — so
@@ -121,7 +122,7 @@ describe("landmarks on reachable ground, five seeds", () => {
       expect(fill(seed, lm.discX, lm.discZ, (x, z) => clutterDensity(seed, CLUTTER_BOULDER, x, z) >= 0.5), `seed ${seed} talus disc fill`)
         .toBeGreaterThanOrEqual(LANDMARK_TUNABLES.LANDMARK_FILL!);
     }
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("keeps every landmark LANDMARK_SPACING apart and LANDMARK_BOWL_MARGIN inside the region", () => {
     expect(LANDMARK_BOWL_MARGIN).toBeGreaterThanOrEqual(LANDMARK_DISC_RADIUS + LANDMARK_DISC_FADE);
