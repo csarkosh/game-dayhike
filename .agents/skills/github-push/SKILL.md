@@ -110,7 +110,17 @@ across shards, and a final `gates` job that fails unless every other job passed.
 one result to read. What the workflow adds is a clean Linux checkout, and the long client suite
 run somewhere other than this machine, which then stays quiet for frame-time measurements.
 It is a pass-or-fail check; nothing it times means anything, because the runners are shared
-machines.
+machines. Two things differ from a local run for that reason:
+
+- **Time limits are scaled.** A test's time limit guards against a hang, not a bar on speed.
+  Every explicit limit is written `timeLimit(<ms>)` (`client/test/helpers/timeLimit.ts`), which
+  multiplies it by `TEST_TIME_SCALE`; unset, locally, the factor is exactly 1. The workflow sets
+  2. The architecture test fails on a limit written as a bare number.
+- **Wall-clock tests are left out.** A test that asserts on elapsed time carries the
+  `wall-clock` tag, and the workflow skips the tag. `npm test` still runs them here;
+  `npm run test:wall-clock` runs only them, and they are only meaningful on a quiet machine.
+  The architecture test fails on a test that reads a clock without the tag, unless it is on
+  its list of tests that print a timing without asserting on it.
 
 A work branch may be pushed to run the gates remotely before it is finished. Then:
 
@@ -172,7 +182,7 @@ the user rather than doing it.
   Team/Enterprise get 250 GiB of each. Billing is metered — the old pre-paid data packs are
   gone. Bandwidth is charged on *download* (clones, pulls, CI fetches), never on upload.
 - Models range from a few KB up to ~3 MB each; every LFS-tracked asset in the repo today
-  (models, ground textures, wildlife calls) totals ~41 MB. Nowhere near either limit.
+  (models, ground textures, wildlife calls, 77 objects) totals ~61 MiB. Nowhere near either limit.
 - **LFS storage counts every version ever pushed and there is no clean per-object delete.**
   Replacing a model's bytes adds a new object permanently. That is a reason to make asset
   updates deliberate, not a reason to avoid updating them.
