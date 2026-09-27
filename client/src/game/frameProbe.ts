@@ -31,11 +31,13 @@ import {
   autoTier,
   holdingVerdict,
   withinClass,
+  onEngine,
   withProbeStarted,
   withVerdict,
   type AutoRecord,
   type ProbeReading,
   type QualityTier,
+  type VerdictEngine,
 } from "./quality.js";
 import { seedFromToken } from "./seed.js";
 import {
@@ -202,8 +204,10 @@ export function probeReadingLine(reading: ProbeReading, width: number, height: n
   return `quality probe: ${reading.tier} ${reading.meanMs.toFixed(2)} ms mean, ${p95} p95, ${reading.frames} frames, ${width}×${height}, ${reading.engine} → ${answer}`;
 }
 
-/** Which record a probe's attempt and verdict are written to. */
-export type ProbeKey = { gpu: string; browser: number; cls: GpuClass };
+/** Which record a probe's attempt and verdict are written to, and the engine
+ * the probed tiers draw with now (absent, WebGL2): the verdict's engine where
+ * no reading gives one. */
+export type ProbeKey = { gpu: string; browser: number; cls: GpuClass; engine?: VerdictEngine };
 
 export type ProbeDeps = {
   storage: Storage | null;
@@ -245,7 +249,10 @@ export async function runProbe(
   for (;;) {
     const step = nextProbeStep(from, readings);
     if ("verdict" in step) {
-      const verdict = { tier: step.verdict, source: "probe" as const, pixels, at: deps.now(), readings };
+      // The engine the deciding reading drew with: a step whose WebGPU engine
+      // failed is measured on WebGL2, and the rule then gives WebGL2 too.
+      const engine = readings[readings.length - 1]?.engine ?? key.engine ?? "webgl2";
+      const verdict = onEngine({ tier: step.verdict, source: "probe" as const, pixels, at: deps.now(), readings }, engine);
       const next = withVerdict(started, key.gpu, key.browser, key.cls, verdict);
       if (next !== null) writeAutoRecord(deps.storage, next);
       return step.verdict;
@@ -286,10 +293,12 @@ export type StartupTier = { tier: QualityTier; source: TierSource; cls: GpuClass
 /** Auto on this machine: the GPU's class and identity, the tier, and the tier
  * a probe would start from, or null, and the most Auto recommends here: a
  * holding verdict's tier, else the class's ceiling (low under the cap). What
- * the Settings screen reads, and where `startupTier` begins. */
+ * the Settings screen reads, and where `startupTier` begins. `at.engine` is
+ * the engine the probed tiers draw with now: a verdict for the other engine
+ * does not hold. */
 export function autoPick(
   signals: GpuSignals,
-  at: { record: AutoRecord | null; pixels: number; now: number },
+  at: { record: AutoRecord | null; pixels: number; now: number; engine?: VerdictEngine },
 ): { cls: GpuClass; gpu: string; tier: QualityTier; probeFrom: QualityTier | null; ceiling: QualityTier } {
   const cls = classifyGpu(signals);
   const gpu = gpuIdentity(signals);
@@ -302,6 +311,7 @@ export function autoPick(
     browser: signals.browser,
     pixels: at.pixels,
     now: at.now,
+    engine: at.engine,
   };
   const auto = autoTier(input);
   // What the frame measured, or the tier that built, once a verdict holds;
@@ -325,11 +335,11 @@ export function autoPick(
  */
 export async function startupTier(
   signals: GpuSignals,
-  opts: { search: string; choice: TierChoice; cancelled(): boolean },
+  opts: { search: string; choice: TierChoice; cancelled(): boolean; engine?: VerdictEngine },
   deps: StartupDeps,
 ): Promise<StartupTier> {
   const record = readAutoRecord(deps.storage);
-  const auto = autoPick(signals, { record, pixels: deps.pixels(), now: deps.now() });
+  const auto = autoPick(signals, { record, pixels: deps.pixels(), now: deps.now(), engine: opts.engine });
   const { cls, gpu } = auto;
   const decided = resolveTier({ override: parseTierOverride(opts.search), choice: opts.choice, auto: auto.tier });
   let tier = decided.tier;
@@ -337,7 +347,7 @@ export async function startupTier(
   if (from !== null && !opts.cancelled()) {
     const screen = deps.showScreen();
     try {
-      const outcome = await probeOnce(from, auto.tier, record, { gpu, browser: signals.browser, cls }, opts, deps);
+      const outcome = await probeOnce(from, auto.tier, record, { gpu, browser: signals.browser, cls, engine: opts.engine }, opts, deps);
       tier = withinClass(outcome.tier, cls, signals.cores, signals.memoryGb);
       if (outcome.line !== null) deps.log(`${outcome.line}; starting at ${tier} (${cls})`);
       else deps.log(`quality probe: verdict ${outcome.tier} (${cls})`);

@@ -125,6 +125,14 @@ export function adapterFromSignals(
   });
 }
 
+/** Whether the signals' adapter fits (`adapterFits`), or null where it is not
+ * known yet (the request `timed-out`): the rule's `fits` without a wait. */
+export function signalsFit(signals: Pick<GpuSignals, "adapterStatus" | "adapter" | "limits" | "features">): boolean | null {
+  if (signals.adapterStatus === "timed-out") return null;
+  if (signals.adapterStatus !== "ok" || signals.adapter === null || signals.limits === null) return false;
+  return adapterFits({ limits: signals.limits, isFallbackAdapter: signals.adapter.isFallbackAdapter }).fits;
+}
+
 /** Of `WEBGPU_TEXTURE_FEATURES`, those the adapter has, in that order. */
 export function featuresToRequest(adapterFeatures: Iterable<string>): string[] {
   const have = new Set(adapterFeatures);

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { landingModel } from "../../src/game/landingModel.js";
 import {
-  adapterFits, adapterFromSignals, chooseEngine, createStartupWindow, failureAction, fallbackHolds, featuresToRequest,
+  adapterFits, adapterFromSignals, chooseEngine, signalsFit, createStartupWindow, failureAction, fallbackHolds, featuresToRequest,
   lateFailureLine, parseEngineOverride, readFallback, recordFailure, resolveWebGpu,
   takeNotice, leaveNotice, withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
   type AdapterReport, type WebGpuSteps,
@@ -481,6 +481,20 @@ describe("the adapter the engine rule reads", () => {
     const none = { adapter: null, limits: null, features: null };
     expect(await adapterFromSignals({ ...none, adapterStatus: "none" }, unasked)).toBeNull();
     expect(await adapterFromSignals({ ...none, adapterStatus: "rejected" }, unasked)).toBeNull();
+  });
+});
+
+describe("whether the signals' adapter fits", () => {
+  const adapter = { vendor: "apple", architecture: "common-3", device: "", description: "", isFallbackAdapter: false };
+  it("is known where the request answered in time, and not known where it timed out", () => {
+    const fits = { adapter, limits: { maxInterStageShaderVariables: 28, maxVertexBuffers: 8 }, features: [] };
+    expect(signalsFit({ ...fits, adapterStatus: "ok" })).toBe(true);
+    expect(signalsFit({ ...fits, limits: { maxInterStageShaderVariables: 16, maxVertexBuffers: 8 }, adapterStatus: "ok" })).toBe(false);
+    expect(signalsFit({ ...fits, adapter: { ...adapter, isFallbackAdapter: true }, adapterStatus: "ok" })).toBe(false);
+    const none = { adapter: null, limits: null, features: null };
+    expect(signalsFit({ ...none, adapterStatus: "timed-out" })).toBe(null);
+    expect(signalsFit({ ...none, adapterStatus: "none" })).toBe(false);
+    expect(signalsFit({ ...none, adapterStatus: "rejected" })).toBe(false);
   });
 });
 

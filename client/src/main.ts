@@ -35,7 +35,7 @@ import { browserEnv, browserMajor, readSignals, type GpuSignals } from "./game/g
 import { START_FAILED_LINE, autoPick, startFallbacks, startHike, startupTier, type StartupTier } from "./game/frameProbe.js";
 import { createHud } from "./game/hud.js";
 import { probeDeps } from "./game/probeScene.js";
-import { containerPixels, withGovernorDrop, type QualityTier } from "./game/quality.js";
+import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "./game/quality.js";
 import type { AutoSummary } from "./game/settings.js";
 import {
   createChoiceKeeper,
@@ -62,6 +62,7 @@ import {
   readFallback,
   recordFailure,
   resolveWebGpu,
+  signalsFit,
   withEngine,
   writeFallback,
   WEBGPU_ENABLED,
@@ -154,8 +155,9 @@ function onTierFallback(fallback: { attempted: QualityTier; built: QualityTier |
     const pixels = app === null ? 0 : containerPixels(app);
     const record = readAutoRecord(pageStorage());
     const now = Date.now();
-    const pick = autoPick(signals, { record, pixels, now });
-    const out = recordFallback({ ...fallback, record, gpu: pick.gpu, browser: signals.browser, cls: pick.cls, choice: currentChoice(), pixels, now });
+    const engine = verdictEngineNow(signals);
+    const pick = autoPick(signals, { record, pixels, now, engine });
+    const out = recordFallback({ ...fallback, record, gpu: pick.gpu, browser: signals.browser, cls: pick.cls, choice: currentChoice(), pixels, now, engine });
     if (out.record !== null) writeAutoRecord(pageStorage(), out.record);
     if (out.choice !== null) saveChoice(out.choice);
     if (out.notice !== null) choiceNotice = out.notice;
@@ -170,8 +172,9 @@ function onGovernorDrop(running: QualityTier): void {
   const pixels = app === null ? 0 : containerPixels(app);
   const record = readAutoRecord(pageStorage());
   const now = Date.now();
-  const pick = autoPick(signals, { record, pixels, now });
-  const next = withGovernorDrop(record, pick.gpu, signals.browser, pick.cls, running, pixels, now);
+  const engine = verdictEngineNow(signals);
+  const pick = autoPick(signals, { record, pixels, now, engine });
+  const next = withGovernorDrop(record, pick.gpu, signals.browser, pick.cls, running, pixels, now, engine);
   if (next !== null) writeAutoRecord(pageStorage(), next);
 }
 
@@ -182,7 +185,7 @@ let landingNotice: string | null = null;
 function autoSummary(): AutoSummary | null {
   if (signals === null) return null;
   const pixels = app === null ? 0 : containerPixels(app);
-  const pick = autoPick(signals, { record: readAutoRecord(pageStorage()), pixels, now: Date.now() });
+  const pick = autoPick(signals, { record: readAutoRecord(pageStorage()), pixels, now: Date.now(), engine: verdictEngineNow(signals) });
   return { tier: pick.tier, probePending: pick.probeFrom !== null, ceiling: pick.ceiling };
 }
 // Bumped by every render, so a hike whose tier is still being decided for a
@@ -544,6 +547,23 @@ function engineEnv(): EngineEnv {
 }
 
 /**
+ * The engine the WebGPU rule gives the probed tiers (high, medium) now, which
+ * Auto's verdicts are kept for (`AutoVerdict.engine`): a verdict measured on
+ * one engine does not decide a hike on the other. An adapter not known yet
+ * counts as WebGPU, which the start then tries.
+ */
+function verdictEngineNow(read: GpuSignals): VerdictEngine {
+  const input: EngineInput = {
+    tier: "high",
+    override: parseEngineOverride(location.search),
+    remembered: fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),
+    on: WEBGPU_ENABLED,
+    fits: signalsFit(read),
+  };
+  return chooseEngine(input) === "webgl2" ? "webgl2" : "webgpu";
+}
+
+/**
  * Remembers a failure, and returns what `failureAction` needs of it. Where
  * storage refuses the record and `pin` is set, this tab's URL is pinned to
  * `engine=webgl2` instead, so a reload of it stays on WebGL2 even when the
@@ -702,7 +722,7 @@ function render(container: HTMLDivElement): void {
     },
     decide: (read, hideLoading) => {
       hikeSignals = read;
-      return startupTier(read, { search: location.search, choice: currentChoice(), cancelled }, {
+      return startupTier(read, { search: location.search, choice: currentChoice(), cancelled, engine: verdictEngineNow(read) }, {
         ...probe,
         showScreen: () => {
           hideLoading();

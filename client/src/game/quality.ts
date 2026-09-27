@@ -124,8 +124,11 @@ export const PROBE_ATTEMPTS = 3;
 const DAY_MS = 86_400_000;
 const RANK: Readonly<Record<QualityTier, number>> = { low: 0, medium: 1, high: 2 };
 
+/** The engine a tier is drawn with (`engineChoice.ts`'s `EngineName`). */
+export type VerdictEngine = "webgl2" | "webgpu";
+
 /** One tier measured by the startup probe. */
-export type ProbeReading = { tier: QualityTier; frames: number; meanMs: number; p95Ms: number; pixels: number; engine: "webgl2" | "webgpu" };
+export type ProbeReading = { tier: QualityTier; frames: number; meanMs: number; p95Ms: number; pixels: number; engine: VerdictEngine };
 
 /**
  * What was learned of one GPU: a probe's tier, a drop after a sustained low
@@ -139,7 +142,26 @@ export type AutoVerdict = {
   pixels: number;
   at: number;
   readings?: ProbeReading[];
+  /**
+   * The engine the verdict was measured with (a probe's) or held on (a
+   * governor's drop, a tier that built): a verdict for one engine says
+   * nothing of the other. Written only for WebGPU; absent, it is WebGL2, the
+   * engine of every record from before WebGPU.
+   */
+  engine?: "webgpu";
 };
+
+/** The engine a verdict holds for (`AutoVerdict.engine`). */
+export function verdictEngine(verdict: AutoVerdict): VerdictEngine {
+  return verdict.engine ?? "webgl2";
+}
+
+/** `verdict` for `engine`: its engine written only for WebGPU. */
+export function onEngine(verdict: Omit<AutoVerdict, "engine">, engine: VerdictEngine): AutoVerdict {
+  const rest: AutoVerdict = { ...verdict };
+  delete rest.engine;
+  return engine === "webgpu" ? { ...rest, engine } : rest;
+}
 
 /**
  * Auto's memory, one per browser profile: the GPU (`gpuIdentity`) and browser
@@ -162,6 +184,9 @@ export type AutoInput = {
   /** The game container's CSS area now. */
   pixels: number;
   now: number;
+  /** The engine the WebGPU rule gives the probed tiers now: a verdict for
+   * the other engine does not hold. Absent, WebGL2. */
+  engine?: VerdictEngine;
 };
 
 /**
@@ -176,12 +201,13 @@ export function recordMatches(record: AutoRecord | null, gpu: string, browser: n
 }
 
 /**
- * The record's verdict when it was made for `cls`, else null: a classifier
- * change that moves this GPU to another class retires the verdict made under
- * the old one, while the attempts stand.
+ * The record's verdict when it was made for `cls` and `engine`, else null: a
+ * classifier change that moves this GPU to another class retires the verdict
+ * made under the old one, and a verdict measured on one engine does not hold
+ * for the other, while the attempts stand.
  */
-export function verdictFor(record: AutoRecord, cls: GpuClass): AutoVerdict | null {
-  return record.cls === cls ? record.verdict : null;
+export function verdictFor(record: AutoRecord, cls: GpuClass, engine: VerdictEngine = "webgl2"): AutoVerdict | null {
+  return record.cls === cls && record.verdict !== null && verdictEngine(record.verdict) === engine ? record.verdict : null;
 }
 
 /**
@@ -205,7 +231,7 @@ export function verdictHolds(verdict: AutoVerdict, pixels: number, now: number):
  */
 export function holdingVerdict(input: AutoInput): AutoVerdict | null {
   if (!recordMatches(input.record, input.gpu, input.browser) || input.record === null) return null;
-  const verdict = verdictFor(input.record, input.cls);
+  const verdict = verdictFor(input.record, input.cls, input.engine);
   return verdict !== null && verdictHolds(verdict, input.pixels, input.now) ? verdict : null;
 }
 
@@ -248,21 +274,25 @@ export function withProbeStarted(prev: AutoRecord | null, gpu: string, browser: 
 /**
  * The record with a verdict for `cls`, or null for a probe's verdict over no
  * area, which certifies nothing and would never hold again. The attempts go
- * back to 0, unless the verdict replaces one made for another class: then the
- * count is carried, so two classes alternating on one GPU, each ignoring the
- * other's verdict, cannot probe on every load.
+ * back to 0, unless the verdict replaces one made for another class or engine:
+ * then the count is carried, so two classes (or engines) alternating on one
+ * GPU, each ignoring the other's verdict, cannot probe on every load.
  */
 export function withVerdict(prev: AutoRecord | null, gpu: string, browser: number, cls: GpuClass, verdict: AutoVerdict): AutoRecord | null {
   if (verdict.source === "probe" && !(verdict.pixels > 0)) return null;
-  const carried = prev !== null && recordMatches(prev, gpu, browser) && prev.verdict !== null && prev.cls !== cls;
+  const carried =
+    prev !== null &&
+    recordMatches(prev, gpu, browser) &&
+    prev.verdict !== null &&
+    (prev.cls !== cls || verdictEngine(prev.verdict) !== verdictEngine(verdict));
   return { v: DETECT_VERSION, gpu, cls, browser, attempts: carried ? prev.attempts : 0, verdict };
 }
 
 /**
  * The record after the governor drops the running tier one step: a verdict of
- * source `governor` at the tier below, for this class, which holds at any
- * window for 7 days, so the next hike starts there too. Null on low, which
- * has nothing below it.
+ * source `governor` at the tier below, for this class and the engine the
+ * running tier drew with, which holds at any window for 7 days, so the next
+ * hike starts there too. Null on low, which has nothing below it.
  */
 export function withGovernorDrop(
   prev: AutoRecord | null,
@@ -272,10 +302,11 @@ export function withGovernorDrop(
   running: QualityTier,
   pixels: number,
   now: number,
+  engine: VerdictEngine = "webgl2",
 ): AutoRecord | null {
   const below: QualityTier | null = running === "high" ? "medium" : running === "medium" ? "low" : null;
   if (below === null) return null;
-  return withVerdict(prev, gpu, browser, cls, { tier: below, source: "governor", pixels, at: now });
+  return withVerdict(prev, gpu, browser, cls, onEngine({ tier: below, source: "governor", pixels, at: now }, engine));
 }
 
 /**

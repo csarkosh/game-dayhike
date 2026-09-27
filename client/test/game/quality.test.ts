@@ -341,3 +341,39 @@ describe("the record after a governor drop", () => {
   });
 });
 
+describe("the engine a verdict was measured with", () => {
+  const onWebGpu = (record: AutoRecord | null, pixels = 2_073_600) =>
+    autoTier({ cls: "apple-unknown", cores: 8, memoryGb: null, record, gpu: SAFARI, browser: 26, pixels, now: NOW, engine: "webgpu" });
+
+  it("holds a WebGL2 verdict for WebGL2 only, and a WebGPU verdict for WebGPU only", () => {
+    // A record from before WebGPU carries no engine: it was WebGL2.
+    expect(auto(rec({}))).toEqual({ tier: "high", probeFrom: null });
+    expect(onWebGpu(rec({}))).toEqual({ tier: "medium", probeFrom: "high" });
+    expect(onWebGpu(rec({ engine: "webgpu" }))).toEqual({ tier: "high", probeFrom: null });
+    expect(auto(rec({ engine: "webgpu" }))).toEqual({ tier: "medium", probeFrom: "high" });
+    expect(verdictFor(rec({ engine: "webgpu" }), "apple-unknown", "webgpu")?.tier).toBe("high");
+    expect(verdictFor(rec({ engine: "webgpu" }), "apple-unknown")).toBe(null);
+  });
+
+  it("keeps the probe attempts per GPU and browser, whatever the engine", () => {
+    expect(onWebGpu(rec({}, { attempts: 3 }))).toEqual({ tier: "medium", probeFrom: null });
+    const started = withProbeStarted(rec({ engine: "webgpu" }, { attempts: 1 }), SAFARI, 26, "apple-unknown");
+    expect(started.attempts).toBe(2);
+    // A verdict replacing one for the other engine carries the count, as one
+    // for another class does, so two engines taking turns cannot probe on
+    // every load.
+    const verdict: AutoVerdict = { tier: "medium", source: "probe", pixels: 2_073_600, at: NOW, engine: "webgpu" };
+    expect(withVerdict(rec({}, { attempts: 2 }), SAFARI, 26, "apple-unknown", verdict)!.attempts).toBe(2);
+    expect(withVerdict(rec({ engine: "webgpu" }, { attempts: 2 }), SAFARI, 26, "apple-unknown", verdict)!.attempts).toBe(0);
+  });
+
+  it("writes a governor's drop for the engine it was held on, and a WebGL2 one as before", () => {
+    expect(withGovernorDrop(null, SAFARI, 26, "apple-unknown", "high", 2_073_600, NOW, "webgpu")!.verdict).toEqual({
+      tier: "medium", source: "governor", pixels: 2_073_600, at: NOW, engine: "webgpu",
+    });
+    expect(withGovernorDrop(null, SAFARI, 26, "apple-unknown", "high", 2_073_600, NOW, "webgl2")!.verdict).toEqual({
+      tier: "medium", source: "governor", pixels: 2_073_600, at: NOW,
+    });
+  });
+});
+

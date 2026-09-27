@@ -328,3 +328,30 @@ describe("the landing's one-shot notice", () => {
     expect(takeNotice(s, 1_790_000_000_000)).toBe(null);
   });
 });
+
+describe("the engine on a verdict", () => {
+  const RTX = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)";
+  const verdict = { tier: "medium" as const, source: "probe" as const, pixels: 2_073_600, at: 1_790_000_000_000 };
+
+  it("reads a WebGPU verdict back, and one with no engine as it was written", () => {
+    const s = memoryStorage();
+    const gpu: AutoRecord = { v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0, verdict: { ...verdict, engine: "webgpu" } };
+    writeAutoRecord(s, gpu);
+    expect(readAutoRecord(s)).toEqual(gpu);
+    const gl: AutoRecord = { ...gpu, verdict };
+    writeAutoRecord(s, gl);
+    expect(readAutoRecord(s)).toEqual(gl);
+    s.setItem("dayhike.quality.auto", JSON.stringify({ ...gpu, verdict: { ...verdict, engine: "vulkan" } }));
+    expect(readAutoRecord(s)).toBe(null);
+  });
+
+  it("writes a build verdict for the engine the tier failed on, over a verdict for the other engine", () => {
+    const base = { gpu: RTX, browser: 153, cls: "discrete-modern" as const, pixels: 2_073_600, now: 1_790_000_000_000 };
+    const held: AutoRecord = { v: 1, ...base, attempts: 0, verdict: { ...verdict, tier: "low", at: base.now - 1 } };
+    const out = recordFallback({ ...base, record: held, attempted: "high", built: "medium", source: "auto", choice: "auto", engine: "webgpu" });
+    expect(out.record!.verdict).toEqual({ tier: "medium", source: "build", pixels: 2_073_600, at: 1_790_000_000_000, engine: "webgpu" });
+    // For the same engine, the lower holding verdict is kept, as before.
+    expect(recordFallback({ ...base, record: held, attempted: "high", built: "medium", source: "auto", choice: "auto" }).record).toBe(null);
+  });
+});
+

@@ -555,3 +555,30 @@ describe("a governor's drop at the next start", () => {
       .toEqual({ tier: "high", source: "choice", cls: "discrete-modern" });
   });
 });
+
+describe("the engine a probe's verdict was measured with", () => {
+  const KEY = { gpu: "Apple GPU", browser: 26, cls: "apple-unknown" } as const;
+  const onGpu = (tier: QualityTier, meanMs: number): ProbeReading => ({ ...reading(tier, meanMs), engine: "webgpu" });
+  const SAFARI: GpuSignals = {
+    renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
+  };
+
+  it("writes the engine the deciding reading drew with, and no engine for WebGL2", async () => {
+    const gpu = memoryStorage();
+    await runProbe("high", "medium", null, KEY, { storage: gpu, runStep: async (tier) => onGpu(tier, 16.7), pixels: () => 2_073_600, now: () => 1_790_000_000_000 });
+    expect(readAutoRecord(gpu)!.verdict!.engine).toBe("webgpu");
+    const gl = memoryStorage();
+    await runProbe("high", "medium", null, KEY, { storage: gl, runStep: async (tier) => reading(tier, 16.7), pixels: () => 2_073_600, now: () => 1_790_000_000_000 });
+    expect(readAutoRecord(gl)!.verdict).not.toHaveProperty("engine");
+  });
+
+  it("reads a verdict only for the engine the probed tiers would draw with now", () => {
+    const record = { v: 1, gpu: "Apple GPU", cls: "apple-unknown" as const, browser: 26, attempts: 0,
+      verdict: { tier: "high" as const, source: "probe" as const, pixels: 2_073_600, at: 1_790_000_000_000 - 1 } };
+    const at = { record, pixels: 2_073_600, now: 1_790_000_000_000 };
+    expect(autoPick(SAFARI, at)).toMatchObject({ tier: "high", probeFrom: null });
+    expect(autoPick(SAFARI, { ...at, engine: "webgl2" })).toMatchObject({ tier: "high", probeFrom: null });
+    expect(autoPick(SAFARI, { ...at, engine: "webgpu" })).toMatchObject({ tier: "medium", probeFrom: "high" });
+  });
+});
+
