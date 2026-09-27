@@ -273,3 +273,49 @@ describe("test time limits", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("wall-clock tests", () => {
+  /**
+   * A test that asserts on elapsed time measures the machine as much as the
+   * code: its bar was set on the development machine and means nothing on a
+   * shared or slower one. Those tests carry the `wall-clock` tag (defined in
+   * vite.config.ts), which CI leaves out and `npm run test:wall-clock` runs
+   * alone. Any clock read in a test puts it under this rule; a test that only
+   * prints a timing, asserting nothing on it, is listed here with why.
+   */
+  const PRINTED_NOT_ASSERTED: Record<string, string> = {
+    "game/bladeMeshes.test.ts > keeps, at the two gate poses, the cells the widened frustum holds, and pins how many":
+      "logs one cull pass's time; asserts only the cell and draw counts",
+    "game/clutterMeshes.test.ts > keeps, at the two gate poses, the cards the widened frustum holds, and pins how many":
+      "logs one cull pass's time; asserts only the card counts",
+    "sim/trailSystem.test.ts > finds the longest way home the graph offers":
+      "logs the guide walk's time over the seed set; asserts only the walks themselves",
+  };
+
+  const reads = testFiles().flatMap((file) => {
+    const rel = relative(TESTS, file);
+    const scan = scanTestSource(file, readFileSync(file, "utf8"));
+    return [
+      ...scan.calls.filter((c) => c.clockReads.length > 0).map((c) => ({ key: `${rel} > ${c.title}`, line: c.line, tagged: c.inheritedTags.includes("wall-clock") })),
+      ...scan.strayClockReads.map((line) => ({ key: `${rel} (outside any test)`, line, tagged: false })),
+    ];
+  });
+
+  // Guards against the guard: the two tagged tests read a clock today, so a
+  // scan that finds none is broken, not clean.
+  it("can see the clock reads", () => {
+    expect(reads.filter((r) => r.tagged).length).toBeGreaterThan(0);
+  });
+
+  it("tags every test that reads a clock, unless it only prints the timing", () => {
+    const offenders = reads
+      .filter((r) => !r.tagged && !(r.key in PRINTED_NOT_ASSERTED))
+      .map((r) => `${r.key} (line ${r.line}) reads a clock: if it asserts on the time, add { tags: ["wall-clock"] } to its options; if it only prints it, add it to PRINTED_NOT_ASSERTED with why`);
+    expect(offenders).toEqual([]);
+  });
+
+  it("lists only tests that still read a clock, untagged", () => {
+    const stale = Object.keys(PRINTED_NOT_ASSERTED).filter((key) => !reads.some((r) => r.key === key && !r.tagged));
+    expect(stale).toEqual([]);
+  });
+});

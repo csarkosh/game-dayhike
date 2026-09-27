@@ -48,5 +48,14 @@ export default defineConfig({
     // value throws here, before any test runs.
     testTimeout: timeLimit(5_000),
     hookTimeout: timeLimit(10_000),
+    tags: [
+      {
+        // Tests whose assertion is a bar on elapsed time, set on the
+        // development machine. CI runs `--tags-filter='!wall-clock'`, and
+        // `npm run test:wall-clock` runs only these, on a quiet machine.
+        name: "wall-clock",
+        description: "asserts on elapsed time; run only on a dedicated, quiet machine",
+      },
+    ],
   },
 });

@@ -326,7 +326,7 @@ describe(
       expect(count).toBeLessThanOrEqual(600);
     });
 
-    it("builds a world in budget", () => {
+    it("builds a world in budget", { tags: ["wall-clock"] }, () => {
       // Measured before the braid: ~460 ms/seed. The braid adds up to two strand
       // searches and up to six rung searches; the budget is a mean, printed so a
       // regression is visible before it is a timeout. Measured with the braid on
