@@ -18,16 +18,17 @@ service.
 |---|---|
 | `aws_instance.test_rig` | `g4dn.xlarge` (one NVIDIA T4) by default, or `g6.xlarge` (one L4). Windows Server 2025 from AWS's public image, 50 GB gp3 boot disk, encrypted and deleted with the machine. IMDSv2 required. Shutting down from inside Windows stops it. |
 | `aws_ec2_instance_state.test_rig` | Running or stopped (`running`), without destroying anything; made again after any change to the machine, so the change cannot leave it in the wrong state (see [What a change does](#what-a-change-does-to-the-machine)). |
-| `terraform_data.setup_script` | The start-up script's SHA-256: a changed script replaces the machine. |
+| `terraform_data.setup_script` | The start-up script's SHA-256, with the user data around it: a change replaces the machine. The machine carries it (with `vpc_cidr`) as the tag `build`, and `data.aws_instances.existing` reads that tag back from AWS at every plan, so a replacement is refused while `running = false`. |
+| `terraform_data.region` | The region of the first apply; a plan in another region is refused. |
 | `aws_vpc`, `aws_subnet`, `aws_internet_gateway`, `aws_route_table` (+ association) | A network of its own with one public subnet. |
 | `aws_security_group.test_rig` | No inbound rule at all (`ingress = []`, so one added outside Terraform is removed); all outbound. |
 | `aws_default_security_group.test_rig` | Takes over this VPC's default security group and leaves it with no rules. |
-| `aws_iam_role.test_rig` + instance profile + policies | The machine's identity; see [Identity](#identity). |
+| `aws_iam_role.test_rig` + instance profile + policies | The machine's identity, with `aws_iam_role_policy_attachments_exclusive` and `aws_iam_role_policies_exclusive` holding its policies to exactly these; see [Identity](#identity). |
 | `aws_scheduler_schedule.backstop` + its role | Stops the machine once a day at 09:00 UTC if it is still running; see [It stops itself](#it-stops-itself). |
 | `aws_budgets_budget.test_rig` (optional) | A monthly alert, created only with `budget_enabled = true`. |
 | `setup.ps1` | The start-up script, passed as user data; see [The first boot](#the-first-boot). |
 | `probe.mjs` | The first run's probe; see [The first run's probe](#the-first-runs-probe). |
-| `tests/plan.tftest.hcl` | `terraform test`, against a mocked AWS provider; creates nothing. See [What is tested](#what-is-tested). |
+| `tests/` | `terraform test` against a mocked AWS provider (creates nothing), and the start-up script's and the probe's own checks. See [What is tested](#what-is-tested). |
 
 Every resource that takes tags carries `purpose = "test-rig"` through the provider's default
 tags, the machine's disk included.
@@ -86,9 +87,12 @@ driver from S3, three installers, a restart), roughly $0.50. Traffic into the ma
 what leaves it (DCV's picture through Session Manager, results) counts against the account's
 100 GB a month of free data transfer out.
 
-## Before the first run, by hand
+## The first session, step by step
 
-None of this is in Terraform. In order:
+None of this is in Terraform. Each step says what to see; anything else is a reason to stop and
+read before going on.
+
+### Before the first `apply`, by hand
 
 1. **On the computer you work from:**
    - AWS credentials for the account (the AWS provider's default chain);
@@ -103,15 +107,15 @@ None of this is in Terraform. In order:
      which the browser asks you to accept once.
 2. **`terraform.tfvars`**, only if a default is to change: `cp terraform.tfvars.example
    terraform.tfvars` (git-ignored). No value is required. `budget_email` is needed only with
-   `budget_enabled = true`.
+   `budget_enabled = true`. Choose `region` now: it is chosen once (see
+   [What a change does](#what-a-change-does-to-the-machine)).
 3. **For the budget, a day ahead:** activate `purpose` as a cost allocation tag in the Billing
    console (Cost allocation tags) or with `aws ce update-cost-allocation-tags-status`. The key is
    offered there up to 24 hours after a tagged resource exists, and activation takes up to 24
    hours more; until then the budget reads $0.
 4. **Names.** The `apply` fails, without touching anything that exists, if the account already
-   has any of: IAM role and instance profile `test-rig`, IAM role `test-rig-backstop-stop`, EventBridge
-   Scheduler schedule `test-rig-backstop-stop`, budget `test-rig`, or a parameter at
-   `/test-rig/desktop-password` that the machine could not overwrite. Check first:
+   has any of: IAM role and instance profile `test-rig`, IAM role `test-rig-backstop-stop`,
+   EventBridge Scheduler schedule `test-rig-backstop-stop`, or budget `test-rig`. Check first:
 
    ```bash
    aws iam get-role --role-name test-rig; aws iam get-role --role-name test-rig-backstop-stop
@@ -119,28 +123,43 @@ None of this is in Terraform. In order:
    aws scheduler get-schedule --region us-east-1 --name test-rig-backstop-stop
    ```
 
-   Each should answer "cannot be found" (`NoSuchEntity`, `ResourceNotFoundException`).
+   Each should answer "cannot be found" (`NoSuchEntity`, `ResourceNotFoundException`). The
+   password parameter is not Terraform's: an existing `/test-rig/desktop-password` does not stop
+   the `apply`, and the machine overwrites it at its first boot.
 5. **The NVIDIA terms.** The first boot downloads the GRID driver from AWS's bucket. AWS: "By
    downloading, … you agree to use the downloaded software only to develop AMIs for use with the
    NVIDIA L4, NVIDIA L40S, NVIDIA A10G, NVIDIA Tesla T4, or NVIDIA Tesla M60 hardware", and "Upon
    installation of the software, you are bound by the terms of the NVIDIA GRID Cloud End User
    License Agreement". Applying this module accepts them.
-6. **After the first `apply`**, from a Session Manager shell (it opens a few minutes after the
-   start, while the set-up runs; `Get-Content -Wait C:\ProgramData\test-rig\setup.log` follows
-   it):
-   - wait for `C:\ProgramData\test-rig\verified`, and read the log's licence line
-     (`licensed product 'NVIDIA RTX Virtual Workstation'; licence 'Licensed ...'`) and stop-timer
-     line;
-   - check the stop timer once (see [It stops itself](#it-stops-itself));
-   - check that CloudTrail did not record the password (see
-     [The desktop user and its password](#the-desktop-user-and-its-password));
-   - **close every DCV client**, then run the probe (see
-     [The first run's probe](#the-first-runs-probe)).
-7. **After a `terraform destroy`**, delete what it leaves by design:
-   - the password: `aws ssm delete-parameter --region us-east-1 --name /test-rig/desktop-password`;
-   - any image made from the machine, and its snapshot (see
-     [An image](#an-image-so-later-machines-start-ready));
-   - the activation of `purpose` as a cost allocation tag, if it is no longer wanted.
+
+### During the first session, in order
+
+| # | Step | Expect |
+|---|---|---|
+| 1 | `terraform plan` before the first apply | 22 to add (23 with the budget), 0 to change, 0 to destroy; nothing in Route53. |
+| 2 | `terraform apply`, then within about 5 minutes of the start, `terraform output -raw shell_command` | A PowerShell opens (the SSM Agent is started before the script). If not, `aws ec2 get-console-output --instance-id <id> --latest --output text` and look for EC2Launch's `agent.log` lines. |
+| 3 | `Get-Content -Wait C:\ProgramData\test-rig\setup.log` | First lines: `Stop timer: 240 minutes after every boot; for this boot at <start + 4 h>`, **not** "could not read the max-run-minutes tag", "the task failed" or "cannot be read". Then `(Get-ScheduledTask test-rig-stop).Triggers`: a boot trigger with `Delay PT4H` and a time trigger. |
+| 4 | The log goes on | `C:\ProgramData\test-rig: SYSTEM and Administrators only`, then `Desktop user hiker: logs on automatically; ... written to Parameter Store` (the parameter write succeeds; a role only minutes old can lag, in which case the next boot retries). |
+| 5 | The driver | The download finishes (no `Timed out:`), `SHA-256` and `Signature of ...: valid, NVIDIA Corporation`, `The NVIDIA GRID driver installer exited with 0` (or `1`: NVIDIA's "Success, but reboot required"; anything else fails the step, and shows whether `-s -n` passes through AWS's self-extracting package), and `Step done: driver`. |
+| 6 | DCV, Chrome, Node, Git | Each `exited with 0` (or `3010` for an MSI), each `Step done`, then `Held still`, `Closed: ...` and `Set-up finished. Restarting once`. |
+| 7 | The restart | The log's next `Stop timer:` line: 4 hours after **this** boot, the set-up's restart. The stop comes 4 hours after the restart, not after the first start. |
+| 8 | The verification boot | The licence line reads a Virtual Workstation and `Licensed` (record the exact product string); `DCV: Session: 'console' (owner:hiker ...)`; `Desktop: hiker is logged on`; `Closed: Remote Desktop off; ...` with no `:3389` among the listeners; `Set-up checked: the machine is ready`, and `C:\ProgramData\test-rig\verified` exists. On `FAILED:`, read it, then `Restart-Computer -Force`: nothing retries until a boot. |
+| 9 | CloudTrail's record of the password write (see [the password](#the-desktop-user-and-its-password)) | `requestParameters` has no `value`. |
+| 10 | DCV by hand: the port forward, sign in as `hiker` with the parameter's password | The desktop, at 1920 × 1080, with no licence error from DCV. Then **close the client**. |
+| 11 | `& 'C:\Program Files\NICE\DCV\Server\bin\dcv.exe' describe-session console --json` | Parses as JSON (no byte-order mark, not UTF-16); `num-of-connections` is `0`. |
+| 12 | The probe (see [The first run's probe](#the-first-runs-probe)) | `PASS`. Read every `WARNING`. Record the renderer string, the `chrome.exe` lines, `featureStatus`, the WebGPU adapter, `refreshHz`, the adapter list and `browserImds`. The desktop is not on a Microsoft Basic Display Adapter. If it fails only on `rasterization` or `gpu_compositing`, run it again with `--ignore-gpu-blocklist` and record both. |
+| 13 | **Stop, then plan** (`terraform apply -var running=false`, then `terraform plan -var running=false`) | `describe-instances` reads `stopped`, not `terminated`. The plan shows **No changes**. This is the one check of what no test here can show: that nothing AWS reports differently about a stopped machine (its public address, its public name, its root volume's tags) makes Terraform want to change or replace it. Any plan that says `aws_instance.test_rig` "must be replaced" is refused until it is understood. |
+| 14 | `aws scheduler get-schedule --region us-east-1 --name test-rig-backstop-stop` | The target's input names this instance id. |
+| 15 | The timer check (see [It stops itself](#it-stops-itself)) | Each trigger stops the machine about 15 minutes after its boot, and the log names which it relied on; after the default is back, the **next** start runs its full 4 hours, not 15 minutes. |
+
+### After a `terraform destroy`
+
+Delete what it leaves by design:
+
+- the password: `aws ssm delete-parameter --region us-east-1 --name /test-rig/desktop-password`;
+- any image made from the machine, and its snapshot (see
+  [An image](#an-image-so-later-machines-start-ready));
+- the activation of `purpose` as a cost allocation tag, if it is no longer wanted.
 
 ## Create, stop, start, destroy
 
@@ -161,7 +180,11 @@ Once the machine has stopped itself, Terraform's state still says `running`; the
 starts it again. `aws ec2 stop-instances --instance-ids <id>` stops it too, with the same
 effect on the next `apply`. Any `apply` with `running = true` starts a stopped machine, whatever
 else it was run for; any `apply` with `running = false` leaves it stopped, whatever else it
-changed. What `destroy` leaves behind is in step 7 above.
+changed. A plan against a stopped machine whose variables have not changed shows no change:
+its public address, which AWS takes away while it is stopped, comes from its subnet
+(`map_public_ip_on_launch`), not from an argument of the instance that Terraform would compare
+(the AWS provider replaces a machine whose `associate_public_ip_address` reads back differently).
+Step 13 of the first session checks it. What `destroy` leaves behind is listed above.
 
 ### What a change does to the machine
 
@@ -169,18 +192,29 @@ changed. What `destroy` leaves behind is in step 7 above.
 |---|---|
 | `running` | The machine is started or stopped. |
 | `instance_type` | The provider stops the machine, changes its size and **starts it again**, whatever `running` says; the running/stopped setting is then applied again (it is re-made after any change to the machine), so a machine meant to be stopped ends stopped. The disk is kept. |
-| `max_run_hours` | The instance tag `max-run-minutes` changes in place. Nothing is restarted or replaced; the new limit applies from the machine's next start. The running/stopped setting is applied again, as above. |
-| The start-up script (`setup.ps1`, or `desktop_user`, `password_parameter`, `display_width`, `display_height`, `region`, which are written into it) | **The machine is replaced**: `plan` shows `aws_instance.test_rig` "must be replaced", triggered by `terraform_data.setup_script`. The new machine runs the first-boot set-up again (about 40 minutes, about $0.50) and gets a new desktop password; the old disk and everything on it go. |
-| A new monthly Windows image | Nothing: the machine keeps its image. `terraform apply -replace=aws_instance.test_rig` moves it on purpose. |
+| `max_run_hours` | The instance tag `max-run-minutes` changes in place. Nothing is restarted or replaced; the new limit applies from the machine's next boot. The running/stopped setting is applied again, as above. |
+| `disk_size_gb` | The disk grows in place, running or stopped (Windows' partition then needs extending by hand). A smaller size is refused by AWS. |
+| The start-up script (`setup.ps1`, the user data around it in `instance.tf`, or `desktop_user`, `password_parameter`, `display_width`, `display_height`, which are written into it), or `vpc_cidr` | **The machine is replaced**: `plan` shows `aws_instance.test_rig` "must be replaced". The new machine runs the first-boot set-up again (about 40 minutes, about $0.50) and makes a new desktop password; the old disk and everything on it go. **Refused while `running = false`**: a new machine must never be stopped before its first set-up has finished (stopped seconds into Windows' own first boot, EC2 hard-stops it after a few minutes, and it may never boot again). Apply with `running = true`, wait for `verified`, then stop it. Until the new machine's first boot writes its password, the parameter holds the old machine's, which no longer works. |
+| `region` | **Refused.** The region is chosen once: the provider's region is not an attribute of any resource, so a change would look for everything in the new region, lose it from state, and leave the machine, its disk and its schedule billing in the old one. To move: `terraform destroy` with the old region, then change it and apply. |
+| A new monthly Windows image | Nothing: the machine keeps its image. |
 | `image_id` | Nothing until `terraform apply -replace=aws_instance.test_rig`. |
+| `terraform apply -replace=aws_instance.test_rig` (a newer image, a prepared image) | A new machine, as for a changed script. Only with `running = true`: the refusal above cannot see a `-replace`. |
 | What AWS offers in the machine's zone | Nothing: the zone is fixed once the subnet exists. |
+
+What the two refusals cannot stop. The replacement refusal reads the machine AWS reports (the tag
+`build` on the machine tagged `Name = test-rig`, `purpose = test-rig`); it cannot see a `-replace`,
+a machine whose tag was changed by hand, or a replacement the provider decides for a reason of
+its own. The region refusal is a record, in state, of the first apply's region, checked by the
+network that every regional resource is built on; it cannot stop `terraform destroy` or
+`terraform apply -refresh-only` run with another region (both drop the resources from state
+without touching them), `terraform state rm`, or anything done outside Terraform.
 
 Why a changed script replaces the machine rather than being ignored: the script's set-up steps
 run only at first boot, so a new script written into a machine that is already set up would
 change nothing a reader could see, while `plan` said nothing either. Replacing it costs a new
 set-up, but is what `plan` shows, and the new machine is what the script says. The trigger is the
-text of the script, not the bytes of the user data, so a Terraform release that compresses
-differently replaces nothing.
+text of the script and of the user data around it, not the compressed bytes, so a Terraform
+release that compresses differently replaces nothing.
 
 ## Reaching the machine
 
@@ -251,7 +285,9 @@ The instance role has:
   on all of them, and the machine has no reason to read any, its own password included.
 
 Nothing else: nothing on Route53, no other bucket, no other instance. The backstop's role may
-call `ec2:StopInstances` on this one instance.
+call `ec2:StopInstances` on this one instance. Both roles' policies are held to exactly these:
+`aws_iam_role_policy_attachments_exclusive` and `aws_iam_role_policies_exclusive` remove, at the
+next apply, any managed or inline policy attached to either role in any other way.
 
 The desktop user cannot use the role at all: a host firewall rule blocks its processes, the
 browser among them, from the instance metadata service (`169.254.169.254`), in the form AWS's
@@ -267,15 +303,20 @@ task with `frequency: always` and `runAs: localSystem`, so it runs at every boot
 system account, with a Session Manager shell available while it runs. The script is gzipped into
 the user data (EC2 caps user data at 16 KB) and unpacked on the machine.
 
-At every boot it first arms the stop timer (below), before anything that can take long, then
-makes `C:\ProgramData\test-rig` writable by the local system account and Administrators only,
+At every boot it first sets the stop timer (below), before anything else can fail, then opens
+its log and makes `C:\ProgramData\test-rig` writable by the local system account and Administrators only,
 with nothing inherited from `ProgramData` (whose Users may create files): nobody else may swap a
 download between its hash check and its run as SYSTEM, or forge a marker. On the first boot it
 then installs, each step recording its own marker there so that a boot that fails part-way is
 finished by the next. Every download and every installer has a time limit (downloads 15 minutes,
-the driver's 30; installers 10 to 30 minutes); one that runs over is stopped with everything it
-started and logged as `Timed out: <what> did not finish in <n> minutes`, and the next boot tries
-again:
+the driver's 30; installers 10 to 30 minutes); one that runs over is logged as `Timed out: <what>
+did not finish in <n> minutes`, nothing further runs on that boot, and the next boot tries again.
+A download or an ordinary installer is stopped with everything it started. An MSI is not quite:
+only its `msiexec` client is stopped, and the install goes on inside the Windows Installer service,
+as the log line says. So every MSI waits first until Windows Installer is idle (its
+`Global\_MSIExecute` mutex free, 30 minutes at most), and each step is marked done only when its
+product is in place (`dcv.exe`, `chrome.exe`, `node.exe` of the pinned version, `git.exe`), never on
+an exit code alone:
 
 1. **The desktop user** (below).
 2. **The NVIDIA GRID driver**, by AWS's documented method for Windows G instances: the installer
@@ -366,7 +407,9 @@ from the system's cryptographic random number generator. It ends up in exactly t
 It is never in Terraform state (the parameter is not a Terraform resource: Terraform would read
 its value back into state), in the user data, in the script's log, or in this repository. A
 rerun of the user step (after a failure, or after an image, below) makes a new password and
-replaces both. The machine's role may overwrite the parameter but not delete it; the desktop
+replaces both. After the machine is replaced, the parameter holds the old machine's password,
+which no longer works anywhere, until the new machine's first boot overwrites it (a few minutes
+into its set-up). The machine's role may overwrite the parameter but not delete it; the desktop
 user cannot reach the role (above).
 
 Not yet confirmed: whether CloudTrail's record of the machine's `PutParameter` call leaves the
@@ -390,16 +433,22 @@ note here that the value is logged.
 A running machine costs $0.715 an hour; one forgotten for a month about $526. Two guards:
 
 1. **Inside Windows:** a scheduled task, run as the local system account whether or not anyone is
-   logged on, runs `shutdown /s /f /t 0` `max_run_hours` (default 4 hours) after every boot, by a
-   start-up trigger with that delay. The instance's shutdown behaviour is `stop`, so the machine
-   stops and keeps its disk. The start-up trigger restarts its clock at every boot by itself and
-   needs no re-arming: it fires even on a boot where the start-up script does not run. The script,
-   first thing at every boot, reads the limit from the instance tag `max-run-minutes`; if the task
-   is missing or its delay differs from the tag, it registers the task again, with a second,
-   one-time trigger for the current boot (a start-up trigger registered during a boot fires only
-   from the next), reads it back (the delay, a next run time, the task ready) and logs it, or
-   falls back to a pending `shutdown /s /t <seconds>`. The task never starts late: a shutdown
-   missed while the machine was off does not fire at a later boot.
+   logged on, runs `shutdown /s /f /t 0` `max_run_hours` (default 4 hours) after each boot. The
+   instance's shutdown behaviour is `stop`, so the machine stops and keeps its disk. The start-up
+   script sets it at every boot, as its very first act, before it even opens its log: it reads
+   the limit from the instance tag `max-run-minutes`, removes the task and registers it afresh
+   with two triggers, one for this boot (`max_run_hours` after it) and one at every start-up
+   delayed by the same amount, which fires at later boots even if the script does not run. It
+   reads the task back (the delay, a next run time, the task ready) and logs it. So the limit
+   counts from **each** boot: in the first session, from the set-up's restart, not from the first
+   start; and a changed tag applies from the next boot, with no trigger of an earlier boot left
+   to stop the machine sooner. Whatever fails (the tag, the boot time, Task Scheduler), the
+   script falls back to a pending `shutdown /s /t <seconds>`, and that fallback cannot itself
+   throw; if even `shutdown.exe` fails, the log says only the daily stop remains. A pending
+   shutdown would make Windows refuse the set-up's own restart, so with the fallback pending the
+   script turns it into a restart a minute away instead of asking the launch agent for one. The
+   task never starts late: a shutdown missed while the machine was off does not fire at a later
+   boot.
 2. **From outside, once a day:** an EventBridge Scheduler schedule calls `StopInstances` on the
    machine at 09:00 UTC (`backstop_stop_schedule`; `null` in `terraform.tfvars` turns it off). It
    catches a machine whose Windows never came up far enough to run the task. Stopping a stopped
@@ -409,21 +458,31 @@ To give a long run more time, raise `max_run_hours` and restart the machine (the
 read at boot), or restart it (the clock starts again).
 
 What can be tested without a machine is tested (see [What is tested](#what-is-tested)): the
-shutdown behaviour, the tag and its value in minutes, that the task has a delayed start-up trigger
-and no late start, that it is armed first, the delay's form (`PT4H`, `PT15M`, `PT1H30M`), the
-one-time trigger's time, and the refusal of a tag outside 15 to 1440 minutes. What only a machine
-shows is that Windows really shuts down on time, by each trigger. Check it once, after the
-first-boot set-up, for about $0.40:
+shutdown behaviour; the tag and its value in minutes; that the task has a delayed start-up trigger
+and no late start and is set first; the delay's form (`PT4H`, `PT15M`, `PT1H30M`); the one-time
+trigger's time; the refusal of a tag outside 15 to 1440 minutes; and the failure paths, with a
+stand-in `shutdown.exe`: with no metadata, no WMI and no Task Scheduler the fallback arms a
+pending shutdown for the whole limit, nothing throws even with no `shutdown.exe`, and a pending
+shutdown is swapped for a restart when set-up needs one.
+
+What only a machine shows is that Windows really shuts down on time, by each trigger, and whether
+removing the task also cancels a start-up trigger's delayed run already pending from the same
+boot (if it does not, and the tag was **raised**, that one boot stops at the old, shorter limit).
+Check it once, after the first-boot set-up, for about $0.40:
 
 1. `terraform apply -var max_run_hours=0.25` changes the tag in place (nothing restarts), then
-   `Restart-Computer -Force` from a Session Manager shell. At that boot the script sees 15 minutes
-   instead of 4 hours and registers the task with a one-time trigger:
+   `Restart-Computer -Force` from a Session Manager shell. At that boot the script registers the
+   task for 15 minutes:
    `aws ec2 describe-instances --instance-ids <id> --query 'Reservations[0].Instances[0].State.Name'`
    should read `stopped` about 15 minutes after the restart.
-2. `terraform apply -var max_run_hours=0.25` again starts it. The task is unchanged, so this time
-   the start-up trigger stops it: `stopped` again about 15 minutes after the start. The log says
-   which trigger it relied on (`Stop timer:` lines).
-3. `terraform apply -var running=false` puts the default back, and leaves the machine stopped.
+2. The start-up trigger alone: `terraform apply -var max_run_hours=0.25` starts it again; from a
+   Session Manager shell, `New-Item C:\ProgramData\test-rig\skip-stop-timer-once` and
+   `Restart-Computer -Force`. At that boot the script leaves the task as it is (and removes the
+   file), so only the start-up trigger registered at the previous boot can stop it: `stopped`
+   about 15 minutes after the restart, and the log says `left as it was for this boot`.
+3. `terraform apply` (the default 4 hours, running) starts it, and the next boot registers 4
+   hours: the machine must still be running 20 minutes after the start, and the log reads
+   `Stop timer: 240 minutes`. Then `terraform apply -var running=false`.
 
 ## Holding the machine still, and security updates
 
@@ -447,8 +506,8 @@ aws ssm send-command --region us-east-1 --instance-ids <instance id> \
 ```
 
 Chrome: run its enterprise installer again (the same command `setup.ps1` uses), or replace the
-machine (`terraform apply -replace=aws_instance.test_rig`), which also takes the newest Windows
-image.
+machine (`terraform apply -replace=aws_instance.test_rig`, with `running = true`), which also
+takes the newest Windows image.
 
 ## The first run's probe
 
@@ -502,8 +561,11 @@ Three questions, in order:
      so no adapter, or a vendor other than `nvidia` (Chrome on Windows serves WebGPU through
      Direct3D 12 on the same GPU), is a `WARNING`, not a fail;
    - Chrome ran in the `Console` session, not session 0;
-   - no DCV client was connected, before or after;
-   - the desktop session could not open a connection to the instance metadata service.
+   - no DCV client was connected, before, during or after;
+   - the desktop session cannot reach the instance metadata service, from Node (a connection) or
+     from Chrome's own network process (a top-level navigation to `http://169.254.169.254/`, which
+     no page policy stops, so only the host firewall can). Any answer, even an error page, is a
+     fail; the report's `browserImds` says what Chrome got.
 
    The report also carries the `chrome.exe` lines of `nvidia-smi` and Chrome's version, which
    every result should record.
@@ -571,8 +633,9 @@ aws ec2 create-image --region us-east-1 --instance-id <instance id> --name test-
 ```
 
 and set `image_id = "ami-..."` in `terraform.tfvars`, then
-`terraform apply -replace=aws_instance.test_rig` (the machine ignores a change of image until it
-is replaced). The image keeps its set-up markers, so the start-up script only makes the new
+`terraform apply -replace=aws_instance.test_rig` with `running = true` (the machine ignores a
+change of image until it is replaced, and a new machine must finish its first boot before it is
+stopped). The image keeps its set-up markers, so the start-up script only makes the new
 password, checks the machine and arms the timer. A later change to the start-up script still
 replaces the machine, from the image: its set-up steps are then skipped, so a change to them
 needs a new image.
@@ -600,38 +663,63 @@ public IPv4 address is billed without the tag, a cent or two a run.
 
 ## What is tested
 
-`terraform test` (from this directory) runs `tests/plan.tftest.hcl` against a mocked AWS provider:
-nothing is created and no credentials are used. It asserts:
+Three sets of checks run without AWS, without Windows and without a machine:
+
+- `terraform test`, from this directory: `tests/plan.tftest.hcl`, against a mocked AWS provider
+  (nothing is created, no credentials are used);
+- `pwsh -NoProfile -File tests/setup.tests.ps1`, on PowerShell 7 on any system: the start-up
+  script's syntax and the functions that need no Windows;
+- `node --test tests/probe.test.mjs`: the probe's judgements on sample reports.
+
+None of them runs in the repository's test workflow; run them by hand after a change here.
+
+`terraform test` asserts:
 
 - the machine: `g4dn.xlarge` by default and `g6.xlarge` by variable, the public image, shutdown
-  behaviour `stop`, IMDSv2 required, the 50 GB encrypted gp3 disk deleted with it, the public
-  address, only its own security group, and the zone (first by name, unmoved by a size switch);
+  behaviour `stop`, IMDSv2 required, the 50 GB encrypted gp3 disk deleted with it, only its own
+  security group, the zone (first by name, unmoved by a size switch), its public address from the
+  subnet, and `associate_public_ip_address` never set on the instance;
 - the network: no inbound rule on the machine's security group, and no rule at all on the
   VPC's default group;
-- identity: EC2 alone may take the role; its only managed policy is
-  `AmazonSSMManagedInstanceCore`; it may do exactly three things (read the GRID driver bucket,
-  read DCV's licence bucket, write the password parameter) and is denied every parameter read;
-  the backstop's role is taken only by this account's scheduler and may only stop this machine,
-  and the schedule's target is this machine;
+- identity: each role's trust is exactly one statement (EC2 for the machine's; this account's
+  scheduler for the backstop's); the machine's role has exactly one managed policy,
+  `AmazonSSMManagedInstanceCore`, and one inline policy, which allows exactly three things (read
+  the GRID driver bucket, read DCV's licence bucket, write the password parameter) and denies
+  every parameter read; the backstop's has no managed policy and one inline policy, which may only
+  stop this machine; the schedule's target is this machine. The sets are enforced in AWS as well:
+  a managed or inline policy added to either role any other way is removed at the next apply. What
+  no test here can see is another policy resource added to this module's own files;
 - the start-up: the user data starts the SSM Agent before the script, runs it at every boot as
-  the local system account, fits in 16 KB; the script arms a stop task with a delayed start-up
-  trigger first, and never late; the timer reaches the machine as the tag `max-run-minutes`
-  (240, or 90 for 1.5 hours); a changed script is what replaces the machine;
-- the sequence of changes, applied in order against the mocked provider with the machine meant
-  to be stopped: a new size keeps the machine and applies the stopped setting again; a new timer
-  changes the tag, keeps the machine and applies the setting again; a changed script replaces
-  the machine, which is left stopped; the same script again keeps it. A mocked provider cannot
-  show the AWS provider's own start after a new size, or the setting's stop that follows; it
-  shows that Terraform re-applies `stopped` after every change to the machine (the AWS provider's
-  source shows the rest: a new size is stop, modify, start; creating the setting stops or starts
-  the machine as asked; removing it does nothing);
+  the local system account, fits in 16 KB; the script sets its stop task first, before its log,
+  with a delayed start-up trigger and never late; the timer reaches the machine as the tag
+  `max-run-minutes` (240, or 90 for 1.5 hours); a changed script, or a changed wrapper around it,
+  is what replaces the machine;
+- the sequence of changes, applied in order against the mocked provider:
+  - the machine stopped and reporting no public address, as AWS reports a stopped machine; a
+    plan with the same variables then keeps the machine and changes nothing about it;
+  - a new size keeps the machine and applies the stopped setting again; a new timer changes the
+    tag, keeps the machine and applies the setting again;
+  - a changed script with `running = false` is refused, when AWS reports a machine of an earlier
+    build; with `running = true` it replaces the machine, which is left running and carries the
+    new build; stopping it afterwards keeps it;
+  - the same state planned in another region is refused.
+
+  A mocked provider does not run the AWS provider's own plan logic or read AWS: it cannot show
+  that a real stopped machine plans no change (step 13 of the first session does), the provider's
+  own start after a new size, or the setting's stop that follows. The AWS provider's source shows
+  those: a new size is stop, modify, start; creating the setting stops or starts the machine as
+  asked; removing it does nothing;
 - the budget: off by default and needing no email then; with it on, the tag filter, $30, alerts
   at 80 % and 100 % actual and 100 % forecast, and a refusal without an email address;
 - the backstop off with `null`; and the refusal of another size, another region, no timer, and a
   timer in part minutes.
 
-What only a machine shows is in [Before the first run, by hand](#before-the-first-run-by-hand),
-step 6.
+`tests/setup.tests.ps1` checks: the script parses, with no syntax Windows PowerShell 5.1 lacks;
+the licence rule; the password; the signer rule; the stop plan and the tag; the time limits on
+downloads; and the stop timer's failure paths (above). `tests/probe.test.mjs` checks every pass
+and fail rule of [the probe](#the-first-runs-probe).
+
+What only a machine shows is in [the first session](#the-first-session-step-by-step).
 
 ## Not defined here
 
