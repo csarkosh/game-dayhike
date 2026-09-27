@@ -25,6 +25,12 @@ mock_provider "aws" {
     values = { locations = ["us-east-1d", "us-east-1b", "us-east-1a"] }
   }
 
+  # No machine of this module exists yet, unless a run says otherwise.
+  override_data {
+    target = data.aws_instances.existing
+    values = { ids = [] }
+  }
+
   # The scheduler checks that its role is an ARN.
   mock_resource "aws_iam_role" {
     defaults = { arn = "arn:aws:iam::111122223333:role/mock" }
@@ -60,8 +66,8 @@ run "defaults" {
   }
 
   assert {
-    condition     = strcontains(local.setup_script, "try {\n  Set-StopTimer\n  Protect-Root\n")
-    error_message = "The stop timer is armed first, before anything that can take long."
+    condition     = strcontains(local.setup_script, "$exitCode = 0\nSet-StopTimer\ntry {\n  New-Item")
+    error_message = "The stop timer is armed first, before anything else can fail, the log included."
   }
 
   assert {
@@ -85,8 +91,8 @@ run "defaults" {
   }
 
   assert {
-    condition     = terraform_data.setup_script.input == sha256(local.setup_script)
-    error_message = "A changed script is what replaces the machine."
+    condition     = terraform_data.setup_script.input == local.setup_hash && local.setup_hash != sha256(local.setup_script)
+    error_message = "A changed script, or a changed wrapper around it in the user data, is what replaces the machine."
   }
 
   assert {
@@ -105,8 +111,8 @@ run "defaults" {
   }
 
   assert {
-    condition     = aws_instance.test_rig.associate_public_ip_address == true
-    error_message = "The machine has a public IPv4 address for outbound traffic."
+    condition     = aws_subnet.test_rig.map_public_ip_on_launch == true
+    error_message = "The machine's public IPv4 address comes from its subnet."
   }
 
   assert {
@@ -119,14 +125,29 @@ run "defaults" {
     error_message = "The VPC's default security group has no rule at all."
   }
 
+  # AWS's provider reads associate_public_ip_address back as false from a
+  # stopped machine and replaces the machine on the difference; it must never
+  # be set on the instance.
   assert {
-    condition     = aws_iam_role_policy_attachment.ssm_core.policy_arn == "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-    error_message = "The only managed policy is AWS's Session Manager baseline."
+    condition     = !strcontains(file("${path.module}/instance.tf"), "associate_public_ip_address =")
+    error_message = "associate_public_ip_address must not be set on the instance: a stopped machine would be replaced."
   }
 
   assert {
-    condition     = jsondecode(aws_iam_role.test_rig.assume_role_policy).Statement[0].Principal.Service == "ec2.amazonaws.com"
-    error_message = "Only EC2 may take the machine's role."
+    condition     = aws_iam_role_policy_attachments_exclusive.test_rig.policy_arns == toset(["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"])
+    error_message = "The role's managed policies are exactly AWS's Session Manager baseline."
+  }
+
+  assert {
+    condition     = aws_iam_role_policies_exclusive.test_rig.policy_names == toset(["test-rig"])
+    error_message = "The role's inline policies are exactly this module's one."
+  }
+
+  assert {
+    condition = jsondecode(aws_iam_role.test_rig.assume_role_policy).Statement == [
+      { Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "ec2.amazonaws.com" } },
+    ]
+    error_message = "The role's trust is exactly one statement: EC2 may take it."
   }
 
   # What the machine may do: read two buckets and write one parameter.
@@ -162,8 +183,21 @@ run "defaults" {
   }
 
   assert {
-    condition     = jsondecode(aws_iam_role.backstop[0].assume_role_policy).Statement[0].Condition.StringEquals["aws:SourceAccount"] == "111122223333"
-    error_message = "Only this account's scheduler may take the backstop's role."
+    condition = jsondecode(aws_iam_role.backstop[0].assume_role_policy).Statement == [
+      {
+        Effect    = "Allow", Action = "sts:AssumeRole", Principal = { Service = "scheduler.amazonaws.com" },
+        Condition = { StringEquals = { "aws:SourceAccount" = "111122223333" } }
+      },
+    ]
+    error_message = "The backstop role's trust is exactly one statement: this account's scheduler may take it."
+  }
+
+  assert {
+    condition = (
+      length(aws_iam_role_policy_attachments_exclusive.backstop[0].policy_arns) == 0 &&
+      aws_iam_role_policies_exclusive.backstop[0].policy_names == toset(["test-rig-backstop-stop"])
+    )
+    error_message = "The backstop role has no managed policy and exactly one inline policy."
   }
 
   assert {
@@ -304,9 +338,20 @@ run "stopped" {
     running = false
   }
 
+  # What AWS reports for a stopped machine: no public address, no public name.
+  override_resource {
+    target = aws_instance.test_rig
+    values = {
+      associate_public_ip_address = false
+      public_ip                   = ""
+      public_dns                  = ""
+      instance_state              = "stopped"
+    }
+  }
+
   assert {
-    condition     = aws_ec2_instance_state.test_rig.state == "stopped"
-    error_message = "running = false stops the machine."
+    condition     = aws_ec2_instance_state.test_rig.state == "stopped" && aws_instance.test_rig.associate_public_ip_address == false
+    error_message = "The machine is stopped and reports no public address."
   }
 
   assert {
@@ -321,12 +366,32 @@ run "stopped" {
   }
 
   assert {
-    condition = (
-      jsondecode(aws_iam_role_policy.backstop[0].policy).Statement[0].Action == "ec2:StopInstances" &&
-      jsondecode(aws_iam_role_policy.backstop[0].policy).Statement[0].Resource == aws_instance.test_rig.arn &&
-      length(jsondecode(aws_iam_role_policy.backstop[0].policy).Statement) == 1
-    )
+    condition = jsondecode(aws_iam_role_policy.backstop[0].policy).Statement == [
+      { Effect = "Allow", Action = "ec2:StopInstances", Resource = aws_instance.test_rig.arn },
+    ]
     error_message = "The backstop's role may stop this machine and do nothing else."
+  }
+}
+
+# The machine exists, is stopped and reports no public address. A plan with
+# the same variables must change nothing about it: the instance keeps its id
+# (a replacement would leave it unknown here, and fail the run), and so does
+# its running/stopped setting (any update to the instance would re-make it).
+run "plan_while_stopped" {
+  command = plan
+
+  variables {
+    running = false
+  }
+
+  assert {
+    condition     = aws_instance.test_rig.id == run.stopped.instance_id
+    error_message = "A plan against the stopped machine replaces it."
+  }
+
+  assert {
+    condition     = aws_ec2_instance_state.test_rig.id == run.stopped.instance_state.id
+    error_message = "A plan against the stopped machine changes it."
   }
 }
 
@@ -376,9 +441,11 @@ run "timer_changed_while_stopped" {
   }
 }
 
-# A changed script replaces the machine, and the new one is left stopped.
-run "script_changed_while_stopped" {
-  command = apply
+# A changed script, with the machine meant to be stopped, is refused: the new
+# machine would be stopped in the middle of Windows' own first boot. The
+# existing machine (as AWS reports it) carries the old build.
+run "script_changed_while_stopped_is_refused" {
+  command = plan
 
   variables {
     running       = false
@@ -387,19 +454,55 @@ run "script_changed_while_stopped" {
     desktop_user  = "walker"
   }
 
-  assert {
-    condition     = aws_instance.test_rig.id != run.stopped.instance_id
-    error_message = "A changed script replaces the machine."
+  override_data {
+    target = data.aws_instances.existing
+    values = { ids = ["i-0123456789abcdef0"] }
+  }
+
+  override_data {
+    target = data.aws_instance.existing
+    values = { tags = { Name = "test-rig", purpose = "test-rig", build = "an-earlier-build" } }
+  }
+
+  expect_failures = [aws_instance.test_rig]
+}
+
+# The same change with the machine running is allowed, and replaces it.
+run "script_changed_while_running" {
+  command = apply
+
+  variables {
+    running       = true
+    instance_type = "g6.xlarge"
+    max_run_hours = 1
+    desktop_user  = "walker"
+  }
+
+  override_data {
+    target = data.aws_instances.existing
+    values = { ids = ["i-0123456789abcdef0"] }
+  }
+
+  override_data {
+    target = data.aws_instance.existing
+    values = { tags = { Name = "test-rig", purpose = "test-rig", build = "an-earlier-build" } }
   }
 
   assert {
-    condition     = aws_ec2_instance_state.test_rig.instance_id == aws_instance.test_rig.id && aws_ec2_instance_state.test_rig.state == "stopped"
-    error_message = "The new machine is left stopped."
+    condition     = aws_instance.test_rig.id != run.stopped.instance_id && aws_instance.test_rig.tags["build"] == local.build_key
+    error_message = "A changed script replaces the machine, and the new one carries its build."
+  }
+
+  assert {
+    condition     = aws_ec2_instance_state.test_rig.instance_id == aws_instance.test_rig.id && aws_ec2_instance_state.test_rig.state == "running"
+    error_message = "The new machine is left running, to finish its set-up."
   }
 }
 
-# The same script again: nothing is replaced.
-run "same_script_again" {
+# Stopping it afterwards, with the same script, is allowed and keeps it. (A
+# test cannot hand the mocked AWS the new build's value, so here the guard
+# sees no machine; the replacement itself is what the run checks.)
+run "stopped_after_set_up" {
   command = apply
 
   variables {
@@ -410,7 +513,23 @@ run "same_script_again" {
   }
 
   assert {
-    condition     = aws_instance.test_rig.id == run.script_changed_while_stopped.instance_id
-    error_message = "An unchanged script keeps the machine."
+    condition     = aws_instance.test_rig.id == run.script_changed_while_running.instance_id && aws_ec2_instance_state.test_rig.state == "stopped"
+    error_message = "An unchanged script keeps the machine, and it can be stopped."
   }
+}
+
+# The region is chosen once: planning the same state in another region is
+# refused, by the network that every regional resource here is built on.
+run "region_changed_is_refused" {
+  command = plan
+
+  variables {
+    region        = "us-west-2"
+    running       = true
+    instance_type = "g6.xlarge"
+    max_run_hours = 1
+    desktop_user  = "walker"
+  }
+
+  expect_failures = [aws_vpc.test_rig]
 }
