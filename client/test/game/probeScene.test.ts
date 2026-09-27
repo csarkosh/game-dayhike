@@ -38,6 +38,7 @@ import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { buildProbeScene } from "../../src/game/probeScene.js";
 import { readFileSync } from "node:fs";
 import { OVER_PLAY_Z, PROBE_SCREEN_LINE, showProbeScreen, timeIdleCadence } from "../../src/game/probeScreen.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
 
@@ -54,7 +55,7 @@ describe("buildProbeScene", () => {
     expect(probe.renderer.scene.meshes.some((mesh) => mesh.name.startsWith("blade_clumps"))).toBe(true);
     probe.dispose();
     expect(EngineStore.Instances.length).toBe(0);
-  }, 60_000);
+  }, timeLimit(60_000));
 });
 
 describe("the probe screen", () => {
