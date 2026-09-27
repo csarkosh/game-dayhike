@@ -1,5 +1,5 @@
 /**
- * The WebGPU engine: the adapter probe, the engine itself, and the watcher
+ * The WebGPU engine: the translators, the engine itself, and the watcher
  * that turns a failure on it into WebGL2. Only `main.ts`'s dynamic `import()`
  * loads this module, on the path where WebGPU could be the answer
  * (`engineChoice.ts`), so the WebGL2 bundle carries none of it, nor the
@@ -36,7 +36,6 @@ import {
   WEBGPU_FETCH_MS,
   WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS,
-  type AdapterReport,
 } from "./engineChoice.js";
 
 /** How Babylon words an uncaptured WebGPU error, which it logs as a warning
@@ -88,35 +87,6 @@ export function catchTranslationFailures(engine: AbstractEngine): void {
     });
     return pending;
   };
-}
-
-/**
- * The high-performance adapter's limits and features, and whether it is a
- * fallback (software) adapter, or null where the browser has no WebGPU, offers
- * no adapter, or the request fails. Never rejects; a request that never
- * answers is bounded by the caller (`resolveWebGpu`).
- */
-export async function probeAdapter(): Promise<AdapterReport | null> {
-  const gpu = (globalThis.navigator as { gpu?: GPU } | undefined)?.gpu;
-  if (!gpu) return null;
-  try {
-    if (!(await WebGPUEngine.IsSupportedAsync)) return null;
-    const adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
-    if (!adapter) return null;
-    // Every limit, read with `for…in`: a browser's limits are getters on the
-    // prototype, so `Object.keys` finds none of them.
-    const limits: Record<string, number> = {};
-    const source = adapter.limits as unknown as Record<string, unknown>;
-    for (const name in source) {
-      const value = source[name];
-      if (typeof value === "number") limits[name] = value;
-    }
-    const legacy = (adapter as unknown as { isFallbackAdapter?: boolean }).isFallbackAdapter;
-    const features = adapter.features ? [...adapter.features] : [];
-    return { limits, isFallbackAdapter: adapter.info?.isFallbackAdapter ?? legacy ?? false, features };
-  } catch {
-    return null;
-  }
 }
 
 /** The two translators, started: glslang as Babylon's GLSL path uses it, and

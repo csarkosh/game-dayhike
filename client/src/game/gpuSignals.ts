@@ -36,8 +36,9 @@ export type AdapterInfo = { vendor: string; architecture: string; device: string
  * `navigator.gpu` or an answer with no adapter; `"rejected"`, the request
  * threw, rejected, or answered with an adapter that could not be read;
  * `"timed-out"`, no answer within `ADAPTER_TIMEOUT_MS`. The WebGPU engine rule
- * reads the difference: an adapter that hangs is a failure worth remembering,
- * a browser without one is not.
+ * reads the difference: `"timed-out"` means not known yet, never a failure,
+ * and the rule waits on the same request with its own budget (`readSignals`);
+ * a browser without an adapter is WebGL2 and nothing is remembered.
  */
 export type AdapterStatus = "ok" | "none" | "rejected" | "timed-out";
 
@@ -48,6 +49,8 @@ export type GpuSignals = {
   adapter: AdapterInfo | null;
   /** The same adapter's limits, every one, for the WebGPU engine rule; null with `adapter`. */
   limits: Readonly<Record<string, number>> | null;
+  /** The same adapter's optional features, for the WebGPU engine rule; null with `adapter`. */
+  features: readonly string[] | null;
   /** Why `adapter` is null, or `"ok"`. */
   adapterStatus: AdapterStatus;
   /** Logical cores, or null where not reported. */
@@ -143,30 +146,50 @@ export function browserMajor(userAgent: string): number {
   return 0;
 }
 
+/** The adapter as the WebGPU engine rule reads it: its limits, whether it is a
+ * fallback (software) adapter, and its optional features. */
+export type AdapterReading = { limits: Readonly<Record<string, number>>; isFallbackAdapter: boolean; features: readonly string[] };
+
 /**
- * Every signal, each on its own guard. The adapter request starts first and
- * runs beside the WebGL read. Whatever else needs the adapter (the WebGPU
- * engine rule reads its `limits` and `isFallbackAdapter`) should read it from
- * here rather than ask again: Babylon's `WebGPUEngine.IsSupportedAsync` is
- * itself a `requestAdapter`.
+ * Every signal, each on its own guard, and the page's one adapter request.
+ * The request starts first and runs beside the WebGL read; `signals` gives up
+ * on it at `ADAPTER_TIMEOUT_MS` (`"timed-out"`), while `adapter` is the same
+ * request's own answer, however long it takes: what the WebGPU engine rule
+ * waits on, with its own budget, when the signals went without it. Null there
+ * for no WebGPU, no adapter, a request that failed or an adapter that could
+ * not be read. Nothing else asks for an adapter: Babylon's
+ * `WebGPUEngine.IsSupportedAsync` is itself a `requestAdapter`.
  */
-export async function gatherSignals(env: SignalEnv): Promise<GpuSignals> {
+export function readSignals(env: SignalEnv): { signals: Promise<GpuSignals>; adapter: Promise<AdapterReading | null> } {
   const nav = env.navigator;
-  const pending = requestAdapter(nav);
-  const renderer = rendererOf(env);
-  const answer = await pending;
-  const found = answer.adapter === null ? null : readAdapter(answer.adapter);
-  const adapterStatus: AdapterStatus = answer.adapter !== null && found === null ? "rejected" : answer.status;
-  return {
-    renderer,
-    adapter: found?.info ?? null,
-    limits: found?.limits ?? null,
-    adapterStatus,
-    cores: reported(() => nav?.hardwareConcurrency),
-    memoryGb: reported(() => nav?.deviceMemory),
-    mobile: isMobile(nav),
-    browser: browserMajor(agentOf(nav)),
-  };
+  const request = requestAdapter(nav);
+  const read = request.whole.then((answer) => (answer.adapter === null ? null : readAdapter(answer.adapter)));
+  const signals = (async (): Promise<GpuSignals> => {
+    const renderer = rendererOf(env);
+    const answer = await request.bounded;
+    const found = answer.adapter === null ? null : await read;
+    const adapterStatus: AdapterStatus = answer.adapter !== null && found === null ? "rejected" : answer.status;
+    return {
+      renderer,
+      adapter: found?.info ?? null,
+      limits: found?.limits ?? null,
+      features: found?.features ?? null,
+      adapterStatus,
+      cores: reported(() => nav?.hardwareConcurrency),
+      memoryGb: reported(() => nav?.deviceMemory),
+      mobile: isMobile(nav),
+      browser: browserMajor(agentOf(nav)),
+    };
+  })();
+  const adapter = read.then((found) =>
+    found === null ? null : { limits: found.limits, isFallbackAdapter: found.info.isFallbackAdapter, features: found.features },
+  );
+  return { signals, adapter };
+}
+
+/** Every signal (`readSignals`), without the adapter request's later answer. */
+export function gatherSignals(env: SignalEnv): Promise<GpuSignals> {
+  return readSignals(env).signals;
 }
 
 /** The page's environment: `globalThis.navigator`, and a throwaway canvas's
@@ -190,13 +213,17 @@ function rendererOf(env: SignalEnv): string | null {
 
 type AdapterAnswer = { status: AdapterStatus; adapter: object | null };
 
-/** The high-performance adapter and how the request ended; the adapter is
- * null unless the status is `"ok"`. Never rejects. */
-function requestAdapter(nav: NavigatorLike | undefined): Promise<AdapterAnswer> {
+/** The high-performance adapter and how the request ended, the adapter null
+ * unless the status is `"ok"`: `whole` whenever the request answers, and
+ * `bounded` given up at `ADAPTER_TIMEOUT_MS`. Asks once; never rejects. */
+function requestAdapter(nav: NavigatorLike | undefined): { whole: Promise<AdapterAnswer>; bounded: Promise<AdapterAnswer> } {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const gpu = nav?.gpu;
-    if (typeof gpu?.requestAdapter !== "function") return Promise.resolve({ status: "none", adapter: null });
+    if (typeof gpu?.requestAdapter !== "function") {
+      const none = Promise.resolve<AdapterAnswer>({ status: "none", adapter: null });
+      return { whole: none, bounded: none };
+    }
     const answer = Promise.resolve(gpu.requestAdapter({ powerPreference: "high-performance" })).then(
       (adapter): AdapterAnswer =>
         typeof adapter === "object" && adapter !== null ? { status: "ok", adapter } : { status: "none", adapter: null },
@@ -205,22 +232,23 @@ function requestAdapter(nav: NavigatorLike | undefined): Promise<AdapterAnswer> 
     const deadline = new Promise<AdapterAnswer>((resolve) => {
       timer = setTimeout(() => resolve({ status: "timed-out", adapter: null }), ADAPTER_TIMEOUT_MS);
     });
-    return Promise.race([answer, deadline]).finally(() => clearTimeout(timer));
+    return { whole: answer, bounded: Promise.race([answer, deadline]).finally(() => clearTimeout(timer)) };
   } catch {
     clearTimeout(timer);
-    return Promise.resolve({ status: "rejected", adapter: null });
+    const rejected = Promise.resolve<AdapterAnswer>({ status: "rejected", adapter: null });
+    return { whole: rejected, bounded: rejected };
   }
 }
 
 /**
- * The adapter's info and limits. Every limit is read with `for…in`: a
- * browser's limits are getters on the prototype, so `Object.keys` finds none.
- * `isFallbackAdapter` is the info's, else the adapter's own older attribute,
- * which is read only when the info has none.
+ * The adapter's info, limits and optional features. Every limit is read with
+ * `for…in`: a browser's limits are getters on the prototype, so `Object.keys`
+ * finds none. `isFallbackAdapter` is the info's, else the adapter's own older
+ * attribute, which is read only when the info has none.
  */
-function readAdapter(adapter: object): { info: AdapterInfo; limits: Record<string, number> } | null {
+function readAdapter(adapter: object): { info: AdapterInfo; limits: Record<string, number>; features: string[] } | null {
   try {
-    const source = adapter as { info?: unknown; limits?: unknown; isFallbackAdapter?: unknown };
+    const source = adapter as { info?: unknown; limits?: unknown; isFallbackAdapter?: unknown; features?: unknown };
     const info = (typeof source.info === "object" && source.info !== null ? source.info : {}) as Record<string, unknown>;
     const text = (value: unknown): string => (typeof value === "string" ? value : "");
     const fallback =
@@ -237,7 +265,12 @@ function readAdapter(adapter: object): { info: AdapterInfo; limits: Record<strin
         if (typeof value === "number") limits[name] = value;
       }
     }
+    const features: string[] = [];
+    if (typeof source.features === "object" && source.features !== null && Symbol.iterator in source.features) {
+      for (const feature of source.features as Iterable<unknown>) if (typeof feature === "string") features.push(feature);
+    }
     return {
+      features,
       info: {
         vendor: text(info.vendor),
         architecture: text(info.architecture),

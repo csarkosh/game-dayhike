@@ -31,7 +31,7 @@ import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
-import { browserEnv, browserMajor, gatherSignals, type GpuSignals } from "./game/gpuSignals.js";
+import { browserEnv, browserMajor, readSignals, type GpuSignals } from "./game/gpuSignals.js";
 import { START_FAILED_LINE, autoPick, startFallbacks, startHike, startupTier, type StartupTier } from "./game/frameProbe.js";
 import { createHud } from "./game/hud.js";
 import { probeDeps } from "./game/probeScene.js";
@@ -51,6 +51,7 @@ import {
   type TierSource,
 } from "./game/tierChoice.js";
 import {
+  adapterFromSignals,
   chooseEngine,
   engineWaitLine,
   failureAction,
@@ -114,8 +115,10 @@ const latestReady: Promise<void> = latestUrl
 // page down rather than one feature.
 const selfId = createLobbyId();
 // What the browser says of the GPU, read once at load: tens of milliseconds,
-// at most 2 s for the WebGPU adapter. A hike's tier is decided from it.
-const signalsReady = gatherSignals(browserEnv());
+// at most 2 s for the WebGPU adapter. A hike's tier is decided from it, and
+// the WebGPU rule reads the adapter from the same request (`adapterFromSignals`).
+const signalsRead = readSignals(browserEnv());
+const signalsReady = signalsRead.signals;
 let signals: GpuSignals | null = null;
 // The Settings panel's Auto line waits on them.
 void signalsReady.then((read) => {
@@ -558,19 +561,20 @@ function rememberFailure(reason: "init" | "pipeline" | "lost", pin = true): { st
 
 /**
  * The WebGPU engine for `canvas`, or null for WebGL2, by `resolveWebGpu`: the
- * module, the adapter, and only where it fits the translators and the engine,
- * within the fetch's budget and the GPU's, every failure caught. A page
- * without `navigator.gpu` fetches nothing. The URL is pinned only while this
- * render is still the page's.
+ * module, the adapter (the GPU's signals', `read`; where they timed out, the
+ * same request's later answer within the GPU's budget), and only where it fits
+ * the translators and the engine, within the fetch's budget and the GPU's,
+ * every failure caught. A page without `navigator.gpu` fetches nothing. The
+ * URL is pinned only while this render is still the page's.
  */
-function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput, token: number): Promise<MadeEngine | null> {
+function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput, read: GpuSignals, token: number): Promise<MadeEngine | null> {
   let translators: Awaited<ReturnType<GpuModule["loadTranslators"]>> | undefined;
   return resolveWebGpu<MadeEngine>(input, {
     available: () => (navigator as { gpu?: unknown }).gpu !== undefined,
     load: async () => {
       const gpu: GpuModule = await import("./game/gpuEngine.js");
       return {
-        probe: gpu.probeAdapter,
+        probe: () => adapterFromSignals(read, () => signalsRead.adapter),
         fetchTranslators: async () => {
           translators = await gpu.loadTranslators();
         },
@@ -687,6 +691,7 @@ function render(container: HTMLDivElement): void {
   const probe = probeDeps(container);
   const cancelled = (): boolean => token !== renderToken;
   running = { dispose: () => probe.abort() };
+  let hikeSignals: GpuSignals | null = null;
   void startHike({
     signals: signalsReady,
     current: () => !cancelled(),
@@ -695,15 +700,19 @@ function render(container: HTMLDivElement): void {
       line.setStatus("Loading…");
       return line;
     },
-    decide: (read, hideLoading) =>
-      startupTier(read, { search: location.search, choice: currentChoice(), cancelled }, {
+    decide: (read, hideLoading) => {
+      hikeSignals = read;
+      return startupTier(read, { search: location.search, choice: currentChoice(), cancelled }, {
         ...probe,
         showScreen: () => {
           hideLoading();
           return probe.showScreen();
         },
-      }),
+      });
+    },
     build: (decided) => {
+      const read = hikeSignals;
+      if (read === null) throw new Error("the GPU's signals were not read");
       const canvas = document.createElement("canvas");
       container.appendChild(canvas);
       const input: EngineInput = {
@@ -723,7 +732,7 @@ function render(container: HTMLDivElement): void {
       // this one while the engine was made wins.
       const wait = createHud(container);
       wait.setStatus(engineWaitLine(choice));
-      void makeWebGpu(canvas, input, token).then((made) => {
+      void makeWebGpu(canvas, input, read, token).then((made) => {
         wait.dispose();
         if (token !== renderToken) {
           made?.engine.dispose();

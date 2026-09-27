@@ -5,65 +5,11 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import { EffectFallbacks } from "@babylonjs/core/Materials/effectFallbacks.js";
-import { catchTranslationFailures, probeAdapter, watchWebGpu } from "../../src/game/gpuEngine.js";
+import { catchTranslationFailures, watchWebGpu } from "../../src/game/gpuEngine.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-});
-
-/** A limits object shaped as a browser's is: every limit an enumerable
- * getter on the prototype, none an own property. */
-function browserLimits(values: Record<string, number>): object {
-  const proto = {};
-  for (const [name, value] of Object.entries(values)) {
-    Object.defineProperty(proto, name, { get: () => value, enumerable: true });
-  }
-  return Object.create(proto) as object;
-}
-
-describe("probeAdapter", () => {
-  it("finds nothing where the browser has no WebGPU", async () => {
-    vi.stubGlobal("navigator", {});
-    expect(await probeAdapter()).toBeNull();
-  });
-
-  it("finds nothing where no adapter is offered, or the request fails", async () => {
-    vi.stubGlobal("navigator", { gpu: { requestAdapter: () => Promise.resolve(null) } });
-    expect(await probeAdapter()).toBeNull();
-    vi.stubGlobal("navigator", { gpu: { requestAdapter: () => Promise.reject(new Error("lost")) } });
-    expect(await probeAdapter()).toBeNull();
-  });
-
-  it("reads every limit off the prototype, and asks for the high-performance adapter", async () => {
-    const asked: unknown[] = [];
-    const adapter = {
-      limits: browserLimits({ maxInterStageShaderVariables: 28, maxVertexBuffers: 8 }),
-      info: { isFallbackAdapter: false },
-      features: new Set(["texture-compression-bc", "timestamp-query"]),
-    };
-    vi.stubGlobal("navigator", {
-      gpu: {
-        requestAdapter: (options?: unknown) => {
-          asked.push(options);
-          return Promise.resolve(adapter);
-        },
-      },
-    });
-    expect(Object.keys(adapter.limits)).toEqual([]);
-    expect(await probeAdapter()).toEqual({
-      limits: { maxInterStageShaderVariables: 28, maxVertexBuffers: 8 },
-      isFallbackAdapter: false,
-      features: ["texture-compression-bc", "timestamp-query"],
-    });
-    expect(asked.at(-1)).toEqual({ powerPreference: "high-performance" });
-  });
-
-  it("reports a fallback adapter as one", async () => {
-    const adapter = { limits: browserLimits({ maxVertexBuffers: 8 }), info: { isFallbackAdapter: true } };
-    vi.stubGlobal("navigator", { gpu: { requestAdapter: () => Promise.resolve(adapter) } });
-    expect(await probeAdapter()).toEqual({ limits: { maxVertexBuffers: 8 }, isFallbackAdapter: true, features: [] });
-  });
 });
 
 describe("watchWebGpu", () => {

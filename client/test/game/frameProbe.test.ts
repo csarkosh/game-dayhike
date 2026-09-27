@@ -167,11 +167,11 @@ describe("runProbe and the Auto record", () => {
 
 describe("startupTier", () => {
   const SAFARI: GpuSignals = {
-    renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
+    renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
   };
   const M4: GpuSignals = {
     renderer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
-    adapter: null, limits: null, adapterStatus: "none", cores: 10, memoryGb: 16, mobile: false, browser: 153,
+    adapter: null, limits: null, features: null, adapterStatus: "none", cores: 10, memoryGb: 16, mobile: false, browser: 153,
   };
 
   /** Fakes for the page: steps answer from `answers`, the timer fires when told,
@@ -286,9 +286,9 @@ describe("startupTier", () => {
     const gpu = "ANGLE (Intel, Intel(R) Graphics (0x00007D67) Direct3D11 vs_5_0 ps_5_0, D3D11)";
     const answered: GpuSignals = {
       renderer: gpu, adapter: { vendor: "intel", architecture: "gen-12lp", device: "", description: "", isFallbackAdapter: false },
-      limits: {}, adapterStatus: "ok", cores: 8, memoryGb: 16, mobile: false, browser: 153,
+      limits: {}, features: [], adapterStatus: "ok", cores: 8, memoryGb: 16, mobile: false, browser: 153,
     };
-    const late: GpuSignals = { ...answered, adapter: null, limits: null, adapterStatus: "timed-out" };
+    const late: GpuSignals = { ...answered, adapter: null, limits: null, features: null, adapterStatus: "timed-out" };
     async function alternate(answer: (tier: QualityTier) => ProbeReading | null): Promise<boolean[]> {
       const s = memoryStorage();
       const probed: boolean[] = [];
@@ -360,7 +360,7 @@ describe("startupTier", () => {
 describe("autoPick", () => {
   it("is Auto's tier and whether it will probe, before any hike", () => {
     const signals: GpuSignals = {
-      renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
+      renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
     };
     expect(autoPick(signals, { record: null, pixels: 2_073_600, now: 1_790_000_000_000 })).toEqual({
       cls: "apple-unknown", gpu: "Apple GPU", tier: "medium", probeFrom: "high", ceiling: "high",
@@ -437,7 +437,7 @@ describe("createProbeMeter", () => {
 
 describe("startHike", () => {
   const SAFARI: GpuSignals = {
-    renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
+    renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
   };
   const DECIDED = { tier: "medium" as const, source: "auto" as const, cls: "apple-unknown" as const };
 
@@ -505,7 +505,7 @@ describe("startHike", () => {
 
 describe("autoPick's recommendation", () => {
   const SAFARI_SIGNALS: GpuSignals = {
-    renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
+    renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
   };
   const at = (record: import("../../src/game/quality.js").AutoRecord | null) =>
     autoPick(SAFARI_SIGNALS, { record, pixels: 2_073_600, now: 1_790_000_000_000 });
@@ -537,7 +537,7 @@ describe("a governor's drop at the next start", () => {
   it("starts the hike one tier down, for Auto only", async () => {
     const RTX = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)";
     const signals: GpuSignals = {
-      renderer: RTX, adapter: null, limits: null, adapterStatus: "none", cores: 16, memoryGb: 32, mobile: false, browser: 153,
+      renderer: RTX, adapter: null, limits: null, features: null, adapterStatus: "none", cores: 16, memoryGb: 32, mobile: false, browser: 153,
     };
     const s = memoryStorage();
     writeAutoRecord(s, {

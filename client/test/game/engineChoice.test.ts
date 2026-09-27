@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { landingModel } from "../../src/game/landingModel.js";
 import {
-  adapterFits, chooseEngine, createStartupWindow, failureAction, fallbackHolds, featuresToRequest,
+  adapterFits, adapterFromSignals, chooseEngine, createStartupWindow, failureAction, fallbackHolds, featuresToRequest,
   lateFailureLine, parseEngineOverride, readFallback, recordFailure, resolveWebGpu,
   takeNotice, leaveNotice, withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
   type AdapterReport, type WebGpuSteps,
@@ -452,3 +452,35 @@ describe("resolveWebGpu", () => {
     expect(await result).toBeNull();
   });
 });
+
+describe("the adapter the engine rule reads", () => {
+  const signals = {
+    adapter: { vendor: "apple", architecture: "common-3", device: "", description: "", isFallbackAdapter: false },
+    limits: { maxInterStageShaderVariables: 28, maxVertexBuffers: 8 },
+    features: ["texture-compression-bc"],
+  };
+  const unasked = (): Promise<AdapterReport | null> => {
+    throw new Error("the later answer is read only when the signals went without it");
+  };
+
+  it("is the signals' own reading where the request answered in time", async () => {
+    expect(await adapterFromSignals({ ...signals, adapterStatus: "ok" }, unasked)).toEqual({
+      limits: { maxInterStageShaderVariables: 28, maxVertexBuffers: 8 },
+      isFallbackAdapter: false,
+      features: ["texture-compression-bc"],
+    });
+  });
+
+  it("is the same request's later answer where the signals timed out: not known yet, never a failure", async () => {
+    const later: AdapterReport = { limits: { maxVertexBuffers: 8 }, isFallbackAdapter: true, features: [] };
+    const none = { adapter: null, limits: null, features: null };
+    expect(await adapterFromSignals({ ...none, adapterStatus: "timed-out" }, () => Promise.resolve(later))).toBe(later);
+  });
+
+  it("is no adapter where there is no WebGPU, no adapter, or the request failed", async () => {
+    const none = { adapter: null, limits: null, features: null };
+    expect(await adapterFromSignals({ ...none, adapterStatus: "none" }, unasked)).toBeNull();
+    expect(await adapterFromSignals({ ...none, adapterStatus: "rejected" }, unasked)).toBeNull();
+  });
+});
+

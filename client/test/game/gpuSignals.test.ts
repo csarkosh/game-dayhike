@@ -3,6 +3,7 @@ import {
   ADAPTER_TIMEOUT_MS,
   browserMajor,
   gatherSignals,
+  readSignals,
   isMobile,
   readRenderer,
   type NavigatorLike,
@@ -114,6 +115,7 @@ describe("gatherSignals", () => {
           requestAdapter: async () => ({
             info: { vendor: "apple", architecture: "common-3", device: "", description: "", isFallbackAdapter: false },
             limits: limits(),
+            features: new Set(["texture-compression-bc", "timestamp-query"]),
           }),
         },
       },
@@ -123,6 +125,7 @@ describe("gatherSignals", () => {
       renderer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
       adapter: { vendor: "apple", architecture: "common-3", device: "", description: "", isFallbackAdapter: false },
       limits: { maxInterStageShaderVariables: 16, maxVertexBuffers: 8 },
+      features: ["texture-compression-bc", "timestamp-query"],
       adapterStatus: "ok",
       cores: 10,
       memoryGb: 16,
@@ -137,7 +140,7 @@ describe("gatherSignals", () => {
       webgl: () => null,
     });
     expect(signals).toEqual({
-      renderer: null, adapter: null, limits: null, adapterStatus: "none", cores: null, memoryGb: null, mobile: false, browser: 26,
+      renderer: null, adapter: null, limits: null, features: null, adapterStatus: "none", cores: null, memoryGb: null, mobile: false, browser: 26,
     });
   });
 
@@ -219,7 +222,7 @@ describe("gatherSignals", () => {
     }) as NavigatorLike;
     const signals = await gatherSignals({ navigator: nav, webgl: () => null });
     expect(signals).toEqual({
-      renderer: null, adapter: null, limits: null, adapterStatus: "rejected", cores: null, memoryGb: null, mobile: false, browser: 0,
+      renderer: null, adapter: null, limits: null, features: null, adapterStatus: "rejected", cores: null, memoryGb: null, mobile: false, browser: 0,
     });
   });
 
@@ -234,3 +237,59 @@ describe("gatherSignals", () => {
     expect(small.memoryGb).toBe(0.25);
   });
 });
+
+describe("the page's one adapter request", () => {
+  const report = { limits: { maxVertexBuffers: 8 }, isFallbackAdapter: false, features: ["texture-compression-bc"] };
+  const adapter = () => ({
+    info: { vendor: "apple", architecture: "common-3", device: "", description: "", isFallbackAdapter: false },
+    limits: { maxVertexBuffers: 8 },
+    features: new Set(["texture-compression-bc"]),
+  });
+
+  it("gives the engine rule the signals' own adapter, asked for once", async () => {
+    let asked = 0;
+    const read = readSignals({
+      navigator: { userAgent: "", gpu: { requestAdapter: async () => (asked++, adapter()) } },
+      webgl: () => null,
+    });
+    expect((await read.signals).adapterStatus).toBe("ok");
+    expect(await read.adapter).toEqual(report);
+    expect(asked).toBe(1);
+  });
+
+  it("keeps waiting on the same request after the signals have gone without it", async () => {
+    vi.useFakeTimers();
+    try {
+      let asked = 0;
+      const read = readSignals({
+        navigator: {
+          userAgent: "",
+          gpu: { requestAdapter: () => (asked++, new Promise((resolve) => setTimeout(() => resolve(adapter()), 3000))) },
+        },
+        webgl: () => null,
+      });
+      let late: unknown = "pending";
+      void read.adapter.then((answer) => (late = answer));
+      await vi.advanceTimersByTimeAsync(2000);
+      // "timed-out": not known yet, and the request is still the one running.
+      expect((await read.signals).adapterStatus).toBe("timed-out");
+      expect(late).toBe("pending");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(late).toEqual(report);
+      expect(asked).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("answers null for no WebGPU, no adapter, a failed request or an adapter it cannot read", async () => {
+    const cases: NavigatorLike[] = [
+      { userAgent: "" },
+      { userAgent: "", gpu: { requestAdapter: async () => null } },
+      { userAgent: "", gpu: { requestAdapter: async () => { throw new Error("refused"); } } },
+      { userAgent: "", gpu: { requestAdapter: async () => Object.defineProperty({}, "info", { get() { throw new Error("denied"); } }) } },
+    ];
+    for (const navigator of cases) expect(await readSignals({ navigator, webgl: () => null }).adapter).toBe(null);
+  });
+});
+

@@ -156,6 +156,15 @@ describe("layer boundaries", () => {
     expect(definitions("safeStorage")).toEqual([]);
   });
 
+  it("asks for a WebGPU adapter in one place, the GPU's signals, and never through Babylon's support check", () => {
+    const naming = (pattern: RegExp): string[] =>
+      sourceFiles(SRC).flatMap((file) =>
+        [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map(() => relative(SRC, file)),
+      );
+    expect(naming(/\.requestAdapter\(/g)).toEqual(["game/gpuSignals.ts"]);
+    expect(naming(/\bIsSupportedAsync\b/g)).toEqual([]);
+  });
+
   it("keeps the quality modules out of sim/ and net/", () => {
     const quality = /game\/(quality|gpuSignals|gpuClass|tierChoice|frameProbe|governor|rendererSwap|settings)(\.js)?$/;
     expect(violations(join(SRC, "sim"), [quality])).toEqual([]);

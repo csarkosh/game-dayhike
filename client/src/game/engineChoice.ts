@@ -11,6 +11,7 @@
  * Storage is read and written through the `Storage` it is handed, every
  * access wrapped as `playerName.ts` wraps its own.
  */
+import type { GpuSignals } from "./gpuSignals.js";
 import type { QualityTier } from "./quality.js";
 
 export type EngineName = "webgl2" | "webgpu";
@@ -95,13 +96,34 @@ export function parseEngineOverride(search: string): EngineName | null {
   return value === "webgl2" || value === "webgpu" ? value : null;
 }
 
-/** What `gpuEngine.ts` learns of the high-performance adapter. */
+/** What the rule reads of the high-performance adapter (`adapterFromSignals`). */
 export type AdapterReport = {
   limits: Readonly<Record<string, number>>;
   isFallbackAdapter: boolean;
   /** The adapter's optional features, where it was asked for them. */
   features?: readonly string[];
 };
+
+/**
+ * The adapter the rule reads, from the page's one adapter request (the GPU's
+ * signals, `readSignals` in `gpuSignals.ts`): the signals' own reading where
+ * the request answered within their 2 s; where it had not (`timed-out`, which
+ * means not known yet, never a failure), the same request's `later` answer,
+ * which the caller bounds with the GPU's budget (`resolveWebGpu`); and no
+ * adapter where the browser has no WebGPU, offers none, or the request failed.
+ */
+export function adapterFromSignals(
+  signals: Pick<GpuSignals, "adapterStatus" | "adapter" | "limits" | "features">,
+  later: () => Promise<AdapterReport | null>,
+): Promise<AdapterReport | null> {
+  if (signals.adapterStatus === "timed-out") return later();
+  if (signals.adapterStatus !== "ok" || signals.adapter === null || signals.limits === null) return Promise.resolve(null);
+  return Promise.resolve({
+    limits: signals.limits,
+    isFallbackAdapter: signals.adapter.isFallbackAdapter,
+    features: signals.features ?? [],
+  });
+}
 
 /** Of `WEBGPU_TEXTURE_FEATURES`, those the adapter has, in that order. */
 export function featuresToRequest(adapterFeatures: Iterable<string>): string[] {
@@ -306,7 +328,8 @@ export type WebGpuSteps<E> = {
   /** Whether the page has WebGPU at all (`navigator.gpu`); where it does not,
    * nothing is fetched. */
   available(): boolean;
-  /** The WebGPU module: `import("./gpuEngine.js")`, adapted. */
+  /** The WebGPU module: `import("./gpuEngine.js")`, adapted, with the
+   * adapter's report from the GPU's signals (`adapterFromSignals`). */
   load(): Promise<{
     probe(): Promise<AdapterReport | null>;
     /** The translators (`loadTranslators`), fetched only once the adapter fits. */
