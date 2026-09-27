@@ -1,9 +1,10 @@
-export type Panel = "downloads" | "credits";
+export type Panel = "downloads" | "credits" | "settings";
 
 export type Route =
   | { kind: "landing" }
   | { kind: "downloads" }
   | { kind: "credits" }
+  | { kind: "settings" }
   /** An invite: join this lobby, then show the landing page. */
   | { kind: "party"; lobbyId: string }
   /** A world. The token feeds the seed and nothing else. */
@@ -55,6 +56,7 @@ export function parseRoute(pathname: string, base: string = BASE): Route {
   // the browser's back button leaves them.
   if (trimmed === "/downloads") return { kind: "downloads" };
   if (trimmed === "/credits") return { kind: "credits" };
+  if (trimmed === "/settings") return { kind: "settings" };
   const party = /^\/party\/([^/]+)$/.exec(trimmed);
   if (party) {
     const id = party[1] as string;

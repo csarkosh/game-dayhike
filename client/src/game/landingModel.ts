@@ -1,4 +1,5 @@
 import { formatSize, isNewer, PLATFORMS, type DesktopRelease, type Platform } from "../net/desktopRelease.js";
+import { settingsModel, type SettingsInput, type SettingsView } from "./settings.js";
 
 // Ad-hoc signed until a Developer ID exists: macOS blocks the first open with
 // "Apple could not verify", and Open Anyway only appears in Settings after that
@@ -39,6 +40,10 @@ export type LandingInput = {
   /** Play was pressed and the world is about to build: the button says so
    * and takes no second press. */
   launching?: boolean;
+  /** The graphics setting for the Settings panel: the player's choice, Auto's
+   * pick once the GPU's signals are in, `?tier=`, and whether the browser keeps
+   * the choice. Auto, with nothing known, when absent. */
+  quality?: Omit<SettingsInput, "context" | "running" | "saved" | "applying">;
 };
 
 export type DownloadCard = { platform: Platform; url: string; label: string; caption: string; note: string };
@@ -57,6 +62,10 @@ export type LandingView = {
   /** Always present: the CC-BY assets' credit has to be reachable from every
    * build, web and desktop alike, so this is not conditional on anything. */
   credits: { label: string };
+  /** Always present, for a follower too: the setting is the player's own. */
+  settings: { label: string };
+  /** The Settings panel's content. */
+  settingsPage: SettingsView;
   join?: { placeholder: string; error?: string };
   versionLabel?: string;
   update?: { url: string; label: string };
@@ -68,7 +77,12 @@ export type LandingView = {
  * vitest can reach it, and `renderLanding` only paints the result.
  */
 export function landingModel(input: LandingInput): LandingView {
-  const view: LandingView = { credits: { label: "Credits" } };
+  const quality = input.quality ?? { choice: "auto", auto: null, override: null, stored: true };
+  const view: LandingView = {
+    credits: { label: "Credits" },
+    settings: { label: "Settings" },
+    settingsPage: settingsModel({ context: "title", ...quality }),
+  };
   if (input.follower) view.waiting = WAITING_FOR_HOST;
   else view.play = input.launching ? { label: "Loading…", busy: true } : { label: "Play" };
 

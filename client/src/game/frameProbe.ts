@@ -36,6 +36,7 @@ import {
   readAutoRecord,
   resolveTier,
   writeAutoRecord,
+  type TierChoice,
   type TierSource,
 } from "./tierChoice.js";
 
@@ -201,9 +202,31 @@ export type StartupDeps = {
 
 export type StartupTier = { tier: QualityTier; source: TierSource; cls: GpuClass };
 
+/** Auto on this machine: the GPU's class and identity, the tier, and the tier
+ * a probe would start from, or null. What the Settings screen's Auto line
+ * reads, and where `startupTier` begins. */
+export function autoPick(
+  signals: GpuSignals,
+  at: { record: AutoRecord | null; pixels: number; now: number },
+): { cls: GpuClass; gpu: string; tier: QualityTier; probeFrom: QualityTier | null } {
+  const cls = classifyGpu(signals);
+  const gpu = gpuIdentity(signals);
+  const auto = autoTier({
+    cls,
+    cores: signals.cores,
+    memoryGb: signals.memoryGb,
+    record: at.record,
+    gpu,
+    browser: signals.browser,
+    pixels: at.pixels,
+    now: at.now,
+  });
+  return { cls, gpu, tier: auto.tier, probeFrom: auto.probeFrom };
+}
+
 /**
- * The tier to build the hike at, and where it came from: `?tier=` over Auto
- * (the player's choice joins with the Settings screen). On Auto, a probed
+ * The tier to build the hike at, and where it came from: `?tier=` over the
+ * player's choice, and the choice over Auto. On Auto, a probed
  * class with no verdict that holds and fewer than three attempts is probed
  * first behind the screen, from its ceiling, or any class from `?probe=`; the
  * probe is bounded at `PROBE_MAX_MS`, and stops at once when `opts.cancelled`
@@ -213,23 +236,13 @@ export type StartupTier = { tier: QualityTier; source: TierSource; cls: GpuClass
  */
 export async function startupTier(
   signals: GpuSignals,
-  opts: { search: string; cancelled(): boolean },
+  opts: { search: string; choice: TierChoice; cancelled(): boolean },
   deps: StartupDeps,
 ): Promise<StartupTier> {
-  const cls = classifyGpu(signals);
-  const gpu = gpuIdentity(signals);
   const record = readAutoRecord(deps.storage);
-  const auto = autoTier({
-    cls,
-    cores: signals.cores,
-    memoryGb: signals.memoryGb,
-    record,
-    gpu,
-    browser: signals.browser,
-    pixels: deps.pixels(),
-    now: deps.now(),
-  });
-  const decided = resolveTier({ override: parseTierOverride(opts.search), choice: "auto", auto: auto.tier });
+  const auto = autoPick(signals, { record, pixels: deps.pixels(), now: deps.now() });
+  const { cls, gpu } = auto;
+  const decided = resolveTier({ override: parseTierOverride(opts.search), choice: opts.choice, auto: auto.tier });
   let tier = decided.tier;
   const from = decided.source === "auto" ? (parseProbeOverride(opts.search) ?? auto.probeFrom) : null;
   if (from !== null && !opts.cancelled()) {

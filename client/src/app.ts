@@ -67,6 +67,8 @@ import { createTrailheadMeshes } from "./game/trailheadMeshes.js";
 import { signSites } from "./sim/placeNames.js";
 import { afterNextPaint } from "./game/paint.js";
 import type { QualityTier } from "./game/quality.js";
+import { settingsModel, type AutoSummary } from "./game/settings.js";
+import type { TierChoice } from "./game/tierChoice.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
@@ -100,9 +102,19 @@ export type GameOptions = {
   onContinueOffline(): void;
   /** The pause menu opened (true) or closed (false); false again on dispose. */
   onPauseChange(paused: boolean): void;
-  /** The tier `main.ts` decided (`startupTier`): `?tier=`, or Auto. Absent,
-   * the renderer picks its own. */
+  /** The tier `main.ts` decided (`startupTier`): `?tier=`, the player's
+   * choice, or Auto. Absent, the renderer picks its own. */
   tier?: QualityTier;
+  /** The graphics setting, for the pause screen's Settings: the player's
+   * choice, whether the browser keeps it, Auto's pick, `?tier=`, and how to
+   * keep a new choice. */
+  quality: {
+    choice(): TierChoice;
+    stored(): boolean;
+    auto(): AutoSummary | null;
+    override: QualityTier | null;
+    save(choice: TierChoice): void;
+  };
 };
 
 export function startGame(canvas: HTMLCanvasElement, token: string, options: GameOptions): GameHandle {
@@ -694,6 +706,24 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       afterNextPaint(() => {
         if (!disposed) options.onExit();
       });
+    },
+    // Apply keeps the choice for the next hike. Rebuilding the renderer at it
+    // live is `onApply`'s to add; the menu already holds on "Applying…" for a
+    // promise it returns.
+    settings: {
+      saved: () => options.quality.choice(),
+      view: (selection, applying) =>
+        settingsModel({
+          context: "pause",
+          choice: selection,
+          saved: options.quality.choice(),
+          auto: options.quality.auto(),
+          running: options.tier,
+          override: options.quality.override,
+          stored: options.quality.stored(),
+          applying,
+        }),
+      onApply: (choice) => options.quality.save(choice),
     },
   });
 

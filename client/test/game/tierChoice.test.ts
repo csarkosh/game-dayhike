@@ -1,5 +1,14 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { pageStorage, parseProbeOverride, parseTierOverride, readAutoRecord, resolveTier, writeAutoRecord } from "../../src/game/tierChoice.js";
+import {
+  pageStorage,
+  parseProbeOverride,
+  parseTierOverride,
+  readAutoRecord,
+  readChoice,
+  resolveTier,
+  writeAutoRecord,
+  writeChoice,
+} from "../../src/game/tierChoice.js";
 import type { AutoRecord } from "../../src/game/quality.js";
 
 function memoryStorage(): Storage {
@@ -130,6 +139,27 @@ describe("pageStorage", () => {
     expect(pageStorage()).toBe(null);
     delete (globalThis as { localStorage?: Storage }).localStorage;
     expect(pageStorage()).toBe(null);
+  });
+});
+
+describe("the player's choice", () => {
+  it("is Auto until one is saved, and round-trips under dayhike.quality", () => {
+    const s = memoryStorage();
+    expect(readChoice(s)).toEqual({ choice: "auto", stored: true });
+    expect(writeChoice(s, "high")).toBe(true);
+    expect(s.getItem("dayhike.quality")).toBe("high");
+    expect(readChoice(s)).toEqual({ choice: "high", stored: true });
+    expect(writeChoice(s, "auto")).toBe(true);
+    expect(readChoice(s)).toEqual({ choice: "auto", stored: true });
+    s.setItem("dayhike.quality", "ultra");
+    expect(readChoice(s)).toEqual({ choice: "auto", stored: true });
+  });
+
+  it("falls back to Auto, not remembered, where storage is missing or throws", () => {
+    expect(readChoice(null)).toEqual({ choice: "auto", stored: false });
+    expect(readChoice(throwingStorage())).toEqual({ choice: "auto", stored: false });
+    expect(writeChoice(throwingStorage(), "low")).toBe(false);
+    expect(writeChoice(null, "low")).toBe(false);
   });
 });
 

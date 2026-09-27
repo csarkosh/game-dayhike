@@ -68,14 +68,17 @@ const STYLE = `
     transition: opacity 240ms ease-out, transform 240ms ease-out;
   }
   .landing .panel.home { opacity: 1; transform: translateX(0); }
-  .landing.show-downloads .panel.home, .landing.show-credits .panel.home {
+  .landing.show-downloads .panel.home, .landing.show-credits .panel.home, .landing.show-settings .panel.home {
     opacity: 0; transform: translateX(-24px); pointer-events: none;
   }
-  .landing .panel.downloads, .landing .panel.credits { opacity: 0; transform: translateX(24px); pointer-events: none; }
-  .landing.show-downloads .panel.downloads, .landing.show-credits .panel.credits {
+  .landing .panel.downloads, .landing .panel.credits, .landing .panel.settings {
+    opacity: 0; transform: translateX(24px); pointer-events: none;
+  }
+  .landing.show-downloads .panel.downloads, .landing.show-credits .panel.credits,
+  .landing.show-settings .panel.settings {
     opacity: 1; transform: translateX(0); pointer-events: auto;
   }
-  .landing .panel.downloads h2, .landing .panel.credits h2 {
+  .landing .panel.downloads h2, .landing .panel.credits h2, .landing .panel.settings h2 {
     margin: 0; font-size: 1.4rem; letter-spacing: 0.1em; text-transform: uppercase;
   }
   /* The list scrolls, and at 1080p it shows about half of itself. macOS draws
@@ -252,9 +255,11 @@ const STYLE = `
 import type { Platform } from "../net/desktopRelease.js";
 import { creditsEntries, renderCredits } from "./credits.js";
 import type { LandingView } from "./landingModel.js";
+import { renderSettings } from "./settings.js";
+import type { TierChoice } from "./tierChoice.js";
 
 /** Which panel is showing. The route decides; see main.ts. */
-export type LandingPanel = "home" | "downloads" | "credits";
+export type LandingPanel = "home" | "downloads" | "credits" | "settings";
 
 export type LandingHandle = {
   setView(view: LandingView): void;
@@ -304,7 +309,16 @@ function glyph(platform: Platform): SVGSVGElement {
 export function renderLanding(
   container: HTMLElement,
   view: LandingView,
-  handlers: { onCreate(): void; onJoin(text: string): void; onDownloads(): void; onCredits(): void; onBack(): void },
+  handlers: {
+    onCreate(): void;
+    onJoin(text: string): void;
+    onDownloads(): void;
+    onSettings(): void;
+    /** A choice pressed on the Settings panel: kept at once, for the hike Play starts. */
+    onChooseTier(choice: TierChoice): void;
+    onCredits(): void;
+    onBack(): void;
+  },
   panel: LandingPanel = "home",
 ): LandingHandle {
   // Appends rather than clearing: main.ts owns the container and may have
@@ -355,9 +369,19 @@ export function renderLanding(
   downloadsBack.addEventListener("click", handlers.onBack);
   downloads.append(downloadsHeading, downloadsBody, downloadsBack);
 
-  root.append(home, downloads, credits);
+  // The Settings panel, painted by the shared Settings screen and repainted
+  // with the view: Auto's pick lands once the GPU's signals are in.
+  const settings = document.createElement("div");
+  settings.className = "panel settings";
+  const settingsUi = renderSettings(settings, view.settingsPage, {
+    onChoose: handlers.onChooseTier,
+    onBack: handlers.onBack,
+  });
+
+  root.append(home, downloads, settings, credits);
   function showPanel(next: LandingPanel): void {
     root.classList.toggle("show-downloads", next === "downloads");
+    root.classList.toggle("show-settings", next === "settings");
     root.classList.toggle("show-credits", next === "credits");
   }
   showPanel(panel);
@@ -408,8 +432,7 @@ export function renderLanding(
     }
 
     // Beneath the primary action — Play on the web, the join form on desktop.
-    // Downloads before Credits: the intended
-    // ordering, Play → Downloads → Credits.
+    // The intended ordering: Play → Downloads → Settings → Credits.
     if (v.downloadsPage !== undefined) {
       const downloadsButton = document.createElement("button");
       downloadsButton.type = "button";
@@ -418,6 +441,12 @@ export function renderLanding(
       downloadsButton.addEventListener("click", handlers.onDownloads);
       parts.push(downloadsButton);
     }
+    const settingsButton = document.createElement("button");
+    settingsButton.type = "button";
+    settingsButton.className = "secondary settings";
+    settingsButton.textContent = v.settings.label;
+    settingsButton.addEventListener("click", handlers.onSettings);
+    parts.push(settingsButton);
     const creditsButton = document.createElement("button");
     creditsButton.type = "button";
     creditsButton.className = "secondary credits";
@@ -481,6 +510,7 @@ export function renderLanding(
       }
     }
     downloadsBody.replaceChildren(...body);
+    settingsUi.setView(v.settingsPage);
   }
 
   paint(view);

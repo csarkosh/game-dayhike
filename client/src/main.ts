@@ -28,9 +28,19 @@ import { createSignalingClient, type SignalingClient } from "./net/signaling.js"
 import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
-import { browserEnv, gatherSignals } from "./game/gpuSignals.js";
-import { startupTier } from "./game/frameProbe.js";
+import { browserEnv, gatherSignals, type GpuSignals } from "./game/gpuSignals.js";
+import { autoPick, startupTier } from "./game/frameProbe.js";
 import { probeDeps } from "./game/probeScene.js";
+import { containerPixels } from "./game/quality.js";
+import type { AutoSummary } from "./game/settings.js";
+import {
+  pageStorage,
+  parseTierOverride,
+  readAutoRecord,
+  readChoice,
+  writeChoice,
+  type TierChoice,
+} from "./game/tierChoice.js";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("#app not found");
@@ -80,6 +90,45 @@ const selfId = createLobbyId();
 // What the browser says of the GPU, read once at load: tens of milliseconds,
 // at most 2 s for the WebGPU adapter. A hike's tier is decided from it.
 const signalsReady = gatherSignals(browserEnv());
+let signals: GpuSignals | null = null;
+// The Settings panel's Auto line waits on them.
+void signalsReady.then((read) => {
+  signals = read;
+  repaintLanding();
+});
+
+// ---- the graphics setting ------------------------------------------------------
+// The player's choice lives in localStorage (`tierChoice.ts`). Where the storage
+// refuses a write, the choice is kept here for the page's life instead, and the
+// Settings screen says so.
+
+let sessionChoice: TierChoice | null = null;
+let choiceRefused = false;
+
+function currentChoice(): TierChoice {
+  return sessionChoice ?? readChoice(pageStorage()).choice;
+}
+
+function choiceStored(): boolean {
+  return !choiceRefused && readChoice(pageStorage()).stored;
+}
+
+function saveChoice(choice: TierChoice): void {
+  if (writeChoice(pageStorage(), choice)) {
+    sessionChoice = null;
+    return;
+  }
+  sessionChoice = choice;
+  choiceRefused = true;
+}
+
+/** What Auto would pick here now, or null until the GPU's signals are in. */
+function autoSummary(): AutoSummary | null {
+  if (signals === null) return null;
+  const pixels = app === null ? 0 : containerPixels(app);
+  const pick = autoPick(signals, { record: readAutoRecord(pageStorage()), pixels, now: Date.now() });
+  return { tier: pick.tier, probePending: pick.probeFrom !== null };
+}
 // Bumped by every render, so a hike whose tier is still being decided for a
 // page that has since been left is never built.
 let renderToken = 0;
@@ -365,6 +414,7 @@ function landingInput(over: Partial<LandingInput> = {}): LandingInput {
     follower: lobby !== null && lobby.state.role === "client",
     touch,
     launching,
+    quality: { choice: currentChoice(), auto: autoSummary(), override: parseTierOverride(location.search), stored: choiceStored() },
     ...over,
   };
 }
@@ -379,6 +429,7 @@ function panelFor(route: Route): LandingPanel {
   // would slide in an empty page. Home is what that route means on desktop.
   if (route.kind === "downloads") return desktop ? "home" : "downloads";
   if (route.kind === "credits") return "credits";
+  if (route.kind === "settings") return "settings";
   return "home";
 }
 
@@ -390,6 +441,7 @@ function isLandingRoute(route: Route): route is Exclude<Route, { kind: "game" }>
     route.kind === "landing" ||
     route.kind === "downloads" ||
     route.kind === "credits" ||
+    route.kind === "settings" ||
     route.kind === "party"
   );
 }
@@ -463,6 +515,11 @@ function render(container: HTMLDivElement): void {
           void enterLobby(lobbyId);
         },
         onDownloads: () => navigateToPanel("downloads"),
+        onSettings: () => navigateToPanel("settings"),
+        onChooseTier: (choice) => {
+          saveChoice(choice);
+          repaintLanding();
+        },
         onCredits: () => navigateToPanel("credits"),
         // Popping history where we can, so the Back button and the browser's
         // own back button do the same thing; router.ts owns the decision and
@@ -498,7 +555,9 @@ function render(container: HTMLDivElement): void {
   const probe = probeDeps(container);
   running = { dispose: () => probe.abort() };
   void signalsReady
-    .then((signals) => startupTier(signals, { search: location.search, cancelled: () => token !== renderToken }, probe))
+    .then((read) =>
+      startupTier(read, { search: location.search, choice: currentChoice(), cancelled: () => token !== renderToken }, probe),
+    )
     .then(({ tier }) => {
       if (token !== renderToken) return;
       const canvas = document.createElement("canvas");
@@ -513,6 +572,13 @@ function render(container: HTMLDivElement): void {
           paintRoster();
         },
         tier,
+        quality: {
+          choice: currentChoice,
+          stored: choiceStored,
+          auto: autoSummary,
+          override: parseTierOverride(location.search),
+          save: saveChoice,
+        },
       });
       running = game;
       announcer.afterPaint();

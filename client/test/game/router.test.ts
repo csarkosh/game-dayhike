@@ -75,6 +75,10 @@ describe("parseRoute", () => {
     expect(parseRoute(`/dayhike/party/${UUID}`, BASE)).toEqual({ kind: "party", lobbyId: UUID });
     expect(parseRoute("/party/not-a-uuid", "/")).toEqual({ kind: "landing" });
   });
+  it("routes /settings to the Settings panel", () => {
+    expect(parseRoute("/settings", "/")).toEqual({ kind: "settings" });
+    expect(parseRoute("/dayhike/settings/", BASE)).toEqual({ kind: "settings" });
+  });
   it("routes the two secondary panels", () => {
     expect(parseRoute("/downloads", "/")).toEqual({ kind: "downloads" });
     expect(parseRoute("/dayhike/credits/", BASE)).toEqual({ kind: "credits" });

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import {
   PROBE_MAX_MS,
+  autoPick,
   nextProbeStep,
   probeHolds,
   probePose,
@@ -197,7 +198,7 @@ describe("startupTier", () => {
     };
     return { deps, storage, steps, lines, screens: () => screens, open: () => open, timer: () => timer };
   }
-  const page = (search = "") => ({ search, cancelled: () => false });
+  const page = (search = "", choice: "auto" | QualityTier = "auto") => ({ search, choice, cancelled: () => false });
 
   it("probes a probed class from its ceiling behind the screen, and starts at the verdict", async () => {
     const t = fakes((tier) => reading(tier, tier === "high" ? 23.96 : 16.7));
@@ -261,7 +262,7 @@ describe("startupTier", () => {
       left = true;
       return reading(tier, 16.7);
     });
-    await startupTier(SAFARI, { search: "", cancelled: () => left }, t.deps);
+    await startupTier(SAFARI, { search: "", choice: "auto", cancelled: () => left }, t.deps);
     expect(t.steps).toEqual(["high"]);
     expect(t.open()).toBe(0);
   });
@@ -290,11 +291,32 @@ describe("startupTier", () => {
     expect(await alternate(() => null)).toEqual([true, true, true, false, false, false, false, false]);
   });
 
+  it("builds a chosen tier with no probe, and puts ?tier= over the choice", async () => {
+    const chosen = fakes(() => reading("high", 16.7));
+    expect(await startupTier(SAFARI, page("", "low"), chosen.deps)).toEqual({ tier: "low", source: "choice", cls: "apple-unknown" });
+    expect(await startupTier(SAFARI, page("?probe=high", "high"), chosen.deps)).toEqual({ tier: "high", source: "choice", cls: "apple-unknown" });
+    expect(chosen.steps).toEqual([]);
+    expect(chosen.lines).toEqual(["quality: low (choice, apple-unknown), engine webgl2", "quality: high (choice, apple-unknown), engine webgl2"]);
+    const overridden = fakes(() => reading("high", 16.7));
+    expect(await startupTier(SAFARI, page("?tier=medium", "low"), overridden.deps)).toEqual({ tier: "medium", source: "override", cls: "apple-unknown" });
+  });
+
   it("stops probing after three attempts without a verdict", async () => {
     const s = memoryStorage();
     writeAutoRecord(s, { v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 3, verdict: null });
     const t = fakes(() => reading("high", 16.7), s);
     expect(await startupTier(SAFARI, page(), t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
     expect(t.steps).toEqual([]);
+  });
+});
+
+describe("autoPick", () => {
+  it("is Auto's tier and whether it will probe, before any hike", () => {
+    const signals: GpuSignals = {
+      renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
+    };
+    expect(autoPick(signals, { record: null, pixels: 2_073_600, now: 1_790_000_000_000 })).toEqual({
+      cls: "apple-unknown", gpu: "Apple GPU", tier: "medium", probeFrom: "high",
+    });
   });
 });

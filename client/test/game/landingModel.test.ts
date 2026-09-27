@@ -132,3 +132,30 @@ describe("landingModel while a game is launching", () => {
     expect(view.waiting).toBe(WAITING_FOR_HOST);
   });
 });
+
+describe("the Settings entry", () => {
+  it("is on every build, for a follower too, and carries the title screen's Settings page", () => {
+    const inputs = [
+      { desktop: false, host: "darwin-arm64" as const, latest: null },
+      { desktop: true, host: "win32-x64" as const, latest: null, appVersion: "1.2.0" },
+      { desktop: false, host: "other" as const, latest: null, touch: true },
+      { desktop: false, host: "darwin-arm64" as const, latest: null, follower: true },
+    ];
+    for (const input of inputs) {
+      const view = landingModel(input);
+      expect(view.settings).toEqual({ label: "Settings" });
+      expect(view.settingsPage.heading).toBe("Settings");
+      expect(view.settingsPage.choices.map((c) => c.selected)).toEqual([true, false, false, false]);
+    }
+  });
+
+  it("paints the player's choice and Auto's pick on the Settings page", () => {
+    const view = landingModel({
+      desktop: false, host: "darwin-arm64", latest: null,
+      quality: { choice: "low", auto: { tier: "medium", probePending: false }, override: null, stored: true },
+    });
+    expect(view.settingsPage.choices.map((c) => c.selected)).toEqual([false, false, false, true]);
+    expect(view.settingsPage.lines).toEqual(["Auto picks Medium on this computer."]);
+    expect(view.settingsPage.apply).toBe(undefined);
+  });
+});

@@ -1,3 +1,6 @@
+import { renderSettings, type SettingsView } from "./settings.js";
+import type { TierChoice } from "./tierChoice.js";
+
 const STYLE = `
   .pausemenu {
     /* The cold cast every control on this screen is drawn in. landing.ts and
@@ -51,10 +54,25 @@ const STYLE = `
     transition-behavior: allow-discrete;
   }
   .pausemenu .panel {
-    display: flex; flex-direction: column; gap: 0.75rem; min-width: 14rem;
+    /* Two pages in one cell: the main page and Settings. They swap in place
+       with the landing's panel slide, so the swap never shifts layout. */
+    display: grid;
     opacity: 0; transform: translateY(8px) scale(0.97);
     transition: opacity 180ms ease-in, transform 180ms ease-in;
   }
+  .pausemenu .page {
+    grid-area: 1 / 1; justify-self: center; align-self: center;
+    display: flex; flex-direction: column; gap: 0.75rem;
+    transition: opacity 240ms ease-out, transform 240ms ease-out;
+  }
+  .pausemenu .page.main { min-width: 14rem; }
+  .pausemenu .page.settings {
+    align-items: center; max-width: calc(100vw - 2rem);
+    opacity: 0; transform: translateX(24px); pointer-events: none;
+  }
+  .pausemenu .page.settings button.apply, .pausemenu .page.settings button.back { min-width: 14rem; }
+  .pausemenu.show-settings .page.main { opacity: 0; transform: translateX(-24px); pointer-events: none; }
+  .pausemenu.show-settings .page.settings { opacity: 1; transform: none; pointer-events: auto; }
   .pausemenu.open .panel {
     opacity: 1; transform: none;
     /* A shallow overshoot on the way up against a plain ease-in on the way
@@ -68,7 +86,7 @@ const STYLE = `
     .pausemenu.open { opacity: 0; }
     .pausemenu.open .panel { opacity: 0; transform: translateY(8px) scale(0.97); }
   }
-  .pausemenu h1 {
+  .pausemenu h1, .pausemenu h2 {
     margin: 0 0 0.5rem; color: #fff; font-size: 1.1rem;
     font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
   }
@@ -116,10 +134,81 @@ const STYLE = `
        displacement goes, including the one the starting style would have
        travelled from. */
     .pausemenu .panel, .pausemenu.open .panel { transform: none; }
+    .pausemenu .page, .pausemenu.show-settings .page { transform: none; }
     @starting-style { .pausemenu.open .panel { transform: none; } }
     .pausemenu button:hover:not(:disabled), .pausemenu button:active:not(:disabled) { transform: none; }
   }
 `;
+
+/** The main page, as data: its title and its buttons, in order. */
+export function pauseMenuModel(): { title: string; buttons: { id: "resume" | "settings" | "exit"; label: string }[] } {
+  return {
+    title: "Paused",
+    buttons: [
+      { id: "resume", label: "Resume" },
+      { id: "settings", label: "Settings" },
+      { id: "exit", label: "Exit" },
+    ],
+  };
+}
+
+/** Which page shows, the Settings selection not yet applied, and whether one
+ * is being applied. */
+export type PauseState = { panel: "main" | "settings"; selection: TierChoice | null; applying: boolean };
+
+export const PAUSE_START: PauseState = Object.freeze({ panel: "main", selection: null, applying: false });
+
+export type PauseEvent =
+  | { kind: "show" }
+  | { kind: "settings"; saved: TierChoice }
+  | { kind: "choose"; choice: TierChoice }
+  | { kind: "apply" }
+  | { kind: "applied" }
+  | { kind: "back" }
+  | { kind: "escape" };
+
+export type PauseEffect = { kind: "resume" } | { kind: "apply"; choice: TierChoice } | null;
+
+/**
+ * The menu's decisions, as data. Settings opens on the saved choice; a choice
+ * only selects; Apply hands the selection on; Back and Escape leave Settings
+ * and discard a selection not applied; Escape on the main page resumes. While
+ * a choice is being applied nothing but its end is heard, and the menu always
+ * opens on the main page.
+ */
+export function pauseStep(state: PauseState, event: PauseEvent): { state: PauseState; effect: PauseEffect } {
+  const stay = { state, effect: null };
+  if (state.applying) return event.kind === "applied" ? { state: { ...state, applying: false }, effect: null } : stay;
+  switch (event.kind) {
+    case "show":
+      return { state: PAUSE_START, effect: null };
+    case "settings":
+      return { state: { panel: "settings", selection: event.saved, applying: false }, effect: null };
+    case "choose":
+      return state.panel === "settings" ? { state: { ...state, selection: event.choice }, effect: null } : stay;
+    case "apply":
+      return state.panel === "settings" && state.selection !== null
+        ? { state: { ...state, applying: true }, effect: { kind: "apply", choice: state.selection } }
+        : stay;
+    case "applied":
+      return stay;
+    case "back":
+      return state.panel === "settings" ? { state: PAUSE_START, effect: null } : stay;
+    case "escape":
+      return state.panel === "settings" ? { state: PAUSE_START, effect: null } : { state, effect: { kind: "resume" } };
+  }
+}
+
+/** What the pause screen's Settings needs from the game. */
+export type PauseSettings = {
+  /** The choice saved now, which Settings opens on. */
+  saved(): TierChoice;
+  /** The Settings page for a selection, painted fresh each time it is shown. */
+  view(selection: TierChoice, applying: boolean): SettingsView;
+  /** Apply: save the choice, and apply it where that is possible. A promise
+   * holds the page on "Applying…" until it settles. */
+  onApply(choice: TierChoice): void | Promise<void>;
+};
 
 export type PauseMenu = {
   show(): void;
@@ -147,12 +236,16 @@ export type PauseMenu = {
  * escape that opened this menu, so a quick Esc-Esc leaves the menu up — the
  * Resume click a moment later succeeds.
  *
+ * Settings swaps the main page for the shared Settings screen (`settings.ts`)
+ * in place; Back and Esc return to the main page. Every decision is
+ * `pauseStep`'s.
+ *
  * Built with DOM APIs and `textContent`, matching the HUD's rule that anything
  * dynamic cannot become markup.
  */
 export function createPauseMenu(
   container: HTMLElement,
-  options: { onResume(): void; onExit(): void },
+  options: { onResume(): void; onExit(): void; settings: PauseSettings },
 ): PauseMenu {
   const style = document.createElement("style");
   style.textContent = STYLE;
@@ -163,29 +256,84 @@ export function createPauseMenu(
   const panel = document.createElement("div");
   panel.className = "panel";
 
+  const model = pauseMenuModel();
+  const main = document.createElement("div");
+  main.className = "page main";
   const title = document.createElement("h1");
-  title.textContent = "Paused";
+  title.textContent = model.title;
+  main.append(title);
+  const buttons = new Map<string, HTMLButtonElement>();
+  for (const b of model.buttons) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = b.label;
+    main.append(button);
+    buttons.set(b.id, button);
+  }
+  const resume = buttons.get("resume") as HTMLButtonElement;
+  const settingsButton = buttons.get("settings") as HTMLButtonElement;
+  const exit = buttons.get("exit") as HTMLButtonElement;
 
-  const resume = document.createElement("button");
-  resume.type = "button";
-  resume.textContent = "Resume";
-  resume.addEventListener("click", () => options.onResume());
+  const settingsPage = document.createElement("div");
+  settingsPage.className = "page settings";
+  settingsPage.inert = true;
+  const settingsUi = renderSettings(settingsPage, options.settings.view(options.settings.saved(), false), {
+    onChoose: (choice) => dispatch({ kind: "choose", choice }),
+    onBack: () => dispatch({ kind: "back" }),
+    onApply: () => dispatch({ kind: "apply" }),
+  });
 
-  const exit = document.createElement("button");
-  exit.type = "button";
-  exit.textContent = "Exit";
-  exit.addEventListener("click", () => options.onExit());
-
-  panel.append(title, resume, exit);
+  panel.append(main, settingsPage);
   root.append(panel);
   container.append(style, root);
 
   let isOpen = false;
+  let state = PAUSE_START;
+
+  function paint(previous: PauseState): void {
+    const onSettings = state.panel === "settings";
+    root.classList.toggle("show-settings", onSettings);
+    main.inert = onSettings;
+    settingsPage.inert = !onSettings;
+    if (onSettings && state.selection !== null) settingsUi.setView(options.settings.view(state.selection, state.applying));
+    // Focus follows the page, so the keyboard is never left on a page that
+    // has gone: the chosen choice on the way in, Settings on the way out.
+    if (previous.panel !== state.panel && isOpen) {
+      if (onSettings) settingsPage.querySelector<HTMLButtonElement>('button.choice[aria-pressed="true"]')?.focus();
+      else settingsButton.focus();
+    }
+  }
+
+  function dispatch(event: PauseEvent): void {
+    const previous = state;
+    const step = pauseStep(state, event);
+    state = step.state;
+    paint(previous);
+    const effect = step.effect;
+    if (effect === null) return;
+    if (effect.kind === "resume") {
+      options.onResume();
+      return;
+    }
+    let applied: void | Promise<void> = undefined;
+    try {
+      applied = options.settings.onApply(effect.choice);
+    } catch (error) {
+      console.error("settings: the choice could not be applied.", error);
+    }
+    void Promise.resolve(applied)
+      .catch((error: unknown) => console.error("settings: the choice could not be applied.", error))
+      .finally(() => dispatch({ kind: "applied" }));
+  }
+
+  resume.addEventListener("click", () => options.onResume());
+  settingsButton.addEventListener("click", () => dispatch({ kind: "settings", saved: options.settings.saved() }));
+  exit.addEventListener("click", () => options.onExit());
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (isOpen && e.code === "Escape") {
       e.preventDefault();
-      options.onResume();
+      dispatch({ kind: "escape" });
     }
   };
   window.addEventListener("keydown", onKeyDown);
@@ -193,6 +341,7 @@ export function createPauseMenu(
   return {
     show() {
       isOpen = true;
+      dispatch({ kind: "show" });
       root.classList.add("open");
     },
     hide() {
@@ -203,12 +352,14 @@ export function createPauseMenu(
       exit.textContent = "Leaving…";
       exit.disabled = true;
       resume.disabled = true;
+      settingsButton.disabled = true;
     },
     get isOpen() {
       return isOpen;
     },
     dispose() {
       window.removeEventListener("keydown", onKeyDown);
+      settingsUi.dispose();
       root.remove();
       style.remove();
     },

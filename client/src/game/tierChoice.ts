@@ -12,6 +12,11 @@ import { CLASS_TIERS, type GpuClass } from "./gpuClass.js";
 import type { AutoRecord, AutoVerdict, ProbeReading, QualityTier } from "./quality.js";
 
 export const AUTO_KEY = "dayhike.quality.auto";
+/** Where the player's choice is kept. */
+export const QUALITY_KEY = "dayhike.quality";
+
+/** The player's choice on the Settings screen: Auto, or a tier. */
+export type TierChoice = "auto" | QualityTier;
 
 export type TierSource = "override" | "choice" | "auto";
 
@@ -97,6 +102,32 @@ export function readAutoRecord(storage: Storage | null): AutoRecord | null {
   }
 }
 
+/**
+ * The player's choice, and whether the browser keeps it: Auto when nothing
+ * (or nothing recognisable) is saved; Auto and not kept where the storage is
+ * missing or refuses.
+ */
+export function readChoice(storage: Storage | null): { choice: TierChoice; stored: boolean } {
+  if (storage === null) return { choice: "auto", stored: false };
+  try {
+    const value = storage.getItem(QUALITY_KEY);
+    return { choice: value === "auto" || isTier(value) ? value : "auto", stored: true };
+  } catch {
+    return { choice: "auto", stored: false };
+  }
+}
+
+/** Keeps the player's choice; false where there is no storage or it refuses. */
+export function writeChoice(storage: Storage | null, choice: TierChoice): boolean {
+  if (storage === null) return false;
+  try {
+    storage.setItem(QUALITY_KEY, choice);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Stores Auto's record; false where there is no storage or it refuses. */
 export function writeAutoRecord(storage: Storage | null, record: AutoRecord): boolean {
   if (storage === null) return false;
@@ -111,7 +142,7 @@ export function writeAutoRecord(storage: Storage | null, record: AutoRecord): bo
 /** The tier to build, and which of the three decided it. */
 export function resolveTier(input: {
   override: QualityTier | null;
-  choice: "auto" | QualityTier;
+  choice: TierChoice;
   auto: QualityTier;
 }): { tier: QualityTier; source: TierSource } {
   if (input.override !== null) return { tier: input.override, source: "override" };
