@@ -235,6 +235,44 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
   });
 });
 
+describe("the halation's sizes on the WebGPU engine (canaries on the installed engine)", () => {
+  // The size tests above run under NullEngine, the WebGL path. They hold on
+  // WebGPU because the sizing is the post process's own, with no engine branch:
+  // each pass's `activate` sizes its input target (the previous pass's write
+  // target) from its own ratio, the manager chains them the same way on both
+  // engines, and neither engine rounds a target to a power of two.
+  const read = (spec: string) => readFileSync(createRequire(import.meta.url).resolve(spec), "utf8");
+  const between = (src: string, from: string, to: string) => {
+    const start = src.indexOf(from);
+    const end = src.indexOf(to, start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    return src.slice(start, end);
+  };
+
+  it("sizes a pass's input target from its own ratio, the same on every engine", () => {
+    const activate = between(read("@babylonjs/core/PostProcesses/postProcess.pure.js"), "    activate(cameraOrScene, sourceTexture = null, forceDepthStencil) {", "    get isSupported() {");
+    expect(activate).toContain(
+      "const requiredWidth = ((sourceTexture ? sourceTexture.width : this._engine.getRenderWidth(true)) * this._options) | 0;",
+    );
+    expect(activate).toContain("desiredWidth = engine.needPOTTextures ? GetExponentOfTwo(desiredWidth, maxSize, this.scaleMode) : desiredWidth;");
+    expect(activate).not.toContain("isWebGPU");
+  });
+
+  it("chains each pass's output into the next pass's activation, the same on every engine", () => {
+    const manager = read("@babylonjs/core/PostProcesses/postProcessManager.js");
+    expect(manager).toContain("pp._outputTexture = postProcesses[index + 1].activate(camera, targetTexture?.texture);");
+    expect(manager).not.toContain("isWebGPU");
+  });
+
+  it("rounds no target to a power of two on WebGPU, as on WebGL2", () => {
+    expect(read("@babylonjs/core/Engines/webgpuEngine.pure.js")).toContain("    get needPOTTextures() {\n        return false;\n    }");
+    expect(read("@babylonjs/core/Engines/thinEngine.pure.js")).toContain(
+      "    get needPOTTextures() {\n        return this._webGLVersion < 2 || this.forcePOTTextures;\n    }",
+    );
+  });
+});
+
 describe("the finish pass's text per engine", () => {
   const sha = (s: string) => createHash("sha256").update(s).digest("hex");
   it("is the file itself on WebGL2", () => {
