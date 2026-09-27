@@ -24,18 +24,28 @@ vi.mock("../../src/game/groundMaps.js", () => ({
 // context this suite does not have. Substituted with `NullEngine` at the
 // module boundary — same trick as the `groundMaps` mock above — so the test
 // below can build a whole `Renderer` on each tier anyway.
+const made = vi.hoisted(() => ({ options: [] as unknown[] }));
 vi.mock("@babylonjs/core/Engines/engine.js", async () => {
   const mod = await vi.importActual<typeof import("@babylonjs/core/Engines/nullEngine.js")>(
     "@babylonjs/core/Engines/nullEngine.js",
   );
-  return { Engine: mod.NullEngine };
+  // Records the options each WebGL2 engine is made with.
+  class Engine extends mod.NullEngine {
+    constructor(_canvas: unknown, _antialias: unknown, options: unknown) {
+      super();
+      made.options.push(options);
+    }
+  }
+  return { Engine };
 });
 
 // The terrain field lives behind the variant registry; a test that builds a
 // forest without `app.ts` has to register the passes itself.
 import "../../src/sim/passes/index.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
-import { buildProbeScene } from "../../src/game/probeScene.js";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { buildProbeScene, measureOnRuleEngine, runProbeStep, type StepEngine } from "../../src/game/probeScene.js";
+import type { ProbeReading } from "../../src/game/quality.js";
 import { readFileSync } from "node:fs";
 import { OVER_PLAY_Z, PROBE_SCREEN_LINE, showProbeScreen, timeIdleCadence } from "../../src/game/probeScreen.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -57,6 +67,107 @@ describe("buildProbeScene", () => {
     expect(EngineStore.Instances.length).toBe(0);
   }, timeLimit(60_000));
 });
+
+describe("a probe step's engine", () => {
+  it("loses its context on dispose, as the game's does: WebGL2's by its option, WebGPU's by its device", () => {
+    made.options.length = 0;
+    const probe = buildProbeScene(FAKE_CANVAS, "low");
+    probe.dispose();
+    expect(made.options).toEqual([{ stencil: true, loseContextOnDispose: true }]);
+    // WebGPU has no option for it: its dispose destroys the device (a canary
+    // on the installed engine).
+    const webgpu = readFileSync(new URL("../../../node_modules/@babylonjs/core/Engines/webgpuEngine.pure.js", import.meta.url), "utf8");
+    expect(webgpu).toContain("        this._depthTexture?.destroy();\n        this._textureHelper.destroyDeferredTextures();\n        this._bufferManager.destroyDeferredBuffers();\n        this._device.destroy();");
+  }, timeLimit(60_000));
+
+  it("draws on the engine it is given, and a failure the step's own watcher hears ends it with the engine's fault", async () => {
+    const engine = new NullEngine();
+    let heard: ((reason: "pipeline" | "lost") => void) | null = null;
+    let watching = false;
+    const on: StepEngine = {
+      canvas: FAKE_CANVAS,
+      engine,
+      watch: (watched, onFailure) => {
+        expect(watched).toBe(engine);
+        heard = onFailure;
+        watching = true;
+        return () => {
+          // Taken off before the engine is disposed, so a disposed engine
+          // is never heard from.
+          expect(engine.isDisposed).toBe(false);
+          watching = false;
+        };
+      },
+    };
+    const appended: unknown[] = [];
+    const container = { appendChild: (c: unknown) => void appended.push(c), clientWidth: 1600, clientHeight: 900 } as unknown as HTMLElement;
+    (FAKE_CANVAS as unknown as { remove(): void }).remove = () => undefined;
+    const step = runProbeStep(container, "medium", { cancelled: () => false, on });
+    expect(appended).toEqual([FAKE_CANVAS]);
+    expect(watching).toBe(true);
+    heard!("lost");
+    expect(await step).toBe("engine-failed");
+    expect(watching).toBe(false);
+    expect(engine.isDisposed).toBe(true);
+    expect(EngineStore.Instances.length).toBe(0);
+  }, timeLimit(60_000));
+});
+
+describe("a probe step on the engine the rule gives its tier", () => {
+  const webgl2 = (): StepEngine => ({ canvas: {} as HTMLCanvasElement, engine: null, watch: null });
+  const reading = (engine: "webgl2" | "webgpu"): ProbeReading => ({ tier: "high", frames: 120, meanMs: 16.7, p95Ms: 16.7, pixels: 2_073_600, engine });
+
+  it("measures on the engine made for the tier when nothing fails", async () => {
+    const on: StepEngine = { canvas: {} as HTMLCanvasElement, engine: new NullEngine(), watch: () => () => undefined };
+    const measured: StepEngine[] = [];
+    let failures = 0;
+    const got = await measureOnRuleEngine("high", () => false, {
+      engineFor: async () => on,
+      failed: () => void failures++,
+      measure: async (_tier, engine) => (measured.push(engine), reading("webgpu")),
+      webgl2,
+    });
+    expect(got).toEqual(reading("webgpu"));
+    expect(measured).toEqual([on]);
+    expect(failures).toBe(0);
+    on.engine!.dispose();
+  });
+
+  it("counts a WebGPU step that fails as the rule's start failure, and measures the step again on WebGL2", async () => {
+    const on: StepEngine = { canvas: {} as HTMLCanvasElement, engine: new NullEngine(), watch: () => () => undefined };
+    const measured: (AbstractEngineLike | null)[] = [];
+    let failures = 0;
+    const got = await measureOnRuleEngine("high", () => false, {
+      engineFor: async () => on,
+      failed: () => void failures++,
+      measure: async (_tier, engine) => {
+        measured.push(engine.engine);
+        return engine.engine === null ? reading("webgl2") : "engine-failed";
+      },
+      webgl2,
+    });
+    expect(got).toEqual(reading("webgl2"));
+    expect(measured).toEqual([on.engine, null]);
+    expect(failures).toBe(1);
+    on.engine!.dispose();
+  });
+
+  it("measures nothing, and lets the engine go, when the page moves on while it is made", async () => {
+    const engine = new NullEngine();
+    let measures = 0;
+    const got = await measureOnRuleEngine("high", () => true, {
+      engineFor: async () => ({ canvas: {} as HTMLCanvasElement, engine, watch: () => () => undefined }),
+      failed: () => undefined,
+      measure: async () => (measures++, null),
+      webgl2,
+    });
+    expect(got).toBe(null);
+    expect(measures).toBe(0);
+    expect(engine.isDisposed).toBe(true);
+  });
+});
+
+type AbstractEngineLike = StepEngine["engine"];
 
 describe("the probe screen", () => {
   afterEach(() => {

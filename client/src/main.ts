@@ -734,8 +734,17 @@ function render(container: HTMLDivElement): void {
   // wait, so a render that moves on stops the probe, and disposes its
   // renderer, before building its own. A throw anywhere in the chain leaves a
   // line rather than a blank page.
-  const probe = probeDeps(container);
   const cancelled = (): boolean => token !== renderToken;
+  // Each probe step draws on the engine the WebGPU rule gives its tier, on
+  // its own canvas, and a WebGPU step that fails is the rule's start failure
+  // (`measureOnRuleEngine`); the game's failure handling never hears of it.
+  const probe = probeDeps(container, {
+    engineFor: async (tier) => {
+      const { canvas, made } = await engineFor(tier, await signalsReady, () => !cancelled());
+      return { canvas, engine: made?.engine ?? null, watch: made?.watch ?? null };
+    },
+    failed: () => void rememberFailure("init", !cancelled()),
+  });
   running = { dispose: () => probe.abort() };
   void startHike<EngineOnCanvas>({
     signals: signalsReady,

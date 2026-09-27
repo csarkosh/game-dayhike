@@ -9,6 +9,7 @@
  * callbacks, and disposes the renderer and removes the canvas whatever
  * happened, so no probe renderer outlives its step.
  */
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { createForest } from "../sim/forest.js";
 import { parseLevel } from "../sim/level.js";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../sim/terrain.js";
@@ -33,18 +34,36 @@ import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 export type ProbeScene = { renderer: Renderer; frame(): void; dispose(): void };
 
 /**
- * The canopy pose at `tier` on `canvas`: `frame()` puts the free camera on the
- * pose, syncs and renders once; `dispose()` disposes the renderer and its
- * engine.
+ * The engine a probe step draws with, and its canvas: WebGPU where the WebGPU
+ * rule gives the step's tier and it started, made for `canvas`, with its
+ * failure detector (`watchWebGpu`), which only the step itself listens to;
+ * else WebGL2 (`engine` and `watch` null), which the renderer makes, with its
+ * context lost on dispose as the game's is.
  */
-export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier): ProbeScene {
+export type StepEngine = {
+  canvas: HTMLCanvasElement;
+  engine: AbstractEngine | null;
+  watch: ((engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void) => () => void) | null;
+};
+
+/** A probe step ended by a fault of its WebGPU engine: its build, an effect,
+ * an uncaptured error or a lost device while it drew. */
+export const ENGINE_FAILED = "engine-failed";
+
+/**
+ * The canopy pose at `tier` on `canvas`, drawn on `engine` when one is given
+ * (WebGPU, made for `canvas`), else on WebGL2: `frame()` puts the free camera
+ * on the pose, syncs and renders once; `dispose()` disposes the renderer and
+ * its engine.
+ */
+export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier, engine: AbstractEngine | null = null): ProbeScene {
   // Module state survives a game's `/terrain` command; the pose is the
   // default variant's.
   setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
   const seed = seedFromToken(PROBE_SEED_TOKEN);
   const level = parseLevel(sandbox01);
   const forest = createForest(seed);
-  const renderer = createRenderer(canvas, level, forest, { tier });
+  const renderer = createRenderer(canvas, level, forest, { tier, engine: engine ?? undefined });
   try {
     renderer.setWeather(WEATHER_PRESETS.mist, 0);
     renderer.setHour(PROBE_HOUR);
@@ -68,45 +87,54 @@ export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier): P
 }
 
 /**
- * Measures `tier` on a fresh canvas in `container`, frame by frame through
- * `createProbeMeter`: ready, warm, measured, with a late shader compile
- * starting the warm-up again. Null on a cancel, an abort, a scene that never
- * readies, a throw, or too few frames. `signal` stops it at once,
- * disposing the renderer before `abort()` returns, so the page can build its
- * next renderer straight after without two living at once.
+ * Measures `tier` in `container`, frame by frame through `createProbeMeter`:
+ * ready, warm, measured, with a late shader compile starting the warm-up
+ * again. On `opts.on`'s canvas and engine when given (the engine the WebGPU
+ * rule gives the tier), else on WebGL2 on a fresh canvas. Null on a cancel, an
+ * abort, a scene that never readies, a throw, or too few frames;
+ * `ENGINE_FAILED` where a WebGPU engine's build or its frames failed, which
+ * only the step's own watcher hears, never the game's. `signal` stops it at
+ * once, disposing the renderer before `abort()` returns, so the page can
+ * build its next renderer straight after without two living at once.
  */
 export function runProbeStep(
   container: HTMLElement,
   tier: QualityTier,
-  opts: { cancelled(): boolean; signal?: AbortSignal },
-): Promise<ProbeReading | null> {
+  opts: { cancelled(): boolean; signal?: AbortSignal; on?: StepEngine },
+): Promise<ProbeReading | null | typeof ENGINE_FAILED> {
   return new Promise((resolve) => {
+    const given = opts.on?.engine ?? null;
     if (opts.cancelled() || opts.signal?.aborted === true) {
+      given?.dispose();
       resolve(null);
       return;
     }
-    const canvas = document.createElement("canvas");
+    const canvas = opts.on?.canvas ?? document.createElement("canvas");
     container.appendChild(canvas);
     let probe: ProbeScene;
     try {
-      probe = buildProbeScene(canvas, tier);
+      // A renderer whose build throws disposes the engine it was given.
+      probe = buildProbeScene(canvas, tier, given);
     } catch (error) {
       console.warn("quality probe: the scene could not be built.", error);
       canvas.remove();
-      resolve(null);
+      resolve(given === null ? null : ENGINE_FAILED);
       return;
     }
     const { engine, scene } = probe.renderer;
     const meter = createProbeMeter(performance.now());
     const compiled = engine.onAfterShaderCompilationObservable.add(() => meter.compiled(performance.now()));
     let done = false;
+    let unwatch = (): void => undefined;
 
-    const finish = (reading: ProbeReading | null): void => {
+    const finish = (reading: ProbeReading | null | typeof ENGINE_FAILED): void => {
       if (done) return;
       done = true;
       engine.stopRenderLoop(loop);
       engine.onAfterShaderCompilationObservable.remove(compiled);
       opts.signal?.removeEventListener("abort", onAbort);
+      // Before the dispose: a disposed engine is not a failing one.
+      unwatch();
       probe.dispose();
       canvas.remove();
       resolve(reading);
@@ -134,15 +162,73 @@ export function runProbeStep(
       }
     };
     opts.signal?.addEventListener("abort", onAbort);
+    if (given !== null && opts.on?.watch) {
+      const stop = opts.on.watch(given, () => finish(ENGINE_FAILED));
+      if (done) stop();
+      else unwatch = stop;
+    }
+    if (done) return;
     engine.runRenderLoop(loop);
   });
+}
+
+/** What `measureOnRuleEngine` needs of the page. */
+export type RuleEngineDeps = {
+  /** The engine the WebGPU rule gives `tier` now, on its own canvas. */
+  engineFor(tier: QualityTier): Promise<StepEngine>;
+  /** A WebGPU step failed: the rule's start failure, remembered as `init`. */
+  failed(): void;
+  /** One measurement of `tier` on `on` (`runProbeStep`). */
+  measure(tier: QualityTier, on: StepEngine): Promise<ProbeReading | null | typeof ENGINE_FAILED>;
+  /** WebGL2 on a fresh canvas. */
+  webgl2(): StepEngine;
+};
+
+/**
+ * One probe step on the engine the WebGPU rule gives its tier: WebGPU for
+ * high and medium where the rule gives it, on the step's own canvas; WebGL2
+ * for low and wherever else. A WebGPU engine that fails to start is already
+ * the rule's start failure (`resolveWebGpu`) and hands back WebGL2; one that
+ * fails in the step's build or frames is the same failure (`failed`), and the
+ * step is measured again on WebGL2. The engine is let go of when the page has
+ * moved on while it was made.
+ */
+export async function measureOnRuleEngine(
+  tier: QualityTier,
+  stopped: () => boolean,
+  deps: RuleEngineDeps,
+): Promise<ProbeReading | null> {
+  const on = await deps.engineFor(tier);
+  if (stopped()) {
+    on.engine?.dispose();
+    return null;
+  }
+  const first = await deps.measure(tier, on);
+  if (first !== ENGINE_FAILED) return first;
+  deps.failed();
+  if (stopped()) return null;
+  const again = await deps.measure(tier, deps.webgl2());
+  return again === ENGINE_FAILED ? null : again;
 }
 
 /** The page's `StartupDeps` for `container`, with `abort()` to stop a probe at
  * once when the page moves on (the render that replaces it calls it first). */
 export type PageProbe = StartupDeps & { abort(): void };
 
-export function probeDeps(container: HTMLElement): PageProbe {
+/** WebGL2 on a fresh canvas: a probe step's engine where the page gives none. */
+function webgl2Step(): StepEngine {
+  return { canvas: document.createElement("canvas"), engine: null, watch: null };
+}
+
+/**
+ * The page's `StartupDeps` for `container`. `engines` gives each step the
+ * engine the WebGPU rule gives its tier and hears of a WebGPU step that
+ * failed (`measureOnRuleEngine`); without it every step is WebGL2.
+ */
+export function probeDeps(
+  container: HTMLElement,
+  engines: Pick<RuleEngineDeps, "engineFor" | "failed"> = { engineFor: async () => webgl2Step(), failed: () => undefined },
+): PageProbe {
   const aborts = new AbortController();
   return {
     storage: pageStorage(),
@@ -153,7 +239,11 @@ export function probeDeps(container: HTMLElement): PageProbe {
       await new Promise<void>((resolve) => afterNextPaint(resolve));
       const stopped = (): boolean => aborts.signal.aborted || cancelled();
       if (stopped()) return null;
-      const reading = await runProbeStep(container, tier, { cancelled: stopped, signal: aborts.signal });
+      const reading = await measureOnRuleEngine(tier, stopped, {
+        ...engines,
+        measure: (step, on) => runProbeStep(container, step, { cancelled: stopped, signal: aborts.signal, on }),
+        webgl2: webgl2Step,
+      });
       if (reading !== null) console.info(probeReadingLine(reading, container.clientWidth, container.clientHeight));
       return reading;
     },
