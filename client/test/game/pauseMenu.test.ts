@@ -240,6 +240,9 @@ describe("the pause screen's Settings page", () => {
     page.button("Apply").click();
     expect(page.applied).toEqual(["low"]);
     expect(page.select.disabled).toBe(true);
+    // The click focused Apply, and Apply went disabled with the rest: the
+    // focus is nowhere until the choice is applied.
+    expect(page.doc.activeElement).toBe(page.doc.body);
     page.finish();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(page.select.disabled).toBe(false);

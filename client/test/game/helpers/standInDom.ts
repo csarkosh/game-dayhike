@@ -6,8 +6,14 @@
  *
  * - setting a select's `value`, or an option's `selected`, fires nothing; a
  *   `change` comes only from `choose`, the stand-in for a person picking;
- * - a focused node taken out of the page loses the focus to the body, so a
- *   repaint that rebuilt the control would show as lost focus.
+ * - a person's pick fires nothing when it changes nothing, and never lands
+ *   on a disabled option; a value no option has selects nothing;
+ * - a focused node taken out of the page, disabled, or put under an inert
+ *   ancestor loses the focus to the body, so a repaint that rebuilt the
+ *   control, or a focus move that never happened, shows as lost focus;
+ * - nothing hidden, disabled, inert or under `display: none` (set inline)
+ *   takes the focus, and a pointer's click focuses the control it lands on,
+ *   as Chrome and Firefox do.
  */
 import { vi } from "vitest";
 
@@ -24,9 +30,9 @@ export class StandInElement {
   type = "";
   name = "";
   htmlFor = "";
-  hidden = false;
-  disabled = false;
-  inert = false;
+  private isHidden = false;
+  private isDisabled = false;
+  private isInert = false;
   readonly style: Record<string, string> = {};
   private text = "";
   private readonly attrs = new Map<string, string>();
@@ -37,6 +43,28 @@ export class StandInElement {
     tag: string,
   ) {
     this.tagName = tag.toUpperCase();
+  }
+
+  get hidden(): boolean {
+    return this.isHidden;
+  }
+  set hidden(on: boolean) {
+    this.isHidden = on;
+    this.doc.focusFixup();
+  }
+  get disabled(): boolean {
+    return this.isDisabled;
+  }
+  set disabled(on: boolean) {
+    this.isDisabled = on;
+    this.doc.focusFixup();
+  }
+  get inert(): boolean {
+    return this.isInert;
+  }
+  set inert(on: boolean) {
+    this.isInert = on;
+    this.doc.focusFixup();
   }
 
   get textContent(): string {
@@ -108,8 +136,7 @@ export class StandInElement {
 
   private detach(node: StandInElement): void {
     node.parent = null;
-    const active = this.doc.activeElement;
-    if (active !== null && !active.isConnected) this.doc.activeElement = this.doc.body;
+    this.doc.focusFixup();
   }
 
   setAttribute(name: string, value: string): void {
@@ -146,16 +173,22 @@ export class StandInElement {
     if (this.isConnected) this.doc.window.fire(event);
     return event;
   }
+  /** A pointer's click: it focuses the control it lands on, then fires. */
   click(): void {
-    if (!this.disabled) this.dispatch("click");
+    if (this.disabled) return;
+    if (FOCUSED_BY_CLICK.has(this.tagName)) this.focus();
+    this.dispatch("click");
   }
 
-  /** As a browser: nothing disabled, out of the page, or under an inert
-   * ancestor takes the focus. */
+  /** As a browser: nothing out of the page, disabled, hidden, or under an
+   * inert or `display: none` ancestor can hold the focus. */
+  get focusable(): boolean {
+    if (this === this.doc.body) return true;
+    if (this.disabled || !this.isConnected) return false;
+    return !this.ancestry().some((node) => node.inert || node.hidden || node.style.display === "none");
+  }
   focus(): void {
-    if (this.disabled || !this.isConnected) return;
-    if (this.ancestry().some((node) => node.inert)) return;
-    this.doc.activeElement = this;
+    if (this.focusable) this.doc.activeElement = this;
   }
 
   /** Every element below this one, in document order. */
@@ -182,6 +215,8 @@ export class StandInElement {
   }
 }
 
+const FOCUSED_BY_CLICK = new Set(["BUTTON", "SELECT", "INPUT", "TEXTAREA", "A"]);
+
 export class StandInOption extends StandInElement {
   value = "";
   private isSelected = false;
@@ -200,23 +235,35 @@ export class StandInSelect extends StandInElement {
     return this.children.filter((c): c is StandInOption => c instanceof StandInOption);
   }
   get selectedIndex(): number {
-    const i = this.options.findIndex((o) => o.selected);
-    return i === -1 && this.options.length > 0 ? 0 : i;
+    return this.options.findIndex((o) => o.selected);
   }
   get value(): string {
     return this.options[this.selectedIndex]?.value ?? "";
   }
-  /** A script's write: selects the matching option and fires nothing, as a
-   * browser does. */
+  /** A script's write: selects the matching option, or none where no option
+   * has that value, and fires nothing, as a browser does. */
   set value(v: string) {
     for (const o of this.options) o.selected = false;
     const match = this.options.find((o) => o.value === v);
     if (match !== undefined) match.selected = true;
   }
+  /** Options going in with none selected: the first one not disabled is, as a
+   * browser's single select does on insertion. */
+  override append(...nodes: (StandInElement | string)[]): void {
+    super.append(...nodes);
+    if (this.selectedIndex === -1) {
+      const first = this.options.find((o) => !o.disabled);
+      if (first !== undefined) first.selected = true;
+    }
+  }
   /** A person picking `value`: the selection moves, then `input` and
-   * `change` fire, in that order, as a browser fires them. */
+   * `change` fire, in that order, as a browser fires them. Nothing happens
+   * for a disabled select, a disabled or missing option, or the value
+   * already chosen. */
   choose(value: string): void {
     if (this.disabled) return;
+    const option = this.options.find((o) => o.value === value);
+    if (option === undefined || option.disabled || option.selected) return;
     this.value = value;
     this.dispatch("input");
     this.dispatch("change");
@@ -240,6 +287,11 @@ export class StandInDocument {
   readonly window = new StandInWindow();
   readonly body: StandInElement;
   activeElement: StandInElement;
+  /** The focus fixup: focus held by a node that can no longer hold it goes
+   * to the body. */
+  focusFixup(): void {
+    if (!this.activeElement.focusable) this.activeElement = this.body;
+  }
   constructor() {
     this.body = new StandInElement(this, "body");
     this.activeElement = this.body;

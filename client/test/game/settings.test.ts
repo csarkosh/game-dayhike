@@ -3,7 +3,7 @@ import { CAUTION_LIVE, TIER_CHOICES, listOpen, renderSettings, settingsModel, ty
 import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";
 import type { TierChoice } from "../../src/game/tierChoice.js";
-import { StandInElement, StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
+import { StandInElement, StandInOption, StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
 
 const CHOICES = (selected: string) => [
   { choice: "auto", label: "Auto (Recommended)", selected: selected === "auto", disabled: false },
@@ -161,6 +161,88 @@ describe("the stand-in document these screens are tested against", () => {
     select.choose("a");
     expect(select.value).toBe("a");
     expect(heard).toEqual(["input", "change"]);
+  });
+});
+
+describe("the stand-in document, where a browser is strict", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A select in the page with options `values`, and the events it fired. */
+  function select(values: string[]) {
+    const doc = installStandInDom();
+    const el = doc.createElement("select") as StandInSelect;
+    doc.body.append(el);
+    for (const v of values) {
+      const option = doc.createElement("option") as StandInOption;
+      option.value = v;
+      el.append(option);
+    }
+    const heard: string[] = [];
+    el.addEventListener("input", () => heard.push("input"));
+    el.addEventListener("change", () => heard.push("change"));
+    return { doc, el, heard };
+  }
+
+  it("selects the first option as options go in, with nothing chosen yet", () => {
+    const { el } = select(["a", "b"]);
+    expect(el.selectedIndex).toBe(0);
+    expect(el.options.map((o) => o.selected)).toEqual([true, false]);
+  });
+
+  it("fires nothing when a person picks the value already chosen", () => {
+    const { el, heard } = select(["a", "b"]);
+    el.value = "b";
+    el.choose("b");
+    expect(heard).toEqual([]);
+  });
+
+  it("never lets a person pick a disabled option", () => {
+    const { el, heard } = select(["a", "b"]);
+    el.options[1]!.disabled = true;
+    el.choose("b");
+    expect(el.value).toBe("a");
+    expect(heard).toEqual([]);
+  });
+
+  it("selects nothing when a script sets a value no option has", () => {
+    const { el } = select(["a", "b"]);
+    el.value = "c";
+    expect(el.selectedIndex).toBe(-1);
+    expect(el.value).toBe("");
+  });
+
+  it("gives no focus to a node under a hidden or display: none ancestor", () => {
+    const { doc, el } = select(["a"]);
+    el.hidden = true;
+    el.focus();
+    expect(doc.activeElement).toBe(doc.body);
+    el.hidden = false;
+    doc.body.style.display = "none";
+    el.focus();
+    expect(doc.activeElement).toBe(doc.body);
+  });
+
+  it("takes the focus from a node that goes disabled, or goes under an inert ancestor", () => {
+    const doc = installStandInDom();
+    const box = doc.createElement("div");
+    const button = doc.createElement("button");
+    doc.body.append(box);
+    box.append(button);
+    button.focus();
+    button.disabled = true;
+    expect(doc.activeElement).toBe(doc.body);
+    button.disabled = false;
+    button.focus();
+    box.inert = true;
+    expect(doc.activeElement).toBe(doc.body);
+  });
+
+  it("focuses a button a pointer clicks, as Chrome and Firefox do", () => {
+    const doc = installStandInDom();
+    const button = doc.createElement("button");
+    doc.body.append(button);
+    button.click();
+    expect(doc.activeElement).toBe(button);
   });
 });
 
