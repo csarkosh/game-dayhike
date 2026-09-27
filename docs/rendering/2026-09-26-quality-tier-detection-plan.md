@@ -4,7 +4,7 @@
 
 **Goal:** Every player starts on the highest tier their GPU holds at 60 Hz at the standard poses, confirmed by the frame where the browser will not name the GPU; the player can see and change the tier from the title and pause screens, and a change made mid-hike is applied live without a reload or a dropped session.
 
-**Architecture:** One function gathers the browser's GPU signals; an ordered rule table turns them into a GPU class; each class has a start tier, a ceiling and a probe flag. A probed class with no stored verdict gets a short measurement of the canopy pose before its first hike. A shared Settings screen on the title and pause screens stores the player's choice; from the pause screen Apply rebuilds the renderer on a fresh canvas behind an "Applying…" screen while the session runs on. A governor lowers the next hike's tier after a sustained low frame rate. Nothing under `sim/`.
+**Architecture:** One function gathers the browser's GPU signals; an ordered rule table turns them into a GPU class; each class has a start tier, a ceiling and a probe flag. A probed class with no stored verdict gets a short measurement of the canopy pose before its first hike. A shared Settings screen on the title and pause screens stores the player's choice; from the pause screen Apply rebuilds the renderer on a fresh canvas behind an "Applying…" screen while the session runs on. On Auto, a governor lowers the tier one step after a sustained low frame rate, at once through the same live rebuild, and remembers it for the next hike. Nothing under `sim/`.
 
 **Tech Stack:** TypeScript, Babylon.js 9.18 (`Engine`, `NullEngine` in tests), WebGL2 and WebGPU browser APIs, vitest 4.
 
@@ -1915,6 +1915,8 @@ EOF
 ---
 
 ### Task 6: The governor
+
+The drop was built live, through Task 5's switch, rather than for the next hike as the steps below first had it; design §10 describes what was built.
 
 **Files:**
 - Create: `client/src/game/governor.ts`

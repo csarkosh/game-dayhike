@@ -857,8 +857,14 @@ nor the scene coming back is seen mid-play:
    lowered to Medium to keep the game smooth."
 
 The governor never raises, and acts at most once per hike: a later hike that is
-still slow on the lower tier drops one more step then. Like any switch, the
-rebuild pauses the hike for everyone in it for as long as it takes (§9.5).
+still slow on the lower tier drops one more step then.
+
+**The drop pauses the hike.** The switch is one synchronous rebuild (§9.5), and
+the idle timing before it stops the loop too, even when the governor then stands
+down. On a host, the world stops for everyone in the hike for as long as they
+take; on a follower, that follower stops alone. The governor accepts that cost
+because it acts at most once a hike, and only after a minute of play under 48
+fps, when one pause costs the players less than more of the same.
 
 ## 11. Determinism
 
