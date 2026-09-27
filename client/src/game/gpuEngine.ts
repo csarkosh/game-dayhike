@@ -124,9 +124,12 @@ export async function probeAdapter(): Promise<AdapterReport | null> {
 export type Translators = { glslang: unknown; twgsl: unknown };
 
 /** Fetches `url` whole, so a loader's own fetch of it comes from the HTTP
- * cache (the build serves these immutable), and checks it is WebAssembly. */
-async function prefetchWasm(url: string, signal: AbortSignal): Promise<void> {
-  const response = await fetch(url, { signal });
+ * cache (the build serves these immutable), and checks it is WebAssembly.
+ * Never aborted, not even for a start given up at the fetch budget: on a slow
+ * link the download still finishes into that cache, so a later attempt in the
+ * page, or the next load, starts from it instead of running out again. */
+async function prefetchWasm(url: string): Promise<void> {
+  const response = await fetch(url);
   if (!response.ok) throw new Error(`${url}: ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes[0] !== 0x00 || bytes[1] !== 0x61 || bytes[2] !== 0x73 || bytes[3] !== 0x6d) {
@@ -191,9 +194,10 @@ export function forgetTranslators(): void {
 
 /**
  * `startTranslators`, given up after `ms`: this rejects then, and the start is
- * abandoned, its WebAssembly fetches aborted and nothing after them run. So a
- * start that stalled and comes in late settles nothing and runs no loader
- * beside a newer start. The timer goes as soon as either settles.
+ * abandoned. Its WebAssembly downloads run on into the cache (`prefetchWasm`),
+ * but nothing after them does, so a start that stalled and comes in late
+ * settles nothing and runs no loader beside a newer start. The timer goes as
+ * soon as either settles.
  */
 async function startWithinBudget(ms: number): Promise<Translators> {
   const abandon = new AbortController();
@@ -214,7 +218,7 @@ async function startWithinBudget(ms: number): Promise<Translators> {
 /** Fetches and starts the translators, one loader at a time; stops before its
  * next step once `signal` is aborted. */
 async function startTranslators(signal: AbortSignal): Promise<Translators> {
-  await Promise.all([prefetchWasm(glslangWasm, signal), prefetchWasm(twgslWasm, signal)]);
+  await Promise.all([prefetchWasm(glslangWasm), prefetchWasm(twgslWasm)]);
   signal.throwIfAborted();
   await Tools.LoadScriptAsync(glslangJs);
   signal.throwIfAborted();

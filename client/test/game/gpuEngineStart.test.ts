@@ -162,12 +162,27 @@ describe("loadTranslators", () => {
   it("drops a start that has not come in within the fetch budget; the next starts afresh, undisturbed", async () => {
     vi.useFakeTimers();
     // The first start's WebAssembly never comes, until it is answered late by
-    // hand: its fetches ignore the abort, as a stalled network can.
-    const signals: AbortSignal[] = [];
+    // hand. As a browser's `fetch`, an aborted one ends there and never
+    // downloads; `downloaded` records each body read whole.
+    const inits: (RequestInit | undefined)[] = [];
     const answerLate: (() => void)[] = [];
-    vi.stubGlobal("fetch", (_url: string, init?: RequestInit) => {
-      if (init?.signal) signals.push(init.signal);
-      return new Promise<Response>((resolve) => answerLate.push(() => resolve(new Response(new Uint8Array(WASM)))));
+    const downloaded: string[] = [];
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      inits.push(init);
+      const name = url.includes("twgsl") ? "twgsl.wasm" : "glslang.wasm";
+      return new Promise<Response>((resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error(`${name}: aborted`)));
+        answerLate.push(() => {
+          const response = new Response(new Uint8Array(WASM));
+          const read = response.arrayBuffer.bind(response);
+          const arrayBuffer = async (): Promise<ArrayBuffer> => {
+            const bytes = await read();
+            downloaded.push(name);
+            return bytes;
+          };
+          resolve(Object.assign(response, { arrayBuffer }));
+        });
+      });
     });
     vi.spyOn(Tools, "LoadScriptAsync").mockImplementation(shippedLoaders([]));
     const first = loadTranslators();
@@ -181,11 +196,14 @@ describe("loadTranslators", () => {
     expect(loadTranslators()).toBe(first);
     await vi.advanceTimersByTimeAsync(1);
     expect(firstOutcome).toBe("Error: the WebGPU translators did not load in 10000 ms");
-    expect(signals.map((signal) => signal.aborted)).toEqual([true, true]);
+    // Its downloads are not aborted: on a slow link they finish into the
+    // immutable cache, so a later attempt starts from it.
+    expect(inits.map((init) => init?.signal?.aborted ?? false)).toEqual([false, false]);
     expect(vi.getTimerCount()).toBe(0);
 
-    // The next call starts afresh. The stalled start's answer comes in while
-    // it runs, and neither runs a loader nor takes the slot.
+    // The next call starts afresh. The stalled start's downloads finish while
+    // it runs; the stalled start then stops, running no loader or factory,
+    // and does not take the slot.
     vi.restoreAllMocks();
     stubFetch(WASM);
     const fresh: string[] = [];
@@ -197,6 +215,7 @@ describe("loadTranslators", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(translators.glslang).toMatchObject({ builtBy: "glslang" });
     expect(translators.twgsl).toMatchObject({ builtBy: "twgsl" });
+    expect([...downloaded].sort()).toEqual(["glslang.wasm", "twgsl.wasm"]);
     expect(fresh).toEqual(["run glslang.js", "call glslang", "run twgsl.js", "call twgsl"]);
     expect(loadTranslators()).toBe(second);
     expect(vi.getTimerCount()).toBe(0);

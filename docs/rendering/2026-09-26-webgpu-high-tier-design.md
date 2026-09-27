@@ -77,8 +77,11 @@ Where the code differs from the text below, or adds to it:
   fetching and compiling about 2.6 MB again (Babylon keeps its first twgsl in a
   static anyway); a start that failed is dropped, so the next one tries again.
   So is one that has not come in within `WEBGPU_FETCH_MS`: it is abandoned
-  there, its WebAssembly fetches aborted and no loader of it run after, so a
-  stalled start holds no later attempt in the page.
+  there and runs no loader after, so a stalled start holds no later attempt in
+  the page. Its WebAssembly downloads are not aborted: served content-hashed
+  and immutable, on a slow link they finish into the browser's cache, and a
+  later attempt (in the page, or on the next load) starts from it rather than
+  running out of the budget again.
 - **A lost device stops Babylon's own restore.** Babylon notifies a loss and
   then starts restoring the engine; since the page reloads (and, once it
   lands, swaps renderers), `watchWebGpu` replaces that restore with nothing on
