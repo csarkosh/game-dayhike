@@ -44,10 +44,11 @@ export default defineConfig({
     environment: "node",
     include: ["test/**/*.test.ts"],
     // vitest's own defaults (5 s a test, 10 s a hook), scaled like every
-    // explicit limit: TEST_TIME_SCALE unset leaves them as they are, and a bad
-    // value throws here, before any test runs.
-    testTimeout: timeLimit(5_000),
-    hookTimeout: timeLimit(10_000),
+    // explicit limit. Only under vitest, which sets VITEST before it loads this
+    // file: `vite dev` and `vite build` load it too, and must not read or
+    // validate TEST_TIME_SCALE. Under vitest a bad value throws here, before
+    // any test runs.
+    ...(process.env.VITEST ? { testTimeout: timeLimit(5_000), hookTimeout: timeLimit(10_000) } : {}),
     tags: [
       {
         // Tests whose assertion is a bar on elapsed time, set on the
