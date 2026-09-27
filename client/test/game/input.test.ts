@@ -222,6 +222,75 @@ describe("presses aimed at a form control", () => {
   });
 });
 
+describe("presses on a form control during play", () => {
+  // A form control can hold the focus into play (the roster's invite field,
+  // clicked to copy the link, then Escape to resume): while play is engaged,
+  // every press is the game's, whatever has the focus.
+  const field = { tagName: "INPUT", isContentEditable: false };
+
+  it("move the player while the pointer is locked", () => {
+    const { input, canvas } = sampler();
+    lockPointer(canvas);
+    fire("keydown", { code: "KeyW", target: field, preventDefault() {} });
+    fire("mousedown", { button: 0, target: field });
+    const cmd = input.sample(1);
+    expect(cmd.moveZ).toBe(1);
+    expect(cmd.buttons).toBe(1);
+  });
+
+  it("move the player while touch play is engaged", () => {
+    const { input } = sampler({ touch: fakeTouch().source, touchMode: true });
+    expect(input.engaged).toBe(true);
+    fire("keydown", { code: "KeyW", target: field, preventDefault() {} });
+    expect(input.sample(1).moveZ).toBe(1);
+  });
+
+  it("let Escape release the lock, as it does in the desktop shell", () => {
+    const { canvas } = sampler();
+    const doc = (globalThis as Record<string, unknown>).document as { exitPointerLock?: () => void };
+    let exits = 0;
+    doc.exitPointerLock = () => {
+      exits += 1;
+    };
+    lockPointer(canvas);
+    fire("keydown", { code: "Escape", target: field, preventDefault() {} });
+    expect(exits).toBe(1);
+  });
+});
+
+describe("taking the controls back", () => {
+  /** A focused element on the fake document, counting its blurs. */
+  function focused(tagName: string) {
+    let blurs = 0;
+    const el = { tagName, isContentEditable: false, blur: () => (blurs += 1) };
+    ((globalThis as Record<string, unknown>).document as { activeElement: unknown }).activeElement = el;
+    return { blurs: () => blurs };
+  }
+
+  it("takes the focus off a form control when the pointer is locked again", () => {
+    const { canvas } = sampler();
+    const invite = focused("INPUT");
+    lockPointer(canvas);
+    expect(invite.blurs()).toBe(1);
+  });
+
+  it("takes the focus off a form control when touch play engages again", () => {
+    const { input } = sampler({ touch: fakeTouch().source, touchMode: true });
+    input.disengage();
+    const invite = focused("INPUT");
+    input.engage();
+    expect(input.engaged).toBe(true);
+    expect(invite.blurs()).toBe(1);
+  });
+
+  it("leaves the focus on anything that is not a form control", () => {
+    const { canvas } = sampler();
+    const resume = focused("BUTTON");
+    lockPointer(canvas);
+    expect(resume.blurs()).toBe(0);
+  });
+});
+
 function fakeTouch(over: Partial<{ moveX: number; moveZ: number; yaw: number; pitch: number; buttons: number; sprinting: boolean }> = {}) {
   const s = { moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, sprinting: false, ...over };
   let looks = 0;
