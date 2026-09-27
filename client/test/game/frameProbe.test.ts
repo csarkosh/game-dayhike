@@ -501,3 +501,23 @@ describe("startHike", () => {
     expect(p.events).toEqual(["loading", "loading gone"]);
   });
 });
+
+describe("autoPick's recommendation", () => {
+  const SAFARI_SIGNALS: GpuSignals = {
+    renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
+  };
+  const at = (record: import("../../src/game/quality.js").AutoRecord | null) =>
+    autoPick(SAFARI_SIGNALS, { record, pixels: 2_073_600, now: 1_790_000_000_000 });
+
+  it("is what the frame measured once a verdict holds, else the class's ceiling", () => {
+    expect(at(null).ceiling).toBe("high");
+    const measured = {
+      v: 1, gpu: "Apple GPU", cls: "apple-unknown" as const, browser: 26, attempts: 0,
+      verdict: { tier: "medium" as const, source: "probe" as const, pixels: 2_073_600, at: 1_790_000_000_000 - 86_400_000 },
+    };
+    expect(at(measured)).toEqual({ cls: "apple-unknown", gpu: "Apple GPU", tier: "medium", probeFrom: null, ceiling: "medium" });
+    // A verdict that no longer holds (another class, or too old) recommends nothing.
+    expect(at({ ...measured, cls: "apple-base" }).ceiling).toBe("high");
+    expect(at({ ...measured, verdict: { ...measured.verdict, at: 1_790_000_000_000 - 31 * 86_400_000 } }).ceiling).toBe("high");
+  });
+});

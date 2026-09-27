@@ -21,10 +21,13 @@ const RANK: Record<QualityTier, number> = { low: 0, medium: 1, high: 2 };
 
 /** The line under the choices for a tier chosen above the recommendation. */
 export const ABOVE_RECOMMENDED = "Higher than recommended for this computer.";
+/** How that line is announced: politely, when it appears, so the reader stays
+ * on the choice just pressed and hears the line after it. */
+export const CAUTION_LIVE = "polite";
 
 /** What Auto would pick on this machine, whether it will first test it, and
- * the highest tier it would ever take here (the class's ceiling, or the low
- * cap), where known. */
+ * the most it recommends here, where known: what the frame measured once a
+ * verdict holds, else the class's ceiling (or the low cap). */
 export type AutoSummary = { tier: QualityTier; probePending: boolean; ceiling?: QualityTier };
 
 export type SettingsInput = {
@@ -108,6 +111,8 @@ export function settingsModel(input: SettingsInput): SettingsView {
   return view;
 }
 
+let cautionIds = 0;
+
 const STYLE = `
   .settings .group {
     margin: 0; font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase;
@@ -125,7 +130,7 @@ const STYLE = `
     margin: 0; max-width: 32rem; text-align: center; font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.62);
   }
-  .settings .caution { font-size: 0.8rem; color: rgba(255, 255, 255, 0.45); }
+  .settings .caution { min-height: 1.3em; font-size: 0.8rem; color: rgba(255, 255, 255, 0.45); }
 `;
 
 /**
@@ -164,8 +169,13 @@ export function renderSettings(
     choices.append(button);
   }
 
+  // A live region from the start, so the line is announced when it appears,
+  // and described by the choices it is about.
   const caution = document.createElement("p");
   caution.className = "line caution";
+  caution.id = `settings-caution-${++cautionIds}`;
+  caution.setAttribute("aria-live", CAUTION_LIVE);
+  choices.setAttribute("aria-describedby", caution.id);
 
   const lines = document.createElement("div");
   lines.style.display = "contents";
@@ -191,7 +201,9 @@ export function renderSettings(
       button.setAttribute("aria-pressed", String(c.selected));
       button.disabled = c.disabled;
     }
-    caution.hidden = v.caution === undefined;
+    // Never hidden: a live region taken out of the page and put back with its
+    // text is not reliably announced. Empty, it keeps its line, so the screen
+    // does not jump when it fills.
     caution.textContent = v.caution ?? "";
     lines.replaceChildren(
       ...v.lines.map((text) => {

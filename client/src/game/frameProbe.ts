@@ -29,6 +29,7 @@ import { classifyGpu, gpuIdentity, type GpuClass } from "./gpuClass.js";
 import type { GpuSignals } from "./gpuSignals.js";
 import {
   autoTier,
+  holdingVerdict,
   withinClass,
   withProbeStarted,
   withVerdict,
@@ -283,16 +284,16 @@ export type StartupDeps = {
 export type StartupTier = { tier: QualityTier; source: TierSource; cls: GpuClass };
 
 /** Auto on this machine: the GPU's class and identity, the tier, and the tier
- * a probe would start from, or null, and the highest tier Auto would take
- * here. What the Settings screen's Auto line reads, and where `startupTier`
- * begins. */
+ * a probe would start from, or null, and the most Auto recommends here: a
+ * holding verdict's tier, else the class's ceiling (low under the cap). What
+ * the Settings screen reads, and where `startupTier` begins. */
 export function autoPick(
   signals: GpuSignals,
   at: { record: AutoRecord | null; pixels: number; now: number },
 ): { cls: GpuClass; gpu: string; tier: QualityTier; probeFrom: QualityTier | null; ceiling: QualityTier } {
   const cls = classifyGpu(signals);
   const gpu = gpuIdentity(signals);
-  const auto = autoTier({
+  const input = {
     cls,
     cores: signals.cores,
     memoryGb: signals.memoryGb,
@@ -301,8 +302,12 @@ export function autoPick(
     browser: signals.browser,
     pixels: at.pixels,
     now: at.now,
-  });
-  const ceiling = withinClass("high", cls, signals.cores, signals.memoryGb);
+  };
+  const auto = autoTier(input);
+  // What the frame measured, once a verdict holds; until then, the most the
+  // class may take here.
+  const measured = holdingVerdict(input);
+  const ceiling = withinClass(measured?.tier ?? "high", cls, signals.cores, signals.memoryGb);
   return { cls, gpu, tier: auto.tier, probeFrom: auto.probeFrom, ceiling };
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { TIER_CHOICES, settingsModel } from "../../src/game/settings.js";
+import { CAUTION_LIVE, TIER_CHOICES, settingsModel } from "../../src/game/settings.js";
 
 const CHOICES = (selected: string) => [
   { choice: "auto", label: "Auto (Recommended)", selected: selected === "auto", disabled: false },
@@ -88,5 +88,11 @@ describe("a choice above what this computer is recommended", () => {
   it("measures against the low cap too", () => {
     const capped = { tier: "low" as const, probePending: false, ceiling: "low" as const };
     expect(settingsModel({ context: "title", choice: "medium", auto: capped, override: null, stored: true }).caution).toBe("Higher than recommended for this computer.");
+  });
+});
+
+describe("the caution line's announcement", () => {
+  it("is read out politely when it appears, without taking the reader from the choice just pressed", () => {
+    expect(CAUTION_LIVE).toBe("polite");
   });
 });

@@ -168,6 +168,17 @@ export function verdictHolds(verdict: AutoVerdict, pixels: number, now: number):
   return age >= 0 && age < VERDICT_DAYS * DAY_MS && (verdict.source === "governor" || pixels <= verdict.pixels * PROBE_PIXEL_SLACK);
 }
 
+/**
+ * The stored verdict that decides Auto's tier now, or null: the record's, when
+ * it was made for this version, GPU and browser (`recordMatches`) and this
+ * class (`verdictFor`), and still holds (`verdictHolds`).
+ */
+export function holdingVerdict(input: AutoInput): AutoVerdict | null {
+  if (!recordMatches(input.record, input.gpu, input.browser) || input.record === null) return null;
+  const verdict = verdictFor(input.record, input.cls);
+  return verdict !== null && verdictHolds(verdict, input.pixels, input.now) ? verdict : null;
+}
+
 function lower(a: QualityTier, b: QualityTier): QualityTier {
   return RANK[a] <= RANK[b] ? a : b;
 }
@@ -231,11 +242,9 @@ export function autoTier(input: AutoInput): { tier: QualityTier; probeFrom: Qual
   const row = CLASS_TIERS[input.cls];
   const ceiling = ceilingFor(input.cls, input.cores, input.memoryGb);
   const start = lower(row.start, ceiling);
+  const verdict = holdingVerdict(input);
+  if (verdict !== null) return { tier: lower(verdict.tier, ceiling), probeFrom: null };
   const record = recordMatches(input.record, input.gpu, input.browser) ? input.record : null;
-  const verdict = record === null ? null : verdictFor(record, input.cls);
-  if (verdict !== null && verdictHolds(verdict, input.pixels, input.now)) {
-    return { tier: lower(verdict.tier, ceiling), probeFrom: null };
-  }
   const attempts = record?.attempts ?? 0;
   if (row.probe && ceiling !== start && attempts < PROBE_ATTEMPTS) return { tier: start, probeFrom: ceiling };
   return { tier: start, probeFrom: null };
