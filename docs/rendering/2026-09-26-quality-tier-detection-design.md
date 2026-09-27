@@ -565,18 +565,44 @@ the engine choice after it. Where the two meet:
 One component, `client/src/game/settings.ts`, as `credits.ts` is: a pure
 `settingsModel(input): SettingsView` that decides everything, and
 `renderSettings(root, view, handlers)` that paints it with DOM calls and
-`textContent` only, into whichever panel hosts it. Its buttons are plain
-`<button>`s, so they take the host's own rules (`.landing button`,
-`.pausemenu button`) and the host's tokens; `settings.ts` owns one small style
-literal for what is its own, the lit state of the chosen button
-(`[aria-pressed="true"]`: `--btn-fill-lit`, `--btn-edge-lit`) and the caption
-lines. Keyboard and touch are the hosts': Tab moves, Enter and Space press, a
-tap presses.
+`textContent` only, into whichever panel hosts it.
+
+The choice is one native `<select>` (`select.choice`), not a row of buttons.
+The visible "Graphics" is its `<label for>`, so it is also the select's
+accessible name; the select has an id and a `name` (`graphics`), and
+`aria-describedby` points at the line under it for a tier chosen above the
+recommendation (`Higher than recommended for this computer.`), a polite live
+region that is always in the page and empty when it has nothing to say.
+
+The select is built once: `setView` updates it and its four options in place
+and sets its value from the view, which fires no `change`, so the select keeps
+the keyboard's focus across a repaint and a repaint never reads as a pick. A
+pick is heard on `change` alone. While a choice is applied the select is
+disabled.
+
+`settings.ts` owns one small style literal for what is its own. The select
+takes the look the game's text inputs share (the landing's join field:
+`padding: 0.5rem 0.75rem`, `font: inherit`, `color: #fff`, a fill of
+`rgba(255, 255, 255, 0.08)`, a 1 px `rgba(255, 255, 255, 0.25)` border, a 4 px
+radius) in both hosts, with `appearance: none` and a caret of its own: two
+small `linear-gradient` triangles in the text's colour at the right, clear of
+the label by a `2.25rem` right padding. It sizes to its longest option, never
+narrower than the `14rem` of the buttons beneath it nor wider than its panel.
+The open list is the browser's: the select carries `color-scheme: dark` and
+each `option` a dark fill (`#16191c`) and a light text (`#eaf1f1`), so the list
+is not drawn light on the dark page. Keyboard focus shows the ring the
+buttons show (`outline: 2px solid var(--btn-edge-lit)`, offset 3 px); disabled,
+the text, fill and border dim and the pointer stops reading as a hand. Apply
+and Back are plain `<button>`s, so they take the host's own rules
+(`.landing button`, `.pausemenu button`) and the host's tokens. Keyboard and
+touch are the browser's own for a select: Tab reaches it, the arrow keys and
+type-ahead letters change it where the list is closed, a tap opens the
+platform's picker.
 
 ```
 SETTINGS
-Graphics
-[ AUTO (RECOMMENDED) ]  [ HIGH ]  [ MEDIUM ]  [ LOW ]
+GRAPHICS
+[ Auto (Recommended)       v ]
 Auto picks Medium on this computer.
 This hike is using Medium.                      (pause only)
 [ APPLY ]                                        (pause only)
@@ -598,15 +624,31 @@ nothing is saved.
 
 ### 8.3 Title and pause
 
-- **Title**: pressing a choice saves it at once. The next Play builds the hike at
-  it; the landing's backdrop stays low.
-- **Pause**: pressing a choice selects it without saving; **Apply** saves it and
-  applies it live (§9); **Back** or Escape discards an unapplied selection.
+- **Title**: choosing an option saves it at once. The next Play builds the hike
+  at it; the landing's backdrop stays low. Opening the panel puts the focus on
+  the select.
+- **Pause**: choosing an option selects it without saving; **Apply** saves it
+  and applies it live (§9); **Back** or Escape discards an unapplied selection.
+  The focus goes to the select on entering Settings and again once a choice is
+  applied (Apply goes disabled and loses it).
   Apply is disabled when the selection resolves to the tier already running,
   while `?tier=` is in the address, and while applying. While applying the
   panel's ground goes opaque, Apply reads "Applying…", and Back and Escape do
   nothing; when the new scene is ready the ground returns to the pause vignette
   and the running line names the new tier.
+- **Escape with the select focused** on the pause screen: with its list closed,
+  Escape goes back to the pause panel as from anywhere else. Where a browser
+  hands the page the Escape that closes an open list, and says the list is open
+  through the `:open` pseudo-class, that Escape is left to the list and the
+  next one goes back. A native select says nothing else about its list, so a
+  browser that both hands the page that Escape and lacks `:open` goes back on
+  it; a browser whose list takes its own keys never shows the page that
+  Escape at all.
+- **Game keys** do not act while the select is used: the pause menu holds the
+  controls (`createPlayGate`), so arrows and letters typed into it move no one,
+  and nothing in the game calls `preventDefault` on them while held, so the
+  select still sees every key. `/` still opens the command bar over the pause
+  menu, as it does from any control there.
 
 ### 8.4 Persistence
 

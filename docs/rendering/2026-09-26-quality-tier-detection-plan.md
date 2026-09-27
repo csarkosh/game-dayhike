@@ -2120,8 +2120,8 @@ Seed `atmo`, `weather mist`, `time 12`: `?cmd=seed%20atmo;freecam;weather%20mist
 
 A fresh profile, windowed:
 
-1. The title screen's buttons in order (Play, Downloads, Settings, Credits); Settings opens `/settings`, the browser's Back returns. The four choices, Auto pressed, the line `Auto picks Medium on this computer.`
-2. High, reload: High still pressed. Play: the console line `quality: high (choice, apple-base), engine …`; **(WebGPU)** the engine the rule gives high. Low, Play: `quality: low (choice, …), engine webgl2`.
+1. The title screen's buttons in order (Play, Downloads, Settings, Credits); Settings opens `/settings`, the browser's Back returns. The Graphics select, focused, with its four options in order and Auto selected, the line `Auto picks Medium on this computer.`
+2. High, reload: High still selected. Play: the console line `quality: high (choice, apple-base), engine …`; **(WebGPU)** the engine the rule gives high. Low, Play: `quality: low (choice, …), engine webgl2`.
 3. In a hike, Escape: Resume, Settings, Exit; Settings opens the same screen with `This hike is using Low.`; Escape goes back to the pause panel; Escape again resumes.
 4. `?tier=high` on the title screen: the override line; in a hike, Apply disabled.
 5. A private window: the storage line; a choice lasts until the window closes.
