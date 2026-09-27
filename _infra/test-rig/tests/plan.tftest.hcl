@@ -25,10 +25,18 @@ mock_provider "aws" {
     values = { locations = ["us-east-1d", "us-east-1b", "us-east-1a"] }
   }
 
-  # No machine of this module exists yet, unless a run says otherwise.
+  # As AWS reports it, a machine of this module exists, without a build tag
+  # (a test cannot hand the mock this module's build, a hash of the script;
+  # an untagged machine counts as this build). A run that needs no machine,
+  # or one of an earlier build, says so.
   override_data {
     target = data.aws_instances.existing
-    values = { ids = [] }
+    values = { ids = ["i-0123456789abcdef0"] }
+  }
+
+  override_data {
+    target = data.aws_instance.existing
+    values = { tags = { Name = "test-rig", purpose = "test-rig" } }
   }
 
   # The scheduler checks that its role is an ARN.
@@ -329,8 +337,41 @@ run "rejects_part_minutes" {
   expect_failures = [var.max_run_hours]
 }
 
+# A first apply with running = false would stop the new machine seconds into
+# Windows' own first boot: with no machine in AWS, it is refused.
+run "created_stopped_is_refused" {
+  command = plan
+
+  variables {
+    running = false
+  }
+
+  override_data {
+    target = data.aws_instances.existing
+    values = { ids = [] }
+  }
+
+  expect_failures = [aws_instance.test_rig]
+}
+
 # --- Applied against the mocked provider, in order ---------------------------
 
+# Created running, as it must be.
+run "created_running" {
+  command = apply
+
+  override_data {
+    target = data.aws_instances.existing
+    values = { ids = [] }
+  }
+
+  assert {
+    condition     = aws_ec2_instance_state.test_rig.state == "running"
+    error_message = "A first apply creates the machine running."
+  }
+}
+
+# Stopping the machine that exists is allowed.
 run "stopped" {
   command = apply
 
@@ -350,8 +391,13 @@ run "stopped" {
   }
 
   assert {
-    condition     = aws_ec2_instance_state.test_rig.state == "stopped" && aws_instance.test_rig.associate_public_ip_address == false
-    error_message = "The machine is stopped and reports no public address."
+    condition     = aws_instance.test_rig.id == run.created_running.instance_id && aws_ec2_instance_state.test_rig.state == "stopped"
+    error_message = "Stopping the machine keeps it and stops it."
+  }
+
+  assert {
+    condition     = aws_instance.test_rig.associate_public_ip_address == false
+    error_message = "The machine reports no public address, as AWS reports a stopped one."
   }
 
   assert {
@@ -499,9 +545,7 @@ run "script_changed_while_running" {
   }
 }
 
-# Stopping it afterwards, with the same script, is allowed and keeps it. (A
-# test cannot hand the mocked AWS the new build's value, so here the guard
-# sees no machine; the replacement itself is what the run checks.)
+# Stopping it afterwards, with the same script, is allowed and keeps it.
 run "stopped_after_set_up" {
   command = apply
 

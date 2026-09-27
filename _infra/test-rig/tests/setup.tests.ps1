@@ -131,12 +131,26 @@ try { Set-StopTimer } catch { $threw = $true }
 Check 'with no shutdown.exe either, Set-StopTimer does not throw' (-not $threw)
 Check 'and says only the daily stop remains' (@($script:Logged | Where-Object { $_ -like '*only the daily stop from outside remains*' }).Count -eq 1 -and $script:StopFallback -eq $false)
 
-# The one-boot skip leaves the task alone and is used up.
+# The one-boot skip leaves the task alone, is used up, and logs what the task
+# holds: here, as after the timer check's step 2, a start-up trigger only.
+function Get-ScheduledTask {
+  [pscustomobject]@{ Triggers = @(
+      [pscustomobject]@{ CimClass = [pscustomobject]@{ CimClassName = 'MSFT_TaskBootTrigger' }; Enabled = $true; Delay = 'PT15M' }
+    ) }
+}
 Set-Content $SkipTimerOnce ''
 $ShutdownExe = $fake
 Remove-Item $calls -ErrorAction SilentlyContinue
+$script:Logged = @()
 Set-StopTimer
 Check 'skip-stop-timer-once touches nothing and is removed' (-not (Test-Path $SkipTimerOnce) -and -not (Test-Path $calls))
+Check 'and logs only what the task holds' (@($script:Logged | Where-Object { $_ -like '*start-up trigger delay PT15M; 0 one-time trigger(s)*' }).Count -eq 1)
+
+# With no task to leave alone, the skip falls back to a pending shutdown.
+function Get-ScheduledTask { }
+Set-Content $SkipTimerOnce ''
+Set-StopTimer
+Check 'a skip with no task still arms a pending shutdown' ((Test-Path $calls) -and @(Get-Content $calls)[0] -like '/s /f /t *')
 
 Remove-Item -Recurse -Force $work
 "failures: $fail"
