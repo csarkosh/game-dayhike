@@ -670,7 +670,12 @@ In `rendererSwap.ts`, `swapRenderer(current, target, bindings)`, synchronous:
 2. dispose the scene extras (signs, body) while their scene is alive;
 3. `renderer.dispose()`, the engine created with `loseContextOnDispose: true`, so
    every GPU object of the old context goes with it, including any the scene
-   forgot;
+   forgot. One exception to "at once": while the scene's BRDF lookup texture is
+   still being expanded (the first second or so of a renderer's life), the
+   scene and its engine are kept, with nothing drawing, until it finishes, at
+   most `BRDF_SETTLE_MAX_MS` (2 s), because disposing the scene first makes
+   Babylon's expansion callback throw (`releaseEngine`, `renderer.ts`);
+   everything else of the renderer is gone before step 4;
 4. a fresh canvas replaces the old one in the container (`replaceWith`), with
    `touchAction: none`;
 5. `createRenderer(fresh, level, forest, { tier, engine })`, the same `level` and

@@ -633,6 +633,61 @@ export type Renderer = {
 
 export type RendererOptions = { tier?: QualityTier };
 
+/** The longest a renderer's engine is kept past its `dispose` for a scene's
+ * BRDF lookup texture to finish expanding (`releaseEngine`). */
+export const BRDF_SETTLE_MAX_MS = 2000;
+
+/** Whether some scene of `engine` has a BRDF lookup texture still being
+ * expanded: loading, or decoding from RGBD into half float. */
+function brdfExpanding(engine: Engine): boolean {
+  return engine.scenes.some((scene) =>
+    [scene.environmentBRDFTexture, scene.environmentFuzzBRDFTexture].some(
+      (texture) => texture !== null && texture !== undefined && texture.getInternalTexture()?.isReady === false,
+    ),
+  );
+}
+
+/**
+ * Disposes `engine`, and its scenes with it, at once, or, while a scene's
+ * BRDF lookup texture is still being expanded, as soon as that has finished,
+ * and at most `maxMs` later.
+ *
+ * Every PBR material asks its scene for the BRDF lookup texture, and Babylon
+ * makes it on first request, then expands it from RGBD into half float
+ * through a post-process, asynchronously: the image loads, the decode
+ * shader's module is imported, its effect compiles, and a callback renders
+ * through `texture.getScene().postProcessManager`
+ * (`RGBDTextureTools.ExpandRGBDTexture`). Dispose the scene before that
+ * callback runs and the texture's scene is null by then: the callback throws a
+ * TypeError inside a promise nothing handles, which prints as "Uncaught (in
+ * promise)". That window is the first second or so of a renderer's life.
+ *
+ * So a renderer torn down inside it keeps only its scene and engine, with
+ * nothing drawing, until the expansion has finished; everything else of the
+ * renderer is already gone, in order, by the time this runs. It costs a
+ * teardown nothing on its own timeline: a live tier change builds the new
+ * renderer at once, and the old context stays alive beside it, off the page,
+ * for as long as the expansion takes, at most `maxMs`. A teardown outside that
+ * window releases the engine at once, as before. Past the bound the engine
+ * goes regardless, and anything the expansion then throws is reported, not
+ * hidden.
+ */
+export function releaseEngine(engine: Engine, maxMs = BRDF_SETTLE_MAX_MS): void {
+  if (!brdfExpanding(engine)) {
+    engine.dispose();
+    return;
+  }
+  const deadline = performance.now() + maxMs;
+  const poll = (): void => {
+    if (brdfExpanding(engine) && performance.now() < deadline) {
+      setTimeout(poll, 16);
+      return;
+    }
+    engine.dispose();
+  };
+  setTimeout(poll, 16);
+}
+
 /**
  * `forest` is null for hand-authored levels. Passing it alongside `level` rather
  * than instead of it keeps the brush path below working unchanged: a forest world
@@ -662,7 +717,7 @@ export function createRenderer(
     // its engine (and the scene on it) and the atmosphere's global plugin
     // registration would outlive it, and the next renderer would meet them.
     releaseAtmosphere();
-    engine.dispose();
+    releaseEngine(engine);
     throw error;
   }
 }
@@ -1244,8 +1299,8 @@ function buildRenderer(
       skinShading.dispose();
       lighting.dispose();
       atmosphere.dispose();
-      scene.dispose();
-      engine.dispose();
+      // The scene goes with its engine, once its BRDF texture is settled.
+      releaseEngine(engine);
     },
     setFreecam(view) {
       freecam = view;
