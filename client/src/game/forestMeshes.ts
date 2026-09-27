@@ -707,14 +707,18 @@ export async function defaultBakeImpostor(
     // each poll triggers the missing compiles and texture loads, so this
     // normally settles in a few frames' worth of 16 ms hops.
     const deadline = performance.now() + timeoutMs;
-    while (!rtt.isReadyForRendering()) {
-      // A bake whose shell is disposed stops polling the torn-down scene and
-      // never renders into it, rather than holding it for the full timeout.
-      if (signal?.aborted === true || performance.now() >= deadline) {
-        camera.dispose();
-        rtt.dispose();
-        return null;
-      }
+    const giveUp = (): null => {
+      camera.dispose();
+      rtt.dispose();
+      return null;
+    };
+    for (;;) {
+      // Before every poll, the first and each one after a wait: a bake whose
+      // shell has been disposed neither polls the torn-down scene nor renders
+      // into it, and gives it up at once rather than at the timeout.
+      if (signal?.aborted === true) return giveUp();
+      if (rtt.isReadyForRendering()) break;
+      if (performance.now() >= deadline) return giveUp();
       await new Promise((resolve) => setTimeout(resolve, 16));
     }
 

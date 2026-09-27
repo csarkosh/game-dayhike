@@ -1304,4 +1304,39 @@ describe("defaultBakeImpostor readiness gate", () => {
     expect(renderSpy).not.toHaveBeenCalled();
     expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
   });
+
+  it("an abort during the wait ends the bake before it polls the torn-down scene again", async () => {
+    const { scene, mesh } = bakeScene();
+    const loads = new AbortController();
+    let polls = 0;
+    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockImplementation(() => {
+      polls++;
+      // The teardown lands while the bake sleeps between polls; were the
+      // next poll to run, it would find the scene ready and render into it.
+      if (polls === 1) setTimeout(() => loads.abort(), 0);
+      return polls > 1;
+    });
+    const renderSpy = vi.spyOn(RenderTargetTexture.prototype, "render");
+
+    const texture = await defaultBakeImpostor(mesh, scene, 5000, undefined, loads.signal);
+
+    expect(texture).toBeNull();
+    expect(polls).toBe(1);
+    expect(renderSpy).not.toHaveBeenCalled();
+    expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
+  });
+
+  it("an abort before the bake starts polls nothing and renders nothing", async () => {
+    const { scene, mesh } = bakeScene();
+    const loads = new AbortController();
+    loads.abort();
+    const pollSpy = vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    const renderSpy = vi.spyOn(RenderTargetTexture.prototype, "render");
+
+    const texture = await defaultBakeImpostor(mesh, scene, 5000, undefined, loads.signal);
+
+    expect(texture).toBeNull();
+    expect(pollSpy).toHaveBeenCalledTimes(0);
+    expect(renderSpy).not.toHaveBeenCalled();
+  });
 });
