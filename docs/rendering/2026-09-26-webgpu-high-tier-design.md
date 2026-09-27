@@ -52,17 +52,31 @@ Where the code differs from the text below, or adds to it:
 - **The wait is not blank.** While the engine is chosen, the page shows
   "Loading…" over the canvas in the HUD's status line, the word the landing's
   Play button showed; on the WebGL2 path there is no wait and no line.
-- **The translators, fetched before the engine and checked.** Babylon 9.18
-  loads them on the first GLSL effect, not in `initAsync`, and its loader waits
-  rather than rejecting when a fetch fails. So the translators' step, once the
-  adapter fits, runs both loaders through
-  Babylon's `Tools.LoadScriptAsync` and fetches both `.wasm` files whole (so
-  Babylon's own fetch of them comes from the HTTP cache), and fails at once
-  where a loader ran but defined no `glslang` or `twgsl` on the page (this host
-  answers a missing script with its HTML page, status 200) or a translator is
-  not WebAssembly. `createWebGpuEngine` then awaits
-  `prepareGlslangAndTintAsync()`, and switches the materials to GLSL only once
-  the engine stands.
+- **The translators, started before the engine and handed to it.** Babylon
+  9.18 loads them on the first GLSL effect, not in `initAsync`, and its loader
+  waits rather than rejecting when a fetch fails. Their two loaders also
+  collide: each is a classic script declaring a top-level `var Module`, its
+  emscripten factory, and each translator starts from whatever `Module` is
+  there when it is started. Loaded together (as first built), the later
+  script's won, glslang was started on twgsl's factory and never came up, and
+  every WebGPU start fell back after 10 s, remembered (the verification
+  note, §3.2). So the translators' step, once the adapter fits, fetches both
+  `.wasm` files whole and checked (so the loaders' own fetches come from the
+  HTTP cache), then runs glslang's loader through Babylon's
+  `Tools.LoadScriptAsync` and starts glslang at once, while its own `Module` is
+  the one there, then does the same for twgsl, and hands the two started
+  translators to `initAsync` (glslang as a promise, twgsl as the instance, as
+  Babylon's options take them), so Babylon neither runs a loader again nor
+  calls a factory. It fails at once where a script does not load, where a
+  loader ran but defined no `glslang` or `twgsl` (this host answers a missing
+  script with its HTML page, status 200), or where a translator is not
+  WebAssembly. `createWebGpuEngine` then awaits `prepareGlslangAndTintAsync()`,
+  and switches the materials to GLSL only once the engine stands.
+- **A lost device stops Babylon's own restore.** Babylon notifies a loss and
+  then starts restoring the engine; since the page reloads (and, once it
+  lands, swaps renderers), `watchWebGpu` replaces that restore with nothing on
+  the engine as it hears the loss. Left to run, it logged a restore and threw
+  in the seconds before the reload landed (the note, §3.3).
 - **Texture compression.** The device asks for `texture-compression-bc`,
   `-etc2` and `-astc` where the adapter has them (`featuresToRequest`): the
   features Babylon reads its compressed-format caps from, so KTX2 textures stay
@@ -158,7 +172,10 @@ tried, and `onEffectErrorObservable` told once none is left, as on WebGL2. The
 watcher therefore reports it as a pipeline failure, and the rule in §5.5
 applies as built: inside the startup window, remembered and a reload onto
 WebGL2; after it, remembered for the next load; the live swap replaces both
-before Task 6. The bake sees it as its failed ending. A failure that belongs to no
+before Task 6. The bake sees it as its failed ending. It covers the case Task
+1's gate met before it was built (the note, §3.3): with the translators
+loaded, glslang's "GLSL compilation failed" throws inside the unawaited
+preparation, which is exactly the rejection it catches. A failure that belongs to no
 compiled effect is logged ("WebGPU shader translation failed"), which the
 watcher also reads. A wrapper, not a page-wide `unhandledrejection` listener,
 because only the wrapper knows which effect failed; canaries pin the unawaited
