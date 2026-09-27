@@ -87,7 +87,7 @@ driver from S3, three installers, a restart), roughly $0.50. Traffic into the ma
 what leaves it (DCV's picture through Session Manager, results) counts against the account's
 100 GB a month of free data transfer out.
 
-## The first session, step by step
+## The first run, step by step
 
 None of this is in Terraform. Each step says what to see; anything else is a reason to stop and
 read before going on.
@@ -132,7 +132,7 @@ read before going on.
    installation of the software, you are bound by the terms of the NVIDIA GRID Cloud End User
    License Agreement". Applying this module accepts them.
 
-### During the first session, in order
+### During the first run, in order
 
 | # | Step | Expect |
 |---|---|---|
@@ -148,9 +148,9 @@ read before going on.
 | 10 | DCV by hand: the port forward, sign in as `hiker` with the parameter's password | The desktop, at 1920 × 1080, with no licence error from DCV. Then **close the client**. |
 | 11 | `& 'C:\Program Files\NICE\DCV\Server\bin\dcv.exe' describe-session console --json` | Parses as JSON (no byte-order mark, not UTF-16); `num-of-connections` is `0`. |
 | 12 | The probe (see [The first run's probe](#the-first-runs-probe)) | `PASS`. Read every `WARNING`. Record the renderer string, the `chrome.exe` lines, `featureStatus`, the WebGPU adapter, `refreshHz`, the adapter list and `browserImds`. The desktop is not on a Microsoft Basic Display Adapter. If it fails only on `rasterization` or `gpu_compositing`, run it again with `--ignore-gpu-blocklist` and record both. |
-| 13 | **Stop, then plan** (`terraform apply -var running=false`, then `terraform plan -var running=false`) | `describe-instances` reads `stopped`, not `terminated`. The plan shows **No changes**. This is the one check of what no test here can show: that nothing AWS reports differently about a stopped machine (its public address, its public name, its root volume's tags) makes Terraform want to change or replace it. Any plan that says `aws_instance.test_rig` "must be replaced" is refused until it is understood. |
+| 13 | **Stop, then plan** (`terraform apply -var running=false`, then `terraform plan -var running=false`), and the plan for the next start (`terraform plan`) | `describe-instances` reads `stopped`, not `terminated`. The stopped plan shows **No changes**. The plan for the next start shows exactly **0 to add, 1 to change, 0 to destroy**: `aws_ec2_instance_state.test_rig` updated in place, `"stopped" -> "running"`. This is the one check of what no test here can show: that nothing AWS reports differently about a stopped machine (its public address, its public name, its root volume's tags) makes Terraform want to change or replace it. Refuse any other plan, above all one that says `aws_instance.test_rig` "must be replaced", until it is understood. |
 | 14 | `aws scheduler get-schedule --region us-east-1 --name test-rig-backstop-stop` | The target's input names this instance id. |
-| 15 | The timer check (see [It stops itself](#it-stops-itself)) | Each trigger stops the machine about 15 minutes after its boot, and the log names which it relied on; after the default is back, the **next** start runs its full 4 hours, not 15 minutes. |
+| 15 | The timer check (see [It stops itself](#it-stops-itself)) | Step 1 stops the machine about 15 minutes after its start; step 2, with the one-time trigger removed by hand, about 15 minutes after its restart, and its log shows `0 one-time trigger(s)`; step 3's start, with the default back, is still running after 20 minutes. |
 
 ### After a `terraform destroy`
 
@@ -173,8 +173,19 @@ terraform apply                     # start it again (running defaults to true)
 terraform destroy                   # delete it and everything above, disk included
 ```
 
-Create it running: stopping a machine in the middle of its first boot interrupts the set-up,
-which then finishes at the next start.
+Create it running, and let the set-up finish before stopping it. A new machine must never be
+stopped before its first-boot set-up has finished: stopped seconds into Windows' own first boot,
+EC2 hard-stops it after a few minutes, and it may never boot again. So an apply with
+`running = false` is refused unless a machine already exists and is not being replaced: a first
+apply, an apply after a `destroy`, or a replacement, with `running = false`, stops at `plan` with
+a message that says to apply with `running = true`, wait for
+`C:\ProgramData\test-rig\verified`, then stop. The refusal reads the machine AWS reports, so
+it cannot see a machine that Terraform replaces because it was tainted (a failed create): after
+a failed create, apply with `running = true`.
+
+Starting the machine on a later day from a different commit replaces it if the start-up script
+changed in between (with `running = true` that is allowed): read the plan before applying it,
+and expect exactly the one change of step 13 unless a new machine is wanted.
 
 Once the machine has stopped itself, Terraform's state still says `running`; the next `apply`
 starts it again. `aws ec2 stop-instances --instance-ids <id>` stops it too, with the same
@@ -184,7 +195,7 @@ changed. A plan against a stopped machine whose variables have not changed shows
 its public address, which AWS takes away while it is stopped, comes from its subnet
 (`map_public_ip_on_launch`), not from an argument of the instance that Terraform would compare
 (the AWS provider replaces a machine whose `associate_public_ip_address` reads back differently).
-Step 13 of the first session checks it. What `destroy` leaves behind is listed above.
+Step 13 of the first run checks it. What `destroy` leaves behind is listed above.
 
 ### What a change does to the machine
 
@@ -194,17 +205,18 @@ Step 13 of the first session checks it. What `destroy` leaves behind is listed a
 | `instance_type` | The provider stops the machine, changes its size and **starts it again**, whatever `running` says; the running/stopped setting is then applied again (it is re-made after any change to the machine), so a machine meant to be stopped ends stopped. The disk is kept. |
 | `max_run_hours` | The instance tag `max-run-minutes` changes in place. Nothing is restarted or replaced; the new limit applies from the machine's next boot. The running/stopped setting is applied again, as above. |
 | `disk_size_gb` | The disk grows in place, running or stopped (Windows' partition then needs extending by hand). A smaller size is refused by AWS. |
-| The start-up script (`setup.ps1`, the user data around it in `instance.tf`, or `desktop_user`, `password_parameter`, `display_width`, `display_height`, which are written into it), or `vpc_cidr` | **The machine is replaced**: `plan` shows `aws_instance.test_rig` "must be replaced". The new machine runs the first-boot set-up again (about 40 minutes, about $0.50) and makes a new desktop password; the old disk and everything on it go. **Refused while `running = false`**: a new machine must never be stopped before its first set-up has finished (stopped seconds into Windows' own first boot, EC2 hard-stops it after a few minutes, and it may never boot again). Apply with `running = true`, wait for `verified`, then stop it. Until the new machine's first boot writes its password, the parameter holds the old machine's, which no longer works. |
+| The start-up script (`setup.ps1`, the user data around it in `instance.tf`, or `desktop_user`, `password_parameter`, `display_width`, `display_height`, which are written into it), or `vpc_cidr` | **The machine is replaced**: `plan` shows `aws_instance.test_rig` "must be replaced". The new machine runs the first-boot set-up again (about 40 minutes, about $0.50) and makes a new desktop password; the old disk and everything on it go. **Refused while `running = false`**: a new machine must never be stopped before its first-boot set-up has finished (stopped seconds into Windows' own first boot, EC2 hard-stops it after a few minutes, and it may never boot again). Apply with `running = true`, wait for `verified`, then stop it. Until the new machine's first boot writes its password, the parameter holds the old machine's, which no longer works. |
 | `region` | **Refused.** The region is chosen once: the provider's region is not an attribute of any resource, so a change would look for everything in the new region, lose it from state, and leave the machine, its disk and its schedule billing in the old one. To move: `terraform destroy` with the old region, then change it and apply. |
 | A new monthly Windows image | Nothing: the machine keeps its image. |
 | `image_id` | Nothing until `terraform apply -replace=aws_instance.test_rig`. |
 | `terraform apply -replace=aws_instance.test_rig` (a newer image, a prepared image) | A new machine, as for a changed script. Only with `running = true`: the refusal above cannot see a `-replace`. |
 | What AWS offers in the machine's zone | Nothing: the zone is fixed once the subnet exists. |
 
-What the two refusals cannot stop. The replacement refusal reads the machine AWS reports (the tag
-`build` on the machine tagged `Name = test-rig`, `purpose = test-rig`); it cannot see a `-replace`,
-a machine whose tag was changed by hand, or a replacement the provider decides for a reason of
-its own. The region refusal is a record, in state, of the first apply's region, checked by the
+What the two refusals cannot stop. The refusal of a new machine while `running = false` reads
+the machines AWS reports (the tag `build` on the machine tagged `Name = test-rig`,
+`purpose = test-rig`); it cannot see a `-replace`, the replacement of a tainted machine, a
+machine whose `build` tag was removed or changed by hand (one without the tag counts as the
+current build), or a replacement the provider decides for a reason of its own. The region refusal is a record, in state, of the first apply's region, checked by the
 network that every regional resource is built on; it cannot stop `terraform destroy` or
 `terraform apply -refresh-only` run with another region (both drop the resources from state
 without touching them), `terraform state rm`, or anything done outside Terraform.
@@ -440,7 +452,7 @@ A running machine costs $0.715 an hour; one forgotten for a month about $526. Tw
    with two triggers, one for this boot (`max_run_hours` after it) and one at every start-up
    delayed by the same amount, which fires at later boots even if the script does not run. It
    reads the task back (the delay, a next run time, the task ready) and logs it. So the limit
-   counts from **each** boot: in the first session, from the set-up's restart, not from the first
+   counts from **each** boot: in the first run, from the set-up's restart, not from the first
    start; and a changed tag applies from the next boot, with no trigger of an earlier boot left
    to stop the machine sooner. Whatever fails (the tag, the boot time, Task Scheduler), the
    script falls back to a pending `shutdown /s /t <seconds>`, and that fallback cannot itself
@@ -450,9 +462,11 @@ A running machine costs $0.715 an hour; one forgotten for a month about $526. Tw
    task never starts late: a shutdown missed while the machine was off does not fire at a later
    boot.
 2. **From outside, once a day:** an EventBridge Scheduler schedule calls `StopInstances` on the
-   machine at 09:00 UTC (`backstop_stop_schedule`; `null` in `terraform.tfvars` turns it off). It
-   catches a machine whose Windows never came up far enough to run the task. Stopping a stopped
-   machine does nothing.
+   machine at 09:00 UTC (`backstop_stop_schedule`; `null` in `terraform.tfvars` turns it off):
+   05:00 in US Eastern daylight time, 04:00 in US Eastern standard time. It catches a machine
+   whose Windows never came up far enough to run the task. It runs at that fixed hour whatever the
+   machine is doing, so it also stops a machine started just before it; start a run at least four
+   hours clear of it. Stopping a stopped machine does nothing.
 
 To give a long run more time, raise `max_run_hours` and restart the machine (the new limit is
 read at boot), or restart it (the clock starts again).
@@ -470,18 +484,30 @@ removing the task also cancels a start-up trigger's delayed run already pending 
 boot (if it does not, and the tag was **raised**, that one boot stops at the old, shorter limit).
 Check it once, after the first-boot set-up, for about $0.40:
 
-1. `terraform apply -var max_run_hours=0.25` changes the tag in place (nothing restarts), then
-   `Restart-Computer -Force` from a Session Manager shell. At that boot the script registers the
+1. With the machine stopped (after step 13 of the first run), `terraform apply -var
+   max_run_hours=0.25` changes the tag in place and starts the machine. Its boot registers the
    task for 15 minutes:
    `aws ec2 describe-instances --instance-ids <id> --query 'Reservations[0].Instances[0].State.Name'`
-   should read `stopped` about 15 minutes after the restart.
-2. The start-up trigger alone: `terraform apply -var max_run_hours=0.25` starts it again; from a
-   Session Manager shell, `New-Item C:\ProgramData\test-rig\skip-stop-timer-once` and
-   `Restart-Computer -Force`. At that boot the script leaves the task as it is (and removes the
-   file), so only the start-up trigger registered at the previous boot can stop it: `stopped`
-   about 15 minutes after the restart, and the log says `left as it was for this boot`.
-3. `terraform apply` (the default 4 hours, running) starts it, and the next boot registers 4
-   hours: the machine must still be running 20 minutes after the start, and the log reads
+   should read `stopped` about 15 minutes after the start.
+2. The start-up trigger alone. `terraform apply -var max_run_hours=0.25` starts it again, and
+   its boot registers the task afresh with both triggers. From a Session Manager shell, remove the
+   one-time trigger by hand, mark the next boot to leave the task alone, and restart:
+
+   ```powershell
+   $task = Get-ScheduledTask test-rig-stop
+   Set-ScheduledTask -TaskName test-rig-stop -Trigger @($task.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskBootTrigger' }) | Out-Null
+   New-Item C:\ProgramData\test-rig\skip-stop-timer-once | Out-Null
+   Restart-Computer -Force
+   ```
+
+   At that boot the script leaves the task exactly as it is (and removes the file), and logs what
+   the task holds: `start-up trigger delay PT15M; 0 one-time trigger(s)`. Only the start-up
+   trigger can stop it now: `stopped` about 15 minutes after the restart. (The trigger is removed
+   before the restart, not by the script during the boot under test, so that nothing changes the
+   task while its start-up trigger's delayed run is pending.)
+3. `terraform apply` (the default 4 hours, running) starts it. Its boot sees 240 minutes and
+   registers the task afresh, which must also cancel the 15-minute run its old start-up trigger
+   began: the machine must still be running 20 minutes after the start, and the log reads
    `Stop timer: 240 minutes`. Then `terraform apply -var running=false`.
 
 ## Holding the machine still, and security updates
@@ -695,17 +721,22 @@ None of them runs in the repository's test workflow; run them by hand after a ch
   `max-run-minutes` (240, or 90 for 1.5 hours); a changed script, or a changed wrapper around it,
   is what replaces the machine;
 - the sequence of changes, applied in order against the mocked provider:
-  - the machine stopped and reporting no public address, as AWS reports a stopped machine; a
-    plan with the same variables then keeps the machine and changes nothing about it;
+  - a first apply with `running = false` is refused; one with `running = true` creates the
+    machine running;
+  - stopping the machine that exists is allowed, and keeps it; the machine then reports no
+    public address, as AWS reports a stopped machine, and a plan with the same variables keeps
+    it and changes nothing about it;
   - a new size keeps the machine and applies the stopped setting again; a new timer changes the
     tag, keeps the machine and applies the setting again;
   - a changed script with `running = false` is refused, when AWS reports a machine of an earlier
     build; with `running = true` it replaces the machine, which is left running and carries the
-    new build; stopping it afterwards keeps it;
+    new build; stopping it afterwards keeps it. (The mocked AWS reports a machine without a
+    `build` tag unless a run says otherwise, which counts as the current build: a test cannot
+    hand it the current build's hash.)
   - the same state planned in another region is refused.
 
   A mocked provider does not run the AWS provider's own plan logic or read AWS: it cannot show
-  that a real stopped machine plans no change (step 13 of the first session does), the provider's
+  that a real stopped machine plans no change (step 13 of the first run does), the provider's
   own start after a new size, or the setting's stop that follows. The AWS provider's source shows
   those: a new size is stop, modify, start; creating the setting stops or starts the machine as
   asked; removing it does nothing;
@@ -719,7 +750,7 @@ the licence rule; the password; the signer rule; the stop plan and the tag; the 
 downloads; and the stop timer's failure paths (above). `tests/probe.test.mjs` checks every pass
 and fail rule of [the probe](#the-first-runs-probe).
 
-What only a machine shows is in [the first session](#the-first-session-step-by-step).
+What only a machine shows is in [the first run](#the-first-run-step-by-step).
 
 ## Not defined here
 
