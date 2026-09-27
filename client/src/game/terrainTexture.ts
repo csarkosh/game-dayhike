@@ -101,7 +101,11 @@ import {
   HORIZON, HORIZON_MAX, TUFT_ALBEDO,
   SWARD_FLOOR, SWARD_MAX, SWARD_COVER, SWARD_FADE,
 } from "./groundHexParams.js";
-import groundHexFx from "./shaders/groundHex.fragment.fx?raw";
+// The hex include, in three files whose join is the include WebGL2 compiles:
+// the lattice, the four sampler-taking fetches, and the noise and horizon.
+import groundHexHead from "./shaders/groundHex.fragment.fx?raw";
+import groundHexFetch from "./shaders/groundHexFetch.fragment.fx?raw";
+import groundHexNoise from "./shaders/groundHexNoise.fragment.fx?raw";
 
 import grassUrl from "../../assets/textures/ground.grass.webp?url";
 import floorUrl from "../../assets/textures/ground.forest_floor.webp?url";
@@ -334,11 +338,36 @@ uniform highp sampler2DArray terrainRAH;
  * on one path, in `getUniforms().fragment` on the other), so an ungated include
  * would not compile wherever this plugin's define is off.
  */
-const TERRAIN_HEX_DEFS = `
+/**
+ * The hex fetches, as WebGPU gets them: `hexFetch2D` and `hexFetchArray` with
+ * the same arguments and the same arithmetic, as macros. On WebGPU Babylon
+ * splits each `sampler2D` uniform into a texture and a sampler and names the
+ * pair through a `sampler2D(tex, samp)` constructor at each use, and glslang
+ * refuses that constructor as a function argument ("sampler constructor must
+ * appear at point of use"), so a function with a sampler parameter cannot be
+ * called; a macro puts the constructor where the texture is read. Each body is
+ * parenthesised, so `hexFetchArray(...).b` still selects from the sum, and
+ * every caller passes plain variables, so a repeated argument costs nothing.
+ * The one-shot spellings (`hexSample2D`, `hexSampleArray`) have no caller in
+ * the plugin and are left out.
+ */
+export const HEX_FETCH_MACROS = `#define hexFetch2D(tex, u1, u2, u3, s, dx, dy) (textureGrad(tex, u1, dx, dy).rgb * (s).x + textureGrad(tex, u2, dx, dy).rgb * (s).y + textureGrad(tex, u3, dx, dy).rgb * (s).z)
+#define hexFetchArray(tex, u1, u2, u3, s, layer, dx, dy) (textureGrad(tex, vec3(u1, layer), dx, dy).rgb * (s).x + textureGrad(tex, vec3(u2, layer), dx, dy).rgb * (s).y + textureGrad(tex, vec3(u3, layer), dx, dy).rgb * (s).z)
+
+`;
+
+/**
+ * The hex include for an engine, gated as above: on WebGL2 the three files
+ * joined, byte for byte the include it has always compiled; on WebGPU the
+ * fetches as `HEX_FETCH_MACROS`.
+ */
+export function terrainHexDefs(webgpu: boolean): string {
+  return `
 #ifdef TERRAINTEX
-${groundHexFx}
+${groundHexHead}${webgpu ? HEX_FETCH_MACROS : groundHexFetch}${groundHexNoise}
 #endif
 `;
+}
 
 const TERRAIN_VERTEX_DEFS = `
 #ifdef TERRAINTEX
@@ -944,7 +973,12 @@ uniform vec4 terrainSwardBand;
         // The hex include sits between this plugin's own declarations and the
         // paints: after the uniforms its functions read, before the paint code
         // that has no use for them.
-        CUSTOM_FRAGMENT_DEFINITIONS: TERRAIN_FRAGMENT_DEFS + TERRAIN_HEX_DEFS + ROAD_FRAGMENT_DEFS + TRAIL_FRAGMENT_DEFS + FEATURE_FRAGMENT_DEFS,
+        CUSTOM_FRAGMENT_DEFINITIONS:
+          TERRAIN_FRAGMENT_DEFS +
+          terrainHexDefs(this._material.getScene().getEngine().isWebGPU) +
+          ROAD_FRAGMENT_DEFS +
+          TRAIL_FRAGMENT_DEFS +
+          FEATURE_FRAGMENT_DEFS,
         // Unconditional locals the reflectivity rewrite below reads whatever
         // the defines say — see TERRAIN_FRAGMENT_MAIN_BEGIN.
         CUSTOM_FRAGMENT_MAIN_BEGIN: TERRAIN_FRAGMENT_MAIN_BEGIN,

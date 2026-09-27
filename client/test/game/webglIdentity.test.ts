@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { pluginTexts } from "./helpers/pluginText.js";
-import groundHexFx from "../../src/game/shaders/groundHex.fragment.fx?raw";
+import groundHexHead from "../../src/game/shaders/groundHex.fragment.fx?raw";
+import groundHexFetch from "../../src/game/shaders/groundHexFetch.fragment.fx?raw";
+import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
 import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
 
 const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
@@ -50,7 +52,10 @@ describe("WebGL2's shader text", () => {
   });
 
   it("pins the hex include and the finish pass as files", () => {
-    expect(sha(groundHexFx)).toBe("21a6e1061ff6d1a66c384400f5eae5538cec24b17e7f551c647aa825c710f9bb");
+    // The hex include is three files, joined on WebGL2 into the one it was.
+    expect(sha(groundHexHead + groundHexFetch + groundHexNoise)).toBe(
+      "21a6e1061ff6d1a66c384400f5eae5538cec24b17e7f551c647aa825c710f9bb",
+    );
     expect(sha(finishFx)).toBe("4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5");
   });
 });
