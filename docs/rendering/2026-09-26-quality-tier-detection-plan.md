@@ -1030,7 +1030,7 @@ Expected: FAIL — the modules and functions do not exist.
 
 `frameProbe.ts`: the constants; `readIntervals` (drop `> PROBE_STALL_MS`; fewer than `PROBE_MIN_FRAMES` left → null; the mean; `p95` the sorted value at `Math.ceil(0.95 * n) - 1`); `probeHolds` (`meanMs <= PROBE_HOLD_MS`); `nextProbeStep` (design §7.5); `probePose()` (`seed = seedFromToken(PROBE_SEED_TOKEN)`, `y = elevationAt(seed, 123, -105.5) + 1.6`; the comment names the pose as every rendering note's canopy pose).
 
-`quality.ts`: `containerPixels` (`clientWidth * clientHeight`, 0 for a container not laid out); `withProbeStarted` (a record matching by `recordMatches` with `attempts + 1`, else a fresh `{ v: DETECT_VERSION, gpu, cls, browser, attempts: 1, verdict: null }`); `withVerdict` (null when `verdict.pixels <= 0`; else the same identity, `attempts: 0`, the verdict).
+`quality.ts`: `containerPixels` (`clientWidth * clientHeight`, 0 for a container not laid out); `withProbeStarted` (a record matching by `recordMatches`, on version, GPU and browser, with `attempts + 1` and its class and verdict kept, else a fresh `{ v: DETECT_VERSION, gpu, cls, browser, attempts: 1, verdict: null }`); `withVerdict` (null when `verdict.pixels <= 0`; else `{ v: DETECT_VERSION, gpu, cls, browser, attempts, verdict }` with `attempts` 0, or the matching record's own count when the verdict it replaces was made for another class, design §6.2).
 
 `frameProbe.ts`, `runProbe`, in this order, each pinned by a test above:
 

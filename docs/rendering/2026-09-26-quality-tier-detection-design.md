@@ -347,8 +347,9 @@ literal in one test, so a later measurement moves one row.
 
 ```ts
 type AutoRecord = {
-  v: number;            // DETECT_VERSION, 1; bumped when what a tier costs moves enough to redo every verdict
+  v: number;            // DETECT_VERSION, 1; bumped when what a tier costs, or a class's start or ceiling, moves enough to redo every verdict
   gpu: string;          // the renderer string, else "vendor/architecture", else ""
+  cls: GpuClass;        // the class the verdict was made for; with no verdict, the class of the first probe
   browser: number;      // the browser major
   attempts: number;     // probes started for this gpu and browser since the last verdict
   verdict: AutoVerdict | null;
@@ -363,11 +364,25 @@ type AutoVerdict = {
 ```
 
 The record **matches** while `v`, `gpu` and `browser` equal the running ones;
-one that does not is replaced, attempts and all. Its verdict **holds** while
-`at` is less than 30 days old, and a `probe` verdict only while the container's
-area is at most 1.5 times `pixels` (it certifies a size, and a bigger window
-costs more); a `governor` verdict holds at any size. A tier is never taken above
-the class's ceiling or past the caps, whatever the verdict says.
+one that does not is replaced, attempts and all. The class is not part of the
+match: an unnamed renderer is classed by its adapter, which can answer in time
+on one load and not on the next, and a match on the class would throw each
+load's attempts away and probe again without end. The class retires the
+verdict instead: a verdict **counts** only while `cls` is the running class, so
+a classifier change that moves a GPU to another class needs no
+`DETECT_VERSION` bump. A verdict that counts **holds** while `at` is no later
+than now (one dated ahead was written under a clock running ahead) and less
+than 30 days old, and a `probe` verdict only while the container's area is at
+most 1.5 times `pixels` (it certifies a size, and a bigger window costs more);
+a `governor` verdict holds at any size. A tier is never taken above the class's
+ceiling or past the caps, whatever the verdict says.
+
+A probe's start adds one to a matching record's `attempts`, keeping its class
+and verdict until the probe's own verdict replaces them, or starts a record at
+one. A probe's verdict sets `attempts` to 0, unless the verdict it replaces was
+made for another class: then the count is carried, so two classes alternating
+on one GPU, each probed to a verdict the other ignores, probe at most three
+times between them rather than on every load.
 
 ### 6.3 Precedence
 
