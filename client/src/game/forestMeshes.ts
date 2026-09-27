@@ -175,6 +175,14 @@ export type ForestMeshes = {
    * must watch its length, not snapshot it at creation.
    */
   readonly casterMeshes: readonly Mesh[];
+  /**
+   * Resolves once the forest's first fill is complete: its models have
+   * landed (or failed, or the shell was disposed first) and every billboard
+   * bake has settled, baked or given up. The bakes run on their own render
+   * target, outside anything the scene counts as pending, so a scene can
+   * report ready while the billboards beyond the near band are still to come.
+   */
+  readonly ready: Promise<void>;
   dispose(): void;
 };
 
@@ -794,6 +802,8 @@ export function createForestMeshes(
   let deadwoodLogMaxX = 0;
   let deadwoodLogMinY = 0;
   let disposed = false;
+  /** Every billboard bake still to land, as it settles into its bucket. */
+  const bakes: Promise<void>[] = [];
   /** Aborted first thing in `dispose`: a GLB in flight then ends at once and
    * quietly, none starts after it, and a bake still polling stops
    * (`modelLoad.ts`). */
@@ -875,9 +885,11 @@ export function createForestMeshes(
     // returns; the async production bake lands whenever its shaders finish
     // compiling, and a rejection counts as a null bake.
     if (bake instanceof Promise) {
-      bake.then(
-        (texture) => adoptBake(impostor, mat, texture),
-        () => adoptBake(impostor, mat, null),
+      bakes.push(
+        bake.then(
+          (texture) => adoptBake(impostor, mat, texture),
+          () => adoptBake(impostor, mat, null),
+        ),
       );
     } else {
       adoptBake(impostor, mat, bake);
@@ -1393,6 +1405,7 @@ export function createForestMeshes(
     );
   }
 
+  let landed: Promise<void> = Promise.resolve();
   if (options.assets != null) {
     const stub = options.assets;
     adopt({
@@ -1416,9 +1429,12 @@ export function createForestMeshes(
     });
   } else {
     // Fire and forget, like `views.models.load`: the forest pops in when the
-    // assets land, and stays absent forever if they fail.
-    void loadAssets();
+    // assets land, and stays absent forever if they fail. `loadAssets`
+    // settles every way it can end, so `ready` always resolves.
+    landed = loadAssets();
   }
+  // The bakes are all started by the time the models are adopted.
+  const ready = landed.then(() => Promise.all(bakes)).then(() => undefined);
 
   return {
     update(x, z) {
@@ -1430,6 +1446,7 @@ export function createForestMeshes(
       maybeBuild();
     },
     casterMeshes,
+    ready,
     dispose() {
       if (disposed) return;
       disposed = true;

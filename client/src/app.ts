@@ -1358,7 +1358,9 @@ function buildGame(
       else tierSource = source;
       governor.restart(performance.now());
       console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine webgl2`);
-      await whenSceneReady(renderer.scene);
+      // The forest's billboards too: they bake outside what the scene
+      // counts, and would otherwise fill in after the cover has lifted.
+      await whenSceneReady(renderer.scene, undefined, renderer.forestReady);
       return tier;
     } finally {
       switching = false;

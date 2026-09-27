@@ -225,6 +225,23 @@ describe("createForestMeshes under NullEngine", () => {
     s: readonly [number, number],
   ): readonly [number, number] => (s[1] <= nearRadius ? s : seamNear(nearRadius));
 
+  it("is ready only once every billboard bake has settled, baked or given up", async () => {
+    const bakes: ((texture: Texture | null) => void)[] = [];
+    const { forest } = build(undefined, () => new Promise<Texture | null>((resolve) => bakes.push(resolve)));
+    let ready = false;
+    void forest.ready.then(() => { ready = true; });
+    await new Promise((r) => setTimeout(r, 20));
+    // Two giant species, two sapling species and the snag: five billboards.
+    expect(bakes.length).toBe(5);
+    expect(ready).toBe(false);
+    for (const settle of bakes.slice(0, 4)) settle(null);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(ready).toBe(false);
+    bakes[4]!(null);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(ready).toBe(true);
+  });
+
   it("stays inside the 32-draw-call vegetation budget", () => {
     const { scene, forest } = build();
     const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");

@@ -569,6 +569,9 @@ export type Renderer = {
   views: EntityViews;
   /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
   shadows: PropShadows;
+  /** Resolves once the forest's first fill, billboards included, is drawn
+   * (`ForestMeshes.ready`); at once in a world without a forest. */
+  readonly forestReady: Promise<void>;
   /**
    * `frame` carries this frame's local, non-simulated view inputs — its
    * duration in seconds and whether sprint is held. Only the walking cue reads
@@ -1078,6 +1081,7 @@ function buildRenderer(
     camera,
     views,
     shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
+    forestReady: forestMeshes?.ready ?? Promise.resolve(),
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
       // of materials x four property writes: cheap enough to do every frame.

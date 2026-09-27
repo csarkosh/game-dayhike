@@ -810,8 +810,10 @@ player makes from the pause screen.
 Apply → the pause panel's ground goes opaque and Apply reads "Applying…" → after
 that has painted (`afterNextPaint`) the synchronous swap runs → the loop resumes
 on the new renderer under the opaque ground while the models load and the
-shaders compile → when the new scene is ready (`scene.executeWhenReady` and no
-waiting items, at most 10 s) the ground fades back to the pause vignette. The
+shaders compile → when the new scene is ready (`scene.isReady()` and no
+waiting items, and the forest's billboard bakes settled, which run outside the
+scene's count; at most 10 s, `whenSceneReady`) the ground fades back to the
+pause vignette. The
 player is on the pause screen throughout, so a pop-in behind it is not seen, and
 Resume puts them back where they were, looking where they looked.
 
