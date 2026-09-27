@@ -1,8 +1,9 @@
 /**
  * What the browser will say about the GPU, read once per page: the WebGL
- * renderer string, the high-performance WebGPU adapter's info and limits, the
- * logical cores, the device memory, and whether the device is a phone or a
- * tablet. `gpuClass.ts` sorts the result into a class.
+ * renderer string and whether the context links shaders off the page's thread,
+ * the high-performance WebGPU adapter's info and limits, the logical cores,
+ * the device memory, and whether the device is a phone or a tablet.
+ * `gpuClass.ts` sorts the result into a class.
  *
  * Babylon-free, with the browser behind `SignalEnv`, so every branch is tested
  * with plain objects. Nothing here throws: a missing API, a refused extension,
@@ -19,6 +20,10 @@
  *   bucketed string in `RENDERER` itself ("Apple M1, or similar") and has
  *   deprecated the extension with a console warning, so the extension is asked
  *   for only when `RENDERER` is the masked value.
+ * - Firefox 156 answers `KHR_parallel_shader_compile` with null, so every
+ *   program links on the page's thread and a link-status read blocks until the
+ *   link is done (169–337 ms each, measured on an Apple M4); where the
+ *   extension is exposed, the engine polls for completion instead.
  * - The adapter's `info` names a vendor and an architecture in Chrome
  *   ("nvidia"/"ampere"; Apple as its Metal family, which says nothing of the
  *   GPU's size) and may be blank elsewhere.
@@ -50,6 +55,9 @@ export type GpuSignals = {
   limits: Readonly<Record<string, number>> | null;
   /** Why `adapter` is null, or `"ok"`. */
   adapterStatus: AdapterStatus;
+  /** Whether the WebGL2 context exposes `KHR_parallel_shader_compile`, or null
+   * without a WebGL2 context or when the extension could not be asked for. */
+  parallelCompile: boolean | null;
   /** Logical cores, or null where not reported. */
   cores: number | null;
   /** Device memory in GiB, or null where not reported. */
@@ -153,15 +161,16 @@ export function browserMajor(userAgent: string): number {
 export async function gatherSignals(env: SignalEnv): Promise<GpuSignals> {
   const nav = env.navigator;
   const pending = requestAdapter(nav);
-  const renderer = rendererOf(env);
+  const context = readContext(env);
   const answer = await pending;
   const found = answer.adapter === null ? null : readAdapter(answer.adapter);
   const adapterStatus: AdapterStatus = answer.adapter !== null && found === null ? "rejected" : answer.status;
   return {
-    renderer,
+    renderer: context.renderer,
     adapter: found?.info ?? null,
     limits: found?.limits ?? null,
     adapterStatus,
+    parallelCompile: context.parallelCompile,
     cores: reported(() => nav?.hardwareConcurrency),
     memoryGb: reported(() => nav?.deviceMemory),
     mobile: isMobile(nav),
@@ -179,10 +188,25 @@ export function browserEnv(): SignalEnv {
   };
 }
 
-function rendererOf(env: SignalEnv): string | null {
+/** The renderer and the parallel-compile extension, both from the one
+ * throwaway context; the extension is asked first, since `readRenderer` loses
+ * the context. */
+function readContext(env: SignalEnv): { renderer: string | null; parallelCompile: boolean | null } {
+  let gl: WebGLLike | null;
   try {
-    const gl = env.webgl();
-    return gl ? readRenderer(gl) : null;
+    gl = env.webgl();
+  } catch {
+    return { renderer: null, parallelCompile: null };
+  }
+  if (!gl) return { renderer: null, parallelCompile: null };
+  const parallelCompile = readParallelCompile(gl);
+  return { renderer: readRenderer(gl), parallelCompile };
+}
+
+function readParallelCompile(gl: WebGLLike): boolean | null {
+  try {
+    const ext = gl.getExtension("KHR_parallel_shader_compile");
+    return typeof ext === "object" && ext !== null;
   } catch {
     return null;
   }
