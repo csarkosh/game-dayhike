@@ -128,12 +128,14 @@ export function createGovernor(start: number): Governor {
 }
 
 /** Whether a frame is steady play the governor may count: engaged, the menu
- * closed, the tab seen, nothing loading, no shader compiled since the last
+ * and the command bar closed (the bar from its "/", before the pointer is let
+ * go), the tab seen, nothing loading, no shader compiled since the last
  * frame, no tier being switched, and not the free camera, whose flight
  * rebuilds the fields every frame as walking never does. */
 export function steadyFrame(frame: {
   engaged: boolean;
   menuOpen: boolean;
+  barOpen: boolean;
   visible: boolean;
   waitingItems: number;
   compiled: boolean;
@@ -143,6 +145,7 @@ export function steadyFrame(frame: {
   return (
     frame.engaged &&
     !frame.menuOpen &&
+    !frame.barOpen &&
     frame.visible &&
     frame.waitingItems === 0 &&
     !frame.compiled &&

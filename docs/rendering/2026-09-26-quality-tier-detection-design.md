@@ -822,7 +822,8 @@ frame was steady play:
   steady play, or an interval over **250 ms** (a stall), is **void**: it neither
   counts nor breaks a run, the way the probe's meter ignores the frames around a
   known hitch (§7.3). A frame is steady (`steadyFrame`) when the player is
-  engaged, the pause screen is closed, the tab is visible, the scene has nothing
+  engaged, the pause screen and the command bar are closed (the bar from its
+  "/", before the pointer is let go), the tab is visible, the scene has nothing
   waiting to load, no shader compiled since the last frame, no tier is being
   switched, and the free camera is not flying (its flight crosses the fields'
   rebuild lattice every frame, work walking never causes);
@@ -849,7 +850,9 @@ low only (`governorDecision`), `actOnDrop` runs under the probe's opaque
 "Setting up graphics…" screen with the controls held, so neither what follows
 nor the scene coming back is seen mid-play. The screen is raised over the play
 HUD (`OVER_PLAY_Z`, 21: above the interact prompt, the touch layer and the
-roster, and so above the pause menu). While it is up (`createPlayGate`), the
+roster, and so above the pause menu). The controls are held or freed only by
+one gate (`createPlayGate`): held while the command bar or the pause menu is
+open, once the match is over, and under the cover. While the cover is up, the
 pointer's lock changes nothing: Escape shows no menu that would be unseen yet
 reachable by keyboard, re-locking hands no controls back, and the command bar
 stays shut. When it lifts, the gate reconciles once with the lock as it is: a

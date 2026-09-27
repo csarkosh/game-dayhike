@@ -244,4 +244,18 @@ describe("layer boundaries", () => {
     expect(offenders).toEqual([]);
     expect(existsSync(join(SRC, "sim", "combat.ts"))).toBe(false);
   });
+
+  it("holds or frees the controls only through the play gate", () => {
+    // `createPlayGate` owns suppression outright: the bar, the menu, the
+    // match's end and the governor's cover all go through it, so no path can
+    // free the controls one of the others holds.
+    const calls: string[] = [];
+    for (const file of sourceFiles(SRC)) {
+      const src = stripComments(readFileSync(file, "utf8"));
+      const name = file.slice(SRC.length + 1).split("\\").join("/");
+      for (const m of src.matchAll(/(\w+)\.setSuppressed\(/g)) calls.push(`${name}: ${m[0]}`);
+    }
+    expect(calls.sort()).toEqual(["app.ts: input.setSuppressed(", "game/pauseMenu.ts: deps.setSuppressed("]);
+    expect(readFileSync(join(SRC, "app.ts"), "utf8")).toContain("setSuppressed: (on) => input.setSuppressed(on),");
+  });
 });

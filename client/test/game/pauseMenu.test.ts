@@ -67,14 +67,21 @@ describe("the play gate", () => {
   /** A page whose pointer lock, bar and match end are set by the test, and
    * what the gate did to it, in order. */
   function page(start: { engaged: boolean; barOpen?: boolean; ended?: boolean }) {
-    const now = { engaged: start.engaged, barOpen: start.barOpen ?? false, ended: start.ended ?? false };
+    const now = { engaged: start.engaged, barOpen: start.barOpen ?? false, menuOpen: false, ended: start.ended ?? false };
     const did: string[] = [];
     const gate = createPlayGate({
       engaged: () => now.engaged,
       barOpen: () => now.barOpen,
+      menuOpen: () => now.menuOpen,
       ended: () => now.ended,
-      showMenu: () => did.push("show menu"),
-      hideMenu: () => did.push("hide menu"),
+      showMenu: () => {
+        now.menuOpen = true;
+        did.push("show menu");
+      },
+      hideMenu: () => {
+        now.menuOpen = false;
+        did.push("hide menu");
+      },
       setSuppressed: (on) => did.push(`suppressed ${on}`),
       paused: (on) => did.push(`paused ${on}`),
     });
@@ -83,7 +90,12 @@ describe("the play gate", () => {
       now.engaged = engaged;
       gate.engagedChanged(engaged);
     };
-    return { gate, did, lock, now };
+    /** The command bar opened or closed. */
+    const bar = (open: boolean): void => {
+      now.barOpen = open;
+      gate.barChanged(open);
+    };
+    return { gate, did, lock, bar, now };
   }
 
   it("shows the menu when the lock goes, and plays on when it comes back", () => {
@@ -103,6 +115,35 @@ describe("the play gate", () => {
     const { did, lock } = page({ engaged: false, ended: true });
     lock(true);
     expect(did).toEqual(["hide menu", "suppressed true", "paused false"]);
+  });
+
+  it("hides the menu under the bar, and hands the controls back when the bar closes", () => {
+    const { did, lock, bar } = page({ engaged: true });
+    lock(false);
+    bar(true);
+    bar(false);
+    lock(true);
+    expect(did).toEqual([
+      "show menu", "suppressed true", "paused true",
+      "hide menu", "suppressed true",
+      "suppressed false",
+      "hide menu", "suppressed false", "paused false",
+    ]);
+  });
+
+  it("keeps the controls held when the bar closes after the match's end", () => {
+    const { did, bar, lock } = page({ engaged: true, ended: true });
+    bar(true);
+    bar(false);
+    lock(true);
+    expect(did).toEqual(["hide menu", "suppressed true", "suppressed true", "hide menu", "suppressed true", "paused false"]);
+  });
+
+  it("holds the controls the moment the match ends", () => {
+    const { gate, did, now } = page({ engaged: true });
+    now.ended = true;
+    gate.refresh();
+    expect(did).toEqual(["suppressed true"]);
   });
 
   it("under a cover, shows no menu when Escape frees the pointer, and never hands the controls back", () => {

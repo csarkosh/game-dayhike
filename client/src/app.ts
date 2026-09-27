@@ -720,7 +720,7 @@ function buildGame(
       const peerId = names.get(p.id);
       return { id: p.id, name: peerId === undefined ? `Hiker ${p.id}` : nameOf(peerId), safe: p.safe, dead: p.health <= 0 };
     });
-    input.setSuppressed(true);
+    gate.refresh();
     posterPanel.hide();
     hud.fade(true);
     // The death line is this player's last word, the panel the match's:
@@ -778,11 +778,13 @@ function buildGame(
     renderer.setFreecam(lastFreecamView);
   }
 
-  // The pause menu and the controls as the pointer's lock comes and goes,
-  // held while the governor's cover is up (`createPlayGate`).
+  // The pause menu and the controls: the gate alone holds or frees them, as
+  // the pointer's lock, the bar, the match's end and the governor's cover
+  // come and go (`createPlayGate`).
   const gate = createPlayGate({
     engaged: () => input.engaged,
     barOpen: () => bar.isOpen,
+    menuOpen: () => menu.isOpen,
     ended: () => ended,
     showMenu: () => menu.show(),
     hideMenu: () => menu.hide(),
@@ -795,9 +797,7 @@ function buildGame(
     // cover, where closing it would hand the controls back unseen.
     canOpen: () => !menu.applying && !gate.covered,
     onOpenChange: (open) => {
-      // The bar outranks the pause menu: `/` over the menu switches to typing.
-      if (open) menu.hide();
-      input.setSuppressed(open || menu.isOpen);
+      gate.barChanged(open);
       // Closing the bar hands the mouse back, so mouselook resumes without a
       // click on the canvas — worst right after `/freecam`, whose whole point is
       // looking around. Guarded on `disposed` because a world command dispatches
@@ -1370,6 +1370,7 @@ function buildGame(
     const steady = steadyFrame({
       engaged: input.engaged,
       menuOpen: menu.isOpen,
+      barOpen: bar.isOpen,
       visible: document.visibilityState === "visible",
       waitingItems: renderer.scene.getWaitingItemsCount(),
       compiled: compiledSinceFrame,

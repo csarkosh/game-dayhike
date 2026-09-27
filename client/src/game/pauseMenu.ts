@@ -235,6 +235,7 @@ export type PlayGateDeps = {
   /** Whether the pointer is locked to the game now. */
   engaged(): boolean;
   barOpen(): boolean;
+  menuOpen(): boolean;
   /** The match is over: the controls stay held. */
   ended(): boolean;
   showMenu(): void;
@@ -247,6 +248,11 @@ export type PlayGateDeps = {
 export type PlayGate = {
   /** The pointer's lock was taken (true) or released (false). */
   engagedChanged(engaged: boolean): void;
+  /** The command bar opened (true) or closed (false). */
+  barChanged(open: boolean): void;
+  /** Sets the controls from the state as it is now: for a change the gate is
+   * not told of, the match's end. */
+  refresh(): void;
   /** Holds the controls under a cover over play; the function returned lifts
    * it, once. */
   cover(): () => void;
@@ -254,34 +260,45 @@ export type PlayGate = {
 };
 
 /**
- * What the pointer's lock does to the pause menu and the controls. Released,
- * the menu shows and the controls are held, unless the command bar has them;
- * taken, the menu goes and the controls come back, unless the bar is open or
- * the match is over. While a cover is over play (the governor's rebuild),
- * the lock changes nothing: a menu shown under the cover would be unseen but
- * reachable by keyboard, and handing the controls back would let the player
- * walk blind. When the cover lifts, the gate reconciles once with the lock as
- * it is then: released shows the menu on Resume, taken plays on.
+ * The pause menu and the controls. The gate alone holds or frees the
+ * controls: held while the command bar or the pause menu is open, once the
+ * match is over, and under a cover over play; free otherwise. The pointer's
+ * lock released shows the menu, unless the bar has the keyboard; taken, it
+ * hides it. The bar opening hides the menu. While a cover is over play (the
+ * governor's rebuild), the lock changes nothing: a menu shown under the cover
+ * would be unseen but reachable by keyboard, and handing the controls back
+ * would let the player walk blind. When the cover lifts, the gate reconciles
+ * once with the lock as it is then: released shows the menu on Resume, taken
+ * plays on.
  */
 export function createPlayGate(deps: PlayGateDeps): PlayGate {
   let covered = false;
+  const settle = (): void => {
+    deps.setSuppressed(deps.barOpen() || deps.menuOpen() || deps.ended() || covered);
+  };
   const engagedChanged = (engaged: boolean): void => {
     if (covered) return;
     if (engaged) {
       deps.hideMenu();
-      deps.setSuppressed(deps.barOpen() || deps.ended());
+      settle();
       deps.paused(false);
     } else if (!deps.barOpen()) {
       deps.showMenu();
-      deps.setSuppressed(true);
+      settle();
       deps.paused(true);
     }
   };
   return {
     engagedChanged,
+    barChanged(open) {
+      // The bar outranks the pause menu: "/" over the menu switches to typing.
+      if (open) deps.hideMenu();
+      settle();
+    },
+    refresh: settle,
     cover() {
       covered = true;
-      deps.setSuppressed(true);
+      settle();
       let lifted = false;
       return () => {
         if (lifted) return;

@@ -102,7 +102,9 @@ describe("the governor", () => {
 });
 
 describe("steadyFrame", () => {
-  const play = { engaged: true, menuOpen: false, visible: true, waitingItems: 0, compiled: false, switching: false, freecam: false };
+  const play = {
+    engaged: true, menuOpen: false, barOpen: false, visible: true, waitingItems: 0, compiled: false, switching: false, freecam: false,
+  };
   it("is steady play, and nothing else", () => {
     expect(steadyFrame(play)).toBe(true);
     expect(steadyFrame({ ...play, engaged: false })).toBe(false);
@@ -113,6 +115,18 @@ describe("steadyFrame", () => {
     expect(steadyFrame({ ...play, switching: true })).toBe(false);
     // Flying crosses the fields' rebuild lattice every frame: work walking never causes.
     expect(steadyFrame({ ...play, freecam: true })).toBe(false);
+    // From the "/" itself, before the lock is let go.
+    expect(steadyFrame({ ...play, barOpen: true })).toBe(false);
+  });
+
+  it("delays a drop latched on the frame the bar opens until play resumes", () => {
+    const g = createGovernor(0);
+    feed(g, 0, 59_975, 25);
+    // "/" was pressed: the bar is open, the pointer not yet let go.
+    expect(g.frame(25, 60_000, steadyFrame({ ...play, barOpen: true }))).toBe(false);
+    expect(g.verdict).toBe("drop");
+    expect(g.frame(25, 60_025, steadyFrame({ ...play, engaged: false, barOpen: true }))).toBe(false);
+    expect(g.frame(25, 70_000, steadyFrame(play))).toBe(true);
   });
 });
 
