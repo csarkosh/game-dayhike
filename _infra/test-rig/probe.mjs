@@ -14,15 +14,26 @@
 // page --runs times, each in a fresh Chrome, and records frame intervals for
 // --seconds, with the median of every minute.
 //
-// Prints one JSON report and then a last line, PASS or FAIL with the reasons;
-// exits 0 only on PASS. A PASS needs all of:
+// It refuses to start while the machine's set-up has not been verified
+// (C:\ProgramData\test-rig\verified; it prints the set-up log's last failure)
+// and while a DCV client is connected to the console session: the question
+// is what Chrome gets with NOBODY connected.
+//
+// Prints one JSON report, any warnings, and then a last line, PASS or FAIL
+// with the reasons; exits 0 only on PASS. A PASS needs all of:
 //   - the WebGL renderer names NVIDIA and this machine's GPU (not SwiftShader,
 //     not Microsoft's basic render driver);
+//   - Chrome's own GPU feature status says hardware for what the game uses:
+//     WebGL (Babylon's WebGL engine), GPU compositing and rasterization;
+//   - the WebGPU adapter, if there is one, is not a fallback adapter (the game
+//     does not use WebGPU, so no adapter, or another vendor's, is a warning);
 //   - nvidia-smi listed chrome.exe while Chrome was drawing;
 //   - the driver's licensed product is a Virtual Workstation and its licence
 //     status is Licensed (the mode AWS documents as enabled by default for the
 //     GRID driver);
 //   - Chrome ran in the console session, not the services session;
+//   - no DCV client connected at any point of the run;
+//   - the desktop user could not reach the instance metadata service;
 //   - with --url, every run's page loaded (no navigation error, the document
 //     complete at the address asked for) and drew frames.
 import { spawn, spawnSync } from 'node:child_process';
@@ -31,6 +42,11 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const DCV = 'C:\\Program Files\\NICE\\DCV\\Server\\bin\\dcv.exe';
+const SETUP = 'C:\\ProgramData\\test-rig';
+// Chrome's feature status names (chrome://gpu, SystemInfo.getInfo) for what
+// the game draws with. Chrome reports WebGL 1 and 2 as one entry, `webgl`.
+const FEATURES = ['webgl', 'gpu_compositing', 'rasterization'];
 const TASK = 'test-rig-probe';
 
 const opt = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
@@ -69,6 +85,15 @@ export function verdict(report) {
   if (!report.nvidia.licence.ok) {
     reasons.push(`the driver's licensed product is "${report.nvidia.licence.product}", status "${report.nvidia.licence.status}", not a licensed Virtual Workstation`);
   }
+  for (const feature of FEATURES) {
+    const status = report.featureStatus?.[feature];
+    if (!/^enabled/.test(status ?? '')) reasons.push(`Chrome's ${feature} is "${status}", not hardware-accelerated`);
+  }
+  if (report.webgpu?.fallback === true) reasons.push('the WebGPU adapter is a fallback (software) adapter');
+  for (const [when, count] of Object.entries(report.dcvConnections ?? { unknown: null })) {
+    if (count !== 0) reasons.push(`DCV had ${count ?? 'an unknown number of'} client(s) connected ${when}; disconnect every client and run again`);
+  }
+  if (report.imdsReachable !== false) reasons.push('the desktop user reached the instance metadata service');
   if (!/^console$/i.test(report.session?.name ?? '') || report.session?.id === 0) {
     reasons.push(`Chrome ran in session "${report.session?.name}" (${report.session?.id}), not the console session`);
   }
@@ -79,10 +104,34 @@ export function verdict(report) {
   return reasons;
 }
 
+// What is worth knowing but does not decide the question.
+export function warnings(report) {
+  const out = [];
+  const webgpu = report.webgpu;
+  if (webgpu === 'no adapter' || !webgpu) out.push('no WebGPU adapter (the game does not use WebGPU)');
+  else if (!/nvidia/i.test(webgpu.vendor ?? '')) out.push(`the WebGPU adapter's vendor is "${webgpu.vendor}", not nvidia`);
+  if (report.display?.cappedAt60OrLower) out.push(`requestAnimationFrame runs at ${report.refreshHz} Hz: frame times below ${(1000 / report.refreshHz).toFixed(1)} ms cannot be seen`);
+  return out;
+}
+
+// The number of clients connected to DCV's console session, from
+// `dcv describe-session console --json` ("num-of-connections"). Throws if it
+// cannot be read: an unknown count is not "nobody connected".
+export function dcvConnectionCount(json) {
+  const count = JSON.parse(json)['num-of-connections'];
+  if (!Number.isInteger(count)) throw new Error(`dcv describe-session gave no num-of-connections: ${json.slice(0, 200)}`);
+  return count;
+}
+
+// The last "FAILED:" line of the set-up log, if any.
+export function lastFailure(log) {
+  return log.split(/\r?\n/).filter((l) => l.includes('FAILED:')).pop() ?? null;
+}
+
 // ------------------------------------------------ inside the console session
 async function inner(dir) {
   const args = JSON.parse(readFileSync(join(dir, 'args.json'), 'utf8'));
-  const result = { session: sessionOf(process.pid), runs: [] };
+  const result = { session: sessionOf(process.pid), imdsReachable: await imdsReachable(), runs: [] };
   let n = 0;
   const blank = pathToFileURL(join(dir, 'probe.html')).href;
   const probe = await withChrome(join(dir, `profile-${n++}`), args.flags, blank, async (browser, page, version) => {
@@ -124,6 +173,19 @@ async function inner(dir) {
   }
   writeFileSync(join(dir, 'result.tmp'), JSON.stringify(result));
   renameSync(join(dir, 'result.tmp'), join(dir, 'result.json'));
+}
+
+// Whether this user can open a connection to the instance metadata service:
+// any answer at all, even an error status, means it can.
+async function imdsReachable() {
+  try {
+    await fetch('http://169.254.169.254/latest/api/token', {
+      method: 'PUT', headers: { 'X-aws-ec2-metadata-token-ttl-seconds': '10' }, signal: AbortSignal.timeout(5000),
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // This process's Windows session, from tasklist.
@@ -222,6 +284,19 @@ async function outer() {
     return { stdout: r.stdout ?? '' };
   };
 
+  if (!existsSync(join(SETUP, 'verified'))) {
+    const log = existsSync(join(SETUP, 'setup.log')) ? readFileSync(join(SETUP, 'setup.log'), 'utf8') : '';
+    throw new Error(`the machine's set-up is not verified (no ${join(SETUP, 'verified')}); ${lastFailure(log) ?? 'the set-up log has no failure yet: it may still be running'}. Read ${join(SETUP, 'setup.log')}`);
+  }
+  const connections = () => {
+    const r = run(DCV, ['describe-session', 'console', '--json']);
+    return dcvConnectionCount(r.stdout || r.stderr || '');
+  };
+  const before = connections();
+  const listed = (run(DCV, ['list-connections', 'console']).stdout ?? '').trim();
+  console.log(`DCV console session: ${before} client(s) connected${listed ? `\n${listed}` : ''}`);
+  if (before !== 0) throw new Error(`a DCV client is connected to the console session (${before}); disconnect every client and run again`);
+
   const running = run('tasklist.exe', ['/fi', 'IMAGENAME eq chrome.exe', '/fo', 'csv', '/nh']).stdout;
   if (/chrome\.exe/i.test(running)) throw new Error('a Chrome is already running on this machine; close it so that nvidia-smi\'s chrome.exe lines are this probe\'s');
   const desktop = run('tasklist.exe', ['/v', '/fi', 'IMAGENAME eq explorer.exe', '/fo', 'csv', '/nh']).stdout;
@@ -244,10 +319,16 @@ async function outer() {
 
   const samples = [];
   const gpuSamples = [];
+  // The most DCV clients seen during the run, read every 30 seconds; null if
+  // a reading failed, which fails the verdict.
+  let during = 0;
   const deadline = Date.now() + (120 + runs * (seconds + 90) + 120) * 1000;
   try {
     for (let i = 0; !existsSync(join(dir, 'result.json')); i++) {
       if (Date.now() > deadline) throw new Error('the probe in the console session never finished');
+      if (i % 15 === 7 && during !== null) {
+        try { during = Math.max(during, connections()); } catch { during = null; }
+      }
       if (i % 15 === 14) {
         const state = ps(`(Get-ScheduledTask -TaskName ${quote(TASK)}).State`).stdout.trim();
         if (state !== 'Running' && !existsSync(join(dir, 'result.json'))) throw new Error(`the probe in the console session stopped (task ${state}, result ${ps(`(Get-ScheduledTaskInfo -TaskName ${quote(TASK)}).LastTaskResult`).stdout.trim()})`);
@@ -262,7 +343,9 @@ async function outer() {
 
   const result = JSON.parse(readFileSync(join(dir, 'result.json'), 'utf8'));
   if (result.error) throw new Error(`in the console session: ${result.error}`);
-  const dcv = run('C:\\Program Files\\NICE\\DCV\\Server\\bin\\dcv.exe', ['describe-session', 'console']);
+  const dcv = run(DCV, ['describe-session', 'console']);
+  let after = null;
+  try { after = connections(); } catch { /* unknown fails the verdict */ }
   const adapters = ps('Get-CimInstance Win32_VideoController | ForEach-Object { "$($_.Name): $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution) at $($_.CurrentRefreshRate) Hz" }');
   const p50s = (result.runs ?? []).filter((r) => r.loaded && r.p50).map((r) => r.p50);
   const report = {
@@ -285,9 +368,11 @@ async function outer() {
     drift: (result.runs ?? []).map((r) => (r.minuteP50?.length > 1 ? +(r.minuteP50.at(-1) / r.minuteP50[0]).toFixed(4) : null)),
     // (slowest - fastest) / median of the runs' median frame intervals.
     spread: p50s.length > 1 ? +((Math.max(...p50s) - Math.min(...p50s)) / [...p50s].sort((a, b) => a - b)[Math.floor(p50s.length / 2)]).toFixed(4) : null,
+    dcvConnections: { before, during, after },
     workDir: dir,
   };
   console.log(JSON.stringify(report, null, 2));
+  for (const w of warnings(report)) console.log(`WARNING: ${w}`);
   const reasons = verdict(report);
   console.log(reasons.length ? `FAIL: ${reasons.join('; ')}` : 'PASS');
   return reasons.length ? 1 : 0;
