@@ -51,6 +51,7 @@ import { attachFoliage, FOLIAGE_PROFILES, FoliagePlugin } from "../../src/game/f
 import {
   createForestMeshes,
   defaultBakeImpostor,
+  IMPOSTOR_BAKE_FAIL_MS,
   IMPOSTOR_BAKE_WARN_MS,
   type BakeOptions,
   type SpeciesMeshes,
@@ -1237,6 +1238,8 @@ describe("createForestMeshes under NullEngine", () => {
 describe("defaultBakeImpostor readiness gate", () => {
   const engines: NullEngine[] = [];
   afterEach(() => {
+    // Even after a test that failed while faking them.
+    vi.useRealTimers();
     vi.restoreAllMocks();
     for (const e of engines.splice(0)) e.dispose();
   });
@@ -1355,27 +1358,78 @@ describe("defaultBakeImpostor readiness gate", () => {
     vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockImplementation(() => ++polls > 2_500);
     vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => undefined);
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const pending = defaultBakeImpostor(mesh, scene);
     await vi.advanceTimersByTimeAsync(41_000);
     expect(await pending).not.toBeNull();
-    expect(errors).toHaveBeenCalledTimes(1);
-    expect(String(errors.mock.calls[0]![0])).toBe("forest impostor bake still waiting after 30 s: s0_lod1");
+    // A warning, not an error: a routine cold WebGPU bake crosses 30 s and lands.
+    expect(warnings.mock.calls.map((c) => String(c[0]))).toEqual(["forest impostor bake still waiting after 30 s: s0_lod1"]);
+    expect(errors).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
-  it("resolves null on a shader error, and says so", async () => {
+  it("gives up at two minutes, loudly, rather than poll for the life of the page", async () => {
+    expect(IMPOSTOR_BAKE_FAIL_MS).toBe(120_000);
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     const { scene, mesh } = bakeScene();
     const gate = vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(false);
-    vi.spyOn(SubMesh.prototype, "_getDrawWrapper").mockReturnValue(
-      { effect: { getCompilationError: () => "ERROR: 0:1: 'x' : undeclared identifier" } } as never,
-    );
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const pending = defaultBakeImpostor(mesh, scene);
+    await vi.advanceTimersByTimeAsync(119_900);
+    expect(errors).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await pending).toBeNull();
+    expect(warnings).toHaveBeenCalledTimes(1);
+    expect(errors.mock.calls.map((c) => String(c[0]))).toEqual(["forest impostor bake gave up after 120 s: s0_lod1"]);
+    const polls = gate.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(gate.mock.calls.length).toBe(polls);
+    expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("resolves null on a shader error once Babylon has no fallback left, and says so", async () => {
+    const { scene, mesh } = bakeScene();
+    const gate = vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(false);
+    vi.spyOn(SubMesh.prototype, "_getDrawWrapper").mockReturnValue({
+      effect: { getCompilationError: () => "ERROR: 0:1: 'x' : undeclared identifier", allFallbacksProcessed: () => true },
+    } as never);
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(await defaultBakeImpostor(mesh, scene)).toBeNull();
     expect(errors.mock.calls.map((c) => String(c[0]))).toEqual([
       "forest impostor bake failed: s0_lod1: ERROR: 0:1: 'x' : undeclared identifier",
     ]);
-    expect(gate).not.toHaveBeenCalled();
+    // Readiness is asked first, and was not there.
+    expect(gate).toHaveBeenCalledTimes(1);
     expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
+  });
+
+  it("keeps waiting while Babylon still has a fallback to compile, and bakes when it does", async () => {
+    // A PBR effect whose compile failed retries with fewer defines on the same
+    // effect, the error still set until the retry lands.
+    const { scene, mesh } = bakeScene();
+    let polls = 0;
+    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockImplementation(() => ++polls > 5);
+    vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => undefined);
+    vi.spyOn(SubMesh.prototype, "_getDrawWrapper").mockReturnValue({
+      effect: { getCompilationError: () => "ERROR: too many uniforms", allFallbacksProcessed: () => false },
+    } as never);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await defaultBakeImpostor(mesh, scene)).not.toBeNull();
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("bakes a ready effect even with an old error on it, as Babylon draws one whose recompile failed", async () => {
+    const { scene, mesh } = bakeScene();
+    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+    vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => undefined);
+    vi.spyOn(SubMesh.prototype, "_getDrawWrapper").mockReturnValue({
+      effect: { getCompilationError: () => "ERROR: an old one", allFallbacksProcessed: () => true },
+    } as never);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await defaultBakeImpostor(mesh, scene)).not.toBeNull();
+    expect(errors).not.toHaveBeenCalled();
   });
 
   it("stops polling when aborted, disposes the target, and logs nothing", async () => {
@@ -1401,5 +1455,7 @@ describe("defaultBakeImpostor readiness gate", () => {
     expect(subMesh).toContain("    _getDrawWrapper(passId, createIfNotExisting = false) {");
     const effect = readFileSync(require.resolve("@babylonjs/core/Materials/effect.pure.js"), "utf8");
     expect(effect).toContain("    getCompilationError() {\n        return this._compilationError;");
+    // An error is final only once every fallback has been tried.
+    expect(effect).toContain("    allFallbacksProcessed() {\n        return this._allFallbacksProcessed;");
   });
 });

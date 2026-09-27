@@ -120,9 +120,15 @@ const UNDERSTORY_URLS = [
 /** Impostor bake resolution — a quad this far away needs no more. */
 const IMPOSTOR_BAKE_SIZE = 256;
 
-/** A bake still waiting on its shaders this long says so, once, and goes on
- * waiting: late is better than never, but late must be visible. */
+/** A bake still waiting on its shaders this long says so, once, as a warning,
+ * and goes on waiting: late is better than never, but late must be visible. A
+ * cold WebGPU start can take about this long and land, so it is not an error. */
 export const IMPOSTOR_BAKE_WARN_MS = 30_000;
+
+/** A bake still waiting this long gives up: about four times the slowest cold
+ * WebGPU bake seen, so it ends a bake that will never be ready (a failure
+ * nothing reported) rather than one that is merely slow, and says so. */
+export const IMPOSTOR_BAKE_FAIL_MS = 120_000;
 
 /** How a bake is told to stop, and when it should say it is still waiting. */
 export type BakeOptions = {
@@ -131,6 +137,8 @@ export type BakeOptions = {
   signal?: AbortSignal;
   /** When to say the bake is still waiting; `IMPOSTOR_BAKE_WARN_MS` if unset. */
   warnMs?: number;
+  /** When to give up; `IMPOSTOR_BAKE_FAIL_MS` if unset. */
+  failMs?: number;
 };
 
 /** One billboard's bake, as the forest last saw it: still baking, landed
@@ -641,20 +649,28 @@ const IMPOSTOR_BAKE_LAYER = 0x10000000;
  * browser; the readiness-gate ordering is unit-tested by spying the RTT
  * prototype. Exported for those tests.
  *
- * There is no deadline. A budget would be a guess per engine and per machine:
+ * No short deadline. A budget would be a guess per engine and per machine:
  * the old 5 s one timed out, silently, under WebGPU's run-time shader
  * translation, and a slow machine on WebGL2 can miss it too, and either way the
- * far forest was gone for the life of the page with nothing said. The bake
- * ends in one of three ways:
- * - ready: it renders once and resolves the texture;
- * - failed: a bake clone's effect reports a compilation error, which it logs
- *   (one `console.error` naming the model) before resolving null, which
- *   disables that billboard's bucket (far trees drop out rather than draw
- *   3,200 opaque grey quads);
- * - aborted: `options.signal` fires (the forest was disposed), and it disposes
- *   its target and resolves null without a word.
- * Still waiting at `options.warnMs` (`IMPOSTOR_BAKE_WARN_MS`), it says so once
- * and waits on.
+ * far forest was gone for the life of the page with nothing said. Each poll
+ * asks, in order, and the bake ends in one of four ways:
+ * - aborted: `options.signal` fired (the forest was disposed); it disposes its
+ *   target and resolves null without a word;
+ * - ready: the target is ready; it renders once and resolves the texture. An
+ *   effect that is ready bakes, even with an error left on it from a recompile
+ *   that failed after an earlier one drew;
+ * - failed: a bake clone's effect reports a compilation error and has no
+ *   fallback left to try (PBR retries a failed compile with fewer defines, on
+ *   the same effect, the error still set until a retry lands); it logs one
+ *   `console.error` naming the model and resolves null, which disables that
+ *   billboard's bucket (far trees drop out rather than draw 3,200 opaque grey
+ *   quads). On WebGPU a translation failure reaches the effect through
+ *   `catchTranslationFailures` (`gpuEngine.ts`);
+ * - given up: still waiting at `options.failMs` (`IMPOSTOR_BAKE_FAIL_MS`); it
+ *   logs one `console.error` and resolves null, so a failure nothing reported
+ *   does not poll for the life of the page.
+ * Still waiting at `options.warnMs` (`IMPOSTOR_BAKE_WARN_MS`), it says so once,
+ * as a warning, and waits on.
  *
  * `pose` rotates the bake clone before anything is measured, for a model
  * whose rest orientation is not how it stands in the world: `deadwood.snag`
@@ -739,10 +755,11 @@ export async function defaultBakeImpostor(
 
     // Readiness under the BAKE pass and camera (see the function comment):
     // each poll triggers the missing compiles and texture loads, so this
-    // normally settles in a few frames' worth of 16 ms hops. No deadline: it
-    // ends ready, failed or aborted.
+    // normally settles in a few frames' worth of 16 ms hops. It ends aborted,
+    // ready, failed or given up (see the function comment).
+    const started = performance.now();
     const warnMs = options.warnMs ?? IMPOSTOR_BAKE_WARN_MS;
-    const warnAt = performance.now() + warnMs;
+    const failMs = options.failMs ?? IMPOSTOR_BAKE_FAIL_MS;
     let warned = false;
     const stop = (): null => {
       camera.dispose();
@@ -751,15 +768,20 @@ export async function defaultBakeImpostor(
     };
     for (;;) {
       if (options.signal?.aborted) return stop();
-      const error = compilationError(bakeMeshes, rtt.renderPassId);
+      if (rtt.isReadyForRendering()) break;
+      const error = finalCompilationError(bakeMeshes, rtt.renderPassId);
       if (error !== null) {
         console.error(`forest impostor bake failed: ${mesh.name}: ${error}`);
         return stop();
       }
-      if (rtt.isReadyForRendering()) break;
-      if (!warned && performance.now() >= warnAt) {
+      const waited = performance.now() - started;
+      if (waited >= failMs) {
+        console.error(`forest impostor bake gave up after ${Math.round(failMs / 1000)} s: ${mesh.name}`);
+        return stop();
+      }
+      if (!warned && waited >= warnMs) {
         warned = true;
-        console.error(`forest impostor bake still waiting after ${Math.round(warnMs / 1000)} s: ${mesh.name}`);
+        console.warn(`forest impostor bake still waiting after ${Math.round(warnMs / 1000)} s: ${mesh.name}`);
       }
       await new Promise((resolve) => setTimeout(resolve, 16));
     }
@@ -776,13 +798,16 @@ export async function defaultBakeImpostor(
 }
 
 /** The first compilation error any of `meshes` reports under render pass
- * `renderPassId`, or null. Reads the pass's draw wrapper without creating one,
- * so a poll changes nothing. */
-function compilationError(meshes: readonly Mesh[], renderPassId: number): string | null {
+ * `renderPassId` with no fallback left to try, or null. An error Babylon is
+ * still recovering from (a fallback compiling on the same effect) is not
+ * final. Reads the pass's draw wrapper without creating one, so a poll changes
+ * nothing. */
+function finalCompilationError(meshes: readonly Mesh[], renderPassId: number): string | null {
   for (const mesh of meshes) {
     for (const subMesh of mesh.subMeshes ?? []) {
-      const error = subMesh._getDrawWrapper(renderPassId)?.effect?.getCompilationError();
-      if (error) return error;
+      const effect = subMesh._getDrawWrapper(renderPassId)?.effect;
+      const error = effect?.getCompilationError();
+      if (error && effect?.allFallbacksProcessed()) return error;
     }
   }
   return null;

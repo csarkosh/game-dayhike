@@ -57,7 +57,7 @@ import {
 } from "./water.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { POND_DEPTH } from "../sim/features.js";
-import { createForestMeshes } from "./forestMeshes.js";
+import { createForestMeshes, type ImpostorBake } from "./forestMeshes.js";
 import { NEAR_RADIUS } from "./forestField.js";
 import { createClutterMeshes } from "./clutterMeshes.js";
 import { createBladeMeshes } from "./bladeMeshes.js";
@@ -612,6 +612,10 @@ export type Renderer = {
   /** `null` restores the weather-driven speed; otherwise clamped to [0, 1]
    * and used in place of it (the `/wind` command). */
   setWindOverride(level: number | null): void;
+  /** The far forest's billboard bakes as they stand (`ForestMeshes.impostorBakes`):
+   * still baking, ready or failed, and how long each took. Empty without a
+   * forest, or until its models have loaded. */
+  impostorBakes(): readonly ImpostorBake[];
 };
 
 export type RendererOptions = {
@@ -1160,6 +1164,9 @@ export function createRenderer(
     },
     setFreecam(view) {
       freecam = view;
+    },
+    impostorBakes() {
+      return forestMeshes?.impostorBakes() ?? [];
     },
     setHour(hour) {
       lighting.setHour(hour);

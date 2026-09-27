@@ -367,6 +367,17 @@ describe("the renderer's engine", () => {
     }
   });
 
+  it("hands out the forest's bake records, empty where there is no forest", () => {
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low" });
+    try {
+      expect(renderer.impostorBakes()).toEqual([]);
+    } finally {
+      renderer.dispose();
+    }
+    const src = readFileSync(fileURLToPath(new URL("../../src/game/renderer.ts", import.meta.url)), "utf8");
+    expect(src).toContain("return forestMeshes?.impostorBakes() ?? [];");
+  });
+
   it("draws on an engine it is given, makes none of its own, and disposes it with itself", () => {
     const given = new NullEngine();
     const before = EngineStore.Instances.length;
