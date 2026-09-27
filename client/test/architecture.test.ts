@@ -108,6 +108,14 @@ describe("layer boundaries", () => {
     expect(bad).toEqual([]);
   });
 
+  it("never turns WebGPU's uniformity analysis off for every shader", () => {
+    // The finish pass turns it off for itself (`finishFragmentFor`); replacing
+    // the engine's stage-descriptor method would hide every other shader's
+    // uniformity fault too.
+    const found = sourceFiles(SRC).filter((f) => readFileSync(f, "utf8").includes("_createPipelineStageDescriptor"));
+    expect(found).toEqual([]);
+  });
+
   it("keeps the engine choice out of sim/ and net/", () => {
     const named = [/engineChoice/, /gpuEngine/, /webgpuVertexBuffer/];
     expect(violations(join(SRC, "sim"), named)).toEqual([]);

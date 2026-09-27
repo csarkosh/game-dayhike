@@ -3,7 +3,11 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { createPost, fxSupportedBy } from "../../src/game/post.js";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
+import { createPost, finishFragmentFor, fxSupportedBy } from "../../src/game/post.js";
 import { postFeaturesFor, MSAA_SAMPLES } from "../../src/game/postParams.js";
 import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "../../src/game/weather.js";
 
@@ -118,5 +122,21 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     expect(camera._postProcesses[0]!.samples).toBe(1);
     post.dispose();
     camera.dispose();
+  });
+});
+
+describe("the finish pass's text per engine", () => {
+  const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+  it("is the file itself on WebGL2", () => {
+    expect(sha(finishFragmentFor(false))).toBe("4465c9bf20695c3a2abd6e7a11ac1fac0a71d2ea5e4f15efe306fc84cf45a1a5");
+  });
+  it("turns uniformity analysis off for itself alone on WebGPU", () => {
+    // Its second read of the scene sits inside a branch on vUV. The target has
+    // one mip level, so the implicit LOD it gives up cannot pick another.
+    expect(finishFragmentFor(true)).toBe("#define DISABLE_UNIFORMITY_ANALYSIS\n" + finishFx);
+  });
+  it("uses the words Babylon's WebGPU engine looks for (a canary on the installed engine)", () => {
+    const src = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
+    expect(src).toContain("const disableUniformityAnalysisInFragment = fragmentCode.indexOf(`#define DISABLE_UNIFORMITY_ANALYSIS`) >= 0;");
   });
 });
