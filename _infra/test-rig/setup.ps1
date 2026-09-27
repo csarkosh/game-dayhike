@@ -5,12 +5,14 @@
 # parameter and display values below and strips the comment lines (EC2 caps
 # user data at 16 KB).
 #
-# Every boot, before anything that can take long:
+# Every boot, first, before anything else can fail (even opening the log):
 #   - the stop timer: a scheduled task shuts Windows down max-run-minutes (an
-#     instance tag) after every boot, by a delayed start-up trigger, and the
-#     instance's shutdown behaviour is `stop`. Registered on the first boot and
-#     whenever the tag changes, with a one-time trigger covering that boot; the
-#     start-up trigger then fires at later boots even if this script does not;
+#     instance tag) after the boot, and the instance's shutdown behaviour is
+#     `stop`. It is registered afresh at every boot with a one-time trigger for
+#     that boot and a start-up trigger delayed by the same amount, which fires
+#     at later boots even if this script does not run; if it cannot be set, a
+#     pending shutdown is;
+# then:
 #   - C:\ProgramData\test-rig made writable by SYSTEM and Administrators only.
 # First boot, then never again (marker C:\ProgramData\test-rig\setup-complete):
 #   - the desktop user, its password (made here) and automatic logon;
@@ -63,13 +65,21 @@ $GitSha256 = 'D065A4E23C3D9A6B5073D609B5BE0830227EC3CA053C083BA385061DDFAF94C6'
 $ClosedGroups = @('Remote Desktop', 'Windows Remote Management')
 $Root = Join-Path $env:ProgramData 'test-rig'
 $Downloads = Join-Path $Root 'downloads'
-New-Item -ItemType Directory -Force -Path $Root | Out-Null
-Start-Transcript -Path (Join-Path $Root 'setup.log') -Append | Out-Null
+$ShutdownExe = "$env:WINDIR\System32\shutdown.exe"
+# Present for one boot: the stop task is left exactly as it is, so that its
+# start-up trigger alone is what stops the machine (README.md, the timer check).
+$SkipTimerOnce = Join-Path $Root 'skip-stop-timer-once'
+$script:Transcribing = $false
+$script:EarlyLog = New-Object System.Collections.Generic.List[string]
+$script:StopFallback = $false
 
 # Write-Host, not Write-Output: the transcript records it, and it never leaks
-# into a function's return value.
+# into a function's return value. Lines written before the log file is open
+# (the stop timer's) are kept and copied into it once it is.
 function Log([string]$Message) {
-  Write-Host "$(Get-Date -Format o) $Message"
+  $line = "$(Get-Date -Format o) $Message"
+  if (-not $script:Transcribing) { $script:EarlyLog.Add($line) }
+  Write-Host $line
 }
 
 function Test-Step([string]$Step) { Test-Path (Join-Path $Root "done-$Step") }
@@ -143,24 +153,47 @@ function Assert-Signer([string]$Path, [string]$Publisher) {
 }
 
 # Runs an installer and stops it, with everything it started, after $Minutes.
-function Invoke-Installer([string]$File, [string[]]$Arguments, [string]$Name, [int]$Minutes) {
+# For an MSI that is only msiexec's client: the install itself runs in the
+# Windows Installer service, which goes on with it; the message says so.
+function Invoke-Installer([string]$File, [string[]]$Arguments, [string]$Name, [int]$Minutes, [switch]$Msi) {
   Log "Running the $Name installer (at most $Minutes minutes)"
   $process = Start-Process -FilePath $File -ArgumentList $Arguments -PassThru
   # Holding the handle keeps ExitCode readable once the process has gone.
   $null = $process.Handle
   if (-not $process.WaitForExit($Minutes * 60000)) {
     & "$env:WINDIR\System32\taskkill.exe" /PID $process.Id /T /F 2>&1 | Out-Null
+    if ($Msi) {
+      throw "Timed out: the $Name installer did not finish in $Minutes minutes; its msiexec client was stopped, but Windows Installer may still be installing it. Nothing further runs on this boot; the next boot waits for Windows Installer and tries again"
+    }
     throw "Timed out: the $Name installer did not finish in $Minutes minutes; stopped it"
   }
   Log "The $Name installer exited with $($process.ExitCode)"
   return $process.ExitCode
 }
 
-function Install-Msi([string]$Path, [string]$Name, [int]$Minutes, [string[]]$Properties = @()) {
+# Windows Installer runs one install at a time and holds the Global\_MSIExecute
+# mutex while it does. Waits for it to be free, so a new install never starts
+# on top of one left running by a timed-out client.
+function Wait-InstallerIdle([int]$Minutes) {
+  $deadline = (Get-Date).AddMinutes($Minutes)
+  while ($true) {
+    $mutex = $null
+    if (-not [Threading.Mutex]::TryOpenExisting('Global\_MSIExecute', [ref]$mutex)) { return }
+    $mutex.Dispose()
+    if ((Get-Date) -gt $deadline) { throw "Timed out: Windows Installer was still busy with another install after $Minutes minutes" }
+    Start-Sleep -Seconds 10
+  }
+}
+
+# Installs an MSI and then checks for the product itself ($Installed, a file
+# it installs), never trusting the exit code alone.
+function Install-Msi([string]$Path, [string]$Name, [int]$Minutes, [string]$Installed, [string[]]$Properties = @()) {
+  Wait-InstallerIdle 30
   $msiLog = Join-Path $Root "$Name-msi.log"
-  $code = Invoke-Installer 'msiexec.exe' (@('/i', "`"$Path`"", '/qn', '/norestart', '/l*v', "`"$msiLog`"") + $Properties) $Name $Minutes
+  $code = Invoke-Installer 'msiexec.exe' (@('/i', "`"$Path`"", '/qn', '/norestart', '/l*v', "`"$msiLog`"") + $Properties) $Name $Minutes -Msi
   # 3010: success, restart required. The set-up restarts once at the end.
   if ($code -notin 0, 3010) { throw "$Name installer exited with $code" }
+  if (-not (Test-Path $Installed)) { throw "$Name installer exited with $code, but $Installed is not there" }
 }
 
 # Native tools write progress to stderr, which Windows PowerShell 5.1 turns
@@ -327,30 +360,33 @@ function Get-StopPlan([datetime]$BootTime, [int]$Minutes, [datetime]$Now) {
   return @{ Delay = [Xml.XmlConvert]::ToString([TimeSpan]::FromMinutes($Minutes)); Once = $once }
 }
 
-# Checked at every boot, before anything else. A task that already has a
-# start-up trigger with this boot's delay existed when this boot started, so
-# that trigger has already fired and its delayed shutdown is pending: it is
-# left alone. Otherwise (the first boot, or a changed tag) the task is
-# registered, with the one-time trigger covering this boot. Run as the local
-# system account, logged on or not. If it cannot be registered, a pending
-# shutdown is the fallback.
+# At every boot, first, before anything else can fail: the task is
+# unregistered and registered again, with the start-up trigger's delay from the
+# tag and a one-time trigger for this boot. Registering it afresh at every boot
+# means a changed tag takes effect at once, and no one-time trigger from an
+# earlier boot is left to stop this one early (the first session's set-up
+# restart included). Run as the local system account, logged on or not.
+# Nothing here throws: whatever fails, a pending shutdown is the fallback.
 function Set-StopTimer {
-  $minutes = Get-MaxRunMinutes
-  $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
-  $plan = Get-StopPlan $boot $minutes (Get-Date)
+  $plan = $null
   try {
-    $existing = Get-ScheduledTask -TaskName 'test-rig-stop' -ErrorAction SilentlyContinue
-    if ($existing -and $existing.State -ne 'Disabled' -and (Get-BootDelays $existing) -contains $plan.Delay) {
-      Log "Stop timer: $minutes minutes after every boot; for this boot at about $($boot.AddMinutes($minutes)), by the start-up trigger"
+    if (Test-Path $SkipTimerOnce) {
+      Remove-Item $SkipTimerOnce -Force
+      Log 'Stop timer: left as it was for this boot (skip-stop-timer-once): its start-up trigger alone stops the machine'
       return
     }
-    $action = New-ScheduledTaskAction -Execute "$env:WINDIR\System32\shutdown.exe" -Argument '/s /f /t 0 /d p:0:0 /c "max_run_hours reached"'
+    $minutes = Get-MaxRunMinutes
+    $boot = Get-Date
+    try { $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime } catch { Log "Stop timer: the boot time cannot be read ($_); counting from now" }
+    $plan = Get-StopPlan $boot $minutes (Get-Date)
+    $action = New-ScheduledTaskAction -Execute $ShutdownExe -Argument '/s /f /t 0 /d p:0:0 /c "max_run_hours reached"'
     $atStartup = New-ScheduledTaskTrigger -AtStartup
     $atStartup.Delay = $plan.Delay
     $once = New-ScheduledTaskTrigger -Once -At $plan.Once
     $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
-    Register-ScheduledTask -TaskName 'test-rig-stop' -Action $action -Trigger @($atStartup, $once) -Principal $principal -Settings $settings -Force | Out-Null
+    Unregister-ScheduledTask -TaskName 'test-rig-stop' -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask -TaskName 'test-rig-stop' -Action $action -Trigger @($atStartup, $once) -Principal $principal -Settings $settings | Out-Null
     $task = Get-ScheduledTask -TaskName 'test-rig-stop'
     $next = (Get-ScheduledTaskInfo -TaskName 'test-rig-stop').NextRunTime
     if (@(Get-BootDelays $task) -notcontains $plan.Delay -or -not $next -or $task.State -ne 'Ready') {
@@ -358,10 +394,45 @@ function Set-StopTimer {
     }
     Log "Stop timer: $minutes minutes after every boot; for this boot at $next"
   } catch {
-    $seconds = [int][Math]::Max(60, ($plan.Once - (Get-Date)).TotalSeconds)
-    Log "Stop timer: the task failed ($_); a pending shutdown in $seconds s instead"
-    & "$env:WINDIR\System32\shutdown.exe" /s /f /t $seconds /d p:0:0 /c 'max_run_hours reached'
-    Log "Stop timer: shutdown.exe exited with $LASTEXITCODE"
+    Invoke-StopFallback $plan "$_"
+  }
+}
+
+# A pending `shutdown /s /t <seconds>`, for when the task cannot be set. It
+# cannot throw; if even it fails, the log says that only the daily stop from
+# outside remains.
+function Invoke-StopFallback($Plan, [string]$Reason) {
+  try {
+    $seconds = 60 * $DefaultMaxRunMinutes
+    try { if ($Plan) { $seconds = [int][Math]::Max(60, ($Plan.Once - (Get-Date)).TotalSeconds) } } catch { }
+    Log "Stop timer: the task failed ($Reason); a pending shutdown in $seconds s instead"
+    $output = & $ShutdownExe /s /f /t $seconds /d p:0:0 /c 'max_run_hours reached' 2>&1
+    $script:StopFallback = ($LASTEXITCODE -eq 0)
+    Log "Stop timer: shutdown.exe exited with $LASTEXITCODE $output"
+  } catch {
+    $script:StopFallback = $false
+    try { Log "Stop timer: the pending shutdown failed too ($_); only the daily stop from outside remains" } catch { }
+  }
+}
+
+# A pending shutdown makes Windows refuse any other, the launch agent's restart
+# after set-up included. When the fallback is pending and the set-up wants its
+# restart, the pending shutdown is swapped for a pending restart a minute away,
+# and the script does not ask the launch agent for one. Returns the exit code
+# to use. If the restart cannot be set, the shutdown is put back.
+function Resolve-RestartWithFallback([int]$ExitCode) {
+  if ($ExitCode -ne 3010 -or -not $script:StopFallback) { return $ExitCode }
+  try {
+    & $ShutdownExe /a 2>&1 | Out-Null
+    & $ShutdownExe /r /f /t 60 /d p:0:0 /c 'test-rig set-up restart' 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+      Log 'Stop timer: the pending shutdown is now a restart in 60 s, for the set-up'
+      return 0
+    }
+    throw "shutdown.exe /r exited with $LASTEXITCODE"
+  } catch {
+    Invoke-StopFallback $null "the restart could not be set: $_"
+    return 0
   }
 }
 
@@ -437,7 +508,7 @@ function Install-Everything {
   if (-not (Test-Step 'dcv')) {
     $msi = Get-Verified $DcvUrl $DcvSha256
     Assert-Signer $msi 'Amazon Web Services, Inc.'
-    Install-Msi $msi 'dcv' 20 @("AUTOMATIC_SESSION_OWNER=$DesktopUser", 'DISABLE_FIREWALL=1', 'REMOVE=iddDriver')
+    Install-Msi $msi 'dcv' 20 "$env:ProgramFiles\NICE\DCV\Server\bin\dcv.exe" @("AUTOMATIC_SESSION_OWNER=$DesktopUser", 'DISABLE_FIREWALL=1', 'REMOVE=iddDriver')
     Set-DcvParameter 'connectivity' 'web-listen-endpoints' "['127.0.0.1:8443', '[::1]:8443']" String
     Set-DcvParameter 'connectivity' 'enable-quic-frontend' 0 DWord
     Set-DcvParameter 'security' 'os-auto-lock' 0 DWord
@@ -449,34 +520,41 @@ function Install-Everything {
 
   # --- Chrome (stable) --------------------------------------------------------
   # Not pinnable: Google's enterprise installer URL only serves the current
-  # release. Its signature is checked instead, and its version logged.
+  # release. Its signature is checked instead, and its version logged. Each
+  # install below is marked done only once its product is in place, so one
+  # that timed out is run again, never built on.
   $chrome = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
-  if (-not (Test-Path $chrome)) {
+  if (-not (Test-Step 'chrome')) {
     $msi = Join-Path $Downloads 'googlechromestandaloneenterprise64.msi'
     $url = 'https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi'
     Log 'Downloading Chrome (current stable, at most 15 minutes)'
     Invoke-Timed 'the Chrome download' 15 $WebDownload @($url, $msi)
     Assert-Signer $msi 'Google LLC'
-    Install-Msi $msi 'chrome' 15
+    Install-Msi $msi 'chrome' 15 $chrome
+    Complete-Step 'chrome'
   }
   Log "Chrome: $((Get-Item $chrome).VersionInfo.ProductVersion)"
 
   # --- Node 22 ------------------------------------------------------------------
   $node = "$env:ProgramFiles\nodejs\node.exe"
-  if (-not (Test-Path $node) -or (Get-Item $node).VersionInfo.ProductVersion -ne $NodeVersion) {
-    Install-Msi (Get-Verified "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-x64.msi" $NodeSha256) 'node' 10
+  if (-not (Test-Step 'node')) {
+    Install-Msi (Get-Verified "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-x64.msi" $NodeSha256) 'node' 10 $node
+    if ((Get-Item $node).VersionInfo.ProductVersion -ne $NodeVersion) { throw "node.exe is $((Get-Item $node).VersionInfo.ProductVersion), not $NodeVersion" }
+    Complete-Step 'node'
   }
   Log "Node: $((Get-Item $node).VersionInfo.ProductVersion)"
 
   # --- Git with LFS -------------------------------------------------------------
   # Git for Windows installs Git LFS with its default components.
   $git = "$env:ProgramFiles\Git\cmd\git.exe"
-  if (-not (Test-Path $git)) {
+  if (-not (Test-Step 'git')) {
     $code = Invoke-Installer (Get-Verified $GitUrl $GitSha256) @('/VERYSILENT', '/NORESTART', '/NOCANCEL', '/SP-', '/SUPPRESSMSGBOXES') 'git' 10
     if ($code -ne 0) { throw "git installer exited with $code" }
+    if (-not (Test-Path $git)) { throw "git installer exited with 0, but $git is not there" }
+    if ((Invoke-Native $git @('lfs', 'install', '--system')) -ne 0) { throw 'git lfs install failed' }
+    Invoke-Native $git @('lfs', 'version') | Out-Null
+    Complete-Step 'git'
   }
-  if ((Invoke-Native $git @('lfs', 'install', '--system')) -ne 0) { throw 'git lfs install failed' }
-  Invoke-Native $git @('lfs', 'version') | Out-Null
 
   # --- Hold the machine still -------------------------------------------------
   # A measurement compares builds on one machine, so nothing may change it or
@@ -604,8 +682,12 @@ function Test-Setup {
 }
 
 $exitCode = 0
+Set-StopTimer
 try {
-  Set-StopTimer
+  New-Item -ItemType Directory -Force -Path $Root | Out-Null
+  Start-Transcript -Path (Join-Path $Root 'setup.log') -Append | Out-Null
+  $script:Transcribing = $true
+  foreach ($line in $script:EarlyLog) { Write-Host $line }
   Protect-Root
   if (-not (Test-Path (Join-Path $Root 'setup-complete'))) {
     Log 'Set-up starting.'
@@ -634,7 +716,7 @@ try {
   Log "FAILED: $_"
   Log 'The next boot retries from the first step not yet done.'
   $exitCode = 1
-} finally {
-  Stop-Transcript | Out-Null
 }
+$exitCode = Resolve-RestartWithFallback $exitCode
+if ($script:Transcribing) { try { Stop-Transcript | Out-Null } catch { } }
 # The user data that runs this script exits with $exitCode.
