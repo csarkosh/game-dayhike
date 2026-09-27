@@ -155,13 +155,40 @@ rejection and hands it to the effect it belongs to (found among the engine's
 compiled effects by its pipeline context) through the effect's own
 `_processCompilationErrors`, so the error is recorded, the next fallback
 tried, and `onEffectErrorObservable` told once none is left, as on WebGL2. The
-watcher therefore reports it as a pipeline failure (the ruling of §5.5
-applies: WebGL2 now, and remembered, through the reload until the live swap
-lands), and the bake as its failed ending. A failure that belongs to no
+watcher therefore reports it as a pipeline failure, and the rule in §5.5
+applies as built: inside the startup window, remembered and a reload onto
+WebGL2; after it, remembered for the next load; the live swap replaces both
+before Task 6. The bake sees it as its failed ending. A failure that belongs to no
 compiled effect is logged ("WebGPU shader translation failed"), which the
 watcher also reads. A wrapper, not a page-wide `unhandledrejection` listener,
 because only the wrapper knows which effect failed; canaries pin the unawaited
-call, the async method, the effect registry and `_processCompilationErrors`.
+call, the async method, the effect registry, `getPipelineContext`, the WebGPU
+pipeline context's `isAsync` and `_processCompilationErrors`. Two limits,
+both rare and both safe, since the engine then falls back: the wrapper cannot
+pass on the pipeline context an effect had before, so a failed re-preparation
+(a program rebuilt after a device loss, say) counts as failed instead of being
+rolled back to the program that worked; and a module that translates but that
+WebGPU rejects when the pipeline is made reaches only the uncaptured-error
+path, which the watcher reads, while the bake reads that effect as ready and
+renders a blank billboard.
+
+**Task 2, as built (code and tests; the browser sweep and §6.4's measurement
+follow).** The WebGL2 identity pins came first: thirty hashes, every plugin's
+injected code per stage and the three post shaders, built through the same
+attach functions the world uses (not builders moved out of the plugins' test
+files, which the plan proposed) on one `NullEngine` scene
+(`client/test/game/helpers/pluginText.ts`). Then, one commit each: the finish
+pass's per-shader uniformity switch (§6.1, byte-identical on WebGL2); the hex
+include split into three files whose join is the original, with the fetches as
+macros on WebGPU (§6.2, byte-identical on WebGL2); `macro` renamed `macroRgb`
+(§6.3, the one change to WebGL2's text, shown to be the whole difference, and
+a scan of every plugin's declared names against WGSL's reserved words found no
+other); the atmosphere's gradient bound whenever it exists (§6.5, shader text
+unchanged; a check that every declared sampler of every plugin is bound in
+every state found no other); and the engine's extensions imported by
+`gpuEngine.ts` (§6.6). §6.4's limits stay Task 1's, 17 inter-stage variables
+and 8 vertex buffers, requested exactly (nothing calls `setMaximumLimits`),
+until the sweep measures the rest.
 
 The spike ran the game on Babylon's `WebGPUEngine` with every existing material
 and plugin, to measure a compute cull of the blade field, and found the engine
