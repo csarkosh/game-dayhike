@@ -145,8 +145,9 @@ jobs:
     env:
       # Every test time limit, and vitest's defaults, times three: the smallest
       # whole factor that keeps every test measured on these runners under two
-      # thirds of its scaled limit. Over eight client runs (runs 36328943645,
-      # 36330139236 x3 and 36332634644 x2) the slowest against its limit was
+      # thirds of its scaled limit. Over seven client executions (run
+      # 36328943645's unsharded and sharded ones, 36330139236 x3 and
+      # 36332634644 x2) the slowest against its limit was
       # sim/clutter's "keeps bushes off the road bed at the jittered instance",
       # 6.95 s against the 5 s default in run 36332634644's second attempt:
       # 0.70 of its limit at a factor of 2, 0.46 at 3.
@@ -179,7 +180,7 @@ jobs:
         run: |
           pointers() { git lfs ls-files -l | grep -E '^[0-9a-f]{64} - ' || true; }
           bad() {
-            echo "::error::The cached LFS objects under $KEY are incomplete or corrupt, and a cache entry cannot be overwritten. Delete it with: gh cache delete $KEY --repo ${GITHUB_REPOSITORY}  (or change lfs-v1 to lfs-v2 in this workflow), then re-run."
+            echo "::error::The cached LFS objects under $KEY are incomplete or corrupt, and a cache entry cannot be overwritten. Delete it with: gh cache delete $KEY --repo ${GITHUB_REPOSITORY}  (or change lfs-v1 to lfs-v2 in this workflow), then re-run ALL jobs (gh run rerun ${GITHUB_RUN_ID} --repo ${GITHUB_REPOSITORY}, not --failed; the lfs job must run again to refill the cache)."
             exit 1
           }
           echo "lfs pointers before checkout: $(pointers | grep -c . || true)"
