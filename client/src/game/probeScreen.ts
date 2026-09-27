@@ -12,8 +12,6 @@ export const PROBE_SCREEN_LINE = "Setting up graphics…";
 const STYLE = `
   .probe-screen {
     position: absolute; inset: 0;
-    /* Above the probe's canvas, which is a plain block in the container. */
-    z-index: 1;
     display: flex; align-items: center; justify-content: center;
     background: #101014; color: #fff;
     font-family: ui-monospace, monospace;
@@ -21,12 +19,19 @@ const STYLE = `
   }
 `;
 
-/** Covers `container` with the screen until `dispose`. */
-export function showProbeScreen(container: HTMLElement): { dispose(): void } {
+/** The screen's layer over a hike in play: above the interact prompt (12),
+ * the touch layer (15) and the roster (20), and so above the pause screen
+ * (18), which the governor never acts under. */
+export const OVER_PLAY_Z = 21;
+
+/** Covers `container` with the screen until `dispose`, at `layer`: by
+ * default just above the probe's canvas, a plain block in the container. */
+export function showProbeScreen(container: HTMLElement, layer = 1): { dispose(): void } {
   const style = document.createElement("style");
   style.textContent = STYLE;
   const root = document.createElement("div");
   root.className = "probe-screen";
+  root.style.zIndex = String(layer);
   root.setAttribute("role", "status");
   root.textContent = PROBE_SCREEN_LINE;
   container.append(style, root);

@@ -79,7 +79,7 @@ import {
 } from "./game/rendererSwap.js";
 import { releaseAtmosphere } from "./game/atmosphere.js";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, createGovernor, governorDecision, steadyFrame } from "./game/governor.js";
-import { showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
+import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
@@ -224,9 +224,9 @@ function buildGame(
   let tier: QualityTier = first.tier;
   let tierSource: TierSource = options.tierSource;
   // The governor (`governor.ts`): fed every frame of play, restarted when the
-  // session starts and after a switch, acting at most once per hike.
+  // session starts and after a switch, stopped when it ends, acting at most
+  // once per hike.
   const governor = createGovernor(performance.now());
-  let governorActed = false;
   /** A tier is being switched: no frame of it is steady play. */
   let switching = false;
   /** The governor is acting: timing the page's idle frames, then its switch. */
@@ -969,6 +969,8 @@ function buildGame(
     // A disposed game has no HUD to write to and no business steering the
     // page: whoever disposed it decided where the player goes next.
     if (disposed) return;
+    // The ending's last seconds are not play: nothing more for the governor.
+    governor.stop();
     hud.setStatus(message);
     // One timer, not one per call: two ends in the same session (a session-end
     // event and a lost transport, say) would otherwise push two history
@@ -1357,13 +1359,10 @@ function buildGame(
       waitingItems: renderer.scene.getWaitingItemsCount(),
       compiled: compiledSinceFrame,
       switching,
+      freecam: freecam !== null || freecamPending,
     });
     compiledSinceFrame = false;
-    governor.frame(dt * 1000, performance.now(), steady);
-    if (governor.verdict === "drop" && !governorActed) {
-      governorActed = true;
-      void lowerTier();
-    }
+    if (governor.frame(dt * 1000, performance.now(), steady)) void lowerTier();
   }
 
   /**
@@ -1376,12 +1375,12 @@ function buildGame(
    */
   async function lowerTier(): Promise<void> {
     const decision = governorDecision(governor.verdict, tier, tierSource);
-    if (decision === null || disposed || broken || switching || lowering) return;
+    if (decision === null || disposed || broken || switching || lowering || landingTimer !== null) return;
     lowering = true;
     try {
       await actOnDrop(tier, decision.next, {
         cover: () => {
-          const screen = showProbeScreen(container);
+          const screen = showProbeScreen(container, OVER_PLAY_Z);
           input.setSuppressed(true);
           return () => {
             screen.dispose();
@@ -1401,7 +1400,7 @@ function buildGame(
         switchTo: (next) => switchTo(next, "auto", null),
         flash: (line, ms) => hud.flash(line, ms),
         log: (line) => console.info(line),
-        alive: () => !disposed && !broken,
+        alive: () => !disposed && !broken && landingTimer === null,
       });
     } finally {
       lowering = false;

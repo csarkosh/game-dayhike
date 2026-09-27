@@ -6,6 +6,8 @@ import {
   tierFor,
   verdictFor,
   verdictHolds,
+  GOVERNOR_VERDICT_DAYS,
+  VERDICT_DAYS,
   withGovernorDrop,
   withProbeStarted,
   withVerdict,
@@ -308,11 +310,24 @@ describe("the record after a governor drop", () => {
     expect(withGovernorDrop(null, "Apple GPU", 26, "apple-unknown", "low", 2_073_600, 1_790_000_000_000)).toBe(null);
   });
 
-  it("is honoured by Auto at the next start, at any window, until it is 30 days old", () => {
+  it("is honoured by Auto at the next start, at any window, until it is 7 days old", () => {
     const record = withGovernorDrop(null, SAFARI, 26, "apple-unknown", "high", 500_000, NOW - DAY)!;
     expect(auto(record, 8_000_000)).toEqual({ tier: "medium", probeFrom: null });
-    expect(autoTier({ cls: "apple-unknown", cores: 8, memoryGb: null, record, gpu: SAFARI, browser: 26, pixels: 2_073_600, now: NOW + 30 * DAY }))
+    expect(autoTier({ cls: "apple-unknown", cores: 8, memoryGb: null, record, gpu: SAFARI, browser: 26, pixels: 2_073_600, now: NOW + 5 * DAY }))
+      .toEqual({ tier: "medium", probeFrom: null });
+    expect(autoTier({ cls: "apple-unknown", cores: 8, memoryGb: null, record, gpu: SAFARI, browser: 26, pixels: 2_073_600, now: NOW + 6 * DAY }))
       .toEqual({ tier: "medium", probeFrom: "high" });
+  });
+
+  it("holds 7 days, since slowness from other apps passes; a probe or build verdict holds 30", () => {
+    expect(GOVERNOR_VERDICT_DAYS).toBe(7);
+    expect(VERDICT_DAYS).toBe(30);
+    const governed: AutoVerdict = { tier: "medium", source: "governor", pixels: 2_073_600, at: NOW - 7 * DAY + 1 };
+    expect(verdictHolds(governed, 2_073_600, NOW)).toBe(true);
+    expect(verdictHolds({ ...governed, at: NOW - 7 * DAY }, 2_073_600, NOW)).toBe(false);
+    expect(verdictHolds({ ...governed, source: "probe", at: NOW - 29 * DAY }, 2_073_600, NOW)).toBe(true);
+    expect(verdictHolds({ ...governed, source: "build", at: NOW - 29 * DAY }, 2_073_600, NOW)).toBe(true);
+    expect(verdictHolds({ ...governed, source: "build", at: NOW - 30 * DAY }, 2_073_600, NOW)).toBe(false);
   });
 });
 

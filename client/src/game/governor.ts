@@ -10,13 +10,15 @@
  *   stream in and shaders compile;
  * - frame intervals gathered in **10 s** windows. A window holding a frame
  *   that is not steady play (paused, a hidden tab, models still loading, a
- *   shader compiled, a tier being switched) or a stall over **250 ms** is
- *   void: it neither counts nor breaks a run, as the probe's meter ignores the
- *   frames around a known hitch;
+ *   shader compiled, a tier being switched, the free camera) or a stall over
+ *   **250 ms** is void: it neither counts nor breaks a run, as the probe's
+ *   meter ignores the frames around a known hitch;
  * - a window whose mean interval is over **20.8 ms** (1.25 × the 60 Hz budget,
  *   48 fps) counts, one at or under resets the run;
  * - **three** counting windows in a row (30 s of play under 48 fps, after the
- *   grace) and the verdict is a drop, latched: once per hike, and never a raise.
+ *   grace) and the verdict is a drop, latched: once per hike, and never a raise;
+ * - the drop is acted on at the first steady frame from the one that made it,
+ *   never under the pause screen, and nothing at all once the session ends.
  *
  * Brief spikes cannot trip it: at 60 Hz a 200 ms hitch lifts its 10 s
  * window's mean by about 0.3 ms, against 4.1 ms of room to the limit. Pure:
@@ -46,11 +48,15 @@ const BELOW: Record<QualityTier, QualityTier | null> = { high: "medium", medium:
 
 export type Governor = {
   /** One frame's interval at `now`; `steady` false for a frame that is not
-   * steady play, which voids its window. */
-  frame(intervalMs: number, now: number, steady?: boolean): void;
+   * steady play, which voids its window. True on the one frame the drop is to
+   * be acted on: the first steady frame from the one that made it, so a drop
+   * made as the pause screen opens waits for play to resume. */
+  frame(intervalMs: number, now: number, steady?: boolean): boolean;
   /** A new grace from `now` (the hike's session starting, a tier switched),
-   * the run cleared; a drop once made is kept. */
+   * the run cleared; a drop once made, or acted on, is kept. */
   restart(now: number): void;
+  /** The hike's session has ended: nothing more is counted or acted on. */
+  stop(): void;
   readonly verdict: "none" | "drop";
 };
 
@@ -62,6 +68,8 @@ export function createGovernor(start: number): Governor {
   let voided = false;
   let run = 0;
   let verdict: "none" | "drop" = "none";
+  let acted = false;
+  let stopped = false;
 
   /** Closes the window: counts it, resets the run, or skips it when void.
    * True when that makes the verdict a drop. */
@@ -78,20 +86,32 @@ export function createGovernor(start: number): Governor {
     return true;
   };
 
+  /** Counts one frame toward the windows, until a drop is made. */
+  const gather = (intervalMs: number, now: number, steady: boolean): void => {
+    if (verdict === "drop" || now < graceUntil) return;
+    if (windowStart === null) windowStart = graceUntil;
+    while (now >= windowStart + GOVERNOR_WINDOW_MS) {
+      windowStart += GOVERNOR_WINDOW_MS;
+      if (close()) return;
+    }
+    if (!steady || !Number.isFinite(intervalMs) || intervalMs < 0 || intervalMs > GOVERNOR_STALL_MS) {
+      voided = true;
+      return;
+    }
+    sum += intervalMs;
+    count += 1;
+  };
+
   return {
     frame(intervalMs, now, steady = true) {
-      if (verdict === "drop" || now < graceUntil) return;
-      if (windowStart === null) windowStart = graceUntil;
-      while (now >= windowStart + GOVERNOR_WINDOW_MS) {
-        windowStart += GOVERNOR_WINDOW_MS;
-        if (close()) return;
-      }
-      if (!steady || !Number.isFinite(intervalMs) || intervalMs < 0 || intervalMs > GOVERNOR_STALL_MS) {
-        voided = true;
-        return;
-      }
-      sum += intervalMs;
-      count += 1;
+      if (stopped) return false;
+      gather(intervalMs, now, steady);
+      if (verdict !== "drop" || acted || !steady) return false;
+      acted = true;
+      return true;
+    },
+    stop() {
+      stopped = true;
     },
     restart(now) {
       graceUntil = now + GOVERNOR_START_MS;
@@ -109,7 +129,8 @@ export function createGovernor(start: number): Governor {
 
 /** Whether a frame is steady play the governor may count: engaged, the menu
  * closed, the tab seen, nothing loading, no shader compiled since the last
- * frame, no tier being switched. */
+ * frame, no tier being switched, and not the free camera, whose flight
+ * rebuilds the fields every frame as walking never does. */
 export function steadyFrame(frame: {
   engaged: boolean;
   menuOpen: boolean;
@@ -117,8 +138,17 @@ export function steadyFrame(frame: {
   waitingItems: number;
   compiled: boolean;
   switching: boolean;
+  freecam: boolean;
 }): boolean {
-  return frame.engaged && !frame.menuOpen && frame.visible && frame.waitingItems === 0 && !frame.compiled && !frame.switching;
+  return (
+    frame.engaged &&
+    !frame.menuOpen &&
+    frame.visible &&
+    frame.waitingItems === 0 &&
+    !frame.compiled &&
+    !frame.switching &&
+    !frame.freecam
+  );
 }
 
 /** What a verdict does to the running tier: on Auto only (never a tier the
@@ -155,7 +185,7 @@ export type DropDeps = {
   switchTo(next: QualityTier): Promise<QualityTier>;
   flash(line: string, ms: number): void;
   log(line: string): void;
-  /** False once the game is gone or its renderer is broken. */
+  /** False once the game is gone, its renderer broken or its session ended. */
   alive(): boolean;
 };
 
@@ -178,7 +208,11 @@ export async function actOnDrop(
   try {
     const resume = deps.stopLoop();
     const cadence = await deps.idleCadence();
-    if (!deps.alive()) return "gone";
+    if (!deps.alive()) {
+      // Nothing written or switched; an ended session's last seconds still draw.
+      resume();
+      return "gone";
+    }
     if (cadence === null || cadence > PROBE_HOLD_MS) {
       deps.log(
         cadence === null

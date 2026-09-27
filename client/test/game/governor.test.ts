@@ -102,7 +102,7 @@ describe("the governor", () => {
 });
 
 describe("steadyFrame", () => {
-  const play = { engaged: true, menuOpen: false, visible: true, waitingItems: 0, compiled: false, switching: false };
+  const play = { engaged: true, menuOpen: false, visible: true, waitingItems: 0, compiled: false, switching: false, freecam: false };
   it("is steady play, and nothing else", () => {
     expect(steadyFrame(play)).toBe(true);
     expect(steadyFrame({ ...play, engaged: false })).toBe(false);
@@ -111,6 +111,8 @@ describe("steadyFrame", () => {
     expect(steadyFrame({ ...play, waitingItems: 2 })).toBe(false);
     expect(steadyFrame({ ...play, compiled: true })).toBe(false);
     expect(steadyFrame({ ...play, switching: true })).toBe(false);
+    // Flying crosses the fields' rebuild lattice every frame: work walking never causes.
+    expect(steadyFrame({ ...play, freecam: true })).toBe(false);
   });
 });
 
@@ -205,9 +207,54 @@ describe("acting on a drop", () => {
     expect(failed.did.slice(-2)).toEqual(["switch low", "lift"]);
   });
 
-  it("does nothing more once the game has gone while it timed", async () => {
+  it("writes and switches nothing once the game has gone, or its session ended, while it timed", async () => {
     const { deps, did } = page(16.7, "low", false);
     expect(await actOnDrop("medium", "low", deps)).toBe("gone");
-    expect(did).toEqual(["cover", "stop", "time", "lift"]);
+    // The loop is handed back: an ended session's last seconds still draw.
+    expect(did).toEqual(["cover", "stop", "time", "resume", "lift"]);
+  });
+});
+
+describe("when a drop is acted on", () => {
+  it("acts once, on the frame the drop latches when that frame is steady play", () => {
+    const g = createGovernor(0);
+    const acted: number[] = [];
+    for (let t = 25; t <= 90_000; t += 25) if (g.frame(25, t)) acted.push(t);
+    expect(acted).toEqual([60_000]);
+  });
+
+  it("waits while the pause screen is open, and acts on the first steady frame after it closes", () => {
+    const g = createGovernor(0);
+    feed(g, 0, 59_975, 25);
+    // The pause screen opens on the frame that closes the third slow window.
+    expect(g.frame(25, 60_000, false)).toBe(false);
+    expect(g.verdict).toBe("drop");
+    expect(g.frame(25, 75_000, false)).toBe(false);
+    expect(g.frame(25, 75_025)).toBe(true);
+    expect(g.frame(25, 75_050)).toBe(false);
+  });
+
+  it("counts nothing, and never acts, once the hike's session has ended", () => {
+    const g = createGovernor(0);
+    feed(g, 0, 59_975, 25);
+    g.stop();
+    expect(g.frame(25, 60_000)).toBe(false);
+    expect(g.verdict).toBe("none");
+    // A drop latched under the pause screen and not yet acted on stays so.
+    const h = createGovernor(0);
+    feed(h, 0, 59_975, 25);
+    h.frame(25, 60_000, false);
+    h.stop();
+    expect(h.frame(25, 60_025)).toBe(false);
+    h.restart(60_025);
+    expect(h.frame(25, 200_000)).toBe(false);
+  });
+
+  it("acts at most once per hike, across restarts", () => {
+    const g = createGovernor(0);
+    feed(g, 0, 59_975, 25);
+    expect(g.frame(25, 60_000)).toBe(true);
+    g.restart(60_000);
+    expect(g.frame(25, 200_000)).toBe(false);
   });
 });

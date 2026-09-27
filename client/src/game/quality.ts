@@ -93,8 +93,12 @@ export function tierFor(caps: Capabilities): QualityTier {
  * the record carries the class its verdict was made for (`verdictFor`).
  */
 export const DETECT_VERSION = 1;
-/** How long a verdict holds, in days. */
+/** How long a probe's or a build verdict holds, in days. */
 export const VERDICT_DAYS = 30;
+/** How long a governor's verdict holds, in days: slowness from load outside
+ * the game (another app, a video call) passes, and a machine should not be
+ * held down a month for it. */
+export const GOVERNOR_VERDICT_DAYS = 7;
 /** A probe verdict holds while the window is at most this many times the area it was measured at. */
 export const PROBE_PIXEL_SLACK = 1.5;
 /** Probes started for one GPU and browser without a verdict, after which Auto keeps the class's start tier. */
@@ -166,14 +170,15 @@ export function verdictFor(record: AutoRecord, cls: GpuClass): AutoVerdict | nul
 /**
  * Whether a verdict still stands: set no later than `now` (a verdict dated in
  * the future was written under a clock running ahead) and under
- * `VERDICT_DAYS` old, and, for a probe's, with the window at most
- * `PROBE_PIXEL_SLACK` times the area it certified (a bigger window costs
- * more). A drop for a low frame rate, and a tier that failed to build, hold at
- * any size.
+ * `GOVERNOR_VERDICT_DAYS` old for the governor's, `VERDICT_DAYS` for the rest,
+ * and, for a probe's, with the window at most `PROBE_PIXEL_SLACK` times the
+ * area it certified (a bigger window costs more). A drop for a low frame rate,
+ * and a tier that failed to build, hold at any size.
  */
 export function verdictHolds(verdict: AutoVerdict, pixels: number, now: number): boolean {
   const age = now - verdict.at;
-  return age >= 0 && age < VERDICT_DAYS * DAY_MS && (verdict.source !== "probe" || pixels <= verdict.pixels * PROBE_PIXEL_SLACK);
+  const days = verdict.source === "governor" ? GOVERNOR_VERDICT_DAYS : VERDICT_DAYS;
+  return age >= 0 && age < days * DAY_MS && (verdict.source !== "probe" || pixels <= verdict.pixels * PROBE_PIXEL_SLACK);
 }
 
 /**
@@ -239,7 +244,7 @@ export function withVerdict(prev: AutoRecord | null, gpu: string, browser: numbe
 /**
  * The record after the governor drops the running tier one step: a verdict of
  * source `governor` at the tier below, for this class, which holds at any
- * window for 30 days, so the next hike starts there too. Null on low, which
+ * window for 7 days, so the next hike starts there too. Null on low, which
  * has nothing below it.
  */
 export function withGovernorDrop(

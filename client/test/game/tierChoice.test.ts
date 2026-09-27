@@ -13,7 +13,7 @@ import {
   writeAutoRecord,
   writeChoice,
 } from "../../src/game/tierChoice.js";
-import type { AutoRecord } from "../../src/game/quality.js";
+import { autoTier, withGovernorDrop, type AutoRecord } from "../../src/game/quality.js";
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();
@@ -250,6 +250,39 @@ describe("recordFallback", () => {
     expect(got.record!.verdict!.tier).toBe("medium");
     expect(got.choice).toBe(null);
     expect(got.notice).toBe(null);
+  });
+
+  it("keeps a governor drop whose own switch fell back, and the next start converges below it", () => {
+    // High was too slow: the governor wrote medium, and medium would not build, so the switch fell back to high.
+    const dropped = withGovernorDrop(null, RTX, 153, "discrete-modern", "high", 2_073_600, 1_790_000_000_000)!;
+    expect(recordFallback({ ...base, record: dropped, attempted: "medium", built: "high", source: "auto", choice: "auto", now: 1_790_000_001_000 }))
+      .toEqual({ record: null, choice: null, notice: null });
+    // The next hike starts at the governor's medium, not at high again.
+    const at = { cls: "discrete-modern" as const, cores: 16, memoryGb: 32, gpu: RTX, browser: 153, pixels: 2_073_600 };
+    expect(autoTier({ ...at, record: dropped, now: 1_790_000_060_000 })).toEqual({ tier: "medium", probeFrom: null });
+    // Its start ladder builds low when medium will not, a lower finding, which is written.
+    const started = recordFallback({ ...base, record: dropped, attempted: "medium", built: "low", source: "auto", choice: "auto", now: 1_790_000_060_000 });
+    expect(started.record).toEqual({
+      v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
+      verdict: { tier: "low", source: "build", pixels: 2_073_600, at: 1_790_000_060_000 },
+    });
+    expect(autoTier({ ...at, record: started.record, now: 1_790_000_120_000 })).toEqual({ tier: "low", probeFrom: null });
+  });
+
+  it("keeps a holding probe verdict at or below the tier that built, and lowers one above it", () => {
+    const probed = (tier: "high" | "medium"): AutoRecord => ({
+      v: 1, gpu: RTX, cls: "discrete-unknown", browser: 153, attempts: 0,
+      verdict: { tier, source: "probe", pixels: 2_073_600, at: 1_789_999_000_000 },
+    });
+    // An explicit High over Auto's measured medium fell back to medium: nothing new is known, and the choice goes back to Auto.
+    expect(recordFallback({ ...base, cls: "discrete-unknown", record: probed("medium"), attempted: "high", built: "medium", source: "choice", choice: "high" }))
+      .toEqual({ record: null, choice: "auto", notice: "High did not start on this computer, so Settings is back on Auto (Recommended)." });
+    expect(recordFallback({ ...base, cls: "discrete-unknown", record: probed("high"), attempted: "high", built: "medium", source: "auto", choice: "auto" }).record!.verdict)
+      .toEqual({ tier: "medium", source: "build", pixels: 2_073_600, at: 1_790_000_000_000 });
+    // A verdict that no longer holds, or was made for another class, says nothing: the build verdict is written.
+    const old: AutoRecord = { ...probed("medium"), verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_787_000_000_000 } };
+    expect(recordFallback({ ...base, cls: "discrete-unknown", record: old, attempted: "high", built: "medium", source: "auto", choice: "auto" }).record!.verdict!.source).toBe("build");
+    expect(recordFallback({ ...base, record: probed("medium"), attempted: "high", built: "medium", source: "auto", choice: "auto" }).record!.verdict!.source).toBe("build");
   });
 
   it("records nothing under ?tier=, and low when nothing built", () => {

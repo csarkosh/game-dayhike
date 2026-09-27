@@ -36,7 +36,8 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
 import "../../src/sim/passes/index.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { buildProbeScene } from "../../src/game/probeScene.js";
-import { PROBE_SCREEN_LINE, timeIdleCadence } from "../../src/game/probeScreen.js";
+import { readFileSync } from "node:fs";
+import { OVER_PLAY_Z, PROBE_SCREEN_LINE, showProbeScreen, timeIdleCadence } from "../../src/game/probeScreen.js";
 
 const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
 
@@ -57,8 +58,41 @@ describe("buildProbeScene", () => {
 });
 
 describe("the probe screen", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("says what the wait is for", () => {
     expect(PROBE_SCREEN_LINE).toBe("Setting up graphics…");
+  });
+
+  /** The screen's elements, built against a stand-in document. */
+  function shown(layer?: number): { className: string; style: { zIndex: string } }[] {
+    const made: { className: string; style: { zIndex: string } }[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const el = { className: "", textContent: "", style: { zIndex: "" }, setAttribute() {}, remove() {} };
+        made.push(el);
+        return el;
+      },
+    });
+    const container = { append() {} } as unknown as HTMLElement;
+    (layer === undefined ? showProbeScreen(container) : showProbeScreen(container, layer)).dispose();
+    return made.filter((el) => el.className === "probe-screen");
+  }
+
+  it("sits over the probe's canvas, and over the play HUD when the governor raises it", () => {
+    expect(shown().map((el) => el.style.zIndex)).toEqual(["1"]);
+    expect(shown(OVER_PLAY_Z).map((el) => el.style.zIndex)).toEqual(["21"]);
+  });
+
+  it("stays above the touch layer, the interact prompt and the roster", () => {
+    const zOf = (file: string): string[] =>
+      [...readFileSync(new URL(`../../src/game/${file}`, import.meta.url), "utf8").matchAll(/z-index: (\d+);/g)].map((m) => m[1] as string);
+    expect(zOf("touchControls.ts")).toEqual(["15"]);
+    expect(zOf("interactPrompt.ts")).toEqual(["12"]);
+    expect(zOf("roster.ts")).toEqual(["20"]);
+    expect(OVER_PLAY_Z).toBe(21);
   });
 });
 
