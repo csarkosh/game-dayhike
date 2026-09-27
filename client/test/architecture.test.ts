@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Resolve against this file, never process.cwd(). Vitest is launched from the
@@ -124,6 +124,16 @@ describe("layer boundaries", () => {
     // uniformity fault too.
     const found = sourceFiles(SRC).filter((f) => readFileSync(f, "utf8").includes("_createPipelineStageDescriptor"));
     expect(found).toEqual([]);
+  });
+
+  it("keeps `forgetTranslators` for tests: nothing in src/ but its definition names it", () => {
+    // A page keeps its started translators for its life (`loadTranslators`);
+    // dropping them is only for tests, which start them afresh each time.
+    const named = sourceFiles(SRC).flatMap((file) =>
+      [...stripComments(readFileSync(file, "utf8")).matchAll(/\bforgetTranslators\b/g)].map(() => relative(SRC, file)),
+    );
+    expect(named).toEqual(["game/gpuEngine.ts"]);
+    expect(readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8")).toContain("export function forgetTranslators(): void {");
   });
 
   it("keeps the engine choice out of sim/ and net/", () => {

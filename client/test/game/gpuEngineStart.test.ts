@@ -159,6 +159,49 @@ describe("loadTranslators", () => {
     expect(retried).toEqual(["run glslang.js", "call glslang", "run twgsl.js", "call twgsl"]);
   });
 
+  it("drops a start that has not come in within the fetch budget; the next starts afresh, undisturbed", async () => {
+    vi.useFakeTimers();
+    // The first start's WebAssembly never comes, until it is answered late by
+    // hand: its fetches ignore the abort, as a stalled network can.
+    const signals: AbortSignal[] = [];
+    const answerLate: (() => void)[] = [];
+    vi.stubGlobal("fetch", (_url: string, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      return new Promise<Response>((resolve) => answerLate.push(() => resolve(new Response(new Uint8Array(WASM)))));
+    });
+    vi.spyOn(Tools, "LoadScriptAsync").mockImplementation(shippedLoaders([]));
+    const first = loadTranslators();
+    let firstOutcome = "pending";
+    first.then(
+      () => (firstOutcome = "loaded"),
+      (err: unknown) => (firstOutcome = String(err)),
+    );
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(firstOutcome).toBe("pending");
+    expect(loadTranslators()).toBe(first);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(firstOutcome).toBe("Error: the WebGPU translators did not load in 10000 ms");
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, true]);
+    expect(vi.getTimerCount()).toBe(0);
+
+    // The next call starts afresh. The stalled start's answer comes in while
+    // it runs, and neither runs a loader nor takes the slot.
+    vi.restoreAllMocks();
+    stubFetch(WASM);
+    const fresh: string[] = [];
+    vi.spyOn(Tools, "LoadScriptAsync").mockImplementation(shippedLoaders(fresh));
+    const second = loadTranslators();
+    expect(second).not.toBe(first);
+    for (const answer of answerLate) answer();
+    const translators = await second;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(translators.glslang).toMatchObject({ builtBy: "glslang" });
+    expect(translators.twgsl).toMatchObject({ builtBy: "twgsl" });
+    expect(fresh).toEqual(["run glslang.js", "call glslang", "run twgsl.js", "call twgsl"]);
+    expect(loadTranslators()).toBe(second);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("fails at once when a script does not load", async () => {
     vi.useFakeTimers();
     stubFetch(WASM);

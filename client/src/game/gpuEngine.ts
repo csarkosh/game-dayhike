@@ -31,7 +31,13 @@ import glslangJs from "@babylonjs/core/assets/glslang/glslang.js?url";
 import glslangWasm from "@babylonjs/core/assets/glslang/glslang.wasm?url";
 import twgslJs from "@babylonjs/core/assets/twgsl/twgsl.js?url";
 import twgslWasm from "@babylonjs/core/assets/twgsl/twgsl.wasm?url";
-import { createStartupWindow, WEBGPU_REQUIRED_LIMITS, WEBGPU_START_MS, type AdapterReport } from "./engineChoice.js";
+import {
+  createStartupWindow,
+  WEBGPU_FETCH_MS,
+  WEBGPU_REQUIRED_LIMITS,
+  WEBGPU_START_MS,
+  type AdapterReport,
+} from "./engineChoice.js";
 
 /** How Babylon words an uncaptured WebGPU error, which it logs as a warning
  * (`webgpuEngine.pure.js`, the device's `uncapturederror` listener). */
@@ -119,8 +125,8 @@ export type Translators = { glslang: unknown; twgsl: unknown };
 
 /** Fetches `url` whole, so a loader's own fetch of it comes from the HTTP
  * cache (the build serves these immutable), and checks it is WebAssembly. */
-async function prefetchWasm(url: string): Promise<void> {
-  const response = await fetch(url);
+async function prefetchWasm(url: string, signal: AbortSignal): Promise<void> {
+  const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`${url}: ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes[0] !== 0x00 || bytes[1] !== 0x61 || bytes[2] !== 0x73 || bytes[3] !== 0x6d) {
@@ -153,16 +159,18 @@ function startTranslator(name: "glslang" | "twgsl", wasm: string): Promise<unkno
  * fetched first, whole and checked, so the loaders' own fetches come from the
  * cache. Rejects at once on a script that does not load (Babylon's script
  * loader rejects), on a loader that defined nothing, and on a translator that
- * is not WebAssembly.
+ * is not WebAssembly; and after `WEBGPU_FETCH_MS` on a start still under way,
+ * which is then abandoned (`startWithinBudget`).
  */
 export function loadTranslators(): Promise<Translators> {
   // Once per page: every later engine (a renderer swap back onto WebGPU makes
   // a new one) takes the same translators instead of fetching and compiling
   // about 2.6 MB of WebAssembly again. Babylon keeps the first twgsl anyway
-  // (`WebGPUTintWASM._Twgsl` is static). A start that fails is dropped, so the
-  // next attempt starts again; one still pending is shared.
+  // (`WebGPUTintWASM._Twgsl` is static). A start that fails, or has not come
+  // in within the fetch budget, is dropped, so the next attempt starts again;
+  // one still under way is shared.
   if (translatorsStarted === null) {
-    const attempt = startTranslators();
+    const attempt = startWithinBudget(WEBGPU_FETCH_MS);
     translatorsStarted = attempt;
     attempt.catch(() => {
       if (translatorsStarted === attempt) translatorsStarted = null;
@@ -181,11 +189,38 @@ export function forgetTranslators(): void {
   translatorsStarted = null;
 }
 
-async function startTranslators(): Promise<Translators> {
-  await Promise.all([prefetchWasm(glslangWasm), prefetchWasm(twgslWasm)]);
+/**
+ * `startTranslators`, given up after `ms`: this rejects then, and the start is
+ * abandoned, its WebAssembly fetches aborted and nothing after them run. So a
+ * start that stalled and comes in late settles nothing and runs no loader
+ * beside a newer start. The timer goes as soon as either settles.
+ */
+async function startWithinBudget(ms: number): Promise<Translators> {
+  const abandon = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      abandon.abort();
+      reject(new Error(`the WebGPU translators did not load in ${ms} ms`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([startTranslators(abandon.signal), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Fetches and starts the translators, one loader at a time; stops before its
+ * next step once `signal` is aborted. */
+async function startTranslators(signal: AbortSignal): Promise<Translators> {
+  await Promise.all([prefetchWasm(glslangWasm, signal), prefetchWasm(twgslWasm, signal)]);
+  signal.throwIfAborted();
   await Tools.LoadScriptAsync(glslangJs);
+  signal.throwIfAborted();
   const glslang = startTranslator("glslang", glslangWasm);
   await Tools.LoadScriptAsync(twgslJs);
+  signal.throwIfAborted();
   const twgsl = startTranslator("twgsl", twgslWasm);
   const [glslangReady, twgslReady] = await Promise.all([glslang, twgsl]);
   return { glslang: glslangReady, twgsl: twgslReady };

@@ -76,6 +76,9 @@ Where the code differs from the text below, or adds to it:
   makes a new one on every switch onto WebGPU) takes the same ones rather than
   fetching and compiling about 2.6 MB again (Babylon keeps its first twgsl in a
   static anyway); a start that failed is dropped, so the next one tries again.
+  So is one that has not come in within `WEBGPU_FETCH_MS`: it is abandoned
+  there, its WebAssembly fetches aborted and no loader of it run after, so a
+  stalled start holds no later attempt in the page.
 - **A lost device stops Babylon's own restore.** Babylon notifies a loss and
   then starts restoring the engine; since the page reloads (and, once it
   lands, swaps renderers), `watchWebGpu` replaces that restore with nothing on
