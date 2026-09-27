@@ -98,6 +98,8 @@ export type GameHandle = {
    * party goes through the landing page, which tears the game down first.
    */
   attachLobby(lobby: Lobby): void;
+  /** The tier the running renderer was built at, and the engine it draws with. */
+  graphics(): { tier: QualityTier; engine: "webgl2" | "webgpu" };
 };
 
 export type GameOptions = {
@@ -1374,7 +1376,7 @@ function buildGame(
       if (got.fellBack) options.onTierFallback({ attempted: target, built: tier, source });
       else tierSource = source;
       governor.restart(performance.now());
-      console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine webgl2`);
+      console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine ${renderer.engine.isWebGPU ? "webgpu" : "webgl2"}`);
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
       await whenSceneReady(renderer.scene, undefined, renderer.forestReady);
@@ -1461,6 +1463,9 @@ function buildGame(
       if (disposed || admission === null || next.state.role !== "host") return;
       lobby = next;
       admission.attach(next);
+    },
+    graphics() {
+      return { tier, engine: renderer.engine.isWebGPU ? "webgpu" : "webgl2" };
     },
     dispose() {
       disposed = true;

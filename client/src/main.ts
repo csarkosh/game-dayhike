@@ -32,7 +32,7 @@ import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lob
 import { startGame, type GameHandle } from "./app.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { browserEnv, browserMajor, readSignals, type GpuSignals } from "./game/gpuSignals.js";
-import { START_FAILED_LINE, autoPick, startFallbacks, startHike, startupTier, type StartupTier } from "./game/frameProbe.js";
+import { LOADING_LINE, START_FAILED_LINE, autoPick, qualityLine, startFallbacks, startHike, startupTier, type StartupTier } from "./game/frameProbe.js";
 import { createHud } from "./game/hud.js";
 import { probeDeps } from "./game/probeScene.js";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "./game/quality.js";
@@ -53,7 +53,6 @@ import {
 import {
   adapterFromSignals,
   chooseEngine,
-  engineWaitLine,
   failureAction,
   fallbackHolds,
   lateFailureLine,
@@ -553,14 +552,39 @@ function engineEnv(): EngineEnv {
  * counts as WebGPU, which the start then tries.
  */
 function verdictEngineNow(read: GpuSignals): VerdictEngine {
-  const input: EngineInput = {
-    tier: "high",
+  return chooseEngine({ ...engineInput("high"), fits: signalsFit(read) }) === "webgl2" ? "webgl2" : "webgpu";
+}
+
+/** The rule's input for `tier` now: the address's override, the remembered
+ * fallback, the switch; the adapter not yet asked (`resolveWebGpu` asks). */
+function engineInput(tier: QualityTier): EngineInput {
+  return {
+    tier,
     override: parseEngineOverride(location.search),
     remembered: fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),
     on: WEBGPU_ENABLED,
-    fits: signalsFit(read),
+    fits: null,
   };
-  return chooseEngine(input) === "webgl2" ? "webgl2" : "webgpu";
+}
+
+/** The canvas a renderer is built on, and the WebGPU engine made for it, or
+ * null: WebGL2, which the renderer makes itself. */
+type EngineOnCanvas = { canvas: HTMLCanvasElement; made: MadeEngine | null };
+
+/**
+ * The engine the WebGPU rule gives `tier` now, on a fresh canvas: WebGL2
+ * unless the rule, with the adapter from the GPU's signals (`read`), gives
+ * WebGPU and it starts. A start that failed may have taken its canvas's
+ * context for WebGPU, and a canvas holds one kind of context for life, so
+ * WebGL2 then gets another fresh canvas. `current` says whether the page
+ * still wants the engine.
+ */
+async function engineFor(tier: QualityTier, read: GpuSignals, current: () => boolean): Promise<EngineOnCanvas> {
+  const canvas = document.createElement("canvas");
+  const input = engineInput(tier);
+  if (chooseEngine(input) === "webgl2") return { canvas, made: null };
+  const made = await makeWebGpu(canvas, input, read, current);
+  return made !== null ? { canvas, made } : { canvas: document.createElement("canvas"), made: null };
 }
 
 /**
@@ -585,9 +609,9 @@ function rememberFailure(reason: "init" | "pipeline" | "lost", pin = true): { st
  * same request's later answer within the GPU's budget), and only where it fits
  * the translators and the engine, within the fetch's budget and the GPU's,
  * every failure caught. A page without `navigator.gpu` fetches nothing. The
- * URL is pinned only while this render is still the page's.
+ * URL is pinned only while the page still wants the engine (`current`).
  */
-function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput, read: GpuSignals, token: number): Promise<MadeEngine | null> {
+function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput, read: GpuSignals, current: () => boolean): Promise<MadeEngine | null> {
   let translators: Awaited<ReturnType<GpuModule["loadTranslators"]>> | undefined;
   return resolveWebGpu<MadeEngine>(input, {
     available: () => (navigator as { gpu?: unknown }).gpu !== undefined,
@@ -604,7 +628,7 @@ function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput, read: GpuSign
         }),
       };
     },
-    remember: (reason) => void rememberFailure(reason, token === renderToken),
+    remember: (reason) => void rememberFailure(reason, current()),
     warn: (message, detail) => {
       if (detail === undefined) console.warn(message);
       else console.warn(message, detail);
@@ -701,73 +725,39 @@ function render(container: HTMLDivElement): void {
     return;
   }
 
-  // The tier comes first (`frameProbe.ts`): from the GPU's signals, and on a
-  // machine whose GPU the browser will not name, from a probe of a few seconds
-  // behind its own screen. `running` covers the wait, so a render that moves
-  // on stops the probe, and disposes its renderer, before building its own.
-  // "Loading…" shows from the first moment, and a throw anywhere leaves a line
-  // rather than a blank page (`startHike`). The engine is chosen for the tier
-  // decided, and the game launched on it (`launch`).
+  // One chain, in order (`startHike`): "Loading…" from the first moment; the
+  // GPU's signals; the tier (`startupTier`: the address's override, else the
+  // saved choice, else Auto, with its probe behind its own screen on a machine
+  // whose GPU the browser will not name); then the engine the WebGPU rule
+  // gives that tier, on the game's canvas, made only now that the probe is
+  // done ("Loading…" again meanwhile); then the launch. `running` covers the
+  // wait, so a render that moves on stops the probe, and disposes its
+  // renderer, before building its own. A throw anywhere in the chain leaves a
+  // line rather than a blank page.
   const probe = probeDeps(container);
   const cancelled = (): boolean => token !== renderToken;
   running = { dispose: () => probe.abort() };
-  let hikeSignals: GpuSignals | null = null;
-  void startHike({
+  void startHike<EngineOnCanvas>({
     signals: signalsReady,
     current: () => !cancelled(),
     showLoading: () => {
       const line = createHud(container);
-      line.setStatus("Loading…");
+      line.setStatus(LOADING_LINE);
       return line;
     },
-    decide: (read, hideLoading) => {
-      hikeSignals = read;
-      return startupTier(read, { search: location.search, choice: currentChoice(), cancelled, engine: verdictEngineNow(read) }, {
+    decide: (read, hideLoading) =>
+      startupTier(read, { search: location.search, choice: currentChoice(), cancelled, engine: verdictEngineNow(read) }, {
         ...probe,
         showScreen: () => {
           hideLoading();
           return probe.showScreen();
         },
-      });
-    },
-    build: (decided) => {
-      const read = hikeSignals;
-      if (read === null) throw new Error("the GPU's signals were not read");
-      const canvas = document.createElement("canvas");
-      container.appendChild(canvas);
-      const input: EngineInput = {
-        tier: decided.tier,
-        override: parseEngineOverride(location.search),
-        remembered: fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),
-        on: WEBGPU_ENABLED,
-        fits: null,
-      };
-      const choice = chooseEngine(input);
-      if (choice === "webgl2") {
-        launch(canvas, route.token, decided, null);
-        return;
-      }
-      // WebGPU could be the answer, which takes the adapter and a moment: the
-      // page says Loading… over the canvas meanwhile. A render that superseded
-      // this one while the engine was made wins.
-      const wait = createHud(container);
-      wait.setStatus(engineWaitLine(choice));
-      void makeWebGpu(canvas, input, read, token).then((made) => {
-        wait.dispose();
-        if (token !== renderToken) {
-          made?.engine.dispose();
-          return;
-        }
-        if (made !== null) {
-          launch(canvas, route.token, decided, made);
-          return;
-        }
-        // A start that failed may have taken this canvas's context for WebGPU,
-        // and a canvas holds one kind of context for life.
-        const fresh = document.createElement("canvas");
-        canvas.replaceWith(fresh);
-        launch(fresh, route.token, decided, null);
-      });
+      }),
+    engine: (decided, read) => engineFor(decided.tier, read, () => !cancelled()),
+    discard: (onCanvas) => onCanvas.made?.engine.dispose(),
+    build: (decided, onCanvas) => {
+      container.appendChild(onCanvas.canvas);
+      launch(onCanvas, route.token, decided);
     },
     fail: (error) => {
       console.error("The game could not start.", error);
@@ -789,12 +779,7 @@ function render(container: HTMLDivElement): void {
  * lost device gets one retry on WebGPU). A throw on WebGL2 is not the
  * engine's and goes up as it always has.
  */
-function launch(
-  canvas: HTMLCanvasElement,
-  worldToken: string,
-  decided: StartupTier,
-  made: MadeEngine | null,
-): void {
+function launch({ canvas, made }: EngineOnCanvas, worldToken: string, decided: StartupTier): void {
   let stopWatching = (): void => undefined;
   const onGpuFailure = (reason: "pipeline" | "lost", inStartup: boolean): void => {
     // Read before the record: a refused one pins `engine=webgl2` in the URL.
@@ -845,6 +830,10 @@ function launch(
     return;
   }
   game = handle;
+  // The tier's line, once the engine in use is known: the tier that built
+  // (the class's start tier or low, where the one decided did not).
+  const built = handle.graphics();
+  console.info(qualityLine(built.tier, built.tier === decided.tier ? decided.source : "fallback", decided.cls, built.engine));
   running =
     made === null
       ? handle

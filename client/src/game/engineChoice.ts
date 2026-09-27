@@ -69,14 +69,6 @@ export const WEBGPU_FETCH_MS = 10_000;
  * (`init`). */
 export const WEBGPU_START_MS = 10_000;
 
-/** What the page shows while the engine is chosen: the landing's own word. */
-const ENGINE_WAIT_LINE = "Loading…";
-
-/** The line to show over the canvas for a choice, or null where there is no
- * wait: only a `"probe"` answer waits, for the adapter and perhaps the engine. */
-export function engineWaitLine(choice: EngineName | "probe"): string | null {
-  return choice === "probe" ? ENGINE_WAIT_LINE : null;
-}
 /** The startup window closes once no effect has compiled for this long after
  * the first frame… */
 export const STARTUP_QUIET_MS = 10_000;

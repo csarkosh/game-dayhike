@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { landingModel } from "../../src/game/landingModel.js";
 import {
   adapterFits, adapterFromSignals, chooseEngine, signalsFit, createStartupWindow, failureAction, fallbackHolds, featuresToRequest,
   lateFailureLine, parseEngineOverride, readFallback, recordFailure, resolveWebGpu,
@@ -7,7 +6,7 @@ import {
   type AdapterReport, type WebGpuSteps,
   FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
   NOTICE_SWITCHED, STARTUP_MAX_MS, STARTUP_QUIET_MS, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
-  WEBGPU_START_MS, WEBGPU_TIERS, engineWaitLine,
+  WEBGPU_START_MS, WEBGPU_TIERS,
 } from "../../src/game/engineChoice.js";
 
 describe("the engine override", () => {
@@ -272,16 +271,6 @@ describe("the line a late GPU error logs", () => {
       .toBe("WebGPU: a GPU error after startup; storage refused the record, so this tab's URL now asks for WebGL2.");
     expect(lateFailureLine(false, "webgpu"))
       .toBe("WebGPU: a GPU error after startup; storage refused the record, so this tab's URL now asks for WebGL2.");
-  });
-});
-
-describe("the wait while the engine is chosen", () => {
-  it("says Loading…, the word the landing's Play button already showed, only where the choice waits", () => {
-    expect(engineWaitLine("probe")).toBe("Loading…");
-    expect(engineWaitLine("webgl2")).toBeNull();
-    expect(engineWaitLine("webgpu")).toBeNull();
-    const launching = landingModel({ desktop: false, host: "darwin-arm64", latest: null, launching: true });
-    expect(launching.play?.label).toBe(engineWaitLine("probe"));
   });
 });
 

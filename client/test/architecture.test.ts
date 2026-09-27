@@ -165,6 +165,18 @@ describe("layer boundaries", () => {
     expect(naming(/\bIsSupportedAsync\b/g)).toEqual([]);
   });
 
+  it("starts a hike through one chain: one render token, the tier decided before the engine, one catch", () => {
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    expect([...main.matchAll(/\blet renderToken\b/g)].length).toBe(1);
+    // The tier comes from the start's decision (`startupTier`), never from
+    // the older rule, and the engine from the tier decided.
+    expect(main).not.toContain("detectTier");
+    expect([...main.matchAll(/\bstartHike</g)].length).toBe(1);
+    expect(main).toContain("engine: (decided, read) => engineFor(decided.tier, read, () => !cancelled()),");
+    // Nothing of the start hangs off a promise outside the chain's catch.
+    expect(main).not.toMatch(/makeWebGpu\([^)]*\)\.then\(/);
+  });
+
   it("keeps the quality modules out of sim/ and net/", () => {
     const quality = /game\/(quality|gpuSignals|gpuClass|tierChoice|frameProbe|governor|rendererSwap|settings)(\.js)?$/;
     expect(violations(join(SRC, "sim"), [quality])).toEqual([]);

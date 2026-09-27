@@ -15,9 +15,12 @@ import {
   readIntervals,
   runProbe,
   startupTier,
+  qualityLine,
+  LOADING_LINE,
   type StartupDeps,
 } from "../../src/game/frameProbe.js";
 import type { GpuSignals } from "../../src/game/gpuSignals.js";
+import { landingModel } from "../../src/game/landingModel.js";
 import type { ProbeReading, QualityTier } from "../../src/game/quality.js";
 import { readAutoRecord, writeAutoRecord } from "../../src/game/tierChoice.js";
 
@@ -219,10 +222,8 @@ describe("startupTier", () => {
     expect(t.screens()).toBe(1);
     expect(t.open()).toBe(0);
     expect(t.timer()).toBe(null);
-    expect(t.lines).toEqual([
-      "quality probe: verdict medium (apple-unknown)",
-      "quality: medium (auto, apple-unknown), engine webgl2",
-    ]);
+    // The tier's own line is the launch's, once the engine is known (`qualityLine`).
+    expect(t.lines).toEqual(["quality probe: verdict medium (apple-unknown)"]);
     expect(readAutoRecord(t.storage)!.verdict!.tier).toBe("medium");
   });
 
@@ -239,7 +240,7 @@ describe("startupTier", () => {
     const t = fakes(() => reading("high", 16.7));
     expect(await startupTier(M4, page(), t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-base" });
     expect(t.steps).toEqual([]);
-    expect(t.lines).toEqual(["quality: medium (auto, apple-base), engine webgl2"]);
+    expect(t.lines).toEqual([]);
   });
 
   it("probes any class from ?probe=, and never under ?tier=", async () => {
@@ -308,7 +309,7 @@ describe("startupTier", () => {
     expect(await startupTier(SAFARI, page("", "low"), chosen.deps)).toEqual({ tier: "low", source: "choice", cls: "apple-unknown" });
     expect(await startupTier(SAFARI, page("?probe=high", "high"), chosen.deps)).toEqual({ tier: "high", source: "choice", cls: "apple-unknown" });
     expect(chosen.steps).toEqual([]);
-    expect(chosen.lines).toEqual(["quality: low (choice, apple-unknown), engine webgl2", "quality: high (choice, apple-unknown), engine webgl2"]);
+    expect(chosen.lines).toEqual([]);
     const overridden = fakes(() => reading("high", 16.7));
     expect(await startupTier(SAFARI, page("?tier=medium", "low"), overridden.deps)).toEqual({ tier: "medium", source: "override", cls: "apple-unknown" });
   });
@@ -441,10 +442,10 @@ describe("startHike", () => {
   };
   const DECIDED = { tier: "medium" as const, source: "auto" as const, cls: "apple-unknown" as const };
 
-  function page(over: Partial<Parameters<typeof startHike>[0]> = {}) {
+  function page(over: Partial<Parameters<typeof startHike<string>>[0]> = {}) {
     const events: string[] = [];
     let current = true;
-    const deps: Parameters<typeof startHike>[0] = {
+    const deps: Parameters<typeof startHike<string>>[0] = {
       signals: Promise.resolve(SAFARI),
       current: () => current,
       showLoading: () => {
@@ -455,24 +456,29 @@ describe("startHike", () => {
         events.push("decide");
         return DECIDED;
       },
-      build: (decided) => void events.push(`build ${decided.tier}`),
+      engine: async (decided) => {
+        events.push(`engine ${decided.tier}`);
+        return "webgl2";
+      },
+      discard: (engine) => void events.push(`discard ${engine}`),
+      build: (decided, engine) => void events.push(`build ${decided.tier} on ${engine}`),
       fail: (error) => void events.push(`fail ${String(error)}`),
       ...over,
     };
     return { deps, events, leave: () => { current = false; } };
   }
 
-  it("says Loading… from the start of the wait until the hike is built", async () => {
+  it("says Loading… from the start of the wait until the hike is built: the signals, the tier, then the engine", async () => {
     let signal: (s: GpuSignals) => void = () => undefined;
     const p = page({ signals: new Promise((resolve) => { signal = resolve; }) });
     const started = startHike(p.deps);
     expect(p.events).toEqual(["loading"]);
     signal(SAFARI);
     await started;
-    expect(p.events).toEqual(["loading", "decide", "loading gone", "build medium"]);
+    expect(p.events).toEqual(["loading", "decide", "engine medium", "loading gone", "build medium on webgl2"]);
   });
 
-  it("hands Loading… over to the probe's screen", async () => {
+  it("hands Loading… over to the probe's screen, and says it again while the engine is made", async () => {
     const p = page({
       decide: async (_signals, hideLoading) => {
         hideLoading();
@@ -481,25 +487,65 @@ describe("startHike", () => {
       },
     });
     await startHike(p.deps);
-    expect(p.events).toEqual(["loading", "loading gone", "probe screen", "build medium"]);
+    expect(p.events).toEqual(["loading", "loading gone", "probe screen", "loading", "engine medium", "loading gone", "build medium on webgl2"]);
   });
 
-  it("says the hike could not start when building it throws, rather than leaving a blank page", async () => {
-    const p = page({ build: () => { throw new Error("no WebGL2"); } });
-    await startHike(p.deps);
-    expect(p.events).toEqual(["loading", "decide", "loading gone", "fail Error: no WebGL2"]);
-    expect(START_FAILED_LINE).toBe("This browser could not start the game.");
-  });
-
-  it("builds nothing and says nothing once the page has moved on", async () => {
+  it("chooses the engine for the tier decided, after it is decided, from the signals", async () => {
+    const seen: string[] = [];
     const p = page({
-      decide: async () => {
-        p.leave();
-        return DECIDED;
+      decide: async () => ({ ...DECIDED, tier: "high" }),
+      engine: async (decided, signals) => {
+        seen.push(`${decided.tier} ${signals.renderer}`);
+        return "webgpu";
       },
     });
     await startHike(p.deps);
-    expect(p.events).toEqual(["loading", "loading gone"]);
+    expect(seen).toEqual(["high Apple GPU"]);
+    expect(p.events.at(-1)).toBe("build high on webgpu");
+  });
+
+  it("says the hike could not start when the engine or the build throws, rather than leaving a blank page", async () => {
+    const building = page({ build: () => { throw new Error("no WebGL2"); } });
+    await startHike(building.deps);
+    expect(building.events).toEqual(["loading", "decide", "engine medium", "loading gone", "fail Error: no WebGL2"]);
+    const engine = page({ engine: async () => { throw new Error("no canvas"); } });
+    await startHike(engine.deps);
+    expect(engine.events).toEqual(["loading", "decide", "loading gone", "fail Error: no canvas"]);
+    expect(START_FAILED_LINE).toBe("This browser could not start the game.");
+  });
+
+  it("builds nothing and says nothing once the page has moved on, and lets go of an engine made meanwhile", async () => {
+    const decided = page({
+      decide: async () => {
+        decided.leave();
+        return DECIDED;
+      },
+    });
+    await startHike(decided.deps);
+    expect(decided.events).toEqual(["loading", "loading gone"]);
+    const made = page({
+      engine: async () => {
+        made.leave();
+        return "webgpu";
+      },
+    });
+    await startHike(made.deps);
+    expect(made.events).toEqual(["loading", "decide", "loading gone", "discard webgpu"]);
+  });
+});
+
+describe("the start's wait line", () => {
+  it("is Loading…, the word the landing's Play button shows as the hike starts", () => {
+    expect(LOADING_LINE).toBe("Loading…");
+    const launching = landingModel({ desktop: false, host: "darwin-arm64", latest: null, launching: true });
+    expect(launching.play?.label).toBe(LOADING_LINE);
+  });
+});
+
+describe("the quality line", () => {
+  it("names the tier, where it came from, the class and the engine in use", () => {
+    expect(qualityLine("medium", "auto", "apple-unknown", "webgl2")).toBe("quality: medium (auto, apple-unknown), engine webgl2");
+    expect(qualityLine("high", "choice", "apple-base", "webgpu")).toBe("quality: high (choice, apple-base), engine webgpu");
   });
 });
 

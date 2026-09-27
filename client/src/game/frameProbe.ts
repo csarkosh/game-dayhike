@@ -331,7 +331,8 @@ export function autoPick(
  * written. The probe itself is bounded at `PROBE_MAX_MS`, and everything stops
  * at once when `opts.cancelled` says the page has moved on. A probe's verdict
  * is never taken above what the class may take on this machine. Logs one line
- * for the probe's outcome and one for the tier.
+ * for the probe's outcome; the tier's own line is the launch's, once the
+ * engine is known (`qualityLine`).
  */
 export async function startupTier(
   signals: GpuSignals,
@@ -355,8 +356,13 @@ export async function startupTier(
       screen.dispose();
     }
   }
-  deps.log(`quality: ${tier} (${decided.source}, ${cls}), engine webgl2`);
   return { tier, source: decided.source, cls };
+}
+
+/** The line a hike logs for its tier once it is launched, with the engine
+ * actually in use: `quality: medium (auto, apple-unknown), engine webgl2`. */
+export function qualityLine(tier: QualityTier, source: TierSource | "fallback", cls: GpuClass, engine: VerdictEngine): string {
+  return `quality: ${tier} (${source}, ${cls}), engine ${engine}`;
 }
 
 /**
@@ -415,20 +421,30 @@ export function startFallbacks(tier: QualityTier, cls: GpuClass, cores: number |
   return [...new Set<QualityTier>([start, "low"])].filter((t) => RANK[t] < RANK[tier]);
 }
 
+/** The line over the game's container while a hike starts: the landing's
+ * own word, which its Play button showed a moment before. */
+export const LOADING_LINE = "Loading…";
+
 /** The line over the game's container when the hike cannot be started. */
 export const START_FAILED_LINE = "This browser could not start the game.";
 
-/** What starting a hike needs of the page. */
-export type HikeStartDeps = {
+/** What starting a hike needs of the page; `E` is the engine made for it. */
+export type HikeStartDeps<E> = {
   signals: Promise<GpuSignals>;
   /** Whether this start is still the page's. */
   current(): boolean;
-  /** "Loading…" over the container, from the start of the wait. */
+  /** "Loading…" over the container: from the start of the wait, and again
+   * while the engine is made after the probe's screen has gone. */
   showLoading(): { dispose(): void };
   /** The tier (`startupTier`); `hideLoading` gives way to the probe's screen. */
   decide(signals: GpuSignals, hideLoading: () => void): Promise<StartupTier>;
-  /** Builds the hike at the tier decided. */
-  build(decided: StartupTier): void;
+  /** The engine the WebGPU rule gives the tier decided, made for the game's
+   * canvas, which is created here, after the probe. */
+  engine(decided: StartupTier, signals: GpuSignals): Promise<E>;
+  /** Lets go of an engine made for a start the page has since left. */
+  discard(engine: E): void;
+  /** Builds the hike at the tier decided, on the engine made for it. */
+  build(decided: StartupTier, engine: E): void;
   /** The hike could not start: says so over the container. */
   fail(error: unknown): void;
 };
@@ -436,12 +452,14 @@ export type HikeStartDeps = {
 /**
  * The page's start of a hike, in order: "Loading…" from the first moment, the
  * signals, the tier (the probe's screen taking over from the line when there
- * is one), then the build, with the line gone in the same task so nothing
- * blank shows between. A throw anywhere is answered with a line, never a
- * blank page; a start the page has moved on from builds and says nothing.
+ * is one), then the engine for that tier ("Loading…" again, if the probe's
+ * screen had taken over), then the build, with the line gone in the same task
+ * so nothing blank shows between. One catch for all of it: a throw anywhere
+ * is answered with a line, never a blank page. A start the page has moved on
+ * from builds nothing, says nothing, and lets go of an engine made meanwhile.
  */
-export async function startHike(deps: HikeStartDeps): Promise<void> {
-  const loading = deps.showLoading();
+export async function startHike<E>(deps: HikeStartDeps<E>): Promise<void> {
+  let loading = deps.showLoading();
   let shown = true;
   const hide = (): void => {
     if (!shown) return;
@@ -453,8 +471,18 @@ export async function startHike(deps: HikeStartDeps): Promise<void> {
     if (!deps.current()) return;
     const decided = await deps.decide(signals, hide);
     if (!deps.current()) return;
+    if (!shown) {
+      loading = deps.showLoading();
+      shown = true;
+    }
+    const engine = await deps.engine(decided, signals);
+    if (!deps.current()) {
+      hide();
+      deps.discard(engine);
+      return;
+    }
     hide();
-    deps.build(decided);
+    deps.build(decided, engine);
   } catch (error) {
     hide();
     if (deps.current()) deps.fail(error);
