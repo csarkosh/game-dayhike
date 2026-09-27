@@ -36,7 +36,7 @@ Peers on different tiers share one world (§11).
 | The signals | One function, `gatherSignals` (`gpuSignals.ts`), reads the WebGL renderer string (`RENDERER`, else `UNMASKED_RENDERER_WEBGL`, from a throwaway WebGL2 context it then loses), the high-performance WebGPU adapter's `info` and limits (one `requestAdapter`, shared with the engine rule), the reported cores and memory, and whether the device is mobile. Every one may be missing; the result says which (§5.1) |
 | The classes | The signals map to one of thirteen GPU classes by an ordered rule table (`gpuClass.ts`, §5.2): mobile, software, three Apple classes by what the string names, discrete and integrated by vendor and generation, and "unknown" classes where a browser buckets or masks the string. Cores and memory only cap: two or fewer of either caps the tier at low |
 | Class to tier | Each class has a **start** tier, a **ceiling**, and whether it is **probed** (§6.1). Named classes go straight to their tier; the unknown ones start one step down and are probed from their ceiling |
-| The probe | Only for a probed class with no valid verdict, before the game is built: the standard canopy pose (seed `atmo`, mist, noon) rendered behind a "Setting up graphics…" screen on the player's own window, at the ceiling, 60 frames discarded and 120 measured after the scene is ready; the tier **holds** when the mean frame interval is ≤ **17.5 ms**; a miss at high measures medium once, a miss at medium settles on low. Bounded at 30 s; three attempts per GPU (§7) |
+| The probe | Only for a probed class with no valid verdict, before the game is built: the standard canopy pose (seed `atmo`, mist, noon) rendered behind a "Setting up graphics…" screen on the player's own window, at the ceiling, 60 frames discarded and 120 measured after the scene is ready; the tier **holds** when the mean frame interval is ≤ **17.5 ms**; a miss at high measures medium once, a miss at medium settles on low. Bounded at 30 s; three attempts per GPU. Skipped where a WebGL2 step would link every shader on the page's thread (§7) |
 | The verdict | `localStorage["dayhike.quality.auto"]`: the tier, whether a probe or the governor set it, the GPU it was measured on, the browser major, the window area and the time. Holds for 30 days on the same GPU and browser, a governor verdict for 7; a probe verdict only while the window is at most 1.5 times the area it was measured at (§6.2) |
 | The setting | A **Settings** entry on the title screen (Play → Downloads → **Settings** → Credits) and on the pause screen (Resume → **Settings** → Exit), both opening one shared Settings screen: **Auto (Recommended)** (the default), **High**, **Medium**, **Low**, with a line naming what Auto picked. Saved in `localStorage["dayhike.quality"]`; a storage that throws means Auto, and a choice made then lasts the page (§8) |
 | Applying it | On the title screen a choice takes effect when Play starts the hike. On the pause screen a choice is applied by **Apply**, live, without a reload: the renderer is disposed and rebuilt on a fresh canvas behind an "Applying…" screen while the session, the data channels, the player's state and the HUD carry on (§9) |
@@ -223,6 +223,7 @@ type GpuSignals = {
   adapter: AdapterInfo | null;      // null without navigator.gpu, an adapter, or within 2 s
   limits: Readonly<Record<string, number>> | null;  // the same adapter's limits, for the engine rule
   adapterStatus: "ok" | "none" | "rejected" | "timed-out";  // why adapter is null, or "ok"
+  parallelCompile: boolean | null;  // KHR_parallel_shader_compile on the WebGL2 context, or null without one
   cores: number | null;             // null where not reported
   memoryGb: number | null;
   mobile: boolean;
@@ -234,8 +235,10 @@ type GpuSignals = {
   is taken as it is unless it reads `WebKit WebGL` (Chrome and Safari's masked
   value); only then is `WEBGL_debug_renderer_info` asked for, so Firefox, where
   `RENDERER` already carries the sanitised string, never logs the extension's
-  deprecation warning. The context is lost at once with `WEBGL_lose_context`, so
-  it does not count against the browser's live-context limit.
+  deprecation warning. The same context is asked for
+  `KHR_parallel_shader_compile` (`parallelCompile`, §7.1). The context is then
+  lost with `WEBGL_lose_context`, so it does not count against the browser's
+  live-context limit.
 - **Adapter.** `navigator.gpu.requestAdapter({ powerPreference:
   "high-performance" })`, raced against 2 s; `adapter.info` (`vendor`,
   `architecture`, `device`, `description`, `isFallbackAdapter`, with the legacy
@@ -431,6 +434,17 @@ route, **before** `startGame`: nothing of the hike exists yet, so it cannot
 stall a session or pop anything a player is looking at, and a follower simply
 arrives a few seconds after the host.
 
+It is **skipped**, before its screen is shown, where its step would draw with
+WebGL2 and the browser does not expose `KHR_parallel_shader_compile`
+(`probeStepCanSettle`): the class's start tier, nothing written, no attempt
+counted, one log line (§7.7); a verdict that holds is still honoured, and
+`?probe=` still forces the probe. Firefox 156 on the reference machine exposes
+no such extension, so every program links on the page's thread: 73 link-status
+reads blocked for 169–337 ms each, 14.4 s in all, the step never saw 1.5 s
+without a compile inside its 15 s, and the screen stayed up about 19 s on each
+of three hikes for no verdict. The governor and the Settings screen remain that
+player's ways to another tier.
+
 ### 7.2 What it renders
 
 The canopy pose of every rendering note: seed `atmo` (627994160), the default
@@ -521,7 +535,9 @@ One `console.info` per measured tier and one for the outcome:
 `quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses`
 and `quality probe: verdict medium (apple-unknown)`, or, with no verdict,
 `quality probe: skipped, the page draws below 60 Hz (33.3 ms a frame); starting at medium (apple-unknown)`
-(or `no verdict`, or `not run, the page moved on`).
+(or `no verdict`, or `not run, the page moved on`). Where the probe is skipped
+for compiling on the page's thread (§7.1), before any screen:
+`quality probe: skipped, this browser compiles shaders on the page's thread; starting at medium (apple-unknown)`.
 
 ### 7.8 With the WebGPU rule
 
@@ -1108,9 +1124,14 @@ nothing is written, and the hike goes on at the tier it had.
 
 ### 13.6 The rest
 
-- Safari and Firefox on the reference machine: the class (`apple-unknown`), the
-  probe on the first hike, its verdict, and the second hike starting at it with
-  no probe. Not a frame gate: the pages cannot be run headless there.
+- Safari on the reference machine: the class (`apple-unknown`), the probe on the
+  first hike, its verdict, and the second hike starting at it with no probe.
+  Not a frame gate: the pages cannot be run headless there.
+- Firefox on the reference machine: the class (`apple-unknown`); no "Setting up
+  graphics…" screen; the log line `quality probe: skipped, this browser compiles
+  shaders on the page's thread; starting at medium (apple-unknown)` and the
+  hike at medium; nothing stored under `dayhike.quality.auto`; the second hike
+  the same (§7.1).
 - The unit suite: the matrix of §6.4, the probe's steps, the governor's windows,
   the model tests of §8, the swap tests of §9, the determinism pin of §11.
 
