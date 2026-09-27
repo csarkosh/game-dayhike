@@ -26,9 +26,13 @@
  * on a given engine that fails is that engine's fault (`engineFailed`, which
  * the caller remembers so the rule gives WebGL2 from then on), and its tier is
  * built again on WebGL2 before the ladder goes down a tier. Every later rung
- * is WebGL2, which is the rule's engine for it: the rule gives WebGL2 to a
- * tier below one it gave WebGL2, and to every tier once a failure is
- * remembered (`engineChoice.test.ts`).
+ * is WebGL2, the last one always. That is the rule's engine for each of them
+ * but one: the rule gives WebGL2 to a tier below one it gave WebGL2, and to
+ * every tier once a failure is remembered (`engineChoice.test.ts`). The one
+ * exception is a switch down to low whose WebGL2 build fails: its ladder is
+ * low, then the tier that was running, and that last rung, which the rule
+ * may give WebGPU, is built on WebGL2, the engine least likely to fail and
+ * one the swap need not wait for.
  *
  * **Only a standing engine is listened to.** The old engine's watcher is
  * taken off before anything of it is disposed (`unwatch`), so a disposed
