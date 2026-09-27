@@ -160,6 +160,137 @@ describe("input suppression", () => {
   });
 });
 
+describe("presses aimed at a form control", () => {
+  // A select's open list, the command bar's field and the like take the
+  // keyboard and the mouse for themselves, and can keep the matching release
+  // from the page: a press recorded there could stay held after Resume.
+  const controls = [
+    { tagName: "SELECT" },
+    { tagName: "OPTION" },
+    { tagName: "INPUT" },
+    { tagName: "TEXTAREA" },
+    { tagName: "DIV", isContentEditable: true },
+  ];
+  const canvasTarget = { tagName: "CANVAS", isContentEditable: false };
+
+  it("are never game presses, even when their release never comes", () => {
+    for (const target of controls) {
+      listeners.clear();
+      const { input } = sampler();
+      input.setSuppressed(true);
+      fire("keydown", { code: "Space", target, preventDefault() {} });
+      fire("keydown", { code: "KeyW", target, preventDefault() {} });
+      fire("mousedown", { button: 0, target });
+      input.setSuppressed(false);
+      expect(input.keys.has("Space")).toBe(false);
+      expect(input.keys.has("KeyW")).toBe(false);
+      const cmd = input.sample(1);
+      expect(cmd.buttons).toBe(0);
+      expect(cmd.moveZ).toBe(0);
+    }
+  });
+
+  it("are not swallowed either: Space and Tab typed into one keep their default", () => {
+    const { input } = sampler();
+    expect(input.suppressed).toBe(false);
+    let prevented = 0;
+    for (const code of ["Space", "Tab"]) fire("keydown", { code, target: { tagName: "INPUT" }, preventDefault: () => (prevented += 1) });
+    expect(prevented).toBe(0);
+  });
+
+  it("do not stop a key or button pressed in the game from being released over one", () => {
+    const { input } = sampler();
+    fire("keydown", { code: "KeyW", target: canvasTarget, preventDefault() {} });
+    fire("mousedown", { button: 0, target: canvasTarget });
+    expect(input.sample(1).moveZ).toBe(1);
+    expect(input.sample(2).buttons).toBe(1);
+    fire("keyup", { code: "KeyW", target: { tagName: "SELECT" } });
+    fire("mouseup", { button: 0, target: { tagName: "SELECT" } });
+    expect(input.keys.has("KeyW")).toBe(false);
+    const cmd = input.sample(3);
+    expect(cmd.moveZ).toBe(0);
+    expect(cmd.buttons).toBe(0);
+  });
+
+  it("leave a key pressed in the game tracked through the menu, as before", () => {
+    const { input } = sampler();
+    fire("keydown", { code: "KeyW", target: canvasTarget, preventDefault() {} });
+    input.setSuppressed(true);
+    fire("keydown", { code: "KeyS", target: { tagName: "SELECT" }, preventDefault() {} });
+    input.setSuppressed(false);
+    expect(input.sample(1).moveZ).toBe(1);
+  });
+});
+
+describe("presses on a form control during play", () => {
+  // A form control can hold the focus into play (the roster's invite field,
+  // clicked to copy the link, then Escape to resume): while play is engaged,
+  // every press is the game's, whatever has the focus.
+  const field = { tagName: "INPUT", isContentEditable: false };
+
+  it("move the player while the pointer is locked", () => {
+    const { input, canvas } = sampler();
+    lockPointer(canvas);
+    fire("keydown", { code: "KeyW", target: field, preventDefault() {} });
+    fire("mousedown", { button: 0, target: field });
+    const cmd = input.sample(1);
+    expect(cmd.moveZ).toBe(1);
+    expect(cmd.buttons).toBe(1);
+  });
+
+  it("move the player while touch play is engaged", () => {
+    const { input } = sampler({ touch: fakeTouch().source, touchMode: true });
+    expect(input.engaged).toBe(true);
+    fire("keydown", { code: "KeyW", target: field, preventDefault() {} });
+    expect(input.sample(1).moveZ).toBe(1);
+  });
+
+  it("let Escape release the lock, as it does in the desktop shell", () => {
+    const { canvas } = sampler();
+    const doc = (globalThis as Record<string, unknown>).document as { exitPointerLock?: () => void };
+    let exits = 0;
+    doc.exitPointerLock = () => {
+      exits += 1;
+    };
+    lockPointer(canvas);
+    fire("keydown", { code: "Escape", target: field, preventDefault() {} });
+    expect(exits).toBe(1);
+  });
+});
+
+describe("taking the controls back", () => {
+  /** A focused element on the fake document, counting its blurs. */
+  function focused(tagName: string) {
+    let blurs = 0;
+    const el = { tagName, isContentEditable: false, blur: () => (blurs += 1) };
+    ((globalThis as Record<string, unknown>).document as { activeElement: unknown }).activeElement = el;
+    return { blurs: () => blurs };
+  }
+
+  it("takes the focus off a form control when the pointer is locked again", () => {
+    const { canvas } = sampler();
+    const invite = focused("INPUT");
+    lockPointer(canvas);
+    expect(invite.blurs()).toBe(1);
+  });
+
+  it("takes the focus off a form control when touch play engages again", () => {
+    const { input } = sampler({ touch: fakeTouch().source, touchMode: true });
+    input.disengage();
+    const invite = focused("INPUT");
+    input.engage();
+    expect(input.engaged).toBe(true);
+    expect(invite.blurs()).toBe(1);
+  });
+
+  it("leaves the focus on anything that is not a form control", () => {
+    const { canvas } = sampler();
+    const resume = focused("BUTTON");
+    lockPointer(canvas);
+    expect(resume.blurs()).toBe(0);
+  });
+});
+
 function fakeTouch(over: Partial<{ moveX: number; moveZ: number; yaw: number; pitch: number; buttons: number; sprinting: boolean }> = {}) {
   const s = { moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, sprinting: false, ...over };
   let looks = 0;
