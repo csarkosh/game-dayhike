@@ -1,0 +1,187 @@
+name: test
+
+# The same gates as `npm run typecheck && npm run lint && npm test`, split into
+# jobs so each one reports on its own, with the client suite sharded across
+# runners: unsharded it is the longest gate by far. The commands are the root
+# package.json's, unchanged, so a local run and this one test the same thing.
+
+on:
+  push:
+    branches: [main, "worktree-**", "ci/**"]
+  pull_request:
+  workflow_dispatch:
+
+# One run per ref: a newer push to a branch or pull request cancels the older
+# run, whose result nobody will read. On main every commit gets its own group
+# (keyed by sha), so no run there is ever cancelled or left pending behind a
+# newer one; a shared group would still drop a queued run when a third arrives.
+concurrency:
+  group: test-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+# Read the repository and nothing else: no job writes to it, and none needs a
+# secret, so a pull request from a fork runs exactly what a push does.
+permissions:
+  contents: read
+
+env:
+  # The 22.x line the development machine runs; package.json's engines says >=22.13.0.
+  NODE_VERSION: 22.13.1
+
+jobs:
+  # The shipped models, textures and sounds are Git LFS objects and the client
+  # suite reads them. LFS bandwidth on the account is capped per month, so the
+  # objects come from the Actions cache, keyed on the object ids themselves:
+  # they are downloaded from LFS once per new set of ids, never per run. This
+  # job fills the cache on a miss; on a hit it only looks the key up. Doing it
+  # once here, before the shards start, keeps a cold run to ONE download rather
+  # than one per shard.
+  lfs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      # lfs: false leaves pointer files in the tree; nothing is downloaded yet.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+      - id: key
+        name: key the cache on the lfs object ids
+        # Only the ids (column 1): the second column is `*` or `-` depending on
+        # whether the file is checked out, so hashing whole lines would change
+        # the key between a cold and a warm tree.
+        run: echo "key=lfs-v1-$(git lfs ls-files -l | cut -d' ' -f1 | sort | sha256sum | cut -c1-64)" >> "$GITHUB_OUTPUT"
+      - id: lookup
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git/lfs/objects
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+      # The only step in the workflow that can reach LFS, and it runs only on a
+      # miss. `fetch` is the download half of `pull`: this job needs the objects
+      # in .git/lfs/objects for the cache, not the files in the tree.
+      - name: download lfs objects (cache miss only)
+        if: steps.lookup.outputs.cache-hit != 'true'
+        run: git lfs fetch
+      - if: steps.lookup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git/lfs/objects
+          key: ${{ steps.key.outputs.key }}
+
+  static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # typecheck and lint read no LFS object, so this job skips them entirely.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - id: install
+        run: npm ci
+      - run: npm run typecheck
+      # Lint runs even when typecheck fails, so one run reports both.
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run lint
+
+  server-and-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Neither suite reads an LFS object.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - id: install
+        run: npm ci
+      - run: npx vitest run --root server
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npx vitest run --root tools
+
+  client:
+    needs: lfs
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      # Every shard reports, so one run shows every failing file, not the first.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: client (${{ matrix.shard }}/${{ strategy.job-total }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git/lfs/objects
+          key: ${{ needs.lfs.outputs.key }}
+          fail-on-cache-miss: true
+      # `git lfs checkout` writes the files from .git/lfs/objects and never goes
+      # to the network. Any file still a pointer afterwards means the cache
+      # lacked its object: fail here, naming it, not in whichever test reads it.
+      - name: check out lfs files from the cache
+        run: |
+          echo "lfs pointers before checkout: $(git lfs ls-files | grep -c ' - ' || true)"
+          git lfs checkout
+          missing=$(git lfs ls-files | grep ' - ' || true)
+          echo "lfs pointers after checkout: $(printf '%s' "$missing" | grep -c . || true)"
+          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --root client --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
+  # MEASUREMENT ONLY, removed once the shard count is chosen: the whole client
+  # suite on one runner, for the unsharded wall time.
+  client-unsharded:
+    needs: lfs
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git/lfs/objects
+          key: ${{ needs.lfs.outputs.key }}
+          fail-on-cache-miss: true
+      - run: git lfs checkout
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --root client
+
+  # The one status to require and to read: it fails unless every job above
+  # succeeded. `always()` matters: a job skipped because its dependency failed
+  # would otherwise skip this one too, and a skipped check reads as passing.
+  gates:
+    if: always()
+    needs: [lfs, static, server-and-tools, client]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do [ "$r" = success ] || exit 1; done
