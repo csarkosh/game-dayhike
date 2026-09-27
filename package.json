@@ -17,6 +17,7 @@
     "test": "vitest run --root client && vitest run --root server && vitest run --root tools",
     "test:client": "vitest run --root client",
     "test:server": "vitest run --root server",
+    "test:wall-clock": "vitest run --root client --tags-filter=wall-clock --maxWorkers=1 test/game/forestField.test.ts test/sim/trailSystem.test.ts",
     "test:watch": "vitest --root client",
     "bench": "vitest bench --root client",
     "typecheck": "tsc -p client --noEmit && tsc -p server --noEmit",

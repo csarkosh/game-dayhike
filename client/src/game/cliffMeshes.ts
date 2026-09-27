@@ -28,6 +28,7 @@ import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 
 import { modelUrl } from "./assetUrls.js";
+import { loadUntilAborted } from "./modelLoad.js";
 import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, createCliffCollector } from "./cliffField.js";
 import { CLIFF_MODEL_HEIGHT, CLIFF_MODELS, CLIFF_SINK, CLIFF_TILT_MAX, cliffFacing } from "../sim/cliffField.js";
 import { attachCliffTint } from "./cliffTintPlugin.js";
@@ -173,7 +174,11 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
   const rings = CLIFF_RINGS[options.quality];
   const reach = rings[2];
   const farBands: FadeBands = fadeBands(null, [reach - CLIFF_FADE_BAND, reach]);
-  const load = options.loader ?? ((output: string) => loadAssetContainerAsync(modelUrl(output), scene));
+  const fetchModel = options.loader ?? ((output: string) => loadAssetContainerAsync(modelUrl(output), scene));
+  // Aborted first thing in `dispose`: a load in flight then ends at once and
+  // quietly, and none starts after it (`modelLoad.ts`).
+  const loads = new AbortController();
+  const load = (output: string): Promise<AssetContainer> => loadUntilAborted(() => fetchModel(output), loads.signal);
   // Memoising, not the pure `collectCliffs`: a rebuild happens on every
   // `CLIFF_CELL` crossing, and a qualifying cell costs dozens of terrain
   // samples (its gate, four neighbours, and the probes of every module along
@@ -215,7 +220,6 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
   const buckets: (Bucket | null)[][] = [];
   const meshes: Mesh[] = [];
   const casterMeshes: Mesh[] = [];
-  let disposed = false;
   let builtX = NaN;
   let builtZ = NaN;
   let pendingX = NaN;
@@ -284,10 +288,18 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
   async function loadAssets(): Promise<void> {
     if (options.loader === undefined) registerBuiltInLoaders();
     for (const [model, output] of CLIFF_MODELS.entries()) {
-      const container = await load(output);
-      if (disposed) {
-        // `dispose` already ran over an earlier container list, so clean up
-        // what just landed here.
+      let container: AssetContainer;
+      try {
+        container = await load(output);
+      } catch (error) {
+        // Disposed while loading: nothing failed, and nothing is left to do.
+        if (loads.signal.aborted) return;
+        throw error;
+      }
+      if (loads.signal.aborted) {
+        // Disposed between the load settling and this line running (a
+        // dispose from another promise's continuation): `dispose` already ran
+        // over an earlier container list, so clean up what just landed here.
         container.dispose();
         return;
       }
@@ -325,7 +337,7 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
         if (other instanceof Mesh && !meshes.includes(other)) other.setEnabled(false);
       }
     }
-    if (disposed) return;
+    if (loads.signal.aborted) return;
     // Replay the eye the caller handed over while the models were loading.
     if (!Number.isNaN(pendingX)) {
       rebuild(pendingX, pendingZ);
@@ -341,7 +353,7 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
      * until the models land — this runs every frame, so it allocates nothing
      * in the common case. */
     update(x, z) {
-      if (disposed) return;
+      if (loads.signal.aborted) return;
       pendingX = x;
       pendingZ = z;
       if (meshes.length === 0) return;
@@ -359,8 +371,8 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
     casterMeshes,
     ready,
     dispose() {
-      if (disposed) return;
-      disposed = true;
+      if (loads.signal.aborted) return;
+      loads.abort();
       // The far buckets' materials are this shell's own clones; the meshes
       // and everything else came out of the containers, so disposing those
       // takes them and the shipped materials with them.

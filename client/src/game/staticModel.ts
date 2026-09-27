@@ -7,6 +7,7 @@ import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 
 import { modelUrl } from "./assetUrls.js";
 import { orientationRoot } from "./characterModel.js";
+import { loadUntilAborted } from "./modelLoad.js";
 
 /**
  * How a model's GLB becomes a container, keyed by the catalog's `output`
@@ -20,6 +21,13 @@ export function defaultModelLoader(scene: Scene): ModelLoader {
     registerBuiltInLoaders();
     return loadAssetContainerAsync(modelUrl(output), scene);
   };
+}
+
+/** `load`, each call ending at once and quietly when `signal` aborts, and none
+ * starting after it (`modelLoad.ts`). Each placed model aborts its own
+ * first thing in `dispose`. */
+export function loaderUntilAborted(load: ModelLoader, signal: AbortSignal): ModelLoader {
+  return (output) => loadUntilAborted(() => load(output), signal);
 }
 
 /** The LOD roots a static model carries; only the first is ever drawn here. */

@@ -9,6 +9,7 @@ import {
   CLUTTER_CLASS_COUNT, clutterCell, CLUTTER_DRIFTWOOD, CLUTTER_GRASS, CLUTTER_GRASS_CELL, CLUTTER_JITTER,
   CLUTTER_MEADOW,
 } from "../../src/sim/clutter.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 0x5eed;
 const CAM = { x: 1800.5, z: -950.5 }; // inland mixed ground, verified non-empty
@@ -179,7 +180,7 @@ describe("clutter bands", () => {
     expect([canopy.near.length, canopy.far.length]).toEqual([2674, 8719]);
     const meadow = collectClutter(627994160, 369, -855)[CLUTTER_MEADOW]!;
     expect([meadow.near.length, meadow.far.length]).toEqual([3168, 10166]);
-  }, 30_000);
+  }, timeLimit(30_000));
 
   it("assigns every instance to the right band by distance", () => {
     const bands = collectClutter(SEED, CAM.x, CAM.z);

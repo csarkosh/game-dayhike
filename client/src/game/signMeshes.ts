@@ -13,7 +13,7 @@ import { SIGN_POST_HALF } from "../sim/signs.js";
 import type { PropShadows } from "./propMeshes.js";
 import { budgetMaterial } from "./headlamp.js";
 import { labelWear, type LabelWear } from "./labelWear.js";
-import { defaultModelLoader, instantiateStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
+import { defaultModelLoader, loaderUntilAborted, instantiateStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 
 export const SIGN_POST_OUTPUT = "models/sign.post.glb";
 export const SIGN_ARM_OUTPUT = "models/sign.arm.glb";
@@ -331,7 +331,10 @@ export function createSignMeshes(
   groundH: (x: number, z: number) => number,
   deps: SignDeps,
 ): SignMeshes {
-  const load = deps.loader ?? defaultModelLoader(scene);
+  // Aborted first thing in `dispose`: a model in flight then ends at once and
+  // quietly (`modelLoad.ts`).
+  const loads = new AbortController();
+  const load = loaderUntilAborted(deps.loader ?? defaultModelLoader(scene), loads.signal);
   const paint = deps.paint ?? paintedLabel;
   let disposed = false;
   const containers: AssetContainer[] = [];
@@ -470,6 +473,7 @@ export function createSignMeshes(
     dispose() {
       if (disposed) return;
       disposed = true;
+      loads.abort();
       for (const box of boxes) dropBox(box);
       for (const plane of labels) plane.dispose();
       labels.length = 0;

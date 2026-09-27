@@ -1,3 +1,4 @@
+import { bindCanvas } from "./canvasBinding.js";
 import type { InputCommand } from "../sim/types.js";
 import { Button } from "../sim/types.js";
 import type { TouchSource } from "./touchControls.js";
@@ -36,6 +37,13 @@ export type InputSampler = {
    * observed `engaged` value, exactly once, through `onEngagedChange`.
    */
   setTouchMode(on: boolean): void;
+  /**
+   * Moves the canvas's listeners, and the pointer lock's identity, to a fresh
+   * canvas (a live tier change builds the renderer on one). The aim and every
+   * other piece of state are kept: recreating the sampler would snap the
+   * player's view back to where the hike began.
+   */
+  rebind(canvas: HTMLCanvasElement): void;
   dispose(): void;
 };
 
@@ -45,6 +53,24 @@ export type InputOptions = {
   /** Start in touch mode. `isTouchDevice()` decides; the layer can flip it later. */
   touchMode?: boolean;
 };
+
+/**
+ * Whether an event is aimed at a form control: a select or one of its
+ * options, a text field, a text area, or anything editable. While play is not
+ * engaged such a press is the control's, never the game's, and it is the one
+ * kind whose release the page may never hear: a select's open list, drawn by
+ * the browser, takes the keyboard and the mouse for itself, so a Space or a
+ * click that opened it can lose its keyup or mouseup to the list and stay held
+ * after Resume. While play is engaged every press is the game's, whatever has
+ * the focus.
+ */
+function aimedAtFormControl(target: EventTarget | null): boolean {
+  const el = target as { tagName?: unknown; isContentEditable?: unknown } | null;
+  if (el === null || typeof el !== "object") return false;
+  if (el.isContentEditable === true) return true;
+  const tag = typeof el.tagName === "string" ? el.tagName.toUpperCase() : "";
+  return tag === "SELECT" || tag === "OPTION" || tag === "INPUT" || tag === "TEXTAREA";
+}
 
 export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions = {}): InputSampler {
   const touch = opts.touch ?? null;
@@ -60,6 +86,17 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
 
   const engaged = (): boolean => (touchMode ? touchEngaged : locked);
 
+  /**
+   * Play is taking the controls back: a form control left focused (the
+   * roster's invite field, clicked on the pause screen to copy the link) must
+   * not keep the keyboard's focus through play, where it would take the keys
+   * as text and the arrows as its own.
+   */
+  const leaveFormControls = (): void => {
+    const active = document.activeElement ?? null;
+    if (active !== null && aimedAtFormControl(active)) (active as HTMLElement).blur?.();
+  };
+
   /** The single definition of the sprint binding; both readers go through it. */
   const sprintHeld = (): boolean => !suppressed && (keys.has("ShiftLeft") || (touch?.sprinting ?? false));
 
@@ -74,11 +111,18 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
     if (!next) {
       keys.clear();
       interactHeld = false;
+    } else {
+      leaveFormControls();
     }
     engagedHandler?.(next);
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
+    // With play not engaged, a press aimed at a form control is never a game
+    // press (see `aimedAtFormControl`). Only the press is refused: its
+    // release, and the release of any key pressed in the game, is still heard
+    // below. With play engaged every key is the game's, Escape included.
+    if (!engaged() && aimedAtFormControl(e.target)) return;
     keys.add(e.code);
     // Esc while locked releases the pointer, which opens the pause menu (the
     // caller watches engaged). In the browser Chromium has already ejected the
@@ -96,6 +140,9 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
     // (the command bar is open) the sampler already reports zero movement, and
     // the bar's focused <input> needs the real Space character to reach it —
     // preventDefault here would silently swallow every space typed into it.
+    // A key typed into the bar's field no longer reaches this line (it is
+    // aimed at a form control), but the rule still matters for the rest:
+    // Space on a focused pause-menu button must still press it.
     if (!suppressed && (e.code === "Space" || e.code === "Tab")) e.preventDefault();
   };
   const onKeyUp = (e: KeyboardEvent) => keys.delete(e.code);
@@ -108,7 +155,7 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
   };
 
   const onMouseDown = (e: MouseEvent) => {
-    if (e.button === 0) interactHeld = true;
+    if (e.button === 0 && (engaged() || !aimedAtFormControl(e.target))) interactHeld = true;
   };
   const onMouseUp = (e: MouseEvent) => {
     if (e.button === 0) interactHeld = false;
@@ -116,11 +163,13 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
 
   const onLockChange = () => {
     const was = locked;
-    locked = document.pointerLockElement === canvas;
+    locked = document.pointerLockElement === binding.canvas;
     // Releasing the pointer must not leave keys stuck down.
     if (!locked) {
       keys.clear();
       interactHeld = false;
+    } else if (!was) {
+      leaveFormControls();
     }
     if (touchMode) {
       // A hybrid device: a touch-screen laptop that started in desktop mode,
@@ -146,9 +195,25 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
   const onCanvasPointerDown = (e: PointerEvent) => {
     lastPointerType = e.pointerType;
   };
+  // A refused pointer lock is not worth surfacing — the player clicks the
+  // canvas and carries on. Chrome's own re-lock rate limit (closing the
+  // command bar locks again right after opening it unlocked) is the common
+  // case reached through `engage`; any other refusal reached through a canvas
+  // click (an unfocused document, a canvas mid-swap) prints the same way if
+  // left unhandled. `requestPointerLock` can reject, return nothing (older
+  // browsers), or throw synchronously (also older browsers) — this swallows
+  // all three.
+  const requestLockQuietly = (): void => {
+    try {
+      void Promise.resolve(binding.canvas.requestPointerLock()).catch(() => undefined);
+    } catch {
+      // Synchronous throw case, above.
+    }
+  };
+
   const onCanvasClick = () => {
     if (lastPointerType === "touch" || lastPointerType === "pen") return;
-    if (!locked) void canvas.requestPointerLock();
+    if (!locked) requestLockQuietly();
   };
 
   window.addEventListener("keydown", onKeyDown);
@@ -157,8 +222,10 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
   window.addEventListener("mousedown", onMouseDown);
   window.addEventListener("mouseup", onMouseUp);
   document.addEventListener("pointerlockchange", onLockChange);
-  canvas.addEventListener("pointerdown", onCanvasPointerDown);
-  canvas.addEventListener("click", onCanvasClick);
+  const binding = bindCanvas(canvas, {
+    pointerdown: onCanvasPointerDown as EventListener,
+    click: onCanvasClick as EventListener,
+  });
 
   const sampler: InputSampler = {
     get engaged() {
@@ -184,11 +251,7 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
         setTouchEngaged(true);
         return;
       }
-      // Chrome rate-limits a re-lock that follows an unlock too closely, which
-      // is precisely this path: opening the command bar unlocks and closing it
-      // locks again. The rejection is not an error worth surfacing — you click
-      // the canvas and carry on — but left unhandled it prints as one.
-      void Promise.resolve(canvas.requestPointerLock()).catch(() => undefined);
+      requestLockQuietly();
     },
     disengage() {
       if (touchMode) {
@@ -203,6 +266,7 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
       touchMode = on;
       if (on) touchEngaged = true;
       const is = engaged();
+      if (is && !was) leaveFormControls();
       if (is !== was) engagedHandler?.(is);
     },
     get sprinting() {
@@ -237,6 +301,12 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
 
       return { seq, moveX, moveZ, yaw, pitch, buttons };
     },
+    rebind(next) {
+      binding.rebind(next);
+      // Whose lock the page holds is now asked of the new canvas; a change is
+      // announced exactly as a lock change is.
+      onLockChange();
+    },
     dispose() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
@@ -244,8 +314,7 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);
       document.removeEventListener("pointerlockchange", onLockChange);
-      canvas.removeEventListener("pointerdown", onCanvasPointerDown);
-      canvas.removeEventListener("click", onCanvasClick);
+      binding.dispose();
     },
   };
   if (opts.touchMode) sampler.setTouchMode(true);

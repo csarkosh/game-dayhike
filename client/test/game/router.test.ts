@@ -9,6 +9,8 @@ import {
   navigateTo,
   pushedFromLanding,
   leavePanel,
+  announcedPath,
+  sameFollowPlace,
 } from "../../src/game/router.js";
 
 const UUID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
@@ -74,6 +76,10 @@ describe("parseRoute", () => {
   it("routes /party/<uuid> to an invite and refuses a non-uuid", () => {
     expect(parseRoute(`/dayhike/party/${UUID}`, BASE)).toEqual({ kind: "party", lobbyId: UUID });
     expect(parseRoute("/party/not-a-uuid", "/")).toEqual({ kind: "landing" });
+  });
+  it("routes /settings to the Settings panel", () => {
+    expect(parseRoute("/settings", "/")).toEqual({ kind: "settings" });
+    expect(parseRoute("/dayhike/settings/", BASE)).toEqual({ kind: "settings" });
   });
   it("routes the two secondary panels", () => {
     expect(parseRoute("/downloads", "/")).toEqual({ kind: "downloads" });
@@ -151,5 +157,24 @@ describe("leavePanel", () => {
   });
   it("pushes the landing route when the panel was loaded directly", () => {
     expect(record(false)).toEqual(["toLanding"]);
+  });
+});
+
+describe("where a lobby host is, for its followers", () => {
+  it("announces a landing panel as the landing page: the panels are each player's own", () => {
+    expect(announcedPath("/settings")).toBe("/");
+    expect(announcedPath("/credits")).toBe("/");
+    expect(announcedPath("/downloads")).toBe("/");
+    expect(announcedPath("/")).toBe("/");
+    expect(announcedPath("/game/epic-panda-fun?cmd=seed%20x")).toBe("/game/epic-panda-fun?cmd=seed%20x");
+  });
+
+  it("leaves a follower in its own panel while the host is on the landing, and moves it into a game", () => {
+    expect(sameFollowPlace("/", "/settings")).toBe(true);
+    expect(sameFollowPlace("/", "/credits")).toBe(true);
+    expect(sameFollowPlace("/", "/")).toBe(true);
+    expect(sameFollowPlace("/game/epic-panda-fun", "/settings")).toBe(false);
+    expect(sameFollowPlace("/game/epic-panda-fun", "/game/epic-panda-fun")).toBe(true);
+    expect(sameFollowPlace("/", "/game/epic-panda-fun")).toBe(false);
   });
 });

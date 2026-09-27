@@ -9,6 +9,7 @@ import { hikerNames } from "../../src/sim/hikerNames.js";
 import { createChunkGrid } from "../../src/sim/chunkGrid.js";
 import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
 import { PROBE_SEEDS } from "./trailGateSeeds.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
@@ -66,7 +67,7 @@ function nearestArm(arms: readonly Arm[], node: number): number {
   return best;
 }
 
-describe("sign posts on real worlds", { timeout: 120_000 }, () => {
+describe("sign posts on real worlds", { timeout: timeLimit(120_000) }, () => {
   it("follows the plank rules on every post, keeps every post off the bed, and emits each post once as a prop", () => {
     let most = 0, total = 0, fillers = 0;
     for (const seed of PROBE_SEEDS) {

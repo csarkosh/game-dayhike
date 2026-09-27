@@ -14,6 +14,7 @@ import {
   CLIFF_TUNABLES, CLIFF_WALL_A, CLIFF_WALL_B, CLIFF_YAW_JITTER, CLIFF_YAW_TAN,
   cliffCellPoint, cliffCellRuns, cliffFacing, cliffGate, cliffGround, cliffLeanTrig, leanPoint, type CliffPoint,
 } from "../../src/sim/cliffField.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /** Seed 1's worst 400 m disc for steep rock (5,549 four-metre cells), from
  * the census in the design's §5. */
@@ -200,7 +201,7 @@ describe("the placement", () => {
     // Measured: the farthest a run carried a module across these worlds,
     // 50.59 m of the 63.84 the constants allow.
     expect(farthest).toBeCloseTo(50.594476156076325, 9);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("pins the run's reach to the arithmetic of its constants", () => {
     // Every step along a run is CLIFF_RUN_SPACING of the mean of its two
@@ -234,7 +235,7 @@ describe("the placement", () => {
     // 12 probes for the long model, 18 for the short one.
     expect(modules).toBe(84);
     expect(probes).toBe(1284);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("the base probes alone would hang a top edge over walkable ground", () => {
     // Why the solid is probed at all, counted on one disc. At every cell
@@ -274,7 +275,7 @@ describe("the placement", () => {
     }
     expect(placedByOldRule).toBe(410);
     expect(overWalkable).toBe(10);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("is a pure function of (seed, cell), whatever order the cells are read in, and differs by world", () => {
     const r = 400;
@@ -301,7 +302,7 @@ describe("the placement", () => {
     expect(runs).toBe(14);
     expect(multi).toBe(12);
     expect(differ).toBe(runs);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("faces downslope, within the yaw jitter, and is shaped as a lying rock instance", () => {
     for (const { m } of modulesIn(WORST.seed, WORST.x, WORST.z, 300)) {
@@ -326,7 +327,7 @@ describe("the placement", () => {
       expect(cliffGate(WORST.seed, m.x, m.z).open).toBe(true);
       expect(cliffLeanTrig(m.groundDx, m.groundDz).c).toBeGreaterThanOrEqual(CLIFF_TILT_COS);
     }
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("starts a run with the long module where three neighbours are steep rock, the short one elsewhere", () => {
     let long = 0, short = 0;
@@ -347,7 +348,7 @@ describe("the placement", () => {
     // Both models start runs on this disc. Measured.
     expect(long).toBe(10);
     expect(short).toBe(3);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("lays runs along the contour on the scarp, spaced by the neighbours' mean width, the models alternating", () => {
     const r = 150;
@@ -394,7 +395,7 @@ describe("the placement", () => {
     // Stepping by the previous module's width alone left 133 of 541 pairs
     // here with a gap, where a long module stepped to a short one.
     expect(gaps).toBe(0);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("starts a run on about one qualifying cell in ten, before any terrain sample", () => {
     let qualifying = 0, placed = 0, modules = 0;
@@ -419,7 +420,7 @@ describe("the placement", () => {
     expect(qualifying).toBe(542);
     expect(placed).toBe(13);
     expect(modules).toBe(78);
-  }, 300_000);
+  }, timeLimit(300_000));
 });
 
 describe("the level id", () => {

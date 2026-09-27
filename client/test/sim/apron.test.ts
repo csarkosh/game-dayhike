@@ -15,6 +15,7 @@ import {
   BLEND_START, BLEND_END_BAY, BLEND_END_HEADLAND,
   COAST_X, COAST_WARP_AMPLITUDE, COAST_WARP_WAVELENGTH, COAST_WARP_OCTAVES,
 } from "../../src/sim/olympic.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /**
  * THE APRON SCAN. The escarpment was the seal on the world: on `bb336b8b`
@@ -114,7 +115,7 @@ describe("the apron", () => {
     expect(worstGrade, msg).toBeLessThanOrEqual(0.66);
     expect(worstWalk, msg).toBeGreaterThanOrEqual(0.88);
     expect(worstReach, msg).toBeGreaterThanOrEqual(0.9);
-  }, 300000);
+  }, timeLimit(300000));
 
   /**
    * THE ROAD IS NOT PART OF THE APRON. `roadOffsetD`'s coast offset is

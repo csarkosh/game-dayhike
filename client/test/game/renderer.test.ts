@@ -90,6 +90,7 @@ import type { Level } from "../../src/sim/level.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
 import { createForest } from "../../src/sim/forest.js";
 import { elevationAt } from "../../src/sim/terrain.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 let engine: NullEngine | null = null;
 
@@ -282,7 +283,7 @@ describe("createClipmap", () => {
         ).toEqual(want[level]!.positions);
       }
     }
-  }, 30000);
+  }, timeLimit(30000));
 
   it("builds one named mesh per ring and disposes them all", () => {
     const s = scene();
@@ -516,7 +517,9 @@ describe("world shell wiring", () => {
   });
 
   it("draws on an engine it is given, and makes WebGL2's own otherwise", () => {
-    expect(src).toContain("const engine = options.engine ?? new Engine(canvas, true, { stencil: true }, true);");
+    expect(src).toContain(
+      "const engine = options.engine ?? new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);",
+    );
     expect(src).toMatch(/engine: AbstractEngine;/);
     expect(src).not.toContain("function detectTier(");
   });
@@ -681,7 +684,7 @@ describe("the wildlife director goes quiet near the Hollow", () => {
     } finally {
       renderer.dispose();
     }
-  }, 60000);
+  }, timeLimit(60000));
 
   it("logs a sighting within a reasonable window with no Hollow around", () => {
     // The positive control the test above needs and did not have: without
@@ -715,7 +718,7 @@ describe("the wildlife director goes quiet near the Hollow", () => {
     } finally {
       renderer.dispose();
     }
-  }, 60000);
+  }, timeLimit(60000));
 });
 
 describe("the sward floor follows the blade field's tiers", () => {
@@ -748,7 +751,7 @@ describe("the sward floor follows the blade field's tiers", () => {
     expect(boundSward("low")).toEqual({ sward: [0.05, 0.065, 0.03, 0], band: [0.05, 0.5, 12, 18] });
     expect(boundSward("medium")).toEqual({ sward: [0.05, 0.065, 0.03, 0.6], band: [0.05, 0.5, 12, 18] });
     expect(boundSward("high")).toEqual({ sward: [0.05, 0.065, 0.03, 0.6], band: [0.05, 0.5, 12, 18] });
-  }, 60_000);
+  }, timeLimit(60_000));
 });
 
 describe("writeListenerPose", () => {
@@ -785,5 +788,31 @@ describe("writeListenerPose", () => {
       writeListenerPose(out, 0, 0, 0, yaw!, pitch!);
       expect(round(Math.hypot(out.fx, out.fy, out.fz))).toBe(1);
     }
+  });
+});
+
+describe("a part the renderer disposes is also torn down when a build fails", () => {
+  // `dispose` names every part it disposes, and `buildRenderer` registers each
+  // part it makes (`partOf`, or `made` for the brushes) so a build that throws
+  // part-way disposes them too. Two lists of one set: a part added to one and
+  // not the other would outlive a failed build, or never be disposed at all.
+  const src = readFileSync(fileURLToPath(new URL("../../src/game/renderer.ts", import.meta.url)), "utf8");
+
+  it("names the same parts in the dispose list and in the failed build's teardown", () => {
+    const start = src.indexOf("    dispose() {\n      views.dispose();");
+    const end = src.indexOf("releaseEngine(engine);", start);
+    expect(start, "the dispose list's anchor").toBeGreaterThanOrEqual(0);
+    expect(end, "the dispose list's end").toBeGreaterThan(start);
+    const disposeList = src.slice(start, end);
+    const disposed = new Set(
+      [...disposeList.matchAll(/(\w+)\??\.dispose\(\)/g)].map((m) => (m[1] === "m" ? "brushMeshes" : m[1]!)),
+    );
+    // The atmosphere is released by `releaseAtmosphere` in `createRenderer`'s
+    // catch, and the scene goes with the engine in both.
+    disposed.delete("atmosphere");
+    const registered = new Set([...src.matchAll(/partOf\((\w+)\);/g)].map((m) => m[1]!));
+    if (/made\(\(\) => \{\s*for \(const m of brushMeshes\) m\.dispose\(\);/.test(src)) registered.add("brushMeshes");
+    expect([...registered].sort()).toEqual([...disposed].sort());
+    expect(disposed.size).toBe(18);
   });
 });

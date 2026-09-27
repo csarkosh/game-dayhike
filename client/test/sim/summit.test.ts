@@ -9,6 +9,7 @@ import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
 import { DISCOVERY_RADIUS, SUMMIT_SPAWN_DIST } from "../../src/sim/summit.js";
 import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
 import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
@@ -20,7 +21,7 @@ const seed = seedFromToken("hollow");
  * build runs past vitest's 5 s default whenever this file shares the machine
  * with the other forest suites. One seed throughout, for the same reason.
  */
-const SUITE = { timeout: 120_000 };
+const SUITE = { timeout: timeLimit(120_000) };
 
 function forestWorld() {
   const w = createForestWorld(createForest(seed));

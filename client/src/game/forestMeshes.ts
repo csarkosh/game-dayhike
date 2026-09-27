@@ -101,6 +101,7 @@ import {
   type FadeBands,
 } from "./distanceFadePlugin.js";
 import { modelUrl } from "./assetUrls.js";
+import { loadUntilAborted } from "./modelLoad.js";
 
 /** Species index 0 → fir/conifer_a, 1 → pine/conifer_b (the `treeInCell`
  * convention). Understory keeps pairing off SPECIES, not cohort. */
@@ -204,6 +205,14 @@ export type ForestMeshes = {
    * made: what a far forest missing from view can be traced to. Empty until
    * the models have loaded. */
   impostorBakes(): readonly ImpostorBake[];
+  /**
+   * Resolves once the forest's first fill is complete: its models have
+   * landed (or failed, or the shell was disposed first) and every billboard
+   * bake has settled, baked or given up. The bakes run on their own render
+   * target, outside anything the scene counts as pending, so a scene can
+   * report ready while the billboards beyond the near band are still to come.
+   */
+  readonly ready: Promise<void>;
   dispose(): void;
 };
 
@@ -842,10 +851,6 @@ export function createForestMeshes(
   const ringOutBand = (s: readonly [number, number]): readonly [number, number] =>
     s[1] <= nearRadius ? s : nearSeamBand;
   const bakeImpostor = options.bakeImpostor ?? defaultBakeImpostor;
-  // One signal for every bake: `dispose` aborts it first thing, so a bake
-  // still waiting on its shaders stops polling and lets its target go.
-  const bakes = new AbortController();
-  const bakeOptions: BakeOptions = { signal: bakes.signal };
   // Memoizing collector, not the pure collectBands: a rebuild happens on every
   // 12 m tree-cell crossing, and re-sampling the whole ~112k-cell impostor
   // disc each time stalls the main thread 25–33 ms. The collector re-samples
@@ -880,6 +885,17 @@ export function createForestMeshes(
   let deadwoodLogMaxX = 0;
   let deadwoodLogMinY = 0;
   let disposed = false;
+  /** Every billboard bake still to land, as it settles into its bucket. */
+  const bakes: Promise<void>[] = [];
+  /** Aborted first thing in `dispose`: a GLB in flight then ends at once and
+   * quietly, none starts after it, and a bake still polling stops
+   * (`modelLoad.ts`). */
+  const loads = new AbortController();
+  // The bakes share the signal: a bake still waiting on its shaders stops
+  // polling and lets its target go.
+  const bakeOptions: BakeOptions = { signal: loads.signal };
+  const loadModel = (url: string): Promise<AssetContainer> =>
+    loadUntilAborted(() => loadAssetContainerAsync(url, scene), loads.signal);
 
   // Last camera seen and last origin built. Split so an `update` that arrives
   // while the GLBs are still loading is honoured the moment they land.
@@ -968,9 +984,11 @@ export function createForestMeshes(
     // returns; the async production bake lands whenever its shaders finish
     // compiling, and a rejection counts as a null bake.
     if (bake instanceof Promise) {
-      bake.then(
-        (texture) => adoptBake(impostor, mat, texture),
-        () => adoptBake(impostor, mat, null),
+      bakes.push(
+        bake.then(
+          (texture) => adoptBake(impostor, mat, texture),
+          () => adoptBake(impostor, mat, null),
+        ),
       );
     } else {
       adoptBake(impostor, mat, bake);
@@ -1235,7 +1253,7 @@ export function createForestMeshes(
     url: string,
     pickBucketed: (container: AssetContainer) => Mesh[][],
   ): Promise<Mesh[][] | null> {
-    const container = await loadAssetContainerAsync(url, scene);
+    const container = await loadModel(url);
     containers.push(container);
     // Disposed while awaiting: dispose() has already run over an earlier
     // (possibly empty) container list, so clean up what just landed here.
@@ -1259,8 +1277,15 @@ export function createForestMeshes(
     try {
       const giants: { lods: [Mesh[], Mesh[], Mesh[]]; understory: Mesh[] | null }[] = [];
       for (let s = 0; s < SPECIES_COUNT; s++) {
-        const tree = await loadAssetContainerAsync(TREE_URLS[s] as string, scene);
-        const under = await loadAssetContainerAsync(UNDERSTORY_URLS[s] as string, scene);
+        const tree = await loadModel(TREE_URLS[s] as string);
+        let under: AssetContainer;
+        try {
+          under = await loadModel(UNDERSTORY_URLS[s] as string);
+        } catch (error) {
+          // The tree already landed and is nobody's yet.
+          tree.dispose();
+          throw error;
+        }
         containers.push(tree, under);
         if (disposed) {
           tree.dispose();
@@ -1312,7 +1337,8 @@ export function createForestMeshes(
       adopt({ giants, saplings, deadwood });
     } catch {
       // A missing or broken asset costs the trees, never the match — the same
-      // degrade-don't-block rule as the character pool's `load`.
+      // degrade-don't-block rule as the character pool's `load`. A dispose
+      // mid-load ends here too, with the rest of the list never fetched.
     }
   }
 
@@ -1477,6 +1503,7 @@ export function createForestMeshes(
     );
   }
 
+  let landed: Promise<void> = Promise.resolve();
   if (options.assets != null) {
     const stub = options.assets;
     adopt({
@@ -1500,9 +1527,12 @@ export function createForestMeshes(
     });
   } else {
     // Fire and forget, like `views.models.load`: the forest pops in when the
-    // assets land, and stays absent forever if they fail.
-    void loadAssets();
+    // assets land, and stays absent forever if they fail. `loadAssets`
+    // settles every way it can end, so `ready` always resolves.
+    landed = loadAssets();
   }
+  // The bakes are all started by the time the models are adopted.
+  const ready = landed.then(() => Promise.all(bakes)).then(() => undefined);
 
   return {
     update(x, z) {
@@ -1517,11 +1547,13 @@ export function createForestMeshes(
     impostorBakes() {
       return impostors.map((imp) => ({ ...imp.bake }));
     },
+    ready,
     dispose() {
       if (disposed) return;
       disposed = true;
-      // First: a bake still waiting stops polling and releases its target.
-      bakes.abort();
+      // First: a GLB in flight ends quietly and a bake still waiting stops
+      // polling and releases its target.
+      loads.abort();
       for (const sp of [...(species ?? []), ...(saplingSpecies ?? [])]) {
         for (const bucket of [...sp.lods, sp.understory, sp.impostor.bucket]) {
           if (bucket === null) continue;

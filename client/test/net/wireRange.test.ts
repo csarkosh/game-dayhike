@@ -11,6 +11,7 @@ import {
   POSITION_PRECISION,
   type Snapshot,
 } from "../../src/net/protocol.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /**
  * Sends one player at `pos` through the snapshot codec and returns where the
@@ -72,7 +73,7 @@ describe("the wire carries the whole forest", () => {
       }
       expect(nodes).toBeGreaterThan(200);
     },
-    300_000,
+    timeLimit(300_000),
   );
 
   it("round-trips a player spawned in the forest on seed token probe1 (the live repro)", () => {

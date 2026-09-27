@@ -11,6 +11,7 @@ import { budgetMaterial } from "./headlamp.js";
 
 import catalog from "../../assets/catalog.json" with { type: "json" };
 import { modelUrl } from "./assetUrls.js";
+import { loadUntilAborted } from "./modelLoad.js";
 
 export type ClipKind = "idle" | "walk" | "attack" | "death";
 
@@ -215,6 +216,9 @@ export function createCharacterPool(
   const inFlight = new Map<string, Promise<void>>();
   const instances = new Map<number, { assetId: string; instance: CharacterInstance }>();
   let disposed = false;
+  /** Aborted first thing in `dispose`: a model in flight then ends at once and
+   * quietly (`modelLoad.ts`). */
+  const loads = new AbortController();
 
   /**
    * One load per asset however many callers ask: a second `load` naming an
@@ -234,7 +238,7 @@ export function createCharacterPool(
     const asset = assets.get(id);
     if (asset === undefined || loaded.has(id)) return;
     try {
-      const container = await loader(asset, scene);
+      const container = await loadUntilAborted(() => loader(asset, scene), loads.signal);
       // Disposed while the file was in flight: nothing will ever draw it.
       if (disposed) {
         container.dispose();
@@ -247,6 +251,7 @@ export function createCharacterPool(
       loaded.set(id, { asset, container, clipNames: container.animationGroups.map((g) => g.name) });
     } catch {
       // An asset problem degrades the visuals; it must never block the match.
+      // A dispose mid-load ends here too, having failed nothing.
     }
   }
 
@@ -324,6 +329,7 @@ export function createCharacterPool(
 
     dispose() {
       disposed = true;
+      loads.abort();
       for (const key of [...instances.keys()]) release(key);
       for (const model of loaded.values()) model.container.dispose();
       loaded.clear();

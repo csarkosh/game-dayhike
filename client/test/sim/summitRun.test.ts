@@ -13,6 +13,7 @@ import { FORK_CUT_RADIUS } from "../../src/sim/cut.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
 import { WATCH_SALT } from "../../src/sim/watcher.js";
 import { escalationTargets } from "../../src/game/escalation.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
@@ -22,7 +23,7 @@ setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
  * vitest's 5 s default whenever it shares the machine with the other forest
  * suites.
  */
-const SUITE = { timeout: 120_000 };
+const SUITE = { timeout: timeLimit(120_000) };
 
 describe("one run on the seed `hollow`", SUITE, () => {
   it("climbs the stem, finds the body, is hunted, reaches the road, and wins", () => {

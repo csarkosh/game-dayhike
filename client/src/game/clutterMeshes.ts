@@ -91,6 +91,7 @@ import type { Rgb } from "./colour.js";
 import { trampleAt, TRAMPLE_BAND } from "./trailBenchParams.js";
 import { ROCK_CUTS, rockPlanes, rockRelief, type RockPlane } from "./rockRelief.js";
 import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
+import { loadUntilAborted } from "./modelLoad.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
 // exactly BOULDER_SINK · (that variant's own BASE_H) · scale shows a visible
@@ -696,6 +697,9 @@ export function createClutterMeshes(
   /** The buckets `cull` filters, flattened once at adoption. */
   let culledBuckets: Bucket[] = [];
   let disposed = false;
+  /** Aborted first thing in `dispose`: a GLB in flight then ends at once and
+   * quietly, and none starts after it (`modelLoad.ts`). */
+  const loads = new AbortController();
   /** Set by a rebuild: the collected sets changed, so the next `cull` cuts
    * whatever the pose. */
   let dirty = false;
@@ -866,7 +870,7 @@ export function createClutterMeshes(
    * wrappers). Returns null if disposed mid-await — the caller must bail out
    * without adopting anything. */
   async function loadBucketed(url: string): Promise<Mesh[][] | null> {
-    const container = await loadAssetContainerAsync(url, scene);
+    const container = await loadUntilAborted(() => loadAssetContainerAsync(url, scene), loads.signal);
     containers.push(container);
     // Disposed while awaiting: dispose() has already run over an earlier
     // (possibly empty) container list, so clean up what just landed here.
@@ -1043,7 +1047,8 @@ export function createClutterMeshes(
       adopt(loaded);
     } catch {
       // A missing or broken asset costs the ground cover, never the match —
-      // the same degrade-don't-block rule as `createForestMeshes`.
+      // the same degrade-don't-block rule as `createForestMeshes`. A dispose
+      // mid-load ends here too, with the rest of the list never fetched.
     }
   }
 
@@ -1081,6 +1086,7 @@ export function createClutterMeshes(
     dispose() {
       if (disposed) return;
       disposed = true;
+      loads.abort();
       scene.getEngine().onContextRestoredObservable.remove(restoreObserver);
       if (buckets !== null) {
         for (const variants of buckets) {

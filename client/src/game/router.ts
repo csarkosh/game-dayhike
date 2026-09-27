@@ -1,9 +1,10 @@
-export type Panel = "downloads" | "credits";
+export type Panel = "downloads" | "credits" | "settings";
 
 export type Route =
   | { kind: "landing" }
   | { kind: "downloads" }
   | { kind: "credits" }
+  | { kind: "settings" }
   /** An invite: join this lobby, then show the landing page. */
   | { kind: "party"; lobbyId: string }
   /** A world. The token feeds the seed and nothing else. */
@@ -55,6 +56,7 @@ export function parseRoute(pathname: string, base: string = BASE): Route {
   // the browser's back button leaves them.
   if (trimmed === "/downloads") return { kind: "downloads" };
   if (trimmed === "/credits") return { kind: "credits" };
+  if (trimmed === "/settings") return { kind: "settings" };
   const party = /^\/party\/([^/]+)$/.exec(trimmed);
   if (party) {
     const id = party[1] as string;
@@ -82,6 +84,37 @@ export function createLobbyId(): string {
   bytes[8] = ((bytes[8] as number) & 0x3f) | 0x80;
   const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** The landing page and its panels: one place, as far as a lobby is concerned. */
+function isLandingFamily(route: Route): boolean {
+  return route.kind === "landing" || route.kind === "downloads" || route.kind === "credits" || route.kind === "settings";
+}
+
+function routeOf(path: string): Route {
+  const query = path.indexOf("?");
+  return parseRoute(query === -1 ? path : path.slice(0, query), "/");
+}
+
+/**
+ * What a lobby host announces for where it is (a route-relative path, query
+ * included): a landing panel is announced as the landing page, since the
+ * panels (Downloads, Settings, Credits) are each player's own, and a follower
+ * is not to be slid into the host's.
+ */
+export function announcedPath(path: string): string {
+  const route = routeOf(path);
+  return isLandingFamily(route) && route.kind !== "landing" ? "/" : path;
+}
+
+/**
+ * Whether a follower at `current` is already where the host's `target` is:
+ * any two landing routes count as one place, so a follower in its own
+ * Settings is not taken out of it by the host being on the landing page.
+ */
+export function sameFollowPlace(target: string, current: string): boolean {
+  if (target === current) return true;
+  return isLandingFamily(routeOf(target)) && isLandingFamily(routeOf(current));
 }
 
 /** Where the page is, relative to the base, query included. This is what a
