@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
+import { EffectFallbacks } from "@babylonjs/core/Materials/effectFallbacks.js";
 import { catchTranslationFailures, probeAdapter, watchWebGpu } from "../../src/game/gpuEngine.js";
 
 afterEach(() => {
@@ -206,6 +207,44 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     }
   });
 
+  it("lets a fallback that compiles end it: one final state, and nothing reported", async () => {
+    const engine = new NullEngine();
+    // The first preparation fails to translate; the fallback's, with a define
+    // fewer, succeeds on the engine's own path.
+    const own = engine as unknown as { _preparePipelineContextAsync: (...args: unknown[]) => unknown };
+    const real = own._preparePipelineContextAsync.bind(engine);
+    let calls = 0;
+    own._preparePipelineContextAsync = (...args: unknown[]) =>
+      ++calls === 1 ? Promise.reject(new Error("GLSL compilation failed")) : real(...args);
+    catchTranslationFailures(engine);
+    const reported: string[] = [];
+    engine.onEffectErrorObservable.add(({ errors }) => void reported.push(errors));
+    const seen: string[] = [];
+    const stop = watchWebGpu(engine, (reason) => void seen.push(reason), () => 0);
+    try {
+      const fallbacks = new EffectFallbacks();
+      fallbacks.addFallback(0, "HEAVY");
+      const effect = engine.createEffect(
+        { vertexSource: "void main() {}", fragmentSource: "void main() {}" },
+        ["position"],
+        [],
+        [],
+        "#define HEAVY\n",
+        fallbacks,
+      );
+      await settle();
+      expect(calls).toBe(2);
+      expect(effect.defines).not.toContain("HEAVY");
+      expect(effect.isReady()).toBe(true);
+      expect(effect.getCompilationError()).toBe("");
+      expect(reported).toEqual([]);
+      expect(seen).toEqual([]);
+    } finally {
+      stop();
+      engine.dispose();
+    }
+  });
+
   it("leaves a preparation that succeeds as it was", async () => {
     const engine = new NullEngine();
     catchTranslationFailures(engine);
@@ -241,5 +280,11 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     // Looked up on the engine at every preparation, so an instance's own wins.
     expect(effect).toContain("this._engine._preparePipelineContextAsync.bind(this._engine)");
     expect(effect).toContain("    _processCompilationErrors(e, previousPipelineContext = null) {");
+    // How the failing effect is found, by its pipeline context.
+    expect(effect).toContain("    getPipelineContext() {\n        return this._pipelineContext;");
+    // And why it would otherwise wait for good: nothing polls a WebGPU
+    // pipeline context, whose readiness only the preparation sets.
+    const context = readFileSync(resolve("@babylonjs/core/Engines/WebGPU/webgpuPipelineContext.js"), "utf8");
+    expect(context).toContain("    get isAsync() {\n        return false;");
   });
 });
