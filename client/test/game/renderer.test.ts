@@ -42,6 +42,26 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
   return { Engine: mod.NullEngine };
 });
 
+// Every pose the renderer hands the blade field to cut to, recorded on the way
+// through to the real shell (which still cuts), so a test can read what the
+// renderer's per-frame cull hook measured.
+const bladeCullPoses = vi.hoisted(() => [] as { aspect: number }[]);
+vi.mock("../../src/game/bladeMeshes.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/bladeMeshes.js")>();
+  return {
+    ...mod,
+    createBladeMeshes: (...args: Parameters<typeof mod.createBladeMeshes>) => {
+      const blades = mod.createBladeMeshes(...args);
+      const cull = blades.cull.bind(blades);
+      blades.cull = (pose) => {
+        if (pose !== null) bladeCullPoses.push({ ...pose });
+        cull(pose);
+      };
+      return blades;
+    },
+  };
+});
+
 // The terrain field lives behind the variant registry, and `activeTerrainVariant`
 // throws until something has registered one. `app.ts` gets that transitively
 // through `forest.ts`; a renderer-only test has to ask for it.
@@ -391,6 +411,31 @@ describe("the renderer's engine", () => {
     }
     expect(given.isDisposed).toBe(true);
   });
+
+  // The grass cull builds its planes from the aspect, so it has to be the
+  // aspect of the engine actually drawing (WebGPU's, when one is handed in),
+  // read every frame, never a canvas the renderer was passed. NullEngine's
+  // render size is its options, so this proves the hook reads the given
+  // engine's render size live; it cannot prove how WebGPUEngine or Engine size
+  // their own drawing buffers against a real canvas.
+  it("culls the grass to the given engine's aspect, read every frame, not the canvas's", () => {
+    const LEVEL: Level = { id: "cull-aspect-test", brushes: [], playerSpawns: [], enemySpawns: [] };
+    const given = new NullEngine({ renderWidth: 1600, renderHeight: 900, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 1 });
+    // A square canvas: its aspect is 1, and the mocked WebGL2 Engine would read it.
+    const canvas = { width: 640, height: 640, renderWidth: 640, renderHeight: 640 } as unknown as HTMLCanvasElement;
+    bladeCullPoses.length = 0;
+    const renderer = createRenderer(canvas, LEVEL, createForest(388817), { tier: "high", engine: given });
+    try {
+      renderer.scene.render();
+      expect(bladeCullPoses.map((p) => p.aspect)).toEqual([1.7777777777777777]);
+      // The engine's drawing size changes (a resize); the next frame reads it.
+      (given as unknown as { _options: { renderWidth: number } })._options.renderWidth = 1200;
+      renderer.scene.render();
+      expect(bladeCullPoses.map((p) => p.aspect)).toEqual([1.7777777777777777, 1.3333333333333333]);
+    } finally {
+      renderer.dispose();
+    }
+  }, 60_000);
 });
 
 describe("world shell wiring", () => {
