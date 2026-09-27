@@ -101,6 +101,36 @@ describe("watchWebGpu", () => {
     }
   });
 
+  it("stops Babylon's own restore after a lost device, since the page reloads instead", () => {
+    vi.useFakeTimers();
+    const engine = new NullEngine();
+    const stop = watchWebGpu(engine, () => undefined, () => 0);
+    try {
+      // Babylon notifies, then calls the restore on the same engine: the
+      // watcher answers in between.
+      engine.onContextLostObservable.notifyObservers(engine);
+      let restored = false;
+      (engine as unknown as { _restoreEngineAfterContextLost(init: () => void): void })._restoreEngineAfterContextLost(() => {
+        restored = true;
+      });
+      vi.advanceTimersByTime(10);
+      expect(restored).toBe(false);
+    } finally {
+      stop();
+      engine.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("notifies a lost device before Babylon starts its restore (a canary on the installed engine)", () => {
+    const src = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
+    expect(src).toContain(
+      "                    this.onContextLostObservable.notifyObservers(this);\n" +
+        "                    // eslint-disable-next-line @typescript-eslint/no-misused-promises\n" +
+        "                    this._restoreEngineAfterContextLost(async () => {",
+    );
+  });
+
   it("tells a failure in the startup window from one after it", () => {
     const engine = new NullEngine();
     let now = 0;

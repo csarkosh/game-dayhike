@@ -113,16 +113,11 @@ export async function probeAdapter(): Promise<AdapterReport | null> {
   }
 }
 
-/** The globals the two translator loaders define on the page, where Babylon
- * looks for them (`self.glslang`, `self.twgsl`). */
-const TRANSLATOR_GLOBALS = ["glslang", "twgsl"] as const;
+/** The two translators, started: glslang as Babylon's GLSL path uses it, and
+ * twgsl as its WGSL translation uses it. Handed to `createWebGpuEngine`. */
+export type Translators = { glslang: unknown; twgsl: unknown };
 
-function missingTranslators(): string[] {
-  const page = globalThis as unknown as Record<string, unknown>;
-  return TRANSLATOR_GLOBALS.filter((name) => typeof page[name] !== "function");
-}
-
-/** Fetches `url` whole, so Babylon's own fetch of it comes from the HTTP
+/** Fetches `url` whole, so a loader's own fetch of it comes from the HTTP
  * cache (the build serves these immutable), and checks it is WebAssembly. */
 async function prefetchWasm(url: string): Promise<void> {
   const response = await fetch(url);
@@ -133,24 +128,41 @@ async function prefetchWasm(url: string): Promise<void> {
   }
 }
 
+/** Starts the translator the loader just run defined as the page global
+ * `name`, on `wasm`; throws at once where the loader defined nothing (this
+ * host answers a missing script with its HTML page, which runs as nothing). */
+function startTranslator(name: "glslang" | "twgsl", wasm: string): Promise<unknown> {
+  const factory = (globalThis as unknown as Record<string, unknown>)[name];
+  if (typeof factory !== "function") throw new Error(`the WebGPU translators did not load: ${name}`);
+  return Promise.resolve((factory as (wasmPath: string) => unknown)(wasm));
+}
+
 /**
- * Everything the WebGPU engine fetches, before any GPU work, so the network's
- * time is measured apart from the GPU's (`resolveWebGpu`): the two translator
- * loaders, run through Babylon's own script loader, which rejects when a script
- * does not load (Babylon's translator setup, handed only their URLs, waits for
- * good instead), and the two translators' WebAssembly. Rejects at once where a
- * loader ran but defined nothing, as it does when this host answers a missing
- * script with its HTML page, or where a translator is not WebAssembly.
+ * The two translators, fetched and started before any GPU work, so the
+ * network's time is measured apart from the GPU's (`resolveWebGpu`).
+ *
+ * Their loaders collide. Each is a classic script that declares a top-level
+ * `var Module`, its emscripten factory, and defines a global (`glslang`,
+ * `twgsl`) whose initialisation calls whatever `Module` is when it is called.
+ * Run both, and the later script's `Module` is the one either finds: started
+ * after both had run, as Babylon would start them, glslang was handed twgsl's
+ * factory and never came up. So they go one at a time, each started right
+ * after its own script ran, while its own `Module` is the one there, and the
+ * two started translators are handed to Babylon (`createWebGpuEngine`), which
+ * then neither runs a loader again nor calls a factory. The WebAssembly is
+ * fetched first, whole and checked, so the loaders' own fetches come from the
+ * cache. Rejects at once on a script that does not load (Babylon's script
+ * loader rejects), on a loader that defined nothing, and on a translator that
+ * is not WebAssembly.
  */
-export async function loadTranslators(): Promise<void> {
-  await Promise.all([
-    Tools.LoadScriptAsync(glslangJs),
-    Tools.LoadScriptAsync(twgslJs),
-    prefetchWasm(glslangWasm),
-    prefetchWasm(twgslWasm),
-  ]);
-  const missing = missingTranslators();
-  if (missing.length > 0) throw new Error(`the WebGPU translators did not load: ${missing.join(", ")}`);
+export async function loadTranslators(): Promise<Translators> {
+  await Promise.all([prefetchWasm(glslangWasm), prefetchWasm(twgslWasm)]);
+  await Tools.LoadScriptAsync(glslangJs);
+  const glslang = startTranslator("glslang", glslangWasm);
+  await Tools.LoadScriptAsync(twgslJs);
+  const twgsl = startTranslator("twgsl", twgslWasm);
+  const [glslangReady, twgslReady] = await Promise.all([glslang, twgsl]);
+  return { glslang: glslangReady, twgsl: twgslReady };
 }
 
 /**
@@ -158,16 +170,17 @@ export async function loadTranslators(): Promise<void> {
  * (antialiased, a stencil buffer, adapted to the device ratio), the
  * high-performance adapter, exactly `WEBGPU_REQUIRED_LIMITS`, and the optional
  * `features` it is given (`featuresToRequest`; Babylon also drops any the
- * adapter lacks). `loadTranslators` comes first; with them on the page, Babylon
- * takes them rather than fetching. Rejects on any failure, or when `ms` pass
- * first, having disposed what it made; the canvas may then hold a WebGPU
- * context, so the caller draws WebGL2 on a fresh one.
+ * adapter lacks), with the `translators` `loadTranslators` started handed to
+ * Babylon as they are. Rejects on any failure, or when `ms` pass first, having
+ * disposed what it made; the canvas may then hold a WebGPU context, so the
+ * caller draws WebGL2 on a fresh one.
  */
 export async function createWebGpuEngine(
   canvas: HTMLCanvasElement,
-  options: { ms?: number; features?: readonly string[] } = {},
+  options: { ms?: number; features?: readonly string[]; translators?: Translators } = {},
 ): Promise<WebGPUEngine> {
-  if (missingTranslators().length > 0) throw new Error("load the WebGPU translators first");
+  const translators = options.translators;
+  if (translators === undefined) throw new Error("load the WebGPU translators first");
   const ms = options.ms ?? WEBGPU_START_MS;
   const made: { engine: WebGPUEngine | null } = { engine: null };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -187,7 +200,9 @@ export async function createWebGpuEngine(
     });
     made.engine = engine;
     catchTranslationFailures(engine);
-    await engine.initAsync({ jsPath: glslangJs, wasmPath: glslangWasm }, { jsPath: twgslJs, wasmPath: twgslWasm });
+    // The started translators, as Babylon's options take them: glslang as a
+    // promise (its setup waits on it), twgsl as the instance. No path to load.
+    await engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl });
     await engine.prepareGlslangAndTintAsync();
     return engine;
   };
@@ -236,7 +251,15 @@ export function watchWebGpu(
   const frame = engine.onEndFrameObservable.addOnce(() => startup.frame(now()));
   const compiled = engine.onAfterShaderCompilationObservable.add(() => startup.compiled(now()));
   const effectError = engine.onEffectErrorObservable.add(() => report("pipeline"));
-  const lost = engine.onContextLostObservable.add(() => report("lost"));
+  const lost = engine.onContextLostObservable.add(() => {
+    // The page reloads after a lost device (and, once it lands, swaps
+    // renderers), so Babylon's own restore, which it starts right after this
+    // notification on the same engine, has nothing to do: it rebuilds what the
+    // reload is about to throw away, and throws on the way.
+    (engine as unknown as { _restoreEngineAfterContextLost: (init: unknown) => void })._restoreEngineAfterContextLost =
+      () => undefined;
+    report("lost");
+  });
 
   // Chained, not replaced: whatever held the hook still hears every entry.
   const previous = Logger.OnNewCacheEntry as ((entry: string) => void) | undefined;

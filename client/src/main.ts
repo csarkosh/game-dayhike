@@ -475,15 +475,18 @@ function rememberFailure(reason: "init" | "pipeline" | "lost", pin = true): { st
  * render is still the page's.
  */
 function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput, token: number): Promise<MadeEngine | null> {
+  let translators: Awaited<ReturnType<GpuModule["loadTranslators"]>> | undefined;
   return resolveWebGpu<MadeEngine>(input, {
     available: () => (navigator as { gpu?: unknown }).gpu !== undefined,
     load: async () => {
       const gpu: GpuModule = await import("./game/gpuEngine.js");
       return {
         probe: gpu.probeAdapter,
-        fetchTranslators: gpu.loadTranslators,
+        fetchTranslators: async () => {
+          translators = await gpu.loadTranslators();
+        },
         create: async (ms, features) => ({
-          engine: await gpu.createWebGpuEngine(canvas, { ms, features }),
+          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators }),
           watch: gpu.watchWebGpu,
         }),
       };
