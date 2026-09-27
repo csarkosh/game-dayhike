@@ -17,6 +17,7 @@ import { createBladeMeshes } from "../../src/game/bladeMeshes.js";
 import { createClutterMeshes } from "../../src/game/clutterMeshes.js";
 import type { CullPose } from "../../src/game/grassCull.js";
 import { OFFSET_HASH_SHIFT, offsetKeyedVertexBuffer } from "../../src/game/webgpuVertexBuffer.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const require = createRequire(import.meta.url);
 let engine: NullEngine;
@@ -252,7 +253,7 @@ describe("the grass cull's thin-instance buffers", () => {
       vi.restoreAllMocks();
       blades.dispose();
     }
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("binds each grass-card kind at one offset, and cuts into the same vertex buffers", () => {
     const scene = new Scene(engine);
@@ -301,5 +302,5 @@ describe("the grass cull's thin-instance buffers", () => {
       vi.restoreAllMocks();
       clutter.dispose();
     }
-  }, 60_000);
+  }, timeLimit(60_000));
 });

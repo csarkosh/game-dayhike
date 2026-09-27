@@ -436,7 +436,7 @@ describe("the renderer's engine", () => {
     } finally {
       renderer.dispose();
     }
-  }, 60_000);
+  }, timeLimit(60_000));
 });
 
 describe("world shell wiring", () => {
