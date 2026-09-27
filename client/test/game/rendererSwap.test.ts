@@ -37,11 +37,18 @@ import "../../src/sim/passes/index.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import { createForest } from "../../src/sim/forest.js";
-import type { Level } from "../../src/sim/level.js";
+import { parseLevel, type Level } from "../../src/sim/level.js";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { createWorld } from "../../src/sim/world.js";
+import { BLADE_MESH_PREFIX } from "../../src/game/bladeMeshes.js";
+import { PROBE_SEED_TOKEN, probePose } from "../../src/game/frameProbe.js";
+import { seedFromToken } from "../../src/game/seed.js";
+import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 import { createRenderer, type Renderer } from "../../src/game/renderer.js";
 import { createBodyMesh } from "../../src/game/bodyMesh.js";
 import { createSignMeshes } from "../../src/game/signMeshes.js";
@@ -291,6 +298,8 @@ function census(scene: Scene) {
     particleSystems: scene.particleSystems.length,
     beforeRender: scene.onBeforeRenderObservable.observers.length,
     afterRender: scene.onAfterRenderObservable.observers.length,
+    // The grass cull's hook, which a swapped scene needs as a fresh one does.
+    beforeActiveMeshes: scene.onBeforeActiveMeshesEvaluationObservable.observers.length,
   };
 }
 
@@ -357,6 +366,54 @@ describe("swapRenderer on NullEngine", () => {
     }
     extras.dispose();
     current.renderer.dispose();
+    expect(EngineStore.Instances.length).toBe(0);
+  }, 180_000);
+});
+
+describe("the grass cull after a swap, on NullEngine", () => {
+  it("cuts the blades and the grass to the view on a swapped renderer as on a fresh one", () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    const seed = seedFromToken(PROBE_SEED_TOKEN);
+    const level = parseLevel(sandbox01);
+    const forest = createForest(seed);
+    const world = createWorld(level, seed, false);
+    const pose = probePose();
+    /** One frame at the canopy pose turned by `turn`: every thin-instanced
+     * mesh and the instances it draws, which the cull hook cuts. */
+    const drawn = (r: Renderer, turn: number): string[] => {
+      r.setFreecam({ ...pose, yaw: pose.yaw + turn });
+      r.sync(world.state, -1, 0);
+      r.scene.render();
+      return r.scene.meshes
+        .filter((m): m is Mesh => m instanceof Mesh && m.hasThinInstances)
+        .map((m) => `${m.name} ${m.isEnabled() ? m.thinInstanceCount : 0}`)
+        .sort();
+    };
+    const blades = (lines: string[]): number =>
+      lines.filter((l) => l.startsWith(BLADE_MESH_PREFIX)).reduce((n, l) => n + Number(l.split(" ").pop()), 0);
+
+    const fresh = createRenderer(nullCanvas(), level, forest, { tier: "medium" });
+    const want = drawn(fresh, 0);
+    fresh.dispose();
+    expect(blades(want)).toBeGreaterThan(0);
+
+    const current = { renderer: createRenderer(nullCanvas(), level, forest, { tier: "high" }), canvas: nullCanvas() };
+    const bindings: SwapBindings = {
+      build: (canvas, tier) => createRenderer(canvas, level, forest, { tier }),
+      freshCanvas: nullCanvas,
+      extras: { dispose: () => undefined, build: () => undefined },
+      rebind: () => undefined,
+      restore: () => undefined,
+      loop: () => undefined,
+    };
+    const swapped = swapRenderer(current, { tier: "medium", engine: null, fallbackTier: "high" }, bindings).renderer;
+    try {
+      expect(drawn(swapped, 0)).toEqual(want);
+      // Turned about, the cut follows the swapped camera.
+      expect(blades(drawn(swapped, Math.PI))).not.toBe(blades(want));
+    } finally {
+      swapped.dispose();
+    }
     expect(EngineStore.Instances.length).toBe(0);
   }, 180_000);
 });
