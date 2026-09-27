@@ -49,6 +49,10 @@ export function finishFragmentFor(webgpu: boolean): string {
   return webgpu ? `#define DISABLE_UNIFORMITY_ANALYSIS\n${finishFragment}` : finishFragment;
 }
 
+// The ratio shared by every pass in the halation sub-chain — extract, blur X,
+// blur Y, and (on high) grade — so a pass's own ratio and the previous
+// pass's ratio agree and the whole sub-chain reads and writes quarter size
+// throughout, blur Y's write target included (see grade's ratio below).
 const HALATION_RATIO = 0.25;
 const HALATION_KERNEL = 32;
 
@@ -63,15 +67,30 @@ const HALATION_KERNEL = 32;
  * The scene pass exists only because Babylon renders the scene straight into
  * the FIRST post-process's own input render target: on high that would
  * otherwise be `halationExtract`, whose ratio (`HALATION_RATIO`, a deliberate
- * quarter resolution for the extract's OWN output) would size the scene
- * render itself, rasterising the entire frame at quarter resolution. A
- * `PassPostProcess` at ratio 1.0 in front of the halation chain absorbs that
- * ratio instead, so the scene always renders full-resolution regardless of
- * what the halation extract downsamples to. `grade.onApply` reads the scene
- * from the scene pass's INPUT (the true full-resolution render), not from
- * `halationExtract`'s input (which would give the same texture indirectly,
- * but only because the scene pass happens to sit in front of it — binding the
- * scene pass directly does not depend on that chaining detail).
+ * quarter resolution for the extract's own INPUT, which the previous pass
+ * writes) would size the scene render itself, rasterising the entire frame
+ * at quarter resolution. A `PassPostProcess` at ratio 1.0 in front of the
+ * halation chain absorbs that ratio instead, so the scene always renders
+ * full-resolution regardless of what the halation extract downsamples to.
+ * `grade.onApply` reads the scene from the scene pass's INPUT (the true
+ * full-resolution render), not from `halationExtract`'s input (which would
+ * give the same texture indirectly, but only because the scene pass happens
+ * to sit in front of it — binding the scene pass directly does not depend on
+ * that chaining detail).
+ *
+ * A pass's own ratio sizes the render target the previous pass writes into,
+ * not the pass's own output. On high, `grade` is therefore built at
+ * `HALATION_RATIO` rather than 1.0: that makes `halationBlurY` write a
+ * quarter-size target and take its blur step there, matching `halationBlurX`,
+ * instead of writing full size and taking a step a quarter as long vertically
+ * as horizontally — the glow was 76 by 22 px at half its peak before this,
+ * 74 by 74 px after (see `docs/rendering/2026-09-27-halation-blur-size.md`).
+ * `grade`'s own OUTPUT is unaffected: it draws into `chromaticAberration`'s
+ * input, whose ratio stays 1.0, so `grade` still writes full size regardless
+ * of the ratio it was built with. On medium there is no halation chain ahead
+ * of it, so `grade` is the FIRST pass and its ratio sizes the scene render
+ * itself (the same hazard the scene pass exists to avoid on high) — there it
+ * stays 1.0.
  *
  * Aberration and FXAA are constructed directly as `ChromaticAberrationPostProcess`
  * and `FxaaPostProcess` rather than through `DefaultRenderingPipeline`: the
@@ -135,11 +154,20 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
       black = RawTexture.CreateRGBATexture(new Uint8Array([0, 0, 0, 255]), 1, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
     }
 
+    // On high, grade's own ratio sizes blur Y's write target (Babylon sizes
+    // a pass's write target by the NEXT pass's ratio — see the doc comment
+    // above). Building grade at HALATION_RATIO makes blur Y write a
+    // quarter-size target and take its blur step there, matching blur X.
+    // grade's own OUTPUT is unaffected: it draws into aberration's input,
+    // which stays ratio 1.0, so grade still writes full size. On medium,
+    // grade is the FIRST pass (no halation chain ahead of it), so its ratio
+    // sizes the scene render itself and must stay 1.0.
+    const gradeRatio = features.halation ? HALATION_RATIO : 1.0;
     grade = new PostProcess("grade", "grade",
       ["exposure", "whitePoint", "purkinje", "purkinjeThreshold", "purkinjeStrength", "shadowTint", "shadowAmount",
         "midtoneTint", "midtoneAmount", "highlightTint", "highlightAmount", "saturation", "lift", "vignetteWeight",
         "vignetteColour", "halationStrength"],
-      ["halationSampler"], 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
+      ["halationSampler"], gradeRatio, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
     const boundScenePass = scenePass;
     const boundBlurY = blurY;
     const boundBlack = black;
