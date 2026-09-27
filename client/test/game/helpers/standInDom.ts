@@ -11,9 +11,14 @@
  * - a focused node taken out of the page, disabled, or put under an inert
  *   ancestor loses the focus to the body, so a repaint that rebuilt the
  *   control, or a focus move that never happened, shows as lost focus;
- * - nothing hidden, disabled, inert or under `display: none` (set inline)
- *   takes the focus, and a pointer's click focuses the control it lands on,
- *   as Chrome and Firefox do.
+ * - nothing hidden, disabled, inert or under `display: none` takes the
+ *   focus or a click, and a pointer's click focuses the control it lands on,
+ *   as Chrome and Firefox do;
+ * - a script unselecting the chosen option selects the first one again.
+ *
+ * Styles are known only as set inline (`style.display`): a class that hides
+ * a node through a stylesheet (`.pausemenu` without `.open`) is invisible
+ * here, so focus survives it where a browser would drop it.
  */
 import { vi } from "vitest";
 
@@ -42,7 +47,15 @@ export class StandInElement {
   private isHidden = false;
   private isDisabled = false;
   private isInert = false;
-  readonly style: Record<string, string> = {};
+  /** Inline styles; a write re-checks the focus, as `display: none` can
+   * take it away. */
+  readonly style: Record<string, string> = new Proxy({} as Record<string, string>, {
+    set: (target, key, value) => {
+      target[key as string] = String(value);
+      this.doc.focusFixup();
+      return true;
+    },
+  });
   private text = "";
   private readonly attrs = new Map<string, string>();
   private readonly listeners = new Map<string, Listener[]>();
@@ -183,16 +196,16 @@ export class StandInElement {
     return event;
   }
   /** A pointer's click: it focuses the control it lands on, then fires,
-   * counting one click. */
+   * counting one click. Nothing that cannot take the focus gets one. */
   click(): void {
-    if (this.disabled) return;
+    if (!this.focusable) return;
     if (FOCUSED_BY_CLICK.has(this.tagName)) this.focus();
     this.dispatch("click", { detail: 1 });
   }
   /** Enter or Space on a focused button: the button has the focus, and the
    * click it fires counts no pointer's clicks. */
   press(): void {
-    if (this.disabled) return;
+    if (!this.focusable) return;
     this.focus();
     this.dispatch("click", { detail: 0 });
   }
@@ -243,8 +256,15 @@ export class StandInOption extends StandInElement {
   get selected(): boolean {
     return this.isSelected;
   }
+  /** A script's write. A single select holds one selected option: selecting
+   * one clears the others, and unselecting the last leaves the first one
+   * not disabled selected, as a browser's does. */
   set selected(on: boolean) {
-    // A single select holds one selected option: selecting one clears the others.
+    this.setSelectedness(on);
+    if (!on && this.parent instanceof StandInSelect) this.parent.reset();
+  }
+  /** The selectedness alone, with no reset (a select's own value write). */
+  setSelectedness(on: boolean): void {
     if (on && this.parent instanceof StandInSelect) for (const o of this.parent.options) o.isSelected = false;
     this.isSelected = on;
   }
@@ -263,18 +283,20 @@ export class StandInSelect extends StandInElement {
   /** A script's write: selects the matching option, or none where no option
    * has that value, and fires nothing, as a browser does. */
   set value(v: string) {
-    for (const o of this.options) o.selected = false;
+    for (const o of this.options) o.setSelectedness(false);
     const match = this.options.find((o) => o.value === v);
-    if (match !== undefined) match.selected = true;
+    if (match !== undefined) match.setSelectedness(true);
+  }
+  /** With none selected, the first option not disabled is. */
+  reset(): void {
+    if (this.selectedIndex !== -1) return;
+    this.options.find((o) => !o.disabled)?.setSelectedness(true);
   }
   /** Options going in with none selected: the first one not disabled is, as a
    * browser's single select does on insertion. */
   override append(...nodes: (StandInElement | string)[]): void {
     super.append(...nodes);
-    if (this.selectedIndex === -1) {
-      const first = this.options.find((o) => !o.disabled);
-      if (first !== undefined) first.selected = true;
-    }
+    this.reset();
   }
   /** A person picking `value`: the selection moves, then `input` and
    * `change` fire, in that order, as a browser fires them. Nothing happens

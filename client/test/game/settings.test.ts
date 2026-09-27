@@ -237,6 +237,46 @@ describe("the stand-in document, where a browser is strict", () => {
     expect(doc.activeElement).toBe(doc.body);
   });
 
+  it("delivers no click, by pointer or by key, to a node that cannot take the focus", () => {
+    const doc = installStandInDom();
+    const box = doc.createElement("div");
+    const button = doc.createElement("button");
+    doc.body.append(box);
+    box.append(button);
+    let clicks = 0;
+    button.addEventListener("click", () => (clicks += 1));
+    for (const hide of [() => (box.inert = true), () => (box.hidden = true), () => (box.style.display = "none")]) {
+      hide();
+      button.click();
+      button.press();
+      box.inert = false;
+      box.hidden = false;
+      box.style.display = "";
+    }
+    expect(clicks).toBe(0);
+    button.click();
+    expect(clicks).toBe(1);
+  });
+
+  it("takes the focus from a node whose ancestor is later set to display: none", () => {
+    const doc = installStandInDom();
+    const box = doc.createElement("div");
+    const button = doc.createElement("button");
+    doc.body.append(box);
+    box.append(button);
+    button.focus();
+    box.style.display = "none";
+    expect(doc.activeElement).toBe(doc.body);
+  });
+
+  it("selects the first option again when a script unselects the chosen one", () => {
+    const { el } = select(["a", "b"]);
+    el.value = "b";
+    el.options[1]!.selected = false;
+    expect(el.selectedIndex).toBe(0);
+    expect(el.value).toBe("a");
+  });
+
   it("focuses a button a pointer clicks, as Chrome and Firefox do", () => {
     const doc = installStandInDom();
     const button = doc.createElement("button");
