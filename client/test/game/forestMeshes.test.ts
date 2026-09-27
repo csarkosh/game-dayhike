@@ -1285,4 +1285,23 @@ describe("defaultBakeImpostor readiness gate", () => {
     expect(renderSpy).not.toHaveBeenCalled();
     expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
   });
+
+  it("an abort ends the bake at the next poll: nothing rendered, the RTT gone", async () => {
+    const { scene, mesh } = bakeScene();
+    const loads = new AbortController();
+    let polls = 0;
+    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockImplementation(() => {
+      polls++;
+      if (polls === 2) loads.abort();
+      return false;
+    });
+    const renderSpy = vi.spyOn(RenderTargetTexture.prototype, "render");
+
+    const texture = await defaultBakeImpostor(mesh, scene, 5000, undefined, loads.signal);
+
+    expect(texture).toBeNull();
+    expect(polls).toBe(2);
+    expect(renderSpy).not.toHaveBeenCalled();
+    expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
+  });
 });

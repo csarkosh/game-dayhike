@@ -101,6 +101,7 @@ import {
   type FadeBands,
 } from "./distanceFadePlugin.js";
 import { modelUrl } from "./assetUrls.js";
+import { loadUntilAborted } from "./modelLoad.js";
 
 /** Species index 0 → fir/conifer_a, 1 → pine/conifer_b (the `treeInCell`
  * convention). Understory keeps pairing off SPECIES, not cohort. */
@@ -150,12 +151,14 @@ export type ForestMeshesOptions = {
    * bucket — far trees drop out rather than draw grey quads. The production
    * default is async: it must wait out shader compilation. Same parameter
    * order as `defaultBakeImpostor`, trailing options and all: `timeoutMs`
-   * third, the optional bake `pose` (the snag's upright roll) fourth. */
+   * third, the optional bake `pose` (the snag's upright roll) fourth, and the
+   * shell's `signal`, aborted when it is disposed, fifth. */
   bakeImpostor?: (
     mesh: Mesh,
     scene: Scene,
     timeoutMs?: number,
     pose?: Quaternion,
+    signal?: AbortSignal,
   ) => Texture | null | Promise<Texture | null>;
   /** Near-band radius override — the quality-tier knob (low = 140). */
   nearRadius?: number;
@@ -615,7 +618,8 @@ const IMPOSTOR_BAKE_LAYER = 0x10000000;
  *
  * A bake that never becomes ready (`timeoutMs`, test hook) resolves null,
  * which disables that billboard's bucket — far trees drop out instead of
- * drawing 3,200 opaque grey quads.
+ * drawing 3,200 opaque grey quads. So does a bake whose `signal` aborts (its
+ * shell was disposed), at the next poll.
  *
  * `pose` rotates the bake clone before anything is measured, for a model
  * whose rest orientation is not how it stands in the world: `deadwood.snag`
@@ -630,6 +634,7 @@ export async function defaultBakeImpostor(
   scene: Scene,
   timeoutMs = 5000,
   pose?: Quaternion,
+  signal?: AbortSignal,
 ): Promise<Texture | null> {
   // Clones share geometry and materials with the source; identical vertex
   // layout means an effect compiled for a clone is the effect the source
@@ -703,7 +708,9 @@ export async function defaultBakeImpostor(
     // normally settles in a few frames' worth of 16 ms hops.
     const deadline = performance.now() + timeoutMs;
     while (!rtt.isReadyForRendering()) {
-      if (performance.now() >= deadline) {
+      // A bake whose shell is disposed stops polling the torn-down scene and
+      // never renders into it, rather than holding it for the full timeout.
+      if (signal?.aborted === true || performance.now() >= deadline) {
         camera.dispose();
         rtt.dispose();
         return null;
@@ -783,6 +790,12 @@ export function createForestMeshes(
   let deadwoodLogMaxX = 0;
   let deadwoodLogMinY = 0;
   let disposed = false;
+  /** Aborted first thing in `dispose`: a GLB in flight then ends at once and
+   * quietly, none starts after it, and a bake still polling stops
+   * (`modelLoad.ts`). */
+  const loads = new AbortController();
+  const loadModel = (url: string): Promise<AssetContainer> =>
+    loadUntilAborted(() => loadAssetContainerAsync(url, scene), loads.signal);
 
   // Last camera seen and last origin built. Split so an `update` that arrives
   // while the GLBs are still loading is honoured the moment they land.
@@ -883,7 +896,7 @@ export function createForestMeshes(
     // the meshes as loaded — enabled and free of thin instances. Impostor
     // texture from LOD1 — detailed enough for a 256² bake, cheaper than LOD0.
     const lod1First = lods[1][0];
-    const bake = lod1First === undefined ? null : bakeImpostor(lod1First, scene);
+    const bake = lod1First === undefined ? null : bakeImpostor(lod1First, scene, undefined, undefined, loads.signal);
 
     for (const mesh of [...lods.flat(), ...(understory ?? [])]) prepBucketMesh(mesh);
 
@@ -1058,7 +1071,7 @@ export function createForestMeshes(
     // fourth.
     const snagSource = loaded.deadwood[0];
     const snagBake =
-      snagSource === undefined ? null : bakeImpostor(snagSource, scene, undefined, SNAG_POSE);
+      snagSource === undefined ? null : bakeImpostor(snagSource, scene, undefined, SNAG_POSE, loads.signal);
 
     // Both dead-tree roles end at the near seam: the SNAG half cross-fades
     // into its billboard there, and a ~1 m log is sub-pixel beyond it and
@@ -1126,7 +1139,7 @@ export function createForestMeshes(
     url: string,
     pickBucketed: (container: AssetContainer) => Mesh[][],
   ): Promise<Mesh[][] | null> {
-    const container = await loadAssetContainerAsync(url, scene);
+    const container = await loadModel(url);
     containers.push(container);
     // Disposed while awaiting: dispose() has already run over an earlier
     // (possibly empty) container list, so clean up what just landed here.
@@ -1150,8 +1163,15 @@ export function createForestMeshes(
     try {
       const giants: { lods: [Mesh[], Mesh[], Mesh[]]; understory: Mesh[] | null }[] = [];
       for (let s = 0; s < SPECIES_COUNT; s++) {
-        const tree = await loadAssetContainerAsync(TREE_URLS[s] as string, scene);
-        const under = await loadAssetContainerAsync(UNDERSTORY_URLS[s] as string, scene);
+        const tree = await loadModel(TREE_URLS[s] as string);
+        let under: AssetContainer;
+        try {
+          under = await loadModel(UNDERSTORY_URLS[s] as string);
+        } catch (error) {
+          // The tree already landed and is nobody's yet.
+          tree.dispose();
+          throw error;
+        }
         containers.push(tree, under);
         if (disposed) {
           tree.dispose();
@@ -1203,7 +1223,8 @@ export function createForestMeshes(
       adopt({ giants, saplings, deadwood });
     } catch {
       // A missing or broken asset costs the trees, never the match — the same
-      // degrade-don't-block rule as the character pool's `load`.
+      // degrade-don't-block rule as the character pool's `load`. A dispose
+      // mid-load ends here too, with the rest of the list never fetched.
     }
   }
 
@@ -1408,6 +1429,7 @@ export function createForestMeshes(
     dispose() {
       if (disposed) return;
       disposed = true;
+      loads.abort();
       for (const sp of [...(species ?? []), ...(saplingSpecies ?? [])]) {
         for (const bucket of [...sp.lods, sp.understory, sp.impostor.bucket]) {
           if (bucket === null) continue;
