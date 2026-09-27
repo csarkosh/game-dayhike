@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import {
   PROBE_MAX_MS,
+  START_FAILED_LINE,
   autoPick,
+  createProbeMeter,
+  idleCadenceMs,
+  startHike,
   nextProbeStep,
   probeHolds,
   probePose,
@@ -169,8 +173,13 @@ describe("startupTier", () => {
     adapter: null, limits: null, adapterStatus: "none", cores: 10, memoryGb: 16, mobile: false, browser: 153,
   };
 
-  /** Fakes for the page: steps answer from `answers`, the timer fires when told. */
-  function fakes(answers: (tier: QualityTier) => ProbeReading | null, storage: Storage = memoryStorage()) {
+  /** Fakes for the page: steps answer from `answers`, the timer fires when told,
+   * the page is visible and draws at 60 Hz unless told otherwise. */
+  function fakes(
+    answers: (tier: QualityTier) => ProbeReading | null,
+    storage: Storage = memoryStorage(),
+    page: { cadence?: number | null; visible?: () => Promise<boolean> } = {},
+  ) {
     const steps: QualityTier[] = [];
     const lines: string[] = [];
     let screens = 0;
@@ -194,6 +203,8 @@ describe("startupTier", () => {
         timer = { fn, ms };
         return () => { timer = null; };
       },
+      whenVisible: page.visible ?? (async () => true),
+      idleCadence: async () => (page.cadence === undefined ? 16.7 : page.cadence),
       log: (line) => void lines.push(line),
     };
     return { deps, storage, steps, lines, screens: () => screens, open: () => open, timer: () => timer };
@@ -252,7 +263,7 @@ describe("startupTier", () => {
     expect(await startupTier(SAFARI, page(), t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
     expect(t.open()).toBe(0);
     expect(readAutoRecord(t.storage)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
-    expect(t.lines[0]).toBe("quality probe: no verdict, starting at medium (apple-unknown)");
+    expect(t.lines[0]).toBe("quality probe: no verdict; starting at medium (apple-unknown)");
     expect(PROBE_MAX_MS).toBe(30_000);
   });
 
@@ -301,6 +312,41 @@ describe("startupTier", () => {
     expect(await startupTier(SAFARI, page("?tier=medium", "low"), overridden.deps)).toEqual({ tier: "medium", source: "override", cls: "apple-unknown" });
   });
 
+  it("never probes where the display or the browser draws below 60 Hz, and writes nothing", async () => {
+    // Safari halves its frame rate in Low Power Mode and when the Mac runs
+    // hot: every tier would read 33 ms, and low would be kept for 30 days.
+    const throttled = fakes((tier) => reading(tier, 33.3), memoryStorage(), { cadence: 33.3 });
+    expect(await startupTier(SAFARI, page(), throttled.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+    expect(throttled.steps).toEqual([]);
+    expect(readAutoRecord(throttled.storage)).toBe(null);
+    expect(throttled.open()).toBe(0);
+    expect(throttled.lines[0]).toBe("quality probe: skipped, the page draws below 60 Hz (33.3 ms a frame); starting at medium (apple-unknown)");
+    const unread = fakes((tier) => reading(tier, 16.7), memoryStorage(), { cadence: null });
+    expect(await startupTier(SAFARI, page(), unread.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+    expect(unread.steps).toEqual([]);
+    expect(readAutoRecord(unread.storage)).toBe(null);
+    const smooth = fakes((tier) => reading(tier, 16.7), memoryStorage(), { cadence: 16.7 });
+    expect(await startupTier(SAFARI, page(), smooth.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
+    expect(smooth.steps).toEqual(["high"]);
+  });
+
+  it("waits for the tab to be seen before it spends an attempt, and spends none if the page leaves first", async () => {
+    let show: (seen: boolean) => void = () => undefined;
+    const hidden = fakes((tier) => reading(tier, 16.7), memoryStorage(), { visible: () => new Promise((resolve) => { show = resolve; }) });
+    const pending = startupTier(SAFARI, page(), hidden.deps);
+    await Promise.resolve();
+    expect(readAutoRecord(hidden.storage)).toBe(null);
+    expect(hidden.timer()).toBe(null);
+    show(true);
+    expect(await pending).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
+    expect(readAutoRecord(hidden.storage)!.attempts).toBe(0);
+    const left = fakes((tier) => reading(tier, 16.7), memoryStorage(), { visible: async () => false });
+    expect(await startupTier(SAFARI, page(), left.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+    expect(left.steps).toEqual([]);
+    expect(readAutoRecord(left.storage)).toBe(null);
+    expect(left.open()).toBe(0);
+  });
+
   it("stops probing after three attempts without a verdict", async () => {
     const s = memoryStorage();
     writeAutoRecord(s, { v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 3, verdict: null });
@@ -318,5 +364,139 @@ describe("autoPick", () => {
     expect(autoPick(signals, { record: null, pixels: 2_073_600, now: 1_790_000_000_000 })).toEqual({
       cls: "apple-unknown", gpu: "Apple GPU", tier: "medium", probeFrom: "high",
     });
+  });
+});
+
+describe("idleCadenceMs", () => {
+  it("is the median interval of an idle run, the first dropped", () => {
+    expect(idleCadenceMs([400, ...f(30, 16.7)])).toBeCloseTo(16.7, 6);
+    expect(idleCadenceMs([16.7, ...f(30, 33.3)])).toBeCloseTo(33.3, 6);
+    expect(idleCadenceMs([16.7, ...f(29, 16.7), 120])).toBeCloseTo(16.7, 6);
+  });
+
+  it("reads nothing from a run too short or all stalls", () => {
+    expect(idleCadenceMs(f(10, 16.7))).toBe(null);
+    expect(idleCadenceMs([16.7, ...f(30, 300)])).toBe(null);
+  });
+});
+
+describe("createProbeMeter", () => {
+  /** Frames at `ms` until the meter answers, from `t`; returns the answer and the frames it took. */
+  function run(meter: ReturnType<typeof createProbeMeter>, t: { now: number }, ms: number, limit = 1000) {
+    for (let n = 1; n <= limit; n++) {
+      t.now += ms;
+      const step = meter.frame(t.now, true);
+      if (step.done) return { stats: step.stats, frames: n };
+    }
+    return { stats: undefined, frames: limit };
+  }
+
+  it("waits for the scene to be quiet, discards the warm-up, and measures 120 frames", () => {
+    const t = { now: 0 };
+    const meter = createProbeMeter(t.now);
+    const got = run(meter, t, 16.667);
+    // 1.5 s of quiet (90 frames, the last of which reads ready), 60 warm, 120 measured.
+    expect(got.frames).toBe(90 + 60 + 120);
+    expect(got.stats!.frames).toBe(120);
+    expect(got.stats!.meanMs).toBeCloseTo(16.667, 3);
+  });
+
+  it("restarts the warm-up when a shader compiles after the scene is ready, so its hitch is never measured", () => {
+    const t = { now: 0 };
+    const meter = createProbeMeter(t.now);
+    for (let n = 0; n < 90 + 60 + 50; n++) {
+      t.now += 16.667;
+      expect(meter.frame(t.now, true).done).toBe(false);
+    }
+    meter.compiled(t.now + 1);
+    t.now += 200;
+    expect(meter.frame(t.now, true).done).toBe(false);
+    const got = run(meter, t, 16.667);
+    expect(got.frames).toBe(59 + 120);
+    expect(got.stats!.meanMs).toBeCloseTo(16.667, 3);
+    expect(got.stats!.p95Ms).toBeCloseTo(16.667, 3);
+  });
+
+  it("gives up on a scene that is never ready in 15 s", () => {
+    const t = { now: 0 };
+    const meter = createProbeMeter(t.now);
+    let answer: { done: boolean; stats?: unknown } = { done: false };
+    let frames = 0;
+    while (!answer.done && frames < 2000) {
+      t.now += 16.667;
+      frames += 1;
+      answer = meter.frame(t.now, false);
+    }
+    expect(answer).toEqual({ done: true, stats: null });
+    expect(t.now).toBeGreaterThan(15_000);
+    expect(t.now).toBeLessThan(15_020);
+  });
+});
+
+describe("startHike", () => {
+  const SAFARI: GpuSignals = {
+    renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
+  };
+  const DECIDED = { tier: "medium" as const, source: "auto" as const, cls: "apple-unknown" as const };
+
+  function page(over: Partial<Parameters<typeof startHike>[0]> = {}) {
+    const events: string[] = [];
+    let current = true;
+    const deps: Parameters<typeof startHike>[0] = {
+      signals: Promise.resolve(SAFARI),
+      current: () => current,
+      showLoading: () => {
+        events.push("loading");
+        return { dispose: () => void events.push("loading gone") };
+      },
+      decide: async () => {
+        events.push("decide");
+        return DECIDED;
+      },
+      build: (decided) => void events.push(`build ${decided.tier}`),
+      fail: (error) => void events.push(`fail ${String(error)}`),
+      ...over,
+    };
+    return { deps, events, leave: () => { current = false; } };
+  }
+
+  it("says Loading… from the start of the wait until the hike is built", async () => {
+    let signal: (s: GpuSignals) => void = () => undefined;
+    const p = page({ signals: new Promise((resolve) => { signal = resolve; }) });
+    const started = startHike(p.deps);
+    expect(p.events).toEqual(["loading"]);
+    signal(SAFARI);
+    await started;
+    expect(p.events).toEqual(["loading", "decide", "loading gone", "build medium"]);
+  });
+
+  it("hands Loading… over to the probe's screen", async () => {
+    const p = page({
+      decide: async (_signals, hideLoading) => {
+        hideLoading();
+        p.events.push("probe screen");
+        return DECIDED;
+      },
+    });
+    await startHike(p.deps);
+    expect(p.events).toEqual(["loading", "loading gone", "probe screen", "build medium"]);
+  });
+
+  it("says the hike could not start when building it throws, rather than leaving a blank page", async () => {
+    const p = page({ build: () => { throw new Error("no WebGL2"); } });
+    await startHike(p.deps);
+    expect(p.events).toEqual(["loading", "decide", "loading gone", "fail Error: no WebGL2"]);
+    expect(START_FAILED_LINE).toBe("This browser could not start the game.");
+  });
+
+  it("builds nothing and says nothing once the page has moved on", async () => {
+    const p = page({
+      decide: async () => {
+        p.leave();
+        return DECIDED;
+      },
+    });
+    await startHike(p.deps);
+    expect(p.events).toEqual(["loading", "loading gone"]);
   });
 });

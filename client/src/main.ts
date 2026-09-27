@@ -29,7 +29,8 @@ import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
 import { browserEnv, gatherSignals, type GpuSignals } from "./game/gpuSignals.js";
-import { autoPick, startupTier } from "./game/frameProbe.js";
+import { START_FAILED_LINE, autoPick, startHike, startupTier } from "./game/frameProbe.js";
+import { createHud } from "./game/hud.js";
 import { probeDeps } from "./game/probeScene.js";
 import { containerPixels } from "./game/quality.js";
 import type { AutoSummary } from "./game/settings.js";
@@ -552,15 +553,30 @@ function render(container: HTMLDivElement): void {
   // machine whose GPU the browser will not name, from a probe of a few seconds
   // behind its own screen. `running` covers the wait, so a render that moves
   // on stops the probe, and disposes its renderer, before building its own.
+  // "Loading…" shows from the first moment, and a throw anywhere leaves a line
+  // rather than a blank page (`startHike`).
   const probe = probeDeps(container);
+  const cancelled = (): boolean => token !== renderToken;
+  let canvas: HTMLCanvasElement | null = null;
   running = { dispose: () => probe.abort() };
-  void signalsReady
-    .then((read) =>
-      startupTier(read, { search: location.search, choice: currentChoice(), cancelled: () => token !== renderToken }, probe),
-    )
-    .then(({ tier }) => {
-      if (token !== renderToken) return;
-      const canvas = document.createElement("canvas");
+  void startHike({
+    signals: signalsReady,
+    current: () => !cancelled(),
+    showLoading: () => {
+      const line = createHud(container);
+      line.setStatus("Loading…");
+      return line;
+    },
+    decide: (read, hideLoading) =>
+      startupTier(read, { search: location.search, choice: currentChoice(), cancelled }, {
+        ...probe,
+        showScreen: () => {
+          hideLoading();
+          return probe.showScreen();
+        },
+      }),
+    build: ({ tier }) => {
+      canvas = document.createElement("canvas");
       container.appendChild(canvas);
       game = startGame(canvas, route.token, {
         lobby,
@@ -583,7 +599,15 @@ function render(container: HTMLDivElement): void {
       running = game;
       announcer.afterPaint();
       paintRoster();
-    });
+    },
+    fail: (error) => {
+      console.error("The game could not start.", error);
+      canvas?.remove();
+      const line = createHud(container);
+      line.setStatus(START_FAILED_LINE);
+      running = { dispose: () => line.dispose() };
+    },
+  });
 }
 
 window.addEventListener("popstate", () => render(app));

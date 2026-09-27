@@ -14,15 +14,13 @@ import { parseLevel } from "../sim/level.js";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../sim/terrain.js";
 import { createWorld } from "../sim/world.js";
 import {
-  PROBE_FRAMES,
   PROBE_HOUR,
-  PROBE_QUIET_MS,
-  PROBE_READY_MAX_MS,
+  PROBE_IDLE_FRAMES,
   PROBE_SEED_TOKEN,
-  PROBE_WARMUP_FRAMES,
+  createProbeMeter,
+  idleCadenceMs,
   probePose,
   probeReadingLine,
-  readIntervals,
   type StartupDeps,
 } from "./frameProbe.js";
 import { afterNextPaint } from "./paint.js";
@@ -72,11 +70,10 @@ export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier): P
 }
 
 /**
- * Measures `tier` on a fresh canvas in `container`: ready (the scene ready,
- * nothing waiting, no shader compiled for `PROBE_QUIET_MS`, at most
- * `PROBE_READY_MAX_MS`), then `PROBE_WARMUP_FRAMES` discarded and
- * `PROBE_FRAMES` intervals recorded. Null on a cancel, an abort, a scene that
- * never readies, a throw, or too few frames. `signal` stops it at once,
+ * Measures `tier` on a fresh canvas in `container`, frame by frame through
+ * `createProbeMeter`: ready, warm, measured, with a late shader compile
+ * starting the warm-up again. Null on a cancel, an abort, a scene that never
+ * readies, a throw, or too few frames. `signal` stops it at once,
  * disposing the renderer before `abort()` returns, so the page can build its
  * next renderer straight after without two living at once.
  */
@@ -102,15 +99,8 @@ export function runProbeStep(
       return;
     }
     const { engine, scene } = probe.renderer;
-    const began = performance.now();
-    let lastCompile = began;
-    const compiled = engine.onAfterShaderCompilationObservable.add(() => {
-      lastCompile = performance.now();
-    });
-    let ready = false;
-    let warm = 0;
-    let last = began;
-    const intervals: number[] = [];
+    const meter = createProbeMeter(performance.now());
+    const compiled = engine.onAfterShaderCompilationObservable.add(() => meter.compiled(performance.now()));
     let done = false;
 
     const finish = (reading: ProbeReading | null): void => {
@@ -132,30 +122,14 @@ export function runProbeStep(
       try {
         const now = performance.now();
         probe.frame();
-        if (!ready) {
-          if (now - began > PROBE_READY_MAX_MS) {
-            finish(null);
-            return;
-          }
-          ready = scene.isReady() && scene.getWaitingItemsCount() === 0 && now - lastCompile >= PROBE_QUIET_MS;
-          last = now;
-          return;
-        }
-        if (warm < PROBE_WARMUP_FRAMES) {
-          warm += 1;
-          last = now;
-          return;
-        }
-        intervals.push(now - last);
-        last = now;
-        if (intervals.length >= PROBE_FRAMES) {
-          const stats = readIntervals(intervals);
-          finish(
-            stats === null
-              ? null
-              : { tier, ...stats, pixels: containerPixels(container), engine: engine.isWebGPU ? "webgpu" : "webgl2" },
-          );
-        }
+        const sceneReady = meter.ready || (scene.isReady() && scene.getWaitingItemsCount() === 0);
+        const step = meter.frame(now, sceneReady);
+        if (!step.done) return;
+        finish(
+          step.stats === null
+            ? null
+            : { tier, ...step.stats, pixels: containerPixels(container), engine: engine.isWebGPU ? "webgpu" : "webgl2" },
+        );
       } catch (error) {
         console.warn("quality probe: a frame failed.", error);
         finish(null);
@@ -190,6 +164,50 @@ export function probeDeps(container: HTMLElement): PageProbe {
       const id = setTimeout(fn, ms);
       return () => clearTimeout(id);
     },
+    whenVisible: () =>
+      new Promise<boolean>((resolve) => {
+        if (aborts.signal.aborted) return resolve(false);
+        if (document.visibilityState === "visible") return resolve(true);
+        const settle = (seen: boolean): void => {
+          document.removeEventListener("visibilitychange", onChange);
+          aborts.signal.removeEventListener("abort", onAbort);
+          resolve(seen);
+        };
+        const onChange = (): void => {
+          if (document.visibilityState === "visible") settle(true);
+        };
+        const onAbort = (): void => settle(false);
+        document.addEventListener("visibilitychange", onChange);
+        aborts.signal.addEventListener("abort", onAbort);
+      }),
+    // The screen's own frames, timed by `requestAnimationFrame` before any
+    // scene is built: the page's cadence with nothing to draw.
+    idleCadence: () =>
+      new Promise<number | null>((resolve) => {
+        const intervals: number[] = [];
+        let last = -1;
+        let id = 0;
+        const onAbort = (): void => {
+          cancelAnimationFrame(id);
+          resolve(null);
+        };
+        const tick = (now: number): void => {
+          if (last >= 0) intervals.push(now - last);
+          last = now;
+          if (intervals.length > PROBE_IDLE_FRAMES) {
+            aborts.signal.removeEventListener("abort", onAbort);
+            resolve(idleCadenceMs(intervals));
+            return;
+          }
+          id = requestAnimationFrame(tick);
+        };
+        if (aborts.signal.aborted) {
+          resolve(null);
+          return;
+        }
+        aborts.signal.addEventListener("abort", onAbort);
+        id = requestAnimationFrame(tick);
+      }),
     log: (line) => console.info(line),
     abort: () => aborts.abort(),
   };

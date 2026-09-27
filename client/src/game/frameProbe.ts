@@ -16,6 +16,13 @@
  * therefore never infers headroom and never steps up. It starts at the ceiling
  * and steps down: a miss at high measures medium once, and any other miss
  * settles on low, which is the floor and is never measured.
+ *
+ * Nor can it measure anything where the page itself draws below 60 Hz: a
+ * display that refreshes slower, or a browser that halves its frame rate
+ * (Safari in Low Power Mode, or on a Mac running hot), reads a miss at every
+ * tier whatever the GPU. So before the attempt is spent the probe screen's own
+ * idle frames are timed, and below 60 Hz the probe is skipped, the class's
+ * start tier kept, and nothing written: a later load tries again.
  */
 import { elevationAt } from "../sim/terrain.js";
 import { classifyGpu, gpuIdentity, type GpuClass } from "./gpuClass.js";
@@ -59,6 +66,10 @@ export const PROBE_QUIET_MS = 1500;
 export const PROBE_READY_MAX_MS = 15_000;
 /** The whole probe, every step, is abandoned after this. */
 export const PROBE_MAX_MS = 30_000;
+/** Idle frames timed on the probe screen before the attempt, about 0.5 s. */
+export const PROBE_IDLE_FRAMES = 30;
+/** Fewer idle intervals than this left after the stalls are dropped is no reading. */
+export const PROBE_IDLE_MIN_FRAMES = 20;
 /** The seed of every rendering note's canopy pose (627994160). */
 export const PROBE_SEED_TOKEN = "atmo";
 /** Noon, the canopy pose's hour. */
@@ -81,6 +92,70 @@ export function readIntervals(intervals: readonly number[]): ProbeStats | null {
   const sorted = [...kept].sort((a, b) => a - b);
   const p95Ms = sorted[Math.ceil(0.95 * sorted.length) - 1] ?? meanMs;
   return { frames: kept.length, meanMs, p95Ms };
+}
+
+/**
+ * The page's own frame interval while nothing is drawn but the probe screen:
+ * the median of an idle run, the first interval (the screen's own paint) and
+ * stalls dropped, or null when too few are left. The median, so one hitch in
+ * half a second does not read as a slow display.
+ */
+export function idleCadenceMs(intervals: readonly number[]): number | null {
+  const kept = intervals.slice(1).filter((ms) => Number.isFinite(ms) && ms >= 0 && ms <= PROBE_STALL_MS);
+  if (kept.length < PROBE_IDLE_MIN_FRAMES) return null;
+  const sorted = [...kept].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 === 1 ? (sorted[mid] as number) : ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2;
+}
+
+/**
+ * One probe step's frames, as data: `frame` for each render-loop callback,
+ * `compiled` whenever a shader compiles. The scene is ready once it says so and
+ * no shader has compiled for `PROBE_QUIET_MS`, given up at `PROBE_READY_MAX_MS`;
+ * then `PROBE_WARMUP_FRAMES` are discarded and `PROBE_FRAMES` intervals kept. A
+ * shader that compiles after the scene is ready starts the warm-up again, so
+ * its hitch (a hundred milliseconds or more, which would tip a 60 Hz machine's
+ * mean into a miss) is never measured; the probe's 30 s cap bounds the restarts.
+ */
+export function createProbeMeter(start: number): {
+  readonly ready: boolean;
+  compiled(now: number): void;
+  frame(now: number, sceneReady: boolean): { done: false } | { done: true; stats: ProbeStats | null };
+} {
+  let lastCompile = start;
+  let ready = false;
+  let warm = 0;
+  let last = start;
+  const intervals: number[] = [];
+  return {
+    get ready() {
+      return ready;
+    },
+    compiled(now) {
+      lastCompile = now;
+      if (ready) {
+        warm = 0;
+        intervals.length = 0;
+      }
+    },
+    frame(now, sceneReady) {
+      if (!ready) {
+        if (now - start > PROBE_READY_MAX_MS) return { done: true, stats: null };
+        ready = sceneReady && now - lastCompile >= PROBE_QUIET_MS;
+        last = now;
+        return { done: false };
+      }
+      if (warm < PROBE_WARMUP_FRAMES) {
+        warm += 1;
+        last = now;
+        return { done: false };
+      }
+      intervals.push(now - last);
+      last = now;
+      if (intervals.length < PROBE_FRAMES) return { done: false };
+      return { done: true, stats: readIntervals(intervals) };
+    },
+  };
 }
 
 /** Whether a reading holds 60 Hz. */
@@ -197,6 +272,11 @@ export type StartupDeps = {
   showScreen(): { dispose(): void };
   /** A timer; the function returned clears it. */
   setTimer(fn: () => void, ms: number): () => void;
+  /** Resolves true once the tab is visible, false if the page moves on first. */
+  whenVisible(): Promise<boolean>;
+  /** The page's idle frame interval on the probe screen (`idleCadenceMs`), or
+   * null when it cannot be read. */
+  idleCadence(): Promise<number | null>;
   log(line: string): void;
 };
 
@@ -226,13 +306,15 @@ export function autoPick(
 
 /**
  * The tier to build the hike at, and where it came from: `?tier=` over the
- * player's choice, and the choice over Auto. On Auto, a probed
- * class with no verdict that holds and fewer than three attempts is probed
- * first behind the screen, from its ceiling, or any class from `?probe=`; the
- * probe is bounded at `PROBE_MAX_MS`, and stops at once when `opts.cancelled`
- * says the page has moved on. A probe's verdict is never taken above what the
- * class may take on this machine. Logs one line for the probe's outcome and
- * one for the tier.
+ * player's choice, and the choice over Auto. On Auto, a probed class with no
+ * verdict that holds and fewer than three attempts is probed first behind the
+ * screen, from its ceiling, or any class from `?probe=`. Before the attempt is
+ * spent the probe waits for the tab to be seen (a hidden tab draws no frames)
+ * and times the page's idle frames; below 60 Hz it is skipped with nothing
+ * written. The probe itself is bounded at `PROBE_MAX_MS`, and everything stops
+ * at once when `opts.cancelled` says the page has moved on. A probe's verdict
+ * is never taken above what the class may take on this machine. Logs one line
+ * for the probe's outcome and one for the tier.
  */
 export async function startupTier(
   signals: GpuSignals,
@@ -247,37 +329,107 @@ export async function startupTier(
   const from = decided.source === "auto" ? (parseProbeOverride(opts.search) ?? auto.probeFrom) : null;
   if (from !== null && !opts.cancelled()) {
     const screen = deps.showScreen();
-    let late = false;
-    const clear = deps.setTimer(() => {
-      late = true;
-    }, PROBE_MAX_MS);
-    const cancelled = (): boolean => late || opts.cancelled();
-    const readings: ProbeReading[] = [];
-    let probed: QualityTier;
     try {
-      probed = await runProbe(from, auto.tier, record, { gpu, browser: signals.browser, cls }, {
-        storage: deps.storage,
-        runStep: async (step) => {
-          if (cancelled()) return null;
-          const reading = await deps.runStep(step, cancelled);
-          if (reading !== null) readings.push(reading);
-          return reading;
-        },
-        pixels: () => deps.pixels(),
-        now: () => deps.now(),
-      });
+      const outcome = await probeOnce(from, auto.tier, record, { gpu, browser: signals.browser, cls }, opts, deps);
+      tier = withinClass(outcome.tier, cls, signals.cores, signals.memoryGb);
+      if (outcome.line !== null) deps.log(`${outcome.line}; starting at ${tier} (${cls})`);
+      else deps.log(`quality probe: verdict ${outcome.tier} (${cls})`);
     } finally {
-      clear();
       screen.dispose();
     }
-    tier = withinClass(probed, cls, signals.cores, signals.memoryGb);
-    const outcome = nextProbeStep(from, readings);
-    deps.log(
-      "verdict" in outcome
-        ? `quality probe: verdict ${outcome.verdict} (${cls})`
-        : `quality probe: no verdict, starting at ${tier} (${cls})`,
-    );
   }
   deps.log(`quality: ${tier} (${decided.source}, ${cls}), engine webgl2`);
   return { tier, source: decided.source, cls };
+}
+
+/**
+ * One probe behind its screen: seen, then timed idle, then `runProbe` under the
+ * 30 s cap. The tier, and a log line when there is no verdict.
+ */
+async function probeOnce(
+  from: QualityTier,
+  start: QualityTier,
+  record: AutoRecord | null,
+  key: ProbeKey,
+  opts: { cancelled(): boolean },
+  deps: StartupDeps,
+): Promise<{ tier: QualityTier; line: string | null }> {
+  const moved = { tier: start, line: "quality probe: not run, the page moved on" };
+  if (!(await deps.whenVisible()) || opts.cancelled()) return moved;
+  const cadence = await deps.idleCadence();
+  if (opts.cancelled()) return moved;
+  if (cadence === null) return { tier: start, line: "quality probe: skipped, the page's frame rate could not be read" };
+  if (cadence > PROBE_HOLD_MS) {
+    return { tier: start, line: `quality probe: skipped, the page draws below 60 Hz (${cadence.toFixed(1)} ms a frame)` };
+  }
+  let late = false;
+  const clear = deps.setTimer(() => {
+    late = true;
+  }, PROBE_MAX_MS);
+  const cancelled = (): boolean => late || opts.cancelled();
+  const readings: ProbeReading[] = [];
+  try {
+    const tier = await runProbe(from, start, record, key, {
+      storage: deps.storage,
+      runStep: async (step) => {
+        if (cancelled()) return null;
+        const reading = await deps.runStep(step, cancelled);
+        if (reading !== null) readings.push(reading);
+        return reading;
+      },
+      pixels: () => deps.pixels(),
+      now: () => deps.now(),
+    });
+    return "verdict" in nextProbeStep(from, readings) ? { tier, line: null } : { tier, line: "quality probe: no verdict" };
+  } finally {
+    clear();
+  }
+}
+
+/** The line over the game's container when the hike cannot be started. */
+export const START_FAILED_LINE = "This browser could not start the game.";
+
+/** What starting a hike needs of the page. */
+export type HikeStartDeps = {
+  signals: Promise<GpuSignals>;
+  /** Whether this start is still the page's. */
+  current(): boolean;
+  /** "Loading…" over the container, from the start of the wait. */
+  showLoading(): { dispose(): void };
+  /** The tier (`startupTier`); `hideLoading` gives way to the probe's screen. */
+  decide(signals: GpuSignals, hideLoading: () => void): Promise<StartupTier>;
+  /** Builds the hike at the tier decided. */
+  build(decided: StartupTier): void;
+  /** The hike could not start: says so over the container. */
+  fail(error: unknown): void;
+};
+
+/**
+ * The page's start of a hike, in order: "Loading…" from the first moment, the
+ * signals, the tier (the probe's screen taking over from the line when there
+ * is one), then the build, with the line gone in the same task so nothing
+ * blank shows between. A throw anywhere is answered with a line, never a
+ * blank page; a start the page has moved on from builds and says nothing.
+ */
+export async function startHike(deps: HikeStartDeps): Promise<void> {
+  const loading = deps.showLoading();
+  let shown = true;
+  const hide = (): void => {
+    if (!shown) return;
+    shown = false;
+    loading.dispose();
+  };
+  try {
+    const signals = await deps.signals;
+    if (!deps.current()) return;
+    const decided = await deps.decide(signals, hide);
+    if (!deps.current()) return;
+    hide();
+    deps.build(decided);
+  } catch (error) {
+    hide();
+    if (deps.current()) deps.fail(error);
+  } finally {
+    hide();
+  }
 }
