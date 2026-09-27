@@ -448,7 +448,9 @@ tier gets its own canvas; the renderer is disposed and its engine made with
    effect compiled for 1.5 s (`engine.onAfterShaderCompilationObservable`); at
    most 15 s, after which the probe gives up (§7.6).
 2. **Warm**: 60 frames discarded (the fields' first rebuilds, the reflection
-   probe, the first shadow renders).
+   probe, the first shadow renders). A shader that compiles after the scene is
+   ready starts the warm-up again: its hitch, 100 ms or more, would tip a
+   machine that holds 60 Hz into a miss. The 30 s cap bounds the restarts.
 3. **Measured**: 120 frame intervals, `performance.now()` between render-loop
    callbacks. Intervals over 250 ms are dropped; fewer than 100 left is no
    reading.
@@ -469,8 +471,17 @@ It never infers headroom from a reading, and so never steps up from one; it
 starts at the class's ceiling instead (§7.5). On a 120 or 144 Hz display the
 reading is uncapped below the budget, which changes nothing. A frame that misses
 a 60 Hz vsync shows as a 33 ms interval, so a GPU that needs 18 ms reads a mean
-between 18 and 33 ms and misses. A display refreshing below 60 Hz reads as a miss at
-every tier and lands on low; the setting overrides it (§14).
+between 18 and 33 ms and misses.
+
+The page itself can draw below 60 Hz whatever the GPU: a display that refreshes
+slower, or a browser that halves its frame rate (Safari renders at 30 fps in
+Low Power Mode and when the Mac runs hot). Every tier would then read a miss,
+and low would be kept for 30 days. So before the attempt is spent, the probe
+times the probe screen's own idle frames, 30 of them (about 0.5 s), and takes
+their median, so one hitch does not count. Below 60 Hz (over 17.5 ms), the
+probe is **skipped**: the class's start tier, nothing written, one log line; a
+later load tries again. A display below 60 Hz therefore keeps its class's start
+tier rather than reading low.
 
 ### 7.5 Steps
 
@@ -494,11 +505,39 @@ the cap, or on a throw anywhere in it, the probe is abandoned, the hike starts a
 the class's start tier, and the attempt counts. After three attempts without a
 verdict the start tier stands and only the governor acts.
 
+The attempt is spent only once the tab is seen (a hidden tab draws no frames)
+and the idle frames hold 60 Hz (§7.4). On a game route the page says
+"Loading…" from the first moment of the wait for the signals until the probe's
+screen or the hike takes over, and a throw anywhere in starting the hike leaves
+the line "This browser could not start the game." rather than a blank page.
+
 ### 7.7 The log
 
-One `console.info` per measured tier and one for the verdict:
+One `console.info` per measured tier and one for the outcome:
 `quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses`
-and `quality probe: verdict medium (apple-unknown)`.
+and `quality probe: verdict medium (apple-unknown)`, or, with no verdict,
+`quality probe: skipped, the page draws below 60 Hz (33.3 ms a frame); starting at medium (apple-unknown)`
+(or `no verdict`, or `not run, the page moved on`).
+
+### 7.8 With the WebGPU rule
+
+The WebGPU rule decides the engine from the tier, so the probe runs first and
+the engine choice after it. Where the two meet:
+
+- **The engine a verdict was measured on.** The Auto record is keyed on the
+  engine each verdict was measured with: a WebGL2 verdict does not decide a
+  WebGPU hike, nor the reverse. The attempt budget stays per GPU and browser.
+- **Probe engines are not watched.** A probe step's WebGPU engine is never
+  given the rule's failure watcher, whose answer is a reload: a lost device
+  mid-probe would reload the page with the attempt spent. A failure during a
+  step, at creation or in its frames, is the rule's `init` failure, and the step
+  runs again on WebGL2.
+- **The game's canvas comes after the probe**, so the probe's canvases never
+  sit beside it in the container.
+- **One catch for the whole start of a hike**, the engine's launch included, so
+  a throw on either engine leaves the line of §7.6 rather than a blank page.
+- **"Loading…" from the start of the wait for the signals**, giving way to the
+  probe's screen when there is a probe, and then to the engine's own wait line.
 
 ## 8. The player setting
 
@@ -889,7 +928,8 @@ found holding 60 Hz, nothing happens in 5 min.
 - The `apple-base` row moves to what §13.1's probe verdict says, low included.
 - The probe's opaque screen distorts its reading (§13.1 over 1.0 ms): the probe
   renders visibly under a 50 % dark overlay instead.
-- A display under 60 Hz reads as a miss everywhere: if reports show it, the hold
+- A display or a browser under 60 Hz is not probed (§7.4) and keeps the class's
+  start tier; if reports show that start is too low for such machines, the hold
   bar becomes the display's own period, estimated as the median interval of a
   steady run of the landing backdrop (low tier, cheap enough to be capped).
 - The swap's stall is over 3 s at 1× CPU on the reference machine: the pause
