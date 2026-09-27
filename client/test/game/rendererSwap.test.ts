@@ -45,7 +45,15 @@ import type { Level } from "../../src/sim/level.js";
 import { createRenderer, type Renderer } from "../../src/game/renderer.js";
 import { createBodyMesh } from "../../src/game/bodyMesh.js";
 import { createSignMeshes } from "../../src/game/signMeshes.js";
-import { buildOrUndo, swapRenderer, type SwapBindings } from "../../src/game/rendererSwap.js";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Scene as BabylonScene } from "@babylonjs/core/scene.js";
+import {
+  buildFirstRenderer,
+  buildOrUndo,
+  swapRenderer,
+  switchOutcome,
+  type SwapBindings,
+} from "../../src/game/rendererSwap.js";
 import type { QualityTier } from "../../src/game/quality.js";
 
 // ---- the order, with stubs --------------------------------------------------
@@ -69,7 +77,11 @@ function stubCanvas(id: string, log: string[]): HTMLCanvasElement {
 
 const idOf = (x: unknown): string => (x as { id: string }).id;
 
-function stubBindings(log: string[], failing: ReadonlySet<QualityTier> = new Set()): SwapBindings {
+function stubBindings(
+  log: string[],
+  failing: ReadonlySet<QualityTier> = new Set(),
+  restoreFailing: ReadonlySet<QualityTier> = new Set(),
+): SwapBindings {
   let n = 0;
   return {
     freshCanvas: () => {
@@ -84,7 +96,11 @@ function stubBindings(log: string[], failing: ReadonlySet<QualityTier> = new Set
     },
     extras: { dispose: () => log.push("extras dispose"), build: (r) => log.push(`extras build ${idOf(r)}`) },
     rebind: (canvas) => log.push(`rebind ${idOf(canvas)}`),
-    restore: (r) => log.push(`restore ${idOf(r)}`),
+    restore: (r) => {
+      log.push(`restore ${idOf(r)}`);
+      const tier = idOf(r).split("@")[0] as QualityTier;
+      if (restoreFailing.has(tier)) throw new Error(`restore ${tier}`);
+    },
     loop: () => undefined,
   };
 }
@@ -139,14 +155,87 @@ describe("swapRenderer's order", () => {
         "rebind c2",
         "run medium@c2",
       ]);
+      // The running tier fails too: one more try at low, the tier least likely to fail.
       const log2: string[] = [];
+      const low = swapRenderer(
+        { renderer: stubRenderer("medium@c0", log2), canvas: stubCanvas("c0", log2) },
+        { tier: "high", engine: null, fallbackTier: "medium" },
+        stubBindings(log2, new Set<QualityTier>(["high", "medium"])),
+      );
+      expect(low.tier).toBe("low");
+      expect(low.fellBack).toBe(true);
+      expect(log2.slice(-5)).toEqual(["build c3 low webgl2", "restore low@c3", "extras build low@c3", "rebind c3", "run low@c3"]);
+      const log3: string[] = [];
       expect(() =>
         swapRenderer(
-          { renderer: stubRenderer("medium@c0", log2), canvas: stubCanvas("c0", log2) },
+          { renderer: stubRenderer("medium@c0", log3), canvas: stubCanvas("c0", log3) },
           { tier: "high", engine: null, fallbackTier: "medium" },
-          stubBindings(log2, new Set<QualityTier>(["high", "medium"])),
+          stubBindings(log3, new Set<QualityTier>(["high", "medium", "low"])),
         ),
-      ).toThrow("no medium");
+      ).toThrow("no low");
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+});
+
+describe("a throw after the build", () => {
+  it("disposes the renderer just built, with what was built into its scene, and falls back", () => {
+    const log: string[] = [];
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const got = swapRenderer(
+        { renderer: stubRenderer("medium@c0", log), canvas: stubCanvas("c0", log) },
+        { tier: "high", engine: null, fallbackTier: "medium" },
+        stubBindings(log, new Set(), new Set<QualityTier>(["high"])),
+      );
+      expect(got.tier).toBe("medium");
+      expect(log.slice(3)).toEqual([
+        "fresh c1",
+        "replace c0 with c1",
+        "build c1 high webgl2",
+        "restore high@c1",
+        "extras dispose",
+        "dispose high@c1",
+        "fresh c2",
+        "replace c1 with c2",
+        "build c2 medium webgl2",
+        "restore medium@c2",
+        "extras build medium@c2",
+        "rebind c2",
+        "run medium@c2",
+      ]);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+});
+
+describe("switchOutcome", () => {
+  it("keeps a choice the switch reached, and keeps the choice as it was after a fallback", () => {
+    expect(switchOutcome("high", { tier: "high", fellBack: false })).toEqual({ save: "high", line: null });
+    expect(switchOutcome("high", { tier: "medium", fellBack: true })).toEqual({ save: null, line: "Could not switch; still using Medium." });
+    expect(switchOutcome("auto", { tier: "low", fellBack: true })).toEqual({ save: null, line: "Could not switch; still using Low." });
+  });
+});
+
+describe("buildFirstRenderer", () => {
+  it("builds the tier asked for on the page's canvas, and each fallback on a fresh one", () => {
+    const log: string[] = [];
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const b = stubBindings(log, new Set<QualityTier>(["high"]));
+      const got = buildFirstRenderer(stubCanvas("c0", log), ["high", "medium", "low"], b);
+      expect(got.tier).toBe("medium");
+      expect(got.fellBack).toBe(true);
+      expect(idOf(got.canvas)).toBe("c1");
+      expect((got.canvas as unknown as { style: { touchAction?: string } }).style.touchAction).toBe("none");
+      expect(log).toEqual(["build c0 high webgl2", "fresh c1", "replace c0 with c1", "build c1 medium webgl2"]);
+      const straight: string[] = [];
+      const first = buildFirstRenderer(stubCanvas("c0", straight), ["high", "low"], stubBindings(straight));
+      expect([first.tier, first.fellBack, idOf(first.canvas)]).toEqual(["high", false, "c0"]);
+      expect(straight).toEqual(["build c0 high webgl2"]);
+      expect(() => buildFirstRenderer(stubCanvas("c0", []), ["high", "low"], stubBindings([], new Set<QualityTier>(["high", "low"])))).toThrow("no low");
     } finally {
       quiet.mockRestore();
     }
@@ -191,6 +280,9 @@ function nullCanvas(): HTMLCanvasElement {
 
 function census(scene: Scene) {
   return {
+    postProcesses: scene.postProcesses.length,
+    renderTargets: scene.customRenderTargets.length,
+    shadowGenerators: scene.lights.filter((light) => light.getShadowGenerator() !== null).length,
     meshes: scene.meshes.length,
     materials: scene.materials.length,
     textures: scene.textures.length,
@@ -267,4 +359,35 @@ describe("swapRenderer on NullEngine", () => {
     current.renderer.dispose();
     expect(EngineStore.Instances.length).toBe(0);
   }, 180_000);
+});
+
+describe("a swap that fails at every tier, on NullEngine", () => {
+  it("leaves no engine and no atmosphere registration behind", () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const forest = createForest(SEED);
+      const current = { renderer: createRenderer(nullCanvas(), LEVEL, forest, { tier: "medium" }), canvas: nullCanvas() };
+      const bindings: SwapBindings = {
+        build: (canvas, tier) => createRenderer(canvas, LEVEL, forest, { tier }),
+        freshCanvas: nullCanvas,
+        extras: { dispose: () => undefined, build: () => undefined },
+        rebind: () => undefined,
+        restore: () => {
+          throw new Error("restore failed");
+        },
+        loop: () => undefined,
+      };
+      expect(() => swapRenderer(current, { tier: "high", engine: null, fallbackTier: "medium" }, bindings)).toThrow("restore failed");
+      expect(EngineStore.Instances.length).toBe(0);
+      const engine = new NullEngine();
+      try {
+        const late = new PBRMaterial("after", new BabylonScene(engine));
+        expect(late.pluginManager?.getPlugin("Atmosphere") ?? null).toBe(null);
+      } finally {
+        engine.dispose();
+      }
+    } finally {
+      quiet.mockRestore();
+    }
+  }, 120_000);
 });

@@ -25,7 +25,7 @@
  * start tier kept, and nothing written: a later load tries again.
  */
 import { elevationAt } from "../sim/terrain.js";
-import { classifyGpu, gpuIdentity, type GpuClass } from "./gpuClass.js";
+import { CLASS_TIERS, classifyGpu, gpuIdentity, type GpuClass } from "./gpuClass.js";
 import type { GpuSignals } from "./gpuSignals.js";
 import {
   autoTier,
@@ -391,6 +391,18 @@ async function probeOnce(
   } finally {
     clear();
   }
+}
+
+const RANK: Readonly<Record<QualityTier, number>> = { low: 0, medium: 1, high: 2 };
+
+/**
+ * The tiers a hike's first renderer falls back through when `tier` fails to
+ * build: the class's start tier (within what the class may take here), then
+ * low, each only below `tier`.
+ */
+export function startFallbacks(tier: QualityTier, cls: GpuClass, cores: number | null, memoryGb: number | null): QualityTier[] {
+  const start = withinClass(CLASS_TIERS[cls].start, cls, cores, memoryGb);
+  return [...new Set<QualityTier>([start, "low"])].filter((t) => RANK[t] < RANK[tier]);
 }
 
 /** The line over the game's container when the hike cannot be started. */

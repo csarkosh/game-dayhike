@@ -265,3 +265,21 @@ describe("withinClass", () => {
     expect(withinClass("low", "discrete-modern", 16, 32)).toBe("low");
   });
 });
+
+describe("a build-failure verdict", () => {
+  const RTX = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)";
+
+  it("holds at any window for 30 days, and starts Auto at the tier that did build", () => {
+    const built: AutoVerdict = { tier: "medium", source: "build", pixels: 500_000, at: NOW - DAY };
+    expect(verdictHolds(built, 9_000_000, NOW)).toBe(true);
+    expect(verdictHolds({ ...built, at: NOW - 30 * DAY }, 2_073_600, NOW)).toBe(false);
+    const record = rec({ tier: "medium", source: "build", pixels: 500_000 }, { gpu: RTX, cls: "discrete-modern", browser: 153 });
+    expect(autoTier({ cls: "discrete-modern", cores: 16, memoryGb: 32, record, gpu: RTX, browser: 153, pixels: 8_000_000, now: NOW }))
+      .toEqual({ tier: "medium", probeFrom: null });
+  });
+
+  it("is kept whatever the window's area, which it does not certify", () => {
+    const verdict: AutoVerdict = { tier: "low", source: "build", pixels: 0, at: NOW };
+    expect(withVerdict(null, RTX, 153, "discrete-modern", verdict)).toEqual({ v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0, verdict });
+  });
+});

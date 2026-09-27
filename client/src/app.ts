@@ -68,8 +68,16 @@ import { signSites } from "./sim/placeNames.js";
 import { afterNextPaint } from "./game/paint.js";
 import type { QualityTier } from "./game/quality.js";
 import { settingsModel, type AutoSummary } from "./game/settings.js";
-import { resolveTier, type TierChoice } from "./game/tierChoice.js";
-import { buildOrUndo, swapRenderer, whenSceneReady, type SwapBindings } from "./game/rendererSwap.js";
+import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice.js";
+import {
+  buildFirstRenderer,
+  buildOrUndo,
+  swapRenderer,
+  switchOutcome,
+  whenSceneReady,
+  type SwapBindings,
+} from "./game/rendererSwap.js";
+import { releaseAtmosphere } from "./game/atmosphere.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
@@ -107,19 +115,29 @@ export type GameOptions = {
    * choice, or Auto. The hike starts at it; the pause screen's Settings can
    * change it while the hike runs. */
   tier: QualityTier;
+  /** Where `tier` came from: `?tier=`, the player's choice, or Auto. */
+  tierSource: TierSource;
+  /** The tiers to try, in order, should `tier` fail to build at the start:
+   * the class's start tier, then low (`startFallbacks`). */
+  fallbackTiers: readonly QualityTier[];
+  /**
+   * A tier failed to build, at the start or on a switch: `built` is the tier
+   * that did (null when none did and the hike is ending). The page records it
+   * (`recordFallback`) so it is not tried again each hike.
+   */
+  onTierFallback(fallback: { attempted: QualityTier; built: QualityTier | null; source: TierSource }): void;
   /** The graphics setting, for the pause screen's Settings: the player's
-   * choice, whether the browser keeps it, Auto's pick, `?tier=`, and how to
-   * keep a new choice. */
+   * choice, whether the browser keeps it, Auto's pick, `?tier=`, a line for a
+   * choice put back on Auto, and how to keep a new choice. */
   quality: {
     choice(): TierChoice;
     stored(): boolean;
     auto(): AutoSummary | null;
     override: QualityTier | null;
+    notice(): string | null;
     save(choice: TierChoice): void;
   };
 };
-
-const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium", low: "Low" };
 
 /**
  * Starts a hike on `canvas`. A start that throws part-way leaves nothing it
@@ -187,10 +205,19 @@ function buildGame(
   );
 
   const forest = createForest(seed);
-  let renderer: Renderer = createRenderer(canvas, level, forest, { tier: options.tier });
+  // The tier asked for, and should it fail to build, the class's start tier
+  // and then low, each on a fresh canvas: only the renderer is retried, not
+  // the world, which is built once.
+  const first = buildFirstRenderer(canvas, [options.tier, ...options.fallbackTiers], {
+    build: (next, at) => createRenderer(next, level, forest, { tier: at }),
+    freshCanvas: () => document.createElement("canvas"),
+  });
+  let renderer: Renderer = first.renderer;
+  canvas = first.canvas;
   made(() => renderer.dispose());
   /** The tier the running renderer was built at. */
-  let tier: QualityTier = options.tier;
+  let tier: QualityTier = first.tier;
+  if (first.fellBack) options.onTierFallback({ attempted: options.tier, built: tier, source: options.tierSource });
   /** What the last switch of tier said, until the next choice: a fallback's line. */
   let swapError: string | null = null;
   /** Both builds of a switch failed: there is no renderer left to dispose. */
@@ -722,6 +749,9 @@ function buildGame(
   }
 
   const bar = createCommandBar(container, {
+    // Not while a new tier is being applied: opening the bar hides the pause
+    // menu, and with it the ground over the rebuild.
+    canOpen: () => !menu.applying,
     onOpenChange: (open) => {
       // The bar outranks the pause menu: `/` over the menu switches to typing.
       if (open) menu.hide();
@@ -793,6 +823,7 @@ function buildGame(
           stored: options.quality.stored(),
           applying,
           error: swapError ?? undefined,
+          notice: options.quality.notice() ?? undefined,
         }),
       onApply: (choice) => applyTier(choice),
       onChoose: () => {
@@ -879,6 +910,12 @@ function buildGame(
   // What this game registered on the lobby's socket outside the admission
   // below, undone on dispose: the socket outlives the game.
   const unsubscribe: (() => void)[] = [];
+  // Undone first should the start throw: whatever arrives later (a lobby's end,
+  // a follower's handshake) finds the game gone.
+  made(() => {
+    disposed = true;
+    for (const off of unsubscribe) off();
+  });
   // How a host game takes in a lobby's members; null for a follower. Held
   // outside `runAsHost` because the lobby it answers offers over can arrive
   // after the game started.
@@ -1165,6 +1202,7 @@ function buildGame(
   renderer.engine.runRenderLoop(loop);
 
   const onResize = () => {
+    if (broken) return;
     renderer.resize();
     touchModel.resize({ width: canvas.clientWidth, height: canvas.clientHeight });
     touchLayer.measure();
@@ -1216,34 +1254,47 @@ function buildGame(
   };
 
   /**
-   * Keeps `choice` and switches the running hike to the tier it resolves to,
-   * behind the pause screen's opaque ground: that paints first, then the
-   * synchronous swap, then the wait for the new scene before the ground lifts.
-   * A build that fails is rebuilt at the running tier and says so; one that
-   * fails twice ends the hike on its way to the landing page.
+   * Switches the running hike to the tier `choice` resolves to, behind the
+   * pause screen's opaque ground: that paints first, then the synchronous
+   * swap, then the wait for the new scene before the ground lifts. The choice
+   * is kept only when the switch reaches its tier; a fallback keeps the choice
+   * as it was, says so, and reports the tier that failed so it is not tried
+   * again. When no tier builds at all, the Settings page and the landing say
+   * why, and the hike ends.
    */
   async function applyTier(choice: TierChoice): Promise<void> {
-    options.quality.save(choice);
     const target = tierFor(choice);
-    if (disposed || broken || target === tier) return;
+    if (disposed || broken) return;
+    if (target === tier) {
+      options.quality.save(choice);
+      return;
+    }
     swapError = null;
     await new Promise<void>((resolve) => afterNextPaint(resolve));
     if (disposed) return;
-    const running = tier;
+    const source = resolveTier({ override: options.quality.override, choice, auto: target }).source;
     let got: ReturnType<typeof swapRenderer>;
     try {
-      got = swapRenderer({ renderer, canvas }, { tier: target, engine: null, fallbackTier: running }, swapBindings);
+      got = swapRenderer({ renderer, canvas }, { tier: target, engine: null, fallbackTier: tier }, swapBindings);
     } catch (error) {
       broken = true;
-      console.error("quality: the renderer could not be rebuilt.", error);
+      // Each failed rung has taken itself down; this is for a throw from the
+      // old renderer's own dispose, which would leave its registration behind.
+      releaseAtmosphere();
+      console.error("quality: the renderer could not be rebuilt at any tier.", error);
+      swapError = "The graphics could not be restarted; returning to the title screen.";
+      options.onTierFallback({ attempted: target, built: null, source });
       endSession("The graphics could not be restarted.");
       throw error;
     }
     renderer = got.renderer;
     canvas = got.canvas;
     tier = got.tier;
-    if (got.fellBack) swapError = `Could not switch; still using ${TIER_NAMES[tier]}.`;
-    console.info(`quality: ${tier} (${resolveTier({ override: options.quality.override, choice, auto: tier }).source}), engine webgl2`);
+    const outcome = switchOutcome(choice, got);
+    if (outcome.save !== null) options.quality.save(outcome.save);
+    swapError = outcome.line;
+    if (got.fellBack) options.onTierFallback({ attempted: target, built: tier, source });
+    console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine webgl2`);
     await whenSceneReady(renderer.scene);
   }
 

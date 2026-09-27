@@ -9,7 +9,7 @@
  * not read back whole is no record.
  */
 import { CLASS_TIERS, type GpuClass } from "./gpuClass.js";
-import type { AutoRecord, AutoVerdict, ProbeReading, QualityTier } from "./quality.js";
+import { withVerdict, type AutoRecord, type AutoVerdict, type ProbeReading, type QualityTier } from "./quality.js";
 
 export const AUTO_KEY = "dayhike.quality.auto";
 /** Where the player's choice is kept. */
@@ -34,6 +34,77 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isClass(value: unknown): value is GpuClass {
   return typeof value === "string" && Object.hasOwn(CLASS_TIERS, value);
+}
+
+const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium", low: "Low" };
+
+/** Where the landing's one-shot notice waits, for this tab only. */
+export const NOTICE_KEY = "dayhike.notice";
+
+/** The page's `sessionStorage`, or null where there is none or its accessor
+ * throws. */
+export function pageSessionStorage(): Storage | null {
+  try {
+    return typeof sessionStorage === "undefined" ? null : sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** Leaves a line for the landing page to show once; false where storage refuses. */
+export function leaveNotice(storage: Storage | null, text: string): boolean {
+  if (storage === null) return false;
+  try {
+    storage.setItem(NOTICE_KEY, text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The line left for the landing, taken so it shows once; null when there is none. */
+export function takeNotice(storage: Storage | null): string | null {
+  if (storage === null) return null;
+  try {
+    const text = storage.getItem(NOTICE_KEY);
+    if (text !== null) storage.removeItem(NOTICE_KEY);
+    return text;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What a tier that failed to build leaves in storage (design §9.3). Under
+ * `?tier=` nothing: it is for testing. Otherwise a `build` verdict at the tier
+ * that did build (low when none did), for this version, GPU, browser and
+ * class, holding 30 days at any window, so Auto starts there and never tries
+ * the failed tier each hike. And where the tier came from the stored choice
+ * (source `choice`, the stored choice the tier that failed), the choice goes
+ * back to Auto with a line saying so: no record can override an explicit
+ * choice, which would otherwise be retried at every hike.
+ */
+export function recordFallback(input: {
+  record: AutoRecord | null;
+  gpu: string;
+  browser: number;
+  cls: GpuClass;
+  attempted: QualityTier;
+  built: QualityTier | null;
+  source: TierSource;
+  choice: TierChoice;
+  pixels: number;
+  now: number;
+}): { record: AutoRecord | null; choice: TierChoice | null; notice: string | null } {
+  if (input.source === "override") return { record: null, choice: null, notice: null };
+  const verdict: AutoVerdict = { tier: input.built ?? "low", source: "build", pixels: input.pixels, at: input.now };
+  const record = withVerdict(input.record, input.gpu, input.browser, input.cls, verdict);
+  if (input.source !== "choice" || input.choice !== input.attempted) return { record, choice: null, notice: null };
+  return {
+    record,
+    choice: "auto",
+    notice: `${TIER_NAMES[input.attempted]} did not start on this computer, so Settings is back on Auto (Recommended).`,
+  };
 }
 
 /** The page's `localStorage`, or null where there is none or its accessor
@@ -75,7 +146,9 @@ function asReading(value: unknown): ProbeReading | null {
 function asVerdict(value: unknown): AutoVerdict | null {
   if (!isObject(value)) return null;
   const { tier, source, pixels, at, readings } = value;
-  if (!isTier(tier) || (source !== "probe" && source !== "governor") || !isNumber(pixels) || !isNumber(at)) return null;
+  if (!isTier(tier) || (source !== "probe" && source !== "governor" && source !== "build") || !isNumber(pixels) || !isNumber(at)) {
+    return null;
+  }
   if (!Array.isArray(readings)) return { tier, source, pixels, at };
   const kept = readings.map(asReading).filter((reading): reading is ProbeReading => reading !== null);
   return { tier, source, pixels, at, readings: kept };

@@ -46,6 +46,9 @@ export type SettingsInput = {
   applying?: boolean;
   /** Pause: the last switch failed, and says so, after every other line. */
   error?: string;
+  /** The stored choice went back to Auto after its tier did not start: said
+   * under Auto's line until the next choice. */
+  notice?: string;
   /** `?tier=` in the address. */
   override: QualityTier | null;
   /** Whether the browser keeps the choice across pages. */
@@ -86,6 +89,7 @@ export function settingsModel(input: SettingsInput): SettingsView {
         : `Auto picks ${TIER_NAMES[input.auto.tier]} on this computer.`,
     );
   }
+  if (input.notice !== undefined) lines.push(input.notice);
   if (input.context === "pause" && input.running !== undefined) lines.push(`This hike is using ${TIER_NAMES[input.running]}.`);
   if (!input.stored) lines.push("This browser is not keeping settings, so this choice lasts until the page closes.");
   if (input.context === "pause" && input.error !== undefined) lines.push(input.error);

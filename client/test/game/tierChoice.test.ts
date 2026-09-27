@@ -5,7 +5,10 @@ import {
   parseTierOverride,
   readAutoRecord,
   createChoiceKeeper,
+  leaveNotice,
   readChoice,
+  recordFallback,
+  takeNotice,
   resolveTier,
   writeAutoRecord,
   writeChoice,
@@ -215,5 +218,67 @@ describe("createChoiceKeeper", () => {
     none.save("high");
     expect(none.choice()).toBe("high");
     expect(none.stored()).toBe(false);
+  });
+});
+
+describe("recordFallback", () => {
+  const RTX = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)";
+  const base = {
+    record: null, gpu: RTX, browser: 153, cls: "discrete-modern" as const, pixels: 2_073_600, now: 1_790_000_000_000,
+  };
+
+  it("keeps Auto on the tier that built, with a build verdict", () => {
+    expect(recordFallback({ ...base, attempted: "high", built: "medium", source: "auto", choice: "auto" })).toEqual({
+      record: {
+        v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
+        verdict: { tier: "medium", source: "build", pixels: 2_073_600, at: 1_790_000_000_000 },
+      },
+      choice: null,
+      notice: null,
+    });
+  });
+
+  it("puts a stored choice that did not start back on Auto, and says so", () => {
+    const got = recordFallback({ ...base, attempted: "high", built: "medium", source: "choice", choice: "high" });
+    expect(got.record!.verdict).toEqual({ tier: "medium", source: "build", pixels: 2_073_600, at: 1_790_000_000_000 });
+    expect(got.choice).toBe("auto");
+    expect(got.notice).toBe("High did not start on this computer, so Settings is back on Auto (Recommended).");
+  });
+
+  it("leaves the stored choice alone when it is not the one that failed (a switch not yet kept)", () => {
+    const got = recordFallback({ ...base, attempted: "high", built: "medium", source: "choice", choice: "auto" });
+    expect(got.record!.verdict!.tier).toBe("medium");
+    expect(got.choice).toBe(null);
+    expect(got.notice).toBe(null);
+  });
+
+  it("records nothing under ?tier=, and low when nothing built", () => {
+    expect(recordFallback({ ...base, attempted: "high", built: "medium", source: "override", choice: "high" })).toEqual({
+      record: null, choice: null, notice: null,
+    });
+    expect(recordFallback({ ...base, attempted: "high", built: null, source: "auto", choice: "auto" }).record!.verdict!.tier).toBe("low");
+  });
+
+  it("reads a build verdict back", () => {
+    const s = memoryStorage();
+    const record: AutoRecord = {
+      v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
+      verdict: { tier: "medium", source: "build", pixels: 2_073_600, at: 1_790_000_000_000 },
+    };
+    expect(writeAutoRecord(s, record)).toBe(true);
+    expect(readAutoRecord(s)).toEqual(record);
+  });
+});
+
+describe("the landing's one-shot notice", () => {
+  it("is left, read once, and gone", () => {
+    const s = memoryStorage();
+    expect(takeNotice(s)).toBe(null);
+    expect(leaveNotice(s, "The graphics could not be restarted.")).toBe(true);
+    expect(takeNotice(s)).toBe("The graphics could not be restarted.");
+    expect(takeNotice(s)).toBe(null);
+    expect(leaveNotice(null, "x")).toBe(false);
+    expect(leaveNotice(throwingStorage(), "x")).toBe(false);
+    expect(takeNotice(throwingStorage())).toBe(null);
   });
 });

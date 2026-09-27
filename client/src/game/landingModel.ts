@@ -43,7 +43,9 @@ export type LandingInput = {
   /** The graphics setting for the Settings panel: the player's choice, Auto's
    * pick once the GPU's signals are in, `?tier=`, and whether the browser keeps
    * the choice. Auto, with nothing known, when absent. */
-  quality?: Omit<SettingsInput, "context" | "running" | "saved" | "applying">;
+  quality?: Omit<SettingsInput, "context" | "running" | "selectionTier" | "applying" | "error">;
+  /** A line left for the landing by the hike that just ended, shown once. */
+  notice?: string;
 };
 
 export type DownloadCard = { platform: Platform; url: string; label: string; caption: string; note: string };
@@ -89,6 +91,8 @@ export type LandingView = {
   settings: { label: string };
   /** The Settings panel's content. */
   settingsPage: SettingsView;
+  /** Why the last hike ended, when it ended on its own. */
+  notice?: string;
   join?: { placeholder: string; error?: string };
   versionLabel?: string;
   update?: { url: string; label: string };
@@ -106,6 +110,7 @@ export function landingModel(input: LandingInput): LandingView {
     settings: { label: "Settings" },
     settingsPage: settingsModel({ context: "title", ...quality }),
   };
+  if (input.notice !== undefined) view.notice = input.notice;
   if (input.follower) view.waiting = WAITING_FOR_HOST;
   else view.play = input.launching ? { label: "Loading…", busy: true } : { label: "Play" };
 

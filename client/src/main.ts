@@ -31,17 +31,23 @@ import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
 import { browserEnv, gatherSignals, type GpuSignals } from "./game/gpuSignals.js";
-import { START_FAILED_LINE, autoPick, startHike, startupTier } from "./game/frameProbe.js";
+import { START_FAILED_LINE, autoPick, startFallbacks, startHike, startupTier } from "./game/frameProbe.js";
 import { createHud } from "./game/hud.js";
 import { probeDeps } from "./game/probeScene.js";
-import { containerPixels } from "./game/quality.js";
+import { containerPixels, type QualityTier } from "./game/quality.js";
 import type { AutoSummary } from "./game/settings.js";
 import {
   createChoiceKeeper,
+  leaveNotice,
+  pageSessionStorage,
   pageStorage,
   parseTierOverride,
   readAutoRecord,
+  recordFallback,
+  takeNotice,
+  writeAutoRecord,
   type TierChoice,
+  type TierSource,
 } from "./game/tierChoice.js";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -107,7 +113,37 @@ void signalsReady.then((read) => {
 const tierChoice = createChoiceKeeper(pageStorage);
 const currentChoice = (): TierChoice => tierChoice.choice();
 const choiceStored = (): boolean => tierChoice.stored();
-const saveChoice = (choice: TierChoice): void => tierChoice.save(choice);
+/** The line for a stored choice put back on Auto after its tier did not
+ * start, shown on the Settings screen until the next choice. */
+let choiceNotice: string | null = null;
+const saveChoice = (choice: TierChoice): void => {
+  tierChoice.save(choice);
+  choiceNotice = null;
+};
+
+/**
+ * A tier failed to build, at a hike's start or on a switch mid-hike: what it
+ * leaves is `recordFallback`'s (a `build` verdict so Auto does not try it
+ * again, a stored choice of it put back on Auto with a line saying so, nothing
+ * under `?tier=`). When nothing built and the hike is ending, the landing gets
+ * a line saying why.
+ */
+function onTierFallback(fallback: { attempted: QualityTier; built: QualityTier | null; source: TierSource }): void {
+  if (signals !== null) {
+    const pixels = app === null ? 0 : containerPixels(app);
+    const record = readAutoRecord(pageStorage());
+    const now = Date.now();
+    const pick = autoPick(signals, { record, pixels, now });
+    const out = recordFallback({ ...fallback, record, gpu: pick.gpu, browser: signals.browser, cls: pick.cls, choice: currentChoice(), pixels, now });
+    if (out.record !== null) writeAutoRecord(pageStorage(), out.record);
+    if (out.choice !== null) saveChoice(out.choice);
+    if (out.notice !== null) choiceNotice = out.notice;
+  }
+  if (fallback.built === null) leaveNotice(pageSessionStorage(), "The last hike ended because the graphics could not be restarted.");
+}
+
+/** A line left for the landing by the hike that just ended, taken when the landing is built. */
+let landingNotice: string | null = null;
 
 /** What Auto would pick here now, or null until the GPU's signals are in. */
 function autoSummary(): AutoSummary | null {
@@ -404,7 +440,14 @@ function landingInput(over: Partial<LandingInput> = {}): LandingInput {
     follower: lobby !== null && lobby.state.role === "client",
     touch,
     launching,
-    quality: { choice: currentChoice(), auto: autoSummary(), override: parseTierOverride(location.search), stored: choiceStored() },
+    quality: {
+      choice: currentChoice(),
+      auto: autoSummary(),
+      override: parseTierOverride(location.search),
+      stored: choiceStored(),
+      notice: choiceNotice ?? undefined,
+    },
+    notice: landingNotice ?? undefined,
     ...over,
   };
 }
@@ -488,6 +531,7 @@ function render(container: HTMLDivElement): void {
     const backdrop = document.createElement("canvas");
     backdrop.className = "landing-bg";
     container.appendChild(backdrop);
+    landingNotice = takeNotice(pageSessionStorage());
 
     const handle = renderLanding(
       container,
@@ -564,7 +608,7 @@ function render(container: HTMLDivElement): void {
           return probe.showScreen();
         },
       }),
-    build: ({ tier }) => {
+    build: ({ tier, source, cls }) => {
       canvas = document.createElement("canvas");
       container.appendChild(canvas);
       game = startGame(canvas, route.token, {
@@ -577,11 +621,15 @@ function render(container: HTMLDivElement): void {
           paintRoster();
         },
         tier,
+        tierSource: source,
+        fallbackTiers: signals === null ? ["low"] : startFallbacks(tier, cls, signals.cores, signals.memoryGb),
+        onTierFallback,
         quality: {
           choice: currentChoice,
           stored: choiceStored,
           auto: autoSummary,
           override: parseTierOverride(location.search),
+          notice: () => choiceNotice,
           save: saveChoice,
         },
       });
@@ -591,7 +639,9 @@ function render(container: HTMLDivElement): void {
     },
     fail: (error) => {
       console.error("The game could not start.", error);
-      canvas?.remove();
+      // Whichever canvas the start left: a renderer that fell back builds on
+      // a fresh one in the first one's place.
+      for (const left of container.querySelectorAll("canvas")) left.remove();
       const line = createHud(container);
       line.setStatus(START_FAILED_LINE);
       running = { dispose: () => line.dispose() };

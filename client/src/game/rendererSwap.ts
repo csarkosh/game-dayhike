@@ -15,6 +15,10 @@
  * and the old context, lost on dispose, takes every GPU object of the old
  * scene with it.
  *
+ * **A failure never leaves a renderer behind.** Each rung that fails is taken
+ * down whole before the next is tried, and the ladder ends at low, the tier
+ * least likely to fail; only then does the throw go up.
+ *
  * **The engine is the caller's.** `target.engine` is an engine made for the new
  * tier before the swap starts (null: the renderer makes its own WebGL2 one).
  * Nothing here decides the engine: the WebGPU rule, where it applies, makes it
@@ -24,6 +28,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { QualityTier } from "./quality.js";
 import type { Renderer } from "./renderer.js";
+import type { TierChoice } from "./tierChoice.js";
 
 /** How long the "Applying…" ground waits for the new scene before lifting anyway. */
 export const SWAP_READY_MAX_MS = 10_000;
@@ -55,14 +60,22 @@ function replaceCanvas(old: HTMLCanvasElement, fresh: HTMLCanvasElement): HTMLCa
   return fresh;
 }
 
+const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium", low: "Low" };
+
 /**
  * The swap, synchronously, in design §9.3's order: stop the loop; dispose the
  * scene extras while their scene lives; dispose the renderer (its engine loses
- * its context); a fresh canvas in the old one's place; build at the target
- * tier; put the view back, rebuild the extras, rebind the listeners, run the
- * loop. A build that throws disposes the engine it was given and rebuilds
- * `fallbackTier` on WebGL2 on another fresh canvas (the first may hold a
- * WebGPU context); a second throw goes up.
+ * its context); then, on a fresh canvas in the old one's place, build at the
+ * target tier, put the view back, rebuild the extras, rebind the listeners and
+ * run the loop.
+ *
+ * A rung that fails, in its build or in anything after it, is taken down
+ * whole (the renderer it built, and with it the engine and the atmosphere's
+ * registration, or else the engine it was given) and the next rung is tried
+ * on another fresh canvas (a failed one may hold a lost or a WebGPU context):
+ * the target, then `fallbackTier` (the tier that was running), then low, the
+ * tier least likely to fail, the last two on WebGL2. Only when every rung
+ * fails does the last throw go up, with nothing of any of them left alive.
  */
 export function swapRenderer(
   current: Swappable,
@@ -72,29 +85,84 @@ export function swapRenderer(
   current.renderer.engine.stopRenderLoop(bindings.loop);
   bindings.extras.dispose();
   current.renderer.dispose();
-  let canvas = replaceCanvas(current.canvas, bindings.freshCanvas());
-  let renderer: Renderer;
-  let tier = target.tier;
-  let fellBack = false;
-  try {
-    renderer = bindings.build(canvas, target.tier, target.engine);
-  } catch (error) {
-    try {
-      target.engine?.dispose();
-    } catch {
-      /* the engine is being dropped either way */
-    }
-    console.error(`quality: the ${target.tier} renderer could not be built; rebuilding ${target.fallbackTier}.`, error);
+  const ladder = [...new Set<QualityTier>([target.tier, target.fallbackTier, "low"])];
+  let canvas = current.canvas;
+  let failure: unknown = new Error("no tier to build");
+  for (const [rung, tier] of ladder.entries()) {
+    const engine = rung === 0 ? target.engine : null;
     canvas = replaceCanvas(canvas, bindings.freshCanvas());
-    renderer = bindings.build(canvas, target.fallbackTier, null);
-    tier = target.fallbackTier;
-    fellBack = true;
+    let renderer: Renderer | null = null;
+    try {
+      renderer = bindings.build(canvas, tier, engine);
+      bindings.restore(renderer);
+      bindings.extras.build(renderer);
+      bindings.rebind(canvas);
+      renderer.engine.runRenderLoop(bindings.loop);
+      return { renderer, canvas, tier, fellBack: rung > 0 };
+    } catch (error) {
+      failure = error;
+      console.error(`quality: the ${tier} renderer could not be ${renderer === null ? "built" : "started"}.`, error);
+      takeDown(renderer, engine, bindings);
+    }
   }
-  bindings.restore(renderer);
-  bindings.extras.build(renderer);
-  bindings.rebind(canvas);
-  renderer.engine.runRenderLoop(bindings.loop);
-  return { renderer, canvas, tier, fellBack };
+  throw failure;
+}
+
+/** Disposes what a failed rung left: what was built into its scene and the
+ * renderer (its engine and registration with it), or the engine it was given
+ * when no renderer was built. Each on its own, so one failing keeps no other. */
+function takeDown(renderer: Renderer | null, engine: AbstractEngine | null, bindings: SwapBindings): void {
+  const steps =
+    renderer === null ? [() => engine?.dispose()] : [() => bindings.extras.dispose(), () => renderer.dispose()];
+  for (const step of steps) {
+    try {
+      step();
+    } catch {
+      /* the rest is still taken down */
+    }
+  }
+}
+
+/**
+ * What a live switch leaves: the choice is kept only when the switch reached
+ * the tier asked for. After a fallback the choice stays as it was (the running
+ * tier came from it), rather than the running tier being written as a choice
+ * of its own, which would turn an Auto player into a fixed-tier one the probe
+ * and the governor never act for.
+ */
+export function switchOutcome(
+  chosen: TierChoice,
+  got: { tier: QualityTier; fellBack: boolean },
+): { save: TierChoice | null; line: string | null } {
+  return got.fellBack
+    ? { save: null, line: `Could not switch; still using ${TIER_NAMES[got.tier]}.` }
+    : { save: chosen, line: null };
+}
+
+/**
+ * The hike's first renderer: the tier asked for on the page's canvas, and on a
+ * throw each later tier in `tiers` (the class's start tier, then low) on a
+ * fresh canvas in the failed one's place. A renderer whose build throws
+ * disposes its own engine and registration (`createRenderer`), so a failed
+ * rung leaves nothing; the last throw goes up when every rung fails.
+ */
+export function buildFirstRenderer(
+  canvas: HTMLCanvasElement,
+  tiers: readonly QualityTier[],
+  bindings: Pick<SwapBindings, "build" | "freshCanvas">,
+): Swappable & { tier: QualityTier; fellBack: boolean } {
+  let current = canvas;
+  let failure: unknown = new Error("no tier to build");
+  for (const [rung, tier] of tiers.entries()) {
+    if (rung > 0) current = replaceCanvas(current, bindings.freshCanvas());
+    try {
+      return { renderer: bindings.build(current, tier, null), canvas: current, tier, fellBack: rung > 0 };
+    } catch (error) {
+      failure = error;
+      console.error(`quality: the ${tier} renderer could not be built at the hike's start.`, error);
+    }
+  }
+  throw failure;
 }
 
 /**

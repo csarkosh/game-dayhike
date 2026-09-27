@@ -110,3 +110,16 @@ describe("the caution line's announcement", () => {
     expect(CAUTION_LIVE).toBe("polite");
   });
 });
+
+describe("a choice put back on Auto", () => {
+  it("says so under Auto's line, on both screens, until the next choice", () => {
+    const auto = { tier: "medium" as const, probePending: false };
+    const notice = "High did not start on this computer, so Settings is back on Auto (Recommended).";
+    expect(settingsModel({ context: "title", choice: "auto", auto, override: null, stored: true, notice }).lines).toEqual([
+      "Auto picks Medium on this computer.",
+      notice,
+    ]);
+    expect(settingsModel({ context: "pause", choice: "auto", selectionTier: "medium", auto, running: "medium", override: null, stored: true, notice }).lines)
+      .toEqual(["Auto picks Medium on this computer.", notice, "This hike is using Medium."]);
+  });
+});

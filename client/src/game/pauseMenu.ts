@@ -62,7 +62,9 @@ const STYLE = `
     background: rgb(8, 9, 12); opacity: 0;
     transition: opacity 220ms ease-out;
   }
-  .pausemenu.applying::before { opacity: 1; }
+  /* Opaque at once on the way in: the page paints once before the swap blocks
+     it, and that paint must already hide the scene. The fade is the way out. */
+  .pausemenu.applying::before { opacity: 1; transition: none; }
   .pausemenu .panel {
     /* Two pages in one cell: the main page and Settings. They swap in place
        with the landing's panel slide, so the swap never shifts layout. */
@@ -250,6 +252,8 @@ export type PauseMenu = {
    * goes with the game. */
   setExiting(): void;
   readonly isOpen: boolean;
+  /** A choice is being applied: the command bar holds off until it is done. */
+  readonly applying: boolean;
   dispose(): void;
 };
 
@@ -397,6 +401,9 @@ export function createPauseMenu(
     },
     get isOpen() {
       return isOpen;
+    },
+    get applying() {
+      return state.applying;
     },
     dispose() {
       window.removeEventListener("keydown", onKeyDown);

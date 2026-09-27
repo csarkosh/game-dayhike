@@ -177,3 +177,11 @@ describe("landingPanelFocus", () => {
     expect(landingPanelFocus("home", "home").focus).toBe(null);
   });
 });
+
+describe("the landing's notice", () => {
+  it("shows a notice left by a hike that ended, and nothing without one", () => {
+    expect(landingModel({ desktop: false, host: "darwin-arm64", latest: null, notice: "The graphics could not be restarted." }).notice)
+      .toBe("The graphics could not be restarted.");
+    expect(landingModel({ desktop: false, host: "darwin-arm64", latest: null }).notice).toBe(undefined);
+  });
+});

@@ -6,6 +6,7 @@ import {
   autoPick,
   createProbeMeter,
   idleCadenceMs,
+  startFallbacks,
   startHike,
   nextProbeStep,
   probeHolds,
@@ -519,5 +520,15 @@ describe("autoPick's recommendation", () => {
     // A verdict that no longer holds (another class, or too old) recommends nothing.
     expect(at({ ...measured, cls: "apple-base" }).ceiling).toBe("high");
     expect(at({ ...measured, verdict: { ...measured.verdict, at: 1_790_000_000_000 - 31 * 86_400_000 } }).ceiling).toBe("high");
+  });
+});
+
+describe("startFallbacks", () => {
+  it("is the class's start tier, then low, only below the tier asked for", () => {
+    expect(startFallbacks("high", "discrete-modern", 16, 32)).toEqual(["low"]);
+    expect(startFallbacks("high", "apple-unknown", 8, null)).toEqual(["medium", "low"]);
+    expect(startFallbacks("medium", "apple-unknown", 8, null)).toEqual(["low"]);
+    expect(startFallbacks("low", "apple-unknown", 8, null)).toEqual([]);
+    expect(startFallbacks("high", "discrete-modern", 2, 32)).toEqual(["low"]);
   });
 });

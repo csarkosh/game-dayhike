@@ -107,11 +107,18 @@ const RANK: Readonly<Record<QualityTier, number>> = { low: 0, medium: 1, high: 2
 export type ProbeReading = { tier: QualityTier; frames: number; meanMs: number; p95Ms: number; pixels: number; engine: "webgl2" | "webgpu" };
 
 /**
- * What the frame decided for one GPU: a probe's tier, or a drop after a
- * sustained low frame rate. `pixels` is the game container's CSS area when it
+ * What was learned of one GPU: a probe's tier, a drop after a sustained low
+ * frame rate (`governor`), or the tier a renderer did build at after a higher
+ * one failed to (`build`). `pixels` is the game container's CSS area when it
  * was set, and `at` is `Date.now()` then.
  */
-export type AutoVerdict = { tier: QualityTier; source: "probe" | "governor"; pixels: number; at: number; readings?: ProbeReading[] };
+export type AutoVerdict = {
+  tier: QualityTier;
+  source: "probe" | "governor" | "build";
+  pixels: number;
+  at: number;
+  readings?: ProbeReading[];
+};
 
 /**
  * Auto's memory, one per browser profile: the GPU (`gpuIdentity`) and browser
@@ -161,11 +168,12 @@ export function verdictFor(record: AutoRecord, cls: GpuClass): AutoVerdict | nul
  * the future was written under a clock running ahead) and under
  * `VERDICT_DAYS` old, and, for a probe's, with the window at most
  * `PROBE_PIXEL_SLACK` times the area it certified (a bigger window costs
- * more). A drop for a low frame rate holds at any size.
+ * more). A drop for a low frame rate, and a tier that failed to build, hold at
+ * any size.
  */
 export function verdictHolds(verdict: AutoVerdict, pixels: number, now: number): boolean {
   const age = now - verdict.at;
-  return age >= 0 && age < VERDICT_DAYS * DAY_MS && (verdict.source === "governor" || pixels <= verdict.pixels * PROBE_PIXEL_SLACK);
+  return age >= 0 && age < VERDICT_DAYS * DAY_MS && (verdict.source !== "probe" || pixels <= verdict.pixels * PROBE_PIXEL_SLACK);
 }
 
 /**
@@ -216,14 +224,14 @@ export function withProbeStarted(prev: AutoRecord | null, gpu: string, browser: 
 }
 
 /**
- * The record with a verdict for `cls`, or null for a verdict over no area,
- * which certifies nothing and would never hold again. The attempts go back to
- * 0, unless the verdict replaces one made for another class: then the count
- * is carried, so two classes alternating on one GPU, each ignoring the
+ * The record with a verdict for `cls`, or null for a probe's verdict over no
+ * area, which certifies nothing and would never hold again. The attempts go
+ * back to 0, unless the verdict replaces one made for another class: then the
+ * count is carried, so two classes alternating on one GPU, each ignoring the
  * other's verdict, cannot probe on every load.
  */
 export function withVerdict(prev: AutoRecord | null, gpu: string, browser: number, cls: GpuClass, verdict: AutoVerdict): AutoRecord | null {
-  if (!(verdict.pixels > 0)) return null;
+  if (verdict.source === "probe" && !(verdict.pixels > 0)) return null;
   const carried = prev !== null && recordMatches(prev, gpu, browser) && prev.verdict !== null && prev.cls !== cls;
   return { v: DETECT_VERSION, gpu, cls, browser, attempts: carried ? prev.attempts : 0, verdict };
 }

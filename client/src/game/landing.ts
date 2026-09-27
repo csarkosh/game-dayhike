@@ -235,6 +235,7 @@ const STYLE = `
     font-size: 0.75rem; color: rgba(255, 255, 255, 0.35);
   }
   .landing .waiting { color: rgba(255, 255, 255, 0.62); margin-top: 1.25rem; }
+  .landing .notice { color: #dbe2e2; margin-top: 1rem; }
   .landing .empty { color: rgba(255, 255, 255, 0.45); }
   /* Phone widths: the title, copy and buttons scale to a 400 px screen with
      16 px gutters and nothing wider than the viewport. */
@@ -402,6 +403,14 @@ export function renderLanding(
 
   function paint(v: LandingView): void {
     const parts: Node[] = [];
+
+    if (v.notice !== undefined) {
+      const notice = document.createElement("p");
+      notice.className = "notice";
+      notice.setAttribute("role", "status");
+      notice.textContent = v.notice;
+      parts.push(notice);
+    }
 
     if (v.play !== undefined) {
       const button = document.createElement("button");
