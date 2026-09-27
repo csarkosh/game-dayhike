@@ -155,6 +155,51 @@ function stageText(plugin: MaterialPluginBase, stage: "vertex" | "fragment"): st
     .join("\n");
 }
 
+/** JSON with object keys sorted, so the text depends on content alone. */
+function sortedJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v !== null && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : v,
+  );
+}
+
+/**
+ * The rest of what shapes each plugin's program, per plugin and per state it
+ * is drawn in (`terrain.interface`, …): its uniforms (the UBO layout and the
+ * GLSL declarations), its samplers, its attributes, and the defines its
+ * `prepareDefines` sets, in that order, one state after another.
+ */
+export function pluginInterfaces(): Record<string, string> {
+  const texts: Record<string, string> = {};
+  const built = pluginsInStates();
+  try {
+    for (const { name, plugin, states, scene, subMesh } of built.cases) {
+      const parts: string[] = [];
+      for (const [index, enter] of states.entries()) {
+        enter();
+        const samplers: string[] = [];
+        plugin.getSamplers(samplers);
+        const attributes: string[] = [];
+        plugin.getAttributes(attributes, scene, subMesh.getMesh());
+        const defines: Record<string, unknown> = {};
+        plugin.prepareDefines(defines as never, scene, subMesh.getMesh());
+        parts.push(
+          `state ${index}`,
+          `uniforms ${sortedJson(plugin.getUniforms())}`,
+          `samplers ${sortedJson(samplers)}`,
+          `attributes ${sortedJson(attributes)}`,
+          `defines ${sortedJson(defines)}`,
+        );
+      }
+      texts[`${name}.interface`] = parts.join("\n");
+    }
+  } finally {
+    built.dispose();
+  }
+  return texts;
+}
+
 /** Every plugin's GLSL per stage (`terrain.fragment`, `foliage.BLADES.vertex`,
  * …), and the three post shaders as stored (`post.grade`, …). */
 export function pluginTexts(): Record<string, string> {

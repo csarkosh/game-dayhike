@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pluginTexts } from "./helpers/pluginText.js";
+import { pluginInterfaces, pluginTexts } from "./helpers/pluginText.js";
 import { terrainHexDefs } from "../../src/game/terrainTexture.js";
 import { finishFragmentFor } from "../../src/game/post.js";
 
@@ -44,7 +44,13 @@ describe("GLSL names on the WebGPU path", () => {
   });
 
   it("declares no name WGSL reserves, on either assembly", () => {
-    const texts = { ...pluginTexts(), "terrain.hex.webgpu": terrainHexDefs(true), "post.finish.webgpu": finishFragmentFor(true) };
+    const texts = {
+      ...pluginTexts(),
+      // The uniforms each plugin declares, which the translation names too.
+      ...pluginInterfaces(),
+      "terrain.hex.webgpu": terrainHexDefs(true),
+      "post.finish.webgpu": finishFragmentFor(true),
+    };
     for (const [key, text] of Object.entries(texts)) {
       expect(declaredNames(text).filter((n) => WGSL_RESERVED.has(n)), key).toEqual([]);
     }

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { pluginTexts } from "./helpers/pluginText.js";
+import { pluginInterfaces, pluginTexts } from "./helpers/pluginText.js";
 import groundHexHead from "../../src/game/shaders/groundHex.fragment.fx?raw";
 import groundHexFetch from "../../src/game/shaders/groundHexFetch.fragment.fx?raw";
 import groundHexNoise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
@@ -46,6 +46,29 @@ const PINS: Record<string, string> = {
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
 };
 
+// The rest of what shapes each plugin's WebGL2 program, per state it is
+// drawn in: its uniforms (UBO layout and GLSL declarations), samplers,
+// attributes and the defines it sets. Taken at the branch's tip, where none of
+// those has changed since the base.
+const INTERFACE_PINS: Record<string, string> = {
+  "atmosphere.interface": "8d2b4a4042179853de33a6c9f4ff2a4c5ecb33ab7a48d44661530b757a19c34f",
+  "cliffTint.interface": "17f58097180ad484779cd5302189b01c65ae910a947d6d347ac9eff595479115",
+  "distanceFade.interface": "c59e5c6bd9a213d90f127332528ef16d234392159113be81a6cc47b38d2709cb",
+  "foliage.BLADES.interface": "38e133af1b4e6322274d74a695851032e14b221b6ff26d3d1a7d783265e6ec29",
+  "foliage.BUSH.interface": "fae1fc5cd58faeef68e40265e525943f3bb209eadaa23b7b27b2104a3ca22651",
+  "foliage.DUFF.interface": "38e133af1b4e6322274d74a695851032e14b221b6ff26d3d1a7d783265e6ec29",
+  "foliage.FLOWER.interface": "fae1fc5cd58faeef68e40265e525943f3bb209eadaa23b7b27b2104a3ca22651",
+  "foliage.GRASS.interface": "fae1fc5cd58faeef68e40265e525943f3bb209eadaa23b7b27b2104a3ca22651",
+  "foliage.MEADOW.interface": "fae1fc5cd58faeef68e40265e525943f3bb209eadaa23b7b27b2104a3ca22651",
+  "foliage.TREE.interface": "6ad630100290345752cb3563eefdb5cfaa5accaa8739e74d9329337cdb7dc640",
+  "foliage.UNDERSTORY.interface": "fae1fc5cd58faeef68e40265e525943f3bb209eadaa23b7b27b2104a3ca22651",
+  "foliageLight.interface": "a86a666d70d9ecddd600f74e67b8028f7795551c775a05e786e4ee73bea725e8",
+  "groundConform.interface": "d1318897a8b44958dc6d4ba703fe861a79590ee61c6d7cb830bc54cb33e7b75a",
+  "skin.interface": "d39b98bf284499c66f8b2765d9947ff326b97a8a716bcb4f2c89cf5b9c1bc2de",
+  "terrain.interface": "7f8eeb214ca436ea7e63d024459ba86645c3557a3f5e5e4345376bdb8259fb78",
+  "wing.interface": "bb03268d86b3711b1e489d0f2a62c81f60556c063d98fc835954b43a11cff985",
+};
+
 describe("WebGL2's shader text", () => {
   it("is byte for byte what it was", () => {
     const texts = pluginTexts();
@@ -60,6 +83,12 @@ describe("WebGL2's shader text", () => {
     expect(text).toContain("vec3 macroRgb = macroTint(");
     expect(text).not.toContain("vec3 macro =");
     expect(sha(text.replaceAll("macroRgb", "macro"))).toBe("748f988e8d74740112ecea806c8494d9811861224f78165aef7d2f646e6742b2");
+  });
+
+  it("keeps every plugin's uniforms, samplers, attributes and defines what they were", () => {
+    const texts = pluginInterfaces();
+    expect(Object.keys(texts).sort()).toEqual(Object.keys(INTERFACE_PINS).sort());
+    for (const [key, text] of Object.entries(texts)) expect(sha(text), key).toBe(INTERFACE_PINS[key]);
   });
 
   it("pins the hex include and the finish pass as files", () => {
