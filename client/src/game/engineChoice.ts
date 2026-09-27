@@ -95,12 +95,6 @@ export function parseEngineOverride(search: string): EngineName | null {
   return value === "webgl2" || value === "webgpu" ? value : null;
 }
 
-/** `?tier=low|medium|high`, in place of detection. */
-export function parseTierOverride(search: string): QualityTier | null {
-  const value = new URLSearchParams(search).get("tier");
-  return value === "low" || value === "medium" || value === "high" ? value : null;
-}
-
 /** What `gpuEngine.ts` learns of the high-performance adapter. */
 export type AdapterReport = {
   limits: Readonly<Record<string, number>>;
@@ -161,17 +155,9 @@ export type FallbackReason = "init" | "pipeline" | "lost";
  */
 export type FallbackRecord = { reason: FallbackReason; browser: number; babylon: string; at: number; losses: number };
 
+/** The browser's major version (`browserMajor`, `gpuSignals.ts`: a change is
+ * what earns WebGPU a retry) and Babylon's version. */
 export type EngineEnv = { browser: number; babylon: string };
-
-/** The browser's major version: the first of `Chrome/`, `Firefox/` and
- * `Version/` (Safari) found, else 0. A change is what earns WebGPU a retry. */
-export function browserMajor(userAgent: string): number {
-  for (const key of ["Chrome", "Firefox", "Version"]) {
-    const match = new RegExp(`${key}/(\\d+)`).exec(userAgent);
-    if (match) return Number(match[1]);
-  }
-  return 0;
-}
 
 /** The record after a failure. A lost device inside `LOSS_WINDOW_MS` of the
  * last one counts up; any other starts the count again. A lost device never
@@ -234,16 +220,6 @@ export function writeFallback(storage: Storage | null, record: FallbackRecord): 
     return true;
   } catch {
     return false;
-  }
-}
-
-/** A storage area, or null where the accessor itself throws (a private window,
- * blocked site data). */
-export function safeStorage(get: () => Storage): Storage | null {
-  try {
-    return get();
-  } catch {
-    return null;
   }
 }
 

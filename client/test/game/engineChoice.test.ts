@@ -1,29 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { landingModel } from "../../src/game/landingModel.js";
 import {
-  adapterFits, browserMajor, chooseEngine, createStartupWindow, failureAction, fallbackHolds, featuresToRequest,
-  keepOverrides, lateFailureLine, parseEngineOverride, parseTierOverride, readFallback, recordFailure, resolveWebGpu,
-  safeStorage, stripOverrides, takeNotice, leaveNotice, withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
+  adapterFits, chooseEngine, createStartupWindow, failureAction, fallbackHolds, featuresToRequest,
+  keepOverrides, lateFailureLine, parseEngineOverride, readFallback, recordFailure, resolveWebGpu,
+  stripOverrides, takeNotice, leaveNotice, withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
   type AdapterReport, type WebGpuSteps,
   FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
   NOTICE_SWITCHED, STARTUP_MAX_MS, STARTUP_QUIET_MS, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS, WEBGPU_TIERS, engineWaitLine, sameRoute,
 } from "../../src/game/engineChoice.js";
 
-describe("the overrides", () => {
-  it("read engine= and tier= and nothing else", () => {
+describe("the engine override", () => {
+  it("reads engine= and nothing else", () => {
     expect(parseEngineOverride("?engine=webgpu")).toBe("webgpu");
     expect(parseEngineOverride("?cmd=freecam&engine=webgl2")).toBe("webgl2");
     expect(parseEngineOverride("?engine=webgl")).toBeNull();
     expect(parseEngineOverride("")).toBeNull();
-    expect(parseTierOverride("?tier=high")).toBe("high");
-    expect(parseTierOverride("?tier=ultra")).toBeNull();
-    expect(parseTierOverride("?engine=webgpu")).toBeNull();
-  });
-
-  it("reads the other two tiers too", () => {
-    expect(parseTierOverride("?tier=low")).toBe("low");
-    expect(parseTierOverride("?engine=webgl2&tier=medium")).toBe("medium");
+    expect(parseEngineOverride("?tier=high")).toBeNull();
   });
 });
 
@@ -122,13 +115,6 @@ describe("the remembered fallback", () => {
     expect(writeFallback(throwing, recordFailure(null, "init", env, t0))).toBe(false);
     expect(readFallback(null)).toBeNull();
   });
-  it("reads the browser's major version from navigator.userAgent", () => {
-    expect(browserMajor("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7310.4 Safari/537.36")).toBe(153);
-    expect(browserMajor("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0")).toBe(145);
-    expect(browserMajor("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15")).toBe(26);
-    expect(browserMajor("")).toBe(0);
-  });
-
   it("round-trips through storage under dayhike.engine, and ignores what it did not write", () => {
     const items = new Map<string, string>();
     const store = {
@@ -263,12 +249,6 @@ describe("the notice across a reload", () => {
     expect(() => leaveNotice(throwing, "x")).not.toThrow();
     expect(takeNotice(throwing)).toBeNull();
     expect(takeNotice(null)).toBeNull();
-  });
-
-  it("finds no storage where the accessor itself throws", () => {
-    expect(safeStorage(() => { throw new Error("denied"); })).toBeNull();
-    const store = {} as Storage;
-    expect(safeStorage(() => store)).toBe(store);
   });
 });
 

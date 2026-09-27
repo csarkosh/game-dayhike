@@ -2,7 +2,7 @@ import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
 import { createRenderer, terrainMaterialFor, type FreecamView, type Renderer } from "./game/renderer.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
-import { FALLBACK_NOTICE_MS, safeStorage, takeNotice } from "./game/engineChoice.js";
+import { FALLBACK_NOTICE_MS, takeNotice } from "./game/engineChoice.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
@@ -70,7 +70,7 @@ import { signSites } from "./sim/placeNames.js";
 import { afterNextPaint } from "./game/paint.js";
 import type { QualityTier } from "./game/quality.js";
 import { settingsModel, type AutoSummary } from "./game/settings.js";
-import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice.js";
+import { pageSessionStorage, resolveTier, type TierChoice, type TierSource } from "./game/tierChoice.js";
 import {
   buildFirstRenderer,
   buildOrUndo,
@@ -1249,7 +1249,7 @@ function buildGame(
   // After a reload that followed a GPU error (`main.ts`), the line saying so,
   // once. Below the session's start, whose `setStatus(null)` would wipe it; a
   // reload leaves any party, so the start before it is the host's.
-  const notice = takeNotice(safeStorage(() => sessionStorage));
+  const notice = takeNotice(pageSessionStorage());
   if (notice !== null) hud.flash(notice, FALLBACK_NOTICE_MS);
 
   /** One frame. Named, so a live tier change can stop it on the old engine and

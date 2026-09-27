@@ -144,6 +144,18 @@ describe("layer boundaries", () => {
     expect(violations(join(SRC, "net"), named)).toEqual([]);
   });
 
+  it("defines each helper the tier and engine code share once: the tier override, the browser's version, the storage accessors", () => {
+    const definitions = (name: string): string[] =>
+      sourceFiles(SRC).flatMap((file) =>
+        [...stripComments(readFileSync(file, "utf8")).matchAll(new RegExp(`\\bfunction ${name}\\(`, "g"))].map(() => relative(SRC, file)),
+      );
+    expect(definitions("parseTierOverride")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("browserMajor")).toEqual(["game/gpuSignals.ts"]);
+    expect(definitions("pageStorage")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("pageSessionStorage")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("safeStorage")).toEqual([]);
+  });
+
   it("keeps the quality modules out of sim/ and net/", () => {
     const quality = /game\/(quality|gpuSignals|gpuClass|tierChoice|frameProbe|governor|rendererSwap|settings)(\.js)?$/;
     expect(violations(join(SRC, "sim"), [quality])).toEqual([]);

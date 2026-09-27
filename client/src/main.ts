@@ -31,7 +31,7 @@ import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
-import { browserEnv, gatherSignals, type GpuSignals } from "./game/gpuSignals.js";
+import { browserEnv, browserMajor, gatherSignals, type GpuSignals } from "./game/gpuSignals.js";
 import { START_FAILED_LINE, autoPick, startFallbacks, startHike, startupTier, type StartupTier } from "./game/frameProbe.js";
 import { createHud } from "./game/hud.js";
 import { probeDeps } from "./game/probeScene.js";
@@ -51,7 +51,6 @@ import {
   type TierSource,
 } from "./game/tierChoice.js";
 import {
-  browserMajor,
   chooseEngine,
   engineWaitLine,
   failureAction,
@@ -63,7 +62,6 @@ import {
   readFallback,
   recordFailure,
   resolveWebGpu,
-  safeStorage,
   sameRoute,
   stripOverrides,
   withEngine,
@@ -542,10 +540,6 @@ type GpuModule = typeof import("./game/gpuEngine.js");
 /** A WebGPU engine made for the canvas, and the watcher from its module. */
 type MadeEngine = { engine: AbstractEngine; watch: GpuModule["watchWebGpu"] };
 
-function localStore(): Storage | null {
-  return safeStorage(() => localStorage);
-}
-
 function engineEnv(): EngineEnv {
   return { browser: browserMajor(navigator.userAgent), babylon: AbstractEngine.Version };
 }
@@ -557,7 +551,7 @@ function engineEnv(): EngineEnv {
  * failure itself did not reload.
  */
 function rememberFailure(reason: "init" | "pipeline" | "lost", pin = true): { stored: boolean; holds: boolean } {
-  const local = localStore();
+  const local = pageStorage();
   const env = engineEnv();
   const now = Date.now();
   const record = recordFailure(readFallback(local), reason, env, now);
@@ -719,7 +713,7 @@ function render(container: HTMLDivElement): void {
       const input: EngineInput = {
         tier: decided.tier,
         override: parseEngineOverride(location.search),
-        remembered: fallbackHolds(readFallback(localStore()), engineEnv(), Date.now()),
+        remembered: fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),
         on: WEBGPU_ENABLED,
         fits: null,
       };
@@ -787,7 +781,7 @@ function launch(
       return;
     }
     stopWatching();
-    if (action.notice !== null) leaveEngineNotice(safeStorage(() => sessionStorage), action.notice);
+    if (action.notice !== null) leaveEngineNotice(pageSessionStorage(), action.notice);
     if (action.reload === "webgl2") location.replace(withEngine(location.href, "webgl2"));
     else location.reload();
   };
