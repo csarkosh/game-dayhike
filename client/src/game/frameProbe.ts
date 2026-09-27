@@ -359,7 +359,12 @@ export async function startupTier(
   let tier = decided.tier;
   const from = decided.source === "auto" ? (parseProbeOverride(opts.search) ?? auto.probeFrom) : null;
   if (decided.source === "auto" && from === null && auto.probeSkipped) {
-    deps.log(`quality probe: skipped, this browser compiles shaders on the page's thread; starting at ${tier} (${cls})`);
+    // What is known: the extension absent, or no WebGL2 context to ask.
+    const reason =
+      signals.parallelCompile === null
+        ? "no WebGL2 context could be made to measure with"
+        : "this browser compiles shaders on the page's thread";
+    deps.log(`quality probe: skipped, ${reason}; starting at ${tier} (${cls})`);
   }
   if (from !== null && !opts.cancelled()) {
     const screen = deps.showScreen();

@@ -537,7 +537,10 @@ and `quality probe: verdict medium (apple-unknown)`, or, with no verdict,
 `quality probe: skipped, the page draws below 60 Hz (33.3 ms a frame); starting at medium (apple-unknown)`
 (or `no verdict`, or `not run, the page moved on`). Where the probe is skipped
 for compiling on the page's thread (§7.1), before any screen:
-`quality probe: skipped, this browser compiles shaders on the page's thread; starting at medium (apple-unknown)`.
+`quality probe: skipped, this browser compiles shaders on the page's thread; starting at medium (apple-unknown)`,
+or, where no WebGL2 context could be made to ask for the extension (a class
+read from the WebGPU adapter alone),
+`quality probe: skipped, no WebGL2 context could be made to measure with; starting at medium (apple-unknown)`.
 
 ### 7.8 With the WebGPU rule
 

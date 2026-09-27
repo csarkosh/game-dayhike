@@ -398,6 +398,20 @@ describe("startupTier", () => {
     expect(readAutoRecord(earlier)!.attempts).toBe(2);
   });
 
+  it("says the probe is skipped for want of a WebGL2 context where none could be made", async () => {
+    const storage = memoryStorage();
+    const t = fakes((tier) => reading(tier, 16.7), storage);
+    expect(await startupTier({ ...FIREFOX, parallelCompile: null }, page(), t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+    expect(t.screens()).toBe(0);
+    expect(t.waits()).toBe(0);
+    expect(t.steps).toEqual([]);
+    expect(contents(storage)).toBe("[]");
+    expect(t.lines).toEqual([
+      "quality probe: skipped, no WebGL2 context could be made to measure with; starting at medium (apple-unknown)",
+      "quality: medium (auto, apple-unknown), engine webgl2",
+    ]);
+  });
+
   it("still honours a holding verdict where shaders compile on the page's thread", async () => {
     const s = memoryStorage();
     writeAutoRecord(s, {
