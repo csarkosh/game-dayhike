@@ -6,6 +6,7 @@ import {
   TOUCH_DOWNLOADS_NOTE,
   WAITING_FOR_HOST,
   landingModel,
+  landingPanelFocus,
 } from "../../src/game/landingModel.js";
 
 const MAC = {
@@ -157,5 +158,22 @@ describe("the Settings entry", () => {
     expect(view.settingsPage.choices.map((c) => c.selected)).toEqual([false, false, false, true]);
     expect(view.settingsPage.lines).toEqual(["Auto picks Medium on this computer."]);
     expect(view.settingsPage.apply).toBe(undefined);
+  });
+});
+
+describe("landingPanelFocus", () => {
+  it("leaves only the panel showing reachable, so no hidden control can be tabbed to or pressed", () => {
+    expect(landingPanelFocus(null, "home").inert).toEqual(["downloads", "settings", "credits"]);
+    expect(landingPanelFocus("home", "settings").inert).toEqual(["home", "downloads", "credits"]);
+    expect(landingPanelFocus("home", "credits").inert).toEqual(["home", "downloads", "settings"]);
+    expect(landingPanelFocus("home", "downloads").inert).toEqual(["home", "settings", "credits"]);
+  });
+
+  it("takes focus into a panel as it opens and back to its entry as it closes, and not on a page load", () => {
+    expect(landingPanelFocus("home", "settings").focus).toEqual({ into: "settings" });
+    expect(landingPanelFocus("settings", "home").focus).toEqual({ entry: "settings" });
+    expect(landingPanelFocus("credits", "home").focus).toEqual({ entry: "credits" });
+    expect(landingPanelFocus(null, "settings").focus).toBe(null);
+    expect(landingPanelFocus("home", "home").focus).toBe(null);
   });
 });

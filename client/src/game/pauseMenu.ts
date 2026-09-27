@@ -167,23 +167,40 @@ export type PauseEvent =
   | { kind: "back" }
   | { kind: "escape" };
 
-export type PauseEffect = { kind: "resume" } | { kind: "apply"; choice: TierChoice } | null;
+/** Where the keyboard's focus goes: the main page's Resume or Settings, or
+ * the Settings page's chosen choice. */
+export type PauseFocus = "resume" | "settings" | "choice";
+
+export type PauseEffect =
+  | { kind: "resume" }
+  | { kind: "apply"; choice: TierChoice }
+  | { kind: "focus"; target: PauseFocus }
+  | null;
 
 /**
  * The menu's decisions, as data. Settings opens on the saved choice; a choice
  * only selects; Apply hands the selection on; Back and Escape leave Settings
  * and discard a selection not applied; Escape on the main page resumes. While
  * a choice is being applied nothing but its end is heard, and the menu always
- * opens on the main page.
+ * opens on the main page. Focus follows: Resume when the menu opens, the
+ * chosen choice on entering Settings and once a choice is applied (Apply
+ * goes disabled, and a disabled button loses the focus), Settings on leaving.
  */
 export function pauseStep(state: PauseState, event: PauseEvent): { state: PauseState; effect: PauseEffect } {
   const stay = { state, effect: null };
-  if (state.applying) return event.kind === "applied" ? { state: { ...state, applying: false }, effect: null } : stay;
+  if (state.applying) {
+    return event.kind === "applied"
+      ? { state: { ...state, applying: false }, effect: { kind: "focus", target: "choice" } }
+      : stay;
+  }
   switch (event.kind) {
     case "show":
-      return { state: PAUSE_START, effect: null };
+      return { state: PAUSE_START, effect: { kind: "focus", target: "resume" } };
     case "settings":
-      return { state: { panel: "settings", selection: event.saved, applying: false }, effect: null };
+      return {
+        state: { panel: "settings", selection: event.saved, applying: false },
+        effect: { kind: "focus", target: "choice" },
+      };
     case "choose":
       return state.panel === "settings" ? { state: { ...state, selection: event.choice }, effect: null } : stay;
     case "apply":
@@ -193,9 +210,11 @@ export function pauseStep(state: PauseState, event: PauseEvent): { state: PauseS
     case "applied":
       return stay;
     case "back":
-      return state.panel === "settings" ? { state: PAUSE_START, effect: null } : stay;
+      return state.panel === "settings" ? { state: PAUSE_START, effect: { kind: "focus", target: "settings" } } : stay;
     case "escape":
-      return state.panel === "settings" ? { state: PAUSE_START, effect: null } : { state, effect: { kind: "resume" } };
+      return state.panel === "settings"
+        ? { state: PAUSE_START, effect: { kind: "focus", target: "settings" } }
+        : { state, effect: { kind: "resume" } };
   }
 }
 
@@ -290,27 +309,31 @@ export function createPauseMenu(
   let isOpen = false;
   let state = PAUSE_START;
 
-  function paint(previous: PauseState): void {
+  function paint(): void {
     const onSettings = state.panel === "settings";
     root.classList.toggle("show-settings", onSettings);
     main.inert = onSettings;
     settingsPage.inert = !onSettings;
     if (onSettings && state.selection !== null) settingsUi.setView(options.settings.view(state.selection, state.applying));
-    // Focus follows the page, so the keyboard is never left on a page that
-    // has gone: the chosen choice on the way in, Settings on the way out.
-    if (previous.panel !== state.panel && isOpen) {
-      if (onSettings) settingsPage.querySelector<HTMLButtonElement>('button.choice[aria-pressed="true"]')?.focus();
-      else settingsButton.focus();
-    }
+  }
+
+  function focus(target: PauseFocus): void {
+    if (!isOpen) return;
+    if (target === "resume") resume.focus();
+    else if (target === "settings") settingsButton.focus();
+    else settingsPage.querySelector<HTMLButtonElement>('button.choice[aria-pressed="true"]')?.focus();
   }
 
   function dispatch(event: PauseEvent): void {
-    const previous = state;
     const step = pauseStep(state, event);
     state = step.state;
-    paint(previous);
+    paint();
     const effect = step.effect;
     if (effect === null) return;
+    if (effect.kind === "focus") {
+      focus(effect.target);
+      return;
+    }
     if (effect.kind === "resume") {
       options.onResume();
       return;
@@ -340,9 +363,11 @@ export function createPauseMenu(
 
   return {
     show() {
+      // Open first: nothing in a display: none subtree can take the focus
+      // that opening gives Resume.
       isOpen = true;
-      dispatch({ kind: "show" });
       root.classList.add("open");
+      dispatch({ kind: "show" });
     },
     hide() {
       isOpen = false;

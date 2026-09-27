@@ -20,6 +20,7 @@ describe("pauseStep", () => {
   it("opens Settings on the saved choice, and Escape on the main panel resumes", () => {
     expect(PAUSE_START).toEqual({ panel: "main", selection: null, applying: false });
     expect(opened()).toEqual({ panel: "settings", selection: "auto", applying: false });
+    expect(pauseStep(PAUSE_START, { kind: "settings", saved: "auto" }).effect).toEqual({ kind: "focus", target: "choice" });
     expect(pauseStep(PAUSE_START, { kind: "escape" })).toEqual({ state: PAUSE_START, effect: { kind: "resume" } });
   });
 
@@ -27,7 +28,7 @@ describe("pauseStep", () => {
     const chosen = pauseStep(opened(), { kind: "choose", choice: "low" });
     expect(chosen).toEqual({ state: { panel: "settings", selection: "low", applying: false }, effect: null });
     for (const leave of [{ kind: "back" }, { kind: "escape" }] as const) {
-      expect(pauseStep(chosen.state, leave)).toEqual({ state: PAUSE_START, effect: null });
+      expect(pauseStep(chosen.state, leave)).toEqual({ state: PAUSE_START, effect: { kind: "focus", target: "settings" } });
     }
     const reopened = pauseStep(pauseStep(chosen.state, { kind: "back" }).state, { kind: "settings", saved: "auto" }).state;
     expect(reopened.selection).toBe("auto");
@@ -40,14 +41,20 @@ describe("pauseStep", () => {
     for (const event of [{ kind: "back" }, { kind: "escape" }, { kind: "choose", choice: "low" }, { kind: "apply" }, { kind: "show" }] as const) {
       expect(pauseStep(applying.state, event)).toEqual({ state: applying.state, effect: null });
     }
+    // Apply goes disabled once its choice is saved, and a disabled button
+    // loses focus: it goes to the choice just applied.
     expect(pauseStep(applying.state, { kind: "applied" })).toEqual({
       state: { panel: "settings", selection: "high", applying: false },
-      effect: null,
+      effect: { kind: "focus", target: "choice" },
     });
   });
 
-  it("opens on the main panel each time it is shown", () => {
-    expect(pauseStep(pauseStep(opened(), { kind: "choose", choice: "low" }).state, { kind: "show" })).toEqual({ state: PAUSE_START, effect: null });
+  it("opens on the main panel each time it is shown, with Resume focused", () => {
+    expect(pauseStep(pauseStep(opened(), { kind: "choose", choice: "low" }).state, { kind: "show" })).toEqual({
+      state: PAUSE_START,
+      effect: { kind: "focus", target: "resume" },
+    });
+    expect(pauseStep(PAUSE_START, { kind: "show" })).toEqual({ state: PAUSE_START, effect: { kind: "focus", target: "resume" } });
   });
 
   it("ignores a choice or an Apply with the main panel showing", () => {

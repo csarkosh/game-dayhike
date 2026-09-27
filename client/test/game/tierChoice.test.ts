@@ -4,6 +4,7 @@ import {
   parseProbeOverride,
   parseTierOverride,
   readAutoRecord,
+  createChoiceKeeper,
   readChoice,
   resolveTier,
   writeAutoRecord,
@@ -168,5 +169,51 @@ describe("resolveTier", () => {
     expect(resolveTier({ override: "low", choice: "high", auto: "medium" })).toEqual({ tier: "low", source: "override" });
     expect(resolveTier({ override: null, choice: "high", auto: "medium" })).toEqual({ tier: "high", source: "choice" });
     expect(resolveTier({ override: null, choice: "auto", auto: "medium" })).toEqual({ tier: "medium", source: "auto" });
+  });
+});
+
+describe("createChoiceKeeper", () => {
+  /** A storage that refuses writes while `refusing` is set. */
+  function flaky() {
+    const inner = memoryStorage();
+    const gate = { refusing: true };
+    const storage: Storage = {
+      get length() { return inner.length; },
+      clear: () => inner.clear(),
+      getItem: (k) => inner.getItem(k),
+      key: (i) => inner.key(i),
+      removeItem: (k) => inner.removeItem(k),
+      setItem: (k, v) => {
+        if (gate.refusing) throw new Error("QuotaExceededError");
+        inner.setItem(k, v);
+      },
+    };
+    return { storage, gate };
+  }
+
+  it("keeps a refused choice for the page's life, and says it is not kept until a write succeeds", () => {
+    const { storage, gate } = flaky();
+    const keeper = createChoiceKeeper(() => storage);
+    expect(keeper.choice()).toBe("auto");
+    expect(keeper.stored()).toBe(true);
+    keeper.save("low");
+    expect(keeper.choice()).toBe("low");
+    expect(keeper.stored()).toBe(false);
+    gate.refusing = false;
+    keeper.save("high");
+    expect(keeper.choice()).toBe("high");
+    expect(keeper.stored()).toBe(true);
+    expect(storage.getItem("dayhike.quality")).toBe("high");
+  });
+
+  it("reads the stored choice when nothing was refused, and holds a choice with no storage at all", () => {
+    const s = memoryStorage();
+    s.setItem("dayhike.quality", "medium");
+    expect(createChoiceKeeper(() => s).choice()).toBe("medium");
+    const none = createChoiceKeeper(() => null);
+    expect(none.stored()).toBe(false);
+    none.save("high");
+    expect(none.choice()).toBe("high");
+    expect(none.stored()).toBe(false);
   });
 });

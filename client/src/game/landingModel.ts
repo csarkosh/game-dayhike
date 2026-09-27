@@ -48,6 +48,29 @@ export type LandingInput = {
 
 export type DownloadCard = { platform: Platform; url: string; label: string; caption: string; note: string };
 
+/** Which panel is showing. The route decides; see main.ts. */
+export type LandingPanel = "home" | "downloads" | "settings" | "credits";
+
+const LANDING_PANELS: readonly LandingPanel[] = ["home", "downloads", "settings", "credits"];
+
+/**
+ * What moving between panels does to the keyboard, as data. Every panel but
+ * the one showing is inert: the panels are only slid and faded out of sight,
+ * and without this Tab and a screen reader still reached them, where
+ * Settings' choices would change the setting unseen. Focus goes into a panel
+ * as it opens and back to its entry on the home panel as it closes; a page
+ * load (`previous` null) moves nothing.
+ */
+export function landingPanelFocus(
+  previous: LandingPanel | null,
+  next: LandingPanel,
+): { inert: LandingPanel[]; focus: { into: LandingPanel } | { entry: LandingPanel } | null } {
+  const inert = LANDING_PANELS.filter((panel) => panel !== next);
+  if (previous === null || previous === next) return { inert, focus: null };
+  if (next !== "home") return { inert, focus: { into: next } };
+  return { inert, focus: { entry: previous } };
+}
+
 export type LandingView = {
   /** The primary action. Absent for a follower, who gets `waiting` instead.
    * `busy` while the game it started is loading: disabled, with a label that

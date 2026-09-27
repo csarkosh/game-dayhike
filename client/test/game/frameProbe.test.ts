@@ -362,8 +362,9 @@ describe("autoPick", () => {
       renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
     };
     expect(autoPick(signals, { record: null, pixels: 2_073_600, now: 1_790_000_000_000 })).toEqual({
-      cls: "apple-unknown", gpu: "Apple GPU", tier: "medium", probeFrom: "high",
+      cls: "apple-unknown", gpu: "Apple GPU", tier: "medium", probeFrom: "high", ceiling: "high",
     });
+    expect(autoPick({ ...signals, cores: 2 }, { record: null, pixels: 2_073_600, now: 1_790_000_000_000 }).ceiling).toBe("low");
   });
 });
 

@@ -65,3 +65,28 @@ describe("settingsModel", () => {
     expect(v.choices.every((c) => c.disabled)).toBe(true);
   });
 });
+
+describe("a choice above what this computer is recommended", () => {
+  const auto = { tier: "medium" as const, probePending: false, ceiling: "medium" as const };
+
+  it("is honoured, with one quiet line under the choices", () => {
+    const high = settingsModel({ context: "title", choice: "high", auto, override: null, stored: true });
+    expect(high.choices.find((c) => c.selected)!.choice).toBe("high");
+    expect(high.caution).toBe("Higher than recommended for this computer.");
+    const paused = settingsModel({ context: "pause", choice: "high", saved: "auto", auto, running: "medium", override: null, stored: true });
+    expect(paused.caution).toBe("Higher than recommended for this computer.");
+  });
+
+  it("says nothing for Auto, for a tier within the recommendation, or before the signals are in", () => {
+    for (const choice of ["auto", "medium", "low"] as const) {
+      expect(settingsModel({ context: "title", choice, auto, override: null, stored: true }).caution).toBe(undefined);
+    }
+    expect(settingsModel({ context: "title", choice: "high", auto: null, override: null, stored: true }).caution).toBe(undefined);
+    expect(settingsModel({ context: "title", choice: "high", auto: { tier: "high", probePending: false, ceiling: "high" }, override: null, stored: true }).caution).toBe(undefined);
+  });
+
+  it("measures against the low cap too", () => {
+    const capped = { tier: "low" as const, probePending: false, ceiling: "low" as const };
+    expect(settingsModel({ context: "title", choice: "medium", auto: capped, override: null, stored: true }).caution).toBe("Higher than recommended for this computer.");
+  });
+});

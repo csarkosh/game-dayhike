@@ -254,12 +254,11 @@ const STYLE = `
 
 import type { Platform } from "../net/desktopRelease.js";
 import { creditsEntries, renderCredits } from "./credits.js";
-import type { LandingView } from "./landingModel.js";
+import { landingPanelFocus, type LandingPanel, type LandingView } from "./landingModel.js";
 import { renderSettings } from "./settings.js";
 import type { TierChoice } from "./tierChoice.js";
 
-/** Which panel is showing. The route decides; see main.ts. */
-export type LandingPanel = "home" | "downloads" | "credits" | "settings";
+export type { LandingPanel } from "./landingModel.js";
 
 export type LandingHandle = {
   setView(view: LandingView): void;
@@ -379,10 +378,25 @@ export function renderLanding(
   });
 
   root.append(home, downloads, settings, credits);
+  const panels: Record<LandingPanel, HTMLElement> = { home, downloads, settings, credits };
+  /** Where focus lands inside each panel as it opens. */
+  const into: Record<LandingPanel, () => HTMLElement | null> = {
+    home: () => null,
+    downloads: () => downloads.querySelector<HTMLElement>("a.download") ?? downloadsBack,
+    settings: () => settings.querySelector<HTMLElement>('button.choice[aria-pressed="true"]'),
+    credits: () => credits.querySelector<HTMLElement>("ul.credits"),
+  };
+  let showing: LandingPanel | null = null;
   function showPanel(next: LandingPanel): void {
     root.classList.toggle("show-downloads", next === "downloads");
     root.classList.toggle("show-settings", next === "settings");
     root.classList.toggle("show-credits", next === "credits");
+    const moved = landingPanelFocus(showing, next);
+    showing = next;
+    for (const name of Object.keys(panels) as LandingPanel[]) panels[name].inert = moved.inert.includes(name);
+    if (moved.focus === null) return;
+    if ("into" in moved.focus) into[moved.focus.into]()?.focus();
+    else home.querySelector<HTMLElement>(`button.secondary.${moved.focus.entry}`)?.focus();
   }
   showPanel(panel);
 

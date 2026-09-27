@@ -128,6 +128,33 @@ export function writeChoice(storage: Storage | null, choice: TierChoice): boolea
   }
 }
 
+/**
+ * The player's choice for the page's life: read from and kept in `storage()`
+ * where it can be, and held here where a write is refused, with `stored()`
+ * false until a later write succeeds.
+ */
+export function createChoiceKeeper(storage: () => Storage | null): {
+  choice(): TierChoice;
+  stored(): boolean;
+  save(choice: TierChoice): void;
+} {
+  let held: TierChoice | null = null;
+  let refused = false;
+  return {
+    choice: () => held ?? readChoice(storage()).choice,
+    stored: () => !refused && readChoice(storage()).stored,
+    save(choice) {
+      if (writeChoice(storage(), choice)) {
+        held = null;
+        refused = false;
+        return;
+      }
+      held = choice;
+      refused = true;
+    },
+  };
+}
+
 /** Stores Auto's record; false where there is no storage or it refuses. */
 export function writeAutoRecord(storage: Storage | null, record: AutoRecord): boolean {
   if (storage === null) return false;

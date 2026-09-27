@@ -17,9 +17,15 @@ export const TIER_CHOICES: readonly TierChoice[] = ["auto", "high", "medium", "l
 
 const LABELS: Record<TierChoice, string> = { auto: "Auto (Recommended)", high: "High", medium: "Medium", low: "Low" };
 const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium", low: "Low" };
+const RANK: Record<QualityTier, number> = { low: 0, medium: 1, high: 2 };
 
-/** What Auto would pick on this machine, and whether it will first test it. */
-export type AutoSummary = { tier: QualityTier; probePending: boolean };
+/** The line under the choices for a tier chosen above the recommendation. */
+export const ABOVE_RECOMMENDED = "Higher than recommended for this computer.";
+
+/** What Auto would pick on this machine, whether it will first test it, and
+ * the highest tier it would ever take here (the class's ceiling, or the low
+ * cap), where known. */
+export type AutoSummary = { tier: QualityTier; probePending: boolean; ceiling?: QualityTier };
 
 export type SettingsInput = {
   context: "title" | "pause";
@@ -44,6 +50,9 @@ export type SettingsView = {
   heading: string;
   group: string;
   choices: { choice: TierChoice; label: string; selected: boolean; disabled: boolean }[];
+  /** A tier chosen above the highest Auto would take here: honoured, and said
+   * so in one quiet line under the choices. */
+  caution?: string;
   lines: string[];
   /** Pause only: the title screen keeps a choice as it is pressed. */
   apply?: { label: string; disabled: boolean };
@@ -87,6 +96,8 @@ export function settingsModel(input: SettingsInput): SettingsView {
     lines,
     back: { label: "Back", disabled: applying },
   };
+  const ceiling = input.auto?.ceiling;
+  if (input.choice !== "auto" && ceiling !== undefined && RANK[input.choice] > RANK[ceiling]) view.caution = ABOVE_RECOMMENDED;
   if (input.context === "pause") {
     const saved = input.saved ?? input.choice;
     view.apply = {
@@ -114,12 +125,14 @@ const STYLE = `
     margin: 0; max-width: 32rem; text-align: center; font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.62);
   }
+  .settings .caution { font-size: 0.8rem; color: rgba(255, 255, 255, 0.45); }
 `;
 
 /**
- * Paints `view` into `root`. The heading and the group label are built once;
- * `setView` rebuilds the choices, the lines and the controls' states in place,
- * so the heading never flickers.
+ * Paints `view` into `root`. Everything is built once and `setView` updates it
+ * in place: the four choices keep their nodes, so the one pressed keeps the
+ * keyboard's focus and its new `aria-pressed` is announced on it; only the
+ * lines below are rebuilt.
  */
 export function renderSettings(
   root: HTMLElement,
@@ -139,6 +152,20 @@ export function renderSettings(
   choices.className = "choices";
   choices.setAttribute("role", "group");
   choices.setAttribute("aria-label", view.group);
+  const buttons = new Map<TierChoice, HTMLButtonElement>();
+  for (const c of view.choices) {
+    const button = document.createElement("button");
+    button.type = "button";
+    // `secondary`: the landing's hollow slab, so the chosen one can be lit
+    // against the others rather than every choice outshouting the page.
+    button.className = "secondary choice";
+    button.addEventListener("click", () => handlers.onChoose(c.choice));
+    buttons.set(c.choice, button);
+    choices.append(button);
+  }
+
+  const caution = document.createElement("p");
+  caution.className = "line caution";
 
   const lines = document.createElement("div");
   lines.style.display = "contents";
@@ -157,20 +184,15 @@ export function renderSettings(
     heading.textContent = v.heading;
     group.textContent = v.group;
     choices.setAttribute("aria-label", v.group);
-    choices.replaceChildren(
-      ...v.choices.map((c) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        // `secondary`: the landing's hollow slab, so the chosen one can be lit
-        // against the others rather than every choice outshouting the page.
-        button.className = "secondary choice";
-        button.textContent = c.label;
-        button.setAttribute("aria-pressed", String(c.selected));
-        button.disabled = c.disabled;
-        button.addEventListener("click", () => handlers.onChoose(c.choice));
-        return button;
-      }),
-    );
+    for (const c of v.choices) {
+      const button = buttons.get(c.choice);
+      if (button === undefined) continue;
+      button.textContent = c.label;
+      button.setAttribute("aria-pressed", String(c.selected));
+      button.disabled = c.disabled;
+    }
+    caution.hidden = v.caution === undefined;
+    caution.textContent = v.caution ?? "";
     lines.replaceChildren(
       ...v.lines.map((text) => {
         const line = document.createElement("p");
@@ -189,12 +211,12 @@ export function renderSettings(
   }
 
   paint(view);
-  root.append(style, heading, group, choices, lines, apply, back);
+  root.append(style, heading, group, choices, caution, lines, apply, back);
 
   return {
     setView: paint,
     dispose() {
-      for (const node of [style, heading, group, choices, lines, apply, back]) node.remove();
+      for (const node of [style, heading, group, choices, caution, lines, apply, back]) node.remove();
     },
   };
 }

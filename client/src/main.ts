@@ -10,6 +10,8 @@ import {
   replaceWithLanding,
   leavePanel,
   browserExit,
+  announcedPath,
+  sameFollowPlace,
   type Route,
 } from "./game/router.js";
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
@@ -35,11 +37,10 @@ import { probeDeps } from "./game/probeScene.js";
 import { containerPixels } from "./game/quality.js";
 import type { AutoSummary } from "./game/settings.js";
 import {
+  createChoiceKeeper,
   pageStorage,
   parseTierOverride,
   readAutoRecord,
-  readChoice,
-  writeChoice,
   type TierChoice,
 } from "./game/tierChoice.js";
 
@@ -99,36 +100,21 @@ void signalsReady.then((read) => {
 });
 
 // ---- the graphics setting ------------------------------------------------------
-// The player's choice lives in localStorage (`tierChoice.ts`). Where the storage
-// refuses a write, the choice is kept here for the page's life instead, and the
-// Settings screen says so.
+// The player's choice lives in localStorage; where the storage refuses a write
+// it is held for the page's life instead, and the Settings screen says so
+// until a write succeeds (`createChoiceKeeper`).
 
-let sessionChoice: TierChoice | null = null;
-let choiceRefused = false;
-
-function currentChoice(): TierChoice {
-  return sessionChoice ?? readChoice(pageStorage()).choice;
-}
-
-function choiceStored(): boolean {
-  return !choiceRefused && readChoice(pageStorage()).stored;
-}
-
-function saveChoice(choice: TierChoice): void {
-  if (writeChoice(pageStorage(), choice)) {
-    sessionChoice = null;
-    return;
-  }
-  sessionChoice = choice;
-  choiceRefused = true;
-}
+const tierChoice = createChoiceKeeper(pageStorage);
+const currentChoice = (): TierChoice => tierChoice.choice();
+const choiceStored = (): boolean => tierChoice.stored();
+const saveChoice = (choice: TierChoice): void => tierChoice.save(choice);
 
 /** What Auto would pick here now, or null until the GPU's signals are in. */
 function autoSummary(): AutoSummary | null {
   if (signals === null) return null;
   const pixels = app === null ? 0 : containerPixels(app);
   const pick = autoPick(signals, { record: readAutoRecord(pageStorage()), pixels, now: Date.now() });
-  return { tier: pick.tier, probePending: pick.probeFrom !== null };
+  return { tier: pick.tier, probePending: pick.probeFrom !== null, ceiling: pick.ceiling };
 }
 // Bumped by every render, so a hike whose tier is still being decided for a
 // page that has since been left is never built.
@@ -280,17 +266,20 @@ function detach(): void {
   lobby = null;
 }
 
-/** A follower goes where the host is. The host's route is "" until known. */
+/** A follower goes where the host is. The host's route is "" until known,
+ * and the landing page and its panels are one place (`sameFollowPlace`): a
+ * follower in its own Settings stays there while the host is on the landing. */
 function follow(active: Lobby): void {
   if (active.state.role !== "client") return;
   const target = active.state.route;
-  if (target === "" || target === currentRoutePath()) return;
+  if (target === "" || sameFollowPlace(target, currentRoutePath())) return;
   navigateTo(target);
 }
 
-/** Host side: tell the lobby where we are now. Called from render(). */
+/** Host side: tell the lobby where we are now, a landing panel as the landing
+ * page (`announcedPath`). Called from render(). */
 function announceRoute(): void {
-  if (lobby !== null && lobby.state.role === "host") lobby.setRoute(currentRoutePath());
+  if (lobby !== null && lobby.state.role === "host") lobby.setRoute(announcedPath(currentRoutePath()));
 }
 
 // Landing routes are announced at once; the game route only after its first

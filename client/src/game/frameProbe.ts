@@ -283,12 +283,13 @@ export type StartupDeps = {
 export type StartupTier = { tier: QualityTier; source: TierSource; cls: GpuClass };
 
 /** Auto on this machine: the GPU's class and identity, the tier, and the tier
- * a probe would start from, or null. What the Settings screen's Auto line
- * reads, and where `startupTier` begins. */
+ * a probe would start from, or null, and the highest tier Auto would take
+ * here. What the Settings screen's Auto line reads, and where `startupTier`
+ * begins. */
 export function autoPick(
   signals: GpuSignals,
   at: { record: AutoRecord | null; pixels: number; now: number },
-): { cls: GpuClass; gpu: string; tier: QualityTier; probeFrom: QualityTier | null } {
+): { cls: GpuClass; gpu: string; tier: QualityTier; probeFrom: QualityTier | null; ceiling: QualityTier } {
   const cls = classifyGpu(signals);
   const gpu = gpuIdentity(signals);
   const auto = autoTier({
@@ -301,7 +302,8 @@ export function autoPick(
     pixels: at.pixels,
     now: at.now,
   });
-  return { cls, gpu, tier: auto.tier, probeFrom: auto.probeFrom };
+  const ceiling = withinClass("high", cls, signals.cores, signals.memoryGb);
+  return { cls, gpu, tier: auto.tier, probeFrom: auto.probeFrom, ceiling };
 }
 
 /**
