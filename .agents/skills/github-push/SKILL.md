@@ -6,10 +6,11 @@ description: Use when pushing work to the game-dayhike GitHub repository at gith
 # Pushing to GitHub
 
 `github.com/csarkosh/game-dayhike` is a public, open-source repository with no reviewers. CI
-runs the tests on a push, which says whether a change works but never why it was made, so the
-commit message is the only record of why a change exists. It is written for the person reading `git log` months later with no memory of this
-session — usually the author — and anyone on the internet can read it too, so it describes the
-change and never anything private about how the work was done.
+runs the tests on a push to `main`, a `worktree-**` or `ci/**` branch, or a pull request, which
+says whether a change works but never why it was made, so the commit message is the only record
+of why a change exists. It is written for the person reading `git log` months later with no
+memory of this session — usually the author — and anyone on the internet can read it too, so it
+describes the change and never anything private about how the work was done.
 
 Remote: `origin` → `git@github.com:csarkosh/game-dayhike.git` (SSH; `gh auth` is configured for it).
 Default branch: `main`.
@@ -112,15 +113,20 @@ run somewhere other than this machine, which then stays quiet for frame-time mea
 It is a pass-or-fail check; nothing it times means anything, because the runners are shared
 machines. Two things differ from a local run for that reason:
 
-- **Time limits are scaled.** A test's time limit guards against a hang, not a bar on speed.
-  Every explicit limit is written `timeLimit(<ms>)` (`client/test/helpers/timeLimit.ts`), which
-  multiplies it by `TEST_TIME_SCALE`; unset, locally, the factor is exactly 1. The workflow sets
-  2. The architecture test fails on a limit written as a bare number.
+- **Time limits are scaled, in the client suite.** A test's time limit guards against a hang,
+  not a bar on speed. Every explicit limit in the client suite — on a test, suite or hook, and
+  on a wait (`vi.waitFor`, `expect.poll`) — is written `timeLimit(<ms>)`
+  (`client/test/helpers/timeLimit.ts`), which multiplies it by `TEST_TIME_SCALE`; unset,
+  locally, the factor is exactly 1, and it may be at most 10. The workflow sets 3 for the client
+  job. The server and tools suites set no limits and are not scaled. The architecture test
+  fails on a limit written as a bare number, naming the line to change.
 - **Wall-clock tests are left out.** A test that asserts on elapsed time carries the
-  `wall-clock` tag, and the workflow skips the tag. `npm test` still runs them here;
-  `npm run test:wall-clock` runs only them, and they are only meaningful on a quiet machine.
-  The architecture test fails on a test that reads a clock without the tag, unless it is on
-  its list of tests that print a timing without asserting on it.
+  `wall-clock` tag, and the workflow skips the tag. A local `npm test` still runs them;
+  `npm run test:wall-clock` runs only them, one file at a time, and they are only meaningful on
+  a quiet machine. A dedicated machine for them is planned, not present; until then a local run
+  is where they run. The architecture test fails on a test that reads a clock without the tag
+  (unless it is listed as printing a timing without asserting on it), on the tag on a test that
+  reads no clock, and when the number of tagged tests is not the one it states (2).
 
 A work branch may be pushed to run the gates remotely before it is finished. Then:
 
@@ -131,8 +137,9 @@ gh run view <run-id> --log-failed                            # only the failing 
 ```
 
 Every push, finished work or not, must pass the repository's pre-push scan first: the
-repository is public, so an unfinished commit is as visible as a finished one. The local
-pre-push hook runs the scan and refuses the push on a hit; never bypass it with `--no-verify`.
+repository is public, so an unfinished commit is as visible as a finished one. The pre-push
+hook on the development machine runs the scan and refuses the push on a hit (the hook is local,
+not part of a clone); never bypass it with `--no-verify`.
 
 The workflow keeps the Git LFS objects in the Actions cache, keyed on their object ids, so a
 run downloads them from LFS only when the set of objects changes (and once more for a branch
