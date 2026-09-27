@@ -25,11 +25,13 @@ coverage/
 # Terraform
 _infra/.terraform/
 _infra/test-rig/.terraform/
+_infra/test-rig-mac/.terraform/
 *.tfstate
 *.tfstate.backup
 *.tfvars
 !_infra/terraform.tfvars.example
 !_infra/test-rig/terraform.tfvars.example
+!_infra/test-rig-mac/terraform.tfvars.example
 
 # Desktop release working state.
 desktop/.cache/

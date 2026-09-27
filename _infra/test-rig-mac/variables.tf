@@ -1,0 +1,74 @@
+variable "zone" {
+  description = "Scaleway zone. fr-par-1 is the only one offering the M4 types (fr-par-3 has M1 and M4 Pro - L)."
+  type        = string
+  default     = "fr-par-1"
+}
+
+variable "region" {
+  description = "Region containing var.zone."
+  type        = string
+  default     = "fr-par"
+}
+
+variable "server_type" {
+  description = <<-EOT
+    Scaleway's commercial type. M4-S: Mac mini M4, 10 CPU cores, 10-core GPU,
+    16 GB, 256 GB SSD, EUR 0.22 an hour excl. VAT (public catalogue,
+    2026-09-27).
+  EOT
+  type        = string
+  default     = "M4-S"
+}
+
+variable "server_count" {
+  description = "How many Macs to rent for the day, to measure in parallel. Named test-rig-01, test-rig-02, ..."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.server_count >= 0 && var.server_count <= 5
+    error_message = "Between 0 and 5 Macs: each costs a full day once created."
+  }
+}
+
+variable "macos" {
+  description = <<-EOT
+    Scaleway OS name, such as macos-tahoe-26.0. Empty (the default) takes
+    Scaleway's default macOS for the server type, delivered in minutes; any
+    other version takes about an hour. `scw apple-silicon os list` lists the
+    names.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "ssh_public_key" {
+  description = <<-EOT
+    The public key to log in with (the contents of an id_*.pub file). No
+    default: it identifies its owner, so it is set in the git-ignored
+    terraform.tfvars, not in a committed file.
+  EOT
+  type        = string
+}
+
+variable "auto_delete_after_24h" {
+  description = <<-EOT
+    Ask Scaleway to delete each Mac by itself at its earliest deletion time,
+    24 hours after creation. On by default so that a forgotten Mac costs one
+    day, not a month.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "run_setup_from_terraform" {
+  description = "Run setup.sh against each Mac as part of apply. Off by default; see README.md."
+  type        = bool
+  default     = false
+}
+
+variable "allow_vnc" {
+  description = "Leave Screen Sharing reachable from the internet after set-up. Off: only SSH is reachable."
+  type        = bool
+  default     = false
+}
