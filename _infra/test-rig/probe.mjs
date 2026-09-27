@@ -33,7 +33,8 @@
 //     GRID driver);
 //   - Chrome ran in the console session, not the services session;
 //   - no DCV client connected at any point of the run;
-//   - the desktop user could not reach the instance metadata service;
+//   - the desktop user could not reach the instance metadata service, from
+//     Node or from Chrome's own network process;
 //   - with --url, every run's page loaded (no navigation error, the document
 //     complete at the address asked for) and drew frames.
 import { spawn, spawnSync } from 'node:child_process';
@@ -94,6 +95,7 @@ export function verdict(report) {
     if (count !== 0) reasons.push(`DCV had ${count ?? 'an unknown number of'} client(s) connected ${when}; disconnect every client and run again`);
   }
   if (report.imdsReachable !== false) reasons.push('the desktop user reached the instance metadata service');
+  if (report.browserImds?.reachable !== false) reasons.push(`Chrome reached the instance metadata service (${report.browserImds?.detail ?? 'not checked'})`);
   if (!/^console$/i.test(report.session?.name ?? '') || report.session?.id === 0) {
     reasons.push(`Chrome ran in session "${report.session?.name}" (${report.session?.id}), not the console session`);
   }
@@ -152,7 +154,16 @@ async function inner(dir) {
                blank: await ${frames(3000)} };
     })()`);
     const refreshHz = found.blank?.p50 ? +(1000 / found.blank.p50).toFixed(1) : null;
-    return { chrome: version, flags: args.flags, ...found, refreshHz, featureStatus: gpu.featureStatus, devices: gpu.devices };
+    // The metadata service, from Chrome's own network process: a top-level
+    // navigation, which no page policy (CORS, private network access) stops,
+    // so only the host firewall can. Any answer, even an error page for the
+    // missing token, means it was reached.
+    const browserImds = await Promise.race([
+      page('Page.navigate', { url: 'http://169.254.169.254/latest/meta-data/' })
+        .then((nav) => ({ reachable: !nav.errorText, detail: nav.errorText || 'answered' })),
+      sleep(45_000).then(() => ({ reachable: false, detail: 'no answer in 45 s' })),
+    ]);
+    return { chrome: version, flags: args.flags, ...found, refreshHz, featureStatus: gpu.featureStatus, devices: gpu.devices, browserImds };
   });
   Object.assign(result, probe);
   for (let i = 0; i < args.runs && args.url; i++) {
