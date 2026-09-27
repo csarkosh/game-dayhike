@@ -121,7 +121,7 @@ EOF
 
 Three parts: **2A** the blade field's 36 buckets and the grass class's 4, filtered to the frustum each frame the view moves (design §5.2); a gate; **2B** the meadow's 2 buckets by the same filter, only if that gate measures them worth it; **2C** sector meshes, the fallback, only if the filter's JS shows in the gate (design §5.6–§5.9).
 
-**As built** (design §5.10): 2A shipped with `CULL_MARGIN` 6° and `CULL_RADIUS` 1.5 m, and a context-restore hand-back of the drawn buffers. Its pass was then rebuilt for speed, keeping what it keeps: `cullPrefix(planes, count, set: CullSet): boolean` over a `CullSet` (`cullSet`, `cullInvalidate`) that holds each bucket's translations apart, moves the matrix and vec4 streams as float64 pairs and returns false, copying nothing, when a bucket keeps exactly its last cut; the shells upload only buckets that changed. 2B is dropped (0.05 ms measured against its 0.15 ms threshold) and 2C not taken. The bar for 2A was re-based on the measured exact-frustum ceiling: at least 70 % of it at native, no pop, no fullness loss; −0.42 of 0.58 ms met it.
+**As built** (design §5.10): 2A shipped with `CULL_MARGIN` 6° and `CULL_RADIUS` 1.5 m, and a context-restore hand-back of the drawn buffers. Its pass was then rebuilt for speed, keeping what it keeps: `cullPrefix(planes, count, set: CullSet): boolean` over a `CullSet` (`cullSet`, `cullInvalidate`) that holds each bucket's translations apart, moves the matrix and vec4 streams as float64 pairs and returns false, copying nothing, when a bucket keeps exactly its last cut; the shells upload only buckets that changed. 2B is dropped (0.05 ms measured against its 0.15 ms threshold) and 2C not taken. The bar for 2A was re-based, after its gate, on the measured exact-frustum ceiling: at least 70 % of it at native, no pop, no fullness loss. −0.42 of 0.58 ms is 72 % (64–84 % on the ceiling's spread, the two figures from different methods; about 79 % like for like, the ceiling including the meadow's 0.05 ms): design §5.10.
 
 **Files:**
 - Create: `client/src/game/grassCull.ts`, `client/test/game/grassCull.test.ts`
@@ -913,7 +913,7 @@ Design §5.10. With 2A in, hiding the blades still saves 0.88–0.94 ms at the c
 
 - [ ] **Step 1: Where the in-view blades spend (measurement only)**
 
-On a branch page at the canopy pose at native, by the toggle method of the note's §1, with 2A's filter on: (a) every blade collapsed to its root in the vertex stage, through a gate-only override of the strength cut to 0, which keeps the vertex work and removes what is rasterised; (b) the blades hidden. (b) is the in-view blades' whole cost, (a) the part after the vertex stage, (b) − (a) the vertex stage's. Recorded in the note; lever 1 is aimed at the vertex stage and lever 2 at its per-vertex arithmetic, so a small (b) − (a) says both will save little, and the task stops there with that finding.
+On a branch page at the canopy pose at native, by the toggle method of the note's §1, with 2A's filter on: (a) every blade collapsed to its root in the vertex stage, through a gate-only override of the strength cut to 0, which keeps the vertex work and removes what is rasterised; (b) the blades hidden. (b) is the in-view blades' whole cost, (a) the part after the vertex stage, (b) − (a) the vertex stage's. Recorded in the note; lever 1 is aimed at the vertex stage and lever 2 at its per-vertex arithmetic, so if (b) − (a) is **under 0.1 ms at native** (Step 4's own bar for one lever) neither can pass that bar, and the task stops there with that finding.
 
 - [ ] **Step 2: Lever 1, fewer rings on the far tiers, test first**
 
@@ -925,7 +925,7 @@ Only the terms of the foliage vertex stage that cannot move a coarse-tier vertex
 
 - [ ] **Step 4: Gate**
 
-1. **Frame**: each lever by the toggle method on branch pages at the canopy pose at native (the lever on against off, three pages); the branch against Task 2's tip by the pair method; the meadow pose and 4× reported. A lever is kept only on a reliable saving of at least 0.1 ms at native; a lever that misses is reverted, its commit named in the note.
+1. **Frame**: each lever by the toggle method on branch pages at the canopy pose at native (the lever on against off, three pages); the branch against Task 2's tip by the pair method; the meadow pose and 4× reported. A lever is kept only on a **reliable** saving of at least 0.1 ms at native: **every one of the round's three pages reads a saving of at least 0.1 ms, and a same-code round run with it (the lever off against off) reads inside ±0.05 ms**. A lever that misses is reverted, its commit named in the note.
 2. **Fullness** at both poses with the isolation: cover ratio, canopy near cover and luminance ratio inside the control's page-to-page spread, as 2A's gate read them.
 3. **The walk and the turn** of design §12.4, and the mid crop's stills: no ring of blades that changes as it crosses a tier's band.
 4. **The running total** against the control at the canopy pose at native, against the design's 0.8 ms goal, with what Task 3's far trim is expected to add (design §6.3).

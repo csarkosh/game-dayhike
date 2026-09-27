@@ -701,9 +701,23 @@ Step 1a as built (the verification note's §4 and §5 carry the measurements):
 exact frustum, the most any culling of them can give, measures **0.58 ± 0.08
 ms** at the canopy pose at native (note §4). No margin reaches 0.8 ms. Step
 1a's bar is therefore set against that ceiling: **at least 70 % of the
-exact-frustum saving at native, with no pop and no loss of fullness.** At
-0.42 / 0.58 = 72 % it is met. The 0.8 ms goal of §1 stands for the design as a
-whole, and is now to be reached with what follows.
+exact-frustum saving at native, with no pop and no loss of fullness.** This
+bar was chosen after step 1a's gate had measured it, so it records what was
+accepted rather than a prediction that was tested; and the ratio is looser
+than one figure says:
+
+- The ceiling is 0.58 ± 0.08 ms (its three pages read 0.67, 0.51 and 0.57),
+  so 0.42 / 0.58 = 72 % spans **64–84 %** on the ceiling's spread alone.
+- The two figures come from different methods: the 0.42 ms is a pair delta
+  against `main` (rounds of −0.34 to −0.46), the 0.58 ms a toggle within one
+  page. Neither carries the other's noise.
+- The ceiling includes the meadow's cards, which step 1a does not filter and
+  which are worth about 0.05 ms (below). Like for like, the ceiling for the
+  blades and the grass class is about 0.53 ms, and step 1a reaches about
+  **79 %** of it.
+
+The 0.8 ms goal of §1 stands for the design as a whole, and is now to be
+reached with what follows.
 
 **Step 1b dropped.** Filtering the meadow's two buckets on top of 1a measures
 0.05 ms (−0.05 ± 0.04 and −0.07 ± 0.14 on two pages), under the 0.15 ms §5.1
