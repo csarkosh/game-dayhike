@@ -108,6 +108,60 @@ Where the code differs from the text below, or adds to it:
 - **The startup window** is kept as the times of the first frame and the last
   compile, and read when a failure arrives, rather than by timers.
 
+**Joined with tier detection, as built.** The tier detection work
+(`2026-09-26-quality-tier-detection-design.md`, §7.8, §9, §10) is merged in,
+and the two starts are one; where this changes the text above and below:
+
+- **One chain.** "Loading…" from the first moment; the GPU's signals; the
+  tier (the address's `?tier=`, else the saved choice, else Auto with its
+  probe); only then the engine the rule gives that tier, on the game's
+  canvas, made once the probe is done ("Loading…" again while it is made);
+  then the launch, which logs `quality: <tier> (<source>, <class>), engine
+  <engine>` with the engine in use. One catch covers all of it
+  (`startHike`).
+- **One adapter request.** The signals ask for the adapter once
+  (`readSignals`) and carry its limits, fallback flag and features; the rule
+  reads them there (`adapterFromSignals`), and `probeAdapter` with Babylon's
+  `IsSupportedAsync` is gone. The signals give up at 2 s, which means not
+  known yet: the rule then waits on the same request within the GPU's 10 s,
+  and only running out of that is remembered. Babylon's `initAsync` still
+  asks for its own adapter when an engine is made (`webgpuEngine.pure.js`
+  line 401); nothing lets it take the page's.
+- **The overrides are one set,** `engine=`, `tier=` and `probe=`, carried
+  across the page's own navigation (so `?tier=high` on the title still sets
+  the hike Play starts) and stripped from every route a host announces
+  (`router.ts`).
+- **Probe steps draw on the rule's engine** for their tier, on their own
+  canvas; a WebGPU step that fails, to start or in its frames, is the rule's
+  `init` failure and is measured again on WebGL2. Only the step listens to
+  its engine. Auto's verdict carries the engine it was measured with (only
+  WebGPU's is written, so WebGL2 records are unchanged), and holds only for
+  it; the probe attempts stay per GPU and browser.
+- **No reload is left.** A pipeline error or an uncaptured one, whenever it
+  comes, swaps the renderer onto WebGL2 at once through the live rebuild; a
+  first lost device retries once on a new WebGPU engine, a second within
+  24 h swaps onto WebGL2; each is remembered, the URL pinned where storage
+  refuses or `?engine=webgpu` outranks the record (`failureSwap`), and the
+  HUD says so. The startup window is gone. A renderer that cannot be built
+  on its WebGPU engine, at the start or in a swap, is the engine's fault:
+  its tier is built again on WebGL2 before the tier ladder goes down, and
+  every later rung is WebGL2, which is the rule's answer there. A Settings
+  Apply or a governor's drop takes the engine the rule gives the new tier.
+- **Only a standing engine is listened to.** The watcher comes off before
+  anything of an engine is disposed, and Babylon reports no loss of a device
+  its own dispose destroyed (the `device.lost` handler returns once the
+  engine is disposed), so a disposed engine is never taken for a failing one.
+- **The governor on WebGPU.** The engine fires
+  `onAfterShaderCompilationObservable` for every effect it translates, as on
+  WebGL2, but makes each render pipeline at the effect's first draw, a frame
+  or more later; the governor voids the frames that made one as well
+  (`watchPipelines`, reading Babylon's per-frame count).
+- **The early teardown holds on WebGPU.** Model loads end through the shell's
+  abort on either engine; a given engine is disposed when the build throws;
+  the BRDF lookup texture is expanded on WebGPU by the same path (only the
+  decode shader's language differs), so `releaseEngine` waits for it there
+  too; the forest's bakes stop on the shells' one abort.
+
 **Task 3, as built.** `offsetKeyedVertexBuffer` (`webgpuVertexBuffer.ts`) keys
 the hash by the offset through an accessor on the vertex buffer instead of a
 replaced `_computeHashCode` (§10). Babylon 9.18 recomputes the hash only by
