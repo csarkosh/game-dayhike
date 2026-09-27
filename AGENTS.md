@@ -32,6 +32,7 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | `desktop/` | Electron launcher (macOS and Windows) that loads the hosted site. |
 | `_infra/` | Terraform for hosting, DNS and the signaling service. |
 | `_infra/test-rig/` | Terraform for a rented Windows machine with an NVIDIA GPU on Google Cloud, run only on the days frame times are measured on it. Its own root module and state: nothing in it can touch `_infra/`'s resources. |
+| `_infra/test-rig-mac/` | Terraform for Mac minis rented from Scaleway by the day (Apple's licence minimum), one or several at once, with the scripts that set one up and probe its GPU. Its own root module and state, apart from `_infra/` and `_infra/test-rig/`. |
 | `docs/` | Research notes, specs, plans and design docs, grouped by subject (`docs/rendering/`, …). Every file is named `YYYY-MM-DD-<topic>.md`; see [Docs](#docs). |
 | `tools/` | `deploy/` (deploy and verify scripts), `vendor-ktx2.mjs`, `docs/` (the docs file-name test), and their tests. |
 | `.agents/skills/` | Agent skills. `.claude/skills` is a symlink to it so Claude Code discovers them. |
