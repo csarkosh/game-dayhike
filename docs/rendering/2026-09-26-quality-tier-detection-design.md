@@ -679,7 +679,8 @@ focus goes to the select only when a key made the press that got there
 (Enter or Space on the Settings button, or on Apply). After a mouse, a finger
 or a pen it goes to the screen's heading instead: on iOS a select focused
 inside a tap can bring its picker up unasked. The heading takes focus from
-script only (`tabIndex` -1) and shows no ring; a screen reader is carried
+script only (`tabIndex` -1) and shows no ring after a pointer (keyboard focus
+on it keeps the browser's ring); a screen reader is carried
 into the screen either way, and Tab goes on to the select. Both hosts tell the
 two apart the same way, by the click's `detail` (`openerOf` in `settings.ts`):
 a click no pointer made counts 0. The title screen's panel reached with no

@@ -351,6 +351,25 @@ describe("the Graphics select", () => {
   });
 });
 
+describe("the heading's focus ring", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // No browser applies these styles here, so this reads the screen's own
+  // style text: the one rule that takes the heading's ring away must spare
+  // keyboard focus, which a keyboard user reaching the screen by the
+  // browser's Forward lands on.
+  it("is taken away only where the focus is not keyboard focus", () => {
+    const doc = installStandInDom();
+    const root = doc.createElement("div");
+    doc.body.append(root);
+    const view = settingsModel({ context: "title", choice: "auto", auto: null, override: null, stored: true });
+    renderSettings(asHtml(root), view, { onChoose: () => {}, onBack: () => {} });
+    const css = root.querySelector("style")!.textContent.replace(/\/\*[\s\S]*?\*\//g, "");
+    const rules = [...css.matchAll(/([^{}]*h2[^{}]*)\{([^}]*)\}/g)].filter((m) => /outline:\s*none/.test(m[2]!));
+    expect(rules.map((m) => m[1]!.trim())).toEqual(['.settings h2[tabindex="-1"]:focus:not(:focus-visible)']);
+  });
+});
+
 describe("whether a select's list is showing", () => {
   afterEach(() => vi.unstubAllGlobals());
 

@@ -157,8 +157,10 @@ const STYLE = `
     color: rgba(255, 255, 255, 0.62);
   }
   /* The heading takes the focus when a pointer opened the screen (see
-     renderSettings): it is not a control, so it shows no ring. */
-  .settings h2[tabindex="-1"]:focus { outline: none; }
+     renderSettings): it is not a control, so after a pointer it shows no
+     ring. A keyboard user can land on it too (the browser's Forward into the
+     title screen's panel), and keyboard focus keeps the browser's ring. */
+  .settings h2[tabindex="-1"]:focus:not(:focus-visible) { outline: none; }
   /* The game's input look (the landing's join field), drawn by us rather than
      by the browser, with a caret of its own so it still reads as a drop-down:
      two triangles of the text's colour, clear of the label by the right
