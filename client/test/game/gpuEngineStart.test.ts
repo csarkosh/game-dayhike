@@ -42,7 +42,7 @@ vi.mock("@babylonjs/core/Engines/webgpuEngine.js", () => {
   return { WebGPUEngine };
 });
 
-import { createWebGpuEngine, loadTranslators } from "../../src/game/gpuEngine.js";
+import { createWebGpuEngine, forgetTranslators, loadTranslators } from "../../src/game/gpuEngine.js";
 
 const canvas = {} as HTMLCanvasElement;
 
@@ -83,6 +83,7 @@ function shippedLoaders(events: string[], opts: { skip?: string; fail?: string }
 }
 
 afterEach(() => {
+  forgetTranslators();
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -120,6 +121,42 @@ describe("loadTranslators", () => {
       "run twgsl.js",
       "call twgsl",
     ]);
+  });
+
+  it("starts them once per page: every later engine gets the same ones", async () => {
+    const events: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      events.push(`fetch ${url.includes("twgsl") ? "twgsl" : "glslang"}.wasm`);
+      return Promise.resolve(new Response(new Uint8Array(WASM)));
+    });
+    vi.spyOn(Tools, "LoadScriptAsync").mockImplementation(shippedLoaders(events));
+    // Two at once, as a renderer swap onto WebGPU could ask, and one later.
+    const [first, second] = await Promise.all([loadTranslators(), loadTranslators()]);
+    const third = await loadTranslators();
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+    expect(events).toEqual([
+      "fetch glslang.wasm",
+      "fetch twgsl.wasm",
+      "run glslang.js",
+      "call glslang",
+      "run twgsl.js",
+      "call twgsl",
+    ]);
+  });
+
+  it("drops a start that failed, so the next one tries again", async () => {
+    stubFetch(WASM);
+    const failed: string[] = [];
+    vi.spyOn(Tools, "LoadScriptAsync").mockImplementation(shippedLoaders(failed, { fail: "twgsl" }));
+    await expect(loadTranslators()).rejects.toThrow("twgsl.js: blocked");
+    vi.restoreAllMocks();
+    stubFetch(WASM);
+    const retried: string[] = [];
+    vi.spyOn(Tools, "LoadScriptAsync").mockImplementation(shippedLoaders(retried));
+    const translators = await loadTranslators();
+    expect(translators.twgsl).toMatchObject({ builtBy: "twgsl" });
+    expect(retried).toEqual(["run glslang.js", "call glslang", "run twgsl.js", "call twgsl"]);
   });
 
   it("fails at once when a script does not load", async () => {

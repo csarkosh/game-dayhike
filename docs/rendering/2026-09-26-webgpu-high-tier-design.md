@@ -71,7 +71,11 @@ Where the code differs from the text below, or adds to it:
   loader ran but defined no `glslang` or `twgsl` (this host answers a missing
   script with its HTML page, status 200), or where a translator is not
   WebAssembly. `createWebGpuEngine` then awaits `prepareGlslangAndTintAsync()`,
-  and switches the materials to GLSL only once the engine stands.
+  and switches the materials to GLSL only once the engine stands. The started
+  translators are kept for the page's life: every later engine (the live swap
+  makes a new one on every switch onto WebGPU) takes the same ones rather than
+  fetching and compiling about 2.6 MB again (Babylon keeps its first twgsl in a
+  static anyway); a start that failed is dropped, so the next one tries again.
 - **A lost device stops Babylon's own restore.** Babylon notifies a loss and
   then starts restoring the engine; since the page reloads (and, once it
   lands, swaps renderers), `watchWebGpu` replaces that restore with nothing on

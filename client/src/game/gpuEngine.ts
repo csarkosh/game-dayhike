@@ -155,7 +155,33 @@ function startTranslator(name: "glslang" | "twgsl", wasm: string): Promise<unkno
  * loader rejects), on a loader that defined nothing, and on a translator that
  * is not WebAssembly.
  */
-export async function loadTranslators(): Promise<Translators> {
+export function loadTranslators(): Promise<Translators> {
+  // Once per page: every later engine (a renderer swap back onto WebGPU makes
+  // a new one) takes the same translators instead of fetching and compiling
+  // about 2.6 MB of WebAssembly again. Babylon keeps the first twgsl anyway
+  // (`WebGPUTintWASM._Twgsl` is static). A start that fails is dropped, so the
+  // next attempt starts again; one still pending is shared.
+  if (translatorsStarted === null) {
+    const attempt = startTranslators();
+    translatorsStarted = attempt;
+    attempt.catch(() => {
+      if (translatorsStarted === attempt) translatorsStarted = null;
+    });
+  }
+  return translatorsStarted;
+}
+
+/** The page's one start of the translators, or null before it (or after one
+ * failed). */
+let translatorsStarted: Promise<Translators> | null = null;
+
+/** Drops the page's started translators, so the next `loadTranslators` starts
+ * them again. For tests: a page keeps its translators for its life. */
+export function forgetTranslators(): void {
+  translatorsStarted = null;
+}
+
+async function startTranslators(): Promise<Translators> {
   await Promise.all([prefetchWasm(glslangWasm), prefetchWasm(twgslWasm)]);
   await Tools.LoadScriptAsync(glslangJs);
   const glslang = startTranslator("glslang", glslangWasm);
