@@ -34,8 +34,10 @@ api() {
   [[ -n "${3:-}" ]] && args+=(-H 'Content-Type: application/json' -d "$3")
   printf 'X-Auth-Token: %s\n' "$SCW_SECRET_KEY" | curl "${args[@]}"
 }
-body() { sed '$d' <<<"$1"; }
-status() { tail -n1 <<<"$1"; }
+# Pipes, not here-strings: bash 3.2 writes a here-string to a temporary file,
+# and a server's JSON carries its password.
+body() { printf '%s\n' "$1" | sed '$d'; }
+status() { printf '%s\n' "$1" | tail -n1; }
 field() { node -e 'const v=JSON.parse(require("fs").readFileSync(0,"utf8"))[process.argv[1]];console.log(v===undefined||v===null?"":v)' "$1"; }
 
 get_server() { # zone id -> body, or exit
@@ -53,8 +55,8 @@ schedule)
   zone=${2:?zone}
   id=${3:?server id}
   server=$(get_server "$zone" "$id")
-  created=$(field created_at <<<"$server")
-  deletable=$(field deletable_at <<<"$server")
+  created=$(printf '%s' "$server" | field created_at)
+  deletable=$(printf '%s' "$server" | field deletable_at)
   gap=$(node -e 'const g=(Date.parse(process.argv[2])-Date.parse(process.argv[1]))/1000;console.log(Number.isNaN(g)?-1:Math.floor(g))' "$created" "$deletable")
   if ((gap < 84600)); then
     echo "REFUSED: $id was created at '$created' and may be deleted from '$deletable'." >&2
