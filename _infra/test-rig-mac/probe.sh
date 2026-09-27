@@ -1,39 +1,87 @@
 #!/usr/bin/env bash
-# The first rented day's probe, run on a Mac after setup.sh:
+# The first rented day's probe, run from this machine after setup.sh:
 #
-#   ssh <username>@<ip> 'bash -s' < probe.sh                 # GPU and display
-#   ssh <username>@<ip> 'bash -s -- <url> 60' < probe.sh      # plus two 60 s frame-time runs
+#   TEST_RIG_PASSWORD=... ./probe.sh --to <username>@<ip> [<url> [<seconds>]]
 #
-# It answers, for a few cents of the day: does Chrome get the M4's GPU when
-# started over SSH, headless and in a window; is a display attached, at what
-# size and refresh rate; and, given a URL, how far apart two identical runs of
-# the same page land. Everything goes to standard output and to
-# ~/test-rig/probe-<time>.log.
+# It answers, for a few cents of the day: does Chrome get the M4's GPU, when
+# started from the SSH shell and inside the logged-in desktop, headless and in
+# a window; is a display attached, at what size and refresh rate; and, given a
+# URL, how far apart two identical frame-time runs of that page land. Output
+# goes to this terminal and to ~/test-rig/probe-<time>.log on the Mac. Each
+# run that fails prints a FAIL line, and the probe exits non-zero if the
+# windowed run inside the desktop, the one the measurements depend on, fails.
 #
-# Chrome is started in the logged-in window session with `launchctl asuser`,
-# which runs a command in that user's GUI (Aqua) context from an SSH shell;
-# a plain SSH command runs outside it, with no WindowServer connection.
+# Chrome is started inside the desktop with `sudo launchctl asuser <uid>
+# sudo -u <user>`: switching into the logged-in user's GUI session needs
+# root when it is asked from SSH. The password travels as in setup.sh: first
+# line of the connection's stdin, then to sudo's askpass helper only.
+#
+# Written for the bash 3.2 macOS ships.
 
 set -euo pipefail
-url=${1:-}
-seconds=${2:-60}
+
+# --- This machine ----------------------------------------------------------------
+if [[ "${1:-}" == --to ]]; then
+  target=${2:?usage: probe.sh --to <username>@<ip> [<url> [<seconds>]]}
+  : "${TEST_RIG_PASSWORD:?set TEST_RIG_PASSWORD to the password of the Mac user}"
+  # The URL and duration expand here, on purpose.
+  # shellcheck disable=SC2029
+  {
+    printf '%s\n' "$TEST_RIG_PASSWORD"
+    cat "$0"
+  } | ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$target" \
+    "IFS= read -r TEST_RIG_PASSWORD && export TEST_RIG_PASSWORD \
+     TEST_RIG_URL='${3:-}' TEST_RIG_SECONDS='${4:-60}' \
+     && mkdir -p ~/test-rig && cat >~/test-rig/probe.sh && bash ~/test-rig/probe.sh </dev/null"
+  exit
+fi
+
+# --- The Mac ---------------------------------------------------------------------
+: "${TEST_RIG_PASSWORD:?run this through probe.sh --to, which supplies the password}"
+pw=$TEST_RIG_PASSWORD
+unset TEST_RIG_PASSWORD
+url=${TEST_RIG_URL:-}
+seconds=${TEST_RIG_SECONDS:-60}
 RIG=$HOME/test-rig
-# shellcheck source=/dev/null
-source "$HOME/.zshenv" 2>/dev/null || true # the PATH setup.sh wrote
 exec > >(tee "$RIG/probe-$(date -u +%Y%m%dT%H%M%SZ).log") 2>&1
 uid=$(id -u)
+node=$RIG/node-v22.13.1-darwin-arm64/bin/node # the version setup.sh installs
+chrome_app='/Applications/Google Chrome.app'
+[[ -x "$node" && -d "$chrome_app" ]] || {
+  echo 'FAIL: Node or Chrome is missing; run setup.sh first.'
+  exit 1
+}
+
+cat >"$RIG/askpass" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$TEST_RIG_PASSWORD"
+EOF
+chmod 700 "$RIG/askpass"
+as_root() { TEST_RIG_PASSWORD=$pw SUDO_ASKPASS=$RIG/askpass sudo -A "$@"; }
+as_root -v
+# Runs a command inside the logged-in user's desktop session (called through run).
+# shellcheck disable=SC2329
+in_desktop() { as_root launchctl asuser "$uid" sudo -u "$USER" -H "$@"; }
 
 echo "== Machine"
 echo "macOS $(sw_vers -productVersion) ($(sw_vers -buildVersion)), $(sysctl -n machdep.cpu.brand_string), $(sysctl -n hw.ncpu) cores"
-echo "Console user: $(stat -f %Su /dev/console) (window session exists only if this is $USER)"
+echo "Chrome $(defaults read "$chrome_app/Contents/Info" CFBundleShortVersionString)"
+console=$(stat -f %Su /dev/console)
+echo "Console user: $console"
+if [[ "$console" != "$USER" ]]; then
+  echo "FAIL: no logged-in desktop for $USER; automatic login did not take effect."
+fi
 echo
 echo "== Displays (Apple's view)"
 system_profiler SPDisplaysDataType | sed -n '/Chipset Model/,$p'
+echo "-- ioreg display entries:"
+ioreg -l | grep -i -E '"(IODisplay[A-Za-z]*|EDID|DisplayAttributes)"' | cut -c1-200 | head -20 || echo '(none)'
 echo
 
 cat >"$RIG/probe.mjs" <<'EOF'
-// Starts Chrome with the given flags, reports the GPU it got, the screen it
-// sees and its frame rate; with --url, also a run of frame intervals.
+// Starts Chrome with the given flags and reports the GPU it got, the screen it
+// sees, its frame rate and its version; with --url, also a run of frame
+// intervals. Exits non-zero if Chrome could not be driven.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -79,8 +127,10 @@ const frames = (ms) => `new Promise((done) => {
   requestAnimationFrame(tick);
 })`;
 
+let failed = false;
 try {
-  const browser = await connect((await devtools('/json/version')).webSocketDebuggerUrl);
+  const version = await devtools('/json/version');
+  const browser = await connect(version.webSocketDebuggerUrl);
   const page = await connect((await devtools('/json/list')).find((t) => t.type === 'page').webSocketDebuggerUrl);
   const { gpu } = await browser('SystemInfo.getInfo');
   const found = await evaluate(page, `(async () => {
@@ -93,7 +143,7 @@ try {
              screen: { width: screen.width, height: screen.height, devicePixelRatio },
              refresh: await ${frames(2000)} };
   })()`);
-  const report = { flags, ...found, featureStatus: gpu.featureStatus };
+  const report = { chrome: version.Browser, flags, ...found, featureStatus: gpu.featureStatus };
   if (url) {
     await page('Page.enable');
     await page('Page.navigate', { url });
@@ -101,25 +151,42 @@ try {
     report.run = { url, seconds, ...(await evaluate(page, frames(seconds * 1000))) };
   }
   console.log(JSON.stringify(report, null, 2));
+} catch (error) {
+  console.log(`FAIL: ${error.message}`);
+  failed = true;
 } finally {
   proc.kill();
 }
-process.exit(0);
+process.exit(failed ? 1 : 0);
 EOF
 
-echo "== Chrome started from the SSH shell (outside the window session), headless"
-node "$RIG/probe.mjs" --headless=new || true
-echo
-echo "== Chrome in the window session, headless"
-launchctl asuser "$uid" "$(command -v node)" "$RIG/probe.mjs" --headless=new || true
-echo
-echo "== Chrome in the window session, in a window"
-launchctl asuser "$uid" "$(command -v node)" "$RIG/probe.mjs" || true
+# A window macOS may treat as hidden has its frames throttled by Chrome, which
+# would read as "no display"; these flags rule that out.
+windowed=(--disable-backgrounding-occluded-windows --disable-renderer-backgrounding)
+status=0
+run() { # label, command...
+  local label=$1
+  shift
+  echo "== $label"
+  if ! "$@"; then
+    echo "FAIL: $label"
+    return 1
+  fi
+  echo
+}
+
+run 'Chrome from the SSH shell, outside the desktop, headless' "$node" "$RIG/probe.mjs" --headless=new || true
+run 'Chrome inside the desktop, headless' in_desktop "$node" "$RIG/probe.mjs" --headless=new || true
+run 'Chrome inside the desktop, in a window' in_desktop "$node" "$RIG/probe.mjs" "${windowed[@]}" || status=1
 
 if [[ -n "$url" ]]; then
-  for run in 1 2; do
-    echo
-    echo "== Frame times, run $run: $url for ${seconds}s, in a window"
-    launchctl asuser "$uid" "$(command -v node)" "$RIG/probe.mjs" "--url=$url" "--seconds=$seconds" || true
+  for n in 1 2; do
+    run "Frame times, run $n: $url for ${seconds}s, in a window" \
+      in_desktop "$node" "$RIG/probe.mjs" "${windowed[@]}" "--url=$url" "--seconds=$seconds" || status=1
   done
 fi
+
+if ((status)); then
+  echo 'PROBE FAILED: Chrome could not be driven in a window inside the desktop; see the FAIL lines above.'
+fi
+exit "$status"

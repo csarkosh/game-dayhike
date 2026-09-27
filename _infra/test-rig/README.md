@@ -179,60 +179,30 @@ hardware-accelerated headless Chrome only on Linux (with Vulkan); on Windows it 
 Chrome uses a single adapter, and that `chrome://gpu` reports "Software only" when it falls
 back.
 
-The probe, run over SSH, costs a few cents: copy this to the machine as `probe.mjs` and run
-`node probe.mjs <chrome flags>`. It starts Chrome with the given flags, asks it for the WebGL
-renderer string, the WebGPU adapter it got, and its own GPU feature status, prints them, and
-closes Chrome.
+Google also documents the licence this driver runs under. The driver its script installs is
+NVIDIA's RTX Virtual Workstation (vWS) driver. On a GPU attached as `nvidia-l4-vws`, Google
+bills the vWS licence with the machine ($0.20 per GPU-hour, "Licensing Fee for NVIDIA Quadro
+Virtual Workstation" in the billing catalogue) and `nvidia-smi -q` shows `Product Name :
+NVIDIA RTX Virtual Workstation`, `License Status : Licensed (Expiry: Permanent)`. On a plain
+`nvidia-l4`, Google's example shows `NVIDIA Virtual Applications`, `Licensed (Expiry: N/A)`, and
+it states that without the vWS licence "you won't get GPU acceleration" for desktop
+applications ([Install drivers for NVIDIA RTX Virtual Workstations](https://docs.cloud.google.com/compute/docs/gpus/install-grid-drivers)).
+A short probe on the plain L4 could therefore look fine and still not be what every real run
+gets, so it is not believed on the renderer string alone.
 
-```js
-import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+The probe, `probe.mjs` in this directory, starts Chrome with the flags given and prints the
+WebGL renderer, the WebGPU adapter, Chrome's GPU feature status and version, the `chrome.exe`
+lines of `nvidia-smi` read while Chrome is drawing, and the licence lines of `nvidia-smi -q`.
+With `--url=<page> --seconds=<n>` it also records frame intervals on that page, with the
+median of every minute. Copy it over and run it on the machine:
 
-const chrome = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const port = 9333;
-const dir = mkdtempSync(join(tmpdir(), 'probe-'));
-// A file: page, not about:blank: WebGPU exists only in a secure context.
-writeFileSync(join(dir, 'probe.html'), '<!doctype html>');
-const proc = spawn(chrome, [`--remote-debugging-port=${port}`, `--user-data-dir=${join(dir, 'profile')}`,
-  '--no-first-run', ...process.argv.slice(2), pathToFileURL(join(dir, 'probe.html')).href], { stdio: 'ignore' });
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function devtools(path) {
-  for (let i = 0; i < 100; i++, await sleep(200)) {
-    try { return await (await fetch(`http://127.0.0.1:${port}${path}`)).json(); } catch {}
-  }
-  throw new Error('Chrome never opened its DevTools port');
-}
-async function connect(url) {
-  const ws = new WebSocket(url), waiting = new Map();
-  let id = 0;
-  ws.onmessage = (e) => { const m = JSON.parse(e.data); waiting.get(m.id)?.(m.result ?? m.error); };
-  await new Promise((r) => (ws.onopen = r));
-  return (method, params = {}) => new Promise((r) => { waiting.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
-}
-
-const browser = await connect((await devtools('/json/version')).webSocketDebuggerUrl);
-const page = await connect((await devtools('/json/list')).find((t) => t.type === 'page').webSocketDebuggerUrl);
-const { gpu } = await browser('SystemInfo.getInfo');
-const { result } = await page('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `(async () => {
-  const gl = document.createElement('canvas').getContext('webgl2');
-  const dbg = gl?.getExtension('WEBGL_debug_renderer_info');
-  const adapter = await navigator.gpu?.requestAdapter();
-  return { webgl: gl ? gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER) : 'no WebGL2',
-           webgpu: adapter ? { ...Object.fromEntries(['vendor', 'architecture', 'device', 'description']
-             .map((k) => [k, adapter.info[k]])), fallback: adapter.info.isFallbackAdapter ?? adapter.isFallbackAdapter } : 'no adapter' };
-})()` });
-console.log(JSON.stringify({ flags: process.argv.slice(2), ...result.value,
-  devices: gpu.devices.map((d) => `${d.vendorString || d.vendorId} ${d.deviceString || d.deviceId} ${d.driverVersion}`),
-  featureStatus: gpu.featureStatus }, null, 2));
-proc.kill();
-process.exit(0);
+```bash
+gcloud compute scp _infra/test-rig/probe.mjs test-rig:probe.mjs --zone=us-west1-b --project=fps-csarko --tunnel-through-iap
+gcloud compute ssh test-rig --zone=us-west1-b --project=fps-csarko --tunnel-through-iap
+node probe.mjs --headless=new
 ```
 
-Run it four ways, in this order, and stop at the first that names the GPU:
+Run it four ways, in this order, and stop at the first that passes:
 
 1. `node probe.mjs --headless=new`
 2. `node probe.mjs --headless=new --use-angle=d3d11 --enable-unsafe-webgpu --ignore-gpu-blocklist`
@@ -241,16 +211,33 @@ Run it four ways, in this order, and stop at the first that names the GPU:
    the console with `tscon %SESSIONNAME% /dest:console` (which disconnects Remote Desktop and
    leaves the session logged in on the machine's own display), then, back over SSH, run the
    probe inside that session with `schtasks /create /tn probe /sc once /st 00:00 /it /ru
-   <user> /tr "cmd /c node C:\probe.mjs > C:\probe.txt 2>&1"` and `schtasks /run /tn probe`.
+   <user> /tr "cmd /c node %USERPROFILE%\probe.mjs > %USERPROFILE%\probe.txt 2>&1"` and
+   `schtasks /run /tn probe`.
 
-The GPU is in use when the WebGL renderer names the L4 (a string like `ANGLE (NVIDIA, NVIDIA
-L4 Direct3D11 ...)`) and the WebGPU adapter's vendor is `nvidia`. `SwiftShader`, `Microsoft
-Basic Render Driver`, a WebGPU `fallback: true` or `no adapter` mean it is not. Whichever way
-first names the GPU is how every later run starts Chrome. If none does, the next things to
-try are `-var enable_display=true` (a display for Windows to attach the desktop to) and the
-RTX Virtual Workstation GPU (`-var gpu_type=nvidia-l4-vws`, $0.20/h more). While there,
-`nvidia-smi -q` shows the driver's licence state: NVIDIA's unlicensed-driver limits would
-show up as a frame rate that collapses after about 20 minutes.
+A way passes when **all** of these hold:
+
+- the WebGL renderer names the L4 (a string like `ANGLE (NVIDIA, NVIDIA L4 Direct3D11 ...)`)
+  and the WebGPU adapter's vendor is `nvidia` (`SwiftShader`, `Microsoft Basic Render Driver`,
+  `fallback: true` or `no adapter` mean it is not);
+- `nvidiaSmiChrome` lists `chrome.exe`: an independent sign that the GPU is really drawing;
+- `licence` shows `License Status : Licensed`, **or** a windowed run of at least 25 minutes
+  (`--url=<page> --seconds=1500`) keeps a steady `minuteP50` to the end.
+
+If the renderer and `nvidia-smi` pass but neither licence condition holds, or the minute
+medians collapse after about 20 minutes, the next step is the vWS GPU
+(`-var gpu_type=nvidia-l4-vws`, $0.20/h more, which replaces the machine), not
+`enable_display`. If nothing names the L4, try `-var enable_display=true` (a display for
+Windows to attach the desktop to), then the vWS GPU.
+
+If way 4 is the one that passes, its repeatable form is Windows automatic logon (the
+`AutoAdminLogon` values under `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`, or
+Sysinternals Autologon, which stores the password as an LSA secret rather than in the
+registry in clear) plus a task that runs at logon. That is the Windows twin of the Mac's
+`kcpassword`, with the same questions about where the password lives; it is the step after a
+pass, not part of this module yet.
+
+Record the `chrome` version with every result: Chrome is not pinnable, and its updater is
+switched off by the start-up script so that it cannot change mid-run.
 
 ## The image, next
 
