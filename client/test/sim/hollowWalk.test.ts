@@ -10,6 +10,7 @@ import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { ENEMY_HALF, PLAYER_HALF, TICK_DT } from "../../src/sim/constants.js";
 import { HOLLOW_HUNT_SPEED, hollowsOf, spawnHollow } from "../../src/sim/hollow.js";
 import { Phase } from "../../src/sim/types.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /**
  * Where the trail crosses the treeline: the point on the stem nearest the pad,
@@ -88,7 +89,7 @@ describe("the Hollow walks the stem on real terrain", () => {
       const walked = ((1 - at.home / graph.stemLen) * 100).toFixed(0);
       expect(d, `seed ${token}: the Hollow stands ${d.toFixed(1)} m from its target after ${t} ticks (${walked}% of the ${graph.stemLen.toFixed(0)} m stem)`).toBeLessThan(3);
     }
-  }, 300_000);
+  }, timeLimit(300_000));
 
   /**
    * A Hollow that finds itself inside the corridor walks straight out to the
@@ -143,5 +144,5 @@ describe("the Hollow walks the stem on real terrain", () => {
       expect(back, `seed ${token}: left the corridor at tick ${out} and was back on it at tick ${back}`).toBe(-1);
       expect(u, `seed ${token}`).toBeGreaterThan(ROAD_CORRIDOR_HALF);
     }
-  }, 120_000);
+  }, timeLimit(120_000));
 });

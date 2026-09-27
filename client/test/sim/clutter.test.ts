@@ -695,7 +695,7 @@ describe("domain census — 90 km, both signs of z", () => {
         expect(v.sample(SEED, ccx, ccz).h).toBeLessThanOrEqual(CLUTTER_DRIFT_ALT_HI + CLUTTER_DRIFT_ALT_HI_FADE + 1e-9);
       }
     }
-  }, 60000);
+  }, timeLimit(60000));
 
   it("is deterministic at large and negative coordinates", () => {
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
@@ -861,6 +861,7 @@ describe("domain census — 90 km, both signs of z", () => {
 });
 
 import { landmarkMaskAt } from "../../src/sim/landmarks.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 describe("boulders honour the landmark mask", () => {
   it("exposes a boulder multiplier the density applies (unit: mask primitive)", () => {
     const m = landmarkMaskAt([{ type: "talus", x: 0, z: 0, carved: true, discX: 0, discZ: 0 }], 0, 0);
@@ -1030,7 +1031,7 @@ describe("groundCover", () => {
     expect(n).toBe(1232);
     expect(grass).toBe(375.3656473161681);
     expect(duff).toBe(39.97600562428079);
-  }, 30_000);
+  }, timeLimit(30_000));
 
   it("keeps three quarters of the sward's edge under a closed canopy, and the duff yields to it", () => {
     // A cell under full canopy, away from every non-grass neighbour: the

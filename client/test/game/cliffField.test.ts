@@ -16,6 +16,7 @@ import {
 import { cliffSeat } from "../../src/game/cliffMeshes.js";
 import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
 import { classifySurface } from "../../src/game/terrainSurface.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /** Seed 1's worst 400 m disc for steep rock (5,549 four-metre cells), from
  * the census in the design's §5. */
@@ -56,7 +57,7 @@ describe("collectCliffs and the collector", () => {
     }
     expect(got.length).toBe(78);
     expect(got.length).toBeLessThanOrEqual(CLIFF_BUDGET);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("collects the modules a run carries into the disc from a cell beyond it", () => {
     // The collar's reason: modules inside the disc whose own cell's point is
@@ -73,7 +74,7 @@ describe("collectCliffs and the collector", () => {
     });
     expect(fromOutside.length).toBe(4);
     for (const { m } of fromOutside) expect(got.has(key(m))).toBe(true);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("memoises cells across rebuilds and matches the pure walk", () => {
     const reach = CLIFF_RINGS.high[2];
@@ -88,7 +89,7 @@ describe("collectCliffs and the collector", () => {
     expect(c.size - size).toBeLessThanOrEqual(cells + 2);
     // Measured: the walk's leading chord, 2 · 485.05 / 12 ≈ 80.8 cells.
     expect(c.size - size).toBe(80);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("partitions the modules across the three LOD buckets by distance, exactly once each", () => {
     const rings = CLIFF_RINGS.high;
@@ -114,7 +115,7 @@ describe("collectCliffs and the collector", () => {
     }
     // Teeth: the far band is where most of a 400 m disc lives.
     expect(bands[2].length).toBeGreaterThan(bands[0].length);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("stays under the budget on the three census worlds' worst discs", () => {
     const counts: number[] = [];
@@ -124,7 +125,7 @@ describe("collectCliffs and the collector", () => {
     expect(CLIFF_BUDGET).toBe(700);
     expect(counts).toEqual([333, 29, 78]);
     for (const n of counts) expect(n).toBeLessThanOrEqual(CLIFF_BUDGET);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("evicts cells left behind by a long walk once the cache outgrows its sweep size", () => {
     // Walk away from the WORST census disc in 400 m strides (one reach's
@@ -164,7 +165,7 @@ describe("collectCliffs and the collector", () => {
     expect(c.size - beforeFar).toBe(sizes[0]!);
     expect(got).toEqual(collectCliffs(seed, 1100, z, reach));
     expect(got.length).toBe(78);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("exercises the near LOD ring at a scarp with steep rock close to the eye", () => {
     // The three census discs above have no steep rock within 60 m of their
@@ -188,7 +189,7 @@ describe("collectCliffs and the collector", () => {
     }
     expect(crowd).toBe(49);
     expect(crowd / bands[0].length).toBeLessThanOrEqual(1);
-  }, 300_000);
+  }, timeLimit(300_000));
 });
 
 describe("the shell seats what the field probed", () => {
@@ -256,5 +257,5 @@ describe("the simulation's rock band against the paint's", () => {
     expect(n).toBe(200);
     expect(tries).toBeGreaterThan(n);
     expect(worst).toBeLessThanOrEqual(TOLERANCE);
-  }, 300_000);
+  }, timeLimit(300_000));
 });

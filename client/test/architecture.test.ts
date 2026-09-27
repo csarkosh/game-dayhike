@@ -1,12 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { limitOffenders, scanTestSource, wallClockOffenders, type ScannedFile } from "./helpers/testCalls.js";
 
 // Resolve against this file, never process.cwd(). Vitest is launched from the
 // repo root with `--root client`, so cwd is the repo root: a relative "src/sim"
 // silently points at nothing and every check below passes vacuously forever.
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
+const TESTS = fileURLToPath(new URL(".", import.meta.url));
 
 function sourceFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
@@ -231,5 +233,125 @@ describe("layer boundaries", () => {
     }
     expect(offenders).toEqual([]);
     expect(existsSync(join(SRC, "sim", "combat.ts"))).toBe(false);
+  });
+});
+
+function scannedTestFiles(): ScannedFile[] {
+  return sourceFiles(TESTS)
+    .filter((f) => f.endsWith(".test.ts"))
+    .map((f) => ({ file: relative(TESTS, f), scan: scanTestSource(f, readFileSync(f, "utf8")) }));
+}
+
+describe("test time limits", () => {
+  const files = scannedTestFiles();
+
+  // Guards against the guard: a scan that finds no test files or no limits
+  // would pass the rule below vacuously.
+  it("can see the test files and the limits in them", () => {
+    expect(files.length).toBeGreaterThan(100);
+    const scaled = files.flatMap(({ scan }) => scan.calls.flatMap((c) => c.limits)).filter((l) => l.kind === "scaled");
+    expect(scaled.length).toBeGreaterThan(50);
+  });
+
+  /**
+   * A limit guards against a hang and must scale with the machine running the
+   * suite, so every explicit one goes through `timeLimit` (test/helpers/
+   * timeLimit.ts), which multiplies it by TEST_TIME_SCALE. A bare number, or a
+   * const holding one, would stay the same on a machine three times slower.
+   * A limit written after the callback of a call that also has an options
+   * object is worse: vitest ignores it, so it goes inside the options instead.
+   * Waits (`vi.waitFor`, `vi.waitUntil`, `expect.poll`) give up after a limit
+   * too, a guard of the same kind, so they state theirs through `timeLimit`;
+   * their 1 s default would not scale. `vi.setConfig`'s `testTimeout` and
+   * `hookTimeout` are test limits and follow the same rule.
+   *
+   * What the scan cannot see, by design, because it reads one file and follows
+   * only names declared in it: options or limits imported from another file
+   * or returned from a helper (no advice is given for them here; the
+   * wall-clock rule below reports them as "cannot tell whether this is
+   * tagged"), a
+   * limit computed in a helper function and passed in, a computed property
+   * key, a spread of anything but a const in the same file, a `let` that is
+   * reassigned after its declaration (read by its first value), and a limit
+   * given to a hook reached through the test context (`ctx.onTestFinished`)
+   * rather than imported. A parameter named in `{ timeout }` shorthand is read
+   * as bare, so a helper that takes an already-scaled limit would be told to
+   * scale it again. The around-hooks, the finish hooks and tests made with
+   * `test.extend` are read like the others.
+   */
+  it("sends every explicit test, suite, hook and wait limit through timeLimit", () => {
+    expect(limitOffenders(files)).toEqual([]);
+  });
+});
+
+describe("wall-clock tests", () => {
+  const files = scannedTestFiles();
+
+  /**
+   * A test that asserts on elapsed time measures the machine as much as the
+   * code: its bar was set on the development machine and means nothing on a
+   * shared or slower one. Those tests carry the `wall-clock` tag (defined in
+   * vite.config.ts), which CI leaves out and `npm run test:wall-clock` runs
+   * alone. Any clock read in a test puts it under this rule; a test that only
+   * prints a timing, asserting nothing on it, is listed here with why.
+   *
+   * The converse holds too: the tag keeps a test off CI with `gates` still
+   * green, so it goes only on a test that reads a clock, and the count of
+   * tagged tests is a literal below, so adding one is a deliberate edit.
+   *
+   * Tags come from the call's options, from every suite around it, and from
+   * the file's module-tag pragma, which vitest reads from the source and
+   * applies to every test in the file. Tags the scan cannot resolve to string
+   * literals on an options object in this file fail closed: the call is
+   * reported as "cannot tell whether this is tagged".
+   *
+   * What the scan cannot see, by design, because it reads one file: a clock
+   * read inside a helper imported from another file, and a clock function
+   * passed around as a value (`measure(performance.now)`) rather than bound to
+   * a const. It sees `now()` on any receiver ending in `performance`/`Date`
+   * (`globalThis.performance?.now()`, `performance["now"]()`, a `perf_hooks`
+   * import under another name, a const alias, `{ performance: p } =
+   * globalThis`), `performance.mark`/`measure`, a destructured or bound
+   * `now`, `process.hrtime` and `process.uptime` (also imported from
+   * `node:process`), `vi.getRealSystemTime()`, `new Date()`/`Date()`, and
+   * `console.time`.
+   */
+  const PRINTED_NOT_ASSERTED: Record<string, string> = {
+    "game/bladeMeshes.test.ts > keeps, at the two gate poses, the cells the widened frustum holds, and pins how many":
+      "logs one cull pass's time; asserts only the cell and draw counts",
+    "game/clutterMeshes.test.ts > keeps, at the two gate poses, the cards the widened frustum holds, and pins how many":
+      "logs one cull pass's time; asserts only the card counts",
+    "sim/trailSystem.test.ts > finds the longest way home the graph offers":
+      "logs the guide walk's time over the seed set; asserts only the walks themselves",
+  };
+  const report = wallClockOffenders(files, PRINTED_NOT_ASSERTED);
+
+  it("tags exactly the tests that assert on a clock, and lists the ones that only print one", () => {
+    expect(report.offenders).toEqual([]);
+  });
+
+  it("tags exactly these tests wall-clock: adding or removing one is a deliberate edit here", () => {
+    expect(
+      [...report.tagged].sort(),
+      "the wall-clock tests changed: if that is meant, update this list and the files test:wall-clock names; if not, remove the tag",
+    ).toEqual([
+      "game/forestField.test.ts > keeps a warm one-cell-move collect fast — the 25-33 ms rescan must not return",
+      "sim/trailSystem.test.ts > builds a world in budget",
+    ]);
+  });
+
+  /**
+   * The script loads only the files that hold tagged tests, on one worker, so
+   * nothing else runs on the machine while the bars are measured. It names the
+   * files, so it must name exactly the ones the tag is on.
+   */
+  it("test:wall-clock runs exactly the files that hold wall-clock tests", () => {
+    const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8")) as { scripts: Record<string, string> };
+    const script = pkg.scripts["test:wall-clock"] ?? "";
+    const named = [...script.matchAll(/\btest\/\S+\.test\.ts\b/g)].map((m) => m[0].slice("test/".length)).sort();
+    const holding = [...new Set(report.tagged.map((key) => key.split(" > ")[0] ?? ""))].sort();
+    expect(named).toEqual(holding);
+    expect(script).toMatch(/--maxWorkers=1\b/);
+    expect(script).toMatch(/--tags-filter=wall-clock\b/);
   });
 });

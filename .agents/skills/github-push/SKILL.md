@@ -5,11 +5,12 @@ description: Use when pushing work to the game-dayhike GitHub repository at gith
 
 # Pushing to GitHub
 
-`github.com/csarkosh/game-dayhike` is a public, open-source repository with no reviewers, and
-nothing in CI runs on a push. The commit message is therefore the only record of why a change
-exists. It is written for the person reading `git log` months later with no memory of this
-session — usually the author — and anyone on the internet can read it too, so it describes the
-change and never anything private about how the work was done.
+`github.com/csarkosh/game-dayhike` is a public, open-source repository with no reviewers. CI
+runs the tests on a push to `main`, a `worktree-**` or `ci/**` branch, or a pull request, which
+says whether a change works but never why it was made, so the commit message is the only record
+of why a change exists. It is written for the person reading `git log` months later with no
+memory of this session — usually the author — and anyone on the internet can read it too, so it
+describes the change and never anything private about how the work was done.
 
 Remote: `origin` → `git@github.com:csarkosh/game-dayhike.git` (SSH; `gh auth` is configured for it).
 Default branch: `main`.
@@ -94,8 +95,7 @@ without collateral damage.
 
 ## Before pushing
 
-No CI runs on a push (the one workflow, the Windows desktop smoke test, is started by hand), so
-these are the gates:
+These are the gates:
 
 ```bash
 npm run typecheck && npm run lint && npm test
@@ -103,6 +103,47 @@ npm run typecheck && npm run lint && npm test
 
 Run them and read the output. A failing gate is reported to the user before pushing, not
 after.
+
+The `test` workflow (`.github/workflows/test.yml`) runs the same commands on GitHub's runners
+for every push to `main`, to a `worktree-**` or `ci/**` branch, and for every pull request:
+typecheck and lint in one job, the server and tools suites in another, the client suite split
+across shards, and a final `gates` job that fails unless every other job passed. `gates` is the
+one result to read. What the workflow adds is a clean Linux checkout, and the long client suite
+run somewhere other than this machine, which then stays quiet for frame-time measurements.
+It is a pass-or-fail check; nothing it times means anything, because the runners are shared
+machines. Two things differ from a local run for that reason:
+
+- **Time limits are scaled, in the client suite.** A test's time limit guards against a hang,
+  not a bar on speed. Every explicit limit in the client suite — on a test, suite or hook, and
+  on a wait (`vi.waitFor`, `expect.poll`) — is written `timeLimit(<ms>)`
+  (`client/test/helpers/timeLimit.ts`), which multiplies it by `TEST_TIME_SCALE`; unset,
+  locally, the factor is exactly 1, and it may be at most 10. The workflow sets 3 for the client
+  job. The server and tools suites set no limits and are not scaled. The architecture test
+  fails on a limit written as a bare number, naming the line to change.
+- **Wall-clock tests are left out.** A test that asserts on elapsed time carries the
+  `wall-clock` tag, and the workflow skips the tag. A local `npm test` still runs them;
+  `npm run test:wall-clock` runs only them, one file at a time, and they are only meaningful on
+  a quiet machine. A dedicated machine for them is planned, not present; until then a local run
+  is where they run. The architecture test fails on a test that reads a clock without the tag
+  (unless it is listed as printing a timing without asserting on it), on the tag on a test that
+  reads no clock, and when the number of tagged tests is not the one it states (2).
+
+A work branch may be pushed to run the gates remotely before it is finished. Then:
+
+```bash
+gh run list --branch <branch> --workflow test.yml --limit 3   # the run for the pushed commit
+gh run watch <run-id> --exit-status                          # follow it; exits non-zero on failure
+gh run view <run-id> --log-failed                            # only the failing steps' output
+```
+
+Every push, finished work or not, must pass the repository's pre-push scan first: the
+repository is public, so an unfinished commit is as visible as a finished one. The pre-push
+hook on the development machine runs the scan and refuses the push on a hit (the hook is local,
+not part of a clone); never bypass it with `--no-verify`.
+
+The workflow keeps the Git LFS objects in the Actions cache, keyed on their object ids, so a
+run downloads them from LFS only when the set of objects changes (and once more for a branch
+whose set `main` has not cached yet).
 
 ## Never push a large or binary file into git history
 
@@ -148,14 +189,15 @@ the user rather than doing it.
   Team/Enterprise get 250 GiB of each. Billing is metered — the old pre-paid data packs are
   gone. Bandwidth is charged on *download* (clones, pulls, CI fetches), never on upload.
 - Models range from a few KB up to ~3 MB each; every LFS-tracked asset in the repo today
-  (models, ground textures, wildlife calls) totals ~41 MB. Nowhere near either limit.
+  (models, ground textures, wildlife calls, 77 objects) totals ~61 MiB. Nowhere near either limit.
 - **LFS storage counts every version ever pushed and there is no clean per-object delete.**
   Replacing a model's bytes adds a new object permanently. That is a reason to make asset
   updates deliberate, not a reason to avoid updating them.
 - `git-lfs` must be installed on any machine that clones, or the working tree gets pointer
   files where the models should be. `brew install git-lfs && git lfs install`.
 
-## Not yet covered
+## Pushing is not shipping
 
-Deployment and rollback belong in this skill and are not written yet. When they are added,
-the commit format above stays as-is — it is what makes a rollback target identifiable.
+A push, to `main` or to a work branch, puts nothing in front of players: nothing reaches them
+until `main` is deployed. Deployment and rollback are the `deploy-production` skill's. The
+commit format above is what makes a rollback target identifiable there.

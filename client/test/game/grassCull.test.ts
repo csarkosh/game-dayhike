@@ -12,6 +12,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { inCone } from "../../src/game/wildlifeDirector.js";
 import { CLUTTER_CULLED } from "../../src/game/clutterMeshes.js";
 import { bladeReach, cardReach, CULLED_MODELS, seen, WIND_FRACTION } from "./helpers/cullReach.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const POSE: CullPose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 1.4, aspect: 1200 / 2029 };
 /** The most the view bob rolls the camera, sprinting at the largest `/bob`. */
@@ -163,7 +164,7 @@ describe("grass cull", () => {
       }
     }
     expect(checked).toBeGreaterThan(1000);
-  }, 20_000);
+  }, timeLimit(20_000));
 
   it("refilters past a threshold, not below", () => {
     expect(needsCull(null, POSE)).toBe(true);
@@ -266,7 +267,7 @@ describe("the widened frustum against what a moved camera sees", () => {
     }
     expect(checked).toBeGreaterThan(500_000);
     expect({ dropped, worst: Number(worst.toFixed(2)) }).toEqual({ dropped: 0, worst: 0 });
-  }, 60_000);
+  }, timeLimit(60_000));
 });
 
 /**
@@ -355,7 +356,7 @@ describe("the pass against a reference", () => {
     expect(passes).toBe(672);
     // Some small steps keep exactly the last cut and are left alone.
     expect(skipped).toBeGreaterThan(0);
-  }, 60_000);
+  }, timeLimit(60_000));
 });
 
 describe("the planes against Babylon's own frustum", () => {

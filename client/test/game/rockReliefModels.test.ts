@@ -14,6 +14,7 @@ import {
 import { CLUTTER_SINK } from "../../src/game/clutterMeshes.js";
 import { CLUTTER_BOULDER_SCALE_MAX, CLUTTER_ROCK_SCALE_MAX } from "../../src/sim/clutter.js";
 import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../../src/sim/passes/clutter.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /**
  * The cut, run on the four models the game actually ships, rather than on the
@@ -93,7 +94,7 @@ beforeAll(async () => {
   for (const m of MODELS) {
     for (const lod of LODS) loaded.push({ name: m.name, model: m.model, lod, arrays: await loadLod(m.file, lod) });
   }
-}, 120000);
+}, timeLimit(120000));
 
 function arraysFor(name: string, lod: string): RockArrays {
   const hit = loaded.find((l) => l.name === name && l.lod === lod);
@@ -290,7 +291,7 @@ describe("the cut on the shipped rock and boulder models", () => {
         }
       }
     }
-  }, 120000);
+  }, timeLimit(120000));
 
   it("leaves a prop enough of its sink to stay out of the terrain it stands on", () => {
     // Every clutter model puts its footprint base at y = 0, and the shell

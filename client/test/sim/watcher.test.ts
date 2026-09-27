@@ -28,12 +28,13 @@ import {
   topForkClimb,
 } from "../../src/sim/watcher.js";
 import type { WatcherRecord } from "../../src/sim/watcher.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
 
 /** A real forest world: the first build runs past vitest's default, as summit.test.ts says. */
-const SUITE = { timeout: 120_000 };
+const SUITE = { timeout: timeLimit(120_000) };
 
 function forestWorld() {
   const w = createForestWorld(createForest(seed));

@@ -22,6 +22,7 @@ import { trampleFrame, writeFoliage } from "../../src/game/clutterMeshes.js";
 import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
 import { CliffTintPlugin } from "../../src/game/cliffTintPlugin.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /** Counts the shell's tint writes, so the per-instance memo is observable:
  * the wrapper stands between `cliffMeshes.ts` and the real writer. */
@@ -250,7 +251,7 @@ describe("createCliffMeshes", () => {
     expect(spied.foliage).toBe(17);
     cliffs.dispose();
     engine.dispose();
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("refuses a LOD root that holds more than one geometry mesh", async () => {
     const engine = new NullEngine();

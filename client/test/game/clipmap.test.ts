@@ -25,6 +25,7 @@ import {
 import { classifySurface, GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { groundCover } from "../../src/sim/clutter.js";
 import { forestDensity, treesInRect } from "../../src/sim/vegetation.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 0x717e;
 const SIDE = RING_CELLS + 1;
@@ -100,7 +101,7 @@ describe("updateRingSamples", () => {
         expect(scrolled.cover).toEqual(fresh.cover);
       }
     }
-  }, 30_000);
+  }, timeLimit(30_000));
 });
 
 describe("ring nesting", () => {
@@ -688,5 +689,5 @@ describe("chord-excess ridge lift", () => {
       // absolute count moved, and it moved because the field did.
       expect(exact / inside, `ring ${level} exact`).toBeGreaterThan(0.008);
     }
-  }, 60000);
+  }, timeLimit(60000));
 });
