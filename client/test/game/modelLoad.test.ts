@@ -78,4 +78,24 @@ describe("loadUntilAborted", () => {
     });
     expect(seen.length).toBe(0);
   });
+
+  it("leaves no unhandled rejection when a container that lands after the abort throws on dispose", async () => {
+    let disposals = 0;
+    const seen = await unhandledDuring(async () => {
+      const loads = new AbortController();
+      const late = manual();
+      const load = loadUntilAborted(() => late.promise, loads.signal);
+      loads.abort();
+      await load.catch(() => undefined);
+      const broken = {
+        dispose() {
+          disposals++;
+          throw new Error("the context is gone");
+        },
+      } as unknown as AssetContainer;
+      late.resolve(broken);
+    });
+    expect(disposals).toBe(1);
+    expect(seen.length).toBe(0);
+  });
 });

@@ -22,6 +22,13 @@
  *   lands is disposed, a rejection is dropped, so neither is adopted by a
  *   disposed shell nor reported as unhandled.
  *
+ * An abandoned load is dropped, not cancelled: Babylon's loader takes no
+ * signal, so the work it has already begun carries on to its end. A load that
+ * was still waiting on the loader module when it was abandoned goes on to
+ * request its file and downloads it whole before it rejects; during a live
+ * tier change that download can run alongside the new renderer's request for
+ * the same file.
+ *
  * A load that fails while its shell lives rejects with its own error, exactly
  * as before, and is reported however that shell reports it.
  */
@@ -50,7 +57,14 @@ export function loadUntilAborted(
       (container) => {
         signal.removeEventListener("abort", onAbort);
         if (ended) {
-          container.dispose();
+          // Nothing watches this chain, so a throw here would surface as an
+          // unhandled rejection: the scene it was made for is gone, and there
+          // is nothing left to report to.
+          try {
+            container.dispose();
+          } catch {
+            /* dropped with the load */
+          }
           return;
         }
         ended = true;
