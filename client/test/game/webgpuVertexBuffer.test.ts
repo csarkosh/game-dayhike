@@ -8,6 +8,7 @@ import { Buffer, type VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
+import type { Material } from "@babylonjs/core/Materials/material.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import "../../src/sim/passes/index.js";
 import { CLUTTER_CLASS_COUNT, CLUTTER_GRASS } from "../../src/sim/clutter.js";
@@ -163,12 +164,21 @@ describe("offsetKeyedVertexBuffer", () => {
  * The grass cull (`grassCull.ts`) rewrites the blade and grass-card buffers
  * every few frames. Babylon makes their vertex buffers itself, in
  * `thinInstanceSetBuffer`: the matrix as one buffer read as `world0`–`world3`
- * at 0, 16, 32 and 48 bytes, every other kind its own buffer at 0. So each
- * kind sits at one offset on every mesh, the offset-blind pipeline key cannot
- * mix two of them up, and none needs `offsetKeyedVertexBuffer`. The cull's
- * prefix uploads write into those vertex buffers in place; a context restore
- * hands the shells' buffers back through `thinInstanceSetBuffer`, which makes
- * new ones the same way.
+ * at 0, 16, 32 and 48 bytes, every other kind its own buffer at 0. So the
+ * meshes of one material bind each kind at one offset, the offset-blind
+ * pipeline key cannot mix two of them up, and while the shells hand Babylon
+ * plain arrays none needs `offsetKeyedVertexBuffer`. The cull's prefix uploads
+ * write into those vertex buffers in place; the shells' context-restore
+ * observers hand their buffers back through `thinInstanceSetBuffer`, which
+ * makes new ones the same way. (The tests fire those observers directly, so
+ * Babylon's own buffer rebuild on a real restore is not exercised here.)
+ *
+ * Each test asserts the property first (no material's meshes bind a kind at
+ * two offsets), then pins today's layout as literals. A GPU-driven
+ * interleaved blade layout replaces that pin, and must move the bucket-growth
+ * path (`applyGrown` in `bladeMeshes.ts`) onto `offsetKeyedVertexBuffer` in the
+ * same change: growth replaces the buffers through `thinInstanceSetBuffer`,
+ * and it runs on WebGPU.
  */
 describe("the grass cull's thin-instance buffers", () => {
   const SEED = 1;
@@ -192,6 +202,20 @@ describe("the grass cull's thin-instance buffers", () => {
     }
     return out;
   }
+  /** Every material whose meshes bind one kind at more than one offset, as
+   * `material kind: offsets`: the case the pipeline key gets wrong. */
+  function mixedOffsets(meshes: readonly Mesh[], kinds: readonly string[]): string[] {
+    const byMaterial = new Map<Material | null, Mesh[]>();
+    for (const m of meshes) byMaterial.set(m.material, [...(byMaterial.get(m.material) ?? []), m]);
+    const out: string[] = [];
+    for (const [material, group] of byMaterial) {
+      for (const [k, at] of Object.entries(offsets(group, kinds))) if (at.length > 1) out.push(`${material?.name ?? "none"} ${k}: ${at.join(",")}`);
+    }
+    return out;
+  }
+  function materials(meshes: readonly Mesh[]): number {
+    return new Set(meshes.map((m) => m.material)).size;
+  }
   function kept(before: readonly VertexBuffer[], after: readonly VertexBuffer[]): number {
     return after.filter((vb) => before.includes(vb)).length;
   }
@@ -199,26 +223,35 @@ describe("the grass cull's thin-instance buffers", () => {
   it("binds each blade kind at one offset, and cuts into the same vertex buffers", () => {
     const scene = new Scene(engine);
     const blades = createBladeMeshes(scene, SEED, { quality: "high" });
-    const kinds = ["world0", "world1", "world2", "world3", "foliage", "bladeStrength"];
-    blades.update(CAM.x, CAM.z);
-    blades.cull(POSE);
-    const meshes = blades.meshes.filter((m) => m.getVertexBuffer("world0") != null);
-    expect(meshes.length).toBe(26);
-    const want = { world0: [0], world1: [16], world2: [32], world3: [48], foliage: [0], bladeStrength: [0] };
-    expect(offsets(meshes, kinds)).toEqual(want);
-    const before = bound(meshes, kinds);
-    expect(before.length).toBe(156);
-    const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
-    blades.cull(TURNED);
-    expect(partial.mock.calls.length).toBeGreaterThan(0);
-    partial.mockRestore();
-    expect(kept(before, bound(meshes, kinds))).toBe(156);
-    // A context restore re-hands the full buffers: new vertex buffers, the same offsets.
-    engine.onContextRestoredObservable.notifyObservers(engine);
-    blades.cull(POSE);
-    expect(kept(before, bound(meshes, kinds))).toBe(0);
-    expect(offsets(meshes, kinds)).toEqual(want);
-    blades.dispose();
+    try {
+      const kinds = ["world0", "world1", "world2", "world3", "foliage", "bladeStrength"];
+      blades.update(CAM.x, CAM.z);
+      blades.cull(POSE);
+      const meshes = blades.meshes.filter((m) => m.getVertexBuffer("world0") != null);
+      expect(meshes.length).toBe(26);
+      expect(materials(meshes)).toBe(3);
+      // The property: one offset per kind within each material.
+      expect(mixedOffsets(meshes, kinds)).toEqual([]);
+      // The pin of today's layout, which a layout change revises.
+      const want = { world0: [0], world1: [16], world2: [32], world3: [48], foliage: [0], bladeStrength: [0] };
+      expect(offsets(meshes, kinds)).toEqual(want);
+      const before = bound(meshes, kinds);
+      expect(before.length).toBe(156);
+      const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
+      blades.cull(TURNED);
+      expect(partial.mock.calls.length).toBeGreaterThan(0);
+      expect(kept(before, bound(meshes, kinds))).toBe(156);
+      // The shells' restore observers re-hand the full buffers: new vertex
+      // buffers, the same offsets.
+      engine.onContextRestoredObservable.notifyObservers(engine);
+      blades.cull(POSE);
+      expect(kept(before, bound(meshes, kinds))).toBe(0);
+      expect(mixedOffsets(meshes, kinds)).toEqual([]);
+      expect(offsets(meshes, kinds)).toEqual(want);
+    } finally {
+      vi.restoreAllMocks();
+      blades.dispose();
+    }
   }, 60_000);
 
   it("binds each grass-card kind at one offset, and cuts into the same vertex buffers", () => {
@@ -236,27 +269,37 @@ describe("the grass cull's thin-instance buffers", () => {
       }));
     }
     const clutter = createClutterMeshes(scene, SEED, { assets, nearBlades: true, cull: true });
-    const kinds = ["world0", "world1", "world2", "world3", "fadeBands", "foliage"];
-    clutter.update(CAM.x, CAM.z);
-    clutter.cull(POSE);
-    const grass = scene.meshes.filter((m): m is Mesh => m instanceof Mesh && m.name.startsWith(`vb-c${CLUTTER_GRASS}v`) && m.getVertexBuffer("world0") != null);
-    expect(grass.length).toBe(4);
-    const want = { world0: [0], world1: [16], world2: [32], world3: [48], fadeBands: [0], foliage: [0] };
-    expect(offsets(grass, kinds)).toEqual(want);
-    // Every thin-instanced clutter mesh, culled or not, binds them the same way.
-    const all = scene.meshes.filter((m): m is Mesh => m instanceof Mesh && m.getVertexBuffer("world0") != null);
-    expect(offsets(all, kinds)).toEqual(want);
-    const before = bound(grass, kinds);
-    expect(before.length).toBe(24);
-    const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
-    clutter.cull(TURNED);
-    expect(partial.mock.calls.length).toBeGreaterThan(0);
-    partial.mockRestore();
-    expect(kept(before, bound(grass, kinds))).toBe(24);
-    engine.onContextRestoredObservable.notifyObservers(engine);
-    clutter.cull(POSE);
-    expect(kept(before, bound(grass, kinds))).toBe(0);
-    expect(offsets(grass, kinds)).toEqual(want);
-    clutter.dispose();
+    try {
+      const kinds = ["world0", "world1", "world2", "world3", "fadeBands", "foliage"];
+      clutter.update(CAM.x, CAM.z);
+      clutter.cull(POSE);
+      const grass = scene.meshes.filter((m): m is Mesh => m instanceof Mesh && m.name.startsWith(`vb-c${CLUTTER_GRASS}v`) && m.getVertexBuffer("world0") != null);
+      expect(grass.length).toBe(4);
+      const all = scene.meshes.filter((m): m is Mesh => m instanceof Mesh && m.getVertexBuffer("world0") != null);
+      expect(materials(grass)).toBe(2);
+      // The property, on the grass cards and on every thin-instanced clutter
+      // mesh, culled or not: one offset per kind within each material.
+      expect(mixedOffsets(grass, kinds)).toEqual([]);
+      expect(mixedOffsets(all, kinds)).toEqual([]);
+      // The pin of today's layout, which a layout change revises.
+      const want = { world0: [0], world1: [16], world2: [32], world3: [48], fadeBands: [0], foliage: [0] };
+      expect(offsets(grass, kinds)).toEqual(want);
+      expect(offsets(all, kinds)).toEqual(want);
+      const before = bound(grass, kinds);
+      expect(before.length).toBe(24);
+      const partial = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
+      clutter.cull(TURNED);
+      expect(partial.mock.calls.length).toBeGreaterThan(0);
+      expect(kept(before, bound(grass, kinds))).toBe(24);
+      // The shells' restore observers, as for the blades.
+      engine.onContextRestoredObservable.notifyObservers(engine);
+      clutter.cull(POSE);
+      expect(kept(before, bound(grass, kinds))).toBe(0);
+      expect(mixedOffsets(grass, kinds)).toEqual([]);
+      expect(offsets(grass, kinds)).toEqual(want);
+    } finally {
+      vi.restoreAllMocks();
+      clutter.dispose();
+    }
   }, 60_000);
 });
