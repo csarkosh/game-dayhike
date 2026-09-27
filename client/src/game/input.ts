@@ -154,9 +154,25 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
   const onCanvasPointerDown = (e: PointerEvent) => {
     lastPointerType = e.pointerType;
   };
+  // A refused pointer lock is not worth surfacing — the player clicks the
+  // canvas and carries on. Chrome's own re-lock rate limit (closing the
+  // command bar locks again right after opening it unlocked) is the common
+  // case reached through `engage`; any other refusal reached through a canvas
+  // click (an unfocused document, a canvas mid-swap) prints the same way if
+  // left unhandled. `requestPointerLock` can reject, return nothing (older
+  // browsers), or throw synchronously (also older browsers) — this swallows
+  // all three.
+  const requestLockQuietly = (): void => {
+    try {
+      void Promise.resolve(binding.canvas.requestPointerLock()).catch(() => undefined);
+    } catch {
+      // Synchronous throw case, above.
+    }
+  };
+
   const onCanvasClick = () => {
     if (lastPointerType === "touch" || lastPointerType === "pen") return;
-    if (!locked) void binding.canvas.requestPointerLock();
+    if (!locked) requestLockQuietly();
   };
 
   window.addEventListener("keydown", onKeyDown);
@@ -194,11 +210,7 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
         setTouchEngaged(true);
         return;
       }
-      // Chrome rate-limits a re-lock that follows an unlock too closely, which
-      // is precisely this path: opening the command bar unlocks and closing it
-      // locks again. The rejection is not an error worth surfacing — you click
-      // the canvas and carry on — but left unhandled it prints as one.
-      void Promise.resolve(binding.canvas.requestPointerLock()).catch(() => undefined);
+      requestLockQuietly();
     },
     disengage() {
       if (touchMode) {

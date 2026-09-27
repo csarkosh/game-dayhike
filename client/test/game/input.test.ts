@@ -337,6 +337,73 @@ describe("pointer lock is a mouse affair", () => {
   });
 });
 
+describe("a refused pointer lock never surfaces as an unhandled rejection", () => {
+  // `unhandledRejection` fires on a later task than the rejection itself, so a
+  // macrotask boundary (setTimeout) is always after it; a bare microtask flush
+  // is not reliably late enough under Node's implementation. This is the only
+  // one of the three refusals that is actually asynchronous, so it is the only
+  // one that needs this wait.
+  async function flushPendingRejections(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  function watchUnhandledRejections(): { rejections: unknown[]; stop: () => void } {
+    const rejections: unknown[] = [];
+    const onUnhandled = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    return { rejections, stop: () => process.off("unhandledRejection", onUnhandled) };
+  }
+
+  it("catches a click's rejected requestPointerLock", async () => {
+    const { canvas } = sampler();
+    (canvas as unknown as { requestPointerLock: () => Promise<never> }).requestPointerLock = () =>
+      Promise.reject(new Error("WrongDocumentError: The root document of this element is not valid for pointer lock."));
+    const watch = watchUnhandledRejections();
+    fire("pointerdown", { pointerType: "mouse" });
+    fire("click", {});
+    await flushPendingRejections();
+    watch.stop();
+    expect(watch.rejections).toEqual([]);
+  });
+
+  it("does not throw when a click's requestPointerLock returns nothing (older browsers)", () => {
+    const { canvas } = sampler();
+    (canvas as { requestPointerLock: () => undefined }).requestPointerLock = () => undefined;
+    fire("pointerdown", { pointerType: "mouse" });
+    expect(() => fire("click", {})).not.toThrow();
+  });
+
+  it("does not throw when a click's requestPointerLock throws synchronously", () => {
+    const { canvas } = sampler();
+    (canvas as { requestPointerLock: () => void }).requestPointerLock = () => {
+      throw new Error("WrongDocumentError");
+    };
+    fire("pointerdown", { pointerType: "mouse" });
+    expect(() => fire("click", {})).not.toThrow();
+  });
+
+  it("engage() survives the same three refusals as the click path", async () => {
+    const rejecting = sampler();
+    (rejecting.canvas as unknown as { requestPointerLock: () => Promise<never> }).requestPointerLock = () =>
+      Promise.reject(new Error("WrongDocumentError"));
+    const watch = watchUnhandledRejections();
+    rejecting.input.engage();
+    await flushPendingRejections();
+    watch.stop();
+    expect(watch.rejections).toEqual([]);
+
+    const returningNothing = sampler();
+    (returningNothing.canvas as { requestPointerLock: () => undefined }).requestPointerLock = () => undefined;
+    expect(() => returningNothing.input.engage()).not.toThrow();
+
+    const throwing = sampler();
+    (throwing.canvas as { requestPointerLock: () => void }).requestPointerLock = () => {
+      throw new Error("WrongDocumentError");
+    };
+    expect(() => throwing.input.engage()).not.toThrow();
+  });
+});
+
 describe("mouse look has no flick", () => {
   it("stops the instant the mouse does, with a live touch model ticking beside it", () => {
     const touch = createTouchModel({ width: 800, height: 400 }, { onPause: () => undefined });
