@@ -740,7 +740,16 @@ In `rendererSwap.ts`, `swapRenderer(current, target, bindings)`, synchronous:
 2. dispose the scene extras (signs, body) while their scene is alive;
 3. `renderer.dispose()`, the engine created with `loseContextOnDispose: true`, so
    every GPU object of the old context goes with it, including any the scene
-   forgot;
+   forgot. One exception to "at once": while the scene's BRDF lookup texture is
+   still being expanded (the first second or so of a renderer's life), the
+   whole old scene and its engine are kept until the expansion finishes, for
+   at most `BRDF_SETTLE_POLLS` (125) checks 16 ms apart that actually run, so
+   the new renderer's build in steps 4 to 7 spends none of it; disposing the
+   scene first makes Babylon's expansion callback throw (`releaseEngine`,
+   `renderer.ts`). The renderer's own parts are disposed at once and nothing
+   draws the kept scene, but what lives in it carries on until it goes: model
+   requests still in flight download and parse into it, and the ground maps
+   keep downloading. For that time the old context is alive beside the new;
 4. a fresh canvas replaces the old one in the container (`replaceWith`), with
    `touchAction: none`;
 5. `createRenderer(fresh, level, forest, { tier, engine })`, the same `level` and
@@ -875,8 +884,10 @@ player makes from the pause screen.
 Apply → the pause panel's ground goes opaque and Apply reads "Applying…" → after
 that has painted (`afterNextPaint`) the synchronous swap runs → the loop resumes
 on the new renderer under the opaque ground while the models load and the
-shaders compile → when the new scene is ready (`scene.executeWhenReady` and no
-waiting items, at most 10 s) the ground fades back to the pause vignette. The
+shaders compile → when the new scene is ready (`scene.isReady()` and no
+waiting items, and the forest's billboard bakes settled, which run outside the
+scene's count; at most 10 s, `whenSceneReady`) the ground fades back to the
+pause vignette. The
 player is on the pause screen throughout, so a pop-in behind it is not seen, and
 Resume puts them back where they were, looking where they looked.
 

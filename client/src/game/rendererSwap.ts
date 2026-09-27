@@ -166,14 +166,29 @@ export function buildFirstRenderer(
 }
 
 /**
- * Resolves once `scene` is ready with nothing waiting to load, or after
- * `maxMs` (a model that never arrives must not hold the screen), or at once for
- * a disposed scene. Polled every 100 ms rather than through
- * `executeWhenReady`, which calls straight back on a ready scene and would
- * spin while items are still waiting.
+ * Resolves once `scene` is ready with nothing waiting to load and `layers` has
+ * settled, or after `maxMs` (a model that never arrives must not hold the
+ * screen), or at the next poll once the scene is disposed. A renderer torn
+ * down while its scene's BRDF texture is still expanding keeps that scene
+ * undisposed until `releaseEngine` lets it go, so for that time this goes on
+ * polling it, and `isReady()` runs against the torn-down scene, which is
+ * harmless. `layers` is what fills in on its
+ * own time outside the scene's own count (the forest's billboard bakes,
+ * `Renderer.forestReady`); a layer that fails counts as settled. Polled every
+ * 100 ms rather than through `executeWhenReady`, which calls straight back on
+ * a ready scene and would spin while items are still waiting.
  */
-export function whenSceneReady(scene: Scene, maxMs = SWAP_READY_MAX_MS): Promise<void> {
+export function whenSceneReady(
+  scene: Scene,
+  maxMs = SWAP_READY_MAX_MS,
+  layers: Promise<unknown> = Promise.resolve(),
+): Promise<void> {
   return new Promise((resolve) => {
+    let layersIn = false;
+    void layers.then(
+      () => { layersIn = true; },
+      () => { layersIn = true; },
+    );
     let poll: ReturnType<typeof setTimeout> | undefined;
     const cap = setTimeout(finish, maxMs);
     function finish(): void {
@@ -182,7 +197,7 @@ export function whenSceneReady(scene: Scene, maxMs = SWAP_READY_MAX_MS): Promise
       resolve();
     }
     const check = (): void => {
-      if (scene.isDisposed || (scene.isReady() && scene.getWaitingItemsCount() === 0)) finish();
+      if (scene.isDisposed || (layersIn && scene.isReady() && scene.getWaitingItemsCount() === 0)) finish();
       else poll = setTimeout(check, 100);
     };
     check();

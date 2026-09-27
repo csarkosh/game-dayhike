@@ -59,6 +59,7 @@ import {
   buildOrUndo,
   swapRenderer,
   switchOutcome,
+  whenSceneReady,
   type SwapBindings,
 } from "../../src/game/rendererSwap.js";
 import type { QualityTier } from "../../src/game/quality.js";
@@ -448,4 +449,37 @@ describe("a swap that fails at every tier, on NullEngine", () => {
       quiet.mockRestore();
     }
   }, timeLimit(120_000));
+});
+
+describe("whenSceneReady", () => {
+  /** A scene that is ready, with nothing waiting to load. */
+  const readyScene = { isDisposed: false, isReady: () => true, getWaitingItemsCount: () => 0 } as unknown as Scene;
+
+  /** Whether `p` has settled after `ms`. */
+  async function settledAfter(p: Promise<unknown>, ms: number): Promise<boolean> {
+    let done = false;
+    void p.then(() => { done = true; });
+    await new Promise((r) => setTimeout(r, ms));
+    return done;
+  }
+
+  it("waits for the streamed layers' first fill as well as the scene", async () => {
+    let fill!: () => void;
+    const layers = new Promise<void>((resolve) => { fill = resolve; });
+    const lifted = whenSceneReady(readyScene, 10_000, layers);
+    expect(await settledAfter(lifted, 300)).toBe(false);
+    fill();
+    expect(await settledAfter(lifted, 250)).toBe(true);
+  });
+
+  it("takes a layer that failed as settled", async () => {
+    const lifted = whenSceneReady(readyScene, 10_000, Promise.reject(new Error("no forest")));
+    expect(await settledAfter(lifted, 250)).toBe(true);
+  });
+
+  it("lifts at its cap when the layers never settle", async () => {
+    const lifted = whenSceneReady(readyScene, 300, new Promise(() => undefined));
+    expect(await settledAfter(lifted, 100)).toBe(false);
+    expect(await settledAfter(lifted, 350)).toBe(true);
+  });
 });

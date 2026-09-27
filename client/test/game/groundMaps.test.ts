@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
-import { flipRowsY, interleaveLayers, loadGroundArrays, NEUTRAL_NORMAL, NEUTRAL_RAH } from "../../src/game/groundMaps.js";
+import { decodeLayer, flipRowsY, interleaveLayers, loadGroundArrays, NEUTRAL_NORMAL, NEUTRAL_RAH } from "../../src/game/groundMaps.js";
 
 describe("interleaveLayers", () => {
   it("concatenates six RGBA planes in layer order", () => {
@@ -96,5 +96,48 @@ describe("loadGroundArrays under NullEngine", () => {
     await arrays.ready;
     expect(created).toEqual([1 * 1 * 6 * 4, 1 * 1 * 6 * 4]); // no late texture was ever created
     engine.dispose();
+  });
+  it("disposed mid-load: every download is told to stop, and the stop is not reported", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const signals: (AbortSignal | undefined)[] = [];
+    const warnings: string[] = [];
+    const decode = (_url: string, _size: number, signal?: AbortSignal) =>
+      new Promise<Uint8ClampedArray>((_resolve, reject) => {
+        signals.push(signal);
+        signal?.addEventListener("abort", () => reject(signal.reason));
+      });
+    const arrays = loadGroundArrays(scene, undefined, decode, {
+      size: 2,
+      createArray: () => ({ dispose() {}, isReady: () => true }) as never,
+      warn: (m) => warnings.push(m),
+    });
+    arrays.dispose();
+    expect(signals.length).toBe(12);
+    expect(signals.filter((s) => s?.aborted === true).length).toBe(12);
+    await arrays.ready;
+    expect(warnings).toEqual([]);
+    engine.dispose();
+  });
+});
+
+describe("decodeLayer", () => {
+  it("hands its signal to the download, and stops before decoding once aborted", async () => {
+    const loads = new AbortController();
+    let given: AbortSignal | null | undefined;
+    const bitmap = vi.fn();
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      given = init?.signal;
+      loads.abort();
+      return { ok: true, blob: async () => new Blob([]) };
+    });
+    vi.stubGlobal("createImageBitmap", bitmap);
+    try {
+      await expect(decodeLayer("ground.webp", 2, loads.signal)).rejects.toBe(loads.signal.reason);
+      expect(given).toBe(loads.signal);
+      expect(bitmap).toHaveBeenCalledTimes(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
