@@ -27,7 +27,11 @@
  * was still waiting on the loader module when it was abandoned goes on to
  * request its file and downloads it whole before it rejects; during a live
  * tier change that download can run alongside the new renderer's request for
- * the same file.
+ * the same file. A renderer torn down in the first second or so of its life
+ * keeps its scene alive until that scene's BRDF texture has expanded
+ * (`releaseEngine` in `renderer.ts`): until then the requests already made
+ * against the scene are not aborted either, and go on downloading and parsing
+ * into it; each container that lands is disposed here.
  *
  * A load that fails while its shell lives rejects with its own error, exactly
  * as before, and is reported however that shell reports it.

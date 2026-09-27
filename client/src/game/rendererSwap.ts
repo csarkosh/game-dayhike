@@ -168,7 +168,11 @@ export function buildFirstRenderer(
 /**
  * Resolves once `scene` is ready with nothing waiting to load and `layers` has
  * settled, or after `maxMs` (a model that never arrives must not hold the
- * screen), or at once for a disposed scene. `layers` is what fills in on its
+ * screen), or at the next poll once the scene is disposed. A renderer torn
+ * down while its scene's BRDF texture is still expanding keeps that scene
+ * undisposed until `releaseEngine` lets it go, so for that time this goes on
+ * polling it, and `isReady()` runs against the torn-down scene, which is
+ * harmless. `layers` is what fills in on its
  * own time outside the scene's own count (the forest's billboard bakes,
  * `Renderer.forestReady`); a layer that fails counts as settled. Polled every
  * 100 ms rather than through `executeWhenReady`, which calls straight back on
