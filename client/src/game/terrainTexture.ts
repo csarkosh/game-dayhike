@@ -584,8 +584,8 @@ const TERRAIN_FRAGMENT_BLEND = `
   // Macro tint: the lush/dry variation over tens of metres, on grass only and
   // faded out with the rest of the detail. A multiplicative tint of
   // surfaceAlbedo, never a write to the material constant.
-  vec3 macro = macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y);
-  surfaceAlbedo *= mix(vec3(1.0), macro, w0 * terrainMacroOn * (1.0 - smoothstep(terrainFade.x, terrainFade.y, dist)));
+  vec3 macroRgb = macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y);
+  surfaceAlbedo *= mix(vec3(1.0), macroRgb, w0 * terrainMacroOn * (1.0 - smoothstep(terrainFade.x, terrainFade.y, dist)));
   // Horizon tint: past HORIZON the floor reads as the vegetation the clutter
   // has thinned out of, not as bare palette.
   surfaceAlbedo = mix(surfaceAlbedo, terrainTuft, w0 * horizonWeight(dist));
