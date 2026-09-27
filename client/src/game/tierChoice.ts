@@ -40,6 +40,9 @@ const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium"
 
 /** Where the landing's one-shot notice waits, for this tab only. */
 export const NOTICE_KEY = "dayhike.notice";
+/** How long a line left for the landing waits to be shown: a reload before
+ * the landing drew it drops it rather than show it out of its moment. */
+export const NOTICE_MAX_AGE_MS = 30_000;
 
 /** The page's `sessionStorage`, or null where there is none or its accessor
  * throws. */
@@ -51,24 +54,33 @@ export function pageSessionStorage(): Storage | null {
   }
 }
 
-/** Leaves a line for the landing page to show once; false where storage refuses. */
-export function leaveNotice(storage: Storage | null, text: string): boolean {
+/** Leaves a line, dated `now` (`Date.now()`), for the landing page to show
+ * once; false where storage refuses. */
+export function leaveNotice(storage: Storage | null, text: string, now: number): boolean {
   if (storage === null) return false;
   try {
-    storage.setItem(NOTICE_KEY, text);
+    storage.setItem(NOTICE_KEY, JSON.stringify({ text, at: now }));
     return true;
   } catch {
     return false;
   }
 }
 
-/** The line left for the landing, taken so it shows once; null when there is none. */
-export function takeNotice(storage: Storage | null): string | null {
+/** The line left for the landing, taken so it shows once; null when there is
+ * none, or it is not one, or it was left more than `NOTICE_MAX_AGE_MS` before
+ * `now` or dated after it. */
+export function takeNotice(storage: Storage | null, now: number): string | null {
   if (storage === null) return null;
   try {
-    const text = storage.getItem(NOTICE_KEY);
-    if (text !== null) storage.removeItem(NOTICE_KEY);
-    return text;
+    const raw = storage.getItem(NOTICE_KEY);
+    if (raw === null) return null;
+    storage.removeItem(NOTICE_KEY);
+    const left: unknown = JSON.parse(raw);
+    if (typeof left !== "object" || left === null) return null;
+    const { text, at } = left as { text?: unknown; at?: unknown };
+    if (typeof text !== "string" || typeof at !== "number") return null;
+    const age = now - at;
+    return age >= 0 && age <= NOTICE_MAX_AGE_MS ? text : null;
   } catch {
     return null;
   }

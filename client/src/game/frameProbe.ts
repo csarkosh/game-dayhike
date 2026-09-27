@@ -304,8 +304,8 @@ export function autoPick(
     now: at.now,
   };
   const auto = autoTier(input);
-  // What the frame measured, once a verdict holds; until then, the most the
-  // class may take here.
+  // What the frame measured, or the tier that built, once a verdict holds;
+  // until then, the most the class may take here.
   const measured = holdingVerdict(input);
   const ceiling = withinClass(measured?.tier ?? "high", cls, signals.cores, signals.memoryGb);
   return { cls, gpu, tier: auto.tier, probeFrom: auto.probeFrom, ceiling };

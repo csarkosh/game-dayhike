@@ -139,7 +139,7 @@ function onTierFallback(fallback: { attempted: QualityTier; built: QualityTier |
     if (out.choice !== null) saveChoice(out.choice);
     if (out.notice !== null) choiceNotice = out.notice;
   }
-  if (fallback.built === null) leaveNotice(pageSessionStorage(), "The last hike ended because the graphics could not be restarted.");
+  if (fallback.built === null) leaveNotice(pageSessionStorage(), "The last hike ended because the graphics could not be restarted.", Date.now());
 }
 
 /** The governor lowered Auto's tier: remembered for this GPU, browser and
@@ -543,7 +543,7 @@ function render(container: HTMLDivElement): void {
     const backdrop = document.createElement("canvas");
     backdrop.className = "landing-bg";
     container.appendChild(backdrop);
-    landingNotice = takeNotice(pageSessionStorage());
+    landingNotice = takeNotice(pageSessionStorage(), Date.now());
 
     const handle = renderLanding(
       container,

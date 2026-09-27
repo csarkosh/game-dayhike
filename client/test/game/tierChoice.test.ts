@@ -273,12 +273,25 @@ describe("recordFallback", () => {
 describe("the landing's one-shot notice", () => {
   it("is left, read once, and gone", () => {
     const s = memoryStorage();
-    expect(takeNotice(s)).toBe(null);
-    expect(leaveNotice(s, "The graphics could not be restarted.")).toBe(true);
-    expect(takeNotice(s)).toBe("The graphics could not be restarted.");
-    expect(takeNotice(s)).toBe(null);
-    expect(leaveNotice(null, "x")).toBe(false);
-    expect(leaveNotice(throwingStorage(), "x")).toBe(false);
-    expect(takeNotice(throwingStorage())).toBe(null);
+    expect(takeNotice(s, 1_790_000_000_000)).toBe(null);
+    expect(leaveNotice(s, "The graphics could not be restarted.", 1_790_000_000_000)).toBe(true);
+    expect(takeNotice(s, 1_790_000_002_000)).toBe("The graphics could not be restarted.");
+    expect(takeNotice(s, 1_790_000_002_000)).toBe(null);
+    expect(leaveNotice(null, "x", 0)).toBe(false);
+    expect(leaveNotice(throwingStorage(), "x", 0)).toBe(false);
+    expect(takeNotice(throwingStorage(), 0)).toBe(null);
+  });
+
+  it("is dropped when it has waited too long, or is dated ahead, so it never shows out of its moment", () => {
+    const s = memoryStorage();
+    leaveNotice(s, "The graphics could not be restarted.", 1_790_000_000_000);
+    expect(takeNotice(s, 1_790_000_030_001)).toBe(null);
+    expect(s.getItem("dayhike.notice")).toBe(null);
+    leaveNotice(s, "The graphics could not be restarted.", 1_790_000_000_000);
+    expect(takeNotice(s, 1_790_000_030_000)).toBe("The graphics could not be restarted.");
+    leaveNotice(s, "ahead", 1_790_000_000_000);
+    expect(takeNotice(s, 1_789_999_999_999)).toBe(null);
+    s.setItem("dayhike.notice", "not a notice");
+    expect(takeNotice(s, 1_790_000_000_000)).toBe(null);
   });
 });

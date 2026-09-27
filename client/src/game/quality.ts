@@ -260,18 +260,20 @@ export function withGovernorDrop(
  * Auto's tier, and the tier to probe from before the first hike, or null. The
  * class gives a start tier and a ceiling (`CLASS_TIERS`); two cores or two
  * gigabytes, where reported, cap both at low (a missing value caps nothing).
- * A matching record's verdict for this class that holds decides, never above
- * the ceiling;
- * otherwise the start tier, with a probe from the ceiling when the class is
- * probed, the ceiling is above the start, and fewer than `PROBE_ATTEMPTS`
- * probes have been started.
+ * A matching record's probe or governor verdict for this class that holds
+ * decides, never above the ceiling. A `build` verdict only lowers the ceiling
+ * to the tier that built: the tier that failed and all above it are out, and
+ * a probed class is still measured below that. Otherwise the start tier, with
+ * a probe from the ceiling when the class is probed, the ceiling is above the
+ * start, and fewer than `PROBE_ATTEMPTS` probes have been started.
  */
 export function autoTier(input: AutoInput): { tier: QualityTier; probeFrom: QualityTier | null } {
   const row = CLASS_TIERS[input.cls];
-  const ceiling = ceilingFor(input.cls, input.cores, input.memoryGb);
-  const start = lower(row.start, ceiling);
   const verdict = holdingVerdict(input);
-  if (verdict !== null) return { tier: lower(verdict.tier, ceiling), probeFrom: null };
+  const classCeiling = ceilingFor(input.cls, input.cores, input.memoryGb);
+  if (verdict !== null && verdict.source !== "build") return { tier: lower(verdict.tier, classCeiling), probeFrom: null };
+  const ceiling = verdict === null ? classCeiling : lower(verdict.tier, classCeiling);
+  const start = lower(row.start, ceiling);
   const record = recordMatches(input.record, input.gpu, input.browser) ? input.record : null;
   const attempts = record?.attempts ?? 0;
   if (row.probe && ceiling !== start && attempts < PROBE_ATTEMPTS) return { tier: start, probeFrom: ceiling };

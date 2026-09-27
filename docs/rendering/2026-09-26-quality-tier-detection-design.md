@@ -356,7 +356,7 @@ type AutoRecord = {
 };
 type AutoVerdict = {
   tier: QualityTier;
-  source: "probe" | "governor";
+  source: "probe" | "governor" | "build";
   pixels: number;       // the game container's CSS area when it was set
   at: number;           // Date.now()
   readings?: ProbeReading[];
@@ -374,8 +374,10 @@ a classifier change that moves a GPU to another class needs no
 than now (one dated ahead was written under a clock running ahead) and less
 than 30 days old, and a `probe` verdict only while the container's area is at
 most 1.5 times `pixels` (it certifies a size, and a bigger window costs more);
-a `governor` verdict holds at any size. A tier is never taken above the class's
-ceiling or past the caps, whatever the verdict says.
+a `governor` or `build` verdict holds at any size. A probe or governor verdict
+decides Auto's tier; a `build` verdict, the tier that built after a higher one
+failed (§9.3), only lowers the ceiling to it. A tier is never taken above the
+class's ceiling or past the caps, whatever the verdict says.
 
 A probe's start adds one to a matching record's `attempts`, keeping its class
 and verdict until the probe's own verdict replaces them, or starts a record at
@@ -719,14 +721,18 @@ means rebuilding the previous configuration, not keeping the previous object:
 - **The failed tier is remembered** (`recordFallback`), except under
   `?tier=`. The Auto record gets a verdict of its own source, `build`, at the
   tier that did build (low when none did): it holds at any window size for 30
-  days like the governor's, so Auto starts there and does not try the failed
-  tier each hike. A stored choice of the failed tier goes back to Auto, since
+  days like the governor's, and it caps rather than decides: the failed tier
+  and all above it are out of Auto's reach, so Auto never tries the failed tier
+  each hike, while a probed class whose start is below the cap is still
+  measured, from the cap. A stored choice of the failed tier goes back to Auto, since
   no record can override an explicit choice, and the Settings screen says "High
   did not start on this computer, so Settings is back on Auto (Recommended)."
   until the next choice.
 - **When no rung builds**, the hike ends. The Settings page, which is what the
   player is looking at, says "The graphics could not be restarted; returning to
-  the title screen.", and the landing shows a line saying why once. A follower
+  the title screen.", and the landing shows a line saying why once, if it is
+  drawn within 30 s of the hike ending; a reload later than that drops the
+  line rather than show it out of its moment. A follower
   sent back into the host's game then starts at a tier that builds.
 - **The hike's start has the same fallback** around its first renderer only,
   not the world: the tier decided, then the class's start tier, then low, each

@@ -279,6 +279,18 @@ describe("a build-failure verdict", () => {
       .toEqual({ tier: "medium", probeFrom: null });
   });
 
+  it("caps a probed class at the tier that built, which is still measured below the cap, and never above it", () => {
+    const build = (tier: QualityTier, cls: GpuClass) => rec({ tier, source: "build", pixels: 2_073_600 }, { cls });
+    // Iris Xe's class starts low and is probed up to medium: medium did build, so the probe still runs, from medium.
+    expect(autoTier({ cls: "integrated-unknown", cores: 8, memoryGb: 16, record: build("medium", "integrated-unknown"), gpu: SAFARI, browser: 26, pixels: 2_073_600, now: NOW }))
+      .toEqual({ tier: "low", probeFrom: "medium" });
+    // Probed up to high: high failed and medium built, so nothing above medium is measured.
+    expect(autoTier({ cls: "apple-unknown", cores: 8, memoryGb: null, record: build("medium", "apple-unknown"), gpu: SAFARI, browser: 26, pixels: 2_073_600, now: NOW }))
+      .toEqual({ tier: "medium", probeFrom: null });
+    expect(autoTier({ cls: "integrated-unknown", cores: 8, memoryGb: 16, record: build("low", "integrated-unknown"), gpu: SAFARI, browser: 26, pixels: 2_073_600, now: NOW }))
+      .toEqual({ tier: "low", probeFrom: null });
+  });
+
   it("is kept whatever the window's area, which it does not certify", () => {
     const verdict: AutoVerdict = { tier: "low", source: "build", pixels: 0, at: NOW };
     expect(withVerdict(null, RTX, 153, "discrete-modern", verdict)).toEqual({ v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0, verdict });
@@ -303,3 +315,4 @@ describe("the record after a governor drop", () => {
       .toEqual({ tier: "medium", probeFrom: "high" });
   });
 });
+
