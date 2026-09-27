@@ -77,6 +77,12 @@ class AtmospherePlugin extends MaterialPluginBase {
   }
 
   override bindForSubMesh(uniformBuffer: UniformBuffer): void {
+    // Bound whenever it exists, the effect on or off: the sampler is always in
+    // the shader (every read of it is gated on `atmOn`, not on a define), and
+    // WebGPU validates every binding a pipeline declares on every draw, so
+    // before the first `update` a draw would declare a sampler nothing bound.
+    // Binding it while off changes no pixel.
+    if (gradientTexture !== null) uniformBuffer.setTexture("atmGradient", gradientTexture);
     const r = current;
     if (r === null || gradientTexture === null) {
       uniformBuffer.updateFloat("atmOn", 0);
@@ -91,7 +97,6 @@ class AtmospherePlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("atmSunWeight", r.sunWeight);
     uniformBuffer.updateFloat3("atmSunDir", r.sunDir.x, r.sunDir.y, r.sunDir.z);
     uniformBuffer.updateFloat3("atmSunColour", r.sunColour.r, r.sunColour.g, r.sunColour.b);
-    uniformBuffer.setTexture("atmGradient", gradientTexture);
   }
 
   override getCustomCode(shaderType: string): Nullable<{ [pointName: string]: string }> {
