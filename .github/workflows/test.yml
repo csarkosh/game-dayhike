@@ -3,9 +3,13 @@ name: test
 # The same gates as `npm run typecheck && npm run lint && npm test`, split into
 # jobs so each one reports on its own, with the client suite sharded across
 # runners: unsharded it is the longest gate by far. The commands are the root
-# package.json's, unchanged, so a local run and this one test the same thing.
-# It answers pass or fail, and nothing more: the runners are shared machines, so
-# no time measured on them says anything about the game's performance.
+# package.json's, so a local run and this one test the same thing, with two
+# differences, both because the runners are shared machines slower than the
+# development one: every test time limit is scaled (TEST_TIME_SCALE), and the
+# tests tagged `wall-clock`, whose assertion is a bar on elapsed time, are left
+# out; they run only on a dedicated machine (`npm run test:wall-clock`). The
+# workflow answers pass or fail, and no time measured here means anything
+# about the game's performance.
 
 on:
   push:
@@ -124,7 +128,17 @@ jobs:
   client:
     needs: lfs
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Long enough that a hung test is reported by vitest, naming it, rather
+    # than by this timeout: the longest scaled limit (600 s x 2 = 20 min) on
+    # top of the slowest shard measured (7 min), plus a margin.
+    timeout-minutes: 30
+    env:
+      # Every test time limit, and vitest's defaults, times two. The smallest
+      # whole factor that kept every test measured on these runners (five full
+      # runs) under two thirds of its limit: the slowest against its limit was
+      # forestField's "two cameras in the same cell yield deeply-equal
+      # bands", 6.3 s against the default 5 s.
+      TEST_TIME_SCALE: 2
     strategy:
       # Every shard reports, so one run shows every failing file, not the first.
       fail-fast: false
@@ -156,7 +170,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
-      - run: npx vitest run --root client --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+      - run: npx vitest run --root client --shard=${{ matrix.shard }}/${{ strategy.job-total }} '--tags-filter=!wall-clock'
 
   # The one status to require and to read: it fails unless every job above
   # succeeded. `always()` matters: a job skipped because its dependency failed
