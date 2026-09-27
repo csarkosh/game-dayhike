@@ -4,6 +4,8 @@ name: test
 # jobs so each one reports on its own, with the client suite sharded across
 # runners: unsharded it is the longest gate by far. The commands are the root
 # package.json's, unchanged, so a local run and this one test the same thing.
+# It answers pass or fail, and nothing more: the runners are shared machines, so
+# no time measured on them says anything about the game's performance.
 
 on:
   push:
@@ -38,7 +40,8 @@ jobs:
   # than one per shard.
   lfs:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Measured: 9 s with the cache warm. A cold fetch is 77 objects, about 61 MB.
+    timeout-minutes: 5
     outputs:
       key: ${{ steps.key.outputs.key }}
     steps:
@@ -73,7 +76,8 @@ jobs:
 
   static:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Measured: 34 s.
+    timeout-minutes: 10
     steps:
       # typecheck and lint read no LFS object, so this job skips them entirely.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,7 +97,8 @@ jobs:
 
   server-and-tools:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Measured: 21 s.
+    timeout-minutes: 10
     steps:
       # Neither suite reads an LFS object.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -110,15 +115,21 @@ jobs:
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx vitest run --root tools
 
+  # The client suite whole on one runner took 17 min (vitest's own figure:
+  # 1014 s). Five shards bring the longest to about 5 min: vitest assigns files
+  # to shards by a hash of their path, not by duration, and the longest single
+  # file (test/sim/trailBed.test.ts, ~280 s on a runner) sets a floor that more
+  # shards cannot lower. At four, the hash put four of the six slowest files in
+  # one shard and it took 8 min.
   client:
     needs: lfs
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 20
     strategy:
       # Every shard reports, so one run shows every failing file, not the first.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     name: client (${{ matrix.shard }}/${{ strategy.job-total }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -147,30 +158,6 @@ jobs:
       - run: npm ci
       - run: npx vitest run --root client --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
-  # MEASUREMENT ONLY, removed once the shard count is chosen: the whole client
-  # suite on one runner, for the unsharded wall time.
-  client-unsharded:
-    needs: lfs
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          lfs: false
-          persist-credentials: false
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .git/lfs/objects
-          key: ${{ needs.lfs.outputs.key }}
-          fail-on-cache-miss: true
-      - run: git lfs checkout
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-      - run: npm ci
-      - run: npx vitest run --root client
-
   # The one status to require and to read: it fails unless every job above
   # succeeded. `always()` matters: a job skipped because its dependency failed
   # would otherwise skip this one too, and a skipped check reads as passing.
@@ -178,7 +165,7 @@ jobs:
     if: always()
     needs: [lfs, static, server-and-tools, client]
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 2
     steps:
       - env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
