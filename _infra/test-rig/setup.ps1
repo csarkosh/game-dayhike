@@ -66,8 +66,10 @@ $ClosedGroups = @('Remote Desktop', 'Windows Remote Management')
 $Root = Join-Path $env:ProgramData 'test-rig'
 $Downloads = Join-Path $Root 'downloads'
 $ShutdownExe = "$env:WINDIR\System32\shutdown.exe"
-# Present for one boot: the stop task is left exactly as it is, so that its
-# start-up trigger alone is what stops the machine (README.md, the timer check).
+# Present for one boot: the stop task is left exactly as it is, not even
+# re-registered, so that whatever it had when this boot started is what stops
+# the machine (README.md, the timer check, which removes its one-time trigger
+# by hand before the restart).
 $SkipTimerOnce = Join-Path $Root 'skip-stop-timer-once'
 $script:Transcribing = $false
 $script:EarlyLog = New-Object System.Collections.Generic.List[string]
@@ -364,7 +366,7 @@ function Get-StopPlan([datetime]$BootTime, [int]$Minutes, [datetime]$Now) {
 # unregistered and registered again, with the start-up trigger's delay from the
 # tag and a one-time trigger for this boot. Registering it afresh at every boot
 # means a changed tag takes effect at once, and no one-time trigger from an
-# earlier boot is left to stop this one early (the first session's set-up
+# earlier boot is left to stop this one early (the first run's set-up
 # restart included). Run as the local system account, logged on or not.
 # Nothing here throws: whatever fails, a pending shutdown is the fallback.
 function Set-StopTimer {
@@ -372,7 +374,10 @@ function Set-StopTimer {
   try {
     if (Test-Path $SkipTimerOnce) {
       Remove-Item $SkipTimerOnce -Force
-      Log 'Stop timer: left as it was for this boot (skip-stop-timer-once): its start-up trigger alone stops the machine'
+      $task = Get-ScheduledTask -TaskName 'test-rig-stop' -ErrorAction SilentlyContinue
+      if (-not $task) { throw 'skip-stop-timer-once was set, but there is no stop task to leave as it was' }
+      $times = @($task.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskTimeTrigger' -and $_.Enabled })
+      Log "Stop timer: left as it was for this boot (skip-stop-timer-once): start-up trigger delay $((Get-BootDelays $task) -join ', '); $($times.Count) one-time trigger(s) $(($times | ForEach-Object { $_.StartBoundary }) -join ', ')"
       return
     }
     $minutes = Get-MaxRunMinutes
