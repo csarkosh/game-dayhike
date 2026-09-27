@@ -41,7 +41,7 @@ Peers on different tiers share one world (§11).
 | The setting | A **Settings** entry on the title screen (Play → Downloads → **Settings** → Credits) and on the pause screen (Resume → **Settings** → Exit), both opening one shared Settings screen: **Auto (Recommended)** (the default), **High**, **Medium**, **Low**, with a line naming what Auto picked. Saved in `localStorage["dayhike.quality"]`; a storage that throws means Auto, and a choice made then lasts the page (§8) |
 | Applying it | On the title screen a choice takes effect when Play starts the hike. On the pause screen a choice is applied by **Apply**, live, without a reload: the renderer is disposed and rebuilt on a fresh canvas behind an "Applying…" screen while the session, the data channels, the player's state and the HUD carry on (§9) |
 | Overrides | `?tier=low\|medium\|high` wins over everything, for testing, and the Settings screen says so; `?probe=high\|medium` forces a probe from that tier and logs it, for the gate |
-| The governor | Auto only. After 30 s, in 10 s windows of frame intervals (any over 250 ms voids its window): three windows in a row with a mean over **20.8 ms** (48 fps) drop the tier one step, once, remembered as a governor verdict. Never raises. Applied at the next hike's start, or at once from the pause screen's Apply; the HUD says so once (§10) |
+| The governor | Auto only. After 30 s, in 10 s windows of frame intervals (any over 250 ms voids its window): three windows in a row with a mean over **20.8 ms** (48 fps) drop the tier one step, once, remembered as a governor verdict. Windows holding a paused, hidden, loading, compiling or switching frame do not count. Never raises. Applied at once through the live switch, under an opaque screen; the HUD says so once (§10) |
 | Determinism | The tier is read by `game/` only. A test steps one world under renderers on each tier and under none, and finds one serialised state and one `passHash` (§11) |
 | Gate | On the reference machine: the probe, forced from high, picks the tier the frame at both standard poses confirms holds 60 Hz, and the class table's own row for the machine agrees; the literal matrix of §6.4 as unit tests; the settings, the live swap and the governor in the browser (§13) |
 | Unchanged | What each tier draws (`QUALITY` and every consumer); the landing backdrop's low tier; the WebGPU rule's own conditions; `sim/`; the protocol |
@@ -806,22 +806,51 @@ Resume puts them back where they were, looking where they looked.
 ## 10. The governor
 
 `createGovernor(now)` in `client/src/game/governor.ts`, pure, fed each frame's
-interval from both loops' `dt` (`app.ts:834`, `:968`):
+interval from both loops' `dt` (`feedGovernor` in `app.ts`), with whether the
+frame was steady play:
 
-- nothing before **30 s** after the hike starts or after a swap;
-- intervals gathered in **10 s** windows; an interval over **250 ms** (a hidden
-  tab, a stall) voids its window, which then neither counts nor breaks a run;
+- nothing before **30 s** after the hike's session starts or after a tier
+  switch (`restart`), while models stream in and shaders compile;
+- intervals gathered in **10 s** windows. A window holding a frame that was not
+  steady play, or an interval over **250 ms** (a stall), is **void**: it neither
+  counts nor breaks a run, the way the probe's meter ignores the frames around a
+  known hitch (§7.3). A frame is steady (`steadyFrame`) when the player is
+  engaged, the pause screen is closed, the tab is visible, the scene has nothing
+  waiting to load, no shader compiled since the last frame, and no tier is being
+  switched;
 - a window whose mean interval is over **20.8 ms** (1.25 × the 60 Hz budget, 48
   fps) counts; one at or under resets the run;
-- **three** counting windows in a row: the verdict is a drop, once, latched.
+- **three** counting windows in a row, 30 s of steady play under 48 fps: the
+  verdict is a drop, once, latched.
 
-On a drop, on Auto only, above low only: the Auto record is written with the
-running tier one step down and `source: "governor"`; one `console.info`; one HUD
-line for 6 s, "Running slowly: your next hike uses Medium. Settings can switch
-now."; and the Settings screen's Auto line names the new pick, so Apply is enabled
-and switches now. It never applies itself mid-hike (a stall the player did not
-ask for, and for a host one every peer shares), never raises, and never acts on
-a chosen tier or under `?tier=`.
+Why these: the probe's bar is 17.5 ms (§7.4), and the governor's sits well above
+it, so a tier the probe found holding does not trip it on a heavier stretch of
+trail; only play that stays under 48 fps for half a minute does. Brief spikes
+cannot: at 60 Hz a 200 ms hitch lifts its 10 s window's mean by about 0.3 ms,
+against 4.1 ms of room to the limit, and one over 250 ms voids its window
+instead. A run needs three windows in a row, so one slow window between normal
+ones starts over.
+
+On a drop, on Auto only (never a chosen tier, never under `?tier=`), and above
+low only (`governorDecision`):
+
+1. The Auto record is written first (`withGovernorDrop`): a verdict one step
+   below the running tier, `source: "governor"`, for this GPU, browser and
+   class. It holds at any window size for 30 days, so the next hike starts
+   there, and it is the tier the Settings screen's Auto line now names.
+2. One `console.info`.
+3. The tier is lowered **now**, through the live switch of §9, the same path
+   Apply takes, with the tier's source kept as Auto. The switch runs under the
+   probe's opaque "Setting up graphics…" screen with the controls held, so
+   neither the rebuild nor the scene coming back is seen mid-play; the screen
+   goes once the scene is ready. A switch that falls back or fails is handled
+   as §9.3 says.
+4. Once the switch reaches the lower tier, one HUD line for 6 s: "Graphics
+   lowered to Medium to keep the game smooth."
+
+The governor never raises, and acts at most once per hike: a later hike that is
+still slow on the lower tier drops one more step then. Like any switch, the
+rebuild pauses the hike for everyone in it for as long as it takes (§9.5).
 
 ## 11. Determinism
 
@@ -869,8 +898,8 @@ of §9.4 apply to them as to everyone.
 
 - The probe confirms every promotion that is not a named GPU, at the heaviest
   standard pose, on the player's own window.
-- The governor lowers a named class that turns out not to hold, from the next
-  hike, and offers the switch now.
+- The governor lowers a named class that turns out not to hold, at once and
+  for the hikes after.
 - The setting lets any player overrule both, and says what Auto would pick.
 - `DETECT_VERSION` retires every stored verdict at once when the tiers' costs
   move (the grass-frame and WebGPU work may).
@@ -941,9 +970,12 @@ Medium → Apply, on the host and then on the follower; on WebGL2, and with
 ### 13.5 The governor
 
 On Auto at medium with the measurement patch's `__engine.setHardwareScalingLevel(0.5)`
-at the canopy pose: the drop is logged between 60 and 61 s after the hike
-starts, the HUD line shows once, Settings' Auto line says Low, Apply switches;
-a reload starts at low from the verdict. Without the scaling, at a pose §13.2
+at the canopy pose: the drop is logged between 60 and 61 s after the hike's
+session starts, the opaque screen covers the switch and the hike goes on at
+low, the HUD line shows once, and Settings' Auto line says Low with nothing to
+apply; a reload starts at low from the verdict. Opening the pause screen or
+hiding the tab in that minute puts the drop off by at least the window it fell
+in, since that window does not count. Without the scaling, at a pose §13.2
 found holding 60 Hz, nothing happens in 5 min.
 
 ### 13.6 The rest
@@ -976,6 +1008,12 @@ found holding 60 Hz, nothing happens in 5 min.
   lower render scale rather than dropping a whole tier, and a scale is the one
   change a governor could make live without a rebuild.
 - The WebGPU rule's reload after a lost device could become a live swap (§9.4).
+- The governor does not know the page's own cadence. A browser that halves its
+  frame rate whatever the GPU (Safari in Low Power Mode, §7.4) reads slow on
+  every tier, so each hike drops a step and the verdict holds 30 days. Before it
+  acts, it could stop the loop under its screen, time the page's idle frames as
+  the probe does, and stand down, writing nothing, when the page itself draws
+  below 60 Hz.
 - The device pixel ratio's change on a window moved between displays (§4.3): hold
   the tier's scaling against it.
 - Once medium and low figures exist (§13.2), the named classes' rows can be

@@ -18,9 +18,9 @@
  * - **three** counting windows in a row (30 s of play under 48 fps, after the
  *   grace) and the verdict is a drop, latched: once per hike, and never a raise.
  *
- * Brief spikes cannot trip it: a 200 ms hitch lifts its window's mean by
- * 0.02 ms per second of window. Pure: the page feeds it `frame` and reads
- * `verdict`.
+ * Brief spikes cannot trip it: at 60 Hz a 200 ms hitch lifts its 10 s
+ * window's mean by about 0.3 ms, against 4.1 ms of room to the limit. Pure:
+ * the page feeds it `frame` and reads `verdict`.
  */
 import type { QualityTier } from "./quality.js";
 import type { TierSource } from "./tierChoice.js";
