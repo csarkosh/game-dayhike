@@ -188,7 +188,10 @@ unchanged; a check that every declared sampler of every plugin is bound in
 every state found no other); and the engine's extensions imported by
 `gpuEngine.ts` (§6.6). §6.4's limits stay Task 1's, 17 inter-stage variables
 and 8 vertex buffers, requested exactly (nothing calls `setMaximumLimits`),
-until the sweep measures the rest.
+until the sweep measures the rest. The pins also hold each plugin's uniforms,
+samplers, attributes and defines per state, and the sweep names the models
+added since the spike (the rangers, the Hollow, the kiosk and SUV, the summit
+body and the fingerposts), none of which carries custom GLSL.
 
 The spike ran the game on Babylon's `WebGPUEngine` with every existing material
 and plugin, to measure a compute cull of the blade field, and found the engine
