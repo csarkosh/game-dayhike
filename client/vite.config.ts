@@ -52,10 +52,11 @@ export default defineConfig({
     tags: [
       {
         // Tests whose assertion is a bar on elapsed time, set on the
-        // development machine. CI runs `--tags-filter='!wall-clock'`, and
-        // `npm run test:wall-clock` runs only these, on a quiet machine.
+        // development machine. CI leaves them out
+        // (`--tags-filter='!wall-clock'`); a local `npm test` runs them, and
+        // `npm run test:wall-clock` runs only them, one file at a time.
         name: "wall-clock",
-        description: "asserts on elapsed time; run only on a dedicated, quiet machine",
+        description: "asserts on elapsed time; meaningful only on a quiet machine",
       },
     ],
   },

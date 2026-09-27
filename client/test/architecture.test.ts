@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { scanTestSource } from "./helpers/testCalls.js";
+import { limitOffenders, scanTestSource, wallClockOffenders, type ScannedFile } from "./helpers/testCalls.js";
 
 // Resolve against this file, never process.cwd(). Vitest is launched from the
 // repo root with `--root client`, so cwd is the repo root: a relative "src/sim"
@@ -236,19 +236,21 @@ describe("layer boundaries", () => {
   });
 });
 
-function testFiles(): string[] {
-  return sourceFiles(TESTS).filter((f) => f.endsWith(".test.ts"));
+function scannedTestFiles(): ScannedFile[] {
+  return sourceFiles(TESTS)
+    .filter((f) => f.endsWith(".test.ts"))
+    .map((f) => ({ file: relative(TESTS, f), scan: scanTestSource(f, readFileSync(f, "utf8")) }));
 }
 
 describe("test time limits", () => {
-  const scans = testFiles().map((file) => ({ file: relative(TESTS, file), scan: scanTestSource(file, readFileSync(file, "utf8")) }));
-  const limited = scans.flatMap(({ file, scan }) => scan.calls.filter((c) => c.limit.kind !== "none").map((c) => ({ file, c })));
+  const files = scannedTestFiles();
 
   // Guards against the guard: a scan that finds no test files or no limits
   // would pass the rule below vacuously.
   it("can see the test files and the limits in them", () => {
-    expect(scans.length).toBeGreaterThan(100);
-    expect(limited.filter(({ c }) => c.limit.kind === "scaled").length).toBeGreaterThan(50);
+    expect(files.length).toBeGreaterThan(100);
+    const scaled = files.flatMap(({ scan }) => scan.calls.flatMap((c) => c.limits)).filter((l) => l.kind === "scaled");
+    expect(scaled.length).toBeGreaterThan(50);
   });
 
   /**
@@ -258,23 +260,26 @@ describe("test time limits", () => {
    * const holding one, would stay the same on a machine three times slower.
    * A limit written after the callback of a call that also has an options
    * object is worse: vitest ignores it, so it goes inside the options instead.
+   * Waits (`vi.waitFor`, `vi.waitUntil`, `expect.poll`) give up after a limit
+   * too, a guard of the same kind, so they state theirs through `timeLimit`;
+   * their 1 s default would not scale. `vi.setConfig`'s `testTimeout` and
+   * `hookTimeout` are test limits and follow the same rule.
+   *
+   * What the scan cannot see, by design, because it reads one file and follows
+   * only consts declared in it: options or limits imported from another file,
+   * a limit computed in a helper function and passed in, a computed property
+   * key, and a spread of anything but a const in the same file. A parameter
+   * named in `{ timeout }` shorthand is read as bare, so a helper that takes an
+   * already-scaled limit would be told to scale it again.
    */
-  it("sends every explicit test, suite and hook limit through timeLimit", () => {
-    const offenders = limited.flatMap(({ file, c }) => {
-      const where = `${file}:${c.line} ${c.callee}`;
-      if (c.limit.kind === "ignored") {
-        return [`${where}: the limit ${c.limit.text} after the callback is ignored when an options object is given; put \`timeout: timeLimit(<ms>)\` in the options`];
-      }
-      if (c.limit.kind === "bare") {
-        return [`${where}: limit ${c.limit.text} — write timeLimit(${c.limit.text}) (import { timeLimit } from test/helpers/timeLimit.js)`];
-      }
-      return [];
-    });
-    expect(offenders).toEqual([]);
+  it("sends every explicit test, suite, hook and wait limit through timeLimit", () => {
+    expect(limitOffenders(files)).toEqual([]);
   });
 });
 
 describe("wall-clock tests", () => {
+  const files = scannedTestFiles();
+
   /**
    * A test that asserts on elapsed time measures the machine as much as the
    * code: its bar was set on the development machine and means nothing on a
@@ -282,6 +287,19 @@ describe("wall-clock tests", () => {
    * vite.config.ts), which CI leaves out and `npm run test:wall-clock` runs
    * alone. Any clock read in a test puts it under this rule; a test that only
    * prints a timing, asserting nothing on it, is listed here with why.
+   *
+   * The converse holds too: the tag keeps a test off CI with `gates` still
+   * green, so it goes only on a test that reads a clock, and the count of
+   * tagged tests is a literal below, so adding one is a deliberate edit.
+   *
+   * What the scan cannot see, by design, because it reads one file: a clock
+   * read inside a helper imported from another file, and a clock function
+   * passed around as a value (`measure(performance.now)`) rather than bound to
+   * a const. It sees `performance.now()` and `Date.now()` on any receiver
+   * ending in `performance`/`Date` (`globalThis.performance?.now()`,
+   * a `perf_hooks` import under another name, a const alias), a destructured
+   * or bound `now`, `process.hrtime`, `new Date()`/`Date()`, and
+   * `console.time`.
    */
   const PRINTED_NOT_ASSERTED: Record<string, string> = {
     "game/bladeMeshes.test.ts > keeps, at the two gate poses, the cells the widened frustum holds, and pins how many":
@@ -291,31 +309,28 @@ describe("wall-clock tests", () => {
     "sim/trailSystem.test.ts > finds the longest way home the graph offers":
       "logs the guide walk's time over the seed set; asserts only the walks themselves",
   };
+  const report = wallClockOffenders(files, PRINTED_NOT_ASSERTED);
 
-  const reads = testFiles().flatMap((file) => {
-    const rel = relative(TESTS, file);
-    const scan = scanTestSource(file, readFileSync(file, "utf8"));
-    return [
-      ...scan.calls.filter((c) => c.clockReads.length > 0).map((c) => ({ key: `${rel} > ${c.title}`, line: c.line, tagged: c.inheritedTags.includes("wall-clock") })),
-      ...scan.strayClockReads.map((line) => ({ key: `${rel} (outside any test)`, line, tagged: false })),
-    ];
+  it("tags exactly the tests that assert on a clock, and lists the ones that only print one", () => {
+    expect(report.offenders).toEqual([]);
   });
 
-  // Guards against the guard: the two tagged tests read a clock today, so a
-  // scan that finds none is broken, not clean.
-  it("can see the clock reads", () => {
-    expect(reads.filter((r) => r.tagged).length).toBeGreaterThan(0);
+  it("has exactly two wall-clock tests: adding one is a deliberate edit here", () => {
+    expect(report.tagged.length).toBe(2);
   });
 
-  it("tags every test that reads a clock, unless it only prints the timing", () => {
-    const offenders = reads
-      .filter((r) => !r.tagged && !(r.key in PRINTED_NOT_ASSERTED))
-      .map((r) => `${r.key} (line ${r.line}) reads a clock: if it asserts on the time, add { tags: ["wall-clock"] } to its options; if it only prints it, add it to PRINTED_NOT_ASSERTED with why`);
-    expect(offenders).toEqual([]);
-  });
-
-  it("lists only tests that still read a clock, untagged", () => {
-    const stale = Object.keys(PRINTED_NOT_ASSERTED).filter((key) => !reads.some((r) => r.key === key && !r.tagged));
-    expect(stale).toEqual([]);
+  /**
+   * The script loads only the files that hold tagged tests, on one worker, so
+   * nothing else runs on the machine while the bars are measured. It names the
+   * files, so it must name exactly the ones the tag is on.
+   */
+  it("test:wall-clock runs exactly the files that hold wall-clock tests", () => {
+    const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8")) as { scripts: Record<string, string> };
+    const script = pkg.scripts["test:wall-clock"] ?? "";
+    const named = [...script.matchAll(/\btest\/\S+\.test\.ts\b/g)].map((m) => m[0].slice("test/".length)).sort();
+    const holding = [...new Set(report.tagged.map((key) => key.split(" > ")[0] ?? ""))].sort();
+    expect(named).toEqual(holding);
+    expect(script).toMatch(/--maxWorkers=1\b/);
+    expect(script).toMatch(/--tags-filter=wall-clock\b/);
   });
 });
