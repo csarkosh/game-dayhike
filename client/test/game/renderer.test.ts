@@ -69,6 +69,7 @@ import type { Level } from "../../src/sim/level.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
 import { createForest } from "../../src/sim/forest.js";
 import { elevationAt } from "../../src/sim/terrain.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 let engine: NullEngine | null = null;
 
@@ -261,7 +262,7 @@ describe("createClipmap", () => {
         ).toEqual(want[level]!.positions);
       }
     }
-  }, 30000);
+  }, timeLimit(30000));
 
   it("builds one named mesh per ring and disposes them all", () => {
     const s = scene();
@@ -588,7 +589,7 @@ describe("the wildlife director goes quiet near the Hollow", () => {
     } finally {
       renderer.dispose();
     }
-  }, 60000);
+  }, timeLimit(60000));
 
   it("logs a sighting within a reasonable window with no Hollow around", () => {
     // The positive control the test above needs and did not have: without
@@ -622,7 +623,7 @@ describe("the wildlife director goes quiet near the Hollow", () => {
     } finally {
       renderer.dispose();
     }
-  }, 60000);
+  }, timeLimit(60000));
 });
 
 describe("the sward floor follows the blade field's tiers", () => {
@@ -655,7 +656,7 @@ describe("the sward floor follows the blade field's tiers", () => {
     expect(boundSward("low")).toEqual({ sward: [0.05, 0.065, 0.03, 0], band: [0.05, 0.5, 12, 18] });
     expect(boundSward("medium")).toEqual({ sward: [0.05, 0.065, 0.03, 0.6], band: [0.05, 0.5, 12, 18] });
     expect(boundSward("high")).toEqual({ sward: [0.05, 0.065, 0.03, 0.6], band: [0.05, 0.5, 12, 18] });
-  }, 60_000);
+  }, timeLimit(60_000));
 });
 
 describe("writeListenerPose", () => {

@@ -1,12 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { scanTestSource } from "./helpers/testCalls.js";
 
 // Resolve against this file, never process.cwd(). Vitest is launched from the
 // repo root with `--root client`, so cwd is the repo root: a relative "src/sim"
 // silently points at nothing and every check below passes vacuously forever.
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
+const TESTS = fileURLToPath(new URL(".", import.meta.url));
 
 function sourceFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
@@ -231,5 +233,43 @@ describe("layer boundaries", () => {
     }
     expect(offenders).toEqual([]);
     expect(existsSync(join(SRC, "sim", "combat.ts"))).toBe(false);
+  });
+});
+
+function testFiles(): string[] {
+  return sourceFiles(TESTS).filter((f) => f.endsWith(".test.ts"));
+}
+
+describe("test time limits", () => {
+  const scans = testFiles().map((file) => ({ file: relative(TESTS, file), scan: scanTestSource(file, readFileSync(file, "utf8")) }));
+  const limited = scans.flatMap(({ file, scan }) => scan.calls.filter((c) => c.limit.kind !== "none").map((c) => ({ file, c })));
+
+  // Guards against the guard: a scan that finds no test files or no limits
+  // would pass the rule below vacuously.
+  it("can see the test files and the limits in them", () => {
+    expect(scans.length).toBeGreaterThan(100);
+    expect(limited.filter(({ c }) => c.limit.kind === "scaled").length).toBeGreaterThan(50);
+  });
+
+  /**
+   * A limit guards against a hang and must scale with the machine running the
+   * suite, so every explicit one goes through `timeLimit` (test/helpers/
+   * timeLimit.ts), which multiplies it by TEST_TIME_SCALE. A bare number, or a
+   * const holding one, would stay the same on a machine three times slower.
+   * A limit written after the callback of a call that also has an options
+   * object is worse: vitest ignores it, so it goes inside the options instead.
+   */
+  it("sends every explicit test, suite and hook limit through timeLimit", () => {
+    const offenders = limited.flatMap(({ file, c }) => {
+      const where = `${file}:${c.line} ${c.callee}`;
+      if (c.limit.kind === "ignored") {
+        return [`${where}: the limit ${c.limit.text} after the callback is ignored when an options object is given; put \`timeout: timeLimit(<ms>)\` in the options`];
+      }
+      if (c.limit.kind === "bare") {
+        return [`${where}: limit ${c.limit.text} — write timeLimit(${c.limit.text}) (import { timeLimit } from test/helpers/timeLimit.js)`];
+      }
+      return [];
+    });
+    expect(offenders).toEqual([]);
   });
 });

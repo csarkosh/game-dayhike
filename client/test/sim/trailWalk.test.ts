@@ -7,6 +7,7 @@ import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } f
 import { PLAYER_HALF } from "../../src/sim/constants.js";
 import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
 import { Phase, type InputCommand } from "../../src/sim/types.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /**
  * The graph is walkable end to end. The sim has no pathing, so each edge is walked separately: the
@@ -19,7 +20,7 @@ import { Phase, type InputCommand } from "../../src/sim/types.js";
 // builds a forest cold, which runs past vitest's 5 s default whenever this
 // file shares the machine with the other forest suites. It guards a hang, not
 // the run time.
-describe("walking the trail graph", { timeout: 120_000 }, () => {
+describe("walking the trail graph", { timeout: timeLimit(120_000) }, () => {
   setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
   for (const seed of [0x5eed, 1, 12345]) {
     it(`seed ${seed}: every edge is grounded and reaches its far node`, () => {

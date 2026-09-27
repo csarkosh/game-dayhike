@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { timeLimit } from "./test/helpers/timeLimit.js";
 
 export default defineConfig({
   // The web build lives under games.csarko.sh/dayhike; the desktop shell serves
@@ -42,5 +43,10 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
+    // vitest's own defaults (5 s a test, 10 s a hook), scaled like every
+    // explicit limit: TEST_TIME_SCALE unset leaves them as they are, and a bad
+    // value throws here, before any test runs.
+    testTimeout: timeLimit(5_000),
+    hookTimeout: timeLimit(10_000),
   },
 });

@@ -23,6 +23,7 @@ import { BOB_ROLL, MAX_BOB_SCALE } from "../../src/game/viewBob.js";
 import { bladeReach, extentSeen, thresholdWalk } from "./helpers/cullReach.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 // The open-field census point: every tier and every character is present.
 const SEED = 1;
@@ -308,7 +309,7 @@ describe("the blade field culled to the frustum", () => {
     expect(enabled).toBeLessThanOrEqual(wholeEnabled);
     partial.mockRestore(); whole.mockRestore(); set.mockRestore();
     blades.dispose(); engine.dispose();
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("refilters after every rebuild, even with the camera still", () => {
     const engine = new NullEngine();
@@ -326,7 +327,7 @@ describe("the blade field culled to the frustum", () => {
     expect(partial).not.toHaveBeenCalled();
     partial.mockRestore();
     blades.dispose(); engine.dispose();
-  }, 60_000);
+  }, timeLimit(60_000));
 
   // A WebGL context restore rebuilds each GPU buffer from the data it last
   // took, which after a prefix upload is the prefix alone. The shell hands
@@ -368,7 +369,7 @@ describe("the blade field culled to the frustum", () => {
     expect(set).not.toHaveBeenCalled();
     set.mockRestore();
     engine.dispose();
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("keeps, at the two gate poses, the cells the widened frustum holds, and pins how many", () => {
     const counts: number[] = [];
@@ -397,7 +398,7 @@ describe("the blade field culled to the frustum", () => {
     expect(counts).toEqual([1614, 6131, 1752, 6587]);
     // Blade draws, culled and whole: the profile counted 20 live buckets at the canopy pose.
     expect(draws).toEqual([20, 20, 12, 12]);
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("never leaves out a cell any part of which the camera can see, on threshold walks at both gate fields", () => {
     const reach = bladeReach();
@@ -443,5 +444,5 @@ describe("the blade field culled to the frustum", () => {
     }
     expect(holds).toBe(320);
     expect(seenCells).toBeGreaterThan(50000);
-  }, 180_000);
+  }, timeLimit(180_000));
 });

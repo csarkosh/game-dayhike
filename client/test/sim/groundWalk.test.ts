@@ -7,6 +7,7 @@ import { PLAYER_HALF } from "../../src/sim/constants.js";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { Button, type InputCommand } from "../../src/sim/types.js";
 import { spiralSpawn } from "../../src/sim/spawn.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /**
  * Walking has to feel smooth, and "smooth" is a measurable property of the sim,
@@ -133,7 +134,7 @@ describe("walking the generated ground", () => {
         }
       }
     }
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("stands on exactly the surface the renderer draws", () => {
     // The clipmap samples `elevationAt` directly, so any gap here is a gap

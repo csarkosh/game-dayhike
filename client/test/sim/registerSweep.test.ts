@@ -5,6 +5,7 @@ import { CAR_MATERIAL, KIOSK_MATERIAL, propSite, roadProp } from "../../src/sim/
 import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { buildRegister } from "../../src/sim/register.js";
 import { SEEDS } from "./trailGateSeeds.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
@@ -19,7 +20,7 @@ setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
  * sweeps, and the contention stretches it past a 300 s guard. The timeout is
  * there to catch a hang, not to fence the run time.
  */
-describe("the register over the 227-seed sweep", { timeout: 600_000 }, () => {
+describe("the register over the 227-seed sweep", { timeout: timeLimit(600_000) }, () => {
   it("names one hiker on every world, puts the body on the crest facing back down the stem, and hangs the poster toward the pad", () => {
     for (const seed of SEEDS) {
       const { graph } = bowlFor(seed);

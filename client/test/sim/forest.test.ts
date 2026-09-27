@@ -9,6 +9,7 @@ import {
   registryDigest,
 } from "../../src/sim/forest.js";
 import { registerPass, registeredPasses, type Pass } from "../../src/sim/chunk.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const PRE_BENCH_LEVEL_ID_1234 = "forest/5/olympic/1234/1586030448/-1513056523";
 
@@ -34,7 +35,7 @@ describe("createForest", () => {
       const id = createForest(seed).levelId;
       expect(new TextEncoder().encode(id).length).toBeLessThan(255);
     }
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("names the generator version, so version skew is detectable", () => {
     // The realistic desync is not float divergence, it is one peer on a bundle
@@ -47,7 +48,7 @@ describe("createForest", () => {
     const b = createForest(12).fieldHash;
     expect(a).not.toBe(b);
     expect(Number.isInteger(a)).toBe(true);
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("exposes a grid that has generated nothing yet", () => {
     expect(createForest(3).grid.generatedCount()).toBe(0);

@@ -36,6 +36,7 @@ import { BOB_ROLL, MAX_BOB_SCALE } from "../../src/game/viewBob.js";
 import { cardReach, extentSeen, thresholdWalk } from "./helpers/cullReach.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import type { ClutterInstance } from "../../src/sim/clutter.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("createClutterMeshes attaches the distance fade", () => {
   it("puts the plugin on every bucket material and a constant fadeBands per bucket", () => {
@@ -395,7 +396,7 @@ describe("the cards beside the blade field", () => {
       clutter.dispose();
       engine.dispose();
     }
-  }, 20_000);
+  }, timeLimit(20_000));
 
   // Under the blades the meadow cards are the cover and the blades the
   // detail, and every near card costs its vertices whether the dither keeps
@@ -808,7 +809,7 @@ describe("the grass class culled to the frustum", () => {
     expect(partial).not.toHaveBeenCalled();
     partial.mockRestore(); updated.mockRestore(); set.mockRestore();
     clutter.dispose(); engine.dispose();
-  }, 60_000);
+  }, timeLimit(60_000));
 
   // As the blade shell: after a context restore the culled buckets' meshes
   // take their full drawn buffers again and the next cull cuts afresh.
@@ -841,7 +842,7 @@ describe("the grass class culled to the frustum", () => {
     expect(set).not.toHaveBeenCalled();
     set.mockRestore();
     engine.dispose();
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("leaves every bucket whole where the tier does not cull", () => {
     const { assets, clutter, engine } = build(1, false);
@@ -853,7 +854,7 @@ describe("the grass class culled to the frustum", () => {
     for (let v = 0; v < 2; v++) for (let l = 0; l < 2; l++) expect(assets[CLUTTER_GRASS]![v]![l]![0]!.thinInstanceCount).toBe(lists[v]![l]!.length);
     partial.mockRestore();
     clutter.dispose(); engine.dispose();
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("keeps, at the two gate poses, the cards the widened frustum holds, and pins how many", () => {
     const counts: number[] = [];
@@ -876,7 +877,7 @@ describe("the grass class culled to the frustum", () => {
     }
     // Canopy: the profile counted 4,559 collected and 687 inside the exact frustum.
     expect(counts).toEqual([870, 4559, 891, 4731]);
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("never leaves out a card any part of which the camera can see, on threshold walks at both gate fields out to 110 m", () => {
     const reach = cardReach();
@@ -919,5 +920,5 @@ describe("the grass class culled to the frustum", () => {
     expect(holds).toBe(320);
     expect(seenCards).toBeGreaterThan(20000);
     expect(far).toBeGreaterThan(5000);
-  }, 180_000);
+  }, timeLimit(180_000));
 });

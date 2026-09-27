@@ -17,6 +17,7 @@ import { hasLineOfSight } from "../../src/sim/ai.js";
 import { aimDirection } from "../../src/sim/view.js";
 import { WATCH_SALT, climbOf, placeWatcher, reachOf, stepWatcher, topForkClimb } from "../../src/sim/watcher.js";
 import type { WatcherRecord } from "../../src/sim/watcher.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
@@ -230,5 +231,5 @@ describe("the watcher on fifty seeds", () => {
       expect(b.shown, summary).toBeGreaterThanOrEqual(floors[i]!);
       expect(b.admitted, summary).toBeGreaterThanOrEqual(admittedFloors[i]!);
     });
-  }, 300_000);
+  }, timeLimit(300_000));
 });
