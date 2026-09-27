@@ -271,7 +271,7 @@ describe("buildOrUndo", () => {
 const LEVEL: Level = { id: "swap-leak", brushes: [], playerSpawns: [], enemySpawns: [] };
 const SEED = 388817;
 const BODY = { pos: { x: 10, y: 2, z: 10 }, yaw: 0 };
-const POSTS = [{ x: 0, z: 0, arms: [{ dx: 0, dz: 1, names: ["Trailhead"] }] }];
+const POSTS = [{ x: 0, z: 0, arms: [{ dx: 0, dz: 1, names: ["Trailhead"], ranks: [0] }] }];
 const never = (): Promise<AssetContainer> => new Promise(() => undefined);
 
 function nullCanvas(): HTMLCanvasElement {

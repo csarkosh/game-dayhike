@@ -59,6 +59,7 @@ import { POND_DEPTH } from "../sim/features.js";
 import { createForestMeshes } from "./forestMeshes.js";
 import { NEAR_RADIUS } from "./forestField.js";
 import { createClutterMeshes } from "./clutterMeshes.js";
+import type { CullPose } from "./grassCull.js";
 import { createBladeMeshes } from "./bladeMeshes.js";
 import { createDuffMeshes } from "./duffMeshes.js";
 import { createCliffMeshes } from "./cliffMeshes.js";
@@ -809,10 +810,15 @@ function buildRenderer(engine: Engine, level: Level, forest: Forest | null, opti
   // of the forest's near-band tier rule. High and medium draw the blade field
   // over the meadow's near cards, which dither in from the eye beneath it;
   // low keeps the cards alone, whose 1.5× scaling is where blades resolve
-  // worst.
+  // worst. The same tiers cull the grass class's cards to the view, as the
+  // blades are (the hook below); low draws them whole.
   const clutterMeshes =
     forest !== null
-      ? createClutterMeshes(scene, forest.seed, { radiusScale: tier === "low" ? 0.6 : undefined, nearBlades: tier !== "low" })
+      ? createClutterMeshes(scene, forest.seed, {
+        radiusScale: tier === "low" ? 0.6 : undefined,
+        nearBlades: tier !== "low",
+        cull: tier !== "low",
+      })
       : null;
   // The near field of blade grass, on the tiers that can afford it; it
   // rebuilds on its own 1 m crossing and draws over the meadow's near cards
@@ -837,6 +843,28 @@ function buildRenderer(engine: Engine, level: Level, forest: Forest | null, opti
   cliffMeshes?.ready.catch((error: unknown) => {
     console.error(`cliff modules: keeping whatever loaded — ${String(error)}`);
   });
+  // The blades and the grass class's cards are culled to the view here, once
+  // the camera's pose for the frame is final (the view bob and the freecam
+  // included) and before Babylon picks the active meshes; the shells refilter
+  // only after a rebuild or when the view has moved past grassCull.ts's
+  // thresholds. The pose is the render camera's own, not the fields' centre.
+  const cullPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 1.4, aspect: 1 };
+  if (bladeMeshes !== null || clutterMeshes !== null) {
+    scene.onBeforeActiveMeshesEvaluationObservable.add(() => {
+      const p = camera.globalPosition;
+      cullPose.x = p.x;
+      cullPose.y = p.y;
+      cullPose.z = p.z;
+      cullPose.yaw = camera.rotation.y;
+      cullPose.pitch = camera.rotation.x;
+      // The view bob's roll, which walking and sprinting put on the camera.
+      cullPose.roll = camera.rotation.z;
+      cullPose.fov = camera.fov;
+      cullPose.aspect = engine.getAspectRatio(camera);
+      bladeMeshes?.cull(cullPose);
+      clutterMeshes?.cull(cullPose);
+    });
+  }
   // Same late-registration story as the forest's casters: the eleven clutter
   // GLBs load asynchronously, so the boulder buckets appear in `casterMeshes`
   // some frames after creation.
