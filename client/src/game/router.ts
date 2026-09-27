@@ -117,6 +117,78 @@ export function sameFollowPlace(target: string, current: string): boolean {
   return isLandingFamily(routeOf(target)) && isLandingFamily(routeOf(current));
 }
 
+/**
+ * The query parameters that belong to this page alone: `?engine=`, `?tier=`
+ * and `?probe=`, a tester's overrides. One set: carried across the page's own
+ * navigation (`keepOverrides`), so an address that sets the tier on the title
+ * still sets it in the hike Play starts, and stripped from the route a lobby
+ * host announces (`stripOverrides`), so none of them follows a host onto a
+ * follower's machine.
+ */
+const OVERRIDES = ["engine", "tier", "probe"] as const;
+
+/**
+ * `route` (a path and query, as a lobby host announces it) without the
+ * overrides. A route with none comes back byte for byte.
+ */
+export function stripOverrides(route: string): string {
+  const at = route.indexOf("?");
+  if (at < 0) return route;
+  const params = new URLSearchParams(route.slice(at));
+  if (!OVERRIDES.some((name) => params.has(name))) return route;
+  for (const name of OVERRIDES) params.delete(name);
+  const query = params.toString();
+  return query === "" ? route.slice(0, at) : `${route.slice(0, at)}?${query}`;
+}
+
+/**
+ * Whether two routes (a path and query each) are the same place: the same
+ * path and the same parameters in any order, each decoded, with the
+ * overrides left out. A follower compares the host's route with its own this
+ * way, since the two sides encode one query differently (`%20` or `+` for a
+ * space, `;` or `%3B`), and a route that reads as changed makes the follower
+ * rebuild its game.
+ */
+export function sameRoute(a: string, b: string): boolean {
+  const canonical = (route: string): string => {
+    const at = route.indexOf("?");
+    const params = new URLSearchParams(at < 0 ? "" : route.slice(at));
+    const entries = [...params].filter(([name]) => !(OVERRIDES as readonly string[]).includes(name));
+    // By name only, and stably: a name's repeated values keep their order,
+    // since the page reads the first of them.
+    entries.sort(([n1], [n2]) => (n1 < n2 ? -1 : n1 > n2 ? 1 : 0));
+    return JSON.stringify([at < 0 ? route : route.slice(0, at), entries]);
+  };
+  return canonical(a) === canonical(b);
+}
+
+/** `route` with the overrides of `ownSearch` (this page's own query) carried
+ * onto it. A page with none gets `route` back unchanged. */
+export function keepOverrides(route: string, ownSearch: string): string {
+  const own = new URLSearchParams(ownSearch);
+  if (!OVERRIDES.some((name) => own.has(name))) return route;
+  const at = route.indexOf("?");
+  const params = new URLSearchParams(at < 0 ? "" : route.slice(at));
+  for (const name of OVERRIDES) {
+    const value = own.get(name);
+    if (value !== null) params.set(name, value);
+  }
+  return `${at < 0 ? route : route.slice(0, at)}?${params.toString()}`;
+}
+
+/** Whether a follower at `current` moves to the host's `target`: not before
+ * the host's route is known (""), and not when it is already in the same
+ * place (`sameFollowPlace`) or on the same route (`sameRoute`). */
+export function followsTo(target: string, current: string): boolean {
+  return target !== "" && !sameFollowPlace(target, current) && !sameRoute(target, current);
+}
+
+/** The route a lobby host announces for where it is (`current`): a landing
+ * panel as the landing page (`announcedPath`), the overrides stripped. */
+export function hostRoute(current: string): string {
+  return stripOverrides(announcedPath(current));
+}
+
 /** Where the page is, relative to the base, query included. This is what a
  * lobby host broadcasts and what a follower navigates to. */
 export function currentRoutePath(): string {
@@ -127,9 +199,15 @@ function popstate(): void {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
-/** Push a route-relative path (it may carry a query) and re-render. */
+/** This page's own query, or "" where there is no page (a test). */
+function ownSearch(): string {
+  return (globalThis as { location?: { search?: string } }).location?.search ?? "";
+}
+
+/** Push a route-relative path (it may carry a query) and re-render, with
+ * this page's overrides carried onto it (`keepOverrides`). */
 export function navigateTo(path: string): void {
-  history.pushState({}, "", withBase(path));
+  history.pushState({}, "", withBase(keepOverrides(path, ownSearch())));
   popstate();
 }
 
@@ -144,7 +222,7 @@ export function navigateToLanding(): void {
 /** Rewrites the current entry to the landing route without re-rendering:
  * used after an invite has been consumed so back/forward never re-join. */
 export function replaceWithLanding(): void {
-  history.replaceState({}, "", withBase("/"));
+  history.replaceState({}, "", withBase(keepOverrides("/", ownSearch())));
 }
 
 /** The state stamped on a panel entry, so Back can tell an entry this app
@@ -152,7 +230,7 @@ export function replaceWithLanding(): void {
 type PanelState = { fromLanding?: boolean };
 
 export function navigateToPanel(panel: Panel): void {
-  history.pushState({ fromLanding: true } satisfies PanelState, "", withBase(`/${panel}`));
+  history.pushState({ fromLanding: true } satisfies PanelState, "", withBase(keepOverrides(`/${panel}`, ownSearch())));
   popstate();
 }
 

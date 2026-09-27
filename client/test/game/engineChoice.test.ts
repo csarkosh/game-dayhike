@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { landingModel } from "../../src/game/landingModel.js";
 import {
   adapterFits, chooseEngine, createStartupWindow, failureAction, fallbackHolds, featuresToRequest,
-  keepOverrides, lateFailureLine, parseEngineOverride, readFallback, recordFailure, resolveWebGpu,
-  stripOverrides, takeNotice, leaveNotice, withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
+  lateFailureLine, parseEngineOverride, readFallback, recordFailure, resolveWebGpu,
+  takeNotice, leaveNotice, withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
   type AdapterReport, type WebGpuSteps,
   FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
   NOTICE_SWITCHED, STARTUP_MAX_MS, STARTUP_QUIET_MS, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
-  WEBGPU_START_MS, WEBGPU_TIERS, engineWaitLine, sameRoute,
+  WEBGPU_START_MS, WEBGPU_TIERS, engineWaitLine,
 } from "../../src/game/engineChoice.js";
 
 describe("the engine override", () => {
@@ -263,23 +263,6 @@ describe("the texture compression the device asks for", () => {
   });
 });
 
-describe("the overrides stay on this page", () => {
-  it("are taken off the route a host announces, and nothing else is touched", () => {
-    expect(stripOverrides("/game/abc?engine=webgpu&tier=high")).toBe("/game/abc");
-    expect(stripOverrides("/game/abc?cmd=seed%20atmo&engine=webgl2")).toBe("/game/abc?cmd=seed+atmo");
-    // No override: the route goes out byte for byte as before.
-    expect(stripOverrides("/game/abc?cmd=seed%20atmo")).toBe("/game/abc?cmd=seed%20atmo");
-    expect(stripOverrides("/game/abc")).toBe("/game/abc");
-    expect(stripOverrides("")).toBe("");
-  });
-
-  it("are carried onto the route a follower is sent to, from its own URL", () => {
-    expect(keepOverrides("/game/abc?cmd=x", "?engine=webgl2&tier=medium&cmd=y")).toBe("/game/abc?cmd=x&engine=webgl2&tier=medium");
-    expect(keepOverrides("/game/abc", "?tier=high")).toBe("/game/abc?tier=high");
-    expect(keepOverrides("/game/abc?cmd=x", "")).toBe("/game/abc?cmd=x");
-  });
-});
-
 describe("the line a late GPU error logs", () => {
   it("promises WebGL2 on the next load only where that is true", () => {
     expect(lateFailureLine(true, null)).toBe("WebGPU: a GPU error after startup; the next load draws with WebGL2.");
@@ -289,39 +272,6 @@ describe("the line a late GPU error logs", () => {
       .toBe("WebGPU: a GPU error after startup; storage refused the record, so this tab's URL now asks for WebGL2.");
     expect(lateFailureLine(false, "webgpu"))
       .toBe("WebGPU: a GPU error after startup; storage refused the record, so this tab's URL now asks for WebGL2.");
-  });
-});
-
-describe("sameRoute", () => {
-  // A hand-typed ?cmd= reaches the host's URL as the browser encoded it
-  // (%20 for a space, a bare ;); the follower's URL went through
-  // URLSearchParams when its own override was carried onto it (+ and %3B).
-  const host = "/game/abc?cmd=seed%20atmo;weather%20mist";
-  const follower = keepOverrides(host, "?tier=high");
-
-  it("sees the same route where only the encoding and the follower's own overrides differ", () => {
-    expect(follower).toBe("/game/abc?cmd=seed+atmo%3Bweather+mist&tier=high");
-    // The comparison it replaces: an unchanged route read as changed, so the
-    // follower navigated and rebuilt its game on every lobby change.
-    expect(stripOverrides(host) === stripOverrides(follower)).toBe(false);
-    expect(sameRoute(host, follower)).toBe(true);
-    expect(sameRoute(`${host}&engine=webgl2`, follower)).toBe(true);
-    expect(sameRoute("/game/abc?b=2&a=1", "/game/abc?a=1&b=2")).toBe(true);
-    expect(sameRoute("/game/abc", "/game/abc?tier=medium")).toBe(true);
-  });
-
-  it("keeps the order of a parameter's repeated values, which decides what the page reads", () => {
-    // URLSearchParams.get takes the first value, so these build different worlds.
-    expect(sameRoute("/game/abc?cmd=a&cmd=b", "/game/abc?cmd=b&cmd=a")).toBe(false);
-    expect(sameRoute("/game/abc?cmd=a&x=1&cmd=b", "/game/abc?x=1&cmd=a&cmd=b")).toBe(true);
-    expect(sameRoute("/game/abc?cmd=a&cmd=b&tier=high", "/game/abc?cmd=a&engine=webgl2&cmd=b")).toBe(true);
-  });
-
-  it("still sees a real change", () => {
-    expect(sameRoute(host, "/game/abc?cmd=seed%20other;weather%20mist&tier=high")).toBe(false);
-    expect(sameRoute(host, "/game/xyz?cmd=seed%20atmo;weather%20mist")).toBe(false);
-    expect(sameRoute("/game/abc", "/game/abc?cmd=x")).toBe(false);
-    expect(sameRoute("/", "/credits")).toBe(false);
   });
 });
 

@@ -289,59 +289,6 @@ export function lateFailureLine(stored: boolean, override: EngineName | null): s
   return `${head}the next load draws with WebGL2.`;
 }
 
-/** The query parameters that belong to this page alone (design §5.3). */
-const OVERRIDES = ["engine", "tier"] as const;
-
-/**
- * `route` (a path and query, as a lobby host announces it) without `engine=`
- * and `tier=`, so a test override or a pinned fallback never follows a host
- * onto a follower's machine. A route with neither comes back byte for byte.
- */
-export function stripOverrides(route: string): string {
-  const at = route.indexOf("?");
-  if (at < 0) return route;
-  const params = new URLSearchParams(route.slice(at));
-  if (!OVERRIDES.some((name) => params.has(name))) return route;
-  for (const name of OVERRIDES) params.delete(name);
-  const query = params.toString();
-  return query === "" ? route.slice(0, at) : `${route.slice(0, at)}?${query}`;
-}
-
-/**
- * Whether two routes (a path and query each) are the same place: the same
- * path and the same parameters in any order, each decoded, with `engine=` and
- * `tier=` left out. A follower compares the host's route with its own this
- * way, since the two sides encode one query differently (`%20` or `+` for a
- * space, `;` or `%3B`), and a route that reads as changed makes the follower
- * rebuild its game.
- */
-export function sameRoute(a: string, b: string): boolean {
-  const canonical = (route: string): string => {
-    const at = route.indexOf("?");
-    const params = new URLSearchParams(at < 0 ? "" : route.slice(at));
-    const entries = [...params].filter(([name]) => !(OVERRIDES as readonly string[]).includes(name));
-    // By name only, and stably: a name's repeated values keep their order,
-    // since the page reads the first of them.
-    entries.sort(([n1], [n2]) => (n1 < n2 ? -1 : n1 > n2 ? 1 : 0));
-    return JSON.stringify([at < 0 ? route : route.slice(0, at), entries]);
-  };
-  return canonical(a) === canonical(b);
-}
-
-/** `route` with this page's own `engine=` and `tier=` (from `ownSearch`)
- * carried onto it: where a follower goes, its own overrides go too. */
-export function keepOverrides(route: string, ownSearch: string): string {
-  const own = new URLSearchParams(ownSearch);
-  if (!OVERRIDES.some((name) => own.has(name))) return route;
-  const at = route.indexOf("?");
-  const params = new URLSearchParams(at < 0 ? "" : route.slice(at));
-  for (const name of OVERRIDES) {
-    const value = own.get(name);
-    if (value !== null) params.set(name, value);
-  }
-  return `${at < 0 ? route : route.slice(0, at)}?${params.toString()}`;
-}
-
 const TIMED_OUT = Symbol("timed out");
 
 /** `promise`, or `TIMED_OUT` once `ms` pass first. */

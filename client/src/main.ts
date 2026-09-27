@@ -10,8 +10,8 @@ import {
   replaceWithLanding,
   leavePanel,
   browserExit,
-  announcedPath,
-  sameFollowPlace,
+  followsTo,
+  hostRoute,
   type Route,
 } from "./game/router.js";
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
@@ -55,15 +55,12 @@ import {
   engineWaitLine,
   failureAction,
   fallbackHolds,
-  keepOverrides,
   lateFailureLine,
   leaveNotice as leaveEngineNotice,
   parseEngineOverride,
   readFallback,
   recordFailure,
   resolveWebGpu,
-  sameRoute,
-  stripOverrides,
   withEngine,
   writeFallback,
   WEBGPU_ENABLED,
@@ -335,24 +332,23 @@ function detach(): void {
   lobby = null;
 }
 
-/** A follower goes where the host is. The host's route is "" until known,
- * and the landing page and its panels are one place (`sameFollowPlace`): a
- * follower in its own Settings stays there while the host is on the landing.
- * `?engine=` and `?tier=` are each page's own: they neither make a route
- * differ (`sameRoute`, which also reads past how each side encoded the query)
- * nor leave the follower's URL when it moves. */
+/** A follower goes where the host is (`followsTo`). The host's route is ""
+ * until known, and the landing page and its panels are one place: a follower
+ * in its own Settings stays there while the host is on the landing. The
+ * overrides (`?engine=`, `?tier=`, `?probe=`) are each page's own: they
+ * neither make a route differ nor leave the follower's URL when it moves
+ * (`navigateTo` carries them). */
 function follow(active: Lobby): void {
   if (active.state.role !== "client") return;
   const target = active.state.route;
-  if (target === "" || sameFollowPlace(target, currentRoutePath()) || sameRoute(target, currentRoutePath())) return;
-  navigateTo(keepOverrides(target, location.search));
+  if (followsTo(target, currentRoutePath())) navigateTo(target);
 }
 
 /** Host side: tell the lobby where we are now, a landing panel as the landing
  * page (`announcedPath`), without this page's own overrides. Called from
  * render(). */
 function announceRoute(): void {
-  if (lobby !== null && lobby.state.role === "host") lobby.setRoute(stripOverrides(announcedPath(currentRoutePath())));
+  if (lobby !== null && lobby.state.role === "host") lobby.setRoute(hostRoute(currentRoutePath()));
 }
 
 // Landing routes are announced at once; the game route only after its first
@@ -379,7 +375,7 @@ async function openLobby(): Promise<void> {
       peerId: selfId,
       lobbyId: createLobbyId(),
       name: selfName,
-      route: currentRoutePath(),
+      route: hostRoute(currentRoutePath()),
     });
     // Abandoned while the reply was in the air. The room is real and hosted by
     // us, so say goodbye properly rather than dropping the socket and leaving
