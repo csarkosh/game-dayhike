@@ -1,5 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseTimeScale } from "./helpers/timeLimit.js";
+import { parseTimeScale, timeLimit } from "./helpers/timeLimit.js";
+
+/**
+ * The config scales vitest's default limit only when VITEST is set, which the
+ * vitest CLI does before it loads the config. The config tests below stub the
+ * variable, so they cannot notice if a vitest release stopped setting it; this
+ * one reads the limit the running test actually has. Under TEST_TIME_SCALE=3
+ * (the workflow) that is 15 s; unset, 5 s. The expectation goes through the
+ * helper because it must hold under whatever factor the run sets.
+ */
+describe("the running suite", () => {
+  it("gives a test with no limit of its own the config's default, scaled", ({ task }) => {
+    expect(task.timeout).toBe(timeLimit(5_000));
+  });
+});
 
 describe("TEST_TIME_SCALE", () => {
   it("is exactly 1 when unset, so every local limit is its literal", () => {

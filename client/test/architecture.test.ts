@@ -266,11 +266,18 @@ describe("test time limits", () => {
    * `hookTimeout` are test limits and follow the same rule.
    *
    * What the scan cannot see, by design, because it reads one file and follows
-   * only consts declared in it: options or limits imported from another file,
-   * a limit computed in a helper function and passed in, a computed property
-   * key, and a spread of anything but a const in the same file. A parameter
-   * named in `{ timeout }` shorthand is read as bare, so a helper that takes an
-   * already-scaled limit would be told to scale it again.
+   * only names declared in it: options or limits imported from another file
+   * or returned from a helper (no advice is given for them here; the
+   * wall-clock rule below reports them as "cannot tell whether this is
+   * tagged"), a
+   * limit computed in a helper function and passed in, a computed property
+   * key, a spread of anything but a const in the same file, a `let` that is
+   * reassigned after its declaration (read by its first value), and a limit
+   * given to a hook reached through the test context (`ctx.onTestFinished`)
+   * rather than imported. A parameter named in `{ timeout }` shorthand is read
+   * as bare, so a helper that takes an already-scaled limit would be told to
+   * scale it again. The around-hooks, the finish hooks and tests made with
+   * `test.extend` are read like the others.
    */
   it("sends every explicit test, suite, hook and wait limit through timeLimit", () => {
     expect(limitOffenders(files)).toEqual([]);
@@ -292,13 +299,21 @@ describe("wall-clock tests", () => {
    * green, so it goes only on a test that reads a clock, and the count of
    * tagged tests is a literal below, so adding one is a deliberate edit.
    *
+   * Tags come from the call's options, from every suite around it, and from
+   * the file's module-tag pragma, which vitest reads from the source and
+   * applies to every test in the file. Tags the scan cannot resolve to string
+   * literals on an options object in this file fail closed: the call is
+   * reported as "cannot tell whether this is tagged".
+   *
    * What the scan cannot see, by design, because it reads one file: a clock
    * read inside a helper imported from another file, and a clock function
    * passed around as a value (`measure(performance.now)`) rather than bound to
-   * a const. It sees `performance.now()` and `Date.now()` on any receiver
-   * ending in `performance`/`Date` (`globalThis.performance?.now()`,
-   * a `perf_hooks` import under another name, a const alias), a destructured
-   * or bound `now`, `process.hrtime`, `new Date()`/`Date()`, and
+   * a const. It sees `now()` on any receiver ending in `performance`/`Date`
+   * (`globalThis.performance?.now()`, `performance["now"]()`, a `perf_hooks`
+   * import under another name, a const alias, `{ performance: p } =
+   * globalThis`), `performance.mark`/`measure`, a destructured or bound
+   * `now`, `process.hrtime` and `process.uptime` (also imported from
+   * `node:process`), `vi.getRealSystemTime()`, `new Date()`/`Date()`, and
    * `console.time`.
    */
   const PRINTED_NOT_ASSERTED: Record<string, string> = {
@@ -315,8 +330,14 @@ describe("wall-clock tests", () => {
     expect(report.offenders).toEqual([]);
   });
 
-  it("has exactly two wall-clock tests: adding one is a deliberate edit here", () => {
-    expect(report.tagged.length).toBe(2);
+  it("tags exactly these tests wall-clock: adding or removing one is a deliberate edit here", () => {
+    expect(
+      [...report.tagged].sort(),
+      "the wall-clock tests changed: if that is meant, update this list and the files test:wall-clock names; if not, remove the tag",
+    ).toEqual([
+      "game/forestField.test.ts > keeps a warm one-cell-move collect fast — the 25-33 ms rescan must not return",
+      "sim/trailSystem.test.ts > builds a world in budget",
+    ]);
   });
 
   /**

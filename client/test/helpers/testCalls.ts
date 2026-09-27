@@ -17,7 +17,8 @@ import ts from "typescript";
 
 const TESTS = new Set(["it", "test"]);
 const SUITES = new Set(["describe", "suite"]);
-const HOOKS = new Set(["beforeAll", "afterAll", "beforeEach", "afterEach"]);
+/** Hooks that take a limit after their callback, including the around-hooks and the per-test finish hooks. */
+const HOOKS = new Set(["beforeAll", "afterAll", "beforeEach", "afterEach", "aroundAll", "aroundEach", "onTestFinished", "onTestFailed"]);
 /** Chained modifiers that return the same call shape: `it.skip(...)`, `describe.concurrent(...)`. */
 const MODIFIERS = new Set(["skip", "only", "todo", "concurrent", "sequential", "shuffle", "fails"]);
 /** Chained factories whose result is then called: `it.each(table)(...)`, `it.skipIf(c)(...)`. */
@@ -53,6 +54,14 @@ export interface TestCall {
   clockReads: number[];
   /** A clock is read in an enclosing suite's body or hooks, outside any test. */
   suiteReadsClock: boolean;
+  /**
+   * Why the scan cannot tell this test's or suite's tags, or null when it can:
+   * options it cannot resolve to an object literal in this file, or a `tags`
+   * value that is not wholly string literals. Read as "may be tagged".
+   */
+  tagsUnknown: string | null;
+  /** A wait or config call whose options the scan cannot resolve: its limit is unseen, not missing. */
+  limitsUnseen: boolean;
 }
 
 export interface StrayClockRead {
@@ -62,6 +71,8 @@ export interface StrayClockRead {
 }
 
 export interface FileScan {
+  /** Tags the file gives every test in it through vitest's module-tag pragma. */
+  moduleTags: string[];
   calls: TestCall[];
   /** Clock reads inside no test's callback: in a suite body, a hook, or at top level. */
   strayClockReads: StrayClockRead[];
@@ -72,9 +83,27 @@ function lastSegment(text: string): string {
   return text.replace(/\?/g, "").split(".").pop() ?? "";
 }
 
+/**
+ * The tags vitest reads from a file's module-tag pragmas (a line comment or a
+ * doc-comment line: the at-sign, "module-tag", then the tag), matched with
+ * vitest's own pattern over the raw source, as vitest does, so a pragma inside
+ * a string counts here exactly as it counts there.
+ */
+export function moduleTagsOf(source: string): string[] {
+  const pattern = new RegExp("(\\/\\/|\\*)\\s*@" + "module-tag\\s+([\\w\\-/]+)\\b");
+  const tags: string[] = [];
+  let rest = source;
+  for (let m = rest.match(pattern); m && m.index !== undefined; m = rest.match(pattern)) {
+    tags.push(m[2] ?? "");
+    rest = rest.slice(m.index + m[0].length);
+  }
+  return tags;
+}
+
 export function scanTestSource(fileName: string, source: string): FileScan {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const lineOf = (n: ts.Node): number => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+  const moduleTags = moduleTagsOf(source);
 
   // Names bound at any depth in this file: consts (for limits, options and
   // tags kept in them), and aliases of vitest's own names and of the clocks.
@@ -83,7 +112,12 @@ export function scanTestSource(fileName: string, source: string): FileScan {
   const vitestNamespaces = new Set<string>();
   const clockReceivers = new Set(["performance", "Date"]);
   const clockFunctions = new Set<string>();
+  /** Names bound to a function in this file: a declaration, or a const holding an arrow or function expression. */
+  const functionNames = new Set<string>();
+  /** `const myTest = test.extend(...)`: resolved to test declarers once vitest's names are known. */
+  const extended: { name: string; base: ts.Expression }[] = [];
   const collect = (n: ts.Node): void => {
+    if (ts.isFunctionDeclaration(n) && n.name) functionNames.add(n.name.text);
     if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier) && n.importClause?.namedBindings) {
       const from = n.moduleSpecifier.text;
       const bindings = n.importClause.namedBindings;
@@ -94,6 +128,7 @@ export function scanTestSource(fileName: string, source: string): FileScan {
           const imported = (el.propertyName ?? el.name).text;
           if (from === "vitest") vitestNames.set(el.name.text, imported);
           if ((from === "node:perf_hooks" || from === "perf_hooks") && imported === "performance") clockReceivers.add(el.name.text);
+          if ((from === "node:process" || from === "process") && (imported === "hrtime" || imported === "uptime")) clockFunctions.add(el.name.text);
         }
       }
     }
@@ -101,14 +136,22 @@ export function scanTestSource(fileName: string, source: string): FileScan {
       const init = n.initializer.getText(sf).replace(/\s+/g, "");
       if (ts.isIdentifier(n.name)) {
         consts.set(n.name.text, n.initializer);
+        if (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer)) functionNames.add(n.name.text);
+        if (ts.isCallExpression(n.initializer) && ts.isPropertyAccessExpression(n.initializer.expression) && n.initializer.expression.name.text === "extend") {
+          extended.push({ name: n.name.text, base: n.initializer.expression.expression });
+        }
         // const p = performance; const now = performance.now.bind(performance)
         if (clockReceivers.has(lastSegment(init))) clockReceivers.add(n.name.text);
         if (/(^|\.)(performance|Date)\??\.now(\.bind\(.*\))?$/.test(init)) clockFunctions.add(n.name.text);
-      } else if (ts.isObjectBindingPattern(n.name) && ["performance", "Date", "process"].includes(lastSegment(init))) {
-        // const { now } = performance
+      } else if (ts.isObjectBindingPattern(n.name)) {
+        const from = lastSegment(init);
         for (const el of n.name.elements) {
           const key = el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : ts.isIdentifier(el.name) ? el.name.text : "";
-          if ((key === "now" || key === "hrtime") && ts.isIdentifier(el.name)) clockFunctions.add(el.name.text);
+          if (!ts.isIdentifier(el.name)) continue;
+          // const { now } = performance; const { hrtime } = process
+          if (["performance", "Date", "process"].includes(from) && ["now", "hrtime", "uptime"].includes(key)) clockFunctions.add(el.name.text);
+          // const { performance: p } = globalThis
+          if (["globalThis", "window", "self"].includes(from) && (key === "performance" || key === "Date")) clockReceivers.add(el.name.text);
         }
       }
     }
@@ -116,7 +159,7 @@ export function scanTestSource(fileName: string, source: string): FileScan {
   };
   collect(sf);
 
-  /** vitest's name for a callee, through aliases and namespaces, or null. */
+  /** vitest's name for a callee, through aliases, namespaces and `test.extend`, or null. */
   const canonical = (id: ts.Identifier): string | null => vitestNames.get(id.text) ?? (["vi", "expect"].includes(id.text) ? id.text : TESTS.has(id.text) || SUITES.has(id.text) || HOOKS.has(id.text) ? id.text : null);
 
   /** it / describe / beforeAll ... for a test-declaring callee, or null. */
@@ -143,6 +186,17 @@ export function scanTestSource(fileName: string, source: string): FileScan {
     }
   }
 
+  // A test made with `test.extend` (or an extension of one) declares tests like `test`.
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const { name, base } of extended) {
+      if (!vitestNames.has(name) && declarer(base) !== null && TESTS.has(declarer(base) ?? "")) {
+        vitestNames.set(name, "test");
+        changed = true;
+      }
+    }
+  }
+
   /** `vi.waitFor`, `expect.poll`, `vi.setConfig` for those callees, through aliases. */
   function member(callee: ts.Expression): string | null {
     if (!ts.isPropertyAccessExpression(callee) || !ts.isIdentifier(callee.expression)) return null;
@@ -151,6 +205,19 @@ export function scanTestSource(fileName: string, source: string): FileScan {
   }
 
   const isFunction = (n: ts.Node | undefined): boolean => !!n && (ts.isArrowFunction(n) || ts.isFunctionExpression(n));
+  /** A function, written here or named: a declaration or a const holding one, in this file. */
+  const isFunctionRef = (n: ts.Node | undefined): boolean => isFunction(n) || (!!n && ts.isIdentifier(n) && functionNames.has(n.text));
+  /** An argument that can only be a limit: a number, `timeLimit(...)`, arithmetic, or a const holding one of those. */
+  function isLimitLike(n: ts.Expression | undefined): boolean {
+    if (!n) return false;
+    if (ts.isNumericLiteral(n) || ts.isBinaryExpression(n) || ts.isPrefixUnaryExpression(n)) return true;
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "timeLimit") return true;
+    if (ts.isIdentifier(n)) {
+      const init = consts.get(n.text);
+      return !!init && !ts.isObjectLiteralExpression(init) && isLimitLike(init);
+    }
+    return false;
+  }
 
   function titleOf(node: ts.Node | undefined): string {
     if (!node) return "";
@@ -200,13 +267,26 @@ export function scanTestSource(fileName: string, source: string): FileScan {
     return found;
   }
 
-  function tagsOf(obj: ts.ObjectLiteralExpression | null): string[] {
-    let value = obj && property(obj, "tags");
-    if (value && ts.isIdentifier(value)) value = consts.get(value.text) ?? value;
-    if (!value) return [];
-    if (ts.isStringLiteral(value)) return [value.text];
-    if (ts.isArrayLiteralExpression(value)) return value.elements.filter(ts.isStringLiteral).map((e) => e.text);
-    return [];
+  /**
+   * The tags an options object gives, or why they cannot be told. Fails
+   * closed: a spread or computed key the scan cannot follow, or a `tags` value
+   * that is not a string literal or an array of them (directly or through a
+   * const array in this file), is "cannot tell", never "untagged".
+   */
+  function tagsOf(obj: ts.ObjectLiteralExpression | null): { tags: string[]; unknown: string | null } {
+    if (!obj) return { tags: [], unknown: null };
+    for (const p of obj.properties) {
+      if (ts.isSpreadAssignment(p) && !optionsObject(p.expression)) return { tags: [], unknown: `a spread the scan cannot follow, \`...${p.expression.getText(sf)}\`` };
+      if (p.name && ts.isComputedPropertyName(p.name)) return { tags: [], unknown: `a computed key, \`${p.name.getText(sf)}\`` };
+    }
+    let value = property(obj, "tags");
+    if (!value) return { tags: [], unknown: null };
+    if (ts.isIdentifier(value) && consts.get(value.text)) value = consts.get(value.text) ?? value;
+    if (ts.isStringLiteral(value)) return { tags: [value.text], unknown: null };
+    if (ts.isArrayLiteralExpression(value) && value.elements.every(ts.isStringLiteral)) {
+      return { tags: value.elements.map((e) => (e as ts.StringLiteral).text), unknown: null };
+    }
+    return { tags: [], unknown: `tags written as \`${value.getText(sf)}\`` };
   }
 
   function isClockRead(node: ts.Node): boolean {
@@ -217,13 +297,23 @@ export function scanTestSource(fileName: string, source: string): FileScan {
     if (!ts.isCallExpression(node)) return false;
     const callee = node.expression;
     if (ts.isIdentifier(callee)) return clockFunctions.has(callee.text) || (callee.text === "Date" && node.arguments.length === 0);
-    if (!ts.isPropertyAccessExpression(callee)) return false;
-    const name = callee.name.text;
-    const receiver = callee.expression.getText(sf);
-    if (name === "now") return clockReceivers.has(lastSegment(receiver));
-    if (name === "hrtime") return lastSegment(receiver) === "process";
+    // `x.now()` and `x["now"]()` alike.
+    let name: string;
+    let receiver: string;
+    if (ts.isPropertyAccessExpression(callee)) {
+      name = callee.name.text;
+      receiver = callee.expression.getText(sf);
+    } else if (ts.isElementAccessExpression(callee) && ts.isStringLiteralLike(callee.argumentExpression)) {
+      name = callee.argumentExpression.text;
+      receiver = callee.expression.getText(sf);
+    } else return false;
+    const on = lastSegment(receiver);
+    if (name === "now") return clockReceivers.has(on);
+    if (name === "mark" || name === "measure") return clockReceivers.has(on) && on !== "Date";
+    if (name === "hrtime" || name === "uptime") return on === "process";
     if (name === "bigint") return /(^|\.)process\??\.hrtime$/.test(receiver.replace(/\s+/g, ""));
-    if (["time", "timeEnd", "timeLog"].includes(name)) return lastSegment(receiver) === "console";
+    if (name === "getRealSystemTime") return on === "vi";
+    if (["time", "timeEnd", "timeLog"].includes(name)) return on === "console";
     return false;
   }
 
@@ -238,31 +328,39 @@ export function scanTestSource(fileName: string, source: string): FileScan {
     const args = node.arguments;
     let limit: Limit = { kind: "none" };
     let options: ts.ObjectLiteralExpression | null = null;
+    let optionsUnknown: string | null = null;
     let body: ts.Node | undefined;
+    const readOptions = (arg: ts.Expression): void => {
+      options = optionsObject(arg);
+      if (!options) optionsUnknown = `options the scan cannot resolve, \`${arg.getText(sf)}\``;
+      const t = options && property(options, "timeout");
+      if (t) limit = limitValue(t);
+    };
     if (kind === "hook") {
       body = args[0];
       if (args[1]) limit = limitValue(args[1]);
     } else {
       const [, a1, a2, a3] = args;
-      const a1Options = a1 !== undefined && !isFunction(a1) && (optionsObject(a1) !== null || isFunction(a2));
-      if (a1Options) {
+      if (a1 === undefined) {
+        // it.todo(title)
+      } else if (isFunctionRef(a1) || (!optionsObject(a1) && isLimitLike(a2))) {
+        // it(title, fn, limit | options); fn may be a function passed by name,
+        // even one imported, when what follows can only be a limit.
+        body = a1;
+        if (a2 && (optionsObject(a2) || !isLimitLike(a2))) readOptions(a2);
+        else if (a2) limit = limitValue(a2);
+      } else if (optionsObject(a1) || isFunctionRef(a2)) {
         // it(title, options, fn): a limit after fn is ignored by vitest.
-        options = optionsObject(a1);
+        readOptions(a1);
         body = a2;
-        const t = options && property(options, "timeout");
-        if (t) limit = limitValue(t);
         if (a3) limit = { kind: "ignored", text: a3.getText(sf), line: lineOf(a3) };
       } else {
-        // it(title, fn, limit | options); fn may be a function passed by name.
-        body = a1;
-        options = optionsObject(a2);
-        if (options) {
-          const t = property(options, "timeout");
-          if (t) limit = limitValue(t);
-        } else if (a2) limit = limitValue(a2);
+        // Neither argument resolves to a function or an options object here.
+        optionsUnknown = `arguments the scan cannot resolve, \`${args.slice(1).map((a) => a.getText(sf)).join(", ")}\``;
       }
     }
-    const tags = tagsOf(options);
+    const read = tagsOf(options);
+    const tags = read.tags;
     const call: TestCall = {
       kind,
       callee: node.expression.getText(sf),
@@ -270,20 +368,24 @@ export function scanTestSource(fileName: string, source: string): FileScan {
       line: lineOf(node),
       limits: limit.kind === "none" ? [] : [limit],
       tags,
-      inheritedTags: [...suites.flatMap((s) => s.tags), ...tags],
+      inheritedTags: [...moduleTags, ...suites.flatMap((s) => s.tags), ...tags],
       clockReads: [],
       suiteReadsClock: false,
+      tagsUnknown: kind === "hook" ? null : (optionsUnknown ?? read.unknown),
+      limitsUnseen: false,
     };
     return { call, body };
   }
 
   function waitOrConfig(node: ts.CallExpression, name: string): TestCall | null {
-    const base = { callee: node.expression.getText(sf), title: "", line: lineOf(node), tags: [], inheritedTags: [], clockReads: [], suiteReadsClock: false };
+    const base = { callee: node.expression.getText(sf), title: "", line: lineOf(node), tags: [], inheritedTags: [], clockReads: [], suiteReadsClock: false, tagsUnknown: null };
     if (WAITS.has(name)) {
       const arg = node.arguments[1];
       const options = optionsObject(arg);
+      const hidden = options?.properties.some((p) => ts.isSpreadAssignment(p) && !optionsObject(p.expression)) ?? false;
+      if ((arg && !options && !isLimitLike(arg)) || hidden) return { ...base, kind: "wait", limits: [], limitsUnseen: true };
       const t = options ? property(options, "timeout") : arg;
-      return { ...base, kind: "wait", limits: t ? [limitValue(t)] : [] };
+      return { ...base, kind: "wait", limits: t ? [limitValue(t)] : [], limitsUnseen: false };
     }
     if (name === "vi.setConfig") {
       const options = optionsObject(node.arguments[0]);
@@ -291,7 +393,7 @@ export function scanTestSource(fileName: string, source: string): FileScan {
         const v = options && property(options, key);
         return v ? [limitValue(v)] : [];
       });
-      return { ...base, kind: "config", limits };
+      return { ...base, kind: "config", limits, limitsUnseen: !options };
     }
     return null;
   }
@@ -300,7 +402,7 @@ export function scanTestSource(fileName: string, source: string): FileScan {
     if (isClockRead(node)) {
       if (test) test.clockReads.push(lineOf(node));
       else {
-        strayClockReads.push({ line: lineOf(node), tags: suites.flatMap((s) => s.tags) });
+        strayClockReads.push({ line: lineOf(node), tags: [...moduleTags, ...suites.flatMap((s) => s.tags)] });
         const inner = suites[suites.length - 1];
         if (inner) suitesReadingClock.add(inner);
       }
@@ -328,7 +430,7 @@ export function scanTestSource(fileName: string, source: string): FileScan {
   visit(sf, [], null);
 
   for (const [call, suites] of testSuites) call.suiteReadsClock = suites.some((s) => suitesReadingClock.has(s));
-  return { calls, strayClockReads };
+  return { moduleTags, calls, strayClockReads };
 }
 
 export interface ScannedFile {
@@ -349,7 +451,7 @@ export function limitOffenders(files: ScannedFile[]): string[] {
     if (!helper.startsWith(".")) helper = `./${helper}`;
     const importLine = `import { timeLimit } from "${helper}"`;
     for (const c of scan.calls) {
-      if (c.kind === "wait" && c.limits.length === 0) {
+      if (c.kind === "wait" && c.limits.length === 0 && !c.limitsUnseen) {
         out.add(`${file}:${c.line} ${c.callee}: no limit, so vitest's unscaled 1 s default applies — pass { timeout: timeLimit(1_000) } (${importLine})`);
       }
       for (const limit of c.limits) {
@@ -383,6 +485,9 @@ export function wallClockOffenders(files: ScannedFile[], printedNotAsserted: Rec
   const untaggedReaders = new Set<string>();
   for (const { file, scan } of files) {
     for (const c of scan.calls) {
+      if ((c.kind === "test" || c.kind === "suite") && c.tagsUnknown) {
+        offenders.push(`${file}:${c.line} ${c.callee} "${c.title}": cannot tell whether this is tagged (${c.tagsUnknown}): write the options as an object literal on the call, with any tags as literal strings, e.g. { tags: ["wall-clock"] }`);
+      }
       if (c.kind !== "test") continue;
       const key = `${file} > ${c.title}`;
       const isTagged = c.inheritedTags.includes("wall-clock");
