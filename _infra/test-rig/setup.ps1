@@ -1,16 +1,23 @@
 # The machine's start-up script, passed as user data (instance.tf) and run by
-# EC2Launch v2 as the local system account at EVERY boot, before the Systems
-# Manager agent starts. Terraform's templatefile fills in the region, user,
-# parameter, timer and display values below and strips the comment lines
-# (EC2 caps user data at 16 KB).
+# EC2Launch v2 as the local system account at EVERY boot, after EC2Launch has
+# started the Systems Manager agent (so a Session Manager shell can follow this
+# log while it runs). Terraform's templatefile fills in the region, user,
+# parameter and display values below and strips the comment lines (EC2 caps
+# user data at 16 KB).
 #
-# Every boot:
-#   - arms the stop timer: a scheduled task shuts Windows down max_run_hours
-#     after this boot, and the instance's shutdown behaviour is `stop`.
+# Every boot, before anything that can take long:
+#   - the stop timer: a scheduled task shuts Windows down max-run-minutes (an
+#     instance tag) after every boot, by a delayed start-up trigger, and the
+#     instance's shutdown behaviour is `stop`. Registered on the first boot and
+#     whenever the tag changes, with a one-time trigger covering that boot; the
+#     start-up trigger then fires at later boots even if this script does not;
+#   - C:\ProgramData\test-rig made writable by SYSTEM and Administrators only.
 # First boot, then never again (marker C:\ProgramData\test-rig\setup-complete):
 #   - the desktop user, its password (made here) and automatic logon;
 #   - the NVIDIA GRID driver, Amazon DCV server, Chrome, Node 22, Git with LFS;
-#   - holds the machine still between measurements;
+#   - holds the machine still between measurements; closes Remote Desktop and
+#     Windows Remote Management on the host, and the metadata service to the
+#     desktop user;
 #   - exits 3010, which EC2Launch v2 answers by restarting and running this
 #     script again.
 # A boot from an image whose `done-user` marker was removed (README.md):
@@ -18,11 +25,15 @@
 # The boot after that (until marker `verified` exists):
 #   - checks, with things that can fail, that the driver runs as a licensed
 #     virtual workstation, that DCV's console session belongs to the desktop
-#     user and that the desktop user is logged on.
+#     user, that the desktop user is logged on, that Remote Desktop and its and
+#     Windows Remote Management's firewall rules are off, and that the desktop
+#     user's metadata-service block is in place. Only then `verified`.
 #
 # Each first-boot step records its own marker, so a boot that fails part-way
-# is finished by the next one from the first step not yet done. Log:
-# C:\ProgramData\test-rig\setup.log. Nothing secret is ever written to it.
+# is finished by the next one from the first step not yet done. Every download
+# and every installer has a time limit; one that runs over is stopped and
+# logged as "Timed out: ...". Log: C:\ProgramData\test-rig\setup.log. Nothing
+# secret is ever written to it.
 #
 # Written for Windows PowerShell 5.1, which is what EC2Launch runs. The user
 # data (instance.tf) dot-sources this script and exits with its $exitCode.
@@ -34,7 +45,8 @@ $ProgressPreference = 'SilentlyContinue'
 $Region = '${region}'
 $DesktopUser = '${desktop_user}'
 $PasswordParameter = '${password_parameter}'
-$MaxRunMinutes = ${max_run_minutes}
+# Used only if the instance tag max-run-minutes cannot be read.
+$DefaultMaxRunMinutes = 240
 
 # Pinned downloads and their SHA-256. The driver is the one AWS's bucket
 # serves as `latest` for Windows (GRID 20.2, built for Server 2022 and 2025),
@@ -48,9 +60,10 @@ $NodeSha256 = '1C0EFC8449987E7DA5D184786A0A96DA83FFA11D334421201E5C09B93017CB8D'
 $GitUrl = 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/Git-2.55.0.5-64-bit.exe'
 $GitSha256 = 'D065A4E23C3D9A6B5073D609B5BE0830227EC3CA053C083BA385061DDFAF94C6'
 
+$ClosedGroups = @('Remote Desktop', 'Windows Remote Management')
 $Root = Join-Path $env:ProgramData 'test-rig'
 $Downloads = Join-Path $Root 'downloads'
-New-Item -ItemType Directory -Force -Path $Root, $Downloads | Out-Null
+New-Item -ItemType Directory -Force -Path $Root | Out-Null
 Start-Transcript -Path (Join-Path $Root 'setup.log') -Append | Out-Null
 
 # Write-Host, not Write-Output: the transcript records it, and it never leaks
@@ -74,11 +87,43 @@ function Assert-Hash([string]$Path, [string]$Sha256) {
   }
 }
 
+# Runs $Block in a separate process and stops it after $Minutes: a download
+# that stalls becomes a logged failure instead of a set-up that never ends.
+function Invoke-Timed([string]$What, [int]$Minutes, [scriptblock]$Block, [object[]]$Arguments) {
+  $job = Start-Job -ScriptBlock $Block -ArgumentList $Arguments
+  try {
+    if (-not (Wait-Job $job -Timeout ($Minutes * 60))) {
+      Stop-Job $job
+      throw "Timed out: $What did not finish in $Minutes minutes; stopped it"
+    }
+    if ($job.State -ne 'Completed') {
+      throw "$What failed: $($job.ChildJobs[0].JobStateInfo.Reason.Message)"
+    }
+    Receive-Job $job -ErrorAction Stop | Out-Null
+  } finally {
+    Remove-Job $job -Force
+  }
+}
+
+$WebDownload = {
+  param($Url, $Path)
+  $ErrorActionPreference = 'Stop'
+  $ProgressPreference = 'SilentlyContinue'
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing -TimeoutSec 120
+}
+
+$S3Download = {
+  param($Bucket, $Key, $Path)
+  $ErrorActionPreference = 'Stop'
+  Read-S3Object -BucketName $Bucket -Key $Key -File $Path -Region 'us-east-1' | Out-Null
+}
+
 function Get-Verified([string]$Url, [string]$Sha256) {
   $path = Join-Path $Downloads ([IO.Path]::GetFileName($Url))
   if (-not (Test-Path $path) -or (Get-FileHash $path -Algorithm SHA256).Hash -ne $Sha256) {
-    Log "Downloading $Url"
-    Invoke-WebRequest -Uri $Url -OutFile $path -UseBasicParsing
+    Log "Downloading $Url (at most 15 minutes)"
+    Invoke-Timed "the download of $Url" 15 $WebDownload @($Url, $path)
   }
   Assert-Hash $path $Sha256
   return $path
@@ -97,16 +142,23 @@ function Assert-Signer([string]$Path, [string]$Publisher) {
   Log "Signature of $([IO.Path]::GetFileName($Path)): valid, $Publisher"
 }
 
-function Invoke-Installer([string]$File, [string[]]$Arguments, [string]$Name) {
-  Log "Running the $Name installer"
-  $process = Start-Process -FilePath $File -ArgumentList $Arguments -Wait -PassThru
+# Runs an installer and stops it, with everything it started, after $Minutes.
+function Invoke-Installer([string]$File, [string[]]$Arguments, [string]$Name, [int]$Minutes) {
+  Log "Running the $Name installer (at most $Minutes minutes)"
+  $process = Start-Process -FilePath $File -ArgumentList $Arguments -PassThru
+  # Holding the handle keeps ExitCode readable once the process has gone.
+  $null = $process.Handle
+  if (-not $process.WaitForExit($Minutes * 60000)) {
+    & "$env:WINDIR\System32\taskkill.exe" /PID $process.Id /T /F 2>&1 | Out-Null
+    throw "Timed out: the $Name installer did not finish in $Minutes minutes; stopped it"
+  }
   Log "The $Name installer exited with $($process.ExitCode)"
   return $process.ExitCode
 }
 
-function Install-Msi([string]$Path, [string]$Name, [string[]]$Properties = @()) {
+function Install-Msi([string]$Path, [string]$Name, [int]$Minutes, [string[]]$Properties = @()) {
   $msiLog = Join-Path $Root "$Name-msi.log"
-  $code = Invoke-Installer 'msiexec.exe' (@('/i', "`"$Path`"", '/qn', '/norestart', '/l*v', "`"$msiLog`"") + $Properties) $Name
+  $code = Invoke-Installer 'msiexec.exe' (@('/i', "`"$Path`"", '/qn', '/norestart', '/l*v', "`"$msiLog`"") + $Properties) $Name $Minutes
   # 3010: success, restart required. The set-up restarts once at the end.
   if ($code -notin 0, 3010) { throw "$Name installer exited with $code" }
 }
@@ -219,26 +271,102 @@ function Set-DcvParameter([string]$Key, [string]$Name, $Value, [Microsoft.Win32.
   $k.Close()
 }
 
-# A scheduled task, run as the local system account, shuts Windows down
-# max_run_hours from now; with the instance's shutdown behaviour at `stop`, the
-# machine stops. Re-registered at every boot, so the clock starts again with
-# each start. If it cannot be registered, a pending shutdown is the fallback.
+# SYSTEM and Administrators only, with nothing inherited from ProgramData
+# (whose Users may create files): nobody else may plant or swap a download
+# between its hash check and its run as SYSTEM, or forge a marker. Everything
+# already inside is reset to inherit this and handed to Administrators.
+function Protect-Root {
+  $code = Invoke-Native 'icacls.exe' @($Root, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F')
+  if ($code -ne 0) { throw "icacls could not restrict $Root ($code)" }
+  if (Get-ChildItem -Force $Root) {
+    Invoke-Native 'icacls.exe' @("$Root\*", '/reset', '/T', '/C', '/Q') | Out-Null
+    Invoke-Native 'icacls.exe' @("$Root\*", '/setowner', '*S-1-5-32-544', '/T', '/C', '/Q') | Out-Null
+  }
+  $acl = Get-Acl $Root
+  $others = @($acl.Access | ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } |
+    Where-Object { $_ -notin 'S-1-5-18', 'S-1-5-32-544' })
+  if (-not $acl.AreAccessRulesProtected -or $others.Count -gt 0) { throw "$Root is still open to $($others -join ', ')" }
+  New-Item -ItemType Directory -Force -Path $Downloads | Out-Null
+  Log "$Root`: SYSTEM and Administrators only"
+}
+
+# How long after this boot the machine stops: the instance tag max-run-minutes
+# (instance.tf), read from the metadata service, which the local system
+# account may reach. The default if it cannot be read.
+function Get-MaxRunMinutes {
+  for ($i = 1; $i -le 3; $i++) {
+    try {
+      $token = Invoke-RestMethod -Method Put -Uri 'http://169.254.169.254/latest/api/token' -Headers @{ 'X-aws-ec2-metadata-token-ttl-seconds' = '60' } -TimeoutSec 5 -UseBasicParsing
+      $value = Invoke-RestMethod -Uri 'http://169.254.169.254/latest/meta-data/tags/instance/max-run-minutes' -Headers @{ 'X-aws-ec2-metadata-token' = "$token" } -TimeoutSec 5 -UseBasicParsing
+      return (ConvertTo-StopMinutes "$value")
+    } catch {
+      $reason = $_
+      Start-Sleep -Seconds 5
+    }
+  }
+  Log "Stop timer: could not read the max-run-minutes tag ($reason); using $DefaultMaxRunMinutes"
+  return $DefaultMaxRunMinutes
+}
+
+function ConvertTo-StopMinutes([string]$Value) {
+  $minutes = 0
+  if (-not [int]::TryParse($Value.Trim(), [ref]$minutes) -or $minutes -lt 15 -or $minutes -gt 1440) {
+    throw "max-run-minutes is '$Value', not a whole number from 15 to 1440"
+  }
+  return $minutes
+}
+
+# The stop task's two triggers: at every start-up, delayed by $Minutes (so it
+# needs no re-arming and fires even on a boot where this script does not run),
+# and once, $Minutes after this boot (a start-up trigger registered now fires
+# only from the next boot). If this boot is already past its limit, a minute
+# from now.
+function Get-StopPlan([datetime]$BootTime, [int]$Minutes, [datetime]$Now) {
+  $once = $BootTime.AddMinutes($Minutes)
+  if ($once -le $Now) { $once = $Now.AddMinutes(1) }
+  return @{ Delay = [Xml.XmlConvert]::ToString([TimeSpan]::FromMinutes($Minutes)); Once = $once }
+}
+
+# Checked at every boot, before anything else. A task that already has a
+# start-up trigger with this boot's delay existed when this boot started, so
+# that trigger has already fired and its delayed shutdown is pending: it is
+# left alone. Otherwise (the first boot, or a changed tag) the task is
+# registered, with the one-time trigger covering this boot. Run as the local
+# system account, logged on or not. If it cannot be registered, a pending
+# shutdown is the fallback.
 function Set-StopTimer {
-  $at = (Get-Date).AddMinutes($MaxRunMinutes)
+  $minutes = Get-MaxRunMinutes
+  $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+  $plan = Get-StopPlan $boot $minutes (Get-Date)
   try {
+    $existing = Get-ScheduledTask -TaskName 'test-rig-stop' -ErrorAction SilentlyContinue
+    if ($existing -and $existing.State -ne 'Disabled' -and (Get-BootDelays $existing) -contains $plan.Delay) {
+      Log "Stop timer: $minutes minutes after every boot; for this boot at about $($boot.AddMinutes($minutes)), by the start-up trigger"
+      return
+    }
     $action = New-ScheduledTaskAction -Execute "$env:WINDIR\System32\shutdown.exe" -Argument '/s /f /t 0 /d p:0:0 /c "max_run_hours reached"'
-    $trigger = New-ScheduledTaskTrigger -Once -At $at
+    $atStartup = New-ScheduledTaskTrigger -AtStartup
+    $atStartup.Delay = $plan.Delay
+    $once = New-ScheduledTaskTrigger -Once -At $plan.Once
     $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-    Register-ScheduledTask -TaskName 'test-rig-stop' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+    Register-ScheduledTask -TaskName 'test-rig-stop' -Action $action -Trigger @($atStartup, $once) -Principal $principal -Settings $settings -Force | Out-Null
+    $task = Get-ScheduledTask -TaskName 'test-rig-stop'
     $next = (Get-ScheduledTaskInfo -TaskName 'test-rig-stop').NextRunTime
-    if (-not $next) { throw 'the task has no next run time' }
-    Log "Stop timer: Windows shuts down, and the machine stops, at $next"
+    if (@(Get-BootDelays $task) -notcontains $plan.Delay -or -not $next -or $task.State -ne 'Ready') {
+      throw "the task reads back as $($task.State), next run '$next', start-up delays '$(@(Get-BootDelays $task) -join ',')', not $($plan.Delay)"
+    }
+    Log "Stop timer: $minutes minutes after every boot; for this boot at $next"
   } catch {
-    Log "Stop timer: the task failed ($_); a pending shutdown instead"
-    & "$env:WINDIR\System32\shutdown.exe" /s /f /t ($MaxRunMinutes * 60) /d p:0:0 /c 'max_run_hours reached'
+    $seconds = [int][Math]::Max(60, ($plan.Once - (Get-Date)).TotalSeconds)
+    Log "Stop timer: the task failed ($_); a pending shutdown in $seconds s instead"
+    & "$env:WINDIR\System32\shutdown.exe" /s /f /t $seconds /d p:0:0 /c 'max_run_hours reached'
     Log "Stop timer: shutdown.exe exited with $LASTEXITCODE"
   }
+}
+
+function Get-BootDelays($Task) {
+  return @($Task.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskBootTrigger' -and $_.Enabled } | ForEach-Object { $_.Delay })
 }
 
 function Set-DesktopUser {
@@ -285,12 +413,17 @@ function Install-Everything {
   if (-not (Test-Step 'driver')) {
     $exe = Join-Path $Downloads ([IO.Path]::GetFileName($DriverKey))
     if (-not (Test-Path $exe) -or (Get-FileHash $exe -Algorithm SHA256).Hash -ne $DriverSha256) {
-      Log "Downloading s3://ec2-windows-nvidia-drivers/$DriverKey"
-      Read-S3Object -BucketName 'ec2-windows-nvidia-drivers' -Key $DriverKey -File $exe -Region 'us-east-1' | Out-Null
+      Log "Downloading s3://ec2-windows-nvidia-drivers/$DriverKey (at most 30 minutes)"
+      Invoke-Timed 'the NVIDIA driver download' 30 $S3Download @('ec2-windows-nvidia-drivers', $DriverKey, $exe)
     }
     Assert-Hash $exe $DriverSha256
     Assert-Signer $exe 'NVIDIA Corporation'
-    $code = Invoke-Installer $exe @('-s', '-noreboot') 'NVIDIA GRID driver'
+    # NVIDIA's installation guide: -s silent, -n no restart; exit code 0 is
+    # success, 1 is "Success, but reboot required" (the set-up restarts once at
+    # the end anyway), any other value is failure. The licence check on the
+    # boot after set-up is the second line.
+    $code = Invoke-Installer $exe @('-s', '-n', "-log:$Root\nvidia-install", '-loglevel:6') 'NVIDIA GRID driver' 30
+    if ($code -notin 0, 1) { throw "The NVIDIA GRID driver installer failed with exit code $code (0 and 1 are success); its log is in $Root\nvidia-install" }
     if (-not (Find-Smi)) { throw "nvidia-smi is missing after the driver installer exited with $code" }
     Complete-Step 'driver'
   }
@@ -304,7 +437,7 @@ function Install-Everything {
   if (-not (Test-Step 'dcv')) {
     $msi = Get-Verified $DcvUrl $DcvSha256
     Assert-Signer $msi 'Amazon Web Services, Inc.'
-    Install-Msi $msi 'dcv' @("AUTOMATIC_SESSION_OWNER=$DesktopUser", 'DISABLE_FIREWALL=1', 'REMOVE=iddDriver')
+    Install-Msi $msi 'dcv' 20 @("AUTOMATIC_SESSION_OWNER=$DesktopUser", 'DISABLE_FIREWALL=1', 'REMOVE=iddDriver')
     Set-DcvParameter 'connectivity' 'web-listen-endpoints' "['127.0.0.1:8443', '[::1]:8443']" String
     Set-DcvParameter 'connectivity' 'enable-quic-frontend' 0 DWord
     Set-DcvParameter 'security' 'os-auto-lock' 0 DWord
@@ -320,17 +453,18 @@ function Install-Everything {
   $chrome = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
   if (-not (Test-Path $chrome)) {
     $msi = Join-Path $Downloads 'googlechromestandaloneenterprise64.msi'
-    Log 'Downloading Chrome (current stable)'
-    Invoke-WebRequest -Uri 'https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi' -OutFile $msi -UseBasicParsing
+    $url = 'https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi'
+    Log 'Downloading Chrome (current stable, at most 15 minutes)'
+    Invoke-Timed 'the Chrome download' 15 $WebDownload @($url, $msi)
     Assert-Signer $msi 'Google LLC'
-    Install-Msi $msi 'chrome'
+    Install-Msi $msi 'chrome' 15
   }
   Log "Chrome: $((Get-Item $chrome).VersionInfo.ProductVersion)"
 
   # --- Node 22 ------------------------------------------------------------------
   $node = "$env:ProgramFiles\nodejs\node.exe"
   if (-not (Test-Path $node) -or (Get-Item $node).VersionInfo.ProductVersion -ne $NodeVersion) {
-    Install-Msi (Get-Verified "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-x64.msi" $NodeSha256) 'node'
+    Install-Msi (Get-Verified "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-x64.msi" $NodeSha256) 'node' 10
   }
   Log "Node: $((Get-Item $node).VersionInfo.ProductVersion)"
 
@@ -338,7 +472,7 @@ function Install-Everything {
   # Git for Windows installs Git LFS with its default components.
   $git = "$env:ProgramFiles\Git\cmd\git.exe"
   if (-not (Test-Path $git)) {
-    $code = Invoke-Installer (Get-Verified $GitUrl $GitSha256) @('/VERYSILENT', '/NORESTART', '/NOCANCEL', '/SP-', '/SUPPRESSMSGBOXES') 'git'
+    $code = Invoke-Installer (Get-Verified $GitUrl $GitSha256) @('/VERYSILENT', '/NORESTART', '/NOCANCEL', '/SP-', '/SUPPRESSMSGBOXES') 'git' 10
     if ($code -ne 0) { throw "git installer exited with $code" }
   }
   if ((Invoke-Native $git @('lfs', 'install', '--system')) -ne 0) { throw 'git lfs install failed' }
@@ -393,6 +527,28 @@ function Install-Everything {
     Log 'Held still: Chrome updater off, automatic Windows updates off, no sleep, no screen saver, no idle lock'
     Complete-Step 'hold'
   }
+
+  # --- Closed on the host as well --------------------------------------------
+  # Nothing reaches this machine through its security group. So that one
+  # mistake there exposes nothing either: Remote Desktop is off and the host
+  # firewall's Remote Desktop and Windows Remote Management rules are disabled.
+  # DCV (console sessions, its own port on loopback) and Session Manager (the
+  # agent's outbound HTTPS) use neither. And the desktop user's processes, a
+  # browser among them, may not reach the instance metadata service and so
+  # the instance role's credentials; the agents, DCV's licence check and the
+  # driver's run as the local system account and still can.
+  if (-not (Test-Step 'closed')) {
+    Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 1 -Type DWord
+    foreach ($group in $ClosedGroups) {
+      Get-NetFirewallRule -DisplayGroup $group -ErrorAction SilentlyContinue | Disable-NetFirewallRule
+    }
+    $sid = (Get-LocalUser -Name $DesktopUser).SID.Value
+    Get-NetFirewallRule -Name 'test-rig-block-imds' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+    New-NetFirewallRule -Name 'test-rig-block-imds' -DisplayName "Block the instance metadata service for $DesktopUser" -Direction Outbound -Action Block `
+      -Protocol TCP -RemoteAddress 169.254.169.254 -LocalUser "D:(A;;CC;;;$sid)" | Out-Null
+    Log "Closed: Remote Desktop off, firewall groups $($ClosedGroups -join ' and ') disabled, metadata service blocked for $DesktopUser"
+    Complete-Step 'closed'
+  }
 }
 
 # Runs on the boot after set-up: every check here can fail, and a failure is
@@ -434,11 +590,23 @@ function Test-Setup {
   } while ((Get-Date) -lt $deadline)
   if ($desktop.Count -eq 0) { throw "$DesktopUser is not logged on: automatic logon did not take effect" }
   Log "Desktop: $DesktopUser is logged on, in session $($desktop[0].SessionId)"
+
+  if ((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server').fDenyTSConnections -ne 1) { throw 'Remote Desktop is on' }
+  foreach ($group in $ClosedGroups) {
+    $open = @(Get-NetFirewallRule -DisplayGroup $group -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq 'True' })
+    if ($open.Count -gt 0) { throw "Firewall rules still enabled in $($group): $($open.DisplayName -join ', ')" }
+  }
+  $imds = Get-NetFirewallRule -Name 'test-rig-block-imds' -ErrorAction SilentlyContinue
+  if (-not $imds -or $imds.Enabled -ne 'True' -or $imds.Action -ne 'Block') { throw "No enabled rule blocks the metadata service for $DesktopUser" }
+  $listening = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalAddress -in '0.0.0.0', '::' } |
+    ForEach-Object { "$($_.LocalAddress):$($_.LocalPort)" } | Sort-Object -Unique
+  Log "Closed: Remote Desktop off; $($ClosedGroups -join ' and ') rules disabled; metadata blocked for $DesktopUser. Listening on all addresses (the security group admits none): $($listening -join ' ')"
 }
 
 $exitCode = 0
 try {
   Set-StopTimer
+  Protect-Root
   if (-not (Test-Path (Join-Path $Root 'setup-complete'))) {
     Log 'Set-up starting.'
     Install-Everything
