@@ -93,12 +93,11 @@ function expansionTaking(turns: number) {
   });
 }
 
-/** Holds the thread, the way the next renderer's build does during a swap. */
+/** Holds the thread for `ms`, the way the next renderer's build does during a
+ * swap: a wait on a flag nothing will ever set, which blocks without reading
+ * a clock. */
 function block(ms: number): void {
-  const until = performance.now() + ms;
-  let spins = 0;
-  while (performance.now() < until) spins++;
-  if (spins < 0) throw new Error("unreachable");
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 /** Whether the BRDF texture had finished expanding each time `engine.dispose` ran. */
