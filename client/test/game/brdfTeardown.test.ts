@@ -35,6 +35,9 @@ import "../../src/sim/passes/index.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { RGBDTextureTools } from "@babylonjs/core/Misc/rgbdTextureTools.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { Engine } from "@babylonjs/core/Engines/engine.js";
 import { createRenderer } from "../../src/game/renderer.js";
 import type { Level } from "../../src/sim/level.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -186,3 +189,39 @@ describe("a renderer disposed while its scene's BRDF texture is still being expa
     }
   }, timeLimit(10_000));
 });
+
+describe("the BRDF texture on an engine the renderer is given, as the WebGPU engine is", () => {
+  it("waits for the same expansion before it releases the given engine", async () => {
+    let readyAtDispose: boolean[] = [];
+    const seen = await unhandledDuring(async () => {
+      const given = new Engine(nullCanvas(), true, {}, true);
+      const r = createRenderer(nullCanvas(), LEVEL, null, { tier: "medium", engine: given });
+      expect(r.engine).toBe(given);
+      expect(expanding(r.scene.environmentBRDFTexture)).toBe(true);
+      readyAtDispose = watchRelease(r);
+      r.dispose();
+      await new Promise((res) => setTimeout(res, 300));
+    });
+    expect(seen).toEqual([]);
+    expect(EngineStore.Instances.length).toBe(0);
+    expect(readyAtDispose).toEqual([true]);
+  }, timeLimit(60_000));
+
+  it("is expanded on WebGPU by the same path, the shader's language aside (a canary on the installed engine)", () => {
+    const read = (spec: string): string => readFileSync(createRequire(import.meta.url).resolve(spec), "utf8");
+    // Every scene's lookup texture is expanded, whatever the engine…
+    expect(read("@babylonjs/core/Misc/brdfTextureTools.js")).toContain(
+      "        scene.useDelayedTextureLoading = useDelayedTextureLoading;\n        RGBDTextureTools.ExpandRGBDTexture(texture);",
+    );
+    // …and WebGPU differs only in the decode shader it imports: the texture is
+    // marked not ready, then rendered through its scene's post-process manager,
+    // which throws once the scene is disposed, as on WebGL2.
+    const expand = read("@babylonjs/core/Misc/rgbdTextureTools.js");
+    const body = expand.slice(expand.indexOf("const expandRgbdTextureAsync = async () => {"), expand.indexOf("if (expandTexture) {\n            if (isReady) {"));
+    expect(body).toContain("internalTexture.isReady = false;");
+    expect(body).toContain('await import("../ShadersWGSL/rgbdDecode.fragment.js");');
+    expect(body).toContain("texture.getScene().postProcessManager.directRender([rgbdPostProcess], expandedTexture, true);");
+    expect(body.match(/isWebGpu/g)).toEqual(["isWebGpu", "isWebGpu", "isWebGpu"]);
+  });
+});
+

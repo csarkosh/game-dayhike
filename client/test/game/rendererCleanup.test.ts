@@ -63,3 +63,20 @@ describe("a renderer whose build throws part-way", () => {
     }
   });
 });
+
+describe("a renderer on an engine it is given (WebGPU's), whose build throws part-way", () => {
+  it("disposes the given engine too, and takes back the atmosphere's registration", () => {
+    const given = new NullEngine();
+    expect(() => createRenderer(FAKE_CANVAS, LEVEL, null, { tier: "medium", engine: given })).toThrow("no lighting");
+    expect(given.isDisposed).toBe(true);
+    expect(EngineStore.Instances.length).toBe(0);
+    const engine = new NullEngine();
+    try {
+      const material = new PBRMaterial("after", new Scene(engine));
+      expect(material.pluginManager?.getPlugin("Atmosphere") ?? null).toBe(null);
+    } finally {
+      engine.dispose();
+    }
+  });
+});
+
