@@ -164,6 +164,16 @@ export function chooseEngine(input: EngineInput, tiers: readonly QualityTier[] =
   return input.fits ? "webgpu" : "webgl2";
 }
 
+/**
+ * The engine for `input.tier`: WebGL2 (null) at once where the rule says so,
+ * nothing fetched and nothing asked, as for every tier while `WEBGPU_ENABLED`
+ * is false and the address sets no engine; else what `resolve` makes of it
+ * (`resolveWebGpu`), which may still be WebGL2.
+ */
+export function engineForTier<E>(input: EngineInput, resolve: () => Promise<E | null>): Promise<E | null> {
+  return chooseEngine(input) === "webgl2" ? Promise.resolve(null) : resolve();
+}
+
 export type FallbackReason = "init" | "pipeline" | "lost";
 
 /**

@@ -54,6 +54,7 @@ import {
 import {
   adapterFromSignals,
   chooseEngine,
+  engineForTier,
   fallbackHolds,
   parseEngineOverride,
   readFallback,
@@ -575,13 +576,14 @@ function engineInput(tier: QualityTier): EngineInput {
  * WebGL2 then gets another fresh canvas. `current` says whether the page
  * still wants the engine.
  */
-async function engineFor(tier: QualityTier, read: GpuSignals, current: () => boolean): Promise<EngineOnCanvas> {
+function engineFor(tier: QualityTier, read: GpuSignals, current: () => boolean): Promise<EngineOnCanvas> {
   const canvas = document.createElement("canvas");
   const input = engineInput(tier);
   const webgl2 = { engine: null, watchers: null };
-  if (chooseEngine(input) === "webgl2") return { canvas, ...webgl2 };
-  const made = await makeWebGpu(canvas, input, read, current);
-  return made !== null ? { canvas, ...made } : { canvas: document.createElement("canvas"), ...webgl2 };
+  const tried = chooseEngine(input) !== "webgl2";
+  return engineForTier(input, () => makeWebGpu(canvas, input, read, current)).then((made) =>
+    made !== null ? { canvas, ...made } : { canvas: tried ? document.createElement("canvas") : canvas, ...webgl2 },
+  );
 }
 
 /**
@@ -813,7 +815,7 @@ function launch(
   onCanvas: EngineOnCanvas,
   worldToken: string,
   decided: StartupTier,
-  engineForTier: (tier: QualityTier) => Promise<EngineOnCanvas>,
+  engineForGame: (tier: QualityTier) => Promise<EngineOnCanvas>,
   notice?: string,
 ): void {
   const { canvas, engine, watchers } = onCanvas;
@@ -830,7 +832,7 @@ function launch(
       },
       engine: engine ?? undefined,
       watchers: watchers ?? undefined,
-      engineFor: engineForTier,
+      engineFor: engineForGame,
       engineFailed,
       notice,
       tier: decided.tier,
@@ -854,7 +856,7 @@ function launch(
     // A canvas holds one kind of context for life.
     const fresh = document.createElement("canvas");
     canvas.replaceWith(fresh);
-    launch({ canvas: fresh, engine: null, watchers: null }, worldToken, decided, engineForTier, line);
+    launch({ canvas: fresh, engine: null, watchers: null }, worldToken, decided, engineForGame, line);
     return;
   }
   game = handle;
