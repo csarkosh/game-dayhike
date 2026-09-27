@@ -98,4 +98,14 @@ describe("loadUntilAborted", () => {
     expect(disposals).toBe(1);
     expect(seen.length).toBe(0);
   });
+
+  it("leaves a settled load alone when the abort comes after it", async () => {
+    const loads = new AbortController();
+    const c = container();
+    const got = await loadUntilAborted(() => Promise.resolve(c), loads.signal);
+    loads.abort();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(got).toBe(c);
+    expect(c.disposals).toBe(0);
+  });
 });

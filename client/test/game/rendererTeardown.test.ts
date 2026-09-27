@@ -182,6 +182,24 @@ describe("a renderer disposed while its models load", () => {
     expect(meshesAfter).toBe(0);
   }, 120_000);
 
+  it("aborts each of its six loading shells, and every load they had running ends through the abort", async () => {
+    // The forest, the clutter, the cliff modules, the birds, the creature pool
+    // and the character pool each start a load at once and hold it here, the
+    // gate never opening: only an abort can end these loads.
+    loads.reset();
+    const forest = createForest(SEED);
+    const r = createRenderer(nullCanvas(), LEVEL, forest, { tier: "high" });
+    await new Promise((res) => setTimeout(res, 50));
+    r.dispose();
+    await new Promise((res) => setTimeout(res, 0));
+
+    expect(loads.calls.filter((c) => c.unguarded).map((c) => c.url)).toEqual([]);
+    const signals = signalsOf(loads.guarded);
+    expect(signals.length).toBe(6);
+    expect(signals.filter((s) => !s.aborted).length).toBe(0);
+    expect(loads.guarded.filter((g) => g.outcome !== "aborted").length).toBe(0);
+  }, 120_000);
+
   it("still reports a load that fails for any other reason", async () => {
     loads.reset();
     loads.failing = "cliff.wall_a.glb";
