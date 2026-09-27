@@ -14,6 +14,13 @@
  * which the build content-hashes and serves with the game, never from a CDN.
  */
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.js";
+// Side-effect import, load-bearing: the WebGPU engine's own extensions (its
+// dynamic texture, compute shader, multi-render, render target and the rest),
+// which the WebGL2 imports the rest of the game makes never reach. Without
+// them a fingerpost's painted texture throws on WebGPU. All of them at once,
+// so the next one a model needs is not found by a player; here, in the module
+// only the WebGPU path loads, so they cost the WebGL2 bundle nothing.
+import "@babylonjs/core/Engines/WebGPU/Extensions/index.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";

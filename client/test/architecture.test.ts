@@ -108,6 +108,16 @@ describe("layer boundaries", () => {
     expect(bad).toEqual([]);
   });
 
+  it("loads the WebGPU engine's extensions with the engine, and only there", () => {
+    // The dynamic texture the fingerposts paint, the compute and multi-render
+    // paths: the WebGPU engine's own versions, which no WebGL2 import reaches.
+    // In `gpuEngine.ts`, so the dynamic chunk carries them; the static-graph
+    // test above keeps them out of the page's first load.
+    expect(readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8")).toContain(
+      'import "@babylonjs/core/Engines/WebGPU/Extensions/index.js";',
+    );
+  });
+
   it("never turns WebGPU's uniformity analysis off for every shader", () => {
     // The finish pass turns it off for itself (`finishFragmentFor`); replacing
     // the engine's stage-descriptor method would hide every other shader's
