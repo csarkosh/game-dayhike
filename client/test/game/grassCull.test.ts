@@ -252,3 +252,92 @@ describe("the widened frustum against what a moved camera sees", () => {
     expect({ dropped, worst: Number(worst.toFixed(2)) }).toEqual({ dropped: 0, worst: 0 });
   }, 60_000);
 });
+
+/**
+ * The pass against a plain reference of the same predicate: an instance is
+ * kept unless its translation lies more than CULL_RADIUS outside any one of
+ * the five planes, tested plane by plane and read from the matrix itself, and
+ * the kept instances' floats are copied in collected order.
+ */
+function referenceCut(planes: Float32Array, count: number, matrix: Float32Array, vec: Float32Array, one: Float32Array) {
+  const idx: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const x = matrix[i * 16 + 12]!, y = matrix[i * 16 + 13]!, z = matrix[i * 16 + 14]!;
+    let keep = true;
+    for (let p = 0; p < 20; p += 4) {
+      if (planes[p]! * x + planes[p + 1]! * y + planes[p + 2]! * z + planes[p + 3]! < -CULL_RADIUS) {
+        keep = false;
+        break;
+      }
+    }
+    if (keep) idx.push(i);
+  }
+  const m = new Float32Array(idx.length * 16), v = new Float32Array(idx.length * 4), o = new Float32Array(idx.length);
+  idx.forEach((i, k) => {
+    m.set(matrix.subarray(i * 16, i * 16 + 16), k * 16);
+    v.set(vec.subarray(i * 4, i * 4 + 4), k * 4);
+    o[k] = one[i]!;
+  });
+  return { idx, m, v, o };
+}
+
+describe("the pass against a reference", () => {
+  it("keeps the reference's instances, in its order, bit for bit, over the sweep's poses and a rebuild", () => {
+    const CAP = 4096;
+    const matrix = new Float32Array(CAP * 16), origins = new Float32Array(CAP * 3), vec = new Float32Array(CAP * 4), one = new Float32Array(CAP);
+    const dst = new Float32Array(CAP * 16), vecDst = new Float32Array(CAP * 4), oneDst = new Float32Array(CAP);
+    const set = cullSet(CAP, origins, { src: matrix, dst }, [{ src: vec, dst: vecDst }], [{ src: one, dst: oneDst }]);
+    let r = 20260926;
+    const rand = (): number => { r = (Math.imul(r, 1103515245) + 12345) >>> 0; return r / 4294967296; };
+    /** A collected set of `n` instances out to 110 m, every float distinct. */
+    const fill = (n: number): void => {
+      for (let i = 0; i < n; i++) {
+        for (let k = 0; k < 16; k++) matrix[i * 16 + k] = (rand() - 0.5) * 4;
+        const a = rand() * 2 * Math.PI, d = 110 * Math.sqrt(rand());
+        matrix[i * 16 + 12] = origins[i * 3] = d * Math.cos(a);
+        matrix[i * 16 + 13] = origins[i * 3 + 1] = (rand() - 0.5) * 12;
+        matrix[i * 16 + 14] = origins[i * 3 + 2] = d * Math.sin(a);
+        for (let k = 0; k < 4; k++) vec[i * 4 + k] = rand();
+        one[i] = rand();
+      }
+    };
+    const bits = (a: Float32Array, n: number) => new Uint32Array(a.buffer, a.byteOffset, n);
+    let count = 3000;
+    fill(count);
+    const planes = new Float32Array(20);
+    let passes = 0, skipped = 0, rebuilt = false;
+    for (let pi = -8; pi <= 12; pi++) {
+      for (const aspect of [1200 / 2029, 16 / 9]) {
+        for (const yaw of [-2.8, -1.2, 0.3, 1.9]) {
+          // A cut, then small steps from it, then one past the thresholds.
+          for (const [dyaw, dpitch, dx, dz] of [[0, 0, 0, 0], [0.01, 0, 0, 0], [0.03, -0.02, 0.1, 0], [0.2, 0.1, 1.5, -2]] as const) {
+            const pose: CullPose = { x: 2 + dx, y: 1.6, z: -3 + dz, yaw: yaw + dyaw, pitch: pi / 10 + dpitch, fov: 1.4, aspect };
+            cullPlanes(pose, planes);
+            const ref = referenceCut(planes, count, matrix, vec, one);
+            const changed = cullPrefix(planes, count, set);
+            passes++;
+            if (!changed) skipped++;
+            expect(set.kept).toBe(ref.idx.length);
+            expect(Array.from(set.last.subarray(0, set.kept))).toEqual(ref.idx);
+            // Whether cut afresh or left as the last cut, the drawn buffers
+            // hold the reference's floats exactly.
+            expect(Array.from(bits(dst, ref.idx.length * 16))).toEqual(Array.from(bits(ref.m, ref.m.length)));
+            expect(Array.from(bits(vecDst, ref.idx.length * 4))).toEqual(Array.from(bits(ref.v, ref.v.length)));
+            expect(Array.from(bits(oneDst, ref.idx.length))).toEqual(Array.from(bits(ref.o, ref.o.length)));
+          }
+          // Halfway through, a rebuild: new instances, another count, the last cut forgotten.
+          if (!rebuilt && pi === 2) {
+            rebuilt = true;
+            count = 3500;
+            fill(count);
+            cullInvalidate(set);
+          }
+        }
+      }
+    }
+    expect(rebuilt).toBe(true);
+    expect(passes).toBe(672);
+    // Some small steps keep exactly the last cut and are left alone.
+    expect(skipped).toBeGreaterThan(0);
+  }, 60_000);
+});
