@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { timeLimit } from "./test/helpers/timeLimit.js";
 
 export default defineConfig({
   // The web build lives under games.csarko.sh/dayhike; the desktop shell serves
@@ -42,5 +43,21 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
+    // vitest's own defaults (5 s a test, 10 s a hook), scaled like every
+    // explicit limit. Only under vitest, which sets VITEST before it loads this
+    // file: `vite dev` and `vite build` load it too, and must not read or
+    // validate TEST_TIME_SCALE. Under vitest a bad value throws here, before
+    // any test runs.
+    ...(process.env.VITEST ? { testTimeout: timeLimit(5_000), hookTimeout: timeLimit(10_000) } : {}),
+    tags: [
+      {
+        // Tests whose assertion is a bar on elapsed time, set on the
+        // development machine. CI leaves them out
+        // (`--tags-filter='!wall-clock'`); a local `npm test` runs them, and
+        // `npm run test:wall-clock` runs only them, one file at a time.
+        name: "wall-clock",
+        description: "asserts on elapsed time; meaningful only on a quiet machine",
+      },
+    ],
   },
 });

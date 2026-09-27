@@ -10,6 +10,7 @@ import { spawnHollow } from "../../src/sim/hollow.js";
 import { stemNodes } from "../../src/sim/trailRoute.js";
 import { isOnCorridor, roadOffset } from "../../src/sim/containment.js";
 import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
@@ -20,7 +21,7 @@ const seed = seedFromToken("hollow");
  * vitest's 5 s default whenever it shares the machine with the other forest
  * suites.
  */
-const SUITE = { timeout: 120_000 };
+const SUITE = { timeout: timeLimit(120_000) };
 
 /** The chase on the seed `hollow`, with one living player standing at (x, z), looking at the ground. */
 function chase(x: number, z: number) {

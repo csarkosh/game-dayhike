@@ -9,6 +9,7 @@ import { MAX_UNACKED_INPUTS, PLAYER_MAX_HEALTH, TICK_DT } from "../../src/sim/co
 import { Button, Outcome, Phase, type InputCommand } from "../../src/sim/types.js";
 import { encodeEvent, MessageType, PROTOCOL_VERSION } from "../../src/net/protocol.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const level = parseLevel(sandbox01);
 const TICK_MS = TICK_DT * 1000;
@@ -190,7 +191,7 @@ describe("reconciliation", () => {
     const hostPos = h.host.world.state.players.get(h.peerEntityId)!.pos;
     const clientPos = h.client.localPlayer()!.pos;
     expect(distance(hostPos, clientPos)).toBeLessThan(0.05);
-  }, 120_000);
+  }, timeLimit(120_000));
 
   it("ignores a snapshot that arrives out of order", () => {
     const h = harness({ latencyMs: 40, jitterMs: 30, lossRate: 0 }, 606);

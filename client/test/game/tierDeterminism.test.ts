@@ -40,6 +40,7 @@ import type { Level } from "../../src/sim/level.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { createRenderer } from "../../src/game/renderer.js";
 import type { QualityTier } from "../../src/game/quality.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const LEVEL: Level = { id: "tier-determinism", brushes: [], playerSpawns: [], enemySpawns: [] };
 const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
@@ -81,5 +82,5 @@ describe("the tier is drawing only", () => {
       expect(got.passHash).toBe(-311867473);
     }
     expect([drawn.low.blades, drawn.medium.blades, drawn.high.blades]).toEqual([false, true, true]);
-  }, 120_000);
+  }, timeLimit(120_000));
 });

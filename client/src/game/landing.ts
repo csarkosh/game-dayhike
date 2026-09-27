@@ -256,7 +256,7 @@ const STYLE = `
 import type { Platform } from "../net/desktopRelease.js";
 import { creditsEntries, renderCredits } from "./credits.js";
 import { landingPanelFocus, type LandingPanel, type LandingView } from "./landingModel.js";
-import { renderSettings } from "./settings.js";
+import { openerOf, renderSettings, type Opener } from "./settings.js";
 import type { TierChoice } from "./tierChoice.js";
 
 export type { LandingPanel } from "./landingModel.js";
@@ -314,7 +314,7 @@ export function renderLanding(
     onJoin(text: string): void;
     onDownloads(): void;
     onSettings(): void;
-    /** A choice pressed on the Settings panel: kept at once, for the hike Play starts. */
+    /** A choice picked on the Settings panel: kept at once, for the hike Play starts. */
     onChooseTier(choice: TierChoice): void;
     onCredits(): void;
     onBack(): void;
@@ -379,12 +379,21 @@ export function renderLanding(
   });
 
   root.append(home, downloads, settings, credits);
+  // How the Settings button was last pressed, taken once by the panel's
+  // opening: the panel is reached otherwise too (the browser's Forward), and
+  // with no press to go by it opens as for a pointer.
+  let settingsOpener: Opener = "pointer";
+  const takeSettingsOpener = (): Opener => {
+    const how = settingsOpener;
+    settingsOpener = "pointer";
+    return how;
+  };
   const panels: Record<LandingPanel, HTMLElement> = { home, downloads, settings, credits };
   /** Where focus lands inside each panel as it opens. */
   const into: Record<LandingPanel, () => HTMLElement | null> = {
     home: () => null,
     downloads: () => downloads.querySelector<HTMLElement>("a.download") ?? downloadsBack,
-    settings: () => settings.querySelector<HTMLElement>('button.choice[aria-pressed="true"]'),
+    settings: () => settingsUi.entry(takeSettingsOpener()),
     credits: () => credits.querySelector<HTMLElement>("ul.credits"),
   };
   let showing: LandingPanel | null = null;
@@ -468,7 +477,10 @@ export function renderLanding(
     settingsButton.type = "button";
     settingsButton.className = "secondary settings";
     settingsButton.textContent = v.settings.label;
-    settingsButton.addEventListener("click", handlers.onSettings);
+    settingsButton.addEventListener("click", (e) => {
+      settingsOpener = openerOf(e);
+      handlers.onSettings();
+    });
     parts.push(settingsButton);
     const creditsButton = document.createElement("button");
     creditsButton.type = "button";

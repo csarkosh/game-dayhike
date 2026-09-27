@@ -8,6 +8,7 @@ import { featureStageD } from "../../src/sim/features.js";
 import { TRAIL_BED_HALF, TRAIL_SINK, TRAIL_SINK_RAMP, TRAIL_TUNABLES, trailSinkD, trailCorridorD } from "../../src/sim/trail.js";
 import type { EdgeKind } from "../../src/sim/trail.js";
 import { SEEDS } from "./trailGateSeeds.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /**
  * THE BED SCAN — the regression gate on the UNION.
@@ -93,7 +94,7 @@ describe("every trail bed is walkable on the composed field", () => {
     // each at <= 1 m. Same reasoning as
     // clutter.test.ts's own explicit timeout: give the slow scans room instead
     // of letting the machine's load decide whether the gate runs.
-  }, 300000);
+  }, timeLimit(300000));
 
   it("is FLUSH: the bed the player stands on is the ground, to half a metre at p95", () => {
     // |composed − pre-trail-with-domes| along every centreline at <= 1 m. The
@@ -136,7 +137,7 @@ describe("every trail bed is walkable on the composed field", () => {
     const stats = { p50: q(0.5), p95: q(0.95), max: resid[resid.length - 1]! };
     expect(stats.p95, JSON.stringify(stats)).toBeLessThanOrEqual(0.5);
     expect(stats.max, JSON.stringify(stats)).toBeLessThanOrEqual(2);
-  }, 300000);
+  }, timeLimit(300000));
 
   it("fits every world's segments in the paint's buckets", () => {
     let worstBucket = 0, worstCount = 0;
@@ -150,7 +151,7 @@ describe("every trail bed is walkable on the composed field", () => {
     // Measured over the 227-seed sweep: bucketMax 13, worst count 141.
     expect(worstBucket).toBeLessThanOrEqual(TRAIL_PAINT_BUCKET_MAX);
     expect(worstCount).toBeLessThanOrEqual(TRAIL_PAINT_MAX_SEGMENTS);
-  }, 300000);
+  }, timeLimit(300000));
 });
 
 describe("the bench sink", () => {

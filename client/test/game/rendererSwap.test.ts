@@ -63,6 +63,7 @@ import {
   type SwapBindings,
 } from "../../src/game/rendererSwap.js";
 import type { QualityTier } from "../../src/game/quality.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 // ---- the order, with stubs --------------------------------------------------
 
@@ -368,7 +369,7 @@ describe("swapRenderer on NullEngine", () => {
     extras.dispose();
     current.renderer.dispose();
     expect(EngineStore.Instances.length).toBe(0);
-  }, 180_000);
+  }, timeLimit(180_000));
 });
 
 describe("the grass cull after a swap, on NullEngine", () => {
@@ -416,7 +417,7 @@ describe("the grass cull after a swap, on NullEngine", () => {
       swapped.dispose();
     }
     expect(EngineStore.Instances.length).toBe(0);
-  }, 180_000);
+  }, timeLimit(180_000));
 });
 
 describe("a swap that fails at every tier, on NullEngine", () => {
@@ -447,7 +448,7 @@ describe("a swap that fails at every tier, on NullEngine", () => {
     } finally {
       quiet.mockRestore();
     }
-  }, 120_000);
+  }, timeLimit(120_000));
 });
 
 describe("whenSceneReady", () => {

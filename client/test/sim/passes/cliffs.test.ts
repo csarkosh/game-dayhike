@@ -18,6 +18,7 @@ import {
   CLIFF_SOLID_REACH, cliffBoxesInRect, cliffBuryFace, cliffCellBoxes, cliffModuleBoxes, clearCliffCellBoxCache,
 } from "../../../src/sim/passes/cliffs.js";
 import { drawnShell, seat } from "../helpers/cliffSolid.js";
+import { timeLimit } from "../../helpers/timeLimit.js";
 
 /** The atmo scarp the gates are shot at, and the chunk holding it. */
 const ATMO = 627994160;
@@ -210,7 +211,7 @@ describe("the colliders", () => {
     expect(capped).toBe(0);
     expect(exposed).toBe(0);
     expect(faceReads).toBe(21975);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("lays a wall straddling a chunk border into both chunks, each its own clipped share", () => {
     const m = cliffCellRuns(ATMO, STRADDLE.ci, STRADDLE.cj)[STRADDLE.k]!;
@@ -239,7 +240,7 @@ describe("the colliders", () => {
       }
       expect(Math.abs(sum - area(b))).toBeLessThan(1e-9);
     }
-  }, 60_000);
+  }, timeLimit(60_000));
 
   it("finds the same boxes for a module from whichever chunk finds it, and builds a chunk the same way twice", () => {
     const m = cliffCellRuns(ATMO, STRADDLE.ci, STRADDLE.cj)[STRADDLE.k]!;
@@ -260,7 +261,7 @@ describe("the colliders", () => {
     const second = grid.chunkAt(SCARP_CHUNK.cx, SCARP_CHUNK.cz).props
       .filter((p) => p.material === CLIFF_MATERIAL).map((p) => p.box);
     expect(second).toEqual(first);
-  }, 60_000);
+  }, timeLimit(60_000));
 });
 
 describe("the remembered runs", () => {
@@ -281,7 +282,7 @@ describe("the remembered runs", () => {
     const cached = cliffBoxesInRect(ATMO, minX, minZ, minX + CHUNK_SIZE, minZ + CHUNK_SIZE);
     expect(cached).toEqual(fresh);
     expect(cold.length).toBe(65);
-  }, 60_000);
+  }, timeLimit(60_000));
 });
 
 describe("a wall stops a hiker", () => {
@@ -352,7 +353,7 @@ describe("a hiker behind a wall", () => {
       results.push(top ? "top" : "slid");
     }
     expect(results).toEqual(["top", "top", "top", "top", "top", "top", "top"]);
-  }, 300_000);
+  }, timeLimit(300_000));
 
   it("slides onto a top or away, never into a trap: the gate's slide census at the scarp", () => {
     // The census the trap was found in: every box piece of every module
@@ -399,7 +400,7 @@ describe("a hiker behind a wall", () => {
       if (best < 1) trapped++;
     }
     expect({ starts, top, still, sliding, trapped }).toEqual({ starts: 119, top: 115, still: 4, sliding: 0, trapped: 0 });
-  }, 300_000);
+  }, timeLimit(300_000));
 });
 
 describe("a hiker along a wall's top", () => {
@@ -467,7 +468,7 @@ describe("a hiker along a wall's top", () => {
     const span = Math.max(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!);
     expect(span).toBeLessThan(0.1);
     expect(along).toBeCloseTo(13.018, 2);
-  }, 60_000);
+  }, timeLimit(60_000));
 });
 
 describe("what the colliders claim", () => {
@@ -513,7 +514,7 @@ describe("what the colliders claim", () => {
       }
     }
     expect({ modules, walkable, standing, modulesStanding }).toEqual({ modules: 84, walkable: 305, standing: 40, modulesStanding: 9 });
-  }, 300_000);
+  }, timeLimit(300_000));
 });
 
 describe("what the colliders cost", () => {
@@ -538,5 +539,5 @@ describe("what the colliders cost", () => {
       worst.push([most, at]);
     }
     expect(worst).toEqual([[88, "-10,-27"], [36, "-6,-21"], [68, "39,-40"]]);
-  }, 300_000);
+  }, timeLimit(300_000));
 });

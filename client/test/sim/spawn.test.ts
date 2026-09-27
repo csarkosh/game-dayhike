@@ -13,6 +13,7 @@ import { depenetrate } from "../../src/sim/collision.js";
 import { ENEMY_MIN_SPAWN_DISTANCE, PLAYER_HALF } from "../../src/sim/constants.js";
 import type { BoxProvider } from "../../src/sim/boxSource.js";
 import type { Vec3 } from "../../src/sim/types.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 0x5a4a7;
 
@@ -152,7 +153,7 @@ describe("spiralSpawn", () => {
       const p = spiralSpawn(grid, seed, PLAYER_HALF);
       expect(needsNoDepenetration(p, grid)).toBe(true);
     }
-  }, 30000);
+  }, timeLimit(30000));
 
   it("is identical for identical seeds, so every peer agrees without a message", () => {
     const a = spiralSpawn(createChunkGrid(SEED), SEED, PLAYER_HALF);
