@@ -21,13 +21,20 @@ variable "server_type" {
 }
 
 variable "server_count" {
-  description = "How many Macs to rent for the day, to measure in parallel. Named test-rig-01, test-rig-02, ..."
+  description = <<-EOT
+    How many Macs to rent for the day, to measure in parallel. Named
+    test-rig-01, test-rig-02, ... Scaleway allows 2 M4-S per zone to a
+    verified organization; more needs a quota increase from Scaleway support
+    first, then this limit raised to match.
+  EOT
   type        = number
   default     = 1
 
   validation {
-    condition     = var.server_count >= 0 && var.server_count <= 5
-    error_message = "Between 0 and 5 Macs: each costs a full day once created."
+    # A count over the quota would bill the Macs Scaleway accepts and then
+    # fail on the next one.
+    condition     = var.server_count >= 0 && var.server_count <= 2
+    error_message = "At most 2 Macs: Scaleway's M4-S quota is 2 per zone. Ask Scaleway support to raise it (console, Support, new ticket), then raise this limit."
   }
 }
 
@@ -55,7 +62,8 @@ variable "auto_delete_after_24h" {
   description = <<-EOT
     Ask Scaleway to delete each Mac by itself at its earliest deletion time,
     24 hours after creation. On by default so that a forgotten Mac costs one
-    day, not a month.
+    day (EUR 5.28), not a month (about EUR 160). Turning it off cannot
+    unschedule a deletion already requested.
   EOT
   type        = bool
   default     = true

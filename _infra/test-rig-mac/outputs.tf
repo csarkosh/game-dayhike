@@ -12,6 +12,11 @@ output "macs" {
   ]
 }
 
+output "server_ids" {
+  description = "Each Mac's zoned id, for scaleway-macs.sh list to set against the API's own listing."
+  value       = [for s in scaleway_apple_silicon_server.mac : s.id]
+}
+
 output "passwords" {
   description = <<-EOT
     Each Mac's admin password, in the order of `macs`. setup.sh needs it for
@@ -33,6 +38,8 @@ locals {
     "M4-S"  = 0.22
     "M4-SP" = 0.24
     "M4-M"  = 0.29
+    # In the catalogue (M4 Pro - L, fr-par-1 and fr-par-3), though the API's
+    # server-type listing does not offer it to this account today.
     "M4-L"  = 0.44
     "M4-XL" = 0.49
   }
@@ -48,5 +55,7 @@ output "day_cost" {
     ${var.server_count} Mac(s) x 24 h x EUR ${local.hourly} = EUR ${format("%.2f", var.server_count * 24 * local.hourly)} for the day.
     Only deletion stops the bill: `terraform destroy` after earliest_delete,
     or Scaleway's own deletion at that time when auto_delete_after_24h is on.
+    A Mac left undeleted bills about EUR ${format("%.0f", 730 * local.hourly)} a month; check with
+    `./scaleway-macs.sh list` at the end of every day.
   EOT
 }
