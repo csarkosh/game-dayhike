@@ -28,20 +28,32 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
  * real loader then meets a disposed scene and rejects exactly as it does in the
  * browser ("Scene has been disposed"). `failing` makes one URL fail at once,
  * for a reason that has nothing to do with the scene.
+ *
+ * `guarded` records every load a shell hands to `loadUntilAborted`: the signal
+ * it was given and how the load it returned settled. A call to the loader that
+ * did not come through it is marked `unguarded`. `mistThrows` makes the mist
+ * shell's constructor throw, part-way through a build, after every shell that
+ * loads models except the character pool already exists.
  */
 const loads = vi.hoisted(() => {
   const state = {
-    calls: [] as { url: string; afterDispose: boolean }[],
+    calls: [] as { url: string; afterDispose: boolean; unguarded: boolean }[],
+    guarded: [] as { signal: AbortSignal; outcome: "pending" | "resolved" | "aborted" | "failed" }[],
+    inGuard: 0,
     pending: 0,
     disposed: false,
     failing: null as string | null,
+    mistThrows: false,
     open: (): void => undefined,
     opened: Promise.resolve(),
     reset(): void {
       state.calls.length = 0;
+      state.guarded.length = 0;
+      state.inGuard = 0;
       state.pending = 0;
       state.disposed = false;
       state.failing = null;
+      state.mistThrows = false;
       state.opened = new Promise<void>((resolve) => {
         state.open = resolve;
       });
@@ -55,7 +67,7 @@ vi.mock("@babylonjs/core/Loading/sceneLoader.js", async (importOriginal) => {
     ...actual,
     loadAssetContainerAsync: async (url: unknown, scene: import("@babylonjs/core/scene.js").Scene) => {
       const name = String(url).split("/").pop()!.split("?")[0]!;
-      loads.calls.push({ url: name, afterDispose: loads.disposed });
+      loads.calls.push({ url: name, afterDispose: loads.disposed, unguarded: loads.inGuard === 0 });
       if (name === loads.failing) throw new Error("HTTP 404");
       loads.pending++;
       try {
@@ -68,8 +80,44 @@ vi.mock("@babylonjs/core/Loading/sceneLoader.js", async (importOriginal) => {
     },
   };
 });
+vi.mock("../../src/game/modelLoad.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/game/modelLoad.js")>();
+  return {
+    ...actual,
+    loadUntilAborted: (start: () => Promise<import("@babylonjs/core/assetContainer.js").AssetContainer>, signal: AbortSignal) => {
+      const record = { signal, outcome: "pending" as "pending" | "resolved" | "aborted" | "failed" };
+      loads.guarded.push(record);
+      // `start` is called synchronously inside, and calls the loader
+      // synchronously, which is how a loader call is known to be guarded.
+      const load = actual.loadUntilAborted(() => {
+        loads.inGuard++;
+        try {
+          return start();
+        } finally {
+          loads.inGuard--;
+        }
+      }, signal);
+      load.then(
+        () => { record.outcome = "resolved"; },
+        (error: unknown) => { record.outcome = error === signal.reason ? "aborted" : "failed"; },
+      );
+      return load;
+    },
+  };
+});
+vi.mock("../../src/game/mistMeshes.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/game/mistMeshes.js")>();
+  return {
+    ...actual,
+    createMistMeshes: (...args: Parameters<typeof actual.createMistMeshes>) => {
+      if (loads.mistThrows) throw new Error("no mist");
+      return actual.createMistMeshes(...args);
+    },
+  };
+});
 
 import "../../src/sim/passes/index.js";
+import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createRenderer } from "../../src/game/renderer.js";
 import type { Level } from "../../src/sim/level.js";
@@ -109,6 +157,11 @@ async function heard(run: () => Promise<void>): Promise<{ errors: string[]; unha
   return { errors, unhandled };
 }
 
+/** The distinct signals the guarded loads were handed, in first-use order. */
+function signalsOf(guarded: typeof loads.guarded): AbortSignal[] {
+  return [...new Set(guarded.map((g) => g.signal))];
+}
+
 describe("a renderer disposed while its models load", () => {
   it("ends every load quietly, starts none afterwards and adopts nothing", async () => {
     loads.reset();
@@ -141,5 +194,28 @@ describe("a renderer disposed while its models load", () => {
     });
     expect(errors).toEqual(["cliff modules: keeping whatever loaded — Error: HTTP 404"]);
     expect(unhandled.length).toBe(0);
+  }, 120_000);
+});
+
+describe("a renderer whose build throws after its loading shells exist", () => {
+  it("ends their loads, starts none afterwards and logs nothing, the build's own throw aside", async () => {
+    loads.reset();
+    loads.mistThrows = true;
+    const forest = createForest(SEED);
+    const { errors, unhandled } = await heard(async () => {
+      expect(() => createRenderer(nullCanvas(), LEVEL, forest, { tier: "high" })).toThrow("no mist");
+      loads.disposed = true;
+      loads.open();
+      await settled();
+    });
+    expect(EngineStore.Instances.length).toBe(0);
+    expect(errors).toEqual([]);
+    expect(unhandled.length).toBe(0);
+    expect(loads.calls.filter((c) => c.afterDispose).map((c) => c.url)).toEqual([]);
+    // The forest, the clutter, the cliff modules, the birds and the creature
+    // pool existed when the mist threw; the character pool comes later.
+    const signals = signalsOf(loads.guarded);
+    expect(signals.length).toBe(5);
+    expect(signals.filter((s) => !s.aborted).length).toBe(0);
   }, 120_000);
 });
