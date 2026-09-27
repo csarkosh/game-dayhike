@@ -110,23 +110,58 @@ draft, with two claims corrected (the hash is public API, not read elsewhere;
 the grouping mismatch goes either way; the workaround as the accessor built),
 and nothing is filed.
 
-**Task 4, as built.** §9 as written: `defaultBakeImpostor` has no deadline and
-ends ready, failed (a bake clone's effect reports a compilation error: one
-`console.error` naming the model, then null) or aborted (the forest's
-`AbortSignal`, fired first thing in `dispose`: the target disposed, null, and
-nothing logged); still waiting at `IMPOSTOR_BAKE_WARN_MS` (30 s) it logs once
-and waits on. The options `{ signal, warnMs }` replace the third parameter,
-`timeoutMs`. `adoptBake` logs a null that is not an abort, naming the
-billboard. The compilation error is read from each bake clone's draw wrapper
-for the bake's own render pass, without creating one (`SubMesh._getDrawWrapper`,
-an internal member, pinned by a canary with `Effect.getCompilationError`), so a
-poll changes nothing and a fast bake on either engine renders exactly as
-before. One addition: `ForestMeshes.impostorBakes()` records each billboard's
-bake, still baking, ready or failed, with the milliseconds it took to settle,
-so a far forest missing from view can be traced to its billboard, and Task 4's
-gate can read when each landed. What only a browser can show: how long the real
+**Task 4, as built.** §9, with four departures. `defaultBakeImpostor` takes
+the options `{ signal, warnMs, failMs }` in place of `timeoutMs`, and on each
+16 ms poll asks, in order: aborted (the forest's `AbortSignal`, fired first
+thing in `dispose`: the target disposed, null, nothing logged); ready (it
+renders once, as before, so a fast bake on either engine renders exactly as
+it did; an effect that is ready bakes even with an error left on it from a
+recompile that failed after an earlier one drew); failed (a bake clone's effect
+reports a compilation error **and** has no fallback left, `allFallbacksProcessed()`:
+PBR retries a failed compile with fewer defines on the same effect, the error
+still set until a retry lands, so an error alone is not final; one
+`console.error` naming the model, then null); or given up. The departures:
+- **A bound after all.** At `IMPOSTOR_BAKE_FAIL_MS` (120 s, about four times
+  the slowest cold WebGPU bake seen) a bake still waiting stops, logs one
+  `console.error` and resolves null, recorded `failed`: a failure nothing
+  reported must not poll for the life of the page.
+- **The 30 s line is a warning** (`console.warn`), not an error: a routine
+  cold WebGPU bake can cross 30 s and land, and must not trip §13.5's
+  zero-error bar.
+- **Translation failures reach the bake** through Task 1's
+  `catchTranslationFailures` (below), which records them on the effect.
+- **The records are the renderer's to give**: `ForestMeshes.impostorBakes()`
+  (each billboard baking, ready or failed, with the milliseconds it took) is
+  handed out by `Renderer.impostorBakes()`, so Task 4's gate reads when each
+  landed without a hook of its own.
+
+`adoptBake` logs a null that is not an abort, naming the billboard. The
+compilation error is read from each clone's draw wrapper for the bake's own
+render pass without creating one (`SubMesh._getDrawWrapper`, internal),
+pinned by a canary with `Effect.getCompilationError` and
+`Effect.allFallbacksProcessed`. What only a browser can show: how long the real
 compiles take on each engine, whether the 30 s warning fires on a cold WebGPU
 start, and the billboards' pixels; Task 4's gate records those.
+
+**Task 1, as built, the translation-failure path** (found with Task 4).
+Babylon 9.18's WebGPU engine translates GLSL inside an async
+`_preparePipelineContextAsync` whose promise its caller neither awaits nor
+catches, so a shader glslang refuses left its effect not-ready for good, with
+no compilation error, no fallback tried and nothing on
+`onEffectErrorObservable`: §5.5's "a shader fails to translate… detected by
+`engine.onEffectErrorObservable`" could not fire. `createWebGpuEngine` now
+installs `catchTranslationFailures` on the engine instance: it catches that
+rejection and hands it to the effect it belongs to (found among the engine's
+compiled effects by its pipeline context) through the effect's own
+`_processCompilationErrors`, so the error is recorded, the next fallback
+tried, and `onEffectErrorObservable` told once none is left, as on WebGL2. The
+watcher therefore reports it as a pipeline failure (the ruling of §5.5
+applies: WebGL2 now, and remembered, through the reload until the live swap
+lands), and the bake as its failed ending. A failure that belongs to no
+compiled effect is logged ("WebGPU shader translation failed"), which the
+watcher also reads. A wrapper, not a page-wide `unhandledrejection` listener,
+because only the wrapper knows which effect failed; canaries pin the unawaited
+call, the async method, the effect registry and `_processCompilationErrors`.
 
 The spike ran the game on Babylon's `WebGPUEngine` with every existing material
 and plugin, to measure a compute cull of the blade field, and found the engine

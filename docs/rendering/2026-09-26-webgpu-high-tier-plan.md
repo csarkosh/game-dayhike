@@ -593,7 +593,7 @@ Then the test, in `engineChoice.test.ts`: `WEBGPU_REQUIRED_LIMITS` toEqual the m
 
 - [ ] **Step 8: Gate: the sweep**
 
-A measurement patch, never committed, run once the scene settles on `?engine=webgpu&tier=high`, and all of it again on `?engine=webgpu&tier=medium`: every mesh with a material is compiled for the main pass with `material.forceCompilationAsync(mesh)`; the lamp is switched on and the compile repeated; `weather rain` and again; `weather eerie`, `time 21` and again. At every pose of design §7.1, the spawn view and the trailhead with the rangers in view. **Bar, on each tier:** zero `engine.onEffectErrorObservable` notifications, zero `WebGPU uncaptured error` entries, zero console errors; every translated shader that needed the finish pass's treatment named, with its reason and tier. On WebGL2 at the same poses and tiers: zero errors, as before.
+A measurement patch, never committed, run once the scene settles on `?engine=webgpu&tier=high`, and all of it again on `?engine=webgpu&tier=medium`: every mesh with a material is compiled for the main pass with `material.forceCompilationAsync(mesh)`; the lamp is switched on and the compile repeated; `weather rain` and again; `weather eerie`, `time 21` and again. At every pose of design §7.1, the spawn view and the trailhead with the rangers in view. **Bar, on each tier:** zero `engine.onEffectErrorObservable` notifications, zero `WebGPU uncaptured error` and zero `WebGPU shader translation failed` entries, zero effects left with a compilation error once every fallback is tried (`getCompilationError()` with `allFallbacksProcessed()`), and zero unhandled promise rejections (a translation failure that escapes `catchTranslationFailures` shows as one), zero console errors; every translated shader that needed the finish pass's treatment named, with its reason and tier. On WebGL2 at the same poses and tiers: zero errors, as before.
 
 Append `## 3. The six changes` to the note: each change, its commit, its test; the sweep's list; the measured limits. Commit the note alone.
 
@@ -748,7 +748,7 @@ The existing call that passes `5000` as the third argument (`forestMeshes.test.t
 
 - [ ] **Step 6: Gate**
 
-On both engines, cold (a fresh browser profile), at the canopy pose and at cliff face-80m: all five billboards land (their buckets enabled; the far forest visible past `NEAR_RADIUS`), with the time each landed. Zero console errors on WebGL2; on WebGPU the 30 s warning, if it fires, is recorded with the model it names. Append `## 5. The impostor bake`; commit the note alone.
+On both engines, cold (a fresh browser profile), at the canopy pose and at cliff face-80m: all five billboards land (their buckets enabled; the far forest visible past `NEAR_RADIUS`), with the time each landed, read from `renderer.impostorBakes()`. Zero console errors on WebGL2; on WebGPU the 30 s warning, if it fires, is recorded with the model it names. Append `## 5. The impostor bake`; commit the note alone.
 
 ---
 
