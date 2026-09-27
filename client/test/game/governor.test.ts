@@ -129,8 +129,15 @@ describe("governorDecision", () => {
 
 describe("acting on a drop", () => {
   /** Fakes for the page, and what the governor did with them, in order. */
-  function page(cadence: number | null, reached: QualityTier | "throws" = "low", alive = true) {
+  function page(
+    cadence: number | null,
+    reached: QualityTier | "throws" = "low",
+    alive = true,
+    also: { throwsAt?: "time" | "record"; endsMidSwitch?: boolean } = {},
+  ) {
     const did: string[] = [];
+    let onEnd: (() => void) | null = null;
+    let ended = false;
     const deps: DropDeps = {
       cover: () => {
         did.push("cover");
@@ -142,17 +149,32 @@ describe("acting on a drop", () => {
       },
       idleCadence: async () => {
         did.push("time");
+        if (also.throwsAt === "time") throw new Error("no timer");
         return cadence;
       },
-      record: (running) => did.push(`record ${running}`),
+      record: (running) => {
+        did.push(`record ${running}`);
+        if (also.throwsAt === "record") throw new Error("no storage");
+      },
       switchTo: async (next) => {
         did.push(`switch ${next}`);
+        if (also.endsMidSwitch) {
+          ended = true;
+          onEnd?.();
+        }
         if (reached === "throws") throw new Error("no tier built");
+        did.push("switched");
         return reached;
       },
       flash: (line, ms) => did.push(`flash ${line} ${ms}`),
       log: (line) => did.push(`log ${line}`),
-      alive: () => alive,
+      alive: () => alive && !ended,
+      whenEnded: (fn) => {
+        onEnd = fn;
+        return () => {
+          onEnd = null;
+        };
+      },
     };
     return { deps, did };
   }
@@ -188,7 +210,7 @@ describe("acting on a drop", () => {
       "cover", "stop", "time",
       "record medium",
       "log quality governor: medium → low, 30 s of play under 48 fps",
-      "switch low", "lift",
+      "switch low", "switched", "lift",
       "flash Graphics lowered to Low to keep the game smooth. 6000",
     ]);
   });
@@ -201,10 +223,36 @@ describe("acting on a drop", () => {
   it("shows no line when the switch fell back or ended the hike", async () => {
     const fellBack = page(16.7, "medium");
     expect(await actOnDrop("medium", "low", fellBack.deps)).toBe("fell-back");
-    expect(fellBack.did.slice(-2)).toEqual(["switch low", "lift"]);
+    expect(fellBack.did.slice(-3)).toEqual(["switch low", "switched", "lift"]);
     const failed = page(16.7, "throws");
     expect(await actOnDrop("medium", "low", failed.deps)).toBe("failed");
     expect(failed.did.slice(-2)).toEqual(["switch low", "lift"]);
+  });
+
+  it("runs the loop again when anything before the switch throws, and lifts the cover", async () => {
+    const timer = page(16.7, "low", true, { throwsAt: "time" });
+    await expect(actOnDrop("medium", "low", timer.deps)).rejects.toThrow("no timer");
+    expect(timer.did).toEqual(["cover", "stop", "time", "resume", "lift"]);
+    const storage = page(16.7, "low", true, { throwsAt: "record" });
+    await expect(actOnDrop("medium", "low", storage.deps)).rejects.toThrow("no storage");
+    expect(storage.did).toEqual(["cover", "stop", "time", "record medium", "resume", "lift"]);
+  });
+
+  it("leaves the loop to the switch once the switch has run, even one that failed", async () => {
+    const failed = page(16.7, "throws");
+    expect(await actOnDrop("medium", "low", failed.deps)).toBe("failed");
+    expect(failed.did).not.toContain("resume");
+  });
+
+  it("lifts the cover the moment the session ends mid-switch, once, and shows no line", async () => {
+    const { deps, did } = page(16.7, "low", true, { endsMidSwitch: true });
+    expect(await actOnDrop("medium", "low", deps)).toBe("lowered");
+    expect(did).toEqual([
+      "cover", "stop", "time",
+      "record medium",
+      "log quality governor: medium → low, 30 s of play under 48 fps",
+      "switch low", "lift", "switched",
+    ]);
   });
 
   it("writes and switches nothing once the game has gone, or its session ended, while it timed", async () => {

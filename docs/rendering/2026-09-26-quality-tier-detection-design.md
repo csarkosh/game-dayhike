@@ -849,7 +849,15 @@ low only (`governorDecision`), `actOnDrop` runs under the probe's opaque
 "Setting up graphics…" screen with the controls held, so neither what follows
 nor the scene coming back is seen mid-play. The screen is raised over the play
 HUD (`OVER_PLAY_Z`, 21: above the interact prompt, the touch layer and the
-roster):
+roster, and so above the pause menu). While it is up (`createPlayGate`), the
+pointer's lock changes nothing: Escape shows no menu that would be unseen yet
+reachable by keyboard, re-locking hands no controls back, and the command bar
+stays shut. When it lifts, the gate reconciles once with the lock as it is: a
+freed pointer shows the menu on Resume, a locked one plays on, and after the
+match's end the controls stay held. It lifts the moment the session or the
+match ends, so the ending is never hidden; a switch under it finishes, or is
+abandoned, as it would. If anything before the switch throws, the loop runs
+again; a switch that ran owns the loop.
 
 1. **The page's own frame rate first.** The render loop stops and the page's
    idle frames are timed as the probe times them (§7.4, `timeIdleCadence`: 30

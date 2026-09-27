@@ -8,7 +8,7 @@ import { createHud } from "./game/hud.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
 import { navigateToLanding } from "./game/router.js";
 import { createCommandBar } from "./game/commandBar.js";
-import { createPauseMenu } from "./game/pauseMenu.js";
+import { createPauseMenu, createPlayGate } from "./game/pauseMenu.js";
 import {
   findCommand,
   parseCommandLine,
@@ -231,6 +231,8 @@ function buildGame(
   let switching = false;
   /** The governor is acting: timing the page's idle frames, then its switch. */
   let lowering = false;
+  /** What the governor's cover does when the session ends: it lifts. */
+  let onSessionOver: (() => void) | null = null;
   /** A shader compiled since the last frame: that frame is a known hitch. */
   let compiledSinceFrame = false;
   let unwatchCompiles: (() => void) | null = null;
@@ -728,6 +730,7 @@ function buildGame(
     endPanel.show(endPanelModel(players));
     if (landingTimer !== null) clearTimeout(landingTimer);
     landingTimer = setTimeout(navigateToLanding, END_LANDING_MS);
+    sessionOver();
   }
 
   /** Advances and paints the touch layer. Both loops, after `renderer.sync`. */
@@ -775,10 +778,22 @@ function buildGame(
     renderer.setFreecam(lastFreecamView);
   }
 
+  // The pause menu and the controls as the pointer's lock comes and goes,
+  // held while the governor's cover is up (`createPlayGate`).
+  const gate = createPlayGate({
+    engaged: () => input.engaged,
+    barOpen: () => bar.isOpen,
+    ended: () => ended,
+    showMenu: () => menu.show(),
+    hideMenu: () => menu.hide(),
+    setSuppressed: (on) => input.setSuppressed(on),
+    paused: (on) => options.onPauseChange(on),
+  });
   const bar = createCommandBar(container, {
     // Not while a new tier is being applied: opening the bar hides the pause
-    // menu, and with it the ground over the rebuild.
-    canOpen: () => !menu.applying,
+    // menu, and with it the ground over the rebuild; nor under the governor's
+    // cover, where closing it would hand the controls back unseen.
+    canOpen: () => !menu.applying && !gate.covered,
     onOpenChange: (open) => {
       // The bar outranks the pause menu: `/` over the menu switches to typing.
       if (open) menu.hide();
@@ -884,15 +899,7 @@ function buildGame(
     // Look is dropped while paused, but a flick still coasting would pick back up
     // on a quick resume.
     if (!engaged) touchModel.stopCoast();
-    if (engaged) {
-      menu.hide();
-      input.setSuppressed(bar.isOpen);
-      options.onPauseChange(false);
-    } else if (!bar.isOpen) {
-      menu.show();
-      input.setSuppressed(true);
-      options.onPauseChange(true);
-    }
+    gate.engagedChanged(engaged);
   });
 
   // Restoring from the URL on load, not a live edit: every view command
@@ -969,14 +976,22 @@ function buildGame(
     // A disposed game has no HUD to write to and no business steering the
     // page: whoever disposed it decided where the player goes next.
     if (disposed) return;
-    // The ending's last seconds are not play: nothing more for the governor.
-    governor.stop();
     hud.setStatus(message);
     // One timer, not one per call: two ends in the same session (a session-end
     // event and a lost transport, say) would otherwise push two history
     // entries. The later message wins, as the more recent explanation.
     if (landingTimer !== null) clearTimeout(landingTimer);
     landingTimer = setTimeout(navigateToLanding, 2000);
+    sessionOver();
+  }
+
+  /** The session has ended, or the match has: its last seconds are not play,
+   * so nothing more for the governor, and a governor's cover lifts at once so
+   * the ending is seen; a switch under it finishes, or is abandoned, as it
+   * would. */
+  function sessionOver(): void {
+    governor.stop();
+    onSessionOver?.();
   }
 
   /**
@@ -1368,10 +1383,13 @@ function buildGame(
   /**
    * The governor's drop, on Auto only and above low only, under the probe's
    * opaque screen with the controls held, so neither the rebuild nor the
-   * scene coming back is seen mid-play (`actOnDrop`). The loop stops while the
-   * page's idle frames are timed; a page drawing below 60 Hz by itself is
-   * left as it is. Otherwise the drop is remembered for the next hike and
-   * applied now through the live switch, once, with a line saying so.
+   * scene coming back is seen mid-play (`actOnDrop`). While it is up, the
+   * pointer's lock neither shows the pause menu nor hands the controls back,
+   * and the bar stays shut (`gate`); it lifts at once if the session ends.
+   * The loop stops while the page's idle frames are timed; a page drawing
+   * below 60 Hz by itself is left as it is. Otherwise the drop is remembered
+   * for the next hike and applied now through the live switch, once, with a
+   * line saying so.
    */
   async function lowerTier(): Promise<void> {
     const decision = governorDecision(governor.verdict, tier, tierSource);
@@ -1381,10 +1399,10 @@ function buildGame(
       await actOnDrop(tier, decision.next, {
         cover: () => {
           const screen = showProbeScreen(container, OVER_PLAY_Z);
-          input.setSuppressed(true);
+          const release = gate.cover();
           return () => {
             screen.dispose();
-            if (!disposed) input.setSuppressed(bar.isOpen || menu.isOpen);
+            if (!disposed) release();
           };
         },
         stopLoop: () => {
@@ -1401,7 +1419,15 @@ function buildGame(
         flash: (line, ms) => hud.flash(line, ms),
         log: (line) => console.info(line),
         alive: () => !disposed && !broken && landingTimer === null,
+        whenEnded: (fn) => {
+          onSessionOver = fn;
+          return () => {
+            if (onSessionOver === fn) onSessionOver = null;
+          };
+        },
       });
+    } catch (error) {
+      console.error("quality governor: the drop could not be acted on.", error);
     } finally {
       lowering = false;
     }

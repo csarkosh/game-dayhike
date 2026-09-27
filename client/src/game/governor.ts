@@ -187,6 +187,9 @@ export type DropDeps = {
   log(line: string): void;
   /** False once the game is gone, its renderer broken or its session ended. */
   alive(): boolean;
+  /** Calls `fn` when the hike's session ends; the function returned stops
+   * that. */
+  whenEnded(fn: () => void): () => void;
 };
 
 /**
@@ -196,40 +199,50 @@ export type DropDeps = {
  * timed, the governor stands down, writing nothing, with one line, and the
  * loop runs again. Otherwise the verdict is written, then the switch runs,
  * and the HUD line shows once the cover is lifted, only if the switch reached
- * `next`.
+ * `next`. The loop runs again whenever the switch was not reached, a throw
+ * included; a switch that ran owns it. The cover lifts once: at the end, or
+ * the moment the session ends, so the end of the hike is never hidden.
  */
 export async function actOnDrop(
   running: QualityTier,
   next: QualityTier,
   deps: DropDeps,
 ): Promise<"lowered" | "fell-back" | "failed" | "held" | "gone"> {
-  const lift = deps.cover();
+  const cover = deps.cover();
+  let lifted = false;
+  const lift = (): void => {
+    if (lifted) return;
+    lifted = true;
+    cover();
+  };
+  const unwatch = deps.whenEnded(lift);
+  let resume: (() => void) | null = null;
+  let switched = false;
   let outcome: "lowered" | "fell-back" | "failed" | "held" | "gone";
   try {
-    const resume = deps.stopLoop();
+    resume = deps.stopLoop();
     const cadence = await deps.idleCadence();
-    if (!deps.alive()) {
-      // Nothing written or switched; an ended session's last seconds still draw.
-      resume();
-      return "gone";
-    }
+    // Nothing written or switched; an ended session's last seconds still draw.
+    if (!deps.alive()) return "gone";
     if (cadence === null || cadence > PROBE_HOLD_MS) {
       deps.log(
         cadence === null
           ? `quality governor: held at ${running}, the page's idle frames could not be timed`
           : `quality governor: held at ${running}, the page itself draws below 60 Hz (${cadence.toFixed(1)} ms a frame)`,
       );
-      resume();
       return "held";
     }
     deps.record(running);
     deps.log(`quality governor: ${running} → ${next}, 30 s of play under ${Math.floor(1000 / GOVERNOR_LIMIT_MS)} fps`);
+    switched = true;
     try {
       outcome = (await deps.switchTo(next)) === next ? "lowered" : "fell-back";
     } catch {
       outcome = "failed";
     }
   } finally {
+    unwatch();
+    if (!switched) resume?.();
     lift();
   }
   if (outcome === "lowered" && deps.alive()) deps.flash(governorLine(next), GOVERNOR_LINE_MS);

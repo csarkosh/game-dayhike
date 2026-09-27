@@ -230,6 +230,72 @@ export function pauseStep(state: PauseState, event: PauseEvent): { state: PauseS
   }
 }
 
+/** What the play gate reads of the page, and does to it. */
+export type PlayGateDeps = {
+  /** Whether the pointer is locked to the game now. */
+  engaged(): boolean;
+  barOpen(): boolean;
+  /** The match is over: the controls stay held. */
+  ended(): boolean;
+  showMenu(): void;
+  hideMenu(): void;
+  setSuppressed(on: boolean): void;
+  /** Tells the page the player has paused, or resumed. */
+  paused(on: boolean): void;
+};
+
+export type PlayGate = {
+  /** The pointer's lock was taken (true) or released (false). */
+  engagedChanged(engaged: boolean): void;
+  /** Holds the controls under a cover over play; the function returned lifts
+   * it, once. */
+  cover(): () => void;
+  readonly covered: boolean;
+};
+
+/**
+ * What the pointer's lock does to the pause menu and the controls. Released,
+ * the menu shows and the controls are held, unless the command bar has them;
+ * taken, the menu goes and the controls come back, unless the bar is open or
+ * the match is over. While a cover is over play (the governor's rebuild),
+ * the lock changes nothing: a menu shown under the cover would be unseen but
+ * reachable by keyboard, and handing the controls back would let the player
+ * walk blind. When the cover lifts, the gate reconciles once with the lock as
+ * it is then: released shows the menu on Resume, taken plays on.
+ */
+export function createPlayGate(deps: PlayGateDeps): PlayGate {
+  let covered = false;
+  const engagedChanged = (engaged: boolean): void => {
+    if (covered) return;
+    if (engaged) {
+      deps.hideMenu();
+      deps.setSuppressed(deps.barOpen() || deps.ended());
+      deps.paused(false);
+    } else if (!deps.barOpen()) {
+      deps.showMenu();
+      deps.setSuppressed(true);
+      deps.paused(true);
+    }
+  };
+  return {
+    engagedChanged,
+    cover() {
+      covered = true;
+      deps.setSuppressed(true);
+      let lifted = false;
+      return () => {
+        if (lifted) return;
+        lifted = true;
+        covered = false;
+        engagedChanged(deps.engaged());
+      };
+    },
+    get covered() {
+      return covered;
+    },
+  };
+}
+
 /** What the pause screen's Settings needs from the game. */
 export type PauseSettings = {
   /** The choice saved now, which Settings opens on. */

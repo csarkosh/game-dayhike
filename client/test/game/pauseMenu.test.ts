@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PAUSE_START, pauseMenuModel, pauseStep, type PauseState } from "../../src/game/pauseMenu.js";
+import { PAUSE_START, createPlayGate, pauseMenuModel, pauseStep, type PauseState } from "../../src/game/pauseMenu.js";
 
 describe("pauseMenuModel", () => {
   it("offers Resume, Settings and Exit, in that order", () => {
@@ -60,5 +60,82 @@ describe("pauseStep", () => {
   it("ignores a choice or an Apply with the main panel showing", () => {
     expect(pauseStep(PAUSE_START, { kind: "choose", choice: "low" })).toEqual({ state: PAUSE_START, effect: null });
     expect(pauseStep(PAUSE_START, { kind: "apply" })).toEqual({ state: PAUSE_START, effect: null });
+  });
+});
+
+describe("the play gate", () => {
+  /** A page whose pointer lock, bar and match end are set by the test, and
+   * what the gate did to it, in order. */
+  function page(start: { engaged: boolean; barOpen?: boolean; ended?: boolean }) {
+    const now = { engaged: start.engaged, barOpen: start.barOpen ?? false, ended: start.ended ?? false };
+    const did: string[] = [];
+    const gate = createPlayGate({
+      engaged: () => now.engaged,
+      barOpen: () => now.barOpen,
+      ended: () => now.ended,
+      showMenu: () => did.push("show menu"),
+      hideMenu: () => did.push("hide menu"),
+      setSuppressed: (on) => did.push(`suppressed ${on}`),
+      paused: (on) => did.push(`paused ${on}`),
+    });
+    /** The pointer lock taken (true) or released (false), as the browser reports it. */
+    const lock = (engaged: boolean): void => {
+      now.engaged = engaged;
+      gate.engagedChanged(engaged);
+    };
+    return { gate, did, lock, now };
+  }
+
+  it("shows the menu when the lock goes, and plays on when it comes back", () => {
+    const { did, lock } = page({ engaged: true });
+    lock(false);
+    lock(true);
+    expect(did).toEqual(["show menu", "suppressed true", "paused true", "hide menu", "suppressed false", "paused false"]);
+  });
+
+  it("leaves the bar in charge while it is open", () => {
+    const { did, lock } = page({ engaged: true, barOpen: true });
+    lock(false);
+    expect(did).toEqual([]);
+  });
+
+  it("keeps the controls held after the match's end, whatever the lock does", () => {
+    const { did, lock } = page({ engaged: false, ended: true });
+    lock(true);
+    expect(did).toEqual(["hide menu", "suppressed true", "paused false"]);
+  });
+
+  it("under a cover, shows no menu when Escape frees the pointer, and never hands the controls back", () => {
+    const { gate, did, lock } = page({ engaged: true });
+    gate.cover();
+    expect(gate.covered).toBe(true);
+    lock(false);
+    lock(true);
+    lock(false);
+    expect(did).toEqual(["suppressed true"]);
+  });
+
+  it("on the lift, with the pointer free, shows the menu on Resume, once", () => {
+    const { gate, did, lock } = page({ engaged: true });
+    const lift = gate.cover();
+    lock(false);
+    lift();
+    lift();
+    expect(gate.covered).toBe(false);
+    expect(did).toEqual(["suppressed true", "show menu", "suppressed true", "paused true"]);
+  });
+
+  it("on the lift, with the pointer still locked, plays on", () => {
+    const { gate, did } = page({ engaged: true });
+    gate.cover()();
+    expect(did).toEqual(["suppressed true", "hide menu", "suppressed false", "paused false"]);
+  });
+
+  it("on the lift after the match ended under it, keeps the controls held", () => {
+    const { gate, did, now } = page({ engaged: true });
+    const lift = gate.cover();
+    now.ended = true;
+    lift();
+    expect(did).toEqual(["suppressed true", "hide menu", "suppressed true", "paused false"]);
   });
 });
