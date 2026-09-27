@@ -1916,7 +1916,7 @@ EOF
 
 ### Task 6: The governor
 
-The drop was built live, through Task 5's switch, rather than for the next hike as the steps below first had it; design §10 describes what was built.
+The drop was built live, through Task 5's switch, rather than for the next hike as the steps below first had it. As built it also times the page's idle frames first and stands down below 60 Hz, counts free-camera frames as unsteady, acts at the first steady frame (never under the pause screen) and not after the session ends, and its verdict holds 7 days, not 30; a fallback's `build` verdict never replaces a lower one. Design §10 describes what was built.
 
 **Files:**
 - Create: `client/src/game/governor.ts`
