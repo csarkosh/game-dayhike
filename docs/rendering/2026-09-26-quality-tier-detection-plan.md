@@ -437,9 +437,9 @@ export const PROBE_PIXEL_SLACK = 1.5;
 export const PROBE_ATTEMPTS = 3;
 export type ProbeReading = { tier: QualityTier; frames: number; meanMs: number; p95Ms: number; pixels: number; engine: "webgl2" | "webgpu" };
 export type AutoVerdict = { tier: QualityTier; source: "probe" | "governor"; pixels: number; at: number; readings?: ProbeReading[] };
-export type AutoRecord = { v: number; gpu: string; browser: number; attempts: number; verdict: AutoVerdict | null };
+export type AutoRecord = { v: number; gpu: string; cls: GpuClass; browser: number; attempts: number; verdict: AutoVerdict | null };
 export type AutoInput = { cls: GpuClass; cores: number | null; memoryGb: number | null; record: AutoRecord | null; gpu: string; browser: number; pixels: number; now: number };
-export function recordMatches(record: AutoRecord | null, gpu: string, browser: number): boolean;
+export function recordMatches(record: AutoRecord | null, gpu: string, browser: number, cls: GpuClass): boolean;
 export function verdictHolds(verdict: AutoVerdict, pixels: number, now: number): boolean;
 export function autoTier(input: AutoInput): { tier: QualityTier; probeFrom: QualityTier | null };
 
@@ -741,8 +741,8 @@ Expected: FAIL — `CLASS_TIERS`, `autoTier` and `tierChoice.ts` do not exist; `
 `main.ts`:
 
 - At module load, beside `selfId`: `const signalsReady: Promise<GpuSignals> = gatherSignals(browserEnv());` and `let signals: GpuSignals | null = null; void signalsReady.then((s) => { signals = s; });`.
-- `function localStore(): Storage | null` wrapping `localStorage` in `try`/`catch` (the WebGPU branch has `safeStorage`; see Global Constraints).
-- `function pageTier(s: GpuSignals, container: HTMLElement): { tier: QualityTier; source: TierSource; cls: GpuClass; probeFrom: QualityTier | null }`: `cls = classifyGpu(s)`, `gpu = gpuIdentity(s)`, `auto = autoTier({ cls, cores: s.cores, memoryGb: s.memoryGb, record: readAutoRecord(localStore()), gpu, browser: s.browser, pixels: container.clientWidth * container.clientHeight, now: Date.now() })`, `resolveTier({ override: parseTierOverride(location.search), choice: "auto", auto: auto.tier })`.
+- Storage through `pageStorage()` from `tierChoice.ts`, the one guarded `localStorage` accessor (the WebGPU branch has the same as `safeStorage`; whichever lands second keeps one, see Global Constraints).
+- `function pageTier(s: GpuSignals, container: HTMLElement): { tier: QualityTier; source: TierSource; cls: GpuClass; probeFrom: QualityTier | null }`: `cls = classifyGpu(s)`, `gpu = gpuIdentity(s)`, `auto = autoTier({ cls, cores: s.cores, memoryGb: s.memoryGb, record: readAutoRecord(pageStorage()), gpu, browser: s.browser, pixels: containerPixels(container), now: Date.now() })`, `resolveTier({ override: parseTierOverride(location.search), choice: "auto", auto: auto.tier })`.
 - `render`: a module-level `let renderToken = 0`, bumped at the top of `render`. The game branch awaits `signalsReady` and returns if the token moved; then `const { tier, source, cls } = pageTier(…)`, `console.info(\`quality: ${tier} (${source}, ${cls}), engine webgl2\`)`, and `startGame(canvas, route.token, { …, tier })`. **(WebGPU)** `launch` takes this `tier` in place of `parseTierOverride(location.search) ?? detectTier(navigator)`; the log line names the engine the rule chose; `detectTier` in `quality.ts` is deleted with its test.
 
 `ARCHITECTURE.md` line 23: "the tier is auto-detected from the device's CPU core count, memory and whether it looks like a mobile browser" becomes "the tier is chosen from the GPU the browser names (`gpuSignals.ts`, `gpuClass.ts`), confirmed by a short measurement where the browser will not name it."
@@ -792,8 +792,8 @@ EOF
 ### Task 3: The startup probe
 
 **Files:**
-- Create: `client/src/game/frameProbe.ts` (the arithmetic, pure), `client/src/game/probeScene.ts` (the scene, Babylon), `client/src/game/probeScreen.ts` (the "Setting up graphics…" screen, DOM)
-- Modify: `client/src/game/quality.ts` (`withProbeStarted`, `withVerdict`)
+- Create: `client/src/game/frameProbe.ts` (the arithmetic and `runProbe`, the probe's order of record writes, pure), `client/src/game/probeScene.ts` (the scene, Babylon), `client/src/game/probeScreen.ts` (the "Setting up graphics…" screen, DOM)
+- Modify: `client/src/game/quality.ts` (`containerPixels`, `withProbeStarted`, `withVerdict`)
 - Modify: `client/src/game/tierChoice.ts` (`parseProbeOverride`)
 - Modify: `client/src/main.ts` (the probe before `startGame`)
 - Test: `client/test/game/frameProbe.test.ts` (new), `client/test/game/probeScene.test.ts` (new), `client/test/game/quality.test.ts`, `client/test/game/tierChoice.test.ts`, `client/test/architecture.test.ts` (`frameProbe.ts` Babylon-free)
@@ -819,10 +819,22 @@ export function readIntervals(intervals: readonly number[]): ProbeStats | null;
 export function probeHolds(stats: { meanMs: number }): boolean;
 export function nextProbeStep(ceiling: QualityTier, readings: readonly ProbeReading[]): { measure: QualityTier } | { verdict: QualityTier };
 export function probePose(): { x: number; y: number; z: number; yaw: number; pitch: number };
+export type ProbeKey = { gpu: string; browser: number; cls: GpuClass };
+export type ProbeDeps = {
+  storage: Storage | null;
+  runStep(tier: QualityTier): Promise<ProbeReading | null>;
+  pixels(): number;   // containerPixels(container)
+  now(): number;
+};
+/** The tier to start the hike at: the verdict, or `start` when the probe cannot run or is abandoned. */
+export function runProbe(from: QualityTier, start: QualityTier, record: AutoRecord | null, key: ProbeKey, deps: ProbeDeps): Promise<QualityTier>;
 
 // quality.ts
-export function withProbeStarted(prev: AutoRecord | null, gpu: string, browser: number): AutoRecord;
-export function withVerdict(prev: AutoRecord | null, gpu: string, browser: number, verdict: AutoVerdict): AutoRecord;
+/** The game container's CSS area, the one measure of the window for a verdict's `pixels` and `AutoInput.pixels`. */
+export function containerPixels(container: { clientWidth: number; clientHeight: number }): number;
+export function withProbeStarted(prev: AutoRecord | null, gpu: string, browser: number, cls: GpuClass): AutoRecord;
+/** Null for a verdict with `pixels <= 0`: an area of nothing certifies nothing, and would never hold again. */
+export function withVerdict(prev: AutoRecord | null, gpu: string, browser: number, cls: GpuClass, verdict: AutoVerdict): AutoRecord | null;
 
 // tierChoice.ts
 export function parseProbeOverride(search: string): QualityTier | null; // ?probe=high|medium
@@ -909,12 +921,62 @@ describe("probePose", () => {
 ```ts
 describe("the record through a probe", () => {
   it("counts a started probe and clears the count with a verdict", () => {
-    const started = withProbeStarted(null, "Apple GPU", 26);
-    expect(started).toEqual({ v: 1, gpu: "Apple GPU", browser: 26, attempts: 1, verdict: null });
-    expect(withProbeStarted(started, "Apple GPU", 26).attempts).toBe(2);
-    expect(withProbeStarted(started, "Apple GPU", 27).attempts).toBe(1);
+    const started = withProbeStarted(null, "Apple GPU", 26, "apple-unknown");
+    expect(started).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
+    expect(withProbeStarted(started, "Apple GPU", 26, "apple-unknown").attempts).toBe(2);
+    expect(withProbeStarted(started, "Apple GPU", 27, "apple-unknown").attempts).toBe(1);
+    expect(withProbeStarted(started, "Apple GPU", 26, "apple-base").attempts).toBe(1);
     const verdict: AutoVerdict = { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000 };
-    expect(withVerdict(started, "Apple GPU", 26, verdict)).toEqual({ v: 1, gpu: "Apple GPU", browser: 26, attempts: 0, verdict });
+    expect(withVerdict(started, "Apple GPU", 26, "apple-unknown", verdict)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0, verdict });
+  });
+
+  it("refuses a verdict over no area, and measures the window one way", () => {
+    const started = withProbeStarted(null, "Apple GPU", 26, "apple-unknown");
+    expect(withVerdict(started, "Apple GPU", 26, "apple-unknown", { tier: "medium", source: "probe", pixels: 0, at: 1_790_000_000_000 })).toBe(null);
+    expect(containerPixels({ clientWidth: 1920, clientHeight: 1080 })).toBe(2_073_600);
+    expect(containerPixels({ clientWidth: 0, clientHeight: 1080 })).toBe(0);
+  });
+});
+```
+
+`client/test/game/frameProbe.test.ts` — also add, with `memoryStorage` and `throwingStorage` as in `tierChoice.test.ts`:
+
+```ts
+describe("runProbe and the Auto record", () => {
+  const KEY = { gpu: "Apple GPU", browser: 26, cls: "apple-unknown" } as const;
+  const reading = (tier: QualityTier, meanMs: number): ProbeReading =>
+    ({ tier, frames: 120, meanMs, p95Ms: meanMs, pixels: 2_073_600, engine: "webgl2" });
+
+  it("never probes where the attempt cannot be written", async () => {
+    let steps = 0;
+    const deps = { storage: throwingStorage(), runStep: async () => { steps += 1; return null; }, pixels: () => 2_073_600, now: () => 1_790_000_000_000 };
+    expect(await runProbe("high", "medium", null, KEY, deps)).toBe("medium");
+    expect(steps).toBe(0);
+  });
+
+  it("writes the attempt before the first step starts", () => {
+    const s = memoryStorage();
+    const deps = { storage: s, runStep: () => new Promise<ProbeReading | null>(() => undefined), pixels: () => 2_073_600, now: () => 1_790_000_000_000 };
+    void runProbe("high", "medium", null, KEY, deps);
+    expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
+  });
+
+  it("never probes a window with no area, and writes nothing for one", async () => {
+    const s = memoryStorage();
+    let steps = 0;
+    const deps = { storage: s, runStep: async () => { steps += 1; return reading("high", 16.7); }, pixels: () => 0, now: () => 1_790_000_000_000 };
+    expect(await runProbe("high", "medium", null, KEY, deps)).toBe("medium");
+    expect(steps).toBe(0);
+    expect(readAutoRecord(s)).toBe(null);
+  });
+
+  it("writes the verdict with the window the steps measured", async () => {
+    const s = memoryStorage();
+    const deps = { storage: s, runStep: async (tier: QualityTier) => reading(tier, tier === "high" ? 23.96 : 16.7), pixels: () => 2_073_600, now: () => 1_790_000_000_000 };
+    expect(await runProbe("high", "medium", null, KEY, deps)).toBe("medium");
+    expect(readAutoRecord(s)!.verdict).toEqual({ tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000,
+      readings: [reading("high", 23.96), reading("medium", 16.7)] });
+    expect(readAutoRecord(s)!.attempts).toBe(0);
   });
 });
 ```
@@ -968,7 +1030,14 @@ Expected: FAIL — the modules and functions do not exist.
 
 `frameProbe.ts`: the constants; `readIntervals` (drop `> PROBE_STALL_MS`; fewer than `PROBE_MIN_FRAMES` left → null; the mean; `p95` the sorted value at `Math.ceil(0.95 * n) - 1`); `probeHolds` (`meanMs <= PROBE_HOLD_MS`); `nextProbeStep` (design §7.5); `probePose()` (`seed = seedFromToken(PROBE_SEED_TOKEN)`, `y = elevationAt(seed, 123, -105.5) + 1.6`; the comment names the pose as every rendering note's canopy pose).
 
-`quality.ts`: `withProbeStarted` (a matching record with `attempts + 1`, else a fresh `{ v: DETECT_VERSION, gpu, browser, attempts: 1, verdict: null }`); `withVerdict` (the same identity, `attempts: 0`, the verdict).
+`quality.ts`: `containerPixels` (`clientWidth * clientHeight`, 0 for a container not laid out); `withProbeStarted` (a record matching by `recordMatches` with `attempts + 1`, else a fresh `{ v: DETECT_VERSION, gpu, cls, browser, attempts: 1, verdict: null }`); `withVerdict` (null when `verdict.pixels <= 0`; else the same identity, `attempts: 0`, the verdict).
+
+`frameProbe.ts`, `runProbe`, in this order, each pinned by a test above:
+
+1. `pixels = deps.pixels()`; `pixels <= 0` returns `start` with nothing written (a window with no area certifies nothing, and its verdict would never hold again).
+2. `writeAutoRecord(deps.storage, withProbeStarted(record, …key))` **before the first `await`**, so a tab closed mid-probe has still spent its attempt. A write that returns false returns `start` without a single step: a storage that refuses writes reads back no attempts on every load, and would otherwise probe before every hike.
+3. The steps: `nextProbeStep(from, readings)`, `await deps.runStep(tier)` for each `measure`; a null reading abandons, returning `start` with the attempt standing.
+4. The verdict: `withVerdict(started, …key, { tier, source: "probe", pixels, at: deps.now(), readings })`, the same `pixels` as step 1 (`containerPixels`, as `AutoInput.pixels` reads it, so the verdict holds on the next load at the same window), written when non-null; the verdict's tier returned.
 
 `tierChoice.ts`: `parseProbeOverride`.
 
@@ -990,7 +1059,7 @@ if (from !== null) {
 }
 ```
 
-`probeTier`: `showProbeScreen(container)`; write `withProbeStarted(record, gpu, browser)`; a `setTimeout(PROBE_MAX_MS)` that sets a `cancelled` flag; loop `nextProbeStep(from, readings)`: a `measure` runs `runProbeStep` (a null reading, a cancel or a throw abandons: the tier stays the class's start, the attempt stands); a `verdict` writes `withVerdict(…, { tier, source: "probe", pixels, at: Date.now(), readings })`. One `console.info` per reading (`quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses`) and one for the verdict (`quality probe: verdict medium (apple-unknown)`). The screen is disposed in a `finally`. **(WebGPU)** each `runProbeStep` gets the engine the rule gives its tier, made on the step's canvas; a failure there is the rule's `init` failure and the step runs on WebGL2.
+`probeTier`: `showProbeScreen(container)`; a `setTimeout(PROBE_MAX_MS)` that sets a `cancelled` flag; `runProbe(from, start, record, { gpu, browser, cls }, { storage: pageStorage(), runStep: (tier) => runProbeStep(container, tier, { cancelled }), pixels: () => containerPixels(container), now: Date.now })`, where `runProbeStep` answers null on a cancel or a throw (so the attempt stands and the hike starts at the class's start tier). One `console.info` per reading (`quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses`) and one for the verdict (`quality probe: verdict medium (apple-unknown)`). The screen is disposed in a `finally`. **(WebGPU)** each `runProbeStep` gets the engine the rule gives its tier, made on the step's canvas; a failure there is the rule's `init` failure and the step runs on WebGL2.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -1256,7 +1325,7 @@ Expected: FAIL — `settings.ts`, `pauseMenuModel`, `readChoice`, the settings r
 
 `router.ts`: `Panel` gains `"settings"`, `Route` gains `{ kind: "settings" }`, `parseRoute` maps `/settings`.
 
-`main.ts`: `isLandingRoute` and `panelFor` take `settings`; `onSettings: () => navigateToPanel("settings")`; `onChooseTier: (c) => { saveChoice(c); repaintLanding(); }`, where `saveChoice` writes through `writeChoice` and, when that fails, keeps `c` in a module-level `sessionChoice`; `currentChoice()` is `sessionChoice ?? readChoice(localStore()).choice`. `pageTier` resolves with `choice: currentChoice()`, and the probe runs only on Auto (it already checks `source === "auto"`). `landingInput` passes `quality: { choice: currentChoice(), auto: autoSummary(), override: parseTierOverride(location.search), stored }`, with `autoSummary()` null until the signals land and then `{ tier, probePending: probeFrom !== null }` from `autoTier`; the landing repaints when `signalsReady` resolves. `startGame` gets `quality` with the same five members.
+`main.ts`: `isLandingRoute` and `panelFor` take `settings`; `onSettings: () => navigateToPanel("settings")`; `onChooseTier: (c) => { saveChoice(c); repaintLanding(); }`, where `saveChoice` writes through `writeChoice` and, when that fails, keeps `c` in a module-level `sessionChoice`; `currentChoice()` is `sessionChoice ?? readChoice(pageStorage()).choice`. `pageTier` resolves with `choice: currentChoice()`, and the probe runs only on Auto (it already checks `source === "auto"`). `landingInput` passes `quality: { choice: currentChoice(), auto: autoSummary(), override: parseTierOverride(location.search), stored }`, with `autoSummary()` null until the signals land and then `{ tier, probePending: probeFrom !== null }` from `autoTier`; the landing repaints when `signalsReady` resolves. `startGame` gets `quality` with the same five members.
 
 `pauseMenu.ts`: `pauseMenuModel` as tested, and `createPauseMenu` builds its buttons from it. The root holds two panels, the existing one as `.panel.main` and a `.panel.settings` painted by `renderSettings`; `show-settings` on the root swaps them with the fade the landing's panels use, carried into this file's own `STYLE` literal; the Settings button repaints the panel from `settings.view()` and shows it; `onChoose` calls `settings.onChoose` and repaints; Back returns to `.panel.main`. `show()` always opens on `.panel.main`. Escape: with the Settings panel showing, it goes back; otherwise it resumes, as now.
 
@@ -1844,7 +1913,7 @@ export function createGovernor(start: number): Governor;
 export function governorLine(next: QualityTier): string;
 
 // quality.ts
-export function withGovernorDrop(prev: AutoRecord | null, gpu: string, browser: number, running: QualityTier, pixels: number, now: number): AutoRecord | null;
+export function withGovernorDrop(prev: AutoRecord | null, gpu: string, browser: number, cls: GpuClass, running: QualityTier, pixels: number, now: number): AutoRecord | null;
 ```
 
 - [ ] **Step 1: Write the failing tests**
@@ -1932,13 +2001,13 @@ describe("the governor", () => {
 ```ts
 describe("the record after a governor drop", () => {
   it("drops the running tier one step, at any window, and has nothing below low", () => {
-    const got = withGovernorDrop(null, "Apple GPU", 26, "high", 2_073_600, 1_790_000_000_000);
+    const got = withGovernorDrop(null, "Apple GPU", 26, "apple-unknown", "high", 2_073_600, 1_790_000_000_000);
     expect(got).toEqual({
-      v: 1, gpu: "Apple GPU", browser: 26, attempts: 0,
+      v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
       verdict: { tier: "medium", source: "governor", pixels: 2_073_600, at: 1_790_000_000_000 },
     });
-    expect(withGovernorDrop(null, "Apple GPU", 26, "medium", 2_073_600, 1_790_000_000_000)!.verdict!.tier).toBe("low");
-    expect(withGovernorDrop(null, "Apple GPU", 26, "low", 2_073_600, 1_790_000_000_000)).toBe(null);
+    expect(withGovernorDrop(null, "Apple GPU", 26, "apple-unknown", "medium", 2_073_600, 1_790_000_000_000)!.verdict!.tier).toBe("low");
+    expect(withGovernorDrop(null, "Apple GPU", 26, "apple-unknown", "low", 2_073_600, 1_790_000_000_000)).toBe(null);
   });
 });
 ```

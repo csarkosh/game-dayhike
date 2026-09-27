@@ -222,6 +222,7 @@ type GpuSignals = {
   renderer: string | null;          // the WebGL renderer string, or null without a WebGL2 context
   adapter: AdapterInfo | null;      // null without navigator.gpu, an adapter, or within 2 s
   limits: Readonly<Record<string, number>> | null;  // the same adapter's limits, for the engine rule
+  adapterStatus: "ok" | "none" | "rejected" | "timed-out";  // why adapter is null, or "ok"
   cores: number | null;             // null where not reported
   memoryGb: number | null;
   mobile: boolean;
@@ -239,10 +240,20 @@ type GpuSignals = {
   "high-performance" })`, raced against 2 s; `adapter.info` (`vendor`,
   `architecture`, `device`, `description`, `isFallbackAdapter`, with the legacy
   `adapter.isFallbackAdapter` as the WebGPU branch reads it) and every limit, read
-  with `for…in` as `gpuEngine.ts`'s `probeAdapter` does. This is the one adapter
-  request of the page: the WebGPU rule's `adapterFits` takes its
-  `{ limits, isFallbackAdapter }` from here, and `probeAdapter` keeps only the
-  `WebGPUEngine.IsSupportedAsync` check.
+  with `for…in` as `gpuEngine.ts`'s `probeAdapter` does. `adapterStatus` says
+  why there is no adapter: `none` (no `navigator.gpu`, or an answer with no
+  adapter), `rejected` (the request threw or rejected, or the adapter could not
+  be read) or `timed-out` (no answer within 2 s).
+- **Sharing the adapter with the WebGPU rule.** The rule's `adapterFits` takes
+  its `{ limits, isFallbackAdapter }` from here. Babylon's
+  `WebGPUEngine.IsSupportedAsync`, which `probeAdapter` keeps, is itself a
+  `requestAdapter`, so at the merge it is replaced by these signals rather than
+  kept beside them. A `timed-out` at 2 s means **not known yet** for the engine
+  choice, never a failure to record: the shared request runs on the engine
+  rule's own budget, or a 2 s timeout falls through to the engine's own wait,
+  so an adapter that answers in 2 to 10 s (a discrete GPU waking) is not kept
+  off WebGPU. `none` and `rejected` are "no adapter", with nothing recorded, as
+  `probeAdapter`'s null is today.
 - **Cores and memory.** The numbers where they are numbers, else null. Never
   defaulted: a missing value is not a small one.
 - **Mobile.** `navigator.userAgentData.mobile` where it exists; else the user
