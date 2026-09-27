@@ -70,7 +70,12 @@ resource "google_compute_instance" "test_rig" {
 
     provisioning_model = var.spot ? "SPOT" : "STANDARD"
     preemptible        = var.spot
-    automatic_restart  = var.spot ? false : true
+
+    # Off even for a standard machine. Google does not say whether a restart
+    # after host maintenance also follows a stop by max_run_duration; with it
+    # off, neither can bring a stopped machine back and bill it. A machine
+    # stopped for maintenance is simply stopped, and the run is redone.
+    automatic_restart = false
 
     # A forgotten machine stops itself. The clock restarts at every start, so
     # this bounds one run, not the machine's life. STOP (not DELETE) keeps the
@@ -99,6 +104,15 @@ resource "google_compute_instance" "test_rig" {
   }
 
   lifecycle {
+    # A mismatched pair fails here, at plan, rather than at the API.
+    precondition {
+      condition = (
+        (startswith(var.machine_type, "g2-") && startswith(var.gpu_type, "nvidia-l4")) ||
+        (startswith(var.machine_type, "n1-") && startswith(var.gpu_type, "nvidia-tesla-"))
+      )
+      error_message = "machine_type and gpu_type do not match: g2-* takes nvidia-l4 or nvidia-l4-vws, n1-* takes nvidia-tesla-t4 or nvidia-tesla-t4-vws."
+    }
+
     # `gcloud compute ssh` and `gcloud compute reset-windows-password` write
     # their keys into instance metadata. Without this, every apply after the
     # first connection would strip them and lock the key's owner out.

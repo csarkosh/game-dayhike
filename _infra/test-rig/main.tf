@@ -86,6 +86,9 @@ resource "google_project_service" "iam" {
   disable_on_destroy = false
 }
 
+# Project-wide, as Google grants it: whoever controls the machine can also
+# write entries under any log name in the project. Accepted; the machine is
+# reachable only through IAP.
 resource "google_project_iam_member" "test_rig_log_writer" {
   project = var.gcp_project_id
   role    = "roles/logging.logWriter"

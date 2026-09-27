@@ -104,7 +104,25 @@ try {
     New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' `
       -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 | Out-Null
   }
-  Log "OpenSSH Server: $((Get-Item "$env:WINDIR\System32\OpenSSH\sshd.exe").VersionInfo.ProductVersion), running"
+  # Keys only: `gcloud compute reset-windows-password` makes password accounts,
+  # and they should get in over Remote Desktop, not SSH. sshd keeps the first
+  # value it reads, so the line goes at the very top of the file, ahead of the
+  # `Match` block Windows' default configuration ends with. sshd writes that
+  # file on its first start, above.
+  $sshdConfig = 'C:\ProgramData\ssh\sshd_config'
+  $sshdExe = "$env:WINDIR\System32\OpenSSH\sshd.exe"
+  $lines = @(Get-Content $sshdConfig)
+  if ($lines[0] -ne 'PasswordAuthentication no') {
+    Log 'SSH: key only'
+    Copy-Item $sshdConfig "$sshdConfig.before-test-rig" -Force
+    Set-Content -Path $sshdConfig -Value (@('PasswordAuthentication no') + $lines) -Encoding ascii
+    if ((Invoke-Native $sshdExe @('-t')) -ne 0) {
+      Copy-Item "$sshdConfig.before-test-rig" $sshdConfig -Force
+      throw 'sshd rejected the configuration with password login off; the previous one is back.'
+    }
+    Restart-Service sshd
+  }
+  Log "OpenSSH Server: $((Get-Item $sshdExe).VersionInfo.ProductVersion), running, key login only"
 
   # --- NVIDIA driver ----------------------------------------------------------
   # Google's documented method for Windows GPU machines: its install script,
@@ -117,11 +135,16 @@ try {
       'https://raw.githubusercontent.com/GoogleCloudPlatform/compute-gpu-installation/e4d32d90993a17795b9f6bc411d2ae6d767052ca/windows/install_gpu_driver.ps1' `
       'install_gpu_driver.ps1' '9d3eb7064a19aaf8e043c6eb863a490054105f0c7f8f121cdab76b100a092897'
     Log 'Running Google''s NVIDIA driver script'
-    Invoke-Native 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $driverScript) | Out-Null
+    $code = Invoke-Native 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $driverScript)
+    if ($code -ne 0) { throw "Google's NVIDIA driver script exited with $code" }
     $smi = $smiPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
     if (-not $smi) { throw 'The NVIDIA driver script finished but nvidia-smi is not installed.' }
   }
   Invoke-Native $smi @() | Out-Null
+  # The driver version and the licence it runs under (see README.md, "The first
+  # run's probe").
+  & $smi -q 2>&1 | Where-Object { $_ -match 'Driver Version|Licensed Product|Product Name|License Status' } |
+    ForEach-Object { Log "  $($_.ToString().Trim())" }
 
   # --- Chrome (stable) --------------------------------------------------------
   $chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
@@ -131,12 +154,32 @@ try {
     Invoke-WebRequest -Uri 'https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi' `
       -OutFile $msi -UseBasicParsing
     $signature = Get-AuthenticodeSignature $msi
-    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Google LLC') {
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(^|, )O=Google LLC(,|$)') {
       throw "Chrome installer signature is $($signature.Status), signed by '$($signature.SignerCertificate.Subject)'"
     }
     Install-Msi $msi 'chrome'
   }
   Log "Chrome: $((Get-Item $chrome).VersionInfo.ProductVersion)"
+
+  # --- Hold the machine still ---------------------------------------------------
+  # A measurement compares builds on one machine, so neither Chrome nor Windows
+  # may change or restart it between runs. Google's updater ignores its update
+  # policies on a machine outside a domain, so its tasks and services are
+  # switched off instead; Windows Update honours its policy. Both are undone by
+  # deleting the machine, which is how a new Chrome or a Windows patch arrives.
+  Get-ScheduledTask | Where-Object { $_.TaskName -like 'GoogleUpdate*' } | ForEach-Object {
+    Disable-ScheduledTask -TaskName $_.TaskName -TaskPath $_.TaskPath | Out-Null
+    Log "Disabled scheduled task $($_.TaskPath)$($_.TaskName)"
+  }
+  Get-Service | Where-Object { $_.Name -like 'GoogleUpdater*' -or $_.Name -in 'gupdate', 'gupdatem' } | ForEach-Object {
+    Stop-Service $_.Name -Force -ErrorAction SilentlyContinue
+    Set-Service $_.Name -StartupType Disabled
+    Log "Disabled service $($_.Name)"
+  }
+  $au = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+  New-Item -Path $au -Force | Out-Null
+  Set-ItemProperty -Path $au -Name NoAutoUpdate -Value 1 -Type DWord
+  Log 'Windows Update: automatic updates off (policy NoAutoUpdate=1)'
 
   # --- Node 22 ----------------------------------------------------------------
   $nodeVersion = '22.23.3'

@@ -36,6 +36,7 @@ variable "machine_type" {
     15 GB, with one NVIDIA T4 attached through gpu_type (Turing, 16 GB GDDR6).
     Google ends T4 support on 2027-08-01, after which a T4 machine cannot be
     created or started. G2 cannot boot from pd-standard; see boot_disk_type.
+    Changing it, or gpu_type, replaces the machine and its disk.
   EOT
   type        = string
   default     = "g2-standard-4"
@@ -56,6 +57,11 @@ variable "gpu_count" {
   description = "GPUs attached. g2-standard-4 takes exactly one."
   type        = number
   default     = 1
+
+  validation {
+    condition     = var.gpu_count >= 1 && floor(var.gpu_count) == var.gpu_count
+    error_message = "gpu_count is a whole number of at least 1."
+  }
 }
 
 variable "image" {
@@ -124,6 +130,12 @@ variable "max_run_hours" {
   EOT
   type        = number
   default     = 4
+
+  validation {
+    # Google takes the limit in whole seconds.
+    condition     = var.max_run_hours >= 0 && floor(var.max_run_hours * 3600) == var.max_run_hours * 3600
+    error_message = "max_run_hours is 0 (no limit) or a positive number of hours that makes whole seconds, such as 0.25 or 4."
+  }
 }
 
 variable "enable_display" {
@@ -146,6 +158,11 @@ variable "direct_access_cidrs" {
   EOT
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = alltrue([for c in var.direct_access_cidrs : !contains(["0.0.0.0/0", "::/0"], c)])
+    error_message = "direct_access_cidrs may not open SSH and RDP to the whole internet (0.0.0.0/0 or ::/0)."
+  }
 }
 
 variable "billing_account_id" {
