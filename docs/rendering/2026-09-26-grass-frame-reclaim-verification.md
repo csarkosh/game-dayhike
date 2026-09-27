@@ -526,3 +526,12 @@ What the plan names to close the rest (design §5.4, §13), measured against the
 The rest of the bar is not in culling. It is in what the blades in view cost,
 which the filter leaves untouched: the bar at 0.8 ms rested on a filter figure
 (0.82) that the confirmation measured at 0.58 on this machine.
+
+After this gate the design re-based step 1a's bar on that ceiling (design
+§5.10): at least 70 % of the exact-frustum saving at native, with no pop and
+no loss of fullness, which the 0.42 ms meets at 72 % (64–84 % on the
+ceiling's spread, about 79 % like for like); the "missed" row above is the
+gate as run, against the bar it was given. The filter has also changed since,
+without changing what a still pose keeps: its pass was rebuilt for speed, and
+its planes now turn with the camera's roll with `CULL_TURN` at 3.5° (design
+§5.2 and §5.10).

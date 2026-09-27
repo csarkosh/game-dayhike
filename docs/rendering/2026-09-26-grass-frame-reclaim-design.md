@@ -398,6 +398,19 @@ bend: 1.38 m for a card, 1.39 m for a clump. At 6° that sweep needs a radius
 of 1.44 m; `grassCull.test.ts` derives both reaches from the models and the
 clump geometry and holds them under `CULL_RADIUS`.
 
+The view bob's roll is larger than the 0.6° above: sprinting doubles it and
+`/bob` scales it up to three times, to `BOB_ROLL × MAX_BOB_SCALE` = 1.8°. So the
+planes are built from the pose's roll too (`camera.rotation.z`, turned about
+the view as Babylon turns the camera, which a test pins against Babylon's own
+frustum), and the prefix is cut again when the roll changes by more than
+`CULL_ROLL` = **1°**. With the cut rolled 1.8°, a 4° yaw and pitch turn while
+looking up still took a far ground corner up to 0.54 m past the sphere, so
+`CULL_TURN` is **3.5°**: the sweep, with the cut level and rolled 1.8° either
+way, turns of 3.5° on both axes, a roll of 1° and moves of 0.49 m, then keeps
+every extent with 0.23 m to spare. At the default `/bob` a walk rolls the camera
+0.6° end to end, under `CULL_ROLL`; the turn threshold costs about a seventh
+more refilters while turning. What a pose keeps does not change.
+
 **Where it runs.** From `renderer.ts`, on
 `scene.onBeforeActiveMeshesEvaluationObservable`, after the camera's pose for
 the frame is final (the view bob included), with the camera's world position,
@@ -668,8 +681,10 @@ dropped first (§13). The meadow's sectors, if taken, add about 22 draws.
 Step 1a as built (the verification note's §4 and §5 carry the measurements):
 
 - **Constants.** `CULL_MARGIN` 6°, `CULL_PUSHBACK` 1 m, `CULL_RADIUS` 1.5 m,
-  `CULL_TURN` 4°, `CULL_MOVE` 0.5 m (§5.2's as-built note gives why). The
-  meadow's buckets are untouched; on the low tier the grass class draws whole.
+  `CULL_TURN` 4° at the gate and 3.5° since, `CULL_ROLL` 1° since, with the
+  planes turned by the camera's roll, `CULL_MOVE` 0.5 m (§5.2's as-built note
+  gives why). The meadow's buckets are untouched; on the low tier the grass
+  class draws whole.
 - **What is drawn**, at the gate's still: at the canopy pose 1,614 of 6,131
   blade cells (0.26) and 870 of 4,559 grass-class cards (0.19); at the meadow
   pose 1,752 of 6,587 and 891 of 4,731. Draw calls do not move: 159–163 at
