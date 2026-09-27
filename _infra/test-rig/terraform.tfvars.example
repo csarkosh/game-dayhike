@@ -10,7 +10,11 @@
 # region        = "us-east-1"  # or us-west-2; chosen once (see README.md)
 # instance_type = "g6.xlarge"  # the L4 instead of the T4
 
-# Stop the machine without destroying it (the disk is kept and billed).
+# Stop the machine without destroying it (the disk is kept and billed). Only
+# for a machine that exists and has finished its first-boot set-up
+# (C:\ProgramData\test-rig\verified): a new machine must never be stopped
+# before then, so an apply that would create or replace one with this set is
+# refused. Never leave it here across a first apply or a destroy.
 # running = false
 
 # max_run_hours = 4

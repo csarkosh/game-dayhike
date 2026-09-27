@@ -79,7 +79,7 @@ variable "disk_size_gb" {
 }
 
 variable "running" {
-  description = "true runs the machine; false stops it (billing only its disk) without destroying it. An apply that would replace the machine is refused while this is false: a new machine must finish its first-boot set-up before it is stopped."
+  description = "true runs the machine; false stops it (billing only its disk) without destroying it. An apply that would create or replace the machine is refused while this is false: a new machine must never be stopped before its first-boot set-up has finished."
   type        = bool
   default     = true
 }

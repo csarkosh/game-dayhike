@@ -63,14 +63,18 @@ data "aws_instances" "existing" {
 }
 
 data "aws_instance" "existing" {
-  for_each    = toset(data.aws_instances.existing.ids)
+  for_each    = toset(data.aws_instances.existing.ids == null ? [] : data.aws_instances.existing.ids)
   instance_id = each.key
 }
 
 locals {
-  # True when a machine exists whose build differs from this one: this apply
-  # replaces it.
-  replaces_machine = anytrue([for m in data.aws_instance.existing : lookup(m.tags, "build", "") != local.build_key])
+  # A machine of this module exists, as AWS reports it.
+  machine_exists = length(data.aws_instance.existing) > 0
+
+  # A machine exists whose build differs from this one: this apply replaces
+  # it. A machine without the tag (every machine this module makes has it; only
+  # a hand can remove it) cannot be judged and counts as this build.
+  replaces_machine = anytrue([for m in data.aws_instance.existing : lookup(m.tags, "build", local.build_key) != local.build_key])
 }
 
 resource "aws_instance" "test_rig" {
@@ -132,12 +136,14 @@ resource "aws_instance" "test_rig" {
     }
 
     # A new machine must never be stopped before its first set-up has
-    # finished: stopped seconds into Windows' own first boot, it is hard-stopped
-    # by EC2 after a few minutes and may never boot again. So a replacement is
-    # refused while the machine is meant to be stopped.
+    # finished: stopped seconds into Windows' own first boot, EC2 hard-stops it
+    # after a few minutes, and it may never boot again. So with running = false
+    # the apply is allowed only to stop a machine that already exists and is
+    # not being replaced; creating one (a first apply, an apply after a
+    # destroy) or replacing one is refused.
     precondition {
-      condition     = var.running || !local.replaces_machine
-      error_message = "This apply replaces the machine (its start-up script, or vpc_cidr, changed), and running is false. A new machine must finish its first-boot set-up before it is stopped: apply with running = true, wait for C:\\ProgramData\\test-rig\\verified, then apply with running = false."
+      condition     = var.running || (local.machine_exists && !local.replaces_machine)
+      error_message = "running is false, and this apply ${local.machine_exists ? "replaces the machine (its start-up script, or vpc_cidr, changed)" : "creates the machine"}. A new machine must never be stopped before its first-boot set-up has finished: stopped in the middle of Windows' own first boot, it may never boot again. Apply with running = true, wait for the set-up to finish (C:\\ProgramData\\test-rig\\verified exists), then apply with running = false."
     }
   }
 
