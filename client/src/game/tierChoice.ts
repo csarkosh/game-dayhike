@@ -3,10 +3,12 @@
  *
  * The order is `resolveTier`'s: `?tier=` in the address (for testing) over the
  * player's choice, and the choice over Auto. Auto's record (`AutoRecord`,
- * `quality.ts`) is kept under `AUTO_KEY`. Every storage access is inside
- * `try`/`catch`: a private window or a browser that blocks site data throws on
- * the accessor itself, and a record that does not read back whole is no record.
+ * `quality.ts`) is kept under `AUTO_KEY`, in the storage `pageStorage` gives.
+ * Every storage access is inside `try`/`catch`: a private window or a browser
+ * that blocks site data throws on the accessor itself, and a record that does
+ * not read back whole is no record.
  */
+import { CLASS_TIERS, type GpuClass } from "./gpuClass.js";
 import type { AutoRecord, AutoVerdict, ProbeReading, QualityTier } from "./quality.js";
 
 export const AUTO_KEY = "dayhike.quality.auto";
@@ -25,6 +27,20 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isClass(value: unknown): value is GpuClass {
+  return typeof value === "string" && Object.hasOwn(CLASS_TIERS, value);
+}
+
+/** The page's `localStorage`, or null where there is none or its accessor
+ * throws (a private window, a browser that blocks site data). */
+export function pageStorage(): Storage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
 /** `?tier=low|medium|high`, else null. */
 export function parseTierOverride(search: string): QualityTier | null {
   const value = new URLSearchParams(search).get("tier");
@@ -39,24 +55,27 @@ function asReading(value: unknown): ProbeReading | null {
   return { tier, frames, meanMs, p95Ms, pixels, engine };
 }
 
+/**
+ * A verdict, or null. Its readings are a log the tier never reads, so a reading
+ * that does not read back whole is dropped rather than the verdict with it:
+ * `JSON.stringify` writes a NaN or an Infinity as null, which then fails here.
+ */
 function asVerdict(value: unknown): AutoVerdict | null {
   if (!isObject(value)) return null;
   const { tier, source, pixels, at, readings } = value;
   if (!isTier(tier) || (source !== "probe" && source !== "governor") || !isNumber(pixels) || !isNumber(at)) return null;
-  if (readings === undefined) return { tier, source, pixels, at };
-  if (!Array.isArray(readings)) return null;
-  const read = readings.map(asReading);
-  if (read.some((reading) => reading === null)) return null;
-  return { tier, source, pixels, at, readings: read as ProbeReading[] };
+  if (!Array.isArray(readings)) return { tier, source, pixels, at };
+  const kept = readings.map(asReading).filter((reading): reading is ProbeReading => reading !== null);
+  return { tier, source, pixels, at, readings: kept };
 }
 
 function asRecord(value: unknown): AutoRecord | null {
   if (!isObject(value)) return null;
-  const { v, gpu, browser, attempts, verdict } = value;
-  if (!isNumber(v) || typeof gpu !== "string" || !isNumber(browser) || !isNumber(attempts)) return null;
-  if (verdict === null) return { v, gpu, browser, attempts, verdict: null };
+  const { v, gpu, cls, browser, attempts, verdict } = value;
+  if (!isNumber(v) || typeof gpu !== "string" || !isClass(cls) || !isNumber(browser) || !isNumber(attempts)) return null;
+  if (verdict === null) return { v, gpu, cls, browser, attempts, verdict: null };
   const held = asVerdict(verdict);
-  return held === null ? null : { v, gpu, browser, attempts, verdict: held };
+  return held === null ? null : { v, gpu, cls, browser, attempts, verdict: held };
 }
 
 /** Auto's record, or null: none stored, no storage, a storage that throws,

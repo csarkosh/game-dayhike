@@ -100,6 +100,7 @@ function rec(verdict: Partial<AutoVerdict> | null, over: Partial<AutoRecord> = {
   return {
     v: 1,
     gpu: SAFARI,
+    cls: "apple-unknown",
     browser: 26,
     attempts: 0,
     verdict: verdict === null ? null : { tier: "high", source: "probe", pixels: 2_073_600, at: NOW - DAY, ...verdict },
@@ -126,6 +127,17 @@ describe("autoTier and the verdict", () => {
     expect(auto(rec({ at: NOW - 30 * DAY + 1 }))).toEqual({ tier: "high", probeFrom: null });
   });
 
+  it("drops a verdict dated in the future", () => {
+    expect(auto(rec({ at: NOW + DAY }))).toEqual({ tier: "medium", probeFrom: "high" });
+    expect(auto(rec({ at: NOW + 1 }))).toEqual({ tier: "medium", probeFrom: "high" });
+    expect(auto(rec({ at: NOW }))).toEqual({ tier: "high", probeFrom: null });
+  });
+
+  it("drops a record made for another class of the same GPU, attempts and all", () => {
+    expect(auto(rec({}, { cls: "apple-base" }))).toEqual({ tier: "medium", probeFrom: "high" });
+    expect(auto(rec(null, { cls: "apple-base", attempts: 3 }))).toEqual({ tier: "medium", probeFrom: "high" });
+  });
+
   it("stops probing after three attempts without a verdict", () => {
     expect(auto(rec(null, { attempts: 2 }))).toEqual({ tier: "medium", probeFrom: "high" });
     expect(auto(rec(null, { attempts: 3 }))).toEqual({ tier: "medium", probeFrom: null });
@@ -137,14 +149,14 @@ describe("autoTier and the verdict", () => {
 
   it("holds a governor drop at any window size, on a class that is never probed", () => {
     const rtx = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)";
-    const record = rec({ tier: "medium", source: "governor", pixels: 500_000 }, { gpu: rtx, browser: 153 });
+    const record = rec({ tier: "medium", source: "governor", pixels: 500_000 }, { gpu: rtx, cls: "discrete-modern", browser: 153 });
     const got = autoTier({ cls: "discrete-modern", cores: 16, memoryGb: 32, record, gpu: rtx, browser: 153, pixels: 8_000_000, now: NOW });
     expect(got).toEqual({ tier: "medium", probeFrom: null });
   });
 
   it("never takes a verdict above the class's ceiling", () => {
     const xe = "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)";
-    const record = rec({ tier: "high" }, { gpu: xe, browser: 153 });
+    const record = rec({ tier: "high" }, { gpu: xe, cls: "integrated-unknown", browser: 153 });
     const got = autoTier({ cls: "integrated-unknown", cores: 8, memoryGb: 16, record, gpu: xe, browser: 153, pixels: 2_073_600, now: NOW });
     expect(got).toEqual({ tier: "medium", probeFrom: null });
   });
@@ -155,13 +167,16 @@ describe("autoTier and the verdict", () => {
   });
 
   it("matches a record by version, GPU and browser, and holds a verdict by age and size", () => {
-    expect(recordMatches(rec({}), SAFARI, 26)).toBe(true);
-    expect(recordMatches(rec({}), SAFARI, 25)).toBe(false);
-    expect(recordMatches(null, SAFARI, 26)).toBe(false);
+    expect(recordMatches(rec({}), SAFARI, 26, "apple-unknown")).toBe(true);
+    expect(recordMatches(rec({}), SAFARI, 25, "apple-unknown")).toBe(false);
+    expect(recordMatches(rec({}), SAFARI, 26, "apple-base")).toBe(false);
+    expect(recordMatches(null, SAFARI, 26, "apple-unknown")).toBe(false);
     const v = rec({})!.verdict!;
     expect(verdictHolds(v, 3_110_400, NOW)).toBe(true);
     expect(verdictHolds(v, 3_110_401, NOW)).toBe(false);
     expect(verdictHolds({ ...v, source: "governor" }, 9_000_000, NOW)).toBe(true);
+    expect(verdictHolds({ ...v, at: NOW + DAY }, 2_073_600, NOW)).toBe(false);
+    expect(verdictHolds({ ...v, source: "governor", at: NOW + DAY }, 2_073_600, NOW)).toBe(false);
   });
 
   it("never gives less memory or fewer cores a higher tier", () => {

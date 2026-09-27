@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { parseTierOverride, readAutoRecord, resolveTier, writeAutoRecord } from "../../src/game/tierChoice.js";
+import { describe, it, expect, afterEach } from "vitest";
+import { pageStorage, parseTierOverride, readAutoRecord, resolveTier, writeAutoRecord } from "../../src/game/tierChoice.js";
 import type { AutoRecord } from "../../src/game/quality.js";
 
 function memoryStorage(): Storage {
@@ -20,7 +20,7 @@ function throwingStorage(): Storage {
 }
 
 const RECORD: AutoRecord = {
-  v: 1, gpu: "Apple GPU", browser: 26, attempts: 1,
+  v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
   verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000,
     readings: [{ tier: "high", frames: 120, meanMs: 23.96, p95Ms: 33.4, pixels: 2_073_600, engine: "webgl2" }] },
 };
@@ -44,13 +44,13 @@ describe("the Auto record's storage", () => {
 
   it("round-trips a record with no verdict, and a governor verdict with no readings", () => {
     const s = memoryStorage();
-    const none: AutoRecord = { v: 1, gpu: "", browser: 0, attempts: 3, verdict: null };
+    const none: AutoRecord = { v: 1, gpu: "", cls: "unknown", browser: 0, attempts: 3, verdict: null };
     expect(writeAutoRecord(s, none)).toBe(true);
-    expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "", browser: 0, attempts: 3, verdict: null });
-    const governor: AutoRecord = { v: 1, gpu: "nvidia/ampere", browser: 153, attempts: 0,
+    expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "", cls: "unknown", browser: 0, attempts: 3, verdict: null });
+    const governor: AutoRecord = { v: 1, gpu: "nvidia/ampere", cls: "discrete-modern", browser: 153, attempts: 0,
       verdict: { tier: "low", source: "governor", pixels: 1_405_320, at: 1_790_000_000_000 } };
     expect(writeAutoRecord(s, governor)).toBe(true);
-    expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "nvidia/ampere", browser: 153, attempts: 0,
+    expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "nvidia/ampere", cls: "discrete-modern", browser: 153, attempts: 0,
       verdict: { tier: "low", source: "governor", pixels: 1_405_320, at: 1_790_000_000_000 } });
   });
 
@@ -66,15 +66,16 @@ describe("the Auto record's storage", () => {
     expect(writeAutoRecord(null, RECORD)).toBe(false);
   });
 
-  it("reads nothing from a verdict or a reading of another shape", () => {
+  it("reads nothing from a record or a verdict of another shape", () => {
     const s = memoryStorage();
     const bad = [
       { ...RECORD, verdict: { ...RECORD.verdict, tier: "ultra" } },
       { ...RECORD, verdict: { ...RECORD.verdict, source: "guess" } },
       { ...RECORD, verdict: { ...RECORD.verdict, at: "yesterday" } },
-      { ...RECORD, verdict: { ...RECORD.verdict, readings: "none" } },
-      { ...RECORD, verdict: { ...RECORD.verdict, readings: [{ tier: "high", frames: 120 }] } },
       { ...RECORD, attempts: null },
+      { ...RECORD, cls: "quantum" },
+      { ...RECORD, cls: "constructor" },
+      { v: 1, gpu: "Apple GPU", browser: 26, attempts: 1, verdict: null },
       null,
       [],
     ];
@@ -82,6 +83,44 @@ describe("the Auto record's storage", () => {
       s.setItem("dayhike.quality.auto", JSON.stringify(value));
       expect(readAutoRecord(s)).toBe(null);
     }
+  });
+
+  it("drops a reading that does not read back whole, and keeps the verdict and the attempts", () => {
+    const s = memoryStorage();
+    const withInfinity: AutoRecord = { ...RECORD, verdict: { ...RECORD.verdict!, readings: [
+      { tier: "high", frames: 120, meanMs: Number.POSITIVE_INFINITY, p95Ms: 33.4, pixels: 2_073_600, engine: "webgl2" },
+      { tier: "medium", frames: 120, meanMs: 16.7, p95Ms: 17.1, pixels: 2_073_600, engine: "webgl2" },
+    ] } };
+    expect(writeAutoRecord(s, withInfinity)).toBe(true);
+    expect(readAutoRecord(s)).toEqual({
+      v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
+      verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000,
+        readings: [{ tier: "medium", frames: 120, meanMs: 16.7, p95Ms: 17.1, pixels: 2_073_600, engine: "webgl2" }] },
+    });
+    s.setItem("dayhike.quality.auto", JSON.stringify({ ...RECORD, verdict: { ...RECORD.verdict, readings: "none" } }));
+    expect(readAutoRecord(s)).toEqual({
+      v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
+      verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000 },
+    });
+  });
+});
+
+describe("pageStorage", () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+
+  afterEach(() => {
+    if (original) Object.defineProperty(globalThis, "localStorage", original);
+    else delete (globalThis as { localStorage?: Storage }).localStorage;
+  });
+
+  it("gives the page's storage, null where there is none, and null where its accessor throws", () => {
+    const s = memoryStorage();
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: s });
+    expect(pageStorage()).toBe(s);
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, get() { throw new Error("SecurityError"); } });
+    expect(pageStorage()).toBe(null);
+    delete (globalThis as { localStorage?: Storage }).localStorage;
+    expect(pageStorage()).toBe(null);
   });
 });
 

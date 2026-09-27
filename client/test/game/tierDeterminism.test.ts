@@ -37,6 +37,7 @@ import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, serializeWorldState, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import type { Level } from "../../src/sim/level.js";
+import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { createRenderer } from "../../src/game/renderer.js";
 import type { QualityTier } from "../../src/game/quality.js";
 
@@ -44,9 +45,14 @@ const LEVEL: Level = { id: "tier-determinism", brushes: [], playerSpawns: [], en
 const FAKE_CANVAS = { renderWidth: 1600, renderHeight: 900 } as unknown as HTMLCanvasElement;
 const ATMO = 627994160;
 
-/** One forest world, one player walking for 120 ticks, drawn after every tick
- * by a renderer on `tier`, or by none. */
-function run(tier: QualityTier | null): { state: string; passHash: number } {
+/**
+ * One forest world, one player walking for 120 ticks, drawn after every tick
+ * by a renderer on `tier`, or by none. `blades` says whether that renderer
+ * built the blade field, which only medium and high draw: it shows each run
+ * really drew on its own tier, so the state comparison cannot pass by every
+ * renderer quietly building the same one.
+ */
+function run(tier: QualityTier | null): { state: string; passHash: number; blades: boolean | null } {
   const forest = createForest(ATMO);
   const world = createForestWorld(forest);
   const player = spawnPlayer(world);
@@ -56,7 +62,9 @@ function run(tier: QualityTier | null): { state: string; passHash: number } {
       tickWorld(world, new Map([[player.id, { seq: t + 1, moveX: 0, moveZ: 1, yaw: 0.3, pitch: 0, buttons: 0 }]]));
       renderer?.sync(world.state, player.id, 0.5, { dt: 1 / 60, sprinting: false });
     }
-    return { state: serializeWorldState(world.state), passHash: forest.passHash };
+    const scene = renderer === null ? null : EngineStore.LastCreatedScene;
+    const blades = scene === null ? null : scene.meshes.some((mesh) => mesh.name.startsWith("blade_clumps"));
+    return { state: serializeWorldState(world.state), passHash: forest.passHash, blades };
   } finally {
     renderer?.dispose();
   }
@@ -66,6 +74,12 @@ describe("the tier is drawing only", () => {
   it("steps one world, to the byte, whatever tier draws it or none", () => {
     const bare = run(null);
     expect(bare.passHash).toBe(-311867473);
-    for (const tier of ["low", "medium", "high"] as const) expect(run(tier)).toEqual(bare);
+    expect(bare.blades).toBe(null);
+    const drawn = { low: run("low"), medium: run("medium"), high: run("high") };
+    for (const got of [drawn.low, drawn.medium, drawn.high]) {
+      expect(got.state).toBe(bare.state);
+      expect(got.passHash).toBe(-311867473);
+    }
+    expect([drawn.low.blades, drawn.medium.blades, drawn.high.blades]).toEqual([false, true, true]);
   }, 120_000);
 });
