@@ -1373,6 +1373,33 @@ EOF
 
 ### Task 5: Apply a tier mid-hike by rebuilding the renderer
 
+**As Task 4 left the pause screen.** Task 4 built the pause screen's Apply and
+its state already. A choice only selects; Apply hands the selection to
+`createPauseMenu`'s `settings.onApply(choice): void | Promise<void>`, and
+Back and Escape discard it. All of that is `pauseStep` (`pauseMenu.ts`), with
+the focus moves as its effects. While a promise from `onApply` is pending, the
+page reads "Applying…" and holds every choice, Back and Escape. Today
+`onApply` only keeps the choice for the next hike. This task makes the swap
+live, and with it:
+
+- `onApply` saves the choice and swaps the renderer (`applyTier` below),
+  returning the promise the menu already waits on. The plan's `pending`,
+  `onChoose` and the clearing on `menu.show()` in step 6 are `pauseStep`'s now,
+  and are not rebuilt.
+- In `settingsModel`, Apply's disabled rule becomes "the selection resolves to
+  the tier already running" (`resolveTier` of the selection, against
+  `running`), design §8.3. It replaces Task 4's "the selection differs from
+  the saved choice". The line "Applies the next time you start a hike." goes.
+- "This hike is using X." reads the tier running now, updated after every swap,
+  not `options.tier`, which is only the tier the hike started at.
+- A failed swap says so. `SettingsInput.error?: string` puts one line after the
+  others, "Could not switch; still using Medium." (the tier that was running,
+  or that the fallback rebuilt). It is set when `onApply` rejects or the swap
+  falls back, and cleared by the next choice.
+
+The interface and test snippets below were written before Task 4; where they
+differ, this list stands.
+
 **Files:**
 - Create: `client/src/game/canvasBinding.ts` (`bindCanvas`), `client/src/game/rendererSwap.ts` (`swapRenderer`, `whenSceneReady`)
 - Modify: `client/src/game/input.ts` (the canvas listeners through `bindCanvas`; `InputSampler.rebind`)
