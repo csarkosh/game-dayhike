@@ -407,7 +407,9 @@ frustum), and the prefix is cut again when the roll changes by more than
 looking up still took a far ground corner up to 0.54 m past the sphere, so
 `CULL_TURN` is **3.5°**: the sweep, with the cut level and rolled 1.8° either
 way, turns of 3.5° on both axes, a roll of 1° and moves of 0.49 m, then keeps
-every extent with 0.23 m to spare. At the default `/bob` a walk rolls the camera
+every extent with 0.23 m to spare; over every sign combination of turn, pitch
+and roll the least room left is 0.13 m, so the thresholds keep at least 0.12 m
+in hand. At the default `/bob` a walk rolls the camera
 0.6° end to end, under `CULL_ROLL`; the turn threshold costs about a seventh
 more refilters while turning. What a pose keeps does not change.
 
