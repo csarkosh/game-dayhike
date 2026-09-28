@@ -266,7 +266,8 @@ With six earlier high loads and one diagnostic load of the same outcome, 13 of
 13 high and 3 of 3 medium loads started WebGPU (first frame 2.1–3.4 s) and
 none stayed: 10.9–20.7 s in, a pipeline failed validation, the record
 `{"reason":"pipeline","browser":154,"babylon":"9.18.0",…,"losses":0}` was
-stored, and the page ended on WebGL2. The two messages, each once per load:
+stored, and the page ended on WebGL2. The two messages, each twice per load
+(once in Babylon's log and once in the browser's):
 
 - `Total fragment input variables count (18 = 17 (user-defined) + 1 (front_facing) exceeds the maximum (17).`
 - `Vertex output variable "<retval>.vFadeDist_1" has a location (17) that is too large. It should be less than (17).` and `Total vertex output variables count (18 = 18 (user-defined)) exceeds the maximum (17).`
@@ -357,8 +358,12 @@ of each crop's mean linear RGB; the WebGL2 floor from two loads of (a) is
 | medium (b) | 0.090 / 20.9 | 0.859 / 2.08 | 0.967 / 0.74 | 1.001 / 0.02 |
 | medium (c) | 0.578 / 18.0 | 2.886 / 17.05 | 2.169 / 9.60 | 1.405 / 3.25 |
 
-The two tiers agree to within 0.01 in every ratio: the medium tier's probe,
-shadow and grade pass change nothing. On WebGPU the bed goes black beyond a
+In (a) the two tiers agree to within 0.01 in every ratio. In (b) they agree
+but for the sky, 0.990 on high against 0.967 on medium. In (c) they part
+further: the bed 0.609 against 0.578, the near bed 2.666 against 2.886, the sky
+2.139 against 2.169 and the haze 1.420 against 1.405. The bed's gap is of the
+same kind and size on both tiers, so the medium tier's probe, shadow and grade
+pass neither cause it nor close it. On WebGPU the bed goes black beyond a
 sharp, stepped edge some metres out, with a pale band toward the crest; nearer
 than the edge it is the right warm brown, and the ground beside it, under the
 same material, matches WebGL2.
