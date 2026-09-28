@@ -74,6 +74,7 @@ import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice
 import {
   buildFirstRenderer,
   buildOrUndo,
+  engineWithinBound,
   swapRenderer,
   switchOutcome,
   whenSceneReady,
@@ -131,7 +132,7 @@ export type GameOptions = {
   /** The engine the WebGPU rule gives `tier` now, made on a fresh canvas
    * (`main.ts`'s `engineFor`): what a switch of tier, and a rebuild after a
    * failure, builds on. */
-  engineFor(tier: QualityTier): Promise<EngineOnCanvas>;
+  engineFor(tier: QualityTier, wanted: () => boolean): Promise<EngineOnCanvas>;
   /** A failure of the running WebGPU engine, or a renderer that could not be
    * built on one (`"pipeline"`): the page remembers it (`failureSwap`), so the
    * WebGPU rule gives the rebuild its engine. The HUD's line for once the
@@ -1439,7 +1440,19 @@ function buildGame(
     try {
       await new Promise<void>((resolve) => afterNextPaint(resolve));
       if (disposed) return tier;
-      const next = await options.engineFor(target);
+      // The engine's making counts against the cover's bound; the scene waits
+      // on what is left of it. An engine too slow for the bound gives way to
+      // WebGL2 at `target`, remembered against nothing.
+      const made = await engineWithinBound((wanted) => options.engineFor(target, wanted), readyMaxMs, {
+        now: () => performance.now(),
+        setTimer: (fn, ms) => {
+          const id = setTimeout(fn, ms);
+          return () => clearTimeout(id);
+        },
+        webgl2: () => ({ canvas: document.createElement("canvas"), engine: null, watchers: null }),
+      });
+      if (made.late) console.warn(`WebGPU: the engine was not ready within the switch's ${readyMaxMs} ms; drawing ${target} with WebGL2.`);
+      const next = made.onCanvas;
       if (disposed || broken) {
         next.engine?.dispose();
         return tier;
@@ -1485,7 +1498,7 @@ function buildGame(
       console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine ${renderer.engine.isWebGPU ? "webgpu" : "webgl2"}`);
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
-      await whenSceneReady(renderer.scene, readyMaxMs, renderer.forestReady);
+      await whenSceneReady(renderer.scene, made.leftMs, renderer.forestReady);
       return tier;
     } finally {
       switching = false;

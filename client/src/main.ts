@@ -591,12 +591,12 @@ function engineInput(tier: QualityTier): EngineInput {
  * WebGL2 then gets another fresh canvas. `current` says whether the page
  * still wants the engine.
  */
-function engineFor(tier: QualityTier, read: GpuSignals, current: () => boolean): Promise<EngineOnCanvas> {
+function engineFor(tier: QualityTier, read: GpuSignals, current: () => boolean, wanted: () => boolean = () => true): Promise<EngineOnCanvas> {
   const canvas = document.createElement("canvas");
   const input = engineInput(tier);
   const webgl2 = { engine: null, watchers: null };
   const tried = chooseEngine(input) !== "webgl2";
-  return engineForTier(input, () => makeWebGpu(canvas, input, read, current)).then((made) =>
+  return engineForTier(input, () => makeWebGpu(canvas, input, read, current, wanted)).then((made) =>
     made !== null ? { canvas, ...made } : { canvas: tried ? document.createElement("canvas") : canvas, ...webgl2 },
   );
 }
@@ -641,7 +641,13 @@ function rememberFailure(reason: "init" | "pipeline" | "lost", pin = true): { st
  * every failure caught. A page without `navigator.gpu` fetches nothing. The
  * URL is pinned only while the page still wants the engine (`current`).
  */
-function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput, read: GpuSignals, current: () => boolean): Promise<MadeEngine | null> {
+function makeWebGpu(
+  canvas: HTMLCanvasElement,
+  input: EngineInput,
+  read: GpuSignals,
+  current: () => boolean,
+  wanted: () => boolean = () => true,
+): Promise<MadeEngine | null> {
   let translators: Awaited<ReturnType<GpuModule["loadTranslators"]>> | undefined;
   return resolveWebGpu<MadeEngine>(input, {
     available: () => (navigator as { gpu?: unknown }).gpu !== undefined,
@@ -658,7 +664,10 @@ function makeWebGpu(canvas: HTMLCanvasElement, input: EngineInput, read: GpuSign
         }),
       };
     },
-    remember: (reason) => void rememberFailure(reason, current()),
+    // An engine a switch gave up waiting for was slow, not broken.
+    remember: (reason) => {
+      if (wanted()) void rememberFailure(reason, current());
+    },
     warn: (message, detail) => {
       if (detail === undefined) console.warn(message);
       else console.warn(message, detail);
@@ -810,7 +819,7 @@ function render(container: HTMLDivElement): void {
       container.appendChild(onCanvas.canvas);
       const read = hikeSignals;
       if (read === null) throw new Error("the GPU's signals were not read");
-      launch(container, onCanvas, route.token, decided, (tier) => engineFor(tier, read, () => !cancelled()));
+      launch(container, onCanvas, route.token, decided, (tier, wanted) => engineFor(tier, read, () => !cancelled(), wanted));
     },
     fail: (error) => {
       console.error("The game could not start.", error);
@@ -840,7 +849,7 @@ function launch(
   onCanvas: EngineOnCanvas,
   worldToken: string,
   decided: StartupTier,
-  engineForGame: (tier: QualityTier) => Promise<EngineOnCanvas>,
+  engineForGame: (tier: QualityTier, wanted: () => boolean) => Promise<EngineOnCanvas>,
 ): void {
   const handle = startOnEngine<GameHandle>(onCanvas, {
     // The recorder the game is handed is `startOnEngine`'s: a fault found

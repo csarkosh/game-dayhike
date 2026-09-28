@@ -90,6 +90,42 @@ export type EngineWatchers = {
  * makes itself. */
 export type EngineOnCanvas = { canvas: HTMLCanvasElement; engine: AbstractEngine | null; watchers: EngineWatchers | null };
 
+/**
+ * The engine a switch builds on, made within its cover's bound, and what is
+ * left of the bound for the new scene's wait (`whenSceneReady`), so the cover
+ * stays up no longer than the bound its caller names plus the build itself. A
+ * switch into WebGPU can otherwise wait up to 10 s for the engine, and 10 s
+ * more for the translators, before the bound starts. `make` is told, through
+ * `wanted`, whether its engine is still wanted. One not made within `boundMs`
+ * is let go of when it arrives; the switch takes WebGL2 at its tier on a fresh
+ * canvas (`late`), with nothing of it remembered against the engine, which was
+ * slow rather than broken: `wanted` reads false from then on, so a failure the
+ * late start meets records nothing, and the next switch or load tries it again.
+ */
+export async function engineWithinBound(
+  make: (wanted: () => boolean) => Promise<EngineOnCanvas>,
+  boundMs: number,
+  deps: { now(): number; setTimer(fn: () => void, ms: number): () => void; webgl2(): EngineOnCanvas },
+): Promise<{ onCanvas: EngineOnCanvas; leftMs: number; late: boolean }> {
+  const from = deps.now();
+  let wanted = true;
+  const making = make(() => wanted);
+  let clear: () => void = () => undefined;
+  const late = new Promise<null>((resolve) => {
+    clear = deps.setTimer(() => resolve(null), Math.max(0, boundMs));
+  });
+  const first = await Promise.race([making, late]).finally(() => clear());
+  if (first === null) {
+    wanted = false;
+    void making.then(
+      (made) => made.engine?.dispose(),
+      () => undefined,
+    );
+    return { onCanvas: deps.webgl2(), leftMs: 0, late: true };
+  }
+  return { onCanvas: first, leftMs: Math.max(0, boundMs - (deps.now() - from)), late: false };
+}
+
 /** One rung of a ladder: a tier, and the engine made for it (null: WebGL2). */
 type Rung = { tier: QualityTier; engine: AbstractEngine | null; watch: WatchEngine | null };
 
