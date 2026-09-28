@@ -13,6 +13,7 @@ import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { CAR_HALF, KIOSK_HALF, kioskFacing } from "./passes/trailhead.js";
 import { hikerNames } from "./hikerNames.js";
+import { facingYaw } from "./facing.js";
 
 export const POSTER_RADIUS = 0.4;
 /** Height above the kiosk's ground of the poster's centre: the middle of the
@@ -49,29 +50,14 @@ export type SearchInput = {
   car: { x: number; z: number };
 };
 
-/**
- * The body faces the way a climber arrives: from the crest back down the
- * stem's last edge. A piecewise-linear atan2 over eight octants, exact at
- * the axes and within 0.07 rad between them — enough for a body to read as
- * facing the trail — and bit-identical everywhere because it uses no trig;
- * yaw = 0 faces +z, and on a stem the last edge is never degenerate.
- */
-function facingYaw(dx: number, dz: number): number {
-  const ax = dx < 0 ? -dx : dx, az = dz < 0 ? -dz : dz;
-  const t = ax + az === 0 ? 0 : ax / (ax + az); // 0 on +z, 1 on +x
-  const quarter = Math.PI / 2;
-  let yaw = t * quarter; // first octant pair: +x, +z
-  if (dz < 0) yaw = Math.PI - yaw;
-  if (dx < 0) yaw = -yaw;
-  return yaw;
-}
-
 /** The poster's hiker, the body's place, the poster and the car, all from the seed. */
 export function buildSearch(input: SearchInput): Search {
   const { graph, groundH } = input;
   const crest = graph.nodes[graph.summit] as TrailNode;
   const lastEdge = graph.edges[graph.stem[graph.stem.length - 1] as number];
   const from = lastEdge === undefined ? crest : (graph.nodes[lastEdge.a === graph.summit ? lastEdge.b : lastEdge.a] as TrailNode);
+  // The body faces the way a climber arrives: from the crest back down the
+  // stem's last edge, which on a stem is never degenerate.
   const body = {
     pos: { x: crest.x, y: groundH(crest.x, crest.z), z: crest.z },
     yaw: facingYaw(from.x - crest.x, from.z - crest.z),
