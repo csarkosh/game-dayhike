@@ -248,7 +248,7 @@ Each is listed in `client/assets/catalog.json` and credited in `CREDITS.md`.
 
 | Value | Where | What happens |
 | --- | --- | --- |
-| The trailhead pass's tunables | `client/src/sim/passes/trailhead.ts` | `SIGN_ROAD_U`, `SIGN_ROAD_Z` and `KIOSK_HALF_*` go; `BOARD_ALONG`, `BOARD_OFFSET`, `BOARD_BED_CLEAR`, `BOARD_ROAD_CLEAR`, `BOARD_BOX_HALF_*` and `BOARD_BOX_STEP` join |
+| The trailhead pass's tunables | `client/src/sim/passes/trailhead.ts` | `SIGN_ROAD_U`, `SIGN_ROAD_Z` and `KIOSK_HALF_*` go; `BOARD_ALONG`, `BOARD_OFFSET`, `BOARD_BED_CLEAR`, `BOARD_ROAD_CLEAR`, `BOARD_BOX_HALF_*`, `BOARD_BOX_STEP` and `BOARD_BOXES` join |
 | The signs pass's tunables | `client/src/sim/passes/signs.ts` | `TRAIL_SIGNS` goes |
 | The level id's probe | `client/src/sim/forest.ts` | The chunks that hold the car and the board's boxes for the probe's seed are measured again and recorded |
 | The pass hash, 178231578 | `client/test/sim/groundGradient.test.ts` | Re-pinned |
