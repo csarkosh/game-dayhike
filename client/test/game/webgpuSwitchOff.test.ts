@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chooseEngine, engineForTier, WEBGPU_ENABLED, WEBGPU_TIERS, type EngineInput } from "../../src/game/engineChoice.js";
 import { autoPick, qualityLine, runProbe } from "../../src/game/frameProbe.js";
@@ -76,6 +77,26 @@ describe("the start with the WebGPU switch off", () => {
 
   it("logs the tier detection branch's line for the tier, the engine named", () => {
     expect(qualityLine("medium", "auto", "apple-unknown", "webgl2")).toBe("quality: medium (auto, apple-unknown), engine webgl2");
+  });
+
+  it("reaches the WebGPU path only through the rule: `makeWebGpu` called once, from behind `engineForTier`", () => {
+    const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
+    // Its definition, and the one call the rule gates.
+    expect(main.match(/\bmakeWebGpu\(/g)).toEqual(["makeWebGpu(", "makeWebGpu("]);
+    expect(main).toContain("function makeWebGpu(");
+    expect(main).toContain("engineForTier(input, () => makeWebGpu(canvas, input, read, current))");
+    // The translators are started in one place, inside it.
+    expect(main.match(/\bloadTranslators\(/g)).toEqual(["loadTranslators("]);
+    const inside = main.slice(main.indexOf("function makeWebGpu("), main.indexOf("\n}\n", main.indexOf("function makeWebGpu(")));
+    expect(inside).toContain("translators = await gpu.loadTranslators();");
+  });
+
+  it("names the translators' files in the WebGPU module alone, so nothing else can fetch them", () => {
+    const src = fileURLToPath(new URL("../../src", import.meta.url));
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith(".ts") ? [join(dir, e.name)] : []));
+    const naming = files(src).filter((file) => /glslang|twgsl/.test(readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
+    expect(naming.map((file) => relative(src, file))).toEqual(["game/gpuEngine.ts"]);
   });
 
   it("imports the WebGPU module in one place, on the path the rule sends to WebGPU", () => {
