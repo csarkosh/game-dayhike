@@ -98,11 +98,14 @@ export function mapSizeProblem(bytes, ceiling = MAP_CEILING) {
  * count as one.
  */
 export function lineFigures(texts) {
+  // Held once: an iterator handed in (the map's values) reads only once, and
+  // there are two counts to make.
+  const held = [...texts];
   const count = (mask) => {
     const seen = new Set();
     let lines = 0;
     let distinctBytes = 0;
-    for (const text of texts) {
+    for (const text of held) {
       for (const raw of text.split('\n')) {
         lines += 1;
         const line = mask ? raw.replace(/\d+/g, '#') : raw;
