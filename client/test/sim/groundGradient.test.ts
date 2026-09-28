@@ -703,6 +703,11 @@ describe("the level id does not move", () => {
     // (registryDigest moves) and the car's box moves 12 m along the road
     // in the probe chunk that holds it (probeDigest moves). A peer with the
     // car at its old place collides differently on the pad.
-    expect(passHash()).toBe(1899941812);
+    // Re-baselined 2026-09-28 from 1899941812: a sign post stands at the
+    // trail's entrance. TRAIL_SIGNS joins pass 9's tunables, so
+    // registryDigest moves whether or not a probed chunk holds the post,
+    // and the chunk that holds the entrance gains the post's box. A peer
+    // without the post has different collision at the entrance.
+    expect(passHash()).toBe(1306907761);
   });
 });
