@@ -11,7 +11,9 @@
  * PBR and standard materials are switched to GLSL by Babylon's own
  * `ForceGLSL`, before the game makes any material. The engine translates that
  * GLSL at run time with the glslang and twgsl builds `@babylonjs/core` ships,
- * which the build content-hashes and serves with the game, never from a CDN.
+ * which the build content-hashes and serves with the game, never from a CDN;
+ * but first it looks each stage up (`shaderLookup.ts`), and starts the
+ * translators only for one it does not find.
  */
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
 // What the non-pure `webgpuEngine.js` loads with the engine, but for its
@@ -59,7 +61,10 @@ import {
   WEBGPU_FETCH_MS,
   WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS,
+  type EngineFailure,
+  type ShaderLookupMode,
 } from "./engineChoice.js";
+import { lookUpShaders } from "./shaderLookup.js";
 
 /** How `catchTranslationFailures` words a failure it cannot trace to an effect. */
 const UNTRANSLATED = "WebGPU shader translation failed";
@@ -67,6 +72,20 @@ const UNTRANSLATED = "WebGPU shader translation failed";
 /** Per engine, who hears of a translation failure that belongs to no
  * compiled effect: the engine's watcher, and no other engine's. */
 const untranslatedHeard = new WeakMap<AbstractEngine, Set<() => void>>();
+
+/** Per engine, who hears that the translators could not be fetched for a
+ * shader its lookup did not find (`reportUnfetched`): the engine's watcher. */
+const unfetchedHeard = new WeakMap<AbstractEngine, Set<() => void>>();
+/** The engines told so, for a watcher put on after. */
+const unfetchedEngines = new WeakSet<AbstractEngine>();
+
+/** Tells `engine`'s watcher that the translators could not be fetched for a
+ * shader its lookup did not find (`lookUpShaders`'s `unfetched`); a watcher
+ * put on later hears it too. */
+export function reportUnfetched(engine: AbstractEngine): void {
+  unfetchedEngines.add(engine);
+  for (const hear of unfetchedHeard.get(engine) ?? []) hear();
+}
 
 type Preparing = {
   _preparePipelineContextAsync: (pipelineContext: unknown, ...rest: unknown[]) => Promise<void>;
@@ -225,21 +244,40 @@ async function startTranslators(signal: AbortSignal): Promise<Translators> {
 }
 
 /**
+ * Hands `translators` to Babylon on `engine`, as `initAsync`'s options take
+ * them (glslang as a promise, twgsl as the instance), and waits for Babylon to
+ * take them: after it, the engine translates on its own path. For an engine
+ * made with none, whose shader lookup starts them at its first stage not
+ * found (`createWebGpuEngine`).
+ */
+export async function handTranslators(engine: WebGPUEngine, translators: Translators): Promise<void> {
+  const own = engine as unknown as { _glslangOptions: unknown; _twgslOptions: unknown };
+  own._glslangOptions = { glslang: Promise.resolve(translators.glslang) };
+  own._twgslOptions = { twgsl: translators.twgsl };
+  await engine.prepareGlslangAndTintAsync();
+}
+
+/**
  * A WebGPU engine on `canvas`, made with the WebGL2 engine's own options
  * (antialiased, a stencil buffer, adapted to the device ratio), the
  * high-performance adapter, exactly `WEBGPU_REQUIRED_LIMITS`, and the optional
  * `features` it is given (`featuresToRequest`; Babylon also drops any the
- * adapter lacks), with the `translators` `loadTranslators` started handed to
- * Babylon as they are. Rejects on any failure, or when `ms` pass first, having
- * disposed what it made; the canvas may then hold a WebGPU context, so the
- * caller draws WebGL2 on a fresh one.
+ * adapter lacks). Given no `translators`, it looks every GLSL shader up before
+ * translating it (`lookUpShaders`, in `lookup`'s mode), and starts the
+ * translators at the first stage not found, or once the page is idle after
+ * its first frame (`loadTranslators`, `handTranslators`); given the
+ * `translators` `loadTranslators` started (`?wgsl=off`), it hands them to
+ * Babylon as they are and translates every stage on Babylon's own path.
+ * Rejects on any failure, or when `ms` pass first, having disposed what it
+ * made; the canvas may then hold a WebGPU context, so the caller draws WebGL2
+ * on a fresh one.
  */
 export async function createWebGpuEngine(
   canvas: HTMLCanvasElement,
-  options: { ms?: number; features?: readonly string[]; translators?: Translators } = {},
+  options: { ms?: number; features?: readonly string[]; translators?: Translators; lookup?: ShaderLookupMode } = {},
 ): Promise<WebGPUEngine> {
   const translators = options.translators;
-  if (translators === undefined) throw new Error("load the WebGPU translators first");
+  if (translators === undefined && options.lookup === "off") throw new Error("load the WebGPU translators first");
   const ms = options.ms ?? WEBGPU_START_MS;
   const made: { engine: WebGPUEngine | null } = { engine: null };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -263,11 +301,20 @@ export async function createWebGpuEngine(
     made.engine = engine;
     giveUpRestore(engine);
     mipEveryLayer(engine);
+    // Before the wrap below, which wraps whatever preparation it finds.
+    if (translators === undefined) {
+      lookUpShaders(engine, {
+        mode: options.lookup ?? "on",
+        translators: async () => handTranslators(engine, await loadTranslators()),
+        unfetched: () => reportUnfetched(engine),
+      });
+    }
     catchTranslationFailures(engine);
     // The started translators, as Babylon's options take them: glslang as a
     // promise (its setup waits on it), twgsl as the instance. No path to load.
-    await engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl });
-    await engine.prepareGlslangAndTintAsync();
+    // None where the lookup starts them.
+    await engine.initAsync(translators && { glslang: Promise.resolve(translators.glslang) }, translators && { twgsl: translators.twgsl });
+    if (translators !== undefined) await engine.prepareGlslangAndTintAsync();
     return engine;
   };
   try {
@@ -348,17 +395,20 @@ export function giveUpRestore(engine: AbstractEngine): void {
  * fails to translate or compile (with `catchTranslationFailures` installed, a
  * translation failure is one), or an uncaptured WebGPU error (`"pipeline"`),
  * and a lost device Babylon did not cause (`"lost"`; Babylon says nothing of
- * the loss a disposed engine's destroyed device makes). Each is reported
- * once, and only from this engine: an uncaptured error is heard on its own
- * device's `uncapturederror` event, not in Babylon's log, which every engine
- * of the page writes to (a probe step's, or one released and still waiting
- * for its BRDF lookup texture). Returns a function that removes every
- * listener; the game calls it before the engine is disposed.
+ * the loss a disposed engine's destroyed device makes), and translators that
+ * could not be fetched for a shader its lookup did not find (`"unfetched"`,
+ * `reportUnfetched`, heard even when told before this watcher was put on).
+ * Each is reported once, and only from this engine: an uncaptured error is
+ * heard on its own device's `uncapturederror` event, not in Babylon's log,
+ * which every engine of the page writes to (a probe step's, or one released
+ * and still waiting for its BRDF lookup texture). Returns a function that
+ * removes every listener; the game calls it before the engine is disposed.
  */
-export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void): () => void {
-  const reported = new Set<"pipeline" | "lost">();
-  const report = (reason: "pipeline" | "lost"): void => {
-    if (reported.has(reason)) return;
+export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: EngineFailure) => void): () => void {
+  const reported = new Set<EngineFailure>();
+  let watching = true;
+  const report = (reason: EngineFailure): void => {
+    if (!watching || reported.has(reason)) return;
     reported.add(reason);
     onFailure(reason);
   };
@@ -375,12 +425,20 @@ export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: "pipelin
   const heard = untranslatedHeard.get(engine) ?? new Set<() => void>();
   untranslatedHeard.set(engine, heard);
   heard.add(onUncaptured);
+  const onUnfetched = (): void => report("unfetched");
+  const unfetched = unfetchedHeard.get(engine) ?? new Set<() => void>();
+  unfetchedHeard.set(engine, unfetched);
+  unfetched.add(onUnfetched);
+  // Told before this watcher: reported once the caller holds its stop.
+  if (unfetchedEngines.has(engine)) queueMicrotask(onUnfetched);
 
   return () => {
+    watching = false;
     engine.onEffectErrorObservable.remove(effectError);
     engine.onContextLostObservable.remove(lost);
     device?.removeEventListener("uncapturederror", onUncaptured);
     heard.delete(onUncaptured);
+    unfetched.delete(onUnfetched);
   };
 }
 

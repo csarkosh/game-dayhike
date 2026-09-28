@@ -43,6 +43,7 @@
  */
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { Scene } from "@babylonjs/core/scene.js";
+import type { EngineFailure } from "./engineChoice.js";
 import type { QualityTier } from "./quality.js";
 import type { Renderer } from "./renderer.js";
 import type { TierChoice } from "./tierChoice.js";
@@ -75,7 +76,7 @@ export type Swappable = { renderer: Renderer; canvas: HTMLCanvasElement };
 
 /** Listens to a WebGPU engine for the failures the game answers
  * (`watchWebGpu`, `gpuEngine.ts`); the function returned stops listening. */
-export type WatchEngine = (engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void) => () => void;
+export type WatchEngine = (engine: AbstractEngine, onFailure: (reason: EngineFailure) => void) => () => void;
 
 /** The WebGPU module's watchers (`gpuEngine.ts`): its failures
  * (`watchWebGpu`), and the frames that made a render pipeline

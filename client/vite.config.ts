@@ -1,7 +1,27 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { defineConfig } from "vitest/config";
 import { timeLimit } from "./test/helpers/timeLimit.js";
 
+/**
+ * The SHA-256 of each shader translator's WebAssembly as Babylon ships it,
+ * `glslang=<hex>|twgsl=<hex>`: part of the salt of every key the WebGPU
+ * shader lookup makes (`shaderLookup.ts`), so a translator that changes
+ * makes every stored translation unreachable. Computed here, once a build,
+ * so the page never hashes 2.6 MB.
+ */
+function translatorDigests(): string {
+  const resolve = createRequire(import.meta.url).resolve;
+  const digest = (name: string): string =>
+    createHash("sha256").update(readFileSync(resolve(`@babylonjs/core/assets/${name}/${name}.wasm`))).digest("hex");
+  return `glslang=${digest("glslang")}|twgsl=${digest("twgsl")}`;
+}
+
 export default defineConfig({
+  define: {
+    __WGSL_TRANSLATORS__: JSON.stringify(translatorDigests()),
+  },
   // The web build lives under games.csarko.sh/dayhike; the desktop shell serves
   // from its own origin at /. The deploy scripts set DAYHIKE_BASE per build and
   // the router reads the result back from import.meta.env.BASE_URL, so no route

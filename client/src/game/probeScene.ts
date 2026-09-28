@@ -23,6 +23,7 @@ import {
   probeReadingLine,
   type StartupDeps,
 } from "./frameProbe.js";
+import type { EngineFailure } from "./engineChoice.js";
 import { afterNextPaint } from "./paint.js";
 import { showProbeScreen, timeIdleCadence } from "./probeScreen.js";
 import { containerPixels, type ProbeReading, type QualityTier, type VerdictEngine } from "./quality.js";
@@ -44,7 +45,7 @@ export type ProbeScene = { renderer: Renderer; frame(): void; dispose(): void };
 export type StepEngine = {
   canvas: HTMLCanvasElement;
   engine: AbstractEngine | null;
-  watch: ((engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void) => () => void) | null;
+  watch: ((engine: AbstractEngine, onFailure: (reason: EngineFailure) => void) => () => void) | null;
 };
 
 /** A probe step ended by a fault of its WebGPU engine: its build, an effect,

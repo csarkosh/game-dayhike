@@ -2,7 +2,7 @@ import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
 import { createRenderer, terrainMaterialFor, type FreecamView, type Renderer } from "./game/renderer.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
-import { FALLBACK_NOTICE_MS } from "./game/engineChoice.js";
+import { FALLBACK_NOTICE_MS, type EngineFailure } from "./game/engineChoice.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
@@ -137,7 +137,7 @@ export type GameOptions = {
    * built on one (`"pipeline"`): the page remembers it (`failureSwap`), so the
    * WebGPU rule gives the rebuild its engine. The HUD's line for once the
    * rebuild is done. */
-  engineFailed(reason: "pipeline" | "lost"): string;
+  engineFailed(reason: EngineFailure): string;
   /** The tier `main.ts` decided (`startupTier`): `?tier=`, the player's
    * choice, or Auto. The hike starts at it; the pause screen's Settings can
    * change it while the hike runs. */

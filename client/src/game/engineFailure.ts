@@ -16,6 +16,7 @@ import {
   recordFailure,
   writeFallback,
   type EngineEnv,
+  type EngineFailure,
   type EngineName,
 } from "./engineChoice.js";
 import { GOVERNOR_SWAP_READY_MAX_MS, type EngineOnCanvas } from "./rendererSwap.js";
@@ -91,7 +92,7 @@ export type FailureDeps = {
    * record, and the URL's pin where needed: `recordEngineFailure`). Its line
    * is the one that engine would earn; the line shown is chosen from the
    * engine the rebuild ends on. */
-  record(reason: "pipeline" | "lost"): string;
+  record(reason: EngineFailure): string;
   /** Covers play; the function returned lifts it. */
   cover(): () => void;
   /** Stops the render loop on the failed engine. */
@@ -102,6 +103,13 @@ export type FailureDeps = {
   rebuild(readyMaxMs: number): Promise<void>;
   flash(line: string): void;
   log(line: string): void;
+};
+
+/** How the log names each failure. */
+const FAILURE_WORDS: Record<EngineFailure, string> = {
+  pipeline: "a GPU error",
+  lost: "the device was lost",
+  unfetched: "its translators did not load",
 };
 
 /**
@@ -117,14 +125,14 @@ export type FailureDeps = {
  * restarted on WebGPU, switched to WebGL2. The cover lifts on every outcome;
  * a rebuild that throws shows no line.
  */
-export function answerFailures(deps: FailureDeps): (engine: unknown, reason: "pipeline" | "lost") => Promise<void> {
+export function answerFailures(deps: FailureDeps): (engine: unknown, reason: EngineFailure) => Promise<void> {
   const answered = new Set<unknown>();
   return async (engine, reason) => {
     if (answered.has(engine) || engine !== deps.running()) return;
     answered.add(engine);
     deps.unwatch();
     if (!deps.alive()) return;
-    deps.log(`WebGPU: ${reason === "lost" ? "the device was lost" : "a GPU error"}; rebuilding the renderer.`);
+    deps.log(`WebGPU: ${FAILURE_WORDS[reason]}; rebuilding the renderer.`);
     deps.record(reason);
     await deps.serial.settled();
     // A switch under way may already have left the failed engine.
@@ -168,6 +176,20 @@ export function recordEngineFailure(
 }
 
 /**
+ * Translators that could not be fetched for a shader the lookup did not find
+ * (`unfetched`): the network's failure, not the GPU's, so nothing is written
+ * to storage and the next load tries WebGPU again. The page holds itself on
+ * WebGL2 for the rest of its life (the caller's own flag, set when the
+ * watcher reports it); a tab whose address asks for WebGPU, which outranks
+ * that, is pinned to `engine=webgl2`, so the rebuild cannot come back to an
+ * engine that cannot fetch them. The HUD's line.
+ */
+export function answerUnfetched(page: { override: EngineName | null; pin(): void }): string {
+  if (page.override === "webgpu") page.pin();
+  return NOTICE_SWITCHED;
+}
+
+/**
  * Starts a hike on `first`, and where it throws on a WebGPU engine, starts it
  * again on WebGL2 on a fresh canvas that takes the place of every canvas the
  * first start left (`place`). The game is handed one recorder of WebGPU
@@ -183,8 +205,8 @@ export function startOnEngine<G extends { notify(line: string): void }>(
   deps: {
     /** Starts the game on `onCanvas`, handing it `engineFailed` for every
      * WebGPU failure it meets. */
-    start(onCanvas: EngineOnCanvas, engineFailed: (reason: "pipeline" | "lost") => string): G;
-    engineFailed(reason: "pipeline" | "lost"): string;
+    start(onCanvas: EngineOnCanvas, engineFailed: (reason: EngineFailure) => string): G;
+    engineFailed(reason: EngineFailure): string;
     freshCanvas(): HTMLCanvasElement;
     place(canvas: HTMLCanvasElement): void;
     log(message: string, error: unknown): void;
@@ -193,7 +215,7 @@ export function startOnEngine<G extends { notify(line: string): void }>(
   let line: string | null = null;
   const once = (): string => (line ??= deps.engineFailed("pipeline"));
   let starting = false;
-  const record = (reason: "pipeline" | "lost"): string =>
+  const record = (reason: EngineFailure): string =>
     starting && reason === "pipeline" ? once() : deps.engineFailed(reason);
   const start = (onCanvas: EngineOnCanvas): G => {
     starting = true;

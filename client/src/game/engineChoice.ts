@@ -114,6 +114,22 @@ export function parseEngineOverride(search: string): EngineName | null {
   return value === "webgl2" || value === "webgpu" ? value : null;
 }
 
+/**
+ * How a WebGPU engine comes by the WGSL of the game's GLSL shaders
+ * (`shaderLookup.ts`): `on`, looked up and translated only where not found;
+ * `record`, the same, keeping every stage's texts and times for a
+ * measurement to read; `verify`, the same, translating every stage found too
+ * and counting those that differ; `off`, Babylon's own path, every stage
+ * translated, the translators started before the engine.
+ */
+export type ShaderLookupMode = "on" | "record" | "verify" | "off";
+
+/** `?wgsl=record|verify|off`; anything else is `on`. */
+export function parseShaderLookup(search: string): ShaderLookupMode {
+  const value = new URLSearchParams(search).get("wgsl");
+  return value === "record" || value === "verify" || value === "off" ? value : "on";
+}
+
 /** What the rule reads of the high-performance adapter (`adapterFromSignals`). */
 export type AdapterReport = {
   limits: Readonly<Record<string, number>>;
@@ -206,6 +222,16 @@ export function engineForTier<E>(input: EngineInput, resolve: () => Promise<E | 
 }
 
 export type FallbackReason = "init" | "pipeline" | "lost";
+
+/**
+ * A failure of a running WebGPU engine, as its watcher reports it
+ * (`watchWebGpu`): an effect that failed or an uncaptured error
+ * (`pipeline`), a lost device (`lost`), or translators that could not be
+ * fetched for a shader the lookup did not find (`unfetched`,
+ * `shaderLookup.ts`). The last is the network's, not the GPU's: it is never
+ * remembered, and holds for the page alone (`answerUnfetched`).
+ */
+export type EngineFailure = "pipeline" | "lost" | "unfetched";
 
 /**
  * A remembered failure: why, on which browser major and Babylon version, when,
@@ -326,7 +352,10 @@ export type WebGpuSteps<E> = {
    * adapter's report from the GPU's signals (`adapterFromSignals`). */
   load(): Promise<{
     probe(): Promise<AdapterReport | null>;
-    /** The translators (`loadTranslators`), fetched only once the adapter fits. */
+    /** The translators (`loadTranslators`), fetched only once the adapter
+     * fits: with `?wgsl=off`, where Babylon's own path needs them before the
+     * engine; else nothing, as the shader lookup starts them at its first
+     * stage not found (`shaderLookup.ts`). */
     fetchTranslators(): Promise<void>;
     /** The engine, given what is left of the GPU's budget and the features to ask for. */
     create(ms: number, features: string[]): Promise<E>;
@@ -338,9 +367,10 @@ export type WebGpuSteps<E> = {
 
 /**
  * The WebGPU engine, or null for WebGL2. In order: the module is imported, the
- * adapter asked, and only where it fits are the translators fetched and the
- * engine made, so a browser that cannot run WebGPU fetches no translator, and
- * one without WebGPU at all fetches nothing. Two budgets, each a running total
+ * adapter asked, and only where it fits are the translators fetched (with
+ * `?wgsl=off`; else the shader lookup fetches them later, at its first stage
+ * not found) and the engine made, so a browser that cannot run WebGPU fetches
+ * no translator, and one without WebGPU at all fetches nothing. Two budgets, each a running total
  * over its two steps and measured apart from the other: `fetchMs` for the
  * module and then the translators, `startMs` for the probe and then the engine,
  * so nothing on the way can leave the page waiting for good. Never rejects. A

@@ -31,8 +31,8 @@ import { createSignalingClient, type SignalingClient } from "./net/signaling.js"
 import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
-import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
-import { recordEngineFailure, startOnEngine } from "./game/engineFailure.js";
+import type { EngineOnCanvas, EngineWatchers, WatchEngine } from "./game/rendererSwap.js";
+import { answerUnfetched, recordEngineFailure, startOnEngine } from "./game/engineFailure.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { browserEnv, browserMajor, readSignals, type GpuSignals } from "./game/gpuSignals.js";
 import {
@@ -71,6 +71,7 @@ import {
   engineForTier,
   fallbackHolds,
   parseEngineOverride,
+  parseShaderLookup,
   readFallback,
   recordFailure,
   resolveWebGpu,
@@ -79,6 +80,7 @@ import {
   writeFallback,
   WEBGPU_ENABLED,
   type EngineEnv,
+  type EngineFailure,
   type EngineInput,
 } from "./game/engineChoice.js";
 
@@ -353,7 +355,7 @@ function detach(): void {
 /** A follower goes where the host is (`followsTo`). The host's route is ""
  * until known, and the landing page and its panels are one place: a follower
  * in its own Settings stays there while the host is on the landing. The
- * overrides (`?engine=`, `?tier=`, `?probe=`) are each page's own: the route
+ * overrides (`?engine=`, `?tier=`, `?probe=`, `?wgsl=`) are each page's own: the route
  * is taken without them (`stripOverrides`), which a host that still announces
  * them would otherwise impose on this machine; they neither make a route
  * differ nor leave the follower's URL when it moves (`navigateTo` carries
@@ -571,13 +573,31 @@ function verdictEngineNow(read: GpuSignals): VerdictEngine {
   return chooseEngine({ ...engineInput("high"), fits: signalsFit(read) }) === "webgl2" ? "webgl2" : "webgpu";
 }
 
+/** Translators that could not be fetched for a shader the lookup did not
+ * find hold this page on WebGL2 (`answerUnfetched`): the network's failure,
+ * remembered nowhere, so the next load tries WebGPU again. Set by every
+ * watcher of a WebGPU engine before its failure is answered
+ * (`holdingUnfetched`). */
+let translatorsUnfetched = false;
+
+/** `watch`, with an `unfetched` report holding the page on WebGL2 before
+ * anything answers it: the game's rebuild, or a probe step's. */
+function holdingUnfetched(watch: WatchEngine): WatchEngine {
+  return (engine, onFailure) =>
+    watch(engine, (reason) => {
+      if (reason === "unfetched") translatorsUnfetched = true;
+      onFailure(reason);
+    });
+}
+
 /** The rule's input for `tier` now: the address's override, the remembered
- * fallback, the switch; the adapter not yet asked (`resolveWebGpu` asks). */
+ * fallback (or this page's hold after translators that could not be
+ * fetched), the switch; the adapter not yet asked (`resolveWebGpu` asks). */
 function engineInput(tier: QualityTier): EngineInput {
   return {
     tier,
     override: parseEngineOverride(location.search),
-    remembered: fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),
+    remembered: translatorsUnfetched || fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),
     on: WEBGPU_ENABLED,
     fits: null,
   };
@@ -608,7 +628,14 @@ function engineFor(tier: QualityTier, read: GpuSignals, current: () => boolean, 
  * (`recordEngineFailure`), so the rebuild's `engineFor` gives the engine the
  * failure asks for. The HUD's line for that engine.
  */
-function engineFailed(reason: "pipeline" | "lost"): string {
+function engineFailed(reason: EngineFailure): string {
+  // Translators that could not be fetched: the page's hold, nothing written.
+  if (reason === "unfetched") {
+    return answerUnfetched({
+      override: parseEngineOverride(location.search),
+      pin: () => history.replaceState(history.state, "", withEngine(location.href, "webgl2")),
+    });
+  }
   return recordEngineFailure(reason, {
     storage: pageStorage(),
     env: engineEnv(),
@@ -637,8 +664,8 @@ function rememberFailure(reason: "init" | "pipeline" | "lost", pin = true): { st
  * The WebGPU engine for `canvas`, or null for WebGL2, by `resolveWebGpu`: the
  * module, the adapter (the GPU's signals', `read`; where they timed out, the
  * same request's later answer within the GPU's budget), and only where it fits
- * the translators and the engine, within the fetch's budget and the GPU's,
- * every failure caught. A page without `navigator.gpu` fetches nothing. The
+ * the engine (and before it the translators, for `?wgsl=off` alone), within
+ * the fetch's budget and the GPU's, every failure caught. A page without `navigator.gpu` fetches nothing. The
  * URL is pinned only while the page still wants the engine (`current`).
  */
 function makeWebGpu(
@@ -649,18 +676,21 @@ function makeWebGpu(
   wanted: () => boolean = () => true,
 ): Promise<MadeEngine | null> {
   let translators: Awaited<ReturnType<GpuModule["loadTranslators"]>> | undefined;
+  const lookup = parseShaderLookup(location.search);
   return resolveWebGpu<MadeEngine>(input, {
     available: () => (navigator as { gpu?: unknown }).gpu !== undefined,
     load: async () => {
       const gpu: GpuModule = await import("./game/gpuEngine.js");
       return {
         probe: () => adapterFromSignals(read, () => signalsRead.adapter),
+        // Before the engine only for Babylon's own path (`?wgsl=off`): the
+        // shader lookup starts them at its first stage not found.
         fetchTranslators: async () => {
-          translators = await gpu.loadTranslators();
+          if (lookup === "off") translators = await gpu.loadTranslators();
         },
         create: async (ms, features) => ({
-          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators }),
-          watchers: { failures: gpu.watchWebGpu, pipelines: gpu.watchPipelines },
+          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, lookup }),
+          watchers: { failures: holdingUnfetched(gpu.watchWebGpu), pipelines: gpu.watchPipelines },
         }),
       };
     },
@@ -786,7 +816,8 @@ function render(container: HTMLDivElement): void {
       const { canvas, engine, watchers } = await engineFor(tier, read, () => !cancelled());
       return { canvas, engine, watch: watchers?.failures ?? null };
     },
-    failed: () => void rememberFailure("init", !cancelled()),
+    // Translators that could not be fetched are the network's: not remembered.
+    failed: () => void (translatorsUnfetched || rememberFailure("init", !cancelled())),
     // Asked of the engine a step got, which a failed WebGPU start makes
     // WebGL2; `?probe=` measures whatever the rule says.
     settles: async (engine) => parseProbeOverride(location.search) !== null || probeStepCanSettle((await signalsReady).parallelCompile, engine),
