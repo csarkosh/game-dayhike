@@ -67,3 +67,46 @@ describe("the map against the bundle, as the deploy check and the build's check 
     ]);
   });
 });
+
+describe('the walk, read as the deploy check fetches it', () => {
+  it("starts from the entry chunk's text its caller already has, and reads the entry no second time", async () => {
+    const read = bundle();
+    const reads = new Map();
+    const counting = async (name) => {
+      reads.set(name, (reads.get(name) ?? 0) + 1);
+      return read(name);
+    };
+    const entryText = await read('index-AAAAAAAA.js');
+    const found = await bundleMapProblems({ entry: 'index-AAAAAAAA.js', entryText, read: counting, mapText: MAP, chunkSource: CHUNK });
+    expect(found.problems).toEqual([]);
+    expect([...reads]).toEqual([
+      ['vendor-BBBBBBBB.js', 1],
+      ['shared-DDDDDDDD.js', 1],
+    ]);
+  });
+
+  it('turns a chunk whose fetch throws into a problem naming it and the error, and goes on', async () => {
+    const read = bundle();
+    const throwing = async (name) => {
+      if (name === 'vendor-BBBBBBBB.js') throw new TypeError('fetch failed');
+      return read(name);
+    };
+    const found = await bundleMapProblems({ entry: 'index-AAAAAAAA.js', read: throwing, mapText: MAP, chunkSource: CHUNK });
+    expect(found.problems).toEqual([
+      'assets/vendor-BBBBBBBB.js, which the entry chunk loads, could not be read: fetch failed',
+      'its salt was made against Babylon 9.18.0, which the bundle does not carry',
+    ]);
+  });
+
+  it('resolves each chunk against the chunk that names it, so chunks in folders are walked right', async () => {
+    const files = {
+      'index-AAAAAAAA.js': 'import"./nested/a-XXXXXXXX.js";const l=()=>import("./gpuEngine-CCCCCCCC.js");',
+      'nested/a-XXXXXXXX.js': 'import{v}from"./b-YYYYYYYY.js";import"../c-ZZZZZZZZ.js";',
+      'nested/b-YYYYYYYY.js': 'export const v=`9.18.0`;',
+      'c-ZZZZZZZZ.js': 'export const c=1;',
+    };
+    const walk = await staticChunks('index-AAAAAAAA.js', async (name) => files[name] ?? null);
+    expect([...walk.chunks.keys()]).toEqual(['index-AAAAAAAA.js', 'nested/a-XXXXXXXX.js', 'nested/b-YYYYYYYY.js', 'c-ZZZZZZZZ.js']);
+    expect(walk.problems).toEqual([]);
+  });
+});

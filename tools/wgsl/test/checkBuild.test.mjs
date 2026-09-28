@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { timeLimit } from '../../../client/test/helpers/timeLimit.ts';
@@ -41,7 +41,10 @@ function dist(change = {}) {
   };
   for (const [name, text] of Object.entries(files)) {
     if (text === null) rmSync(join(root, name), { force: true });
-    else writeFileSync(join(root, name), text);
+    else {
+      mkdirSync(dirname(join(root, name)), { recursive: true });
+      writeFileSync(join(root, name), text);
+    }
   }
   return root;
 }
@@ -103,6 +106,17 @@ describe('the check of the built client', () => {
     expect(await checkBuild(dist({ 'assets/index-AAAAAAAA.js': entry }), { mapFormat: FORMAT })).toEqual([
       'the deploy check refuses the map: its salt was made against Babylon 9.18.0, which the bundle does not carry',
     ]);
+  });
+
+  it('reads chunks in folders against the chunk that names them', async () => {
+    const notes = [];
+    const nested = dist({
+      'assets/index-AAAAAAAA.js': 'import"./nested/a-XXXXXXXX.js";const l=()=>import(`./gpuEngine-CCCCCCCC.js`);',
+      'assets/nested/a-XXXXXXXX.js': 'import{v}from"./b-YYYYYYYY.js";',
+      'assets/nested/b-YYYYYYYY.js': 'export const v=`9.18.0`;',
+    });
+    expect(await checkBuild(nested, { mapFormat: FORMAT, note: (line) => notes.push(line) })).toEqual([]);
+    expect(notes).toEqual(["Babylon's version 9.18.0 is in assets/nested/b-YYYYYYYY.js, which the entry chunk imports statically"]);
   });
 
   it('runs from the command line: fails with a plain line a problem, passes saying so', async () => {

@@ -935,6 +935,33 @@ describe("the translations shipped with the build", () => {
     expect([map.get("aa"), reads.text, seen.pulled]).toEqual(["// a", 0, 16]);
   });
 
+  it("decodes a character its body's parts split, whole: three bytes split two and one, four split two and two", async () => {
+    const wgsl = "// € for the euro, 𝄞 for the clef\n@fragment fn main() {}";
+    const text = mapText(SALT, new Map([["aa", wgsl]]));
+    const bytes = new TextEncoder().encode(text);
+    const euro = bytes.indexOf(0xe2);
+    const clef = bytes.indexOf(0xf0);
+    expect([bytes[euro + 1], bytes[euro + 2], bytes[clef + 1], bytes[clef + 2], bytes[clef + 3]]).toEqual([0x82, 0xac, 0x9d, 0x84, 0x9e]);
+    const parts = [bytes.subarray(0, euro + 2), bytes.subarray(euro + 2, clef + 2), bytes.subarray(clef + 2)];
+    const { body, seen } = streamOf(parts);
+    const map = loadWgslMap(MAP_URL, SALT, { fetch: answering(body, {}, "").answer });
+    await map.ready;
+    expect(seen.pulled).toBe(3);
+    expect(map.get("aa")).toBe(wgsl);
+
+    // A body that ends inside a character is not read as though the
+    // character were not there: its last bytes decode to a replacement, and
+    // the map, no longer one, is refused.
+    const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    const cut = new Uint8Array([...new TextEncoder().encode(text), 0xe2, 0x82]);
+    const truncated = streamOf([cut.subarray(0, cut.length - 1), cut.subarray(cut.length - 1)]);
+    const refused = loadWgslMap(MAP_URL, SALT, { fetch: answering(truncated.body, {}, "").answer });
+    await refused.ready;
+    expect(refused.get("aa")).toBe(null);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0]).startsWith("WebGPU shader lookup: no translations shipped with the build (")).toBe(true);
+  });
+
   it("with no stream to read, refuses a text past the ceiling by its length, before it is parsed", async () => {
     const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
     const over = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(16_777_217)).answer });
