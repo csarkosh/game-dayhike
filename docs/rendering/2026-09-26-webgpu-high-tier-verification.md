@@ -526,7 +526,10 @@ medium) and 4 WebGL2 controls (2 a tier).
 - **WebGPU at the first frame and at 60 s on 15 of 15**, in the same document
   and at the same address throughout; no record stored; no error and no warning
   beyond the page's usual lines. The first frame came 7.9–9.8 s after
-  navigation. (The reference Mac on `785825e`, asking for 17 inter-stage
+  navigation. The engine at 60 s was WebGPU on all 15, but on three of them
+  the page was not yet drawing at the display's rate: 1.4 and 1.5 frames a
+  second on the first two high loads, still in the slow start of §7.2, and 21.4
+  on the eighth; the other twelve read 59.8–60.2. (The reference Mac on `785825e`, asking for 17 inter-stage
   variables: 16 of 16 fell back with `pipeline`.)
 - The WebGL2 controls: WebGL2 throughout, first frame 7.6–7.7 s, 60 frames a
   second at 60 s.
@@ -594,11 +597,13 @@ compiles and program links.
   the same shadows on both engines. At the `pair3` pose the shrub is the same
   whole plant on both engines. Its leaf cover in the crown crop read 0.0593 on
   WebGPU against 0.0513 and 0.0499 on two WebGL2 loads, 0.008 over, where two
-  WebGL2 loads differ by 0.0014: the leaves sway, and on the WebGPU still two
-  lie over the fog where on the WebGL2 stills they lie over a trunk. The
-  silhouette count (pixels 12 or more of luma from the shrub hidden), which
-  sees leaves over the trunk too, reads 0.0880 on WebGPU, between WebGL2's
-  0.0836 and 0.0886.
+  WebGL2 loads differ by 0.0014: **a miss of the number**, whose bar is 0.003.
+  It is accepted as the same picture on the silhouette count: the leaves sway
+  between stills, and on the WebGPU still two lie over the fog where on the
+  WebGL2 stills they lie over a trunk, which the leaf-cover count (luma under
+  80) cannot see. The silhouette count (pixels 12 or more of luma from the
+  shrub hidden), which sees leaves over the trunk too, reads 0.0880 on WebGPU,
+  between WebGL2's 0.0836 and 0.0886.
 - **The bed's arrays** (§6.6): every layer of `terrainRAH` and
   `terrainNormals` read back at mip 1 (centre texel and mean) and mip 9 is
   identical on the two engines on this machine; no layer reads zeros; the
