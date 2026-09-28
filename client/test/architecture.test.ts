@@ -219,6 +219,72 @@ describe("layer boundaries", () => {
     expect(app).toContain("    rebuild: () => switchNow(tier, tierSource, null).then(() => {\n      engineNotice = null;\n    }),");
   });
 
+  it("loads nothing with the WebGPU engine that registers what the WebGL2 path does not, but the engine's own", () => {
+    // A module that registers something on load (a getter on a texture, a
+    // fallback image, an audio engine) changes what every engine of the page
+    // does once the WebGPU chunk has loaded. The spherical harmonics registered
+    // by the non-pure PBR module lit WebGPU's frame 1.23 times brighter.
+    const NODE_MODULES = fileURLToPath(new URL("../../node_modules", import.meta.url));
+    const runtimeImports = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"'?]+)["']/gm)].map((m) => m[1] as string);
+    const resolveIn = (from: string, spec: string): string | null => {
+      if (spec.startsWith("@babylonjs/")) return join(NODE_MODULES, spec);
+      if (!spec.startsWith(".")) return null;
+      const path = join(from, "..", spec);
+      return from.includes("node_modules") ? path : path.replace(/\.js$/, ".ts");
+    };
+    const graph = (entry: string): Set<string> => {
+      const seen = new Set<string>();
+      const stack = [entry];
+      while (stack.length > 0) {
+        const file = stack.pop() as string;
+        if (seen.has(file) || !existsSync(file)) continue;
+        seen.add(file);
+        for (const spec of runtimeImports(file)) {
+          const next = resolveIn(file, spec);
+          if (next !== null) stack.push(next);
+        }
+      }
+      return seen;
+    };
+    const webgl2 = graph(join(SRC, "main.ts"));
+    const webgpu = [...graph(join(SRC, "game/gpuEngine.ts"))].filter((f) => f.includes("@babylonjs") && !webgl2.has(f));
+    // What registers on load: a call at the top level of the module.
+    const registering = webgpu
+      .filter((f) => /^[A-Z][A-Za-z]*\(\);$/m.test(readFileSync(f, "utf8")) || /^import\s+["'][^"']+["'];$/m.test(readFileSync(f, "utf8")))
+      .map((f) => f.slice(f.indexOf("@babylonjs/core/") + "@babylonjs/core/".length))
+      .sort();
+    expect(registering).toEqual([
+      // A vertex buffer's realignment, which only an engine asking for
+      // 4-byte-aligned strides and offsets (WebGPU's) calls.
+      "Buffers/buffer.align.js",
+      // The WebGPU engine's own extensions: methods on its prototype, which no
+      // WebGL2 engine has.
+      "Engines/WebGPU/Extensions/engine.alpha.js",
+      "Engines/WebGPU/Extensions/engine.computeShader.js",
+      "Engines/WebGPU/Extensions/engine.cubeTexture.js",
+      "Engines/WebGPU/Extensions/engine.debugging.js",
+      "Engines/WebGPU/Extensions/engine.dynamicTexture.js",
+      "Engines/WebGPU/Extensions/engine.multiRender.js",
+      "Engines/WebGPU/Extensions/engine.query.js",
+      "Engines/WebGPU/Extensions/engine.rawTexture.js",
+      "Engines/WebGPU/Extensions/engine.readTexture.js",
+      "Engines/WebGPU/Extensions/engine.renderTarget.js",
+      "Engines/WebGPU/Extensions/engine.renderTargetCube.js",
+      "Engines/WebGPU/Extensions/engine.renderTargetTexture.js",
+      "Engines/WebGPU/Extensions/engine.videoTexture.js",
+      "Engines/WebGPU/Extensions/index.js",
+    ]);
+    // And the game's own WebGPU module takes every Babylon class it names from
+    // the pure form of its module, where there is one (a bare import is a
+    // registration, held by the list above).
+    const own = [...readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8").matchAll(/^import\s+(?!type\s)[^"';]+\s+from\s+["']([^"'?]+)["']/gm)]
+      .map((m) => m[1] as string)
+      .filter((spec) => spec.startsWith("@babylonjs/"));
+    const impure = own.filter((spec) => spec.endsWith(".js") && !spec.endsWith(".pure.js") && existsSync(join(NODE_MODULES, spec.replace(/\.js$/, ".pure.js"))));
+    expect(impure).toEqual([]);
+  });
+
   it("keeps the quality modules out of sim/ and net/", () => {
     const quality = /game\/(quality|gpuSignals|gpuClass|tierChoice|frameProbe|governor|rendererSwap|settings)(\.js)?$/;
     expect(violations(join(SRC, "sim"), [quality])).toEqual([]);

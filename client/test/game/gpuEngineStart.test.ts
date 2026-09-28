@@ -16,7 +16,7 @@ const made = vi.hoisted(() => ({
   prepare: (): Promise<void> => Promise.resolve(),
 }));
 
-vi.mock("@babylonjs/core/Engines/webgpuEngine.js", () => {
+vi.mock("@babylonjs/core/Engines/webgpuEngine.pure.js", () => {
   class WebGPUEngine {
     static get IsSupportedAsync(): Promise<boolean> {
       return Promise.resolve(true);

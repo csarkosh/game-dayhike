@@ -13,7 +13,23 @@
  * GLSL at run time with the glslang and twgsl builds `@babylonjs/core` ships,
  * which the build content-hashes and serves with the game, never from a CDN.
  */
-import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.js";
+import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
+// What the non-pure `webgpuEngine.js` loads with the engine, but for its
+// audio engine: registered, it would give every engine made afterwards,
+// WebGL2's included, Babylon's own audio engine. The clear quad's WGSL
+// shaders, the vertex-buffer realignment WebGPU asks for, and the engine
+// extensions every Babylon engine takes (the WebGL2 path loads the same).
+import "@babylonjs/core/ShadersWGSL/clearQuad.vertex.js";
+import "@babylonjs/core/ShadersWGSL/clearQuad.fragment.js";
+import "@babylonjs/core/Buffers/buffer.align.js";
+import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.loadingScreen.js";
+import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.dom.js";
+import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.states.js";
+import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.stencil.js";
+import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.renderPass.js";
+import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.texture.js";
+import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.loadFile.js";
+import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.textureLoaders.js";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
 import { keyEveryBoundBuffer } from "./webgpuVertexBuffer.js";
 // Side-effect import, load-bearing: the WebGPU engine's own extensions (its
@@ -24,11 +40,17 @@ import { keyEveryBoundBuffer } from "./webgpuVertexBuffer.js";
 // only the WebGPU path loads, so they cost the WebGL2 bundle nothing.
 import "@babylonjs/core/Engines/WebGPU/Extensions/index.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
-import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial.js";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+// The pure modules, as every other file imports them: the non-pure PBR
+// module registers `BaseTexture.sphericalPolynomial`, which lit only a page
+// that loaded this module with the probe's spherical harmonics (the
+// verification note, §6.6).
+import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial.pure.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.pure.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
-import { Tools } from "@babylonjs/core/Misc/tools.js";
+// Pure: the non-pure module registers `EngineStore.FallbackTexture`, the
+// image a texture that fails to load is drawn with, on every engine.
+import { Tools } from "@babylonjs/core/Misc/tools.pure.js";
 import glslangJs from "@babylonjs/core/assets/glslang/glslang.js?url";
 import glslangWasm from "@babylonjs/core/assets/glslang/glslang.wasm?url";
 import twgslJs from "@babylonjs/core/assets/twgsl/twgsl.js?url";
