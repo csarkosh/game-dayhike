@@ -16,6 +16,20 @@ describe("the engine a switch makes, within its cover's bound", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  /** The switch's clock, moved with the fake timers (no real clock is read). */
+  const clock = { t: 0 };
+  async function advance(ms: number): Promise<void> {
+    clock.t += ms;
+    await vi.advanceTimersByTimeAsync(ms);
+  }
+  const timers = {
+    now: () => clock.t,
+    setTimer: (fn: () => void, at: number) => {
+      const id = setTimeout(fn, at);
+      return () => clearTimeout(id);
+    },
+  };
+
   /** An engine made after `ms`, on a canvas named `gpu`, whose dispose is counted. */
   function slowEngine(ms: number) {
     const log: string[] = [];
@@ -30,11 +44,7 @@ describe("the engine a switch makes, within its cover's bound", () => {
       return new Promise((resolve) => setTimeout(() => resolve(made), ms));
     };
     const deps = {
-      now: () => Date.now(),
-      setTimer: (fn: () => void, at: number) => {
-        const id = setTimeout(fn, at);
-        return () => clearTimeout(id);
-      },
+      ...timers,
       webgl2: (): EngineOnCanvas => ({ canvas: { id: "gl" } as unknown as HTMLCanvasElement, engine: null, watchers: null }),
     };
     return { log, made, make, deps, wanted: () => asked?.() ?? null };
@@ -44,7 +54,7 @@ describe("the engine a switch makes, within its cover's bound", () => {
     expect(GOVERNOR_SWAP_READY_MAX_MS).toBe(10_000);
     const t = slowEngine(3_000);
     const result = engineWithinBound(t.make, GOVERNOR_SWAP_READY_MAX_MS, t.deps);
-    await vi.advanceTimersByTimeAsync(3_000);
+    await advance(3_000);
     const got = await result;
     expect(got).toEqual({ onCanvas: t.made, leftMs: 7_000, late: false });
     expect(t.wanted()).toBe(true);
@@ -55,7 +65,7 @@ describe("the engine a switch makes, within its cover's bound", () => {
     expect(APPLY_SWAP_READY_MAX_MS).toBe(20_000);
     const t = slowEngine(12_000);
     const result = engineWithinBound(t.make, APPLY_SWAP_READY_MAX_MS, t.deps);
-    await vi.advanceTimersByTimeAsync(12_000);
+    await advance(12_000);
     expect((await result).leftMs).toBe(8_000);
   });
 
@@ -64,9 +74,9 @@ describe("the engine a switch makes, within its cover's bound", () => {
     const result = engineWithinBound(t.make, GOVERNOR_SWAP_READY_MAX_MS, t.deps);
     let settled = false;
     void result.then(() => (settled = true));
-    await vi.advanceTimersByTimeAsync(9_999);
+    await advance(9_999);
     expect(settled).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
+    await advance(1);
     const got = await result;
     expect(got.late).toBe(true);
     expect(got.leftMs).toBe(0);
@@ -75,22 +85,15 @@ describe("the engine a switch makes, within its cover's bound", () => {
     // A failure the late start meets from here is not remembered.
     expect(t.wanted()).toBe(false);
     expect(t.log).toEqual([]);
-    await vi.advanceTimersByTimeAsync(5_000);
+    await advance(5_000);
     expect(t.log).toEqual(["disposed"]);
   });
 
-  it("takes WebGL2 at once where the engine's making rejects late, and never throws", async () => {
-    const deps = {
-      now: () => Date.now(),
-      setTimer: (fn: () => void, at: number) => {
-        const id = setTimeout(fn, at);
-        return () => clearTimeout(id);
-      },
-      webgl2: (): EngineOnCanvas => ({ canvas: {} as HTMLCanvasElement, engine: null, watchers: null }),
-    };
+  it("takes WebGL2 at the bound where the engine's making would reject later, and never throws", async () => {
+    const deps = { ...timers, webgl2: (): EngineOnCanvas => ({ canvas: {} as HTMLCanvasElement, engine: null, watchers: null }) };
     const result = engineWithinBound(() => new Promise((_, reject) => setTimeout(() => reject(new Error("no device")), 12_000)), 10_000, deps);
-    await vi.advanceTimersByTimeAsync(10_000);
+    await advance(10_000);
     expect((await result).late).toBe(true);
-    await vi.advanceTimersByTimeAsync(2_000);
+    await advance(2_000);
   });
 });
