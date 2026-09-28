@@ -17,12 +17,9 @@ vi.mock("@babylonjs/core/Loading/sceneLoader.js", async (importOriginal) => {
 
 // The terrain variants the lighting's sky reads.
 import "../../src/sim/passes/index.js";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { WebGPUShaderProcessorGLSL } from "@babylonjs/core/Engines/WebGPU/webgpuShaderProcessorsGLSL.js";
-import { WebGPUShaderProcessingContext } from "@babylonjs/core/Engines/WebGPU/webgpuShaderProcessingContext.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.js";
@@ -35,6 +32,7 @@ import { createForestMeshes } from "../../src/game/forestMeshes.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { FOG_DISTANCE } from "../../src/sim/forestConstants.js";
 import { pluginsInStates } from "./helpers/pluginText.js";
+import { drawnEffect, probeReady, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /**
@@ -52,7 +50,8 @@ import { timeLimit } from "../helpers/timeLimit.js";
  * shipped GLBs, with the same plugins, lights, fog and probe, and each
  * material's vertex outputs are read from the processed shader with the
  * locations Babylon gave them (a `mat3` takes three). `NullEngine` reports the
- * derivatives WebGPU always has, which the normal map's basis needs. What it
+ * caps of WebGPU's that shape a shader (`helpers/webgpuProcessing.ts`), the
+ * derivatives the normal map's basis needs among them. What it
  * cannot make is the sun's cascaded shadow map (it has no float render
  * targets), so the shadow varyings are added by count: each cascade a
  * `vPositionFromLight` and a `vDepthMetric`, and one `vPositionFromCamera` per
@@ -123,16 +122,9 @@ type Drawn = {
  * GLSL as the WebGPU engine does. Keyed by material name; the first mesh that
  * draws a material speaks for it. */
 async function buildForest(): Promise<{ drawn: Map<string, Drawn>; dispose(): void }> {
-  const engine = new NullEngine();
-  const processing = engine as unknown as {
-    _shaderProcessor: unknown;
-    _getShaderProcessingContext: (language: number) => unknown;
-  };
-  processing._shaderProcessor = new WebGPUShaderProcessorGLSL();
-  processing._getShaderProcessingContext = (language) => new WebGPUShaderProcessingContext(language, false);
-  // The WebGPU engine's caps have it (a canary below); the normal map's basis
-  // (`vTBN`) is made only when it is there.
-  engine.getCaps().standardDerivatives = true;
+  // The WebGPU engine's caps that shape a shader: its derivatives make the
+  // normal map's basis (`vTBN`) a varying.
+  const engine = webgpuProcessingEngine();
 
   const scene = new Scene(engine);
   // The renderer's order: the atmosphere before any material, the camera, the
@@ -147,27 +139,13 @@ async function buildForest(): Promise<{ drawn: Map<string, Drawn>; dispose(): vo
   // The renderer registers the forest's casters with the lighting, which is
   // what makes them receive the sun's shadows.
   for (const mesh of forest.casterMeshes) lighting.addShadowMesh(mesh);
-  // The probe's cube is ready once it first renders, which NullEngine never does.
-  const probe = scene.environmentTexture as unknown as { isReady: () => boolean } | null;
-  if (probe) probe.isReady = () => true;
+  probeReady(scene);
 
   const drawn = new Map<string, Drawn>();
   for (const mesh of scene.meshes as Mesh[]) {
     const material = mesh.material;
-    const subMesh = mesh.subMeshes?.[0];
-    if (!material || !subMesh || drawn.has(material.name) || !mesh.isEnabled()) continue;
-    // The effect compiles over a few ticks.
-    let ready = material.isReadyForSubMesh(mesh, subMesh, true);
-    for (let i = 0; i < 50 && !ready; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      ready = material.isReadyForSubMesh(mesh, subMesh, true);
-    }
-    if (!ready) throw new Error(`${material.name} never became ready on the NullEngine`);
-    const effect = subMesh.effect as unknown as {
-      _processingContext: { _varyingNextLocation: number };
-      _vertexSourceCode: string;
-      _fragmentSourceCode: string;
-    };
+    if (!material || !mesh.subMeshes?.[0] || drawn.has(material.name) || !mesh.isEnabled()) continue;
+    const effect = await drawnEffect(mesh);
     const varyings = [...effect._vertexSourceCode.matchAll(/layout\(location = \d+\)\s*(?:flat\s+)?out (\w+) (\w+);/g)].map(
       ([, type, name]) => ((LOCATIONS[type as string] ?? 1) > 1 ? `${name} (${LOCATIONS[type as string]})` : (name as string)),
     );
@@ -405,8 +383,10 @@ describe("inter-stage variables on WebGPU", () => {
     // A matrix takes as many locations as it has columns.
     expect(read("@babylonjs/core/Engines/WebGPU/webgpuShaderProcessingContext.js")).toContain("    mat3: 3,\n    mat4: 4,");
     const webgpu = read("@babylonjs/core/Engines/webgpuEngine.pure.js");
-    // The WebGPU engine has the derivatives the NullEngine above is given.
+    // The WebGPU engine has the caps the NullEngine above is given.
     expect(webgpu).toContain("            standardDerivatives: true,");
+    expect(webgpu).toContain("            textureLOD: true,");
+    expect(webgpu).toContain("    get supportsUniformBuffers() {\n        return true;\n    }");
     // A cascaded shadow generator draws two to four cascades, whatever it is set to.
     expect([CascadedShadowGenerator.MIN_CASCADES_COUNT, CascadedShadowGenerator.MAX_CASCADES_COUNT]).toEqual([2, 4]);
     expect(read("@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.pure.js")).toContain(
