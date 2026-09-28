@@ -127,7 +127,7 @@ describe("a probe step on the engine the rule gives its tier", () => {
       measure: async (_tier, engine) => (measured.push(engine), reading("webgpu")),
       webgl2,
       settles: () => true,
-    });
+    }, 1_000);
     expect(got).toEqual(reading("webgpu"));
     expect(measured).toEqual([on]);
     expect(failures).toBe(0);
@@ -147,7 +147,7 @@ describe("a probe step on the engine the rule gives its tier", () => {
       },
       webgl2,
       settles: () => true,
-    });
+    }, 1_000);
     expect(got).toEqual(reading("webgl2"));
     expect(measured).toEqual([on.engine, null]);
     expect(failures).toBe(1);
@@ -163,7 +163,7 @@ describe("a probe step on the engine the rule gives its tier", () => {
       measure: async () => (measures++, null),
       webgl2,
       settles: () => true,
-    });
+    }, 1_000);
     expect(got).toBe(null);
     expect(measures).toBe(0);
     expect(engine.isDisposed).toBe(true);
@@ -182,7 +182,7 @@ describe("a probe step that cannot settle on the engine it got", () => {
       measure: async () => (measures++, null),
       webgl2,
       settles: (engine) => (asked.push(engine), engine !== "webgl2"),
-    });
+    }, 1_000);
     expect(got).toBe(null);
     expect(measures).toBe(0);
     expect(asked).toEqual(["webgl2"]);
@@ -199,11 +199,31 @@ describe("a probe step that cannot settle on the engine it got", () => {
       measure: async (_tier, engine) => (measured.push(engine.engine), "engine-failed"),
       webgl2,
       settles: (engine) => (asked.push(engine), engine === "webgpu"),
-    });
+    }, 1_000);
     expect(got).toBe(null);
     expect(measured).toEqual([on.engine]);
     expect(failures).toBe(1);
     expect(asked).toEqual(["webgpu", "webgl2"]);
+    on.engine!.dispose();
+  });
+
+  it("gives both measurements the step's one bound: the WebGL2 one after a WebGPU failure takes what is left", async () => {
+    const on: StepEngine = { canvas: {} as HTMLCanvasElement, engine: new NullEngine(), watch: () => () => undefined };
+    const bounds: number[] = [];
+    const got = await measureOnRuleEngine(
+      "high",
+      () => false,
+      {
+        engineFor: async () => on,
+        failed: () => undefined,
+        measure: async (_tier, engine, readyBy) => (bounds.push(readyBy), engine.engine === null ? null : "engine-failed"),
+        webgl2,
+        settles: () => true,
+      },
+      42_000,
+    );
+    expect(got).toBe(null);
+    expect(bounds).toEqual([42_000, 42_000]);
     on.engine!.dispose();
   });
 
@@ -216,7 +236,7 @@ describe("a probe step that cannot settle on the engine it got", () => {
       measure: async () => (measures++, null),
       webgl2,
       settles: () => false,
-    });
+    }, 1_000);
     expect(got).toBe(null);
     expect(measures).toBe(0);
     expect(engine.isDisposed).toBe(true);

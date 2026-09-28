@@ -188,7 +188,7 @@ export type RuleEngineDeps = {
    * (`probeStepCanSettle`), or true where `?probe=` forces the probe. */
   settles(engine: VerdictEngine): boolean | Promise<boolean>;
   /** One measurement of `tier` on `on` (`runProbeStep`). */
-  measure(tier: QualityTier, on: StepEngine): Promise<ProbeReading | null | typeof ENGINE_FAILED>;
+  measure(tier: QualityTier, on: StepEngine, readyBy: number): Promise<ProbeReading | null | typeof ENGINE_FAILED>;
   /** WebGL2 on a fresh canvas. */
   webgl2(): StepEngine;
 };
@@ -204,23 +204,26 @@ export type RuleEngineDeps = {
  * without `KHR_parallel_shader_compile`, is not measured: no reading, at once,
  * rather than the player held behind the probe's screen for one that cannot
  * come. The engine is let go of when the page has moved on while it was made,
- * or when it is not measured.
+ * or when it is not measured. Both measurements are ready by the one
+ * `readyBy`, the step's bound: the WebGL2 one after a WebGPU engine's failure
+ * takes what is left of it, not a fresh one.
  */
 export async function measureOnRuleEngine(
   tier: QualityTier,
   stopped: () => boolean,
   deps: RuleEngineDeps,
+  readyBy: number,
 ): Promise<ProbeReading | null> {
   const on = await deps.engineFor(tier);
   if (stopped() || !(await deps.settles(on.engine === null ? "webgl2" : "webgpu")) || stopped()) {
     on.engine?.dispose();
     return null;
   }
-  const first = await deps.measure(tier, on);
+  const first = await deps.measure(tier, on, readyBy);
   if (first !== ENGINE_FAILED) return first;
   deps.failed();
   if (stopped() || !(await deps.settles("webgl2")) || stopped()) return null;
-  const again = await deps.measure(tier, deps.webgl2());
+  const again = await deps.measure(tier, deps.webgl2(), readyBy);
   return again === ENGINE_FAILED ? null : again;
 }
 
@@ -259,13 +262,16 @@ export function probeDeps(
       await new Promise<void>((resolve) => afterNextPaint(resolve));
       const stopped = (): boolean => aborts.signal.aborted || cancelled();
       if (stopped()) return null;
-      // One bound for the step, both measurements: the WebGL2 one after a
-      // WebGPU engine's failure takes what is left of it, not a fresh one.
-      const reading = await measureOnRuleEngine(tier, stopped, {
-        ...engines,
-        measure: (step, on) => runProbeStep(container, step, { cancelled: stopped, signal: aborts.signal, on, readyBy }),
-        webgl2: webgl2Step,
-      });
+      const reading = await measureOnRuleEngine(
+        tier,
+        stopped,
+        {
+          ...engines,
+          measure: (step, on, by) => runProbeStep(container, step, { cancelled: stopped, signal: aborts.signal, on, readyBy: by }),
+          webgl2: webgl2Step,
+        },
+        readyBy,
+      );
       if (reading !== null) console.info(probeReadingLine(reading, container.clientWidth, container.clientHeight));
       return reading;
     },
