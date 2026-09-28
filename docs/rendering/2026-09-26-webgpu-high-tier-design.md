@@ -540,7 +540,18 @@ with its own identity re-pin, taken only if the measurement asks for it.
 - `?engine=webgl2`: WebGL2 on every tier, whatever is remembered. Also the
   advice to give a player with a GPU problem.
 - `?engine=webgpu`: WebGPU on any tier if the GPU fits, whatever is remembered;
-  if it does not fit, WebGL2 and one `console.warn` naming why.
+  if it does not fit, WebGL2 and one `console.warn` naming why. The low tier
+  included, though the rule keeps it on WebGL2 (`WEBGPU_TIERS`): it is how the
+  low tier's WebGPU fault was found (§6.1) and how that tier is measured.
+- After a failure that ends on WebGL2, the address is pinned to
+  `engine=webgl2` in this tab wherever the rule would otherwise give WebGPU
+  again: storage refused the record, or `?engine=webgpu` outranks it
+  (`pinsAfterFailure`). One rule on every such path: a start that fails
+  (`init`, the first load's, a switch's, a probe step's, a lost device's
+  retry), a pipeline or uncaptured error, and a second lost device. A reload
+  then does not walk into the same failure while the record holds. A first
+  lost device retries on WebGPU and pins nothing; an engine that was only
+  slow for a switch's bound records nothing and pins nothing.
 - `?tier=low|medium|high`: the tier, in place of detection. Committed here
   because every rendering gate needs it and the switch is unreachable without
   it (§4).
@@ -746,7 +757,7 @@ bounded by its caller (the tier detection design's `APPLY_SWAP_READY_MAX_MS`,
 | path | bound | the cover at most |
 | --- | --- | --- |
 | Settings Apply, on the pause screen | Apply's, 20 s | 20 s + 5 s + the build |
-| the governor's drop, in play | the governor's, 10 s | 10 s + 5 s + the build |
+| the governor's drop, in play | the governor's, 10 s | its idle timing (≤ 2 s) + 10 s + 5 s + the build |
 | a failure's rebuild (a pipeline error, an uncaptured error), in play | the governor's, 10 s | 10 s + 5 s + the build |
 | a lost device's retry on WebGPU, and a second loss's rebuild on WebGL2 | the governor's, 10 s | 10 s + 5 s + the build |
 | a rung of a fallback ladder, inside any of these | its switch's | its switch's |
@@ -814,6 +825,27 @@ pixels, legal in divergent flow everywhere, but WebGL2's text changes.
 file's literal; `finishFragmentFor(true)` is the define, a newline, then the
 same bytes; no source file under `client/src` names
 `_createPipelineStageDescriptor`.
+
+**As found (the verification note, §7.6).** The terrain's fragment failed on
+the low tier: the trail paint's bed fetch of `terrainRAH` under the corridor's
+`fwidth` edge, the one Tint named, and with it every read the terrain makes in
+a branch on a varying or a texel. High and medium passed only because the
+cascaded-shadow include turned the analysis off for the module; low has no
+shadow. The terrain plugin now puts the define in its own fragment code on
+WebGPU (`TERRAIN_UNIFORMITY_OFF`), for the reads listed there: the rock
+parallax's height fetches in its loop, the relief gate's height and normal
+fetches, the road paint's inside the road, the trail paint's segment fetches in
+its search and its bed fetches inside the corridor, and the feature paint's
+table fetches in its loop. The define rather than explicit gradients: the table
+fetches read one-level data textures, and every other read's coordinate is
+continuous across its branch's edge where the branch's weight is 0, so the
+level of detail the read gives up there is multiplied away; explicit gradients
+would need a pair per coordinate outside the branches and a second copy of
+WebGL2's text. `uniformity.test.ts` finds every implicit-derivative read under
+a branch or a loop in the game's plugins and post passes, pins the list, and
+holds the define on each such shader on WebGPU and never on WebGL2; it does not
+see reads after a non-uniform return or discard, in a `?:`, or inside a
+function called from a branch.
 
 ### 6.2 The hex fetches, as macros on WebGPU
 
