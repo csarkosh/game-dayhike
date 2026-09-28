@@ -211,6 +211,7 @@ describe("layer boundaries", () => {
     const body = (from: string, to: string): string => app.slice(app.indexOf(from), app.indexOf(to, app.indexOf(from)));
     // `switchNow` is the swap both paths run: it shows no line.
     expect(body("  async function switchNow(", "\n  }\n")).not.toContain("hud.flash");
+    expect(body("  async function switchNow(", "\n  }\n")).not.toContain("flashEngineNotice");
     // A switch (Apply, the governor) shows the line of an engine that could
     // not build its tier…
     expect(body("  function switchTo(", "\n  }\n")).toContain("flashEngineNotice");
