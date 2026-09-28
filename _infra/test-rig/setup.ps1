@@ -63,6 +63,7 @@ $GitUrl = 'https://github.com/git-for-windows/git/releases/download/v2.55.0.wind
 $GitSha256 = 'D065A4E23C3D9A6B5073D609B5BE0830227EC3CA053C083BA385061DDFAF94C6'
 
 $ClosedGroups = @('Remote Desktop', 'Windows Remote Management')
+$DcvFirewallRule = 'NICE DCV Server (In)'
 $Root = Join-Path $env:ProgramData 'test-rig'
 $Downloads = Join-Path $Root 'downloads'
 $ShutdownExe = "$env:WINDIR\System32\shutdown.exe"
@@ -192,6 +193,8 @@ function Wait-InstallerIdle([int]$Minutes) {
 function Install-Msi([string]$Path, [string]$Name, [int]$Minutes, [string]$Installed, [string[]]$Properties = @()) {
   Wait-InstallerIdle 30
   $msiLog = Join-Path $Root "$Name-msi.log"
+  # A log from an earlier attempt is kept beside the new one, not overwritten.
+  if (Test-Path $msiLog) { Move-Item $msiLog (Join-Path $Root "$Name-msi.$(Get-Date -Format yyyyMMddTHHmmss).log") -Force }
   $code = Invoke-Installer 'msiexec.exe' (@('/i', "`"$Path`"", '/qn', '/norestart', '/l*v', "`"$msiLog`"") + $Properties) $Name $Minutes -Msi
   # 3010: success, restart required. The set-up restarts once at the end.
   if ($code -notin 0, 3010) { throw "$Name installer exited with $code" }
@@ -519,12 +522,32 @@ function Install-Everything {
   # Its console session belongs to the desktop user and exists whether or not
   # anyone is connected. It listens on the loopback addresses only, reached
   # through Session Manager's port forwarding. It does not lock the desktop
-  # when a client disconnects (os-auto-lock is on by default), and it adds no
-  # firewall rule and no virtual display adapter of its own beside the GPU's.
+  # when a client disconnects (os-auto-lock is on by default).
+  #
+  # Exactly the features it needs, named with ADDLOCAL (the package's own
+  # feature names, 2025.0-20103): server (the core, dcv.exe, dcvserver.exe),
+  # webClient (the browser client) and VC2017Redist (the Visual C++ runtime the
+  # server needs; the package enables that feature only when the runtime is
+  # missing, and Windows Installer leaves a disabled feature out). Once any
+  # feature is named on the command line, Windows Installer installs nothing
+  # else, so no REMOVE: on a first install a REMOVE with no ADDLOCAL names no
+  # feature to install, becomes REMOVE=ALL and runs the package's uninstall
+  # path. Left out: the indirect display driver (iddDriver; AWS's guide gives
+  # it to machines without a GPU driver, and here the GRID driver's display is
+  # the one Chrome must draw on), and the audio, printer, webcam, gamepad,
+  # smart card, USB, WebAuthn and WebRTC redirection drivers.
+  #
+  # DISABLE_FIREWALL=0: in this package the action that adds the firewall rule
+  # "NICE DCV Server (In)" runs unless DISABLE_FIREWALL is "0" (the value of
+  # its own "No, I will manually configure my firewall later" box), whatever
+  # the guide says of 1. Any such rule is removed afterwards all the same.
   if (-not (Test-Step 'dcv')) {
     $msi = Get-Verified $DcvUrl $DcvSha256
     Assert-Signer $msi 'Amazon Web Services, Inc.'
-    Install-Msi $msi 'dcv' 20 "$env:ProgramFiles\NICE\DCV\Server\bin\dcv.exe" @("AUTOMATIC_SESSION_OWNER=$DesktopUser", 'DISABLE_FIREWALL=1', 'REMOVE=iddDriver')
+    Install-Msi $msi 'dcv' 20 "$env:ProgramFiles\NICE\DCV\Server\bin\dcv.exe" @('ADDLOCAL=server,webClient,VC2017Redist', "AUTOMATIC_SESSION_OWNER=$DesktopUser", 'DISABLE_FIREWALL=0')
+    $rules = @(Get-NetFirewallRule -DisplayName $DcvFirewallRule -ErrorAction SilentlyContinue)
+    $rules | Remove-NetFirewallRule
+    Log "DCV: $($rules.Count) firewall rule(s) '$DcvFirewallRule' removed; iddDriver not installed"
     Set-DcvParameter 'connectivity' 'web-listen-endpoints' "['127.0.0.1:8443', '[::1]:8443']" String
     Set-DcvParameter 'connectivity' 'enable-quic-frontend' 0 DWord
     Set-DcvParameter 'security' 'os-auto-lock' 0 DWord
@@ -672,6 +695,8 @@ function Test-Setup {
     Start-Sleep -Seconds 10
   } while ((Get-Date) -lt $deadline)
   Log "DCV: $sessions"
+  if (Get-NetFirewallRule -DisplayName $DcvFirewallRule -ErrorAction SilentlyContinue) { throw "The firewall rule '$DcvFirewallRule' is present" }
+  if (Get-ChildItem "$env:ProgramFiles\NICE\DCV\Server" -Recurse -Filter 'AWSIddDriver.dll' -ErrorAction SilentlyContinue) { throw "DCV's indirect display driver is installed" }
   if (-not $ours) { throw "DCV has no console session owned by $DesktopUser" }
 
   $deadline = (Get-Date).AddMinutes(3)

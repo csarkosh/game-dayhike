@@ -50,6 +50,24 @@ foreach ($d in $descriptions) {
     $d -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $d.Value.Length -le 48)
 }
 
+# Windows Installer: a REMOVE with no ADDLOCAL on a first install names nothing
+# to install and runs the package's uninstall path. Every Install-Msi line that
+# passes REMOVE= must pass ADDLOCAL= too; every feature named must be one of
+# the thirteen in nice-dcv-server-x64-Release-2025.0-20103.msi's Feature table.
+$source = Get-Content $script -Raw
+$msiLines = @($source -split "`n" | Where-Object { $_ -match 'Install-Msi ' -and $_ -notmatch '^\s*(#|function)' })
+Check 'an MSI is installed' ($msiLines.Count -ge 1)
+foreach ($line in $msiLines) {
+  Check "no REMOVE= without ADDLOCAL=: $($line.Trim())" (-not ($line -match 'REMOVE=' -and $line -notmatch 'ADDLOCAL='))
+}
+$dcvFeatures = 'ALL', 'server', 'webClient', 'webrtc', 'webauthn', 'VC2017Redist', 'iddDriver', 'webcamDriver',
+  'gamepadDriver', 'audioMicDriver', 'audioSpkDriver', 'printerDriver', 'virtualSmartcardDriver', 'usbDriver'
+foreach ($m in [regex]::Matches($source, '(?:ADDLOCAL|REMOVE)=([A-Za-z0-9,]+)')) {
+  foreach ($name in $m.Groups[1].Value -split ',') {
+    Check "feature '$name' is one of the DCV package's" ($name -cin $dcvFeatures)
+  }
+}
+
 # --- The script's functions and the variables they read -------------------------
 foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
   . ([ScriptBlock]::Create($f.Extent.Text))

@@ -87,6 +87,35 @@ run "defaults" {
     error_message = "Every -Description passed to New-LocalUser is at most 48 characters (Windows' limit)."
   }
 
+  # Windows Installer: once any feature is named on the command line, only
+  # the features named are installed, and ADDLOCAL is evaluated before REMOVE.
+  # A REMOVE with no ADDLOCAL on a first install installs nothing and turns
+  # into the package's uninstall path.
+  assert {
+    condition = length(regexall("(?m)^.*Install-Msi .*$", local.setup_script)) >= 1 && !anytrue([
+      for line in regexall("(?m)^.*Install-Msi .*$", local.setup_script) : strcontains(line, "REMOVE=") && !strcontains(line, "ADDLOCAL=")
+    ])
+    error_message = "An MSI is installed with REMOVE= but no ADDLOCAL=: on a first install that installs nothing."
+  }
+
+  # The feature names passed to Amazon DCV server's MSI are the package's own:
+  # the thirteen in the Feature table of nice-dcv-server-x64-Release-2025.0-20103.msi.
+  assert {
+    condition = alltrue([
+      for name in flatten([for m in regexall("(?:ADDLOCAL|REMOVE)=([A-Za-z0-9,]+)", local.setup_script) : split(",", m[0])]) :
+      contains([
+        "ALL", "server", "webClient", "webrtc", "webauthn", "VC2017Redist", "iddDriver", "webcamDriver", "gamepadDriver",
+        "audioMicDriver", "audioSpkDriver", "printerDriver", "virtualSmartcardDriver", "usbDriver",
+      ], name)
+    ])
+    error_message = "A feature name passed to the DCV MSI is not one of the package's thirteen (2025.0-20103)."
+  }
+
+  assert {
+    condition     = strcontains(local.setup_script, "'ADDLOCAL=server,webClient,VC2017Redist'") && !strcontains(local.setup_script, "iddDriver'")
+    error_message = "DCV is installed with exactly the server, the web client and the runtime, and without the indirect display driver."
+  }
+
   assert {
     condition     = !strcontains(local.setup_script, "StartWhenAvailable")
     error_message = "The stop task must not start late: a missed shutdown would fire on a later boot."
