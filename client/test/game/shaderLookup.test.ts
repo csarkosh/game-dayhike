@@ -94,7 +94,7 @@ type Harness = ReturnType<typeof harness>;
 /** Hands `translators` to Babylon on `engine` as the engine's maker does,
  * before the engine is handed over: after it, Babylon's own path translates
  * in the call. */
-async function loadTranslators(engine: WebGPUEngine, translators: Translators): Promise<void> {
+async function handOver(engine: WebGPUEngine, translators: Translators): Promise<void> {
   const own = engine as unknown as { _glslangOptions: unknown; _twgslOptions: unknown };
   own._glslangOptions = { glslang: Promise.resolve(translators.glslang) };
   own._twgslOptions = { twgsl: translators.twgsl };
@@ -125,7 +125,7 @@ function memorySource(entries: Record<string, string> = {}, name = "memory", sal
 async function lookUp(h: Harness, sources: readonly WgslSource[], mode: "on" | "record" | "verify" = "on", report?: ShaderLookupReport) {
   const made = report ?? newLookupReport(mode, SALT);
   const ready = lookUpShaders(h.engine, { mode, salt: SALT, sources: () => Promise.resolve(sources), report: made });
-  await loadTranslators(h.engine, h.translators);
+  await handOver(h.engine, h.translators);
   await ready;
   return made;
 }
@@ -133,7 +133,9 @@ async function lookUp(h: Harness, sources: readonly WgslSource[], mode: "on" | "
 /**
  * Prepares one effect on `h`'s engine as Babylon's `Effect` does, and what
  * had happened by the time the call returned, before anything was awaited:
- * a preparation never waits (C1 in the module's comment).
+ * a preparation runs to `onReady` in the call that asks for it, as Babylon's
+ * own does, which Babylon relies on when it prepares an effect again at the
+ * first draw of integer vertex buffers.
  */
 async function prepare(
   h: Harness,
@@ -173,7 +175,7 @@ async function prepare(
 /** Babylon's own preparation of the same effect, its translators loaded. */
 async function babylons(opts: Parameters<typeof prepare>[1] = {}) {
   const h = harness();
-  await loadTranslators(h.engine, h.translators);
+  await handOver(h.engine, h.translators);
   const { context } = await prepare(h, opts);
   return { h, context };
 }
@@ -331,7 +333,7 @@ describe("the WebGPU shader lookup", () => {
     for (const sources of factories) {
       const h = harness();
       const ready = lookUpShaders(h.engine, { mode: "on", salt: SALT, sources, report: newLookupReport("on", SALT) });
-      await loadTranslators(h.engine, h.translators);
+      await handOver(h.engine, h.translators);
       await ready;
       await prepare(h);
       expect(h.compiled).toEqual(own.h.compiled);
@@ -409,7 +411,7 @@ describe("the WebGPU shader lookup", () => {
     await lookUp(hit, [kept.source]);
     const found = await prepare(hit);
     const own = harness();
-    await loadTranslators(own.engine, own.translators);
+    await handOver(own.engine, own.translators);
     const babylon = await prepare(own);
     expect(missed.events).toEqual(["before", "after", "ready"]);
     expect(found.events).toEqual(missed.events);
@@ -598,7 +600,7 @@ describe("the WebGPU shader lookup", () => {
       },
       report: newLookupReport("on", SALT),
     });
-    await loadTranslators(first.engine, first.translators);
+    await handOver(first.engine, first.translators);
     await ready;
     await prepare(first);
     const stored = (): number => idb.databases.values().next().value?.get("meta")?.size ?? 0;
@@ -611,7 +613,7 @@ describe("the WebGPU shader lookup", () => {
       sources: () => loadWgslStore(SALT, { idb: idb.factory }).then((s) => (s === null ? [] : [s])),
       report,
     });
-    await loadTranslators(second.engine, second.translators);
+    await handOver(second.engine, second.translators);
     await readyAgain;
     const { inTheCall } = await prepare(second);
     expect(inTheCall).toEqual(["before", "after", "ready"]);
