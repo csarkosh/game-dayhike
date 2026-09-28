@@ -32,9 +32,9 @@
 | `client/src/game/gpuClass.ts` (new) | 1, 2 | `GpuClass`, `classifyGpu`, `gpuIdentity`; `CLASS_TIERS` |
 | `client/test/game/gpuFixtures.ts` (new) | 1 | The renderer strings and adapter infos every matrix reads |
 | `client/test/game/gpuSignals.test.ts`, `gpuClass.test.ts` (new) | 1, 2 | Gathering with fakes; the class and tier matrices |
-| `client/src/game/quality.ts` | 2 | `tierFor` and `Capabilities` removed; `autoTier`, `AutoRecord`, `AutoVerdict`, `DETECT_VERSION`, `verdictHolds` |
+| `client/src/game/quality.ts` | 2 | `autoTier`, `AutoRecord`, `AutoVerdict`, `DETECT_VERSION`, `verdictHolds`; as built, `tierFor` and `Capabilities` stay (design §6.3) |
 | `client/src/game/tierChoice.ts` (new) | 2, 3, 4 | `parseTierOverride`, `parseProbeOverride`, `resolveTier`, the Auto record's read and write; the player's choice's read and write |
-| `client/src/game/renderer.ts` | 2, 5 | `detectTier` removed, `tier ?? "low"`; `loseContextOnDispose`; `RendererOptions.engine` |
+| `client/src/game/renderer.ts` | 2, 5 | `loseContextOnDispose`; `RendererOptions.engine`; as built, `detectTier` stays as the tier of a renderer given none (design §6.3) |
 | `client/src/main.ts` | 2, 3, 4, 5 | Signals at load; the tier resolved before `startGame`; the probe; the Settings panel; the engine hook (WebGPU) |
 | `client/src/app.ts` | 2, 4, 5, 6 | `GameOptions.tier` and `quality`; the pause Settings; the live swap; the governor |
 | `client/test/game/quality.test.ts`, `tierChoice.test.ts` (new), `tierDeterminism.test.ts` (new) | 2 | `autoTier` and the record; precedence; the determinism pin |

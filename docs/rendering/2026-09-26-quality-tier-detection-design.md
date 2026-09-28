@@ -1,11 +1,27 @@
 # Quality tier detection: design
 
-**As built.** Nothing yet. This is the design as written on 2026-09-26, against
-`main` at `ba0fd95`. The plan
-([2026-09-26-quality-tier-detection-plan](2026-09-26-quality-tier-detection-plan.md))
-builds it in seven tasks, the last of them the gate. When the work lands this
-paragraph is rewritten to say what shipped and with what values; the sections
-below stay the design as written.
+**As built.** All of it, on WebGL2; the sections below are the design as
+written on 2026-09-26 against `main` at `ba0fd95`, amended where the build or
+a browser reading moved it. The tier is chosen from the GPU the browser names:
+thirteen classes (`gpuClass.ts`), each with a start tier, a ceiling and whether
+it is probed; the reference machine's `apple-base` starts and stays at medium.
+Where the GPU cannot be named, a probe before the first hike renders the canopy
+pose behind "Setting up graphics…": 60 frames discarded and 120 measured, a
+tier holding at a mean of at most 17.5 ms, a step ending early as a miss once
+its frames pass 2,100 ms (and its warm-up bounded by the same), 15 s for a step
+to be ready, 30 s for the whole probe, three attempts, a miss kept when the cap
+cuts the next step. The probe is skipped where WebGL2 links every shader on
+the page's thread (Firefox), and where the page draws below 60 Hz. Its verdict
+holds 30 days, while the window is at most 1.5 times the one measured. The
+governor, on Auto only, drops one tier after three 10 s windows over 20.8 ms
+following 30 s of play, remembered for 7 days, with one HUD line for 6 s. The
+player chooses Auto, High, Medium or Low from one drop-down on the title's and
+the pause screen's Settings; a choice made mid-hike is applied live, the
+renderer rebuilt on a fresh canvas behind a cover that lifts when the new scene
+and its forest are ready, or at 20 s after Apply and 10 s after a governor's
+drop. `?tier=` overrides everything and `?probe=` forces a probe. The older
+rule from cores and memory (`tierFor`, `detectTier`) is kept as the tier of a
+renderer given none (§6.3).
 
 Day Hike picks a quality tier once, when the renderer is made, from the number
 of logical cores and the memory the browser reports. Neither says anything about
@@ -405,8 +421,12 @@ tier = ?tier=…                          (the override, for testing)
               if the class is probed and fewer than 3 attempts were made   (§7)
 ```
 
-`autoTier(input): { tier, probeFrom }` in `quality.ts` (pure; `tierFor` and
-`Capabilities` go, with their tests). `resolveTier({ override, choice, auto })`
+`autoTier(input): { tier, probeFrom }` in `quality.ts` (pure). As built,
+`tierFor` and `Capabilities` stay in `quality.ts` with their tests, and
+`renderer.ts`'s `detectTier` still gives a renderer built with no tier the old
+rule from cores and memory; the page passes a tier to every renderer it
+builds, so neither decides a hike here, and they stay because the WebGPU work,
+which merges this, keeps `detectTier` for a renderer given no tier. `resolveTier({ override, choice, auto })`
 in `tierChoice.ts` returns the tier and its source (`override`, `choice`, `auto`),
 which the page logs once per renderer build:
 `quality: medium (auto, apple-base), engine webgl2`.
