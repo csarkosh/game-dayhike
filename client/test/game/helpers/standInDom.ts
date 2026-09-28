@@ -220,6 +220,10 @@ export class StandInElement {
   focus(): void {
     if (this.focusable) this.doc.activeElement = this;
   }
+  /** As a browser: the focus, if this node holds it, goes to the body. */
+  blur(): void {
+    if (this.doc.activeElement === this) this.doc.activeElement = this.doc.body;
+  }
 
   /** Every element below this one, in document order. */
   descendants(): StandInElement[] {
@@ -329,6 +333,16 @@ export class StandInDocument {
   readonly window = new StandInWindow();
   readonly body: StandInElement;
   activeElement: StandInElement;
+  /** No pointer lock is ever held here. */
+  readonly pointerLockElement = null;
+  /** The document's own listeners (`pointerlockchange`); nothing fires them. */
+  private readonly listeners = new StandInWindow();
+  addEventListener(type: string, listener: Listener): void {
+    this.listeners.addEventListener(type, listener);
+  }
+  removeEventListener(type: string, listener: Listener): void {
+    this.listeners.removeEventListener(type, listener);
+  }
   /** The focus fixup: focus held by a node that can no longer hold it goes
    * to the body. */
   focusFixup(): void {

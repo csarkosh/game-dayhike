@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 
 // `terrainTexture.ts`'s plugin constructor calls the real `loadGroundArrays`
 // whenever it isn't handed a factory, and `renderer.ts`'s own
@@ -55,6 +55,8 @@ import { createSignMeshes } from "../../src/game/signMeshes.js";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene as BabylonScene } from "@babylonjs/core/scene.js";
 import {
+  APPLY_SWAP_READY_MAX_MS,
+  GOVERNOR_SWAP_READY_MAX_MS,
   buildFirstRenderer,
   buildOrUndo,
   swapRenderer,
@@ -603,5 +605,62 @@ describe("whenSceneReady", () => {
     const lifted = whenSceneReady(readyScene, 300, new Promise(() => undefined));
     expect(await settledAfter(lifted, 100)).toBe(false);
     expect(await settledAfter(lifted, 350)).toBe(true);
+  });
+});
+
+describe("whenSceneReady's cap", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** A ready scene with nothing waiting, counting the polls that look at it
+   * (each reads `isDisposed` first). */
+  function countingScene(): { scene: Scene; asked: () => number } {
+    let n = 0;
+    const scene = {
+      get isDisposed() {
+        n += 1;
+        return false;
+      },
+      isReady: () => true,
+      getWaitingItemsCount: () => 0,
+    } as unknown as Scene;
+    return { scene, asked: () => n };
+  }
+
+  /** Whether `p` has settled yet. */
+  function tracked(p: Promise<unknown>): { done: () => boolean } {
+    let done = false;
+    void p.then(() => { done = true; });
+    return { done: () => done };
+  }
+
+  it("is 20 s for the Settings Apply and 10 s for the governor's drop", () => {
+    expect(APPLY_SWAP_READY_MAX_MS).toBe(20_000);
+    expect(GOVERNOR_SWAP_READY_MAX_MS).toBe(10_000);
+  });
+
+  it("outlasts, on the Apply's bound, a forest that settles 16 s in, and lifts at the first poll after it", async () => {
+    // At 6× CPU the forest was whole up to 16.1 s after the renderer's build.
+    const layers = new Promise<void>((resolve) => setTimeout(resolve, 16_000));
+    const lifted = tracked(whenSceneReady(countingScene().scene, APPLY_SWAP_READY_MAX_MS, layers));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(lifted.done()).toBe(false);
+    await vi.advanceTimersByTimeAsync(5_900);
+    expect(lifted.done()).toBe(false);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(lifted.done()).toBe(true);
+  });
+
+  it("still lifts at the Apply's 20 s when a layer never settles, once, and stops polling", async () => {
+    const { scene, asked } = countingScene();
+    const lifted = tracked(whenSceneReady(scene, APPLY_SWAP_READY_MAX_MS, new Promise(() => undefined)));
+    await vi.advanceTimersByTimeAsync(19_900);
+    expect(lifted.done()).toBe(false);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(lifted.done()).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    const polls = asked();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(asked()).toBe(polls);
   });
 });

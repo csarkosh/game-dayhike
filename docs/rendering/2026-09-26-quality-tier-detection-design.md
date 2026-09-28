@@ -36,7 +36,7 @@ Peers on different tiers share one world (§11).
 | The signals | One function, `gatherSignals` (`gpuSignals.ts`), reads the WebGL renderer string (`RENDERER`, else `UNMASKED_RENDERER_WEBGL`, from a throwaway WebGL2 context it then loses), the high-performance WebGPU adapter's `info` and limits (one `requestAdapter`, shared with the engine rule), the reported cores and memory, and whether the device is mobile. Every one may be missing; the result says which (§5.1) |
 | The classes | The signals map to one of thirteen GPU classes by an ordered rule table (`gpuClass.ts`, §5.2): mobile, software, three Apple classes by what the string names, discrete and integrated by vendor and generation, and "unknown" classes where a browser buckets or masks the string. Cores and memory only cap: two or fewer of either caps the tier at low |
 | Class to tier | Each class has a **start** tier, a **ceiling**, and whether it is **probed** (§6.1). Named classes go straight to their tier; the unknown ones start one step down and are probed from their ceiling |
-| The probe | Only for a probed class with no valid verdict, before the game is built: the standard canopy pose (seed `atmo`, mist, noon) rendered behind a "Setting up graphics…" screen on the player's own window, at the ceiling, 60 frames discarded and 120 measured after the scene is ready; the tier **holds** when the mean frame interval is ≤ **17.5 ms**; a miss at high measures medium once, a miss at medium settles on low. Bounded at 30 s; three attempts per GPU (§7) |
+| The probe | Only for a probed class with no valid verdict, before the game is built: the standard canopy pose (seed `atmo`, mist, noon) rendered behind a "Setting up graphics…" screen on the player's own window, at the ceiling, 60 frames discarded and 120 measured after the scene is ready; the tier **holds** when the mean frame interval is ≤ **17.5 ms**; a miss at high measures medium once, a miss at medium settles on low. Bounded at 30 s; three attempts per GPU. Skipped where a WebGL2 step would link every shader on the page's thread (§7) |
 | The verdict | `localStorage["dayhike.quality.auto"]`: the tier, whether a probe or the governor set it, the GPU it was measured on, the browser major, the window area and the time. Holds for 30 days on the same GPU and browser, a governor verdict for 7; a probe verdict only while the window is at most 1.5 times the area it was measured at (§6.2) |
 | The setting | A **Settings** entry on the title screen (Play → Downloads → **Settings** → Credits) and on the pause screen (Resume → **Settings** → Exit), both opening one shared Settings screen: **Auto (Recommended)** (the default), **High**, **Medium**, **Low**, with a line naming what Auto picked. Saved in `localStorage["dayhike.quality"]`; a storage that throws means Auto, and a choice made then lasts the page (§8) |
 | Applying it | On the title screen a choice takes effect when Play starts the hike. On the pause screen a choice is applied by **Apply**, live, without a reload: the renderer is disposed and rebuilt on a fresh canvas behind an "Applying…" screen while the session, the data channels, the player's state and the HUD carry on (§9) |
@@ -223,6 +223,7 @@ type GpuSignals = {
   adapter: AdapterInfo | null;      // null without navigator.gpu, an adapter, or within 2 s
   limits: Readonly<Record<string, number>> | null;  // the same adapter's limits, for the engine rule
   adapterStatus: "ok" | "none" | "rejected" | "timed-out";  // why adapter is null, or "ok"
+  parallelCompile: boolean | null;  // KHR_parallel_shader_compile on the WebGL2 context, or null without one
   cores: number | null;             // null where not reported
   memoryGb: number | null;
   mobile: boolean;
@@ -234,8 +235,10 @@ type GpuSignals = {
   is taken as it is unless it reads `WebKit WebGL` (Chrome and Safari's masked
   value); only then is `WEBGL_debug_renderer_info` asked for, so Firefox, where
   `RENDERER` already carries the sanitised string, never logs the extension's
-  deprecation warning. The context is lost at once with `WEBGL_lose_context`, so
-  it does not count against the browser's live-context limit.
+  deprecation warning. The same context is asked for
+  `KHR_parallel_shader_compile` (`parallelCompile`, §7.1). The context is then
+  lost with `WEBGL_lose_context`, so it does not count against the browser's
+  live-context limit.
 - **Adapter.** `navigator.gpu.requestAdapter({ powerPreference:
   "high-performance" })`, raced against 2 s; `adapter.info` (`vendor`,
   `architecture`, `device`, `description`, `isFallbackAdapter`, with the legacy
@@ -433,6 +436,17 @@ route, **before** `startGame`: nothing of the hike exists yet, so it cannot
 stall a session or pop anything a player is looking at, and a follower simply
 arrives a few seconds after the host.
 
+It is **skipped**, before its screen is shown, where its step would draw with
+WebGL2 and the browser does not expose `KHR_parallel_shader_compile`
+(`probeStepCanSettle`): the class's start tier, nothing written, no attempt
+counted, one log line (§7.7); a verdict that holds is still honoured, and
+`?probe=` still forces the probe. Firefox 156 on the reference machine exposes
+no such extension, so every program links on the page's thread: 73 link-status
+reads blocked for 169–337 ms each, 14.4 s in all, the step never saw 1.5 s
+without a compile inside its 15 s, and the screen stayed up about 19 s on each
+of three hikes for no verdict. The governor and the Settings screen remain that
+player's ways to another tier.
+
 ### 7.2 What it renders
 
 The canopy pose of every rendering note: seed `atmo` (627994160), the default
@@ -523,7 +537,12 @@ One `console.info` per measured tier and one for the outcome:
 `quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses`
 and `quality probe: verdict medium (apple-unknown)`, or, with no verdict,
 `quality probe: skipped, the page draws below 60 Hz (33.3 ms a frame); starting at medium (apple-unknown)`
-(or `no verdict`, or `not run, the page moved on`).
+(or `no verdict`, or `not run, the page moved on`). Where the probe is skipped
+for compiling on the page's thread (§7.1), before any screen:
+`quality probe: skipped, this browser compiles shaders on the page's thread; starting at medium (apple-unknown)`,
+or, where no WebGL2 context could be made to ask for the extension (a class
+read from the WebGPU adapter alone),
+`quality probe: skipped, no WebGL2 context could be made to measure with; starting at medium (apple-unknown)`.
 
 ### 7.8 With the WebGPU rule
 
@@ -888,10 +907,29 @@ that has painted (`afterNextPaint`) the synchronous swap runs → the loop resum
 on the new renderer under the opaque ground while the models load and the
 shaders compile → when the new scene is ready (`scene.isReady()` and no
 waiting items, and the forest's billboard bakes settled, which run outside the
-scene's count; at most 10 s, `whenSceneReady`) the ground fades back to the
-pause vignette. The
-player is on the pause screen throughout, so a pop-in behind it is not seen, and
-Resume puts them back where they were, looking where they looked.
+scene's count; `whenSceneReady`) the ground fades back to the pause vignette.
+The player is on the pause screen throughout, so a pop-in behind it is not
+seen, and Resume puts them back where they were, looking where they looked.
+
+**The bounds.** The wait is bounded from the end of the build, so that a model
+or a layer that never settles cannot hold the screen, and the bound belongs to
+whoever put the cover up: `switchTo` takes it as a required argument and hands
+it to `whenSceneReady`, which has no default.
+
+- **Apply: 20 s** (`APPLY_SWAP_READY_MAX_MS`). It covers a player on the pause
+  screen who asked for the switch. It is sized for the slowest build measured:
+  in Chrome on an Apple M4 at 6× CPU throttling the build took about 4.2 s and
+  the forest was whole 3.2–6.1 s after a 10 s bound, 16.1 s after the build at
+  most, so that bound lifted the cover on bare hillside in 12 switches of 12,
+  with the forest appearing 1.7–4.2 s later. At 1× the cover lifts on
+  readiness, 3.5–3.75 s after Apply. On a machine slower still the cover lifts
+  at 20 s and the forest fills in after it, in view.
+- **The governor's drop: 10 s** (`GOVERNOR_SWAP_READY_MAX_MS`, §10). It covers
+  a player in the middle of play who did not ask, without sight or controls, in
+  a world that goes on around them (a party, a hunt); there a forest that fills
+  in after the lift costs less than ten more seconds of that. On a machine as
+  slow as the 6× one, the cover lifts at 10 s on bare hillside and the forest
+  fills in after it, in view.
 
 ## 10. The governor
 
@@ -963,7 +1001,11 @@ again; a switch that ran owns the loop.
 3. One `console.info`.
 4. The tier is lowered **now**, through the live switch of §9, the same path
    Apply takes, with the tier's source kept as Auto; the screen goes once the
-   scene is ready. A switch that falls back or fails is handled as §9.3 says,
+   scene is ready, or at 10 s from the end of the build
+   (`GOVERNOR_SWAP_READY_MAX_MS`), half the Apply's bound (§9.6): the player
+   under it did not ask and cannot see or move in a world that goes on, so on
+   a slow machine the screen lifts at 10 s and the forest may fill in after,
+   in view. A switch that falls back or fails is handled as §9.3 says,
    which keeps the governor's verdict when the tier that built is above it.
 5. Once the switch reaches the lower tier, one HUD line for 6 s: "Graphics
    lowered to Medium to keep the game smooth."
@@ -1110,9 +1152,14 @@ nothing is written, and the hike goes on at the tier it had.
 
 ### 13.6 The rest
 
-- Safari and Firefox on the reference machine: the class (`apple-unknown`), the
-  probe on the first hike, its verdict, and the second hike starting at it with
-  no probe. Not a frame gate: the pages cannot be run headless there.
+- Safari on the reference machine: the class (`apple-unknown`), the probe on the
+  first hike, its verdict, and the second hike starting at it with no probe.
+  Not a frame gate: the pages cannot be run headless there.
+- Firefox on the reference machine: the class (`apple-unknown`); no "Setting up
+  graphics…" screen; the log line `quality probe: skipped, this browser compiles
+  shaders on the page's thread; starting at medium (apple-unknown)` and the
+  hike at medium; nothing stored under `dayhike.quality.auto`; the second hike
+  the same (§7.1).
 - The unit suite: the matrix of §6.4, the probe's steps, the governor's windows,
   the model tests of §8, the swap tests of §9, the determinism pin of §11.
 

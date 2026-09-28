@@ -216,7 +216,7 @@ describe("layer boundaries", () => {
     // not build its tier…
     expect(body("  function switchTo(", "\n  }\n")).toContain("flashEngineNotice");
     // …and a failure's rebuild leaves the line to the answer (`answerFailures`).
-    expect(app).toContain("    rebuild: () => switchNow(tier, tierSource, null).then(() => {\n      engineNotice = null;\n    }),");
+    expect(app).toContain("    rebuild: () => switchNow(tier, tierSource, null, GOVERNOR_SWAP_READY_MAX_MS).then(() => {\n      engineNotice = null;\n    }),");
   });
 
   it("loads nothing with the WebGPU engine that registers what the WebGL2 path does not, but the engine's own", () => {

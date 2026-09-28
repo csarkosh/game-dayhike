@@ -42,7 +42,7 @@ describe("the start with the WebGPU switch off", () => {
     // The engine `main.ts` keys the verdicts on (`verdictEngineNow`).
     expect(chooseEngine({ tier: WEBGPU_TIERS[0] as QualityTier, override: null, remembered: false, on: WEBGPU_ENABLED, fits: true })).toBe("webgl2");
     const signals: GpuSignals = {
-      renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", cores: 8, memoryGb: null, mobile: false, browser: 26,
+      renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
     };
     const verdict = { tier: "high" as const, source: "probe" as const, pixels: 2_073_600, at: 1_790_000_000_000 - 1 };
     const records: (AutoRecord | null)[] = [

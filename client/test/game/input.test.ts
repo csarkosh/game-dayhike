@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createInputSampler } from "../../src/game/input.js";
 import { createTouchModel } from "../../src/game/touchControls.js";
+import { installStandInDom } from "./helpers/standInDom.js";
 
 type Listener = (e: unknown) => void;
 const listeners = new Map<string, Listener[]>();
@@ -283,6 +284,27 @@ describe("taking the controls back", () => {
     expect(invite.blurs()).toBe(1);
   });
 
+  it("takes the focus off a focused select when touch mode switches play on", () => {
+    // The Settings screen's Graphics drop-down, focused on a mouse device that
+    // then takes a touch: play engages there and then, and the select must not
+    // keep the keyboard through it.
+    const doc = installStandInDom();
+    try {
+      const graphics = doc.createElement("select");
+      doc.body.append(graphics);
+      graphics.focus();
+      expect(doc.activeElement).toBe(graphics);
+      const canvas = { ...fakeTarget(), requestPointerLock: () => undefined };
+      const input = createInputSampler(canvas as unknown as HTMLCanvasElement, { touch: fakeTouch().source });
+      expect(input.engaged).toBe(false);
+      input.setTouchMode(true);
+      expect(input.engaged).toBe(true);
+      expect(doc.activeElement).not.toBe(graphics);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("leaves the focus on anything that is not a form control", () => {
     const { canvas } = sampler();
     const resume = focused("BUTTON");
@@ -513,25 +535,29 @@ describe("a refused pointer lock never surfaces as an unhandled rejection", () =
     expect(() => fire("click", {})).not.toThrow();
   });
 
-  it("engage() survives the same three refusals as the click path", async () => {
-    const rejecting = sampler();
-    (rejecting.canvas as unknown as { requestPointerLock: () => Promise<never> }).requestPointerLock = () =>
+  it("catches engage()'s rejected requestPointerLock", async () => {
+    const { input, canvas } = sampler();
+    (canvas as unknown as { requestPointerLock: () => Promise<never> }).requestPointerLock = () =>
       Promise.reject(new Error("WrongDocumentError"));
     const watch = watchUnhandledRejections();
-    rejecting.input.engage();
+    input.engage();
     await flushPendingRejections();
     watch.stop();
     expect(watch.rejections).toEqual([]);
+  });
 
-    const returningNothing = sampler();
-    (returningNothing.canvas as { requestPointerLock: () => undefined }).requestPointerLock = () => undefined;
-    expect(() => returningNothing.input.engage()).not.toThrow();
+  it("does not throw when engage()'s requestPointerLock returns nothing (older browsers)", () => {
+    const { input, canvas } = sampler();
+    (canvas as { requestPointerLock: () => undefined }).requestPointerLock = () => undefined;
+    expect(() => input.engage()).not.toThrow();
+  });
 
-    const throwing = sampler();
-    (throwing.canvas as { requestPointerLock: () => void }).requestPointerLock = () => {
+  it("does not throw when engage()'s requestPointerLock throws synchronously", () => {
+    const { input, canvas } = sampler();
+    (canvas as { requestPointerLock: () => void }).requestPointerLock = () => {
       throw new Error("WrongDocumentError");
     };
-    expect(() => throwing.input.engage()).not.toThrow();
+    expect(() => input.engage()).not.toThrow();
   });
 });
 
