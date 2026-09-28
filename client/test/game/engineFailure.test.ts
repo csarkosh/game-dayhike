@@ -4,6 +4,7 @@ import {
   NOTICE_SWITCHED,
   chooseEngine,
   fallbackHolds,
+  pinsAfterFailure,
   readFallback,
 } from "../../src/game/engineChoice.js";
 import {
@@ -11,6 +12,7 @@ import {
   coverWith,
   createSerial,
   recordEngineFailure,
+  recordStartFailure,
   startOnEngine,
   type FailureDeps,
 } from "../../src/game/engineFailure.js";
@@ -334,6 +336,47 @@ describe("the page's record of a failure", () => {
     expect(pinned).toBe(1);
     expect(recordEngineFailure("pipeline", { storage: memoryStorage(), env: ENV, now: T0, override: "webgpu", pin: () => void pinned++ })).toBe(NOTICE_SWITCHED);
     expect(pinned).toBe(2);
+  });
+
+  it("pins every path that ends on WebGL2 after a failure by one rule: storage refused, or ?engine=webgpu over the record", () => {
+    const throwing = { getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); } } as unknown as Storage;
+    /** Whether each path pinned, for a page whose storage is `storage` and whose address says `override`. */
+    const paths = (storage: () => Storage | null, override: "webgpu" | null): Record<string, boolean> => {
+      const out: Record<string, boolean> = {};
+      const run = (name: string, act: (pin: () => void) => void): void => {
+        let pinned = false;
+        act(() => (pinned = true));
+        out[name] = pinned;
+      };
+      // A failed start: the first load's, a switch's, a probe step's, a lost device's retry.
+      run("init", (pin) => void recordStartFailure({ storage: storage(), env: ENV, now: T0, override, current: true, pin }));
+      run("pipeline", (pin) => void recordEngineFailure("pipeline", { storage: storage(), env: ENV, now: T0, override, pin }));
+      // A second lost device in 24 h, on the storage the first one wrote to.
+      run("lost twice", (pin) => {
+        const kept = storage();
+        recordEngineFailure("lost", { storage: kept, env: ENV, now: T0, override, pin: () => undefined });
+        recordEngineFailure("lost", { storage: kept, env: ENV, now: T0 + HOUR, override, pin });
+      });
+      // A first lost device retries on WebGPU: nothing to pin.
+      run("lost once", (pin) => void recordEngineFailure("lost", { storage: storage(), env: ENV, now: T0, override, pin }));
+      return out;
+    };
+    expect(paths(memoryStorage, null)).toEqual({ init: false, pipeline: false, "lost twice": false, "lost once": false });
+    expect(paths(memoryStorage, "webgpu")).toEqual({ init: true, pipeline: true, "lost twice": true, "lost once": false });
+    expect(paths(() => throwing, null)).toEqual({ init: true, pipeline: true, "lost twice": true, "lost once": true });
+    expect(pinsAfterFailure({ stored: true, override: null })).toBe(false);
+    expect(pinsAfterFailure({ stored: true, override: "webgl2" })).toBe(false);
+    expect(pinsAfterFailure({ stored: true, override: "webgpu" })).toBe(true);
+    expect(pinsAfterFailure({ stored: false, override: null })).toBe(true);
+  });
+
+  it("records a failed start as init, and leaves the address alone where the page no longer wants the engine", () => {
+    const storage = memoryStorage();
+    let pinned = 0;
+    const got = recordStartFailure({ storage, env: ENV, now: T0, override: "webgpu", current: false, pin: () => void pinned++ });
+    expect(got).toEqual({ stored: true, holds: true });
+    expect(readFallback(storage)).toEqual({ reason: "init", browser: 153, babylon: "9.18.0", at: T0, losses: 0 });
+    expect(pinned).toBe(0);
   });
 });
 

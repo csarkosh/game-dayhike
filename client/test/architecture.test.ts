@@ -226,6 +226,15 @@ describe("layer boundaries", () => {
     );
   });
 
+  it("records every failed WebGPU start through the one pin rule: the first load's, a switch's, a retry's, a probe step's", () => {
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    expect(main).toContain("  return recordStartFailure({");
+    expect(main).toContain("    remember: () => {\n      if (wanted()) void rememberFailure(current());\n    },");
+    expect(main).toContain("    failed: () => void rememberFailure(!cancelled()),");
+    expect([...main.matchAll(/\brememberFailure\(/g)].length).toBe(3);
+    expect(main).not.toMatch(/\b(recordFailure|writeFallback)\(/);
+  });
+
   it("bounds the cover over every switch by what its caller passes: no path picks its own bound", () => {
     // The Settings Apply passes `APPLY_SWAP_READY_MAX_MS` (`pauseMenu.ts`),
     // the governor and a failure's rebuild `GOVERNOR_SWAP_READY_MAX_MS`
