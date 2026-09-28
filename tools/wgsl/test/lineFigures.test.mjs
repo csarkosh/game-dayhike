@@ -29,4 +29,10 @@ describe('how much of the map is repeated lines', () => {
     expect(lineFigures(['a\n'])).toEqual({ lines: 2, distinct: 2, distinctBytes: 3, masked: { lines: 2, distinct: 2, distinctBytes: 3 } });
     expect(lineFigures([])).toEqual({ lines: 0, distinct: 0, distinctBytes: 0, masked: { lines: 0, distinct: 0, distinctBytes: 0 } });
   });
+
+  it('splits at \\n alone: a line of a \\r\\n text keeps its \\r, and a lone \\r splits nothing', () => {
+    expect(lineFigures(['a\r\nb'])).toEqual({ lines: 2, distinct: 2, distinctBytes: 5, masked: { lines: 2, distinct: 2, distinctBytes: 5 } });
+    expect(lineFigures(['a\rb\n'])).toEqual({ lines: 2, distinct: 2, distinctBytes: 5, masked: { lines: 2, distinct: 2, distinctBytes: 5 } });
+    expect(lineFigures(['a\r\na\n'])).toEqual({ lines: 3, distinct: 3, distinctBytes: 6, masked: { lines: 3, distinct: 3, distinctBytes: 6 } });
+  });
 });
