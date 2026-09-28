@@ -55,7 +55,7 @@ const SITES: TrailheadSites = {
   kiosk: { site: { x: 6, z: 39 }, facing: { dx: 0, dz: -1 } },
 };
 const groundH = (x: number, z: number): number => 3 + 0.01 * x - 0.02 * z;
-const LINES = ["MISSING", "Dana Whitcombe", "Last seen on the summit trail."];
+const LINES = ["MISSING", "Dana Whitcombe", "Last seen at Trail 14."];
 
 function setup(scene: Scene, loader: (output: string) => Promise<AssetContainer>) {
   const painted: { name: string; lines: readonly string[]; width: number; height: number; material: Material }[] = [];

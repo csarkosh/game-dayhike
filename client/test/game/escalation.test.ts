@@ -12,7 +12,7 @@ import {
   SPIKE_DECAY_S, SPIKE_RISE_S, WORLD_EASE_S, atmosphereUnder, escalationTargets, stepEscalation,
   type EscalationTargets,
 } from "../../src/game/escalation.js";
-import { graph } from "../sim/helpers/registerGraph.js";
+import { graph } from "../sim/helpers/stemGraph.js";
 
 type Brush = { min: [number, number, number]; max: [number, number, number]; material: string };
 const FLOOR: Brush = { min: [-300, -1, -300], max: [300, 0, 300], material: "concrete" };

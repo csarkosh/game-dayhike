@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { SIGN_POST_OFFSET, SUMMIT_LABEL, TRAILHEAD_LABEL, signPostSites, signPosts } from "../../src/sim/signs.js";
+import {
+  SIGN_POST_OFFSET, SUMMIT_LABEL, TRAILHEAD_LABEL, TRAIL_NAME, allSignPosts, signPostSites, signPosts, trailSign, trailSignSite,
+} from "../../src/sim/signs.js";
 import { trailDistance, TRAIL_BED_HALF, type TrailEdge, type TrailGraph } from "../../src/sim/trail.js";
-import { graph } from "./helpers/registerGraph.js";
+import { graph } from "./helpers/stemGraph.js";
 
 const sites = (g: ReturnType<typeof graph>) => [
   { name: SUMMIT_LABEL, x: 200, z: 0 },
@@ -147,5 +149,43 @@ describe("signPosts", () => {
   it("stands no post on a world with no junction", () => {
     const g = graph(0);
     expect(signPosts(g, sites(g))).toEqual([]);
+  });
+});
+
+describe("the trail's sign", () => {
+  // The stem leaves along +x from the pad at the origin: the entrance is
+  // (8, 0). The board stands at (2, 7); a player spawns at (1.3, 0).
+  const board = { x: 2, z: 7 }, spawn = { x: 1.3, z: 0 };
+
+  it("is named Trail 14", () => {
+    expect(TRAIL_NAME).toBe("Trail 14");
+  });
+
+  it("stands 1.75 m off the bed at the entrance, on the side farther from the board", () => {
+    expect(trailSignSite(graph(1), board)).toEqual({ x: 8, z: -1.75 });
+    expect(trailSignSite(graph(1), { x: 2, z: -7 })).toEqual({ x: 8, z: 1.75 });
+  });
+
+  it("carries one plank, across the line to the player and pointing away from the bed", () => {
+    const post = trailSign(graph(1), board, spawn);
+    expect({ x: post.x, z: post.z }).toEqual({ x: 8, z: -1.75 });
+    expect(post.arms).toHaveLength(1);
+    const arm = post.arms[0]!;
+    expect(arm.names).toEqual(["Trail 14"]);
+    expect(arm.ranks).toEqual([0]);
+    expect(arm.dx).toBeCloseTo(-0.2527158154000624, 9);
+    expect(arm.dz).toBeCloseTo(-0.96754055038881, 9);
+    // Across the line from the post to the player: the plank's face is toward them.
+    const len = Math.hypot(spawn.x - post.x, spawn.z - post.z);
+    expect(arm.dx * ((spawn.x - post.x) / len) + arm.dz * ((spawn.z - post.z) / len)).toBeCloseTo(0, 9);
+  });
+
+  it("joins the junction posts as the last post", () => {
+    const g = graph(2);
+    const named = [{ name: "Summit", x: 200, z: 0 }];
+    const posts = allSignPosts(g, named, board, spawn);
+    expect(posts).toHaveLength(3);
+    expect(posts.slice(0, 2)).toEqual(signPosts(g, named));
+    expect(posts[2]).toEqual(trailSign(g, board, spawn));
   });
 });

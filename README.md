@@ -11,7 +11,7 @@
 
 <br>
 
-One hiker is missing, last seen on the summit trail, and the poster at the trailhead is the whole briefing.
+One hiker is missing, last seen at Trail 14, and the poster at the trailhead is the whole briefing.
 
 Play as a park ranger sent to find them. Lead a search party of up to five up the trail to the crest, where the hiker is waiting — and so is whatever left them there. Then get everyone back down to the road.
 

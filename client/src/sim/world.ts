@@ -7,11 +7,11 @@ import type { Forest } from "./forest.js";
 import type { TrailGraph } from "./trail.js";
 import type { CutRecord } from "./cut.js";
 import { createWatcherRecord, stepWatcher, type WatcherRecord } from "./watcher.js";
-import { spiralSpawn } from "./spawn.js";
+import { spiralSpawn, trailheadStart } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
-import { buildRegister, installRegister, type Register } from "./register.js";
-import { CAR_MATERIAL, KIOSK_MATERIAL, propSite, roadProp } from "./passes/trailhead.js";
+import { buildSearch, installSearch, type Search } from "./search.js";
+import { CAR_MATERIAL, KIOSK_MATERIAL, trailheadSite } from "./passes/trailhead.js";
 import { containAtRoad } from "./containment.js";
 import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
@@ -69,10 +69,11 @@ export type World = {
    */
   interactables: Map<number, Interactable>;
   /**
-   * The poster, the box and the car for a forest world (`register.ts`); null
+   * The missing hiker, the poster, the body's place and the car for a forest
+   * world (`search.ts`); null
    * for a hand-authored level, which has no trail to lose anybody on.
    */
-  register: Register | null;
+  search: Search | null;
   /**
    * The trail network for a forest world (`trail.ts`): the Hollow's map and
    * what `app.ts` paints signs from. Null for a hand-authored level.
@@ -84,7 +85,7 @@ export type World = {
    * client's predicted world. It lives here and not on `WorldState` because
    * `WorldState` is what `cloneWorldState` copies, `serializeWorldState`
    * fingerprints and the snapshot carries to every peer — and the record is
-   * the host's alone, like `register` and `trail` beside it.
+   * the host's alone, like `search` and `trail` beside it.
    */
   cut: CutRecord | null;
   /**
@@ -110,7 +111,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
     maxEnemies: ENEMY_POPULATION_CAP,
     waterLevel: null,
     interactables: new Map(),
-    register: null,
+    search: null,
     trail: null,
     cut: null,
     watcher: null,
@@ -145,7 +146,7 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
     maxEnemies: 0,
     waterLevel: variant.waterLevel ?? null,
     interactables: new Map(),
-    register: null,
+    search: null,
     trail: graph ?? null,
     cut: null,
     watcher: graph === undefined || !authoritative ? null : createWatcherRecord(forest.seed),
@@ -163,11 +164,11 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
   // poster comes from the same seed on every peer.
   const roadCenterX = variant.roadCenterX;
   if (graph !== undefined && roadCenterX !== undefined) {
-    const kiosk = propSite(graph, roadCenterX, forest.seed, roadProp(KIOSK_MATERIAL));
-    const car = propSite(graph, roadCenterX, forest.seed, roadProp(CAR_MATERIAL));
-    installRegister(
+    const kiosk = trailheadSite(graph, roadCenterX, forest.seed, KIOSK_MATERIAL);
+    const car = trailheadSite(graph, roadCenterX, forest.seed, CAR_MATERIAL);
+    installSearch(
       world,
-      buildRegister({
+      buildSearch({
         seed: forest.seed,
         graph,
         groundH: (x, z) => elevationAt(forest.seed, x, z),
@@ -180,21 +181,26 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
 }
 
 /**
- * Where a joining player starts.
+ * Where a joining player starts, and the way they face.
  *
  * Hand-authored levels cycle their spawn list by player count so a full lobby
- * never stacks. A forest has no list, so every peer walks the same deterministic
- * spiral out from the origin and arrives at the same answer without exchanging
- * anything.
+ * never stacks. A forest has no list: every peer derives the same start from
+ * the seed (`trailheadStart`), in front of the car and facing the trail, and
+ * walks the same deterministic spiral out from it to the first free place,
+ * so they arrive at the same answer without exchanging anything. The yaw is
+ * the start's own, whatever place the spiral finds: the game aims the view
+ * from the seed alone and must agree with it. The start is free on every one
+ * of the 227 sweep seeds, so the two have never differed.
  */
-function pickSpawn(world: World): Vec3 {
+function pickSpawn(world: World): { pos: Vec3; yaw: number } {
   if (world.forest !== null) {
     const seed = world.forest.seed;
-    const th = activeTerrainVariant().trailGraph?.(seed).trailhead;
-    return spiralSpawn(world.boxes, seed, PLAYER_HALF, th === undefined ? { x: 0.5, z: 0.5 } : { x: th.x, z: th.z });
+    const start = trailheadStart(seed);
+    const centre = start === null ? { x: 0.5, z: 0.5 } : { x: start.x, z: start.z };
+    return { pos: spiralSpawn(world.boxes, seed, PLAYER_HALF, centre), yaw: start === null ? 0 : start.yaw };
   }
   const spawns = world.level.playerSpawns;
-  return spawns[world.state.players.size % spawns.length] as Vec3;
+  return { pos: spawns[world.state.players.size % spawns.length] as Vec3, yaw: 0 };
 }
 
 export function spawnPlayer(world: World): PlayerState {
@@ -202,9 +208,9 @@ export function spawnPlayer(world: World): PlayerState {
   const spawn = pickSpawn(world);
   const player: PlayerState = {
     id,
-    pos: cloneVec3(spawn),
+    pos: cloneVec3(spawn.pos),
     vel: { x: 0, y: 0, z: 0 },
-    yaw: 0,
+    yaw: spawn.yaw,
     pitch: 0,
     health: PLAYER_MAX_HEALTH,
     grounded: false,

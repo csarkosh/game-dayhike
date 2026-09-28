@@ -2,17 +2,19 @@ import { registerPass } from "../chunk.js";
 import { CHUNK_SIZE } from "../forestConstants.js";
 import { activeTerrainVariant, elevationSampleAt } from "../terrain.js";
 import { ROAD_BED_HALF } from "../road.js";
-import { TRAILHEAD_U } from "../bowl.js";
+import { TRAILHEAD_U, TRAILHEAD_RADIUS } from "../bowl.js";
+import { PLAYER_HALF } from "../constants.js";
+import { segmentBoxGap, type Ground } from "../boxGap.js";
 import { TRAIL_BED_HALF, trailDistance } from "../trail.js";
-import type { TrailGraph } from "../trail.js";
+import type { TrailGraph, TrailNode } from "../trail.js";
 import type { Vec3 } from "../types.js";
 
 /** The trailhead's two props: axis-aligned brushes for the ranger's car and
  * the roofed notice board (the kiosk) the missing hiker's poster is pinned
  * to. The drawn models stand on these boxes; the boxes are what a hiker
- * collides with.
+ * collides with. The board stands by `propSite`, the car by `carSite`.
  *
- * BOTH STAND IN THE ROAD FRAME (u from the road centreline, z from the
+ * THE BOARD STANDS IN THE ROAD FRAME (u from the road centreline, z from the
  * trailhead's own anchor). The board
  * used to be laid out in a DEPARTURE FRAME whose `a` pointed
  * into the widest FREE wedge at node 0, i.e. away from the trail; that was
@@ -48,10 +50,23 @@ export const CAR_HALF: Vec3 = { x: 0.9, y: 0.8, z: 2.3 };
 export const KIOSK_HALF: Vec3 = { x: 1.1, y: 1.25, z: 0.55 };
 
 /** The car: parked on the shoulder, parallel to the
- * road, its road-side face 0.5 m off the pavement edge, beside the pad (not
- * on it). */
+ * road, its road-side face 0.5 m off the pavement edge, at the pad's own
+ * place along the road, so that it is behind a player who stands near the
+ * pad's centre and faces the trail. */
 export const CAR_ROAD_U = ROAD_BED_HALF + 0.5 + CAR_HALF.x; // centre's u
-export const CAR_ROAD_Z = 12;                              // centre's z from the anchor: clears the pad disc
+export const CAR_ROAD_Z = 0;                               // centre's z from the anchor
+/** The least gap from the bed's centreline to the car's box: the bed's
+ * half-width and a player's, so a player walking the bed's edge clears the
+ * car. Where the gap is less, the car slides along the road. */
+export const CAR_BED_CLEAR = TRAIL_BED_HALF + PLAYER_HALF.x;
+export const CAR_SLIDE_STEP = 0.5;
+/** The pad's radius. Over the 227-seed sweep the car slides 3.5 m at most. */
+export const CAR_SLIDE_MAX = 8;
+/** How far past the car's box, along the line to the entrance, a player
+ * spawns (`trailheadSpawn` in spawn.ts). It stands here because it is part
+ * of what every peer must agree on, and the pass's tunables are what the
+ * level id reads. */
+export const SPAWN_GAP = 2.5;
 
 /** The kiosk, beside the car in the same road frame: two metres inland of
  * the pad centre, seven along the road. */
@@ -82,6 +97,60 @@ export function kioskFacing(site: { z: number }, trailhead: { z: number }): { dx
   return { dx: 0, dz: site.z > trailhead.z ? -1 : 1 };
 }
 
+export type EntranceGraph = Pick<TrailGraph, "nodes" | "edges" | "stem" | "trailhead">;
+
+/**
+ * The trail's entrance: the point where the stem's first edge crosses the
+ * pad's rim, and the unit direction the trail leaves in. The first edge is
+ * longer than the pad's radius on every seed of the sweep (11.4 m at the
+ * least), so the bed is straight from the pad's centre to the rim. A graph
+ * with no stem leaves toward +x.
+ */
+export function trailEntrance(graph: EntranceGraph): { x: number; z: number; dx: number; dz: number } {
+  const first = graph.stem.length === 0 ? undefined : graph.edges[graph.stem[0] as number];
+  const from = graph.nodes[0] as TrailNode;
+  const to = first === undefined ? from : (graph.nodes[first.a === 0 ? first.b : first.a] as TrailNode);
+  const ex = to.x - from.x, ez = to.z - from.z;
+  const len = Math.sqrt(ex * ex + ez * ez);
+  const dx = len > 0 ? ex / len : 1, dz = len > 0 ? ez / len : 0;
+  return { x: graph.trailhead.x + dx * TRAILHEAD_RADIUS, z: graph.trailhead.z + dz * TRAILHEAD_RADIUS, dx, dz };
+}
+
+/** The least gap from any edge's centreline to a box. */
+export function bedGap(graph: Pick<TrailGraph, "nodes" | "edges">, centre: Ground, half: Ground): number {
+  let gap = Infinity;
+  for (const e of graph.edges) {
+    const g = segmentBoxGap(graph.nodes[e.a] as TrailNode, graph.nodes[e.b] as TrailNode, centre, half);
+    if (g < gap) gap = g;
+  }
+  return gap;
+}
+
+/**
+ * Where the car stands: on the shoulder at the pad's own place along the
+ * road, and where the bed would come within CAR_BED_CLEAR of its box, slid
+ * along the road in CAR_SLIDE_STEP steps until it does not, or until
+ * CAR_SLIDE_MAX. It slides away from the way the trail heads, so the bed
+ * runs off from the car and not along its flank. Over the 227-seed sweep it
+ * stands at the pad on 216 seeds and slides 3 m on one and 3.5 m on ten.
+ */
+export function carSite(
+  graph: EntranceGraph,
+  roadCenterX: (seed: number, z: number) => number,
+  seed: number,
+): Ground {
+  const away = trailEntrance(graph).dz > 0 ? -1 : 1;
+  const at = (slide: number): Ground => {
+    const z = graph.trailhead.z + CAR_ROAD_Z + away * slide;
+    return { x: roadCenterX(seed, z) + CAR_ROAD_U, z };
+  };
+  let site = at(0);
+  for (let slide = CAR_SLIDE_STEP; slide <= CAR_SLIDE_MAX && bedGap(graph, site, CAR_HALF) < CAR_BED_CLEAR; slide += CAR_SLIDE_STEP) {
+    site = at(slide);
+  }
+  return site;
+}
+
 /**
  * Where a prop stands: the road frame's own centreline at the prop's OWN z
  * (the centreline curves, so a site 7 m along the road is not 7 m along a
@@ -97,7 +166,7 @@ export function kioskFacing(site: { z: number }, trailhead: { z: number }): { dx
  * internals.
  */
 export function propSite(
-  graph: Pick<TrailGraph, "nodes" | "edges" | "trailhead">,
+  graph: EntranceGraph,
   roadCenterX: (seed: number, z: number) => number,
   seed: number, p: RoadProp,
 ): { x: number; z: number } {
@@ -116,6 +185,16 @@ export function propSite(
   return { x: s.x, z: s.z };
 }
 
+/** Where the prop of a material stands: the car by its own rule, the rest by `propSite`. */
+export function trailheadSite(
+  graph: EntranceGraph,
+  roadCenterX: (seed: number, z: number) => number,
+  seed: number,
+  material: string,
+): Ground {
+  return material === CAR_MATERIAL ? carSite(graph, roadCenterX, seed) : propSite(graph, roadCenterX, seed, roadProp(material));
+}
+
 /** Pass 8. Emits each prop into the chunk that contains its centre, so a
  * prop is emitted exactly once even when its box straddles a chunk edge —
  * the collision broadphase surfaces every chunk a query overlaps. */
@@ -127,6 +206,7 @@ registerPass({
       CAR_HALF_X: CAR_HALF.x, CAR_HALF_Y: CAR_HALF.y, CAR_HALF_Z: CAR_HALF.z,
       KIOSK_HALF_X: KIOSK_HALF.x, KIOSK_HALF_Y: KIOSK_HALF.y, KIOSK_HALF_Z: KIOSK_HALF.z,
       CAR_ROAD_U, CAR_ROAD_Z, SIGN_ROAD_U, SIGN_ROAD_Z,
+      CAR_BED_CLEAR, CAR_SLIDE_STEP, CAR_SLIDE_MAX, SPAWN_GAP,
     };
   },
   run(chunk, worldSeed) {
@@ -140,7 +220,7 @@ registerPass({
     const maxX = minX + CHUNK_SIZE;
     const maxZ = minZ + CHUNK_SIZE;
     for (const p of PROPS) {
-      const { x: cx, z: cz } = propSite(graph, roadCenterX, worldSeed, p);
+      const { x: cx, z: cz } = trailheadSite(graph, roadCenterX, worldSeed, p.material);
       if (cx < minX || cx >= maxX || cz < minZ || cz >= maxZ) continue;
       const ground = elevationSampleAt(worldSeed, cx, cz).h;
       chunk.props.push({

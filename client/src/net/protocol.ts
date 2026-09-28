@@ -3,10 +3,9 @@ import type { InputCommand, Vec3 } from "../sim/types.js";
 /**
  * Bumped whenever the wire format changes (most recently: the summit loop —
  * the phase byte; each player's flags byte, whose bit 0 is safety; the items
- * section, the respawn timer, the carried item and the sign-out ticks gone;
- * the Named event; before that, the stare, one byte per player; before that,
- * the register — the hikers' items, the match outcome, and each player's
- * carried item and sign-out ticks; before that, positions widened from
+ * section and three bytes per player gone; the Named event; before that,
+ * the stare, one byte per player; before that, the match outcome and the
+ * items; before that, positions widened from
  * int16 to int32 so the wire carries the whole forest rather than a 512 m
  * box around the origin, and input sequence numbers widened from uint16 to
  * uint32 so they no longer wrap after 18 minutes; before that, the lamp

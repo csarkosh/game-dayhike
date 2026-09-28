@@ -3,6 +3,9 @@ import { nextRandom } from "./types.js";
 import type { BoxProvider } from "./boxSource.js";
 import { depenetrate } from "./collision.js";
 import { activeTerrainVariant, elevationSampleAt } from "./terrain.js";
+import { facingYaw } from "./facing.js";
+import type { Ground } from "./boxGap.js";
+import { CAR_HALF, SPAWN_GAP, carSite, trailEntrance, type EntranceGraph } from "./passes/trailhead.js";
 
 /** Attempts per call. Bounded so a caller cannot hang the tick. */
 const RING_ATTEMPTS = 8;
@@ -100,4 +103,43 @@ export function ringSample(
     return { x: around.x + dx, y: around.y, z: around.z + dz };
   }
   return null;
+}
+
+/** Where a player arrives, and the yaw they face. */
+export type Start = { x: number; z: number; yaw: number };
+
+/**
+ * A player arrives on the straight line from the car to the trail's
+ * entrance, SPAWN_GAP past the point where that line leaves the car's box,
+ * facing the entrance. Because they stand on that line, the car is behind
+ * them and the entrance ahead whatever way the trail leaves the pad: on 24
+ * of the 227 sweep seeds it leaves nearly parallel to the road, and a place
+ * fixed in the road's frame could not put the car behind them there.
+ */
+export function trailheadSpawn(graph: EntranceGraph, car: Ground): Start {
+  const e = trailEntrance(graph);
+  const lx = e.x - car.x, lz = e.z - car.z;
+  const len = Math.sqrt(lx * lx + lz * lz);
+  const ux = lx / len, uz = lz / len;
+  const ax = ux < 0 ? -ux : ux, az = uz < 0 ? -uz : uz;
+  // How far along the line the car's box reaches: the nearer of its two faces.
+  const outX = ax === 0 ? Infinity : CAR_HALF.x / ax;
+  const outZ = az === 0 ? Infinity : CAR_HALF.z / az;
+  const reach = (outX < outZ ? outX : outZ) + SPAWN_GAP;
+  const x = car.x + ux * reach, z = car.z + uz * reach;
+  return { x, z, yaw: facingYaw(e.x - x, e.z - z) };
+}
+
+/**
+ * The start on the active terrain's world for a seed, or null where the
+ * world has no trail or no road. A pure function of the seed, so the sim
+ * that places a player and the game that aims their view agree on every
+ * peer with nothing exchanged.
+ */
+export function trailheadStart(seed: number): Start | null {
+  const variant = activeTerrainVariant();
+  const graph = variant.trailGraph?.(seed);
+  const roadCenterX = variant.roadCenterX;
+  if (graph === undefined || roadCenterX === undefined) return null;
+  return trailheadSpawn(graph, carSite(graph, roadCenterX, seed));
 }

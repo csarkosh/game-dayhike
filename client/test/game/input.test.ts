@@ -30,7 +30,7 @@ afterEach(() => {
   delete (globalThis as Record<string, unknown>).document;
 });
 
-function sampler(opts: { touch?: import("../../src/game/touchControls.js").TouchSource; touchMode?: boolean } = {}) {
+function sampler(opts: { touch?: import("../../src/game/touchControls.js").TouchSource; touchMode?: boolean; startYaw?: number } = {}) {
   const canvas = { ...fakeTarget(), requestPointerLock: () => undefined };
   return { input: createInputSampler(canvas as unknown as HTMLCanvasElement, opts), canvas };
 }
@@ -687,5 +687,58 @@ describe("rebinding to a fresh canvas", () => {
     input.rebind(fresh as unknown as HTMLCanvasElement);
     expect(input.engaged).toBe(true);
     expect(seen).toEqual([true]);
+  });
+});
+
+describe("the starting yaw", () => {
+  it("is the yaw of the first command", () => {
+    const { input } = sampler({ startYaw: 1.25 });
+    const cmd = input.sample(1);
+    expect(cmd.yaw).toBe(1.25);
+    expect(cmd.pitch).toBe(0);
+  });
+
+  it("is 0 when none is given", () => {
+    const { input } = sampler();
+    expect(input.sample(1).yaw).toBe(0);
+  });
+
+  it("carries the starting yaw while suppressed", () => {
+    const { input } = sampler({ startYaw: 1.25 });
+    input.setSuppressed(true);
+    expect(input.sample(1).yaw).toBe(1.25);
+    input.setSuppressed(false);
+    expect(input.sample(2).yaw).toBe(1.25);
+  });
+
+  it("turns from the starting yaw with the mouse", () => {
+    const { input, canvas } = sampler({ startYaw: 1.25 });
+    lockPointer(canvas);
+    fire("mousemove", { movementX: 100, movementY: 0 });
+    expect(input.sample(1).yaw).toBeCloseTo(1.47, 9);
+  });
+
+  it("adds a touch look to the starting yaw", () => {
+    const touch = {
+      moveX: 0, moveZ: 0, sprinting: false,
+      takeLook: () => ({ yaw: 0.5, pitch: 0 }),
+      takeButtons: () => 0,
+    } as unknown as import("../../src/game/touchControls.js").TouchSource;
+    const { input } = sampler({ touch, touchMode: true, startYaw: 1.25 });
+    expect(input.sample(1).yaw).toBe(1.75);
+  });
+
+  it("is kept through a rebind to a fresh canvas, as is a turn made from it", () => {
+    const freshCanvas = () => ({ ...fakeTarget(), requestPointerLock: () => undefined });
+    const { input } = sampler({ startYaw: 1.25 });
+    const first = freshCanvas();
+    input.rebind(first as unknown as HTMLCanvasElement);
+    expect(input.sample(1).yaw).toBe(1.25);
+
+    lockPointer(first);
+    fire("mousemove", { movementX: 100, movementY: 0 });
+    expect(input.sample(2).yaw).toBeCloseTo(1.47, 9);
+    input.rebind(freshCanvas() as unknown as HTMLCanvasElement);
+    expect(input.sample(3).yaw).toBeCloseTo(1.47, 9);
   });
 });
