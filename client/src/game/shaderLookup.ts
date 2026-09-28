@@ -33,8 +33,8 @@
  * pipeline context and builds the render pipeline from `stages` straight
  * after (`checkNonFloatVertexBuffers`, `buffer.nonFloatVertexBuffers.js`).
  * So every source answers from memory, read in while the engine is made
- * (`lookUpShaders`' promise, which the engine's maker waits for within
- * `WGSL_SOURCES_MS`); the translators are loaded before the engine is handed
+ * (`lookUpShaders`' promise, which the engine's maker waits for within each
+ * source's bound); the translators are loaded before the engine is handed
  * over, so a stage not found is translated at once; and keeping a new
  * translation is never waited on. Its canaries are in `shaderLookup.test.ts`.
  */
@@ -49,12 +49,16 @@ import { WGSL_START_MAX_BYTES, loadWgslStore } from "./wgslStore.js";
 // The key and the salt, in a module the build's tools load too (`wgslFormat.ts`).
 export { LOOKUP_FORMAT, lookupSalt, stageKey, translatorInput, uniformityOff, type Stage };
 
-/** How long the engine's maker waits for the sources to be read into memory,
- * opening and reading together (less where its start's budget leaves less):
- * a stage asked for before its entry has landed is a miss, translated; an
- * entry that lands later is found from then on. The device's request runs
- * meanwhile. */
-export const WGSL_SOURCES_MS = 2_000;
+/** How long the engine's maker waits for a source to be read into memory,
+ * opening and reading together, where the source names no bound of its own
+ * (`WgslSource.waitMs`), and for the list of sources to come (less where its
+ * start's budget leaves less): a stage asked for before its entry has landed
+ * is a miss, translated; an entry that lands later is found from then on.
+ * The browser's store opened in 2 to 6 ms and answered a start's reads within
+ * 83 ms on a machine with 4 virtual CPUs, whose device came 39 ms after the
+ * read began; a database that never answers adds the whole bound to the
+ * start, so it is short. */
+export const WGSL_SOURCES_MS = 500;
 /** The most WGSL text the page keeps of its own translations, for the
  * engine's life: 32 MB of characters (ASCII, which V8 keeps a byte a
  * character), the bound the browser's store reads a start's entries in by
@@ -94,6 +98,11 @@ export type WgslSource = {
    * is found from then on. Absent: in memory from the start. What it read is
    * held for the engine's life. */
   readonly ready?: Promise<void>;
+  /** How long the engine's maker waits for `ready`, from when the sources
+   * were asked for: its own bound, where it has one (the map shipped with the
+   * build, `WGSL_MAP_MS`); `WGSL_SOURCES_MS` where not. Always within the
+   * start's own budget. */
+  readonly waitMs?: number;
   /** Lets go of everything it holds, connections included. */
   close?(): void;
 };
@@ -315,8 +324,8 @@ function during<T extends object, K extends keyof T>(target: T, key: K, value: T
  * Looks up every GLSL shader `engine` prepares before translating it (see the
  * module's comment). `mode` `"off"` leaves the engine as Babylon made it.
  * Resolves once its sources (`sources`, the browser's store by default) are
- * in memory, or `WGSL_SOURCES_MS` has passed, whichever comes first, never
- * rejecting; the engine's maker waits for it before handing the engine over,
+ * in memory, or each one's bound has passed (`WgslSource.waitMs`,
+ * `WGSL_SOURCES_MS` by default), never rejecting; the engine's maker waits for it before handing the engine over,
  * and the translators must be loaded by then too. What its sources read and
  * what it translates (up to `maxKeptChars` of text, `WGSL_KEPT_MAX_CHARS` by
  * default) are kept for the engine's life. `report` counts and records (the
@@ -373,8 +382,8 @@ export function lookUpShaders(
       return;
     }
     asked = ours;
-    const left = Math.max(0, WGSL_SOURCES_MS - (performance.now() - began));
-    await within(Promise.all(ours.map((source) => source.ready ?? Promise.resolve())), left);
+    const elapsed = performance.now() - began;
+    await Promise.all(ours.map((source) => within(source.ready ?? Promise.resolve(), Math.max(0, (source.waitMs ?? WGSL_SOURCES_MS) - elapsed))));
   })().catch(() => undefined);
 
   const release = (): void => {

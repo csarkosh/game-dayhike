@@ -9,8 +9,8 @@
  *
  * A preparation never waits (`shaderLookup.ts`), so the map answers from
  * memory: `loadWgslMap` fetches it as the engine is made, and parses it into
- * memory as it lands; the lookup waits for that within `WGSL_SOURCES_MS`,
- * beside the store's read. A map that lands after the engine is handed over
+ * memory as it lands; the lookup waits for that within its own bound,
+ * `WGSL_MAP_MS`, beside the store's read. A map that lands after the engine is handed over
  * is found from then on. What it read is held for the engine's life, as the
  * store's is.
  *
@@ -26,6 +26,22 @@ import { readMap } from "./wgslFormat.js";
 
 /** How the report names the map (`hitsBySource`). */
 export const WGSL_MAP_SOURCE = "shipped";
+
+/**
+ * How long the engine's maker waits for the map, from when its fetch began,
+ * within the start's own budget. The map is the difference between a first
+ * visit that translates nothing and one that translates every stage (40 s of
+ * the page's thread on a machine with 4 virtual CPUs); but a map that lands
+ * after the engine is handed over is still found by every stage asked for
+ * from then on, and the preparations run on for most of a minute: the few
+ * effects made before the world's first frame (the post chain, the sky, one
+ * material), then the world's, from its first frame, 4 to 5 s after the
+ * hand-over there. So waiting longer buys only those first effects, which
+ * cost about a second to translate there, and a map that never comes costs
+ * the whole wait: the wait is that second. A start's map, about a megabyte
+ * compressed, comes within it over a link of 10 Mbit/s or more.
+ */
+export const WGSL_MAP_MS = 1_000;
 
 /**
  * The map at `url`, for `salt`, as a source of the lookup, at once: its
@@ -53,6 +69,7 @@ export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fe
     name: WGSL_MAP_SOURCE,
     salt,
     ready,
+    waitMs: WGSL_MAP_MS,
     get: (key) => held.get(key) ?? null,
     close: () => {
       closed = true;

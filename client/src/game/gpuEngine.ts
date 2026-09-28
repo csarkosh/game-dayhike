@@ -255,7 +255,8 @@ async function startTranslators(signal: AbortSignal): Promise<Translators> {
  * (`lookUpShaders`, in `lookup`'s mode; `?wgsl=off` installs nothing), from
  * `sources` (by default the translations shipped with the build, then the
  * browser's store) read into memory while the
- * device comes, within `WGSL_SOURCES_MS` and never closer than
+ * device comes, each within its bound (`WGSL_SOURCES_MS`; the map's
+ * `WGSL_MAP_MS`) and never closer than
  * `SOURCES_MARGIN_MS` to its deadline (entries still arriving are found as
  * they land), so that no preparation waits once the engine is handed over.
  * Rejects on any failure, or when `ms` pass first,

@@ -34,7 +34,7 @@ import {
   type WgslSource,
 } from "../../src/game/shaderLookup.js";
 import { corpusText, mapText, readCorpus } from "../../src/game/wgslFormat.js";
-import { WGSL_MAP_SOURCE, loadWgslMap } from "../../src/game/wgslMap.js";
+import { WGSL_MAP_MS, WGSL_MAP_SOURCE, loadWgslMap } from "../../src/game/wgslMap.js";
 import { loadWgslStore, wgslStoreName } from "../../src/game/wgslStore.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { memoryIndexedDb } from "./helpers/memoryIndexedDb.js";
@@ -343,8 +343,8 @@ describe("the WebGPU shader lookup", () => {
     }
   });
 
-  it("waits for its sources at most 2 s: what has not arrived by then is not there, and a source that lands later is let go", async () => {
-    expect(WGSL_SOURCES_MS).toBe(2_000);
+  it("waits for its sources at most 500 ms: what has not arrived by then is not there, and a source that lands later is let go", async () => {
+    expect(WGSL_SOURCES_MS).toBe(500);
     vi.useFakeTimers();
     const late = memorySource();
     let land: (sources: readonly WgslSource[]) => void = () => undefined;
@@ -352,7 +352,7 @@ describe("the WebGPU shader lookup", () => {
     const ready = lookUpShaders(h.engine, { mode: "on", salt: SALT, sources: () => new Promise((r) => (land = r)), report: newLookupReport("on", SALT) });
     let done = false;
     void ready.then(() => (done = true));
-    await vi.advanceTimersByTimeAsync(1_999);
+    await vi.advanceTimersByTimeAsync(499);
     expect(done).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(done).toBe(true);
@@ -360,16 +360,29 @@ describe("the WebGPU shader lookup", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(late.events).toEqual(["close"]);
     // A source in, whose entries are still arriving: waited for within the
-    // same 2 s, then asked for what it has.
+    // same 500 ms, then asked for what it has.
     const slow: WgslSource = { ...memorySource().source, ready: new Promise(() => undefined) };
     const partly = harness();
     const readyPartly = lookUpShaders(partly.engine, { mode: "on", salt: SALT, sources: () => Promise.resolve([slow]), report: newLookupReport("on", SALT) });
     let partlyDone = false;
     void readyPartly.then(() => (partlyDone = true));
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(250);
     expect(partlyDone).toBe(false);
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(250);
     expect(partlyDone).toBe(true);
+
+    // A source with a bound of its own is waited for by it, the others by
+    // theirs: the map's 1 s beside a store that never answers.
+    const own: WgslSource = { ...memorySource().source, ready: new Promise(() => undefined), waitMs: 1_000 };
+    const store: WgslSource = { ...memorySource({}, "store").source, ready: new Promise(() => undefined) };
+    const both = harness();
+    const readyBoth = lookUpShaders(both.engine, { mode: "on", salt: SALT, sources: () => Promise.resolve([own, store]), report: newLookupReport("on", SALT) });
+    let bothDone = false;
+    void readyBoth.then(() => (bothDone = true));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(bothDone).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(bothDone).toBe(true);
   });
 
   it("keeps what it translated for the engine's life, up to 32 MB of text: an effect made again minutes after the start finds its stages (the rain's)", async () => {
@@ -770,7 +783,8 @@ describe("the translations shipped with the build", () => {
     }
   });
 
-  it("is waited for 2 s at most when its fetch never answers, is found from when it lands, and is aborted when the engine is let go", async () => {
+  it("is waited for 1 s at most, by its own bound, when its fetch never answers; is found from when it lands; is aborted when the engine is let go", async () => {
+    expect(WGSL_MAP_MS).toBe(1_000);
     const { kept } = await translatedBy({ fragment: `${FRAGMENT}\n// the lamp on` });
     vi.useFakeTimers();
     let land: (response: Response) => void = () => undefined;
@@ -785,7 +799,7 @@ describe("the translations shipped with the build", () => {
     await handOver(h.engine, h.translators);
     let done = false;
     void ready.then(() => (done = true));
-    await vi.advanceTimersByTimeAsync(1_999);
+    await vi.advanceTimersByTimeAsync(999);
     expect(done).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(done).toBe(true);
@@ -804,7 +818,7 @@ describe("the translations shipped with the build", () => {
     const other = harness();
     const signalsBefore = signals.length;
     const readyOther = lookUpShaders(other.engine, { mode: "on", salt: SALT, sources: () => Promise.resolve([loadWgslMap(MAP_URL, SALT, { fetch: slow })]), report });
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(1_000);
     await readyOther;
     releaseShaderLookup(other.engine);
     expect(signals.slice(signalsBefore).map((signal) => signal.aborted)).toEqual([true]);
@@ -853,7 +867,7 @@ describe("the translations shipped with the build", () => {
  * the map shipped beside it.
  */
 describe("a source still opening", () => {
-  it("does not hold back the sources beside it; one that opens after 2 s is let go as it lands and never asked", async () => {
+  it("does not hold back the sources beside it; one that opens after 500 ms is let go as it lands and never asked", async () => {
     const { kept } = await translatedBy();
     vi.useFakeTimers();
     let open: (source: WgslSource | null) => void = () => undefined;
@@ -866,7 +880,7 @@ describe("a source still opening", () => {
     await handOver(h.engine, h.translators);
     let done = false;
     void ready.then(() => (done = true));
-    await vi.advanceTimersByTimeAsync(1_999);
+    await vi.advanceTimersByTimeAsync(499);
     expect(done).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(done).toBe(true);
@@ -879,7 +893,7 @@ describe("a source still opening", () => {
     expect(late.puts).toEqual([]);
   });
 
-  it("answers, keeps and closes as the source it opened to, once open within 2 s", async () => {
+  it("answers, keeps and closes as the source it opened to, once open within 500 ms", async () => {
     const { kept } = await translatedBy();
     const store = memorySource(Object.fromEntries(kept.map), "store");
     const opening = openingSource("store", SALT, Promise.resolve(store.source));
