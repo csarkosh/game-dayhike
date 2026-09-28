@@ -2,7 +2,7 @@
 // deploy would ship, read from its files, before anything is deployed.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { bundleMapProblems, staticChunks } from '../../deploy/lib/bundle.mjs';
 import { findChunkName, findMapUrl } from '../../deploy/lib/modelUrls.mjs';
 
@@ -46,15 +46,16 @@ export async function checkBuild(dist, { mapFormat, note = () => undefined }) {
     problems.push('index.html names no entry chunk');
     return problems;
   }
-  const entry = basename(entrySrc);
-  const walk = await staticChunks(entry, readFile);
+  const entry = entrySrc.slice(entrySrc.lastIndexOf('/assets/') + '/assets/'.length);
+  const entryText = readFile(entry);
+  const walk = await staticChunks(entry, readFile, undefined, entryText);
   for (const [name, text] of walk.chunks) {
     for (const word of WEBGPU_ONLY) {
       if (text.includes(word)) problems.push(`assets/${name}, loaded with the entry chunk, names ${word}`);
     }
   }
 
-  const gpu = findChunkName(readFile(entry) ?? '', 'gpuEngine');
+  const gpu = findChunkName(entryText ?? '', 'gpuEngine');
   if (gpu === null) {
     problems.push(`the entry chunk assets/${entry} names no WebGPU chunk`);
     return problems;
@@ -64,7 +65,7 @@ export async function checkBuild(dist, { mapFormat, note = () => undefined }) {
     const url = findMapUrl(chunk);
     if (url === null || !url.endsWith(`/assets/${mapName}`)) problems.push(`the WebGPU chunk assets/${gpu} does not name assets/${mapName}`);
     else {
-      const checked = await bundleMapProblems({ entry, read: readFile, mapText, chunkSource: chunk });
+      const checked = await bundleMapProblems({ entry, entryText, read: readFile, mapText, chunkSource: chunk });
       for (const problem of checked.problems) problems.push(`the deploy check refuses the map: ${problem}`);
       for (const name of checked.carriers) {
         note(`Babylon's version ${checked.babylon} is in assets/${name}, ${name === entry ? 'the entry chunk' : 'which the entry chunk imports statically'}`);
