@@ -106,6 +106,14 @@ describe("the Hollow walks the stem on real terrain", () => {
    * the seeds whose trails hug the corridor longest, which no longer matters
    * to the time. `hollowCorridor.test.ts` walks the case that used to freeze —
    * a route into the woods that starts at the trailhead, deeper inside.
+   *
+   * It starts 30 m along the road from the pad, where nothing stands between
+   * the road and the woods. The walk out is a straight line, with no way
+   * round a box: started at the pad's own place, on `hollow18` it walks into
+   * the road-side face of the car, which has stood at the pad since
+   * 2026-09-28, and stays there at u = 5.6. No Hollow is ever put on the
+   * road behind the car: none steps onto the corridor, and none spawns on it
+   * short of the trail.
    */
   it("walks out of the road corridor instead of freezing on it", () => {
     for (const token of ["hollow0", "hollow29", "hollow18"]) {
@@ -123,11 +131,12 @@ describe("the Hollow walks the stem on real terrain", () => {
       const p = spawnPlayer(w);
       p.pitch = 1.4;
       p.pos = { x: crest.x, y: elevationAt(seed, crest.x, crest.z) + PLAYER_HALF.y, z: crest.z };
-      // On the road's centreline by the pad: u = 0, as deep in as it goes.
+      // On the road's centreline, 30 m along it from the pad: u = 0, as deep
+      // in as it goes, and clear of the car and the board.
       const roadCenterX = activeTerrainVariant().roadCenterX!;
-      const th = graph.trailhead;
-      const sx = roadCenterX(seed, th.z);
-      const h = spawnHollow(w, { x: sx, y: elevationAt(seed, sx, th.z) + ENEMY_HALF.y, z: th.z }, p.id, 0);
+      const sz = graph.trailhead.z + 30;
+      const sx = roadCenterX(seed, sz);
+      const h = spawnHollow(w, { x: sx, y: elevationAt(seed, sx, sz) + ENEMY_HALF.y, z: sz }, p.id, 0);
       expect(isOnCorridor(w, h.pos.x, h.pos.z), `seed ${token}`).toBe(true);
 
       let out = -1;
