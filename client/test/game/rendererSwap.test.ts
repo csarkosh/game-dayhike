@@ -161,14 +161,15 @@ describe("swapRenderer's order", () => {
       );
       expect(got.tier).toBe("medium");
       expect(got.fellBack).toBe(true);
-      // The given engine's rung failing is the engine's fault first: its tier
-      // is tried again on WebGL2 before the ladder goes down.
+      // The given engine's rung failing may be the engine's fault: its tier
+      // is tried again on WebGL2 before the ladder goes down. It fails there
+      // too, so the fault is the tier's, and nothing is held against the
+      // engine.
       expect(log.slice(4)).toEqual([
         "fresh c1",
         "replace c0 with c1",
         "build c1 high given",
         "dispose given engine",
-        "engine failed: no high",
         "fresh c2",
         "replace c1 with c2",
         "build c2 high webgl2",
@@ -231,12 +232,12 @@ describe("a swap onto a given engine", () => {
       expect([got.tier, got.fellBack, got.engineFellBack]).toEqual(["high", false, true]);
       expect(log.filter((line) => line.startsWith("watch"))).toEqual([]);
       expect(log.filter((line) => line.startsWith("engine failed"))).toEqual(["engine failed: no high"]);
+      // Held against the engine once the same tier has stood on WebGL2.
       expect(log.slice(4)).toEqual([
         "fresh c1",
         "replace c0 with c1",
         "build c1 high given",
         "dispose given engine",
-        "engine failed: no high",
         "fresh c2",
         "replace c1 with c2",
         "build c2 high webgl2",
@@ -244,6 +245,7 @@ describe("a swap onto a given engine", () => {
         "extras build high@c2",
         "rebind c2",
         "run high@c2",
+        "engine failed: no high",
       ]);
     } finally {
       quiet.mockRestore();
@@ -257,7 +259,13 @@ describe("a swap onto a given engine", () => {
       const b = stubBindings(log, new Set(), new Set(), new Set<QualityTier>(["high"]));
       const got = buildFirstRenderer(stubCanvas("c0", log), ["high", "medium", "low"], b, { engine: engine(log), watch: detector });
       expect([got.tier, got.fellBack, got.engineFellBack, idOf(got.canvas)]).toEqual(["high", false, true, "c1"]);
-      expect(log).toEqual(["build c0 high given", "dispose given engine", "engine failed: no high", "fresh c1", "replace c0 with c1", "build c1 high webgl2"]);
+      expect(log).toEqual(["build c0 high given", "dispose given engine", "fresh c1", "replace c0 with c1", "build c1 high webgl2", "engine failed: no high"]);
+      // A tier that fails on WebGL2 as well is the tier's fault: no record
+      // against the engine, and the ladder goes down.
+      const both: string[] = [];
+      const lower = buildFirstRenderer(stubCanvas("c0", both), ["high", "medium"], stubBindings(both, new Set<QualityTier>(["high"])), { engine: engine(both), watch: detector });
+      expect([lower.tier, lower.fellBack]).toEqual(["medium", true]);
+      expect(both.filter((line) => line.startsWith("engine failed"))).toEqual([]);
       const watched: string[] = [];
       const standing = buildFirstRenderer(stubCanvas("c0", watched), ["high", "low"], stubBindings(watched), { engine: engine(watched), watch: detector });
       expect([standing.tier, standing.engineFellBack]).toEqual(["high", false]);
