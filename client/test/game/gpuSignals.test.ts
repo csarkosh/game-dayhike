@@ -107,8 +107,10 @@ describe("isChromeOrEdge and hostOs, the browser and platform the WebGPU rule re
   const LAUNCHER_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) day-hike-desktop/0.3.0 Chrome/152.0.0.0 Electron/44.1.1 Safari/537.36 DayHike/0.3.0";
   const LAUNCHER_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) day-hike-desktop/0.3.0 Chrome/152.0.0.0 Electron/44.1.1 Safari/537.36 DayHike/0.3.0";
   const OPERA_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 OPR/125.0.0.0";
-  const VIVALDI_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Vivaldi/7.9.3970.41";
-  const BRAVE_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Brave/154";
+  // Brave and Vivaldi send Chrome's user agent unchanged: only their brands
+  // tell them apart.
+  const BRAVE_WINDOWS = CHROME_WINDOWS;
+  const VIVALDI_MAC = CHROME_MAC;
   const SAMSUNG_ANDROID = "Mozilla/5.0 (Linux; Android 16; SM-S938B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/29.0 Chrome/136.0.0.0 Mobile Safari/537.36";
   const YANDEX_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 YaBrowser/25.10.0.0 Safari/537.36";
   const SAFARI_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
@@ -128,8 +130,6 @@ describe("isChromeOrEdge and hostOs, the browser and platform the WebGPU rule re
       [LAUNCHER_MAC, false, "mac"],
       [LAUNCHER_WINDOWS, false, "windows"],
       [OPERA_WINDOWS, false, "windows"],
-      [VIVALDI_MAC, false, "mac"],
-      [BRAVE_WINDOWS, false, "windows"],
       [SAMSUNG_ANDROID, false, "other"],
       [YANDEX_WINDOWS, false, "windows"],
       [SAFARI_MAC, false, "mac"],
@@ -155,15 +155,30 @@ describe("isChromeOrEdge and hostOs, the browser and platform the WebGPU rule re
     expect(isChromeOrEdge({ userAgent: "", userAgentData: { brands: [grease, chromium, { brand: "Microsoft Edge" }] } })).toBe(true);
     // Brave, Opera and the launcher (an Electron build, which names no
     // product brand) are refused by their brands even with Chrome's user agent.
-    expect(isChromeOrEdge({ userAgent: CHROME_WINDOWS, userAgentData: { brands: [grease, chromium, { brand: "Brave" }] } })).toBe(false);
+    expect(isChromeOrEdge({ userAgent: BRAVE_WINDOWS, userAgentData: { brands: [{ brand: "Brave" }, chromium, grease] } })).toBe(false);
     expect(isChromeOrEdge({ userAgent: CHROME_WINDOWS, userAgentData: { brands: [grease, chromium, { brand: "Opera" }] } })).toBe(false);
     expect(isChromeOrEdge({ userAgent: CHROME_MAC, userAgentData: { brands: [grease, chromium] } })).toBe(false);
     expect(isChromeOrEdge({ userAgent: LAUNCHER_MAC, userAgentData: { brands: [chromium, grease] } })).toBe(false);
+    // Without brands (a bare `http://` address has no client hint), the user
+    // agent alone cannot tell Brave or Vivaldi from Chrome.
+    expect(isChromeOrEdge({ userAgent: VIVALDI_MAC })).toBe(true);
+    expect(isChromeOrEdge({ userAgent: BRAVE_WINDOWS })).toBe(true);
     // A list present but empty says nothing, and the user agent is read.
     expect(isChromeOrEdge({ userAgent: CHROME_MAC, userAgentData: { brands: [] } })).toBe(true);
     expect(isChromeOrEdge({ userAgent: EDGE_WINDOWS, userAgentData: { brands: [] } })).toBe(true);
     expect(isChromeOrEdge({ userAgent: LAUNCHER_WINDOWS, userAgentData: { brands: [] } })).toBe(false);
     expect(isChromeOrEdge({ userAgent: OPERA_WINDOWS, userAgentData: { brands: [] } })).toBe(false);
+  });
+
+  it("takes a browser that names itself Google Chrome in its brands for Chrome, and one that does not for another", () => {
+    const grease = { brand: "Not A(Brand" };
+    const chromium = { brand: "Chromium" };
+    // Vivaldi's user agent is Chrome's, so its brands decide, either way
+    // (which of the two a real Vivaldi reports was not read).
+    expect(isChromeOrEdge({ userAgent: VIVALDI_MAC, userAgentData: { brands: [chromium, grease] } })).toBe(false);
+    expect(isChromeOrEdge({ userAgent: VIVALDI_MAC, userAgentData: { brands: [chromium, { brand: "Google Chrome" }, grease] } })).toBe(true);
+    // Headless Chrome 154 on macOS reports these.
+    expect(isChromeOrEdge({ userAgent: "", userAgentData: { brands: [chromium, { brand: "Google Chrome" }, grease] } })).toBe(true);
   });
 
   it("prefers the client hint's platform where it names one", () => {

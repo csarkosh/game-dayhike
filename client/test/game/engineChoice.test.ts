@@ -70,7 +70,6 @@ describe("the rule on each browser and platform, the switch on", () => {
   // Chromium-based, but neither Chrome nor Edge by name (`isChromeOrEdge`).
   const BRAVE_WINDOWS = { chromeOrEdge: false, os: "windows", mobile: false } as const;
   const OPERA_WINDOWS = { chromeOrEdge: false, os: "windows", mobile: false } as const;
-  const VIVALDI_MAC = { chromeOrEdge: false, os: "mac", mobile: false } as const;
   const LAUNCHER_MAC = { chromeOrEdge: false, os: "mac", mobile: false } as const;
   const LAUNCHER_WINDOWS = { chromeOrEdge: false, os: "windows", mobile: false } as const;
   const SAFARI_MAC = { chromeOrEdge: false, os: "mac", mobile: false } as const;
@@ -99,9 +98,9 @@ describe("the rule on each browser and platform, the switch on", () => {
     }
   });
 
-  it("keeps Brave, Opera, Vivaldi, the desktop launcher, Safari, Firefox, Chrome on Android, Linux and ChromeOS, and a tablet, on WebGL2 at every tier, without asking the adapter", () => {
+  it("keeps Brave, Opera, the desktop launcher, Safari, Firefox, Chrome on Android, Linux and ChromeOS, and a tablet, on WebGL2 at every tier, without asking the adapter", () => {
     const hosts = [
-      BRAVE_WINDOWS, OPERA_WINDOWS, VIVALDI_MAC, LAUNCHER_MAC, LAUNCHER_WINDOWS,
+      BRAVE_WINDOWS, OPERA_WINDOWS, LAUNCHER_MAC, LAUNCHER_WINDOWS,
       SAFARI_MAC, FIREFOX_MAC, FIREFOX_WINDOWS, CHROME_ANDROID, CHROME_LINUX, CHROME_OS, CHROME_TABLET_WINDOWS,
     ];
     for (const host of hosts) {

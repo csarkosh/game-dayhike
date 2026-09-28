@@ -26,7 +26,7 @@ describe("the start where the rule gives WebGL2", () => {
     { chromeOrEdge: false, os: "windows", mobile: false }, // Firefox
     { chromeOrEdge: true, os: "other", mobile: true }, // Chrome on Android
     { chromeOrEdge: true, os: "other", mobile: false }, // Chrome on Linux
-    { chromeOrEdge: false, os: "mac", mobile: false }, // the desktop launcher, Brave, Opera, Vivaldi
+    { chromeOrEdge: false, os: "mac", mobile: false }, // the desktop launcher, Brave, Opera
     { chromeOrEdge: false, os: "windows", mobile: false }, // the same on Windows
   ] as const;
 
@@ -54,7 +54,7 @@ describe("the start where the rule gives WebGL2", () => {
     }
   });
 
-  it("draws every tier on WebGL2 without asking for WebGPU on Safari, Firefox, Chrome on Android and Linux, the desktop launcher, Brave, Opera and Vivaldi", async () => {
+  it("draws every tier on WebGL2 without asking for WebGPU on Safari, Firefox, Chrome on Android and Linux, the desktop launcher, Brave and Opera", async () => {
     for (const host of OTHERS) {
       for (const tier of TIERS) {
         for (const fits of [null, false, true]) {
