@@ -116,6 +116,12 @@ export function readCorpus(text: string): CorpusStage[] {
 /** The format of the map the build ships. */
 export const MAP_FORMAT = "dayhike-wgsl-map/1";
 
+/** The most a map may be, in bytes of text: 16 MB. The page holds it whole
+ * for the engine's life, and parses it in one task on its thread; the build
+ * refuses a larger one (`tools/wgsl/build-map.mjs`), and the page one whose
+ * `Content-Length` says it is larger (`loadWgslMap`). */
+export const MAP_MAX_BYTES = 16_777_216;
+
 /** The map: `{"format": MAP_FORMAT, "salt": ..., "entries": {key: wgsl}}`,
  * its keys sorted, so the same entries always make the same bytes. */
 export function mapText(salt: string, entries: ReadonlyMap<string, string>): string {

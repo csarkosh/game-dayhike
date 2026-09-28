@@ -15,14 +15,15 @@
  * store's is.
  *
  * Nothing here is the player's to see: a map that does not come (a fetch
- * refused or never answered, an HTTP error), one made for another build (its
- * salt) or in another format, or one that does not parse is a source with
+ * refused or never answered, an HTTP error), one whose `Content-Length` is
+ * over `MAP_MAX_BYTES`, one made for another build (its salt) or in another
+ * format, or one that does not parse is a source with
  * nothing in it, and the lookup translates as the engine always has: never an
  * error, never a switch to WebGL2, never a record. It takes no writes.
  */
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { WgslSource } from "./shaderLookup.js";
-import { readMap } from "./wgslFormat.js";
+import { MAP_MAX_BYTES, readMap } from "./wgslFormat.js";
 
 /** How the report names the map (`hitsBySource`). */
 export const WGSL_MAP_SOURCE = "shipped";
@@ -59,6 +60,12 @@ export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fe
   const ready = (async (): Promise<void> => {
     const response = await request(url, { signal: abort.signal });
     if (!response.ok) throw new Error(`${url}: ${response.status}`);
+    // Refused unread where it says it is over the ceiling.
+    const length = Number(response.headers.get("content-length"));
+    if (length > MAP_MAX_BYTES) {
+      abort.abort();
+      throw new Error(`${url}: ${length} bytes, over the map's ceiling of ${MAP_MAX_BYTES}`);
+    }
     const entries = readMap(await response.text(), salt);
     if (!closed) held = entries;
   })().catch((error: unknown) => {

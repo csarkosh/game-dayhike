@@ -76,6 +76,20 @@ export function buildMap({ stages, salt, translate, shared, now = () => performa
   return { text: shared.mapText(salt, entries), entries, translated, failed };
 }
 
+/** The page's `MAP_MAX_BYTES` (`client/src/game/wgslFormat.ts`), 16 MB of
+ * text, for a caller without it; the build passes the page's own, and
+ * `mapSize.test.mjs` holds the two equal. */
+const MAP_CEILING = 16_777_216;
+
+/**
+ * Why a map of `bytes` may not ship, or null: over `ceiling` the page would
+ * hold it whole for the engine's life, and parse it in one task.
+ */
+export function mapSizeProblem(bytes, ceiling = MAP_CEILING) {
+  if (bytes <= ceiling) return null;
+  return `the WGSL map is ${bytes} bytes, over its ceiling of ${ceiling} (MAP_MAX_BYTES): a page would hold it whole for the engine's life`;
+}
+
 /** `text`'s bytes raw, gzipped at level 9 and brotli'd at quality 11. */
 export function sizes(text) {
   const bytes = Buffer.from(text, 'utf8');

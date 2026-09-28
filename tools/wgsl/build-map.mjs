@@ -9,7 +9,8 @@
 // translated with the very translator files the page ships, as the page
 // translates it. The same corpus and translators give the same bytes. A stage
 // that does not translate is left out of the map and reported: the build goes
-// on, and the page translates that stage itself, as it always has.
+// on, and the page translates that stage itself, as it always has. A map over
+// 16 MB (`MAP_MAX_BYTES`) fails the build.
 //
 // Usage: node tools/wgsl/build-map.mjs [--corpus <dir>] [--out <file>] [--reuse]
 //   --reuse  leaves a map made from the same corpus under the same salt as it
@@ -18,7 +19,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { buildMap, formatTimes, inputsDigest, nodeSalt, readCorpusDir, sizes } from './lib/buildMap.mjs';
+import { buildMap, formatTimes, inputsDigest, mapSizeProblem, nodeSalt, readCorpusDir, sizes } from './lib/buildMap.mjs';
 import { CORPUS_DIR, MAP_FILE, writeWhole } from './lib/files.mjs';
 import { loadShared } from './lib/shared.mjs';
 import { startTranslators, translateStage } from './lib/translators.mjs';
@@ -49,6 +50,11 @@ for (const stage of made.translated) {
 }
 for (const stage of made.failed) {
   console.error(`  FAILED     ${stage.stage.padEnd(8)}  ${stage.id.slice(0, 16)}  ${stage.message}`);
+}
+const tooLarge = mapSizeProblem(Buffer.byteLength(made.text), shared.MAP_MAX_BYTES);
+if (tooLarge !== null) {
+  console.error(`\n!! ${tooLarge}. Nothing was written.\n`);
+  process.exit(1);
 }
 writeWhole(out, made.text);
 writeFileSync(inputsFile, inputs);
