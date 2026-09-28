@@ -190,8 +190,9 @@ export const DUFF_SWEEP_SIZE = 8000;
  * so a crossing re-samples only the ring of cells newly inside the disc.
  * Eviction is keyed on the `reach` of the most recent `collect` call, so a
  * quality-tier change that shrinks the reach still sweeps the cells the
- * shrunk disc no longer needs. */
-export function createDuffCollector(seed: number): DuffCollector {
+ * shrunk disc no longer needs. `release` is told of every cell the sweep
+ * lets go, so what the shell keeps beside a cell goes with it. */
+export function createDuffCollector(seed: number, release?: (cell: DuffCell) => void): DuffCollector {
   const cache = new Map<number, DuffCell | null>();
   return {
     collect(camX: number, camZ: number, reach: number): DuffTiers {
@@ -213,12 +214,15 @@ export function createDuffCollector(seed: number): DuffCollector {
         // the cell size is ever retuned.
         const evictRadius = reach + DUFF_PAD + 8 * DUFF_CELL;
         const evictRadius2 = evictRadius * evictRadius;
-        for (const key of cache.keys()) {
+        for (const [key, c] of cache) {
           const cj = (key % KEY_SPAN) - KEY_HALF;
           const ci = Math.floor(key / KEY_SPAN) - KEY_HALF;
           const dx = Math.max(ci * DUFF_CELL - ox, 0, ox - (ci + 1) * DUFF_CELL);
           const dz = Math.max(cj * DUFF_CELL - oz, 0, oz - (cj + 1) * DUFF_CELL);
-          if (dx * dx + dz * dz >= evictRadius2) cache.delete(key);
+          if (dx * dx + dz * dz >= evictRadius2) {
+            cache.delete(key);
+            if (c !== null) release?.(c);
+          }
         }
       }
       return tiers;

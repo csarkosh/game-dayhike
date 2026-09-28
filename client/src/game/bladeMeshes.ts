@@ -52,6 +52,7 @@ import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliage
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
+import { createKeptValues } from "./keptValues.js";
 
 export const BLADE_MESH_PREFIX = "blade_clumps";
 export function bladeMeshName(character: number, tier: number, size: number): string {
@@ -93,6 +94,8 @@ export type BladeMeshes = {
    * adoption and no contract to watch the length.
    */
   readonly meshes: readonly Mesh[];
+  /** Cells whose matrix and tint are kept (keptValues.ts). */
+  readonly kept: number;
   dispose(): void;
 };
 
@@ -158,9 +161,9 @@ const BUCKET_MIN_INSTANCES = 64;
  * then nothing reads or writes it. */
 const EMPTY_BUFFER = new Float32Array(0);
 
-/** One matrix's worth of scratch floats, so the fill can compose a matrix and
- * copy it into a bucket buffer at any offset without a per-instance subarray
- * view — `writeInstanceMatrix`'s trick in the clutter shell. */
+/** One matrix's worth of scratch floats, so a cell's matrix can be composed
+ * and copied into the kept values at any offset without a per-instance
+ * subarray view — `computeInstance`'s trick in the clutter shell. */
 const scratchMat = new Float32Array(16);
 /** The widened frustum's planes, rewritten by each cut. */
 const cullScratchPlanes = new Float32Array(20);
@@ -168,7 +171,7 @@ const cullScratchPlanes = new Float32Array(20);
 const KEEP_ALL = new Float32Array(20);
 /** The frame handed to `instanceMatrixFor`: the bench's own trample frame with
  * the height scaled by the cell's strength and canopy. Module-level and
- * rewritten per instance, because a rebuild touches thousands of cells and an
+ * rewritten per cell, because a walk computes thousands of cells and an
  * object per cell is exactly the allocation this file rules out. */
 const scratchFrame: { height: number; lean: number; ax: number; az: number; tint: Rgb } = { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } };
 
@@ -304,12 +307,48 @@ function createClumpMesh(scene: Scene, character: number, tier: number, size: nu
   return mesh;
 }
 
+/** Floats kept per cell: the matrix (16), then the tint (4). */
+const KEPT_STRIDE = 20;
+const KEPT_FOLIAGE = 16;
+
 export function createBladeMeshes(scene: Scene, seed: number, options: BladeMeshesOptions): BladeMeshes {
+  /**
+   * A cell's matrix and tint, computed the first time it is listed. Both are
+   * functions of the cell and the seed alone: the trample frame is the
+   * trail's, the height scale the cell's own strength and canopy, the tint
+   * the ground under it. Nothing in them depends on the eye, the tier the
+   * cell is listed in (a cell in two tiers' lists draws the same clump in
+   * each), the time or the wind. The strength is the cell's own field.
+   */
+  function computeCell(c: BladeCell, out: Float32Array, offset: number): void {
+    const frame = trampleFrame(seed, c);
+    // A thin sward is short as well as sparse: bladeHeightScale carries that.
+    const heightScale = bladeHeightScale(c.strength, c.canopy);
+    // `trampleFrame` returns a SHARED scratch object, valid only until the
+    // next call. The copy below exists so the height can be scaled without
+    // writing through to it, and it copies `tint` only to stay a faithful
+    // frame — `instanceMatrixFor` reads height, lean and the axis, never the
+    // tint, so that field is inert here. The live read of the shared frame
+    // is `writeFoliage`'s `frame.tint`, which is why the order (frame,
+    // matrix, foliage) must stay inside one call: hoisting `writeFoliage`
+    // past the next `trampleFrame` would stain this cell with the following
+    // cell's bench tint. Only values are kept, never the frame.
+    scratchFrame.height = frame.height * heightScale;
+    scratchFrame.lean = frame.lean;
+    scratchFrame.ax = frame.ax;
+    scratchFrame.az = frame.az;
+    scratchFrame.tint = frame.tint;
+    instanceMatrixFor(c, scratchFrame, scratchMat);
+    out.set(scratchMat, offset);
+    writeFoliage(seed, c, out, offset + KEPT_FOLIAGE, frame);
+  }
+  const kept = createKeptValues<BladeCell>(KEPT_STRIDE, computeCell);
   // Memoizing collector, not the pure `collectBladeCells`: a rebuild happens
   // on every 1 m crossing, and re-sampling the whole disc from cold each time
   // would pay fresh gate, terrain and density samples for thousands of cells
-  // that have not moved (see bladeField.ts).
-  const collector = createBladeCollector(seed);
+  // that have not moved (see bladeField.ts). A cell it lets go takes its kept
+  // values with it.
+  const collector = createBladeCollector(seed, (c) => kept.release(c));
   /** `buckets[tier][character][size]`. */
   const buckets: Bucket[][][] = [];
   const materials: PBRMaterial[] = [];
@@ -358,7 +397,9 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
    * (reusing `count` as the cursor) into the collected buffers, then a grown
    * bucket's new drawn buffers go to its mesh; `cull` uploads the rest. The
    * list arrives nearest-first from the field and is walked in order, so each
-   * bucket's instances stay sorted by distance.
+   * bucket's instances stay sorted by distance. Pass 2 copies each cell's
+   * kept matrix and tint, computing them only for a cell listed for the
+   * first time (`computeCell`).
    */
   function fill(list: BladeCell[], row: Bucket[][]): void {
     for (const sizes of row) for (const bucket of sizes) bucket.count = 0;
@@ -369,29 +410,15 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
     }
     for (const c of list) {
       const bucket = row[c.character]![c.size]!;
-      const frame = trampleFrame(seed, c);
-      // A thin sward is short as well as sparse: bladeHeightScale carries that.
-      const heightScale = bladeHeightScale(c.strength, c.canopy);
-      // `trampleFrame` returns a SHARED scratch object, valid only until the
-      // next call. The copy below exists so the height can be scaled without
-      // writing through to it, and it copies `tint` only to stay a faithful
-      // frame — `instanceMatrixFor` reads height, lean and the axis, never the
-      // tint, so that field is inert here. The live read of the shared frame
-      // is `writeFoliage`'s `frame.tint`, which is why the order (frame,
-      // matrix, foliage) must stay inside one iteration: hoisting
-      // `writeFoliage` past the next `trampleFrame` would stain this cell with
-      // the following cell's bench tint.
-      scratchFrame.height = frame.height * heightScale;
-      scratchFrame.lean = frame.lean;
-      scratchFrame.ax = frame.ax;
-      scratchFrame.az = frame.az;
-      scratchFrame.tint = frame.tint;
-      instanceMatrixFor(c, scratchFrame, scratchMat);
-      bucket.buf.set(scratchMat, bucket.count * 16);
-      bucket.origins[bucket.count * 3] = scratchMat[12]!;
-      bucket.origins[bucket.count * 3 + 1] = scratchMat[13]!;
-      bucket.origins[bucket.count * 3 + 2] = scratchMat[14]!;
-      writeFoliage(seed, c, bucket.foliage, bucket.count * 4, frame);
+      const at = kept.offsetOf(c);
+      const data = kept.data;
+      const { buf, foliage, origins } = bucket;
+      const m = bucket.count * 16, f = bucket.count * 4, o = bucket.count * 3;
+      for (let k = 0; k < 16; k++) buf[m + k] = data[at + k]!;
+      origins[o] = data[at + 12]!;
+      origins[o + 1] = data[at + 13]!;
+      origins[o + 2] = data[at + 14]!;
+      for (let k = 0; k < 4; k++) foliage[f + k] = data[at + KEPT_FOLIAGE + k]!;
       bucket.strength[bucket.count] = c.strength;
       bucket.count++;
     }
@@ -445,6 +472,9 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
       for (const row of buckets) for (const sizes of row) for (const bucket of sizes) cutBucket(bucket, planes);
     },
     meshes,
+    get kept() {
+      return kept.size;
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

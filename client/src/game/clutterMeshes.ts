@@ -92,6 +92,7 @@ import { trampleAt, TRAMPLE_BAND } from "./trailBenchParams.js";
 import { ROCK_CUTS, rockPlanes, rockRelief, type RockPlane } from "./rockRelief.js";
 import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
 import { loadUntilAborted } from "./modelLoad.js";
+import { createKeptValues } from "./keptValues.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
 // exactly BOULDER_SINK · (that variant's own BASE_H) · scale shows a visible
@@ -329,6 +330,8 @@ export type ClutterMeshes = {
    * the same contract `ForestMeshes.casterMeshes` carries.
    */
   readonly casterMeshes: readonly Mesh[];
+  /** Instances whose matrix and tint are kept (keptValues.ts). */
+  readonly kept: number;
   dispose(): void;
 };
 
@@ -384,8 +387,8 @@ const scratchMat = new Matrix();
 const scratchLeanAxis = new Vector3();
 const scratchLean = new Quaternion();
 /** One matrix's worth of scratch floats, reused by `instanceMatrixFor` so
- * `writeInstanceMatrix` can copy it into a bucket buffer at any offset
- * without `Matrix.copyToArray` needing a per-instance subarray view. */
+ * `computeInstance` can copy it into the kept values at any offset without
+ * `Matrix.copyToArray` needing a per-instance subarray view. */
 const scratchMatBuf = new Float32Array(16);
 
 /** The node itself plus descendants, filtered to meshes that carry geometry —
@@ -601,7 +604,7 @@ export function trampleFrame(seed: number, inst: ClutterInstance): Readonly<{ he
 
 /**
  * The instance's world matrix, written into `out` (16 floats, offset 0):
- * `writeInstanceMatrix`'s pure core, split out so a test can build one
+ * `computeInstance`'s pure core, split out so a test can build one
  * matrix and inspect it directly rather than reading a bucket buffer back
  * off a `thinInstanceSetBuffer` spy. Rotation is derived HERE, from the
  * plain `hash` draw the sim emits: sim/ is forbidden trig, game/ is not —
@@ -644,11 +647,6 @@ export function instanceMatrixFor(inst: ClutterInstance, frame: ReturnType<typeo
   scratchMat.copyToArray(out);
 }
 
-function writeInstanceMatrix(inst: ClutterInstance, buf: Float32Array, offset: number, frame: ReturnType<typeof trampleFrame>): void {
-  instanceMatrixFor(inst, frame, scratchMatBuf);
-  buf.set(scratchMatBuf, offset);
-}
-
 /** Ground colour at the instance (the palette the clipmap bakes into vertex
  * colour, so grass and ground can never disagree) and the canopy shade the
  * bush palette used to carry by hand. slope = |∇h|; canopy = forestDensity. */
@@ -668,6 +666,11 @@ export function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Ar
   buf[offset + 3] = 1 - 0.5 * canopy;
 }
 
+/** Floats kept per instance: the matrix (16), then the tint (4), which only
+ * the classes that wear the foliage plugin write and read. */
+const KEPT_STRIDE = 20;
+const KEPT_FOLIAGE = 16;
+
 /**
  * The clutter's Babylon shell. Production loads the seventeen shipped GLBs
  * asynchronously and builds buckets when they arrive; the returned object is
@@ -682,11 +685,29 @@ export function createClutterMeshes(
   const radiusScale = options.radiusScale ?? 1;
   const nearBlades = options.nearBlades ?? false;
   const culling = options.cull ?? false;
+  /**
+   * An instance's matrix, and its tint for a class that wears the foliage
+   * plugin, computed the first time it is listed. Both are functions of the
+   * instance and the seed alone: the trample frame is the trail's, the tint
+   * the ground under it. The band an instance is listed in picks its bucket
+   * and its fade bands, both written per bucket at the fill, never its matrix
+   * or tint: a seam instance listed in both bands draws the same values in
+   * each. Nothing here depends on the eye, the tier's radius, the time or the
+   * wind.
+   */
+  function computeInstance(inst: ClutterInstance, out: Float32Array, offset: number): void {
+    const frame = trampleFrame(seed, inst);
+    instanceMatrixFor(inst, frame, scratchMatBuf);
+    out.set(scratchMatBuf, offset);
+    if (FOLIAGE_BY_CLASS.has(inst.cls)) writeFoliage(seed, inst, out, offset + KEPT_FOLIAGE, frame);
+  }
+  const kept = createKeptValues<ClutterInstance>(KEPT_STRIDE, computeInstance);
   // Memoizing collector, not the pure `collectClutter`: a rebuild happens on
   // every 3 m grass-cell crossing, and re-sampling all eight discs from cold
   // each time would pay fresh density and terrain samples for thousands of
-  // cells that have not moved (see clutterField.ts).
-  const collector = createClutterCollector(seed);
+  // cells that have not moved (see clutterField.ts). An instance it lets go
+  // takes its kept values with it.
+  const collector = createClutterCollector(seed, (inst) => kept.release(inst));
 
   const casterMeshes: Mesh[] = [];
   const containers: AssetContainer[] = [];
@@ -736,12 +757,33 @@ export function createClutterMeshes(
     return perLod[lod] as Bucket;
   }
 
+  /** One instance at a bucket's cursor: its kept matrix (and the origin a
+   * culled bucket tests), the bucket's fade bands, and its kept tint where
+   * the bucket wears the foliage plugin. */
+  function writeInstance(bucket: Bucket, inst: ClutterInstance): void {
+    const at = kept.offsetOf(inst);
+    const data = kept.data;
+    const { buf } = bucket;
+    const m = bucket.count * 16;
+    for (let k = 0; k < 16; k++) buf[m + k] = data[at + k]!;
+    if (bucket.culled) writeOrigin(bucket);
+    writeFadeBands(bucket.bands, bucket.count * 4, bucket.fade);
+    if (bucket.tints) {
+      const { foliage } = bucket;
+      const f = bucket.count * 4;
+      for (let k = 0; k < 4; k++) foliage[f + k] = data[at + KEPT_FOLIAGE + k]!;
+    }
+    bucket.count++;
+  }
+
   /**
    * Rebuild: two passes over the collected bands, so every bucket knows its
    * size before a single matrix is written and no buffer has to grow
    * mid-fill. Pass 1 counts, `ensureCapacity` grows what it must, pass 2
    * writes (reusing `count` as the cursor), then the buffers are pushed (a
-   * culled bucket's by `cull`).
+   * culled bucket's by `cull`). Pass 2 copies each instance's kept matrix and
+   * tint, computing them only for an instance listed for the first time
+   * (`computeInstance`).
    */
   function rebuild(x: number, z: number): void {
     const all = buckets as Bucket[][][];
@@ -770,24 +812,8 @@ export function createClutterMeshes(
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       const variants = all[cls] as Bucket[][];
       const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
-      for (const inst of band.near) {
-        const bucket = bucketFor(variants, inst, NEAR_LOD);
-        const frame = trampleFrame(seed, inst);
-        writeInstanceMatrix(inst, bucket.buf, bucket.count * 16, frame);
-        if (bucket.culled) writeOrigin(bucket);
-        writeFadeBands(bucket.bands, bucket.count * 4, bucket.fade);
-        if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4, frame);
-        bucket.count++;
-      }
-      for (const inst of band.far) {
-        const bucket = bucketFor(variants, inst, FAR_LOD);
-        const frame = trampleFrame(seed, inst);
-        writeInstanceMatrix(inst, bucket.buf, bucket.count * 16, frame);
-        if (bucket.culled) writeOrigin(bucket);
-        writeFadeBands(bucket.bands, bucket.count * 4, bucket.fade);
-        if (bucket.tints) writeFoliage(seed, inst, bucket.foliage, bucket.count * 4, frame);
-        bucket.count++;
-      }
+      for (const inst of band.near) writeInstance(bucketFor(variants, inst, NEAR_LOD), inst);
+      for (const inst of band.far) writeInstance(bucketFor(variants, inst, FAR_LOD), inst);
     }
 
     for (const variants of all) {
@@ -1083,6 +1109,9 @@ export function createClutterMeshes(
       for (const bucket of culledBuckets) cutBucket(bucket, planes);
     },
     casterMeshes,
+    get kept() {
+      return kept.size;
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

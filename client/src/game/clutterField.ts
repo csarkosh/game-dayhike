@@ -476,8 +476,10 @@ export const COLLECTOR_SWEEP_SIZE = 110000;
  * collect after a small camera move re-samples only the cells newly inside
  * some class's disc instead of paying fresh density/terrain samples for all
  * nine grids every frame. Mirrors `forestField.ts`'s `createBandCollector`.
+ * `release` is told of every instance the sweep lets go, so what the shell
+ * keeps beside an instance goes with it.
  */
-export function createClutterCollector(seed: number): ClutterCollector {
+export function createClutterCollector(seed: number, release?: (inst: ClutterInstance) => void): ClutterCollector {
   const cache = new Map<number, ClutterInstance | null>();
   return {
     collect(camX: number, camZ: number, radiusScale: number = 1): ClutterBands {
@@ -503,7 +505,7 @@ export function createClutterCollector(seed: number): ClutterCollector {
         for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
           originByClass.push(clutterOrigin(camX, camZ, clutterCell(cls)));
         }
-        for (const key of cache.keys()) {
+        for (const [key, inst] of cache) {
           const cls = Math.floor(key / CELL_KEY_CLASS_SPAN);
           const rest = key - cls * CELL_KEY_CLASS_SPAN;
           const czPart = rest % CELL_KEY_SPAN;
@@ -514,7 +516,10 @@ export function createClutterCollector(seed: number): ClutterCollector {
           const dx = Math.max(cx * cell - ax, 0, ax - (cx + 1) * cell);
           const dz = Math.max(cz * cell - az, 0, az - (cz + 1) * cell);
           const evR = evictRadius(cls);
-          if (dx * dx + dz * dz >= evR * evR) cache.delete(key);
+          if (dx * dx + dz * dz >= evR * evR) {
+            cache.delete(key);
+            if (inst !== null) release?.(inst);
+          }
         }
       }
       return bands;
