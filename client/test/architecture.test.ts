@@ -249,9 +249,31 @@ describe("layer boundaries", () => {
     };
     const webgl2 = graph(join(SRC, "main.ts"));
     const webgpu = [...graph(join(SRC, "game/gpuEngine.ts"))].filter((f) => f.includes("@babylonjs") && !webgl2.has(f));
-    // What registers on load: a call at the top level of the module.
+    // What registers on load, at the top level of a module: a call such as
+    // `RegisterTools();`, a bare import, a class registered by name, a
+    // prototype assigned to, or a property defined.
+    const REGISTRATIONS = [
+      /^[A-Z][A-Za-z]*\(\);$/m,
+      /^import\s+["'][^"']+["'];$/m,
+      /^RegisterClass\(/m,
+      /^[A-Za-z_$][\w$.]*\.prototype\.[\w$]+\s*=[^=]/m,
+      /^Object\.defineProperty\(/m,
+    ];
+    const registers = (text: string): boolean => REGISTRATIONS.some((pattern) => pattern.test(text));
+    // The shapes a later Babylon might write a registration in, each caught.
+    expect(
+      [
+        "RegisterTools();",
+        'import "./engine.alpha.js";',
+        'RegisterClass("BABYLON.PBRMaterial", PBRMaterial);',
+        "ThinEngine.prototype.createDynamicTexture = function () {};",
+        'Object.defineProperty(BaseTexture.prototype, "sphericalPolynomial", {',
+        "    Engine.prototype.inside = function () {};",
+        'import { Engine } from "./engine.js";',
+      ].map(registers),
+    ).toEqual([true, true, true, true, true, false, false]);
     const registering = webgpu
-      .filter((f) => /^[A-Z][A-Za-z]*\(\);$/m.test(readFileSync(f, "utf8")) || /^import\s+["'][^"']+["'];$/m.test(readFileSync(f, "utf8")))
+      .filter((f) => registers(readFileSync(f, "utf8")))
       .map((f) => f.slice(f.indexOf("@babylonjs/core/") + "@babylonjs/core/".length))
       .sort();
     expect(registering).toEqual([
