@@ -198,6 +198,11 @@ Check 'a skip with no task still arms a pending shutdown' ((Test-Path $calls) -a
 # --- An adapter with no mode ------------------------------------------------------
 Check 'an adapter with no mode reads inactive' ((Format-AdapterMode ([pscustomobject]@{ CurrentHorizontalResolution = $null })) -eq 'inactive')
 Check 'an active adapter reads its mode' ((Format-AdapterMode ([pscustomobject]@{ CurrentHorizontalResolution = 1920; CurrentVerticalResolution = 1080; CurrentRefreshRate = 60 })) -eq '1920x1080 at 60 Hz')
+$pinned = Join-Path $work 'node-v22.23.3-x64.msi'
+Set-Content $pinned 'x' -NoNewline
+$script:Logged = @()
+Assert-Hash $pinned (Get-FileHash $pinned -Algorithm SHA256).Hash
+Check 'a pinned hash that matches is logged' (@($script:Logged) -contains 'SHA-256 of node-v22.23.3-x64.msi: as pinned')
 Remove-Item -Recurse -Force $work
 "failures: $fail"
 if ($fail -gt 0) { exit 1 }

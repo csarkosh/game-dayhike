@@ -101,6 +101,7 @@ function Assert-Hash([string]$Path, [string]$Sha256) {
     Remove-Item $Path -Force
     throw "SHA-256 mismatch for $($Path): expected $Sha256, got $actual"
   }
+  Log "SHA-256 of $([IO.Path]::GetFileName($Path)): as pinned"
 }
 
 # Runs $Block in a separate process and stops it after $Minutes: a download
