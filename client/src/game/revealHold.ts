@@ -11,6 +11,8 @@ export type RevealHoldDeps = {
   hideWorld(hidden: boolean): void;
   /** Shows the hold's "Loading…" line, or takes it down. */
   showLine(shown: boolean): void;
+  /** Lets go of the line for good, once the hold has lifted. */
+  releaseLine(): void;
   /** The game HUD's own status line, "" when it says nothing. */
   status(): string;
   /** Calls `fn` after each frame; returns what stops it. */
@@ -24,9 +26,10 @@ export type RevealHoldDeps = {
  * Holds the start's world hidden until a frame leaves no draw out (the
  * reveal's own bound, 10 s after the first frame at most), with a "Loading…"
  * line shown only while the game's own HUD says nothing: a follower sees
- * "Connecting…" alone, and the line once that has gone. Returns a function
- * that lifts the hold at once (a switch of tier, the game's end), and stops
- * waiting; the hold lifts once, whichever comes first.
+ * "Connecting…" alone, and the line once that has gone. The line is let go
+ * of however the hold lifts. Returns a function that lifts the hold at once
+ * (a switch of tier, the game's end), and stops waiting; the hold lifts once,
+ * whichever comes first.
  */
 export function holdReveal(deps: RevealHoldDeps): () => void {
   let lifted = false;
@@ -48,6 +51,7 @@ export function holdReveal(deps: RevealHoldDeps): () => void {
     stopReveal();
     deps.hideWorld(false);
     matchLine();
+    deps.releaseLine();
   };
   stopReveal = deps.reveal(lift);
   // A reveal that answered at once found nothing to stop yet.

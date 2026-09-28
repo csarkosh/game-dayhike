@@ -135,8 +135,9 @@ export const IMPOSTOR_BAKE_FAIL_MS = 120_000;
 /** What a bake reads of the pipelines a WebGPU engine makes asynchronously
  * (`asyncPipelines.ts`): the draws its render left out, and the renderer's
  * scope around a render (`guarded`, `scopeRenderingGroups`), which shuts what
- * the render left open even as it throws. */
-export type BakePipelines = Pick<AsyncPipelines, "takeSkipped"> & { guarded(render: () => void): void };
+ * the render left open even as it throws, and answers false where a draw left
+ * out escaped the render and the patch came off for good. */
+export type BakePipelines = Pick<AsyncPipelines, "takeSkipped"> & { guarded(render: () => void): boolean };
 
 /** How often a bake whose render left a draw out renders again, readiness
  * checked first, to see whether its own pipelines have landed. */
@@ -856,11 +857,17 @@ export async function defaultBakeImpostor(
  * against it, and a bake does not wait for anything but its own pipelines.
  * The target is kept for the life of the page, so a draw left out in it,
  * while its pipeline is made (`asyncPipelines.ts`), would bake a blank or
- * partial tree for good: such a render is never kept.
+ * partial tree for good: such a render is never kept. A render that a draw
+ * left out escaped drew nothing whole, and the patch is off from then on
+ * (`AsyncPipelines.guard`): the target is rendered once more, now on
+ * Babylon's synchronous path, and that render is the one judged.
  */
 function renderedWhole(rtt: RenderTargetTexture, pipelines: BakePipelines): boolean {
   pipelines.takeSkipped();
-  pipelines.guarded(() => rtt.render());
+  if (!pipelines.guarded(() => rtt.render())) {
+    pipelines.takeSkipped();
+    pipelines.guarded(() => rtt.render());
+  }
   return pipelines.takeSkipped() === 0;
 }
 

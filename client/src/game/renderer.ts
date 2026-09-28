@@ -664,12 +664,13 @@ function bakePipelines(pipelines: AsyncPipelines | null, scope: GroupScope | nul
  * after-observer, so every group still open is shut as each frame of the
  * scene begins (`onBeforeRenderObservable`), and a render outside the scene's
  * frames (the impostor bake's) goes through `guarded`, which shuts what its
- * render left open, even as it throws. Returns `off`, which takes the scope
- * off, and `guarded`.
+ * render left open, even as it throws, inside the patch's own guard
+ * (`AsyncPipelines.guard`): false where a draw left out escaped it and the
+ * patch came off. Returns `off`, which takes the scope off, and `guarded`.
  */
-export type GroupScope = { off(): void; guarded(render: () => void): void };
+export type GroupScope = { off(): void; guarded(render: () => void): boolean };
 
-export function scopeRenderingGroups(scene: Scene, pipelines: Pick<AsyncPipelines, "enter" | "leave">): GroupScope {
+export function scopeRenderingGroups(scene: Scene, pipelines: Pick<AsyncPipelines, "enter" | "leave" | "guard">): GroupScope {
   /** The target that owns each rendering manager met, or null for the scene's own. */
   const owners = new WeakMap<RenderingManager, ObjectRenderer | null>();
   const drawnOnce = (manager: RenderingManager): boolean => {
@@ -705,7 +706,7 @@ export function scopeRenderingGroups(scene: Scene, pipelines: Pick<AsyncPipeline
     guarded(render) {
       const depth = open.length;
       try {
-        render();
+        return pipelines.guard(render);
       } finally {
         shutTo(depth);
       }

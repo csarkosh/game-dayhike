@@ -73,6 +73,13 @@ export type AsyncPipelines = {
   settled(ms: number): Promise<boolean>;
   /** Takes the patch off (the engine's own methods back). */
   remove(): void;
+  /** Runs `render`, a render outside the scene's frames (the impostor
+   * bake's), inside the guard each scene's frame has: where a draw left out
+   * escapes it, the patch comes off for good, said once and recorded, and
+   * this returns false, having drawn nothing whole, so the caller can render
+   * again, synchronously; true where the render ran. Every other throw
+   * passes through. */
+  guard(render: () => void): boolean;
 };
 
 /** Creations in flight at once for a processor with `cores` cores: two fewer
@@ -314,6 +321,14 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
   /** A creation still in flight at its deadline: given up, its node drawn
    * synchronously from its next draw, its slot freed. */
   const expire = (creation: Creation): void => {
+    // A hidden page's frames stop, and whether the browser goes on making
+    // pipelines for it is not known: a deadline passing then is set again,
+    // so a creation is given up only on one that passes while it is shown.
+    // Without a document (the suite), the page counts as shown.
+    if (flying.has(creation) && !stopped() && (globalThis as { document?: { visibilityState?: string } }).document?.visibilityState === "hidden") {
+      creation.deadline = setTimeout(() => expire(creation), ASYNC_PIPELINE_MAX_MS);
+      return;
+    }
     if (!land(creation)) return;
     if (!stopped()) {
       nodes.set(creation.node, "failed");
@@ -414,20 +429,27 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
   // scene of this engine renders inside a catch of the sentinel alone: the
   // patch then comes off this engine for good, every later draw synchronous,
   // said once, and the frame's loop goes on. Any other throw passes through.
+  /** Runs `render`; where the sentinel escapes it, takes the patch off for
+   * good, says so and records it, and answers false. */
+  const guard = (render: () => void): boolean => {
+    try {
+      render();
+      return true;
+    } catch (error) {
+      if (error !== LEFT_OUT) throw error;
+      report.escapes++;
+      console.warn("WebGPU: a draw left out while its render pipeline was made reached the frame; this engine makes every pipeline synchronously from now on.");
+      pipelines.remove();
+      return false;
+    }
+  };
   const scenes = new Map<Renders, { ownRender: Renders["render"]; hadOwn: boolean; guarded: Renders["render"] }>();
   const guardRender = (scene: Renders): void => {
     if (scenes.has(scene)) return;
     const ownRender = scene.render;
     const hadOwn = Object.prototype.hasOwnProperty.call(scene, "render");
     const guarded = (...args: unknown[]): void => {
-      try {
-        ownRender.apply(scene, args);
-      } catch (error) {
-        if (error !== LEFT_OUT) throw error;
-        report.escapes++;
-        console.warn("WebGPU: a draw left out while its render pipeline was made reached the frame; this engine makes every pipeline synchronously from now on.");
-        pipelines.remove();
-      }
+      guard(() => ownRender.apply(scene, args));
     };
     scene.render = guarded;
     scenes.set(scene, { ownRender, hadOwn, guarded });
@@ -444,6 +466,7 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
       depth = Math.max(0, depth - 1);
     },
     pending,
+    guard,
     takeSkipped() {
       const count = skipped;
       skipped = 0;

@@ -1355,6 +1355,7 @@ function buildGame(
         held.style.visibility = hidden ? "hidden" : "";
       },
       showLine: (shown) => line.setStatus(shown ? LOADING_LINE : null),
+      releaseLine: () => line.dispose(),
       status: () => hud.status(),
       eachFrame: (fn) => {
         const observer = engine.onEndFrameObservable.add(fn);
@@ -1362,10 +1363,7 @@ function buildGame(
       },
       reveal: (fn) => gpu.reveal(engine, fn),
     });
-    endRevealHold = () => {
-      lift();
-      line.dispose();
-    };
+    endRevealHold = lift;
     made(() => endRevealHold());
   }
   renderer.engine.runRenderLoop(loop);
