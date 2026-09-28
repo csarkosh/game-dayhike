@@ -185,7 +185,13 @@ describe("WGSL's uniformity analysis and the game's shaders", () => {
         .map(([name, code]) => [name, readsUnderBranch(code)] as const)
         .filter(([, reads]) => reads.length > 0),
     );
-    expect(found).toEqual({});
+    expect(found).toEqual({
+      // The finish pass's peripheral echo, under `mask > 0.0` (§6.1).
+      "post.finish": ["textureSampler"],
+      // The ground blend's parallax and relief gates, and the road, trail and
+      // feature paints (`TERRAIN_UNIFORMITY_OFF`).
+      terrain: ["featureTex", "roadAsphalt", "terrainFloor", "terrainNormals", "terrainPebble", "terrainRAH", "trailSegs"],
+    });
   });
 
   it("marks each of them with the define on WebGPU, and leaves WebGL2's text without it", () => {
