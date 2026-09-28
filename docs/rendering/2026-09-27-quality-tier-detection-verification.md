@@ -502,7 +502,10 @@ hike, which is not so at this spawn.
 
 Then `quality: low (auto), engine webgl2` at +71.14 s; the cover, then the HUD
 line "Graphics lowered to Low to keep the game smooth." once, for 6.001 s. In
-five drops the line showed once, for 6.000–6.001 s. Settings afterwards: Auto
+all six drops read on `5071e0c` (two solo, four on party followers, below) the
+line showed once, for 6.001, 6.000, 5.999, 6.001, 6.001 and 6.003 s, from the
+page's own stamps of its appearing and going: 6 s to within 3 ms, the bar's
+"6 s" read to the nearest 0.01 s. Settings afterwards: Auto
 selected, "Auto picks Low on this computer.", "This hike is using Low.", Apply
 disabled; Low leaves it disabled; Medium gives "Higher than recommended for
 this computer." and enables it. A reload: `quality: low (auto, apple-base),
@@ -515,11 +518,11 @@ max 33.3 ms), at the display's cap. For 328 s after the first frame: no
 governor line, no HUD line, no Auto record written.
 
 **In a party.** A follower on Auto dropped twice on its own while two game
-pages loaded the machine to about 10–20: the same line, the HUD line for 6.0 s,
+pages loaded the machine to about 10–20: the same line, the HUD line once,
 and after the drop the follower's pause menu open, since the swap took the
 canvas that held the lock. Two more follower drops were made at 0.4 scaling
 after walking somewhere new, one of them 32 s after the scaling. Of the six
-drops read in all, the `glGetProgramiv` warnings of §6 followed 2, both on
+drops read on `5071e0c`, the `glGetProgramiv` warnings of §6 followed 2, both on
 followers soon after arriving somewhere new; the follower drop made with the
 parallel-compile extension turned off printed none.
 
@@ -664,7 +667,7 @@ that holds the evidence.
 | 13.4 zero console errors | **missed** on `5071e0c` for a swap within about 0.5 s of the hike appearing; **met** on `6efd2b4` (15 early Applies, 24 Play-then-leave tries) and `5ba234f` (6 Applies at 6× and a governor's drop) | `5071e0c`, `6efd2b4`, `5ba234f` | §6, §7 |
 | 13.5 the drop logged between 60 and 61 s after the hike's session starts | **missed**: 70.24 s after the first frame, one window late, the 50–60 s window void for three shader compiles | `5071e0c` | §7 |
 | 13.5 the opaque screen covers the switch and the hike goes on at low | **met**; on `5ba234f` at 6× the cover lifted on its 10 s bound on bare hillside and the forest was full 3.05 s later, as the design allows for a drop | `5071e0c`, `5ba234f` | §7 |
-| 13.5 the HUD line shows once | **met**: 6.000–6.001 s, five drops | `5071e0c` | §7 |
+| 13.5 the HUD line shows once | **met**: once in each of six drops, for 5.999–6.003 s (6 s to the nearest 0.01 s) | `5071e0c` | §7 |
 | 13.5 Settings' Auto line says Low with nothing to apply | **met** | `5071e0c` | §7 |
 | 13.5 a reload starts at low from the verdict | **met** | `5071e0c` | §7 |
 | 13.5 the pause screen or a hidden tab in that minute puts the drop off; a drop made as the pause screen opens waits for Resume | **not read** | | below |
