@@ -150,9 +150,10 @@ run "defaults" {
       strcontains(local.startup_script, "$DesktopUser = 'hiker'") &&
       strcontains(local.startup_script, "$RequireVws = '1' -eq '1'") &&
       google_compute_instance.test_rig.metadata["enable-windows-ssh"] == "TRUE" &&
+      google_compute_instance.test_rig.metadata["block-project-ssh-keys"] == "TRUE" &&
       google_compute_instance.test_rig.metadata["sysprep-specialize-script-cmd"] == "googet -noconfirm=true install google-compute-engine-ssh"
     )
-    error_message = "The start-up script, with the desktop user and the licence requirement filled in, and Google's SSH set-up are in the metadata."
+    error_message = "The start-up script, with the desktop user and the licence requirement filled in, Google's SSH set-up, and the block on project-wide SSH keys are in the metadata."
   }
 
   assert {

@@ -148,6 +148,13 @@ resource "google_compute_instance" "test_rig" {
     sysprep-specialize-script-cmd = "googet -noconfirm=true install google-compute-engine-ssh"
     enable-windows-ssh            = "TRUE"
 
+    # The machine takes SSH keys from its own metadata only, never the
+    # project's: a key in the project's metadata is accepted by every machine
+    # of the project that does not block them. With this set, `gcloud compute
+    # ssh` puts its key in the machine's metadata (it checks this key), which
+    # the lifecycle below leaves alone, and the key goes with the machine.
+    block-project-ssh-keys = "TRUE"
+
     # Runs at every boot as the local system account; the set-up steps run
     # only until each is done. See startup.ps1. A change is written into the
     # machine in place and read at its next boot.
