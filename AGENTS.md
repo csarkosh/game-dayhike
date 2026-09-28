@@ -26,13 +26,14 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | Path | What |
 |---|---|
 | `client/` | The game: `src/{game,net,sim}` (Babylon.js rendering, WebRTC networking, deterministic simulation), `index.html`, `levels/`, `public/` (favicons, in csarko.sh's colours, and the vendored KTX2 decoder), tests under `test/`. |
+| `client/shaders/corpus/` | The GLSL stages the build translates to WGSL ahead (`tools/wgsl/`), so the WebGPU path finds its shaders on a first visit: `stages-<h>.json`, one stage a line, merged from pages recorded with `?wgsl=record` by `tools/wgsl/merge-corpus.mjs` (for now a small set made under Node, `tools/wgsl/node-corpus.mjs`, which no browser asks for). The map the build makes of it goes to `client/shaders/map/`, not committed. |
 | `client/assets/` | Shipped models, ground textures and wildlife calls, committed through Git LFS. `client/assets/catalog.json` lists every one; [`CREDITS.md`](CREDITS.md) credits the third-party work. |
 | `branding/` | The Day Hike icon (`dayhike.svg`) shown at the top of the README. |
 | `server/` | The Node (`ws`) signaling server: introduces peers in a room, then steps out. |
 | `desktop/` | Electron launcher (macOS and Windows) that loads the hosted site. |
 | `_infra/` | Terraform for hosting, DNS and the signaling service. |
 | `docs/` | Research notes, specs, plans and design docs, grouped by subject (`docs/rendering/`, …). Every file is named `YYYY-MM-DD-<topic>.md`; see [Docs](#docs). |
-| `tools/` | `deploy/` (deploy and verify scripts), `vendor-ktx2.mjs`, `docs/` (the docs file-name test), and their tests. |
+| `tools/` | `deploy/` (deploy and verify scripts), `wgsl/` (the shader corpus translated to the WGSL map the build ships, and merged from recorded pages), `vendor-ktx2.mjs`, `docs/` (the docs file-name test), and their tests. |
 | `.agents/skills/` | Agent skills. `.claude/skills` is a symlink to it so Claude Code discovers them. |
 | `.claude/settings.json` | Imports the shared skill plugins from [`csarkosh/skills-general`](https://github.com/csarkosh/skills-general); see [Skills](#skills). |
 | `.github/` | CI workflows: `test.yml` runs typecheck, lint and the three test suites on every push to `main` and to `worktree-**`/`ci/**` branches and on pull requests, with the client suite's test time limits scaled by `TEST_TIME_SCALE` and the `wall-clock` tests left out (a local `npm test` runs them; `npm run test:wall-clock` runs only them); the Windows desktop smoke test is started by hand. |
