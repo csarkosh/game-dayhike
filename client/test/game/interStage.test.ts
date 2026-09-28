@@ -393,9 +393,19 @@ describe("inter-stage variables on WebGPU", () => {
       "    set numCascades(value) {\n        value = Math.min(Math.max(value, CascadedShadowGenerator.MIN_CASCADES_COUNT), CascadedShadowGenerator.MAX_CASCADES_COUNT);",
     );
     // A cascaded shadow light's varyings: two per cascade, and one more.
-    expect(read("@babylonjs/core/Shaders/ShadersInclude/lightVxUboDeclaration.js")).toContain(
+    const lightVertex = read("@babylonjs/core/Shaders/ShadersInclude/lightVxUboDeclaration.js");
+    expect(lightVertex).toContain(
       "varying vec4 vPositionFromLight{X}[SHADOWCSMNUM_CASCADES{X}];varying float vDepthMetric{X}[SHADOWCSMNUM_CASCADES{X}];varying vec4 vPositionFromCamera{X};",
     );
+    // And every varying a light's vertex declarations make, so one added
+    // anywhere in the include is seen.
+    expect([...lightVertex.matchAll(/\bvarying\s+[^;]+;/g)].map((m) => m[0])).toEqual([
+      "varying vec4 vPositionFromLight{X}[SHADOWCSMNUM_CASCADES{X}];",
+      "varying float vDepthMetric{X}[SHADOWCSMNUM_CASCADES{X}];",
+      "varying vec4 vPositionFromCamera{X};",
+      "varying vec4 vPositionFromLight{X};",
+      "varying float vDepthMetric{X};",
+    ]);
     // Babylon's own kernel blur (the halation's) sizes its varyings from the
     // device's limit, so it can never pass it.
     expect(webgpu).toContain("            maxVaryingVectors: this._deviceLimits.maxInterStageShaderVariables,");

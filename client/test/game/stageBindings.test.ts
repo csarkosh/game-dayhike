@@ -223,9 +223,26 @@ describe("WebGPU's per-stage bindings, at the defaults the device keeps", () => 
     const read = (spec: string): string => readFileSync(createRequire(import.meta.url).resolve(spec), "utf8");
     // A cascaded shadow map filtered by comparison is one texture and one
     // sampler per shadowed light, and the sun's is filtered so.
-    expect(read("@babylonjs/core/Shaders/ShadersInclude/lightUboDeclaration.js")).toContain(
-      "#elif defined(SHADOWPCF{X})\nuniform highp sampler2DArrayShadow shadowTexture{X};\n",
-    );
+    const lightFragment = read("@babylonjs/core/Shaders/ShadersInclude/lightUboDeclaration.js");
+    expect(lightFragment).toContain("#elif defined(SHADOWPCF{X})\nuniform highp sampler2DArrayShadow shadowTexture{X};\n");
+    // And every texture a light's fragment declarations can bind, so one
+    // added anywhere in the include, for shadows or otherwise, is seen.
+    expect([...lightFragment.matchAll(/\buniform\s+(?:(?:highp|mediump|lowp)\s+)?\w*[sS]ampler\w*\s+[^;]+;/g)].map((m) => m[0])).toEqual([
+      "uniform sampler2D iesLightTexture{X};",
+      "uniform sampler2D rectAreaLightEmissionTexture{X};",
+      "uniform sampler2D projectionLightTexture{X};",
+      "uniform sampler2D lightDataTexture{X};",
+      "uniform highp sampler2D tileMaskTexture{X};",
+      "uniform highp sampler2DArrayShadow shadowTexture{X};",
+      "uniform highp sampler2DArray depthTexture{X};",
+      "uniform highp sampler2DArrayShadow shadowTexture{X};",
+      "uniform highp sampler2DArray shadowTexture{X};",
+      "uniform samplerCube shadowTexture{X};",
+      "uniform highp sampler2DShadow shadowTexture{X};",
+      "uniform highp sampler2D depthTexture{X};",
+      "uniform highp sampler2DShadow shadowTexture{X};",
+      "uniform sampler2D shadowTexture{X};",
+    ]);
     const lighting = readFileSync(new URL("../../src/game/lighting.ts", import.meta.url), "utf8");
     expect(lighting).toContain("    shadows.usePercentageCloserFiltering = true;");
     expect(lighting).not.toMatch(/usePercentageCloserFilteringSoft|useContactHardeningShadow/);
