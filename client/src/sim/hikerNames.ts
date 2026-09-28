@@ -2,7 +2,7 @@ import { nextRandom } from "./types.js";
 
 /**
  * The missing hikers' names, drawn from two fixed tables by the world seed so
- * every peer reads the same book. Plain, period-neutral names: the register is
+ * every peer reads the same poster. Plain, period-neutral names: the poster is
  * a real trailhead's, not a horror prop.
  */
 export const FIRST_NAMES: readonly string[] = [

@@ -59,7 +59,7 @@ import { createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { createEndPanel, endPanelModel } from "./game/endPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
 import { DEATH_LINE, END_LANDING_MS, roadLine } from "./game/passages.js";
-import { InteractKind } from "./sim/register.js";
+import { InteractKind } from "./sim/search.js";
 import { signPosts } from "./sim/signs.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
 import { CAR_MATERIAL, KIOSK_MATERIAL, kioskFacing, propSite, roadProp } from "./sim/passes/trailhead.js";
@@ -314,7 +314,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
           ? (value as WeatherPresetName)
           : DEFAULT_WEATHER;
       weatherName = preset;
-      // The three direct calls stay so a world without a register behaves
+      // The three direct calls stay so a world without a search behaves
       // exactly as today; on a forest world `syncAtmosphere` overrides them
       // next frame — including the 3 s fade this starts, which its instant
       // (0 s) set cancels before it is seen.
@@ -419,7 +419,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
    * `renderer.sync`, which reads the weather this sets.
    */
   function syncAtmosphere(world: World, state: WorldState, localId: number, dt: number): void {
-    if (world.register === null || world.trail === null) return;
+    if (world.search === null || world.trail === null) return;
     const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground);
     escalation = stepEscalation(escalation, targets, dt);
     const a = atmosphereUnder(base, escalation);
@@ -453,20 +453,20 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
    * from the same seed the sim used.
    */
   function createSigns(world: World): { dispose(): void } | null {
-    const register = world.register;
+    const search = world.search;
     const variant = activeTerrainVariant();
     const graph = variant.trailGraph?.(seed);
     const roadCenterX = variant.roadCenterX;
-    if (register === null || graph === undefined || roadCenterX === undefined) return null;
+    if (search === null || graph === undefined || roadCenterX === undefined) return null;
     const kiosk = propSite(graph, roadCenterX, seed, roadProp(KIOSK_MATERIAL));
     const car = propSite(graph, roadCenterX, seed, roadProp(CAR_MATERIAL));
     const groundH = (x: number, z: number): number => elevationAt(seed, x, z);
     // The places the posts name: the summit where the body lies, and every
     // pond and meadow, never under the missing hiker's own first name.
-    const hikerFirst = register.hiker.name.split(" ")[0] as string;
+    const hikerFirst = search.hiker.name.split(" ")[0] as string;
     const posts: SignMeshes = createSignMeshes(
       renderer.scene,
-      signPosts(graph, signSites(seed, graph.features, hikerFirst, register.body.pos)),
+      signPosts(graph, signSites(seed, graph.features, hikerFirst, search.body.pos)),
       groundH,
       { materialFor: (name) => terrainMaterialFor(renderer.scene, name), shadows: renderer.shadows },
     );
@@ -476,7 +476,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       groundH,
       {
         materialFor: (name) => terrainMaterialFor(renderer.scene, name),
-        lines: ["MISSING", register.hiker.name, "Last seen on the summit trail."],
+        lines: ["MISSING", search.hiker.name, "Last seen on the summit trail."],
         shadows: renderer.shadows,
       },
     );
@@ -499,15 +499,15 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   function syncPoster(world: World, self: PlayerState | undefined, cmd: InputCommand): void {
     const edges = pressedEdges(lastButtons, cmd.buttons);
     lastButtons = cmd.buttons;
-    if (self === undefined || self.health <= 0 || world.register === null) return;
+    if (self === undefined || self.health <= 0 || world.search === null) return;
     if (posterPanel.isOpen) {
       if ((edges & Button.Interact) !== 0 || cmd.moveX !== 0 || cmd.moveZ !== 0) posterPanel.hide();
       return;
     }
     if ((edges & Button.Interact) === 0) return;
     const target = resolveInteract(world, self);
-    if (target === null || target.kind !== InteractKind.Register) return;
-    posterPanel.show(posterModel(world.register));
+    if (target === null || target.kind !== InteractKind.Poster) return;
+    posterPanel.show(posterModel(world.search));
   }
 
   let roadLineAt = -Infinity;
@@ -819,7 +819,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
     registerInteractables(host.world);
     signs = createSigns(host.world);
-    body = host.world.register === null ? null : createBodyMesh(renderer.scene, host.world.register.body, { shadows: renderer.shadows });
+    body = host.world.search === null ? null : createBodyMesh(renderer.scene, host.world.search.body, { shadows: renderer.shadows });
     host.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
@@ -917,7 +917,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     escalation = ESCALATION_REST;
     registerInteractables(client.world);
     signs = createSigns(client.world);
-    body = client.world.register === null ? null : createBodyMesh(renderer.scene, client.world.register.body, { shadows: renderer.shadows });
+    body = client.world.search === null ? null : createBodyMesh(renderer.scene, client.world.search.body, { shadows: renderer.shadows });
     // Every peer names itself, host or follower. The host does echo a
     // newcomer's own pairing back to it, so this is belt and braces — but it
     // means "You" never depends on that echo arriving.

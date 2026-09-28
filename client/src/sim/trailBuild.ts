@@ -903,7 +903,7 @@ export function buildTrail(
   const { stem, stemLen } = finalGeom;
 
   // Strand and rung edges carry the stem progress of each end's nearest stem
-  // point, so `nearestPointOnEdges` (register.ts) reads something sane on them.
+  // point, so a reader of stem progress reads something sane on them.
   {
     const finalSamples = sampleStem(state, finalGeom);
     const progressAt = (n: TrailNode): number => stemLen > 0 ? stemPose(finalSamples, n.x, n.z).arc / stemLen : 0;

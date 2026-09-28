@@ -10,7 +10,7 @@ import { createWatcherRecord, stepWatcher, type WatcherRecord } from "./watcher.
 import { spiralSpawn } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
-import { buildRegister, installRegister, type Register } from "./register.js";
+import { buildSearch, installSearch, type Search } from "./search.js";
 import { CAR_MATERIAL, KIOSK_MATERIAL, propSite, roadProp } from "./passes/trailhead.js";
 import { containAtRoad } from "./containment.js";
 import { createGroundField, type GroundField } from "./ground.js";
@@ -69,10 +69,11 @@ export type World = {
    */
   interactables: Map<number, Interactable>;
   /**
-   * The poster, the box and the car for a forest world (`register.ts`); null
+   * The missing hiker, the poster, the body's place and the car for a forest
+   * world (`search.ts`); null
    * for a hand-authored level, which has no trail to lose anybody on.
    */
-  register: Register | null;
+  search: Search | null;
   /**
    * The trail network for a forest world (`trail.ts`): the Hollow's map and
    * what `app.ts` paints signs from. Null for a hand-authored level.
@@ -84,7 +85,7 @@ export type World = {
    * client's predicted world. It lives here and not on `WorldState` because
    * `WorldState` is what `cloneWorldState` copies, `serializeWorldState`
    * fingerprints and the snapshot carries to every peer — and the record is
-   * the host's alone, like `register` and `trail` beside it.
+   * the host's alone, like `search` and `trail` beside it.
    */
   cut: CutRecord | null;
   /**
@@ -110,7 +111,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
     maxEnemies: ENEMY_POPULATION_CAP,
     waterLevel: null,
     interactables: new Map(),
-    register: null,
+    search: null,
     trail: null,
     cut: null,
     watcher: null,
@@ -145,7 +146,7 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
     maxEnemies: 0,
     waterLevel: variant.waterLevel ?? null,
     interactables: new Map(),
-    register: null,
+    search: null,
     trail: graph ?? null,
     cut: null,
     watcher: graph === undefined || !authoritative ? null : createWatcherRecord(forest.seed),
@@ -165,9 +166,9 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
   if (graph !== undefined && roadCenterX !== undefined) {
     const kiosk = propSite(graph, roadCenterX, forest.seed, roadProp(KIOSK_MATERIAL));
     const car = propSite(graph, roadCenterX, forest.seed, roadProp(CAR_MATERIAL));
-    installRegister(
+    installSearch(
       world,
-      buildRegister({
+      buildSearch({
         seed: forest.seed,
         graph,
         groundH: (x, z) => elevationAt(forest.seed, x, z),

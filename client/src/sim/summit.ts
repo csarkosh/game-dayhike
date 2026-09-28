@@ -82,9 +82,9 @@ export function updateSafety(world: World): void {
  * the cut to do: its Hollows only ever step out into a match still on.
  */
 export function stepSummit(world: World): void {
-  const register = world.register;
+  const search = world.search;
   const state = world.state;
-  if (register === null || world.trail === null) return;
+  if (search === null || world.trail === null) return;
   // A finished match finds nothing and ends nothing. The guard covers the
   // climb as well as the chase: a forest party that died on the way up is
   // already Lost (`updateLoss`), and a player joining that match must not be
@@ -92,14 +92,14 @@ export function stepSummit(world: World): void {
   if (state.outcome !== Outcome.Playing) return;
 
   if (state.phase === Phase.Climb) {
-    const who = finder(world, register.body.pos);
+    const who = finder(world, search.body.pos);
     if (who === null) return;
     state.phase = Phase.Chase;
     // The watcher first: deleting an enemy here is safe because the deaths
     // and the loss were judged above, and the snapshot is built after the
     // tick. The summit Hollow is a separate spawn, never the watcher kept.
     hideWatcher(world);
-    spawnHollow(world, emergePoint(world, register.body.pos, who.pos), who.id, SUMMIT_REVEAL_S);
+    spawnHollow(world, emergePoint(world, search.body.pos, who.pos), who.id, SUMMIT_REVEAL_S);
     world.cut = drawGuide(world);
     return;
   }

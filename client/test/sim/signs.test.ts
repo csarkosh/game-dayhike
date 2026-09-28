@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SIGN_POST_OFFSET, SUMMIT_LABEL, TRAILHEAD_LABEL, signPostSites, signPosts } from "../../src/sim/signs.js";
 import { trailDistance, TRAIL_BED_HALF, type TrailEdge, type TrailGraph } from "../../src/sim/trail.js";
-import { graph } from "./helpers/registerGraph.js";
+import { graph } from "./helpers/stemGraph.js";
 
 const sites = (g: ReturnType<typeof graph>) => [
   { name: SUMMIT_LABEL, x: 200, z: 0 },

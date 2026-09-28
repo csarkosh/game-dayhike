@@ -1,6 +1,6 @@
 /**
  * Wooden sign posts at every junction of the trail graph, one arm per branch
- * and one plank per place (B §2.5): each place named once on a post, on the
+ * and one plank per place: each place named once on a post, on the
  * arm with the shortest trail to it, the Summit on top. Pure geometry over the
  * graph: the pass emits the post's collision box, `game/signMeshes.ts` paints
  * the planks.

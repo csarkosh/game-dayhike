@@ -48,8 +48,8 @@ export type TerrainVariant = {
   trailDistance?: (seed: number, x: number, z: number) => number;
   /** The seeded trail graph for this world, memoized per seed. */
   trailGraph?: (seed: number) => TrailGraph;
-  /** The two scenery landmarks (the stand, the talus) beside the trail, for
-   * the register's fallback site. Absent = none. */
+  /** The two scenery landmarks (the stand, the talus) beside the trail.
+   * Absent = none. */
   sceneryLandmarks?: (seed: number) => readonly Landmark[];
   /** Per-point multipliers and floors carved landmarks apply to tree and
    * boulder density; identity (`{1, 1, 0, 0}`) where nothing is carved. */

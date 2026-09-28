@@ -366,7 +366,7 @@ describe("the tick", SUITE, () => {
 
   it("never shows once the phase has flipped, leaving the summit Hollow alone", () => {
     const { w, p } = forestWorld();
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     standAt(p, body.x - 5, body.z);
     tick(w);
     expect(w.state.phase).toBe(Phase.Chase);
@@ -393,7 +393,7 @@ describe("the tick", SUITE, () => {
     tick(w, 10);
     expect(w.state.enemies.has(id)).toBe(true);
     expect(w.state.rngSeed).toBe(2032433950);
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     standAt(q, body.x - 5, body.z);
     tick(w);
     expect(w.state.phase).toBe(Phase.Chase);

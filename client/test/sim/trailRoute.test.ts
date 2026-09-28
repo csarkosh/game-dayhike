@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { route, stemNodes, stemProgress, homeDistances, forksOf, guideWalk, pathLength, GUIDE_MIN, GUIDE_MAX } from "../../src/sim/trailRoute.js";
-import { graph } from "./helpers/registerGraph.js";
+import { graph } from "./helpers/stemGraph.js";
 import type { TrailEdge, TrailGraph } from "../../src/sim/trail.js";
 import { nextRandom } from "../../src/sim/types.js";
 

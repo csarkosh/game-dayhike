@@ -6,7 +6,7 @@ import { SIGN_POST_HALF, SIGN_POST_OFFSET, signPostSites } from "../signs.js";
 /** Pass 9. The sign posts' collision boxes, one per junction, emitted into the
  * chunk holding the post's centre, like the trailhead pass. The arms and
  * their names are render-only (`game/signMeshes.ts`), so the pass needs the
- * graph and nothing about the book. */
+ * graph and nothing else. */
 registerPass({
   id: 9,
   name: "signs",

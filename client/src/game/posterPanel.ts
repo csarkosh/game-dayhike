@@ -1,12 +1,12 @@
-import type { Register } from "../sim/register.js";
+import type { Search } from "../sim/search.js";
 
 export type PosterView = { title: string; name: string; lines: string[] };
 
 /** The poster as data: the one missing hiker it names, and where. */
-export function posterModel(register: Register): PosterView {
+export function posterModel(search: Search): PosterView {
   return {
     title: "MISSING",
-    name: register.hiker.name,
+    name: search.hiker.name,
     lines: ["Last seen on the summit trail.", "If you have seen them, call the ranger station."],
   };
 }
