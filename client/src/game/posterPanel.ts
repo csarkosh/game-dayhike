@@ -1,14 +1,24 @@
 import type { Search } from "../sim/search.js";
+import { TRAIL_NAME } from "../sim/signs.js";
 
 export type PosterView = { title: string; name: string; lines: string[] };
+
+const POSTER_TITLE = "MISSING";
+/** Where the hiker was last seen: the one line the panel and the board share. */
+export const POSTER_LAST_SEEN = `Last seen at ${TRAIL_NAME}.`;
 
 /** The poster as data: the one missing hiker it names, and where. */
 export function posterModel(search: Search): PosterView {
   return {
-    title: "MISSING",
+    title: POSTER_TITLE,
     name: search.hiker.name,
-    lines: ["Last seen on the summit trail.", "If you have seen them, call the ranger station."],
+    lines: [POSTER_LAST_SEEN, "If you have seen them, call the ranger station."],
   };
+}
+
+/** The lines painted on the notice board: the title, the name, and where. */
+export function posterBoardLines(search: Search): string[] {
+  return [POSTER_TITLE, search.hiker.name, POSTER_LAST_SEEN];
 }
 
 const STYLE = `

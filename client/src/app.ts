@@ -55,12 +55,13 @@ import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
 import { isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
-import { createPosterPanel, posterModel } from "./game/posterPanel.js";
+import { createPosterPanel, posterBoardLines, posterModel } from "./game/posterPanel.js";
 import { createEndPanel, endPanelModel } from "./game/endPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
 import { DEATH_LINE, END_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
-import { signPosts } from "./sim/signs.js";
+import { allSignPosts } from "./sim/signs.js";
+import { trailheadStart } from "./sim/spawn.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
 import { CAR_MATERIAL, KIOSK_MATERIAL, kioskFacing, trailheadSite } from "./sim/passes/trailhead.js";
 import { createTrailheadMeshes } from "./game/trailheadMeshes.js";
@@ -193,7 +194,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     { width: canvas.clientWidth, height: canvas.clientHeight },
     { onPause: () => input.disengage() },
   );
-  const input = createInputSampler(canvas, { touch: touchModel, touchMode: touchStart });
+  // A player's yaw is whatever their input says, so the look starts where
+  // the spawn faces: the trail's entrance. Every peer derives it from the
+  // seed, as the sim does, so a follower starts facing the trail too.
+  const start = trailheadStart(seed);
+  const input = createInputSampler(canvas, { touch: touchModel, touchMode: touchStart, startYaw: start?.yaw ?? 0 });
   const accumulator = new FixedStepAccumulator();
   const container = canvas.parentElement ?? document.body;
   const hud = createHud(container);
@@ -449,8 +454,8 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
    */
   let body: { dispose(): void } | null = null;
   /**
-   * Junction posts, and the trailhead's car and kiosk with the poster on it,
-   * from the same seed the sim used.
+   * Junction posts and the trail's sign, and the trailhead's car and notice
+   * board with the poster on it, from the same seed the sim used.
    */
   function createSigns(world: World): { dispose(): void } | null {
     const search = world.search;
@@ -466,7 +471,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     const hikerFirst = search.hiker.name.split(" ")[0] as string;
     const posts: SignMeshes = createSignMeshes(
       renderer.scene,
-      signPosts(graph, signSites(seed, graph.features, hikerFirst, search.body.pos)),
+      allSignPosts(graph, signSites(seed, graph.features, hikerFirst, search.body.pos), kiosk, start ?? graph.trailhead),
       groundH,
       { materialFor: (name) => terrainMaterialFor(renderer.scene, name), shadows: renderer.shadows },
     );
@@ -476,7 +481,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       groundH,
       {
         materialFor: (name) => terrainMaterialFor(renderer.scene, name),
-        lines: ["MISSING", search.hiker.name, "Last seen on the summit trail."],
+        lines: posterBoardLines(search),
         shadows: renderer.shadows,
       },
     );
