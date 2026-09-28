@@ -563,6 +563,17 @@ the engine choice after it. Where the two meet:
   a throw on either engine leaves the line of §7.6 rather than a blank page.
 - **"Loading…" from the start of the wait for the signals**, giving way to the
   probe's screen when there is a probe, and then to the engine's own wait line.
+- **The probe's skip asks each step's engine.** Whether a step can settle
+  (`probeStepCanSettle`) is asked of the engine the rule gives the probed
+  tiers: WebGL2 as above, WebGPU not until measured
+  (`WEBGPU_PROBE_STEPS_SETTLE`, false: Babylon translates WebGPU shaders on the
+  page's thread), and both where the adapter has not answered; a step that
+  ends on another engine is asked again as it runs. With the switch off every
+  step is WebGL2 and nothing here changes (the WebGPU design, §5.9).
+- **The cover's bound on the rebuilds.** A rebuild after a WebGPU failure,
+  in play and unasked, waits the governor's 10 s for its scene, as the
+  governor's drop does; a fallback's rung and a switch across engines wait on
+  the bound of the switch they belong to (the WebGPU design, §5.9).
 
 ## 8. The player setting
 

@@ -685,6 +685,66 @@ smoke keeps exercising that path.
 WebGL2. The landing's engine is disposed before the game's is made
 (`main.ts:424`), so the two never run at once.
 
+### 5.9 The frame probe and the switch's cover, per engine
+
+**The probe's steps.** Tier detection's probe is skipped where its step could
+never be ready (`probeStepCanSettle`, the tier detection design §7.8): a step
+is ready once `PROBE_QUIET_MS` pass without a compile inside
+`PROBE_READY_MAX_MS`, and a WebGL2 context without
+`KHR_parallel_shader_compile` links one program a frame on the page's thread,
+so it never is. On this branch a step draws with the engine the rule gives its
+tier, so the question is asked of that engine:
+
+- **WebGL2 steps** (the switch off, `?engine=webgl2`, a remembered fallback,
+  an unfit adapter): as tier detection built it, ready only with the
+  extension.
+- **WebGPU steps** (high and medium where the rule gives WebGPU): not taken to
+  settle until measured (`WEBGPU_PROBE_STEPS_SETTLE`, false). Babylon's WebGPU
+  engine translates each effect's shaders on the page's thread as the effect
+  is made (glslang, then Tint, both synchronous; `WebGPUPipelineContext.isAsync`
+  is false) and makes each render pipeline at its first draw with
+  `createRenderPipeline`, and the probe's meter restarts its quiet on either. A
+  WebGPU step is therefore no quieter than a WebGL2 one without the extension,
+  and the first reading on a four-core Windows machine drew about 2 frames a
+  second for about 50 s after the page opened. A step that is never ready holds
+  the player behind the probe's screen for 15 s, writes no verdict and spends
+  one of three attempts, so until a browser has measured otherwise (§13.7) a
+  probe whose steps draw on WebGPU is skipped before its screen: Auto starts at
+  the class's start tier on WebGPU, with nothing written, and the governor
+  corrects it in play. With the value turned on, a browser without the
+  extension but with a fitting adapter (Firefox) probes its WebGPU steps.
+- **An adapter not known yet** when Auto decides: a step may end on either
+  engine, so both must settle.
+- **A step that ends on another engine** (a WebGPU start that fails, or a
+  WebGPU engine that fails in the step, and the step measured again on WebGL2)
+  is asked again as it runs (`measureOnRuleEngine`), and is not measured where
+  it cannot settle: no reading, at once. `?probe=` forces the probe past all of
+  this, which is how §13.7 measures it.
+- **Low is the floor and is never measured**: a probe whose high and medium
+  steps miss decides low without a third step, whatever engine low would draw
+  with.
+
+Settings' caption (`probePending`) and the start read the same answer
+(`autoPick`, with the engine the rule gives the probed tiers), so the caption
+says a probe is pending exactly where the start will show the probe's screen.
+
+**The cover's bound.** Every switch waits for its new scene under a cover,
+bounded by its caller (the tier detection design's `APPLY_SWAP_READY_MAX_MS`,
+20 s, and `GOVERNOR_SWAP_READY_MAX_MS`, 10 s), passed down to `whenSceneReady`:
+
+| path | bound |
+| --- | --- |
+| Settings Apply, on the pause screen | Apply's, 20 s |
+| the governor's drop, in play | the governor's, 10 s |
+| a failure's rebuild (a pipeline error, an uncaptured error), in play | the governor's, 10 s |
+| a lost device's retry on WebGPU, and a second loss's rebuild on WebGL2 | the governor's, 10 s |
+| a rung of a fallback ladder, inside any of these | its switch's |
+| a switch that crosses engines | its caller's |
+
+A rebuild nobody asked for, in the middle of play, covers the same player the
+governor's drop does, so it takes the same bound (`answerFailures` passes it);
+no third bound is needed. The hike's first build has no cover wait of its own.
+
 ## 6. The six compatibility changes
 
 ### 6.0 The WebGL2 identity pins
@@ -1325,6 +1385,17 @@ landed. The rest hold on either path.
    `WEBGPU_FETCH_MS` have passed, nothing recorded.
 8. A translator loader served as the host's HTML page (a missing asset): WebGL2
    at once, nothing recorded.
+
+### 13.7 The probe on WebGPU
+
+What turns `WEBGPU_PROBE_STEPS_SETTLE` on (§5.9): on each tier probed, with an
+empty browser shader cache, `?probe=high` on WebGPU at the canopy pose, the
+time from each step's engine to its meter's `ready`, and whether a reading
+came, over five loads each on the slowest machines whose class is probed (a
+four-core Windows laptop among them) and on the reference Mac. **Bar:** every
+step ready inside `PROBE_READY_MAX_MS` (15 s) with at least 5 s to spare, and a
+reading on every load. Short of it, the value stays false and those machines
+start at their class's start tier on WebGPU.
 
 ## 14. Tests
 
