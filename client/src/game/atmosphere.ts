@@ -34,6 +34,21 @@ const ATMOSPHERE_FOG_CODE = "finalColor.rgb=atmosphereFog(finalColor.rgb,fog);";
 /** Module-level so every material's plugin instance reads one truth, the cel.ts precedent. */
 let current: AtmosphereRecord | null = null;
 let gradientTexture: RawTexture | null = null;
+/** Whether a registration is live: from `createAtmosphere` until its dispose. */
+let registered = false;
+
+/**
+ * Takes back a registration no `dispose` will: a renderer whose build threw
+ * after `createAtmosphere` never returned the atmosphere to dispose. Left
+ * registered, the plugin would reach every material the next renderer makes.
+ */
+export function releaseAtmosphere(): void {
+  if (!registered) return;
+  UnregisterMaterialPlugin("Atmosphere");
+  registered = false;
+  current = null;
+  gradientTexture = null;
+}
 
 class AtmospherePlugin extends MaterialPluginBase {
   constructor(material: Material) {
@@ -144,6 +159,7 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
   RegisterMaterialPlugin("Atmosphere", (material) =>
     material instanceof PBRMaterial && material.name !== HOLLOW_MATERIAL ? new AtmospherePlugin(material) : null,
   );
+  registered = true;
   let record = atmosphereUnder(WEATHER_PRESETS.clear, 12, viewDistance);
   let gradient: Rgb[] = [];
   let lastKey = "";
@@ -189,6 +205,7 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
     },
     dispose() {
       UnregisterMaterialPlugin("Atmosphere");
+      registered = false;
       current = null;
       gradientTexture = null;
       tex.dispose();

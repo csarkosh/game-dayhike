@@ -1,4 +1,5 @@
 import { formatSize, isNewer, PLATFORMS, type DesktopRelease, type Platform } from "../net/desktopRelease.js";
+import { settingsModel, type SettingsInput, type SettingsView } from "./settings.js";
 
 // Ad-hoc signed until a Developer ID exists: macOS blocks the first open with
 // "Apple could not verify", and Open Anyway only appears in Settings after that
@@ -39,9 +40,38 @@ export type LandingInput = {
   /** Play was pressed and the world is about to build: the button says so
    * and takes no second press. */
   launching?: boolean;
+  /** The graphics setting for the Settings panel: the player's choice, Auto's
+   * pick once the GPU's signals are in, `?tier=`, and whether the browser keeps
+   * the choice. Auto, with nothing known, when absent. */
+  quality?: Omit<SettingsInput, "context" | "running" | "selectionTier" | "applying" | "error">;
+  /** A line left for the landing by the hike that just ended, shown once. */
+  notice?: string;
 };
 
 export type DownloadCard = { platform: Platform; url: string; label: string; caption: string; note: string };
+
+/** Which panel is showing. The route decides; see main.ts. */
+export type LandingPanel = "home" | "downloads" | "settings" | "credits";
+
+const LANDING_PANELS: readonly LandingPanel[] = ["home", "downloads", "settings", "credits"];
+
+/**
+ * What moving between panels does to the keyboard, as data. Every panel but
+ * the one showing is inert: the panels are only slid and faded out of sight,
+ * and without this Tab and a screen reader still reached them, where
+ * Settings' choices would change the setting unseen. Focus goes into a panel
+ * as it opens and back to its entry on the home panel as it closes; a page
+ * load (`previous` null) moves nothing.
+ */
+export function landingPanelFocus(
+  previous: LandingPanel | null,
+  next: LandingPanel,
+): { inert: LandingPanel[]; focus: { into: LandingPanel } | { entry: LandingPanel } | null } {
+  const inert = LANDING_PANELS.filter((panel) => panel !== next);
+  if (previous === null || previous === next) return { inert, focus: null };
+  if (next !== "home") return { inert, focus: { into: next } };
+  return { inert, focus: { entry: previous } };
+}
 
 export type LandingView = {
   /** The primary action. Absent for a follower, who gets `waiting` instead.
@@ -57,6 +87,12 @@ export type LandingView = {
   /** Always present: the CC-BY assets' credit has to be reachable from every
    * build, web and desktop alike, so this is not conditional on anything. */
   credits: { label: string };
+  /** Always present, for a follower too: the setting is the player's own. */
+  settings: { label: string };
+  /** The Settings panel's content. */
+  settingsPage: SettingsView;
+  /** Why the last hike ended, when it ended on its own. */
+  notice?: string;
   join?: { placeholder: string; error?: string };
   versionLabel?: string;
   update?: { url: string; label: string };
@@ -68,7 +104,13 @@ export type LandingView = {
  * vitest can reach it, and `renderLanding` only paints the result.
  */
 export function landingModel(input: LandingInput): LandingView {
-  const view: LandingView = { credits: { label: "Credits" } };
+  const quality = input.quality ?? { choice: "auto", auto: null, override: null, stored: true };
+  const view: LandingView = {
+    credits: { label: "Credits" },
+    settings: { label: "Settings" },
+    settingsPage: settingsModel({ context: "title", ...quality }),
+  };
+  if (input.notice !== undefined) view.notice = input.notice;
   if (input.follower) view.waiting = WAITING_FOR_HOST;
   else view.play = input.launching ? { label: "Loading…", busy: true } : { label: "Play" };
 

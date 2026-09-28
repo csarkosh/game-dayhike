@@ -15,6 +15,7 @@ import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 import { modelUrl } from "./assetUrls.js";
+import { loadUntilAborted } from "./modelLoad.js";
 import { orientationRoot } from "./characterModel.js";
 import type { ClipRole } from "./wildlifeBehaviour.js";
 
@@ -211,17 +212,28 @@ export function createCreaturePool(): CreaturePool {
   const assets = resolveCreatureAssets(catalog);
   const loaded = new Map<string, Loaded>();
   const instances = new Map<number, CreatureInstance>();
+  /** Aborted first thing in `dispose`: the species in flight then ends at once
+   * and quietly, and the rest of the list is never fetched (`modelLoad.ts`). */
+  const loads = new AbortController();
   return {
     async load(scene) {
       if (assets.length === 0) return; // no creature assets shipped yet; no animals
       registerBuiltInLoaders();
       for (const asset of assets) {
         try {
-          const container = await loadAssetContainerAsync(asset.url, scene);
+          const container = await loadUntilAborted(() => loadAssetContainerAsync(asset.url, scene), loads.signal);
+          // Disposed between the load settling and this line: nothing will
+          // ever instantiate it.
+          if (loads.signal.aborted) {
+            container.dispose();
+            return;
+          }
           // Stop the source clips: only the instantiated copies should animate.
           for (const g of container.animationGroups) g.stop();
           loaded.set(asset.id, { asset, container, clipNames: container.animationGroups.map((g) => g.name) });
         } catch {
+          // Disposed mid-load: nothing failed, and the rest is not wanted.
+          if (loads.signal.aborted) return;
           // One bad asset costs its own species and nothing else.
         }
       }
@@ -271,6 +283,7 @@ export function createCreaturePool(): CreaturePool {
       instances.get(key)?.dispose();
     },
     dispose() {
+      loads.abort();
       for (const k of [...instances.keys()]) instances.get(k)?.dispose();
       for (const v of loaded.values()) v.container.dispose();
       loaded.clear();

@@ -91,10 +91,14 @@ export function flipRowsY(data: Uint8ClampedArray, size: number): Uint8ClampedAr
  * false and the flip has to happen before the data ever reaches the GPU, so
  * the array still agrees with the albedo `Texture`s' default invertY=true on
  * which way v runs over the same planar world-XZ UV. */
-export async function decodeLayer(url: string, size: number): Promise<Uint8ClampedArray> {
-  const res = await fetch(url);
+export async function decodeLayer(url: string, size: number, signal?: AbortSignal): Promise<Uint8ClampedArray> {
+  const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  const bitmap = await createImageBitmap(await res.blob(), { colorSpaceConversion: "none", premultiplyAlpha: "none" });
+  const blob = await res.blob();
+  // The decode itself cannot be stopped once begun; this is the last point
+  // before it where a teardown still saves the work.
+  signal?.throwIfAborted();
+  const bitmap = await createImageBitmap(blob, { colorSpaceConversion: "none", premultiplyAlpha: "none" });
   const canvas = new OffscreenCanvas(size, size);
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (ctx === null) throw new Error("no 2d context");
@@ -122,7 +126,7 @@ function createRawArray(scene: Scene): CreateArray {
 export function loadGroundArrays(
   scene: Scene,
   urls: { normal: string[]; rah: string[] } = GROUND_LAYER_URLS,
-  decode: (url: string, size: number) => Promise<Uint8ClampedArray> = decodeLayer,
+  decode: (url: string, size: number, signal?: AbortSignal) => Promise<Uint8ClampedArray> = decodeLayer,
   options: { size?: number; createArray?: CreateArray; warn?: (message: string) => void } = {},
 ): GroundArrays {
   const size = options.size ?? GROUND_MAP_SIZE;
@@ -131,14 +135,17 @@ export function loadGroundArrays(
   const placeholder = (texel: Uint8ClampedArray, name: string) =>
     create(interleaveLayers(new Array(GROUND_LAYERS).fill(texel), 1), 1, GROUND_LAYERS, name);
   let disposed = false;
+  // Aborted in `dispose`, the way every model load is (`modelLoad.ts`): the
+  // twelve downloads stop with the scene rather than run on for nothing.
+  const loads = new AbortController();
   const arrays: GroundArrays = {
     normals: placeholder(NEUTRAL_NORMAL, "terrainNormals"),
     rah: placeholder(NEUTRAL_RAH, "terrainRAH"),
     ready: Promise.resolve(),
-    dispose() { disposed = true; arrays.normals.dispose(); arrays.rah.dispose(); },
+    dispose() { disposed = true; loads.abort(); arrays.normals.dispose(); arrays.rah.dispose(); },
   };
   const load = async (kind: "normal" | "rah", field: "normals" | "rah") => {
-    const layers = await Promise.all(urls[kind].map((u) => decode(u, size)));
+    const layers = await Promise.all(urls[kind].map((u) => decode(u, size, loads.signal)));
     // `dispose()` may have already run while these twelve decodes were in
     // flight — the scene is torn down, so the late array must not be created
     // (and bound into `arrays[field]`) at all; that would orphan a GPU
@@ -151,6 +158,10 @@ export function loadGroundArrays(
   };
   (arrays as { ready: Promise<void> }).ready = Promise.all([load("normal", "normals"), load("rah", "rah")])
     .then(() => undefined)
-    .catch((error: unknown) => { warn(`ground maps: keeping the flat placeholders — ${String(error)}`); });
+    .catch((error: unknown) => {
+      // Stopped by `dispose`: nothing failed, and there is no scene to keep.
+      if (disposed) return;
+      warn(`ground maps: keeping the flat placeholders — ${String(error)}`);
+    });
   return arrays;
 }

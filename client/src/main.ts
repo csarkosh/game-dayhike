@@ -10,6 +10,9 @@ import {
   replaceWithLanding,
   leavePanel,
   browserExit,
+  hostRoute,
+  stripOverrides,
+  sameFollowPlace,
   type Route,
 } from "./game/router.js";
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
@@ -28,6 +31,25 @@ import { createSignalingClient, type SignalingClient } from "./net/signaling.js"
 import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
+import { browserEnv, gatherSignals, type GpuSignals } from "./game/gpuSignals.js";
+import { START_FAILED_LINE, autoPick, startFallbacks, startHike, startupTier } from "./game/frameProbe.js";
+import { createHud } from "./game/hud.js";
+import { probeDeps } from "./game/probeScene.js";
+import { containerPixels, withGovernorDrop, type QualityTier } from "./game/quality.js";
+import type { AutoSummary } from "./game/settings.js";
+import {
+  createChoiceKeeper,
+  leaveNotice,
+  pageSessionStorage,
+  pageStorage,
+  parseTierOverride,
+  readAutoRecord,
+  recordFallback,
+  takeNotice,
+  writeAutoRecord,
+  type TierChoice,
+  type TierSource,
+} from "./game/tierChoice.js";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("#app not found");
@@ -74,6 +96,78 @@ const latestReady: Promise<void> = latestUrl
 // address — exactly where two-machine testing happens — would take the whole
 // page down rather than one feature.
 const selfId = createLobbyId();
+// What the browser says of the GPU, read once at load: tens of milliseconds,
+// at most 2 s for the WebGPU adapter. A hike's tier is decided from it.
+const signalsReady = gatherSignals(browserEnv());
+let signals: GpuSignals | null = null;
+// The Settings panel's Auto line waits on them.
+void signalsReady.then((read) => {
+  signals = read;
+  repaintLanding();
+});
+
+// ---- the graphics setting ------------------------------------------------------
+// The player's choice lives in localStorage; where the storage refuses a write
+// it is held for the page's life instead, and the Settings screen says so
+// until a write succeeds (`createChoiceKeeper`).
+
+const tierChoice = createChoiceKeeper(pageStorage);
+const currentChoice = (): TierChoice => tierChoice.choice();
+const choiceStored = (): boolean => tierChoice.stored();
+/** The line for a stored choice put back on Auto after its tier did not
+ * start, shown on the Settings screen until the next choice. */
+let choiceNotice: string | null = null;
+const saveChoice = (choice: TierChoice): void => {
+  tierChoice.save(choice);
+  choiceNotice = null;
+};
+
+/**
+ * A tier failed to build, at a hike's start or on a switch mid-hike: what it
+ * leaves is `recordFallback`'s (a `build` verdict so Auto does not try it
+ * again, a stored choice of it put back on Auto with a line saying so, nothing
+ * under `?tier=`). When nothing built and the hike is ending, the landing gets
+ * a line saying why.
+ */
+function onTierFallback(fallback: { attempted: QualityTier; built: QualityTier | null; source: TierSource }): void {
+  if (signals !== null) {
+    const pixels = app === null ? 0 : containerPixels(app);
+    const record = readAutoRecord(pageStorage());
+    const now = Date.now();
+    const pick = autoPick(signals, { record, pixels, now });
+    const out = recordFallback({ ...fallback, record, gpu: pick.gpu, browser: signals.browser, cls: pick.cls, choice: currentChoice(), pixels, now });
+    if (out.record !== null) writeAutoRecord(pageStorage(), out.record);
+    if (out.choice !== null) saveChoice(out.choice);
+    if (out.notice !== null) choiceNotice = out.notice;
+  }
+  if (fallback.built === null) leaveNotice(pageSessionStorage(), "The last hike ended because the graphics could not be restarted.", Date.now());
+}
+
+/** The governor lowered Auto's tier: remembered for this GPU, browser and
+ * class, so the next hike starts one step down too (`withGovernorDrop`). */
+function onGovernorDrop(running: QualityTier): void {
+  if (signals === null) return;
+  const pixels = app === null ? 0 : containerPixels(app);
+  const record = readAutoRecord(pageStorage());
+  const now = Date.now();
+  const pick = autoPick(signals, { record, pixels, now });
+  const next = withGovernorDrop(record, pick.gpu, signals.browser, pick.cls, running, pixels, now);
+  if (next !== null) writeAutoRecord(pageStorage(), next);
+}
+
+/** A line left for the landing by the hike that just ended, taken when the landing is built. */
+let landingNotice: string | null = null;
+
+/** What Auto would pick here now, or null until the GPU's signals are in. */
+function autoSummary(): AutoSummary | null {
+  if (signals === null) return null;
+  const pixels = app === null ? 0 : containerPixels(app);
+  const pick = autoPick(signals, { record: readAutoRecord(pageStorage()), pixels, now: Date.now() });
+  return { tier: pick.tier, probePending: pick.probeFrom !== null, ceiling: pick.ceiling };
+}
+// Bumped by every render, so a hike whose tier is still being decided for a
+// page that has since been left is never built.
+let renderToken = 0;
 let selfName = loadName();
 let lobby: Lobby | null = null;
 let lobbyError: string | undefined;
@@ -221,17 +315,23 @@ function detach(): void {
   lobby = null;
 }
 
-/** A follower goes where the host is. The host's route is "" until known. */
+/** A follower goes where the host is. The host's route is "" until known,
+ * and the landing page and its panels are one place (`sameFollowPlace`): a
+ * follower in its own Settings stays there while the host is on the landing.
+ * The route is taken without `?tier=` and `?probe=` (`stripOverrides`), which
+ * a host that still announces them would otherwise impose on this machine,
+ * and compared with where this page is without its own. */
 function follow(active: Lobby): void {
   if (active.state.role !== "client") return;
-  const target = active.state.route;
-  if (target === "" || target === currentRoutePath()) return;
+  const target = stripOverrides(active.state.route);
+  if (target === "" || sameFollowPlace(target, stripOverrides(currentRoutePath()))) return;
   navigateTo(target);
 }
 
-/** Host side: tell the lobby where we are now. Called from render(). */
+/** Host side: tell the lobby where we are now, a landing panel as the landing
+ * page, without this page's own overrides (`hostRoute`). Called from render(). */
 function announceRoute(): void {
-  if (lobby !== null && lobby.state.role === "host") lobby.setRoute(currentRoutePath());
+  if (lobby !== null && lobby.state.role === "host") lobby.setRoute(hostRoute(currentRoutePath()));
 }
 
 // Landing routes are announced at once; the game route only after its first
@@ -258,7 +358,7 @@ async function openLobby(): Promise<void> {
       peerId: selfId,
       lobbyId: createLobbyId(),
       name: selfName,
-      route: currentRoutePath(),
+      route: hostRoute(currentRoutePath()),
     });
     // Abandoned while the reply was in the air. The room is real and hosted by
     // us, so say goodbye properly rather than dropping the socket and leaving
@@ -356,6 +456,14 @@ function landingInput(over: Partial<LandingInput> = {}): LandingInput {
     follower: lobby !== null && lobby.state.role === "client",
     touch,
     launching,
+    quality: {
+      choice: currentChoice(),
+      auto: autoSummary(),
+      override: parseTierOverride(location.search),
+      stored: choiceStored(),
+      notice: choiceNotice ?? undefined,
+    },
+    notice: landingNotice ?? undefined,
     ...over,
   };
 }
@@ -370,6 +478,7 @@ function panelFor(route: Route): LandingPanel {
   // would slide in an empty page. Home is what that route means on desktop.
   if (route.kind === "downloads") return desktop ? "home" : "downloads";
   if (route.kind === "credits") return "credits";
+  if (route.kind === "settings") return "settings";
   return "home";
 }
 
@@ -381,6 +490,7 @@ function isLandingRoute(route: Route): route is Exclude<Route, { kind: "game" }>
     route.kind === "landing" ||
     route.kind === "downloads" ||
     route.kind === "credits" ||
+    route.kind === "settings" ||
     route.kind === "party"
   );
 }
@@ -402,6 +512,7 @@ function onPlay(): void {
 // `app` is passed in rather than closed over: the null check above does not
 // narrow inside a hoisted function declaration, which could be called first.
 function render(container: HTMLDivElement): void {
+  const token = ++renderToken;
   const route = parseRoute(location.pathname);
 
   // An invite: consume it (so back/forward never re-join), show the landing
@@ -436,6 +547,7 @@ function render(container: HTMLDivElement): void {
     const backdrop = document.createElement("canvas");
     backdrop.className = "landing-bg";
     container.appendChild(backdrop);
+    landingNotice = takeNotice(pageSessionStorage(), Date.now());
 
     const handle = renderLanding(
       container,
@@ -453,6 +565,11 @@ function render(container: HTMLDivElement): void {
           void enterLobby(lobbyId);
         },
         onDownloads: () => navigateToPanel("downloads"),
+        onSettings: () => navigateToPanel("settings"),
+        onChooseTier: (choice) => {
+          saveChoice(choice);
+          repaintLanding();
+        },
         onCredits: () => navigateToPanel("credits"),
         // Popping history where we can, so the Back button and the browser's
         // own back button do the same thing; router.ts owns the decision and
@@ -481,21 +598,72 @@ function render(container: HTMLDivElement): void {
     return;
   }
 
-  const canvas = document.createElement("canvas");
-  container.appendChild(canvas);
-  game = startGame(canvas, route.token, {
-    lobby,
-    peerId: selfId,
-    onExit: exitGame,
-    onContinueOffline: continueOffline,
-    onPauseChange: (next) => {
-      paused = next;
+  // The tier comes first (`frameProbe.ts`): from the GPU's signals, and on a
+  // machine whose GPU the browser will not name, from a probe of a few seconds
+  // behind its own screen. `running` covers the wait, so a render that moves
+  // on stops the probe, and disposes its renderer, before building its own.
+  // "Loading…" shows from the first moment, and a throw anywhere leaves a line
+  // rather than a blank page (`startHike`).
+  const probe = probeDeps(container);
+  const cancelled = (): boolean => token !== renderToken;
+  let canvas: HTMLCanvasElement | null = null;
+  running = { dispose: () => probe.abort() };
+  void startHike({
+    signals: signalsReady,
+    current: () => !cancelled(),
+    showLoading: () => {
+      const line = createHud(container);
+      line.setStatus("Loading…");
+      return line;
+    },
+    decide: (read, hideLoading) =>
+      startupTier(read, { search: location.search, choice: currentChoice(), cancelled }, {
+        ...probe,
+        showScreen: () => {
+          hideLoading();
+          return probe.showScreen();
+        },
+      }),
+    build: ({ tier, source, cls }) => {
+      canvas = document.createElement("canvas");
+      container.appendChild(canvas);
+      game = startGame(canvas, route.token, {
+        lobby,
+        peerId: selfId,
+        onExit: exitGame,
+        onContinueOffline: continueOffline,
+        onPauseChange: (next) => {
+          paused = next;
+          paintRoster();
+        },
+        tier,
+        tierSource: source,
+        fallbackTiers: signals === null ? ["low"] : startFallbacks(tier, cls, signals.cores, signals.memoryGb),
+        onTierFallback,
+        onGovernorDrop,
+        quality: {
+          choice: currentChoice,
+          stored: choiceStored,
+          auto: autoSummary,
+          override: parseTierOverride(location.search),
+          notice: () => choiceNotice,
+          save: saveChoice,
+        },
+      });
+      running = game;
+      announcer.afterPaint();
       paintRoster();
     },
+    fail: (error) => {
+      console.error("The game could not start.", error);
+      // Whichever canvas the start left: a renderer that fell back builds on
+      // a fresh one in the first one's place.
+      for (const left of container.querySelectorAll("canvas")) left.remove();
+      const line = createHud(container);
+      line.setStatus(START_FAILED_LINE);
+      running = { dispose: () => line.dispose() };
+    },
   });
-  running = game;
-  announcer.afterPaint();
-  paintRoster();
 }
 
 window.addEventListener("popstate", () => render(app));

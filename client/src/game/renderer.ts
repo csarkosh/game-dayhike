@@ -34,7 +34,7 @@ import {
   type RingSamples,
 } from "./clipmap.js";
 import { createLighting } from "./lighting.js";
-import { createAtmosphere } from "./atmosphere.js";
+import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
@@ -71,6 +71,7 @@ import { createMistMeshes } from "./mistMeshes.js";
 import { createRain } from "./rain.js";
 import { createMotes } from "./motes.js";
 import { createPropMeshes, type PropShadows } from "./propMeshes.js";
+import { buildOrUndo } from "./rendererSwap.js";
 
 const MATERIAL_COLORS: Record<string, [number, number, number]> = {
   concrete: [0.42, 0.44, 0.47],
@@ -568,6 +569,9 @@ export type Renderer = {
   views: EntityViews;
   /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
   shadows: PropShadows;
+  /** Resolves once the forest's first fill, billboards included, is drawn
+   * (`ForestMeshes.ready`); at once in a world without a forest. */
+  readonly forestReady: Promise<void>;
   /**
    * `frame` carries this frame's local, non-simulated view inputs — its
    * duration in seconds and whether sprint is held. Only the walking cue reads
@@ -632,6 +636,75 @@ export type Renderer = {
 
 export type RendererOptions = { tier?: QualityTier };
 
+/** The most polls a renderer's engine waits, past its `dispose`, for a scene's
+ * BRDF lookup texture to finish expanding (`releaseEngine`). One browser
+ * reading put the end of the expansion about 0.9 s after a renderer's build,
+ * about 56 polls of 16 ms; this is a little over twice that. */
+export const BRDF_SETTLE_POLLS = 125;
+
+/** The wait between two of those polls. */
+const BRDF_POLL_MS = 16;
+
+/** Whether some scene of `engine` has a BRDF lookup texture still being
+ * expanded: loading, or decoding from RGBD into half float. */
+function brdfExpanding(engine: Engine): boolean {
+  return engine.scenes.some((scene) =>
+    [scene.environmentBRDFTexture, scene.environmentFuzzBRDFTexture].some(
+      (texture) => texture !== null && texture !== undefined && texture.getInternalTexture()?.isReady === false,
+    ),
+  );
+}
+
+/**
+ * Disposes `engine`, and its scenes with it, at once, or, while a scene's
+ * BRDF lookup texture is still being expanded, as soon as that has finished,
+ * checking every 16 ms, for at most `polls` checks.
+ *
+ * Every PBR material asks its scene for the BRDF lookup texture, and Babylon
+ * makes it on first request, then expands it from RGBD into half float
+ * through a post-process, asynchronously: the image loads, the decode
+ * shader's module is imported, its effect compiles, and a callback renders
+ * through `texture.getScene().postProcessManager`
+ * (`RGBDTextureTools.ExpandRGBDTexture`). Dispose the scene before that
+ * callback runs and the texture's scene is null by then: the callback throws a
+ * TypeError inside a promise nothing handles, which prints as "Uncaught (in
+ * promise)". That window is the first second or so of a renderer's life.
+ *
+ * So a renderer torn down inside it keeps its whole scene and its engine
+ * alive until the expansion has finished. The parts the renderer disposes
+ * itself are gone at once, in order, and nothing draws the scene; but what
+ * lives in the scene lives on with it until it goes: model requests still in
+ * flight go on downloading and parsing into it (the shells that asked for them
+ * have already dropped them), and the ground maps go on downloading. A live
+ * tier change builds the new renderer at once, so the old context stays alive
+ * beside it, off the page, for as long as the expansion takes.
+ *
+ * The bound counts polls that run, not time since the dispose: the expansion
+ * advances only while the main thread is free, and during a swap the new
+ * renderer's build holds the thread for seconds on a slow machine, which a
+ * bound in time would spend before the first poll. Once the polls run out the
+ * engine goes regardless, and anything the expansion then throws is reported,
+ * not hidden. An engine something else has already disposed is left alone.
+ */
+export function releaseEngine(engine: Engine, polls = BRDF_SETTLE_POLLS): void {
+  if (engine.isDisposed) return;
+  if (!brdfExpanding(engine)) {
+    engine.dispose();
+    return;
+  }
+  let left = polls;
+  const poll = (): void => {
+    if (engine.isDisposed) return;
+    left--;
+    if (brdfExpanding(engine) && left > 0) {
+      setTimeout(poll, BRDF_POLL_MS);
+      return;
+    }
+    engine.dispose();
+  };
+  setTimeout(poll, BRDF_POLL_MS);
+}
+
 /**
  * `forest` is null for hand-authored levels. Passing it alongside `level` rather
  * than instead of it keeps the brush path below working unchanged: a forest world
@@ -645,8 +718,39 @@ export function createRenderer(
   forest: Forest | null = null,
   options: RendererOptions = {},
 ): Renderer {
-  const engine = new Engine(canvas, true, { stencil: true }, true);
+  // The context is lost when the engine is disposed, so a renderer that is
+  // replaced (a live tier change, the landing's backdrop giving way to the
+  // game) frees every GPU object of its scene at once, including any the
+  // scene failed to delete.
+  const engine = new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);
+  try {
+    // Every part the build has made is disposed, newest first, when a later
+    // part throws: the same teardown `dispose` gives a whole renderer, so the
+    // shells already loading models abort their loads rather than run on
+    // against the scene the engine takes down below.
+    return buildOrUndo((made) => buildRenderer(engine, level, forest, options, made));
+  } catch (error) {
+    // A build that throws part-way never hands back a renderer to dispose:
+    // its engine (and the scene on it) and the atmosphere's global plugin
+    // registration would outlive it, and the next renderer would meet them.
+    releaseAtmosphere();
+    releaseEngine(engine);
+    throw error;
+  }
+}
+
+function buildRenderer(
+  engine: Engine,
+  level: Level,
+  forest: Forest | null,
+  options: RendererOptions,
+  made: (undo: () => void) => void,
+): Renderer {
   const scene = new Scene(engine);
+  /** Disposes `part` if a later part of the build throws. */
+  const partOf = (part: { dispose(): void } | null): void => {
+    if (part !== null) made(() => part.dispose());
+  };
   // Sun + fill already occupy two of every material's default four light
   // slots; without raising the cap, only the first two of the local lamp and
   // up to MAX_PLAYERS remote lamps ever light anything. Before any material
@@ -658,6 +762,7 @@ export function createRenderer(
   const atmosphere = createAtmosphere(scene, FOG_DISTANCE);
 
   const skinShading = createSkinShading(scene);
+  partOf(skinShading);
 
   // Never call attachControl: this camera is driven entirely by sim state.
   const camera = new UniversalCamera("player", new Vector3(0, 2, 0), scene);
@@ -675,6 +780,7 @@ export function createRenderer(
   localLamp.parent = camera;
   localLamp.position.set(0, 0, 0);
   localLamp.direction.set(0, 0, 1);
+  partOf(localLamp);
 
   // The walking cue (`viewBob.ts`). Render-only: it offsets the eye, never the
   // sim position Interact traces from.
@@ -693,7 +799,9 @@ export function createRenderer(
   // built, from the tier and the float-target capability.
   const postFeatures = postFeaturesFor(tier, fxSupportedBy(engine));
   const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath });
+  partOf(lighting);
   const post = createPost(scene, camera, postFeatures);
+  partOf(post);
   let unsettle = 1;
 
   // A forest draws terrain instead of brushes. Guarded here rather than relying on
@@ -722,6 +830,9 @@ export function createRenderer(
     lighting.addShadowMesh(mesh);
     brushMeshes.push(mesh);
   }
+  made(() => {
+    for (const m of brushMeshes) m.dispose();
+  });
 
   // ---- Generated terrain: geometry clipmap -------------------------------
   //
@@ -731,6 +842,7 @@ export function createRenderer(
   // Ring meshes are also the complete shadow-caster set: seven meshes,
   // bounded, which closes the old grows-without-bound caster list.
   const clipmap = forest === null ? null : createClipmap(scene, forest.seed);
+  partOf(clipmap);
   if (clipmap !== null) {
     for (const mesh of clipmap.meshes) lighting.addShadowMesh(mesh);
   }
@@ -748,6 +860,7 @@ export function createRenderer(
     forest !== null && waterLevel !== undefined
       ? createWater(scene, forest.seed, waterLevel, ponds)
       : null;
+  partOf(water);
 
   // Every chunk prop the sim collides with, drawn: the trailhead's placeholder
   // car, post and sign used to be pure collision boxes, an invisible wall no
@@ -763,6 +876,7 @@ export function createRenderer(
           remove: lighting.removeShadowMesh,
         })
       : null;
+  partOf(propMeshes);
 
   // Trees ride the same guard as the clipmap and water: hand-authored levels
   // have no forest and get none. Low tier shrinks the near (full-geometry)
@@ -781,6 +895,7 @@ export function createRenderer(
     forest !== null
       ? createForestMeshes(scene, forest.seed, { nearRadius: tier === "low" ? lowTierNearRadius : undefined })
       : null;
+  partOf(forestMeshes);
   // Forest shadow casters (the LOD0 bucket only) cannot be registered here: the GLBs load
   // asynchronously, so `casterMeshes` starts empty and fills once. sync()
   // below registers new entries as they appear — append-only, so a plain
@@ -803,10 +918,12 @@ export function createRenderer(
         cull: tier !== "low",
       })
       : null;
+  partOf(clutterMeshes);
   // The near field of blade grass, on the tiers that can afford it; it
   // rebuilds on its own 1 m crossing and draws over the meadow's near cards
   // as detail rather than taking their place.
   const bladeMeshes = forest !== null && tier !== "low" ? createBladeMeshes(scene, forest.seed, { quality: tier }) : null;
+  partOf(bladeMeshes);
   // The terrain's sward floor is the shaded ground between those blades, so it
   // runs exactly where they are drawn: off on the low tier. Without a forest
   // there is no clipmap, and the terrain material is not built for it.
@@ -815,10 +932,12 @@ export function createRenderer(
   // tiers as the blades beside it: what the grass field thins out, this fills
   // in, so the ground reads full rather than bare. Low tier draws neither.
   const duffMeshes = forest !== null && tier !== "low" ? createDuffMeshes(scene, forest.seed, { quality: tier }) : null;
+  partOf(duffMeshes);
   // Rock-wall modules on the faces too steep to stand on, on every tier —
   // the field carries a ring set per tier. Renderer-only: it reads the
   // simulation and touches nothing in it.
   const cliffMeshes = forest !== null ? createCliffMeshes(scene, forest.seed, { quality: tier }) : null;
+  partOf(cliffMeshes);
   // A failed GLB fetch rejects `ready`; log it once here so it is not an
   // unhandled rejection. The shell keeps working with whatever loaded — a
   // partial load just leaves the loaded model's buckets rebuilding, the
@@ -871,6 +990,7 @@ export function createRenderer(
           },
         })
       : null;
+  partOf(wildlife);
 
   // The player positions wildlife reacts to, rebuilt in place every frame: at
   // most five entries, and `stepUnit` runs over them once per unit per tick, so
@@ -942,13 +1062,17 @@ export function createRenderer(
   // valley haze, and a forest world seeds the bank placement with the same
   // seed the forest and clipmap use.
   const mist = forest !== null ? createMistMeshes(scene, forest.seed, tier) : null;
+  partOf(mist);
 
   // Rain is universal, unlike the forest-gated effects above: weather applies
   // to hand-authored levels too, and a stopped particle system is free.
   const rain = createRain(scene, tier);
+  partOf(rain);
   const motes = createMotes(scene, tier);
+  partOf(motes);
 
   const views = new EntityViews(scene);
+  partOf(views);
   // Fire and forget: the other hikers and the Hollow render as capsules until
   // this resolves, and a model that fails to load stays a capsule for good.
   // Only the rangers and the Hollow are fetched, not every character listed.
@@ -971,6 +1095,7 @@ export function createRenderer(
     camera,
     views,
     shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
+    forestReady: forestMeshes?.ready ?? Promise.resolve(),
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
       // of materials x four property writes: cheap enough to do every frame.
@@ -1192,8 +1317,8 @@ export function createRenderer(
       skinShading.dispose();
       lighting.dispose();
       atmosphere.dispose();
-      scene.dispose();
-      engine.dispose();
+      // The scene goes with its engine, once its BRDF texture is settled.
+      releaseEngine(engine);
     },
     setFreecam(view) {
       freecam = view;

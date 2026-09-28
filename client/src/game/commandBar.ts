@@ -32,7 +32,12 @@ export type CommandBar = {
  */
 export function createCommandBar(
   container: HTMLElement,
-  options: { onSubmit(line: string): string | null; onOpenChange(open: boolean): void },
+  options: {
+    onSubmit(line: string): string | null;
+    onOpenChange(open: boolean): void;
+    /** Whether "/" may open the bar now; it may unless this says otherwise. */
+    canOpen?(): boolean;
+  },
 ): CommandBar {
   const style = document.createElement("style");
   style.textContent = STYLE;
@@ -84,7 +89,7 @@ export function createCommandBar(
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (!isOpen) {
-      if (e.key === "/") {
+      if (e.key === "/" && options.canOpen?.() !== false) {
         e.preventDefault();
         open();
       }

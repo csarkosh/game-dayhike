@@ -91,6 +91,12 @@ describe("layer boundaries", () => {
     expect(violations(join(SRC, "net"), [/^@babylonjs/, /game\//])).toEqual([]);
   });
 
+  it("keeps the quality modules out of sim/ and net/", () => {
+    const quality = /game\/(quality|gpuSignals|gpuClass|tierChoice|frameProbe|governor|rendererSwap|settings)(\.js)?$/;
+    expect(violations(join(SRC, "sim"), [quality])).toEqual([]);
+    expect(violations(join(SRC, "net"), [quality])).toEqual([]);
+  });
+
   /**
    * `game/` is deliberately split: `colour.ts`, `sky.ts`, `quality.ts` and
    * `terrainSurface.ts` are pure arithmetic, tested under
@@ -131,6 +137,12 @@ describe("layer boundaries", () => {
       join(SRC, "game", "bladeClump.ts"),
       join(SRC, "game", "bladeField.ts"),
       join(SRC, "game", "rockRelief.ts"),
+      join(SRC, "game", "gpuSignals.ts"),
+      join(SRC, "game", "gpuClass.ts"),
+      join(SRC, "game", "tierChoice.ts"),
+      join(SRC, "game", "frameProbe.ts"),
+      join(SRC, "game", "settings.ts"),
+      join(SRC, "game", "governor.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -233,6 +245,23 @@ describe("layer boundaries", () => {
     }
     expect(offenders).toEqual([]);
     expect(existsSync(join(SRC, "sim", "combat.ts"))).toBe(false);
+  });
+
+  it("holds or frees the controls only through the play gate", () => {
+    // `createPlayGate` owns suppression outright: the bar, the menu, the
+    // match's end and the governor's cover all go through it, so no path can
+    // free the controls one of the others holds. Every mention of the name is
+    // counted, not only `x.setSuppressed(` calls, so optional chaining,
+    // brackets, a split line, `.bind` or destructuring cannot slip past:
+    // input.ts declares and defines it, pauseMenu.ts declares the gate's
+    // dependency and calls it once, app.ts hands the gate `input`'s.
+    const mentions: Record<string, number> = {};
+    for (const file of sourceFiles(SRC)) {
+      const count = [...stripComments(readFileSync(file, "utf8")).matchAll(/\bsetSuppressed\b/g)].length;
+      if (count > 0) mentions[file.slice(SRC.length + 1).split("\\").join("/")] = count;
+    }
+    expect(mentions).toEqual({ "app.ts": 2, "game/input.ts": 2, "game/pauseMenu.ts": 2 });
+    expect(readFileSync(join(SRC, "app.ts"), "utf8")).toContain("setSuppressed: (on) => input.setSuppressed(on),");
   });
 });
 

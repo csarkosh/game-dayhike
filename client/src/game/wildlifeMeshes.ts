@@ -44,6 +44,7 @@ import {
   type PlayerPoint, type UnitState, type WildlifeEvent,
 } from "./wildlifeBehaviour.js";
 import { createCreaturePool, type CreatureInstance, type CreaturePool } from "./creatureModel.js";
+import { loadUntilAborted } from "./modelLoad.js";
 import {
   createDirectorState, DIRECTOR_ID_BASE, onScreen, PLACE_BODY_H, step as stepDirector,
   type Candidate, type CueEvent, type Ground, type MatchState, type View,
@@ -643,6 +644,9 @@ export function createWildlifeMeshes(
   const speciesPresence: number[] = new Array<number>(SPECIES_COUNT).fill(1);
   let lastPresenceTick = -1;
   let disposed = false;
+  /** Aborted first thing in `dispose`: the bird in flight then ends at once and
+   * quietly, and the rest of the list is never fetched (`modelLoad.ts`). */
+  const loads = new AbortController();
 
   // Fire and forget. Nothing has to be re-driven when it resolves: `ensureSlot`
   // asks `pool.has` again for every member of every unit on every frame, so
@@ -727,7 +731,7 @@ export function createWildlifeMeshes(
       const output = birdOutputFor(assetId);
       if (output === null) continue;
       try {
-        const container = await loadAssetContainerAsync(modelUrl(output), scene);
+        const container = await loadUntilAborted(() => loadAssetContainerAsync(modelUrl(output), scene), loads.signal);
         // Disposed while awaiting: dispose() has already walked a shorter
         // container list, so clean up what just landed here.
         if (disposed) {
@@ -745,6 +749,8 @@ export function createWildlifeMeshes(
         }
         adoptBirdBucket(assetId, meshes);
       } catch {
+        // Disposed mid-load: nothing failed, and the rest is not wanted.
+        if (loads.signal.aborted) return;
         // One bad asset costs its own bird and nothing else — the
         // degrade-don't-block rule the forest and clutter shells share.
       }
@@ -1320,6 +1326,7 @@ export function createWildlifeMeshes(
       return directorRemovals.slice();
     },
     dispose() {
+      loads.abort();
       for (const [key, inst] of slots) {
         if (shadows !== undefined) for (const mesh of inst.root.getChildMeshes()) shadows.remove(mesh);
         pool.release(key);

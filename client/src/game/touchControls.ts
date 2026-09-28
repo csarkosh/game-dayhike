@@ -1,3 +1,4 @@
+import { bindCanvas } from "./canvasBinding.js";
 import { Button } from "../sim/types.js";
 
 /** Thumb travel from the base centre that reads as full deflection, CSS px. */
@@ -456,6 +457,9 @@ export type TouchLayer = {
   sync(): void;
   /** Re-measures the drawn base for the model. After a resize. */
   measure(): void;
+  /** Moves the stick and look pointers' listeners to a fresh canvas (a live
+   * tier change builds the renderer on one); the model keeps its state. */
+  rebind(canvas: HTMLCanvasElement): void;
   dispose(): void;
 };
 
@@ -539,7 +543,7 @@ export function createTouchLayer(
       hooks.onFirstTouch();
     }
     if (!hooks.engaged()) return;
-    canvas.setPointerCapture(e.pointerId);
+    binding.canvas.setPointerCapture(e.pointerId);
     model.down({ id: e.pointerId, x: e.clientX, y: e.clientY, hit: "canvas" }, now());
   };
   const onCanvasMove = (e: PointerEvent) => {
@@ -551,10 +555,12 @@ export function createTouchLayer(
   const onCanvasCancel = (e: PointerEvent) => {
     if (e.pointerType === "touch") model.cancel(e.pointerId, now());
   };
-  canvas.addEventListener("pointerdown", onCanvasDown);
-  canvas.addEventListener("pointermove", onCanvasMove);
-  canvas.addEventListener("pointerup", onCanvasUp);
-  canvas.addEventListener("pointercancel", onCanvasCancel);
+  const binding = bindCanvas(canvas, {
+    pointerdown: onCanvasDown as EventListener,
+    pointermove: onCanvasMove as EventListener,
+    pointerup: onCanvasUp as EventListener,
+    pointercancel: onCanvasCancel as EventListener,
+  });
 
   function bindButton(el: HTMLButtonElement, hit: "lamp" | "pause"): void {
     el.addEventListener("pointerdown", (e) => {
@@ -571,6 +577,9 @@ export function createTouchLayer(
 
   return {
     measure,
+    rebind(next) {
+      binding.rebind(next);
+    },
     sync() {
       const s = model.state;
       const engaged = hooks.engaged();
@@ -612,10 +621,7 @@ export function createTouchLayer(
     dispose() {
       clearTimeout(pulseTimer);
       clearTimeout(freshTimer);
-      canvas.removeEventListener("pointerdown", onCanvasDown);
-      canvas.removeEventListener("pointermove", onCanvasMove);
-      canvas.removeEventListener("pointerup", onCanvasUp);
-      canvas.removeEventListener("pointercancel", onCanvasCancel);
+      binding.dispose();
       root.remove();
       style.remove();
     },

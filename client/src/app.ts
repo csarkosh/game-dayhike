@@ -1,6 +1,6 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
-import { createRenderer, terrainMaterialFor } from "./game/renderer.js";
+import { createRenderer, terrainMaterialFor, type FreecamView, type Renderer } from "./game/renderer.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
@@ -8,7 +8,7 @@ import { createHud } from "./game/hud.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
 import { navigateToLanding } from "./game/router.js";
 import { createCommandBar } from "./game/commandBar.js";
-import { createPauseMenu } from "./game/pauseMenu.js";
+import { createPauseMenu, createPlayGate } from "./game/pauseMenu.js";
 import {
   findCommand,
   parseCommandLine,
@@ -67,6 +67,20 @@ import { CAR_MATERIAL, KIOSK_MATERIAL, kioskFacing, trailheadSite } from "./sim/
 import { createTrailheadMeshes } from "./game/trailheadMeshes.js";
 import { signSites } from "./sim/placeNames.js";
 import { afterNextPaint } from "./game/paint.js";
+import type { QualityTier } from "./game/quality.js";
+import { settingsModel, type AutoSummary } from "./game/settings.js";
+import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice.js";
+import {
+  buildFirstRenderer,
+  buildOrUndo,
+  swapRenderer,
+  switchOutcome,
+  whenSceneReady,
+  type SwapBindings,
+} from "./game/rendererSwap.js";
+import { releaseAtmosphere } from "./game/atmosphere.js";
+import { GOVERNOR_IDLE_MAX_MS, actOnDrop, createGovernor, governorDecision, steadyFrame } from "./game/governor.js";
+import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, Outcome, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
@@ -100,9 +114,55 @@ export type GameOptions = {
   onContinueOffline(): void;
   /** The pause menu opened (true) or closed (false); false again on dispose. */
   onPauseChange(paused: boolean): void;
+  /** The tier `main.ts` decided (`startupTier`): `?tier=`, the player's
+   * choice, or Auto. The hike starts at it; the pause screen's Settings can
+   * change it while the hike runs. */
+  tier: QualityTier;
+  /** Where `tier` came from: `?tier=`, the player's choice, or Auto. */
+  tierSource: TierSource;
+  /** The tiers to try, in order, should `tier` fail to build at the start:
+   * the class's start tier, then low (`startFallbacks`). */
+  fallbackTiers: readonly QualityTier[];
+  /**
+   * A tier failed to build, at the start or on a switch: `built` is the tier
+   * that did (null when none did and the hike is ending). The page records it
+   * (`recordFallback`) so it is not tried again each hike.
+   */
+  onTierFallback(fallback: { attempted: QualityTier; built: QualityTier | null; source: TierSource }): void;
+  /** The governor lowered Auto's tier from `running` (`governor.ts`): the page
+   * records it (`withGovernorDrop`) so the next hike starts there too. */
+  onGovernorDrop(running: QualityTier): void;
+  /** The graphics setting, for the pause screen's Settings: the player's
+   * choice, whether the browser keeps it, Auto's pick, `?tier=`, a line for a
+   * choice put back on Auto, and how to keep a new choice. */
+  quality: {
+    choice(): TierChoice;
+    stored(): boolean;
+    auto(): AutoSummary | null;
+    override: QualityTier | null;
+    notice(): string | null;
+    save(choice: TierChoice): void;
+  };
 };
 
+/**
+ * Starts a hike on `canvas`. A start that throws part-way leaves nothing it
+ * made behind (`buildOrUndo`): above all no engine, and no global plugin
+ * registration for the next renderer to meet.
+ */
 export function startGame(canvas: HTMLCanvasElement, token: string, options: GameOptions): GameHandle {
+  return buildOrUndo((made) => buildGame(canvas, token, options, made));
+}
+
+function buildGame(
+  firstCanvas: HTMLCanvasElement,
+  token: string,
+  options: GameOptions,
+  made: (undo: () => void) => void,
+): GameHandle {
+  // The renderer and its canvas are replaced when the tier changes mid-hike
+  // (`applyTier`); everything reads them through these bindings when it runs.
+  let canvas = firstCanvas;
   // The sim registry is the source of truth for variant names; the command
   // layer only validates against them. This MUST run before `parseScript`
   // below: `parseScript` validates every entry as it parses, so a `terrain`
@@ -151,8 +211,49 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   );
 
   const forest = createForest(seed);
-  const renderer = createRenderer(canvas, level, forest);
+  // The tier asked for, and should it fail to build, the class's start tier
+  // and then low, each on a fresh canvas: only the renderer is retried, not
+  // the world, which is built once.
+  const first = buildFirstRenderer(canvas, [options.tier, ...options.fallbackTiers], {
+    build: (next, at) => createRenderer(next, level, forest, { tier: at }),
+    freshCanvas: () => document.createElement("canvas"),
+  });
+  let renderer: Renderer = first.renderer;
+  canvas = first.canvas;
+  made(() => renderer.dispose());
+  /** The tier the running renderer was built at, and where it came from. */
+  let tier: QualityTier = first.tier;
+  let tierSource: TierSource = options.tierSource;
+  // The governor (`governor.ts`): fed every frame of play, restarted when the
+  // session starts and after a switch, stopped when it ends, acting at most
+  // once per hike.
+  const governor = createGovernor(performance.now());
+  /** A tier is being switched: no frame of it is steady play. */
+  let switching = false;
+  /** The governor is acting: timing the page's idle frames, then its switch. */
+  let lowering = false;
+  /** What the governor's cover does when the session ends: it lifts. */
+  let onSessionOver: (() => void) | null = null;
+  /** A shader compiled since the last frame: that frame is a known hitch. */
+  let compiledSinceFrame = false;
+  let unwatchCompiles: (() => void) | null = null;
+  /** Marks the frames a shader compiled in, on the renderer now running. */
+  function watchCompiles(r: Renderer): void {
+    unwatchCompiles?.();
+    const observer = r.engine.onAfterShaderCompilationObservable.add(() => {
+      compiledSinceFrame = true;
+    });
+    unwatchCompiles = () => r.engine.onAfterShaderCompilationObservable.remove(observer);
+  }
+  watchCompiles(renderer);
+  made(() => unwatchCompiles?.());
+  if (first.fellBack) options.onTierFallback({ attempted: options.tier, built: tier, source: options.tierSource });
+  /** What the last switch of tier said, until the next choice: a fallback's line. */
+  let swapError: string | null = null;
+  /** Both builds of a switch failed: there is no renderer left to dispose. */
+  let broken = false;
   const ambient = createAmbientAudio();
+  made(() => ambient.dispose());
   // Shares the ambient context — one AudioContext for the whole game, gated on
   // the same unlock gesture. Constructed here rather than inside the renderer
   // because the renderer owns no audio: it produces the events and the camera
@@ -160,6 +261,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // where there are no animals to voice: the six clip fetches and the per-frame
   // listener write would both be for nothing.
   const wildlifeAudio = renderer.hasWildlife ? createWildlifeAudio(ambient, seed) : null;
+  made(() => wildlifeAudio?.dispose());
   let weatherName: WeatherPresetName = DEFAULT_WEATHER;
   /**
    * The console's preset and hour: what the escalation departs from on a
@@ -183,6 +285,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // and building a full oscillator/gain graph nothing references or disposes.
   const unlockOnPointerDown = () => ambient.unlock();
   window.addEventListener("pointerdown", unlockOnPointerDown, { once: true });
+  made(() => window.removeEventListener("pointerdown", unlockOnPointerDown));
   let disposed = false;
   // The browser must never scroll, zoom or select on the game canvas: every
   // finger on it is a stick or a look.
@@ -199,20 +302,24 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // seed, as the sim does, so a follower starts facing the trail too.
   const start = trailheadStart(seed);
   const input = createInputSampler(canvas, { touch: touchModel, touchMode: touchStart, startYaw: start?.yaw ?? 0 });
+  made(() => input.dispose());
   const accumulator = new FixedStepAccumulator();
   const container = canvas.parentElement ?? document.body;
   const hud = createHud(container);
+  made(() => hud.dispose());
   const touchLayer = createTouchLayer(container, canvas, touchModel, {
     engaged: () => input.engaged,
     onFirstTouch: () => input.setTouchMode(true),
     visible: touchStart,
   });
+  made(() => touchLayer.dispose());
   // A phone backgrounds the page constantly; coming back should land on the
   // pause menu, not mid-walk. Desktop already gets this from pointer lock.
   const onVisibility = () => {
     if (document.visibilityState === "hidden" && !disposed) input.disengage();
   };
   document.addEventListener("visibilitychange", onVisibility);
+  made(() => document.removeEventListener("visibilitychange", onVisibility));
 
   let freecam: FreecamState | null = null;
   /**
@@ -232,6 +339,13 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // Mirrors what the renderer was last told, so a bare typed `/skin` knows what
   // it is flipping. On by default: skin shading starts enabled.
   let skin = true;
+  // Mirrors of what the view commands and the free camera last told the
+  // renderer and nothing else keeps, so a renderer built mid-hike (`applyTier`)
+  // is told them again.
+  let bobScale = DEFAULT_BOB_SCALE;
+  let unsettleLevel = 1;
+  let windOverride: number | null = null;
+  let lastFreecamView: FreecamView | null = null;
 
   function currentScript(): ScriptEntry[] {
     return parseScript(new URLSearchParams(location.search).get("cmd") ?? "").entries;
@@ -290,6 +404,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       } else {
         freecam = null;
         freecamPending = false;
+        lastFreecamView = null;
         renderer.setFreecam(null);
       }
     } else if (name === "wireframe") {
@@ -331,14 +446,17 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       ambient.setWeather(base.weather);
       wildlifePresence = wildlifePresenceUnder(base.weather);
     } else if (name === "bob") {
-      renderer.setBobScale(typeof value === "number" ? value : DEFAULT_BOB_SCALE);
+      bobScale = typeof value === "number" ? value : DEFAULT_BOB_SCALE;
+      renderer.setBobScale(bobScale);
     } else if (name === "unsettle") {
-      renderer.setUnsettle((typeof value === "number" ? value : 100) / 100);
+      unsettleLevel = (typeof value === "number" ? value : 100) / 100;
+      renderer.setUnsettle(unsettleLevel);
     } else if (name === "wind") {
       // Bare `/wind` restores the weather-driven speed: `scriptValue`
       // returns `false` for it, not a level, so anything but a number means
       // no override.
-      renderer.setWindOverride(typeof value === "number" ? value / 100 : null);
+      windOverride = typeof value === "number" ? value / 100 : null;
+      renderer.setWindOverride(windOverride);
     } else if (name === "volume") {
       // No `scriptValue` on this command (it is not persisted — see
       // commands.ts): read the validated argument directly instead.
@@ -402,6 +520,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     onUp: () => touchModel.interactUp(),
     touch: touchStart,
   });
+  made(() => prompt.dispose());
 
   /** Resolves and paints the prompt. Both loops, after `renderer.sync`. */
   function syncPrompt(world: World, self: PlayerState | undefined): void {
@@ -456,9 +575,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   let body: { dispose(): void } | null = null;
   /**
    * Junction posts and the trail's sign, and the trailhead's car and notice
-   * board with the poster on it, from the same seed the sim used.
+   * board with the poster on it, from the same seed the sim used, in `r`'s
+   * scene: the renderer being built, which during a live tier change is not
+   * yet `renderer`.
    */
-  function createSigns(world: World): { dispose(): void } | null {
+  function createSigns(world: World, r: Renderer): { dispose(): void } | null {
     const search = world.search;
     const variant = activeTerrainVariant();
     const graph = variant.trailGraph?.(seed);
@@ -471,19 +592,19 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     // pond and meadow, never under the missing hiker's own first name.
     const hikerFirst = search.hiker.name.split(" ")[0] as string;
     const posts: SignMeshes = createSignMeshes(
-      renderer.scene,
+      r.scene,
       allSignPosts(graph, signSites(seed, graph.features, hikerFirst, search.body.pos), kiosk, start ?? graph.trailhead),
       groundH,
-      { materialFor: (name) => terrainMaterialFor(renderer.scene, name), shadows: renderer.shadows },
+      { materialFor: (name) => terrainMaterialFor(r.scene, name), shadows: r.shadows },
     );
     const trailhead = createTrailheadMeshes(
-      renderer.scene,
+      r.scene,
       { car: { site: car, trailhead: graph.trailhead }, kiosk: { site: kiosk, facing: kioskFacing(kiosk, graph.trailhead) } },
       groundH,
       {
-        materialFor: (name) => terrainMaterialFor(renderer.scene, name),
+        materialFor: (name) => terrainMaterialFor(r.scene, name),
         lines: posterBoardLines(search),
-        shadows: renderer.shadows,
+        shadows: r.shadows,
       },
     );
     return {
@@ -494,8 +615,29 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     };
   }
 
+  /** The session's world, once there is one: what the scene extras are built from. */
+  let activeWorld: World | null = null;
+
+  /** Everything built into the scene outside the renderer: the signs and the
+   * body at the crest, from the session's world, in `r`'s scene. */
+  function buildExtras(r: Renderer): void {
+    if (activeWorld === null) return;
+    signs = createSigns(activeWorld, r);
+    body = activeWorld.search === null ? null : createBodyMesh(r.scene, activeWorld.search.body, { shadows: r.shadows });
+  }
+
+  function disposeExtras(): void {
+    signs?.dispose();
+    body?.dispose();
+    signs = null;
+    body = null;
+  }
+  made(disposeExtras);
+
   const posterPanel = createPosterPanel(container);
+  made(() => posterPanel.dispose());
   const endPanel = createEndPanel(container);
+  made(() => endPanel.dispose());
   let lastButtons = 0;
   /**
    * The poster is this player's own screen: it opens on an Interact press at
@@ -585,7 +727,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       const peerId = names.get(p.id);
       return { id: p.id, name: peerId === undefined ? `Hiker ${p.id}` : nameOf(peerId), safe: p.safe, dead: p.health <= 0 };
     });
-    input.setSuppressed(true);
+    gate.refresh();
     posterPanel.hide();
     hud.fade(true);
     // The death line is this player's last word, the panel the match's:
@@ -595,6 +737,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     endPanel.show(endPanelModel(players));
     if (landingTimer !== null) clearTimeout(landingTimer);
     landingTimer = setTimeout(navigateToLanding, END_LANDING_MS);
+    sessionOver();
   }
 
   /** Advances and paints the touch layer. Both loops, after `renderer.sync`. */
@@ -638,14 +781,30 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     // from the one the player uses.
     const aim = input.sample(seq);
     freecam = stepFreecam(freecam, { yaw: aim.yaw, keys: input.keys, dt });
-    renderer.setFreecam({ ...freecam, yaw: aim.yaw, pitch: aim.pitch });
+    lastFreecamView = { ...freecam, yaw: aim.yaw, pitch: aim.pitch };
+    renderer.setFreecam(lastFreecamView);
   }
 
+  // The pause menu and the controls: the gate alone holds or frees them, as
+  // the pointer's lock, the bar, the match's end and the governor's cover
+  // come and go (`createPlayGate`).
+  const gate = createPlayGate({
+    engaged: () => input.engaged,
+    barOpen: () => bar.isOpen,
+    menuOpen: () => menu.isOpen,
+    ended: () => ended,
+    showMenu: () => menu.show(),
+    hideMenu: () => menu.hide(),
+    setSuppressed: (on) => input.setSuppressed(on),
+    paused: (on) => options.onPauseChange(on),
+  });
   const bar = createCommandBar(container, {
+    // Not while a new tier is being applied: opening the bar hides the pause
+    // menu, and with it the ground over the rebuild; nor under the governor's
+    // cover, where closing it would hand the controls back unseen.
+    canOpen: () => !menu.applying && !gate.covered,
     onOpenChange: (open) => {
-      // The bar outranks the pause menu: `/` over the menu switches to typing.
-      if (open) menu.hide();
-      input.setSuppressed(open || menu.isOpen);
+      gate.barChanged(open);
       // Closing the bar hands the mouse back, so mouselook resumes without a
       // click on the canvas — worst right after `/freecam`, whose whole point is
       // looking around. Guarded on `disposed` because a world command dispatches
@@ -681,6 +840,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       return null;
     },
   });
+  made(() => bar.dispose());
 
   const menu = createPauseMenu(container, {
     onResume: () => {
@@ -697,7 +857,30 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
         if (!disposed) options.onExit();
       });
     },
+    // Apply keeps the choice and switches the running hike to it, live: the
+    // menu holds on "Applying…" until the promise `applyTier` returns settles.
+    settings: {
+      saved: () => options.quality.choice(),
+      view: (selection, applying) =>
+        settingsModel({
+          context: "pause",
+          choice: selection,
+          selectionTier: tierFor(selection),
+          auto: options.quality.auto(),
+          running: tier,
+          override: options.quality.override,
+          stored: options.quality.stored(),
+          applying,
+          error: swapError ?? undefined,
+          notice: options.quality.notice() ?? undefined,
+        }),
+      onApply: (choice, readyMaxMs) => applyTier(choice, readyMaxMs),
+      onChoose: () => {
+        swapError = null;
+      },
+    },
   });
+  made(() => menu.dispose());
 
   /**
    * The pause menu is driven by the sampler's engaged state, not by who
@@ -716,21 +899,14 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     onReload: () => location.reload(),
     onOffline: () => options.onContinueOffline(),
   });
+  made(() => connectPanel.dispose());
 
   input.onEngagedChange((engaged) => {
     if (disposed) return;
     // Look is dropped while paused, but a flick still coasting would pick back up
     // on a quick resume.
     if (!engaged) touchModel.stopCoast();
-    if (engaged) {
-      menu.hide();
-      input.setSuppressed(bar.isOpen);
-      options.onPauseChange(false);
-    } else if (!bar.isOpen) {
-      menu.show();
-      input.setSuppressed(true);
-      options.onPauseChange(true);
-    }
+    gate.engagedChanged(engaged);
   });
 
   // Restoring from the URL on load, not a live edit: every view command
@@ -741,6 +917,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   const degradation = parseNetConditions(location.search);
 
   const netgraph = createNetgraph(container);
+  made(() => netgraph.dispose());
   const snapshotRate = new RateCounter(1000);
   const byteRate = new RateCounter(1000);
   const frameRate = new RateCounter(1000);
@@ -754,6 +931,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     }
   };
   window.addEventListener("keydown", onDebugKey);
+  made(() => window.removeEventListener("keydown", onDebugKey));
 
   let seq = 0;
   // Populated once we know whether we host or join.
@@ -764,6 +942,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // lobby's socket — which now outlives the game — and would feed the next
   // game's offer/answer traffic into a dead RTCPeerConnection.
   let session: { dispose(): void } | null = null;
+  made(() => session?.dispose());
   // The lobby is the reliable, immediate word on whether the host is still
   // there. Without it the only signal is the data channel closing, which is
   // indistinguishable from a network hiccup and costs an ICE timeout to
@@ -772,10 +951,17 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
   // What this game registered on the lobby's socket outside the admission
   // below, undone on dispose: the socket outlives the game.
   const unsubscribe: (() => void)[] = [];
+  // Undone first should the start throw: whatever arrives later (a lobby's end,
+  // a follower's handshake) finds the game gone.
+  made(() => {
+    disposed = true;
+    for (const off of unsubscribe) off();
+  });
   // How a host game takes in a lobby's members; null for a follower. Held
   // outside `runAsHost` because the lobby it answers offers over can arrive
   // after the game started.
   let admission: HostAdmission | null = null;
+  made(() => admission?.dispose());
 
   const wrap = (t: Transport): Transport =>
     degradation === null ? t : degradeTransport(t, degradation);
@@ -803,6 +989,16 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     // entries. The later message wins, as the more recent explanation.
     if (landingTimer !== null) clearTimeout(landingTimer);
     landingTimer = setTimeout(navigateToLanding, 2000);
+    sessionOver();
+  }
+
+  /** The session has ended, or the match has: its last seconds are not play,
+   * so nothing more for the governor, and a governor's cover lifts at once so
+   * the ending is seen; a switch under it finishes, or is abandoned, as it
+   * would. */
+  function sessionOver(): void {
+    governor.stop();
+    onSessionOver?.();
   }
 
   /**
@@ -818,14 +1014,15 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       hostPeerId: selfPeerId,
     });
     session = host;
+    governor.restart(performance.now());
     escalation = ESCALATION_REST;
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
     names.set(host.localEntityId, selfPeerId);
 
     registerInteractables(host.world);
-    signs = createSigns(host.world);
-    body = host.world.search === null ? null : createBodyMesh(renderer.scene, host.world.search.body, { shadows: renderer.shadows });
+    activeWorld = host.world;
+    buildExtras(renderer);
     host.onInteracted((e) => {
       if (debugOn) console.info("[debug] interacted", e);
     });
@@ -838,6 +1035,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
     stepAndRender = () => {
       const dt = frameSeconds();
+      feedGovernor(dt);
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
@@ -920,10 +1118,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       forest,
     });
     session = client;
+    governor.restart(performance.now());
     escalation = ESCALATION_REST;
     registerInteractables(client.world);
-    signs = createSigns(client.world);
-    body = client.world.search === null ? null : createBodyMesh(renderer.scene, client.world.search.body, { shadows: renderer.shadows });
+    activeWorld = client.world;
+    buildExtras(renderer);
     // Every peer names itself, host or follower. The host does echo a
     // newcomer's own pairing back to it, so this is belt and braces — but it
     // means "You" never depends on that echo arriving.
@@ -972,6 +1171,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
 
     stepAndRender = () => {
       const dt = frameSeconds();
+      feedGovernor(dt);
       const ticks = accumulator.advance(dt);
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
@@ -1042,7 +1242,9 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     connectClient();
   }
 
-  renderer.engine.runRenderLoop(() => {
+  /** One frame. Named, so a live tier change can stop it on the old engine and
+   * run it on the new one; it reads `renderer` when it runs. */
+  function loop(): void {
     if (stepAndRender === null) {
       // Not connected yet: keep the frame clock from accumulating a huge first
       // delta, and still draw the empty level behind the HUD.
@@ -1051,14 +1253,202 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       return;
     }
     stepAndRender();
-  });
+  }
+  renderer.engine.runRenderLoop(loop);
 
   const onResize = () => {
+    if (broken) return;
     renderer.resize();
     touchModel.resize({ width: canvas.clientWidth, height: canvas.clientHeight });
     touchLayer.measure();
   };
   window.addEventListener("resize", onResize);
+  made(() => window.removeEventListener("resize", onResize));
+
+  // ---- the tier, changed mid-hike ------------------------------------------------
+  // Apply on the pause screen rebuilds the renderer at the new tier on a fresh
+  // canvas (`rendererSwap.ts`), with the session, its connections, the input
+  // and the HUD carrying on. The rebuild is one synchronous job: for its length
+  // nothing ticks, sends or reads (a host's peers keep predicting, and
+  // reconcile after; `sessionStall.test.ts`), and the first frame after runs
+  // at most the accumulator's 15 ticks and drops the rest.
+
+  /** The tier a choice would run at now: `?tier=`, the choice, or Auto's pick. */
+  function tierFor(choice: TierChoice): QualityTier {
+    return resolveTier({ override: options.quality.override, choice, auto: options.quality.auto()?.tier ?? tier }).tier;
+  }
+
+  /** Puts back on a new renderer what the old one was told. */
+  function restoreView(r: Renderer): void {
+    r.setHour(appliedHour);
+    r.setWeather(appliedWeather, 0);
+    r.setWireframe(wireframe);
+    r.setSkinShading(skin);
+    r.setBobScale(bobScale);
+    r.setUnsettle(unsettleLevel);
+    r.setWindOverride(windOverride);
+    r.setFreecam(lastFreecamView);
+    // The new camera is on no one until its first sync.
+    cameraOnPlayer = false;
+    watchCompiles(r);
+  }
+
+  const swapBindings: SwapBindings = {
+    // The engine is WebGL2, made by the renderer. The WebGPU rule, where it
+    // applies, makes the target's engine before the swap and passes it here.
+    build: (next, target) => createRenderer(next, level, forest, { tier: target }),
+    freshCanvas: () => document.createElement("canvas"),
+    extras: { dispose: disposeExtras, build: buildExtras },
+    rebind: (next) => {
+      input.rebind(next);
+      touchLayer.rebind(next);
+      touchModel.resize({ width: next.clientWidth, height: next.clientHeight });
+      touchLayer.measure();
+    },
+    restore: restoreView,
+    loop,
+  };
+
+  /**
+   * Switches the running hike to the tier `choice` resolves to, the player's
+   * Apply on the pause screen, waiting at most `readyMaxMs` for the new scene.
+   * The choice is kept only when the switch reaches its tier (`switchTo`).
+   */
+  async function applyTier(choice: TierChoice, readyMaxMs: number): Promise<void> {
+    const target = tierFor(choice);
+    // One switch at a time: the governor's may be under way.
+    if (disposed || broken || switching || lowering) return;
+    if (target === tier) {
+      options.quality.save(choice);
+      return;
+    }
+    const source = resolveTier({ override: options.quality.override, choice, auto: target }).source;
+    await switchTo(target, source, choice, readyMaxMs);
+  }
+
+  /**
+   * Switches the running hike to `target`: the page paints first (the pause
+   * screen's opaque ground, or the governor's cover), then the synchronous
+   * swap, then the wait for the new scene. `save`, when given, is kept only
+   * when the switch reaches `target`; a fallback keeps the choice as it was,
+   * says so, and reports the tier that failed so it is not tried again. When
+   * no tier builds at all, the Settings page and the landing say why, and the
+   * hike ends. The wait for the new scene is bounded by `readyMaxMs`, which
+   * each caller passes for the cover it put up (`APPLY_SWAP_READY_MAX_MS`,
+   * `GOVERNOR_SWAP_READY_MAX_MS`). Returns the tier now running.
+   */
+  async function switchTo(
+    target: QualityTier,
+    source: TierSource,
+    save: TierChoice | null,
+    readyMaxMs: number,
+  ): Promise<QualityTier> {
+    swapError = null;
+    switching = true;
+    try {
+      await new Promise<void>((resolve) => afterNextPaint(resolve));
+      if (disposed) return tier;
+      let got: ReturnType<typeof swapRenderer>;
+      try {
+        got = swapRenderer({ renderer, canvas }, { tier: target, engine: null, fallbackTier: tier }, swapBindings);
+      } catch (error) {
+        broken = true;
+        // Each failed rung has taken itself down; this is for a throw from the
+        // old renderer's own dispose, which would leave its registration behind.
+        releaseAtmosphere();
+        console.error("quality: the renderer could not be rebuilt at any tier.", error);
+        swapError = "The graphics could not be restarted; returning to the title screen.";
+        options.onTierFallback({ attempted: target, built: null, source });
+        endSession("The graphics could not be restarted.");
+        throw error;
+      }
+      renderer = got.renderer;
+      canvas = got.canvas;
+      tier = got.tier;
+      const outcome = switchOutcome(save ?? "auto", got);
+      if (save !== null && outcome.save !== null) options.quality.save(outcome.save);
+      swapError = outcome.line;
+      if (got.fellBack) options.onTierFallback({ attempted: target, built: tier, source });
+      else tierSource = source;
+      governor.restart(performance.now());
+      console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine webgl2`);
+      // The forest's billboards too: they bake outside what the scene
+      // counts, and would otherwise fill in after the cover has lifted.
+      await whenSceneReady(renderer.scene, readyMaxMs, renderer.forestReady);
+      return tier;
+    } finally {
+      switching = false;
+    }
+  }
+
+  /** Feeds the governor one frame of play, and acts on its verdict once. */
+  function feedGovernor(dt: number): void {
+    const steady = steadyFrame({
+      engaged: input.engaged,
+      menuOpen: menu.isOpen,
+      barOpen: bar.isOpen,
+      visible: document.visibilityState === "visible",
+      waitingItems: renderer.scene.getWaitingItemsCount(),
+      compiled: compiledSinceFrame,
+      switching,
+      freecam: freecam !== null || freecamPending,
+    });
+    compiledSinceFrame = false;
+    if (governor.frame(dt * 1000, performance.now(), steady)) void lowerTier();
+  }
+
+  /**
+   * The governor's drop, on Auto only and above low only, under the probe's
+   * opaque screen with the controls held, so neither the rebuild nor the
+   * scene coming back is seen mid-play (`actOnDrop`). While it is up, the
+   * pointer's lock neither shows the pause menu nor hands the controls back,
+   * and the bar stays shut (`gate`); it lifts at once if the session ends.
+   * The loop stops while the page's idle frames are timed; a page drawing
+   * below 60 Hz by itself is left as it is. Otherwise the drop is remembered
+   * for the next hike and applied now through the live switch, once, with a
+   * line saying so.
+   */
+  async function lowerTier(): Promise<void> {
+    const decision = governorDecision(governor.verdict, tier, tierSource);
+    if (decision === null || disposed || broken || switching || lowering || landingTimer !== null) return;
+    lowering = true;
+    try {
+      await actOnDrop(tier, decision.next, {
+        cover: () => {
+          const screen = showProbeScreen(container, OVER_PLAY_Z);
+          const release = gate.cover();
+          return () => {
+            screen.dispose();
+            if (!disposed) release();
+          };
+        },
+        stopLoop: () => {
+          const stopped = renderer;
+          stopped.engine.stopRenderLoop();
+          return () => {
+            if (!disposed && !broken && renderer === stopped) stopped.engine.runRenderLoop(loop);
+          };
+        },
+        idleCadence: () => timeIdleCadence(AbortSignal.timeout(GOVERNOR_IDLE_MAX_MS)),
+        record: (running) => options.onGovernorDrop(running),
+        // A switch that builds no tier has ended the hike and said so.
+        switchTo: (next, readyMaxMs) => switchTo(next, "auto", null, readyMaxMs),
+        flash: (line, ms) => hud.flash(line, ms),
+        log: (line) => console.info(line),
+        alive: () => !disposed && !broken && landingTimer === null,
+        whenEnded: (fn) => {
+          onSessionOver = fn;
+          return () => {
+            if (onSessionOver === fn) onSessionOver = null;
+          };
+        },
+      });
+    } catch (error) {
+      console.error("quality governor: the drop could not be acted on.", error);
+    } finally {
+      lowering = false;
+    }
+  }
 
   return {
     attachLobby(next) {
@@ -1078,7 +1468,7 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       document.removeEventListener("visibilitychange", onVisibility);
       netgraph.dispose();
       if (landingTimer !== null) clearTimeout(landingTimer);
-      renderer.engine.stopRenderLoop();
+      if (!broken) renderer.engine.stopRenderLoop();
       session?.dispose();
       admission?.dispose();
       for (const off of unsubscribe) off();
@@ -1088,12 +1478,11 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
       connectPanel.dispose();
       posterPanel.dispose();
       endPanel.dispose();
-      signs?.dispose();
-      body?.dispose();
+      disposeExtras();
       touchLayer.dispose();
       prompt.dispose();
       input.dispose();
-      renderer.dispose();
+      if (!broken) renderer.dispose();
       wildlifeAudio?.dispose();
       ambient.dispose();
     },

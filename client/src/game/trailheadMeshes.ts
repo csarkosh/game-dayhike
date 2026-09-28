@@ -11,7 +11,7 @@ import { CAR_HALF, CAR_MATERIAL, KIOSK_HALF, KIOSK_MATERIAL } from "../sim/passe
 import type { Vec3 } from "../sim/types.js";
 import type { PropShadows } from "./propMeshes.js";
 import { armYaw, paintedMaterial, type Painter } from "./signMeshes.js";
-import { defaultModelLoader, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
+import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 
 export const TRAILHEAD_CAR_OUTPUT = "models/trailhead.car.glb";
 export const TRAILHEAD_KIOSK_OUTPUT = "models/trailhead.kiosk.glb";
@@ -94,7 +94,10 @@ export function createTrailheadMeshes(
   groundH: (x: number, z: number) => number,
   deps: TrailheadDeps,
 ): TrailheadMeshes {
-  const load = deps.loader ?? defaultModelLoader(scene);
+  // Aborted first thing in `dispose`: a model in flight then ends at once and
+  // quietly (`modelLoad.ts`).
+  const loads = new AbortController();
+  const load = loaderUntilAborted(deps.loader ?? defaultModelLoader(scene), loads.signal);
   const paint = deps.paint ?? paintedMaterial;
   let disposed = false;
   const placed: PlacedModel[] = [];
@@ -180,6 +183,7 @@ export function createTrailheadMeshes(
     dispose() {
       if (disposed) return;
       disposed = true;
+      loads.abort();
       dropBox(carBox);
       dropBox(kioskBox);
       for (const model of placed) {

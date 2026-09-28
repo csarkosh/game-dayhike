@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createInputSampler } from "../../src/game/input.js";
 import { createTouchModel } from "../../src/game/touchControls.js";
+import { installStandInDom } from "./helpers/standInDom.js";
 
 type Listener = (e: unknown) => void;
 const listeners = new Map<string, Listener[]>();
@@ -157,6 +158,158 @@ describe("input suppression", () => {
     };
     fire("keydown", { code: "Escape", preventDefault() {} });
     expect(exits).toBe(0);
+  });
+});
+
+describe("presses aimed at a form control", () => {
+  // A select's open list, the command bar's field and the like take the
+  // keyboard and the mouse for themselves, and can keep the matching release
+  // from the page: a press recorded there could stay held after Resume.
+  const controls = [
+    { tagName: "SELECT" },
+    { tagName: "OPTION" },
+    { tagName: "INPUT" },
+    { tagName: "TEXTAREA" },
+    { tagName: "DIV", isContentEditable: true },
+  ];
+  const canvasTarget = { tagName: "CANVAS", isContentEditable: false };
+
+  it("are never game presses, even when their release never comes", () => {
+    for (const target of controls) {
+      listeners.clear();
+      const { input } = sampler();
+      input.setSuppressed(true);
+      fire("keydown", { code: "Space", target, preventDefault() {} });
+      fire("keydown", { code: "KeyW", target, preventDefault() {} });
+      fire("mousedown", { button: 0, target });
+      input.setSuppressed(false);
+      expect(input.keys.has("Space")).toBe(false);
+      expect(input.keys.has("KeyW")).toBe(false);
+      const cmd = input.sample(1);
+      expect(cmd.buttons).toBe(0);
+      expect(cmd.moveZ).toBe(0);
+    }
+  });
+
+  it("are not swallowed either: Space and Tab typed into one keep their default", () => {
+    const { input } = sampler();
+    expect(input.suppressed).toBe(false);
+    let prevented = 0;
+    for (const code of ["Space", "Tab"]) fire("keydown", { code, target: { tagName: "INPUT" }, preventDefault: () => (prevented += 1) });
+    expect(prevented).toBe(0);
+  });
+
+  it("do not stop a key or button pressed in the game from being released over one", () => {
+    const { input } = sampler();
+    fire("keydown", { code: "KeyW", target: canvasTarget, preventDefault() {} });
+    fire("mousedown", { button: 0, target: canvasTarget });
+    expect(input.sample(1).moveZ).toBe(1);
+    expect(input.sample(2).buttons).toBe(1);
+    fire("keyup", { code: "KeyW", target: { tagName: "SELECT" } });
+    fire("mouseup", { button: 0, target: { tagName: "SELECT" } });
+    expect(input.keys.has("KeyW")).toBe(false);
+    const cmd = input.sample(3);
+    expect(cmd.moveZ).toBe(0);
+    expect(cmd.buttons).toBe(0);
+  });
+
+  it("leave a key pressed in the game tracked through the menu, as before", () => {
+    const { input } = sampler();
+    fire("keydown", { code: "KeyW", target: canvasTarget, preventDefault() {} });
+    input.setSuppressed(true);
+    fire("keydown", { code: "KeyS", target: { tagName: "SELECT" }, preventDefault() {} });
+    input.setSuppressed(false);
+    expect(input.sample(1).moveZ).toBe(1);
+  });
+});
+
+describe("presses on a form control during play", () => {
+  // A form control can hold the focus into play (the roster's invite field,
+  // clicked to copy the link, then Escape to resume): while play is engaged,
+  // every press is the game's, whatever has the focus.
+  const field = { tagName: "INPUT", isContentEditable: false };
+
+  it("move the player while the pointer is locked", () => {
+    const { input, canvas } = sampler();
+    lockPointer(canvas);
+    fire("keydown", { code: "KeyW", target: field, preventDefault() {} });
+    fire("mousedown", { button: 0, target: field });
+    const cmd = input.sample(1);
+    expect(cmd.moveZ).toBe(1);
+    expect(cmd.buttons).toBe(1);
+  });
+
+  it("move the player while touch play is engaged", () => {
+    const { input } = sampler({ touch: fakeTouch().source, touchMode: true });
+    expect(input.engaged).toBe(true);
+    fire("keydown", { code: "KeyW", target: field, preventDefault() {} });
+    expect(input.sample(1).moveZ).toBe(1);
+  });
+
+  it("let Escape release the lock, as it does in the desktop shell", () => {
+    const { canvas } = sampler();
+    const doc = (globalThis as Record<string, unknown>).document as { exitPointerLock?: () => void };
+    let exits = 0;
+    doc.exitPointerLock = () => {
+      exits += 1;
+    };
+    lockPointer(canvas);
+    fire("keydown", { code: "Escape", target: field, preventDefault() {} });
+    expect(exits).toBe(1);
+  });
+});
+
+describe("taking the controls back", () => {
+  /** A focused element on the fake document, counting its blurs. */
+  function focused(tagName: string) {
+    let blurs = 0;
+    const el = { tagName, isContentEditable: false, blur: () => (blurs += 1) };
+    ((globalThis as Record<string, unknown>).document as { activeElement: unknown }).activeElement = el;
+    return { blurs: () => blurs };
+  }
+
+  it("takes the focus off a form control when the pointer is locked again", () => {
+    const { canvas } = sampler();
+    const invite = focused("INPUT");
+    lockPointer(canvas);
+    expect(invite.blurs()).toBe(1);
+  });
+
+  it("takes the focus off a form control when touch play engages again", () => {
+    const { input } = sampler({ touch: fakeTouch().source, touchMode: true });
+    input.disengage();
+    const invite = focused("INPUT");
+    input.engage();
+    expect(input.engaged).toBe(true);
+    expect(invite.blurs()).toBe(1);
+  });
+
+  it("takes the focus off a focused select when touch mode switches play on", () => {
+    // The Settings screen's Graphics drop-down, focused on a mouse device that
+    // then takes a touch: play engages there and then, and the select must not
+    // keep the keyboard through it.
+    const doc = installStandInDom();
+    try {
+      const graphics = doc.createElement("select");
+      doc.body.append(graphics);
+      graphics.focus();
+      expect(doc.activeElement).toBe(graphics);
+      const canvas = { ...fakeTarget(), requestPointerLock: () => undefined };
+      const input = createInputSampler(canvas as unknown as HTMLCanvasElement, { touch: fakeTouch().source });
+      expect(input.engaged).toBe(false);
+      input.setTouchMode(true);
+      expect(input.engaged).toBe(true);
+      expect(doc.activeElement).not.toBe(graphics);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("leaves the focus on anything that is not a form control", () => {
+    const { canvas } = sampler();
+    const resume = focused("BUTTON");
+    lockPointer(canvas);
+    expect(resume.blurs()).toBe(0);
   });
 });
 
@@ -337,6 +490,77 @@ describe("pointer lock is a mouse affair", () => {
   });
 });
 
+describe("a refused pointer lock never surfaces as an unhandled rejection", () => {
+  // `unhandledRejection` fires on a later task than the rejection itself, so a
+  // macrotask boundary (setTimeout) is always after it; a bare microtask flush
+  // is not reliably late enough under Node's implementation. This is the only
+  // one of the three refusals that is actually asynchronous, so it is the only
+  // one that needs this wait.
+  async function flushPendingRejections(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  function watchUnhandledRejections(): { rejections: unknown[]; stop: () => void } {
+    const rejections: unknown[] = [];
+    const onUnhandled = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    return { rejections, stop: () => process.off("unhandledRejection", onUnhandled) };
+  }
+
+  it("catches a click's rejected requestPointerLock", async () => {
+    const { canvas } = sampler();
+    (canvas as unknown as { requestPointerLock: () => Promise<never> }).requestPointerLock = () =>
+      Promise.reject(new Error("WrongDocumentError: The root document of this element is not valid for pointer lock."));
+    const watch = watchUnhandledRejections();
+    fire("pointerdown", { pointerType: "mouse" });
+    fire("click", {});
+    await flushPendingRejections();
+    watch.stop();
+    expect(watch.rejections).toEqual([]);
+  });
+
+  it("does not throw when a click's requestPointerLock returns nothing (older browsers)", () => {
+    const { canvas } = sampler();
+    (canvas as { requestPointerLock: () => undefined }).requestPointerLock = () => undefined;
+    fire("pointerdown", { pointerType: "mouse" });
+    expect(() => fire("click", {})).not.toThrow();
+  });
+
+  it("does not throw when a click's requestPointerLock throws synchronously", () => {
+    const { canvas } = sampler();
+    (canvas as { requestPointerLock: () => void }).requestPointerLock = () => {
+      throw new Error("WrongDocumentError");
+    };
+    fire("pointerdown", { pointerType: "mouse" });
+    expect(() => fire("click", {})).not.toThrow();
+  });
+
+  it("catches engage()'s rejected requestPointerLock", async () => {
+    const { input, canvas } = sampler();
+    (canvas as unknown as { requestPointerLock: () => Promise<never> }).requestPointerLock = () =>
+      Promise.reject(new Error("WrongDocumentError"));
+    const watch = watchUnhandledRejections();
+    input.engage();
+    await flushPendingRejections();
+    watch.stop();
+    expect(watch.rejections).toEqual([]);
+  });
+
+  it("does not throw when engage()'s requestPointerLock returns nothing (older browsers)", () => {
+    const { input, canvas } = sampler();
+    (canvas as { requestPointerLock: () => undefined }).requestPointerLock = () => undefined;
+    expect(() => input.engage()).not.toThrow();
+  });
+
+  it("does not throw when engage()'s requestPointerLock throws synchronously", () => {
+    const { input, canvas } = sampler();
+    (canvas as { requestPointerLock: () => void }).requestPointerLock = () => {
+      throw new Error("WrongDocumentError");
+    };
+    expect(() => input.engage()).not.toThrow();
+  });
+});
+
 describe("mouse look has no flick", () => {
   it("stops the instant the mouse does, with a live touch model ticking beside it", () => {
     const touch = createTouchModel({ width: 800, height: 400 }, { onPause: () => undefined });
@@ -397,6 +621,75 @@ describe("touch source in sample", () => {
   });
 });
 
+describe("rebinding to a fresh canvas", () => {
+  /** A canvas of its own: its listeners kept apart from the window's. */
+  function ownCanvas() {
+    const live = new Map<string, Listener>();
+    let locks = 0;
+    return {
+      live,
+      locks: () => locks,
+      addEventListener: (type: string, fn: Listener) => void live.set(type, fn),
+      removeEventListener: (type: string, fn: Listener) => {
+        if (live.get(type) === fn) live.delete(type);
+      },
+      requestPointerLock: () => {
+        locks += 1;
+      },
+    };
+  }
+
+  it("keeps the aim, follows the pointer lock to the new canvas, and moves its listeners there", () => {
+    const old = ownCanvas();
+    const input = createInputSampler(old as unknown as HTMLCanvasElement);
+    lockPointer(old);
+    fire("mousemove", { movementX: 100, movementY: 40 });
+    const before = input.sample(1);
+    expect(before.yaw).not.toBe(0);
+    // The old canvas leaves the page and the browser drops the lock with it.
+    const doc = (globalThis as Record<string, unknown>).document as { pointerLockElement: unknown };
+    doc.pointerLockElement = null;
+    fire("pointerlockchange", {});
+    expect(input.engaged).toBe(false);
+
+    const fresh = ownCanvas();
+    input.rebind(fresh as unknown as HTMLCanvasElement);
+    expect(old.live.size).toBe(0);
+    expect([...fresh.live.keys()].sort()).toEqual(["click", "pointerdown"]);
+    // A click on the new canvas asks for the lock there; the old one is gone.
+    fresh.live.get("pointerdown")!({ pointerType: "mouse" });
+    fresh.live.get("click")!({});
+    expect(fresh.locks()).toBe(1);
+    input.engage();
+    expect(fresh.locks()).toBe(2);
+    expect(old.locks()).toBe(0);
+
+    lockPointer(fresh);
+    expect(input.engaged).toBe(true);
+    lockPointer(old);
+    expect(input.engaged).toBe(false);
+    lockPointer(fresh);
+    const after = input.sample(2);
+    expect(after.yaw).toBe(before.yaw);
+    expect(after.pitch).toBe(before.pitch);
+    fire("keydown", { code: "KeyW", preventDefault() {} });
+    expect(input.sample(3).moveZ).toBe(1);
+  });
+
+  it("announces a lock the new canvas already holds", () => {
+    const old = ownCanvas();
+    const input = createInputSampler(old as unknown as HTMLCanvasElement);
+    const seen: boolean[] = [];
+    input.onEngagedChange((engaged) => seen.push(engaged));
+    const fresh = ownCanvas();
+    const doc = (globalThis as Record<string, unknown>).document as { pointerLockElement: unknown };
+    doc.pointerLockElement = fresh;
+    input.rebind(fresh as unknown as HTMLCanvasElement);
+    expect(input.engaged).toBe(true);
+    expect(seen).toEqual([true]);
+  });
+});
+
 describe("the starting yaw", () => {
   it("is the yaw of the first command", () => {
     const { input } = sampler({ startYaw: 1.25 });
@@ -433,5 +726,19 @@ describe("the starting yaw", () => {
     } as unknown as import("../../src/game/touchControls.js").TouchSource;
     const { input } = sampler({ touch, touchMode: true, startYaw: 1.25 });
     expect(input.sample(1).yaw).toBe(1.75);
+  });
+
+  it("is kept through a rebind to a fresh canvas, as is a turn made from it", () => {
+    const freshCanvas = () => ({ ...fakeTarget(), requestPointerLock: () => undefined });
+    const { input } = sampler({ startYaw: 1.25 });
+    const first = freshCanvas();
+    input.rebind(first as unknown as HTMLCanvasElement);
+    expect(input.sample(1).yaw).toBe(1.25);
+
+    lockPointer(first);
+    fire("mousemove", { movementX: 100, movementY: 0 });
+    expect(input.sample(2).yaw).toBeCloseTo(1.47, 9);
+    input.rebind(freshCanvas() as unknown as HTMLCanvasElement);
+    expect(input.sample(3).yaw).toBeCloseTo(1.47, 9);
   });
 });

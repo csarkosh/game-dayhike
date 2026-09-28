@@ -695,3 +695,29 @@ describe("writeListenerPose", () => {
     }
   });
 });
+
+describe("a part the renderer disposes is also torn down when a build fails", () => {
+  // `dispose` names every part it disposes, and `buildRenderer` registers each
+  // part it makes (`partOf`, or `made` for the brushes) so a build that throws
+  // part-way disposes them too. Two lists of one set: a part added to one and
+  // not the other would outlive a failed build, or never be disposed at all.
+  const src = readFileSync(fileURLToPath(new URL("../../src/game/renderer.ts", import.meta.url)), "utf8");
+
+  it("names the same parts in the dispose list and in the failed build's teardown", () => {
+    const start = src.indexOf("    dispose() {\n      views.dispose();");
+    const end = src.indexOf("releaseEngine(engine);", start);
+    expect(start, "the dispose list's anchor").toBeGreaterThanOrEqual(0);
+    expect(end, "the dispose list's end").toBeGreaterThan(start);
+    const disposeList = src.slice(start, end);
+    const disposed = new Set(
+      [...disposeList.matchAll(/(\w+)\??\.dispose\(\)/g)].map((m) => (m[1] === "m" ? "brushMeshes" : m[1]!)),
+    );
+    // The atmosphere is released by `releaseAtmosphere` in `createRenderer`'s
+    // catch, and the scene goes with the engine in both.
+    disposed.delete("atmosphere");
+    const registered = new Set([...src.matchAll(/partOf\((\w+)\);/g)].map((m) => m[1]!));
+    if (/made\(\(\) => \{\s*for \(const m of brushMeshes\) m\.dispose\(\);/.test(src)) registered.add("brushMeshes");
+    expect([...registered].sort()).toEqual([...disposed].sort());
+    expect(disposed.size).toBe(18);
+  });
+});

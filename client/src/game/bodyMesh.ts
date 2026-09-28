@@ -6,7 +6,7 @@ import type { Scene } from "@babylonjs/core/scene.js";
 
 import type { Vec3 } from "../sim/types.js";
 import type { PropShadows } from "./propMeshes.js";
-import { defaultModelLoader, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
+import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 
 export const BODY_OUTPUT = "models/summit.body.glb";
 
@@ -96,7 +96,10 @@ export function createBodyMesh(scene: Scene, body: { pos: Vec3; yaw: number }, d
 
   let disposed = false;
   let model: PlacedModel | null = null;
-  const load = deps.loader ?? defaultModelLoader(scene);
+  // Aborted first thing in `dispose`: a model in flight then ends at once and
+  // quietly (`modelLoad.ts`).
+  const loads = new AbortController();
+  const load = loaderUntilAborted(deps.loader ?? defaultModelLoader(scene), loads.signal);
   const ready = (async () => {
     let container;
     try {
@@ -126,6 +129,7 @@ export function createBodyMesh(scene: Scene, body: { pos: Vec3; yaw: number }, d
     dispose() {
       if (disposed) return;
       disposed = true;
+      loads.abort();
       dropPlaceholder();
       node.dispose();
       if (model !== null) {
