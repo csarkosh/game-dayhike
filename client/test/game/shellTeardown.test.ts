@@ -128,7 +128,7 @@ describe("a placed model disposed with its model in flight", () => {
   const POSTS = [{ x: 0, z: 0, arms: [{ dx: 0, dz: 1, names: ["Trailhead"], ranks: [0] }] }];
   const SITES = {
     car: { site: { x: 10, z: 20 }, trailhead: { x: 1, z: 32 } },
-    kiosk: { site: { x: 6, z: 39 }, facing: { dx: 0, dz: -1 } },
+    board: { x: 6, z: 39, fx: 0, fz: -1, ax: 1, az: 0 },
   };
   const groundH = (): number => 2;
   const places = {

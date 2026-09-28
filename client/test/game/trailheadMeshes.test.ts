@@ -49,10 +49,10 @@ function gatedLoader(scene: Scene) {
   };
 }
 
-/** The car parked 12 m short of the trailhead along +z; the kiosk 7 m past it, its poster facing back (-z). */
+/** The car parked 12 m short of the trailhead along +z; the board 7 m past it, its face looking back (-z). */
 const SITES: TrailheadSites = {
   car: { site: { x: 10, z: 20 }, trailhead: { x: 1, z: 32 } },
-  kiosk: { site: { x: 6, z: 39 }, facing: { dx: 0, dz: -1 } },
+  board: { x: 6, z: 39, fx: 0, fz: -1, ax: 1, az: 0 },
 };
 const groundH = (x: number, z: number): number => 3 + 0.01 * x - 0.02 * z;
 const LINES = ["MISSING", "Dana Whitcombe", "Last seen at Trail 14."];
@@ -107,31 +107,38 @@ describe("carYaw", () => {
 });
 
 describe("createTrailheadMeshes", () => {
-  it("draws the sim's two boxes until the models arrive, then places each model on its site", async () => {
+  it("draws the sim's boxes until the models arrive, then places each model on its site", async () => {
     const scene = freshScene();
     const gate = gatedLoader(scene);
     const { meshes, shadowed, boxMaterials } = setup(scene, gate.loader);
 
     const carBox = scene.getMeshByName("trailhead_car_box") as Mesh;
-    const kioskBox = scene.getMeshByName("trailhead_kiosk_box") as Mesh;
-    expect(boxMaterials).toEqual(["car", "kiosk"]);
+    const boardBoxes = [0, 1, 2, 3, 4].map((k) => scene.getMeshByName(`trailhead_kiosk_box_${k}`) as Mesh);
+    expect(boxMaterials).toEqual(["car", "kiosk", "kiosk", "kiosk", "kiosk", "kiosk"]);
     // The boxes the sim collides with: 1.8 x 1.6 x 4.6 and 2.2 x 2.5 x 1.1, standing on the ground.
     const carExtent = carBox.getBoundingInfo().boundingBox.extendSize;
     expect([carExtent.x, carExtent.y, carExtent.z].map((v) => +v.toFixed(6))).toEqual([0.9, 0.8, 2.3]);
     expect(carBox.position.x).toBe(10);
     expect(carBox.position.y).toBeCloseTo(3.5, 9);
     expect(carBox.position.z).toBe(20);
-    const kioskExtent = kioskBox.getBoundingInfo().boundingBox.extendSize;
-    expect([kioskExtent.x, kioskExtent.y, kioskExtent.z].map((v) => +v.toFixed(6))).toEqual([1.1, 1.25, 0.55]);
-    expect(kioskBox.position.y).toBeCloseTo(3.53, 9);
-    expect(shadowed.has(carBox) && shadowed.has(kioskBox)).toBe(true);
+    // The board's five: 0.55 x 2.5 x 0.55 each, 0.44 m apart along the board's own line (+x here).
+    expect(boardBoxes.map((b) => +b.position.x.toFixed(6))).toEqual([5.12, 5.56, 6, 6.44, 6.88]);
+    for (const b of boardBoxes) {
+      const e = b.getBoundingInfo().boundingBox.extendSize;
+      expect([e.x, e.y, e.z].map((v) => +v.toFixed(6))).toEqual([0.275, 1.25, 0.275]);
+      expect(b.position.z).toBe(39);
+    }
+    // Each stands on the ground at its own centre: 3 + 0.01 x - 0.02 z, and half its height.
+    expect(boardBoxes[0]!.position.y).toBeCloseTo(3.5212, 9);
+    expect(boardBoxes[4]!.position.y).toBeCloseTo(3.5388, 9);
+    expect(shadowed.has(carBox) && boardBoxes.every((b) => shadowed.has(b))).toBe(true);
 
     gate.release();
     await meshes.ready;
 
     expect(scene.getMeshByName("trailhead_car_box")).toBeNull();
-    expect(scene.getMeshByName("trailhead_kiosk_box")).toBeNull();
-    expect(shadowed.has(carBox) || shadowed.has(kioskBox)).toBe(false);
+    for (const k of [0, 1, 2, 3, 4]) expect(scene.getMeshByName(`trailhead_kiosk_box_${k}`)).toBeNull();
+    expect(shadowed.has(carBox) || boardBoxes.some((b) => shadowed.has(b))).toBe(false);
 
     const car = scene.getTransformNodeByName("trailhead_car")!;
     expect(car.position.x).toBe(10);
@@ -249,8 +256,9 @@ describe("createTrailheadMeshes", () => {
     const { meshes, painted, shadowed } = setup(scene, () => Promise.reject(new Error("offline")));
     await meshes.ready;
     expect(scene.getMeshByName("trailhead_car_box")).not.toBeNull();
-    expect(scene.getMeshByName("trailhead_kiosk_box")).not.toBeNull();
-    expect(shadowed.size).toBe(2);
+    expect(scene.getMeshByName("trailhead_kiosk_box_0")).not.toBeNull();
+    expect(scene.getMeshByName("trailhead_kiosk_box_4")).not.toBeNull();
+    expect(shadowed.size).toBe(6);
     expect(painted).toHaveLength(0);
     meshes.dispose();
     expect(scene.getMeshByName("trailhead_car_box")).toBeNull();

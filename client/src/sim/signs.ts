@@ -1,8 +1,7 @@
 /**
  * Wooden sign posts at every junction of the trail graph, one arm per branch
  * and one plank per place: each place named once on a post, on the
- * arm with the shortest trail to it, the Summit on top; and one more post at
- * the trail's entrance, whose one plank names the trail. Pure geometry over the
+ * arm with the shortest trail to it, the Summit on top. Pure geometry over the
  * graph: the pass emits the post's collision box, `game/signMeshes.ts` paints
  * the planks.
  *
@@ -12,8 +11,6 @@
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { TRAIL_BED_HALF, nearestTrailNode, trailDistance } from "./trail.js";
 import type { Vec3 } from "./types.js";
-import type { Ground } from "./boxGap.js";
-import { trailEntrance, type EntranceGraph } from "./trailhead.js";
 
 export type SignArm = {
   /** Unit direction the arm points, from the post. */
@@ -32,7 +29,7 @@ export type SignPost = { x: number; z: number; arms: SignArm[] };
 
 export const TRAILHEAD_LABEL = "Trailhead";
 export const SUMMIT_LABEL = "Summit";
-/** The trail's name, as the sign at its entrance and the poster give it. */
+/** The trail's name, as the board at its entrance and the poster give it. */
 export const TRAIL_NAME = "Trail 14";
 /** Metres from the junction node to the post: off the bed, on the shoulder. */
 export const SIGN_POST_OFFSET = TRAIL_BED_HALF + 1;
@@ -255,43 +252,4 @@ export function signPosts(graph: TrailGraph, sites: readonly NamedSite[]): SignP
     }
     return { x, z, arms };
   });
-}
-
-/**
- * Where the trail's sign stands: SIGN_POST_OFFSET from the bed's centreline
- * at the entrance, across the trail's direction, on the side farther from
- * the notice board, so the two never crowd each other.
- */
-export function trailSignSite(graph: EntranceGraph, board: Ground): Ground {
-  const e = trailEntrance(graph);
-  const px = -e.dz, pz = e.dx;
-  const a = { x: e.x + px * SIGN_POST_OFFSET, z: e.z + pz * SIGN_POST_OFFSET };
-  const b = { x: e.x - px * SIGN_POST_OFFSET, z: e.z - pz * SIGN_POST_OFFSET };
-  const da = (a.x - board.x) * (a.x - board.x) + (a.z - board.z) * (a.z - board.z);
-  const db = (b.x - board.x) * (b.x - board.x) + (b.z - board.z) * (b.z - board.z);
-  return da >= db ? a : b;
-}
-
-/**
- * The sign at the trail's entrance: one post with one plank that names the
- * trail. The plank runs across the line from the post to where a player
- * arrives, so its face is toward them, and it points away from the bed, so
- * it never hangs over the trail.
- */
-export function trailSign(graph: EntranceGraph, board: Ground, spawn: Ground): SignPost {
-  const site = trailSignSite(graph, board);
-  const e = trailEntrance(graph);
-  const vx = spawn.x - site.x, vz = spawn.z - site.z;
-  const len = Math.sqrt(vx * vx + vz * vz);
-  let dx = len > 0 ? -vz / len : e.dx, dz = len > 0 ? vx / len : e.dz;
-  if (dx * (site.x - e.x) + dz * (site.z - e.z) < 0) {
-    dx = -dx;
-    dz = -dz;
-  }
-  return { x: site.x, z: site.z, arms: [{ dx, dz, names: [TRAIL_NAME], ranks: [0] }] };
-}
-
-/** Every post the game draws: the junction posts, then the trail's sign. */
-export function allSignPosts(graph: TrailGraph, sites: readonly NamedSite[], board: Ground, spawn: Ground): SignPost[] {
-  return [...signPosts(graph, sites), trailSign(graph, board, spawn)];
 }

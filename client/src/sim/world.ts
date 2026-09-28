@@ -11,7 +11,7 @@ import { spiralSpawn, trailheadStart } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
 import { buildSearch, installSearch, type Search } from "./search.js";
-import { CAR_MATERIAL, KIOSK_MATERIAL, trailheadSite } from "./trailhead.js";
+import { trailheadPlaces } from "./trailhead.js";
 import { containAtRoad } from "./containment.js";
 import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
@@ -160,20 +160,19 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
       rngSeed: forest.seed | 0,
     },
   };
-  // The kiosk and the car stand where the trailhead pass put them, and the
+  // The board and the car stand where the trailhead pass put them, and the
   // poster comes from the same seed on every peer.
   const roadCenterX = variant.roadCenterX;
   if (graph !== undefined && roadCenterX !== undefined) {
-    const kiosk = trailheadSite(graph, roadCenterX, forest.seed, KIOSK_MATERIAL);
-    const car = trailheadSite(graph, roadCenterX, forest.seed, CAR_MATERIAL);
+    const places = trailheadPlaces(graph, roadCenterX, forest.seed);
     installSearch(
       world,
       buildSearch({
         seed: forest.seed,
         graph,
         groundH: (x, z) => elevationAt(forest.seed, x, z),
-        kiosk,
-        car,
+        board: places.board,
+        car: places.car,
       }),
     );
   }

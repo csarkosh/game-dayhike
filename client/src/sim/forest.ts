@@ -150,16 +150,14 @@ const PROBE_CHUNKS: readonly (readonly [number, number])[] = [
   // the sign's own site, so pass 8 emits two props, the kiosk and the car,
   // and both still land in [-9, 0]. The window is unchanged.
   //
-  // Re-read 2026-09-28: the car stands at the pad. Measured for PROBE_SEED:
-  // the kiosk (x=−281.63, z=7) and the car (x=−285.73, z=0) both in [-9, 0].
+  // Re-read 2026-09-28: the car stands at the pad and the board at the
+  // trail's entrance. Measured for PROBE_SEED: the car (x=−285.73, z=0) in
+  // [-9, 0]; the board's five boxes, from (x=−274.21, z=−5.05) to
+  // (x=−274.92, z=−6.66), all in [-9, -1], which joins the window for them.
+  // [-10, 0] holds nothing of pass 8 now and stays, so that no id moves for
+  // its going.
   [-10, 0],
   [-9, 0],
-  // Extended 2026-09-28 for the sign at the trail's entrance (pass 9).
-  // Measured for PROBE_SEED: its post stands at (x=−279.36, z=−6.99), in
-  // [-9, -1], which the window above does not hold. The level id moves in
-  // this release for the car's sake already, so holding the post costs no
-  // id that was not moving; left out, a later change to where the sign
-  // stands could move no id at all.
   [-9, -1],
   // Extended 2026-09-15 for pass 9 (signs): a junction post for PROBE_SEED.
   // Measured: the graph for 0x0badf00d stands posts at (x=75.98, z=-166) in

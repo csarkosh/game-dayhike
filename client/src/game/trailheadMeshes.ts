@@ -7,7 +7,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 
-import { CAR_HALF, CAR_MATERIAL, KIOSK_HALF, KIOSK_MATERIAL } from "../sim/trailhead.js";
+import { BOARD_BOX_HALF, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes, type Board } from "../sim/trailhead.js";
 import type { Vec3 } from "../sim/types.js";
 import type { PropShadows } from "./propMeshes.js";
 import { armYaw, paintedMaterial, type Painter } from "./signMeshes.js";
@@ -23,8 +23,8 @@ type Site = { x: number; z: number };
 export type TrailheadSites = {
   /** The car's footprint centre, and the trailhead it is parked beside. */
   car: { site: Site; trailhead: Site };
-  /** The kiosk's footprint centre, and the way its poster faces (`kioskFacing`). */
-  kiosk: { site: Site; facing: { dx: number; dz: number } };
+  /** The board: its centre, the way its face looks, and its own line. */
+  board: Board;
 };
 
 export type TrailheadDeps = {
@@ -103,13 +103,9 @@ export function createTrailheadMeshes(
   const placed: PlacedModel[] = [];
   const painted: Material[] = [];
 
-  function fallbackBox(material: string, site: Site, half: Vec3): Mesh {
+  function fallbackBox(name: string, material: string, site: Site, half: Vec3): Mesh {
     const ground = groundH(site.x, site.z);
-    const mesh = MeshBuilder.CreateBox(
-      `trailhead_${material}_box`,
-      { width: 2 * half.x, height: 2 * half.y, depth: 2 * half.z },
-      scene,
-    );
+    const mesh = MeshBuilder.CreateBox(name, { width: 2 * half.x, height: 2 * half.y, depth: 2 * half.z }, scene);
     mesh.position.set(site.x, ground + half.y, site.z);
     mesh.material = deps.materialFor(material);
     mesh.isPickable = false;
@@ -123,11 +119,11 @@ export function createTrailheadMeshes(
     box.dispose();
   }
 
-  const carBox = fallbackBox(CAR_MATERIAL, sites.car.site, CAR_HALF);
-  const kioskBox = fallbackBox(KIOSK_MATERIAL, sites.kiosk.site, KIOSK_HALF);
+  const carBox = fallbackBox("trailhead_car_box", CAR_MATERIAL, sites.car.site, CAR_HALF);
+  const kioskBoxes = boardBoxes(sites.board).map((b, k) => fallbackBox(`trailhead_kiosk_box_${k}`, KIOSK_MATERIAL, b, BOARD_BOX_HALF));
 
   async function place(
-    output: string, name: string, site: Site, yaw: number, box: Mesh,
+    output: string, name: string, site: Site, yaw: number, boxes: readonly Mesh[],
     dress?: (container: AssetContainer) => void,
   ): Promise<void> {
     let container: AssetContainer;
@@ -152,7 +148,7 @@ export function createTrailheadMeshes(
     }
     for (const m of model.meshes) deps.shadows?.add(m);
     placed.push(model);
-    dropBox(box);
+    for (const box of boxes) dropBox(box);
   }
 
   function dressKiosk(container: AssetContainer): void {
@@ -170,11 +166,11 @@ export function createTrailheadMeshes(
   }
 
   const ready = Promise.all([
-    place(TRAILHEAD_CAR_OUTPUT, "trailhead_car", sites.car.site, carYaw(sites.car.site, sites.car.trailhead), carBox),
+    place(TRAILHEAD_CAR_OUTPUT, "trailhead_car", sites.car.site, carYaw(sites.car.site, sites.car.trailhead), [carBox]),
     place(
-      TRAILHEAD_KIOSK_OUTPUT, "trailhead_kiosk", sites.kiosk.site,
-      // The model's poster faces +Z; turn +Z onto the facing.
-      armYaw(sites.kiosk.facing), kioskBox, dressKiosk,
+      TRAILHEAD_KIOSK_OUTPUT, "trailhead_kiosk", sites.board,
+      // The model's face looks toward +Z; turn +Z onto the board's facing.
+      armYaw({ dx: sites.board.fx, dz: sites.board.fz }), kioskBoxes, dressKiosk,
     ),
   ]).then(() => undefined);
 
@@ -185,7 +181,7 @@ export function createTrailheadMeshes(
       disposed = true;
       loads.abort();
       dropBox(carBox);
-      dropBox(kioskBox);
+      for (const box of kioskBoxes) dropBox(box);
       for (const model of placed) {
         for (const m of model.meshes) deps.shadows?.remove(m);
         model.dispose();

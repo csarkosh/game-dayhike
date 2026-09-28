@@ -404,7 +404,7 @@ const POSTS = [
 /** The car on the road and the notice board by the trail. */
 const TRAILHEAD = {
   car: { site: { x: 10, z: 20 }, trailhead: { x: 1, z: 32 } },
-  kiosk: { site: { x: 6, z: 39 }, facing: { dx: 0, dz: -1 } },
+  board: { x: 6, z: 39, fx: 0, fz: -1, ax: 1, az: 0 },
 };
 const never = (): Promise<AssetContainer> => new Promise(() => undefined);
 
