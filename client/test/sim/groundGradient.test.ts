@@ -708,6 +708,9 @@ describe("the level id does not move", () => {
     // registryDigest moves whether or not a probed chunk holds the post,
     // and the chunk that holds the entrance gains the post's box. A peer
     // without the post has different collision at the entrance.
-    expect(passHash()).toBe(1306907761);
+    // Re-baselined 2026-09-28 from 1306907761: the probe gained chunk
+    // [-9, -1], which holds the sign's post for the probe's seed
+    // (probeDigest moves). No constant changed.
+    expect(passHash()).toBe(178231578);
   });
 });
