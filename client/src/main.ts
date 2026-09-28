@@ -34,7 +34,7 @@ import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
 import { recordEngineFailure, recordStartFailure, startOnEngine } from "./game/engineFailure.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
-import { browserEnv, browserMajor, hostOs, isChromium, readSignals, type GpuSignals } from "./game/gpuSignals.js";
+import { browserEnv, browserMajor, hostOs, isChromeOrEdge, readSignals, type GpuSignals } from "./game/gpuSignals.js";
 import {
   LOADING_LINE,
   START_FAILED_LINE,
@@ -583,7 +583,7 @@ function engineInput(tier: QualityTier, read: GpuSignals): EngineInput {
     remembered: fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),
     on: WEBGPU_ENABLED,
     fits: null,
-    chromium: isChromium(nav),
+    chromeOrEdge: isChromeOrEdge(nav),
     os: hostOs(nav),
     mobile: read.mobile,
   };

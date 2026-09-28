@@ -1,7 +1,7 @@
 /**
  * Which engine draws the game: WebGL2, or Babylon's WebGPU engine on the tiers
- * `WEBGPU_TIERS` names (high), in a Chromium-based browser on macOS or Windows
- * on a device that is not a phone or a tablet, where the browser offers a
+ * `WEBGPU_TIERS` names (high), in Google Chrome or Microsoft Edge on macOS or
+ * Windows on a device that is not a phone or a tablet, where the browser offers a
  * hardware adapter with the limits the scene needs. Everywhere else WebGL2,
  * as every tier always drew.
  *
@@ -12,7 +12,9 @@
  * canopy at four times the pixels 51.0 → 40.1; on medium, the canopy
  * 19.2 → 19.3 ms (no gain) and the meadow 17.3 → 16.7 (at the display's cap).
  * Only Chrome on macOS and on Windows was measured, no other browser or
- * platform (`docs/rendering/2026-09-26-webgpu-high-tier-verification.md`, §8).
+ * platform. Edge is admitted as the same engine as Chrome; the desktop
+ * launcher and the other browsers built on Chromium are not
+ * (`docs/rendering/2026-09-26-webgpu-high-tier-verification.md`, §8).
  *
  * Decided for each renderer
  * the page builds (`main.ts`'s `engineFor`: the probe's steps, the hike's
@@ -227,8 +229,9 @@ export type EngineInput = {
   on: boolean;
   /** The adapter's verdict, or null before it has been asked. */
   fits: boolean | null;
-  /** The browser is built on Chromium (`isChromium`, `gpuSignals.ts`). */
-  chromium: boolean;
+  /** The browser is Google Chrome or Microsoft Edge by name
+   * (`isChromeOrEdge`, `gpuSignals.ts`). */
+  chromeOrEdge: boolean;
   /** The operating system (`hostOs`, `gpuSignals.ts`). */
   os: HostOs;
   /** A phone or a tablet (`GpuSignals.mobile`). */
@@ -238,16 +241,18 @@ export type EngineInput = {
 /**
  * The rule. `"probe"` means the answer needs the adapter: ask it, then call
  * again with `fits`. WebGPU by default only where every one of these holds:
- * the tier is in `tiers` (high), the switch is on, the browser is
- * Chromium-based, the platform is macOS or Windows on a device that is not
- * mobile, no failure is remembered, and the adapter fits. Safari and Firefox
- * are WebGL2 whatever they offer at `navigator.gpu`. `?engine=webgl2` wins
+ * the tier is in `tiers` (high), the switch is on, the browser is Google
+ * Chrome or Microsoft Edge, the platform is macOS or Windows on a device that
+ * is not mobile, no failure is remembered, and the adapter fits. Safari and
+ * Firefox are WebGL2 whatever they offer at `navigator.gpu`, and so are the
+ * other browsers built on Chromium (Brave, Opera, Vivaldi, the desktop
+ * launcher), none of them measured. `?engine=webgl2` wins
  * outright; `?engine=webgpu` goes past the tier, the switch, the browser, the
  * platform and the memory, but never past the adapter.
  */
 export function chooseEngine(input: EngineInput, tiers: readonly QualityTier[] = WEBGPU_TIERS): EngineName | "probe" {
   if (input.override === "webgl2") return "webgl2";
-  const measured = input.chromium && (input.os === "mac" || input.os === "windows") && !input.mobile;
+  const measured = input.chromeOrEdge && (input.os === "mac" || input.os === "windows") && !input.mobile;
   if (input.override !== "webgpu" && (!tiers.includes(input.tier) || !input.on || !measured || input.remembered)) return "webgl2";
   if (input.fits === null) return "probe";
   return input.fits ? "webgpu" : "webgl2";
@@ -256,7 +261,7 @@ export function chooseEngine(input: EngineInput, tiers: readonly QualityTier[] =
 /**
  * The engine for `input.tier`: WebGL2 (null) at once where the rule says so,
  * nothing fetched and nothing asked, as for medium and low, for every tier off
- * desktop Chromium on macOS and Windows, and while `WEBGPU_ENABLED` is false,
+ * desktop Chrome and Edge on macOS and Windows, and while `WEBGPU_ENABLED` is false,
  * where the address sets no engine; else what `resolve` makes of it
  * (`resolveWebGpu`), which may still be WebGL2.
  */

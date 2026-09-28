@@ -202,7 +202,7 @@ async function verify() {
   // The MIME type is checked, not just the bytes: a browser compiles a
   // WebAssembly response while it streams only when it is `application/wasm`.
   // A broken translator fails no WebGL2 page, which every tier but high and
-  // every browser but desktop Chromium on macOS and Windows draws with
+  // every browser but Chrome and Edge on macOS and Windows draws with
   // (`client/src/game/engineChoice.ts`), so it would go unnoticed there.
   const translatorIds = ['glslang', 'twgsl'];
   const gpuChunk = bundleSource ? findChunkName(bundleSource, 'gpuEngine') : null;

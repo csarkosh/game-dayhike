@@ -144,21 +144,35 @@ export function isMobile(nav: NavigatorLike | undefined): boolean {
   }
 }
 
+/** The client hint's brands of the two browsers the WebGPU rule admits. */
+const CHROME_OR_EDGE_BRANDS: readonly string[] = ["Google Chrome", "Microsoft Edge"];
+/** User-agent tokens of browsers built on Chromium that are neither Chrome
+ * nor Edge, though they carry `Chrome/`: the desktop launcher (Electron),
+ * Opera, Brave, Vivaldi, Samsung Internet and Yandex. */
+const OTHER_CHROMIUM_AGENT = /\bElectron\/|\bOPR\/|\bBrave\b|\bVivaldi\/|\bSamsungBrowser\/|\bYaBrowser\//;
+
 /**
- * Whether the browser is built on Chromium (Chrome, Edge, the desktop
- * launcher): the client hint's brands where it lists any, else a `Chrome/` or
- * `Chromium/` token in the user agent, which Safari, Firefox and Chrome on iOS
- * (WebKit underneath) do not send. The client hint is Chromium's alone, and
- * only on a page served securely, so the user agent is what Safari, Firefox
- * and a bare `http://` address are read by. For the WebGPU engine rule
- * (`engineChoice.ts`), which has been measured on Chrome alone.
+ * Whether the browser is Google Chrome or Microsoft Edge by name, the one
+ * browser the WebGPU engine rule (`engineChoice.ts`) was measured in and the
+ * one that shares its engine. Other browsers built on Chromium are not: the
+ * desktop launcher (an Electron build, whose brands name no product and whose
+ * user agent carries `Electron/`), Brave, Opera, Vivaldi, none of them
+ * measured. The client hint's brands where it lists any: `Google Chrome` or
+ * `Microsoft Edge` among them. Else the user agent: `Chrome/` and none of the
+ * other browsers' tokens (Edge's `Edg/` passes); Safari, Firefox and Chrome on
+ * iOS (WebKit underneath, `CriOS/`) send no `Chrome/`. The client hint is
+ * Chromium's alone, and only on a page served securely, so Safari, Firefox
+ * and a bare `http://` address are read by the user agent.
  */
-export function isChromium(nav: NavigatorLike | undefined): boolean {
+export function isChromeOrEdge(nav: NavigatorLike | undefined): boolean {
   if (!nav) return false;
   try {
     const brands = nav.userAgentData?.brands;
-    if (Array.isArray(brands) && brands.length > 0) return brands.some((b: { brand?: unknown }) => b?.brand === "Chromium");
-    return /\bChrom(?:e|ium)\/\d/.test(agentOf(nav));
+    if (Array.isArray(brands) && brands.length > 0) {
+      return brands.some((b: { brand?: unknown }) => typeof b?.brand === "string" && CHROME_OR_EDGE_BRANDS.includes(b.brand));
+    }
+    const agent = agentOf(nav);
+    return /\bChrome\/\d/.test(agent) && !OTHER_CHROMIUM_AGENT.test(agent);
   } catch {
     return false;
   }
