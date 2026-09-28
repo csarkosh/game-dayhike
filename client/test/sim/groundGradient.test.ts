@@ -615,7 +615,7 @@ describe("the level id does not move", () => {
     //     shipped values, so the WORLDS do not change, but the level id must
     //     fold them in before anyone pulls the "LOOP_TRIES 16" lever later — 50
     //     keys -> 53.
-    // Re-baselined 2026-09-15 from 1594363661: the register's sign posts are
+    // Re-baselined 2026-09-15 from 1594363661: the fork sign posts are
     // pass 9, a new registry entry with its own tunables, and the level-id
     // probe gained the chunk that holds a post. Both move this on purpose:
     // a peer without the posts has different collision at every fork.
@@ -697,6 +697,20 @@ describe("the level id does not move", () => {
     // moves), and in probe chunk [-9, 0] the sign's box of material "pillar"
     // is now the wider, taller "kiosk" and the car's "crate" is "car"
     // (probeDigest moves). A peer still drawing the post cannot join.
-    expect(passHash()).toBe(-311867473);
+    // Re-baselined 2026-09-28 from -311867473: the car stands at the pad
+    // (CAR_ROAD_Z 12 -> 0) and slides clear of the bed, so CAR_BED_CLEAR,
+    // CAR_SLIDE_STEP, CAR_SLIDE_MAX and SPAWN_GAP join pass 8's tunables
+    // (registryDigest moves) and the car's box moves 12 m along the road
+    // in the probe chunk that holds it (probeDigest moves). A peer with the
+    // car at its old place collides differently on the pad.
+    // Re-baselined 2026-09-28 from 1899941812: a sign post stands at the
+    // trail's entrance. TRAIL_SIGNS joins pass 9's tunables, so
+    // registryDigest moves whether or not a probed chunk holds the post,
+    // and the chunk that holds the entrance gains the post's box. A peer
+    // without the post has different collision at the entrance.
+    // Re-baselined 2026-09-28 from 1306907761: the probe gained chunk
+    // [-9, -1], which holds the sign's post for the probe's seed
+    // (probeDigest moves). No constant changed.
+    expect(passHash()).toBe(178231578);
   });
 });

@@ -39,7 +39,7 @@ describe("the climb", SUITE, () => {
     expect(w.state.phase).toBe(Phase.Climb);
     tick(w, 1);
     expect(p.safe).toBe(true); // the pad is 9 m from the road's centreline
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     standAt(p, body.x - 40, body.z);
     tick(w, 1);
     expect(p.safe).toBe(false);
@@ -50,7 +50,7 @@ describe("the climb", SUITE, () => {
 describe("safe ground", SUITE, () => {
   it("does not let a Hollow at the treeline kill a player who reached the corridor this tick", () => {
     const { w, p } = forestWorld();
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     standAt(p, body.x - 5, body.z);
     tick(w, 1);
     const h = [...w.state.enemies.values()][0]!;
@@ -78,7 +78,7 @@ describe("the discovery", SUITE, () => {
   it("flips the phase for everyone when the first living player reaches the body, and the Hollow steps out behind it", () => {
     const { w, p } = forestWorld();
     const q = spawnPlayer(w);
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     // Both are in reach on the same tick, and q — the higher id — is both
     // nearer the body and on the other side of it, so the lower id winning
     // the tie is what decides the target and the side it steps out on.
@@ -106,7 +106,7 @@ describe("the discovery", SUITE, () => {
 
   it("steps out on the +x fallback when the finder is standing on the body", () => {
     const { w, p } = forestWorld();
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     // Exactly on it: the line from the finder through the body is degenerate,
     // and `emergePoint` falls back to +x rather than dividing by nothing.
     standAt(p, body.x, body.z);
@@ -119,7 +119,7 @@ describe("the discovery", SUITE, () => {
 
   it("does not flip for a dead player at the body", () => {
     const { w, p } = forestWorld();
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     p.health = 0;
     standAt(p, body.x, body.z);
     tick(w, 1);
@@ -133,7 +133,7 @@ describe("the discovery", SUITE, () => {
     tick(w, 1);
     expect(w.state.outcome).toBe(Outcome.Lost); // the party died on the climb
     const q = spawnPlayer(w);
-    standAt(q, w.register!.body.pos.x, w.register!.body.pos.z);
+    standAt(q, w.search!.body.pos.x, w.search!.body.pos.z);
     tick(w, 1);
     expect(w.state.phase).toBe(Phase.Climb);
     expect(w.state.enemies.size).toBe(0);
@@ -143,7 +143,7 @@ describe("the discovery", SUITE, () => {
 describe("the end", SUITE, () => {
   it("wins when every living player is on the corridor, once the chase has begun", () => {
     const { w, p } = forestWorld();
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     standAt(p, body.x - 5, body.z);
     tick(w, 1);
     expect(w.state.phase).toBe(Phase.Chase);
@@ -157,7 +157,7 @@ describe("the end", SUITE, () => {
   it("is a win with one safe and one dead, and a loss with everyone dead", () => {
     const { w, p } = forestWorld();
     const q = spawnPlayer(w);
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     standAt(p, body.x - 5, body.z);
     tick(w, 1);
     q.health = 0;
@@ -167,7 +167,7 @@ describe("the end", SUITE, () => {
     expect(w.state.outcome).toBe(Outcome.Won);
 
     const two = forestWorld();
-    standAt(two.p, two.w.register!.body.pos.x - 5, two.w.register!.body.pos.z);
+    standAt(two.p, two.w.search!.body.pos.x - 5, two.w.search!.body.pos.z);
     tick(two.w, 1);
     two.p.health = 0;
     tick(two.w, 1);
@@ -183,7 +183,7 @@ describe("the end", SUITE, () => {
 
   it("a Hollow chasing a player onto the corridor stops at the treeline and stands", () => {
     const { w, p } = forestWorld();
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     standAt(p, body.x - 5, body.z);
     tick(w, 1);
     const h = [...w.state.enemies.values()][0]!;

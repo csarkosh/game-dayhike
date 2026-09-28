@@ -197,9 +197,8 @@ describe("snapshot codec", () => {
   it("stays within the bandwidth budget", () => {
     // 695 bytes at 20 Hz is about 14 KB/s down per client, and 56 KB/s up for
     // a host serving four of them. Smaller than protocol 4's 774: the items
-    // section and three bytes per player (the respawn timer, the carried item
-    // and the sign-out ticks) left with the count, and a phase byte and a
-    // flags byte per player arrived.
+    // section and three bytes per player left, and a phase byte and a flags
+    // byte per player arrived.
     expect(encodeSnapshot(sampleSnapshot()).byteLength).toBe(695);
   });
 

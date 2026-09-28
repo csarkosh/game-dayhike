@@ -17,7 +17,7 @@ import {
   spawnHollow,
 } from "../../src/sim/hollow.js";
 import { nearestTrailNode } from "../../src/sim/trail.js";
-import { graph } from "./helpers/registerGraph.js";
+import { graph } from "./helpers/stemGraph.js";
 
 type Brush = { min: [number, number, number]; max: [number, number, number]; material: string };
 const FLOOR: Brush = { min: [-300, -1, -300], max: [300, 0, 300], material: "concrete" };

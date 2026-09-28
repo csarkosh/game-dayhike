@@ -218,6 +218,7 @@ describe("the watcher on fifty seeds", () => {
       ...bySlot.map((b) => `${b.slot}: shown ${b.shown}/${b.stands}, admitted ${b.admitted}/${b.stands * 200}`),
       `never shown: ${never.join("; ")}`,
     ].join("\n");
+    console.info(`[watcher sweep]\n${summary}`);
     expect(cases.length, summary).toBe(936);
     expect(shown.length, summary).toBeGreaterThanOrEqual(875);
     expect(admitted, summary).toBeGreaterThanOrEqual(78955);

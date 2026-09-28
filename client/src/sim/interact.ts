@@ -5,7 +5,7 @@ import { aimDirection } from "./view.js";
 
 /**
  * A thing a player can act on. Registered by the system that owns
- * it — the register's box and other interactables — and resolved here; `onInteract` is
+ * it — the poster and other interactables — and resolved here; `onInteract` is
  * that system's effect, called by the host with the acting player's id. The
  * resolver applies nothing itself.
  */

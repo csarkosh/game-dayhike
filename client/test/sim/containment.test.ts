@@ -53,7 +53,7 @@ describe("the wall in a forest world", { timeout: timeLimit(120_000) }, () => {
       // Standing against the car's inland face leaves the wall between the
       // player and the pavement, and puts them within arm's reach of the car:
       // whatever ends the match at the car has to be reachable from here.
-      const car = world.register!.car;
+      const car = world.search!.car;
       const p = spawnPlayer(world);
       p.pos = { x: car.x + CAR_HALF.x + PLAYER_HALF.x + 0.05, y: elevationAt(seed, car.x, car.z) + PLAYER_HALF.y, z: car.z };
       for (let t = 0; t < 60; t++) tickWorld(world, new Map([[p.id, input({ seq: t + 1 })]]));
@@ -63,7 +63,8 @@ describe("the wall in a forest world", { timeout: timeLimit(120_000) }, () => {
       expect(CAR_ROAD_U - CAR_HALF.x).toBeCloseTo(ROAD_BED_HALF + 0.5, 9);
     }
     // 5 was the wall at the road; 6, the ground's stick standing a hull on a
-    // box top. Either way no peer from before the wall can join.
-    expect(GEN_VERSION).toBe(6);
+    // box top; 7, the car at the pad, the sign at the trail's entrance and
+    // the player facing the trail. Either way no peer from before can join.
+    expect(GEN_VERSION).toBe(7);
   });
 });

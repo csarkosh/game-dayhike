@@ -45,8 +45,9 @@ export type TrailheadMeshes = {
 
 /**
  * The car's yaw: 0 or PI only, so the model stays square to the box the sim
- * collides with, turned so its nose points along the road toward the
- * trailhead it is parked beside — the way a ranger pulls in.
+ * collides with. It stands at the pad's own place along the road on most
+ * worlds, and there its nose points toward +z (yaw 0); where it has slid
+ * along the road to clear the trail, its nose points back toward the pad.
  */
 export function carYaw(site: Site, trailhead: Site): number {
   return trailhead.z >= site.z ? 0 : Math.PI;

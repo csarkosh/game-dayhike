@@ -213,6 +213,12 @@ function speedOf(h: EnemyState): number {
  *   posts and the three road props, the widest being the car, 4.6 m along
  *   the road; one strafe from a standstill covers about 4.1 m, and the side
  *   never changes, so the second clears it where the first did not.
+ *   KNOWN NOT TO HOLD where it meets a box's face square on, which inside
+ *   the corridor is how it meets one, heading along x alone: it is carried
+ *   about 2 cm into the box and put back tick by tick, the squared distance
+ *   to the edge moves by far more than STUCK_EPSILON each time, the stuck
+ *   timer never runs, and no strafe begins (`hollowWalk.test.ts` has the
+ *   trace, on `hollow18` against the car). Nothing puts a Hollow there today.
  *
  * Returns whether it moved (or had nowhere to move to): false is a step
  * refused at the treeline, which `followRoute` reads.

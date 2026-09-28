@@ -8,7 +8,13 @@ const FNV_PRIME = 0x01000193;
 const FNV_OFFSET = 0x811c9dc5;
 
 /**
- * Escape hatch, not the main defence. Bumped to 6 when the ground's stick
+ * Escape hatch, not the main defence. Bumped to 7 when a player began to
+ * arrive in front of the car, facing the trail's entrance (`trailheadSpawn`
+ * in `spawn.ts`): spawn selection is how the world is used, not how it is
+ * generated. The car's new place and the sign at the entrance move
+ * `passHash` in the same release, but this does not lean on that.
+ *
+ * Bumped to 6 when the ground's stick
  * learned to stand a hull on a box top rather than snap it onto the hillside
  * under that top (`movement.ts`, `resolveGround`): the world is generated the
  * same, and two peers on either side of the change would still resolve the
@@ -37,7 +43,7 @@ const FNV_OFFSET = 0x811c9dc5;
  * change, and yet a peer on the old build resolves every step against a
  * different surface. This is exactly the case the escape hatch exists for.
  */
-export const GEN_VERSION = 6;
+export const GEN_VERSION = 7;
 
 export type Forest = {
   seed: number;
@@ -143,8 +149,18 @@ const PROBE_CHUNKS: readonly (readonly [number, number])[] = [
   // Re-read 2026-09-26: the post is gone and the sign became the kiosk at
   // the sign's own site, so pass 8 emits two props, the kiosk and the car,
   // and both still land in [-9, 0]. The window is unchanged.
+  //
+  // Re-read 2026-09-28: the car stands at the pad. Measured for PROBE_SEED:
+  // the kiosk (x=−281.63, z=7) and the car (x=−285.73, z=0) both in [-9, 0].
   [-10, 0],
   [-9, 0],
+  // Extended 2026-09-28 for the sign at the trail's entrance (pass 9).
+  // Measured for PROBE_SEED: its post stands at (x=−279.36, z=−6.99), in
+  // [-9, -1], which the window above does not hold. The level id moves in
+  // this release for the car's sake already, so holding the post costs no
+  // id that was not moving; left out, a later change to where the sign
+  // stands could move no id at all.
+  [-9, -1],
   // Extended 2026-09-15 for pass 9 (signs): a junction post for PROBE_SEED.
   // Measured: the graph for 0x0badf00d stands posts at (x=75.98, z=-166) in
   // [2, -6], two more in [8, -9] and one in [13, -10]; one chunk is enough for

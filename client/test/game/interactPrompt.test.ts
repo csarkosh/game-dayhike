@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { promptLabel, promptModel } from "../../src/game/interactPrompt.js";
 import { INTERACT_REACH } from "../../src/sim/interact.js";
-import { InteractKind } from "../../src/sim/register.js";
+import { InteractKind } from "../../src/sim/search.js";
 
 const VIEW = { width: 800, height: 400 };
 
@@ -39,9 +39,9 @@ describe("promptModel at the box", () => {
   });
 
   it("reads the box's own label rather than a kind-specific one", () => {
-    // The box is the one Register-kind interactable there is, and it carries
-    // its label from the sim (`installRegister`) — no branch on the kind here.
-    const box = { kind: InteractKind.Register, label: "Read the poster" };
+    // The poster is the one Poster-kind interactable there is, and it carries
+    // its label from the sim (`installSearch`) — no branch on the kind here.
+    const box = { kind: InteractKind.Poster, label: "Read the poster" };
     expect(promptModel(box, at, VIEW, false)?.label).toBe("Read the poster");
     expect(promptModel(box, at, VIEW, true)?.label).toBe("Read the poster");
   });
