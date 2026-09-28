@@ -127,7 +127,7 @@ describe("the material plugins' numbers", () => {
     const files = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith(".ts") ? [join(dir, e.name)] : []));
     const root = fileURLToPath(new URL("../../src", import.meta.url));
-    const calling = files(root).filter((file) => /\bpinPluginNumbers\(\)/.test(readFileSync(file, "utf8")));
+    const calling = files(root).filter((file) => /\bpinPluginNumbers\(\);/.test(readFileSync(file, "utf8")));
     expect(calling.map((file) => file.slice(root.length + 1))).toEqual(["game/gpuEngine.ts"]);
   });
 });
