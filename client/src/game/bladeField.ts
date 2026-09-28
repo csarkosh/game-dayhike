@@ -256,8 +256,10 @@ const EVICT_RADIUS = BLADE_REACH + BLADE_PAD + 8 * BLADE_CELL;
 export const BLADE_SWEEP_SIZE = 30000;
 
 /** The memoising collector the shell uses: `bladeCellAt` is pure in its cell,
- * so a crossing re-samples only the ring of cells newly inside the disc. */
-export function createBladeCollector(seed: number): BladeCollector {
+ * so a crossing re-samples only the ring of cells newly inside the disc.
+ * `release` is told of every cell the sweep lets go, so what the shell keeps
+ * beside a cell goes with it. */
+export function createBladeCollector(seed: number, release?: (cell: BladeCell) => void): BladeCollector {
   const cache = new Map<number, BladeCell | null>();
   return {
     collect(camX: number, camZ: number): BladeTiers {
@@ -272,12 +274,15 @@ export function createBladeCollector(seed: number): BladeCollector {
       });
       if (cache.size > BLADE_SWEEP_SIZE) {
         const ox = bladeOrigin(camX), oz = bladeOrigin(camZ);
-        for (const key of cache.keys()) {
+        for (const [key, c] of cache) {
           const cj = (key % KEY_SPAN) - KEY_HALF;
           const ci = Math.floor(key / KEY_SPAN) - KEY_HALF;
           const dx = Math.max(ci * BLADE_CELL - ox, 0, ox - (ci + 1) * BLADE_CELL);
           const dz = Math.max(cj * BLADE_CELL - oz, 0, oz - (cj + 1) * BLADE_CELL);
-          if (dx * dx + dz * dz >= EVICT_RADIUS * EVICT_RADIUS) cache.delete(key);
+          if (dx * dx + dz * dz >= EVICT_RADIUS * EVICT_RADIUS) {
+            cache.delete(key);
+            if (c !== null) release?.(c);
+          }
         }
       }
       return tiers;

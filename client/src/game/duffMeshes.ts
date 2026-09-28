@@ -27,6 +27,7 @@ import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, d
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { CLUTTER_SINK, instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
+import { createKeptValues } from "./keptValues.js";
 
 export const DUFF_MESH_PREFIX = "duff_clumps";
 export function duffMeshName(character: number, tier: number): string {
@@ -45,6 +46,8 @@ export type DuffMeshes = {
    * clumps are built here from vertex arrays rather than loaded from a GLB
    * that lands later. */
   readonly meshes: readonly Mesh[];
+  /** Cells whose matrix and tint are kept (keptValues.ts). */
+  readonly kept: number;
   dispose(): void;
 };
 
@@ -86,9 +89,9 @@ const BUCKET_MIN_INSTANCES = 64;
  * then nothing reads or writes it. */
 const EMPTY_BUFFER = new Float32Array(0);
 
-/** One matrix's worth of scratch floats, so the fill can compose a matrix and
- * copy it into a bucket buffer at any offset without a per-instance subarray
- * view — `writeInstanceMatrix`'s trick in the clutter shell. */
+/** One matrix's worth of scratch floats, so a cell's matrix can be composed
+ * and copied into the kept values at any offset without a per-instance
+ * subarray view — `computeInstance`'s trick in the clutter shell. */
 const scratchMat = new Float32Array(16);
 /** The Y translation's index in a Babylon `Matrix`'s flat 16-float array
  * (`Matrix.copyToArray`'s own layout: translation occupies indices 12-14,
@@ -190,13 +193,54 @@ function createClumpMesh(scene: Scene, character: number, tier: number, count: n
   return mesh;
 }
 
+/** Floats kept per cell: the matrix (16), then the tint (4). */
+const KEPT_STRIDE = 20;
+const KEPT_FOLIAGE = 16;
+
 export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshesOptions): DuffMeshes {
   const reach = DUFF_REACH[options.quality];
+  /**
+   * A cell's matrix and tint, computed the first time it is listed: functions
+   * of the cell and the seed alone, the blade shell's own reasoning. The
+   * reach, the one thing the tier changes, decides only which cells are
+   * listed, never what a listed cell draws.
+   */
+  function computeCell(c: DuffCell, out: Float32Array, offset: number): void {
+    // The litter class is not in `TRAMPLED`, so this is always the identity
+    // frame for duff — called anyway, rather than skipped, so the fill
+    // walks the same path `bladeMeshes.ts` does and the two shells stay
+    // comparable; nobody later has to wonder whether duff is meant to
+    // flatten near the trail and does not.
+    const frame = trampleFrame(seed, c);
+    instanceMatrixFor(c, frame, scratchMat);
+    // `instanceMatrixFor` sinks every non-boulder instance CLUTTER_SINK
+    // (2 cm) below its sampled ground height, on the reasoning that "two
+    // centimetres is under a blade's width, so nothing visibly shortens"
+    // (clutterMeshes.ts). That holds for a blade root, a rock's flattened
+    // underside or a grass card's base edge, whose own root sits well
+    // clear of the ground it is meant to settle into — but not for duff,
+    // whose root ring is built to lie exactly at the sampled ground
+    // height, y = 0 (duffClump.ts: "Roots lie on a disc... at y = 0"), even
+    // though a piece's own far vertices rise well above that: the leaf
+    // character's own geometry rises to about 96 mm (80% of
+    // `DUFF_HEIGHT_MAX`, duffClump.ts). Sinking the root 2 cm would still
+    // settle it into the terrain rather than leave it lying on top, so the
+    // sink is cancelled here, per-instance, rather than by changing
+    // `instanceMatrixFor` itself, which every other clutter class still
+    // relies on. This restores the piece's root ring to sit exactly at the
+    // sampled ground height, the same plane its own vertices are built
+    // against.
+    scratchMat[MATRIX_TY] = scratchMat[MATRIX_TY]! + CLUTTER_SINK;
+    out.set(scratchMat, offset);
+    writeFoliage(seed, c, out, offset + KEPT_FOLIAGE, frame);
+  }
+  const kept = createKeptValues<DuffCell>(KEPT_STRIDE, computeCell);
   // Memoizing collector, not the pure `collectDuffCells`: a rebuild happens on
   // every 1 m crossing, and re-sampling the whole disc from cold each time
   // would pay fresh gate, terrain and density samples for thousands of cells
-  // that have not moved (see duffField.ts).
-  const collector = createDuffCollector(seed);
+  // that have not moved (see duffField.ts). A cell it lets go takes its kept
+  // values with it.
+  const collector = createDuffCollector(seed, (c) => kept.release(c));
   /** `buckets[tier][character]`. */
   const buckets: Bucket[][] = [];
   const materials: PBRMaterial[] = [];
@@ -229,7 +273,9 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
    * One tier's fill: two passes over its list, so every bucket knows its size
    * before a single matrix is written and no buffer has to grow mid-fill.
    * The list arrives nearest-first from the field and is walked in order, so
-   * each bucket's instances stay sorted by distance.
+   * each bucket's instances stay sorted by distance. Pass 2 copies each
+   * cell's kept matrix and tint, computing them only for a cell listed for
+   * the first time (`computeCell`).
    */
   function fill(list: DuffCell[], row: Bucket[]): void {
     for (const bucket of row) bucket.count = 0;
@@ -240,33 +286,12 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
     }
     for (const c of list) {
       const bucket = row[c.character]!;
-      // The litter class is not in `TRAMPLED`, so this is always the identity
-      // frame for duff — called anyway, rather than skipped, so the fill
-      // walks the same path `bladeMeshes.ts` does and the two shells stay
-      // comparable; nobody later has to wonder whether duff is meant to
-      // flatten near the trail and does not.
-      const frame = trampleFrame(seed, c);
-      instanceMatrixFor(c, frame, scratchMat);
-      // `instanceMatrixFor` sinks every non-boulder instance CLUTTER_SINK
-      // (2 cm) below its sampled ground height, on the reasoning that "two
-      // centimetres is under a blade's width, so nothing visibly shortens"
-      // (clutterMeshes.ts). That holds for a blade root, a rock's flattened
-      // underside or a grass card's base edge, whose own root sits well
-      // clear of the ground it is meant to settle into — but not for duff,
-      // whose root ring is built to lie exactly at the sampled ground
-      // height, y = 0 (duffClump.ts: "Roots lie on a disc... at y = 0"), even
-      // though a piece's own far vertices rise well above that: the leaf
-      // character's own geometry rises to about 96 mm (80% of
-      // `DUFF_HEIGHT_MAX`, duffClump.ts). Sinking the root 2 cm would still
-      // settle it into the terrain rather than leave it lying on top, so the
-      // sink is cancelled here, per-instance, rather than by changing
-      // `instanceMatrixFor` itself, which every other clutter class still
-      // relies on. This restores the piece's root ring to sit exactly at the
-      // sampled ground height, the same plane its own vertices are built
-      // against.
-      scratchMat[MATRIX_TY] = scratchMat[MATRIX_TY]! + CLUTTER_SINK;
-      bucket.buf.set(scratchMat, bucket.count * 16);
-      writeFoliage(seed, c, bucket.foliage, bucket.count * 4, frame);
+      const at = kept.offsetOf(c);
+      const data = kept.data;
+      const { buf, foliage } = bucket;
+      const m = bucket.count * 16, f = bucket.count * 4;
+      for (let k = 0; k < 16; k++) buf[m + k] = data[at + k]!;
+      for (let k = 0; k < 4; k++) foliage[f + k] = data[at + KEPT_FOLIAGE + k]!;
       bucket.bladeStrength[bucket.count] = c.strength;
       bucket.count++;
     }
@@ -296,6 +321,9 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
       rebuild(x, z);
     },
     meshes,
+    get kept() {
+      return kept.size;
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

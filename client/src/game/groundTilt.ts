@@ -5,7 +5,7 @@
  * Renderer-only, and it has to be — the sim is forbidden trig and `Math.hypot`
  * (architecture.test.ts), so it hands over the raw ∂h/∂x and ∂h/∂z and the
  * angles are derived here. Same division of labour `clutterMeshes`'
- * `writeInstanceMatrix` already documents for yaw.
+ * `instanceMatrixFor` already documents for yaw.
  *
  * Used by the props that REST on the ground. Trees do not use it: a conifer
  * grows plumb whatever the hillside does, so its base is conformed in the
