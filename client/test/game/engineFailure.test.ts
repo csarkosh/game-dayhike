@@ -48,6 +48,8 @@ function deferred(): { promise: Promise<void>; resolve(): void } {
  */
 function hike(first: Engine = { name: "gpu0", webgpu: true }) {
   const log: string[] = [];
+  /** What each rebuild was given: the bound on its wait for the new scene. */
+  const bounds: unknown[][] = [];
   const storage = memoryStorage();
   const page = { url: null as "webgl2" | null, now: T0 };
   let engine = first;
@@ -76,7 +78,8 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
       return () => void log.push("lift");
     },
     stopLoop: () => void log.push(`stop ${engine.name}`),
-    rebuild: async () => {
+    rebuild: async (...given: unknown[]) => {
+      bounds.push(given);
       log.push(`rebuild from ${engine.name}`);
       if (rebuildGate !== null) await rebuildGate;
       if (rebuildThrows) throw new Error("no tier builds");
@@ -97,6 +100,7 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
   return {
     deps,
     log,
+    bounds,
     storage,
     page,
     serial,
@@ -126,6 +130,16 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
       `flash ${NOTICE_SWITCHED}`,
     ]);
     expect(readFallback(h.storage)).toEqual({ reason: "pipeline", browser: 153, babylon: "9.18.0", at: T0, losses: 0 });
+  });
+
+  it("waits the governor's 10 s for the rebuilt scene under its cover, a pipeline error and a lost device alike", async () => {
+    // A rebuild nobody asked for, in the middle of play: the governor's bound
+    // (`GOVERNOR_SWAP_READY_MAX_MS`), not the Settings Apply's 20 s.
+    for (const reason of ["pipeline", "lost"] as const) {
+      const h = hike();
+      await h.answer(h.engine(), reason);
+      expect(h.bounds, reason).toEqual([[10_000]]);
+    }
   });
 
   it("retries a first lost device once on a new WebGPU engine on a fresh canvas, and a second within 24 h swaps to WebGL2", async () => {

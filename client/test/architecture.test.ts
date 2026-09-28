@@ -216,7 +216,25 @@ describe("layer boundaries", () => {
     // not build its tier…
     expect(body("  function switchTo(", "\n  }\n")).toContain("flashEngineNotice");
     // …and a failure's rebuild leaves the line to the answer (`answerFailures`).
-    expect(app).toContain("    rebuild: () => switchNow(tier, tierSource, null, GOVERNOR_SWAP_READY_MAX_MS).then(() => {\n      engineNotice = null;\n    }),");
+    expect(app).toContain("    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => {\n      engineNotice = null;\n    }),");
+  });
+
+  it("bounds the cover over every switch by what its caller passes: no path picks its own bound", () => {
+    // The Settings Apply passes `APPLY_SWAP_READY_MAX_MS` (`pauseMenu.ts`),
+    // the governor and a failure's rebuild `GOVERNOR_SWAP_READY_MAX_MS`
+    // (`governor.ts`, `engineFailure.ts`); a fallback's rung and a switch
+    // that crosses engines are inside `switchNow` and wait on its bound.
+    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    expect([...app.matchAll(/(?<!function )\bswitch(?:To|Now)\([^()]*\)/g)].map((m) => m[0])).toEqual([
+      "switchTo(target, source, choice, readyMaxMs)",
+      "switchNow(target, source, save, readyMaxMs)",
+      "switchNow(tier, tierSource, null, readyMaxMs)",
+      'switchTo(next, "auto", null, readyMaxMs)',
+    ]);
+    expect([...app.matchAll(/\bwhenSceneReady\([^;]*;/g)].map((m) => m[0])).toEqual([
+      "whenSceneReady(renderer.scene, readyMaxMs, renderer.forestReady);",
+    ]);
+    expect(app).not.toMatch(/SWAP_READY_MAX_MS/);
   });
 
   it("loads nothing with the WebGPU engine that registers what the WebGL2 path does not, but the engine's own", () => {
