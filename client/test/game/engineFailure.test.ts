@@ -54,6 +54,7 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
   let alive = true;
   let canvases = 0;
   let rebuildGate: Promise<void> | null = null;
+  let readyGate: Promise<void> | null = null;
   let rebuildThrows = false;
   let webgpuStarts = true;
   const serial = createSerial();
@@ -87,6 +88,8 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
         engine = { name: `gl${canvases}`, webgpu: false };
       }
       log.push(`on ${engine.name} (c${canvases})`);
+      // The new scene getting ready, the new engine already running.
+      if (readyGate !== null) await readyGate;
     },
     flash: (line) => void log.push(`flash ${line}`),
     log: () => undefined,
@@ -102,6 +105,7 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
     setEngine: (next: Engine) => (engine = next),
     end: () => (alive = false),
     holdRebuild: (gate: Promise<void>) => (rebuildGate = gate),
+    holdReady: (gate: Promise<void>) => (readyGate = gate),
     failRebuild: () => (rebuildThrows = true),
     failWebGpuStart: () => (webgpuStarts = false),
   };
@@ -206,6 +210,39 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     expect(h.log.filter((line) => line.startsWith("rebuild"))).toEqual(["rebuild from gpu0"]);
   });
 
+  it("answers the new engine's own failure while the first rebuild is still under way, after it: both recorded, two rebuilds, each cover lifted once", async () => {
+    const h = hike();
+    const ready = deferred();
+    h.holdReady(ready.promise);
+    const first = h.answer(h.engine(), "lost");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The retry runs on a new WebGPU engine, its scene still getting ready.
+    expect(h.engine()).toEqual({ name: "gpu1", webgpu: true });
+    const second = h.answer(h.engine(), "pipeline");
+    await Promise.resolve();
+    ready.resolve();
+    await first;
+    await second;
+    expect(h.log).toEqual([
+      "unwatch gpu0",
+      `record lost: ${NOTICE_RESTARTED}`,
+      "cover",
+      "stop gpu0",
+      "rebuild from gpu0",
+      "on gpu1 (c1)",
+      "unwatch gpu1",
+      `record pipeline: ${NOTICE_SWITCHED}`,
+      "lift",
+      `flash ${NOTICE_RESTARTED}`,
+      "cover",
+      "stop gpu1",
+      "rebuild from gpu1",
+      "on gl2 (c2)",
+      "lift",
+      `flash ${NOTICE_SWITCHED}`,
+    ]);
+  });
+
   it("does not loop: a late report from the engine the rebuild left, once the new renderer runs on WebGL2, changes nothing", async () => {
     const h = hike();
     const failed = h.engine();
@@ -292,17 +329,17 @@ describe("a hike that cannot be started on its WebGPU engine", () => {
   };
   const gpu: EngineOnCanvas = { canvas: { id: "c0" } as unknown as HTMLCanvasElement, engine: {} as never, watchers: null };
 
-  function page(starts: ((onCanvas: EngineOnCanvas, engineFailed: (reason: "pipeline") => string) => Game)[]) {
+  function page(starts: ((onCanvas: EngineOnCanvas, engineFailed: (reason: "pipeline" | "lost") => string) => Game)[]) {
     const log: string[] = [];
     let n = 0;
     return {
       log,
       deps: {
-        start: (onCanvas: EngineOnCanvas, engineFailed: (reason: "pipeline") => string) => {
+        start: (onCanvas: EngineOnCanvas, engineFailed: (reason: "pipeline" | "lost") => string) => {
           log.push(`start on ${(onCanvas.canvas as unknown as { id: string }).id} ${onCanvas.engine === null ? "webgl2" : "webgpu"}`);
           return (starts[n++] as (typeof starts)[number])(onCanvas, engineFailed);
         },
-        engineFailed: (reason: "pipeline") => {
+        engineFailed: (reason: "pipeline" | "lost") => {
           log.push(`record ${reason}`);
           return NOTICE_SWITCHED;
         },
@@ -335,6 +372,22 @@ describe("a hike that cannot be started on its WebGPU engine", () => {
     const started = startOnEngine(gpu, p.deps);
     expect(p.log.filter((line) => line.startsWith("record"))).toEqual(["record pipeline"]);
     expect(started.lines).toEqual([NOTICE_SWITCHED]);
+  });
+
+  it("hands the game a recorder that, once the start has returned, records every failure of the hike", () => {
+    let recorder: ((reason: "pipeline" | "lost") => string) | null = null;
+    const p = page([
+      (_on, engineFailed) => {
+        recorder = engineFailed;
+        return game("gpu");
+      },
+    ]);
+    startOnEngine(gpu, p.deps);
+    const record = recorder as unknown as (reason: "pipeline" | "lost") => string;
+    record("pipeline");
+    record("lost");
+    record("pipeline");
+    expect(p.log.filter((line) => line.startsWith("record"))).toEqual(["record pipeline", "record lost", "record pipeline"]);
   });
 
   it("holds nothing against the engine when WebGL2 fails too: the throw goes up", () => {

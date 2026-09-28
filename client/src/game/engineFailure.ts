@@ -167,35 +167,48 @@ export function recordEngineFailure(
 /**
  * Starts a hike on `first`, and where it throws on a WebGPU engine, starts it
  * again on WebGL2 on a fresh canvas that takes the place of every canvas the
- * first start left (`place`). The throw is held against the engine
- * (`engineFailed`) only once the WebGL2 start stands, and once in all (the
- * first start's own ladder may already have recorded it); the game then
- * shows the line. A throw on WebGL2, or from the WebGL2 start, goes up: the
- * fault is not the engine's.
+ * first start left (`place`). The game is handed one recorder of WebGPU
+ * failures for its life (`start`'s `engineFailed`). While a start is under
+ * way, a fault its ladder finds is the start's: held against the engine
+ * once, and only once the WebGL2 start stands, and the game then shows the
+ * line. Once the start has returned, every failure of the hike is recorded
+ * as it comes (`deps.engineFailed`). A throw on WebGL2, or from the WebGL2
+ * start, goes up: the fault is not the engine's.
  */
 export function startOnEngine<G extends { notify(line: string): void }>(
   first: EngineOnCanvas,
   deps: {
-    /** Starts the game on `onCanvas`, recording a WebGPU fault its own ladder
-     * finds through `engineFailed`. */
-    start(onCanvas: EngineOnCanvas, engineFailed: (reason: "pipeline") => string): G;
-    engineFailed(reason: "pipeline"): string;
+    /** Starts the game on `onCanvas`, handing it `engineFailed` for every
+     * WebGPU failure it meets. */
+    start(onCanvas: EngineOnCanvas, engineFailed: (reason: "pipeline" | "lost") => string): G;
+    engineFailed(reason: "pipeline" | "lost"): string;
     freshCanvas(): HTMLCanvasElement;
     place(canvas: HTMLCanvasElement): void;
     log(message: string, error: unknown): void;
   },
 ): G {
   let line: string | null = null;
-  const once = (reason: "pipeline"): string => (line ??= deps.engineFailed(reason));
+  const once = (): string => (line ??= deps.engineFailed("pipeline"));
+  let starting = false;
+  const record = (reason: "pipeline" | "lost"): string =>
+    starting && reason === "pipeline" ? once() : deps.engineFailed(reason);
+  const start = (onCanvas: EngineOnCanvas): G => {
+    starting = true;
+    try {
+      return deps.start(onCanvas, record);
+    } finally {
+      starting = false;
+    }
+  };
   try {
-    return deps.start(first, once);
+    return start(first);
   } catch (error) {
     if (first.engine === null) throw error;
     deps.log("WebGPU: the game could not be started on it; starting it on WebGL2.", error);
     const fresh = deps.freshCanvas();
     deps.place(fresh);
-    const game = deps.start({ canvas: fresh, engine: null, watchers: null }, once);
-    game.notify(once("pipeline"));
+    const game = start({ canvas: fresh, engine: null, watchers: null });
+    game.notify(once());
     return game;
   }
 }

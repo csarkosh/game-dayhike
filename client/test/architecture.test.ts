@@ -190,6 +190,22 @@ describe("layer boundaries", () => {
     expect(main).not.toMatch(/makeWebGpu\([^)]*\)\.then\(/);
   });
 
+  it("wires the failure answer to the engine that failed and the renderer that runs, and the game to the start's recorder", () => {
+    // What `engineFailure.test.ts` cannot see: the page's side of it.
+    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    // The watcher reports the engine it watches, captured when it is put on.
+    expect(app).toContain("      const engine = r.engine;\n      stopWatching = detector(engine, (reason) => void answerFailure(engine, reason));");
+    // The answer compares it with the engine the running renderer draws with.
+    expect(app).toContain("    running: () => renderer.engine,");
+    expect(app).toContain("    runningOnWebGpu: () => renderer.engine.isWebGPU,");
+    // The game records every WebGPU failure through the recorder
+    // `startOnEngine` hands its start, which tells the start's from the hike's.
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    expect(main).toContain("    start: ({ canvas, engine, watchers }, record) =>");
+    expect([...main.matchAll(/engineFailed: record,/g)].length).toBe(1);
+    expect(main).not.toMatch(/\bstarting\b/);
+  });
+
   it("keeps the quality modules out of sim/ and net/", () => {
     const quality = /game\/(quality|gpuSignals|gpuClass|tierChoice|frameProbe|governor|rendererSwap|settings)(\.js)?$/;
     expect(violations(join(SRC, "sim"), [quality])).toEqual([]);

@@ -821,42 +821,36 @@ function launch(
   engineForGame: (tier: QualityTier) => Promise<EngineOnCanvas>,
 ): void {
   const handle = startOnEngine<GameHandle>(onCanvas, {
-    start: ({ canvas, engine, watchers }, startFailed) => {
-      // While the game is being started, a WebGPU fault its ladder finds is
-      // the start's (recorded once, `startOnEngine`); after, the hike's.
-      let starting = true;
-      try {
-        return startGame(canvas, worldToken, {
-          lobby,
-          peerId: selfId,
-          onExit: exitGame,
-          onContinueOffline: continueOffline,
-          onPauseChange: (next) => {
-            paused = next;
-            paintRoster();
-          },
-          engine: engine ?? undefined,
-          watchers: watchers ?? undefined,
-          engineFor: engineForGame,
-          engineFailed: (reason) => (starting && reason === "pipeline" ? startFailed(reason) : engineFailed(reason)),
-          tier: decided.tier,
-          tierSource: decided.source,
-          fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),
-          onTierFallback,
-          onGovernorDrop,
-          quality: {
-            choice: currentChoice,
-            stored: choiceStored,
-            auto: autoSummary,
-            override: parseTierOverride(location.search),
-            notice: () => choiceNotice,
-            save: saveChoice,
-          },
-        });
-      } finally {
-        starting = false;
-      }
-    },
+    // The recorder the game is handed is `startOnEngine`'s: a fault found
+    // while it starts is the start's, recorded once; after, the hike's.
+    start: ({ canvas, engine, watchers }, record) =>
+      startGame(canvas, worldToken, {
+        lobby,
+        peerId: selfId,
+        onExit: exitGame,
+        onContinueOffline: continueOffline,
+        onPauseChange: (next) => {
+          paused = next;
+          paintRoster();
+        },
+        engine: engine ?? undefined,
+        watchers: watchers ?? undefined,
+        engineFor: engineForGame,
+        engineFailed: record,
+        tier: decided.tier,
+        tierSource: decided.source,
+        fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),
+        onTierFallback,
+        onGovernorDrop,
+        quality: {
+          choice: currentChoice,
+          stored: choiceStored,
+          auto: autoSummary,
+          override: parseTierOverride(location.search),
+          notice: () => choiceNotice,
+          save: saveChoice,
+        },
+      }),
     engineFailed,
     // A canvas holds one kind of context for life.
     freshCanvas: () => document.createElement("canvas"),
