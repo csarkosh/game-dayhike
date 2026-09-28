@@ -61,9 +61,13 @@ function addedBy(scene: Scene, make: () => RenderTargetTexture): { target: Rende
   return { target, manager: added[0]!.renderingManager };
 }
 
-function scopeLog(): { calls: string[]; pipelines: Pick<AsyncPipelines, "enter" | "leave"> } {
+function scopeLog(): { calls: string[]; pipelines: Pick<AsyncPipelines, "enter" | "leave" | "guard"> } {
   const calls: string[] = [];
-  return { calls, pipelines: { enter: () => void calls.push("enter"), leave: () => void calls.push("leave") } };
+  const guard = (render: () => void): boolean => {
+    render();
+    return true;
+  };
+  return { calls, pipelines: { enter: () => void calls.push("enter"), leave: () => void calls.push("leave"), guard } };
 }
 
 describe("where draws may be left out: the rendering groups", () => {
@@ -142,6 +146,10 @@ describe("the renderer on a WebGPU engine with pipelines made asynchronously", (
     return {
       enter: () => void order.push("enter"),
       leave: () => void order.push("leave"),
+      guard: (render) => {
+        render();
+        return true;
+      },
       pending: () => 0,
       takeSkipped: () => 0,
       settled: () => Promise.resolve(true),
@@ -193,9 +201,10 @@ describe("the impostor bake with pipelines made asynchronously", () => {
         skipped = 0;
         return count;
       },
-      guarded: (render: () => void): void => {
+      guarded: (render: () => void): boolean => {
         events.push("guarded");
         render();
+        return true;
       },
     };
     vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockImplementation(() => {

@@ -15,6 +15,7 @@ function held(status = "") {
   const end = holdReveal({
     hideWorld: (hidden) => void events.push(hidden ? "world hidden" : "world shown"),
     showLine: (shown) => void events.push(shown ? "line shown" : "line gone"),
+    releaseLine: () => void events.push("line released"),
     status: () => hud,
     eachFrame: (fn) => {
       frame = fn;
@@ -39,13 +40,13 @@ function held(status = "") {
 }
 
 describe("the start's hold on its world", () => {
-  it("hides the world under its line, and shows it once a frame left nothing out", () => {
+  it("hides the world under its line, and shows it once a frame left nothing out, its line let go of", () => {
     const hold = held();
     expect(hold.events).toEqual(["world hidden", "line shown"]);
     hold.frame();
     expect(hold.events).toEqual(["world hidden", "line shown"]);
     hold.lift();
-    expect(hold.events).toEqual(["world hidden", "line shown", "world shown", "line gone"]);
+    expect(hold.events).toEqual(["world hidden", "line shown", "world shown", "line gone", "line released"]);
     expect(hold.watchingFrames()).toBe(false);
   });
 
@@ -61,18 +62,18 @@ describe("the start's hold on its world", () => {
     hold.frame();
     expect(hold.events).toEqual(["world hidden", "line shown", "line gone"]);
     hold.lift();
-    expect(hold.events).toEqual(["world hidden", "line shown", "line gone", "world shown"]);
+    expect(hold.events).toEqual(["world hidden", "line shown", "line gone", "world shown", "line released"]);
   });
 
   it("is lifted at once by a switch or the game's end, stops waiting for the frame, and lifts once", () => {
     const hold = held();
     hold.end();
-    expect(hold.events).toEqual(["world hidden", "line shown", "world shown", "line gone"]);
+    expect(hold.events).toEqual(["world hidden", "line shown", "world shown", "line gone", "line released"]);
     expect(hold.stops()).toBe(1);
     expect(hold.watchingFrames()).toBe(false);
     hold.end();
     hold.lift();
-    expect(hold.events).toEqual(["world hidden", "line shown", "world shown", "line gone"]);
+    expect(hold.events).toEqual(["world hidden", "line shown", "world shown", "line gone", "line released"]);
     expect(hold.stops()).toBe(1);
   });
 
@@ -83,6 +84,7 @@ describe("the start's hold on its world", () => {
     holdReveal({
       hideWorld: (hidden) => void events.push(hidden ? "world hidden" : "world shown"),
       showLine: (shown) => void events.push(shown ? "line shown" : "line gone"),
+      releaseLine: () => void events.push("line released"),
       status: () => "",
       eachFrame: () => {
         watching = true;
@@ -93,7 +95,7 @@ describe("the start's hold on its world", () => {
         return () => void stops++;
       },
     });
-    expect(events).toEqual(["world hidden", "line shown", "world shown", "line gone"]);
+    expect(events).toEqual(["world hidden", "line shown", "world shown", "line gone", "line released"]);
     expect(stops).toBe(1);
     expect(watching).toBe(false);
   });

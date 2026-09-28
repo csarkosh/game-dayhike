@@ -132,12 +132,23 @@ function page(): PipelinesReport {
   return report;
 }
 
+/** Every patch a test made, taken off after it, so no creation's deadline
+ * outlives its test. */
+const controllers: AsyncPipelines[] = [];
+function tracked(pipelines: AsyncPipelines | null): AsyncPipelines | null {
+  if (pipelines !== null) controllers.push(pipelines);
+  return pipelines;
+}
+function installTracked(...args: Parameters<typeof installPipelines>): AsyncPipelines | null {
+  return tracked(installPipelines(...args));
+}
+
 /** A patched engine on a fresh cache, `limit` in flight. */
 function patched(limit: number, now?: () => number) {
   const gpu = fakeDevice();
   const cache = cacheOn(gpu.device);
   const engine = engineOn(cache);
-  const pipelines = installPipelines(engine as never, limit, now === undefined ? {} : { now }) as AsyncPipelines;
+  const pipelines = installTracked(engine as never, limit, now === undefined ? {} : { now }) as AsyncPipelines;
   return { ...gpu, cache, engine, pipelines };
 }
 
@@ -146,6 +157,7 @@ beforeEach(() => {
   delete (globalThis as { dayhikePipelines?: PipelinesReport }).dayhikePipelines;
 });
 afterEach(() => {
+  for (const pipelines of controllers.splice(0)) pipelines.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   // A spy on `console` made again returns the one already there, so each
@@ -404,7 +416,7 @@ describe("render pipelines made asynchronously", () => {
     const gpu = fakeDevice();
     const engine = engineOn(cacheOn(gpu.device));
     const ownDraw = engine._draw;
-    const pipelines = installPipelines(engine as never, 2) as AsyncPipelines;
+    const pipelines = installTracked(engine as never, 2) as AsyncPipelines;
     expect(engine._draw).not.toBe(ownDraw);
     pipelines.remove();
     expect(engine._draw).toBe(ownDraw);
@@ -471,7 +483,7 @@ describe("render pipelines made asynchronously", () => {
 
   it("is not installed on an engine with no pipeline cache, such as one whose start has not come", () => {
     const engine = { onEndFrameObservable: new Observable<unknown>() };
-    expect(installPipelines(engine as never, 2)).toBeNull();
+    expect(installTracked(engine as never, 2)).toBeNull();
     expect(asyncPipelinesOf(engine as never)).toBeNull();
     expect(leftOutOn(engine as never)).toBe(0);
   });
@@ -496,7 +508,7 @@ describe("the address switch, ?pipelines=", () => {
     const cache = cacheOn(gpu.device);
     const engine = engineOn(cache);
     const ownDraw = engine._draw;
-    expect(installPipelines(engine as never, "sync")).toBeNull();
+    expect(installTracked(engine as never, "sync")).toBeNull();
     expect(engine._draw).toBe(ownDraw);
     expect(Object.prototype.hasOwnProperty.call(cache, "getRenderPipeline")).toBe(false);
     expect(page()).toMatchObject({ mode: "sync", limit: 0 });
@@ -507,10 +519,10 @@ describe("the address switch, ?pipelines=", () => {
 
   it("installs the patch with the limit given, each engine's report replacing the last", () => {
     const first = engineOn(cacheOn(fakeDevice().device));
-    expect(installPipelines(first as never, 5)).not.toBeNull();
+    expect(installTracked(first as never, 5)).not.toBeNull();
     expect(page()).toMatchObject({ mode: "async", limit: 5 });
     const second = engineOn(cacheOn(fakeDevice().device));
-    expect(installPipelines(second as never, 16)).not.toBeNull();
+    expect(installTracked(second as never, 16)).not.toBeNull();
     expect(page()).toMatchObject({ mode: "async", limit: 16 });
   });
 
@@ -529,13 +541,13 @@ describe("the address switch, ?pipelines=", () => {
     vi.resetModules();
     const eight = await import("../../src/game/asyncPipelines.js");
     expect(eight.ASYNC_PIPELINES_MAX_IN_FLIGHT).toBe(6);
-    expect(eight.installPipelines(engineOn(cacheOn(fakeDevice().device)) as never, "async")).not.toBeNull();
+    expect(tracked(eight.installPipelines(engineOn(cacheOn(fakeDevice().device)) as never, "async"))).not.toBeNull();
     expect(page()).toMatchObject({ mode: "async", limit: 6 });
     vi.stubGlobal("navigator", {});
     vi.resetModules();
     const none = await import("../../src/game/asyncPipelines.js");
     expect(none.ASYNC_PIPELINES_MAX_IN_FLIGHT).toBe(2);
-    none.installPipelines(engineOn(cacheOn(fakeDevice().device)) as never, "async");
+    tracked(none.installPipelines(engineOn(cacheOn(fakeDevice().device)) as never, "async"));
     expect(page()).toMatchObject({ mode: "async", limit: 2 });
   }, timeLimit(30_000));
 });
@@ -617,7 +629,7 @@ describe("the reveal", () => {
   it("lifts at once on an engine that makes its pipelines as Babylon does, and never once stopped", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const synchronous = engineOn(cacheOn(fakeDevice().device));
-    installPipelines(synchronous as never, "sync");
+    installTracked(synchronous as never, "sync");
     let lifted = 0;
     revealWhenWhole(synchronous as never, () => void lifted++);
     expect(lifted).toBe(1);
@@ -730,7 +742,7 @@ describe("a draw left out that escapes the frame", () => {
 
   it("adds nothing to a scene's render with ?pipelines=sync", () => {
     const engine = engineOn(cacheOn(fakeDevice().device));
-    installPipelines(engine as never, "sync");
+    installTracked(engine as never, "sync");
     const render = (): void => undefined;
     const scene = { render };
     engine.onNewSceneAddedObservable.notifyObservers(scene);
@@ -811,7 +823,13 @@ describe("the impostor bake on an engine whose queue never empties", () => {
         pipelines.leave();
       });
       const baking = defaultBakeImpostor(mesh, scene, {
-        pipelines: { takeSkipped: () => pipelines.takeSkipped(), guarded: (render) => render() },
+        pipelines: {
+          takeSkipped: () => pipelines.takeSkipped(),
+          guarded: (render) => {
+            render();
+            return true;
+          },
+        },
       });
       await vi.advanceTimersByTimeAsync(0);
       expect(renders).toBe(1);
@@ -822,6 +840,103 @@ describe("the impostor bake on an engine whose queue never empties", () => {
       expect(pipelines.pending()).toBe(2);
     } finally {
       vi.restoreAllMocks();
+      nullEngine.dispose();
+    }
+  });
+});
+
+describe("a creation in a hidden page", () => {
+  it("is not given up while the page is hidden: its deadline is set again, and passes only while the page is shown", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const page_ = { visibilityState: "hidden" };
+    vi.stubGlobal("document", page_);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { asked, engine, pipelines } = patched(1);
+    pipelines.enter();
+    draw(engine, effect(1));
+    draw(engine, effect(2));
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(asked.map((a) => a.label)).toEqual(["effect 1"]);
+    expect(page()).toMatchObject({ expired: 0, pending: 2 });
+    // Shown again: the deadline set last passes 30 s after it was set.
+    page_.visibilityState = "visible";
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(page().expired).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(page()).toMatchObject({ expired: 1, pending: 1 });
+    expect(asked.map((a) => a.label)).toEqual(["effect 1", "effect 2"]);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts a page with no document, as under the suite, as shown", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(typeof (globalThis as { document?: unknown }).document).toBe("undefined");
+    const { engine, pipelines } = patched(1);
+    pipelines.enter();
+    draw(engine, effect(1));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(page().expired).toBe(1);
+  });
+});
+
+describe("the guard around a render outside the frame", () => {
+  it("answers true for a render that ran, and passes every other throw through", () => {
+    const { engine, pipelines } = patched(2);
+    let ran = 0;
+    expect(pipelines.guard(() => void ran++)).toBe(true);
+    expect(ran).toBe(1);
+    const broken = new Error("a render failed");
+    expect(() =>
+      pipelines.guard(() => {
+        throw broken;
+      }),
+    ).toThrow(broken);
+    expect(asyncPipelinesOf(engine as never)).toBe(pipelines);
+  });
+
+  it("takes the patch off for good where a draw left out escapes, says so once, and answers false", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { engine, pipelines } = patched(2);
+    const escaped = pipelines.guard(() => {
+      pipelines.enter();
+      engine._cacheRenderPipeline.getRenderPipeline(0, effect(1), 1, 0);
+    });
+    expect(escaped).toBe(false);
+    expect(asyncPipelinesOf(engine as never)).toBeNull();
+    expect(page()).toMatchObject({ escapes: 1 });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a whole bake, made synchronously, where its first render let a draw left out escape", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { made, engine, pipelines } = patched(2);
+    const nullEngine = new NullEngine();
+    try {
+      const scene = new Scene(nullEngine);
+      const scope = scopeRenderingGroups(scene, pipelines);
+      const mesh = MeshBuilder.CreateBox("s0_lod1", { size: 2 }, scene);
+      vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+      let renders = 0;
+      vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => {
+        renders++;
+        pipelines.enter();
+        // The first render reaches the cache past the engine's draw; the
+        // next draws as the game does.
+        if (renders === 1) engine._cacheRenderPipeline.getRenderPipeline(0, effect(1), 1, 0);
+        else draw(engine, effect(1));
+        pipelines.leave();
+      });
+      const texture = await defaultBakeImpostor(mesh, scene, {
+        pipelines: { takeSkipped: () => pipelines.takeSkipped(), guarded: scope.guarded },
+      });
+      expect(texture).not.toBeNull();
+      expect(renders).toBe(2);
+      expect(made).toEqual(["effect 1"]);
+      expect(asyncPipelinesOf(engine as never)).toBeNull();
+      expect(page()).toMatchObject({ escapes: 1 });
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
       nullEngine.dispose();
     }
   });
