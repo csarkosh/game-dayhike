@@ -26,13 +26,16 @@ export function nodeSalt(shared, clientDir = CLIENT_DIR) {
 }
 
 /**
- * The stages of every corpus file in `dir` (`*.json`, in name order), and how
- * many each file holds. A file that is not a corpus throws, naming it: the
- * corpus is committed, and a damaged one is an error to fix, not to skip.
+ * The stages of every corpus file in `dir` (`*.json`, in name order), how
+ * many each file holds, and the stages whose text carries a carriage return
+ * (`withCarriageReturns`: the file, the stage, its name), which the build
+ * refuses. A file that is not a corpus throws, naming it: the corpus is
+ * committed, and a damaged one is an error to fix, not to skip.
  */
 export function readCorpusDir(dir, shared) {
   const files = [];
   const stages = [];
+  const withCarriageReturns = [];
   for (const name of readdirSync(dir).filter((n) => n.endsWith('.json')).sort()) {
     let read;
     try {
@@ -42,8 +45,11 @@ export function readCorpusDir(dir, shared) {
     }
     files.push({ name, stages: read.length });
     stages.push(...read);
+    for (const entry of read) {
+      if (entry.glsl.includes('\r')) withCarriageReturns.push({ file: name, stage: entry.stage, id: shared.corpusId(entry) });
+    }
   }
-  return { files, stages };
+  return { files, stages, withCarriageReturns };
 }
 
 /**
@@ -117,6 +123,24 @@ export function lineFigures(texts) {
     return { lines, distinct: seen.size, distinctBytes };
   };
   return { ...count(false), masked: count(true) };
+}
+
+/**
+ * Why the map's `text` is not ASCII, or null. The page's fallback, where a
+ * response has no body to read as it comes, bounds the map by its length in
+ * characters, a character a byte only while it is ASCII.
+ */
+export function asciiProblem(text) {
+  let outside = 0;
+  let first = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) > 0x7f) {
+      outside += 1;
+      if (first < 0) first = i;
+    }
+  }
+  if (outside === 0) return null;
+  return `the WGSL map is not ASCII: ${outside} character${outside === 1 ? '' : 's'} outside it, the first at character ${first}`;
 }
 
 /** `text`'s bytes raw, gzipped at level 9 and brotli'd at quality 11. */
