@@ -7,7 +7,7 @@ import type { Forest } from "./forest.js";
 import type { TrailGraph } from "./trail.js";
 import type { CutRecord } from "./cut.js";
 import { createWatcherRecord, stepWatcher, type WatcherRecord } from "./watcher.js";
-import { spiralSpawn } from "./spawn.js";
+import { spiralSpawn, trailheadStart } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
 import { buildSearch, installSearch, type Search } from "./search.js";
@@ -181,21 +181,23 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
 }
 
 /**
- * Where a joining player starts.
+ * Where a joining player starts, and the way they face.
  *
  * Hand-authored levels cycle their spawn list by player count so a full lobby
- * never stacks. A forest has no list, so every peer walks the same deterministic
- * spiral out from the origin and arrives at the same answer without exchanging
- * anything.
+ * never stacks. A forest has no list: every peer derives the same start from
+ * the seed (`trailheadStart`), in front of the car and facing the trail, and
+ * walks the same deterministic spiral out from it to the first free place,
+ * so they arrive at the same answer without exchanging anything.
  */
-function pickSpawn(world: World): Vec3 {
+function pickSpawn(world: World): { pos: Vec3; yaw: number } {
   if (world.forest !== null) {
     const seed = world.forest.seed;
-    const th = activeTerrainVariant().trailGraph?.(seed).trailhead;
-    return spiralSpawn(world.boxes, seed, PLAYER_HALF, th === undefined ? { x: 0.5, z: 0.5 } : { x: th.x, z: th.z });
+    const start = trailheadStart(seed);
+    const centre = start === null ? { x: 0.5, z: 0.5 } : { x: start.x, z: start.z };
+    return { pos: spiralSpawn(world.boxes, seed, PLAYER_HALF, centre), yaw: start === null ? 0 : start.yaw };
   }
   const spawns = world.level.playerSpawns;
-  return spawns[world.state.players.size % spawns.length] as Vec3;
+  return { pos: spawns[world.state.players.size % spawns.length] as Vec3, yaw: 0 };
 }
 
 export function spawnPlayer(world: World): PlayerState {
@@ -203,9 +205,9 @@ export function spawnPlayer(world: World): PlayerState {
   const spawn = pickSpawn(world);
   const player: PlayerState = {
     id,
-    pos: cloneVec3(spawn),
+    pos: cloneVec3(spawn.pos),
     vel: { x: 0, y: 0, z: 0 },
-    yaw: 0,
+    yaw: spawn.yaw,
     pitch: 0,
     health: PLAYER_MAX_HEALTH,
     grounded: false,
