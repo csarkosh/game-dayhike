@@ -85,7 +85,8 @@ On the default machine, running costs $0.1468 + $0.5600 + $0.2000 + $0.1840 + $0
 
 - **One three-hour run:** 3 × $1.0972 = $3.29, plus about $0.02 of NAT traffic: **about $3.31**.
 - **A month of four such runs:** 4 × $3.31 + $5.00 for the disk = **about $18.26**.
-- **Stopped all month:** the disk alone, **$5.00**.
+- **Stopped all month:** the disk alone, **$5.00**, if Cloud NAT releases its address while no
+  machine uses it, as this module expects; if it keeps it, $3.65 more (first run, step 16).
 - **Left running** (were nothing to stop it): 730 × $1.0972 + $5.00 = about $806 a month. The run
   limit caps one forgotten start at `max_run_hours` (default 4): 4 × $1.0972 = $4.39. If the limit
   were ever gone, the daily stop caps it at a day: 24 × $1.0972 = at most $26.33.
@@ -161,17 +162,37 @@ None of this is in Terraform. Each step says what to see and what to do when it 
 | 1 | `terraform plan` before the first apply | **13 to add** (15 with the budget), 0 to change, 0 to destroy; every one a creation of this module's resources. | Stop and read: anything to change or destroy means the state already holds something. |
 | 2 | `terraform apply` | Everything created within a few minutes. | A quota error names the quota: step 2 above. `ZONE_RESOURCE_POOL_EXHAUSTED`: Google has no L4 free in the zone; try later, or `-var zone=us-west1-a`. |
 | 3 | About 5 minutes after the apply, `terraform output -raw ssh_command`, run | A `cmd.exe` prompt on the machine (the SSH package is installed at first-boot specialisation). | `gcloud compute instances get-serial-port-output test-rig --zone=us-west1-b --project=fps-csarko`: look for the specialisation and the guest agent's lines. |
-| 4 | `terraform output -raw setup_log_command`, run | Within about 10 minutes of the start: `C:\ProgramData\test-rig: SYSTEM and Administrators only`, `Set-up starting.`, then `OpenSSH Server: <path> <version>, running, key login only` (record which `sshd.exe` the service runs: Google's package's or Windows' own) and `Step done: ssh`. | No log after 15 minutes: Google documents `windows-startup-script-ps1` as running "on every boot after the VM's initial boot"; if it waited for a second boot, restart the machine once from the SSH shell (`shutdown /r /t 0`) and look again. |
+| 4 | `terraform output -raw setup_log_command`, run | Within about 10 minutes of the start: `C:\ProgramData\test-rig: SYSTEM and Administrators only`, `Set-up starting.`, then `OpenSSH Server: <path> <version>, running, key login only` (record which `sshd.exe` the service runs: Google's package's or Windows' own) and `Step done: ssh`. | The script runs on the first boot after Windows' specialisation, with no restart by hand: Google's own set-up script (`instance_setup.ps1` in `GoogleCloudPlatform/compute-image-windows`, `sysprep/`) finishes specialisation, restarts, and at the end of the next boot enables and runs the `GCEStartup` task, which runs `windows-startup-script-ps1`. That boot is what Google's page calls "each boot after the initial boot". If no log appears within 15 minutes all the same, read the serial port (step 3) for `Instance setup finished`, then restart once from the SSH shell (`shutdown /r /t 0`) and look again. |
 | 5 | The log goes on | `Desktop user hiker: logs on automatically; password made here, kept in C:\ProgramData\test-rig\desktop-password` and `Step done: user-hiker`. | A `New-LocalUser` or policy error: read it; `tests/startup.test.mjs` checks the limits Microsoft documents, and a new one belongs there. |
-| 6 | The driver | `Downloading https://storage.googleapis.com/compute-gpu-installation-us/...`, `Signature of ...: valid, NVIDIA Corporation`, `The NVIDIA driver installer exited with 0` (or `1`: NVIDIA's "Success, but reboot required"), `Step done: driver`. | Any other exit code fails the step; its log is in `C:\ProgramData\test-rig\nvidia-install`. `SHA-256 mismatch`: Google's bucket serves a different file; stop. |
-| 7 | Chrome, Node, Git, holding still, closing | Each `exited with 0` (or `3010` for an MSI), each `Step done`, then `Held still: ...`, `Closed: the metadata server is blocked for hiker`, `Set-up finished. Restarting once`. | `Timed out:` or `FAILED:`: the next boot retries from that step; restart once (`shutdown /r /t 0`). |
-| 8 | The boot after the restart | `NVIDIA driver 582.53; licensed product 'NVIDIA RTX Virtual Workstation'; licence 'Licensed (Expiry: Permanent)'` (record the exact strings); the display adapters (record them and their refresh rate); `Sessions: ... console hiker 1 Active ...`; `Set-up checked: the machine is ready`, and `C:\ProgramData\test-rig\verified` exists. | `FAILED: The driver is not running as a licensed NVIDIA RTX Virtual Workstation`: check the GPU type (`gcloud compute instances describe test-rig --zone=us-west1-b --format='value(guestAccelerators)'`). `FAILED: hiker is not logged on at the console`: automatic logon did not take effect on this image; read `Sessions:` and stop. On any `FAILED:`, `shutdown /r /t 0` retries. |
+| 6 | The driver | `Downloading https://storage.googleapis.com/compute-gpu-installation-us/...`, `Signature of ...: valid, NVIDIA Corporation`, `The NVIDIA driver installer exited with 0` within a few minutes (the same NVIDIA installer with `-s -n` exited 0 in 2 min 18 s on an AWS machine's first boot), `Step done: driver-installed`, `nvidia-smi: <path>` (record it) and `Step done: driver`. Exit `1` (NVIDIA's "Success, but reboot required") is success too: then `Restart needed: ...`, a restart, and `nvidia-smi: <path>`, `Step done: driver` on the next boot. | Any other exit code fails the step; its log is in `C:\ProgramData\test-rig\nvidia-install`. `SHA-256 mismatch`: Google's bucket serves a different file; stop. See [When a step fails](#when-a-step-fails). |
+| 7 | Chrome, Node, Git, holding still, closing | Each `exited with 0` (or `3010` for an MSI), each `Step done`, then `Held still: ...`, `Closed: the metadata server is blocked for hiker`, `Set-up finished. Restarting once`. | `Timed out:` or `FAILED:`: [When a step fails](#when-a-step-fails). |
+| 8 | The boot after the restart | `NVIDIA driver 582.53; licensed product 'NVIDIA RTX Virtual Workstation'; licence 'Licensed (...)'` (record the exact strings; AWS's machine read `Licensed (Expiry: N/A)` on the same product, Google documents `Licensed (Expiry: Permanent)`, and both pass); `Sessions: ... console hiker 1 Active ...`; `Display task: ... already 1920x1080 ...` or `... returned 0`, then a `Display: <width>x<height> at <n> Hz on <adapter>` line for each display adapter (**record them**: the size, the refresh rate and which adapter); `Set-up checked: the machine is ready`, and `C:\ProgramData\test-rig\verified` exists. | `WARNING: no display is at 1920 x 1080`: see [The display](#the-display); it does not stop the machine being ready. `FAILED: The driver is not running as a licensed NVIDIA RTX Virtual Workstation`: check the GPU type (`gcloud compute instances describe test-rig --zone=us-west1-b --format='value(guestAccelerators)'`). `FAILED: hiker is not logged on at the console`: automatic logon did not take effect on this image; read `Sessions:` and stop. Any other `FAILED:`: [When a step fails](#when-a-step-fails). |
 | 9 | `terraform output -raw desktop_password_command`, run | 24 letters and digits. | Nothing: the user step did not finish (step 5). |
 | 10 | The probe (see [The first run's probe](#the-first-runs-probe)), nobody connected over Remote Desktop | `PASS`. Read every `WARNING`. Record the renderer string, the `chrome.exe` lines, `featureStatus`, the WebGPU adapter, `refreshHz`, the display adapters and `browserMetadata`. | See the probe's section: a Chrome flag first, then `-var enable_display=true`; a failing licence is step 8's. |
 | 11 | `gcloud compute instances describe test-rig --zone=us-west1-b --project=fps-csarko --format='value(resourceStatus.scheduling.terminationTimestamp,resourcePolicies)'` | A termination time 4 hours after the machine's start (not after its restart: a restart does not move it), and the instance schedule `test-rig-backstop-stop`. | No time: the run limit is not on the machine; stop it by hand (`terraform apply -var running=false`) and read `scheduling` in the same output. |
 | 12 | **Stop, then plan**: `terraform apply -var running=false`, then `terraform plan -var running=false`, then `terraform plan` | The apply stops it (`gcloud compute instances list` shows `TERMINATED`). The stopped plan shows **No changes**. The plan for the next start shows exactly **0 to add, 1 to change, 0 to destroy**: `google_compute_instance.test_rig` updated in place, `desired_status = "TERMINATED" -> "RUNNING"`. | This is the one check of what no test here can show: that nothing Google reports differently about a stopped machine makes Terraform change or replace it. What differs, by Google's documentation: the status (`TERMINATED`, which the provider reads back into `desired_status`, the one change expected) and the termination time (`resourceStatus.scheduling.terminationTimestamp`, cleared while stopped, which the provider does not read). The machine has no external address to lose. Refuse any other plan, above all one that says `google_compute_instance.test_rig` "must be replaced", until it is understood; the attribute it names goes in `ignore_changes` or is pinned, and a test is added. |
 | 13 | Where `gcloud compute ssh` put its key: `gcloud compute project-info describe --project=fps-csarko --format='value(commonInstanceMetadata.items)'` | No `ssh-keys` (the key is in the instance's metadata, which the module leaves alone). | `ssh-keys` listed: the key went project-wide, harmless while no other machine exists in the project; remove it after a `destroy` (below). |
-| 14 | The first time the run limit or the daily stop fires: `gcloud compute operations list --project=fps-csarko --filter='targetLink~instances/test-rig'` | `compute.instances.deferredStop` (the run limit) or a `stop` by Compute Engine's service agent (the daily stop). | Neither fires while the machine runs past its time: stop it by hand and read the instance's `scheduling` and the schedule's status (`gcloud compute resource-policies describe test-rig-backstop-stop --region=us-west1`). |
+| 14 | The first time the run limit fires: `gcloud compute operations list --project=fps-csarko --filter='targetLink~instances/test-rig' --format='table(insertTime,operationType,status)'` | A `compute.instances.deferredStop` operation about 4 hours after the start. | The machine runs past its time: stop it by hand (`terraform apply -var running=false`) and read the instance's `scheduling`. |
+| 15 | The daily stop, once: start the machine between 07:00 and 08:00 UTC (it runs about an hour for this, $1.10) and, after 09:15 UTC, read the Admin Activity audit log: `gcloud logging read 'protoPayload.methodName:"compute.instances.stop" AND protoPayload.authenticationInfo.principalEmail:"compute-system"' --project=fps-csarko --freshness=2d --format='table(timestamp,protoPayload.methodName,protoPayload.resourceName,protoPayload.authenticationInfo.principalEmail)'` | A line at 09:00 UTC (up to 15 minutes later), method `v1.compute.instances.stop` (or `compute.instances.stop`), resource `projects/fps-csarko/zones/us-west1-b/instances/test-rig`, principal Compute Engine's service agent, `service-<project number>@compute-system.iam.gserviceaccount.com`. No role is granted to it by this module: it holds `compute.instances.stop` through its own role, `roles/compute.serviceAgent`. `gcloud compute instances list` shows `TERMINATED`. | No line and the machine still running: the schedule could not act; stop it by hand. Google's page asks for `roles/compute.instanceAdmin.v1` on the service agent; grant it by hand, then look again the next day: `number=$(gcloud projects describe fps-csarko --format='value(projectNumber)')`, `gcloud projects add-iam-policy-binding fps-csarko --member="serviceAccount:service-${number}@compute-system.iam.gserviceaccount.com" --role=roles/compute.instanceAdmin.v1`. Also read `gcloud compute resource-policies describe test-rig-backstop-stop --region=us-west1 --project=fps-csarko`. |
+| 16 | After the first stop, the addresses Cloud NAT holds with the machine stopped: `gcloud compute routers get-status test-rig --region=us-west1 --project=fps-csarko --format='value(result.natStatus[0].autoAllocatedNatIps.len())'` | Nothing or `0`: the NAT has released its address, and a stopped machine bills its disk alone. | `1` (or more): the NAT keeps an address while no machine uses it, $0.005 an hour each, **$3.65 a month** more while stopped. Record it; the cost table's "stopped" line then reads $8.65 a month. |
+
+### When a step fails
+
+What you see: the log's last lines (`terraform output -raw setup_log_command`) are
+`FAILED: <reason>` (a `Timed out: <what> did not finish in <n> minutes` is one such reason), then
+`Restarting to retry from the first step not yet done (automatic restart 1 of 2)`. The machine
+restarts by itself, and the next boot goes on from the first step without a `Step done` line; steps
+already done are not repeated. After two failed boots in a row it stops restarting and the last
+line reads `... no automatic restart left. Read the FAILED line above ...`: the machine then idles
+until its run limit stops it.
+
+What you do: read the `FAILED:` line and the lines before it. A passing cause (a download that
+stalled, a driver not yet loaded) needs nothing more than a restart: `shutdown /r /t 0` from the
+SSH shell, which retries from the first step not yet done and allows two automatic restarts again
+once a boot succeeds. A cause that recurs (a hash that no longer matches, a value Windows refuses)
+needs a change to `startup.ps1` first: stop the machine (`terraform apply -var running=false`) so
+that it bills nothing meanwhile, and see [What a change does](#what-a-change-does-to-the-machine)
+for how a changed script reaches it.
 
 ### After a `terraform destroy`
 
@@ -220,8 +241,9 @@ The run limit and the daily stop come from Compute Engine and cannot stop a new 
 first boot: the limit is at least an hour (the set-up takes about 40 minutes), and the daily stop
 is avoided by the time of day (step 5 above).
 
-Once the machine has stopped itself, Terraform's state still says `RUNNING`; the next `apply`
-starts it again. `gcloud compute instances stop test-rig --zone=us-west1-b` stops it too, with the
+Once the machine has stopped itself, the provider reads it back as `TERMINATED` (it takes
+`desired_status` from the machine's status), so the next `apply` with `running = true` plans the
+one change `TERMINATED` to `RUNNING` and starts it again. `gcloud compute instances stop test-rig --zone=us-west1-b` stops it too, with the
 same effect on the next `apply`. Any `apply` with `running = true` starts a stopped machine,
 whatever else it was run for; any `apply` with `running = false` leaves it stopped.
 
@@ -230,18 +252,26 @@ whatever else it was run for; any `apply` with `running = false` leaves it stopp
 | Change | What happens |
 |---|---|
 | `running` | The machine is started or stopped. |
-| `desktop_user`, `startup.ps1` | The start-up script in the machine's metadata changes in place, running or stopped; nothing restarts. The next boot runs it: a new desktop user is made, with its own password, then the machine restarts once and is checked again. A changed set-up step does not run again on a machine that has done it (its marker is there); a new one does. |
+| `desktop_user`, `startup.ps1` | The start-up script in the machine's metadata changes in place, running or stopped; nothing restarts, and `plan` shows an in-place update of `metadata`. The next boot runs the new script. On a machine that has finished its set-up (`C:\ProgramData\test-rig\setup-complete` exists), that boot runs only what the script does at every boot: it keeps `C:\ProgramData\test-rig` closed; for a new `desktop_user` it makes that user with its own password and a display task, restarts once and checks the machine again; and it logs the licence. **No set-up step runs again, changed or new**: a new driver, Chrome, Node or Git pin, a new holding-still setting, or a new step changes nothing on that machine. To make a machine take a changed set-up, replace it: `terraform apply -replace=google_compute_instance.test_rig` with `running = true`, a new machine that runs the whole new script (about 40 minutes). By hand instead, from an SSH shell: `Remove-Item C:\ProgramData\test-rig\setup-complete, C:\ProgramData\test-rig\verified` and the `done-<step>` marker of each changed step, then `shutdown /r /t 0`; every step without its marker runs, and the machine is checked again. |
 | `gpu_type` (and with it `machine_type`), `max_run_hours`, `spot`, `boot_disk_size_gb`, `boot_disk_type`, `zone`, `instance_name` | **The machine is replaced**: `plan` shows `google_compute_instance.test_rig` "must be replaced", and its `build` label changes. The new machine runs the first-boot set-up again (about 40 minutes); the old disk and everything on it go. **Refused while `running = false`**. The provider cannot change the run limit of a machine in place (its schema forces a new machine), although Google's API can on a stopped one. |
 | `enable_display` | The provider stops the machine, changes it and starts it again if `running` is true. |
 | `backstop_stop_schedule` | The schedule changes or goes, in place. |
 | A new monthly Windows image, `image`, `baked_image` | Nothing until `terraform apply -replace=google_compute_instance.test_rig` (with `running = true`: the refusal cannot see a `-replace`). |
 
-What the refusals cannot stop: a `-replace`; the replacement of a machine that Terraform tainted
-after a failed create (apply with `running = true` after a failed create); a machine whose `build`
-label was removed or changed by hand (one without it counts as the current build); a replacement
-the provider decides for a reason of its own. The read knows nothing of Terraform's state: if the
-state were lost while a machine named `test-rig` still existed, it would take that machine for
-this module's.
+What the refusals cannot stop:
+
+- **a machine that exists but is still in its first boot.** `terraform apply` creates it, and a
+  minute later `terraform apply -var running=false` passes: the machine is there and of this build,
+  so the provider stops it in the middle of Windows' specialisation. Nothing reads how far its
+  set-up is. So: **create it running, wait for `verified`, then stop.**
+- a `-replace`, and the replacement of a machine that Terraform tainted after a failed create: both
+  create a new machine, and with `running = false` (say, left in `terraform.tfvars`) stop it at
+  once. Run both with `running = true` only;
+- a machine whose `build` label was removed or changed by hand (one without it counts as the
+  current build);
+- a replacement the provider decides for a reason of its own;
+- a lost state: the read knows nothing of Terraform's state, so if the state were lost while a
+  machine named `test-rig` still existed, it would take that machine for this module's.
 
 ## Reaching the machine
 
@@ -298,6 +328,9 @@ not blocked. The probe checks the block from inside the desktop session.
 
 The daily stop is carried out by Compute Engine's own service agent, which already holds
 `compute.instances.stop` through its role `roles/compute.serviceAgent`; nothing is granted for it.
+Google's page asks for `roles/compute.instanceAdmin.v1` on that agent and warns that schedules can
+stop working without it; step 15 of the first run looks for the stop in the audit log and gives the
+grant to make if it is not there.
 
 ## The first boot
 
@@ -310,23 +343,30 @@ At every boot it first makes `C:\ProgramData\test-rig` writable by the local sys
 Administrators only, with nothing inherited from `ProgramData` (whose Users may create files):
 nobody else may swap a download between its hash check and its run as SYSTEM, forge a marker, or
 read the desktop password. On the first boot it then installs, each step recording its own marker
-there so that a boot that fails part-way is finished by the next. Every download and every
-installer has a time limit (downloads 15 minutes, the driver's 30; installers 10 to 30 minutes); one
-that runs over is logged as `Timed out: <what> did not finish in <n> minutes`, nothing further runs
-on that boot, and the next boot tries again. Every MSI waits first until Windows Installer is idle,
+there so that a boot that fails part-way is finished by the next. Every call that can hang has a
+time limit: downloads 15 minutes (the driver's 30), installers 10 to 30 minutes, adding the OpenSSH
+capability 20, starting or stopping a service 5, and every native program (`nvidia-smi`, `icacls`,
+`reg`, `powercfg`, `git`, `sshd -t`, `qwinsta`) 5 minutes unless it says otherwise. One that runs
+over is stopped with everything it started and logged as `Timed out: <what> did not finish in <n>
+minutes` (or seconds); nothing further runs on that boot, and the machine restarts to try again
+(see [When a step fails](#when-a-step-fails)). Every MSI waits first until Windows Installer is idle,
 and each step is marked done only when its product is in place, never on an exit code alone:
 
 1. **SSH, key login only.** `PasswordAuthentication no` goes at the top of `sshd_config` (sshd keeps
    the first value it reads, ahead of the `Match` block the default configuration ends with), checked
    with `sshd -t` by the `sshd.exe` the service actually runs, and rolled back if it fails.
-2. **The desktop user** (below).
+2. **The desktop user** (below), and its display task ([The display](#the-display)).
 3. **The NVIDIA RTX Virtual Workstation driver**, by Google's documented method: the driver from
    Google's bucket, the build Google's own Windows installer script picks for a virtual-workstation
    machine (NVIDIA's 582.53, vGPU 19, the long-term branch Google recommends through July 2028),
    checked against the SHA-256 that script pins and against its Authenticode signature (signer
    `NVIDIA Corporation`, exactly), and run with NVIDIA's switches `-s -n` (silent, no restart). The
-   script fails on any exit code but 0 ("Success") and 1 ("Success, but reboot required"), and on a
-   missing or failing `nvidia-smi`. Google's script itself is not run: it ends every failure (no GPU,
+   script fails on any exit code but 0 ("Success") and 1 ("Success, but reboot required"). On 1 it
+   records `driver-installed` and restarts the machine before anything checks the driver; the next
+   boot checks it. On 0 it checks it at once. The check is `nvidia-smi` (looked for in System32,
+   NVIDIA's `NVSMI` directory and the driver store, its path logged), run with a limit of two
+   minutes; a missing or failing one fails the step, and the restart that follows checks again.
+   Google's script itself is not run: it ends every failure (no GPU,
    a checksum mismatch, a failed download, an installer error) with a bare `Exit`, so its exit code
    says nothing.
 4. **Chrome** (stable), from Google's enterprise installer: not pinnable (that address serves only
@@ -340,10 +380,37 @@ It then restarts the machine once. On that boot it checks, with things that can 
 `nvidia-smi -q` names exactly `NVIDIA RTX Virtual Workstation`, `Licensed`, as the driver's
 licensed product (polling for up to five minutes, since the licence is fetched over the network;
 on a GPU without the licence it only logs it); that the desktop user is logged on at the console
-(`qwinsta`); and that the metadata-server block is in place. It logs the display adapters and what
+(`qwinsta`); and that the metadata-server block is in place. It logs what the display task did, the
+size and refresh rate of every display adapter (with a `WARNING` if none is 1920 × 1080), and what
 listens on all addresses. Only then does it write `C:\ProgramData\test-rig\verified`. A failure is
-logged as `FAILED: <reason>` and retried at the next boot, and the probe refuses to run until
-`verified` exists, printing that line.
+logged as `FAILED: <reason>` and the machine restarts to retry (at most twice in a row; see [When a
+step fails](#when-a-step-fails)), and the probe refuses to run until `verified` exists, printing
+that line.
+
+### The display
+
+There is no monitor, and nothing here like AWS's DCV, which sets its console's size from its own
+setting. The console the desktop user logs on to is drawn on the display the NVIDIA driver presents
+with nothing attached (and, with `enable_display = true`, Google's virtual display beside it); Windows
+starts it at whatever mode that display offers first. An AWS machine with the same kind of driver
+came up at 1366 × 768, 60 Hz, with nobody connected. Windows keeps each display's chosen mode in
+the registry per display and user, which nothing documents writing to directly.
+
+So the set-up gives the desktop user a scheduled task, `test-rig-display`, that runs at every logon
+of that user, in that user's session, and asks for 1920 × 1080 with Microsoft's documented
+`ChangeDisplaySettingsEx`, saved for that user. It writes what the mode was and what Windows answered
+to `C:\Users\hiker\AppData\Local\test-rig-display.txt` (`0`: done; `-2`: the driver offers no such
+mode). `Set-DisplayResolution` (Windows Server's `ServerCore` module) is not used: like any such call
+it sets the mode of the session it runs in, and the start-up script runs in the services session at
+boot, not in the console.
+
+The check after set-up logs that result and each adapter's size and refresh rate, and warns (it
+does not fail) if no display is at 1920 × 1080. The probe reports the size Chrome's screen has, the
+adapters with their size and refresh rate, and the rate `requestAnimationFrame` runs at, and warns if
+the screen is not 1920 × 1080. Step 8 of the first run records the size, the rate and the adapter.
+If the driver refuses the mode, the measurements run at the size it gives, recorded with each result;
+what the driver offers is then a question for `nvidia-smi` and the NVIDIA documentation, not for this
+module.
 
 The log is `C:\ProgramData\test-rig\setup.log`. The repository is not cloned at boot.
 
@@ -436,9 +503,12 @@ From an SSH shell on the machine (`powershell` first):
 ```powershell
 cd $env:USERPROFILE
 $env:GIT_LFS_SKIP_SMUDGE = '1'   # the probe needs no LFS objects
-git clone --depth 1 https://github.com/csarkosh/game-dayhike.git
+git clone --depth 1 --branch worktree-test-rig-gcp https://github.com/csarkosh/game-dayhike.git
 node game-dayhike\_infra\test-rig-gcp\probe.mjs
 ```
+
+`--branch worktree-test-rig-gcp`: the probe is on that branch until it is merged into `main`, the
+repository's default branch, which a plain clone takes. Once it is merged, drop `--branch ...`.
 
 (Or copy it over: `gcloud compute scp _infra/test-rig-gcp/probe.mjs test-rig:probe.mjs
 --zone=us-west1-b --project=fps-csarko --tunnel-through-iap`.)
@@ -451,7 +521,9 @@ interactive logon type (Microsoft: such a task "will be run only in an existing 
 session"), where it launches Chrome with a fresh profile and finds Chrome's DevTools endpoint
 through the `DevToolsActivePort` file Chrome writes into that profile, so it can never attach to
 another Chrome. From the shell, meanwhile, it reads `nvidia-smi`'s process list, which only an
-administrator sees whole, and `qwinsta` every 30 seconds. It prints one JSON report, any `WARNING:`
+administrator sees whole, and `qwinsta` every 30 seconds. It looks for `nvidia-smi.exe` where the
+driver installs it (System32, NVIDIA's `NVSMI` directory, the driver store), then on `PATH`, and
+prints the path it uses. It prints one JSON report, any `WARNING:`
 lines, and then `PASS` or `FAIL: <reasons>`, and exits 0 only on a pass.
 
 Three questions, in order:
@@ -573,7 +645,7 @@ against the mocked provider: created running; stopped and kept; a plan while sto
 desktop user while stopped is written in place; a new run limit while stopped is refused; with the
 machine running it is applied; a stopped machine is started again. Each refusal was shown to fail
 its test with its condition removed. What a mocked provider cannot show is in the file's first
-lines and in the first run's steps 12 to 14; the refusal of a machine created stopped is the real
+lines and in the first run's steps 12 to 16; the refusal of a machine created stopped is the real
 read's `not found` (above).
 
 `tests/startup.test.mjs` checks, against the limits Microsoft documents: the description passed to
@@ -582,9 +654,18 @@ Windows' complexity rule; that the password reaches no command line and no log l
 script makes (under 260 characters); the task and rule names; that only the script's two values are
 templated and nothing else Terraform's `templatefile` would read; that it uses no syntax Windows
 PowerShell 5.1 lacks and its brackets balance; the pinned hashes and the driver's source; the licence
-rule; the computer name (15 characters); and the script's size. `tests/probe.test.mjs` checks every
+rule; the computer name (15 characters); the script's size; that `msiexec` gets no feature
+property (a `REMOVE=` without `ADDLOCAL=` can install nothing of a product on a first install, and
+this module passes none: a property added later is added to the check with its reason); that the
+driver step restarts when its installer asks and checks `nvidia-smi` only after; that every native
+program, service start or stop and `Add-WindowsCapability` has a time limit; that a failed boot
+restarts itself at most twice in a row; and the display task (1920 × 1080, `ChangeDisplaySettingsEx`,
+a `DEVMODEW` of Microsoft's 220 bytes, run at the desktop user's logon, checked after set-up). Each of
+these was shown to fail with its defect planted, `REMOVE=` on the `msiexec` line among them. `tests/probe.test.mjs` checks every
 pass and fail rule of [the probe](#the-first-runs-probe), including Google's unlicensed
-`NVIDIA Virtual Applications ... Licensed` output as a fail, and the reading of `qwinsta`.
+`NVIDIA Virtual Applications ... Licensed` output as a fail, the reading of `qwinsta`, the order in
+which it looks for `nvidia-smi` (System32, `NVSMI`, the driver store, then `PATH`), and the warning
+for a screen that is not 1920 × 1080.
 
 What only a machine shows is in [the first run](#the-first-run-step-by-step).
 
