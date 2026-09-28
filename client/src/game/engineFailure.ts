@@ -10,6 +10,7 @@
 import {
   NOTICE_RESTARTED,
   NOTICE_SWITCHED,
+  NOTICE_UNFETCHED,
   failureSwap,
   pinsAfterFailure,
   fallbackHolds,
@@ -123,7 +124,8 @@ const FAILURE_WORDS: Record<EngineFailure, string> = {
  * A report from an engine that is no longer the running one, or one already
  * answered, changes nothing more; so does one whose engine a switch already
  * left while it waited. The HUD's line says what the rebuild ended on:
- * restarted on WebGPU, switched to WebGL2. The cover lifts on every outcome;
+ * restarted on WebGPU, switched to WebGL2 (after translators that could not
+ * be fetched, a line that names no GPU error). The cover lifts on every outcome;
  * a rebuild that throws shows no line.
  */
 export function answerFailures(deps: FailureDeps): (engine: unknown, reason: EngineFailure) => Promise<void> {
@@ -152,7 +154,7 @@ export function answerFailures(deps: FailureDeps): (engine: unknown, reason: Eng
         } finally {
           lift();
         }
-        if (deps.alive()) deps.flash(deps.runningOnWebGpu() ? NOTICE_RESTARTED : NOTICE_SWITCHED);
+        if (deps.alive()) deps.flash(deps.runningOnWebGpu() ? NOTICE_RESTARTED : reason === "unfetched" ? NOTICE_UNFETCHED : NOTICE_SWITCHED);
       })(),
     );
   };
@@ -262,5 +264,5 @@ export function startOnEngine<G extends { notify(line: string): void }>(
  */
 export function answerUnfetched(page: { override: EngineName | null; pin(): void }): string {
   if (pinsAfterFailure({ stored: true, override: page.override })) page.pin();
-  return NOTICE_SWITCHED;
+  return NOTICE_UNFETCHED;
 }

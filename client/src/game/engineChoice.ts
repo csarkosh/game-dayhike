@@ -105,6 +105,8 @@ export const FALLBACK_NOTICE_MS = 6_000;
 
 export const NOTICE_SWITCHED = "Graphics switched to WebGL2 after a GPU error.";
 export const NOTICE_RESTARTED = "Graphics restarted after a GPU error.";
+/** After translators that could not be fetched (`unfetched`): no GPU error. */
+export const NOTICE_UNFETCHED = "Graphics switched to WebGL2: part of the renderer could not be downloaded.";
 
 const DAY_MS = 86_400_000;
 

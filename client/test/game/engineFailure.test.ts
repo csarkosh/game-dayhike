@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   NOTICE_RESTARTED,
   NOTICE_SWITCHED,
+  NOTICE_UNFETCHED,
   chooseEngine,
   fallbackHolds,
   pinsAfterFailure,
@@ -141,19 +142,24 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     expect(readFallback(h.storage)).toEqual({ reason: "pipeline", browser: 153, babylon: "9.18.0", at: T0, losses: 0 });
   });
 
-  it("swaps translators that could not be fetched onto WebGL2 as for a failure, writing nothing, so the next load tries WebGPU again", async () => {
+  it("swaps translators that could not be fetched onto WebGL2 as for a failure, with its own line once, writing nothing, so the next load tries WebGPU again", async () => {
     const h = hike();
-    await h.answer(h.engine(), "unfetched");
+    const failed = h.engine();
+    await h.answer(failed, "unfetched");
     expect(h.log).toEqual([
       "unwatch gpu0",
-      `record unfetched: ${NOTICE_SWITCHED}`,
+      `record unfetched: ${NOTICE_UNFETCHED}`,
       "cover",
       "stop gpu0",
       "rebuild from gpu0",
       "on gl1 (c1)",
       "lift",
-      `flash ${NOTICE_SWITCHED}`,
+      `flash ${NOTICE_UNFETCHED}`,
     ]);
+    expect(h.log.filter((line) => line.startsWith("flash"))).toHaveLength(1);
+    // The failed engine reported again: answered no more.
+    await h.answer(failed, "unfetched");
+    expect(h.log.filter((line) => line.startsWith("flash"))).toHaveLength(1);
     expect(readFallback(h.storage)).toBe(null);
     expect(h.page.url).toBe(null);
     // The next load: no record, so the rule gives WebGPU again.
@@ -167,7 +173,7 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
       ["webgl2", 0],
     ] as const) {
       let pins = 0;
-      expect(answerUnfetched({ override, pin: () => void pins++ })).toBe(NOTICE_SWITCHED);
+      expect(answerUnfetched({ override, pin: () => void pins++ })).toBe(NOTICE_UNFETCHED);
       expect(pins, String(override)).toBe(pinned);
     }
   });

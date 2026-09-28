@@ -5,7 +5,7 @@ import {
   withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
   type AdapterReport, type WebGpuSteps,
   FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
-  NOTICE_SWITCHED, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
+  NOTICE_SWITCHED, NOTICE_UNFETCHED, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS, WEBGPU_TIERS,
 } from "../../src/game/engineChoice.js";
 
@@ -166,9 +166,10 @@ describe("the remembered fallback", () => {
 });
 
 describe("what a failure of the running WebGPU engine does: a live swap, never a reload", () => {
-  it("says one of two lines on the HUD once the swap is done", () => {
+  it("says one of three lines on the HUD once the swap is done: a network that failed the translators is no GPU error", () => {
     expect(NOTICE_SWITCHED).toBe("Graphics switched to WebGL2 after a GPU error.");
     expect(NOTICE_RESTARTED).toBe("Graphics restarted after a GPU error.");
+    expect(NOTICE_UNFETCHED).toBe("Graphics switched to WebGL2: part of the renderer could not be downloaded.");
   });
 
   it("swaps a pipeline error or an uncaptured one onto WebGL2 at once, whenever it comes", () => {
