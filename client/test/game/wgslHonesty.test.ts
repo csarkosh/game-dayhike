@@ -97,11 +97,11 @@ describe("the map the build ships, against the page's own translation", () => {
     const salt = nodeSalt(format);
     expect(salt).toBe(buildSalt());
     const { stages } = readCorpusDir(CORPUS_DIR, format);
-    expect(stages.length).toBeGreaterThan(0);
     const made = buildMap({ stages, salt, translate: (entry) => translateStage(translators, entry), shared: format });
     expect(made.failed).toEqual([]);
     const map = format.readMap(made.text, salt);
-    expect(map.size).toBe(stages.length);
+    expect(stages).toHaveLength(10);
+    expect(map.size).toBe(10);
 
     // The page's own lookup, with no source: every stage translated in the page's way.
     const own = await page([], "record");
@@ -119,7 +119,7 @@ describe("the map the build ships, against the page's own translation", () => {
       expect(map.get(key), `${entry.stage} ${format.corpusId(entry)}`).toBe(translatedByPage.get(key));
       compared += 1;
     }
-    expect(compared).toBe(stages.length);
+    expect(compared).toBe(10);
 
   }, timeLimit(300_000));
 
@@ -132,7 +132,7 @@ describe("the map the build ships, against the page's own translation", () => {
     const made = buildMap({ stages: [vertex, fragment], salt, translate: (entry) => translateStage(translators, entry), shared: format });
     const fragmentKey = format.stageKey(salt, fragment.stage, fragment.flag, fragment.glsl);
     const serve = (text: string): typeof fetch =>
-      (() => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(text) } as Response)) as unknown as typeof fetch;
+      (() => Promise.resolve({ ok: true, status: 200, headers: new Headers(), text: () => Promise.resolve(text) } as Response)) as unknown as typeof fetch;
 
     const shipped = await page([loadWgslMap("/dayhike/assets/wgsl-map-Ab12Cd34.json", salt, { fetch: serve(made.text) })], "verify");
     await shipped.prepare(vertex.glsl, fragment.glsl);

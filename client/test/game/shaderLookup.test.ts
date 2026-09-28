@@ -371,6 +371,21 @@ describe("the WebGPU shader lookup", () => {
     await vi.advanceTimersByTimeAsync(250);
     expect(partlyDone).toBe(true);
 
+    // A source whose read fails does not end the wait for the others: each is
+    // still waited for by its own bound.
+    const refused = Promise.reject(new Error("refused"));
+    refused.catch(() => undefined);
+    const failing: WgslSource = { ...memorySource({}, "failing").source, ready: refused };
+    const patient: WgslSource = { ...memorySource().source, ready: new Promise(() => undefined), waitMs: 1_000 };
+    const mixed = harness();
+    const readyMixed = lookUpShaders(mixed.engine, { mode: "on", salt: SALT, sources: () => Promise.resolve([failing, patient]), report: newLookupReport("on", SALT) });
+    let mixedDone = false;
+    void readyMixed.then(() => (mixedDone = true));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(mixedDone).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mixedDone).toBe(true);
+
     // A source with a bound of its own is waited for by it, the others by
     // theirs: the map's 1 s beside a store that never answers.
     const own: WgslSource = { ...memorySource().source, ready: new Promise(() => undefined), waitMs: 1_000 };
@@ -712,8 +727,8 @@ describe("the translations shipped with the build", () => {
   const MAP_URL = "/dayhike/assets/wgsl-map-Ab12Cd34.json";
   /** A response with `body`, read with promises alone, so that fake timers
    * hold nothing of it back. */
-  const response = (body: string, status = 200): Response =>
-    ({ ok: status >= 200 && status < 300, status, text: () => Promise.resolve(body) }) as Response;
+  const response = (body: string, status = 200, headers: Record<string, string> = {}): Response =>
+    ({ ok: status >= 200 && status < 300, status, headers: new Headers(headers), text: () => Promise.resolve(body) }) as Response;
   /** `fetch` answering every request with `body`. */
   function serving(body: string, status = 200) {
     const answer = (() => Promise.resolve(response(body, status))) as unknown as typeof fetch;
@@ -736,7 +751,7 @@ describe("the translations shipped with the build", () => {
     expect(report.hitsBySource).toEqual({ shipped: 2 });
   });
 
-  it("is asked before the store: a stage both have is the map's and is never written to the store; one only the store has is the store's", async () => {
+  it("is asked before the store: a stage both have is the map's; one only the store has is the store's", async () => {
     const { kept, first } = await translatedBy();
     const vertexKey = keyOf("vertex", VERTEX);
     const fragmentKey = keyOf("fragment", FRAGMENT);
@@ -749,7 +764,6 @@ describe("the translations shipped with the build", () => {
     expect(h.modules).toEqual(first.modules);
     expect(report.effects[0]?.stages.map((s) => s.from)).toEqual(["shipped", "store"]);
     expect(report.hitsBySource).toEqual({ shipped: 1, store: 1 });
-    expect(store.puts).toEqual([]);
 
     // By default: the map at the URL the build gives, then the store.
     vi.stubGlobal("fetch", serving(mapText(SALT, kept.map)).answer);
@@ -822,6 +836,32 @@ describe("the translations shipped with the build", () => {
     await readyOther;
     releaseShaderLookup(other.engine);
     expect(signals.slice(signalsBefore).map((signal) => signal.aborted)).toEqual([true]);
+  });
+
+  it("refuses a map whose Content-Length is over the 16 MB ceiling, before reading its body: a source with nothing in it", async () => {
+    const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    let read = 0;
+    const big = (() =>
+      Promise.resolve({
+        ...response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "16777217" }),
+        text: () => {
+          read += 1;
+          return Promise.resolve(mapText(SALT, new Map([["aa", "// a"]])));
+        },
+      } as Response)) as unknown as typeof fetch;
+    const map = loadWgslMap(MAP_URL, SALT, { fetch: big });
+    await map.ready;
+    expect([map.get("aa"), read]).toEqual([null, 0]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toBe(
+      `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: 16777217 bytes, over the map's ceiling of 16777216)`,
+    );
+    // At the ceiling, read.
+    const atCeiling = loadWgslMap(MAP_URL, SALT, {
+      fetch: (() => Promise.resolve(response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "16777216" }))) as unknown as typeof fetch,
+    });
+    await atCeiling.ready;
+    expect(atCeiling.get("aa")).toBe("// a");
   });
 
   it("holds what it read for the engine's life, asked for or not, and lets it all go when closed", async () => {

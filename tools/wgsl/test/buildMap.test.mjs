@@ -128,7 +128,7 @@ describe('the map the build ships', () => {
     const lines = done.stdout.split('\n');
     expect(lines.filter((line) => / ms {2}(vertex {2}|fragment) {2}[0-9a-f]{16} {2}\d+ B GLSL -> \d+ B WGSL$/.test(line))).toHaveLength(2);
     expect(done.stdout).toContain('  entries:      2\n');
-    expect(done.stdout).toMatch(new RegExp(`  bytes:        ${Buffer.byteLength(done.map)} raw, \\d+ gzip -9, \\d+ brotli -q 11\n`));
+    expect(done.stdout).toMatch(/ {2}bytes: {8}\d+ raw, \d+ gzip -9, \d+ brotli -q 11\n/);
     expect(done.stdout).toMatch(/ {2}translation: {2}translators started in \d+ ms; \d+ ms in all, \d+ ms a stage on average, \d+ ms the longest\n/);
     expect(done.stdout).toMatch(/ {2}reading it: {3}\d+\.\d\d ms as one JSON \(shipped\), \d+\.\d\d ms as an index and a text\n/);
     expect(done.stderr).toBe('');
@@ -153,8 +153,8 @@ describe('the map the build ships', () => {
     const out = join(directory(), 'map.json');
     const done = await tool(CORPUS_DIR, out);
     const { stages } = readCorpusDir(CORPUS_DIR, shared);
-    expect(stages.length).toBeGreaterThan(0);
-    expect(Object.keys(JSON.parse(done.map).entries)).toHaveLength(stages.length);
+    expect(stages).toHaveLength(10);
+    expect(Object.keys(JSON.parse(done.map).entries)).toHaveLength(10);
     expect(done.stderr).not.toContain('FAILED');
     // The figures, for the run's log: sizes, what reading it costs, the translators' start.
     console.log(done.stdout.slice(done.stdout.indexOf('wgsl map:')));

@@ -116,7 +116,7 @@ describe("the start with the WebGPU switch off", () => {
       const file = stack.pop() as string;
       if (reached.has(file)) continue;
       reached.add(file);
-      for (const m of readFileSync(file, "utf8").matchAll(/^\s*import\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["'](\.[^"']+)\.js["']/gm)) {
+      for (const m of readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["'](\.[^"']+)\.js["']/gm)) {
         stack.push(join(file, "..", `${m[1] as string}.ts`));
       }
     }
