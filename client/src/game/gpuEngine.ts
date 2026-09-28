@@ -40,6 +40,9 @@ import { keyEveryBoundBuffer } from "./webgpuVertexBuffer.js";
 // only the WebGPU path loads, so they cost the WebGL2 bundle nothing.
 import "@babylonjs/core/Engines/WebGPU/Extensions/index.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import { AbstractEngine as BaseEngine } from "@babylonjs/core/Engines/abstractEngine.pure.js";
+import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
+import { _CommonDispose } from "@babylonjs/core/Engines/engine.common.js";
 // The pure modules, as every other file imports them: the non-pure PBR
 // module registers `BaseTexture.sphericalPolynomial`, which lit only a page
 // that loaded this module with the probe's spherical harmonics (the
@@ -279,15 +282,43 @@ export async function createWebGpuEngine(
     StandardMaterial.ForceGLSL = true;
     return engine;
   } catch (err) {
-    try {
-      made.engine?.dispose();
-    } catch {
-      /* a half-made engine may not dispose cleanly; it is dropped either way */
-    }
+    if (made.engine !== null) disposeHalfMade(made.engine);
     throw err;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Disposes a WebGPU engine whose start failed part-way. Babylon's
+ * `WebGPUEngine.dispose` reads what `initAsync` makes once the device stands
+ * (`_timestampQuery` first, then the texture and buffer managers and the
+ * device), so on an engine whose device never came it throws at the first of
+ * them, before its last two steps: dropping the canvas's, the window's and
+ * the document's listeners (`_CommonDispose`), and the base dispose, which
+ * takes the engine out of `EngineStore.Instances`. Those run here where it
+ * threw, each on its own guard, and the engine leaves the store whatever
+ * they do.
+ */
+export function disposeHalfMade(engine: WebGPUEngine): void {
+  try {
+    engine.dispose();
+    return;
+  } catch {
+    /* the device never came: finish below */
+  }
+  try {
+    _CommonDispose(engine, engine.getRenderingCanvas());
+  } catch {
+    /* listeners that were never added */
+  }
+  try {
+    BaseEngine.prototype.dispose.call(engine);
+  } catch {
+    /* as far as it goes */
+  }
+  const at = EngineStore.Instances.indexOf(engine);
+  if (at >= 0) EngineStore.Instances.splice(at, 1);
 }
 
 /** `InternalTextureSource.Raw2DArray`, the source of a `RawTexture2DArray`. */
