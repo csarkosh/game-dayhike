@@ -116,6 +116,17 @@ run "defaults" {
     error_message = "DCV is installed with exactly the server, the web client and the runtime, and without the indirect display driver."
   }
 
+  # The console must be display_width x display_height with nobody connected:
+  # the script asks DCV for it and the verification boot fails otherwise.
+  assert {
+    condition = (
+      strcontains(local.setup_script, "$DisplayWidth = 1920\n$DisplayHeight = 1080") &&
+      strcontains(local.setup_script, "@('set-display-layout', '--session', 'console', \"$want+0+0\")") &&
+      strcontains(local.setup_script, "if ($size -ne \"$($DisplayWidth)x$($DisplayHeight)\") { throw \"The console is $size, not $($DisplayWidth)x$($DisplayHeight)\" }")
+    )
+    error_message = "The script sets the console to display_width x display_height and fails the verification boot if it is not."
+  }
+
   assert {
     condition     = !strcontains(local.setup_script, "StartWhenAvailable")
     error_message = "The stop task must not start late: a missed shutdown would fire on a later boot."

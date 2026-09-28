@@ -195,6 +195,9 @@ Set-Content $SkipTimerOnce ''
 Set-StopTimer
 Check 'a skip with no task still arms a pending shutdown' ((Test-Path $calls) -and @(Get-Content $calls)[0] -like '/s /f /t *')
 
+# --- An adapter with no mode ------------------------------------------------------
+Check 'an adapter with no mode reads inactive' ((Format-AdapterMode ([pscustomobject]@{ CurrentHorizontalResolution = $null })) -eq 'inactive')
+Check 'an active adapter reads its mode' ((Format-AdapterMode ([pscustomobject]@{ CurrentHorizontalResolution = 1920; CurrentVerticalResolution = 1080; CurrentRefreshRate = 60 })) -eq '1920x1080 at 60 Hz')
 Remove-Item -Recurse -Force $work
 "failures: $fail"
 if ($fail -gt 0) { exit 1 }

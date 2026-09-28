@@ -64,6 +64,9 @@ $GitSha256 = 'D065A4E23C3D9A6B5073D609B5BE0830227EC3CA053C083BA385061DDFAF94C6'
 
 $ClosedGroups = @('Remote Desktop', 'Windows Remote Management')
 $DcvFirewallRule = 'NICE DCV Server (In)'
+# The console's size, which the game's measurements are taken at.
+$DisplayWidth = ${display_width}
+$DisplayHeight = ${display_height}
 $Root = Join-Path $env:ProgramData 'test-rig'
 $Downloads = Join-Path $Root 'downloads'
 $ShutdownExe = "$env:WINDIR\System32\shutdown.exe"
@@ -553,7 +556,7 @@ function Install-Everything {
     Set-DcvParameter 'security' 'os-auto-lock' 0 DWord
     Set-DcvParameter 'session-management' 'create-session' 1 DWord
     Set-DcvParameter 'session-management/automatic-console-session' 'owner' $DesktopUser String
-    Set-DcvParameter 'display' 'console-session-default-layout' "[{'w':<${display_width}>, 'h':<${display_height}>, 'x':<0>, 'y':<0>}]" String
+    Set-DcvParameter 'display' 'console-session-default-layout' "[{'w':<$DisplayWidth>, 'h':<$DisplayHeight>, 'x':<0>, 'y':<0>}]" String
     Complete-Step 'dcv'
   }
 
@@ -668,6 +671,63 @@ function Install-Everything {
   }
 }
 
+# An adapter's current mode, or `inactive` for one that drives no display.
+function Format-AdapterMode($Adapter) {
+  if ($Adapter.CurrentHorizontalResolution) {
+    return "$($Adapter.CurrentHorizontalResolution)x$($Adapter.CurrentVerticalResolution) at $($Adapter.CurrentRefreshRate) Hz"
+  }
+  return 'inactive'
+}
+
+# DCV's console session's display layout, as WxH (several heads joined by
+# commas), from `dcv describe-session console --json`; empty if there is no
+# session yet.
+function Get-ConsoleLayout([string]$Dcv) {
+  try {
+    $session = (Get-NativeLines $Dcv @('describe-session', 'console', '--json')) -join "`n" | ConvertFrom-Json
+    return (@($session.'display-layout') | ForEach-Object { "$($_.width)x$($_.height)" }) -join ','
+  } catch {
+    return ''
+  }
+}
+
+# The console at display_width x display_height, with nobody connected. The
+# console-session-default-layout parameter written at set-up is what DCV's
+# guide gives for the size "at startup", but the first run's machine came up
+# at 1366x768 with it set. So once the session exists, this asks for the size
+# with `dcv set-display-layout`, which the guide gives for a running session,
+# and reads it back from DCV and from Windows. Returns the size DCV reports.
+function Set-ConsoleDisplay {
+  $dcv = "$env:ProgramFiles\NICE\DCV\Server\bin\dcv.exe"
+  $want = "$($DisplayWidth)x$($DisplayHeight)"
+  $deadline = (Get-Date).AddMinutes(3)
+  do {
+    $now = Get-ConsoleLayout $dcv
+    if ($now) { break }
+    Start-Sleep -Seconds 10
+  } while ((Get-Date) -lt $deadline)
+  $offered = 'unknown'
+  try {
+    $offered = @(Get-CimInstance CIM_VideoControllerResolution -ErrorAction Stop | Where-Object {
+      $_.HorizontalResolution -eq $DisplayWidth -and $_.VerticalResolution -eq $DisplayHeight
+    }).Count
+  } catch { }
+  Log "Display: DCV's console layout reads '$now'; modes of $want offered by the adapters: $offered"
+  if ($now -and $now -ne $want) {
+    $code = Invoke-Native $dcv @('set-display-layout', '--session', 'console', "$want+0+0")
+    $deadline = (Get-Date).AddMinutes(1)
+    do {
+      Start-Sleep -Seconds 5
+      $now = Get-ConsoleLayout $dcv
+    } while ($now -ne $want -and (Get-Date) -lt $deadline)
+    Log "Display: dcv set-display-layout --session console $want+0+0 exited with $code; the layout now reads '$now'"
+  }
+  Get-CimInstance Win32_VideoController | ForEach-Object {
+    Log "Display adapter: $($_.Name), $(Format-AdapterMode $_), driver $($_.DriverVersion)"
+  }
+  return $now
+}
+
 # Runs on the boot after set-up: every check here can fail, and a failure is
 # logged and retried at the next boot.
 function Test-Setup {
@@ -681,10 +741,6 @@ function Test-Setup {
   } while ((Get-Date) -lt $deadline)
   Log "NVIDIA driver $($licence.Driver); licensed product '$($licence.Product)'; licence '$($licence.Status)'"
   if (-not $licence.Ok) { throw 'The GRID driver is not running as a licensed virtual workstation' }
-
-  Get-CimInstance Win32_VideoController | ForEach-Object {
-    Log "Display adapter: $($_.Name), $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution) at $($_.CurrentRefreshRate) Hz, driver $($_.DriverVersion)"
-  }
 
   $dcv = "$env:ProgramFiles\NICE\DCV\Server\bin\dcv.exe"
   $deadline = (Get-Date).AddMinutes(3)
@@ -709,6 +765,9 @@ function Test-Setup {
   } while ((Get-Date) -lt $deadline)
   if ($desktop.Count -eq 0) { throw "$DesktopUser is not logged on: automatic logon did not take effect" }
   Log "Desktop: $DesktopUser is logged on, in session $($desktop[0].SessionId)"
+
+  $size = Set-ConsoleDisplay
+  if ($size -ne "$($DisplayWidth)x$($DisplayHeight)") { throw "The console is $size, not $($DisplayWidth)x$($DisplayHeight)" }
 
   if ((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server').fDenyTSConnections -ne 1) { throw 'Remote Desktop is on' }
   foreach ($group in $ClosedGroups) {
@@ -752,6 +811,8 @@ try {
       $licence = Get-LicenceState (Get-NativeLines $smi @('-q'))
       Log "Boot: NVIDIA driver $($licence.Driver); licensed product '$($licence.Product)'; licence '$($licence.Status)'"
     }
+    $size = Set-ConsoleDisplay
+    if ($size -ne "$($DisplayWidth)x$($DisplayHeight)") { Log "Display: the console is $size, not $($DisplayWidth)x$($DisplayHeight); the probe fails on it" }
   }
 } catch {
   Log "FAILED: $_"

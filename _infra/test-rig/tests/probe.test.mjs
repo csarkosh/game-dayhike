@@ -3,7 +3,7 @@
 //   node --test _infra/test-rig/tests/probe.test.mjs
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { dcvConnectionCount, lastFailure, licenceState, verdict, warnings } from '../probe.mjs';
+import { adapterLine, dcvConnectionCount, lastFailure, licenceState, verdict, warnings } from '../probe.mjs';
 
 const vws = licenceState('    vGPU Software Licensed Product\n        Product Name : NVIDIA RTX Virtual Workstation\n        License Status : Licensed (Expiry: N/A)\n');
 // What Chrome 154 reported on an Apple M4 (SystemInfo.getInfo): the feature
@@ -22,6 +22,8 @@ const good = (over = {}) => ({
   browserImds: { reachable: false, detail: 'net::ERR_NETWORK_ACCESS_DENIED' },
   dcvConnections: { before: 0, during: 0, after: 0 },
   session: { name: 'Console', id: 1 },
+  screen: { width: 1920, height: 1080, devicePixelRatio: 1, visibility: 'visible' },
+  display: { wanted: '1920x1080' },
   runs: [],
   nvidia: { gpuName: 'Tesla T4', chromeSamples: 5, licence: vws },
   ...over,
@@ -101,4 +103,18 @@ test('a 60 Hz cap warns; the set-up log\'s last failure is found', () => {
   assert.ok(warnings(good({ refreshHz: 60, display: { cappedAt60OrLower: true } })).some((w) => w.includes('60 Hz')));
   assert.equal(lastFailure('a\r\nx FAILED: one\r\nb\r\ny FAILED: two\r\nc'), 'y FAILED: two');
   assert.equal(lastFailure('all fine\n'), null);
+});
+
+test('the screen must be the size asked for, in device pixels', () => {
+  // What the first run's machine showed with nobody connected.
+  const small = fails({ screen: { width: 1366, height: 768, devicePixelRatio: 1 } });
+  assert.deepEqual(small, ['the screen is 1366x768, not 1920x1080']);
+  assert.deepEqual(fails({ screen: { width: 1280, height: 720, devicePixelRatio: 1.5 } }), []);
+  assert.equal(fails({ display: { wanted: '2560x1440' } }).length, 1);
+  assert.equal(fails({ screen: undefined }).length, 1);
+});
+
+test('an adapter with no mode reads inactive', () => {
+  assert.equal(adapterLine({ Name: 'Microsoft Basic Display Adapter', CurrentHorizontalResolution: null, CurrentVerticalResolution: null, CurrentRefreshRate: null }), 'Microsoft Basic Display Adapter: inactive');
+  assert.equal(adapterLine({ Name: 'NVIDIA Tesla T4', CurrentHorizontalResolution: 1920, CurrentVerticalResolution: 1080, CurrentRefreshRate: 60 }), 'NVIDIA Tesla T4: 1920x1080 at 60 Hz');
 });

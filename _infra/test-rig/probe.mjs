@@ -1,8 +1,8 @@
-// The first session's probe on the rented Windows machine. Run it from a
+// The first run's probe on the rented Windows machine. Run it from a
 // Session Manager shell (an administrator, in the non-interactive services
 // session):
 //
-//   node probe.mjs [--user=hiker] [--url=<page> [--seconds=60] [--runs=1]] [chrome flags]
+//   node probe.mjs [--user=hiker] [--display=1920x1080] [--url=<page> [--seconds=60] [--runs=1]] [chrome flags]
 //
 // It answers whether Chrome, drawing on the desktop user's console session
 // with nobody connected, gets the NVIDIA GPU. It starts itself again inside
@@ -33,6 +33,9 @@
 //     GRID driver);
 //   - Chrome ran in the console session, not the services session;
 //   - no DCV client connected at any point of the run;
+//   - the screen Chrome draws on is the size asked for (--display, by default
+//     1920x1080, the module's display_width x display_height), in device
+//     pixels;
 //   - the desktop user could not reach the instance metadata service, from
 //     Node or from Chrome's own network process;
 //   - with --url, every run's page loaded (no navigation error, the document
@@ -51,7 +54,7 @@ const FEATURES = ['webgl', 'gpu_compositing', 'rasterization'];
 const TASK = 'test-rig-probe';
 
 const opt = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
-const own = /^--(user|url|seconds|runs|inner)=/;
+const own = /^--(user|display|url|seconds|runs|inner)=/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const run = (file, args) => spawnSync(file, args, { encoding: 'utf8', windowsHide: true });
 const ps = (command) => run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command]);
@@ -94,6 +97,9 @@ export function verdict(report) {
   for (const [when, count] of Object.entries(report.dcvConnections ?? { unknown: null })) {
     if (count !== 0) reasons.push(`DCV had ${count ?? 'an unknown number of'} client(s) connected ${when}; disconnect every client and run again`);
   }
+  const want = report.display?.wanted;
+  const got = report.screen ? `${Math.round(report.screen.width * (report.screen.devicePixelRatio ?? 1))}x${Math.round(report.screen.height * (report.screen.devicePixelRatio ?? 1))}` : 'unknown';
+  if (!want || got !== want) reasons.push(`the screen is ${got}, not ${want ?? 'the size asked for'}`);
   if (report.imdsReachable !== false) reasons.push('the desktop user reached the instance metadata service');
   if (report.browserImds?.reachable !== false) reasons.push(`Chrome reached the instance metadata service (${report.browserImds?.detail ?? 'not checked'})`);
   if (!/^console$/i.test(report.session?.name ?? '') || report.session?.id === 0) {
@@ -114,6 +120,15 @@ export function warnings(report) {
   else if (!/nvidia/i.test(webgpu.vendor ?? '')) out.push(`the WebGPU adapter's vendor is "${webgpu.vendor}", not nvidia`);
   if (report.display?.cappedAt60OrLower) out.push(`requestAnimationFrame runs at ${report.refreshHz} Hz: frame times below ${(1000 / report.refreshHz).toFixed(1)} ms cannot be seen`);
   return out;
+}
+
+// A display adapter as Windows reports it (Win32_VideoController): its current
+// mode, or `inactive` for one that drives no display.
+export function adapterLine(a) {
+  const mode = a.CurrentHorizontalResolution
+    ? `${a.CurrentHorizontalResolution}x${a.CurrentVerticalResolution} at ${a.CurrentRefreshRate} Hz`
+    : 'inactive';
+  return `${a.Name}: ${mode}`;
 }
 
 // The number of clients connected to DCV's console session, from
@@ -357,7 +372,9 @@ async function outer() {
   const dcv = run(DCV, ['describe-session', 'console']);
   let after = null;
   try { after = connections(); } catch { /* unknown fails the verdict */ }
-  const adapters = ps('Get-CimInstance Win32_VideoController | ForEach-Object { "$($_.Name): $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution) at $($_.CurrentRefreshRate) Hz" }');
+  const adapterJson = ps('@(Get-CimInstance Win32_VideoController | Select-Object Name, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate) | ConvertTo-Json -Compress').stdout.trim();
+  let adapters;
+  try { adapters = [JSON.parse(adapterJson || '[]')].flat().map(adapterLine); } catch { adapters = [adapterJson]; }
   const p50s = (result.runs ?? []).filter((r) => r.loaded && r.p50).map((r) => r.p50);
   const report = {
     ...result,
@@ -369,7 +386,8 @@ async function outer() {
       gpu: gpuSamples,
     },
     display: {
-      adapters: adapters.stdout.trim().split(/\r?\n/),
+      wanted: opt('display') ?? '1920x1080',
+      adapters,
       dcv: (dcv.stdout || dcv.stderr || String(dcv.error)).trim(),
       refreshHz: result.refreshHz,
       cappedAt60OrLower: result.refreshHz !== null && result.refreshHz <= 61,
