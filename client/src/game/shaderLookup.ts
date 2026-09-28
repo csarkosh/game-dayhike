@@ -43,6 +43,7 @@ import { WebGPUTintWASM } from "@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { ShaderLookupMode } from "./engineChoice.js";
 import { LOOKUP_FORMAT, corpusText, lookupSalt, stageKey, translatorInput, uniformityOff, type Stage } from "./wgslFormat.js";
+import { loadWgslMap } from "./wgslMap.js";
 import { loadWgslStore } from "./wgslStore.js";
 
 // The key and the salt, in a module the build's tools load too (`wgslFormat.ts`).
@@ -72,9 +73,9 @@ const WGSL = 1;
 const PAGE = "page";
 
 /**
- * One source of WGSL: the browser's store (`wgslStore.ts`), and next, the
- * translations shipped with the build. Every answer comes from memory, at
- * once: a preparation never waits (see the module's comment).
+ * One source of WGSL: the translations shipped with the build (`wgslMap.ts`),
+ * and the browser's store (`wgslStore.ts`). Every answer comes from memory,
+ * at once: a preparation never waits (see the module's comment).
  */
 export type WgslSource = {
   /** How the report names it (`hitsBySource`, `StageRecord.from`). */
@@ -202,9 +203,56 @@ function pageReport(mode: Exclude<ShaderLookupMode, "off">, salt: string): Shade
   return page.dayhikeWgsl;
 }
 
-/** The browser's store for `salt`, as the lookup's one source by default. */
-export function defaultSources(salt: string): Promise<readonly WgslSource[]> {
-  return loadWgslStore(salt).then((store) => (store === null ? [] : [store]));
+/**
+ * The lookup's sources by default: the translations shipped with the build,
+ * the map at `mapUrl` (none where it is empty, as under the suite), then the
+ * browser's store for `salt`. Each comes in on its own, so neither holds the
+ * other back.
+ */
+export function defaultSources(salt: string, mapUrl = ""): Promise<readonly WgslSource[]> {
+  const store = openingSource("store", salt, loadWgslStore(salt));
+  return Promise.resolve(mapUrl === "" ? [store] : [loadWgslMap(mapUrl, salt), store]);
+}
+
+/**
+ * A source still opening (`opening`), as one the lookup can hold from the
+ * start: it has nothing until it opens, and from then answers as the source
+ * it opened to. One that has not opened within `ms` (the lookup's own bound,
+ * counted from the same moment, as it is made with the others) is closed as
+ * it lands and never asked, as a list of sources that comes late is. So the
+ * browser's store, which opens a database first, never holds back the map
+ * shipped with the build beside it.
+ */
+export function openingSource(name: string, salt: string, opening: Promise<WgslSource | null>, ms: number = WGSL_SOURCES_MS): WgslSource {
+  let open: WgslSource | null = null;
+  let closed = false;
+  const landing = opening.catch(() => null);
+  const ready = within(landing, ms).then((source): Promise<void> | undefined => {
+    if (source === null) {
+      // None, or too late: let go of one that lands after all.
+      void landing.then((late) => late?.close?.());
+      return undefined;
+    }
+    if (closed) {
+      source.close?.();
+      return undefined;
+    }
+    open = source;
+    return source.ready;
+  });
+  return {
+    name,
+    salt,
+    ready: ready.then(() => undefined),
+    get: (key) => open?.get(key) ?? null,
+    put: (key, wgsl) => open?.put?.(key, wgsl),
+    settle: () => open?.settle?.(),
+    close: () => {
+      closed = true;
+      open?.close?.();
+      open = null;
+    },
+  };
 }
 
 /** What the lookup uses of a WebGPU engine: Babylon 9.18's own members. */
