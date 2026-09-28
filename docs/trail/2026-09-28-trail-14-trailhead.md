@@ -1,7 +1,7 @@
 # Trail 14 — the trailhead, rearranged
 
 **Date:** 2026-09-28
-**Status:** Designed, not built.
+**Status:** Designed, not built. The plan is `docs/trail/2026-09-28-trail-14-trailhead-plan.md`.
 **Amends:** `docs/trail/2026-09-11-trail-system.md` (the pad's props and the spawn) and
 `docs/gameplay/2026-09-16-the-summit.md` §7 (the poster's line). The trail graph, the pad, the
 road wall and the notice board's site are unchanged.
@@ -80,7 +80,8 @@ trail. That is why the player's place is derived from the car and the entrance (
 | How far the car slides along the road (§3.1) | 0 m | 0 m | 3.5 m |
 
 - The car and the entrance read 4.07° at most because the sim's facing is computed without
-  trigonometry (§3.2) and is exact only on the eight compass points.
+  trigonometry (§3.2). It is exact only on the eight compass points, and its worst error between
+  them is 0.0711 rad (4.07°).
 - The player's facing is within 15° of the trail's direction on 215 seeds and never more than
   18.63° off it.
 - The car stands at the pad's own place along the road on 216 seeds and slides on 11: 3 m on
@@ -192,6 +193,7 @@ named for a register that the game no longer has.
 | `InteractKind.Register` (2) | `InteractKind.Poster` (2) |
 | `BOX_RADIUS`, `BOX_HEIGHT`, `BOX_INTERACTABLE_ID`, `Register.box` | `POSTER_RADIUS`, `POSTER_HEIGHT`, `POSTER_INTERACTABLE_ID`, `Search.poster` |
 | `client/test/sim/register.test.ts`, `registerSweep.test.ts` | `search.test.ts`, `searchSweep.test.ts` |
+| `client/test/sim/helpers/registerGraph.ts` | `helpers/stemGraph.ts` |
 
 - The interactable's kind keeps its number, 2, and its id keeps its number, so nothing on the
   wire changes and protocol 5 stands.
@@ -212,6 +214,7 @@ The car moves and a box is added, so the generated world changes.
 | `GEN_VERSION` | `client/src/sim/forest.ts` | 6 → 7 |
 | The pass hash, −311867473 | `client/test/sim/groundGradient.test.ts` | Re-pinned to the value the new tunables give |
 | The trailhead pass's tunables | `client/src/sim/passes/trailhead.ts` | `CAR_ROAD_Z` changes; `CAR_BED_CLEAR`, `CAR_SLIDE_STEP`, `CAR_SLIDE_MAX` and `SPAWN_GAP` join |
+| The signs pass's tunables | `client/src/sim/passes/signs.ts` | `TRAIL_SIGNS` (1) joins, so the level id moves with the sign whether or not a probed chunk holds its post |
 | The watcher's sweep, 875 of 936 stands | `client/test/sim/watcherSweep.test.ts` | Re-measured. The pad's stands change, because the player there stands and faces differently and the car is in a new place |
 | The trailhead sweep's bounds | `client/test/sim/trailhead.test.ts` | The car's clauses are rewritten for §3.1; the board's stand |
 
@@ -224,6 +227,7 @@ to it was.
 | File | Change |
 | --- | --- |
 | `client/src/sim/facing.ts` | New. The trig-free facing, moved out of the search module. |
+| `client/src/sim/boxGap.ts` | New. Distances in the ground plane between a point, a segment and a box, for the car's slide. |
 | `client/src/sim/passes/trailhead.ts` | The car's place along the road and its slide (§3.1); `carSite`. |
 | `client/src/sim/spawn.ts` | `trailheadSpawn(graph, car)`: S and the facing (§3.2). |
 | `client/src/sim/world.ts` | `pickSpawn` centres on S; `spawnPlayer` sets the yaw. |
@@ -261,7 +265,7 @@ Every numeric expectation is a literal.
 
 **Unit tests:**
 
-- The facing at the eight compass points is exact, and between them within 0.07 rad.
+- The facing at the eight compass points is exact, and between them within 0.072 rad.
 - The car slides away from the trail's heading, and not at all on a trail that leaves straight
   inland.
 - The spawn's yaw is the facing from S to E, and a new player has it.
