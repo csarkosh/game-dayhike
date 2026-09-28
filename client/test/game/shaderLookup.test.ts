@@ -18,8 +18,7 @@ import { parseShaderLookup } from "../../src/game/engineChoice.js";
 import { catchTranslationFailures, disposeHalfMade, type Translators } from "../../src/game/gpuEngine.js";
 import {
   LOOKUP_FORMAT,
-  WGSL_HOLD_MAX_MS,
-  WGSL_HOLD_QUIET_MS,
+  WGSL_KEPT_MAX_CHARS,
   WGSL_SOURCES_MS,
   buildSalt,
   defaultSources,
@@ -118,7 +117,6 @@ function memorySource(entries: Record<string, string> = {}, name = "memory", sal
       puts.push(key);
       map.set(key, wgsl);
     },
-    settle: () => void events.push("settle"),
     close: () => void events.push("close"),
   };
   return { source, map, puts, events };
@@ -322,7 +320,7 @@ describe("the WebGPU shader lookup", () => {
     expect(other.events).toEqual(["close"]);
   });
 
-  it("translates a stage two effects share once, while the start's WGSL is held", async () => {
+  it("translates a stage two effects share once", async () => {
     const h = harness();
     const report = await lookUp(h, []);
     await prepare(h);
@@ -374,36 +372,38 @@ describe("the WebGPU shader lookup", () => {
     expect(partlyDone).toBe(true);
   });
 
-  it("lets the start's WGSL go after 30 s without a preparation, or 120 s after the engine stood, whichever comes first", async () => {
-    expect([WGSL_HOLD_QUIET_MS, WGSL_HOLD_MAX_MS]).toEqual([30_000, 120_000]);
+  it("keeps what it translated for the engine's life, up to 32 MB of text: an effect made again minutes after the start finds its stages (the rain's)", async () => {
+    expect(WGSL_KEPT_MAX_CHARS).toBe(33_554_432);
     vi.useFakeTimers();
-    const quiet = memorySource();
-    const h = harness();
-    await lookUp(h, [quiet.source]);
-    await vi.advanceTimersByTimeAsync(29_999);
-    expect(quiet.events).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(quiet.events).toEqual(["settle"]);
-
-    // A source that takes no writes, so that only the page's own held
+    // A source that takes no writes, so that only the page's own kept
     // translations can spare a translation.
-    const busy = { events: [] as string[] };
-    const busySource: WgslSource = { name: "busy", salt: SALT, get: () => null, settle: () => void busy.events.push("settle") };
-    const b = harness();
-    await lookUp(b, [busySource]);
-    for (let s = 0; s < 5; s++) {
-      await vi.advanceTimersByTimeAsync(20_000);
-      await prepare(b, { defines: `#define STEP${s}` });
-    }
-    expect(busy.events).toEqual([]);
-    await vi.advanceTimersByTimeAsync(20_000);
-    expect(busy.events).toEqual(["settle"]);
-    // After it, a stage two effects share is translated each time, the
-    // translators being loaded.
-    const compiledBefore = b.compiled.length;
-    await prepare(b, { defines: "#define LATER" });
-    await prepare(b, { defines: "#define LATER", fragment: `${FRAGMENT}\n// another` });
-    expect(b.compiled.length - compiledBefore).toBe(4);
+    const none: WgslSource = { name: "none", salt: SALT, get: () => null };
+    const h = harness();
+    const report = await lookUp(h, [none]);
+    await prepare(h);
+    await vi.advanceTimersByTimeAsync(600_000);
+    const again = await prepare(h);
+    expect(again.inTheCall).toEqual(["before", "after", "ready"]);
+    expect(h.compiled.map(([stage]) => stage)).toEqual(["vertex", "fragment"]);
+    expect(report.hitsBySource).toEqual({ page: 2 });
+
+    // Past the bound a translation is not kept, and is translated again when
+    // asked again: here the bound holds the vertex stage's WGSL and no more.
+    const small = harness();
+    const vertexWgsl = `// WGSL of\n${translatorInput(VERTEX, DEFINES)}`;
+    const ready = lookUpShaders(small.engine, {
+      mode: "on",
+      salt: SALT,
+      sources: () => Promise.resolve([none]),
+      report: newLookupReport("on", SALT),
+      maxKeptChars: vertexWgsl.length,
+    });
+    await handOver(small.engine, small.translators);
+    await ready;
+    await prepare(small);
+    expect(small.modules[0]).toBe(vertexWgsl);
+    await prepare(small);
+    expect(small.compiled.map(([stage]) => stage)).toEqual(["vertex", "fragment", "fragment"]);
   });
 
   it("notifies the compile observables on a hit as on a miss: once each, before the effect is ready", async () => {
@@ -594,7 +594,7 @@ describe("the WebGPU shader lookup", () => {
       if (how === "dispose") h.engine.onDisposeObservable.notifyObservers(h.engine);
       else releaseShaderLookup(h.engine);
       releaseShaderLookup(h.engine);
-      expect(shared.events, how).toEqual(["settle", "close"]);
+      expect(shared.events, how).toEqual(["close"]);
       await prepare(h, { defines: "#define AFTER" });
       expect(shared.puts, how).toHaveLength(2);
     }
@@ -614,7 +614,7 @@ describe("the WebGPU shader lookup", () => {
     });
     await lookUp(h, [shared.source]);
     disposeHalfMade(h.engine);
-    expect(shared.events).toEqual(["settle", "close"]);
+    expect(shared.events).toEqual(["close"]);
     // Babylon's base dispose notifies its dispose observable only at the end,
     // after the effects, textures and scenes (a canary on the installed engine).
     const base = readFileSync(resolve("@babylonjs/core/Engines/abstractEngine.pure.js"), "utf8");
@@ -623,7 +623,7 @@ describe("the WebGPU shader lookup", () => {
     expect(dispose.indexOf("this.scenes[0].dispose();")).toBeGreaterThan(0);
   });
 
-  it("finds, after the settle, a stored stage the hike had not asked for, and translates again one it had used", async () => {
+  it("finds, minutes after the start, a stored stage the start used and one the hike had not asked for, in the call", async () => {
     const idb = memoryIndexedDb();
     const fromStore = (): Promise<readonly WgslSource[]> => loadWgslStore(SALT, { idb: idb.factory }).then((s) => (s === null ? [] : [s]));
     const lampOn = `${FRAGMENT}\n// the headlamp on`;
@@ -643,16 +643,14 @@ describe("the WebGPU shader lookup", () => {
     await lookUp(second, store === undefined ? [] : [store]);
     await prepare(second);
     expect(second.compiled).toEqual([]);
-    await vi.advanceTimersByTimeAsync(30_000);
-    // The lamp on after the settle: its fragment stage, never asked for, is
-    // found in the call; its vertex stage, the start's, used and let go, is
-    // translated.
+    await vi.advanceTimersByTimeAsync(600_000);
+    // The lamp on: its fragment stage, never asked for, and its vertex stage,
+    // the start's, are both found in the call.
     const lamp = await prepare(second, { fragment: lampOn });
     expect(lamp.inTheCall).toEqual(["before", "after", "ready"]);
-    expect(second.compiled.map(([stage]) => stage)).toEqual(["vertex"]);
-    // The start's effect asked for again: both its stages translated.
+    // The start's effect made again (the rain's case): found.
     await prepare(second);
-    expect(second.compiled.map(([stage]) => stage)).toEqual(["vertex", "vertex", "fragment"]);
+    expect(second.compiled).toEqual([]);
   });
 
   it("keeps a translation in the browser's store, and the next engine finds it there, in the call", async () => {
@@ -812,7 +810,7 @@ describe("the translations shipped with the build", () => {
     expect(signals.slice(signalsBefore).map((signal) => signal.aborted)).toEqual([true]);
   });
 
-  it("holds what it read as the store does: an entry asked for before the settle is let go at it, one not asked for is kept until it is used", async () => {
+  it("holds what it read for the engine's life, asked for or not, and lets it all go when closed", async () => {
     const map = shipped(
       new Map([
         ["aa", "// a"],
@@ -820,9 +818,7 @@ describe("the translations shipped with the build", () => {
       ]),
     );
     await map.ready;
-    expect([map.get("aa"), map.get("aa"), map.get("cc")]).toEqual(["// a", "// a", null]);
-    map.settle?.();
-    expect([map.get("aa"), map.get("bb"), map.get("bb")]).toEqual([null, "// b", null]);
+    expect([map.get("aa"), map.get("aa"), map.get("cc"), map.get("bb")]).toEqual(["// a", "// a", null, "// b"]);
     const closing = shipped(new Map([["aa", "// a"]]));
     await closing.ready;
     closing.close?.();
@@ -883,7 +879,7 @@ describe("a source still opening", () => {
     expect(late.puts).toEqual([]);
   });
 
-  it("answers, keeps, settles and closes as the source it opened to, once open within 2 s", async () => {
+  it("answers, keeps and closes as the source it opened to, once open within 2 s", async () => {
     const { kept } = await translatedBy();
     const store = memorySource(Object.fromEntries(kept.map), "store");
     const opening = openingSource("store", SALT, Promise.resolve(store.source));
@@ -894,7 +890,7 @@ describe("a source still opening", () => {
     await prepare(h, { defines: "#define LATER" });
     expect(store.puts).toEqual([keyOf("vertex", VERTEX, "#define LATER"), keyOf("fragment", FRAGMENT, "#define LATER")]);
     releaseShaderLookup(h.engine);
-    expect(store.events).toEqual(["settle", "close"]);
+    expect(store.events).toEqual(["close"]);
     // A store the browser refuses is none: nothing asked, nothing thrown.
     const none = openingSource("store", SALT, Promise.resolve(null));
     await none.ready;

@@ -10,14 +10,14 @@
  * unzips the most recently used entries into memory, up to
  * `WGSL_START_MAX_BYTES` of WGSL, while the engine is made. An entry still
  * being unzipped when the engine is handed over lands in memory when it is
- * done, and is found from then on. Once the start has settled (`settle`) the
- * entries it used are let go (Babylon keeps an effect once made, and rarely
- * asks for it again); those it has not asked for yet, the headlamp's, the
- * rain's, the last hike's creatures', are kept for the engine's life, and
- * each is let go once used. So what it holds never grows past the start's
- * read, and shrinks after the settle. A translation kept is written later,
- * never waited on, and not held. Bounded on disk (`WGSL_STORE_MAX_BYTES`,
- * `WGSL_STORE_MAX_ENTRIES`), the least recently used going first.
+ * done, and is found from then on. What it read is held for the engine's
+ * life, used or not: an effect the game makes again later (the rain re-makes
+ * effects the start used) finds its stages, and those not asked for yet, the
+ * headlamp's, the rain's, the last hike's creatures', are there when they
+ * are. So what it holds never grows past the start's read. A translation
+ * kept is written later, never waited on, and not held. Bounded on disk
+ * (`WGSL_STORE_MAX_BYTES`, `WGSL_STORE_MAX_ENTRIES`), the least recently used
+ * going first.
  *
  * Nothing here is the player's to see: storage refused (site data blocked),
  * a private window, a full disk, a newer build deleting this one's database,
@@ -199,11 +199,8 @@ export async function loadWgslStore(
     }
   })().catch(() => undefined);
 
-  /** The WGSL read in for the start. */
+  /** The WGSL read in for the start, held for the engine's life. */
   const held = new Map<string, string>();
-  /** Keys served from `held` before the settle, let go at it. */
-  const served = new Set<string>();
-  let settled = false;
 
   /** Uses not yet written. */
   const touched = new Set<string>();
@@ -260,9 +257,6 @@ export async function loadWgslStore(
     get: (key) => {
       const wgsl = held.get(key);
       if (wgsl === undefined) return null;
-      // Used: kept until the settle, let go at once after it.
-      if (settled) held.delete(key);
-      else served.add(key);
       const entry = index.get(key);
       if (entry !== undefined) {
         entry.lastUsed = now();
@@ -293,19 +287,12 @@ export async function loadWgslStore(
         if (!gone.includes(key)) index.set(key, entry);
       })().catch(() => undefined);
     },
-    settle: () => {
-      settled = true;
-      for (const key of served) held.delete(key);
-      served.clear();
-    },
     close: () => {
       if (touchTimer !== null) {
         clearTimeout(touchTimer);
         writeTouches();
       }
-      settled = true;
       held.clear();
-      served.clear();
       index.clear();
       close();
     },

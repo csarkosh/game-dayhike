@@ -44,7 +44,7 @@ import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { ShaderLookupMode } from "./engineChoice.js";
 import { LOOKUP_FORMAT, corpusText, lookupSalt, stageKey, translatorInput, uniformityOff, type Stage } from "./wgslFormat.js";
 import { loadWgslMap } from "./wgslMap.js";
-import { loadWgslStore } from "./wgslStore.js";
+import { WGSL_START_MAX_BYTES, loadWgslStore } from "./wgslStore.js";
 
 // The key and the salt, in a module the build's tools load too (`wgslFormat.ts`).
 export { LOOKUP_FORMAT, lookupSalt, stageKey, translatorInput, uniformityOff, type Stage };
@@ -55,21 +55,21 @@ export { LOOKUP_FORMAT, lookupSalt, stageKey, translatorInput, uniformityOff, ty
  * entry that lands later is found from then on. The device's request runs
  * meanwhile. */
 export const WGSL_SOURCES_MS = 2_000;
-/** The start settles once no preparation has come for this long… */
-export const WGSL_HOLD_QUIET_MS = 30_000;
-/** …or this long after the engine stood, whichever comes first. The WGSL the
- * start used is then let go, the page's own translations and each source's
- * entries that were asked for; a source keeps those not asked for yet. A
- * stage asked for again after that is translated, the translators being
- * loaded. */
-export const WGSL_HOLD_MAX_MS = 120_000;
+/** The most WGSL text the page keeps of its own translations, for the
+ * engine's life: 32 MB of characters (ASCII, which V8 keeps a byte a
+ * character), the bound the browser's store reads a start's entries in by
+ * (`WGSL_START_MAX_BYTES`). A stage used at the start and asked for again
+ * later (an effect made again, as the rain does) is found, not translated
+ * again on the page's thread; past the bound a new translation is not kept
+ * here, and the store keeps it for the next visit. */
+export const WGSL_KEPT_MAX_CHARS = WGSL_START_MAX_BYTES;
 
 /** `ShaderLanguage.GLSL` and `ShaderLanguage.WGSL`. */
 const GLSL = 0;
 const WGSL = 1;
 
 /** The name under which the report counts the stages found among those this
- * page itself translated while the start's WGSL was held. */
+ * page itself translated. */
 const PAGE = "page";
 
 /**
@@ -91,11 +91,9 @@ export type WgslSource = {
   put?(key: string, wgsl: string): void;
   /** Resolves once its entries are in memory. The engine's maker waits for
    * it within its bound; an entry that lands after the engine is handed over
-   * is found from then on. Absent: in memory from the start. */
+   * is found from then on. Absent: in memory from the start. What it read is
+   * held for the engine's life. */
   readonly ready?: Promise<void>;
-  /** The start has settled: lets go of the WGSL it held and was asked for,
-   * keeping what has not been asked for yet; the keys may stay. */
-  settle?(): void;
   /** Lets go of everything it holds, connections included. */
   close?(): void;
 };
@@ -246,7 +244,6 @@ export function openingSource(name: string, salt: string, opening: Promise<WgslS
     ready: ready.then(() => undefined),
     get: (key) => open?.get(key) ?? null,
     put: (key, wgsl) => open?.put?.(key, wgsl),
-    settle: () => open?.settle?.(),
     close: () => {
       closed = true;
       open?.close?.();
@@ -320,11 +317,11 @@ function during<T extends object, K extends keyof T>(target: T, key: K, value: T
  * Resolves once its sources (`sources`, the browser's store by default) are
  * in memory, or `WGSL_SOURCES_MS` has passed, whichever comes first, never
  * rejecting; the engine's maker waits for it before handing the engine over,
- * and the translators must be loaded by then too. From then the WGSL held
- * for the start is let go after `WGSL_HOLD_QUIET_MS` without a preparation,
- * or `WGSL_HOLD_MAX_MS`. `report` counts and records (the page's, where none
- * is given). Install it before `catchTranslationFailures`, which wraps
- * whatever preparation it finds.
+ * and the translators must be loaded by then too. What its sources read and
+ * what it translates (up to `maxKeptChars` of text, `WGSL_KEPT_MAX_CHARS` by
+ * default) are kept for the engine's life. `report` counts and records (the
+ * page's, where none is given). Install it before `catchTranslationFailures`,
+ * which wraps whatever preparation it finds.
  */
 export function lookUpShaders(
   engine: AbstractEngine,
@@ -333,6 +330,7 @@ export function lookUpShaders(
     salt?: string;
     sources?: (salt: string) => Promise<readonly WgslSource[]>;
     report?: ShaderLookupReport;
+    maxKeptChars?: number;
   },
 ): Promise<void> {
   const mode = options.mode;
@@ -343,26 +341,13 @@ export function lookUpShaders(
 
   /** The sources asked, in order, once they are in. */
   let asked: readonly WgslSource[] = [];
-  /** Stages this page translated while the start's WGSL is held: two effects
-   * with one stage between them translate it once. */
+  /** Stages this page translated, kept for the engine's life up to
+   * `maxKept` characters: two effects with one stage between them translate
+   * it once, and an effect made again later (the rain's) finds its stages. */
   const translated = new Map<string, string>();
+  const maxKept = options.maxKeptChars ?? WGSL_KEPT_MAX_CHARS;
+  let kept = 0;
   let released = false;
-  let quiet: ReturnType<typeof setTimeout> | undefined;
-  let longest: ReturnType<typeof setTimeout> | undefined;
-  let held = false;
-  const settle = (): void => {
-    if (!held) return;
-    held = false;
-    clearTimeout(quiet);
-    clearTimeout(longest);
-    translated.clear();
-    for (const source of asked) source.settle?.();
-  };
-  const keepQuiet = (): void => {
-    if (!held) return;
-    clearTimeout(quiet);
-    quiet = setTimeout(settle, WGSL_HOLD_QUIET_MS);
-  };
 
   /** The sources as they land, whenever that is. */
   const arriving = (options.sources ?? defaultSources)(salt).catch(() => null);
@@ -390,21 +375,12 @@ export function lookUpShaders(
     asked = ours;
     const left = Math.max(0, WGSL_SOURCES_MS - (performance.now() - began));
     await within(Promise.all(ours.map((source) => source.ready ?? Promise.resolve())), left);
-  })()
-    .catch(() => undefined)
-    .then(() => {
-      if (released) return;
-      held = true;
-      keepQuiet();
-      longest = setTimeout(settle, WGSL_HOLD_MAX_MS);
-    });
+  })().catch(() => undefined);
 
   const release = (): void => {
     if (released) return;
     released = true;
-    settle();
-    clearTimeout(quiet);
-    clearTimeout(longest);
+    translated.clear();
     for (const source of asked) source.close?.();
     asked = [];
   };
@@ -490,7 +466,7 @@ export function lookUpShaders(
       const glsl = translatorInput(code, defines);
       const flag = uniformityOff(code);
       const key = stageKey(salt, stage, flag, glsl);
-      let wgsl: string | null = held ? (translated.get(key) ?? null) : null;
+      let wgsl: string | null = translated.get(key) ?? null;
       let from = PAGE;
       for (const source of asked) {
         if (wgsl !== null) break;
@@ -505,7 +481,10 @@ export function lookUpShaders(
     for (const stage of stages) {
       if (stage.from !== "translated") continue;
       stage.wgsl = translate(stage);
-      if (held) translated.set(stage.key, stage.wgsl);
+      if (!released && kept + stage.wgsl.length <= maxKept) {
+        translated.set(stage.key, stage.wgsl);
+        kept += stage.wgsl.length;
+      }
       for (const source of asked) {
         try {
           source.put?.(stage.key, stage.wgsl);
@@ -545,7 +524,6 @@ export function lookUpShaders(
         stages: stages.map((s) => ({ ...s })),
       });
     }
-    keepQuiet();
     onReady();
   };
   return ready;

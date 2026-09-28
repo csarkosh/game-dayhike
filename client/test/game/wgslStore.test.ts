@@ -100,18 +100,19 @@ describe("the browser's WGSL store", () => {
     expect((await loaded(idb)).get("k1")).toBe(WGSL);
   });
 
-  it("lets go at the settle of the stages the start used, keeps those not asked for yet, and lets each of those go once used", async () => {
+  it("holds what it read for the engine's life: a stage used at the start is there when asked again, one not asked for yet when it is; closed, nothing", async () => {
     const idb = memoryIndexedDb();
     const writing = await loaded(idb);
     await kept(idb, writing, "used");
     await kept(idb, writing, "later");
     const store = await loaded(idb);
     expect(store.get("used")).toBe(WGSL);
-    store.settle?.();
-    expect(store.get("used")).toBe(null);
-    // The headlamp's variant, say: asked for only after the settle.
+    // The rain's effect made again, say, and the headlamp's variant.
+    expect(store.get("used")).toBe(WGSL);
     expect(store.get("later")).toBe(WGSL);
-    expect(store.get("later")).toBe(null);
+    expect(store.get("later")).toBe(WGSL);
+    store.close?.();
+    expect([store.get("used"), store.get("later")]).toEqual([null, null]);
   });
 
   it("reads in only what fits the start's bound, the most recently used first", async () => {

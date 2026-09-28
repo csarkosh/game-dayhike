@@ -11,9 +11,8 @@
  * memory: `loadWgslMap` fetches it as the engine is made, and parses it into
  * memory as it lands; the lookup waits for that within `WGSL_SOURCES_MS`,
  * beside the store's read. A map that lands after the engine is handed over
- * is found from then on. It holds what it read as the store does: an entry
- * asked for before the start settles is let go at the settle, one not asked
- * for yet is kept, and let go once used.
+ * is found from then on. What it read is held for the engine's life, as the
+ * store's is.
  *
  * Nothing here is the player's to see: a map that does not come (a fetch
  * refused or never answered, an HTTP error), one made for another build (its
@@ -37,11 +36,8 @@ export const WGSL_MAP_SOURCE = "shipped";
 export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fetch } = {}): WgslSource {
   const request = deps.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
   const abort = new AbortController();
-  /** The WGSL read in. */
+  /** The WGSL read in, held for the engine's life. */
   let held = new Map<string, string>();
-  /** Keys served from `held` before the settle, let go at it. */
-  const served = new Set<string>();
-  let settled = false;
   let closed = false;
 
   const ready = (async (): Promise<void> => {
@@ -57,25 +53,11 @@ export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fe
     name: WGSL_MAP_SOURCE,
     salt,
     ready,
-    get: (key) => {
-      const wgsl = held.get(key);
-      if (wgsl === undefined) return null;
-      // Used: kept until the settle, let go at once after it.
-      if (settled) held.delete(key);
-      else served.add(key);
-      return wgsl;
-    },
-    settle: () => {
-      settled = true;
-      for (const key of served) held.delete(key);
-      served.clear();
-    },
+    get: (key) => held.get(key) ?? null,
     close: () => {
       closed = true;
-      settled = true;
       abort.abort();
       held.clear();
-      served.clear();
     },
   };
 }
