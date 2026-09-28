@@ -126,6 +126,7 @@ describe("a probe step on the engine the rule gives its tier", () => {
       failed: () => void failures++,
       measure: async (_tier, engine) => (measured.push(engine), reading("webgpu")),
       webgl2,
+      settles: () => true,
     });
     expect(got).toEqual(reading("webgpu"));
     expect(measured).toEqual([on]);
@@ -145,6 +146,7 @@ describe("a probe step on the engine the rule gives its tier", () => {
         return engine.engine === null ? reading("webgl2") : "engine-failed";
       },
       webgl2,
+      settles: () => true,
     });
     expect(got).toEqual(reading("webgl2"));
     expect(measured).toEqual([on.engine, null]);
@@ -160,6 +162,60 @@ describe("a probe step on the engine the rule gives its tier", () => {
       failed: () => undefined,
       measure: async () => (measures++, null),
       webgl2,
+      settles: () => true,
+    });
+    expect(got).toBe(null);
+    expect(measures).toBe(0);
+    expect(engine.isDisposed).toBe(true);
+  });
+});
+
+describe("a probe step that cannot settle on the engine it got", () => {
+  const webgl2 = (): StepEngine => ({ canvas: {} as HTMLCanvasElement, engine: null, watch: null });
+
+  it("is not measured where a failed WebGPU start left it WebGL2 and WebGL2 cannot settle: no reading, at once", async () => {
+    const asked: string[] = [];
+    let measures = 0;
+    const got = await measureOnRuleEngine("high", () => false, {
+      engineFor: async () => webgl2(),
+      failed: () => undefined,
+      measure: async () => (measures++, null),
+      webgl2,
+      settles: (engine) => (asked.push(engine), engine !== "webgl2"),
+    });
+    expect(got).toBe(null);
+    expect(measures).toBe(0);
+    expect(asked).toEqual(["webgl2"]);
+  });
+
+  it("is not measured again on WebGL2 after its WebGPU engine failed, where WebGL2 cannot settle", async () => {
+    const on: StepEngine = { canvas: {} as HTMLCanvasElement, engine: new NullEngine(), watch: () => () => undefined };
+    const asked: string[] = [];
+    const measured: (AbstractEngineLike | null)[] = [];
+    let failures = 0;
+    const got = await measureOnRuleEngine("high", () => false, {
+      engineFor: async () => on,
+      failed: () => void failures++,
+      measure: async (_tier, engine) => (measured.push(engine.engine), "engine-failed"),
+      webgl2,
+      settles: (engine) => (asked.push(engine), engine === "webgpu"),
+    });
+    expect(got).toBe(null);
+    expect(measured).toEqual([on.engine]);
+    expect(failures).toBe(1);
+    expect(asked).toEqual(["webgpu", "webgl2"]);
+    on.engine!.dispose();
+  });
+
+  it("lets its WebGPU engine go unmeasured where a WebGPU step cannot settle", async () => {
+    const engine = new NullEngine();
+    let measures = 0;
+    const got = await measureOnRuleEngine("medium", () => false, {
+      engineFor: async () => ({ canvas: {} as HTMLCanvasElement, engine, watch: () => () => undefined }),
+      failed: () => undefined,
+      measure: async () => (measures++, null),
+      webgl2,
+      settles: () => false,
     });
     expect(got).toBe(null);
     expect(measures).toBe(0);

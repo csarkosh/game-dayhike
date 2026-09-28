@@ -34,7 +34,17 @@ import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
 import { recordEngineFailure, startOnEngine } from "./game/engineFailure.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { browserEnv, browserMajor, readSignals, type GpuSignals } from "./game/gpuSignals.js";
-import { LOADING_LINE, START_FAILED_LINE, autoPick, launchLine, startFallbacks, startHike, startupTier, type StartupTier } from "./game/frameProbe.js";
+import {
+  LOADING_LINE,
+  START_FAILED_LINE,
+  autoPick,
+  launchLine,
+  probeStepCanSettle,
+  startFallbacks,
+  startHike,
+  startupTier,
+  type StartupTier,
+} from "./game/frameProbe.js";
 import { createHud } from "./game/hud.js";
 import { probeDeps } from "./game/probeScene.js";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "./game/quality.js";
@@ -44,6 +54,7 @@ import {
   leaveNotice,
   pageSessionStorage,
   pageStorage,
+  parseProbeOverride,
   parseTierOverride,
   readAutoRecord,
   recordFallback,
@@ -759,6 +770,9 @@ function render(container: HTMLDivElement): void {
       return { canvas, engine, watch: watchers?.failures ?? null };
     },
     failed: () => void rememberFailure("init", !cancelled()),
+    // Asked of the engine a step got, which a failed WebGPU start makes
+    // WebGL2; `?probe=` measures whatever the rule says.
+    settles: async (engine) => parseProbeOverride(location.search) !== null || probeStepCanSettle((await signalsReady).parallelCompile, engine),
   });
   running = { dispose: () => probe.abort() };
   /** The GPU's signals this start read, for the engines made later. */

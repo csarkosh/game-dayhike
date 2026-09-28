@@ -24,7 +24,7 @@ import {
 } from "./frameProbe.js";
 import { afterNextPaint } from "./paint.js";
 import { showProbeScreen, timeIdleCadence } from "./probeScreen.js";
-import { containerPixels, type ProbeReading, type QualityTier } from "./quality.js";
+import { containerPixels, type ProbeReading, type QualityTier, type VerdictEngine } from "./quality.js";
 import { createRenderer, type Renderer } from "./renderer.js";
 import { seedFromToken } from "./seed.js";
 import { pageStorage } from "./tierChoice.js";
@@ -178,6 +178,9 @@ export type RuleEngineDeps = {
   engineFor(tier: QualityTier): Promise<StepEngine>;
   /** A WebGPU step failed: the rule's start failure, remembered as `init`. */
   failed(): void;
+  /** Whether a step drawing with `engine` can be ready here
+   * (`probeStepCanSettle`), or true where `?probe=` forces the probe. */
+  settles(engine: VerdictEngine): boolean | Promise<boolean>;
   /** One measurement of `tier` on `on` (`runProbeStep`). */
   measure(tier: QualityTier, on: StepEngine): Promise<ProbeReading | null | typeof ENGINE_FAILED>;
   /** WebGL2 on a fresh canvas. */
@@ -190,8 +193,12 @@ export type RuleEngineDeps = {
  * for low and wherever else. A WebGPU engine that fails to start is already
  * the rule's start failure (`resolveWebGpu`) and hands back WebGL2; one that
  * fails in the step's build or frames is the same failure (`failed`), and the
- * step is measured again on WebGL2. The engine is let go of when the page has
- * moved on while it was made.
+ * step is measured again on WebGL2. A step whose engine it cannot settle on
+ * (`settles`), such as WebGL2 after a WebGPU start that failed on a browser
+ * without `KHR_parallel_shader_compile`, is not measured: no reading, at once,
+ * rather than the player held behind the probe's screen for one that cannot
+ * come. The engine is let go of when the page has moved on while it was made,
+ * or when it is not measured.
  */
 export async function measureOnRuleEngine(
   tier: QualityTier,
@@ -199,14 +206,14 @@ export async function measureOnRuleEngine(
   deps: RuleEngineDeps,
 ): Promise<ProbeReading | null> {
   const on = await deps.engineFor(tier);
-  if (stopped()) {
+  if (stopped() || !(await deps.settles(on.engine === null ? "webgl2" : "webgpu")) || stopped()) {
     on.engine?.dispose();
     return null;
   }
   const first = await deps.measure(tier, on);
   if (first !== ENGINE_FAILED) return first;
   deps.failed();
-  if (stopped()) return null;
+  if (stopped() || !(await deps.settles("webgl2")) || stopped()) return null;
   const again = await deps.measure(tier, deps.webgl2());
   return again === ENGINE_FAILED ? null : again;
 }
@@ -222,12 +229,18 @@ function webgl2Step(): StepEngine {
 
 /**
  * The page's `StartupDeps` for `container`. `engines` gives each step the
- * engine the WebGPU rule gives its tier and hears of a WebGPU step that
- * failed (`measureOnRuleEngine`); without it every step is WebGL2.
+ * engine the WebGPU rule gives its tier, hears of a WebGPU step that failed,
+ * and says whether a step can settle on the engine it got
+ * (`measureOnRuleEngine`); without it every step is WebGL2.
  */
 export function probeDeps(
   container: HTMLElement,
-  engines: Pick<RuleEngineDeps, "engineFor" | "failed"> = { engineFor: async () => webgl2Step(), failed: () => undefined },
+  engines: Pick<RuleEngineDeps, "engineFor" | "failed" | "settles"> = {
+    engineFor: async () => webgl2Step(),
+    failed: () => undefined,
+    // Every step WebGL2: the start has already skipped a probe it cannot settle.
+    settles: () => true,
+  },
 ): PageProbe {
   const aborts = new AbortController();
   return {

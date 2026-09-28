@@ -29,7 +29,10 @@
  * one program a frame, each blocking for a few hundred milliseconds, so the
  * scene is never quiet for `PROBE_QUIET_MS` inside `PROBE_READY_MAX_MS`. There
  * the probe is skipped before its screen is shown, the class's start tier kept,
- * and nothing written (`probeStepCanSettle`).
+ * and nothing written (`probeStepCanSettle`). A step asks this of the engine it
+ * draws with: on WebGPU, Babylon translates each effect's shaders on the
+ * page's thread too, so a WebGPU step is not taken to settle until a browser
+ * has measured that it does (`WEBGPU_PROBE_STEPS_SETTLE`).
  */
 import { elevationAt } from "../sim/terrain.js";
 import { CLASS_TIERS, classifyGpu, gpuIdentity, type GpuClass } from "./gpuClass.js";
@@ -192,14 +195,52 @@ export function nextProbeStep(
 }
 
 /**
+ * Whether a probe step on WebGPU is ready (`PROBE_QUIET_MS` without a compile
+ * or a new pipeline) inside `PROBE_READY_MAX_MS`. Not taken on trust: Babylon's
+ * WebGPU engine translates every effect's shaders on the page's thread as the
+ * effect is made (GLSL to SPIR-V by glslang, then to WGSL by Tint, both
+ * synchronous, `WebGPUPipelineContext.isAsync` false), and makes each render
+ * pipeline at its first draw with `createRenderPipeline`, so a WebGPU step is
+ * as busy as a WebGL2 one without `KHR_parallel_shader_compile`. The first
+ * reading on a four-core Windows machine drew about 2 frames a second for
+ * about 50 s after the page opened. A step that is never ready holds the
+ * player behind the probe's screen for its 15 s, writes no verdict, and
+ * spends one of the three attempts: so false, the safe value, until a browser
+ * has measured, at the canopy pose with an empty shader cache, on the slowest
+ * machines whose class is probed, and on each tier probed, the time from a
+ * WebGPU step's engine to its meter's `ready`, and found it inside
+ * `PROBE_READY_MAX_MS` with margin on every load. `?probe=` measures it: it
+ * forces the probe past this.
+ */
+export const WEBGPU_PROBE_STEPS_SETTLE = false;
+
+/**
  * Whether a probe step drawing with `engine` can ever be ready: on WebGL2 only
  * where the context exposes `KHR_parallel_shader_compile` (`parallelCompile`
  * true), since without it every program links on the page's thread and the
- * scene is never quiet long enough; on WebGPU always, as its pipelines are
- * made off the page's thread.
+ * scene is never quiet long enough; on WebGPU as `webgpuSettles` says
+ * (`WEBGPU_PROBE_STEPS_SETTLE`). An engine not known yet (null) may be either,
+ * so both must settle.
  */
-export function probeStepCanSettle(parallelCompile: boolean | null, engine: ProbeReading["engine"]): boolean {
-  return engine === "webgpu" || parallelCompile === true;
+export function probeStepCanSettle(
+  parallelCompile: boolean | null,
+  engine: VerdictEngine | null,
+  webgpuSettles: boolean = WEBGPU_PROBE_STEPS_SETTLE,
+): boolean {
+  if (engine === null) return probeStepCanSettle(parallelCompile, "webgl2", webgpuSettles) && webgpuSettles;
+  return engine === "webgpu" ? webgpuSettles : parallelCompile === true;
+}
+
+/**
+ * The engine the probe's steps draw with, as far as it is known before they
+ * run: `engine`, the one the WebGPU rule gives the probed tiers (high and
+ * medium share it), WebGL2 where none is given; null where the rule gives
+ * WebGPU but the adapter has not answered yet, so a step may still end on
+ * WebGL2.
+ */
+export function probeStepEngine(signals: Pick<GpuSignals, "adapterStatus">, engine: VerdictEngine | undefined): VerdictEngine | null {
+  const on = engine ?? "webgl2";
+  return on === "webgpu" && signals.adapterStatus === "timed-out" ? null : on;
 }
 
 /**
@@ -316,7 +357,8 @@ export type StartupTier = { tier: QualityTier; source: TierSource; cls: GpuClass
  * Auto recommends here: a holding verdict's tier, else the class's ceiling
  * (low under the cap). What the Settings screen reads, and where
  * `startupTier` begins. `at.engine` is the engine the probed tiers draw with
- * now: a verdict for the other engine does not hold. */
+ * now: a verdict for the other engine does not hold, and the probe's first
+ * step is asked whether it can settle on it (`probeStepEngine`). */
 export function autoPick(
   signals: GpuSignals,
   at: { record: AutoRecord | null; pixels: number; now: number; engine?: VerdictEngine },
@@ -339,8 +381,8 @@ export function autoPick(
   // until then, the most the class may take here.
   const measured = holdingVerdict(input);
   const ceiling = withinClass(measured?.tier ?? "high", cls, signals.cores, signals.memoryGb);
-  // Every probe step draws with WebGL2.
-  const probeSkipped = auto.probeFrom !== null && !probeStepCanSettle(signals.parallelCompile, "webgl2");
+  // The first step's engine; a step that ends on another is checked as it runs.
+  const probeSkipped = auto.probeFrom !== null && !probeStepCanSettle(signals.parallelCompile, probeStepEngine(signals, at.engine));
   return { cls, gpu, tier: auto.tier, probeFrom: probeSkipped ? null : auto.probeFrom, probeSkipped, ceiling };
 }
 
@@ -371,11 +413,14 @@ export async function startupTier(
   let tier = decided.tier;
   const from = decided.source === "auto" ? (parseProbeOverride(opts.search) ?? auto.probeFrom) : null;
   if (decided.source === "auto" && from === null && auto.probeSkipped) {
-    // What is known: the extension absent, or no WebGL2 context to ask.
+    // What is known: a step on WebGPU, the extension absent, or no WebGL2
+    // context to ask.
     const reason =
-      signals.parallelCompile === null
-        ? "no WebGL2 context could be made to measure with"
-        : "this browser compiles shaders on the page's thread";
+      probeStepEngine(signals, opts.engine) !== "webgl2" && !probeStepCanSettle(signals.parallelCompile, "webgpu")
+        ? "a WebGPU step translates its shaders on the page's thread"
+        : signals.parallelCompile === null
+          ? "no WebGL2 context could be made to measure with"
+          : "this browser compiles shaders on the page's thread";
     deps.log(`quality probe: skipped, ${reason}; starting at ${tier} (${cls})`);
   }
   if (from !== null && !opts.cancelled()) {

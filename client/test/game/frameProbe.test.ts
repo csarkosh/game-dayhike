@@ -11,6 +11,8 @@ import {
   nextProbeStep,
   probeHolds,
   probeStepCanSettle,
+  probeStepEngine,
+  WEBGPU_PROBE_STEPS_SETTLE,
   probePose,
   probeReadingLine,
   readIntervals,
@@ -22,6 +24,7 @@ import {
   type StartupDeps,
 } from "../../src/game/frameProbe.js";
 import type { GpuSignals } from "../../src/game/gpuSignals.js";
+import { WEBGPU_TIERS } from "../../src/game/engineChoice.js";
 import { landingModel } from "../../src/game/landingModel.js";
 import { autoTier, type ProbeReading, type QualityTier, type VerdictEngine } from "../../src/game/quality.js";
 import { readAutoRecord, writeAutoRecord } from "../../src/game/tierChoice.js";
@@ -113,6 +116,29 @@ describe("probeStepCanSettle", () => {
       { parallelCompile: null, engine: "webgpu", settles: false },
     ] as const;
     for (const row of table) expect(probeStepCanSettle(row.parallelCompile, row.engine)).toBe(row.settles);
+  });
+
+  it("settles a WebGPU step once one is measured to, Firefox's too, and an engine not known only where both engines settle", () => {
+    // The safe value until a browser measures a WebGPU step's settling.
+    expect(WEBGPU_PROBE_STEPS_SETTLE).toBe(false);
+    // With that measurement in, Firefox without the extension probes its
+    // WebGPU steps and still not its WebGL2 ones.
+    expect(probeStepCanSettle(false, "webgpu", true)).toBe(true);
+    expect(probeStepCanSettle(false, "webgl2", true)).toBe(false);
+    expect(probeStepCanSettle(false, null, true)).toBe(false);
+    expect(probeStepCanSettle(true, null, true)).toBe(true);
+    expect(probeStepCanSettle(true, null, false)).toBe(false);
+  });
+
+  it("asks it of the probed tiers' engine, and of either engine while the adapter has not answered", () => {
+    expect(probeStepEngine({ adapterStatus: "ok" }, "webgpu")).toBe("webgpu");
+    expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgpu")).toBe(null);
+    expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgl2")).toBe("webgl2");
+    expect(probeStepEngine({ adapterStatus: "ok" }, undefined)).toBe("webgl2");
+    // The probed tiers share the rule's engine, so the first step's answer is
+    // the second's; a step that ends on another engine is asked as it runs
+    // (`measureOnRuleEngine`).
+    expect(WEBGPU_TIERS).toEqual(["high", "medium"]);
   });
 });
 
@@ -412,6 +438,31 @@ describe("startupTier", () => {
     expect(contents(storage)).toBe("[]");
     expect(t.lines).toEqual([
       "quality probe: skipped, a WebGPU step translates its shaders on the page's thread; starting at medium (apple-unknown)",
+    ]);
+  });
+
+  it("shows the probe's screen exactly where Settings says a probe is pending, for each engine a step may draw with", async () => {
+    const cases: [string, GpuSignals, VerdictEngine][] = [
+      ["WebGL2, linked in parallel", SAFARI, "webgl2"],
+      ["WebGL2, linked on the page's thread", FIREFOX, "webgl2"],
+      ["WebGPU, the adapter known", SAFARI, "webgpu"],
+      ["WebGPU without the WebGL2 extension", FIREFOX, "webgpu"],
+      ["WebGPU, the adapter not known yet", { ...SAFARI, adapterStatus: "timed-out" }, "webgpu"],
+    ];
+    const seen: [string, boolean, boolean][] = [];
+    for (const [name, signals, engine] of cases) {
+      const t = fakes((tier) => reading(tier, 16.7));
+      // The page's summary for Settings (`autoSummary` in main.ts).
+      const pending = autoPick(signals, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, engine }).probeFrom !== null;
+      await startupTier(signals, { ...page(), engine }, t.deps);
+      seen.push([name, pending, t.screens() === 1]);
+    }
+    expect(seen).toEqual([
+      ["WebGL2, linked in parallel", true, true],
+      ["WebGL2, linked on the page's thread", false, false],
+      ["WebGPU, the adapter known", false, false],
+      ["WebGPU without the WebGL2 extension", false, false],
+      ["WebGPU, the adapter not known yet", false, false],
     ]);
   });
 
