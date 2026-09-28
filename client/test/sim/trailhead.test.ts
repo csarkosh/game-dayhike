@@ -8,8 +8,9 @@ import {
 } from "../../src/sim/terrain.js";
 import type { Brush } from "../../src/sim/level.js";
 import {
-  CAR_HALF, PROPS, bedGap, carSite, propSite, roadProp, trailEntrance, trailheadSite,
+  CAR_HALF, KIOSK_HALF, PROPS, bedGap, carSite, propSite, roadProp, trailEntrance, trailheadSite,
 } from "../../src/sim/passes/trailhead.js";
+import { trailheadSpawn } from "../../src/sim/spawn.js";
 import { ROAD_BED_HALF } from "../../src/sim/road.js";
 import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
 import type { TrailGraph, TrailEdge } from "../../src/sim/trail.js";
@@ -220,4 +221,41 @@ describe("the car's place", () => {
     expect(trailheadSite(g, straightRoad, 1, "car")).toEqual(carSite(g, straightRoad, 1));
     expect(trailheadSite(g, straightRoad, 1, "kiosk")).toEqual(propSite(g, straightRoad, 1, roadProp("kiosk")));
   });
+});
+
+describe("the player's place", () => {
+  it("stands the player in front of the car, facing the trail's entrance, on every seed", () => {
+    const v = terrainVariant("olympic")!;
+    const gapTo = (x: number, z: number, c: { x: number; z: number }, h: { x: number; z: number }): number =>
+      Math.hypot(Math.max(Math.abs(x - c.x) - h.x, 0), Math.max(Math.abs(z - c.z) - h.z, 0));
+    let behind = Infinity, ahead = 0, axis = 0, carGap = Infinity, boardGap = Infinity, road = Infinity, reach = 0;
+    for (const seed of SEEDS) {
+      const graph = v.trailGraph!(seed);
+      const car = carSite(graph, v.roadCenterX!, seed);
+      const board = trailheadSite(graph, v.roadCenterX!, seed, "kiosk");
+      const s = trailheadSpawn(graph, car);
+      const e = trailEntrance(graph);
+      const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
+      const off = (x: number, z: number): number => {
+        const d = Math.hypot(x - s.x, z - s.z);
+        const c = ((x - s.x) * fx + (z - s.z) * fz) / d;
+        return (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI;
+      };
+      behind = Math.min(behind, off(car.x, car.z));
+      ahead = Math.max(ahead, off(e.x, e.z));
+      axis = Math.max(axis, (Math.acos(Math.max(-1, Math.min(1, fx * e.dx + fz * e.dz))) * 180) / Math.PI);
+      carGap = Math.min(carGap, gapTo(s.x, s.z, car, CAR_HALF));
+      boardGap = Math.min(boardGap, gapTo(s.x, s.z, board, KIOSK_HALF));
+      road = Math.min(road, s.x - roadCenterXOf(seed, s.z));
+      reach = Math.max(reach, Math.hypot(e.x - s.x, e.z - s.z));
+    }
+    console.info(`[trailhead] player: car ${behind.toFixed(2)} deg off the facing at least, entrance ${ahead.toFixed(2)} at most, facing ${axis.toFixed(2)} off the trail's direction at most, ${carGap.toFixed(2)} m from the car, ${boardGap.toFixed(2)} m from the board, ${road.toFixed(2)} m from the centreline, ${reach.toFixed(2)} m from the entrance at most`);
+    expect(behind).toBeGreaterThanOrEqual(175);
+    expect(ahead).toBeLessThanOrEqual(5);
+    expect(axis).toBeLessThanOrEqual(19);
+    expect(carGap).toBeGreaterThanOrEqual(1.5);
+    expect(boardGap).toBeGreaterThanOrEqual(3);
+    expect(road).toBeGreaterThanOrEqual(7.5);
+    expect(reach).toBeLessThanOrEqual(7);
+  }, timeLimit(300000));
 });
