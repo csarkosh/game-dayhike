@@ -7,6 +7,7 @@ import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import { EffectFallbacks } from "@babylonjs/core/Materials/effectFallbacks.js";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
 import { ThinWebGPUEngine } from "@babylonjs/core/Engines/thinWebGPUEngine.js";
+import { WEBGPU_FETCH_MS } from "../../src/game/engineChoice.js";
 import { catchTranslationFailures, mipEveryLayer, reportUnfetched, watchPipelines, watchWebGpu } from "../../src/game/gpuEngine.js";
 
 afterEach(() => {
@@ -348,6 +349,11 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     expect(start.indexOf("    catchTranslationFailures(engine);")).toBeGreaterThan(start.indexOf("      lookUpShaders(engine, {"));
     // Translators it cannot fetch are told to the engine's watcher, not thrown.
     expect(start).toContain("        unfetched: () => reportUnfetched(engine),");
+    // A stage not found and the idle prefetch start them through one
+    // function: the game's loader, with the fetch's budget, 10 s.
+    expect(start).toContain("        translators: async () => handTranslators(engine, await loadTranslators()),");
+    expect(src).toContain("    const attempt = startWithinBudget(WEBGPU_FETCH_MS);");
+    expect(WEBGPU_FETCH_MS).toBe(10_000);
   });
 
   it("is still needed: Babylon still drops the rejection (a canary on the installed engine)", () => {

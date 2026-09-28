@@ -357,7 +357,10 @@ export function lookUpShaders(
     return started;
   };
   // A later stage not found should not wait on the network: the translators
-  // are started once the page is idle after the first frame.
+  // are started once the page is idle after the first frame, by the same
+  // start a stage not found makes (so within the same budget). That start
+  // failing is silent and changes nothing: the next stage not found starts
+  // them again, and only a failure there is told (`unfetched`).
   own.onEndFrameObservable?.addOnce(() =>
     whenIdle(() => {
       if (!own.isDisposed) translatorsReady().catch(() => undefined);

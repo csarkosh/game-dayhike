@@ -420,6 +420,57 @@ describe("the WebGPU shader lookup", () => {
     expect(h.compiled).toHaveLength(2);
   });
 
+  it("fails a prefetch silently: nothing told, logged or kept; the next stage not found starts the translators again, and its failure is told", async () => {
+    const idle: (() => void)[] = [];
+    vi.stubGlobal("requestIdleCallback", (run: () => void) => void idle.push(run));
+    const warned = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    const h = harness();
+    const told: unknown[] = [];
+    let starts = 0;
+    lookUpShaders(h.engine, {
+      mode: "on",
+      salt: SALT,
+      sources: [],
+      report: newLookupReport("on", SALT),
+      translators: async () => {
+        starts++;
+        throw new Error("the WebGPU translators did not load in 10000 ms");
+      },
+      unfetched: (error) => void told.push(error),
+    });
+    h.engine.onEndFrameObservable.notifyObservers(h.engine);
+    idle[0]?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect([starts, told.length, warned.mock.calls.length]).toEqual([1, 0, 0]);
+    // A miss starts them again; failing there, it is told.
+    await prepare(h);
+    expect([starts, told.length, warned.mock.calls.length]).toEqual([2, 1, 1]);
+    // A miss after a silent prefetch that failed, with the network back.
+    const again = harness();
+    let back = 0;
+    const idleAgain: (() => void)[] = [];
+    vi.stubGlobal("requestIdleCallback", (run: () => void) => void idleAgain.push(run));
+    lookUpShaders(again.engine, {
+      mode: "on",
+      salt: SALT,
+      sources: [],
+      report: newLookupReport("on", SALT),
+      translators: async () => {
+        back++;
+        if (back === 1) throw new Error("the WebGPU translators did not load in 10000 ms");
+        await handTranslators(again.engine, again.translators);
+      },
+      unfetched: (error) => void told.push(error),
+    });
+    again.engine.onEndFrameObservable.notifyObservers(again.engine);
+    idleAgain[0]?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const { events } = await prepare(again);
+    expect(back).toBe(2);
+    expect(events).toEqual(["before", "after", "ready"]);
+    expect(told).toHaveLength(1);
+  });
+
   it("leaves a native WGSL effect to Babylon, and a raw GLSL one too once it has started the translators", async () => {
     const own = harness();
     const wgsl = await prepare(own, { language: 1, vertex: "// vertex wgsl", fragment: "// fragment wgsl" });
