@@ -231,8 +231,11 @@ describe("layer boundaries", () => {
       "switchNow(tier, tierSource, null, readyMaxMs)",
       'switchTo(next, "auto", null, readyMaxMs)',
     ]);
+    // The engine's making counts against the bound: the scene waits on what
+    // is left of it (`engineWithinBound`).
+    expect(app).toContain("const made = await engineWithinBound((wanted) => options.engineFor(target, wanted), readyMaxMs, ");
     expect([...app.matchAll(/\bwhenSceneReady\([^;]*;/g)].map((m) => m[0])).toEqual([
-      "whenSceneReady(renderer.scene, readyMaxMs, renderer.forestReady);",
+      "whenSceneReady(renderer.scene, made.leftMs, renderer.forestReady);",
     ]);
     expect(app).not.toMatch(/SWAP_READY_MAX_MS/);
   });
