@@ -485,8 +485,14 @@ page-wide uniformity switch, and holds translations. The bundle it searches
 is the entry chunk and every chunk it imports statically, fetched by the walk
 the build's check reads its files with (`tools/deploy/lib/bundle.mjs`, at
 most `MAX_STATIC_CHUNKS`, 500), so a version literal the build's check finds
-in an imported chunk is found here too; a chunk that does not answer fails
-the check, naming it.
+in an imported chunk is found here too; on the real build it is in two
+chunks the entry imports (`abstractEngine.pure-*.js`, `tools.pure-*.js`),
+not in the entry chunk. The walk starts from the entry chunk's text the
+check already fetched, and resolves each chunk against the chunk that names
+it. A chunk that does not answer, or whose fetch throws, fails the check,
+naming it and the error; and any request of the deploy check that gets no
+answer at all is a failure of its own check, never the end of the checks
+after it (`tools/deploy/lib/reach.mjs`).
 
 ## 6. The translators, and the start's order
 
