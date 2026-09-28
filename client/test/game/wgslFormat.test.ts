@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { CORPUS_FORMAT, corpusId, corpusText, readCorpus, stageKey, type CorpusStage } from "../../src/game/wgslFormat.js";
+import { CORPUS_FORMAT, MAP_FORMAT, corpusId, corpusText, mapText, readCorpus, readMap, stageKey, type CorpusStage } from "../../src/game/wgslFormat.js";
 
 const VERTEX: CorpusStage = { stage: "vertex", flag: false, glsl: "#version 450\nvoid main() { gl_Position = vec4(0.0); }" };
 const FRAGMENT: CorpusStage = { stage: "fragment", flag: true, glsl: "#version 450\n#define DISABLE_UNIFORMITY_ANALYSIS\nvoid main() {}" };
@@ -36,5 +36,35 @@ describe("the corpus", () => {
       "a corpus stage without its stage, flag or text",
     );
     expect(() => readCorpus("null")).toThrow("not a corpus");
+  });
+});
+
+describe("the map", () => {
+  const SALT = "dayhike-wgsl/1|babylon=test|staticUA=false";
+
+  it("writes its entries under their keys, sorted, so the same entries always make the same bytes", () => {
+    expect(MAP_FORMAT).toBe("dayhike-wgsl-map/1");
+    const entries = new Map([
+      ["bb", "// fragment"],
+      ["aa", "// vertex"],
+    ]);
+    const text = mapText(SALT, entries);
+    expect(text).toBe('{"format":"dayhike-wgsl-map/1","salt":"dayhike-wgsl/1|babylon=test|staticUA=false","entries":{"aa":"// vertex","bb":"// fragment"}}');
+    expect(mapText(SALT, new Map([...entries].reverse()))).toBe(text);
+    expect(readMap(text, SALT)).toEqual(new Map([
+      ["aa", "// vertex"],
+      ["bb", "// fragment"],
+    ]));
+    expect(readMap(mapText(SALT, new Map()), SALT).size).toBe(0);
+  });
+
+  it("refuses a map made for another salt or in another format, and anything that is not one", () => {
+    const text = mapText(SALT, new Map([["aa", "// vertex"]]));
+    expect(() => readMap(text, `${SALT}x`)).toThrow("made for another build");
+    expect(() => readMap(text.replace("dayhike-wgsl-map/1", "dayhike-wgsl-map/2"), SALT)).toThrow("not a map of dayhike-wgsl-map/1");
+    expect(() => readMap(text.slice(0, -1), SALT)).toThrow(SyntaxError);
+    expect(() => readMap(`{"format":"dayhike-wgsl-map/1","salt":${JSON.stringify(SALT)},"entries":[]}`, SALT)).toThrow("a map without entries");
+    expect(() => readMap(`{"format":"dayhike-wgsl-map/1","salt":${JSON.stringify(SALT)},"entries":{"aa":1}}`, SALT)).toThrow("the entry aa is not WGSL text");
+    expect(() => readMap("null", SALT)).toThrow("not a map");
   });
 });

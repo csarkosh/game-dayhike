@@ -1,9 +1,10 @@
 /**
  * What identifies a WGSL translation: the key of a stage and the salt it is
- * made under (`shaderLookup.ts`); and the corpus, the GLSL stages the build
- * translates ahead (`tools/wgsl/`). Nothing here imports Babylon or the DOM,
- * so the build's tools can load it under Node and key a stage with the very
- * code the page keys it with.
+ * made under (`shaderLookup.ts`); and the two files that carry translations
+ * made ahead: the corpus, the GLSL stages the build translates
+ * (`tools/wgsl/`), and the map, their WGSL under their keys, which the page
+ * fetches. Nothing here imports Babylon or the DOM, so the build's tools load
+ * it under Node and key a stage with the very code the page keys it with.
  */
 import { sha256Hex } from "./sha256.js";
 
@@ -110,4 +111,30 @@ export function readCorpus(text: string): CorpusStage[] {
     }
     return { stage: entry.stage, flag: entry.flag, glsl: entry.glsl };
   });
+}
+
+/** The format of the map the build ships. */
+export const MAP_FORMAT = "dayhike-wgsl-map/1";
+
+/** The map: `{"format": MAP_FORMAT, "salt": ..., "entries": {key: wgsl}}`,
+ * its keys sorted, so the same entries always make the same bytes. */
+export function mapText(salt: string, entries: ReadonlyMap<string, string>): string {
+  const sorted: Record<string, string> = {};
+  for (const key of [...entries.keys()].sort()) sorted[key] = entries.get(key) as string;
+  return JSON.stringify({ format: MAP_FORMAT, salt, entries: sorted });
+}
+
+/** The entries of a map made for `salt`; throws on another format, another
+ * salt, or anything that is not a map. */
+export function readMap(text: string, salt: string): Map<string, string> {
+  const map = JSON.parse(text) as { format?: unknown; salt?: unknown; entries?: unknown };
+  if (map?.format !== MAP_FORMAT) throw new Error(`not a map of ${MAP_FORMAT}: ${String(map?.format)}`);
+  if (map.salt !== salt) throw new Error("made for another build");
+  if (typeof map.entries !== "object" || map.entries === null || Array.isArray(map.entries)) throw new Error("a map without entries");
+  const entries = new Map<string, string>();
+  for (const [key, wgsl] of Object.entries(map.entries)) {
+    if (typeof wgsl !== "string") throw new Error(`the entry ${key} is not WGSL text`);
+    entries.set(key, wgsl);
+  }
+  return entries;
 }
