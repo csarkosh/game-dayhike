@@ -32,7 +32,7 @@ import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas, EngineWatchers, WatchEngine } from "./game/rendererSwap.js";
-import { answerUnfetched, recordEngineFailure, startOnEngine } from "./game/engineFailure.js";
+import { answerUnfetched, recordEngineFailure, recordStartFailure, startOnEngine } from "./game/engineFailure.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { browserEnv, browserMajor, readSignals, type GpuSignals } from "./game/gpuSignals.js";
 import {
@@ -73,11 +73,9 @@ import {
   parseEngineOverride,
   parseShaderLookup,
   readFallback,
-  recordFailure,
   resolveWebGpu,
   signalsFit,
   withEngine,
-  writeFallback,
   WEBGPU_ENABLED,
   type EngineEnv,
   type EngineFailure,
@@ -646,18 +644,21 @@ function engineFailed(reason: EngineFailure): string {
 }
 
 /**
- * Remembers a failure of a WebGPU start (`init`), and what it left. Where
- * storage refuses the record and `pin` is set, this tab's URL is pinned to
- * `engine=webgl2` instead, so the rule gives WebGL2 in this tab from then on.
+ * Remembers a failure of a WebGPU start (`init`), and pins this tab's URL to
+ * `engine=webgl2` where the rule would otherwise give WebGPU again: storage
+ * refused the record, or `?engine=webgpu` outranks it (`recordStartFailure`,
+ * the same rule as a running engine's failure). `current`: whether the page
+ * still wants the engine; where it does not, the URL is left as it is.
  */
-function rememberFailure(reason: "init" | "pipeline" | "lost", pin = true): { stored: boolean; holds: boolean } {
-  const local = pageStorage();
-  const env = engineEnv();
-  const now = Date.now();
-  const record = recordFailure(readFallback(local), reason, env, now);
-  const stored = writeFallback(local, record);
-  if (!stored && pin) history.replaceState(history.state, "", withEngine(location.href, "webgl2"));
-  return { stored, holds: fallbackHolds(record, env, now) };
+function rememberFailure(current = true): { stored: boolean; holds: boolean } {
+  return recordStartFailure({
+    storage: pageStorage(),
+    env: engineEnv(),
+    now: Date.now(),
+    override: parseEngineOverride(location.search),
+    current,
+    pin: () => history.replaceState(history.state, "", withEngine(location.href, "webgl2")),
+  });
 }
 
 /**
@@ -695,8 +696,8 @@ function makeWebGpu(
       };
     },
     // An engine a switch gave up waiting for was slow, not broken.
-    remember: (reason) => {
-      if (wanted()) void rememberFailure(reason, current());
+    remember: () => {
+      if (wanted()) void rememberFailure(current());
     },
     warn: (message, detail) => {
       if (detail === undefined) console.warn(message);
@@ -817,7 +818,7 @@ function render(container: HTMLDivElement): void {
       return { canvas, engine, watch: watchers?.failures ?? null };
     },
     // Translators that could not be fetched are the network's: not remembered.
-    failed: () => void (translatorsUnfetched || rememberFailure("init", !cancelled())),
+    failed: () => void (translatorsUnfetched || rememberFailure(!cancelled())),
     // Asked of the engine a step got, which a failed WebGPU start makes
     // WebGL2; `?probe=` measures whatever the rule says.
     settles: async (engine) => parseProbeOverride(location.search) !== null || probeStepCanSettle((await signalsReady).parallelCompile, engine),

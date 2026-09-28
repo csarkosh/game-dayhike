@@ -308,6 +308,19 @@ export function writeFallback(storage: Storage | null, record: FallbackRecord): 
 }
 
 /**
+ * Whether a WebGPU failure that ends on WebGL2 pins `engine=webgl2` in this
+ * tab's address: wherever the rule would otherwise give WebGPU again in this
+ * tab, so a reload does not walk into the same failure while the record
+ * holds. That is where storage refused the record (nothing remembers it), or
+ * where the address's `?engine=webgpu` outranks the record. One rule for every
+ * such path: a failed start (`init`), a pipeline or uncaptured error, a second
+ * lost device, and a lost device's retry whose start fails.
+ */
+export function pinsAfterFailure(input: { stored: boolean; override: EngineName | null }): boolean {
+  return !input.stored || input.override === "webgpu";
+}
+
+/**
  * What a failure of the running WebGPU engine does, after the record has been
  * written (`stored`) and read back (`holds`): a live swap of the renderer at
  * the running tier, never a reload, which would end a party (a host's reload
@@ -328,7 +341,7 @@ export function failureSwap(input: {
 }): { engine: EngineName; pin: boolean; notice: string } {
   const retry = input.reason === "lost" && input.stored && !input.holds;
   if (retry) return { engine: "webgpu", pin: false, notice: NOTICE_RESTARTED };
-  return { engine: "webgl2", pin: !input.stored || input.override === "webgpu", notice: NOTICE_SWITCHED };
+  return { engine: "webgl2", pin: pinsAfterFailure(input), notice: NOTICE_SWITCHED };
 }
 
 const TIMED_OUT = Symbol("timed out");

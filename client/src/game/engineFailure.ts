@@ -11,6 +11,7 @@ import {
   NOTICE_RESTARTED,
   NOTICE_SWITCHED,
   failureSwap,
+  pinsAfterFailure,
   fallbackHolds,
   readFallback,
   recordFailure,
@@ -173,6 +174,30 @@ export function recordEngineFailure(
   const act = failureSwap({ stored, holds: fallbackHolds(record, page.env, page.now), reason, override: page.override });
   if (act.pin) page.pin();
   return act.notice;
+}
+
+/**
+ * Remembers a WebGPU start that failed (`init`: an adapter that does not
+ * answer, an engine that does not start, a probe step's WebGPU engine that
+ * fails), which ends on WebGL2, and pins `engine=webgl2` in this tab's
+ * address by the same rule as a failure of a running engine
+ * (`pinsAfterFailure`): where storage refused the record, or the address's
+ * `?engine=webgpu` outranks it. `page.pin` is not called where the page no
+ * longer wants the engine. What was stored, and whether the record holds.
+ */
+export function recordStartFailure(page: {
+  storage: Storage | null;
+  env: EngineEnv;
+  now: number;
+  override: EngineName | null;
+  /** Whether the page still wants the engine whose start failed. */
+  current: boolean;
+  pin(): void;
+}): { stored: boolean; holds: boolean } {
+  const record = recordFailure(readFallback(page.storage), "init", page.env, page.now);
+  const stored = writeFallback(page.storage, record);
+  if (page.current && pinsAfterFailure({ stored, override: page.override })) page.pin();
+  return { stored, holds: fallbackHolds(record, page.env, page.now) };
 }
 
 /**

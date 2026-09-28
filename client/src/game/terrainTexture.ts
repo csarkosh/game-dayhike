@@ -357,6 +357,32 @@ export const HEX_FETCH_MACROS = `#define hexFetch2D(tex, u1, u2, u3, s, dx, dy) 
 `;
 
 /**
+ * The terrain's fragment, as WebGPU gets it, turns WGSL's uniformity analysis
+ * off with the define the WebGPU engine reads from a stage's code (the finish
+ * pass does the same, `post.ts`). WGSL refuses an implicit-derivative texture
+ * read (`textureSample`) in non-uniform control flow, and every branch on a
+ * varying or on a texel is non-uniform there. This shader has many such reads:
+ * the rock parallax's height fetches in its loop, the relief gate's
+ * (`strength > 0.0`) height and normal fetches, the road paint's (`rau` inside
+ * the road), the trail paint's segment fetches in its search and its bed
+ * fetches inside the corridor (the one Tint named, under the `fwidth` edge),
+ * and the feature paint's table fetches in its loop. Each is safe without the
+ * analysis. The table fetches (the trail's segments, the features) read data
+ * textures of one level, so no level of detail can be chosen wrongly. The
+ * others' coordinates are continuous across the branch's edge, and the
+ * branch's own weight (the relief strength, the road's and the trail's
+ * blends) is 0 at that edge, so a level of detail a read gives up there is
+ * multiplied away; WebGL2's GLSL takes the same reads as they are. The
+ * alternative, explicit gradients on every read, would need a gradient pair
+ * per coordinate taken outside the branches, and would change WebGL2's text
+ * or need a second copy of it. Only on WebGPU, so WebGL2's text is the same
+ * byte for byte. High and medium had it only by accident, from Babylon's
+ * cascaded-shadow include; the low tier, which has no shadow, failed.
+ */
+export const TERRAIN_UNIFORMITY_OFF = `#define DISABLE_UNIFORMITY_ANALYSIS
+`;
+
+/**
  * The hex include for an engine, gated as above: on WebGL2 the three files
  * joined, byte for byte the include it has always compiled; on WebGPU the
  * fetches as `HEX_FETCH_MACROS`.
@@ -974,6 +1000,7 @@ uniform vec4 terrainSwardBand;
         // paints: after the uniforms its functions read, before the paint code
         // that has no use for them.
         CUSTOM_FRAGMENT_DEFINITIONS:
+          (this._material.getScene().getEngine().isWebGPU ? TERRAIN_UNIFORMITY_OFF : "") +
           TERRAIN_FRAGMENT_DEFS +
           terrainHexDefs(this._material.getScene().getEngine().isWebGPU) +
           ROAD_FRAGMENT_DEFS +

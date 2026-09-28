@@ -220,7 +220,7 @@ describe("layer boundaries", () => {
     expect(main).toContain("watchers: { failures: holdingUnfetched(gpu.watchWebGpu), pipelines: gpu.watchPipelines },");
     expect(main).toContain("    remembered: translatorsUnfetched || fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),");
     expect(main).toContain('  if (reason === "unfetched") {\n    return answerUnfetched({');
-    expect(main).toContain('    failed: () => void (translatorsUnfetched || rememberFailure("init", !cancelled())),');
+    expect(main).toContain("    failed: () => void (translatorsUnfetched || rememberFailure(!cancelled())),");
     expect([...main.matchAll(/\btranslatorsUnfetched = true\b/g)]).toHaveLength(1);
   });
 
@@ -242,6 +242,17 @@ describe("layer boundaries", () => {
     expect(main).toContain(
       '      if (probeStepEngine(read, verdictEngineNow(read)) === "webgl2") return { canvas: document.createElement("canvas"), engine: null, watch: null };',
     );
+  });
+
+  it("records every failed WebGPU start through the one pin rule: the first load's, a switch's, a retry's, a probe step's", () => {
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    expect(main).toContain("  return recordStartFailure({");
+    expect(main).toContain("    remember: () => {\n      if (wanted()) void rememberFailure(current());\n    },");
+    // A probe step's, except where translators could not be fetched: the
+    // network's failure, not the start's (`answerUnfetched`).
+    expect(main).toContain("    failed: () => void (translatorsUnfetched || rememberFailure(!cancelled())),");
+    expect([...main.matchAll(/\brememberFailure\(/g)].length).toBe(3);
+    expect(main).not.toMatch(/\b(recordFailure|writeFallback)\(/);
   });
 
   it("bounds the cover over every switch by what its caller passes: no path picks its own bound", () => {
