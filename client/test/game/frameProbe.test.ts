@@ -824,7 +824,10 @@ describe("the engine a probe's verdict was measured with", () => {
     const at = { record, pixels: 2_073_600, now: 1_790_000_000_000 };
     expect(autoPick(SAFARI, at)).toMatchObject({ tier: "high", probeFrom: null });
     expect(autoPick(SAFARI, { ...at, engine: "webgl2" })).toMatchObject({ tier: "high", probeFrom: null });
-    expect(autoPick(SAFARI, { ...at, engine: "webgpu" })).toMatchObject({ tier: "medium", probeFrom: "high" });
+    // The WebGL2 verdict does not hold for WebGPU; the probe it would call for
+    // is skipped, a WebGPU step not being taken to settle
+    // (`WEBGPU_PROBE_STEPS_SETTLE`).
+    expect(autoPick(SAFARI, { ...at, engine: "webgpu" })).toMatchObject({ tier: "medium", probeFrom: null, probeSkipped: true });
   });
 });
 
