@@ -113,6 +113,16 @@ export function findWasmUrls(source, ids) {
 }
 
 /**
+ * The URL a built chunk references for the WGSL map (`wgsl-map-<hash>.json`),
+ * the translations the build made of the shader corpus, which
+ * `client/src/game/gpuEngine.ts` imports from `virtual:dayhike-wgsl-map`, or
+ * null. Same matching rules as `findModelUrls`; named by the WebGPU chunk.
+ */
+export function findMapUrl(source) {
+  return findAssetUrls(source, ['wgsl-map'], 'json')['wgsl-map'] ?? null;
+}
+
+/**
  * The file name (`<name>-<hash>.js`) of a chunk the entry chunk splits out, or
  * null. Only the file name: the entry names a dynamic chunk both as
  * `./gpuEngine-<hash>.js` (the import itself) and as

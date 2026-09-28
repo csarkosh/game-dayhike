@@ -14,7 +14,8 @@
 import { readFileSync } from 'node:fs';
 import { fail, tfOutput } from './lib/preconditions.mjs';
 import { validateLatest } from './lib/desktopRelease.mjs';
-import { findChunkName, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
+import { findChunkName, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
+import { mapProblems } from './lib/wgslMap.mjs';
 
 const siteUrl = tfOutput('site_url');
 const signalingUrl = tfOutput('signaling_url');
@@ -233,6 +234,31 @@ async function verify() {
         `${id}.wasm is served immutable`,
         `cache-control: ${res.headers.get('cache-control')}`,
       );
+    }
+
+    // 4d. The WGSL map: the translations the build made of the shader corpus
+    // (`tools/wgsl/build-map.mjs`), which a WebGPU page asks before it
+    // translates a shader itself. Named by the same chunk as a hashed asset.
+    // A map that does not come, or is not this build's (its salt against the
+    // translators' digests the chunk carries), costs nothing but speed on the
+    // page, which translates every stage as if there were none: exactly what
+    // would go unnoticed without this check.
+    const mapUrl = chunkSource ? findMapUrl(chunkSource) : null;
+    if (chunkSource && !mapUrl) {
+      failures.push('the WebGPU chunk does not reference the WGSL map — was it built (tools/wgsl/build-map.mjs) and imported?');
+    } else if (mapUrl) {
+      const res = await fetch(`${siteOrigin}${mapUrl}`);
+      if (res.status !== 200) {
+        failures.push(`${mapUrl} — got ${res.status}`);
+      } else {
+        check(
+          (res.headers.get('cache-control') ?? '').includes('immutable'),
+          'the WGSL map is served immutable',
+          `cache-control: ${res.headers.get('cache-control')}`,
+        );
+        const problems = mapProblems(await res.text(), chunkSource);
+        check(problems.length === 0, "the WGSL map parses, is this build's and holds translations", problems.join('; '));
+      }
     }
   }
 
