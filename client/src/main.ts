@@ -31,9 +31,10 @@ import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
+import { recordEngineFailure, startOnEngine } from "./game/engineFailure.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { browserEnv, browserMajor, readSignals, type GpuSignals } from "./game/gpuSignals.js";
-import { LOADING_LINE, START_FAILED_LINE, autoPick, qualityLine, startFallbacks, startHike, startupTier, type StartupTier } from "./game/frameProbe.js";
+import { LOADING_LINE, START_FAILED_LINE, autoPick, launchLine, startFallbacks, startHike, startupTier, type StartupTier } from "./game/frameProbe.js";
 import { createHud } from "./game/hud.js";
 import { probeDeps } from "./game/probeScene.js";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "./game/quality.js";
@@ -59,7 +60,6 @@ import {
   parseEngineOverride,
   readFallback,
   recordFailure,
-  failureSwap,
   resolveWebGpu,
   signalsFit,
   withEngine,
@@ -588,22 +588,23 @@ function engineFor(tier: QualityTier, read: GpuSignals, current: () => boolean):
 
 /**
  * A failure of a running WebGPU engine, or a renderer that could not be built
- * on one (`"pipeline"`): remembered, and, where the rule would otherwise give
- * WebGPU again, `engine=webgl2` pinned in this tab's URL (`failureSwap`), so
- * the rebuild's `engineFor` gives the engine the failure asks for. The HUD's
- * line for once the rebuild is done.
+ * on one (`"pipeline"`): remembered, and `engine=webgl2` pinned in this tab's
+ * URL where the rule would otherwise give WebGPU again
+ * (`recordEngineFailure`), so the rebuild's `engineFor` gives the engine the
+ * failure asks for. The HUD's line for that engine.
  */
 function engineFailed(reason: "pipeline" | "lost"): string {
-  // Read before the record: nothing is pinned by it.
-  const override = parseEngineOverride(location.search);
-  const { stored, holds } = rememberFailure(reason, false);
-  const act = failureSwap({ stored, holds, reason, override });
-  if (act.pin) history.replaceState(history.state, "", withEngine(location.href, "webgl2"));
-  return act.notice;
+  return recordEngineFailure(reason, {
+    storage: pageStorage(),
+    env: engineEnv(),
+    now: Date.now(),
+    override: parseEngineOverride(location.search),
+    pin: () => history.replaceState(history.state, "", withEngine(location.href, "webgl2")),
+  });
 }
 
 /**
- * Remembers a failure, and returns what `failureSwap` needs of it. Where
+ * Remembers a failure of a WebGPU start (`init`), and what it left. Where
  * storage refuses the record and `pin` is set, this tab's URL is pinned to
  * `engine=webgl2` instead, so the rule gives WebGL2 in this tab from then on.
  */
@@ -787,7 +788,7 @@ function render(container: HTMLDivElement): void {
       container.appendChild(onCanvas.canvas);
       const read = hikeSignals;
       if (read === null) throw new Error("the GPU's signals were not read");
-      launch(onCanvas, route.token, decided, (tier) => engineFor(tier, read, () => !cancelled()));
+      launch(container, onCanvas, route.token, decided, (tier) => engineFor(tier, read, () => !cancelled()));
     },
     fail: (error) => {
       console.error("The game could not start.", error);
@@ -805,65 +806,68 @@ function render(container: HTMLDivElement): void {
  * Starts the game on `onCanvas` at the tier decided, on the engine made for
  * it: WebGL2 when there is none, as always; otherwise WebGPU, which the game
  * listens to and answers live (`app.ts`). A start that throws on a WebGPU
- * engine, once the game has undone all it made, is the engine's failure:
- * remembered, and the game started again at the same tier on WebGL2, which
- * the rule now gives, with the HUD's line; a throw on WebGL2 goes up to the
- * start's one catch (`startHike`). `engineFor` makes the engine for a switch
- * of tier or a rebuild later.
+ * engine, once the game has undone all it made, is started again at the same
+ * tier on WebGL2 on a fresh canvas that takes the place of every canvas in
+ * the container, and the throw is held against the engine once that stands
+ * (`startOnEngine`); a throw on WebGL2 goes up to the start's one catch
+ * (`startHike`). `engineForGame` makes the engine for a switch of tier or a
+ * rebuild later.
  */
 function launch(
+  container: HTMLElement,
   onCanvas: EngineOnCanvas,
   worldToken: string,
   decided: StartupTier,
   engineForGame: (tier: QualityTier) => Promise<EngineOnCanvas>,
-  notice?: string,
 ): void {
-  const { canvas, engine, watchers } = onCanvas;
-  let handle: GameHandle;
-  try {
-    handle = startGame(canvas, worldToken, {
-      lobby,
-      peerId: selfId,
-      onExit: exitGame,
-      onContinueOffline: continueOffline,
-      onPauseChange: (next) => {
-        paused = next;
-        paintRoster();
-      },
-      engine: engine ?? undefined,
-      watchers: watchers ?? undefined,
-      engineFor: engineForGame,
-      engineFailed,
-      notice,
-      tier: decided.tier,
-      tierSource: decided.source,
-      fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),
-      onTierFallback,
-      onGovernorDrop,
-      quality: {
-        choice: currentChoice,
-        stored: choiceStored,
-        auto: autoSummary,
-        override: parseTierOverride(location.search),
-        notice: () => choiceNotice,
-        save: saveChoice,
-      },
-    });
-  } catch (err) {
-    if (engine === null) throw err;
-    console.error("WebGPU: the game could not be built on it; starting it on WebGL2.", err);
-    const line = engineFailed("pipeline");
+  const handle = startOnEngine<GameHandle>(onCanvas, {
+    start: ({ canvas, engine, watchers }, startFailed) => {
+      // While the game is being started, a WebGPU fault its ladder finds is
+      // the start's (recorded once, `startOnEngine`); after, the hike's.
+      let starting = true;
+      try {
+        return startGame(canvas, worldToken, {
+          lobby,
+          peerId: selfId,
+          onExit: exitGame,
+          onContinueOffline: continueOffline,
+          onPauseChange: (next) => {
+            paused = next;
+            paintRoster();
+          },
+          engine: engine ?? undefined,
+          watchers: watchers ?? undefined,
+          engineFor: engineForGame,
+          engineFailed: (reason) => (starting && reason === "pipeline" ? startFailed(reason) : engineFailed(reason)),
+          tier: decided.tier,
+          tierSource: decided.source,
+          fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),
+          onTierFallback,
+          onGovernorDrop,
+          quality: {
+            choice: currentChoice,
+            stored: choiceStored,
+            auto: autoSummary,
+            override: parseTierOverride(location.search),
+            notice: () => choiceNotice,
+            save: saveChoice,
+          },
+        });
+      } finally {
+        starting = false;
+      }
+    },
+    engineFailed,
     // A canvas holds one kind of context for life.
-    const fresh = document.createElement("canvas");
-    canvas.replaceWith(fresh);
-    launch({ canvas: fresh, engine: null, watchers: null }, worldToken, decided, engineForGame, line);
-    return;
-  }
+    freshCanvas: () => document.createElement("canvas"),
+    place: (fresh) => {
+      for (const left of container.querySelectorAll("canvas")) left.remove();
+      container.appendChild(fresh);
+    },
+    log: (message, error) => console.error(message, error),
+  });
   game = handle;
-  // The tier's line, once the engine in use is known: the tier that built
-  // (the class's start tier or low, where the one decided did not).
-  const built = handle.graphics();
-  console.info(qualityLine(built.tier, built.tier === decided.tier ? decided.source : "fallback", decided.cls, built.engine));
+  console.info(launchLine(decided, handle.graphics()));
   running = handle;
   announcer.afterPaint();
   paintRoster();

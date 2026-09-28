@@ -361,6 +361,16 @@ export async function startupTier(
   return { tier, source: decided.source, cls };
 }
 
+/**
+ * The line a hike's launch logs, once per renderer build as a switch's is:
+ * the tier the first renderer was built at and the engine it draws with,
+ * with the decided tier's source, or `fallback` where the decided tier did
+ * not build and a lower one did (as a switch that falls back logs it).
+ */
+export function launchLine(decided: StartupTier, built: { tier: QualityTier; engine: VerdictEngine }): string {
+  return qualityLine(built.tier, built.tier === decided.tier ? decided.source : "fallback", decided.cls, built.engine);
+}
+
 /** The line a hike logs for its tier once it is launched, with the engine
  * actually in use: `quality: medium (auto, apple-unknown), engine webgl2`. */
 export function qualityLine(tier: QualityTier, source: TierSource | "fallback", cls: GpuClass, engine: VerdictEngine): string {

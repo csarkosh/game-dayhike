@@ -16,6 +16,7 @@ import {
   runProbe,
   startupTier,
   qualityLine,
+  launchLine,
   LOADING_LINE,
   type StartupDeps,
 } from "../../src/game/frameProbe.js";
@@ -539,6 +540,14 @@ describe("the start's wait line", () => {
     expect(LOADING_LINE).toBe("Loading…");
     const launching = landingModel({ desktop: false, host: "darwin-arm64", latest: null, launching: true });
     expect(launching.play?.label).toBe(LOADING_LINE);
+  });
+});
+
+describe("the line a launch logs", () => {
+  it("names the tier the first renderer built at and the engine it draws with, the source `fallback` where it fell back", () => {
+    const decided = { tier: "high" as const, source: "auto" as const, cls: "apple-unknown" as const };
+    expect(launchLine(decided, { tier: "high", engine: "webgpu" })).toBe("quality: high (auto, apple-unknown), engine webgpu");
+    expect(launchLine(decided, { tier: "medium", engine: "webgl2" })).toBe("quality: medium (fallback, apple-unknown), engine webgl2");
   });
 });
 
