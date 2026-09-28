@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import * as page from '../../../client/src/game/wgslFormat.ts';
 import { timeLimit } from '../../../client/test/helpers/timeLimit.ts';
 import { buildMap, nodeSalt, readCorpusDir } from '../lib/buildMap.mjs';
+import { CORPUS_DIR } from '../lib/files.mjs';
 import { loadShared } from '../lib/shared.mjs';
 import { startTranslators, translateStage } from '../lib/translators.mjs';
 
@@ -147,6 +148,17 @@ describe('the map the build ships', () => {
     expect(remade.stdout).not.toContain('is up to date with');
     expect(Object.keys(JSON.parse(remade.map).entries)).toHaveLength(3);
   }, timeLimit(120_000));
+
+  it('makes the map of the committed corpus, every stage translated, and says what it cost', async () => {
+    const out = join(directory(), 'map.json');
+    const done = await tool(CORPUS_DIR, out);
+    const { stages } = readCorpusDir(CORPUS_DIR, shared);
+    expect(stages.length).toBeGreaterThan(0);
+    expect(Object.keys(JSON.parse(done.map).entries)).toHaveLength(stages.length);
+    expect(done.stderr).not.toContain('FAILED');
+    // The figures, for the run's log: sizes, what reading it costs, the translators' start.
+    console.log(done.stdout.slice(done.stdout.indexOf('wgsl map:')));
+  }, timeLimit(300_000));
 
   it('refuses a corpus file that is not one, naming it', () => {
     const corpus = directory({ 'bad.json': '{"format":"something else"}' });
