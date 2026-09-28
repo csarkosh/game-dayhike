@@ -2,12 +2,13 @@
  * One number for each material plugin class, the same on every load.
  *
  * Babylon 9.18 gives each plugin class a define of its own, `MATERIALPLUGIN_<n>`,
- * put in the defines of every material the plugin is on, and numbers it the
- * first time a plugin of that class is added to a material on the page
- * (`MaterialPluginManager._addPlugin`: a page-wide counter, keyed by the
- * class's `getClassName()`). What is added first follows what loads first, so
- * the number of a class, and with it the text of every shader of a material
- * the class is on, can differ from one load to the next: on WebGPU, a stage
+ * and numbers it the first time a plugin of that class is added to a material
+ * on the page (`MaterialPluginManager._addPlugin`: a page-wide counter, keyed
+ * by the class's `getClassName()`). A material carries one such define, that
+ * of the last class added to it (`_addPlugin` rebuilds the material's plugin
+ * defines around the class it adds). What is added first follows what loads
+ * first, so the number of a class, and with it the text of every shader of a
+ * material whose last plugin it is, can differ from one load to the next: on WebGPU, a stage
  * whose text differs has another key (`shaderLookup.ts`), and a translation
  * the build shipped or the browser stored is not found. The define is read by
  * no shader, so the number changes nothing drawn.

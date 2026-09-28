@@ -113,9 +113,11 @@ second, though the WGSL may be the same: misses, never a wrong picture.
 - *The plugins' numbers.* Babylon gives each material plugin class a define,
   `MATERIALPLUGIN_<n>`, numbered the first time a plugin of that class is added
   to a material on the page, from a page-wide counter keyed by the class's
-  name (`MaterialPluginManager._addPlugin`, `materialPluginManager.pure.js:42–45`),
-  and puts it first in the defines of every material the class is on; what is
-  added first follows what loads first. The define is read by no shader.
+  name (`MaterialPluginManager._addPlugin`, `materialPluginManager.pure.js:42–45`).
+  A material carries one such define, first in its defines: that of the last
+  class added to it, as `_addPlugin` rebuilds the material's plugin defines
+  around the class it adds (`:50–51`). What is added first follows what loads
+  first. The define is read by no shader.
   Pinned (`pluginNumbers.ts`): once a WebGPU engine stands, before any of its
   materials, every class the game's materials carry (Babylon's seven on a PBR
   material, the decal map's, the game's nine) is numbered by its place in
@@ -129,11 +131,38 @@ second, though the WGSL may be the same: misses, never a wrong picture.
   no later visit asked for, and each has, in each later visit, a stage of the
   same kind whose text is exactly as long, whose WGSL is exactly as long, and
   whose defines begin with the same 82 characters, under another key. So the
-  text differs at the same length, past the plugin's define: a digit, or two
-  lines in another order. Candidates are a light's index (lights met in
-  another order swap `LIGHT0`/`LIGHT1` blocks at equal length), a texture's
-  UV set, or a define's order; the record kept effect names cut at 90
-  characters and key prefixes, not the texts, so which it is is §8's item 2.
+  text differs at the same length, past the plugin's define.
+
+**The requirement that a page's keys be the same on every load is not shown
+met.** Pinning the plugins' numbers meets it for the one mechanism it names,
+but on the loads recorded those numbers were already the same, and what did
+differ lies past them. Babylon's source shows three mechanisms that would
+give exactly that, a text of the same length under another key; none is
+shown to be the one that fired:
+
+- *The order of the defines.* A material's defines print in the order their
+  names were first set on its defines object (`MaterialDefines.rebuild` takes
+  them from `Object.keys`, `materialDefines.js:141–148`, and `toString`
+  writes them so, `:214–231`), and a light's defines are first set when that
+  light's index is first prepared (`materialHelper.functions.js:789–836`). A
+  submesh whose defines first met fewer lights, or met them in another
+  order, prints the same defines in another order.
+- *A light's index, by arrival.* Lights are numbered by the mesh's
+  `lightSources` (`materialHelper.functions.js:585–595`), where a light that
+  becomes enabled or starts affecting the mesh is appended at the end, not in
+  the scene's order (`abstractMesh.pure.js:953–969`); the other players'
+  lamps are made as they arrive over the network (`entityViews.ts`), beside
+  the local one (`renderer.ts`). Two lights swapping indices swap their blocks
+  at equal length.
+- *A numeric define's value.* `SHADOWCSMNUM_CASCADES0 <n>` follows the
+  tier's cascades, and a texture's `…DIRECTUV <n>` its UV set: a value that
+  changes keeps the length.
+
+Which it is needs two loads recorded whole, the stages' texts diffed line by
+line (§8, item 2); the record kept effect names cut at 90 characters and key
+prefixes, not the texts. Meanwhile a corpus merged from several recorded
+loads holds each variant that any of them met, and so serves a later load
+whichever of them fires in it.
 
 ## 4. The layer
 
@@ -379,8 +408,25 @@ with Vite as the game's is, in `tools/wgsl/test/mapPlugin.test.mjs`). A
 build whose map was not made fails, naming the step. The dev server runs the
 tool as it starts and serves the map at `<base>wgsl-map.json` once made (a
 request before then waits; one the tool failed to make is a 404, no map), so
-a measurement on the dev server sees what production will. Under the suite
-the URL is empty and no map is asked for.
+a measurement on the dev server sees what production will. With
+`DAYHIKE_SKIP_WGSL_MAP` set, the dev server translates nothing and answers
+the map's request with a 404 (a real corpus is minutes of CPU, beside what
+the dev server may be measuring); the build always translates. Under the
+suite the URL is empty and no map is asked for.
+
+**Its ceiling.** A map is at most `MAP_MAX_BYTES`, 16 MB of text: the page
+holds it whole for the engine's life and parses it in one task on its
+thread. The build fails on a larger one, naming its size and the ceiling, and
+the page refuses one whose `Content-Length` says it is larger before reading
+its body: a source with nothing in it, one console line.
+
+**The build, checked on every push.** The test workflow's `build` job builds
+the client as the deploy does (`npm run build`, under the production base)
+and runs `tools/wgsl/check-build.mjs` on it: exactly one
+`assets/wgsl-map-*.json`, parsing as a map of the known format; the entry
+chunk and every chunk it imports statically naming none of `wgsl-map`,
+`wgslFormat`, `dayhike-wgsl`; the WebGPU chunk naming the map; and the deploy
+check (below) accepting the built map against the built chunks.
 
 **On the page.** `loadWgslMap` fetches the map as the engine is made, beside
 the store's read, and parses it into memory when it lands; a map that lands
@@ -401,7 +447,9 @@ the translators, is the lever for slower links. Its salt is checked against the 
 and its format must be known; a map that does not come (a refused fetch, an
 HTTP error, a fetch that never answers), is another build's, or does not
 parse is a source with nothing in it: one console line, nothing the player
-sees, never a switch to WebGL2, never a record. It takes no writes, so a
+sees, never a switch to WebGL2, never a record. So is one whose
+`Content-Length` is over the map's ceiling (above), refused before its body
+is read. It takes no writes, so a
 stage found in it is never written to the store. Its hits are counted as
 `shipped` in `hitsBySource`. What it read is held for the engine's life
 (§5).
@@ -424,8 +472,9 @@ browser's WebAssembly gives Node's bytes is §8's item 4.
 **The deploy check.** `npm run deploy:verify` (`tools/deploy/verify.mjs`,
 check 4d) finds the map in the WebGPU chunk, and checks that it is served
 `immutable`, parses, is of a format the chunk reads, carries in its salt the
-translators' digests and the key's format the chunk was built with, and holds
-translations.
+translators' digests and the key's format the chunk was built with, Babylon's
+version the bundle carries and, where the bundle shows it, Babylon's
+page-wide uniformity switch, and holds translations.
 
 ## 6. The translators, and the start's order
 
