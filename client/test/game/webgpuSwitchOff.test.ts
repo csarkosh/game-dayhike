@@ -125,6 +125,39 @@ describe("the start with the WebGPU switch off", () => {
     expect(lookup).toEqual([]);
   });
 
+  it("loads nothing of the asynchronous pipelines on a WebGL2 page: only the WebGPU module reaches them, and only a WebGPU engine's renderer is given them", () => {
+    const src = fileURLToPath(new URL("../../src", import.meta.url));
+    /** Every module `entry` reaches by a runtime import (types aside). */
+    const reachedFrom = (entry: string): Set<string> => {
+      const reached = new Set<string>();
+      const stack = [entry];
+      while (stack.length > 0) {
+        const file = stack.pop() as string;
+        if (reached.has(file)) continue;
+        reached.add(file);
+        for (const m of readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["'](\.[^"']+)\.js["']/gm)) {
+          stack.push(join(file, "..", `${m[1] as string}.ts`));
+        }
+      }
+      return reached;
+    };
+    const fromMain = [...reachedFrom(join(src, "main.ts"))].map((file) => relative(src, file));
+    expect(fromMain.length).toBeGreaterThan(20);
+    expect(fromMain.filter((file) => /asyncPipelines/.test(file))).toEqual([]);
+    expect([...reachedFrom(join(src, "game/gpuEngine.ts"))].map((file) => relative(src, file))).toContain("game/asyncPipelines.ts");
+    // The engine is made with the page's switch, and its module hands the
+    // game the patch and the reveal.
+    const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
+    expect(main).toContain("engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, lookup, pipelines }),");
+    expect(main).toContain("watchers: { failures: gpu.watchWebGpu, pipelines: gpu.watchPipelines, asyncPipelines: gpu.asyncPipelinesOf, reveal: gpu.revealWhenWhole },");
+    // The game holds its first frames only on a WebGPU engine, and gives the
+    // patch only to a renderer on one.
+    const app = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
+    expect(app.match(/watchers\.reveal\(/g)).toEqual(["watchers.reveal("]);
+    expect(app).toContain("if (renderer.engine.isWebGPU && watchers !== null) {");
+    expect(app).toContain("engine !== null && watchers !== null ? (watchers.asyncPipelines(engine) ?? undefined) : undefined");
+  });
+
   it("imports the WebGPU module in one place, on the path the rule sends to WebGPU", () => {
     const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
     // The one runtime import (the other names the module's type only).
