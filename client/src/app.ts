@@ -867,7 +867,7 @@ function buildGame(
           error: swapError ?? undefined,
           notice: options.quality.notice() ?? undefined,
         }),
-      onApply: (choice) => applyTier(choice),
+      onApply: (choice, readyMaxMs) => applyTier(choice, readyMaxMs),
       onChoose: () => {
         swapError = null;
       },
@@ -1304,10 +1304,10 @@ function buildGame(
 
   /**
    * Switches the running hike to the tier `choice` resolves to, the player's
-   * Apply on the pause screen. The choice is kept only when the switch reaches
-   * its tier (`switchTo`).
+   * Apply on the pause screen, waiting at most `readyMaxMs` for the new scene.
+   * The choice is kept only when the switch reaches its tier (`switchTo`).
    */
-  async function applyTier(choice: TierChoice): Promise<void> {
+  async function applyTier(choice: TierChoice, readyMaxMs: number): Promise<void> {
     const target = tierFor(choice);
     // One switch at a time: the governor's may be under way.
     if (disposed || broken || switching || lowering) return;
@@ -1316,7 +1316,7 @@ function buildGame(
       return;
     }
     const source = resolveTier({ override: options.quality.override, choice, auto: target }).source;
-    await switchTo(target, source, choice);
+    await switchTo(target, source, choice, readyMaxMs);
   }
 
   /**
@@ -1326,9 +1326,16 @@ function buildGame(
    * when the switch reaches `target`; a fallback keeps the choice as it was,
    * says so, and reports the tier that failed so it is not tried again. When
    * no tier builds at all, the Settings page and the landing say why, and the
-   * hike ends. Returns the tier now running.
+   * hike ends. The wait for the new scene is bounded by `readyMaxMs`, which
+   * each caller passes for the cover it put up (`APPLY_SWAP_READY_MAX_MS`,
+   * `GOVERNOR_SWAP_READY_MAX_MS`). Returns the tier now running.
    */
-  async function switchTo(target: QualityTier, source: TierSource, save: TierChoice | null): Promise<QualityTier> {
+  async function switchTo(
+    target: QualityTier,
+    source: TierSource,
+    save: TierChoice | null,
+    readyMaxMs: number,
+  ): Promise<QualityTier> {
     swapError = null;
     switching = true;
     try {
@@ -1360,7 +1367,7 @@ function buildGame(
       console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine webgl2`);
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
-      await whenSceneReady(renderer.scene, undefined, renderer.forestReady);
+      await whenSceneReady(renderer.scene, readyMaxMs, renderer.forestReady);
       return tier;
     } finally {
       switching = false;
@@ -1418,7 +1425,7 @@ function buildGame(
         idleCadence: () => timeIdleCadence(AbortSignal.timeout(GOVERNOR_IDLE_MAX_MS)),
         record: (running) => options.onGovernorDrop(running),
         // A switch that builds no tier has ended the hike and said so.
-        switchTo: (next) => switchTo(next, "auto", null),
+        switchTo: (next, readyMaxMs) => switchTo(next, "auto", null, readyMaxMs),
         flash: (line, ms) => hud.flash(line, ms),
         log: (line) => console.info(line),
         alive: () => !disposed && !broken && landingTimer === null,

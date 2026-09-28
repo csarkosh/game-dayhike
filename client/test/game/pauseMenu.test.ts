@@ -1,8 +1,15 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { PAUSE_START, createPauseMenu, createPlayGate, pauseMenuModel, pauseStep, type PauseState } from "../../src/game/pauseMenu.js";
+import type { Scene } from "@babylonjs/core/scene.js";
+import {
+  PAUSE_START, createPauseMenu, createPlayGate, pauseMenuModel, pauseStep, type PauseSettings, type PauseState,
+} from "../../src/game/pauseMenu.js";
+import { whenSceneReady } from "../../src/game/rendererSwap.js";
 import { settingsModel } from "../../src/game/settings.js";
 import type { TierChoice } from "../../src/game/tierChoice.js";
 import { StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
+
+/** A scene that is ready, with nothing waiting to load. */
+const readyScene = { isDisposed: false, isReady: () => true, getWaitingItemsCount: () => 0 } as unknown as Scene;
 
 describe("pauseMenuModel", () => {
   it("offers Resume, Settings and Exit, in that order", () => {
@@ -187,8 +194,9 @@ describe("the play gate", () => {
 describe("the pause screen's Settings page", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  /** The menu, open, on a hike running Medium with Auto picking Medium. */
-  function opened() {
+  /** The menu, open, on a hike running Medium with Auto picking Medium;
+   * `apply`, when given, stands in for the game's Apply. */
+  function opened(apply?: PauseSettings["onApply"]) {
     const doc = installStandInDom();
     const container = doc.createElement("div");
     doc.body.append(container);
@@ -206,11 +214,13 @@ describe("the pause screen's Settings page", () => {
             context: "pause", choice: selection, selectionTier: selection === "auto" ? "medium" : selection,
             auto: { tier: "medium", probePending: false }, running: "medium", override: null, stored: true, applying,
           }),
-        onApply: (choice) => {
-          applied.push(choice);
-          saved = choice;
-          return new Promise<void>((resolve) => (finish = resolve));
-        },
+        onApply:
+          apply ??
+          ((choice) => {
+            applied.push(choice);
+            saved = choice;
+            return new Promise<void>((resolve) => (finish = resolve));
+          }),
       },
     });
     menu.show();
@@ -256,6 +266,29 @@ describe("the pause screen's Settings page", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(page.select.disabled).toBe(false);
     expect(page.doc.activeElement).toBe(page.select);
+  });
+
+  it("holds \"Applying…\" at most 20 s for a new scene that never settles, then lets go", async () => {
+    vi.useFakeTimers();
+    try {
+      const bounds: number[] = [];
+      // The switch's wait as the game's Apply runs it: the bound it is
+      // handed, on a ready scene whose forest never settles.
+      const page = opened(async (_choice, readyMaxMs) => {
+        bounds.push(readyMaxMs);
+        await whenSceneReady(readyScene, readyMaxMs, new Promise(() => undefined));
+      });
+      page.button("Settings").press();
+      page.select.choose("low");
+      page.button("Apply").press();
+      await vi.advanceTimersByTimeAsync(19_900);
+      expect(page.select.disabled).toBe(true);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(page.select.disabled).toBe(false);
+      expect(bounds).toEqual([20_000]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("returns the focus to the heading once applied, when a pointer pressed Apply", async () => {

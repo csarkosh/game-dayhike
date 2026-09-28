@@ -30,8 +30,29 @@ import type { QualityTier } from "./quality.js";
 import type { Renderer } from "./renderer.js";
 import type { TierChoice } from "./tierChoice.js";
 
-/** How long the "Applying…" ground waits for the new scene before lifting anyway. */
-export const SWAP_READY_MAX_MS = 10_000;
+/**
+ * How long the Settings Apply's "Applying…" ground waits for the new scene
+ * before lifting anyway, counted from the end of the renderer's build. It
+ * covers a player on the pause screen who asked for the switch. Sized for the
+ * slowest build measured: in Chrome on an Apple M4 at 6× CPU throttling the
+ * build took about 4.2 s and the forest was whole 3.2–6.1 s past a 10 s bound
+ * (16.1 s after the build at most), so that bound lifted the cover on bare
+ * hillside in 12 switches of 12. 20 s covers the slowest with margin. It
+ * stays a bound: a model or a layer that never settles holds the cover this
+ * long and no longer, and on a machine slower still the cover lifts here and
+ * the forest fills in after.
+ */
+export const APPLY_SWAP_READY_MAX_MS = 20_000;
+
+/**
+ * How long the governor's screen over its switch waits for the new scene,
+ * counted the same way. Shorter than the Apply's because of whom it covers: a
+ * player in the middle of play who did not ask, without sight or controls, in
+ * a world that goes on around them (a party, a hunt). There a forest that
+ * fills in after the lift costs less than ten more seconds of that. On a slow
+ * machine the cover lifts here and the forest may fill in after.
+ */
+export const GOVERNOR_SWAP_READY_MAX_MS = 10_000;
 
 export type Swappable = { renderer: Renderer; canvas: HTMLCanvasElement };
 
@@ -168,7 +189,9 @@ export function buildFirstRenderer(
 /**
  * Resolves once `scene` is ready with nothing waiting to load and `layers` has
  * settled, or after `maxMs` (a model that never arrives must not hold the
- * screen), or at the next poll once the scene is disposed. A renderer torn
+ * screen), or at the next poll once the scene is disposed. `maxMs` has no
+ * default: it is the bound of whoever put the cover up
+ * (`APPLY_SWAP_READY_MAX_MS`, `GOVERNOR_SWAP_READY_MAX_MS`). A renderer torn
  * down while its scene's BRDF texture is still expanding keeps that scene
  * undisposed until `releaseEngine` lets it go, so for that time this goes on
  * polling it, and `isReady()` runs against the torn-down scene, which is
@@ -180,7 +203,7 @@ export function buildFirstRenderer(
  */
 export function whenSceneReady(
   scene: Scene,
-  maxMs = SWAP_READY_MAX_MS,
+  maxMs: number,
   layers: Promise<unknown> = Promise.resolve(),
 ): Promise<void> {
   return new Promise((resolve) => {

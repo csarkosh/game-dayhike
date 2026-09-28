@@ -1,3 +1,4 @@
+import { APPLY_SWAP_READY_MAX_MS } from "./rendererSwap.js";
 import { listOpen, openerOf, renderSettings, type Opener, type SettingsView } from "./settings.js";
 import type { TierChoice } from "./tierChoice.js";
 
@@ -322,8 +323,9 @@ export type PauseSettings = {
   /** The Settings page for a selection, painted fresh each time it is shown. */
   view(selection: TierChoice, applying: boolean): SettingsView;
   /** Apply: save the choice, and apply it where that is possible. A promise
-   * holds the page on "Applying…" until it settles. */
-  onApply(choice: TierChoice): void | Promise<void>;
+   * holds the page on "Applying…" until it settles; `readyMaxMs` bounds how
+   * long it may wait for the new scene (`APPLY_SWAP_READY_MAX_MS`). */
+  onApply(choice: TierChoice, readyMaxMs: number): void | Promise<void>;
   /** A choice was picked (the selection changed): what the last Apply said
    * can be let go. */
   onChoose?(choice: TierChoice): void;
@@ -451,7 +453,7 @@ export function createPauseMenu(
     }
     let applied: void | Promise<void> = undefined;
     try {
-      applied = options.settings.onApply(effect.choice);
+      applied = options.settings.onApply(effect.choice, APPLY_SWAP_READY_MAX_MS);
     } catch (error) {
       console.error("settings: the choice could not be applied.", error);
     }
