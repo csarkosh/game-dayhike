@@ -278,7 +278,13 @@ describe("createWebGpuEngine", () => {
         adaptToDeviceRatio: true,
         powerPreference: "high-performance",
         deviceDescriptor: {
-          requiredLimits: { maxInterStageShaderVariables: 19, maxVertexBuffers: 8 },
+          requiredLimits: {
+            maxInterStageShaderVariables: 19,
+            maxVertexBuffers: 8,
+            maxSampledTexturesPerShaderStage: 16,
+            maxSamplersPerShaderStage: 16,
+            maxUniformBuffersPerShaderStage: 12,
+          },
           requiredFeatures: ["texture-compression-bc"],
         },
       },

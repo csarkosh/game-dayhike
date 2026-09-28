@@ -38,6 +38,7 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { QUALITY, type QualityTier } from "../../src/game/quality.js";
+import { WEBGPU_REQUIRED_LIMITS } from "../../src/game/engineChoice.js";
 import { createAtmosphere } from "../../src/game/atmosphere.js";
 import { createLighting } from "../../src/game/lighting.js";
 import { budgetLights, createHeadlamp, LIGHT_BUDGET } from "../../src/game/headlamp.js";
@@ -54,9 +55,9 @@ import { timeLimit } from "../helpers/timeLimit.js";
  * browser's sweep (the verification note, §4): sampled textures and samplers
  * per stage, 16 each, set by the terrain's fragment stage, and uniform buffers
  * per stage, 12, set by every lit PBR material with the seven lights the game
- * binds at most. The device asks for no more than the default of these, so
- * one more texture or sampler on the terrain, or an eighth light, fails the
- * pipeline on every adapter.
+ * binds at most. The device asks for exactly the default of these
+ * (`WEBGPU_REQUIRED_LIMITS`), so one more texture or sampler on the terrain,
+ * or an eighth light, fails the pipeline on every adapter.
  *
  * What the suite can see of them: the terrain's clipmap and the forest, built
  * as the renderer builds them with every lamp of a full party lit, on a
@@ -73,8 +74,12 @@ const CEILING =
   "`WEBGPU_REQUIRED_LIMITS` (engineChoice.ts), which then turns away every adapter that offers only the default, " +
   "or take a texture, a sampler or a light away";
 
-/** WebGPU's defaults for the three limits. */
-const DEFAULTS = { textures: 16, samplers: 16, uniformBuffers: 12 };
+/** The three limits the device is made with. */
+const LIMITS = {
+  textures: WEBGPU_REQUIRED_LIMITS.maxSampledTexturesPerShaderStage as number,
+  samplers: WEBGPU_REQUIRED_LIMITS.maxSamplersPerShaderStage as number,
+  uniformBuffers: WEBGPU_REQUIRED_LIMITS.maxUniformBuffersPerShaderStage as number,
+};
 
 type Drawn = { vertex: StageBindings; fragment: StageBindings; textureNames: string[]; bufferNames: string[]; receivesShadows: boolean };
 
@@ -197,16 +202,18 @@ describe("WebGPU's per-stage bindings, at the defaults the device keeps", () => 
     expect({ high: onTier(terrain, "high"), medium: onTier(terrain, "medium") }, CEILING).toEqual({ high: measured, medium: measured });
   });
 
-  it("holds every material the terrain and the forest draw within the defaults on every tier", () => {
+  it("holds every material the terrain and the forest draw within the device's limits on every tier", () => {
+    // The device asks for WebGPU's defaults of the three, no more.
+    expect(LIMITS).toEqual({ textures: 16, samplers: 16, uniformBuffers: 12 });
     expect(world.drawn.size).toBe(21);
     for (const [name, drawn] of world.drawn) {
       for (const tier of Object.keys(QUALITY) as QualityTier[]) {
         const stages = onTier(drawn, tier);
         for (const [stage, seen] of Object.entries(stages)) {
           const at = `${name}, ${stage} stage, on ${tier}: ${CEILING}`;
-          expect(seen.textures, at).toBeLessThanOrEqual(DEFAULTS.textures);
-          expect(seen.samplers, at).toBeLessThanOrEqual(DEFAULTS.samplers);
-          expect(seen.uniformBuffers, at).toBeLessThanOrEqual(DEFAULTS.uniformBuffers);
+          expect(seen.textures, at).toBeLessThanOrEqual(LIMITS.textures);
+          expect(seen.samplers, at).toBeLessThanOrEqual(LIMITS.samplers);
+          expect(seen.uniformBuffers, at).toBeLessThanOrEqual(LIMITS.uniformBuffers);
         }
       }
     }

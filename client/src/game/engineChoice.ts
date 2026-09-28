@@ -30,26 +30,42 @@ export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"];
 /**
  * What the device is created with, and what an adapter must reach to be
  * chosen: exactly these, never the adapter's maximum, so a pipeline that
- * outgrows them fails here rather than only on a weaker adapter. Eight vertex
- * buffers are a terrain ring's six and the default.
+ * outgrows them fails here rather than only on a weaker adapter. Each is
+ * measured, over every pipeline of 13 WebGPU pages on both tiers, each
+ * replayed at chosen limits (the verification note, §4):
  *
- * Inter-stage variables: WebGPU lets a vertex stage write at most this many
- * user-defined outputs, each at a location below it, and a fragment stage read
- * at most this many user-defined inputs less one for each inter-stage built-in
- * it reads (`front_facing`, `sample_index`, `sample_mask`, `primitive_index`
- * and the two subgroup built-ins; the position does not count). On WebGPU
- * Babylon declares every vertex output as a fragment input, a `mat3` taking
- * three locations, so the giant trees' faded material, 18 outputs and a
- * two-sided fragment reading `front_facing`, needs 19 (`interStage.test.ts`
- * holds the count; the verification note's §6.1 has the reading). The
- * specification lowers the vertex stage's count twice more: by one for a
- * pipeline drawing `point-list` topology, and by one for every four
- * `clip_distances` it writes. The game uses neither: it draws no points, and
- * the device is not asked for the `clip-distances` feature.
+ * - Inter-stage variables, 19. WebGPU lets a vertex stage write at most this
+ *   many user-defined outputs, each at a location below it, and a fragment
+ *   stage read at most this many user-defined inputs less one for each
+ *   inter-stage built-in it reads (`front_facing`, `sample_index`,
+ *   `sample_mask`, `primitive_index` and the two subgroup built-ins; the
+ *   position does not count). On WebGPU Babylon declares every vertex output
+ *   as a fragment input, a `mat3` taking three locations. The giant trees'
+ *   faded material (`material1`) writes 18 outputs and its two-sided fragment
+ *   reads 18 inputs and `front_facing`, on both tiers, and so does the
+ *   halation's blur on high: at 18 both fail validation, at 19 no pipeline
+ *   does (`interStage.test.ts` holds the count). The specification lowers the
+ *   vertex stage's count twice more: by one for a pipeline drawing
+ *   `point-list` topology, and by one for every four `clip_distances` it
+ *   writes. The game uses neither: it draws no points, and the device is not
+ *   asked for the `clip-distances` feature.
+ * - Vertex buffers, 8, the default: the most a pipeline binds is 7 (the duff
+ *   clumps, the giant fir's `material1`, the fern, the meadow's clutter, the
+ *   grass).
+ * - Sampled textures and samplers per stage, 16 each, and uniform buffers per
+ *   stage, 12: WebGPU's defaults, at which the scene sits with no margin. The
+ *   terrain's fragment stage takes all 16 textures and 16 samplers, and every
+ *   lit PBR material with a full party's seven lights all 12 uniform buffers
+ *   (`stageBindings.test.ts` holds the counts). They are named so that this
+ *   is the scene's whole need; every adapter offers the defaults, so naming
+ *   them turns none away.
  */
 export const WEBGPU_REQUIRED_LIMITS: Readonly<Record<string, number>> = {
   maxInterStageShaderVariables: 19,
   maxVertexBuffers: 8,
+  maxSampledTexturesPerShaderStage: 16,
+  maxSamplersPerShaderStage: 16,
+  maxUniformBuffersPerShaderStage: 12,
 };
 
 /**
