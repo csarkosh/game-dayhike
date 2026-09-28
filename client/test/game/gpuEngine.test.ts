@@ -7,7 +7,7 @@ import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import { EffectFallbacks } from "@babylonjs/core/Materials/effectFallbacks.js";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
 import { ThinWebGPUEngine } from "@babylonjs/core/Engines/thinWebGPUEngine.js";
-import { catchTranslationFailures, mipEveryLayer, watchPipelines, watchWebGpu } from "../../src/game/gpuEngine.js";
+import { catchTranslationFailures, mipEveryLayer, reportUnfetched, watchPipelines, watchWebGpu } from "../../src/game/gpuEngine.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -171,6 +171,36 @@ describe("watchWebGpu", () => {
     );
   });
 
+  it("reports translators its own engine's lookup could not fetch as unfetched, once, even when told before it watched", async () => {
+    const engine = new NullEngine();
+    const other = new NullEngine();
+    const seen: string[] = [];
+    const stop = watchWebGpu(engine, (reason) => seen.push(reason));
+    try {
+      reportUnfetched(other);
+      reportUnfetched(engine);
+      reportUnfetched(engine);
+      expect(seen).toEqual(["unfetched"]);
+    } finally {
+      stop();
+    }
+    // Told before its watcher was put on: heard once the caller holds the
+    // watcher's stop, and not by one taken off first.
+    const late = new NullEngine();
+    reportUnfetched(late);
+    const heard: string[] = [];
+    const stopLate = watchWebGpu(late, (reason) => heard.push(reason));
+    expect(heard).toEqual([]);
+    await Promise.resolve();
+    expect(heard).toEqual(["unfetched"]);
+    stopLate();
+    const offFirst: string[] = [];
+    watchWebGpu(late, (reason) => offFirst.push(reason))();
+    await Promise.resolve();
+    expect(offFirst).toEqual([]);
+    for (const e of [engine, other, late]) e.dispose();
+  });
+
   it("leaves Babylon's log hook as it found it", () => {
     const original = Logger.OnNewCacheEntry;
     const engine = new NullEngine();
@@ -307,6 +337,17 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     } finally {
       engine.dispose();
     }
+  });
+
+  it("wraps the shader lookup's preparation, installed first on every engine the maker makes (the source of the one maker)", () => {
+    // The wrap binds whatever preparation it finds, so the lookup goes on
+    // first and a translation it runs is caught like Babylon's own.
+    const src = readFileSync(new URL("../../src/game/gpuEngine.ts", import.meta.url), "utf8");
+    const start = src.slice(src.indexOf("  const start = async (): Promise<WebGPUEngine> => {"), src.indexOf("    await engine.initAsync("));
+    expect(start.indexOf("      lookUpShaders(engine, {")).toBeGreaterThan(0);
+    expect(start.indexOf("    catchTranslationFailures(engine);")).toBeGreaterThan(start.indexOf("      lookUpShaders(engine, {"));
+    // Translators it cannot fetch are told to the engine's watcher, not thrown.
+    expect(start).toContain("        unfetched: () => reportUnfetched(engine),");
   });
 
   it("is still needed: Babylon still drops the rejection (a canary on the installed engine)", () => {

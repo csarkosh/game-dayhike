@@ -42,6 +42,7 @@ vi.mock("@babylonjs/core/Engines/webgpuEngine.pure.js", () => {
   return { WebGPUEngine };
 });
 
+import { WebGPUEngine as WebGPUEngineMock } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
 import { createWebGpuEngine, forgetTranslators, loadTranslators } from "../../src/game/gpuEngine.js";
 
 const canvas = {} as HTMLCanvasElement;
@@ -255,18 +256,40 @@ describe("loadTranslators", () => {
 });
 
 describe("createWebGpuEngine", () => {
-  it("refuses to start before the translators are loaded, and makes no engine", async () => {
-    await expect(createWebGpuEngine(canvas, {})).rejects.toThrow("load the WebGPU translators first");
+  it("refuses to start on Babylon's own path (?wgsl=off) before the translators are loaded, and makes no engine", async () => {
+    await expect(createWebGpuEngine(canvas, { lookup: "off" })).rejects.toThrow("load the WebGPU translators first");
     expect(made.options).toEqual([]);
     expect(PBRBaseMaterial.ForceGLSL).toBe(false);
   });
 
-  it("hands Babylon the translators it was given, so it neither loads nor starts its own", async () => {
-    await createWebGpuEngine(canvas, { translators: TRANSLATORS });
+  it("hands Babylon the translators it was given (?wgsl=off), so it neither loads nor starts its own, and looks nothing up", async () => {
+    // Babylon's own preparation, as the engine's wraps find it.
+    const own = vi.spyOn(WebGPUEngineMock.prototype, "_preparePipelineContextAsync");
+    const engine = await createWebGpuEngine(canvas, { translators: TRANSLATORS, lookup: "off" });
     const [glslangOptions, twgslOptions] = made.initArgs[0] as [{ glslang: Promise<unknown> }, { twgsl: unknown }];
     expect(Object.keys(glslangOptions)).toEqual(["glslang"]);
     expect(await glslangOptions.glslang).toBe(TRANSLATORS.glslang);
     expect(twgslOptions).toEqual({ twgsl: TRANSLATORS.twgsl });
+    // A GLSL effect's preparation reaches it through the failure wrap alone.
+    await (engine as unknown as { _preparePipelineContextAsync(context: unknown): Promise<void> })._preparePipelineContextAsync({
+      shaderProcessingContext: { shaderLanguage: 0 },
+    });
+    expect(own).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts no translator before the engine when it looks shaders up: Babylon is handed none, and nothing is fetched", async () => {
+    const asked = stubFetch(WASM);
+    let prepared = 0;
+    made.prepare = () => {
+      prepared++;
+      return Promise.resolve();
+    };
+    const engine = await createWebGpuEngine(canvas, { features: [] });
+    expect(made.initArgs).toEqual([[undefined, undefined]]);
+    expect(prepared).toBe(0);
+    expect(asked).toEqual([]);
+    expect(typeof Object.getOwnPropertyDescriptor(engine, "_preparePipelineContextAsync")?.value).toBe("function");
+    expect(PBRBaseMaterial.ForceGLSL).toBe(true);
   });
 
   it("asks the device for exactly the required limits and the texture formats it is given", async () => {

@@ -123,9 +123,17 @@ describe("layer boundaries", () => {
   it("never turns WebGPU's uniformity analysis off for every shader", () => {
     // The finish pass turns it off for itself (`finishFragmentFor`); replacing
     // the engine's stage-descriptor method would hide every other shader's
-    // uniformity fault too.
+    // uniformity fault too. The shader lookup calls it, with WGSL already
+    // translated (each stage's switch read as Babylon reads it), and nothing
+    // replaces it.
     const found = sourceFiles(SRC).filter((f) => readFileSync(f, "utf8").includes("_createPipelineStageDescriptor"));
-    expect(found).toEqual([]);
+    expect(found.map((f) => relative(SRC, f))).toEqual(["game/shaderLookup.ts"]);
+    const lookup = readFileSync(join(SRC, "game/shaderLookup.ts"), "utf8");
+    expect(lookup).not.toMatch(/_createPipelineStageDescriptor\s*=[^=]/);
+    expect([...lookup.matchAll(/own\._createPipelineStageDescriptor\(([^)]*)\)/g)].map((m) => m[1])).toEqual([
+      "vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false",
+      "vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false",
+    ]);
   });
 
   it("keeps `forgetTranslators` for tests: nothing in src/ but its definition names it", () => {
@@ -204,6 +212,16 @@ describe("layer boundaries", () => {
     expect(main).toContain("    start: ({ canvas, engine, watchers }, record) =>");
     expect([...main.matchAll(/engineFailed: record,/g)].length).toBe(1);
     expect(main).not.toMatch(/\bstarting\b/);
+  });
+
+  it("holds the page on WebGL2 after translators that could not be fetched, remembered nowhere: every watcher sets the hold, the rule reads it, the probe writes no record", () => {
+    // What `engineFailure.test.ts` cannot see: the page's side of `unfetched`.
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    expect(main).toContain("watchers: { failures: holdingUnfetched(gpu.watchWebGpu), pipelines: gpu.watchPipelines },");
+    expect(main).toContain("    remembered: translatorsUnfetched || fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),");
+    expect(main).toContain('  if (reason === "unfetched") {\n    return answerUnfetched({');
+    expect(main).toContain('    failed: () => void (translatorsUnfetched || rememberFailure("init", !cancelled())),');
+    expect([...main.matchAll(/\btranslatorsUnfetched = true\b/g)]).toHaveLength(1);
   });
 
   it("shows one line after a failure rebuild: the swap itself shows none, a switch its engine's, the answer its own", () => {

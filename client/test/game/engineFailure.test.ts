@@ -8,6 +8,7 @@ import {
 } from "../../src/game/engineChoice.js";
 import {
   answerFailures,
+  answerUnfetched,
   coverWith,
   createSerial,
   recordEngineFailure,
@@ -51,7 +52,7 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
   /** What each rebuild was given: the bound on its wait for the new scene. */
   const bounds: unknown[][] = [];
   const storage = memoryStorage();
-  const page = { url: null as "webgl2" | null, now: T0 };
+  const page = { url: null as "webgl2" | "webgpu" | null, now: T0, held: false };
   let engine = first;
   let alive = true;
   let canvases = 0;
@@ -61,7 +62,7 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
   let webgpuStarts = true;
   const serial = createSerial();
   const rule = (): "webgl2" | "webgpu" | "probe" =>
-    chooseEngine({ tier: "high", override: page.url, remembered: fallbackHolds(readFallback(storage), ENV, page.now), on: true, fits: true });
+    chooseEngine({ tier: "high", override: page.url, remembered: page.held || fallbackHolds(readFallback(storage), ENV, page.now), on: true, fits: true });
   const deps: FailureDeps = {
     serial,
     alive: () => alive,
@@ -69,7 +70,13 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
     runningOnWebGpu: () => engine.webgpu,
     unwatch: () => void log.push(`unwatch ${engine.name}`),
     record: (reason) => {
-      const line = recordEngineFailure(reason, { storage, env: ENV, now: page.now, override: null, pin: () => (page.url = "webgl2") });
+      // As `main.ts`: translators that could not be fetched hold the page
+      // (its watcher set the hold first) and write nothing.
+      if (reason === "unfetched") page.held = true;
+      const line =
+        reason === "unfetched"
+          ? answerUnfetched({ override: page.url, pin: () => (page.url = "webgl2") })
+          : recordEngineFailure(reason, { storage, env: ENV, now: page.now, override: null, pin: () => (page.url = "webgl2") });
       log.push(`record ${reason}: ${line}`);
       return line;
     },
@@ -130,6 +137,37 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
       `flash ${NOTICE_SWITCHED}`,
     ]);
     expect(readFallback(h.storage)).toEqual({ reason: "pipeline", browser: 153, babylon: "9.18.0", at: T0, losses: 0 });
+  });
+
+  it("swaps translators that could not be fetched onto WebGL2 as for a failure, writing nothing, so the next load tries WebGPU again", async () => {
+    const h = hike();
+    await h.answer(h.engine(), "unfetched");
+    expect(h.log).toEqual([
+      "unwatch gpu0",
+      `record unfetched: ${NOTICE_SWITCHED}`,
+      "cover",
+      "stop gpu0",
+      "rebuild from gpu0",
+      "on gl1 (c1)",
+      "lift",
+      `flash ${NOTICE_SWITCHED}`,
+    ]);
+    expect(readFallback(h.storage)).toBe(null);
+    expect(h.page.url).toBe(null);
+    // The next load: no record, so the rule gives WebGPU again.
+    expect(chooseEngine({ tier: "high", override: null, remembered: fallbackHolds(readFallback(h.storage), ENV, T0), on: true, fits: true })).toBe("webgpu");
+  });
+
+  it("pins only a tab whose address asks for WebGPU after translators that could not be fetched, which the page's hold cannot outrank", () => {
+    for (const [override, pinned] of [
+      ["webgpu", 1],
+      [null, 0],
+      ["webgl2", 0],
+    ] as const) {
+      let pins = 0;
+      expect(answerUnfetched({ override, pin: () => void pins++ })).toBe(NOTICE_SWITCHED);
+      expect(pins, String(override)).toBe(pinned);
+    }
   });
 
   it("waits the governor's 10 s for the rebuilt scene under its cover, a pipeline error and a lost device alike", async () => {
