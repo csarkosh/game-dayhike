@@ -24,27 +24,40 @@
  * around a compile are notified around it, as the governor and the probe
  * listen to them. A translation that throws rejects the preparation as it
  * does today, so `catchTranslationFailures` still answers it. A native WGSL
- * effect is Babylon's own; so is a raw one, once the translators are there.
+ * effect is Babylon's own, and so is a raw one.
  *
- * The translators are started at the first stage not found, and when the
- * page is idle after the engine's first frame, by the function the engine's
- * maker passes (`gpuEngine.ts`: the game's own loader, never Babylon's, whose
- * promise has no rejection path). Translators that cannot be fetched for a
- * stage not found are the network's failure, not the shader's: the effect is
- * left unready and the page told (`unfetched`), never the failure handling
- * that remembers a broken engine. A stored WGSL the device refuses is
- * dropped and translated afresh, once. Its canaries are in
- * `shaderLookup.test.ts`.
+ * **A preparation never waits.** Babylon's own preparation, once its
+ * translators are loaded, runs to `onReady` in the call that asked for it,
+ * and Babylon relies on that: at the first draw of a mesh with integer vertex
+ * buffers (every skinned glTF model) it prepares the effect again on the same
+ * pipeline context and builds the render pipeline from `stages` straight
+ * after (`checkNonFloatVertexBuffers`, `buffer.nonFloatVertexBuffers.js`).
+ * So every source answers from memory, read in while the engine is made
+ * (`lookUpShaders`' promise, which the engine's maker waits for within
+ * `WGSL_SOURCES_MS`); the translators are loaded before the engine is handed
+ * over, so a stage not found is translated at once; and keeping a new
+ * translation is never waited on. Its canaries are in `shaderLookup.test.ts`.
  */
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { WebGPUTintWASM } from "@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { ShaderLookupMode } from "./engineChoice.js";
 import { sha256Hex } from "./sha256.js";
-import { openWgslStore } from "./wgslStore.js";
+import { loadWgslStore } from "./wgslStore.js";
 
 /** The format of the key; a change to how it is made changes this. */
 export const LOOKUP_FORMAT = "dayhike-wgsl/1";
+
+/** How long the engine's maker waits for the sources to be read into memory,
+ * opening and reading together: what has not arrived by then is not there
+ * for the start (a miss, translated). The device's request runs meanwhile. */
+export const WGSL_SOURCES_MS = 2_000;
+/** The WGSL held in memory for the start is let go once no preparation has
+ * come for this long… */
+export const WGSL_HOLD_QUIET_MS = 30_000;
+/** …or this long after the engine stood, whichever comes first. A stage not
+ * found after that is translated, the translators being loaded. */
+export const WGSL_HOLD_MAX_MS = 120_000;
 
 /** `ShaderLanguage.GLSL` and `ShaderLanguage.WGSL`. */
 const GLSL = 0;
@@ -56,20 +69,35 @@ const VERSION_PREFIX = "#version 450\n";
 /** The define a stage turns Tint's uniformity analysis off with. */
 const UNIFORMITY_OFF = "#define DISABLE_UNIFORMITY_ANALYSIS";
 
+/** The name under which the report counts the stages found among those this
+ * page itself translated while the start's WGSL was held. */
+const PAGE = "page";
+
 export type Stage = "vertex" | "fragment";
 
-/** One source of WGSL: the browser's store (`wgslStore.ts`), and next, the
- * translations shipped with the build. */
+/**
+ * One source of WGSL: the browser's store (`wgslStore.ts`), and next, the
+ * translations shipped with the build. Every answer comes from memory, at
+ * once: a preparation never waits (see the module's comment).
+ */
 export type WgslSource = {
-  /** Whether it holds `key`, answered at once. */
-  has(key: string): boolean;
-  /** The WGSL under `key`, or null where it cannot be read. */
-  get(key: string): Promise<string | null>;
-  /** Keeps a stage just translated; a source that keeps nothing ignores it. */
-  put(key: string, wgsl: string): void;
-  /** Forgets `key`, whose WGSL the device refused. */
-  drop(key: string): void;
-  /** Lets go of what it holds open; it has nothing after. */
+  /** How the report names it (`hitsBySource`, `StageRecord.from`). */
+  readonly name: string;
+  /** The salt its entries were made under: a source of another salt is never
+   * asked (a map shipped with another build, say). */
+  readonly salt: string;
+  /** The WGSL under `key`, from memory, or null. */
+  get(key: string): string | null;
+  /** Keeps a stage just translated, at once in memory where it holds its
+   * entries there, and anywhere else later, never waited on. Absent on a
+   * source that takes no writes (a map shipped with the build). */
+  put?(key: string, wgsl: string): void;
+  /** Resolves once its entries are in memory; what has not arrived by the
+   * maker's bound is simply not there. Absent: in memory from the start. */
+  readonly ready?: Promise<void>;
+  /** Lets go of the WGSL held in memory for the start; the keys may stay. */
+  settle?(): void;
+  /** Lets go of everything it holds, connections included. */
   close?(): void;
 };
 
@@ -82,8 +110,9 @@ export type StageRecord = {
   /** Exactly what the first translator was, or would have been, handed. */
   glsl: string;
   wgsl: string;
-  /** Where its WGSL came from: a source, or a translation now. */
-  from: "source" | "translated";
+  /** Where its WGSL came from: the name of the source that had it, or
+   * `translated`. */
+  from: string;
   /** ms in the first translator, GLSL to SPIR-V; 0 for a stage found. */
   spirvMs: number;
   /** ms in the second, SPIR-V to WGSL; 0 for a stage found. */
@@ -112,17 +141,18 @@ export type EffectRecord = {
 export type ShaderLookupReport = {
   mode: Exclude<ShaderLookupMode, "off">;
   salt: string;
-  /** Stages whose WGSL was found in a source and used. */
+  /** Stages whose WGSL was found and used. */
   hits: number;
-  /** Stages translated because no source had them (or had one the device
-   * refused). */
+  /** The same, by the name of the source that had it (`page` for a stage
+   * this page translated earlier in the start). */
+  hitsBySource: Record<string, number>;
+  /** Stages translated because nothing had them. */
   misses: number;
   /** ms translating on the page's thread, both translators, every stage
-   * (`?wgsl=verify`'s checks included). */
+   * (`?wgsl=verify`'s own translations not included). */
   translateMs: number;
-  /** Stored stages the device refused, dropped and translated afresh. */
-  rejected: number;
-  /** `?wgsl=verify`: stages found whose translation now differs. */
+  /** `?wgsl=verify`: stages whose text for the first translator, or whose
+   * WGSL, differs from what Babylon's own path makes of the same effect. */
   differences: number;
   effects: EffectRecord[];
   /** Saves the report as a JSON file. */
@@ -131,8 +161,9 @@ export type ShaderLookupReport = {
 
 /** The salt: the key's format, Babylon's version (it owns the text around
  * the code and the diagnostic before the WGSL), the translators' own bytes'
- * digests (`__WGSL_TRANSLATORS__`, computed by the build), and Babylon's
- * page-wide uniformity switch, which no text shows. */
+ * digests, their WebAssembly and their loaders (`__WGSL_TRANSLATORS__`,
+ * computed by the build), and Babylon's page-wide uniformity switch, which
+ * no text shows. */
 export function lookupSalt(parts: { babylon: string; translators: string; staticUniformityOff: boolean }): string {
   return `${LOOKUP_FORMAT}|babylon=${parts.babylon}|${parts.translators}|staticUA=${parts.staticUniformityOff}`;
 }
@@ -185,9 +216,9 @@ export function newLookupReport(mode: Exclude<ShaderLookupMode, "off">, salt: st
     mode,
     salt,
     hits: 0,
+    hitsBySource: {},
     misses: 0,
     translateMs: 0,
-    rejected: 0,
     differences: 0,
     effects: [],
     download() {
@@ -208,6 +239,11 @@ function pageReport(mode: Exclude<ShaderLookupMode, "off">, salt: string): Shade
   return page.dayhikeWgsl;
 }
 
+/** The browser's store for `salt`, as the lookup's one source by default. */
+export function defaultSources(salt: string): Promise<readonly WgslSource[]> {
+  return loadWgslStore(salt).then((store) => (store === null ? [] : [store]));
+}
+
 /** What the lookup uses of a WebGPU engine: Babylon 9.18's own members. */
 type LookupEngine = {
   _preparePipelineContextAsync(pipelineContext: unknown, ...rest: unknown[]): Promise<void>;
@@ -215,11 +251,9 @@ type LookupEngine = {
   _compileRawShaderToSpirV(source: string, type: string): unknown;
   _tintWASM: { convertSpirV2WGSL(code: unknown, disableUniformityAnalysis?: boolean): string } | null;
   _createPipelineStageDescriptor(vertex: string, fragment: string, shaderLanguage: number, uaVertex: boolean, uaFragment: boolean): unknown;
-  _device: { pushErrorScope(filter: "validation"): void; popErrorScope(): Promise<unknown> };
-  readonly isDisposed: boolean;
+  _device: { createShaderModule(descriptor: { code: string }): unknown };
   onBeforeShaderCompilationObservable: { notifyObservers(engine: unknown): void };
   onAfterShaderCompilationObservable: { notifyObservers(engine: unknown): void };
-  onEndFrameObservable?: { addOnce(callback: () => void): unknown };
   onDisposeObservable?: { addOnce(callback: () => void): unknown };
 };
 
@@ -231,141 +265,140 @@ type LookupContext = {
   stages?: unknown;
 };
 
-/** One stage under way. */
-type Pending = StageRecord & { source: WgslSource | null };
-
-/** A shader module, as far as its compilation messages. */
-type ModuleLike = { getCompilationInfo?: () => Promise<{ messages: readonly { type: string }[] }> };
-
-/** Of the stages `found` in a source, those whose module in `made` (Babylon's
- * stage descriptor) the device refused, by each module's compilation
- * messages; all of them where the messages do not say. */
-async function refusedStages(found: Pending[], made: unknown): Promise<Pending[]> {
-  const modules = made as { vertexStage: { module: ModuleLike }; fragmentStage: { module: ModuleLike } };
-  const refused = await Promise.all(
-    found.map(async (stage) => {
-      const module = stage.stage === "vertex" ? modules.vertexStage.module : modules.fragmentStage.module;
-      try {
-        const info = await module.getCompilationInfo?.();
-        return info?.messages.some((message) => message.type === "error") ?? false;
-      } catch {
-        return false;
-      }
-    }),
-  );
-  const bad = found.filter((_, i) => refused[i]);
-  return bad.length > 0 ? bad : found;
-}
-
-/** Runs `run` when the page is next idle, or soon where it cannot say. */
-function whenIdle(run: () => void): void {
-  const idle = (globalThis as { requestIdleCallback?: (callback: () => void) => unknown }).requestIdleCallback;
-  if (typeof idle === "function") idle(run);
-  else setTimeout(run, 0);
-}
-
 /** Per engine, what lets its lookup go (`releaseShaderLookup`). */
 const releases = new WeakMap<AbstractEngine, () => void>();
 
 /**
  * Lets `engine`'s lookup go: its sources closed (the browser's store's
- * database), and no source opened after. Once; called when the engine is
- * disposed, and callable where an engine is let go of without Babylon's
- * dispose running to its end (a start that failed part-way). An engine
- * without a lookup is left alone.
+ * database), its timers cleared, and any source that arrives later closed as
+ * it lands. Once; called when the engine is disposed, and by
+ * `disposeHalfMade`, where Babylon's dispose never gets as far as telling
+ * anyone. An engine without a lookup is left alone.
  */
 export function releaseShaderLookup(engine: AbstractEngine): void {
   releases.get(engine)?.();
   releases.delete(engine);
 }
 
+/** `promise`, or null once `ms` pass first. */
+function within<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
+/** A property of `target` replaced for one call, and put back as it was
+ * (its own, or its prototype's). */
+function during<T extends object, K extends keyof T>(target: T, key: K, value: T[K], run: () => void): void {
+  const own = Object.prototype.hasOwnProperty.call(target, key);
+  const before = target[key];
+  target[key] = value;
+  try {
+    run();
+  } finally {
+    if (own) target[key] = before;
+    else Reflect.deleteProperty(target, key);
+  }
+}
+
 /**
  * Looks up every GLSL shader `engine` prepares before translating it (see the
  * module's comment). `mode` `"off"` leaves the engine as Babylon made it.
- * `translators` starts the translators and hands them to the engine, or
- * rejects; a start that failed is tried again at the next stage not found.
- * Where it fails for a stage not found, that effect cannot be made: its
- * preparation ends there, unready and without an error (a network's failure
- * is not the shader's, so `catchTranslationFailures` never hears it), and
- * `unfetched` is called, once for the engine, for the page to let it go.
- * `sources` are asked in order: where none are given, the browser's store
- * for this build's salt, opened at the first shader, so an engine whose
- * start fails before one opens nothing. `report` counts and records (the
- * page's, where none is given). Install it before
- * `catchTranslationFailures`, which wraps whatever preparation it finds.
+ * Resolves once its sources (`sources`, the browser's store by default) are
+ * in memory, or `WGSL_SOURCES_MS` has passed, whichever comes first, never
+ * rejecting; the engine's maker waits for it before handing the engine over,
+ * and the translators must be loaded by then too. From then the WGSL held
+ * for the start is let go after `WGSL_HOLD_QUIET_MS` without a preparation,
+ * or `WGSL_HOLD_MAX_MS`. `report` counts and records (the page's, where none
+ * is given). Install it before `catchTranslationFailures`, which wraps
+ * whatever preparation it finds.
  */
 export function lookUpShaders(
   engine: AbstractEngine,
   options: {
     mode: ShaderLookupMode;
-    translators: () => Promise<void>;
-    unfetched?: (error: unknown) => void;
     salt?: string;
-    sources?: readonly WgslSource[] | Promise<readonly WgslSource[]>;
+    sources?: (salt: string) => Promise<readonly WgslSource[]>;
     report?: ShaderLookupReport;
   },
-): ShaderLookupReport | null {
+): Promise<void> {
   const mode = options.mode;
-  if (mode === "off") return null;
+  if (mode === "off") return Promise.resolve();
   const own = engine as unknown as LookupEngine;
   const salt = options.salt ?? buildSalt();
   const report = options.report ?? pageReport(mode, salt);
 
+  /** The sources asked, in order, once they are in. */
+  let asked: readonly WgslSource[] = [];
+  /** Stages this page translated while the start's WGSL is held: two effects
+   * with one stage between them translate it once. */
+  const translated = new Map<string, string>();
   let released = false;
-  let opened: Promise<readonly WgslSource[]> | null = null;
-  const sources = (): Promise<readonly WgslSource[]> => {
-    if (released) return Promise.resolve([]);
-    opened ??= Promise.resolve(options.sources ?? openWgslStore(salt).then((store) => (store === null ? [] : [store]))).catch(() => []);
-    return opened;
+  let quiet: ReturnType<typeof setTimeout> | undefined;
+  let longest: ReturnType<typeof setTimeout> | undefined;
+  let held = false;
+  const settle = (): void => {
+    if (!held) return;
+    held = false;
+    clearTimeout(quiet);
+    clearTimeout(longest);
+    translated.clear();
+    for (const source of asked) source.settle?.();
   };
+  const keepQuiet = (): void => {
+    if (!held) return;
+    clearTimeout(quiet);
+    quiet = setTimeout(settle, WGSL_HOLD_QUIET_MS);
+  };
+
+  /** The sources as they land, whenever that is. */
+  const arriving = (options.sources ?? defaultSources)(salt).catch(() => null);
+  const ready = (async (): Promise<void> => {
+    const began = performance.now();
+    const got = await within(arriving, WGSL_SOURCES_MS);
+    if (got === null) {
+      // Too late for this engine: let go as they land.
+      void arriving.then((late) => {
+        for (const source of late ?? []) source.close?.();
+      });
+      return;
+    }
+    const ours = got.filter((source) => source.salt === salt);
+    for (const source of got) {
+      if (source.salt !== salt) {
+        Logger.Warn(`WebGPU shader lookup: the source ${source.name} was made for another build; not asked`);
+        source.close?.();
+      }
+    }
+    if (released) {
+      for (const source of ours) source.close?.();
+      return;
+    }
+    asked = ours;
+    const left = Math.max(0, WGSL_SOURCES_MS - (performance.now() - began));
+    await within(Promise.all(ours.map((source) => source.ready ?? Promise.resolve())), left);
+  })()
+    .catch(() => undefined)
+    .then(() => {
+      if (released) return;
+      held = true;
+      keepQuiet();
+      longest = setTimeout(settle, WGSL_HOLD_MAX_MS);
+    });
+
   const release = (): void => {
     if (released) return;
     released = true;
-    void opened?.then((all) => {
-      for (const source of all) source.close?.();
-    });
+    settle();
+    clearTimeout(quiet);
+    clearTimeout(longest);
+    for (const source of asked) source.close?.();
+    asked = [];
   };
   releases.set(engine, release);
   own.onDisposeObservable?.addOnce(() => releaseShaderLookup(engine));
-
-  let told = false;
-  /** Whether the translators are there, started if need be; where they
-   * cannot be, the page is told, once. */
-  const haveTranslators = async (): Promise<boolean> => {
-    try {
-      await translatorsReady();
-      return true;
-    } catch (error) {
-      if (!told) {
-        told = true;
-        Logger.Warn(`WebGPU shader lookup: the translators did not load for a shader not found: ${error instanceof Error ? error.message : String(error)}`);
-        options.unfetched?.(error);
-      }
-      return false;
-    }
-  };
-
-  let started: Promise<void> | null = null;
-  const translatorsReady = (): Promise<void> => {
-    if (started === null) {
-      const attempt = options.translators();
-      started = attempt;
-      attempt.catch(() => {
-        if (started === attempt) started = null;
-      });
-    }
-    return started;
-  };
-  // A later stage not found should not wait on the network: the translators
-  // are started once the page is idle after the first frame, by the same
-  // start a stage not found makes (so within the same budget). That start
-  // failing is silent and changes nothing: the next stage not found starts
-  // them again, and only a failure there is told (`unfetched`).
-  own.onEndFrameObservable?.addOnce(() =>
-    whenIdle(() => {
-      if (!own.isDisposed) translatorsReady().catch(() => undefined);
-    }),
-  );
 
   // Where Babylon's own processing of an effect begins, for the recorder.
   const processingSince = new WeakMap<object, number>();
@@ -378,12 +411,37 @@ export function lookUpShaders(
     };
   }
 
-  const translate = (stage: Pending): string => {
+  const prepare = own._preparePipelineContextAsync.bind(engine);
+
+  /** What Babylon's own preparation hands the first translator and makes of
+   * the same effect, on a scratch context: the text for each stage and the
+   * WGSL of each module, in stage order (`?wgsl=verify`). Babylon's own
+   * preparation runs to its end in the call, its translators being loaded. */
+  const babylons = (context: LookupContext, rest: unknown[]): { glsl: string[]; wgsl: string[] } => {
+    const glsl: string[] = [];
+    const wgsl: string[] = [];
+    const compile = own._compileRawShaderToSpirV;
+    const device = own._device;
+    during(own, "_compileRawShaderToSpirV", (source: string, type: string) => {
+      glsl.push(source);
+      return compile.call(engine, source, type);
+    }, () =>
+      during(device, "createShaderModule", (descriptor: { code: string }) => {
+        wgsl.push(descriptor.code);
+        return {};
+      }, () => {
+        void prepare({ shaderProcessingContext: context.shaderProcessingContext }, ...rest.slice(0, 9), () => undefined).catch(() => undefined);
+      }),
+    );
+    return { glsl, wgsl };
+  };
+
+  const translate = (stage: StageRecord): string => {
     const from = performance.now();
     const spirv = own._compileRawShaderToSpirV(stage.glsl, stage.stage);
     const middle = performance.now();
     const tint = own._tintWASM;
-    if (tint === null) throw new Error("WebGPU shader translation failed: the translators are not ready");
+    if (tint === null) throw new Error("WebGPU shader translation failed: the translators are not loaded");
     const wgsl = tint.convertSpirV2WGSL(spirv, stage.flag);
     const to = performance.now();
     stage.spirvMs += middle - from;
@@ -392,21 +450,8 @@ export function lookUpShaders(
     return wgsl;
   };
 
-  /** Translates `stage` now and offers it to every source to keep. */
-  const translateAndKeep = (stage: Pending, kept: readonly WgslSource[]): void => {
-    stage.wgsl = translate(stage);
-    stage.from = "translated";
-    stage.source = null;
-    for (const source of kept) {
-      try {
-        source.put(stage.key, stage.wgsl);
-      } catch {
-        /* a source that cannot keep it keeps nothing */
-      }
-    }
-  };
-
-  const prepare = own._preparePipelineContextAsync.bind(engine);
+  // Deliberately `async` with no `await`: it runs to `onReady` in the call,
+  // as Babylon's own does, and a translation that throws rejects its promise.
   own._preparePipelineContextAsync = async (pipelineContext, ...rest) => {
     const context = pipelineContext as LookupContext;
     const [vertex, fragment, createAsRaw, rawVertex, rawFragment, , defines, , , onReady] = rest as [
@@ -421,16 +466,11 @@ export function lookUpShaders(
       unknown,
       () => void,
     ];
-    if (context.shaderProcessingContext.shaderLanguage !== GLSL) return prepare(pipelineContext, ...rest);
-    if (createAsRaw) {
-      // Babylon's own path, which would otherwise start its own translators.
-      if (!(await haveTranslators())) return;
-      return prepare(pipelineContext, ...rest);
-    }
+    if (context.shaderProcessingContext.shaderLanguage !== GLSL || createAsRaw) return prepare(pipelineContext, ...rest);
 
     const at = performance.now();
     const began = processingSince.get(context.shaderProcessingContext);
-    const stages: Pending[] = (
+    const stages: StageRecord[] = (
       [
         ["vertex", vertex],
         ["fragment", fragment],
@@ -438,63 +478,52 @@ export function lookUpShaders(
     ).map(([stage, code]) => {
       const glsl = translatorInput(code, defines);
       const flag = uniformityOff(code);
-      return { stage, key: stageKey(salt, stage, flag, glsl), flag, glsl, wgsl: "", from: "source", spirvMs: 0, wgslMs: 0, source: null };
-    });
-    const asked = await sources();
-    for (const stage of stages) {
+      const key = stageKey(salt, stage, flag, glsl);
+      let wgsl: string | null = held ? (translated.get(key) ?? null) : null;
+      let from = PAGE;
       for (const source of asked) {
-        if (!source.has(stage.key)) continue;
-        const wgsl = await source.get(stage.key).catch(() => null);
-        if (wgsl === null) continue;
-        stage.wgsl = wgsl;
-        stage.source = source;
-        break;
+        if (wgsl !== null) break;
+        wgsl = source.get(key);
+        from = source.name;
       }
-    }
-    if ((stages.some((stage) => stage.source === null) || mode === "verify") && !(await haveTranslators())) return;
-    if (own.isDisposed) return;
+      return { stage, key, flag, glsl, wgsl: wgsl ?? "", from: wgsl === null ? "translated" : from, spirvMs: 0, wgslMs: 0 };
+    });
 
     context.sources = { fragment, vertex, rawVertex, rawFragment };
     own.onBeforeShaderCompilationObservable.notifyObservers(engine);
-    for (const stage of stages) if (stage.source === null) translateAndKeep(stage, asked);
-    if (mode === "verify") {
-      for (const stage of stages.filter((s) => s.source !== null)) {
-        const now = translate(stage);
-        if (now !== stage.wgsl) {
-          report.differences += 1;
-          Logger.Warn(`WebGPU shader lookup: the ${stage.stage} stage ${stage.key} translates differently from what was found`);
+    for (const stage of stages) {
+      if (stage.from !== "translated") continue;
+      stage.wgsl = translate(stage);
+      if (held) translated.set(stage.key, stage.wgsl);
+      for (const source of asked) {
+        try {
+          source.put?.(stage.key, stage.wgsl);
+        } catch {
+          /* a source that cannot keep it keeps nothing */
         }
       }
     }
-    const [vertexStage, fragmentStage] = stages as [Pending, Pending];
-    const found = stages.filter((stage) => stage.source !== null);
-    // A WGSL found is checked by the device before the effect uses it (Babylon
-    // reads no module's compilation messages): an error scope around its
-    // modules, so a refused one is an answer here, not an uncaptured error.
-    const moduleFrom = performance.now();
-    if (found.length > 0) own._device.pushErrorScope("validation");
-    let made = own._createPipelineStageDescriptor(vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false);
-    const refused = found.length > 0 ? own._device.popErrorScope() : null;
-    let moduleMs = performance.now() - moduleFrom;
-    own.onAfterShaderCompilationObservable.notifyObservers(engine);
-    if (refused !== null && (await refused.catch(() => null)) !== null) {
-      const bad = await refusedStages(found, made);
-      report.rejected += bad.length;
-      for (const stage of bad) stage.source?.drop(stage.key);
-      if (!(await haveTranslators()) || own.isDisposed) return;
-      own.onBeforeShaderCompilationObservable.notifyObservers(engine);
-      for (const stage of bad) translateAndKeep(stage, asked);
-      const again = performance.now();
-      made = own._createPipelineStageDescriptor(vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false);
-      moduleMs += performance.now() - again;
-      own.onAfterShaderCompilationObservable.notifyObservers(engine);
+    const [vertexStage, fragmentStage] = stages as [StageRecord, StageRecord];
+    if (mode === "verify") {
+      const theirs = babylons(context, rest);
+      for (const [i, stage] of stages.entries()) {
+        if (theirs.glsl[i] === stage.glsl && theirs.wgsl[i] === stage.wgsl) continue;
+        report.differences += 1;
+        Logger.Warn(`WebGPU shader lookup: the ${stage.stage} stage ${stage.key} differs from Babylon's own path (${theirs.glsl[i] === stage.glsl ? "WGSL" : "text for the first translator"})`);
+      }
     }
-    if (own.isDisposed) return;
-    context.stages = made;
+    const moduleFrom = performance.now();
+    context.stages = own._createPipelineStageDescriptor(vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false);
+    const moduleMs = performance.now() - moduleFrom;
+    own.onAfterShaderCompilationObservable.notifyObservers(engine);
 
     for (const stage of stages) {
-      if (stage.from === "source") report.hits += 1;
-      else report.misses += 1;
+      if (stage.from === "translated") {
+        report.misses += 1;
+      } else {
+        report.hits += 1;
+        report.hitsBySource[stage.from] = (report.hitsBySource[stage.from] ?? 0) + 1;
+      }
     }
     if (mode === "record") {
       report.effects.push({
@@ -502,10 +531,11 @@ export function lookUpShaders(
         at,
         processMs: began === undefined ? 0 : at - began,
         moduleMs,
-        stages: stages.map((s) => ({ stage: s.stage, key: s.key, flag: s.flag, glsl: s.glsl, wgsl: s.wgsl, from: s.from, spirvMs: s.spirvMs, wgslMs: s.wgslMs })),
+        stages: stages.map((s) => ({ ...s })),
       });
     }
+    keepQuiet();
     onReady();
   };
-  return report;
+  return ready;
 }

@@ -665,8 +665,8 @@ function rememberFailure(current = true): { stored: boolean; holds: boolean } {
  * The WebGPU engine for `canvas`, or null for WebGL2, by `resolveWebGpu`: the
  * module, the adapter (the GPU's signals', `read`; where they timed out, the
  * same request's later answer within the GPU's budget), and only where it fits
- * the engine (and before it the translators, for `?wgsl=off` alone), within
- * the fetch's budget and the GPU's, every failure caught. A page without `navigator.gpu` fetches nothing. The
+ * the translators and the engine, within the fetch's budget and the GPU's,
+ * every failure caught. A page without `navigator.gpu` fetches nothing. The
  * URL is pinned only while the page still wants the engine (`current`).
  */
 function makeWebGpu(
@@ -684,10 +684,8 @@ function makeWebGpu(
       const gpu: GpuModule = await import("./game/gpuEngine.js");
       return {
         probe: () => adapterFromSignals(read, () => signalsRead.adapter),
-        // Before the engine only for Babylon's own path (`?wgsl=off`): the
-        // shader lookup starts them at its first stage not found.
         fetchTranslators: async () => {
-          if (lookup === "off") translators = await gpu.loadTranslators();
+          translators = await gpu.loadTranslators();
         },
         create: async (ms, features) => ({
           engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, lookup }),
