@@ -251,7 +251,7 @@ fallback) in Chrome 154.
 
 | limit | WebGPU default | required | set by (tier) | reference adapter |
 | --- | --- | --- | --- | --- |
-| `maxInterStageShaderVariables` | 16 | **19** | the giant trees' faded material (`material1` of the fir and of the pine, one effect): 18 vertex outputs, and 18 fragment inputs with `front_facing` (both tiers); the halation's blur, the same (high) | 28 |
+| `maxInterStageShaderVariables` | 16 | **19** | the giant trees' faded material (`material1` of the fir and of the pine, one effect): 18 vertex outputs, and 18 fragment inputs with `front_facing` (both tiers), the one pipeline that sets it | 28 |
 | `maxVertexBuffers` | 8 | 8, the default | 7: the duff clumps, the giant fir's `material1` at every level of detail, the fern, the meadow's clutter and the grass (both tiers) | 8 |
 | `maxSampledTexturesPerShaderStage` | 16 | 16, the default | 16: the terrain's fragment stage on the clipmap rings (both tiers); next, 8 | not read |
 | `maxSamplersPerShaderStage` | 16 | 16, the default | 16: the same | not read |
@@ -259,8 +259,13 @@ fallback) in Chrome 154.
 
 **Inter-stage variables.** At 19, with every other limit at WebGPU's default,
 no pipeline on any of the 13 pages fails. At 18 the trees' faded material
-fails on both tiers, and on high the halation's blur with it:
+fails on both tiers:
 `Total fragment input variables count (19 = 18 (user-defined) + 1 (front_facing) exceeds the maximum (18).`
+The halation's blur failed there too on high, but only in the replay: it
+sizes its taps from the device's own limit, so the page, built on a device of
+19, made a blur for 19, and the replay made that pipeline on a device of 18. A
+page whose device offers 18 builds a blur that fits. The faded material alone
+sets 19.
 At the defaults the trees' other material (`material0`, 17 vertex outputs, and
 17 fragment inputs with `front_facing`) fails too. So the fragment stage's 18
 inputs with `front_facing`, which the design inferred from Babylon's

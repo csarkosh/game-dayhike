@@ -517,7 +517,7 @@ for run here and fail elsewhere.
 
 | limit | WebGPU default | required | why |
 | --- | --- | --- | --- |
-| `maxInterStageShaderVariables` | 16 | **19** (as found: 17 was one short) | the giant trees' faded material: 18 vertex outputs, and, since Babylon declares every vertex output as a fragment input, 18 fragment inputs plus `front_facing`, which WebGPU counts (§6.4); measured on both tiers, and on high the halation's blur the same (the verification note, §4) |
+| `maxInterStageShaderVariables` | 16 | **19** (as found: 17 was one short) | the giant trees' faded material: 18 vertex outputs, and, since Babylon declares every vertex output as a fragment input, 18 fragment inputs plus `front_facing`, which WebGPU counts (§6.4); measured on both tiers, the one pipeline that sets 19 (the verification note, §4) |
 | `maxSampledTexturesPerShaderStage` | 16 | 16 (measured, no margin) | the terrain's fragment: seven layer maps and arrays, road ×2, trail ×2, the feature table, the atmosphere's gradient, the environment cube, the BRDF lookup and the cascaded shadow map, 16 |
 | `maxSamplersPerShaderStage` | 16 | 16 (measured, no margin) | the same, the shadow map's by comparison |
 | `maxUniformBuffersPerShaderStage` | 12 | 12 (measured, no margin) | the internals, scene, mesh and material blocks, one per light up to `LIGHT_BUDGET` 7 (`headlamp.ts:70`), and the leftover block: 12 |
@@ -802,8 +802,10 @@ counts. The halation's kernel blur, which counted 18 at a device of 28,
 sizes itself from the device's limit and cannot pass it. The full sweep of
 every material, running in a browser, sets the final number. As read (the
 verification note, §4): 19, the faded material's fragment stage reading 18
-inputs and `front_facing` on both tiers, which fails at 18 and passes at 19;
-the halation's blur on high the same. The inter-stage test now builds the
+inputs and `front_facing` on both tiers, which fails at 18 and passes at 19,
+the one pipeline that sets it; the halation's blur, which fills whatever the
+device offers, failed at 18 only in the replay of a pipeline built for 19. The
+inter-stage test now builds the
 forest from the shipped models on `NullEngine` with Babylon's WebGPU
 processing, pins the varyings Babylon gives the giants' materials, and adds
 the shadow cascades' varyings by count, which it cannot draw; its count
