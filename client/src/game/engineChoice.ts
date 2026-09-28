@@ -282,19 +282,6 @@ export function writeFallback(storage: Storage | null, record: FallbackRecord): 
 }
 
 /**
- * What a failure of the running WebGPU engine does, after the record has been
- * written (`stored`) and read back (`holds`): a live swap of the renderer at
- * the running tier, never a reload, which would end a party (a host's reload
- * ends the room). A pipeline error or an uncaptured one, whenever it comes,
- * and a second lost device in `LOSS_WINDOW_MS`, swap onto WebGL2; a first
- * lost device retries once on a new WebGPU engine. `engine` is what the rule
- * then gives, which the rebuild takes by the rule: `pin` asks for
- * `engine=webgl2` in this tab's URL wherever the rule would otherwise give
- * WebGPU again (storage refused the record, or `?engine=webgpu` outranks it),
- * so a failing engine can never loop. `notice` is the HUD's line once the
- * swap is done.
- */
-/**
  * Whether a WebGPU failure that ends on WebGL2 pins `engine=webgl2` in this
  * tab's address: wherever the rule would otherwise give WebGPU again in this
  * tab, so a reload does not walk into the same failure while the record
@@ -307,6 +294,19 @@ export function pinsAfterFailure(input: { stored: boolean; override: EngineName 
   return !input.stored || input.override === "webgpu";
 }
 
+/**
+ * What a failure of the running WebGPU engine does, after the record has been
+ * written (`stored`) and read back (`holds`): a live swap of the renderer at
+ * the running tier, never a reload, which would end a party (a host's reload
+ * ends the room). A pipeline error or an uncaptured one, whenever it comes,
+ * and a second lost device in `LOSS_WINDOW_MS`, swap onto WebGL2; a first
+ * lost device retries once on a new WebGPU engine. `engine` is what the rule
+ * then gives, which the rebuild takes by the rule: `pin` asks for
+ * `engine=webgl2` in this tab's URL wherever the rule would otherwise give
+ * WebGPU again (storage refused the record, or `?engine=webgpu` outranks it),
+ * so a failing engine can never loop. `notice` is the HUD's line once the
+ * swap is done.
+ */
 export function failureSwap(input: {
   stored: boolean;
   holds: boolean;
