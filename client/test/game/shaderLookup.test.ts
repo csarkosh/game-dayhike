@@ -32,7 +32,7 @@ import {
   type ShaderLookupReport,
   type WgslSource,
 } from "../../src/game/shaderLookup.js";
-import { loadWgslStore } from "../../src/game/wgslStore.js";
+import { loadWgslStore, wgslStoreName } from "../../src/game/wgslStore.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { memoryIndexedDb } from "./helpers/memoryIndexedDb.js";
 
@@ -585,6 +585,38 @@ describe("the WebGPU shader lookup", () => {
     const dispose = base.slice(base.indexOf("    dispose() {\n        this.releaseEffects();"), base.indexOf("        this.onDisposeObservable.clear();"));
     expect(dispose.indexOf("this.onDisposeObservable.notifyObservers(this);")).toBeGreaterThan(dispose.indexOf("this.scenes[0].dispose();"));
     expect(dispose.indexOf("this.scenes[0].dispose();")).toBeGreaterThan(0);
+  });
+
+  it("finds, after the settle, a stored stage the hike had not asked for, and translates again one it had used", async () => {
+    const idb = memoryIndexedDb();
+    const fromStore = (): Promise<readonly WgslSource[]> => loadWgslStore(SALT, { idb: idb.factory }).then((s) => (s === null ? [] : [s]));
+    const lampOn = `${FRAGMENT}\n// the headlamp on`;
+    // A first load that met the start's effect and the lamp's.
+    const first = harness();
+    const readyFirst = lookUpShaders(first.engine, { mode: "on", salt: SALT, sources: fromStore, report: newLookupReport("on", SALT) });
+    await handOver(first.engine, first.translators);
+    await readyFirst;
+    await prepare(first);
+    await prepare(first, { fragment: lampOn });
+    await vi.waitFor(() => expect(idb.databases.get(wgslStoreName(SALT))?.get("meta")?.size).toBe(3), { timeout: timeLimit(5_000) });
+    // The next load, its store read in, then the hike's own clock.
+    const [store] = await fromStore();
+    await store?.ready;
+    vi.useFakeTimers();
+    const second = harness();
+    await lookUp(second, store === undefined ? [] : [store]);
+    await prepare(second);
+    expect(second.compiled).toEqual([]);
+    await vi.advanceTimersByTimeAsync(30_000);
+    // The lamp on after the settle: its fragment stage, never asked for, is
+    // found in the call; its vertex stage, the start's, used and let go, is
+    // translated.
+    const lamp = await prepare(second, { fragment: lampOn });
+    expect(lamp.inTheCall).toEqual(["before", "after", "ready"]);
+    expect(second.compiled.map(([stage]) => stage)).toEqual(["vertex"]);
+    // The start's effect asked for again: both its stages translated.
+    await prepare(second);
+    expect(second.compiled.map(([stage]) => stage)).toEqual(["vertex", "vertex", "fragment"]);
   });
 
   it("keeps a translation in the browser's store, and the next engine finds it there, in the call", async () => {

@@ -49,14 +49,18 @@ import { loadWgslStore } from "./wgslStore.js";
 export const LOOKUP_FORMAT = "dayhike-wgsl/1";
 
 /** How long the engine's maker waits for the sources to be read into memory,
- * opening and reading together: what has not arrived by then is not there
- * for the start (a miss, translated). The device's request runs meanwhile. */
+ * opening and reading together (less where its start's budget leaves less):
+ * a stage asked for before its entry has landed is a miss, translated; an
+ * entry that lands later is found from then on. The device's request runs
+ * meanwhile. */
 export const WGSL_SOURCES_MS = 2_000;
-/** The WGSL held in memory for the start is let go once no preparation has
- * come for this long… */
+/** The start settles once no preparation has come for this long… */
 export const WGSL_HOLD_QUIET_MS = 30_000;
-/** …or this long after the engine stood, whichever comes first. A stage not
- * found after that is translated, the translators being loaded. */
+/** …or this long after the engine stood, whichever comes first. The WGSL the
+ * start used is then let go, the page's own translations and each source's
+ * entries that were asked for; a source keeps those not asked for yet. A
+ * stage asked for again after that is translated, the translators being
+ * loaded. */
 export const WGSL_HOLD_MAX_MS = 120_000;
 
 /** `ShaderLanguage.GLSL` and `ShaderLanguage.WGSL`. */
@@ -88,14 +92,16 @@ export type WgslSource = {
   readonly salt: string;
   /** The WGSL under `key`, from memory, or null. */
   get(key: string): string | null;
-  /** Keeps a stage just translated, at once in memory where it holds its
-   * entries there, and anywhere else later, never waited on. Absent on a
-   * source that takes no writes (a map shipped with the build). */
+  /** Keeps a stage just translated, later, never waited on (the page's own
+   * map spares a second translation meanwhile). Absent on a source that
+   * takes no writes (a map shipped with the build). */
   put?(key: string, wgsl: string): void;
-  /** Resolves once its entries are in memory; what has not arrived by the
-   * maker's bound is simply not there. Absent: in memory from the start. */
+  /** Resolves once its entries are in memory. The engine's maker waits for
+   * it within its bound; an entry that lands after the engine is handed over
+   * is found from then on. Absent: in memory from the start. */
   readonly ready?: Promise<void>;
-  /** Lets go of the WGSL held in memory for the start; the keys may stay. */
+  /** The start has settled: lets go of the WGSL it held and was asked for,
+   * keeping what has not been asked for yet; the keys may stay. */
   settle?(): void;
   /** Lets go of everything it holds, connections included. */
   close?(): void;

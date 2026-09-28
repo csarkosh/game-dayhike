@@ -8,11 +8,15 @@
  * A preparation never waits (`shaderLookup.ts`), so the store answers from
  * memory: `loadWgslStore` opens it, reads the records, and reads and
  * unzips the most recently used entries into memory, up to
- * `WGSL_START_MAX_BYTES` of WGSL, while the engine is made; what has not
- * arrived by the lookup's bound is simply not there. The WGSL is let go once
- * the start has settled (`settle`); the records stay. A translation kept is
- * held in memory at once while the start's WGSL is, and written later,
- * never waited on. Bounded on disk (`WGSL_STORE_MAX_BYTES`,
+ * `WGSL_START_MAX_BYTES` of WGSL, while the engine is made. An entry still
+ * being unzipped when the engine is handed over lands in memory when it is
+ * done, and is found from then on. Once the start has settled (`settle`) the
+ * entries it used are let go (Babylon keeps an effect once made, and rarely
+ * asks for it again); those it has not asked for yet, the headlamp's, the
+ * rain's, the last hike's creatures', are kept for the engine's life, and
+ * each is let go once used. So what it holds never grows past the start's
+ * read, and shrinks after the settle. A translation kept is written later,
+ * never waited on, and not held. Bounded on disk (`WGSL_STORE_MAX_BYTES`,
  * `WGSL_STORE_MAX_ENTRIES`), the least recently used going first.
  *
  * Nothing here is the player's to see: storage refused (site data blocked),
@@ -195,9 +199,11 @@ export async function loadWgslStore(
     }
   })().catch(() => undefined);
 
-  /** The start's WGSL, in memory until `settle`. */
+  /** The WGSL read in for the start. */
   const held = new Map<string, string>();
-  let holding = true;
+  /** Keys served from `held` before the settle, let go at it. */
+  const served = new Set<string>();
+  let settled = false;
 
   /** Uses not yet written. */
   const touched = new Set<string>();
@@ -239,7 +245,7 @@ export async function loadWgslStore(
       chosen.map(async (key) => {
         try {
           const wgsl = await unpack(await done(store.get(key)));
-          if (holding && open) held.set(key, wgsl);
+          if (open) held.set(key, wgsl);
         } catch {
           drop(key);
         }
@@ -254,6 +260,9 @@ export async function loadWgslStore(
     get: (key) => {
       const wgsl = held.get(key);
       if (wgsl === undefined) return null;
+      // Used: kept until the settle, let go at once after it.
+      if (settled) held.delete(key);
+      else served.add(key);
       const entry = index.get(key);
       if (entry !== undefined) {
         entry.lastUsed = now();
@@ -263,7 +272,6 @@ export async function loadWgslStore(
       return wgsl;
     },
     put: (key, wgsl) => {
-      if (holding) held.set(key, wgsl);
       if (index.has(key) || !open) return;
       void (async () => {
         const value = await pack(wgsl);
@@ -286,16 +294,18 @@ export async function loadWgslStore(
       })().catch(() => undefined);
     },
     settle: () => {
-      holding = false;
-      held.clear();
+      settled = true;
+      for (const key of served) held.delete(key);
+      served.clear();
     },
     close: () => {
       if (touchTimer !== null) {
         clearTimeout(touchTimer);
         writeTouches();
       }
-      holding = false;
+      settled = true;
       held.clear();
+      served.clear();
       index.clear();
       close();
     },

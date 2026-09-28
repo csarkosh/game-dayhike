@@ -92,23 +92,26 @@ describe("the browser's WGSL store", () => {
     expect(again.get("k2")).toBe(null);
   });
 
-  it("holds a stage it keeps at once, before it is written", async () => {
-    const idb = memoryIndexedDb();
-    const store = await loaded(idb);
-    store.put?.("k1", WGSL);
-    expect(store.get("k1")).toBe(WGSL);
-  });
-
-  it("lets the start's WGSL go when told the start has settled, keeping the stages on disk", async () => {
+  it("holds nothing it keeps: a translation is written, and found on a later load", async () => {
     const idb = memoryIndexedDb();
     const store = await loaded(idb);
     await kept(idb, store, "k1");
-    store.settle?.();
     expect(store.get("k1")).toBe(null);
-    // Kept after it: written, not held.
-    await kept(idb, store, "k2");
-    expect(store.get("k2")).toBe(null);
-    expect((await loaded(idb)).get("k2")).toBe(WGSL);
+    expect((await loaded(idb)).get("k1")).toBe(WGSL);
+  });
+
+  it("lets go at the settle of the stages the start used, keeps those not asked for yet, and lets each of those go once used", async () => {
+    const idb = memoryIndexedDb();
+    const writing = await loaded(idb);
+    await kept(idb, writing, "used");
+    await kept(idb, writing, "later");
+    const store = await loaded(idb);
+    expect(store.get("used")).toBe(WGSL);
+    store.settle?.();
+    expect(store.get("used")).toBe(null);
+    // The headlamp's variant, say: asked for only after the settle.
+    expect(store.get("later")).toBe(WGSL);
+    expect(store.get("later")).toBe(null);
   });
 
   it("reads in only what fits the start's bound, the most recently used first", async () => {
