@@ -9,7 +9,8 @@
 # First boot, then never again (marker C:\ProgramData\test-rig\setup-complete):
 #   - SSH: the OpenSSH server running, key login only;
 #   - the desktop user, its password (made here), automatic logon, and a
-#     logon task that sets its console to 1920 x 1080;
+#     logon task that sets its console to 1920 x 1080 (a script file the
+#     user may read and run but not change);
 #   - the NVIDIA RTX Virtual Workstation driver (restarting in between if its
 #     installer asks, and checking nvidia-smi after), Chrome, Node 22, Git
 #     with LFS;
@@ -22,10 +23,12 @@
 # The boot after that (until marker `verified` exists):
 #   - checks, with things that can fail, that the driver runs as a licensed
 #     RTX Virtual Workstation (on a -vws GPU), that the desktop user is logged
-#     on at the console, and that its metadata-server block is in place; logs
+#     on at the console, that its metadata-server block is in place, and
+#     that it cannot change the display task's script; logs
 #     the console's size and warns if it is not 1920 x 1080. Only then
 #     `verified`.
-# A boot that fails logs "FAILED: <reason>" and restarts the machine, which
+# A boot that fails logs "FAILED: <reason>" and restarts the machine (after
+# waiting, at most 15 minutes, for Windows Installer to be idle), which
 # retries from the first step not yet done, at most twice in a row.
 #
 # The machine's run limit and its daily stop are Compute Engine's (instance.tf),
@@ -76,6 +79,8 @@ $FailureCount = Join-Path $Root 'failed-boots'
 $DisplayWidth = 1920
 $DisplayHeight = 1080
 $DisplayTask = 'test-rig-display'
+$DisplayDir = Join-Path $env:ProgramData 'test-rig-display'
+$DisplayScript = Join-Path $DisplayDir 'set-display.ps1'
 $MaxFailureRestarts = 2
 
 # Write-Host, not Write-Output: the transcript records it, and it never leaks
@@ -347,8 +352,11 @@ namespace TestRig {
 
 # A task that runs at every logon of the desktop user, in that user's session
 # (the interactive logon type needs no password), and asks for the console's
-# size. It writes what happened to the user's own local application data,
-# where the check after set-up reads it.
+# size. The script it runs is a file in its own directory, which SYSTEM and
+# Administrators may change and the desktop user may only read and run; the
+# directory is made afresh each time, so a former desktop user keeps no
+# access. The task writes what happened to the user's own local application
+# data, where the check after set-up reads it.
 function Set-DisplayTask {
   $lines = @(
     '$ErrorActionPreference = ''Stop'''
@@ -361,13 +369,38 @@ function Set-DisplayTask {
     '} catch { $result = "failed: $_" }'
     'Set-Content -Path $out -Value "$(Get-Date -Format o) $result"'
   )
-  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($lines -join "`r`n"))
-  $action = New-ScheduledTaskAction -Execute "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand $encoded"
+  $sid = (Get-LocalUser -Name $DesktopUser).SID.Value
+  Remove-Item $DisplayDir -Recurse -Force -ErrorAction SilentlyContinue
+  New-Item -ItemType Directory -Force -Path $DisplayDir | Out-Null
+  $code = Invoke-Native 'icacls.exe' @($DisplayDir, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', "*$($sid):(OI)(CI)RX")
+  if ($code -ne 0) { throw "icacls could not restrict $DisplayDir ($code)" }
+  Set-Content -Path $DisplayScript -Value ($lines -join "`r`n") -Encoding ascii
+  $action = New-ScheduledTaskAction -Execute "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$DisplayScript`""
   $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:COMPUTERNAME\$DesktopUser"
   $principal = New-ScheduledTaskPrincipal -UserId "$env:COMPUTERNAME\$DesktopUser" -LogonType Interactive -RunLevel Limited
   $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
   Register-ScheduledTask -TaskName $DisplayTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-  Log "Display: task $DisplayTask asks for $DisplayWidth x $DisplayHeight at every logon of $DesktopUser"
+  Log "Display: task $DisplayTask runs $DisplayScript at every logon of $DesktopUser, asking for $DisplayWidth x $DisplayHeight"
+}
+
+# The display script's access, as the check after set-up requires it: SYSTEM
+# and Administrators, and the desktop user with no right to change it (to
+# write, append, delete, or change its permissions or owner), nobody else, and
+# not owned by the desktop user.
+function Test-DisplayScriptAccess {
+  if (-not (Test-Path $DisplayScript)) { throw "The display script $DisplayScript is not there" }
+  $sid = (Get-LocalUser -Name $DesktopUser).SID.Value
+  $acl = Get-Acl $DisplayScript
+  $change = [Security.AccessControl.FileSystemRights]'Write, Delete, ChangePermissions, TakeOwnership'
+  foreach ($rule in $acl.Access) {
+    $who = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+    if ($who -notin 'S-1-5-18', 'S-1-5-32-544', $sid) { throw "$DisplayScript is open to $who ($($rule.FileSystemRights))" }
+    if ($who -eq $sid -and $rule.AccessControlType -eq 'Allow' -and ($rule.FileSystemRights -band $change) -ne 0) {
+      throw "$DesktopUser may change $DisplayScript ($($rule.FileSystemRights))"
+    }
+  }
+  if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -eq $sid) { throw "$DesktopUser owns $DisplayScript" }
+  Log "Display script: $DisplayScript, SYSTEM and Administrators full, $DesktopUser read and run only"
 }
 
 # 24 characters from 57 letters and digits (no 0, O, 1, I or l), about 140
@@ -515,9 +548,10 @@ function Install-Everything {
   # installer switches: -s silent, -n no restart; exit code 0 is success, 1 is
   # "Success, but reboot required", any other value is failure. On 1 the
   # machine restarts before anything checks the driver, and the next boot
-  # checks it; on 0 it is checked at once (a check that fails restarts the
-  # machine too, below). The licence check on the boot after set-up is the
-  # second line.
+  # checks it; on 0 it is checked at once. A driver that is not ready yet
+  # (nvidia-smi missing or failing) is given one restart, shared with the
+  # installer's own request, before the step fails. The licence check on the
+  # boot after set-up is the second line.
   if (-not (Test-Step 'driver')) {
     if (-not (Test-Step 'driver-installed')) {
       $exe = Get-Verified $DriverUrl $DriverSha256 30
@@ -525,12 +559,18 @@ function Install-Everything {
       $code = Invoke-Installer $exe @('-s', '-n', "-log:$Root\nvidia-install", '-loglevel:6') 'NVIDIA driver' 30
       if ($code -notin 0, 1) { throw "The NVIDIA driver installer failed with exit code $code (0 and 1 are success); its log is in $Root\nvidia-install" }
       Complete-Step 'driver-installed'
-      if ($code -eq 1) { Request-Restart 'the NVIDIA driver installer asked for a restart (exit code 1)'; return }
+      if ($code -eq 1) { Complete-Step 'driver-restarted'; Request-Restart 'the NVIDIA driver installer asked for a restart (exit code 1)'; return }
     }
     $smi = Find-Smi
-    if (-not $smi) { throw 'nvidia-smi is missing after the driver was installed' }
-    $code = Invoke-Native $smi @() 120
-    if ($code -ne 0) { throw "nvidia-smi ($smi) exited with $code after the driver was installed" }
+    $code = if ($smi) { Invoke-Native $smi @() 120 } else { 'not found' }
+    if ($code -ne 0) {
+      if (-not (Test-Step 'driver-restarted')) {
+        Complete-Step 'driver-restarted'
+        Request-Restart "nvidia-smi is not ready after the driver install ($code); one restart before it counts as a failure"
+        return
+      }
+      throw "nvidia-smi ($smi) is not ready after the driver install and a restart: $code"
+    }
     Log "nvidia-smi: $smi"
     Complete-Step 'driver'
   }
@@ -656,6 +696,8 @@ function Test-Setup {
   Log "Sessions: $(($sessions | ForEach-Object { $_.Trim() }) -join ' | ')"
   if ($console.Count -eq 0) { throw "$DesktopUser is not logged on at the console: automatic logon did not take effect" }
 
+  Test-DisplayScriptAccess
+
   # The console's size: what the logon task did, then what Windows reports.
   # Not a failure: the probe answers whether Chrome gets the GPU at any size;
   # a size other than the one asked for is recorded and warned about.
@@ -698,10 +740,12 @@ try {
   } elseif (-not (Test-Step $UserStep)) {
     # A new desktop_user, or a machine started from an image whose user
     # marker was removed (README.md): the user and a new password, its
-    # metadata block, then a restart so that automatic logon uses them.
+    # metadata block, then a restart so that automatic logon uses them. The
+    # machine stops being ready first, so that a failure here can never
+    # leave it marked ready with the new user unchecked.
+    Remove-Item (Join-Path $Root 'verified') -ErrorAction SilentlyContinue
     Set-DesktopUser
     Set-MetadataBlock
-    Remove-Item (Join-Path $Root 'verified') -ErrorAction SilentlyContinue
     Log 'Desktop user set. Restarting once; the next boot checks it.'
     $restart = $true
   } elseif (-not (Test-Path (Join-Path $Root 'verified'))) {
@@ -722,11 +766,20 @@ try {
   # done, at most $MaxFailureRestarts times in a row: a step that fails for a
   # passing reason (a download, a driver not yet loaded) is retried without
   # anyone there, and one that fails every time does not restart forever.
+  #
+  # An MSI whose time limit ran out may still be installing inside the
+  # Windows Installer service (only its msiexec client was stopped). A
+  # restart now would cut it off, and the next boot would meet a suspended
+  # install. So the restart first waits up to 15 minutes for Windows Installer
+  # to be idle; one still busy after its own limit and those 15 minutes is
+  # taken as hung, and the restart goes ahead (Windows Installer rolls an
+  # unfinished install back at the restart, and the retry installs again).
   try {
     $count = 0
     if (Test-Path $FailureCount) { $count = [int](Get-Content $FailureCount -TotalCount 1) }
     if ($count -lt $MaxFailureRestarts) {
       Set-Content -Path $FailureCount -Value ($count + 1)
+      try { Wait-InstallerIdle 15 } catch { Log "$_; restarting all the same" }
       Log "Restarting to retry from the first step not yet done (automatic restart $($count + 1) of $MaxFailureRestarts)."
       $restart = $true
     } else {

@@ -205,10 +205,11 @@ test('msiexec gets no feature properties: no REMOVE= without ADDLOCAL=, and toda
 test('the driver step restarts when its installer asks, and checks nvidia-smi only after', () => {
   const at = (s) => { const i = script.indexOf(s); assert.ok(i > 0, s); return i; };
   const installed = at("Complete-Step 'driver-installed'");
-  const restart = at("if ($code -eq 1) { Request-Restart");
+  const restart = at("if ($code -eq 1) { Complete-Step 'driver-restarted'; Request-Restart");
   const check = at("$smi = Find-Smi\n");
   const done = at("Complete-Step 'driver'\n");
   assert.ok(installed < restart && restart < check && check < done);
+  assert.equal((script.match(/Request-Restart /g) ?? []).length, 2, 'the installer\'s request, and nvidia-smi not ready');
   assert.match(script, /if \(-not \(Test-Step 'driver-installed'\)\) \{/);
   // Install-Everything returns at a requested restart; the main part restarts
   // instead of marking the set-up finished.
@@ -240,27 +241,107 @@ test('every call that can hang has a time limit', () => {
   assert.equal(/\.WaitForExit\(\)/.test(script), false, 'no WaitForExit without a limit');
 });
 
-test('a failed boot restarts itself, at most twice in a row, and says so', () => {
+// The script's main catch block: what a failed boot does.
+const failureBlock = () => {
+  const m = /\n\} catch \{\n  \$failed = \$true\n([\s\S]*?)\n\} finally \{\n([\s\S]*?)\n\}\n/.exec(script);
+  assert.ok(m, 'the main catch and finally blocks');
+  return { onFailure: m[1], always: m[2] };
+};
+
+test('a failed boot restarts itself at most twice in a row: the count is written before the restart, cleared only by a boot that did not fail', () => {
   assert.match(script, /^\$MaxFailureRestarts = 2$/m);
-  assert.match(script, /FAILED: /);
-  assert.match(script, /no automatic restart left/);
-  // A boot that does not fail clears the count.
-  assert.match(script, /Remove-Item \$FailureCount -Force -ErrorAction SilentlyContinue/);
+  const { onFailure, always } = failureBlock();
+  assert.match(onFailure, /Log "FAILED: \$_"/);
+  // Inside the bound's condition, the count is written first, then the
+  // restart asked for; the other branch says no restart is left.
+  const bound = /\n    if \(\$count -lt \$MaxFailureRestarts\) \{\n([\s\S]*?)\n    \} else \{\n([\s\S]*?)\n    \}/.exec(onFailure);
+  assert.ok(bound, 'the bound: if ($count -lt $MaxFailureRestarts) { ... } else { ... }');
+  const [, within, otherwise] = bound;
+  const write = within.indexOf('Set-Content -Path $FailureCount -Value ($count + 1)');
+  const restart = within.indexOf('$restart = $true');
+  assert.ok(write >= 0 && restart > write, 'the count is written before the restart is asked for');
+  assert.equal(otherwise.includes('$restart = $true'), false);
+  assert.match(otherwise, /no automatic restart left/);
+  assert.equal((script.match(/\$restart = \$true/g) ?? []).length, 3, 'the set-up, the new-user boot, and the bounded failure restart');
+  // The count is read as a number, and is removed in exactly one place: in the
+  // finally block, only when the boot did not fail.
+  assert.match(onFailure, /\$count = \[int\]\(Get-Content \$FailureCount -TotalCount 1\)/);
+  const removals = scriptLines.filter((l) => /Remove-Item[^\n]*\$FailureCount/.test(l));
+  assert.deepEqual(removals.map((l) => l.trim()), ['if (-not $failed) { Remove-Item $FailureCount -Force -ErrorAction SilentlyContinue }']);
+  assert.ok(always.includes(removals[0].trim()));
 });
 
-test('the console is set to 1920 x 1080 at every logon of the desktop user, by ChangeDisplaySettingsEx, and checked', () => {
+test('a failure restart first waits, a bounded time, for Windows Installer to be idle', () => {
+  const { onFailure } = failureBlock();
+  const wait = onFailure.indexOf('try { Wait-InstallerIdle 15 } catch {');
+  assert.ok(wait >= 0, 'Wait-InstallerIdle 15, its failure caught');
+  assert.ok(wait < onFailure.indexOf('$restart = $true'));
+});
+
+test('a new desktop user un-verifies the machine before anything else that can fail', () => {
+  const branch = /\} elseif \(-not \(Test-Step \$UserStep\)\) \{\n([\s\S]*?)\n  \} elseif/.exec(script)[1];
+  const code = branch.split('\n').filter((l) => !/^\s*#/.test(l)).map((l) => l.trim());
+  assert.equal(code[0], "Remove-Item (Join-Path $Root 'verified') -ErrorAction SilentlyContinue");
+  assert.ok(code.indexOf('Set-DesktopUser') > 0 && code.indexOf('Set-MetadataBlock') > code.indexOf('Set-DesktopUser'));
+});
+
+test('nvidia-smi not ready after the driver is installed asks for one restart before it fails the step', () => {
+  const step = /if \(-not \(Test-Step 'driver'\)\) \{\n([\s\S]*?)\n    Complete-Step 'driver'\n/.exec(script)[1];
+  const once = step.indexOf("if (-not (Test-Step 'driver-restarted')) {");
+  const fail = step.indexOf('throw "nvidia-smi');
+  assert.ok(once > step.indexOf('$smi = Find-Smi') && once < fail, 'the one restart comes before the failure');
+  assert.match(step, /Complete-Step 'driver-restarted'\n\s+Request-Restart "nvidia-smi/);
+  // The installer's own request for a restart uses up the same one restart.
+  assert.match(step, /if \(\$code -eq 1\) \{ Complete-Step 'driver-restarted'; Request-Restart/);
+});
+
+// The C# the display task compiles, as Microsoft declares DEVMODEW and
+// ChangeDisplaySettingsEx.
+const displaySource = /\$DisplaySource = @"\n([\s\S]*?)\n"@/.exec(script)[1];
+
+test('DEVMODEW: Unicode, the fields in Microsoft\'s order with their types, two 32-character strings', () => {
+  assert.match(displaySource, /\[StructLayout\(LayoutKind\.Sequential, CharSet = CharSet\.Unicode\)\]\n\s+public struct DEVMODE \{/);
+  const body = /public struct DEVMODE \{([\s\S]*?)\n\s+\}/.exec(displaySource)[1];
+  const fields = [...body.matchAll(/(\[MarshalAs\(UnmanagedType\.ByValTStr, SizeConst = (\d+)\)\] )?public (string|short|int) ([^;]+);/g)]
+    .flatMap(([, , size, type, names]) => names.split(',').map((n) => `${type}${size ? `[${size}]` : ''} ${n.trim()}`));
+  assert.deepEqual(fields, [
+    'string[32] dmDeviceName',
+    'short dmSpecVersion', 'short dmDriverVersion', 'short dmSize', 'short dmDriverExtra',
+    'int dmFields',
+    'int dmPositionX', 'int dmPositionY', 'int dmDisplayOrientation', 'int dmDisplayFixedOutput',
+    'short dmColor', 'short dmDuplex', 'short dmYResolution', 'short dmTTOption', 'short dmCollate',
+    'string[32] dmFormName',
+    'short dmLogPixels',
+    'int dmBitsPerPel', 'int dmPelsWidth', 'int dmPelsHeight', 'int dmDisplayFlags', 'int dmDisplayFrequency',
+    'int dmICMMethod', 'int dmICMIntent', 'int dmMediaType', 'int dmDitherType', 'int dmReserved1', 'int dmReserved2',
+    'int dmPanningWidth', 'int dmPanningHeight',
+  ]);
+  assert.equal((displaySource.match(/SizeConst = 32/g) ?? []).length, 2);
+});
+
+test('ChangeDisplaySettingsEx: both imports Unicode, width and height flagged, saved for the user', () => {
+  const imports = displaySource.split('\n').filter((l) => l.includes('DllImport'));
+  assert.equal(imports.length, 2);
+  for (const line of imports) assert.match(line, /\[DllImport\("user32\.dll", CharSet = CharSet\.Unicode\)\] static extern /);
+  assert.match(imports[0], /bool EnumDisplaySettings\(string device, int mode, ref DEVMODE dm\)/);
+  assert.match(imports[1], /int ChangeDisplaySettingsEx\(string device, ref DEVMODE dm, IntPtr hwnd, int flags, IntPtr param\)/);
+  // DM_PELSWIDTH 0x80000, DM_PELSHEIGHT 0x100000; CDS_UPDATEREGISTRY 0x01.
+  assert.match(displaySource, /dm\.dmFields = 0x80000 \| 0x100000;/);
+  assert.match(displaySource, /ChangeDisplaySettingsEx\(null, ref dm, IntPtr\.Zero, 0x01, IntPtr\.Zero\)/);
+  assert.match(displaySource, /EnumDisplaySettings\(null, -1, ref dm\)/); // ENUM_CURRENT_SETTINGS
+});
+
+test('the display task runs a script file the desktop user may read and run but not change, checked after set-up', () => {
   assert.match(script, /^\$DisplayWidth = 1920$/m);
   assert.match(script, /^\$DisplayHeight = 1080$/m);
-  assert.match(script, /static extern int ChangeDisplaySettingsEx\(/);
+  assert.equal(script.includes('-EncodedCommand'), false);
+  assert.match(script, /^\$DisplayDir = Join-Path \$env:ProgramData 'test-rig-display'$/m);
+  assert.match(script, /-Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"\$DisplayScript`""/);
+  assert.match(script, /Invoke-Native 'icacls\.exe' @\(\$DisplayDir, '\/inheritance:r', '\/grant:r', '\*S-1-5-18:\(OI\)\(CI\)F', '\*S-1-5-32-544:\(OI\)\(CI\)F', "\*\$\(\$sid\):\(OI\)\(CI\)RX"\)/);
   assert.match(script, /New-ScheduledTaskTrigger -AtLogOn -User/);
   assert.match(script, /-LogonType Interactive -RunLevel Limited/);
+  // The check after set-up: the script file's access, then the size.
+  assert.match(script, /function Test-DisplayScriptAccess/);
+  assert.match(script, /\n  Test-DisplayScriptAccess\n/);
   assert.match(script, /Display: \$\(\$adapter\.CurrentHorizontalResolution\)x\$\(\$adapter\.CurrentVerticalResolution\)/);
-  // DEVMODEW: the fields up to dmPanningHeight, as Microsoft declares them;
-  // 220 bytes when laid out (two 32-character strings of 2 bytes each).
-  const devmode = /public struct DEVMODE \{([\s\S]*?)\}/.exec(script)[1];
-  const size = [...devmode.matchAll(/public (string|short|int) ([^;]+);/g)].reduce((sum, [, type, names]) => {
-    const count = names.split(',').length;
-    return sum + count * (type === 'string' ? 64 : type === 'short' ? 2 : 4);
-  }, 0);
-  assert.equal(size, 220);
 });
