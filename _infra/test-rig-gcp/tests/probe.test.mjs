@@ -33,6 +33,7 @@ const good = (over = {}) => ({
   browserMetadata: { reachable: false, detail: 'net::ERR_CONNECTION_REFUSED' },
   remoteSessions: { before: 0, during: 0, after: 0 },
   session: { name: 'Console', id: 1 },
+  screen: { width: 1920, height: 1080, devicePixelRatio: 1 },
   runs: [],
   nvidia: { gpuName: 'NVIDIA L4', chromeSamples: 5, licence: vws },
   ...over,
@@ -162,4 +163,17 @@ test('nvidia-smi is looked for where the driver installs it, then on PATH', () =
 test('a console that is not 1920 x 1080 warns', () => {
   assert.ok(warnings(good({ screen: { width: 1366, height: 768 } })).some((w) => w.includes('1366 x 768')));
   assert.equal(warnings(good({ screen: { width: 1920, height: 1080 } })).some((w) => w.includes('x 1080')), false);
+});
+
+test('measurement runs at a screen size other than 1920 x 1080 fail, naming both sizes; the plain probe only warns', () => {
+  const small = { width: 1366, height: 768 };
+  const measured = fails({ screen: small, runs: [{ loaded: true, frames: 3600 }] });
+  assert.equal(measured.length, 1);
+  assert.match(measured[0], /1366 x 768/);
+  assert.match(measured[0], /1920 x 1080/);
+  assert.deepEqual(fails({ screen: small, runs: [] }), []);
+  assert.deepEqual(fails({ screen: small }), []);
+  assert.deepEqual(fails({ screen: { width: 1920, height: 1080 }, runs: [{ loaded: true, frames: 3600 }] }), []);
+  // An unknown size is not the size asked for.
+  assert.equal(fails({ screen: undefined, runs: [{ loaded: true, frames: 3600 }] }).length, 1);
 });

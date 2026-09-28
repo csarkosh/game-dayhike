@@ -36,7 +36,9 @@
 //   - the desktop user could not reach the metadata server, from Node or from
 //     Chrome's own network process;
 //   - with --url, every run's page loaded (no navigation error, the document
-//     complete at the address asked for) and drew frames.
+//     complete at the address asked for) and drew frames, and Chrome's screen
+//     is the 1920 x 1080 the start-up script sets (without --url a screen of
+//     another size is a warning).
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -135,6 +137,11 @@ export function verdict(report) {
   if (report.browserMetadata?.reachable !== false) reasons.push(`Chrome reached the metadata server (${report.browserMetadata?.detail ?? 'not checked'})`);
   if (!/^console$/i.test(report.session?.name ?? '') || report.session?.id === 0) {
     reasons.push(`Chrome ran in session "${report.session?.name}" (${report.session?.id}), not the console session`);
+  }
+  // Frame times measured at another size cannot be compared with runs at
+  // the size asked for; the plain probe (no --url) only warns about it.
+  if ((report.runs ?? []).length > 0 && (report.screen?.width !== DISPLAY.width || report.screen?.height !== DISPLAY.height)) {
+    reasons.push(`Chrome's screen is ${report.screen?.width ?? '?'} x ${report.screen?.height ?? '?'}, not ${DISPLAY.width} x ${DISPLAY.height}: frame times measured at another size cannot be compared`);
   }
   for (const [i, r] of (report.runs ?? []).entries()) {
     if (!r.loaded) reasons.push(`run ${i + 1}: the page did not load (${r.error})`);
