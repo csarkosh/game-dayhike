@@ -274,6 +274,18 @@ describe("the record through a probe", () => {
     }
     expect(withGovernorDrop(spent, SAFARI, 26, "apple-unknown", "medium", 2_073_600, NOW)!.attempts).toBe(3);
     expect(withVerdict(spent, SAFARI, 26, "apple-unknown", { tier: "low", source: "probe", pixels: 2_073_600, at: NOW })!.attempts).toBe(0);
+    // A probe's verdict written by a cut keeps the count too, for either
+    // engine's lookup: only a finished probe clears it.
+    const probed: AutoVerdict = { tier: "low", source: "probe", pixels: 2_073_600, at: NOW };
+    const table = [
+      { cut: false, lookup: "webgl2", attempts: 0 },
+      { cut: true, lookup: "webgl2", attempts: 3 },
+      { cut: false, lookup: "webgpu", attempts: 0 },
+      { cut: true, lookup: "webgpu", attempts: 3 },
+    ] as const;
+    for (const row of table) {
+      expect(withVerdict(spent, SAFARI, 26, "apple-unknown", probed, row.lookup, row.cut)!.attempts, JSON.stringify(row)).toBe(row.attempts);
+    }
     // Once the governor's verdict lapses, the three probes spent stay spent.
     const lapsed = withGovernorDrop(spent, SAFARI, 26, "apple-unknown", "medium", 2_073_600, NOW - 8 * DAY)!;
     expect(auto(lapsed)).toEqual({ tier: "medium", probeFrom: null });
