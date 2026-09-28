@@ -222,7 +222,9 @@ export async function measureOnRuleEngine(
   const first = await deps.measure(tier, on, readyBy);
   if (first !== ENGINE_FAILED) return first;
   deps.failed();
-  if (stopped() || !(await deps.settles("webgl2")) || stopped()) return null;
+  // A bound already passed gives the re-measure nothing to be ready in: no
+  // scene is built for it.
+  if (stopped() || performance.now() >= readyBy || !(await deps.settles("webgl2")) || stopped()) return null;
   const again = await deps.measure(tier, deps.webgl2(), readyBy);
   return again === ENGINE_FAILED ? null : again;
 }
