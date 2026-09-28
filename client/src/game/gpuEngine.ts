@@ -246,8 +246,12 @@ export async function createWebGpuEngine(
   const ms = options.ms ?? WEBGPU_START_MS;
   const made: { engine: WebGPUEngine | null } = { engine: null };
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let late = false;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`the WebGPU engine was not ready in ${ms} ms`)), ms);
+    timer = setTimeout(() => {
+      late = true;
+      reject(new Error(`the WebGPU engine was not ready in ${ms} ms`));
+    }, ms);
   });
   // Every vertex buffer this engine draws keyed by its offset in the
   // pipeline cache (`webgpuVertexBuffer.ts`); once per page.
@@ -273,8 +277,9 @@ export async function createWebGpuEngine(
     await engine.prepareGlslangAndTintAsync();
     return engine;
   };
+  const starting = start();
   try {
-    const engine = await Promise.race([start(), deadline]);
+    const engine = await Promise.race([starting, deadline]);
     // Only once the engine stands: a failed start leaves Babylon's defaults,
     // and neither switch changes anything on WebGL2, where every material is
     // GLSL.
@@ -283,6 +288,15 @@ export async function createWebGpuEngine(
     return engine;
   } catch (err) {
     if (made.engine !== null) disposeHalfMade(made.engine);
+    // Given up while the start was still under way: its device may come
+    // later, to an engine already disposed. When the start settles, that
+    // engine's disposal is finished and its device destroyed.
+    if (late) {
+      const finish = (): void => {
+        if (made.engine !== null) disposeHalfMade(made.engine);
+      };
+      void starting.then(finish, finish);
+    }
     throw err;
   } finally {
     clearTimeout(timer);
@@ -291,21 +305,23 @@ export async function createWebGpuEngine(
 
 /**
  * Disposes a WebGPU engine whose start failed part-way. Babylon's
- * `WebGPUEngine.dispose` reads what `initAsync` makes once the device stands
- * (`_timestampQuery` first, then the texture and buffer managers and the
- * device), so on an engine whose device never came it throws at the first of
- * them, before its last two steps: dropping the canvas's, the window's and
- * the document's listeners (`_CommonDispose`), and the base dispose, which
- * takes the engine out of `EngineStore.Instances`. Those run here where it
- * threw, each on its own guard, and the engine leaves the store whatever
- * they do.
+ * `WebGPUEngine.dispose` reads what `initAsync` makes after the device
+ * (`_timestampQuery` first, then the texture and buffer managers), so on an
+ * engine whose start failed before those it throws at the first of them,
+ * before its last steps: destroying the device, where one came, dropping the
+ * canvas's, the window's and the document's listeners (`_CommonDispose`),
+ * and the base dispose, which takes the engine out of
+ * `EngineStore.Instances`. Those run here where it threw, each on its own
+ * guard, and the engine leaves the store whatever they do. Run again on an
+ * engine whose start settled after it was given up, it destroys the device
+ * that came since.
  */
 export function disposeHalfMade(engine: WebGPUEngine): void {
   try {
     engine.dispose();
     return;
   } catch {
-    /* the device never came: finish below */
+    /* a start that failed part-way: finish below */
   }
   try {
     _CommonDispose(engine, engine.getRenderingCanvas());
@@ -317,8 +333,18 @@ export function disposeHalfMade(engine: WebGPUEngine): void {
   } catch {
     /* as far as it goes */
   }
+  destroyDevice(engine);
   const at = EngineStore.Instances.indexOf(engine);
   if (at >= 0) EngineStore.Instances.splice(at, 1);
+}
+
+/** Destroys the engine's device, where one came; a second destroy is a no-op. */
+function destroyDevice(engine: WebGPUEngine): void {
+  try {
+    (engine as unknown as { _device?: { destroy(): void } })._device?.destroy();
+  } catch {
+    /* already gone */
+  }
 }
 
 /** `InternalTextureSource.Raw2DArray`, the source of a `RawTexture2DArray`. */
