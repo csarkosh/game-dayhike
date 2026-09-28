@@ -617,13 +617,33 @@ describe("createProbeMeter", () => {
 
   it("ends a step under 4 frames a second as a miss at its 21st stall, which the early end cannot see", () => {
     // 300 ms a frame: ready at 1.5 s (5 frames), the warm-up bounded at
-    // 2,100 ms (6 frames), then every interval a stall. Before, the stalls
-    // were dropped, the sum never grew, and the cap cut the step unread.
+    // 2,100 ms of intervals counted at most 250 ms each (8 frames), then every
+    // interval a stall. Before, the stalls were dropped, the sum never grew,
+    // and the cap cut the step unread.
     const t = { now: 0 };
     const meter = createProbeMeter(t.now);
     const got = run(meter, t, 300);
-    expect(got.frames).toBe(5 + 6 + 21);
+    expect(got.frames).toBe(5 + 8 + 21);
     expect(got.stats).toEqual({ frames: 21, meanMs: 300, p95Ms: 300, stalls: 21 });
+  });
+
+  it("counts a hidden tab's gap in the warm-up as 250 ms, so the warm-up is not cut short by it", () => {
+    // 60 Hz: ready at frame 90; 10 warm-up frames, then the tab hidden for
+    // 3 s, then the rest. Counted by the clock, the gap spent the whole
+    // 2,100 ms bound: the warm-up ended at once and the frames just after
+    // the tab came back were measured.
+    const t = { now: 0 };
+    const meter = createProbeMeter(t.now);
+    for (let n = 0; n < 90 + 10; n++) {
+      t.now += 16.667;
+      expect(meter.frame(t.now, true).done).toBe(false);
+    }
+    t.now += 3000;
+    expect(meter.frame(t.now, true).done).toBe(false);
+    const got = run(meter, t, 16.667);
+    expect(got.frames).toBe(49 + 120);
+    expect(got.stats!.frames).toBe(120);
+    expect(got.stats!.meanMs).toBeCloseTo(16.667, 3);
   });
 
   it("measures all 120 frames of a step that holds at the bar exactly", () => {

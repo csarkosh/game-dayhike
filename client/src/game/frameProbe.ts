@@ -71,7 +71,8 @@ export const PROBE_MIN_FRAMES = 100;
  * `PROBE_HOLD_MS`, 2,100 ms. Once the kept intervals sum past it the mean of
  * 120 can only be over the bar, so the step ends there as a miss rather than
  * spend 12 s on 120 frames of 100 ms. It bounds the warm-up too: 60 frames or
- * this long since the warm-up began, whichever comes first, so a slow machine
+ * this much of the warm-up's own intervals, each counted at most 250 ms so a
+ * hidden tab does not spend it, whichever comes first, so a slow machine
  * spends at most about 4.2 s of frames on a step (at 100 ms a frame the 60
  * warm-up frames alone were 6 s). A machine that holds reaches 60 warm-up
  * frames in about 1 s, well inside it.
@@ -180,8 +181,8 @@ export function idleCadenceMs(intervals: readonly number[]): number | null {
  * `compiled` whenever a shader compiles. The scene is ready once it says so and
  * no shader has compiled for `PROBE_QUIET_MS`, given up at `readyMaxMs`
  * (`PROBE_READY_MAX_MS`, or less where the probe's cap leaves less: `stepReadyMaxMs`);
- * then `PROBE_WARMUP_FRAMES` are discarded (or fewer, once
- * `PROBE_STEP_BUDGET_MS` has passed since the warm-up began) and `PROBE_FRAMES`
+ * then `PROBE_WARMUP_FRAMES` are discarded (or fewer, once their intervals,
+ * each counted at most `PROBE_STALL_MS`, sum to `PROBE_STEP_BUDGET_MS`) and `PROBE_FRAMES`
  * intervals kept, or fewer where their sum passes `PROBE_STEP_BUDGET_MS`
  * first (`readEarlyMiss`) or more than `PROBE_MAX_STALLS` of them are stalls
  * (`readStallMiss`): then the step ends as a miss. A shader that
@@ -197,7 +198,7 @@ export function createProbeMeter(start: number, readyMaxMs: number = PROBE_READY
   let lastCompile = start;
   let ready = false;
   let warm = 0;
-  let warmFrom = start;
+  let warmSpent = 0;
   let last = start;
   const intervals: number[] = [];
   return {
@@ -208,7 +209,7 @@ export function createProbeMeter(start: number, readyMaxMs: number = PROBE_READY
       lastCompile = now;
       if (ready) {
         warm = 0;
-        warmFrom = now;
+        warmSpent = 0;
         intervals.length = 0;
       }
     },
@@ -217,13 +218,19 @@ export function createProbeMeter(start: number, readyMaxMs: number = PROBE_READY
         if (now - start > readyMaxMs) return { done: true, stats: null };
         ready = sceneReady && now - lastCompile >= PROBE_QUIET_MS;
         last = now;
-        warmFrom = now;
         return { done: false };
       }
-      if (warm < PROBE_WARMUP_FRAMES && now - warmFrom < PROBE_STEP_BUDGET_MS) {
-        warm += 1;
-        last = now;
-        return { done: false };
+      if (warm < PROBE_WARMUP_FRAMES) {
+        // The warm-up's own intervals, each counted at most `PROBE_STALL_MS`:
+        // a tab hidden for seconds spends 250 ms of it, not the whole bound,
+        // while a machine under 4 frames a second still reaches the bound.
+        const spent = warmSpent + Math.min(Math.max(now - last, 0), PROBE_STALL_MS);
+        if (spent < PROBE_STEP_BUDGET_MS) {
+          warm += 1;
+          warmSpent = spent;
+          last = now;
+          return { done: false };
+        }
       }
       warm = PROBE_WARMUP_FRAMES;
       intervals.push(now - last);

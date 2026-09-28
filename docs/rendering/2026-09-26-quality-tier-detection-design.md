@@ -500,9 +500,13 @@ tier gets its own canvas; the renderer is disposed and its engine made with
    that is nothing: a second step that could only be ready too late to be
    measured gives up there, not at the cap after the player has waited it out.
 2. **Warm**: 60 frames discarded (the fields' first rebuilds, the reflection
-   probe, the first shadow renders), or fewer once 2,100 ms have passed since
-   the warm-up began (`PROBE_STEP_BUDGET_MS`, below): at 100 ms a frame the 60
-   alone would take 6 s, and a machine that holds reaches 60 in about 1 s. A
+   probe, the first shadow renders), or fewer once the warm-up's own
+   intervals, each counted at most 250 ms, sum to 2,100 ms
+   (`PROBE_STEP_BUDGET_MS`, below): at 100 ms a frame the 60 alone would take
+   6 s, and a machine that holds reaches 60 in about 1 s. Counting each
+   interval at most 250 ms keeps a tab hidden for seconds from spending the
+   whole bound in one gap, and still ends the warm-up of a machine under 4
+   frames a second. A
    shader that compiles after the scene is ready starts the warm-up again: its
    hitch, 100 ms or more, would tip a machine that holds 60 Hz into a miss.
    The 30 s cap bounds the restarts.
