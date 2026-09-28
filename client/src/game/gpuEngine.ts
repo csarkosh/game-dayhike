@@ -11,7 +11,9 @@
  * PBR and standard materials are switched to GLSL by Babylon's own
  * `ForceGLSL`, before the game makes any material. The engine translates that
  * GLSL at run time with the glslang and twgsl builds `@babylonjs/core` ships,
- * which the build content-hashes and serves with the game, never from a CDN.
+ * which the build content-hashes and serves with the game, never from a CDN;
+ * but first it looks each stage up (`shaderLookup.ts`), and translates only
+ * one it does not find.
  */
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
 // What the non-pure `webgpuEngine.js` loads with the engine, but for its
@@ -62,7 +64,14 @@ import {
   WEBGPU_FETCH_MS,
   WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS,
+  type ShaderLookupMode,
 } from "./engineChoice.js";
+import { lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
+
+/** The least of its start's budget an engine keeps when it waits for its
+ * shader lookup's sources: the wait is given up this long before the
+ * deadline, since running out of that budget is remembered (`init`). */
+const SOURCES_MARGIN_MS = 500;
 
 /** How `catchTranslationFailures` words a failure it cannot trace to an effect. */
 const UNTRANSLATED = "WebGPU shader translation failed";
@@ -233,19 +242,36 @@ async function startTranslators(signal: AbortSignal): Promise<Translators> {
  * high-performance adapter, exactly `WEBGPU_REQUIRED_LIMITS`, and the optional
  * `features` it is given (`featuresToRequest`; Babylon also drops any the
  * adapter lacks), with the `translators` `loadTranslators` started handed to
- * Babylon as they are. Rejects on any failure, or when `ms` pass first, having
- * disposed what it made; the canvas may then hold a WebGPU context, so the
- * caller draws WebGL2 on a fresh one.
+ * Babylon as they are. Every GLSL shader is looked up before it is translated
+ * (`lookUpShaders`, in `lookup`'s mode; `?wgsl=off` installs nothing), from
+ * `sources` (the browser's store by default) read into memory while the
+ * device comes, within `WGSL_SOURCES_MS` and never closer than
+ * `SOURCES_MARGIN_MS` to its deadline (entries still arriving are found as
+ * they land), so that no preparation waits once the engine is handed over.
+ * Rejects on any failure, or when `ms` pass first,
+ * having disposed what it made; the canvas may then hold a WebGPU context, so
+ * the caller draws WebGL2 on a fresh one.
  */
 export async function createWebGpuEngine(
   canvas: HTMLCanvasElement,
-  options: { ms?: number; features?: readonly string[]; translators?: Translators } = {},
+  options: {
+    ms?: number;
+    features?: readonly string[];
+    translators?: Translators;
+    lookup?: ShaderLookupMode;
+    sources?: (salt: string) => Promise<readonly WgslSource[]>;
+  } = {},
 ): Promise<WebGPUEngine> {
   const translators = options.translators;
   if (translators === undefined) throw new Error("load the WebGPU translators first");
   const ms = options.ms ?? WEBGPU_START_MS;
   const made: { engine: WebGPUEngine | null } = { engine: null };
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let marginTimer: ReturnType<typeof setTimeout> | undefined;
+  /** When the wait for the sources is given up at the latest. */
+  const sourcesBy = new Promise<void>((resolve) => {
+    marginTimer = setTimeout(resolve, Math.max(0, ms - SOURCES_MARGIN_MS));
+  });
   let late = false;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
@@ -270,11 +296,16 @@ export async function createWebGpuEngine(
     made.engine = engine;
     giveUpRestore(engine);
     mipEveryLayer(engine);
+    // Before the wrap below, which wraps whatever preparation it finds; its
+    // sources are read in while the device comes, and waited for (bounded)
+    // before the engine is handed over.
+    const looking = lookUpShaders(engine, { mode: options.lookup ?? "on", sources: options.sources });
     catchTranslationFailures(engine);
     // The started translators, as Babylon's options take them: glslang as a
     // promise (its setup waits on it), twgsl as the instance. No path to load.
     await engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl });
     await engine.prepareGlslangAndTintAsync();
+    await Promise.race([looking, sourcesBy]);
     return engine;
   };
   const starting = start();
@@ -300,6 +331,7 @@ export async function createWebGpuEngine(
     throw err;
   } finally {
     clearTimeout(timer);
+    clearTimeout(marginTimer);
   }
 }
 
@@ -314,9 +346,13 @@ export async function createWebGpuEngine(
  * `EngineStore.Instances`. Those run here where it threw, each on its own
  * guard, and the engine leaves the store whatever they do. Run again on an
  * engine whose start settled after it was given up, it destroys the device
- * that came since.
+ * that came since. Its shader lookup is let go of first
+ * (`releaseShaderLookup`): the dispose Babylon's throw cut short, and even
+ * the base dispose run here, may never reach `onDisposeObservable`, which
+ * the base dispose notifies only after the effects, textures and scenes.
  */
 export function disposeHalfMade(engine: WebGPUEngine): void {
+  releaseShaderLookup(engine);
   try {
     engine.dispose();
     return;

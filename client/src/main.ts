@@ -71,6 +71,7 @@ import {
   engineForTier,
   fallbackHolds,
   parseEngineOverride,
+  parseShaderLookup,
   readFallback,
   resolveWebGpu,
   signalsFit,
@@ -351,7 +352,7 @@ function detach(): void {
 /** A follower goes where the host is (`followsTo`). The host's route is ""
  * until known, and the landing page and its panels are one place: a follower
  * in its own Settings stays there while the host is on the landing. The
- * overrides (`?engine=`, `?tier=`, `?probe=`) are each page's own: the route
+ * overrides (`?engine=`, `?tier=`, `?probe=`, `?wgsl=`) are each page's own: the route
  * is taken without them (`stripOverrides`), which a host that still announces
  * them would otherwise impose on this machine; they neither make a route
  * differ nor leave the follower's URL when it moves (`navigateTo` carries
@@ -650,6 +651,7 @@ function makeWebGpu(
   wanted: () => boolean = () => true,
 ): Promise<MadeEngine | null> {
   let translators: Awaited<ReturnType<GpuModule["loadTranslators"]>> | undefined;
+  const lookup = parseShaderLookup(location.search);
   return resolveWebGpu<MadeEngine>(input, {
     available: () => (navigator as { gpu?: unknown }).gpu !== undefined,
     load: async () => {
@@ -660,7 +662,7 @@ function makeWebGpu(
           translators = await gpu.loadTranslators();
         },
         create: async (ms, features) => ({
-          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators }),
+          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, lookup }),
           watchers: { failures: gpu.watchWebGpu, pipelines: gpu.watchPipelines },
         }),
       };

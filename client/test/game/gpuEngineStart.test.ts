@@ -42,7 +42,9 @@ vi.mock("@babylonjs/core/Engines/webgpuEngine.pure.js", () => {
   return { WebGPUEngine };
 });
 
+import { WebGPUEngine as WebGPUEngineMock } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
 import { createWebGpuEngine, forgetTranslators, loadTranslators } from "../../src/game/gpuEngine.js";
+import type { WgslSource } from "../../src/game/shaderLookup.js";
 
 const canvas = {} as HTMLCanvasElement;
 
@@ -255,18 +257,70 @@ describe("loadTranslators", () => {
 });
 
 describe("createWebGpuEngine", () => {
-  it("refuses to start before the translators are loaded, and makes no engine", async () => {
+  it("refuses to start before the translators are loaded, looking shaders up or not, and makes no engine", async () => {
     await expect(createWebGpuEngine(canvas, {})).rejects.toThrow("load the WebGPU translators first");
+    await expect(createWebGpuEngine(canvas, { lookup: "off" })).rejects.toThrow("load the WebGPU translators first");
     expect(made.options).toEqual([]);
     expect(PBRBaseMaterial.ForceGLSL).toBe(false);
   });
 
-  it("hands Babylon the translators it was given, so it neither loads nor starts its own", async () => {
-    await createWebGpuEngine(canvas, { translators: TRANSLATORS });
+  it("hands Babylon the translators it was given (?wgsl=off), so it neither loads nor starts its own, and looks nothing up", async () => {
+    // Babylon's own preparation, as the engine's wraps find it.
+    const own = vi.spyOn(WebGPUEngineMock.prototype, "_preparePipelineContextAsync");
+    const engine = await createWebGpuEngine(canvas, { translators: TRANSLATORS, lookup: "off" });
     const [glslangOptions, twgslOptions] = made.initArgs[0] as [{ glslang: Promise<unknown> }, { twgsl: unknown }];
     expect(Object.keys(glslangOptions)).toEqual(["glslang"]);
     expect(await glslangOptions.glslang).toBe(TRANSLATORS.glslang);
     expect(twgslOptions).toEqual({ twgsl: TRANSLATORS.twgsl });
+    // A GLSL effect's preparation reaches it through the failure wrap alone.
+    await (engine as unknown as { _preparePipelineContextAsync(context: unknown): Promise<void> })._preparePipelineContextAsync({
+      shaderProcessingContext: { shaderLanguage: 0 },
+    });
+    expect(own).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands the engine over only once its translators are started and its lookup's sources are in, within 2 s", async () => {
+    vi.useFakeTimers();
+    let land: (sources: readonly WgslSource[]) => void = () => undefined;
+    const sources = (): Promise<readonly WgslSource[]> => new Promise((resolve) => (land = resolve));
+    let handed = false;
+    const making = createWebGpuEngine(canvas, { translators: TRANSLATORS, sources }).then(() => (handed = true));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(made.initArgs).toHaveLength(1);
+    expect(handed).toBe(false);
+    land([]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(handed).toBe(true);
+    await making;
+    // Sources that never come hold it 2 s at most.
+    handed = false;
+    const never = (): Promise<readonly WgslSource[]> => new Promise(() => undefined);
+    const waiting = createWebGpuEngine(canvas, { translators: TRANSLATORS, sources: never }).then(() => (handed = true));
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(handed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(handed).toBe(true);
+    await waiting;
+  });
+
+  it("waits for its sources no closer than 500 ms to its deadline, and not at all nearer, so a slow read never fails a start", async () => {
+    vi.useFakeTimers();
+    const never = (): Promise<readonly WgslSource[]> => new Promise(() => undefined);
+    // A start with 1 s of its budget left: handed over at 500 ms.
+    let handed = false;
+    const late = createWebGpuEngine(canvas, { ms: 1_000, translators: TRANSLATORS, sources: never }).then(() => (handed = true));
+    await vi.advanceTimersByTimeAsync(499);
+    expect(handed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(handed).toBe(true);
+    await late;
+    // With 300 ms left: handed over at once.
+    handed = false;
+    const later = createWebGpuEngine(canvas, { ms: 300, translators: TRANSLATORS, sources: never }).then(() => (handed = true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(handed).toBe(true);
+    await later;
+    expect(made.disposed).toBe(0);
   });
 
   it("asks the device for exactly the required limits and the texture formats it is given", async () => {

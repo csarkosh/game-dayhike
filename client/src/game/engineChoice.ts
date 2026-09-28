@@ -114,6 +114,22 @@ export function parseEngineOverride(search: string): EngineName | null {
   return value === "webgl2" || value === "webgpu" ? value : null;
 }
 
+/**
+ * How a WebGPU engine comes by the WGSL of the game's GLSL shaders
+ * (`shaderLookup.ts`): `on`, looked up and translated only where not found;
+ * `record`, the same, keeping every stage's texts and times for a
+ * measurement to read; `verify`, the same, with every effect also prepared
+ * on Babylon's own path and the stages that differ counted;
+ * `off`, Babylon's own path, every stage translated.
+ */
+export type ShaderLookupMode = "on" | "record" | "verify" | "off";
+
+/** `?wgsl=record|verify|off`; anything else is `on`. */
+export function parseShaderLookup(search: string): ShaderLookupMode {
+  const value = new URLSearchParams(search).get("wgsl");
+  return value === "record" || value === "verify" || value === "off" ? value : "on";
+}
+
 /** What the rule reads of the high-performance adapter (`adapterFromSignals`). */
 export type AdapterReport = {
   limits: Readonly<Record<string, number>>;

@@ -217,6 +217,9 @@ describe("the overrides stay on this page", () => {
     expect(stripOverrides("")).toBe("");
     // The probe override is the third of the set.
     expect(stripOverrides("/game/abc?probe=high&cmd=x&tier=low")).toBe("/game/abc?cmd=x");
+    // The WebGPU shader lookup's, the fourth: a measurement's, never a follower's.
+    expect(stripOverrides("/game/abc?wgsl=record&cmd=x")).toBe("/game/abc?cmd=x");
+    expect(sameRoute("/game/abc?cmd=x&wgsl=off", "/game/abc?cmd=x")).toBe(true);
   });
 
   it("are carried onto the route a follower is sent to, from its own URL", () => {
@@ -224,6 +227,7 @@ describe("the overrides stay on this page", () => {
     expect(keepOverrides("/game/abc", "?tier=high")).toBe("/game/abc?tier=high");
     expect(keepOverrides("/game/abc?cmd=x", "")).toBe("/game/abc?cmd=x");
     expect(keepOverrides("/game/abc", "?probe=medium&engine=webgpu")).toBe("/game/abc?engine=webgpu&probe=medium");
+    expect(keepOverrides("/game/abc", "?wgsl=verify&engine=webgpu")).toBe("/game/abc?engine=webgpu&wgsl=verify");
   });
 });
 

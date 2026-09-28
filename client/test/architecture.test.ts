@@ -123,9 +123,16 @@ describe("layer boundaries", () => {
   it("never turns WebGPU's uniformity analysis off for every shader", () => {
     // The finish pass turns it off for itself (`finishFragmentFor`); replacing
     // the engine's stage-descriptor method would hide every other shader's
-    // uniformity fault too.
+    // uniformity fault too. The shader lookup calls it, with WGSL already
+    // translated (each stage's switch read as Babylon reads it), and nothing
+    // replaces it.
     const found = sourceFiles(SRC).filter((f) => readFileSync(f, "utf8").includes("_createPipelineStageDescriptor"));
-    expect(found).toEqual([]);
+    expect(found.map((f) => relative(SRC, f))).toEqual(["game/shaderLookup.ts"]);
+    const lookup = readFileSync(join(SRC, "game/shaderLookup.ts"), "utf8");
+    expect(lookup).not.toMatch(/_createPipelineStageDescriptor\s*=[^=]/);
+    expect([...lookup.matchAll(/own\._createPipelineStageDescriptor\(([^)]*)\)/g)].map((m) => m[1])).toEqual([
+      "vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false",
+    ]);
   });
 
   it("keeps `forgetTranslators` for tests: nothing in src/ but its definition names it", () => {

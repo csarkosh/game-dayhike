@@ -594,6 +594,13 @@ landing goes until the game starts on whichever engine was chosen; a normal cold
 WebGPU start shows it for the translators' download and compile and the device,
 and the worst case, a stalled fetch and a stalled adapter, for 20 s.
 
+With the shader lookup ([its design](2026-09-28-webgpu-shader-lookup-design.md),
+§6), the order is the same: the translators are still fetched and started
+before the engine, within the fetch budget, and "Loading…" still covers them.
+What is added is inside the engine's making, within the GPU's budget: the
+lookup's store is opened and its entries read into memory while the device is
+requested, for at most 2 s. No preparation of a shader then waits.
+
 ### 5.5 What fails, and what the player sees
 
 | failure | detected by | action | what the player sees |
@@ -1548,6 +1555,11 @@ Pre-stated, in order:
 - **The plugins in WGSL.** It would remove the 2.7 MB of translators, their
   startup cost and the synchronous translation hitch, and every §6 change with
   them. About 1,325 lines.
+- **Translated shaders looked up, not translated at every start**
+  ([its design](2026-09-28-webgpu-shader-lookup-design.md)): a lookup keyed by
+  the exact GLSL, with the browser's store built and translations shipped with
+  the build next, against the 39.8 s of translation measured on a 4-CPU
+  machine's start.
 - **Snapshot rendering** for the static buckets, if the spawn pose shows a
   CPU-side cost.
 - **A mesh-level indirect instance count** upstream, the spike's §8 shape, if
