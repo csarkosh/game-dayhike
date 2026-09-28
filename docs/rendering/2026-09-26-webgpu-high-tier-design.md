@@ -743,14 +743,16 @@ ground alone.
 bounded by its caller (the tier detection design's `APPLY_SWAP_READY_MAX_MS`,
 20 s, and `GOVERNOR_SWAP_READY_MAX_MS`, 10 s), passed down to `whenSceneReady`:
 
-| path | bound |
-| --- | --- |
-| Settings Apply, on the pause screen | Apply's, 20 s |
-| the governor's drop, in play | the governor's, 10 s |
-| a failure's rebuild (a pipeline error, an uncaptured error), in play | the governor's, 10 s |
-| a lost device's retry on WebGPU, and a second loss's rebuild on WebGL2 | the governor's, 10 s |
-| a rung of a fallback ladder, inside any of these | its switch's |
-| a switch that crosses engines | its caller's |
+| path | bound | the cover at most |
+| --- | --- | --- |
+| Settings Apply, on the pause screen | Apply's, 20 s | 20 s + 5 s + the build |
+| the governor's drop, in play | the governor's, 10 s | 10 s + 5 s + the build |
+| a failure's rebuild (a pipeline error, an uncaptured error), in play | the governor's, 10 s | 10 s + 5 s + the build |
+| a lost device's retry on WebGPU, and a second loss's rebuild on WebGL2 | the governor's, 10 s | 10 s + 5 s + the build |
+| a rung of a fallback ladder, inside any of these | its switch's | its switch's |
+| a switch that crosses engines | its caller's | its caller's |
+
+The 5 s is `SWAP_SCENE_MIN_MS`, below.
 
 A rebuild nobody asked for, in the middle of play, covers the same player the
 governor's drop does, so it takes the same bound (`answerFailures` passes it);
@@ -760,10 +762,13 @@ The bound covers the engine's making too (`engineWithinBound`). A switch into
 WebGPU makes its engine under the cover, which can take up to
 `WEBGPU_START_MS` (10 s), and `WEBGPU_FETCH_MS` (10 s) more where the
 translators are not loaded yet; that time is counted against the bound, and
-the new scene waits on what is left of it. The cover's total is the bound the
-path names plus the renderer's build itself. An engine not ready within the
+the new scene waits on what is left of it, but never less than
+`SWAP_SCENE_MIN_MS` (5 s), so a scene built after a slow or late engine still
+has its models, ground maps and bakes loaded under the cover. The cover's total
+is at most the bound the path names, plus that floor where the engine ate into
+the bound, plus the renderer's build itself. An engine not ready within the
 bound gives way to WebGL2 at the switch's tier, on a fresh canvas, and is let
-go of when it arrives. It was slow, not broken: nothing is remembered against
+go of when it arrives; its scene waits the 5 s floor. It was slow, not broken: nothing is remembered against
 it, and the next switch or load tries WebGPU again. The player sees the cover
 lift on the tier they asked for, drawn with WebGL2, and no line in the HUD;
 the console says why.
@@ -1517,6 +1522,12 @@ Pre-stated, in order:
   build I ships on private internals.
 - **A committed pose command**, so every gate here reproduces from a URL alone
   (the near-grass design's follow-up, still open).
+- **A WebGL2 verdict and a WebGPU probe.** While WebGPU probe steps are not
+  taken to settle, a holding WebGL2 verdict is read for WebGPU as a floor and
+  stops the probe (§5.9). If WebGPU steps are later measured to settle
+  (§13.7), decide whether a holding WebGL2 verdict should keep stopping a
+  WebGPU probe, or give way to one, since it would then keep a WebGPU hike
+  unmeasured for up to 30 days.
 - **The probe's spherical harmonics on both engines.** WebGL2, as shipped,
   never computes them: `BaseTexture.sphericalPolynomial` is Babylon's stub
   unless its polynomial module is loaded, so PBR's diffuse ambient from the
