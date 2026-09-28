@@ -21,6 +21,7 @@ import type { CullPose } from "../../src/game/grassCull.js";
 import { OFFSET_HASH_SHIFT, keyEveryBoundBuffer, offsetKeyedVertexBuffer } from "../../src/game/webgpuVertexBuffer.js";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
 import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree.js";
+import { WEBGPU_REQUIRED_LIMITS } from "../../src/game/engineChoice.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const require = createRequire(import.meta.url);
@@ -60,6 +61,24 @@ describe("Babylon's WebGPU pipeline cache (canaries: when one fails, a fixed Bab
       "            this._states[newNumStates++] = vid;\n            this._states[newNumStates++] = oid;\n",
     );
     expect(suggested).not.toContain(block);
+  });
+
+  it("still lays out an offset within the stride as it is, and one past it as 0", () => {
+    const src = readFileSync(require.resolve("@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js"), "utf8");
+    // `layoutOffset` mirrors this range, with the device's default stride limit.
+    expect(src).toContain(
+      [
+        "                const offset = vertexBuffer.effectiveByteOffset;",
+        "                const formatSize = vertexBuffer.getSize(true);",
+        "                const byteStride = vertexBuffer.effectiveByteStride;",
+        "                vertexBuffer._validOffsetRange =",
+        "                    (offset + formatSize <= this._kMaxVertexBufferStride && byteStride === 0) || (byteStride !== 0 && offset + formatSize <= byteStride);",
+      ].join("\n"),
+    );
+    expect(src).toContain("                    offset = 0; // the offset will be set directly in the setVertexBuffer call");
+    // The device is made with the default stride limit, 2048.
+    expect(src).toContain("        this._kMaxVertexBufferStride = device.limits.maxVertexBufferArrayStride || 2048;");
+    expect(WEBGPU_REQUIRED_LIMITS).not.toHaveProperty("maxVertexBufferArrayStride");
   });
 
   it("still looks a key up as a plain object's property, exact for any integer below 2^53", () => {
@@ -110,6 +129,42 @@ describe("every vertex buffer drawn on a WebGPU engine, whoever made it", () => 
       fern.instanceDivisor = 0;
       cache.setBuffers({ uv: fern }, null, null);
       expect(fern.hashCode).toBe(before);
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("keys an offset past the stride as Babylon lays it out, at 0: accessors packed one after another share one key", () => {
+    // Two accessors packed into one non-interleaved view, as the glTF loader
+    // binds them: an 8-byte stride, the second at byte 80. Babylon puts 0 in
+    // the pipeline's layout for it and passes 80 to `setVertexBuffer`, so the
+    // two need one pipeline, and one key.
+    const packed = new Buffer(engine, new Float32Array(40), false, 2);
+    const first = packed.createVertexBuffer("uv", 0, 2);
+    const second = packed.createVertexBuffer("uv", 20, 2);
+    expect([first.byteOffset, second.byteOffset, second.byteStride]).toEqual([0, 80, 8]);
+    const plain = second.hashCode;
+    const uninstall = keyEveryBoundBuffer(WebGPUCacheRenderPipeline.prototype);
+    try {
+      const cache = new WebGPUCacheRenderPipelineTree({ limits: {} } as never, plant().fern);
+      cache.setBuffers({ uv: first }, null, { uv: second });
+      expect([first.hashCode, second.hashCode]).toEqual([plain, plain]);
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("keys an offset within the stride by the offset: the last byte of the stride still parts", () => {
+    // A 4-byte attribute ending exactly at a 12-byte stride, and one at 0.
+    const shared = new Buffer(engine, new Float32Array(30), false, 3);
+    const start = shared.createVertexBuffer("tint", 0, 1);
+    const end = shared.createVertexBuffer("tint", 2, 1);
+    expect([end.byteOffset + end.getSize(true), end.byteStride]).toEqual([12, 12]);
+    const uninstall = keyEveryBoundBuffer(WebGPUCacheRenderPipeline.prototype);
+    try {
+      const cache = new WebGPUCacheRenderPipelineTree({ limits: {} } as never, plant().fern);
+      cache.setBuffers({ tint: start }, null, { tint: end });
+      expect(end.hashCode - start.hashCode).toBe(8 * OFFSET_HASH_SHIFT);
     } finally {
       uninstall();
     }

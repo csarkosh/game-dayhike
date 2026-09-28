@@ -14,8 +14,10 @@
  * such cache and draws both correctly.
  *
  * The workaround keys the hash by the offset as well, as
- * `byteOffset × OFFSET_HASH_SHIFT`, above the stride's bits (a stride of at most
- * 2,048 bytes fills bits 12–23). It is an accessor on the instance, not a value
+ * `offset × OFFSET_HASH_SHIFT`, above the stride's bits (a stride of at most
+ * 2,048 bytes fills bits 12–23), where the offset is the one the layout holds
+ * (`layoutOffset`): 0 for an attribute past its stride, whose offset Babylon
+ * binds with the buffer instead. It is an accessor on the instance, not a value
  * added once: Babylon recomputes the hash by assigning `hashCode`, from the
  * constructor and from the `instanceDivisor` setter whenever instancing flips,
  * which would drop a term added once. The accessor keeps whatever Babylon
@@ -48,12 +50,34 @@ import type { Buffer, VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 /** How far above the stride's bits the byte offset is folded into the hash. */
 export const OFFSET_HASH_SHIFT = 2 ** 24;
 
+/** The device's limit on a vertex buffer's stride: WebGPU's default, which
+ * the device is made with (`WEBGPU_REQUIRED_LIMITS` does not raise it). */
+const MAX_VERTEX_BUFFER_STRIDE = 2048;
+
+/**
+ * The byte offset Babylon puts in the pipeline's vertex layout for
+ * `vertexBuffer`: its offset when the attribute lies within its stride, else 0,
+ * the offset then going to `setVertexBuffer` instead (`_validOffsetRange` in
+ * `webgpuCacheRenderPipeline.js`, mirrored here). Only the first parts
+ * pipelines, so only it goes into the key: an offset past the stride, such as
+ * an accessor packed after another in one glTF view, would otherwise make a
+ * pipeline of its own for the same layout.
+ */
+export function layoutOffset(vertexBuffer: VertexBuffer): number {
+  const effective = vertexBuffer as VertexBuffer & { effectiveByteOffset?: number; effectiveByteStride?: number };
+  const offset = effective.effectiveByteOffset ?? vertexBuffer.byteOffset;
+  const stride = effective.effectiveByteStride ?? vertexBuffer.byteStride;
+  const end = offset + vertexBuffer.getSize(true);
+  return (stride === 0 ? end <= MAX_VERTEX_BUFFER_STRIDE : end <= stride) ? offset : 0;
+}
+
 /** Every vertex buffer already keyed. A set lookup is what a buffer costs on
  * every later draw, where reading its property descriptor would allocate. */
 const keyedBuffers = new WeakSet<VertexBuffer>();
 
-/** `vertexBuffer` with its hash keyed by its byte offset for every read, once:
- * a buffer already keyed is left as it is. */
+/** `vertexBuffer` with its hash keyed by its layout's byte offset
+ * (`layoutOffset`) for every read, once: a buffer already keyed is left as it
+ * is. */
 export function keyByOffset(vertexBuffer: VertexBuffer): VertexBuffer {
   if (keyedBuffers.has(vertexBuffer)) return vertexBuffer;
   keyedBuffers.add(vertexBuffer);
@@ -61,7 +85,7 @@ export function keyByOffset(vertexBuffer: VertexBuffer): VertexBuffer {
   Object.defineProperty(vertexBuffer, "hashCode", {
     configurable: true,
     enumerable: true,
-    get: () => base + vertexBuffer.byteOffset * OFFSET_HASH_SHIFT,
+    get: () => base + layoutOffset(vertexBuffer) * OFFSET_HASH_SHIFT,
     set: (value: number) => {
       base = value;
     },
