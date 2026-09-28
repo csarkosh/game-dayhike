@@ -202,7 +202,8 @@ describe("runProbe and the Auto record", () => {
     ]) {
       const s = memoryStorage();
       expect(await runProbe("high", "medium", null, KEY, { storage: s, runStep, pixels: () => 2_073_600, now: () => 1_790_000_000_000 })).toBe("medium");
-      expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+      // The verdict of a probe cut short keeps the attempt it spent.
+      expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
         verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000, readings: [reading("high", 34.3)] } });
     }
     // A class that starts at low keeps low, not the medium below the miss.
@@ -349,7 +350,7 @@ describe("startupTier", () => {
     expect(t.steps).toEqual(["high", "medium"]);
     expect(t.open()).toBe(0);
     expect(t.lines[0]).toBe("quality probe: cut short after high missed, verdict medium; starting at medium (apple-unknown)");
-    expect(readAutoRecord(t.storage)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+    expect(readAutoRecord(t.storage)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
       verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000, readings: [reading("high", 34.3)] } });
     const next = fakes((tier) => reading(tier, 34.3), t.storage);
     expect(await startupTier(SAFARI, page(), next.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
@@ -747,12 +748,10 @@ describe("a governor's drop at the next start", () => {
 });
 
 describe("Safari on a Mac slower than the reference machine, hike after hike", () => {
-  // Every probe step's scene takes 7.5 s to build and load, then 1.5 s to fall
-  // quiet; high draws at 70 ms a frame, medium at 50 and low at 30, all under
-  // the governor's 48 fps. Before a step could end early this probe took 21.7 s
-  // over high alone, the cap cut medium, and the sequence ran: three hikes of
-  // 30 s of screen with no verdict, the governor's drop to low, and once that
-  // lapsed after 7 days, the probes again.
+  // Every probe step's scene takes `loadMs` to build and load, then 1.5 s to
+  // fall quiet; high draws at 70 ms a frame, medium at 50 and low at 30, all
+  // under the governor's 48 fps. Each hike is followed by a minute of play,
+  // after which the governor drops any tier played under 48 fps.
   const SLOW_MAC: GpuSignals = {
     renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
   };
@@ -760,7 +759,7 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
   const DAY = 86_400_000;
   const BASE = 1_790_000_000_000;
 
-  it("probes once, reads low inside the cap, and is not probed or dropped again in 30 days", async () => {
+  async function hikes(loadMs: number, days: readonly number[]) {
     const storage = memoryStorage();
     const clock = { now: BASE };
     let timer: { at: number; fn: () => void } | null = null;
@@ -768,7 +767,7 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
     const tiers: QualityTier[] = [];
     const screens: number[] = [];
     let drops = 0;
-    for (const day of [0, 0, 0, 0, 1, 7, 8, 14, 29]) {
+    for (const day of days) {
       clock.now = Math.max(clock.now + 600_000, BASE + day * DAY);
       const steps: QualityTier[] = [];
       const deps: StartupDeps = {
@@ -785,7 +784,7 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
             const due: { at: number; fn: () => void } | null = timer;
             if (due !== null && clock.now >= due.at) due.fn();
             if (cancelled()) return null;
-            const loaded = clock.now - begin >= 7_500;
+            const loaded = clock.now - begin >= loadMs;
             if (loaded && !compiled) {
               compiled = true;
               meter.compiled(clock.now);
@@ -814,7 +813,6 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
       const started = await startupTier(SLOW_MAC, { search: "", choice: "auto", cancelled: () => false }, deps);
       tiers.push(started.tier);
       if (steps.length > 0) probes.push(steps);
-      // A minute of play; the governor drops a tier played under 48 fps.
       clock.now += 60_000;
       if (FRAME_MS[started.tier] > 20.8) {
         const next = withGovernorDrop(readAutoRecord(storage), "Apple GPU", 26, "apple-unknown", started.tier, 1_045_960, clock.now);
@@ -824,13 +822,33 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
         }
       }
     }
-    expect(probes).toEqual([["high", "medium"]]);
-    expect(screens).toEqual([27_000]);
-    expect(tiers).toEqual(["low", "low", "low", "low", "low", "low", "low", "low", "low"]);
-    expect(drops).toBe(0);
-    const verdict = readAutoRecord(storage)!.verdict!;
+    return { storage, probes, tiers, screens, drops };
+  }
+
+  it("probes once, reads low inside the cap, and is not probed or dropped again in 30 days", async () => {
+    // 9 s to be ready. Before a step could end early this probe took 21.7 s
+    // over high alone, the cap cut medium, and the sequence ran: three hikes of
+    // 30 s of screen with no verdict, the governor's drop to low, and once that
+    // lapsed after 7 days, the probes again.
+    const got = await hikes(7_500, [0, 0, 0, 0, 1, 7, 8, 14, 29]);
+    expect(got.probes).toEqual([["high", "medium"]]);
+    expect(got.screens).toEqual([27_000]);
+    expect(got.tiers).toEqual(["low", "low", "low", "low", "low", "low", "low", "low", "low"]);
+    expect(got.drops).toBe(0);
+    const verdict = readAutoRecord(got.storage)!.verdict!;
     expect(verdict.tier).toBe("low");
     expect(verdict.source).toBe("probe");
     expect(verdict.readings!.map((r) => [r.tier, r.frames, r.meanMs, r.early])).toEqual([["high", 31, 70, true], ["medium", 43, 50, true]]);
+  });
+
+  it("probes at most three times over nine weeks where the cap always cuts the second step", async () => {
+    // 12 s to be ready: high misses at about 16 s and the cap cuts medium, so
+    // each probe's verdict is medium, unmeasured; medium plays under 48 fps
+    // and the governor drops to low, a verdict that lapses after 7 days. A
+    // cut verdict that cleared the count gave this machine a probe every week.
+    const got = await hikes(10_500, [0, 1, 8, 16, 24, 32, 40, 48, 56, 62]);
+    expect(got.probes).toEqual([["high", "medium"], ["high", "medium"], ["high", "medium"]]);
+    expect(got.tiers).toEqual(["medium", "low", "medium", "medium", "medium", "medium", "medium", "medium", "medium", "low"]);
+    expect(readAutoRecord(got.storage)!.attempts).toBe(3);
   });
 });

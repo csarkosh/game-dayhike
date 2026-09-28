@@ -291,7 +291,10 @@ export type ProbeDeps = {
  *    before it, the attempt stands and nothing else is written. After a step
  *    that missed, what that miss taught is kept (`cutVerdict`): the tier below
  *    it, never above `start`, written as the probe's verdict, so the next hike
- *    does not measure the miss again.
+ *    does not measure the miss again. That verdict keeps the attempt spent:
+ *    only a probe that finished clears the count, so a machine whose probe is
+ *    always cut sees at most three probes in all, however often its verdict
+ *    lapses or is replaced.
  * 4. The verdict is written with the same area as step 1, the area
  *    `AutoInput.pixels` reads, so it holds on the next load at this window.
  */
@@ -307,15 +310,15 @@ export async function runProbe(
   const started = withProbeStarted(record, key.gpu, key.browser, key.cls);
   if (!writeAutoRecord(deps.storage, started)) return start;
   const readings: ProbeReading[] = [];
-  const settle = (tier: QualityTier): QualityTier => {
+  const settle = (tier: QualityTier, cut: boolean): QualityTier => {
     const verdict = { tier, source: "probe" as const, pixels, at: deps.now(), readings };
     const next = withVerdict(started, key.gpu, key.browser, key.cls, verdict);
-    if (next !== null) writeAutoRecord(deps.storage, next);
+    if (next !== null) writeAutoRecord(deps.storage, cut ? { ...next, attempts: started.attempts } : next);
     return tier;
   };
   for (;;) {
     const step = nextProbeStep(from, readings);
-    if ("verdict" in step) return settle(step.verdict);
+    if ("verdict" in step) return settle(step.verdict, false);
     let reading: ProbeReading | null;
     try {
       reading = await deps.runStep(step.measure);
@@ -324,7 +327,7 @@ export async function runProbe(
     }
     if (reading === null) {
       const cut = cutVerdict(readings, start);
-      return cut === null ? start : settle(cut);
+      return cut === null ? start : settle(cut, true);
     }
     readings.push(reading);
   }
