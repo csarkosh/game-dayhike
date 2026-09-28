@@ -12,3 +12,9 @@
 *.md   text eol=lf
 *.ts   text eol=lf
 *.mjs  text eol=lf
+
+# Shader sources: their text is what the WebGPU shader lookup keys a stage by,
+# so a checkout with Windows line endings would give every stage another key.
+*.fx   text eol=lf
+*.glsl text eol=lf
+*.wgsl text eol=lf

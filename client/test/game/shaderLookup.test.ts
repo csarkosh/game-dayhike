@@ -523,7 +523,18 @@ describe("the WebGPU shader lookup", () => {
     const second = harness();
     await lookUp(second, [shared.source], "record", report);
     await prepare(second);
-    expect(Object.keys(report).sort()).toEqual(["differences", "download", "effects", "hits", "hitsBySource", "misses", "mode", "salt", "translateMs"]);
+    expect(Object.keys(report).sort()).toEqual([
+      "differences",
+      "download",
+      "effects",
+      "hits",
+      "hitsBySource",
+      "misses",
+      "mode",
+      "salt",
+      "stagesWithCarriageReturns",
+      "translateMs",
+    ]);
     expect([report.mode, report.salt, report.hits, report.misses, report.differences]).toEqual(["record", SALT, 2, 2, 0]);
     expect(report.hitsBySource).toEqual({ memory: 2 });
     expect(report.translateMs).toBeGreaterThan(0);
@@ -581,6 +592,26 @@ describe("the WebGPU shader lookup", () => {
       ]),
     );
     expect(readCorpus(text)).toHaveLength(3);
+  });
+
+  it("with ?wgsl=record counts the stages whose text carries a carriage return, and keys them as they are", async () => {
+    const report = newLookupReport("record", SALT);
+    const h = harness();
+    await lookUp(h, [], "record", report);
+    const windowsVertex = VERTEX.replaceAll("\n", "\r\n");
+    await prepare(h, { vertex: windowsVertex });
+    await prepare(h, { vertex: windowsVertex, fragment: FRAGMENT.replaceAll("\n", "\r\n") });
+    await prepare(h);
+    expect(report.stagesWithCarriageReturns).toBe(3);
+    // The key is the hash of the exact text, carriage returns and all.
+    expect(report.effects[0]?.stages[0]?.key).toBe(keyOf("vertex", windowsVertex));
+    expect(report.effects[0]?.stages[0]?.glsl).toBe(translatorInput(windowsVertex, DEFINES));
+    // Without ?wgsl=record, nothing is kept and nothing counted.
+    const plain = newLookupReport("on", SALT);
+    const other = harness();
+    await lookUp(other, [], "on", plain);
+    await prepare(other, { vertex: windowsVertex });
+    expect(plain.stagesWithCarriageReturns).toBe(0);
   });
 
   it("counts, but records no effect, without ?wgsl=record", async () => {

@@ -161,6 +161,12 @@ export type ShaderLookupReport = {
   /** `?wgsl=verify`: stages whose text for the first translator, or whose
    * WGSL, differs from what Babylon's own path makes of the same effect. */
   differences: number;
+  /** `?wgsl=record`: stages kept whose text carries a carriage return, as a
+   * checkout with Windows line endings gives the game's shader files. Their
+   * keys are the hashes of that text, which a page built from a checkout
+   * without never asks for, so a recording that counts any is not one to
+   * merge as it is (`tools/wgsl/merge-corpus.mjs` repairs it). */
+  stagesWithCarriageReturns: number;
   effects: EffectRecord[];
   /** Saves the stages of the effects recorded as a corpus file
    * (`corpusText`), the form the build translates ahead (`tools/wgsl/`):
@@ -190,6 +196,7 @@ export function newLookupReport(mode: Exclude<ShaderLookupMode, "off">, salt: st
     misses: 0,
     translateMs: 0,
     differences: 0,
+    stagesWithCarriageReturns: 0,
     effects: [],
     download() {
       const corpus = corpusText(this.effects.flatMap((effect) => effect.stages));
@@ -536,6 +543,7 @@ export function lookUpShaders(
       }
     }
     if (mode === "record") {
+      for (const stage of stages) if (stage.glsl.includes("\r")) report.stagesWithCarriageReturns += 1;
       report.effects.push({
         name: context._name ?? "",
         at,

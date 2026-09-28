@@ -353,7 +353,7 @@ and how many are new; a recorded file dropped into the directory is merged
 and removed.
 
 **What is shipped now.** 421 stages (221 vertex, 121 fragment, 79 fragment
-stages that turn the uniformity analysis off), 14,199,007 bytes in the
+stages that turn the uniformity analysis off), 14,183,815 bytes in the
 sixteen files, recorded with `?wgsl=record` in Chrome 154 on Windows with an
 NVIDIA T4 under Direct3D 12, on the high and medium tiers, each text checked
 by its SHA-256 against the page that recorded it, and merged. The pages
@@ -363,7 +363,27 @@ every material compiled; the weathers and the hours; a party of two. Not yet
 in it: anything recorded on macOS (its texture formats reach the text
 through the defines, §8 item 3), and the low tier. 228 of the stages carry
 characters outside ASCII (in the game's shader comments); glslang is handed
-them as the page hands them, and the WGSL has no comments.
+them as the page hands them, and the WGSL has no comments (the build checks
+that the map is ASCII).
+
+**Line endings.** The recording was first made from a checkout with Windows
+line endings: the game's `.fx` shader files had no line-ending rule, so they
+were checked out with `\r\n`, and 234 of the 421 stages carried their
+carriage returns into the text, and so into their keys, which a page built
+from a checkout without them never asks for. On a Mac, a first visit on the
+build with that corpus found 43 stages in the shipped map and translated
+52; with the same stages' `\r\n` turned to `\n` (still 421 distinct, the
+map's WGSL the same 23,367,492 bytes) the same page found 100 and
+translated none. The corpus was repaired by the merge tool, and three
+things now keep it from happening again: `.gitattributes` checks `.fx`
+(and `.glsl`, `.wgsl`) out with `\n` everywhere; the merge tool turns every
+`\r\n` into `\n` in each stage it reads, reports how many, and refuses a
+stage with a carriage return left, and the map's build refuses a corpus
+with one, naming the stage and the tool that repairs it; and a page opened
+with `?wgsl=record` counts the stages it keeps whose text carries one
+(`stagesWithCarriageReturns` in `dayhikeWgsl`), so such a recording is seen
+at once. The key stays the hash of the exact text: the page repairs
+nothing.
 
 The ten stages made under Node (`tools/wgsl/node-corpus.mjs`: the game's
 three post shaders and Babylon's PBR and Standard materials, through
@@ -433,11 +453,14 @@ with Vite as the game's is, in `tools/wgsl/test/mapPlugin.test.mjs`). A
 build whose map was not made fails, naming the step. The dev server runs the
 tool as it starts and serves the map at `<base>wgsl-map.json` once made (a
 request before then waits; one the tool failed to make is a 404, no map), so
-a measurement on the dev server sees what production will. With
-`DAYHIKE_SKIP_WGSL_MAP` set, the dev server translates nothing and answers
-the map's request with a 404 (a real corpus is minutes of CPU, beside what
-the dev server may be measuring); the build always translates. Under the
-suite the URL is empty and no map is asked for.
+a measurement on the dev server sees what production will. A dev server's
+start so translates the whole corpus wherever no map was made yet (every
+fresh checkout: the map is not committed): the 421 recorded stages take about
+35 s on an Apple M4 and 54 s on a GitHub build runner, beside whatever the
+dev server may be measuring. With `DAYHIKE_SKIP_WGSL_MAP` set, the dev
+server translates nothing and answers the map's request with a 404; the
+build always translates. Under the suite the URL is empty and no map is
+asked for.
 
 **Its ceiling.** A map is at most `MAP_MAX_BYTES`, 32 MiB (33,554,432 bytes)
 of text: the page holds it whole for the engine's life and parses it in one

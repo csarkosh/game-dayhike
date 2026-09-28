@@ -13,7 +13,11 @@ type Shared = {
 };
 
 export declare function nodeSalt(shared: Shared, clientDir?: string): string;
-export declare function readCorpusDir(dir: string, shared: Shared): { files: { name: string; stages: number }[]; stages: CorpusStage[] };
+export declare function readCorpusDir(
+  dir: string,
+  shared: Shared,
+): { files: { name: string; stages: number }[]; stages: CorpusStage[]; withCarriageReturns: { file: string; stage: "vertex" | "fragment"; id: string }[] };
+export declare function asciiProblem(text: string): string | null;
 export declare function buildMap(options: {
   stages: readonly CorpusStage[];
   salt: string;

@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -131,6 +131,7 @@ describe('the map the build ships', () => {
     const lines = done.stdout.split('\n');
     expect(lines.filter((line) => / ms {2}(vertex {2}|fragment) {2}[0-9a-f]{16} {2}\d+ B GLSL -> \d+ B WGSL$/.test(line))).toHaveLength(2);
     expect(done.stdout).toContain('  entries:      2\n  failed:       0\n');
+    expect(done.stdout).toContain('  ascii:        yes\n');
     expect(done.stdout).toMatch(/ {2}largest: {6}\d+ B of WGSL, the (vertex|fragment) stage [0-9a-f]{16}\n/);
     // The two stages' WGSL, as the shipped translators make it.
     expect(lines).toContain('  lines:        41 in all, 24 distinct in 651 B; digits as #: 41 in all, 24 distinct in 638 B');
@@ -165,6 +166,23 @@ describe('the map the build ships', () => {
     // The figures, for the run's log: sizes, what reading it costs, the translators' start.
     console.log(done.stdout.slice(done.stdout.indexOf('wgsl map:')));
   }, timeLimit(300_000));
+
+  it('refuses a corpus in which a stage carries a carriage return, naming it and the tool that repairs it, and writes no map', async () => {
+    const windows = { stage: 'fragment', flag: false, glsl: '#version 450\r\nvoid main() {}' };
+    const corpus = directory({ 'stages-x.json': shared.corpusText([windows]) });
+    cpSync(join(FIXTURE, 'two-stages.json'), join(corpus, 'two-stages.json'));
+    const out = join(directory(), 'map.json');
+    const failed = await run(process.execPath, [TOOL, '--corpus', corpus, '--out', out]).then(
+      () => null,
+      (error) => error,
+    );
+    expect(failed?.code).toBe(1);
+    expect(failed?.stderr).toContain(
+      `✗ the fragment stage ${shared.corpusId(windows).slice(0, 16)} in stages-x.json carries a carriage return: ` +
+        'the corpus is committed text; node tools/wgsl/merge-corpus.mjs repairs it',
+    );
+    expect(existsSync(out)).toBe(false);
+  }, timeLimit(60_000));
 
   it('refuses a corpus file that is not one, naming it', () => {
     const corpus = directory({ 'bad.json': '{"format":"something else"}' });

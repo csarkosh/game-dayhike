@@ -19,7 +19,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { buildMap, formatTimes, inputsDigest, lineFigures, mapSizeProblem, nodeSalt, readCorpusDir, sizes } from './lib/buildMap.mjs';
+import { asciiProblem, buildMap, formatTimes, inputsDigest, lineFigures, mapSizeProblem, nodeSalt, readCorpusDir, sizes } from './lib/buildMap.mjs';
 import { CORPUS_DIR, MAP_FILE, writeWhole } from './lib/files.mjs';
 import { loadShared } from './lib/shared.mjs';
 import { startTranslators, translateStage } from './lib/translators.mjs';
@@ -34,7 +34,18 @@ const shown = (path) => relative(process.cwd(), path) || path;
 
 const shared = await loadShared();
 const salt = nodeSalt(shared);
-const { files, stages } = readCorpusDir(corpusDir, shared);
+const { files, stages, withCarriageReturns } = readCorpusDir(corpusDir, shared);
+// The corpus is committed text, not repaired here: a stage with a carriage
+// return is one no page asks for, and the merge tool repairs it.
+if (withCarriageReturns.length > 0) {
+  for (const found of withCarriageReturns) {
+    console.error(
+      `✗ the ${found.stage} stage ${found.id.slice(0, 16)} in ${found.file} carries a carriage return: ` +
+        'the corpus is committed text; node tools/wgsl/merge-corpus.mjs repairs it',
+    );
+  }
+  process.exit(1);
+}
 const inputs = inputsDigest(salt, stages, shared);
 if (values.reuse && existsSync(out) && existsSync(inputsFile) && readFileSync(inputsFile, 'utf8') === inputs) {
   console.log(`wgsl map: ${shown(out)} is up to date with ${shown(corpusDir)}`);
@@ -56,6 +67,7 @@ const ms = made.translated.map((stage) => stage.ms);
 const total = ms.reduce((a, b) => a + b, 0);
 const times = formatTimes(made.text);
 const lines = lineFigures(made.entries.values());
+const notAscii = asciiProblem(made.text);
 const largest = made.translated.reduce((a, b) => (b.wgslBytes > (a?.wgslBytes ?? -1) ? b : a), null);
 // The figures first, so a map over its ceiling still says what it is.
 console.log(`wgsl map: ${shown(out)}`);
@@ -63,6 +75,7 @@ console.log(`  corpus:       ${stages.length} stages in ${files.length} files un
 console.log(`  entries:      ${made.entries.size}`);
 console.log(`  failed:       ${made.failed.length}${made.failed.length > 0 ? ` (${made.failed.map((stage) => stage.id).join(', ')})` : ''}`);
 console.log(`  bytes:        ${size.raw} raw, ${size.gzip} gzip -9, ${size.brotli} brotli -q 11`);
+console.log(`  ascii:        ${notAscii === null ? 'yes' : 'no'}`);
 console.log(
   `  lines:        ${lines.lines} in all, ${lines.distinct} distinct in ${lines.distinctBytes} B; ` +
     `digits as #: ${lines.masked.lines} in all, ${lines.masked.distinct} distinct in ${lines.masked.distinctBytes} B`,
@@ -73,6 +86,10 @@ console.log(
     `${(made.translated.length ? total / made.translated.length : 0).toFixed(0)} ms a stage on average, ${Math.max(0, ...ms).toFixed(0)} ms the longest`,
 );
 console.log(`  reading it:   ${times.jsonMs.toFixed(2)} ms as one JSON (shipped), ${times.indexMs.toFixed(2)} ms as an index and a text`);
+if (notAscii !== null) {
+  console.error(`\n!! ${notAscii}. Nothing was written.\n`);
+  process.exit(1);
+}
 const tooLarge = mapSizeProblem(Buffer.byteLength(made.text), shared.MAP_MAX_BYTES);
 if (tooLarge !== null) {
   console.error(`\n!! ${tooLarge}. Nothing was written.\n`);
