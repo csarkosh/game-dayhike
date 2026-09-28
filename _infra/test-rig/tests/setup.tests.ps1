@@ -30,6 +30,26 @@ $ps7 = $ast.FindAll({ param($n)
   }, $true)
 Check 'no syntax that Windows PowerShell 5.1 lacks' ($ps7.Count -eq 0)
 
+# --- Arguments with a documented length limit ------------------------------------
+# New-LocalUser and Set-LocalUser: "-Description ... The maximum length is 48
+# characters." Every literal passed there must fit.
+$userCalls = $ast.FindAll({ param($n)
+    $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -in 'New-LocalUser', 'Set-LocalUser'
+  }, $true)
+$descriptions = foreach ($call in $userCalls) {
+  $elements = $call.CommandElements
+  for ($i = 0; $i -lt $elements.Count - 1; $i++) {
+    if ($elements[$i] -is [System.Management.Automation.Language.CommandParameterAst] -and $elements[$i].ParameterName -eq 'Description') {
+      $elements[$i + 1]
+    }
+  }
+}
+Check 'a -Description is passed to New-LocalUser' (@($descriptions).Count -ge 1)
+foreach ($d in $descriptions) {
+  Check "-Description is a literal of at most 48 characters: '$($d.Extent.Text)'" (
+    $d -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $d.Value.Length -le 48)
+}
+
 # --- The script's functions and the variables they read -------------------------
 foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
   . ([ScriptBlock]::Create($f.Extent.Text))
@@ -56,12 +76,17 @@ Check "no licence section fails; the GPU's own product name is not taken" ((-not
 $seen = @{}
 $bad = $null
 foreach ($i in 1..200) {
-  $p = New-Password
-  if ($p.Length -ne 24 -or $p -cnotmatch '[A-Z]' -or $p -cnotmatch '[a-z]' -or $p -notmatch '[0-9]' -or $p -cmatch '[^A-HJ-NP-Za-km-z2-9]') { $bad = $p }
+  $p = New-Password 'hiker'
+  if ($p.Length -ne 24 -or $p -cnotmatch '[A-Z]' -or $p -cnotmatch '[a-z]' -or $p -notmatch '[0-9]' -or $p -cmatch '[^A-HJ-NP-Za-km-z2-9]' -or $p -match 'hiker') { $bad = $p }
   $seen[$p] = 1
 }
-Check 'passwords: 24 characters, all three classes, the alphabet only' (-not $bad)
+Check 'passwords: 24 characters, all three classes, the alphabet only, no account name' (-not $bad)
 Check 'passwords: 200 distinct' ($seen.Count -eq 200)
+Check 'a password holding the account name, in any case, is refused' (-not (Test-PasswordAcceptable 'Ab2xxHiKeRxxxxxxxxxxxxxx' 'hiker'))
+Check 'a short account name is not checked' (Test-PasswordAcceptable 'Ab2xxJoxxxxxxxxxxxxxxxxx' 'jo')
+Check 'a password missing a class is refused' (-not (Test-PasswordAcceptable 'abcdefghijkmnpqrstuvwxy2' 'hiker'))
+Check 'a password with a symbol is refused' (-not (Test-PasswordAcceptable 'Ab2xxxxxxxxxxxxxxxxxxxx$' 'hiker'))
+Check 'a password of another length is refused' (-not (Test-PasswordAcceptable 'Ab2' 'hiker'))
 
 # --- The signer rule (the organisation part of Assert-Signer) ----------------------
 function OrgOk($Subject, $Publisher) { $Subject -cmatch ('(^|, )O="?' + [regex]::Escape($Publisher) + '"?(,|$)') }

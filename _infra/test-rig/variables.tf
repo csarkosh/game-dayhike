@@ -129,9 +129,16 @@ variable "desktop_user" {
   type        = string
   default     = "hiker"
 
+  # Windows (New-LocalUser): a user name holds at most 20 characters, none of
+  # " / \ [ ] : ; | = , + * ? < > @, and cannot be identical to any other user
+  # or group name on the computer, the built-in ones of Windows Server and the
+  # SSM Agent's ssm-user included.
   validation {
-    condition     = can(regex("^[a-z][a-z0-9-]{2,19}$", var.desktop_user)) && !contains(["administrator", "guest", "ssm-user"], var.desktop_user)
-    error_message = "desktop_user is 3 to 20 lowercase letters, digits or hyphens, starting with a letter, and not a built-in account."
+    condition = can(regex("^[a-z][a-z0-9-]{2,19}$", var.desktop_user)) && !contains([
+      "administrator", "guest", "defaultaccount", "wdagutilityaccount", "ssm-user",
+      "administrators", "users", "guests", "replicator", "iis_iusrs",
+    ], var.desktop_user)
+    error_message = "desktop_user is 3 to 20 lowercase letters, digits or hyphens, starting with a letter, and not a built-in account or group name."
   }
 }
 
@@ -146,9 +153,18 @@ variable "password_parameter" {
   type        = string
   default     = "/test-rig/desktop-password"
 
+  # Parameter Store: letters, digits and _.- with / between levels; at most
+  # fifteen levels; not beginning with "aws" or "ssm" (in any case); at most
+  # 1011 characters counting the parameter's ARN prefix, so 900 leaves room
+  # for any partition and region.
   validation {
-    condition     = can(regex("^(/[A-Za-z0-9_.-]+)+$", var.password_parameter))
-    error_message = "password_parameter is a path such as /test-rig/desktop-password."
+    condition = (
+      can(regex("^(/[A-Za-z0-9_.-]+)+$", var.password_parameter)) &&
+      !can(regex("^/(?i:aws|ssm)", var.password_parameter)) &&
+      length(split("/", var.password_parameter)) - 1 <= 15 &&
+      length(var.password_parameter) <= 900
+    )
+    error_message = "password_parameter is a path such as /test-rig/desktop-password: at most 15 levels and 900 characters, and not beginning with aws or ssm."
   }
 }
 

@@ -282,11 +282,22 @@ namespace TestRig {
 }
 "@
 
+# Windows' password complexity rule (Passfilt.dll): characters from three of
+# the classes (here capitals, small letters and digits, all three), and not
+# containing the account name, compared without case, when the name is three
+# characters or more. Letters and digits only, so nothing in it is special to
+# PowerShell, to a command line or to DCV's sign-in; at most 127 characters
+# (New-LocalUser's limit).
+function Test-PasswordAcceptable([string]$Candidate, [string]$AccountName) {
+  return $Candidate.Length -eq 24 -and $Candidate -cmatch '[A-Z]' -and $Candidate -cmatch '[a-z]' -and
+    $Candidate -match '[0-9]' -and $Candidate -cnotmatch '[^A-Za-z0-9]' -and
+    ($AccountName.Length -lt 3 -or $Candidate.IndexOf($AccountName, [StringComparison]::OrdinalIgnoreCase) -lt 0)
+}
+
 # 24 characters from 57 letters and digits (no 0, O, 1, I or l), about 140
-# bits, with at least one capital, one small letter and one digit for Windows'
-# complexity rule. Bytes of 228 and over are skipped, so every character is
-# equally likely.
-function New-Password {
+# bits, drawn until Test-PasswordAcceptable passes. Bytes of 228 and over are
+# skipped, so every character is equally likely.
+function New-Password([string]$AccountName) {
   $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
   $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
   do {
@@ -294,7 +305,7 @@ function New-Password {
     $rng.GetBytes($bytes)
     $chars = foreach ($b in $bytes) { if ($b -lt 228) { $alphabet[$b % 57] } }
     $candidate = -join ($chars | Select-Object -First 24)
-  } until ($candidate.Length -eq 24 -and $candidate -cmatch '[A-Z]' -and $candidate -cmatch '[a-z]' -and $candidate -match '[0-9]')
+  } until (Test-PasswordAcceptable $candidate $AccountName)
   return $candidate
 }
 
@@ -452,12 +463,12 @@ function Set-DesktopUser {
   # automatic logon reads, and Parameter Store (for signing in to DCV). A
   # rerun makes a new one and replaces both.
   Add-Type -TypeDefinition $LsaSource
-  $password = New-Password
+  $password = New-Password $DesktopUser
   $secure = ConvertTo-SecureString $password -AsPlainText -Force
   if (Get-LocalUser -Name $DesktopUser -ErrorAction SilentlyContinue) {
     Set-LocalUser -Name $DesktopUser -Password $secure
   } else {
-    New-LocalUser -Name $DesktopUser -Password $secure -PasswordNeverExpires -AccountNeverExpires -UserMayNotChangePassword -Description 'Logs on automatically; runs the browser under test' | Out-Null
+    New-LocalUser -Name $DesktopUser -Password $secure -PasswordNeverExpires -AccountNeverExpires -UserMayNotChangePassword -Description 'Logs on automatically; runs the tested browser' | Out-Null
   }
   $users = Get-LocalGroup -SID 'S-1-5-32-545'
   if (-not (Get-LocalGroupMember -Group $users | Where-Object { $_.Name -like "*\$DesktopUser" })) {

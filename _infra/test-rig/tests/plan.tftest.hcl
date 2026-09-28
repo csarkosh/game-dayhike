@@ -78,6 +78,15 @@ run "defaults" {
     error_message = "The stop timer is armed first, before anything else can fail, the log included."
   }
 
+  # New-LocalUser: "-Description ... The maximum length is 48 characters."
+  # Read from the rendered script, so it runs without PowerShell.
+  assert {
+    condition = length(regexall("New-LocalUser [^\n]*-Description '([^']*)'", local.setup_script)) >= 1 && alltrue([
+      for m in regexall("-Description '([^']*)'", local.setup_script) : length(m[0]) <= 48
+    ])
+    error_message = "Every -Description passed to New-LocalUser is at most 48 characters (Windows' limit)."
+  }
+
   assert {
     condition     = !strcontains(local.setup_script, "StartWhenAvailable")
     error_message = "The stop task must not start late: a missed shutdown would fire on a later boot."
@@ -315,6 +324,36 @@ run "rejects_other_regions" {
   }
 
   expect_failures = [var.region]
+}
+
+run "rejects_a_user_name_over_20_characters" {
+  command = plan
+
+  variables {
+    desktop_user = "abcdefghijklmnopqrstu"
+  }
+
+  expect_failures = [var.desktop_user]
+}
+
+run "rejects_a_built_in_group_name" {
+  command = plan
+
+  variables {
+    desktop_user = "users"
+  }
+
+  expect_failures = [var.desktop_user]
+}
+
+run "rejects_a_reserved_parameter_name" {
+  command = plan
+
+  variables {
+    password_parameter = "/AWS/test-rig/desktop-password"
+  }
+
+  expect_failures = [var.password_parameter]
 }
 
 run "rejects_no_stop" {
