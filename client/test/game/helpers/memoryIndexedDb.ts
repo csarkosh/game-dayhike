@@ -6,12 +6,16 @@
  * `getAllKeys` (in key order), `databases` and `deleteDatabase`. Values are
  * copied in and out, as a browser's structured clone does. `refuse` fails
  * every open, as a browser with site data blocked does; `failWrites` aborts
- * every write, as a full disk does.
+ * every write, as a full disk does. Each connection is kept (`connections`),
+ * with its `versionchange` handler; a closed one refuses every transaction,
+ * as a browser's does.
  */
 export type MemoryIndexedDb = {
   factory: IDBFactory;
   /** The databases, by name: each object store's entries. */
   databases: Map<string, Map<string, Map<string, unknown>>>;
+  /** Every connection opened, in order. */
+  connections: (IDBDatabase & { closed: boolean })[];
   refuse: boolean;
   failWrites: boolean;
 };
@@ -42,16 +46,22 @@ export function memoryIndexedDb(): MemoryIndexedDb {
     };
   }
 
+  const connections: (IDBDatabase & { closed: boolean })[] = [];
   function database(name: string, stores: Map<string, Map<string, unknown>>): IDBDatabase {
-    return {
+    const db = {
       name,
+      closed: false,
+      onversionchange: null,
       objectStoreNames: { contains: (store: string) => stores.has(store) },
       createObjectStore: (store: string) => {
         stores.set(store, new Map());
         return {};
       },
-      close: () => undefined,
+      close: () => {
+        db.closed = true;
+      },
       transaction: (names: string | string[], mode: IDBTransactionMode = "readonly") => {
+        if (db.closed) throw new DOMException("The database connection is closing.", "InvalidStateError");
         const tx = { oncomplete: null, onerror: null, onabort: null, error: null } as unknown as {
           oncomplete: (() => void) | null;
           onerror: (() => void) | null;
@@ -115,7 +125,10 @@ export function memoryIndexedDb(): MemoryIndexedDb {
         later(settle);
         return tx as unknown as IDBTransaction;
       },
-    } as unknown as IDBDatabase;
+    };
+    const made = db as unknown as IDBDatabase & { closed: boolean };
+    connections.push(made);
+    return made;
   }
 
   const factory = {
@@ -159,6 +172,7 @@ export function memoryIndexedDb(): MemoryIndexedDb {
   return {
     factory,
     databases,
+    connections,
     get refuse() {
       return state.refuse;
     },

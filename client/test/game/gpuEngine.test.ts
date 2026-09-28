@@ -7,7 +7,6 @@ import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import { EffectFallbacks } from "@babylonjs/core/Materials/effectFallbacks.js";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
 import { ThinWebGPUEngine } from "@babylonjs/core/Engines/thinWebGPUEngine.js";
-import { WEBGPU_FETCH_MS } from "../../src/game/engineChoice.js";
 import { catchTranslationFailures, mipEveryLayer, reportUnfetched, watchPipelines, watchWebGpu } from "../../src/game/gpuEngine.js";
 
 afterEach(() => {
@@ -340,20 +339,20 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     }
   });
 
-  it("wraps the shader lookup's preparation, installed first on every engine the maker makes (the source of the one maker)", () => {
+  it("wraps the shader lookup's preparation, installed first on every engine the maker makes, and hands the engine over only once its sources are in (the source of the one maker)", () => {
     // The wrap binds whatever preparation it finds, so the lookup goes on
     // first and a translation it runs is caught like Babylon's own.
     const src = readFileSync(new URL("../../src/game/gpuEngine.ts", import.meta.url), "utf8");
-    const start = src.slice(src.indexOf("  const start = async (): Promise<WebGPUEngine> => {"), src.indexOf("    await engine.initAsync("));
-    expect(start.indexOf("      lookUpShaders(engine, {")).toBeGreaterThan(0);
-    expect(start.indexOf("    catchTranslationFailures(engine);")).toBeGreaterThan(start.indexOf("      lookUpShaders(engine, {"));
-    // Translators it cannot fetch are told to the engine's watcher, not thrown.
-    expect(start).toContain("        unfetched: () => reportUnfetched(engine),");
-    // A stage not found and the idle prefetch start them through one
-    // function: the game's loader, with the fetch's budget, 10 s.
-    expect(start).toContain("        translators: async () => handTranslators(engine, await loadTranslators()),");
-    expect(src).toContain("    const attempt = startWithinBudget(WEBGPU_FETCH_MS);");
-    expect(WEBGPU_FETCH_MS).toBe(10_000);
+    const start = src.slice(src.indexOf("  const start = async (): Promise<WebGPUEngine> => {"), src.indexOf("    return engine;\n  };"));
+    const install = '    const looking = lookUpShaders(engine, { mode: options.lookup ?? "on", sources: options.sources });';
+    expect(start.indexOf(install)).toBeGreaterThan(0);
+    expect(start.indexOf("    catchTranslationFailures(engine);")).toBeGreaterThan(start.indexOf(install));
+    // The translators handed to Babylon and started, and the sources in,
+    // before the engine is handed over: no preparation then waits.
+    expect(start).toContain(
+      "    await engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl });\n" +
+        "    await engine.prepareGlslangAndTintAsync();\n    await looking;\n",
+    );
   });
 
   it("is still needed: Babylon still drops the rejection (a canary on the installed engine)", () => {

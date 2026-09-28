@@ -7,12 +7,19 @@ import { fileURLToPath } from "node:url";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
 import { WebGPUTintWASM } from "@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js";
 import { WebGPUPipelineContext } from "@babylonjs/core/Engines/WebGPU/webgpuPipelineContext.js";
+import { WebGPUShaderProcessorGLSL } from "@babylonjs/core/Engines/WebGPU/webgpuShaderProcessorsGLSL.js";
+import { checkNonFloatVertexBuffers } from "@babylonjs/core/Buffers/buffer.nonFloatVertexBuffers.js";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import { Observable } from "@babylonjs/core/Misc/observable.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import { parseShaderLookup } from "../../src/game/engineChoice.js";
-import { catchTranslationFailures, disposeHalfMade, handTranslators } from "../../src/game/gpuEngine.js";
+import { catchTranslationFailures, disposeHalfMade, type Translators } from "../../src/game/gpuEngine.js";
 import {
   LOOKUP_FORMAT,
+  WGSL_HOLD_MAX_MS,
+  WGSL_HOLD_QUIET_MS,
+  WGSL_SOURCES_MS,
   buildSalt,
   lookUpShaders,
   releaseShaderLookup,
@@ -24,7 +31,7 @@ import {
   type ShaderLookupReport,
   type WgslSource,
 } from "../../src/game/shaderLookup.js";
-import { openWgslStore, wgslStoreName } from "../../src/game/wgslStore.js";
+import { loadWgslStore } from "../../src/game/wgslStore.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { memoryIndexedDb } from "./helpers/memoryIndexedDb.js";
 
@@ -45,17 +52,13 @@ afterEach(() => {
 
 /**
  * A WebGPU engine with Babylon 9.18's own methods (its prototype's) on a
- * stand-in device, and two stand-in translators: the first returns what it
- * was handed, the second writes a WGSL naming it. The device refuses a
- * module whose code `refuse` names, into the innermost error scope where one
- * is open, else as an uncaptured error, as WebGPU does.
+ * stand-in device that keeps the code of each module it makes, and two
+ * stand-in translators: the first returns what it was handed, the second
+ * writes a WGSL naming it.
  */
-function harness(refuse: (code: string) => boolean = () => false) {
+function harness() {
   const modules: string[] = [];
   const compiled: [string, string][] = [];
-  const uncaptured: string[] = [];
-  const scopes: string[][] = [];
-  const counts = { converted: 0 };
   const engine = Object.create(WebGPUEngine.prototype) as WebGPUEngine;
   Object.assign(engine, {
     _isDisposed: false,
@@ -66,21 +69,11 @@ function harness(refuse: (code: string) => boolean = () => false) {
     _compiledEffects: {},
     onBeforeShaderCompilationObservable: new Observable(),
     onAfterShaderCompilationObservable: new Observable(),
-    onEndFrameObservable: new Observable(),
     _device: {
       createShaderModule: ({ code }: { code: string }) => {
         modules.push(code);
-        const bad = refuse(code);
-        if (bad) {
-          const error = `refused: ${code.slice(0, 40)}`;
-          const scope = scopes[scopes.length - 1];
-          if (scope !== undefined) scope.push(error);
-          else uncaptured.push(error);
-        }
-        return { code, getCompilationInfo: () => Promise.resolve({ messages: bad ? [{ type: "error" }] : [] }) };
+        return { code };
       },
-      pushErrorScope: () => void scopes.push([]),
-      popErrorScope: () => Promise.resolve(scopes.pop()?.[0] ?? null),
     },
   });
   const translators = {
@@ -90,68 +83,70 @@ function harness(refuse: (code: string) => boolean = () => false) {
         return { spirvOf: text };
       },
     },
-    twgsl: {
-      convertSpirV2WGSL: (code: { spirvOf: string }) => {
-        counts.converted++;
-        return `// WGSL of\n${code.spirvOf}`;
-      },
-    },
+    twgsl: { convertSpirV2WGSL: (code: { spirvOf: string }) => `// WGSL of\n${code.spirvOf}` },
   };
-  return { engine, modules, compiled, uncaptured, translators, counts, scopes };
+  return { engine, modules, compiled, translators };
 }
 
 type Harness = ReturnType<typeof harness>;
 
-/** A source in memory, recording what it keeps and drops. */
-function memorySource(entries: Record<string, string> = {}) {
+/** Hands `translators` to Babylon on `engine` as the engine's maker does,
+ * before the engine is handed over: after it, Babylon's own path translates
+ * in the call. */
+async function loadTranslators(engine: WebGPUEngine, translators: Translators): Promise<void> {
+  const own = engine as unknown as { _glslangOptions: unknown; _twgslOptions: unknown };
+  own._glslangOptions = { glslang: Promise.resolve(translators.glslang) };
+  own._twgslOptions = { twgsl: translators.twgsl };
+  await engine.prepareGlslangAndTintAsync();
+}
+
+/** A source in memory, named, recording what it keeps. */
+function memorySource(entries: Record<string, string> = {}, name = "memory", salt = SALT) {
   const map = new Map(Object.entries(entries));
   const puts: string[] = [];
-  const drops: string[] = [];
+  const events: string[] = [];
   const source: WgslSource = {
-    has: (key) => map.has(key),
-    get: (key) => Promise.resolve(map.get(key) ?? null),
+    name,
+    salt,
+    get: (key) => map.get(key) ?? null,
     put: (key, wgsl) => {
       puts.push(key);
       map.set(key, wgsl);
     },
-    drop: (key) => {
-      drops.push(key);
-      map.delete(key);
-    },
+    settle: () => void events.push("settle"),
+    close: () => void events.push("close"),
   };
-  return { source, map, puts, drops };
+  return { source, map, puts, events };
 }
 
-/** The lookup on `h`'s engine, with `sources`, starting `h`'s translators
- * through the game's hand-over; the calls of that start counted. */
-function lookUp(h: Harness, sources: readonly WgslSource[], mode: "on" | "record" | "verify" = "on", report?: ShaderLookupReport) {
-  const started = { count: 0 };
-  const made = lookUpShaders(h.engine, {
-    mode,
-    salt: SALT,
-    sources,
-    report: report ?? newLookupReport(mode, SALT),
-    translators: async () => {
-      started.count++;
-      await handTranslators(h.engine, h.translators);
-    },
-  });
-  return { report: made as ShaderLookupReport, started };
+/** The lookup on `h`'s engine with `sources`, and the engine as its maker
+ * hands it over: translators loaded, the sources in. */
+async function lookUp(h: Harness, sources: readonly WgslSource[], mode: "on" | "record" | "verify" = "on", report?: ShaderLookupReport) {
+  const made = report ?? newLookupReport(mode, SALT);
+  const ready = lookUpShaders(h.engine, { mode, salt: SALT, sources: () => Promise.resolve(sources), report: made });
+  await loadTranslators(h.engine, h.translators);
+  await ready;
+  return made;
 }
 
-/** Prepares one effect on `h`'s engine as Babylon's `Effect` does. */
+/**
+ * Prepares one effect on `h`'s engine as Babylon's `Effect` does, and what
+ * had happened by the time the call returned, before anything was awaited:
+ * a preparation never waits (C1 in the module's comment).
+ */
 async function prepare(
   h: Harness,
-  opts: { vertex?: string; fragment?: string; defines?: string | null; language?: number; raw?: boolean; context?: object } = {},
+  opts: { vertex?: string; fragment?: string; defines?: string | null; language?: number; raw?: boolean; context?: WebGPUPipelineContext; processing?: object } = {},
 ) {
-  const processing = opts.context ?? { shaderLanguage: opts.language ?? 0 };
-  const context = new WebGPUPipelineContext(processing as never, h.engine);
+  const context = opts.context ?? new WebGPUPipelineContext((opts.processing ?? { shaderLanguage: opts.language ?? 0 }) as never, h.engine);
   context._name = "test-effect";
   const events: string[] = [];
   const before = h.engine.onBeforeShaderCompilationObservable.add(() => void events.push("before"));
   const after = h.engine.onAfterShaderCompilationObservable.add(() => void events.push("after"));
+  let inTheCall: string[] = [];
+  let stagesInTheCall: unknown;
   try {
-    await (h.engine as unknown as { _preparePipelineContextAsync(...args: unknown[]): Promise<void> })._preparePipelineContextAsync(
+    const pending = (h.engine as unknown as { _preparePipelineContextAsync(...args: unknown[]): Promise<void> })._preparePipelineContextAsync(
       context,
       opts.vertex ?? VERTEX,
       opts.fragment ?? FRAGMENT,
@@ -164,23 +159,35 @@ async function prepare(
       "",
       () => void events.push("ready"),
     );
+    inTheCall = [...events];
+    stagesInTheCall = context.stages;
+    await pending;
   } finally {
     h.engine.onBeforeShaderCompilationObservable.remove(before);
     h.engine.onAfterShaderCompilationObservable.remove(after);
   }
-  return { context, events };
+  return { context, events, inTheCall, stagesInTheCall };
 }
 
-/** Babylon's own preparation of the same effect, its translators handed over first. */
+/** Babylon's own preparation of the same effect, its translators loaded. */
 async function babylons(opts: Parameters<typeof prepare>[1] = {}) {
   const h = harness();
-  await handTranslators(h.engine, h.translators);
+  await loadTranslators(h.engine, h.translators);
   const { context } = await prepare(h, opts);
   return { h, context };
 }
 
 const keyOf = (stage: "vertex" | "fragment", code: string, defines: string | null = DEFINES): string =>
   stageKey(SALT, stage, uniformityOff(code), translatorInput(code, defines));
+
+/** Every stage `h` translates, kept under its key: what a first load leaves. */
+async function translatedBy(opts: Parameters<typeof prepare>[1] = {}) {
+  const kept = memorySource();
+  const first = harness();
+  await lookUp(first, [kept.source]);
+  await prepare(first, opts);
+  return { kept, first };
+}
 
 describe("the WebGPU shader lookup", () => {
   it("hands the first translator exactly the text Babylon's own path hands it, and makes the same modules from what it translates", async () => {
@@ -194,7 +201,7 @@ describe("the WebGPU shader lookup", () => {
     for (const opts of cases) {
       const own = await babylons(opts);
       const h = harness();
-      lookUp(h, []);
+      await lookUp(h, []);
       const { context } = await prepare(h, opts);
       expect(h.compiled, JSON.stringify(opts)).toEqual(own.h.compiled);
       expect(h.modules, JSON.stringify(opts)).toEqual(own.h.modules);
@@ -203,52 +210,79 @@ describe("the WebGPU shader lookup", () => {
     }
     // A stage that turns uniformity analysis off gets Babylon's diagnostic.
     const h = harness();
-    lookUp(h, []);
+    await lookUp(h, []);
     await prepare(h, { fragment: `#define DISABLE_UNIFORMITY_ANALYSIS\n${FRAGMENT}` });
     expect(h.modules[0]?.startsWith("// WGSL of")).toBe(true);
     expect(h.modules[1]?.startsWith("diagnostic(off, derivative_uniformity);\n// WGSL of")).toBe(true);
   });
 
-  it("finds both stages: starts and calls no translator, and makes exactly two shader modules", async () => {
-    const shared = memorySource();
-    const first = harness();
-    lookUp(first, [shared.source]);
-    await prepare(first);
+  it("prepares in the call that asks, never waiting: ready, with its stages set, before the call returns, on a hit and on a miss", async () => {
+    const miss = harness();
+    const kept = memorySource();
+    await lookUp(miss, [kept.source]);
+    const missed = await prepare(miss);
+    expect(missed.inTheCall).toEqual(["before", "after", "ready"]);
+    expect(missed.stagesInTheCall).toBe(missed.context.stages);
+    expect(missed.stagesInTheCall).not.toBe(undefined);
+    const hit = harness();
+    await lookUp(hit, [kept.source]);
+    const found = await prepare(hit);
+    expect(hit.compiled).toEqual([]);
+    expect(found.inTheCall).toEqual(["before", "after", "ready"]);
+    expect(found.stagesInTheCall).toBe(found.context.stages);
+  });
+
+  it("prepares a context that already has stages again, in the call, and leaves the new stages on it, on a hit and on a miss", async () => {
+    const vertexInt = `${VERTEX}\nlayout(location = 1) in uvec4 _int_matricesIndices_;`;
+    // Both variants translated once: every stage of them found after.
+    const { kept, first: translating } = await translatedBy();
+    await prepare(translating, { vertex: vertexInt });
+    for (const store of [memorySource(), kept]) {
+      const h = harness();
+      await lookUp(h, [store.source]);
+      const first = await prepare(h);
+      const old = first.context.stages;
+      const again = await prepare(h, { context: first.context, vertex: vertexInt });
+      expect(again.context).toBe(first.context);
+      expect(again.inTheCall).toEqual(["before", "after", "ready"]);
+      expect(again.stagesInTheCall).not.toBe(old);
+      expect(again.stagesInTheCall).toBe(first.context.stages);
+      const stages = first.context.stages as unknown as { vertexStage: { module: { code: string } } };
+      expect(stages.vertexStage.module.code).toContain("_int_matricesIndices_");
+      expect(h.compiled.length).toBe(store === kept ? 0 : 3);
+    }
+  });
+
+  it("finds both stages: calls no translator, and makes exactly two shader modules, counting the source that had them", async () => {
+    const { kept, first } = await translatedBy();
     const h = harness();
-    const { report, started } = lookUp(h, [shared.source]);
+    const report = await lookUp(h, [kept.source]);
     const { context, events } = await prepare(h);
-    expect(started.count).toBe(0);
     expect(h.compiled).toEqual([]);
-    expect(h.counts.converted).toBe(0);
-    expect((h.engine as unknown as { _glslang: unknown })._glslang).toBe(null);
-    expect(h.modules).toHaveLength(2);
-    expect(h.modules).toEqual([...shared.map.values()]);
+    expect(h.modules).toEqual(first.modules);
     expect(context.isReady).toBe(true);
     expect(events).toEqual(["before", "after", "ready"]);
-    expect([report.hits, report.misses, report.rejected]).toEqual([2, 0, 0]);
-    expect(h.uncaptured).toEqual([]);
+    expect([report.hits, report.misses]).toEqual([2, 0]);
+    expect(report.hitsBySource).toEqual({ memory: 2 });
   });
 
   it("translates the one stage no source has, and only it", async () => {
-    const full = memorySource();
-    const first = harness();
-    lookUp(first, [full.source]);
-    await prepare(first);
-    const vertexOnly = memorySource({ [keyOf("vertex", VERTEX)]: full.map.get(keyOf("vertex", VERTEX)) as string });
+    const { kept, first } = await translatedBy();
+    const vertexOnly = memorySource({ [keyOf("vertex", VERTEX)]: kept.map.get(keyOf("vertex", VERTEX)) as string });
     const h = harness();
-    const { report, started } = lookUp(h, [vertexOnly.source]);
+    const report = await lookUp(h, [vertexOnly.source]);
     await prepare(h);
-    expect(started.count).toBe(1);
     expect(h.compiled.map(([stage]) => stage)).toEqual(["fragment"]);
     expect(h.modules).toEqual(first.modules);
     expect([report.hits, report.misses]).toEqual([1, 1]);
   });
 
-  it("keeps each stage it translates, under the stage's key, in every source", async () => {
+  it("keeps each stage it translates, under the stage's key, in every source that takes writes", async () => {
     const one = memorySource();
-    const two = memorySource();
+    const two = memorySource({}, "two");
+    const shipped: WgslSource = { name: "shipped", salt: SALT, get: () => null };
     const h = harness();
-    lookUp(h, [one.source, two.source]);
+    await lookUp(h, [shipped, one.source, two.source]);
     await prepare(h);
     const keys = [keyOf("vertex", VERTEX), keyOf("fragment", FRAGMENT)];
     expect(one.puts).toEqual(keys);
@@ -256,140 +290,134 @@ describe("the WebGPU shader lookup", () => {
     expect([one.map.get(keys[0] as string), one.map.get(keys[1] as string)]).toEqual(h.modules);
   });
 
-  it("asks its sources in order, and takes the first that has the stage", async () => {
+  it("asks its sources in order, takes the first that has the stage, and names it", async () => {
     const key = keyOf("vertex", VERTEX);
-    const first = memorySource({ [key]: "// first" });
-    const second = memorySource({ [key]: "// second", [keyOf("fragment", FRAGMENT)]: "// second's fragment" });
+    const first = memorySource({ [key]: "// first" }, "first");
+    const second = memorySource({ [key]: "// second", [keyOf("fragment", FRAGMENT)]: "// second's fragment" }, "second");
     const h = harness();
-    lookUp(h, [first.source, second.source]);
+    const report = await lookUp(h, [first.source, second.source], "record");
     await prepare(h);
     expect(h.modules).toEqual(["// first", "// second's fragment"]);
     expect(h.compiled).toEqual([]);
+    expect(report.hitsBySource).toEqual({ first: 1, second: 1 });
+    expect(report.effects[0]?.stages.map((s) => s.from)).toEqual(["first", "second"]);
   });
 
-  it("drops a stored stage the device refuses and translates it afresh, once, with no uncaptured error", async () => {
-    const good = harness();
-    lookUp(good, []);
-    await prepare(good);
-    const stored = memorySource({ [keyOf("vertex", VERTEX)]: "corrupt WGSL", [keyOf("fragment", FRAGMENT)]: good.modules[1] as string });
-    const h = harness((code) => code.startsWith("corrupt"));
-    const { report } = lookUp(h, [stored.source]);
-    const { context, events } = await prepare(h);
-    expect(stored.drops).toEqual([keyOf("vertex", VERTEX)]);
-    expect(h.compiled.map(([stage]) => stage)).toEqual(["vertex"]);
-    expect(h.modules).toEqual(["corrupt WGSL", good.modules[1], good.modules[0], good.modules[1]]);
-    expect(h.uncaptured).toEqual([]);
-    expect(stored.map.get(keyOf("vertex", VERTEX))).toBe(good.modules[0]);
-    expect([report.hits, report.misses, report.rejected]).toEqual([1, 1, 1]);
-    expect(context.isReady).toBe(true);
-    expect(events).toEqual(["before", "after", "before", "after", "ready"]);
-  });
-
-  it("leaves a fresh translation the device refuses to its uncaptured error, as without the lookup: no second retry", async () => {
-    const stored = memorySource({ [keyOf("vertex", VERTEX)]: "corrupt WGSL" });
-    const h = harness((code) => code.startsWith("corrupt") || code.includes("vertex:test"));
-    lookUp(h, [stored.source]);
+  it("never asks a source made for another salt, and lets it go", async () => {
+    const { kept } = await translatedBy();
+    const other = memorySource(Object.fromEntries(kept.map), "shipped", "dayhike-wgsl/1|babylon=other");
+    vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    const h = harness();
+    const report = await lookUp(h, [other.source]);
     await prepare(h);
-    expect(h.modules).toHaveLength(4);
-    expect(h.uncaptured).toHaveLength(1);
-    expect(h.compiled.map(([stage]) => stage)).toEqual(["fragment", "vertex"]);
+    expect(h.compiled.map(([stage]) => stage)).toEqual(["vertex", "fragment"]);
+    expect(report.hits).toBe(0);
+    expect(other.events).toEqual(["close"]);
   });
 
-  it("with no source (a store the browser refused) translates every stage, as without the lookup", async () => {
+  it("translates a stage two effects share once, while the start's WGSL is held", async () => {
+    const h = harness();
+    const report = await lookUp(h, []);
+    await prepare(h);
+    await prepare(h, { fragment: `${FRAGMENT}\n// another fragment` });
+    expect(h.compiled.map(([stage]) => stage)).toEqual(["vertex", "fragment", "fragment"]);
+    expect(report.hitsBySource).toEqual({ page: 1 });
+  });
+
+  it("with no source translates every stage, as without the lookup", async () => {
     const own = await babylons();
-    const refused: (() => readonly WgslSource[] | Promise<readonly WgslSource[]>)[] = [
-      () => [],
-      () => Promise.resolve([]),
-      () => Promise.reject(new Error("refused")),
-    ];
-    for (const sources of refused) {
+    const factories: (() => Promise<readonly WgslSource[]>)[] = [() => Promise.resolve([]), () => Promise.reject(new Error("refused"))];
+    for (const sources of factories) {
       const h = harness();
-      lookUpShaders(h.engine, {
-        mode: "on",
-        salt: SALT,
-        sources: sources(),
-        report: newLookupReport("on", SALT),
-        translators: () => handTranslators(h.engine, h.translators),
-      });
+      const ready = lookUpShaders(h.engine, { mode: "on", salt: SALT, sources, report: newLookupReport("on", SALT) });
+      await loadTranslators(h.engine, h.translators);
+      await ready;
       await prepare(h);
       expect(h.compiled).toEqual(own.h.compiled);
       expect(h.modules).toEqual(own.h.modules);
     }
   });
 
+  it("waits for its sources at most 2 s: what has not arrived by then is not there, and a source that lands later is let go", async () => {
+    expect(WGSL_SOURCES_MS).toBe(2_000);
+    vi.useFakeTimers();
+    const late = memorySource();
+    let land: (sources: readonly WgslSource[]) => void = () => undefined;
+    const h = harness();
+    const ready = lookUpShaders(h.engine, { mode: "on", salt: SALT, sources: () => new Promise((r) => (land = r)), report: newLookupReport("on", SALT) });
+    let done = false;
+    void ready.then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(done).toBe(true);
+    land([late.source]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(late.events).toEqual(["close"]);
+    // A source in, whose entries are still arriving: waited for within the
+    // same 2 s, then asked for what it has.
+    const slow: WgslSource = { ...memorySource().source, ready: new Promise(() => undefined) };
+    const partly = harness();
+    const readyPartly = lookUpShaders(partly.engine, { mode: "on", salt: SALT, sources: () => Promise.resolve([slow]), report: newLookupReport("on", SALT) });
+    let partlyDone = false;
+    void readyPartly.then(() => (partlyDone = true));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(partlyDone).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(partlyDone).toBe(true);
+  });
+
+  it("lets the start's WGSL go after 30 s without a preparation, or 120 s after the engine stood, whichever comes first", async () => {
+    expect([WGSL_HOLD_QUIET_MS, WGSL_HOLD_MAX_MS]).toEqual([30_000, 120_000]);
+    vi.useFakeTimers();
+    const quiet = memorySource();
+    const h = harness();
+    await lookUp(h, [quiet.source]);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(quiet.events).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(quiet.events).toEqual(["settle"]);
+
+    // A source that takes no writes, so that only the page's own held
+    // translations can spare a translation.
+    const busy = { events: [] as string[] };
+    const busySource: WgslSource = { name: "busy", salt: SALT, get: () => null, settle: () => void busy.events.push("settle") };
+    const b = harness();
+    await lookUp(b, [busySource]);
+    for (let s = 0; s < 5; s++) {
+      await vi.advanceTimersByTimeAsync(20_000);
+      await prepare(b, { defines: `#define STEP${s}` });
+    }
+    expect(busy.events).toEqual([]);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(busy.events).toEqual(["settle"]);
+    // After it, a stage two effects share is translated each time, the
+    // translators being loaded.
+    const compiledBefore = b.compiled.length;
+    await prepare(b, { defines: "#define LATER" });
+    await prepare(b, { defines: "#define LATER", fragment: `${FRAGMENT}\n// another` });
+    expect(b.compiled.length - compiledBefore).toBe(4);
+  });
+
   it("notifies the compile observables on a hit as on a miss: once each, before the effect is ready", async () => {
-    const shared = memorySource();
+    const { kept } = await translatedBy();
     const miss = harness();
-    lookUp(miss, [shared.source]);
+    await lookUp(miss, []);
     const missed = await prepare(miss);
     const hit = harness();
-    lookUp(hit, [shared.source]);
+    await lookUp(hit, [kept.source]);
     const found = await prepare(hit);
     const own = harness();
-    await handTranslators(own.engine, own.translators);
+    await loadTranslators(own.engine, own.translators);
     const babylon = await prepare(own);
     expect(missed.events).toEqual(["before", "after", "ready"]);
     expect(found.events).toEqual(missed.events);
     expect(babylon.events).toEqual(missed.events);
   });
 
-  it("starts the translators at the first stage not found, once for stages at once, and again after a start that failed", async () => {
-    const h = harness();
-    let fail = true;
-    let starts = 0;
-    vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
-    lookUpShaders(h.engine, {
-      mode: "on",
-      salt: SALT,
-      sources: [],
-      report: newLookupReport("on", SALT),
-      translators: async () => {
-        starts++;
-        if (fail) throw new Error("the WebGPU translators did not load: glslang");
-        await handTranslators(h.engine, h.translators);
-      },
-    });
-    await prepare(h);
-    expect(h.modules).toEqual([]);
-    fail = false;
-    await Promise.all([prepare(h), prepare(h, { defines: "#define OTHER" })]);
-    expect(starts).toBe(2);
-    expect(h.modules).toHaveLength(4);
-  });
-
-  it("tells the page, once, of translators that cannot be fetched for a stage not found, and never the failure wrap: the effect is left unready", async () => {
-    const h = harness();
-    const told: unknown[] = [];
-    const warned = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
-    const unfetched = new Error("the WebGPU translators did not load in 10000 ms");
-    lookUpShaders(h.engine, {
-      mode: "on",
-      salt: SALT,
-      sources: [],
-      report: newLookupReport("on", SALT),
-      translators: () => Promise.reject(unfetched),
-      unfetched: (error) => void told.push(error),
-    });
-    catchTranslationFailures(h.engine);
-    const wrapped = vi.spyOn(Logger, "Error").mockImplementation(() => undefined);
-    const effectErrors: unknown[] = [];
-    h.engine.onEffectErrorObservable = new Observable();
-    h.engine.onEffectErrorObservable.add((e) => void effectErrors.push(e));
-    const first = await prepare(h);
-    const second = await prepare(h, { raw: true });
-    const third = await prepare(h, { defines: "#define OTHER" });
-    expect(told).toEqual([unfetched]);
-    expect(warned).toHaveBeenCalledTimes(1);
-    expect(wrapped).not.toHaveBeenCalled();
-    expect(effectErrors).toEqual([]);
-    expect([first.events, second.events, third.events]).toEqual([[], [], []]);
-    expect([first.context.isReady, third.context.isReady]).toEqual([false, false]);
-    expect(h.modules).toEqual([]);
-  });
-
   it("gives a translation that throws to the failure handling, as without the lookup", async () => {
     const h = harness();
-    lookUp(h, []);
+    await lookUp(h, []);
     h.translators.glslang.compileGLSL = () => {
       throw new Error("GLSL compilation failed");
     };
@@ -401,131 +429,51 @@ describe("the WebGPU shader lookup", () => {
     expect(logged).toHaveBeenCalledWith("WebGPU shader translation failed: GLSL compilation failed");
   });
 
-  it("starts the translators once the page is idle after the engine's first frame, and only then", async () => {
-    const idle: (() => void)[] = [];
-    vi.stubGlobal("requestIdleCallback", (run: () => void) => void idle.push(run));
-    const h = harness();
-    const { started } = lookUp(h, []);
-    expect(idle).toHaveLength(0);
-    h.engine.onEndFrameObservable.notifyObservers(h.engine);
-    h.engine.onEndFrameObservable.notifyObservers(h.engine);
-    expect(started.count).toBe(0);
-    expect(idle).toHaveLength(1);
-    idle[0]?.();
-    await Promise.resolve();
-    expect(started.count).toBe(1);
-    // The first stage not found then takes the same start.
-    await prepare(h);
-    expect(started.count).toBe(1);
-    expect(h.compiled).toHaveLength(2);
-  });
-
-  it("fails a prefetch silently: nothing told, logged or kept; the next stage not found starts the translators again, and its failure is told", async () => {
-    const idle: (() => void)[] = [];
-    vi.stubGlobal("requestIdleCallback", (run: () => void) => void idle.push(run));
-    const warned = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
-    const h = harness();
-    const told: unknown[] = [];
-    let starts = 0;
-    lookUpShaders(h.engine, {
-      mode: "on",
-      salt: SALT,
-      sources: [],
-      report: newLookupReport("on", SALT),
-      translators: async () => {
-        starts++;
-        throw new Error("the WebGPU translators did not load in 10000 ms");
-      },
-      unfetched: (error) => void told.push(error),
-    });
-    h.engine.onEndFrameObservable.notifyObservers(h.engine);
-    idle[0]?.();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect([starts, told.length, warned.mock.calls.length]).toEqual([1, 0, 0]);
-    // A miss starts them again; failing there, it is told.
-    await prepare(h);
-    expect([starts, told.length, warned.mock.calls.length]).toEqual([2, 1, 1]);
-    // A miss after a silent prefetch that failed, with the network back.
-    const again = harness();
-    let back = 0;
-    const idleAgain: (() => void)[] = [];
-    vi.stubGlobal("requestIdleCallback", (run: () => void) => void idleAgain.push(run));
-    lookUpShaders(again.engine, {
-      mode: "on",
-      salt: SALT,
-      sources: [],
-      report: newLookupReport("on", SALT),
-      translators: async () => {
-        back++;
-        if (back === 1) throw new Error("the WebGPU translators did not load in 10000 ms");
-        await handTranslators(again.engine, again.translators);
-      },
-      unfetched: (error) => void told.push(error),
-    });
-    again.engine.onEndFrameObservable.notifyObservers(again.engine);
-    idleAgain[0]?.();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const { events } = await prepare(again);
-    expect(back).toBe(2);
-    expect(events).toEqual(["before", "after", "ready"]);
-    expect(told).toHaveLength(1);
-  });
-
-  it("leaves a native WGSL effect to Babylon, and a raw GLSL one too once it has started the translators", async () => {
+  it("leaves a native WGSL effect and a raw GLSL one to Babylon, prepared in the call", async () => {
     const own = harness();
     const wgsl = await prepare(own, { language: 1, vertex: "// vertex wgsl", fragment: "// fragment wgsl" });
     const h = harness();
-    const { started, report } = lookUp(h, []);
+    const report = await lookUp(h, []);
     const looked = await prepare(h, { language: 1, vertex: "// vertex wgsl", fragment: "// fragment wgsl" });
-    expect(started.count).toBe(0);
     expect(h.modules).toEqual(own.modules);
     expect(looked.context.sources).toEqual(wgsl.context.sources);
+    expect(looked.inTheCall).toEqual(["before", "after", "ready"]);
 
     const ownRaw = await babylons({ raw: true });
     const raw = harness();
-    const rawLookup = lookUp(raw, []);
-    await prepare(raw, { raw: true });
-    expect(rawLookup.started.count).toBe(1);
+    const rawReport = await lookUp(raw, []);
+    const rawDone = await prepare(raw, { raw: true });
     expect(raw.compiled).toEqual(ownRaw.h.compiled);
     expect(raw.modules).toEqual(ownRaw.h.modules);
-    expect([report.hits, report.misses, rawLookup.report.hits, rawLookup.report.misses]).toEqual([0, 0, 0, 0]);
+    expect(rawDone.inTheCall).toEqual(["ready"]);
+    expect([report.hits, report.misses, rawReport.hits, rawReport.misses]).toEqual([0, 0, 0, 0]);
   });
 
-  it("ends a preparation whose engine was disposed meanwhile without making a module or calling it ready", async () => {
-    const h = harness();
-    let answer: (value: string | null) => void = () => undefined;
-    const key = keyOf("vertex", VERTEX);
-    const slow: WgslSource = {
-      has: (k) => k === key,
-      get: () => new Promise((r) => (answer = r)),
-      put: () => undefined,
-      drop: () => undefined,
-    };
-    lookUp(h, [slow]);
-    const pending = prepare(h);
-    await new Promise((r) => setTimeout(r, 0));
-    (h.engine as unknown as { _isDisposed: boolean })._isDisposed = true;
-    answer("// vertex");
-    const { events, context } = await pending;
-    expect(h.modules).toEqual([]);
-    expect(events).toEqual([]);
-    expect(context.isReady).toBe(false);
-  });
-
-  it("with ?wgsl=verify translates every stage found and counts the ones that differ, drawing with what it found", async () => {
-    const good = harness();
-    lookUp(good, []);
-    await prepare(good);
-    const stored = memorySource({ [keyOf("vertex", VERTEX)]: good.modules[0] as string, [keyOf("fragment", FRAGMENT)]: "// a different WGSL" });
+  it("with ?wgsl=verify compares every stage with what Babylon's own path makes of the same effect, and counts the ones that differ", async () => {
+    const { kept, first } = await translatedBy();
+    kept.map.set(keyOf("fragment", FRAGMENT), "// a different WGSL");
     const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
     const h = harness();
-    const { report } = lookUp(h, [stored.source], "verify");
+    const report = await lookUp(h, [kept.source], "verify");
     await prepare(h);
-    expect(h.compiled.map(([stage]) => stage)).toEqual(["vertex", "fragment"]);
     expect(report.differences).toBe(1);
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(h.modules).toEqual([good.modules[0], "// a different WGSL"]);
+    // It draws with what it found, and Babylon's check makes no module.
+    expect(h.modules).toEqual([first.modules[0], "// a different WGSL"]);
     expect([report.hits, report.misses]).toEqual([2, 0]);
+
+    // A text for glslang put together otherwise than Babylon's own path puts
+    // it is a difference too, though the WGSL agrees with itself.
+    const drifted = harness();
+    const driftReport = await lookUp(drifted, [], "verify");
+    const composeOwn = WebGPUEngine.prototype as unknown as { _compileShaderToSpirV(s: string, t: string, d: string, v: string): unknown };
+    Object.assign(drifted.engine, {
+      _compileShaderToSpirV: (source: string, type: string, defines: string, version: string) =>
+        composeOwn._compileShaderToSpirV.call(drifted.engine, source, type, `${defines}\n#define DRIFT`, version),
+    });
+    await prepare(drifted);
+    expect(driftReport.differences).toBe(2);
+    expect(drifted.modules).toHaveLength(2);
   });
 
   it("with ?wgsl=record keeps every effect's stages, texts and times, one object for a measurement to read", async () => {
@@ -534,14 +482,15 @@ describe("the WebGPU shader lookup", () => {
     const shared = memorySource();
     const report = newLookupReport("record", SALT);
     const first = harness();
-    lookUp(first, [shared.source], "record", report);
+    await lookUp(first, [shared.source], "record", report);
     const processing = first.engine._getShaderProcessingContext(0, false) as object;
-    await prepare(first, { context: processing });
+    await prepare(first, { processing });
     const second = harness();
-    lookUp(second, [shared.source], "record", report);
+    await lookUp(second, [shared.source], "record", report);
     await prepare(second);
-    expect(Object.keys(report).sort()).toEqual(["differences", "download", "effects", "hits", "misses", "mode", "rejected", "salt", "translateMs"]);
-    expect([report.mode, report.salt, report.hits, report.misses, report.rejected, report.differences]).toEqual(["record", SALT, 2, 2, 0, 0]);
+    expect(Object.keys(report).sort()).toEqual(["differences", "download", "effects", "hits", "hitsBySource", "misses", "mode", "salt", "translateMs"]);
+    expect([report.mode, report.salt, report.hits, report.misses, report.differences]).toEqual(["record", SALT, 2, 2, 0]);
+    expect(report.hitsBySource).toEqual({ memory: 2 });
     expect(report.translateMs).toBeGreaterThan(0);
     expect(typeof report.download).toBe("function");
     expect(report.effects).toHaveLength(2);
@@ -560,8 +509,8 @@ describe("the WebGPU shader lookup", () => {
     ]);
     expect(translated.stages.every((s) => s.spirvMs > 0 && s.wgslMs > 0)).toBe(true);
     expect(found.stages.map((s) => [s.from, s.spirvMs, s.wgslMs])).toEqual([
-      ["source", 0, 0],
-      ["source", 0, 0],
+      ["memory", 0, 0],
+      ["memory", 0, 0],
     ]);
     // It reads whole as JSON, the form `download()` saves.
     expect(JSON.parse(JSON.stringify(report)).effects[0].stages[1].wgsl).toBe(first.modules[1]);
@@ -569,23 +518,24 @@ describe("the WebGPU shader lookup", () => {
 
   it("counts, but records no effect, without ?wgsl=record", async () => {
     const h = harness();
-    const { report } = lookUp(h, []);
+    const report = await lookUp(h, []);
     await prepare(h);
     expect([report.hits, report.misses, report.effects.length]).toEqual([0, 2, 0]);
   });
 
   it("puts the page's report on the page, the first engine's, as dayhikeWgsl", () => {
     vi.stubGlobal("dayhikeWgsl", undefined);
-    const h = harness();
-    const made = lookUpShaders(h.engine, { mode: "record", salt: SALT, sources: [], translators: () => Promise.resolve() });
-    const again = lookUpShaders(harness().engine, { mode: "record", salt: SALT, sources: [], translators: () => Promise.resolve() });
+    const none = (): Promise<readonly WgslSource[]> => Promise.resolve([]);
+    void lookUpShaders(harness().engine, { mode: "record", salt: SALT, sources: none });
+    const made = (globalThis as { dayhikeWgsl?: ShaderLookupReport }).dayhikeWgsl;
+    void lookUpShaders(harness().engine, { mode: "record", salt: SALT, sources: none });
+    expect(made?.mode).toBe("record");
     expect((globalThis as { dayhikeWgsl?: unknown }).dayhikeWgsl).toBe(made);
-    expect(again).toBe(made);
   });
 
-  it("with ?wgsl=off leaves the engine as Babylon made it", () => {
+  it("with ?wgsl=off leaves the engine as Babylon made it", async () => {
     const h = harness();
-    expect(lookUpShaders(h.engine, { mode: "off", salt: SALT, sources: [], translators: () => Promise.resolve() })).toBe(null);
+    await lookUpShaders(h.engine, { mode: "off", salt: SALT, sources: () => Promise.resolve([]) });
     expect(Object.getOwnPropertyDescriptor(h.engine, "_preparePipelineContextAsync")).toBe(undefined);
     expect(Object.getOwnPropertyDescriptor(h.engine, "_getShaderProcessingContext")).toBe(undefined);
     expect(parseShaderLookup("?wgsl=off")).toBe("off");
@@ -595,53 +545,37 @@ describe("the WebGPU shader lookup", () => {
     expect(parseShaderLookup("?wgsl=OFF")).toBe("on");
   });
 
-  it("opens the browser's store at its first shader, not before, so an engine whose start fails opens none", async () => {
-    const idb = memoryIndexedDb();
-    vi.stubGlobal("indexedDB", idb.factory);
-    const h = harness();
-    lookUpShaders(h.engine, { mode: "on", salt: SALT, report: newLookupReport("on", SALT), translators: () => handTranslators(h.engine, h.translators) });
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(idb.databases.size).toBe(0);
-    await prepare(h);
-    expect([...idb.databases.keys()]).toEqual([wgslStoreName(SALT)]);
-  });
-
-  it("lets its store go when its engine is disposed, or when told to, once; and opens none after", async () => {
+  it("lets its sources go when its engine is disposed, or when told to, once; and asks none after", async () => {
     for (const how of ["dispose", "told"] as const) {
-      const closed: string[] = [];
       const shared = memorySource();
       const h = harness();
       Object.assign(h.engine, { onDisposeObservable: new Observable() });
-      lookUp(h, [{ ...shared.source, close: () => void closed.push("closed") }]);
+      await lookUp(h, [shared.source]);
       await prepare(h);
       if (how === "dispose") h.engine.onDisposeObservable.notifyObservers(h.engine);
       else releaseShaderLookup(h.engine);
       releaseShaderLookup(h.engine);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(closed, how).toEqual(["closed"]);
-      // After it, no source is asked: every stage is translated.
+      expect(shared.events, how).toEqual(["settle", "close"]);
       await prepare(h, { defines: "#define AFTER" });
-      expect(h.compiled.map(([stage]) => stage), how).toEqual(["vertex", "fragment", "vertex", "fragment"]);
+      expect(shared.puts, how).toHaveLength(2);
     }
-    // An engine that looked nothing up, or never prepared, is left alone.
+    // An engine that looked nothing up is left alone.
     expect(() => releaseShaderLookup(harness().engine)).not.toThrow();
   });
 
-  it("lets its store go when a start that failed part-way is disposed, though Babylon's dispose throws before it tells anyone", async () => {
-    const closed: string[] = [];
+  it("lets its sources go when a start that failed part-way is disposed, though Babylon's dispose throws before it tells anyone", async () => {
+    const shared = memorySource();
     const h = harness();
-    // No dispose observable is ever notified: the store's release must come
-    // from the disposal's own end.
+    // No dispose observable is ever notified: the release must come from
+    // the disposal's own end.
     Object.assign(h.engine, {
       dispose: () => {
         throw new TypeError("Cannot read properties of undefined (reading 'dispose')");
       },
     });
-    lookUp(h, [{ ...memorySource().source, close: () => void closed.push("closed") }]);
-    await prepare(h);
+    await lookUp(h, [shared.source]);
     disposeHalfMade(h.engine);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(closed).toEqual(["closed"]);
+    expect(shared.events).toEqual(["settle", "close"]);
     // Babylon's base dispose notifies its dispose observable only at the end,
     // after the effects, textures and scenes (a canary on the installed engine).
     const base = readFileSync(resolve("@babylonjs/core/Engines/abstractEngine.pure.js"), "utf8");
@@ -650,22 +584,112 @@ describe("the WebGPU shader lookup", () => {
     expect(dispose.indexOf("this.scenes[0].dispose();")).toBeGreaterThan(0);
   });
 
-  it("keeps a translation in the browser's store, and the next engine finds it there", async () => {
+  it("keeps a translation in the browser's store, and the next engine finds it there, in the call", async () => {
     const idb = memoryIndexedDb();
     const first = harness();
-    const opened = openWgslStore(SALT, { idb: idb.factory }).then((store) => (store === null ? [] : [store]));
-    lookUpShaders(first.engine, { mode: "on", salt: SALT, sources: opened, report: newLookupReport("on", SALT), translators: () => handTranslators(first.engine, first.translators) });
+    let store: WgslSource | null = null;
+    const ready = lookUpShaders(first.engine, {
+      mode: "on",
+      salt: SALT,
+      sources: async () => {
+        store = await loadWgslStore(SALT, { idb: idb.factory });
+        return store === null ? [] : [store];
+      },
+      report: newLookupReport("on", SALT),
+    });
+    await loadTranslators(first.engine, first.translators);
+    await ready;
     await prepare(first);
-    const store = (await opened)[0] as WgslSource;
-    await vi.waitFor(() => expect(store.has(keyOf("fragment", FRAGMENT))).toBe(true), { timeout: timeLimit(5_000) });
+    const stored = (): number => idb.databases.values().next().value?.get("meta")?.size ?? 0;
+    await vi.waitFor(() => expect(stored()).toBe(2), { timeout: timeLimit(5_000) });
     const second = harness();
-    const reopened = openWgslStore(SALT, { idb: idb.factory }).then((s) => (s === null ? [] : [s]));
     const report = newLookupReport("on", SALT);
-    lookUpShaders(second.engine, { mode: "on", salt: SALT, sources: reopened, report, translators: () => handTranslators(second.engine, second.translators) });
-    await prepare(second);
+    const readyAgain = lookUpShaders(second.engine, {
+      mode: "on",
+      salt: SALT,
+      sources: () => loadWgslStore(SALT, { idb: idb.factory }).then((s) => (s === null ? [] : [s])),
+      report,
+    });
+    await loadTranslators(second.engine, second.translators);
+    await readyAgain;
+    const { inTheCall } = await prepare(second);
+    expect(inTheCall).toEqual(["before", "after", "ready"]);
     expect(second.compiled).toEqual([]);
     expect(second.modules).toEqual(first.modules);
-    expect([report.hits, report.misses]).toEqual([2, 0]);
+    expect(report.hitsBySource).toEqual({ store: 2 });
+    expect(store).not.toBe(null);
+  });
+});
+
+/**
+ * Babylon's own re-preparation of an effect whose mesh draws integer vertex
+ * buffers (every skinned glTF model's joints), driven through Babylon's real
+ * `Effect` and `checkNonFloatVertexBuffers` on an engine with Babylon's WebGPU
+ * methods, its WebGPU GLSL processor and a stand-in device.
+ */
+describe("the re-preparation Babylon makes at the first draw of integer vertex buffers", () => {
+  function effectEngine() {
+    const h = harness();
+    Object.assign(h.engine, {
+      _shaderProcessor: new WebGPUShaderProcessorGLSL(),
+      _shaderPlatformName: "WEBGPU",
+      isNDCHalfZRange: true,
+      _caps: { parallelShaderCompile: undefined, highPrecisionShaderSupported: true },
+      _highPrecisionShadersAllowed: true,
+      _features: { _checkNonFloatVertexBuffersDontRecreatePipelineContext: true },
+      onReleaseEffectsObservable: new Observable(),
+    });
+    return h;
+  }
+  const SKINNED = {
+    vertexSource: "attribute vec3 position;\nattribute vec4 matricesIndices;\nvoid main() { gl_Position = vec4(position + matricesIndices.xyz, 1.0); }",
+    fragmentSource: "void main() { gl_FragColor = vec4(1.0); }",
+  };
+  const JOINTS = { matricesIndices: { type: VertexBuffer.UNSIGNED_BYTE, normalized: false } };
+
+  async function drawSkinned(store: ReturnType<typeof memorySource>) {
+    const h = effectEngine();
+    await lookUp(h, [store.source]);
+    const effect = (h.engine as unknown as { createEffect(...a: unknown[]): Effect }).createEffect(SKINNED, ["position", "matricesIndices"], [], [], "");
+    const context = effect.getPipelineContext() as WebGPUPipelineContext;
+    expect(effect.isReady()).toBe(true);
+    const before = context.stages;
+    checkNonFloatVertexBuffers(JOINTS as never, effect);
+    // By the time Babylon's check returns, and Babylon builds the render
+    // pipeline from the context's stages, they are the new ones.
+    const after = context.stages as unknown as { vertexStage: { module: { code: string } } } | undefined;
+    return { h, effect, context, before, after };
+  }
+
+  it("leaves the integer variant's stages on the same context before Babylon's call returns, on a miss and on a hit", async () => {
+    const kept = memorySource();
+    const missed = await drawSkinned(kept);
+    expect(missed.effect.getPipelineContext()).toBe(missed.context);
+    expect(missed.after).not.toBe(missed.before);
+    expect(missed.after?.vertexStage.module.code).toContain("_int_matricesIndices_");
+    // The integer variant's fragment stage is the first's: translated once.
+    expect(missed.h.compiled.map(([stage]) => stage)).toEqual(["vertex", "fragment", "vertex"]);
+
+    const hit = await drawSkinned(kept);
+    expect(hit.after).not.toBe(hit.before);
+    expect(hit.after?.vertexStage.module.code).toContain("_int_matricesIndices_");
+    expect(hit.h.compiled).toEqual([]);
+  });
+
+  it("is made in the call, on the same context, and read from that context right after (canaries on the installed engine)", () => {
+    const nonFloat = readFileSync(resolve("@babylonjs/core/Buffers/buffer.nonFloatVertexBuffers.js"), "utf8");
+    expect(nonFloat).toContain("        // There is no additional call to async so the _processShaderCodeAsync will execute synchronously.");
+    expect(nonFloat).toContain(
+      "        effect._processShaderCodeAsync(null, engine._features._checkNonFloatVertexBuffersDontRecreatePipelineContext, shaderProcessingContext);",
+    );
+    const engine = readFileSync(resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
+    expect(engine).toContain("            _checkNonFloatVertexBuffersDontRecreatePipelineContext: true,");
+    const cache = readFileSync(resolve("@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js"), "utf8");
+    const build = cache.slice(cache.indexOf("    _buildRenderPipelineDescriptor(effect, topology, sampleCount) {"));
+    expect(build.indexOf("checkNonFloatVertexBuffers(this._vertexBuffers, effect);")).toBeGreaterThan(0);
+    expect(build.indexOf("module: webgpuPipelineContext.stages.vertexStage.module,")).toBeGreaterThan(
+      build.indexOf("checkNonFloatVertexBuffers(this._vertexBuffers, effect);"),
+    );
   });
 });
 

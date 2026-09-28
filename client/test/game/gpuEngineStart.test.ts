@@ -44,6 +44,7 @@ vi.mock("@babylonjs/core/Engines/webgpuEngine.pure.js", () => {
 
 import { WebGPUEngine as WebGPUEngineMock } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
 import { createWebGpuEngine, forgetTranslators, loadTranslators } from "../../src/game/gpuEngine.js";
+import type { WgslSource } from "../../src/game/shaderLookup.js";
 
 const canvas = {} as HTMLCanvasElement;
 
@@ -256,7 +257,8 @@ describe("loadTranslators", () => {
 });
 
 describe("createWebGpuEngine", () => {
-  it("refuses to start on Babylon's own path (?wgsl=off) before the translators are loaded, and makes no engine", async () => {
+  it("refuses to start before the translators are loaded, looking shaders up or not, and makes no engine", async () => {
+    await expect(createWebGpuEngine(canvas, {})).rejects.toThrow("load the WebGPU translators first");
     await expect(createWebGpuEngine(canvas, { lookup: "off" })).rejects.toThrow("load the WebGPU translators first");
     expect(made.options).toEqual([]);
     expect(PBRBaseMaterial.ForceGLSL).toBe(false);
@@ -277,19 +279,28 @@ describe("createWebGpuEngine", () => {
     expect(own).toHaveBeenCalledTimes(1);
   });
 
-  it("starts no translator before the engine when it looks shaders up: Babylon is handed none, and nothing is fetched", async () => {
-    const asked = stubFetch(WASM);
-    let prepared = 0;
-    made.prepare = () => {
-      prepared++;
-      return Promise.resolve();
-    };
-    const engine = await createWebGpuEngine(canvas, { features: [] });
-    expect(made.initArgs).toEqual([[undefined, undefined]]);
-    expect(prepared).toBe(0);
-    expect(asked).toEqual([]);
-    expect(typeof Object.getOwnPropertyDescriptor(engine, "_preparePipelineContextAsync")?.value).toBe("function");
-    expect(PBRBaseMaterial.ForceGLSL).toBe(true);
+  it("hands the engine over only once its translators are started and its lookup's sources are in, within 2 s", async () => {
+    vi.useFakeTimers();
+    let land: (sources: readonly WgslSource[]) => void = () => undefined;
+    const sources = (): Promise<readonly WgslSource[]> => new Promise((resolve) => (land = resolve));
+    let handed = false;
+    const making = createWebGpuEngine(canvas, { translators: TRANSLATORS, sources }).then(() => (handed = true));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(made.initArgs).toHaveLength(1);
+    expect(handed).toBe(false);
+    land([]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(handed).toBe(true);
+    await making;
+    // Sources that never come hold it 2 s at most.
+    handed = false;
+    const never = (): Promise<readonly WgslSource[]> => new Promise(() => undefined);
+    const waiting = createWebGpuEngine(canvas, { translators: TRANSLATORS, sources: never }).then(() => (handed = true));
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(handed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(handed).toBe(true);
+    await waiting;
   });
 
   it("asks the device for exactly the required limits and the texture formats it is given", async () => {

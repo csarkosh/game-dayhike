@@ -132,7 +132,6 @@ describe("layer boundaries", () => {
     expect(lookup).not.toMatch(/_createPipelineStageDescriptor\s*=[^=]/);
     expect([...lookup.matchAll(/own\._createPipelineStageDescriptor\(([^)]*)\)/g)].map((m) => m[1])).toEqual([
       "vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false",
-      "vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false",
     ]);
   });
 
