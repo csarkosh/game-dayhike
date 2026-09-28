@@ -16,6 +16,8 @@ import {
   nextProbeStep,
   probeHolds,
   probeStepCanSettle,
+  probeStepEngine,
+  WEBGPU_PROBE_STEPS_SETTLE,
   probePose,
   probeReadingLine,
   readEarlyMiss,
@@ -23,10 +25,15 @@ import {
   readStallMiss,
   runProbe,
   startupTier,
+  qualityLine,
+  launchLine,
+  LOADING_LINE,
   type StartupDeps,
 } from "../../src/game/frameProbe.js";
 import type { GpuSignals } from "../../src/game/gpuSignals.js";
-import { withGovernorDrop, type ProbeReading, type QualityTier } from "../../src/game/quality.js";
+import { WEBGPU_TIERS } from "../../src/game/engineChoice.js";
+import { landingModel } from "../../src/game/landingModel.js";
+import { autoTier, withGovernorDrop, type ProbeReading, type QualityTier, type VerdictEngine } from "../../src/game/quality.js";
 import { readAutoRecord, writeAutoRecord } from "../../src/game/tierChoice.js";
 
 const f = (n: number, ms: number): number[] => Array.from({ length: n }, () => ms);
@@ -128,16 +135,47 @@ describe("nextProbeStep", () => {
 });
 
 describe("probeStepCanSettle", () => {
-  it("settles a WebGL2 step only where programs link off the page's thread, and a WebGPU step always", () => {
+  it("settles a WebGL2 step only where programs link off the page's thread, and a WebGPU step not until it is measured to", () => {
+    // Babylon translates a WebGPU effect's shaders on the page's thread
+    // (glslang, then Tint) and makes each pipeline at its first draw, so a
+    // WebGPU step is no quieter than a WebGL2 one without the extension.
     const table = [
       { parallelCompile: true, engine: "webgl2", settles: true },
       { parallelCompile: false, engine: "webgl2", settles: false },
       { parallelCompile: null, engine: "webgl2", settles: false },
-      { parallelCompile: true, engine: "webgpu", settles: true },
-      { parallelCompile: false, engine: "webgpu", settles: true },
-      { parallelCompile: null, engine: "webgpu", settles: true },
+      { parallelCompile: true, engine: "webgpu", settles: false },
+      { parallelCompile: false, engine: "webgpu", settles: false },
+      { parallelCompile: null, engine: "webgpu", settles: false },
     ] as const;
     for (const row of table) expect(probeStepCanSettle(row.parallelCompile, row.engine)).toBe(row.settles);
+  });
+
+  it("settles a WebGPU step once one is measured to, Firefox's too, and an engine not known only where both engines settle", () => {
+    // The safe value until a browser measures a WebGPU step's settling.
+    expect(WEBGPU_PROBE_STEPS_SETTLE).toBe(false);
+    // With that measurement in, Firefox without the extension probes its
+    // WebGPU steps and still not its WebGL2 ones.
+    expect(probeStepCanSettle(false, "webgpu", true)).toBe(true);
+    expect(probeStepCanSettle(false, "webgl2", true)).toBe(false);
+    expect(probeStepCanSettle(false, null, true)).toBe(false);
+    expect(probeStepCanSettle(true, null, true)).toBe(true);
+    expect(probeStepCanSettle(true, null, false)).toBe(false);
+  });
+
+  it("measures on WebGL2 while a WebGPU step cannot settle, whatever the rule gives the probed tiers", () => {
+    expect(probeStepEngine({ adapterStatus: "ok" }, "webgpu")).toBe("webgl2");
+    expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgpu")).toBe("webgl2");
+    expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgl2")).toBe("webgl2");
+    expect(probeStepEngine({ adapterStatus: "ok" }, undefined)).toBe("webgl2");
+    // Once a WebGPU step is measured to settle, the steps draw on the rule's
+    // engine again, and on either while the adapter has not answered.
+    expect(probeStepEngine({ adapterStatus: "ok" }, "webgpu", true)).toBe("webgpu");
+    expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgpu", true)).toBe(null);
+    expect(probeStepEngine({ adapterStatus: "ok" }, "webgl2", true)).toBe("webgl2");
+    // Only the high tier draws on WebGPU, so the probed tiers need not share
+    // the rule's engine: `engine` is the high tier's, and a step that ends on
+    // another engine is asked as it runs (`measureOnRuleEngine`).
+    expect(WEBGPU_TIERS).toEqual(["high"]);
   });
 });
 
@@ -248,11 +286,11 @@ describe("cutVerdict", () => {
 
 describe("startupTier", () => {
   const SAFARI: GpuSignals = {
-    renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
+    renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
   };
   const M4: GpuSignals = {
     renderer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
-    adapter: null, limits: null, adapterStatus: "none", parallelCompile: true, cores: 10, memoryGb: 16, mobile: false, browser: 153,
+    adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 10, memoryGb: 16, mobile: false, browser: 153,
   };
 
   /** Fakes for the page: steps answer from `answers`, the timer fires when told,
@@ -307,10 +345,8 @@ describe("startupTier", () => {
     expect(t.screens()).toBe(1);
     expect(t.open()).toBe(0);
     expect(t.timer()).toBe(null);
-    expect(t.lines).toEqual([
-      "quality probe: verdict medium (apple-unknown)",
-      "quality: medium (auto, apple-unknown), engine webgl2",
-    ]);
+    // The tier's own line is the launch's, once the engine is known (`qualityLine`).
+    expect(t.lines).toEqual(["quality probe: verdict medium (apple-unknown)"]);
     expect(readAutoRecord(t.storage)!.verdict!.tier).toBe("medium");
   });
 
@@ -327,7 +363,7 @@ describe("startupTier", () => {
     const t = fakes(() => reading("high", 16.7));
     expect(await startupTier(M4, page(), t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-base" });
     expect(t.steps).toEqual([]);
-    expect(t.lines).toEqual(["quality: medium (auto, apple-base), engine webgl2"]);
+    expect(t.lines).toEqual([]);
   });
 
   it("probes any class from ?probe=, and never under ?tier=", async () => {
@@ -391,9 +427,9 @@ describe("startupTier", () => {
     const gpu = "ANGLE (Intel, Intel(R) Graphics (0x00007D67) Direct3D11 vs_5_0 ps_5_0, D3D11)";
     const answered: GpuSignals = {
       renderer: gpu, adapter: { vendor: "intel", architecture: "gen-12lp", device: "", description: "", isFallbackAdapter: false },
-      limits: {}, adapterStatus: "ok", parallelCompile: true, cores: 8, memoryGb: 16, mobile: false, browser: 153,
+      limits: {}, features: [], adapterStatus: "ok", parallelCompile: true, cores: 8, memoryGb: 16, mobile: false, browser: 153,
     };
-    const late: GpuSignals = { ...answered, adapter: null, limits: null, adapterStatus: "timed-out" };
+    const late: GpuSignals = { ...answered, adapter: null, limits: null, features: null, adapterStatus: "timed-out" };
     async function alternate(answer: (tier: QualityTier) => ProbeReading | null): Promise<boolean[]> {
       const s = memoryStorage();
       const probed: boolean[] = [];
@@ -413,7 +449,7 @@ describe("startupTier", () => {
     expect(await startupTier(SAFARI, page("", "low"), chosen.deps)).toEqual({ tier: "low", source: "choice", cls: "apple-unknown" });
     expect(await startupTier(SAFARI, page("?probe=high", "high"), chosen.deps)).toEqual({ tier: "high", source: "choice", cls: "apple-unknown" });
     expect(chosen.steps).toEqual([]);
-    expect(chosen.lines).toEqual(["quality: low (choice, apple-unknown), engine webgl2", "quality: high (choice, apple-unknown), engine webgl2"]);
+    expect(chosen.lines).toEqual([]);
     const overridden = fakes(() => reading("high", 16.7));
     expect(await startupTier(SAFARI, page("?tier=medium", "low"), overridden.deps)).toEqual({ tier: "medium", source: "override", cls: "apple-unknown" });
   });
@@ -456,7 +492,7 @@ describe("startupTier", () => {
   // Firefox 156 on an Apple M4: no KHR_parallel_shader_compile, so a step
   // never sees 1.5 s without a compile inside its 15 s.
   const FIREFOX: GpuSignals = {
-    renderer: "Apple M1, or similar", adapter: null, limits: null, adapterStatus: "none", parallelCompile: false,
+    renderer: "Apple M1, or similar", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: false,
     cores: 10, memoryGb: null, mobile: false, browser: 156,
   };
   const contents = (s: Storage): string => JSON.stringify(Array.from({ length: s.length }, (_, i) => [s.key(i), s.getItem(s.key(i)!)]));
@@ -475,10 +511,60 @@ describe("startupTier", () => {
       expect(contents(storage)).toBe(before);
       expect(t.lines).toEqual([
         "quality probe: skipped, this browser compiles shaders on the page's thread; starting at medium (apple-unknown)",
-        "quality: medium (auto, apple-unknown), engine webgl2",
       ]);
     }
     expect(readAutoRecord(earlier)!.attempts).toBe(2);
+  });
+
+  it("probes tiers that draw on WebGPU on WebGL2, and the verdict holds for WebGPU", async () => {
+    const storage = memoryStorage();
+    const t = fakes((tier) => reading(tier, 16.7), storage);
+    expect(await startupTier(SAFARI, { ...page(), engine: "webgpu" }, t.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
+    expect(t.screens()).toBe(1);
+    expect(t.steps).toEqual(["high"]);
+    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)"]);
+    // A WebGL2 verdict, read for a WebGPU start: no second probe.
+    expect(readAutoRecord(storage)!.verdict).not.toHaveProperty("engine");
+    expect(readAutoRecord(storage)!.attempts).toBe(0);
+    const again = fakes((tier) => reading(tier, 16.7), storage);
+    expect(await startupTier(SAFARI, { ...page(), engine: "webgpu" }, again.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
+    expect(again.screens()).toBe(0);
+  });
+
+  it("shows the probe's screen exactly where Settings says a probe is pending, for each engine a step may draw with", async () => {
+    const cases: [string, GpuSignals, VerdictEngine][] = [
+      ["WebGL2, linked in parallel", SAFARI, "webgl2"],
+      ["WebGL2, linked on the page's thread", FIREFOX, "webgl2"],
+      ["WebGPU, the adapter known", SAFARI, "webgpu"],
+      ["WebGPU without the WebGL2 extension", FIREFOX, "webgpu"],
+      ["WebGPU, the adapter not known yet", { ...SAFARI, adapterStatus: "timed-out" }, "webgpu"],
+      ["WebGPU, a WebGL2 verdict holding", SAFARI, "webgpu"],
+    ];
+    const seen: [string, boolean, boolean][] = [];
+    for (const [name, signals, engine] of cases) {
+      // The last case holds a WebGL2 verdict of the tier detection release's shape.
+      const storage = memoryStorage();
+      if (name === "WebGPU, a WebGL2 verdict holding") {
+        writeAutoRecord(storage, {
+          v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+          verdict: { tier: "high", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000 - 86_400_000 },
+        });
+      }
+      const t = fakes((tier) => reading(tier, 16.7), storage);
+      // The page's summary for Settings (`autoSummary` in main.ts).
+      const record = readAutoRecord(storage);
+      const pending = autoPick(signals, { record, pixels: 2_073_600, now: 1_790_000_000_000, engine }).probeFrom !== null;
+      await startupTier(signals, { ...page(), engine }, t.deps);
+      seen.push([name, pending, t.screens() === 1]);
+    }
+    expect(seen).toEqual([
+      ["WebGL2, linked in parallel", true, true],
+      ["WebGL2, linked on the page's thread", false, false],
+      ["WebGPU, the adapter known", true, true],
+      ["WebGPU without the WebGL2 extension", false, false],
+      ["WebGPU, the adapter not known yet", true, true],
+      ["WebGPU, a WebGL2 verdict holding", false, false],
+    ]);
   });
 
   it("says the probe is skipped for want of a WebGL2 context where none could be made", async () => {
@@ -491,7 +577,6 @@ describe("startupTier", () => {
     expect(contents(storage)).toBe("[]");
     expect(t.lines).toEqual([
       "quality probe: skipped, no WebGL2 context could be made to measure with; starting at medium (apple-unknown)",
-      "quality: medium (auto, apple-unknown), engine webgl2",
     ]);
   });
 
@@ -504,7 +589,8 @@ describe("startupTier", () => {
     const t = fakes((tier) => reading(tier, 16.7), s);
     expect(await startupTier(FIREFOX, page(), t.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
     expect(t.screens()).toBe(0);
-    expect(t.lines).toEqual(["quality: high (auto, apple-unknown), engine webgl2"]);
+    // The tier's own line is the launch's, once the engine is known.
+    expect(t.lines).toEqual([]);
   });
 
   it("still probes from ?probe= where shaders compile on the page's thread", async () => {
@@ -512,7 +598,7 @@ describe("startupTier", () => {
     expect(await startupTier(FIREFOX, page("?probe=high"), t.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
     expect(t.steps).toEqual(["high"]);
     expect(t.screens()).toBe(1);
-    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)", "quality: high (auto, apple-unknown), engine webgl2"]);
+    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)"]);
     expect(readAutoRecord(t.storage)!.verdict!.tier).toBe("high");
   });
 
@@ -528,7 +614,7 @@ describe("startupTier", () => {
     expect(t.steps).toEqual(["high"]);
     expect(attempts).toEqual([1]);
     expect(readAutoRecord(t.storage)!.verdict!.tier).toBe("high");
-    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)", "quality: high (auto, apple-unknown), engine webgl2"]);
+    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)"]);
   });
 
   it("stops probing after three attempts without a verdict", async () => {
@@ -541,9 +627,31 @@ describe("startupTier", () => {
 });
 
 describe("autoPick", () => {
+  it("asks whether the probe's first step can settle on the engine it will draw with", () => {
+    const signals = (parallelCompile: boolean | null, adapterStatus: GpuSignals["adapterStatus"]): GpuSignals => ({
+      renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus, parallelCompile, cores: 8, memoryGb: null, mobile: false, browser: 26,
+    });
+    const probe = (read: GpuSignals, engine: "webgl2" | "webgpu") => {
+      const pick = autoPick(read, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, engine });
+      return { probeFrom: pick.probeFrom, probeSkipped: pick.probeSkipped };
+    };
+    const probed = { probeFrom: "high", probeSkipped: false };
+    const skipped = { probeFrom: null, probeSkipped: true };
+    // WebGL2 steps, as with the switch off: the tier detection branch's rule.
+    expect(probe(signals(true, "none"), "webgl2")).toEqual(probed);
+    expect(probe(signals(false, "none"), "webgl2")).toEqual(skipped);
+    // Tiers that draw on WebGPU, whose steps cannot settle there: measured on
+    // WebGL2 where a WebGL2 step can settle, the adapter known or not.
+    expect(probe(signals(true, "none"), "webgpu")).toEqual(probed);
+    expect(probe(signals(true, "timed-out"), "webgpu")).toEqual(probed);
+    // Where WebGL2 cannot settle either (Firefox): skipped.
+    expect(probe(signals(false, "none"), "webgpu")).toEqual(skipped);
+    expect(probe(signals(false, "timed-out"), "webgpu")).toEqual(skipped);
+  });
+
   it("is Auto's tier and whether it will probe, before any hike", () => {
     const signals: GpuSignals = {
-      renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
+      renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
     };
     expect(autoPick(signals, { record: null, pixels: 2_073_600, now: 1_790_000_000_000 })).toEqual({
       cls: "apple-unknown", gpu: "Apple GPU", tier: "medium", probeFrom: "high", probeSkipped: false, ceiling: "high",
@@ -693,14 +801,14 @@ describe("createProbeMeter", () => {
 
 describe("startHike", () => {
   const SAFARI: GpuSignals = {
-    renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
+    renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
   };
   const DECIDED = { tier: "medium" as const, source: "auto" as const, cls: "apple-unknown" as const };
 
-  function page(over: Partial<Parameters<typeof startHike>[0]> = {}) {
+  function page(over: Partial<Parameters<typeof startHike<string>>[0]> = {}) {
     const events: string[] = [];
     let current = true;
-    const deps: Parameters<typeof startHike>[0] = {
+    const deps: Parameters<typeof startHike<string>>[0] = {
       signals: Promise.resolve(SAFARI),
       current: () => current,
       showLoading: () => {
@@ -711,24 +819,29 @@ describe("startHike", () => {
         events.push("decide");
         return DECIDED;
       },
-      build: (decided) => void events.push(`build ${decided.tier}`),
+      engine: async (decided) => {
+        events.push(`engine ${decided.tier}`);
+        return "webgl2";
+      },
+      discard: (engine) => void events.push(`discard ${engine}`),
+      build: (decided, engine) => void events.push(`build ${decided.tier} on ${engine}`),
       fail: (error) => void events.push(`fail ${String(error)}`),
       ...over,
     };
     return { deps, events, leave: () => { current = false; } };
   }
 
-  it("says Loading… from the start of the wait until the hike is built", async () => {
+  it("says Loading… from the start of the wait until the hike is built: the signals, the tier, then the engine", async () => {
     let signal: (s: GpuSignals) => void = () => undefined;
     const p = page({ signals: new Promise((resolve) => { signal = resolve; }) });
     const started = startHike(p.deps);
     expect(p.events).toEqual(["loading"]);
     signal(SAFARI);
     await started;
-    expect(p.events).toEqual(["loading", "decide", "loading gone", "build medium"]);
+    expect(p.events).toEqual(["loading", "decide", "engine medium", "loading gone", "build medium on webgl2"]);
   });
 
-  it("hands Loading… over to the probe's screen", async () => {
+  it("hands Loading… over to the probe's screen, and says it again while the engine is made", async () => {
     const p = page({
       decide: async (_signals, hideLoading) => {
         hideLoading();
@@ -737,31 +850,79 @@ describe("startHike", () => {
       },
     });
     await startHike(p.deps);
-    expect(p.events).toEqual(["loading", "loading gone", "probe screen", "build medium"]);
+    expect(p.events).toEqual(["loading", "loading gone", "probe screen", "loading", "engine medium", "loading gone", "build medium on webgl2"]);
   });
 
-  it("says the hike could not start when building it throws, rather than leaving a blank page", async () => {
-    const p = page({ build: () => { throw new Error("no WebGL2"); } });
-    await startHike(p.deps);
-    expect(p.events).toEqual(["loading", "decide", "loading gone", "fail Error: no WebGL2"]);
-    expect(START_FAILED_LINE).toBe("This browser could not start the game.");
-  });
-
-  it("builds nothing and says nothing once the page has moved on", async () => {
+  it("chooses the engine for the tier decided, after it is decided, from the signals", async () => {
+    const seen: string[] = [];
     const p = page({
-      decide: async () => {
-        p.leave();
-        return DECIDED;
+      decide: async () => ({ ...DECIDED, tier: "high" }),
+      engine: async (decided, signals) => {
+        seen.push(`${decided.tier} ${signals.renderer}`);
+        return "webgpu";
       },
     });
     await startHike(p.deps);
-    expect(p.events).toEqual(["loading", "loading gone"]);
+    expect(seen).toEqual(["high Apple GPU"]);
+    expect(p.events.at(-1)).toBe("build high on webgpu");
+  });
+
+  it("says the hike could not start when the engine or the build throws, rather than leaving a blank page", async () => {
+    const building = page({ build: () => { throw new Error("no WebGL2"); } });
+    await startHike(building.deps);
+    expect(building.events).toEqual(["loading", "decide", "engine medium", "loading gone", "fail Error: no WebGL2"]);
+    const engine = page({ engine: async () => { throw new Error("no canvas"); } });
+    await startHike(engine.deps);
+    expect(engine.events).toEqual(["loading", "decide", "loading gone", "fail Error: no canvas"]);
+    expect(START_FAILED_LINE).toBe("This browser could not start the game.");
+  });
+
+  it("builds nothing and says nothing once the page has moved on, and lets go of an engine made meanwhile", async () => {
+    const decided = page({
+      decide: async () => {
+        decided.leave();
+        return DECIDED;
+      },
+    });
+    await startHike(decided.deps);
+    expect(decided.events).toEqual(["loading", "loading gone"]);
+    const made = page({
+      engine: async () => {
+        made.leave();
+        return "webgpu";
+      },
+    });
+    await startHike(made.deps);
+    expect(made.events).toEqual(["loading", "decide", "loading gone", "discard webgpu"]);
+  });
+});
+
+describe("the start's wait line", () => {
+  it("is Loading…, the word the landing's Play button shows as the hike starts", () => {
+    expect(LOADING_LINE).toBe("Loading…");
+    const launching = landingModel({ desktop: false, host: "darwin-arm64", latest: null, launching: true });
+    expect(launching.play?.label).toBe(LOADING_LINE);
+  });
+});
+
+describe("the line a launch logs", () => {
+  it("names the tier the first renderer built at and the engine it draws with, the source `fallback` where it fell back", () => {
+    const decided = { tier: "high" as const, source: "auto" as const, cls: "apple-unknown" as const };
+    expect(launchLine(decided, { tier: "high", engine: "webgpu" })).toBe("quality: high (auto, apple-unknown), engine webgpu");
+    expect(launchLine(decided, { tier: "medium", engine: "webgl2" })).toBe("quality: medium (fallback, apple-unknown), engine webgl2");
+  });
+});
+
+describe("the quality line", () => {
+  it("names the tier, where it came from, the class and the engine in use", () => {
+    expect(qualityLine("medium", "auto", "apple-unknown", "webgl2")).toBe("quality: medium (auto, apple-unknown), engine webgl2");
+    expect(qualityLine("high", "choice", "apple-base", "webgpu")).toBe("quality: high (choice, apple-base), engine webgpu");
   });
 });
 
 describe("autoPick's recommendation", () => {
   const SAFARI_SIGNALS: GpuSignals = {
-    renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
+    renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
   };
   const at = (record: import("../../src/game/quality.js").AutoRecord | null) =>
     autoPick(SAFARI_SIGNALS, { record, pixels: 2_073_600, now: 1_790_000_000_000 });
@@ -793,7 +954,7 @@ describe("a governor's drop at the next start", () => {
   it("starts the hike one tier down, for Auto only", async () => {
     const RTX = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)";
     const signals: GpuSignals = {
-      renderer: RTX, adapter: null, limits: null, adapterStatus: "none", parallelCompile: true, cores: 16, memoryGb: 32, mobile: false, browser: 153,
+      renderer: RTX, adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 16, memoryGb: 32, mobile: false, browser: 153,
     };
     const s = memoryStorage();
     writeAutoRecord(s, {
@@ -812,13 +973,82 @@ describe("a governor's drop at the next start", () => {
   });
 });
 
+describe("the engine a probe's verdict was measured with", () => {
+  const KEY = { gpu: "Apple GPU", browser: 26, cls: "apple-unknown" } as const;
+  const onGpu = (tier: QualityTier, meanMs: number): ProbeReading => ({ ...reading(tier, meanMs), engine: "webgpu" });
+  const SAFARI: GpuSignals = {
+    renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
+  };
+
+  it("writes the engine the deciding reading drew with, and no engine for WebGL2", async () => {
+    const gpu = memoryStorage();
+    await runProbe("high", "medium", null, KEY, { storage: gpu, runStep: async (tier) => onGpu(tier, 16.7), pixels: () => 2_073_600, now: () => 1_790_000_000_000 });
+    expect(readAutoRecord(gpu)!.verdict!.engine).toBe("webgpu");
+    const gl = memoryStorage();
+    await runProbe("high", "medium", null, KEY, { storage: gl, runStep: async (tier) => reading(tier, 16.7), pixels: () => 2_073_600, now: () => 1_790_000_000_000 });
+    expect(readAutoRecord(gl)!.verdict).not.toHaveProperty("engine");
+  });
+
+  it("reads a verdict only for the engine the probed tiers would draw with now", () => {
+    const record = { v: 1, gpu: "Apple GPU", cls: "apple-unknown" as const, browser: 26, attempts: 0,
+      verdict: { tier: "high" as const, source: "probe" as const, pixels: 2_073_600, at: 1_790_000_000_000 - 1 } };
+    const at = { record, pixels: 2_073_600, now: 1_790_000_000_000 };
+    expect(autoPick(SAFARI, at)).toMatchObject({ tier: "high", probeFrom: null });
+    expect(autoPick(SAFARI, { ...at, engine: "webgl2" })).toMatchObject({ tier: "high", probeFrom: null });
+    // A WebGL2 verdict holds for WebGPU too: it is a floor there.
+    expect(autoPick(SAFARI, { ...at, engine: "webgpu" })).toMatchObject({ tier: "high", probeFrom: null });
+  });
+});
+
+describe("the probe's attempts when its verdict is for another engine than the one it is looked up under", () => {
+  /**
+   * Six loads of one page: each asks Auto with `key` (the engine the rule
+   * gives the probed tiers when the load starts) and, when Auto probes, runs
+   * the probe with steps that draw on `drawn`. With the adapter not known
+   * yet the key is WebGPU, and the steps can still end on WebGL2 with
+   * nothing remembered (an unfit adapter answering late, a translator fetch
+   * that runs out): the verdict is then WebGL2's, which a WebGPU key never
+   * reads.
+   */
+  async function loads(key: VerdictEngine, drawn: VerdictEngine): Promise<boolean[]> {
+    const storage = memoryStorage();
+    const KEY = { gpu: "Apple GPU", browser: 26, cls: "apple-unknown" as const, engine: key };
+    const probed: boolean[] = [];
+    for (let load = 0; load < 6; load++) {
+      const record = readAutoRecord(storage);
+      const now = 1_790_000_000_000 + load * 60_000;
+      const auto = autoTier({ cls: "apple-unknown", cores: 8, memoryGb: null, record, gpu: "Apple GPU", browser: 26, pixels: 2_073_600, now, engine: key });
+      probed.push(auto.probeFrom !== null);
+      if (auto.probeFrom === null) continue;
+      await runProbe(auto.probeFrom, auto.tier, record, KEY, {
+        storage,
+        runStep: async (tier) => ({ ...reading(tier, 16.7), engine: drawn }),
+        pixels: () => 2_073_600,
+        now: () => now,
+      });
+    }
+    return probed;
+  }
+
+  it("probes at most three times where the key never reads the verdict: a WebGPU verdict under a WebGL2 key", async () => {
+    expect(await loads("webgl2", "webgpu")).toEqual([true, true, true, false, false, false]);
+  });
+
+  it("probes once and stops where the key reads the verdict: its own engine's, or WebGL2's under WebGPU", async () => {
+    expect(await loads("webgl2", "webgl2")).toEqual([true, false, false, false, false, false]);
+    expect(await loads("webgpu", "webgpu")).toEqual([true, false, false, false, false, false]);
+    expect(await loads("webgpu", "webgl2")).toEqual([true, false, false, false, false, false]);
+  });
+});
+
+
 describe("Safari on a Mac slower than the reference machine, hike after hike", () => {
   // Every probe step's scene takes `loadMs` to build and load, then 1.5 s to
   // fall quiet; high draws at 70 ms a frame, medium at 50 and low at 30, all
   // under the governor's 48 fps. Each hike is followed by a minute of play,
   // after which the governor drops any tier played under 48 fps.
   const SLOW_MAC: GpuSignals = {
-    renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
+    renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
   };
   const FRAME_MS: Record<QualityTier, number> = { high: 70, medium: 50, low: 30 };
   const DAY = 86_400_000;

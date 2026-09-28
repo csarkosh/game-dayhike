@@ -1,10 +1,15 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
 import { createRenderer, terrainMaterialFor, type FreecamView, type Renderer } from "./game/renderer.js";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import type { AsyncPipelines } from "./game/asyncPipelines.js";
+import { FALLBACK_NOTICE_MS } from "./game/engineChoice.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
 import { createHud } from "./game/hud.js";
+import { LOADING_LINE } from "./game/frameProbe.js";
+import { holdReveal, whenFrameWhole } from "./game/revealHold.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
 import { navigateToLanding } from "./game/router.js";
 import { createCommandBar } from "./game/commandBar.js";
@@ -73,12 +78,16 @@ import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice
 import {
   buildFirstRenderer,
   buildOrUndo,
+  engineWithinBound,
   swapRenderer,
   switchOutcome,
   whenSceneReady,
+  type EngineOnCanvas,
+  type EngineWatchers,
   type SwapBindings,
 } from "./game/rendererSwap.js";
 import { releaseAtmosphere } from "./game/atmosphere.js";
+import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, createGovernor, governorDecision, steadyFrame } from "./game/governor.js";
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
@@ -97,6 +106,10 @@ export type GameHandle = {
    * party goes through the landing page, which tears the game down first.
    */
   attachLobby(lobby: Lobby): void;
+  /** The tier the running renderer was built at, and the engine it draws with. */
+  graphics(): { tier: QualityTier; engine: "webgl2" | "webgpu" };
+  /** Shows a line on the HUD for a few seconds. */
+  notify(line: string): void;
 };
 
 export type GameOptions = {
@@ -114,6 +127,21 @@ export type GameOptions = {
   onContinueOffline(): void;
   /** The pause menu opened (true) or closed (false); false again on dispose. */
   onPauseChange(paused: boolean): void;
+  /** An engine already made for the canvas (WebGPU, where `main.ts` chose
+   * it) for the first renderer at `tier`; absent, the renderer makes the
+   * WebGL2 one. */
+  engine?: AbstractEngine;
+  /** The WebGPU module's watchers, given with a WebGPU engine. */
+  watchers?: EngineWatchers;
+  /** The engine the WebGPU rule gives `tier` now, made on a fresh canvas
+   * (`main.ts`'s `engineFor`): what a switch of tier, and a rebuild after a
+   * failure, builds on. */
+  engineFor(tier: QualityTier, wanted: () => boolean): Promise<EngineOnCanvas>;
+  /** A failure of the running WebGPU engine, or a renderer that could not be
+   * built on one (`"pipeline"`): the page remembers it (`failureSwap`), so the
+   * WebGPU rule gives the rebuild its engine. The HUD's line for once the
+   * rebuild is done. */
+  engineFailed(reason: "pipeline" | "lost"): string;
   /** The tier `main.ts` decided (`startupTier`): `?tier=`, the player's
    * choice, or Auto. The hike starts at it; the pause screen's Settings can
    * change it while the hike runs. */
@@ -163,6 +191,10 @@ function buildGame(
   // The renderer and its canvas are replaced when the tier changes mid-hike
   // (`applyTier`); everything reads them through these bindings when it runs.
   let canvas = firstCanvas;
+  // The WebGPU engine made for this hike belongs to no renderer until the
+  // first one is built: a start that throws before then disposes it here.
+  let unowned: AbstractEngine | undefined = options.engine;
+  made(() => unowned?.dispose());
   // The sim registry is the source of truth for variant names; the command
   // layer only validates against them. This MUST run before `parseScript`
   // below: `parseScript` validates every entry as it parses, so a `terrain`
@@ -211,16 +243,56 @@ function buildGame(
   );
 
   const forest = createForest(seed);
+  /** The WebGPU module's watchers, once a WebGPU engine has been made. */
+  let watchers: EngineWatchers | null = options.watchers ?? null;
+  /** Stops listening to the running engine for failures (`watchWebGpu`). */
+  let stopWatching = (): void => undefined;
+  /** The HUD's line for a renderer that fell back to WebGL2 when its WebGPU
+   * engine could not build it, shown once play can see it. */
+  let engineNotice: string | null = null;
+  /** The ladders' hooks for the engine: listen to one that stands, take the
+   * old one's listener off before it goes, and remember one that failed. */
+  const engineBindings: Pick<SwapBindings, "watch" | "unwatch" | "engineFailed"> = {
+    watch: (r, detector) => {
+      stopWatching();
+      const engine = r.engine;
+      stopWatching = detector(engine, (reason) => void answerFailure(engine, reason));
+    },
+    unwatch: () => {
+      stopWatching();
+      stopWatching = () => undefined;
+    },
+    engineFailed: (error) => {
+      console.error("WebGPU: the renderer could not be built on it; building it on WebGL2.", error);
+      engineNotice = options.engineFailed("pipeline");
+    },
+  };
+  /** The pipelines a WebGPU engine made here makes asynchronously
+   * (`asyncPipelines.ts`), for the renderer built on it; none on WebGL2. */
+  const pipelinesFor = (engine: AbstractEngine | null): AsyncPipelines | undefined =>
+    engine !== null && watchers !== null ? (watchers.asyncPipelines(engine) ?? undefined) : undefined;
   // The tier asked for, and should it fail to build, the class's start tier
   // and then low, each on a fresh canvas: only the renderer is retried, not
-  // the world, which is built once.
-  const first = buildFirstRenderer(canvas, [options.tier, ...options.fallbackTiers], {
-    build: (next, at) => createRenderer(next, level, forest, { tier: at }),
-    freshCanvas: () => document.createElement("canvas"),
-  });
+  // the world, which is built once. A WebGPU engine that cannot build the
+  // tier is its own fault: that tier is built again on WebGL2 first.
+  // From here the ladder's renderers own it: `createRenderer` releases the
+  // engine it was given if its build throws, and the renderer disposes it.
+  unowned = undefined;
+  const first = buildFirstRenderer(
+    canvas,
+    [options.tier, ...options.fallbackTiers],
+    {
+      build: (next, at, engine) => createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine) }),
+      freshCanvas: () => document.createElement("canvas"),
+      ...engineBindings,
+    },
+    options.engine === undefined ? null : { engine: options.engine, watch: watchers?.failures ?? null },
+  );
   let renderer: Renderer = first.renderer;
   canvas = first.canvas;
   made(() => renderer.dispose());
+  // Newest first: the listener goes before the renderer it listens to.
+  made(() => engineBindings.unwatch());
   /** The tier the running renderer was built at, and where it came from. */
   let tier: QualityTier = first.tier;
   let tierSource: TierSource = options.tierSource;
@@ -232,18 +304,30 @@ function buildGame(
   let switching = false;
   /** The governor is acting: timing the page's idle frames, then its switch. */
   let lowering = false;
-  /** What the governor's cover does when the session ends: it lifts. */
-  let onSessionOver: (() => void) | null = null;
-  /** A shader compiled since the last frame: that frame is a known hitch. */
+  /** What a cover over play does when the session ends: it lifts. */
+  const onSessionOver = new Set<() => void>();
+  /** The switch, the governor's drop or the rebuild after a failure under
+   * way: one at a time. */
+  const serial = createSerial();
+  /** A shader compiled since the last frame, or on WebGPU a render pipeline
+   * was made: that frame is a known hitch. */
   let compiledSinceFrame = false;
   let unwatchCompiles: (() => void) | null = null;
-  /** Marks the frames a shader compiled in, on the renderer now running. */
+  /** Marks the frames a shader compiled in, on the renderer now running: the
+   * engine's compile observable, which both engines fire, and on WebGPU the
+   * frames that made a render pipeline (`watchPipelines`), which WebGPU makes
+   * at an effect's first draw, after its compile. */
   function watchCompiles(r: Renderer): void {
     unwatchCompiles?.();
-    const observer = r.engine.onAfterShaderCompilationObservable.add(() => {
+    const mark = (): void => {
       compiledSinceFrame = true;
-    });
-    unwatchCompiles = () => r.engine.onAfterShaderCompilationObservable.remove(observer);
+    };
+    const observer = r.engine.onAfterShaderCompilationObservable.add(mark);
+    const stopPipelines = r.engine.isWebGPU && watchers !== null ? watchers.pipelines(r.engine, mark) : () => undefined;
+    unwatchCompiles = () => {
+      r.engine.onAfterShaderCompilationObservable.remove(observer);
+      stopPipelines();
+    };
   }
   watchCompiles(renderer);
   made(() => unwatchCompiles?.());
@@ -998,7 +1082,7 @@ function buildGame(
    * would. */
   function sessionOver(): void {
     governor.stop();
-    onSessionOver?.();
+    for (const lift of [...onSessionOver]) lift();
   }
 
   /**
@@ -1242,6 +1326,11 @@ function buildGame(
     connectClient();
   }
 
+  // A start that fell back to WebGL2 from a WebGPU engine, the line saying
+  // so, once. Below the session's start, whose `setStatus(null)` would wipe it.
+  if (engineNotice !== null) hud.flash(engineNotice, FALLBACK_NOTICE_MS);
+  engineNotice = null;
+
   /** One frame. Named, so a live tier change can stop it on the old engine and
    * run it on the new one; it reads `renderer` when it runs. */
   function loop(): void {
@@ -1253,6 +1342,36 @@ function buildGame(
       return;
     }
     stepAndRender();
+  }
+
+  // On WebGPU a draw may be left out while its pipeline is made
+  // (`asyncPipelines.ts`), so the first frames can show a world with holes:
+  // the world stays hidden until a frame leaves nothing out, 10 s after the
+  // first frame at most (`revealWhenWhole`), under "Loading…" while the HUD
+  // says nothing of its own (`holdReveal`). A switch or the game's end lifts
+  // it at once. WebGL2 shows its first frame as always.
+  /** Lifts the start's hold, once, and stops waiting for a whole frame. */
+  let endRevealHold = (): void => undefined;
+  if (renderer.engine.isWebGPU && watchers !== null) {
+    const held = canvas;
+    const engine = renderer.engine;
+    const gpu = watchers;
+    const line = createHud(container);
+    const lift = holdReveal({
+      hideWorld: (hidden) => {
+        held.style.visibility = hidden ? "hidden" : "";
+      },
+      showLine: (shown) => line.setStatus(shown ? LOADING_LINE : null),
+      releaseLine: () => line.dispose(),
+      status: () => hud.status(),
+      eachFrame: (fn) => {
+        const observer = engine.onEndFrameObservable.add(fn);
+        return () => engine.onEndFrameObservable.remove(observer);
+      },
+      reveal: (fn) => gpu.reveal(engine, fn),
+    });
+    endRevealHold = lift;
+    made(() => endRevealHold());
   }
   renderer.engine.runRenderLoop(loop);
 
@@ -1294,9 +1413,10 @@ function buildGame(
   }
 
   const swapBindings: SwapBindings = {
-    // The engine is WebGL2, made by the renderer. The WebGPU rule, where it
-    // applies, makes the target's engine before the swap and passes it here.
-    build: (next, target) => createRenderer(next, level, forest, { tier: target }),
+    // The target's engine is made before the swap by the WebGPU rule
+    // (`options.engineFor`), on the canvas `freshCanvas` hands out first;
+    // null, the renderer makes WebGL2's.
+    build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine) }),
     freshCanvas: () => document.createElement("canvas"),
     extras: { dispose: disposeExtras, build: buildExtras },
     rebind: (next) => {
@@ -1307,6 +1427,7 @@ function buildGame(
     },
     restore: restoreView,
     loop,
+    ...engineBindings,
   };
 
   /**
@@ -1316,8 +1437,9 @@ function buildGame(
    */
   async function applyTier(choice: TierChoice, readyMaxMs: number): Promise<void> {
     const target = tierFor(choice);
-    // One switch at a time: the governor's may be under way.
-    if (disposed || broken || switching || lowering) return;
+    // One switch at a time: the governor's, or a rebuild after a failure, may
+    // be under way.
+    if (disposed || broken || !serial.idle) return;
     if (target === tier) {
       options.quality.save(choice);
       return;
@@ -1328,29 +1450,77 @@ function buildGame(
 
   /**
    * Switches the running hike to `target`: the page paints first (the pause
-   * screen's opaque ground, or the governor's cover), then the synchronous
-   * swap, then the wait for the new scene. `save`, when given, is kept only
-   * when the switch reaches `target`; a fallback keeps the choice as it was,
-   * says so, and reports the tier that failed so it is not tried again. When
-   * no tier builds at all, the Settings page and the landing say why, and the
-   * hike ends. The wait for the new scene is bounded by `readyMaxMs`, which
-   * each caller passes for the cover it put up (`APPLY_SWAP_READY_MAX_MS`,
-   * `GOVERNOR_SWAP_READY_MAX_MS`). Returns the tier now running.
+   * screen's opaque ground, or a cover over play), then the engine the WebGPU
+   * rule gives `target` is made (`options.engineFor`) while the old renderer
+   * still draws, then the synchronous swap, then the wait for the new scene.
+   * `save`, when given, is kept only when the switch reaches `target`; a
+   * fallback keeps the choice as it was, says so, and reports the tier that
+   * failed so it is not tried again. A WebGPU engine that could not build
+   * `target` gives way to WebGL2 at `target`, remembered, with the HUD's line.
+   * When no tier builds at all, the Settings page and the landing say why,
+   * and the hike ends. The wait for the new scene is bounded by `readyMaxMs`,
+   * which each caller passes for the cover it put up
+   * (`APPLY_SWAP_READY_MAX_MS`, `GOVERNOR_SWAP_READY_MAX_MS`). Returns the
+   * tier now running.
    */
-  async function switchTo(
-    target: QualityTier,
-    source: TierSource,
-    save: TierChoice | null,
-    readyMaxMs: number,
-  ): Promise<QualityTier> {
+  function switchTo(target: QualityTier, source: TierSource, save: TierChoice | null, readyMaxMs: number): Promise<QualityTier> {
+    return serial.track(
+      switchNow(target, source, save, readyMaxMs).then((reached) => {
+        flashEngineNotice();
+        return reached;
+      }),
+    );
+  }
+
+  /** The line of a WebGPU engine that could not build its tier, once. */
+  function flashEngineNotice(): void {
+    if (engineNotice !== null && !disposed && !broken) hud.flash(engineNotice, FALLBACK_NOTICE_MS);
+    engineNotice = null;
+  }
+
+  async function switchNow(target: QualityTier, source: TierSource, save: TierChoice | null, readyMaxMs: number): Promise<QualityTier> {
     swapError = null;
     switching = true;
     try {
       await new Promise<void>((resolve) => afterNextPaint(resolve));
       if (disposed) return tier;
+      // The engine's making counts against the cover's bound; the scene waits
+      // on what is left of it. An engine too slow for the bound gives way to
+      // WebGL2 at `target`, remembered against nothing.
+      const made = await engineWithinBound((wanted) => options.engineFor(target, wanted), readyMaxMs, {
+        now: () => performance.now(),
+        setTimer: (fn, ms) => {
+          const id = setTimeout(fn, ms);
+          return () => clearTimeout(id);
+        },
+        webgl2: () => ({ canvas: document.createElement("canvas"), engine: null, watchers: null }),
+      });
+      if (made.late) console.warn(`WebGPU: the engine was not ready within the switch's ${readyMaxMs} ms; drawing ${target} with WebGL2.`);
+      const next = made.onCanvas;
+      if (disposed || broken) {
+        next.engine?.dispose();
+        return tier;
+      }
+      if (next.watchers !== null) watchers = next.watchers;
+      // The canvas the engine was made on is the first the swap takes.
+      let engineCanvas: HTMLCanvasElement | null = next.canvas;
+      const bindings: SwapBindings = {
+        ...swapBindings,
+        freshCanvas: () => {
+          const fresh = engineCanvas ?? document.createElement("canvas");
+          engineCanvas = null;
+          return fresh;
+        },
+      };
+      // The start's hold on its world, if still up, gives way to the switch's own cover.
+      endRevealHold();
       let got: ReturnType<typeof swapRenderer>;
       try {
-        got = swapRenderer({ renderer, canvas }, { tier: target, engine: null, fallbackTier: tier }, swapBindings);
+        got = swapRenderer(
+          { renderer, canvas },
+          { tier: target, engine: next.engine, watch: next.watchers?.failures ?? null, fallbackTier: tier },
+          bindings,
+        );
       } catch (error) {
         broken = true;
         // Each failed rung has taken itself down; this is for a throw from the
@@ -1371,15 +1541,69 @@ function buildGame(
       if (got.fellBack) options.onTierFallback({ attempted: target, built: tier, source });
       else tierSource = source;
       governor.restart(performance.now());
-      console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine webgl2`);
+      console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine ${renderer.engine.isWebGPU ? "webgpu" : "webgl2"}`);
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
-      await whenSceneReady(renderer.scene, readyMaxMs, renderer.forestReady);
+      const sceneFrom = performance.now();
+      await whenSceneReady(renderer.scene, made.leftMs, renderer.forestReady);
+      // On WebGPU, then a frame that left no draw out while its pipeline was
+      // made, within what is left of the same bound: the cover lasts no
+      // longer, and meshes do not appear after it lifts.
+      const gpu = watchers;
+      if (renderer.engine.isWebGPU && gpu !== null) {
+        const engine = renderer.engine;
+        await whenFrameWhole((lift) => gpu.reveal(engine, lift), made.leftMs - (performance.now() - sceneFrom));
+      }
       return tier;
     } finally {
       switching = false;
     }
   }
+
+  /**
+   * Covers play: the probe's opaque screen over the play HUD, the controls
+   * held (`gate.cover`), lifted by the function returned, or at once when the
+   * session ends so the ending is never hidden (`coverWith`).
+   */
+  function coverPlay(): () => void {
+    return coverWith({
+      show: () => showProbeScreen(container, OVER_PLAY_Z),
+      hold: () => {
+        const release = gate.cover();
+        return () => {
+          if (!disposed) release();
+        };
+      },
+      whenEnded: (lift) => {
+        onSessionOver.add(lift);
+        return () => void onSessionOver.delete(lift);
+      },
+    });
+  }
+
+  /**
+   * A failure of the running WebGPU engine (`watchWebGpu`), answered live,
+   * never by a reload, which would end a party (`answerFailures`): the page
+   * remembers it, and the renderer is rebuilt at the running tier on the
+   * engine the WebGPU rule now gives it, under a cover over play.
+   */
+  const answerFailure = answerFailures({
+    serial,
+    alive: () => !disposed && !broken && landingTimer === null,
+    running: () => renderer.engine,
+    runningOnWebGpu: () => renderer.engine.isWebGPU,
+    unwatch: () => engineBindings.unwatch(),
+    record: (reason) => options.engineFailed(reason),
+    cover: coverPlay,
+    stopLoop: () => renderer.engine.stopRenderLoop(),
+    // The answer shows the line for what the rebuild ended on; the swap's
+    // own is dropped, so it shows once.
+    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => {
+      engineNotice = null;
+    }),
+    flash: (line) => hud.flash(line, FALLBACK_NOTICE_MS),
+    log: (line) => console.error(line),
+  });
 
   /** Feeds the governor one frame of play, and acts on its verdict once. */
   function feedGovernor(dt: number): void {
@@ -1410,18 +1634,13 @@ function buildGame(
    */
   async function lowerTier(): Promise<void> {
     const decision = governorDecision(governor.verdict, tier, tierSource);
-    if (decision === null || disposed || broken || switching || lowering || landingTimer !== null) return;
+    if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null) return;
     lowering = true;
+    let done: () => void = () => undefined;
+    void serial.track(new Promise<void>((resolve) => (done = resolve)));
     try {
       await actOnDrop(tier, decision.next, {
-        cover: () => {
-          const screen = showProbeScreen(container, OVER_PLAY_Z);
-          const release = gate.cover();
-          return () => {
-            screen.dispose();
-            if (!disposed) release();
-          };
-        },
+        cover: coverPlay,
         stopLoop: () => {
           const stopped = renderer;
           stopped.engine.stopRenderLoop();
@@ -1437,16 +1656,15 @@ function buildGame(
         log: (line) => console.info(line),
         alive: () => !disposed && !broken && landingTimer === null,
         whenEnded: (fn) => {
-          onSessionOver = fn;
-          return () => {
-            if (onSessionOver === fn) onSessionOver = null;
-          };
+          onSessionOver.add(fn);
+          return () => void onSessionOver.delete(fn);
         },
       });
     } catch (error) {
       console.error("quality governor: the drop could not be acted on.", error);
     } finally {
       lowering = false;
+      done();
     }
   }
 
@@ -1459,6 +1677,12 @@ function buildGame(
       lobby = next;
       admission.attach(next);
     },
+    graphics() {
+      return { tier, engine: renderer.engine.isWebGPU ? "webgpu" : "webgl2" };
+    },
+    notify(line) {
+      if (!disposed) hud.flash(line, FALLBACK_NOTICE_MS);
+    },
     dispose() {
       disposed = true;
       options.onPauseChange(false);
@@ -1468,6 +1692,10 @@ function buildGame(
       document.removeEventListener("visibilitychange", onVisibility);
       netgraph.dispose();
       if (landingTimer !== null) clearTimeout(landingTimer);
+      endRevealHold();
+      // Before anything of the engine goes: a disposed engine is not a
+      // failing one.
+      engineBindings.unwatch();
       if (!broken) renderer.engine.stopRenderLoop();
       session?.dispose();
       admission?.dispose();

@@ -102,6 +102,7 @@ import {
 } from "./distanceFadePlugin.js";
 import { modelUrl } from "./assetUrls.js";
 import { loadUntilAborted } from "./modelLoad.js";
+import type { AsyncPipelines } from "./asyncPipelines.js";
 
 /** Species index 0 → fir/conifer_a, 1 → pine/conifer_b (the `treeInCell`
  * convention). Understory keeps pairing off SPECIES, not cohort. */
@@ -120,6 +121,49 @@ const UNDERSTORY_URLS = [
 
 /** Impostor bake resolution — a quad this far away needs no more. */
 const IMPOSTOR_BAKE_SIZE = 256;
+
+/** A bake still waiting on its shaders this long says so, once, as a warning,
+ * and goes on waiting: late is better than never, but late must be visible. A
+ * cold WebGPU start can take about this long and land, so it is not an error. */
+export const IMPOSTOR_BAKE_WARN_MS = 30_000;
+
+/** A bake still waiting this long gives up: about four times the slowest cold
+ * WebGPU bake seen, so it ends a bake that will never be ready (a failure
+ * nothing reported) rather than one that is merely slow, and says so. */
+export const IMPOSTOR_BAKE_FAIL_MS = 120_000;
+
+/** What a bake reads of the pipelines a WebGPU engine makes asynchronously
+ * (`asyncPipelines.ts`): the draws its render left out, and the renderer's
+ * scope around a render (`guarded`, `scopeRenderingGroups`), which shuts what
+ * the render left open even as it throws, and answers false where a draw left
+ * out escaped the render and the patch came off for good. */
+export type BakePipelines = Pick<AsyncPipelines, "takeSkipped"> & { guarded(render: () => void): boolean };
+
+/** How often a bake whose render left a draw out renders again, readiness
+ * checked first, to see whether its own pipelines have landed. */
+export const BAKE_PIPELINES_POLL_MS = 250;
+
+/** How a bake is told to stop, and when it should say it is still waiting. */
+export type BakeOptions = {
+  /** Aborted when the forest is disposed: the bake then stops polling,
+   * disposes its target and resolves null without a word. */
+  signal?: AbortSignal;
+  /** When to say the bake is still waiting; `IMPOSTOR_BAKE_WARN_MS` if unset. */
+  warnMs?: number;
+  /** When to give up; `IMPOSTOR_BAKE_FAIL_MS` if unset. */
+  failMs?: number;
+  /** On a WebGPU engine that makes its pipelines asynchronously, where a draw
+   * of the bake's render may be left out: the bake then keeps only a render
+   * that left nothing out (`renderedWhole`). Absent, it renders once, as
+   * always. */
+  pipelines?: BakePipelines;
+};
+
+/** One billboard's bake, as the forest last saw it: still baking, landed
+ * (`ready`, its bucket drawing once filled), or `failed` (null, or rejected:
+ * the bucket stays off, and the console has said so). `ms` is how long it
+ * took to settle, null while baking. */
+export type ImpostorBake = { name: string; state: "baking" | "ready" | "failed"; ms: number | null };
 
 /** The snag billboard bakes from an UPRIGHT clone. `deadwood.snag` is
  * modelled lying down (long axis on local X — see `deadwoodMatrixBuffer`), so
@@ -148,20 +192,22 @@ export type ForestMeshesOptions = {
   } | null;
   /** NullEngine escape hatch: render targets lie under NullEngine, so tests
    * inject a stub. A null bake (sync or resolved) DISABLES that billboard's
-   * bucket — far trees drop out rather than draw grey quads. The production
-   * default is async: it must wait out shader compilation. Same parameter
-   * order as `defaultBakeImpostor`, trailing options and all: `timeoutMs`
-   * third, the optional bake `pose` (the snag's upright roll) fourth, and the
-   * shell's `signal`, aborted when it is disposed, fifth. */
+   * bucket — far trees drop out rather than draw grey quads — and says so in
+   * the console. The production default is async: it must wait out shader
+   * compilation. Same parameter order as `defaultBakeImpostor`: the bake
+   * options (the forest's abort signal) third, the optional bake `pose` (the
+   * snag's upright roll) fourth. */
   bakeImpostor?: (
     mesh: Mesh,
     scene: Scene,
-    timeoutMs?: number,
+    options?: BakeOptions,
     pose?: Quaternion,
-    signal?: AbortSignal,
   ) => Texture | null | Promise<Texture | null>;
   /** Near-band radius override — the quality-tier knob (low = 140). */
   nearRadius?: number;
+  /** The WebGPU engine's asynchronous pipelines, handed to every bake
+   * (`BakeOptions.pipelines`); absent on WebGL2. */
+  pipelines?: BakePipelines;
 };
 
 export type ForestMeshes = {
@@ -175,6 +221,10 @@ export type ForestMeshes = {
    * must watch its length, not snapshot it at creation.
    */
   readonly casterMeshes: readonly Mesh[];
+  /** Every billboard's bake as it stands, in the order the billboards were
+   * made: what a far forest missing from view can be traced to. Empty until
+   * the models have loaded. */
+  impostorBakes(): readonly ImpostorBake[];
   /**
    * Resolves once the forest's first fill is complete: its models have
    * landed (or failed, or the shell was disposed first) and every billboard
@@ -204,6 +254,10 @@ type Impostor = {
   /** Vertical centre of the quad in tree-local metres — the quad is
    * origin-centred, the tree origin is at its footprint base. */
   centreY: number;
+  /** Its bake as the forest last saw it (`ForestMeshes.impostorBakes`). */
+  bake: ImpostorBake;
+  /** When that bake was kicked off (`performance.now()`), for its `ms`. */
+  bakeStartedAt: number;
   /** True once a bake texture landed on the material. Until then — and
    * forever, if the bake returned null or failed — the bucket stays
    * disabled: an untextured alpha-test material draws opaque grey. */
@@ -624,10 +678,34 @@ const IMPOSTOR_BAKE_LAYER = 0x10000000;
  * browser; the readiness-gate ordering is unit-tested by spying the RTT
  * prototype. Exported for those tests.
  *
- * A bake that never becomes ready (`timeoutMs`, test hook) resolves null,
- * which disables that billboard's bucket — far trees drop out instead of
- * drawing 3,200 opaque grey quads. So does a bake whose `signal` aborts (its
- * shell was disposed), at the next poll.
+ * No short deadline. A budget would be a guess per engine and per machine:
+ * the old 5 s one timed out, silently, under WebGPU's run-time shader
+ * translation, and a slow machine on WebGL2 can miss it too, and either way the
+ * far forest was gone for the life of the page with nothing said. Each poll
+ * asks, in order, and the bake ends in one of four ways:
+ * - aborted: `options.signal` fired (the forest was disposed); it disposes its
+ *   target and resolves null without a word;
+ * - ready: the target is ready; it renders once and resolves the texture. An
+ *   effect that is ready bakes, even with an error left on it from a recompile
+ *   that failed after an earlier one drew. On a WebGPU engine that makes its
+ *   pipelines asynchronously (`options.pipelines`) a draw of that render may
+ *   be left out while its pipeline is made: it then keeps only a render made
+ *   on a ready target that left nothing out (`renderedWhole`), rendering
+ *   again every `BAKE_PIPELINES_POLL_MS`, readiness checked first, and once
+ *   its bound has run out, once more on Babylon's synchronous path; where
+ *   none could be kept it resolves null, saying so;
+ * - failed: a bake clone's effect reports a compilation error and has no
+ *   fallback left to try (PBR retries a failed compile with fewer defines, on
+ *   the same effect, the error still set until a retry lands); it logs one
+ *   `console.error` naming the model and resolves null, which disables that
+ *   billboard's bucket (far trees drop out rather than draw 3,200 opaque grey
+ *   quads). On WebGPU a translation failure reaches the effect through
+ *   `catchTranslationFailures` (`gpuEngine.ts`);
+ * - given up: still waiting at `options.failMs` (`IMPOSTOR_BAKE_FAIL_MS`); it
+ *   logs one `console.error` and resolves null, so a failure nothing reported
+ *   does not poll for the life of the page.
+ * Still waiting at `options.warnMs` (`IMPOSTOR_BAKE_WARN_MS`), it says so once,
+ * as a warning, and waits on.
  *
  * `pose` rotates the bake clone before anything is measured, for a model
  * whose rest orientation is not how it stands in the world: `deadwood.snag`
@@ -640,9 +718,8 @@ const IMPOSTOR_BAKE_LAYER = 0x10000000;
 export async function defaultBakeImpostor(
   mesh: Mesh,
   scene: Scene,
-  timeoutMs = 5000,
+  options: BakeOptions = {},
   pose?: Quaternion,
-  signal?: AbortSignal,
 ): Promise<Texture | null> {
   // Clones share geometry and materials with the source; identical vertex
   // layout means an effect compiled for a clone is the effect the source
@@ -713,24 +790,56 @@ export async function defaultBakeImpostor(
 
     // Readiness under the BAKE pass and camera (see the function comment):
     // each poll triggers the missing compiles and texture loads, so this
-    // normally settles in a few frames' worth of 16 ms hops.
-    const deadline = performance.now() + timeoutMs;
-    const giveUp = (): null => {
+    // normally settles in a few frames' worth of 16 ms hops. It ends aborted,
+    // ready, failed or given up (see the function comment).
+    const started = performance.now();
+    const warnMs = options.warnMs ?? IMPOSTOR_BAKE_WARN_MS;
+    const failMs = options.failMs ?? IMPOSTOR_BAKE_FAIL_MS;
+    let warned = false;
+    const stop = (): null => {
       camera.dispose();
       rtt.dispose();
       return null;
     };
+    const pipelines = options.pipelines;
     for (;;) {
-      // Before every poll, the first and each one after a wait: a bake whose
-      // shell has been disposed neither polls the torn-down scene nor renders
-      // into it, and gives it up at once rather than at the timeout.
-      if (signal?.aborted === true) return giveUp();
-      if (rtt.isReadyForRendering()) break;
-      if (performance.now() >= deadline) return giveUp();
-      await new Promise((resolve) => setTimeout(resolve, 16));
+      if (options.signal?.aborted) return stop();
+      const ready = rtt.isReadyForRendering();
+      if (ready) {
+        if (pipelines === undefined) break;
+        // Its pipelines are made asynchronously: a render made on a ready
+        // target and whole is kept; one that left a draw out is made again at
+        // the next poll, readiness checked first, until its own pipelines have
+        // landed. Once the bake's bound has run out, one last render as a
+        // target drawn once, which the scope leaves on Babylon's synchronous
+        // path; a render that still left a draw out is never kept.
+        const late = performance.now() - started >= failMs;
+        if (late) rtt.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+        if (renderedWhole(rtt, pipelines)) break;
+        if (late) {
+          console.error(`forest impostor bake left a draw out: ${mesh.name}`);
+          return stop();
+        }
+      } else {
+        const error = finalCompilationError(bakeMeshes, rtt.renderPassId);
+        if (error !== null) {
+          console.error(`forest impostor bake failed: ${mesh.name}: ${error}`);
+          return stop();
+        }
+      }
+      const waited = performance.now() - started;
+      if (!ready && waited >= failMs) {
+        console.error(`forest impostor bake gave up after ${Math.round(failMs / 1000)} s: ${mesh.name}`);
+        return stop();
+      }
+      if (!warned && waited >= warnMs) {
+        warned = true;
+        console.warn(`forest impostor bake still waiting after ${Math.round(warnMs / 1000)} s: ${mesh.name}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, ready ? BAKE_PIPELINES_POLL_MS : 16));
     }
 
-    rtt.render();
+    if (pipelines === undefined) rtt.render();
     camera.dispose();
     return rtt;
   } finally {
@@ -739,6 +848,43 @@ export async function defaultBakeImpostor(
     // exclusively by this bake, never shared with the live buckets.
     clone.dispose(false, true);
   }
+}
+
+/**
+ * Renders the bake's target once, inside the scope's guard, and says whether
+ * the render left no draw out. The count is taken just before and just after
+ * the render, so draws left out elsewhere on the engine are never counted
+ * against it, and a bake does not wait for anything but its own pipelines.
+ * The target is kept for the life of the page, so a draw left out in it,
+ * while its pipeline is made (`asyncPipelines.ts`), would bake a blank or
+ * partial tree for good: such a render is never kept. A render that a draw
+ * left out escaped drew nothing whole, and the patch is off from then on
+ * (`AsyncPipelines.guard`): the target is rendered once more, now on
+ * Babylon's synchronous path, and that render is the one judged.
+ */
+function renderedWhole(rtt: RenderTargetTexture, pipelines: BakePipelines): boolean {
+  pipelines.takeSkipped();
+  if (!pipelines.guarded(() => rtt.render())) {
+    pipelines.takeSkipped();
+    pipelines.guarded(() => rtt.render());
+  }
+  return pipelines.takeSkipped() === 0;
+}
+
+/** The first compilation error any of `meshes` reports under render pass
+ * `renderPassId` with no fallback left to try, or null. An error Babylon is
+ * still recovering from (a fallback compiling on the same effect) is not
+ * final. Reads the pass's draw wrapper without creating one, so a poll changes
+ * nothing. */
+function finalCompilationError(meshes: readonly Mesh[], renderPassId: number): string | null {
+  for (const mesh of meshes) {
+    for (const subMesh of mesh.subMeshes ?? []) {
+      const effect = subMesh._getDrawWrapper(renderPassId)?.effect;
+      const error = effect?.getCompilationError();
+      if (error && effect?.allFallbacksProcessed()) return error;
+    }
+  }
+  return null;
 }
 
 /**
@@ -780,6 +926,8 @@ export function createForestMeshes(
   const containers: AssetContainer[] = [];
   const materials: Material[] = [];
   const textures: Texture[] = [];
+  /** Every billboard, in the order made, for `impostorBakes`. */
+  const impostors: Impostor[] = [];
   let species: SpeciesBuckets[] | null = null;
   // Regeneration saplings, per species (index-aligned with `species`): the
   // same shape the giants get, once they got their own billboard.
@@ -808,6 +956,9 @@ export function createForestMeshes(
    * quietly, none starts after it, and a bake still polling stops
    * (`modelLoad.ts`). */
   const loads = new AbortController();
+  // The bakes share the signal: a bake still waiting on its shaders stops
+  // polling and lets its target go.
+  const bakeOptions: BakeOptions = { signal: loads.signal, pipelines: options.pipelines };
   const loadModel = (url: string): Promise<AssetContainer> =>
     loadUntilAborted(() => loadAssetContainerAsync(url, scene), loads.signal);
 
@@ -821,14 +972,24 @@ export function createForestMeshes(
   /**
    * A bake landing on a billboard. A null texture — or a bake that failed —
    * leaves `ready` false forever, so the bucket never enables: far trees drop
-   * out rather than draw opaque grey quads.
+   * out rather than draw opaque grey quads. Never silently: the console names
+   * the billboard, and its record says `failed`. A null after `dispose` is the
+   * abort, and says nothing.
    */
   function adoptBake(imp: Impostor, mat: PBRMaterial, texture: Texture | null): void {
-    if (texture === null) return;
+    if (texture === null) {
+      if (disposed) return;
+      imp.bake.state = "failed";
+      imp.bake.ms = performance.now() - imp.bakeStartedAt;
+      console.error(`forest impostor: no bake for ${imp.bake.name}`);
+      return;
+    }
     if (disposed) {
       texture.dispose();
       return;
     }
+    imp.bake.state = "ready";
+    imp.bake.ms = performance.now() - imp.bakeStartedAt;
     textures.push(texture);
     mat.albedoTexture = texture;
     mat.useAlphaFromAlbedoTexture = true;
@@ -878,8 +1039,11 @@ export function createForestMeshes(
       // not silently wrong.
       bucket: { meshes: [plane], fade: fadeBands(seamNear(nearRadius), SEAM_FAR) },
       centreY,
+      bake: { name: plane.name, state: "baking", ms: null },
+      bakeStartedAt: performance.now(),
       ready: false,
     };
+    impostors.push(impostor);
 
     // A synchronous bake (the NullEngine stubs) lands before this function
     // returns; the async production bake lands whenever its shaders finish
@@ -912,7 +1076,7 @@ export function createForestMeshes(
     // the meshes as loaded — enabled and free of thin instances. Impostor
     // texture from LOD1 — detailed enough for a 256² bake, cheaper than LOD0.
     const lod1First = lods[1][0];
-    const bake = lod1First === undefined ? null : bakeImpostor(lod1First, scene, undefined, undefined, loads.signal);
+    const bake = lod1First === undefined ? null : bakeImpostor(lod1First, scene, bakeOptions);
 
     for (const mesh of [...lods.flat(), ...(understory ?? [])]) prepBucketMesh(mesh);
 
@@ -1083,11 +1247,10 @@ export function createForestMeshes(
     // The snag's bake, kicked BEFORE `adoptBucket` disables the deadwood
     // meshes — the same rule `adoptSpecies` records for the tree bakes — and
     // posed upright, because the asset is modelled lying down (`SNAG_POSE`).
-    // `timeoutMs` stays defaulted; it is the third parameter, the pose the
-    // fourth.
+    // The bake options are the third parameter, the pose the fourth.
     const snagSource = loaded.deadwood[0];
     const snagBake =
-      snagSource === undefined ? null : bakeImpostor(snagSource, scene, undefined, SNAG_POSE, loads.signal);
+      snagSource === undefined ? null : bakeImpostor(snagSource, scene, bakeOptions, SNAG_POSE);
 
     // Both dead-tree roles end at the near seam: the SNAG half cross-fades
     // into its billboard there, and a ~1 m log is sub-pixel beyond it and
@@ -1446,10 +1609,15 @@ export function createForestMeshes(
       maybeBuild();
     },
     casterMeshes,
+    impostorBakes() {
+      return impostors.map((imp) => ({ ...imp.bake }));
+    },
     ready,
     dispose() {
       if (disposed) return;
       disposed = true;
+      // First: a GLB in flight ends quietly and a bake still waiting stops
+      // polling and releases its target.
       loads.abort();
       for (const sp of [...(species ?? []), ...(saplingSpecies ?? [])]) {
         for (const bucket of [...sp.lods, sp.understory, sp.impostor.bucket]) {

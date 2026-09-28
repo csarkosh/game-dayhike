@@ -162,7 +162,9 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
 
   scene.getEngine().setHardwareScalingLevel(settings.hardwareScaling);
 
-  const sky = new SkyMaterial("skyMaterial", scene);
+  // GLSL on every engine (the third argument), so the sky is one source on
+  // WebGL2 and WebGPU alike; a no-op on WebGL2, where every material is GLSL.
+  const sky = new SkyMaterial("skyMaterial", scene, true);
   sky.backFaceCulling = false;
   // Drive the sky from an explicit sun vector rather than from its own
   // inclination and azimuth, so exactly one function decides where the sun is

@@ -342,3 +342,34 @@ describe("the landing's one-shot notice", () => {
     expect(takeNotice(s, 1_790_000_000_000)).toBe(null);
   });
 });
+
+describe("the engine on a verdict", () => {
+  const RTX = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)";
+  const verdict = { tier: "medium" as const, source: "probe" as const, pixels: 2_073_600, at: 1_790_000_000_000 };
+
+  it("reads a WebGPU verdict back, and one with no engine as it was written", () => {
+    const s = memoryStorage();
+    const gpu: AutoRecord = { v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0, verdict: { ...verdict, engine: "webgpu" } };
+    writeAutoRecord(s, gpu);
+    expect(readAutoRecord(s)).toEqual(gpu);
+    const gl: AutoRecord = { ...gpu, verdict };
+    writeAutoRecord(s, gl);
+    expect(readAutoRecord(s)).toEqual(gl);
+    s.setItem("dayhike.quality.auto", JSON.stringify({ ...gpu, verdict: { ...verdict, engine: "vulkan" } }));
+    expect(readAutoRecord(s)).toBe(null);
+  });
+
+  it("writes a build verdict for the engine the tier failed on, over a verdict that engine does not read", () => {
+    const base = { gpu: RTX, browser: 153, cls: "discrete-modern" as const, pixels: 2_073_600, now: 1_790_000_000_000 };
+    const onGpu: AutoRecord = { v: 1, ...base, attempts: 0, verdict: { ...verdict, tier: "low", at: base.now - 1, engine: "webgpu" } };
+    // A WebGPU verdict is not read for WebGL2: the WebGL2 build verdict is written over it.
+    const out = recordFallback({ ...base, record: onGpu, attempted: "high", built: "medium", source: "auto", choice: "auto" });
+    expect(out.record!.verdict).toEqual({ tier: "medium", source: "build", pixels: 2_073_600, at: 1_790_000_000_000 });
+    // A lower WebGL2 verdict is read for WebGPU (a floor there), so it is kept,
+    // as the lower holding verdict of the same engine is.
+    const onGl: AutoRecord = { v: 1, ...base, attempts: 0, verdict: { ...verdict, tier: "low", at: base.now - 1 } };
+    expect(recordFallback({ ...base, record: onGl, attempted: "high", built: "medium", source: "auto", choice: "auto", engine: "webgpu" }).record).toBe(null);
+    expect(recordFallback({ ...base, record: onGl, attempted: "high", built: "medium", source: "auto", choice: "auto" }).record).toBe(null);
+  });
+});
+

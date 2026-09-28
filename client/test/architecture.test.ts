@@ -91,6 +91,266 @@ describe("layer boundaries", () => {
     expect(violations(join(SRC, "net"), [/^@babylonjs/, /game\//])).toEqual([]);
   });
 
+  it("reaches the WebGPU engine from main.ts only through a dynamic import", () => {
+    const staticImports = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*import\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const seen = new Set<string>();
+    const stack = [join(SRC, "main.ts")];
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of staticImports(file)) {
+        if (/^@babylonjs\/core\/Engines\/(?:webgpuEngine|WebGPU\/)/.test(spec)) bad.push(`${file} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(20);
+    expect(bad).toEqual([]);
+  });
+
+  it("loads the WebGPU engine's extensions with the engine, and only there", () => {
+    // The dynamic texture the fingerposts paint, the compute and multi-render
+    // paths: the WebGPU engine's own versions, which no WebGL2 import reaches.
+    // In `gpuEngine.ts`, so the dynamic chunk carries them; the static-graph
+    // test above keeps them out of the page's first load.
+    expect(readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8")).toContain(
+      'import "@babylonjs/core/Engines/WebGPU/Extensions/index.js";',
+    );
+  });
+
+  it("never turns WebGPU's uniformity analysis off for every shader", () => {
+    // The finish pass turns it off for itself (`finishFragmentFor`); replacing
+    // the engine's stage-descriptor method would hide every other shader's
+    // uniformity fault too. The shader lookup calls it, with WGSL already
+    // translated (each stage's switch read as Babylon reads it), and nothing
+    // replaces it.
+    const found = sourceFiles(SRC).filter((f) => readFileSync(f, "utf8").includes("_createPipelineStageDescriptor"));
+    expect(found.map((f) => relative(SRC, f))).toEqual(["game/shaderLookup.ts"]);
+    const lookup = readFileSync(join(SRC, "game/shaderLookup.ts"), "utf8");
+    expect(lookup).not.toMatch(/_createPipelineStageDescriptor\s*=[^=]/);
+    expect([...lookup.matchAll(/own\._createPipelineStageDescriptor\(([^)]*)\)/g)].map((m) => m[1])).toEqual([
+      "vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false",
+    ]);
+  });
+
+  it("keeps `forgetTranslators` for tests: nothing in src/ but its definition names it", () => {
+    // A page keeps its started translators for its life (`loadTranslators`);
+    // dropping them is only for tests, which start them afresh each time.
+    const named = sourceFiles(SRC).flatMap((file) =>
+      [...stripComments(readFileSync(file, "utf8")).matchAll(/\bforgetTranslators\b/g)].map(() => relative(SRC, file)),
+    );
+    expect(named).toEqual(["game/gpuEngine.ts"]);
+    expect(readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8")).toContain("export function forgetTranslators(): void {");
+  });
+
+  it("keeps the engine choice out of sim/ and net/", () => {
+    const named = [/engineChoice/, /gpuEngine/, /webgpuVertexBuffer/];
+    expect(violations(join(SRC, "sim"), named)).toEqual([]);
+    expect(violations(join(SRC, "net"), named)).toEqual([]);
+  });
+
+  it("defines each helper the tier and engine code share once: the tier override, the browser's version, the storage accessors", () => {
+    const definitions = (name: string): string[] =>
+      sourceFiles(SRC).flatMap((file) =>
+        [...stripComments(readFileSync(file, "utf8")).matchAll(new RegExp(`\\bfunction ${name}\\(`, "g"))].map(() => relative(SRC, file)),
+      );
+    expect(definitions("parseTierOverride")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("browserMajor")).toEqual(["game/gpuSignals.ts"]);
+    expect(definitions("pageStorage")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("pageSessionStorage")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("safeStorage")).toEqual([]);
+    // The landing notice's pair: the engine's own reload notice is gone with
+    // the reload.
+    expect(definitions("leaveNotice")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("takeNotice")).toEqual(["game/tierChoice.ts"]);
+  });
+
+  it("answers a WebGPU failure without reloading the page: the one reload left is the player's, on a build mismatch", () => {
+    const calls = (pattern: RegExp): string[] =>
+      sourceFiles(SRC).flatMap((file) =>
+        [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map((m) => `${relative(SRC, file)}: ${m[0]}`),
+      );
+    expect(calls(/location\.replace\(/g)).toEqual([]);
+    expect(calls(/.*location\.reload\(.*/g)).toEqual(["app.ts:     onReload: () => location.reload(),"]);
+  });
+
+  it("asks for a WebGPU adapter in one place, the GPU's signals, and never through Babylon's support check", () => {
+    const naming = (pattern: RegExp): string[] =>
+      sourceFiles(SRC).flatMap((file) =>
+        [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map(() => relative(SRC, file)),
+      );
+    expect(naming(/\.requestAdapter\(/g)).toEqual(["game/gpuSignals.ts"]);
+    expect(naming(/\bIsSupportedAsync\b/g)).toEqual([]);
+  });
+
+  it("starts a hike through one chain: one render token, the tier decided before the engine, one catch", () => {
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    expect([...main.matchAll(/\blet renderToken\b/g)].length).toBe(1);
+    // The tier comes from the start's decision (`startupTier`), never from
+    // the older rule, and the engine from the tier decided.
+    expect(main).not.toContain("detectTier");
+    expect([...main.matchAll(/\bstartHike</g)].length).toBe(1);
+    expect(main).toContain("      return engineFor(decided.tier, read, () => !cancelled());");
+    // Nothing of the start hangs off a promise outside the chain's catch.
+    expect(main).not.toMatch(/makeWebGpu\([^)]*\)\.then\(/);
+  });
+
+  it("wires the failure answer to the engine that failed and the renderer that runs, and the game to the start's recorder", () => {
+    // What `engineFailure.test.ts` cannot see: the page's side of it.
+    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    // The watcher reports the engine it watches, captured when it is put on.
+    expect(app).toContain("      const engine = r.engine;\n      stopWatching = detector(engine, (reason) => void answerFailure(engine, reason));");
+    // The answer compares it with the engine the running renderer draws with.
+    expect(app).toContain("    running: () => renderer.engine,");
+    expect(app).toContain("    runningOnWebGpu: () => renderer.engine.isWebGPU,");
+    // The game records every WebGPU failure through the recorder
+    // `startOnEngine` hands its start, which tells the start's from the hike's.
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    expect(main).toContain("    start: ({ canvas, engine, watchers }, record) =>");
+    expect([...main.matchAll(/engineFailed: record,/g)].length).toBe(1);
+    expect(main).not.toMatch(/\bstarting\b/);
+  });
+
+  it("shows one line after a failure rebuild: the swap itself shows none, a switch its engine's, the answer its own", () => {
+    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    const body = (from: string, to: string): string => app.slice(app.indexOf(from), app.indexOf(to, app.indexOf(from)));
+    // `switchNow` is the swap both paths run: it shows no line.
+    expect(body("  async function switchNow(", "\n  }\n")).not.toContain("hud.flash");
+    expect(body("  async function switchNow(", "\n  }\n")).not.toContain("flashEngineNotice");
+    // A switch (Apply, the governor) shows the line of an engine that could
+    // not build its tier…
+    expect(body("  function switchTo(", "\n  }\n")).toContain("flashEngineNotice");
+    // …and a failure's rebuild leaves the line to the answer (`answerFailures`).
+    expect(app).toContain("    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => {\n      engineNotice = null;\n    }),");
+  });
+
+  it("measures the probe's steps on WebGL2 where the rule draws their tiers on WebGPU and a WebGPU step cannot settle", () => {
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    expect(main).toContain(
+      '      if (probeStepEngine(read, verdictEngineNow(read)) === "webgl2") return { canvas: document.createElement("canvas"), engine: null, watch: null };',
+    );
+  });
+
+  it("records every failed WebGPU start through the one pin rule: the first load's, a switch's, a retry's, a probe step's", () => {
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    expect(main).toContain("  return recordStartFailure({");
+    expect(main).toContain("    remember: () => {\n      if (wanted()) void rememberFailure(current());\n    },");
+    expect(main).toContain("    failed: () => void rememberFailure(!cancelled()),");
+    expect([...main.matchAll(/\brememberFailure\(/g)].length).toBe(3);
+    expect(main).not.toMatch(/\b(recordFailure|writeFallback)\(/);
+  });
+
+  it("bounds the cover over every switch by what its caller passes: no path picks its own bound", () => {
+    // The Settings Apply passes `APPLY_SWAP_READY_MAX_MS` (`pauseMenu.ts`),
+    // the governor and a failure's rebuild `GOVERNOR_SWAP_READY_MAX_MS`
+    // (`governor.ts`, `engineFailure.ts`); a fallback's rung and a switch
+    // that crosses engines are inside `switchNow` and wait on its bound.
+    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    expect([...app.matchAll(/(?<!function )\bswitch(?:To|Now)\([^()]*\)/g)].map((m) => m[0])).toEqual([
+      "switchTo(target, source, choice, readyMaxMs)",
+      "switchNow(target, source, save, readyMaxMs)",
+      "switchNow(tier, tierSource, null, readyMaxMs)",
+      'switchTo(next, "auto", null, readyMaxMs)',
+    ]);
+    // The engine's making counts against the bound: the scene waits on what
+    // is left of it (`engineWithinBound`).
+    expect(app).toContain("const made = await engineWithinBound((wanted) => options.engineFor(target, wanted), readyMaxMs, ");
+    expect([...app.matchAll(/\bwhenSceneReady\([^;]*;/g)].map((m) => m[0])).toEqual([
+      "whenSceneReady(renderer.scene, made.leftMs, renderer.forestReady);",
+    ]);
+    expect(app).not.toMatch(/SWAP_READY_MAX_MS/);
+  });
+
+  it("loads nothing with the WebGPU engine that registers what the WebGL2 path does not, but the engine's own", () => {
+    // A module that registers something on load (a getter on a texture, a
+    // fallback image, an audio engine) changes what every engine of the page
+    // does once the WebGPU chunk has loaded. The spherical harmonics registered
+    // by the non-pure PBR module lit WebGPU's frame 1.23 times brighter.
+    const NODE_MODULES = fileURLToPath(new URL("../../node_modules", import.meta.url));
+    const runtimeImports = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"'?]+)["']/gm)].map((m) => m[1] as string);
+    const resolveIn = (from: string, spec: string): string | null => {
+      if (spec.startsWith("@babylonjs/")) return join(NODE_MODULES, spec);
+      if (!spec.startsWith(".")) return null;
+      const path = join(from, "..", spec);
+      return from.includes("node_modules") ? path : path.replace(/\.js$/, ".ts");
+    };
+    const graph = (entry: string): Set<string> => {
+      const seen = new Set<string>();
+      const stack = [entry];
+      while (stack.length > 0) {
+        const file = stack.pop() as string;
+        if (seen.has(file) || !existsSync(file)) continue;
+        seen.add(file);
+        for (const spec of runtimeImports(file)) {
+          const next = resolveIn(file, spec);
+          if (next !== null) stack.push(next);
+        }
+      }
+      return seen;
+    };
+    const webgl2 = graph(join(SRC, "main.ts"));
+    const webgpu = [...graph(join(SRC, "game/gpuEngine.ts"))].filter((f) => f.includes("@babylonjs") && !webgl2.has(f));
+    // What registers on load, at the top level of a module: a call such as
+    // `RegisterTools();`, a bare import, a class registered by name, a
+    // prototype assigned to, or a property defined.
+    const REGISTRATIONS = [
+      /^[A-Z][A-Za-z]*\(\);$/m,
+      /^import\s+["'][^"']+["'];$/m,
+      /^RegisterClass\(/m,
+      /^[A-Za-z_$][\w$.]*\.prototype\.[\w$]+\s*=[^=]/m,
+      /^Object\.defineProperty\(/m,
+    ];
+    const registers = (text: string): boolean => REGISTRATIONS.some((pattern) => pattern.test(text));
+    // The shapes a later Babylon might write a registration in, each caught.
+    expect(
+      [
+        "RegisterTools();",
+        'import "./engine.alpha.js";',
+        'RegisterClass("BABYLON.PBRMaterial", PBRMaterial);',
+        "ThinEngine.prototype.createDynamicTexture = function () {};",
+        'Object.defineProperty(BaseTexture.prototype, "sphericalPolynomial", {',
+        "    Engine.prototype.inside = function () {};",
+        'import { Engine } from "./engine.js";',
+      ].map(registers),
+    ).toEqual([true, true, true, true, true, false, false]);
+    const registering = webgpu
+      .filter((f) => registers(readFileSync(f, "utf8")))
+      .map((f) => f.slice(f.indexOf("@babylonjs/core/") + "@babylonjs/core/".length))
+      .sort();
+    expect(registering).toEqual([
+      // A vertex buffer's realignment, which only an engine asking for
+      // 4-byte-aligned strides and offsets (WebGPU's) calls.
+      "Buffers/buffer.align.js",
+      // The WebGPU engine's own extensions: methods on its prototype, which no
+      // WebGL2 engine has.
+      "Engines/WebGPU/Extensions/engine.alpha.js",
+      "Engines/WebGPU/Extensions/engine.computeShader.js",
+      "Engines/WebGPU/Extensions/engine.cubeTexture.js",
+      "Engines/WebGPU/Extensions/engine.debugging.js",
+      "Engines/WebGPU/Extensions/engine.dynamicTexture.js",
+      "Engines/WebGPU/Extensions/engine.multiRender.js",
+      "Engines/WebGPU/Extensions/engine.query.js",
+      "Engines/WebGPU/Extensions/engine.rawTexture.js",
+      "Engines/WebGPU/Extensions/engine.readTexture.js",
+      "Engines/WebGPU/Extensions/engine.renderTarget.js",
+      "Engines/WebGPU/Extensions/engine.renderTargetCube.js",
+      "Engines/WebGPU/Extensions/engine.renderTargetTexture.js",
+      "Engines/WebGPU/Extensions/engine.videoTexture.js",
+      "Engines/WebGPU/Extensions/index.js",
+    ]);
+    // And the game's own WebGPU module takes every Babylon class it names from
+    // the pure form of its module, where there is one (a bare import is a
+    // registration, held by the list above).
+    const own = [...readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8").matchAll(/^import\s+(?!type\s)[^"';]+\s+from\s+["']([^"'?]+)["']/gm)]
+      .map((m) => m[1] as string)
+      .filter((spec) => spec.startsWith("@babylonjs/"));
+    const impure = own.filter((spec) => spec.endsWith(".js") && !spec.endsWith(".pure.js") && existsSync(join(NODE_MODULES, spec.replace(/\.js$/, ".pure.js"))));
+    expect(impure).toEqual([]);
+  });
+
   it("keeps the quality modules out of sim/ and net/", () => {
     const quality = /game\/(quality|gpuSignals|gpuClass|tierChoice|frameProbe|governor|rendererSwap|settings)(\.js)?$/;
     expect(violations(join(SRC, "sim"), [quality])).toEqual([]);
@@ -114,6 +374,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "colour.ts"),
       join(SRC, "game", "sky.ts"),
       join(SRC, "game", "quality.ts"),
+      join(SRC, "game", "engineChoice.ts"),
       join(SRC, "game", "terrainSurface.ts"),
       join(SRC, "game", "atmosphereParams.ts"),
       join(SRC, "game", "clipmap.ts"),

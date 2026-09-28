@@ -14,7 +14,9 @@
 import { readFileSync } from 'node:fs';
 import { fail, tfOutput } from './lib/preconditions.mjs';
 import { validateLatest } from './lib/desktopRelease.mjs';
-import { findModelUrls, findTextureUrls } from './lib/modelUrls.mjs';
+import { findChunkName, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
+import { bundleMapProblems } from './lib/bundle.mjs';
+import { reach } from './lib/reach.mjs';
 
 const siteUrl = tfOutput('site_url');
 const signalingUrl = tfOutput('signaling_url');
@@ -34,7 +36,7 @@ async function verify() {
   console.log(`\nVerifying ${siteUrl}\n`);
 
   // 1. The page loads.
-  const index = await fetch(`${siteUrl}/`);
+  const index = await reach(`${siteUrl}/`);
   check(index.status === 200, 'index.html returns 200', `got ${index.status}`);
   const html = await index.text();
   check(html.includes('<script'), 'index.html carries a script tag', 'no <script> found');
@@ -45,13 +47,13 @@ async function verify() {
   );
 
   // 2. A deep game link resolves rather than 404ing, so the SPA rewrite works.
-  const deep = await fetch(`${siteUrl}/game/3f2504e0-4f89-41d3-9a0c-0305e82c3301`);
+  const deep = await reach(`${siteUrl}/game/3f2504e0-4f89-41d3-9a0c-0305e82c3301`);
   check(deep.status === 200, 'a /game/<uuid> link resolves', `got ${deep.status}`);
 
   // 2b. The old host and the new root both serve the redirect page, which
   // carries the new base URL in its script and its fallback link.
   for (const target of [`https://${legacyHost}/game/3f2504e0-4f89-41d3-9a0c-0305e82c3301?cmd=x`, `${siteOrigin}/`]) {
-    const res = await fetch(target, { redirect: 'manual' });
+    const res = await reach(target, { redirect: 'manual' });
     const body = res.status === 200 ? await res.text() : '';
     check(
       res.status === 200 && body.includes(`${siteUrl}/`) && body.includes('function redirectTarget'),
@@ -71,7 +73,7 @@ async function verify() {
   } else {
     // Vite emits the bundle's src base-absolute (`/dayhike/assets/...`), not
     // relative to siteUrl, so it has to be fetched against the site's origin.
-    const asset = await fetch(`${siteOrigin}${bundle}`);
+    const asset = await reach(`${siteOrigin}${bundle}`);
     check(asset.status === 200, `${bundle} returns 200`, `got ${asset.status}`);
     check(
       (asset.headers.get('cache-control') ?? '').includes('immutable'),
@@ -125,7 +127,7 @@ async function verify() {
         failures.push(`the bundle does not reference ${id} — was the model map built?`);
         continue;
       }
-      const res = await fetch(`${siteOrigin}${url}`);
+      const res = await reach(`${siteOrigin}${url}`);
       if (res.status !== 200) {
         failures.push(`${url} — got ${res.status}`);
         continue;
@@ -174,7 +176,7 @@ async function verify() {
         );
         continue;
       }
-      const res = await fetch(`${siteOrigin}${url}`);
+      const res = await reach(`${siteOrigin}${url}`);
       if (res.status !== 200) {
         failures.push(`${url} — got ${res.status}`);
         continue;
@@ -192,10 +194,103 @@ async function verify() {
     }
   }
 
+  // 4c. The WebGPU engine's translators shipped whole and are served as
+  // WebAssembly. `client/src/game/gpuEngine.ts` imports glslang and twgsl with
+  // `?url`, so, like the models, their names are hashed and have to be read
+  // out of the build: here out of the WebGPU chunk, which only a dynamic
+  // import reaches, so the entry chunk is read for that chunk's name first.
+  // The MIME type is checked, not just the bytes: a browser compiles a
+  // WebAssembly response while it streams only when it is `application/wasm`.
+  // A broken translator fails no WebGL2 page, which every tier but high and
+  // every browser but Chrome and Edge on macOS and Windows draws with
+  // (`client/src/game/engineChoice.ts`), so it would go unnoticed there.
+  const translatorIds = ['glslang', 'twgsl'];
+  const gpuChunk = bundleSource ? findChunkName(bundleSource, 'gpuEngine') : null;
+  if (!bundleSource) {
+    failures.push('skipped the WebGPU translator checks — no bundle source to find the WebGPU chunk in');
+  } else if (!gpuChunk) {
+    failures.push('the bundle does not reference the gpuEngine chunk — was the WebGPU engine split out?');
+  } else {
+    const chunkUrl = new URL(gpuChunk, `${siteOrigin}${bundle}`).href;
+    const chunk = await reach(chunkUrl);
+    const chunkSource = chunk.status === 200 ? await chunk.text() : '';
+    if (!chunkSource) failures.push(`${chunkUrl} — got ${chunk.status}`);
+    const wasmUrls = findWasmUrls(chunkSource, translatorIds);
+    for (const id of chunkSource ? translatorIds : []) {
+      const url = wasmUrls[id];
+      if (!url) {
+        failures.push(`the WebGPU chunk does not reference ${id}.wasm — was it inlined, or not imported with ?url?`);
+        continue;
+      }
+      const res = await reach(`${siteOrigin}${url}`);
+      if (res.status !== 200) {
+        failures.push(`${url} — got ${res.status}`);
+        continue;
+      }
+      const type = res.headers.get('content-type') ?? '';
+      check(type.startsWith('application/wasm'), `${id}.wasm is served as application/wasm`, `content-type: ${type}`);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      check(isWasm(bytes), `${id}.wasm is a real WebAssembly module`, `magic was ${bytes.subarray(0, 4).toString('hex')}`);
+      check(
+        (res.headers.get('cache-control') ?? '').includes('immutable'),
+        `${id}.wasm is served immutable`,
+        `cache-control: ${res.headers.get('cache-control')}`,
+      );
+    }
+
+    // 4d. The WGSL map: the translations the build made of the shader corpus
+    // (`tools/wgsl/build-map.mjs`), which a WebGPU page asks before it
+    // translates a shader itself. Named by the same chunk as a hashed asset.
+    // A map that does not come, or is not this build's (its salt against the
+    // translators' digests the chunk carries), costs nothing but speed on the
+    // page, which translates every stage as if there were none: exactly what
+    // would go unnoticed without this check.
+    const mapUrl = chunkSource ? findMapUrl(chunkSource) : null;
+    if (chunkSource && !mapUrl) {
+      failures.push('the WebGPU chunk does not reference the WGSL map — was it built (tools/wgsl/build-map.mjs) and imported?');
+    } else if (mapUrl) {
+      // One failure line for this check whatever goes wrong in it (a body
+      // cut short, a chunk that gets no answer), and the checks after it run.
+      try {
+        const res = await reach(`${siteOrigin}${mapUrl}`);
+        if (res.status !== 200) {
+          failures.push(`${mapUrl} — got ${res.status}`);
+        } else {
+          check(
+            (res.headers.get('cache-control') ?? '').includes('immutable'),
+            'the WGSL map is served immutable',
+            `cache-control: ${res.headers.get('cache-control')}`,
+          );
+          // Against the chunks the entry loads with it, as the build's check
+          // reads them: Babylon's version may be in any of them. The entry's
+          // text is check 3's; each chunk's path is resolved against the chunk
+          // that names it, under the entry's `assets/`.
+          const entryUrl = `${siteOrigin}${bundle}`;
+          const assetsUrl = entryUrl.slice(0, entryUrl.lastIndexOf('/assets/') + '/assets/'.length);
+          const checked = await bundleMapProblems({
+            entry: entryUrl.slice(assetsUrl.length),
+            entryText: bundleSource,
+            // A fetch that throws is the walk's to name, with the chunk.
+            read: async (path) => {
+              const chunkRes = await fetch(new URL(path, assetsUrl).href);
+              return chunkRes.status === 200 ? chunkRes.text() : null;
+            },
+            mapText: await res.text(),
+            chunkSource,
+          });
+          check(checked.problems.length === 0, "the WGSL map parses, is this build's and holds translations", checked.problems.join('; '));
+          for (const name of checked.carriers) console.log(`  · Babylon's version ${checked.babylon} is in ${name}`);
+        }
+      } catch (err) {
+        failures.push(`the WGSL map check could not finish — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
   // 5. Signaling is healthy. Not /healthz: Google's frontend on *.run.app
   // intercepts that exact literal path and answers it itself, never reaching
   // the container. /healthcheck is the path the server actually binds.
-  const health = await fetch(`${signalingUrl}/healthcheck`);
+  const health = await reach(`${signalingUrl}/healthcheck`);
   check(health.status === 200, 'signaling /healthcheck returns 200', `got ${health.status}`);
 
   // 6. And it actually creates a lobby — the thing a player depends on. Node
@@ -258,7 +353,7 @@ async function verify() {
   // production lost the file, and that is a real failure.
   const downloadsUrl = tfOutput('downloads_url');
   const pkgVersion = JSON.parse(readFileSync('desktop/package.json', 'utf8')).version;
-  const latestRes = await fetch(`${downloadsUrl}/desktop/latest.json`, { cache: 'no-store' });
+  const latestRes = await reach(`${downloadsUrl}/desktop/latest.json`, { cache: 'no-store' });
   if (latestRes.status !== 200) {
     if (pkgVersion === '0.0.0') {
       console.log('  ! desktop: no release published yet (desktop/package.json is 0.0.0) — skipping');
@@ -277,7 +372,7 @@ async function verify() {
     } else {
       check(latest.version === pkgVersion, `latest.json advertises ${pkgVersion}`, `it says ${latest.version}`);
       for (const [platform, build] of Object.entries(latest.platforms)) {
-        const head = await fetch(build.url, { method: 'HEAD' });
+        const head = await reach(build.url, { method: 'HEAD' });
         check(head.status === 200, `the advertised ${platform} artifact exists`, `HEAD ${build.url} → ${head.status}`);
         check(
           Number(head.headers.get('content-length')) === build.size,

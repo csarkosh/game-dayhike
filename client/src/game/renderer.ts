@@ -1,4 +1,5 @@
 import { Engine } from "@babylonjs/core/Engines/engine.js";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
@@ -9,6 +10,10 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
+import type { RenderingManager } from "@babylonjs/core/Rendering/renderingManager.js";
+import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer.js";
+import type { AsyncPipelines } from "./asyncPipelines.js";
 
 import type { Level } from "../sim/level.js";
 import type { Vec3, WorldState } from "../sim/types.js";
@@ -41,7 +46,7 @@ import { createSkinShading } from "./skin.js";
 import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
 import type { WeatherParams } from "./weather.js";
 import { wetSurfaceUnder } from "./weather.js";
-import { tierFor, type QualityTier } from "./quality.js";
+import { detectTier, type QualityTier } from "./quality.js";
 import { activeTerrainVariant } from "../sim/terrain.js";
 import { fbm2 } from "../sim/field.js";
 import {
@@ -56,7 +61,7 @@ import {
 } from "./water.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { POND_DEPTH } from "../sim/features.js";
-import { createForestMeshes } from "./forestMeshes.js";
+import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
 import { NEAR_RADIUS } from "./forestField.js";
 import { createClutterMeshes } from "./clutterMeshes.js";
 import type { CullPose } from "./grassCull.js";
@@ -511,22 +516,6 @@ export function createWater(
   };
 }
 
-/**
- * Reads what the browser will admit to. Deliberately conservative and
- * deliberately overridable — the detected tier is meant to be a default,
- * not a verdict.
- */
-function detectTier(): QualityTier {
-  const nav = globalThis.navigator as
-    | { hardwareConcurrency?: number; deviceMemory?: number; userAgent?: string }
-    | undefined;
-  return tierFor({
-    cores: nav?.hardwareConcurrency ?? 4,
-    memoryGb: nav?.deviceMemory ?? 4,
-    mobile: /Mobi|Android|iPhone|iPad/.test(nav?.userAgent ?? ""),
-  });
-}
-
 export type FreecamView = { x: number; y: number; z: number; yaw: number; pitch: number };
 
 /** This frame's view inputs that come from neither the world nor the clock. */
@@ -564,7 +553,7 @@ export function writeListenerPose(
 
 export type Renderer = {
   scene: Scene;
-  engine: Engine;
+  engine: AbstractEngine;
   camera: UniversalCamera;
   views: EntityViews;
   /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
@@ -632,9 +621,98 @@ export type Renderer = {
   /** `null` restores the weather-driven speed; otherwise clamped to [0, 1]
    * and used in place of it (the `/wind` command). */
   setWindOverride(level: number | null): void;
+  /** The far forest's billboard bakes as they stand (`ForestMeshes.impostorBakes`):
+   * still baking, ready or failed, and how long each took. Empty without a
+   * forest, or until its models have loaded. */
+  impostorBakes(): readonly ImpostorBake[];
 };
 
-export type RendererOptions = { tier?: QualityTier };
+export type RendererOptions = {
+  tier?: QualityTier;
+  /** An engine already made for `canvas`: WebGPU on the tiers where it fits
+   * (`engineChoice.ts`, `gpuEngine.ts`). Absent, the WebGL2 engine is made
+   * here as always. Either way the renderer owns it and disposes it. */
+  engine?: AbstractEngine;
+  /** The pipelines that WebGPU engine makes asynchronously
+   * (`asyncPipelines.ts`): its scene's rendering groups are their scope
+   * (`scopeRenderingGroups`), its impostor bakes keep only a render that left
+   * nothing out, and the renderer takes the patch off before its engine goes.
+   * Absent on WebGL2, where nothing of it happens. */
+  pipelines?: AsyncPipelines;
+};
+
+/** What the impostor bakes read of the pipelines and the scope: the draws a
+ * render left out, and the scope's guard around a render. None on WebGL2. */
+function bakePipelines(pipelines: AsyncPipelines | null, scope: GroupScope | null): BakePipelines | undefined {
+  if (pipelines === null || scope === null) return undefined;
+  return { takeSkipped: () => pipelines.takeSkipped(), guarded: scope.guarded };
+}
+
+/**
+ * Opens the scope of `pipelines` around each rendering group's draws in
+ * `scene` (`onBeforeRenderingGroupObservable` to
+ * `onAfterRenderingGroupObservable`, which bracket the mesh, sprite and
+ * particle draws of every group, for the camera and for every render
+ * target): a draw there may be left out while its pipeline is made. Clears,
+ * post-processes and layers draw outside the groups and stay synchronous, so
+ * no frame is shown without its final composite. A target drawn once
+ * (`REFRESHRATE_RENDER_ONCE`, such as the reflection probe) is a render that
+ * is kept, so its groups stay outside the scope too, on Babylon's synchronous
+ * path.
+ *
+ * The scope cannot stay open: a throw inside a group skips the group's
+ * after-observer, so every group still open is shut as each frame of the
+ * scene begins (`onBeforeRenderObservable`), and a render outside the scene's
+ * frames (the impostor bake's) goes through `guarded`, which shuts what its
+ * render left open, even as it throws, inside the patch's own guard
+ * (`AsyncPipelines.guard`): false where a draw left out escaped it and the
+ * patch came off. Returns `off`, which takes the scope off, and `guarded`.
+ */
+export type GroupScope = { off(): void; guarded(render: () => void): boolean };
+
+export function scopeRenderingGroups(scene: Scene, pipelines: Pick<AsyncPipelines, "enter" | "leave" | "guard">): GroupScope {
+  /** The target that owns each rendering manager met, or null for the scene's own. */
+  const owners = new WeakMap<RenderingManager, ObjectRenderer | null>();
+  const drawnOnce = (manager: RenderingManager): boolean => {
+    if (manager === scene.renderingManager) return false;
+    let owner = owners.get(manager);
+    if (owner === undefined) {
+      owner = scene.objectRenderers.find((r) => r.renderingManager === manager) ?? null;
+      owners.set(manager, owner);
+    }
+    return owner !== null && owner.refreshRate === RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+  };
+  /** Whether each group now open entered the scope, innermost last. */
+  const open: boolean[] = [];
+  const before = scene.onBeforeRenderingGroupObservable.add((info) => {
+    const scoped = !drawnOnce(info.renderingManager);
+    open.push(scoped);
+    if (scoped) pipelines.enter();
+  });
+  const after = scene.onAfterRenderingGroupObservable.add(() => {
+    if (open.pop() === true) pipelines.leave();
+  });
+  /** Shuts every group opened past the first `depth`, innermost first. */
+  const shutTo = (depth: number): void => {
+    while (open.length > depth) if (open.pop() === true) pipelines.leave();
+  };
+  const frame = scene.onBeforeRenderObservable.add(() => shutTo(0));
+  return {
+    off() {
+      scene.onBeforeRenderingGroupObservable.remove(before);
+      scene.onAfterRenderingGroupObservable.remove(after);
+      scene.onBeforeRenderObservable.remove(frame);
+    },
+    guarded(render) {
+      const depth = open.length;
+      try {
+        return pipelines.guard(render);
+      } finally {
+        shutTo(depth);
+      }
+    },
+  };
+}
 
 /** The most polls a renderer's engine waits, past its `dispose`, for a scene's
  * BRDF lookup texture to finish expanding (`releaseEngine`). One browser
@@ -647,7 +725,7 @@ const BRDF_POLL_MS = 16;
 
 /** Whether some scene of `engine` has a BRDF lookup texture still being
  * expanded: loading, or decoding from RGBD into half float. */
-function brdfExpanding(engine: Engine): boolean {
+function brdfExpanding(engine: AbstractEngine): boolean {
   return engine.scenes.some((scene) =>
     [scene.environmentBRDFTexture, scene.environmentFuzzBRDFTexture].some(
       (texture) => texture !== null && texture !== undefined && texture.getInternalTexture()?.isReady === false,
@@ -686,7 +764,7 @@ function brdfExpanding(engine: Engine): boolean {
  * engine goes regardless, and anything the expansion then throws is reported,
  * not hidden. An engine something else has already disposed is left alone.
  */
-export function releaseEngine(engine: Engine, polls = BRDF_SETTLE_POLLS): void {
+export function releaseEngine(engine: AbstractEngine, polls = BRDF_SETTLE_POLLS): void {
   if (engine.isDisposed) return;
   if (!brdfExpanding(engine)) {
     engine.dispose();
@@ -721,8 +799,9 @@ export function createRenderer(
   // The context is lost when the engine is disposed, so a renderer that is
   // replaced (a live tier change, the landing's backdrop giving way to the
   // game) frees every GPU object of its scene at once, including any the
-  // scene failed to delete.
-  const engine = new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);
+  // scene failed to delete. An engine handed in (WebGPU) is owned the same
+  // way: disposed with the renderer, or here when the build throws.
+  const engine = options.engine ?? new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);
   try {
     // Every part the build has made is disposed, newest first, when a later
     // part throws: the same teardown `dispose` gives a whole renderer, so the
@@ -740,7 +819,7 @@ export function createRenderer(
 }
 
 function buildRenderer(
-  engine: Engine,
+  engine: AbstractEngine,
   level: Level,
   forest: Forest | null,
   options: RendererOptions,
@@ -751,6 +830,17 @@ function buildRenderer(
   const partOf = (part: { dispose(): void } | null): void => {
     if (part !== null) made(() => part.dispose());
   };
+  // On a WebGPU engine that makes its pipelines asynchronously, the scene's
+  // rendering groups are where a draw may be left out while its pipeline is
+  // made. Taken off, and the patch with it, before the engine goes: here if
+  // the build throws, in `dispose` otherwise.
+  const pipelines = options.pipelines ?? null;
+  const scope = pipelines === null ? null : scopeRenderingGroups(scene, pipelines);
+  const releasePipelines = (): void => {
+    scope?.off();
+    pipelines?.remove();
+  };
+  made(releasePipelines);
   // Sun + fill already occupy two of every material's default four light
   // slots; without raising the cap, only the first two of the local lamp and
   // up to MAX_PLAYERS remote lamps ever light anything. Before any material
@@ -794,7 +884,7 @@ function buildRenderer(
   // Fog, clear colour, the sun and the ambient fill all live there now, for the
   // brush path as well as the forest — one lit world is worth more than the
   // sandbox's old dark clear colour.
-  const tier = options.tier ?? detectTier();
+  const tier = options.tier ?? detectTier(globalThis.navigator);
   // Who owns colour is decided once, before lighting and the post chain are
   // built, from the tier and the float-target capability.
   const postFeatures = postFeaturesFor(tier, fxSupportedBy(engine));
@@ -893,7 +983,7 @@ function buildRenderer(
   const lowTierNearRadius = Math.round(NEAR_RADIUS * (140 / 240));
   const forestMeshes =
     forest !== null
-      ? createForestMeshes(scene, forest.seed, { nearRadius: tier === "low" ? lowTierNearRadius : undefined })
+      ? createForestMeshes(scene, forest.seed, { nearRadius: tier === "low" ? lowTierNearRadius : undefined, pipelines: bakePipelines(pipelines, scope) })
       : null;
   partOf(forestMeshes);
   // Forest shadow casters (the LOD0 bucket only) cannot be registered here: the GLBs load
@@ -1317,11 +1407,18 @@ function buildRenderer(
       skinShading.dispose();
       lighting.dispose();
       atmosphere.dispose();
+      // Before the engine, which may wait for its BRDF texture: nothing of a
+      // renderer that has gone asks for a pipeline, and nothing it asked for
+      // is started or stored (a swap's new engine compiles alone).
+      releasePipelines();
       // The scene goes with its engine, once its BRDF texture is settled.
       releaseEngine(engine);
     },
     setFreecam(view) {
       freecam = view;
+    },
+    impostorBakes() {
+      return forestMeshes?.impostorBakes() ?? [];
     },
     setHour(hour) {
       lighting.setHour(hour);

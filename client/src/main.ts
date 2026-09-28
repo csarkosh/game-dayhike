@@ -10,9 +10,9 @@ import {
   replaceWithLanding,
   leavePanel,
   browserExit,
+  followsTo,
   hostRoute,
   stripOverrides,
-  sameFollowPlace,
   type Route,
 } from "./game/router.js";
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
@@ -31,17 +31,32 @@ import { createSignalingClient, type SignalingClient } from "./net/signaling.js"
 import { signalingUrl } from "./net/signalingUrl.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { startGame, type GameHandle } from "./app.js";
-import { browserEnv, gatherSignals, type GpuSignals } from "./game/gpuSignals.js";
-import { START_FAILED_LINE, autoPick, startFallbacks, startHike, startupTier } from "./game/frameProbe.js";
+import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
+import { recordEngineFailure, recordStartFailure, startOnEngine } from "./game/engineFailure.js";
+import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import { browserEnv, browserMajor, hostOs, isChromeOrEdge, readSignals, type GpuSignals } from "./game/gpuSignals.js";
+import {
+  LOADING_LINE,
+  START_FAILED_LINE,
+  autoPick,
+  launchLine,
+  probeStepCanSettle,
+  probeStepEngine,
+  startFallbacks,
+  startHike,
+  startupTier,
+  type StartupTier,
+} from "./game/frameProbe.js";
 import { createHud } from "./game/hud.js";
 import { probeDeps } from "./game/probeScene.js";
-import { containerPixels, withGovernorDrop, type QualityTier } from "./game/quality.js";
+import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "./game/quality.js";
 import type { AutoSummary } from "./game/settings.js";
 import {
   createChoiceKeeper,
   leaveNotice,
   pageSessionStorage,
   pageStorage,
+  parseProbeOverride,
   parseTierOverride,
   readAutoRecord,
   recordFallback,
@@ -50,6 +65,22 @@ import {
   type TierChoice,
   type TierSource,
 } from "./game/tierChoice.js";
+import {
+  adapterFromSignals,
+  chooseEngine,
+  engineForTier,
+  fallbackHolds,
+  parseEngineOverride,
+  parsePipelines,
+  parseShaderLookup,
+  readFallback,
+  resolveWebGpu,
+  signalsFit,
+  withEngine,
+  WEBGPU_ENABLED,
+  type EngineEnv,
+  type EngineInput,
+} from "./game/engineChoice.js";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("#app not found");
@@ -97,8 +128,10 @@ const latestReady: Promise<void> = latestUrl
 // page down rather than one feature.
 const selfId = createLobbyId();
 // What the browser says of the GPU, read once at load: tens of milliseconds,
-// at most 2 s for the WebGPU adapter. A hike's tier is decided from it.
-const signalsReady = gatherSignals(browserEnv());
+// at most 2 s for the WebGPU adapter. A hike's tier is decided from it, and
+// the WebGPU rule reads the adapter from the same request (`adapterFromSignals`).
+const signalsRead = readSignals(browserEnv());
+const signalsReady = signalsRead.signals;
 let signals: GpuSignals | null = null;
 // The Settings panel's Auto line waits on them.
 void signalsReady.then((read) => {
@@ -134,8 +167,9 @@ function onTierFallback(fallback: { attempted: QualityTier; built: QualityTier |
     const pixels = app === null ? 0 : containerPixels(app);
     const record = readAutoRecord(pageStorage());
     const now = Date.now();
-    const pick = autoPick(signals, { record, pixels, now });
-    const out = recordFallback({ ...fallback, record, gpu: pick.gpu, browser: signals.browser, cls: pick.cls, choice: currentChoice(), pixels, now });
+    const engine = verdictEngineNow(signals);
+    const pick = autoPick(signals, { record, pixels, now, engine });
+    const out = recordFallback({ ...fallback, record, gpu: pick.gpu, browser: signals.browser, cls: pick.cls, choice: currentChoice(), pixels, now, engine });
     if (out.record !== null) writeAutoRecord(pageStorage(), out.record);
     if (out.choice !== null) saveChoice(out.choice);
     if (out.notice !== null) choiceNotice = out.notice;
@@ -150,8 +184,9 @@ function onGovernorDrop(running: QualityTier): void {
   const pixels = app === null ? 0 : containerPixels(app);
   const record = readAutoRecord(pageStorage());
   const now = Date.now();
-  const pick = autoPick(signals, { record, pixels, now });
-  const next = withGovernorDrop(record, pick.gpu, signals.browser, pick.cls, running, pixels, now);
+  const engine = verdictEngineNow(signals);
+  const pick = autoPick(signals, { record, pixels, now, engine });
+  const next = withGovernorDrop(record, pick.gpu, signals.browser, pick.cls, running, pixels, now, engine);
   if (next !== null) writeAutoRecord(pageStorage(), next);
 }
 
@@ -162,7 +197,7 @@ let landingNotice: string | null = null;
 function autoSummary(): AutoSummary | null {
   if (signals === null) return null;
   const pixels = app === null ? 0 : containerPixels(app);
-  const pick = autoPick(signals, { record: readAutoRecord(pageStorage()), pixels, now: Date.now() });
+  const pick = autoPick(signals, { record: readAutoRecord(pageStorage()), pixels, now: Date.now(), engine: verdictEngineNow(signals) });
   return { tier: pick.tier, probePending: pick.probeFrom !== null, ceiling: pick.ceiling };
 }
 // Bumped by every render, so a hike whose tier is still being decided for a
@@ -315,21 +350,23 @@ function detach(): void {
   lobby = null;
 }
 
-/** A follower goes where the host is. The host's route is "" until known,
- * and the landing page and its panels are one place (`sameFollowPlace`): a
- * follower in its own Settings stays there while the host is on the landing.
- * The route is taken without `?tier=` and `?probe=` (`stripOverrides`), which
- * a host that still announces them would otherwise impose on this machine,
- * and compared with where this page is without its own. */
+/** A follower goes where the host is (`followsTo`). The host's route is ""
+ * until known, and the landing page and its panels are one place: a follower
+ * in its own Settings stays there while the host is on the landing. The
+ * overrides (`?engine=`, `?tier=`, `?probe=`, `?wgsl=`) are each page's own: the route
+ * is taken without them (`stripOverrides`), which a host that still announces
+ * them would otherwise impose on this machine; they neither make a route
+ * differ nor leave the follower's URL when it moves (`navigateTo` carries
+ * them). */
 function follow(active: Lobby): void {
   if (active.state.role !== "client") return;
   const target = stripOverrides(active.state.route);
-  if (target === "" || sameFollowPlace(target, stripOverrides(currentRoutePath()))) return;
-  navigateTo(target);
+  if (followsTo(target, currentRoutePath())) navigateTo(target);
 }
 
 /** Host side: tell the lobby where we are now, a landing panel as the landing
- * page, without this page's own overrides (`hostRoute`). Called from render(). */
+ * page (`announcedPath`), without this page's own overrides. Called from
+ * render(). */
 function announceRoute(): void {
   if (lobby !== null && lobby.state.role === "host") lobby.setRoute(hostRoute(currentRoutePath()));
 }
@@ -509,6 +546,146 @@ function onPlay(): void {
   });
 }
 
+// ---- the engine ----------------------------------------------------------------
+// WebGL2 unless `engineChoice.ts`'s rule says WebGPU and the adapter agrees.
+// Every way WebGPU can fail ends on WebGL2, and none by a reload, which would
+// end a party: before the game starts, in the same start; once it runs, by a
+// live rebuild of the renderer (`app.ts`), remembered (`dayhike.engine`), or
+// by `?engine=webgl2` in the URL where storage refuses the record.
+
+type GpuModule = typeof import("./game/gpuEngine.js");
+/** A WebGPU engine made for a canvas, and its module's watchers. */
+type MadeEngine = { engine: AbstractEngine; watchers: EngineWatchers };
+
+function engineEnv(): EngineEnv {
+  return { browser: browserMajor(navigator.userAgent), babylon: AbstractEngine.Version };
+}
+
+/**
+ * The engine the WebGPU rule gives the high tier now, which Auto's verdicts
+ * are kept for (`AutoVerdict.engine`): a verdict measured on one engine does
+ * not decide a hike on the other. An adapter not known yet counts as WebGPU,
+ * which the start then tries.
+ */
+function verdictEngineNow(read: GpuSignals): VerdictEngine {
+  return chooseEngine({ ...engineInput("high", read), fits: signalsFit(read) }) === "webgl2" ? "webgl2" : "webgpu";
+}
+
+/** The rule's input for `tier` now: the address's override, the remembered
+ * fallback, the switch, the browser, the platform and whether the device is
+ * mobile (the GPU's signals, `read`); the adapter not yet asked
+ * (`resolveWebGpu` asks). */
+function engineInput(tier: QualityTier, read: GpuSignals): EngineInput {
+  const nav = browserEnv().navigator;
+  return {
+    tier,
+    override: parseEngineOverride(location.search),
+    remembered: fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),
+    on: WEBGPU_ENABLED,
+    fits: null,
+    chromeOrEdge: isChromeOrEdge(nav),
+    os: hostOs(nav),
+    mobile: read.mobile,
+  };
+}
+
+/**
+ * The engine the WebGPU rule gives `tier` now, on a fresh canvas: WebGL2
+ * unless the rule, with the adapter from the GPU's signals (`read`), gives
+ * WebGPU and it starts. A start that failed may have taken its canvas's
+ * context for WebGPU, and a canvas holds one kind of context for life, so
+ * WebGL2 then gets another fresh canvas. `current` says whether the page
+ * still wants the engine.
+ */
+function engineFor(tier: QualityTier, read: GpuSignals, current: () => boolean, wanted: () => boolean = () => true): Promise<EngineOnCanvas> {
+  const canvas = document.createElement("canvas");
+  const input = engineInput(tier, read);
+  const webgl2 = { engine: null, watchers: null };
+  const tried = chooseEngine(input) !== "webgl2";
+  return engineForTier(input, () => makeWebGpu(canvas, input, read, current, wanted)).then((made) =>
+    made !== null ? { canvas, ...made } : { canvas: tried ? document.createElement("canvas") : canvas, ...webgl2 },
+  );
+}
+
+/**
+ * A failure of a running WebGPU engine, or a renderer that could not be built
+ * on one (`"pipeline"`): remembered, and `engine=webgl2` pinned in this tab's
+ * URL where the rule would otherwise give WebGPU again
+ * (`recordEngineFailure`), so the rebuild's `engineFor` gives the engine the
+ * failure asks for. The HUD's line for that engine.
+ */
+function engineFailed(reason: "pipeline" | "lost"): string {
+  return recordEngineFailure(reason, {
+    storage: pageStorage(),
+    env: engineEnv(),
+    now: Date.now(),
+    override: parseEngineOverride(location.search),
+    pin: () => history.replaceState(history.state, "", withEngine(location.href, "webgl2")),
+  });
+}
+
+/**
+ * Remembers a failure of a WebGPU start (`init`), and pins this tab's URL to
+ * `engine=webgl2` where the rule would otherwise give WebGPU again: storage
+ * refused the record, or `?engine=webgpu` outranks it (`recordStartFailure`,
+ * the same rule as a running engine's failure). `current`: whether the page
+ * still wants the engine; where it does not, the URL is left as it is.
+ */
+function rememberFailure(current = true): { stored: boolean; holds: boolean } {
+  return recordStartFailure({
+    storage: pageStorage(),
+    env: engineEnv(),
+    now: Date.now(),
+    override: parseEngineOverride(location.search),
+    current,
+    pin: () => history.replaceState(history.state, "", withEngine(location.href, "webgl2")),
+  });
+}
+
+/**
+ * The WebGPU engine for `canvas`, or null for WebGL2, by `resolveWebGpu`: the
+ * module, the adapter (the GPU's signals', `read`; where they timed out, the
+ * same request's later answer within the GPU's budget), and only where it fits
+ * the translators and the engine, within the fetch's budget and the GPU's,
+ * every failure caught. A page without `navigator.gpu` fetches nothing. The
+ * URL is pinned only while the page still wants the engine (`current`).
+ */
+function makeWebGpu(
+  canvas: HTMLCanvasElement,
+  input: EngineInput,
+  read: GpuSignals,
+  current: () => boolean,
+  wanted: () => boolean = () => true,
+): Promise<MadeEngine | null> {
+  let translators: Awaited<ReturnType<GpuModule["loadTranslators"]>> | undefined;
+  const lookup = parseShaderLookup(location.search);
+  const pipelines = parsePipelines(location.search);
+  return resolveWebGpu<MadeEngine>(input, {
+    available: () => (navigator as { gpu?: unknown }).gpu !== undefined,
+    load: async () => {
+      const gpu: GpuModule = await import("./game/gpuEngine.js");
+      return {
+        probe: () => adapterFromSignals(read, () => signalsRead.adapter),
+        fetchTranslators: async () => {
+          translators = await gpu.loadTranslators();
+        },
+        create: async (ms, features) => ({
+          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, lookup, pipelines }),
+          watchers: { failures: gpu.watchWebGpu, pipelines: gpu.watchPipelines, asyncPipelines: gpu.asyncPipelinesOf, reveal: gpu.revealWhenWhole },
+        }),
+      };
+    },
+    // An engine a switch gave up waiting for was slow, not broken.
+    remember: () => {
+      if (wanted()) void rememberFailure(current());
+    },
+    warn: (message, detail) => {
+      if (detail === undefined) console.warn(message);
+      else console.warn(message, detail);
+    },
+  });
+}
+
 // `app` is passed in rather than closed over: the null check above does not
 // narrow inside a hoisted function declaration, which could be called first.
 function render(container: HTMLDivElement): void {
@@ -598,61 +775,62 @@ function render(container: HTMLDivElement): void {
     return;
   }
 
-  // The tier comes first (`frameProbe.ts`): from the GPU's signals, and on a
-  // machine whose GPU the browser will not name, from a probe of a few seconds
-  // behind its own screen. `running` covers the wait, so a render that moves
-  // on stops the probe, and disposes its renderer, before building its own.
-  // "Loading…" shows from the first moment, and a throw anywhere leaves a line
-  // rather than a blank page (`startHike`).
-  const probe = probeDeps(container);
+  // One chain, in order (`startHike`): "Loading…" from the first moment; the
+  // GPU's signals; the tier (`startupTier`: the address's override, else the
+  // saved choice, else Auto, with its probe behind its own screen on a machine
+  // whose GPU the browser will not name); then the engine the WebGPU rule
+  // gives that tier, on the game's canvas, made only now that the probe is
+  // done ("Loading…" again meanwhile); then the launch. `running` covers the
+  // wait, so a render that moves on stops the probe, and disposes its
+  // renderer, before building its own. A throw anywhere in the chain leaves a
+  // line rather than a blank page.
   const cancelled = (): boolean => token !== renderToken;
-  let canvas: HTMLCanvasElement | null = null;
+  // Each probe step draws on the engine the WebGPU rule gives its tier, on
+  // its own canvas, and a WebGPU step that fails is the rule's start failure
+  // (`measureOnRuleEngine`); the game's failure handling never hears of it.
+  const probe = probeDeps(container, {
+    engineFor: async (tier) => {
+      const read = await signalsReady;
+      // Tiers the rule draws on WebGPU are measured on WebGL2 while a WebGPU
+      // step cannot settle (`probeStepEngine`): the verdict holds for both.
+      if (probeStepEngine(read, verdictEngineNow(read)) === "webgl2") return { canvas: document.createElement("canvas"), engine: null, watch: null };
+      const { canvas, engine, watchers } = await engineFor(tier, read, () => !cancelled());
+      return { canvas, engine, watch: watchers?.failures ?? null };
+    },
+    failed: () => void rememberFailure(!cancelled()),
+    // Asked of the engine a step got, which a failed WebGPU start makes
+    // WebGL2; `?probe=` measures whatever the rule says.
+    settles: async (engine) => parseProbeOverride(location.search) !== null || probeStepCanSettle((await signalsReady).parallelCompile, engine),
+  });
   running = { dispose: () => probe.abort() };
-  void startHike({
+  /** The GPU's signals this start read, for the engines made later. */
+  let hikeSignals: GpuSignals | null = null;
+  void startHike<EngineOnCanvas>({
     signals: signalsReady,
     current: () => !cancelled(),
     showLoading: () => {
       const line = createHud(container);
-      line.setStatus("Loading…");
+      line.setStatus(LOADING_LINE);
       return line;
     },
     decide: (read, hideLoading) =>
-      startupTier(read, { search: location.search, choice: currentChoice(), cancelled }, {
+      startupTier(read, { search: location.search, choice: currentChoice(), cancelled, engine: verdictEngineNow(read) }, {
         ...probe,
         showScreen: () => {
           hideLoading();
           return probe.showScreen();
         },
       }),
-    build: ({ tier, source, cls }) => {
-      canvas = document.createElement("canvas");
-      container.appendChild(canvas);
-      game = startGame(canvas, route.token, {
-        lobby,
-        peerId: selfId,
-        onExit: exitGame,
-        onContinueOffline: continueOffline,
-        onPauseChange: (next) => {
-          paused = next;
-          paintRoster();
-        },
-        tier,
-        tierSource: source,
-        fallbackTiers: signals === null ? ["low"] : startFallbacks(tier, cls, signals.cores, signals.memoryGb),
-        onTierFallback,
-        onGovernorDrop,
-        quality: {
-          choice: currentChoice,
-          stored: choiceStored,
-          auto: autoSummary,
-          override: parseTierOverride(location.search),
-          notice: () => choiceNotice,
-          save: saveChoice,
-        },
-      });
-      running = game;
-      announcer.afterPaint();
-      paintRoster();
+    engine: (decided, read) => {
+      hikeSignals = read;
+      return engineFor(decided.tier, read, () => !cancelled());
+    },
+    discard: (onCanvas) => onCanvas.engine?.dispose(),
+    build: (decided, onCanvas) => {
+      container.appendChild(onCanvas.canvas);
+      const read = hikeSignals;
+      if (read === null) throw new Error("the GPU's signals were not read");
+      launch(container, onCanvas, route.token, decided, (tier, wanted) => engineFor(tier, read, () => !cancelled(), wanted));
     },
     fail: (error) => {
       console.error("The game could not start.", error);
@@ -664,6 +842,71 @@ function render(container: HTMLDivElement): void {
       running = { dispose: () => line.dispose() };
     },
   });
+}
+
+/**
+ * Starts the game on `onCanvas` at the tier decided, on the engine made for
+ * it: WebGL2 when there is none, as always; otherwise WebGPU, which the game
+ * listens to and answers live (`app.ts`). A start that throws on a WebGPU
+ * engine, once the game has undone all it made, is started again at the same
+ * tier on WebGL2 on a fresh canvas that takes the place of every canvas in
+ * the container, and the throw is held against the engine once that stands
+ * (`startOnEngine`); a throw on WebGL2 goes up to the start's one catch
+ * (`startHike`). `engineForGame` makes the engine for a switch of tier or a
+ * rebuild later.
+ */
+function launch(
+  container: HTMLElement,
+  onCanvas: EngineOnCanvas,
+  worldToken: string,
+  decided: StartupTier,
+  engineForGame: (tier: QualityTier, wanted: () => boolean) => Promise<EngineOnCanvas>,
+): void {
+  const handle = startOnEngine<GameHandle>(onCanvas, {
+    // The recorder the game is handed is `startOnEngine`'s: a fault found
+    // while it starts is the start's, recorded once; after, the hike's.
+    start: ({ canvas, engine, watchers }, record) =>
+      startGame(canvas, worldToken, {
+        lobby,
+        peerId: selfId,
+        onExit: exitGame,
+        onContinueOffline: continueOffline,
+        onPauseChange: (next) => {
+          paused = next;
+          paintRoster();
+        },
+        engine: engine ?? undefined,
+        watchers: watchers ?? undefined,
+        engineFor: engineForGame,
+        engineFailed: record,
+        tier: decided.tier,
+        tierSource: decided.source,
+        fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),
+        onTierFallback,
+        onGovernorDrop,
+        quality: {
+          choice: currentChoice,
+          stored: choiceStored,
+          auto: autoSummary,
+          override: parseTierOverride(location.search),
+          notice: () => choiceNotice,
+          save: saveChoice,
+        },
+      }),
+    engineFailed,
+    // A canvas holds one kind of context for life.
+    freshCanvas: () => document.createElement("canvas"),
+    place: (fresh) => {
+      for (const left of container.querySelectorAll("canvas")) left.remove();
+      container.appendChild(fresh);
+    },
+    log: (message, error) => console.error(message, error),
+  });
+  game = handle;
+  console.info(launchLine(decided, handle.graphics()));
+  running = handle;
+  announcer.afterPaint();
+  paintRoster();
 }
 
 window.addEventListener("popstate", () => render(app));

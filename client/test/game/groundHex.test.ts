@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import hexFx from "../../src/game/shaders/groundHex.fragment.fx?raw";
+import { createHash } from "node:crypto";
+import head from "../../src/game/shaders/groundHex.fragment.fx?raw";
+import fetches from "../../src/game/shaders/groundHexFetch.fragment.fx?raw";
+import noise from "../../src/game/shaders/groundHexNoise.fragment.fx?raw";
+import { HEX_FETCH_MACROS, terrainHexDefs } from "../../src/game/terrainTexture.js";
+
+/** The include as WebGL2 compiles it: the three files joined. */
+const hexFx = head + fetches + noise;
 import {
   HEX_LATTICE, HEX_SHARPNESS, HEX_SKEW, HEX_UNSKEW, MACRO_WAVE, MACRO_WEIGHT, MACRO_SLOPE,
   MACRO_LUSH, MACRO_DRY,
@@ -29,5 +36,27 @@ describe("groundHex.fragment.fx stays in lockstep with groundHexParams.ts", () =
     expect(hexFx).toContain("textureGrad(");
     expect(hexFx).not.toContain("discard");
     expect(hexFx).not.toContain("uniform sampler");
+  });
+});
+
+describe("the hex include, per engine", () => {
+  const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+  it("joins back into the original include, byte for byte", () => {
+    expect(sha(head + fetches + noise)).toBe("21a6e1061ff6d1a66c384400f5eae5538cec24b17e7f551c647aa825c710f9bb");
+    expect(terrainHexDefs(false)).toContain(head + fetches + noise);
+  });
+  it("gives WebGPU the two fetches as macros and no function taking a sampler", () => {
+    const gpu = terrainHexDefs(true);
+    expect(gpu).toContain(head + HEX_FETCH_MACROS + noise);
+    expect(gpu).not.toMatch(/\w+\s+\w+\s*\([^)]*\bsampler2D(?:Array)?\b[^)]*\)\s*\{/);
+    expect(gpu).toContain("#define hexFetch2D(tex, u1, u2, u3, s, dx, dy)");
+    expect(gpu).toContain("#define hexFetchArray(tex, u1, u2, u3, s, layer, dx, dy)");
+  });
+  it("fetches with the same six terms either way", () => {
+    const terms = (s: string) =>
+      [...s.matchAll(/textureGrad\(tex, (?:vec3\()?u[123](?:, layer\))?, dx, dy\)\.rgb \* \(?s\)?\.[xyz]/g)]
+        .map((m) => m[0].replace("(s)", "s"));
+    expect(terms(fetches)).toHaveLength(6);
+    expect(terms(HEX_FETCH_MACROS)).toEqual(terms(fetches));
   });
 });

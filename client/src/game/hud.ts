@@ -13,6 +13,8 @@ const STYLE = `
 
 export type Hud = {
   setStatus(text: string | null): void;
+  /** The status line's text now, "" when it says nothing. */
+  status(): string;
   /** A line that clears itself after `ms`, unless something replaces it first. */
   flash(text: string, ms: number): void;
   /** Darkens the whole view over 1.5 s; the status line stays readable on top. */
@@ -51,6 +53,9 @@ export function createHud(container: HTMLElement): Hud {
     setStatus(text) {
       cancelFlash();
       status.textContent = text ?? "";
+    },
+    status() {
+      return status.textContent ?? "";
     },
     flash(text, ms) {
       cancelFlash();

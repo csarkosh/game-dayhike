@@ -29,7 +29,12 @@
  * one program a frame, each blocking for a few hundred milliseconds, so the
  * scene is never quiet for `PROBE_QUIET_MS` inside `PROBE_READY_MAX_MS`. There
  * the probe is skipped before its screen is shown, the class's start tier kept,
- * and nothing written (`probeStepCanSettle`).
+ * and nothing written (`probeStepCanSettle`). A step asks this of the engine it
+ * draws with: on WebGPU, Babylon translates each effect's shaders on the
+ * page's thread too, so a WebGPU step is not taken to settle until a browser
+ * has measured that it does (`WEBGPU_PROBE_STEPS_SETTLE`), and until then
+ * tiers that draw on WebGPU are measured on WebGL2 (`probeStepEngine`), whose
+ * verdict holds for WebGPU too (`verdictRead`).
  */
 import { elevationAt } from "../sim/terrain.js";
 import { CLASS_TIERS, classifyGpu, gpuIdentity, type GpuClass } from "./gpuClass.js";
@@ -38,11 +43,13 @@ import {
   autoTier,
   holdingVerdict,
   withinClass,
+  onEngine,
   withProbeStarted,
   withVerdict,
   type AutoRecord,
   type ProbeReading,
   type QualityTier,
+  type VerdictEngine,
 } from "./quality.js";
 import { seedFromToken } from "./seed.js";
 import {
@@ -285,14 +292,60 @@ export function nextProbeStep(
 }
 
 /**
+ * Whether a probe step on WebGPU is ready (`PROBE_QUIET_MS` without a compile
+ * or a new pipeline) inside `PROBE_READY_MAX_MS`. Not taken on trust: Babylon's
+ * WebGPU engine translates every effect's shaders on the page's thread as the
+ * effect is made (GLSL to SPIR-V by glslang, then to WGSL by Tint, both
+ * synchronous, `WebGPUPipelineContext.isAsync` false), and makes each render
+ * pipeline at its first draw with `createRenderPipeline`, so a WebGPU step is
+ * as busy as a WebGL2 one without `KHR_parallel_shader_compile`. The first
+ * reading on a four-core Windows machine drew about 2 frames a second for
+ * about 50 s after the page opened. A step that is never ready holds the
+ * player behind the probe's screen for its 15 s, writes no verdict, and
+ * spends one of the three attempts: so false, the safe value, until a browser
+ * has measured, at the canopy pose with an empty shader cache, on the slowest
+ * machines whose class is probed, and on each tier probed, the time from a
+ * WebGPU step's engine to its meter's `ready`, and found it inside
+ * `PROBE_READY_MAX_MS` with margin on every load (a measurement build that
+ * sets this true, with `?probe=`). While false, the probe's steps draw on
+ * WebGL2 whatever the rule gives their tier (`probeStepEngine`).
+ */
+export const WEBGPU_PROBE_STEPS_SETTLE = false;
+
+/**
  * Whether a probe step drawing with `engine` can ever be ready: on WebGL2 only
  * where the context exposes `KHR_parallel_shader_compile` (`parallelCompile`
  * true), since without it every program links on the page's thread and the
- * scene is never quiet long enough; on WebGPU always, as its pipelines are
- * made off the page's thread.
+ * scene is never quiet long enough; on WebGPU as `webgpuSettles` says
+ * (`WEBGPU_PROBE_STEPS_SETTLE`). An engine not known yet (null) may be either,
+ * so both must settle.
  */
-export function probeStepCanSettle(parallelCompile: boolean | null, engine: ProbeReading["engine"]): boolean {
-  return engine === "webgpu" || parallelCompile === true;
+export function probeStepCanSettle(
+  parallelCompile: boolean | null,
+  engine: VerdictEngine | null,
+  webgpuSettles: boolean = WEBGPU_PROBE_STEPS_SETTLE,
+): boolean {
+  if (engine === null) return probeStepCanSettle(parallelCompile, "webgl2", webgpuSettles) && webgpuSettles;
+  return engine === "webgpu" ? webgpuSettles : parallelCompile === true;
+}
+
+/**
+ * The engine the probe's steps draw with, as far as it is known before they
+ * run. `engine` is the one the WebGPU rule gives the high tier (medium's is
+ * WebGL2), WebGL2 where none is given. Where it is WebGPU and a
+ * WebGPU step cannot settle (`webgpuSettles` false), the steps draw on WebGL2
+ * on their own canvases: a WebGL2 verdict holds for WebGPU (`verdictRead`),
+ * and the hike then starts on the rule's engine at the verdict's tier. Where
+ * a WebGPU step can settle, WebGPU, or null while the adapter has not
+ * answered, since a step may still end on WebGL2.
+ */
+export function probeStepEngine(
+  signals: Pick<GpuSignals, "adapterStatus">,
+  engine: VerdictEngine | undefined,
+  webgpuSettles: boolean = WEBGPU_PROBE_STEPS_SETTLE,
+): VerdictEngine | null {
+  if ((engine ?? "webgl2") === "webgl2" || !webgpuSettles) return "webgl2";
+  return signals.adapterStatus === "timed-out" ? null : "webgpu";
 }
 
 /**
@@ -319,8 +372,10 @@ export function probeReadingLine(reading: ProbeReading, width: number, height: n
   return `quality probe: ${reading.tier} ${reading.meanMs.toFixed(2)} ms mean, ${p95} p95, ${frames}, ${width}×${height}, ${reading.engine} → ${answer}`;
 }
 
-/** Which record a probe's attempt and verdict are written to. */
-export type ProbeKey = { gpu: string; browser: number; cls: GpuClass };
+/** Which record a probe's attempt and verdict are written to, and the engine
+ * the probed tiers draw with now (absent, WebGL2): the verdict's engine where
+ * no reading gives one. */
+export type ProbeKey = { gpu: string; browser: number; cls: GpuClass; engine?: VerdictEngine };
 
 export type ProbeDeps = {
   storage: Storage | null;
@@ -367,9 +422,15 @@ export async function runProbe(
   if (!writeAutoRecord(deps.storage, started)) return start;
   const readings: ProbeReading[] = [];
   const settle = (tier: QualityTier, cut: boolean): QualityTier => {
-    const verdict = { tier, source: "probe" as const, pixels, at: deps.now(), readings };
-    const next = withVerdict(started, key.gpu, key.browser, key.cls, verdict);
-    if (next !== null) writeAutoRecord(deps.storage, cut ? { ...next, attempts: started.attempts } : next);
+    // The engine the deciding reading drew with: a step whose WebGPU engine
+    // failed is measured on WebGL2, and the rule then gives WebGL2 too.
+    const engine = readings[readings.length - 1]?.engine ?? key.engine ?? "webgl2";
+    const verdict = onEngine({ tier, source: "probe" as const, pixels, at: deps.now(), readings }, engine);
+    // Looked up next load under the key's engine: a verdict it will not read
+    // keeps the attempts, so the cap still ends the probing; so does a cut's,
+    // which only a finished probe clears.
+    const next = withVerdict(started, key.gpu, key.browser, key.cls, verdict, key.engine ?? "webgl2", cut);
+    if (next !== null) writeAutoRecord(deps.storage, next);
     return tier;
   };
   for (;;) {
@@ -433,10 +494,13 @@ export type StartupTier = { tier: QualityTier; source: TierSource; cls: GpuClass
  * because its step could not settle here (`probeStepCanSettle`), and the most
  * Auto recommends here: a holding verdict's tier, else the class's ceiling
  * (low under the cap). What the Settings screen reads, and where
- * `startupTier` begins. */
+ * `startupTier` begins. `at.engine` is the engine the probed tiers draw with
+ * now: the verdict's lookup (`verdictRead`), and what decides the engine the
+ * probe's steps draw with, of which it is asked whether they can settle
+ * (`probeStepEngine`). */
 export function autoPick(
   signals: GpuSignals,
-  at: { record: AutoRecord | null; pixels: number; now: number },
+  at: { record: AutoRecord | null; pixels: number; now: number; engine?: VerdictEngine },
 ): { cls: GpuClass; gpu: string; tier: QualityTier; probeFrom: QualityTier | null; probeSkipped: boolean; ceiling: QualityTier } {
   const cls = classifyGpu(signals);
   const gpu = gpuIdentity(signals);
@@ -449,14 +513,15 @@ export function autoPick(
     browser: signals.browser,
     pixels: at.pixels,
     now: at.now,
+    engine: at.engine,
   };
   const auto = autoTier(input);
   // What the frame measured, or the tier that built, once a verdict holds;
   // until then, the most the class may take here.
   const measured = holdingVerdict(input);
   const ceiling = withinClass(measured?.tier ?? "high", cls, signals.cores, signals.memoryGb);
-  // Every probe step draws with WebGL2.
-  const probeSkipped = auto.probeFrom !== null && !probeStepCanSettle(signals.parallelCompile, "webgl2");
+  // The first step's engine; a step that ends on another is checked as it runs.
+  const probeSkipped = auto.probeFrom !== null && !probeStepCanSettle(signals.parallelCompile, probeStepEngine(signals, at.engine));
   return { cls, gpu, tier: auto.tier, probeFrom: probeSkipped ? null : auto.probeFrom, probeSkipped, ceiling };
 }
 
@@ -472,21 +537,23 @@ export function autoPick(
  * probe itself is bounded at `PROBE_MAX_MS`, and everything stops at once when
  * `opts.cancelled` says the page has moved on. A probe's verdict is never
  * taken above what the class may take on this machine. Logs one line for the
- * probe's outcome and one for the tier.
+ * probe's outcome; the tier's own line is the launch's, once the engine is
+ * known (`qualityLine`).
  */
 export async function startupTier(
   signals: GpuSignals,
-  opts: { search: string; choice: TierChoice; cancelled(): boolean },
+  opts: { search: string; choice: TierChoice; cancelled(): boolean; engine?: VerdictEngine },
   deps: StartupDeps,
 ): Promise<StartupTier> {
   const record = readAutoRecord(deps.storage);
-  const auto = autoPick(signals, { record, pixels: deps.pixels(), now: deps.now() });
+  const auto = autoPick(signals, { record, pixels: deps.pixels(), now: deps.now(), engine: opts.engine });
   const { cls, gpu } = auto;
   const decided = resolveTier({ override: parseTierOverride(opts.search), choice: opts.choice, auto: auto.tier });
   let tier = decided.tier;
   const from = decided.source === "auto" ? (parseProbeOverride(opts.search) ?? auto.probeFrom) : null;
   if (decided.source === "auto" && from === null && auto.probeSkipped) {
-    // What is known: the extension absent, or no WebGL2 context to ask.
+    // What is known: the extension absent, or no WebGL2 context to ask. (A
+    // WebGPU step that cannot settle is measured on WebGL2 instead.)
     const reason =
       signals.parallelCompile === null
         ? "no WebGL2 context could be made to measure with"
@@ -496,7 +563,7 @@ export async function startupTier(
   if (from !== null && !opts.cancelled()) {
     const screen = deps.showScreen();
     try {
-      const outcome = await probeOnce(from, auto.tier, record, { gpu, browser: signals.browser, cls }, opts, deps);
+      const outcome = await probeOnce(from, auto.tier, record, { gpu, browser: signals.browser, cls, engine: opts.engine }, opts, deps);
       tier = withinClass(outcome.tier, cls, signals.cores, signals.memoryGb);
       if (outcome.line !== null) deps.log(`${outcome.line}; starting at ${tier} (${cls})`);
       else deps.log(`quality probe: verdict ${outcome.tier} (${cls})`);
@@ -504,8 +571,23 @@ export async function startupTier(
       screen.dispose();
     }
   }
-  deps.log(`quality: ${tier} (${decided.source}, ${cls}), engine webgl2`);
   return { tier, source: decided.source, cls };
+}
+
+/**
+ * The line a hike's launch logs, once per renderer build as a switch's is:
+ * the tier the first renderer was built at and the engine it draws with,
+ * with the decided tier's source, or `fallback` where the decided tier did
+ * not build and a lower one did (as a switch that falls back logs it).
+ */
+export function launchLine(decided: StartupTier, built: { tier: QualityTier; engine: VerdictEngine }): string {
+  return qualityLine(built.tier, built.tier === decided.tier ? decided.source : "fallback", decided.cls, built.engine);
+}
+
+/** The line a hike logs for its tier once it is launched, with the engine
+ * actually in use: `quality: medium (auto, apple-unknown), engine webgl2`. */
+export function qualityLine(tier: QualityTier, source: TierSource | "fallback", cls: GpuClass, engine: VerdictEngine): string {
+  return `quality: ${tier} (${source}, ${cls}), engine ${engine}`;
 }
 
 /**
@@ -569,20 +651,30 @@ export function startFallbacks(tier: QualityTier, cls: GpuClass, cores: number |
   return [...new Set<QualityTier>([start, "low"])].filter((t) => RANK[t] < RANK[tier]);
 }
 
+/** The line over the game's container while a hike starts: the landing's
+ * own word, which its Play button showed a moment before. */
+export const LOADING_LINE = "Loading…";
+
 /** The line over the game's container when the hike cannot be started. */
 export const START_FAILED_LINE = "This browser could not start the game.";
 
-/** What starting a hike needs of the page. */
-export type HikeStartDeps = {
+/** What starting a hike needs of the page; `E` is the engine made for it. */
+export type HikeStartDeps<E> = {
   signals: Promise<GpuSignals>;
   /** Whether this start is still the page's. */
   current(): boolean;
-  /** "Loading…" over the container, from the start of the wait. */
+  /** "Loading…" over the container: from the start of the wait, and again
+   * while the engine is made after the probe's screen has gone. */
   showLoading(): { dispose(): void };
   /** The tier (`startupTier`); `hideLoading` gives way to the probe's screen. */
   decide(signals: GpuSignals, hideLoading: () => void): Promise<StartupTier>;
-  /** Builds the hike at the tier decided. */
-  build(decided: StartupTier): void;
+  /** The engine the WebGPU rule gives the tier decided, made for the game's
+   * canvas, which is created here, after the probe. */
+  engine(decided: StartupTier, signals: GpuSignals): Promise<E>;
+  /** Lets go of an engine made for a start the page has since left. */
+  discard(engine: E): void;
+  /** Builds the hike at the tier decided, on the engine made for it. */
+  build(decided: StartupTier, engine: E): void;
   /** The hike could not start: says so over the container. */
   fail(error: unknown): void;
 };
@@ -590,12 +682,14 @@ export type HikeStartDeps = {
 /**
  * The page's start of a hike, in order: "Loading…" from the first moment, the
  * signals, the tier (the probe's screen taking over from the line when there
- * is one), then the build, with the line gone in the same task so nothing
- * blank shows between. A throw anywhere is answered with a line, never a
- * blank page; a start the page has moved on from builds and says nothing.
+ * is one), then the engine for that tier ("Loading…" again, if the probe's
+ * screen had taken over), then the build, with the line gone in the same task
+ * so nothing blank shows between. One catch for all of it: a throw anywhere
+ * is answered with a line, never a blank page. A start the page has moved on
+ * from builds nothing, says nothing, and lets go of an engine made meanwhile.
  */
-export async function startHike(deps: HikeStartDeps): Promise<void> {
-  const loading = deps.showLoading();
+export async function startHike<E>(deps: HikeStartDeps<E>): Promise<void> {
+  let loading = deps.showLoading();
   let shown = true;
   const hide = (): void => {
     if (!shown) return;
@@ -607,8 +701,18 @@ export async function startHike(deps: HikeStartDeps): Promise<void> {
     if (!deps.current()) return;
     const decided = await deps.decide(signals, hide);
     if (!deps.current()) return;
+    if (!shown) {
+      loading = deps.showLoading();
+      shown = true;
+    }
+    const engine = await deps.engine(decided, signals);
+    if (!deps.current()) {
+      hide();
+      deps.discard(engine);
+      return;
+    }
     hide();
-    deps.build(decided);
+    deps.build(decided, engine);
   } catch (error) {
     hide();
     if (deps.current()) deps.fail(error);

@@ -11,9 +11,16 @@ import {
   leavePanel,
   announcedPath,
   sameFollowPlace,
+  navigateToGame,
+  navigateToLanding,
+  replaceWithLanding,
   stripOverrides,
+  keepOverrides,
+  sameRoute,
+  followsTo,
   hostRoute,
 } from "../../src/game/router.js";
+import { parseTierOverride, resolveTier } from "../../src/game/tierChoice.js";
 
 const UUID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const BASE = "/dayhike/";
@@ -197,5 +204,142 @@ describe("where a lobby host is, for its followers", () => {
     expect(sameFollowPlace("/game/epic-panda-fun", "/settings")).toBe(false);
     expect(sameFollowPlace("/game/epic-panda-fun", "/game/epic-panda-fun")).toBe(true);
     expect(sameFollowPlace("/", "/game/epic-panda-fun")).toBe(false);
+  });
+});
+
+describe("the overrides stay on this page", () => {
+  it("are taken off the route a host announces, and nothing else is touched", () => {
+    expect(stripOverrides("/game/abc?engine=webgpu&tier=high")).toBe("/game/abc");
+    expect(stripOverrides("/game/abc?cmd=seed%20atmo&engine=webgl2")).toBe("/game/abc?cmd=seed+atmo");
+    // No override: the route goes out byte for byte as before.
+    expect(stripOverrides("/game/abc?cmd=seed%20atmo")).toBe("/game/abc?cmd=seed%20atmo");
+    expect(stripOverrides("/game/abc")).toBe("/game/abc");
+    expect(stripOverrides("")).toBe("");
+    // The probe override is the third of the set.
+    expect(stripOverrides("/game/abc?probe=high&cmd=x&tier=low")).toBe("/game/abc?cmd=x");
+    // The WebGPU shader lookup's, the fourth: a measurement's, never a follower's.
+    expect(stripOverrides("/game/abc?wgsl=record&cmd=x")).toBe("/game/abc?cmd=x");
+    expect(sameRoute("/game/abc?cmd=x&wgsl=off", "/game/abc?cmd=x")).toBe(true);
+  });
+
+  it("are carried onto the route a follower is sent to, from its own URL", () => {
+    expect(keepOverrides("/game/abc?cmd=x", "?engine=webgl2&tier=medium&cmd=y")).toBe("/game/abc?cmd=x&engine=webgl2&tier=medium");
+    expect(keepOverrides("/game/abc", "?tier=high")).toBe("/game/abc?tier=high");
+    expect(keepOverrides("/game/abc?cmd=x", "")).toBe("/game/abc?cmd=x");
+    expect(keepOverrides("/game/abc", "?probe=medium&engine=webgpu")).toBe("/game/abc?engine=webgpu&probe=medium");
+    expect(keepOverrides("/game/abc", "?wgsl=verify&engine=webgpu")).toBe("/game/abc?engine=webgpu&wgsl=verify");
+  });
+});
+
+describe("sameRoute", () => {
+  // A hand-typed ?cmd= reaches the host's URL as the browser encoded it
+  // (%20 for a space, a bare ;); the follower's URL went through
+  // URLSearchParams when its own override was carried onto it (+ and %3B).
+  const host = "/game/abc?cmd=seed%20atmo;weather%20mist";
+  const follower = keepOverrides(host, "?tier=high");
+
+  it("sees the same route where only the encoding and the follower's own overrides differ", () => {
+    expect(follower).toBe("/game/abc?cmd=seed+atmo%3Bweather+mist&tier=high");
+    // The comparison it replaces: an unchanged route read as changed, so the
+    // follower navigated and rebuilt its game on every lobby change.
+    expect(stripOverrides(host) === stripOverrides(follower)).toBe(false);
+    expect(sameRoute(host, follower)).toBe(true);
+    expect(sameRoute(`${host}&engine=webgl2`, follower)).toBe(true);
+    expect(sameRoute("/game/abc?b=2&a=1", "/game/abc?a=1&b=2")).toBe(true);
+    expect(sameRoute("/game/abc", "/game/abc?tier=medium")).toBe(true);
+    expect(sameRoute("/game/abc?probe=high", "/game/abc")).toBe(true);
+  });
+
+  it("keeps the order of a parameter's repeated values, which decides what the page reads", () => {
+    // URLSearchParams.get takes the first value, so these build different worlds.
+    expect(sameRoute("/game/abc?cmd=a&cmd=b", "/game/abc?cmd=b&cmd=a")).toBe(false);
+    expect(sameRoute("/game/abc?cmd=a&x=1&cmd=b", "/game/abc?x=1&cmd=a&cmd=b")).toBe(true);
+    expect(sameRoute("/game/abc?cmd=a&cmd=b&tier=high", "/game/abc?cmd=a&engine=webgl2&cmd=b")).toBe(true);
+  });
+
+  it("still sees a real change", () => {
+    expect(sameRoute(host, "/game/abc?cmd=seed%20other;weather%20mist&tier=high")).toBe(false);
+    expect(sameRoute(host, "/game/xyz?cmd=seed%20atmo;weather%20mist")).toBe(false);
+    expect(sameRoute("/game/abc", "/game/abc?cmd=x")).toBe(false);
+    expect(sameRoute("/", "/credits")).toBe(false);
+  });
+});
+
+describe("the overrides across the page's own navigation", () => {
+  function stubPage(search: string): { pushed: string[]; replaced: string[] } {
+    const record = { pushed: [] as string[], replaced: [] as string[] };
+    const at = { pathname: "/", search };
+    vi.stubGlobal("location", at);
+    vi.stubGlobal("history", {
+      state: null,
+      pushState(_state: unknown, _title: string, url: string) {
+        record.pushed.push(url);
+        at.search = new URL(url, "http://page").search;
+      },
+      replaceState(_state: unknown, _title: string, url: string) {
+        record.replaced.push(url);
+        at.search = new URL(url, "http://page").search;
+      },
+    });
+    vi.stubGlobal("PopStateEvent", class { constructor(readonly type: string) {} });
+    vi.stubGlobal("window", { dispatchEvent: () => true });
+    return record;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("carries tier=, engine= and probe= onto every route the page moves to, and nothing else", () => {
+    const record = stubPage("?tier=high&engine=webgl2&probe=medium&cmd=seed%20x");
+    navigateToGame("epic-panda-fun");
+    navigateToLanding();
+    navigateToPanel("settings");
+    replaceWithLanding();
+    expect(record.pushed).toEqual([
+      withBase("/game/epic-panda-fun?engine=webgl2&tier=high&probe=medium"),
+      withBase("/?engine=webgl2&tier=high&probe=medium"),
+      withBase("/settings?engine=webgl2&tier=high&probe=medium"),
+    ]);
+    expect(record.replaced).toEqual([withBase("/?engine=webgl2&tier=high&probe=medium")]);
+  });
+
+  it("moves a page with no override exactly as before", () => {
+    const record = stubPage("");
+    navigateToGame("epic-panda-fun");
+    navigateTo(`/game/${UUID}?cmd=seed%20x`);
+    expect(record.pushed).toEqual([withBase("/game/epic-panda-fun"), withBase(`/game/${UUID}?cmd=seed%20x`)]);
+  });
+
+  it("starts the hike Play opens from a title at ?tier=high at high, as its Settings line says", () => {
+    // The title's Settings says "The address sets High (?tier=high), which
+    // overrides this setting." Play moves to the game route, whose search is
+    // what the start reads the tier from (`startupTier`, `resolveTier`).
+    stubPage("?tier=high");
+    navigateToGame("epic-panda-fun");
+    expect(parseTierOverride(location.search)).toBe("high");
+    expect(resolveTier({ override: parseTierOverride(location.search), choice: "low", auto: "medium" })).toEqual({
+      tier: "high",
+      source: "override",
+    });
+  });
+});
+
+describe("a follower and its host, with the overrides", () => {
+  it("moves a follower unless it is in the same place or on the same route", () => {
+    expect(followsTo("", "/")).toBe(false);
+    // The same place: a follower in its own Settings while the host is home.
+    expect(followsTo("/", "/settings?tier=low")).toBe(false);
+    // The same route: only the encoding and the follower's own overrides differ.
+    expect(followsTo("/game/abc?cmd=seed%20atmo", "/game/abc?cmd=seed+atmo&tier=high")).toBe(false);
+    expect(followsTo("/game/abc", "/game/abc?probe=high")).toBe(false);
+    expect(followsTo("/game/abc", "/")).toBe(true);
+    expect(followsTo("/game/abc", "/game/xyz?tier=high")).toBe(true);
+  });
+
+  it("announces the host's route with its overrides stripped and a panel as the home route", () => {
+    expect(hostRoute("/settings?tier=high")).toBe("/");
+    expect(hostRoute("/game/abc?tier=high&engine=webgpu&probe=medium&cmd=x")).toBe("/game/abc?cmd=x");
+    expect(hostRoute("/game/abc?cmd=seed%20x")).toBe("/game/abc?cmd=seed%20x");
   });
 });

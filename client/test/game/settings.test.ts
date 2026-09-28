@@ -64,7 +64,7 @@ describe("settingsModel", () => {
   it("names the class's start tier where the probe is skipped because shaders compile on the page's thread", () => {
     // Firefox 156 on an Apple M4, and the page's own summary of Auto (`autoSummary` in main.ts).
     const firefox: GpuSignals = {
-      renderer: "Apple M1, or similar", adapter: null, limits: null, adapterStatus: "none", parallelCompile: false,
+      renderer: "Apple M1, or similar", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: false,
       cores: 10, memoryGb: null, mobile: false, browser: 156,
     };
     const caption = (signals: GpuSignals) => {

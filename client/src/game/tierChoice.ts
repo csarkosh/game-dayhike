@@ -10,6 +10,7 @@
  */
 import { CLASS_TIERS, type GpuClass } from "./gpuClass.js";
 import {
+  onEngine,
   recordMatches,
   verdictFor,
   verdictHolds,
@@ -18,6 +19,7 @@ import {
   type AutoVerdict,
   type ProbeReading,
   type QualityTier,
+  type VerdictEngine,
 } from "./quality.js";
 
 export const AUTO_KEY = "dayhike.quality.auto";
@@ -100,8 +102,8 @@ const RANK: Readonly<Record<QualityTier, number>> = { low: 0, medium: 1, high: 2
 /**
  * What a tier that failed to build leaves in storage (design §9.3). Under
  * `?tier=` nothing: it is for testing. Otherwise a `build` verdict at the tier
- * that did build (low when none did), for this version, GPU, browser and
- * class, holding 30 days at any window, so Auto never tries the failed tier
+ * that did build (low when none did), for this version, GPU, browser, class
+ * and engine, holding 30 days at any window, so Auto never tries the failed tier
  * each hike; but only when it lowers what is known. A verdict for this class
  * that holds at or below the tier that built is kept, since a fallback says
  * nothing new about the tiers below it: so a governor's drop whose own switch
@@ -122,13 +124,17 @@ export function recordFallback(input: {
   choice: TierChoice;
   pixels: number;
   now: number;
+  /** The engine the probed tiers draw with now, which the verdict is for
+   * (`AutoVerdict.engine`); absent, WebGL2. */
+  engine?: VerdictEngine;
 }): { record: AutoRecord | null; choice: TierChoice | null; notice: string | null } {
   if (input.source === "override") return { record: null, choice: null, notice: null };
   const built = input.built ?? "low";
+  const engine = input.engine ?? "webgl2";
   const known =
-    input.record !== null && recordMatches(input.record, input.gpu, input.browser) ? verdictFor(input.record, input.cls) : null;
+    input.record !== null && recordMatches(input.record, input.gpu, input.browser) ? verdictFor(input.record, input.cls, engine) : null;
   const kept = known !== null && verdictHolds(known, input.pixels, input.now) && RANK[known.tier] <= RANK[built];
-  const verdict: AutoVerdict = { tier: built, source: "build", pixels: input.pixels, at: input.now };
+  const verdict: AutoVerdict = onEngine({ tier: built, source: "build", pixels: input.pixels, at: input.now }, engine);
   const record = kept ? null : withVerdict(input.record, input.gpu, input.browser, input.cls, verdict);
   if (input.source !== "choice" || input.choice !== input.attempted) return { record, choice: null, notice: null };
   return {
@@ -179,13 +185,16 @@ function asReading(value: unknown): ProbeReading | null {
  */
 function asVerdict(value: unknown): AutoVerdict | null {
   if (!isObject(value)) return null;
-  const { tier, source, pixels, at, readings } = value;
+  const { tier, source, pixels, at, readings, engine } = value;
   if (!isTier(tier) || (source !== "probe" && source !== "governor" && source !== "build") || !isNumber(pixels) || !isNumber(at)) {
     return null;
   }
-  if (!Array.isArray(readings)) return { tier, source, pixels, at };
+  // WebGPU's is the one engine written; none is WebGL2 (`AutoVerdict.engine`).
+  if (engine !== undefined && engine !== "webgpu") return null;
+  const onEngine: Pick<AutoVerdict, "engine"> = engine === "webgpu" ? { engine: "webgpu" } : {};
+  if (!Array.isArray(readings)) return { tier, source, pixels, at, ...onEngine };
   const kept = readings.map(asReading).filter((reading): reading is ProbeReading => reading !== null);
-  return { tier, source, pixels, at, readings: kept };
+  return { tier, source, pixels, at, readings: kept, ...onEngine };
 }
 
 function asRecord(value: unknown): AutoRecord | null {

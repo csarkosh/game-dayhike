@@ -101,7 +101,11 @@ import {
   HORIZON, HORIZON_MAX, TUFT_ALBEDO,
   SWARD_FLOOR, SWARD_MAX, SWARD_COVER, SWARD_FADE,
 } from "./groundHexParams.js";
-import groundHexFx from "./shaders/groundHex.fragment.fx?raw";
+// The hex include, in three files whose join is the include WebGL2 compiles:
+// the lattice, the four sampler-taking fetches, and the noise and horizon.
+import groundHexHead from "./shaders/groundHex.fragment.fx?raw";
+import groundHexFetch from "./shaders/groundHexFetch.fragment.fx?raw";
+import groundHexNoise from "./shaders/groundHexNoise.fragment.fx?raw";
 
 import grassUrl from "../../assets/textures/ground.grass.webp?url";
 import floorUrl from "../../assets/textures/ground.forest_floor.webp?url";
@@ -334,11 +338,62 @@ uniform highp sampler2DArray terrainRAH;
  * on one path, in `getUniforms().fragment` on the other), so an ungated include
  * would not compile wherever this plugin's define is off.
  */
-const TERRAIN_HEX_DEFS = `
+/**
+ * The hex fetches, as WebGPU gets them: `hexFetch2D` and `hexFetchArray` with
+ * the same arguments and the same arithmetic, as macros. On WebGPU Babylon
+ * splits each `sampler2D` uniform into a texture and a sampler and names the
+ * pair through a `sampler2D(tex, samp)` constructor at each use, and glslang
+ * refuses that constructor as a function argument ("sampler constructor must
+ * appear at point of use"), so a function with a sampler parameter cannot be
+ * called; a macro puts the constructor where the texture is read. Each body is
+ * parenthesised, so `hexFetchArray(...).b` still selects from the sum, and
+ * every caller passes plain variables, so a repeated argument costs nothing.
+ * The one-shot spellings (`hexSample2D`, `hexSampleArray`) have no caller in
+ * the plugin and are left out.
+ */
+export const HEX_FETCH_MACROS = `#define hexFetch2D(tex, u1, u2, u3, s, dx, dy) (textureGrad(tex, u1, dx, dy).rgb * (s).x + textureGrad(tex, u2, dx, dy).rgb * (s).y + textureGrad(tex, u3, dx, dy).rgb * (s).z)
+#define hexFetchArray(tex, u1, u2, u3, s, layer, dx, dy) (textureGrad(tex, vec3(u1, layer), dx, dy).rgb * (s).x + textureGrad(tex, vec3(u2, layer), dx, dy).rgb * (s).y + textureGrad(tex, vec3(u3, layer), dx, dy).rgb * (s).z)
+
+`;
+
+/**
+ * The terrain's fragment, as WebGPU gets it, turns WGSL's uniformity analysis
+ * off with the define the WebGPU engine reads from a stage's code (the finish
+ * pass does the same, `post.ts`). WGSL refuses an implicit-derivative texture
+ * read (`textureSample`) in non-uniform control flow, and every branch on a
+ * varying or on a texel is non-uniform there. This shader has many such reads:
+ * the rock parallax's height fetches in its loop, the relief gate's
+ * (`strength > 0.0`) height and normal fetches, the road paint's (`rau` inside
+ * the road), the trail paint's segment fetches in its search and its bed
+ * fetches inside the corridor (the one Tint named, under the `fwidth` edge),
+ * and the feature paint's table fetches in its loop. Each is safe without the
+ * analysis. The table fetches (the trail's segments, the features) read data
+ * textures of one level, so no level of detail can be chosen wrongly. The
+ * others' coordinates are continuous across the branch's edge, and the
+ * branch's own weight (the relief strength, the road's and the trail's
+ * blends) is 0 at that edge, so a level of detail a read gives up there is
+ * multiplied away; WebGL2's GLSL takes the same reads as they are. The
+ * alternative, explicit gradients on every read, would need a gradient pair
+ * per coordinate taken outside the branches, and would change WebGL2's text
+ * or need a second copy of it. Only on WebGPU, so WebGL2's text is the same
+ * byte for byte. High and medium had it only by accident, from Babylon's
+ * cascaded-shadow include; the low tier, which has no shadow, failed.
+ */
+export const TERRAIN_UNIFORMITY_OFF = `#define DISABLE_UNIFORMITY_ANALYSIS
+`;
+
+/**
+ * The hex include for an engine, gated as above: on WebGL2 the three files
+ * joined, byte for byte the include it has always compiled; on WebGPU the
+ * fetches as `HEX_FETCH_MACROS`.
+ */
+export function terrainHexDefs(webgpu: boolean): string {
+  return `
 #ifdef TERRAINTEX
-${groundHexFx}
+${groundHexHead}${webgpu ? HEX_FETCH_MACROS : groundHexFetch}${groundHexNoise}
 #endif
 `;
+}
 
 const TERRAIN_VERTEX_DEFS = `
 #ifdef TERRAINTEX
@@ -555,8 +610,8 @@ const TERRAIN_FRAGMENT_BLEND = `
   // Macro tint: the lush/dry variation over tens of metres, on grass only and
   // faded out with the rest of the detail. A multiplicative tint of
   // surfaceAlbedo, never a write to the material constant.
-  vec3 macro = macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y);
-  surfaceAlbedo *= mix(vec3(1.0), macro, w0 * terrainMacroOn * (1.0 - smoothstep(terrainFade.x, terrainFade.y, dist)));
+  vec3 macroRgb = macroTint(macroNoise(vPositionW.xz), 1.0 - terrainN.y);
+  surfaceAlbedo *= mix(vec3(1.0), macroRgb, w0 * terrainMacroOn * (1.0 - smoothstep(terrainFade.x, terrainFade.y, dist)));
   // Horizon tint: past HORIZON the floor reads as the vegetation the clutter
   // has thinned out of, not as bare palette.
   surfaceAlbedo = mix(surfaceAlbedo, terrainTuft, w0 * horizonWeight(dist));
@@ -944,7 +999,13 @@ uniform vec4 terrainSwardBand;
         // The hex include sits between this plugin's own declarations and the
         // paints: after the uniforms its functions read, before the paint code
         // that has no use for them.
-        CUSTOM_FRAGMENT_DEFINITIONS: TERRAIN_FRAGMENT_DEFS + TERRAIN_HEX_DEFS + ROAD_FRAGMENT_DEFS + TRAIL_FRAGMENT_DEFS + FEATURE_FRAGMENT_DEFS,
+        CUSTOM_FRAGMENT_DEFINITIONS:
+          (this._material.getScene().getEngine().isWebGPU ? TERRAIN_UNIFORMITY_OFF : "") +
+          TERRAIN_FRAGMENT_DEFS +
+          terrainHexDefs(this._material.getScene().getEngine().isWebGPU) +
+          ROAD_FRAGMENT_DEFS +
+          TRAIL_FRAGMENT_DEFS +
+          FEATURE_FRAGMENT_DEFS,
         // Unconditional locals the reflectivity rewrite below reads whatever
         // the defines say — see TERRAIN_FRAGMENT_MAIN_BEGIN.
         CUSTOM_FRAGMENT_MAIN_BEGIN: TERRAIN_FRAGMENT_MAIN_BEGIN,

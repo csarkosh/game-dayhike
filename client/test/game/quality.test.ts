@@ -2,10 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   QUALITY,
   autoTier,
+  detectTier,
   recordMatches,
   tierFor,
   verdictFor,
   verdictHolds,
+  verdictRead,
   GOVERNOR_VERDICT_DAYS,
   VERDICT_DAYS,
   withGovernorDrop,
@@ -19,6 +21,7 @@ import {
   type QualityTier,
 } from "../../src/game/quality.js";
 import { CLASS_TIERS, type GpuClass } from "../../src/game/gpuClass.js";
+import { AUTO_KEY, readAutoRecord } from "../../src/game/tierChoice.js";
 
 describe("QUALITY", () => {
   it("matches the quality tier table", () => {
@@ -97,6 +100,15 @@ describe("tierFor", () => {
   it("is deterministic", () => {
     const caps: Capabilities = { cores: 8, memoryGb: 8, mobile: false };
     expect(tierFor(caps)).toBe(tierFor(caps));
+  });
+
+  it("detects medium at best on a desktop that reports 8 GB, and low where memory goes unreported", () => {
+    // An 8 GB report (all Chromium gave before Chrome 147) is medium at most.
+    expect(detectTier({ hardwareConcurrency: 12, deviceMemory: 8, userAgent: "Chrome/153" })).toBe("medium");
+    // No deviceMemory at all (the API is Chromium's alone) reads the default 4.
+    expect(detectTier({ hardwareConcurrency: 12, userAgent: "Version/26.0 Safari/605.1.15" })).toBe("low");
+    expect(detectTier({ hardwareConcurrency: 12, deviceMemory: 8, userAgent: "iPhone" })).toBe("low");
+    expect(detectTier(undefined)).toBe("low");
   });
 });
 
@@ -262,6 +274,18 @@ describe("the record through a probe", () => {
     }
     expect(withGovernorDrop(spent, SAFARI, 26, "apple-unknown", "medium", 2_073_600, NOW)!.attempts).toBe(3);
     expect(withVerdict(spent, SAFARI, 26, "apple-unknown", { tier: "low", source: "probe", pixels: 2_073_600, at: NOW })!.attempts).toBe(0);
+    // A probe's verdict written by a cut keeps the count too, for either
+    // engine's lookup: only a finished probe clears it.
+    const probed: AutoVerdict = { tier: "low", source: "probe", pixels: 2_073_600, at: NOW };
+    const table = [
+      { cut: false, lookup: "webgl2", attempts: 0 },
+      { cut: true, lookup: "webgl2", attempts: 3 },
+      { cut: false, lookup: "webgpu", attempts: 0 },
+      { cut: true, lookup: "webgpu", attempts: 3 },
+    ] as const;
+    for (const row of table) {
+      expect(withVerdict(spent, SAFARI, 26, "apple-unknown", probed, row.lookup, row.cut)!.attempts, JSON.stringify(row)).toBe(row.attempts);
+    }
     // Once the governor's verdict lapses, the three probes spent stay spent.
     const lapsed = withGovernorDrop(spent, SAFARI, 26, "apple-unknown", "medium", 2_073_600, NOW - 8 * DAY)!;
     expect(auto(lapsed)).toEqual({ tier: "medium", probeFrom: null });
@@ -344,6 +368,71 @@ describe("the record after a governor drop", () => {
     expect(verdictHolds({ ...governed, source: "probe", at: NOW - 29 * DAY }, 2_073_600, NOW)).toBe(true);
     expect(verdictHolds({ ...governed, source: "build", at: NOW - 29 * DAY }, 2_073_600, NOW)).toBe(true);
     expect(verdictHolds({ ...governed, source: "build", at: NOW - 30 * DAY }, 2_073_600, NOW)).toBe(false);
+  });
+});
+
+describe("the engine a verdict was measured with", () => {
+  const onWebGpu = (record: AutoRecord | null, pixels = 2_073_600) =>
+    autoTier({ cls: "apple-unknown", cores: 8, memoryGb: null, record, gpu: SAFARI, browser: 26, pixels, now: NOW, engine: "webgpu" });
+
+  it("holds a WebGL2 verdict for both engines, and a WebGPU verdict for WebGPU only", () => {
+    // A record from before WebGPU carries no engine: it was WebGL2. WebGPU
+    // draws the same scene at least as fast, so a tier that holds on WebGL2
+    // holds on WebGPU: the WebGL2 verdict is a floor for WebGPU.
+    expect(auto(rec({}))).toEqual({ tier: "high", probeFrom: null });
+    expect(onWebGpu(rec({}))).toEqual({ tier: "high", probeFrom: null });
+    expect(verdictFor(rec({}), "apple-unknown", "webgpu")?.tier).toBe("high");
+    // Nothing says WebGL2 is as fast as WebGPU.
+    expect(onWebGpu(rec({ engine: "webgpu" }))).toEqual({ tier: "high", probeFrom: null });
+    expect(auto(rec({ engine: "webgpu" }))).toEqual({ tier: "medium", probeFrom: "high" });
+    expect(verdictFor(rec({ engine: "webgpu" }), "apple-unknown", "webgpu")?.tier).toBe("high");
+    expect(verdictFor(rec({ engine: "webgpu" }), "apple-unknown")).toBe(null);
+  });
+
+  it("reads a verdict for its own engine, and a WebGL2 verdict for WebGPU too", () => {
+    const gl: AutoVerdict = { tier: "high", source: "probe", pixels: 2_073_600, at: NOW };
+    const gpu: AutoVerdict = { ...gl, engine: "webgpu" };
+    expect([verdictRead("webgl2", gl), verdictRead("webgpu", gl), verdictRead("webgpu", gpu), verdictRead("webgl2", gpu)]).toEqual([true, true, true, false]);
+  });
+
+  it("reads a record tier detection's release wrote, its WebGL2 verdict holding for a WebGPU start", () => {
+    // As that release writes it: no engine on the verdict, WebGL2 readings.
+    const text =
+      '{"v":1,"gpu":"Apple GPU","cls":"apple-unknown","browser":26,"attempts":0,"verdict":{"tier":"high","source":"probe","pixels":2073600,"at":1789913600000,' +
+      '"readings":[{"tier":"high","frames":120,"meanMs":16.7,"p95Ms":17.4,"pixels":2073600,"engine":"webgl2"}]}}';
+    const written = readAutoRecord({ getItem: (key: string) => (key === AUTO_KEY ? text : null) } as Storage);
+    expect(written?.verdict?.tier).toBe("high");
+    expect(onWebGpu(written)).toEqual({ tier: "high", probeFrom: null });
+    expect(auto(written)).toEqual({ tier: "high", probeFrom: null });
+  });
+
+  it("resets the attempts for a WebGL2 probe's verdict looked up under WebGPU, which reads it", () => {
+    const verdict: AutoVerdict = { tier: "medium", source: "probe", pixels: 2_073_600, at: NOW };
+    expect(withVerdict(rec(null, { attempts: 2 }), SAFARI, 26, "apple-unknown", verdict, "webgpu")!.attempts).toBe(0);
+    // A WebGPU verdict looked up under WebGL2 is not read: the count carried.
+    expect(withVerdict(rec(null, { attempts: 2 }), SAFARI, 26, "apple-unknown", { ...verdict, engine: "webgpu" }, "webgl2")!.attempts).toBe(2);
+  });
+
+  it("keeps the probe attempts per GPU and browser, whatever the engine", () => {
+    expect(onWebGpu(rec({ source: "governor", tier: "medium" }, { attempts: 3 }))).toEqual({ tier: "medium", probeFrom: null });
+    expect(onWebGpu(rec(null, { attempts: 3 }))).toEqual({ tier: "medium", probeFrom: null });
+    const started = withProbeStarted(rec({ engine: "webgpu" }, { attempts: 1 }), SAFARI, 26, "apple-unknown");
+    expect(started.attempts).toBe(2);
+    // A verdict replacing one for the other engine carries the count, as one
+    // for another class does, so two engines taking turns cannot probe on
+    // every load.
+    const verdict: AutoVerdict = { tier: "medium", source: "probe", pixels: 2_073_600, at: NOW, engine: "webgpu" };
+    expect(withVerdict(rec({}, { attempts: 2 }), SAFARI, 26, "apple-unknown", verdict)!.attempts).toBe(2);
+    expect(withVerdict(rec({ engine: "webgpu" }, { attempts: 2 }), SAFARI, 26, "apple-unknown", verdict)!.attempts).toBe(0);
+  });
+
+  it("writes a governor's drop for the engine it was held on, and a WebGL2 one as before", () => {
+    expect(withGovernorDrop(null, SAFARI, 26, "apple-unknown", "high", 2_073_600, NOW, "webgpu")!.verdict).toEqual({
+      tier: "medium", source: "governor", pixels: 2_073_600, at: NOW, engine: "webgpu",
+    });
+    expect(withGovernorDrop(null, SAFARI, 26, "apple-unknown", "high", 2_073_600, NOW, "webgl2")!.verdict).toEqual({
+      tier: "medium", source: "governor", pixels: 2_073_600, at: NOW,
+    });
   });
 });
 

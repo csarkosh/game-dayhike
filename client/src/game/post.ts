@@ -34,6 +34,21 @@ export function fxSupportedBy(engine: AbstractEngine): boolean {
   return Boolean(caps.textureHalfFloatRender || caps.textureFloatRender);
 }
 
+/**
+ * The finish pass's fragment shader for an engine. On WebGL2, the file itself,
+ * byte for byte. On WebGPU, the file with Babylon's own per-shader switch in
+ * front of it, `#define DISABLE_UNIFORMITY_ANALYSIS`, which the WebGPU engine
+ * reads from a stage's code and hands the GLSL-to-WGSL translation: the pass
+ * reads the scene a second time inside a branch on `vUV` (the peripheral
+ * overlap), and WGSL refuses an implicit-derivative read in non-uniform
+ * control flow. It is safe here because the scene target has one mip level,
+ * so the level of detail the read gives up cannot select another. Only this
+ * shader: every other one keeps the analysis, and its faults with it.
+ */
+export function finishFragmentFor(webgpu: boolean): string {
+  return webgpu ? `#define DISABLE_UNIFORMITY_ANALYSIS\n${finishFragment}` : finishFragment;
+}
+
 // The ratio shared by every pass in the halation sub-chain — extract, blur X,
 // blur Y, and (on high) grade — so a pass's own ratio and the previous
 // pass's ratio agree and the whole sub-chain reads and writes quarter size
@@ -120,7 +135,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
       : Constants.TEXTURETYPE_FLOAT;
     Effect.ShadersStore["halationExtractFragmentShader"] = halationExtractFragment;
     Effect.ShadersStore["gradeFragmentShader"] = gradeFragment;
-    Effect.ShadersStore["finishFragmentShader"] = finishFragment;
+    Effect.ShadersStore["finishFragmentShader"] = finishFragmentFor(engine.isWebGPU);
 
     if (features.halation) {
       // Absorbs the halation extract's quarter-resolution ratio so the scene

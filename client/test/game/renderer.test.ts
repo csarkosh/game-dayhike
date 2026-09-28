@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Engine } from "@babylonjs/core/Engines/engine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
@@ -39,6 +40,26 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
     "@babylonjs/core/Engines/nullEngine.js",
   );
   return { Engine: mod.NullEngine };
+});
+
+// Every pose the renderer hands the blade field to cut to, recorded on the way
+// through to the real shell (which still cuts), so a test can read what the
+// renderer's per-frame cull hook measured.
+const bladeCullPoses = vi.hoisted(() => [] as { aspect: number }[]);
+vi.mock("../../src/game/bladeMeshes.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/game/bladeMeshes.js")>();
+  return {
+    ...mod,
+    createBladeMeshes: (...args: Parameters<typeof mod.createBladeMeshes>) => {
+      const blades = mod.createBladeMeshes(...args);
+      const cull = blades.cull.bind(blades);
+      blades.cull = (pose) => {
+        if (pose !== null) bladeCullPoses.push({ ...pose });
+        cull(pose);
+      };
+      return blades;
+    },
+  };
 });
 
 // The terrain field lives behind the variant registry, and `activeTerrainVariant`
@@ -352,6 +373,72 @@ describe("renderer.wind()", () => {
   });
 });
 
+describe("the renderer's engine", () => {
+  // `Engine` here is this file's module mock (NullEngine standing in for the
+  // WebGL2 engine), so an instance of it is what the WebGL2 path constructs.
+  it("makes the WebGL2 Engine itself when it is given none", () => {
+    const before = EngineStore.Instances.length;
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low" });
+    try {
+      expect(renderer.engine).toBeInstanceOf(Engine);
+      expect(renderer.scene.getEngine()).toBe(renderer.engine);
+      expect(EngineStore.Instances.length - before).toBe(1);
+    } finally {
+      renderer.dispose();
+    }
+  });
+
+  it("hands out the forest's bake records, empty where there is no forest", () => {
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low" });
+    try {
+      expect(renderer.impostorBakes()).toEqual([]);
+    } finally {
+      renderer.dispose();
+    }
+    const src = readFileSync(fileURLToPath(new URL("../../src/game/renderer.ts", import.meta.url)), "utf8");
+    expect(src).toContain("return forestMeshes?.impostorBakes() ?? [];");
+  });
+
+  it("draws on an engine it is given, makes none of its own, and disposes it with itself", () => {
+    const given = new NullEngine();
+    const before = EngineStore.Instances.length;
+    const renderer = createRenderer({} as unknown as HTMLCanvasElement, EMPTY_LEVEL, null, { tier: "low", engine: given });
+    try {
+      expect(renderer.engine).toBe(given);
+      expect(renderer.scene.getEngine()).toBe(given);
+      expect(EngineStore.Instances.length - before).toBe(0);
+    } finally {
+      renderer.dispose();
+    }
+    expect(given.isDisposed).toBe(true);
+  });
+
+  // The grass cull builds its planes from the aspect, so it has to be the
+  // aspect of the engine actually drawing (WebGPU's, when one is handed in),
+  // read every frame, never a canvas the renderer was passed. NullEngine's
+  // render size is its options, so this proves the hook reads the given
+  // engine's render size live; it cannot prove how WebGPUEngine or Engine size
+  // their own drawing buffers against a real canvas.
+  it("culls the grass to the given engine's aspect, read every frame, not the canvas's", () => {
+    const LEVEL: Level = { id: "cull-aspect-test", brushes: [], playerSpawns: [], enemySpawns: [] };
+    const given = new NullEngine({ renderWidth: 1600, renderHeight: 900, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 1 });
+    // A square canvas: its aspect is 1, and the mocked WebGL2 Engine would read it.
+    const canvas = { width: 640, height: 640, renderWidth: 640, renderHeight: 640 } as unknown as HTMLCanvasElement;
+    bladeCullPoses.length = 0;
+    const renderer = createRenderer(canvas, LEVEL, createForest(388817), { tier: "high", engine: given });
+    try {
+      renderer.scene.render();
+      expect(bladeCullPoses.map((p) => p.aspect)).toEqual([1.7777777777777777]);
+      // The engine's drawing size changes (a resize); the next frame reads it.
+      (given as unknown as { _options: { renderWidth: number } })._options.renderWidth = 1200;
+      renderer.scene.render();
+      expect(bladeCullPoses.map((p) => p.aspect)).toEqual([1.7777777777777777, 1.3333333333333333]);
+    } finally {
+      renderer.dispose();
+    }
+  }, timeLimit(60_000));
+});
+
 describe("world shell wiring", () => {
   // `createRenderer` needs a real canvas and a WebGL context; the wind test
   // above works around that with a `NullEngine` substitution (see the
@@ -427,6 +514,14 @@ describe("world shell wiring", () => {
     // The reused array is truncated to this frame's count, not left holding the
     // previous frame's tail.
     expect(drain).toContain("wildlifeEventDrain.length = n;");
+  });
+
+  it("draws on an engine it is given, and makes WebGL2's own otherwise", () => {
+    expect(src).toContain(
+      "const engine = options.engine ?? new Engine(canvas, true, { stencil: true, loseContextOnDispose: true }, true);",
+    );
+    expect(src).toMatch(/engine: AbstractEngine;/);
+    expect(src).not.toContain("function detectTier(");
   });
 
   it("creates the duff field beside the blade field, both guarded to the same tiers", () => {

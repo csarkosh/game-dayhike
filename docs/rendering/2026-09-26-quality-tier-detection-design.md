@@ -436,7 +436,9 @@ rule from cores and memory; the page passes a tier to every renderer it
 builds, so neither decides a hike here, and they stay because the WebGPU work,
 which merges this, keeps `detectTier` for a renderer given no tier. `resolveTier({ override, choice, auto })`
 in `tierChoice.ts` returns the tier and its source (`override`, `choice`, `auto`),
-which the page logs once per renderer build:
+which the page logs once per renderer build, naming the tier that renderer
+was built at and the engine it draws with, and `fallback` as the source
+where the tier asked for did not build and a lower one did:
 `quality: medium (auto, apple-base), engine webgl2`.
 
 ### 6.4 The literal matrix
@@ -626,6 +628,20 @@ the engine choice after it. Where the two meet:
   a throw on either engine leaves the line of §7.6 rather than a blank page.
 - **"Loading…" from the start of the wait for the signals**, giving way to the
   probe's screen when there is a probe, and then to the engine's own wait line.
+- **The probe draws on WebGL2.** A WebGPU step is not taken to settle until
+  measured (`WEBGPU_PROBE_STEPS_SETTLE`, false: Babylon translates WebGPU
+  shaders on the page's thread), so tiers the rule draws on WebGPU are probed
+  on WebGL2 where a WebGL2 step can settle, and skipped where it cannot, as
+  above. A WebGL2 verdict holds for WebGPU as a floor (`verdictRead`), and
+  this release's records are read so; a WebGPU verdict holds for WebGPU only.
+  With the switch off every step is WebGL2 and nothing here changes (the
+  WebGPU design, §5.9).
+- **The cover's bound on the rebuilds.** A rebuild after a WebGPU failure,
+  in play and unasked, waits the governor's 10 s, as the governor's drop does;
+  a fallback's rung and a switch across engines wait on the bound of the
+  switch they belong to. Making a WebGPU engine counts against the bound; one
+  not ready in time gives way to WebGL2 at the tier, remembered against
+  nothing (the WebGPU design, §5.9).
 
 ## 8. The player setting
 
