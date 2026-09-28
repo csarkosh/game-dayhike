@@ -213,16 +213,6 @@ describe("layer boundaries", () => {
     expect(main).not.toMatch(/\bstarting\b/);
   });
 
-  it("holds the page on WebGL2 after translators that could not be fetched, remembered nowhere: every watcher sets the hold, the rule reads it, the probe writes no record", () => {
-    // What `engineFailure.test.ts` cannot see: the page's side of `unfetched`.
-    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
-    expect(main).toContain("watchers: { failures: holdingUnfetched(gpu.watchWebGpu), pipelines: gpu.watchPipelines },");
-    expect(main).toContain("    remembered: translatorsUnfetched || fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),");
-    expect(main).toContain('  if (reason === "unfetched") {\n    return answerUnfetched({');
-    expect(main).toContain("    failed: () => void (translatorsUnfetched || rememberFailure(!cancelled())),");
-    expect([...main.matchAll(/\btranslatorsUnfetched = true\b/g)]).toHaveLength(1);
-  });
-
   it("shows one line after a failure rebuild: the swap itself shows none, a switch its engine's, the answer its own", () => {
     const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
     const body = (from: string, to: string): string => app.slice(app.indexOf(from), app.indexOf(to, app.indexOf(from)));
@@ -247,9 +237,7 @@ describe("layer boundaries", () => {
     const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
     expect(main).toContain("  return recordStartFailure({");
     expect(main).toContain("    remember: () => {\n      if (wanted()) void rememberFailure(current());\n    },");
-    // A probe step's, except where translators could not be fetched: the
-    // network's failure, not the start's (`answerUnfetched`).
-    expect(main).toContain("    failed: () => void (translatorsUnfetched || rememberFailure(!cancelled())),");
+    expect(main).toContain("    failed: () => void rememberFailure(!cancelled()),");
     expect([...main.matchAll(/\brememberFailure\(/g)].length).toBe(3);
     expect(main).not.toMatch(/\b(recordFailure|writeFallback)\(/);
   });

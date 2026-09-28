@@ -64,7 +64,6 @@ import {
   WEBGPU_FETCH_MS,
   WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS,
-  type EngineFailure,
   type ShaderLookupMode,
 } from "./engineChoice.js";
 import { lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
@@ -75,20 +74,6 @@ const UNTRANSLATED = "WebGPU shader translation failed";
 /** Per engine, who hears of a translation failure that belongs to no
  * compiled effect: the engine's watcher, and no other engine's. */
 const untranslatedHeard = new WeakMap<AbstractEngine, Set<() => void>>();
-
-/** Per engine, who hears that the translators could not be fetched for a
- * shader its lookup did not find (`reportUnfetched`): the engine's watcher. */
-const unfetchedHeard = new WeakMap<AbstractEngine, Set<() => void>>();
-/** The engines told so, for a watcher put on after. */
-const unfetchedEngines = new WeakSet<AbstractEngine>();
-
-/** Tells `engine`'s watcher that the translators could not be fetched for a
- * shader its lookup did not find (`lookUpShaders`'s `unfetched`); a watcher
- * put on later hears it too. */
-export function reportUnfetched(engine: AbstractEngine): void {
-  unfetchedEngines.add(engine);
-  for (const hear of unfetchedHeard.get(engine) ?? []) hear();
-}
 
 type Preparing = {
   _preparePipelineContextAsync: (pipelineContext: unknown, ...rest: unknown[]) => Promise<void>;
@@ -443,20 +428,17 @@ export function giveUpRestore(engine: AbstractEngine): void {
  * fails to translate or compile (with `catchTranslationFailures` installed, a
  * translation failure is one), or an uncaptured WebGPU error (`"pipeline"`),
  * and a lost device Babylon did not cause (`"lost"`; Babylon says nothing of
- * the loss a disposed engine's destroyed device makes), and translators that
- * could not be fetched for a shader its lookup did not find (`"unfetched"`,
- * `reportUnfetched`, heard even when told before this watcher was put on).
- * Each is reported once, and only from this engine: an uncaptured error is
- * heard on its own device's `uncapturederror` event, not in Babylon's log,
- * which every engine of the page writes to (a probe step's, or one released
- * and still waiting for its BRDF lookup texture). Returns a function that
- * removes every listener; the game calls it before the engine is disposed.
+ * the loss a disposed engine's destroyed device makes). Each is reported
+ * once, and only from this engine: an uncaptured error is heard on its own
+ * device's `uncapturederror` event, not in Babylon's log, which every engine
+ * of the page writes to (a probe step's, or one released and still waiting
+ * for its BRDF lookup texture). Returns a function that removes every
+ * listener; the game calls it before the engine is disposed.
  */
-export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: EngineFailure) => void): () => void {
-  const reported = new Set<EngineFailure>();
-  let watching = true;
-  const report = (reason: EngineFailure): void => {
-    if (!watching || reported.has(reason)) return;
+export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void): () => void {
+  const reported = new Set<"pipeline" | "lost">();
+  const report = (reason: "pipeline" | "lost"): void => {
+    if (reported.has(reason)) return;
     reported.add(reason);
     onFailure(reason);
   };
@@ -473,20 +455,12 @@ export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: EngineFa
   const heard = untranslatedHeard.get(engine) ?? new Set<() => void>();
   untranslatedHeard.set(engine, heard);
   heard.add(onUncaptured);
-  const onUnfetched = (): void => report("unfetched");
-  const unfetched = unfetchedHeard.get(engine) ?? new Set<() => void>();
-  unfetchedHeard.set(engine, unfetched);
-  unfetched.add(onUnfetched);
-  // Told before this watcher: reported once the caller holds its stop.
-  if (unfetchedEngines.has(engine)) queueMicrotask(onUnfetched);
 
   return () => {
-    watching = false;
     engine.onEffectErrorObservable.remove(effectError);
     engine.onContextLostObservable.remove(lost);
     device?.removeEventListener("uncapturederror", onUncaptured);
     heard.delete(onUncaptured);
-    unfetched.delete(onUnfetched);
   };
 }
 

@@ -105,8 +105,6 @@ export const FALLBACK_NOTICE_MS = 6_000;
 
 export const NOTICE_SWITCHED = "Graphics switched to WebGL2 after a GPU error.";
 export const NOTICE_RESTARTED = "Graphics restarted after a GPU error.";
-/** After translators that could not be fetched (`unfetched`): no GPU error. */
-export const NOTICE_UNFETCHED = "Graphics switched to WebGL2: part of the renderer could not be downloaded.";
 
 const DAY_MS = 86_400_000;
 
@@ -224,16 +222,6 @@ export function engineForTier<E>(input: EngineInput, resolve: () => Promise<E | 
 }
 
 export type FallbackReason = "init" | "pipeline" | "lost";
-
-/**
- * A failure of a running WebGPU engine, as its watcher reports it
- * (`watchWebGpu`): an effect that failed or an uncaptured error
- * (`pipeline`), a lost device (`lost`), or translators that could not be
- * fetched for a shader the lookup did not find (`unfetched`,
- * `shaderLookup.ts`). The last is the network's, not the GPU's: it is never
- * remembered, and holds for the page alone (`answerUnfetched`).
- */
-export type EngineFailure = "pipeline" | "lost" | "unfetched";
 
 /**
  * A remembered failure: why, on which browser major and Babylon version, when,
