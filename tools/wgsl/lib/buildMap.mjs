@@ -68,7 +68,9 @@ export function buildMap({ stages, salt, translate, shared, now = () => performa
       entries.set(key, wgsl);
       translated.push({ id, key, stage: entry.stage, ms: now() - from, glslBytes: entry.glsl.length, wgslBytes: wgsl.length });
     } catch (error) {
-      failed.push({ id, stage: entry.stage, message: error instanceof Error ? error.message : String(error) });
+      // The translators run in contexts of their own, whose errors are not
+      // this context's `Error`s.
+      failed.push({ id, stage: entry.stage, message: typeof error?.message === 'string' ? error.message : String(error) });
     }
   }
   return { text: shared.mapText(salt, entries), entries, translated, failed };
