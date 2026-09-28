@@ -41,8 +41,8 @@ export function nameHash(name: string): number {
   return h >>> 0;
 }
 
-/** mulberry32: a small, fast generator of floats in [0, 1). */
-function generator(seed: number): () => number {
+/** mulberry32: a small, fast generator of floats in [0, 1). What every seeded wear draws from. */
+export function wearGenerator(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -79,7 +79,7 @@ export function knockedOutArea(wear: LabelWear): number {
  * under `WEAR_AREA_CAP` of it, so the name still reads.
  */
 export function labelWear(name: string, ink: InkBox): LabelWear {
-  const rand = generator(nameHash(name));
+  const rand = wearGenerator(nameHash(name));
   const between = (lo: number, hi: number): number => lo + (hi - lo) * rand();
   const h = ink.height;
   const cap = WEAR_AREA_CAP * ink.width * ink.height;
