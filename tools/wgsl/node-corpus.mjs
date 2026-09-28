@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// Writes a small corpus made under Node, for the build's translation to have
-// real shaders to translate before a corpus recorded in browsers
-// (`?wgsl=record`) is merged in: the game's three post shaders (the halation
+// Writes a small corpus made under Node, the fixture the tests translate
+// (`tools/wgsl/test/fixtures/node-corpus/`): the game's three post shaders (the halation
 // extract, the grade, the finish as WebGPU takes it) and Babylon's PBR and
 // Standard materials on a sphere lit by the sun, each effect's two stages as
 // Babylon's WebGPU GLSL processing hands them to the engine, composed for the
@@ -12,14 +11,16 @@
 // platform name and depth range besides. It is not byte for byte what a
 // browser's WebGPU engine makes of these effects (the engine's caps, its
 // version and the game's own defines differ), so a browser never asks for
-// these stages: they exercise the build and the page's source of shipped
-// translations end to end, and buy no hit.
+// these stages, and they are not shipped: they exercise the build's tool and
+// the page's own translation in the tests, against each other.
 //
-// Usage: node tools/wgsl/node-corpus.mjs <out.json>
-//        then node tools/wgsl/merge-corpus.mjs <out.json>
+// Usage: node tools/wgsl/node-corpus.mjs [out.json]
+//   with no file, the fixture's files are written afresh, split as the
+//   corpus is (`merge-corpus.mjs`)
 
-import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
 import { WebGPUShaderProcessorGLSL } from '@babylonjs/core/Engines/WebGPU/webgpuShaderProcessorsGLSL.js';
 import { WebGPUShaderProcessingContext } from '@babylonjs/core/Engines/WebGPU/webgpuShaderProcessingContext.js';
@@ -34,10 +35,11 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js'
 import { Effect } from '@babylonjs/core/Materials/effect.js';
 import { PostProcess } from '@babylonjs/core/PostProcesses/postProcess.js';
 import '@babylonjs/core/Shaders/postprocess.vertex.js';
+import { NODE_CORPUS_DIR } from './lib/files.mjs';
+import { mergeCorpus } from './lib/mergeCorpus.mjs';
 import { loadShared } from './lib/shared.mjs';
 
 const out = process.argv[2];
-if (!out) throw new Error('usage: node tools/wgsl/node-corpus.mjs <out.json>');
 const shared = await loadShared();
 const shader = (name) => readFileSync(new URL(`../../client/src/game/shaders/${name}.fragment.fx`, import.meta.url), 'utf8');
 
@@ -104,6 +106,15 @@ for (let tick = 0; tick < 100; tick++) {
 }
 const made = new Set(stages.map((entry) => shared.corpusId(entry))).size;
 if (made < 10) throw new Error(`only ${made} stages were prepared; expected the five effects' ten`);
-writeFileSync(resolve(out), shared.corpusText(stages));
-console.log(`wrote ${made} stages to ${out}`);
+if (out) {
+  writeFileSync(resolve(out), shared.corpusText(stages));
+  console.log(`wrote ${made} stages to ${out}`);
+} else {
+  // The fixture afresh: its files removed, then these stages split into them.
+  const recorded = join(mkdtempSync(join(tmpdir(), 'dayhike-node-corpus-')), 'node.json');
+  writeFileSync(recorded, shared.corpusText(stages));
+  for (const name of readdirSync(NODE_CORPUS_DIR).filter((n) => n.endsWith('.json'))) rmSync(join(NODE_CORPUS_DIR, name));
+  mergeCorpus({ dir: NODE_CORPUS_DIR, recorded: [recorded], shared });
+  console.log(`wrote ${made} stages to ${NODE_CORPUS_DIR}`);
+}
 engine.dispose();

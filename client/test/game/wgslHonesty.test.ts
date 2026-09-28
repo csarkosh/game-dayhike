@@ -7,19 +7,20 @@ import { buildSalt, lookUpShaders, newLookupReport, type ShaderLookupReport, typ
 import * as format from "../../src/game/wgslFormat.js";
 import { loadWgslMap } from "../../src/game/wgslMap.js";
 import { buildMap, nodeSalt, readCorpusDir } from "../../../tools/wgsl/lib/buildMap.mjs";
-import { CORPUS_DIR } from "../../../tools/wgsl/lib/files.mjs";
+import { NODE_CORPUS_DIR } from "../../../tools/wgsl/lib/files.mjs";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /**
  * The map the build ships is honest only if every entry is byte for byte what
- * the page would translate from the same text. Here the committed corpus is
- * translated twice with the real translators the client ships, both under
- * Node: by the build's tool, and by the page's own lookup through Babylon's
- * own engine methods (the translators handed to Babylon as the engine's maker
- * hands them, on a stand-in device that keeps each module's code). Whether a
- * browser's WebAssembly gives the same bytes as Node's is for a recorded page
- * to show (the design's §8); this holds the tool to the page.
+ * the page would translate from the same text. Here a corpus of ten stages
+ * made under Node (the tools' fixture, `NODE_CORPUS_DIR`) is translated twice
+ * with the real translators the client ships, both under Node: by the build's
+ * tool, and by the page's own lookup through Babylon's own engine methods (the
+ * translators handed to Babylon as the engine's maker hands them, on a
+ * stand-in device that keeps each module's code). Whether a browser's
+ * WebAssembly gives the same bytes as Node's is for a recorded page to show
+ * (the design's §8); this holds the tool to the page.
  */
 
 const VERSION = "#version 450\n";
@@ -96,7 +97,7 @@ describe("the map the build ships, against the page's own translation", () => {
   it("keys every stage of the corpus as the page does, under the page's salt, and holds, for each, byte for byte the WGSL the page translates", async () => {
     const salt = nodeSalt(format);
     expect(salt).toBe(buildSalt());
-    const { stages } = readCorpusDir(CORPUS_DIR, format);
+    const { stages } = readCorpusDir(NODE_CORPUS_DIR, format);
     const made = buildMap({ stages, salt, translate: (entry) => translateStage(translators, entry), shared: format });
     expect(made.failed).toEqual([]);
     const map = format.readMap(made.text, salt);
@@ -125,7 +126,7 @@ describe("the map the build ships, against the page's own translation", () => {
 
   it("finds every stage in the map when the page is given it, and ?wgsl=verify counts an entry altered by one byte", async () => {
     const salt = nodeSalt(format);
-    const { stages } = readCorpusDir(CORPUS_DIR, format);
+    const { stages } = readCorpusDir(NODE_CORPUS_DIR, format);
     const vertex = stages.find((entry) => entry.stage === "vertex" && !entry.flag);
     const fragment = stages.find((entry) => entry.stage === "fragment");
     if (vertex === undefined || fragment === undefined) throw new Error("the corpus has no vertex stage or no fragment stage");

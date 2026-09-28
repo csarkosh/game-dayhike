@@ -26,7 +26,7 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | Path | What |
 |---|---|
 | `client/` | The game: `src/{game,net,sim}` (Babylon.js rendering, WebRTC networking, deterministic simulation), `index.html`, `levels/`, `public/` (favicons, in csarko.sh's colours, and the vendored KTX2 decoder), tests under `test/`. |
-| `client/shaders/corpus/` | The GLSL stages the build translates to WGSL ahead (`tools/wgsl/`), so the WebGPU path finds its shaders on a first visit: `stages-<h>.json`, one stage a line, merged from pages recorded with `?wgsl=record` by `tools/wgsl/merge-corpus.mjs` (for now a small set made under Node, `tools/wgsl/node-corpus.mjs`, which no browser asks for). The map the build makes of it goes to `client/shaders/map/`, not committed. |
+| `client/shaders/corpus/` | The GLSL stages the build translates to WGSL ahead (`tools/wgsl/`), so the WebGPU path finds its shaders on a first visit: `stages-<h>.json`, one stage a line, merged from pages recorded with `?wgsl=record` by `tools/wgsl/merge-corpus.mjs`. The ten stages made under Node (`tools/wgsl/node-corpus.mjs`), which no browser asks for, are the tests' fixture in `tools/wgsl/test/fixtures/node-corpus/`, not shipped. The map the build makes of it goes to `client/shaders/map/`, not committed. |
 | `client/assets/` | Shipped models, ground textures and wildlife calls, committed through Git LFS. `client/assets/catalog.json` lists every one; [`CREDITS.md`](CREDITS.md) credits the third-party work. |
 | `branding/` | The Day Hike icon (`dayhike.svg`) shown at the top of the README. |
 | `server/` | The Node (`ws`) signaling server: introduces peers in a room, then steps out. |

@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import * as page from '../../../client/src/game/wgslFormat.ts';
 import { timeLimit } from '../../../client/test/helpers/timeLimit.ts';
 import { buildMap, nodeSalt, readCorpusDir } from '../lib/buildMap.mjs';
-import { CORPUS_DIR } from '../lib/files.mjs';
+import { NODE_CORPUS_DIR } from '../lib/files.mjs';
 import { loadShared } from '../lib/shared.mjs';
 import { startTranslators, translateStage } from '../lib/translators.mjs';
 
@@ -149,10 +149,10 @@ describe('the map the build ships', () => {
     expect(Object.keys(JSON.parse(remade.map).entries)).toHaveLength(3);
   }, timeLimit(120_000));
 
-  it('makes the map of the committed corpus, every stage translated, and says what it cost', async () => {
+  it('makes the map of the corpus made under Node, every stage translated, and says what it cost', async () => {
     const out = join(directory(), 'map.json');
-    const done = await tool(CORPUS_DIR, out);
-    const { stages } = readCorpusDir(CORPUS_DIR, shared);
+    const done = await tool(NODE_CORPUS_DIR, out);
+    const { stages } = readCorpusDir(NODE_CORPUS_DIR, shared);
     expect(stages).toHaveLength(10);
     expect(Object.keys(JSON.parse(done.map).entries)).toHaveLength(10);
     expect(done.stderr).not.toContain('FAILED');
