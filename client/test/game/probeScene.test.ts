@@ -227,6 +227,27 @@ describe("a probe step that cannot settle on the engine it got", () => {
     on.engine!.dispose();
   });
 
+  it("does not build the WebGL2 re-measure when the step's bound has already passed", async () => {
+    const on: StepEngine = { canvas: {} as HTMLCanvasElement, engine: new NullEngine(), watch: () => () => undefined };
+    let measures = 0;
+    const got = await measureOnRuleEngine(
+      "high",
+      () => false,
+      {
+        engineFor: async () => on,
+        failed: () => undefined,
+        measure: async () => (measures++, "engine-failed"),
+        webgl2,
+        settles: () => true,
+      },
+      // A bound already behind the clock: the page's clock is past 0.
+      0,
+    );
+    expect(got).toBe(null);
+    expect(measures).toBe(1);
+    on.engine!.dispose();
+  });
+
   it("lets its WebGPU engine go unmeasured where a WebGPU step cannot settle", async () => {
     const engine = new NullEngine();
     let measures = 0;
