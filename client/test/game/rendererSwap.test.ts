@@ -276,6 +276,31 @@ describe("a swap onto a given engine", () => {
   });
 });
 
+describe("a swap that throws before its first rung", () => {
+  it("disposes the engine made for it, once, when the old renderer's dispose or the fresh canvas throws", () => {
+    for (const where of ["old dispose", "fresh canvas"] as const) {
+      const log: string[] = [];
+      const given = { dispose: () => log.push("dispose given engine") } as unknown as AbstractEngine;
+      const old = stubRenderer("low@c0", log);
+      const bindings = stubBindings(log);
+      if (where === "old dispose") {
+        (old as unknown as { dispose(): void }).dispose = () => {
+          throw new Error("old dispose");
+        };
+      } else {
+        bindings.freshCanvas = () => {
+          throw new Error("fresh canvas");
+        };
+      }
+      expect(() =>
+        swapRenderer({ renderer: old, canvas: stubCanvas("c0", log) }, { tier: "high", engine: given, fallbackTier: "low" }, bindings),
+      ).toThrow(where);
+      expect(log.filter((line) => line === "dispose given engine")).toEqual(["dispose given engine"]);
+      expect(log.some((line) => line.startsWith("build"))).toBe(false);
+    }
+  });
+});
+
 describe("a throw after the build", () => {
   it("disposes the renderer just built, with what was built into its scene, and falls back", () => {
     const log: string[] = [];

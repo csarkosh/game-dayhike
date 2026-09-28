@@ -137,6 +137,32 @@ export function swapRenderer(
   target: { tier: QualityTier; engine: AbstractEngine | null; watch?: WatchEngine | null; fallbackTier: QualityTier },
   bindings: SwapBindings,
 ): Swappable & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
+  // The engine made for the target is the swap's until its rung's build takes
+  // it (`createRenderer` releases it if that throws): a throw before then (the
+  // old renderer's dispose, a fresh canvas) disposes it here, once.
+  let unowned = target.engine;
+  try {
+    return climb(current, target, bindings, () => {
+      unowned = null;
+    });
+  } catch (error) {
+    try {
+      unowned?.dispose();
+    } catch {
+      /* the throw that matters goes up */
+    }
+    throw error;
+  }
+}
+
+/** `swapRenderer`'s steps; `taken` is called as the given engine's rung
+ * hands it to the build. */
+function climb(
+  current: Swappable,
+  target: { tier: QualityTier; engine: AbstractEngine | null; watch?: WatchEngine | null; fallbackTier: QualityTier },
+  bindings: SwapBindings,
+  taken: () => void,
+): Swappable & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
   current.renderer.engine.stopRenderLoop(bindings.loop);
   bindings.unwatch();
   bindings.extras.dispose();
@@ -151,6 +177,7 @@ export function swapRenderer(
     canvas = replaceCanvas(canvas, bindings.freshCanvas());
     let renderer: Renderer | null = null;
     try {
+      if (engine !== null) taken();
       renderer = bindings.build(canvas, tier, engine);
       bindings.restore(renderer);
       bindings.extras.build(renderer);
