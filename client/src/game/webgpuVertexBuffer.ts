@@ -33,6 +33,12 @@
  * attributes to buffers in the same pattern. And a vertex buffer Babylon copies
  * (a cloned geometry) is a plain one again.
  *
+ * Every vertex buffer drawn on a WebGPU engine is keyed so, whoever made it
+ * (`keyEveryBoundBuffer`, installed by `createWebGpuEngine`): the glTF
+ * loader's interleaved buffers too, such as the fern's and the shrub's UVs,
+ * one kind in one 48-byte stride at offsets 24 and 12, which drew the shrub
+ * with the fern's pipeline.
+ *
  * The canaries in `webgpuVertexBuffer.test.ts` fail when an installed Babylon
  * keys the offset itself or recomputes the hash another way; the workaround and
  * its callers then go, or are revised, in the upgrade's own commit.
@@ -41,6 +47,22 @@ import type { Buffer, VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 
 /** How far above the stride's bits the byte offset is folded into the hash. */
 export const OFFSET_HASH_SHIFT = 2 ** 24;
+
+/** `vertexBuffer` with its hash keyed by its byte offset for every read, once:
+ * a buffer already keyed is left as it is. */
+export function keyByOffset(vertexBuffer: VertexBuffer): VertexBuffer {
+  if (Object.getOwnPropertyDescriptor(vertexBuffer, "hashCode")?.get !== undefined) return vertexBuffer;
+  let base = vertexBuffer.hashCode;
+  Object.defineProperty(vertexBuffer, "hashCode", {
+    configurable: true,
+    enumerable: true,
+    get: () => base + vertexBuffer.byteOffset * OFFSET_HASH_SHIFT,
+    set: (value: number) => {
+      base = value;
+    },
+  });
+  return vertexBuffer;
+}
 
 /**
  * `buffer.createVertexBuffer(kind, offset, size, undefined, instanced)` (offset
@@ -54,15 +76,45 @@ export function offsetKeyedVertexBuffer(
   size: number,
   instanced = false,
 ): VertexBuffer {
-  const vertexBuffer = buffer.createVertexBuffer(kind, offset, size, undefined, instanced);
-  let base = vertexBuffer.hashCode;
-  Object.defineProperty(vertexBuffer, "hashCode", {
-    configurable: true,
-    enumerable: true,
-    get: () => base + vertexBuffer.byteOffset * OFFSET_HASH_SHIFT,
-    set: (value: number) => {
-      base = value;
-    },
-  });
-  return vertexBuffer;
+  return keyByOffset(buffer.createVertexBuffer(kind, offset, size, undefined, instanced));
+}
+
+/** The part of Babylon's WebGPU pipeline cache the key reaches through. */
+type BindingCache = {
+  setBuffers(
+    vertexBuffers: Record<string, VertexBuffer> | null,
+    indexBuffer: unknown,
+    overrideVertexBuffers: Record<string, VertexBuffer> | null,
+  ): void;
+};
+
+/**
+ * Keys every vertex buffer the WebGPU pipeline cache is given by its offset
+ * (`keyByOffset`), whoever made it: the glTF loader's interleaved buffers, the
+ * game's, Babylon's own. `setBuffers` on the cache's prototype
+ * (`WebGPUCacheRenderPipeline`, which only WebGPU engines make, the main
+ * cache and the clear quad's alike) is the one door every buffer passes
+ * through before `_setVertexState` reads its hash, so a buffer is keyed before
+ * its first draw on WebGPU, and a buffer drawn on WebGL2 is never touched.
+ * Returns a function that puts the cache's own `setBuffers` back (for tests: a
+ * page keeps it for its life).
+ */
+export function keyEveryBoundBuffer(cachePrototype: BindingCache): () => void {
+  const own = cachePrototype.setBuffers;
+  if ((own as { offsetKeyed?: boolean }).offsetKeyed === true) return () => undefined;
+  const keyed: BindingCache["setBuffers"] = function (this: BindingCache, vertexBuffers, indexBuffer, overrideVertexBuffers) {
+    for (const map of [vertexBuffers, overrideVertexBuffers]) {
+      if (map === null || map === undefined) continue;
+      for (const kind in map) {
+        const vertexBuffer = map[kind];
+        if (vertexBuffer) keyByOffset(vertexBuffer);
+      }
+    }
+    own.call(this, vertexBuffers, indexBuffer, overrideVertexBuffers);
+  };
+  (keyed as { offsetKeyed?: boolean }).offsetKeyed = true;
+  cachePrototype.setBuffers = keyed;
+  return () => {
+    if (cachePrototype.setBuffers === keyed) cachePrototype.setBuffers = own;
+  };
 }

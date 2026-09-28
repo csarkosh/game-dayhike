@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Buffer, type VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Scene } from "@babylonjs/core/scene.js";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
@@ -16,7 +18,9 @@ import { elevationSampleAt } from "../../src/sim/terrain.js";
 import { createBladeMeshes } from "../../src/game/bladeMeshes.js";
 import { createClutterMeshes } from "../../src/game/clutterMeshes.js";
 import type { CullPose } from "../../src/game/grassCull.js";
-import { OFFSET_HASH_SHIFT, offsetKeyedVertexBuffer } from "../../src/game/webgpuVertexBuffer.js";
+import { OFFSET_HASH_SHIFT, keyEveryBoundBuffer, offsetKeyedVertexBuffer } from "../../src/game/webgpuVertexBuffer.js";
+import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
+import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const require = createRequire(import.meta.url);
@@ -79,6 +83,56 @@ describe("Babylon's WebGPU pipeline cache (canaries: when one fails, a fixed Bab
     expect(src).not.toMatch(/_hashCode\b/);
     expect(src.match(/this\._computeHashCode\(\);/g)).toHaveLength(2);
     expect(src).toContain("if (isInstanced !== this._instanced) {\n            this._instanced = isInstanced;\n            this._computeHashCode();");
+  });
+});
+
+describe("every vertex buffer drawn on a WebGPU engine, whoever made it", () => {
+  // The fern's and the shrub's UVs as the glTF loader builds them: one kind,
+  // one 48-byte stride, at byte offsets 24 and 12.
+  const plant = () => {
+    const shared = new Buffer(engine, new Float32Array(10 * 12), false, 12);
+    return { fern: shared.createVertexBuffer("uv", 6, 2), shrub: shared.createVertexBuffer("uv", 3, 2) };
+  };
+
+  it("is keyed by its offset once the WebGPU pipeline cache takes it: the fern's and the shrub's UVs part", () => {
+    const { fern, shrub } = plant();
+    expect([fern.byteOffset, shrub.byteOffset, fern.byteStride]).toEqual([24, 12, 48]);
+    expect(fern.hashCode).toBe(shrub.hashCode);
+    const uninstall = keyEveryBoundBuffer(WebGPUCacheRenderPipeline.prototype);
+    try {
+      const cache = new WebGPUCacheRenderPipelineTree({ limits: {} } as never, plant().fern);
+      cache.setBuffers({ uv: fern }, null, null);
+      cache.setBuffers({ uv: shrub }, null, { uv: shrub });
+      expect(fern.hashCode - shrub.hashCode).toBe(12 * OFFSET_HASH_SHIFT);
+      // Babylon's own recompute keeps the term, and a second binding adds none.
+      const before = fern.hashCode;
+      fern.instanceDivisor = 1;
+      fern.instanceDivisor = 0;
+      cache.setBuffers({ uv: fern }, null, null);
+      expect(fern.hashCode).toBe(before);
+    } finally {
+      uninstall();
+    }
+  });
+
+  it("leaves every vertex buffer drawn on a WebGL2 engine as it was", () => {
+    const uninstall = keyEveryBoundBuffer(WebGPUCacheRenderPipeline.prototype);
+    try {
+      const scene = new Scene(engine);
+      scene.activeCamera = new UniversalCamera("camera", new Vector3(0, 0, -5), scene);
+      const box = CreateBox("box", {}, scene);
+      box.material = new PBRMaterial("m", scene);
+      const { fern } = plant();
+      box.setVerticesBuffer(fern);
+      const hashes = Object.fromEntries(Object.entries(box.geometry?.getVertexBuffers() ?? {}).map(([kind, vb]) => [kind, vb.hashCode]));
+      scene.render();
+      for (const [kind, vb] of Object.entries(box.geometry?.getVertexBuffers() ?? {})) {
+        expect(Object.getOwnPropertyDescriptor(vb, "hashCode")?.get, kind).toBeUndefined();
+        expect(vb.hashCode, kind).toBe(hashes[kind]);
+      }
+    } finally {
+      uninstall();
+    }
   });
 });
 

@@ -15,6 +15,7 @@
  */
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.js";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
+import { keyEveryBoundBuffer } from "./webgpuVertexBuffer.js";
 // Side-effect import, load-bearing: the WebGPU engine's own extensions (its
 // dynamic texture, compute shader, multi-render, render target and the rest),
 // which the WebGL2 imports the rest of the game makes never reach. Without
@@ -223,6 +224,9 @@ export async function createWebGpuEngine(
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`the WebGPU engine was not ready in ${ms} ms`)), ms);
   });
+  // Every vertex buffer this engine draws keyed by its offset in the
+  // pipeline cache (`webgpuVertexBuffer.ts`); once per page.
+  keyEveryBoundBuffer(WebGPUCacheRenderPipeline.prototype as never);
   const start = async (): Promise<WebGPUEngine> => {
     const engine = new WebGPUEngine(canvas, {
       antialias: true,
