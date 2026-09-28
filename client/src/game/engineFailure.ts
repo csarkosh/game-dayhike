@@ -254,11 +254,13 @@ export function startOnEngine<G extends { notify(line: string): void }>(
  * (`unfetched`): the network's failure, not the GPU's, so nothing is written
  * to storage and the next load tries WebGPU again. The page holds itself on
  * WebGL2 for the rest of its life (the caller's own flag, set when the
- * watcher reports it); a tab whose address asks for WebGPU, which outranks
- * that, is pinned to `engine=webgl2`, so the rebuild cannot come back to an
- * engine that cannot fetch them. The HUD's line.
+ * watcher reports it), and that hold stands where a record would: the
+ * address is pinned to `engine=webgl2` by the one rule after every ending on
+ * WebGL2 (`pinsAfterFailure`), so only where `?engine=webgpu` outranks it,
+ * and the rebuild cannot come back to an engine that cannot fetch them. The
+ * HUD's line.
  */
 export function answerUnfetched(page: { override: EngineName | null; pin(): void }): string {
-  if (page.override === "webgpu") page.pin();
+  if (pinsAfterFailure({ stored: true, override: page.override })) page.pin();
   return NOTICE_SWITCHED;
 }
