@@ -8,8 +8,11 @@
 #   - C:\ProgramData\test-rig made writable by SYSTEM and Administrators only.
 # First boot, then never again (marker C:\ProgramData\test-rig\setup-complete):
 #   - SSH: the OpenSSH server running, key login only;
-#   - the desktop user, its password (made here) and automatic logon;
-#   - the NVIDIA RTX Virtual Workstation driver, Chrome, Node 22, Git with LFS;
+#   - the desktop user, its password (made here), automatic logon, and a
+#     logon task that sets its console to 1920 x 1080;
+#   - the NVIDIA RTX Virtual Workstation driver (restarting in between if its
+#     installer asks, and checking nvidia-smi after), Chrome, Node 22, Git
+#     with LFS;
 #   - holds the machine still between measurements; blocks the metadata
 #     server (and so the machine's service account) for the desktop user;
 #   - restarts once.
@@ -19,16 +22,19 @@
 # The boot after that (until marker `verified` exists):
 #   - checks, with things that can fail, that the driver runs as a licensed
 #     RTX Virtual Workstation (on a -vws GPU), that the desktop user is logged
-#     on at the console, and that its metadata-server block is in place. Only
-#     then `verified`.
+#     on at the console, and that its metadata-server block is in place; logs
+#     the console's size and warns if it is not 1920 x 1080. Only then
+#     `verified`.
+# A boot that fails logs "FAILED: <reason>" and restarts the machine, which
+# retries from the first step not yet done, at most twice in a row.
 #
 # The machine's run limit and its daily stop are Compute Engine's (instance.tf),
 # outside Windows: nothing here can fail in a way that keeps it running.
 #
 # Each first-boot step records its own marker, so a boot that fails part-way
-# is finished by the next one from the first step not yet done. Every download
-# and every installer has a time limit; one that runs over is stopped and
-# logged as "Timed out: ...". Log: C:\ProgramData\test-rig\setup.log. Nothing
+# is finished by the next one from the first step not yet done. Every
+# download, installer, native program and service start or stop has a time
+# limit; one that runs over is stopped and logged as "Timed out: ...". Log: C:\ProgramData\test-rig\setup.log. Nothing
 # secret is ever written to it.
 #
 # Written for Windows PowerShell 5.1, which is what the guest agent runs.
@@ -63,6 +69,14 @@ $Downloads = Join-Path $Root 'downloads'
 $PasswordFile = Join-Path $Root 'desktop-password'
 $MetadataRule = 'test-rig-block-metadata'
 $UserStep = "user-$DesktopUser"
+$FailureCount = Join-Path $Root 'failed-boots'
+# The console's size. With no monitor, Windows starts the console at whatever
+# mode the display driver offers first; the desktop user's logon task below
+# asks for this one.
+$DisplayWidth = 1920
+$DisplayHeight = 1080
+$DisplayTask = 'test-rig-display'
+$MaxFailureRestarts = 2
 
 # Write-Host, not Write-Output: the transcript records it, and it never leaks
 # into a function's return value.
@@ -143,7 +157,7 @@ function Invoke-Installer([string]$File, [string[]]$Arguments, [string]$Name, [i
   # Holding the handle keeps ExitCode readable once the process has gone.
   $null = $process.Handle
   if (-not $process.WaitForExit($Minutes * 60000)) {
-    & "$env:WINDIR\System32\taskkill.exe" /PID $process.Id /T /F 2>&1 | Out-Null
+    Invoke-Taskkill $process.Id
     if ($Msi) {
       throw "Timed out: the $Name installer did not finish in $Minutes minutes; its msiexec client was stopped, but Windows Installer may still be installing it. Nothing further runs on this boot; the next boot waits for Windows Installer and tries again"
     }
@@ -178,28 +192,56 @@ function Install-Msi([string]$Path, [string]$Name, [int]$Minutes, [string]$Insta
   if (-not (Test-Path $Installed)) { throw "$Name installer exited with $code, but $Installed is not there" }
 }
 
-# Native tools write progress to stderr, which Windows PowerShell 5.1 turns
-# into terminating errors under 'Stop'.
-function Invoke-Native([string]$File, [string[]]$Arguments) {
-  $saved = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
+# One argument as a Windows command line takes it: quoted when it holds a
+# space or a quote, with the quotes and the backslashes before them escaped.
+function ConvertTo-Argument([string]$Value) {
+  if ($Value -notmatch '[\s"]') { return $Value }
+  return '"' + (($Value -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"'
+}
+
+# Runs a native program, stops it (and everything it started) after $Seconds,
+# and returns its exit code and its output lines (standard output, then
+# standard error). Its output goes to files, not to PowerShell, so a program
+# writing progress to stderr never becomes an error under 'Stop'.
+function Invoke-Bounded([string]$File, [string[]]$Arguments, [int]$Seconds) {
+  $out = [IO.Path]::GetTempFileName()
+  $err = [IO.Path]::GetTempFileName()
   try {
-    & $File @Arguments 2>&1 | ForEach-Object { Log "  $_" }
-    return $LASTEXITCODE
+    $line = (@($Arguments) | ForEach-Object { ConvertTo-Argument $_ }) -join ' '
+    $start = @{ FilePath = $File; NoNewWindow = $true; PassThru = $true; RedirectStandardOutput = $out; RedirectStandardError = $err }
+    if ($line) { $start.ArgumentList = $line }
+    $process = Start-Process @start
+    # Holding the handle keeps ExitCode readable once the process has gone.
+    $null = $process.Handle
+    if (-not $process.WaitForExit($Seconds * 1000)) {
+      Invoke-Taskkill $process.Id
+      throw "Timed out: $([IO.Path]::GetFileName($File)) $line did not finish in $Seconds seconds; stopped it"
+    }
+    $lines = @(Get-Content $out, $err -ErrorAction SilentlyContinue | ForEach-Object { "$_" })
+    return @{ Code = $process.ExitCode; Lines = $lines }
   } finally {
-    $ErrorActionPreference = $saved
+    Remove-Item $out, $err -Force -ErrorAction SilentlyContinue
   }
 }
 
-# The same, returning the output lines and never throwing on stderr.
-function Get-NativeLines([string]$File, [string[]]$Arguments) {
-  $saved = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
-  try {
-    return @(& $File @Arguments 2>&1 | ForEach-Object { "$_" })
-  } finally {
-    $ErrorActionPreference = $saved
-  }
+# Stops a process and everything it started. taskkill.exe itself is not given
+# a limit: it only signals.
+function Invoke-Taskkill([int]$ProcessId) {
+  $kill = Start-Process -FilePath "$env:WINDIR\System32\taskkill.exe" -ArgumentList "/PID $ProcessId /T /F" -NoNewWindow -PassThru
+  $null = $kill.WaitForExit(60000)
+}
+
+# A native program, its output logged, its exit code returned. Five minutes
+# unless the caller says otherwise.
+function Invoke-Native([string]$File, [string[]]$Arguments, [int]$Seconds = 300) {
+  $result = Invoke-Bounded $File $Arguments $Seconds
+  foreach ($line in $result.Lines) { Log "  $line" }
+  return $result.Code
+}
+
+# The same, returning the output lines.
+function Get-NativeLines([string]$File, [string[]]$Arguments, [int]$Seconds = 300) {
+  return (Invoke-Bounded $File $Arguments $Seconds).Lines
 }
 
 function Find-Smi {
@@ -264,6 +306,70 @@ namespace TestRig {
 }
 "@
 
+# Sets the display mode of the session it runs in, by Microsoft's documented
+# ChangeDisplaySettingsEx, saved for that user (CDS_UPDATEREGISTRY), and says
+# what the mode was and what Windows answered (0: done; -2: the driver offers
+# no such mode). DEVMODEW as Microsoft declares it, display fields.
+$DisplaySource = @"
+using System;
+using System.Runtime.InteropServices;
+namespace TestRig {
+  public static class Display {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct DEVMODE {
+      [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+      public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+      public int dmFields;
+      public int dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+      public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+      [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+      public short dmLogPixels;
+      public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+      public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+    }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplaySettings(string device, int mode, ref DEVMODE dm);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettingsEx(string device, ref DEVMODE dm, IntPtr hwnd, int flags, IntPtr param);
+    public static string Set(int width, int height) {
+      DEVMODE dm = new DEVMODE();
+      dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+      if (!EnumDisplaySettings(null, -1, ref dm)) return "the current mode cannot be read";
+      string before = dm.dmPelsWidth + "x" + dm.dmPelsHeight + " at " + dm.dmDisplayFrequency + " Hz";
+      if (dm.dmPelsWidth == width && dm.dmPelsHeight == height) return "already " + before;
+      dm.dmPelsWidth = width;
+      dm.dmPelsHeight = height;
+      dm.dmFields = 0x80000 | 0x100000;
+      int result = ChangeDisplaySettingsEx(null, ref dm, IntPtr.Zero, 0x01, IntPtr.Zero);
+      return "was " + before + "; ChangeDisplaySettingsEx to " + width + "x" + height + " returned " + result;
+    }
+  }
+}
+"@
+
+# A task that runs at every logon of the desktop user, in that user's session
+# (the interactive logon type needs no password), and asks for the console's
+# size. It writes what happened to the user's own local application data,
+# where the check after set-up reads it.
+function Set-DisplayTask {
+  $lines = @(
+    '$ErrorActionPreference = ''Stop'''
+    '$out = Join-Path $env:LOCALAPPDATA ''test-rig-display.txt'''
+    'try {'
+    '  Add-Type -TypeDefinition @'''
+    $DisplaySource
+    '''@'
+    "  `$result = [TestRig.Display]::Set($DisplayWidth, $DisplayHeight)"
+    '} catch { $result = "failed: $_" }'
+    'Set-Content -Path $out -Value "$(Get-Date -Format o) $result"'
+  )
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($lines -join "`r`n"))
+  $action = New-ScheduledTaskAction -Execute "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand $encoded"
+  $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:COMPUTERNAME\$DesktopUser"
+  $principal = New-ScheduledTaskPrincipal -UserId "$env:COMPUTERNAME\$DesktopUser" -LogonType Interactive -RunLevel Limited
+  $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+  Register-ScheduledTask -TaskName $DisplayTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+  Log "Display: task $DisplayTask asks for $DisplayWidth x $DisplayHeight at every logon of $DesktopUser"
+}
+
 # 24 characters from 57 letters and digits (no 0, O, 1, I or l), about 140
 # bits, with at least one capital, one small letter and one digit: three of
 # the four classes Windows' complexity rule asks for, and never containing
@@ -315,11 +421,11 @@ function Set-SshKeyOnly {
   # for the keys `gcloud compute ssh` pushes. If no sshd service exists, the
   # Windows capability is added instead.
   if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
-    Log 'Adding the OpenSSH Server capability'
-    Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null
+    Log 'Adding the OpenSSH Server capability (at most 20 minutes)'
+    Invoke-Timed 'adding the OpenSSH Server capability' 20 { Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0' | Out-Null } @()
   }
   Set-Service sshd -StartupType Automatic
-  if ((Get-Service sshd).Status -ne 'Running') { Start-Service sshd }
+  if ((Get-Service sshd).Status -ne 'Running') { Invoke-Timed 'starting sshd' 5 { Start-Service sshd } @() }
   # Keys only: `gcloud compute reset-windows-password` makes password accounts,
   # and they should get in over Remote Desktop, not SSH. sshd keeps the first
   # value it reads, so the line goes at the very top of the file, ahead of the
@@ -336,7 +442,7 @@ function Set-SshKeyOnly {
       Copy-Item "$sshdConfig.before-test-rig" $sshdConfig -Force
       throw 'sshd rejected the configuration with password login off; the previous one is back.'
     }
-    Restart-Service sshd
+    Invoke-Timed 'restarting sshd' 5 { Restart-Service sshd } @()
   }
   Log "OpenSSH Server: $sshdExe $((Get-Item $sshdExe).VersionInfo.ProductVersion), running, key login only"
   Complete-Step 'ssh'
@@ -375,6 +481,7 @@ function Set-DesktopUser {
   $password = $null
   $secure = $null
   Log "Desktop user $($DesktopUser): logs on automatically; password made here, kept in $PasswordFile"
+  Set-DisplayTask
   Complete-Step $UserStep
 }
 
@@ -390,6 +497,13 @@ function Set-MetadataBlock {
   Log "Closed: the metadata server is blocked for $DesktopUser"
 }
 
+# Ends this boot's set-up early for a restart that a step needs; the main part
+# restarts the machine and the next boot goes on from the next step.
+function Request-Restart([string]$Reason) {
+  $script:RestartReason = $Reason
+  Log "Restart needed: $Reason"
+}
+
 function Install-Everything {
   if (-not (Test-Step 'ssh')) { Set-SshKeyOnly }
   if (-not (Test-Step $UserStep)) { Set-DesktopUser }
@@ -399,17 +513,25 @@ function Install-Everything {
   # Google's own installer script picks for a virtual-workstation machine,
   # checked here against its SHA-256 and its Authenticode signature. NVIDIA's
   # installer switches: -s silent, -n no restart; exit code 0 is success, 1 is
-  # "Success, but reboot required" (the set-up restarts once at the end
-  # anyway), any other value is failure. The licence check on the boot after
-  # set-up is the second line.
+  # "Success, but reboot required", any other value is failure. On 1 the
+  # machine restarts before anything checks the driver, and the next boot
+  # checks it; on 0 it is checked at once (a check that fails restarts the
+  # machine too, below). The licence check on the boot after set-up is the
+  # second line.
   if (-not (Test-Step 'driver')) {
-    $exe = Get-Verified $DriverUrl $DriverSha256 30
-    Assert-Signer $exe 'NVIDIA Corporation'
-    $code = Invoke-Installer $exe @('-s', '-n', "-log:$Root\nvidia-install", '-loglevel:6') 'NVIDIA driver' 30
-    if ($code -notin 0, 1) { throw "The NVIDIA driver installer failed with exit code $code (0 and 1 are success); its log is in $Root\nvidia-install" }
+    if (-not (Test-Step 'driver-installed')) {
+      $exe = Get-Verified $DriverUrl $DriverSha256 30
+      Assert-Signer $exe 'NVIDIA Corporation'
+      $code = Invoke-Installer $exe @('-s', '-n', "-log:$Root\nvidia-install", '-loglevel:6') 'NVIDIA driver' 30
+      if ($code -notin 0, 1) { throw "The NVIDIA driver installer failed with exit code $code (0 and 1 are success); its log is in $Root\nvidia-install" }
+      Complete-Step 'driver-installed'
+      if ($code -eq 1) { Request-Restart 'the NVIDIA driver installer asked for a restart (exit code 1)'; return }
+    }
     $smi = Find-Smi
-    if (-not $smi) { throw "nvidia-smi is missing after the driver installer exited with $code" }
-    if ((Invoke-Native $smi @()) -ne 0) { throw "nvidia-smi exited with $LASTEXITCODE after the driver install" }
+    if (-not $smi) { throw 'nvidia-smi is missing after the driver was installed' }
+    $code = Invoke-Native $smi @() 120
+    if ($code -ne 0) { throw "nvidia-smi ($smi) exited with $code after the driver was installed" }
+    Log "nvidia-smi: $smi"
     Complete-Step 'driver'
   }
 
@@ -465,9 +587,10 @@ function Install-Everything {
       Log "Disabled scheduled task $($_.TaskPath)$($_.TaskName)"
     }
     Get-Service | Where-Object { $_.Name -like 'GoogleUpdater*' -or $_.Name -in 'gupdate', 'gupdatem' } | ForEach-Object {
-      Stop-Service $_.Name -Force -ErrorAction SilentlyContinue
-      Set-Service $_.Name -StartupType Disabled
-      Log "Disabled service $($_.Name)"
+      $service = $_.Name
+      try { Invoke-Timed "stopping $service" 5 { param($Name) Stop-Service $Name -Force } @($service) } catch { Log "Not stopped now, disabled from the next boot: $_" }
+      Set-Service $service -StartupType Disabled
+      Log "Disabled service $service"
     }
     $au = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
     New-Item -Path $au -Force | Out-Null
@@ -522,10 +645,6 @@ function Test-Setup {
   if ($RequireVws -and -not $licence.Ok) { throw 'The driver is not running as a licensed NVIDIA RTX Virtual Workstation' }
   if (-not $RequireVws) { Log 'A GPU without the workstation licence (a control run): the licence is logged, not required' }
 
-  Get-CimInstance Win32_VideoController | ForEach-Object {
-    Log "Display adapter: $($_.Name), $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution) at $($_.CurrentRefreshRate) Hz, driver $($_.DriverVersion)"
-  }
-
   # The desktop user logged on at the console, not in a Remote Desktop session.
   $deadline = (Get-Date).AddMinutes(3)
   do {
@@ -537,6 +656,21 @@ function Test-Setup {
   Log "Sessions: $(($sessions | ForEach-Object { $_.Trim() }) -join ' | ')"
   if ($console.Count -eq 0) { throw "$DesktopUser is not logged on at the console: automatic logon did not take effect" }
 
+  # The console's size: what the logon task did, then what Windows reports.
+  # Not a failure: the probe answers whether Chrome gets the GPU at any size;
+  # a size other than the one asked for is recorded and warned about.
+  $asked = Join-Path $env:SystemDrive "Users\$DesktopUser\AppData\Local\test-rig-display.txt"
+  $deadline = (Get-Date).AddMinutes(2)
+  while (-not (Test-Path $asked) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 10 }
+  if (Test-Path $asked) { Log "Display task: $(Get-Content $asked -TotalCount 1)" } else { Log "WARNING: the display task left no result in $asked" }
+  $adapters = @(Get-CimInstance Win32_VideoController)
+  foreach ($adapter in $adapters) {
+    Log "Display: $($adapter.CurrentHorizontalResolution)x$($adapter.CurrentVerticalResolution) at $($adapter.CurrentRefreshRate) Hz on $($adapter.Name), driver $($adapter.DriverVersion)"
+  }
+  if (-not ($adapters | Where-Object { $_.CurrentHorizontalResolution -eq $DisplayWidth -and $_.CurrentVerticalResolution -eq $DisplayHeight })) {
+    Log "WARNING: no display is at $DisplayWidth x $DisplayHeight (above): frame times would be measured at another size. README.md, The display."
+  }
+
   $rule = Get-NetFirewallRule -Name $MetadataRule -ErrorAction SilentlyContinue
   if (-not $rule -or $rule.Enabled -ne 'True' -or $rule.Action -ne 'Block') { throw "No enabled rule blocks the metadata server for $DesktopUser" }
   $listening = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalAddress -in '0.0.0.0', '::' } |
@@ -546,6 +680,7 @@ function Test-Setup {
 
 $restart = $false
 $failed = $false
+$script:RestartReason = $null
 try {
   New-Item -ItemType Directory -Force -Path $Root | Out-Null
   Start-Transcript -Path (Join-Path $Root 'setup.log') -Append | Out-Null
@@ -553,8 +688,12 @@ try {
   if (-not (Test-Path (Join-Path $Root 'setup-complete'))) {
     Log 'Set-up starting.'
     Install-Everything
-    Set-Content -Path (Join-Path $Root 'setup-complete') -Value (Get-Date -Format o)
-    Log 'Set-up finished. Restarting once; the next boot checks it.'
+    if ($script:RestartReason) {
+      Log 'Restarting; the next boot goes on from the next step.'
+    } else {
+      Set-Content -Path (Join-Path $Root 'setup-complete') -Value (Get-Date -Format o)
+      Log 'Set-up finished. Restarting once; the next boot checks it.'
+    }
     $restart = $true
   } elseif (-not (Test-Step $UserStep)) {
     # A new desktop_user, or a machine started from an image whose user
@@ -577,10 +716,27 @@ try {
     }
   }
 } catch {
-  Log "FAILED: $_"
-  Log 'The next boot retries from the first step not yet done.'
   $failed = $true
+  Log "FAILED: $_"
+  # A failure restarts the machine, which retries from the first step not yet
+  # done, at most $MaxFailureRestarts times in a row: a step that fails for a
+  # passing reason (a download, a driver not yet loaded) is retried without
+  # anyone there, and one that fails every time does not restart forever.
+  try {
+    $count = 0
+    if (Test-Path $FailureCount) { $count = [int](Get-Content $FailureCount -TotalCount 1) }
+    if ($count -lt $MaxFailureRestarts) {
+      Set-Content -Path $FailureCount -Value ($count + 1)
+      Log "Restarting to retry from the first step not yet done (automatic restart $($count + 1) of $MaxFailureRestarts)."
+      $restart = $true
+    } else {
+      Log "The last $MaxFailureRestarts boots failed too: no automatic restart left. Read the FAILED line above; after a fix, restart the machine by hand to retry from the first step not yet done."
+    }
+  } catch {
+    Log "The count of automatic restarts cannot be read or written ($_): no automatic restart."
+  }
 } finally {
+  if (-not $failed) { Remove-Item $FailureCount -Force -ErrorAction SilentlyContinue }
   try { Stop-Transcript | Out-Null } catch { }
 }
 

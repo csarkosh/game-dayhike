@@ -149,7 +149,7 @@ test('every path the script makes fits Windows\' 260 characters, and names are o
   }
   // Task Scheduler task names are files under System32\Tasks; firewall rule
   // names are free text but kept plain.
-  for (const name of [TASK, literal('MetadataRule')]) {
+  for (const name of [TASK, literal('MetadataRule'), literal('DisplayTask')]) {
     assert.match(name, /^[A-Za-z0-9-]{1,64}$/);
   }
 });
@@ -176,4 +176,91 @@ test('the instance name fits a Windows computer name (15 characters)', () => {
 
 test('the script fits Google\'s 256 KB for windows-startup-script-ps1', () => {
   assert.ok(Buffer.byteLength(script) < 200 * 1024);
+});
+
+// Lines of code (strings and comments blanked) with their text, for checks of
+// what the script calls.
+const codeLines = code(script).split('\n');
+const scriptLines = script.split('\n');
+
+test('msiexec gets no feature properties: no REMOVE= without ADDLOCAL=, and today none at all', () => {
+  // An MSI's REMOVE= on a first install, without ADDLOCAL=, can install
+  // nothing of the product (Windows Installer applies REMOVE to the default
+  // feature set). This module passes no property to any MSI: a property added
+  // later is added here with its reason.
+  const allowedProperties = [];
+  for (const line of scriptLines) {
+    if (/REMOVE=/i.test(line)) assert.match(line, /ADDLOCAL=/i, `REMOVE= without ADDLOCAL=: ${line.trim()}`);
+  }
+  const msiexec = scriptLines.filter((l) => /Invoke-Installer 'msiexec\.exe'/.test(l));
+  assert.equal(msiexec.length, 1, 'one msiexec call, in Install-Msi');
+  assert.match(msiexec[0], /Invoke-Installer 'msiexec\.exe' @\('\/i', "`"\$Path`"", '\/qn', '\/norestart', '\/l\*v', "`"\$msiLog`""\) \$Name \$Minutes -Msi/);
+  assert.match(script, /^function Install-Msi\(\[string\]\$Path, \[string\]\$Name, \[int\]\$Minutes, \[string\]\$Installed\) \{$/m);
+  const calls = codeLines.filter((l) => /\bInstall-Msi\b/.test(l) && !/^function /.test(l.trim()));
+  assert.ok(calls.length >= 2);
+  const properties = scriptLines.flatMap((l) => [...l.matchAll(/\b([A-Z][A-Z0-9_]{2,})=/g)].map((m) => m[1]));
+  assert.deepEqual(properties.filter((p) => !allowedProperties.includes(p)), []);
+});
+
+test('the driver step restarts when its installer asks, and checks nvidia-smi only after', () => {
+  const at = (s) => { const i = script.indexOf(s); assert.ok(i > 0, s); return i; };
+  const installed = at("Complete-Step 'driver-installed'");
+  const restart = at("if ($code -eq 1) { Request-Restart");
+  const check = at("$smi = Find-Smi\n");
+  const done = at("Complete-Step 'driver'\n");
+  assert.ok(installed < restart && restart < check && check < done);
+  assert.match(script, /if \(-not \(Test-Step 'driver-installed'\)\) \{/);
+  // Install-Everything returns at a requested restart; the main part restarts
+  // instead of marking the set-up finished.
+  assert.match(script, /Install-Everything\r?\n\s+if \(\$script:RestartReason\) \{/);
+});
+
+test('every call that can hang has a time limit', () => {
+  // Native programs run through Invoke-Native or Get-NativeLines, both of
+  // which stop the program after a limit; nothing calls one bare with &.
+  for (const [i, line] of codeLines.entries()) {
+    if (/(^|[^\w])& /.test(line)) assert.fail(`line ${i + 1} calls a program without a time limit: ${scriptLines[i].trim()}`);
+  }
+  assert.match(script, /function Invoke-Bounded\(\[string\]\$File, \[string\[\]\]\$Arguments, \[int\]\$Seconds\)/);
+  assert.match(script, /if \(-not \$process\.WaitForExit\(\$Seconds \* 1000\)\)/);
+  // Add-WindowsCapability runs in a timed job.
+  const capability = scriptLines.findIndex((l) => l.includes("Add-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0'"));
+  assert.ok(capability > 0);
+  assert.match(scriptLines[capability], /Invoke-Timed 'adding the OpenSSH Server capability' \d+ \{/);
+  // Starting, stopping and restarting a service waits for as long as the
+  // service takes; each runs in a timed job.
+  for (const line of scriptLines.filter((l) => /\b(Start|Stop|Restart)-Service\b/.test(l) && !/^\s*#/.test(l))) {
+    assert.match(line, /Invoke-Timed ('[^']+'|"[^"]+") \d+ \{/, line.trim());
+  }
+  // Every Start-Process is waited on with a limit: the installers, the
+  // bounded native programs, and taskkill (a minute).
+  const starts = scriptLines.filter((l) => /Start-Process /.test(l));
+  assert.equal(starts.length, 3);
+  assert.equal((script.match(/\.WaitForExit\(\S/g) ?? []).length, 3);
+  assert.equal(/\.WaitForExit\(\)/.test(script), false, 'no WaitForExit without a limit');
+});
+
+test('a failed boot restarts itself, at most twice in a row, and says so', () => {
+  assert.match(script, /^\$MaxFailureRestarts = 2$/m);
+  assert.match(script, /FAILED: /);
+  assert.match(script, /no automatic restart left/);
+  // A boot that does not fail clears the count.
+  assert.match(script, /Remove-Item \$FailureCount -Force -ErrorAction SilentlyContinue/);
+});
+
+test('the console is set to 1920 x 1080 at every logon of the desktop user, by ChangeDisplaySettingsEx, and checked', () => {
+  assert.match(script, /^\$DisplayWidth = 1920$/m);
+  assert.match(script, /^\$DisplayHeight = 1080$/m);
+  assert.match(script, /static extern int ChangeDisplaySettingsEx\(/);
+  assert.match(script, /New-ScheduledTaskTrigger -AtLogOn -User/);
+  assert.match(script, /-LogonType Interactive -RunLevel Limited/);
+  assert.match(script, /Display: \$\(\$adapter\.CurrentHorizontalResolution\)x\$\(\$adapter\.CurrentVerticalResolution\)/);
+  // DEVMODEW: the fields up to dmPanningHeight, as Microsoft declares them;
+  // 220 bytes when laid out (two 32-character strings of 2 bytes each).
+  const devmode = /public struct DEVMODE \{([\s\S]*?)\}/.exec(script)[1];
+  const size = [...devmode.matchAll(/public (string|short|int) ([^;]+);/g)].reduce((sum, [, type, names]) => {
+    const count = names.split(',').length;
+    return sum + count * (type === 'string' ? 64 : type === 'short' ? 2 : 4);
+  }, 0);
+  assert.equal(size, 220);
 });
