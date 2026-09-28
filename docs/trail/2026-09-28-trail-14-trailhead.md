@@ -1,7 +1,7 @@
 # Trail 14 — the trailhead, rearranged
 
 **Date:** 2026-09-28
-**Status:** Designed, not built. The plan is `docs/trail/2026-09-28-trail-14-trailhead-plan.md`.
+**Status:** Built 2026-09-28, by the steps in `docs/trail/2026-09-28-trail-14-trailhead-plan.md`; not yet looked at in the running game (§8.2). What the build found: the watcher's sweep stands at the pad's centre, never where a player now arrives, so its readings did not move and say nothing of the new start; a Hollow started on the road behind the car walks into it and stays, which is a fault in the chase's stuck test older than this change (`client/test/sim/hollowWalk.test.ts` has the trace); and the level id's probe gained the chunk that holds the sign's post.
 **Amends:** `docs/trail/2026-09-11-trail-system.md` (the pad's props and the spawn) and
 `docs/gameplay/2026-09-16-the-summit.md` §7 (the poster's line). The trail graph, the pad, the
 road wall and the notice board's site are unchanged.
@@ -215,6 +215,7 @@ The car moves and a box is added, so the generated world changes.
 | The pass hash, −311867473 | `client/test/sim/groundGradient.test.ts` | Re-pinned to the value the new tunables give |
 | The trailhead pass's tunables | `client/src/sim/passes/trailhead.ts` | `CAR_ROAD_Z` changes; `CAR_BED_CLEAR`, `CAR_SLIDE_STEP`, `CAR_SLIDE_MAX` and `SPAWN_GAP` join |
 | The signs pass's tunables | `client/src/sim/passes/signs.ts` | `TRAIL_SIGNS` (1) joins, so the level id moves with the sign whether or not a probed chunk holds its post |
+| The level id's probe | `client/src/sim/forest.ts` | Chunk [-9, -1] joins: it holds the sign's post for the probe's seed |
 | The watcher's sweep, 875 of 936 stands | `client/test/sim/watcherSweep.test.ts` | Re-measured. The pad's stands change, because the player there stands and faces differently and the car is in a new place |
 | The trailhead sweep's bounds | `client/test/sim/trailhead.test.ts` | The car's clauses are rewritten for §3.1; the board's stand |
 

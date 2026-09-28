@@ -13,10 +13,9 @@
 ## Global Constraints
 
 - Work in the worktree `.claude/worktrees/trail-14-trailhead` on branch `worktree-trail-14-trailhead`. Stage explicit paths only; never `git add -A` or `git add .`. Never use bare `git stash`.
-- Commit messages use the repository's `## What` / `## How` shape (`.agents/skills/github-push/SKILL.md`): a type-prefixed subject under 72 characters, a `## What` paragraph, a `## How` list with backticked paths, then the trailers the harness gives.
+- Commit messages use the repository's `## What` / `## How` shape (`.agents/skills/github-push/SKILL.md`): a type-prefixed subject under 72 characters, a `## What` paragraph, a `## How` list with backticked paths, then the repository's two trailers.
 - The repository is public. Code, comments, test names, docs and commit messages describe the change and its measurements, and nothing about how the work was organised.
 - The repository's pre-push scan runs after every commit and must report nothing failing.
-- No push and no deploy without a go-ahead.
 - Every numeric test expectation is a literal, never computed from the code under test.
 - Every explicit test time limit goes through `timeLimit(<ms>)` from `client/test/helpers/timeLimit.ts`.
 - `sim/` never imports `net/`, `game/` or Babylon (ESLint enforces it).
@@ -1954,7 +1953,7 @@ Find two free ports (`lsof -nP -iTCP -sTCP:LISTEN | grep -E ":(51|80)[0-9]{2}"` 
 PORT=<signaling port> ALLOWED_ORIGINS=http://localhost:<vite port> npm run dev
 ```
 
-with the vite port and the `/ws` proxy set in `client/vite.config.ts` for the session only; that edit is never staged or committed.
+with the vite port and the `/ws` proxy set in `client/vite.config.ts`; that edit is local and never staged or committed.
 
 - [ ] **Step 2: Open each world and look**
 
@@ -1987,7 +1986,7 @@ Create a party on one page, open its invite link on a second page, and start the
 
 If the sign's lettering cannot be read from the spawn on any world, say so with the still: the spec's boundary (§9) leaves a larger sign to a model made for the trailhead, and that becomes the next piece of work.
 
-- [ ] **Step 5: Revert the session's edit and commit the note alone**
+- [ ] **Step 5: Revert the local edit and commit the note alone**
 
 ```bash
 git checkout -- client/vite.config.ts
