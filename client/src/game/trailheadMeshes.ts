@@ -123,7 +123,11 @@ export function createTrailheadMeshes(
     for (const m of model.meshes) deps.shadows?.add(m);
     placed.push(model);
     for (const box of boxes) dropBox(box);
-    after?.(model);
+    try {
+      after?.(model);
+    } catch {
+      // A face that cannot be painted costs the look, never the board.
+    }
   }
 
   let face: Mesh | null = null;

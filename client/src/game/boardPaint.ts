@@ -6,8 +6,8 @@
  *
  * What is drawn, and where, is decided by pure modules (`boardFace.ts`,
  * `boardMap.ts`, `boardWear.ts`); this is the one module that touches a
- * canvas, and only `wrap`, `paperCrop`, `boardDrawingOf` and
- * `whenImagesArrive` of it run without one.
+ * canvas, and only `wrap`, `paperCrop`, `portraitCrop`, `boardDrawingOf`
+ * and `whenImagesArrive` of it run without one.
  */
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture.js";
@@ -67,6 +67,20 @@ export function paperCrop(name: string, rect: { width: number; height: number },
   const h = nameHash(name);
   const fx = (h & 0xffff) / 0xffff, fy = ((h >>> 16) & 0xffff) / 0xffff;
   return { x: fx * (size - width), y: fy * (size - height), width, height };
+}
+
+/** The photograph's print on the poster: four wide to five tall. */
+const PRINT_ASPECT = 0.8;
+
+/**
+ * The part of the photograph the print shows: the largest four-by-five that
+ * fits, from the middle, so a photograph of another shape is cut and never
+ * stretched.
+ */
+export function portraitCrop(image: { width: number; height: number }): { x: number; y: number; width: number; height: number } {
+  const width = Math.min(image.width, image.height * PRINT_ASPECT);
+  const height = width / PRINT_ASPECT;
+  return { x: (image.width - width) / 2, y: (image.height - height) / 2, width, height };
 }
 
 export type BoardSource = {
@@ -220,11 +234,13 @@ function drawPoster(ctx: Ctx, text: BoardText["poster"], portrait: CanvasImageSo
   ctx.font = `900 ${Math.round(w * 0.15)}px ${SERIF}`;
   const title = Array.from(text.title).join(" ");
   ctx.fillText(title, (w - ctx.measureText(title).width) / 2, h * 0.13);
-  const pw = w * 0.5, ph = pw * 1.25, px = (w - pw) / 2, py = h * 0.17;
+  const pw = w * 0.5, ph = pw / PRINT_ASPECT, px = (w - pw) / 2, py = h * 0.17;
   if (portrait !== null) {
     ctx.save();
     ctx.globalAlpha *= 0.78;
-    ctx.drawImage(portrait, px, py, pw, ph);
+    const from = portrait as { width?: number; height?: number };
+    const c = portraitCrop({ width: from.width ?? 512, height: from.height ?? 512 });
+    ctx.drawImage(portrait, c.x, c.y, c.width, c.height, px, py, pw, ph);
     ctx.restore();
     // Bleached: a pale wash over the print, as the sun leaves one.
     ctx.fillStyle = "rgba(232, 226, 210, 0.34)";
@@ -378,7 +394,8 @@ function draw(ctx: Ctx, drawing: BoardDrawing, images: Images): void {
  * Waits for the images that have an address and asks for the face to be
  * drawn once more with whichever arrived. Nothing is asked for where there
  * is no address, and nothing is drawn where none arrived or the texture has
- * gone in the meantime.
+ * gone in the meantime. A drawing that fails costs the look, never the
+ * match: what was drawn before it stays.
  */
 export async function whenImagesArrive<T>(
   urls: { paper: string | null; portrait: string | null },
@@ -392,7 +409,11 @@ export async function whenImagesArrive<T>(
     urls.portrait === null ? null : load(urls.portrait),
   ]);
   if (gone() || (paper === null && portrait === null)) return;
-  redraw({ paper, portrait });
+  try {
+    redraw({ paper, portrait });
+  } catch {
+    // The stand-ins stay.
+  }
 }
 
 function loadImage(url: string): Promise<HTMLImageElement | null> {

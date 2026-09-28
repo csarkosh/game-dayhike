@@ -263,6 +263,8 @@ describe("the board's place", () => {
       [[0, 1, "stem"], [2, 3, "loop"], [4, 5, "loop"]],
     );
     expect(boardSite(g, straightRoad, 1, { x: 1.3, z: -1 }).z).toBeCloseTo(2.5, 9);
+    // And from the other side of the line, the other side of the trail.
+    expect(boardSite(g, straightRoad, 1, { x: 1.3, z: 1 }).z).toBeCloseTo(-2.5, 9);
   });
 
   it("lays five boxes along the board's own line, 2.31 m from end to end at any facing", () => {

@@ -64,7 +64,7 @@ const DRAWING: BoardDrawing = {
   urls: { paper: null, portrait: null },
 };
 
-function setup(scene: Scene, loader: (output: string) => Promise<AssetContainer>) {
+function setup(scene: Scene, loader: (output: string) => Promise<AssetContainer>, fails = false) {
   const painted: { name: string; drawing: BoardDrawing; material: Material }[] = [];
   const shadowed = new Set<AbstractMesh>();
   const boxMaterials: string[] = [];
@@ -77,6 +77,7 @@ function setup(scene: Scene, loader: (output: string) => Promise<AssetContainer>
     // A NullEngine has no canvas to paint on; the painter is the one part
     // of this that needs a browser.
     paint: (s, name, drawing) => {
+      if (fails) throw new Error("no canvas");
       const material = new PBRMaterial(name, s);
       painted.push({ name, drawing, material });
       return material;
@@ -229,6 +230,42 @@ describe("createTrailheadMeshes", () => {
     expect(face.isPickable).toBe(false);
     meshes.dispose();
     expect(scene.getMeshByName("trailhead_board_face")).toBeNull();
+  });
+
+  it("stands the plane on the model's own face: a millimetre in front of it, and its size", async () => {
+    const scene = freshScene();
+    const { meshes } = setup(scene, diskLoader(scene));
+    await meshes.ready;
+    const kiosk = scene.getTransformNodeByName("trailhead_kiosk")!;
+    const plane = worldVertices(scene.getMeshByName("trailhead_board_face") as Mesh);
+    // The model's panel: what it draws between its posts, from 0.8 m to
+    // 1.9 m above its foot, which is on the ground at 2.28.
+    const panel = kiosk.getChildMeshes(false)
+      .filter((m) => m.name !== "trailhead_board_face" && m.getTotalVertices() > 0)
+      .flatMap((m) => worldVertices(m))
+      .filter(({ p }) => Math.abs(p.x - 6) <= 1.001 && p.y >= 3.08 && p.y <= 4.18);
+    expect(panel.length).toBeGreaterThan(0);
+    // The board's face looks toward -z, so its front is the least z drawn.
+    const front = Math.min(...panel.map(({ p }) => p.z));
+    expect(front - plane[0]!.p.z).toBeCloseTo(0.001, 3);
+    const face = panel.filter(({ p }) => p.z - front < 0.0005);
+    const xs = face.map(({ p }) => p.x), ys = face.map(({ p }) => p.y);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(2, 2);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(1, 2);
+    expect((Math.max(...xs) + Math.min(...xs)) / 2).toBeCloseTo(6, 2);
+    expect((Math.max(...ys) + Math.min(...ys)) / 2).toBeCloseTo(3.65, 2);
+    meshes.dispose();
+  });
+
+  it("stands the board without a face when the face cannot be painted", async () => {
+    const scene = freshScene();
+    const { meshes } = setup(scene, diskLoader(scene), true);
+    await expect(meshes.ready).resolves.toBeUndefined();
+    expect(scene.getTransformNodeByName("trailhead_kiosk")).not.toBeNull();
+    expect(scene.getTransformNodeByName("trailhead_car")).not.toBeNull();
+    expect(scene.getMeshByName("trailhead_kiosk_box_0")).toBeNull();
+    expect(scene.getMeshByName("trailhead_board_face")).toBeNull();
+    meshes.dispose();
   });
 
   it("leaves the model's own materials as they are", async () => {

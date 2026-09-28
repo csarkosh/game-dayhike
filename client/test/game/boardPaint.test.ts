@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { boardText } from "../../src/game/boardFace.js";
-import { boardDrawingOf, paperCrop, whenImagesArrive, wrap } from "../../src/game/boardPaint.js";
+import { boardDrawingOf, paperCrop, portraitCrop, whenImagesArrive, wrap } from "../../src/game/boardPaint.js";
 
 describe("wrap", () => {
   const width = (s: string): number => s.length * 10;
@@ -37,6 +37,22 @@ describe("paperCrop", () => {
   });
 });
 
+describe("portraitCrop", () => {
+  it("cuts the print's four-by-five from the middle of a square photograph, so the face is not stretched", () => {
+    const c = portraitCrop({ width: 512, height: 512 });
+    expect(c.x).toBeCloseTo(51.2, 9);
+    expect(c.y).toBe(0);
+    expect(c.width).toBeCloseTo(409.6, 9);
+    expect(c.height).toBeCloseTo(512, 9);
+  });
+
+  it("cuts it from the middle of a photograph of any shape", () => {
+    expect(portraitCrop({ width: 800, height: 500 })).toEqual({ x: 200, y: 0, width: 400, height: 500 });
+    expect(portraitCrop({ width: 400, height: 800 })).toEqual({ x: 0, y: 150, width: 400, height: 500 });
+    expect(portraitCrop({ width: 400, height: 500 })).toEqual({ x: 0, y: 0, width: 400, height: 500 });
+  });
+});
+
 describe("whenImagesArrive", () => {
   const both = { paper: "paper.webp", portrait: "portrait.webp" };
 
@@ -53,6 +69,15 @@ describe("whenImagesArrive", () => {
     expect(asked).toEqual([]);
     await whenImagesArrive(both, async () => null, () => false, (images) => drawn.push(images));
     expect(drawn).toEqual([]);
+  });
+
+  it("keeps what is drawn when drawing the images fails", async () => {
+    let tried = 0;
+    await whenImagesArrive(both, async () => "X", () => false, () => {
+      tried++;
+      throw new Error("no canvas");
+    });
+    expect(tried).toBe(1);
   });
 
   it("drops an image that arrives after disposal", async () => {
