@@ -176,20 +176,6 @@ export function recordEngineFailure(
 }
 
 /**
- * Translators that could not be fetched for a shader the lookup did not find
- * (`unfetched`): the network's failure, not the GPU's, so nothing is written
- * to storage and the next load tries WebGPU again. The page holds itself on
- * WebGL2 for the rest of its life (the caller's own flag, set when the
- * watcher reports it); a tab whose address asks for WebGPU, which outranks
- * that, is pinned to `engine=webgl2`, so the rebuild cannot come back to an
- * engine that cannot fetch them. The HUD's line.
- */
-export function answerUnfetched(page: { override: EngineName | null; pin(): void }): string {
-  if (page.override === "webgpu") page.pin();
-  return NOTICE_SWITCHED;
-}
-
-/**
  * Starts a hike on `first`, and where it throws on a WebGPU engine, starts it
  * again on WebGL2 on a fresh canvas that takes the place of every canvas the
  * first start left (`place`). The game is handed one recorder of WebGPU
@@ -236,4 +222,18 @@ export function startOnEngine<G extends { notify(line: string): void }>(
     game.notify(once());
     return game;
   }
+}
+
+/**
+ * Translators that could not be fetched for a shader the lookup did not find
+ * (`unfetched`): the network's failure, not the GPU's, so nothing is written
+ * to storage and the next load tries WebGPU again. The page holds itself on
+ * WebGL2 for the rest of its life (the caller's own flag, set when the
+ * watcher reports it); a tab whose address asks for WebGPU, which outranks
+ * that, is pinned to `engine=webgl2`, so the rebuild cannot come back to an
+ * engine that cannot fetch them. The HUD's line.
+ */
+export function answerUnfetched(page: { override: EngineName | null; pin(): void }): string {
+  if (page.override === "webgpu") page.pin();
+  return NOTICE_SWITCHED;
 }
