@@ -116,11 +116,15 @@ export function readCorpus(text: string): CorpusStage[] {
 /** The format of the map the build ships. */
 export const MAP_FORMAT = "dayhike-wgsl-map/1";
 
-/** The most a map may be, in bytes of text: 16 MB. The page holds it whole
+/** The most a map may be, in bytes of text: 32 MiB. The page holds it whole
  * for the engine's life, and parses it in one task on its thread; the build
  * refuses a larger one (`tools/wgsl/build-map.mjs`), and the page one that
- * reads past it, before it is parsed (`loadWgslMap`). */
-export const MAP_MAX_BYTES = 16_777_216;
+ * reads past it, before it is parsed (`loadWgslMap`). Set from the map the
+ * recorded corpus makes: 23,367,492 bytes for two tiers on one platform, read
+ * as one JSON in 24 to 35 ms, in a page of about 250 to 280 MB in all. A
+ * corpus whose union would pass it is split into a map per platform, not
+ * given a higher ceiling. */
+export const MAP_MAX_BYTES = 33_554_432;
 
 /** The map: `{"format": MAP_FORMAT, "salt": ..., "entries": {key: wgsl}}`,
  * its keys sorted, so the same entries always make the same bytes. */

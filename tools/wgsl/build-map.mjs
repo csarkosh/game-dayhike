@@ -10,7 +10,7 @@
 // translates it. The same corpus and translators give the same bytes. A stage
 // that does not translate is left out of the map and reported: the build goes
 // on, and the page translates that stage itself, as it always has. A map over
-// 16 MB (`MAP_MAX_BYTES`) fails the build.
+// 32 MiB (`MAP_MAX_BYTES`) fails the build.
 //
 // Usage: node tools/wgsl/build-map.mjs [--corpus <dir>] [--out <file>] [--reuse]
 //   --reuse  leaves a map made from the same corpus under the same salt as it
