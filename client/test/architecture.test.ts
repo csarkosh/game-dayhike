@@ -206,6 +206,18 @@ describe("layer boundaries", () => {
     expect(main).not.toMatch(/\bstarting\b/);
   });
 
+  it("shows one line after a failure rebuild: the swap itself shows none, a switch its engine's, the answer its own", () => {
+    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    const body = (from: string, to: string): string => app.slice(app.indexOf(from), app.indexOf(to, app.indexOf(from)));
+    // `switchNow` is the swap both paths run: it shows no line.
+    expect(body("  async function switchNow(", "\n  }\n")).not.toContain("hud.flash");
+    // A switch (Apply, the governor) shows the line of an engine that could
+    // not build its tier…
+    expect(body("  function switchTo(", "\n  }\n")).toContain("flashEngineNotice");
+    // …and a failure's rebuild leaves the line to the answer (`answerFailures`).
+    expect(app).toContain("    rebuild: () => switchNow(tier, tierSource, null).then(() => {\n      engineNotice = null;\n    }),");
+  });
+
   it("keeps the quality modules out of sim/ and net/", () => {
     const quality = /game\/(quality|gpuSignals|gpuClass|tierChoice|frameProbe|governor|rendererSwap|settings)(\.js)?$/;
     expect(violations(join(SRC, "sim"), [quality])).toEqual([]);

@@ -1416,7 +1416,18 @@ function buildGame(
    * and the hike ends. Returns the tier now running.
    */
   function switchTo(target: QualityTier, source: TierSource, save: TierChoice | null): Promise<QualityTier> {
-    return serial.track(switchNow(target, source, save));
+    return serial.track(
+      switchNow(target, source, save).then((reached) => {
+        flashEngineNotice();
+        return reached;
+      }),
+    );
+  }
+
+  /** The line of a WebGPU engine that could not build its tier, once. */
+  function flashEngineNotice(): void {
+    if (engineNotice !== null && !disposed && !broken) hud.flash(engineNotice, FALLBACK_NOTICE_MS);
+    engineNotice = null;
   }
 
   async function switchNow(target: QualityTier, source: TierSource, save: TierChoice | null): Promise<QualityTier> {
@@ -1472,8 +1483,6 @@ function buildGame(
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
       await whenSceneReady(renderer.scene, undefined, renderer.forestReady);
-      if (engineNotice !== null && !disposed && !broken) hud.flash(engineNotice, FALLBACK_NOTICE_MS);
-      engineNotice = null;
       return tier;
     } finally {
       switching = false;
@@ -1516,7 +1525,11 @@ function buildGame(
     record: (reason) => options.engineFailed(reason),
     cover: coverPlay,
     stopLoop: () => renderer.engine.stopRenderLoop(),
-    rebuild: () => switchNow(tier, tierSource, null).then(() => undefined),
+    // The answer shows the line for what the rebuild ended on; the swap's
+    // own is dropped, so it shows once.
+    rebuild: () => switchNow(tier, tierSource, null).then(() => {
+      engineNotice = null;
+    }),
     flash: (line) => hud.flash(line, FALLBACK_NOTICE_MS),
     log: (line) => console.error(line),
   });
