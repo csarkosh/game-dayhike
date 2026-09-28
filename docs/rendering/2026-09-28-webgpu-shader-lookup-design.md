@@ -350,13 +350,37 @@ Why that form:
 `tools/wgsl/merge-corpus.mjs` takes recorded files and the corpus and writes
 the union, each stage once, saying how many stages the recorded files hold
 and how many are new; a recorded file dropped into the directory is merged
-and removed. The corpus committed now is a small one made under Node
-(`tools/wgsl/node-corpus.mjs`: the game's three post shaders and Babylon's
-PBR and Standard materials, ten stages, through Babylon's WebGPU GLSL
-processing on `NullEngine`). It is not byte for byte what a browser's WebGPU
-engine makes of those effects (the caps, the engine's version and the game's
-own defines differ), so no browser asks for its stages: it exercises the path
-end to end until a corpus recorded in browsers is merged in.
+and removed.
+
+**What is shipped now.** 421 stages (221 vertex, 121 fragment, 79 fragment
+stages that turn the uniformity analysis off), 14,199,007 bytes in the
+sixteen files, recorded with `?wgsl=record` in Chrome 154 on Windows with an
+NVIDIA T4 under Direct3D 12, on the high and medium tiers, each text checked
+by its SHA-256 against the page that recorded it, and merged. The pages
+covered: the standard pose on a first and a repeat visit; the trailhead with
+characters in view; the headlamp on; rain; night; a sweep over the poses with
+every material compiled; the weathers and the hours; a party of two. Not yet
+in it: anything recorded on macOS (its texture formats reach the text
+through the defines, §8 item 3), and the low tier. 228 of the stages carry
+characters outside ASCII (in the game's shader comments); glslang is handed
+them as the page hands them, and the WGSL has no comments.
+
+The ten stages made under Node (`tools/wgsl/node-corpus.mjs`: the game's
+three post shaders and Babylon's PBR and Standard materials, through
+Babylon's WebGPU GLSL processing on `NullEngine`) are not shipped: no browser
+asks for them (the caps, the engine's version and the game's own defines
+differ from a browser's). They are the tests' fixture,
+`tools/wgsl/test/fixtures/node-corpus/`, which `node-corpus.mjs` rewrites.
+
+**The map it makes, measured** (the test workflow's `build` job, GitHub's
+runner, Node 22): 421 entries, none failed; 23,367,492 bytes raw, 4,035,679
+gzip −9, 488,023 brotli −q 11 (brotli's window sees across entries, gzip's
+does not); the largest entry 184,166 bytes, a fragment stage; 35.5 s of
+translation, 84 ms a stage on average, 477 ms the longest; read as one JSON
+in 24.4 ms, as an index and a text in 2.7 ms. **It is over the map's 16 MB
+ceiling, so the build fails** (below): one map of every recorded stage does
+not fit. Whether the ceiling moves, the map splits (per tier, per start), or
+its form changes is not yet decided.
 
 **The tool.** `tools/wgsl/build-map.mjs`, plain Node, run by `npm run build`
 before `vite build`: it loads each translator's loader, a classic script, in
@@ -468,7 +492,7 @@ live one without a browser: a recorded page's `hitsBySource.shipped` against
 the corpus's size shows how much of it is live. A corpus recorded under an
 older build is re-recorded, not trusted.
 
-**Honesty.** `wgslHonesty.test.ts` translates the committed corpus with the
+**Honesty.** `wgslHonesty.test.ts` translates the Node-made fixture with the
 tool and with the page's own lookup, both with the real translators under
 Node, through Babylon's own engine methods on a stand-in device, and holds
 every map entry byte for byte to the page's WGSL, and the tool's salt to the
@@ -583,10 +607,11 @@ were each dropped and translated afresh, nothing else. A start's WGSL was
 page thread remains (9 s at the start), the GPU process compiling the render
 pipelines as far as the device's queue shows: the map does not remove it.
 
-1. **The real corpus's size, per tier**, raw, gzip −9 and brotli −q 11: the
-   standard pages recorded with `?wgsl=record` on both tiers, merged, and
-   built (`build-map.mjs` prints it). It decides whether one map for every
-   tier holds, or a map per tier, and whether the JSON's parse matters (§5.2).
+1. **The real corpus's size, per tier.** Both tiers together, measured
+   (§5.2): 421 stages, a map of 23.4 MB raw, 4.0 MB gzip, 0.49 MB brotli, over
+   the 16 MB ceiling; its JSON read in 24 ms under Node. Per tier, and in a
+   browser on the slow machine, not yet: they decide how the map is split or
+   bounded, and whether the JSON's parse matters.
 2. **What else in the text differs between loads of one page** (§3): two
    loads recorded with `?wgsl=record`, their reports kept whole
    (`JSON.stringify(dayhikeWgsl)`, the stages' `glsl` with them), and each
