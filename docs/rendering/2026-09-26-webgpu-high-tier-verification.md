@@ -236,6 +236,202 @@ not of the GPU, and it must be fixed before the switch can be turned on, since
 it would otherwise be remembered as a GPU failure for 30 days. Task 2's gates
 start from WebGPU actually starting.
 
+## 6. The trail bed
+
+Read on 2026-09-27 at `785825e`, the method of §1 with three differences:
+Chrome 154 (154.0.8037.58); every page in a fresh isolated browser context
+with a recorder injected before the page's scripts (the first frame is the
+first animation frame at which the engine's frame counter is above 0, in ms
+from navigation); and one diagnostic injection on every WebGPU page read
+after §6.1, named there. The stills are 1200 × 2029 at device pixel ratio 1,
+the pose `__fcSet(123, 110.87, -105.5, 1.571, 0.3)` set about 20 s after
+navigation and the still taken at about 24.5 s, each on its own fresh page.
+The sun at every still: direction (0, −0.9701, 0.2425), intensity 0.7508 in
+mist and 3.9518 in clear, equal within each pair. The stills stay outside the
+repository; the numbers are here. The run read the engine's start first and
+met the fern and the shrub on the way; both are recorded ahead of the bed.
+
+### 6.1 The engine starts, and stays on no load
+
+`&engine=webgpu`, 25 s a load, a fresh context each, no pose. The WebGL2
+controls (high 2217 ms, medium 2044 ms to the first frame) log no warning or
+error and store no record.
+
+| load | first frame on WebGPU (ms) | first GPU error (ms) | ended on | record stored |
+| --- | --- | --- | --- | --- |
+| high 1–6 | 2163, 2427, 2369, 2238, 2233, 3390 | 10916, 14938, 13741, 13400, 12777, 20733 | WebGL2 | `pipeline` |
+| medium 1–3 | 2098, 2105, 2628 | 12260, 11699, 14469 | WebGL2 | `pipeline` |
+
+With six earlier high loads and one diagnostic load of the same outcome, 13 of
+13 high and 3 of 3 medium loads started WebGPU (first frame 2.1–3.4 s) and
+none stayed: 10.9–20.7 s in, a pipeline failed validation, the record
+`{"reason":"pipeline","browser":154,"babylon":"9.18.0",…,"losses":0}` was
+stored, and the page ended on WebGL2. The two messages, each once per load:
+
+- `Total fragment input variables count (18 = 17 (user-defined) + 1 (front_facing) exceeds the maximum (17).`
+- `Vertex output variable "<retval>.vFadeDist_1" has a location (17) that is too large. It should be less than (17).` and `Total vertex output variables count (18 = 18 (user-defined)) exceeds the maximum (17).`
+
+The device is made with exactly 17 inter-stage variables
+(`WEBGPU_REQUIRED_LIMITS`). The adapter (Apple M4, `metal-3`, not a fallback)
+offers 28. On one page whose device was asked for the adapter's 28 by an
+injection (the build unchanged), WebGPU ran 30 s with no warning and no record,
+and the locations Babylon gave each compiled effect were read back:
+
+| effect | locations | reads `front_facing` | drawn by |
+| --- | --- | --- | --- |
+| PBR with the foliage plugin | 17 | yes | the giant fir's and the giant pine's second primitive (`material0`) |
+| PBR with the foliage and distance-fade plugins | 18 (the 18th `vFadeDist`) | yes | their first primitive (`material1`) |
+| `kernelBlur` | 18 | not read | the halation's two blurs (high tier) |
+
+So the giant fir and the giant pine, which come into the drawn set 10–20 s
+after the load, need 18; the halation's blur counts 18 as well (whether it
+fails at 17 was not seen: the page had fallen back by then). No effect of the
+fern, the shrub or the terrain is over 16. Every WebGPU page read after this
+carries that injection (the device at 28), so it stays on WebGPU.
+
+### 6.2 The fern and the shrub
+
+High tier, the canopy page at 24 s. The enabled `understory.fern.node0` (51
+thin instances) and `understory.shrub.node0` (71) have their own materials and
+share one effect on both engines. Their UV buffers, made by the glTF loader,
+are interleaved in a 48-byte stride, the fern's at byte offset 24 and the
+shrub's at 12, and both carry the vertex-buffer hash 196630. Babylon's WebGPU
+pipeline cache keys an attribute by that hash, not by its offset (Appendix A),
+so the pipeline built first fixes the offset for both.
+
+At the pose `__fcSet(130.66, 113.2, -144.14, -0.82, 0.35)` (a fern instance at
+(128.22, 110.00, −137.95) and a shrub at (124.31, 109.83, −142.14), the shrub in
+view), the shrub's leaf cover in its crown (crop `330:180:300:320`, pixels of
+sRGB luma under 80, less the same crop with the shrub hidden, 0.1261–0.1265):
+
+| page | leaf cover |
+| --- | --- |
+| WebGL2, both drawn | 0.058 |
+| WebGL2, the fern hidden | 0.058 (ΔE 0.01 on the shrub) |
+| WebGPU, both drawn | **0.016** |
+| WebGPU, the fern hidden | 0.059 |
+
+On WebGPU the shrub is drawn with the fern's pipeline and reads its UVs 12
+bytes too far into each vertex: mis-cut slivers of the wrong part of the atlas.
+Hidden from the start, the fern cannot build the pipeline first, and the shrub
+is right. The same plant at the canopy pose's left edge (`60:500:150:180`) is
+mis-cut the same way.
+
+### 6.3 The crops
+
+Literals, `x:y:w:h` in the still's pixels:
+
+- **bed** `830:770:150:90`: the bed beyond the near stretch, clear of grass
+  tufts on both engines;
+- **bed_near** `1000:930:150:90`: the nearer stretch of the same bed;
+- **sky** `1020:180:100:60`: the top of the frame, which at this pose is fogged
+  canopy, the brightest and least varied block of the top 240 rows;
+- **haze** `750:490:40:40`: the most even haze between the trunks;
+- and the design's **near** `280:500:420:970` and **mid** `220:22:400:678`.
+
+The bed crop sits roughly 10–20 m out by eye; the terrain is displaced on the
+GPU and does not pick, so the design's 4–12 m could not be measured.
+
+### 6.4 The numbers, per tier and engine
+
+(a) as is; (b) the environment's intensity 0, the scene's environment and every
+material's reflection texture null; (c) clear weather. Luminance Y and CIELAB
+of each crop's mean linear RGB; the WebGL2 floor from two loads of (a) is
+ΔE ≤ 0.02 on the bed (luminance ratio 0.999–1.000) and ΔE ≤ 0.09 on the sky.
+
+| high | bed Y (L*, a*, b*) | bed_near Y | sky Y | haze Y |
+| --- | --- | --- | --- | --- |
+| WebGL2 (a) | 0.08546 (35.09, 4.79, −0.00) | 0.08644 | 0.13671 | 0.22403 |
+| WebGPU (a) | 0.04159 (24.19, 2.57, −5.00) | 0.10560 | 0.14403 | 0.22504 |
+| WebGL2 (b) | 0.03230 (20.94, 8.06, 6.14) | 0.04414 | 0.13649 | 0.22389 |
+| WebGPU (b) | 0.00293 (2.64, 0.42, −0.16) | 0.03793 | 0.13507 | 0.22403 |
+| WebGL2 (c) | 0.01037 (9.29, 1.87, 4.47) | 0.02538 | 0.01669 | 0.00395 |
+| WebGPU (c) | 0.00631 (5.70, 0.07, −12.57) | 0.06765 | 0.03570 | 0.00561 |
+
+| WebGPU against WebGL2, luminance ratio / ΔE | bed | bed_near | sky | haze |
+| --- | --- | --- | --- | --- |
+| high (a) | 0.487 / 12.2 | 1.222 / 3.75 | 1.054 / 1.51 | 1.005 / 0.15 |
+| high (b) | 0.091 / 20.8 | 0.859 / 2.09 | 0.990 / 0.21 | 1.001 / 0.02 |
+| high (c) | 0.609 / 17.5 | 2.666 / 16.5 | 2.139 / 9.47 | 1.420 / 3.25 |
+| medium (a) | 0.485 / 12.25 | 1.223 / 3.76 | 1.054 / 1.52 | 1.005 / 0.19 |
+| medium (b) | 0.090 / 20.9 | 0.859 / 2.08 | 0.967 / 0.74 | 1.001 / 0.02 |
+| medium (c) | 0.578 / 18.0 | 2.886 / 17.05 | 2.169 / 9.60 | 1.405 / 3.25 |
+
+The two tiers agree to within 0.01 in every ratio: the medium tier's probe,
+shadow and grade pass change nothing. On WebGPU the bed goes black beyond a
+sharp, stepped edge some metres out, with a pale band toward the crest; nearer
+than the edge it is the right warm brown, and the ground beside it, under the
+same material, matches WebGL2.
+
+### 6.5 The branch of the ladder taken, and what was ruled out
+
+(b) does not close the gap: it widens it (WebGPU's bed goes to L* 2.6, black,
+where WebGL2's keeps its brown). So the ladder's second branch: the uncommitted
+patch of Task 5 Step 1, the bed's `surfaceAlbedo` replaced by the snow mix, the
+wetness and the canopy weight as three channels, and
+`WebGPUCacheRenderPipeline.LogErrorIfNoVertexBuffer` set. The three channels
+agree between the engines within the lighting difference seen elsewhere (bed
+luminance ratio 1.13, near bed 1.34), with no stepped edge; no missing vertex
+buffer is reported. Ruled out: **the snow mix, the wetness, the weights
+attribute and a missing vertex buffer**. The black is made inside the bed's
+own colour. Read back on both engines at the canopy pose in mist: **the
+probe's six faces** are identical at levels 0 and 1 to the second decimal, and
+within 0.7 of 255 at levels 3 and 5 (each engine's own mip filter); **the BRDF
+lookup** is equal to half-float precision (means 0.07, 0.83, 0.29, 1.00). The
+terrain material's defines are the same on both.
+
+### 6.6 The two causes, as found
+
+**The ground's texture arrays have mips on layer 0 only, on WebGPU.** Read
+back, per layer and level: on WebGL2 every layer of `terrainRAH` and
+`terrainNormals` (512², 6 layers, 10 levels, RGBA8) is populated at every
+level; on WebGPU layer 0 is, and layers 1–5 are populated at level 0 and
+**zero at every coarser level**, alpha included. Babylon 9.18's WebGPU mip
+generation for a `RawTexture2DArray` renders the chain of layer 0 alone. The
+bed's colour is multiplied by an occlusion factor read from layers 4 (pebble)
+and 1 (floor) of `terrainRAH` (`trailPaint.ts`); once the bed is drawn from a
+coarser level the factor reads 0, and the bed goes black: black with the
+environment off, the environment's cool grey on black in (a), the sky's blue in
+(c), the stepped edge at the level-0/level-1 boundary. Generating the missing
+layers' mips on the page with the engine's own mip pass brings the bed back in
+kind (warm brown, continuous to the crest, no edge): bed 1.29×, ΔE 4.95.
+
+**The rest of the frame is brighter on WebGPU: the probe's spherical harmonics
+on WebGPU only.** With the environment off, the near and mid crops match to
+ΔE ≤ 0.07 on both tiers; with it, they read 1.23× / 1.07× in mist and 1.38× /
+1.99× in clear. The probe cube's harmonics are computed on WebGPU
+(`preScaledHarmonics.l00` = (0.26736, 0.28445, 0.31118), every other band 0)
+and undefined on WebGL2, where `BaseTexture.sphericalPolynomial` is Babylon's
+stub getter: the WebGPU module imports `pbrBaseMaterial.js`, the non-pure
+module, which registers the real getter; every other file imports modules that
+do not.
+
+Both corrected on the page, without a build edit (the missing mips generated,
+and the computed harmonics zeroed, which is what WebGL2 binds), against the
+WebGL2 stills, luminance ratio / ΔE:
+
+| still | bed | bed_near | sky | haze | near | mid |
+| --- | --- | --- | --- | --- | --- | --- |
+| high, mist, as is | 0.487 / 12.2 | 1.222 / 3.75 | 1.054 / 1.51 | 1.005 / 0.15 | 1.231 / 3.07 | 1.068 / 1.44 |
+| high, mist, mips only | 1.291 / 4.95 | 1.351 / 5.82 | 1.032 / 1.27 | 1.005 / 0.16 | 1.239 / 3.18 | 1.069 / 1.47 |
+| high, mist, harmonics only | 0.472 / 12.63 | 0.921 / 1.68 | 1.000 / 0.01 | 0.999 / 0.02 | 1.000 / 0.06 | 1.001 / 0.03 |
+| **high, mist, both** | **1.000 / 0.01** | **1.000 / 0.01** | **0.999 / 0.03** | **1.000 / 0.01** | **1.001 / 0.01** | **1.000 / 0.01** |
+| high, clear, as is | 0.609 / 17.51 | 2.666 / 16.51 | 2.139 / 9.47 | 1.420 / 3.25 | 1.378 / 7.57 | 1.991 / 9.49 |
+| **high, clear, both** | **1.002 / 0.05** | **0.978 / 0.29** | **0.971 / 0.29** | **1.030 / 0.15** | **0.999 / 0.02** | **1.002 / 0.01** |
+| medium, mist, as is | 0.485 / 12.25 | 1.223 / 3.76 | 1.054 / 1.52 | 1.005 / 0.19 | 1.236 / 3.16 | 1.068 / 1.45 |
+| **medium, mist, both** | **1.000 / 0.00** | **1.000 / 0.01** | **1.000 / 0.01** | **1.001 / 0.03** | **1.001 / 0.01** | **1.001 / 0.01** |
+
+With both corrected, the WebGPU frame is the WebGL2 frame within the
+same-engine floor on both tiers in mist, and within ΔE 0.3 in clear.
+
+### 6.7 What follows
+
+The four findings (the inter-stage limit, the loader's buffers, the arrays'
+mips, the harmonics) are fixed on the WebGPU path in the commits after this
+note. None of the fixes has yet been read in a browser: the start's hold, the
+shrub, the bed and the frame's brightness are to be read again on the fixed
+build, and appended here.
+
 ## Appendix A. The pipeline-cache bug, as a draft issue
 
 Design Appendix A's text, kept here with the gates that concern it. It is a
