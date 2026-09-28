@@ -154,7 +154,7 @@ read before going on.
 | 3 | `Get-Content -Wait C:\ProgramData\test-rig\setup.log` | First line: `<time> Stop timer: 240 minutes after every boot; for this boot at <start + 4 h>` (the time in the machine's clock, UTC, as `MM/dd/yyyy HH:mm:ss`, for example `for this boot at 09/28/2026 04:11:26` from a line stamped `00:12:24`), **not** "could not read the max-run-minutes tag", "the task failed" or "cannot be read". Then `(Get-ScheduledTask test-rig-stop).Triggers`: a boot trigger with `Delay PT4H` and a time trigger. |
 | 4 | The log goes on | `C:\ProgramData\test-rig: SYSTEM and Administrators only`, then `Set-up starting.`, then `Desktop user hiker: logs on automatically; ... written to Parameter Store`, then `Step done: user` (the parameter write succeeds; a role only minutes old can lag, in which case the next boot retries). |
 | 5 | The driver | The download finishes (no `Timed out:`), `SHA-256` and `Signature of ...: valid, NVIDIA Corporation`, `The NVIDIA GRID driver installer exited with 0` (or `1`: NVIDIA's "Success, but reboot required"; anything else fails the step, and shows whether `-s -n` passes through AWS's self-extracting package), and `Step done: driver`. |
-| 6 | DCV, Chrome, Node, Git | Each `exited with 0` (or `3010` for an MSI), each `Step done`, then `Held still`, `Closed: ...` and `Set-up finished. Restarting once`. |
+| 6 | DCV, Chrome, Node, Git | DCV: `Downloading https://d1uj6qtbmh3dt5.cloudfront.net/2025.0/Servers/nice-dcv-server-x64-Release-2025.0-20103.msi (at most 15 minutes)` (or nothing, if an earlier boot already holds it), `Signature of nice-dcv-server-x64-Release-2025.0-20103.msi: valid, Amazon Web Services, Inc.`, `Running the dcv installer (at most 20 minutes)`, `The dcv installer exited with 0` (or `3010`), `DCV: 0 firewall rule(s) 'NICE DCV Server (In)' removed; iddDriver not installed`, `Step done: dcv`. Then Chrome, Node and Git, each `exited with 0` (or `3010` for an MSI) and `Step done`; then `Held still`, `Closed: ...` and `Set-up finished. Restarting once`. If an installer fails, its log is `C:\ProgramData\test-rig\<name>-msi.log`, and an earlier attempt's is kept beside it with a time in its name. |
 | 7 | The restart | The log's next `Stop timer:` line: 4 hours after **this** boot, the set-up's restart. The stop comes 4 hours after the restart, not after the first start. |
 | 8 | The verification boot | The licence line reads a Virtual Workstation and `Licensed` (record the exact product string); `DCV: Session: 'console' (owner:hiker ...)`; `Desktop: hiker is logged on`; `Closed: Remote Desktop off; ...` with no `:3389` among the listeners; `Set-up checked: the machine is ready`, and `C:\ProgramData\test-rig\verified` exists. On `FAILED:`, read it, then `Restart-Computer -Force`: nothing retries until a boot. |
 | 9 | CloudTrail's record of the password write (see [the password](#the-desktop-user-and-its-password)) | `requestParameters` has no `value`. |
@@ -358,8 +358,20 @@ an exit code alone:
    the script fails on anything but 0 or 1. The licence check on the next boot is the second
    line. See [Which driver](#which-driver).
 3. **Amazon DCV server** 2025.0-20103, pinned and checked by SHA-256 and signature (`Amazon Web
-   Services, Inc.`), installed unattended with its console session owned by the desktop user,
-   no firewall rule, and no Indirect Display Driver (so the only display adapter is the GPU's).
+   Services, Inc.`), installed unattended with its console session owned by the desktop user.
+   It installs exactly the features named with `ADDLOCAL=server,webClient,VC2017Redist` (the
+   package's own names): the server, the browser client, and the Visual C++ runtime the server
+   needs (a feature the package enables only when the runtime is missing). Windows Installer
+   installs only what is named once any feature is named, and evaluates `ADDLOCAL` before
+   `REMOVE`; a `REMOVE` alone on a first install names nothing to install and runs the package's
+   uninstall path instead, so none is passed. Left out: the indirect display driver (AWS's
+   guide gives it to machines without a GPU driver; here the GRID driver's display is the one
+   Chrome must draw on, so the only display adapter is the GPU's), and the audio, printer,
+   webcam, gamepad, smart card, USB, WebAuthn and WebRTC redirection drivers, none of which DCV
+   needs to run. No firewall rule: `DISABLE_FIREWALL=0` is the value the package's own "No, I
+   will manually configure my firewall later" box sets, and any rule named `NICE DCV Server (In)`
+   is removed after the install all the same. The boot after set-up checks that neither the rule
+   nor the display driver is there.
    AWS documents that on Windows a console session "is automatically created and active after
    the server is installed", that DCV is free on EC2, and that the GPU drivers give "DirectX and
    OpenGL hardware acceleration for applications". It is set not to lock the desktop when a
