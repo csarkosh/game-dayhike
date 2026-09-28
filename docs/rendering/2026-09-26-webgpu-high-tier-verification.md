@@ -1,10 +1,11 @@
-# WebGPU on the high and medium tiers: verification
+# WebGPU, the high tier's default: verification
 
-What is measured against the WebGPU design's gates
+What was measured of the WebGPU design
 ([`2026-09-26-webgpu-high-tier-design.md`](2026-09-26-webgpu-high-tier-design.md),
-§13), how, and what the numbers were. This note starts with Task 1's gate: the
-engine chosen before the game starts, switched off, and every way the WebGPU
-start can fail ending on WebGL2. Each later gate appends a section.
+§13) on the high and medium tiers, how, and what the numbers were, from the
+engine chosen before the game starts and every way a WebGPU start can fail
+ending on WebGL2 to the frame times on which WebGPU became the high tier's
+default in Chrome and Edge on macOS and Windows (§8).
 
 ## 1. Method
 
@@ -33,8 +34,9 @@ renders 1200 × 2029. One browser serves the whole gate: it is started once, not
 once per round.
 
 **Page.** `/dayhike/game/<fresh uuid>?cmd=seed%20atmo;freecam;weather%20mist;time%2012&tier=high`,
-with `&engine=webgpu` where the WebGPU path is exercised; the switch is off
-(`WEBGPU_ENABLED = false`), so the override is the only way onto it.
+with `&engine=webgpu` where the WebGPU path is exercised; the switch was off
+for these readings (`WEBGPU_ENABLED = false`), so the override was the only
+way onto it.
 
 **Frame: the pair method** (design §13.1). Per round, a discarded warm-up page,
 then the two builds on fresh pages one at a time in alternating order, each
@@ -692,6 +694,73 @@ every pose also scored on a 3 × 3 grid. The bar is §7.3's of the design
    address still says `engine=webgpu`, so a reload asks for WebGPU again and
    fails its start once more before WebGL2; after a pipeline error or a second
    lost device the address is pinned to `engine=webgl2`.
+
+## 8. The default, switched on where it was measured faster
+
+As of 2026-09-28 WebGPU is the default engine on the high tier, in Google
+Chrome or Microsoft Edge on macOS or Windows on a device that is not a phone
+or a tablet, where no failure is remembered and the adapter fits
+(`chooseEngine`, `engineChoice.ts`; the design, §5.1). Everywhere else the
+game draws with WebGL2, as before. These are the figures that decided it.
+
+**Frame time.** Mean frame time on an Apple M4 at 1920 × 1080 in Chrome 154,
+WebGL2 → WebGPU:
+
+| pose | high tier | medium tier |
+| --- | --- | --- |
+| canopy | 24.2 → 20.9 ms | 19.2 → 19.3 ms |
+| meadow | 19.5 → 17.1 ms | 17.3 → 16.7 ms (at the display's cap) |
+| trailside | 21.6 → 19.6 ms | not measured |
+| night | 23.6 → 20.1 ms | not measured |
+| canopy at 4 × the pixels | 51.0 → 40.1 ms | not measured |
+
+The high tier is faster on WebGPU at every pose that is not at the display's
+cap. The medium tier is not faster under the canopy, and its meadow reading
+sits at the display's cap, where a gain cannot show: medium stays on WebGL2.
+
+**A first visit.** On the high tier, the time from opening the page to
+drawing at the full frame rate:
+
+| machine and browser | WebGPU | WebGL2 |
+| --- | --- | --- |
+| an Apple M4, Chrome on macOS | 4 to 6 s | 4 to 6 s |
+| a Windows machine with an NVIDIA T4 and 4 virtual CPUs, Chrome on Windows | 18 to 21 s | 28 s |
+
+On that Windows machine the steady frame sat at the display's cap on both
+engines, so there WebGPU was measured to reach its full rate sooner, not to
+draw faster.
+
+**Who reaches it on Auto.** The default applies to the high tier. On Auto a
+machine reaches High only by its GPU's class or by the start's measurement,
+which runs on WebGL2 (the design, §5.9). So a machine whose class is capped
+below High, or whose measurement misses High on WebGL2, is never tried on
+WebGPU at High, although WebGPU might have held the rate there. A base Apple
+M-series chip is one: the Apple M4 the frame times above were measured on is
+classed `apple-base` and runs Medium on WebGL2 on Auto. Those that do reach
+High on Auto are the classes that start there, `apple-large` (Apple's Pro,
+Max and Ultra chips) and `discrete-modern` (RTX, RDNA 1 and later, Arc A5xx
+and up), and machines of the probed classes `unknown` and `discrete-unknown`
+whose WebGL2 measurement holds High (`gpuClass.ts`). Anyone who chooses High
+in Settings gets it too. None of the machines that reach High on Auto was
+measured.
+
+**What was not measured.**
+
+- **Other browsers.** Only Chrome. Edge was not measured: it is on the
+  WebGPU default as the same engine as Chrome. The desktop launcher, an
+  Electron build of Chromium, was not measured and stays on WebGL2 at every
+  tier. Other browsers built on Chromium were not measured either, and a
+  browser is told apart from Chrome only by the brands it reports: Brave's
+  and Opera's name neither Chrome nor Edge, and they stay on WebGL2; one whose
+  brands name Google Chrome is taken for Chrome, and the adapter's check and
+  the fallback still apply to it. Brave and Vivaldi send Chrome's user agent
+  unchanged, and what Vivaldi's brands hold was not read. Safari and Firefox
+  were not measured, and the rule keeps them on WebGL2.
+- **Other platforms.** Only macOS and Windows. Linux, ChromeOS, Android and
+  iOS were not measured, and the rule keeps them on WebGL2.
+- **The medium tier** beyond the canopy and the meadow.
+- **A party.** Every reading is of one player alone; a hike with other
+  players drawn was not measured on either engine.
 
 ## Appendix A. The pipeline-cache bug, as a draft issue
 

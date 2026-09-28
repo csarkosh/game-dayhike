@@ -63,7 +63,7 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
   let webgpuStarts = true;
   const serial = createSerial();
   const rule = (): "webgl2" | "webgpu" | "probe" =>
-    chooseEngine({ tier: "high", override: page.url, remembered: fallbackHolds(readFallback(storage), ENV, page.now), on: true, fits: true });
+    chooseEngine({ tier: "high", override: page.url, remembered: fallbackHolds(readFallback(storage), ENV, page.now), on: true, fits: true, chromeOrEdge: true, os: "mac", mobile: false });
   const deps: FailureDeps = {
     serial,
     alive: () => alive,

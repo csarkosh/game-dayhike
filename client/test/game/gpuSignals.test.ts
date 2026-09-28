@@ -3,6 +3,8 @@ import {
   ADAPTER_TIMEOUT_MS,
   browserMajor,
   gatherSignals,
+  hostOs,
+  isChromeOrEdge,
   readSignals,
   isMobile,
   readRenderer,
@@ -91,6 +93,116 @@ describe("browserMajor", () => {
     expect(browserMajor("Mozilla/5.0 (Macintosh; rv:145.0) Gecko/20100101 Firefox/145.0")).toBe(145);
     expect(browserMajor("Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/26.0 Safari/605.1.15")).toBe(26);
     expect(browserMajor("")).toBe(0);
+  });
+});
+
+describe("isChromeOrEdge and hostOs, the browser and platform the WebGPU rule reads", () => {
+  const CHROME_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
+  const CHROME_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
+  const EDGE_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0";
+  const EDGE_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0";
+  // The desktop launcher: Electron's default user agent (the app's name and
+  // version, `Chrome/`, `Electron/`) with `DayHike/<version>` appended
+  // (`desktop/main.cjs`).
+  const LAUNCHER_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) day-hike-desktop/0.3.0 Chrome/152.0.0.0 Electron/44.1.1 Safari/537.36 DayHike/0.3.0";
+  const LAUNCHER_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) day-hike-desktop/0.3.0 Chrome/152.0.0.0 Electron/44.1.1 Safari/537.36 DayHike/0.3.0";
+  const OPERA_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 OPR/125.0.0.0";
+  // Brave and Vivaldi send Chrome's user agent unchanged: only their brands
+  // tell them apart.
+  const BRAVE_WINDOWS = CHROME_WINDOWS;
+  const VIVALDI_MAC = CHROME_MAC;
+  const SAMSUNG_ANDROID = "Mozilla/5.0 (Linux; Android 16; SM-S938B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/29.0 Chrome/136.0.0.0 Mobile Safari/537.36";
+  const YANDEX_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 YaBrowser/25.10.0.0 Safari/537.36";
+  const SAFARI_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
+  const FIREFOX_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0";
+  const FIREFOX_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0";
+  const CHROME_ANDROID = "Mozilla/5.0 (Linux; Android 16; Pixel 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36";
+  const CHROME_LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
+  const CHROME_OS = "Mozilla/5.0 (X11; CrOS x86_64 16433.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
+  const CHROME_IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/154.0.0.0 Mobile/15E148 Safari/604.1";
+
+  it("reads the user agent where there is no client hint (Safari, Firefox, a page not served securely)", () => {
+    const rows: [string, boolean, "mac" | "windows" | "other"][] = [
+      [CHROME_MAC, true, "mac"],
+      [CHROME_WINDOWS, true, "windows"],
+      [EDGE_WINDOWS, true, "windows"],
+      [EDGE_MAC, true, "mac"],
+      [LAUNCHER_MAC, false, "mac"],
+      [LAUNCHER_WINDOWS, false, "windows"],
+      [OPERA_WINDOWS, false, "windows"],
+      [SAMSUNG_ANDROID, false, "other"],
+      [YANDEX_WINDOWS, false, "windows"],
+      [SAFARI_MAC, false, "mac"],
+      [FIREFOX_WINDOWS, false, "windows"],
+      [FIREFOX_MAC, false, "mac"],
+      // Chrome by name, on a platform the rule turns away.
+      [CHROME_ANDROID, true, "other"],
+      [CHROME_LINUX, true, "other"],
+      [CHROME_OS, true, "other"],
+      // Chrome on iOS is WebKit underneath, and names no `Chrome/`.
+      [CHROME_IOS, false, "other"],
+    ];
+    for (const [userAgent, chromeOrEdge, os] of rows) {
+      expect(isChromeOrEdge({ userAgent })).toBe(chromeOrEdge);
+      expect(hostOs({ userAgent })).toBe(os);
+    }
+  });
+
+  it("reads the client hint's brands where it lists any: Google Chrome or Microsoft Edge by name, and no other", () => {
+    const grease = { brand: "Not)A;Brand" };
+    const chromium = { brand: "Chromium" };
+    expect(isChromeOrEdge({ userAgent: "", userAgentData: { brands: [grease, chromium, { brand: "Google Chrome" }] } })).toBe(true);
+    expect(isChromeOrEdge({ userAgent: "", userAgentData: { brands: [grease, chromium, { brand: "Microsoft Edge" }] } })).toBe(true);
+    // Brave, Opera and the launcher (an Electron build, which names no
+    // product brand) are refused by their brands even with Chrome's user agent.
+    expect(isChromeOrEdge({ userAgent: BRAVE_WINDOWS, userAgentData: { brands: [{ brand: "Brave" }, chromium, grease] } })).toBe(false);
+    expect(isChromeOrEdge({ userAgent: CHROME_WINDOWS, userAgentData: { brands: [grease, chromium, { brand: "Opera" }] } })).toBe(false);
+    expect(isChromeOrEdge({ userAgent: CHROME_MAC, userAgentData: { brands: [grease, chromium] } })).toBe(false);
+    expect(isChromeOrEdge({ userAgent: LAUNCHER_MAC, userAgentData: { brands: [chromium, grease] } })).toBe(false);
+    // Without brands (a bare `http://` address has no client hint), the user
+    // agent alone cannot tell Brave or Vivaldi from Chrome.
+    expect(isChromeOrEdge({ userAgent: VIVALDI_MAC })).toBe(true);
+    expect(isChromeOrEdge({ userAgent: BRAVE_WINDOWS })).toBe(true);
+    // A list present but empty says nothing, and the user agent is read.
+    expect(isChromeOrEdge({ userAgent: CHROME_MAC, userAgentData: { brands: [] } })).toBe(true);
+    expect(isChromeOrEdge({ userAgent: EDGE_WINDOWS, userAgentData: { brands: [] } })).toBe(true);
+    expect(isChromeOrEdge({ userAgent: LAUNCHER_WINDOWS, userAgentData: { brands: [] } })).toBe(false);
+    expect(isChromeOrEdge({ userAgent: OPERA_WINDOWS, userAgentData: { brands: [] } })).toBe(false);
+  });
+
+  it("takes a browser that names itself Google Chrome in its brands for Chrome, and one that does not for another", () => {
+    const grease = { brand: "Not A(Brand" };
+    const chromium = { brand: "Chromium" };
+    // Vivaldi's user agent is Chrome's, so its brands decide, either way
+    // (which of the two a real Vivaldi reports was not read).
+    expect(isChromeOrEdge({ userAgent: VIVALDI_MAC, userAgentData: { brands: [chromium, grease] } })).toBe(false);
+    expect(isChromeOrEdge({ userAgent: VIVALDI_MAC, userAgentData: { brands: [chromium, { brand: "Google Chrome" }, grease] } })).toBe(true);
+    // Headless Chrome 154 on macOS reports these.
+    expect(isChromeOrEdge({ userAgent: "", userAgentData: { brands: [chromium, { brand: "Google Chrome" }, grease] } })).toBe(true);
+  });
+
+  it("prefers the client hint's platform where it names one", () => {
+    expect(hostOs({ userAgent: CHROME_LINUX, userAgentData: { platform: "macOS" } })).toBe("mac");
+    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Windows" } })).toBe("windows");
+    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Linux" } })).toBe("other");
+    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Android" } })).toBe("other");
+    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Chrome OS" } })).toBe("other");
+    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "" } })).toBe("mac");
+  });
+
+  it("is neither without a navigator, and never throws", () => {
+    expect(isChromeOrEdge(undefined)).toBe(false);
+    expect(hostOs(undefined)).toBe("other");
+    const throwing = {
+      get userAgent(): string {
+        throw new Error("denied");
+      },
+      get userAgentData(): undefined {
+        throw new Error("denied");
+      },
+    } as NavigatorLike;
+    expect(isChromeOrEdge(throwing)).toBe(false);
+    expect(hostOs(throwing)).toBe("other");
   });
 });
 

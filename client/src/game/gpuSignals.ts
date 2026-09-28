@@ -79,7 +79,7 @@ export type NavigatorLike = {
   hardwareConcurrency?: number;
   deviceMemory?: number;
   maxTouchPoints?: number;
-  userAgentData?: { mobile?: boolean };
+  userAgentData?: { mobile?: boolean; brands?: readonly { brand: string }[]; platform?: string };
   gpu?: { requestAdapter(options: { powerPreference: "high-performance" }): Promise<unknown> };
 };
 
@@ -141,6 +141,68 @@ export function isMobile(nav: NavigatorLike | undefined): boolean {
     return /Macintosh/.test(agent) && typeof nav.maxTouchPoints === "number" && nav.maxTouchPoints > 1;
   } catch {
     return false;
+  }
+}
+
+/** The client hint's brands of the two browsers the WebGPU rule admits. */
+const CHROME_OR_EDGE_BRANDS: readonly string[] = ["Google Chrome", "Microsoft Edge"];
+/** User-agent tokens of browsers built on Chromium that are neither Chrome
+ * nor Edge, though they carry `Chrome/`: the desktop launcher (Electron),
+ * Opera, Samsung Internet and Yandex, and the `Brave` and `Vivaldi/` tokens
+ * older builds of those sent (today both send Chrome's user agent). */
+const OTHER_CHROMIUM_AGENT = /\bElectron\/|\bOPR\/|\bBrave\b|\bVivaldi\/|\bSamsungBrowser\/|\bYaBrowser\//;
+
+/**
+ * Whether the browser is Google Chrome or Microsoft Edge by name, the one
+ * browser the WebGPU engine rule (`engineChoice.ts`) was measured in and the
+ * one that shares its engine. Other browsers built on Chromium are not, where
+ * they can be told apart: the desktop launcher (an Electron build, whose
+ * brands name no product and whose user agent carries `Electron/`), Brave and
+ * Opera by their brands, none of them measured. A browser that sends Chrome's
+ * user agent (Brave, Vivaldi) is told apart only by its brands, and one whose
+ * brands name Google Chrome is taken for Chrome. The client hint's brands where it lists any: `Google Chrome` or
+ * `Microsoft Edge` among them. Else the user agent: `Chrome/` and none of the
+ * other browsers' tokens (Edge's `Edg/` passes); Safari, Firefox and Chrome on
+ * iOS (WebKit underneath, `CriOS/`) send no `Chrome/`. The client hint is
+ * Chromium's alone, and only on a page served securely, so Safari, Firefox
+ * and a bare `http://` address are read by the user agent.
+ */
+export function isChromeOrEdge(nav: NavigatorLike | undefined): boolean {
+  if (!nav) return false;
+  try {
+    const brands = nav.userAgentData?.brands;
+    if (Array.isArray(brands) && brands.length > 0) {
+      return brands.some((b: { brand?: unknown }) => typeof b?.brand === "string" && CHROME_OR_EDGE_BRANDS.includes(b.brand));
+    }
+    const agent = agentOf(nav);
+    return /\bChrome\/\d/.test(agent) && !OTHER_CHROMIUM_AGENT.test(agent);
+  } catch {
+    return false;
+  }
+}
+
+/** The operating system as the WebGPU engine rule reads it. */
+export type HostOs = "mac" | "windows" | "other";
+
+/**
+ * The operating system: the client hint's platform where it names one
+ * ("macOS", "Windows"), else the user agent's `Macintosh`/`Mac OS X` or
+ * `Windows NT`; an iPhone or an iPad that names itself is neither. An iPad
+ * that says Macintosh is `isMobile`'s to tell apart.
+ */
+export function hostOs(nav: NavigatorLike | undefined): HostOs {
+  if (!nav) return "other";
+  try {
+    const platform = nav.userAgentData?.platform;
+    if (typeof platform === "string" && platform !== "") return platform === "macOS" ? "mac" : platform === "Windows" ? "windows" : "other";
+    const agent = agentOf(nav);
+    // An iPhone's says "like Mac OS X".
+    if (/\biPhone|\biPad|\biPod/.test(agent)) return "other";
+    if (/\bWindows NT\b/.test(agent)) return "windows";
+    if (/\bMacintosh\b|\bMac OS X\b/.test(agent)) return "mac";
+    return "other";
+  } catch {
+    return "other";
   }
 }
 

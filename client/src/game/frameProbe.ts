@@ -331,8 +331,8 @@ export function probeStepCanSettle(
 
 /**
  * The engine the probe's steps draw with, as far as it is known before they
- * run. `engine` is the one the WebGPU rule gives the probed tiers (high and
- * medium share it), WebGL2 where none is given. Where it is WebGPU and a
+ * run. `engine` is the one the WebGPU rule gives the high tier (medium's is
+ * WebGL2), WebGL2 where none is given. Where it is WebGPU and a
  * WebGPU step cannot settle (`webgpuSettles` false), the steps draw on WebGL2
  * on their own canvases: a WebGL2 verdict holds for WebGPU (`verdictRead`),
  * and the hike then starts on the rule's engine at the verdict's tier. Where

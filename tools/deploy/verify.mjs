@@ -201,8 +201,9 @@ async function verify() {
   // import reaches, so the entry chunk is read for that chunk's name first.
   // The MIME type is checked, not just the bytes: a browser compiles a
   // WebAssembly response while it streams only when it is `application/wasm`.
-  // Nothing here fails while WebGPU is only reached by `?engine=webgpu`, which
-  // is exactly when a broken translator would go unnoticed.
+  // A broken translator fails no WebGL2 page, which every tier but high and
+  // every browser but Chrome and Edge on macOS and Windows draws with
+  // (`client/src/game/engineChoice.ts`), so it would go unnoticed there.
   const translatorIds = ['glslang', 'twgsl'];
   const gpuChunk = bundleSource ? findChunkName(bundleSource, 'gpuEngine') : null;
   if (!bundleSource) {
