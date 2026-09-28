@@ -108,11 +108,19 @@ describe("the Hollow walks the stem on real terrain", () => {
    * a route into the woods that starts at the trailhead, deeper inside.
    *
    * It starts 30 m along the road from the pad, where nothing stands between
-   * the road and the woods. The walk out is a straight line, with no way
-   * round a box: started at the pad's own place, on `hollow18` it walks into
-   * the road-side face of the car, which has stood at the pad since
-   * 2026-09-28, and stays there at u = 5.6. No Hollow is ever put on the
-   * road behind the car: none steps onto the corridor, and none spawns on it
+   * the road and the woods. Started at the pad's own place, on `hollow18` it
+   * walks into the road-side face of the car, which has stood at the pad
+   * since 2026-09-28, and stays there at u = 5.6 for all 1200 ticks: the
+   * sidestep `walkToward` keeps for this never begins. Traced tick by tick,
+   * the Hollow meets the face square on (inside the corridor it heads along
+   * x alone), and each tick it is carried about 2 cm into the box and put
+   * back; at 25 m from its goal those 2 cm move the squared distance by
+   * about 0.9, far over STUCK_EPSILON (0.01), so every other tick reads as
+   * progress, the stuck timer never passes 0.02 s of its 1.5 s, and no
+   * strafe starts. On `hollow0` it meets the car off the square and slides
+   * round it, 2.2 s late. That is a fault in the stuck test, older than the
+   * car's move and not mended here. No Hollow is ever put on the road
+   * behind the car: none steps onto the corridor, and none spawns on it
    * short of the trail.
    */
   it("walks out of the road corridor instead of freezing on it", () => {
