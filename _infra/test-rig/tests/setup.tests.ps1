@@ -195,7 +195,7 @@ Set-Content $SkipTimerOnce ''
 Set-StopTimer
 Check 'a skip with no task still arms a pending shutdown' ((Test-Path $calls) -and @(Get-Content $calls)[0] -like '/s /f /t *')
 
-# --- An adapter with no mode ------------------------------------------------------
+# --- An adapter with no mode, and the hash check's log line -------------------------
 Check 'an adapter with no mode reads inactive' ((Format-AdapterMode ([pscustomobject]@{ CurrentHorizontalResolution = $null })) -eq 'inactive')
 Check 'an active adapter reads its mode' ((Format-AdapterMode ([pscustomobject]@{ CurrentHorizontalResolution = 1920; CurrentVerticalResolution = 1080; CurrentRefreshRate = 60 })) -eq '1920x1080 at 60 Hz')
 $pinned = Join-Path $work 'node-v22.23.3-x64.msi'
@@ -203,6 +203,16 @@ Set-Content $pinned 'x' -NoNewline
 $script:Logged = @()
 Assert-Hash $pinned (Get-FileHash $pinned -Algorithm SHA256).Hash
 Check 'a pinned hash that matches is logged' (@($script:Logged) -contains 'SHA-256 of node-v22.23.3-x64.msi: as pinned')
+
+# --- An earlier MSI log is kept beside the new one ----------------------------------
+$Root = $work
+function Wait-InstallerIdle { }
+function Invoke-Installer { return 0 }
+Set-Content (Join-Path $work 'dcv-msi.log') 'the earlier attempt'
+Install-Msi 'x.msi' 'dcv' 1 $pinned
+$kept = @(Get-ChildItem $work -Filter 'dcv-msi.*.log')
+Check 'the earlier MSI log is kept under a timed name' ($kept.Count -eq 1 -and (Get-Content $kept[0].FullName) -eq 'the earlier attempt' -and -not (Test-Path (Join-Path $work 'dcv-msi.log')))
+
 Remove-Item -Recurse -Force $work
 "failures: $fail"
 if ($fail -gt 0) { exit 1 }

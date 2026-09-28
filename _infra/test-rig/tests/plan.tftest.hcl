@@ -116,6 +116,13 @@ run "defaults" {
     error_message = "DCV is installed with exactly the server, the web client and the runtime, and without the indirect display driver."
   }
 
+  # An earlier attempt's MSI log is moved aside before the next install writes
+  # its own (msiexec's /l*v overwrites).
+  assert {
+    condition     = length(regexall("(?s)function Install-Msi.*?if \\(Test-Path \\$msiLog\\) \\{ Move-Item \\$msiLog .*?Invoke-Installer 'msiexec.exe'", local.setup_script)) == 1
+    error_message = "Install-Msi moves an earlier log aside before it runs msiexec."
+  }
+
   # The console must be display_width x display_height with nobody connected:
   # the script asks DCV for it and the verification boot fails otherwise.
   assert {
@@ -391,6 +398,40 @@ run "rejects_a_reserved_parameter_name" {
 
   variables {
     password_parameter = "/AWS/test-rig/desktop-password"
+  }
+
+  expect_failures = [var.password_parameter]
+}
+
+run "accepts_a_parameter_of_15_levels_and_900_characters" {
+  command = plan
+
+  variables {
+    # 15 levels; the last pads the name to exactly 900 characters.
+    password_parameter = "/a/b/c/d/e/f/g/h/i/j/k/l/m/n/${join("", [for i in range(871) : "x"])}"
+  }
+
+  assert {
+    condition     = length(var.password_parameter) == 900 && length(split("/", var.password_parameter)) - 1 == 15
+    error_message = "The boundary name is 900 characters in 15 levels, and is accepted."
+  }
+}
+
+run "rejects_a_parameter_of_16_levels" {
+  command = plan
+
+  variables {
+    password_parameter = "/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p"
+  }
+
+  expect_failures = [var.password_parameter]
+}
+
+run "rejects_a_parameter_of_901_characters" {
+  command = plan
+
+  variables {
+    password_parameter = "/test-rig/${join("", [for i in range(891) : "x"])}"
   }
 
   expect_failures = [var.password_parameter]
