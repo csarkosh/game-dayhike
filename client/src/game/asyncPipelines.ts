@@ -120,7 +120,7 @@ export type PipelinesReport = {
   /** Of those, given up at their deadline (`ASYNC_PIPELINE_MAX_MS`; their
    * nodes then made synchronously). */
   expired: number;
-  /** Frames a draw left out escaped (`guardRender`): the patch then came off. */
+  /** Renders a draw left out escaped (`guard`): the patch then came off. */
   escapes: number;
   /** Pipelines made on Babylon's synchronous path: its per-frame count, summed. */
   sync: number;
