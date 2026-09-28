@@ -74,12 +74,14 @@ function run(tier: QualityTier | null): { state: string; passHash: number; blade
 describe("the tier is drawing only", () => {
   it("steps one world, to the byte, whatever tier draws it or none", () => {
     const bare = run(null);
-    expect(bare.passHash).toBe(-311867473);
+    // The pass hash `groundGradient.test.ts` pins: the world with the car at
+    // the pad and the sign at the trail's entrance.
+    expect(bare.passHash).toBe(178231578);
     expect(bare.blades).toBe(null);
     const drawn = { low: run("low"), medium: run("medium"), high: run("high") };
     for (const got of [drawn.low, drawn.medium, drawn.high]) {
       expect(got.state).toBe(bare.state);
-      expect(got.passHash).toBe(-311867473);
+      expect(got.passHash).toBe(178231578);
     }
     expect([drawn.low.blades, drawn.medium.blades, drawn.high.blades]).toEqual([false, true, true]);
   }, timeLimit(120_000));
