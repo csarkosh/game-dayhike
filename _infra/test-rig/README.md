@@ -82,8 +82,8 @@ On the default machine, running costs $0.710 + $0.005 = **$0.715 an hour**.
   24 × $0.715 = at most $17.16.
 - On `g6.xlarge`: $0.9938/h, $2.98 a run, $15.93 a month of four.
 
-The first run also pays for the first boot's set-up, about 40 minutes (an estimate: a 0.75 GB
-driver from S3, three installers, a restart), roughly $0.50. Traffic into the machine is free;
+The first run also pays for the first boot's set-up, about 7 minutes (measured on 2026-09-28;
+see [The first boot](#the-first-boot)), under $0.10. Traffic into the machine is free;
 what leaves it (DCV's picture through Session Manager, results) counts against the account's
 100 GB a month of free data transfer out.
 
@@ -151,16 +151,16 @@ read before going on.
 |---|---|---|
 | 1 | `terraform plan` before the first apply | 22 to add (23 with the budget), 0 to change, 0 to destroy; nothing in Route53. |
 | 2 | `terraform apply`, then within about 5 minutes of the start, `terraform output -raw shell_command` | A PowerShell opens (the SSM Agent is started before the script). If not, `aws ec2 get-console-output --instance-id <id> --latest --output text` and look for EC2Launch's `agent.log` lines. |
-| 3 | `Get-Content -Wait C:\ProgramData\test-rig\setup.log` | First line: `<time> Stop timer: 240 minutes after every boot; for this boot at <start + 4 h>` (the time in the machine's clock, UTC, as `MM/dd/yyyy HH:mm:ss`, for example `for this boot at 09/28/2026 04:11:26` from a line stamped `00:12:24`), **not** "could not read the max-run-minutes tag", "the task failed" or "cannot be read". Then `(Get-ScheduledTask test-rig-stop).Triggers`: a boot trigger with `Delay PT4H` and a time trigger. |
-| 4 | The log goes on | `C:\ProgramData\test-rig: SYSTEM and Administrators only`, then `Set-up starting.`, then `Desktop user hiker: logs on automatically; ... written to Parameter Store`, then `Step done: user` (the parameter write succeeds; a role only minutes old can lag, in which case the next boot retries). |
-| 5 | The driver | The download finishes (no `Timed out:`), `SHA-256` and `Signature of ...: valid, NVIDIA Corporation`, `The NVIDIA GRID driver installer exited with 0` (or `1`: NVIDIA's "Success, but reboot required"; anything else fails the step, and shows whether `-s -n` passes through AWS's self-extracting package), and `Step done: driver`. |
-| 6 | DCV, Chrome, Node, Git | DCV: `Downloading https://d1uj6qtbmh3dt5.cloudfront.net/2025.0/Servers/nice-dcv-server-x64-Release-2025.0-20103.msi (at most 15 minutes)` (or nothing, if an earlier boot already holds it), `Signature of nice-dcv-server-x64-Release-2025.0-20103.msi: valid, Amazon Web Services, Inc.`, `Running the dcv installer (at most 20 minutes)`, `The dcv installer exited with 0` (or `3010`), `DCV: 0 firewall rule(s) 'NICE DCV Server (In)' removed; iddDriver not installed`, `Step done: dcv`. Then Chrome, Node and Git, each `exited with 0` (or `3010` for an MSI) and `Step done`; then `Held still`, `Closed: ...` and `Set-up finished. Restarting once`. If an installer fails, its log is `C:\ProgramData\test-rig\<name>-msi.log`, and an earlier attempt's is kept beside it with a time in its name. |
-| 7 | The restart | The log's next `Stop timer:` line: 4 hours after **this** boot, the set-up's restart. The stop comes 4 hours after the restart, not after the first start. |
-| 8 | The verification boot | The licence line reads a Virtual Workstation and `Licensed` (record the exact product string); `DCV: Session: 'console' (owner:hiker ...)`; `Desktop: hiker is logged on`; `Closed: Remote Desktop off; ...` with no `:3389` among the listeners; `Set-up checked: the machine is ready`, and `C:\ProgramData\test-rig\verified` exists. On `FAILED:`, read it, then `Restart-Computer -Force`: nothing retries until a boot. |
+| 3 | `Get-Content -Wait C:\ProgramData\test-rig\setup.log` | First line: `<time> Stop timer: 240 minutes after every boot; for this boot at <start + 4 h>` (every line starts with the machine's time in UTC, such as `2026-09-28T01:43:47.0513407+00:00`; the time in the line is `MM/dd/yyyy HH:mm:ss`, such as `for this boot at 09/28/2026 05:42:56`), **not** "could not read the max-run-minutes tag", "the task failed" or "cannot be read". Then `(Get-ScheduledTask test-rig-stop).Triggers`: a boot trigger with `Delay PT4H` and a time trigger. |
+| 4 | The log goes on | icacls' own lines (`processed file: C:\ProgramData\test-rig`, `Successfully processed ... files; Failed processing 0 files`), then `C:\ProgramData\test-rig: SYSTEM and Administrators only`, `Set-up starting.`, `Desktop user hiker: logs on automatically; password made here, written to Parameter Store /test-rig/desktop-password` and `Step done: user` (the parameter write succeeds; a role only minutes old can lag, in which case the next boot retries). |
+| 5 | The driver | `Downloading s3://ec2-windows-nvidia-drivers/grid-20.2/596.86__grid_..._aws_swl.exe (at most 30 minutes)`, `SHA-256 of 596.86__grid_..._aws_swl.exe: as pinned`, `Signature of 596.86__grid_..._aws_swl.exe: valid, NVIDIA Corporation`, `Running the NVIDIA GRID driver installer (at most 30 minutes)`, `The NVIDIA GRID driver installer exited with 0` (or `1`: NVIDIA's "Success, but reboot required"; anything else fails the step), `Step done: driver`. |
+| 6 | DCV, Chrome, Node, Git | DCV: `Downloading https://d1uj6qtbmh3dt5.cloudfront.net/2025.0/Servers/nice-dcv-server-x64-Release-2025.0-20103.msi (at most 15 minutes)` (or nothing, if an earlier boot already holds it), `SHA-256 of nice-dcv-server-x64-Release-2025.0-20103.msi: as pinned`, `Signature of nice-dcv-server-x64-Release-2025.0-20103.msi: valid, Amazon Web Services, Inc.`, `Running the dcv installer (at most 20 minutes)`, `The dcv installer exited with 0` (or `3010`), `DCV: 0 firewall rule(s) 'NICE DCV Server (In)' removed; iddDriver not installed`, `Step done: dcv`. Chrome: `Downloading Chrome (current stable, at most 15 minutes)`, `Signature of googlechromestandaloneenterprise64.msi: valid, Google LLC`, `Running the chrome installer (at most 15 minutes)`, `The chrome installer exited with 0`, `Step done: chrome`, `Chrome: <version>`. Node: `Downloading https://nodejs.org/dist/v22.23.3/node-v22.23.3-x64.msi (at most 15 minutes)`, `SHA-256 of node-v22.23.3-x64.msi: as pinned`, `Running the node installer (at most 10 minutes)`, `The node installer exited with 0`, `Step done: node`, `Node: 22.23.3`. Git: `Downloading https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/Git-2.55.0.5-64-bit.exe (at most 15 minutes)`, `SHA-256 of Git-2.55.0.5-64-bit.exe: as pinned`, `Running the git installer (at most 10 minutes)`, `The git installer exited with 0`, `Git LFS initialized.`, `git-lfs/<version> ...`, `Step done: git`. Then `Disabled scheduled task \GoogleSystem\GoogleUpdater\...` and `Disabled service GoogleUpdater...` lines, reg.exe's `The operation completed successfully.` lines, `Held still: Chrome updater off, automatic Windows updates off, no sleep, no screen saver, no idle lock`, `Step done: hold`, `Closed: Remote Desktop off, firewall groups Remote Desktop and Windows Remote Management disabled, metadata service blocked for hiker`, `Step done: closed`, `Set-up finished. Restarting once; the next boot checks it.` If an installer fails, its log is `C:\ProgramData\test-rig\<name>-msi.log`, and an earlier attempt's is kept beside it with a time in its name. |
+| 7 | The restart | The log's next `Stop timer:` line: 4 hours after **this** boot, the set-up's restart. The stop comes 4 hours after the restart, not after the first start. Then icacls' lines again and `C:\ProgramData\test-rig: SYSTEM and Administrators only`. |
+| 8 | The verification boot | `NVIDIA driver 596.86; licensed product 'NVIDIA RTX Virtual Workstation'; licence 'Licensed (Expiry: N/A)'`; `DCV: Session: 'console' (owner:hiker type:console)`; `Desktop: hiker is logged on, in session 1`; `Display: DCV's console layout reads '<W>x<H>'; modes of 1920x1080 offered by the adapters: <n>`, and, if it was not 1920x1080, `Display: dcv set-display-layout --session console 1920x1080+0+0 exited with 0; the layout now reads '1920x1080'`; `Display adapter: Microsoft Basic Display Adapter, inactive, driver 10.0.26100.1` (present, and driving no display) and `Display adapter: NVIDIA Tesla T4, 1920x1080 at 60 Hz, driver 32.0.15.9686`; `Closed: Remote Desktop off; Remote Desktop and Windows Remote Management rules disabled; metadata blocked for hiker. Listening on all addresses (the security group admits none): :::135 :::445 :::47001 ... :::5985 0.0.0.0:135 ...`, with no `:3389`. 5985 and 47001 are Windows Remote Management's own listeners, which run whatever the firewall says; its rules are disabled, and the security group admits nothing, so nothing reaches them. Then `Set-up checked: the machine is ready`, and `C:\ProgramData\test-rig\verified` exists. The boot fails if the console is not `display_width` × `display_height`: `FAILED: The console is <W>x<H>, not 1920x1080`. On `FAILED:`, read it, then `Restart-Computer -Force`: nothing retries until a boot. |
 | 9 | CloudTrail's record of the password write (see [the password](#the-desktop-user-and-its-password)) | `requestParameters` has no `value`. |
-| 10 | DCV by hand: the port forward, sign in as `hiker` with the parameter's password | The desktop, at 1920 × 1080, with no licence error from DCV. Then **close the client**. |
+| 10 | DCV by hand: the port forward, sign in as `hiker` with the parameter's password | The desktop, at 1920 × 1080, with no licence error from DCV. Then **close the client**; a client may change the layout, and the next boot sets it back. |
 | 11 | `& 'C:\Program Files\NICE\DCV\Server\bin\dcv.exe' describe-session console --json` | Parses as JSON (no byte-order mark, not UTF-16); `num-of-connections` is `0`. |
-| 12 | The probe (see [The first run's probe](#the-first-runs-probe)) | `PASS`. Read every `WARNING`. Record the renderer string, the `chrome.exe` lines, `featureStatus`, the WebGPU adapter, `refreshHz`, the adapter list and `browserImds`. The desktop is not on a Microsoft Basic Display Adapter. If it fails only on `rasterization` or `gpu_compositing`, run it again with `--ignore-gpu-blocklist` and record both. |
+| 12 | The probe (see [The first run's probe](#the-first-runs-probe)) | `PASS`. Read every `WARNING`. Record the renderer string, the `chrome.exe` lines, `featureStatus`, the WebGPU adapter, `refreshHz`, the adapter list and `browserImds`. The screen is 1920 × 1080 (a different size fails). The desktop is on the NVIDIA adapter; a Microsoft Basic Display Adapter may be listed as well, `inactive`, driving no display. If it fails only on `rasterization` or `gpu_compositing`, run it again with `--ignore-gpu-blocklist` and record both. |
 | 13 | **Stop, then plan** (`terraform apply -var running=false`, then `terraform plan -var running=false`), and the plan for the next start (`terraform plan`) | `describe-instances` reads `stopped`, not `terminated`. The stopped plan shows **No changes**. The plan for the next start shows exactly **0 to add, 1 to change, 0 to destroy**: `aws_ec2_instance_state.test_rig` updated in place, `"stopped" -> "running"`. This is the one check of what no test here can show: that nothing AWS reports differently about a stopped machine (its public address, its public name, its root volume's tags) makes Terraform want to change or replace it. Refuse any other plan, above all one that says `aws_instance.test_rig` "must be replaced", until it is understood. |
 | 14 | `aws scheduler get-schedule --region us-east-1 --name test-rig-backstop-stop` | The target's input names this instance id. |
 | 15 | The timer check (see [It stops itself](#it-stops-itself)) | Step 1 stops the machine about 15 minutes after its start; step 2, with the one-time trigger removed by hand, about 15 minutes after its restart, and its log shows `0 one-time trigger(s)`; step 3's start, with the default back, is still running after 20 minutes. |
@@ -218,7 +218,7 @@ Step 13 of the first run checks it. What `destroy` leaves behind is listed above
 | `instance_type` | The provider stops the machine, changes its size and **starts it again**, whatever `running` says; the running/stopped setting is then applied again (it is re-made after any change to the machine), so a machine meant to be stopped ends stopped. The disk is kept. |
 | `max_run_hours` | The instance tag `max-run-minutes` changes in place. Nothing is restarted or replaced; the new limit applies from the machine's next boot. The running/stopped setting is applied again, as above. |
 | `disk_size_gb` | The disk grows in place, running or stopped (Windows' partition then needs extending by hand). A smaller size is refused by AWS. |
-| The start-up script (`setup.ps1`, the user data around it in `instance.tf`, or `desktop_user`, `password_parameter`, `display_width`, `display_height`, which are written into it), or `vpc_cidr` | **The machine is replaced**: `plan` shows `aws_instance.test_rig` "must be replaced". The new machine runs the first-boot set-up again (about 40 minutes, about $0.50) and makes a new desktop password; the old disk and everything on it go. **Refused while `running = false`**: a new machine must never be stopped before its first-boot set-up has finished (stopped seconds into Windows' own first boot, EC2 hard-stops it after a few minutes, and it may never boot again). Apply with `running = true`, wait for `verified`, then stop it. Until the new machine's first boot writes its password, the parameter holds the old machine's, which no longer works. |
+| The start-up script (`setup.ps1`, the user data around it in `instance.tf`, or `desktop_user`, `password_parameter`, `display_width`, `display_height`, which are written into it), or `vpc_cidr` | **The machine is replaced**: `plan` shows `aws_instance.test_rig` "must be replaced". The new machine runs the first-boot set-up again (about 7 minutes, under $0.10) and makes a new desktop password; the old disk and everything on it go. **Refused while `running = false`**: a new machine must never be stopped before its first-boot set-up has finished (stopped seconds into Windows' own first boot, EC2 hard-stops it after a few minutes, and it may never boot again). Apply with `running = true`, wait for `verified`, then stop it. Until the new machine's first boot writes its password, the parameter holds the old machine's, which no longer works. |
 | `region` | **Refused.** The region is chosen once: the provider's region is not an attribute of any resource, so a change would look for everything in the new region, lose it from state, and leave the machine, its disk and its schedule billing in the old one. To move: `terraform destroy` with the old region, then change it and apply. |
 | A new monthly Windows image | Nothing: the machine keeps its image. |
 | `image_id` | Nothing until `terraform apply -replace=aws_instance.test_rig`. |
@@ -375,8 +375,23 @@ an exit code alone:
    AWS documents that on Windows a console session "is automatically created and active after
    the server is installed", that DCV is free on EC2, and that the GPU drivers give "DirectX and
    OpenGL hardware acceleration for applications". It is set not to lock the desktop when a
-   client disconnects (`os-auto-lock`, on by default on Windows) and to start the console at
-   `display_width` × `display_height` (1920 × 1080).
+   client disconnects (`os-auto-lock`, on by default on Windows).
+
+   **The console's size.** The game is measured at `display_width` × `display_height`
+   (1920 × 1080), so the console must be that size with nobody connected. The set-up writes
+   DCV's `console-session-default-layout` (section `display`, a string, in the guide's own
+   form), which the guide says DCV applies "at startup" if the hardware and software support
+   it. On the first run's machine (2026-09-28) it did not take: with nobody connected, the
+   console came up at 1366 × 768, the NVIDIA driver's default for a display with no monitor.
+   So at every boot after set-up, once DCV's console session exists, the script asks again
+   with `dcv set-display-layout --session console 1920x1080+0+0`, the guide's command for a
+   running session, and reads the size back from DCV and from Windows. The verification boot
+   fails if the console is not that size; a later boot logs it, and the probe fails on it.
+   If `dcv set-display-layout` does not take with nobody connected either, the next means is
+   Windows' own: changing the display mode from inside the console session
+   (`ChangeDisplaySettingsEx`, run as the desktop user), which works on any mode the driver
+   offers. The verification boot logs how many 1920 × 1080 modes the adapters offer, to tell
+   the two apart.
 4. **Chrome** (stable), from Google's enterprise installer: not pinnable (that address serves
    only the current release), so its signature is checked (`Google LLC`) and its version logged.
 5. **Node 22.23.3** and **Git 2.55.0 for Windows** (with Git LFS; `git lfs install --system`),
@@ -396,6 +411,27 @@ write `C:\ProgramData\test-rig\verified`. A failure is logged as `FAILED: <reaso
 at the next boot, and the probe refuses to run until `verified` exists, printing that line.
 
 The log is `C:\ProgramData\test-rig\setup.log`. The repository is not cloned at boot.
+
+### How long a healthy first boot takes
+
+Measured on 2026-09-28, on `g4dn.xlarge` in `us-east-1`, from `setup.log`:
+
+| Step | Took |
+|---|---|
+| The desktop user (password made, written to Parameter Store) | 34 s |
+| The GRID driver: download from S3 | 64 s |
+| The GRID driver: install | 2 min 18 s |
+| DCV (download, checks, install) | 29 s |
+| Chrome | 50 s |
+| Node | 9 s |
+| Git with LFS | 34 s |
+| Holding it still, closing the host | 3 s |
+| The restart, to `Set-up checked: the machine is ready` | 42 s |
+
+From the first line of the log (`Stop timer: ...`, 01:43:47 UTC) to the restart (`Set-up
+finished`, 01:50:18) took 6 min 31 s, and to `Set-up checked: the machine is ready` (01:51:00)
+7 min 13 s. A step taking many times its figure here is worth a look before its time limit
+ends it.
 
 ### Which driver
 
@@ -571,12 +607,18 @@ user's console session with nobody connected, get the NVIDIA GPU? Programs start
 Session Manager shell run in the non-interactive services session, where Chrome could fall back
 to software. `probe.mjs` settles it for a few cents.
 
-From a Session Manager shell on the machine:
+From a Session Manager shell on the machine. An interactive shell (`terraform output -raw
+shell_command`) runs as `ssm-user`, and its profile (`C:\Users\ssm-user`) is a good place for the
+clone. A command sent with Systems Manager Run Command runs as the local system account, whose
+profile is under `C:\Windows\System32\config`: clone into `C:\probe` instead. The probe copies
+itself into the desktop user's profile to run there, so either place works. Until this module
+is merged into the default branch, the probe is only on the branch `worktree-test-rig-aws`:
+clone that branch (and drop `--branch worktree-test-rig-aws` once it is merged).
 
 ```powershell
-cd $env:USERPROFILE
-$env:GIT_LFS_SKIP_SMUDGE = '1'   # the probe needs no LFS objects
-git clone --depth 1 https://github.com/csarkosh/game-dayhike.git
+cd $env:USERPROFILE                              # Run Command: mkdir C:\probe; cd C:\probe
+$env:GIT_LFS_SKIP_SMUDGE = '1'                   # the probe needs no LFS objects
+git clone --depth 1 --branch worktree-test-rig-aws https://github.com/csarkosh/game-dayhike.git
 node game-dayhike\_infra\test-rig\probe.mjs
 ```
 
@@ -616,6 +658,9 @@ Three questions, in order:
      so no adapter, or a vendor other than `nvidia` (Chrome on Windows serves WebGPU through
      Direct3D 12 on the same GPU), is a `WARNING`, not a fail;
    - Chrome ran in the `Console` session, not session 0;
+   - the screen is the size asked for, in device pixels: `--display=<W>x<H>`, by default
+     `1920x1080` (the module's `display_width` × `display_height`). The message gives both
+     sizes, such as `the screen is 1366x768, not 1920x1080`;
    - no DCV client was connected, before, during or after;
    - the desktop session cannot reach the instance metadata service, from Node (a connection) or
      from Chrome's own network process (a top-level navigation to `http://169.254.169.254/`, which
@@ -668,7 +713,7 @@ Virtual Workstation rule fails by design.
 
 ## An image, so later machines start ready
 
-Once the machine is set up and verified, an image of it lets a later machine skip the 40-minute
+Once the machine is set up and verified, an image of it lets a later machine skip the 7-minute
 set-up. AWS's GRID page says a Windows machine started from a custom image needs that image
 "created with Windows Sysprep to ensure that the GRID driver works". So, from a Session Manager
 shell:
@@ -771,12 +816,19 @@ None of them runs in the repository's test workflow; run them by hand after a ch
   asked; removing it does nothing;
 - the budget: off by default and needing no email then; with it on, the tag filter, $30, alerts
   at 80 % and 100 % actual and 100 % forecast, and a refusal without an email address;
-- the backstop off with `null`; and the refusal of another size, another region, no timer, and a
-  timer in part minutes.
+- the backstop off with `null`; and the refusal of another size, another region, no timer, a
+  timer in part minutes, a user name over 20 characters or a built-in one, and a parameter name
+  that is reserved, over 15 levels or over 900 characters (with the 15-level, 900-character
+  name accepted);
+- the start-up script's installs: no MSI given `REMOVE=` without `ADDLOCAL=`, only the DCV
+  package's own feature names, every `-Description` within 48 characters, an earlier MSI log
+  moved aside before the next install, and the console asked for at `display_width` ×
+  `display_height` with the verification boot failing otherwise.
 
 `tests/setup.tests.ps1` checks: the script parses, with no syntax Windows PowerShell 5.1 lacks;
 the licence rule; the password; the signer rule; the stop plan and the tag; the time limits on
-downloads; and the stop timer's failure paths (above). `tests/probe.test.mjs` checks every pass
+downloads; the stop timer's failure paths (above); `inactive` for an adapter with no mode; the
+pinned hash's log line; and an earlier MSI log kept under a timed name. `tests/probe.test.mjs` checks every pass
 and fail rule of [the probe](#the-first-runs-probe).
 
 What only a machine shows is in [the first run](#the-first-run-step-by-step).
