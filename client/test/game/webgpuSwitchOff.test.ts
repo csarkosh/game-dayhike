@@ -10,7 +10,7 @@ import { readAutoRecord } from "../../src/game/tierChoice.js";
 
 /**
  * Wherever the rule gives WebGL2, which with `WEBGPU_ENABLED` on is every tier
- * but high, and high everywhere but desktop Chromium on macOS and Windows, a
+ * but high, and high everywhere but Chrome and Edge on macOS and Windows, a
  * player's start is what it was before the WebGPU engine was built: the same
  * tier decision, the same engine (WebGL2), the same records and log lines, the
  * engine's name aside. Nothing of WebGPU is fetched there: its module is
@@ -19,13 +19,15 @@ import { readAutoRecord } from "../../src/game/tierChoice.js";
  */
 describe("the start where the rule gives WebGL2", () => {
   const TIERS: readonly QualityTier[] = ["low", "medium", "high"];
-  const CHROME_MAC = { chromium: true, os: "mac", mobile: false } as const;
-  const EDGE_WINDOWS = { chromium: true, os: "windows", mobile: false } as const;
+  const CHROME_MAC = { chromeOrEdge: true, os: "mac", mobile: false } as const;
+  const EDGE_WINDOWS = { chromeOrEdge: true, os: "windows", mobile: false } as const;
   const OTHERS = [
-    { chromium: false, os: "mac", mobile: false }, // Safari
-    { chromium: false, os: "windows", mobile: false }, // Firefox
-    { chromium: true, os: "other", mobile: true }, // Chrome on Android
-    { chromium: true, os: "other", mobile: false }, // Chrome on Linux
+    { chromeOrEdge: false, os: "mac", mobile: false }, // Safari
+    { chromeOrEdge: false, os: "windows", mobile: false }, // Firefox
+    { chromeOrEdge: true, os: "other", mobile: true }, // Chrome on Android
+    { chromeOrEdge: true, os: "other", mobile: false }, // Chrome on Linux
+    { chromeOrEdge: false, os: "mac", mobile: false }, // the desktop launcher, Brave, Opera, Vivaldi
+    { chromeOrEdge: false, os: "windows", mobile: false }, // the same on Windows
   ] as const;
 
   it("is on, for the high tier alone", () => {
@@ -52,7 +54,7 @@ describe("the start where the rule gives WebGL2", () => {
     }
   });
 
-  it("draws every tier on WebGL2 without asking for WebGPU on Safari, Firefox, and Chrome on Android and Linux", async () => {
+  it("draws every tier on WebGL2 without asking for WebGPU on Safari, Firefox, Chrome on Android and Linux, the desktop launcher, Brave, Opera and Vivaldi", async () => {
     for (const host of OTHERS) {
       for (const tier of TIERS) {
         for (const fits of [null, false, true]) {
@@ -87,7 +89,7 @@ describe("the start where the rule gives WebGL2", () => {
   it("keys Auto's verdicts on WebGL2 where the rule gives the high tier WebGL2, so its tier decision and its records are the tier detection branch's", async () => {
     // The engine `main.ts` keys the verdicts on (`verdictEngineNow`): the high
     // tier's, here Safari's.
-    expect(chooseEngine({ tier: WEBGPU_TIERS[0] as QualityTier, override: null, remembered: false, on: WEBGPU_ENABLED, fits: true, chromium: false, os: "mac", mobile: false })).toBe("webgl2");
+    expect(chooseEngine({ tier: WEBGPU_TIERS[0] as QualityTier, override: null, remembered: false, on: WEBGPU_ENABLED, fits: true, chromeOrEdge: false, os: "mac", mobile: false })).toBe("webgl2");
     const signals: GpuSignals = {
       renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
     };
@@ -139,7 +141,7 @@ describe("the start where the rule gives WebGL2", () => {
     // The rule is handed the browser, the platform and the device as the GPU's
     // signals read them (`engineInput`), for every renderer the page builds.
     const input = main.slice(main.indexOf("function engineInput("), main.indexOf("\n}\n", main.indexOf("function engineInput(")));
-    expect(input).toContain("chromium: isChromium(nav),");
+    expect(input).toContain("chromeOrEdge: isChromeOrEdge(nav),");
     expect(input).toContain("os: hostOs(nav),");
     expect(input).toContain("mobile: read.mobile,");
   });
