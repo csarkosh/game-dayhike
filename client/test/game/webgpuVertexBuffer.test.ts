@@ -115,6 +115,29 @@ describe("every vertex buffer drawn on a WebGPU engine, whoever made it", () => 
     }
   });
 
+  it("costs a buffer already keyed one set lookup a draw, no property read or write", () => {
+    const { fern, shrub } = plant();
+    const uninstall = keyEveryBoundBuffer(WebGPUCacheRenderPipeline.prototype);
+    try {
+      const cache = new WebGPUCacheRenderPipelineTree({ limits: {} } as never, plant().fern);
+      cache.setBuffers({ uv: fern }, null, { uv: shrub });
+      const write = vi.spyOn(Object, "defineProperty");
+      const read = vi.spyOn(Object, "getOwnPropertyDescriptor");
+      // Making the second spy defines a few properties itself.
+      write.mockClear();
+      try {
+        for (let draw = 0; draw < 3; draw++) cache.setBuffers({ uv: fern }, null, { uv: shrub });
+        expect([read.mock.calls.length, write.mock.calls.length]).toEqual([0, 0]);
+      } finally {
+        read.mockRestore();
+        write.mockRestore();
+      }
+      expect(fern.hashCode - shrub.hashCode).toBe(12 * OFFSET_HASH_SHIFT);
+    } finally {
+      uninstall();
+    }
+  });
+
   it("leaves every vertex buffer drawn on a WebGL2 engine as it was", () => {
     const uninstall = keyEveryBoundBuffer(WebGPUCacheRenderPipeline.prototype);
     try {

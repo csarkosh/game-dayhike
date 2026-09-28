@@ -48,10 +48,15 @@ import type { Buffer, VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 /** How far above the stride's bits the byte offset is folded into the hash. */
 export const OFFSET_HASH_SHIFT = 2 ** 24;
 
+/** Every vertex buffer already keyed. A set lookup is what a buffer costs on
+ * every later draw, where reading its property descriptor would allocate. */
+const keyedBuffers = new WeakSet<VertexBuffer>();
+
 /** `vertexBuffer` with its hash keyed by its byte offset for every read, once:
  * a buffer already keyed is left as it is. */
 export function keyByOffset(vertexBuffer: VertexBuffer): VertexBuffer {
-  if (Object.getOwnPropertyDescriptor(vertexBuffer, "hashCode")?.get !== undefined) return vertexBuffer;
+  if (keyedBuffers.has(vertexBuffer)) return vertexBuffer;
+  keyedBuffers.add(vertexBuffer);
   let base = vertexBuffer.hashCode;
   Object.defineProperty(vertexBuffer, "hashCode", {
     configurable: true,
