@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import { wgslMapPlugin } from "../tools/wgsl/lib/mapPlugin.mjs";
 import { translatorDigests } from "../tools/wgsl/lib/translators.mjs";
 import { timeLimit } from "./test/helpers/timeLimit.js";
 
@@ -7,6 +8,15 @@ import { timeLimit } from "./test/helpers/timeLimit.js";
 const CLIENT = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
+  plugins: [
+    // The WGSL map of the shader corpus, the WebGPU shader lookup's first
+    // source: a hashed asset of the WebGPU chunk in the build, made on the dev
+    // server as it starts (`tools/wgsl/lib/mapPlugin.mjs`).
+    wgslMapPlugin({
+      mapFile: fileURLToPath(new URL("shaders/map/wgsl-map.json", import.meta.url)),
+      tool: fileURLToPath(new URL("../tools/wgsl/build-map.mjs", import.meta.url)),
+    }),
+  ],
   define: {
     // The SHA-256 of each shader translator as Babylon ships it, its
     // WebAssembly and its JavaScript loader, `glslang=<hex>|twgsl=<hex>|

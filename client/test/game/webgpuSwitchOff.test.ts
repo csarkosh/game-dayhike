@@ -99,6 +99,32 @@ describe("the start with the WebGPU switch off", () => {
     expect(naming.map((file) => relative(src, file))).toEqual(["game/gpuEngine.ts"]);
   });
 
+  it("names the map of translations the build ships in the WebGPU module alone, which the page's first load never imports", () => {
+    const src = fileURLToPath(new URL("../../src", import.meta.url));
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith(".ts") && !e.name.endsWith(".d.ts") ? [join(dir, e.name)] : [],
+      );
+    const code = (file: string): string => readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+    const naming = files(src).filter((file) => code(file).includes("virtual:dayhike-wgsl-map"));
+    expect(naming.map((file) => relative(src, file))).toEqual(["game/gpuEngine.ts"]);
+    // The modules that fetch and read it, and the one that names it, are
+    // reached from main.ts only through the WebGPU module's dynamic import.
+    const reached = new Set<string>();
+    const stack = [join(src, "main.ts")];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (reached.has(file)) continue;
+      reached.add(file);
+      for (const m of readFileSync(file, "utf8").matchAll(/^\s*import\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["'](\.[^"']+)\.js["']/gm)) {
+        stack.push(join(file, "..", `${m[1] as string}.ts`));
+      }
+    }
+    expect(reached.size).toBeGreaterThan(20);
+    const lookup = [...reached].map((file) => relative(src, file)).filter((file) => /gpuEngine|shaderLookup|wgslMap|wgslStore|wgslFormat/.test(file));
+    expect(lookup).toEqual([]);
+  });
+
   it("imports the WebGPU module in one place, on the path the rule sends to WebGPU", () => {
     const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
     // The one runtime import (the other names the module's type only).
