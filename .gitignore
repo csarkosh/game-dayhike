@@ -22,12 +22,33 @@ coverage/
 *.tgz
 *.dmg
 
-# Terraform
-_infra/.terraform/
+# Terraform. Plan files and state hold every resource attribute in clear;
+# tfvars files hold account-specific values and addresses. A saved plan has no
+# fixed name, so under _infra/ every name one is likely to get is ignored.
+**/.terraform/
 *.tfstate
 *.tfstate.backup
+.terraform.tfstate.lock.info
+*.tfplan
+*.tfplan.json
+tfplan
+plan.out
+_infra/**/*.plan
+_infra/**/*.plan.json
+_infra/**/plan
+_infra/**/plan.json
+_infra/**/*.out
+_infra/**/*.bin
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+crash.log
+crash.*.log
 *.tfvars
+*.tfvars.json
 !_infra/terraform.tfvars.example
+!_infra/test-rig-gcp/terraform.tfvars.example
 
 # Desktop release working state.
 desktop/.cache/
