@@ -19,7 +19,9 @@ player chooses Auto, High, Medium or Low from one drop-down on the title's and
 the pause screen's Settings; a choice made mid-hike is applied live, the
 renderer rebuilt on a fresh canvas behind a cover that lifts when the new scene
 and its forest are ready, or at 20 s after Apply and 10 s after a governor's
-drop. `?tier=` overrides everything and `?probe=` forces a probe. The older
+drop. `?tier=` overrides everything and `?probe=` forces a probe, on the
+machine whose address carries them: a lobby host's announced route goes out
+without them, and a follower drops them from a route it is sent to. The older
 rule from cores and memory (`tierFor`, `detectTier`) is kept as the tier of a
 renderer given none (§6.3).
 

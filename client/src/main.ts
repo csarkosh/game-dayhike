@@ -10,7 +10,8 @@ import {
   replaceWithLanding,
   leavePanel,
   browserExit,
-  announcedPath,
+  hostRoute,
+  stripOverrides,
   sameFollowPlace,
   type Route,
 } from "./game/router.js";
@@ -316,18 +317,21 @@ function detach(): void {
 
 /** A follower goes where the host is. The host's route is "" until known,
  * and the landing page and its panels are one place (`sameFollowPlace`): a
- * follower in its own Settings stays there while the host is on the landing. */
+ * follower in its own Settings stays there while the host is on the landing.
+ * The route is taken without `?tier=` and `?probe=` (`stripOverrides`), which
+ * a host that still announces them would otherwise impose on this machine,
+ * and compared with where this page is without its own. */
 function follow(active: Lobby): void {
   if (active.state.role !== "client") return;
-  const target = active.state.route;
-  if (target === "" || sameFollowPlace(target, currentRoutePath())) return;
+  const target = stripOverrides(active.state.route);
+  if (target === "" || sameFollowPlace(target, stripOverrides(currentRoutePath()))) return;
   navigateTo(target);
 }
 
 /** Host side: tell the lobby where we are now, a landing panel as the landing
- * page (`announcedPath`). Called from render(). */
+ * page, without this page's own overrides (`hostRoute`). Called from render(). */
 function announceRoute(): void {
-  if (lobby !== null && lobby.state.role === "host") lobby.setRoute(announcedPath(currentRoutePath()));
+  if (lobby !== null && lobby.state.role === "host") lobby.setRoute(hostRoute(currentRoutePath()));
 }
 
 // Landing routes are announced at once; the game route only after its first
@@ -354,7 +358,7 @@ async function openLobby(): Promise<void> {
       peerId: selfId,
       lobbyId: createLobbyId(),
       name: selfName,
-      route: currentRoutePath(),
+      route: hostRoute(currentRoutePath()),
     });
     // Abandoned while the reply was in the air. The room is real and hosted by
     // us, so say goodbye properly rather than dropping the socket and leaving

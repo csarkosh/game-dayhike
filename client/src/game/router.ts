@@ -117,6 +117,35 @@ export function sameFollowPlace(target: string, current: string): boolean {
   return isLandingFamily(routeOf(target)) && isLandingFamily(routeOf(current));
 }
 
+/**
+ * The query parameters that belong to this page alone: `?tier=` and
+ * `?probe=`, a tester's overrides. Stripped from the route a lobby host
+ * announces (`stripOverrides`), so neither follows a host onto a follower's
+ * machine, and from a route a follower is sent to, for a host that still
+ * announces them.
+ */
+const OVERRIDES = ["tier", "probe"] as const;
+
+/**
+ * `route` (a path and query, as a lobby host announces it) without the
+ * overrides. A route with none comes back byte for byte.
+ */
+export function stripOverrides(route: string): string {
+  const at = route.indexOf("?");
+  if (at < 0) return route;
+  const params = new URLSearchParams(route.slice(at));
+  if (!OVERRIDES.some((name) => params.has(name))) return route;
+  for (const name of OVERRIDES) params.delete(name);
+  const query = params.toString();
+  return query === "" ? route.slice(0, at) : `${route.slice(0, at)}?${query}`;
+}
+
+/** The route a lobby host announces for where it is (`current`): a landing
+ * panel as the landing page (`announcedPath`), the overrides stripped. */
+export function hostRoute(current: string): string {
+  return stripOverrides(announcedPath(current));
+}
+
 /** Where the page is, relative to the base, query included. This is what a
  * lobby host broadcasts and what a follower navigates to. */
 export function currentRoutePath(): string {
