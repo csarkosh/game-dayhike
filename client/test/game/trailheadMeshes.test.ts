@@ -13,7 +13,9 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
-import { carYaw, createTrailheadMeshes, posterMaterial, type TrailheadSites } from "../../src/game/trailheadMeshes.js";
+import { carYaw, createTrailheadMeshes, type TrailheadSites } from "../../src/game/trailheadMeshes.js";
+import type { BoardDrawing } from "../../src/game/boardPaint.js";
+import { boardText } from "../../src/game/boardFace.js";
 
 registerBuiltInLoaders();
 
@@ -55,10 +57,15 @@ const SITES: TrailheadSites = {
   board: { x: 6, z: 39, fx: 0, fz: -1, ax: 1, az: 0 },
 };
 const groundH = (x: number, z: number): number => 3 + 0.01 * x - 0.02 * z;
-const LINES = ["MISSING", "Dana Whitcombe", "Last seen at Trail 14."];
+const DRAWING: BoardDrawing = {
+  seed: 2032433950,
+  text: boardText("Trail 14", "Hugh Kowalski", "Last seen at Trail 14.", 1274),
+  map: { nodes: [{ x: 0, z: 0 }, { x: 100, z: 0 }], edges: [{ a: 0, b: 1, kind: "stem" }], road: [], features: [], places: [], summitName: "Summit" },
+  urls: { paper: null, portrait: null },
+};
 
 function setup(scene: Scene, loader: (output: string) => Promise<AssetContainer>) {
-  const painted: { name: string; lines: readonly string[]; width: number; height: number; material: Material }[] = [];
+  const painted: { name: string; drawing: BoardDrawing; material: Material }[] = [];
   const shadowed = new Set<AbstractMesh>();
   const boxMaterials: string[] = [];
   const meshes = createTrailheadMeshes(scene, SITES, groundH, {
@@ -66,12 +73,12 @@ function setup(scene: Scene, loader: (output: string) => Promise<AssetContainer>
       boxMaterials.push(name);
       return new StandardMaterial(`box_${name}`, scene);
     },
-    lines: LINES,
+    board: DRAWING,
     // A NullEngine has no canvas to paint on; the painter is the one part
     // of this that needs a browser.
-    paint: (s, name, lines, width, height) => {
+    paint: (s, name, drawing) => {
       const material = new PBRMaterial(name, s);
-      painted.push({ name, lines, width, height, material });
+      painted.push({ name, drawing, material });
       return material;
     },
     shadows: { add: (m) => shadowed.add(m), remove: (m) => shadowed.delete(m) },
@@ -191,64 +198,52 @@ describe("createTrailheadMeshes", () => {
     meshes.dispose();
   });
 
-  it("paints the poster on the kiosk's one untextured material, upright on the face toward the pad", async () => {
+  it("draws the face on a plane of its own, a millimetre in front of the model's, upright and toward the player", async () => {
     const scene = freshScene();
     const { meshes, painted } = setup(scene, diskLoader(scene));
     await meshes.ready;
-    expect(painted.map(({ name, lines, width, height }) => ({ name, lines, width, height }))).toEqual([
-      { name: "mat_poster", lines: LINES, width: 1024, height: 512 },
-    ]);
-    const poster = painted[0]!.material;
-    const kiosk = scene.getTransformNodeByName("trailhead_kiosk")!;
-    const boards = descendantNamed(kiosk, "LOD0").getChildMeshes(false).filter((m) => m.material === poster);
-    expect(boards).toHaveLength(1);
-    const verts = worldVertices(boards[0]!);
-    // The board hangs on the -z face here, the way the poster faces, 0.16 m off the kiosk's centre.
-    for (const { p } of verts) expect(p.z).toBeCloseTo(39 - 0.159, 2);
-    // Seen from the pad (looking +z, so +x is to the right), the board's
-    // top-left corner carries the canvas's top-left: u = 0 and v = 1, where a
-    // painted canvas's top row is uploaded.
+    expect(painted.map(({ name, drawing }) => ({ name, drawing }))).toEqual([{ name: "trailhead_board_face", drawing: DRAWING }]);
+    const face = scene.getMeshByName("trailhead_board_face") as Mesh;
+    expect(face.material).toBe(painted[0]!.material);
+    const verts = worldVertices(face);
+    expect(verts).toHaveLength(4);
+    // The board is at (6, 39) and its face looks toward -z: the plane stands
+    // 0.159 m and a millimetre in front of the board's centre plane.
+    for (const { p } of verts) expect(p.z).toBeCloseTo(38.84, 6);
     const top = Math.max(...verts.map(({ p }) => p.y));
     const bottom = Math.min(...verts.map(({ p }) => p.y));
     const left = Math.min(...verts.map(({ p }) => p.x));
     const right = Math.max(...verts.map(({ p }) => p.x));
+    // 2 m by 1 m, its centre 1.37 m above the board's foot, which is on the ground at 2.28.
+    expect(right - left).toBeCloseTo(2, 6);
+    expect(top - bottom).toBeCloseTo(1, 6);
+    expect((top + bottom) / 2).toBeCloseTo(3.65, 6);
+    expect((left + right) / 2).toBeCloseTo(6, 6);
+    // Seen from in front (looking +z, so +x is to the right), the texture's
+    // top-left corner is the plane's: u = 0 and v = 1, where a painted
+    // canvas's top row is uploaded.
     const at = (x: number, y: number) => verts.find(({ p }) => Math.abs(p.x - x) < 1e-4 && Math.abs(p.y - y) < 1e-4)!;
-    expect(right - left).toBeCloseTo(2, 3);
-    expect(top - bottom).toBeCloseTo(1, 3);
     expect([at(left, top).u, at(left, top).v]).toEqual([0, 1]);
     expect([at(right, top).u, at(right, top).v]).toEqual([1, 1]);
     expect([at(left, bottom).u, at(left, bottom).v]).toEqual([0, 0]);
-    // The kiosk's own board material is gone; the painted one replaced it on every level.
-    for (const lod of ["LOD1", "LOD2"]) {
-      expect(descendantNamed(kiosk, lod).getChildMeshes(false).filter((m) => m.material === poster)).toHaveLength(1);
-    }
-    for (const m of kiosk.getChildMeshes(false)) {
-      if (m.material === poster || m.material === null) continue;
-      expect((m.material as PBRMaterial).albedoTexture).not.toBeNull();
-    }
+    expect(face.isPickable).toBe(false);
     meshes.dispose();
+    expect(scene.getMeshByName("trailhead_board_face")).toBeNull();
   });
 
-  it("finds the poster by its missing base colour texture, whose v the loader leaves top-down", async () => {
+  it("leaves the model's own materials as they are", async () => {
     const scene = freshScene();
-    const container = await diskLoader(scene)("models/trailhead.kiosk.glb");
-    const board = posterMaterial(container)!;
-    expect(board).toBeInstanceOf(PBRMaterial);
-    const mesh = container.meshes.find((m) => m.material === board)!;
-    const pos = mesh.getVerticesData(VertexBuffer.PositionKind)!;
-    const uv = mesh.getVerticesData(VertexBuffer.UVKind)!;
-    // The file's own top-left corner (x = -1 in the file, y = 1.866): the
-    // loader keeps glTF's v = 0 at the top, which is why the poster's v is
-    // turned before a painted canvas goes on it.
-    let found = false;
-    for (let i = 0; i < pos.length / 3; i++) {
-      if (Math.abs((pos[3 * i] as number) + 1) < 1e-3 && Math.abs((pos[3 * i + 1] as number) - 1.866) < 1e-3) {
-        expect([uv[2 * i], uv[2 * i + 1]]).toEqual([0, 0]);
-        found = true;
-      }
+    const { meshes, painted } = setup(scene, diskLoader(scene));
+    await meshes.ready;
+    const kiosk = scene.getTransformNodeByName("trailhead_kiosk")!;
+    // The file's own root is a mesh with nothing to draw, and no material.
+    const drawn = kiosk.getChildMeshes(false).filter((m) => m.name !== "trailhead_board_face" && m.getTotalVertices() > 0);
+    expect(drawn.length).toBeGreaterThan(0);
+    for (const m of drawn) {
+      expect(m.material).not.toBe(painted[0]!.material);
+      expect(m.material).not.toBeNull();
     }
-    expect(found).toBe(true);
-    container.dispose();
+    meshes.dispose();
   });
 
   it("keeps the boxes, and paints nothing, when the models never load", async () => {
@@ -260,6 +255,7 @@ describe("createTrailheadMeshes", () => {
     expect(scene.getMeshByName("trailhead_kiosk_box_4")).not.toBeNull();
     expect(shadowed.size).toBe(6);
     expect(painted).toHaveLength(0);
+    expect(scene.getMeshByName("trailhead_board_face")).toBeNull();
     meshes.dispose();
     expect(scene.getMeshByName("trailhead_car_box")).toBeNull();
     expect(shadowed.size).toBe(0);

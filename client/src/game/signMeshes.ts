@@ -20,8 +20,6 @@ export const SIGN_ARM_OUTPUT = "models/sign.arm.glb";
 /** One plank's label texture: one name on one line across a 1 m board, so wide and short. */
 export const LABEL_TEXTURE = { width: 1024, height: 192 } as const;
 
-/** Makes the painted material for the trailhead poster: `paintedMaterial`, or a stand-in where there is no canvas. */
-export type Painter = (scene: Scene, name: string, lines: readonly string[], width: number, height: number) => Material;
 /** Makes the see-through lettering for one plank face: `paintedLabel`, or a stand-in where there is no canvas. */
 export type LabelPainter = (scene: Scene, name: string, text: string, width: number, height: number) => Material;
 
@@ -70,46 +68,16 @@ export const POST_HEIGHT = 2.221;
 export const POST_CLEARANCE = 0.1;
 /** The gap between a label and the arm face it sits on: enough to never fight it for depth. */
 const LABEL_LIFT = 0.001;
-const WOOD = "#6b4f2a";
-const PAINT = "#f2ead8";
 /** The lettering: dark, like letters routed into weathered wood. */
-const CARVED = "#24180c";
+export const CARVED = "#24180c";
 /** The lit lower lip of a routed letter, drawn a little below it. */
-const CARVED_LIP = "rgba(236, 214, 170, 0.35)";
-
-/**
- * Painted wood: the words are drawn into a texture on the trailhead poster's
- * board rather than floated in the air, so they are read the way a notice is —
- * by walking up to it with a lamp. One texture per world, never rebuilt. The
- * canvas is uploaded top row at v = 1, Babylon's own texture convention.
- */
-export function paintedMaterial(scene: Scene, name: string, lines: readonly string[], width: number, height: number): PBRMaterial {
-  const texture = new DynamicTexture(name, { width, height }, scene, false);
-  const ctx = texture.getContext();
-  ctx.fillStyle = WOOD;
-  ctx.fillRect(0, 0, width, height);
-  // The largest size at which every line fits the width (monospace runs about
-  // 0.62 em per glyph) and all the lines fit the height.
-  const longest = Math.max(1, ...lines.map((l) => l.length));
-  const size = Math.round(Math.min(height * 0.45, (height / (lines.length + 1)) * 0.8, (width * 0.92) / (longest * 0.62)));
-  ctx.font = `bold ${size}px ui-monospace, monospace`;
-  ctx.fillStyle = PAINT;
-  for (const [i, line] of lines.entries()) {
-    ctx.fillText(line, size * 0.5, size * 1.2 + i * size * 1.3);
-  }
-  texture.update(true);
-  const material = new PBRMaterial(`${name}_mat`, scene);
-  material.albedoTexture = texture;
-  material.metallic = 0;
-  material.roughness = 0.9;
-  return material;
-}
+export const CARVED_LIP = "rgba(236, 214, 170, 0.35)";
 
 /**
  * Takes the wear out of painted lettering: soft patches of fade, then the
  * flakes, chips and scratches knocked clean through to the clear ground.
  */
-function scrape(ctx: CanvasRenderingContext2D, wear: LabelWear): void {
+export function scrape(ctx: CanvasRenderingContext2D, wear: LabelWear): void {
   ctx.save();
   ctx.globalCompositeOperation = "destination-out";
   for (const p of wear.patches) {

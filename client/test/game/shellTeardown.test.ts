@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import type { BoardDrawing } from "../../src/game/boardPaint.js";
+import { boardText } from "../../src/game/boardFace.js";
 import { readFileSync } from "node:fs";
 
 /**
@@ -126,6 +128,13 @@ describe("a container that lands after its shell was disposed", () => {
 
 describe("a placed model disposed with its model in flight", () => {
   const POSTS = [{ x: 0, z: 0, arms: [{ dx: 0, dz: 1, names: ["Trailhead"], ranks: [0] }] }];
+  /** What the board's face carries: enough for a painter that draws nothing. */
+  const BOARD: BoardDrawing = {
+    seed: 1,
+    text: boardText("Trail 14", "Dana Whitcombe", "Last seen at Trail 14.", 1274),
+    map: { nodes: [{ x: 0, z: 0 }], edges: [], road: [], features: [], places: [], summitName: "Summit" },
+    urls: { paper: null, portrait: null },
+  };
   const SITES = {
     car: { site: { x: 10, z: 20 }, trailhead: { x: 1, z: 32 } },
     board: { x: 6, z: 39, fx: 0, fz: -1, ax: 1, az: 0 },
@@ -142,7 +151,7 @@ describe("a placed model disposed with its model in flight", () => {
     trailhead: (scene: Scene) =>
       createTrailheadMeshes(scene, SITES, groundH, {
         materialFor: (name) => new StandardMaterial(`box_${name}`, scene),
-        lines: ["MISSING"],
+        board: BOARD,
         paint: (s, name) => new PBRMaterial(name, s),
         loader: heldLoader(scene),
       }),

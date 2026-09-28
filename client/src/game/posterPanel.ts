@@ -16,11 +16,6 @@ export function posterModel(search: Search): PosterView {
   };
 }
 
-/** The lines painted on the notice board: the title, the name, and where. */
-export function posterBoardLines(search: Search): string[] {
-  return [POSTER_TITLE, search.hiker.name, POSTER_LAST_SEEN];
-}
-
 const STYLE = `
   .poster {
     position: absolute; inset: 0; display: none;

@@ -1,22 +1,21 @@
-import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
-import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
-import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 
 import { BOARD_BOX_HALF, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes, type Board } from "../sim/trailhead.js";
 import type { Vec3 } from "../sim/types.js";
+import { BOARD_FACE } from "./boardFace.js";
+import { paintedBoard, type BoardDrawing, type BoardPainter } from "./boardPaint.js";
 import type { PropShadows } from "./propMeshes.js";
-import { armYaw, paintedMaterial, type Painter } from "./signMeshes.js";
+import { armYaw } from "./signMeshes.js";
 import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 
 export const TRAILHEAD_CAR_OUTPUT = "models/trailhead.car.glb";
 export const TRAILHEAD_KIOSK_OUTPUT = "models/trailhead.kiosk.glb";
-/** The poster's painted texture: the board is 2 m by 1 m, so twice as wide as tall. */
-export const POSTER_TEXTURE = { width: 1024, height: 512 } as const;
+/** How far in front of the model's own face the painted plane stands. */
+export const BOARD_FACE_LIFT = 0.001;
 
 type Site = { x: number; z: number };
 
@@ -30,9 +29,9 @@ export type TrailheadSites = {
 export type TrailheadDeps = {
   /** The box material by prop name — `terrainMaterialFor`, as the prop boxes use. */
   materialFor(name: string): Material;
-  /** The poster's lines, top to bottom. */
-  lines: readonly string[];
-  paint?: Painter;
+  /** What the board's face carries. */
+  board: BoardDrawing;
+  paint?: BoardPainter;
   shadows?: PropShadows;
   loader?: ModelLoader;
 };
@@ -54,39 +53,15 @@ export function carYaw(site: Site, trailhead: Site): number {
 }
 
 /**
- * The kiosk's poster material: the one material in the model with no base
- * colour texture. Null unless there is exactly one, so a model that breaks the
- * rule shows its own board rather than paint on the wrong part.
- */
-export function posterMaterial(container: AssetContainer): Material | null {
-  const bare = container.materials.filter((m) => m instanceof PBRMaterial && m.albedoTexture === null);
-  return bare.length === 1 ? (bare[0] as Material) : null;
-}
-
-/**
- * Turns a glTF texture coordinate's v (0 at the image's top) into Babylon's
- * (0 at the bottom). The loader keeps glTF's v as it is and uploads the file's
- * own textures unflipped to match, but a painted canvas is uploaded the other
- * way up, its top row at v = 1 — as it is on every other painted surface in
- * the game. Without this the poster would hang upside down.
- */
-function flipPosterV(mesh: AbstractMesh): void {
-  const uvs = mesh.getVerticesData(VertexBuffer.UVKind);
-  if (uvs === null) return;
-  const flipped = new Float32Array(uvs.length);
-  for (let i = 0; i < uvs.length; i += 2) {
-    flipped[i] = uvs[i] as number;
-    flipped[i + 1] = 1 - (uvs[i + 1] as number);
-  }
-  (mesh as Mesh).setVerticesData(VertexBuffer.UVKind, flipped, false);
-}
-
-/**
- * The trailhead's two models, placed once from the seed's sites: the ranger's
- * SUV on the shoulder and the roofed kiosk with the missing hiker's poster.
- * Each stands on the box the sim collides with and, until its model arrives
- * (or for good, if it never does), that box is drawn instead, exactly as the
- * prop boxes elsewhere are — so the pad never holds an invisible wall.
+ * The trailhead's two models, placed once from the seed's places: the
+ * ranger's SUV on the shoulder and the roofed board at the trail's
+ * entrance, turned to face where a player arrives. Each stands on the
+ * boxes the sim collides with and, until its model arrives (or for good, if
+ * it never does), those boxes are drawn instead, exactly as the prop boxes
+ * elsewhere are — so the trailhead never holds an invisible wall. The
+ * board's face is a plane of the game's own, painted when the match starts
+ * (`boardPaint.ts`) and placed by the face's size and place, which are the
+ * model's to keep.
  */
 export function createTrailheadMeshes(
   scene: Scene,
@@ -98,7 +73,7 @@ export function createTrailheadMeshes(
   // quietly (`modelLoad.ts`).
   const loads = new AbortController();
   const load = loaderUntilAborted(deps.loader ?? defaultModelLoader(scene), loads.signal);
-  const paint = deps.paint ?? paintedMaterial;
+  const paint = deps.paint ?? paintedBoard;
   let disposed = false;
   const placed: PlacedModel[] = [];
   const painted: Material[] = [];
@@ -124,7 +99,7 @@ export function createTrailheadMeshes(
 
   async function place(
     output: string, name: string, site: Site, yaw: number, boxes: readonly Mesh[],
-    dress?: (container: AssetContainer) => void,
+    after?: (model: PlacedModel) => void,
   ): Promise<void> {
     let container: AssetContainer;
     try {
@@ -140,7 +115,6 @@ export function createTrailheadMeshes(
     }
     let model: PlacedModel;
     try {
-      dress?.(container);
       model = placeStaticModel(container, name, site.x, groundH(site.x, site.z), site.z, yaw);
     } catch {
       container.dispose();
@@ -149,20 +123,28 @@ export function createTrailheadMeshes(
     for (const m of model.meshes) deps.shadows?.add(m);
     placed.push(model);
     for (const box of boxes) dropBox(box);
+    after?.(model);
   }
 
-  function dressKiosk(container: AssetContainer): void {
-    const board = posterMaterial(container);
-    if (board === null) return;
-    const poster = paint(scene, "mat_poster", deps.lines, POSTER_TEXTURE.width, POSTER_TEXTURE.height);
-    painted.push(poster);
-    for (const mesh of container.meshes) {
-      if (mesh.material !== board) continue;
-      flipPosterV(mesh);
-      mesh.material = poster;
-    }
-    container.materials.splice(container.materials.indexOf(board), 1);
-    board.dispose();
+  let face: Mesh | null = null;
+  /**
+   * The face's own plane: 2 m by 1 m, a millimetre in front of the model's
+   * planks, in the board's own space so it turns with the board. A plane
+   * looks toward -Z as it is made; half a turn points it out of the face,
+   * and leaves the texture's left at the player's left.
+   */
+  function faceOn(model: PlacedModel): void {
+    const material = paint(scene, "trailhead_board_face", deps.board);
+    painted.push(material);
+    const plane = MeshBuilder.CreatePlane("trailhead_board_face", { width: BOARD_FACE.width, height: BOARD_FACE.height }, scene);
+    plane.parent = model.node;
+    plane.position.set(0, BOARD_FACE.centreY, BOARD_FACE.front + BOARD_FACE_LIFT);
+    plane.rotation.y = Math.PI;
+    plane.material = material;
+    plane.isPickable = false;
+    // It takes the shadows the board does, but casts none of its own.
+    plane.receiveShadows = true;
+    face = plane;
   }
 
   const ready = Promise.all([
@@ -170,7 +152,7 @@ export function createTrailheadMeshes(
     place(
       TRAILHEAD_KIOSK_OUTPUT, "trailhead_kiosk", sites.board,
       // The model's face looks toward +Z; turn +Z onto the board's facing.
-      armYaw({ dx: sites.board.fx, dz: sites.board.fz }), kioskBoxes, dressKiosk,
+      armYaw({ dx: sites.board.fx, dz: sites.board.fz }), kioskBoxes, faceOn,
     ),
   ]).then(() => undefined);
 
@@ -182,6 +164,8 @@ export function createTrailheadMeshes(
       loads.abort();
       dropBox(carBox);
       for (const box of kioskBoxes) dropBox(box);
+      face?.dispose();
+      face = null;
       for (const model of placed) {
         for (const m of model.meshes) deps.shadows?.remove(m);
         model.dispose();
