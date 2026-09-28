@@ -1,7 +1,5 @@
 # Trail 14 Trailhead Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** A player arrives on the pad facing the trail, with the car behind them and a sign reading "Trail 14" at the trail's entrance turned toward them; the trail's name replaces "the summit trail" wherever a player reads it; and the code that holds the poster, the body's place and the car is renamed from `register` to `search`.
 
 **Architecture:** Everything is derived from the seed and the trail graph on every peer, with nothing new on the wire. The car's place, the entrance and the spawn's gap live with the trailhead pass (`sim/passes/trailhead.ts`), the player's place and facing in `sim/spawn.ts`, the sign in `sim/signs.ts`, and two small pure modules carry the geometry (`sim/boxGap.ts`) and the trig-free facing (`sim/facing.ts`). The game gives the input sampler the spawn's facing, because a player's yaw is whatever their input says.
@@ -26,7 +24,7 @@
 - On this machine run `npm run typecheck`, `npm run lint` and the test files a task names. The full suites run once, in Task 9.
 - A pinned value that moves is read from a run of the changed code and written as a literal, with a dated comment saying what it was and why it moved, as `client/test/sim/groundGradient.test.ts` already does.
 
-## Review Focus
+## Inputs the tests must also cover
 
 Inputs the spec implies and a person will meet. Each has its test in the task that owns the code.
 
