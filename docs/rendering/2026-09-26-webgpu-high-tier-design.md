@@ -517,7 +517,7 @@ for run here and fail elsewhere.
 
 | limit | WebGPU default | required | why |
 | --- | --- | --- | --- |
-| `maxInterStageShaderVariables` | 16 | **17** | the blade material: PBR's varyings plus the foliage plugin's four (`foliage.vertex.fx:21–24`), as the spike measured |
+| `maxInterStageShaderVariables` | 16 | **19** (as found: 17 was one short) | the giant trees' faded material: 18 vertex outputs, and, since Babylon declares every vertex output as a fragment input, 18 fragment inputs plus `front_facing`, which WebGPU counts (§6.4) |
 | `maxSampledTexturesPerShaderStage` | 16 | measured by Task 2 | the terrain's fragment: seven layer maps and arrays, road ×2, trail ×2, the feature table, the atmosphere's gradient, the environment cube, the BRDF lookup and the cascaded shadow map, about 16 |
 | `maxSamplersPerShaderStage` | 16 | measured by Task 2 | the same, plus the shadow map's comparison sampler |
 | `maxUniformBuffersPerShaderStage` | 12 | measured by Task 2 | scene, mesh and material blocks, one per light up to `LIGHT_BUDGET` 7 (`headlamp.ts:70`), and the leftover block: about 11 |
@@ -780,6 +780,29 @@ hashes to the old literal.
 
 **What failed.** The blade material's 17th varying against the default 16.
 
+**As found (the verification note, §6.1).** 17 was one short, and not for the
+blades: WebGPU started on every load and stayed on none, because the giant
+fir's and pine's two materials failed validation 10.9–20.7 s in, one with 17
+fragment inputs and `front_facing`, one with 18 vertex outputs, against a
+device made with 17. WebGPU's own rule ("validating inter-stage interfaces"):
+a vertex stage writes at most the limit's user-defined outputs, each at a
+location below it; a fragment stage reads at most the limit's user-defined
+inputs less one for each inter-stage built-in it reads (`front_facing`,
+`sample_index`, `sample_mask`, `primitive_index` and the two subgroup
+built-ins), the position not counted. On WebGPU Babylon declares every vertex
+output as a fragment input and places a `mat3` in three locations, and a
+two-sided PBR material reads `front_facing`, so the faded trunk material needs
+19; the device asks for 19, the number in one place (`engineChoice.ts`).
+`interStage.test.ts` holds it: each plugin's varyings parsed from its injected
+GLSL and pinned, and the measured materials, Babylon's share from the
+browser's reading, held within the limit as the specification counts; the
+suite cannot translate a shader to WGSL, nor build a whole material with the
+engine features that bring Babylon's own varyings, so the Babylon share is the
+measured one. The halation's kernel blur, which counted 18 at a device of 28,
+sizes itself from the device's limit and cannot pass it. The full sweep of
+every material, running in a browser, sets the final number; the 19 has not
+yet been read in a browser.
+
 **Change.** §5.2: the rule checks the adapter against `WEBGPU_REQUIRED_LIMITS`
 and the device is created with exactly those. Task 2 measures the three rows
 the spike did not and pins them.
@@ -985,6 +1008,30 @@ pins and the WebGL2 stills at the trail poses against `main`. **Bar:** the
 canopy pose's bed crop and every trail pose of §7.1 inside §7.3's bar, and the
 verdict reads the same bed.
 
+**As found (the verification note, §6).** Neither the probe nor the sky nor a
+trail input: the ladder's second branch ruled out the snow mix, the wetness,
+the weights attribute and a missing vertex buffer, and the probe's faces and
+the BRDF lookup read back equal. Two causes, each confirmed on the page
+without a build edit. **The ground's texture arrays** (`terrainRAH`,
+`terrainNormals`, 512², six layers, ten levels, the only array textures the
+game makes, `groundMaps.ts`) had mips on layer 0 only on WebGPU: Babylon
+9.18's WebGPU mip pass for a `RawTexture2DArray` renders layer 0 alone, so
+the bed's occlusion, read from layers 4 and 1, went to 0 beyond level 0 and
+the bed went black, with the stepped edge at the level boundary. The fix is on
+the WebGPU path only: every WebGPU engine runs Babylon's own mip pass for
+each other layer after it (`mipEveryLayer`, `gpuEngine.ts`), each level
+rendered from the one above through a linear sampler, the 2×2 average
+WebGL2's `generateMipmap` gives every layer; a canary pins Babylon's
+layer-0-only pass. Building the mips on the CPU before upload instead would
+cost about 9 ms of start-up for both arrays (measured in node, the real
+sizes), but it would change WebGL2's upload and filter too, which this fix
+must not. **The rest of the frame**, 1.23× near ground in mist and up to 2×
+in clear, was the probe's spherical harmonics, registered on WebGPU alone by
+the non-pure PBR module the WebGPU module imported; it now imports the pure
+one (§13's parity). With both corrected on the page, the frame matched WebGL2
+within the same-engine floor on both tiers. The fixed build has not yet been
+read in a browser.
+
 ## 9. The impostor bake
 
 The bake cannot render until every clone's effect is ready under the bake's own
@@ -1040,6 +1087,19 @@ plain vertex buffers at different offsets still hash equal; when a fixed
 Babylon ships, the canary fails, and the workaround and its callers go in the
 upgrade's own commit. A source scan asserts that no other file creates a
 vertex buffer over a shared buffer at a non-zero offset.
+
+**As found (the verification note, §6.2).** Something on `main` does meet it:
+the glTF loader's interleaved buffers. `understory.fern` and
+`understory.shrub` share one effect, their UVs one hash at offsets 24 and 12
+of a 48-byte stride, so on WebGPU the shrub was drawn with the fern's pipeline
+(leaf cover 0.016 against 0.058). The offset now keys every vertex buffer a
+WebGPU engine draws, whoever made it: `keyEveryBoundBuffer`
+(`webgpuVertexBuffer.ts`), installed by `createWebGpuEngine` on the WebGPU
+pipeline cache's prototype, keys each buffer as the cache's `setBuffers` takes
+it, before `_setVertexState` reads its hash, the main cache and the clear
+quad's alike. WebGL2 engines never use that cache, and a test draws a mesh on
+one and finds every buffer's hash and plain property as they were. The fixed
+shrub has not yet been read in a browser.
 
 The draft upstream issue is Appendix A. Filing it is a manual step for whoever
 maintains this repository's account with the Babylon.js project; no task in the
@@ -1347,6 +1407,15 @@ Pre-stated, in order:
   build I ships on private internals.
 - **A committed pose command**, so every gate here reproduces from a URL alone
   (the near-grass design's follow-up, still open).
+- **The probe's spherical harmonics on both engines.** WebGL2, as shipped,
+  never computes them: `BaseTexture.sphericalPolynomial` is Babylon's stub
+  unless its polynomial module is loaded, so PBR's diffuse ambient from the
+  environment is absent, and WebGPU now matches that. With them, the near
+  ground reads about 1.23 times brighter in mist and up to 2 times in clear
+  (the verification note, §6.6), the sky crop 2.1 times in clear; the
+  environment's diffuse light would then come from the probe, which may be
+  the more natural picture, and would move WebGL2's look and its stills. A
+  change to the look, judged by its own gate, not a parity fix.
 
 ## Appendix A. Draft upstream issue
 
