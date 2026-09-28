@@ -6,13 +6,15 @@
 
 /**
  * What is wrong with a deployed map (`mapText`) for the WebGPU chunk that
- * names it (`chunkSource`), or nothing: it parses; its format is one the chunk
- * reads; its salt is the chunk's, the translators' digests the build baked in
- * (`__WGSL_TRANSLATORS__`) and the key's format; and it holds translations.
- * A map of another salt is never asked by the page: every stage would be
- * translated as if there were none.
+ * names it (`chunkSource`) and the rest of the bundle (`bundleSource`, the
+ * entry chunk, which carries Babylon), or nothing: it parses; its format is
+ * one the chunk reads; its salt is the bundle's, the translators' digests the
+ * build baked in (`__WGSL_TRANSLATORS__`), the key's format, Babylon's version
+ * and, where the bundle shows it, Babylon's page-wide uniformity switch; and
+ * it holds translations. A map of another salt is never asked by the page:
+ * every stage would be translated as if there were none.
  */
-export function mapProblems(mapText, chunkSource) {
+export function mapProblems(mapText, chunkSource, bundleSource = '') {
   let map;
   try {
     map = JSON.parse(mapText);
@@ -31,6 +33,19 @@ export function mapProblems(mapText, chunkSource) {
     problems.push('the WebGPU chunk carries no translators\' digests to check the salt against');
   } else if (!salt.includes(`|${translators}|`) || !/^dayhike-wgsl\/\d+$/.test(keyFormat) || !chunkSource.includes(keyFormat)) {
     problems.push(`its salt ${JSON.stringify(salt.slice(0, 80))}… is not this build's`);
+  }
+  const bundle = `${chunkSource}\n${bundleSource}`;
+  const babylon = salt.match(/\|babylon=([^|]*)\|/)?.[1];
+  if (babylon === undefined) {
+    problems.push('its salt names no Babylon version');
+  } else if (!new RegExp(`["'\`]${babylon.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'\`]`).test(bundle)) {
+    problems.push(`its salt was made against Babylon ${babylon}, which the bundle does not carry`);
+  }
+  const switched = bundle.match(/DisableUniformityAnalysis\s*=\s*(!0|!1|true|false)\b/)?.[1];
+  const bundleUA = switched === undefined ? undefined : switched === '!0' || switched === 'true' ? 'true' : 'false';
+  const saltUA = salt.match(/\|staticUA=(true|false)$/)?.[1];
+  if (bundleUA !== undefined && saltUA !== bundleUA) {
+    problems.push(`its salt's uniformity switch, ${saltUA}, is not the bundle's, ${bundleUA}`);
   }
   const entries = map.entries;
   if (typeof entries !== 'object' || entries === null || Array.isArray(entries)) {

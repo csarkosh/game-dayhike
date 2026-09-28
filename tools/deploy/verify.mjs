@@ -256,7 +256,7 @@ async function verify() {
           'the WGSL map is served immutable',
           `cache-control: ${res.headers.get('cache-control')}`,
         );
-        const problems = mapProblems(await res.text(), chunkSource);
+        const problems = mapProblems(await res.text(), chunkSource, bundleSource);
         check(problems.length === 0, "the WGSL map parses, is this build's and holds translations", problems.join('; '));
       }
     }
