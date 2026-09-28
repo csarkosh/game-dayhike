@@ -234,6 +234,7 @@ export async function createWebGpuEngine(
       },
     });
     made.engine = engine;
+    giveUpRestore(engine);
     catchTranslationFailures(engine);
     // The started translators, as Babylon's options take them: glslang as a
     // promise (its setup waits on it), twgsl as the instance. No path to load.
@@ -262,6 +263,21 @@ export async function createWebGpuEngine(
 }
 
 /**
+ * Stops Babylon's own recovery of `engine` after a lost device, for good.
+ * Babylon, right after it notifies the loss, calls the engine's
+ * `_restoreEngineAfterContextLost`, looked up on the instance, which makes a
+ * new device (`initAsync`) and rebuilds the engine's resources. This code
+ * never relies on it: a hike's renderer is rebuilt on a new engine on a fresh
+ * canvas, a probe step is measured again, and an engine let go of is about to
+ * be disposed, where a restore would leave a second device alive. So every
+ * engine made here, and every engine watched, has it replaced by nothing, and
+ * it stays so after the watcher is off.
+ */
+export function giveUpRestore(engine: AbstractEngine): void {
+  (engine as unknown as { _restoreEngineAfterContextLost: (init: unknown) => void })._restoreEngineAfterContextLost = () => undefined;
+}
+
+/**
  * Watches a running WebGPU engine for the failures the game answers with a
  * live swap of its renderer (`failureSwap`, `engineChoice.ts`): an effect that
  * fails to translate or compile (with `catchTranslationFailures` installed, a
@@ -280,15 +296,8 @@ export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: "pipelin
   };
 
   const effectError = engine.onEffectErrorObservable.add(() => report("pipeline"));
-  const lost = engine.onContextLostObservable.add(() => {
-    // The renderer is rebuilt on a fresh canvas after a lost device (a new
-    // engine), so Babylon's own restore, which it starts right after this
-    // notification on the same engine, has nothing to do: it rebuilds what the
-    // swap is about to throw away, and throws on the way.
-    (engine as unknown as { _restoreEngineAfterContextLost: (init: unknown) => void })._restoreEngineAfterContextLost =
-      () => undefined;
-    report("lost");
-  });
+  giveUpRestore(engine);
+  const lost = engine.onContextLostObservable.add(() => report("lost"));
 
   // Chained, not replaced: whatever held the hook still hears every entry.
   const previous = Logger.OnNewCacheEntry as ((entry: string) => void) | undefined;

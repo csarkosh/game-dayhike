@@ -69,8 +69,43 @@ describe("watchWebGpu", () => {
     }
   });
 
-  it("notifies a lost device before Babylon starts its restore (a canary on the installed engine)", () => {
+  it("gives Babylon's restore up from the moment it watches, and leaves it given up after: no second device for an engine let go", () => {
+    vi.useFakeTimers();
+    const engine = new NullEngine();
+    // Babylon's own restore runs its `initEngine` on a timer.
+    const restore = (): boolean => {
+      let restored = false;
+      (engine as unknown as { _restoreEngineAfterContextLost(init: () => void): void })._restoreEngineAfterContextLost(() => {
+        restored = true;
+      });
+      vi.advanceTimersByTime(10);
+      return restored;
+    };
+    const stop = watchWebGpu(engine, () => undefined);
+    try {
+      // A loss Babylon restores without the watcher having heard it first
+      // (a device lost after the watcher is off, say).
+      expect(restore()).toBe(false);
+      stop();
+      expect(restore()).toBe(false);
+    } finally {
+      engine.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("makes every WebGPU engine with Babylon's restore given up (the source of the one maker)", () => {
+    const src = readFileSync(new URL("../../src/game/gpuEngine.ts", import.meta.url), "utf8");
+    const start = src.slice(src.indexOf("  const start = async (): Promise<WebGPUEngine> => {"), src.indexOf("    await engine.initAsync("));
+    expect(start).toContain("    giveUpRestore(engine);");
+  });
+
+  it("notifies a lost device before Babylon starts its restore, which it looks up on the engine (a canary on the installed engine)", () => {
     const src = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
+    // The restore is the engine's own `_restoreEngineAfterContextLost`, looked
+    // up on the instance when the loss comes, and it makes a new device
+    // (`initAsync`): replacing it on the instance is what stops it.
+    expect(src).toContain("                        await this.initAsync(this._glslangOptions ?? this._options?.glslangOptions, this._twgslOptions ?? this._options?.twgslOptions);");
     expect(src).toContain(
       "                    this.onContextLostObservable.notifyObservers(this);\n" +
         "                    // eslint-disable-next-line @typescript-eslint/no-misused-promises\n" +
