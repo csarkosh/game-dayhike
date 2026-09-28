@@ -44,12 +44,19 @@ export type InputOptions = {
   touch?: TouchSource;
   /** Start in touch mode. `isTouchDevice()` decides; the layer can flip it later. */
   touchMode?: boolean;
+  /**
+   * The yaw the look starts at: the way the player faces when they arrive.
+   * A player's yaw is whatever their input says, so a spawn that faces the
+   * trail is turned back to yaw 0 by the first command unless the look
+   * starts there too. 0 when absent.
+   */
+  startYaw?: number;
 };
 
 export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions = {}): InputSampler {
   const touch = opts.touch ?? null;
   const keys = new Set<string>();
-  let yaw = 0;
+  let yaw = opts.startYaw ?? 0;
   let pitch = 0;
   let locked = false;
   let touchMode = false;
