@@ -10,7 +10,7 @@ import { WebGPUPipelineContext } from "@babylonjs/core/Engines/WebGPU/webgpuPipe
 import { Observable } from "@babylonjs/core/Misc/observable.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import { parseShaderLookup } from "../../src/game/engineChoice.js";
-import { catchTranslationFailures, handTranslators } from "../../src/game/gpuEngine.js";
+import { catchTranslationFailures, disposeHalfMade, handTranslators } from "../../src/game/gpuEngine.js";
 import {
   LOOKUP_FORMAT,
   buildSalt,
@@ -574,6 +574,29 @@ describe("the WebGPU shader lookup", () => {
     }
     // An engine that looked nothing up, or never prepared, is left alone.
     expect(() => releaseShaderLookup(harness().engine)).not.toThrow();
+  });
+
+  it("lets its store go when a start that failed part-way is disposed, though Babylon's dispose throws before it tells anyone", async () => {
+    const closed: string[] = [];
+    const h = harness();
+    // No dispose observable is ever notified: the store's release must come
+    // from the disposal's own end.
+    Object.assign(h.engine, {
+      dispose: () => {
+        throw new TypeError("Cannot read properties of undefined (reading 'dispose')");
+      },
+    });
+    lookUp(h, [{ ...memorySource().source, close: () => void closed.push("closed") }]);
+    await prepare(h);
+    disposeHalfMade(h.engine);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(closed).toEqual(["closed"]);
+    // Babylon's base dispose notifies its dispose observable only at the end,
+    // after the effects, textures and scenes (a canary on the installed engine).
+    const base = readFileSync(resolve("@babylonjs/core/Engines/abstractEngine.pure.js"), "utf8");
+    const dispose = base.slice(base.indexOf("    dispose() {\n        this.releaseEffects();"), base.indexOf("        this.onDisposeObservable.clear();"));
+    expect(dispose.indexOf("this.onDisposeObservable.notifyObservers(this);")).toBeGreaterThan(dispose.indexOf("this.scenes[0].dispose();"));
+    expect(dispose.indexOf("this.scenes[0].dispose();")).toBeGreaterThan(0);
   });
 
   it("keeps a translation in the browser's store, and the next engine finds it there", async () => {

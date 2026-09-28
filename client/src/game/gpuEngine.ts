@@ -67,7 +67,7 @@ import {
   type EngineFailure,
   type ShaderLookupMode,
 } from "./engineChoice.js";
-import { lookUpShaders } from "./shaderLookup.js";
+import { lookUpShaders, releaseShaderLookup } from "./shaderLookup.js";
 
 /** How `catchTranslationFailures` words a failure it cannot trace to an effect. */
 const UNTRANSLATED = "WebGPU shader translation failed";
@@ -361,9 +361,13 @@ export async function createWebGpuEngine(
  * `EngineStore.Instances`. Those run here where it threw, each on its own
  * guard, and the engine leaves the store whatever they do. Run again on an
  * engine whose start settled after it was given up, it destroys the device
- * that came since.
+ * that came since. Its shader lookup is let go of first
+ * (`releaseShaderLookup`): the dispose Babylon's throw cut short, and even
+ * the base dispose run here, may never reach `onDisposeObservable`, which
+ * the base dispose notifies only after the effects, textures and scenes.
  */
 export function disposeHalfMade(engine: WebGPUEngine): void {
+  releaseShaderLookup(engine);
   try {
     engine.dispose();
     return;
