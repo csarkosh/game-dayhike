@@ -416,9 +416,15 @@ suite the URL is empty and no map is asked for.
 
 **Its ceiling.** A map is at most `MAP_MAX_BYTES`, 16 MB of text: the page
 holds it whole for the engine's life and parses it in one task on its
-thread. The build fails on a larger one, naming its size and the ceiling, and
-the page refuses one whose `Content-Length` says it is larger before reading
-its body: a source with nothing in it, one console line.
+thread. The build fails on a larger one, naming its size and the ceiling. The
+page reads the map's body as it arrives, counting its decoded bytes, and
+stops and refuses it once they pass the ceiling, before anything is parsed;
+the `Content-Length` header cannot bound it alone, since the host serves the
+map compressed (the header then counts the smaller bytes sent) and a chunked
+response has none, so it only refuses sooner a map whose header already says
+it is larger. A response with no body to read as it comes is read whole and
+refused by its length before it is parsed. Each is a source with nothing in
+it, one console line.
 
 **The build, checked on every push.** The test workflow's `build` job builds
 the client as the deploy does (`npm run build`, under the production base)
@@ -426,7 +432,9 @@ and runs `tools/wgsl/check-build.mjs` on it: exactly one
 `assets/wgsl-map-*.json`, parsing as a map of the known format; the entry
 chunk and every chunk it imports statically naming none of `wgsl-map`,
 `wgslFormat`, `dayhike-wgsl`; the WebGPU chunk naming the map; and the deploy
-check (below) accepting the built map against the built chunks.
+check (below) accepting the built map against the built chunks, read by the
+same walk the deploy check fetches them with. Its log names the chunk that
+carries Babylon's version.
 
 **On the page.** `loadWgslMap` fetches the map as the engine is made, beside
 the store's read, and parses it into memory when it lands; a map that lands
@@ -447,9 +455,8 @@ the translators, is the lever for slower links. Its salt is checked against the 
 and its format must be known; a map that does not come (a refused fetch, an
 HTTP error, a fetch that never answers), is another build's, or does not
 parse is a source with nothing in it: one console line, nothing the player
-sees, never a switch to WebGL2, never a record. So is one whose
-`Content-Length` is over the map's ceiling (above), refused before its body
-is read. It takes no writes, so a
+sees, never a switch to WebGL2, never a record. So is one that reads past
+the map's ceiling (above), refused before it is parsed. It takes no writes, so a
 stage found in it is never written to the store. Its hits are counted as
 `shipped` in `hitsBySource`. What it read is held for the engine's life
 (§5).
@@ -474,7 +481,12 @@ check 4d) finds the map in the WebGPU chunk, and checks that it is served
 `immutable`, parses, is of a format the chunk reads, carries in its salt the
 translators' digests and the key's format the chunk was built with, Babylon's
 version the bundle carries and, where the bundle shows it, Babylon's
-page-wide uniformity switch, and holds translations.
+page-wide uniformity switch, and holds translations. The bundle it searches
+is the entry chunk and every chunk it imports statically, fetched by the walk
+the build's check reads its files with (`tools/deploy/lib/bundle.mjs`, at
+most `MAX_STATIC_CHUNKS`, 500), so a version literal the build's check finds
+in an imported chunk is found here too; a chunk that does not answer fails
+the check, naming it.
 
 ## 6. The translators, and the start's order
 
