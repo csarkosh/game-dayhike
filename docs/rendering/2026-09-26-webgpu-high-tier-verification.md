@@ -504,6 +504,190 @@ note. None of the fixes has yet been read in a browser: the start's hold, the
 shrub, the bed and the frame's brightness are to be read again on the fixed
 build, and appended here.
 
+## 7. The second machine: Windows, an NVIDIA Tesla T4
+
+Read on 2026-09-28 at `a63e5c2`, with the measurement patches of §1, on a
+rented machine: Windows Server 2025, an NVIDIA Tesla T4, a 1920 × 1080 desktop
+at device pixel ratio 1 (the window 1920 × 945), 4 logical cores
+(`navigator.hardwareConcurrency`), nobody at its screen. Chrome 154.0.8037.58,
+driven remotely; WebGL2 through ANGLE on Direct3D 11, WebGPU through Direct3D
+12. The build was served by the dev server on the machine itself. Every page
+opened in a fresh isolated browser context with the recorder injected before
+the page's scripts, and every reading after the first 12 loads carries its
+proof of place: the user agent (`Windows NT`), the WebGL renderer
+(`ANGLE (NVIDIA, NVIDIA Tesla T4 (0x00001EB8) Direct3D11 …)`) and, on WebGPU,
+the running engine's adapter (`nvidia`, `turing`).
+
+### 7.1 WebGPU starts, and stays
+
+19 loads, each read to 60 s: 15 on WebGPU (`?engine=webgpu`; 10 high, 5
+medium) and 4 WebGL2 controls (2 a tier).
+
+- **WebGPU at the first frame and at 60 s on 15 of 15**, in the same document
+  and at the same address throughout; no record stored; no error and no warning
+  beyond the page's usual lines. The first frame came 7.9–9.8 s after
+  navigation. (The reference Mac on `785825e`, asking for 17 inter-stage
+  variables: 16 of 16 fell back with `pipeline`.)
+- The WebGL2 controls: WebGL2 throughout, first frame 7.6–7.7 s, 60 frames a
+  second at 60 s.
+- Chrome on Windows warns, on every page that asks for an adapter, that
+  `powerPreference` is ignored there (crbug.com/369219127).
+- The adapter (`requestAdapter({ powerPreference: "high-performance" })`):
+  vendor `nvidia`, architecture `turing`, not a fallback. Its limits for the
+  five the build names, and what the device was made with:
+
+  | limit | adapter | device |
+  | --- | --- | --- |
+  | `maxInterStageShaderVariables` | 28 | 19 |
+  | `maxVertexBuffers` | 8 | 8 |
+  | `maxSampledTexturesPerShaderStage` | 48 | 16 |
+  | `maxSamplersPerShaderStage` | 16 | 16 |
+  | `maxUniformBuffersPerShaderStage` | 12 | 12 |
+
+  Samplers and uniform buffers per stage are at the scene's measured need
+  (§4) on this adapter too, as on the Apple M4: they cannot be raised on
+  either machine.
+
+### 7.2 The start-up
+
+High tier, the canopy page without a pose, 75 s a load; each engine loaded
+twice in one browser context (cold, then the same page again), with a
+per-second timeline from navigation: animation frames, the engine's frames,
+long tasks, WebGPU `createShaderModule` and `createRenderPipeline` calls, the
+engine's effect preparations and the time each took to settle, WebGL shader
+compiles and program links.
+
+| load | first frame | first second at the display's rate (60) | frames drawn in 0–50 s | effect preparations (0–57 s) | their summed time | long tasks (0–57 s) | shader modules / render pipelines | WebGL compiles / links |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| WebGPU cold | 8013 ms | 57 s | 135 | 61 | 39.8 s | 49.0 s | 134 / 70 | – |
+| WebGPU second | 8014 ms | 52 s | 100 | 55 | 35.4 s | 44.1 s | 118 / 65 | – |
+| WebGL2 cold | 7602 ms | 17 s | 2159 | 60 | 0.28 s | 8.9 s | – | 124 / 62 |
+| WebGL2 second | 7700 ms | 17 s | 2141 | 61 | 0.21 s | 9.0 s | – | 126 / 63 |
+
+- On WebGPU each effect's preparation (Babylon's GLSL through glslang to
+  SPIR-V and through Tint to WGSL, in WebAssembly on the page's thread) took
+  0.7–2.0 s, one effect after another, about one a second: long tasks of
+  700–1250 ms back to back from 13 s to 52 s, 40 of them over 400 ms. The page
+  drew about one frame per long task, 1–2 frames a second, from about 11 s to
+  about 50 s, then 60 once the last effect of the view was prepared. The
+  render pipelines themselves returned at once (65–70 a load). Effects seen
+  later cost the same: at 71–74 s on the cold load a few more came in and the
+  page fell to 1–25 frames a second for 3 s.
+- WebGL2 prepared the same 60 or so effects in 0.2–0.3 s in all (the context
+  offers `KHR_parallel_shader_compile`) and was at 60 from 17 s.
+- The first frame, the same on both engines, is set by the world's build (a
+  long task of about 4.8 s at 1.6–6.5 s, and one of 1.1–1.2 s). The network
+  is not part of it: the page's `load` fired at 1.5–1.6 s, its own resources
+  were in by about 0.6 s and the rest of the assets by about 10 s, cold and
+  second load alike. The second load of the same page was no faster.
+- The Mac never saw this: its WebGPU first frames were 2.1–3.4 s and its pages
+  were at 60 by 20–25 s. On this machine a WebGPU player sees about 40 s of
+  1–2 frames a second after the first frame, where WebGL2 is at 60 by 17 s,
+  and each material seen for the first time in play holds the page for about
+  a second.
+
+### 7.3 The four fixes, read again
+
+- **The shrub** (§6.2): its UV buffer is keyed apart from the other plants'
+  (`uv` 196630 + 12 × 2^24 against + 24 × 2^24); the shadow pass's group
+  (the car, the kiosk's poster, the summit body) is keyed apart and drawn with
+  the same shadows on both engines. At the `pair3` pose the shrub is the same
+  whole plant on both engines. Its leaf cover in the crown crop read 0.0593 on
+  WebGPU against 0.0513 and 0.0499 on two WebGL2 loads, 0.008 over, where two
+  WebGL2 loads differ by 0.0014: the leaves sway, and on the WebGPU still two
+  lie over the fog where on the WebGL2 stills they lie over a trunk. The
+  silhouette count (pixels 12 or more of luma from the shrub hidden), which
+  sees leaves over the trunk too, reads 0.0880 on WebGPU, between WebGL2's
+  0.0836 and 0.0886.
+- **The bed's arrays** (§6.6): every layer of `terrainRAH` and
+  `terrainNormals` read back at mip 1 (centre texel and mean) and mip 9 is
+  identical on the two engines on this machine; no layer reads zeros; the
+  texture has 10 levels.
+- **The brightness**: `sphericalPolynomial` undefined on both engines' probe.
+- **The registrations**: no Babylon audio engine on either engine, and
+  `EngineStore.FallbackTexture` the empty default on both.
+- 70 pipelines at the canopy pose at about 78 s (73 made by the device, 3 of
+  them outside the cache), as on the Mac.
+
+### 7.4 Parity, a first reading
+
+A first reading on a second machine, not the frame and parity gates on the
+reference machine. Stills of 1920 × 945, each on its own page 75–83 s after
+navigation (both engines at 60 by then), the pose set by the free camera, the
+sun recorded beside each and equal within every pair (mist 0.7508, clear
+3.9518, direction (0, −0.9701, 0.2425)); crops placed afresh on this frame, and
+every pose also scored on a 3 × 3 grid. The bar is §7.3's of the design
+(luminance ratio 0.95–1.05 or twice the floor's; ΔE ≤ 2 or twice the floor's).
+
+- **The same picture within the floor**: the canopy pose in mist on both tiers
+  (every crop; the bed 1.0051 / ΔE 0.10 against a WebGL2 floor of 1.0047 /
+  0.09 at high; warm brown to the crest, no stepped edge, no glint), the
+  meadow, the meadow's trail, the trail down, the night pose, on both tiers.
+  The face at 30 m: the same rock and cliff modules (within 0.2 %); the one or
+  two grid cells that miss hold animals crossing the WebGL2 stills only.
+- **Where the canopy's sun-dapple falls**: in clear weather at the canopy pose,
+  and at the trail-along and seam poses, the bed crops read 3–7 % apart
+  (ΔE ≤ 1.12), the medium tier's canopy bed 0.950 and its near bed 0.933, just
+  outside the bar. Two WebGL2 loads put the dapple in the same place (within
+  0.8 %) and two WebGPU loads agree with each other as closely; the two engines
+  put it in different places. Nothing static differs.
+- Everything that moves with the world's clock (the canopy's sway and its
+  dapple, the shrub's leaves, the animals) differs between the engines at the
+  same time after load; the animals' positions read on a pair of pages at the
+  face pose differ, the WebGPU page having drawn 1703 frames to WebGL2's 4163.
+  The slow start of §7.2 would put a WebGPU page's world clock behind if each
+  frame's step is clamped; the world clock itself was not read. Stills of
+  moving things are to be compared at the same world time.
+
+### 7.5 The fallback
+
+- **An uncaptured error** in a solo hike: rebuilt on WebGL2 with no reload,
+  the record `pipeline`, the address pinned to `engine=webgl2`, the line once,
+  the pose kept. **Met.** The cover stood 19.0 s: 8.9 s to the WebGL2 engine,
+  10.1 s for its scene.
+- **The same with a follower**: the follower never showed "Reconnecting…",
+  and saw the host move again after the swap. **Met.** After the swap the host
+  was in the pause menu with its pointer lock gone (the canvas that held the
+  lock was replaced) and had to press Resume.
+- **A lost device, twice**: one retry on a new WebGPU engine on a fresh canvas,
+  two devices made in all, the second loss onto WebGL2 with the record `lost`
+  (losses 2) and the address pinned; the lines once each. **Met.**
+- **An error during a Settings Apply under way**: at most two engines, the
+  cover and the line once, the record `pipeline`. **Met.** An error on the old
+  engine while the new one is made could not be produced: the page's thread
+  does not run between the click and the old engine's release.
+- **A Settings Apply that crosses engines**: not as written, since the address
+  must carry `?engine=webgpu` with the switch off, which puts every tier on
+  WebGPU. High → Low built Low on WebGPU, which failed (defect 1 below); Low →
+  Medium then stayed on WebGL2, as the record says.
+- **The governor on WebGPU at medium**: not run. This machine's class
+  (`discrete-legacy`) is Auto at low with no probe, so Auto is never at medium
+  here.
+- **A failure's rebuild whose WebGPU retry fails**: WebGL2, the line once, the
+  record `init`. The line **met**; defects 2 and 3 below.
+- **`?tier=high` on the title page, then Play**: the hike at high. **Met.**
+
+### 7.6 Three defects, as found
+
+1. **The low tier fails on WebGPU.** `?tier=low&engine=webgpu`: the first
+   frame on WebGPU at 7.8 s; at frame 26 (13.2 s)
+   `Error while parsing WGSL: :3240:30 error: 'textureSample' must only be called from uniform control flow`
+   on `textureSample(terrainRAHTexture, terrainRAHSampler, …)`, with the notes
+   `if ((x_3915 < (7.0f + x_3917))) {` and
+   `:3146:9 note: return value of 'fwidth' may be non-uniform`; the pipeline
+   invalid, the page on WebGL2 at 60 s, the record `pipeline`. Every WebGPU
+   load at low fails. High and medium pass because Babylon's cascaded-shadow
+   include defines `DISABLE_UNIFORMITY_ANALYSIS`, which turns the analysis off
+   for the whole module; low has no shadow.
+2. **A half-made engine left behind.** After a lost device whose one retry
+   failed (the device request refused), `EngineStore.Instances` held two
+   engines to the end of the hike: the running WebGL2 engine, and the retry's
+   `WebGPUEngine`, disposed, with no device, its canvas detached, no scene.
+3. **The address not pinned.** On that same path the record is `init` and the
+   address still says `engine=webgpu`, so a reload asks for WebGPU again and
+   fails its start once more before WebGL2; after a pipeline error or a second
+   lost device the address is pinned to `engine=webgl2`.
+
 ## Appendix A. The pipeline-cache bug, as a draft issue
 
 Design Appendix A's text, kept here with the gates that concern it. It is a
