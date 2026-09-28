@@ -809,6 +809,10 @@ describe("the lines of Babylon 9.18 the lookup copies or leans on (canaries on t
     };
     const pipelineContext = readFileSync(resolve("@babylonjs/core/Engines/WebGPU/webgpuPipelineContext.js"), "utf8");
     const nonFloat = readFileSync(resolve("@babylonjs/core/Buffers/buffer.nonFloatVertexBuffers.js"), "utf8");
+    const effect = readFileSync(resolve("@babylonjs/core/Materials/effect.pure.js"), "utf8");
+    const functions = readFileSync(resolve("@babylonjs/core/Materials/effect.functions.js"), "utf8");
+    const cache = readFileSync(resolve("@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js"), "utf8");
+    const tint = readFileSync(resolve("@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js"), "utf8");
     expect({
       prepare: digest(engine, "    async _preparePipelineContextAsync(", "    getAttributes(pipelineContext, attributesNames) {"),
       compile: digest(engine, "    _compilePipelineStageDescriptor(vertexCode, fragmentCode, defines, shaderLanguage) {", "    createRawShaderProgram() {"),
@@ -820,6 +824,17 @@ describe("the lines of Babylon 9.18 the lookup copies or leans on (canaries on t
       spirv: digest(engine, "    _compileRawShaderToSpirV(source, type) {", "    _getWGSLShader("),
       isReady: digest(pipelineContext, "    get isReady() {", "    constructor("),
       nonFloat: digest(nonFloat, "export function checkNonFloatVertexBuffers(vertexBuffers, effect) {", "//# sourceMappingURL"),
+      // The re-preparation's own path, which must await nothing but an
+      // effect's extra initializations, hand the kept context on in the
+      // order the lookup reads its arguments, and run `onReady`'s action
+      // at once; the pipeline built from the stages after it; the second
+      // translator's wrapper, whose output is what is stored.
+      processShader: digest(effect, "    async _processShaderCodeAsync(", "    get key() {"),
+      prepareEffect: digest(effect, "    _prepareEffect(keepExistingPipelineContext = false) {", "    _getShaderCodeAndErrorLine("),
+      createAndPrepare: digest(functions, "export const createAndPreparePipelineContext = ", "\n};\n"),
+      executeWhen: digest(engine, "    _executeWhenRenderingStateIsCompiled(pipelineContext, action) {", "    bindSamplers() { }"),
+      buildDescriptor: digest(cache, "    _buildRenderPipelineDescriptor(effect, topology, sampleCount) {", "    _createRenderPipeline(effect, topology, sampleCount) {"),
+      convert: digest(tint, "    convertSpirV2WGSL(code, disableUniformityAnalysis = false) {", "// Default twgsl options."),
     }).toEqual({
       prepare: "f6b14c32b327f76b854d92b44bddf902710f1f21af59250f802af90b07d5b7cc",
       compile: "10282feb3582d5a301b949b56caf7adbb5f16060a9df0ad571fe37940bdb5d2c",
@@ -827,6 +842,12 @@ describe("the lines of Babylon 9.18 the lookup copies or leans on (canaries on t
       spirv: "ad624ad5e9c1a22e684cd4a0184fbce8d93886c67a5f186913d707f5db1d388a",
       isReady: "dbaad8c15f9107fcd7051c84340a7712016c8467a5b5d54f99abebb904a02c3e",
       nonFloat: "983f3575d3dcfef9fef9bc5df97c25b5cc2aef45bca214f1ac15d98dd63824cb",
+      processShader: "ffef4511a780eb609b0b6669b76adfcd8b73f7f2dcd63ea9dd18a2ed91a66c1a",
+      prepareEffect: "d5035243305b6e77583434ad58d050a08ec45f48cd6137edd1d1bfaa76cc2f90",
+      createAndPrepare: "17b881793f9e6661e7f62c9df908f0dd590b908d3ea3c927c632b7101ab0689a",
+      executeWhen: "6e998642ec9026ff1d76360646eb3572a84bff9e3b2a50b5e234d4a4fe171eb5",
+      buildDescriptor: "c6a0749d74bc90f81138236cec529421239fe9114216e40a8f1b190bf2e439e1",
+      convert: "5b0a7e403ab678ed152330024c49c9b3e8cc5d897b1d944d1a7aacb11dc2e7df",
     });
     // What the readiness is: the stages alone.
     expect(pipelineContext).toContain("    get isReady() {\n        if (this.stages) {\n            return true;\n        }\n        return false;\n    }");
