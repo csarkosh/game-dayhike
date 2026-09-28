@@ -11,6 +11,7 @@ import {
   CAR_HALF, KIOSK_HALF, PROPS, bedGap, carSite, propSite, roadProp, trailEntrance, trailheadSite,
 } from "../../src/sim/passes/trailhead.js";
 import { trailheadSpawn } from "../../src/sim/spawn.js";
+import { SIGN_POST_HALF, trailSign, trailSignSite } from "../../src/sim/signs.js";
 import { ROAD_BED_HALF } from "../../src/sim/road.js";
 import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
 import type { TrailGraph, TrailEdge } from "../../src/sim/trail.js";
@@ -258,4 +259,55 @@ describe("the player's place", () => {
     expect(road).toBeGreaterThanOrEqual(7.5);
     expect(reach).toBeLessThanOrEqual(7);
   }, timeLimit(300000));
+});
+
+describe("the trail's sign on real worlds", () => {
+  it("stands in the player's view at the entrance, clear of the bed, the car and the board, on every seed", () => {
+    const v = terrainVariant("olympic")!;
+    const gapTo = (x: number, z: number, c: { x: number; z: number }, h: { x: number; z: number }): number =>
+      Math.hypot(Math.max(Math.abs(x - c.x) - h.x, 0), Math.max(Math.abs(z - c.z) - h.z, 0));
+    let widest = 0, nearest = Infinity, farthest = 0, carGap = Infinity, boardGap = Infinity, tipGap = Infinity, road = Infinity, turned = 0;
+    for (const seed of SEEDS) {
+      const graph = v.trailGraph!(seed);
+      const car = carSite(graph, v.roadCenterX!, seed);
+      const board = trailheadSite(graph, v.roadCenterX!, seed, "kiosk");
+      const s = trailheadSpawn(graph, car);
+      const post = trailSign(graph, board, s);
+      const arm = post.arms[0]!;
+      expect(trailSignSite(graph, board)).toEqual({ x: post.x, z: post.z });
+      expect(v.trailDistance!(seed, post.x, post.z), `seed ${seed}`).toBeCloseTo(1.75, 6);
+      const d = Math.hypot(post.x - s.x, post.z - s.z);
+      const c = ((post.x - s.x) * Math.sin(s.yaw) + (post.z - s.z) * Math.cos(s.yaw)) / d;
+      widest = Math.max(widest, (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI);
+      nearest = Math.min(nearest, d);
+      farthest = Math.max(farthest, d);
+      carGap = Math.min(carGap, gapTo(post.x, post.z, car, CAR_HALF));
+      boardGap = Math.min(boardGap, gapTo(post.x, post.z, board, KIOSK_HALF));
+      // The plank is 1.095 m long: its tip must be farther from the bed than the post.
+      tipGap = Math.min(tipGap, v.trailDistance!(seed, post.x + arm.dx * 1.095, post.z + arm.dz * 1.095));
+      road = Math.min(road, post.x - roadCenterXOf(seed, post.z));
+      turned = Math.max(turned, Math.abs(arm.dx * ((s.x - post.x) / d) + arm.dz * ((s.z - post.z) / d)));
+    }
+    console.info(`[trailhead] sign: ${widest.toFixed(2)} deg off the view's centre at most, ${nearest.toFixed(2)}-${farthest.toFixed(2)} m from the player, ${carGap.toFixed(2)} m from the car, ${boardGap.toFixed(2)} m from the board, plank tip ${tipGap.toFixed(2)} m from the bed, ${road.toFixed(2)} m from the centreline`);
+    expect(widest).toBeLessThanOrEqual(35);
+    expect(nearest).toBeGreaterThanOrEqual(3);
+    expect(farthest).toBeLessThanOrEqual(7);
+    expect(carGap).toBeGreaterThanOrEqual(3);
+    expect(boardGap).toBeGreaterThanOrEqual(3);
+    expect(tipGap).toBeGreaterThanOrEqual(2.5);
+    expect(road).toBeGreaterThanOrEqual(6.5);
+    expect(turned).toBeLessThan(1e-9);
+  }, timeLimit(300000));
+
+  it("is emitted once as a prop, where it stands", () => {
+    for (const seed of [0x5eed, 1, 12345]) {
+      const v = terrainVariant("olympic")!;
+      const graph = v.trailGraph!(seed);
+      const site = trailSignSite(graph, trailheadSite(graph, v.roadCenterX!, seed, "kiosk"));
+      const chunk = chunkHolding(seed, site.x, site.z);
+      const emitted = chunk.props.filter((b) => b.material === "signpost" && Math.abs(b.box.min.x + SIGN_POST_HALF.x - site.x) < 1e-6 && Math.abs(b.box.min.z + SIGN_POST_HALF.z - site.z) < 1e-6);
+      expect(emitted, `seed ${seed}`).toHaveLength(1);
+      expect(emitted[0]!.box.max.y - emitted[0]!.box.min.y).toBeCloseTo(2.2, 6);
+    }
+  }, timeLimit(60_000));
 });
