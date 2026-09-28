@@ -1,28 +1,22 @@
 # WebGPU on the high and medium tiers: design
 
-**As built.** Task 1 so far, shipped switched off (the next paragraph). This
-is the design as written on 2026-09-26, from
-the WebGPU blade culling spike (`docs/rendering/2026-09-26-grass-webgpu-spike.md`,
-on the spike's branch `worktree-grass-webgpu-spike` until the plan's Task 1
-brings it over, and its code commit `781e4a2`). The plan
-([2026-09-26-webgpu-high-tier-plan](2026-09-26-webgpu-high-tier-plan.md))
-builds it in eight tasks on a fresh branch from `origin/main` (`ba0fd95`); the
-engine reaches a player by default only at Task 6, after the parity and frame
-gates. When the work lands this paragraph is rewritten to say what shipped and
-with what values; the sections below stay the design as written.
+**As shipped.** Since 2026-09-28 WebGPU is the default engine on the high
+tier in Google Chrome and Microsoft Edge on macOS and Windows (§5.1); every
+other tier and browser draws with WebGL2, and `?engine=` overrides. The
+sections below are the design as written on 2026-09-26, from the WebGPU blade
+culling spike (`docs/rendering/2026-09-26-grass-webgpu-spike.md`, its code
+commit `781e4a2`), with where the code differs said next.
 
-**Task 1, as built.** The rule, the overrides and the fallback of §5, switched
-off (`WEBGPU_ENABLED = false`), so WebGPU is reached only with
-`?engine=webgpu`. Three decisions of 2026-09-26 are written into the sections
-below:
+**The rule, the overrides and the fallback of §5** were first built switched
+off (`WEBGPU_ENABLED = false`) and are now on for the high tier alone. Three
+decisions of 2026-09-26 are written into the sections below:
 
-- The rule covers the **high and medium** tiers: one constant,
-  `WEBGPU_TIERS = ["high", "medium"]` in `engineChoice.ts`, which
+- The rule was written for the **high and medium** tiers and ships for high
+  alone: one constant, `WEBGPU_TIERS = ["high"]` in `engineChoice.ts`, which
   `chooseEngine` reads (and takes as a parameter in its tests), so a change of
   tiers is one line with its test. Low and the landing backdrop stay WebGL2.
-  Tier detection is being redesigned on its own (§4). §1, §2, §4, §5.1, §5.7,
-  §7.1, §13.1 and §14–§16 are amended, and the gates are measured on both
-  tiers.
+  Tier detection is designed on its own (§4). §1, §2, §4, §5.1, §5.7, §7.1,
+  §13.1 and §14–§16 are amended, and were measured on both tiers.
 - One frame bar for both tiers: a gain above the same-code floor at the canopy
   pose, no standard pose slower than its floor, and parity; 1.5 ms on high is
   the expectation, reported, not the gate (§1, §3.2, §13.1, §16).
@@ -472,11 +466,11 @@ whatever its GPU, and one with more than four threads and more than 4 GB to
 medium. Safari and Firefox expose no `deviceMemory`, read the default 4 GB, and
 land on low.
 
-So the rule covers both tiers a desktop Chromium is detected as. As switched
-on (§5.1) it covers high alone: desktop Chrome and Edge players on macOS and
-Windows reach WebGPU on high with no action of theirs, medium stays on WebGL2,
-and the desktop launcher, the other Chromium browsers, Safari and Firefox stay
-on WebGL2 at every tier. Changing detection moves every player it
+As shipped (§5.1) the rule covers high alone: Chrome and Edge players on
+macOS and Windows whose tier is high reach WebGPU with no action of theirs
+(who reaches high on Auto: §5.9); medium stays on WebGL2, and the desktop
+launcher, browsers whose brands name neither Chrome nor Edge, Safari and
+Firefox stay on WebGL2 at every tier. Changing detection moves every player it
 promotes onto a higher tier's costs (on high: the scene pass, halation, two
 2048² cascades, 400 m of cliff rings), which is a design of its own with its own
 frame gate, being written separately (§17). The engine rule is written against
@@ -489,10 +483,16 @@ the resolved tier, so it needs no change when detection does.
 **As switched on (2026-09-28).** WebGPU is the default on the high tier alone
 (`WEBGPU_TIERS = ["high"]`, `WEBGPU_ENABLED = true`), and only in Google
 Chrome or Microsoft Edge on macOS or Windows on a device that is not a phone
-or a tablet: the one tier, and the one browser on the two platforms, where it
-was measured to draw faster, with Edge as the same engine as Chrome. The
-other browsers built on Chromium (Brave, Opera, Vivaldi) and the desktop
-launcher, an Electron build, were not measured and stay on WebGL2. On an
+or a tablet: the one tier and the one browser where WebGPU was measured to
+draw faster on macOS, and to reach its full rate sooner on a first visit on
+Windows (where the steady frame sat at the display's cap on both engines),
+with Edge as the same engine as Chrome. The desktop launcher, an Electron
+build, was not measured and stays on WebGL2. A browser is told apart from
+Chrome only by the brands it reports: Brave's and Opera's name neither Chrome
+nor Edge and stay on WebGL2, while one whose brands name Google Chrome is
+taken for Chrome (Brave and Vivaldi send Chrome's user agent unchanged; what
+Vivaldi's brands hold was not read), and the adapter's check and the fallback
+still apply to it. On an
 Apple M4 in Chrome 154 the high tier gained at every pose not at the display's
 cap (the canopy 24.2 → 20.9 ms) and the medium tier did not gain under the
 canopy (19.2 → 19.3 ms); the figures are in the verification note, §8. Safari
@@ -504,7 +504,10 @@ where `Chrome/` counts only without `Electron/`, `OPR/`, `Brave`, `Vivaldi/`,
 mobile by `GpuSignals.mobile`, and all three reach `chooseEngine` as plain
 values. The engine is chosen for each renderer from its tier, so a switch
 between High and Medium, the player's or the governor's, also changes the
-engine, under the switch's own cover.
+engine, under the switch's own cover. A drop from High on WebGPU whose Medium
+build fails climbs the swap's ladder (`swapRenderer`): its next rung is the
+tier that was running, High, now on WebGL2, which is slower than the WebGPU
+High the drop left. It is rare, and left as it is.
 
 ```
 tier   = ?tier=… if valid, else detected
@@ -767,6 +770,21 @@ that it does (`WEBGPU_PROBE_STEPS_SETTLE`, false; §13.7), and, as built:
   WebGPU engine that fails in the step, and the step measured again on WebGL2)
   is asked again as it runs (`measureOnRuleEngine`), and is not measured where
   it cannot settle: no reading, at once. `?probe=` forces the probe past this.
+- **Who reaches WebGPU on Auto.** The default applies to the high tier, and
+  on Auto a machine reaches High only by its class or by the start's
+  measurement, which runs on WebGL2. By class: `apple-large` (Apple's Pro,
+  Max and Ultra chips) and `discrete-modern` (RTX, RDNA 1 and later, Arc A5xx
+  and up) start at High (`gpuClass.ts`). By measurement: `unknown` and
+  `discrete-unknown`, whose ceiling is High, where the WebGL2 step holds it
+  (`apple-unknown` too, but that is how Safari and Firefox name an Apple GPU,
+  and the rule keeps them on WebGL2). So a machine whose class is capped below
+  High is never tried on WebGPU at High, although WebGPU might have held the
+  rate there: `apple-base`, a base M-series chip such as the Apple M4 the
+  frame times were measured on, runs Medium on WebGL2 on Auto. Nor is one
+  whose WebGL2 measurement misses High: its verdict caps the tier for WebGPU
+  as for WebGL2. Anyone who chooses High in Settings gets it, on Chrome or
+  Edge on macOS or Windows. None of the machines that reach High on Auto was
+  measured on WebGPU.
 - **Low is the floor and is never measured**: a probe whose high and medium
   steps miss decides low without a third step.
 

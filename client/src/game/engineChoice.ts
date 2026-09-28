@@ -5,15 +5,20 @@
  * hardware adapter with the limits the scene needs. Everywhere else WebGL2,
  * as every tier always drew.
  *
- * Why there and nowhere else: WebGPU is the default only where it was
- * measured to draw faster. Mean frame time on an Apple M4 at 1920 × 1080 in
+ * Why there and nowhere else: WebGPU was measured to draw faster on macOS,
+ * and to reach its full rate sooner on a first visit on Windows (18 to 21 s
+ * against 28 s, on a machine whose steady frame sat at the display's cap on
+ * both engines). Mean frame time on an Apple M4 at 1920 × 1080 in
  * Chrome 154, WebGL2 → WebGPU: on high, the canopy 24.2 → 20.9 ms, the meadow
  * 19.5 → 17.1, the trailside 21.6 → 19.6, the night 23.6 → 20.1, and the
  * canopy at four times the pixels 51.0 → 40.1; on medium, the canopy
  * 19.2 → 19.3 ms (no gain) and the meadow 17.3 → 16.7 (at the display's cap).
  * Only Chrome on macOS and on Windows was measured, no other browser or
  * platform. Edge is admitted as the same engine as Chrome; the desktop
- * launcher and the other browsers built on Chromium are not
+ * launcher is not, nor is a browser whose brands name neither (Brave, Opera).
+ * A browser is told apart from Chrome only by the brands it reports: one
+ * that reports Google Chrome's is taken for Chrome, and the adapter's check
+ * and the fallback still apply to it
  * (`docs/rendering/2026-09-26-webgpu-high-tier-verification.md`, §8).
  *
  * Decided for each renderer
@@ -245,8 +250,8 @@ export type EngineInput = {
  * Chrome or Microsoft Edge, the platform is macOS or Windows on a device that
  * is not mobile, no failure is remembered, and the adapter fits. Safari and
  * Firefox are WebGL2 whatever they offer at `navigator.gpu`, and so are the
- * other browsers built on Chromium (Brave, Opera, Vivaldi, the desktop
- * launcher), none of them measured. `?engine=webgl2` wins
+ * desktop launcher and the browsers built on Chromium whose brands name
+ * neither Chrome nor Edge (Brave, Opera), none of them measured. `?engine=webgl2` wins
  * outright; `?engine=webgpu` goes past the tier, the switch, the browser, the
  * platform and the memory, but never past the adapter.
  */

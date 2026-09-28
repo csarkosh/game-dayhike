@@ -148,16 +148,19 @@ export function isMobile(nav: NavigatorLike | undefined): boolean {
 const CHROME_OR_EDGE_BRANDS: readonly string[] = ["Google Chrome", "Microsoft Edge"];
 /** User-agent tokens of browsers built on Chromium that are neither Chrome
  * nor Edge, though they carry `Chrome/`: the desktop launcher (Electron),
- * Opera, Brave, Vivaldi, Samsung Internet and Yandex. */
+ * Opera, Samsung Internet and Yandex, and the `Brave` and `Vivaldi/` tokens
+ * older builds of those sent (today both send Chrome's user agent). */
 const OTHER_CHROMIUM_AGENT = /\bElectron\/|\bOPR\/|\bBrave\b|\bVivaldi\/|\bSamsungBrowser\/|\bYaBrowser\//;
 
 /**
  * Whether the browser is Google Chrome or Microsoft Edge by name, the one
  * browser the WebGPU engine rule (`engineChoice.ts`) was measured in and the
- * one that shares its engine. Other browsers built on Chromium are not: the
- * desktop launcher (an Electron build, whose brands name no product and whose
- * user agent carries `Electron/`), Brave, Opera, Vivaldi, none of them
- * measured. The client hint's brands where it lists any: `Google Chrome` or
+ * one that shares its engine. Other browsers built on Chromium are not, where
+ * they can be told apart: the desktop launcher (an Electron build, whose
+ * brands name no product and whose user agent carries `Electron/`), Brave and
+ * Opera by their brands, none of them measured. A browser that sends Chrome's
+ * user agent (Brave, Vivaldi) is told apart only by its brands, and one whose
+ * brands name Google Chrome is taken for Chrome. The client hint's brands where it lists any: `Google Chrome` or
  * `Microsoft Edge` among them. Else the user agent: `Chrome/` and none of the
  * other browsers' tokens (Edge's `Edg/` passes); Safari, Firefox and Chrome on
  * iOS (WebKit underneath, `CriOS/`) send no `Chrome/`. The client hint is

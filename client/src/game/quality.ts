@@ -331,9 +331,17 @@ export function withVerdict(
 
 /**
  * The record after the governor drops the running tier one step: a verdict of
- * source `governor` at the tier below, for this class and the engine the
- * running tier drew with, which holds at any window for 7 days, so the next
- * hike starts there too. Null on low, which has nothing below it.
+ * source `governor` at the tier below, for this class and `engine`, which
+ * holds at any window for 7 days, so the next hike starts there too. Null on
+ * low, which has nothing below it.
+ *
+ * The page passes the engine the WebGPU rule gives the high tier
+ * (`verdictEngineNow`, `main.ts`), not the running tier's, so a drop from
+ * medium to low, drawn on WebGL2, is recorded under WebGPU where the rule
+ * gives high WebGPU. What that costs: should that key later turn to WebGL2
+ * (a remembered failure, an adapter that no longer fits), the drop is not
+ * read, and the player may be dropped again, once, until a new verdict is
+ * written.
  */
 export function withGovernorDrop(
   prev: AutoRecord | null,
