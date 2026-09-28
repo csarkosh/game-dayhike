@@ -11,7 +11,7 @@ import type { Vec3 } from "./types.js";
 import { cloneVec3 } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
-import { CAR_HALF, KIOSK_HALF, kioskFacing } from "./passes/trailhead.js";
+import { CAR_HALF, KIOSK_HALF, kioskFacing } from "./trailhead.js";
 import { hikerNames } from "./hikerNames.js";
 import { facingYaw } from "./facing.js";
 

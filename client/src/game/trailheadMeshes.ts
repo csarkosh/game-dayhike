@@ -7,7 +7,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 
-import { CAR_HALF, CAR_MATERIAL, KIOSK_HALF, KIOSK_MATERIAL } from "../sim/passes/trailhead.js";
+import { CAR_HALF, CAR_MATERIAL, KIOSK_HALF, KIOSK_MATERIAL } from "../sim/trailhead.js";
 import type { Vec3 } from "../sim/types.js";
 import type { PropShadows } from "./propMeshes.js";
 import { armYaw, paintedMaterial, type Painter } from "./signMeshes.js";

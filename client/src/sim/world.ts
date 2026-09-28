@@ -11,7 +11,7 @@ import { spiralSpawn, trailheadStart } from "./spawn.js";
 import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
 import { buildSearch, installSearch, type Search } from "./search.js";
-import { CAR_MATERIAL, KIOSK_MATERIAL, trailheadSite } from "./passes/trailhead.js";
+import { CAR_MATERIAL, KIOSK_MATERIAL, trailheadSite } from "./trailhead.js";
 import { containAtRoad } from "./containment.js";
 import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";

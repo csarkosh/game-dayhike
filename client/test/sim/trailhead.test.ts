@@ -9,7 +9,7 @@ import {
 import type { Brush } from "../../src/sim/level.js";
 import {
   CAR_HALF, KIOSK_HALF, PROPS, bedGap, carSite, propSite, roadProp, trailEntrance, trailheadSite,
-} from "../../src/sim/passes/trailhead.js";
+} from "../../src/sim/trailhead.js";
 import { trailheadSpawn } from "../../src/sim/spawn.js";
 import { SIGN_POST_HALF, trailSign, trailSignSite } from "../../src/sim/signs.js";
 import { ROAD_BED_HALF } from "../../src/sim/road.js";

@@ -2,7 +2,7 @@ import { registerPass } from "../chunk.js";
 import { CHUNK_SIZE } from "../forestConstants.js";
 import { activeTerrainVariant, elevationSampleAt } from "../terrain.js";
 import { SIGN_POST_HALF, SIGN_POST_OFFSET, signPostSites, trailSignSite } from "../signs.js";
-import { KIOSK_MATERIAL, trailheadSite } from "./trailhead.js";
+import { KIOSK_MATERIAL, trailheadSite } from "../trailhead.js";
 
 /** Pass 9. The sign posts' collision boxes, one per junction and one at the
  * trail's entrance, each emitted into the chunk holding the post's centre,

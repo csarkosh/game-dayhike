@@ -68,7 +68,7 @@ import { InteractKind } from "./sim/search.js";
 import { allSignPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
-import { CAR_MATERIAL, KIOSK_MATERIAL, kioskFacing, trailheadSite } from "./sim/passes/trailhead.js";
+import { CAR_MATERIAL, KIOSK_MATERIAL, kioskFacing, trailheadSite } from "./sim/trailhead.js";
 import { createTrailheadMeshes } from "./game/trailheadMeshes.js";
 import { signSites } from "./sim/placeNames.js";
 import { afterNextPaint } from "./game/paint.js";

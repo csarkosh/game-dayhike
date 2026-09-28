@@ -13,7 +13,7 @@ import type { TrailGraph, TrailNode } from "./trail.js";
 import { TRAIL_BED_HALF, nearestTrailNode, trailDistance } from "./trail.js";
 import type { Vec3 } from "./types.js";
 import type { Ground } from "./boxGap.js";
-import { trailEntrance, type EntranceGraph } from "./passes/trailhead.js";
+import { trailEntrance, type EntranceGraph } from "./trailhead.js";
 
 export type SignArm = {
   /** Unit direction the arm points, from the post. */
