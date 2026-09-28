@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { fail, tfOutput } from './lib/preconditions.mjs';
 import { validateLatest } from './lib/desktopRelease.mjs';
 import { findChunkName, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
-import { mapProblems } from './lib/wgslMap.mjs';
+import { bundleMapProblems } from './lib/bundle.mjs';
 
 const siteUrl = tfOutput('site_url');
 const signalingUrl = tfOutput('signaling_url');
@@ -256,8 +256,20 @@ async function verify() {
           'the WGSL map is served immutable',
           `cache-control: ${res.headers.get('cache-control')}`,
         );
-        const problems = mapProblems(await res.text(), chunkSource, bundleSource);
-        check(problems.length === 0, "the WGSL map parses, is this build's and holds translations", problems.join('; '));
+        // Against the chunks the entry loads with it, as the build's check
+        // reads them: Babylon's version may be in any of them.
+        const entryUrl = `${siteOrigin}${bundle}`;
+        const checked = await bundleMapProblems({
+          entry: entryUrl.slice(entryUrl.lastIndexOf('/') + 1),
+          read: async (name) => {
+            const chunkRes = await fetch(new URL(name, entryUrl).href);
+            return chunkRes.status === 200 ? chunkRes.text() : null;
+          },
+          mapText: await res.text(),
+          chunkSource,
+        });
+        check(checked.problems.length === 0, "the WGSL map parses, is this build's and holds translations", checked.problems.join('; '));
+        for (const name of checked.carriers) console.log(`  · Babylon's version ${checked.babylon} is in ${name}`);
       }
     }
   }

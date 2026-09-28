@@ -13,7 +13,8 @@ import { loadShared } from './lib/shared.mjs';
 
 const dist = resolve(process.argv[2] ?? fileURLToPath(new URL('../../client/dist/', import.meta.url)));
 const { MAP_FORMAT } = await loadShared();
-const problems = checkBuild(dist, { mapFormat: MAP_FORMAT });
+// Which chunk carries Babylon's version, for the log.
+const problems = await checkBuild(dist, { mapFormat: MAP_FORMAT, note: (line) => console.log(line) });
 if (problems.length > 0) {
   for (const problem of problems) console.error(`✗ ${problem}`);
   process.exit(1);

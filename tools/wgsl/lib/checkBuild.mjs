@@ -3,34 +3,32 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { bundleMapProblems, staticChunks } from '../../deploy/lib/bundle.mjs';
 import { findChunkName, findMapUrl } from '../../deploy/lib/modelUrls.mjs';
-import { mapProblems } from '../../deploy/lib/wgslMap.mjs';
 
 /** What only the WebGPU chunk may name. */
 const WEBGPU_ONLY = ['wgsl-map', 'wgslFormat', 'dayhike-wgsl'];
 /** A map the build emits. */
 const MAP_NAME = /^wgsl-map-[A-Za-z0-9_-]{8}\.json$/;
-/** A chunk's static imports and re-exports of a sibling chunk (never `import(…)`). */
-const STATIC_IMPORT = /(?:^|[^\w$.])(?:import|export)\s*(?:[\w$*{}\s,]*?\s*from\s*)?["'`]\.\/([^"'`]+\.js)["'`]/g;
 
 /**
  * What is wrong with the built client in `dist`, or nothing: exactly one
  * `assets/wgsl-map-*.json`, parsing as a map of `mapFormat`; the entry chunk
  * and every chunk it imports statically naming none of `WEBGPU_ONLY`; the
  * WebGPU chunk naming the map; and the deploy check accepting the map
- * against the chunks.
+ * against the same chunks the deploy check reads (`bundleMapProblems`).
+ * `note` hears which chunk carries Babylon's version.
  */
-export function checkBuild(dist, { mapFormat }) {
+export async function checkBuild(dist, { mapFormat, note = () => undefined }) {
   const problems = [];
   const assets = join(dist, 'assets');
-  const read = (name) => readFileSync(join(assets, name), 'utf8');
+  const readFile = (name) => (existsSync(join(assets, name)) ? readFileSync(join(assets, name), 'utf8') : null);
 
   const maps = existsSync(assets) ? readdirSync(assets).filter((name) => MAP_NAME.test(name)) : [];
   if (maps.length !== 1) problems.push(`the build holds ${maps.length} WGSL maps (assets/wgsl-map-*.json), not 1`);
   const mapName = maps.length === 1 ? maps[0] : null;
-  let mapText = null;
-  if (mapName !== null) {
-    mapText = read(mapName);
+  const mapText = mapName === null ? null : readFile(mapName);
+  if (mapText !== null) {
     let map = null;
     try {
       map = JSON.parse(mapText);
@@ -49,35 +47,28 @@ export function checkBuild(dist, { mapFormat }) {
     return problems;
   }
   const entry = basename(entrySrc);
-  // The entry chunk and every chunk it loads with it.
-  const loaded = [];
-  const stack = [entry];
-  while (stack.length > 0) {
-    const name = stack.pop();
-    if (loaded.includes(name) || !existsSync(join(assets, name))) continue;
-    loaded.push(name);
-    for (const m of read(name).matchAll(STATIC_IMPORT)) stack.push(m[1]);
-  }
-  for (const name of loaded) {
-    const text = read(name);
+  const walk = await staticChunks(entry, readFile);
+  for (const [name, text] of walk.chunks) {
     for (const word of WEBGPU_ONLY) {
       if (text.includes(word)) problems.push(`assets/${name}, loaded with the entry chunk, names ${word}`);
     }
   }
 
-  const entrySource = read(entry);
-  const gpu = findChunkName(entrySource, 'gpuEngine');
+  const gpu = findChunkName(readFile(entry) ?? '', 'gpuEngine');
   if (gpu === null) {
     problems.push(`the entry chunk assets/${entry} names no WebGPU chunk`);
     return problems;
   }
-  const chunk = read(gpu);
+  const chunk = readFile(gpu) ?? '';
   if (mapName !== null) {
     const url = findMapUrl(chunk);
     if (url === null || !url.endsWith(`/assets/${mapName}`)) problems.push(`the WebGPU chunk assets/${gpu} does not name assets/${mapName}`);
     else {
-      const refused = mapProblems(mapText, chunk, loaded.map(read).join('\n'));
-      for (const problem of refused) problems.push(`the deploy check refuses the map: ${problem}`);
+      const checked = await bundleMapProblems({ entry, read: readFile, mapText, chunkSource: chunk });
+      for (const problem of checked.problems) problems.push(`the deploy check refuses the map: ${problem}`);
+      for (const name of checked.carriers) {
+        note(`Babylon's version ${checked.babylon} is in assets/${name}, ${name === entry ? 'the entry chunk' : 'which the entry chunk imports statically'}`);
+      }
     }
   }
   return problems;
