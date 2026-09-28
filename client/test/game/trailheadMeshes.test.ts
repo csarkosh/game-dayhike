@@ -199,7 +199,7 @@ describe("createTrailheadMeshes", () => {
     meshes.dispose();
   });
 
-  it("draws the face on a plane of its own, a millimetre in front of the model's, upright and toward the player", async () => {
+  it("draws the face on a plane of its own, 2 mm in front of the model's, upright and toward the player", async () => {
     const scene = freshScene();
     const { meshes, painted } = setup(scene, diskLoader(scene));
     await meshes.ready;
@@ -209,8 +209,8 @@ describe("createTrailheadMeshes", () => {
     const verts = worldVertices(face);
     expect(verts).toHaveLength(4);
     // The board is at (6, 39) and its face looks toward -z: the plane stands
-    // 0.159 m and a millimetre in front of the board's centre plane.
-    for (const { p } of verts) expect(p.z).toBeCloseTo(38.84, 6);
+    // 0.159 m and 2 mm in front of the board's centre plane.
+    for (const { p } of verts) expect(p.z).toBeCloseTo(38.839, 5);
     const top = Math.max(...verts.map(({ p }) => p.y));
     const bottom = Math.min(...verts.map(({ p }) => p.y));
     const left = Math.min(...verts.map(({ p }) => p.x));
@@ -232,7 +232,7 @@ describe("createTrailheadMeshes", () => {
     expect(scene.getMeshByName("trailhead_board_face")).toBeNull();
   });
 
-  it("stands the plane on the model's own face: a millimetre in front of it, and its size", async () => {
+  it("stands the plane on the model's own face: 2 mm in front of it, and its size", async () => {
     const scene = freshScene();
     const { meshes } = setup(scene, diskLoader(scene));
     await meshes.ready;
@@ -247,7 +247,7 @@ describe("createTrailheadMeshes", () => {
     expect(panel.length).toBeGreaterThan(0);
     // The board's face looks toward -z, so its front is the least z drawn.
     const front = Math.min(...panel.map(({ p }) => p.z));
-    expect(front - plane[0]!.p.z).toBeCloseTo(0.001, 3);
+    expect(front - plane[0]!.p.z).toBeCloseTo(0.002, 3);
     const face = panel.filter(({ p }) => p.z - front < 0.0005);
     const xs = face.map(({ p }) => p.x), ys = face.map(({ p }) => p.y);
     expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(2, 2);

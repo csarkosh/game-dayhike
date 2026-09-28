@@ -153,7 +153,7 @@ of the board's centre plane.
 | 5 | Fading, water stains, rust under the staples, scratches | Seeded wear |
 
 Layers 2 to 5 are one texture, 2048 by 1024, clear wherever the planks show. It is drawn on a
-plane 1 mm in front of the face, as the fork signs' lettering is drawn in front of their planks.
+plane 2 mm in front of the face, biased toward the eye in depth, as the fork signs' lettering is drawn in front of their planks.
 The game places that plane by the face's size and place above, which are the model's to keep; it
 does not look for the face by a material or a name.
 

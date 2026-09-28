@@ -6,8 +6,8 @@
  *
  * What is drawn, and where, is decided by pure modules (`boardFace.ts`,
  * `boardMap.ts`, `boardWear.ts`); this is the one module that touches a
- * canvas, and only `wrap`, `paperCrop`, `portraitCrop`, `boardDrawingOf`
- * and `whenImagesArrive` of it run without one.
+ * canvas, and only `wrap`, `paperCrop`, `portraitCrop`, `boardDrawingOf`,
+ * `boardMaterial` and `whenImagesArrive` of it run without one.
  */
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture.js";
@@ -427,6 +427,34 @@ function loadImage(url: string): Promise<HTMLImageElement | null> {
 }
 
 /**
+ * How far the face's paint is biased toward the eye, in the depth buffer's
+ * own steps. A plane 2 mm in front of the planks still lost to them from
+ * some standpoints beyond about 3 m (see `BOARD_FACE_LIFT`): on each of the
+ * 15 where it did, out to 14 m, a bias of 60 steps or fewer put it back.
+ * This is twice that.
+ */
+export const BOARD_FACE_BIAS = -120;
+
+/** The face's material, without its texture: clear wherever the texture is, and drawn over the planks behind it. */
+export function boardMaterial(scene: Scene, name: string): PBRMaterial {
+  const material = new PBRMaterial(name, scene);
+  material.useAlphaFromAlbedoTexture = true;
+  material.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+  // The clear ground must stay clear: no reflection or highlight kept where
+  // the alpha is zero, which would lay a sheen over the planks.
+  material.useRadianceOverAlpha = false;
+  material.useSpecularOverAlpha = false;
+  material.backFaceCulling = true;
+  // The slope's share of the bias, which is nothing where the face is
+  // looked at square on, and the constant share, which holds there.
+  material.zOffset = -1;
+  material.zOffsetUnits = BOARD_FACE_BIAS;
+  material.metallic = 0;
+  material.roughness = 0.92;
+  return material;
+}
+
+/**
  * The face's material: drawn at once with stand-ins for the paper and the
  * photograph, and drawn again with the images when they arrive. An image
  * that arrives after the texture is disposed is dropped.
@@ -447,18 +475,7 @@ export const paintedBoard: BoardPainter = (scene, name, drawing) => {
     draw(ctx, drawing, images);
     texture.update(true);
   });
-  const material = new PBRMaterial(`${name}_mat`, scene);
+  const material = boardMaterial(scene, `${name}_mat`);
   material.albedoTexture = texture;
-  material.useAlphaFromAlbedoTexture = true;
-  material.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
-  // The clear ground must stay clear: no reflection or highlight kept where
-  // the alpha is zero, which would lay a sheen over the planks.
-  material.useRadianceOverAlpha = false;
-  material.useSpecularOverAlpha = false;
-  material.backFaceCulling = true;
-  // A millimetre off the face is plenty up close; the bias keeps it on top at range.
-  material.zOffset = -1;
-  material.metallic = 0;
-  material.roughness = 0.92;
   return material;
 };

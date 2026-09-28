@@ -14,8 +14,18 @@ import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoa
 
 export const TRAILHEAD_CAR_OUTPUT = "models/trailhead.car.glb";
 export const TRAILHEAD_KIOSK_OUTPUT = "models/trailhead.kiosk.glb";
-/** How far in front of the model's own face the painted plane stands. */
-export const BOARD_FACE_LIFT = 0.001;
+/**
+ * How far in front of the model's own face the painted plane stands. With
+ * the view's near plane at 5 cm, a vertex lands in depth to within about
+ * 0.7 mm for every metre between it and the eye, so a plane 1 mm in front
+ * of another loses to it, in wedges across the face, from some places a
+ * player stands. Measured from standpoints 1 to 18 m in front of the board:
+ * at 1 mm and no bias the paint was lost from 16 of 75 under WebGPU and 1
+ * of 78 under WebGL2; at 2 mm with the material's bias (`boardPaint.ts`),
+ * from none under either. 2 mm holds the first metres and the bias the
+ * rest.
+ */
+export const BOARD_FACE_LIFT = 0.002;
 
 type Site = { x: number; z: number };
 
@@ -132,7 +142,7 @@ export function createTrailheadMeshes(
 
   let face: Mesh | null = null;
   /**
-   * The face's own plane: 2 m by 1 m, a millimetre in front of the model's
+   * The face's own plane: 2 m by 1 m, 2 mm in front of the model's
    * planks, in the board's own space so it turns with the board. A plane
    * looks toward -Z as it is made; half a turn points it out of the face,
    * and leaves the texture's left at the player's left.

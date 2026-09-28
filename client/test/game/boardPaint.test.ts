@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { Scene } from "@babylonjs/core/scene.js";
 import { boardText } from "../../src/game/boardFace.js";
-import { boardDrawingOf, paperCrop, portraitCrop, whenImagesArrive, wrap } from "../../src/game/boardPaint.js";
+import { boardDrawingOf, boardMaterial, paperCrop, portraitCrop, whenImagesArrive, wrap } from "../../src/game/boardPaint.js";
 
 describe("wrap", () => {
   const width = (s: string): number => s.length * 10;
@@ -117,5 +120,28 @@ describe("boardDrawingOf", () => {
     expect(d.map.road.every((r) => r.x === -9)).toBe(true);
     expect(d.map.places).toEqual([{ name: "Summit", x: 100, z: 0 }]);
     expect(d.urls).toEqual({ paper: null, portrait: null });
+  });
+});
+
+describe("boardMaterial", () => {
+  let engine: NullEngine | null = null;
+  afterEach(() => {
+    engine?.dispose();
+    engine = null;
+  });
+
+  it("blends over the planks behind it, and is biased to the front of them at any range", () => {
+    engine = new NullEngine();
+    const material = boardMaterial(new Scene(engine), "face");
+    expect(material.name).toBe("face");
+    expect(material.transparencyMode).toBe(PBRMaterial.PBRMATERIAL_ALPHABLEND);
+    expect(material.useAlphaFromAlbedoTexture).toBe(true);
+    expect(material.backFaceCulling).toBe(true);
+    // The slope's share of the bias, and the constant share that holds
+    // where the face is looked at square on.
+    expect(material.zOffset).toBe(-1);
+    expect(material.zOffsetUnits).toBe(-120);
+    expect(material.metallic).toBe(0);
+    expect(material.roughness).toBe(0.92);
   });
 });
