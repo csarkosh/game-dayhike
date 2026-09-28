@@ -71,6 +71,7 @@ import {
   WEBGPU_START_MS,
   type ShaderLookupMode,
 } from "./engineChoice.js";
+import { pinPluginNumbers } from "./pluginNumbers.js";
 import { defaultSources, lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
 
 /** The least of its start's budget an engine keeps when it waits for its
@@ -327,6 +328,9 @@ export async function createWebGpuEngine(
     // GLSL.
     PBRBaseMaterial.ForceGLSL = true;
     StandardMaterial.ForceGLSL = true;
+    // Before any of its materials: every plugin class's define numbered the
+    // same on every load, so a stage's text, and its key, is too.
+    pinPluginNumbers();
     return engine;
   } catch (err) {
     if (made.engine !== null) disposeHalfMade(made.engine);
