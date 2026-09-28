@@ -303,6 +303,26 @@ describe("createWebGpuEngine", () => {
     await waiting;
   });
 
+  it("waits for its sources no closer than 500 ms to its deadline, and not at all nearer, so a slow read never fails a start", async () => {
+    vi.useFakeTimers();
+    const never = (): Promise<readonly WgslSource[]> => new Promise(() => undefined);
+    // A start with 1 s of its budget left: handed over at 500 ms.
+    let handed = false;
+    const late = createWebGpuEngine(canvas, { ms: 1_000, translators: TRANSLATORS, sources: never }).then(() => (handed = true));
+    await vi.advanceTimersByTimeAsync(499);
+    expect(handed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(handed).toBe(true);
+    await late;
+    // With 300 ms left: handed over at once.
+    handed = false;
+    const later = createWebGpuEngine(canvas, { ms: 300, translators: TRANSLATORS, sources: never }).then(() => (handed = true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(handed).toBe(true);
+    await later;
+    expect(made.disposed).toBe(0);
+  });
+
   it("asks the device for exactly the required limits and the texture formats it is given", async () => {
     await createWebGpuEngine(canvas, { features: ["texture-compression-bc"], translators: TRANSLATORS });
     expect(made.options).toEqual([

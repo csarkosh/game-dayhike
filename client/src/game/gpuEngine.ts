@@ -68,6 +68,11 @@ import {
 } from "./engineChoice.js";
 import { lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
 
+/** The least of its start's budget an engine keeps when it waits for its
+ * shader lookup's sources: the wait is given up this long before the
+ * deadline, since running out of that budget is remembered (`init`). */
+const SOURCES_MARGIN_MS = 500;
+
 /** How `catchTranslationFailures` words a failure it cannot trace to an effect. */
 const UNTRANSLATED = "WebGPU shader translation failed";
 
@@ -240,8 +245,10 @@ async function startTranslators(signal: AbortSignal): Promise<Translators> {
  * Babylon as they are. Every GLSL shader is looked up before it is translated
  * (`lookUpShaders`, in `lookup`'s mode; `?wgsl=off` installs nothing), from
  * `sources` (the browser's store by default) read into memory while the
- * device comes, within `WGSL_SOURCES_MS`, so that no preparation waits once
- * the engine is handed over. Rejects on any failure, or when `ms` pass first,
+ * device comes, within `WGSL_SOURCES_MS` and never closer than
+ * `SOURCES_MARGIN_MS` to its deadline (entries still arriving are found as
+ * they land), so that no preparation waits once the engine is handed over.
+ * Rejects on any failure, or when `ms` pass first,
  * having disposed what it made; the canvas may then hold a WebGPU context, so
  * the caller draws WebGL2 on a fresh one.
  */
@@ -260,6 +267,11 @@ export async function createWebGpuEngine(
   const ms = options.ms ?? WEBGPU_START_MS;
   const made: { engine: WebGPUEngine | null } = { engine: null };
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let marginTimer: ReturnType<typeof setTimeout> | undefined;
+  /** When the wait for the sources is given up at the latest. */
+  const sourcesBy = new Promise<void>((resolve) => {
+    marginTimer = setTimeout(resolve, Math.max(0, ms - SOURCES_MARGIN_MS));
+  });
   let late = false;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
@@ -293,7 +305,7 @@ export async function createWebGpuEngine(
     // promise (its setup waits on it), twgsl as the instance. No path to load.
     await engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl });
     await engine.prepareGlslangAndTintAsync();
-    await looking;
+    await Promise.race([looking, sourcesBy]);
     return engine;
   };
   const starting = start();
@@ -319,6 +331,7 @@ export async function createWebGpuEngine(
     throw err;
   } finally {
     clearTimeout(timer);
+    clearTimeout(marginTimer);
   }
 }
 

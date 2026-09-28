@@ -321,7 +321,7 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     // before the engine is handed over: no preparation then waits.
     expect(start).toContain(
       "    await engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl });\n" +
-        "    await engine.prepareGlslangAndTintAsync();\n    await looking;\n",
+        "    await engine.prepareGlslangAndTintAsync();\n    await Promise.race([looking, sourcesBy]);\n",
     );
   });
 
