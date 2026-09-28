@@ -693,6 +693,49 @@ every pose also scored on a 3 × 3 grid. The bar is §7.3's of the design
    fails its start once more before WebGL2; after a pipeline error or a second
    lost device the address is pinned to `engine=webgl2`.
 
+## 8. The default, switched on where it was measured faster
+
+As of 2026-09-28 WebGPU is the default engine on the high tier, in a
+Chromium-based browser on macOS or Windows on a device that is not a phone or
+a tablet, where no failure is remembered and the adapter fits
+(`chooseEngine`, `engineChoice.ts`; the design, §5.1). Everywhere else the
+game draws with WebGL2, as before. These are the figures that decided it.
+
+**Frame time.** Mean frame time on an Apple M4 at 1920 × 1080 in Chrome 154,
+WebGL2 → WebGPU:
+
+| pose | high tier | medium tier |
+| --- | --- | --- |
+| canopy | 24.2 → 20.9 ms | 19.2 → 19.3 ms |
+| meadow | 19.5 → 17.1 ms | 17.3 → 16.7 ms (at the display's cap) |
+| trailside | 21.6 → 19.6 ms | not measured |
+| night | 23.6 → 20.1 ms | not measured |
+| canopy at 4 × the pixels | 51.0 → 40.1 ms | not measured |
+
+The high tier is faster on WebGPU at every pose that is not at the display's
+cap. The medium tier is not faster under the canopy, and its meadow reading
+sits at the display's cap, where a gain cannot show: medium stays on WebGL2.
+
+**A first visit.** On the high tier, the time from opening the page to
+drawing at the full frame rate:
+
+| machine and browser | WebGPU | WebGL2 |
+| --- | --- | --- |
+| an Apple M4, Chrome on macOS | 4 to 6 s | 4 to 6 s |
+| a Windows machine with an NVIDIA T4 and 4 virtual CPUs, Chrome on Windows | 18 to 21 s | 28 s |
+
+**What was not measured.**
+
+- **Other browsers.** Only Chrome. Edge and the desktop launcher are on the
+  WebGPU default by the rule, as Chromium-based, and were not measured
+  themselves. Safari and Firefox were not measured, and the rule keeps them
+  on WebGL2.
+- **Other platforms.** Only macOS and Windows. Linux, ChromeOS, Android and
+  iOS were not measured, and the rule keeps them on WebGL2.
+- **The medium tier** beyond the canopy and the meadow.
+- **A party.** Every reading is of one player alone; a hike with other
+  players drawn was not measured on either engine.
+
 ## Appendix A. The pipeline-cache bug, as a draft issue
 
 Design Appendix A's text, kept here with the gates that concern it. It is a

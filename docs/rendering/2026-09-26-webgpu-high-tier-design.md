@@ -472,9 +472,10 @@ whatever its GPU, and one with more than four threads and more than 4 GB to
 medium. Safari and Firefox expose no `deviceMemory`, read the default 4 GB, and
 land on low.
 
-So the rule covers both tiers a desktop Chromium is detected as: once the
-switch is on, desktop Chrome, Edge and launcher players reach WebGPU on high or
-medium with no action of theirs, and Safari and Firefox stay on WebGL2 on low. Changing detection moves every player it
+So the rule covers both tiers a desktop Chromium is detected as. As switched
+on (§5.1) it covers high alone: desktop Chrome, Edge and launcher players on
+macOS and Windows reach WebGPU on high with no action of theirs, medium stays
+on WebGL2, and Safari and Firefox stay on WebGL2 at every tier. Changing detection moves every player it
 promotes onto a higher tier's costs (on high: the scene pass, halation, two
 2048² cascades, 400 m of cliff rings), which is a design of its own with its own
 frame gate, being written separately (§17). The engine rule is written against
@@ -484,14 +485,30 @@ the resolved tier, so it needs no change when detection does.
 
 ### 5.1 The rule
 
-Resolved once, before the game starts, in `main.ts`:
+**As switched on (2026-09-28).** WebGPU is the default on the high tier alone
+(`WEBGPU_TIERS = ["high"]`, `WEBGPU_ENABLED = true`), and only in a
+Chromium-based browser (Chrome, Edge, the desktop launcher) on macOS or
+Windows on a device that is not a phone or a tablet: the one tier, and the one
+browser on the two platforms, where it was measured to draw faster. On an
+Apple M4 in Chrome 154 the high tier gained at every pose not at the display's
+cap (the canopy 24.2 → 20.9 ms) and the medium tier did not gain under the
+canopy (19.2 → 19.3 ms); the figures are in the verification note, §8. Safari
+and Firefox are WebGL2 whatever they offer at `navigator.gpu`. The browser and
+the platform are read by `isChromium` and `hostOs` (`gpuSignals.ts`: the
+client hint where there is one, else the user agent), whether the device is
+mobile by `GpuSignals.mobile`, and all three reach `chooseEngine` as plain
+values. The engine is chosen for each renderer from its tier, so a switch
+between High and Medium, the player's or the governor's, also changes the
+engine, under the switch's own cover.
 
 ```
 tier   = ?tier=… if valid, else detected
 engine = ?engine=webgl2                          → WebGL2
        | ?engine=webgpu      and the GPU fits     → WebGPU
-       | tier ∉ WEBGPU_TIERS (high, medium)      → WebGL2
-       | not WEBGPU_ENABLED                      → WebGL2   (until Task 6)
+       | tier ∉ WEBGPU_TIERS (high)              → WebGL2
+       | not WEBGPU_ENABLED                      → WebGL2
+       | not Chromium, not macOS or Windows,
+         or a phone or a tablet                  → WebGL2
        | the remembered fallback holds           → WebGL2
        | the GPU fits                            → WebGPU
        | otherwise                               → WebGL2
