@@ -30,8 +30,18 @@ import type { QualityTier } from "./quality.js";
 import type { Renderer } from "./renderer.js";
 import type { TierChoice } from "./tierChoice.js";
 
-/** How long the "Applying…" ground waits for the new scene before lifting anyway. */
-export const SWAP_READY_MAX_MS = 10_000;
+/**
+ * How long the cover over a switch (the "Applying…" ground, or the governor's
+ * screen) waits for the new scene before lifting anyway, counted from the end
+ * of the renderer's build. Sized for the slowest build measured: in Chrome on
+ * an Apple M4 at 6× CPU throttling the build took about 4.2 s and the forest
+ * was whole 3.2–6.1 s past a 10 s bound (16.1 s after the build at most), so
+ * that bound lifted the cover on bare hillside in 12 switches of 12. 20 s
+ * covers the slowest with margin. It stays a bound: a model or a layer that never settles holds
+ * the cover this long and no longer, and on a machine slower still the cover
+ * lifts here and the forest fills in after.
+ */
+export const SWAP_READY_MAX_MS = 20_000;
 
 export type Swappable = { renderer: Renderer; canvas: HTMLCanvasElement };
 
