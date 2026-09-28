@@ -379,8 +379,9 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
    * client's predicted world so both can resolve what is in reach. Nothing
    * crosses the wire: the registry is seeded like everything else. Today that
    * is only the debug pad marker: a lone interactable 2 m out from the
-   * trailhead at chest height, provably in reach when standing on the pad and
-   * facing it.
+   * pad's centre at chest height, in reach from the pad's centre when facing
+   * it. A player arrives a little off the centre, facing the trail, and
+   * walks to it.
    */
   function registerInteractables(world: World): void {
     if (!debugOn) return;

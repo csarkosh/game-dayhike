@@ -45,7 +45,7 @@ export type SearchInput = {
   seed: number;
   graph: TrailGraph;
   groundH(x: number, z: number): number;
-  /** The kiosk's and the car's sites (`propSite` over the `kiosk` and `car` props). */
+  /** The kiosk's and the car's sites (`trailheadSite` for each). */
   kiosk: { x: number; z: number };
   car: { x: number; z: number };
 };

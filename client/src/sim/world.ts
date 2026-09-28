@@ -187,7 +187,10 @@ export function createForestWorld(forest: Forest, authoritative = true): World {
  * never stacks. A forest has no list: every peer derives the same start from
  * the seed (`trailheadStart`), in front of the car and facing the trail, and
  * walks the same deterministic spiral out from it to the first free place,
- * so they arrive at the same answer without exchanging anything.
+ * so they arrive at the same answer without exchanging anything. The yaw is
+ * the start's own, whatever place the spiral finds: the game aims the view
+ * from the seed alone and must agree with it. The start is free on every one
+ * of the 227 sweep seeds, so the two have never differed.
  */
 function pickSpawn(world: World): { pos: Vec3; yaw: number } {
   if (world.forest !== null) {
