@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { bowlFor } from "../../src/sim/olympic.js";
-import { CAR_MATERIAL, KIOSK_MATERIAL, propSite, roadProp } from "../../src/sim/passes/trailhead.js";
+import { CAR_MATERIAL, KIOSK_MATERIAL, trailheadSite } from "../../src/sim/passes/trailhead.js";
 import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { buildSearch } from "../../src/sim/search.js";
 import { SEEDS } from "./trailGateSeeds.js";
@@ -24,7 +24,7 @@ describe("the search over the 227-seed sweep", { timeout: timeLimit(600_000) }, 
   it("names one hiker on every world, puts the body on the crest facing back down the stem, and hangs the poster toward the pad", () => {
     for (const seed of SEEDS) {
       const { graph } = bowlFor(seed);
-      const site = (material: string) => propSite(graph, activeTerrainVariant().roadCenterX!, seed, roadProp(material));
+      const site = (material: string) => trailheadSite(graph, activeTerrainVariant().roadCenterX!, seed, material);
       const r = buildSearch({ seed, graph, groundH: (x, z) => elevationAt(seed, x, z), kiosk: site(KIOSK_MATERIAL), car: site(CAR_MATERIAL) });
       expect(r.hiker.name.length, `seed ${seed}`).toBeGreaterThan(0);
       const crest = graph.nodes[graph.summit]!;
