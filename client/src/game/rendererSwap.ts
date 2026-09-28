@@ -91,9 +91,18 @@ export type EngineWatchers = {
 export type EngineOnCanvas = { canvas: HTMLCanvasElement; engine: AbstractEngine | null; watchers: EngineWatchers | null };
 
 /**
+ * The least a switch's new scene waits under the cover for its models, ground
+ * maps and bakes, whatever the engine's making took of the bound: without it a
+ * late engine would lift the cover at once on a scene still loading.
+ */
+export const SWAP_SCENE_MIN_MS = 5_000;
+
+/**
  * The engine a switch builds on, made within its cover's bound, and what is
- * left of the bound for the new scene's wait (`whenSceneReady`), so the cover
- * stays up no longer than the bound its caller names plus the build itself. A
+ * left of the bound for the new scene's wait (`whenSceneReady`), never less
+ * than `SWAP_SCENE_MIN_MS`, so the cover stays up no longer than the bound its
+ * caller names, plus that floor where the engine ate into it, plus the build
+ * itself. A
  * switch into WebGPU can otherwise wait up to 10 s for the engine, and 10 s
  * more for the translators, before the bound starts. `make` is told, through
  * `wanted`, whether its engine is still wanted. One not made within `boundMs`
@@ -121,9 +130,9 @@ export async function engineWithinBound(
       (made) => made.engine?.dispose(),
       () => undefined,
     );
-    return { onCanvas: deps.webgl2(), leftMs: 0, late: true };
+    return { onCanvas: deps.webgl2(), leftMs: SWAP_SCENE_MIN_MS, late: true };
   }
-  return { onCanvas: first, leftMs: Math.max(0, boundMs - (deps.now() - from)), late: false };
+  return { onCanvas: first, leftMs: Math.max(SWAP_SCENE_MIN_MS, boundMs - (deps.now() - from)), late: false };
 }
 
 /** One rung of a ladder: a tier, and the engine made for it (null: WebGL2). */

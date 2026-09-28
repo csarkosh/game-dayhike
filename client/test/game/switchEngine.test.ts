@@ -3,6 +3,7 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import {
   APPLY_SWAP_READY_MAX_MS,
   GOVERNOR_SWAP_READY_MAX_MS,
+  SWAP_SCENE_MIN_MS,
   engineWithinBound,
   whenSceneReady,
   type EngineOnCanvas,
@@ -93,6 +94,7 @@ describe("the engine a switch makes, within its cover's bound", () => {
   });
 
   it("leaves the scene at least its 5 s floor however much of the bound the engine took", async () => {
+    expect(SWAP_SCENE_MIN_MS).toBe(5_000);
     const t = slowEngine(8_000);
     const result = engineWithinBound(t.make, GOVERNOR_SWAP_READY_MAX_MS, t.deps);
     await advance(8_000);
