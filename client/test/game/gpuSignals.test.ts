@@ -9,8 +9,9 @@ import {
   type WebGLLike,
 } from "../../src/game/gpuSignals.js";
 
-/** A WebGL2 context answering RENDERER (0x1F01) and, if given, the debug extension's 0x9246. */
-function gl(renderer: string, unmasked: string | null) {
+/** A WebGL2 context answering RENDERER (0x1F01), if given the debug extension's
+ * 0x9246, and `KHR_parallel_shader_compile` when `parallel` is set. */
+function gl(renderer: string, unmasked: string | null, parallel = false) {
   const asked: string[] = [];
   let lost = 0;
   const ctx: WebGLLike = {
@@ -20,6 +21,7 @@ function gl(renderer: string, unmasked: string | null) {
       asked.push(name);
       if (name === "WEBGL_debug_renderer_info") return unmasked === null ? null : { UNMASKED_RENDERER_WEBGL: 0x9246 };
       if (name === "WEBGL_lose_context") return { loseContext: () => { lost += 1; } };
+      if (name === "KHR_parallel_shader_compile") return parallel ? { COMPLETION_STATUS_KHR: 0x91b1 } : null;
       return null;
     },
   };
@@ -102,7 +104,7 @@ describe("gatherSignals", () => {
   }
 
   it("reads everything a desktop Chrome offers", async () => {
-    const g = gl("WebKit WebGL", "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)");
+    const g = gl("WebKit WebGL", "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)", true);
     const signals = await gatherSignals({
       navigator: {
         userAgent: "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/153.0.0.0 Safari/537.36",
@@ -124,11 +126,41 @@ describe("gatherSignals", () => {
       adapter: { vendor: "apple", architecture: "common-3", device: "", description: "", isFallbackAdapter: false },
       limits: { maxInterStageShaderVariables: 16, maxVertexBuffers: 8 },
       adapterStatus: "ok",
+      parallelCompile: true,
       cores: 10,
       memoryGb: 16,
       mobile: false,
       browser: 153,
     });
+  });
+
+  it("reads whether the one WebGL2 context compiles off the page's thread, before the context is lost", async () => {
+    // Firefox 156 answers the extension with null: every program links on the page's thread.
+    const firefox = gl("Apple M1, or similar", null);
+    let contexts = 0;
+    const absent = await gatherSignals({ navigator: { userAgent: "" }, webgl: () => { contexts += 1; return firefox.ctx; } });
+    expect(absent.parallelCompile).toBe(false);
+    expect(absent.renderer).toBe("Apple M1, or similar");
+    expect(contexts).toBe(1);
+    expect(firefox.lost()).toBe(1);
+    const chrome = gl("WebKit WebGL", "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)", true);
+    const present = await gatherSignals({ navigator: { userAgent: "" }, webgl: () => chrome.ctx });
+    expect(present.parallelCompile).toBe(true);
+    expect(chrome.asked.indexOf("KHR_parallel_shader_compile")).toBeLessThan(chrome.asked.indexOf("WEBGL_lose_context"));
+    expect(chrome.lost()).toBe(1);
+  });
+
+  it("knows nothing of parallel compiling without a WebGL2 context, or when getExtension throws", async () => {
+    expect((await gatherSignals({ navigator: { userAgent: "" }, webgl: () => null })).parallelCompile).toBe(null);
+    expect((await gatherSignals({ navigator: { userAgent: "" }, webgl: () => { throw new Error("no context"); } })).parallelCompile).toBe(null);
+    const refusing: WebGLLike = {
+      RENDERER: 0x1f01,
+      getParameter: () => "Apple M1, or similar",
+      getExtension: () => { throw new Error("gone"); },
+    };
+    const signals = await gatherSignals({ navigator: { userAgent: "" }, webgl: () => refusing });
+    expect(signals.parallelCompile).toBe(null);
+    expect(signals.renderer).toBe("Apple M1, or similar");
   });
 
   it("reports what is missing as missing, never as a small number", async () => {
@@ -137,7 +169,7 @@ describe("gatherSignals", () => {
       webgl: () => null,
     });
     expect(signals).toEqual({
-      renderer: null, adapter: null, limits: null, adapterStatus: "none", cores: null, memoryGb: null, mobile: false, browser: 26,
+      renderer: null, adapter: null, limits: null, adapterStatus: "none", parallelCompile: null, cores: null, memoryGb: null, mobile: false, browser: 26,
     });
   });
 
@@ -219,7 +251,7 @@ describe("gatherSignals", () => {
     }) as NavigatorLike;
     const signals = await gatherSignals({ navigator: nav, webgl: () => null });
     expect(signals).toEqual({
-      renderer: null, adapter: null, limits: null, adapterStatus: "rejected", cores: null, memoryGb: null, mobile: false, browser: 0,
+      renderer: null, adapter: null, limits: null, adapterStatus: "rejected", parallelCompile: null, cores: null, memoryGb: null, mobile: false, browser: 0,
     });
   });
 

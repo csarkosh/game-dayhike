@@ -23,6 +23,13 @@
  * tier whatever the GPU. So before the attempt is spent the probe screen's own
  * idle frames are timed, and below 60 Hz the probe is skipped, the class's
  * start tier kept, and nothing written: a later load tries again.
+ *
+ * Nor can a step settle where every shader links on the page's thread: a
+ * WebGL2 context without `KHR_parallel_shader_compile` (Firefox 156) links about
+ * one program a frame, each blocking for a few hundred milliseconds, so the
+ * scene is never quiet for `PROBE_QUIET_MS` inside `PROBE_READY_MAX_MS`. There
+ * the probe is skipped before its screen is shown, the class's start tier kept,
+ * and nothing written (`probeStepCanSettle`).
  */
 import { elevationAt } from "../sim/terrain.js";
 import { CLASS_TIERS, classifyGpu, gpuIdentity, type GpuClass } from "./gpuClass.js";
@@ -183,6 +190,17 @@ export function nextProbeStep(
 }
 
 /**
+ * Whether a probe step drawing with `engine` can ever be ready: on WebGL2 only
+ * where the context exposes `KHR_parallel_shader_compile` (`parallelCompile`
+ * true), since without it every program links on the page's thread and the
+ * scene is never quiet long enough; on WebGPU always, as its pipelines are
+ * made off the page's thread.
+ */
+export function probeStepCanSettle(parallelCompile: boolean | null, engine: ProbeReading["engine"]): boolean {
+  return engine === "webgpu" || parallelCompile === true;
+}
+
+/**
  * Every rendering note's canopy pose: seed `atmo`, the free camera at
  * (123, ground + 1.6, −105.5), yaw 1.571, pitch 0.3. The heaviest standard view,
  * and every measurement in the repository is taken there, so a probe reading
@@ -283,14 +301,16 @@ export type StartupDeps = {
 
 export type StartupTier = { tier: QualityTier; source: TierSource; cls: GpuClass };
 
-/** Auto on this machine: the GPU's class and identity, the tier, and the tier
- * a probe would start from, or null, and the most Auto recommends here: a
- * holding verdict's tier, else the class's ceiling (low under the cap). What
- * the Settings screen reads, and where `startupTier` begins. */
+/** Auto on this machine: the GPU's class and identity, the tier, the tier a
+ * probe would start from, or null, whether a probe that was due is skipped
+ * because its step could not settle here (`probeStepCanSettle`), and the most
+ * Auto recommends here: a holding verdict's tier, else the class's ceiling
+ * (low under the cap). What the Settings screen reads, and where
+ * `startupTier` begins. */
 export function autoPick(
   signals: GpuSignals,
   at: { record: AutoRecord | null; pixels: number; now: number },
-): { cls: GpuClass; gpu: string; tier: QualityTier; probeFrom: QualityTier | null; ceiling: QualityTier } {
+): { cls: GpuClass; gpu: string; tier: QualityTier; probeFrom: QualityTier | null; probeSkipped: boolean; ceiling: QualityTier } {
   const cls = classifyGpu(signals);
   const gpu = gpuIdentity(signals);
   const input = {
@@ -308,20 +328,24 @@ export function autoPick(
   // until then, the most the class may take here.
   const measured = holdingVerdict(input);
   const ceiling = withinClass(measured?.tier ?? "high", cls, signals.cores, signals.memoryGb);
-  return { cls, gpu, tier: auto.tier, probeFrom: auto.probeFrom, ceiling };
+  // Every probe step draws with WebGL2.
+  const probeSkipped = auto.probeFrom !== null && !probeStepCanSettle(signals.parallelCompile, "webgl2");
+  return { cls, gpu, tier: auto.tier, probeFrom: probeSkipped ? null : auto.probeFrom, probeSkipped, ceiling };
 }
 
 /**
  * The tier to build the hike at, and where it came from: `?tier=` over the
  * player's choice, and the choice over Auto. On Auto, a probed class with no
  * verdict that holds and fewer than three attempts is probed first behind the
- * screen, from its ceiling, or any class from `?probe=`. Before the attempt is
- * spent the probe waits for the tab to be seen (a hidden tab draws no frames)
- * and times the page's idle frames; below 60 Hz it is skipped with nothing
- * written. The probe itself is bounded at `PROBE_MAX_MS`, and everything stops
- * at once when `opts.cancelled` says the page has moved on. A probe's verdict
- * is never taken above what the class may take on this machine. Logs one line
- * for the probe's outcome and one for the tier.
+ * screen, from its ceiling, or any class from `?probe=`. Where its step could
+ * not settle (`probeStepCanSettle`) it is skipped at once, with no screen and
+ * nothing written, unless `?probe=` forces it. Before the attempt is spent the
+ * probe waits for the tab to be seen (a hidden tab draws no frames) and times
+ * the page's idle frames; below 60 Hz it is skipped with nothing written. The
+ * probe itself is bounded at `PROBE_MAX_MS`, and everything stops at once when
+ * `opts.cancelled` says the page has moved on. A probe's verdict is never
+ * taken above what the class may take on this machine. Logs one line for the
+ * probe's outcome and one for the tier.
  */
 export async function startupTier(
   signals: GpuSignals,
@@ -334,6 +358,14 @@ export async function startupTier(
   const decided = resolveTier({ override: parseTierOverride(opts.search), choice: opts.choice, auto: auto.tier });
   let tier = decided.tier;
   const from = decided.source === "auto" ? (parseProbeOverride(opts.search) ?? auto.probeFrom) : null;
+  if (decided.source === "auto" && from === null && auto.probeSkipped) {
+    // What is known: the extension absent, or no WebGL2 context to ask.
+    const reason =
+      signals.parallelCompile === null
+        ? "no WebGL2 context could be made to measure with"
+        : "this browser compiles shaders on the page's thread";
+    deps.log(`quality probe: skipped, ${reason}; starting at ${tier} (${cls})`);
+  }
   if (from !== null && !opts.cancelled()) {
     const screen = deps.showScreen();
     try {

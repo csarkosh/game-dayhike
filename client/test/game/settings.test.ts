@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { CAUTION_LIVE, TIER_CHOICES, listOpen, renderSettings, settingsModel, type SettingsInput } from "../../src/game/settings.js";
+import { autoPick } from "../../src/game/frameProbe.js";
+import type { GpuSignals } from "../../src/game/gpuSignals.js";
 import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";
 import type { TierChoice } from "../../src/game/tierChoice.js";
@@ -57,6 +59,21 @@ describe("settingsModel", () => {
       "This browser is not keeping settings, so this choice lasts until the page closes.",
       "Could not switch; still using Medium.",
     ]);
+  });
+
+  it("names the class's start tier where the probe is skipped because shaders compile on the page's thread", () => {
+    // Firefox 156 on an Apple M4, and the page's own summary of Auto (`autoSummary` in main.ts).
+    const firefox: GpuSignals = {
+      renderer: "Apple M1, or similar", adapter: null, limits: null, adapterStatus: "none", parallelCompile: false,
+      cores: 10, memoryGb: null, mobile: false, browser: 156,
+    };
+    const caption = (signals: GpuSignals) => {
+      const pick = autoPick(signals, { record: null, pixels: 2_073_600, now: 1_790_000_000_000 });
+      const auto = { tier: pick.tier, probePending: pick.probeFrom !== null, ceiling: pick.ceiling };
+      return settingsModel({ context: "title", choice: "auto", auto, override: null, stored: true }).lines;
+    };
+    expect(caption(firefox)).toEqual(["Auto picks Medium on this computer."]);
+    expect(caption({ ...firefox, parallelCompile: true })).toEqual(["Auto tests this computer when your next hike starts."]);
   });
 
   it("has no Apply on the title screen, where a choice is kept as it is picked", () => {
