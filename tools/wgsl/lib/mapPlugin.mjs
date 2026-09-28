@@ -15,10 +15,12 @@
 //   `<base>wgsl-map.json` once it is made, so a measurement on the dev server
 //   sees what production will. A request made before it is ready waits for
 //   it; one the tool failed to make is a 404, which the page reads as no map.
-//   With `DAYHIKE_SKIP_WGSL_MAP` set, the dev server translates nothing (a
-//   real corpus is minutes of CPU, beside what the dev server may be
-//   measuring) and answers the map's request with a 404. The build always
-//   translates.
+//   Making it translates the whole corpus: the 421 recorded stages took
+//   about 35 s on an Apple M4 and 54 s on a GitHub build runner, beside what
+//   the dev server may be measuring, on every start of a checkout that has
+//   no map made yet. With `DAYHIKE_SKIP_WGSL_MAP` set, the dev server
+//   translates nothing and answers the map's request with a 404. The build
+//   always translates.
 // - the suite: the URL is empty, and the page asks for no map.
 
 import { spawn } from 'node:child_process';
