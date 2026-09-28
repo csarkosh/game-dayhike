@@ -15,6 +15,10 @@
 //   `<base>wgsl-map.json` once it is made, so a measurement on the dev server
 //   sees what production will. A request made before it is ready waits for
 //   it; one the tool failed to make is a 404, which the page reads as no map.
+//   With `DAYHIKE_SKIP_WGSL_MAP` set, the dev server translates nothing (a
+//   real corpus is minutes of CPU, beside what the dev server may be
+//   measuring) and answers the map's request with a 404. The build always
+//   translates.
 // - the suite: the URL is empty, and the page asks for no map.
 
 import { spawn } from 'node:child_process';
@@ -25,6 +29,8 @@ export const WGSL_MAP_ID = 'virtual:dayhike-wgsl-map';
 const RESOLVED = `\0${WGSL_MAP_ID}`;
 /** Where the dev server serves the map, under the base. */
 const DEV_PATH = 'wgsl-map.json';
+/** Set, the dev server makes no map. */
+export const SKIP_ENV = 'DAYHIKE_SKIP_WGSL_MAP';
 
 /**
  * The plugin, for the map at `mapFile`, made by the tool at `tool` (the dev
@@ -55,7 +61,7 @@ export function wgslMapPlugin({ mapFile, tool }) {
     },
     configureServer(server) {
       if (process.env.VITEST) return;
-      const made = new Promise((resolve) => {
+      const made = process.env[SKIP_ENV] ? Promise.resolve(false) : new Promise((resolve) => {
         const child = spawn(process.execPath, [tool, '--reuse', '--out', mapFile], { stdio: 'inherit' });
         child.on('exit', (code) => resolve(code === 0));
         child.on('error', () => resolve(false));
