@@ -16,6 +16,7 @@
 #     with LFS;
 #   - holds the machine still between measurements; blocks the metadata
 #     server (and so the machine's service account) for the desktop user;
+#     disables Windows Remote Management's inbound firewall rules;
 #   - restarts once.
 # A boot whose desktop user has no `done-user-<name>` marker (a new
 #   desktop_user, or an image whose marker was removed; README.md):
@@ -23,7 +24,8 @@
 # The boot after that (until marker `verified` exists):
 #   - checks, with things that can fail, that the driver runs as a licensed
 #     RTX Virtual Workstation (on a -vws GPU), that the desktop user is logged
-#     on at the console, that its metadata-server block is in place, and
+#     on at the console, that its metadata-server block is in place, that no
+#     inbound rule admits Windows Remote Management, and
 #     that it cannot change the display task's script; logs
 #     the console's size and warns if it is not 1920 x 1080. Only then
 #     `verified`.
@@ -71,6 +73,7 @@ $Root = Join-Path $env:ProgramData 'test-rig'
 $Downloads = Join-Path $Root 'downloads'
 $PasswordFile = Join-Path $Root 'desktop-password'
 $MetadataRule = 'test-rig-block-metadata'
+$RemoteManagementPorts = @('5985', '5986')
 $UserStep = "user-$DesktopUser"
 $FailureCount = Join-Path $Root 'failed-boots'
 # The console's size. With no monitor, Windows starts the console at whatever
@@ -537,6 +540,42 @@ function Request-Restart([string]$Reason) {
   Log "Restart needed: $Reason"
 }
 
+# Whether a firewall rule's local ports, as Get-NetFirewallPortFilter gives
+# them (numbers, ranges such as 5000-6000, or keywords such as Any), name a
+# port of Windows Remote Management. Any is not counted: a rule for every port
+# is not a Remote Management rule, and the VPC admits only 22 and 3389.
+function Test-RemoteManagementPort([string[]]$Ports) {
+  foreach ($port in $Ports) {
+    foreach ($wanted in $RemoteManagementPorts) {
+      if ($port -eq $wanted) { return $true }
+      if ($port -match '^(\d+)-(\d+)$' -and [int]$Matches[1] -le [int]$wanted -and [int]$wanted -le [int]$Matches[2]) { return $true }
+    }
+  }
+  return $false
+}
+
+# The enabled inbound rules that admit Windows Remote Management (HTTP 5985,
+# HTTPS 5986): its own firewall group, and any other rule on its ports, which
+# Google's instance set-up (it configures WinRM over HTTPS at specialisation)
+# may add outside that group.
+function Get-OpenRemoteManagementRules {
+  return @(Get-NetFirewallRule -Direction Inbound -Enabled True -ErrorAction SilentlyContinue | Where-Object {
+      $_.Action -eq 'Allow' -and ($_.DisplayGroup -like 'Windows Remote Management*' -or (Test-RemoteManagementPort @(($_ | Get-NetFirewallPortFilter).LocalPort)))
+    })
+}
+
+# Closed on the host as well: nothing reaches Windows Remote Management through
+# the VPC (no external address; IAP's range only, to 22 and 3389), and with its
+# inbound rules disabled one mistaken VPC rule would expose it no more. Its
+# service is left running; nothing but the firewall is changed.
+function Close-RemoteManagement {
+  $open = @(Get-OpenRemoteManagementRules)
+  $open | Disable-NetFirewallRule
+  $listening = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalAddress -in '0.0.0.0', '::' } |
+    ForEach-Object { "$($_.LocalAddress):$($_.LocalPort)" } | Sort-Object -Unique
+  Log "Closed: Windows Remote Management's inbound rules disabled ($(if ($open.Count) { ($open | ForEach-Object { $_.DisplayName }) -join ', ' } else { 'none were enabled' })). Still listening on all addresses, behind the host firewall and the VPC: $($listening -join ' ')"
+}
+
 function Install-Everything {
   if (-not (Test-Step 'ssh')) { Set-SshKeyOnly }
   if (-not (Test-Step $UserStep)) { Set-DesktopUser }
@@ -666,6 +705,7 @@ function Install-Everything {
 
   if (-not (Test-Step 'closed')) {
     Set-MetadataBlock
+    Close-RemoteManagement
     Complete-Step 'closed'
   }
 }
@@ -715,9 +755,11 @@ function Test-Setup {
 
   $rule = Get-NetFirewallRule -Name $MetadataRule -ErrorAction SilentlyContinue
   if (-not $rule -or $rule.Enabled -ne 'True' -or $rule.Action -ne 'Block') { throw "No enabled rule blocks the metadata server for $DesktopUser" }
+  $open = @(Get-OpenRemoteManagementRules)
+  if ($open.Count -gt 0) { throw "Windows Remote Management is open on the host: $(($open | ForEach-Object { $_.DisplayName }) -join ', ')" }
   $listening = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalAddress -in '0.0.0.0', '::' } |
     ForEach-Object { "$($_.LocalAddress):$($_.LocalPort)" } | Sort-Object -Unique
-  Log "Closed: metadata server blocked for $DesktopUser. Listening on all addresses (the VPC firewall admits only IAP, to 22 and 3389): $($listening -join ' ')"
+  Log "Closed: metadata server blocked for $DesktopUser; no inbound rule for Windows Remote Management. Listening on all addresses (the VPC firewall admits only IAP, to 22 and 3389): $($listening -join ' ')"
 }
 
 $restart = $false

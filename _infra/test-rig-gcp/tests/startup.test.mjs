@@ -345,3 +345,25 @@ test('the display task runs a script file the desktop user may read and run but 
   assert.match(script, /\n  Test-DisplayScriptAccess\n/);
   assert.match(script, /Display: \$\(\$adapter\.CurrentHorizontalResolution\)x\$\(\$adapter\.CurrentVerticalResolution\)/);
 });
+
+test('Windows Remote Management is closed on the host, and the check after set-up fails if it is open', () => {
+  // The set-up: its firewall group, and any inbound rule on 5985 or 5986
+  // (Google's own set-up may add one outside the group), disabled; SSH and
+  // Remote Desktop, which IAP carries, left alone.
+  assert.match(script, /^\$RemoteManagementPorts = @\('5985', '5986'\)$/m);
+  const close = /function Close-RemoteManagement \{\n([\s\S]*?)\n\}/.exec(script)[1];
+  assert.match(close, /Disable-NetFirewallRule/);
+  assert.match(close, /Get-OpenRemoteManagementRules/);
+  assert.match(close, /Log "Closed: /);
+  const rules = /function Get-OpenRemoteManagementRules \{\n([\s\S]*?)\n\}/.exec(script)[1];
+  assert.match(rules, /Get-NetFirewallRule -Direction Inbound -Enabled True/);
+  assert.match(rules, /\$_\.DisplayGroup -like 'Windows Remote Management\*'/);
+  assert.match(rules, /Get-NetFirewallPortFilter/);
+  assert.match(rules, /Test-RemoteManagementPort/);
+  assert.equal(/Remote Desktop|OpenSSH|3389|'22'/.test(close + rules), false, 'SSH and Remote Desktop are not touched');
+  // The closed step runs it; the check after set-up fails on an open rule.
+  const closedStep = /if \(-not \(Test-Step 'closed'\)\) \{\n([\s\S]*?)\n    Complete-Step 'closed'/.exec(script)[1];
+  assert.match(closedStep, /Close-RemoteManagement/);
+  const check = /function Test-Setup \{\n([\s\S]*?)\n\}\n/.exec(script)[1];
+  assert.match(check, /\$open = @\(Get-OpenRemoteManagementRules\)\n\s+if \(\$open\.Count -gt 0\) \{ throw /);
+});
