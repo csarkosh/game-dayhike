@@ -148,9 +148,9 @@ describe("probeStepCanSettle", () => {
     expect(probeStepCanSettle(true, null, false)).toBe(false);
   });
 
-  it("asks it of the probed tiers' engine, and of either engine while the adapter has not answered", () => {
-    expect(probeStepEngine({ adapterStatus: "ok" }, "webgpu")).toBe("webgpu");
-    expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgpu")).toBe(null);
+  it("measures on WebGL2 while a WebGPU step cannot settle, whatever the rule gives the probed tiers", () => {
+    expect(probeStepEngine({ adapterStatus: "ok" }, "webgpu")).toBe("webgl2");
+    expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgpu")).toBe("webgl2");
     expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgl2")).toBe("webgl2");
     expect(probeStepEngine({ adapterStatus: "ok" }, undefined)).toBe("webgl2");
     // The probed tiers share the rule's engine, so the first step's answer is
@@ -494,17 +494,19 @@ describe("startupTier", () => {
     expect(readAutoRecord(earlier)!.attempts).toBe(2);
   });
 
-  it("skips the probe whose steps would draw on WebGPU, before its screen: no wait, nothing written", async () => {
+  it("probes tiers that draw on WebGPU on WebGL2, and the verdict holds for WebGPU", async () => {
     const storage = memoryStorage();
     const t = fakes((tier) => reading(tier, 16.7), storage);
-    expect(await startupTier(SAFARI, { ...page(), engine: "webgpu" }, t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
-    expect(t.screens()).toBe(0);
-    expect(t.waits()).toBe(0);
-    expect(t.steps).toEqual([]);
-    expect(contents(storage)).toBe("[]");
-    expect(t.lines).toEqual([
-      "quality probe: skipped, a WebGPU step translates its shaders on the page's thread; starting at medium (apple-unknown)",
-    ]);
+    expect(await startupTier(SAFARI, { ...page(), engine: "webgpu" }, t.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
+    expect(t.screens()).toBe(1);
+    expect(t.steps).toEqual(["high"]);
+    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)"]);
+    // A WebGL2 verdict, read for a WebGPU start: no second probe.
+    expect(readAutoRecord(storage)!.verdict).not.toHaveProperty("engine");
+    expect(readAutoRecord(storage)!.attempts).toBe(0);
+    const again = fakes((tier) => reading(tier, 16.7), storage);
+    expect(await startupTier(SAFARI, { ...page(), engine: "webgpu" }, again.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
+    expect(again.screens()).toBe(0);
   });
 
   it("shows the probe's screen exactly where Settings says a probe is pending, for each engine a step may draw with", async () => {
@@ -514,21 +516,32 @@ describe("startupTier", () => {
       ["WebGPU, the adapter known", SAFARI, "webgpu"],
       ["WebGPU without the WebGL2 extension", FIREFOX, "webgpu"],
       ["WebGPU, the adapter not known yet", { ...SAFARI, adapterStatus: "timed-out" }, "webgpu"],
+      ["WebGPU, a WebGL2 verdict holding", SAFARI, "webgpu"],
     ];
     const seen: [string, boolean, boolean][] = [];
     for (const [name, signals, engine] of cases) {
-      const t = fakes((tier) => reading(tier, 16.7));
+      // The last case holds a WebGL2 verdict of the tier detection release's shape.
+      const storage = memoryStorage();
+      if (name === "WebGPU, a WebGL2 verdict holding") {
+        writeAutoRecord(storage, {
+          v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+          verdict: { tier: "high", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000 - 86_400_000 },
+        });
+      }
+      const t = fakes((tier) => reading(tier, 16.7), storage);
       // The page's summary for Settings (`autoSummary` in main.ts).
-      const pending = autoPick(signals, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, engine }).probeFrom !== null;
+      const record = readAutoRecord(storage);
+      const pending = autoPick(signals, { record, pixels: 2_073_600, now: 1_790_000_000_000, engine }).probeFrom !== null;
       await startupTier(signals, { ...page(), engine }, t.deps);
       seen.push([name, pending, t.screens() === 1]);
     }
     expect(seen).toEqual([
       ["WebGL2, linked in parallel", true, true],
       ["WebGL2, linked on the page's thread", false, false],
-      ["WebGPU, the adapter known", false, false],
+      ["WebGPU, the adapter known", true, true],
       ["WebGPU without the WebGL2 extension", false, false],
-      ["WebGPU, the adapter not known yet", false, false],
+      ["WebGPU, the adapter not known yet", true, true],
+      ["WebGPU, a WebGL2 verdict holding", false, false],
     ]);
   });
 
@@ -605,13 +618,13 @@ describe("autoPick", () => {
     // WebGL2 steps, as with the switch off: the tier detection branch's rule.
     expect(probe(signals(true, "none"), "webgl2")).toEqual(probed);
     expect(probe(signals(false, "none"), "webgl2")).toEqual(skipped);
-    // WebGPU steps, the adapter known: not until a WebGPU step is measured to
-    // settle, with or without the WebGL2 extension.
-    expect(probe(signals(true, "none"), "webgpu")).toEqual(skipped);
+    // Tiers that draw on WebGPU, whose steps cannot settle there: measured on
+    // WebGL2 where a WebGL2 step can settle, the adapter known or not.
+    expect(probe(signals(true, "none"), "webgpu")).toEqual(probed);
+    expect(probe(signals(true, "timed-out"), "webgpu")).toEqual(probed);
+    // Where WebGL2 cannot settle either (Firefox): skipped.
     expect(probe(signals(false, "none"), "webgpu")).toEqual(skipped);
-    // The adapter not known yet: the step may draw on either engine, so both
-    // must settle.
-    expect(probe(signals(true, "timed-out"), "webgpu")).toEqual(skipped);
+    expect(probe(signals(false, "timed-out"), "webgpu")).toEqual(skipped);
   });
 
   it("is Auto's tier and whether it will probe, before any hike", () => {
@@ -911,10 +924,8 @@ describe("the engine a probe's verdict was measured with", () => {
     const at = { record, pixels: 2_073_600, now: 1_790_000_000_000 };
     expect(autoPick(SAFARI, at)).toMatchObject({ tier: "high", probeFrom: null });
     expect(autoPick(SAFARI, { ...at, engine: "webgl2" })).toMatchObject({ tier: "high", probeFrom: null });
-    // The WebGL2 verdict does not hold for WebGPU; the probe it would call for
-    // is skipped, a WebGPU step not being taken to settle
-    // (`WEBGPU_PROBE_STEPS_SETTLE`).
-    expect(autoPick(SAFARI, { ...at, engine: "webgpu" })).toMatchObject({ tier: "medium", probeFrom: null, probeSkipped: true });
+    // A WebGL2 verdict holds for WebGPU too: it is a floor there.
+    expect(autoPick(SAFARI, { ...at, engine: "webgpu" })).toMatchObject({ tier: "high", probeFrom: null });
   });
 });
 
@@ -948,14 +959,14 @@ describe("the probe's attempts when its verdict is for another engine than the o
     return probed;
   }
 
-  it("probes at most three times, whatever the engines of the key and of the verdict", async () => {
-    expect(await loads("webgpu", "webgl2")).toEqual([true, true, true, false, false, false]);
+  it("probes at most three times where the key never reads the verdict: a WebGPU verdict under a WebGL2 key", async () => {
     expect(await loads("webgl2", "webgpu")).toEqual([true, true, true, false, false, false]);
   });
 
-  it("still probes once and stops when the verdict is read under the engine it was measured on", async () => {
+  it("probes once and stops where the key reads the verdict: its own engine's, or WebGL2's under WebGPU", async () => {
     expect(await loads("webgl2", "webgl2")).toEqual([true, false, false, false, false, false]);
     expect(await loads("webgpu", "webgpu")).toEqual([true, false, false, false, false, false]);
+    expect(await loads("webgpu", "webgl2")).toEqual([true, false, false, false, false, false]);
   });
 });
 

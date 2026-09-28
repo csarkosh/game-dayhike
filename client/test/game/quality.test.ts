@@ -20,6 +20,7 @@ import {
   type QualityTier,
 } from "../../src/game/quality.js";
 import { CLASS_TIERS, type GpuClass } from "../../src/game/gpuClass.js";
+import { AUTO_KEY, readAutoRecord } from "../../src/game/tierChoice.js";
 
 describe("QUALITY", () => {
   it("matches the quality tier table", () => {
@@ -361,18 +362,41 @@ describe("the engine a verdict was measured with", () => {
   const onWebGpu = (record: AutoRecord | null, pixels = 2_073_600) =>
     autoTier({ cls: "apple-unknown", cores: 8, memoryGb: null, record, gpu: SAFARI, browser: 26, pixels, now: NOW, engine: "webgpu" });
 
-  it("holds a WebGL2 verdict for WebGL2 only, and a WebGPU verdict for WebGPU only", () => {
-    // A record from before WebGPU carries no engine: it was WebGL2.
+  it("holds a WebGL2 verdict for both engines, and a WebGPU verdict for WebGPU only", () => {
+    // A record from before WebGPU carries no engine: it was WebGL2. WebGPU
+    // draws the same scene at least as fast, so a tier that holds on WebGL2
+    // holds on WebGPU: the WebGL2 verdict is a floor for WebGPU.
     expect(auto(rec({}))).toEqual({ tier: "high", probeFrom: null });
-    expect(onWebGpu(rec({}))).toEqual({ tier: "medium", probeFrom: "high" });
+    expect(onWebGpu(rec({}))).toEqual({ tier: "high", probeFrom: null });
+    expect(verdictFor(rec({}), "apple-unknown", "webgpu")?.tier).toBe("high");
+    // Nothing says WebGL2 is as fast as WebGPU.
     expect(onWebGpu(rec({ engine: "webgpu" }))).toEqual({ tier: "high", probeFrom: null });
     expect(auto(rec({ engine: "webgpu" }))).toEqual({ tier: "medium", probeFrom: "high" });
     expect(verdictFor(rec({ engine: "webgpu" }), "apple-unknown", "webgpu")?.tier).toBe("high");
     expect(verdictFor(rec({ engine: "webgpu" }), "apple-unknown")).toBe(null);
   });
 
+  it("reads a record tier detection's release wrote, its WebGL2 verdict holding for a WebGPU start", () => {
+    // As that release writes it: no engine on the verdict, WebGL2 readings.
+    const text =
+      '{"v":1,"gpu":"Apple GPU","cls":"apple-unknown","browser":26,"attempts":0,"verdict":{"tier":"high","source":"probe","pixels":2073600,"at":1789913600000,' +
+      '"readings":[{"tier":"high","frames":120,"meanMs":16.7,"p95Ms":17.4,"pixels":2073600,"engine":"webgl2"}]}}';
+    const written = readAutoRecord({ getItem: (key: string) => (key === AUTO_KEY ? text : null) } as Storage);
+    expect(written?.verdict?.tier).toBe("high");
+    expect(onWebGpu(written)).toEqual({ tier: "high", probeFrom: null });
+    expect(auto(written)).toEqual({ tier: "high", probeFrom: null });
+  });
+
+  it("resets the attempts for a WebGL2 probe's verdict looked up under WebGPU, which reads it", () => {
+    const verdict: AutoVerdict = { tier: "medium", source: "probe", pixels: 2_073_600, at: NOW };
+    expect(withVerdict(rec(null, { attempts: 2 }), SAFARI, 26, "apple-unknown", verdict, "webgpu")!.attempts).toBe(0);
+    // A WebGPU verdict looked up under WebGL2 is not read: the count carried.
+    expect(withVerdict(rec(null, { attempts: 2 }), SAFARI, 26, "apple-unknown", { ...verdict, engine: "webgpu" }, "webgl2")!.attempts).toBe(2);
+  });
+
   it("keeps the probe attempts per GPU and browser, whatever the engine", () => {
-    expect(onWebGpu(rec({}, { attempts: 3 }))).toEqual({ tier: "medium", probeFrom: null });
+    expect(onWebGpu(rec({ source: "governor", tier: "medium" }, { attempts: 3 }))).toEqual({ tier: "medium", probeFrom: null });
+    expect(onWebGpu(rec(null, { attempts: 3 }))).toEqual({ tier: "medium", probeFrom: null });
     const started = withProbeStarted(rec({ engine: "webgpu" }, { attempts: 1 }), SAFARI, 26, "apple-unknown");
     expect(started.attempts).toBe(2);
     // A verdict replacing one for the other engine carries the count, as one
