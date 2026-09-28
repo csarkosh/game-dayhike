@@ -185,9 +185,10 @@ sources asked in order; the first that has a stage answers it.
   the lookup translates as the engine always did. An entry that does not read
   back is dropped.
 - **Let go with its engine**: its database is closed when the engine is
-  disposed (`releaseShaderLookup`, which the engine's dispose calls, and which
-  is callable where an engine is let go of without Babylon's dispose running
-  to its end).
+  disposed (`releaseShaderLookup`, which the engine's dispose observable
+  calls), and first thing when a start that failed part-way is disposed
+  (`disposeHalfMade`), where Babylon's dispose throws before that observable
+  is ever notified.
 
 It buys nothing on a first visit; on a return visit, every stage seen before
 is found.
@@ -222,17 +223,23 @@ engine, inside the fetch budget. With it:
   through Babylon's own loader, whose promise has no rejection path, so a
   failed fetch there would leave every GLSL effect pending for good.
 - **Once the page is idle after the engine's first frame**, they are started
-  the same way, so that a later stage not found does not wait on the network.
+  the same way (the same start, so the same 10 s), so that a later stage not
+  found does not wait on the network. A prefetch that fails is silent and
+  changes nothing: no swap, no line, no record; the next stage not found
+  starts them again, and only a failure there is answered.
 - **Translators that cannot be fetched** for a stage not found are the
   network's failure, not the GPU's. That effect cannot be made: its
   preparation ends, unready and without an error, so the failure wrap never
   hears of it, and the engine's watcher reports `unfetched`
   (`reportUnfetched`, `watchWebGpu`). The page answers it as a failure is
-  answered, by a live swap onto WebGL2 with the HUD's line, but remembers
-  nothing: no record is written, the page alone holds itself on WebGL2 for
+  answered, by a live swap onto WebGL2, with its own HUD line ("Graphics
+  switched to WebGL2: part of the renderer could not be downloaded.", once,
+  never the GPU error's), but remembers nothing: no record is written, the page alone holds itself on WebGL2 for
   the rest of its life, and the next load tries WebGPU again. A tab whose
   address asks for `?engine=webgpu`, which outranks that hold, is pinned to
-  `engine=webgl2` so the rebuild cannot come back to it. A probe step that
+  `engine=webgl2` so the rebuild cannot come back to it: the one address rule
+  after every ending on WebGL2 (`pinsAfterFailure`), with the page's hold
+  standing where a record would. A probe step that
   meets it writes no `init` record either.
 
 So the failure records keep their meaning: `init` is a WebGPU start that
@@ -292,6 +299,23 @@ a gate: `hits` and `misses` show whether the mechanism fired.
    corpus**, or only in the scripted minute's: the recording answers it, and
    with it whether the scripted minute's longest frame can meet its bar
    without moving translation off the page's thread.
+9. **The store against a real IndexedDB.** The suite holds it against an
+   `indexedDB` in memory only. In Chrome: a normal profile over two loads
+   (the second's `hits` equal the first's `misses`, and `rejected` is 0); a
+   private window (the store works for the window's life or is none, and the
+   page draws either way); storage refused by the site's settings (no store,
+   no error, every stage translated); and quota, with the store filled past a
+   small origin quota, so that a `put` the browser refuses keeps nothing and
+   costs nothing, and the eviction keeps it under its bounds.
+10. **The SHA-256's cost per stage on a slow CPU.** Keying is synchronous, in
+    the frame that asks, and the lookup's whole saving assumes it costs a few
+    milliseconds against the translation's 0.7 to 2.0 s. On the T4 machine
+    with `?wgsl=record`, the time to key each stage against its `glsl`'s
+    length; if the largest stages cost more than a frame's share, hash
+    incrementally or cache the key per effect.
+11. **A Node round trip against the browser's output, byte for byte**, for
+    the start's whole corpus (item 6), before any shipped map is trusted: the
+    suite has no test that runs the real translators, which it stubs.
 
 ## 9. The bars
 
