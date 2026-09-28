@@ -41,7 +41,11 @@ export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"];
  * Babylon declares every vertex output as a fragment input, a `mat3` taking
  * three locations, so the giant trees' faded material, 18 outputs and a
  * two-sided fragment reading `front_facing`, needs 19 (`interStage.test.ts`
- * holds the count; the verification note's §6.1 has the reading).
+ * holds the count; the verification note's §6.1 has the reading). The
+ * specification lowers the vertex stage's count twice more: by one for a
+ * pipeline drawing `point-list` topology, and by one for every four
+ * `clip_distances` it writes. The game uses neither: it draws no points, and
+ * the device is not asked for the `clip-distances` feature.
  */
 export const WEBGPU_REQUIRED_LIMITS: Readonly<Record<string, number>> = {
   maxInterStageShaderVariables: 19,

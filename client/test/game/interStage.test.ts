@@ -25,7 +25,7 @@ import { WebGPUShaderProcessorGLSL } from "@babylonjs/core/Engines/WebGPU/webgpu
 import { WebGPUShaderProcessingContext } from "@babylonjs/core/Engines/WebGPU/webgpuShaderProcessingContext.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
-import { WEBGPU_REQUIRED_LIMITS } from "../../src/game/engineChoice.js";
+import { WEBGPU_REQUIRED_LIMITS, WEBGPU_TEXTURE_FEATURES, featuresToRequest } from "../../src/game/engineChoice.js";
 import { QUALITY, type QualityTier } from "../../src/game/quality.js";
 import { createAtmosphere } from "../../src/game/atmosphere.js";
 import { createLighting } from "../../src/game/lighting.js";
@@ -397,6 +397,30 @@ describe("inter-stage variables on WebGPU", () => {
     // device's limit, so it can never pass it.
     expect(webgpu).toContain("            maxVaryingVectors: this._deviceLimits.maxInterStageShaderVariables,");
     expect(read("@babylonjs/core/PostProcesses/thinBlurPostProcess.js")).toContain("const maxVaryingRows = this.options.engine.getCaps().maxVaryingVectors");
+  });
+
+  it("draws nothing that lowers the vertex stage's count further (point lists, clip distances)", () => {
+    // `clip_distances` needs the `clip-distances` feature, and the device is
+    // asked only for what `featuresToRequest` keeps, whatever the adapter has.
+    expect(featuresToRequest(["clip-distances", ...WEBGPU_TEXTURE_FEATURES])).not.toContain("clip-distances");
+    // A point list comes from a material's fill mode or `pointsCloud`; no
+    // source sets either. The one file that names these is the limit's own
+    // comment, which says the game uses neither.
+    const root = new URL("../../src/", import.meta.url);
+    const found: string[] = [];
+    const walk = (dir: URL, prefix: string): void => {
+      for (const name of readdirSync(dir).sort()) {
+        const url = new URL(name, dir);
+        if (statSync(url).isDirectory()) walk(new URL(`${name}/`, dir), `${prefix}${name}/`);
+        else if (/\.(ts|fx)$/.test(name) && /pointsCloud|fillMode|Point(?:List|Fill)|clip_distances|clip-distances/.test(readFileSync(url, "utf8"))) {
+          found.push(`${prefix}${name}`);
+        }
+      }
+    };
+    walk(root, "");
+    expect(found).toEqual(["game/engineChoice.ts"]);
+    // And every material the forest draws fills triangles.
+    for (const [name, drawn] of forest.drawn) expect(drawn.material.fillMode, name).toBe(0);
   });
 
   it("keeps the limit in one place", () => {
