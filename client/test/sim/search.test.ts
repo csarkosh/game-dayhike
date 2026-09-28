@@ -48,6 +48,15 @@ describe("installSearch", () => {
   });
 });
 
+describe("the poster on the wire", () => {
+  it("keeps the numbers a peer on the same protocol expects", () => {
+    // An Interacted event carries both. They were 2 and 2 under the module's
+    // old name, and a rename must not move them.
+    expect(InteractKind.Poster).toBe(2);
+    expect(POSTER_INTERACTABLE_ID).toBe(2);
+  });
+});
+
 describe("reading the poster", () => {
   it("resolves the poster for a player standing in front of the kiosk, facing it", () => {
     const world = createWorld(flat, 1);
