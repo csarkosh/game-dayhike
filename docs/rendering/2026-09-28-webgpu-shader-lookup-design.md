@@ -1,11 +1,13 @@
 # WebGPU shader lookup: design
 
 **As built, 2026-09-28.** The lookup layer, the browser's store and the
-recorder, on `worktree-webgpu-wgsl`, behind the WebGPU engine's off switch
-(`WEBGPU_ENABLED = false`, so reached only with `?engine=webgpu`). Shipping
-translations made at build time is the next step, on the same layer (§5.2).
-Nothing here has yet been measured in a browser: §8 says what has to be, and
-§9 the bars it must meet.
+recorder, on `worktree-webgpu-wgsl`, and the translations made at build time
+and shipped as the lookup's first source (§5.2), on
+`worktree-webgpu-wgsl-map`, behind the WebGPU engine's off switch
+(`WEBGPU_ENABLED = false`, so reached only with `?engine=webgpu`). Nothing
+here but the lookup and the store has yet been measured in a browser (their
+first readings are in §8): §8 says what has to be, and §9 the
+bars it must meet.
 
 Babylon 9.18.0 throughout; line references are to its installed
 `node_modules/@babylonjs/core`.
@@ -83,12 +85,16 @@ salt  = "dayhike-wgsl/1" + "|babylon=" + Babylon's version
         + "|staticUA=" + WebGPUTintWASM.DisableUniformityAnalysis
 ```
 
-(`stageKey`, `lookupSalt`). The translators' digests, of their WebAssembly and
-of their loaders (which hold glslang's defaults and twgsl's wrapper), are
-computed by the build (`vite.config.ts`, the `__WGSL_TRANSLATORS__` constant),
-so the page never hashes their 2.7 MB. The key is hashed in the page synchronously, by a SHA-256
-in TypeScript (`sha256.ts`): `crypto.subtle` answers a task later at the
-earliest. The key carries the whole stage as glslang is handed it, so two
+(`stageKey`, `lookupSalt`, in `wgslFormat.ts`, a module with no Babylon and
+no DOM in it, so the build's tools key a stage with the very same code under
+Node, §5.2). The translators' digests, of their WebAssembly and of their
+loaders (which hold glslang's defaults and twgsl's wrapper), are computed by
+the build (`vite.config.ts`, the `__WGSL_TRANSLATORS__` constant, through
+`tools/wgsl/lib/translators.mjs`'s `translatorDigests`, which the tools salt
+with too), so the page never hashes their 2.7 MB. The key is hashed in the
+page synchronously, by a SHA-256 in TypeScript (`sha256.ts`): `crypto.subtle`
+answers a task later at the earliest. Read in a browser on a machine with 4
+virtual CPUs, it costs 0.5 to 0.6 ms a stage, about 60 ms a start. The key carries the whole stage as glslang is handed it, so two
 stages that differ only by the uniformity define get two keys.
 
 **Why a stale entry cannot be reached.** A change to anything that decides the
@@ -99,12 +105,35 @@ in `G_s`), the uniformity switch (in the key and the salt). A stored WGSL made
 under anything else is simply never asked for. The one way to draw a wrong
 shader from the store is a SHA-256 collision.
 
-**A hit-rate hazard, not a correctness one.** Babylon numbers each plugin's
-`MATERIALPLUGIN_N` define in the order plugin classes are first attached on
-the page (`materialPluginManager.pure.js:42–45`). Were that order ever to
-differ between loads, every key of the affected materials would change though
-the WGSL would not: misses, never a wrong picture. §8 measures whether it
-does.
+**A hit-rate hazard, not a correctness one: text that differs between
+loads.** A stage whose text differs from one load of a page to the next has
+another key, and a translation made on the first load is not found on the
+second, though the WGSL may be the same: misses, never a wrong picture.
+
+- *The plugins' numbers.* Babylon gives each material plugin class a define,
+  `MATERIALPLUGIN_<n>`, numbered the first time a plugin of that class is added
+  to a material on the page, from a page-wide counter keyed by the class's
+  name (`MaterialPluginManager._addPlugin`, `materialPluginManager.pure.js:42–45`),
+  and puts it first in the defines of every material the class is on; what is
+  added first follows what loads first. The define is read by no shader.
+  Pinned (`pluginNumbers.ts`): once a WebGPU engine stands, before any of its
+  materials, every class the game's materials carry (Babylon's seven on a PBR
+  material, the decal map's, the game's nine) is numbered by its place in
+  `PLUGIN_ORDER`, and Babylon numbers any other after them. On WebGL2 nothing
+  changes: a page that never makes a WebGPU engine keeps Babylon's numbering
+  and its shader text, and the WebGL2 pins.
+- *Something else, not yet named.* On the Windows machine, over four recorded
+  loads of one page, the plugins' numbers were the same on every load (the
+  first define of each material's defines, 8 to 16). Yet the first visit
+  prepared 18 to 20 stages (9 to 10 PBR effects, of plugins 8, 13 and 14) that
+  no later visit asked for, and each has, in each later visit, a stage of the
+  same kind whose text is exactly as long, whose WGSL is exactly as long, and
+  whose defines begin with the same 82 characters, under another key. So the
+  text differs at the same length, past the plugin's define: a digit, or two
+  lines in another order. Candidates are a light's index (lights met in
+  another order swap `LIGHT0`/`LIGHT1` blocks at equal length), a texture's
+  UV set, or a define's order; the record kept effect names cut at 90
+  characters and key prefixes, not the texts, so which it is is §8's item 2.
 
 ## 4. The layer
 
@@ -119,8 +148,9 @@ and a raw GLSL one (shader overrides; the game makes none) go to Babylon's own
 method untouched. For every other GLSL effect it:
 
 1. builds `G_v`, `G_f`, `u_v` and `u_f` as Babylon does, and the two keys;
-2. asks, for each key, the stages this page translated while the start's WGSL
-   is held, then its sources in order (§5), each answering from memory;
+2. asks, for each key, the stages this page translated (kept for the
+   engine's life, up to `WGSL_KEPT_MAX_CHARS`), then its sources in order
+   (§5), each answering from memory;
 3. translates a stage none has, alone, through the engine's own methods
    (`_compileRawShaderToSpirV`, then `_tintWASM.convertSpirV2WGSL` with the
    stage's switch, so Babylon's diagnostic is added as it adds it), and offers
@@ -169,19 +199,31 @@ build can so be measured both ways.
 ## 5. Sources of entries
 
 One interface, several sources asked in order; the first that has a stage
-answers it. A `WgslSource` has a `name` (the report counts hits by it) and the
+answers it: the translations shipped with the build (`wgslMap.ts`, §5.2),
+then the browser's store (`wgslStore.ts`, §5.1). A `WgslSource` has a `name` (the report counts hits by it) and the
 `salt` its entries were made under (a source of another salt is closed and
 never asked); `get` answers from memory; `put`, where the source takes writes,
 holds a new translation at once and writes it later, never waited on;
-`ready` resolves once its entries are in memory; `settle` lets the start's
-WGSL go; `close` lets everything go. `createWebGpuEngine` takes the sources to
-use (the browser's store by default), so a second source is added where the
-engine is made, not in the layer.
+`ready` resolves once its entries are in memory; `waitMs` is how long the
+engine's maker waits for it, where it has a bound of its own; `close` lets
+everything go. `createWebGpuEngine` takes the sources to
+use (by default the map shipped with the build, then the browser's store,
+`defaultSources`), so a source is added where the engine is made, not in the
+layer. Each default source comes in on its own: the store, which must open
+a database before it has anything, is held from the start by
+`openingSource`, which answers nothing until the store has opened and lets
+go of one that has not opened within the bound as it lands, so its opening
+never holds back the map beside it.
 
 **Read in while the engine is made.** The lookup starts its sources as the
 engine object is made, and `createWebGpuEngine` waits for them after the
-device and the translators, within `WGSL_SOURCES_MS`, 2 s from the start of
-the read, opening and reading together; the device's request runs meanwhile.
+device and the translators, each within its bound, counted from the start of
+the read, opening and reading together: `WGSL_SOURCES_MS`, 500 ms, for the
+store (and any source without a bound of its own), and the map's own,
+`WGSL_MAP_MS`, 1 s (§5.2). On the Windows machine the store opened in 2 to
+6 ms and answered a start's 94 to 116 reads within 83 ms, while the device
+came 39 ms after the read began: a database that never answered added the
+whole of the old 2 s bound to the start, so the store's is short.
 The wait sits inside the start's own budget, whose running out is
 remembered (`init`), so it also ends 500 ms before that budget's deadline
 (`SOURCES_MARGIN_MS`), and does not happen at all with less left: a cache
@@ -192,28 +234,29 @@ the engine is handed over: a stage asked for before its entry has landed is
 a miss, translated; one asked for after is found. Nothing is read from the
 database after the read the start began.
 
-**What is let go once the start has settled.** The start settles
-`WGSL_HOLD_QUIET_MS` (30 s) after the last preparation, or
-`WGSL_HOLD_MAX_MS` (120 s) after the engine stood, whichever comes first.
-Then the WGSL the start used is let go: the page's own translations, and
-each source's entries that were asked for (Babylon keeps an effect once
-made, and rarely asks for it again). What has not been asked for yet (the
-headlamp's variants, the rain's, the last hike's creatures', all read in
-because they were used recently) is kept for the engine's life, and each is
-let go once it is used; turning the lamp on a minute into a hike finds its
-stages rather than translating them. A stage used before the settle and
-asked for again after it (an effect made again) is translated, the
-translators being loaded, and not held.
+**Kept for the engine's life.** What the sources read and what the page
+translates is kept until the engine is let go, used or not. A first version
+let the start's WGSL go once the start had settled (30 s without a
+preparation, or 120 s): on the Windows machine the first rain of a visit
+made again effects the start had used, and two stages the store held were
+translated on the page's thread, a 2.1 s frozen frame. Now an effect made
+again (the rain's) finds its stages, as the headlamp's variants, the rain's
+and the last hike's creatures' do, read in because they were used recently.
 
-**What that costs in memory.** The store holds only what it read in for the
+**What that costs in memory.** The store holds what it read in for the
 start: at most `WGSL_START_MAX_BYTES`, 32 MB of WGSL text (ASCII, which V8
 keeps a byte a character), plus the records of at most 2,000 stages, a few
 hundred kilobytes, and, while the entries are unzipped, their gzipped bytes,
-a few MB. What it keeps is never held. Over a long hike that bound never
-grows: nothing is read or held after the start's read, and after the settle
-it shrinks as each kept stage is used. The page's own translations are held
-only until the settle, the start's misses (on a first visit, the start's
-whole set). A start's own set is estimated at 6 to 24 MB (§8 measures it).
+a few MB. What it keeps is never held. The page's own translations are kept
+up to `WGSL_KEPT_MAX_CHARS`, the same 32 MB of text; past it a translation is
+not kept here, and the store keeps it for the next visit. The map holds what
+the build shipped. Over a long hike none of it grows past those bounds:
+nothing is read after the start's read. What a start holds, estimated from
+the Windows machine's reading (a start's WGSL 4.99 MB of text over 106
+stages; the store's 128 entries 5.9 M characters): about 5 MB of strings for
+the page's own on a first visit, about 6 MB for the store's read on a return
+visit, and the map's entries beside either (for a start's set, about as much
+again); 64 MB and the map at the very most.
 
 **Let go with its engine.** Every source is closed when the engine is disposed
 (`releaseShaderLookup`, which the engine's dispose observable calls), and
@@ -245,18 +288,144 @@ where Babylon's dispose throws before that observable is ever notified.
 It buys nothing on a first visit; on a return visit, every stage seen before
 is found.
 
-### 5.2 Translations shipped with the build (next)
+### 5.2 Translations shipped with the build
 
-A second source ahead of the store: a map `{ salt, entries: { key: wgsl } }`
-per tier, made before `vite build` by translating a recorded corpus of `G_s`
-under Node with the very files the page ships (both translators run under
-Node unchanged), imported with `?url` so it is content-hashed and served
-`immutable`, fetched on the WebGPU path only, and parsed into memory within
-the same bound as the store. It takes no writes; its salt is checked by the
-layer; its hits are counted under its own name. It fixes the first visit,
-which the store cannot. The corpus comes from `?wgsl=record` on the standard
-pages (§7); a freshness test would check that a canonical set of keys,
-computed under Node, is in the map.
+`wgslMap.ts`, `loadWgslMap`; made by `tools/wgsl/`. It fixes the first
+visit, which the store cannot: a stage the corpus holds is found on a
+player's first load.
+
+**The corpus.** The GLSL stages to translate ahead, committed in
+`client/shaders/corpus/`: for each, the stage, its uniformity switch and the
+exact text handed to glslang (`G_s`), the three the recorder keeps of a stage
+that decide its WGSL (§7). A corpus file is JSON, `{"format":
+"dayhike-wgsl-corpus/1", "stages": [...]}`, one stage a line, sorted by a
+name that no build changes (the stage's key under an empty salt,
+`corpusId`), and the committed corpus is up to sixteen such files,
+`stages-<h>.json`, a stage in the one named by the first digit of its name.
+Why that form:
+
+- **One download is one file.** `dayhikeWgsl.download()` on a page opened
+  with `?wgsl=record` saves exactly a corpus file (`corpusText`), which can be
+  dropped into the directory as it is and built. A file a stage, named by its
+  key, cannot come out of a browser as one download, and the key carries the
+  salt, so every Babylon or translator upgrade would rename every file though
+  its text had not changed.
+- **Review.** One stage a line, sorted: a merge reads in a diff as the stages
+  it adds, and a stage's text is still readable, escaped.
+- **Size.** Git keeps the text zlib'd and deltas one version of a file
+  against the last; an archive would defeat both and could not be reviewed.
+  Sixteen files keep each a sixteenth of the whole, so a real corpus (§8)
+  stays far below the size a Git host refuses a file at, and a stage always
+  lands in the same file.
+
+`tools/wgsl/merge-corpus.mjs` takes recorded files and the corpus and writes
+the union, each stage once, saying how many stages the recorded files hold
+and how many are new; a recorded file dropped into the directory is merged
+and removed. The corpus committed now is a small one made under Node
+(`tools/wgsl/node-corpus.mjs`: the game's three post shaders and Babylon's
+PBR and Standard materials, ten stages, through Babylon's WebGPU GLSL
+processing on `NullEngine`). It is not byte for byte what a browser's WebGPU
+engine makes of those effects (the caps, the engine's version and the game's
+own defines differ), so no browser asks for its stages: it exercises the path
+end to end until a corpus recorded in browsers is merged in.
+
+**The tool.** `tools/wgsl/build-map.mjs`, plain Node, run by `npm run build`
+before `vite build`: it loads each translator's loader, a classic script, in
+a `vm` context of its own (their top-level `Module`s collide in one), its
+fetch of the WebAssembly answered with the file's bytes, both files resolved
+from the client package as the page's build resolves them; hands twgsl to
+Babylon's own wrapper as the page does (`initTwgsl`); keys every stage with
+`wgslFormat.ts` itself (bundled with esbuild and imported, since this Node
+runs no TypeScript) under the salt the page computes (Babylon's version and
+page-wide switch read from the installed Babylon, the translators' digests
+by the build's own function); and translates each as the page does
+(`compileGLSL(G_s, s)`, then Babylon's `convertSpirV2WGSL` with `u_s`). The
+same corpus and translators give the same bytes. A stage that does not
+translate is left out and reported loudly, and the build goes on: the page
+translates that stage itself, as it always has. It prints the entries, the
+bytes raw, gzip −9 and brotli −q 11, each stage's milliseconds, and what
+reading the map costs in its two candidate forms. `--reuse` keeps a map made
+from the same corpus under the same salt (the dev server's start).
+
+**The map.** `{"format": "dayhike-wgsl-map/1", "salt": ..., "entries":
+{key: wgsl}}`, one JSON, its keys sorted (`mapText`, `readMap`), written to
+`client/shaders/map/` (not committed). One map for every tier: the engine's
+maker does not know the tier, and whether a map per tier pays is for the
+real corpus's sizes to decide (§8). Chosen over a JSON index into one UTF-8
+text (the page parsing a small index and decoding each entry from its bytes,
+never parsing the WGSL as JSON) for three reasons, the first two decisive
+whatever the sizes:
+
+- the host compresses a JSON response (gzip or brotli) and would serve a
+  binary blob as it is: the WGSL is 6 to 50 times smaller compressed (§8);
+- parsed, each entry is one string, held once for the engine's life (§5);
+  the other form would hold the whole blob of bytes and, beside it, a decoded
+  string of every entry asked for;
+- reading it costs one `JSON.parse`, when it lands, before the preparations
+  that find it. The tool measures both forms on each map: on the committed
+  corpus (10 entries, 91,340 bytes raw, 16,655 gzip −9, 13,147 brotli −q 11)
+  0.09 ms as one JSON and 0.02 ms as an index and a text, under Node on
+  GitHub's runner, both nothing; the measurement to watch is the real
+  corpus's in a browser on the slow machine (§8): the index would be taken up
+  only if the JSON's parse is a long task the start can feel.
+
+**In the build.** The WebGPU module imports the map's URL from
+`virtual:dayhike-wgsl-map` (`tools/wgsl/lib/mapPlugin.mjs`): in `vite build`
+the map is re-exported with `?url&no-inline`, so it is emitted as
+`assets/wgsl-map-<hash>.json`, never inlined however small, named by the
+WebGPU chunk alone and served `immutable` under `/assets/**`; the WebGL2
+bundle neither holds nor names it (`webgpuSwitchOff.test.ts`; a page built
+with Vite as the game's is, in `tools/wgsl/test/mapPlugin.test.mjs`). A
+build whose map was not made fails, naming the step. The dev server runs the
+tool as it starts and serves the map at `<base>wgsl-map.json` once made (a
+request before then waits; one the tool failed to make is a 404, no map), so
+a measurement on the dev server sees what production will. Under the suite
+the URL is empty and no map is asked for.
+
+**On the page.** `loadWgslMap` fetches the map as the engine is made, beside
+the store's read, and parses it into memory when it lands; a map that lands
+after the engine is handed over is found from then on, and its fetch is
+aborted when the engine is let go. The engine's maker waits for it by its
+own bound, `WGSL_MAP_MS`, 1 s from its fetch, within the start's budget. The
+map is the difference between a first visit that translates nothing and one
+that translates every stage (40 s of the page's thread on the Windows
+machine), but a map that lands late is still found by every stage asked for
+after, and the preparations run on for most of a minute: the few effects
+made before the world's first frame (the post chain, the sky, one
+material), then the world's, from its first frame, 4 to 5 s after the
+hand-over there. So a longer wait buys only those first effects, about a
+second of translation there, while a map that never comes costs the whole
+wait: the wait is that second. A start's map, about a megabyte compressed,
+comes within it over a link of 10 Mbit/s or more; fetching it earlier, beside
+the translators, is the lever for slower links. Its salt is checked against the page's
+and its format must be known; a map that does not come (a refused fetch, an
+HTTP error, a fetch that never answers), is another build's, or does not
+parse is a source with nothing in it: one console line, nothing the player
+sees, never a switch to WebGL2, never a record. It takes no writes, so a
+stage found in it is never written to the store. Its hits are counted as
+`shipped` in `hitsBySource`. What it read is held for the engine's life
+(§5).
+
+**A stale entry** is one whose text the game no longer produces: after a
+change to a shader, a plugin, a define or Babylon. Its key is never asked
+for, so it costs its bytes and nothing else, and it cannot be told from a
+live one without a browser: a recorded page's `hitsBySource.shipped` against
+the corpus's size shows how much of it is live. A corpus recorded under an
+older build is re-recorded, not trusted.
+
+**Honesty.** `wgslHonesty.test.ts` translates the committed corpus with the
+tool and with the page's own lookup, both with the real translators under
+Node, through Babylon's own engine methods on a stand-in device, and holds
+every map entry byte for byte to the page's WGSL, and the tool's salt to the
+page's `buildSalt`. `?wgsl=verify` counts a map entry that differs from what
+the page translates (held with an entry altered by one byte). Whether a
+browser's WebAssembly gives Node's bytes is §8's item 4.
+
+**The deploy check.** `npm run deploy:verify` (`tools/deploy/verify.mjs`,
+check 4d) finds the map in the WebGPU chunk, and checks that it is served
+`immutable`, parses, is of a format the chunk reads, carries in its salt the
+translators' digests and the key's format the chunk was built with, and holds
+translations.
 
 ## 6. The translators, and the start's order
 
@@ -272,7 +441,15 @@ failed download mid-hike needed an ending of its own (a swap to WebGL2 with
 its own line, nothing remembered); and on a first visit the download ran
 after "Loading…" was gone, over an empty world, instead of inside it. Lazy
 translators may come back with the translations shipped at build time (§5.2),
-where a first visit can find every stage, and only as measured.
+where a first visit can find every stage, and only as measured. What they
+cost the start as they are: 2,646,596 bytes of WebAssembly (glslang 943,680,
+twgsl 1,702,916; 887,392 gzipped, the host's compression) and 90,585 of
+loaders, fetched and compiled inside the fetch budget before the engine is
+made. Under Node both start in about 20 ms, compiled lazily; in a browser
+their fetch and start on the slow machine have not been measured apart from
+the start (§8, item 6). With every stage found in the map, a start needs
+none of it; making them lazy again is a later decision, taken on that
+measurement.
 
 The start, step by step:
 
@@ -284,8 +461,8 @@ The start, step by step:
 4. The engine made (`createWebGpuEngine`): the engine object, the lookup
    installed and its sources' read started, the device requested
    (`initAsync`), the translators handed to Babylon, and the sources waited
-   for, at most 2 s from when their read began and never closer than
-   500 ms to the start's deadline.
+   for, each by its bound from when their read began (the store 500 ms, the
+   map 1 s) and never closer than 500 ms to the start's deadline.
 5. The engine handed over; the world's build and its first preparations,
    each in its call.
 
@@ -298,8 +475,8 @@ With `?wgsl=off` step 4 installs no lookup and reads nothing.
 
 - **Always**: the page object `dayhikeWgsl` (one per page, across every engine
   it makes) counts `hits` (stages found and used), `hitsBySource` (the same by
-  the source's name, `page` for a stage this page translated earlier in the
-  start), `misses` (stages translated), `translateMs` (both translators, every
+  the source's name, `page` for a stage this page translated earlier,
+  `shipped` for the map, `store` for the browser's store), `misses` (stages translated), `translateMs` (both translators, every
   stage, on the page's thread) and `differences`.
 - **`?wgsl=record`** also keeps, for every effect prepared, its `name` (the
   effect's key), `at`, `processMs` (Babylon's own processing: from its
@@ -316,61 +493,74 @@ With `?wgsl=off` step 4 installs no lookup and reads nothing.
   preparation notifies the compile observables once more.
 - **`?wgsl=off`**: Babylon's own path (§4).
 
-A measurement reads it whole with `JSON.stringify(dayhikeWgsl)` from the page
-(or saves it with `dayhikeWgsl.download()`), and reads the counters alone for
-a gate: `hits` and `misses` show whether the mechanism fired.
+A measurement reads it whole with `JSON.stringify(dayhikeWgsl)` from the
+page, and reads the counters alone for a gate: `hits` and `misses` show
+whether the mechanism fired, `hitsBySource.shipped` how many the map served.
+`dayhikeWgsl.download()` saves the stages a `?wgsl=record` page prepared as a
+corpus file (§5.2), each once: the input of the build's translation.
 
 ## 8. What is not known yet, and how each will be measured
 
-1. **How the 39.8 s divides** between glslang, Tint and Babylon's processing,
-   per effect: one first load on the T4 machine with `?wgsl=record`
-   (`spirvMs`, `wgslMs`, `processMs`).
-2. **The WGSL's size**, per effect, per start and over the union of the
-   standard pages, raw, gzip −9 and brotli −q 11: the recorded `wgsl` of the
-   rig's pages. It decides the shipped map's format (§5.2), and whether
-   `WGSL_START_MAX_BYTES` holds a start's set.
-3. **Whether the keys are stable across loads** (the `MATERIALPLUGIN_N`
-   hazard, §3): two recorded loads of the same page, their key sets compared.
-   If they differ, the plugins' order is fixed before any material exists.
-4. **Whether one corpus serves every machine**: the same page recorded on the
-   Apple M4 (ASTC, ETC2) and the T4 machine (BC), the key sets intersected.
-5. **What the GPU process costs once translation is gone**: a Chrome trace
-   with the GPU categories on the T4 machine, on a load whose stages are all
-   found: Dawn's shader and pipeline compiles, and whether frames wait on
-   them; Chrome's own shader cache keys on the WGSL, so a first and a second
-   load.
-6. **Whether Node's translation equals the browser's** byte for byte: the
-   recorded `G_s` translated under Node with the shipped files, each result
-   compared with the recorded `W_s`. Expected equal; it is what makes the
-   shipped map honest. `?wgsl=verify` checks each browser against Babylon's
-   own path.
-7. **The skinned draw on a real device**: a page with a hiker in view, first
-   and second load, no validation error at its first draw and its effect's
-   vertex source carrying `_int_matricesIndices_`; `?wgsl=off` alike.
-8. **Whether the headlamp's and the rain's variants are in a start's
-   corpus**, or only in the scripted minute's: the recording answers it, and
-   with it whether the scripted minute's longest frame can meet its bar
-   without moving translation off the page's thread.
-9. **The store against a real IndexedDB.** The suite holds it against an
-   `indexedDB` in memory only. In Chrome: a normal profile over two loads
-   (the second's `hits` equal the first's `misses`); a private window (the
-   store works for the window's life or is none, and the page draws either
-   way); storage refused by the site's settings (no store, no error, every
-   stage translated); quota, with the store filled past a small origin quota,
-   so that a `put` the browser refuses keeps nothing and costs nothing, and
-   the eviction keeps it under its bounds; and the read's time at the
-   engine's making, against its 2 s.
-10. **The SHA-256's cost per stage on a slow CPU.** Keying is synchronous, in
-    the frame that asks, and the lookup's whole saving assumes it costs a few
-    milliseconds against the translation's 0.7 to 2.0 s. On the T4 machine
-    with `?wgsl=record`, the time to key each stage against its `glsl`'s
-    length; if the largest stages cost more than a frame's share, hash
-    incrementally or cache the key per effect.
-11. **A Node round trip against the browser's output, byte for byte**, for
-    the start's whole corpus (item 6), before any shipped map is trusted: the
-    suite has no test that runs the real translators, which it stubs.
-12. **The memory the held WGSL costs**: the page's heap with the start's WGSL
-    held and after it is let go (§5), on a return visit.
+**Read so far** (the lookup's first readings in a browser: a Windows machine,
+an NVIDIA T4, 4 virtual CPUs, Chrome 154, high tier, canopy page, before the
+map): a first visit translated 92 stages in 40.0 s (Tint 79 % of it, glslang
+the rest; Babylon's own processing 4.6 s outside the preparation) and settled
+at 57 s, against 54 s with `?wgsl=off`; a second visit found 68 and
+translated 22 (9.5 s) and settled at 36 s, a third found 86 and translated 2
+and settled at 37 s, WebGL2 at 27 s and 18 s. The store opened in 2 to 6 ms
+and answered within 83 ms; a stage's key costs 0.5 to 0.6 ms; `?wgsl=verify`
+counted no difference over 98 stages; a truncated and a byte-flipped entry
+were each dropped and translated afresh, nothing else. A start's WGSL was
+4.99 MB of text for 106 stages (3.20 MB of GLSL in); the store's 128 entries,
+1.22 MB gzipped. With translation gone a stall with no frame and an idle
+page thread remains (9 s at the start), the GPU process compiling the render
+pipelines as far as the device's queue shows: the map does not remove it.
+
+1. **The real corpus's size, per tier**, raw, gzip −9 and brotli −q 11: the
+   standard pages recorded with `?wgsl=record` on both tiers, merged, and
+   built (`build-map.mjs` prints it). It decides whether one map for every
+   tier holds, or a map per tier, and whether the JSON's parse matters (§5.2).
+2. **What else in the text differs between loads of one page** (§3): two
+   loads recorded with `?wgsl=record`, their reports kept whole
+   (`JSON.stringify(dayhikeWgsl)`, the stages' `glsl` with them), and each
+   pair of stages of equal length and different key compared line by line.
+   With the plugins' numbers pinned, what is left is named there, and pinned
+   the same way where it can be (a light's index, a define's order).
+3. **Whether keys recorded on one machine are asked for on another**: the
+   same pages recorded on the Apple M4 and on the Windows machine, the key
+   sets intersected. The texture compression formats differ (ASTC and ETC2
+   against BC), and they reach the text through the defines where a material
+   reads a compressed texture's format; a corpus is then the union of both,
+   and each machine finds its own half.
+4. **Whether Node's translation equals the browser's**, byte for byte: every
+   recorded `G_s` translated with the tool, each result compared with the
+   recorded `W_s`. Expected equal (the same WebAssembly; `wgslHonesty.test.ts`
+   holds the tool to the page's own path under Node); it is what makes the
+   shipped map honest in a browser. `?wgsl=verify` on a page given the map
+   checks it there.
+5. **The first visit with the map**: the Windows machine, a fresh profile,
+   high tier, canopy page, a map built from that page's recorded corpus: the
+   counters (`hitsBySource.shipped` near a start's 90 stages, `misses` near
+   none), the time to settle against §9's 30 s, the map's fetch and parse
+   against its 1 s, and the first frame against WebGL2's.
+6. **What fetching and starting the translators costs a start** once every
+   stage is found: 2,646,596 bytes of WebAssembly (887,392 gzipped) and
+   90,585 of loaders, fetched and compiled before the engine is made. Timed
+   apart on the Windows machine, a fresh profile and a warm one; it decides
+   whether they are fetched lazily again (§6).
+7. **The GPU process** once translation is gone (the stall above): a Chrome
+   trace with the GPU categories, a first and a second load.
+8. **The memory the kept WGSL costs**: the page's heap on a first and a
+   return visit, against the estimate of §5 (about 5 MB for the page's own
+   translations, about 6 MB for the store's read, the map beside them).
+9. **The skinned draw on a real device**, first and second load: no
+   validation error at its first draw, its effect's vertex source carrying
+   `_int_matricesIndices_`; `?wgsl=off` alike (read once on the Windows
+   machine: met).
+10. **The store in a private window and against a small origin quota**: the
+    store works for the window's life or is none, and the page draws either
+    way; a `put` the browser refuses keeps nothing, and the eviction keeps the
+    store under its bounds.
 
 ## 9. The bars
 
@@ -385,8 +575,10 @@ The WebGPU design's §13.3, on the T4 machine, high tier, canopy page:
 For the store alone, the second load must settle within 30 s (about WebGL2's
 17–20 s expected), with the counters showing every stage found (two `hits`
 an effect, about 110 for a start's 55 translated effects, and no `misses`),
-and the WebGL2 shader pins unchanged. The store cannot move the first load
-(§5.1); that is the shipped map's bar.
+and the WebGL2 shader pins unchanged: read at 36 s and 37 s, with 22 and 2
+misses, not met. The store cannot move the first load (§5.1); that is the
+shipped map's bar, the first load within 30 s with the counters showing the
+map's hits, which item 5 of §8 reads.
 
 ## 10. The canaries
 
@@ -413,3 +605,10 @@ the call returns, driven also through Babylon's own `Effect` and
 `checkNonFloatVertexBuffers`. A Babylon upgrade changes the salt anyway, which
 turns every stored entry into a miss: it can cost speed, never a wrong
 picture.
+
+`pluginNumbers.test.ts` pins Babylon's numbering of plugin classes by its
+text, holds `PLUGIN_ORDER` to every plugin class a PBR and a Standard
+material carry and every one in `src/`, and two loads with the models
+arriving in either order to the same defines. `wgslHonesty.test.ts` holds
+the build's map, entry by entry, to the page's own translation of the same
+corpus with the real translators, and the tool's salt to the page's.
