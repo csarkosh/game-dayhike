@@ -71,6 +71,7 @@ import {
   engineForTier,
   fallbackHolds,
   parseEngineOverride,
+  parsePipelines,
   parseShaderLookup,
   readFallback,
   resolveWebGpu,
@@ -652,6 +653,7 @@ function makeWebGpu(
 ): Promise<MadeEngine | null> {
   let translators: Awaited<ReturnType<GpuModule["loadTranslators"]>> | undefined;
   const lookup = parseShaderLookup(location.search);
+  const pipelines = parsePipelines(location.search);
   return resolveWebGpu<MadeEngine>(input, {
     available: () => (navigator as { gpu?: unknown }).gpu !== undefined,
     load: async () => {
@@ -662,8 +664,8 @@ function makeWebGpu(
           translators = await gpu.loadTranslators();
         },
         create: async (ms, features) => ({
-          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, lookup }),
-          watchers: { failures: gpu.watchWebGpu, pipelines: gpu.watchPipelines },
+          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, lookup, pipelines }),
+          watchers: { failures: gpu.watchWebGpu, pipelines: gpu.watchPipelines, asyncPipelines: gpu.asyncPipelinesOf, reveal: gpu.revealWhenWhole },
         }),
       };
     },

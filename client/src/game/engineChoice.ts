@@ -130,6 +130,23 @@ export function parseShaderLookup(search: string): ShaderLookupMode {
   return value === "record" || value === "verify" || value === "off" ? value : "on";
 }
 
+/**
+ * How a WebGPU engine makes a render pipeline its draws have not met yet
+ * (`asyncPipelines.ts`): `async`, asynchronously, the mesh left out of the
+ * frame until it lands, at most the page's limit in flight; a number from 1
+ * to 16, the same with that many in flight; `sync`, Babylon's own path, made
+ * at the draw that first needs it while the frame waits.
+ */
+export type PipelineMode = "sync" | "async" | number;
+
+/** `?pipelines=sync|async|<1–16>`; anything else is `async`. */
+export function parsePipelines(search: string): PipelineMode {
+  const value = new URLSearchParams(search).get("pipelines");
+  if (value === "sync") return "sync";
+  if (value !== null && /^[1-9]\d?$/.test(value) && Number(value) <= 16) return Number(value);
+  return "async";
+}
+
 /** What the rule reads of the high-performance adapter (`adapterFromSignals`). */
 export type AdapterReport = {
   limits: Readonly<Record<string, number>>;

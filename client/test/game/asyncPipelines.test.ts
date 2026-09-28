@@ -153,7 +153,7 @@ describe("Babylon's WebGPU pipeline cache and draw (canaries: when one fails, Ba
   });
 
   it("still leaves a lookup's node where the patch reads it, and finds a pipeline stored there as the pre-warm stores it", () => {
-    const { device } = fakeDevice();
+    const { device, made } = fakeDevice();
     const cache = cacheOn(device);
     const first = effect(1);
     expect(cache._lookupRenderPipeline(0, first, 1, 0)).toBeNull();
@@ -171,7 +171,7 @@ describe("Babylon's WebGPU pipeline cache and draw (canaries: when one fails, Ba
     expect(cache._lookupRenderPipeline(0, first, 1, 0)).toBe(pipeline);
     // And by Babylon's own draw-time path, which then makes nothing.
     expect(cache.getRenderPipeline(0, first, 1, 0)).toBe(pipeline);
-    expect(device.made).toEqual([]);
+    expect(made).toEqual([]);
   });
 
   it("still stores a pre-warmed pipeline in the node captured before the call, and normalises the sample count as the patch does", () => {

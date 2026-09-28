@@ -43,6 +43,7 @@
  */
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { Scene } from "@babylonjs/core/scene.js";
+import type { AsyncPipelines } from "./asyncPipelines.js";
 import type { QualityTier } from "./quality.js";
 import type { Renderer } from "./renderer.js";
 import type { TierChoice } from "./tierChoice.js";
@@ -78,11 +79,16 @@ export type Swappable = { renderer: Renderer; canvas: HTMLCanvasElement };
 export type WatchEngine = (engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void) => () => void;
 
 /** The WebGPU module's watchers (`gpuEngine.ts`): its failures
- * (`watchWebGpu`), and the frames that made a render pipeline
- * (`watchPipelines`). */
+ * (`watchWebGpu`); the frames that made a render pipeline, or left a draw out
+ * while one was made (`watchPipelines`); the pipelines an engine makes
+ * asynchronously, for the renderer built on it (`asyncPipelinesOf`, null where
+ * it makes them as Babylon does); and the start's reveal, held until a frame
+ * leaves nothing out (`revealWhenWhole`). */
 export type EngineWatchers = {
   failures: WatchEngine;
   pipelines(engine: AbstractEngine, onCreated: () => void): () => void;
+  asyncPipelines(engine: AbstractEngine): AsyncPipelines | null;
+  reveal(engine: AbstractEngine, lift: () => void): () => void;
 };
 
 /** A renderer's canvas and the engine made for it: WebGPU with its module's
