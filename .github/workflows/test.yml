@@ -196,6 +196,54 @@ jobs:
       - run: npm ci
       - run: npx vitest run --root client --shard=${{ matrix.shard }}/${{ strategy.job-total }} '--tags-filter=!wall-clock'
 
+  # The real client, built as the deploy builds it (`npm run build`, which
+  # translates the shader corpus into the WGSL map before `vite build`, under
+  # the production base `tools/deploy/lib/buildClient.mjs` sets), then checked
+  # by one command: one map of the known format, named by the WebGPU chunk and
+  # by nothing the WebGL2 page loads, and accepted by the deploy check. The
+  # suites build only fixtures; this is the one place the real build runs
+  # before a deploy.
+  build:
+    needs: lfs
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+      # The shipped models and textures, from the cache the lfs job fills,
+      # checked as the client job checks them: the build imports them.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git/lfs/objects
+          key: ${{ needs.lfs.outputs.key }}
+          fail-on-cache-miss: true
+      - name: check out lfs files from the cache
+        env:
+          KEY: ${{ needs.lfs.outputs.key }}
+        run: |
+          pointers() { git lfs ls-files -l | grep -E '^[0-9a-f]{64} - ' || true; }
+          bad() {
+            echo "::error::The cached LFS objects under $KEY are incomplete or corrupt, and a cache entry cannot be overwritten. Delete it with: gh cache delete $KEY --repo ${GITHUB_REPOSITORY}  (or change lfs-v1 to lfs-v2 in this workflow), then re-run ALL jobs (gh run rerun ${GITHUB_RUN_ID} --repo ${GITHUB_REPOSITORY}, not --failed; the lfs job must run again to refill the cache)."
+            exit 1
+          }
+          git lfs fsck --objects || bad
+          git lfs checkout
+          missing=$(pointers)
+          if [ -n "$missing" ]; then echo "$missing"; bad; fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: build the client with the production base
+        env:
+          DAYHIKE_BASE: /dayhike/
+        run: npm run build
+      - name: check the built client carries the WGSL map as it should
+        run: node tools/wgsl/check-build.mjs client/dist
+
   # The one status to require and to read: it fails unless every job above
   # succeeded. `always()` matters: a job skipped because its dependency failed
   # would otherwise skip this one too, and a skipped check reads as passing.
@@ -203,7 +251,7 @@ jobs:
   # `gates` on a superseded commit is that cancellation, not a failure to chase.
   gates:
     if: always()
-    needs: [lfs, static, server-and-tools, client]
+    needs: [lfs, static, server-and-tools, client, build]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

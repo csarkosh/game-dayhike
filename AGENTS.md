@@ -36,7 +36,7 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | `tools/` | `deploy/` (deploy and verify scripts), `wgsl/` (the shader corpus translated to the WGSL map the build ships, and merged from recorded pages; the dev server makes the map as it starts unless `DAYHIKE_SKIP_WGSL_MAP` is set), `vendor-ktx2.mjs`, `docs/` (the docs file-name test), and their tests. |
 | `.agents/skills/` | Agent skills. `.claude/skills` is a symlink to it so Claude Code discovers them. |
 | `.claude/settings.json` | Imports the shared skill plugins from [`csarkosh/skills-general`](https://github.com/csarkosh/skills-general); see [Skills](#skills). |
-| `.github/` | CI workflows: `test.yml` runs typecheck, lint and the three test suites on every push to `main` and to `worktree-**`/`ci/**` branches and on pull requests, with the client suite's test time limits scaled by `TEST_TIME_SCALE` and the `wall-clock` tests left out (a local `npm test` runs them; `npm run test:wall-clock` runs only them); the Windows desktop smoke test is started by hand. |
+| `.github/` | CI workflows: `test.yml` runs typecheck, lint and the three test suites, and builds the client as the deploy does and checks the built WGSL map (`tools/wgsl/check-build.mjs`), on every push to `main` and to `worktree-**`/`ci/**` branches and on pull requests, with the client suite's test time limits scaled by `TEST_TIME_SCALE` and the `wall-clock` tests left out (a local `npm test` runs them; `npm run test:wall-clock` runs only them); the Windows desktop smoke test is started by hand. |
 | `AGENTS.md` | This file. `CLAUDE.md` points here. |
 | `README.md` | Human-facing overview of the game. |
 | `ARCHITECTURE.md` | The layering, determinism, rendering, asset and hosting details. |
