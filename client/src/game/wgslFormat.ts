@@ -1,6 +1,7 @@
 /**
  * What identifies a WGSL translation: the key of a stage and the salt it is
- * made under (`shaderLookup.ts`). Nothing here imports Babylon or the DOM,
+ * made under (`shaderLookup.ts`); and the corpus, the GLSL stages the build
+ * translates ahead (`tools/wgsl/`). Nothing here imports Babylon or the DOM,
  * so the build's tools can load it under Node and key a stage with the very
  * code the page keys it with.
  */
@@ -60,4 +61,53 @@ export function stageKey(salt: string, stage: Stage, flag: boolean, glsl: string
     SEPARATOR,
     encoder.encode(glsl),
   );
+}
+
+/** The format of a corpus file. */
+export const CORPUS_FORMAT = "dayhike-wgsl-corpus/1";
+
+/** One stage of the corpus: what the recorder keeps of it that decides its
+ * WGSL (`StageRecord`'s `stage`, `flag` and `glsl`). */
+export type CorpusStage = { stage: Stage; flag: boolean; glsl: string };
+
+/** A corpus stage's name, the same under every build: its key with an empty
+ * salt. The corpus is sorted, deduplicated and split by it. */
+export function corpusId(entry: CorpusStage): string {
+  return stageKey("", entry.stage, entry.flag, entry.glsl);
+}
+
+/**
+ * A corpus file: `{"format": CORPUS_FORMAT, "stages": [...]}`, each stage
+ * once, sorted by `corpusId`, one stage a line, so that a change to the
+ * corpus reads in a diff as the stages it adds and drops. What the recorder
+ * downloads, and what `tools/wgsl/merge-corpus.mjs` writes.
+ */
+export function corpusText(stages: Iterable<CorpusStage>): string {
+  const byId = new Map<string, CorpusStage>();
+  for (const { stage, flag, glsl } of stages) {
+    const entry = { stage, flag, glsl };
+    byId.set(corpusId(entry), entry);
+  }
+  const lines = [...byId].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, entry]) => JSON.stringify(entry));
+  const body = lines.length === 0 ? "" : `\n${lines.join(",\n")}\n`;
+  return `{"format":${JSON.stringify(CORPUS_FORMAT)},"stages":[${body}]}\n`;
+}
+
+/** The stages of a corpus file; throws on another format, or on anything
+ * that is not one. */
+export function readCorpus(text: string): CorpusStage[] {
+  const file = JSON.parse(text) as { format?: unknown; stages?: unknown };
+  if (file?.format !== CORPUS_FORMAT) throw new Error(`not a corpus of ${CORPUS_FORMAT}: ${String(file?.format)}`);
+  if (!Array.isArray(file.stages)) throw new Error("a corpus without stages");
+  return file.stages.map((value: unknown) => {
+    const entry = value as Partial<CorpusStage> | null;
+    if (
+      (entry?.stage !== "vertex" && entry?.stage !== "fragment") ||
+      typeof entry.flag !== "boolean" ||
+      typeof entry.glsl !== "string"
+    ) {
+      throw new Error("a corpus stage without its stage, flag or text");
+    }
+    return { stage: entry.stage, flag: entry.flag, glsl: entry.glsl };
+  });
 }

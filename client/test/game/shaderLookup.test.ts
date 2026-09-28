@@ -32,6 +32,7 @@ import {
   type ShaderLookupReport,
   type WgslSource,
 } from "../../src/game/shaderLookup.js";
+import { corpusText, readCorpus } from "../../src/game/wgslFormat.js";
 import { loadWgslStore, wgslStoreName } from "../../src/game/wgslStore.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { memoryIndexedDb } from "./helpers/memoryIndexedDb.js";
@@ -515,8 +516,40 @@ describe("the WebGPU shader lookup", () => {
       ["memory", 0, 0],
       ["memory", 0, 0],
     ]);
-    // It reads whole as JSON, the form `download()` saves.
+    // It reads whole as JSON.
     expect(JSON.parse(JSON.stringify(report)).effects[0].stages[1].wgsl).toBe(first.modules[1]);
+  });
+
+  it("with ?wgsl=record downloads the stages it prepared as a corpus file, the form the build translates ahead", async () => {
+    const report = newLookupReport("record", SALT);
+    const first = harness();
+    await lookUp(first, [], "record", report);
+    await prepare(first);
+    // The same effect again, and one sharing its vertex stage: each stage once.
+    const second = harness();
+    await lookUp(second, [], "record", report);
+    await prepare(second);
+    await prepare(second, { fragment: `#define DISABLE_UNIFORMITY_ANALYSIS\n${FRAGMENT}` });
+    const saved: Blob[] = [];
+    const link = { href: "", download: "", click: vi.fn() };
+    vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      saved.push(blob as Blob);
+      return "blob:corpus";
+    });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    vi.stubGlobal("document", { createElement: () => link });
+    report.download();
+    expect(link.click).toHaveBeenCalledTimes(1);
+    expect(link.download).toMatch(/^dayhike-wgsl-corpus-\d+\.json$/);
+    const text = await (saved[0] as Blob).text();
+    expect(text).toBe(
+      corpusText([
+        { stage: "vertex", flag: false, glsl: translatorInput(VERTEX, DEFINES) },
+        { stage: "fragment", flag: false, glsl: translatorInput(FRAGMENT, DEFINES) },
+        { stage: "fragment", flag: true, glsl: translatorInput(`#define DISABLE_UNIFORMITY_ANALYSIS\n${FRAGMENT}`, DEFINES) },
+      ]),
+    );
+    expect(readCorpus(text)).toHaveLength(3);
   });
 
   it("counts, but records no effect, without ?wgsl=record", async () => {

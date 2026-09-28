@@ -42,7 +42,7 @@ import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { WebGPUTintWASM } from "@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { ShaderLookupMode } from "./engineChoice.js";
-import { LOOKUP_FORMAT, lookupSalt, stageKey, translatorInput, uniformityOff, type Stage } from "./wgslFormat.js";
+import { LOOKUP_FORMAT, corpusText, lookupSalt, stageKey, translatorInput, uniformityOff, type Stage } from "./wgslFormat.js";
 import { loadWgslStore } from "./wgslStore.js";
 
 // The key and the salt, in a module the build's tools load too (`wgslFormat.ts`).
@@ -133,8 +133,9 @@ export type EffectRecord = {
 
 /**
  * What the lookup reports, one object for the page, on `globalThis` as
- * `dayhikeWgsl` for a measurement to read or `download()`. The counters are
- * always kept; the effects only with `?wgsl=record`.
+ * `dayhikeWgsl` for a measurement to read, whose recorded stages
+ * `download()` saves as a corpus. The counters are always kept; the effects
+ * only with `?wgsl=record`.
  */
 export type ShaderLookupReport = {
   mode: Exclude<ShaderLookupMode, "off">;
@@ -153,7 +154,10 @@ export type ShaderLookupReport = {
    * WGSL, differs from what Babylon's own path makes of the same effect. */
   differences: number;
   effects: EffectRecord[];
-  /** Saves the report as a JSON file. */
+  /** Saves the stages of the effects recorded as a corpus file
+   * (`corpusText`), the form the build translates ahead (`tools/wgsl/`):
+   * dropped into the corpus, it is built. Empty without `?wgsl=record`. The
+   * report whole is `JSON.stringify(dayhikeWgsl)`. */
   download(): void;
 };
 
@@ -180,10 +184,11 @@ export function newLookupReport(mode: Exclude<ShaderLookupMode, "off">, salt: st
     differences: 0,
     effects: [],
     download() {
-      const url = URL.createObjectURL(new Blob([JSON.stringify(this)], { type: "application/json" }));
+      const corpus = corpusText(this.effects.flatMap((effect) => effect.stages));
+      const url = URL.createObjectURL(new Blob([corpus], { type: "application/json" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = `dayhike-wgsl-${Date.now()}.json`;
+      link.download = `dayhike-wgsl-corpus-${Date.now()}.json`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 0);
     },
