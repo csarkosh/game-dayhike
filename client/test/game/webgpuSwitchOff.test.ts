@@ -84,7 +84,7 @@ describe("the start with the WebGPU switch off", () => {
     // Its definition, and the one call the rule gates.
     expect(main.match(/\bmakeWebGpu\(/g)).toEqual(["makeWebGpu(", "makeWebGpu("]);
     expect(main).toContain("function makeWebGpu(");
-    expect(main).toContain("engineForTier(input, () => makeWebGpu(canvas, input, read, current))");
+    expect(main).toContain("engineForTier(input, () => makeWebGpu(canvas, input, read, current, wanted))");
     // The translators are started in one place, inside it.
     expect(main.match(/\bloadTranslators\(/g)).toEqual(["loadTranslators("]);
     const inside = main.slice(main.indexOf("function makeWebGpu("), main.indexOf("\n}\n", main.indexOf("function makeWebGpu(")));
@@ -105,6 +105,6 @@ describe("the start with the WebGPU switch off", () => {
     expect(main.match(/(?<!typeof )import\("\.\/game\/gpuEngine\.js"\)/g)).toEqual(['import("./game/gpuEngine.js")']);
     // `engineFor` asks the rule first; only an answer other than WebGL2 goes on
     // to `makeWebGpu`, whose `load` is that import.
-    expect(main).toContain("  return engineForTier(input, () => makeWebGpu(canvas, input, read, current)).then(");
+    expect(main).toContain("  return engineForTier(input, () => makeWebGpu(canvas, input, read, current, wanted)).then(");
   });
 });

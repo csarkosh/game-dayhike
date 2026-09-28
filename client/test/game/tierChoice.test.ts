@@ -355,13 +355,17 @@ describe("the engine on a verdict", () => {
     expect(readAutoRecord(s)).toBe(null);
   });
 
-  it("writes a build verdict for the engine the tier failed on, over a verdict for the other engine", () => {
+  it("writes a build verdict for the engine the tier failed on, over a verdict that engine does not read", () => {
     const base = { gpu: RTX, browser: 153, cls: "discrete-modern" as const, pixels: 2_073_600, now: 1_790_000_000_000 };
-    const held: AutoRecord = { v: 1, ...base, attempts: 0, verdict: { ...verdict, tier: "low", at: base.now - 1 } };
-    const out = recordFallback({ ...base, record: held, attempted: "high", built: "medium", source: "auto", choice: "auto", engine: "webgpu" });
-    expect(out.record!.verdict).toEqual({ tier: "medium", source: "build", pixels: 2_073_600, at: 1_790_000_000_000, engine: "webgpu" });
-    // For the same engine, the lower holding verdict is kept, as before.
-    expect(recordFallback({ ...base, record: held, attempted: "high", built: "medium", source: "auto", choice: "auto" }).record).toBe(null);
+    const onGpu: AutoRecord = { v: 1, ...base, attempts: 0, verdict: { ...verdict, tier: "low", at: base.now - 1, engine: "webgpu" } };
+    // A WebGPU verdict is not read for WebGL2: the WebGL2 build verdict is written over it.
+    const out = recordFallback({ ...base, record: onGpu, attempted: "high", built: "medium", source: "auto", choice: "auto" });
+    expect(out.record!.verdict).toEqual({ tier: "medium", source: "build", pixels: 2_073_600, at: 1_790_000_000_000 });
+    // A lower WebGL2 verdict is read for WebGPU (a floor there), so it is kept,
+    // as the lower holding verdict of the same engine is.
+    const onGl: AutoRecord = { v: 1, ...base, attempts: 0, verdict: { ...verdict, tier: "low", at: base.now - 1 } };
+    expect(recordFallback({ ...base, record: onGl, attempted: "high", built: "medium", source: "auto", choice: "auto", engine: "webgpu" }).record).toBe(null);
+    expect(recordFallback({ ...base, record: onGl, attempted: "high", built: "medium", source: "auto", choice: "auto" }).record).toBe(null);
   });
 });
 
