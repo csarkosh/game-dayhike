@@ -394,7 +394,6 @@ describe("startupTier", () => {
       expect(contents(storage)).toBe(before);
       expect(t.lines).toEqual([
         "quality probe: skipped, this browser compiles shaders on the page's thread; starting at medium (apple-unknown)",
-        "quality: medium (auto, apple-unknown), engine webgl2",
       ]);
     }
     expect(readAutoRecord(earlier)!.attempts).toBe(2);
@@ -410,7 +409,6 @@ describe("startupTier", () => {
     expect(contents(storage)).toBe("[]");
     expect(t.lines).toEqual([
       "quality probe: skipped, no WebGL2 context could be made to measure with; starting at medium (apple-unknown)",
-      "quality: medium (auto, apple-unknown), engine webgl2",
     ]);
   });
 
@@ -423,7 +421,8 @@ describe("startupTier", () => {
     const t = fakes((tier) => reading(tier, 16.7), s);
     expect(await startupTier(FIREFOX, page(), t.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
     expect(t.screens()).toBe(0);
-    expect(t.lines).toEqual(["quality: high (auto, apple-unknown), engine webgl2"]);
+    // The tier's own line is the launch's, once the engine is known.
+    expect(t.lines).toEqual([]);
   });
 
   it("still probes from ?probe= where shaders compile on the page's thread", async () => {
@@ -431,7 +430,7 @@ describe("startupTier", () => {
     expect(await startupTier(FIREFOX, page("?probe=high"), t.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
     expect(t.steps).toEqual(["high"]);
     expect(t.screens()).toBe(1);
-    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)", "quality: high (auto, apple-unknown), engine webgl2"]);
+    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)"]);
     expect(readAutoRecord(t.storage)!.verdict!.tier).toBe("high");
   });
 
@@ -447,7 +446,7 @@ describe("startupTier", () => {
     expect(t.steps).toEqual(["high"]);
     expect(attempts).toEqual([1]);
     expect(readAutoRecord(t.storage)!.verdict!.tier).toBe("high");
-    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)", "quality: high (auto, apple-unknown), engine webgl2"]);
+    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)"]);
   });
 
   it("stops probing after three attempts without a verdict", async () => {
