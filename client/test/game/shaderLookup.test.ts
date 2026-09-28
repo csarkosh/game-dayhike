@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
 import { WebGPUTintWASM } from "@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js";
 import { WebGPUPipelineContext } from "@babylonjs/core/Engines/WebGPU/webgpuPipelineContext.js";
@@ -751,6 +752,46 @@ describe("the lookup's key", () => {
 describe("the lines of Babylon 9.18 the lookup copies or leans on (canaries on the installed engine)", () => {
   const engine = readFileSync(resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
   const between = (from: string, to: string): string => engine.slice(engine.indexOf(from), engine.indexOf(to, engine.indexOf(from)));
+
+  it("keeps whole every body the lookup replaces, skips or calls, on Babylon 9.18.0: a line added anywhere in one turns this red", () => {
+    // The lookup replaces the preparation whole for a GLSL effect, and so
+    // skips Babylon's compile of its stages; it calls the composition, the
+    // stage descriptor, and relies on readiness being the stages alone and
+    // on the re-preparation for integer vertex buffers being synchronous.
+    // Each body is pinned by the SHA-256 of its text in the installed
+    // Babylon; on an upgrade, read each against the lookup before moving it.
+    expect(AbstractEngine.Version).toBe("9.18.0");
+    const digest = (text: string, from: string, to: string): string => {
+      const at = text.indexOf(from);
+      const end = text.indexOf(to, at);
+      expect(at, from).toBeGreaterThanOrEqual(0);
+      expect(end, to).toBeGreaterThan(at);
+      return createHash("sha256").update(text.slice(at, end)).digest("hex");
+    };
+    const pipelineContext = readFileSync(resolve("@babylonjs/core/Engines/WebGPU/webgpuPipelineContext.js"), "utf8");
+    const nonFloat = readFileSync(resolve("@babylonjs/core/Buffers/buffer.nonFloatVertexBuffers.js"), "utf8");
+    expect({
+      prepare: digest(engine, "    async _preparePipelineContextAsync(", "    getAttributes(pipelineContext, attributesNames) {"),
+      compile: digest(engine, "    _compilePipelineStageDescriptor(vertexCode, fragmentCode, defines, shaderLanguage) {", "    createRawShaderProgram() {"),
+      descriptor: digest(
+        engine,
+        "    _createPipelineStageDescriptor(vertexShader, fragmentShader, shaderLanguage, disableUniformityAnalysisInVertex, disableUniformityAnalysisInFragment) {",
+        "    _compileRawPipelineStageDescriptor(",
+      ),
+      spirv: digest(engine, "    _compileRawShaderToSpirV(source, type) {", "    _getWGSLShader("),
+      isReady: digest(pipelineContext, "    get isReady() {", "    constructor("),
+      nonFloat: digest(nonFloat, "export function checkNonFloatVertexBuffers(vertexBuffers, effect) {", "//# sourceMappingURL"),
+    }).toEqual({
+      prepare: "f6b14c32b327f76b854d92b44bddf902710f1f21af59250f802af90b07d5b7cc",
+      compile: "10282feb3582d5a301b949b56caf7adbb5f16060a9df0ad571fe37940bdb5d2c",
+      descriptor: "a46d9fc69b06155c9109d4c0f4d93c2c46afe72bc89824d4d74bc2cad3ffaf8f",
+      spirv: "ad624ad5e9c1a22e684cd4a0184fbce8d93886c67a5f186913d707f5db1d388a",
+      isReady: "dbaad8c15f9107fcd7051c84340a7712016c8467a5b5d54f99abebb904a02c3e",
+      nonFloat: "983f3575d3dcfef9fef9bc5df97c25b5cc2aef45bca214f1ac15d98dd63824cb",
+    });
+    // What the readiness is: the stages alone.
+    expect(pipelineContext).toContain("    get isReady() {\n        if (this.stages) {\n            return true;\n        }\n        return false;\n    }");
+  });
 
   it("puts the version line and the defines before a stage's code, and hands that to glslang", () => {
     expect(engine).toContain(
