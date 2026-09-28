@@ -35,7 +35,9 @@ describe("the bounds of the browser's WGSL store", () => {
     ]);
     expect(evictions(index, { bytes: 130, entries: 4 })).toEqual([]);
     expect(evictions(index, { bytes: 100, entries: 4 })).toEqual(["b"]);
-    expect(evictions(index, { bytes: 50, entries: 4 })).toEqual(["b", "c", "a"]);
+    // A bound is within itself: 50 bytes left of 50 stop the eviction.
+    expect(evictions(index, { bytes: 50, entries: 4 })).toEqual(["b", "c"]);
+    expect(evictions(index, { bytes: 49, entries: 4 })).toEqual(["b", "c", "a"]);
     expect(evictions(index, { bytes: 1_000, entries: 2 })).toEqual(["b", "c"]);
     // A tie goes by key, so the choice does not hang on the map's order.
     expect(evictions(new Map([["y", { bytes: 1, lastUsed: 1 }], ["x", { bytes: 1, lastUsed: 1 }]]), { bytes: 1, entries: 9 })).toEqual(["x"]);
