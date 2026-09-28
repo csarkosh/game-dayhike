@@ -466,12 +466,21 @@ tier gets its own canvas; the renderer is disposed and its engine made with
    effect compiled for 1.5 s (`engine.onAfterShaderCompilationObservable`); at
    most 15 s, after which the probe gives up (§7.6).
 2. **Warm**: 60 frames discarded (the fields' first rebuilds, the reflection
-   probe, the first shadow renders). A shader that compiles after the scene is
-   ready starts the warm-up again: its hitch, 100 ms or more, would tip a
-   machine that holds 60 Hz into a miss. The 30 s cap bounds the restarts.
+   probe, the first shadow renders), or fewer once 2,100 ms have passed since
+   the warm-up began (`PROBE_STEP_BUDGET_MS`, below): at 100 ms a frame the 60
+   alone would take 6 s, and a machine that holds reaches 60 in about 1 s. A
+   shader that compiles after the scene is ready starts the warm-up again: its
+   hitch, 100 ms or more, would tip a machine that holds 60 Hz into a miss.
+   The 30 s cap bounds the restarts.
 3. **Measured**: 120 frame intervals, `performance.now()` between render-loop
    callbacks. Intervals over 250 ms are dropped; fewer than 100 left is no
-   reading.
+   reading. The 120 hold only if they sum to at most 120 × 17.5 ms = 2,100 ms
+   (`PROBE_STEP_BUDGET_MS`, §7.4), so once the kept intervals sum past that
+   the step ends there as a miss: its reading is the mean and p95 of the
+   frames measured, their count, and `early` (logged "ended early"). The
+   floor is the arithmetic's own: 2,100 ms of intervals of at most 250 ms is at
+   least 9 frames. A slow machine then reads its miss in about 2 s, not 12,
+   and a step spends at most about 4.2 s on frames after it is ready.
 
 The reading: `{ tier, frames, meanMs, p95Ms, pixels, engine }`.
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import {
   PROBE_MAX_MS,
+  PROBE_STEP_BUDGET_MS,
   START_FAILED_LINE,
   autoPick,
   createProbeMeter,
@@ -13,6 +14,7 @@ import {
   probeStepCanSettle,
   probePose,
   probeReadingLine,
+  readEarlyMiss,
   readIntervals,
   runProbe,
   startupTier,
@@ -67,6 +69,21 @@ describe("readIntervals", () => {
 
   it("drops intervals that are not a time", () => {
     expect(readIntervals([...f(100, 16.667), Number.NaN, -1, Number.POSITIVE_INFINITY])!.frames).toBe(100);
+  });
+});
+
+describe("readEarlyMiss", () => {
+  it("reads a miss once the kept intervals sum past 2,100 ms, from the frames measured", () => {
+    expect(PROBE_STEP_BUDGET_MS).toBe(2100);
+    expect(readEarlyMiss(f(9, 240))).toEqual({ frames: 9, meanMs: 240, p95Ms: 240, early: true });
+    expect(readEarlyMiss(f(21, 100))).toBe(null);
+    expect(readEarlyMiss(f(22, 100))).toEqual({ frames: 22, meanMs: 100, p95Ms: 100, early: true });
+  });
+
+  it("counts no stall toward the sum, so at most 250 ms a frame it needs 9 frames", () => {
+    expect(readEarlyMiss(f(8, 250))).toBe(null);
+    expect(readEarlyMiss([...f(8, 250), 400, 400, 400])).toBe(null);
+    expect(readEarlyMiss([...f(8, 250), 400, 101])).toEqual({ frames: 9, meanMs: 2101 / 9, p95Ms: 250, early: true });
   });
 });
 
@@ -126,6 +143,8 @@ describe("probeReadingLine", () => {
       .toBe("quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses");
     expect(probeReadingLine({ tier: "medium", frames: 118, meanMs: 16.667, p95Ms: 16.9, pixels: 1_405_320, engine: "webgl2" }, 1470, 956))
       .toBe("quality probe: medium 16.67 ms mean, 16.9 p95, 118 frames, 1470×956, webgl2 → holds");
+    expect(probeReadingLine({ tier: "high", frames: 22, meanMs: 100, p95Ms: 100, pixels: 1_045_960, engine: "webgl2", early: true }, 1324, 790))
+      .toBe("quality probe: high 100.00 ms mean, 100 p95, 22 frames (ended early), 1324×790, webgl2 → misses");
   });
 });
 
@@ -520,6 +539,27 @@ describe("createProbeMeter", () => {
     expect(got.frames).toBe(59 + 120);
     expect(got.stats!.meanMs).toBeCloseTo(16.667, 3);
     expect(got.stats!.p95Ms).toBeCloseTo(16.667, 3);
+  });
+
+  it("ends a slow step as a miss at 2,100 ms of measured frames, its warm-up bounded by the same", () => {
+    // 100 ms a frame: ready at 1.5 s (15 frames); the warm-up ends 2,100 ms
+    // after it began (20 frames, not 60); the 22nd measured interval takes the
+    // sum past 2,100 ms. Before, this step took 15 + 60 + 120 frames, 19.5 s.
+    const t = { now: 0 };
+    const meter = createProbeMeter(t.now);
+    const got = run(meter, t, 100);
+    expect(got.frames).toBe(15 + 20 + 22);
+    expect(got.stats).toEqual({ frames: 22, meanMs: 100, p95Ms: 100, early: true });
+  });
+
+  it("measures all 120 frames of a step that holds at the bar exactly", () => {
+    // 17.5 ms: 60 warm-up frames take 1,050 ms, and 120 measured sum to
+    // 2,100 ms, which is not past the budget.
+    const t = { now: 0 };
+    const meter = createProbeMeter(t.now);
+    const got = run(meter, t, 17.5);
+    expect(got.frames).toBe(86 + 60 + 120);
+    expect(got.stats).toEqual({ frames: 120, meanMs: 17.5, p95Ms: 17.5 });
   });
 
   it("gives up on a scene that is never ready in 15 s", () => {

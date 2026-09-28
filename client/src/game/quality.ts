@@ -107,8 +107,18 @@ export const PROBE_ATTEMPTS = 3;
 const DAY_MS = 86_400_000;
 const RANK: Readonly<Record<QualityTier, number>> = { low: 0, medium: 1, high: 2 };
 
-/** One tier measured by the startup probe. */
-export type ProbeReading = { tier: QualityTier; frames: number; meanMs: number; p95Ms: number; pixels: number; engine: "webgl2" | "webgpu" };
+/** One tier measured by the startup probe; `early` when its step ended as a
+ * miss before its 120 frames, the mean and p95 then those of the frames it
+ * measured. */
+export type ProbeReading = {
+  tier: QualityTier;
+  frames: number;
+  meanMs: number;
+  p95Ms: number;
+  pixels: number;
+  engine: "webgl2" | "webgpu";
+  early?: true;
+};
 
 /**
  * What was learned of one GPU: a probe's tier, a drop after a sustained low

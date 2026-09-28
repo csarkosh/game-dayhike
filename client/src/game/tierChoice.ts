@@ -163,10 +163,10 @@ export function parseProbeOverride(search: string): QualityTier | null {
 
 function asReading(value: unknown): ProbeReading | null {
   if (!isObject(value)) return null;
-  const { tier, frames, meanMs, p95Ms, pixels, engine } = value;
+  const { tier, frames, meanMs, p95Ms, pixels, engine, early } = value;
   if (!isTier(tier) || !isNumber(frames) || !isNumber(meanMs) || !isNumber(p95Ms) || !isNumber(pixels)) return null;
   if (engine !== "webgl2" && engine !== "webgpu") return null;
-  return { tier, frames, meanMs, p95Ms, pixels, engine };
+  return early === true ? { tier, frames, meanMs, p95Ms, pixels, engine, early } : { tier, frames, meanMs, p95Ms, pixels, engine };
 }
 
 /**
