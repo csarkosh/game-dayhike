@@ -181,21 +181,39 @@ engine is made, not in the layer.
 **Read in while the engine is made.** The lookup starts its sources as the
 engine object is made, and `createWebGpuEngine` waits for them after the
 device and the translators, within `WGSL_SOURCES_MS`, 2 s from the start of
-the read, opening and reading together; the device's request runs meanwhile,
-all within the GPU's start budget. Whatever has not arrived by then is not
-there for this engine (a miss, translated); a source that lands later is
-closed as it lands. After the engine is handed over, nothing is read.
+the read, opening and reading together; the device's request runs meanwhile.
+The wait sits inside the start's own budget, whose running out is
+remembered (`init`), so it also ends 500 ms before that budget's deadline
+(`SOURCES_MARGIN_MS`), and does not happen at all with less left: a cache
+that exists to be optional never fails a start. A source that has not
+opened by the bound is closed as it lands and never asked. A source that has
+opened but whose entries are still being unzipped goes on filling in after
+the engine is handed over: a stage asked for before its entry has landed is
+a miss, translated; one asked for after is found. Nothing is read from the
+database after the read the start began.
 
-**Let go once the start has settled.** The WGSL held for the start, the
-sources' and the page's own translations, is let go `WGSL_HOLD_QUIET_MS`
-(30 s) after the last preparation, or `WGSL_HOLD_MAX_MS` (120 s) after the
-engine stood, whichever comes first; the keys may stay. A stage not found
-after that is translated, the translators being loaded, and kept on disk.
-Held, the map costs at most the store's start bound, `WGSL_START_MAX_BYTES`:
-32 MB of WGSL text (ASCII, which V8 keeps a byte a character), plus the
-records of at most 2,000 stages, a few hundred kilobytes, and, while the
-entries are unzipped, their gzipped bytes, at most a few MB. A start's own
-set is estimated at 6 to 24 MB (§8 measures it).
+**What is let go once the start has settled.** The start settles
+`WGSL_HOLD_QUIET_MS` (30 s) after the last preparation, or
+`WGSL_HOLD_MAX_MS` (120 s) after the engine stood, whichever comes first.
+Then the WGSL the start used is let go: the page's own translations, and
+each source's entries that were asked for (Babylon keeps an effect once
+made, and rarely asks for it again). What has not been asked for yet (the
+headlamp's variants, the rain's, the last hike's creatures', all read in
+because they were used recently) is kept for the engine's life, and each is
+let go once it is used; turning the lamp on a minute into a hike finds its
+stages rather than translating them. A stage used before the settle and
+asked for again after it (an effect made again) is translated, the
+translators being loaded, and not held.
+
+**What that costs in memory.** The store holds only what it read in for the
+start: at most `WGSL_START_MAX_BYTES`, 32 MB of WGSL text (ASCII, which V8
+keeps a byte a character), plus the records of at most 2,000 stages, a few
+hundred kilobytes, and, while the entries are unzipped, their gzipped bytes,
+a few MB. What it keeps is never held. Over a long hike that bound never
+grows: nothing is read or held after the start's read, and after the settle
+it shrinks as each kept stage is used. The page's own translations are held
+only until the settle, the start's misses (on a first visit, the start's
+whole set). A start's own set is estimated at 6 to 24 MB (§8 measures it).
 
 **Let go with its engine.** Every source is closed when the engine is disposed
 (`releaseShaderLookup`, which the engine's dispose observable calls), and
@@ -266,7 +284,8 @@ The start, step by step:
 4. The engine made (`createWebGpuEngine`): the engine object, the lookup
    installed and its sources' read started, the device requested
    (`initAsync`), the translators handed to Babylon, and the sources waited
-   for, at most 2 s from when their read began.
+   for, at most 2 s from when their read began and never closer than
+   500 ms to the start's deadline.
 5. The engine handed over; the world's build and its first preparations,
    each in its call.
 
@@ -374,9 +393,16 @@ and the WebGL2 shader pins unchanged. The store cannot move the first load
 `shaderLookup.test.ts` pins, in the installed Babylon 9.18.0, the whole of
 each body the layer replaces, skips or calls, by the SHA-256 of its text: the
 preparation, the stages' compile, the stage descriptor, the composition of
-glslang's input, `WebGPUPipelineContext.isReady` (the stages alone) and the
-re-preparation for integer vertex buffers; so a line an upgrade adds anywhere
-in them is noticed. Beside them, lines pinned by their text (the version line,
+glslang's input, `WebGPUPipelineContext.isReady` (the stages alone), the
+re-preparation for integer vertex buffers, and the path it runs through
+synchronously (`Effect._processShaderCodeAsync`, `_prepareEffect`,
+`createAndPreparePipelineContext`, `_executeWhenRenderingStateIsCompiled`,
+`_buildRenderPipelineDescriptor`), and Tint's wrapper
+`convertSpirV2WGSL`; so a line an upgrade adds anywhere in them is noticed.
+It also pins, beside `LOOKUP_FORMAT`, the text of the lookup's own three
+functions that decide what is stored for a key (`translatorInput`,
+`translate`, `pack`): a change to any of them must bump the format, so that
+no entry made the old way is reachable. Beside them, lines pinned by their text (the version line,
 the uniformity switch, the observables, the diagnostic prefix, the
 recorder's two readings, the synchronous re-preparation's call and comment,
 the WebGPU engine keeping the context, and the pipeline reading `stages` after
