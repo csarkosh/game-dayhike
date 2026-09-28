@@ -123,7 +123,8 @@ export function sameFollowPlace(target: string, current: string): boolean {
  * navigation (`keepOverrides`), so an address that sets the tier on the title
  * still sets it in the hike Play starts, and stripped from the route a lobby
  * host announces (`stripOverrides`), so none of them follows a host onto a
- * follower's machine.
+ * follower's machine, and from a route a follower is sent to, for a host that
+ * still announces them.
  */
 const OVERRIDES = ["engine", "tier", "probe"] as const;
 

@@ -12,6 +12,7 @@ import {
   browserExit,
   followsTo,
   hostRoute,
+  stripOverrides,
   type Route,
 } from "./game/router.js";
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
@@ -351,12 +352,14 @@ function detach(): void {
 /** A follower goes where the host is (`followsTo`). The host's route is ""
  * until known, and the landing page and its panels are one place: a follower
  * in its own Settings stays there while the host is on the landing. The
- * overrides (`?engine=`, `?tier=`, `?probe=`) are each page's own: they
- * neither make a route differ nor leave the follower's URL when it moves
- * (`navigateTo` carries them). */
+ * overrides (`?engine=`, `?tier=`, `?probe=`) are each page's own: the route
+ * is taken without them (`stripOverrides`), which a host that still announces
+ * them would otherwise impose on this machine; they neither make a route
+ * differ nor leave the follower's URL when it moves (`navigateTo` carries
+ * them). */
 function follow(active: Lobby): void {
   if (active.state.role !== "client") return;
-  const target = active.state.route;
+  const target = stripOverrides(active.state.route);
   if (followsTo(target, currentRoutePath())) navigateTo(target);
 }
 

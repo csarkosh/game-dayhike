@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import {
   PROBE_MAX_MS,
+  PROBE_STEP_BUDGET_MS,
   START_FAILED_LINE,
   autoPick,
   createProbeMeter,
+  cutVerdict,
   idleCadenceMs,
   startFallbacks,
   startHike,
@@ -15,6 +17,7 @@ import {
   WEBGPU_PROBE_STEPS_SETTLE,
   probePose,
   probeReadingLine,
+  readEarlyMiss,
   readIntervals,
   runProbe,
   startupTier,
@@ -26,7 +29,7 @@ import {
 import type { GpuSignals } from "../../src/game/gpuSignals.js";
 import { WEBGPU_TIERS } from "../../src/game/engineChoice.js";
 import { landingModel } from "../../src/game/landingModel.js";
-import { autoTier, type ProbeReading, type QualityTier, type VerdictEngine } from "../../src/game/quality.js";
+import { autoTier, withGovernorDrop, type ProbeReading, type QualityTier, type VerdictEngine } from "../../src/game/quality.js";
 import { readAutoRecord, writeAutoRecord } from "../../src/game/tierChoice.js";
 
 const f = (n: number, ms: number): number[] => Array.from({ length: n }, () => ms);
@@ -74,6 +77,21 @@ describe("readIntervals", () => {
 
   it("drops intervals that are not a time", () => {
     expect(readIntervals([...f(100, 16.667), Number.NaN, -1, Number.POSITIVE_INFINITY])!.frames).toBe(100);
+  });
+});
+
+describe("readEarlyMiss", () => {
+  it("reads a miss once the kept intervals sum past 2,100 ms, from the frames measured", () => {
+    expect(PROBE_STEP_BUDGET_MS).toBe(2100);
+    expect(readEarlyMiss(f(9, 240))).toEqual({ frames: 9, meanMs: 240, p95Ms: 240, early: true });
+    expect(readEarlyMiss(f(21, 100))).toBe(null);
+    expect(readEarlyMiss(f(22, 100))).toEqual({ frames: 22, meanMs: 100, p95Ms: 100, early: true });
+  });
+
+  it("counts no stall toward the sum, so at most 250 ms a frame it needs 9 frames", () => {
+    expect(readEarlyMiss(f(8, 250))).toBe(null);
+    expect(readEarlyMiss([...f(8, 250), 400, 400, 400])).toBe(null);
+    expect(readEarlyMiss([...f(8, 250), 400, 101])).toEqual({ frames: 9, meanMs: 2101 / 9, p95Ms: 250, early: true });
   });
 });
 
@@ -159,6 +177,8 @@ describe("probeReadingLine", () => {
       .toBe("quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses");
     expect(probeReadingLine({ tier: "medium", frames: 118, meanMs: 16.667, p95Ms: 16.9, pixels: 1_405_320, engine: "webgl2" }, 1470, 956))
       .toBe("quality probe: medium 16.67 ms mean, 16.9 p95, 118 frames, 1470×956, webgl2 → holds");
+    expect(probeReadingLine({ tier: "high", frames: 22, meanMs: 100, p95Ms: 100, pixels: 1_045_960, engine: "webgl2", early: true }, 1324, 790))
+      .toBe("quality probe: high 100.00 ms mean, 100 p95, 22 frames (ended early), 1324×790, webgl2 → misses");
   });
 });
 
@@ -205,11 +225,40 @@ describe("runProbe and the Auto record", () => {
     }
   });
 
+  it("keeps what a miss taught when a later step reads nothing: the tier below, never above the start", async () => {
+    for (const runStep of [
+      async (tier: QualityTier) => (tier === "high" ? reading("high", 34.3) : null),
+      async (tier: QualityTier) => {
+        if (tier === "high") return reading("high", 34.3);
+        throw new Error("context lost");
+      },
+    ]) {
+      const s = memoryStorage();
+      expect(await runProbe("high", "medium", null, KEY, { storage: s, runStep, pixels: () => 2_073_600, now: () => 1_790_000_000_000 })).toBe("medium");
+      expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+        verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000, readings: [reading("high", 34.3)] } });
+    }
+    // A class that starts at low keeps low, not the medium below the miss.
+    const s = memoryStorage();
+    const runStep = async (tier: QualityTier) => (tier === "high" ? reading("high", 34.3) : null);
+    expect(await runProbe("high", "low", null, KEY, { storage: s, runStep, pixels: () => 2_073_600, now: () => 1_790_000_000_000 })).toBe("low");
+    expect(readAutoRecord(s)!.verdict!.tier).toBe("low");
+  });
+
   it("counts a second attempt on the record of the first", async () => {
     const s = memoryStorage();
     const first = { v: 1, gpu: "Apple GPU", cls: "apple-unknown" as const, browser: 26, attempts: 1, verdict: null };
     await runProbe("high", "medium", first, KEY, { storage: s, runStep: async () => null, pixels: () => 2_073_600, now: () => 1_790_000_000_000 });
     expect(readAutoRecord(s)!.attempts).toBe(2);
+  });
+});
+
+describe("cutVerdict", () => {
+  it("is the tier below the last miss, never above the start, and nothing without a reading", () => {
+    expect(cutVerdict([reading("high", 34.3)], "medium")).toBe("medium");
+    expect(cutVerdict([reading("high", 34.3)], "low")).toBe("low");
+    expect(cutVerdict([reading("medium", 19)], "medium")).toBe("low");
+    expect(cutVerdict([], "medium")).toBe(null);
   });
 });
 
@@ -319,6 +368,23 @@ describe("startupTier", () => {
     expect(readAutoRecord(t.storage)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
     expect(t.lines[0]).toBe("quality probe: no verdict; starting at medium (apple-unknown)");
     expect(PROBE_MAX_MS).toBe(30_000);
+  });
+
+  it("keeps the miss when the 30 s cap cuts the second step, and does not probe again", async () => {
+    let t: ReturnType<typeof fakes> | null = null;
+    t = fakes((tier) => {
+      if (tier === "medium") t!.timer()!.fn();
+      return reading(tier, 34.3);
+    });
+    expect(await startupTier(SAFARI, page(), t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+    expect(t.steps).toEqual(["high", "medium"]);
+    expect(t.open()).toBe(0);
+    expect(t.lines[0]).toBe("quality probe: cut short after high missed, verdict medium; starting at medium (apple-unknown)");
+    expect(readAutoRecord(t.storage)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+      verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000, readings: [reading("high", 34.3)] } });
+    const next = fakes((tier) => reading(tier, 34.3), t.storage);
+    expect(await startupTier(SAFARI, page(), next.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+    expect(next.steps).toEqual([]);
   });
 
   it("stops at once when the page moves on", async () => {
@@ -612,6 +678,27 @@ describe("createProbeMeter", () => {
     expect(got.stats!.p95Ms).toBeCloseTo(16.667, 3);
   });
 
+  it("ends a slow step as a miss at 2,100 ms of measured frames, its warm-up bounded by the same", () => {
+    // 100 ms a frame: ready at 1.5 s (15 frames); the warm-up ends 2,100 ms
+    // after it began (20 frames, not 60); the 22nd measured interval takes the
+    // sum past 2,100 ms. Before, this step took 15 + 60 + 120 frames, 19.5 s.
+    const t = { now: 0 };
+    const meter = createProbeMeter(t.now);
+    const got = run(meter, t, 100);
+    expect(got.frames).toBe(15 + 20 + 22);
+    expect(got.stats).toEqual({ frames: 22, meanMs: 100, p95Ms: 100, early: true });
+  });
+
+  it("measures all 120 frames of a step that holds at the bar exactly", () => {
+    // 17.5 ms: 60 warm-up frames take 1,050 ms, and 120 measured sum to
+    // 2,100 ms, which is not past the budget.
+    const t = { now: 0 };
+    const meter = createProbeMeter(t.now);
+    const got = run(meter, t, 17.5);
+    expect(got.frames).toBe(86 + 60 + 120);
+    expect(got.stats).toEqual({ frames: 120, meanMs: 17.5, p95Ms: 17.5 });
+  });
+
   it("gives up on a scene that is never ready in 15 s", () => {
     const t = { now: 0 };
     const meter = createProbeMeter(t.now);
@@ -872,3 +959,92 @@ describe("the probe's attempts when its verdict is for another engine than the o
   });
 });
 
+
+describe("Safari on a Mac slower than the reference machine, hike after hike", () => {
+  // Every probe step's scene takes 7.5 s to build and load, then 1.5 s to fall
+  // quiet; high draws at 70 ms a frame, medium at 50 and low at 30, all under
+  // the governor's 48 fps. Before a step could end early this probe took 21.7 s
+  // over high alone, the cap cut medium, and the sequence ran: three hikes of
+  // 30 s of screen with no verdict, the governor's drop to low, and once that
+  // lapsed after 7 days, the probes again.
+  const SLOW_MAC: GpuSignals = {
+    renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
+  };
+  const FRAME_MS: Record<QualityTier, number> = { high: 70, medium: 50, low: 30 };
+  const DAY = 86_400_000;
+  const BASE = 1_790_000_000_000;
+
+  it("probes once, reads low inside the cap, and is not probed or dropped again in 30 days", async () => {
+    const storage = memoryStorage();
+    const clock = { now: BASE };
+    let timer: { at: number; fn: () => void } | null = null;
+    const probes: QualityTier[][] = [];
+    const tiers: QualityTier[] = [];
+    const screens: number[] = [];
+    let drops = 0;
+    for (const day of [0, 0, 0, 0, 1, 7, 8, 14, 29]) {
+      clock.now = Math.max(clock.now + 600_000, BASE + day * DAY);
+      const steps: QualityTier[] = [];
+      const deps: StartupDeps = {
+        storage,
+        pixels: () => 1_045_960,
+        now: () => clock.now,
+        runStep: async (tier, cancelled) => {
+          steps.push(tier);
+          const begin = clock.now;
+          const meter = createProbeMeter(begin);
+          let compiled = false;
+          for (;;) {
+            clock.now += FRAME_MS[tier];
+            const due: { at: number; fn: () => void } | null = timer;
+            if (due !== null && clock.now >= due.at) due.fn();
+            if (cancelled()) return null;
+            const loaded = clock.now - begin >= 7_500;
+            if (loaded && !compiled) {
+              compiled = true;
+              meter.compiled(clock.now);
+            }
+            const step = meter.frame(clock.now, loaded);
+            if (step.done) return step.stats === null ? null : { tier, ...step.stats, pixels: 1_045_960, engine: "webgl2" };
+          }
+        },
+        showScreen: () => {
+          const shown = clock.now;
+          return { dispose: () => void screens.push(clock.now - shown) };
+        },
+        setTimer: (fn, ms) => {
+          timer = { at: clock.now + ms, fn };
+          return () => {
+            timer = null;
+          };
+        },
+        whenVisible: async () => true,
+        idleCadence: async () => {
+          clock.now += 500;
+          return 16.7;
+        },
+        log: () => undefined,
+      };
+      const started = await startupTier(SLOW_MAC, { search: "", choice: "auto", cancelled: () => false }, deps);
+      tiers.push(started.tier);
+      if (steps.length > 0) probes.push(steps);
+      // A minute of play; the governor drops a tier played under 48 fps.
+      clock.now += 60_000;
+      if (FRAME_MS[started.tier] > 20.8) {
+        const next = withGovernorDrop(readAutoRecord(storage), "Apple GPU", 26, "apple-unknown", started.tier, 1_045_960, clock.now);
+        if (next !== null) {
+          writeAutoRecord(storage, next);
+          drops += 1;
+        }
+      }
+    }
+    expect(probes).toEqual([["high", "medium"]]);
+    expect(screens).toEqual([27_000]);
+    expect(tiers).toEqual(["low", "low", "low", "low", "low", "low", "low", "low", "low"]);
+    expect(drops).toBe(0);
+    const verdict = readAutoRecord(storage)!.verdict!;
+    expect(verdict.tier).toBe("low");
+    expect(verdict.source).toBe("probe");
+    expect(verdict.readings!.map((r) => [r.tier, r.frames, r.meanMs, r.early])).toEqual([["high", 31, 70, true], ["medium", 43, 50, true]]);
+  });
+});

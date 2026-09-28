@@ -71,6 +71,17 @@ export const PROBE_WARMUP_FRAMES = 60;
 export const PROBE_FRAMES = 120;
 /** Fewer intervals than this left after the stalls are dropped is no reading. */
 export const PROBE_MIN_FRAMES = 100;
+/**
+ * What the measured frames may take in all and still hold: `PROBE_FRAMES` ×
+ * `PROBE_HOLD_MS`, 2,100 ms. Once the kept intervals sum past it the mean of
+ * 120 can only be over the bar, so the step ends there as a miss rather than
+ * spend 12 s on 120 frames of 100 ms. It bounds the warm-up too: 60 frames or
+ * this long since the warm-up began, whichever comes first, so a slow machine
+ * spends at most about 4.2 s of frames on a step (at 100 ms a frame the 60
+ * warm-up frames alone were 6 s). A machine that holds reaches 60 warm-up
+ * frames in about 1 s, well inside it.
+ */
+export const PROBE_STEP_BUDGET_MS = PROBE_FRAMES * PROBE_HOLD_MS;
 /** An interval over this is a stall (a hidden tab, a collection), not a frame. */
 export const PROBE_STALL_MS = 250;
 /** The scene is ready once no shader has compiled for this long. */
@@ -91,7 +102,19 @@ export const PROBE_HOUR = 12;
 /** The canopy pose, where the eye stands on the ground at `x`, `z`. */
 const POSE = { x: 123, z: -105.5, yaw: 1.571, pitch: 0.3, eye: 1.6 } as const;
 
-export type ProbeStats = { frames: number; meanMs: number; p95Ms: number };
+/** A step's statistics; `early` when it ended as a miss before `PROBE_FRAMES`
+ * (`PROBE_STEP_BUDGET_MS`), its mean and p95 then those of the frames measured. */
+export type ProbeStats = { frames: number; meanMs: number; p95Ms: number; early?: true };
+
+/** An interval that is a frame: a time, not a stall. */
+const isFrame = (ms: number): boolean => Number.isFinite(ms) && ms >= 0 && ms <= PROBE_STALL_MS;
+
+function statsOf(kept: readonly number[]): ProbeStats {
+  const meanMs = kept.reduce((sum, ms) => sum + ms, 0) / kept.length;
+  const sorted = [...kept].sort((a, b) => a - b);
+  const p95Ms = sorted[Math.ceil(0.95 * sorted.length) - 1] ?? meanMs;
+  return { frames: kept.length, meanMs, p95Ms };
+}
 
 /**
  * The mean and 95th percentile of a run of frame intervals, with stalls over
@@ -99,12 +122,22 @@ export type ProbeStats = { frames: number; meanMs: number; p95Ms: number };
  * fewer than `PROBE_MIN_FRAMES` are left.
  */
 export function readIntervals(intervals: readonly number[]): ProbeStats | null {
-  const kept = intervals.filter((ms) => Number.isFinite(ms) && ms >= 0 && ms <= PROBE_STALL_MS);
+  const kept = intervals.filter(isFrame);
   if (kept.length < PROBE_MIN_FRAMES) return null;
-  const meanMs = kept.reduce((sum, ms) => sum + ms, 0) / kept.length;
-  const sorted = [...kept].sort((a, b) => a - b);
-  const p95Ms = sorted[Math.ceil(0.95 * sorted.length) - 1] ?? meanMs;
-  return { frames: kept.length, meanMs, p95Ms };
+  return statsOf(kept);
+}
+
+/**
+ * The reading of a step ended early: its kept intervals already sum past
+ * `PROBE_STEP_BUDGET_MS`, so the mean of the full 120 could only miss. The
+ * statistics are those of the frames measured, marked `early`. Its floor is
+ * the arithmetic's own: 2,100 ms of intervals of at most 250 ms is at least 9
+ * frames. Null while the sum is within the budget.
+ */
+export function readEarlyMiss(intervals: readonly number[]): ProbeStats | null {
+  const kept = intervals.filter(isFrame);
+  if (kept.reduce((sum, ms) => sum + ms, 0) <= PROBE_STEP_BUDGET_MS) return null;
+  return { ...statsOf(kept), early: true };
 }
 
 /**
@@ -125,10 +158,13 @@ export function idleCadenceMs(intervals: readonly number[]): number | null {
  * One probe step's frames, as data: `frame` for each render-loop callback,
  * `compiled` whenever a shader compiles. The scene is ready once it says so and
  * no shader has compiled for `PROBE_QUIET_MS`, given up at `PROBE_READY_MAX_MS`;
- * then `PROBE_WARMUP_FRAMES` are discarded and `PROBE_FRAMES` intervals kept. A
- * shader that compiles after the scene is ready starts the warm-up again, so
- * its hitch (a hundred milliseconds or more, which would tip a 60 Hz machine's
- * mean into a miss) is never measured; the probe's 30 s cap bounds the restarts.
+ * then `PROBE_WARMUP_FRAMES` are discarded (or fewer, once
+ * `PROBE_STEP_BUDGET_MS` has passed since the warm-up began) and `PROBE_FRAMES`
+ * intervals kept, or fewer where their sum passes `PROBE_STEP_BUDGET_MS`
+ * first: then the step ends as a miss (`readEarlyMiss`). A shader that
+ * compiles after the scene is ready starts the warm-up again, so its hitch (a
+ * hundred milliseconds or more, which would tip a 60 Hz machine's mean into a
+ * miss) is never measured; the probe's 30 s cap bounds the restarts.
  */
 export function createProbeMeter(start: number): {
   readonly ready: boolean;
@@ -138,6 +174,7 @@ export function createProbeMeter(start: number): {
   let lastCompile = start;
   let ready = false;
   let warm = 0;
+  let warmFrom = start;
   let last = start;
   const intervals: number[] = [];
   return {
@@ -148,6 +185,7 @@ export function createProbeMeter(start: number): {
       lastCompile = now;
       if (ready) {
         warm = 0;
+        warmFrom = now;
         intervals.length = 0;
       }
     },
@@ -156,17 +194,20 @@ export function createProbeMeter(start: number): {
         if (now - start > PROBE_READY_MAX_MS) return { done: true, stats: null };
         ready = sceneReady && now - lastCompile >= PROBE_QUIET_MS;
         last = now;
+        warmFrom = now;
         return { done: false };
       }
-      if (warm < PROBE_WARMUP_FRAMES) {
+      if (warm < PROBE_WARMUP_FRAMES && now - warmFrom < PROBE_STEP_BUDGET_MS) {
         warm += 1;
         last = now;
         return { done: false };
       }
+      warm = PROBE_WARMUP_FRAMES;
       intervals.push(now - last);
       last = now;
-      if (intervals.length < PROBE_FRAMES) return { done: false };
-      return { done: true, stats: readIntervals(intervals) };
+      if (intervals.length >= PROBE_FRAMES) return { done: true, stats: readIntervals(intervals) };
+      const early = readEarlyMiss(intervals);
+      return early === null ? { done: false } : { done: true, stats: early };
     },
   };
 }
@@ -256,11 +297,13 @@ export function probePose(): { x: number; y: number; z: number; yaw: number; pit
 }
 
 /** One reading as the page logs it:
- * `quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses`. */
+ * `quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses`,
+ * with `(ended early)` after the frames for a step that ended as a miss before 120. */
 export function probeReadingLine(reading: ProbeReading, width: number, height: number): string {
   const p95 = Math.round(reading.p95Ms * 10) / 10;
   const answer = probeHolds(reading) ? "holds" : "misses";
-  return `quality probe: ${reading.tier} ${reading.meanMs.toFixed(2)} ms mean, ${p95} p95, ${reading.frames} frames, ${width}×${height}, ${reading.engine} → ${answer}`;
+  const frames = `${reading.frames} frames${reading.early === true ? " (ended early)" : ""}`;
+  return `quality probe: ${reading.tier} ${reading.meanMs.toFixed(2)} ms mean, ${p95} p95, ${frames}, ${width}×${height}, ${reading.engine} → ${answer}`;
 }
 
 /** Which record a probe's attempt and verdict are written to, and the engine
@@ -289,7 +332,11 @@ export type ProbeDeps = {
  *    mid-probe has still spent it; and where the write fails nothing is
  *    measured at all, since a storage that refuses writes reads back no
  *    attempts on every load and would otherwise probe before every hike.
- * 3. A step that reads nothing (or throws) abandons, the attempt standing.
+ * 3. A step that reads nothing (or throws) abandons. With nothing read
+ *    before it, the attempt stands and nothing else is written. After a step
+ *    that missed, what that miss taught is kept (`cutVerdict`): the tier below
+ *    it, never above `start`, written as the probe's verdict, so the next hike
+ *    does not measure the miss again.
  * 4. The verdict is written with the same area as step 1, the area
  *    `AutoInput.pixels` reads, so it holds on the next load at this window.
  */
@@ -305,28 +352,48 @@ export async function runProbe(
   const started = withProbeStarted(record, key.gpu, key.browser, key.cls);
   if (!writeAutoRecord(deps.storage, started)) return start;
   const readings: ProbeReading[] = [];
+  const settle = (tier: QualityTier): QualityTier => {
+    // The engine the deciding reading drew with: a step whose WebGPU engine
+    // failed is measured on WebGL2, and the rule then gives WebGL2 too.
+    const engine = readings[readings.length - 1]?.engine ?? key.engine ?? "webgl2";
+    const verdict = onEngine({ tier, source: "probe" as const, pixels, at: deps.now(), readings }, engine);
+    // Looked up next load under the key's engine: a verdict it will not read
+    // keeps the attempts, so the cap still ends the probing.
+    const next = withVerdict(started, key.gpu, key.browser, key.cls, verdict, key.engine ?? "webgl2");
+    if (next !== null) writeAutoRecord(deps.storage, next);
+    return tier;
+  };
   for (;;) {
     const step = nextProbeStep(from, readings);
-    if ("verdict" in step) {
-      // The engine the deciding reading drew with: a step whose WebGPU engine
-      // failed is measured on WebGL2, and the rule then gives WebGL2 too.
-      const engine = readings[readings.length - 1]?.engine ?? key.engine ?? "webgl2";
-      const verdict = onEngine({ tier: step.verdict, source: "probe" as const, pixels, at: deps.now(), readings }, engine);
-      // Looked up next load under the key's engine: a verdict it will not read
-      // keeps the attempts, so the cap still ends the probing.
-      const next = withVerdict(started, key.gpu, key.browser, key.cls, verdict, key.engine ?? "webgl2");
-      if (next !== null) writeAutoRecord(deps.storage, next);
-      return step.verdict;
-    }
+    if ("verdict" in step) return settle(step.verdict);
     let reading: ProbeReading | null;
     try {
       reading = await deps.runStep(step.measure);
     } catch {
       reading = null;
     }
-    if (reading === null) return start;
+    if (reading === null) {
+      const cut = cutVerdict(readings, start);
+      return cut === null ? start : settle(cut);
+    }
     readings.push(reading);
   }
+}
+
+const BELOW: Readonly<Record<QualityTier, QualityTier>> = { high: "medium", medium: "low", low: "low" };
+
+/**
+ * The verdict of a probe cut short (its 30 s cap, or a step that read
+ * nothing) after a step that missed: the tier below the one that missed, never
+ * above `start`, the class's start tier here. Null when nothing was read, which
+ * teaches nothing. Every reading before a cut is a miss, since a hold ends the
+ * probe with its verdict (`nextProbeStep`).
+ */
+export function cutVerdict(readings: readonly ProbeReading[], start: QualityTier): QualityTier | null {
+  const missed = readings[readings.length - 1];
+  if (missed === undefined) return null;
+  const below = BELOW[missed.tier];
+  return RANK[below] <= RANK[start] ? below : start;
 }
 
 /** What `startupTier` needs of the page. */
@@ -491,7 +558,10 @@ async function probeOnce(
       pixels: () => deps.pixels(),
       now: () => deps.now(),
     });
-    return "verdict" in nextProbeStep(from, readings) ? { tier, line: null } : { tier, line: "quality probe: no verdict" };
+    if ("verdict" in nextProbeStep(from, readings)) return { tier, line: null };
+    const missed = readings[readings.length - 1];
+    if (missed === undefined) return { tier, line: "quality probe: no verdict" };
+    return { tier, line: `quality probe: cut short after ${missed.tier} missed, verdict ${tier}` };
   } finally {
     clear();
   }

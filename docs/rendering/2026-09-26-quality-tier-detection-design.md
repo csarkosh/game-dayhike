@@ -1,11 +1,29 @@
 # Quality tier detection: design
 
-**As built.** Nothing yet. This is the design as written on 2026-09-26, against
-`main` at `ba0fd95`. The plan
-([2026-09-26-quality-tier-detection-plan](2026-09-26-quality-tier-detection-plan.md))
-builds it in seven tasks, the last of them the gate. When the work lands this
-paragraph is rewritten to say what shipped and with what values; the sections
-below stay the design as written.
+**As built.** All of it, on WebGL2; the sections below are the design as
+written on 2026-09-26 against `main` at `ba0fd95`, amended where the build or
+a browser reading moved it. The tier is chosen from the GPU the browser names:
+thirteen classes (`gpuClass.ts`), each with a start tier, a ceiling and whether
+it is probed; the reference machine's `apple-base` starts and stays at medium.
+Where the GPU cannot be named, a probe before the first hike renders the canopy
+pose behind "Setting up graphics…": 60 frames discarded and 120 measured, a
+tier holding at a mean of at most 17.5 ms, a step ending early as a miss once
+its frames pass 2,100 ms (and its warm-up bounded by the same), 15 s for a step
+to be ready, 30 s for the whole probe, three attempts, a miss kept when the cap
+cuts the next step. The probe is skipped where WebGL2 links every shader on
+the page's thread (Firefox), and where the page draws below 60 Hz. Its verdict
+holds 30 days, while the window is at most 1.5 times the one measured. The
+governor, on Auto only, drops one tier after three 10 s windows over 20.8 ms
+following 30 s of play, remembered for 7 days, with one HUD line for 6 s. The
+player chooses Auto, High, Medium or Low from one drop-down on the title's and
+the pause screen's Settings; a choice made mid-hike is applied live, the
+renderer rebuilt on a fresh canvas behind a cover that lifts when the new scene
+and its forest are ready, or at 20 s after Apply and 10 s after a governor's
+drop. `?tier=` overrides everything and `?probe=` forces a probe, on the
+machine whose address carries them: a lobby host's announced route goes out
+without them, and a follower drops them from a route it is sent to. The older
+rule from cores and memory (`tierFor`, `detectTier`) is kept as the tier of a
+renderer given none (§6.3).
 
 Day Hike picks a quality tier once, when the renderer is made, from the number
 of logical cores and the memory the browser reports. Neither says anything about
@@ -389,7 +407,10 @@ and verdict until the probe's own verdict replaces them, or starts a record at
 one. A probe's verdict sets `attempts` to 0, unless the verdict it replaces was
 made for another class: then the count is carried, so two classes alternating
 on one GPU, each probed to a verdict the other ignores, probe at most three
-times between them rather than on every load.
+times between them rather than on every load. A `governor` or `build`
+verdict measured nothing and keeps a matching record's `attempts`: when it
+lapses, the probes left are those left before it, so a GPU whose three probes
+reached no verdict is not probed three more times a week after a drop.
 
 ### 6.3 Precedence
 
@@ -402,8 +423,12 @@ tier = ?tier=…                          (the override, for testing)
               if the class is probed and fewer than 3 attempts were made   (§7)
 ```
 
-`autoTier(input): { tier, probeFrom }` in `quality.ts` (pure; `tierFor` and
-`Capabilities` go, with their tests). `resolveTier({ override, choice, auto })`
+`autoTier(input): { tier, probeFrom }` in `quality.ts` (pure). As built,
+`tierFor` and `Capabilities` stay in `quality.ts` with their tests, and
+`renderer.ts`'s `detectTier` still gives a renderer built with no tier the old
+rule from cores and memory; the page passes a tier to every renderer it
+builds, so neither decides a hike here, and they stay because the WebGPU work,
+which merges this, keeps `detectTier` for a renderer given no tier. `resolveTier({ override, choice, auto })`
 in `tierChoice.ts` returns the tier and its source (`override`, `choice`, `auto`),
 which the page logs once per renderer build, naming the tier that renderer
 was built at and the engine it draws with, and `fallback` as the source
@@ -468,12 +493,21 @@ tier gets its own canvas; the renderer is disposed and its engine made with
    effect compiled for 1.5 s (`engine.onAfterShaderCompilationObservable`); at
    most 15 s, after which the probe gives up (§7.6).
 2. **Warm**: 60 frames discarded (the fields' first rebuilds, the reflection
-   probe, the first shadow renders). A shader that compiles after the scene is
-   ready starts the warm-up again: its hitch, 100 ms or more, would tip a
-   machine that holds 60 Hz into a miss. The 30 s cap bounds the restarts.
+   probe, the first shadow renders), or fewer once 2,100 ms have passed since
+   the warm-up began (`PROBE_STEP_BUDGET_MS`, below): at 100 ms a frame the 60
+   alone would take 6 s, and a machine that holds reaches 60 in about 1 s. A
+   shader that compiles after the scene is ready starts the warm-up again: its
+   hitch, 100 ms or more, would tip a machine that holds 60 Hz into a miss.
+   The 30 s cap bounds the restarts.
 3. **Measured**: 120 frame intervals, `performance.now()` between render-loop
    callbacks. Intervals over 250 ms are dropped; fewer than 100 left is no
-   reading.
+   reading. The 120 hold only if they sum to at most 120 × 17.5 ms = 2,100 ms
+   (`PROBE_STEP_BUDGET_MS`, §7.4), so once the kept intervals sum past that
+   the step ends there as a miss: its reading is the mean and p95 of the
+   frames measured, their count, and `early` (logged "ended early"). The
+   floor is the arithmetic's own: 2,100 ms of intervals of at most 250 ms is at
+   least 9 frames. A slow machine then reads its miss in about 2 s, not 12,
+   and a step spends at most about 4.2 s on frames after it is ready.
 
 The reading: `{ tier, frames, meanMs, p95Ms, pixels, engine }`.
 
@@ -522,8 +556,12 @@ first hike that needs it: a world build (one blocks the page "for a second or
 more", `main.ts:391`), the models from the HTTP cache after the first visit,
 compilation, about 3 s of frames per tier. The whole probe is capped at 30 s; on
 the cap, or on a throw anywhere in it, the probe is abandoned, the hike starts at
-the class's start tier, and the attempt counts. After three attempts without a
-verdict the start tier stands and only the governor acts.
+the class's start tier, and the attempt counts. What a step that already missed
+taught is kept: a probe cut after a miss (at high, say, with medium not yet
+read) has the verdict of the tier below the miss, never above the class's start
+tier (`cutVerdict`), written as the probe's, so the next hike does not measure
+the miss again. After three attempts without a verdict the start tier stands
+and only the governor acts.
 
 The attempt is spent only once the tab is seen (a hidden tab draws no frames)
 and the idle frames hold 60 Hz (§7.4). On a game route the page says
@@ -537,7 +575,9 @@ One `console.info` per measured tier and one for the outcome:
 `quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses`
 and `quality probe: verdict medium (apple-unknown)`, or, with no verdict,
 `quality probe: skipped, the page draws below 60 Hz (33.3 ms a frame); starting at medium (apple-unknown)`
-(or `no verdict`, or `not run, the page moved on`). Where the probe is skipped
+(or `no verdict`, or `not run, the page moved on`), or, cut after a miss (§7.6),
+`quality probe: cut short after high missed, verdict medium; starting at medium (apple-unknown)`.
+A step that ended early (§7.3) says so after its frames: `22 frames (ended early)`. Where the probe is skipped
 for compiling on the page's thread (§7.1), before any screen:
 `quality probe: skipped, this browser compiles shaders on the page's thread; starting at medium (apple-unknown)`,
 or, where no WebGL2 context could be made to ask for the extension (a class

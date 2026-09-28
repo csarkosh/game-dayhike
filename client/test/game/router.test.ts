@@ -178,6 +178,25 @@ describe("where a lobby host is, for its followers", () => {
     expect(announcedPath("/game/epic-panda-fun?cmd=seed%20x")).toBe("/game/epic-panda-fun?cmd=seed%20x");
   });
 
+  it("announces a host's route without its ?tier= and ?probe=, which are its own machine's", () => {
+    expect(hostRoute("/game/epic-panda-fun?tier=high")).toBe("/game/epic-panda-fun");
+    expect(hostRoute("/game/epic-panda-fun?cmd=seed%20atmo&tier=high&probe=high")).toBe("/game/epic-panda-fun?cmd=seed+atmo");
+    expect(hostRoute("/settings?tier=low")).toBe("/");
+    expect(hostRoute("/?probe=medium")).toBe("/");
+    // A route with no override comes back byte for byte, its encoding kept.
+    expect(hostRoute("/game/epic-panda-fun?cmd=seed%20atmo")).toBe("/game/epic-panda-fun?cmd=seed%20atmo");
+    expect(hostRoute("/game/epic-panda-fun")).toBe("/game/epic-panda-fun");
+  });
+
+  it("takes ?tier= and ?probe= off a route a follower is sent to, from a host that still announces them", () => {
+    expect(stripOverrides("/game/epic-panda-fun?tier=high")).toBe("/game/epic-panda-fun");
+    expect(stripOverrides("/game/epic-panda-fun?probe=high&cmd=x&tier=low")).toBe("/game/epic-panda-fun?cmd=x");
+    expect(stripOverrides("/game/epic-panda-fun?cmd=seed%20atmo")).toBe("/game/epic-panda-fun?cmd=seed%20atmo");
+    expect(stripOverrides("")).toBe("");
+    // A follower on the host's game with its own override is where the host is.
+    expect(sameFollowPlace(stripOverrides("/game/epic-panda-fun?tier=high"), stripOverrides("/game/epic-panda-fun?tier=low"))).toBe(true);
+  });
+
   it("leaves a follower in its own panel while the host is on the landing, and moves it into a game", () => {
     expect(sameFollowPlace("/", "/settings")).toBe(true);
     expect(sameFollowPlace("/", "/credits")).toBe(true);

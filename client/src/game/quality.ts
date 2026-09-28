@@ -127,8 +127,18 @@ const RANK: Readonly<Record<QualityTier, number>> = { low: 0, medium: 1, high: 2
 /** The engine a tier is drawn with (`engineChoice.ts`'s `EngineName`). */
 export type VerdictEngine = "webgl2" | "webgpu";
 
-/** One tier measured by the startup probe. */
-export type ProbeReading = { tier: QualityTier; frames: number; meanMs: number; p95Ms: number; pixels: number; engine: VerdictEngine };
+/** One tier measured by the startup probe; `early` when its step ended as a
+ * miss before its 120 frames, the mean and p95 then those of the frames it
+ * measured. */
+export type ProbeReading = {
+  tier: QualityTier;
+  frames: number;
+  meanMs: number;
+  p95Ms: number;
+  pixels: number;
+  engine: VerdictEngine;
+  early?: true;
+};
 
 /**
  * What was learned of one GPU: a probe's tier, a drop after a sustained low
@@ -273,12 +283,16 @@ export function withProbeStarted(prev: AutoRecord | null, gpu: string, browser: 
 
 /**
  * The record with a verdict for `cls`, or null for a probe's verdict over no
- * area, which certifies nothing and would never hold again. The attempts go
- * back to 0, unless the verdict replaces one made for another class or engine,
- * or will not be read under `lookup`, the engine the next load looks it up
- * under (a probe keyed on WebGPU whose steps ended on WebGL2, say): then the
- * count is carried, so two classes (or engines) alternating on one GPU, or a
- * verdict the key never reads, cannot probe on every load.
+ * area, which certifies nothing and would never hold again. A probe's verdict
+ * sets the attempts back to 0, unless it replaces one made for another class
+ * or engine, or will not be read under `lookup`, the engine the next load
+ * looks it up under (a probe keyed on WebGPU whose steps ended on WebGL2,
+ * say): then the count is carried, so two classes (or engines) alternating on
+ * one GPU, or a verdict the key never reads, cannot probe on every load. A
+ * governor's or a build's verdict measured nothing, so it keeps a matching
+ * record's count: once it lapses, the probes left are the ones that were left
+ * before it, and a GPU whose probes never reached a verdict is not probed
+ * three more times.
  */
 export function withVerdict(
   prev: AutoRecord | null,
@@ -289,11 +303,12 @@ export function withVerdict(
   lookup: VerdictEngine = verdictEngine(verdict),
 ): AutoRecord | null {
   if (verdict.source === "probe" && !(verdict.pixels > 0)) return null;
-  const matching = prev !== null && recordMatches(prev, gpu, browser);
+  const matching = prev !== null && recordMatches(prev, gpu, browser) ? prev : null;
   const replaced =
-    matching && prev.verdict !== null && (prev.cls !== cls || verdictEngine(prev.verdict) !== verdictEngine(verdict));
-  const unread = matching && lookup !== verdictEngine(verdict);
-  return { v: DETECT_VERSION, gpu, cls, browser, attempts: replaced || unread ? prev.attempts : 0, verdict };
+    matching?.verdict != null && (matching.cls !== cls || verdictEngine(matching.verdict) !== verdictEngine(verdict));
+  const unread = matching !== null && lookup !== verdictEngine(verdict);
+  const carried = verdict.source !== "probe" || replaced || unread;
+  return { v: DETECT_VERSION, gpu, cls, browser, attempts: carried ? (matching?.attempts ?? 0) : 0, verdict };
 }
 
 /**
