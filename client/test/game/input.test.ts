@@ -727,4 +727,18 @@ describe("the starting yaw", () => {
     const { input } = sampler({ touch, touchMode: true, startYaw: 1.25 });
     expect(input.sample(1).yaw).toBe(1.75);
   });
+
+  it("is kept through a rebind to a fresh canvas, as is a turn made from it", () => {
+    const freshCanvas = () => ({ ...fakeTarget(), requestPointerLock: () => undefined });
+    const { input } = sampler({ startYaw: 1.25 });
+    const first = freshCanvas();
+    input.rebind(first as unknown as HTMLCanvasElement);
+    expect(input.sample(1).yaw).toBe(1.25);
+
+    lockPointer(first);
+    fire("mousemove", { movementX: 100, movementY: 0 });
+    expect(input.sample(2).yaw).toBeCloseTo(1.47, 9);
+    input.rebind(freshCanvas() as unknown as HTMLCanvasElement);
+    expect(input.sample(3).yaw).toBeCloseTo(1.47, 9);
+  });
 });

@@ -52,6 +52,7 @@ import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 import { createRenderer, type Renderer } from "../../src/game/renderer.js";
 import { createBodyMesh } from "../../src/game/bodyMesh.js";
 import { createSignMeshes } from "../../src/game/signMeshes.js";
+import { createTrailheadMeshes } from "../../src/game/trailheadMeshes.js";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene as BabylonScene } from "@babylonjs/core/scene.js";
 import {
@@ -282,7 +283,16 @@ describe("buildOrUndo", () => {
 const LEVEL: Level = { id: "swap-leak", brushes: [], playerSpawns: [], enemySpawns: [] };
 const SEED = 388817;
 const BODY = { pos: { x: 10, y: 2, z: 10 }, yaw: 0 };
-const POSTS = [{ x: 0, z: 0, arms: [{ dx: 0, dz: 1, names: ["Trailhead"], ranks: [0] }] }];
+/** A junction post, and the one-plank sign at the trail's entrance. */
+const POSTS = [
+  { x: 0, z: 0, arms: [{ dx: 0, dz: 1, names: ["Trailhead"], ranks: [0] }] },
+  { x: 4, z: 0, arms: [{ dx: 1, dz: 0, names: ["Trail 14"], ranks: [0] }] },
+];
+/** The car on the road and the notice board by the trail. */
+const TRAILHEAD = {
+  car: { site: { x: 10, z: 20 }, trailhead: { x: 1, z: 32 } },
+  kiosk: { site: { x: 6, z: 39 }, facing: { dx: 0, dz: -1 } },
+};
 const never = (): Promise<AssetContainer> => new Promise(() => undefined);
 
 function nullCanvas(): HTMLCanvasElement {
@@ -307,7 +317,8 @@ function census(scene: Scene) {
   };
 }
 
-/** What app.ts builds into the scene outside the renderer: the body and the signs. */
+/** What app.ts builds into the scene outside the renderer: the body, the
+ * signs, and the trailhead's car and notice board. */
 function sceneExtras() {
   let live: { dispose(): void }[] = [];
   return {
@@ -316,6 +327,13 @@ function sceneExtras() {
         createBodyMesh(r.scene, BODY, { shadows: r.shadows, loader: never }),
         createSignMeshes(r.scene, POSTS, () => 2, {
           materialFor: (name) => new StandardMaterial(`box_${name}`, r.scene),
+          paint: (s, name) => new PBRMaterial(name, s),
+          shadows: r.shadows,
+          loader: never,
+        }),
+        createTrailheadMeshes(r.scene, TRAILHEAD, () => 2, {
+          materialFor: (name) => new StandardMaterial(`box_${name}`, r.scene),
+          lines: ["MISSING", "Dana Whitcombe", "Last seen at Trail 14."],
           paint: (s, name) => new PBRMaterial(name, s),
           shadows: r.shadows,
           loader: never,
