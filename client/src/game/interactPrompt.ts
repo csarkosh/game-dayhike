@@ -23,8 +23,8 @@ export function promptLabel(kind: number): string {
  * and projects its position; this only decides the label, the size and the
  * clamp.
  *
- * Every interactable the summit loop has — the box at the trailhead — carries
- * its own label (`register.ts`), so there is no per-kind special case here:
+ * Every interactable the summit loop has — the poster on the notice board — carries
+ * its own label (`search.ts`), so there is no per-kind special case here:
  * a labelled target reads out its label, an unlabelled one falls back to its
  * kind's verb.
  */

@@ -36,7 +36,7 @@ describe("one run on the seed `hollow`", SUITE, () => {
     // The climb is every stem node outside the discovery radius, not simply
     // "all but the last": on `hollow` the node before the crest stands 11.3 m
     // from the body, inside the 12 m radius, so standing there IS the find.
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     const climb = chain.filter((n) => {
       const node = graph.nodes[n]!;
       const dx = node.x - body.x, dz = node.z - body.z;

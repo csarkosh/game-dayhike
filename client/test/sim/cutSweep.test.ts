@@ -45,7 +45,7 @@ function descend(token: string): Descent {
   const p = spawnPlayer(w);
   const g = w.trail!;
   const at = (x: number, z: number) => { p.pos = { x, y: w.ground!.heightAt(x, z) + 0.9, z }; };
-  const body = w.register!.body.pos;
+  const body = w.search!.body.pos;
   at(body.x - 5, body.z);
   tickWorld(w, new Map());
   expect(w.state.phase, token).toBe(Phase.Chase);

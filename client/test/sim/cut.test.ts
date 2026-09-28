@@ -435,7 +435,7 @@ describe("the cut in the tick", SUITE, () => {
   const chase = (token = "hollow") => {
     const w = createForestWorld(createForest(seedFromToken(token)));
     const p = spawnPlayer(w);
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     p.pos = { x: body.x - 5, y: w.ground!.heightAt(body.x - 5, body.z) + 0.9, z: body.z };
     tick(w);
     expect(w.state.phase).toBe(Phase.Chase);
@@ -463,7 +463,7 @@ describe("the cut in the tick", SUITE, () => {
     const p = spawnPlayer(w);
     tick(w, 3);
     expect(w.cut).toBeNull();
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     p.pos = { x: body.x - 5, y: w.ground!.heightAt(body.x - 5, body.z) + 0.9, z: body.z };
     tick(w);
     expect(w.state.phase).toBe(Phase.Chase);
@@ -663,7 +663,7 @@ describe("the cut in the tick", SUITE, () => {
   it("never cuts on a client's world", () => {
     const w = createForestWorld(createForest(seed), false);
     const p = spawnPlayer(w);
-    const body = w.register!.body.pos;
+    const body = w.search!.body.pos;
     p.pos = { x: body.x - 5, y: w.ground!.heightAt(body.x - 5, body.z) + 0.9, z: body.z };
     tick(w);
     expect(w.state.phase).toBe(Phase.Climb);

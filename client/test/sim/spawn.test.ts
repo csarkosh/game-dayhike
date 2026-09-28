@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createChunkGrid } from "../../src/sim/chunkGrid.js";
-import { groundSpawn, ringSample, spiralSpawn } from "../../src/sim/spawn.js";
+import { groundSpawn, ringSample, spiralSpawn, trailheadSpawn, trailheadStart } from "../../src/sim/spawn.js";
 import {
   DEFAULT_TERRAIN_VARIANT,
   elevationSampleAt,
@@ -14,6 +14,10 @@ import { ENEMY_MIN_SPAWN_DISTANCE, PLAYER_HALF } from "../../src/sim/constants.j
 import type { BoxProvider } from "../../src/sim/boxSource.js";
 import type { Vec3 } from "../../src/sim/types.js";
 import { timeLimit } from "../helpers/timeLimit.js";
+import { graph } from "./helpers/stemGraph.js";
+import { seedFromToken } from "../../src/game/seed.js";
+import { createForest } from "../../src/sim/forest.js";
+import { createForestWorld, spawnPlayer } from "../../src/sim/world.js";
 
 const SEED = 0x5a4a7;
 
@@ -230,6 +234,60 @@ describe("spiralSpawn with a centre (trailhead)", () => {
       const s = elevationSampleAt(seed, p.x, p.z);
       expect(Math.abs(s.dx) + Math.abs(s.dz)).toBeLessThan(0.05); // on the flat
       expect(needsNoDepenetration(p, grid)).toBe(true);
+    }
+  });
+});
+
+describe("trailheadSpawn", () => {
+  it("stands the player 2.5 m past the car's box on the line to the entrance, facing it", () => {
+    // The stem leaves along +x from the pad at the origin, so the entrance
+    // is (8, 0). The car's box is 0.9 m deep toward it.
+    const s = trailheadSpawn(graph(1), { x: -2.1, z: 0 });
+    expect(s.x).toBeCloseTo(1.3, 9);
+    expect(s.z).toBeCloseTo(0, 9);
+    expect(s.yaw).toBeCloseTo(1.5707963267948966, 12);
+  });
+
+  it("follows the line when the car stands off to one side", () => {
+    const s = trailheadSpawn(graph(1), { x: -2.1, z: -3 });
+    expect(s.x).toBeCloseTo(1.1965159905355383, 9);
+    expect(s.z).toBeCloseTo(-2.0208368344943946, 9);
+    expect(s.yaw).toBeCloseTo(1.2110719771472105, 9);
+  });
+});
+
+describe("trailheadStart", () => {
+  it("gives every caller the same start for a seed", { timeout: timeLimit(60_000) }, () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    const seed = seedFromToken("hollow");
+    const first = trailheadStart(seed)!;
+    trailheadStart(seedFromToken("room-1"));
+    expect(trailheadStart(seed)).toEqual(first);
+    expect(first.x).toBeCloseTo(-313.0286066837363, 6);
+    expect(first.z).toBeCloseTo(-2.398352174641473, 6);
+    expect(first.yaw).toBeCloseTo(2.295766724707367, 9);
+  });
+
+  it("has no start on a world with no trail", () => {
+    setActiveTerrainVariant("montane");
+    try {
+      expect(trailheadStart(7)).toBeNull();
+    } finally {
+      setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    }
+  });
+});
+
+describe("a player's arrival", () => {
+  it("puts every player at the start, facing the trail", { timeout: timeLimit(60_000) }, () => {
+    setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+    const seed = seedFromToken("hollow");
+    const w = createForestWorld(createForest(seed));
+    const a = spawnPlayer(w), b = spawnPlayer(w);
+    for (const p of [a, b]) {
+      expect(p.pos.x).toBeCloseTo(-313.0286066837363, 6);
+      expect(p.pos.z).toBeCloseTo(-2.398352174641473, 6);
+      expect(p.yaw).toBeCloseTo(2.295766724707367, 9);
     }
   });
 });

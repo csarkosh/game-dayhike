@@ -106,6 +106,22 @@ describe("the Hollow walks the stem on real terrain", () => {
    * the seeds whose trails hug the corridor longest, which no longer matters
    * to the time. `hollowCorridor.test.ts` walks the case that used to freeze —
    * a route into the woods that starts at the trailhead, deeper inside.
+   *
+   * It starts 30 m along the road from the pad, where nothing stands between
+   * the road and the woods. Started at the pad's own place, on `hollow18` it
+   * walks into the road-side face of the car, which has stood at the pad
+   * since 2026-09-28, and stays there at u = 5.6 for all 1200 ticks: the
+   * sidestep `walkToward` keeps for this never begins. Traced tick by tick,
+   * the Hollow meets the face square on (inside the corridor it heads along
+   * x alone), and each tick it is carried about 2 cm into the box and put
+   * back; at 25 m from its goal those 2 cm move the squared distance by
+   * about 0.9, far over STUCK_EPSILON (0.01), so every other tick reads as
+   * progress, the stuck timer never passes 0.02 s of its 1.5 s, and no
+   * strafe starts. On `hollow0` it meets the car off the square and slides
+   * round it, 2.2 s late. That is a fault in the stuck test, older than the
+   * car's move and not mended here. No Hollow is ever put on the road
+   * behind the car: none steps onto the corridor, and none spawns on it
+   * short of the trail.
    */
   it("walks out of the road corridor instead of freezing on it", () => {
     for (const token of ["hollow0", "hollow29", "hollow18"]) {
@@ -123,11 +139,12 @@ describe("the Hollow walks the stem on real terrain", () => {
       const p = spawnPlayer(w);
       p.pitch = 1.4;
       p.pos = { x: crest.x, y: elevationAt(seed, crest.x, crest.z) + PLAYER_HALF.y, z: crest.z };
-      // On the road's centreline by the pad: u = 0, as deep in as it goes.
+      // On the road's centreline, 30 m along it from the pad: u = 0, as deep
+      // in as it goes, and clear of the car and the board.
       const roadCenterX = activeTerrainVariant().roadCenterX!;
-      const th = graph.trailhead;
-      const sx = roadCenterX(seed, th.z);
-      const h = spawnHollow(w, { x: sx, y: elevationAt(seed, sx, th.z) + ENEMY_HALF.y, z: th.z }, p.id, 0);
+      const sz = graph.trailhead.z + 30;
+      const sx = roadCenterX(seed, sz);
+      const h = spawnHollow(w, { x: sx, y: elevationAt(seed, sx, sz) + ENEMY_HALF.y, z: sz }, p.id, 0);
       expect(isOnCorridor(w, h.pos.x, h.pos.z), `seed ${token}`).toBe(true);
 
       let out = -1;
