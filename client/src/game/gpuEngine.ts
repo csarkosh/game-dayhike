@@ -69,10 +69,16 @@ import {
   WEBGPU_FETCH_MS,
   WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS,
+  type PipelineMode,
   type ShaderLookupMode,
 } from "./engineChoice.js";
+import { installPipelines, leftOutOn } from "./asyncPipelines.js";
 import { pinPluginNumbers } from "./pluginNumbers.js";
 import { defaultSources, lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
+
+// The game reaches the patch on an engine made here, and the start's reveal,
+// through this module alone (`main.ts`'s watchers).
+export { asyncPipelinesOf, revealWhenWhole } from "./asyncPipelines.js";
 
 /** The least of its start's budget an engine keeps when it waits for its
  * shader lookup's sources: the wait is given up this long before the
@@ -260,6 +266,10 @@ async function startTranslators(signal: AbortSignal): Promise<Translators> {
  * `WGSL_MAP_MS`) and never closer than
  * `SOURCES_MARGIN_MS` to its deadline (entries still arriving are found as
  * they land), so that no preparation waits once the engine is handed over.
+ * Once it stands, its render pipelines are made as `pipelines` says
+ * (`installPipelines`, `?pipelines=`): by default asynchronously, a draw left
+ * out until its pipeline lands, inside the scope its renderer opens
+ * (`asyncPipelines.ts`).
  * Rejects on any failure, or when `ms` pass first,
  * having disposed what it made; the canvas may then hold a WebGPU context, so
  * the caller draws WebGL2 on a fresh one.
@@ -272,6 +282,7 @@ export async function createWebGpuEngine(
     translators?: Translators;
     lookup?: ShaderLookupMode;
     sources?: (salt: string) => Promise<readonly WgslSource[]>;
+    pipelines?: PipelineMode;
   } = {},
 ): Promise<WebGPUEngine> {
   const translators = options.translators;
@@ -323,6 +334,9 @@ export async function createWebGpuEngine(
   const starting = start();
   try {
     const engine = await Promise.race([starting, deadline]);
+    // On this engine's own cache and draw, which `initAsync` made; a draw is
+    // left out only inside the scope its renderer opens.
+    installPipelines(engine, options.pipelines ?? "async");
     // Only once the engine stands: a failed start leaves Babylon's defaults,
     // and neither switch changes anything on WebGL2, where every material is
     // GLSL.
@@ -498,13 +512,20 @@ export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: "pipelin
  * `onAfterShaderCompilationObservable` reports as on WebGL2, but the pipeline
  * that draws with them is made at their first draw, a frame or more later,
  * and that is a hitch of its own: the governor voids its window as for a
- * compile. Babylon counts the pipelines each frame made
+ * compile. Babylon counts the pipelines each frame made synchronously
  * (`WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame`) before it tells
- * the frame's end. Returns a function that stops listening.
+ * the frame's end. A pipeline made asynchronously (`asyncPipelines.ts`) is not
+ * counted there and is no hitch; but a frame that left a draw out while one
+ * was made is cheaper than a whole one, so it is told too (`leftOutOn`).
+ * Returns a function that stops listening.
  */
 export function watchPipelines(engine: AbstractEngine, onCreated: () => void): () => void {
+  let seen = leftOutOn(engine);
   const observer = engine.onEndFrameObservable.add(() => {
-    if (WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame > 0) onCreated();
+    const leftOut = leftOutOn(engine);
+    const unmeasured = WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame > 0 || leftOut !== seen;
+    seen = leftOut;
+    if (unmeasured) onCreated();
   });
   return () => engine.onEndFrameObservable.remove(observer);
 }

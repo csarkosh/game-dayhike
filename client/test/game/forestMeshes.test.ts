@@ -669,6 +669,32 @@ describe("createForestMeshes under NullEngine", () => {
     expect(errors).not.toHaveBeenCalled();
   });
 
+  it("hands every bake the pipelines it was given, so a bake on WebGPU keeps only a render that left nothing out", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const pipelines = {
+      takeSkipped: () => 0,
+      guarded: (render: () => void): boolean => {
+        render();
+        return true;
+      },
+    };
+    const given: unknown[] = [];
+    const forest = createForestMeshes(scene, SEED, {
+      assets: stubAssets(scene),
+      pipelines,
+      bakeImpostor: (_mesh, _s, options) => {
+        given.push(options?.pipelines);
+        return null;
+      },
+    });
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+    expect(given.length).toBe(5);
+    expect(given.every((p) => p === pipelines)).toBe(true);
+    forest.dispose();
+  });
+
   it("dispose leaves the scene meshless and is idempotent", () => {
     const { scene, forest } = build();
     forest.update(FOREST_CAM.x, FOREST_CAM.z);

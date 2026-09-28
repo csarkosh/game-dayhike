@@ -2,11 +2,14 @@ import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
 import { createRenderer, terrainMaterialFor, type FreecamView, type Renderer } from "./game/renderer.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import type { AsyncPipelines } from "./game/asyncPipelines.js";
 import { FALLBACK_NOTICE_MS } from "./game/engineChoice.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
 import { createHud } from "./game/hud.js";
+import { LOADING_LINE } from "./game/frameProbe.js";
+import { holdReveal, whenFrameWhole } from "./game/revealHold.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
 import { navigateToLanding } from "./game/router.js";
 import { createCommandBar } from "./game/commandBar.js";
@@ -263,6 +266,10 @@ function buildGame(
       engineNotice = options.engineFailed("pipeline");
     },
   };
+  /** The pipelines a WebGPU engine made here makes asynchronously
+   * (`asyncPipelines.ts`), for the renderer built on it; none on WebGL2. */
+  const pipelinesFor = (engine: AbstractEngine | null): AsyncPipelines | undefined =>
+    engine !== null && watchers !== null ? (watchers.asyncPipelines(engine) ?? undefined) : undefined;
   // The tier asked for, and should it fail to build, the class's start tier
   // and then low, each on a fresh canvas: only the renderer is retried, not
   // the world, which is built once. A WebGPU engine that cannot build the
@@ -274,7 +281,7 @@ function buildGame(
     canvas,
     [options.tier, ...options.fallbackTiers],
     {
-      build: (next, at, engine) => createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined }),
+      build: (next, at, engine) => createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine) }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
@@ -1329,6 +1336,36 @@ function buildGame(
     }
     stepAndRender();
   }
+
+  // On WebGPU a draw may be left out while its pipeline is made
+  // (`asyncPipelines.ts`), so the first frames can show a world with holes:
+  // the world stays hidden until a frame leaves nothing out, 10 s after the
+  // first frame at most (`revealWhenWhole`), under "Loading…" while the HUD
+  // says nothing of its own (`holdReveal`). A switch or the game's end lifts
+  // it at once. WebGL2 shows its first frame as always.
+  /** Lifts the start's hold, once, and stops waiting for a whole frame. */
+  let endRevealHold = (): void => undefined;
+  if (renderer.engine.isWebGPU && watchers !== null) {
+    const held = canvas;
+    const engine = renderer.engine;
+    const gpu = watchers;
+    const line = createHud(container);
+    const lift = holdReveal({
+      hideWorld: (hidden) => {
+        held.style.visibility = hidden ? "hidden" : "";
+      },
+      showLine: (shown) => line.setStatus(shown ? LOADING_LINE : null),
+      releaseLine: () => line.dispose(),
+      status: () => hud.status(),
+      eachFrame: (fn) => {
+        const observer = engine.onEndFrameObservable.add(fn);
+        return () => engine.onEndFrameObservable.remove(observer);
+      },
+      reveal: (fn) => gpu.reveal(engine, fn),
+    });
+    endRevealHold = lift;
+    made(() => endRevealHold());
+  }
   renderer.engine.runRenderLoop(loop);
 
   const onResize = () => {
@@ -1372,7 +1409,7 @@ function buildGame(
     // The target's engine is made before the swap by the WebGPU rule
     // (`options.engineFor`), on the canvas `freshCanvas` hands out first;
     // null, the renderer makes WebGL2's.
-    build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined }),
+    build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine) }),
     freshCanvas: () => document.createElement("canvas"),
     extras: { dispose: disposeExtras, build: buildExtras },
     rebind: (next) => {
@@ -1468,6 +1505,8 @@ function buildGame(
           return fresh;
         },
       };
+      // The start's hold on its world, if still up, gives way to the switch's own cover.
+      endRevealHold();
       let got: ReturnType<typeof swapRenderer>;
       try {
         got = swapRenderer(
@@ -1498,7 +1537,16 @@ function buildGame(
       console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine ${renderer.engine.isWebGPU ? "webgpu" : "webgl2"}`);
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
+      const sceneFrom = performance.now();
       await whenSceneReady(renderer.scene, made.leftMs, renderer.forestReady);
+      // On WebGPU, then a frame that left no draw out while its pipeline was
+      // made, within what is left of the same bound: the cover lasts no
+      // longer, and meshes do not appear after it lifts.
+      const gpu = watchers;
+      if (renderer.engine.isWebGPU && gpu !== null) {
+        const engine = renderer.engine;
+        await whenFrameWhole((lift) => gpu.reveal(engine, lift), made.leftMs - (performance.now() - sceneFrom));
+      }
       return tier;
     } finally {
       switching = false;
@@ -1637,6 +1685,7 @@ function buildGame(
       document.removeEventListener("visibilitychange", onVisibility);
       netgraph.dispose();
       if (landingTimer !== null) clearTimeout(landingTimer);
+      endRevealHold();
       // Before anything of the engine goes: a disposed engine is not a
       // failing one.
       engineBindings.unwatch();
