@@ -517,16 +517,18 @@ for run here and fail elsewhere.
 
 | limit | WebGPU default | required | why |
 | --- | --- | --- | --- |
-| `maxInterStageShaderVariables` | 16 | **19** (as found: 17 was one short) | the giant trees' faded material: 18 vertex outputs, and, since Babylon declares every vertex output as a fragment input, 18 fragment inputs plus `front_facing`, which WebGPU counts (§6.4) |
-| `maxSampledTexturesPerShaderStage` | 16 | measured by Task 2 | the terrain's fragment: seven layer maps and arrays, road ×2, trail ×2, the feature table, the atmosphere's gradient, the environment cube, the BRDF lookup and the cascaded shadow map, about 16 |
-| `maxSamplersPerShaderStage` | 16 | measured by Task 2 | the same, plus the shadow map's comparison sampler |
-| `maxUniformBuffersPerShaderStage` | 12 | measured by Task 2 | scene, mesh and material blocks, one per light up to `LIGHT_BUDGET` 7 (`headlamp.ts:70`), and the leftover block: about 11 |
-| `maxVertexBuffers` | 8 | 8 | six on a terrain ring (position, normal, colour and the three of `renderer.ts:221–223`); five on a Task 7 bucket |
+| `maxInterStageShaderVariables` | 16 | **19** (as found: 17 was one short) | the giant trees' faded material: 18 vertex outputs, and, since Babylon declares every vertex output as a fragment input, 18 fragment inputs plus `front_facing`, which WebGPU counts (§6.4); measured on both tiers, and on high the halation's blur the same (the verification note, §4) |
+| `maxSampledTexturesPerShaderStage` | 16 | 16 (measured, no margin) | the terrain's fragment: seven layer maps and arrays, road ×2, trail ×2, the feature table, the atmosphere's gradient, the environment cube, the BRDF lookup and the cascaded shadow map, 16 |
+| `maxSamplersPerShaderStage` | 16 | 16 (measured, no margin) | the same, the shadow map's by comparison |
+| `maxUniformBuffersPerShaderStage` | 12 | 12 (measured, no margin) | the internals, scene, mesh and material blocks, one per light up to `LIGHT_BUDGET` 7 (`headlamp.ts:70`), and the leftover block: 12 |
+| `maxVertexBuffers` | 8 | 8 (measured: 7 needed) | six on a terrain ring (position, normal, colour and the three of `renderer.ts:221–223`); five on a Task 7 bucket; as found, 7 on the duff clumps, the giant fir's faded material, the fern, the meadow's clutter and the grass |
 | `maxStorageBuffersPerShaderStage` | 8 | 6 (Task 7 only) | the cull pass: parameters, candidates, counts, three tier outputs |
 
 Task 2 measures the three unmeasured rows from the translated WGSL of every
 pipeline the sweep builds (the highest binding count per stage) and pins them
-as literals. Whether adapters on Windows (Dawn on D3D12) expose more than 16
+as literals. As found (the verification note, §4): all three sit exactly at
+the default, and `WEBGPU_REQUIRED_LIMITS` names them there, with the two
+above, so the request lists the scene's whole need. Whether adapters on Windows (Dawn on D3D12) expose more than 16
 inter-stage variables was not measured. If a Windows figure shows they do not,
 the lever is to pack the foliage plugin's three scalar varyings
 (`vFoliageH`, `vFoliageClump`, `vFoliageDist`) into one `vec3`, which brings the
@@ -794,14 +796,18 @@ output as a fragment input and places a `mat3` in three locations, and a
 two-sided PBR material reads `front_facing`, so the faded trunk material needs
 19; the device asks for 19, the number in one place (`engineChoice.ts`).
 `interStage.test.ts` holds it: each plugin's varyings parsed from its injected
-GLSL and pinned, and the measured materials, Babylon's share from the
-browser's reading, held within the limit as the specification counts; the
-suite cannot translate a shader to WGSL, nor build a whole material with the
-engine features that bring Babylon's own varyings, so the Babylon share is the
-measured one. The halation's kernel blur, which counted 18 at a device of 28,
+GLSL and pinned, and, as first built, the measured materials, Babylon's share
+from the browser's reading, held within the limit as the specification
+counts. The halation's kernel blur, which counted 18 at a device of 28,
 sizes itself from the device's limit and cannot pass it. The full sweep of
-every material, running in a browser, sets the final number; the 19 has not
-yet been read in a browser.
+every material, running in a browser, sets the final number. As read (the
+verification note, §4): 19, the faded material's fragment stage reading 18
+inputs and `front_facing` on both tiers, which fails at 18 and passes at 19;
+the halation's blur on high the same. The inter-stage test now builds the
+forest from the shipped models on `NullEngine` with Babylon's WebGPU
+processing, pins the varyings Babylon gives the giants' materials, and adds
+the shadow cascades' varyings by count, which it cannot draw; its count
+matches the browser's on both tiers.
 
 **Change.** §5.2: the rule checks the adapter against `WEBGPU_REQUIRED_LIMITS`
 and the device is created with exactly those. Task 2 measures the three rows

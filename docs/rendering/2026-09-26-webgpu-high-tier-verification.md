@@ -236,6 +236,67 @@ not of the GPU, and it must be fixed before the switch can be turned on, since
 it would otherwise be remembered as a GPU failure for 30 days. Task 2's gates
 start from WebGPU actually starting.
 
+## 4. The required limits, measured
+
+Task 2 Step 7 (2D). Read on 2026-09-27 over 13 WebGPU pages, 7 on the high
+tier and 6 on medium: mist, clear, rain with the lamp on, and the eerie
+weather at 21 h with the lamp on; every pose of design §7.1 and the spawn
+view; the trailhead with the five rangers in view, every lamp of a full party
+lit (seven lights bound, the game's cap), and the Hollow; the kiosk with its
+poster, the car, the summit body and a fingerpost; then the compile sweep of
+Step 8. Every pipeline the engine made was counted, 1,603 in all (98–142 a
+page), and replayed on a second device at chosen limits, so each verdict is
+the browser's own. The reference adapter is an Apple M4 (Metal, not a
+fallback) in Chrome 154.
+
+| limit | WebGPU default | required | set by (tier) | reference adapter |
+| --- | --- | --- | --- | --- |
+| `maxInterStageShaderVariables` | 16 | **19** | the giant trees' faded material (`material1` of the fir and of the pine, one effect): 18 vertex outputs, and 18 fragment inputs with `front_facing` (both tiers); the halation's blur, the same (high) | 28 |
+| `maxVertexBuffers` | 8 | 8, the default | 7: the duff clumps, the giant fir's `material1` at every level of detail, the fern, the meadow's clutter and the grass (both tiers) | 8 |
+| `maxSampledTexturesPerShaderStage` | 16 | 16, the default | 16: the terrain's fragment stage on the clipmap rings (both tiers); next, 8 | not read |
+| `maxSamplersPerShaderStage` | 16 | 16, the default | 16: the same | not read |
+| `maxUniformBuffersPerShaderStage` | 12 | 12, the default | 12: both stages of every lit PBR material with seven lights bound (the terrain, the duff, the kiosk, the car, the trees); 8 with three | not read |
+
+**Inter-stage variables.** At 19, with every other limit at WebGPU's default,
+no pipeline on any of the 13 pages fails. At 18 the trees' faded material
+fails on both tiers, and on high the halation's blur with it:
+`Total fragment input variables count (19 = 18 (user-defined) + 1 (front_facing) exceeds the maximum (18).`
+At the defaults the trees' other material (`material0`, 17 vertex outputs, and
+17 fragment inputs with `front_facing`) fails too. So the fragment stage's 18
+inputs with `front_facing`, which the design inferred from Babylon's
+processing, is now measured, and it is what sets 19. The browser counts a
+fragment stage's user-defined inputs with its `front_facing`, `sample_index`
+and `sample_mask` (neither of the last two appears), and a vertex stage's
+user-defined outputs, one more only for point-list topology, which no pipeline
+uses; the position is not counted. §6.1's reading of 18 was the vertex stage
+alone: validation stops at the first stage that fails.
+
+**No margin.** Three limits sit exactly at WebGPU's default: one more texture
+or sampler on the terrain, or an eighth light, fails the pipeline on every
+adapter. `WEBGPU_REQUIRED_LIMITS` names all five at the values above, so the
+device request and the adapter check list the scene's whole need;
+`interStage.test.ts` and `stageBindings.test.ts` count, from what the suite
+can build, the trees' varyings, the terrain's textures and samplers and the
+lights bound, and fail when any grows.
+
+**The rest.** Every other limit the scene touches is below its default: one
+texture and one sampler in the vertex stage (skinning), no storage buffer or
+storage texture, two bind groups, one colour target, 10 vertex attributes
+(16), an array stride of 68 bytes (2048), a largest 2D texture of 2560 (8192)
+and 6 array layers (256), a largest buffer of 6 MiB, a uniform binding of
+3312 B (64 KiB), and no compute pipeline.
+
+**At exactly these limits.** Two more pages had the device made with
+`{ maxInterStageShaderVariables: 19, maxVertexBuffers: 8 }` and every other
+limit at the default (read back 19, 8, 16, 16 and 12): high in mist (147
+pipelines, 142 effects) and medium in the eerie weather at 21 h with the lamp
+on (119 pipelines, 127 effects). Both stayed on WebGPU throughout, with no
+GPU error, no effect error, no console warning or error, no unhandled
+rejection and no stored record; their compile sweeps ran 319 and 318 jobs
+with no failure.
+
+Whether an adapter on Windows offers 19 inter-stage variables was not read.
+
 ## 6. The trail bed
 
 Read on 2026-09-27 at `785825e`, the method of §1 with three differences:
@@ -285,8 +346,9 @@ and the locations Babylon gave each compiled effect were read back:
 | `kernelBlur` | 18 | not read | the halation's two blurs (high tier) |
 
 So the giant fir and the giant pine, which come into the drawn set 10–20 s
-after the load, need 18; the halation's blur counts 18 as well (whether it
-fails at 17 was not seen: the page had fallen back by then). No effect of the
+after the load, need 18 here; the halation's blur counts 18 as well (whether it
+fails at 17 was not seen: the page had fallen back by then). §4 measures the
+fragment stage as well: 18 inputs with `front_facing`, so 19. No effect of the
 fern, the shrub or the terrain is over 16. Every WebGPU page read after this
 carries that injection (the device at 28), so it stays on WebGPU.
 
