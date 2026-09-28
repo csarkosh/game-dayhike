@@ -595,14 +595,11 @@ WebGPU start shows it for the translators' download and compile and the device,
 and the worst case, a stalled fetch and a stalled adapter, for 20 s.
 
 With the shader lookup ([its design](2026-09-28-webgpu-shader-lookup-design.md),
-§6), the start fetches no translator: the module is imported within the fetch
-budget, the adapter probed and the engine made within the GPU's, and the
-translators are fetched, within the same 10 s of their own, at the first
-shader the lookup does not find, or once the page is idle after the first
-frame. "Loading…" covers the module and the device, and on a first visit the
-translators' download too, since the first shaders are then not found.
-Translators that cannot be fetched then end on WebGL2 by a live swap, as a
-failure does, with nothing remembered. `?wgsl=off` keeps the order above.
+§6), the order is the same: the translators are still fetched and started
+before the engine, within the fetch budget, and "Loading…" still covers them.
+What is added is inside the engine's making, within the GPU's budget: the
+lookup's store is opened and its entries read into memory while the device is
+requested, for at most 2 s. No preparation of a shader then waits.
 
 ### 5.5 What fails, and what the player sees
 

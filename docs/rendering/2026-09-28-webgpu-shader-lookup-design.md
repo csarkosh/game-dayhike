@@ -79,12 +79,14 @@ and Babylon's wrapping of them, and the lookup keys each stage by
 key_s = SHA-256( salt ‖ 0 ‖ s ‖ 0 ‖ (u_s ? "1" : "0") ‖ 0 ‖ UTF-8(G_s) )
 salt  = "dayhike-wgsl/1" + "|babylon=" + Babylon's version
         + "|glslang=" + SHA-256(glslang.wasm) + "|twgsl=" + SHA-256(twgsl.wasm)
+        + "|glslang.js=" + SHA-256(glslang.js) + "|twgsl.js=" + SHA-256(twgsl.js)
         + "|staticUA=" + WebGPUTintWASM.DisableUniformityAnalysis
 ```
 
-(`stageKey`, `lookupSalt`). The translators' digests are computed by the build
-(`vite.config.ts`, the `__WGSL_TRANSLATORS__` constant), so the page never
-hashes their 2.6 MB. The key is hashed in the page synchronously, by a SHA-256
+(`stageKey`, `lookupSalt`). The translators' digests, of their WebAssembly and
+of their loaders (which hold glslang's defaults and twgsl's wrapper), are
+computed by the build (`vite.config.ts`, the `__WGSL_TRANSLATORS__` constant),
+so the page never hashes their 2.7 MB. The key is hashed in the page synchronously, by a SHA-256
 in TypeScript (`sha256.ts`): `crypto.subtle` answers a task later at the
 earliest. The key carries the whole stage as glslang is handed it, so two
 stages that differ only by the uniformity define get two keys.
@@ -112,19 +114,17 @@ makes, before the wrap that catches translation failures
 (`catchTranslationFailures`), which wraps whatever preparation it finds.
 
 It replaces the engine instance's `_preparePipelineContextAsync` (Babylon's
-`Effect` looks it up on the engine at every preparation). For a native WGSL
-effect it calls Babylon's own method untouched; for a raw GLSL effect (shader
-overrides; the game makes none) it starts the translators first and then calls
-Babylon's own. For every other GLSL effect it:
+`Effect` looks it up on the engine at every preparation). A native WGSL effect
+and a raw GLSL one (shader overrides; the game makes none) go to Babylon's own
+method untouched. For every other GLSL effect it:
 
 1. builds `G_v`, `G_f`, `u_v` and `u_f` as Babylon does, and the two keys;
-2. asks its sources in order for each key (§5): a source says at once whether
-   it holds a key, and reads the WGSL asynchronously;
-3. where a stage is not found, starts the translators if they are not yet
-   (§6), and translates that stage alone, through the engine's own methods
+2. asks, for each key, the stages this page translated while the start's WGSL
+   is held, then its sources in order (§5), each answering from memory;
+3. translates a stage none has, alone, through the engine's own methods
    (`_compileRawShaderToSpirV`, then `_tintWASM.convertSpirV2WGSL` with the
    stage's switch, so Babylon's diagnostic is added as it adds it), and offers
-   the WGSL to every source to keep, unwaited;
+   the WGSL to every source that takes writes, never waited on;
 4. sets the pipeline context's `sources` as Babylon does, and its `stages`
    through Babylon's own `_createPipelineStageDescriptor` with the WGSL
    language, which skips Tint and only makes the two shader modules;
@@ -133,62 +133,96 @@ Babylon's own. For every other GLSL effect it:
    compile, so the governor and the probe see a compile on a hit as on a miss;
 6. calls `onReady`.
 
-A found stage's WGSL is checked by the device before the effect uses it:
-Babylon reads no module's compilation messages, so the modules of an effect
-with a found stage are made inside a `validation` error scope. A refusal is
-then an answer, not an uncaptured error (which the watcher would answer by
-swapping to WebGL2): the stage the device refused (by its module's compilation
-messages; every found stage where they do not say) is dropped from its source
-and translated afresh, once. A fresh translation the device refuses is left to
-the uncaptured error, as without the lookup.
+**It never waits.** All of that runs in the call that asked for it, as
+Babylon's own preparation does once its translators are loaded, and Babylon
+relies on that. At the first draw of a mesh with integer vertex buffers (every
+skinned glTF model: the hikers, the Hollow, wildlife, whose joint indices are
+`UNSIGNED_BYTE` or `UNSIGNED_SHORT`) the render pipeline's descriptor calls
+`checkNonFloatVertexBuffers` (`buffer.nonFloatVertexBuffers.js:48–84`), which
+prepares the effect again on the same pipeline context, with the joints as
+integer inputs, "synchronously" (its own comment, `:78`; the WebGPU engine keeps
+the context, `_checkNonFloatVertexBuffersDontRecreatePipelineContext: true`),
+and then builds the pipeline from `stages` straight after
+(`webgpuCacheRenderPipeline.js:841, 916`). A preparation that waited once,
+for a store's read or a translator's download, left the old float-input
+modules there: the pipeline failed validation at the first skinned draw, the
+watcher swapped to WebGL2 and remembered it for 30 days, on every load. So
+every source is in memory before the engine is handed over (§5), the
+translators are loaded by then (§6), and the preparation has no `await`.
 
 A translation that throws rejects the preparation as it did, so the failure
-wrap records it on its effect and the watcher answers it as before. An engine
-disposed while a preparation waited ends that preparation with nothing made.
+wrap records it on its effect and the watcher answers it as before.
 
-`?wgsl=off` installs nothing: Babylon's own path, every stage translated, the
-translators started before the engine, as before the lookup. One build can so
-be measured both ways.
+**A found stage is not checked by the device.** Babylon reads no module's
+compilation messages, and the device answers only asynchronously, after the
+effect is ready and maybe drawn; a refusal it gave then would already have
+failed a pipeline. What stands between a damaged entry and the device is the
+store's gzip, whose CRC-32 is checked as each entry is unzipped at the engine's
+making (a store is only made where the browser can check it). A WGSL that
+passes it is byte for byte what the translators made under the same salt,
+which a fresh translation would reproduce; the device can refuse it only where
+it would refuse the fresh one too.
 
-With a found stage the effect is ready a task or two later than a translated
-one would have been in the same frame (the store's read, the error scope's
-answer). A mesh that already drew with an earlier variant keeps drawing it
-meanwhile (Babylon's shader hot-swapping); a new mesh appears a frame later.
+`?wgsl=off` installs nothing: Babylon's own path, every stage translated. One
+build can so be measured both ways.
 
 ## 5. Sources of entries
 
-One interface (`WgslSource`: `has`, `get`, `put`, `drop`, `close`), several
-sources asked in order; the first that has a stage answers it.
+One interface, several sources asked in order; the first that has a stage
+answers it. A `WgslSource` has a `name` (the report counts hits by it) and the
+`salt` its entries were made under (a source of another salt is closed and
+never asked); `get` answers from memory; `put`, where the source takes writes,
+holds a new translation at once and writes it later, never waited on;
+`ready` resolves once its entries are in memory; `settle` lets the start's
+WGSL go; `close` lets everything go. `createWebGpuEngine` takes the sources to
+use (the browser's store by default), so a second source is added where the
+engine is made, not in the layer.
+
+**Read in while the engine is made.** The lookup starts its sources as the
+engine object is made, and `createWebGpuEngine` waits for them after the
+device and the translators, within `WGSL_SOURCES_MS`, 2 s from the start of
+the read, opening and reading together; the device's request runs meanwhile,
+all within the GPU's start budget. Whatever has not arrived by then is not
+there for this engine (a miss, translated); a source that lands later is
+closed as it lands. After the engine is handed over, nothing is read.
+
+**Let go once the start has settled.** The WGSL held for the start, the
+sources' and the page's own translations, is let go `WGSL_HOLD_QUIET_MS`
+(30 s) after the last preparation, or `WGSL_HOLD_MAX_MS` (120 s) after the
+engine stood, whichever comes first; the keys may stay. A stage not found
+after that is translated, the translators being loaded, and kept on disk.
+Held, the map costs at most the store's start bound, `WGSL_START_MAX_BYTES`:
+32 MB of WGSL text (ASCII, which V8 keeps a byte a character), plus the
+records of at most 2,000 stages, a few hundred kilobytes, and, while the
+entries are unzipped, their gzipped bytes, at most a few MB. A start's own
+set is estimated at 6 to 24 MB (§8 measures it).
+
+**Let go with its engine.** Every source is closed when the engine is disposed
+(`releaseShaderLookup`, which the engine's dispose observable calls), and
+first thing when a start that failed part-way is disposed (`disposeHalfMade`),
+where Babylon's dispose throws before that observable is ever notified.
 
 ### 5.1 The browser's store (now)
 
-`wgslStore.ts`: IndexedDB.
+`wgslStore.ts`, `loadWgslStore`: IndexedDB.
 
 - **One database per salt**, `dayhike-wgsl-<16 hex digits of the salt's
   SHA-256>`, so a new build's store is a new database; every other database
-  of the store's is deleted when one opens.
+  of the store's is deleted when one opens. A newer build deleting this one's
+  closes the connection (`versionchange`), from when it keeps nothing more.
 - **Two object stores**: each stage's WGSL, gzipped (`CompressionStream`,
-  about 6–10×; kept as text where the browser has none), and a small record of
-  its gzipped size and last use.
-- **The records are read whole when the store opens**, so whether it holds a
-  key is known at once; a WGSL is read only when used. The store opens at the
-  engine's first shader, not before, so an engine whose start fails opens
-  nothing; the first shader waits for it at most `WGSL_STORE_OPEN_MS`, 2 s,
-  after which it is no store for that engine.
-- **Bounded**: 64 MB of gzipped WGSL (`WGSL_STORE_MAX_BYTES`) or 2,000 stages
-  (`WGSL_STORE_MAX_ENTRIES`), the least recently used evicted first, in the
-  transaction that keeps a new stage. Uses are written a second later, a
+  about 6–10×), and a small record of its gzipped size, its unzipped size and
+  its last use. A browser without `CompressionStream` has no store.
+- **Read in for a start**: the records whole, then the most recently used
+  entries while their unzipped WGSL fits `WGSL_START_MAX_BYTES`, 32 MB, each
+  unzipped and checked; one that does not read back is dropped.
+- **Bounded on disk**: 64 MB of gzipped WGSL (`WGSL_STORE_MAX_BYTES`) or 2,000
+  stages (`WGSL_STORE_MAX_ENTRIES`), the least recently used evicted first, in
+  the transaction that keeps a new stage. Uses are written a second later, a
   start's in one transaction.
 - **Guarded**: storage refused (site data blocked), a private window, a full
-  disk, a database that does not answer, or an entry that does not read back
-  (gzip carries a checksum) is a store that has nothing or keeps nothing, and
-  the lookup translates as the engine always did. An entry that does not read
-  back is dropped.
-- **Let go with its engine**: its database is closed when the engine is
-  disposed (`releaseShaderLookup`, which the engine's dispose observable
-  calls), and first thing when a start that failed part-way is disposed
-  (`disposeHalfMade`), where Babylon's dispose throws before that observable
-  is ever notified.
+  disk, or a database that does not answer is a store that has nothing or
+  keeps nothing, and the lookup translates as the engine always did.
 
 It buys nothing on a first visit; on a return visit, every stage seen before
 is found.
@@ -197,55 +231,46 @@ is found.
 
 A second source ahead of the store: a map `{ salt, entries: { key: wgsl } }`
 per tier, made before `vite build` by translating a recorded corpus of `G_s`
-under Node with the very `.wasm` the page ships (both translators run under
+under Node with the very files the page ships (both translators run under
 Node unchanged), imported with `?url` so it is content-hashed and served
-`immutable`, fetched on the WebGPU path only, beside the world's build. Its
-`has` is synchronous over the parsed map; its `put` and `drop` do nothing. It
-fixes the first visit, which the store cannot. The corpus comes from
-`?wgsl=record` on the standard pages (§7); a freshness test would check that
-a canonical set of keys, computed under Node, is in the map.
+`immutable`, fetched on the WebGPU path only, and parsed into memory within
+the same bound as the store. It takes no writes; its salt is checked by the
+layer; its hits are counted under its own name. It fixes the first visit,
+which the store cannot. The corpus comes from `?wgsl=record` on the standard
+pages (§7); a freshness test would check that a canonical set of keys,
+computed under Node, is in the map.
 
 ## 6. The translators, and the start's order
 
-Before the lookup, the start fetched and started both translators before the
-engine, inside the fetch budget. With it:
+**Decision (2026-09-28): the translators stay eager.** They are fetched and
+started before the engine is handed over, through the game's own loader and
+within the fetch budget, as before the lookup; a failure there is the start's
+failure, answered as it always was (WebGL2 for this load, nothing
+remembered). A first version fetched them only at the first stage not found,
+or once the page was idle after the first frame, to spare a visitor whose
+every stage is found one 2.6 MB download. It cost more than it saved: a
+preparation had to wait for the download, which is the defect of §4; a
+failed download mid-hike needed an ending of its own (a swap to WebGL2 with
+its own line, nothing remembered); and on a first visit the download ran
+after "Loading…" was gone, over an empty world, instead of inside it. Lazy
+translators may come back with the translations shipped at build time (§5.2),
+where a first visit can find every stage, and only as measured.
 
-- **The start**: the WebGPU module imported (the fetch budget,
-  `WEBGPU_FETCH_MS`, 10 s), the adapter asked, and where it fits the engine
-  made (the GPU's budget, `WEBGPU_START_MS`, 10 s). No translator is fetched
-  in the start; `?wgsl=off` alone fetches them there, as before, since
-  Babylon's own path needs them before the engine. "Loading…" means what it
-  meant, and is shorter by the translators' download and compile on a load
-  that finds every stage.
-- **At the first stage not found**, the translators are fetched and started
-  through the game's own loader (`loadTranslators`: once a page, 10 s,
-  rejects on any failure), then handed to Babylon (`handTranslators`); never
-  through Babylon's own loader, whose promise has no rejection path, so a
-  failed fetch there would leave every GLSL effect pending for good.
-- **Once the page is idle after the engine's first frame**, they are started
-  the same way (the same start, so the same 10 s), so that a later stage not
-  found does not wait on the network. A prefetch that fails is silent and
-  changes nothing: no swap, no line, no record; the next stage not found
-  starts them again, and only a failure there is answered.
-- **Translators that cannot be fetched** for a stage not found are the
-  network's failure, not the GPU's. That effect cannot be made: its
-  preparation ends, unready and without an error, so the failure wrap never
-  hears of it, and the engine's watcher reports `unfetched`
-  (`reportUnfetched`, `watchWebGpu`). The page answers it as a failure is
-  answered, by a live swap onto WebGL2, with its own HUD line ("Graphics
-  switched to WebGL2: part of the renderer could not be downloaded.", once,
-  never the GPU error's), but remembers nothing: no record is written, the page alone holds itself on WebGL2 for
-  the rest of its life, and the next load tries WebGPU again. A tab whose
-  address asks for `?engine=webgpu`, which outranks that hold, is pinned to
-  `engine=webgl2` so the rebuild cannot come back to it: the one address rule
-  after every ending on WebGL2 (`pinsAfterFailure`), with the page's hold
-  standing where a record would. A probe step that
-  meets it writes no `init` record either.
+The start, step by step:
 
-So the failure records keep their meaning: `init` is a WebGPU start that
-failed, `pipeline` a shader or pipeline the engine could not make, `lost` a
-lost device; a network that fails the translators is none of them, at the
-start (where it never counted) or later.
+1. "Loading…" on screen. The WebGPU module imported (the fetch budget,
+   `WEBGPU_FETCH_MS`, 10 s, running across this step and the third).
+2. The adapter asked (the GPU's budget, `WEBGPU_START_MS`, 10 s, running
+   across this step and the fourth).
+3. Where it fits, the translators fetched and started (`loadTranslators`).
+4. The engine made (`createWebGpuEngine`): the engine object, the lookup
+   installed and its sources' read started, the device requested
+   (`initAsync`), the translators handed to Babylon, and the sources waited
+   for, at most 2 s from when their read began.
+5. The engine handed over; the world's build and its first preparations,
+   each in its call.
+
+With `?wgsl=off` step 4 installs no lookup and reads nothing.
 
 ## 7. The recorder
 
@@ -253,17 +278,23 @@ start (where it never counted) or later.
 `wgsl`): carried across the page's navigation, never announced to a follower.
 
 - **Always**: the page object `dayhikeWgsl` (one per page, across every engine
-  it makes) counts `hits` (stages found and used), `misses` (stages
-  translated), `translateMs` (both translators, every stage, on the page's
-  thread), `rejected` (found stages the device refused) and `differences`.
+  it makes) counts `hits` (stages found and used), `hitsBySource` (the same by
+  the source's name, `page` for a stage this page translated earlier in the
+  start), `misses` (stages translated), `translateMs` (both translators, every
+  stage, on the page's thread) and `differences`.
 - **`?wgsl=record`** also keeps, for every effect prepared, its `name` (the
   effect's key), `at`, `processMs` (Babylon's own processing: from its
   processing context's making to the preparation), `moduleMs` (the two shader
   modules), and for each stage its `key`, `flag` (`u_s`), `glsl` (exactly
-  `G_s`), `wgsl`, `from` (`source` or `translated`), `spirvMs` (glslang) and
-  `wgslMs` (Tint).
-- **`?wgsl=verify`** translates every found stage too and compares, counting
-  `differences` and logging each.
+  `G_s`), `wgsl`, `from` (the source's name, or `translated`), `spirvMs`
+  (glslang) and `wgslMs` (Tint).
+- **`?wgsl=verify`** prepares every effect a second time on Babylon's own
+  path, on a scratch context whose modules are not made, and compares, stage
+  by stage, the text Babylon hands the first translator with the key's `G_s`,
+  and Babylon's WGSL with the one used; each difference is counted in
+  `differences` and logged. It so checks the lookup's composition against
+  Babylon's on the real shaders, as well as the store. That second
+  preparation notifies the compile observables once more.
 - **`?wgsl=off`**: Babylon's own path (§4).
 
 A measurement reads it whole with `JSON.stringify(dayhikeWgsl)` from the page
@@ -277,7 +308,8 @@ a gate: `hits` and `misses` show whether the mechanism fired.
    (`spirvMs`, `wgslMs`, `processMs`).
 2. **The WGSL's size**, per effect, per start and over the union of the
    standard pages, raw, gzip −9 and brotli −q 11: the recorded `wgsl` of the
-   rig's pages. It decides the shipped map's format (§5.2).
+   rig's pages. It decides the shipped map's format (§5.2), and whether
+   `WGSL_START_MAX_BYTES` holds a start's set.
 3. **Whether the keys are stable across loads** (the `MATERIALPLUGIN_N`
    hazard, §3): two recorded loads of the same page, their key sets compared.
    If they differ, the plugins' order is fixed before any material exists.
@@ -289,24 +321,26 @@ a gate: `hits` and `misses` show whether the mechanism fired.
    them; Chrome's own shader cache keys on the WGSL, so a first and a second
    load.
 6. **Whether Node's translation equals the browser's** byte for byte: the
-   recorded `G_s` translated under Node with the shipped `.wasm`, each result
+   recorded `G_s` translated under Node with the shipped files, each result
    compared with the recorded `W_s`. Expected equal; it is what makes the
-   shipped map honest. `?wgsl=verify` checks the same in each browser.
-7. **The post chain while a post shader is not ready** (a found stage is
-   ready a task later): delay one post effect in a development page and look
-   at the frames.
+   shipped map honest. `?wgsl=verify` checks each browser against Babylon's
+   own path.
+7. **The skinned draw on a real device**: a page with a hiker in view, first
+   and second load, no validation error at its first draw and its effect's
+   vertex source carrying `_int_matricesIndices_`; `?wgsl=off` alike.
 8. **Whether the headlamp's and the rain's variants are in a start's
    corpus**, or only in the scripted minute's: the recording answers it, and
    with it whether the scripted minute's longest frame can meet its bar
    without moving translation off the page's thread.
 9. **The store against a real IndexedDB.** The suite holds it against an
    `indexedDB` in memory only. In Chrome: a normal profile over two loads
-   (the second's `hits` equal the first's `misses`, and `rejected` is 0); a
-   private window (the store works for the window's life or is none, and the
-   page draws either way); storage refused by the site's settings (no store,
-   no error, every stage translated); and quota, with the store filled past a
-   small origin quota, so that a `put` the browser refuses keeps nothing and
-   costs nothing, and the eviction keeps it under its bounds.
+   (the second's `hits` equal the first's `misses`); a private window (the
+   store works for the window's life or is none, and the page draws either
+   way); storage refused by the site's settings (no store, no error, every
+   stage translated); quota, with the store filled past a small origin quota,
+   so that a `put` the browser refuses keeps nothing and costs nothing, and
+   the eviction keeps it under its bounds; and the read's time at the
+   engine's making, against its 2 s.
 10. **The SHA-256's cost per stage on a slow CPU.** Keying is synchronous, in
     the frame that asks, and the lookup's whole saving assumes it costs a few
     milliseconds against the translation's 0.7 to 2.0 s. On the T4 machine
@@ -316,6 +350,8 @@ a gate: `hits` and `misses` show whether the mechanism fired.
 11. **A Node round trip against the browser's output, byte for byte**, for
     the start's whole corpus (item 6), before any shipped map is trusted: the
     suite has no test that runs the real translators, which it stubs.
+12. **The memory the held WGSL costs**: the page's heap with the start's WGSL
+    held and after it is let go (§5), on a return visit.
 
 ## 9. The bars
 
@@ -329,21 +365,25 @@ The WebGPU design's §13.3, on the T4 machine, high tier, canopy page:
 
 For the store alone, the second load must settle within 30 s (about WebGL2's
 17–20 s expected), with the counters showing every stage found (two `hits`
-an effect, about 110 for a start's 55 translated effects, and no `misses`), and the WebGL2 shader pins unchanged. The store cannot
-move the first load (§5.1); that is the shipped map's bar.
+an effect, about 110 for a start's 55 translated effects, and no `misses`),
+and the WebGL2 shader pins unchanged. The store cannot move the first load
+(§5.1); that is the shipped map's bar.
 
 ## 10. The canaries
 
-`shaderLookup.test.ts` pins, in the installed Babylon, each line the layer
-copies or leans on: the version line and the defines before the code, and
-that text handed to glslang; the uniformity switch read from each stage's
-code; the observables notified around the compile; Tint skipped for WGSL and
-one module made per stage from the code given; the preparation's parameter
-list, its `sources` shape, and Babylon's own loader reached only there, for
-GLSL; the diagnostic before a WGSL whose stage turns uniformity analysis off;
-where the recorder reads an effect's processing and its name. Beside them, the
-layer runs against Babylon's own engine methods on a stand-in device and is
-held to hand glslang exactly the text Babylon's own path hands it and to make
-exactly the same modules. A Babylon upgrade changes the salt anyway, which
+`shaderLookup.test.ts` pins, in the installed Babylon 9.18.0, the whole of
+each body the layer replaces, skips or calls, by the SHA-256 of its text: the
+preparation, the stages' compile, the stage descriptor, the composition of
+glslang's input, `WebGPUPipelineContext.isReady` (the stages alone) and the
+re-preparation for integer vertex buffers; so a line an upgrade adds anywhere
+in them is noticed. Beside them, lines pinned by their text (the version line,
+the uniformity switch, the observables, the diagnostic prefix, the
+recorder's two readings, the synchronous re-preparation's call and comment,
+the WebGPU engine keeping the context, and the pipeline reading `stages` after
+it). The layer runs against Babylon's own engine methods on a stand-in device
+and is held to hand glslang exactly the text Babylon's own path hands it, to
+make exactly the same modules, and to be ready, with its new stages, before
+the call returns, driven also through Babylon's own `Effect` and
+`checkNonFloatVertexBuffers`. A Babylon upgrade changes the salt anyway, which
 turns every stored entry into a miss: it can cost speed, never a wrong
 picture.
