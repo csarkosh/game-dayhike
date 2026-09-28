@@ -132,6 +132,9 @@ describe('the map the build ships', () => {
     expect(lines.filter((line) => / ms {2}(vertex {2}|fragment) {2}[0-9a-f]{16} {2}\d+ B GLSL -> \d+ B WGSL$/.test(line))).toHaveLength(2);
     expect(done.stdout).toContain('  entries:      2\n  failed:       0\n');
     expect(done.stdout).toMatch(/ {2}largest: {6}\d+ B of WGSL, the (vertex|fragment) stage [0-9a-f]{16}\n/);
+    const lines = done.stdout.split('\n').find((line) => line.startsWith('  lines:'));
+    expect(lines).toMatch(/^ {2}lines: {8}\d+ in all, \d+ distinct in \d+ B; digits as #: \d+ in all, \d+ distinct in \d+ B$/);
+    console.log(lines);
     expect(done.stdout).toMatch(/ {2}bytes: {8}\d+ raw, \d+ gzip -9, \d+ brotli -q 11\n/);
     expect(done.stdout).toMatch(/ {2}translation: {2}translators started in \d+ ms; \d+ ms in all, \d+ ms a stage on average, \d+ ms the longest\n/);
     expect(done.stdout).toMatch(/ {2}reading it: {3}\d+\.\d\d ms as one JSON \(shipped\), \d+\.\d\d ms as an index and a text\n/);

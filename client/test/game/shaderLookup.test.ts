@@ -838,12 +838,12 @@ describe("the translations shipped with the build", () => {
     expect(signals.slice(signalsBefore).map((signal) => signal.aborted)).toEqual([true]);
   });
 
-  it("refuses a map whose Content-Length is over the 16 MB ceiling, before reading its body: a source with nothing in it", async () => {
+  it("refuses a map whose Content-Length is over the 32 MiB ceiling, before reading its body: a source with nothing in it", async () => {
     const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
     let read = 0;
     const big = (() =>
       Promise.resolve({
-        ...response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "16777217" }),
+        ...response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "33554433" }),
         text: () => {
           read += 1;
           return Promise.resolve(mapText(SALT, new Map([["aa", "// a"]])));
@@ -854,11 +854,11 @@ describe("the translations shipped with the build", () => {
     expect([map.get("aa"), read]).toEqual([null, 0]);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toBe(
-      `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: 16777217 bytes, over the map's ceiling of 16777216)`,
+      `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: 33554433 bytes, over the map's ceiling of 33554432)`,
     );
     // At the ceiling, read.
     const atCeiling = loadWgslMap(MAP_URL, SALT, {
-      fetch: (() => Promise.resolve(response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "16777216" }))) as unknown as typeof fetch,
+      fetch: (() => Promise.resolve(response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "33554432" }))) as unknown as typeof fetch,
     });
     await atCeiling.ready;
     expect(atCeiling.get("aa")).toBe("// a");
@@ -896,7 +896,7 @@ describe("the translations shipped with the build", () => {
     return text + " ".repeat(bytes - text.length);
   };
   const MIB = new Uint8Array(1_048_576).fill(0x20);
-  const CEILING_REFUSED = `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: past the map's ceiling of 16777216 bytes as it was read)`;
+  const CEILING_REFUSED = `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: past the map's ceiling of 33554432 bytes as it was read)`;
   /** `fetch` answering with `body` and `headers`, counting the reads of its text. */
   function answering(body: ReadableStream<Uint8Array> | null, headers: Record<string, string>, text: string) {
     const reads = { text: 0 };
@@ -912,27 +912,31 @@ describe("the translations shipped with the build", () => {
     return { answer, reads };
   }
 
-  it("refuses a body that reads past the 16 MB ceiling though its Content-Length says less, and stops reading it: never parsed", async () => {
+  it("refuses a body that reads past the 32 MiB ceiling though its Content-Length says less, and stops reading it: never parsed", async () => {
     const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
     for (const headers of [{ "content-length": "1000" }, {}] as Record<string, string>[]) {
       warn.mockClear();
-      const { body, seen } = streamOf(Array.from({ length: 20 }, () => MIB));
+      // One shared mebibyte, forty times: the reading stops at the 33rd.
+      const { body, seen } = streamOf(Array.from({ length: 40 }, () => MIB));
       const { answer, reads } = answering(body, headers, padded(1_000));
       const map = loadWgslMap(MAP_URL, SALT, { fetch: answer });
       await map.ready;
-      expect([map.get("aa"), reads.text, seen.pulled, seen.cancelled]).toEqual([null, 0, 17, true]);
+      expect([map.get("aa"), reads.text, seen.pulled, seen.cancelled]).toEqual([null, 0, 33, true]);
       expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([CEILING_REFUSED]);
     }
   });
 
   it("reads a body of exactly the ceiling through its stream, and finds its entries", async () => {
-    const bytes = new TextEncoder().encode(padded(16_777_216));
-    const parts = Array.from({ length: 16 }, (_, i) => bytes.subarray(i * 1_048_576, (i + 1) * 1_048_576));
+    // The map, then white space from the one shared mebibyte to exactly
+    // 33,554,432 bytes: 31 of it whole, and what is left of the last.
+    const head = new TextEncoder().encode(mapText(SALT, new Map([["aa", "// a"]])));
+    const parts = [head, ...Array.from({ length: 31 }, () => MIB), MIB.subarray(0, 1_048_576 - head.length)];
+    expect(parts.reduce((sum, part) => sum + part.length, 0)).toBe(33_554_432);
     const { body, seen } = streamOf(parts);
-    const { answer, reads } = answering(body, {}, padded(16_777_216));
+    const { answer, reads } = answering(body, {}, "");
     const map = loadWgslMap(MAP_URL, SALT, { fetch: answer });
     await map.ready;
-    expect([map.get("aa"), reads.text, seen.pulled]).toEqual(["// a", 0, 16]);
+    expect([map.get("aa"), reads.text, seen.pulled]).toEqual(["// a", 0, 33]);
   });
 
   it("decodes a character its body's parts split, whole: three bytes split two and one, four split two and two", async () => {
@@ -964,11 +968,11 @@ describe("the translations shipped with the build", () => {
 
   it("with no stream to read, refuses a text past the ceiling by its length, before it is parsed", async () => {
     const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
-    const over = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(16_777_217)).answer });
+    const over = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(33_554_433)).answer });
     await over.ready;
     expect(over.get("aa")).toBe(null);
     expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([CEILING_REFUSED]);
-    const at = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(16_777_216)).answer });
+    const at = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(33_554_432)).answer });
     await at.ready;
     expect(at.get("aa")).toBe("// a");
   });
