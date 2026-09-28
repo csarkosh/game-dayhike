@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
@@ -61,6 +61,62 @@ describe("Babylon's WebGPU pipeline cache (canaries: when one fails, a fixed Bab
       "            this._states[newNumStates++] = vid;\n            this._states[newNumStates++] = oid;\n",
     );
     expect(suggested).not.toContain(block);
+  });
+
+  it("still takes vertex buffers in through setBuffers alone, the one door the key is installed on", () => {
+    const src = readFileSync(require.resolve("@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js"), "utf8");
+    // `setBuffers` stores both maps.
+    expect(src).toContain(
+      [
+        "    setBuffers(vertexBuffers, indexBuffer, overrideVertexBuffers) {",
+        "        this._vertexBuffers = vertexBuffers;",
+        "        this._overrideVertexBuffers = overrideVertexBuffers;",
+        "        this.indexBuffer = indexBuffer;",
+        "    }",
+      ].join("\n"),
+    );
+    // Every line of Babylon's engines that touches the cache's two maps: the
+    // two stores above, the vertex state's read and the layout's (the same
+    // line), and the non-float check. Another store, or a read of another
+    // map, would pass buffers by the key.
+    const engines = join(dirname(require.resolve("@babylonjs/core/package.json")), "Engines");
+    const scripts = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? scripts(join(dir, e.name)) : e.name.endsWith(".js") ? [join(dir, e.name)] : [],
+      );
+    const touching = scripts(engines)
+      .sort()
+      .flatMap((file) =>
+        readFileSync(file, "utf8")
+          .split("\n")
+          .filter((line) => /\b_(?:override)?[vV]ertexBuffers\b/.test(line) && !/\b_currentVertexBuffers\b/.test(line))
+          .map((line) => `${relative(engines, file)}: ${line.trim()}`),
+      );
+    const read = "let vertexBuffer = (this._overrideVertexBuffers && this._overrideVertexBuffers[attributes[index]]) ?? this._vertexBuffers[attributes[index]];";
+    expect(touching).toEqual([
+      "WebGPU/webgpuCacheRenderPipeline.js: this._vertexBuffers = vertexBuffers;",
+      "WebGPU/webgpuCacheRenderPipeline.js: this._overrideVertexBuffers = overrideVertexBuffers;",
+      `WebGPU/webgpuCacheRenderPipeline.js: ${read}`,
+      `WebGPU/webgpuCacheRenderPipeline.js: ${read}`,
+      "WebGPU/webgpuCacheRenderPipeline.js: if (this._vertexBuffers) {",
+      "WebGPU/webgpuCacheRenderPipeline.js: checkNonFloatVertexBuffers(this._vertexBuffers, effect);",
+    ]);
+    // The first read is the vertex state's, which reads the key.
+    expect(src).toContain(
+      [
+        "    _setVertexState(effect) {",
+        "        const currStateLen = this._statesLength;",
+        "        let newNumStates = StatePosition.VertexState;",
+        "        const webgpuPipelineContext = effect._pipelineContext;",
+        "        const attributes = webgpuPipelineContext.shaderProcessingContext.attributeNamesFromEffect;",
+        "        const locations = webgpuPipelineContext.shaderProcessingContext.attributeLocationsFromEffect;",
+        "        let currentGPUBuffer;",
+        "        let numVertexBuffers = 0;",
+        "        for (let index = 0; index < attributes.length; index++) {",
+        "            const location = locations[index];",
+        `            ${read}`,
+      ].join("\n"),
+    );
   });
 
   it("still lays out an offset within the stride as it is, and one past it as 0", () => {
