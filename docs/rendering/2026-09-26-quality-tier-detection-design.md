@@ -886,10 +886,19 @@ that has painted (`afterNextPaint`) the synchronous swap runs → the loop resum
 on the new renderer under the opaque ground while the models load and the
 shaders compile → when the new scene is ready (`scene.isReady()` and no
 waiting items, and the forest's billboard bakes settled, which run outside the
-scene's count; at most 10 s, `whenSceneReady`) the ground fades back to the
-pause vignette. The
-player is on the pause screen throughout, so a pop-in behind it is not seen, and
-Resume puts them back where they were, looking where they looked.
+scene's count; `whenSceneReady`) the ground fades back to the pause vignette.
+The player is on the pause screen throughout, so a pop-in behind it is not
+seen, and Resume puts them back where they were, looking where they looked.
+
+**The bound.** The wait is bounded at 20 s from the end of the build
+(`SWAP_READY_MAX_MS`), so that a model or a layer that never settles cannot hold
+the screen; the governor's switch (§10) waits under the same bound. It is sized
+for the slowest build measured: in Chrome on an Apple M4 at 6× CPU throttling
+the build took about 4.2 s and the forest was whole 3.2–6.1 s after a 10 s
+bound, 16.1 s after the build at most, so that bound lifted the cover on bare
+hillside in 12 switches of 12, with the forest appearing 1.7–4.2 s later. At 1×
+the cover lifts on readiness, 3.5–3.75 s after Apply. On a machine slower still
+the cover lifts at 20 s and the forest fills in after it, in view.
 
 ## 10. The governor
 
