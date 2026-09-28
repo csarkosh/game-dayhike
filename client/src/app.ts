@@ -74,7 +74,6 @@ import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice
 import {
   buildFirstRenderer,
   buildOrUndo,
-  GOVERNOR_SWAP_READY_MAX_MS,
   swapRenderer,
   switchOutcome,
   whenSceneReady,
@@ -1531,7 +1530,7 @@ function buildGame(
     stopLoop: () => renderer.engine.stopRenderLoop(),
     // The answer shows the line for what the rebuild ended on; the swap's
     // own is dropped, so it shows once.
-    rebuild: () => switchNow(tier, tierSource, null, GOVERNOR_SWAP_READY_MAX_MS).then(() => {
+    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => {
       engineNotice = null;
     }),
     flash: (line) => hud.flash(line, FALLBACK_NOTICE_MS),

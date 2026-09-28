@@ -18,7 +18,7 @@ import {
   type EngineEnv,
   type EngineName,
 } from "./engineChoice.js";
-import type { EngineOnCanvas } from "./rendererSwap.js";
+import { GOVERNOR_SWAP_READY_MAX_MS, type EngineOnCanvas } from "./rendererSwap.js";
 
 /** The work under way on a hike's renderer (a switch of tier, the
  * governor's drop, a rebuild after a failure): one at a time. */
@@ -97,8 +97,9 @@ export type FailureDeps = {
   /** Stops the render loop on the failed engine. */
   stopLoop(): void;
   /** Rebuilds the renderer at the running tier on the engine the rule now
-   * gives it (the live switch); rejects when no tier builds. */
-  rebuild(): Promise<void>;
+   * gives it (the live switch), waiting at most `readyMaxMs` for its new
+   * scene; rejects when no tier builds. */
+  rebuild(readyMaxMs: number): Promise<void>;
   flash(line: string): void;
   log(line: string): void;
 };
@@ -133,7 +134,9 @@ export function answerFailures(deps: FailureDeps): (engine: unknown, reason: "pi
         const lift = deps.cover();
         try {
           deps.stopLoop();
-          await deps.rebuild();
+          // A rebuild nobody asked for, in the middle of play: the cover
+          // lifts on the governor's bound, as its drop's does.
+          await deps.rebuild(GOVERNOR_SWAP_READY_MAX_MS);
         } catch (error) {
           deps.log(`WebGPU: the renderer could not be rebuilt after a failure: ${String(error)}`);
           return;
