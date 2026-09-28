@@ -253,7 +253,9 @@ export async function runProbe(
       // failed is measured on WebGL2, and the rule then gives WebGL2 too.
       const engine = readings[readings.length - 1]?.engine ?? key.engine ?? "webgl2";
       const verdict = onEngine({ tier: step.verdict, source: "probe" as const, pixels, at: deps.now(), readings }, engine);
-      const next = withVerdict(started, key.gpu, key.browser, key.cls, verdict);
+      // Looked up next load under the key's engine: a verdict it will not read
+      // keeps the attempts, so the cap still ends the probing.
+      const next = withVerdict(started, key.gpu, key.browser, key.cls, verdict, key.engine ?? "webgl2");
       if (next !== null) writeAutoRecord(deps.storage, next);
       return step.verdict;
     }

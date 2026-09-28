@@ -21,7 +21,7 @@ import {
 } from "../../src/game/frameProbe.js";
 import type { GpuSignals } from "../../src/game/gpuSignals.js";
 import { landingModel } from "../../src/game/landingModel.js";
-import type { ProbeReading, QualityTier } from "../../src/game/quality.js";
+import { autoTier, type ProbeReading, type QualityTier, type VerdictEngine } from "../../src/game/quality.js";
 import { readAutoRecord, writeAutoRecord } from "../../src/game/tierChoice.js";
 
 const f = (n: number, ms: number): number[] => Array.from({ length: n }, () => ms);
@@ -625,6 +625,47 @@ describe("the engine a probe's verdict was measured with", () => {
     expect(autoPick(SAFARI, at)).toMatchObject({ tier: "high", probeFrom: null });
     expect(autoPick(SAFARI, { ...at, engine: "webgl2" })).toMatchObject({ tier: "high", probeFrom: null });
     expect(autoPick(SAFARI, { ...at, engine: "webgpu" })).toMatchObject({ tier: "medium", probeFrom: "high" });
+  });
+});
+
+describe("the probe's attempts when its verdict is for another engine than the one it is looked up under", () => {
+  /**
+   * Six loads of one page: each asks Auto with `key` (the engine the rule
+   * gives the probed tiers when the load starts) and, when Auto probes, runs
+   * the probe with steps that draw on `drawn`. With the adapter not known
+   * yet the key is WebGPU, and the steps can still end on WebGL2 with
+   * nothing remembered (an unfit adapter answering late, a translator fetch
+   * that runs out): the verdict is then WebGL2's, which a WebGPU key never
+   * reads.
+   */
+  async function loads(key: VerdictEngine, drawn: VerdictEngine): Promise<boolean[]> {
+    const storage = memoryStorage();
+    const KEY = { gpu: "Apple GPU", browser: 26, cls: "apple-unknown" as const, engine: key };
+    const probed: boolean[] = [];
+    for (let load = 0; load < 6; load++) {
+      const record = readAutoRecord(storage);
+      const now = 1_790_000_000_000 + load * 60_000;
+      const auto = autoTier({ cls: "apple-unknown", cores: 8, memoryGb: null, record, gpu: "Apple GPU", browser: 26, pixels: 2_073_600, now, engine: key });
+      probed.push(auto.probeFrom !== null);
+      if (auto.probeFrom === null) continue;
+      await runProbe(auto.probeFrom, auto.tier, record, KEY, {
+        storage,
+        runStep: async (tier) => ({ ...reading(tier, 16.7), engine: drawn }),
+        pixels: () => 2_073_600,
+        now: () => now,
+      });
+    }
+    return probed;
+  }
+
+  it("probes at most three times, whatever the engines of the key and of the verdict", async () => {
+    expect(await loads("webgpu", "webgl2")).toEqual([true, true, true, false, false, false]);
+    expect(await loads("webgl2", "webgpu")).toEqual([true, true, true, false, false, false]);
+  });
+
+  it("still probes once and stops when the verdict is read under the engine it was measured on", async () => {
+    expect(await loads("webgl2", "webgl2")).toEqual([true, false, false, false, false, false]);
+    expect(await loads("webgpu", "webgpu")).toEqual([true, false, false, false, false, false]);
   });
 });
 

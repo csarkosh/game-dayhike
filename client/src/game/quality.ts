@@ -274,18 +274,26 @@ export function withProbeStarted(prev: AutoRecord | null, gpu: string, browser: 
 /**
  * The record with a verdict for `cls`, or null for a probe's verdict over no
  * area, which certifies nothing and would never hold again. The attempts go
- * back to 0, unless the verdict replaces one made for another class or engine:
- * then the count is carried, so two classes (or engines) alternating on one
- * GPU, each ignoring the other's verdict, cannot probe on every load.
+ * back to 0, unless the verdict replaces one made for another class or engine,
+ * or will not be read under `lookup`, the engine the next load looks it up
+ * under (a probe keyed on WebGPU whose steps ended on WebGL2, say): then the
+ * count is carried, so two classes (or engines) alternating on one GPU, or a
+ * verdict the key never reads, cannot probe on every load.
  */
-export function withVerdict(prev: AutoRecord | null, gpu: string, browser: number, cls: GpuClass, verdict: AutoVerdict): AutoRecord | null {
+export function withVerdict(
+  prev: AutoRecord | null,
+  gpu: string,
+  browser: number,
+  cls: GpuClass,
+  verdict: AutoVerdict,
+  lookup: VerdictEngine = verdictEngine(verdict),
+): AutoRecord | null {
   if (verdict.source === "probe" && !(verdict.pixels > 0)) return null;
-  const carried =
-    prev !== null &&
-    recordMatches(prev, gpu, browser) &&
-    prev.verdict !== null &&
-    (prev.cls !== cls || verdictEngine(prev.verdict) !== verdictEngine(verdict));
-  return { v: DETECT_VERSION, gpu, cls, browser, attempts: carried ? prev.attempts : 0, verdict };
+  const matching = prev !== null && recordMatches(prev, gpu, browser);
+  const replaced =
+    matching && prev.verdict !== null && (prev.cls !== cls || verdictEngine(prev.verdict) !== verdictEngine(verdict));
+  const unread = matching && lookup !== verdictEngine(verdict);
+  return { v: DETECT_VERSION, gpu, cls, browser, attempts: replaced || unread ? prev.attempts : 0, verdict };
 }
 
 /**
