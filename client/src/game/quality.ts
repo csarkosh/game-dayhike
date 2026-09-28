@@ -129,7 +129,8 @@ export type VerdictEngine = "webgl2" | "webgpu";
 
 /** One tier measured by the startup probe; `early` when its step ended as a
  * miss before its 120 frames, the mean and p95 then those of the frames it
- * measured. */
+ * measured; `stalls` when it ended as a miss for more than 20 intervals over
+ * 250 ms, the mean and p95 then those of every interval, stalls included. */
 export type ProbeReading = {
   tier: QualityTier;
   frames: number;
@@ -138,6 +139,7 @@ export type ProbeReading = {
   pixels: number;
   engine: VerdictEngine;
   early?: true;
+  stalls?: number;
 };
 
 /**
@@ -303,7 +305,8 @@ export function withProbeStarted(prev: AutoRecord | null, gpu: string, browser: 
  * looks it up under (a probe keyed on WebGPU whose steps ended on WebGL2,
  * say): then the count is carried, so two classes (or engines) alternating on
  * one GPU, or a verdict the key never reads, cannot probe on every load. A
- * governor's or a build's verdict measured nothing, so it keeps a matching
+ * probe `cut` before it finished keeps the attempt it spent too: only a
+ * finished probe clears the count. A governor's or a build's verdict measured nothing, so it keeps a matching
  * record's count: once it lapses, the probes left are the ones that were left
  * before it, and a GPU whose probes never reached a verdict is not probed
  * three more times.
@@ -315,13 +318,14 @@ export function withVerdict(
   cls: GpuClass,
   verdict: AutoVerdict,
   lookup: VerdictEngine = verdictEngine(verdict),
+  cut = false,
 ): AutoRecord | null {
   if (verdict.source === "probe" && !(verdict.pixels > 0)) return null;
   const matching = prev !== null && recordMatches(prev, gpu, browser) ? prev : null;
   const replaced =
     matching?.verdict != null && (matching.cls !== cls || verdictEngine(matching.verdict) !== verdictEngine(verdict));
   const unread = matching !== null && !verdictRead(lookup, verdict);
-  const carried = verdict.source !== "probe" || replaced || unread;
+  const carried = verdict.source !== "probe" || replaced || unread || cut;
   return { v: DETECT_VERSION, gpu, cls, browser, attempts: carried ? (matching?.attempts ?? 0) : 0, verdict };
 }
 

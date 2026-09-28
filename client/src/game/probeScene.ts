@@ -16,6 +16,7 @@ import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../sim/terrain
 import { createWorld } from "../sim/world.js";
 import {
   PROBE_HOUR,
+  PROBE_READY_MAX_MS,
   PROBE_SEED_TOKEN,
   createProbeMeter,
   probePose,
@@ -91,7 +92,8 @@ export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier, en
  * ready, warm, measured, with a late shader compile starting the warm-up
  * again. On `opts.on`'s canvas and engine when given (the engine the WebGPU
  * rule gives the tier), else on WebGL2 on a fresh canvas. Null on a cancel, an
- * abort, a scene that never readies, a throw, or too few frames;
+ * abort, a scene that never readies (by `opts.readyBy`, at most
+ * `PROBE_READY_MAX_MS` after its build), a throw, or too few frames;
  * `ENGINE_FAILED` where a WebGPU engine's build or its frames failed, which
  * only the step's own watcher hears, never the game's. `signal` stops it at
  * once, disposing the renderer before `abort()` returns, so the page can
@@ -100,7 +102,7 @@ export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier, en
 export function runProbeStep(
   container: HTMLElement,
   tier: QualityTier,
-  opts: { cancelled(): boolean; signal?: AbortSignal; on?: StepEngine },
+  opts: { cancelled(): boolean; signal?: AbortSignal; on?: StepEngine; readyBy?: number },
 ): Promise<ProbeReading | null | typeof ENGINE_FAILED> {
   return new Promise((resolve) => {
     const given = opts.on?.engine ?? null;
@@ -122,7 +124,11 @@ export function runProbeStep(
       return;
     }
     const { engine, scene } = probe.renderer;
-    const meter = createProbeMeter(performance.now());
+    // Ready within `PROBE_READY_MAX_MS` of the end of the build, and by
+    // `readyBy` (a `performance.now()` time: what the probe's cap leaves the
+    // step, the paint wait and the build spent from it), whichever is sooner.
+    const began = performance.now();
+    const meter = createProbeMeter(began, opts.readyBy === undefined ? PROBE_READY_MAX_MS : Math.min(PROBE_READY_MAX_MS, opts.readyBy - began));
     const compiled = engine.onAfterShaderCompilationObservable.add(() => meter.compiled(performance.now()));
     let done = false;
     let unwatch = (): void => undefined;
@@ -247,14 +253,17 @@ export function probeDeps(
     storage: pageStorage(),
     pixels: () => containerPixels(container),
     now: () => Date.now(),
-    async runStep(tier, cancelled) {
+    async runStep(tier, cancelled, readyMaxMs) {
+      const readyBy = performance.now() + readyMaxMs;
       // The scene's build blocks the page; the screen paints first.
       await new Promise<void>((resolve) => afterNextPaint(resolve));
       const stopped = (): boolean => aborts.signal.aborted || cancelled();
       if (stopped()) return null;
+      // One bound for the step, both measurements: the WebGL2 one after a
+      // WebGPU engine's failure takes what is left of it, not a fresh one.
       const reading = await measureOnRuleEngine(tier, stopped, {
         ...engines,
-        measure: (step, on) => runProbeStep(container, step, { cancelled: stopped, signal: aborts.signal, on }),
+        measure: (step, on) => runProbeStep(container, step, { cancelled: stopped, signal: aborts.signal, on, readyBy }),
         webgl2: webgl2Step,
       });
       if (reading !== null) console.info(probeReadingLine(reading, container.clientWidth, container.clientHeight));

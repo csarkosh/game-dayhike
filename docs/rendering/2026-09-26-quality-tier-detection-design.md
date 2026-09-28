@@ -8,22 +8,24 @@ it is probed; the reference machine's `apple-base` starts and stays at medium.
 Where the GPU cannot be named, a probe before the first hike renders the canopy
 pose behind "Setting up graphics…": 60 frames discarded and 120 measured, a
 tier holding at a mean of at most 17.5 ms, a step ending early as a miss once
-its frames pass 2,100 ms (and its warm-up bounded by the same), 15 s for a step
-to be ready, 30 s for the whole probe, three attempts, a miss kept when the cap
-cuts the next step. The probe is skipped where WebGL2 links every shader on
-the page's thread (Firefox), and where the page draws below 60 Hz. Its verdict
-holds 30 days, while the window is at most 1.5 times the one measured. The
-governor, on Auto only, drops one tier after three 10 s windows over 20.8 ms
-following 30 s of play, remembered for 7 days, with one HUD line for 6 s. The
-player chooses Auto, High, Medium or Low from one drop-down on the title's and
-the pause screen's Settings; a choice made mid-hike is applied live, the
-renderer rebuilt on a fresh canvas behind a cover that lifts when the new scene
-and its forest are ready, or at 20 s after Apply and 10 s after a governor's
-drop. `?tier=` overrides everything and `?probe=` forces a probe, on the
-machine whose address carries them: a lobby host's announced route goes out
-without them, and a follower drops them from a route it is sent to. The older
-rule from cores and memory (`tierFor`, `detectTier`) is kept as the tier of a
-renderer given none (§6.3).
+its frames pass 2,100 ms or more than 20 of them stall (and its warm-up bounded
+by the same 2,100 ms), 15 s for a step to be ready or less where the cap leaves
+less, 30 s for the whole probe, three attempts, a miss kept when the cap cuts
+the next step, its attempt still counted. The probe is skipped where WebGL2
+links every shader on the page's thread (Firefox), and where the page draws
+below 60 Hz. Its verdict holds 30 days, while the window is at most 1.5 times
+the one measured. The governor, on Auto only, drops one tier after three 10 s
+windows over 20.8 ms following 30 s of play, remembered for 7 days, with one
+HUD line for 6 s. The player chooses Auto, High, Medium or Low from one
+drop-down on the title's and the pause screen's Settings; a choice made
+mid-hike is applied live, the renderer rebuilt on a fresh canvas behind a
+cover that lifts when the new scene and its forest are ready, or at a bound
+counted from the end of the new renderer's build: 20 s for Apply, 10 s for a
+governor's drop (§9.6). `?tier=` overrides everything and `?probe=` forces a
+probe, on the machine whose address carries them: a lobby host's announced
+route goes out without them, and a follower drops them from a route it is sent
+to. The older rule from cores and memory (`tierFor`, `detectTier`) is kept as
+the tier of a renderer given none (§6.3).
 
 Day Hike picks a quality tier once, when the renderer is made, from the number
 of logical cores and the memory the browser reports. Neither says anything about
@@ -404,13 +406,17 @@ class's ceiling or past the caps, whatever the verdict says.
 
 A probe's start adds one to a matching record's `attempts`, keeping its class
 and verdict until the probe's own verdict replaces them, or starts a record at
-one. A probe's verdict sets `attempts` to 0, unless the verdict it replaces was
-made for another class: then the count is carried, so two classes alternating
+one. A verdict from a probe that finished sets `attempts` to 0, unless the
+verdict it replaces was made for another class: then the count is carried, so
+two classes alternating
 on one GPU, each probed to a verdict the other ignores, probe at most three
 times between them rather than on every load. A `governor` or `build`
 verdict measured nothing and keeps a matching record's `attempts`: when it
 lapses, the probes left are those left before it, so a GPU whose three probes
-reached no verdict is not probed three more times a week after a drop.
+reached no verdict is not probed three more times a week after a drop. Nor
+does a probe cut short after a miss (§7.6) clear the count: its verdict keeps
+the attempt it spent, so a machine whose second step never fits the cap sees
+at most three probes in all, not one each time the governor's week lapses.
 
 ### 6.3 Precedence
 
@@ -491,11 +497,22 @@ tier gets its own canvas; the renderer is disposed and its engine made with
 
 1. **Ready**: `scene.isReady()`, `scene.getWaitingItemsCount() === 0`, and no
    effect compiled for 1.5 s (`engine.onAfterShaderCompilationObservable`); at
-   most 15 s, after which the probe gives up (§7.6).
+   most 15 s from the end of the step's build, after which the probe gives up
+   (§7.6). Two steps each given 15 s cannot both fit the 30 s cap, so a step
+   is also given no more than what the cap has left less the 4.2 s its frames
+   may need once ready (`stepReadyMaxMs`, counted from the step's start, its
+   build included), the sooner of the two deciding, and is not started where
+   that is nothing: a second step that could only be ready too late to be
+   measured gives up there, not at the cap after the player has waited it out,
+   while a first step keeps its full 15 s after a slow build.
 2. **Warm**: 60 frames discarded (the fields' first rebuilds, the reflection
-   probe, the first shadow renders), or fewer once 2,100 ms have passed since
-   the warm-up began (`PROBE_STEP_BUDGET_MS`, below): at 100 ms a frame the 60
-   alone would take 6 s, and a machine that holds reaches 60 in about 1 s. A
+   probe, the first shadow renders), or fewer once the warm-up's own
+   intervals, each counted at most 250 ms, sum to 2,100 ms
+   (`PROBE_STEP_BUDGET_MS`, below): at 100 ms a frame the 60 alone would take
+   6 s, and a machine that holds reaches 60 in about 1 s. Counting each
+   interval at most 250 ms keeps a tab hidden for seconds from spending the
+   whole bound in one gap, and still ends the warm-up of a machine under 4
+   frames a second. A
    shader that compiles after the scene is ready starts the warm-up again: its
    hitch, 100 ms or more, would tip a machine that holds 60 Hz into a miss.
    The 30 s cap bounds the restarts.
@@ -507,9 +524,17 @@ tier gets its own canvas; the renderer is disposed and its engine made with
    frames measured, their count, and `early` (logged "ended early"). The
    floor is the arithmetic's own: 2,100 ms of intervals of at most 250 ms is at
    least 9 frames. A slow machine then reads its miss in about 2 s, not 12,
-   and a step spends at most about 4.2 s on frames after it is ready.
+   and a step spends at most about 4.2 s on frames after it is ready. That sum
+   counts frames only, and below 4 frames a second every interval is a stall;
+   so a step also ends as a miss once more than 20 of its intervals are over
+   250 ms (`PROBE_MAX_STALLS`, 120 less the 100 a reading needs): its reading
+   is the mean and p95 of every interval measured, stalls included, their
+   count, and `stalls` (logged "21 over 250 ms"). 21 intervals over 250 ms
+   among at most 120 is a mean over 43 ms, a miss whatever the rest read.
 
-The reading: `{ tier, frames, meanMs, p95Ms, pixels, engine }`.
+The reading: `{ tier, frames, meanMs, p95Ms, pixels, engine }`, with `early`
+for a step that ended as a miss on its sum, and `stalls`, their count, for
+one that ended on its stalls (3, above).
 
 ### 7.4 The budget, and a capped reading
 
