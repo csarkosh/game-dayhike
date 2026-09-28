@@ -25,6 +25,7 @@ import { WebGPUShaderProcessorGLSL } from "@babylonjs/core/Engines/WebGPU/webgpu
 import { WebGPUShaderProcessingContext } from "@babylonjs/core/Engines/WebGPU/webgpuShaderProcessingContext.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.js";
 import { WEBGPU_REQUIRED_LIMITS, WEBGPU_TEXTURE_FEATURES, featuresToRequest } from "../../src/game/engineChoice.js";
 import { QUALITY, type QualityTier } from "../../src/game/quality.js";
 import { createAtmosphere } from "../../src/game/atmosphere.js";
@@ -65,7 +66,7 @@ import { timeLimit } from "../helpers/timeLimit.js";
 /** What to do when a pin below turns red. */
 const WEIGH =
   "the varyings of a tree's material changed: read the locations of the effects in a browser " +
-  "(the verification note, §6.1) and raise `maxInterStageShaderVariables` in engineChoice.ts " +
+  "(the verification note, §4) and raise `maxInterStageShaderVariables` in engineChoice.ts " +
   "in the same commit if the count grew";
 
 /** Locations a GLSL type takes, as Babylon's WebGPU processing context counts them. */
@@ -208,12 +209,21 @@ function shadowGenerators(): string[] {
   return found;
 }
 
+/** The cascades the sun's shadow generator draws on a tier: the tier's count,
+ * held by Babylon's `numCascades` setter to between its least and most (a
+ * canary below). */
+function drawnCascades(tier: QualityTier): number {
+  const { shadowMapSize, shadowCascades } = QUALITY[tier];
+  if (shadowMapSize === 0) return 0;
+  return Math.min(Math.max(shadowCascades, CascadedShadowGenerator.MIN_CASCADES_COUNT), CascadedShadowGenerator.MAX_CASCADES_COUNT);
+}
+
 /** The shadow varyings' locations on a mesh that receives shadows, on a tier:
  * per shadowed light, two per cascade and one more (`lightVxUboDeclaration`,
  * a canary below). */
 function shadowLocations(tier: QualityTier, lights: number): number {
-  const { shadowMapSize, shadowCascades } = QUALITY[tier];
-  return shadowMapSize > 0 ? lights * (2 * shadowCascades + 1) : 0;
+  const cascades = drawnCascades(tier);
+  return cascades > 0 ? lights * (2 * cascades + 1) : 0;
 }
 
 /** The giants' two materials, the most varyings the forest draws. */
@@ -310,29 +320,37 @@ describe("inter-stage variables on WebGPU", () => {
     });
   });
 
-  it("pins the lights that cast shadows, and their cascades on each tier", () => {
+  it("pins the lights that cast shadows, and the cascades each tier draws", () => {
     expect(shadowGenerators(), WEIGH).toEqual(["game/lighting.ts: CascadedShadowGenerator"]);
-    expect(
-      Object.fromEntries((Object.keys(QUALITY) as QualityTier[]).map((tier) => [tier, QUALITY[tier].shadowMapSize > 0 ? QUALITY[tier].shadowCascades : 0])),
-      WEIGH,
-    ).toEqual({ low: 0, medium: 1, high: 2 });
+    const tiers = Object.keys(QUALITY) as QualityTier[];
+    // The tiers' settings, and what Babylon draws of them: it raises a
+    // cascaded shadow generator's count to at least two, so the medium
+    // tier's one cascade is drawn as two.
+    expect(Object.fromEntries(tiers.map((tier) => [tier, QUALITY[tier].shadowMapSize > 0 ? QUALITY[tier].shadowCascades : 0])), WEIGH).toEqual({
+      low: 0,
+      medium: 1,
+      high: 2,
+    });
+    expect(Object.fromEntries(tiers.map((tier) => [tier, drawnCascades(tier)])), WEIGH).toEqual({ low: 0, medium: 2, high: 2 });
   });
 
-  it("counts what the browser read for the giants on the high tier", () => {
-    // The verification note, §6.1: 17 locations on the giants' `material0`
-    // effects and 18 on `material1`'s, on the high tier.
-    const high = Object.fromEntries(
-      GIANTS.map((name) => {
-        const drawn = forest.drawn.get(name) as Drawn;
-        return [name, drawn.locations + (drawn.receivesShadows ? shadowLocations("high", 1) : 0)];
-      }),
-    );
-    expect(high, WEIGH).toEqual({
+  it("counts what the browser read for the giants on both tiers", () => {
+    // The browser's sweep (the verification note, §4): 17 vertex outputs on
+    // the giants' `material0` effects and 18 on `material1`'s, on both tiers.
+    const count = (tier: QualityTier) =>
+      Object.fromEntries(
+        GIANTS.map((name) => {
+          const drawn = forest.drawn.get(name) as Drawn;
+          return [name, drawn.locations + (drawn.receivesShadows ? shadowLocations(tier, 1) : 0)];
+        }),
+      );
+    const measured = {
       "tree.giant_fir.material0": 17,
       "tree.giant_fir.material1": 18,
       "tree.giant_pine.material0": 17,
       "tree.giant_pine.material1": 18,
-    });
+    };
+    expect({ high: count("high"), medium: count("medium") }, WEIGH).toEqual({ high: measured, medium: measured });
   });
 
   it("holds every material the forest draws within the device's limit on every tier, counted as the specification counts", () => {
@@ -389,6 +407,11 @@ describe("inter-stage variables on WebGPU", () => {
     const webgpu = read("@babylonjs/core/Engines/webgpuEngine.pure.js");
     // The WebGPU engine has the derivatives the NullEngine above is given.
     expect(webgpu).toContain("            standardDerivatives: true,");
+    // A cascaded shadow generator draws two to four cascades, whatever it is set to.
+    expect([CascadedShadowGenerator.MIN_CASCADES_COUNT, CascadedShadowGenerator.MAX_CASCADES_COUNT]).toEqual([2, 4]);
+    expect(read("@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.pure.js")).toContain(
+      "    set numCascades(value) {\n        value = Math.min(Math.max(value, CascadedShadowGenerator.MIN_CASCADES_COUNT), CascadedShadowGenerator.MAX_CASCADES_COUNT);",
+    );
     // A cascaded shadow light's varyings: two per cascade, and one more.
     expect(read("@babylonjs/core/Shaders/ShadersInclude/lightVxUboDeclaration.js")).toContain(
       "varying vec4 vPositionFromLight{X}[SHADOWCSMNUM_CASCADES{X}];varying float vDepthMetric{X}[SHADOWCSMNUM_CASCADES{X}];varying vec4 vPositionFromCamera{X};",
