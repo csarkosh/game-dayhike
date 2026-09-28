@@ -251,6 +251,22 @@ describe("the record through a probe", () => {
     expect(withVerdict(other, SAFARI, 27, "apple-unknown", verdict)!.attempts).toBe(0);
   });
 
+  it("keeps the count through a governor's or a build's verdict; only a probe's clears it", () => {
+    const spent = rec(null, { attempts: 3 });
+    for (const source of ["governor", "build"] as const) {
+      const verdict: AutoVerdict = { tier: "low", source, pixels: 2_073_600, at: NOW };
+      expect(withVerdict(spent, SAFARI, 26, "apple-unknown", verdict)).toEqual({ v: 1, gpu: SAFARI, cls: "apple-unknown", browser: 26, attempts: 3, verdict });
+      // Another GPU's or browser's record counts nothing.
+      expect(withVerdict(spent, SAFARI, 27, "apple-unknown", verdict)!.attempts).toBe(0);
+      expect(withVerdict(null, SAFARI, 26, "apple-unknown", verdict)!.attempts).toBe(0);
+    }
+    expect(withGovernorDrop(spent, SAFARI, 26, "apple-unknown", "medium", 2_073_600, NOW)!.attempts).toBe(3);
+    expect(withVerdict(spent, SAFARI, 26, "apple-unknown", { tier: "low", source: "probe", pixels: 2_073_600, at: NOW })!.attempts).toBe(0);
+    // Once the governor's verdict lapses, the three probes spent stay spent.
+    const lapsed = withGovernorDrop(spent, SAFARI, 26, "apple-unknown", "medium", 2_073_600, NOW - 8 * DAY)!;
+    expect(auto(lapsed)).toEqual({ tier: "medium", probeFrom: null });
+  });
+
   it("refuses a verdict over no area, and measures the window one way", () => {
     const started = withProbeStarted(null, "Apple GPU", 26, "apple-unknown");
     expect(withVerdict(started, "Apple GPU", 26, "apple-unknown", { tier: "medium", source: "probe", pixels: 0, at: 1_790_000_000_000 })).toBe(null);

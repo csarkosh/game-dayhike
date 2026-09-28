@@ -389,7 +389,10 @@ and verdict until the probe's own verdict replaces them, or starts a record at
 one. A probe's verdict sets `attempts` to 0, unless the verdict it replaces was
 made for another class: then the count is carried, so two classes alternating
 on one GPU, each probed to a verdict the other ignores, probe at most three
-times between them rather than on every load.
+times between them rather than on every load. A `governor` or `build`
+verdict measured nothing and keeps a matching record's `attempts`: when it
+lapses, the probes left are those left before it, so a GPU whose three probes
+reached no verdict is not probed three more times a week after a drop.
 
 ### 6.3 Precedence
 

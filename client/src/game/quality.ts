@@ -240,15 +240,19 @@ export function withProbeStarted(prev: AutoRecord | null, gpu: string, browser: 
 
 /**
  * The record with a verdict for `cls`, or null for a probe's verdict over no
- * area, which certifies nothing and would never hold again. The attempts go
- * back to 0, unless the verdict replaces one made for another class: then the
- * count is carried, so two classes alternating on one GPU, each ignoring the
- * other's verdict, cannot probe on every load.
+ * area, which certifies nothing and would never hold again. A probe's verdict
+ * sets the attempts back to 0, unless it replaces one made for another class:
+ * then the count is carried, so two classes alternating on one GPU, each
+ * ignoring the other's verdict, cannot probe on every load. A governor's or a
+ * build's verdict measured nothing, so it keeps a matching record's count:
+ * once it lapses, the probes left are the ones that were left before it, and
+ * a GPU whose probes never reached a verdict is not probed three more times.
  */
 export function withVerdict(prev: AutoRecord | null, gpu: string, browser: number, cls: GpuClass, verdict: AutoVerdict): AutoRecord | null {
   if (verdict.source === "probe" && !(verdict.pixels > 0)) return null;
-  const carried = prev !== null && recordMatches(prev, gpu, browser) && prev.verdict !== null && prev.cls !== cls;
-  return { v: DETECT_VERSION, gpu, cls, browser, attempts: carried ? prev.attempts : 0, verdict };
+  const matching = prev !== null && recordMatches(prev, gpu, browser) ? prev : null;
+  const carried = verdict.source !== "probe" || (matching?.verdict != null && matching.cls !== cls);
+  return { v: DETECT_VERSION, gpu, cls, browser, attempts: carried ? (matching?.attempts ?? 0) : 0, verdict };
 }
 
 /**
