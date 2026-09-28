@@ -377,10 +377,11 @@ runner, Node 22): 421 entries, none failed; 23,367,492 bytes raw, 4,035,679
 gzip −9, 488,023 brotli −q 11 (brotli's window sees across entries, gzip's
 does not); the largest entry 184,166 bytes, a fragment stage; 35.5 s of
 translation, 84 ms a stage on average, 477 ms the longest; read as one JSON
-in 24.4 ms, as an index and a text in 2.7 ms. **It is over the map's 16 MB
-ceiling, so the build fails** (below): one map of every recorded stage does
-not fit. Whether the ceiling moves, the map splits (per tier, per start), or
-its form changes is not yet decided.
+in 24.4 ms, as an index and a text in 2.7 ms (17.7 and 3.3 ms on a later
+run). Its WGSL is 642,494 lines, 77,364 of them distinct, in 3,409,566
+bytes; with every run of digits read as `#`, 3,722 distinct, in 169,814
+bytes: most of the map is lines it repeats, and most of the rest differ only
+in a generated number. The map's ceiling was set from these figures (below).
 
 **The tool.** `tools/wgsl/build-map.mjs`, plain Node, run by `npm run build`
 before `vite build`: it loads each translator's loader, a classic script, in
@@ -438,9 +439,16 @@ the map's request with a 404 (a real corpus is minutes of CPU, beside what
 the dev server may be measuring); the build always translates. Under the
 suite the URL is empty and no map is asked for.
 
-**Its ceiling.** A map is at most `MAP_MAX_BYTES`, 16 MB of text: the page
-holds it whole for the engine's life and parses it in one task on its
-thread. The build fails on a larger one, naming its size and the ceiling. The
+**Its ceiling.** A map is at most `MAP_MAX_BYTES`, 32 MiB (33,554,432 bytes)
+of text: the page holds it whole for the engine's life and parses it in one
+task on its thread. It was set from the map the recorded corpus makes,
+23,367,492 bytes for two tiers on one platform, which a page holds in about
+250 to 280 MB in all and reads as one JSON in 24 to 35 ms. A recording on
+another platform that takes the union past it is answered by a map per
+platform, not by a higher ceiling. The build fails on a larger map, naming
+its size and the ceiling. The build also prints how much of the map is
+repeated lines (`lines:`: the lines in all, the distinct ones and their
+bytes, and the same with every run of digits read as `#`). The
 page reads the map's body as it arrives, counting its decoded bytes, and
 stops and refuses it once they pass the ceiling, before anything is parsed;
 the `Content-Length` header cannot bound it alone, since the host serves the
@@ -608,10 +616,9 @@ page thread remains (9 s at the start), the GPU process compiling the render
 pipelines as far as the device's queue shows: the map does not remove it.
 
 1. **The real corpus's size, per tier.** Both tiers together, measured
-   (§5.2): 421 stages, a map of 23.4 MB raw, 4.0 MB gzip, 0.49 MB brotli, over
-   the 16 MB ceiling; its JSON read in 24 ms under Node. Per tier, and in a
-   browser on the slow machine, not yet: they decide how the map is split or
-   bounded, and whether the JSON's parse matters.
+   (§5.2): 421 stages, a map of 23.4 MB raw, 4.0 MB gzip, 0.49 MB brotli,
+   under the 32 MiB ceiling set from it; its JSON read in 18 to 24 ms under
+   Node. Per tier, and in a browser on the slow machine, not yet.
 2. **What else in the text differs between loads of one page** (§3): two
    loads recorded with `?wgsl=record`, their reports kept whole
    (`JSON.stringify(dayhikeWgsl)`, the stages' `glsl` with them), and each
