@@ -13,7 +13,7 @@ import {
 import { trailheadSpawn } from "../../src/sim/spawn.js";
 import { SIGN_POST_HALF, trailSign, trailSignSite } from "../../src/sim/signs.js";
 import { ROAD_BED_HALF } from "../../src/sim/road.js";
-import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
+import { TRAIL_BED_HALF, trailDistance } from "../../src/sim/trail.js";
 import type { TrailGraph, TrailEdge } from "../../src/sim/trail.js";
 import { TRAILHEAD_U } from "../../src/sim/bowl.js";
 import { SEEDS } from "./trailGateSeeds.js";
@@ -275,7 +275,11 @@ describe("the trail's sign on real worlds", () => {
       const post = trailSign(graph, board, s);
       const arm = post.arms[0]!;
       expect(trailSignSite(graph, board)).toEqual({ x: post.x, z: post.z });
-      expect(v.trailDistance!(seed, post.x, post.z), `seed ${seed}`).toBeCloseTo(1.75, 6);
+      // Measured on the graph's own edges: the variant's `trailDistance` is
+      // the terrain's, and answers Infinity outside the region the trail is
+      // built in, where a sign beside a trail that leaves along the road
+      // can stand (seed 195).
+      expect(trailDistance(graph, post.x, post.z), `seed ${seed}`).toBeCloseTo(1.75, 6);
       const d = Math.hypot(post.x - s.x, post.z - s.z);
       const c = ((post.x - s.x) * Math.sin(s.yaw) + (post.z - s.z) * Math.cos(s.yaw)) / d;
       widest = Math.max(widest, (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI);
@@ -284,7 +288,7 @@ describe("the trail's sign on real worlds", () => {
       carGap = Math.min(carGap, gapTo(post.x, post.z, car, CAR_HALF));
       boardGap = Math.min(boardGap, gapTo(post.x, post.z, board, KIOSK_HALF));
       // The plank is 1.095 m long: its tip must be farther from the bed than the post.
-      tipGap = Math.min(tipGap, v.trailDistance!(seed, post.x + arm.dx * 1.095, post.z + arm.dz * 1.095));
+      tipGap = Math.min(tipGap, trailDistance(graph, post.x + arm.dx * 1.095, post.z + arm.dz * 1.095));
       road = Math.min(road, post.x - roadCenterXOf(seed, post.z));
       turned = Math.max(turned, Math.abs(arm.dx * ((s.x - post.x) / d) + arm.dz * ((s.z - post.z) / d)));
     }
