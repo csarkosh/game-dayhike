@@ -240,6 +240,7 @@ export async function createWebGpuEngine(
     });
     made.engine = engine;
     giveUpRestore(engine);
+    mipEveryLayer(engine);
     catchTranslationFailures(engine);
     // The started translators, as Babylon's options take them: glslang as a
     // promise (its setup waits on it), twgsl as the instance. No path to load.
@@ -265,6 +266,43 @@ export async function createWebGpuEngine(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** `InternalTextureSource.Raw2DArray`, the source of a `RawTexture2DArray`. */
+const RAW_2D_ARRAY = 11;
+
+type MipEngine = {
+  _generateMipmaps(texture: unknown, commandEncoder?: unknown): void;
+  _renderEncoder: unknown;
+  _textureHelper: { generateMipmaps(hardware: unknown, levels: number, layer: number, commandEncoder: unknown): void };
+};
+
+/**
+ * Makes `engine` build the mips of every layer of an array texture. Babylon
+ * 9.18's WebGPU mip pass for a `RawTexture2DArray` renders the chain of layer
+ * 0 alone (`ThinWebGPUEngine._generateMipmaps`), so layers 1 and up read zero
+ * at every level below full size: the ground's relief arrays
+ * (`groundMaps.ts`) then blacked the trail's bed wherever it was drawn from a
+ * coarser level. After Babylon's own pass (layer 0, and the render pass it
+ * ends), the same pass runs for each other layer on the same encoder: each
+ * level rendered from the one above through a linear sampler, a 2×2 average,
+ * which is the box filter WebGL2's `generateMipmap` gives every layer. Other
+ * textures are left to Babylon. A WebGL2 engine is never given it. Its canary
+ * is in `gpuEngine.test.ts`.
+ */
+export function mipEveryLayer(engine: AbstractEngine): void {
+  const own = engine as unknown as MipEngine;
+  if (typeof own._generateMipmaps !== "function") return;
+  const generate = own._generateMipmaps.bind(engine);
+  own._generateMipmaps = (texture, commandEncoder) => {
+    generate(texture, commandEncoder);
+    const array = texture as { _source?: number; depth?: number; mipLevelCount?: number; _hardwareTexture?: unknown; isCube?: boolean };
+    if (array._source !== RAW_2D_ARRAY || array.isCube === true || !array._hardwareTexture || !((array.depth ?? 1) > 1)) return;
+    const encoder = commandEncoder ?? own._renderEncoder;
+    for (let layer = 1; layer < (array.depth ?? 1); layer++) {
+      own._textureHelper.generateMipmaps(array._hardwareTexture, array.mipLevelCount ?? 1, layer, encoder);
+    }
+  };
 }
 
 /**

@@ -6,7 +6,8 @@ import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import { EffectFallbacks } from "@babylonjs/core/Materials/effectFallbacks.js";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
-import { catchTranslationFailures, watchPipelines, watchWebGpu } from "../../src/game/gpuEngine.js";
+import { ThinWebGPUEngine } from "@babylonjs/core/Engines/thinWebGPUEngine.js";
+import { catchTranslationFailures, mipEveryLayer, watchPipelines, watchWebGpu } from "../../src/game/gpuEngine.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -367,6 +368,52 @@ describe("the frames that made a render pipeline, for the governor", () => {
     // translation, as on WebGL2 at a compile.
     const compile = src.slice(src.indexOf("    _compilePipelineStageDescriptor(vertexCode, fragmentCode, defines, shaderLanguage) {"), src.indexOf("    createRawShaderProgram() {"));
     expect(compile).toContain("this.onAfterShaderCompilationObservable.notifyObservers(this);");
+  });
+});
+
+describe("the mips of every layer of an array texture on WebGPU", () => {
+  /** An engine as the mip pass reads it: its own `_generateMipmaps` (the
+   * installed engine's), and a helper that records each layer it is asked for. */
+  function engine() {
+    const layers: [number, number][] = [];
+    const fake = {
+      _renderEncoder: { id: "render" },
+      _endCurrentRenderPass: () => undefined,
+      _textureHelper: {
+        generateMipmaps: (_hw: unknown, levels: number, layer: number) => void layers.push([layer, levels]),
+        generateCubeMipmaps: () => void layers.push([-1, 0]),
+      },
+      _generateMipmaps(texture: unknown, commandEncoder?: unknown) {
+        (ThinWebGPUEngine.prototype as unknown as { _generateMipmaps(t: unknown, e?: unknown): void })._generateMipmaps.call(this, texture, commandEncoder);
+      },
+    };
+    return { fake, layers };
+  }
+  // The ground's relief arrays: 512², six layers, ten levels, `Raw2DArray`.
+  const array = { _source: 11, depth: 6, width: 512, height: 512, mipLevelCount: 10, isCube: false, _hardwareTexture: {} };
+
+  it("are made for layer 0 alone by Babylon 9.18 (a canary: an upstream fix is noticed here)", () => {
+    const { fake, layers } = engine();
+    fake._generateMipmaps(array);
+    expect(layers).toEqual([[0, 10]]);
+  });
+
+  it("are made for every layer once the engine is given the pass per layer, and nothing else changes", () => {
+    const { fake, layers } = engine();
+    mipEveryLayer(fake as never);
+    fake._generateMipmaps(array);
+    expect(layers).toEqual([[0, 10], [1, 10], [2, 10], [3, 10], [4, 10], [5, 10]]);
+    layers.length = 0;
+    fake._generateMipmaps({ ...array, _source: 3, depth: 1 });
+    fake._generateMipmaps({ ...array, depth: 1 });
+    fake._generateMipmaps({ ...array, isCube: true, _source: 0 });
+    expect(layers).toEqual([[0, 10], [0, 10], [-1, 0]]);
+  });
+
+  it("gives every engine the maker makes the pass per layer", () => {
+    const src = readFileSync(new URL("../../src/game/gpuEngine.ts", import.meta.url), "utf8");
+    const start = src.slice(src.indexOf("  const start = async (): Promise<WebGPUEngine> => {"), src.indexOf("    await engine.initAsync("));
+    expect(start).toContain("    mipEveryLayer(engine);");
   });
 });
 
