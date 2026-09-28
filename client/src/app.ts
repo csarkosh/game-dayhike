@@ -186,6 +186,10 @@ function buildGame(
   // The renderer and its canvas are replaced when the tier changes mid-hike
   // (`applyTier`); everything reads them through these bindings when it runs.
   let canvas = firstCanvas;
+  // The WebGPU engine made for this hike belongs to no renderer until the
+  // first one is built: a start that throws before then disposes it here.
+  let unowned: AbstractEngine | undefined = options.engine;
+  made(() => unowned?.dispose());
   // The sim registry is the source of truth for variant names; the command
   // layer only validates against them. This MUST run before `parseScript`
   // below: `parseScript` validates every entry as it parses, so a `terrain`
@@ -262,6 +266,9 @@ function buildGame(
   // and then low, each on a fresh canvas: only the renderer is retried, not
   // the world, which is built once. A WebGPU engine that cannot build the
   // tier is its own fault: that tier is built again on WebGL2 first.
+  // From here the ladder's renderers own it: `createRenderer` releases the
+  // engine it was given if its build throws, and the renderer disposes it.
+  unowned = undefined;
   const first = buildFirstRenderer(
     canvas,
     [options.tier, ...options.fallbackTiers],
