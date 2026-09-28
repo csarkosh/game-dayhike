@@ -148,6 +148,9 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  // A spy on `console` made again returns the one already there, so each
+  // test's count starts from its own.
+  vi.restoreAllMocks();
   WebGPUCacheRenderPipeline.NumPipelineCreationLastFrame = 0;
 });
 
