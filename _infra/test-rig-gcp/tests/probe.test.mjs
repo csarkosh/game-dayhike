@@ -3,7 +3,7 @@
 //   node --test _infra/test-rig-gcp/tests/*.test.mjs
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { activeRemoteSessions, lastFailure, licenceState, sessions, verdict, warnings } from '../probe.mjs';
+import { activeRemoteSessions, findSmi, lastFailure, licenceState, sessions, verdict, warnings } from '../probe.mjs';
 
 // `nvidia-smi -q` as Google documents it for a properly licensed RTX Virtual
 // Workstation, and for a GPU attached without the licence.
@@ -141,4 +141,25 @@ test('a 60 Hz cap and a second display adapter warn; the set-up log\'s last fail
   assert.ok(warnings(good({ display: { adapters: ['NVIDIA L4: 1920x1080 at 60 Hz', 'Google Virtual Display: 1024x768 at 60 Hz'] } })).some((w) => w.includes('2 display adapters')));
   assert.equal(lastFailure('a\r\nx FAILED: one\r\nb\r\ny FAILED: two\r\nc'), 'y FAILED: two');
   assert.equal(lastFailure('all fine\n'), null);
+});
+
+test('nvidia-smi is looked for where the driver installs it, then on PATH', () => {
+  const system32 = 'C:\\Windows\\System32\\nvidia-smi.exe';
+  const nvsmi = 'C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe';
+  const store = 'C:\\Windows\\System32\\DriverStore\\FileRepository';
+  const inStore = `${store}\\nvgridsw.inf_amd64_0123456789abcdef\\nvidia-smi.exe`;
+  const env = { WINDIR: 'C:\\Windows', ProgramFiles: 'C:\\Program Files' };
+  const fs = (files) => ({
+    exists: (p) => files.includes(p),
+    list: (dir) => (dir === store ? ['nvlddmkm.inf_amd64_1', 'nvgridsw.inf_amd64_0123456789abcdef', 'other.inf'] : []),
+  });
+  assert.equal(findSmi(fs([system32, nvsmi, inStore]), env), system32);
+  assert.equal(findSmi(fs([nvsmi, inStore]), env), nvsmi);
+  assert.equal(findSmi(fs([inStore]), env), inStore);
+  assert.equal(findSmi(fs([]), env), 'nvidia-smi');
+});
+
+test('a console that is not 1920 x 1080 warns', () => {
+  assert.ok(warnings(good({ screen: { width: 1366, height: 768 } })).some((w) => w.includes('1366 x 768')));
+  assert.equal(warnings(good({ screen: { width: 1920, height: 1080 } })).some((w) => w.includes('x 1080')), false);
 });

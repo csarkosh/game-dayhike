@@ -38,7 +38,7 @@
 //   - with --url, every run's page loaded (no navigation error, the document
 //     complete at the address asked for) and drew frames.
 import { spawn, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -75,6 +75,24 @@ export function licenceState(text) {
   state.ok = state.product === 'NVIDIA RTX Virtual Workstation' && /^Licensed/.test(state.status);
   return state;
 }
+
+// ------------------------------------------------------------- nvidia-smi
+// Where the driver installs nvidia-smi.exe, in the order the start-up script
+// looks: System32, NVIDIA's NVSMI directory, the driver store's directory for
+// an NVIDIA driver; then whatever PATH finds. Found here rather than through
+// PATH alone, which a driver that installs it only in the driver store leaves
+// without it: every reading would then be empty and fail a healthy machine.
+export function findSmi({ exists, list }, env = process.env) {
+  const store = `${env.WINDIR}\\System32\\DriverStore\\FileRepository`;
+  const candidates = [
+    `${env.WINDIR}\\System32\\nvidia-smi.exe`,
+    `${env.ProgramFiles}\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe`,
+    ...list(store).filter((d) => /^nv/i.test(d)).map((d) => `${store}\\${d}\\nvidia-smi.exe`),
+  ];
+  return candidates.find((p) => exists(p)) ?? 'nvidia-smi';
+}
+
+const DISPLAY = { width: 1920, height: 1080 };
 
 // ------------------------------------------------------ Remote Desktop sessions
 // The sessions `qwinsta` lists, and of them the Remote Desktop ones that are
@@ -132,6 +150,9 @@ export function warnings(report) {
   if (webgpu === 'no adapter' || !webgpu) out.push('no WebGPU adapter (the game does not use WebGPU)');
   else if (!/nvidia/i.test(webgpu.vendor ?? '')) out.push(`the WebGPU adapter's vendor is "${webgpu.vendor}", not nvidia`);
   if (report.display?.cappedAt60OrLower) out.push(`requestAnimationFrame runs at ${report.refreshHz} Hz: frame times below ${(1000 / report.refreshHz).toFixed(1)} ms cannot be seen`);
+  if (report.screen && (report.screen.width !== DISPLAY.width || report.screen.height !== DISPLAY.height)) {
+    out.push(`Chrome's screen is ${report.screen.width} x ${report.screen.height}, not the ${DISPLAY.width} x ${DISPLAY.height} the start-up script sets`);
+  }
   if ((report.display?.adapters ?? []).length > 1) out.push(`Windows lists ${report.display.adapters.length} display adapters: ${report.display.adapters.join('; ')}`);
   return out;
 }
@@ -299,7 +320,9 @@ async function outer() {
   const seconds = Number(opt('seconds') ?? 60);
   const runs = url ? Number(opt('runs') ?? 1) : 0;
   const flags = process.argv.slice(2).filter((a) => !own.test(a));
-  const smi = (args) => ({ stdout: run('nvidia-smi', args).stdout ?? '' });
+  const smiPath = findSmi({ exists: existsSync, list: (dir) => { try { return readdirSync(dir); } catch { return []; } } });
+  console.log(`nvidia-smi: ${smiPath}`);
+  const smi = (args) => ({ stdout: run(smiPath, args).stdout ?? '' });
 
   if (!existsSync(join(SETUP, 'verified'))) {
     const log = existsSync(join(SETUP, 'setup.log')) ? readFileSync(join(SETUP, 'setup.log'), 'utf8') : '';
@@ -369,6 +392,7 @@ async function outer() {
   const report = {
     ...result,
     nvidia: {
+      smi: smiPath,
       gpuName: smi(['--query-gpu=name', '--format=csv,noheader']).stdout.trim(),
       licence: licenceState(smi(['-q']).stdout ?? ''),
       chromeSamples: samples.length,
