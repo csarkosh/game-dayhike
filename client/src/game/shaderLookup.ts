@@ -237,11 +237,11 @@ export function openingSource(name: string, salt: string, opening: Promise<WgslS
   const ready = within(landing, ms).then((source): Promise<void> | undefined => {
     if (source === null) {
       // None, or too late: let go of one that lands after all.
-      void landing.then((late) => late?.close?.());
+      void landing.then((late) => closeQuietly(late));
       return undefined;
     }
     if (closed) {
-      source.close?.();
+      closeQuietly(source);
       return undefined;
     }
     open = source;
@@ -295,6 +295,16 @@ const releases = new WeakMap<AbstractEngine, () => void>();
 export function releaseShaderLookup(engine: AbstractEngine): void {
   releases.get(engine)?.();
   releases.delete(engine);
+}
+
+/** Closes `source`, where there is one; a close that throws closes nothing
+ * more. */
+function closeQuietly(source: WgslSource | null): void {
+  try {
+    source?.close?.();
+  } catch {
+    /* already gone */
+  }
 }
 
 /** `promise`, or null once `ms` pass first. */
@@ -383,7 +393,8 @@ export function lookUpShaders(
     }
     asked = ours;
     const elapsed = performance.now() - began;
-    await Promise.all(ours.map((source) => within(source.ready ?? Promise.resolve(), Math.max(0, (source.waitMs ?? WGSL_SOURCES_MS) - elapsed))));
+    // Settled, not all: a source whose read fails ends no other's wait.
+    await Promise.allSettled(ours.map((source) => within(source.ready ?? Promise.resolve(), Math.max(0, (source.waitMs ?? WGSL_SOURCES_MS) - elapsed))));
   })().catch(() => undefined);
 
   const release = (): void => {
