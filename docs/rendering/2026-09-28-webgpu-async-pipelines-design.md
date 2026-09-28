@@ -70,6 +70,19 @@ draw left out never has one. Snapshot recording, which takes a bundle
 encoder before the lookup, is left to Babylon: while the engine renders by
 snapshot every draw is Babylon's.
 
+**The last guard.** Every draw reaches the lookup through the engine's own
+`_draw` (Babylon's `drawElementsType` and `drawArraysType` are its only
+callers, and `_draw` is the lookup's only caller; the canaries count them).
+Were a Babylon ever to add another path, the sentinel would leave
+`scene.render`, and Babylon's render loop queues no frame after a throw: the
+game would stop for good, with no WebGPU error to swap on, which is worse
+than the freeze removed. So each scene of a patched engine renders inside a
+catch of the sentinel alone (`guardRender`): the patch then comes off that
+engine for good, every later draw synchronous, one `console.warn` says so,
+`dayhikePipelines.escapes` counts it, and the frame's loop goes on. Any other
+throw passes through as before; on WebGL2 and with `?pipelines=sync` no
+catch is added.
+
 **Why a run-time patch on the instance.** A fork of Babylon would carry the
 whole engine for one method, and a patch on the prototype would reach the
 clear quad's cache and every engine of the page. Babylon's public
@@ -101,6 +114,14 @@ with it), and takes the scope and the patch off in `dispose` (and when its
 build throws) before its engine goes, so a swap's old engine starts and
 stores nothing more while the new one compiles.
 
+The scope cannot stay open: a throw inside a group skips the group's
+after-observer, so every group still open is shut as each frame of the scene
+begins (`onBeforeRenderObservable`), and the impostor bake, whose renders
+come outside the scene's frames, renders through the scope's `guarded`,
+which shuts what its render left open even as it throws. Otherwise a throw
+in a bake's render would leave every later post-process and probe draw open
+to being left out.
+
 A target drawn once (`REFRESHRATE_RENDER_ONCE`) is a render that is kept, as
 the bake's is (§5), so its groups stay outside the scope: the reflection
 probe's skybox is drawn on Babylon's path, as before. Babylon's own rule for
@@ -125,24 +146,31 @@ before:
 
 The impostor bake renders once into a texture kept for the life of the page;
 a draw left out there would bake a blank or partial tree for good. It never
-keeps such a render (`bakeWhole` in `forestMeshes.ts`), in two phases,
-because its structure already allows them (it is asynchronous and bounded):
+keeps such a render (`renderedWhole` in `forestMeshes.ts`, from its poll),
+because its structure already allows it (it is asynchronous and bounded):
 
-1. once its target is ready, a render that asks for the pipelines it lacks;
-   kept if it left nothing out (`takeSkipped()` read just before and after);
-2. otherwise a wait for the pipelines (`settled`), at most what is left of
-   the bake's own bound (`IMPOSTOR_BAKE_FAIL_MS`, 120 s from its start), and
-   a second render, kept if it left nothing out;
-3. otherwise, or when the wait ran out, one more render as a target drawn
-   once, which the scope leaves on Babylon's synchronous path (§4): its
-   pipelines are made as before, while the page waits;
-4. a render that still left something out is not kept: the bake fails as a
+1. at each poll, readiness first (`rtt.isReadyForRendering()`): a target not
+   ready is never rendered, and the bake goes back to its 16 ms poll, as
+   before; Babylon itself leaves a mesh that is not ready out of a render
+   without a draw, which no count of left-out draws would see;
+2. on a ready target, a render, the count of left-out draws read just before
+   and just after it (`takeSkipped()`): kept if it left nothing out;
+3. otherwise the bake renders again every `BAKE_PIPELINES_POLL_MS` (250 ms),
+   readiness checked first each time, until a render is whole. It waits for
+   its own pipelines only: a pipeline it already asked for is not asked
+   for again, and a render finds its pipelines as soon as they land, whatever
+   else the engine is still making;
+4. once what is left of the bake's own bound (`IMPOSTOR_BAKE_FAIL_MS`, 120 s
+   from its start) has run out, one more render, as a target drawn once,
+   which the scope leaves on Babylon's synchronous path (§4): its pipelines
+   are made as before, while the page waits;
+5. a render that still left something out is not kept: the bake fails as a
    compile failure does, with one `console.error`, and that billboard's
    bucket is disabled.
 
-The first is better for the player than a bake always made synchronously:
-the bake's pipelines are made without a freeze, and the fallback keeps the
-old behaviour as a floor.
+Every render goes through the scope's `guarded` (§4). This is better for the
+player than a bake always made synchronously: the bake's pipelines are made
+without a freeze, and the fallback keeps the old behaviour as a floor.
 
 ## 6. The reveal
 
@@ -156,6 +184,17 @@ is an empty world, not a whole one), and at most `REVEAL_PIPELINES_MAX_MS`
 game's end lifts it at once; their own covers take over. On WebGL2, and on
 WebGPU with `?pipelines=sync`, nothing is held.
 
+The line is shown only while the game's own HUD says nothing
+(`holdReveal`, `revealHold.ts`): a follower sees "Connecting…" alone, and
+"Loading…" once that has gone, if the world is still held.
+
+**A switch's cover.** A switch of tier, the governor's drop and a failure's
+rebuild wait under a cover for the new scene (`whenSceneReady`); on WebGPU
+the cover then also waits for a frame that left nothing out
+(`whenFrameWhole`), within what is left of the same bound (`made.leftMs`
+less the scene's wait), so meshes do not appear after the cover lifts. The
+covers' own bounds are not lengthened.
+
 The longest start is therefore, on WebGPU with the patch, the start's
 existing bounds ("Loading…" for at most `WEBGPU_FETCH_MS` + `WEBGPU_START_MS`,
 20 s, where both stall), the build, the first frame, and 10 s more; on WebGL2
@@ -168,7 +207,16 @@ A creation that rejects marks its node failed: the node's next draw takes
 Babylon's own synchronous path, which raises the validation error where it
 is raised today, so the failure watcher (`watchWebGpu`) and the live swap to
 WebGL2 behave exactly as before. A node marked failed is never tried
-asynchronously again. Once the engine is disposed, its device lost, or the
+asynchronously again. The first rejection is said once, with its message, in
+a `console.warn`.
+
+A creation still in flight `ASYNC_PIPELINE_MAX_MS` (30 s) after it was
+started (not queued) is given up the same way: its node is marked failed,
+so its next draw takes the synchronous path, its slot in flight is freed for
+the queue behind it, the first such is said once in a `console.warn`, and
+`dayhikePipelines.expired` counts it. One that lands after its deadline
+stores nothing. A creation that never settles can therefore neither keep a
+mesh out for good, nor starve the governor of windows, nor stall the queue. Once the engine is disposed, its device lost, or the
 patch removed, nothing is started and nothing is stored into a node (a
 creation still pending at a loss lands as a pipeline of a lost device), and
 every draw is Babylon's.
@@ -190,8 +238,8 @@ pipeline was made synchronously **or** a draw was left out (`leftOutOn`,
 counted per engine). The other readers of frame times: the governor's idle
 timing runs with the render loop stopped, so nothing is drawn or left out;
 the probe's steps build their renderer without the patch, so every draw is
-Babylon's; the switch's cover waits on the scene and the forest's bakes, not
-on frame times.
+Babylon's; the switch's cover waits on the scene, the forest's bakes and a
+frame that left nothing out, not on frame times.
 
 ## 9. The address switch, and what a measurement reads
 
@@ -200,8 +248,9 @@ or nothing, installs the patch at the page's limit; `?pipelines=<n>`, 1 to
 16, installs it with `n` in flight (`parsePipelines`, `engineChoice.ts`).
 `globalThis.dayhikePipelines` is the report of the page's latest WebGPU
 engine: the mode, the limit, the pipelines asked for asynchronously, landed
-and failed, those made synchronously (Babylon's per-frame count, summed), the
-draws left out, the longest time from asked to landed (the queue's wait
+and failed, those given up at their deadline, those made synchronously
+(Babylon's per-frame count, summed), the draws left out, the frames a
+left-out draw escaped (the patch then off), the longest time from asked to landed (the queue's wait
 included), and what is pending now.
 
 ## 10. What a browser must still show
@@ -220,6 +269,22 @@ included), and what is pending now.
 - A swap of tier on WebGPU: the old engine's queue gone, nothing drawn with a
   pipeline of the old device.
 - `dayhikePipelines` read at 60 s on each of these.
+- Whether Chrome settles every `createRenderPipelineAsync`, a device loss
+  included, and in what order against `device.lost`: `pending` back to 0 on
+  the 91-pipeline page, and after a forced device loss.
+- Whether Chrome also raises `uncapturederror` for a rejected asynchronous
+  creation (the swap then comes one draw earlier).
+- Whether a canvas at `visibility: hidden` keeps the clicks that engage the
+  pointer lock during the hold: click during the hold, and see what engages.
+- How late the Hollow appears when it comes into view mid-chase: from its
+  first left-out draw to its first drawn frame, at the default limit.
+- A console across a whole hike with no uncaught "a draw left out" error,
+  and no `escapes`.
+- The five bakes with pixels in each on a cold start, one of them forced
+  down the fallback (a short `failMs` and `?pipelines=1`).
+- A follower's reveal: a still at the lift and one at spawn, with
+  "Connecting…" and "Loading…" never shown together.
+- After a WebGPU switch of tier, no mesh appearing after the cover lifts.
 
 ## 11. Considered and not built
 
