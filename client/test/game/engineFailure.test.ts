@@ -164,9 +164,11 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     expect(h.log).toEqual(["unwatch gpu0", `record pipeline: ${NOTICE_SWITCHED}`]);
     apply.resolve();
     await answered;
-    // Remembered for the engines the rule gives from now on; the healthy
-    // renderer the switch built is not thrown away.
+    // Remembered for the engines the rule gives from now on (the next load
+    // takes WebGL2); the renderer the switch built on another engine, which
+    // has its own watcher, is not rebuilt.
     expect(h.log).toEqual(["unwatch gpu0", `record pipeline: ${NOTICE_SWITCHED}`]);
+    expect(readFallback(h.storage)).toEqual({ reason: "pipeline", browser: 153, babylon: "9.18.0", at: T0, losses: 0 });
     expect(h.engine().name).toBe("gpu9");
   });
 

@@ -630,6 +630,12 @@ without a reload, a change of engine on a fresh canvas included); it is Task
   rebuilt on a new WebGPU engine on a fresh canvas, the loss counted, with the
   line "Graphics restarted after a GPU error." **A second** within 24 h swaps
   onto WebGL2 and is remembered (`lost`), as the reload does today.
+- A failure of an engine that a switch under way (Apply, the governor's
+  drop) has already left by the time the rebuild could run is recorded, so
+  the next load, and every engine the rule gives from then on, takes
+  WebGL2, but it does not rebuild the renderer that switch built on
+  another engine: that engine has its own watcher, which answers its own
+  failure (as built, `answerFailures`).
 - Where storage refuses the record, the tab's URL is pinned to
   `engine=webgl2` as today, so a reload stays on WebGL2. Until then the
 reload paths stay as built, reachable only with `?engine=webgpu` behind the off
