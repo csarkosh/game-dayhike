@@ -81,7 +81,10 @@ catch of the sentinel alone (`guardRender`): the patch then comes off that
 engine for good, every later draw synchronous, one `console.warn` says so,
 `dayhikePipelines.escapes` counts it, and the frame's loop goes on. Any other
 throw passes through as before; on WebGL2 and with `?pipelines=sync` no
-catch is added.
+catch is added. A render outside the scene's frames, the impostor bake's,
+runs inside the same catch (`AsyncPipelines.guard`), which answers false
+where the sentinel escaped it, so the bake can render again, synchronously
+(§5).
 
 **Why a run-time patch on the instance.** A fork of Babylon would carry the
 whole engine for one method, and a patch on the prototype would reach the
@@ -168,7 +171,10 @@ because its structure already allows it (it is asynchronous and bounded):
    compile failure does, with one `console.error`, and that billboard's
    bucket is disabled.
 
-Every render goes through the scope's `guarded` (§4). This is better for the
+Every render goes through the scope's `guarded` (§4), inside the patch's own
+guard (§2): a render that a draw left out escaped drew nothing whole, the
+patch is off from then on, and the bake renders once more, synchronously,
+and judges that render. This is better for the
 player than a bake always made synchronously: the bake's pipelines are made
 without a freeze, and the fallback keeps the old behaviour as a floor.
 
@@ -216,10 +222,19 @@ so its next draw takes the synchronous path, its slot in flight is freed for
 the queue behind it, the first such is said once in a `console.warn`, and
 `dayhikePipelines.expired` counts it. One that lands after its deadline
 stores nothing. A creation that never settles can therefore neither keep a
-mesh out for good, nor starve the governor of windows, nor stall the queue. Once the engine is disposed, its device lost, or the
-patch removed, nothing is started and nothing is stored into a node (a
-creation still pending at a loss lands as a pipeline of a lost device), and
-every draw is Babylon's.
+mesh out for good, nor starve the governor of windows, nor stall the queue.
+
+A hidden page's frames stop, and whether the browser goes on making
+pipelines for it is not known; were it not to, a long absence would give up
+the whole queue in turn, and every node would then be made synchronously on
+return. So a deadline that passes while the page is hidden
+(`document.visibilityState`) is set again, the full 30 s, and a creation is
+given up only on a deadline that passes while the page is shown. Without a
+document (the test suite) the page counts as shown.
+
+Once the engine is disposed, its device lost, or the patch removed, nothing
+is started and nothing is stored into a node (a creation still pending at a
+loss lands as a pipeline of a lost device), and every draw is Babylon's.
 
 ## 8. The limit, and the governor
 
@@ -243,15 +258,16 @@ frame that left nothing out, not on frame times.
 
 ## 9. The address switch, and what a measurement reads
 
-`?pipelines=sync` leaves Babylon's path as it is (the control); `?pipelines=async`,
-or nothing, installs the patch at the page's limit; `?pipelines=<n>`, 1 to
-16, installs it with `n` in flight (`parsePipelines`, `engineChoice.ts`).
+`?pipelines=sync` leaves Babylon's path as it is (the control);
+`?pipelines=async`, or nothing, installs the patch at the page's limit;
+`?pipelines=<n>`, 1 to 16, installs it with `n` in flight (`parsePipelines`,
+`engineChoice.ts`).
 `globalThis.dayhikePipelines` is the report of the page's latest WebGPU
 engine: the mode, the limit, the pipelines asked for asynchronously, landed
 and failed, those given up at their deadline, those made synchronously
-(Babylon's per-frame count, summed), the draws left out, the frames a
-left-out draw escaped (the patch then off), the longest time from asked to landed (the queue's wait
-included), and what is pending now.
+(Babylon's per-frame count, summed), the draws left out, the renders a
+left-out draw escaped (the patch then off), the longest time from asked to
+landed (the queue's wait included), and what is pending now.
 
 ## 10. What a browser must still show
 
@@ -284,7 +300,18 @@ included), and what is pending now.
   down the fallback (a short `failMs` and `?pipelines=1`).
 - A follower's reveal: a still at the lift and one at spawn, with
   "Connecting…" and "Loading…" never shown together.
-- After a WebGPU switch of tier, no mesh appearing after the cover lifts.
+- After a WebGPU switch of tier, no mesh appearing after the cover lifts,
+  and how long the cover now lasts against its bounds: at most 20 s from the
+  Settings Apply and 10 s from the governor or a failure's rebuild, less the
+  engine's making but never less than 5 s, plus the build. A new engine makes
+  every pipeline anew, so on a slow machine the cover may now run to its
+  bound where it lifted before on the scene and the forest alone.
+- Whether a hidden tab's pipelines land: hide the tab during a cold start
+  with `?pipelines=1`, wait over 30 s, come back, and read
+  `dayhikePipelines.expired`.
+- What one frame a left-out draw escaped looks like, and whether the
+  scene's uniform buffer stays the target's after a throw inside a render
+  target (the sentinel thrown on purpose, from a test hook).
 
 ## 11. Considered and not built
 
