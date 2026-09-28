@@ -1,7 +1,7 @@
 # The trailhead board
 
 **Date:** 2026-09-28
-**Status:** Designed, not built.
+**Status:** Designed, not built. The steps to build it are `docs/trail/2026-09-28-trailhead-board-plan.md`.
 **Amends:** `docs/trail/2026-09-28-trail-14-trailhead.md` §3.3 (the sign at the entrance, which
 goes) and §3.4 (the notice board, which moves). The car, the player's place and facing, the
 trail's name and the road wall are unchanged.
@@ -46,24 +46,26 @@ place and the shape of §3.
 
 | Measure | Least | Median | Most |
 | --- | --- | --- | --- |
-| The board's centre, off the centre of the player's view | 10.42° | 14.90° | 17.05° |
-| The board's far end, off the centre of the player's view | 17.31° | 22.02° | 24.65° |
-| The board's centre, from the player | 6.31 m | 8.97 m | 9.37 m |
-| The bed's centreline, from the board's boxes | 1.25 m | 1.34 m | 1.47 m |
-| The board's boxes, from the road's centreline | 10.14 m | 17.49 m | 19.84 m |
-| The board's boxes, from the car's box | 8.19 m | 10.33 m | 11.24 m |
-| The board's boxes, from the player | 5.93 m | 8.61 m | 9.02 m |
+| The board's centre, off the centre of the player's view | 9.20° | 16.14° | 18.14° |
+| The board's far end, off the centre of the player's view | 15.86° | 22.72° | 24.72° |
+| The board's centre, from the player | 6.74 m | 9.55 m | 9.83 m |
+| The bed's centreline, from the board's boxes | 1.29 m | 1.35 m | 1.45 m |
+| The board's boxes, from the road's centreline | 10.11 m | 18.85 m | 19.99 m |
+| The board's boxes, from the car's box | 8.66 m | 11.31 m | 11.73 m |
+| The board's boxes, from the player | 6.36 m | 9.22 m | 9.49 m |
 
-- Both sides of the trail clear the road and the bed on 219 seeds, one side on 8, neither on none.
+- Both sides of the trail clear the road and the bed on 218 seeds, one side on 9, neither on none.
+- The board stands on the side of `+n` on 63 seeds and of `−n` on 164.
 - **The whole board is within 25° of the centre of the view on every seed.** A phone held
   upright sees about 25° to each side (the view's 1.4 rad is its height), so the board is in
   the first frame on every screen.
-- Two other places were measured and set aside:
+- Three other places were measured and set aside:
 
 | Place | The board's far end, off the view's centre | From the player | Why not |
 | --- | --- | --- | --- |
 | At the pad's rim, 2.35 m off the bed | 23.76°–38.69° | 4.63–7.49 m | Within 25° on only 4 seeds: part of the board is out of an upright phone's frame on the rest. |
 | 3 m past the rim, 2.35 m off the bed | 13.66°–22.73° | 7.10–10.25 m | The bed comes within 1.10 m of a box, under the 1.15 m a player needs, and neither side clears on 72 seeds. |
+| 2 m past the rim, 2.5 m off the bed | 17.31°–26.04° | 6.31–9.37 m | Over 25° on some seeds, once the side is chosen by the line of sight as §3.1 has it. |
 
 ## 3. Where the board stands
 
@@ -84,12 +86,13 @@ It uses what the trailhead already gives: **E** and **d**, the entrance and the 
 3. A candidate **clears** when every one of its boxes (§3.2) is at least `BOARD_ROAD_CLEAR` from
    the road's centreline at the box's own z, and the bed's centreline, on any edge, is at least
    `BOARD_BED_CLEAR` from every box.
-4. The board takes the candidate whose centre is nearer the centre of the player's view, among
-   those that clear. If neither clears it takes the nearer of the two. A tie goes to `+n`.
+4. Where one candidate clears and the other does not, the board takes the one that clears.
+   Where both do, or neither does, it takes the one nearer the centre of the player's view,
+   which is the line from S to E. A tie goes to `+n`.
 
 | Constant | Value | Why |
 | --- | --- | --- |
-| `BOARD_ALONG` | 2 m | Past the pad's rim, so the board sits inside the view (§2). |
+| `BOARD_ALONG` | 2.5 m | Past the pad's rim, so the board sits inside the view (§2). |
 | `BOARD_OFFSET` | 2.5 m | The board's centre from the bed's centreline. |
 | `BOARD_BED_CLEAR` | 1.15 m | `TRAIL_BED_HALF` plus `PLAYER_HALF.x`, as for the car. |
 | `BOARD_ROAD_CLEAR` | 6 m | `ROAD_BED_HALF` plus 0.5, the shoulder the car keeps. |
@@ -103,7 +106,7 @@ is therefore five boxes in a row:
 - each `BOARD_BOX_HALF` = { x 0.275, y 1.25, z 0.275 }, standing on the ground at its own centre;
 - material `kiosk`, as today.
 
-`BOARD_BOX_STEP` is 0.44 m, so the row is 2.31 m long and covers the board's 2.2 m at any angle,
+`BOARD_BOXES` is 5 and `BOARD_BOX_STEP` is 0.44 m, so the row is 2.31 m long and covers the board's 2.2 m at any angle,
 and nowhere thicker than 0.78 m. The roof overhangs the row; it is above a hiker's head and has
 no box, so a player can stand in under its edge to read.
 
@@ -249,7 +252,7 @@ Each is listed in `client/assets/catalog.json` and credited in `CREDITS.md`.
 | The signs pass's tunables | `client/src/sim/passes/signs.ts` | `TRAIL_SIGNS` goes |
 | The level id's probe | `client/src/sim/forest.ts` | The chunks that hold the car and the board's boxes for the probe's seed are measured again and recorded |
 | The pass hash, 178231578 | `client/test/sim/groundGradient.test.ts` | Re-pinned |
-| The watcher's sweep, 875 of 936 stands | `client/test/sim/watcherSweep.test.ts` | Measured again: the board's boxes now stand beside the trail, 10 m from the pad's centre, and the old board's no longer stand on the pad |
+| The watcher's sweep, 875 of 936 stands | `client/test/sim/watcherSweep.test.ts` | Measured again: the board's boxes now stand beside the trail, about 10.5 m from the pad's centre, and the old board's no longer stand on the pad |
 | `hikerNames` | `client/test/sim/hikerNames.test.ts`, `placeNames.test.ts` | The names the tests expect, where a world's hiker changes |
 | `GEN_VERSION` | `client/src/sim/forest.ts` | Stays 7: what is generated changes, which the pass hash already reads |
 
@@ -257,7 +260,8 @@ Each is listed in `client/assets/catalog.json` and credited in `CREDITS.md`.
 
 | File | Change |
 | --- | --- |
-| `client/src/sim/passes/trailhead.ts` | `boardSite`, `boardBoxes` and their constants; pass 8 emits the car and the board's five boxes; the road-frame props go (§3.4). |
+| `client/src/sim/trailhead.ts` | New. The trailhead's geometry and constants, moved out of the pass's module so that reading one registers nothing; `boardSite`, `boardBoxes`, `trailheadPlaces`; the road-frame props go (§3.4). |
+| `client/src/sim/passes/trailhead.ts` | Pass 8 alone: it emits the car's box and the board's five. |
 | `client/src/sim/signs.ts`, `client/src/sim/passes/signs.ts` | The post at the entrance goes. |
 | `client/src/sim/search.ts` | The poster's point from the board's place and facing. |
 | `client/src/sim/hikerNames.ts` | `HIKER_FIRST_NAMES`. |
@@ -266,6 +270,7 @@ Each is listed in `client/assets/catalog.json` and credited in `CREDITS.md`.
 | `client/src/game/boardMap.ts` | New. Pure: the map's lines, places and labels in the sheet's own space, from a graph and its names. |
 | `client/src/game/boardWear.ts` | New. Pure: each part's wear from the seed and its name. |
 | `client/src/game/boardPaint.ts` | New. Draws the face's texture from those three and the two images. The one module that touches a canvas. |
+| `client/src/game/boardImages.ts` | New. The two images' addresses, found by a glob, so a checkout without them builds. |
 | `client/src/game/trailheadMeshes.ts` | Places the board at its place and facing; draws the face's plane; falls back to the five boxes. `posterMaterial` and the painted poster go. |
 | `client/src/game/signMeshes.ts` | `paintedMaterial` goes with its one caller. |
 | `client/src/app.ts` | Gives the board its place, the graph, the names and the seed. |
@@ -285,12 +290,12 @@ Every numeric expectation is a literal.
 | Clause | Bound |
 | --- | --- |
 | The board's far end, off the player's facing | at most 25° |
-| The board's centre, from the player | between 6 m and 9.5 m |
+| The board's centre, from the player | between 6.5 m and 10 m |
 | The bed's centreline, from every box | at least 1.15 m |
 | Every box, from the road's centreline | at least 6 m |
-| The board's boxes, from the car's box | at least 8 m |
+| The board's boxes, from the car's box | at least 8.5 m |
 | The board's facing: its angle off the direction to the player | 0, to nine places |
-| The sides that clear | both on 219 seeds, one on 8, neither on 0 |
+| The side the board takes | `+n` on 63 seeds, `−n` on 164 |
 | The poster's point | within reach (`POSTER_RADIUS`) of a player standing 1 m in front of the poster sheet and facing it |
 
 **Unit tests:**
