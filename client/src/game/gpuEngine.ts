@@ -334,6 +334,9 @@ export async function createWebGpuEngine(
   const starting = start();
   try {
     const engine = await Promise.race([starting, deadline]);
+    // On this engine's own cache and draw, which `initAsync` made; a draw is
+    // left out only inside the scope its renderer opens.
+    installPipelines(engine, options.pipelines ?? "async");
     // Only once the engine stands: a failed start leaves Babylon's defaults,
     // and neither switch changes anything on WebGL2, where every material is
     // GLSL.
@@ -342,9 +345,6 @@ export async function createWebGpuEngine(
     // Before any of its materials: every plugin class's define numbered the
     // same on every load, so a stage's text, and its key, is too.
     pinPluginNumbers();
-    // On this engine's own cache and draw, which `initAsync` made; a draw is
-    // left out only inside the scope its renderer opens.
-    installPipelines(engine, options.pipelines ?? "async");
     return engine;
   } catch (err) {
     if (made.engine !== null) disposeHalfMade(made.engine);

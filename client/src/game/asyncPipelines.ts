@@ -117,8 +117,8 @@ type PipelineCache = {
   _device: { createRenderPipelineAsync(descriptor: unknown): Promise<unknown>; lost?: Promise<unknown> };
   _parameter: { token: CacheNode; pipeline: unknown };
   disabled: boolean;
-  getRenderPipeline(fillMode: number, effect: unknown, sampleCount: number, textureState?: number): unknown;
-  _lookupRenderPipeline(fillMode: number, effect: unknown, sampleCount: number, textureState: number): unknown;
+  getRenderPipeline(fill: number, effect: unknown, sampleCount: number, textureState?: number): unknown;
+  _lookupRenderPipeline(fill: number, effect: unknown, sampleCount: number, textureState: number): unknown;
   _buildRenderPipelineDescriptor(effect: unknown, topology: string, sampleCount: number): unknown;
   _setRenderPipeline(param: { token: CacheNode; pipeline: unknown }): void;
 };
@@ -132,8 +132,8 @@ type PatchedEngine = {
 };
 
 /** Babylon's topology for a fill mode, as its own `getRenderPipeline` takes it. */
-const topologyOf = (fillMode: number): string =>
-  (WebGPUCacheRenderPipeline as unknown as { _GetTopology(fillMode: number): string })._GetTopology(fillMode);
+const topologyOf = (fill: number): string =>
+  (WebGPUCacheRenderPipeline as unknown as { _GetTopology(fill: number): string })._GetTopology(fill);
 
 /** Thrown out of `getRenderPipeline` for a draw left out, and caught by the
  * wrapper on `_draw`: one object, made once, so throwing it costs no trace. */
@@ -275,21 +275,21 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
 
   const ownGet = cache.getRenderPipeline;
   const hadOwnGet = Object.prototype.hasOwnProperty.call(cache, "getRenderPipeline");
-  const getRenderPipeline = (fillMode: number, effect: unknown, sampleCount: number, textureState = 0): unknown => {
+  const getRenderPipeline = (fill: number, effect: unknown, sampleCount: number, textureState = 0): unknown => {
     if (depth === 0 || cache.disabled || stopped() || own.snapshotRendering === true) {
-      return ownGet.call(cache, fillMode, effect, sampleCount, textureState);
+      return ownGet.call(cache, fill, effect, sampleCount, textureState);
     }
     const samples = WebGPUTextureHelper.GetSample(sampleCount);
-    const found = cache._lookupRenderPipeline(fillMode, effect, samples, textureState);
+    const found = cache._lookupRenderPipeline(fill, effect, samples, textureState);
     if (found) return found;
     const node = cache._parameter.token;
     const state = nodes.get(node);
     // Babylon's own path, which looks the node up again, misses, makes the
     // pipeline and stores it, raising a validation error where it did.
-    if (state === "failed") return ownGet.call(cache, fillMode, effect, sampleCount, textureState);
+    if (state === "failed") return ownGet.call(cache, fill, effect, sampleCount, textureState);
     if (state === undefined) {
       // Built now, from the draw's state, as Babylon's own path would.
-      const descriptor = cache._buildRenderPipelineDescriptor(effect, topologyOf(fillMode), samples);
+      const descriptor = cache._buildRenderPipelineDescriptor(effect, topologyOf(fill), samples);
       nodes.set(node, "pending");
       queue.push({ node, descriptor, askedAt: now() });
       tally.asked++;

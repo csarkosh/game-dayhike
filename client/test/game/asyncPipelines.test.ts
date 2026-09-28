@@ -146,9 +146,11 @@ afterEach(() => {
 describe("Babylon's WebGPU pipeline cache and draw (canaries: when one fails, Babylon has moved; revise the patch in the upgrade's own commit)", () => {
   it("still has the methods the patch calls, on the cache's prototype", () => {
     const proto = WebGPUCacheRenderPipeline.prototype as unknown as Record<string, unknown>;
-    for (const name of ["getRenderPipeline", "_lookupRenderPipeline", "_buildRenderPipelineDescriptor", "_createRenderPipeline", "preWarmPipeline", "_setRenderPipeline"]) {
+    for (const name of ["getRenderPipeline", "_lookupRenderPipeline", "_buildRenderPipelineDescriptor", "_createRenderPipeline", "preWarmPipeline"]) {
       expect(typeof proto[name], name).toBe("function");
     }
+    // The engine's cache is the tree, which stores a pipeline in its node.
+    expect(typeof (WebGPUCacheRenderPipelineTree.prototype as unknown as Record<string, unknown>)._setRenderPipeline).toBe("function");
     expect(typeof (WebGPUCacheRenderPipeline as unknown as { _GetTopology: unknown })._GetTopology).toBe("function");
   });
 

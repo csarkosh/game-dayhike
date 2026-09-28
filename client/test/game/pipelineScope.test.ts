@@ -155,17 +155,18 @@ describe("the renderer on a WebGPU engine with pipelines made asynchronously", (
     const main = groupOf(r.scene, r.scene.renderingManager);
     r.scene.onBeforeRenderingGroupObservable.notifyObservers(main);
     r.scene.onAfterRenderingGroupObservable.notifyObservers(main);
-    const observed = r.scene.onBeforeRenderingGroupObservable;
-    let scopedAtEngineDispose = -1;
+    // As the engine goes, a group's draws no longer open the scope (Babylon
+    // drops a removed observer from its list on the next turn, and calls it
+    // no more at once).
     const dispose = r.engine.dispose.bind(r.engine);
     vi.spyOn(r.engine, "dispose").mockImplementation(() => {
+      r.scene.onBeforeRenderingGroupObservable.notifyObservers(main);
+      r.scene.onAfterRenderingGroupObservable.notifyObservers(main);
       order.push("engine disposed");
-      scopedAtEngineDispose = observed.observers.length;
       dispose();
     });
     r.dispose();
     expect(order).toEqual(["enter", "leave", "remove", "engine disposed"]);
-    expect(scopedAtEngineDispose).toBe(without);
   });
 });
 
