@@ -3,6 +3,7 @@ import "../../src/sim/passes/index.js";
 import {
   PROBE_MAX_MS,
   PROBE_MAX_STALLS,
+  PROBE_READY_MAX_MS,
   PROBE_STEP_BUDGET_MS,
   START_FAILED_LINE,
   stepReadyMaxMs,
@@ -656,8 +657,10 @@ describe("createProbeMeter", () => {
     expect(got.stats).toEqual({ frames: 120, meanMs: 17.5, p95Ms: 17.5 });
   });
 
-  it("gives a step what the cap leaves it to be ready, less the frames it needs, and at most 15 s", () => {
-    expect(stepReadyMaxMs(30_000)).toBe(15_000);
+  it("gives a step what the cap leaves it to be ready, less the frames it needs", () => {
+    // Uncapped: the 15 s is counted after the step's build, where the page
+    // takes the lesser of the two.
+    expect(stepReadyMaxMs(30_000)).toBe(25_800);
     expect(stepReadyMaxMs(16_700)).toBe(12_500);
     expect(stepReadyMaxMs(13_760)).toBe(9_560);
     expect(stepReadyMaxMs(4_200)).toBe(0);
@@ -821,7 +824,7 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
   const DAY = 86_400_000;
   const BASE = 1_790_000_000_000;
 
-  async function hikes(loadMs: number, days: readonly number[]) {
+  async function hikes(loadMs: number, days: readonly number[], frameMs: Record<QualityTier, number> = FRAME_MS, buildMs = 0) {
     const storage = memoryStorage();
     const clock = { now: BASE };
     let timer: { at: number; fn: () => void } | null = null;
@@ -838,11 +841,15 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
         now: () => clock.now,
         runStep: async (tier, cancelled, readyMaxMs) => {
           steps.push(tier);
+          // As the page does: the build blocks, then the step has 15 s from
+          // its end, or what the cap left it from the call, whichever is sooner.
+          const called = clock.now;
+          clock.now += buildMs;
           const begin = clock.now;
-          const meter = createProbeMeter(begin, readyMaxMs);
+          const meter = createProbeMeter(begin, Math.min(PROBE_READY_MAX_MS, called + readyMaxMs - begin));
           let compiled = false;
           for (;;) {
-            clock.now += FRAME_MS[tier];
+            clock.now += frameMs[tier];
             const due: { at: number; fn: () => void } | null = timer;
             if (due !== null && clock.now >= due.at) due.fn();
             if (cancelled()) return null;
@@ -876,7 +883,7 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
       tiers.push(started.tier);
       if (steps.length > 0) probes.push(steps);
       clock.now += 60_000;
-      if (FRAME_MS[started.tier] > 20.8) {
+      if (frameMs[started.tier] > 20.8) {
         const next = withGovernorDrop(readAutoRecord(storage), "Apple GPU", 26, "apple-unknown", started.tier, 1_045_960, clock.now);
         if (next !== null) {
           writeAutoRecord(storage, next);
@@ -901,6 +908,19 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
     expect(verdict.tier).toBe("low");
     expect(verdict.source).toBe("probe");
     expect(verdict.readings!.map((r) => [r.tier, r.frames, r.meanMs, r.early])).toEqual([["high", 31, 70, true], ["medium", 43, 50, true]]);
+  });
+
+  it("gives the first step its 15 s to be ready from after a slow build: one reading, a verdict", async () => {
+    // A 6 s build, then 11 s to be ready, and high holding at 16 ms a frame:
+    // one step. Counted from before the build, the step had 9 s after it and
+    // read nothing, on three hikes, and then the class's start tier stood.
+    const got = await hikes(9_500, [0, 1, 7, 14, 29], { high: 16, medium: 16, low: 16 }, 6_000);
+    expect(got.probes).toEqual([["high"]]);
+    expect(got.screens).toEqual([20_388]);
+    expect(got.tiers).toEqual(["high", "high", "high", "high", "high"]);
+    const verdict = readAutoRecord(got.storage)!.verdict!;
+    expect(verdict.source).toBe("probe");
+    expect(verdict.readings!.map((r) => [r.tier, r.frames, r.meanMs])).toEqual([["high", 120, 16]]);
   });
 
   it("probes at most three times over nine weeks where the cap always cuts the second step", async () => {

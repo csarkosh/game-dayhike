@@ -99,8 +99,9 @@ export function runProbeStep(
       return;
     }
     const { engine, scene } = probe.renderer;
-    // Ready by `readyBy` (a `performance.now()` time), counted from after the
-    // build, which is part of the time the step was given.
+    // Ready within `PROBE_READY_MAX_MS` of the end of the build, and by
+    // `readyBy` (a `performance.now()` time: what the probe's cap leaves the
+    // step, the paint wait and the build spent from it), whichever is sooner.
     const began = performance.now();
     const meter = createProbeMeter(began, opts.readyBy === undefined ? PROBE_READY_MAX_MS : Math.min(PROBE_READY_MAX_MS, opts.readyBy - began));
     const compiled = engine.onAfterShaderCompilationObservable.add(() => meter.compiled(performance.now()));

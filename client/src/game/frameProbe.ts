@@ -180,7 +180,8 @@ export function idleCadenceMs(intervals: readonly number[]): number | null {
  * One probe step's frames, as data: `frame` for each render-loop callback,
  * `compiled` whenever a shader compiles. The scene is ready once it says so and
  * no shader has compiled for `PROBE_QUIET_MS`, given up at `readyMaxMs`
- * (`PROBE_READY_MAX_MS`, or less where the probe's cap leaves less: `stepReadyMaxMs`);
+ * (`PROBE_READY_MAX_MS` after the build, or less where the probe's cap leaves
+ * less: `stepReadyMaxMs`);
  * then `PROBE_WARMUP_FRAMES` are discarded (or fewer, once their intervals,
  * each counted at most `PROBE_STALL_MS`, sum to `PROBE_STEP_BUDGET_MS`) and `PROBE_FRAMES`
  * intervals kept, or fewer where their sum passes `PROBE_STEP_BUDGET_MS`
@@ -245,16 +246,19 @@ export function createProbeMeter(start: number, readyMaxMs: number = PROBE_READY
 }
 
 /**
- * How long a step may take to be ready when `leftMs` of the probe's cap is
- * left as it starts: `PROBE_READY_MAX_MS`, or less, what is left after the
- * frames a step needs once ready (its warm-up and its measurement, at most
+ * How long a step has, from its start, to be ready when `leftMs` of the
+ * probe's cap is left as it starts: what is left after the frames a step
+ * needs once ready (its warm-up and its measurement, at most
  * `PROBE_STEP_BUDGET_MS` each). Two steps each allowed 15 s cannot both fit
  * 30 s: a second step that could only be ready too late to be measured gives
  * up there, rather than at the cap after the player has waited it out. At or
- * under 0 the step is not started.
+ * under 0 the step is not started. Not capped here: the step's own
+ * `PROBE_READY_MAX_MS` is counted from after its build, so the step takes the
+ * lesser of the two once its scene is built, and a first step keeps its full
+ * 15 s after a slow build.
  */
 export function stepReadyMaxMs(leftMs: number): number {
-  return Math.min(PROBE_READY_MAX_MS, leftMs - 2 * PROBE_STEP_BUDGET_MS);
+  return leftMs - 2 * PROBE_STEP_BUDGET_MS;
 }
 
 /** Whether a reading holds 60 Hz. */
