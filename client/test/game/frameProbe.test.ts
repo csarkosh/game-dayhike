@@ -100,14 +100,17 @@ describe("nextProbeStep", () => {
 });
 
 describe("probeStepCanSettle", () => {
-  it("settles a WebGL2 step only where programs link off the page's thread, and a WebGPU step always", () => {
+  it("settles a WebGL2 step only where programs link off the page's thread, and a WebGPU step not until it is measured to", () => {
+    // Babylon translates a WebGPU effect's shaders on the page's thread
+    // (glslang, then Tint) and makes each pipeline at its first draw, so a
+    // WebGPU step is no quieter than a WebGL2 one without the extension.
     const table = [
       { parallelCompile: true, engine: "webgl2", settles: true },
       { parallelCompile: false, engine: "webgl2", settles: false },
       { parallelCompile: null, engine: "webgl2", settles: false },
-      { parallelCompile: true, engine: "webgpu", settles: true },
-      { parallelCompile: false, engine: "webgpu", settles: true },
-      { parallelCompile: null, engine: "webgpu", settles: true },
+      { parallelCompile: true, engine: "webgpu", settles: false },
+      { parallelCompile: false, engine: "webgpu", settles: false },
+      { parallelCompile: null, engine: "webgpu", settles: false },
     ] as const;
     for (const row of table) expect(probeStepCanSettle(row.parallelCompile, row.engine)).toBe(row.settles);
   });
@@ -399,6 +402,19 @@ describe("startupTier", () => {
     expect(readAutoRecord(earlier)!.attempts).toBe(2);
   });
 
+  it("skips the probe whose steps would draw on WebGPU, before its screen: no wait, nothing written", async () => {
+    const storage = memoryStorage();
+    const t = fakes((tier) => reading(tier, 16.7), storage);
+    expect(await startupTier(SAFARI, { ...page(), engine: "webgpu" }, t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+    expect(t.screens()).toBe(0);
+    expect(t.waits()).toBe(0);
+    expect(t.steps).toEqual([]);
+    expect(contents(storage)).toBe("[]");
+    expect(t.lines).toEqual([
+      "quality probe: skipped, a WebGPU step translates its shaders on the page's thread; starting at medium (apple-unknown)",
+    ]);
+  });
+
   it("says the probe is skipped for want of a WebGL2 context where none could be made", async () => {
     const storage = memoryStorage();
     const t = fakes((tier) => reading(tier, 16.7), storage);
@@ -459,6 +475,28 @@ describe("startupTier", () => {
 });
 
 describe("autoPick", () => {
+  it("asks whether the probe's first step can settle on the engine it will draw with", () => {
+    const signals = (parallelCompile: boolean | null, adapterStatus: GpuSignals["adapterStatus"]): GpuSignals => ({
+      renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus, parallelCompile, cores: 8, memoryGb: null, mobile: false, browser: 26,
+    });
+    const probe = (read: GpuSignals, engine: "webgl2" | "webgpu") => {
+      const pick = autoPick(read, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, engine });
+      return { probeFrom: pick.probeFrom, probeSkipped: pick.probeSkipped };
+    };
+    const probed = { probeFrom: "high", probeSkipped: false };
+    const skipped = { probeFrom: null, probeSkipped: true };
+    // WebGL2 steps, as with the switch off: the tier detection branch's rule.
+    expect(probe(signals(true, "none"), "webgl2")).toEqual(probed);
+    expect(probe(signals(false, "none"), "webgl2")).toEqual(skipped);
+    // WebGPU steps, the adapter known: not until a WebGPU step is measured to
+    // settle, with or without the WebGL2 extension.
+    expect(probe(signals(true, "none"), "webgpu")).toEqual(skipped);
+    expect(probe(signals(false, "none"), "webgpu")).toEqual(skipped);
+    // The adapter not known yet: the step may draw on either engine, so both
+    // must settle.
+    expect(probe(signals(true, "timed-out"), "webgpu")).toEqual(skipped);
+  });
+
   it("is Auto's tier and whether it will probe, before any hike", () => {
     const signals: GpuSignals = {
       renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
