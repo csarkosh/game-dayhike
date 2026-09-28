@@ -55,7 +55,8 @@ import { createSignMeshes } from "../../src/game/signMeshes.js";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene as BabylonScene } from "@babylonjs/core/scene.js";
 import {
-  SWAP_READY_MAX_MS,
+  APPLY_SWAP_READY_MAX_MS,
+  GOVERNOR_SWAP_READY_MAX_MS,
   buildFirstRenderer,
   buildOrUndo,
   swapRenderer,
@@ -511,14 +512,15 @@ describe("whenSceneReady's cap", () => {
     return { done: () => done };
   }
 
-  it("is 20 s", () => {
-    expect(SWAP_READY_MAX_MS).toBe(20_000);
+  it("is 20 s for the Settings Apply and 10 s for the governor's drop", () => {
+    expect(APPLY_SWAP_READY_MAX_MS).toBe(20_000);
+    expect(GOVERNOR_SWAP_READY_MAX_MS).toBe(10_000);
   });
 
-  it("outlasts a forest that settles 16 s in, and lifts at the first poll after it", async () => {
+  it("outlasts, on the Apply's bound, a forest that settles 16 s in, and lifts at the first poll after it", async () => {
     // At 6× CPU the forest was whole up to 16.1 s after the renderer's build.
     const layers = new Promise<void>((resolve) => setTimeout(resolve, 16_000));
-    const lifted = tracked(whenSceneReady(countingScene().scene, undefined, layers));
+    const lifted = tracked(whenSceneReady(countingScene().scene, APPLY_SWAP_READY_MAX_MS, layers));
     await vi.advanceTimersByTimeAsync(10_000);
     expect(lifted.done()).toBe(false);
     await vi.advanceTimersByTimeAsync(5_900);
@@ -527,9 +529,9 @@ describe("whenSceneReady's cap", () => {
     expect(lifted.done()).toBe(true);
   });
 
-  it("still lifts at 20 s when a layer never settles, once, and stops polling", async () => {
+  it("still lifts at the Apply's 20 s when a layer never settles, once, and stops polling", async () => {
     const { scene, asked } = countingScene();
-    const lifted = tracked(whenSceneReady(scene, undefined, new Promise(() => undefined)));
+    const lifted = tracked(whenSceneReady(scene, APPLY_SWAP_READY_MAX_MS, new Promise(() => undefined)));
     await vi.advanceTimersByTimeAsync(19_900);
     expect(lifted.done()).toBe(false);
     await vi.advanceTimersByTimeAsync(100);

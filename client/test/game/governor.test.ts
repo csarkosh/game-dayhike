@@ -1,9 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import type { Scene } from "@babylonjs/core/scene.js";
 import {
   GOVERNOR_IDLE_MAX_MS, GOVERNOR_LIMIT_MS, GOVERNOR_LINE_MS, GOVERNOR_START_MS, GOVERNOR_STALL_MS, GOVERNOR_WINDOW_MS, GOVERNOR_WINDOWS,
   actOnDrop, createGovernor, governorDecision, governorLine, steadyFrame, type DropDeps, type Governor,
 } from "../../src/game/governor.js";
 import type { QualityTier } from "../../src/game/quality.js";
+import { whenSceneReady } from "../../src/game/rendererSwap.js";
+
+/** A scene that is ready, with nothing waiting to load. */
+const readyScene = { isDisposed: false, isReady: () => true, getWaitingItemsCount: () => 0 } as unknown as Scene;
 
 /** Frames of `ms` each, from `from` until the clock reaches `until`; returns the clock. */
 function feed(g: Governor, from: number, until: number, ms: number, steady = true): number {
@@ -267,6 +272,31 @@ describe("acting on a drop", () => {
       "log quality governor: medium → low, 30 s of play under 48 fps",
       "switch low", "lift", "switched",
     ]);
+  });
+
+  it("holds its cover at most 10 s for a new scene that never settles, then lifts it", async () => {
+    vi.useFakeTimers();
+    try {
+      const { deps, did } = page(16.7);
+      const bounds: number[] = [];
+      // The switch's wait as `switchTo` runs it: the bound it is handed, on a
+      // ready scene whose forest never settles.
+      deps.switchTo = async (next, readyMaxMs) => {
+        bounds.push(readyMaxMs);
+        await whenSceneReady(readyScene, readyMaxMs, new Promise(() => undefined));
+        return next;
+      };
+      let outcome: string | null = null;
+      void actOnDrop("medium", "low", deps).then((o) => { outcome = o; });
+      await vi.advanceTimersByTimeAsync(9_900);
+      expect(did).not.toContain("lift");
+      await vi.advanceTimersByTimeAsync(100);
+      expect(did.at(-2)).toBe("lift");
+      expect(outcome).toBe("lowered");
+      expect(bounds).toEqual([10_000]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("writes and switches nothing once the game has gone, or its session ended, while it timed", async () => {

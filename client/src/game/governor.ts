@@ -31,6 +31,7 @@
  */
 import { PROBE_HOLD_MS } from "./frameProbe.js";
 import type { QualityTier } from "./quality.js";
+import { GOVERNOR_SWAP_READY_MAX_MS } from "./rendererSwap.js";
 import type { TierSource } from "./tierChoice.js";
 
 export const GOVERNOR_START_MS = 30_000;
@@ -184,8 +185,9 @@ export type DropDeps = {
   /** Writes the governor's verdict for the next start, from the running tier. */
   record(running: QualityTier): void;
   /** The live switch; the tier it reached. Rejects when no tier built, having
-   * ended the hike. */
-  switchTo(next: QualityTier): Promise<QualityTier>;
+   * ended the hike. `readyMaxMs` bounds its wait for the new scene under the
+   * cover (`GOVERNOR_SWAP_READY_MAX_MS`). */
+  switchTo(next: QualityTier, readyMaxMs: number): Promise<QualityTier>;
   flash(line: string, ms: number): void;
   log(line: string): void;
   /** False once the game is gone, its renderer broken or its session ended. */
@@ -239,7 +241,7 @@ export async function actOnDrop(
     deps.log(`quality governor: ${running} → ${next}, 30 s of play under ${Math.floor(1000 / GOVERNOR_LIMIT_MS)} fps`);
     switched = true;
     try {
-      outcome = (await deps.switchTo(next)) === next ? "lowered" : "fell-back";
+      outcome = (await deps.switchTo(next, GOVERNOR_SWAP_READY_MAX_MS)) === next ? "lowered" : "fell-back";
     } catch {
       outcome = "failed";
     }
