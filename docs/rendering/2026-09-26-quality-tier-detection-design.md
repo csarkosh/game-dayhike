@@ -8,22 +8,24 @@ it is probed; the reference machine's `apple-base` starts and stays at medium.
 Where the GPU cannot be named, a probe before the first hike renders the canopy
 pose behind "Setting up graphics…": 60 frames discarded and 120 measured, a
 tier holding at a mean of at most 17.5 ms, a step ending early as a miss once
-its frames pass 2,100 ms (and its warm-up bounded by the same), 15 s for a step
-to be ready, 30 s for the whole probe, three attempts, a miss kept when the cap
-cuts the next step. The probe is skipped where WebGL2 links every shader on
-the page's thread (Firefox), and where the page draws below 60 Hz. Its verdict
-holds 30 days, while the window is at most 1.5 times the one measured. The
-governor, on Auto only, drops one tier after three 10 s windows over 20.8 ms
-following 30 s of play, remembered for 7 days, with one HUD line for 6 s. The
-player chooses Auto, High, Medium or Low from one drop-down on the title's and
-the pause screen's Settings; a choice made mid-hike is applied live, the
-renderer rebuilt on a fresh canvas behind a cover that lifts when the new scene
-and its forest are ready, or at 20 s after Apply and 10 s after a governor's
-drop. `?tier=` overrides everything and `?probe=` forces a probe, on the
-machine whose address carries them: a lobby host's announced route goes out
-without them, and a follower drops them from a route it is sent to. The older
-rule from cores and memory (`tierFor`, `detectTier`) is kept as the tier of a
-renderer given none (§6.3).
+its frames pass 2,100 ms or more than 20 of them stall (and its warm-up bounded
+by the same 2,100 ms), 15 s for a step to be ready or less where the cap leaves
+less, 30 s for the whole probe, three attempts, a miss kept when the cap cuts
+the next step, its attempt still counted. The probe is skipped where WebGL2
+links every shader on the page's thread (Firefox), and where the page draws
+below 60 Hz. Its verdict holds 30 days, while the window is at most 1.5 times
+the one measured. The governor, on Auto only, drops one tier after three 10 s
+windows over 20.8 ms following 30 s of play, remembered for 7 days, with one
+HUD line for 6 s. The player chooses Auto, High, Medium or Low from one
+drop-down on the title's and the pause screen's Settings; a choice made
+mid-hike is applied live, the renderer rebuilt on a fresh canvas behind a
+cover that lifts when the new scene and its forest are ready, or at a bound
+counted from the end of the new renderer's build: 20 s for Apply, 10 s for a
+governor's drop (§9.6). `?tier=` overrides everything and `?probe=` forces a
+probe, on the machine whose address carries them: a lobby host's announced
+route goes out without them, and a follower drops them from a route it is sent
+to. The older rule from cores and memory (`tierFor`, `detectTier`) is kept as
+the tier of a renderer given none (§6.3).
 
 Day Hike picks a quality tier once, when the renderer is made, from the number
 of logical cores and the memory the browser reports. Neither says anything about
@@ -526,7 +528,9 @@ tier gets its own canvas; the renderer is disposed and its engine made with
    count, and `stalls` (logged "21 over 250 ms"). 21 intervals over 250 ms
    among at most 120 is a mean over 43 ms, a miss whatever the rest read.
 
-The reading: `{ tier, frames, meanMs, p95Ms, pixels, engine }`.
+The reading: `{ tier, frames, meanMs, p95Ms, pixels, engine }`, with `early`
+for a step that ended as a miss on its sum, and `stalls`, their count, for
+one that ended on its stalls (3, above).
 
 ### 7.4 The budget, and a capped reading
 
