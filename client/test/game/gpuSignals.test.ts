@@ -3,6 +3,8 @@ import {
   ADAPTER_TIMEOUT_MS,
   browserMajor,
   gatherSignals,
+  hostOs,
+  isChromium,
   readSignals,
   isMobile,
   readRenderer,
@@ -91,6 +93,66 @@ describe("browserMajor", () => {
     expect(browserMajor("Mozilla/5.0 (Macintosh; rv:145.0) Gecko/20100101 Firefox/145.0")).toBe(145);
     expect(browserMajor("Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/26.0 Safari/605.1.15")).toBe(26);
     expect(browserMajor("")).toBe(0);
+  });
+});
+
+describe("isChromium and hostOs, the browser and platform the WebGPU rule reads", () => {
+  const CHROME_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
+  const EDGE_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0";
+  const LAUNCHER_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) DayHike/0.3.0 Chrome/152.0.0.0 Electron/44.1.1 Safari/537.36";
+  const SAFARI_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
+  const FIREFOX_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0";
+  const FIREFOX_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0";
+  const CHROME_ANDROID = "Mozilla/5.0 (Linux; Android 16; Pixel 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36";
+  const CHROME_LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
+  const CHROME_IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/154.0.0.0 Mobile/15E148 Safari/604.1";
+
+  it("reads the user agent where there is no client hint (Safari, Firefox, a page not served securely)", () => {
+    const rows: [string, boolean, "mac" | "windows" | "other"][] = [
+      [CHROME_MAC, true, "mac"],
+      [EDGE_WINDOWS, true, "windows"],
+      [LAUNCHER_WINDOWS, true, "windows"],
+      [SAFARI_MAC, false, "mac"],
+      [FIREFOX_WINDOWS, false, "windows"],
+      [FIREFOX_MAC, false, "mac"],
+      [CHROME_ANDROID, true, "other"],
+      [CHROME_LINUX, true, "other"],
+      // Chrome on iOS is WebKit underneath, and names no `Chrome/`.
+      [CHROME_IOS, false, "other"],
+    ];
+    for (const [userAgent, chromium, os] of rows) {
+      expect(isChromium({ userAgent })).toBe(chromium);
+      expect(hostOs({ userAgent })).toBe(os);
+    }
+  });
+
+  it("prefers the client hint's brands and platform where it has them", () => {
+    const brands = [{ brand: "Not)A;Brand" }, { brand: "Chromium" }, { brand: "Google Chrome" }];
+    expect(isChromium({ userAgent: "", userAgentData: { brands } })).toBe(true);
+    expect(isChromium({ userAgent: CHROME_MAC, userAgentData: { brands: [{ brand: "Not)A;Brand" }, { brand: "Other" }] } })).toBe(false);
+    // An empty list says nothing, and the user agent is read.
+    expect(isChromium({ userAgent: CHROME_MAC, userAgentData: { brands: [] } })).toBe(true);
+    expect(hostOs({ userAgent: CHROME_LINUX, userAgentData: { platform: "macOS" } })).toBe("mac");
+    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Windows" } })).toBe("windows");
+    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Linux" } })).toBe("other");
+    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Android" } })).toBe("other");
+    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "Chrome OS" } })).toBe("other");
+    expect(hostOs({ userAgent: CHROME_MAC, userAgentData: { platform: "" } })).toBe("mac");
+  });
+
+  it("is neither without a navigator, and never throws", () => {
+    expect(isChromium(undefined)).toBe(false);
+    expect(hostOs(undefined)).toBe("other");
+    const throwing = {
+      get userAgent(): string {
+        throw new Error("denied");
+      },
+      get userAgentData(): undefined {
+        throw new Error("denied");
+      },
+    } as NavigatorLike;
+    expect(isChromium(throwing)).toBe(false);
+    expect(hostOs(throwing)).toBe("other");
   });
 });
 

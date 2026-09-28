@@ -20,36 +20,100 @@ describe("the engine override", () => {
 });
 
 describe("chooseEngine", () => {
-  const high = { tier: "high" as const, override: null, remembered: false, on: true, fits: null };
+  // Chrome on macOS: a desktop Chromium on one of the two measured platforms.
+  const high = { tier: "high" as const, override: null, remembered: false, on: true, fits: null, chromium: true, os: "mac" as const, mobile: false };
   it("probes only where WebGPU could be the answer", () => {
     expect(chooseEngine(high)).toBe("probe");
     expect(chooseEngine({ ...high, fits: true })).toBe("webgpu");
     expect(chooseEngine({ ...high, fits: false })).toBe("webgl2");
-    expect(chooseEngine({ ...high, tier: "medium" })).toBe("probe");
-    expect(chooseEngine({ ...high, tier: "medium", fits: true })).toBe("webgpu");
+    expect(chooseEngine({ ...high, tier: "medium" })).toBe("webgl2");
+    expect(chooseEngine({ ...high, tier: "medium", fits: true })).toBe("webgl2");
     expect(chooseEngine({ ...high, tier: "low" })).toBe("webgl2");
     expect(chooseEngine({ ...high, tier: "low", fits: true })).toBe("webgl2");
     expect(chooseEngine({ ...high, on: false })).toBe("webgl2");
     expect(chooseEngine({ ...high, remembered: true })).toBe("webgl2");
     expect(chooseEngine({ ...high, override: "webgl2", fits: true })).toBe("webgl2");
   });
-  it("lets ?engine=webgpu past the tier, the switch and the memory, never past the adapter", () => {
-    const forced = { tier: "low" as const, override: "webgpu" as const, remembered: true, on: false, fits: null };
+  it("lets ?engine=webgpu past the tier, the browser, the platform, the switch and the memory, never past the adapter", () => {
+    const forced = { tier: "low" as const, override: "webgpu" as const, remembered: true, on: false, fits: null, chromium: false, os: "other" as const, mobile: true };
     expect(chooseEngine(forced)).toBe("probe");
     expect(chooseEngine({ ...forced, fits: true })).toBe("webgpu");
     expect(chooseEngine({ ...forced, fits: false })).toBe("webgl2");
   });
-  it("ships switched off", () => {
-    expect(WEBGPU_ENABLED).toBe(false);
+  it("ships switched on", () => {
+    expect(WEBGPU_ENABLED).toBe(true);
   });
-  it("applies to the tiers one constant names: high and medium, never low", () => {
-    expect(WEBGPU_TIERS).toEqual(["high", "medium"]);
+  it("applies to the tiers one constant names: high alone, never medium or low", () => {
+    expect(WEBGPU_TIERS).toEqual(["high"]);
     // A change of tiers is a change to that constant alone: the rule reads it.
     const medium = { ...high, tier: "medium" as const };
-    expect(chooseEngine(medium, ["high"])).toBe("webgl2");
-    expect(chooseEngine({ ...medium, fits: true }, ["high"])).toBe("webgl2");
+    expect(chooseEngine(medium, ["high", "medium"])).toBe("probe");
+    expect(chooseEngine({ ...medium, fits: true }, ["high", "medium"])).toBe("webgpu");
     expect(chooseEngine(high, ["high"])).toBe("probe");
     expect(chooseEngine(high, [])).toBe("webgl2");
+  });
+});
+
+describe("the rule on each browser and platform, the switch on", () => {
+  /** The rule's answer for a host at `tier`, with no override, nothing
+   * remembered, and an adapter that fits. */
+  const answer = (
+    host: { chromium: boolean; os: "mac" | "windows" | "other"; mobile: boolean },
+    tier: "high" | "medium" | "low",
+    over: { override?: "webgl2" | "webgpu" | null; remembered?: boolean; fits?: boolean | null } = {},
+  ) => chooseEngine({ tier, override: null, remembered: false, on: true, fits: true, ...host, ...over });
+
+  const CHROME_MAC = { chromium: true, os: "mac", mobile: false } as const;
+  const EDGE_WINDOWS = { chromium: true, os: "windows", mobile: false } as const;
+  const SAFARI_MAC = { chromium: false, os: "mac", mobile: false } as const;
+  const FIREFOX_MAC = { chromium: false, os: "mac", mobile: false } as const;
+  const FIREFOX_WINDOWS = { chromium: false, os: "windows", mobile: false } as const;
+  const CHROME_ANDROID = { chromium: true, os: "other", mobile: true } as const;
+  const CHROME_LINUX = { chromium: true, os: "other", mobile: false } as const;
+  // A tablet whose browser reports a desktop platform: mobile decides.
+  const CHROME_TABLET_WINDOWS = { chromium: true, os: "windows", mobile: true } as const;
+
+  it("gives WebGPU on the high tier to desktop Chrome and Edge on macOS and Windows, where the adapter fits", () => {
+    expect(answer(CHROME_MAC, "high")).toBe("webgpu");
+    expect(answer(EDGE_WINDOWS, "high")).toBe("webgpu");
+    expect(answer(CHROME_MAC, "high", { fits: null })).toBe("probe");
+    expect(answer(EDGE_WINDOWS, "high", { fits: null })).toBe("probe");
+    expect(answer(CHROME_MAC, "high", { fits: false })).toBe("webgl2");
+    expect(answer(EDGE_WINDOWS, "high", { fits: false })).toBe("webgl2");
+  });
+
+  it("keeps medium and low on WebGL2 there, without asking the adapter", () => {
+    for (const host of [CHROME_MAC, EDGE_WINDOWS]) {
+      for (const tier of ["medium", "low"] as const) {
+        expect(answer(host, tier)).toBe("webgl2");
+        expect(answer(host, tier, { fits: null })).toBe("webgl2");
+      }
+    }
+  });
+
+  it("keeps Safari, Firefox, Chrome on Android and on Linux, and a tablet, on WebGL2 at every tier, without asking the adapter", () => {
+    for (const host of [SAFARI_MAC, FIREFOX_MAC, FIREFOX_WINDOWS, CHROME_ANDROID, CHROME_LINUX, CHROME_TABLET_WINDOWS]) {
+      for (const tier of ["high", "medium", "low"] as const) {
+        expect(answer(host, tier)).toBe("webgl2");
+        expect(answer(host, tier, { fits: null })).toBe("webgl2");
+      }
+    }
+  });
+
+  it("keeps a remembered failure on WebGL2", () => {
+    expect(answer(CHROME_MAC, "high", { remembered: true })).toBe("webgl2");
+    expect(answer(EDGE_WINDOWS, "high", { remembered: true, fits: null })).toBe("webgl2");
+  });
+
+  it("lets the address decide everywhere: ?engine=webgpu past the tier, the browser, the platform and the memory, not the adapter; ?engine=webgl2 outright", () => {
+    for (const host of [CHROME_MAC, EDGE_WINDOWS, SAFARI_MAC, FIREFOX_WINDOWS, CHROME_ANDROID, CHROME_LINUX]) {
+      for (const tier of ["high", "medium", "low"] as const) {
+        expect(answer(host, tier, { override: "webgpu", remembered: true, fits: null })).toBe("probe");
+        expect(answer(host, tier, { override: "webgpu", remembered: true })).toBe("webgpu");
+        expect(answer(host, tier, { override: "webgpu", fits: false })).toBe("webgl2");
+        expect(answer(host, tier, { override: "webgl2" })).toBe("webgl2");
+      }
+    }
   });
 });
 
@@ -206,7 +270,7 @@ describe("what a failure of the running WebGPU engine does: a live swap, never a
             const remembered = stored && holds;
             const url = act.pin ? "webgl2" : override;
             for (const tier of WEBGPU_TIERS) {
-              expect(chooseEngine({ tier, override: url, remembered, on: true, fits: true })).toBe(act.engine);
+              expect(chooseEngine({ tier, override: url, remembered, on: true, fits: true, chromium: true, os: "windows", mobile: false })).toBe(act.engine);
             }
           }
         }
@@ -218,14 +282,21 @@ describe("what a failure of the running WebGPU engine does: a live swap, never a
 describe("the rule's later rungs", () => {
   it("gives WebGL2 to a tier below one it gave WebGL2, so a ladder's later rungs are WebGL2 by the rule", () => {
     const order = ["low", "medium", "high"] as const;
-    for (const override of [null, "webgl2", "webgpu"] as const) {
-      for (const remembered of [false, true]) {
-        for (const on of [false, true]) {
-          for (const fits of [false, true]) {
-            for (const [i, upper] of order.entries()) {
-              if (chooseEngine({ tier: upper, override, remembered, on, fits }) !== "webgl2") continue;
-              for (const lower of order.slice(0, i)) {
-                expect(chooseEngine({ tier: lower, override, remembered, on, fits })).toBe("webgl2");
+    const hosts = [
+      { chromium: true, os: "mac", mobile: false },
+      { chromium: false, os: "mac", mobile: false },
+      { chromium: true, os: "other", mobile: true },
+    ] as const;
+    for (const host of hosts) {
+      for (const override of [null, "webgl2", "webgpu"] as const) {
+        for (const remembered of [false, true]) {
+          for (const on of [false, true]) {
+            for (const fits of [false, true]) {
+              for (const [i, upper] of order.entries()) {
+                if (chooseEngine({ tier: upper, override, remembered, on, fits, ...host }) !== "webgl2") continue;
+                for (const lower of order.slice(0, i)) {
+                  expect(chooseEngine({ tier: lower, override, remembered, on, fits, ...host })).toBe("webgl2");
+                }
               }
             }
           }
@@ -262,7 +333,7 @@ describe("resolveWebGpu", () => {
     vi.useRealTimers();
   });
 
-  const high = { tier: "high" as const, override: null, remembered: false, on: true, fits: null };
+  const high = { tier: "high" as const, override: null, remembered: false, on: true, fits: null, chromium: true, os: "mac" as const, mobile: false };
   const fitting: AdapterReport = {
     limits: { ...DEFAULT_LIMITS, maxInterStageShaderVariables: 28 },
     isFallbackAdapter: false,
