@@ -10,6 +10,33 @@
 # replacement (its schema marks them; the `build` label below lists them),
 # or that a real stopped machine plans no change (the first run's steps).
 
+# Every variable pinned to its default, so that a terraform.tfvars in this
+# directory (git-ignored, a person's own) cannot change what a run tests.
+# tests/variables.test.mjs checks that each value here is variables.tf's
+# default, so the runs below still test the defaults.
+variables {
+  gcp_project_id         = "fps-csarko"
+  gcp_region             = "us-west1"
+  zone                   = "us-west1-a"
+  instance_name          = "test-rig"
+  machine_type           = "g2-standard-4"
+  gpu_type               = "nvidia-l4-vws"
+  image                  = "projects/windows-cloud/global/images/family/windows-2025"
+  baked_image            = ""
+  boot_disk_size_gb      = 50
+  boot_disk_type         = "pd-balanced"
+  spot                   = false
+  running                = true
+  max_run_hours          = 4
+  backstop_stop_schedule = "0 9 * * *"
+  desktop_user           = "hiker"
+  enable_display         = false
+  subnet_cidr            = "10.60.0.0/24"
+  direct_access_cidrs    = []
+  billing_account_id     = ""
+  monthly_budget_usd     = 45
+}
+
 mock_provider "google" {
   # The machine as Google reports it, when a plan reads it (running = false):
   # it exists, without a build label (a test cannot hand the mock this
@@ -39,11 +66,11 @@ run "defaults" {
   assert {
     condition = (
       google_compute_instance.test_rig.machine_type == "g2-standard-4" &&
-      google_compute_instance.test_rig.zone == "us-west1-b" &&
+      google_compute_instance.test_rig.zone == "us-west1-a" &&
       google_compute_instance.test_rig.guest_accelerator[0].type == "nvidia-l4-vws" &&
       google_compute_instance.test_rig.guest_accelerator[0].count == 1
     )
-    error_message = "The default machine is g2-standard-4 with one L4 carrying the RTX Virtual Workstation licence, in us-west1-b."
+    error_message = "The default machine is g2-standard-4 with one L4 carrying the RTX Virtual Workstation licence, in us-west1-a."
   }
 
   assert {

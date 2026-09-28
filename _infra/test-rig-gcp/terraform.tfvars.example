@@ -2,7 +2,7 @@
 # value below is the default; nothing is required.
 
 # gcp_project_id = "fps-csarko"
-# zone           = "us-west1-b"
+# zone           = "us-west1-a"  # a change replaces the machine; see README.md, Zones and stock-outs
 
 # The GPU. The default is the L4 with the RTX Virtual Workstation licence; the
 # plain L4 is for a control run, the T4 needs the other machine type.

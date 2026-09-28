@@ -12,15 +12,22 @@ variable "gcp_region" {
 
 variable "zone" {
   description = <<-EOT
-    Zone the machine runs in. us-west1-b offers all four GPU choices below
-    (nvidia-l4-vws, nvidia-l4, nvidia-tesla-t4-vws, nvidia-tesla-t4), so
-    switching between them never means moving zones. In us-west1, as of
-    2026-09-27, us-west1-a offers the same four and us-west1-c the two L4s
-    only. A zone outside var.gcp_region also needs gcp_region changed; a
-    change of zone replaces the machine.
+    Zone the machine runs in: us-west1-a, where it was made. us-west1-a and
+    us-west1-b offer all four GPU choices below (nvidia-l4-vws, nvidia-l4,
+    nvidia-tesla-t4-vws, nvidia-tesla-t4), so switching between them never
+    means moving zones; us-west1-c offers the two L4s only (2026-09-27).
+    Offered is not available: on 2026-09-28 us-west1-b refused to create a
+    g2-standard-4 with nvidia-l4-vws ("does not have enough resources
+    available ... STOCKOUT ... Consider trying your request in the us-west1-a
+    zone(s)"). A stock-out can refuse the start of a stopped machine as well
+    as a create: a stopped machine holds no GPU. A change of zone replaces
+    the machine and its disk, so a create refused for stock is moved to
+    another zone before the machine exists (a refused first apply leaves no
+    machine to replace), and a refused start is retried later in the same
+    zone. A zone outside var.gcp_region also needs gcp_region changed.
   EOT
   type        = string
-  default     = "us-west1-b"
+  default     = "us-west1-a"
 }
 
 variable "instance_name" {
@@ -151,7 +158,8 @@ variable "max_run_hours" {
     Compute Engine stops the machine this many hours after each start, so one
     left running costs at most this many hours. Whole minutes, from 1 to 24:
     at least an hour because the limit also runs during a new machine's
-    first-boot set-up (about 40 minutes), which must never be stopped. The
+    first-boot set-up (7 min 39 s on the first real boot), which must never be
+    stopped. The
     clock starts again at every start, not at a restart from inside Windows.
     Changing it replaces the machine and its disk (the provider cannot change
     a machine's run limit in place), which is refused while running is false.
