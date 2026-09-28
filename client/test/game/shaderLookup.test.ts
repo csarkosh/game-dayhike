@@ -775,7 +775,7 @@ describe("the lookup's key", () => {
     };
     const lookup = src("shaderLookup.ts");
     const stored = createHash("sha256")
-      .update(slice(lookup, "export function translatorInput(", "/** Whether a stage turns Tint"))
+      .update(slice(src("wgslFormat.ts"), "export function translatorInput(", "/** Whether a stage turns Tint"))
       .update(slice(lookup, "  const translate = (stage: StageRecord): string => {", "  // Deliberately `async` with no `await`"))
       .update(slice(src("wgslStore.ts"), "async function pack(", "/** What `pack` made"))
       .digest("hex");

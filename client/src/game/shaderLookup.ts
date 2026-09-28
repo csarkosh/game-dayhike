@@ -42,16 +42,11 @@ import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { WebGPUTintWASM } from "@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { ShaderLookupMode } from "./engineChoice.js";
-import { sha256Hex } from "./sha256.js";
+import { LOOKUP_FORMAT, lookupSalt, stageKey, translatorInput, uniformityOff, type Stage } from "./wgslFormat.js";
 import { loadWgslStore } from "./wgslStore.js";
 
-/** The format of the key and of what is stored under it. A change to how
- * the key is made, or to what is stored for a key (the text composed for the
- * first translator, `translatorInput`; the translation, `translate` in
- * `lookUpShaders`; the packing, `pack` in `wgslStore.ts`) bumps it, so that
- * no entry made the old way is reachable; `shaderLookup.test.ts` pins the
- * three by their text beside it. */
-export const LOOKUP_FORMAT = "dayhike-wgsl/1";
+// The key and the salt, in a module the build's tools load too (`wgslFormat.ts`).
+export { LOOKUP_FORMAT, lookupSalt, stageKey, translatorInput, uniformityOff, type Stage };
 
 /** How long the engine's maker waits for the sources to be read into memory,
  * opening and reading together (less where its start's budget leaves less):
@@ -72,17 +67,9 @@ export const WGSL_HOLD_MAX_MS = 120_000;
 const GLSL = 0;
 const WGSL = 1;
 
-/** What Babylon 9.18 puts before a non-raw stage's defines and code
- * (`_compilePipelineStageDescriptor`, webgpuEngine.pure.js). */
-const VERSION_PREFIX = "#version 450\n";
-/** The define a stage turns Tint's uniformity analysis off with. */
-const UNIFORMITY_OFF = "#define DISABLE_UNIFORMITY_ANALYSIS";
-
 /** The name under which the report counts the stages found among those this
  * page itself translated while the start's WGSL was held. */
 const PAGE = "page";
-
-export type Stage = "vertex" | "fragment";
 
 /**
  * One source of WGSL: the browser's store (`wgslStore.ts`), and next, the
@@ -170,15 +157,6 @@ export type ShaderLookupReport = {
   download(): void;
 };
 
-/** The salt: the key's format, Babylon's version (it owns the text around
- * the code and the diagnostic before the WGSL), the translators' own bytes'
- * digests, their WebAssembly and their loaders (`__WGSL_TRANSLATORS__`,
- * computed by the build), and Babylon's page-wide uniformity switch, which
- * no text shows. */
-export function lookupSalt(parts: { babylon: string; translators: string; staticUniformityOff: boolean }): string {
-  return `${LOOKUP_FORMAT}|babylon=${parts.babylon}|${parts.translators}|staticUA=${parts.staticUniformityOff}`;
-}
-
 /** The salt of this build, on the Babylon it runs. */
 export function buildSalt(): string {
   return lookupSalt({
@@ -188,37 +166,6 @@ export function buildSalt(): string {
     translators: typeof __WGSL_TRANSLATORS__ === "string" ? __WGSL_TRANSLATORS__ : "translators=unknown",
     staticUniformityOff: WebGPUTintWASM.DisableUniformityAnalysis,
   });
-}
-
-/** The text Babylon 9.18 hands the first translator for one stage of a
- * non-raw GLSL effect: `_compilePipelineStageDescriptor` passes its version
- * line to `_compileShaderToSpirV`, which puts it and the defines before the
- * code. */
-export function translatorInput(code: string, defines: string | null): string {
-  return VERSION_PREFIX + (defines ? defines + "\n" : "") + code;
-}
-
-/** Whether a stage turns Tint's uniformity analysis off, read as Babylon 9.18
- * reads it: from the processed code, not the defines. */
-export function uniformityOff(code: string): boolean {
-  return code.indexOf(UNIFORMITY_OFF) >= 0;
-}
-
-const encoder = new TextEncoder();
-const SEPARATOR = new Uint8Array([0]);
-
-/** A stage's key: SHA-256 over the salt, the stage, its uniformity switch and
- * the exact text the first translator is handed, each apart by a zero byte. */
-export function stageKey(salt: string, stage: Stage, flag: boolean, glsl: string): string {
-  return sha256Hex(
-    encoder.encode(salt),
-    SEPARATOR,
-    encoder.encode(stage),
-    SEPARATOR,
-    encoder.encode(flag ? "1" : "0"),
-    SEPARATOR,
-    encoder.encode(glsl),
-  );
 }
 
 /** A report for the page, empty, in `mode`. */
