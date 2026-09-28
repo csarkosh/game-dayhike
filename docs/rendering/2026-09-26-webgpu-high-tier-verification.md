@@ -695,9 +695,9 @@ every pose also scored on a 3 × 3 grid. The bar is §7.3's of the design
 
 ## 8. The default, switched on where it was measured faster
 
-As of 2026-09-28 WebGPU is the default engine on the high tier, in a
-Chromium-based browser on macOS or Windows on a device that is not a phone or
-a tablet, where no failure is remembered and the adapter fits
+As of 2026-09-28 WebGPU is the default engine on the high tier, in Google
+Chrome or Microsoft Edge on macOS or Windows on a device that is not a phone
+or a tablet, where no failure is remembered and the adapter fits
 (`chooseEngine`, `engineChoice.ts`; the design, §5.1). Everywhere else the
 game draws with WebGL2, as before. These are the figures that decided it.
 
@@ -726,10 +726,12 @@ drawing at the full frame rate:
 
 **What was not measured.**
 
-- **Other browsers.** Only Chrome. Edge and the desktop launcher are on the
-  WebGPU default by the rule, as Chromium-based, and were not measured
-  themselves. Safari and Firefox were not measured, and the rule keeps them
-  on WebGL2.
+- **Other browsers.** Only Chrome. Edge was not measured: it is on the
+  WebGPU default as the same engine as Chrome. The desktop launcher, an
+  Electron build of Chromium, was not measured and stays on WebGL2 at every
+  tier, as do Brave, Opera, Vivaldi and the other browsers built on Chromium
+  that are neither Chrome nor Edge. Safari and Firefox were not measured, and
+  the rule keeps them on WebGL2.
 - **Other platforms.** Only macOS and Windows. Linux, ChromeOS, Android and
   iOS were not measured, and the rule keeps them on WebGL2.
 - **The medium tier** beyond the canopy and the meadow.
