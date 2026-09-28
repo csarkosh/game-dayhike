@@ -730,7 +730,7 @@ describe("the lookup's key", () => {
     expect(uniformityOff("void main() {}")).toBe(false);
   });
 
-  it("is salted with its format, Babylon's version, the shipped translators' digests and Babylon's page-wide switch", () => {
+  it("is salted with its format, Babylon's version, the shipped translators' digests (WebAssembly and loaders) and Babylon's page-wide switch", () => {
     expect(LOOKUP_FORMAT).toBe("dayhike-wgsl/1");
     expect(lookupSalt({ babylon: "9.18.0", translators: "glslang=aa|twgsl=bb", staticUniformityOff: false })).toBe(
       "dayhike-wgsl/1|babylon=9.18.0|glslang=aa|twgsl=bb|staticUA=false",
@@ -742,10 +742,15 @@ describe("the lookup's key", () => {
       lookupSalt({ babylon: "9.18.0", translators: "glslang=aa|twgsl=bb", staticUniformityOff: true }),
     ];
     expect(new Set(salts).size).toBe(4);
-    // The build's digests are those of the WebAssembly it ships.
-    const digest = (name: string): string =>
-      createHash("sha256").update(readFileSync(resolve(`@babylonjs/core/assets/${name}/${name}.wasm`))).digest("hex");
-    expect(buildSalt()).toBe(`dayhike-wgsl/1|babylon=9.18.0|glslang=${digest("glslang")}|twgsl=${digest("twgsl")}|staticUA=false`);
+    // The build's digests are those of the translators it ships, their
+    // WebAssembly and their loaders.
+    const digest = (file: string): string => createHash("sha256").update(readFileSync(resolve(`@babylonjs/core/assets/${file}`))).digest("hex");
+    expect(buildSalt()).toBe(
+      "dayhike-wgsl/1|babylon=9.18.0" +
+        `|glslang=${digest("glslang/glslang.wasm")}|twgsl=${digest("twgsl/twgsl.wasm")}` +
+        `|glslang.js=${digest("glslang/glslang.js")}|twgsl.js=${digest("twgsl/twgsl.js")}` +
+        "|staticUA=false",
+    );
   });
 });
 

@@ -5,17 +5,19 @@ import { defineConfig } from "vitest/config";
 import { timeLimit } from "./test/helpers/timeLimit.js";
 
 /**
- * The SHA-256 of each shader translator's WebAssembly as Babylon ships it,
- * `glslang=<hex>|twgsl=<hex>`: part of the salt of every key the WebGPU
- * shader lookup makes (`shaderLookup.ts`), so a translator that changes
- * makes every stored translation unreachable. Computed here, once a build,
- * so the page never hashes 2.6 MB.
+ * The SHA-256 of each shader translator as Babylon ships it, its WebAssembly
+ * and its JavaScript loader (which holds the translator's defaults and its
+ * wrapper), `glslang=<hex>|twgsl=<hex>|glslang.js=<hex>|twgsl.js=<hex>`: part
+ * of the salt of every key the WebGPU shader lookup makes
+ * (`shaderLookup.ts`), so a translator that changes makes every stored
+ * translation unreachable. Computed here, once a build, so the page never
+ * hashes 2.7 MB.
  */
 function translatorDigests(): string {
   const resolve = createRequire(import.meta.url).resolve;
-  const digest = (name: string): string =>
-    createHash("sha256").update(readFileSync(resolve(`@babylonjs/core/assets/${name}/${name}.wasm`))).digest("hex");
-  return `glslang=${digest("glslang")}|twgsl=${digest("twgsl")}`;
+  const digest = (name: string, kind: "wasm" | "js"): string =>
+    createHash("sha256").update(readFileSync(resolve(`@babylonjs/core/assets/${name}/${name}.${kind}`))).digest("hex");
+  return `glslang=${digest("glslang", "wasm")}|twgsl=${digest("twgsl", "wasm")}|glslang.js=${digest("glslang", "js")}|twgsl.js=${digest("twgsl", "js")}`;
 }
 
 export default defineConfig({
