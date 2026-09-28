@@ -360,11 +360,26 @@ by its SHA-256 against the page that recorded it, and merged. The pages
 covered: the standard pose on a first and a repeat visit; the trailhead with
 characters in view; the headlamp on; rain; night; a sweep over the poses with
 every material compiled; the weathers and the hours; a party of two. Not yet
-in it: anything recorded on macOS (its texture formats reach the text
-through the defines, §8 item 3), and the low tier. 228 of the stages carry
+in it: the low tier. 228 of the stages carry
 characters outside ASCII (in the game's shader comments); glslang is handed
 them as the page hands them, and the WGSL has no comments (the build checks
 that the map is ASCII).
+
+**What was added from a player's own view.** Every page above was recorded
+with the free camera. 101 more stages were recorded in Chrome 154 on an Apple
+M4, on the high tier, from the view a player has: from the start by day and
+by night with the lamp on, at the canopy, on a walk up the trail, and in a
+party of two. Before them a first visit from the start translated 16 to 25
+stages in the browser in its first seconds (2.0 to 3.1 s on the page's
+thread), a walk 28 to 29 and a party 56 to 64; with them, two first visits
+from the start found 88 and 94 stages in the shipped map and translated
+none. The corpus holds 522 stages, 17,424,519 bytes in the sixteen files.
+The stages recorded on Windows serve a page on macOS and the reverse where
+both ask for the same text: the key does not carry the platform. The map of
+the 522, made on an Apple M4: 28,479,065 bytes raw, 4,916,997 gzip −9,
+518,891 brotli −q 11, none failed, read as one JSON in 25.9 ms; it sits
+under the ceiling with 5 MB to spare, which the next recording of this size
+would use up (the ceiling's note below).
 
 **Line endings.** The recording was first made from a checkout with Windows
 line endings: the game's `.fx` shader files had no line-ending rule, so they
@@ -455,8 +470,8 @@ tool as it starts and serves the map at `<base>wgsl-map.json` once made (a
 request before then waits; one the tool failed to make is a 404, no map), so
 a measurement on the dev server sees what production will. A dev server's
 start so translates the whole corpus wherever no map was made yet (every
-fresh checkout: the map is not committed): the 421 recorded stages take about
-35 s on an Apple M4 and 54 s on a GitHub build runner, beside whatever the
+fresh checkout: the map is not committed): 421 recorded stages took about
+35 s on an Apple M4 and 54 s on a GitHub build runner, 522 take 41 s on the M4, beside whatever the
 dev server may be measuring. With `DAYHIKE_SKIP_WGSL_MAP` set, the dev
 server translates nothing and answers the map's request with a 404; the
 build always translates. Under the suite the URL is empty and no map is
@@ -641,7 +656,8 @@ pipelines as far as the device's queue shows: the map does not remove it.
 1. **The real corpus's size, per tier.** Both tiers together, measured
    (§5.2): 421 stages, a map of 23.4 MB raw, 4.0 MB gzip, 0.49 MB brotli,
    under the 32 MiB ceiling set from it; its JSON read in 18 to 24 ms under
-   Node. Per tier, and in a browser on the slow machine, not yet.
+   Node; with the 101 stages of a player's own view, 522 stages and 28.5 MB.
+   Per tier, and in a browser on the slow machine, not yet.
 2. **What else in the text differs between loads of one page** (§3): two
    loads recorded with `?wgsl=record`, their reports kept whole
    (`JSON.stringify(dayhikeWgsl)`, the stages' `glsl` with them), and each
