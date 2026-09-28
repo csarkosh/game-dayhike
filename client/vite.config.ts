@@ -1,28 +1,31 @@
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import { wgslMapPlugin } from "../tools/wgsl/lib/mapPlugin.mjs";
+import { translatorDigests } from "../tools/wgsl/lib/translators.mjs";
 import { timeLimit } from "./test/helpers/timeLimit.js";
 
-/**
- * The SHA-256 of each shader translator as Babylon ships it, its WebAssembly
- * and its JavaScript loader (which holds the translator's defaults and its
- * wrapper), `glslang=<hex>|twgsl=<hex>|glslang.js=<hex>|twgsl.js=<hex>`: part
- * of the salt of every key the WebGPU shader lookup makes
- * (`shaderLookup.ts`), so a translator that changes makes every stored
- * translation unreachable. Computed here, once a build, so the page never
- * hashes 2.7 MB.
- */
-function translatorDigests(): string {
-  const resolve = createRequire(import.meta.url).resolve;
-  const digest = (name: string, kind: "wasm" | "js"): string =>
-    createHash("sha256").update(readFileSync(resolve(`@babylonjs/core/assets/${name}/${name}.${kind}`))).digest("hex");
-  return `glslang=${digest("glslang", "wasm")}|twgsl=${digest("twgsl", "wasm")}|glslang.js=${digest("glslang", "js")}|twgsl.js=${digest("twgsl", "js")}`;
-}
+/** This package's directory, where its imports resolve from. */
+const CLIENT = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
+  plugins: [
+    // The WGSL map of the shader corpus, the WebGPU shader lookup's first
+    // source: a hashed asset of the WebGPU chunk in the build, made on the dev
+    // server as it starts (`tools/wgsl/lib/mapPlugin.mjs`).
+    wgslMapPlugin({
+      mapFile: fileURLToPath(new URL("shaders/map/wgsl-map.json", import.meta.url)),
+      tool: fileURLToPath(new URL("../tools/wgsl/build-map.mjs", import.meta.url)),
+    }),
+  ],
   define: {
-    __WGSL_TRANSLATORS__: JSON.stringify(translatorDigests()),
+    // The SHA-256 of each shader translator as Babylon ships it, its
+    // WebAssembly and its JavaScript loader, `glslang=<hex>|twgsl=<hex>|
+    // glslang.js=<hex>|twgsl.js=<hex>`: part of the salt of every key the
+    // WebGPU shader lookup makes (`shaderLookup.ts`), so a translator that
+    // changes makes every stored translation unreachable. Computed here, once
+    // a build, so the page never hashes 2.7 MB; by the function the build's
+    // translation of the corpus computes its salt with (`tools/wgsl/`).
+    __WGSL_TRANSLATORS__: JSON.stringify(translatorDigests(CLIENT)),
   },
   // The web build lives under games.csarko.sh/dayhike; the desktop shell serves
   // from its own origin at /. The deploy scripts set DAYHIKE_BASE per build and

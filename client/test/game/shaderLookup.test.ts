@@ -18,11 +18,12 @@ import { parseShaderLookup } from "../../src/game/engineChoice.js";
 import { catchTranslationFailures, disposeHalfMade, type Translators } from "../../src/game/gpuEngine.js";
 import {
   LOOKUP_FORMAT,
-  WGSL_HOLD_MAX_MS,
-  WGSL_HOLD_QUIET_MS,
+  WGSL_KEPT_MAX_CHARS,
   WGSL_SOURCES_MS,
   buildSalt,
+  defaultSources,
   lookUpShaders,
+  openingSource,
   releaseShaderLookup,
   lookupSalt,
   newLookupReport,
@@ -32,6 +33,8 @@ import {
   type ShaderLookupReport,
   type WgslSource,
 } from "../../src/game/shaderLookup.js";
+import { corpusText, mapText, readCorpus } from "../../src/game/wgslFormat.js";
+import { WGSL_MAP_MS, WGSL_MAP_SOURCE, loadWgslMap } from "../../src/game/wgslMap.js";
 import { loadWgslStore, wgslStoreName } from "../../src/game/wgslStore.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { memoryIndexedDb } from "./helpers/memoryIndexedDb.js";
@@ -114,7 +117,6 @@ function memorySource(entries: Record<string, string> = {}, name = "memory", sal
       puts.push(key);
       map.set(key, wgsl);
     },
-    settle: () => void events.push("settle"),
     close: () => void events.push("close"),
   };
   return { source, map, puts, events };
@@ -318,7 +320,7 @@ describe("the WebGPU shader lookup", () => {
     expect(other.events).toEqual(["close"]);
   });
 
-  it("translates a stage two effects share once, while the start's WGSL is held", async () => {
+  it("translates a stage two effects share once", async () => {
     const h = harness();
     const report = await lookUp(h, []);
     await prepare(h);
@@ -341,8 +343,8 @@ describe("the WebGPU shader lookup", () => {
     }
   });
 
-  it("waits for its sources at most 2 s: what has not arrived by then is not there, and a source that lands later is let go", async () => {
-    expect(WGSL_SOURCES_MS).toBe(2_000);
+  it("waits for its sources at most 500 ms: what has not arrived by then is not there, and a source that lands later is let go", async () => {
+    expect(WGSL_SOURCES_MS).toBe(500);
     vi.useFakeTimers();
     const late = memorySource();
     let land: (sources: readonly WgslSource[]) => void = () => undefined;
@@ -350,7 +352,7 @@ describe("the WebGPU shader lookup", () => {
     const ready = lookUpShaders(h.engine, { mode: "on", salt: SALT, sources: () => new Promise((r) => (land = r)), report: newLookupReport("on", SALT) });
     let done = false;
     void ready.then(() => (done = true));
-    await vi.advanceTimersByTimeAsync(1_999);
+    await vi.advanceTimersByTimeAsync(499);
     expect(done).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(done).toBe(true);
@@ -358,48 +360,78 @@ describe("the WebGPU shader lookup", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(late.events).toEqual(["close"]);
     // A source in, whose entries are still arriving: waited for within the
-    // same 2 s, then asked for what it has.
+    // same 500 ms, then asked for what it has.
     const slow: WgslSource = { ...memorySource().source, ready: new Promise(() => undefined) };
     const partly = harness();
     const readyPartly = lookUpShaders(partly.engine, { mode: "on", salt: SALT, sources: () => Promise.resolve([slow]), report: newLookupReport("on", SALT) });
     let partlyDone = false;
     void readyPartly.then(() => (partlyDone = true));
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(250);
     expect(partlyDone).toBe(false);
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(250);
     expect(partlyDone).toBe(true);
+
+    // A source whose read fails does not end the wait for the others: each is
+    // still waited for by its own bound.
+    const refused = Promise.reject(new Error("refused"));
+    refused.catch(() => undefined);
+    const failing: WgslSource = { ...memorySource({}, "failing").source, ready: refused };
+    const patient: WgslSource = { ...memorySource().source, ready: new Promise(() => undefined), waitMs: 1_000 };
+    const mixed = harness();
+    const readyMixed = lookUpShaders(mixed.engine, { mode: "on", salt: SALT, sources: () => Promise.resolve([failing, patient]), report: newLookupReport("on", SALT) });
+    let mixedDone = false;
+    void readyMixed.then(() => (mixedDone = true));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(mixedDone).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mixedDone).toBe(true);
+
+    // A source with a bound of its own is waited for by it, the others by
+    // theirs: the map's 1 s beside a store that never answers.
+    const own: WgslSource = { ...memorySource().source, ready: new Promise(() => undefined), waitMs: 1_000 };
+    const store: WgslSource = { ...memorySource({}, "store").source, ready: new Promise(() => undefined) };
+    const both = harness();
+    const readyBoth = lookUpShaders(both.engine, { mode: "on", salt: SALT, sources: () => Promise.resolve([own, store]), report: newLookupReport("on", SALT) });
+    let bothDone = false;
+    void readyBoth.then(() => (bothDone = true));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(bothDone).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(bothDone).toBe(true);
   });
 
-  it("lets the start's WGSL go after 30 s without a preparation, or 120 s after the engine stood, whichever comes first", async () => {
-    expect([WGSL_HOLD_QUIET_MS, WGSL_HOLD_MAX_MS]).toEqual([30_000, 120_000]);
+  it("keeps what it translated for the engine's life, up to 32 MB of text: an effect made again minutes after the start finds its stages (the rain's)", async () => {
+    expect(WGSL_KEPT_MAX_CHARS).toBe(33_554_432);
     vi.useFakeTimers();
-    const quiet = memorySource();
-    const h = harness();
-    await lookUp(h, [quiet.source]);
-    await vi.advanceTimersByTimeAsync(29_999);
-    expect(quiet.events).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(quiet.events).toEqual(["settle"]);
-
-    // A source that takes no writes, so that only the page's own held
+    // A source that takes no writes, so that only the page's own kept
     // translations can spare a translation.
-    const busy = { events: [] as string[] };
-    const busySource: WgslSource = { name: "busy", salt: SALT, get: () => null, settle: () => void busy.events.push("settle") };
-    const b = harness();
-    await lookUp(b, [busySource]);
-    for (let s = 0; s < 5; s++) {
-      await vi.advanceTimersByTimeAsync(20_000);
-      await prepare(b, { defines: `#define STEP${s}` });
-    }
-    expect(busy.events).toEqual([]);
-    await vi.advanceTimersByTimeAsync(20_000);
-    expect(busy.events).toEqual(["settle"]);
-    // After it, a stage two effects share is translated each time, the
-    // translators being loaded.
-    const compiledBefore = b.compiled.length;
-    await prepare(b, { defines: "#define LATER" });
-    await prepare(b, { defines: "#define LATER", fragment: `${FRAGMENT}\n// another` });
-    expect(b.compiled.length - compiledBefore).toBe(4);
+    const none: WgslSource = { name: "none", salt: SALT, get: () => null };
+    const h = harness();
+    const report = await lookUp(h, [none]);
+    await prepare(h);
+    await vi.advanceTimersByTimeAsync(600_000);
+    const again = await prepare(h);
+    expect(again.inTheCall).toEqual(["before", "after", "ready"]);
+    expect(h.compiled.map(([stage]) => stage)).toEqual(["vertex", "fragment"]);
+    expect(report.hitsBySource).toEqual({ page: 2 });
+
+    // Past the bound a translation is not kept, and is translated again when
+    // asked again: here the bound holds the vertex stage's WGSL and no more.
+    const small = harness();
+    const vertexWgsl = `// WGSL of\n${translatorInput(VERTEX, DEFINES)}`;
+    const ready = lookUpShaders(small.engine, {
+      mode: "on",
+      salt: SALT,
+      sources: () => Promise.resolve([none]),
+      report: newLookupReport("on", SALT),
+      maxKeptChars: vertexWgsl.length,
+    });
+    await handOver(small.engine, small.translators);
+    await ready;
+    await prepare(small);
+    expect(small.modules[0]).toBe(vertexWgsl);
+    await prepare(small);
+    expect(small.compiled.map(([stage]) => stage)).toEqual(["vertex", "fragment", "fragment"]);
   });
 
   it("notifies the compile observables on a hit as on a miss: once each, before the effect is ready", async () => {
@@ -515,8 +547,40 @@ describe("the WebGPU shader lookup", () => {
       ["memory", 0, 0],
       ["memory", 0, 0],
     ]);
-    // It reads whole as JSON, the form `download()` saves.
+    // It reads whole as JSON.
     expect(JSON.parse(JSON.stringify(report)).effects[0].stages[1].wgsl).toBe(first.modules[1]);
+  });
+
+  it("with ?wgsl=record downloads the stages it prepared as a corpus file, the form the build translates ahead", async () => {
+    const report = newLookupReport("record", SALT);
+    const first = harness();
+    await lookUp(first, [], "record", report);
+    await prepare(first);
+    // The same effect again, and one sharing its vertex stage: each stage once.
+    const second = harness();
+    await lookUp(second, [], "record", report);
+    await prepare(second);
+    await prepare(second, { fragment: `#define DISABLE_UNIFORMITY_ANALYSIS\n${FRAGMENT}` });
+    const saved: Blob[] = [];
+    const link = { href: "", download: "", click: vi.fn() };
+    vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      saved.push(blob as Blob);
+      return "blob:corpus";
+    });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    vi.stubGlobal("document", { createElement: () => link });
+    report.download();
+    expect(link.click).toHaveBeenCalledTimes(1);
+    expect(link.download).toMatch(/^dayhike-wgsl-corpus-\d+\.json$/);
+    const text = await (saved[0] as Blob).text();
+    expect(text).toBe(
+      corpusText([
+        { stage: "vertex", flag: false, glsl: translatorInput(VERTEX, DEFINES) },
+        { stage: "fragment", flag: false, glsl: translatorInput(FRAGMENT, DEFINES) },
+        { stage: "fragment", flag: true, glsl: translatorInput(`#define DISABLE_UNIFORMITY_ANALYSIS\n${FRAGMENT}`, DEFINES) },
+      ]),
+    );
+    expect(readCorpus(text)).toHaveLength(3);
   });
 
   it("counts, but records no effect, without ?wgsl=record", async () => {
@@ -558,7 +622,7 @@ describe("the WebGPU shader lookup", () => {
       if (how === "dispose") h.engine.onDisposeObservable.notifyObservers(h.engine);
       else releaseShaderLookup(h.engine);
       releaseShaderLookup(h.engine);
-      expect(shared.events, how).toEqual(["settle", "close"]);
+      expect(shared.events, how).toEqual(["close"]);
       await prepare(h, { defines: "#define AFTER" });
       expect(shared.puts, how).toHaveLength(2);
     }
@@ -578,7 +642,7 @@ describe("the WebGPU shader lookup", () => {
     });
     await lookUp(h, [shared.source]);
     disposeHalfMade(h.engine);
-    expect(shared.events).toEqual(["settle", "close"]);
+    expect(shared.events).toEqual(["close"]);
     // Babylon's base dispose notifies its dispose observable only at the end,
     // after the effects, textures and scenes (a canary on the installed engine).
     const base = readFileSync(resolve("@babylonjs/core/Engines/abstractEngine.pure.js"), "utf8");
@@ -587,7 +651,7 @@ describe("the WebGPU shader lookup", () => {
     expect(dispose.indexOf("this.scenes[0].dispose();")).toBeGreaterThan(0);
   });
 
-  it("finds, after the settle, a stored stage the hike had not asked for, and translates again one it had used", async () => {
+  it("finds, minutes after the start, a stored stage the start used and one the hike had not asked for, in the call", async () => {
     const idb = memoryIndexedDb();
     const fromStore = (): Promise<readonly WgslSource[]> => loadWgslStore(SALT, { idb: idb.factory }).then((s) => (s === null ? [] : [s]));
     const lampOn = `${FRAGMENT}\n// the headlamp on`;
@@ -607,16 +671,14 @@ describe("the WebGPU shader lookup", () => {
     await lookUp(second, store === undefined ? [] : [store]);
     await prepare(second);
     expect(second.compiled).toEqual([]);
-    await vi.advanceTimersByTimeAsync(30_000);
-    // The lamp on after the settle: its fragment stage, never asked for, is
-    // found in the call; its vertex stage, the start's, used and let go, is
-    // translated.
+    await vi.advanceTimersByTimeAsync(600_000);
+    // The lamp on: its fragment stage, never asked for, and its vertex stage,
+    // the start's, are both found in the call.
     const lamp = await prepare(second, { fragment: lampOn });
     expect(lamp.inTheCall).toEqual(["before", "after", "ready"]);
-    expect(second.compiled.map(([stage]) => stage)).toEqual(["vertex"]);
-    // The start's effect asked for again: both its stages translated.
+    // The start's effect made again (the rain's case): found.
     await prepare(second);
-    expect(second.compiled.map(([stage]) => stage)).toEqual(["vertex", "vertex", "fragment"]);
+    expect(second.compiled).toEqual([]);
   });
 
   it("keeps a translation in the browser's store, and the next engine finds it there, in the call", async () => {
@@ -653,6 +715,380 @@ describe("the WebGPU shader lookup", () => {
     expect(second.modules).toEqual(first.modules);
     expect(report.hitsBySource).toEqual({ store: 2 });
     expect(store).not.toBe(null);
+  });
+});
+
+/**
+ * The map of translations the build ships (`wgslMap.ts`), the lookup's first
+ * source: fetched while the engine is made, read into memory within the
+ * lookup's bound, never a failure the player sees.
+ */
+describe("the translations shipped with the build", () => {
+  const MAP_URL = "/dayhike/assets/wgsl-map-Ab12Cd34.json";
+  /** A response with `body`, read with promises alone, so that fake timers
+   * hold nothing of it back. */
+  const response = (body: string, status = 200, headers: Record<string, string> = {}): Response =>
+    ({ ok: status >= 200 && status < 300, status, headers: new Headers(headers), text: () => Promise.resolve(body) }) as Response;
+  /** `fetch` answering every request with `body`. */
+  function serving(body: string, status = 200) {
+    const answer = (() => Promise.resolve(response(body, status))) as unknown as typeof fetch;
+    return { answer };
+  }
+  /** The map of `entries` for this build, as the lookup's source. */
+  const shipped = (entries: ReadonlyMap<string, string>, salt = SALT): WgslSource =>
+    loadWgslMap(MAP_URL, SALT, { fetch: serving(mapText(salt, entries)).answer });
+
+  it("finds a stage in the map, in the call, and counts it under its own name; it takes no writes", async () => {
+    const { kept, first } = await translatedBy();
+    const map = shipped(kept.map);
+    expect([map.name, WGSL_MAP_SOURCE, map.put]).toEqual(["shipped", "shipped", undefined]);
+    const h = harness();
+    const report = await lookUp(h, [map]);
+    const { inTheCall } = await prepare(h);
+    expect(inTheCall).toEqual(["before", "after", "ready"]);
+    expect(h.compiled).toEqual([]);
+    expect(h.modules).toEqual(first.modules);
+    expect(report.hitsBySource).toEqual({ shipped: 2 });
+  });
+
+  it("is asked before the store: a stage both have is the map's; one only the store has is the store's", async () => {
+    const { kept, first } = await translatedBy();
+    const vertexKey = keyOf("vertex", VERTEX);
+    const fragmentKey = keyOf("fragment", FRAGMENT);
+    const map = shipped(new Map([[vertexKey, kept.map.get(vertexKey) as string]]));
+    const store = memorySource({ [vertexKey]: "// the store's vertex", [fragmentKey]: kept.map.get(fragmentKey) as string }, "store");
+    const h = harness();
+    const report = await lookUp(h, [map, store.source], "record");
+    await prepare(h);
+    expect(h.compiled).toEqual([]);
+    expect(h.modules).toEqual(first.modules);
+    expect(report.effects[0]?.stages.map((s) => s.from)).toEqual(["shipped", "store"]);
+    expect(report.hitsBySource).toEqual({ shipped: 1, store: 1 });
+
+    // By default: the map at the URL the build gives, then the store.
+    vi.stubGlobal("fetch", serving(mapText(SALT, kept.map)).answer);
+    const sources = await defaultSources(SALT, MAP_URL);
+    expect(sources.map((source) => source.name)).toEqual(["shipped", "store"]);
+    expect((await defaultSources(SALT)).map((source) => source.name)).toEqual(["store"]);
+    for (const source of sources) source.close?.();
+  });
+
+  it("is a source with nothing in it when the map does not come, is another build's or format's, or does not parse: every stage translated, nothing thrown", async () => {
+    const { kept } = await translatedBy();
+    const text = mapText(SALT, kept.map);
+    const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    const cases: [string, typeof fetch][] = [
+      ["a refused fetch", (() => Promise.reject(new TypeError("Failed to fetch"))) as unknown as typeof fetch],
+      ["an HTTP error", serving("not found", 404).answer],
+      ["another build's map", serving(mapText(`${SALT}x`, kept.map)).answer],
+      ["another format", serving(text.replace('"dayhike-wgsl-map/1"', '"dayhike-wgsl-map/2"')).answer],
+      ["the site's page, not a map", serving("<!doctype html><title>Day Hike</title>").answer],
+    ];
+    for (const [what, answer] of cases) {
+      warn.mockClear();
+      const h = harness();
+      const report = await lookUp(h, [loadWgslMap(MAP_URL, SALT, { fetch: answer })]);
+      const { inTheCall } = await prepare(h);
+      expect(inTheCall, what).toEqual(["before", "after", "ready"]);
+      expect(h.compiled.map(([stage]) => stage), what).toEqual(["vertex", "fragment"]);
+      expect([report.hits, report.misses], what).toEqual([0, 2]);
+      expect(warn, what).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0]), what).toMatch(/^WebGPU shader lookup: no translations shipped with the build \(/);
+    }
+  });
+
+  it("is waited for 1 s at most, by its own bound, when its fetch never answers; is found from when it lands; is aborted when the engine is let go", async () => {
+    expect(WGSL_MAP_MS).toBe(1_000);
+    const { kept } = await translatedBy({ fragment: `${FRAGMENT}\n// the lamp on` });
+    vi.useFakeTimers();
+    let land: (response: Response) => void = () => undefined;
+    const signals: AbortSignal[] = [];
+    const slow = ((_url: string, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      return new Promise<Response>((resolve) => (land = resolve));
+    }) as unknown as typeof fetch;
+    const h = harness();
+    const report = newLookupReport("on", SALT);
+    const ready = lookUpShaders(h.engine, { mode: "on", salt: SALT, sources: () => Promise.resolve([loadWgslMap(MAP_URL, SALT, { fetch: slow })]), report });
+    await handOver(h.engine, h.translators);
+    let done = false;
+    void ready.then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(done).toBe(true);
+    // Not there yet: translated in the call.
+    const early = await prepare(h);
+    expect(early.inTheCall).toEqual(["before", "after", "ready"]);
+    expect(h.compiled.map(([stage]) => stage)).toEqual(["vertex", "fragment"]);
+    // Landed: found from then on.
+    land(response(mapText(SALT, kept.map)));
+    await vi.advanceTimersByTimeAsync(0);
+    await prepare(h, { fragment: `${FRAGMENT}\n// the lamp on` });
+    expect(h.compiled.map(([stage]) => stage)).toEqual(["vertex", "fragment"]);
+    expect(report.hitsBySource).toEqual({ page: 1, shipped: 1 });
+
+    // A fetch still under way when the engine is let go is aborted.
+    const other = harness();
+    const signalsBefore = signals.length;
+    const readyOther = lookUpShaders(other.engine, { mode: "on", salt: SALT, sources: () => Promise.resolve([loadWgslMap(MAP_URL, SALT, { fetch: slow })]), report });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await readyOther;
+    releaseShaderLookup(other.engine);
+    expect(signals.slice(signalsBefore).map((signal) => signal.aborted)).toEqual([true]);
+  });
+
+  it("refuses a map whose Content-Length is over the 32 MiB ceiling, before reading its body: a source with nothing in it", async () => {
+    const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    let read = 0;
+    const big = (() =>
+      Promise.resolve({
+        ...response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "33554433" }),
+        text: () => {
+          read += 1;
+          return Promise.resolve(mapText(SALT, new Map([["aa", "// a"]])));
+        },
+      } as Response)) as unknown as typeof fetch;
+    const map = loadWgslMap(MAP_URL, SALT, { fetch: big });
+    await map.ready;
+    expect([map.get("aa"), read]).toEqual([null, 0]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toBe(
+      `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: 33554433 bytes, over the map's ceiling of 33554432)`,
+    );
+    // At the ceiling, read.
+    const atCeiling = loadWgslMap(MAP_URL, SALT, {
+      fetch: (() => Promise.resolve(response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "33554432" }))) as unknown as typeof fetch,
+    });
+    await atCeiling.ready;
+    expect(atCeiling.get("aa")).toBe("// a");
+  });
+
+  /** A body read a part at a time, only as it is asked for; `hang` keeps it
+   * from ever ending after its parts. What was pulled, and whether it was
+   * cancelled. */
+  function streamOf(parts: Uint8Array[], hang = false) {
+    const seen = { pulled: 0, cancelled: false };
+    let next = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          if (next < parts.length) {
+            seen.pulled += 1;
+            controller.enqueue(parts[next++] as Uint8Array);
+            return undefined;
+          }
+          if (hang) return new Promise<void>(() => undefined);
+          controller.close();
+          return undefined;
+        },
+        cancel() {
+          seen.cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    return { body, seen };
+  }
+  /** A map of one entry, padded with white space to `bytes`. */
+  const padded = (bytes: number): string => {
+    const text = mapText(SALT, new Map([["aa", "// a"]]));
+    return text + " ".repeat(bytes - text.length);
+  };
+  const MIB = new Uint8Array(1_048_576).fill(0x20);
+  const CEILING_REFUSED = `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: past the map's ceiling of 33554432 bytes as it was read)`;
+  /** `fetch` answering with `body` and `headers`, counting the reads of its text. */
+  function answering(body: ReadableStream<Uint8Array> | null, headers: Record<string, string>, text: string) {
+    const reads = { text: 0 };
+    const answer = (() =>
+      Promise.resolve({
+        ...response("", 200, headers),
+        body,
+        text: () => {
+          reads.text += 1;
+          return Promise.resolve(text);
+        },
+      } as Response)) as unknown as typeof fetch;
+    return { answer, reads };
+  }
+
+  it("refuses a body that reads past the 32 MiB ceiling though its Content-Length says less, and stops reading it: never parsed", async () => {
+    const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    for (const headers of [{ "content-length": "1000" }, {}] as Record<string, string>[]) {
+      warn.mockClear();
+      // One shared mebibyte, forty times: the reading stops at the 33rd.
+      const { body, seen } = streamOf(Array.from({ length: 40 }, () => MIB));
+      const { answer, reads } = answering(body, headers, padded(1_000));
+      const map = loadWgslMap(MAP_URL, SALT, { fetch: answer });
+      await map.ready;
+      expect([map.get("aa"), reads.text, seen.pulled, seen.cancelled]).toEqual([null, 0, 33, true]);
+      expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([CEILING_REFUSED]);
+    }
+  });
+
+  it("reads a body of exactly the ceiling through its stream, and finds its entries", async () => {
+    // The map, then white space from the one shared mebibyte to exactly
+    // 33,554,432 bytes: 31 of it whole, and what is left of the last.
+    const head = new TextEncoder().encode(mapText(SALT, new Map([["aa", "// a"]])));
+    const parts = [head, ...Array.from({ length: 31 }, () => MIB), MIB.subarray(0, 1_048_576 - head.length)];
+    expect(parts.reduce((sum, part) => sum + part.length, 0)).toBe(33_554_432);
+    const { body, seen } = streamOf(parts);
+    const { answer, reads } = answering(body, {}, "");
+    const map = loadWgslMap(MAP_URL, SALT, { fetch: answer });
+    await map.ready;
+    expect([map.get("aa"), reads.text, seen.pulled]).toEqual(["// a", 0, 33]);
+  });
+
+  it("decodes a character its body's parts split, whole: three bytes split two and one, four split two and two", async () => {
+    const wgsl = "// € for the euro, 𝄞 for the clef\n@fragment fn main() {}";
+    const text = mapText(SALT, new Map([["aa", wgsl]]));
+    const bytes = new TextEncoder().encode(text);
+    const euro = bytes.indexOf(0xe2);
+    const clef = bytes.indexOf(0xf0);
+    expect([bytes[euro + 1], bytes[euro + 2], bytes[clef + 1], bytes[clef + 2], bytes[clef + 3]]).toEqual([0x82, 0xac, 0x9d, 0x84, 0x9e]);
+    const parts = [bytes.subarray(0, euro + 2), bytes.subarray(euro + 2, clef + 2), bytes.subarray(clef + 2)];
+    const { body, seen } = streamOf(parts);
+    const map = loadWgslMap(MAP_URL, SALT, { fetch: answering(body, {}, "").answer });
+    await map.ready;
+    expect(seen.pulled).toBe(3);
+    expect(map.get("aa")).toBe(wgsl);
+
+    // A body that ends inside a character is not read as though the
+    // character were not there: its last bytes decode to a replacement, and
+    // the map, no longer one, is refused.
+    const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    const cut = new Uint8Array([...new TextEncoder().encode(text), 0xe2, 0x82]);
+    const truncated = streamOf([cut.subarray(0, cut.length - 1), cut.subarray(cut.length - 1)]);
+    const refused = loadWgslMap(MAP_URL, SALT, { fetch: answering(truncated.body, {}, "").answer });
+    await refused.ready;
+    expect(refused.get("aa")).toBe(null);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0]).startsWith("WebGPU shader lookup: no translations shipped with the build (")).toBe(true);
+  });
+
+  it("with no stream to read, refuses a text past the ceiling by its length, before it is parsed", async () => {
+    const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    const over = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(33_554_433)).answer });
+    await over.ready;
+    expect(over.get("aa")).toBe(null);
+    expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([CEILING_REFUSED]);
+    const at = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(33_554_432)).answer });
+    await at.ready;
+    expect(at.get("aa")).toBe("// a");
+  });
+
+  it("while its body is being read, is still waited for 1 s at most, and its reading is stopped when the engine is let go", async () => {
+    vi.useFakeTimers();
+    const { body, seen } = streamOf([MIB], true);
+    const signals: AbortSignal[] = [];
+    const reading = ((_url: string, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      return Promise.resolve({ ...response("", 200, {}), body, text: () => new Promise<string>(() => undefined) } as Response);
+    }) as unknown as typeof fetch;
+    const h = harness();
+    const ready = lookUpShaders(h.engine, {
+      mode: "on",
+      salt: SALT,
+      sources: () => Promise.resolve([loadWgslMap(MAP_URL, SALT, { fetch: reading })]),
+      report: newLookupReport("on", SALT),
+    });
+    let done = false;
+    void ready.then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(done).toBe(true);
+    releaseShaderLookup(h.engine);
+    await vi.advanceTimersByTimeAsync(0);
+    expect([signals.map((signal) => signal.aborted), seen.cancelled]).toEqual([[true], true]);
+  });
+
+  it("holds what it read for the engine's life, asked for or not, and lets it all go when closed", async () => {
+    const map = shipped(
+      new Map([
+        ["aa", "// a"],
+        ["bb", "// b"],
+      ]),
+    );
+    await map.ready;
+    expect([map.get("aa"), map.get("aa"), map.get("cc"), map.get("bb")]).toEqual(["// a", "// a", null, "// b"]);
+    const closing = shipped(new Map([["aa", "// a"]]));
+    await closing.ready;
+    closing.close?.();
+    expect(closing.get("aa")).toBe(null);
+  });
+
+  it("with ?wgsl=verify counts a map entry that differs by one byte from what the page translates", async () => {
+    const { kept, first } = await translatedBy();
+    const fragmentKey = keyOf("fragment", FRAGMENT);
+    const altered = new Map(kept.map);
+    const wgsl = kept.map.get(fragmentKey) as string;
+    altered.set(fragmentKey, `${wgsl.slice(0, -1)}${wgsl.endsWith("x") ? "y" : "x"}`);
+    const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    const h = harness();
+    const report = await lookUp(h, [shipped(altered)], "verify");
+    await prepare(h);
+    expect(report.hitsBySource).toEqual({ shipped: 2 });
+    expect(report.differences).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(h.modules).toEqual([first.modules[0], altered.get(fragmentKey)]);
+    // The map as the build made it: no difference.
+    const same = harness();
+    const sameReport = await lookUp(same, [shipped(kept.map)], "verify");
+    await prepare(same);
+    expect([sameReport.hitsBySource, sameReport.differences]).toEqual([{ shipped: 2 }, 0]);
+  });
+});
+
+/**
+ * The browser's store opens a database before it has anything; the lookup
+ * holds it from the start (`openingSource`), so its opening never holds back
+ * the map shipped beside it.
+ */
+describe("a source still opening", () => {
+  it("does not hold back the sources beside it; one that opens after 500 ms is let go as it lands and never asked", async () => {
+    const { kept } = await translatedBy();
+    vi.useFakeTimers();
+    let open: (source: WgslSource | null) => void = () => undefined;
+    const late = memorySource(Object.fromEntries(kept.map), "store");
+    const beside = memorySource(Object.fromEntries(kept.map), "beside");
+    const h = harness();
+    const report = newLookupReport("on", SALT);
+    const opening = openingSource("store", SALT, new Promise((resolve) => (open = resolve)));
+    const ready = lookUpShaders(h.engine, { mode: "on", salt: SALT, sources: () => Promise.resolve([opening, beside.source]), report });
+    await handOver(h.engine, h.translators);
+    let done = false;
+    void ready.then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(499);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(done).toBe(true);
+    await prepare(h);
+    expect(report.hitsBySource).toEqual({ beside: 2 });
+    open(late.source);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(late.events).toEqual(["close"]);
+    await prepare(h, { defines: "#define LATER" });
+    expect(late.puts).toEqual([]);
+  });
+
+  it("answers, keeps and closes as the source it opened to, once open within 500 ms", async () => {
+    const { kept } = await translatedBy();
+    const store = memorySource(Object.fromEntries(kept.map), "store");
+    const opening = openingSource("store", SALT, Promise.resolve(store.source));
+    const h = harness();
+    const report = await lookUp(h, [opening]);
+    await prepare(h);
+    expect(report.hitsBySource).toEqual({ store: 2 });
+    await prepare(h, { defines: "#define LATER" });
+    expect(store.puts).toEqual([keyOf("vertex", VERTEX, "#define LATER"), keyOf("fragment", FRAGMENT, "#define LATER")]);
+    releaseShaderLookup(h.engine);
+    expect(store.events).toEqual(["close"]);
+    // A store the browser refuses is none: nothing asked, nothing thrown.
+    const none = openingSource("store", SALT, Promise.resolve(null));
+    await none.ready;
+    expect(none.get(keyOf("vertex", VERTEX))).toBe(null);
+    expect(() => none.put?.("key", "// wgsl")).not.toThrow();
   });
 });
 
@@ -775,7 +1211,7 @@ describe("the lookup's key", () => {
     };
     const lookup = src("shaderLookup.ts");
     const stored = createHash("sha256")
-      .update(slice(lookup, "export function translatorInput(", "/** Whether a stage turns Tint"))
+      .update(slice(src("wgslFormat.ts"), "export function translatorInput(", "/** Whether a stage turns Tint"))
       .update(slice(lookup, "  const translate = (stage: StageRecord): string => {", "  // Deliberately `async` with no `await`"))
       .update(slice(src("wgslStore.ts"), "async function pack(", "/** What `pack` made"))
       .digest("hex");

@@ -33,8 +33,8 @@
  * pipeline context and builds the render pipeline from `stages` straight
  * after (`checkNonFloatVertexBuffers`, `buffer.nonFloatVertexBuffers.js`).
  * So every source answers from memory, read in while the engine is made
- * (`lookUpShaders`' promise, which the engine's maker waits for within
- * `WGSL_SOURCES_MS`); the translators are loaded before the engine is handed
+ * (`lookUpShaders`' promise, which the engine's maker waits for within each
+ * source's bound); the translators are loaded before the engine is handed
  * over, so a stage not found is translated at once; and keeping a new
  * translation is never waited on. Its canaries are in `shaderLookup.test.ts`.
  */
@@ -42,52 +42,44 @@ import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { WebGPUTintWASM } from "@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { ShaderLookupMode } from "./engineChoice.js";
-import { sha256Hex } from "./sha256.js";
-import { loadWgslStore } from "./wgslStore.js";
+import { LOOKUP_FORMAT, corpusText, lookupSalt, stageKey, translatorInput, uniformityOff, type Stage } from "./wgslFormat.js";
+import { loadWgslMap } from "./wgslMap.js";
+import { WGSL_START_MAX_BYTES, loadWgslStore } from "./wgslStore.js";
 
-/** The format of the key and of what is stored under it. A change to how
- * the key is made, or to what is stored for a key (the text composed for the
- * first translator, `translatorInput`; the translation, `translate` in
- * `lookUpShaders`; the packing, `pack` in `wgslStore.ts`) bumps it, so that
- * no entry made the old way is reachable; `shaderLookup.test.ts` pins the
- * three by their text beside it. */
-export const LOOKUP_FORMAT = "dayhike-wgsl/1";
+// The key and the salt, in a module the build's tools load too (`wgslFormat.ts`).
+export { LOOKUP_FORMAT, lookupSalt, stageKey, translatorInput, uniformityOff, type Stage };
 
-/** How long the engine's maker waits for the sources to be read into memory,
- * opening and reading together (less where its start's budget leaves less):
- * a stage asked for before its entry has landed is a miss, translated; an
- * entry that lands later is found from then on. The device's request runs
- * meanwhile. */
-export const WGSL_SOURCES_MS = 2_000;
-/** The start settles once no preparation has come for this long… */
-export const WGSL_HOLD_QUIET_MS = 30_000;
-/** …or this long after the engine stood, whichever comes first. The WGSL the
- * start used is then let go, the page's own translations and each source's
- * entries that were asked for; a source keeps those not asked for yet. A
- * stage asked for again after that is translated, the translators being
- * loaded. */
-export const WGSL_HOLD_MAX_MS = 120_000;
+/** How long the engine's maker waits for a source to be read into memory,
+ * opening and reading together, where the source names no bound of its own
+ * (`WgslSource.waitMs`), and for the list of sources to come (less where its
+ * start's budget leaves less): a stage asked for before its entry has landed
+ * is a miss, translated; an entry that lands later is found from then on.
+ * The browser's store opened in 2 to 6 ms and answered a start's reads within
+ * 83 ms on a machine with 4 virtual CPUs, whose device came 39 ms after the
+ * read began; a database that never answers adds the whole bound to the
+ * start, so it is short. */
+export const WGSL_SOURCES_MS = 500;
+/** The most WGSL text the page keeps of its own translations, for the
+ * engine's life: 32 MB of characters (ASCII, which V8 keeps a byte a
+ * character), the bound the browser's store reads a start's entries in by
+ * (`WGSL_START_MAX_BYTES`). A stage used at the start and asked for again
+ * later (an effect made again, as the rain does) is found, not translated
+ * again on the page's thread; past the bound a new translation is not kept
+ * here, and the store keeps it for the next visit. */
+export const WGSL_KEPT_MAX_CHARS = WGSL_START_MAX_BYTES;
 
 /** `ShaderLanguage.GLSL` and `ShaderLanguage.WGSL`. */
 const GLSL = 0;
 const WGSL = 1;
 
-/** What Babylon 9.18 puts before a non-raw stage's defines and code
- * (`_compilePipelineStageDescriptor`, webgpuEngine.pure.js). */
-const VERSION_PREFIX = "#version 450\n";
-/** The define a stage turns Tint's uniformity analysis off with. */
-const UNIFORMITY_OFF = "#define DISABLE_UNIFORMITY_ANALYSIS";
-
 /** The name under which the report counts the stages found among those this
- * page itself translated while the start's WGSL was held. */
+ * page itself translated. */
 const PAGE = "page";
 
-export type Stage = "vertex" | "fragment";
-
 /**
- * One source of WGSL: the browser's store (`wgslStore.ts`), and next, the
- * translations shipped with the build. Every answer comes from memory, at
- * once: a preparation never waits (see the module's comment).
+ * One source of WGSL: the translations shipped with the build (`wgslMap.ts`),
+ * and the browser's store (`wgslStore.ts`). Every answer comes from memory,
+ * at once: a preparation never waits (see the module's comment).
  */
 export type WgslSource = {
   /** How the report names it (`hitsBySource`, `StageRecord.from`). */
@@ -103,11 +95,14 @@ export type WgslSource = {
   put?(key: string, wgsl: string): void;
   /** Resolves once its entries are in memory. The engine's maker waits for
    * it within its bound; an entry that lands after the engine is handed over
-   * is found from then on. Absent: in memory from the start. */
+   * is found from then on. Absent: in memory from the start. What it read is
+   * held for the engine's life. */
   readonly ready?: Promise<void>;
-  /** The start has settled: lets go of the WGSL it held and was asked for,
-   * keeping what has not been asked for yet; the keys may stay. */
-  settle?(): void;
+  /** How long the engine's maker waits for `ready`, from when the sources
+   * were asked for: its own bound, where it has one (the map shipped with the
+   * build, `WGSL_MAP_MS`); `WGSL_SOURCES_MS` where not. Always within the
+   * start's own budget. */
+  readonly waitMs?: number;
   /** Lets go of everything it holds, connections included. */
   close?(): void;
 };
@@ -146,8 +141,9 @@ export type EffectRecord = {
 
 /**
  * What the lookup reports, one object for the page, on `globalThis` as
- * `dayhikeWgsl` for a measurement to read or `download()`. The counters are
- * always kept; the effects only with `?wgsl=record`.
+ * `dayhikeWgsl` for a measurement to read, whose recorded stages
+ * `download()` saves as a corpus. The counters are always kept; the effects
+ * only with `?wgsl=record`.
  */
 export type ShaderLookupReport = {
   mode: Exclude<ShaderLookupMode, "off">;
@@ -166,18 +162,12 @@ export type ShaderLookupReport = {
    * WGSL, differs from what Babylon's own path makes of the same effect. */
   differences: number;
   effects: EffectRecord[];
-  /** Saves the report as a JSON file. */
+  /** Saves the stages of the effects recorded as a corpus file
+   * (`corpusText`), the form the build translates ahead (`tools/wgsl/`):
+   * dropped into the corpus, it is built. Empty without `?wgsl=record`. The
+   * report whole is `JSON.stringify(dayhikeWgsl)`. */
   download(): void;
 };
-
-/** The salt: the key's format, Babylon's version (it owns the text around
- * the code and the diagnostic before the WGSL), the translators' own bytes'
- * digests, their WebAssembly and their loaders (`__WGSL_TRANSLATORS__`,
- * computed by the build), and Babylon's page-wide uniformity switch, which
- * no text shows. */
-export function lookupSalt(parts: { babylon: string; translators: string; staticUniformityOff: boolean }): string {
-  return `${LOOKUP_FORMAT}|babylon=${parts.babylon}|${parts.translators}|staticUA=${parts.staticUniformityOff}`;
-}
 
 /** The salt of this build, on the Babylon it runs. */
 export function buildSalt(): string {
@@ -188,37 +178,6 @@ export function buildSalt(): string {
     translators: typeof __WGSL_TRANSLATORS__ === "string" ? __WGSL_TRANSLATORS__ : "translators=unknown",
     staticUniformityOff: WebGPUTintWASM.DisableUniformityAnalysis,
   });
-}
-
-/** The text Babylon 9.18 hands the first translator for one stage of a
- * non-raw GLSL effect: `_compilePipelineStageDescriptor` passes its version
- * line to `_compileShaderToSpirV`, which puts it and the defines before the
- * code. */
-export function translatorInput(code: string, defines: string | null): string {
-  return VERSION_PREFIX + (defines ? defines + "\n" : "") + code;
-}
-
-/** Whether a stage turns Tint's uniformity analysis off, read as Babylon 9.18
- * reads it: from the processed code, not the defines. */
-export function uniformityOff(code: string): boolean {
-  return code.indexOf(UNIFORMITY_OFF) >= 0;
-}
-
-const encoder = new TextEncoder();
-const SEPARATOR = new Uint8Array([0]);
-
-/** A stage's key: SHA-256 over the salt, the stage, its uniformity switch and
- * the exact text the first translator is handed, each apart by a zero byte. */
-export function stageKey(salt: string, stage: Stage, flag: boolean, glsl: string): string {
-  return sha256Hex(
-    encoder.encode(salt),
-    SEPARATOR,
-    encoder.encode(stage),
-    SEPARATOR,
-    encoder.encode(flag ? "1" : "0"),
-    SEPARATOR,
-    encoder.encode(glsl),
-  );
 }
 
 /** A report for the page, empty, in `mode`. */
@@ -233,10 +192,11 @@ export function newLookupReport(mode: Exclude<ShaderLookupMode, "off">, salt: st
     differences: 0,
     effects: [],
     download() {
-      const url = URL.createObjectURL(new Blob([JSON.stringify(this)], { type: "application/json" }));
+      const corpus = corpusText(this.effects.flatMap((effect) => effect.stages));
+      const url = URL.createObjectURL(new Blob([corpus], { type: "application/json" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = `dayhike-wgsl-${Date.now()}.json`;
+      link.download = `dayhike-wgsl-corpus-${Date.now()}.json`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 0);
     },
@@ -250,9 +210,55 @@ function pageReport(mode: Exclude<ShaderLookupMode, "off">, salt: string): Shade
   return page.dayhikeWgsl;
 }
 
-/** The browser's store for `salt`, as the lookup's one source by default. */
-export function defaultSources(salt: string): Promise<readonly WgslSource[]> {
-  return loadWgslStore(salt).then((store) => (store === null ? [] : [store]));
+/**
+ * The lookup's sources by default: the translations shipped with the build,
+ * the map at `mapUrl` (none where it is empty, as under the suite), then the
+ * browser's store for `salt`. Each comes in on its own, so neither holds the
+ * other back.
+ */
+export function defaultSources(salt: string, mapUrl = ""): Promise<readonly WgslSource[]> {
+  const store = openingSource("store", salt, loadWgslStore(salt));
+  return Promise.resolve(mapUrl === "" ? [store] : [loadWgslMap(mapUrl, salt), store]);
+}
+
+/**
+ * A source still opening (`opening`), as one the lookup can hold from the
+ * start: it has nothing until it opens, and from then answers as the source
+ * it opened to. One that has not opened within `ms` (the lookup's own bound,
+ * counted from the same moment, as it is made with the others) is closed as
+ * it lands and never asked, as a list of sources that comes late is. So the
+ * browser's store, which opens a database first, never holds back the map
+ * shipped with the build beside it.
+ */
+export function openingSource(name: string, salt: string, opening: Promise<WgslSource | null>, ms: number = WGSL_SOURCES_MS): WgslSource {
+  let open: WgslSource | null = null;
+  let closed = false;
+  const landing = opening.catch(() => null);
+  const ready = within(landing, ms).then((source): Promise<void> | undefined => {
+    if (source === null) {
+      // None, or too late: let go of one that lands after all.
+      void landing.then((late) => closeQuietly(late));
+      return undefined;
+    }
+    if (closed) {
+      closeQuietly(source);
+      return undefined;
+    }
+    open = source;
+    return source.ready;
+  });
+  return {
+    name,
+    salt,
+    ready: ready.then(() => undefined),
+    get: (key) => open?.get(key) ?? null,
+    put: (key, wgsl) => open?.put?.(key, wgsl),
+    close: () => {
+      closed = true;
+      open?.close?.();
+      open = null;
+    },
+  };
 }
 
 /** What the lookup uses of a WebGPU engine: Babylon 9.18's own members. */
@@ -291,6 +297,16 @@ export function releaseShaderLookup(engine: AbstractEngine): void {
   releases.delete(engine);
 }
 
+/** Closes `source`, where there is one; a close that throws closes nothing
+ * more. */
+function closeQuietly(source: WgslSource | null): void {
+  try {
+    source?.close?.();
+  } catch {
+    /* already gone */
+  }
+}
+
 /** `promise`, or null once `ms` pass first. */
 function within<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -318,13 +334,13 @@ function during<T extends object, K extends keyof T>(target: T, key: K, value: T
  * Looks up every GLSL shader `engine` prepares before translating it (see the
  * module's comment). `mode` `"off"` leaves the engine as Babylon made it.
  * Resolves once its sources (`sources`, the browser's store by default) are
- * in memory, or `WGSL_SOURCES_MS` has passed, whichever comes first, never
- * rejecting; the engine's maker waits for it before handing the engine over,
- * and the translators must be loaded by then too. From then the WGSL held
- * for the start is let go after `WGSL_HOLD_QUIET_MS` without a preparation,
- * or `WGSL_HOLD_MAX_MS`. `report` counts and records (the page's, where none
- * is given). Install it before `catchTranslationFailures`, which wraps
- * whatever preparation it finds.
+ * in memory, or each one's bound has passed (`WgslSource.waitMs`,
+ * `WGSL_SOURCES_MS` by default), never rejecting; the engine's maker waits for it before handing the engine over,
+ * and the translators must be loaded by then too. What its sources read and
+ * what it translates (up to `maxKeptChars` of text, `WGSL_KEPT_MAX_CHARS` by
+ * default) are kept for the engine's life. `report` counts and records (the
+ * page's, where none is given). Install it before `catchTranslationFailures`,
+ * which wraps whatever preparation it finds.
  */
 export function lookUpShaders(
   engine: AbstractEngine,
@@ -333,6 +349,7 @@ export function lookUpShaders(
     salt?: string;
     sources?: (salt: string) => Promise<readonly WgslSource[]>;
     report?: ShaderLookupReport;
+    maxKeptChars?: number;
   },
 ): Promise<void> {
   const mode = options.mode;
@@ -343,26 +360,13 @@ export function lookUpShaders(
 
   /** The sources asked, in order, once they are in. */
   let asked: readonly WgslSource[] = [];
-  /** Stages this page translated while the start's WGSL is held: two effects
-   * with one stage between them translate it once. */
+  /** Stages this page translated, kept for the engine's life up to
+   * `maxKept` characters: two effects with one stage between them translate
+   * it once, and an effect made again later (the rain's) finds its stages. */
   const translated = new Map<string, string>();
+  const maxKept = options.maxKeptChars ?? WGSL_KEPT_MAX_CHARS;
+  let kept = 0;
   let released = false;
-  let quiet: ReturnType<typeof setTimeout> | undefined;
-  let longest: ReturnType<typeof setTimeout> | undefined;
-  let held = false;
-  const settle = (): void => {
-    if (!held) return;
-    held = false;
-    clearTimeout(quiet);
-    clearTimeout(longest);
-    translated.clear();
-    for (const source of asked) source.settle?.();
-  };
-  const keepQuiet = (): void => {
-    if (!held) return;
-    clearTimeout(quiet);
-    quiet = setTimeout(settle, WGSL_HOLD_QUIET_MS);
-  };
 
   /** The sources as they land, whenever that is. */
   const arriving = (options.sources ?? defaultSources)(salt).catch(() => null);
@@ -388,23 +392,15 @@ export function lookUpShaders(
       return;
     }
     asked = ours;
-    const left = Math.max(0, WGSL_SOURCES_MS - (performance.now() - began));
-    await within(Promise.all(ours.map((source) => source.ready ?? Promise.resolve())), left);
-  })()
-    .catch(() => undefined)
-    .then(() => {
-      if (released) return;
-      held = true;
-      keepQuiet();
-      longest = setTimeout(settle, WGSL_HOLD_MAX_MS);
-    });
+    const elapsed = performance.now() - began;
+    // Settled, not all: a source whose read fails ends no other's wait.
+    await Promise.allSettled(ours.map((source) => within(source.ready ?? Promise.resolve(), Math.max(0, (source.waitMs ?? WGSL_SOURCES_MS) - elapsed))));
+  })().catch(() => undefined);
 
   const release = (): void => {
     if (released) return;
     released = true;
-    settle();
-    clearTimeout(quiet);
-    clearTimeout(longest);
+    translated.clear();
     for (const source of asked) source.close?.();
     asked = [];
   };
@@ -490,7 +486,7 @@ export function lookUpShaders(
       const glsl = translatorInput(code, defines);
       const flag = uniformityOff(code);
       const key = stageKey(salt, stage, flag, glsl);
-      let wgsl: string | null = held ? (translated.get(key) ?? null) : null;
+      let wgsl: string | null = translated.get(key) ?? null;
       let from = PAGE;
       for (const source of asked) {
         if (wgsl !== null) break;
@@ -505,7 +501,10 @@ export function lookUpShaders(
     for (const stage of stages) {
       if (stage.from !== "translated") continue;
       stage.wgsl = translate(stage);
-      if (held) translated.set(stage.key, stage.wgsl);
+      if (!released && kept + stage.wgsl.length <= maxKept) {
+        translated.set(stage.key, stage.wgsl);
+        kept += stage.wgsl.length;
+      }
       for (const source of asked) {
         try {
           source.put?.(stage.key, stage.wgsl);
@@ -545,7 +544,6 @@ export function lookUpShaders(
         stages: stages.map((s) => ({ ...s })),
       });
     }
-    keepQuiet();
     onReady();
   };
   return ready;

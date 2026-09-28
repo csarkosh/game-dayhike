@@ -314,7 +314,7 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     // first and a translation it runs is caught like Babylon's own.
     const src = readFileSync(new URL("../../src/game/gpuEngine.ts", import.meta.url), "utf8");
     const start = src.slice(src.indexOf("  const start = async (): Promise<WebGPUEngine> => {"), src.indexOf("    return engine;\n  };"));
-    const install = '    const looking = lookUpShaders(engine, { mode: options.lookup ?? "on", sources: options.sources });';
+    const install = '    const looking = lookUpShaders(engine, { mode: options.lookup ?? "on", sources: options.sources ?? shippedThenStored });';
     expect(start.indexOf(install)).toBeGreaterThan(0);
     expect(start.indexOf("    catchTranslationFailures(engine);")).toBeGreaterThan(start.indexOf(install));
     // The translators handed to Babylon and started, and the sources in,
@@ -323,6 +323,11 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
       "    await engine.initAsync({ glslang: Promise.resolve(translators.glslang) }, { twgsl: translators.twgsl });\n" +
         "    await engine.prepareGlslangAndTintAsync();\n    await Promise.race([looking, sourcesBy]);\n",
     );
+    // By default, the translations shipped with the build first, then the store.
+    expect(src).toContain(
+      "const shippedThenStored = (salt: string): Promise<readonly WgslSource[]> => defaultSources(salt, wgslMapUrl);",
+    );
+    expect(src).toContain('import wgslMapUrl from "virtual:dayhike-wgsl-map";');
   });
 
   it("is still needed: Babylon still drops the rejection (a canary on the installed engine)", () => {

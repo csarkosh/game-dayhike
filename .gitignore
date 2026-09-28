@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# The WGSL map the build makes from the shader corpus (tools/wgsl/build-map.mjs).
+client/shaders/map/
 site/
 server/dist/
 .DS_Store

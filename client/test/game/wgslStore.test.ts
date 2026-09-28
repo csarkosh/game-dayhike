@@ -100,20 +100,6 @@ describe("the browser's WGSL store", () => {
     expect((await loaded(idb)).get("k1")).toBe(WGSL);
   });
 
-  it("lets go at the settle of the stages the start used, keeps those not asked for yet, and lets each of those go once used", async () => {
-    const idb = memoryIndexedDb();
-    const writing = await loaded(idb);
-    await kept(idb, writing, "used");
-    await kept(idb, writing, "later");
-    const store = await loaded(idb);
-    expect(store.get("used")).toBe(WGSL);
-    store.settle?.();
-    expect(store.get("used")).toBe(null);
-    // The headlamp's variant, say: asked for only after the settle.
-    expect(store.get("later")).toBe(WGSL);
-    expect(store.get("later")).toBe(null);
-  });
-
   it("reads in only what fits the start's bound, the most recently used first", async () => {
     const idb = memoryIndexedDb();
     let now = 0;

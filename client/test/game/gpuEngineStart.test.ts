@@ -44,7 +44,7 @@ vi.mock("@babylonjs/core/Engines/webgpuEngine.pure.js", () => {
 
 import { WebGPUEngine as WebGPUEngineMock } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
 import { createWebGpuEngine, forgetTranslators, loadTranslators } from "../../src/game/gpuEngine.js";
-import type { WgslSource } from "../../src/game/shaderLookup.js";
+import { buildSalt, type WgslSource } from "../../src/game/shaderLookup.js";
 
 const canvas = {} as HTMLCanvasElement;
 
@@ -279,24 +279,24 @@ describe("createWebGpuEngine", () => {
     expect(own).toHaveBeenCalledTimes(1);
   });
 
-  it("hands the engine over only once its translators are started and its lookup's sources are in, within 2 s", async () => {
+  it("hands the engine over only once its translators are started and its lookup's sources are in, within 500 ms", async () => {
     vi.useFakeTimers();
     let land: (sources: readonly WgslSource[]) => void = () => undefined;
     const sources = (): Promise<readonly WgslSource[]> => new Promise((resolve) => (land = resolve));
     let handed = false;
     const making = createWebGpuEngine(canvas, { translators: TRANSLATORS, sources }).then(() => (handed = true));
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(250);
     expect(made.initArgs).toHaveLength(1);
     expect(handed).toBe(false);
     land([]);
     await vi.advanceTimersByTimeAsync(0);
     expect(handed).toBe(true);
     await making;
-    // Sources that never come hold it 2 s at most.
+    // Sources that never come hold it 500 ms at most.
     handed = false;
     const never = (): Promise<readonly WgslSource[]> => new Promise(() => undefined);
     const waiting = createWebGpuEngine(canvas, { translators: TRANSLATORS, sources: never }).then(() => (handed = true));
-    await vi.advanceTimersByTimeAsync(1_999);
+    await vi.advanceTimersByTimeAsync(499);
     expect(handed).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(handed).toBe(true);
@@ -306,10 +306,13 @@ describe("createWebGpuEngine", () => {
   it("waits for its sources no closer than 500 ms to its deadline, and not at all nearer, so a slow read never fails a start", async () => {
     vi.useFakeTimers();
     const never = (): Promise<readonly WgslSource[]> => new Promise(() => undefined);
-    // A start with 1 s of its budget left: handed over at 500 ms.
+    // A source whose own bound is 1 s (the map's), never ready, in a start
+    // with 1.2 s of its budget left: handed over at 700 ms.
+    const slow = (): Promise<readonly WgslSource[]> =>
+      Promise.resolve([{ name: "slow", salt: buildSalt(), get: () => null, ready: new Promise<void>(() => undefined), waitMs: 1_000 }]);
     let handed = false;
-    const late = createWebGpuEngine(canvas, { ms: 1_000, translators: TRANSLATORS, sources: never }).then(() => (handed = true));
-    await vi.advanceTimersByTimeAsync(499);
+    const late = createWebGpuEngine(canvas, { ms: 1_200, translators: TRANSLATORS, sources: slow }).then(() => (handed = true));
+    await vi.advanceTimersByTimeAsync(699);
     expect(handed).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(handed).toBe(true);

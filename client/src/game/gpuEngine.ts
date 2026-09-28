@@ -12,8 +12,10 @@
  * `ForceGLSL`, before the game makes any material. The engine translates that
  * GLSL at run time with the glslang and twgsl builds `@babylonjs/core` ships,
  * which the build content-hashes and serves with the game, never from a CDN;
- * but first it looks each stage up (`shaderLookup.ts`), and translates only
- * one it does not find.
+ * but first it looks each stage up (`shaderLookup.ts`): in the translations
+ * the build made of the shader corpus and ships beside this module
+ * (`wgslMap.ts`), then in the browser's store; and translates only one it
+ * does not find.
  */
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
 // What the non-pure `webgpuEngine.js` loads with the engine, but for its
@@ -60,18 +62,26 @@ import glslangJs from "@babylonjs/core/assets/glslang/glslang.js?url";
 import glslangWasm from "@babylonjs/core/assets/glslang/glslang.wasm?url";
 import twgslJs from "@babylonjs/core/assets/twgsl/twgsl.js?url";
 import twgslWasm from "@babylonjs/core/assets/twgsl/twgsl.wasm?url";
+// The map of translations the build ships, named here so that only this
+// chunk refers to it.
+import wgslMapUrl from "virtual:dayhike-wgsl-map";
 import {
   WEBGPU_FETCH_MS,
   WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS,
   type ShaderLookupMode,
 } from "./engineChoice.js";
-import { lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
+import { pinPluginNumbers } from "./pluginNumbers.js";
+import { defaultSources, lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
 
 /** The least of its start's budget an engine keeps when it waits for its
  * shader lookup's sources: the wait is given up this long before the
  * deadline, since running out of that budget is remembered (`init`). */
 const SOURCES_MARGIN_MS = 500;
+
+/** The lookup's sources on every engine made here: the translations shipped
+ * with the build, then the browser's store. */
+const shippedThenStored = (salt: string): Promise<readonly WgslSource[]> => defaultSources(salt, wgslMapUrl);
 
 /** How `catchTranslationFailures` words a failure it cannot trace to an effect. */
 const UNTRANSLATED = "WebGPU shader translation failed";
@@ -244,8 +254,10 @@ async function startTranslators(signal: AbortSignal): Promise<Translators> {
  * adapter lacks), with the `translators` `loadTranslators` started handed to
  * Babylon as they are. Every GLSL shader is looked up before it is translated
  * (`lookUpShaders`, in `lookup`'s mode; `?wgsl=off` installs nothing), from
- * `sources` (the browser's store by default) read into memory while the
- * device comes, within `WGSL_SOURCES_MS` and never closer than
+ * `sources` (by default the translations shipped with the build, then the
+ * browser's store) read into memory while the
+ * device comes, each within its bound (`WGSL_SOURCES_MS`; the map's
+ * `WGSL_MAP_MS`) and never closer than
  * `SOURCES_MARGIN_MS` to its deadline (entries still arriving are found as
  * they land), so that no preparation waits once the engine is handed over.
  * Rejects on any failure, or when `ms` pass first,
@@ -299,7 +311,7 @@ export async function createWebGpuEngine(
     // Before the wrap below, which wraps whatever preparation it finds; its
     // sources are read in while the device comes, and waited for (bounded)
     // before the engine is handed over.
-    const looking = lookUpShaders(engine, { mode: options.lookup ?? "on", sources: options.sources });
+    const looking = lookUpShaders(engine, { mode: options.lookup ?? "on", sources: options.sources ?? shippedThenStored });
     catchTranslationFailures(engine);
     // The started translators, as Babylon's options take them: glslang as a
     // promise (its setup waits on it), twgsl as the instance. No path to load.
@@ -316,6 +328,9 @@ export async function createWebGpuEngine(
     // GLSL.
     PBRBaseMaterial.ForceGLSL = true;
     StandardMaterial.ForceGLSL = true;
+    // Before any of its materials: every plugin class's define numbered the
+    // same on every load, so a stage's text, and its key, is too.
+    pinPluginNumbers();
     return engine;
   } catch (err) {
     if (made.engine !== null) disposeHalfMade(made.engine);
