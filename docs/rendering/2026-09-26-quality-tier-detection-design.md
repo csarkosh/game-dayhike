@@ -493,7 +493,12 @@ tier gets its own canvas; the renderer is disposed and its engine made with
 
 1. **Ready**: `scene.isReady()`, `scene.getWaitingItemsCount() === 0`, and no
    effect compiled for 1.5 s (`engine.onAfterShaderCompilationObservable`); at
-   most 15 s, after which the probe gives up (§7.6).
+   most 15 s, after which the probe gives up (§7.6). Two steps each given 15 s
+   cannot both fit the 30 s cap, so a step is given at most what the cap has
+   left less the 4.2 s its frames may need once ready (`stepReadyMaxMs`,
+   counted from the step's start, its build included), and none at all where
+   that is nothing: a second step that could only be ready too late to be
+   measured gives up there, not at the cap after the player has waited it out.
 2. **Warm**: 60 frames discarded (the fields' first rebuilds, the reflection
    probe, the first shadow renders), or fewer once 2,100 ms have passed since
    the warm-up began (`PROBE_STEP_BUDGET_MS`, below): at 100 ms a frame the 60

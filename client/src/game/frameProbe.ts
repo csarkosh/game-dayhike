@@ -152,7 +152,8 @@ export function idleCadenceMs(intervals: readonly number[]): number | null {
 /**
  * One probe step's frames, as data: `frame` for each render-loop callback,
  * `compiled` whenever a shader compiles. The scene is ready once it says so and
- * no shader has compiled for `PROBE_QUIET_MS`, given up at `PROBE_READY_MAX_MS`;
+ * no shader has compiled for `PROBE_QUIET_MS`, given up at `readyMaxMs`
+ * (`PROBE_READY_MAX_MS`, or less where the probe's cap leaves less: `stepReadyMaxMs`);
  * then `PROBE_WARMUP_FRAMES` are discarded (or fewer, once
  * `PROBE_STEP_BUDGET_MS` has passed since the warm-up began) and `PROBE_FRAMES`
  * intervals kept, or fewer where their sum passes `PROBE_STEP_BUDGET_MS`
@@ -161,7 +162,7 @@ export function idleCadenceMs(intervals: readonly number[]): number | null {
  * hundred milliseconds or more, which would tip a 60 Hz machine's mean into a
  * miss) is never measured; the probe's 30 s cap bounds the restarts.
  */
-export function createProbeMeter(start: number): {
+export function createProbeMeter(start: number, readyMaxMs: number = PROBE_READY_MAX_MS): {
   readonly ready: boolean;
   compiled(now: number): void;
   frame(now: number, sceneReady: boolean): { done: false } | { done: true; stats: ProbeStats | null };
@@ -186,7 +187,7 @@ export function createProbeMeter(start: number): {
     },
     frame(now, sceneReady) {
       if (!ready) {
-        if (now - start > PROBE_READY_MAX_MS) return { done: true, stats: null };
+        if (now - start > readyMaxMs) return { done: true, stats: null };
         ready = sceneReady && now - lastCompile >= PROBE_QUIET_MS;
         last = now;
         warmFrom = now;
@@ -205,6 +206,19 @@ export function createProbeMeter(start: number): {
       return early === null ? { done: false } : { done: true, stats: early };
     },
   };
+}
+
+/**
+ * How long a step may take to be ready when `leftMs` of the probe's cap is
+ * left as it starts: `PROBE_READY_MAX_MS`, or less, what is left after the
+ * frames a step needs once ready (its warm-up and its measurement, at most
+ * `PROBE_STEP_BUDGET_MS` each). Two steps each allowed 15 s cannot both fit
+ * 30 s: a second step that could only be ready too late to be measured gives
+ * up there, rather than at the cap after the player has waited it out. At or
+ * under 0 the step is not started.
+ */
+export function stepReadyMaxMs(leftMs: number): number {
+  return Math.min(PROBE_READY_MAX_MS, leftMs - 2 * PROBE_STEP_BUDGET_MS);
 }
 
 /** Whether a reading holds 60 Hz. */
@@ -355,8 +369,9 @@ export type StartupDeps = {
   /** The game container's area, `containerPixels`. */
   pixels(): number;
   now(): number;
-  /** Measures one tier on a fresh canvas; null on a cancel or a failure. */
-  runStep(tier: QualityTier, cancelled: () => boolean): Promise<ProbeReading | null>;
+  /** Measures one tier on a fresh canvas; null on a cancel or a failure, or
+   * when its scene is not ready within `readyMaxMs` of the call. */
+  runStep(tier: QualityTier, cancelled: () => boolean, readyMaxMs: number): Promise<ProbeReading | null>;
   /** The "Setting up graphics…" screen over the probe's canvas. */
   showScreen(): { dispose(): void };
   /** A timer; the function returned clears it. */
@@ -472,6 +487,7 @@ async function probeOnce(
     return { tier: start, line: `quality probe: skipped, the page draws below 60 Hz (${cadence.toFixed(1)} ms a frame)` };
   }
   let late = false;
+  const began = deps.now();
   const clear = deps.setTimer(() => {
     late = true;
   }, PROBE_MAX_MS);
@@ -481,8 +497,9 @@ async function probeOnce(
     const tier = await runProbe(from, start, record, key, {
       storage: deps.storage,
       runStep: async (step) => {
-        if (cancelled()) return null;
-        const reading = await deps.runStep(step, cancelled);
+        const readyMaxMs = stepReadyMaxMs(PROBE_MAX_MS - (deps.now() - began));
+        if (cancelled() || readyMaxMs <= 0) return null;
+        const reading = await deps.runStep(step, cancelled, readyMaxMs);
         if (reading !== null) readings.push(reading);
         return reading;
       },

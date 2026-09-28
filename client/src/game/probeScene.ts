@@ -15,6 +15,7 @@ import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../sim/terrain
 import { createWorld } from "../sim/world.js";
 import {
   PROBE_HOUR,
+  PROBE_READY_MAX_MS,
   PROBE_SEED_TOKEN,
   createProbeMeter,
   probePose,
@@ -71,14 +72,15 @@ export function buildProbeScene(canvas: HTMLCanvasElement, tier: QualityTier): P
  * Measures `tier` on a fresh canvas in `container`, frame by frame through
  * `createProbeMeter`: ready, warm, measured, with a late shader compile
  * starting the warm-up again. Null on a cancel, an abort, a scene that never
- * readies, a throw, or too few frames. `signal` stops it at once,
+ * readies (by `opts.readyBy`, at most `PROBE_READY_MAX_MS` after its build),
+ * a throw, or too few frames. `signal` stops it at once,
  * disposing the renderer before `abort()` returns, so the page can build its
  * next renderer straight after without two living at once.
  */
 export function runProbeStep(
   container: HTMLElement,
   tier: QualityTier,
-  opts: { cancelled(): boolean; signal?: AbortSignal },
+  opts: { cancelled(): boolean; signal?: AbortSignal; readyBy?: number },
 ): Promise<ProbeReading | null> {
   return new Promise((resolve) => {
     if (opts.cancelled() || opts.signal?.aborted === true) {
@@ -97,7 +99,10 @@ export function runProbeStep(
       return;
     }
     const { engine, scene } = probe.renderer;
-    const meter = createProbeMeter(performance.now());
+    // Ready by `readyBy` (a `performance.now()` time), counted from after the
+    // build, which is part of the time the step was given.
+    const began = performance.now();
+    const meter = createProbeMeter(began, opts.readyBy === undefined ? PROBE_READY_MAX_MS : Math.min(PROBE_READY_MAX_MS, opts.readyBy - began));
     const compiled = engine.onAfterShaderCompilationObservable.add(() => meter.compiled(performance.now()));
     let done = false;
 
@@ -148,12 +153,13 @@ export function probeDeps(container: HTMLElement): PageProbe {
     storage: pageStorage(),
     pixels: () => containerPixels(container),
     now: () => Date.now(),
-    async runStep(tier, cancelled) {
+    async runStep(tier, cancelled, readyMaxMs) {
+      const readyBy = performance.now() + readyMaxMs;
       // The scene's build blocks the page; the screen paints first.
       await new Promise<void>((resolve) => afterNextPaint(resolve));
       const stopped = (): boolean => aborts.signal.aborted || cancelled();
       if (stopped()) return null;
-      const reading = await runProbeStep(container, tier, { cancelled: stopped, signal: aborts.signal });
+      const reading = await runProbeStep(container, tier, { cancelled: stopped, signal: aborts.signal, readyBy });
       if (reading !== null) console.info(probeReadingLine(reading, container.clientWidth, container.clientHeight));
       return reading;
     },

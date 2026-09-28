@@ -4,6 +4,7 @@ import {
   PROBE_MAX_MS,
   PROBE_STEP_BUDGET_MS,
   START_FAILED_LINE,
+  stepReadyMaxMs,
   autoPick,
   createProbeMeter,
   cutVerdict,
@@ -610,6 +611,22 @@ describe("createProbeMeter", () => {
     expect(got.stats).toEqual({ frames: 120, meanMs: 17.5, p95Ms: 17.5 });
   });
 
+  it("gives a step what the cap leaves it to be ready, less the frames it needs, and at most 15 s", () => {
+    expect(stepReadyMaxMs(30_000)).toBe(15_000);
+    expect(stepReadyMaxMs(16_700)).toBe(12_500);
+    expect(stepReadyMaxMs(13_760)).toBe(9_560);
+    expect(stepReadyMaxMs(4_200)).toBe(0);
+    const t = { now: 0 };
+    const meter = createProbeMeter(t.now, 9_560);
+    let answer: { done: boolean; stats?: unknown } = { done: false };
+    while (!answer.done) {
+      t.now += 50;
+      answer = meter.frame(t.now, false);
+    }
+    expect(answer).toEqual({ done: true, stats: null });
+    expect(t.now).toBe(9_600);
+  });
+
   it("gives up on a scene that is never ready in 15 s", () => {
     const t = { now: 0 };
     const meter = createProbeMeter(t.now);
@@ -774,10 +791,10 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
         storage,
         pixels: () => 1_045_960,
         now: () => clock.now,
-        runStep: async (tier, cancelled) => {
+        runStep: async (tier, cancelled, readyMaxMs) => {
           steps.push(tier);
           const begin = clock.now;
-          const meter = createProbeMeter(begin);
+          const meter = createProbeMeter(begin, readyMaxMs);
           let compiled = false;
           for (;;) {
             clock.now += FRAME_MS[tier];
@@ -850,5 +867,8 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
     expect(got.probes).toEqual([["high", "medium"], ["high", "medium"], ["high", "medium"]]);
     expect(got.tiers).toEqual(["medium", "low", "medium", "medium", "medium", "medium", "medium", "medium", "medium", "low"]);
     expect(readAutoRecord(got.storage)!.attempts).toBe(3);
+    // High ends 16.24 s into the cap, leaving medium 9.56 s to be ready where
+    // it needs 12 s: it gives up there, not at the cap's 30 s.
+    expect(got.screens).toEqual([26_340, 26_340, 26_340]);
   });
 });
