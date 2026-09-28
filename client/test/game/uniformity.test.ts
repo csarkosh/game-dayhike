@@ -194,13 +194,31 @@ describe("WGSL's uniformity analysis and the game's shaders", () => {
     });
   });
 
-  it("marks each of them with the define on WebGPU, and leaves WebGL2's text without it", () => {
+  it("marks every shader the scan finds with the define on WebGPU, and leaves WebGL2's text without it", () => {
     const onWebGpu = pluginFragments(true);
     const onWebGl2 = pluginFragments(false);
-    expect(onWebGpu.terrain).toContain(DEFINE);
-    expect(onWebGl2.terrain).not.toContain(DEFINE);
-    expect(finishFragmentFor(true)).toContain(DEFINE);
-    expect(finishFragmentFor(false)).not.toContain(DEFINE);
+    // Each shader's text on each engine: the plugins' as they inject it, the
+    // post passes' as `post.ts` stores them (only the finish pass differs).
+    const webgpu: Record<string, string> = {
+      ...onWebGpu,
+      "post.grade": gradeFragment,
+      "post.halationExtract": halationExtractFragment,
+      "post.finish": finishFragmentFor(true),
+    };
+    const webgl2: Record<string, string> = {
+      ...onWebGl2,
+      "post.grade": gradeFragment,
+      "post.halationExtract": halationExtractFragment,
+      "post.finish": finishFragmentFor(false),
+    };
+    // Every shader that reads a texture under a branch: a new one fails here
+    // until it carries the define on WebGPU, or its read moves.
+    const found = Object.keys(webgl2).filter((name) => readsUnderBranch(webgl2[name] as string).length > 0);
+    expect(found.length).toBeGreaterThan(0);
+    for (const name of found) {
+      expect(webgpu[name], `${name} on WebGPU`).toContain(DEFINE);
+      expect(webgl2[name], `${name} on WebGL2`).not.toContain(DEFINE);
+    }
     // No other plugin carries it: each shader turns the analysis off on its own.
     expect(Object.keys(onWebGpu).filter((name) => onWebGpu[name]?.includes(DEFINE)).sort()).toEqual(["terrain"]);
   });
