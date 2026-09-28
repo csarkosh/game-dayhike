@@ -16,12 +16,18 @@ afterEach(() => {
 describe("watchWebGpu", () => {
   const effectError = { effect: null as unknown as Effect, errors: "FRAGMENT SHADER ERROR" };
 
-  it("reports an uncaptured error Babylon logs as pipeline, by the log alone", () => {
-    const engine = new NullEngine();
+  /** A NullEngine with a device of its own, as a WebGPU engine has once
+   * started: something to dispatch `uncapturederror` on. */
+  function withDevice(): NullEngine & { _device: EventTarget } {
+    return Object.assign(new NullEngine(), { _device: new EventTarget() });
+  }
+
+  it("reports an uncaptured error on its own engine's device as pipeline", () => {
+    const engine = withDevice();
     const seen: string[] = [];
     const stop = watchWebGpu(engine, (reason) => seen.push(reason));
     try {
-      Logger.Warn("[Frame 3] WebGPU uncaptured error (1): [object GPUValidationError] - binding missing");
+      engine._device.dispatchEvent(new Event("uncapturederror"));
       expect(seen).toEqual(["pipeline"]);
       // The same reason again, by another road, is not reported twice.
       engine.onEffectErrorObservable.notifyObservers(effectError);
@@ -30,6 +36,30 @@ describe("watchWebGpu", () => {
       stop();
       engine.dispose();
     }
+  });
+
+  it("hears no other engine's uncaptured error, nor Babylon's page-wide log of one, and nothing once it is off", () => {
+    const watched = withDevice();
+    const other = withDevice();
+    const seen: string[] = [];
+    const stop = watchWebGpu(watched, (reason) => seen.push(reason));
+    try {
+      other._device.dispatchEvent(new Event("uncapturederror"));
+      Logger.Warn("[Frame 3] WebGPU uncaptured error (1): [object GPUValidationError] - binding missing");
+      expect(seen).toEqual([]);
+      stop();
+      watched._device.dispatchEvent(new Event("uncapturederror"));
+      expect(seen).toEqual([]);
+    } finally {
+      watched.dispose();
+      other.dispose();
+    }
+  });
+
+  it("hears the device Babylon itself listens on (a canary on the installed engine)", () => {
+    const src = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
+    expect(src).toContain("            this._device = device;");
+    expect(src).toContain('            this._device.addEventListener("uncapturederror", (event) => {');
   });
 
   it("reports a failed effect as pipeline and a lost device as lost, each once", () => {
@@ -140,29 +170,15 @@ describe("watchWebGpu", () => {
     );
   });
 
-  it("matches the words Babylon logs an uncaptured error with (a canary on the installed engine)", () => {
-    const source = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Engines/webgpuEngine.pure.js"), "utf8");
-    expect(source).toContain("Logger.Warn(`[Frame ${this._frameId}] WebGPU uncaptured error (");
-    expect(source).toContain("this.onContextLostObservable.notifyObservers(this);");
-  });
-
-  it("passes every log entry on to the handler it found, and puts that handler back", () => {
+  it("leaves Babylon's log hook as it found it", () => {
     const original = Logger.OnNewCacheEntry;
-    const previous = vi.fn();
-    Logger.OnNewCacheEntry = previous;
     const engine = new NullEngine();
     try {
-      const seen: string[] = [];
-      const stop = watchWebGpu(engine, (reason) => seen.push(reason));
-      Logger.OnNewCacheEntry("<div>[10:00:00]: a note</div><br>");
-      expect(previous).toHaveBeenCalledWith("<div>[10:00:00]: a note</div><br>");
-      expect(seen).toEqual([]);
+      const stop = watchWebGpu(engine, () => undefined);
+      expect(Logger.OnNewCacheEntry).toBe(original);
       stop();
-      expect(Logger.OnNewCacheEntry).toBe(previous);
-      engine.onEffectErrorObservable.notifyObservers(effectError);
-      expect(seen).toEqual([]);
+      expect(Logger.OnNewCacheEntry).toBe(original);
     } finally {
-      Logger.OnNewCacheEntry = original;
       engine.dispose();
     }
   });
@@ -207,21 +223,29 @@ describe("a GLSL translation that fails inside Babylon's unawaited pipeline prep
     }
   });
 
-  it("reports one it cannot trace to an effect through Babylon's log, which the watcher reads", async () => {
+  it("reports one it cannot trace to an effect to its own engine's watcher only", async () => {
     const engine = new NullEngine();
+    const other = new NullEngine();
     translationFails(engine);
     catchTranslationFailures(engine);
     const seen: string[] = [];
+    const elsewhere: string[] = [];
     const stop = watchWebGpu(engine, (reason) => void seen.push(reason));
+    const stopOther = watchWebGpu(other, (reason) => void elsewhere.push(reason));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       const prepare = (engine as unknown as { _preparePipelineContextAsync: (context: object) => Promise<void> })
         ._preparePipelineContextAsync;
       void prepare({}).catch(() => undefined);
       await settle();
       expect(seen).toEqual(["pipeline"]);
+      expect(elsewhere).toEqual([]);
     } finally {
+      errors.mockRestore();
       stop();
+      stopOther();
       engine.dispose();
+      other.dispose();
     }
   });
 

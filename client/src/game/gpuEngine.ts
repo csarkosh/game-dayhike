@@ -38,12 +38,12 @@ import {
   WEBGPU_START_MS,
 } from "./engineChoice.js";
 
-/** How Babylon words an uncaptured WebGPU error, which it logs as a warning
- * (`webgpuEngine.pure.js`, the device's `uncapturederror` listener). */
-const UNCAPTURED = "WebGPU uncaptured error";
-
 /** How `catchTranslationFailures` words a failure it cannot trace to an effect. */
 const UNTRANSLATED = "WebGPU shader translation failed";
+
+/** Per engine, who hears of a translation failure that belongs to no
+ * compiled effect: the engine's watcher, and no other engine's. */
+const untranslatedHeard = new WeakMap<AbstractEngine, Set<() => void>>();
 
 type Preparing = {
   _preparePipelineContextAsync: (pipelineContext: unknown, ...rest: unknown[]) => Promise<void>;
@@ -65,7 +65,7 @@ type Preparing = {
  * fallback tried, and `onEffectErrorObservable` told once none is left, just
  * as on WebGL2. So `watchWebGpu` sees it as a pipeline failure, and the
  * impostor bake as its failed ending. A failure that belongs to no compiled
- * effect is logged (`UNTRANSLATED`), which the watcher also reads. A wrapper
+ * effect is logged (`UNTRANSLATED`) and told to this engine's watcher. A wrapper
  * rather than a page-wide `unhandledrejection` listener: that would learn of
  * the failure but not which effect it belongs to, so nothing would be recorded
  * on the effect. Its canaries are in `gpuEngine.test.ts`.
@@ -83,6 +83,7 @@ export function catchTranslationFailures(engine: AbstractEngine): void {
         (effect as unknown as { _processCompilationErrors(e: unknown): void })._processCompilationErrors(error);
       } else {
         Logger.Error(`${UNTRANSLATED}: ${error instanceof Error ? error.message : String(error)}`);
+        for (const hear of untranslatedHeard.get(engine) ?? []) hear();
       }
     });
     return pending;
@@ -284,8 +285,11 @@ export function giveUpRestore(engine: AbstractEngine): void {
  * translation failure is one), or an uncaptured WebGPU error (`"pipeline"`),
  * and a lost device Babylon did not cause (`"lost"`; Babylon says nothing of
  * the loss a disposed engine's destroyed device makes). Each is reported
- * once. Returns a function that removes every observer and hands Babylon's
- * log hook back; the game calls it before the engine is disposed.
+ * once, and only from this engine: an uncaptured error is heard on its own
+ * device's `uncapturederror` event, not in Babylon's log, which every engine
+ * of the page writes to (a probe step's, or one released and still waiting
+ * for its BRDF lookup texture). Returns a function that removes every
+ * listener; the game calls it before the engine is disposed.
  */
 export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: "pipeline" | "lost") => void): () => void {
   const reported = new Set<"pipeline" | "lost">();
@@ -299,18 +303,20 @@ export function watchWebGpu(engine: AbstractEngine, onFailure: (reason: "pipelin
   giveUpRestore(engine);
   const lost = engine.onContextLostObservable.add(() => report("lost"));
 
-  // Chained, not replaced: whatever held the hook still hears every entry.
-  const previous = Logger.OnNewCacheEntry as ((entry: string) => void) | undefined;
-  const onEntry = (entry: string): void => {
-    previous?.(entry);
-    if (entry.includes(UNCAPTURED) || entry.includes(UNTRANSLATED)) report("pipeline");
-  };
-  Logger.OnNewCacheEntry = onEntry;
+  // The device Babylon itself listens on for uncaptured errors; an engine
+  // not yet started has none.
+  const device = (engine as unknown as { _device?: EventTarget })._device;
+  const onUncaptured = (): void => report("pipeline");
+  device?.addEventListener("uncapturederror", onUncaptured);
+  const heard = untranslatedHeard.get(engine) ?? new Set<() => void>();
+  untranslatedHeard.set(engine, heard);
+  heard.add(onUncaptured);
 
   return () => {
     engine.onEffectErrorObservable.remove(effectError);
     engine.onContextLostObservable.remove(lost);
-    if (Logger.OnNewCacheEntry === onEntry) Logger.OnNewCacheEntry = previous as (entry: string) => void;
+    device?.removeEventListener("uncapturederror", onUncaptured);
+    heard.delete(onUncaptured);
   };
 }
 
