@@ -532,8 +532,12 @@ first hike that needs it: a world build (one blocks the page "for a second or
 more", `main.ts:391`), the models from the HTTP cache after the first visit,
 compilation, about 3 s of frames per tier. The whole probe is capped at 30 s; on
 the cap, or on a throw anywhere in it, the probe is abandoned, the hike starts at
-the class's start tier, and the attempt counts. After three attempts without a
-verdict the start tier stands and only the governor acts.
+the class's start tier, and the attempt counts. What a step that already missed
+taught is kept: a probe cut after a miss (at high, say, with medium not yet
+read) has the verdict of the tier below the miss, never above the class's start
+tier (`cutVerdict`), written as the probe's, so the next hike does not measure
+the miss again. After three attempts without a verdict the start tier stands
+and only the governor acts.
 
 The attempt is spent only once the tab is seen (a hidden tab draws no frames)
 and the idle frames hold 60 Hz (§7.4). On a game route the page says
@@ -547,7 +551,9 @@ One `console.info` per measured tier and one for the outcome:
 `quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses`
 and `quality probe: verdict medium (apple-unknown)`, or, with no verdict,
 `quality probe: skipped, the page draws below 60 Hz (33.3 ms a frame); starting at medium (apple-unknown)`
-(or `no verdict`, or `not run, the page moved on`). Where the probe is skipped
+(or `no verdict`, or `not run, the page moved on`), or, cut after a miss (§7.6),
+`quality probe: cut short after high missed, verdict medium; starting at medium (apple-unknown)`.
+A step that ended early (§7.3) says so after its frames: `22 frames (ended early)`. Where the probe is skipped
 for compiling on the page's thread (§7.1), before any screen:
 `quality probe: skipped, this browser compiles shaders on the page's thread; starting at medium (apple-unknown)`,
 or, where no WebGL2 context could be made to ask for the extension (a class

@@ -6,6 +6,7 @@ import {
   START_FAILED_LINE,
   autoPick,
   createProbeMeter,
+  cutVerdict,
   idleCadenceMs,
   startFallbacks,
   startHike,
@@ -191,11 +192,40 @@ describe("runProbe and the Auto record", () => {
     }
   });
 
+  it("keeps what a miss taught when a later step reads nothing: the tier below, never above the start", async () => {
+    for (const runStep of [
+      async (tier: QualityTier) => (tier === "high" ? reading("high", 34.3) : null),
+      async (tier: QualityTier) => {
+        if (tier === "high") return reading("high", 34.3);
+        throw new Error("context lost");
+      },
+    ]) {
+      const s = memoryStorage();
+      expect(await runProbe("high", "medium", null, KEY, { storage: s, runStep, pixels: () => 2_073_600, now: () => 1_790_000_000_000 })).toBe("medium");
+      expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+        verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000, readings: [reading("high", 34.3)] } });
+    }
+    // A class that starts at low keeps low, not the medium below the miss.
+    const s = memoryStorage();
+    const runStep = async (tier: QualityTier) => (tier === "high" ? reading("high", 34.3) : null);
+    expect(await runProbe("high", "low", null, KEY, { storage: s, runStep, pixels: () => 2_073_600, now: () => 1_790_000_000_000 })).toBe("low");
+    expect(readAutoRecord(s)!.verdict!.tier).toBe("low");
+  });
+
   it("counts a second attempt on the record of the first", async () => {
     const s = memoryStorage();
     const first = { v: 1, gpu: "Apple GPU", cls: "apple-unknown" as const, browser: 26, attempts: 1, verdict: null };
     await runProbe("high", "medium", first, KEY, { storage: s, runStep: async () => null, pixels: () => 2_073_600, now: () => 1_790_000_000_000 });
     expect(readAutoRecord(s)!.attempts).toBe(2);
+  });
+});
+
+describe("cutVerdict", () => {
+  it("is the tier below the last miss, never above the start, and nothing without a reading", () => {
+    expect(cutVerdict([reading("high", 34.3)], "medium")).toBe("medium");
+    expect(cutVerdict([reading("high", 34.3)], "low")).toBe("low");
+    expect(cutVerdict([reading("medium", 19)], "medium")).toBe("low");
+    expect(cutVerdict([], "medium")).toBe(null);
   });
 });
 
@@ -307,6 +337,23 @@ describe("startupTier", () => {
     expect(readAutoRecord(t.storage)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
     expect(t.lines[0]).toBe("quality probe: no verdict; starting at medium (apple-unknown)");
     expect(PROBE_MAX_MS).toBe(30_000);
+  });
+
+  it("keeps the miss when the 30 s cap cuts the second step, and does not probe again", async () => {
+    let t: ReturnType<typeof fakes> | null = null;
+    t = fakes((tier) => {
+      if (tier === "medium") t!.timer()!.fn();
+      return reading(tier, 34.3);
+    });
+    expect(await startupTier(SAFARI, page(), t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+    expect(t.steps).toEqual(["high", "medium"]);
+    expect(t.open()).toBe(0);
+    expect(t.lines[0]).toBe("quality probe: cut short after high missed, verdict medium; starting at medium (apple-unknown)");
+    expect(readAutoRecord(t.storage)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+      verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000, readings: [reading("high", 34.3)] } });
+    const next = fakes((tier) => reading(tier, 34.3), t.storage);
+    expect(await startupTier(SAFARI, page(), next.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+    expect(next.steps).toEqual([]);
   });
 
   it("stops at once when the page moves on", async () => {

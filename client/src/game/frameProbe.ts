@@ -287,7 +287,11 @@ export type ProbeDeps = {
  *    mid-probe has still spent it; and where the write fails nothing is
  *    measured at all, since a storage that refuses writes reads back no
  *    attempts on every load and would otherwise probe before every hike.
- * 3. A step that reads nothing (or throws) abandons, the attempt standing.
+ * 3. A step that reads nothing (or throws) abandons. With nothing read
+ *    before it, the attempt stands and nothing else is written. After a step
+ *    that missed, what that miss taught is kept (`cutVerdict`): the tier below
+ *    it, never above `start`, written as the probe's verdict, so the next hike
+ *    does not measure the miss again.
  * 4. The verdict is written with the same area as step 1, the area
  *    `AutoInput.pixels` reads, so it holds on the next load at this window.
  */
@@ -303,23 +307,43 @@ export async function runProbe(
   const started = withProbeStarted(record, key.gpu, key.browser, key.cls);
   if (!writeAutoRecord(deps.storage, started)) return start;
   const readings: ProbeReading[] = [];
+  const settle = (tier: QualityTier): QualityTier => {
+    const verdict = { tier, source: "probe" as const, pixels, at: deps.now(), readings };
+    const next = withVerdict(started, key.gpu, key.browser, key.cls, verdict);
+    if (next !== null) writeAutoRecord(deps.storage, next);
+    return tier;
+  };
   for (;;) {
     const step = nextProbeStep(from, readings);
-    if ("verdict" in step) {
-      const verdict = { tier: step.verdict, source: "probe" as const, pixels, at: deps.now(), readings };
-      const next = withVerdict(started, key.gpu, key.browser, key.cls, verdict);
-      if (next !== null) writeAutoRecord(deps.storage, next);
-      return step.verdict;
-    }
+    if ("verdict" in step) return settle(step.verdict);
     let reading: ProbeReading | null;
     try {
       reading = await deps.runStep(step.measure);
     } catch {
       reading = null;
     }
-    if (reading === null) return start;
+    if (reading === null) {
+      const cut = cutVerdict(readings, start);
+      return cut === null ? start : settle(cut);
+    }
     readings.push(reading);
   }
+}
+
+const BELOW: Readonly<Record<QualityTier, QualityTier>> = { high: "medium", medium: "low", low: "low" };
+
+/**
+ * The verdict of a probe cut short (its 30 s cap, or a step that read
+ * nothing) after a step that missed: the tier below the one that missed, never
+ * above `start`, the class's start tier here. Null when nothing was read, which
+ * teaches nothing. Every reading before a cut is a miss, since a hold ends the
+ * probe with its verdict (`nextProbeStep`).
+ */
+export function cutVerdict(readings: readonly ProbeReading[], start: QualityTier): QualityTier | null {
+  const missed = readings[readings.length - 1];
+  if (missed === undefined) return null;
+  const below = BELOW[missed.tier];
+  return RANK[below] <= RANK[start] ? below : start;
 }
 
 /** What `startupTier` needs of the page. */
@@ -462,7 +486,10 @@ async function probeOnce(
       pixels: () => deps.pixels(),
       now: () => deps.now(),
     });
-    return "verdict" in nextProbeStep(from, readings) ? { tier, line: null } : { tier, line: "quality probe: no verdict" };
+    if ("verdict" in nextProbeStep(from, readings)) return { tier, line: null };
+    const missed = readings[readings.length - 1];
+    if (missed === undefined) return { tier, line: "quality probe: no verdict" };
+    return { tier, line: `quality probe: cut short after ${missed.tier} missed, verdict ${tier}` };
   } finally {
     clear();
   }
