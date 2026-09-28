@@ -764,6 +764,27 @@ describe("the lookup's key", () => {
     expect(uniformityOff("void main() {}")).toBe(false);
   });
 
+  it("has its format changed with anything that decides what is stored for a key: the composed text, the translation, the packing", () => {
+    const src = (file: string): string => readFileSync(new URL(`../../src/game/${file}`, import.meta.url), "utf8");
+    const slice = (text: string, from: string, to: string): string => {
+      const at = text.indexOf(from);
+      const end = text.indexOf(to, at);
+      expect(at, from).toBeGreaterThanOrEqual(0);
+      expect(end, to).toBeGreaterThan(at);
+      return text.slice(at, end);
+    };
+    const lookup = src("shaderLookup.ts");
+    const stored = createHash("sha256")
+      .update(slice(lookup, "export function translatorInput(", "/** Whether a stage turns Tint"))
+      .update(slice(lookup, "  const translate = (stage: StageRecord): string => {", "  // Deliberately `async` with no `await`"))
+      .update(slice(src("wgslStore.ts"), "async function pack(", "/** What `pack` made"))
+      .digest("hex");
+    expect(
+      [LOOKUP_FORMAT, stored],
+      "what is stored for a key has changed: bump LOOKUP_FORMAT (so no entry made the old way is reachable), then update both here",
+    ).toEqual(["dayhike-wgsl/1", "645d79bd3228be2ce3199bc10383bdf19c4687dd50dc16d9fd7896c525a008d6"]);
+  });
+
   it("is salted with its format, Babylon's version, the shipped translators' digests (WebAssembly and loaders) and Babylon's page-wide switch", () => {
     expect(LOOKUP_FORMAT).toBe("dayhike-wgsl/1");
     expect(lookupSalt({ babylon: "9.18.0", translators: "glslang=aa|twgsl=bb", staticUniformityOff: false })).toBe(

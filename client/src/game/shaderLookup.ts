@@ -45,7 +45,12 @@ import type { ShaderLookupMode } from "./engineChoice.js";
 import { sha256Hex } from "./sha256.js";
 import { loadWgslStore } from "./wgslStore.js";
 
-/** The format of the key; a change to how it is made changes this. */
+/** The format of the key and of what is stored under it. A change to how
+ * the key is made, or to what is stored for a key (the text composed for the
+ * first translator, `translatorInput`; the translation, `translate` in
+ * `lookUpShaders`; the packing, `pack` in `wgslStore.ts`) bumps it, so that
+ * no entry made the old way is reachable; `shaderLookup.test.ts` pins the
+ * three by their text beside it. */
 export const LOOKUP_FORMAT = "dayhike-wgsl/1";
 
 /** How long the engine's maker waits for the sources to be read into memory,
