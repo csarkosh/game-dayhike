@@ -1,7 +1,20 @@
 /**
- * Which engine draws the game: WebGL2, as every tier always has, or Babylon's
- * WebGPU engine on the tiers `WEBGPU_TIERS` names, where the browser offers a
- * hardware adapter with the limits the scene needs. Decided for each renderer
+ * Which engine draws the game: WebGL2, or Babylon's WebGPU engine on the tiers
+ * `WEBGPU_TIERS` names (high), in a Chromium-based browser on macOS or Windows
+ * on a device that is not a phone or a tablet, where the browser offers a
+ * hardware adapter with the limits the scene needs. Everywhere else WebGL2,
+ * as every tier always drew.
+ *
+ * Why there and nowhere else: WebGPU is the default only where it was
+ * measured to draw faster. Mean frame time on an Apple M4 at 1920 × 1080 in
+ * Chrome 154, WebGL2 → WebGPU: on high, the canopy 24.2 → 20.9 ms, the meadow
+ * 19.5 → 17.1, the trailside 21.6 → 19.6, the night 23.6 → 20.1, and the
+ * canopy at four times the pixels 51.0 → 40.1; on medium, the canopy
+ * 19.2 → 19.3 ms (no gain) and the meadow 17.3 → 16.7 (at the display's cap).
+ * Only Chrome on macOS and on Windows was measured, no other browser or
+ * platform (`docs/rendering/2026-09-26-webgpu-high-tier-verification.md`, §8).
+ *
+ * Decided for each renderer
  * the page builds (`main.ts`'s `engineFor`: the probe's steps, the hike's
  * start, every switch of tier and every rebuild after a failure), from the
  * tier it is for, and remembered when WebGPU fails, so a failing engine is
@@ -13,19 +26,19 @@
  * Storage is read and written through the `Storage` it is handed, every
  * access wrapped as `playerName.ts` wraps its own.
  */
-import type { GpuSignals } from "./gpuSignals.js";
+import type { GpuSignals, HostOs } from "./gpuSignals.js";
 import type { QualityTier } from "./quality.js";
 
 export type EngineName = "webgl2" | "webgpu";
 
-/** WebGPU as the default on the tiers below. Off until the parity and frame
- * gates pass on each of them; until then only `?engine=webgpu` reaches it. */
-export const WEBGPU_ENABLED = false;
+/** WebGPU as the default on the tiers below, on the browsers and platforms
+ * the rule names (`chooseEngine`). False, only `?engine=webgpu` reaches it. */
+export const WEBGPU_ENABLED = true;
 
-/** The tiers the WebGPU default applies to: high and medium, the two that
- * desktop Chromium's detection gives (`quality.ts`). Low and the landing
- * backdrop stay WebGL2. */
-export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"];
+/** The tiers the WebGPU default applies to: high alone, the one it drew
+ * faster at every pose not at the display's cap. Medium did not gain under
+ * the canopy (19.2 → 19.3 ms); it, low and the landing backdrop stay WebGL2. */
+export const WEBGPU_TIERS: readonly QualityTier[] = ["high"];
 
 /**
  * What the device is created with, and what an adapter must reach to be
@@ -214,24 +227,37 @@ export type EngineInput = {
   on: boolean;
   /** The adapter's verdict, or null before it has been asked. */
   fits: boolean | null;
+  /** The browser is built on Chromium (`isChromium`, `gpuSignals.ts`). */
+  chromium: boolean;
+  /** The operating system (`hostOs`, `gpuSignals.ts`). */
+  os: HostOs;
+  /** A phone or a tablet (`GpuSignals.mobile`). */
+  mobile: boolean;
 };
 
 /**
  * The rule. `"probe"` means the answer needs the adapter: ask it, then call
- * again with `fits`. `?engine=webgl2` wins outright; `?engine=webgpu` goes past
- * the tier, the switch and the memory, but never past the adapter.
+ * again with `fits`. WebGPU by default only where every one of these holds:
+ * the tier is in `tiers` (high), the switch is on, the browser is
+ * Chromium-based, the platform is macOS or Windows on a device that is not
+ * mobile, no failure is remembered, and the adapter fits. Safari and Firefox
+ * are WebGL2 whatever they offer at `navigator.gpu`. `?engine=webgl2` wins
+ * outright; `?engine=webgpu` goes past the tier, the switch, the browser, the
+ * platform and the memory, but never past the adapter.
  */
 export function chooseEngine(input: EngineInput, tiers: readonly QualityTier[] = WEBGPU_TIERS): EngineName | "probe" {
   if (input.override === "webgl2") return "webgl2";
-  if (input.override !== "webgpu" && (!tiers.includes(input.tier) || !input.on || input.remembered)) return "webgl2";
+  const measured = input.chromium && (input.os === "mac" || input.os === "windows") && !input.mobile;
+  if (input.override !== "webgpu" && (!tiers.includes(input.tier) || !input.on || !measured || input.remembered)) return "webgl2";
   if (input.fits === null) return "probe";
   return input.fits ? "webgpu" : "webgl2";
 }
 
 /**
  * The engine for `input.tier`: WebGL2 (null) at once where the rule says so,
- * nothing fetched and nothing asked, as for every tier while `WEBGPU_ENABLED`
- * is false and the address sets no engine; else what `resolve` makes of it
+ * nothing fetched and nothing asked, as for medium and low, for every tier off
+ * desktop Chromium on macOS and Windows, and while `WEBGPU_ENABLED` is false,
+ * where the address sets no engine; else what `resolve` makes of it
  * (`resolveWebGpu`), which may still be WebGL2.
  */
 export function engineForTier<E>(input: EngineInput, resolve: () => Promise<E | null>): Promise<E | null> {

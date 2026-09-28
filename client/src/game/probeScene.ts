@@ -195,8 +195,8 @@ export type RuleEngineDeps = {
 
 /**
  * One probe step on the engine the WebGPU rule gives its tier: WebGPU for
- * high and medium where the rule gives it, on the step's own canvas; WebGL2
- * for low and wherever else. A WebGPU engine that fails to start is already
+ * high where the rule gives it, on the step's own canvas; WebGL2 for medium,
+ * low and wherever else. A WebGPU engine that fails to start is already
  * the rule's start failure (`resolveWebGpu`) and hands back WebGL2; one that
  * fails in the step's build or frames is the same failure (`failed`), and the
  * step is measured again on WebGL2. A step whose engine it cannot settle on

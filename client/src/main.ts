@@ -34,7 +34,7 @@ import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
 import { recordEngineFailure, recordStartFailure, startOnEngine } from "./game/engineFailure.js";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
-import { browserEnv, browserMajor, readSignals, type GpuSignals } from "./game/gpuSignals.js";
+import { browserEnv, browserMajor, hostOs, isChromium, readSignals, type GpuSignals } from "./game/gpuSignals.js";
 import {
   LOADING_LINE,
   START_FAILED_LINE,
@@ -562,24 +562,30 @@ function engineEnv(): EngineEnv {
 }
 
 /**
- * The engine the WebGPU rule gives the probed tiers (high, medium) now, which
- * Auto's verdicts are kept for (`AutoVerdict.engine`): a verdict measured on
- * one engine does not decide a hike on the other. An adapter not known yet
- * counts as WebGPU, which the start then tries.
+ * The engine the WebGPU rule gives the high tier now, which Auto's verdicts
+ * are kept for (`AutoVerdict.engine`): a verdict measured on one engine does
+ * not decide a hike on the other. An adapter not known yet counts as WebGPU,
+ * which the start then tries.
  */
 function verdictEngineNow(read: GpuSignals): VerdictEngine {
-  return chooseEngine({ ...engineInput("high"), fits: signalsFit(read) }) === "webgl2" ? "webgl2" : "webgpu";
+  return chooseEngine({ ...engineInput("high", read), fits: signalsFit(read) }) === "webgl2" ? "webgl2" : "webgpu";
 }
 
 /** The rule's input for `tier` now: the address's override, the remembered
- * fallback, the switch; the adapter not yet asked (`resolveWebGpu` asks). */
-function engineInput(tier: QualityTier): EngineInput {
+ * fallback, the switch, the browser, the platform and whether the device is
+ * mobile (the GPU's signals, `read`); the adapter not yet asked
+ * (`resolveWebGpu` asks). */
+function engineInput(tier: QualityTier, read: GpuSignals): EngineInput {
+  const nav = browserEnv().navigator;
   return {
     tier,
     override: parseEngineOverride(location.search),
     remembered: fallbackHolds(readFallback(pageStorage()), engineEnv(), Date.now()),
     on: WEBGPU_ENABLED,
     fits: null,
+    chromium: isChromium(nav),
+    os: hostOs(nav),
+    mobile: read.mobile,
   };
 }
 
@@ -593,7 +599,7 @@ function engineInput(tier: QualityTier): EngineInput {
  */
 function engineFor(tier: QualityTier, read: GpuSignals, current: () => boolean, wanted: () => boolean = () => true): Promise<EngineOnCanvas> {
   const canvas = document.createElement("canvas");
-  const input = engineInput(tier);
+  const input = engineInput(tier, read);
   const webgl2 = { engine: null, watchers: null };
   const tried = chooseEngine(input) !== "webgl2";
   return engineForTier(input, () => makeWebGpu(canvas, input, read, current, wanted)).then((made) =>

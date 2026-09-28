@@ -79,7 +79,7 @@ export type NavigatorLike = {
   hardwareConcurrency?: number;
   deviceMemory?: number;
   maxTouchPoints?: number;
-  userAgentData?: { mobile?: boolean };
+  userAgentData?: { mobile?: boolean; brands?: readonly { brand: string }[]; platform?: string };
   gpu?: { requestAdapter(options: { powerPreference: "high-performance" }): Promise<unknown> };
 };
 
@@ -141,6 +141,51 @@ export function isMobile(nav: NavigatorLike | undefined): boolean {
     return /Macintosh/.test(agent) && typeof nav.maxTouchPoints === "number" && nav.maxTouchPoints > 1;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Whether the browser is built on Chromium (Chrome, Edge, the desktop
+ * launcher): the client hint's brands where it lists any, else a `Chrome/` or
+ * `Chromium/` token in the user agent, which Safari, Firefox and Chrome on iOS
+ * (WebKit underneath) do not send. The client hint is Chromium's alone, and
+ * only on a page served securely, so the user agent is what Safari, Firefox
+ * and a bare `http://` address are read by. For the WebGPU engine rule
+ * (`engineChoice.ts`), which has been measured on Chrome alone.
+ */
+export function isChromium(nav: NavigatorLike | undefined): boolean {
+  if (!nav) return false;
+  try {
+    const brands = nav.userAgentData?.brands;
+    if (Array.isArray(brands) && brands.length > 0) return brands.some((b: { brand?: unknown }) => b?.brand === "Chromium");
+    return /\bChrom(?:e|ium)\/\d/.test(agentOf(nav));
+  } catch {
+    return false;
+  }
+}
+
+/** The operating system as the WebGPU engine rule reads it. */
+export type HostOs = "mac" | "windows" | "other";
+
+/**
+ * The operating system: the client hint's platform where it names one
+ * ("macOS", "Windows"), else the user agent's `Macintosh`/`Mac OS X` or
+ * `Windows NT`; an iPhone or an iPad that names itself is neither. An iPad
+ * that says Macintosh is `isMobile`'s to tell apart.
+ */
+export function hostOs(nav: NavigatorLike | undefined): HostOs {
+  if (!nav) return "other";
+  try {
+    const platform = nav.userAgentData?.platform;
+    if (typeof platform === "string" && platform !== "") return platform === "macOS" ? "mac" : platform === "Windows" ? "windows" : "other";
+    const agent = agentOf(nav);
+    // An iPhone's says "like Mac OS X".
+    if (/\biPhone|\biPad|\biPod/.test(agent)) return "other";
+    if (/\bWindows NT\b/.test(agent)) return "windows";
+    if (/\bMacintosh\b|\bMac OS X\b/.test(agent)) return "mac";
+    return "other";
+  } catch {
+    return "other";
   }
 }
 
