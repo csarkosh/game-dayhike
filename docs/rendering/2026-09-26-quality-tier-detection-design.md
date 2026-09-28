@@ -890,15 +890,25 @@ scene's count; `whenSceneReady`) the ground fades back to the pause vignette.
 The player is on the pause screen throughout, so a pop-in behind it is not
 seen, and Resume puts them back where they were, looking where they looked.
 
-**The bound.** The wait is bounded at 20 s from the end of the build
-(`SWAP_READY_MAX_MS`), so that a model or a layer that never settles cannot hold
-the screen; the governor's switch (§10) waits under the same bound. It is sized
-for the slowest build measured: in Chrome on an Apple M4 at 6× CPU throttling
-the build took about 4.2 s and the forest was whole 3.2–6.1 s after a 10 s
-bound, 16.1 s after the build at most, so that bound lifted the cover on bare
-hillside in 12 switches of 12, with the forest appearing 1.7–4.2 s later. At 1×
-the cover lifts on readiness, 3.5–3.75 s after Apply. On a machine slower still
-the cover lifts at 20 s and the forest fills in after it, in view.
+**The bounds.** The wait is bounded from the end of the build, so that a model
+or a layer that never settles cannot hold the screen, and the bound belongs to
+whoever put the cover up: `switchTo` takes it as a required argument and hands
+it to `whenSceneReady`, which has no default.
+
+- **Apply: 20 s** (`APPLY_SWAP_READY_MAX_MS`). It covers a player on the pause
+  screen who asked for the switch. It is sized for the slowest build measured:
+  in Chrome on an Apple M4 at 6× CPU throttling the build took about 4.2 s and
+  the forest was whole 3.2–6.1 s after a 10 s bound, 16.1 s after the build at
+  most, so that bound lifted the cover on bare hillside in 12 switches of 12,
+  with the forest appearing 1.7–4.2 s later. At 1× the cover lifts on
+  readiness, 3.5–3.75 s after Apply. On a machine slower still the cover lifts
+  at 20 s and the forest fills in after it, in view.
+- **The governor's drop: 10 s** (`GOVERNOR_SWAP_READY_MAX_MS`, §10). It covers
+  a player in the middle of play who did not ask, without sight or controls, in
+  a world that goes on around them (a party, a hunt); there a forest that fills
+  in after the lift costs less than ten more seconds of that. On a machine as
+  slow as the 6× one, the cover lifts at 10 s on bare hillside and the forest
+  fills in after it, in view.
 
 ## 10. The governor
 
@@ -970,7 +980,11 @@ again; a switch that ran owns the loop.
 3. One `console.info`.
 4. The tier is lowered **now**, through the live switch of §9, the same path
    Apply takes, with the tier's source kept as Auto; the screen goes once the
-   scene is ready. A switch that falls back or fails is handled as §9.3 says,
+   scene is ready, or at 10 s from the end of the build
+   (`GOVERNOR_SWAP_READY_MAX_MS`), half the Apply's bound (§9.6): the player
+   under it did not ask and cannot see or move in a world that goes on, so on
+   a slow machine the screen lifts at 10 s and the forest may fill in after,
+   in view. A switch that falls back or fails is handled as §9.3 says,
    which keeps the governor's verdict when the tier that built is above it.
 5. Once the switch reaches the lower tier, one HUD line for 6 s: "Graphics
    lowered to Medium to keep the game smooth."
