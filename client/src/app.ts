@@ -9,6 +9,7 @@ import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
 import { createHud } from "./game/hud.js";
 import { LOADING_LINE } from "./game/frameProbe.js";
+import { holdReveal, whenFrameWhole } from "./game/revealHold.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
 import { navigateToLanding } from "./game/router.js";
 import { createCommandBar } from "./game/commandBar.js";
@@ -1338,27 +1339,32 @@ function buildGame(
 
   // On WebGPU a draw may be left out while its pipeline is made
   // (`asyncPipelines.ts`), so the first frames can show a world with holes:
-  // the world stays hidden under "Loading…" until a frame leaves nothing out,
-  // 10 s after the first frame at most (`revealWhenWhole`). A switch or the
-  // game's end lifts it at once. WebGL2 shows its first frame as always.
+  // the world stays hidden until a frame leaves nothing out, 10 s after the
+  // first frame at most (`revealWhenWhole`), under "Loading…" while the HUD
+  // says nothing of its own (`holdReveal`). A switch or the game's end lifts
+  // it at once. WebGL2 shows its first frame as always.
   /** Lifts the start's hold, once, and stops waiting for a whole frame. */
   let endRevealHold = (): void => undefined;
   if (renderer.engine.isWebGPU && watchers !== null) {
     const held = canvas;
+    const engine = renderer.engine;
+    const gpu = watchers;
     const line = createHud(container);
-    line.setStatus(LOADING_LINE);
-    held.style.visibility = "hidden";
-    let lifted = false;
-    const lift = (): void => {
-      if (lifted) return;
-      lifted = true;
-      held.style.visibility = "";
-      line.dispose();
-    };
-    const stopWaiting = watchers.reveal(renderer.engine, lift);
+    const lift = holdReveal({
+      hideWorld: (hidden) => {
+        held.style.visibility = hidden ? "hidden" : "";
+      },
+      showLine: (shown) => line.setStatus(shown ? LOADING_LINE : null),
+      status: () => hud.status(),
+      eachFrame: (fn) => {
+        const observer = engine.onEndFrameObservable.add(fn);
+        return () => engine.onEndFrameObservable.remove(observer);
+      },
+      reveal: (fn) => gpu.reveal(engine, fn),
+    });
     endRevealHold = () => {
-      stopWaiting();
       lift();
+      line.dispose();
     };
     made(() => endRevealHold());
   }
@@ -1533,7 +1539,16 @@ function buildGame(
       console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine ${renderer.engine.isWebGPU ? "webgpu" : "webgl2"}`);
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
+      const sceneFrom = performance.now();
       await whenSceneReady(renderer.scene, made.leftMs, renderer.forestReady);
+      // On WebGPU, then a frame that left no draw out while its pipeline was
+      // made, within what is left of the same bound: the cover lasts no
+      // longer, and meshes do not appear after it lifts.
+      const gpu = watchers;
+      if (renderer.engine.isWebGPU && gpu !== null) {
+        const engine = renderer.engine;
+        await whenFrameWhole((lift) => gpu.reveal(engine, lift), made.leftMs - (performance.now() - sceneFrom));
+      }
       return tier;
     } finally {
       switching = false;

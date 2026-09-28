@@ -34,8 +34,13 @@
  *   synchronous path, which raises the validation error where it is raised
  *   today, so the failure watcher (`watchWebGpu`) and the swap to WebGL2 go
  *   as before; a node so marked is never made asynchronously again;
+ * - a creation still in flight `ASYNC_PIPELINE_MAX_MS` after it started is
+ *   given up the same way, its slot freed; one that lands after that stores
+ *   nothing. The first rejection, and the first deadline passed, are said;
  * - once the engine is disposed or its device lost, or the patch removed,
  *   nothing is started and nothing is stored, and every draw is Babylon's.
+ * And should the sentinel ever leave a frame (`guardRender`), the patch comes
+ * off that engine for good rather than stop the game.
  * Outside the scope, and while the engine renders by snapshot, every draw is
  * Babylon's, untouched.
  *
@@ -81,6 +86,12 @@ export function maxInFlightFor(cores: number | undefined): number {
  * value, to be measured in a browser. */
 export const ASYNC_PIPELINES_MAX_IN_FLIGHT = maxInFlightFor(globalThis.navigator?.hardwareConcurrency);
 
+/** The longest a creation may take from the moment it is started (not
+ * queued): past it, it is given up, its slot freed and its node drawn
+ * synchronously from its next draw, so a creation that never settles can
+ * neither keep a mesh out for good nor stall the queue behind it. */
+export const ASYNC_PIPELINE_MAX_MS = 30_000;
+
 /** The longest the start holds its reveal for a frame that left nothing out,
  * counted from the end of its first frame (`revealWhenWhole`). */
 export const REVEAL_PIPELINES_MAX_MS = 10_000;
@@ -99,6 +110,11 @@ export type PipelinesReport = {
   landed: number;
   /** Of those, failed (their nodes then made synchronously). */
   failed: number;
+  /** Of those, given up at their deadline (`ASYNC_PIPELINE_MAX_MS`; their
+   * nodes then made synchronously). */
+  expired: number;
+  /** Frames a draw left out escaped (`guardRender`): the patch then came off. */
+  escapes: number;
   /** Pipelines made on Babylon's synchronous path: its per-frame count, summed. */
   sync: number;
   /** Draws left out while their pipeline was made. */
@@ -178,6 +194,8 @@ export function installPipelines(
     asked: 0,
     landed: 0,
     failed: 0,
+    expired: 0,
+    escapes: 0,
     sync: 0,
     leftOut: 0,
     longestMs: 0,
@@ -193,8 +211,15 @@ export function installPipelines(
   return patch(engine, limit, report, options.now ?? (() => performance.now()));
 }
 
-/** A creation asked for, in flight or waiting its turn. */
-type Creation = { node: CacheNode; descriptor: unknown; askedAt: number };
+/** A creation asked for, in flight or waiting its turn; its deadline set
+ * once it is started. */
+type Creation = { node: CacheNode; descriptor: unknown; askedAt: number; deadline?: ReturnType<typeof setTimeout> };
+
+/** What a scene's render is, to the guard (`Scene.render`). */
+type Renders = { render: (...args: unknown[]) => void };
+
+/** The message of what a rejected creation was rejected with. */
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, now: () => number): AsyncPipelines | null {
   const own = engine as unknown as PatchedEngine;
@@ -213,6 +238,11 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
   let skipped = 0;
   let removed = false;
   let lost = false;
+  /** The creations in flight, each until it lands, fails or is given up. */
+  const flying = new Set<Creation>();
+  /** Whether a rejection, and a deadline passed, has been said. */
+  let saidFailure = false;
+  let saidExpiry = false;
   const waiters = new Set<{ resolve(emptied: boolean): void; timer: ReturnType<typeof setTimeout> }>();
 
   const stopped = (): boolean => removed || lost || own.isDisposed;
@@ -237,6 +267,8 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
       const creation = queue.shift();
       if (creation === undefined) return;
       inFlight++;
+      flying.add(creation);
+      creation.deadline = setTimeout(() => expire(creation), ASYNC_PIPELINE_MAX_MS);
       let making: Promise<unknown>;
       try {
         making = device.createRenderPipelineAsync(creation.descriptor);
@@ -244,24 +276,51 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
         making = Promise.reject(error);
       }
       void making.then(
-        (pipeline) => settle(creation, pipeline),
-        () => settle(creation, null),
+        (pipeline) => settle(creation, { pipeline }),
+        (error: unknown) => settle(creation, { error }),
       );
     }
   };
-  /** A creation landed (`pipeline`) or failed (null). */
-  const settle = (creation: Creation, pipeline: unknown): void => {
+  /** Takes `creation` out of flight, once: false where it already was (given
+   * up at its deadline, whatever comes of it after). */
+  const land = (creation: Creation): boolean => {
+    if (!flying.delete(creation)) return false;
+    clearTimeout(creation.deadline);
     inFlight--;
+    return true;
+  };
+  /** A creation landed or failed. */
+  const settle = (creation: Creation, outcome: { pipeline: unknown } | { error: unknown }): void => {
+    if (!land(creation)) return;
     if (!stopped()) {
-      if (pipeline !== null) {
+      if ("pipeline" in outcome) {
         // As `preWarmPipeline` stores it: in the node the lookup left.
-        cache._setRenderPipeline({ token: creation.node, pipeline });
+        cache._setRenderPipeline({ token: creation.node, pipeline: outcome.pipeline });
         nodes.delete(creation.node);
         report.landed++;
         report.longestMs = Math.max(report.longestMs, now() - creation.askedAt);
       } else {
         nodes.set(creation.node, "failed");
         report.failed++;
+        if (!saidFailure) {
+          saidFailure = true;
+          console.warn(`WebGPU: a render pipeline could not be made asynchronously; its draws make it synchronously: ${messageOf(outcome.error)}`);
+        }
+      }
+    }
+    start();
+    update();
+  };
+  /** A creation still in flight at its deadline: given up, its node drawn
+   * synchronously from its next draw, its slot freed. */
+  const expire = (creation: Creation): void => {
+    if (!land(creation)) return;
+    if (!stopped()) {
+      nodes.set(creation.node, "failed");
+      report.expired++;
+      if (!saidExpiry) {
+        saidExpiry = true;
+        console.warn(`WebGPU: a render pipeline was not made within ${ASYNC_PIPELINE_MAX_MS / 1000} s; its draws make it synchronously.`);
       }
     }
     start();
@@ -303,28 +362,37 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
 
   // Leaving `_draw` where its lookup throws is safe, item by item, for what it
   // has done by then (`webgpuEngine.pure.js`, `_draw`):
-  // - the current render pass is begun (`_getCurrentRenderPass`), as for any
-  //   draw; it is ended with the frame's others, with nothing added to it;
-  // - `applyStates` has put the draw's depth, stencil, cull and blend state in
-  //   the cache and the engine's trackers; the next draw applies its own over
-  //   them, as after any draw;
-  // - the internal and the effect's leftover uniform buffers are bound and
-  //   the latter written: the material context's bindings for this draw, which
-  //   the next draw of it binds and writes again;
-  // - the draw context's vertex pulling is set, and its bundle dropped when
+  // - `_getCurrentRenderPass` has begun the render target's pass, or the
+  //   main pass, where none was open; it is ended with the frame's others,
+  //   this draw simply absent from it;
+  // - `applyStates` has set the stencil state (through the stencil composer)
+  //   and the alpha blend's enable on the cache; the depth and cull state came
+  //   from `setState` before the draw. Every draw sets its own;
+  // - the internals' uniform buffer and the effect's leftover one are bound on
+  //   the draw context (`bindUniformBufferBase`, `setBuffer`), and the
+  //   leftover one written with this draw's values; the next draw binds and
+  //   writes its own;
+  // - the draw context's vertex pulling is set (marking the context dirty
+  //   where it changed);
+  // - outside compatibility mode, the draw context's bundle is dropped where
   //   stale (`fastBundle = undefined`); a draw with a live bundle returns
-  //   before the lookup, so a draw left out never has one, and its next draw
-  //   takes the slow path whole;
+  //   before the lookup, so a draw left out never has one. Babylon's default,
+  //   compatibility mode, keeps no bundle: every draw sets its pipeline, index
+  //   and vertex buffers and bind groups on the pass anew;
   // - the texture state is written to the material context, recomputed at
   //   every draw;
-  // - the cache's lookup has updated its state keys, its node stack and
-  //   `_parameter` (token the node, pipeline empty) exactly as a miss does
-  //   before Babylon makes the pipeline; the next lookup walks to the same
-  //   node and reads what is stored there.
-  // Not reached: the bind groups (the draw context stays dirty, so its next
-  // draw makes them), the bundle encoder, `setPipeline`, the draw itself and
-  // `_reportDrawCall`. Snapshot recording, which takes a bundle encoder before
-  // the lookup, is left to Babylon (`snapshotRendering` above).
+  // - the cache's lookup has set its state keys, its node stack and
+  //   `_parameter` (the token the node, no pipeline) as after any miss, and
+  //   its vertex buffers, which every lookup rebuilds; the next lookup of the
+  //   same state walks to the same node and reads what is stored there.
+  // Not reached: `getBindGroups`, which resets the draw and material
+  // contexts' dirty flags, so both stay dirty and the next draw makes its bind
+  // groups again; `_applyRenderPassChanges`, so the viewport, scissor, stencil
+  // reference and blend colour stay to be applied by the next draw; the bundle
+  // encoder, `setPipeline`, the buffers and bind groups set on the pass, the
+  // draw itself and `_reportDrawCall`. Snapshot recording, which takes a
+  // bundle encoder before the lookup, is left to Babylon (`snapshotRendering`
+  // above).
   const hadOwnDraw = Object.prototype.hasOwnProperty.call(own, "_draw");
   const draw = (...args: unknown[]): void => {
     try {
@@ -337,6 +405,36 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
     }
   };
   own._draw = draw;
+
+  // The last guard: were a draw path ever to ask the cache without going
+  // through this engine's `_draw` (a Babylon that moved; the canaries in
+  // `asyncPipelines.test.ts` watch for it), the sentinel would leave
+  // `scene.render`, and Babylon's render loop queues no frame after a throw:
+  // the game would stop for good, with no WebGPU error to swap on. So each
+  // scene of this engine renders inside a catch of the sentinel alone: the
+  // patch then comes off this engine for good, every later draw synchronous,
+  // said once, and the frame's loop goes on. Any other throw passes through.
+  const scenes = new Map<Renders, { ownRender: Renders["render"]; hadOwn: boolean; guarded: Renders["render"] }>();
+  const guardRender = (scene: Renders): void => {
+    if (scenes.has(scene)) return;
+    const ownRender = scene.render;
+    const hadOwn = Object.prototype.hasOwnProperty.call(scene, "render");
+    const guarded = (...args: unknown[]): void => {
+      try {
+        ownRender.apply(scene, args);
+      } catch (error) {
+        if (error !== LEFT_OUT) throw error;
+        report.escapes++;
+        console.warn("WebGPU: a draw left out while its render pipeline was made reached the frame; this engine makes every pipeline synchronously from now on.");
+        pipelines.remove();
+      }
+    };
+    scene.render = guarded;
+    scenes.set(scene, { ownRender, hadOwn, guarded });
+  };
+  const withScenes = engine as { onNewSceneAddedObservable?: AbstractEngine["onNewSceneAddedObservable"]; scenes?: unknown[] };
+  const sceneAdded = withScenes.onNewSceneAddedObservable?.add((scene) => guardRender(scene as unknown as Renders)) ?? null;
+  for (const scene of withScenes.scenes ?? []) guardRender(scene as Renders);
 
   const pipelines: AsyncPipelines = {
     enter() {
@@ -377,6 +475,14 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
         if (hadOwnDraw) own._draw = ownDraw;
         else delete own._draw;
       }
+      for (const creation of flying) clearTimeout(creation.deadline);
+      withScenes.onNewSceneAddedObservable?.remove(sceneAdded);
+      for (const [scene, { ownRender, hadOwn, guarded }] of scenes) {
+        if (scene.render !== guarded) continue;
+        if (hadOwn) scene.render = ownRender;
+        else delete (scene as { render?: unknown }).render;
+      }
+      scenes.clear();
       if (installed.get(engine) === pipelines) installed.delete(engine);
       update();
     },

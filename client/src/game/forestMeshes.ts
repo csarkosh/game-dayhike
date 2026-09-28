@@ -133,9 +133,14 @@ export const IMPOSTOR_BAKE_WARN_MS = 30_000;
 export const IMPOSTOR_BAKE_FAIL_MS = 120_000;
 
 /** What a bake reads of the pipelines a WebGPU engine makes asynchronously
- * (`asyncPipelines.ts`): the draws its render left out, and the wait for
- * what it asked for. */
-export type BakePipelines = Pick<AsyncPipelines, "takeSkipped" | "settled">;
+ * (`asyncPipelines.ts`): the draws its render left out, and the renderer's
+ * scope around a render (`guarded`, `scopeRenderingGroups`), which shuts what
+ * the render left open even as it throws. */
+export type BakePipelines = Pick<AsyncPipelines, "takeSkipped"> & { guarded(render: () => void): void };
+
+/** How often a bake whose render left a draw out renders again, readiness
+ * checked first, to see whether its own pipelines have landed. */
+export const BAKE_PIPELINES_POLL_MS = 250;
 
 /** How a bake is told to stop, and when it should say it is still waiting. */
 export type BakeOptions = {
@@ -148,7 +153,8 @@ export type BakeOptions = {
   failMs?: number;
   /** On a WebGPU engine that makes its pipelines asynchronously, where a draw
    * of the bake's render may be left out: the bake then keeps only a render
-   * that left nothing out (`bakeWhole`). Absent, it renders once, as always. */
+   * that left nothing out (`renderedWhole`). Absent, it renders once, as
+   * always. */
   pipelines?: BakePipelines;
 };
 
@@ -682,9 +688,11 @@ const IMPOSTOR_BAKE_LAYER = 0x10000000;
  *   effect that is ready bakes, even with an error left on it from a recompile
  *   that failed after an earlier one drew. On a WebGPU engine that makes its
  *   pipelines asynchronously (`options.pipelines`) a draw of that render may
- *   be left out while its pipeline is made, so it keeps only a render that
- *   left nothing out (`bakeWhole`), and resolves null, saying so, where none
- *   could be;
+ *   be left out while its pipeline is made: it then keeps only a render made
+ *   on a ready target that left nothing out (`renderedWhole`), rendering
+ *   again every `BAKE_PIPELINES_POLL_MS`, readiness checked first, and once
+ *   its bound has run out, once more on Babylon's synchronous path; where
+ *   none could be kept it resolves null, saying so;
  * - failed: a bake clone's effect reports a compilation error and has no
  *   fallback left to try (PBR retries a failed compile with fewer defines, on
  *   the same effect, the error still set until a retry lands); it logs one
@@ -792,16 +800,34 @@ export async function defaultBakeImpostor(
       rtt.dispose();
       return null;
     };
+    const pipelines = options.pipelines;
     for (;;) {
       if (options.signal?.aborted) return stop();
-      if (rtt.isReadyForRendering()) break;
-      const error = finalCompilationError(bakeMeshes, rtt.renderPassId);
-      if (error !== null) {
-        console.error(`forest impostor bake failed: ${mesh.name}: ${error}`);
-        return stop();
+      const ready = rtt.isReadyForRendering();
+      if (ready) {
+        if (pipelines === undefined) break;
+        // Its pipelines are made asynchronously: a render made on a ready
+        // target and whole is kept; one that left a draw out is made again at
+        // the next poll, readiness checked first, until its own pipelines have
+        // landed. Once the bake's bound has run out, one last render as a
+        // target drawn once, which the scope leaves on Babylon's synchronous
+        // path; a render that still left a draw out is never kept.
+        const late = performance.now() - started >= failMs;
+        if (late) rtt.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+        if (renderedWhole(rtt, pipelines)) break;
+        if (late) {
+          console.error(`forest impostor bake left a draw out: ${mesh.name}`);
+          return stop();
+        }
+      } else {
+        const error = finalCompilationError(bakeMeshes, rtt.renderPassId);
+        if (error !== null) {
+          console.error(`forest impostor bake failed: ${mesh.name}: ${error}`);
+          return stop();
+        }
       }
       const waited = performance.now() - started;
-      if (waited >= failMs) {
+      if (!ready && waited >= failMs) {
         console.error(`forest impostor bake gave up after ${Math.round(failMs / 1000)} s: ${mesh.name}`);
         return stop();
       }
@@ -809,20 +835,10 @@ export async function defaultBakeImpostor(
         warned = true;
         console.warn(`forest impostor bake still waiting after ${Math.round(warnMs / 1000)} s: ${mesh.name}`);
       }
-      await new Promise((resolve) => setTimeout(resolve, 16));
+      await new Promise((resolve) => setTimeout(resolve, ready ? BAKE_PIPELINES_POLL_MS : 16));
     }
 
-    if (options.pipelines === undefined) {
-      rtt.render();
-    } else {
-      // Within the bake's own bound: what is left of it.
-      const kept = await bakeWhole(rtt, options.pipelines, Math.max(0, failMs - (performance.now() - started)), options.signal);
-      if (kept === "aborted") return stop();
-      if (kept === "left-out") {
-        console.error(`forest impostor bake left a draw out: ${mesh.name}`);
-        return stop();
-      }
-    }
+    if (pipelines === undefined) rtt.render();
     camera.dispose();
     return rtt;
   } finally {
@@ -834,40 +850,18 @@ export async function defaultBakeImpostor(
 }
 
 /**
- * Renders the bake's target so that the render kept left no draw out, and
- * says how it ended: `kept`, `aborted` (the forest went during the wait) or
- * `left-out` (no render could be kept, which the caller treats as a failed
- * bake). The target is kept for the life of the page, so a draw left out in
- * it, while its pipeline is made on WebGPU (`asyncPipelines.ts`), would bake a
- * blank or partial tree for good.
- *
- * In two phases: a render that asks for the pipelines it lacks, kept if it
- * left nothing out; else a wait for them, at most `waitMs` (what is left of
- * the bake's own bound), and a second render, kept if it left nothing out;
- * else, or when the wait ran out, one more render as a target drawn once,
- * which the renderer's scope leaves on Babylon's synchronous path
- * (`scopeRenderingGroups`), its pipelines made while the page waits, as
- * before. The count is taken just before each render, so draws left out
- * elsewhere are never counted against it; and a render the count shows left
- * something out is never kept, whichever it was.
+ * Renders the bake's target once, inside the scope's guard, and says whether
+ * the render left no draw out. The count is taken just before and just after
+ * the render, so draws left out elsewhere on the engine are never counted
+ * against it, and a bake does not wait for anything but its own pipelines.
+ * The target is kept for the life of the page, so a draw left out in it,
+ * while its pipeline is made (`asyncPipelines.ts`), would bake a blank or
+ * partial tree for good: such a render is never kept.
  */
-async function bakeWhole(
-  rtt: RenderTargetTexture,
-  pipelines: BakePipelines,
-  waitMs: number,
-  signal: AbortSignal | undefined,
-): Promise<"kept" | "aborted" | "left-out"> {
-  const whole = (): boolean => {
-    pipelines.takeSkipped();
-    rtt.render();
-    return pipelines.takeSkipped() === 0;
-  };
-  if (whole()) return "kept";
-  const emptied = await pipelines.settled(waitMs);
-  if (signal?.aborted) return "aborted";
-  if (emptied && whole()) return "kept";
-  rtt.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
-  return whole() ? "kept" : "left-out";
+function renderedWhole(rtt: RenderTargetTexture, pipelines: BakePipelines): boolean {
+  pipelines.takeSkipped();
+  pipelines.guarded(() => rtt.render());
+  return pipelines.takeSkipped() === 0;
 }
 
 /** The first compilation error any of `meshes` reports under render pass

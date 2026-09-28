@@ -176,15 +176,16 @@ describe("the impostor bake with pipelines made asynchronously", () => {
    * run out), and whose renders leave out what `leftOut` gives for the render's
    * index and the target's rate as it draws (rate 0, a target drawn once, is
    * Babylon's synchronous path: the scope above). Every readiness check, take
-   * of the count, guarded render and render is recorded in order, a render
-   * with its time from the bake's start.
+   * of the count, guarded render and render is recorded in order; the tests
+   * move the fake timers by hand, so when each render comes is read from how
+   * many there are after each step.
    */
   function bake(opts: { gates?: boolean[]; leftOut(index: number, rate: number): number; failMs?: number; signal?: AbortSignal }) {
     const scene = sceneOnNullEngine();
     const mesh = MeshBuilder.CreateBox("s0_lod1", { size: 2 }, scene);
     const events: string[] = [];
     let skipped = 0;
-    let renders = 0;
+    let rendered = 0;
     const pipelines = {
       takeSkipped: (): number => {
         events.push("take");
@@ -202,75 +203,86 @@ describe("the impostor bake with pipelines made asynchronously", () => {
       events.push(ready ? "ready" : "not ready");
       return ready;
     });
-    const from = performance.now();
     vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
-      const leftOut = opts.leftOut(renders++, this.refreshRate);
-      events.push(`render at ${performance.now() - from} rate ${this.refreshRate} left out ${leftOut}`);
+      const leftOut = opts.leftOut(rendered++, this.refreshRate);
+      events.push(`render, rate ${this.refreshRate}, left out ${leftOut}`);
       skipped += leftOut;
     });
     const texture = defaultBakeImpostor(mesh, scene, { pipelines, failMs: opts.failMs, signal: opts.signal });
-    return { texture, events, scene };
+    return { texture, events, scene, renders: () => events.filter((e) => e.startsWith("render")) };
   }
-  const renders = (events: readonly string[]): string[] => events.filter((e) => e.startsWith("render"));
 
   it("reads what each render left out around it, and keeps a first render that left nothing out", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     const { texture, events } = bake({ leftOut: () => 0 });
     await vi.advanceTimersByTimeAsync(0);
     expect(await texture).not.toBeNull();
-    expect(events).toEqual(["ready", "take", "guarded", "render at 0 rate 1 left out 0", "take"]);
+    expect(events).toEqual(["ready", "take", "guarded", "render, rate 1, left out 0", "take"]);
   });
 
   it("renders again every 250 ms, readiness checked first, until a render left nothing out", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
-    const { texture, events } = bake({ leftOut: (i) => [3, 2, 0][i] ?? 0 });
-    await vi.advanceTimersByTimeAsync(500);
+    const { texture, events, renders } = bake({ leftOut: (i) => [3, 2, 0][i] ?? 0 });
+    await vi.advanceTimersByTimeAsync(249);
+    expect(renders().length).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(renders().length).toBe(2);
+    await vi.advanceTimersByTimeAsync(249);
+    expect(renders().length).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
     expect(await texture).not.toBeNull();
     expect(events).toEqual([
-      "ready", "take", "guarded", "render at 0 rate 1 left out 3", "take",
-      "ready", "take", "guarded", "render at 250 rate 1 left out 2", "take",
-      "ready", "take", "guarded", "render at 500 rate 1 left out 0", "take",
+      "ready", "take", "guarded", "render, rate 1, left out 3", "take",
+      "ready", "take", "guarded", "render, rate 1, left out 2", "take",
+      "ready", "take", "guarded", "render, rate 1, left out 0", "take",
     ]);
   });
 
   it("goes back to its poll while the target is not ready, and renders only a ready one", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
-    const { texture, events } = bake({ gates: [true, false, false], leftOut: (i) => [1, 0][i] ?? 0 });
-    await vi.advanceTimersByTimeAsync(282);
+    const { texture, events, renders } = bake({ gates: [true, false, false], leftOut: (i) => [1, 0][i] ?? 0 });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(renders().length).toBe(1);
+    await vi.advanceTimersByTimeAsync(31);
+    expect(renders().length).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
     expect(await texture).not.toBeNull();
     expect(events).toEqual([
-      "ready", "take", "guarded", "render at 0 rate 1 left out 1", "take",
+      "ready", "take", "guarded", "render, rate 1, left out 1", "take",
       "not ready",
       "not ready",
-      "ready", "take", "guarded", "render at 282 rate 1 left out 0", "take",
+      "ready", "take", "guarded", "render, rate 1, left out 0", "take",
     ]);
   });
 
   it("renders as a target drawn once, on Babylon's synchronous path, when what is left of its bound runs out", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
-    const { texture, events } = bake({ failMs: 1_000, leftOut: (_i, rate) => (rate === 0 ? 0 : 1) });
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(await texture).not.toBeNull();
-    expect(renders(events)).toEqual([
-      "render at 0 rate 1 left out 1",
-      "render at 250 rate 1 left out 1",
-      "render at 500 rate 1 left out 1",
-      "render at 750 rate 1 left out 1",
-      "render at 1000 rate 0 left out 0",
+    const { texture, renders } = bake({ failMs: 1_000, leftOut: (_i, rate) => (rate === 0 ? 0 : 1) });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(renders()).toEqual([
+      "render, rate 1, left out 1",
+      "render, rate 1, left out 1",
+      "render, rate 1, left out 1",
+      "render, rate 1, left out 1",
     ]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await texture).not.toBeNull();
+    expect(renders().slice(4)).toEqual(["render, rate 0, left out 0"]);
   });
 
   it("keeps no render in which a draw was left out, even its synchronous one: it fails, and says so", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const { texture, events, scene } = bake({ failMs: 500, leftOut: () => 1 });
-    await vi.advanceTimersByTimeAsync(1_000);
+    const { texture, scene, renders } = bake({ failMs: 500, leftOut: () => 1 });
+    await vi.advanceTimersByTimeAsync(500);
     expect(await texture).toBeNull();
-    expect(renders(events)).toEqual([
-      "render at 0 rate 1 left out 1",
-      "render at 250 rate 1 left out 1",
-      "render at 500 rate 0 left out 1",
+    expect(renders()).toEqual([
+      "render, rate 1, left out 1",
+      "render, rate 1, left out 1",
+      "render, rate 0, left out 1",
     ]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(renders().length).toBe(3);
     expect(errors.mock.calls.map((c) => String(c[0]))).toEqual(["forest impostor bake left a draw out: s0_lod1"]);
     expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
   });
@@ -279,12 +291,12 @@ describe("the impostor bake with pipelines made asynchronously", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const abort = new AbortController();
-    const { texture, events, scene } = bake({ leftOut: () => 1, signal: abort.signal });
+    const { texture, scene, renders } = bake({ leftOut: () => 1, signal: abort.signal });
     await vi.advanceTimersByTimeAsync(0);
     abort.abort();
     await vi.advanceTimersByTimeAsync(250);
     expect(await texture).toBeNull();
-    expect(renders(events)).toEqual(["render at 0 rate 1 left out 1"]);
+    expect(renders()).toEqual(["render, rate 1, left out 1"]);
     expect(errors).not.toHaveBeenCalled();
     expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
   });

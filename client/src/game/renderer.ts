@@ -61,7 +61,7 @@ import {
 } from "./water.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { POND_DEPTH } from "../sim/features.js";
-import { createForestMeshes, type ImpostorBake } from "./forestMeshes.js";
+import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
 import { NEAR_RADIUS } from "./forestField.js";
 import { createClutterMeshes } from "./clutterMeshes.js";
 import type { CullPose } from "./grassCull.js";
@@ -641,6 +641,13 @@ export type RendererOptions = {
   pipelines?: AsyncPipelines;
 };
 
+/** What the impostor bakes read of the pipelines and the scope: the draws a
+ * render left out, and the scope's guard around a render. None on WebGL2. */
+function bakePipelines(pipelines: AsyncPipelines | null, scope: GroupScope | null): BakePipelines | undefined {
+  if (pipelines === null || scope === null) return undefined;
+  return { takeSkipped: () => pipelines.takeSkipped(), guarded: scope.guarded };
+}
+
 /**
  * Opens the scope of `pipelines` around each rendering group's draws in
  * `scene` (`onBeforeRenderingGroupObservable` to
@@ -651,9 +658,18 @@ export type RendererOptions = {
  * no frame is shown without its final composite. A target drawn once
  * (`REFRESHRATE_RENDER_ONCE`, such as the reflection probe) is a render that
  * is kept, so its groups stay outside the scope too, on Babylon's synchronous
- * path. Returns a function that takes the scope off.
+ * path.
+ *
+ * The scope cannot stay open: a throw inside a group skips the group's
+ * after-observer, so every group still open is shut as each frame of the
+ * scene begins (`onBeforeRenderObservable`), and a render outside the scene's
+ * frames (the impostor bake's) goes through `guarded`, which shuts what its
+ * render left open, even as it throws. Returns `off`, which takes the scope
+ * off, and `guarded`.
  */
-export function scopeRenderingGroups(scene: Scene, pipelines: Pick<AsyncPipelines, "enter" | "leave">): () => void {
+export type GroupScope = { off(): void; guarded(render: () => void): void };
+
+export function scopeRenderingGroups(scene: Scene, pipelines: Pick<AsyncPipelines, "enter" | "leave">): GroupScope {
   /** The target that owns each rendering manager met, or null for the scene's own. */
   const owners = new WeakMap<RenderingManager, ObjectRenderer | null>();
   const drawnOnce = (manager: RenderingManager): boolean => {
@@ -675,9 +691,25 @@ export function scopeRenderingGroups(scene: Scene, pipelines: Pick<AsyncPipeline
   const after = scene.onAfterRenderingGroupObservable.add(() => {
     if (open.pop() === true) pipelines.leave();
   });
-  return () => {
-    scene.onBeforeRenderingGroupObservable.remove(before);
-    scene.onAfterRenderingGroupObservable.remove(after);
+  /** Shuts every group opened past the first `depth`, innermost first. */
+  const shutTo = (depth: number): void => {
+    while (open.length > depth) if (open.pop() === true) pipelines.leave();
+  };
+  const frame = scene.onBeforeRenderObservable.add(() => shutTo(0));
+  return {
+    off() {
+      scene.onBeforeRenderingGroupObservable.remove(before);
+      scene.onAfterRenderingGroupObservable.remove(after);
+      scene.onBeforeRenderObservable.remove(frame);
+    },
+    guarded(render) {
+      const depth = open.length;
+      try {
+        render();
+      } finally {
+        shutTo(depth);
+      }
+    },
   };
 }
 
@@ -802,9 +834,9 @@ function buildRenderer(
   // made. Taken off, and the patch with it, before the engine goes: here if
   // the build throws, in `dispose` otherwise.
   const pipelines = options.pipelines ?? null;
-  const unscope = pipelines === null ? () => undefined : scopeRenderingGroups(scene, pipelines);
+  const scope = pipelines === null ? null : scopeRenderingGroups(scene, pipelines);
   const releasePipelines = (): void => {
-    unscope();
+    scope?.off();
     pipelines?.remove();
   };
   made(releasePipelines);
@@ -950,7 +982,7 @@ function buildRenderer(
   const lowTierNearRadius = Math.round(NEAR_RADIUS * (140 / 240));
   const forestMeshes =
     forest !== null
-      ? createForestMeshes(scene, forest.seed, { nearRadius: tier === "low" ? lowTierNearRadius : undefined, pipelines: pipelines ?? undefined })
+      ? createForestMeshes(scene, forest.seed, { nearRadius: tier === "low" ? lowTierNearRadius : undefined, pipelines: bakePipelines(pipelines, scope) })
       : null;
   partOf(forestMeshes);
   // Forest shadow casters (the LOD0 bucket only) cannot be registered here: the GLBs load
