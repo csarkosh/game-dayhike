@@ -864,6 +864,114 @@ describe("the translations shipped with the build", () => {
     expect(atCeiling.get("aa")).toBe("// a");
   });
 
+  /** A body read a part at a time, only as it is asked for; `hang` keeps it
+   * from ever ending after its parts. What was pulled, and whether it was
+   * cancelled. */
+  function streamOf(parts: Uint8Array[], hang = false) {
+    const seen = { pulled: 0, cancelled: false };
+    let next = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          if (next < parts.length) {
+            seen.pulled += 1;
+            controller.enqueue(parts[next++] as Uint8Array);
+            return undefined;
+          }
+          if (hang) return new Promise<void>(() => undefined);
+          controller.close();
+          return undefined;
+        },
+        cancel() {
+          seen.cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    return { body, seen };
+  }
+  /** A map of one entry, padded with white space to `bytes`. */
+  const padded = (bytes: number): string => {
+    const text = mapText(SALT, new Map([["aa", "// a"]]));
+    return text + " ".repeat(bytes - text.length);
+  };
+  const MIB = new Uint8Array(1_048_576).fill(0x20);
+  const CEILING_REFUSED = `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: past the map's ceiling of 16777216 bytes as it was read)`;
+  /** `fetch` answering with `body` and `headers`, counting the reads of its text. */
+  function answering(body: ReadableStream<Uint8Array> | null, headers: Record<string, string>, text: string) {
+    const reads = { text: 0 };
+    const answer = (() =>
+      Promise.resolve({
+        ...response("", 200, headers),
+        body,
+        text: () => {
+          reads.text += 1;
+          return Promise.resolve(text);
+        },
+      } as Response)) as unknown as typeof fetch;
+    return { answer, reads };
+  }
+
+  it("refuses a body that reads past the 16 MB ceiling though its Content-Length says less, and stops reading it: never parsed", async () => {
+    const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    for (const headers of [{ "content-length": "1000" }, {}] as Record<string, string>[]) {
+      warn.mockClear();
+      const { body, seen } = streamOf(Array.from({ length: 20 }, () => MIB));
+      const { answer, reads } = answering(body, headers, padded(1_000));
+      const map = loadWgslMap(MAP_URL, SALT, { fetch: answer });
+      await map.ready;
+      expect([map.get("aa"), reads.text, seen.pulled, seen.cancelled]).toEqual([null, 0, 17, true]);
+      expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([CEILING_REFUSED]);
+    }
+  });
+
+  it("reads a body of exactly the ceiling through its stream, and finds its entries", async () => {
+    const bytes = new TextEncoder().encode(padded(16_777_216));
+    const parts = Array.from({ length: 16 }, (_, i) => bytes.subarray(i * 1_048_576, (i + 1) * 1_048_576));
+    const { body, seen } = streamOf(parts);
+    const { answer, reads } = answering(body, {}, padded(16_777_216));
+    const map = loadWgslMap(MAP_URL, SALT, { fetch: answer });
+    await map.ready;
+    expect([map.get("aa"), reads.text, seen.pulled]).toEqual(["// a", 0, 16]);
+  });
+
+  it("with no stream to read, refuses a text past the ceiling by its length, before it is parsed", async () => {
+    const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    const over = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(16_777_217)).answer });
+    await over.ready;
+    expect(over.get("aa")).toBe(null);
+    expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([CEILING_REFUSED]);
+    const at = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(16_777_216)).answer });
+    await at.ready;
+    expect(at.get("aa")).toBe("// a");
+  });
+
+  it("while its body is being read, is still waited for 1 s at most, and its reading is stopped when the engine is let go", async () => {
+    vi.useFakeTimers();
+    const { body, seen } = streamOf([MIB], true);
+    const signals: AbortSignal[] = [];
+    const reading = ((_url: string, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      return Promise.resolve({ ...response("", 200, {}), body, text: () => new Promise<string>(() => undefined) } as Response);
+    }) as unknown as typeof fetch;
+    const h = harness();
+    const ready = lookUpShaders(h.engine, {
+      mode: "on",
+      salt: SALT,
+      sources: () => Promise.resolve([loadWgslMap(MAP_URL, SALT, { fetch: reading })]),
+      report: newLookupReport("on", SALT),
+    });
+    let done = false;
+    void ready.then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(done).toBe(true);
+    releaseShaderLookup(h.engine);
+    await vi.advanceTimersByTimeAsync(0);
+    expect([signals.map((signal) => signal.aborted), seen.cancelled]).toEqual([[true], true]);
+  });
+
   it("holds what it read for the engine's life, asked for or not, and lets it all go when closed", async () => {
     const map = shipped(
       new Map([

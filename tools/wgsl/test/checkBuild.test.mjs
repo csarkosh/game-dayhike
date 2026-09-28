@@ -47,45 +47,61 @@ function dist(change = {}) {
 }
 
 describe('the check of the built client', () => {
-  it('passes a build whose one map is named by the WebGPU chunk alone and is this build\'s', () => {
-    expect(checkBuild(dist(), { mapFormat: FORMAT })).toEqual([]);
+  it('passes a build whose one map is named by the WebGPU chunk alone and is this build\'s', async () => {
+    expect(await checkBuild(dist(), { mapFormat: FORMAT })).toEqual([]);
   });
 
-  it('fails a build with no map, or with two, or with one that is not a map of the known format', () => {
-    expect(checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': null }), { mapFormat: FORMAT })).toContain(
+  it('fails a build with no map, or with two, or with one that is not a map of the known format', async () => {
+    expect(await checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': null }), { mapFormat: FORMAT })).toContain(
       'the build holds 0 WGSL maps (assets/wgsl-map-*.json), not 1',
     );
-    expect(checkBuild(dist({ 'assets/wgsl-map-Zz9_Zk9a.json': MAP }), { mapFormat: FORMAT })).toContain(
+    expect(await checkBuild(dist({ 'assets/wgsl-map-Zz9_Zk9a.json': MAP }), { mapFormat: FORMAT })).toContain(
       'the build holds 2 WGSL maps (assets/wgsl-map-*.json), not 1',
     );
-    expect(checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': '<!doctype html>' }), { mapFormat: FORMAT })).toContain(
+    expect(await checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': '<!doctype html>' }), { mapFormat: FORMAT })).toContain(
       'assets/wgsl-map-Qx3_Zk9a.json does not parse as JSON',
     );
     expect(
-      checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': MAP.replace(FORMAT, 'dayhike-wgsl-map/2') }), { mapFormat: FORMAT }),
+      await checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': MAP.replace(FORMAT, 'dayhike-wgsl-map/2') }), { mapFormat: FORMAT }),
     ).toContain('assets/wgsl-map-Qx3_Zk9a.json is not a map of dayhike-wgsl-map/1');
   });
 
-  it('fails a build whose entry chunk, or a chunk it imports statically, names the map or the lookup', () => {
+  it('fails a build whose entry chunk, or a chunk it imports statically, names the map or the lookup', async () => {
     expect(
-      checkBuild(dist({ 'assets/vendor-BBBBBBBB.js': 'export const a=`/dayhike/assets/wgsl-map-Qx3_Zk9a.json`;' }), { mapFormat: FORMAT }),
+      await checkBuild(dist({ 'assets/vendor-BBBBBBBB.js': 'export const a=`/dayhike/assets/wgsl-map-Qx3_Zk9a.json`;' }), { mapFormat: FORMAT }),
     ).toEqual(['assets/vendor-BBBBBBBB.js, loaded with the entry chunk, names wgsl-map']);
     expect(
-      checkBuild(dist({ 'assets/vendor-BBBBBBBB.js': 'export{a}from"./shared-DDDDDDDD.js";', 'assets/shared-DDDDDDDD.js': 'export const a=`dayhike-wgsl-corpus-`;' }), {
+      await checkBuild(dist({ 'assets/vendor-BBBBBBBB.js': 'export{a}from"./shared-DDDDDDDD.js";', 'assets/shared-DDDDDDDD.js': 'export const a=`dayhike-wgsl-corpus-`;' }), {
         mapFormat: FORMAT,
       }),
     ).toEqual(['assets/shared-DDDDDDDD.js, loaded with the entry chunk, names dayhike-wgsl']);
     // The WebGPU chunk, imported dynamically, is not the entry's to carry.
-    expect(checkBuild(dist({ 'assets/index-AAAAAAAA.js': 'import"./vendor-BBBBBBBB.js";var Ze=`9.18.0`;const l=()=>import("./gpuEngine-CCCCCCCC.js");' }), { mapFormat: FORMAT })).toEqual([]);
+    expect(await checkBuild(dist({ 'assets/index-AAAAAAAA.js': 'import"./vendor-BBBBBBBB.js";var Ze=`9.18.0`;const l=()=>import("./gpuEngine-CCCCCCCC.js");' }), { mapFormat: FORMAT })).toEqual([]);
   });
 
-  it("fails a build whose WebGPU chunk does not name the map, or whose map is not the bundle's", () => {
+  it("fails a build whose WebGPU chunk does not name the map, or whose map is not the bundle's", async () => {
     expect(
-      checkBuild(dist({ 'assets/gpuEngine-CCCCCCCC.js': 'var Wm=`/dayhike/assets/wgsl-map-Zz9_Zk9a.json`;' }), { mapFormat: FORMAT }),
+      await checkBuild(dist({ 'assets/gpuEngine-CCCCCCCC.js': 'var Wm=`/dayhike/assets/wgsl-map-Zz9_Zk9a.json`;' }), { mapFormat: FORMAT }),
     ).toContain('the WebGPU chunk assets/gpuEngine-CCCCCCCC.js does not name assets/wgsl-map-Qx3_Zk9a.json');
     const other = MAP.replace('babylon=9.18.0', 'babylon=9.17.0');
-    expect(checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': other }), { mapFormat: FORMAT })).toEqual([
+    expect(await checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': other }), { mapFormat: FORMAT })).toEqual([
       'the deploy check refuses the map: its salt was made against Babylon 9.17.0, which the bundle does not carry',
+    ]);
+  });
+
+  it("finds Babylon's version where only a chunk the entry imports statically carries it, as the deploy check does, and says which", async () => {
+    const entry = 'import{a as e}from"./vendor-BBBBBBBB.js";const l=()=>import(`./gpuEngine-CCCCCCCC.js`),__vite__mapDeps=["assets/gpuEngine-CCCCCCCC.js"];';
+    const notes = [];
+    expect(
+      await checkBuild(dist({ 'assets/index-AAAAAAAA.js': entry, 'assets/vendor-BBBBBBBB.js': 'var Ze=class{static get Version(){return`9.18.0`}};export const a=Ze;' }), {
+        mapFormat: FORMAT,
+        note: (line) => notes.push(line),
+      }),
+    ).toEqual([]);
+    expect(notes).toEqual(["Babylon's version 9.18.0 is in assets/vendor-BBBBBBBB.js, which the entry chunk imports statically"]);
+    // Nowhere: refused with the deploy check's own words.
+    expect(await checkBuild(dist({ 'assets/index-AAAAAAAA.js': entry }), { mapFormat: FORMAT })).toEqual([
+      'the deploy check refuses the map: its salt was made against Babylon 9.18.0, which the bundle does not carry',
     ]);
   });
 
