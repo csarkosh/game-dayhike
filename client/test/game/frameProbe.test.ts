@@ -22,7 +22,7 @@ import {
   type StartupDeps,
 } from "../../src/game/frameProbe.js";
 import type { GpuSignals } from "../../src/game/gpuSignals.js";
-import type { ProbeReading, QualityTier } from "../../src/game/quality.js";
+import { withGovernorDrop, type ProbeReading, type QualityTier } from "../../src/game/quality.js";
 import { readAutoRecord, writeAutoRecord } from "../../src/game/tierChoice.js";
 
 const f = (n: number, ms: number): number[] => Array.from({ length: n }, () => ms);
@@ -743,5 +743,94 @@ describe("a governor's drop at the next start", () => {
       .toEqual({ tier: "medium", source: "auto", cls: "discrete-modern" });
     expect(await startupTier(signals, { search: "", choice: "high", cancelled: () => false }, deps))
       .toEqual({ tier: "high", source: "choice", cls: "discrete-modern" });
+  });
+});
+
+describe("Safari on a Mac slower than the reference machine, hike after hike", () => {
+  // Every probe step's scene takes 7.5 s to build and load, then 1.5 s to fall
+  // quiet; high draws at 70 ms a frame, medium at 50 and low at 30, all under
+  // the governor's 48 fps. Before a step could end early this probe took 21.7 s
+  // over high alone, the cap cut medium, and the sequence ran: three hikes of
+  // 30 s of screen with no verdict, the governor's drop to low, and once that
+  // lapsed after 7 days, the probes again.
+  const SLOW_MAC: GpuSignals = {
+    renderer: "Apple GPU", adapter: null, limits: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
+  };
+  const FRAME_MS: Record<QualityTier, number> = { high: 70, medium: 50, low: 30 };
+  const DAY = 86_400_000;
+  const BASE = 1_790_000_000_000;
+
+  it("probes once, reads low inside the cap, and is not probed or dropped again in 30 days", async () => {
+    const storage = memoryStorage();
+    const clock = { now: BASE };
+    let timer: { at: number; fn: () => void } | null = null;
+    const probes: QualityTier[][] = [];
+    const tiers: QualityTier[] = [];
+    const screens: number[] = [];
+    let drops = 0;
+    for (const day of [0, 0, 0, 0, 1, 7, 8, 14, 29]) {
+      clock.now = Math.max(clock.now + 600_000, BASE + day * DAY);
+      const steps: QualityTier[] = [];
+      const deps: StartupDeps = {
+        storage,
+        pixels: () => 1_045_960,
+        now: () => clock.now,
+        runStep: async (tier, cancelled) => {
+          steps.push(tier);
+          const begin = clock.now;
+          const meter = createProbeMeter(begin);
+          let compiled = false;
+          for (;;) {
+            clock.now += FRAME_MS[tier];
+            const due: { at: number; fn: () => void } | null = timer;
+            if (due !== null && clock.now >= due.at) due.fn();
+            if (cancelled()) return null;
+            const loaded = clock.now - begin >= 7_500;
+            if (loaded && !compiled) {
+              compiled = true;
+              meter.compiled(clock.now);
+            }
+            const step = meter.frame(clock.now, loaded);
+            if (step.done) return step.stats === null ? null : { tier, ...step.stats, pixels: 1_045_960, engine: "webgl2" };
+          }
+        },
+        showScreen: () => {
+          const shown = clock.now;
+          return { dispose: () => void screens.push(clock.now - shown) };
+        },
+        setTimer: (fn, ms) => {
+          timer = { at: clock.now + ms, fn };
+          return () => {
+            timer = null;
+          };
+        },
+        whenVisible: async () => true,
+        idleCadence: async () => {
+          clock.now += 500;
+          return 16.7;
+        },
+        log: () => undefined,
+      };
+      const started = await startupTier(SLOW_MAC, { search: "", choice: "auto", cancelled: () => false }, deps);
+      tiers.push(started.tier);
+      if (steps.length > 0) probes.push(steps);
+      // A minute of play; the governor drops a tier played under 48 fps.
+      clock.now += 60_000;
+      if (FRAME_MS[started.tier] > 20.8) {
+        const next = withGovernorDrop(readAutoRecord(storage), "Apple GPU", 26, "apple-unknown", started.tier, 1_045_960, clock.now);
+        if (next !== null) {
+          writeAutoRecord(storage, next);
+          drops += 1;
+        }
+      }
+    }
+    expect(probes).toEqual([["high", "medium"]]);
+    expect(screens).toEqual([27_000]);
+    expect(tiers).toEqual(["low", "low", "low", "low", "low", "low", "low", "low", "low"]);
+    expect(drops).toBe(0);
+    const verdict = readAutoRecord(storage)!.verdict!;
+    expect(verdict.tier).toBe("low");
+    expect(verdict.source).toBe("probe");
+    expect(verdict.readings!.map((r) => [r.tier, r.frames, r.meanMs, r.early])).toEqual([["high", 31, 70, true], ["medium", 43, 50, true]]);
   });
 });
