@@ -15,9 +15,10 @@
  * store's is.
  *
  * Nothing here is the player's to see: a map that does not come (a fetch
- * refused or never answered, an HTTP error), one whose `Content-Length` is
- * over `MAP_MAX_BYTES`, one made for another build (its salt) or in another
- * format, or one that does not parse is a source with
+ * refused or never answered, an HTTP error), one past `MAP_MAX_BYTES` as it
+ * is read (refused sooner where its `Content-Length` already says so), one
+ * made for another build (its salt) or in another format, or one that does
+ * not parse is a source with
  * nothing in it, and the lookup translates as the engine always has: never an
  * error, never a switch to WebGL2, never a record. It takes no writes.
  */
@@ -56,17 +57,52 @@ export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fe
   /** The WGSL read in, held for the engine's life. */
   let held = new Map<string, string>();
   let closed = false;
+  /** Stops a body being read, where one is. */
+  let stopReading: () => void = () => undefined;
+
+  /** The body's text, counted as its decoded bytes arrive and refused once
+   * they pass `MAP_MAX_BYTES`, the reading stopped. A response with no body
+   * to read as it comes is read whole and refused by its length before it
+   * is parsed (a character a byte: the map is ASCII). */
+  const readBounded = async (response: Response): Promise<string> => {
+    const past = (): Error => new Error(`${url}: past the map's ceiling of ${MAP_MAX_BYTES} bytes as it was read`);
+    if (!response.body) {
+      const text = await response.text();
+      if (text.length > MAP_MAX_BYTES) throw past();
+      return text;
+    }
+    const reader = response.body.getReader();
+    stopReading = () => void reader.cancel().catch(() => undefined);
+    const decoder = new TextDecoder();
+    const parts: string[] = [];
+    let bytes = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAP_MAX_BYTES) {
+        abort.abort();
+        stopReading();
+        throw past();
+      }
+      parts.push(decoder.decode(value, { stream: true }));
+    }
+    parts.push(decoder.decode());
+    return parts.join("");
+  };
 
   const ready = (async (): Promise<void> => {
     const response = await request(url, { signal: abort.signal });
     if (!response.ok) throw new Error(`${url}: ${response.status}`);
-    // Refused unread where it says it is over the ceiling.
+    // Refused unread where its header already says it is over the ceiling;
+    // the header counts the bytes sent, compressed or not, so what is read is
+    // counted too.
     const length = Number(response.headers.get("content-length"));
     if (length > MAP_MAX_BYTES) {
       abort.abort();
       throw new Error(`${url}: ${length} bytes, over the map's ceiling of ${MAP_MAX_BYTES}`);
     }
-    const entries = readMap(await response.text(), salt);
+    const entries = readMap(await readBounded(response), salt);
     if (!closed) held = entries;
   })().catch((error: unknown) => {
     if (!closed) Logger.Warn(`WebGPU shader lookup: no translations shipped with the build (${error instanceof Error ? error.message : String(error)})`);
@@ -81,6 +117,7 @@ export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fe
     close: () => {
       closed = true;
       abort.abort();
+      stopReading();
       held.clear();
     },
   };
