@@ -30,13 +30,21 @@ export const WEBGPU_TIERS: readonly QualityTier[] = ["high", "medium"];
 /**
  * What the device is created with, and what an adapter must reach to be
  * chosen: exactly these, never the adapter's maximum, so a pipeline that
- * outgrows them fails here rather than only on a weaker adapter. Seventeen
- * inter-stage variables are the blade material's (PBR's varyings plus the
- * foliage plugin's four), one over the default of 16; eight vertex buffers are
- * a terrain ring's six and the default.
+ * outgrows them fails here rather than only on a weaker adapter. Eight vertex
+ * buffers are a terrain ring's six and the default.
+ *
+ * Inter-stage variables: WebGPU lets a vertex stage write at most this many
+ * user-defined outputs, each at a location below it, and a fragment stage read
+ * at most this many user-defined inputs less one for each inter-stage built-in
+ * it reads (`front_facing`, `sample_index`, `sample_mask`, `primitive_index`
+ * and the two subgroup built-ins; the position does not count). On WebGPU
+ * Babylon declares every vertex output as a fragment input, a `mat3` taking
+ * three locations, so the giant trees' faded material, 18 outputs and a
+ * two-sided fragment reading `front_facing`, needs 19 (`interStage.test.ts`
+ * holds the count; the verification note's §6.1 has the reading).
  */
 export const WEBGPU_REQUIRED_LIMITS: Readonly<Record<string, number>> = {
-  maxInterStageShaderVariables: 17,
+  maxInterStageShaderVariables: 19,
   maxVertexBuffers: 8,
 };
 

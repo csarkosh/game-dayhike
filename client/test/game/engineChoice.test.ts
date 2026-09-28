@@ -54,12 +54,12 @@ describe("chooseEngine", () => {
 });
 
 describe("adapterFits", () => {
-  it("wants 17 inter-stage variables, 8 vertex buffers and a hardware adapter", () => {
-    expect(WEBGPU_REQUIRED_LIMITS).toEqual({ maxInterStageShaderVariables: 17, maxVertexBuffers: 8 });
+  it("wants 19 inter-stage variables, 8 vertex buffers and a hardware adapter", () => {
+    expect(WEBGPU_REQUIRED_LIMITS).toEqual({ maxInterStageShaderVariables: 19, maxVertexBuffers: 8 });
     const defaults = { maxInterStageShaderVariables: 16, maxVertexBuffers: 8 };
     const reference = { maxInterStageShaderVariables: 28, maxVertexBuffers: 8 };
     expect(adapterFits({ limits: defaults, isFallbackAdapter: false }))
-      .toEqual({ fits: false, why: "maxInterStageShaderVariables 16 < 17" });
+      .toEqual({ fits: false, why: "maxInterStageShaderVariables 16 < 19" });
     expect(adapterFits({ limits: reference, isFallbackAdapter: false })).toEqual({ fits: true, why: null });
     expect(adapterFits({ limits: reference, isFallbackAdapter: true })).toEqual({ fits: false, why: "fallback adapter" });
     expect(adapterFits(null)).toEqual({ fits: false, why: "no adapter" });
@@ -297,7 +297,7 @@ describe("resolveWebGpu", () => {
     expect(quiet.log.remembered).toEqual([]);
     const forced = steps({ probe: () => Promise.resolve(small) });
     expect(await resolveWebGpu({ ...high, override: "webgpu" }, forced.s, budgets)).toBeNull();
-    expect(forced.log.warned).toEqual(["WebGPU: not on this browser (maxInterStageShaderVariables 16 < 17); drawing with WebGL2."]);
+    expect(forced.log.warned).toEqual(["WebGPU: not on this browser (maxInterStageShaderVariables 16 < 19); drawing with WebGL2."]);
     const none = steps({ probe: () => Promise.resolve(null) });
     expect(await resolveWebGpu(high, none.s, budgets)).toBeNull();
     expect(none.log.calls).toEqual(["load"]);
