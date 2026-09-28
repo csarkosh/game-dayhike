@@ -153,8 +153,22 @@ describe("the start with the WebGPU switch off", () => {
     // The game holds its first frames only on a WebGPU engine, and gives the
     // patch only to a renderer on one.
     const app = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
-    expect(app.match(/watchers\.reveal\(/g)).toEqual(["watchers.reveal("]);
+    expect(app.match(/\bholdReveal\(/g)).toEqual(["holdReveal("]);
     expect(app).toContain("if (renderer.engine.isWebGPU && watchers !== null) {");
+    // The hold gives way to a switch's own cover and to the game's end
+    // (`revealHold.test.ts` shows what lifting it does; the app itself needs a
+    // page to run).
+    const switchNow = app.slice(app.indexOf("  async function switchNow("), app.indexOf("\n  }\n", app.indexOf("  async function switchNow(")));
+    expect(switchNow.indexOf("endRevealHold();")).toBeGreaterThan(0);
+    expect(switchNow.indexOf("swapRenderer(")).toBeGreaterThan(switchNow.indexOf("endRevealHold();"));
+    // The switch's cover also waits for a frame that left nothing out, on
+    // what is left of its bound, after the scene is ready.
+    const ready = switchNow.indexOf("await whenSceneReady(renderer.scene, made.leftMs, renderer.forestReady);");
+    expect(ready).toBeGreaterThan(0);
+    expect(switchNow.indexOf("await whenFrameWhole(")).toBeGreaterThan(ready);
+    const dispose = app.slice(app.lastIndexOf("    dispose() {\n      disposed = true;"));
+    expect(dispose.indexOf("endRevealHold();")).toBeGreaterThan(0);
+    expect(dispose.indexOf("endRevealHold();")).toBeLessThan(dispose.indexOf("renderer.dispose();"));
     expect(app).toContain("engine !== null && watchers !== null ? (watchers.asyncPipelines(engine) ?? undefined) : undefined");
   });
 

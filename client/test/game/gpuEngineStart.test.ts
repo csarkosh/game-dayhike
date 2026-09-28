@@ -38,12 +38,15 @@ vi.mock("@babylonjs/core/Engines/webgpuEngine.pure.js", () => {
     _preparePipelineContextAsync(): Promise<void> {
       return Promise.resolve();
     }
+    // What `initAsync` makes that the pipelines' patch is installed on.
+    _cacheRenderPipeline = { _device: {}, getRenderPipeline: (): null => null };
+    _draw(): void {}
   }
   return { WebGPUEngine };
 });
 
 import { WebGPUEngine as WebGPUEngineMock } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
-import { createWebGpuEngine, forgetTranslators, loadTranslators } from "../../src/game/gpuEngine.js";
+import { asyncPipelinesOf, createWebGpuEngine, forgetTranslators, loadTranslators } from "../../src/game/gpuEngine.js";
 import { buildSalt, type WgslSource } from "../../src/game/shaderLookup.js";
 
 const canvas = {} as HTMLCanvasElement;
@@ -324,6 +327,13 @@ describe("createWebGpuEngine", () => {
     expect(handed).toBe(true);
     await later;
     expect(made.disposed).toBe(0);
+  });
+
+  it("hands over an engine whose render pipelines are made asynchronously, and one left on Babylon's path with ?pipelines=sync", async () => {
+    const engine = await createWebGpuEngine(canvas, { translators: TRANSLATORS, lookup: "off" });
+    expect(asyncPipelinesOf(engine)).not.toBeNull();
+    const synchronous = await createWebGpuEngine(canvas, { translators: TRANSLATORS, lookup: "off", pipelines: "sync" });
+    expect(asyncPipelinesOf(synchronous)).toBeNull();
   });
 
   it("asks the device for exactly the required limits and the texture formats it is given", async () => {

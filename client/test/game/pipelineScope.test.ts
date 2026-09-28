@@ -27,7 +27,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
 import { RenderingGroupInfo, type RenderingManager } from "@babylonjs/core/Rendering/renderingManager.js";
 import type { AsyncPipelines } from "../../src/game/asyncPipelines.js";
-import { IMPOSTOR_BAKE_FAIL_MS, defaultBakeImpostor } from "../../src/game/forestMeshes.js";
+import { defaultBakeImpostor } from "../../src/game/forestMeshes.js";
 import { createRenderer, scopeRenderingGroups } from "../../src/game/renderer.js";
 import type { Level } from "../../src/sim/level.js";
 
@@ -52,6 +52,15 @@ function groupOf(scene: Scene, manager: RenderingManager): RenderingGroupInfo {
 }
 
 /** Records the scope's enter and leave. */
+/** The target a render target just made added to `scene`, found by identity. */
+function addedBy(scene: Scene, make: () => RenderTargetTexture): { target: RenderTargetTexture; manager: RenderingManager } {
+  const before = [...scene.objectRenderers];
+  const target = make();
+  const added = scene.objectRenderers.filter((r) => !before.includes(r));
+  expect(added.length).toBe(1);
+  return { target, manager: added[0]!.renderingManager };
+}
+
 function scopeLog(): { calls: string[]; pipelines: Pick<AsyncPipelines, "enter" | "leave"> } {
   const calls: string[] = [];
   return { calls, pipelines: { enter: () => void calls.push("enter"), leave: () => void calls.push("leave") } };
@@ -61,19 +70,17 @@ describe("where draws may be left out: the rendering groups", () => {
   it("brackets each rendering group of the camera's pass and of a target drawn every frame, and nothing once off", () => {
     const scene = sceneOnNullEngine();
     const { calls, pipelines } = scopeLog();
-    const off = scopeRenderingGroups(scene, pipelines);
+    const scope = scopeRenderingGroups(scene, pipelines);
     const main = groupOf(scene, scene.renderingManager);
     scene.onBeforeRenderingGroupObservable.notifyObservers(main);
     scene.onAfterRenderingGroupObservable.notifyObservers(main);
     // A shadow map's kind: a target the scene draws every frame.
-    const count = scene.objectRenderers.length;
-    const everyFrame = new RenderTargetTexture("every frame", 4, scene);
-    expect(scene.objectRenderers.length).toBe(count + 1);
-    const everyFrameGroup = groupOf(scene, scene.objectRenderers[count]!.renderingManager);
+    const { target: everyFrame, manager } = addedBy(scene, () => new RenderTargetTexture("every frame", 4, scene));
+    const everyFrameGroup = groupOf(scene, manager);
     scene.onBeforeRenderingGroupObservable.notifyObservers(everyFrameGroup);
     scene.onAfterRenderingGroupObservable.notifyObservers(everyFrameGroup);
     expect(calls).toEqual(["enter", "leave", "enter", "leave"]);
-    off();
+    scope.off();
     scene.onBeforeRenderingGroupObservable.notifyObservers(main);
     scene.onAfterRenderingGroupObservable.notifyObservers(main);
     expect(calls.length).toBe(4);
@@ -84,13 +91,10 @@ describe("where draws may be left out: the rendering groups", () => {
     const scene = sceneOnNullEngine();
     const { calls, pipelines } = scopeLog();
     scopeRenderingGroups(scene, pipelines);
-    const count = scene.objectRenderers.length;
     // The reflection probe's kind.
-    const once = new RenderTargetTexture("once", 4, scene);
+    const { target: once, manager } = addedBy(scene, () => new RenderTargetTexture("once", 4, scene));
     once.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
-    const owner = scene.objectRenderers[count]!;
-    expect(owner.refreshRate).toBe(0);
-    const onceGroup = groupOf(scene, owner.renderingManager);
+    const onceGroup = groupOf(scene, manager);
     const main = groupOf(scene, scene.renderingManager);
     // Drawn on its own, and inside the camera's pass: its groups never enter,
     // and the camera's leave still matches the camera's enter.
@@ -147,11 +151,7 @@ describe("the renderer on a WebGPU engine with pipelines made asynchronously", (
 
   it("scopes its scene's rendering groups, and takes the scope and the patch off before its engine goes", () => {
     const order: string[] = [];
-    const bare = createRenderer(CANVAS, LEVEL, null, { tier: "medium" });
-    const without = bare.scene.onBeforeRenderingGroupObservable.observers.length;
-    bare.dispose();
     const r = createRenderer(CANVAS, LEVEL, null, { tier: "medium", pipelines: recorded(order) });
-    expect(r.scene.onBeforeRenderingGroupObservable.observers.length).toBe(without + 1);
     const main = groupOf(r.scene, r.scene.renderingManager);
     r.scene.onBeforeRenderingGroupObservable.notifyObservers(main);
     r.scene.onAfterRenderingGroupObservable.notifyObservers(main);
@@ -171,116 +171,121 @@ describe("the renderer on a WebGPU engine with pipelines made asynchronously", (
 });
 
 describe("the impostor bake with pipelines made asynchronously", () => {
-  function bakeScene() {
+  /**
+   * A bake whose target is ready as `gates` says, in turn (ready once they
+   * run out), and whose renders leave out what `leftOut` gives for the render's
+   * index and the target's rate as it draws (rate 0, a target drawn once, is
+   * Babylon's synchronous path: the scope above). Every readiness check, take
+   * of the count, guarded render and render is recorded in order, a render
+   * with its time from the bake's start.
+   */
+  function bake(opts: { gates?: boolean[]; leftOut(index: number, rate: number): number; failMs?: number; signal?: AbortSignal }) {
     const scene = sceneOnNullEngine();
     const mesh = MeshBuilder.CreateBox("s0_lod1", { size: 2 }, scene);
-    return { scene, mesh };
-  }
-
-  /**
-   * Bakes with pipelines whose renders leave out, in turn, the counts in
-   * `plan` (0 once it runs out), and whose wait answers `emptied`. Each
-   * render is recorded with what it left out and the target's rate as it
-   * drew, the rate 0 of a render-once target being Babylon's synchronous
-   * path (the scope above).
-   */
-  async function bake(plan: number[], emptied: boolean, signal?: AbortSignal) {
-    const { scene, mesh } = bakeScene();
+    const events: string[] = [];
     let skipped = 0;
-    const waits: number[] = [];
+    let renders = 0;
     const pipelines = {
-      takeSkipped: () => {
-        const n = skipped;
+      takeSkipped: (): number => {
+        events.push("take");
+        const count = skipped;
         skipped = 0;
-        return n;
+        return count;
       },
-      settled: (ms: number) => {
-        waits.push(ms);
-        return Promise.resolve(emptied);
+      guarded: (render: () => void): void => {
+        events.push("guarded");
+        render();
       },
     };
-    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
-    const renders: { leftOut: number; rate: number }[] = [];
+    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockImplementation(() => {
+      const ready = opts.gates?.shift() ?? true;
+      events.push(ready ? "ready" : "not ready");
+      return ready;
+    });
+    const from = performance.now();
     vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
-      const leftOut = plan.shift() ?? 0;
-      renders.push({ leftOut, rate: this.refreshRate });
+      const leftOut = opts.leftOut(renders++, this.refreshRate);
+      events.push(`render at ${performance.now() - from} rate ${this.refreshRate} left out ${leftOut}`);
       skipped += leftOut;
     });
-    const texture = await defaultBakeImpostor(mesh, scene, { pipelines, failMs: 5_000, signal });
-    return { texture, renders, waits, scene };
+    const texture = defaultBakeImpostor(mesh, scene, { pipelines, failMs: opts.failMs, signal: opts.signal });
+    return { texture, events, scene };
   }
+  const renders = (events: readonly string[]): string[] => events.filter((e) => e.startsWith("render"));
 
-  it("keeps a first render that left nothing out, and waits for nothing", async () => {
-    const { texture, renders, waits } = await bake([0], true);
-    expect(texture).not.toBeNull();
-    expect(renders).toEqual([{ leftOut: 0, rate: 1 }]);
-    expect(waits).toEqual([]);
-  });
-
-  it("asks with a first render, waits within its bound, and keeps the second when it left nothing out", async () => {
+  it("reads what each render left out around it, and keeps a first render that left nothing out", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
-    const baking = bake([3, 0], true);
+    const { texture, events } = bake({ leftOut: () => 0 });
     await vi.advanceTimersByTimeAsync(0);
-    const { texture, renders, waits } = await baking;
-    expect(texture).not.toBeNull();
-    expect(renders).toEqual([{ leftOut: 3, rate: 1 }, { leftOut: 0, rate: 1 }]);
-    expect(waits).toEqual([5_000]);
+    expect(await texture).not.toBeNull();
+    expect(events).toEqual(["ready", "take", "guarded", "render at 0 rate 1 left out 0", "take"]);
   });
 
-  it("renders once more on Babylon's synchronous path when the second render still left something out", async () => {
-    const { texture, renders } = await bake([3, 2, 0], true);
-    expect(texture).not.toBeNull();
-    expect(renders).toEqual([{ leftOut: 3, rate: 1 }, { leftOut: 2, rate: 1 }, { leftOut: 0, rate: 0 }]);
+  it("renders again every 250 ms, readiness checked first, until a render left nothing out", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
+    const { texture, events } = bake({ leftOut: (i) => [3, 2, 0][i] ?? 0 });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await texture).not.toBeNull();
+    expect(events).toEqual([
+      "ready", "take", "guarded", "render at 0 rate 1 left out 3", "take",
+      "ready", "take", "guarded", "render at 250 rate 1 left out 2", "take",
+      "ready", "take", "guarded", "render at 500 rate 1 left out 0", "take",
+    ]);
   });
 
-  it("renders on Babylon's synchronous path when the wait runs out", async () => {
-    const { texture, renders, waits } = await bake([3, 0], false);
-    expect(texture).not.toBeNull();
-    expect(renders).toEqual([{ leftOut: 3, rate: 1 }, { leftOut: 0, rate: 0 }]);
-    expect(waits.length).toBe(1);
+  it("goes back to its poll while the target is not ready, and renders only a ready one", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
+    const { texture, events } = bake({ gates: [true, false, false], leftOut: (i) => [1, 0][i] ?? 0 });
+    await vi.advanceTimersByTimeAsync(282);
+    expect(await texture).not.toBeNull();
+    expect(events).toEqual([
+      "ready", "take", "guarded", "render at 0 rate 1 left out 1", "take",
+      "not ready",
+      "not ready",
+      "ready", "take", "guarded", "render at 282 rate 1 left out 0", "take",
+    ]);
   });
 
-  it("keeps no render in which a draw was left out, whatever the pipelines do: it fails, and says so", async () => {
+  it("renders as a target drawn once, on Babylon's synchronous path, when what is left of its bound runs out", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
+    const { texture, events } = bake({ failMs: 1_000, leftOut: (_i, rate) => (rate === 0 ? 0 : 1) });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await texture).not.toBeNull();
+    expect(renders(events)).toEqual([
+      "render at 0 rate 1 left out 1",
+      "render at 250 rate 1 left out 1",
+      "render at 500 rate 1 left out 1",
+      "render at 750 rate 1 left out 1",
+      "render at 1000 rate 0 left out 0",
+    ]);
+  });
+
+  it("keeps no render in which a draw was left out, even its synchronous one: it fails, and says so", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const { texture, renders, scene } = await bake([3, 2, 1], true);
-    expect(texture).toBeNull();
-    expect(renders).toEqual([{ leftOut: 3, rate: 1 }, { leftOut: 2, rate: 1 }, { leftOut: 1, rate: 0 }]);
+    const { texture, events, scene } = bake({ failMs: 500, leftOut: () => 1 });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await texture).toBeNull();
+    expect(renders(events)).toEqual([
+      "render at 0 rate 1 left out 1",
+      "render at 250 rate 1 left out 1",
+      "render at 500 rate 0 left out 1",
+    ]);
     expect(errors.mock.calls.map((c) => String(c[0]))).toEqual(["forest impostor bake left a draw out: s0_lod1"]);
     expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
-    // Across every plan: a bake that kept a render kept one that left nothing out.
-    for (const [plan, emptied] of [[[0], true], [[1, 0], true], [[1, 1, 0], true], [[1, 0], false], [[1, 1], false], [[2, 2, 2], true]] as const) {
-      const run = await bake([...plan], emptied);
-      expect(run.texture === null || run.renders[run.renders.length - 1]!.leftOut === 0, JSON.stringify(plan)).toBe(true);
-    }
   });
 
-  it("stops without a word when the forest goes while it waits", async () => {
+  it("stops without a word when the forest goes while it polls", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "performance"] });
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const abort = new AbortController();
-    const { scene, mesh } = bakeScene();
-    vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
-    const render = vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => undefined);
-    let skipped = 1;
-    const pipelines = {
-      takeSkipped: () => {
-        const n = skipped;
-        skipped = 0;
-        return n;
-      },
-      settled: () => {
-        abort.abort();
-        return Promise.resolve(true);
-      },
-    };
-    // The first take clears what came before the bake; the render then leaves one out.
-    render.mockImplementationOnce(() => void (skipped = 1));
-    expect(await defaultBakeImpostor(mesh, scene, { pipelines, signal: abort.signal })).toBeNull();
-    expect(render).toHaveBeenCalledTimes(1);
+    const { texture, events, scene } = bake({ leftOut: () => 1, signal: abort.signal });
+    await vi.advanceTimersByTimeAsync(0);
+    abort.abort();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(await texture).toBeNull();
+    expect(renders(events)).toEqual(["render at 0 rate 1 left out 1"]);
     expect(errors).not.toHaveBeenCalled();
     expect(scene.textures.some((t) => t.name === "forest_impostor_bake")).toBe(false);
-  });
-
-  it("waits within the bake's own bound, which stays two minutes", () => {
-    expect(IMPOSTOR_BAKE_FAIL_MS).toBe(120_000);
   });
 });

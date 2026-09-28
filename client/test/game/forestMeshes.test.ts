@@ -673,7 +673,7 @@ describe("createForestMeshes under NullEngine", () => {
     const engine = new NullEngine();
     engines.push(engine);
     const scene = new Scene(engine);
-    const pipelines = { takeSkipped: () => 0, settled: () => Promise.resolve(true) };
+    const pipelines = { takeSkipped: () => 0, guarded: (render: () => void) => render() };
     const given: unknown[] = [];
     const forest = createForestMeshes(scene, SEED, {
       assets: stubAssets(scene),
