@@ -153,6 +153,11 @@ describe("probeStepCanSettle", () => {
     expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgpu")).toBe("webgl2");
     expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgl2")).toBe("webgl2");
     expect(probeStepEngine({ adapterStatus: "ok" }, undefined)).toBe("webgl2");
+    // Once a WebGPU step is measured to settle, the steps draw on the rule's
+    // engine again, and on either while the adapter has not answered.
+    expect(probeStepEngine({ adapterStatus: "ok" }, "webgpu", true)).toBe("webgpu");
+    expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgpu", true)).toBe(null);
+    expect(probeStepEngine({ adapterStatus: "ok" }, "webgl2", true)).toBe("webgl2");
     // The probed tiers share the rule's engine, so the first step's answer is
     // the second's; a step that ends on another engine is asked as it runs
     // (`measureOnRuleEngine`).

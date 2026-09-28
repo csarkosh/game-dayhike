@@ -219,6 +219,13 @@ describe("layer boundaries", () => {
     expect(app).toContain("    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => {\n      engineNotice = null;\n    }),");
   });
 
+  it("measures the probe's steps on WebGL2 where the rule draws their tiers on WebGPU and a WebGPU step cannot settle", () => {
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    expect(main).toContain(
+      '      if (probeStepEngine(read, verdictEngineNow(read)) === "webgl2") return { canvas: document.createElement("canvas"), engine: null, watch: null };',
+    );
+  });
+
   it("bounds the cover over every switch by what its caller passes: no path picks its own bound", () => {
     // The Settings Apply passes `APPLY_SWAP_READY_MAX_MS` (`pauseMenu.ts`),
     // the governor and a failure's rebuild `GOVERNOR_SWAP_READY_MAX_MS`

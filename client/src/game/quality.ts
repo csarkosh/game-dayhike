@@ -154,9 +154,10 @@ export type AutoVerdict = {
   readings?: ProbeReading[];
   /**
    * The engine the verdict was measured with (a probe's) or held on (a
-   * governor's drop, a tier that built): a verdict for one engine says
-   * nothing of the other. Written only for WebGPU; absent, it is WebGL2, the
-   * engine of every record from before WebGPU.
+   * governor's drop, a tier that built): a WebGPU verdict says nothing of
+   * WebGL2, while a WebGL2 verdict is a floor for WebGPU (`verdictRead`).
+   * Written only for WebGPU; absent, it is WebGL2, the engine of every record
+   * from before WebGPU.
    */
   engine?: "webgpu";
 };
@@ -164,6 +165,19 @@ export type AutoVerdict = {
 /** The engine a verdict holds for (`AutoVerdict.engine`). */
 export function verdictEngine(verdict: AutoVerdict): VerdictEngine {
   return verdict.engine ?? "webgl2";
+}
+
+/**
+ * Whether a verdict is read under `lookup`, the engine the probed tiers draw
+ * with now: a verdict for that engine, and a WebGL2 verdict for WebGPU too. A
+ * verdict says which tier the machine holds, and WebGPU drew the same scene
+ * faster than WebGL2 at every pose measured, so a tier that holds on WebGL2
+ * holds on WebGPU: a WebGL2 verdict is a floor there. Nothing says the
+ * reverse, so a WebGPU verdict is read for WebGPU only.
+ */
+export function verdictRead(lookup: VerdictEngine, verdict: AutoVerdict): boolean {
+  const on = verdictEngine(verdict);
+  return on === lookup || on === "webgl2";
 }
 
 /** `verdict` for `engine`: its engine written only for WebGPU. */
@@ -194,8 +208,8 @@ export type AutoInput = {
   /** The game container's CSS area now. */
   pixels: number;
   now: number;
-  /** The engine the WebGPU rule gives the probed tiers now: a verdict for
-   * the other engine does not hold. Absent, WebGL2. */
+  /** The engine the WebGPU rule gives the probed tiers now, the verdict's
+   * lookup (`verdictRead`). Absent, WebGL2. */
   engine?: VerdictEngine;
 };
 
@@ -211,13 +225,13 @@ export function recordMatches(record: AutoRecord | null, gpu: string, browser: n
 }
 
 /**
- * The record's verdict when it was made for `cls` and `engine`, else null: a
- * classifier change that moves this GPU to another class retires the verdict
- * made under the old one, and a verdict measured on one engine does not hold
- * for the other, while the attempts stand.
+ * The record's verdict when it was made for `cls` and is read under `engine`
+ * (`verdictRead`), else null: a classifier change that moves this GPU to
+ * another class retires the verdict made under the old one, and a WebGPU
+ * verdict does not hold for WebGL2, while the attempts stand.
  */
 export function verdictFor(record: AutoRecord, cls: GpuClass, engine: VerdictEngine = "webgl2"): AutoVerdict | null {
-  return record.cls === cls && record.verdict !== null && verdictEngine(record.verdict) === engine ? record.verdict : null;
+  return record.cls === cls && record.verdict !== null && verdictRead(engine, record.verdict) ? record.verdict : null;
 }
 
 /**
@@ -306,7 +320,7 @@ export function withVerdict(
   const matching = prev !== null && recordMatches(prev, gpu, browser) ? prev : null;
   const replaced =
     matching?.verdict != null && (matching.cls !== cls || verdictEngine(matching.verdict) !== verdictEngine(verdict));
-  const unread = matching !== null && lookup !== verdictEngine(verdict);
+  const unread = matching !== null && !verdictRead(lookup, verdict);
   const carried = verdict.source !== "probe" || replaced || unread;
   return { v: DETECT_VERSION, gpu, cls, browser, attempts: carried ? (matching?.attempts ?? 0) : 0, verdict };
 }

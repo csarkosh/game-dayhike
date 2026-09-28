@@ -32,7 +32,9 @@
  * and nothing written (`probeStepCanSettle`). A step asks this of the engine it
  * draws with: on WebGPU, Babylon translates each effect's shaders on the
  * page's thread too, so a WebGPU step is not taken to settle until a browser
- * has measured that it does (`WEBGPU_PROBE_STEPS_SETTLE`).
+ * has measured that it does (`WEBGPU_PROBE_STEPS_SETTLE`), and until then
+ * tiers that draw on WebGPU are measured on WebGL2 (`probeStepEngine`), whose
+ * verdict holds for WebGPU too (`verdictRead`).
  */
 import { elevationAt } from "../sim/terrain.js";
 import { CLASS_TIERS, classifyGpu, gpuIdentity, type GpuClass } from "./gpuClass.js";
@@ -250,8 +252,9 @@ export function nextProbeStep(
  * has measured, at the canopy pose with an empty shader cache, on the slowest
  * machines whose class is probed, and on each tier probed, the time from a
  * WebGPU step's engine to its meter's `ready`, and found it inside
- * `PROBE_READY_MAX_MS` with margin on every load. `?probe=` measures it: it
- * forces the probe past this.
+ * `PROBE_READY_MAX_MS` with margin on every load (a measurement build that
+ * sets this true, with `?probe=`). While false, the probe's steps draw on
+ * WebGL2 whatever the rule gives their tier (`probeStepEngine`).
  */
 export const WEBGPU_PROBE_STEPS_SETTLE = false;
 
@@ -274,14 +277,21 @@ export function probeStepCanSettle(
 
 /**
  * The engine the probe's steps draw with, as far as it is known before they
- * run: `engine`, the one the WebGPU rule gives the probed tiers (high and
- * medium share it), WebGL2 where none is given; null where the rule gives
- * WebGPU but the adapter has not answered yet, so a step may still end on
- * WebGL2.
+ * run. `engine` is the one the WebGPU rule gives the probed tiers (high and
+ * medium share it), WebGL2 where none is given. Where it is WebGPU and a
+ * WebGPU step cannot settle (`webgpuSettles` false), the steps draw on WebGL2
+ * on their own canvases: a WebGL2 verdict holds for WebGPU (`verdictRead`),
+ * and the hike then starts on the rule's engine at the verdict's tier. Where
+ * a WebGPU step can settle, WebGPU, or null while the adapter has not
+ * answered, since a step may still end on WebGL2.
  */
-export function probeStepEngine(signals: Pick<GpuSignals, "adapterStatus">, engine: VerdictEngine | undefined): VerdictEngine | null {
-  const on = engine ?? "webgl2";
-  return on === "webgpu" && signals.adapterStatus === "timed-out" ? null : on;
+export function probeStepEngine(
+  signals: Pick<GpuSignals, "adapterStatus">,
+  engine: VerdictEngine | undefined,
+  webgpuSettles: boolean = WEBGPU_PROBE_STEPS_SETTLE,
+): VerdictEngine | null {
+  if ((engine ?? "webgl2") === "webgl2" || !webgpuSettles) return "webgl2";
+  return signals.adapterStatus === "timed-out" ? null : "webgpu";
 }
 
 /**
@@ -424,8 +434,9 @@ export type StartupTier = { tier: QualityTier; source: TierSource; cls: GpuClass
  * Auto recommends here: a holding verdict's tier, else the class's ceiling
  * (low under the cap). What the Settings screen reads, and where
  * `startupTier` begins. `at.engine` is the engine the probed tiers draw with
- * now: a verdict for the other engine does not hold, and the probe's first
- * step is asked whether it can settle on it (`probeStepEngine`). */
+ * now: the verdict's lookup (`verdictRead`), and what decides the engine the
+ * probe's steps draw with, of which it is asked whether they can settle
+ * (`probeStepEngine`). */
 export function autoPick(
   signals: GpuSignals,
   at: { record: AutoRecord | null; pixels: number; now: number; engine?: VerdictEngine },
@@ -480,14 +491,12 @@ export async function startupTier(
   let tier = decided.tier;
   const from = decided.source === "auto" ? (parseProbeOverride(opts.search) ?? auto.probeFrom) : null;
   if (decided.source === "auto" && from === null && auto.probeSkipped) {
-    // What is known: a step on WebGPU, the extension absent, or no WebGL2
-    // context to ask.
+    // What is known: the extension absent, or no WebGL2 context to ask. (A
+    // WebGPU step that cannot settle is measured on WebGL2 instead.)
     const reason =
-      probeStepEngine(signals, opts.engine) !== "webgl2" && !probeStepCanSettle(signals.parallelCompile, "webgpu")
-        ? "a WebGPU step translates its shaders on the page's thread"
-        : signals.parallelCompile === null
-          ? "no WebGL2 context could be made to measure with"
-          : "this browser compiles shaders on the page's thread";
+      signals.parallelCompile === null
+        ? "no WebGL2 context could be made to measure with"
+        : "this browser compiles shaders on the page's thread";
     deps.log(`quality probe: skipped, ${reason}; starting at ${tier} (${cls})`);
   }
   if (from !== null && !opts.cancelled()) {

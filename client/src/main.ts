@@ -41,6 +41,7 @@ import {
   autoPick,
   launchLine,
   probeStepCanSettle,
+  probeStepEngine,
   startFallbacks,
   startHike,
   startupTier,
@@ -769,7 +770,11 @@ function render(container: HTMLDivElement): void {
   // (`measureOnRuleEngine`); the game's failure handling never hears of it.
   const probe = probeDeps(container, {
     engineFor: async (tier) => {
-      const { canvas, engine, watchers } = await engineFor(tier, await signalsReady, () => !cancelled());
+      const read = await signalsReady;
+      // Tiers the rule draws on WebGPU are measured on WebGL2 while a WebGPU
+      // step cannot settle (`probeStepEngine`): the verdict holds for both.
+      if (probeStepEngine(read, verdictEngineNow(read)) === "webgl2") return { canvas: document.createElement("canvas"), engine: null, watch: null };
+      const { canvas, engine, watchers } = await engineFor(tier, read, () => !cancelled());
       return { canvas, engine, watch: watchers?.failures ?? null };
     },
     failed: () => void rememberFailure("init", !cancelled()),

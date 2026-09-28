@@ -7,6 +7,7 @@ import {
   tierFor,
   verdictFor,
   verdictHolds,
+  verdictRead,
   GOVERNOR_VERDICT_DAYS,
   VERDICT_DAYS,
   withGovernorDrop,
@@ -374,6 +375,12 @@ describe("the engine a verdict was measured with", () => {
     expect(auto(rec({ engine: "webgpu" }))).toEqual({ tier: "medium", probeFrom: "high" });
     expect(verdictFor(rec({ engine: "webgpu" }), "apple-unknown", "webgpu")?.tier).toBe("high");
     expect(verdictFor(rec({ engine: "webgpu" }), "apple-unknown")).toBe(null);
+  });
+
+  it("reads a verdict for its own engine, and a WebGL2 verdict for WebGPU too", () => {
+    const gl: AutoVerdict = { tier: "high", source: "probe", pixels: 2_073_600, at: NOW };
+    const gpu: AutoVerdict = { ...gl, engine: "webgpu" };
+    expect([verdictRead("webgl2", gl), verdictRead("webgpu", gl), verdictRead("webgpu", gpu), verdictRead("webgl2", gpu)]).toEqual([true, true, true, false]);
   });
 
   it("reads a record tier detection's release wrote, its WebGL2 verdict holding for a WebGPU start", () => {
