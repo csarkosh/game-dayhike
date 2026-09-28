@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Scene } from "@babylonjs/core/scene.js";
 import {
   APPLY_SWAP_READY_MAX_MS,
   GOVERNOR_SWAP_READY_MAX_MS,
   engineWithinBound,
+  whenSceneReady,
   type EngineOnCanvas,
 } from "../../src/game/rendererSwap.js";
 
@@ -79,7 +81,8 @@ describe("the engine a switch makes, within its cover's bound", () => {
     await advance(1);
     const got = await result;
     expect(got.late).toBe(true);
-    expect(got.leftMs).toBe(0);
+    // The scene still gets its floor: models and bakes load under the cover.
+    expect(got.leftMs).toBe(5_000);
     expect(got.onCanvas.engine).toBe(null);
     expect((got.onCanvas.canvas as unknown as { id: string }).id).toBe("gl");
     // A failure the late start meets from here is not remembered.
@@ -87,6 +90,51 @@ describe("the engine a switch makes, within its cover's bound", () => {
     expect(t.log).toEqual([]);
     await advance(5_000);
     expect(t.log).toEqual(["disposed"]);
+  });
+
+  it("leaves the scene at least its 5 s floor however much of the bound the engine took", async () => {
+    const t = slowEngine(8_000);
+    const result = engineWithinBound(t.make, GOVERNOR_SWAP_READY_MAX_MS, t.deps);
+    await advance(8_000);
+    expect(await result).toEqual({ onCanvas: t.made, leftMs: 5_000, late: false });
+  });
+
+  /** A scene that is ready `readyAt` ms after it is asked, or never (null). */
+  function sceneReadyAfter(readyAt: number | null): Scene {
+    const from = clock.t;
+    return {
+      isDisposed: false,
+      isReady: () => readyAt !== null && clock.t - from >= readyAt,
+      getWaitingItemsCount: () => 0,
+    } as unknown as Scene;
+  }
+
+  it("after an engine at 12 s of a 10 s bound, lifts the cover when the WebGL2 scene is ready, 3 s after its build", async () => {
+    const t = slowEngine(12_000);
+    const made = engineWithinBound(t.make, GOVERNOR_SWAP_READY_MAX_MS, t.deps);
+    await advance(10_000);
+    const got = await made;
+    expect(got.late).toBe(true);
+    // The build, then the wait for its scene.
+    let lifted = false;
+    void whenSceneReady(sceneReadyAfter(3_000), got.leftMs).then(() => (lifted = true));
+    await advance(2_900);
+    expect(lifted).toBe(false);
+    await advance(100);
+    expect(lifted).toBe(true);
+  });
+
+  it("after an engine at 12 s of a 10 s bound, lifts the cover 5 s after the build where the scene is never ready", async () => {
+    const t = slowEngine(12_000);
+    const made = engineWithinBound(t.make, GOVERNOR_SWAP_READY_MAX_MS, t.deps);
+    await advance(10_000);
+    const got = await made;
+    let lifted = false;
+    void whenSceneReady(sceneReadyAfter(null), got.leftMs).then(() => (lifted = true));
+    await advance(4_999);
+    expect(lifted).toBe(false);
+    await advance(1);
+    expect(lifted).toBe(true);
   });
 
   it("takes WebGL2 at the bound where the engine's making would reject later, and never throws", async () => {
