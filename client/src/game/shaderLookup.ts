@@ -164,7 +164,7 @@ export type ShaderLookupReport = {
   /** `?wgsl=record`: stages kept whose text carries a carriage return, as a
    * checkout with Windows line endings gives the game's shader files. Their
    * keys are the hashes of that text, which a page built from a checkout
-   * without never asks for, so a recording that counts any is not one to
+   * without them never asks for, so a recording that counts any is not one to
    * merge as it is (`tools/wgsl/merge-corpus.mjs` repairs it). */
   stagesWithCarriageReturns: number;
   effects: EffectRecord[];
