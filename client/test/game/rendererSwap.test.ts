@@ -101,7 +101,12 @@ function stubBindings(
     },
     build: (canvas, tier, engine) => {
       log.push(`build ${idOf(canvas)} ${tier} ${engine === null ? "webgl2" : "given"}`);
-      if (failing.has(tier) || (engine !== null && givenFailing.has(tier))) throw new Error(`no ${tier}`);
+      if (failing.has(tier) || (engine !== null && givenFailing.has(tier))) {
+        // As `createRenderer` does: a build that throws releases the engine
+        // it was given (`releaseEngine`), so nothing after it may again.
+        engine?.dispose();
+        throw new Error(`no ${tier}`);
+      }
       return stubRenderer(`${tier}@${idOf(canvas)}`, log);
     },
     unwatch: () => log.push("unwatch"),
@@ -252,7 +257,7 @@ describe("a swap onto a given engine", () => {
       const b = stubBindings(log, new Set(), new Set(), new Set<QualityTier>(["high"]));
       const got = buildFirstRenderer(stubCanvas("c0", log), ["high", "medium", "low"], b, { engine: engine(log), watch: detector });
       expect([got.tier, got.fellBack, got.engineFellBack, idOf(got.canvas)]).toEqual(["high", false, true, "c1"]);
-      expect(log).toEqual(["build c0 high given", "engine failed: no high", "fresh c1", "replace c0 with c1", "build c1 high webgl2"]);
+      expect(log).toEqual(["build c0 high given", "dispose given engine", "engine failed: no high", "fresh c1", "replace c0 with c1", "build c1 high webgl2"]);
       const watched: string[] = [];
       const standing = buildFirstRenderer(stubCanvas("c0", watched), ["high", "low"], stubBindings(watched), { engine: engine(watched), watch: detector });
       expect([standing.tier, standing.engineFellBack]).toEqual(["high", false]);

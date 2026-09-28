@@ -124,7 +124,7 @@ const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium"
  *
  * A rung that fails, in its build or in anything after it, is taken down
  * whole (the renderer it built, and with it the engine and the atmosphere's
- * registration, or else the engine it was given) and the next rung is tried
+ * registration; a build that threw has released its own) and the next rung is tried
  * on another fresh canvas (a failed one may hold a lost or a WebGPU context):
  * the target, then `fallbackTier` (the tier that was running), then low, the
  * tier least likely to fail, the last two on WebGL2. Only when every rung
@@ -156,7 +156,7 @@ export function swapRenderer(
     } catch (error) {
       failure = error;
       console.error(`quality: the ${tier} renderer could not be ${renderer === null ? "built" : "started"}.`, error);
-      takeDown(renderer, engine, bindings);
+      takeDown(renderer, bindings);
       if (engine !== null) bindings.engineFailed(error);
     }
   }
@@ -164,11 +164,14 @@ export function swapRenderer(
 }
 
 /** Disposes what a failed rung left: what was built into its scene and the
- * renderer (its engine and registration with it), or the engine it was given
- * when no renderer was built. Each on its own, so one failing keeps no other. */
-function takeDown(renderer: Renderer | null, engine: AbstractEngine | null, bindings: SwapBindings): void {
-  const steps =
-    renderer === null ? [() => engine?.dispose()] : [() => bindings.extras.dispose(), () => renderer.dispose()];
+ * renderer (its engine and registration with it). A rung whose build threw
+ * left nothing: `createRenderer` has already released the engine it was
+ * given (`releaseEngine`, which waits for the scene's BRDF lookup texture), so
+ * it is not disposed again here, which would be at once and bring back the
+ * throw that wait prevents. Each on its own, so one failing keeps no other. */
+function takeDown(renderer: Renderer | null, bindings: SwapBindings): void {
+  if (renderer === null) return;
+  const steps = [() => bindings.extras.dispose(), () => renderer.dispose()];
   for (const step of steps) {
     try {
       step();
