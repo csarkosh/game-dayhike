@@ -62,7 +62,7 @@ import { DEATH_LINE, END_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { signPosts } from "./sim/signs.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
-import { CAR_MATERIAL, KIOSK_MATERIAL, kioskFacing, propSite, roadProp } from "./sim/passes/trailhead.js";
+import { CAR_MATERIAL, KIOSK_MATERIAL, kioskFacing, trailheadSite } from "./sim/passes/trailhead.js";
 import { createTrailheadMeshes } from "./game/trailheadMeshes.js";
 import { signSites } from "./sim/placeNames.js";
 import { afterNextPaint } from "./game/paint.js";
@@ -458,8 +458,8 @@ export function startGame(canvas: HTMLCanvasElement, token: string, options: Gam
     const graph = variant.trailGraph?.(seed);
     const roadCenterX = variant.roadCenterX;
     if (search === null || graph === undefined || roadCenterX === undefined) return null;
-    const kiosk = propSite(graph, roadCenterX, seed, roadProp(KIOSK_MATERIAL));
-    const car = propSite(graph, roadCenterX, seed, roadProp(CAR_MATERIAL));
+    const kiosk = trailheadSite(graph, roadCenterX, seed, KIOSK_MATERIAL);
+    const car = trailheadSite(graph, roadCenterX, seed, CAR_MATERIAL);
     const groundH = (x: number, z: number): number => elevationAt(seed, x, z);
     // The places the posts name: the summit where the body lies, and every
     // pond and meadow, never under the missing hiker's own first name.

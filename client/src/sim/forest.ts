@@ -8,7 +8,13 @@ const FNV_PRIME = 0x01000193;
 const FNV_OFFSET = 0x811c9dc5;
 
 /**
- * Escape hatch, not the main defence. Bumped to 6 when the ground's stick
+ * Escape hatch, not the main defence. Bumped to 7 when a player began to
+ * arrive in front of the car, facing the trail's entrance (`trailheadSpawn`
+ * in `spawn.ts`): spawn selection is how the world is used, not how it is
+ * generated. The car's new place and the sign at the entrance move
+ * `passHash` in the same release, but this does not lean on that.
+ *
+ * Bumped to 6 when the ground's stick
  * learned to stand a hull on a box top rather than snap it onto the hillside
  * under that top (`movement.ts`, `resolveGround`): the world is generated the
  * same, and two peers on either side of the change would still resolve the
@@ -37,7 +43,7 @@ const FNV_OFFSET = 0x811c9dc5;
  * change, and yet a peer on the old build resolves every step against a
  * different surface. This is exactly the case the escape hatch exists for.
  */
-export const GEN_VERSION = 6;
+export const GEN_VERSION = 7;
 
 export type Forest = {
   seed: number;

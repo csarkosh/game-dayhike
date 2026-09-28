@@ -697,6 +697,12 @@ describe("the level id does not move", () => {
     // moves), and in probe chunk [-9, 0] the sign's box of material "pillar"
     // is now the wider, taller "kiosk" and the car's "crate" is "car"
     // (probeDigest moves). A peer still drawing the post cannot join.
-    expect(passHash()).toBe(-311867473);
+    // Re-baselined 2026-09-28 from -311867473: the car stands at the pad
+    // (CAR_ROAD_Z 12 -> 0) and slides clear of the bed, so CAR_BED_CLEAR,
+    // CAR_SLIDE_STEP, CAR_SLIDE_MAX and SPAWN_GAP join pass 8's tunables
+    // (registryDigest moves) and the car's box moves 12 m along the road
+    // in the probe chunk that holds it (probeDigest moves). A peer with the
+    // car at its old place collides differently on the pad.
+    expect(passHash()).toBe(1899941812);
   });
 });
