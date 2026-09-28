@@ -109,7 +109,8 @@ const RANK: Readonly<Record<QualityTier, number>> = { low: 0, medium: 1, high: 2
 
 /** One tier measured by the startup probe; `early` when its step ended as a
  * miss before its 120 frames, the mean and p95 then those of the frames it
- * measured. */
+ * measured; `stalls` when it ended as a miss for more than 20 intervals over
+ * 250 ms, the mean and p95 then those of every interval, stalls included. */
 export type ProbeReading = {
   tier: QualityTier;
   frames: number;
@@ -118,6 +119,7 @@ export type ProbeReading = {
   pixels: number;
   engine: "webgl2" | "webgpu";
   early?: true;
+  stalls?: number;
 };
 
 /**

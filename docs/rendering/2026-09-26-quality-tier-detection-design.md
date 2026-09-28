@@ -514,7 +514,13 @@ tier gets its own canvas; the renderer is disposed and its engine made with
    frames measured, their count, and `early` (logged "ended early"). The
    floor is the arithmetic's own: 2,100 ms of intervals of at most 250 ms is at
    least 9 frames. A slow machine then reads its miss in about 2 s, not 12,
-   and a step spends at most about 4.2 s on frames after it is ready.
+   and a step spends at most about 4.2 s on frames after it is ready. That sum
+   counts frames only, and below 4 frames a second every interval is a stall;
+   so a step also ends as a miss once more than 20 of its intervals are over
+   250 ms (`PROBE_MAX_STALLS`, 120 less the 100 a reading needs): its reading
+   is the mean and p95 of every interval measured, stalls included, their
+   count, and `stalls` (logged "21 over 250 ms"). 21 intervals over 250 ms
+   among at most 120 is a mean over 43 ms, a miss whatever the rest read.
 
 The reading: `{ tier, frames, meanMs, p95Ms, pixels, engine }`.
 

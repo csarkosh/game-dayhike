@@ -76,13 +76,17 @@ describe("the Auto record's storage", () => {
       verdict: { tier: "low", source: "governor", pixels: 1_405_320, at: 1_790_000_000_000 } });
   });
 
-  it("round-trips a reading that ended early, marked so", () => {
+  it("round-trips a reading that ended early, or for its stalls, marked so", () => {
     const s = memoryStorage();
     const early: AutoRecord = { ...RECORD, verdict: { ...RECORD.verdict!, tier: "low",
-      readings: [{ tier: "high", frames: 22, meanMs: 100, p95Ms: 100, pixels: 2_073_600, engine: "webgl2", early: true }] } };
+      readings: [
+        { tier: "high", frames: 22, meanMs: 100, p95Ms: 100, pixels: 2_073_600, engine: "webgl2", early: true },
+        { tier: "medium", frames: 21, meanMs: 300, p95Ms: 300, pixels: 2_073_600, engine: "webgl2", stalls: 21 },
+      ] } };
     expect(writeAutoRecord(s, early)).toBe(true);
     expect(readAutoRecord(s)!.verdict!.readings).toEqual([
       { tier: "high", frames: 22, meanMs: 100, p95Ms: 100, pixels: 2_073_600, engine: "webgl2", early: true },
+      { tier: "medium", frames: 21, meanMs: 300, p95Ms: 300, pixels: 2_073_600, engine: "webgl2", stalls: 21 },
     ]);
   });
 

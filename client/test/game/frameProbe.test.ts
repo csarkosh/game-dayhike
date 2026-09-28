@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import {
   PROBE_MAX_MS,
+  PROBE_MAX_STALLS,
   PROBE_STEP_BUDGET_MS,
   START_FAILED_LINE,
   stepReadyMaxMs,
@@ -18,6 +19,7 @@ import {
   probeReadingLine,
   readEarlyMiss,
   readIntervals,
+  readStallMiss,
   runProbe,
   startupTier,
   type StartupDeps,
@@ -89,6 +91,16 @@ describe("readEarlyMiss", () => {
   });
 });
 
+describe("readStallMiss", () => {
+  it("reads a miss once more than 20 intervals are over 250 ms, from every interval measured", () => {
+    expect(PROBE_MAX_STALLS).toBe(20);
+    expect(readStallMiss(f(20, 300))).toBe(null);
+    expect(readStallMiss(f(21, 300))).toEqual({ frames: 21, meanMs: 300, p95Ms: 300, stalls: 21 });
+    expect(readStallMiss([...f(50, 16), ...f(21, 400)])).toEqual({ frames: 71, meanMs: 9200 / 71, p95Ms: 400, stalls: 21 });
+    expect(readStallMiss([...f(99, 16.667), ...f(20, 400)])).toBe(null);
+  });
+});
+
 describe("probeHolds", () => {
   it("holds at or under 17.5 ms", () => {
     expect(probeHolds({ meanMs: 16.667 })).toBe(true);
@@ -147,6 +159,8 @@ describe("probeReadingLine", () => {
       .toBe("quality probe: medium 16.67 ms mean, 16.9 p95, 118 frames, 1470×956, webgl2 → holds");
     expect(probeReadingLine({ tier: "high", frames: 22, meanMs: 100, p95Ms: 100, pixels: 1_045_960, engine: "webgl2", early: true }, 1324, 790))
       .toBe("quality probe: high 100.00 ms mean, 100 p95, 22 frames (ended early), 1324×790, webgl2 → misses");
+    expect(probeReadingLine({ tier: "high", frames: 21, meanMs: 300, p95Ms: 300, pixels: 1_045_960, engine: "webgl2", stalls: 21 }, 1324, 790))
+      .toBe("quality probe: high 300.00 ms mean, 300 p95, 21 frames (21 over 250 ms), 1324×790, webgl2 → misses");
   });
 });
 
@@ -599,6 +613,17 @@ describe("createProbeMeter", () => {
     const got = run(meter, t, 100);
     expect(got.frames).toBe(15 + 20 + 22);
     expect(got.stats).toEqual({ frames: 22, meanMs: 100, p95Ms: 100, early: true });
+  });
+
+  it("ends a step under 4 frames a second as a miss at its 21st stall, which the early end cannot see", () => {
+    // 300 ms a frame: ready at 1.5 s (5 frames), the warm-up bounded at
+    // 2,100 ms (6 frames), then every interval a stall. Before, the stalls
+    // were dropped, the sum never grew, and the cap cut the step unread.
+    const t = { now: 0 };
+    const meter = createProbeMeter(t.now);
+    const got = run(meter, t, 300);
+    expect(got.frames).toBe(5 + 6 + 21);
+    expect(got.stats).toEqual({ frames: 21, meanMs: 300, p95Ms: 300, stalls: 21 });
   });
 
   it("measures all 120 frames of a step that holds at the bar exactly", () => {

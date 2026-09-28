@@ -79,6 +79,15 @@ export const PROBE_MIN_FRAMES = 100;
 export const PROBE_STEP_BUDGET_MS = PROBE_FRAMES * PROBE_HOLD_MS;
 /** An interval over this is a stall (a hidden tab, a collection), not a frame. */
 export const PROBE_STALL_MS = 250;
+/**
+ * Stalls a step's measurement may hold: `PROBE_FRAMES` − `PROBE_MIN_FRAMES`,
+ * 20. One more and the 120 can no longer leave the 100 frames a reading
+ * needs, so the step ends there as a miss (`readStallMiss`): a machine that
+ * takes over 250 ms that often does not hold the tier, and below 4 frames a
+ * second every interval is a stall, which the early end, summing frames only,
+ * never sees.
+ */
+export const PROBE_MAX_STALLS = PROBE_FRAMES - PROBE_MIN_FRAMES;
 /** The scene is ready once no shader has compiled for this long. */
 export const PROBE_QUIET_MS = 1500;
 /** A scene not ready in this long gives up its step. */
@@ -98,8 +107,10 @@ export const PROBE_HOUR = 12;
 const POSE = { x: 123, z: -105.5, yaw: 1.571, pitch: 0.3, eye: 1.6 } as const;
 
 /** A step's statistics; `early` when it ended as a miss before `PROBE_FRAMES`
- * (`PROBE_STEP_BUDGET_MS`), its mean and p95 then those of the frames measured. */
-export type ProbeStats = { frames: number; meanMs: number; p95Ms: number; early?: true };
+ * (`PROBE_STEP_BUDGET_MS`), its mean and p95 then those of the frames measured;
+ * `stalls` when it ended as a miss for its stalls (`PROBE_MAX_STALLS`), its
+ * mean and p95 then those of every interval measured, stalls included. */
+export type ProbeStats = { frames: number; meanMs: number; p95Ms: number; early?: true; stalls?: number };
 
 /** An interval that is a frame: a time, not a stall. */
 const isFrame = (ms: number): boolean => Number.isFinite(ms) && ms >= 0 && ms <= PROBE_STALL_MS;
@@ -136,6 +147,21 @@ export function readEarlyMiss(intervals: readonly number[]): ProbeStats | null {
 }
 
 /**
+ * The reading of a step ended for its stalls: more than `PROBE_MAX_STALLS` of
+ * its intervals are over `PROBE_STALL_MS`, so it can no longer read 100
+ * frames. The statistics are those of every interval measured, stalls
+ * included, since they are what the frames took, with the count of stalls:
+ * 21 over 250 ms among at most 120 intervals is a mean over 43 ms, a miss
+ * whatever the rest read. Null while the stalls are within the bound.
+ */
+export function readStallMiss(intervals: readonly number[]): ProbeStats | null {
+  const measured = intervals.filter((ms) => Number.isFinite(ms) && ms >= 0);
+  const stalls = measured.length - measured.filter(isFrame).length;
+  if (stalls <= PROBE_MAX_STALLS) return null;
+  return { ...statsOf(measured), stalls };
+}
+
+/**
  * The page's own frame interval while nothing is drawn but the probe screen:
  * the median of an idle run, the first interval (the screen's own paint) and
  * stalls dropped, or null when too few are left. The median, so one hitch in
@@ -157,7 +183,8 @@ export function idleCadenceMs(intervals: readonly number[]): number | null {
  * then `PROBE_WARMUP_FRAMES` are discarded (or fewer, once
  * `PROBE_STEP_BUDGET_MS` has passed since the warm-up began) and `PROBE_FRAMES`
  * intervals kept, or fewer where their sum passes `PROBE_STEP_BUDGET_MS`
- * first: then the step ends as a miss (`readEarlyMiss`). A shader that
+ * first (`readEarlyMiss`) or more than `PROBE_MAX_STALLS` of them are stalls
+ * (`readStallMiss`): then the step ends as a miss. A shader that
  * compiles after the scene is ready starts the warm-up again, so its hitch (a
  * hundred milliseconds or more, which would tip a 60 Hz machine's mean into a
  * miss) is never measured; the probe's 30 s cap bounds the restarts.
@@ -201,6 +228,8 @@ export function createProbeMeter(start: number, readyMaxMs: number = PROBE_READY
       warm = PROBE_WARMUP_FRAMES;
       intervals.push(now - last);
       last = now;
+      const stalled = readStallMiss(intervals);
+      if (stalled !== null) return { done: true, stats: stalled };
       if (intervals.length >= PROBE_FRAMES) return { done: true, stats: readIntervals(intervals) };
       const early = readEarlyMiss(intervals);
       return early === null ? { done: false } : { done: true, stats: early };
@@ -269,11 +298,13 @@ export function probePose(): { x: number; y: number; z: number; yaw: number; pit
 
 /** One reading as the page logs it:
  * `quality probe: high 23.96 ms mean, 33.4 p95, 120 frames, 1920×1080, webgl2 → misses`,
- * with `(ended early)` after the frames for a step that ended as a miss before 120. */
+ * with `(ended early)` after the frames for a step that ended as a miss before
+ * 120, or `(21 over 250 ms)` for one that ended for its stalls. */
 export function probeReadingLine(reading: ProbeReading, width: number, height: number): string {
   const p95 = Math.round(reading.p95Ms * 10) / 10;
   const answer = probeHolds(reading) ? "holds" : "misses";
-  const frames = `${reading.frames} frames${reading.early === true ? " (ended early)" : ""}`;
+  const why = reading.early === true ? " (ended early)" : reading.stalls !== undefined ? ` (${reading.stalls} over 250 ms)` : "";
+  const frames = `${reading.frames} frames${why}`;
   return `quality probe: ${reading.tier} ${reading.meanMs.toFixed(2)} ms mean, ${p95} p95, ${frames}, ${width}×${height}, ${reading.engine} → ${answer}`;
 }
 
