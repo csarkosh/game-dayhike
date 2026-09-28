@@ -402,7 +402,9 @@ tier = ?tier=…                          (the override, for testing)
 `autoTier(input): { tier, probeFrom }` in `quality.ts` (pure; `tierFor` and
 `Capabilities` go, with their tests). `resolveTier({ override, choice, auto })`
 in `tierChoice.ts` returns the tier and its source (`override`, `choice`, `auto`),
-which the page logs once per renderer build:
+which the page logs once per renderer build, naming the tier that renderer
+was built at and the engine it draws with, and `fallback` as the source
+where the tier asked for did not build and a lower one did:
 `quality: medium (auto, apple-base), engine webgl2`.
 
 ### 6.4 The literal matrix

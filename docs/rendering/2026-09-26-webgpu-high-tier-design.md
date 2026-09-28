@@ -117,7 +117,10 @@ and the two starts are one; where this changes the text above and below:
   probe); only then the engine the rule gives that tier, on the game's
   canvas, made once the probe is done ("Loading…" again while it is made);
   then the launch, which logs `quality: <tier> (<source>, <class>), engine
-  <engine>` with the engine in use. One catch covers all of it
+  <engine>` once the first renderer stands (`launchLine`): as a switch logs
+  its build, the tier it was built at and the engine it draws with, with the
+  source `fallback` where the tier decided did not build and a lower one did
+  (whose own error lines come before it). One catch covers all of it
   (`startHike`).
 - **One adapter request.** The signals ask for the adapter once
   (`readSignals`) and carry its limits, fallback flag and features; the rule
@@ -136,21 +139,36 @@ and the two starts are one; where this changes the text above and below:
   `init` failure and is measured again on WebGL2. Only the step listens to
   its engine. Auto's verdict carries the engine it was measured with (only
   WebGPU's is written, so WebGL2 records are unchanged), and holds only for
-  it; the probe attempts stay per GPU and browser.
+  it; the probe attempts stay per GPU and browser, and a verdict written for
+  another engine than the one the next load looks it up under keeps them, so
+  the three-attempt cap holds however the key and the reading differ.
 - **No reload is left.** A pipeline error or an uncaptured one, whenever it
   comes, swaps the renderer onto WebGL2 at once through the live rebuild; a
   first lost device retries once on a new WebGPU engine, a second within
   24 h swaps onto WebGL2; each is remembered, the URL pinned where storage
   refuses or `?engine=webgpu` outranks the record (`failureSwap`), and the
-  HUD says so. The startup window is gone. A renderer that cannot be built
-  on its WebGPU engine, at the start or in a swap, is the engine's fault:
-  its tier is built again on WebGL2 before the tier ladder goes down, and
-  every later rung is WebGL2, which is the rule's answer there. A Settings
-  Apply or a governor's drop takes the engine the rule gives the new tier.
-- **Only a standing engine is listened to.** The watcher comes off before
-  anything of an engine is disposed, and Babylon reports no loss of a device
-  its own dispose destroyed (the `device.lost` handler returns once the
-  engine is disposed), so a disposed engine is never taken for a failing one.
+  HUD says so, naming what the rebuild ended on. The startup window is gone.
+  One failure of an engine is answered once, and not at all once a switch
+  under way has already left that engine. A renderer that cannot be built on
+  its WebGPU engine, at the start or in a swap, has its tier built again on
+  WebGL2 before the tier ladder goes down, and the fault is held against the
+  engine only once that stands (a tier that fails on WebGL2 too is the
+  tier's fault); every later rung is WebGL2, which is the rule's answer
+  there. A start that throws on WebGPU after its renderer is started again on
+  WebGL2 on a fresh canvas that replaces every canvas in the container. A
+  Settings Apply or a governor's drop takes the engine the rule gives the new
+  tier. All of this is `engineFailure.ts`, tested sequence by sequence.
+- **Only a standing engine is listened to, and only for itself.** The
+  watcher comes off before anything of an engine is disposed, and Babylon
+  reports no loss of a device its own dispose destroyed (the `device.lost`
+  handler returns once the engine is disposed), so a disposed engine is never
+  taken for a failing one. An uncaptured error is heard on the engine's own
+  device (`uncapturederror`), not in Babylon's log, which every engine of the
+  page writes to. Babylon's own restore after a lost device, which would make
+  a new device on the same engine, is given up on every engine as it is made
+  and as it is watched (`giveUpRestore`); nothing here relies on it. A
+  failed rung's engine is released once, by `createRenderer`, after its
+  BRDF lookup texture.
 - **The governor on WebGPU.** The engine fires
   `onAfterShaderCompilationObservable` for every effect it translates, as on
   WebGL2, but makes each render pipeline at the effect's first draw, a frame
@@ -240,8 +258,8 @@ before Task 6. The bake sees it as its failed ending. It covers the case Task
 1's gate met before it was built (the note, §3.3): with the translators
 loaded, glslang's "GLSL compilation failed" throws inside the unawaited
 preparation, which is exactly the rejection it catches. A failure that belongs to no
-compiled effect is logged ("WebGPU shader translation failed"), which the
-watcher also reads. A wrapper, not a page-wide `unhandledrejection` listener,
+compiled effect is logged ("WebGPU shader translation failed") and told to
+that engine's watcher. A wrapper, not a page-wide `unhandledrejection` listener,
 because only the wrapper knows which effect failed; canaries pin the unawaited
 call, the async method, the effect registry, `getPipelineContext`, the WebGPU
 pipeline context's `isAsync` and `_processCompilationErrors`. Two limits,
@@ -617,7 +635,9 @@ without a reload, a change of engine on a fresh canvas included); it is Task
 reload paths stay as built, reachable only with `?engine=webgpu` behind the off
 switch; the record, the lost-device count and the pin in the URL are kept as
 they are, and only what happens after them changes. Babylon's own device-loss
-recovery is not relied on, though it starts: it rebuilds buffers and textures, but the forest's impostor bakes and
+recovery is not relied on, and is stopped (as built: replaced by nothing on
+every engine made or watched, `giveUpRestore`): it rebuilds buffers and
+textures, but the forest's impostor bakes and
 the environment probe are one-shot render targets whose contents a lost device
 erases and nothing renders again. The HUD line is carried across the reload by
 a `sessionStorage` marker, dropped silently where that storage throws.
