@@ -51,6 +51,23 @@ for (const stage of made.translated) {
 for (const stage of made.failed) {
   console.error(`  FAILED     ${stage.stage.padEnd(8)}  ${stage.id.slice(0, 16)}  ${stage.message}`);
 }
+const size = sizes(made.text);
+const ms = made.translated.map((stage) => stage.ms);
+const total = ms.reduce((a, b) => a + b, 0);
+const times = formatTimes(made.text);
+const largest = made.translated.reduce((a, b) => (b.wgslBytes > (a?.wgslBytes ?? -1) ? b : a), null);
+// The figures first, so a map over its ceiling still says what it is.
+console.log(`wgsl map: ${shown(out)}`);
+console.log(`  corpus:       ${stages.length} stages in ${files.length} files under ${shown(corpusDir)}, ${made.translated.length + made.failed.length} distinct`);
+console.log(`  entries:      ${made.entries.size}`);
+console.log(`  failed:       ${made.failed.length}${made.failed.length > 0 ? ` (${made.failed.map((stage) => stage.id).join(', ')})` : ''}`);
+console.log(`  bytes:        ${size.raw} raw, ${size.gzip} gzip -9, ${size.brotli} brotli -q 11`);
+console.log(`  largest:      ${largest === null ? 'none' : `${largest.wgslBytes} B of WGSL, the ${largest.stage} stage ${largest.id.slice(0, 16)}`}`);
+console.log(
+  `  translation:  translators started in ${startMs.toFixed(0)} ms; ${total.toFixed(0)} ms in all, ` +
+    `${(made.translated.length ? total / made.translated.length : 0).toFixed(0)} ms a stage on average, ${Math.max(0, ...ms).toFixed(0)} ms the longest`,
+);
+console.log(`  reading it:   ${times.jsonMs.toFixed(2)} ms as one JSON (shipped), ${times.indexMs.toFixed(2)} ms as an index and a text`);
 const tooLarge = mapSizeProblem(Buffer.byteLength(made.text), shared.MAP_MAX_BYTES);
 if (tooLarge !== null) {
   console.error(`\n!! ${tooLarge}. Nothing was written.\n`);
@@ -58,20 +75,6 @@ if (tooLarge !== null) {
 }
 writeWhole(out, made.text);
 writeFileSync(inputsFile, inputs);
-
-const size = sizes(made.text);
-const ms = made.translated.map((stage) => stage.ms);
-const total = ms.reduce((a, b) => a + b, 0);
-const times = formatTimes(made.text);
-console.log(`wgsl map: ${shown(out)}`);
-console.log(`  corpus:       ${stages.length} stages in ${files.length} files under ${shown(corpusDir)}, ${made.translated.length + made.failed.length} distinct`);
-console.log(`  entries:      ${made.entries.size}`);
-console.log(`  bytes:        ${size.raw} raw, ${size.gzip} gzip -9, ${size.brotli} brotli -q 11`);
-console.log(
-  `  translation:  translators started in ${startMs.toFixed(0)} ms; ${total.toFixed(0)} ms in all, ` +
-    `${(made.translated.length ? total / made.translated.length : 0).toFixed(0)} ms a stage on average, ${Math.max(0, ...ms).toFixed(0)} ms the longest`,
-);
-console.log(`  reading it:   ${times.jsonMs.toFixed(2)} ms as one JSON (shipped), ${times.indexMs.toFixed(2)} ms as an index and a text`);
 if (made.failed.length > 0) {
   console.error(
     `\n!! wgsl map: ${made.failed.length} of ${made.translated.length + made.failed.length} stages did not translate and are NOT in the map ` +

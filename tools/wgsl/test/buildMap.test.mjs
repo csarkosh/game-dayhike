@@ -113,6 +113,7 @@ describe('the map the build ships', () => {
     expect(Object.keys(JSON.parse(done.map).entries)).toHaveLength(2);
     expect(done.stderr).toContain(`FAILED     fragment  ${shared.corpusId(BROKEN).slice(0, 16)}  GLSL compilation failed`);
     expect(done.stderr).toContain('!! wgsl map: 1 of 3 stages did not translate and are NOT in the map');
+    expect(done.stdout).toContain(`  failed:       1 (${shared.corpusId(BROKEN)})\n`);
   }, timeLimit(120_000));
 
   it('makes an empty map of an empty corpus', async () => {
@@ -120,6 +121,8 @@ describe('the map the build ships', () => {
     const done = await tool(directory(), out);
     expect(done.map).toBe(`{"format":"dayhike-wgsl-map/1","salt":${JSON.stringify(nodeSalt(shared))},"entries":{}}`);
     expect(done.stdout).toContain('  entries:      0\n');
+    expect(done.stdout).toContain('  failed:       0\n  bytes:');
+    expect(done.stdout).toContain('  largest:      none\n');
   }, timeLimit(60_000));
 
   it('prints the entries, the bytes raw, gzipped and brotli\'d, and the milliseconds of each stage', async () => {
@@ -127,7 +130,8 @@ describe('the map the build ships', () => {
     const done = await tool(FIXTURE, out);
     const lines = done.stdout.split('\n');
     expect(lines.filter((line) => / ms {2}(vertex {2}|fragment) {2}[0-9a-f]{16} {2}\d+ B GLSL -> \d+ B WGSL$/.test(line))).toHaveLength(2);
-    expect(done.stdout).toContain('  entries:      2\n');
+    expect(done.stdout).toContain('  entries:      2\n  failed:       0\n');
+    expect(done.stdout).toMatch(/ {2}largest: {6}\d+ B of WGSL, the (vertex|fragment) stage [0-9a-f]{16}\n/);
     expect(done.stdout).toMatch(/ {2}bytes: {8}\d+ raw, \d+ gzip -9, \d+ brotli -q 11\n/);
     expect(done.stdout).toMatch(/ {2}translation: {2}translators started in \d+ ms; \d+ ms in all, \d+ ms a stage on average, \d+ ms the longest\n/);
     expect(done.stdout).toMatch(/ {2}reading it: {3}\d+\.\d\d ms as one JSON \(shipped\), \d+\.\d\d ms as an index and a text\n/);
