@@ -28,5 +28,11 @@ export declare function buildMap(options: {
 };
 export declare function sizes(text: string): { raw: number; gzip: number; brotli: number };
 export declare function mapSizeProblem(bytes: number, ceiling?: number): string | null;
+export declare function lineFigures(texts: Iterable<string>): {
+  lines: number;
+  distinct: number;
+  distinctBytes: number;
+  masked: { lines: number; distinct: number; distinctBytes: number };
+};
 export declare function formatTimes(text: string, runs?: number): { jsonMs: number; indexMs: number };
 export declare function inputsDigest(salt: string, stages: readonly CorpusStage[], shared: Shared): string;

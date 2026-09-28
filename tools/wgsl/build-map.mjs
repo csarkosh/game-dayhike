@@ -19,7 +19,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { buildMap, formatTimes, inputsDigest, mapSizeProblem, nodeSalt, readCorpusDir, sizes } from './lib/buildMap.mjs';
+import { buildMap, formatTimes, inputsDigest, lineFigures, mapSizeProblem, nodeSalt, readCorpusDir, sizes } from './lib/buildMap.mjs';
 import { CORPUS_DIR, MAP_FILE, writeWhole } from './lib/files.mjs';
 import { loadShared } from './lib/shared.mjs';
 import { startTranslators, translateStage } from './lib/translators.mjs';
@@ -55,6 +55,7 @@ const size = sizes(made.text);
 const ms = made.translated.map((stage) => stage.ms);
 const total = ms.reduce((a, b) => a + b, 0);
 const times = formatTimes(made.text);
+const lines = lineFigures(made.entries.values());
 const largest = made.translated.reduce((a, b) => (b.wgslBytes > (a?.wgslBytes ?? -1) ? b : a), null);
 // The figures first, so a map over its ceiling still says what it is.
 console.log(`wgsl map: ${shown(out)}`);
@@ -62,6 +63,10 @@ console.log(`  corpus:       ${stages.length} stages in ${files.length} files un
 console.log(`  entries:      ${made.entries.size}`);
 console.log(`  failed:       ${made.failed.length}${made.failed.length > 0 ? ` (${made.failed.map((stage) => stage.id).join(', ')})` : ''}`);
 console.log(`  bytes:        ${size.raw} raw, ${size.gzip} gzip -9, ${size.brotli} brotli -q 11`);
+console.log(
+  `  lines:        ${lines.lines} in all, ${lines.distinct} distinct in ${lines.distinctBytes} B; ` +
+    `digits as #: ${lines.masked.lines} in all, ${lines.masked.distinct} distinct in ${lines.masked.distinctBytes} B`,
+);
 console.log(`  largest:      ${largest === null ? 'none' : `${largest.wgslBytes} B of WGSL, the ${largest.stage} stage ${largest.id.slice(0, 16)}`}`);
 console.log(
   `  translation:  translators started in ${startMs.toFixed(0)} ms; ${total.toFixed(0)} ms in all, ` +

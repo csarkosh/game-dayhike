@@ -90,6 +90,32 @@ export function mapSizeProblem(bytes, ceiling = MAP_CEILING) {
   return `the WGSL map is ${bytes} bytes, over its ceiling of ${ceiling} (MAP_MAX_BYTES): a page would hold it whole for the engine's life`;
 }
 
+/**
+ * How much of the map's WGSL (`texts`, its entries) is repeated lines: every
+ * text split at each newline, the lines in all, the distinct lines and their
+ * bytes (each once, with its newline); and the same with every run of digits
+ * in a line read as `#`, so that lines that differ only in a generated number
+ * count as one.
+ */
+export function lineFigures(texts) {
+  const count = (mask) => {
+    const seen = new Set();
+    let lines = 0;
+    let distinctBytes = 0;
+    for (const text of texts) {
+      for (const raw of text.split('\n')) {
+        lines += 1;
+        const line = mask ? raw.replace(/\d+/g, '#') : raw;
+        if (seen.has(line)) continue;
+        seen.add(line);
+        distinctBytes += Buffer.byteLength(line) + 1;
+      }
+    }
+    return { lines, distinct: seen.size, distinctBytes };
+  };
+  return { ...count(false), masked: count(true) };
+}
+
 /** `text`'s bytes raw, gzipped at level 9 and brotli'd at quality 11. */
 export function sizes(text) {
   const bytes = Buffer.from(text, 'utf8');
