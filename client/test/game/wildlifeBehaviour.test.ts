@@ -6,7 +6,7 @@ import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { treeInCell, TREE_CELL, COHORT_GIANT } from "../../src/sim/vegetation.js";
 import {
   SPECIES_ELK, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST, SPECIES_GULL, SPECIES_EAGLE, SPECIES_BUTTERFLY,
-  SPECIES_COUNT, RAVEN_PERCH_HEIGHT, GIANT_TRUNK_RADIUS_PER_SCALE, wildlifeUnitsInDisc, type WildlifeUnit,
+  SPECIES_COUNT, SPECIES_DEER, RAVEN_PERCH_HEIGHT, GIANT_TRUNK_RADIUS_PER_SCALE, wildlifeUnitsInDisc, forestGround, type WildlifeUnit,
 } from "../../src/game/wildlifeField.js";
 import {
   PHASE_REST, PHASE_ALERT, PHASE_FLEE, PHASE_SETTLE, PHASE_RETURN, CALL_ELK_BUGLE, CALL_RAVEN_CROAK,
@@ -17,7 +17,7 @@ import {
   ELK_FLEE_AWAY, ELK_REFUGE_ARRIVE, SQUIRREL_FORAGE_RADIUS, SQUIRREL_CLIMB, SQUIRREL_CLING_CLEARANCE,
   RAVEN_BLEND_SECONDS, RAVEN_CLIMB_MPS, ravenBlendSeconds, clipForPhase,
   PHASE_CUE, RABBIT_RETURN_SPEED, GULL_SPEED, startCue, BUTTERFLY_ALT, BUTTERFLY_SPEED, BUTTERFLY_CUE_SPEED,
-  createUnitState, stepUnit, wildlifePresenceUnder, type PlayerPoint, type WildlifeEvent, type UnitState,
+  createUnitState, groundReads, stepUnit, wildlifePresenceUnder, type PlayerPoint, type WildlifeEvent, type UnitState,
 } from "../../src/game/wildlifeBehaviour.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -61,7 +61,7 @@ const far: PlayerPoint[] = [{ x: 1e6, z: 1e6 }];
 function cueSeconds(run: boolean): number {
   const rabbit = firstOf(SPECIES_RABBIT);
   const u: UnitState = createUnitState(rabbit, 1000, SEED);
-  startCue(u, u.x, u.z + 8, run, 1000);
+  startCue(u, u.x, u.z + 8, run, 1000, SEED);
   let t = 1001;
   for (; t <= 1001 + 10 * SIM_TICK_HZ && u.phase === PHASE_CUE; t++) stepUnit(u, t, far, SEED, 12, [], []);
   expect(u.phase).toBe(PHASE_REST);
@@ -813,7 +813,7 @@ describe("calls and presence", () => {
     // inequality would put a squirrel crossing the forest floor belly-first against bark.
     const squirrel = firstOf(SPECIES_SQUIRREL);
     const u = createUnitState(squirrel, 1000, SEED);
-    startCue(u, squirrel.homeX + 8, squirrel.homeZ, false, 1000);
+    startCue(u, squirrel.homeX + 8, squirrel.homeZ, false, 1000, SEED);
     for (let t = 1001; t <= 1030; t++) stepUnit(u, t, far, SEED, 12, [], []);
     expect(u.phase).toBe(PHASE_CUE);
     expect(u.poses[0]!.pitch).toBe(0);
@@ -827,7 +827,7 @@ describe("calls and presence", () => {
     const gull = firstOf(SPECIES_GULL);
     const u = createUnitState(gull, 1000, SEED);
     const markX = gull.homeX + 40, markZ = gull.homeZ + 30; // 50 m away
-    startCue(u, markX, markZ, false, 1000);
+    startCue(u, markX, markZ, false, 1000, SEED);
     let t = 1001;
     for (; t <= 1001 + 10 * SIM_TICK_HZ && u.phase === PHASE_CUE; t++) stepUnit(u, t, far, SEED, 12, [], []);
     expect(u.phase).toBe(PHASE_REST);
@@ -980,7 +980,7 @@ describe("the butterfly", () => {
     // gap between a hidden start and a mark inside the cue's budget.
     const u = createUnitState(butterflyUnit, 1000, SEED);
     const markX = HOME_X + 4, markZ = HOME_Z + 3; // 5 m away
-    startCue(u, markX, markZ, false, 1000);
+    startCue(u, markX, markZ, false, 1000, SEED);
     let t = 1001;
     for (; t <= 1001 + 20 * SIM_TICK_HZ && u.phase === PHASE_CUE; t++) stepUnit(u, t, [], SEED, 12, [], []);
     expect(u.phase).toBe(PHASE_REST);
@@ -988,4 +988,103 @@ describe("the butterfly", () => {
     expect(u.x).toBeCloseTo(markX, 6);
     expect(u.z).toBeCloseTo(markZ, 6);
   });
+});
+
+describe("the animals that walk keep to the forest's ground", () => {
+  // The world "hollow". Along z = 0 the road's centreline is at x = -322.73 and the
+  // ground reaches 9 m, where no sand is left, some 53 m inland of it, near x = -270:
+  // everything seaward of that is sand, the road's strip or the road.
+  const HOLLOW = 2032433950;
+  const at = (species: number, x: number, z: number, over: Partial<WildlifeUnit> = {}): WildlifeUnit => {
+    const h = elevationAt(HOLLOW, x, z);
+    return {
+      species, id: 7001 + species, cellX: 0, cellZ: 0, x, z, h, members: species === SPECIES_ELK ? 8 : species === SPECIES_SQUIRREL ? 1 : 3,
+      refugeX: x + 100, refugeZ: z, homeX: x, homeZ: z, homeH: h, homeScale: 1, altitude: 0, radius: 0, hash: 0.37, presenceDraw: 0.2, ...over,
+    };
+  };
+  /** Steps a unit for `seconds`, and gives back every place any of its members stood that is not the forest's ground. */
+  const strays = (u: UnitState, players: (tick: number) => PlayerPoint[], seconds: number): string[] => {
+    const out: string[] = [];
+    for (let t = 1001; t <= 1000 + seconds * SIM_TICK_HZ; t++) {
+      stepUnit(u, t, players(t), HOLLOW, 12, [], []);
+      if (t % 6 !== 0) continue;
+      for (const [m, pose] of u.poses.entries()) {
+        if (pose.scale === 0) continue; // hidden in its bush
+        if (!forestGround(HOLLOW, pose.x, pose.z)) out.push(`member ${m} at ${pose.x.toFixed(1)}, ${pose.z.toFixed(1)}, tick ${t}`);
+      }
+    }
+    return out;
+  };
+
+  it("stands where the test says: the herd's place is the forest's, and the sand is 12 m seaward of it", () => {
+    setActiveTerrainVariant("olympic");
+    expect(forestGround(HOLLOW, -258, 0)).toBe(true);
+    expect(forestGround(HOLLOW, -270, 0)).toBe(false);
+    expect(forestGround(HOLLOW, -323, 0)).toBe(false);
+  });
+
+  it("asks the ground nothing on a frame the herd's lead has not moved", () => {
+    setActiveTerrainVariant("olympic");
+    // Eight elk, 60 m inside the forest, with nobody near: they graze, and now and then walk a few metres.
+    const u = createUnitState(at(SPECIES_ELK, -210, 0), 1000, HOLLOW);
+    let still = 0, moving = 0, readsStill = 0, readsMoving = 0;
+    for (let t = 1001; t <= 1000 + 120 * SIM_TICK_HZ; t++) {
+      const x = u.x, z = u.z, before = groundReads();
+      stepUnit(u, t, far, HOLLOW, 12, [], []);
+      const reads = groundReads() - before;
+      if (u.x === x && u.z === z) { still++; readsStill += reads; } else { moving++; readsMoving += reads; }
+    }
+    // Both kinds of frame are in the two minutes, so the count is of something.
+    expect(still).toBeGreaterThan(3600);
+    expect(moving).toBeGreaterThan(60);
+    // A frame on which the lead stops is one on which it has moved: what is asked on the
+    // frames it stands is what a wander's new goal asks, once for each walk.
+    expect(readsStill).toBeLessThanOrEqual(120);
+    expect(readsMoving).toBeGreaterThan(0);
+  }, timeLimit(60_000));
+
+  it("grazes a herd at the forest's edge without a member stepping onto the sand", () => {
+    setActiveTerrainVariant("olympic");
+    // 6 m inside the edge, with members spread up to 12 m about the lead.
+    const u = createUnitState(at(SPECIES_ELK, -264, 0), 1000, HOLLOW);
+    expect(forestGround(HOLLOW, -264, 0)).toBe(true);
+    expect(strays(u, () => far, 60)).toEqual([]);
+  }, timeLimit(60_000));
+
+  it("stops a herd at the forest's edge when its refuge lies across the sand", () => {
+    setActiveTerrainVariant("olympic");
+    const u = createUnitState(at(SPECIES_ELK, -258, 0, { refugeX: -420, refugeZ: 0 }), 1000, HOLLOW);
+    // A player 20 m inland of the herd: inside the flee range, with the refuge behind the herd.
+    expect(strays(u, () => [{ x: -238, z: 0 }], 30)).toEqual([]);
+    expect(u.x).toBeLessThan(-262);
+    expect(forestGround(HOLLOW, u.x, u.z)).toBe(true);
+  }, timeLimit(60_000));
+
+  it("stops a herd at the forest's edge when it runs from a player who stands between it and its refuge", () => {
+    setActiveTerrainVariant("olympic");
+    const u = createUnitState(at(SPECIES_DEER, -258, 0, { refugeX: -158, refugeZ: 0 }), 1000, HOLLOW);
+    expect(strays(u, () => [{ x: -238, z: 0 }], 30)).toEqual([]);
+    expect(u.x).toBeLessThan(-262);
+  }, timeLimit(60_000));
+
+  it("stops an animal sent to a mark on the road at the forest's edge", () => {
+    setActiveTerrainVariant("olympic");
+    for (const species of [SPECIES_ELK, SPECIES_RABBIT, SPECIES_SQUIRREL]) {
+      const u = createUnitState(at(species, -258, 0), 1000, HOLLOW);
+      startCue(u, -323, 0, species !== SPECIES_ELK, 1000, HOLLOW);
+      // The mark it makes for is the forest's edge on the way to the road, 53 m short of it.
+      expect(u.goalX, `species ${species}`).toBeLessThan(-262);
+      expect(u.goalX, `species ${species}`).toBeGreaterThan(-272);
+      expect(forestGround(HOLLOW, u.goalX, u.goalZ), `species ${species}`).toBe(true);
+      expect(strays(u, () => far, 40), `species ${species}`).toEqual([]);
+      // It arrived there and went back to its own business.
+      expect(u.phase, `species ${species}`).toBe(PHASE_REST);
+    }
+  }, timeLimit(60_000));
+
+  it("forages a squirrel round a trunk at the forest's edge without it crossing onto the sand", () => {
+    setActiveTerrainVariant("olympic");
+    const u = createUnitState(at(SPECIES_SQUIRREL, -266, 0), 1000, HOLLOW);
+    expect(strays(u, () => far, 120)).toEqual([]);
+  }, timeLimit(60_000));
 });

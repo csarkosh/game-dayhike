@@ -256,6 +256,14 @@ export type SpeciesPresence = readonly number[];
 /** However the caller wants to answer "how high is the ground here" — the
  * real heightfield in play, a flat plane or a wall in a test. */
 export type Ground = (x: number, z: number) => number;
+/**
+ * Whether an animal of this species may be at this point: the ground its kind keeps to,
+ * as the caller that knows the world tells it. A cue starts, ends and passes only where
+ * this holds — see `walkAllowed`. The view decides where an animal can appear unseen, and
+ * on its own that is anywhere: a player looking up the beach had elk walked in across the
+ * sand.
+ */
+export type Habitat = (species: number, x: number, z: number) => boolean;
 export type Seen = { id: number; species: number; x: number; y: number; z: number };
 /**
  * A unit the director may act on. It carries TWO positions, and which is which matters:
@@ -427,7 +435,10 @@ type Clockwork = {
    * back within range or starts a cue, so it is bounded by the size of the pool, and the
    * next occupant of a slot (which starts its life mid-cue) begins from zero. */
   farFor: Map<number, number>;
+  /** Where each species may be. See `Habitat`. */
+  habitat: Habitat;
 };
+const anywhere: Habitat = () => true;
 const clockworks = new WeakMap<DirectorState, Clockwork>();
 function clockworkFor(state: DirectorState): Clockwork {
   let c = clockworks.get(state);
@@ -435,7 +446,7 @@ function clockworkFor(state: DirectorState): Clockwork {
     c = {
       tick: 0, haveView: false, viewX: 0, viewZ: 0, viewYaw: 0, driftX: 0, driftZ: 0, driftYaw: 0,
       counted: new Int32Array(SEEN_SLOTS), countedOn: new Uint8Array(SEEN_SLOTS), countedN: 0,
-      logAtStage: -1, stageTick: 0, farFor: new Map(),
+      logAtStage: -1, stageTick: 0, farFor: new Map(), habitat: anywhere,
     };
     clockworks.set(state, c);
   }
@@ -460,7 +471,12 @@ function drawGap(seed: number, tick: number): number {
   return GAP[0] + hash3(seed, tick, 1, 0) * (GAP[1] - GAP[0]);
 }
 
-export function createDirectorState(seed: number): DirectorState {
+export function createDirectorState(seed: number, habitat: Habitat = anywhere): DirectorState {
+  const state = createState(seed);
+  clockworkFor(state).habitat = habitat;
+  return state;
+}
+function createState(seed: number): DirectorState {
   return {
     sinceSighting: 0,
     targetGap: drawGap(seed, 0),
@@ -848,6 +864,20 @@ function cueLands(
   return false;
 }
 
+/**
+ * Whether the whole walk is over ground the species may be on: where it sets out from, the
+ * mark, and the points between that `cueLands` reads. An animal is stopped at the edge of
+ * its ground whatever it is sent to, so a walk that crosses that edge is one that ends
+ * short of its mark, and the beat is better spent on another.
+ */
+function walkAllowed(habitat: Habitat, species: number, fromX: number, fromZ: number, mark: { x: number; z: number }): boolean {
+  for (let i = 0; i <= PATH_SAMPLES; i++) {
+    const f = i / PATH_SAMPLES;
+    if (!habitat(species, fromX + (mark.x - fromX) * f, fromZ + (mark.z - fromZ) * f)) return false;
+  }
+  return true;
+}
+
 /** Whether the animal can cover the ground between where it is and the mark inside
  * `CUE_FLIGHT`, at the gait this cue asked for. */
 function reachable(species: number, run: boolean, fromX: number, fromZ: number, mark: { x: number; z: number }): boolean {
@@ -1031,7 +1061,7 @@ function extentHidden(view: View, ground: Ground, c: Candidate, mist: number): b
  * is what sends `stageCue` to the pool.
  */
 function driveable(
-  view: View, aim: View, ground: Ground, candidates: readonly Candidate[], species: number, staging: number, run: boolean, mist: number,
+  view: View, aim: View, ground: Ground, habitat: Habitat, candidates: readonly Candidate[], species: number, staging: number, run: boolean, mist: number,
 ): Candidate | null {
   let best: Candidate | null = null;
   let bestDistance = RECYCLE;
@@ -1051,6 +1081,7 @@ function driveable(
     markFor(aim, species, staging, c.moveX, c.moveZ, markScratch);
     if (!reachable(species, run, c.moveX, c.moveZ, markScratch)) continue;
     if (!cueLands(aim, ground, species, c.y, mist, c.moveX, c.moveZ, markScratch)) continue;
+    if (!walkAllowed(habitat, species, c.moveX, c.moveZ, markScratch)) continue;
     bestDistance = distance;
     best = c;
   }
@@ -1103,7 +1134,7 @@ export function stageCue(
     const staging = stagingFor(species);
     // Breaking cover is a bolt; a flier's crossing and a herd's walk-in are not.
     const run = staging === STAGING_COVER;
-    const driven = driveable(view, aim, ground, candidates, species, staging, run, match.mist);
+    const driven = driveable(view, aim, ground, clock.habitat, candidates, species, staging, run, match.mist);
     if (driven !== null) {
       // From the ANCHOR, not from the animal: the goal replaces the anchor, so a mark
       // measured anywhere else is a mark the mover cannot honour.
@@ -1123,6 +1154,7 @@ export function stageCue(
       // whose whole walk stays out of frame.
       if (!reachable(species, run, startScratch.x, startScratch.z, markScratch)) continue;
       if (!cueLands(aim, ground, species, startScratch.y, match.mist, startScratch.x, startScratch.z, markScratch)) continue;
+      if (!walkAllowed(clock.habitat, species, startScratch.x, startScratch.z, markScratch)) continue;
       out.push({
         kind: "place", species, x: startScratch.x, y: startScratch.y, z: startScratch.z,
         goalX: markScratch.x, goalZ: markScratch.z, run,

@@ -18,7 +18,7 @@ import type { WeatherParams } from "./weather.js";
 import {
   FIRST_BIRD_SPECIES, GIANT_TRUNK_RADIUS_PER_SCALE, SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_DEER, SPECIES_EAGLE,
   SPECIES_ELK, SPECIES_GULL, SPECIES_RABBIT, SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL,
-  RAVEN_PERCH_HEIGHT, WILDLIFE_SPREAD, type WildlifeUnit,
+  RAVEN_PERCH_HEIGHT, WILDLIFE_SPREAD, forestGround, lastAllowed, type WildlifeUnit,
 } from "./wildlifeField.js";
 
 /**
@@ -321,6 +321,63 @@ function moveToward(u: UnitState, speed: number): boolean {
   u.z += (dz / d) * step;
   return false;
 }
+let reads = 0;
+/** How many times this module has asked whether a place is the forest's ground: a test's
+ * seam, for what a frame costs. */
+export function groundReads(): number {
+  return reads;
+}
+function onForest(seed: number, x: number, z: number): boolean {
+  reads++;
+  return forestGround(seed, x, z);
+}
+/**
+ * For each member of a herd, the place its offset last asked for and the place it was
+ * given, four numbers a member. A herd stands far more than it walks, and while its lead
+ * stands each member asks for the place it asked for the frame before: the answer is kept,
+ * and the ground is asked again only once the lead has moved.
+ */
+const keptPlaces = new WeakMap<UnitState, Float64Array>();
+function keptPlace(u: UnitState, m: number, seed: number, tx: number, tz: number): Float64Array {
+  let kept = keptPlaces.get(u);
+  if (kept === undefined || kept.length < u.memberOffsets.length * 4) {
+    kept = new Float64Array(u.memberOffsets.length * 4).fill(NaN);
+    keptPlaces.set(u, kept);
+  }
+  const i = m * 4;
+  if (kept[i] === tx && kept[i + 1] === tz) return kept;
+  kept[i] = tx;
+  kept[i + 1] = tz;
+  if (onForest(seed, tx, tz)) {
+    kept[i + 2] = tx;
+    kept[i + 3] = tz;
+  } else {
+    const p = lastAllowed((x, z) => onForest(seed, x, z), u.x, u.z, tx, tz);
+    kept[i + 2] = p.x;
+    kept[i + 3] = p.z;
+  }
+  return kept;
+}
+
+/**
+ * Holds a goal just set to the forest's ground: the goal becomes the furthest point
+ * toward it that the animal can reach without stepping onto the shore or into the road's
+ * strip (`wildlifeField.ts`, `forestGround`). Every goal an animal that walks is given
+ * passes through here, so a herd that flees toward the sea stops at the forest's edge
+ * and one sent to a mark on the road never arrives. An animal that somehow stands on
+ * forbidden ground already is let walk out of it, to a goal that is allowed.
+ */
+function keepGoal(u: UnitState, seed: number): void {
+  if (u.unit.species >= FIRST_BIRD_SPECIES) return;
+  const allowed = (x: number, z: number): boolean => onForest(seed, x, z);
+  if (!allowed(u.x, u.z)) {
+    if (!allowed(u.goalX, u.goalZ)) { u.goalX = u.x; u.goalZ = u.z; }
+    return;
+  }
+  const p = lastAllowed(allowed, u.x, u.z, u.goalX, u.goalZ);
+  u.goalX = p.x;
+  u.goalZ = p.z;
+}
 function closing(prev: number, now: number): boolean {
   return now < prev - 1e-6;
 }
@@ -338,6 +395,7 @@ function restWander(u: UnitState, tick: number, seed: number, gridSeconds: numbe
   const r = Math.sqrt(hash3(u.unit.id, slot, SALT_WANDER_R, seed)) * radius;
   u.goalX = u.unit.x + r * Math.cos(a);
   u.goalZ = u.unit.z + r * Math.sin(a);
+  keepGoal(u, seed);
 }
 
 /**
@@ -388,7 +446,14 @@ export function createUnitState(unit: WildlifeUnit, tick: number, seed: number):
     const r = hash3(unit.id, m, SALT_MEMBER + 1, seed) * WILDLIFE_SPREAD[unit.species]!;
     const delay = Math.round(range(hash3(unit.id, m, SALT_MEMBER + 2, seed), MEMBER_DELAY) * SIM_TICK_HZ);
     offsets.push({ a, r, delay });
-    u.poses.push({ x: unit.x + r * Math.cos(a), z: unit.z + r * Math.sin(a), y: unit.h, yaw: a, pitch: 0, scale: 1, clip: "graze", wing: 1 });
+    let px = unit.x + r * Math.cos(a), pz = unit.z + r * Math.sin(a);
+    // As `poseGround` holds a member's place, so it starts there.
+    if (unit.species < FIRST_BIRD_SPECIES && r > 0 && !onForest(seed, px, pz)) {
+      const p = lastAllowed((x, z) => onForest(seed, x, z), unit.x, unit.z, px, pz);
+      px = p.x;
+      pz = p.z;
+    }
+    u.poses.push({ x: px, z: pz, y: unit.h, yaw: a, pitch: 0, scale: 1, clip: "graze", wing: 1 });
   }
   u.memberOffsets = offsets;
   return u;
@@ -524,6 +589,7 @@ function startElkFlee(u: UnitState, tick: number, seed: number, p: PlayerPoint |
     u.goalX = u.unit.refugeX;
     u.goalZ = u.unit.refugeZ;
   }
+  keepGoal(u, seed);
   out.push({ kind: "call", call: CALL_ELK_BARK, x: x0, y: y0, z: z0, species: u.unit.species });
   out.push({ kind: "flee", x: x0, z: z0, species: u.unit.species });
 }
@@ -579,6 +645,7 @@ function stepElk(u: UnitState, tick: number, players: readonly PlayerPoint[], se
       if (d <= ELK_FLEE_RANGE && seconds(u, tick) >= MIN_SETTLE_HOLD) { startElkFlee(u, tick, seed, p, true, out); break; }
       if (d >= ELK_SETTLE_CLEAR && seconds(u, tick) >= u.dwell) {
         enter(u, PHASE_RETURN, tick); u.goalX = u.unit.x; u.goalZ = u.unit.z; u.alertD = Infinity;
+        keepGoal(u, seed);
       }
       break;
     }
@@ -630,7 +697,7 @@ function stepRabbit(u: UnitState, tick: number, players: readonly PlayerPoint[],
       }
       break;
     case PHASE_SETTLE:
-      if (seconds(u, tick) >= u.dwell && d > RABBIT_FREEZE_RANGE) { enter(u, PHASE_RETURN, tick); u.goalX = u.unit.x; u.goalZ = u.unit.z; }
+      if (seconds(u, tick) >= u.dwell && d > RABBIT_FREEZE_RANGE) { enter(u, PHASE_RETURN, tick); u.goalX = u.unit.x; u.goalZ = u.unit.z; keepGoal(u, seed); }
       break;
     case PHASE_RETURN:
       if (d <= RABBIT_FREEZE_RANGE) { enter(u, PHASE_ALERT, tick); u.dwell = range(draw(u, SALT_ALERT, seed), RABBIT_FREEZE_SECONDS); break; }
@@ -650,6 +717,7 @@ function nextLeg(u: UnitState, seed: number): void {
   const side = f < 1 ? (hash3(u.unit.id, u.episode, SALT_LEGS + 1 + u.leg, seed) - 0.5) * Math.min(6, 0.6 * len) * (u.leg % 2 ? -1 : 1) : 0;
   u.goalX = u.unit.x + dx * f + (-dz / len) * side;
   u.goalZ = u.unit.z + dz * f + (dx / len) * side;
+  keepGoal(u, seed);
 }
 
 function stepSquirrel(u: UnitState, tick: number, players: readonly PlayerPoint[], seed: number, out: WildlifeEvent[]): void {
@@ -662,6 +730,7 @@ function stepSquirrel(u: UnitState, tick: number, players: readonly PlayerPoint[
       if (d <= SQUIRREL_ALARM_RANGE) {
         const x0 = u.x, z0 = u.z, y0 = u.y;
         u.episode++; enter(u, PHASE_ALERT, tick); u.goalX = u.unit.homeX; u.goalZ = u.unit.homeZ;
+        keepGoal(u, seed);
         // Alarm chatter fires immediately at the alarm, not just once treed.
         out.push({ kind: "call", call: CALL_SQUIRREL_CHATTER, x: x0, y: y0, z: z0, species: u.unit.species });
         out.push({ kind: "flee", x: x0, z: z0, species: u.unit.species });
@@ -779,13 +848,15 @@ function cueSpeed(u: UnitState): number {
 }
 
 /**
- * Hand a unit a mark to make for. The one door into PHASE_CUE — the shell that applies the
+ * Hand a unit a mark to make for, held to the forest's ground for an animal that walks
+ * (`keepGoal`). The one door into PHASE_CUE — the shell that applies the
  * director's events comes through here rather than reaching into the phase fields, so the
  * goal, the gait and the phase can never be set half-way.
  */
-export function startCue(u: UnitState, goalX: number, goalZ: number, run: boolean, tick: number): void {
+export function startCue(u: UnitState, goalX: number, goalZ: number, run: boolean, tick: number, seed: number): void {
   u.goalX = goalX;
   u.goalZ = goalZ;
+  keepGoal(u, seed);
   u.cueRun = run;
   enter(u, PHASE_CUE, tick);
 }
@@ -833,8 +904,15 @@ function poseGround(u: UnitState, tick: number, seed: number): void {
     // Offset angle, spread radius and join-delay are cached on the unit at creation
     // instead of re-drawn from hash3 every frame here.
     const { a, r, delay } = u.memberOffsets[m]!;
-    const tx = u.x + r * Math.cos(a);
-    const tz = u.z + r * Math.sin(a);
+    let tx = u.x + r * Math.cos(a);
+    let tz = u.z + r * Math.sin(a);
+    // A member's place about the lead is the forest's too: where its own offset would
+    // stand it on the shore, it stands as far that way as the forest goes.
+    if (r > 0) {
+      const kept = keptPlace(u, m, seed, tx, tz);
+      tx = kept[m * 4 + 2]!;
+      tz = kept[m * 4 + 3]!;
+    }
     if (tick - u.phaseStart >= delay || m === 0) {
       const dx = tx - pose.x, dz = tz - pose.z, dd = Math.hypot(dx, dz);
       // A bolting cue moves the lead at the flee speed, so the members have to be allowed to

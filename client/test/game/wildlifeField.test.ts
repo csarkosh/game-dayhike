@@ -13,6 +13,7 @@ import {
   wildlifeUnitInCell, wildlifeUnitsInDisc, createWildlifeCollector,
   groundAnchor,
   type WildlifeUnit,
+  GROUND_ROAD_CLEAR, GROUND_SHORE_ALT, forestGround, lastAllowed, speciesGround,
 } from "../../src/game/wildlifeField.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -87,11 +88,14 @@ describe("the rabbits and the canopy", () => {
   // canopy floor at 0.5 (main before the near-grass work) the split was
   // open 705 / 634 / 556, partial 736 / 709 / 580, closed 0 / 0 / 0. At
   // 0.75 the open ground is the same to the unit; partial canopy carries more
-  // grass, so more rabbits (a total of 1664 / 1568 / 1349).
+  // grass, so more rabbits (a total of 1664 / 1568 / 1349). Since no animal
+  // stands on ground under 9 m or within 30 m of the road, the rabbits of the
+  // shore's edge are gone: 7, 7 and 3 of the open ground's, and one of seed
+  // 1's under a partial canopy.
   const want: Record<number, [number, number, number]> = {
-    1: [705, 959, 0],
-    388817: [634, 934, 0],
-    [-1117907922]: [556, 793, 0],
+    1: [698, 958, 0],
+    388817: [627, 934, 0],
+    [-1117907922]: [553, 793, 0],
   };
   for (const seed of SEEDS) {
     it(`seed ${seed}: keeps the open-ground rabbits and none under a closed canopy`, () => {
@@ -145,6 +149,19 @@ describe("wildlife placement census", () => {
         expect(Math.hypot(s.dx, s.dz)).toBeLessThanOrEqual(MAX_WALKABLE_GRADIENT);
       }
     });
+    it(`seed ${seed}: nothing that walks is anchored on ground under 9 m or within 30 m of the road`, () => {
+      let counted = 0;
+      for (const species of [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL]) {
+        for (const u of census(seed, species)) {
+          counted++;
+          expect(elevationSampleAt(seed, u.x, u.z).h, `species ${species} at ${u.x}, ${u.z}`).toBeGreaterThanOrEqual(9);
+          expect(variant.roadDistance!(seed, u.x, u.z), `species ${species} at ${u.x}, ${u.z}`).toBeGreaterThanOrEqual(30);
+          // A rabbit bolts to its bush, so the bush is on the forest's ground too.
+          if (species === SPECIES_RABBIT) expect(forestGround(seed, u.refugeX, u.refugeZ), `the bush at ${u.refugeX}, ${u.refugeZ}`).toBe(true);
+        }
+      }
+      expect(counted).toBeGreaterThan(1000);
+    }, timeLimit(60_000));
     it(`seed ${seed}: every rabbit unit has a bush within ${RABBIT_COVER_RADIUS} m, and its refuge is that bush`, () => {
       const units = census(seed, SPECIES_RABBIT);
       // Measured 2026-09-02: seeds 1, 388817, -1117907922 gave 1168, 1132, 974
@@ -286,6 +303,8 @@ describe("wildlife placement census", () => {
           const t = treeInCell(seed, tx, tz);
           if (t === null || t.cohort !== COHORT_GIANT) continue;
           if (Math.floor(t.x / cell) !== cx || Math.floor(t.z / cell) !== cz) continue;
+          // A giant by the shore or the road is no squirrel's home.
+          if (!forestGround(seed, t.x, t.z)) continue;
           const d = Math.hypot(t.x - anchor.x, t.z - anchor.z);
           if (d < nearestD) { nearestD = d; nearest = t; }
         }
@@ -293,7 +312,8 @@ describe("wildlife placement census", () => {
         if (u === null) continue; // the density gate can reject regardless of tree coverage
         sawUnit = true;
         // If a unit exists, its home trunk must be the TRUE nearest giant
-        // belonging to this cell (found by the generous window above), not
+        // belonging to this cell that stands on the forest's own ground
+        // (found by the generous window above), not
         // merely whatever the production scan window happened to reach.
         expect(nearest).not.toBeNull();
         expect(u.homeX).toBe(nearest!.x);
@@ -395,4 +415,94 @@ describe("wildlife placement census", () => {
       }
     });
   }
+});
+
+describe("the ground an animal may stand on", () => {
+  // The world "hollow": the road's centreline is at x = -322.73 where z = 0, and the pad 9 m inland of it.
+  const HOLLOW = 2032433950;
+
+  it("is not the road, the pad, or the sand that runs inland of them", () => {
+    setActiveTerrainVariant("olympic");
+    expect(forestGround(HOLLOW, -323, 0)).toBe(false); // the road
+    expect(forestGround(HOLLOW, -314, 0)).toBe(false); // the pad
+    expect(forestGround(HOLLOW, -291, 0)).toBe(false); // 32 m inland, 5.99 m up: past the road's strip, still sand
+    expect(forestGround(HOLLOW, -283, 0)).toBe(false); // 40 m inland, 7.00 m up: the sand is fading, not gone
+  });
+
+  it("is the ground above the sand, clear of the road's strip", () => {
+    setActiveTerrainVariant("olympic");
+    expect(forestGround(HOLLOW, -263, 0)).toBe(true); // 60 m inland, 10.10 m up
+    expect(forestGround(HOLLOW, -203, 0)).toBe(true); // 120 m inland, 24.60 m up
+    expect(GROUND_SHORE_ALT).toBe(9);
+    expect(GROUND_ROAD_CLEAR).toBe(30);
+  });
+});
+
+describe("the ground each species keeps to", () => {
+  const HOLLOW = 2032433950;
+  const WALKERS = [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL];
+  const BIRDS = [SPECIES_RAVEN_ROOST, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE];
+
+  it("holds the four that walk, and the butterfly, off the sand and the road", () => {
+    setActiveTerrainVariant("olympic");
+    for (const species of [...WALKERS, SPECIES_BUTTERFLY]) {
+      expect(speciesGround(HOLLOW, species, -323, 0), `species ${species} on the road`).toBe(false);
+      expect(speciesGround(HOLLOW, species, -291, 0), `species ${species} on the sand`).toBe(false);
+      expect(speciesGround(HOLLOW, species, -283, 0), `species ${species} where the sand is fading`).toBe(false);
+      expect(speciesGround(HOLLOW, species, -263, 0), `species ${species} in the forest`).toBe(true);
+    }
+  });
+
+  it("holds none of them off a slope: how steep the ground is decides where one is anchored, not where it may go", () => {
+    setActiveTerrainVariant("olympic");
+    // 112.46 m up and 369.5 m from the road, on a slope of 1.04.
+    const s = elevationSampleAt(HOLLOW, 47, 240);
+    expect(Math.hypot(s.dx, s.dz)).toBeGreaterThan(MAX_WALKABLE_GRADIENT);
+    for (const species of [...WALKERS, SPECIES_BUTTERFLY]) expect(speciesGround(HOLLOW, species, 47, 240), `species ${species}`).toBe(true);
+    expect(forestGround(HOLLOW, 47, 240)).toBe(true);
+  });
+
+  it("holds no bird anywhere", () => {
+    setActiveTerrainVariant("olympic");
+    for (const species of BIRDS) {
+      expect(speciesGround(HOLLOW, species, -323, 0), `species ${species} over the road`).toBe(true);
+      expect(speciesGround(HOLLOW, species, -291, 0), `species ${species} over the sand`).toBe(true);
+      expect(speciesGround(HOLLOW, species, -340, 0), `species ${species} over the water's edge`).toBe(true);
+    }
+  });
+});
+
+describe("lastAllowed", () => {
+  const inland = (x: number): boolean => x <= 10;
+
+  it("is the goal itself where the whole way there is allowed", () => {
+    expect(lastAllowed((x) => inland(x), 0, 0, 8, 6)).toEqual({ x: 8, z: 6 });
+  });
+
+  it("stops at the edge of the allowed ground, to a quarter of a metre", () => {
+    const p = lastAllowed((x) => inland(x), 0, 0, 30, 0);
+    expect(p.x).toBeGreaterThanOrEqual(9.75);
+    expect(p.x).toBeLessThanOrEqual(10);
+    expect(p.z).toBe(0);
+    const q = lastAllowed((x) => inland(x), 0, 0, 30, 40);
+    expect(q.x).toBeGreaterThanOrEqual(9.75);
+    expect(q.x).toBeLessThanOrEqual(10);
+    expect(q.z / q.x).toBeCloseTo(40 / 30, 9);
+  });
+
+  it("stops at the first edge it meets, though the goal lies on allowed ground beyond", () => {
+    const p = lastAllowed((x) => x <= 10 || x >= 20, 0, 0, 30, 0);
+    expect(p.x).toBeGreaterThanOrEqual(9.75);
+    expect(p.x).toBeLessThanOrEqual(10);
+  });
+
+  it("finds a strip of forbidden ground a metre and a half wide", () => {
+    const p = lastAllowed((x) => x <= 10 || x >= 11.5, 0, 0, 30, 0);
+    expect(p.x).toBeLessThanOrEqual(10);
+    expect(p.x).toBeGreaterThanOrEqual(9.75);
+  });
+
+  it("stays where it is when it starts on forbidden ground", () => {
+    expect(lastAllowed(() => false, 3, 4, 30, 0)).toEqual({ x: 3, z: 4 });
+  });
 });

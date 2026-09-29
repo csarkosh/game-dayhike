@@ -45,7 +45,7 @@ import { TransformNode as BabylonTransformNode } from "@babylonjs/core/Meshes/tr
 import {
   DIRECTOR_POOL, FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL,
   SPECIES_RABBIT, SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, WILDLIFE_CELL, WILDLIFE_D, WILDLIFE_RADIUS,
-  WILDLIFE_SPREAD, wildlifeUnitsInDisc,
+  WILDLIFE_SPREAD, forestGround, wildlifeUnitsInDisc,
 } from "../../src/game/wildlifeField.js";
 import {
   BIRD_ASSET, BIRD_OMEGA, BIRD_PERCHED_ASSET, BUTTERFLY_BODY_HALF, BUTTERFLY_COLOURWAYS, BUTTERFLY_OMEGA,
@@ -73,14 +73,14 @@ const CAM_Z = -500;
 const FAR_AWAY = [{ x: 1e6, z: 1e6 }];
 const GROUND_ASSETS = ["wildlife.elk", "wildlife.deer", "wildlife.rabbit", "wildlife.squirrel"];
 /**
- * A point with no ground-species unit anywhere in any species' disc — flat
- * water far from the trail. The director's own field of candidates is empty
- * here, so any sighting the tests below see can only be a unit the director
- * itself placed or drove: nothing natural is ever already sitting in frame to
- * confuse the two.
+ * A point on the forest's ground, 234.9 m up, with no ground-species unit anywhere in any
+ * species' disc, no bird's circle nearer than 248 m, and ground every species may stand on
+ * for 45 m about it. The director's own field of candidates is empty here, so any sighting
+ * the tests below see can only be a unit the director itself placed or drove: nothing
+ * natural is ever already sitting in frame to confuse the two.
  */
-const QUIET_X = -10000;
-const QUIET_Z = -8000;
+const QUIET_X = 1900;
+const QUIET_Z = -2600;
 const DAY_MATCH: MatchState = { phase: 0, hollowDistance: Infinity, hollowHunting: false, inWorld: true, hour: 12, mist: 0 };
 /** Weather that takes every placeable species' presence to exactly zero at once — full
  * dread empties the ground and the sky, full rain finishes the butterfly. */
@@ -779,6 +779,56 @@ function flying(
 function birdUnits(species: number) {
   return wildlifeUnitsInDisc(SEED, BIRD_CAM_X, BIRD_CAM_Z).filter((u) => u.species === species);
 }
+
+describe("the wildlife director at the trailhead", () => {
+  // The world "hollow". Its road runs along z at x = -322.73; the pad a player arrives on is
+  // 9 m inland of it, the sand runs a further 45 m inland, and the forest's ground starts there.
+  const HOLLOW = 2032433950;
+  /** Every ground animal drawn over a minute from one standpoint, read six times a second. */
+  const watch = (x: number, z: number, yaw: number): { drawn: number; placed: number; strays: string[] } => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const { pool, acquired } = fakePool(scene, GROUND_ASSETS);
+    const w = createWildlifeMeshes(scene, HOLLOW, { pool });
+    const view: View = { x, y: elevationAt(HOLLOW, x, z) + 1.7, z, yaw, pitch: 0, fov: 1.4, aspect: 16 / 9 };
+    const seen = { drawn: 0, placed: 0, strays: [] as string[] };
+    for (let tick = 0; tick < 3600; tick++) {
+      w.update(x, z, tick, [{ x, z }], WEATHER_PRESETS.clear, 12, { view, match: DAY_MATCH });
+      seen.placed = Math.max(seen.placed, w.poolCount());
+      if (tick % 10 !== 0) continue;
+      for (const [key, rec] of acquired) {
+        seen.drawn++;
+        const p = rec.root.position;
+        if (!forestGround(HOLLOW, p.x, p.z) && seen.strays.length < 5) seen.strays.push(`${rec.id} ${key} at ${p.x.toFixed(1)}, ${p.z.toFixed(1)}, tick ${tick}`);
+      }
+    }
+    w.dispose();
+    engine.dispose();
+    return seen;
+  };
+
+  it("puts no animal that walks in front of a player on the pad, looking inland across the sand", () => {
+    // The trees are 45 m off and more, further than an animal is walked in from.
+    for (const yaw of [Math.PI / 2, Math.PI / 2 - 0.7, Math.PI / 2 + 0.7]) {
+      const seen = watch(-314, 0, yaw);
+      expect(seen.strays).toEqual([]);
+      expect(seen.placed).toBe(0);
+    }
+  }, timeLimit(60_000));
+
+  it("walks animals in on the forest's side of a player at its edge, and none on the sand's", () => {
+    // 60 m and 78 m inland, where the forest's ground starts, looking along its edge and
+    // inland. Along the edge the sand is one side of the frame and the forest the other, the
+    // gulls over the shore are in the frame for most of the minute, and an animal is owed
+    // the player only in what is left of it.
+    for (const [x, yaw] of [[-263, 0], [-263, Math.PI / 2], [-245, Math.PI]] as const) {
+      const seen = watch(x, 0, yaw);
+      expect(seen.placed, `from ${x}, looking ${yaw.toFixed(2)}`).toBeGreaterThan(0);
+      expect(seen.drawn).toBeGreaterThan(0);
+      expect(seen.strays).toEqual([]);
+    }
+  }, timeLimit(60_000));
+});
 
 describe("bird thin instances", () => {
   it("maps every bird species to a model and gives each its own beat", () => {

@@ -8,9 +8,9 @@
  * Every unit carries its refuge (bush, trunk, snag, forest-edge direction) so
  * a reaction in wildlifeBehaviour.ts is a lookup, never a search.
  *
- * `walkable()` (beach + slope) gates every ground species, not just elk: a
- * rabbit on a cliff face or a squirrel's tree standing on the beach are wrong
- * for the same reason an elk herd there is.
+ * `standable()` (shore, road and slope) gates every ground species, not just
+ * elk: a rabbit on a cliff face or a squirrel's tree standing on the beach are
+ * wrong for the same reason an elk herd there is.
  */
 import { hash3 } from "../sim/field.js";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "../sim/terrain.js";
@@ -19,7 +19,6 @@ import {
   CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_GRASS, CLUTTER_GRASS_CANOPY_LO, CLUTTER_MEADOW, clutterDensity, clutterInRect,
 } from "../sim/clutter.js";
 import { MAX_WALKABLE_GRADIENT } from "../sim/ground.js";
-import { SAND_TOP } from "./terrainSurface.js";
 
 export const SPECIES_ELK = 0;
 export const SPECIES_DEER = 1;
@@ -329,8 +328,70 @@ export const CELL_ID_BIAS_Z = 4096;
 export function unitId(species: number, cx: number, cz: number): number {
   return ((((cx + CELL_ID_BIAS) & 0x3fff) << 17) | (((cz + CELL_ID_BIAS_Z) & 0x1fff) << 4) | (species & 0xf));
 }
-function walkable(s: TerrainSample): boolean {
-  return s.h > SAND_TOP && Math.hypot(s.dx, s.dz) <= MAX_WALKABLE_GRADIENT;
+/**
+ * The forest's ground, which everything that walks keeps to: above the height at which no
+ * sand is left in the ground's paint (`terrainSurface.ts` fades it out between SAND_TOP and
+ * 9 m) and clear of the strip the road is cleared through. Gulls are the shore's.
+ */
+export const GROUND_SHORE_ALT = 9;
+/** The cleared strip's half-width: the sim's ROAD_CORRIDOR_HALF, held here as a number
+ * because nothing in this module may move the level id. */
+export const GROUND_ROAD_CLEAR = 30;
+/** Where an animal that walks may be anchored: the forest's ground, no steeper than a
+ * player could walk. */
+function standable(s: TerrainSample, road: number): boolean {
+  return s.h >= GROUND_SHORE_ALT && road >= GROUND_ROAD_CLEAR && Math.hypot(s.dx, s.dz) <= MAX_WALKABLE_GRADIENT;
+}
+/**
+ * Where an animal that walks may go, and be put. How steep the ground is has no part in
+ * it: a herd crosses steep ground as it always has, and held to walkable ground it would
+ * stop at the first steep band between it and its refuge.
+ */
+export function forestGround(seed: number, x: number, z: number): boolean {
+  const road = activeTerrainVariant().roadDistance?.(seed, x, z) ?? Infinity;
+  if (road < GROUND_ROAD_CLEAR) return false;
+  return elevationSampleAt(seed, x, z).h >= GROUND_SHORE_ALT;
+}
+/**
+ * The ground a species keeps to, for whatever puts an animal somewhere the field did not:
+ * the forest's ground for the four that walk and for a butterfly, and no rule at all for
+ * the birds.
+ */
+export function speciesGround(seed: number, species: number, x: number, z: number): boolean {
+  if (species < FIRST_BIRD_SPECIES || species === SPECIES_BUTTERFLY) return forestGround(seed, x, z);
+  return true;
+}
+/** How far apart the way to a goal is tried, and how closely the edge is then found (m). */
+const ALLOWED_STRIDE = 1;
+const ALLOWED_EDGE = 0.25;
+/**
+ * The furthest point toward a goal that can be reached over allowed ground alone: the
+ * goal itself where the whole way is allowed, and otherwise the last allowed point before
+ * the first forbidden one, found to within ALLOWED_EDGE. Where the start is itself
+ * forbidden, the start. Pure in its arguments, so two peers that ask from the same place
+ * get the same answer.
+ */
+export function lastAllowed(
+  allowed: (x: number, z: number) => boolean,
+  fromX: number, fromZ: number, toX: number, toZ: number,
+): { x: number; z: number } {
+  if (!allowed(fromX, fromZ)) return { x: fromX, z: fromZ };
+  const dx = toX - fromX, dz = toZ - fromZ;
+  const length = Math.hypot(dx, dz);
+  const steps = Math.ceil(length / ALLOWED_STRIDE);
+  let good = 0;
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    if (allowed(fromX + dx * t, fromZ + dz * t)) { good = t; continue; }
+    let bad = t;
+    while ((bad - good) * length > ALLOWED_EDGE) {
+      const mid = (good + bad) / 2;
+      if (allowed(fromX + dx * mid, fromZ + dz * mid)) good = mid;
+      else bad = mid;
+    }
+    return { x: fromX + dx * good, z: fromZ + dz * good };
+  }
+  return { x: toX, z: toZ };
 }
 /** Direction of the densest forest on a ring around (x, z); the flee target lies REFUGE_DISTANCE that way. */
 function forestRefuge(seed: number, x: number, z: number): { x: number; z: number } {
@@ -378,9 +439,9 @@ function groundUnit(seed: number, species: number, cx: number, cz: number): Wild
   const presenceDraw = draw(seed, species, cx, cz, 2) / WILDLIFE_D[species]!;
   if (presenceDraw >= 1) return null;
   const s = elevationSampleAt(seed, x, z);
-  if (!walkable(s)) return null;
   const variant = activeTerrainVariant();
   const road = variant.roadDistance?.(seed, x, z) ?? Infinity;
+  if (!standable(s, road)) return null;
   switch (species) {
     case SPECIES_ELK: {
       if (road < ELK_ROAD_CLEAR) return null;
@@ -404,7 +465,8 @@ function groundUnit(seed: number, species: number, cx: number, cz: number): Wild
       let bestD = RABBIT_COVER_RADIUS;
       for (const b of bushes) {
         const d = Math.hypot(b.x - x, b.z - z);
-        if (d <= bestD) { bestD = d; best = b; }
+        // The bush is where the rabbit bolts to and comes back from.
+        if (d <= bestD && forestGround(seed, b.x, b.z)) { bestD = d; best = b; }
       }
       if (best === null) return null;
       return unit({ seed, presenceDraw, species, cellX: cx, cellZ: cz, x, z, h: s.h, members: membersFor(seed, species, cx, cz), refugeX: best.x, refugeZ: best.z, homeX: best.x, homeZ: best.z, homeH: best.groundH, altitude: 0, radius: 0 });
@@ -433,6 +495,9 @@ function groundUnit(seed: number, species: number, cx: number, cz: number): Wild
         const t = treeInCell(seed, tx, tz);
         if (t === null || t.cohort !== COHORT_GIANT) continue;
         if (Math.floor(t.x / cell) !== cx || Math.floor(t.z / cell) !== cz) continue;
+        // The squirrel lives at its tree, not at the cell's anchor, so it is the tree's
+        // own ground that has to be the forest's.
+        if (!forestGround(seed, t.x, t.z)) continue;
         const d = Math.hypot(t.x - x, t.z - z);
         if (d < bestD) { bestD = d; best = t; }
       }
