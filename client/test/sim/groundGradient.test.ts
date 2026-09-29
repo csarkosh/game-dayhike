@@ -757,6 +757,9 @@ describe("the level id does not move", () => {
     // post is [4, 1] where it was [2, -6], which holds no post on the probe's
     // new trail (probeDigest moves). No constant changed. This is the value the
     // trail from the treeline carries.
-    expect(passHash()).toBe(-2079813416);
+    // Re-baselined 2026-09-29 from -2079813416: the forest's floor in the strip
+    // at the trailhead is 1 where it was 0.6 (STRIP_FOREST_FLOOR, pass 8), so
+    // that a wood stands at the pad on a world whose shore is open.
+    expect(passHash()).toBe(-1513373362);
   });
 });

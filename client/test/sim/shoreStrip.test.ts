@@ -39,7 +39,7 @@ describe("shoreStripAt", () => {
   });
 
   it("declares its constants", () => {
-    expect([STRIP_HALF, STRIP_EDGE, STRIP_REACH, STRIP_FADE, STRIP_LIFT, STRIP_FOREST_FLOOR]).toEqual([30, 15, 100, 20, 9, 0.6]);
+    expect([STRIP_HALF, STRIP_EDGE, STRIP_REACH, STRIP_FADE, STRIP_LIFT, STRIP_FOREST_FLOOR]).toEqual([30, 15, 100, 20, 9, 1]);
     expect(Object.keys(SHORE_STRIP_TUNABLES).sort()).toEqual(["STRIP_EDGE", "STRIP_FADE", "STRIP_FOREST_FLOOR", "STRIP_HALF", "STRIP_LIFT", "STRIP_REACH"]);
     const pass8 = registeredPasses().find((p) => p.id === 8)!;
     for (const [key, value] of Object.entries(SHORE_STRIP_TUNABLES)) expect(pass8.tunables[key], key).toBe(value);

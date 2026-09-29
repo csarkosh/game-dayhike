@@ -29,7 +29,7 @@ export const STRIP_FADE = 20;
 /** What the shore's rules add to the ground's height where the strip is whole (m). */
 export const STRIP_LIFT = 9;
 /** The least the forest's density is where the strip is whole and the road's verge is cleared. */
-export const STRIP_FOREST_FLOOR = 0.6;
+export const STRIP_FOREST_FLOOR = 1;
 
 export const SHORE_STRIP_TUNABLES: Readonly<Record<string, number>> = {
   STRIP_HALF, STRIP_EDGE, STRIP_REACH, STRIP_FADE, STRIP_LIFT, STRIP_FOREST_FLOOR,

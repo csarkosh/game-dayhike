@@ -64,8 +64,8 @@ line, 16 m in all.
 | The stem, from the doorway's line, 30 m from the road | 0.2 m | 2.0 m | 6.6 m |
 | The stem's whole length | 276.2 m | 1036.0 m | 2140.4 m |
 | The least height the shore's rules read under any edge of any kind | 8.87 m | 12.21 m | 14.47 m |
-| Trees within 40 m of the pad's centre | 2 | 9 | 15 |
-| The nearest tree to the pad's centre | 9.0 m | 19.7 m | 34.4 m |
+| Trees within 40 m of the pad's centre, with the forest's floor at 1 (§3.3) | 4 | 10 | 15 |
+| The nearest tree to the pad's centre, the same | 9.0 m | 19.2 m | 29.3 m |
 
 The trail is built on all 227 seeds with no fallback. The stem's median length was 1029.7 m
 without the doorway. A doorway three cells wide was tried too: the first edge turned up to
@@ -156,7 +156,13 @@ sand.
 
 Inside the strip the forest's density is at least `STRIP_FOREST_FLOOR` times the strip's
 weight, times the road's own gate, the way a talus field's floor lets boulders stand on ground
-the slope rule would leave bare. `STRIP_FOREST_FLOOR` is 0.6.
+the slope rule would leave bare. `STRIP_FOREST_FLOOR` is 1: where the strip is whole and the
+road's gate is open, the forest is as dense as it is anywhere.
+
+It was 0.6 as first built. On `room-50` and `room-19`, whose shores are open, that stood 5 and
+2 trees within 40 m of the pad, saplings among them, and the pad read as open ground
+([the look](2026-09-29-trail-from-the-treeline-verification.md)). At 1 the same two stand 11
+and 7.
 
 ## 4. The doorway
 
@@ -258,7 +264,7 @@ it is left as it was; a steep doorway cell stays closed; a cell above the shore 
 | The first edge's turn from straight inland | at most 21° |
 | The stem, from the doorway's line, 30 m from the road | at most 7 m |
 | The stem's run along the road on ground under 4 m | at most 3.5 m |
-| Trees within 40 m of the pad's centre | at least 2, on every seed |
+| Trees within 40 m of the pad's centre | at least 4, on every seed |
 | The board's further end, from the centre of the view as the player faces | at most 18° |
 | The car's slide along the road | none, on every seed |
 | A tree within 8 m of any trail | none, as now |

@@ -227,9 +227,17 @@ function sweep(token: string): Case[] {
  * showed on 7. Above the pad 12 stands never show, as 12 did: eleven of
  * them the same by world, climb and facing, and `hollow5` at half way
  * facing down in the place of `hollow31` a quarter of the way facing up.
+ *
+ * Re-pinned 2026-09-29 from 860 shown and 76 074 admitted: the forest's
+ * floor in the strip at the trailhead is 1 where it was 0.6, and a wood
+ * stands about the pad. From the pad 3 420 of 40 000 placements are
+ * admitted where 5 592 were, the sightline refusing 64 116 in all where it
+ * refused 61 997 and the ground 26 264 where it refused 26 211. The pad is
+ * 147 of 200: `hollow22` facing right from the pad no longer shows. No
+ * stand above the pad moved, by shown or by admitted.
  */
 describe("the watcher on fifty seeds", () => {
-  it("stands only where every rule holds, and shows within 120 ticks on 860 of 924 stands", () => {
+  it("stands only where every rule holds, and shows within 120 ticks on 859 of 924 stands", () => {
     const cases: Case[] = [];
     for (let i = 0; i < 50; i++) cases.push(...sweep(`hollow${i}`));
     const shown = cases.filter((c) => c.shownAt !== -1);
@@ -254,14 +262,14 @@ describe("the watcher on fifty seeds", () => {
     ].join("\n");
     console.info(`[watcher sweep]\n${summary}`);
     expect(cases.length, summary).toBe(924);
-    expect(shown.length, summary).toBeGreaterThanOrEqual(860);
-    expect(admitted, summary).toBeGreaterThanOrEqual(76074);
+    expect(shown.length, summary).toBeGreaterThanOrEqual(859);
+    expect(admitted, summary).toBeGreaterThanOrEqual(73902);
     expect(refused.flee, summary).toBe(0);
     expect(Math.abs(ranges[0]! - 25), summary).toBeLessThanOrEqual(0.5);
     expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
     expect(bySlot.map((b) => `${b.slot} ${b.stands}`), summary).toEqual(["climb 0 200", "climb 0.25 200", "climb 0.5 200", "climb 0.75 200", "top fork 180"]);
-    const floors = [148, 197, 191, 200, 180];
-    const admittedFloors = [5592, 12528, 17356, 25792, 22864];
+    const floors = [147, 197, 191, 200, 180];
+    const admittedFloors = [3420, 12528, 17356, 25792, 22864];
     bySlot.forEach((b, i) => {
       expect(b.shown, summary).toBeGreaterThanOrEqual(floors[i]!);
       expect(b.admitted, summary).toBeGreaterThanOrEqual(admittedFloors[i]!);

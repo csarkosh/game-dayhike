@@ -75,7 +75,7 @@ describe("the trail from the treeline, over the 227-seed sweep", () => {
     expect(most.alongOnSand).toBeLessThanOrEqual(3.5);
     expect(least.shore).toBeGreaterThanOrEqual(8.8);
     expect(least.bedShore).toBeGreaterThanOrEqual(9);
-    expect(least.trees).toBeGreaterThanOrEqual(2);
+    expect(least.trees).toBeGreaterThanOrEqual(4);
     expect(most.treesByTrail).toBe(0);
     expect(most.tall).toBe(0);
   }, timeLimit(300_000));

@@ -352,7 +352,20 @@ describe("the forest in the strip at the trailhead", () => {
     setActiveTerrainVariant("olympic");
     // Seed 24301, 40 m from the centreline on the pad's line: 11.50 m up, a slope of 0.207,
     // the road's gate wide open. The raggedness gives less than the floor there.
-    expect(forestDensityUnmasked(24301, -190.2775522776278, 0)).toBe(0.6);
+    expect(forestDensityUnmasked(24301, -190.2775522776278, 0)).toBe(1);
+  });
+
+  it("stands a wood at the pad on a world whose shore is open", () => {
+    setActiveTerrainVariant("olympic");
+    // `room-50` and `room-19`: inland of their shores the ground is open, and
+    // the strip's wood is the floor's alone. With the floor at 0.6 they stood
+    // 5 and 2 trees within 40 m of the pad, saplings among them.
+    const woods = [252151888, -1609472273].map((seed) => {
+      const padX = activeTerrainVariant().roadCenterX!(seed, 0) + 9;
+      const near = treesInRect(seed, padX - 40, -40, padX + 40, 40).filter((t) => Math.hypot(t.x - padX, t.z) <= 40);
+      return [near.length, near.filter((t) => t.cohort === COHORT_GIANT).length];
+    });
+    expect(woods).toEqual([[11, 11], [7, 5]]);
   });
 
   it("stands trees within 40 m of the pad", () => {
