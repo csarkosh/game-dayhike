@@ -37,7 +37,7 @@ import { fadeWeight } from "./distanceFadePlugin.js";
 import { attachWing, WING_TIME_WRAP } from "./wingPlugin.js";
 import {
   createWildlifeCollector, DIRECTOR_POOL, FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_DEER,
-  SPECIES_ELK, SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, WILDLIFE_RADIUS, type WildlifeUnit,
+  SPECIES_ELK, SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, speciesGround, WILDLIFE_RADIUS, type WildlifeUnit,
 } from "./wildlifeField.js";
 import {
   createUnitState, PHASE_REST, startCue, stepUnit, wildlifePresenceUnder,
@@ -590,7 +590,7 @@ export function createWildlifeMeshes(
   // the id: a real field id can land anywhere in its 31 bits (see
   // `DIRECTOR_ID_BASE`'s own doc in wildlifeDirector.ts), so the only
   // trustworthy record of "did I place this" is one this shell keeps itself.
-  const directorState = createDirectorState(seed);
+  const directorState = createDirectorState(seed, (species, x, z) => speciesGround(seed, species, x, z));
   const ground: Ground = (x, z) => elevationAt(seed, x, z);
   const candidatePool: Candidate[] = [];
   const candidates: Candidate[] = [];

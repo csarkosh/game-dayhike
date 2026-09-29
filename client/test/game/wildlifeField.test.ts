@@ -13,7 +13,7 @@ import {
   wildlifeUnitInCell, wildlifeUnitsInDisc, createWildlifeCollector,
   groundAnchor,
   type WildlifeUnit,
-  GROUND_ROAD_CLEAR, GROUND_SHORE_ALT, forestGround, lastAllowed,
+  GROUND_ROAD_CLEAR, GROUND_SHORE_ALT, forestGround, lastAllowed, speciesGround,
 } from "../../src/game/wildlifeField.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -435,6 +435,41 @@ describe("the ground an animal may stand on", () => {
     expect(forestGround(HOLLOW, -203, 0)).toBe(true); // 120 m inland, 24.60 m up
     expect(GROUND_SHORE_ALT).toBe(9);
     expect(GROUND_ROAD_CLEAR).toBe(30);
+  });
+});
+
+describe("the ground each species keeps to", () => {
+  const HOLLOW = 2032433950;
+  const WALKERS = [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL];
+  const BIRDS = [SPECIES_RAVEN_ROOST, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE];
+
+  it("holds the four that walk to the forest's ground", () => {
+    setActiveTerrainVariant("olympic");
+    for (const species of WALKERS) {
+      expect(speciesGround(HOLLOW, species, -323, 0), `species ${species} on the road`).toBe(false);
+      expect(speciesGround(HOLLOW, species, -291, 0), `species ${species} on the sand`).toBe(false);
+      expect(speciesGround(HOLLOW, species, -263, 0), `species ${species} in the forest`).toBe(true);
+      // 112.46 m up and 369.5 m from the road, on a slope of 1.04.
+      expect(speciesGround(HOLLOW, species, 47, 240), `species ${species} on a slope too steep to stand on`).toBe(false);
+    }
+  });
+
+  it("holds a butterfly off the sand and the road, and lets it over any slope", () => {
+    setActiveTerrainVariant("olympic");
+    expect(speciesGround(HOLLOW, SPECIES_BUTTERFLY, -323, 0)).toBe(false);
+    expect(speciesGround(HOLLOW, SPECIES_BUTTERFLY, -291, 0)).toBe(false);
+    expect(speciesGround(HOLLOW, SPECIES_BUTTERFLY, -283, 0)).toBe(false);
+    expect(speciesGround(HOLLOW, SPECIES_BUTTERFLY, -263, 0)).toBe(true);
+    expect(speciesGround(HOLLOW, SPECIES_BUTTERFLY, 47, 240)).toBe(true);
+  });
+
+  it("holds no bird anywhere", () => {
+    setActiveTerrainVariant("olympic");
+    for (const species of BIRDS) {
+      expect(speciesGround(HOLLOW, species, -323, 0), `species ${species} over the road`).toBe(true);
+      expect(speciesGround(HOLLOW, species, -291, 0), `species ${species} over the sand`).toBe(true);
+      expect(speciesGround(HOLLOW, species, -340, 0), `species ${species} over the water's edge`).toBe(true);
+    }
   });
 });
 

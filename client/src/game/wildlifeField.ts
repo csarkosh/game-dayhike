@@ -347,6 +347,17 @@ export function forestGround(seed: number, x: number, z: number): boolean {
   if (road < GROUND_ROAD_CLEAR) return false;
   return standable(elevationSampleAt(seed, x, z), road);
 }
+/**
+ * The ground a species keeps to, for whatever puts an animal somewhere the field did not:
+ * the forest's ground for the four that walk; anywhere above the sand and clear of the
+ * road's strip for a butterfly, which no slope stops; and no rule at all for the birds.
+ */
+export function speciesGround(seed: number, species: number, x: number, z: number): boolean {
+  if (species < FIRST_BIRD_SPECIES) return forestGround(seed, x, z);
+  if (species !== SPECIES_BUTTERFLY) return true;
+  const road = activeTerrainVariant().roadDistance?.(seed, x, z) ?? Infinity;
+  return road >= GROUND_ROAD_CLEAR && elevationSampleAt(seed, x, z).h >= GROUND_SHORE_ALT;
+}
 /** How far apart the way to a goal is tried, and how closely the edge is then found (m). */
 const ALLOWED_STRIDE = 1;
 const ALLOWED_EDGE = 0.25;

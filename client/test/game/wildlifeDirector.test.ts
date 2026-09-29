@@ -817,3 +817,104 @@ describe("cues", () => {
     expect(s.log).toHaveLength(log.length);
   });
 });
+
+describe("the ground a cue may use", () => {
+  // The views the sweeps below stand at: beside the line the ground is cut along, a little
+  // way off it and well off it, looking along it, across it and away from it.
+  const VIEWS: readonly View[] = [view(0, 0, 0), view(1, 10, 0), view(-2, 30, 0), view(0.3, 5, -5)];
+  /** The points a walk is tried at, the start and the mark among them. */
+  const walk = (e: { x: number; z: number; goalX: number; goalZ: number }): { x: number; z: number }[] => {
+    const points: { x: number; z: number }[] = [];
+    for (let i = 0; i <= 6; i++) points.push({ x: e.x + (e.goalX - e.x) * i / 6, z: e.z + (e.goalZ - e.z) * i / 6 });
+    return points;
+  };
+  /** Every placement staged over the views and four hundred ticks at each. */
+  const placements = (ground?: (species: number, x: number, z: number) => boolean): Extract<CueEvent, { kind: "place" }>[] => {
+    const placed: Extract<CueEvent, { kind: "place" }>[] = [];
+    const out: CueEvent[] = [];
+    for (const v of VIEWS) {
+      const s = createDirectorState(5, ground);
+      for (let tick = 0; tick < 400; tick++) {
+        out.length = 0;
+        stageCue(s, v, flat, [], PRESENT, day, tick, 5, out);
+        const e = out[0];
+        if (e !== undefined && e.kind === "place") placed.push(e);
+      }
+    }
+    return placed;
+  };
+
+  it("starts no animal, and sends none, onto ground it may not use", () => {
+    const east = (_species: number, x: number): boolean => x >= 0;
+    // With no ground refused the same sweep does both, so the sweep can show the fault.
+    const free = placements();
+    expect(free.filter((e) => e.x < 0).length).toBeGreaterThan(0);
+    expect(free.filter((e) => e.goalX < 0).length).toBeGreaterThan(0);
+
+    const kept = placements(east);
+    expect(kept.length).toBeGreaterThan(0);
+    for (const e of kept) {
+      expect(e.x, `a ${e.species} started at ${e.x.toFixed(2)}, ${e.z.toFixed(2)}`).toBeGreaterThanOrEqual(0);
+      expect(e.goalX, `a ${e.species} sent to ${e.goalX.toFixed(2)}, ${e.goalZ.toFixed(2)}`).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("walks no animal across ground it may not use, to reach ground it may", () => {
+    // A strip eight to ten metres in front of the first view, across its whole frame.
+    const strip = (_species: number, _x: number, z: number): boolean => z <= 8 || z >= 10;
+    const crosses = (e: Extract<CueEvent, { kind: "place" }>): boolean => walk(e).some((p) => !strip(e.species, p.x, p.z));
+    expect(placements().filter(crosses).length).toBeGreaterThan(0);
+
+    const kept = placements(strip);
+    expect(kept.length).toBeGreaterThan(0);
+    for (const e of kept) {
+      for (const p of walk(e)) expect(strip(e.species, p.x, p.z), `a ${e.species} walked through ${p.x.toFixed(2)}, ${p.z.toFixed(2)}`).toBe(true);
+    }
+  });
+
+  it("asks of the species being staged, so ground refused to one is open to the rest", () => {
+    const noElk = (species: number): boolean => species !== SPECIES_ELK;
+    expect(placements().filter((e) => e.species === SPECIES_ELK).length).toBeGreaterThan(0);
+    const kept = placements(noElk);
+    expect(kept.filter((e) => e.species === SPECIES_ELK)).toHaveLength(0);
+    expect(kept.filter((e) => e.species === SPECIES_DEER).length).toBeGreaterThan(0);
+    expect(kept.filter((e) => e.species === SPECIES_BUTTERFLY).length).toBeGreaterThan(0);
+  });
+
+  it("drives no animal to a mark on ground it may not use", () => {
+    const s = createDirectorState(3);
+    s.sinceSighting = 20; s.targetGap = 5;
+    const tick = tickDrawing(s, 3, 100, (sp) => !LOOP_FLIERS.includes(sp) && sp !== SPECIES_BUTTERFLY);
+    const chosen = pickSpecies(s, hash3(3, tick, 2, 0));
+    const edge = at(1.1, 20);
+    const near: Candidate = { id: 9, species: chosen, x: edge.x, y: 1, z: edge.z, moveX: edge.x, moveZ: edge.z, moveR: 0, onScreen: false, phase: PHASE_REST, owned: false };
+    const out: CueEvent[] = [];
+    expect(stageCue(s, view(), flat, [near], PRESENT, day, tick, 3, out)).toBe(true);
+    const driven = out[0]!;
+    expect(driven.kind).toBe("drive");
+    if (driven.kind !== "drive") return;
+
+    // The same beat, with the ground about that mark refused to it.
+    const offMark = (_species: number, x: number, z: number): boolean => Math.hypot(x - driven.goalX, z - driven.goalZ) > 1;
+    const held = createDirectorState(3, offMark);
+    held.sinceSighting = 20; held.targetGap = 5;
+    out.length = 0;
+    stageCue(held, view(), flat, [near], PRESENT, day, tick, 3, out);
+    for (const e of out) {
+      expect(e.kind).not.toBe("drive");
+      if (e.kind === "place") expect(offMark(e.species, e.goalX, e.goalZ)).toBe(true);
+    }
+  });
+
+  it("stages nothing at all where no ground may be used", () => {
+    const s = createDirectorState(5, () => false);
+    const out: CueEvent[] = [];
+    const edge = at(1.1, 20);
+    for (let tick = 0; tick < 400; tick++) {
+      const species = pickSpecies(s, hash3(5, tick, 2, 0));
+      const near: Candidate = { id: 9, species, x: edge.x, y: 1, z: edge.z, moveX: edge.x, moveZ: edge.z, moveR: 0, onScreen: false, phase: PHASE_REST, owned: false };
+      expect(stageCue(s, view(), flat, [near], PRESENT, day, tick, 5, out)).toBe(false);
+    }
+    expect(out).toHaveLength(0);
+  });
+});
