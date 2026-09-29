@@ -122,7 +122,7 @@ function descend(token: string): Descent {
 /**
  * The cut on fifty seeds, walked as above, with the timeout `hollowWalk.test.ts`
  * carries for the same fifty worlds. The floors are what the walk measured on
- * 2026-09-25, pinned; the shares are the trail builder's and the guide's, not
+ * 2026-09-25 and again on 2026-09-29, pinned; the shares are the trail builder's and the guide's, not
  * the cut's, and moving them is the density follow-up.
  */
 describe("the cut on fifty seeds", () => {
@@ -135,14 +135,20 @@ describe("the cut on fifty seeds", () => {
     const median = packs[24]!;
     const largest = packs[49]!;
     const corridor = runs.map((r, i) => (r.corridorForks.length > 0 ? `hollow${i}` : null)).filter((t) => t !== null);
-    // The guide lands in its band on 29 of the 50; the rest walk the longest
+    console.info(`[cut sweep] guide in band on ${inBand} of 50; pack at the pad: ${packs.join(" ")}; a fork on the corridor on ${corridor.join(", ") || "no seed"}`);
+    // The guide lands in its band on 28 of the 50; the rest walk the longest
     // route found under the cap, as the summit design's §3.5 allows.
-    expect(inBand, `guide in band on ${inBand} of 50`).toBeGreaterThanOrEqual(29);
+    // 2026-09-29: 29 before the trail left the pad inland, through the
+    // doorway (`closeShore`, trailGrid.ts). The trail is another one below
+    // its first forks on most worlds, and the way home with it.
+    expect(inBand, `guide in band on ${inBand} of 50`).toBeGreaterThanOrEqual(28);
     // The pack at the pad, the summit Hollow counted: the median world sends
-    // five, the busiest eleven. One seed, `hollow29`, stands a fork on the
-    // corridor, and that fork is never cut.
+    // five, the busiest eleven. 2026-09-29: no seed stands a fork on the
+    // corridor, where `hollow29` stood one: the shore is closed to the
+    // trail's search. `cut.test.ts` tries the rule for such a fork on one
+    // hung there by hand.
     expect(median, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(5);
     expect(largest, `pack at the pad: ${packs.join(" ")}`).toBeGreaterThanOrEqual(11);
-    expect(corridor, `a fork on the corridor on ${corridor.join(", ") || "no seed"}`).toEqual(["hollow29"]);
+    expect(corridor, `a fork on the corridor on ${corridor.join(", ") || "no seed"}`).toEqual([]);
   }, timeLimit(300_000));
 });
