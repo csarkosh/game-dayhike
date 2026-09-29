@@ -31,7 +31,7 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | `branding/` | The Day Hike icon (`dayhike.svg`) shown at the top of the README. |
 | `server/` | The Node (`ws`) signaling server: introduces peers in a room, then steps out. |
 | `desktop/` | Electron launcher (macOS and Windows) that loads the hosted site. |
-| `_infra/` | Terraform for hosting, DNS and the signaling service. One pattern throughout: a root holds the backend, the providers and `module` calls (`main.tf`, `variables.tf`, `outputs.tf`), and the resources are in `_infra/modules/<provider>-<thing>/` (each with `main.tf`, `variables.tf`, `outputs.tf`, and no backend or provider block). `_infra/`'s own root calls `aws-dns`, `gcp-hosting`, `gcp-signaling` and `gcp-downloads`; each test machine below is a root of its own that calls its one module. |
+| `_infra/` | Terraform for hosting, DNS and the signaling service. One pattern throughout: a root holds the backend, the providers and `module` calls (`main.tf`, `variables.tf`, `outputs.tf`), and the resources are in `_infra/modules/<provider>-<purpose>[-<details>]/` (see [Infrastructure names](#infrastructure-names)) (each with `main.tf`, `variables.tf`, `outputs.tf`, and no backend or provider block). `_infra/`'s own root calls `aws-dns`, `gcp-hosting`, `gcp-signaling` and `gcp-downloads`; each test machine below is a root of its own that calls its one module. |
 | `_infra/test-rig-aws-windows/` | Terraform for a rented Windows machine with an NVIDIA GPU on AWS, run only on the days frame times are measured on it. The root a person runs: backend, provider, one call of `_infra/modules/aws-test-rig-windows/` (the resources and the start-up script), `moved.tf` (the addresses from before the resources moved there), the probe for its first run and the tests. Its own state, not called from `_infra/main.tf`: nothing in it can touch `_infra/`'s resources. |
 | `_infra/test-rig-gcp-windows/` | Terraform for a rented Windows machine with an NVIDIA GPU on Google Cloud, run only on the days frame times are measured on it. The root a person runs: backend, providers, one call of `_infra/modules/gcp-test-rig-windows/` (the resources and the start-up script), `moved.tf` (the addresses from before the resources moved there), the probe for its first run and the tests. Its own state, not called from `_infra/main.tf`: nothing in it can touch `_infra/`'s resources. |
 | `_infra/test-rig-scaleway-mac/` | **Incomplete, never applied.** Terraform for Apple silicon Macs rented by the day from Scaleway. The root a person runs: backend, provider, one call of `_infra/modules/scaleway-test-rig-mac/` (the resources, the set-up script and the script that asks Scaleway's API directly), and the probe for its first day. Its README's first section says where it stands, the known gaps and how to pick it up; `plan` refuses to run until `acknowledge_incomplete` is set. Its own state (it holds each Mac's admin password), not called from `_infra/main.tf`: nothing in it can touch `_infra/`'s resources or either Windows machine. |
@@ -51,6 +51,22 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | `.dockerignore` | Build context excludes for the signaling server's Docker image. |
 | `.gitattributes` | Git LFS tracking for shipped binaries; `\n` line endings for text and shader files; the shader corpus marked generated. |
 | `.gitignore` | Build output, local state and worktrees excluded from version control. |
+
+## Infrastructure names
+
+Directories of Terraform under `_infra/` are named in one of two formats, by where they are. Both are lowercase, words joined by single hyphens.
+
+**A module, in `_infra/modules/`: `<provider>-<purpose>[-<details>]`.**
+
+- `<provider>` is the cloud provider the resources are made at: `aws`, `gcp`, `scaleway`.
+- `<purpose>` is what the resources are for: `dns`, `hosting`, `signaling`, `downloads`, `test-rig`.
+- `<details>` is optional and comes last: whatever tells two modules of one provider and purpose apart. For a test machine it is the operating system it runs: `windows`, `mac`, or `windows-mac` for one that holds both.
+
+So `aws-dns`, `gcp-hosting`, `aws-test-rig-windows`, `gcp-test-rig-windows`, `scaleway-test-rig-mac`.
+
+**A root of its own, in `_infra/` beside the main root: `<purpose>-<provider>[-<details>]`.** The purpose comes first, so that the roots of one purpose sort together and apart from `modules/`; the provider and the details are the module's. So `test-rig-aws-windows` (calls `modules/aws-test-rig-windows`), `test-rig-gcp-windows`, `test-rig-scaleway-mac`.
+
+A directory's name is not its state's address. Renaming a directory changes no resource; changing a backend's `prefix`, a resource's name or a `module` call's name does, so leave those as they are when a directory is renamed.
 
 ## Docs
 
