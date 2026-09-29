@@ -502,8 +502,12 @@ function commitStaged(bucket: Bucket): void {
   if (bucket.culled) bucket.origins.set(bucket.staged.origins.subarray(0, n * 3));
 }
 
-/** Instances a slice of the clutter's fill writes. */
+/** Instances' worth of work a slice of the clutter's fill does before it
+ * yields: an instance whose values are copied counts 1, one computed for the
+ * first time `FILL_NEW_COST` — its trample frame and ground tint are several
+ * walks through the terrain's noise. About a tenth of a millisecond. */
 const FILL_SLICE = 1024;
+const FILL_NEW_COST = 16;
 
 /**
  * Pushes a filled bucket to its meshes. A bucket whose buffer was just grown
@@ -824,16 +828,17 @@ export function createClutterMeshes(
    * Rebuild, as slices (`syncJobs.ts`): the bands collected, then two passes
    * over them, so every bucket knows its size before a single matrix is
    * written and no buffer has to grow mid-fill. Pass 1 counts, pass 2 writes
-   * each bucket's staging buffers (`stagedCount` the cursor), `FILL_SLICE`
-   * instances a slice, copying each instance's kept matrix and tint and
-   * computing them only for an instance listed for the first time
-   * (`computeInstance`). The last slice copies every bucket's staged
+   * each bucket's staging buffers (`stagedCount` the cursor), copying each
+   * instance's kept matrix and tint and computing them only for an instance
+   * listed for the first time (`computeInstance`), and yields by the work
+   * done (`FILL_SLICE`). The last slice copies every bucket's staged
    * instances into the buffers it draws and pushes them (a culled bucket's by
    * `cull`), all in one step, so no frame draws a bucket half rebuilt.
    */
   function* rebuild(x: number, z: number): Slices {
     const all = buckets as Bucket[][][];
     const bands = yield* collector.collectSlices(x, z, radiusScale);
+    yield;
 
     for (const variants of all) {
       for (const perLod of variants) {
@@ -845,6 +850,8 @@ export function createClutterMeshes(
       const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
       for (const inst of band.near) bucketFor(variants, inst, NEAR_LOD).stagedCount++;
       for (const inst of band.far) bucketFor(variants, inst, FAR_LOD).stagedCount++;
+      // A class's count is a pass over its lists, the meadow's thousands long.
+      yield;
     }
     for (const variants of all) {
       for (const perLod of variants) {
@@ -854,17 +861,20 @@ export function createClutterMeshes(
         }
       }
     }
-    let written = 0;
+    let work = 0;
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       const variants = all[cls] as Bucket[][];
       const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
-      for (const inst of band.near) {
-        stageInstance(bucketFor(variants, inst, NEAR_LOD), inst);
-        if (++written % FILL_SLICE === 0) yield;
-      }
-      for (const inst of band.far) {
-        stageInstance(bucketFor(variants, inst, FAR_LOD), inst);
-        if (++written % FILL_SLICE === 0) yield;
+      for (let lod = NEAR_LOD; lod <= FAR_LOD; lod++) {
+        for (const inst of lod === NEAR_LOD ? band.near : band.far) {
+          const known = kept.size;
+          stageInstance(bucketFor(variants, inst, lod), inst);
+          work += kept.size > known ? FILL_NEW_COST : 1;
+          if (work >= FILL_SLICE) {
+            work = 0;
+            yield;
+          }
+        }
       }
     }
 

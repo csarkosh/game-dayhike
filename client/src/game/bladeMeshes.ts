@@ -140,6 +140,12 @@ type Bucket = {
   /** Set when `buf` was replaced this rebuild: the mesh then needs a fresh
    * `thinInstanceSetBuffer` (a new GPU buffer) for the new drawn buffers. */
   grown: boolean;
+  /** Where a rebuild in slices writes first, so that nothing `cull` reads
+   * changes until its last slice copies it across: the collected buffers'
+   * four, grown the same way, never uploaded. */
+  staged: { buf: Float32Array; foliage: Float32Array; strength: Float32Array; origins: Float32Array };
+  /** Instances staged — counted, then the write cursor, as `count` is. */
+  stagedCount: number;
 };
 
 function emptyBucket(mesh: Mesh): Bucket {
@@ -147,6 +153,7 @@ function emptyBucket(mesh: Mesh): Bucket {
   return {
     mesh, buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER, drawn, origins: EMPTY_BUFFER,
     cull: bucketCullSet(0, EMPTY_BUFFER, EMPTY_BUFFER, EMPTY_BUFFER, EMPTY_BUFFER, drawn), count: 0, grown: false,
+    staged: { buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER, origins: EMPTY_BUFFER }, stagedCount: 0,
   };
 }
 
@@ -206,6 +213,34 @@ function ensureCapacity(bucket: Bucket): void {
   bucket.origins = new Float32Array((capacity / 16) * 3);
   bucket.cull = bucketCullSet(capacity / 16, bucket.origins, bucket.buf, bucket.foliage, bucket.strength, bucket.drawn);
   bucket.grown = true;
+}
+
+/** Grows a bucket's staging buffers to hold `bucket.stagedCount` instances,
+ * by `ensureCapacity`'s doubling; old contents are dropped, as there. */
+function ensureStaging(bucket: Bucket): void {
+  const needed = bucket.stagedCount * 16;
+  if (bucket.staged.buf.length >= needed) return;
+  let capacity = Math.max(bucket.staged.buf.length, BUCKET_MIN_INSTANCES * 16);
+  while (capacity < needed) capacity *= 2;
+  bucket.staged = {
+    buf: new Float32Array(capacity),
+    foliage: new Float32Array(capacity / 4),
+    strength: new Float32Array(capacity / 16),
+    origins: new Float32Array((capacity / 16) * 3),
+  };
+}
+
+/** Copies a bucket's staged cells into its collected buffers, growing those
+ * first by `ensureCapacity`: after this the bucket holds exactly what a fill
+ * writing them directly would. */
+function commitStaged(bucket: Bucket): void {
+  bucket.count = bucket.stagedCount;
+  ensureCapacity(bucket);
+  const n = bucket.count;
+  bucket.buf.set(bucket.staged.buf.subarray(0, n * 16));
+  bucket.foliage.set(bucket.staged.foliage.subarray(0, n * 4));
+  bucket.strength.set(bucket.staged.strength.subarray(0, n));
+  bucket.origins.set(bucket.staged.origins.subarray(0, n * 3));
 }
 
 /**
@@ -319,6 +354,13 @@ function createClumpMesh(scene: Scene, character: number, tier: number, size: nu
 const KEPT_STRIDE = 20;
 const KEPT_FOLIAGE = 16;
 
+/** Cells' worth of work a slice of a fill does before it yields: a cell whose
+ * values are copied counts 1, one computed for the first time
+ * `FILL_NEW_COST` — its trample frame and ground tint are several walks
+ * through the terrain's noise. About a tenth of a millisecond. */
+const FILL_SLICE = 1024;
+const FILL_NEW_COST = 16;
+
 export function createBladeMeshes(scene: Scene, seed: number, options: BladeMeshesOptions): BladeMeshes {
   /**
    * A cell's matrix and tint, computed the first time it is listed. Both are
@@ -398,38 +440,53 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
   const lastPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 0, aspect: 0 };
 
   /**
-   * One tier's fill: two passes over its list, so every bucket knows its size
-   * before a single matrix is written and no buffer has to grow mid-fill.
-   * Pass 1 counts, `ensureCapacity` grows what it must, pass 2 writes
-   * (reusing `count` as the cursor) into the collected buffers, then a grown
-   * bucket's new drawn buffers go to its mesh; `cull` uploads the rest. The
-   * list arrives nearest-first from the field and is walked in order, so each
+   * One tier's fill, as slices: two passes over its list, so every bucket
+   * knows its size before a single matrix is written and no buffer has to
+   * grow mid-fill. Pass 1 counts, `ensureStaging` grows what it must, pass 2
+   * writes each bucket's staging buffers (`stagedCount` the cursor). The list
+   * arrives nearest-first from the field and is walked in order, so each
    * bucket's instances stay sorted by distance. Pass 2 copies each cell's
    * kept matrix and tint, computing them only for a cell listed for the
-   * first time (`computeCell`).
+   * first time (`computeCell`), and yields by the work done: a cell computed
+   * counts as `FILL_NEW_COST` copied ones.
    */
-  function fill(list: BladeCell[], row: Bucket[][]): void {
-    for (const sizes of row) for (const bucket of sizes) bucket.count = 0;
-    for (const c of list) row[c.character]![c.size]!.count++;
+  function* stage(list: BladeCell[], row: Bucket[][]): Slices {
+    for (const sizes of row) for (const bucket of sizes) bucket.stagedCount = 0;
+    for (const c of list) row[c.character]![c.size]!.stagedCount++;
     for (const sizes of row) for (const bucket of sizes) {
-      ensureCapacity(bucket);
-      bucket.count = 0;
+      ensureStaging(bucket);
+      bucket.stagedCount = 0;
     }
+    yield;
+    let work = 0;
     for (const c of list) {
       const bucket = row[c.character]![c.size]!;
+      const known = kept.size;
       const at = kept.offsetOf(c);
       const data = kept.data;
-      const { buf, foliage, origins } = bucket;
-      const m = bucket.count * 16, f = bucket.count * 4, o = bucket.count * 3;
+      const { buf, foliage, origins, strength } = bucket.staged;
+      const i = bucket.stagedCount;
+      const m = i * 16, f = i * 4, o = i * 3;
       for (let k = 0; k < 16; k++) buf[m + k] = data[at + k]!;
       origins[o] = data[at + 12]!;
       origins[o + 1] = data[at + 13]!;
       origins[o + 2] = data[at + 14]!;
       for (let k = 0; k < 4; k++) foliage[f + k] = data[at + KEPT_FOLIAGE + k]!;
-      bucket.strength[bucket.count] = c.strength;
-      bucket.count++;
+      strength[i] = c.strength;
+      bucket.stagedCount++;
+      work += kept.size > known ? FILL_NEW_COST : 1;
+      if (work >= FILL_SLICE) {
+        work = 0;
+        yield;
+      }
     }
+  }
+
+  /** One tier's staged cells into its collected buffers, then a grown
+   * bucket's new drawn buffers to its mesh; `cull` uploads the rest. */
+  function commit(row: Bucket[][]): void {
     for (const sizes of row) for (const bucket of sizes) {
+      commitStaged(bucket);
       applyGrown(bucket);
       // The collected buffers were rewritten: the last cut's indices no
       // longer name the same cells.
@@ -439,15 +496,17 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
 
   /**
    * The rebuild for an eye at (x, z), as slices (`syncJobs.ts`): the tier
-   * lists collected, then all three fills in the last slice. The fills write
-   * the collected buffers `cull` reads, so they run in one step: a cut between
-   * two of them would upload a bucket half written.
+   * lists collected, the three tiers staged, then all three copied into the
+   * collected buffers `cull` reads in the last slice, in one step, so no cut
+   * ever reads a bucket half written.
    */
   function* rebuild(x: number, z: number): Slices {
     const tiers: BladeTiers = yield* collector.collectSlices(x, z);
-    fill(tiers.fine, buckets[0]!);
-    fill(tiers.mid, buckets[1]!);
-    fill(tiers.coarse, buckets[2]!);
+    yield;
+    yield* stage(tiers.fine, buckets[0]!);
+    yield* stage(tiers.mid, buckets[1]!);
+    yield* stage(tiers.coarse, buckets[2]!);
+    for (const row of buckets) commit(row);
     dirty = true;
     view.x = x;
     view.z = z;

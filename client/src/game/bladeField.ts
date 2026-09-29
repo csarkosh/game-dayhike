@@ -3,7 +3,8 @@ import { activeTerrainVariant } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { latticeHash } from "./groundHexParams.js";
 import { CLUTTER_FAR_SPLIT, CLUTTER_RADII, clutterSeamEdges } from "./clutterField.js";
-import type { Slices } from "./syncJobs.js";
+import { finish, type Slices } from "./syncJobs.js";
+import { createCellWindow, inWindow, moveWindow, walkEveryCell, type CellRows } from "./cellWindow.js";
 
 /**
  * The blade field: the near-field lattice the blade clumps stand on, walked
@@ -199,8 +200,13 @@ function bladeOrigin(v: number): number {
   return Math.floor(v / BLADE_CELL) * BLADE_CELL;
 }
 
-/** The walk, shared by the pure one-shot and the memoising collector. */
-function collectBladeCore(camX: number, camZ: number, sample: (ci: number, cj: number) => BladeCell | null): BladeTiers {
+/** Listed cells a slice of the walk classifies before it yields. */
+const TIER_SLICE = 4096;
+
+/** The walk, shared by the pure one-shot and the collector that keeps its
+ * square (`createBladeCollector`): the same loop over the same rows, in
+ * slices for a job (`syncJobs.ts`); the one-shot runs it at once. */
+function* collectBladeSlices(camX: number, camZ: number, rowsOf: CellRows<BladeCell>): Slices<BladeTiers> {
   const ox = bladeOrigin(camX), oz = bladeOrigin(camZ);
   const [e0, e1] = BLADE_TIER_EDGE;
   const fineHi = e0 + BLADE_PAD;
@@ -214,10 +220,10 @@ function collectBladeCore(camX: number, camZ: number, sample: (ci: number, cj: n
   const coarse: { c: BladeCell; d2: number }[] = [];
   const c0x = Math.floor((ox - r) / BLADE_CELL), c1x = Math.floor((ox + r) / BLADE_CELL);
   const c0z = Math.floor((oz - r) / BLADE_CELL), c1z = Math.floor((oz + r) / BLADE_CELL);
-  for (let cj = c0z; cj <= c1z; cj++) {
-    for (let ci = c0x; ci <= c1x; ci++) {
-      const c = sample(ci, cj);
-      if (c === null) continue;
+  const rows = yield* rowsOf(0, c0x, c1x, c0z, c1z);
+  let listed = 0;
+  for (const row of rows) {
+    for (const c of row) {
       const dx = c.x - ox, dz = c.z - oz;
       const d2 = dx * dx + dz * dz;
       if (d2 >= coarseHi2) continue;
@@ -225,18 +231,27 @@ function collectBladeCore(camX: number, camZ: number, sample: (ci: number, cj: n
       if (d2 >= midLo2 && d2 < midHi2) mid.push({ c, d2 });
       if (d2 >= coarseLo2) coarse.push({ c, d2 });
     }
+    listed += row.length;
+    if (listed >= TIER_SLICE) {
+      listed = 0;
+      yield;
+    }
   }
+  // Stable, so cells at one distance keep the walk's order.
   const nearest = (a: { d2: number }, b: { d2: number }) => a.d2 - b.d2;
   fine.sort(nearest);
   mid.sort(nearest);
+  yield;
   coarse.sort(nearest);
-  return { fine: fine.map((p) => p.c), mid: mid.map((p) => p.c), coarse: coarse.map((p) => p.c) };
+  const tiers = { fine: fine.map((p) => p.c), mid: mid.map((p) => p.c), coarse: coarse.map((p) => p.c) };
+  yield;
+  return tiers;
 }
 
 /** The three tier lists around the eye, nearest first, each padded past its
  * band so no eye inside the rebuild cell can want a clump that is absent. */
 export function collectBladeCells(seed: number, camX: number, camZ: number): BladeTiers {
-  return collectBladeCore(camX, camZ, (ci, cj) => bladeCellAt(seed, ci, cj));
+  return finish(collectBladeSlices(camX, camZ, walkEveryCell((_, ci, cj) => bladeCellAt(seed, ci, cj))));
 }
 
 export type BladeCollector = {
@@ -246,6 +261,9 @@ export type BladeCollector = {
   collectSlices(camX: number, camZ: number): Slices<BladeTiers>;
   /** Cached cell count, for the tests. */
   readonly size: number;
+  /** Cells the last collect looked up: those its square added and those a
+   * sweep had let go inside it. For the tests. */
+  readonly walked: number;
 };
 
 // Numeric cell key: exact for |index| < 2^20 (±524 km on a 0.5 m lattice).
@@ -258,45 +276,65 @@ const EVICT_RADIUS = BLADE_REACH + BLADE_PAD + 8 * BLADE_CELL;
  * never per crossing. */
 export const BLADE_SWEEP_SIZE = 30000;
 
+/** Cached cells a slice of the eviction sweep looks at before it yields. */
+const SWEEP_SLICE = 2048;
+
 /** The memoising collector the shell uses: `bladeCellAt` is pure in its cell,
  * so a crossing re-samples only the ring of cells newly inside the disc.
  * `release` is told of every cell the sweep lets go, so what the shell keeps
- * beside a cell goes with it. */
+ * beside a cell goes with it. It keeps its last square of cells too
+ * (`cellWindow.ts`), so a collect looks up only the cells the square adds
+ * rather than all of its 6,561, and walks the cells it holds in the same
+ * order; a cell the sweep lets go while the square still holds it is looked
+ * up again at the next collect, as a walk of every cell would. */
 export function createBladeCollector(seed: number, release?: (cell: BladeCell) => void): BladeCollector {
   const cache = new Map<number, BladeCell | null>();
-  return {
-    *collectSlices(camX: number, camZ: number): Slices<BladeTiers> {
-      const tiers = this.collect(camX, camZ);
-      yield;
-      return tiers;
-    },
-    collect(camX: number, camZ: number): BladeTiers {
-      const tiers = collectBladeCore(camX, camZ, (ci, cj) => {
-        const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);
-        let c = cache.get(key);
-        if (c === undefined) {
-          c = bladeCellAt(seed, ci, cj);
-          cache.set(key, c);
+  const square = createCellWindow<BladeCell>();
+  const lookup = (ci: number, cj: number): BladeCell | null => {
+    const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);
+    let c = cache.get(key);
+    if (c === undefined) {
+      c = bladeCellAt(seed, ci, cj);
+      cache.set(key, c);
+    }
+    return c;
+  };
+  const rowsOf: CellRows<BladeCell> = function* (_, x0, x1, z0, z1) {
+    yield* moveWindow(square, x0, x1, z0, z1, lookup);
+    return square.rows;
+  };
+  function* collectSlices(camX: number, camZ: number): Slices<BladeTiers> {
+    const tiers = yield* collectBladeSlices(camX, camZ, rowsOf);
+    if (cache.size > BLADE_SWEEP_SIZE) {
+      const ox = bladeOrigin(camX), oz = bladeOrigin(camZ);
+      let looked = 0;
+      for (const [key, c] of cache) {
+        const cj = (key % KEY_SPAN) - KEY_HALF;
+        const ci = Math.floor(key / KEY_SPAN) - KEY_HALF;
+        const dx = Math.max(ci * BLADE_CELL - ox, 0, ox - (ci + 1) * BLADE_CELL);
+        const dz = Math.max(cj * BLADE_CELL - oz, 0, oz - (cj + 1) * BLADE_CELL);
+        if (dx * dx + dz * dz >= EVICT_RADIUS * EVICT_RADIUS) {
+          cache.delete(key);
+          if (c !== null) release?.(c);
+          // A corner cell of the square can lie past the eviction radius
+          // and still be held: the next collect looks it up again.
+          if (inWindow(square, ci, cj)) square.refresh.push(ci, cj);
         }
-        return c;
-      });
-      if (cache.size > BLADE_SWEEP_SIZE) {
-        const ox = bladeOrigin(camX), oz = bladeOrigin(camZ);
-        for (const [key, c] of cache) {
-          const cj = (key % KEY_SPAN) - KEY_HALF;
-          const ci = Math.floor(key / KEY_SPAN) - KEY_HALF;
-          const dx = Math.max(ci * BLADE_CELL - ox, 0, ox - (ci + 1) * BLADE_CELL);
-          const dz = Math.max(cj * BLADE_CELL - oz, 0, oz - (cj + 1) * BLADE_CELL);
-          if (dx * dx + dz * dz >= EVICT_RADIUS * EVICT_RADIUS) {
-            cache.delete(key);
-            if (c !== null) release?.(c);
-          }
-        }
+        if (++looked % SWEEP_SLICE === 0) yield;
       }
-      return tiers;
+    }
+    return tiers;
+  }
+  return {
+    collectSlices,
+    collect(camX: number, camZ: number): BladeTiers {
+      return finish(collectSlices(camX, camZ));
     },
     get size(): number {
       return cache.size;
+    },
+    get walked(): number {
+      return square.walked;
     },
   };
 }

@@ -4,7 +4,8 @@ import { forestDensity } from "../sim/vegetation.js";
 import { latticeHash } from "./groundHexParams.js";
 import { DUFF_CHARACTER_COUNT, DUFF_TWIG } from "./duffClump.js";
 import { GROW_NONE, type BladeEdges } from "./bladeField.js";
-import type { Slices } from "./syncJobs.js";
+import { finish, type Slices } from "./syncJobs.js";
+import { createCellWindow, inWindow, moveWindow, walkEveryCell, type CellRows } from "./cellWindow.js";
 
 /**
  * The duff field: the counterpart of `bladeField.ts` for the ground's dead
@@ -133,8 +134,13 @@ function duffOrigin(v: number): number {
   return Math.floor(v / DUFF_CELL) * DUFF_CELL;
 }
 
-/** The walk, shared by the pure one-shot and the memoising collector. */
-function collectDuffCore(camX: number, camZ: number, reach: number, sample: (ci: number, cj: number) => DuffCell | null): DuffTiers {
+/** Listed cells a slice of the walk classifies before it yields. */
+const TIER_SLICE = 4096;
+
+/** The walk, shared by the pure one-shot and the collector that keeps its
+ * square (`createDuffCollector`): the same loop over the same rows, in
+ * slices for a job (`syncJobs.ts`); the one-shot runs it at once. */
+function* collectDuffSlices(camX: number, camZ: number, reach: number, rowsOf: CellRows<DuffCell>): Slices<DuffTiers> {
   const ox = duffOrigin(camX), oz = duffOrigin(camZ);
   const nearHi = DUFF_TIER_EDGE + DUFF_PAD;
   const farLo = Math.max(0, DUFF_TIER_EDGE - DUFF_TIER_BAND - DUFF_PAD);
@@ -145,27 +151,35 @@ function collectDuffCore(camX: number, camZ: number, reach: number, sample: (ci:
   const far: { c: DuffCell; d2: number }[] = [];
   const c0x = Math.floor((ox - r) / DUFF_CELL), c1x = Math.floor((ox + r) / DUFF_CELL);
   const c0z = Math.floor((oz - r) / DUFF_CELL), c1z = Math.floor((oz + r) / DUFF_CELL);
-  for (let cj = c0z; cj <= c1z; cj++) {
-    for (let ci = c0x; ci <= c1x; ci++) {
-      const c = sample(ci, cj);
-      if (c === null) continue;
+  const rows = yield* rowsOf(0, c0x, c1x, c0z, c1z);
+  let listed = 0;
+  for (const row of rows) {
+    for (const c of row) {
       const dx = c.x - ox, dz = c.z - oz;
       const d2 = dx * dx + dz * dz;
       if (d2 >= farHi2) continue;
       if (d2 < nearHi2) near.push({ c, d2 });
       if (d2 >= farLo2) far.push({ c, d2 });
     }
+    listed += row.length;
+    if (listed >= TIER_SLICE) {
+      listed = 0;
+      yield;
+    }
   }
+  // Stable, so cells at one distance keep the walk's order.
   const nearest = (a: { d2: number }, b: { d2: number }) => a.d2 - b.d2;
   near.sort(nearest);
   far.sort(nearest);
-  return { near: near.map((p) => p.c), far: far.map((p) => p.c) };
+  const tiers = { near: near.map((p) => p.c), far: far.map((p) => p.c) };
+  yield;
+  return tiers;
 }
 
 /** The two tier lists around the eye, nearest first, each padded past its
  * band so no eye inside the rebuild cell can want a piece that is absent. */
 export function collectDuffCells(seed: number, camX: number, camZ: number, reach: number): DuffTiers {
-  return collectDuffCore(camX, camZ, reach, (ci, cj) => duffCellAt(seed, ci, cj));
+  return finish(collectDuffSlices(camX, camZ, reach, walkEveryCell((_, ci, cj) => duffCellAt(seed, ci, cj))));
 }
 
 export type DuffCollector = {
@@ -175,6 +189,9 @@ export type DuffCollector = {
   collectSlices(camX: number, camZ: number, reach: number): Slices<DuffTiers>;
   /** Cached cell count, for the tests. */
   readonly size: number;
+  /** Cells the last collect looked up: those its square added and those a
+   * sweep had let go inside it. For the tests. */
+  readonly walked: number;
 };
 
 // Numeric cell key: exact for |index| < 2^20 (±524 km on a 1 m lattice).
@@ -189,54 +206,74 @@ const KEY_SPAN = 1 << 21;
  * crossing. */
 export const DUFF_SWEEP_SIZE = 8000;
 
+/** Cached cells a slice of the eviction sweep looks at before it yields. */
+const SWEEP_SLICE = 2048;
+
 /** The memoising collector the shell uses: `duffCellAt` is pure in its cell,
  * so a crossing re-samples only the ring of cells newly inside the disc.
  * Eviction is keyed on the `reach` of the most recent `collect` call, so a
  * quality-tier change that shrinks the reach still sweeps the cells the
  * shrunk disc no longer needs. `release` is told of every cell the sweep
- * lets go, so what the shell keeps beside a cell goes with it. */
+ * lets go, so what the shell keeps beside a cell goes with it. It keeps its
+ * last square of cells too (`cellWindow.ts`), so a collect looks up only the
+ * cells the square adds, and walks the cells it holds in the same order; a
+ * cell the sweep lets go while the square still holds it is looked up again
+ * at the next collect, as a walk of every cell would. */
 export function createDuffCollector(seed: number, release?: (cell: DuffCell) => void): DuffCollector {
   const cache = new Map<number, DuffCell | null>();
-  return {
-    *collectSlices(camX: number, camZ: number, reach: number): Slices<DuffTiers> {
-      const tiers = this.collect(camX, camZ, reach);
-      yield;
-      return tiers;
-    },
-    collect(camX: number, camZ: number, reach: number): DuffTiers {
-      const tiers = collectDuffCore(camX, camZ, reach, (ci, cj) => {
-        const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);
-        let c = cache.get(key);
-        if (c === undefined) {
-          c = duffCellAt(seed, ci, cj);
-          cache.set(key, c);
+  const square = createCellWindow<DuffCell>();
+  const lookup = (ci: number, cj: number): DuffCell | null => {
+    const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);
+    let c = cache.get(key);
+    if (c === undefined) {
+      c = duffCellAt(seed, ci, cj);
+      cache.set(key, c);
+    }
+    return c;
+  };
+  const rowsOf: CellRows<DuffCell> = function* (_, x0, x1, z0, z1) {
+    yield* moveWindow(square, x0, x1, z0, z1, lookup);
+    return square.rows;
+  };
+  function* collectSlices(camX: number, camZ: number, reach: number): Slices<DuffTiers> {
+    const tiers = yield* collectDuffSlices(camX, camZ, reach, rowsOf);
+    if (cache.size > DUFF_SWEEP_SIZE) {
+      const ox = duffOrigin(camX), oz = duffOrigin(camZ);
+      // Cells whose nearest point sits this far past the reach are evicted:
+      // the `EVICT_RADIUS = reach + DUFF_PAD + 8 * DUFF_CELL` derivation
+      // (the blade field's own `8 * BLADE_CELL` margin), written against
+      // `DUFF_CELL` rather than folded to a literal so it stays right if
+      // the cell size is ever retuned.
+      const evictRadius = reach + DUFF_PAD + 8 * DUFF_CELL;
+      const evictRadius2 = evictRadius * evictRadius;
+      let looked = 0;
+      for (const [key, c] of cache) {
+        const cj = (key % KEY_SPAN) - KEY_HALF;
+        const ci = Math.floor(key / KEY_SPAN) - KEY_HALF;
+        const dx = Math.max(ci * DUFF_CELL - ox, 0, ox - (ci + 1) * DUFF_CELL);
+        const dz = Math.max(cj * DUFF_CELL - oz, 0, oz - (cj + 1) * DUFF_CELL);
+        if (dx * dx + dz * dz >= evictRadius2) {
+          cache.delete(key);
+          if (c !== null) release?.(c);
+          // A corner cell of the square can lie past the eviction radius
+          // and still be held: the next collect looks it up again.
+          if (inWindow(square, ci, cj)) square.refresh.push(ci, cj);
         }
-        return c;
-      });
-      if (cache.size > DUFF_SWEEP_SIZE) {
-        const ox = duffOrigin(camX), oz = duffOrigin(camZ);
-        // Cells whose nearest point sits this far past the reach are evicted:
-        // the `EVICT_RADIUS = reach + DUFF_PAD + 8 * DUFF_CELL` derivation
-        // (the blade field's own `8 * BLADE_CELL` margin), written against
-        // `DUFF_CELL` rather than folded to a literal so it stays right if
-        // the cell size is ever retuned.
-        const evictRadius = reach + DUFF_PAD + 8 * DUFF_CELL;
-        const evictRadius2 = evictRadius * evictRadius;
-        for (const [key, c] of cache) {
-          const cj = (key % KEY_SPAN) - KEY_HALF;
-          const ci = Math.floor(key / KEY_SPAN) - KEY_HALF;
-          const dx = Math.max(ci * DUFF_CELL - ox, 0, ox - (ci + 1) * DUFF_CELL);
-          const dz = Math.max(cj * DUFF_CELL - oz, 0, oz - (cj + 1) * DUFF_CELL);
-          if (dx * dx + dz * dz >= evictRadius2) {
-            cache.delete(key);
-            if (c !== null) release?.(c);
-          }
-        }
+        if (++looked % SWEEP_SLICE === 0) yield;
       }
-      return tiers;
+    }
+    return tiers;
+  }
+  return {
+    collectSlices,
+    collect(camX: number, camZ: number, reach: number): DuffTiers {
+      return finish(collectSlices(camX, camZ, reach));
     },
     get size(): number {
       return cache.size;
+    },
+    get walked(): number {
+      return square.walked;
     },
   };
 }

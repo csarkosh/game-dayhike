@@ -312,6 +312,7 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
    */
   function* rebuild(x: number, z: number): Slices {
     const tiers: DuffTiers = yield* collector.collectSlices(x, z, reach);
+    yield;
     fill(tiers.near, buckets[0]!);
     fill(tiers.far, buckets[1]!);
     view.x = x;
