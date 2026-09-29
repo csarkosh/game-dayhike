@@ -1,3 +1,18 @@
+# The rented Windows machine with an NVIDIA GPU on Google Cloud. This
+# directory is its root: the backend, the providers and one call of
+# ../modules/gcp-test-rig/, where the resources are, as _infra/ calls its own
+# modules. It is what a person runs (`terraform apply -var running=false` and
+# the rest, README.md). A resource's address carries the call's name, as in
+# module.test_rig.google_compute_instance.test_rig; moved.tf maps the
+# addresses the resources had before they moved into the module.
+#
+# It is NOT called from _infra/main.tf, and must not be: the machine keeps a
+# state of its own, so that hosting's state holds nothing of it, starting,
+# stopping or replacing it never plans against hosting, DNS or the signaling
+# service, and a `terraform destroy` here can only reach the module's
+# resources. (Its Windows passwords are kept out of this state too: they are
+# made on the machine and read with gcloud.)
+
 terraform {
   # 1.7 for the mock providers in tests/.
   required_version = ">= 1.7"
@@ -6,8 +21,7 @@ terraform {
   # worktree dies with the worktree), in the same versioned bucket, under its
   # own prefix. Nothing here reads _infra's state and nothing in _infra reads
   # this one: the two root modules share a bucket and a project and nothing
-  # else, so a `terraform destroy` run here can only reach the resources below,
-  # never hosting, DNS or the signaling service.
+  # else.
   backend "gcs" {
     bucket = "fps-csarko-tfstate"
     prefix = "test-rig-gcp"
@@ -29,13 +43,14 @@ provider "google" {
   # Every resource that takes labels gets this one, so the machine's cost can
   # be filtered out of the bill. Networks, firewalls, routers, service
   # accounts and IAM bindings take no labels; of those only NAT costs anything,
-  # and only while the machine runs.
+  # and only while the machine runs. The module's resources take it from this
+  # provider.
   default_labels = local.labels
 }
 
 # The billing budget API refuses a user's own credentials unless the call names
 # a project to bill it to. Scoped to its own alias so that header is sent for
-# the budget only, not for every other call this module makes.
+# the budget only, not for every other call the module makes.
 provider "google" {
   alias                 = "billing"
   project               = var.gcp_project_id
@@ -45,55 +60,36 @@ provider "google" {
 }
 
 locals {
-  labels = {
-    purpose = "test-rig"
+  labels = { purpose = "test-rig" }
+}
+
+module "test_rig" {
+  source = "../modules/gcp-test-rig"
+
+  gcp_project_id         = var.gcp_project_id
+  gcp_region             = var.gcp_region
+  zone                   = var.zone
+  instance_name          = var.instance_name
+  machine_type           = var.machine_type
+  gpu_type               = var.gpu_type
+  image                  = var.image
+  baked_image            = var.baked_image
+  boot_disk_size_gb      = var.boot_disk_size_gb
+  boot_disk_type         = var.boot_disk_type
+  spot                   = var.spot
+  running                = var.running
+  max_run_hours          = var.max_run_hours
+  backstop_stop_schedule = var.backstop_stop_schedule
+  desktop_user           = var.desktop_user
+  enable_display         = var.enable_display
+  subnet_cidr            = var.subnet_cidr
+  direct_access_cidrs    = var.direct_access_cidrs
+  billing_account_id     = var.billing_account_id
+  monthly_budget_usd     = var.monthly_budget_usd
+  labels                 = local.labels
+
+  providers = {
+    google         = google
+    google.billing = google.billing
   }
-}
-
-# The APIs this module needs. `disable_on_destroy = false` so a destroy here
-# never switches an API off under anything else in the project. Compute Engine
-# is already on in fps-csarko; the resource makes a fresh project work too.
-resource "google_project_service" "compute" {
-  service            = "compute.googleapis.com"
-  disable_on_destroy = false
-}
-
-# For `gcloud compute ssh --tunnel-through-iap` and `gcloud compute
-# start-iap-tunnel`, the only ways in (network.tf).
-resource "google_project_service" "iap" {
-  service            = "iap.googleapis.com"
-  disable_on_destroy = false
-}
-
-# Creating a service account needs it.
-resource "google_project_service" "iam" {
-  service            = "iam.googleapis.com"
-  disable_on_destroy = false
-}
-
-# Its own identity rather than the default compute service account, which
-# carries project-wide Editor. It can write logs (the start-up script's output
-# reaches Cloud Logging through the guest agent) and metrics (the Ops Agent, if
-# it is ever installed), and nothing else. The desktop user cannot reach it at
-# all: the start-up script blocks the metadata server for that account.
-resource "google_service_account" "test_rig" {
-  account_id   = "test-rig"
-  display_name = "Rented Windows GPU test machine"
-
-  depends_on = [google_project_service.iam]
-}
-
-# Project-wide, as Google grants it: whoever controls the machine can also
-# write entries under any log name in the project. Accepted; the machine is
-# reachable only through IAP.
-resource "google_project_iam_member" "test_rig_log_writer" {
-  project = var.gcp_project_id
-  role    = "roles/logging.logWriter"
-  member  = "serviceAccount:${google_service_account.test_rig.email}"
-}
-
-resource "google_project_iam_member" "test_rig_metric_writer" {
-  project = var.gcp_project_id
-  role    = "roles/monitoring.metricWriter"
-  member  = "serviceAccount:${google_service_account.test_rig.email}"
 }

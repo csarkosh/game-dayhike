@@ -11,7 +11,18 @@ This is its own Terraform root module with its own state (`gs://fps-csarko-tfsta
 `test-rig-gcp`). It shares nothing with the root module in `_infra/`: no remote-state lookup, no
 shared resource. A `terraform destroy` here cannot reach hosting, DNS or the signaling service.
 
+The resources themselves are in [`_infra/modules/gcp-test-rig/`](../modules/gcp-test-rig/), as
+`_infra/`'s own are in `_infra/modules/`. This directory is the root that calls it: the backend,
+the two providers (the default one and the budget's `google.billing`), one `module "test_rig"`
+call, the variables and outputs passed through, and `moved.tf`. Every command below runs here,
+and a resource's address carries the call's name:
+`module.test_rig.google_compute_instance.test_rig`. It is not called from `_infra/main.tf`, so
+that starting, stopping or replacing the machine never plans against hosting, DNS or the
+signaling service.
+
 ## What it defines
+
+Resources and data sources are the module's, at `module.test_rig.<address>`.
 
 | Resource | Why |
 |---|---|
@@ -24,7 +35,8 @@ shared resource. A `terraform destroy` here cannot reach hosting, DNS or the sig
 | `google_service_account.test_rig` + two IAM bindings | The machine's identity: writes logs and metrics, nothing else. See [Identity](#identity). |
 | `google_project_service` × 3 | Compute Engine, IAP and IAM. Never disabled on destroy. |
 | `google_billing_budget` (optional) | A monthly alert, created only when `billing_account_id` is set. |
-| `startup.ps1` | The start-up script, in the machine's metadata; see [The first boot](#the-first-boot). |
+| `../modules/gcp-test-rig/startup.ps1` | The start-up script, in the machine's metadata; see [The first boot](#the-first-boot). |
+| `moved.tf` | The resources' earlier addresses, from before they moved into the module; see [The move into the module](#the-move-into-the-module). |
 | `probe.mjs` | The first run's probe; see [The first run's probe](#the-first-runs-probe). |
 | `tests/` | `terraform test` against a mocked Google provider (creates nothing), and the start-up script's and the probe's own checks under Node. See [What is tested](#what-is-tested). |
 
@@ -198,7 +210,7 @@ None of this is in Terraform. Each step says what to see and what to do when it 
 | 9 | `terraform output -raw desktop_password_command`, run | 24 letters and digits. | Nothing: the user step did not finish (step 5). |
 | 10 | The probe (see [The first run's probe](#the-first-runs-probe)), nobody connected over Remote Desktop | `PASS`. The first run's: `ANGLE (NVIDIA, NVIDIA L4 (0x000027B8) Direct3D11 vs_5_0 ps_5_0, D3D11)`, WebGPU `nvidia` / `lovelace`, not a fallback; `webgl`, `gpu_compositing`, `rasterization` `enabled`; session `Console` 1; screen 1920 × 1080; `browserMetadata` `net::ERR_NETWORK_ACCESS_DENIED`; Chrome 154.0.8037.58; **`refreshHz` 58.8**. Chrome's `devices` list also names two `Microsoft Basic Render Driver` entries beside the L4: Windows' software renderer, which Chrome lists and did not draw with (the renderer string is the L4's). Record the renderer string, the `chrome.exe` lines, `featureStatus`, the WebGPU adapter, `refreshHz`, the display adapters and `browserMetadata`. | See the probe's section: a Chrome flag first, then `-var enable_display=true`; a failing licence is step 8's. At 58.8 Hz a frame time under about 17 ms cannot be seen: before any measurement, compare a run with `--disable-gpu-vsync --disable-frame-rate-limit` (question 2 of the probe). |
 | 11 | `gcloud compute instances describe test-rig --zone=$(terraform output -raw zone) --project=fps-csarko --format='value(resourceStatus.scheduling.terminationTimestamp,resourcePolicies)'` | A termination time 4 hours after the machine's start (not after its restart: a restart does not move it), and the instance schedule `test-rig-backstop-stop`. | No time: the run limit is not on the machine; stop it by hand (`terraform apply -var running=false`) and read `scheduling` in the same output. |
-| 12 | **Stop, then plan**: `terraform apply -var running=false`, then `terraform plan -var running=false`, then `terraform plan` | The apply stops it (`gcloud compute instances list` shows `TERMINATED`). The stopped plan shows **No changes**. The plan for the next start shows exactly **0 to add, 1 to change, 0 to destroy**: `google_compute_instance.test_rig` updated in place, `desired_status = "TERMINATED" -> "RUNNING"`. | This is the one check of what no test here can show: that nothing Google reports differently about a stopped machine makes Terraform change or replace it. What differs, by Google's documentation: the status (`TERMINATED`, which the provider reads back into `desired_status`, the one change expected) and the termination time (`resourceStatus.scheduling.terminationTimestamp`, cleared while stopped, which the provider does not read). The machine has no external address to lose. Refuse any other plan, above all one that says `google_compute_instance.test_rig` "must be replaced", until it is understood; the attribute it names goes in `ignore_changes` or is pinned, and a test is added. |
+| 12 | **Stop, then plan**: `terraform apply -var running=false`, then `terraform plan -var running=false`, then `terraform plan` | The apply stops it (`gcloud compute instances list` shows `TERMINATED`). The stopped plan shows **No changes**. The plan for the next start shows exactly **0 to add, 1 to change, 0 to destroy**: `module.test_rig.google_compute_instance.test_rig` updated in place, `desired_status = "TERMINATED" -> "RUNNING"`. | This is the one check of what no test here can show: that nothing Google reports differently about a stopped machine makes Terraform change or replace it. What differs, by Google's documentation: the status (`TERMINATED`, which the provider reads back into `desired_status`, the one change expected) and the termination time (`resourceStatus.scheduling.terminationTimestamp`, cleared while stopped, which the provider does not read). The machine has no external address to lose. Refuse any other plan, above all one that says `module.test_rig.google_compute_instance.test_rig` "must be replaced", until it is understood; the attribute it names goes in `ignore_changes` or is pinned, and a test is added. |
 | 13 | Where `gcloud compute ssh` put its key: `gcloud compute instances describe test-rig --zone=$(terraform output -raw zone) --project=fps-csarko --format='value(metadata.items[].key)'` and `gcloud compute project-info describe --project=fps-csarko --format='value(commonInstanceMetadata.items[].key)'` | The machine's keys include `ssh-keys` and `block-project-ssh-keys`; the project's do not include `ssh-keys`. The machine blocks project-wide keys, so gcloud puts its key in the machine's metadata (gcloud checks `block-project-ssh-keys` for this), where the module leaves it alone and where it goes with the machine. | The project holds `ssh-keys`: a key there is accepted by every machine of the project that does not block project keys. The first run's machine was made before the block, and gcloud put the key there. Once no machine needs it: `gcloud compute project-info remove-metadata --keys=ssh-keys --project=fps-csarko` (it removes every project-wide key: read them first with the describe above and `--format='value(commonInstanceMetadata.items)'`). |
 | 14 | The first time the run limit fires: `gcloud compute operations list --project=fps-csarko --filter='targetLink~instances/test-rig' --format='table(insertTime,operationType,status)'` | A `compute.instances.deferredStop` operation about 4 hours after the start. | The machine runs past its time: stop it by hand (`terraform apply -var running=false`) and read the instance's `scheduling`. |
 | 15 | The daily stop, once: start the machine between 07:00 and 08:00 UTC and, after 09:15 UTC, read the Admin Activity audit log. The machine runs until the stop at 09:00: $2.19 for a 07:00 start (2 hours), $1.10 for an 08:00 start (1 hour). The filter names the machine and Compute Engine's service agent, not a method, so the stop shows under whatever method name Google logs it: `gcloud logging read 'protoPayload.resourceName:"instances/test-rig" AND protoPayload.authenticationInfo.principalEmail:"compute-system"' --project=fps-csarko --freshness=2d --format='table(timestamp,protoPayload.methodName,protoPayload.resourceName,protoPayload.authenticationInfo.principalEmail)'` | A line at 09:00 UTC (up to 15 minutes later) whose method is a stop (record the name as logged, such as `v1.compute.instances.stop`), resource `projects/fps-csarko/zones/<zone>/instances/test-rig`, principal Compute Engine's service agent, `service-<project number>@compute-system.iam.gserviceaccount.com`. No role is granted to it by this module: it holds `compute.instances.stop` through its own role, `roles/compute.serviceAgent`. `gcloud compute instances list` shows `TERMINATED`. | No line and the machine still running: the schedule could not act; stop it by hand. Google's page asks for `roles/compute.instanceAdmin.v1` on the service agent; grant it by hand, then look again the next day: `number=$(gcloud projects describe fps-csarko --format='value(projectNumber)')`, `gcloud projects add-iam-policy-binding fps-csarko --member="serviceAccount:service-${number}@compute-system.iam.gserviceaccount.com" --role=roles/compute.instanceAdmin.v1`. Also read `gcloud compute resource-policies describe test-rig-backstop-stop --region=us-west1 --project=fps-csarko`. |
@@ -283,11 +295,11 @@ whatever else it was run for; any `apply` with `running = false` leaves it stopp
 | Change | What happens |
 |---|---|
 | `running` | The machine is started or stopped. |
-| `desktop_user`, `startup.ps1` | The start-up script in the machine's metadata changes in place, running or stopped; nothing restarts, and `plan` shows an in-place update of `metadata`. The next boot runs the new script. On a machine that has finished its set-up (`C:\ProgramData\test-rig\setup-complete` exists), that boot runs only what the script does at every boot: it keeps `C:\ProgramData\test-rig` closed; for a new `desktop_user` it makes that user with its own password and a display task, restarts once and checks the machine again; and it logs the licence. **No set-up step runs again, changed or new**: a new driver, Chrome, Node or Git pin, a new holding-still setting, or a new step changes nothing on that machine. To make a machine take a changed set-up, replace it: `terraform apply -replace=google_compute_instance.test_rig` with `running = true`, a new machine that runs the whole new script (about 8 minutes). By hand instead, from an SSH shell: `Remove-Item C:\ProgramData\test-rig\setup-complete, C:\ProgramData\test-rig\verified` and the `done-<step>` marker of each changed step, then `shutdown /r /t 0`; every step without its marker runs, and the machine is checked again. |
-| `gpu_type` (and with it `machine_type`), `max_run_hours`, `spot`, `boot_disk_size_gb`, `boot_disk_type`, `zone`, `instance_name` | **The machine is replaced**: `plan` shows `google_compute_instance.test_rig` "must be replaced", and its `build` label changes. The new machine runs the first-boot set-up again (about 8 minutes); the old disk and everything on it go. **Refused while `running = false`**. The provider cannot change the run limit of a machine in place (its schema forces a new machine), although Google's API can on a stopped one. |
+| `desktop_user`, `startup.ps1` | The start-up script in the machine's metadata changes in place, running or stopped; nothing restarts, and `plan` shows an in-place update of `metadata`. The next boot runs the new script. On a machine that has finished its set-up (`C:\ProgramData\test-rig\setup-complete` exists), that boot runs only what the script does at every boot: it keeps `C:\ProgramData\test-rig` closed; for a new `desktop_user` it makes that user with its own password and a display task, restarts once and checks the machine again; and it logs the licence. **No set-up step runs again, changed or new**: a new driver, Chrome, Node or Git pin, a new holding-still setting, or a new step changes nothing on that machine. To make a machine take a changed set-up, replace it: `terraform apply -replace=module.test_rig.google_compute_instance.test_rig` with `running = true`, a new machine that runs the whole new script (about 8 minutes). By hand instead, from an SSH shell: `Remove-Item C:\ProgramData\test-rig\setup-complete, C:\ProgramData\test-rig\verified` and the `done-<step>` marker of each changed step, then `shutdown /r /t 0`; every step without its marker runs, and the machine is checked again. |
+| `gpu_type` (and with it `machine_type`), `max_run_hours`, `spot`, `boot_disk_size_gb`, `boot_disk_type`, `zone`, `instance_name` | **The machine is replaced**: `plan` shows `module.test_rig.google_compute_instance.test_rig` "must be replaced", and its `build` label changes. The new machine runs the first-boot set-up again (about 8 minutes); the old disk and everything on it go. **Refused while `running = false`**. The provider cannot change the run limit of a machine in place (its schema forces a new machine), although Google's API can on a stopped one. |
 | `enable_display` | The provider stops the machine, changes it and starts it again if `running` is true. |
 | `backstop_stop_schedule` | The schedule changes or goes, in place. |
-| A new monthly Windows image, `image`, `baked_image` | Nothing until `terraform apply -replace=google_compute_instance.test_rig` (with `running = true`: the refusal cannot see a `-replace`). |
+| A new monthly Windows image, `image`, `baked_image` | Nothing until `terraform apply -replace=module.test_rig.google_compute_instance.test_rig` (with `running = true`: the refusal cannot see a `-replace`). |
 
 ### The machine made on 2026-09-28
 
@@ -300,7 +312,7 @@ closing of Windows Remote Management. What each does to it:
   its `build` label is unchanged (the zone in it is the same).
 - **The metadata and the script:** both are the machine's metadata, which the provider changes in
   place, stopped or running, with no restart and no replacement. The next plan shows
-  `google_compute_instance.test_rig` **updated in place**: `metadata` gains `block-project-ssh-keys`
+  `module.test_rig.google_compute_instance.test_rig` **updated in place**: `metadata` gains `block-project-ssh-keys`
   and a new `windows-startup-script-ps1`; with `running = true` also `desired_status`
   `"TERMINATED" -> "RUNNING"`. Plan: 0 to add, 1 to change, 0 to destroy.
 - **Windows Remote Management stays open on its host firewall** (not reachable: no external address,
@@ -329,6 +341,20 @@ What the refusals cannot stop:
 - a replacement the provider decides for a reason of its own;
 - a lost state: the read knows nothing of Terraform's state, so if the state were lost while a
   machine named `test-rig` still existed, it would take that machine for this module's.
+
+### The move into the module
+
+The resources were declared in this directory until they moved into `../modules/gcp-test-rig/`,
+after the machine had been applied. `moved.tf` maps each earlier address to its new one
+(`google_compute_instance.test_rig` to `module.test_rig.google_compute_instance.test_rig`, and
+so on for all 16 resources, a `count` resource's `[0]` included; data sources need none), so the
+state follows the code and nothing is destroyed or created. After `terraform init` (which also
+installs the module), `terraform plan`, with `running` as the machine was last applied, shows
+each resource as moved. The move changes nothing else: any other change in that plan is one the
+code already held before the move, and a plan of the commit before the move shows it too. Refuse
+a plan that creates, replaces or destroys anything until it is understood; applying the plan
+writes the new addresses into the state. Keep `moved.tf`: a state still at the old addresses
+needs it.
 
 ## Reaching the machine
 
@@ -583,7 +609,7 @@ machine is replaced. The exposure is small (only IAP reaches it; the browser loa
 own pages), but the cadence is: **patch at least monthly, after Microsoft's monthly security
 release, and whenever Chrome ships a security fix**, between measurement series, and take a new
 baseline after each. The simplest patch is a new machine:
-`terraform apply -replace=google_compute_instance.test_rig` (with `running = true`) takes the
+`terraform apply -replace=module.test_rig.google_compute_instance.test_rig` (with `running = true`) takes the
 newest Windows Server 2025 image and the current Chrome, at the cost of a new first-boot set-up.
 In place: sign in as `rdp-admin` and run Windows Update from Settings, and run Chrome's enterprise
 installer again (the address `startup.ps1` uses).
@@ -701,7 +727,7 @@ gcloud compute images create test-rig-YYYYMMDD --project=fps-csarko \
 ```
 
 then `baked_image = "projects/fps-csarko/global/images/family/test-rig"` in `terraform.tfvars` and
-`terraform apply -replace=google_compute_instance.test_rig` with `running = true`. The image keeps
+`terraform apply -replace=module.test_rig.google_compute_instance.test_rig` with `running = true`. The image keeps
 the other set-up markers, so the start-up script only makes the new password, restarts, checks the
 machine and writes `verified`. An image made this way is not generalised (no Sysprep), which is fine
 for a machine that only ever runs one at a time; whether the workstation licence and automatic logon
@@ -729,8 +755,21 @@ Three sets of checks run without Google Cloud, without Windows and without a mac
 - `terraform test`, from this directory: `tests/plan.tftest.hcl`, against a mocked Google provider
   (nothing is created, no credentials are used);
 - `node --test tests/*.test.mjs`, from this directory: `tests/startup.test.mjs`, the start-up
-  script's static checks, which need no PowerShell, and `tests/probe.test.mjs`, the probe's
-  judgements on sample reports.
+  script's static checks, which need no PowerShell, `tests/probe.test.mjs`, the probe's
+  judgements on sample reports, and `tests/variables.test.mjs`, the test variables against this
+  root.
+
+An assertion of `terraform test` can name a resource, local or output of the configuration its
+run tests, never one inside a module that configuration calls. So the runs that read the machine
+test `../modules/gcp-test-rig/` directly, with every input pinned to this root's defaults, and the
+runs of the variables' validations test this root, whose plan goes through the module. Both
+providers are mocked, the budget's `google.billing` included.
+
+`terraform validate` here reports the budget's provider configuration as not present: when it
+checks a test run that tests a module, Terraform (1.10 and 1.16 alike) does not give that module
+the test file's providers, and a module's aliased provider, unlike its default one, has no empty
+configuration to fall back on. `terraform test`, which does give them, passes, and
+`terraform validate -no-tests` checks the configuration itself.
 
 None of them runs in the repository's test workflow; run them by hand after a change here.
 
@@ -774,8 +813,8 @@ failed boot, a structure without `CharSet`, a field moved, among others.
 `tests/variables.test.mjs` checks that `terraform test` pins every variable (so that a
 `terraform.tfvars` in this directory, a person's own, cannot change a run: the suite passes with one
 present, and failed without the pins against one holding another zone and `running = false`), that
-each pin is exactly the variable's default (so the runs still test the defaults), and that the
-default zone is `us-west1-a`. `tests/startup.test.mjs` also checks the closing of Windows Remote
+each pin is exactly the variable's default (so the runs still test the defaults), that `main.tf`
+passes every variable to the module unchanged, and that the default zone is `us-west1-a`. `tests/startup.test.mjs` also checks the closing of Windows Remote
 Management: its firewall group and any inbound rule on 5985 or 5986 disabled, Remote Desktop and SSH
 left alone, the check boot failing on an open rule.
 

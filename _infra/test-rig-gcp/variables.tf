@@ -91,7 +91,8 @@ variable "image" {
     needs a desktop), the newest family Google publishes, and one the NVIDIA
     driver below is built for. The machine keeps the image it was made from:
     a newer image in the family, or a change here, takes effect only when the
-    machine is replaced (`terraform apply -replace=google_compute_instance.test_rig`).
+    machine is replaced
+    (`terraform apply -replace=module.test_rig.google_compute_instance.test_rig`).
   EOT
   type        = string
   default     = "projects/windows-cloud/global/images/family/windows-2025"

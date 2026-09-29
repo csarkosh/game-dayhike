@@ -10,9 +10,10 @@
 #
 # The amount and thresholds are set so that an alert means something is wrong.
 # An ordinary month is four three-hour runs: $18.26 on the default machine
-# (README.md). The first alert, at 80 % of the default $45 ($36), is about
-# twice that: a machine left running until the daily stop (at most a day,
-# $26.33) on top of an ordinary month passes it; ordinary use never does.
+# (_infra/test-rig-gcp/README.md). The first alert, at 80 % of the default $45
+# ($36), is about twice that: a machine left running until the daily stop (at
+# most a day, $26.33) on top of an ordinary month passes it; ordinary use
+# never does.
 
 resource "google_project_service" "billingbudgets" {
   count = var.billing_account_id != "" ? 1 : 0
@@ -38,7 +39,7 @@ resource "google_billing_budget" "test_rig" {
     # Only what carries the machine's label: the machine, its GPU, its Windows
     # and workstation licences, and its disk. The NAT gateway takes no labels,
     # which leaves a few cents a month outside the count.
-    labels = local.labels
+    labels = var.labels
 
     calendar_period = "MONTH"
   }

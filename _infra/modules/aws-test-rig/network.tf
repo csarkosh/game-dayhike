@@ -60,7 +60,7 @@ resource "aws_subnet" "test_rig" {
     # The zone is read from AWS's offerings at every plan. Once the subnet
     # exists, a change there (AWS no longer offering a size in it) must not
     # replace the subnet and the machine with it; a deliberate move is
-    # `terraform apply -replace=aws_subnet.test_rig`.
+    # `terraform apply -replace=module.test_rig.aws_subnet.test_rig`.
     ignore_changes = [availability_zone]
 
     precondition {

@@ -64,7 +64,7 @@ resource "google_compute_instance" "test_rig" {
   desired_status            = var.running ? "RUNNING" : "TERMINATED"
   allow_stopping_for_update = true
 
-  labels = merge(local.labels, { build = local.build_key })
+  labels = merge(var.labels, { build = local.build_key })
 
   boot_disk {
     auto_delete = true
@@ -77,7 +77,7 @@ resource "google_compute_instance" "test_rig" {
       # Set here as well as through the provider's default labels: the disk is
       # created by the instance, and it is the one part billed while stopped.
       # Fixed: the provider replaces the machine if these change.
-      labels = local.labels
+      labels = var.labels
     }
   }
 
@@ -168,8 +168,10 @@ resource "google_compute_instance" "test_rig" {
     #
     # The image: the family's newest image changes every month, and a baked
     # image is a deliberate choice. The machine keeps the image it was made
-    # from; `terraform apply -replace=google_compute_instance.test_rig` moves
-    # it to var.image or var.baked_image on purpose.
+    # from; `terraform apply
+    # -replace=module.test_rig.google_compute_instance.test_rig` (from
+    # _infra/test-rig-gcp/) moves it to var.image or var.baked_image on
+    # purpose.
     ignore_changes = [
       metadata["ssh-keys"],
       metadata["windows-keys"],

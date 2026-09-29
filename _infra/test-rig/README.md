@@ -12,7 +12,17 @@ no shared resource. `_infra/` manages Route53 records in the same AWS account; n
 touches Route53, and a `terraform destroy` here cannot reach hosting, DNS or the signaling
 service.
 
+The resources themselves are in [`_infra/modules/aws-test-rig/`](../modules/aws-test-rig/),
+as `_infra/`'s own are in `_infra/modules/`. This directory is the root that calls it: the
+backend, the provider, one `module "test_rig"` call, the variables and outputs passed through,
+and `moved.tf`. Every command below runs here, and a resource's address carries the call's
+name: `module.test_rig.aws_instance.test_rig`. It is not called from `_infra/main.tf`, so that
+starting, stopping or replacing the machine never plans against hosting, DNS or the signaling
+service.
+
 ## What it defines
+
+Resources and data sources are the module's, at `module.test_rig.<address>`.
 
 | Resource | Why |
 |---|---|
@@ -26,7 +36,8 @@ service.
 | `aws_iam_role.test_rig` + instance profile + policies | The machine's identity, with `aws_iam_role_policy_attachments_exclusive` and `aws_iam_role_policies_exclusive` holding its policies to exactly these; see [Identity](#identity). |
 | `aws_scheduler_schedule.backstop` + its role | Stops the machine once a day at 09:00 UTC if it is still running; see [It stops itself](#it-stops-itself). |
 | `aws_budgets_budget.test_rig` (optional) | A monthly alert, created only with `budget_enabled = true`. |
-| `setup.ps1` | The start-up script, passed as user data; see [The first boot](#the-first-boot). |
+| `../modules/aws-test-rig/setup.ps1` | The start-up script, passed as user data; see [The first boot](#the-first-boot). |
+| `moved.tf` | The resources' earlier addresses, from before they moved into the module; see [The move into the module](#the-move-into-the-module). |
 | `probe.mjs` | The first run's probe; see [The first run's probe](#the-first-runs-probe). |
 | `tests/` | `terraform test` against a mocked AWS provider (creates nothing), and the start-up script's and the probe's own checks. See [What is tested](#what-is-tested). |
 
@@ -161,7 +172,7 @@ read before going on.
 | 10 | DCV by hand: the port forward, sign in as `hiker` with the parameter's password | The desktop, at 1920 × 1080, with no licence error from DCV. Then **close the client**; a client may change the layout, and the next boot sets it back. |
 | 11 | `& 'C:\Program Files\NICE\DCV\Server\bin\dcv.exe' describe-session console --json` | Parses as JSON (no byte-order mark, not UTF-16); `num-of-connections` is `0`. |
 | 12 | The probe (see [The first run's probe](#the-first-runs-probe)) | `PASS`. Read every `WARNING`. Record the renderer string, the `chrome.exe` lines, `featureStatus`, the WebGPU adapter, `refreshHz`, the adapter list and `browserImds`. The screen is 1920 × 1080 (a different size fails). The desktop is on the NVIDIA adapter; a Microsoft Basic Display Adapter may be listed as well, `inactive`, driving no display. If it fails only on `rasterization` or `gpu_compositing`, run it again with `--ignore-gpu-blocklist` and record both. |
-| 13 | **Stop, then plan** (`terraform apply -var running=false`, then `terraform plan -var running=false`), and the plan for the next start (`terraform plan`) | `describe-instances` reads `stopped`, not `terminated`. The stopped plan shows **No changes**. The plan for the next start shows exactly **0 to add, 1 to change, 0 to destroy**: `aws_ec2_instance_state.test_rig` updated in place, `"stopped" -> "running"`. This is the one check of what no test here can show: that nothing AWS reports differently about a stopped machine (its public address, its public name, its root volume's tags) makes Terraform want to change or replace it. Refuse any other plan, above all one that says `aws_instance.test_rig` "must be replaced", until it is understood. |
+| 13 | **Stop, then plan** (`terraform apply -var running=false`, then `terraform plan -var running=false`), and the plan for the next start (`terraform plan`) | `describe-instances` reads `stopped`, not `terminated`. The stopped plan shows **No changes**. The plan for the next start shows exactly **0 to add, 1 to change, 0 to destroy**: `module.test_rig.aws_ec2_instance_state.test_rig` updated in place, `"stopped" -> "running"`. This is the one check of what no test here can show: that nothing AWS reports differently about a stopped machine (its public address, its public name, its root volume's tags) makes Terraform want to change or replace it. Refuse any other plan, above all one that says `module.test_rig.aws_instance.test_rig` "must be replaced", until it is understood. |
 | 14 | `aws scheduler get-schedule --region us-east-1 --name test-rig-backstop-stop` | The target's input names this instance id. |
 | 15 | The timer check (see [It stops itself](#it-stops-itself)) | Step 1 stops the machine about 15 minutes after its start; step 2, with the one-time trigger removed by hand, about 15 minutes after its restart, and its log shows `0 one-time trigger(s)`; step 3's start, with the default back, is still running after 20 minutes. |
 
@@ -218,11 +229,11 @@ Step 13 of the first run checks it. What `destroy` leaves behind is listed above
 | `instance_type` | The provider stops the machine, changes its size and **starts it again**, whatever `running` says; the running/stopped setting is then applied again (it is re-made after any change to the machine), so a machine meant to be stopped ends stopped. The disk is kept. |
 | `max_run_hours` | The instance tag `max-run-minutes` changes in place. Nothing is restarted or replaced; the new limit applies from the machine's next boot. The running/stopped setting is applied again, as above. |
 | `disk_size_gb` | The disk grows in place, running or stopped (Windows' partition then needs extending by hand). A smaller size is refused by AWS. |
-| The start-up script (`setup.ps1`, the user data around it in `instance.tf`, or `desktop_user`, `password_parameter`, `display_width`, `display_height`, which are written into it), or `vpc_cidr` | **The machine is replaced**: `plan` shows `aws_instance.test_rig` "must be replaced". The new machine runs the first-boot set-up again (about 7 minutes, under $0.10) and makes a new desktop password; the old disk and everything on it go. **Refused while `running = false`**: a new machine must never be stopped before its first-boot set-up has finished (stopped seconds into Windows' own first boot, EC2 hard-stops it after a few minutes, and it may never boot again). Apply with `running = true`, wait for `verified`, then stop it. Until the new machine's first boot writes its password, the parameter holds the old machine's, which no longer works. |
+| The start-up script (`setup.ps1`, the user data around it in `instance.tf`, both in the module, or `desktop_user`, `password_parameter`, `display_width`, `display_height`, which are written into it), or `vpc_cidr` | **The machine is replaced**: `plan` shows `module.test_rig.aws_instance.test_rig` "must be replaced". The new machine runs the first-boot set-up again (about 7 minutes, under $0.10) and makes a new desktop password; the old disk and everything on it go. **Refused while `running = false`**: a new machine must never be stopped before its first-boot set-up has finished (stopped seconds into Windows' own first boot, EC2 hard-stops it after a few minutes, and it may never boot again). Apply with `running = true`, wait for `verified`, then stop it. Until the new machine's first boot writes its password, the parameter holds the old machine's, which no longer works. |
 | `region` | **Refused.** The region is chosen once: the provider's region is not an attribute of any resource, so a change would look for everything in the new region, lose it from state, and leave the machine, its disk and its schedule billing in the old one. To move: `terraform destroy` with the old region, then change it and apply. |
 | A new monthly Windows image | Nothing: the machine keeps its image. |
-| `image_id` | Nothing until `terraform apply -replace=aws_instance.test_rig`. |
-| `terraform apply -replace=aws_instance.test_rig` (a newer image, a prepared image) | A new machine, as for a changed script. Only with `running = true`: the refusal above cannot see a `-replace`. |
+| `image_id` | Nothing until `terraform apply -replace=module.test_rig.aws_instance.test_rig`. |
+| `terraform apply -replace=module.test_rig.aws_instance.test_rig` (a newer image, a prepared image) | A new machine, as for a changed script. Only with `running = true`: the refusal above cannot see a `-replace`. |
 | What AWS offers in the machine's zone | Nothing: the zone is fixed once the subnet exists. |
 
 What the two refusals cannot stop. The refusal of a new machine while `running = false` reads
@@ -244,6 +255,19 @@ change nothing a reader could see, while `plan` said nothing either. Replacing i
 set-up, but is what `plan` shows, and the new machine is what the script says. The trigger is the
 text of the script and of the user data around it, not the compressed bytes, so a Terraform
 release that compresses differently replaces nothing.
+
+### The move into the module
+
+The resources were declared in this directory until they moved into `../modules/aws-test-rig/`,
+after the machine had been applied. `moved.tf` maps each earlier address to its new one
+(`aws_instance.test_rig` to `module.test_rig.aws_instance.test_rig`, and so on for all 23
+resources, a `count` resource's `[0]` included; data sources need none), so the state follows
+the code and nothing is destroyed or created. After `terraform init` (which also installs the
+module), `terraform plan`, with `running` as the machine was last applied, shows each resource
+as moved. The move changes nothing else: any other change in that plan is one the code already
+held before the move, and a plan of the commit before the move shows it too. Refuse a plan that
+creates, replaces or destroys anything until it is understood; applying the plan writes the new
+addresses into the state. Keep `moved.tf`: a state still at the old addresses needs it.
 
 ## Reaching the machine
 
@@ -597,7 +621,7 @@ aws ssm send-command --region us-east-1 --instance-ids <instance id> \
 ```
 
 Chrome: run its enterprise installer again (the same command `setup.ps1` uses), or replace the
-machine (`terraform apply -replace=aws_instance.test_rig`, with `running = true`), which also
+machine (`terraform apply -replace=module.test_rig.aws_instance.test_rig`, with `running = true`), which also
 takes the newest Windows image.
 
 ## The first run's probe
@@ -733,7 +757,7 @@ aws ec2 create-image --region us-east-1 --instance-id <instance id> --name test-
 ```
 
 and set `image_id = "ami-..."` in `terraform.tfvars`, then
-`terraform apply -replace=aws_instance.test_rig` with `running = true` (the machine ignores a
+`terraform apply -replace=module.test_rig.aws_instance.test_rig` with `running = true` (the machine ignores a
 change of image until it is replaced, and a new machine must finish its first boot before it is
 stopped). The image keeps its set-up markers, so the start-up script only makes the new
 password, checks the machine and arms the timer. A later change to the start-up script still
@@ -769,7 +793,15 @@ Three sets of checks run without AWS, without Windows and without a machine:
   (nothing is created, no credentials are used);
 - `pwsh -NoProfile -File tests/setup.tests.ps1`, on PowerShell 7 on any system: the start-up
   script's syntax and the functions that need no Windows;
-- `node --test tests/probe.test.mjs`: the probe's judgements on sample reports.
+- `node --test tests/*.test.mjs`: the probe's judgements on sample reports, and the test
+  variables against this root.
+
+An assertion of `terraform test` can name a resource of the configuration its run tests, never
+one inside a module that configuration calls. So the runs that read the machine test
+`../modules/aws-test-rig/` directly, with every input pinned to this root's defaults, and the
+runs of the variables' validations test this root, whose plan goes through the module.
+`tests/variables.test.mjs` checks that the pins are this root's defaults and that `main.tf`
+passes every variable to the module unchanged.
 
 None of them runs in the repository's test workflow; run them by hand after a change here.
 

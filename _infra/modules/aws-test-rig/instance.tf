@@ -58,7 +58,7 @@ resource "terraform_data" "setup_script" {
 # The machines of this module that exist now, read from AWS at every plan, and
 # the build each was made from.
 data "aws_instances" "existing" {
-  instance_tags        = { Name = local.name, purpose = local.tags.purpose }
+  instance_tags        = { Name = local.name, purpose = var.tags.purpose }
   instance_state_names = ["pending", "running", "stopping", "stopped"]
 }
 
@@ -121,7 +121,8 @@ resource "aws_instance" "test_rig" {
 
   lifecycle {
     # A new monthly Windows image changes the parameter's value; the machine
-    # that exists is kept. `terraform apply -replace=aws_instance.test_rig`
+    # that exists is kept. `terraform apply
+    # -replace=module.test_rig.aws_instance.test_rig` (from _infra/test-rig/)
     # moves it to the newest image (or to var.image_id) on purpose.
     #
     # user_data: a changed script replaces the machine (terraform_data above)
