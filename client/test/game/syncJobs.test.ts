@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, createCrossing, createSyncJobs, crossingAt, finish, type Slices,
+  SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, createCrossing, createSyncJobs, crossingAt, finish, nextCrossing, sortSlices, turn,
+  type Slices,
 } from "../../src/game/syncJobs.js";
+
+/** `list` sorted at once by `sortSlices`. */
+function sortSlicesDone(list: number[]): number[] {
+  finish(sortSlices(list, (a, b) => a - b));
+  return list;
+}
 
 /** A test clock: `now` is advanced by hand, by the slices below. */
 function testClock(): { clock: () => number; advance(ms: number): void } {
@@ -200,6 +207,23 @@ describe("the scheduler", () => {
     expect(jobEnded).toBe(true);
   });
 
+  it("shares the idle budget between owners a slice each in turn", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const order: string[] = [];
+    const work = (name: string): Slices => (function* () {
+      for (;;) {
+        t.advance(1);
+        order.push(name);
+        yield;
+      }
+    })();
+    jobs.idle({}, work("a"));
+    jobs.idle({}, work("b"));
+    jobs.run();
+    expect(order).toEqual(["a", "b", "a", "b"]);
+  });
+
   it("takes a job whose slice throws out of the queue, and throws", () => {
     const jobs = createSyncJobs(() => 0);
     const owner = {};
@@ -212,6 +236,28 @@ describe("the scheduler", () => {
     expect(() => jobs.run()).not.toThrow();
   });
 
+  it("sorts in slices into exactly the order Array.prototype.sort leaves, ties as they came", () => {
+    // A fixed pseudo-random list with many equal keys, tagged by position.
+    let state = 7;
+    const list: { key: number; at: number }[] = [];
+    for (let at = 0; at < 20_000; at++) {
+      state = (state * 48271) % 2147483647;
+      list.push({ key: state % 997, at });
+    }
+    const byKey = (a: { key: number }, b: { key: number }): number => a.key - b.key;
+    const want = [...list].sort(byKey);
+    const got = [...list];
+    const slices = sortSlices(got, byKey);
+    let n = 0;
+    while (slices.next().done !== true) n++;
+    expect(got.map((e) => e.at)).toEqual(want.map((e) => e.at));
+    // 20,000 elements over 15 passes, a slice ending at the first merge to
+    // bring its moves to 8,192.
+    expect(n).toBe(32);
+    const empty: number[] = [];
+    expect([...sortSlicesDone(empty), ...sortSlicesDone([3])]).toEqual([3]);
+  });
+
   it("finish runs a job's slices to the end and returns its result", () => {
     let slices = 0;
     const result = finish((function* () {
@@ -222,6 +268,31 @@ describe("the scheduler", () => {
       return "built";
     })());
     expect([result, slices]).toEqual(["built", 5]);
+  });
+});
+
+describe("a view's next crossing", () => {
+  it("is where it reaches first a line of the grid, a millimetre past it", () => {
+    const out = new Float64Array(2);
+    // Heading mostly along x: the x line at 11 comes before the z line at 11.
+    expect(nextCrossing(10.5, 10.5, 1, 0.3, 1, out)).toBe(true);
+    expect(out[0]).toBeCloseTo(11.001, 9);
+    expect(out[1]).toBeCloseTo(10.5 + 0.501 * 0.3, 9);
+    // Heading down z: the line below, then a millimetre under it.
+    expect(nextCrossing(10.5, 10.25, 0, -0.1, 1, out)).toBe(true);
+    expect([out[0], out[1]]).toEqual([10.5, 9.999]);
+    // Standing still: none.
+    expect(nextCrossing(10.5, 10.5, 0, 0, 1, out)).toBe(false);
+  });
+
+  it("is re-aimed when the view turns, and only then", () => {
+    const h = { x: 0, z: 0 };
+    expect(turn(h, 0.08, 0.02)).toBe(true);
+    expect(turn(h, 0.09, 0.01)).toBe(false);
+    expect(turn(h, 0, 0)).toBe(false);
+    expect(turn(h, 0.09, -0.01)).toBe(true);
+    expect(turn(h, Number.NaN, 1)).toBe(false);
+    expect(h).toEqual({ x: 0.09, z: -0.01 });
   });
 });
 
@@ -259,5 +330,13 @@ describe("crossingAt", () => {
     // No scheduler.
     at(c, 515.9, 10.5);
     expect(at(c, 516.0, 10.5, false)).toBe("now");
+    // A cell of 10 m: the boost's 2.4 m a frame is under half a cell, and
+    // still more than a metre.
+    const wide = createCrossing();
+    const on10 = (x: number) => crossingAt(wide, x, 0, Math.floor(x / 10) * 10, 0, 10, true);
+    on10(18.5);
+    expect(on10(20.9)).toBe("now");
+    on10(29.95);
+    expect(on10(30.04)).toBe("later");
   });
 });

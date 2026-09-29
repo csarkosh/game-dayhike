@@ -3,6 +3,8 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 
 // The terrain material's ground textures are a texture array NullEngine
 // cannot make; `renderer.test.ts` stands in for them the same way.
@@ -21,13 +23,16 @@ import {
   createRingSamples, holeCellsFor, ringGeometry, snapOrigin, updateRingSamples, RING_COUNT, type RingGeometry,
   type RingSamples,
 } from "../../src/game/clipmap.js";
-import { SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, createSyncJobs, type SyncJobs } from "../../src/game/syncJobs.js";
+import {
+  SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, createSyncJobs, finish as finishSlices, type SyncJobs,
+} from "../../src/game/syncJobs.js";
 import { collectBladeCells, createBladeCollector } from "../../src/game/bladeField.js";
 import { createBladeMeshes, type BladeMeshes } from "../../src/game/bladeMeshes.js";
 import { DUFF_REACH, collectDuffCells, createDuffCollector } from "../../src/game/duffField.js";
 import { createDuffMeshes, type DuffMeshes } from "../../src/game/duffMeshes.js";
 import { collectClutter, createClutterCollector } from "../../src/game/clutterField.js";
 import { createClutterMeshes, type ClutterMeshes } from "../../src/game/clutterMeshes.js";
+import { createForestMeshes, type ForestMeshes } from "../../src/game/forestMeshes.js";
 import {
   BLADE_KINDS, DUFF_KINDS, SEED, clutterKinds, clutterScene, differences, expectedBlades, expectedClutter,
   expectedDuff, uploads, type Spy, type Uploads,
@@ -217,7 +222,79 @@ function clutterShell(): Shell {
   };
 }
 
-const SHELLS = [clipmapShell, clutterShell, bladeShell, duffShell];
+/** A box with an alpha-tested material, as the forest's models are. */
+function box(name: string, scene: Scene): Mesh {
+  const mesh = CreateBox(name, { size: 1 }, scene);
+  mesh.material = new PBRMaterial(`${name}_mat`, scene);
+  (mesh.material as PBRMaterial).transparencyMode = PBRMaterial.PBRMATERIAL_ALPHATEST;
+  return mesh;
+}
+
+/** Boxes in place of the forest's seven models (`forestMeshes.test.ts`'s
+ * stubs, reduced), and no billboard bakes, which NullEngine cannot make. */
+function forestOn(scene: Scene, jobs: SyncJobs | undefined): ForestMeshes {
+  const lods = (prefix: string): [Mesh, Mesh, Mesh] => [box(`${prefix}0`, scene), box(`${prefix}1`, scene), box(`${prefix}2`, scene)];
+  return createForestMeshes(scene, SEED, {
+    assets: {
+      giants: [0, 1].map((s) => ({ lods: lods(`g${s}_`), understory: box(`u${s}`, scene) })),
+      saplings: [0, 1].map((s) => ({ lods: lods(`p${s}_`) })),
+      deadwood: box("dead", scene),
+    },
+    bakeImpostor: () => null,
+    jobs,
+  });
+}
+
+const FOREST_KINDS: [string, number][] = [["matrix", 16], ["fadeBands", 4], ["groundGrad", 2], ["foliage", 4]];
+
+/**
+ * The forest: its buffers are all new arrays each rebuild, built from the
+ * collected bands by functions of the bands and the view alone, so what it
+ * uploads for a view is held to the same forest rebuilding at once at that
+ * view, without a scheduler.
+ */
+function forestShell(): Shell {
+  let reference: { forest: ForestMeshes; meshes: Mesh[]; engine: NullEngine } | null = null;
+  let spy: Spy | null = null;
+  const bucketMeshes = (scene: Scene): Mesh[] => scene.meshes.filter((m): m is Mesh => m instanceof Mesh);
+  return {
+    name: "forest",
+    // Inside a stand of trees near the origin.
+    start: { x: 1, z: 1 },
+    make(jobs) {
+      const engine = new NullEngine();
+      const scene = new Scene(engine);
+      const mocked = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+      spy = mocked as unknown as Spy;
+      const forest = forestOn(scene, jobs);
+      const meshes = bucketMeshes(scene);
+      return {
+        update: (x, z) => forest.update(x, z),
+        get view() { return forest.view; },
+        drawn: () => uploads(spy!, meshes, () => FOREST_KINDS),
+        dispose: () => {
+          forest.dispose();
+          reference?.forest.dispose();
+          reference?.engine.dispose();
+          mocked.mockRestore();
+          engine.dispose();
+        },
+      };
+    },
+    expected(x, z) {
+      if (reference === null) {
+        const engine = new NullEngine();
+        const scene = new Scene(engine);
+        const forest = forestOn(scene, undefined);
+        reference = { forest, meshes: bucketMeshes(scene), engine };
+      }
+      reference.forest.update(x, z);
+      return uploads(spy!, reference.meshes, () => FOREST_KINDS);
+    },
+  };
+}
+
+const SHELLS = [clipmapShell, clutterShell, bladeShell, duffShell, forestShell];
 
 describe("rebuilds as jobs: what is uploaded", () => {
   for (const shellOf of SHELLS) {
@@ -255,6 +332,7 @@ const GRIDS: Record<string, (v: number) => number> = {
   clutter: (v) => Math.floor(v / 3) * 3,
   blades: (v) => Math.floor(v),
   duff: (v) => Math.floor(v),
+  forest: (v) => Math.floor(v / 10) * 10,
 };
 
 describe("rebuilds as jobs: when", () => {
@@ -338,7 +416,7 @@ describe("rebuilds as jobs: when", () => {
       const grid = GRIDS[shell.name]!;
       for (const p of walk(far, BOOST)) {
         if (p.frame === 0) continue;
-        if (p.frame > 6) break;
+        if (fast === 3) break;
         const moved = grid(p.x) !== grid(p.x - Math.cos(HEADING) * BOOST * DT) || grid(p.z) !== grid(p.z - Math.sin(HEADING) * BOOST * DT);
         if (!moved) {
           s.update(p.x, p.z);
@@ -348,7 +426,7 @@ describe("rebuilds as jobs: when", () => {
         check(p.x, p.z, `boost frame ${p.frame}`);
         fast++;
       }
-      expect(fast).toBeGreaterThanOrEqual(3);
+      expect(fast).toBe(3);
       s.dispose();
     }, timeLimit(240_000));
 
@@ -481,6 +559,31 @@ describe("rebuilds as jobs: what is computed", () => {
     expect(bands).toEqual(collectClutter(SEED, cx + 3, 100.5));
   }, timeLimit(120_000));
 
+  it("looks up ahead the strip the next collect adds, which then samples nothing and lists what a walk of every cell lists", () => {
+    // Walking along +x: the next collects are those of the first frame past
+    // the next grass-cell line (102 m) and the next metre line (36 m).
+    const clutter = createClutterCollector(SEED);
+    clutter.collect(100.5, 100.5);
+    const cold = clutter.size;
+    finishSlices(clutter.prefetchSlices(100.5, 100.5, 0.0875, 0, 1));
+    const ahead = clutter.size;
+    const bands = clutter.collect(102.05, 100.5);
+    expect([ahead - cold, clutter.size - ahead]).toEqual([598, 0]);
+    expect(bands).toEqual(collectClutter(SEED, 102.05, 100.5));
+
+    const blades = createBladeCollector(SEED);
+    blades.collect(35.5, 21335.5);
+    const found: unknown[] = [];
+    finishSlices(blades.prefetchSlices(35.5, 21335.5, 0.0875, 0, (c) => {
+      found.push(c);
+      return 1;
+    }));
+    const size = blades.size;
+    const tiers = blades.collect(36.05, 21335.5);
+    expect([found.length, blades.size - size]).toEqual([77, 0]);
+    expect(tiers).toEqual(collectBladeCells(SEED, 36.05, 21335.5));
+  }, timeLimit(60_000));
+
   it("prepares the terrain's next moves with the budget jobs leave, and a crossing commits them without sampling", () => {
     const engine = new NullEngine();
     const jobs = createSyncJobs(tickClock(TICK));
@@ -500,10 +603,10 @@ describe("rebuilds as jobs: what is computed", () => {
       }
       lastView = clipmap.view.x;
     }
-    // 105 m at a walk, 64 crossings and 120 ring moves prepared ahead; the
-    // crossings themselves lifted what two or three moves not prepared lift
-    // (766 a step), where a move lifts that many every time.
-    expect([builds, prepared, lifted]).toEqual([64, 120, 1782]);
+    // 105 m at a walk, 64 crossings and 121 ring moves prepared ahead; the
+    // crossings themselves lifted what two moves not prepared lift (766 a
+    // step), where every move lifted that many before.
+    expect([builds, prepared, lifted]).toEqual([64, 121, 1532]);
     clipmap.dispose();
     engine.dispose();
   }, timeLimit(120_000));
