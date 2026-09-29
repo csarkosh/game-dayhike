@@ -69,6 +69,7 @@ import {
   WEBGPU_FETCH_MS,
   WEBGPU_REQUIRED_LIMITS,
   WEBGPU_START_MS,
+  WebGpuStartTimeout,
   type PipelineMode,
   type ShaderLookupMode,
 } from "./engineChoice.js";
@@ -82,7 +83,7 @@ export { asyncPipelinesOf, revealWhenWhole } from "./asyncPipelines.js";
 
 /** The least of its start's budget an engine keeps when it waits for its
  * shader lookup's sources: the wait is given up this long before the
- * deadline, since running out of that budget is remembered (`init`). */
+ * deadline, since running out of that budget is remembered (`timeout`). */
 const SOURCES_MARGIN_MS = 500;
 
 /** The lookup's sources on every engine made here: the translations shipped
@@ -270,8 +271,9 @@ async function startTranslators(signal: AbortSignal): Promise<Translators> {
  * (`installPipelines`, `?pipelines=`): by default asynchronously, a draw left
  * out until its pipeline lands, inside the scope its renderer opens
  * (`asyncPipelines.ts`).
- * Rejects on any failure, or when `ms` pass first,
- * having disposed what it made; the canvas may then hold a WebGPU context, so
+ * Rejects on any failure, or when `ms` pass first (with `WebGpuStartTimeout`,
+ * which the rule remembers as a `timeout` rather than a failure), having
+ * disposed what it made; the canvas may then hold a WebGPU context, so
  * the caller draws WebGL2 on a fresh one.
  */
 export async function createWebGpuEngine(
@@ -299,7 +301,7 @@ export async function createWebGpuEngine(
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       late = true;
-      reject(new Error(`the WebGPU engine was not ready in ${ms} ms`));
+      reject(new WebGpuStartTimeout(ms));
     }, ms);
   });
   // Every vertex buffer this engine draws keyed by its offset in the
