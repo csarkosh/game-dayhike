@@ -119,6 +119,87 @@ describe("the scheduler", () => {
     expect(late).toEqual([0, 0, 0, 0, 26]);
   });
 
+  it("starts a slice said to be long only where it fits, or first in a frame, and lets the jobs behind it go on", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const heavy = { at: null as number | null }, light = { at: null as number | null };
+    // Two small slices, then one it says takes 3 ms.
+    jobs.begin({}, (function* () {
+      t.advance(1);
+      yield;
+      t.advance(1);
+      yield 3;
+      t.advance(3);
+      heavy.at = jobs.frame;
+    })());
+    jobs.begin({}, job(t, 3, 0.5, light, () => jobs.frame));
+    const spent: number[] = [];
+    for (let f = 0; f < 3; f++) {
+      const before = t.clock();
+      jobs.run();
+      spent.push(t.clock() - before);
+    }
+    // Frame 0: the two small slices (2 ms); the long one would end at 5 ms,
+    // so it waits, and the other job's three slices run instead. Frame 1:
+    // the long one, first.
+    expect(spent).toEqual([3.5, 3, 0]);
+    expect([light.at, heavy.at]).toEqual([0, 1]);
+  });
+
+  it("gives idle work only the budget left while no job is pending, and ends work it drops with return", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    let idleSlices = 0;
+    let ended = 0;
+    const idleWork = (): Slices => (function* () {
+      try {
+        for (;;) {
+          t.advance(1);
+          idleSlices++;
+          yield;
+        }
+      } finally {
+        ended++;
+      }
+    })();
+    const owner = {};
+    jobs.idle(owner, idleWork());
+    const done = { at: null as number | null };
+    jobs.begin({}, job(t, 6, 1, done, () => jobs.frame));
+    jobs.run();
+    // A job pending: its four slices, no idle work.
+    expect([jobs.last.slices, jobs.last.idle, idleSlices]).toEqual([4, 0, 0]);
+    jobs.run();
+    // The job's last two slices, then idle work with the 2 ms left.
+    expect([done.at, jobs.last.slices, jobs.last.idle]).toEqual([1, 2, 2]);
+    jobs.run();
+    expect(jobs.last.idle).toBe(4);
+    // Replaced, and the new work cleared once it has run: each ended where
+    // it stood.
+    jobs.idle(owner, idleWork());
+    expect(ended).toBe(1);
+    jobs.run();
+    jobs.idle(owner, null);
+    jobs.run();
+    expect([jobs.last.idle, ended]).toEqual([0, 2]);
+    // A job dropped by its owner is ended the same way.
+    let jobEnded = false;
+    jobs.begin(owner, (function* () {
+      try {
+        for (;;) {
+          t.advance(3);
+          yield;
+        }
+      } finally {
+        jobEnded = true;
+      }
+    })());
+    jobs.run();
+    expect(jobEnded).toBe(false);
+    jobs.cancel(owner);
+    expect(jobEnded).toBe(true);
+  });
+
   it("takes a job whose slice throws out of the queue, and throws", () => {
     const jobs = createSyncJobs(() => 0);
     const owner = {};

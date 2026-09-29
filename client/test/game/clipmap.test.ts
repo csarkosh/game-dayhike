@@ -19,9 +19,14 @@ import {
   ringGeometry,
   ringSpacing,
   snapOrigin,
+  commitRingMove,
+  prepareRingMove,
+  ringSampleSlices,
   updateRingSamples,
   WEIGHTS2_STRIDE,
+  type RingArrays,
 } from "../../src/game/clipmap.js";
+import { finish as finishSlices } from "../../src/game/syncJobs.js";
 import { classifySurface, GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { groundCover } from "../../src/sim/clutter.js";
 import { forestDensity, treesInRect } from "../../src/sim/vegetation.js";
@@ -99,8 +104,60 @@ describe("updateRingSamples", () => {
         expect(scrolled.weights).toEqual(fresh.weights);
         expect(scrolled.weights2).toEqual(fresh.weights2);
         expect(scrolled.cover).toEqual(fresh.cover);
+        // What the ring keeps for its re-emits: the normals, and the lift,
+        // copied for the vertices inside both rings and computed for the rest.
+        expect(scrolled.normals).toEqual(fresh.normals);
+        expect(scrolled.lift).toEqual(fresh.lift);
       }
     }
+  }, timeLimit(30_000));
+
+  it("prepares a move ahead that, committed, makes the ring what the move would, and drops one the ring outran", () => {
+    const ring = createRingSamples(SEED, 1, 100, -50);
+    const twin = createRingSamples(SEED, 1, 100, -50);
+    const spare: RingArrays[] = [];
+    // Ring 1 steps 4 m: prepared ahead for the step to +x.
+    const ox = ring.originX + 4;
+    const move = finishSlices(prepareRingMove(ring, SEED, ox, ring.originZ, spare));
+    expect(move).not.toBeNull();
+    expect(ring.originX).toBe(ox - 4);
+    commitRingMove(ring, move!, spare);
+    updateRingSamples(twin, SEED, 104, -50);
+    expect([ring.originX, ring.moves]).toEqual([twin.originX, 1]);
+    for (const key of ["h", "hh", "dx", "dz", "colors", "weights", "weights2", "cover", "normals", "lift"] as const) {
+      expect(ring[key], key).toEqual(twin[key]);
+    }
+    // A move prepared while the ring moves under it is dropped, its arrays
+    // handed back: the spare set then holds those and the ring's old ones.
+    const outrun = prepareRingMove(ring, SEED, ring.originX, ring.originZ + 4, spare);
+    outrun.next();
+    expect(spare).toHaveLength(0);
+    updateRingSamples(ring, SEED, 108, -50, spare);
+    let step = outrun.next();
+    while (step.done !== true) step = outrun.next();
+    expect(step.value).toBeNull();
+    expect(spare).toHaveLength(2);
+  }, timeLimit(30_000));
+
+  it("moves in slices that leave the ring as it was until the last, sharing one spare set of arrays", () => {
+    const ring = createRingSamples(SEED, 0, 100, -50);
+    const before = { originX: ring.originX, h: ring.h, lift: ring.lift };
+    const spare: RingArrays[] = [];
+    const slices = ringSampleSlices(ring, SEED, 102, -50, spare);
+    let n = 0;
+    for (let step = slices.next(); step.done !== true; step = slices.next()) {
+      n++;
+      expect([ring.originX, ring.h, ring.lift]).toEqual([before.originX, before.h, before.lift]);
+    }
+    // A step of one snap (two cells) samples two new columns in about twenty
+    // slices, and hands the old arrays back as the spare set.
+    expect(n).toBeGreaterThan(10);
+    expect(ring.originX).toBe(before.originX + 2);
+    expect(spare).toHaveLength(1);
+    expect(spare[0]!.h).toBe(before.h);
+    const fresh = createRingSamples(SEED, 0, 102, -50);
+    expect(ring.h).toEqual(fresh.h);
+    expect(ring.lift).toEqual(fresh.lift);
   }, timeLimit(30_000));
 });
 
@@ -121,6 +178,10 @@ describe("ring nesting", () => {
       weights: new Float32Array(0),
       weights2: new Float32Array(0),
       cover: new Float32Array(0),
+      normals: new Float32Array(0),
+      lift: new Float64Array(0),
+      lifted: 0,
+      moves: 0,
     });
     for (let level = 1; level < RING_COUNT; level++) {
       for (const [cx, cz] of [[0, 0], [777.3, -412.9], [-6001.2, 3987.4]] as const) {

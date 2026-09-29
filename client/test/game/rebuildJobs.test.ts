@@ -47,14 +47,15 @@ const HEADING = 0.3;
 /**
  * The test clock: every reading advances it by `tick` ms, and the scheduler
  * reads it once as a frame's share starts and once before each slice, so
- * every slice is charged `tick`. A quarter of a millisecond lets a frame's
- * budget hold sixteen slices.
+ * every slice is charged `tick`. A tenth of a millisecond is about what a
+ * slice of the terrain's or the ground cover's rebuild takes, and lets a
+ * frame's budget hold forty.
  */
 function tickClock(tick: number): () => number {
   let now = 0;
   return () => (now += tick);
 }
-const TICK = 0.25;
+const TICK = 0.1;
 
 /** The positions of a walk from `start` along `HEADING` at `speed`, one a frame. */
 function* walk(start: { x: number; z: number }, speed: number): Generator<{ x: number; z: number; frame: number }> {
@@ -268,7 +269,6 @@ describe("rebuilds as jobs: when", () => {
     let crossings = 0;
     let crowded = 0;
     let slowest = 0;
-    let overtaken = 0;
     for (const p of walk(start, WALKING)) {
       if (p.frame === 600) break;
       let begun = 0;
@@ -296,7 +296,6 @@ describe("rebuilds as jobs: when", () => {
         const shown = queue.findIndex((c) => s.view.x === c.x && s.view.z === c.z);
         if (shown >= 0) {
           slowest = Math.max(slowest, p.frame - queue[0]!.frame);
-          if (shown > 0) overtaken += shown;
           queue.splice(0, shown + 1);
         }
         // What is not yet on screen crossed fewer than six frames ago.
@@ -305,10 +304,9 @@ describe("rebuilds as jobs: when", () => {
     }
     // 600 frames at a walk: 52.5 m. Crossings of all four grids, several of
     // them in the same frame as another; none waited more than six frames,
-    // and a few were overtaken by the next line along the diagonal.
+    // including any a further line along the diagonal overtook.
     expect(crossings).toBeGreaterThan(100);
     expect(crowded).toBeGreaterThan(5);
-    expect(overtaken).toBeGreaterThan(0);
     expect(slowest).toBeLessThanOrEqual(SYNC_LATE_FRAMES_MAX);
     for (const s of made) s.dispose();
   }, timeLimit(240_000));
@@ -394,4 +392,51 @@ describe("rebuilds as jobs: when", () => {
       s.dispose();
     }, timeLimit(240_000));
   }
+});
+
+describe("rebuilds as jobs: what is computed", () => {
+  it("lifts 766 vertices at a ring-0 step, where re-emitting rings 0 and 1 whole lifted 84,034", () => {
+    // The step moves ring 0 by one snap (two cells) along x and nothing else.
+    // Its new columns, the old border column, the new border column and the
+    // two border rows are lifted (4 × 127 + 2 × 129); every other vertex is
+    // interior to both rings and keeps its lift. The rebuild before lifted
+    // every vertex of both rings it re-emitted, and again once or twice for
+    // each blended vertex's coarser height: 45,697 for ring 0 and 38,337 for
+    // ring 1.
+    const engine = new NullEngine();
+    const clipmap = createClipmap(new Scene(engine), SEED);
+    clipmap.update(0.5, 0.5);
+    clipmap.update(2.5, 0.5);
+    expect(clipmap.lifted).toBe(766);
+    expect(differences(ringUploads(clipmap), expectedRings(referenceRings(), 2.5, 0.5))).toEqual([]);
+    clipmap.dispose();
+    engine.dispose();
+  }, timeLimit(60_000));
+
+  it("prepares the terrain's next moves with the budget jobs leave, and a crossing commits them without sampling", () => {
+    const engine = new NullEngine();
+    const jobs = createSyncJobs(tickClock(TICK));
+    const clipmap = createClipmap(new Scene(engine), SEED, jobs);
+    let builds = 0;
+    let prepared = 0;
+    let lifted = 0;
+    let lastView = NaN;
+    for (const p of walk({ x: 0.5, z: 0.5 }, WALKING)) {
+      if (p.frame === 1200) break;
+      clipmap.update(p.x, p.z);
+      jobs.run();
+      if (clipmap.view.x !== lastView && p.frame > 0) {
+        builds++;
+        prepared += clipmap.prepared;
+        lifted += clipmap.lifted;
+      }
+      lastView = clipmap.view.x;
+    }
+    // 105 m at a walk, 64 crossings and 120 ring moves prepared ahead; the
+    // crossings themselves lifted what two or three moves not prepared lift
+    // (766 a step), where a move lifts that many every time.
+    expect([builds, prepared, lifted]).toEqual([64, 120, 1782]);
+    clipmap.dispose();
+    engine.dispose();
+  }, timeLimit(120_000));
 });
