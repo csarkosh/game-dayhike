@@ -4,12 +4,14 @@ export type CorpusStage = { stage: "vertex" | "fragment"; flag: boolean; glsl: s
 
 /** What the tools use of `client/src/game/wgslFormat.ts`. */
 export type Shared = {
+  MAP_FORMAT: string;
   lookupSalt(parts: { babylon: string; translators: string; staticUniformityOff: boolean }): string;
   stageKey(salt: string, stage: "vertex" | "fragment", flag: boolean, glsl: string): string;
   corpusId(entry: CorpusStage): string;
   corpusText(stages: Iterable<CorpusStage>): string;
   readCorpus(text: string): CorpusStage[];
   mapText(salt: string, entries: ReadonlyMap<string, string>): string;
+  readMap(text: string, salt: string): { readonly size: number; keys(): IterableIterator<string>; get(key: string): string | null };
 };
 
 export declare function nodeSalt(shared: Shared, clientDir?: string): string;
@@ -34,5 +36,12 @@ export declare function lineFigures(texts: Iterable<string>): {
   distinctBytes: number;
   masked: { lines: number; distinct: number; distinctBytes: number };
 };
-export declare function formatTimes(text: string, runs?: number): { jsonMs: number; indexMs: number };
+export declare function readBackProblems(text: string, salt: string, entries: ReadonlyMap<string, string>, shared: Shared): string[];
+export declare function tableFigures(text: string): { lines: number; runs: number };
+export declare function readTimes(
+  text: string,
+  salt: string,
+  shared: Shared,
+  runs?: number,
+): { readMs: number; expandAllMs: number; expandLargestMs: number };
 export declare function inputsDigest(salt: string, stages: readonly CorpusStage[], shared: Shared): string;

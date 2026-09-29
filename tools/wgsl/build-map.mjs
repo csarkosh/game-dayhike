@@ -8,20 +8,36 @@
 //
 // Every stage is keyed with the page's own code under this build's salt and
 // translated with the very translator files the page ships, as the page
-// translates it. The same corpus and translators give the same bytes. A stage
-// that does not translate is left out of the map and reported: the build goes
-// on, and the page translates that stage itself, as it always has. A map over
-// 32 MiB (`MAP_MAX_BYTES`) fails the build, and so does a corpus file whose
-// bytes are not the stage its name says (edited, reformatted or renamed).
+// translates it. The map stores each distinct line of WGSL once and each
+// stage as runs of those lines (`mapText`). The same corpus and translators
+// give the same bytes. A stage that does not translate is left out of the map
+// and reported: the build goes on, and the page translates that stage itself,
+// as it always has. A map over 8 MiB (`MAP_MAX_BYTES`) fails the build, and
+// so does a corpus file whose bytes are not the stage its name says (edited,
+// reformatted or renamed). Once written, the map is read back from its file
+// with the page's own reader and every entry expanded and compared with its
+// translation, byte for byte: any difference fails the build, naming the
+// entry, and the map is removed.
 //
 // Usage: node tools/wgsl/build-map.mjs [--corpus <dir>] [--out <file>] [--reuse]
 //   --reuse  leaves a map made from the same corpus under the same salt as it
 //            is (the dev server's start).
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { asciiProblem, buildMap, formatTimes, inputsDigest, lineFigures, mapSizeProblem, nodeSalt, sizes } from './lib/buildMap.mjs';
+import {
+  asciiProblem,
+  buildMap,
+  inputsDigest,
+  lineFigures,
+  mapSizeProblem,
+  nodeSalt,
+  readBackProblems,
+  readTimes,
+  sizes,
+  tableFigures,
+} from './lib/buildMap.mjs';
 import { readCorpusDir, refusalText } from './lib/corpus.mjs';
 import { CORPUS_DIR, MAP_FILE, writeWhole } from './lib/files.mjs';
 import { loadShared } from './lib/shared.mjs';
@@ -68,8 +84,16 @@ for (const stage of made.failed) {
 const size = sizes(made.text);
 const ms = made.translated.map((stage) => stage.ms);
 const total = ms.reduce((a, b) => a + b, 0);
-const times = formatTimes(made.text);
+// A map the page's reader refuses is timed as nothing here, and fails the
+// build when it is read back (below).
+let times;
+try {
+  times = readTimes(made.text, salt, shared);
+} catch (error) {
+  times = { refused: error instanceof Error ? error.message : String(error) };
+}
 const lines = lineFigures(made.entries.values());
+const table = tableFigures(made.text);
 const notAscii = asciiProblem(made.text);
 const largest = made.translated.reduce((a, b) => (b.wgslBytes > (a?.wgslBytes ?? -1) ? b : a), null);
 // The figures first, so a map over its ceiling still says what it is.
@@ -83,12 +107,18 @@ console.log(
   `  lines:        ${lines.lines} in all, ${lines.distinct} distinct in ${lines.distinctBytes} B; ` +
     `digits as #: ${lines.masked.lines} in all, ${lines.masked.distinct} distinct in ${lines.masked.distinctBytes} B`,
 );
+console.log(`  runs:         ${table.runs}, over a table of ${table.lines} lines`);
 console.log(`  largest:      ${largest === null ? 'none' : `${largest.wgslBytes} B of WGSL, the ${largest.stage} stage ${largest.id.slice(0, 16)}`}`);
 console.log(
   `  translation:  translators started in ${startMs.toFixed(0)} ms; ${total.toFixed(0)} ms in all, ` +
     `${(made.translated.length ? total / made.translated.length : 0).toFixed(0)} ms a stage on average, ${Math.max(0, ...ms).toFixed(0)} ms the longest`,
 );
-console.log(`  reading it:   ${times.jsonMs.toFixed(2)} ms as one JSON (shipped), ${times.indexMs.toFixed(2)} ms as an index and a text`);
+console.log(
+  times.refused === undefined
+    ? `  reading it:   ${times.readMs.toFixed(2)} ms to read with the page's reader, ` +
+        `${times.expandAllMs.toFixed(2)} ms to expand every entry, ${times.expandLargestMs.toFixed(2)} ms the largest`
+    : `  reading it:   the page's reader refuses it (${times.refused})`,
+);
 if (notAscii !== null) {
   console.error(`\n!! ${notAscii}. Nothing was written.\n`);
   process.exit(1);
@@ -99,6 +129,19 @@ if (tooLarge !== null) {
   process.exit(1);
 }
 writeWhole(out, made.text);
+// The file as the page will read it: every entry expanded and compared with
+// the translation it was made of. A map that does not serve exactly them is
+// removed, with the record of what it was made from, so that nothing ships it
+// and `--reuse` never keeps it.
+const readBack = readBackProblems(readFileSync(out, 'utf8'), salt, made.entries, shared);
+if (readBack.length > 0) {
+  rmSync(out, { force: true });
+  rmSync(inputsFile, { force: true });
+  for (const problem of readBack) console.error(`✗ ${problem}`);
+  console.error(`\n!! the WGSL map read back from ${shown(out)} does not serve its translations. It was removed.\n`);
+  process.exit(1);
+}
+console.log(`  read back:    ${made.entries.size} entries, each byte for byte its translation`);
 writeFileSync(inputsFile, inputs);
 if (made.failed.length > 0) {
   console.error(

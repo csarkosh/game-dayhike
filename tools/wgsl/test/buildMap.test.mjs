@@ -164,7 +164,7 @@ describe('the map the build ships', () => {
     expect(done.stderr).toBe('');
   }, timeLimit(60_000));
 
-  it('with --reuse leaves a map made from the same corpus under the same salt as it is, and remakes one whose corpus changed', async () => {
+  it('with --reuse leaves a map made from the same corpus under the same salt as it is, and remakes one whose corpus or format changed', async () => {
     const corpus = corpusOf(readCorpusDir(FIXTURE, shared).stages);
     const out = join(directory(), 'map.json');
     await tool(corpus, out);
@@ -177,6 +177,15 @@ describe('the map the build ships', () => {
     const remade = await tool(corpus, out, '--reuse');
     expect(remade.stdout).not.toContain('is up to date with');
     expect(Object.keys(JSON.parse(remade.map).entries)).toHaveLength(3);
+    // A map made in the format before this one, from the same corpus under
+    // the same salt, recorded as that format's tool recorded it: made again.
+    const salt = nodeSalt(shared);
+    const stages = readCorpusDir(corpus, shared).stages;
+    writeFileSync(out, JSON.stringify({ format: 'dayhike-wgsl-map/1', salt, entries: {} }));
+    writeFileSync(`${out}.inputs`, createHash('sha256').update(salt).update('\0').update(shared.corpusText(stages)).digest('hex'));
+    const renewed = await tool(corpus, out, '--reuse');
+    expect(renewed.stdout).not.toContain('is up to date with');
+    expect(JSON.parse(renewed.map).format).toBe('dayhike-wgsl-map/2');
   }, timeLimit(120_000));
 
   it('makes the map of the corpus made under Node, every stage translated, and says what it cost', async () => {
