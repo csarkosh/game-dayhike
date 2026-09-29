@@ -32,12 +32,15 @@ import {
   createRingSamples,
   holeCellsFor,
   ringGeometry,
+  snapOrigin,
   updateRingSamples,
+  BASE_SPACING,
   RING_COUNT,
   WEIGHTS2_STRIDE,
   type RingGeometry,
   type RingSamples,
 } from "./clipmap.js";
+import { createCrossing, createSyncJobs, crossingAt, finish, type Slices, type SyncJobs } from "./syncJobs.js";
 import { createLighting } from "./lighting.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
@@ -234,8 +237,14 @@ export type Clipmap = {
   /** One mesh per ring, coarsening outward. Also the whole shadow-caster set. */
   readonly meshes: readonly Mesh[];
   update(camX: number, camZ: number): void;
+  /** The camera position the rings' buffers were last built for. */
+  readonly view: { readonly x: number; readonly z: number };
   dispose(): void;
 };
+
+/** Ring 0's snap step (m): `snapOrigin` puts it on a lattice of twice its
+ * 1 m spacing, and every coarser ring moves only when ring 0 does. */
+const CLIPMAP_STEP = 2;
 
 /**
  * The seven-ring clipmap that draws generated terrain, as a unit that owns its
@@ -246,31 +255,98 @@ export type Clipmap = {
  * this takes only a `Scene` and so runs on a `NullEngine`. The re-emit rule
  * below is the one genuinely subtle thing in the renderer, and leaving it
  * sealed inside a closure would have left it permanently untestable.
+ *
+ * Given `jobs`, a one-step crossing at a walk becomes a job (`syncJobs.ts`):
+ * the rings move and re-emit in slices over the frames that follow, and every
+ * ring that re-emits is uploaded in the job's last slice, together, so no
+ * frame draws one ring moved against a neighbour that has not. Without it, and
+ * at the crossings `crossingAt` builds at once, the whole rebuild runs in the
+ * frame of the crossing, as it always did.
  */
-export function createClipmap(scene: Scene, seed: number): Clipmap {
+export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clipmap {
   const rings: RingSamples[] = [];
   const meshes: Mesh[] = [];
+  /** The origins each ring's buffers were built from: its own, the finer
+   * ring's (its hole) and the coarser ring's (its border blend). */
+  const drawn: { x: number; z: number; fx: number; fz: number; cx: number; cz: number }[] = [];
+  const crossing = createCrossing();
+  const view = { x: 0, z: 0 };
 
-  function emitRing(level: number): void {
+  /**
+   * Whether ring `level`'s buffers are stale: it moved, the finer ring inside
+   * it moved (the hole in its index buffer follows the finer ring's
+   * footprint), or the coarser ring outside it moved (its border blends to the
+   * coarser ring's samples, `coarseHeight`).
+   *
+   * The last clause never adds an emit the first two do not already make:
+   * `snapOrigin` puts ring L on a lattice of 2^(L+1), and any camera crossing
+   * of a multiple of 2^(L+1) is also a crossing of 2^L, so a ring moving
+   * always implies the ring inside it moved. It is kept so the rule reads off
+   * what the buffers depend on rather than off that lattice fact: a job
+   * dropped half done leaves some rings moved and none re-emitted, and the
+   * next rebuild must still find every ring whose inputs changed since it
+   * was last drawn.
+   */
+  function stale(level: number): boolean {
+    const ring = rings[level] as RingSamples;
+    const finer = level > 0 ? (rings[level - 1] as RingSamples) : null;
+    const coarser = level < RING_COUNT - 1 ? (rings[level + 1] as RingSamples) : null;
+    const d = drawn[level];
+    return d === undefined || d.x !== ring.originX || d.z !== ring.originZ ||
+      (finer !== null && (d.fx !== finer.originX || d.fz !== finer.originZ)) ||
+      (coarser !== null && (d.cx !== coarser.originX || d.cz !== coarser.originZ));
+  }
+
+  function geometryOf(level: number): RingGeometry {
     const ring = rings[level] as RingSamples;
     const finer = level > 0 ? (rings[level - 1] as RingSamples) : null;
     // The border blends to the coarser ring's samples, so every ring must
-    // exist before any ring emits — hence the two loops
-    // below. The outermost ring meets nothing and passes null.
+    // have moved before any ring emits. The outermost ring meets nothing and
+    // passes null. Ring 0 draws solid; every coarser ring cuts a hole where
+    // the finer ring covers it.
     const coarser = level < RING_COUNT - 1 ? (rings[level + 1] as RingSamples) : null;
-    applyRingGeometry(
-      meshes[level] as Mesh,
-      // Ring 0 draws solid; every coarser ring cuts a hole where the finer ring
-      // covers it.
-      ringGeometry(ring, finer === null ? null : holeCellsFor(ring, finer), coarser),
-    );
+    return ringGeometry(ring, finer === null ? null : holeCellsFor(ring, finer), coarser);
+  }
+
+  function markDrawn(level: number): void {
+    const ring = rings[level] as RingSamples;
+    const finer = level > 0 ? (rings[level - 1] as RingSamples) : null;
+    const coarser = level < RING_COUNT - 1 ? (rings[level + 1] as RingSamples) : null;
+    drawn[level] = {
+      x: ring.originX, z: ring.originZ,
+      fx: finer?.originX ?? NaN, fz: finer?.originZ ?? NaN,
+      cx: coarser?.originX ?? NaN, cz: coarser?.originZ ?? NaN,
+    };
+  }
+
+  /** The rebuild for a camera at (camX, camZ): every ring's samples moved, a
+   * slice a ring, then each stale ring's buffers made, a slice a ring, then
+   * all of them uploaded at once. */
+  function* build(camX: number, camZ: number): Slices {
+    for (let level = 0; level < RING_COUNT; level++) {
+      updateRingSamples(rings[level] as RingSamples, seed, camX, camZ);
+      yield;
+    }
+    const made: (RingGeometry | null)[] = [];
+    for (let level = 0; level < RING_COUNT; level++) {
+      made.push(stale(level) ? geometryOf(level) : null);
+      if (made[level] !== null) yield;
+    }
+    for (let level = 0; level < RING_COUNT; level++) {
+      const geometry = made[level];
+      if (geometry === null || geometry === undefined) continue;
+      applyRingGeometry(meshes[level] as Mesh, geometry);
+    }
+    for (let level = 0; level < RING_COUNT; level++) if (made[level] !== null) markDrawn(level);
+    view.x = camX;
+    view.z = camZ;
   }
 
   for (let level = 0; level < RING_COUNT; level++) {
     rings.push(createRingSamples(seed, level, 0, 0));
     meshes.push(createClipmapMesh(scene, `clipmap_${level}`));
   }
-  for (let level = 0; level < RING_COUNT; level++) emitRing(level);
+  finish(build(0, 0));
 
   // The terrain material is shared and seedless; the road's centerline table
   // is per world, so the clipmap, which knows the seed, turns it on.
@@ -278,38 +354,25 @@ export function createClipmap(scene: Scene, seed: number): Clipmap {
   enableTrailPaint(scene, terrainMaterialFor(scene, "terrain"), seed);
   enableFeaturePaint(scene, terrainMaterialFor(scene, "terrain"), seed);
 
+  const owner = {};
   return {
     meshes,
     update(camX, camZ) {
-      const moved: boolean[] = [];
-      for (let level = 0; level < RING_COUNT; level++) {
-        moved.push(updateRingSamples(rings[level] as RingSamples, seed, camX, camZ));
+      const kind = crossingAt(
+        crossing, camX, camZ, snapOrigin(camX, BASE_SPACING), snapOrigin(camZ, BASE_SPACING), CLIPMAP_STEP,
+        jobs !== undefined,
+      );
+      if (kind === "none") return;
+      if (kind === "later") {
+        (jobs as SyncJobs).begin(owner, build(camX, camZ));
+        return;
       }
-      // A ring re-emits when it moved, or when the finer ring inside it moved —
-      // the hole in its index buffer follows the finer ring's footprint, so a
-      // ring that has not moved itself can still be holding a stale hole.
-      //
-      // Necessary and sufficient, and there is deliberately no outward clause:
-      // `snapOrigin` puts ring L on a lattice of 2^(L+1), and any camera
-      // crossing of a multiple of 2^(L+1) is also a crossing of 2^L, so a ring
-      // moving always implies the ring inside it moved. Nothing a coarser ring
-      // does can invalidate a finer one.
-      //
-      // A finer ring's border now also reads the coarser ring's samples
-      // (`coarseHeight`, for the chord that avoids seams at the lift). That
-      // dependency is discharged by the same lattice fact, not a new one:
-      // `moved[level+1]` (the coarser ring) implies `moved[level]` (the ring
-      // whose border reads it), and the loop above refreshes every ring's
-      // samples before any ring below emits, so a finer ring's emit always
-      // sees the coarser ring's post-move samples. A change to `snapOrigin`'s
-      // snap, or a ring placed on a lattice other than 2^(L+1), would break
-      // that implication, need an outward clause here, and open seams no
-      // unit test covers.
-      for (let level = 0; level < RING_COUNT; level++) {
-        if (moved[level] || (level > 0 && (moved[level - 1] as boolean))) emitRing(level);
-      }
+      jobs?.cancel(owner);
+      finish(build(camX, camZ));
     },
+    view,
     dispose() {
+      jobs?.cancel(owner);
       for (const mesh of meshes) mesh.dispose();
     },
   };
@@ -924,6 +987,12 @@ function buildRenderer(
     for (const m of brushMeshes) m.dispose();
   });
 
+  // The rebuilds a crossing starts — the terrain's rings, the ground cover's
+  // lists — run as jobs over the frames after it, under a per-frame budget
+  // (`syncJobs.ts`), rather than whole in the frame of the crossing. `sync`
+  // runs this frame's share once every shell has seen the view.
+  const jobs = createSyncJobs(() => performance.now());
+
   // ---- Generated terrain: geometry clipmap -------------------------------
   //
   // Rendering follows the CAMERA, kilometres out, with no chunk generation at
@@ -931,7 +1000,7 @@ function buildRenderer(
   // Collision chunks still follow the player through world.boxes, untouched.
   // Ring meshes are also the complete shadow-caster set: seven meshes,
   // bounded, which closes the old grows-without-bound caster list.
-  const clipmap = forest === null ? null : createClipmap(scene, forest.seed);
+  const clipmap = forest === null ? null : createClipmap(scene, forest.seed, jobs);
   partOf(clipmap);
   if (clipmap !== null) {
     for (const mesh of clipmap.meshes) lighting.addShadowMesh(mesh);
@@ -1006,13 +1075,14 @@ function buildRenderer(
         radiusScale: tier === "low" ? 0.6 : undefined,
         nearBlades: tier !== "low",
         cull: tier !== "low",
+        jobs,
       })
       : null;
   partOf(clutterMeshes);
   // The near field of blade grass, on the tiers that can afford it; it
   // rebuilds on its own 1 m crossing and draws over the meadow's near cards
   // as detail rather than taking their place.
-  const bladeMeshes = forest !== null && tier !== "low" ? createBladeMeshes(scene, forest.seed, { quality: tier }) : null;
+  const bladeMeshes = forest !== null && tier !== "low" ? createBladeMeshes(scene, forest.seed, { quality: tier, jobs }) : null;
   partOf(bladeMeshes);
   // The terrain's sward floor is the shaded ground between those blades, so it
   // runs exactly where they are drawn: off on the low tier. Without a forest
@@ -1021,7 +1091,7 @@ function buildRenderer(
   // The near field of dead leaves, twigs and small branches, on the same
   // tiers as the blades beside it: what the grass field thins out, this fills
   // in, so the ground reads full rather than bare. Low tier draws neither.
-  const duffMeshes = forest !== null && tier !== "low" ? createDuffMeshes(scene, forest.seed, { quality: tier }) : null;
+  const duffMeshes = forest !== null && tier !== "low" ? createDuffMeshes(scene, forest.seed, { quality: tier, jobs }) : null;
   partOf(duffMeshes);
   // Rock-wall modules on the faces too steep to stand on, on every tier —
   // the field carries a ring set per tier. Renderer-only: it reads the
@@ -1276,6 +1346,7 @@ function buildRenderer(
         bob.reset();
         rain.update(camera.position, weather, wind);
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
+        jobs.run();
         return;
       }
 
@@ -1338,6 +1409,9 @@ function buildRenderer(
         rain.update(camera.position, weather, wind);
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
       }
+      // This frame's share of the rebuilds the updates above began, once
+      // every shell has seen the view.
+      jobs.run();
     },
     hasWildlife: wildlife !== null,
     wildlifeEvents() {

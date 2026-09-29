@@ -4,6 +4,7 @@ import { forestDensity } from "../sim/vegetation.js";
 import { latticeHash } from "./groundHexParams.js";
 import { DUFF_CHARACTER_COUNT, DUFF_TWIG } from "./duffClump.js";
 import { GROW_NONE, type BladeEdges } from "./bladeField.js";
+import type { Slices } from "./syncJobs.js";
 
 /**
  * The duff field: the counterpart of `bladeField.ts` for the ground's dead
@@ -170,6 +171,8 @@ export function collectDuffCells(seed: number, camX: number, camZ: number, reach
 export type DuffCollector = {
   /** Identical output to `collectDuffCells(seed, camX, camZ, reach)`. */
   collect(camX: number, camZ: number, reach: number): DuffTiers;
+  /** `collect` as slices for a job (`syncJobs.ts`), returning the same lists. */
+  collectSlices(camX: number, camZ: number, reach: number): Slices<DuffTiers>;
   /** Cached cell count, for the tests. */
   readonly size: number;
 };
@@ -195,6 +198,11 @@ export const DUFF_SWEEP_SIZE = 8000;
 export function createDuffCollector(seed: number, release?: (cell: DuffCell) => void): DuffCollector {
   const cache = new Map<number, DuffCell | null>();
   return {
+    *collectSlices(camX: number, camZ: number, reach: number): Slices<DuffTiers> {
+      const tiers = this.collect(camX, camZ, reach);
+      yield;
+      return tiers;
+    },
     collect(camX: number, camZ: number, reach: number): DuffTiers {
       const tiers = collectDuffCore(camX, camZ, reach, (ci, cj) => {
         const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);

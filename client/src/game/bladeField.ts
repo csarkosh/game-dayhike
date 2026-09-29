@@ -3,6 +3,7 @@ import { activeTerrainVariant } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { latticeHash } from "./groundHexParams.js";
 import { CLUTTER_FAR_SPLIT, CLUTTER_RADII, clutterSeamEdges } from "./clutterField.js";
+import type { Slices } from "./syncJobs.js";
 
 /**
  * The blade field: the near-field lattice the blade clumps stand on, walked
@@ -241,6 +242,8 @@ export function collectBladeCells(seed: number, camX: number, camZ: number): Bla
 export type BladeCollector = {
   /** Identical output to `collectBladeCells(seed, camX, camZ)`. */
   collect(camX: number, camZ: number): BladeTiers;
+  /** `collect` as slices for a job (`syncJobs.ts`), returning the same lists. */
+  collectSlices(camX: number, camZ: number): Slices<BladeTiers>;
   /** Cached cell count, for the tests. */
   readonly size: number;
 };
@@ -262,6 +265,11 @@ export const BLADE_SWEEP_SIZE = 30000;
 export function createBladeCollector(seed: number, release?: (cell: BladeCell) => void): BladeCollector {
   const cache = new Map<number, BladeCell | null>();
   return {
+    *collectSlices(camX: number, camZ: number): Slices<BladeTiers> {
+      const tiers = this.collect(camX, camZ);
+      yield;
+      return tiers;
+    },
     collect(camX: number, camZ: number): BladeTiers {
       const tiers = collectBladeCore(camX, camZ, (ci, cj) => {
         const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);

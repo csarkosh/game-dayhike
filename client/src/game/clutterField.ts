@@ -23,6 +23,7 @@ import {
   CLUTTER_MEADOW,
   type ClutterInstance,
 } from "../sim/clutter.js";
+import type { Slices } from "./syncJobs.js";
 
 /**
  * Per-class scatter radius (m), indexed by class id (CLUTTER_GRASS = 0 ..
@@ -413,6 +414,8 @@ export function collectClutterWithBudgets(
 export type ClutterCollector = {
   /** Identical output to `collectClutter(seed, camX, camZ, radiusScale)`. */
   collect(camX: number, camZ: number, radiusScale?: number): ClutterBands;
+  /** `collect` as slices for a job (`syncJobs.ts`), returning the same bands. */
+  collectSlices(camX: number, camZ: number, radiusScale?: number): Slices<ClutterBands>;
   /** Cached cell count — exposed so tests can pin the eviction bound (the
    * `forestField.ts` `BandCollector.size` idiom). */
   readonly size: number;
@@ -482,6 +485,11 @@ export const COLLECTOR_SWEEP_SIZE = 110000;
 export function createClutterCollector(seed: number, release?: (inst: ClutterInstance) => void): ClutterCollector {
   const cache = new Map<number, ClutterInstance | null>();
   return {
+    *collectSlices(camX: number, camZ: number, radiusScale: number = 1): Slices<ClutterBands> {
+      const bands = this.collect(camX, camZ, radiusScale);
+      yield;
+      return bands;
+    },
     collect(camX: number, camZ: number, radiusScale: number = 1): ClutterBands {
       const bands = collectClutterCore(camX, camZ, radiusScale, CLUTTER_BUDGETS, (cls, cx, cz) => {
         const key = cls * CELL_KEY_CLASS_SPAN + (cx + CELL_KEY_HALF) * CELL_KEY_SPAN + (cz + CELL_KEY_HALF);

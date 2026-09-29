@@ -28,6 +28,7 @@ import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliage
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { CLUTTER_SINK, instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { createKeptValues } from "./keptValues.js";
+import { createCrossing, crossingAt, finish, type Slices, type SyncJobs } from "./syncJobs.js";
 
 export const DUFF_MESH_PREFIX = "duff_clumps";
 export function duffMeshName(character: number, tier: number): string {
@@ -37,10 +38,17 @@ export function duffMeshName(character: number, tier: number): string {
  * scatters light more diffusely than a living blade's waxy surface. */
 const DUFF_ROUGHNESS = 0.9;
 
-export type DuffMeshesOptions = { quality: "high" | "medium" };
+export type DuffMeshesOptions = {
+  quality: "high" | "medium";
+  /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
+   * over the frames that follow rather than in the frame of the crossing. */
+  jobs?: SyncJobs;
+};
 
 export type DuffMeshes = {
   update(camX: number, camZ: number): void;
+  /** The eye position the buffers were last built for. */
+  readonly view: { readonly x: number; readonly z: number };
   /** Every bucket mesh, in tier-then-character order. Complete the moment
    * `createDuffMeshes` returns — the blade shell's own contract, since the
    * clumps are built here from vertex arrays rather than loaded from a GLB
@@ -266,8 +274,7 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
     buckets.push(row);
   }
   let disposed = false;
-  let builtX = NaN;
-  let builtZ = NaN;
+  const jobs = options.jobs;
 
   /**
    * One tier's fill: two passes over its list, so every bucket knows its size
@@ -298,28 +305,43 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
     for (const bucket of row) applyBucket(bucket);
   }
 
-  function rebuild(x: number, z: number): void {
-    const tiers: DuffTiers = collector.collect(x, z, reach);
+  /**
+   * The rebuild for an eye at (x, z), as slices (`syncJobs.ts`): the tier
+   * lists collected, then both fills in the last slice. The fills write the
+   * very buffers the meshes hold, so they run in one step.
+   */
+  function* rebuild(x: number, z: number): Slices {
+    const tiers: DuffTiers = yield* collector.collectSlices(x, z, reach);
     fill(tiers.near, buckets[0]!);
     fill(tiers.far, buckets[1]!);
+    view.x = x;
+    view.z = z;
   }
+
+  const crossing = createCrossing();
+  const view = { x: NaN, z: NaN };
+  const owner = {};
 
   return {
     /**
      * Rebuild only when the eye's snapped origin moves, on the field's own
-     * DUFF_REBUILD_CELL — the blade shell's own inlined-snap reasoning:
-     * this runs every frame, and an object per call is exactly the per-frame
-     * allocation this file rules out.
+     * DUFF_REBUILD_CELL; a one-cell step at a walk is a job given
+     * `options.jobs` (`crossingAt` says which crossings build at once).
      */
     update(x, z) {
       if (disposed) return;
       const ox = Math.floor(x / DUFF_REBUILD_CELL) * DUFF_REBUILD_CELL;
       const oz = Math.floor(z / DUFF_REBUILD_CELL) * DUFF_REBUILD_CELL;
-      if (ox === builtX && oz === builtZ) return;
-      builtX = ox;
-      builtZ = oz;
-      rebuild(x, z);
+      const kind = crossingAt(crossing, x, z, ox, oz, DUFF_REBUILD_CELL, jobs !== undefined);
+      if (kind === "none") return;
+      if (kind === "later") {
+        (jobs as SyncJobs).begin(owner, rebuild(x, z));
+        return;
+      }
+      jobs?.cancel(owner);
+      finish(rebuild(x, z));
     },
+    view,
     meshes,
     get kept() {
       return kept.size;
@@ -327,6 +349,7 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
     dispose() {
       if (disposed) return;
       disposed = true;
+      jobs?.cancel(owner);
       // The meshes and the materials are both ours — generated here, adopted
       // from no container — so both have to be disposed by hand.
       for (const mesh of meshes) mesh.dispose();

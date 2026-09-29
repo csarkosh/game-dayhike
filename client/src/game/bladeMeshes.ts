@@ -53,6 +53,7 @@ import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
 import { createKeptValues } from "./keptValues.js";
+import { createCrossing, crossingAt, finish, type Slices, type SyncJobs } from "./syncJobs.js";
 
 export const BLADE_MESH_PREFIX = "blade_clumps";
 export function bladeMeshName(character: number, tier: number, size: number): string {
@@ -74,7 +75,12 @@ export function bladeHeightScale(strength: number, canopy: number): number {
 /** The material's roughness. */
 const BLADE_ROUGHNESS = 0.8;
 
-export type BladeMeshesOptions = { quality: BladeQuality };
+export type BladeMeshesOptions = {
+  quality: BladeQuality;
+  /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
+   * over the frames that follow rather than in the frame of the crossing. */
+  jobs?: SyncJobs;
+};
 
 export type BladeMeshes = {
   update(camX: number, camZ: number): void;
@@ -86,6 +92,8 @@ export type BladeMeshes = {
    * buckets draw the prefix of the last cut.
    */
   cull(pose: CullPose | null): void;
+  /** The eye position the collected buffers were last built for. */
+  readonly view: { readonly x: number; readonly z: number };
   /**
    * Every bucket mesh, in tier-then-character-then-size order. Unlike the
    * clutter shell's `casterMeshes` this array is complete the moment
@@ -376,8 +384,7 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
     buckets.push(row);
   }
   let disposed = false;
-  let builtX = NaN;
-  let builtZ = NaN;
+  const jobs = options.jobs;
   const restoreObserver = scene.getEngine().onContextRestoredObservable.add(() => {
     for (const row of buckets) for (const sizes of row) for (const bucket of sizes) rehandBucket(bucket);
     dirty = true;
@@ -430,32 +437,48 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
     }
   }
 
-  function rebuild(x: number, z: number): void {
-    const tiers: BladeTiers = collector.collect(x, z);
+  /**
+   * The rebuild for an eye at (x, z), as slices (`syncJobs.ts`): the tier
+   * lists collected, then all three fills in the last slice. The fills write
+   * the collected buffers `cull` reads, so they run in one step: a cut between
+   * two of them would upload a bucket half written.
+   */
+  function* rebuild(x: number, z: number): Slices {
+    const tiers: BladeTiers = yield* collector.collectSlices(x, z);
     fill(tiers.fine, buckets[0]!);
     fill(tiers.mid, buckets[1]!);
     fill(tiers.coarse, buckets[2]!);
     dirty = true;
+    view.x = x;
+    view.z = z;
   }
+
+  const crossing = createCrossing();
+  const view = { x: NaN, z: NaN };
+  const owner = {};
 
   return {
     /**
      * Rebuild only when the eye's snapped origin moves, on the field's own
      * BLADE_REBUILD_CELL — the cell BLADE_PAD is derived from, so every tier
      * list collected at the old origin still covers the eye anywhere inside
-     * the new cell and no clump pops. Snapped inline rather than through a
-     * `{x, z}` helper: this runs every frame, and an object per call is
-     * exactly the per-frame allocation this file rules out.
+     * the new cell and no clump pops. A one-cell step at a walk is a job
+     * given `options.jobs` (`crossingAt` says which crossings build at once).
      */
     update(x, z) {
       if (disposed) return;
       const ox = Math.floor(x / BLADE_REBUILD_CELL) * BLADE_REBUILD_CELL;
       const oz = Math.floor(z / BLADE_REBUILD_CELL) * BLADE_REBUILD_CELL;
-      if (ox === builtX && oz === builtZ) return;
-      builtX = ox;
-      builtZ = oz;
-      rebuild(x, z);
+      const kind = crossingAt(crossing, x, z, ox, oz, BLADE_REBUILD_CELL, jobs !== undefined);
+      if (kind === "none") return;
+      if (kind === "later") {
+        (jobs as SyncJobs).begin(owner, rebuild(x, z));
+        return;
+      }
+      jobs?.cancel(owner);
+      finish(rebuild(x, z));
     },
+    view,
     cull(pose) {
       if (disposed) return;
       if (!dirty && (pose === null ? cutMode === "all" : cutMode === "pose" && !needsCull(lastPose, pose))) return;
@@ -478,6 +501,7 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
     dispose() {
       if (disposed) return;
       disposed = true;
+      jobs?.cancel(owner);
       scene.getEngine().onContextRestoredObservable.remove(restoreObserver);
       // The meshes and the materials are both ours — generated here, adopted
       // from no container — so both have to be disposed by hand.
