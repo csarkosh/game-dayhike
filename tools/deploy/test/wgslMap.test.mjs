@@ -8,14 +8,15 @@ const TRANSLATORS = `glslang=${hex('a')}|twgsl=${hex('b')}|glslang.js=${hex('c')
 // translators' digests the build baked in, Babylon's uniformity switch, and
 // the map's URL, base-absolute.
 const CHUNK =
-  'var Ci=`dayhike-wgsl/1`,Mf=`dayhike-wgsl-map/1`;' +
+  'var Ci=`dayhike-wgsl/1`,Mf=`dayhike-wgsl-map/2`;' +
   `function Ei(){return\`\${Ci}|babylon=\${Ze.Version}|\${"${TRANSLATORS}"}|staticUA=\${Tn.DisableUniformityAnalysis}\`}` +
   'Tn.DisableUniformityAnalysis=!1;' +
   'var Wm=`/dayhike/assets/wgsl-map-Qx3_Zk9a.json`,dr=`/dayhike/assets/glslang-G7Yt_-32.wasm`;';
 // And of the entry chunk, which carries Babylon's version.
 const ENTRY = 'var Ze=class{static get Version(){return`9.18.0`}static get NpmPackage(){return`babylonjs@9.18.0`}};';
 const SALT = `dayhike-wgsl/1|babylon=9.18.0|${TRANSLATORS}|staticUA=false`;
-const map = (fields) => JSON.stringify({ format: 'dayhike-wgsl-map/1', salt: SALT, entries: { [hex('e')]: '@vertex fn main() {}' }, ...fields });
+const map = (fields) =>
+  JSON.stringify({ format: 'dayhike-wgsl-map/2', salt: SALT, lines: ['@vertex fn main() {}', ''], entries: { [hex('e')]: [0, 1] }, ...fields });
 
 describe('findMapUrl', () => {
   it('finds the map the WebGPU chunk names, and nothing where there is none', () => {
@@ -48,8 +49,13 @@ describe('mapProblems', () => {
   });
 
   it("fails a map of another format, or made for another build's translators or key", () => {
-    expect(mapProblems(map({ format: 'dayhike-wgsl-map/2' }), CHUNK, ENTRY)).toEqual([
-      'its format "dayhike-wgsl-map/2" is not the one the WebGPU chunk reads',
+    expect(mapProblems(map({ format: 'dayhike-wgsl-map/3' }), CHUNK, ENTRY)).toEqual([
+      'its format "dayhike-wgsl-map/3" is not the one the WebGPU chunk reads',
+    ]);
+    // The format before this one, each entry's WGSL whole, against a chunk that reads this one.
+    expect(mapProblems(map({ format: 'dayhike-wgsl-map/1', lines: undefined, entries: { [hex('e')]: '@vertex fn main() {}' } }), CHUNK, ENTRY)).toEqual([
+      'its format "dayhike-wgsl-map/1" is not the one the WebGPU chunk reads',
+      'it has no table of lines',
     ]);
     const otherTranslators = SALT.replace(hex('a'), hex('f'));
     expect(mapProblems(map({ salt: otherTranslators }), CHUNK, ENTRY)).toHaveLength(1);
@@ -60,9 +66,23 @@ describe('mapProblems', () => {
     ]);
   });
 
-  it('fails a map that holds no translations', () => {
+  it('fails a map that holds no translations: none, or none that expands to text', () => {
     expect(mapProblems(map({ entries: {} }), CHUNK, ENTRY)).toEqual(['it is empty']);
     expect(mapProblems(map({ entries: [] }), CHUNK, ENTRY)).toEqual(['it has no entries']);
-    expect(mapProblems(map({ entries: { [hex('e')]: 7 } }), CHUNK, ENTRY)).toEqual(['an entry is not WGSL text']);
+    // Every entry the empty line alone: nothing to serve.
+    expect(mapProblems(map({ entries: { [hex('e')]: [1, 1], [hex('f')]: [1, 1] } }), CHUNK, ENTRY)).toEqual(['no entry expands to WGSL text']);
+    // One that does is enough, beside one that does not.
+    expect(mapProblems(map({ entries: { [hex('e')]: [1, 1], [hex('f')]: [1, 1, 0, 1] } }), CHUNK, ENTRY)).toEqual([]);
+  });
+
+  it('fails a map whose lines or runs are damaged, as the page would refuse it', () => {
+    expect(mapProblems(map({ lines: undefined }), CHUNK, ENTRY)).toEqual(['it has no table of lines']);
+    expect(mapProblems(map({ lines: ['@vertex fn main() {}', 7] }), CHUNK, ENTRY)).toEqual(['a line of its table is not text without a newline']);
+    expect(mapProblems(map({ lines: ['@vertex\nfn main() {}'] }), CHUNK, ENTRY)).toEqual(['a line of its table is not text without a newline']);
+    for (const runs of [7, '0,1', [], [0], [0, 1, 1], [0, 0], [1, -1], [2, 1], [-1, 2], [0.5, 1], [0, '1']]) {
+      expect(mapProblems(map({ entries: { [hex('e')]: runs } }), CHUNK, ENTRY), JSON.stringify(runs)).toEqual([
+        'an entry is not runs of the lines in its table',
+      ]);
+    }
   });
 });

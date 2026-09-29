@@ -812,7 +812,9 @@ describe("the translations shipped with the build", () => {
       ["a refused fetch", (() => Promise.reject(new TypeError("Failed to fetch"))) as unknown as typeof fetch],
       ["an HTTP error", serving("not found", 404).answer],
       ["another build's map", serving(mapText(`${SALT}x`, kept.map)).answer],
-      ["another format", serving(text.replace('"dayhike-wgsl-map/1"', '"dayhike-wgsl-map/2"')).answer],
+      ["another format", serving(text.replace('"dayhike-wgsl-map/2"', '"dayhike-wgsl-map/3"')).answer],
+      // The format before this one, each entry's WGSL whole, as the build made it.
+      ["the format before this one", serving(JSON.stringify({ format: "dayhike-wgsl-map/1", salt: SALT, entries: Object.fromEntries(kept.map) })).answer],
       ["the site's page, not a map", serving("<!doctype html><title>Day Hike</title>").answer],
     ];
     for (const [what, answer] of cases) {
@@ -826,6 +828,33 @@ describe("the translations shipped with the build", () => {
       expect(warn, what).toHaveBeenCalledTimes(1);
       expect(String(warn.mock.calls[0]?.[0]), what).toMatch(/^WebGPU shader lookup: no translations shipped with the build \(/);
     }
+  });
+
+  it("is a source with nothing in it when the map is damaged: a run outside its lines, a run of no lines, an odd count, a line not text or holding a newline; one console line, nothing thrown", async () => {
+    const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
+    const map = (lines: unknown, entries: unknown): string => JSON.stringify({ format: "dayhike-wgsl-map/2", salt: SALT, lines, entries });
+    const LINES = ["// a", "// b"];
+    const cases: [string, string, string][] = [
+      ["a run past its lines", map(LINES, { aa: [0, 1], bb: [1, 2] }), "the entry bb has a run outside its lines: 1, 2"],
+      ["a run before its lines", map(LINES, { aa: [-1, 1] }), "the entry aa has a run outside its lines: -1, 1"],
+      ["a run of no lines", map(LINES, { aa: [0, 0] }), "the entry aa has a run outside its lines: 0, 0"],
+      ["a run of fewer than none", map(LINES, { aa: [1, -1] }), "the entry aa has a run outside its lines: 1, -1"],
+      ["an odd number of numbers", map(LINES, { aa: [0, 1, 1] }), "the entry aa is not runs of lines"],
+      ["a line that is not text", map(["// a", 7], { aa: [0, 1] }), "the line 1 is not text"],
+      ["a line holding a newline", map(["// a", "// b\n// c"], { aa: [0, 1] }), "the line 1 holds a newline"],
+    ];
+    for (const [what, text, message] of cases) {
+      warn.mockClear();
+      const source = loadWgslMap(MAP_URL, SALT, { fetch: serving(text).answer });
+      await expect(source.ready, what).resolves.toBe(undefined);
+      // Not even an entry the damage does not touch.
+      expect([source.get("aa"), source.get("bb")], what).toEqual([null, null]);
+      expect(warn.mock.calls.map((call) => String(call[0])), what).toEqual([`WebGPU shader lookup: no translations shipped with the build (${message})`]);
+    }
+    // Whole, the same map is read, and each entry expanded as it is asked for.
+    const whole = loadWgslMap(MAP_URL, SALT, { fetch: serving(map(LINES, { aa: [0, 2], bb: [1, 1, 0, 1] })).answer });
+    await whole.ready;
+    expect([whole.get("aa"), whole.get("bb"), whole.get("cc")]).toEqual(["// a\n// b", "// b\n// a", null]);
   });
 
   it("is waited for 1 s at most, by its own bound, when its fetch never answers; is found from when it lands; is aborted when the engine is let go", async () => {
@@ -869,12 +898,12 @@ describe("the translations shipped with the build", () => {
     expect(signals.slice(signalsBefore).map((signal) => signal.aborted)).toEqual([true]);
   });
 
-  it("refuses a map whose Content-Length is over the 32 MiB ceiling, before reading its body: a source with nothing in it", async () => {
+  it("refuses a map whose Content-Length is over the 8 MiB ceiling, before reading its body: a source with nothing in it", async () => {
     const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
     let read = 0;
     const big = (() =>
       Promise.resolve({
-        ...response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "33554433" }),
+        ...response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "8388609" }),
         text: () => {
           read += 1;
           return Promise.resolve(mapText(SALT, new Map([["aa", "// a"]])));
@@ -885,11 +914,11 @@ describe("the translations shipped with the build", () => {
     expect([map.get("aa"), read]).toEqual([null, 0]);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toBe(
-      `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: 33554433 bytes, over the map's ceiling of 33554432)`,
+      `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: 8388609 bytes, over the map's ceiling of 8388608)`,
     );
     // At the ceiling, read.
     const atCeiling = loadWgslMap(MAP_URL, SALT, {
-      fetch: (() => Promise.resolve(response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "33554432" }))) as unknown as typeof fetch,
+      fetch: (() => Promise.resolve(response(mapText(SALT, new Map([["aa", "// a"]])), 200, { "content-length": "8388608" }))) as unknown as typeof fetch,
     });
     await atCeiling.ready;
     expect(atCeiling.get("aa")).toBe("// a");
@@ -927,7 +956,7 @@ describe("the translations shipped with the build", () => {
     return text + " ".repeat(bytes - text.length);
   };
   const MIB = new Uint8Array(1_048_576).fill(0x20);
-  const CEILING_REFUSED = `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: past the map's ceiling of 33554432 bytes as it was read)`;
+  const CEILING_REFUSED = `WebGPU shader lookup: no translations shipped with the build (${MAP_URL}: past the map's ceiling of 8388608 bytes as it was read)`;
   /** `fetch` answering with `body` and `headers`, counting the reads of its text. */
   function answering(body: ReadableStream<Uint8Array> | null, headers: Record<string, string>, text: string) {
     const reads = { text: 0 };
@@ -943,31 +972,31 @@ describe("the translations shipped with the build", () => {
     return { answer, reads };
   }
 
-  it("refuses a body that reads past the 32 MiB ceiling though its Content-Length says less, and stops reading it: never parsed", async () => {
+  it("refuses a body that reads past the 8 MiB ceiling though its Content-Length says less, and stops reading it: never parsed", async () => {
     const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
     for (const headers of [{ "content-length": "1000" }, {}] as Record<string, string>[]) {
       warn.mockClear();
-      // One shared mebibyte, forty times: the reading stops at the 33rd.
-      const { body, seen } = streamOf(Array.from({ length: 40 }, () => MIB));
+      // One shared mebibyte, twelve times: the reading stops at the 9th.
+      const { body, seen } = streamOf(Array.from({ length: 12 }, () => MIB));
       const { answer, reads } = answering(body, headers, padded(1_000));
       const map = loadWgslMap(MAP_URL, SALT, { fetch: answer });
       await map.ready;
-      expect([map.get("aa"), reads.text, seen.pulled, seen.cancelled]).toEqual([null, 0, 33, true]);
+      expect([map.get("aa"), reads.text, seen.pulled, seen.cancelled]).toEqual([null, 0, 9, true]);
       expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([CEILING_REFUSED]);
     }
   });
 
   it("reads a body of exactly the ceiling through its stream, and finds its entries", async () => {
     // The map, then white space from the one shared mebibyte to exactly
-    // 33,554,432 bytes: 31 of it whole, and what is left of the last.
+    // 8,388,608 bytes: 7 of it whole, and what is left of the last.
     const head = new TextEncoder().encode(mapText(SALT, new Map([["aa", "// a"]])));
-    const parts = [head, ...Array.from({ length: 31 }, () => MIB), MIB.subarray(0, 1_048_576 - head.length)];
-    expect(parts.reduce((sum, part) => sum + part.length, 0)).toBe(33_554_432);
+    const parts = [head, ...Array.from({ length: 7 }, () => MIB), MIB.subarray(0, 1_048_576 - head.length)];
+    expect(parts.reduce((sum, part) => sum + part.length, 0)).toBe(8_388_608);
     const { body, seen } = streamOf(parts);
     const { answer, reads } = answering(body, {}, "");
     const map = loadWgslMap(MAP_URL, SALT, { fetch: answer });
     await map.ready;
-    expect([map.get("aa"), reads.text, seen.pulled]).toEqual(["// a", 0, 33]);
+    expect([map.get("aa"), reads.text, seen.pulled]).toEqual(["// a", 0, 9]);
   });
 
   it("decodes a character its body's parts split, whole: three bytes split two and one, four split two and two", async () => {
@@ -999,11 +1028,11 @@ describe("the translations shipped with the build", () => {
 
   it("with no stream to read, refuses a text past the ceiling by its length, before it is parsed", async () => {
     const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
-    const over = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(33_554_433)).answer });
+    const over = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(8_388_609)).answer });
     await over.ready;
     expect(over.get("aa")).toBe(null);
     expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([CEILING_REFUSED]);
-    const at = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(33_554_432)).answer });
+    const at = loadWgslMap(MAP_URL, SALT, { fetch: answering(null, {}, padded(8_388_608)).answer });
     await at.ready;
     expect(at.get("aa")).toBe("// a");
   });

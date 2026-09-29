@@ -13,7 +13,8 @@ const MAP_NAME = /^wgsl-map-[A-Za-z0-9_-]{8}\.json$/;
 
 /**
  * What is wrong with the built client in `dist`, or nothing: exactly one
- * `assets/wgsl-map-*.json`, parsing as a map of `mapFormat`; the entry chunk
+ * `assets/wgsl-map-*.json`, parsing as a map of `mapFormat` (its table of
+ * lines and its entries; the deploy check reads the runs); the entry chunk
  * and every chunk it imports statically naming none of `WEBGPU_ONLY`; the
  * WebGPU chunk naming the map; and the deploy check accepting the map
  * against the same chunks the deploy check reads (`bundleMapProblems`).
@@ -35,7 +36,7 @@ export async function checkBuild(dist, { mapFormat, note = () => undefined }) {
     } catch {
       problems.push(`assets/${mapName} does not parse as JSON`);
     }
-    if (map !== null && (map?.format !== mapFormat || typeof map.entries !== 'object' || map.entries === null)) {
+    if (map !== null && (map?.format !== mapFormat || !Array.isArray(map.lines) || typeof map.entries !== 'object' || map.entries === null)) {
       problems.push(`assets/${mapName} is not a map of ${mapFormat}`);
     }
   }

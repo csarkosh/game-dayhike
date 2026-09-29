@@ -47,7 +47,7 @@ async function buildPage(map) {
 
 describe('the map in the page\'s build', () => {
   it('is a content-hashed asset that only the WebGPU chunk names; the WebGL2 bundle neither holds nor names it', async () => {
-    const map = '{"format":"dayhike-wgsl-map/1","salt":"s","entries":{"aa":"@vertex fn main() {}"}}';
+    const map = '{"format":"dayhike-wgsl-map/2","salt":"s","lines":["@vertex fn main() {}"],"entries":{"aa":[0,1]}}';
     const page = await buildPage(map);
     const emitted = page.files.filter((name) => /^wgsl-map-[A-Za-z0-9_-]{8}\.json$/.test(name));
     expect(emitted).toHaveLength(1);
@@ -58,7 +58,7 @@ describe('the map in the page\'s build', () => {
   }, timeLimit(60_000));
 
   it('is never inlined, however small: an empty map is still a file of its own', async () => {
-    const map = '{"format":"dayhike-wgsl-map/1","salt":"s","entries":{}}';
+    const map = '{"format":"dayhike-wgsl-map/2","salt":"s","lines":[],"entries":{}}';
     const page = await buildPage(map);
     const emitted = page.files.filter((name) => /^wgsl-map-[A-Za-z0-9_-]{8}\.json$/.test(name));
     expect(emitted).toHaveLength(1);

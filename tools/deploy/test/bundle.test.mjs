@@ -4,10 +4,10 @@ import { MAX_STATIC_CHUNKS, bundleMapProblems, staticChunks } from '../lib/bundl
 const hex = (c) => c.repeat(64);
 const TRANSLATORS = `glslang=${hex('a')}|twgsl=${hex('b')}|glslang.js=${hex('c')}|twgsl.js=${hex('d')}`;
 const SALT = `dayhike-wgsl/1|babylon=9.18.0|${TRANSLATORS}|staticUA=false`;
-const MAP = JSON.stringify({ format: 'dayhike-wgsl-map/1', salt: SALT, entries: { [hex('e')]: '@vertex fn main() {}' } });
+const MAP = JSON.stringify({ format: 'dayhike-wgsl-map/2', salt: SALT, lines: ['@vertex fn main() {}'], entries: { [hex('e')]: [0, 1] } });
 // The WebGPU chunk, carrying the formats, the digests and the switch, not Babylon's version.
 const CHUNK =
-  'import{Ze}from"./index-AAAAAAAA.js";var Ci=`dayhike-wgsl/1`,Mf=`dayhike-wgsl-map/1`;' +
+  'import{Ze}from"./index-AAAAAAAA.js";var Ci=`dayhike-wgsl/1`,Mf=`dayhike-wgsl-map/2`;' +
   `function Ei(){return\`\${Ci}|babylon=\${Ze.Version}|\${"${TRANSLATORS}"}|staticUA=\${Tn.DisableUniformityAnalysis}\`}` +
   'Tn.DisableUniformityAnalysis=!1;var Wm=`/dayhike/assets/wgsl-map-Qx3_Zk9a.json`;';
 

@@ -10,12 +10,12 @@ import { checkBuild } from '../lib/checkBuild.mjs';
 
 const run = promisify(execFile);
 const TOOL = fileURLToPath(new URL('../check-build.mjs', import.meta.url));
-const FORMAT = 'dayhike-wgsl-map/1';
+const FORMAT = 'dayhike-wgsl-map/2';
 
 const hex = (c) => c.repeat(64);
 const TRANSLATORS = `glslang=${hex('a')}|twgsl=${hex('b')}|glslang.js=${hex('c')}|twgsl.js=${hex('d')}`;
 const SALT = `dayhike-wgsl/1|babylon=9.18.0|${TRANSLATORS}|staticUA=false`;
-const MAP = JSON.stringify({ format: FORMAT, salt: SALT, entries: { [hex('e')]: '@vertex fn main() {}' } });
+const MAP = JSON.stringify({ format: FORMAT, salt: SALT, lines: ['@vertex fn main() {}'], entries: { [hex('e')]: [0, 1] } });
 
 /**
  * A built client shaped as the real one: the page naming its entry chunk, the
@@ -33,7 +33,7 @@ function dist(change = {}) {
       'const l=()=>import(`./gpuEngine-CCCCCCCC.js`),__vite__mapDeps=["assets/gpuEngine-CCCCCCCC.js"];',
     'assets/vendor-BBBBBBBB.js': 'export const a=1;',
     'assets/gpuEngine-CCCCCCCC.js':
-      'import{Ze}from"./index-AAAAAAAA.js";var Ci=`dayhike-wgsl/1`,Mf=`dayhike-wgsl-map/1`;' +
+      'import{Ze}from"./index-AAAAAAAA.js";var Ci=`dayhike-wgsl/1`,Mf=`dayhike-wgsl-map/2`;' +
       `function Ei(){return\`\${Ci}|babylon=\${Ze.Version}|\${"${TRANSLATORS}"}|staticUA=\${Tn.DisableUniformityAnalysis}\`}` +
       'Tn.DisableUniformityAnalysis=!1;var Wm=`/dayhike/assets/wgsl-map-Qx3_Zk9a.json`;',
     'assets/wgsl-map-Qx3_Zk9a.json': MAP,
@@ -65,8 +65,18 @@ describe('the check of the built client', () => {
       'assets/wgsl-map-Qx3_Zk9a.json does not parse as JSON',
     );
     expect(
-      await checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': MAP.replace(FORMAT, 'dayhike-wgsl-map/2') }), { mapFormat: FORMAT }),
-    ).toContain('assets/wgsl-map-Qx3_Zk9a.json is not a map of dayhike-wgsl-map/1');
+      await checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': MAP.replace(FORMAT, 'dayhike-wgsl-map/3') }), { mapFormat: FORMAT }),
+    ).toContain('assets/wgsl-map-Qx3_Zk9a.json is not a map of dayhike-wgsl-map/2');
+    // The format before this one, each entry's WGSL whole.
+    const first = JSON.stringify({ format: 'dayhike-wgsl-map/1', salt: SALT, entries: { [hex('e')]: '@vertex fn main() {}' } });
+    expect(await checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': first }), { mapFormat: FORMAT })).toContain(
+      'assets/wgsl-map-Qx3_Zk9a.json is not a map of dayhike-wgsl-map/2',
+    );
+    // Its format's name on a map without its lines.
+    const noLines = JSON.stringify({ format: FORMAT, salt: SALT, entries: { [hex('e')]: [0, 1] } });
+    expect(await checkBuild(dist({ 'assets/wgsl-map-Qx3_Zk9a.json': noLines }), { mapFormat: FORMAT })).toContain(
+      'assets/wgsl-map-Qx3_Zk9a.json is not a map of dayhike-wgsl-map/2',
+    );
   });
 
   it('fails a build whose entry chunk, or a chunk it imports statically, names the map or the lookup', async () => {

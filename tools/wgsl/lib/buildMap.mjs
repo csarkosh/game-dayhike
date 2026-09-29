@@ -1,7 +1,9 @@
 // Translating the corpus into the map the page fetches (`build-map.mjs`):
 // every stage of the corpus, keyed under this build's salt with the page's own
 // code (`shared.mjs`), translated with the files the page ships
-// (`translators.mjs`), written as the page reads it (`mapText`).
+// (`translators.mjs`), written as the page reads it (`mapText`: each distinct
+// line once, each stage as runs of them), and read back with the page's own
+// reader (`readMap`) before it is shipped.
 
 import { createHash } from 'node:crypto';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
@@ -53,18 +55,50 @@ export function buildMap({ stages, salt, translate, shared, now = () => performa
   return { text: shared.mapText(salt, entries), entries, translated, failed };
 }
 
-/** The page's `MAP_MAX_BYTES` (`client/src/game/wgslFormat.ts`), 32 MiB of
+/** The page's `MAP_MAX_BYTES` (`client/src/game/wgslFormat.ts`), 8 MiB of
  * text, for a caller without it; the build passes the page's own, and
  * `mapSize.test.mjs` holds the two equal. */
-const MAP_CEILING = 33_554_432;
+const MAP_CEILING = 8_388_608;
 
 /**
  * Why a map of `bytes` may not ship, or null: over `ceiling` the page would
- * hold it whole for the engine's life, and parse it in one task.
+ * parse it in one task and hold its lines for the engine's life.
  */
 export function mapSizeProblem(bytes, ceiling = MAP_CEILING) {
   if (bytes <= ceiling) return null;
-  return `the WGSL map is ${bytes} bytes, over its ceiling of ${ceiling} (MAP_MAX_BYTES): a page would hold it whole for the engine's life`;
+  return `the WGSL map is ${bytes} bytes, over its ceiling of ${ceiling} (MAP_MAX_BYTES): a page reads it in one task and holds its lines for the engine's life`;
+}
+
+/**
+ * Why the map's `text`, read back with the page's own reader (`readMap`) for
+ * `salt`, does not serve exactly `entries` (key to WGSL), or nothing: a map
+ * the page would refuse, with its reason; each entry that expands to other
+ * text than its translation, byte for byte, or is missing; each entry that is
+ * no translation.
+ */
+export function readBackProblems(text, salt, entries, shared) {
+  let map;
+  try {
+    map = shared.readMap(text, salt);
+  } catch (error) {
+    return [`the map does not read back: ${error instanceof Error ? error.message : String(error)}`];
+  }
+  const problems = [];
+  for (const [key, wgsl] of entries) {
+    const back = map.get(key);
+    if (back === null) problems.push(`the entry ${key} is not in the map read back`);
+    else if (back !== wgsl) problems.push(`the entry ${key} reads back as other text than its translation`);
+  }
+  for (const key of map.keys()) if (!entries.has(key)) problems.push(`the map read back holds ${key}, which is no translation`);
+  return problems;
+}
+
+/** The map's table of lines and its runs, counted from its `text`. */
+export function tableFigures(text) {
+  const map = JSON.parse(text);
+  let runs = 0;
+  for (const entry of Object.values(map.entries)) runs += entry.length / 2;
+  return { lines: map.lines.length, runs };
 }
 
 /**
@@ -127,32 +161,12 @@ export function sizes(text) {
 }
 
 /**
- * What reading the map costs in each of the two forms it could take, in ms
- * on this machine: the map as one JSON, parsed whole (the form shipped); and
- * a small JSON index of each entry's place in one UTF-8 text, the index
- * parsed and every entry decoded from its bytes (the form a page would read
- * without parsing the WGSL as JSON). Each the least of `runs` readings.
+ * What reading the map costs the page, in ms on this machine, with the page's
+ * own reader (`shared.readMap`) for `salt`: reading the text (its parse and
+ * its checks), expanding every entry, and expanding the one of the most
+ * text. Each the least of `runs` readings.
  */
-export function formatTimes(text, runs = 5) {
-  const entries = JSON.parse(text).entries;
-  const encoder = new TextEncoder();
-  const index = [];
-  const parts = [];
-  let at = 0;
-  for (const [key, wgsl] of Object.entries(entries)) {
-    const bytes = encoder.encode(wgsl);
-    index.push([key, at, bytes.length]);
-    parts.push(bytes);
-    at += bytes.length;
-  }
-  const indexText = JSON.stringify(index);
-  const blob = new Uint8Array(at);
-  let offset = 0;
-  for (const part of parts) {
-    blob.set(part, offset);
-    offset += part.length;
-  }
-  const decoder = new TextDecoder();
+export function readTimes(text, salt, shared, runs = 5) {
   const least = (read) => {
     let best = Infinity;
     for (let run = 0; run < runs; run++) {
@@ -162,15 +176,24 @@ export function formatTimes(text, runs = 5) {
     }
     return best;
   };
+  const map = shared.readMap(text, salt);
+  let largest = null;
+  let largestLength = -1;
+  for (const key of map.keys()) {
+    const length = map.get(key).length;
+    if (length > largestLength) [largest, largestLength] = [key, length];
+  }
   return {
-    jsonMs: least(() => JSON.parse(text)),
-    indexMs: least(() => {
-      for (const [, start, length] of JSON.parse(indexText)) decoder.decode(blob.subarray(start, start + length));
+    readMs: least(() => shared.readMap(text, salt)),
+    expandAllMs: least(() => {
+      for (const key of map.keys()) map.get(key);
     }),
+    expandLargestMs: largest === null ? 0 : least(() => map.get(largest)),
   };
 }
 
-/** A digest of everything the map is made of: the salt and the corpus's stages. */
+/** A digest of everything the map is made of: its format, the salt and the
+ * corpus's stages. A map of another format is made again, never reused. */
 export function inputsDigest(salt, stages, shared) {
-  return createHash('sha256').update(salt).update('\0').update(shared.corpusText(stages)).digest('hex');
+  return createHash('sha256').update(shared.MAP_FORMAT).update('\0').update(salt).update('\0').update(shared.corpusText(stages)).digest('hex');
 }

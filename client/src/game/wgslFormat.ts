@@ -119,37 +119,122 @@ export function readCorpus(text: string): CorpusStage[] {
 }
 
 /** The format of the map the build ships. */
-export const MAP_FORMAT = "dayhike-wgsl-map/1";
+export const MAP_FORMAT = "dayhike-wgsl-map/2";
 
-/** The most a map may be, in bytes of text: 32 MiB. The page holds it whole
- * for the engine's life, and parses it in one task on its thread; the build
+/** The most a map may be, in bytes of text: 8 MiB. The page parses it in one
+ * task on its thread and holds its lines for the engine's life; the build
  * refuses a larger one (`tools/wgsl/build-map.mjs`), and the page one that
  * reads past it, before it is parsed (`loadWgslMap`). Set from the map the
- * recorded corpus makes: 23,367,492 bytes for two tiers on one platform, read
- * as one JSON in 24 to 35 ms, in a page of about 250 to 280 MB in all. A
- * corpus whose union would pass it is split into a map per platform, not
- * given a higher ceiling. */
-export const MAP_MAX_BYTES = 33_554_432;
+ * recorded corpus makes: 5,073,415 bytes for 522 entries, about 9,700 bytes
+ * an entry, so it holds about 860 entries at that average (more, since a new
+ * entry's lines are mostly in the table already). A corpus whose union would
+ * pass it is split into a map per platform, not given a higher ceiling. */
+export const MAP_MAX_BYTES = 8_388_608;
 
-/** The map: `{"format": MAP_FORMAT, "salt": ..., "entries": {key: wgsl}}`,
- * its keys sorted, so the same entries always make the same bytes. */
+/**
+ * The map: `{"format": MAP_FORMAT, "salt": ..., "lines": [...], "entries":
+ * {key: [start, length, ...]}}`. `lines` holds every distinct line of the
+ * entries' WGSL once (a line is what `split("\n")` gives, so a text that ends
+ * in a newline ends in an empty line), in order of first appearance over the
+ * entries taken in ascending order of key; each entry is its lines as runs of
+ * consecutive indices into `lines`, each run as long as it can be. Joining an
+ * entry's lines with `"\n"` gives its WGSL back exactly. The same entries
+ * always make the same bytes, whatever their order.
+ */
 export function mapText(salt: string, entries: ReadonlyMap<string, string>): string {
-  const sorted: Record<string, string> = {};
-  for (const key of [...entries.keys()].sort()) sorted[key] = entries.get(key) as string;
-  return JSON.stringify({ format: MAP_FORMAT, salt, entries: sorted });
+  const lines: string[] = [];
+  const indexOf = new Map<string, number>();
+  const runsOf: Record<string, number[]> = {};
+  for (const key of [...entries.keys()].sort()) {
+    const runs: number[] = [];
+    for (const line of (entries.get(key) as string).split("\n")) {
+      let index = indexOf.get(line);
+      if (index === undefined) {
+        index = lines.length;
+        lines.push(line);
+        indexOf.set(line, index);
+      }
+      const last = runs.length - 2;
+      // The next line of the table extends the run; any other line, the same
+      // line again included, starts one.
+      if (last >= 0 && (runs[last] as number) + (runs[last + 1] as number) === index) runs[last + 1] = (runs[last + 1] as number) + 1;
+      else runs.push(index, 1);
+    }
+    runsOf[key] = runs;
+  }
+  return JSON.stringify({ format: MAP_FORMAT, salt, lines, entries: runsOf });
 }
 
-/** The entries of a map made for `salt`; throws on another format, another
- * salt, or anything that is not a map. */
-export function readMap(text: string, salt: string): Map<string, string> {
-  const map = JSON.parse(text) as { format?: unknown; salt?: unknown; entries?: unknown };
+/**
+ * A map as the page holds it: the table of lines and each entry's runs, never
+ * the entries expanded. `get` expands an entry when it is asked for, each
+ * time, and keeps nothing of what it hands over.
+ */
+export type WgslMap = {
+  readonly size: number;
+  keys(): IterableIterator<string>;
+  /** The WGSL under `key`, its lines joined, or null. */
+  get(key: string): string | null;
+};
+
+/**
+ * The map made for `salt`, read from its text; throws on another format,
+ * another salt, anything that is not a map, and a map damaged anywhere: a
+ * line that is not text or that holds a newline, an entry that is not an
+ * even count of numbers (at least two), a run that is not whole numbers, that
+ * starts outside the table, holds no lines or reaches past the table's end.
+ * A damaged map is refused whole, so that no entry of a map whose table or
+ * runs are broken is ever served, not even one the damage does not touch.
+ * The runs are held in one typed array, the lines as the parse made them.
+ */
+export function readMap(text: string, salt: string): WgslMap {
+  const map = JSON.parse(text) as { format?: unknown; salt?: unknown; lines?: unknown; entries?: unknown };
   if (map?.format !== MAP_FORMAT) throw new Error(`not a map of ${MAP_FORMAT}: ${String(map?.format)}`);
   if (map.salt !== salt) throw new Error("made for another build");
-  if (typeof map.entries !== "object" || map.entries === null || Array.isArray(map.entries)) throw new Error("a map without entries");
-  const entries = new Map<string, string>();
-  for (const [key, wgsl] of Object.entries(map.entries)) {
-    if (typeof wgsl !== "string") throw new Error(`the entry ${key} is not WGSL text`);
-    entries.set(key, wgsl);
+  const lines = map.lines;
+  if (!Array.isArray(lines)) throw new Error("a map without its lines");
+  for (let i = 0; i < lines.length; i++) {
+    const line: unknown = lines[i];
+    if (typeof line !== "string") throw new Error(`the line ${i} is not text`);
+    if (line.includes("\n")) throw new Error(`the line ${i} holds a newline`);
   }
-  return entries;
+  const entries = map.entries;
+  if (typeof entries !== "object" || entries === null || Array.isArray(entries)) throw new Error("a map without entries");
+  const listed = Object.entries(entries as Record<string, unknown>);
+  let numbers = 0;
+  for (const [key, runs] of listed) {
+    if (!Array.isArray(runs) || runs.length === 0 || runs.length % 2 !== 0) throw new Error(`the entry ${key} is not runs of lines`);
+    for (let i = 0; i < runs.length; i += 2) {
+      const start: unknown = runs[i];
+      const length: unknown = runs[i + 1];
+      if (!Number.isInteger(start) || !Number.isInteger(length) || (start as number) < 0 || (length as number) < 1 || (start as number) + (length as number) > lines.length) {
+        throw new Error(`the entry ${key} has a run outside its lines: ${JSON.stringify(start)}, ${JSON.stringify(length)}`);
+      }
+    }
+    numbers += runs.length;
+  }
+  const all = new Uint32Array(numbers);
+  const runsOf = new Map<string, Uint32Array>();
+  let at = 0;
+  for (const [key, runs] of listed as [string, number[]][]) {
+    all.set(runs, at);
+    runsOf.set(key, all.subarray(at, at + runs.length));
+    at += runs.length;
+  }
+  const table = lines as string[];
+  return {
+    size: runsOf.size,
+    keys: () => runsOf.keys(),
+    get(key: string): string | null {
+      const runs = runsOf.get(key);
+      if (runs === undefined) return null;
+      const parts: string[] = [];
+      for (let i = 0; i < runs.length; i += 2) {
+        const start = runs[i] as number;
+        const end = start + (runs[i + 1] as number);
+        for (let line = start; line < end; line++) parts.push(table[line] as string);
+      }
+      return parts.join("\n");
+    },
+  };
 }

@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { CORPUS_FORMAT, MAP_FORMAT, corpusId, corpusText, mapText, readCorpus, readMap, stageKey, type CorpusStage } from "../../src/game/wgslFormat.js";
+import {
+  CORPUS_FORMAT,
+  MAP_FORMAT,
+  corpusId,
+  corpusText,
+  mapText,
+  readCorpus,
+  readMap,
+  stageKey,
+  type CorpusStage,
+  type WgslMap,
+} from "../../src/game/wgslFormat.js";
 
 const VERTEX: CorpusStage = { stage: "vertex", flag: false, glsl: "#version 450\nvoid main() { gl_Position = vec4(0.0); }" };
 const FRAGMENT: CorpusStage = { stage: "fragment", flag: true, glsl: "#version 450\n#define DISABLE_UNIFORMITY_ANALYSIS\nvoid main() {}" };
@@ -41,30 +52,86 @@ describe("the corpus", () => {
 
 describe("the map", () => {
   const SALT = "dayhike-wgsl/1|babylon=test|staticUA=false";
+  /** Every entry of a map read, expanded. */
+  const expanded = (map: WgslMap): Map<string, string | null> => new Map([...map.keys()].map((key) => [key, map.get(key)]));
+  /** A map of format 2 for `SALT` holding `lines` and `entries` as they are given. */
+  const raw = (lines: unknown, entries: unknown): string => JSON.stringify({ format: "dayhike-wgsl-map/2", salt: SALT, lines, entries });
 
-  it("writes its entries under their keys, sorted, so the same entries always make the same bytes", () => {
-    expect(MAP_FORMAT).toBe("dayhike-wgsl-map/1");
-    const entries = new Map([
-      ["bb", "// fragment"],
-      ["aa", "// vertex"],
-    ]);
-    const text = mapText(SALT, entries);
-    expect(text).toBe('{"format":"dayhike-wgsl-map/1","salt":"dayhike-wgsl/1|babylon=test|staticUA=false","entries":{"aa":"// vertex","bb":"// fragment"}}');
-    expect(mapText(SALT, new Map([...entries].reverse()))).toBe(text);
-    expect(readMap(text, SALT)).toEqual(new Map([
-      ["aa", "// vertex"],
-      ["bb", "// fragment"],
-    ]));
+  /** Texts that end with a newline and without, hold an empty line, repeat a
+   * line in a row, repeat two lines in a row, are one line, or are empty. */
+  const TEXTS = new Map([
+    ["gg", "p\nq\np\nq"],
+    ["aa", "a\nb\nc\n"],
+    ["ff", "one"],
+    ["bb", "a\nb\nc"],
+    ["dd", ""],
+    ["cc", "x\nx\nx"],
+    ["ee", "a\n\nb"],
+  ]);
+
+  it("writes each distinct line once, in order of first appearance over the keys sorted, and each entry as maximal runs of consecutive lines", () => {
+    expect(MAP_FORMAT).toBe("dayhike-wgsl-map/2");
+    const text = mapText(SALT, TEXTS);
+    expect(text).toBe(
+      '{"format":"dayhike-wgsl-map/2","salt":"dayhike-wgsl/1|babylon=test|staticUA=false",' +
+        '"lines":["a","b","c","","x","one","p","q"],' +
+        // A run never takes in a line equal to the one before it unless it is
+        // the next line of the table: "x" three times is three runs.
+        '"entries":{"aa":[0,4],"bb":[0,3],"cc":[4,1,4,1,4,1],"dd":[3,1],"ee":[0,1,3,1,1,1],"ff":[5,1],"gg":[6,2,6,2]}}',
+    );
+    // The same entries in any order make the same bytes.
+    expect(mapText(SALT, new Map([...TEXTS].reverse()))).toBe(text);
+    expect(mapText(SALT, new Map())).toBe('{"format":"dayhike-wgsl-map/2","salt":"dayhike-wgsl/1|babylon=test|staticUA=false","lines":[],"entries":{}}');
+  });
+
+  it("reads back every entry, expanded when asked for, byte for byte the text it was made of", () => {
+    const map = readMap(mapText(SALT, TEXTS), SALT);
+    expect(map.size).toBe(7);
+    expect([...map.keys()]).toEqual(["aa", "bb", "cc", "dd", "ee", "ff", "gg"]);
+    expect(expanded(map)).toEqual(new Map([...TEXTS].sort(([a], [b]) => (a < b ? -1 : 1))));
+    expect([map.get("aa"), map.get("aa"), map.get("dd"), map.get("zz")]).toEqual(["a\nb\nc\n", "a\nb\nc\n", "", null]);
+    // Carriage returns, tabs, quotes, backslashes and characters outside ASCII
+    // are the line's own.
+    const odd = new Map([["aa", 'a\r\n\t"b"\\\n€ 𝄞\r'], ["bb", "\n\n"]]);
+    expect(expanded(readMap(mapText(SALT, odd), SALT))).toEqual(odd);
     expect(readMap(mapText(SALT, new Map()), SALT).size).toBe(0);
   });
 
-  it("refuses a map made for another salt or in another format, and anything that is not one", () => {
+  it("refuses a map made for another salt or in another format, the format before this one included, and anything that is not one", () => {
     const text = mapText(SALT, new Map([["aa", "// vertex"]]));
     expect(() => readMap(text, `${SALT}x`)).toThrow("made for another build");
-    expect(() => readMap(text.replace("dayhike-wgsl-map/1", "dayhike-wgsl-map/2"), SALT)).toThrow("not a map of dayhike-wgsl-map/1");
+    expect(() => readMap(text.replace("dayhike-wgsl-map/2", "dayhike-wgsl-map/3"), SALT)).toThrow("not a map of dayhike-wgsl-map/2");
+    // The format before this one: each entry's WGSL whole.
+    const first = JSON.stringify({ format: "dayhike-wgsl-map/1", salt: SALT, entries: { aa: "// vertex" } });
+    expect(() => readMap(first, SALT)).toThrow("not a map of dayhike-wgsl-map/2: dayhike-wgsl-map/1");
     expect(() => readMap(text.slice(0, -1), SALT)).toThrow(SyntaxError);
-    expect(() => readMap(`{"format":"dayhike-wgsl-map/1","salt":${JSON.stringify(SALT)},"entries":[]}`, SALT)).toThrow("a map without entries");
-    expect(() => readMap(`{"format":"dayhike-wgsl-map/1","salt":${JSON.stringify(SALT)},"entries":{"aa":1}}`, SALT)).toThrow("the entry aa is not WGSL text");
     expect(() => readMap("null", SALT)).toThrow("not a map");
+  });
+
+  it("refuses a damaged map whole, naming what is wrong: never an entry that expands to other text", () => {
+    const LINES = ["a", "b", "c"];
+    const cases: [string, string, string][] = [
+      ["no lines", raw(undefined, { aa: [0, 1] }), "a map without its lines"],
+      ["lines not a list", raw({ 0: "a" }, { aa: [0, 1] }), "a map without its lines"],
+      ["a line that is not text", raw(["a", 1, "c"], { aa: [0, 1] }), "the line 1 is not text"],
+      ["a line that is null", raw(["a", null], { aa: [0, 1] }), "the line 1 is not text"],
+      ["a line holding a newline", raw(["a", "b\nc"], { aa: [0, 1] }), "the line 1 holds a newline"],
+      ["no entries", raw(LINES, undefined), "a map without entries"],
+      ["entries as a list", raw(LINES, [[0, 1]]), "a map without entries"],
+      ["an entry that is text", raw(LINES, { aa: "a" }), "the entry aa is not runs of lines"],
+      ["an entry of no runs", raw(LINES, { aa: [] }), "the entry aa is not runs of lines"],
+      ["an odd number of numbers", raw(LINES, { aa: [0, 1, 2] }), "the entry aa is not runs of lines"],
+      ["a run past the table", raw(LINES, { aa: [0, 1], bb: [2, 2] }), "the entry bb has a run outside its lines: 2, 2"],
+      ["a run starting past the table", raw(LINES, { aa: [3, 1] }), "the entry aa has a run outside its lines: 3, 1"],
+      ["a run before the table", raw(LINES, { aa: [-1, 2] }), "the entry aa has a run outside its lines: -1, 2"],
+      ["a run of no lines", raw(LINES, { aa: [0, 1, 1, 0] }), "the entry aa has a run outside its lines: 1, 0"],
+      ["a run of fewer than none", raw(LINES, { aa: [2, -1] }), "the entry aa has a run outside its lines: 2, -1"],
+      ["a start that is not a whole number", raw(LINES, { aa: [0.5, 1] }), "the entry aa has a run outside its lines: 0.5, 1"],
+      ["a length that is text", raw(LINES, { aa: [0, "1"] }), 'the entry aa has a run outside its lines: 0, "1"'],
+      ["a start that is null", raw(LINES, { aa: [null, 1] }), "the entry aa has a run outside its lines: null, 1"],
+    ];
+    for (const [what, text, message] of cases) expect(() => readMap(text, SALT), what).toThrow(message);
+    // The same, whole: read.
+    expect(expanded(readMap(raw(LINES, { aa: [0, 3], bb: [2, 1, 0, 1] }), SALT))).toEqual(new Map([["aa", "a\nb\nc"], ["bb", "c\na"]]));
   });
 });

@@ -2,29 +2,32 @@
  * The translations shipped with the build, the WebGPU shader lookup's first
  * source (`shaderLookup.ts`), asked before the browser's store: the map
  * `tools/wgsl/build-map.mjs` makes of the shader corpus before Vite runs,
- * each stage's WGSL under the key the page asks for, which the build ships as
- * a content-hashed asset of the WebGPU chunk (`gpuEngine.ts`), served
- * immutable. So a first visit finds the stages the corpus holds, which the
- * store cannot.
+ * each stage's WGSL under the key the page asks for, stored as a table of the
+ * distinct lines and each stage's lines as runs into it (`mapText`), which the
+ * build ships as a content-hashed asset of the WebGPU chunk (`gpuEngine.ts`),
+ * served immutable. So a first visit finds the stages the corpus holds, which
+ * the store cannot.
  *
  * A preparation never waits (`shaderLookup.ts`), so the map answers from
- * memory: `loadWgslMap` fetches it as the engine is made, and parses it into
+ * memory: `loadWgslMap` fetches it as the engine is made, and reads it into
  * memory as it lands; the lookup waits for that within its own bound,
  * `WGSL_MAP_MS`, beside the store's read. A map that lands after the engine is handed over
- * is found from then on. What it read is held for the engine's life, as the
- * store's is.
+ * is found from then on. The table and the runs are held for the engine's
+ * life, as the store's read is; a stage's WGSL is expanded from them when it
+ * is asked for, and not kept here once handed over.
  *
  * Nothing here is the player's to see: a map that does not come (a fetch
  * refused or never answered, an HTTP error), one past `MAP_MAX_BYTES` as it
  * is read (refused sooner where its `Content-Length` already says so), one
- * made for another build (its salt) or in another format, or one that does
- * not parse is a source with
+ * made for another build (its salt) or in another format, one that does not
+ * parse, or one damaged anywhere (a run outside its lines, a line that is not
+ * one: `readMap`) is a source with
  * nothing in it, and the lookup translates as the engine always has: never an
  * error, never a switch to WebGL2, never a record. It takes no writes.
  */
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { WgslSource } from "./shaderLookup.js";
-import { MAP_MAX_BYTES, readMap } from "./wgslFormat.js";
+import { MAP_MAX_BYTES, readMap, type WgslMap } from "./wgslFormat.js";
 
 /** How the report names the map (`hitsBySource`). */
 export const WGSL_MAP_SOURCE = "shipped";
@@ -47,15 +50,15 @@ export const WGSL_MAP_MS = 1_000;
 
 /**
  * The map at `url`, for `salt`, as a source of the lookup, at once: its
- * fetch begun, its entries in memory once `ready` resolves (never rejecting),
- * none where the map is not this build's or does not come. `close` aborts a
- * fetch still under way.
+ * fetch begun, its lines and runs in memory once `ready` resolves (never
+ * rejecting), none where the map is not this build's, is damaged or does not
+ * come. `close` aborts a fetch still under way and lets the map go.
  */
 export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fetch } = {}): WgslSource {
   const request = deps.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
   const abort = new AbortController();
-  /** The WGSL read in, held for the engine's life. */
-  let held = new Map<string, string>();
+  /** The map read in, its lines and runs, held for the engine's life. */
+  let held: WgslMap | null = null;
   let closed = false;
   /** Stops a body being read, where one is. */
   let stopReading: () => void = () => undefined;
@@ -102,8 +105,8 @@ export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fe
       abort.abort();
       throw new Error(`${url}: ${length} bytes, over the map's ceiling of ${MAP_MAX_BYTES}`);
     }
-    const entries = readMap(await readBounded(response), salt);
-    if (!closed) held = entries;
+    const map = readMap(await readBounded(response), salt);
+    if (!closed) held = map;
   })().catch((error: unknown) => {
     if (!closed) Logger.Warn(`WebGPU shader lookup: no translations shipped with the build (${error instanceof Error ? error.message : String(error)})`);
   });
@@ -113,12 +116,13 @@ export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fe
     salt,
     ready,
     waitMs: WGSL_MAP_MS,
-    get: (key) => held.get(key) ?? null,
+    // Expanded as it is asked for; the lookup decides what it keeps.
+    get: (key) => held?.get(key) ?? null,
     close: () => {
       closed = true;
       abort.abort();
       stopReading();
-      held.clear();
+      held = null;
     },
   };
 }

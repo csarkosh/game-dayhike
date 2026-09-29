@@ -11,8 +11,11 @@
  * one the chunk reads; its salt is the bundle's, the translators' digests the
  * build baked in (`__WGSL_TRANSLATORS__`), the key's format, Babylon's version
  * and, where the bundle shows it, Babylon's page-wide uniformity switch; and
- * it holds translations. A map of another salt is never asked by the page:
- * every stage would be translated as if there were none.
+ * it holds translations: a table of lines, each a text without a newline, and
+ * entries, each runs of lines in the table (`[start, length, ...]`, as the
+ * page reads them: `readMap`), at least one expanding to text. A map of
+ * another salt is never asked by the page, nor a damaged one read: every
+ * stage would be translated as if there were none.
  */
 export function mapProblems(mapText, chunkSource, bundleSource = '') {
   let map;
@@ -47,13 +50,39 @@ export function mapProblems(mapText, chunkSource, bundleSource = '') {
   if (bundleUA !== undefined && saltUA !== bundleUA) {
     problems.push(`its salt's uniformity switch, ${saltUA}, is not the bundle's, ${bundleUA}`);
   }
+  const lines = map.lines;
   const entries = map.entries;
-  if (typeof entries !== 'object' || entries === null || Array.isArray(entries)) {
+  if (!Array.isArray(lines)) {
+    problems.push('it has no table of lines');
+  } else if (!lines.every((line) => typeof line === 'string' && !line.includes('\n'))) {
+    problems.push('a line of its table is not text without a newline');
+  } else if (typeof entries !== 'object' || entries === null || Array.isArray(entries)) {
     problems.push('it has no entries');
   } else if (Object.keys(entries).length === 0) {
     problems.push('it is empty');
-  } else if (!Object.values(entries).every((wgsl) => typeof wgsl === 'string' && wgsl.length > 0)) {
-    problems.push('an entry is not WGSL text');
+  } else if (!Object.values(entries).every((runs) => runsInTable(runs, lines.length))) {
+    problems.push('an entry is not runs of the lines in its table');
+  } else if (!Object.values(entries).some((runs) => expandsToText(runs, lines))) {
+    problems.push('no entry expands to WGSL text');
   }
   return problems;
+}
+
+/** Whether `runs` is `[start, length, ...]`, at least one run, each of whole
+ * numbers, of one line or more, inside a table of `count` lines. */
+function runsInTable(runs, count) {
+  if (!Array.isArray(runs) || runs.length === 0 || runs.length % 2 !== 0) return false;
+  for (let i = 0; i < runs.length; i += 2) {
+    const [start, length] = [runs[i], runs[i + 1]];
+    if (!Number.isInteger(start) || !Number.isInteger(length) || start < 0 || length < 1 || start + length > count) return false;
+  }
+  return true;
+}
+
+/** Whether the entry of `runs` expands to text: more than one line, or one
+ * that is not empty. */
+function expandsToText(runs, lines) {
+  let count = 0;
+  for (let i = 1; i < runs.length; i += 2) count += runs[i];
+  return count > 1 || lines[runs[0]].length > 0;
 }
