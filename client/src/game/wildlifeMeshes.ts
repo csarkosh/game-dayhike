@@ -850,7 +850,7 @@ export function createWildlifeMeshes(
       hash: 0, presenceDraw: 0,
     };
     const u = createUnitState(unit, tick, seed);
-    startCue(u, e.goalX, e.goalZ, e.run, tick);
+    startCue(u, e.goalX, e.goalZ, e.run, tick, seed);
     states.set(id, u);
     poolIds.add(id);
   }
@@ -896,7 +896,7 @@ export function createWildlifeMeshes(
     }
     const u = states.get(e.id);
     if (u === undefined) return; // the unit it named already left some other way
-    startCue(u, e.goalX, e.goalZ, e.run, tick);
+    startCue(u, e.goalX, e.goalZ, e.run, tick, seed);
   }
 
   /** Resets the write cursor before a frame that runs the director rebuilds

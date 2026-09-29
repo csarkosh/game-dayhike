@@ -156,6 +156,8 @@ describe("wildlife placement census", () => {
           counted++;
           expect(elevationSampleAt(seed, u.x, u.z).h, `species ${species} at ${u.x}, ${u.z}`).toBeGreaterThanOrEqual(9);
           expect(variant.roadDistance!(seed, u.x, u.z), `species ${species} at ${u.x}, ${u.z}`).toBeGreaterThanOrEqual(30);
+          // A rabbit bolts to its bush, so the bush is on the forest's ground too.
+          if (species === SPECIES_RABBIT) expect(forestGround(seed, u.refugeX, u.refugeZ), `the bush at ${u.refugeX}, ${u.refugeZ}`).toBe(true);
         }
       }
       expect(counted).toBeGreaterThan(1000);

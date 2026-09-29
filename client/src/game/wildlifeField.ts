@@ -451,7 +451,8 @@ function groundUnit(seed: number, species: number, cx: number, cz: number): Wild
       let bestD = RABBIT_COVER_RADIUS;
       for (const b of bushes) {
         const d = Math.hypot(b.x - x, b.z - z);
-        if (d <= bestD) { bestD = d; best = b; }
+        // The bush is where the rabbit bolts to and comes back from.
+        if (d <= bestD && forestGround(seed, b.x, b.z)) { bestD = d; best = b; }
       }
       if (best === null) return null;
       return unit({ seed, presenceDraw, species, cellX: cx, cellZ: cz, x, z, h: s.h, members: membersFor(seed, species, cx, cz), refugeX: best.x, refugeZ: best.z, homeX: best.x, homeZ: best.z, homeH: best.groundH, altitude: 0, radius: 0 });
