@@ -430,11 +430,15 @@ a visit asks for in its first seconds or not by what has come into range by
 then. Those 4 were recorded from three of those visits, each text checked by
 its SHA-256 against the page, and added. One page recorded once is therefore
 not the whole of what that page can ask for: a pose is recorded several
-times, until visits stop bringing new stages.
+times, until visits stop bringing new stages. With those 4 shipped, of 42
+more first visits made the same way 40 found every stage in the map (90 to
+128 stages) and 2 translated 2, the same 2: a material drawn with thin
+instances that carry a colour, under 3 lights. Those were recorded from both
+visits and added.
 
-The corpus holds 594 stages (310 vertex, 170 fragment, 114 fragment stages
-that turn the uniformity analysis off), 19,268,759 bytes in 594 files, 26 to
-49 a folder; 319 of them carry characters outside ASCII. The map of the 590
+The corpus holds 596 stages (311 vertex, 171 fragment, 114 fragment stages
+that turn the uniformity analysis off), 19,326,814 bytes in 596 files, 26 to
+49 a folder; 320 of them carry characters outside ASCII. The map of the 590
 was 5,366,025 bytes; the map's other sizes in this document are those of the
 522.
 
