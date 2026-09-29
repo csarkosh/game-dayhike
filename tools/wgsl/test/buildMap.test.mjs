@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import * as page from '../../../client/src/game/wgslFormat.ts';
 import { timeLimit } from '../../../client/test/helpers/timeLimit.ts';
-import { buildMap, nodeSalt } from '../lib/buildMap.mjs';
+import { buildMap, nodeSalt, readBackProblems } from '../lib/buildMap.mjs';
 import { readCorpusDir } from '../lib/corpus.mjs';
 import { NODE_CORPUS_DIR } from '../lib/files.mjs';
 import { mergeCorpus } from '../lib/mergeCorpus.mjs';
@@ -37,6 +37,15 @@ function directory(files = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'dayhike-wgsl-test-'));
   for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
   return dir;
+}
+
+/** Every entry of a map read with the page's reader, expanded. */
+const expanded = (map) => new Map([...map.keys()].map((key) => [key, map.get(key)]));
+
+/** The lines of a map's table and its runs, from its text. */
+function tableAndRuns(text) {
+  const file = JSON.parse(text);
+  return { lines: file.lines.length, runs: Object.values(file.entries).reduce((sum, runs) => sum + runs.length / 2, 0) };
 }
 
 /** Every file under `dir`, by its path relative to it. */
@@ -72,7 +81,10 @@ describe('the map the build ships', () => {
     const made = buildMap({ stages, salt, translate: (entry) => translateStage(translators, entry), shared });
     const keys = stages.map((entry) => page.stageKey(salt, entry.stage, entry.flag, entry.glsl));
     expect([...made.entries.keys()].sort()).toEqual([...keys].sort());
-    expect(page.readMap(made.text, salt)).toEqual(made.entries);
+    // Read with the page's reader, every entry expands to its translation, byte for byte.
+    expect(expanded(page.readMap(made.text, salt))).toEqual(made.entries);
+    // The two stages' 41 lines, 24 of them distinct, in 24 runs.
+    expect(tableAndRuns(made.text)).toEqual({ lines: 24, runs: 24 });
   }, timeLimit(60_000));
 
   it('translates each stage as the page does: WGSL of its stage, with Babylon\'s diagnostic where the stage turns the analysis off', () => {
@@ -126,7 +138,9 @@ describe('the map the build ships', () => {
   it('makes an empty map of an empty corpus', async () => {
     const out = join(directory(), 'map.json');
     const done = await tool(directory(), out);
-    expect(done.map).toBe(`{"format":"dayhike-wgsl-map/1","salt":${JSON.stringify(nodeSalt(shared))},"entries":{}}`);
+    expect(done.map).toBe(`{"format":"dayhike-wgsl-map/2","salt":${JSON.stringify(nodeSalt(shared))},"lines":[],"entries":{}}`);
+    expect(done.stdout).toContain('  runs:         0, over a table of 0 lines\n');
+    expect(done.stdout).toContain('  read back:    0 entries, each byte for byte its translation\n');
     expect(done.stdout).toContain('  entries:      0\n');
     expect(done.stdout).toContain('  failed:       0\n  bytes:');
     expect(done.stdout).toContain('  largest:      none\n');
@@ -142,9 +156,11 @@ describe('the map the build ships', () => {
     expect(done.stdout).toMatch(/ {2}largest: {6}\d+ B of WGSL, the (vertex|fragment) stage [0-9a-f]{16}\n/);
     // The two stages' WGSL, as the shipped translators make it.
     expect(lines).toContain('  lines:        41 in all, 24 distinct in 651 B; digits as #: 41 in all, 24 distinct in 638 B');
+    expect(lines).toContain('  runs:         24, over a table of 24 lines');
+    expect(lines).toContain('  read back:    2 entries, each byte for byte its translation');
     expect(done.stdout).toMatch(/ {2}bytes: {8}\d+ raw, \d+ gzip -9, \d+ brotli -q 11\n/);
     expect(done.stdout).toMatch(/ {2}translation: {2}translators started in \d+ ms; \d+ ms in all, \d+ ms a stage on average, \d+ ms the longest\n/);
-    expect(done.stdout).toMatch(/ {2}reading it: {3}\d+\.\d\d ms as one JSON \(shipped\), \d+\.\d\d ms as an index and a text\n/);
+    expect(done.stdout).toMatch(/ {2}reading it: {3}\d+\.\d\d ms to read with the page's reader, \d+\.\d\d ms to expand every entry, \d+\.\d\d ms the largest\n/);
     expect(done.stderr).toBe('');
   }, timeLimit(60_000));
 
@@ -170,6 +186,13 @@ describe('the map the build ships', () => {
     expect(stages).toHaveLength(10);
     expect(Object.keys(JSON.parse(done.map).entries)).toHaveLength(10);
     expect(done.stderr).not.toContain('FAILED');
+    // The ten stages' 2,781 lines, 1,718 of them distinct, in 805 runs; each
+    // entry, read with the page's reader, expands to its translation.
+    expect(tableAndRuns(done.map)).toEqual({ lines: 1_718, runs: 805 });
+    expect(done.stdout).toContain('  lines:        2781 in all, 1718 distinct in 67270 B;');
+    const salt = nodeSalt(shared);
+    const translated = buildMap({ stages, salt, translate: (entry) => translateStage(translators, entry), shared });
+    expect(expanded(page.readMap(done.map, salt))).toEqual(translated.entries);
     // The figures, for the run's log: sizes, what reading it costs, the translators' start.
     console.log(done.stdout.slice(done.stdout.indexOf('wgsl map:')));
 
@@ -208,4 +231,42 @@ describe('the map the build ships', () => {
     expect(done.stderr).toContain(`! ${join(corpus, 'bad.json')}: not a corpus file, left alone (a recording? node tools/wgsl/merge-corpus.mjs adds its stages)\n`);
     expect(readFileSync(join(corpus, 'bad.json'), 'utf8')).toBe('{"format":"something else"}');
   }, timeLimit(60_000));
+});
+
+describe('the map read back', () => {
+  const SALT = 's';
+  const ENTRIES = new Map([
+    ['aa', 'a\nb\n'],
+    ['bb', 'b\nc'],
+  ]);
+
+  it('passes a map whose every entry expands to its translation', () => {
+    const text = shared.mapText(SALT, ENTRIES);
+    expect(text).toBe('{"format":"dayhike-wgsl-map/2","salt":"s","lines":["a","b","","c"],"entries":{"aa":[0,3],"bb":[1,1,3,1]}}');
+    expect(readBackProblems(text, SALT, ENTRIES, shared)).toEqual([]);
+    expect(readBackProblems(shared.mapText(SALT, new Map()), SALT, new Map(), shared)).toEqual([]);
+  });
+
+  it('names each entry that expands to other text than its translation, or is missing, or is no translation', () => {
+    const text = shared.mapText(SALT, ENTRIES);
+    expect(readBackProblems(text.replace('"lines":["a","b","","c"]', '"lines":["a","c","","b"]'), SALT, ENTRIES, shared)).toEqual([
+      'the entry aa reads back as other text than its translation',
+      'the entry bb reads back as other text than its translation',
+    ]);
+    expect(readBackProblems(text.replace('"c"]', '"d"]'), SALT, ENTRIES, shared)).toEqual(['the entry bb reads back as other text than its translation']);
+    expect(readBackProblems(text.replace('"bb":[1,1,3,1]', '"bb":[1,1]'), SALT, ENTRIES, shared)).toEqual([
+      'the entry bb reads back as other text than its translation',
+    ]);
+    expect(readBackProblems(shared.mapText(SALT, new Map([['aa', 'a\nb\n']])), SALT, ENTRIES, shared)).toEqual(['the entry bb is not in the map read back']);
+    expect(readBackProblems(text, SALT, new Map([['aa', 'a\nb\n']]), shared)).toEqual(['the map read back holds bb, which is no translation']);
+  });
+
+  it('refuses a map the page would not read, with the page\'s reason', () => {
+    const text = shared.mapText(SALT, ENTRIES);
+    expect(readBackProblems(text.replace('[1,1,3,1]', '[1,1,4,1]'), SALT, ENTRIES, shared)).toEqual([
+      'the map does not read back: the entry bb has a run outside its lines: 4, 1',
+    ]);
+    expect(readBackProblems(text, 'another', ENTRIES, shared)).toEqual(['the map does not read back: made for another build']);
+    expect(readBackProblems(text.slice(0, -1), SALT, ENTRIES, shared)[0]).toMatch(/^the map does not read back: /);
+  });
 });

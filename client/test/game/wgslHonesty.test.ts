@@ -101,9 +101,12 @@ describe("the map the build ships, against the page's own translation", () => {
     const { stages } = readCorpusDir(NODE_CORPUS_DIR, format);
     const made = buildMap({ stages, salt, translate: (entry) => translateStage(translators, entry), shared: format });
     expect(made.failed).toEqual([]);
+    // Read as the page reads it: the table of lines and each entry's runs,
+    // an entry expanded when it is asked for.
     const map = format.readMap(made.text, salt);
     expect(stages).toHaveLength(10);
     expect(map.size).toBe(10);
+    expect(JSON.parse(made.text).format).toBe("dayhike-wgsl-map/2");
 
     // The page's own lookup, with no source: every stage translated in the page's way.
     const own = await page([], "record");
@@ -118,6 +121,7 @@ describe("the map the build ships, against the page's own translation", () => {
     for (const entry of stages) {
       const key = format.stageKey(salt, entry.stage, entry.flag, entry.glsl);
       expect(translatedByPage.has(key), `${entry.stage} ${format.corpusId(entry)}`).toBe(true);
+      // Expanded from the map, byte for byte the page's own translation.
       expect(map.get(key), `${entry.stage} ${format.corpusId(entry)}`).toBe(translatedByPage.get(key));
       compared += 1;
     }
