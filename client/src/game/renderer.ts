@@ -31,13 +31,18 @@ import { setFoliageWind, FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED } from "./foliag
 import {
   createRingSamples,
   holeCellsFor,
-  ringGeometry,
+  ringGeometryBuffers,
+  ringGeometrySlices,
+  ringSampleSlices,
+  commitRingMove,
+  prepareRingMove,
   snapOrigin,
-  updateRingSamples,
   BASE_SPACING,
   RING_COUNT,
   WEIGHTS2_STRIDE,
+  type RingArrays,
   type RingGeometry,
+  type RingMove,
   type RingSamples,
 } from "./clipmap.js";
 import { createCrossing, createSyncJobs, crossingAt, finish, type Slices, type SyncJobs } from "./syncJobs.js";
@@ -239,12 +244,24 @@ export type Clipmap = {
   update(camX: number, camZ: number): void;
   /** The camera position the rings' buffers were last built for. */
   readonly view: { readonly x: number; readonly z: number };
+  /** Vertices whose lifted height the last rebuild computed itself, over
+   * every ring it moved; a move prepared ahead computed its own before.
+   * For the tests. */
+  readonly lifted: number;
+  /** Ring moves the last rebuild took from moves prepared ahead. For the
+   * tests. */
+  readonly prepared: number;
   dispose(): void;
 };
 
 /** Ring 0's snap step (m): `snapOrigin` puts it on a lattice of twice its
  * 1 m spacing, and every coarser ring moves only when ring 0 does. */
 const CLIPMAP_STEP = 2;
+
+/** What uploading one ring's buffers takes (ms): about a millisecond a ring
+ * in a browser profile of a walk, on the medium tier of an Apple M4. The
+ * clipmap's job says so before its last slice (`syncJobs.ts`). */
+const CLIPMAP_UPLOAD_MS = 1;
 
 /**
  * The seven-ring clipmap that draws generated terrain, as a unit that owns its
@@ -262,6 +279,15 @@ const CLIPMAP_STEP = 2;
  * frame draws one ring moved against a neighbour that has not. Without it, and
  * at the crossings `crossingAt` builds at once, the whole rebuild runs in the
  * frame of the crossing, as it always did.
+ *
+ * Moving a ring is mostly sampling the strip it moves onto, a few
+ * milliseconds a ring whatever its spacing, and where the camera crosses a
+ * line of a coarse ring's lattice five or six rings move at once. So, as idle
+ * work, the clipmap prepares each ring's next move ahead — onto the line the
+ * camera, on its present heading, will reach first (`prepareRingMove`) — and
+ * a rebuild that finds its move prepared from the ring as it stands commits
+ * it in one step instead of sampling. What it commits is exactly what the
+ * move would make; a guess the camera does not follow is dropped.
  */
 export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clipmap {
   const rings: RingSamples[] = [];
@@ -297,7 +323,8 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clip
       (coarser !== null && (d.cx !== coarser.originX || d.cz !== coarser.originZ));
   }
 
-  function geometryOf(level: number): RingGeometry {
+  /** Ring `level`'s buffers made again into `out`, in slices. */
+  function geometrySlices(level: number, out: RingGeometry): Slices {
     const ring = rings[level] as RingSamples;
     const finer = level > 0 ? (rings[level - 1] as RingSamples) : null;
     // The border blends to the coarser ring's samples, so every ring must
@@ -305,7 +332,7 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clip
     // passes null. Ring 0 draws solid; every coarser ring cuts a hole where
     // the finer ring covers it.
     const coarser = level < RING_COUNT - 1 ? (rings[level + 1] as RingSamples) : null;
-    return ringGeometry(ring, finer === null ? null : holeCellsFor(ring, finer), coarser);
+    return ringGeometrySlices(ring, finer === null ? null : holeCellsFor(ring, finer), coarser, out);
   }
 
   function markDrawn(level: number): void {
@@ -319,32 +346,141 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clip
     };
   }
 
-  /** The rebuild for a camera at (camX, camZ): every ring's samples moved, a
-   * slice a ring, then each stale ring's buffers made, a slice a ring, then
-   * all of them uploaded at once. */
-  function* build(camX: number, camZ: number): Slices {
-    for (let level = 0; level < RING_COUNT; level++) {
-      updateRingSamples(rings[level] as RingSamples, seed, camX, camZ);
-      yield;
-    }
-    const made: (RingGeometry | null)[] = [];
-    for (let level = 0; level < RING_COUNT; level++) {
-      made.push(stale(level) ? geometryOf(level) : null);
-      if (made[level] !== null) yield;
-    }
-    for (let level = 0; level < RING_COUNT; level++) {
-      const geometry = made[level];
-      if (geometry === null || geometry === undefined) continue;
-      applyRingGeometry(meshes[level] as Mesh, geometry);
-    }
-    for (let level = 0; level < RING_COUNT; level++) if (made[level] !== null) markDrawn(level);
-    view.x = camX;
-    view.z = camZ;
+  /** The buffers each ring's mesh draws, and the ones its next re-emit
+   * writes, swapped as it is uploaded: a job in progress never writes an
+   * array a mesh holds. */
+  const front: (RingGeometry | null)[] = [];
+  const back: (RingGeometry | null)[] = [];
+  /** The one spare set of sample arrays the rings' moves share
+   * (`ringSampleSlices`). */
+  const spare: RingArrays[] = [];
+  let lifted = 0;
+  let preparedUsed = 0;
+  /** Each ring's next move, prepared ahead, or null. */
+  const prepared: (RingMove | null)[] = [];
+  /** The origin each ring is expected to move to next (NaN: none), which
+   * `prepared` is worked out for. */
+  const expectX = new Float64Array(RING_COUNT).fill(NaN);
+  const expectZ = new Float64Array(RING_COUNT).fill(NaN);
+  /** The camera's last move between two frames: its heading. */
+  let headingX = 0;
+  let headingZ = 0;
+
+  /** Hands back a prepared move that is not for ring `level` as it stands,
+   * going to (ox, oz). */
+  function dropPrepared(level: number, ox: number, oz: number): void {
+    const p = prepared[level];
+    if (p === null || p === undefined) return;
+    const ring = rings[level] as RingSamples;
+    if (p.moves === ring.moves && p.originX === ox && p.originZ === oz) return;
+    spare.push(p.arrays);
+    prepared[level] = null;
   }
 
+  /**
+   * Where each ring moves next if the camera at (camX, camZ) keeps its
+   * heading: across whichever of its lattice's lines, x or z, the camera
+   * reaches first. Ring L's origin steps by 2·spacing as the camera crosses
+   * origin + 64·spacing going down or origin + 66·spacing going up. Returns
+   * whether any ring's expectation changed.
+   */
+  function expect(camX: number, camZ: number): boolean {
+    let changed = false;
+    for (let level = 0; level < RING_COUNT; level++) {
+      const ring = rings[level] as RingSamples;
+      const s = ring.spacing;
+      const tx = headingX > 0 ? (ring.originX + 66 * s - camX) / headingX
+        : headingX < 0 ? (camX - (ring.originX + 64 * s)) / -headingX : Infinity;
+      const tz = headingZ > 0 ? (ring.originZ + 66 * s - camZ) / headingZ
+        : headingZ < 0 ? (camZ - (ring.originZ + 64 * s)) / -headingZ : Infinity;
+      let ex = NaN;
+      let ez = NaN;
+      if (tx < Infinity || tz < Infinity) {
+        ex = tx <= tz ? ring.originX + Math.sign(headingX) * 2 * s : ring.originX;
+        ez = tx <= tz ? ring.originZ : ring.originZ + Math.sign(headingZ) * 2 * s;
+      }
+      if (!Object.is(ex, expectX[level]) || !Object.is(ez, expectZ[level])) changed = true;
+      expectX[level] = ex;
+      expectZ[level] = ez;
+    }
+    return changed;
+  }
+
+  /** Idle work: each ring's expected move prepared, finer rings first. An
+   * expectation a rebuild has since overtaken (the ring already stands
+   * there) waits for `aim` to renew it. */
+  function* prepare(): Slices {
+    for (let level = 0; level < RING_COUNT; level++) {
+      const ring = rings[level] as RingSamples;
+      const ex = expectX[level] as number;
+      const ez = expectZ[level] as number;
+      if (Number.isNaN(ex) || (ex === ring.originX && ez === ring.originZ)) continue;
+      dropPrepared(level, ex, ez);
+      if (prepared[level] !== null) continue;
+      prepared[level] = yield* prepareRingMove(ring, seed, ex, ez, spare);
+    }
+  }
+
+  /** Re-aims the idle work at the camera's next moves, when they changed. */
+  function aim(camX: number, camZ: number, force: boolean): void {
+    if (jobs === undefined || jobs.pending(owner)) return;
+    if (expect(camX, camZ) || force) jobs.idle(owner, prepare());
+  }
+
+  /** The rebuild for a camera at (camX, camZ): every ring's samples moved,
+   * then each stale ring's buffers made, each in slices of its own, then all
+   * of them uploaded in the last slice. */
+  function* build(camX: number, camZ: number): Slices {
+    let computed = 0;
+    let used = 0;
+    for (let level = 0; level < RING_COUNT; level++) {
+      const ring = rings[level] as RingSamples;
+      const ox = snapOrigin(camX, ring.spacing);
+      const oz = snapOrigin(camZ, ring.spacing);
+      // A ring that stays keeps its prepared move for when it does go.
+      if (ox === ring.originX && oz === ring.originZ) continue;
+      dropPrepared(level, ox, oz);
+      const p = prepared[level];
+      if (p !== null && p !== undefined) {
+        commitRingMove(ring, p, spare);
+        prepared[level] = null;
+        used++;
+        continue;
+      }
+      if (yield* ringSampleSlices(ring, seed, camX, camZ, spare)) computed += ring.lifted;
+    }
+    const made: number[] = [];
+    for (let level = 0; level < RING_COUNT; level++) {
+      if (!stale(level)) continue;
+      const out = back[level] ?? ringGeometryBuffers(level > 0);
+      back[level] = out;
+      yield* geometrySlices(level, out);
+      made.push(level);
+    }
+    // The uploads are one step, and the only long one.
+    if (made.length > 0) yield CLIPMAP_UPLOAD_MS * made.length;
+    for (const level of made) {
+      applyRingGeometry(meshes[level] as Mesh, back[level] as RingGeometry);
+      const drawnBefore = front[level] ?? null;
+      front[level] = back[level] ?? null;
+      back[level] = drawnBefore;
+      markDrawn(level);
+    }
+    lifted = computed;
+    preparedUsed = used;
+    view.x = camX;
+    view.z = camZ;
+    // The rings stand somewhere new: aim the idle work at their next moves.
+    if (!Number.isNaN(crossing.lastX)) aim(crossing.lastX, crossing.lastZ, true);
+  }
+
+  const owner = {};
   for (let level = 0; level < RING_COUNT; level++) {
     rings.push(createRingSamples(seed, level, 0, 0));
     meshes.push(createClipmapMesh(scene, `clipmap_${level}`));
+    front.push(null);
+    back.push(null);
+    prepared.push(null);
   }
   finish(build(0, 0));
 
@@ -354,15 +490,23 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clip
   enableTrailPaint(scene, terrainMaterialFor(scene, "terrain"), seed);
   enableFeaturePaint(scene, terrainMaterialFor(scene, "terrain"), seed);
 
-  const owner = {};
   return {
     meshes,
     update(camX, camZ) {
+      const hx = camX - crossing.lastX;
+      const hz = camZ - crossing.lastZ;
+      if ((hx !== 0 || hz !== 0) && !Number.isNaN(hx) && !Number.isNaN(hz)) {
+        headingX = hx;
+        headingZ = hz;
+      }
       const kind = crossingAt(
         crossing, camX, camZ, snapOrigin(camX, BASE_SPACING), snapOrigin(camZ, BASE_SPACING), CLIPMAP_STEP,
         jobs !== undefined,
       );
-      if (kind === "none") return;
+      if (kind === "none") {
+        aim(camX, camZ, false);
+        return;
+      }
       if (kind === "later") {
         (jobs as SyncJobs).begin(owner, build(camX, camZ));
         return;
@@ -371,8 +515,15 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clip
       finish(build(camX, camZ));
     },
     view,
+    get lifted() {
+      return lifted;
+    },
+    get prepared() {
+      return preparedUsed;
+    },
     dispose() {
       jobs?.cancel(owner);
+      jobs?.idle(owner, null);
       for (const mesh of meshes) mesh.dispose();
     },
   };

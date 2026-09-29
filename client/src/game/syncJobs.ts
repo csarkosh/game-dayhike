@@ -12,6 +12,17 @@
  * `SYNC_LATE_FRAMES_MAX` frames after the crossing that began it, and a frame
  * spends at most the budget and one slice on jobs unless a job is that late.
  *
+ * What budget no job needs goes to idle work (`idle`): work a shell can do
+ * ahead of a crossing it expects, such as the terrain sampling the ground its
+ * rings will move onto next. It runs only while no job is pending, is never
+ * late, and may be dropped between any two of its slices.
+ *
+ * Slices are small, a tenth of a millisecond or so, except the one that
+ * uploads: that must be one step, and the terrain's takes about a millisecond
+ * a ring. A job says so by yielding the milliseconds its next slice will
+ * take, and such a slice starts only as a frame's share begins or where it
+ * fits in what is left of the budget; the jobs behind it use the rest.
+ *
  * Which crossings wait and which do not is each shell's `crossingAt`: the
  * first build, a jump of more than one cell (a teleport) and a view moving
  * more than half a cell a frame (the free camera's boost) all build at once,
@@ -36,8 +47,9 @@ export const SYNC_BUDGET_MS = 4;
 export const SYNC_LATE_FRAMES_MAX = 6;
 
 /** A rebuild in slices: each `next()` runs one slice, and the call that
- * returns `done` has applied the result. */
-export type Slices<T = void> = Generator<void, T, void>;
+ * returns `done` has applied the result. A slice may yield what it expects
+ * the next to take (ms); nothing yielded means a small one. */
+export type Slices<T = void> = Generator<number | void, T, void>;
 
 /** Runs `slices` to its end at once and returns what it returns. */
 export function finish<T>(slices: Slices<T>): T {
@@ -52,21 +64,29 @@ export type SyncJobs = {
    * one job: one it already has is dropped unfinished, and the new one takes
    * its place in the queue and its deadline. */
   begin(owner: object, slices: Slices): void;
-  /** Drops `owner`'s pending job unfinished; its meshes keep what they drew. */
+  /** Drops `owner`'s pending job unfinished; its meshes keep what they drew.
+   * A job dropped here or by `begin` is ended with `return`, so its `finally`
+   * blocks run. */
   cancel(owner: object): void;
   /** Whether `owner` has a job begun and not yet applied. */
   pending(owner: object): boolean;
+  /** Sets `owner`'s idle work, replacing any it has (null clears it): slices
+   * run only with the budget left while no job is pending. */
+  idle(owner: object, slices: Slices | null): void;
   /** This frame's share: the late jobs to their end, then slices of the rest
    * until the budget is spent. Call once a frame, after every shell's update. */
   run(): void;
   /** Frames `run` has closed. */
   readonly frame: number;
-  /** Slices the last `run` ran, and how many of them it ran past the budget
-   * because a job was late. For the tests. */
-  readonly last: { readonly slices: number; readonly late: number; readonly completed: number };
+  /** Slices the last `run` ran, how many of them it ran past the budget
+   * because a job was late, the jobs it completed, and the idle slices it
+   * ran. For the tests. */
+  readonly last: { readonly slices: number; readonly late: number; readonly completed: number; readonly idle: number };
 };
 
-type Job = { owner: object; slices: Slices; begun: number };
+/** A queued job: its slices, the frame whose crossing began it, and what
+ * its next slice is expected to take (ms). */
+type Job = { owner: object; slices: Slices; begun: number; next: number };
 
 /**
  * The scheduler. `clock` is read once as `run` starts and once before each
@@ -74,8 +94,10 @@ type Job = { owner: object; slices: Slices; begun: number };
  */
 export function createSyncJobs(clock: () => number): SyncJobs {
   const queue: Job[] = [];
+  /** Idle work, one per owner, oldest first. */
+  const idle: { owner: object; slices: Slices }[] = [];
   let frame = 0;
-  const last = { slices: 0, late: 0, completed: 0 };
+  const last = { slices: 0, late: 0, completed: 0, idle: 0 };
 
   function remove(job: Job): void {
     const at = queue.indexOf(job);
@@ -87,7 +109,9 @@ export function createSyncJobs(clock: () => number): SyncJobs {
   function slice(job: Job): boolean {
     let done: boolean | undefined;
     try {
-      done = job.slices.next().done;
+      const step = job.slices.next();
+      done = step.done;
+      job.next = step.done !== true && typeof step.value === "number" ? step.value : 0;
     } finally {
       if (done !== false) remove(job);
     }
@@ -100,22 +124,33 @@ export function createSyncJobs(clock: () => number): SyncJobs {
     begin(owner, slices) {
       const held = queue.find((job) => job.owner === owner);
       if (held === undefined) {
-        queue.push({ owner, slices, begun: frame });
+        queue.push({ owner, slices, begun: frame, next: 0 });
         return;
       }
+      // Dropped with `return`, so whatever it holds is handed back.
+      held.slices.return(undefined);
       held.slices = slices;
+      held.next = 0;
     },
     cancel(owner) {
       const held = queue.find((job) => job.owner === owner);
-      if (held !== undefined) remove(held);
+      if (held === undefined) return;
+      remove(held);
+      held.slices.return(undefined);
     },
     pending(owner) {
       return queue.some((job) => job.owner === owner);
+    },
+    idle(owner, slices) {
+      const at = idle.findIndex((work) => work.owner === owner);
+      if (at >= 0) idle.splice(at, 1)[0]?.slices.return(undefined);
+      if (slices !== null) idle.push({ owner, slices });
     },
     run() {
       last.slices = 0;
       last.late = 0;
       last.completed = 0;
+      last.idle = 0;
       const start = clock();
       // A late job goes to its end first: it is the one the picture waits on.
       // Its last slice takes it out of the queue, so the next job moves up
@@ -130,7 +165,31 @@ export function createSyncJobs(clock: () => number): SyncJobs {
         while (!slice(job)) last.late++;
         last.late++;
       }
-      while (queue.length > 0 && clock() - start < SYNC_BUDGET_MS) slice(queue[0] as Job);
+      // Then slices, oldest job first, while the budget lasts. A job whose
+      // next slice would not fit in what is left waits for the next frame
+      // (unless nothing has run yet this frame), and the jobs behind it go on.
+      for (let i = 0, ran = last.slices; i < queue.length;) {
+        const spent = clock() - start;
+        if (spent >= SYNC_BUDGET_MS) break;
+        const job = queue[i] as Job;
+        if (last.slices > ran && spent + job.next > SYNC_BUDGET_MS) {
+          i++;
+          continue;
+        }
+        slice(job);
+        // A job done has left the queue, and the next has moved up to `i`.
+      }
+      // Then idle work, with what is left, while nothing is pending.
+      while (queue.length === 0 && idle.length > 0 && clock() - start < SYNC_BUDGET_MS) {
+        const work = idle[0] as { owner: object; slices: Slices };
+        let done = true;
+        try {
+          done = work.slices.next().done === true;
+        } finally {
+          if (done) idle.shift();
+        }
+        last.idle++;
+      }
       frame++;
     },
     get frame() {
