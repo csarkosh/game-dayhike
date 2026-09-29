@@ -4,7 +4,7 @@ import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** The committed corpus: every `*.json` in it is read. */
+/** The committed corpus: one shader file a stage, `<h>/<id>.<stage>[.uniformity-off].glsl` (`corpus.mjs`). */
 export const CORPUS_DIR = fileURLToPath(new URL('../../../client/shaders/corpus/', import.meta.url));
 /** The ten stages made under Node (`tools/wgsl/node-corpus.mjs`), which no
  * browser asks for: a fixture the tools' and the client's tests translate,

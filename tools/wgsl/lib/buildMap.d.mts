@@ -1,9 +1,9 @@
 // Types for the client suite, which imports `buildMap.mjs` from TypeScript.
 
-type CorpusStage = { stage: "vertex" | "fragment"; flag: boolean; glsl: string };
+export type CorpusStage = { stage: "vertex" | "fragment"; flag: boolean; glsl: string };
 
 /** What the tools use of `client/src/game/wgslFormat.ts`. */
-type Shared = {
+export type Shared = {
   lookupSalt(parts: { babylon: string; translators: string; staticUniformityOff: boolean }): string;
   stageKey(salt: string, stage: "vertex" | "fragment", flag: boolean, glsl: string): string;
   corpusId(entry: CorpusStage): string;
@@ -13,10 +13,6 @@ type Shared = {
 };
 
 export declare function nodeSalt(shared: Shared, clientDir?: string): string;
-export declare function readCorpusDir(
-  dir: string,
-  shared: Shared,
-): { files: { name: string; stages: number }[]; stages: CorpusStage[]; withCarriageReturns: { file: string; stage: "vertex" | "fragment"; id: string }[] };
 export declare function asciiProblem(text: string): string | null;
 export declare function buildMap(options: {
   stages: readonly CorpusStage[];

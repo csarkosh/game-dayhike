@@ -1,11 +1,12 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { timeLimit } from '../../../client/test/helpers/timeLimit.ts';
+import { readCorpusDir, stageFile } from '../lib/corpus.mjs';
 import { mergeCorpus } from '../lib/mergeCorpus.mjs';
 import { loadShared } from '../lib/shared.mjs';
 
@@ -21,19 +22,16 @@ function directory(files = {}) {
   return dir;
 }
 
-/** Every stage the corpus in `dir` holds, and the files it is in. */
-function corpusIn(dir, shared) {
-  const files = readdirSync(dir).filter((name) => name.endsWith('.json')).sort();
-  return { files, stages: files.flatMap((name) => shared.readCorpus(readFileSync(join(dir, name), 'utf8'))) };
-}
+/** Every file under `dir`, by its path relative to it. */
+const tree = (dir) => readdirSync(dir, { recursive: true }).filter((name) => statSync(join(dir, name)).isFile()).sort();
 
 let shared;
 beforeAll(async () => {
   shared = await loadShared();
 }, timeLimit(30_000));
 
-describe('merging recorded corpus files', () => {
-  it('writes the union, each stage once, in the file named by the first digit of its name, and counts what is new', () => {
+describe('merging recordings into the corpus', () => {
+  it('writes the union, each stage once, in a file of its own, and counts what is new', () => {
     const a = stage('// a');
     const b = stage('// b', 'vertex');
     const c = stage('// c', 'fragment', true);
@@ -43,32 +41,18 @@ describe('merging recorded corpus files', () => {
     });
     const dir = directory();
     const first = mergeCorpus({ dir, recorded: [join(recorded, 'one.json'), join(recorded, 'two.json')], shared });
-    expect(first).toEqual({ read: 4, added: 3, total: 3, removed: [], normalised: 0 });
-    const { files, stages } = corpusIn(dir, shared);
-    expect(files).toEqual([...new Set([a, b, c].map((s) => `stages-${shared.corpusId(s)[0]}.json`))].sort());
-    expect(stages).toHaveLength(3);
+    expect(first).toEqual({ read: 4, added: 3, total: 3, removed: [], normalised: 0, leftAlone: [] });
+    expect(tree(dir)).toEqual([a, b, c].map((s) => stageFile(s, shared)).sort());
+    const { stages } = readCorpusDir(dir, shared);
     expect(new Set(stages.map((s) => shared.corpusId(s)))).toEqual(new Set([a, b, c].map((s) => shared.corpusId(s))));
-    for (const name of files) {
-      const text = readFileSync(join(dir, name), 'utf8');
-      // Each file as `corpusText` writes it: sorted, one stage a line.
-      expect(text).toBe(shared.corpusText(shared.readCorpus(text)));
-      for (const s of shared.readCorpus(text)) expect(shared.corpusId(s)[0]).toBe(name[7]);
-    }
     // What it read from elsewhere, it leaves where it was.
     expect(existsSync(join(recorded, 'one.json'))).toBe(true);
-
-    // Merged again, and with one new stage: only that one is new, and the
-    // files it does not reach keep their bytes.
-    const before = Object.fromEntries(files.map((name) => [name, readFileSync(join(dir, name), 'utf8')]));
-    const d = stage('// d');
-    const more = directory({ 'three.json': shared.corpusText([a, d]) });
-    expect(mergeCorpus({ dir, recorded: [join(more, 'three.json')], shared })).toEqual({ read: 2, added: 1, total: 4, removed: [], normalised: 0 });
-    const dFile = `stages-${shared.corpusId(d)[0]}.json`;
-    for (const name of files.filter((n) => n !== dFile)) expect(readFileSync(join(dir, name), 'utf8')).toBe(before[name]);
-    expect(mergeCorpus({ dir, recorded: [], shared })).toEqual({ read: 0, added: 0, total: 4, removed: [], normalised: 0 });
+    expect(mergeCorpus({ dir, recorded: [join(recorded, 'one.json')], shared })).toEqual({ read: 2, added: 0, total: 3, removed: [], normalised: 0, leftAlone: [] });
+    expect(mergeCorpus({ dir, recorded: [], shared })).toEqual({ read: 0, added: 0, total: 3, removed: [], normalised: 0, leftAlone: [] });
+    expect(tree(dir)).toHaveLength(3);
   });
 
-  it('merges a recorded file dropped into the corpus as it was downloaded, and removes it once its stages are in', () => {
+  it('merges a recording dropped into the corpus as it was downloaded, and removes it once its stages are files', () => {
     const a = stage('// a');
     const b = stage('// b');
     const dir = directory({ 'dayhike-wgsl-corpus-1790000000000.json': shared.corpusText([a, b]) });
@@ -78,17 +62,27 @@ describe('merging recorded corpus files', () => {
       total: 2,
       removed: ['dayhike-wgsl-corpus-1790000000000.json'],
       normalised: 0,
+      leftAlone: [],
     });
-    const { files, stages } = corpusIn(dir, shared);
-    expect(files.every((name) => /^stages-[0-9a-f]\.json$/.test(name))).toBe(true);
-    expect(stages).toHaveLength(2);
+    expect(tree(dir)).toEqual([a, b].map((s) => stageFile(s, shared)).sort());
   });
 
-  it('refuses a recorded file that is not a corpus, naming it, and writes nothing', () => {
-    const dir = directory({ [`stages-0.json`]: shared.corpusText([]) });
+  it('refuses a recording that is not a corpus, naming it, and writes nothing', () => {
+    const dir = directory();
     const bad = join(directory({ 'report.json': '{"mode":"record","effects":[]}' }), 'report.json');
-    expect(() => mergeCorpus({ dir, recorded: [bad], shared })).toThrow(`${bad}: not a corpus of dayhike-wgsl-corpus/1`);
-    expect(readFileSync(join(dir, 'stages-0.json'), 'utf8')).toBe(shared.corpusText([]));
+    const good = join(directory({ 'r.json': shared.corpusText([stage('// a')]) }), 'r.json');
+    expect(() => mergeCorpus({ dir, recorded: [good, bad], shared })).toThrow(`${bad}: not a corpus of dayhike-wgsl-corpus/1`);
+    expect(tree(dir)).toEqual([]);
+  });
+
+  it('refuses a stage that is not Unicode text, naming it, and writes nothing', () => {
+    const lone = stage('// \ud800');
+    const dir = directory();
+    const recorded = join(directory({ 'r.json': shared.corpusText([lone]) }), 'r.json');
+    expect(() => mergeCorpus({ dir, recorded: [recorded], shared })).toThrow(
+      `${recorded}: the fragment stage ${shared.corpusId(lone).slice(0, 16)} is not valid UTF-8 text (it holds a lone surrogate); nothing was written`,
+    );
+    expect(tree(dir)).toEqual([]);
   });
 
   it('runs from the command line, saying what it read and what was new', async () => {
@@ -99,35 +93,27 @@ describe('merging recorded corpus files', () => {
   }, timeLimit(30_000));
 });
 
-describe('line endings in the corpus', () => {
-  it('turns every \\r\\n into \\n, in recorded files and in the corpus\'s own, counts the stages it changed, and rewrites every file', () => {
+describe('line endings in a recording', () => {
+  it('turns every \\r\\n into \\n and counts the stages it changed', () => {
     const windows = stage('// one\r\n// two\r\nvoid main() {}');
     const unix = stage('// one\n// two\nvoid main() {}');
     const other = stage('// three\r\nvoid main() {}', 'vertex');
-    // The corpus as a checkout with Windows line endings left it: one stage in
-    // a file of its own name, another under a name its repaired text no longer has.
-    const dir = directory({
-      [`stages-${shared.corpusId(other)[0]}.json`]: shared.corpusText([other]),
-    });
-    const recorded = join(directory({ 'r.json': shared.corpusText([windows, unix]) }), 'r.json');
-    expect(mergeCorpus({ dir, recorded: [recorded], shared })).toEqual({ read: 2, added: 1, total: 2, removed: [], normalised: 2 });
-    const { files, stages } = corpusIn(dir, shared);
+    const dir = directory();
+    const recorded = join(directory({ 'r.json': shared.corpusText([windows, unix, other]) }), 'r.json');
+    expect(mergeCorpus({ dir, recorded: [recorded], shared })).toEqual({ read: 3, added: 2, total: 2, removed: [], normalised: 2, leftAlone: [] });
+    const { stages } = readCorpusDir(dir, shared);
     expect(stages.map((s) => s.glsl).sort()).toEqual(['#version 450\n// one\n// two\nvoid main() {}', '#version 450\n// three\nvoid main() {}']);
-    expect(stages.some((s) => s.glsl.includes('\r'))).toBe(false);
-    // Every file is one the stages it holds name: none left with the old text.
-    for (const name of files) for (const s of shared.readCorpus(readFileSync(join(dir, name), 'utf8'))) expect(shared.corpusId(s)[0]).toBe(name[7]);
-    expect(files).toEqual([...new Set(stages.map((s) => `stages-${shared.corpusId(s)[0]}.json`))].sort());
+    for (const file of tree(dir)) expect(readFileSync(join(dir, file)).includes(0x0d)).toBe(false);
   });
 
   it('refuses a stage that still carries a carriage return after that, naming it, and writes nothing', () => {
     const lone = stage('// one\rvoid main() {}');
-    const dir = directory({ 'stages-0.json': shared.corpusText([]) });
-    const recorded = join(directory({ 'r.json': shared.corpusText([lone]) }), 'r.json');
+    const dir = directory();
+    const recorded = join(directory({ 'r.json': shared.corpusText([stage('// fine'), lone]) }), 'r.json');
     expect(() => mergeCorpus({ dir, recorded: [recorded], shared })).toThrow(
       `${recorded}: the fragment stage ${shared.corpusId(lone).slice(0, 16)} carries a carriage return that ends no line; nothing was written`,
     );
-    expect(readdirSync(dir)).toEqual(['stages-0.json']);
-    expect(readFileSync(join(dir, 'stages-0.json'), 'utf8')).toBe(shared.corpusText([]));
+    expect(tree(dir)).toEqual([]);
   });
 
   it('says from the command line how many stages had Windows line endings, and exits 1 on one it cannot repair', async () => {
