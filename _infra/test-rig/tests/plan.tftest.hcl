@@ -2,6 +2,38 @@
 # provider: `plan` and `apply` here create nothing and use no AWS credentials.
 # The plan-only runs come first; the apply runs at the end share one mocked
 # state, in order.
+#
+# The resources are in ../modules/aws-test-rig/, and an assertion can name a
+# resource, a local or a precondition of the configuration a run tests only,
+# never one inside a module it calls. So the runs that read the machine test
+# that module directly (their `module` block), with the addresses it declares;
+# the runs of this root's variable validations test this root. The module takes
+# every input from the variables below, pinned to this root's defaults, which
+# tests/variables.test.mjs checks, with this root passing each one on
+# unchanged.
+
+# Every variable pinned to its default, so that a terraform.tfvars in this
+# directory (git-ignored, a person's own) cannot change what a run tests, and
+# the module's inputs as this root sets them.
+variables {
+  region                 = "us-east-1"
+  availability_zone      = null
+  instance_type          = "g4dn.xlarge"
+  image_id               = null
+  disk_size_gb           = 50
+  running                = true
+  max_run_hours          = 4
+  backstop_stop_schedule = "cron(0 9 * * ? *)"
+  desktop_user           = "hiker"
+  password_parameter     = "/test-rig/desktop-password"
+  display_width          = 1920
+  display_height         = 1080
+  vpc_cidr               = "10.70.0.0/24"
+  budget_enabled         = false
+  budget_email           = null
+  monthly_budget_usd     = 30
+  tags                   = { purpose = "test-rig" }
+}
 
 mock_provider "aws" {
   override_data {
@@ -39,6 +71,40 @@ mock_provider "aws" {
     values = { tags = { Name = "test-rig", purpose = "test-rig" } }
   }
 
+  # The same answers at the addresses a run of this root (no `module` block)
+  # reads them at, so that its plan goes through the module as the runs above
+  # it do. `terraform validate` warns that half of these targets do not exist:
+  # each half exists in the runs of one configuration only.
+  override_data {
+    target = module.test_rig.data.aws_partition.current
+    values = { partition = "aws" }
+  }
+
+  override_data {
+    target = module.test_rig.data.aws_caller_identity.current
+    values = { account_id = "111122223333" }
+  }
+
+  override_data {
+    target = module.test_rig.data.aws_ssm_parameter.windows
+    values = { insecure_value = "ami-0123456789abcdef0" }
+  }
+
+  override_data {
+    target = module.test_rig.data.aws_ec2_instance_type_offerings.allowed
+    values = { locations = ["us-east-1d", "us-east-1b", "us-east-1a"] }
+  }
+
+  override_data {
+    target = module.test_rig.data.aws_instances.existing
+    values = { ids = ["i-0123456789abcdef0"] }
+  }
+
+  override_data {
+    target = module.test_rig.data.aws_instance.existing
+    values = { tags = { Name = "test-rig", purpose = "test-rig" } }
+  }
+
   # The scheduler checks that its role is an ARN.
   mock_resource "aws_iam_role" {
     defaults = { arn = "arn:aws:iam::111122223333:role/mock" }
@@ -47,6 +113,10 @@ mock_provider "aws" {
 
 run "defaults" {
   command = plan
+
+  module {
+    source = "../modules/aws-test-rig"
+  }
 
   assert {
     condition     = aws_instance.test_rig.instance_type == "g4dn.xlarge"
@@ -278,6 +348,10 @@ run "defaults" {
 run "l4" {
   command = plan
 
+  module {
+    source = "../modules/aws-test-rig"
+  }
+
   variables {
     instance_type = "g6.xlarge"
   }
@@ -296,6 +370,10 @@ run "l4" {
 run "ninety_minutes" {
   command = plan
 
+  module {
+    source = "../modules/aws-test-rig"
+  }
+
   variables {
     max_run_hours = 1.5
   }
@@ -308,6 +386,10 @@ run "ninety_minutes" {
 
 run "budget_on" {
   command = plan
+
+  module {
+    source = "../modules/aws-test-rig"
+  }
 
   variables {
     budget_enabled = true
@@ -333,6 +415,10 @@ run "budget_on" {
 run "budget_needs_email" {
   command = plan
 
+  module {
+    source = "../modules/aws-test-rig"
+  }
+
   variables {
     budget_enabled = true
   }
@@ -342,6 +428,10 @@ run "budget_needs_email" {
 
 run "no_backstop" {
   command = plan
+
+  module {
+    source = "../modules/aws-test-rig"
+  }
 
   variables {
     backstop_stop_schedule = null
@@ -462,6 +552,10 @@ run "rejects_part_minutes" {
 run "created_stopped_is_refused" {
   command = plan
 
+  module {
+    source = "../modules/aws-test-rig"
+  }
+
   variables {
     running = false
   }
@@ -480,6 +574,10 @@ run "created_stopped_is_refused" {
 run "created_running" {
   command = apply
 
+  module {
+    source = "../modules/aws-test-rig"
+  }
+
   override_data {
     target = data.aws_instances.existing
     values = { ids = [] }
@@ -494,6 +592,10 @@ run "created_running" {
 # Stopping the machine that exists is allowed.
 run "stopped" {
   command = apply
+
+  module {
+    source = "../modules/aws-test-rig"
+  }
 
   variables {
     running = false
@@ -546,6 +648,10 @@ run "stopped" {
 run "plan_while_stopped" {
   command = plan
 
+  module {
+    source = "../modules/aws-test-rig"
+  }
+
   variables {
     running = false
   }
@@ -569,6 +675,10 @@ run "plan_while_stopped" {
 run "resized_while_stopped" {
   command = apply
 
+  module {
+    source = "../modules/aws-test-rig"
+  }
+
   variables {
     running       = false
     instance_type = "g6.xlarge"
@@ -589,6 +699,10 @@ run "resized_while_stopped" {
 # applied again all the same.
 run "timer_changed_while_stopped" {
   command = apply
+
+  module {
+    source = "../modules/aws-test-rig"
+  }
 
   variables {
     running       = false
@@ -613,6 +727,10 @@ run "timer_changed_while_stopped" {
 run "script_changed_while_stopped_is_refused" {
   command = plan
 
+  module {
+    source = "../modules/aws-test-rig"
+  }
+
   variables {
     running       = false
     instance_type = "g6.xlarge"
@@ -636,6 +754,10 @@ run "script_changed_while_stopped_is_refused" {
 # The same change with the machine running is allowed, and replaces it.
 run "script_changed_while_running" {
   command = apply
+
+  module {
+    source = "../modules/aws-test-rig"
+  }
 
   variables {
     running       = true
@@ -669,6 +791,10 @@ run "script_changed_while_running" {
 run "stopped_after_set_up" {
   command = apply
 
+  module {
+    source = "../modules/aws-test-rig"
+  }
+
   variables {
     running       = false
     instance_type = "g6.xlarge"
@@ -686,6 +812,10 @@ run "stopped_after_set_up" {
 # refused, by the network that every regional resource here is built on.
 run "region_changed_is_refused" {
   command = plan
+
+  module {
+    source = "../modules/aws-test-rig"
+  }
 
   variables {
     region        = "us-west-2"

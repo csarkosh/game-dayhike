@@ -1,5 +1,5 @@
-# Checks of setup.ps1 that run without Windows, on PowerShell 7 on any
-# operating system:
+# Checks of setup.ps1 (in _infra/modules/aws-test-rig/) that run without
+# Windows, on PowerShell 7 on any operating system:
 #
 #   pwsh -NoProfile -File _infra/test-rig/tests/setup.tests.ps1
 #
@@ -11,7 +11,7 @@
 # Exits 1 on any failure.
 
 $ErrorActionPreference = 'Stop'
-$script = Join-Path $PSScriptRoot '..' 'setup.ps1'
+$script = Join-Path $PSScriptRoot '..' '..' 'modules' 'aws-test-rig' 'setup.ps1'
 $fail = 0
 function Check([string]$Name, [bool]$Condition) {
   if ($Condition) { "ok   $Name" } else { "FAIL $Name"; $script:fail++ }

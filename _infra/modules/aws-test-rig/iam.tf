@@ -11,7 +11,8 @@
 #
 # Nothing here grants anything on Route53, on another bucket, or on any other
 # instance. The policies are plain jsonencode() values rather than policy
-# document data sources, so that tests/ can assert what they say.
+# document data sources, so that _infra/test-rig/tests/ can assert what they
+# say.
 
 locals {
   arn_prefix = "arn:${data.aws_partition.current.partition}"

@@ -1,3 +1,18 @@
+# The rented Windows machine with an NVIDIA GPU on AWS. This directory is its
+# root: the backend, the provider and one call of ../modules/aws-test-rig/,
+# where the resources are, as _infra/ calls its own modules. It is what a
+# person runs (`terraform apply -var running=false` and the rest, README.md).
+# A resource's address carries the call's name, as in
+# module.test_rig.aws_instance.test_rig; moved.tf maps the addresses the
+# resources had before they moved into the module.
+#
+# It is NOT called from _infra/main.tf, and must not be: the machine keeps a
+# state of its own, so that hosting's state holds nothing of it, starting,
+# stopping or replacing it never plans against hosting, DNS or the signaling
+# service, and a `terraform destroy` here can only reach the module's
+# resources. (The desktop user's password is kept out of this state too: the
+# machine writes it to Parameter Store, which Terraform does not manage.)
+
 terraform {
   # 1.7 for the mock providers in tests/.
   required_version = ">= 1.7"
@@ -6,10 +21,8 @@ terraform {
   # worktree dies with the worktree), in the same versioned bucket, under its
   # own prefix. Nothing here reads _infra's state and nothing in _infra reads
   # this one: the two root modules share a bucket and an AWS account and
-  # nothing else, so a `terraform destroy` run here can only reach the
-  # resources below, never hosting, DNS or the signaling service. The bucket
-  # is Google Cloud Storage, so `init` and `plan` need Google application
-  # default credentials as well as AWS ones.
+  # nothing else. The bucket is Google Cloud Storage, so `init` and `plan`
+  # need Google application default credentials as well as AWS ones.
   backend "gcs" {
     bucket = "fps-csarko-tfstate"
     prefix = "test-rig-aws"
@@ -28,81 +41,39 @@ provider "aws" {
 
   # Every resource that takes tags gets this one, so the machine's cost can be
   # told apart in billing and the optional budget can filter on it. The
-  # provider also puts it on the instance's root volume.
+  # provider also puts it on the instance's root volume. The module's
+  # resources take it from this provider.
   default_tags {
     tags = local.tags
   }
 }
 
 locals {
-  tags = {
-    purpose = "test-rig"
+  tags = { purpose = "test-rig" }
+}
+
+module "test_rig" {
+  source = "../modules/aws-test-rig"
+
+  region                 = var.region
+  availability_zone      = var.availability_zone
+  instance_type          = var.instance_type
+  image_id               = var.image_id
+  disk_size_gb           = var.disk_size_gb
+  running                = var.running
+  max_run_hours          = var.max_run_hours
+  backstop_stop_schedule = var.backstop_stop_schedule
+  desktop_user           = var.desktop_user
+  password_parameter     = var.password_parameter
+  display_width          = var.display_width
+  display_height         = var.display_height
+  vpc_cidr               = var.vpc_cidr
+  budget_enabled         = var.budget_enabled
+  budget_email           = var.budget_email
+  monthly_budget_usd     = var.monthly_budget_usd
+  tags                   = local.tags
+
+  providers = {
+    aws = aws
   }
-
-  name = "test-rig"
-}
-
-data "aws_partition" "current" {}
-
-# The region is chosen once. The provider's region is not an attribute of any
-# resource, so changing var.region does not move or replace anything: every
-# resource is looked for in the new region, not found, and dropped from state,
-# while the machine, its disk and its schedule go on existing, and billing, in
-# the old one. This records the region of the first apply (a later change to
-# the input is ignored), and the network, which every regional resource here
-# is built on, refuses to be planned in another. Moving is `terraform destroy`
-# in the old region first.
-resource "terraform_data" "region" {
-  input = var.region
-
-  lifecycle {
-    ignore_changes = [input]
-  }
-}
-
-locals {
-  region_error = "This state's machine is in ${terraform_data.region.output}, and region is now ${var.region}. The region is chosen once: set it back, or run `terraform destroy` with the old region first and then apply with the new one."
-}
-
-# Read at plan time, never written into a file: the account id appears only in
-# the ARNs below and in state.
-data "aws_caller_identity" "current" {}
-
-# AWS's public parameter for the newest Windows Server 2025 image with the
-# desktop (Full, not Core: Chrome needs a desktop), English. 2025 because the
-# newest GRID driver in AWS's bucket is built for Windows Server 2022 and 2025
-# only (GRID 17 and later dropped 2019), and Amazon DCV server 2025.0 is the
-# first release to support 2025; of the two, 2025 has the longer support life.
-# The instance ignores later changes to it (instance.tf), so a newer monthly
-# image never replaces a machine that exists.
-data "aws_ssm_parameter" "windows" {
-  name = "/aws/service/ami-windows-latest/Windows_Server-2025-English-Full-Base"
-}
-
-# The zones that offer every machine size this module allows. The subnet goes
-# in the first of them, so switching var.instance_type never moves the subnet
-# (which would replace it and the machine with it).
-data "aws_ec2_instance_type_offerings" "allowed" {
-  for_each = toset(local.instance_types)
-
-  location_type = "availability-zone"
-
-  filter {
-    name   = "instance-type"
-    values = [each.key]
-  }
-}
-
-locals {
-  instance_types = keys(local.hourly_usd)
-
-  common_zones = sort(setintersection([
-    for offering in data.aws_ec2_instance_type_offerings.allowed : offering.locations
-  ]...))
-
-  availability_zone = var.availability_zone != null ? var.availability_zone : try(local.common_zones[0], null)
-
-  # Where the machine writes the desktop user's password (setup.ps1). Not a
-  # Terraform resource: Terraform reads a parameter's value back into state.
-  password_parameter_arn = "arn:${data.aws_partition.current.partition}:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${var.password_parameter}"
 }

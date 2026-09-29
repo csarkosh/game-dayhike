@@ -5,8 +5,8 @@
 # Off unless budget_enabled. It counts only costs that carry the tag
 # purpose = test-rig: the machine and its disk. AWS counts a tag in billing only
 # once it is activated as a cost allocation tag, which is an account-wide
-# setting made by hand (see README.md), and only for costs after that: until
-# then the budget reads $0.
+# setting made by hand (see _infra/test-rig/README.md), and only for costs
+# after that: until then the budget reads $0.
 #
 # The amount and thresholds are set so that an alert means something is wrong.
 # An ordinary month is four three-hour runs: $12.58 on g4dn.xlarge, $15.93 on

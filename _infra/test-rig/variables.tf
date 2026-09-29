@@ -3,10 +3,10 @@ variable "region" {
     AWS region the machine runs in. us-east-1 and us-west-2 both offer both
     machine sizes, at the same prices, and are where this account's quota for
     on-demand G instances is set (it is per region). Chosen once: a later
-    change is refused (main.tf, terraform_data.region), because it would leave
-    the machine, its disk and its schedule billing in the old region while
-    Terraform forgot them. To move, `terraform destroy` with the old region
-    first.
+    change is refused (../modules/aws-test-rig/main.tf, terraform_data.region),
+    because it would leave the machine, its disk and its schedule billing in
+    the old region while Terraform forgot them. To move, `terraform destroy`
+    with the old region first.
   EOT
   type        = string
   default     = "us-east-1"
@@ -23,8 +23,9 @@ variable "availability_zone" {
     zone, in name order, that offers both allowed sizes, so a switch of size
     never moves the machine. The zone is fixed once the subnet exists: a later
     change in what AWS offers never moves it, and neither does a change here
-    (move it on purpose with `terraform apply -replace=aws_subnet.test_rig`,
-    which replaces the machine too).
+    (move it on purpose with
+    `terraform apply -replace=module.test_rig.aws_subnet.test_rig`, which
+    replaces the machine too).
   EOT
   type        = string
   default     = null
@@ -53,7 +54,7 @@ variable "image_id" {
     image: an image made from this machine once it has been set up (see
     README.md). Null (the default) uses the public image. The machine ignores a
     change here until it is replaced with
-    `terraform apply -replace=aws_instance.test_rig`.
+    `terraform apply -replace=module.test_rig.aws_instance.test_rig`.
   EOT
   type        = string
   default     = null
@@ -197,7 +198,7 @@ variable "vpc_cidr" {
 }
 
 variable "budget_enabled" {
-  description = "Create the monthly budget alert (budget.tf)."
+  description = "Create the monthly budget alert (../modules/aws-test-rig/budget.tf)."
   type        = bool
   default     = false
 }
