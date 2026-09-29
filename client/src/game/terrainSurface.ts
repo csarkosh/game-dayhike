@@ -1,4 +1,5 @@
 import { fbm2, valueNoise2 } from "../sim/field.js";
+import { shoreHeight } from "../sim/shoreStrip.js";
 import { clamp01, mixRgb, type Rgb } from "./colour.js";
 import { SLOPE_HI, SLOPE_LO } from "../sim/vegetation.js";
 
@@ -196,8 +197,12 @@ export function classifySurface(
   const wSub = W_PEBBLE;
   const coastal = mixRgb(submerged, sand, smoothstep(-0.4, 0.1, altitude));
   const wCoastal = mixW(wSub, wSand, smoothstep(-0.4, 0.1, altitude));
-  colour = mixRgb(coastal, colour, smoothstep(SAND_TOP, COAST_FADE_END, altitude));
-  w = mixW(wCoastal, w, smoothstep(SAND_TOP, COAST_FADE_END, altitude));
+  // Inland of the trailhead's pad the sand gives way by the strip's height
+  // (`sim/shoreStrip.ts`). Ground at 9 m and above has no sand to take, and
+  // is not asked about the strip.
+  const inland = smoothstep(SAND_TOP, COAST_FADE_END, altitude >= COAST_FADE_END ? altitude : shoreHeight(seed, x, z, altitude));
+  colour = mixRgb(coastal, colour, inland);
+  w = mixW(wCoastal, w, inland);
 
   // Canopy tint sits AFTER the coastal bands (the density field is already
   // zero on the beach) and BEFORE the slope overlays, so a cliff through a
