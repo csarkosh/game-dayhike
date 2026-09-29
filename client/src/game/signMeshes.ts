@@ -69,9 +69,9 @@ export const POST_CLEARANCE = 0.1;
 /** The gap between a label and the arm face it sits on: enough to never fight it for depth. */
 const LABEL_LIFT = 0.001;
 /** The lettering: dark, like letters routed into weathered wood. */
-export const CARVED = "#24180c";
+const CARVED = "#24180c";
 /** The lit lower lip of a routed letter, drawn a little below it. */
-export const CARVED_LIP = "rgba(236, 214, 170, 0.35)";
+const CARVED_LIP = "rgba(236, 214, 170, 0.35)";
 
 /**
  * Takes the wear out of painted lettering: soft patches of fade, then the

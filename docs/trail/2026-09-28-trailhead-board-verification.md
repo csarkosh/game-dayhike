@@ -4,12 +4,11 @@
 **Checks:** [`2026-09-28-trailhead-board.md`](2026-09-28-trailhead-board.md) §9.2.
 **Looked at:** commit `b304873` for the stills; commit `6a22a93` for the depth measurement and
 the two-player view; the board's place as it stands now, 4.5 m past the entrance, for the last
-section.
+two sections.
 **Browser:** Chrome 154 on macOS, `ANGLE (Apple, ANGLE Metal Renderer: Apple M4)`. `?tier=high`
 drew with WebGPU at 1600 by 900; `?tier=low` drew with WebGL2 at 1066 by 600 (scaling 1.5).
-**Images:** the stand-ins. The paper and the photograph are not in the repository yet, and the
-model's face is still its plain pale panel, so the sheets are flat paper, the photograph a grey
-print, and the wood behind them a pale board.
+**Images:** the stand-ins, for every section but the last. There the model's face carries its
+planks and the paper and the photograph are in.
 
 The stills are kept outside the repository: every file under `docs/` is a dated `.md`.
 
@@ -36,7 +35,7 @@ The board stood 2.5 m past the entrance for every section but the last.
 | 2 | From arrival the trail's name can be read | Met on all six | Met on four; missed on `room-50` and `room-19` |
 | 3 | At a metre every sheet can be read | Met on all six | Met on four; missed on `room-50` and `room-19` |
 | 4 | The map matches the world | Met on five; `room-140` has no fork | The same map |
-| 5 | The planks and the wear read as a weathered board | Missed: see below | Missed |
+| 5 | The planks and the wear read as a weathered board | Missed with the stand-ins; met with the planks and the images (last section) | The same |
 | 6 | The board can be walked round and not through | Met on all six | The same simulation |
 | 7 | "Read the poster" at the poster's sheet and nowhere else | Missed: see below | The same simulation |
 | 8 | By headlamp after dark the board can be read | Missed on all six | Not looked at |
@@ -208,3 +207,26 @@ furthest. The watcher's sweep was run with the board in both places and no count
 differs between them.
 
 The board by headlamp and the fork signs' lettering are left as they are.
+
+## With the planks, the paper and the photograph
+
+Looked at on `hollow` and `room-140`, on both tiers, on arrival, from 2.3 m and from a metre.
+
+| | Seen |
+| --- | --- |
+| The face | Weathered planks lying across the board, grey-brown, with knots and gaps between them. |
+| The sheets | Grey-beige paper with fibre and flecks, each with its staples, its stain and its bleached corner. They stand out from the planks on both tiers. |
+| The poster | The photograph of the missing hiker, head and shoulders, facing the reader, cut to its print and not stretched, faded toward the paper. Under it the name and the two lines, read at a metre. |
+| The map and the rules | As before, read at a metre. |
+| The model's own materials | Two, both textured; the game changes neither. |
+| The images | Both are asked for and arrive: the stand-ins are replaced on the first frames. |
+
+**The trail's name was lost on the planks, and is painted now.** The name and the distance were
+drawn as the fork signs' lettering is, dark in the wood. On the pale stand-in face that read; on
+the dark planks it could barely be made out on either tier. The grooves carry pale paint now
+(`ROUTED_PAINT`, `ROUTED_SHADOW`), worn as before. With it the name and the distance are read
+at a metre and from 2.3 m on the high tier, and at a metre on the low; from 2.3 m on the low
+tier they are faint.
+
+Still as the earlier sections found: each sheet's stain is a round disc with an even edge; by
+headlamp at a metre the sheets wash out to white.

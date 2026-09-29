@@ -13,11 +13,11 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { Scene } from "@babylonjs/core/scene.js";
-import { BOARD_TEXTURE, DISTANCE, SHEETS, TITLE, boardText, type BoardText, type Sheet, type SheetName } from "./boardFace.js";
+import { BOARD_TEXTURE, DISTANCE, ROUTED_PAINT, ROUTED_SHADOW, SHEETS, TITLE, boardText, type BoardText, type Sheet, type SheetName } from "./boardFace.js";
 import { boardMap, type BoardMap, type MapInput } from "./boardMap.js";
 import { sheetWear, type SheetWear } from "./boardWear.js";
 import { labelWear, nameHash } from "./labelWear.js";
-import { CARVED, CARVED_LIP, scrape } from "./signMeshes.js";
+import { scrape } from "./signMeshes.js";
 
 export type BoardDrawing = {
   seed: number;
@@ -138,7 +138,7 @@ function routed(ctx: Ctx, text: string, at: { centreX: number; centreY: number; 
   const x = at.centreX - metrics.width / 2;
   const baseline = at.centreY + at.height / 2;
   const lip = Math.max(1, Math.round(size * 0.05));
-  const ink = { x, y: baseline - at.height, width: metrics.width, height: at.height + lip };
+  const ink = { x, y: baseline - at.height - lip, width: metrics.width, height: at.height + lip };
   const wear = labelWear(text, ink);
   const chars = Array.from(spaced);
   let letter = 0;
@@ -146,9 +146,10 @@ function routed(ctx: Ctx, text: string, at: { centreX: number; centreY: number; 
     const left = x + ctx.measureText(chars.slice(0, i).join("")).width;
     const faded = char === " " ? 1 : (wear.letters[letter++] ?? 1);
     ctx.globalAlpha = wear.alpha * faded;
-    ctx.fillStyle = CARVED_LIP;
-    ctx.fillText(char, left, baseline + lip);
-    ctx.fillStyle = CARVED;
+    // The shadow lies under the groove's upper edge, so a little above the paint.
+    ctx.fillStyle = ROUTED_SHADOW;
+    ctx.fillText(char, left, baseline - lip);
+    ctx.fillStyle = ROUTED_PAINT;
     ctx.fillText(char, left, baseline);
   }
   ctx.globalAlpha = 1;

@@ -29,6 +29,13 @@ export const SHEETS: readonly Sheet[] = [
 /** The routed lines across the top: each line's centre and its capitals' height, in pixels. */
 export const TITLE = { centreX: 1024, centreY: 87, height: 102 } as const;
 export const DISTANCE = { centreX: 1024, centreY: 179, height: 41 } as const;
+/**
+ * The routed lettering's two colours: pale paint left in the grooves, and
+ * the shadow the groove's upper edge throws into it. The planks are dark,
+ * and lettering as dark as the fork signs' cannot be read on them.
+ */
+export const ROUTED_PAINT = "#f1ebd8";
+export const ROUTED_SHADOW = "rgba(18, 11, 5, 0.6)";
 
 export function sheet(name: SheetName): Sheet {
   const found = SHEETS.find((s) => s.name === name);

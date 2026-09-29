@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOARD_FACE, BOARD_TEXTURE, DISTANCE, SHEETS, TITLE, boardText, miles, sheet, sheetCentre } from "../../src/game/boardFace.js";
+import { BOARD_FACE, BOARD_TEXTURE, boardText, DISTANCE, miles, ROUTED_PAINT, ROUTED_SHADOW, sheet, sheetCentre, SHEETS, TITLE } from "../../src/game/boardFace.js";
 
 describe("the board's face", () => {
   it("is twice as wide as tall, on the texture and on the board", () => {
@@ -69,5 +69,12 @@ describe("the board's words", () => {
   it("lays out any hiker's name", () => {
     expect(boardText("Trail 14", "", "Last seen at Trail 14.", 1274).poster.name).toBe("");
     expect(boardText("Trail 14", "Bartholomew Featherstonehaugh-Cholmondeley", "x", 1).poster.name).toBe("Bartholomew Featherstonehaugh-Cholmondeley");
+  });
+});
+
+describe("the routed lettering", () => {
+  it("is pale paint in the grooves, over the grooves' own shadow, to be read on dark planks", () => {
+    expect(ROUTED_PAINT).toBe("#f1ebd8");
+    expect(ROUTED_SHADOW).toBe("rgba(18, 11, 5, 0.6)");
   });
 });

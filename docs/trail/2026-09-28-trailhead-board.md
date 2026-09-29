@@ -1,7 +1,7 @@
 # The trailhead board
 
 **Date:** 2026-09-28
-**Status:** Built, but for the model's planks and the two images (§6). The steps that built it are `docs/trail/2026-09-28-trailhead-board-plan.md`; how it looks in the game is `docs/trail/2026-09-28-trailhead-board-verification.md`.
+**Status:** Built. The steps that built it are `docs/trail/2026-09-28-trailhead-board-plan.md`; how it looks in the game is `docs/trail/2026-09-28-trailhead-board-verification.md`.
 **Amends:** `docs/trail/2026-09-28-trail-14-trailhead.md` §3.3 (the sign at the entrance, which
 goes) and §3.4 (the notice board, which moves). The car, the player's place and facing, the
 trail's name and the road wall are unchanged.
@@ -153,7 +153,7 @@ of the board's centre plane.
 | Layer | What | Where it comes from |
 | --- | --- | --- |
 | 1 | Weathered planks, with their relief | Texture maps in the board's model (§6) |
-| 2 | The trail's name and the distance to the summit, routed into the wood | Drawn when the match starts |
+| 2 | The trail's name and the distance to the summit, routed into the wood and painted: pale paint in the grooves, since lettering as dark as the fork signs' cannot be read on the board's dark planks | Drawn when the match starts |
 | 3 | Three sheets of aged paper, and the torn corners of older ones | The paper image (§6), placed and stained from the seed |
 | 4 | The map, the poster's words and photograph, the rules | Drawn when the match starts; the photograph is an image (§6) |
 | 5 | Fading, water stains, rust under the staples, scratches | Seeded wear |
