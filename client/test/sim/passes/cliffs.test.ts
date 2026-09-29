@@ -205,12 +205,17 @@ describe("the colliders", () => {
       }
     }
     expect(outside).toBe(0);
-    expect(modules).toBe(206);
-    expect(points).toBe(106996);
-    expect(boxes).toBe(834);
+    // 2026-09-29: 206 modules, 106996 points, 834 boxes and 21975 face
+    // reads before the trail left the pad inland. The modules moved with the
+    // ground the trail's bed is cut into, on 9 of the 200 worlds
+    // (`cliffField.test.ts` has the count of them); nothing drawn stands
+    // outside its boxes, no face is capped and none is exposed, as before.
+    expect(modules).toBe(228);
+    expect(points).toBe(118562);
+    expect(boxes).toBe(927);
     expect(capped).toBe(0);
     expect(exposed).toBe(0);
-    expect(faceReads).toBe(21975);
+    expect(faceReads).toBe(24353);
   }, timeLimit(300_000));
 
   it("lays a wall straddling a chunk border into both chunks, each its own clipped share", () => {

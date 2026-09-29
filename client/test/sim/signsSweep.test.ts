@@ -137,6 +137,10 @@ describe("sign posts on real worlds", { timeout: timeLimit(120_000) }, () => {
       }
     }
     // The most planks on one post, every plank on the five seeds, and how many are fillers.
-    expect({ most, total, fillers }).toEqual({ most: 5, total: 163, fillers: 17 });
+    // 2026-09-29: 163 planks, 17 of them fillers, before the trail left the
+    // pad inland. The whole difference is world 4242, whose trail has four
+    // junctions where it had eight, and 16 planks where it had 34; the other
+    // four worlds hold 37, 26, 45 and 21 planks as they did.
+    expect({ most, total, fillers }).toEqual({ most: 5, total: 145, fillers: 15 });
   });
 });

@@ -197,7 +197,13 @@ describe("the placement", () => {
         }
       }
     }
-    expect(laid).toBe(405);
+    // 2026-09-29: 405 before the trail left the pad inland. The placement
+    // reads the terrain and nothing else, and the trail's bed is cut into
+    // the terrain: the trail is another line on 122 of these worlds, and on
+    // 9 of them the ground by the old line or the new one opens or shuts a
+    // cell's gate. 11 modules went and 32 came, every one within 31.2 m of
+    // one line or the other. The farthest carry reads as it did.
+    expect(laid).toBe(426);
     // Measured: the farthest a run carried a module across these worlds,
     // 50.59 m of the 63.84 the constants allow.
     expect(farthest).toBeCloseTo(50.594476156076325, 9);
