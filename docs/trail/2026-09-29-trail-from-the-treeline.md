@@ -24,8 +24,9 @@ cross sand.
 | --- | --- |
 | What lies between the road and the trail's start | The forest comes to the road, at the trailhead only. The car stays on the shoulder. |
 | How the forest is brought there | A strip inland of the pad in which the shore's rules read the ground as higher than it is. The ground's shape does not change. |
-| How the trail is kept off the sand | The trail's search may not enter shore ground, except through a doorway one cell wide straight inland of the pad. |
-| Where a player arrives, the car, the board | As they are, each placed from the trail's first leg. |
+| How the trail is kept off the sand | The trail's search may not enter shore ground, except through a doorway two cells wide, 16 m, straight inland of the pad. |
+| Where a player arrives, the car | As they are, each placed from the trail's first leg. |
+| The board | Placed from the trail's first leg as it is, but the place it takes is judged by the board's further end against the way the player faces (§6). |
 | The wire | Protocol 5 stands. |
 | The level id | Moves (§7). |
 
@@ -52,6 +53,9 @@ On 54 seeds the stem runs more than 10 m along the road while on ground under 4 
 
 ### 2.2 With the doorway of §4, tried on the trail's own search
 
+The doorway measured is the two rows of cells whose centres are 4 m to either side of the pad's
+line, 16 m in all.
+
 | Measure | Least | Median | Most |
 | --- | --- | --- | --- |
 | The stem's length on ground under 4 m, all of it inside the strip of §3 | 0.0 m | 11.5 m | 27.8 m |
@@ -59,10 +63,18 @@ On 54 seeds the stem runs more than 10 m along the road while on ground under 4 
 | The first edge's turn from straight inland | 0.5° | 5.3° | 20.8° |
 | The stem, from the doorway's line, 30 m from the road | 0.2 m | 2.0 m | 6.6 m |
 | The stem's whole length | 276.2 m | 1036.0 m | 2140.4 m |
+| The least height the shore's rules read under any edge of any kind | 8.87 m | 12.21 m | 14.47 m |
+| Trees within 40 m of the pad's centre | 2 | 9 | 15 |
+| The nearest tree to the pad's centre | 9.0 m | 19.7 m | 34.4 m |
 
 The trail is built on all 227 seeds with no fallback. The stem's median length was 1029.7 m
 without the doorway. A doorway three cells wide was tried too: the first edge turned up to
 56.7°, and on one seed the stem still ran 12 m along the road.
+
+The last three rows were measured with the strip of §3 in place as well. Four seeds have an
+edge on ground the rules read under 9 m, at 8.87 to 8.99 m, where the sand's share of the paint
+is under half of one part in a hundred. With the trail leaving straight inland the car stands at
+the pad on all 227 seeds; it slid along the road on 11 before.
 
 A straight first edge, fixed and not searched for, was measured and set aside: the ground along
 it is steeper than the search's own limit of 0.6 on 52 seeds, and steeper than 0.9 on 9.
@@ -101,6 +113,8 @@ distance along the road from the pad's `z`, without its sign.
 
 | Inland | The strip's weight |
 | --- | --- |
+| `u` of 0 or less: the centreline and everything seaward of it | 0 |
+| `u` from 0 to the road bed's half-width, 5.5 m | rises smoothly to 1, under the pavement |
 | `u` up to `STRIP_REACH` | 1 |
 | `u` from `STRIP_REACH` to `STRIP_REACH + STRIP_FADE` | falls smoothly to 0 |
 
@@ -128,6 +142,7 @@ collision, the snow line and the rules for high ground are as they were.
 | Bushes begin above the shore | `client/src/sim/clutter.ts`, `CLUTTER_BUSH_ALT_LO` | the ground's height |
 | Rocks begin above the shore | `client/src/sim/clutter.ts`, `CLUTTER_ROCK_ALT_LO` | the ground's height |
 | Sand is painted below 4 m, fading out by 9 m | `client/src/game/terrainSurface.ts`, `SAND_TOP` | the ground's height |
+| Stumps and mushrooms grow above the shore | `client/src/sim/clutter.ts`, the fungus class, by `CLUTTER_GRASS_ALT_LO` | the ground's height |
 | An animal may stand on ground that is not sand | `client/src/game/wildlifeField.ts` | the ground's height |
 
 The rules that keep things off the road are unchanged: trees 12 m from its centreline, grass
@@ -147,17 +162,19 @@ the slope rule would leave bare. `STRIP_FOREST_FLOOR` is 0.6.
 
 The trail's search runs on a grid of 8 m cells in the road's frame. A cell is **shore** when
 its ground is under `SHORE_GATE_ALT`, or it is within `SHORE_GATE_U` of the road's centreline.
-A shore cell is closed to the search unless it is in the **doorway**: within `DOORWAY_HALF` of
-the pad's `z`, which is one row of cells running straight inland from the pad.
+A shore cell is closed to the search unless it is in the **doorway**: its centre within
+`DOORWAY_HALF` of the pad's `z`. The rows' centres stand 4 m to either side of the pad's line,
+so the doorway is two rows of cells, 16 m wide, running straight inland from the pad.
 
 | Constant | Value | Why |
 | --- | --- | --- |
 | `SHORE_GATE_ALT` | 9 m | The height at which no sand is left. The search reads the ground's own height here, not the lifted one: what is closed is what would be sand without the strip. |
 | `SHORE_GATE_U` | 30 m | The cleared strip's half-width, `ROAD_CORRIDOR_HALF`. |
-| `DOORWAY_HALF` | 4 m | Half a cell. |
+| `DOORWAY_HALF` | 4 m | Half a cell: the two rows beside the pad's line. |
 
-The doorway closes cells and opens none: a doorway cell too steep for the search stays closed,
-and the pad's own ring stays open by the rule it has. The search finds its own way up the
+The doorway closes cells and opens none: a doorway cell too steep for the search stays closed.
+The pad's own ring, which the search has always been let through, is closed like any other
+shore ground outside the doorway's rows. The search finds its own way up the
 doorway, so the trail's first leg is as walkable as any other (§2.2). Every search reads the
 same grid, so loops, strands and rungs keep off the shore as the stem does.
 
@@ -167,7 +184,7 @@ again.
 ## 5. The trailhead's clearing
 
 Nothing that stands tall grows within `TRAILHEAD_CLEARING` of the pad's centre: no bush, rock,
-boulder or stump. Grass, flowers and leaf litter do. `TRAILHEAD_CLEARING` is 24 m, which takes
+boulder, stump or mushroom (stumps and mushrooms are one class). Grass, flowers and leaf litter do. `TRAILHEAD_CLEARING` is 24 m, which takes
 in where a player arrives, the entrance 8 m from the pad's centre, and the board, which
 stands at most 12.75 m from it.
 
@@ -177,8 +194,15 @@ from the bed, so no tree can stand between a player and the board.
 ## 6. What does not change
 
 - The pad, the car's place and its slide along the road, where a player arrives and the way
-  they face, the board's place and its boxes: each is placed from the trail's first leg by the
-  rules it has.
+  they face, and the board's boxes: each is placed from the trail's first leg by the rules it
+  has.
+- The board's place is chosen among the places it always had. What changes is how they are
+  judged. A player faces the entrance to within 4°, which is the most the facing's own
+  arithmetic is out by, and the rule measured the board's centre against the line to the
+  entrance and not against the facing. With the trail leaving nearly straight inland that put
+  the board's further end 23.5° from the view's centre on 4 of the 227 seeds, past the 21.3° an
+  upright phone shows. The rule now takes the place whose further end is nearest the centre of
+  the view as the player faces, and the further end is within 17.9° on every seed.
 - The road's cleared strip is still the ground a Hollow never enters. Trees stand in part of
   it now; the rule reads the distance from the road and not what grows there.
 - The board's face, its words and its map. The map draws the trail the world has.
@@ -204,6 +228,7 @@ The pass hash is re-pinned in `client/test/sim/groundGradient.test.ts` and
 | `client/src/sim/vegetation.ts` | The shore rule reads `shoreHeight`; the floor of §3.3. |
 | `client/src/sim/clutter.ts` | The shore rules read `shoreHeight`; the clearing. |
 | `client/src/sim/trailGrid.ts`, `client/src/sim/trailBuild.ts` | The doorway. |
+| `client/src/sim/facing.ts`, `client/src/sim/trailhead.ts` | The way a yaw faces, as a direction; the board's place judged by its further end. |
 | `client/src/game/terrainSurface.ts` | The sand's paint reads `shoreHeight`. |
 | `client/src/game/wildlifeField.ts` | An animal's ground reads `shoreHeight`. |
 | `client/src/sim/forest.ts` | `GEN_VERSION`, the probe's record. |
@@ -229,15 +254,17 @@ it is left as it was; a steep doorway cell stays closed; a cell above the shore 
 | Clause | Bound |
 | --- | --- |
 | The trail is built, with no fallback | on every seed |
-| Any edge of any kind, on ground under 9 m or within 30 m of the road, outside the doorway | none, but for the half cell the grid allows to either side: at most 8 m from the doorway's line |
+| The height the shore's rules read under any edge of any kind, sampled each metre | at least 8.8 m |
 | The first edge's turn from straight inland | at most 21° |
 | The stem, from the doorway's line, 30 m from the road | at most 7 m |
 | The stem's run along the road on ground under 4 m | at most 3.5 m |
-| A tree within 40 m of the pad's centre | at least one, on every seed |
+| Trees within 40 m of the pad's centre | at least 2, on every seed |
+| The board's further end, from the centre of the view as the player faces | at most 18° |
+| The car's slide along the road | none, on every seed |
 | A tree within 8 m of any trail | none, as now |
 | A bush, rock, boulder or stump within 24 m of the pad's centre | none |
 | `shoreHeight` on the bed, from the pad to where the ground reaches 9 m | at least 9 m |
-| Everything the trailhead board's spec holds (its §9.1) | unchanged |
+| Everything else the trailhead board's spec holds (its §9.1) | unchanged |
 
 **The watcher's sweep and the Hollow's walk** are run again. Trees stand near the pad, so the
 watcher's stands at the pad may move; every stand that does is named with the tree on its
