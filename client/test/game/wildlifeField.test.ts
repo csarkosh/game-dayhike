@@ -95,11 +95,19 @@ describe("the rabbits and the canopy", () => {
   // 1's under a partial canopy. 2026-09-29: seed 1's were 698 and 958. A wood
   // comes down to the road at the trailhead, and four of seed 1's rabbits
   // stand in it: the ground they stand on was open and is under a canopy of
-  // 0.53 to 0.6 now.
+  // 0.53 to 0.6 now. With the trail leaving the pad inland, the same day,
+  // seed 1 reads 693 and 960 where that left it 694 and 962: three of its
+  // rabbits stood within 1.1 m of the new trail's line, where the grass is
+  // 0 to 0.45 now, under a rabbit's floor, and one of them was of the four.
+  // Seed -1117907922 reads 552 and 791 where it read 553 and 793: four
+  // rabbits went, two from ground that has no grass now and two from ground
+  // that is under a closed canopy now, and one came where a closed canopy
+  // opened, each within 24 m of the new line; and one that stood under a
+  // canopy of 0.84 stands in the open, 9.3 m from it.
   const want: Record<number, [number, number, number]> = {
-    1: [694, 962, 0],
+    1: [693, 960, 0],
     388817: [627, 934, 0],
-    [-1117907922]: [553, 793, 0],
+    [-1117907922]: [552, 791, 0],
   };
   for (const seed of SEEDS) {
     it(`seed ${seed}: keeps the open-ground rabbits and none under a closed canopy`, () => {

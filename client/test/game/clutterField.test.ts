@@ -176,8 +176,12 @@ describe("clutter bands", () => {
     // is 0.9375 and the meadow class's presence follows it (1,400 near and
     // 4,619 far with the canopy floor at 0.5). In the open meadow at
     // (369, -855) the grass is 1.5 whatever the floor.
+    // 2026-09-29: 2,674 near and 8,719 far before the trail left the pad
+    // inland. This world's trail is another line: the 97 and 250 more all
+    // stand within 2.6 m of the old line, the nearest of them 17.5 m from
+    // the canopy pose, and none went.
     const canopy = collectClutter(627994160, 123, -105.5)[CLUTTER_MEADOW]!;
-    expect([canopy.near.length, canopy.far.length]).toEqual([2674, 8719]);
+    expect([canopy.near.length, canopy.far.length]).toEqual([2771, 8969]);
     const meadow = collectClutter(627994160, 369, -855)[CLUTTER_MEADOW]!;
     expect([meadow.near.length, meadow.far.length]).toEqual([3168, 10166]);
   }, timeLimit(30_000));

@@ -876,7 +876,12 @@ describe("the grass class culled to the frustum", () => {
       clutter.dispose(); engine.dispose();
     }
     // Canopy: the profile counted 4,559 collected and 687 inside the exact frustum.
-    expect(counts).toEqual([870, 4559, 891, 4731]);
+    // 2026-09-29: 4,570 collected there since the trail left the pad inland.
+    // This world's trail is another line: 42 cards more stand within 2.3 m
+    // of the old line, 19.8 m and further from the pose, and 31 fewer within
+    // 2.3 m of the new one, 81.4 m and further from it. The view holds 870
+    // as it did, and the meadow pose, 574 m from the trail, reads as it did.
+    expect(counts).toEqual([870, 4570, 891, 4731]);
   }, timeLimit(60_000));
 
   it("never leaves out a card any part of which the camera can see, on threshold walks at both gate fields out to 110 m", () => {

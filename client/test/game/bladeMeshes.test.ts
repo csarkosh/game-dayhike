@@ -395,7 +395,12 @@ describe("the blade field culled to the frustum", () => {
       blades.dispose(); engine.dispose();
     }
     // Canopy: the profile counted 6,131 collected and 1,063 inside the exact frustum.
-    expect(counts).toEqual([1614, 6131, 1752, 6587]);
+    // 2026-09-29: 6,188 collected there since the trail left the pad inland.
+    // This world's trail is another line: the 57 cells more all stand
+    // within 0.9 m of the old line, none went, and none of the 57 is in the
+    // view, which holds 1,614 as it did. The meadow pose, 574 m from the
+    // trail, reads as it did.
+    expect(counts).toEqual([1614, 6188, 1752, 6587]);
     // Blade draws, culled and whole: the profile counted 20 live buckets at the canopy pose.
     expect(draws).toEqual([20, 20, 12, 12]);
   }, timeLimit(60_000));

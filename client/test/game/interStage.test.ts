@@ -120,7 +120,15 @@ type Drawn = {
 
 /** The forest, as the renderer builds it, on a `NullEngine` that processes
  * GLSL as the WebGPU engine does. Keyed by material name; the first mesh that
- * draws a material speaks for it. */
+ * draws a material speaks for it, the forest's casters before the rest.
+ *
+ * A giant's material is drawn on its nearest mesh, a caster, which takes the
+ * sun's shadows, and on its middle one, which takes none, so the caster is
+ * the heavier of the two and the one to weigh. It speaks whether or not a
+ * tree stands in it at this eye. 2026-09-29: the scene's order and its
+ * enabled meshes did, until the trail on this world came within 53.5 m of
+ * the origin where it had passed at 86.4 m: no giant pine stands in the
+ * nearest mesh here now, where two did, and the middle mesh came first. */
 async function buildForest(): Promise<{ drawn: Map<string, Drawn>; dispose(): void }> {
   // The WebGPU engine's caps that shape a shader: its derivatives make the
   // normal map's basis (`vTBN`) a varying.
@@ -142,9 +150,11 @@ async function buildForest(): Promise<{ drawn: Map<string, Drawn>; dispose(): vo
   probeReady(scene);
 
   const drawn = new Map<string, Drawn>();
-  for (const mesh of scene.meshes as Mesh[]) {
+  const casters = new Set<unknown>(forest.casterMeshes);
+  const meshes = scene.meshes as Mesh[];
+  for (const mesh of [...meshes.filter((m) => casters.has(m)), ...meshes.filter((m) => !casters.has(m))]) {
     const material = mesh.material;
-    if (!material || !mesh.subMeshes?.[0] || drawn.has(material.name) || !mesh.isEnabled()) continue;
+    if (!material || !mesh.subMeshes?.[0] || drawn.has(material.name) || !(casters.has(mesh) || mesh.isEnabled())) continue;
     const effect = await drawnEffect(mesh);
     const varyings = [...effect._vertexSourceCode.matchAll(/layout\(location = \d+\)\s*(?:flat\s+)?out (\w+) (\w+);/g)].map(
       ([, type, name]) => ((LOCATIONS[type as string] ?? 1) > 1 ? `${name} (${LOCATIONS[type as string]})` : (name as string)),
