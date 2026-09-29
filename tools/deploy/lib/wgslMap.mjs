@@ -4,6 +4,12 @@
 // `virtual:dayhike-wgsl-map`; `findMapUrl` finds it). A pure function over
 // the texts `verify.mjs` fetched, so it is testable without a network.
 
+/** The page's `MAP_MAX_BYTES` and `MAP_ENTRY_MAX_CHARS`
+ * (`client/src/game/wgslFormat.ts`), which this check, plain Node, cannot
+ * import; `wgslMap.test.mjs` holds each equal to the page's. */
+export const LIVE_MAP_MAX_BYTES = 8_388_608;
+export const LIVE_ENTRY_MAX_CHARS = 8_388_608;
+
 /**
  * What is wrong with a deployed map (`mapText`) for the WebGPU chunk that
  * names it (`chunkSource`) and the rest of the bundle (`bundleSource`, the
@@ -13,19 +19,27 @@
  * and, where the bundle shows it, Babylon's page-wide uniformity switch; and
  * it holds translations: a table of lines, each a text without a newline, and
  * entries, each runs of lines in the table (`[start, length, ...]`, as the
- * page reads them: `readMap`), at least one expanding to text. A map of
+ * page reads them: `readMap`), none expanding past `LIVE_ENTRY_MAX_CHARS`
+ * and at least one expanding to text; and it is no larger than the page
+ * reads, `LIVE_MAP_MAX_BYTES`. A map of
  * another salt is never asked by the page, nor a damaged one read: every
  * stage would be translated as if there were none.
  */
 export function mapProblems(mapText, chunkSource, bundleSource = '') {
+  const bytes = Buffer.byteLength(mapText);
+  // Past the page's ceiling every page refuses the map unread.
+  const tooLarge =
+    bytes > LIVE_MAP_MAX_BYTES
+      ? [`it is ${bytes} bytes, over the page's ceiling of ${LIVE_MAP_MAX_BYTES} (MAP_MAX_BYTES): every page refuses it and translates every stage itself`]
+      : [];
   let map;
   try {
     map = JSON.parse(mapText);
   } catch {
-    return ['the map does not parse as JSON'];
+    return [...tooLarge, 'the map does not parse as JSON'];
   }
-  if (typeof map !== 'object' || map === null) return ['the map is not an object'];
-  const problems = [];
+  if (typeof map !== 'object' || map === null) return [...tooLarge, 'the map is not an object'];
+  const problems = [...tooLarge];
   if (typeof map.format !== 'string' || !/^dayhike-wgsl-map\/\d+$/.test(map.format) || !chunkSource.includes(map.format)) {
     problems.push(`its format ${JSON.stringify(map.format)} is not the one the WebGPU chunk reads`);
   }
@@ -62,10 +76,27 @@ export function mapProblems(mapText, chunkSource, bundleSource = '') {
     problems.push('it is empty');
   } else if (!Object.values(entries).every((runs) => runsInTable(runs, lines.length))) {
     problems.push('an entry is not runs of the lines in its table');
+  } else if (longest(Object.values(entries), lines) > LIVE_ENTRY_MAX_CHARS) {
+    problems.push(`an entry expands to ${longest(Object.values(entries), lines)} characters, past the ceiling of ${LIVE_ENTRY_MAX_CHARS} the page reads`);
   } else if (!Object.values(entries).some((runs) => expandsToText(runs, lines))) {
     problems.push('no entry expands to WGSL text');
   }
   return problems;
+}
+
+/** The most characters an entry of `entries` (runs into `lines`) expands
+ * to, reckoned as the page reckons it: its lines' lengths and a newline
+ * between each two. */
+function longest(entries, lines) {
+  const before = new Float64Array(lines.length + 1);
+  for (let i = 0; i < lines.length; i++) before[i + 1] = before[i] + lines[i].length;
+  let most = 0;
+  for (const runs of entries) {
+    let chars = -1;
+    for (let i = 0; i < runs.length; i += 2) chars += before[runs[i] + runs[i + 1]] - before[runs[i]] + runs[i + 1];
+    most = Math.max(most, chars);
+  }
+  return most;
 }
 
 /** Whether `runs` is `[start, length, ...]`, at least one run, each of whole

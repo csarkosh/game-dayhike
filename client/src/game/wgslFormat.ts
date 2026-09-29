@@ -131,6 +131,14 @@ export const MAP_FORMAT = "dayhike-wgsl-map/2";
  * pass it is split into a map per platform, not given a higher ceiling. */
 export const MAP_MAX_BYTES = 8_388_608;
 
+/** The most characters one entry of a map may expand to: 8,388,608, 45
+ * times the largest real entry (184,166). A map past the file's ceiling was
+ * the most one entry could be when each entry was stored whole; now a file
+ * under it could name one long line enough times to make a string past what
+ * the page can hold, so `readMap` reckons each entry's length from its runs
+ * and refuses the map whole where one passes this. */
+export const MAP_ENTRY_MAX_CHARS = 8_388_608;
+
 /**
  * The map: `{"format": MAP_FORMAT, "salt": ..., "lines": [...], "entries":
  * {key: [start, length, ...]}}`. `lines` holds every distinct line of the
@@ -144,7 +152,8 @@ export const MAP_MAX_BYTES = 8_388_608;
 export function mapText(salt: string, entries: ReadonlyMap<string, string>): string {
   const lines: string[] = [];
   const indexOf = new Map<string, number>();
-  const runsOf: Record<string, number[]> = {};
+  // No prototype: an entry keyed `__proto__` is an entry like any other.
+  const runsOf: Record<string, number[]> = Object.create(null) as Record<string, number[]>;
   for (const key of [...entries.keys()].sort()) {
     const runs: number[] = [];
     for (const line of (entries.get(key) as string).split("\n")) {
@@ -173,7 +182,9 @@ export function mapText(salt: string, entries: ReadonlyMap<string, string>): str
 export type WgslMap = {
   readonly size: number;
   keys(): IterableIterator<string>;
-  /** The WGSL under `key`, its lines joined, or null. */
+  /** The WGSL under `key`, its lines joined, or null. Never throws: every
+   * entry's length was reckoned when the map was read, and none passes
+   * `MAP_ENTRY_MAX_CHARS`. */
   get(key: string): string | null;
 };
 
@@ -182,8 +193,10 @@ export type WgslMap = {
  * another salt, anything that is not a map, and a map damaged anywhere: a
  * line that is not text or that holds a newline, an entry that is not an
  * even count of numbers (at least two), a run that is not whole numbers, that
- * starts outside the table, holds no lines or reaches past the table's end.
- * A damaged map is refused whole, so that no entry of a map whose table or
+ * starts outside the table, holds no lines or reaches past the table's end,
+ * and an entry that would expand past `MAP_ENTRY_MAX_CHARS` characters,
+ * reckoned from its runs and the lines' lengths before anything is
+ * expanded. A damaged map is refused whole, so that no entry of a map whose table or
  * runs are broken is ever served, not even one the damage does not touch.
  * The runs are held in one typed array, the lines as the parse made them.
  */
@@ -198,19 +211,27 @@ export function readMap(text: string, salt: string): WgslMap {
     if (typeof line !== "string") throw new Error(`the line ${i} is not text`);
     if (line.includes("\n")) throw new Error(`the line ${i} holds a newline`);
   }
+  // The characters of the lines before each: a run's are two lookups.
+  const before = new Float64Array(lines.length + 1);
+  for (let i = 0; i < lines.length; i++) before[i + 1] = (before[i] as number) + (lines[i] as string).length;
   const entries = map.entries;
   if (typeof entries !== "object" || entries === null || Array.isArray(entries)) throw new Error("a map without entries");
   const listed = Object.entries(entries as Record<string, unknown>);
   let numbers = 0;
   for (const [key, runs] of listed) {
     if (!Array.isArray(runs) || runs.length === 0 || runs.length % 2 !== 0) throw new Error(`the entry ${key} is not runs of lines`);
+    // Its lines' characters, and a newline between each two.
+    let chars = -1;
     for (let i = 0; i < runs.length; i += 2) {
       const start: unknown = runs[i];
       const length: unknown = runs[i + 1];
       if (!Number.isInteger(start) || !Number.isInteger(length) || (start as number) < 0 || (length as number) < 1 || (start as number) + (length as number) > lines.length) {
         throw new Error(`the entry ${key} has a run outside its lines: ${JSON.stringify(start)}, ${JSON.stringify(length)}`);
       }
+      const [first, end] = [start as number, (start as number) + (length as number)];
+      chars += (before[end] as number) - (before[first] as number) + (length as number);
     }
+    if (chars > MAP_ENTRY_MAX_CHARS) throw new Error(`the entry ${key} expands to ${chars} characters, past the ceiling of ${MAP_ENTRY_MAX_CHARS}`);
     numbers += runs.length;
   }
   const all = new Uint32Array(numbers);
