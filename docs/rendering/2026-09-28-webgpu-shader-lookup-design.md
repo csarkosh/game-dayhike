@@ -395,7 +395,7 @@ party of two. Before them a first visit from the start translated 16 to 25
 stages in the browser in its first seconds (2.0 to 3.1 s on the page's
 thread), a walk 28 to 29 and a party 56 to 64; with them, two first visits
 from the start found 88 and 94 stages in the shipped map and translated
-none. The corpus holds 522 stages (274 vertex, 149 fragment, 99 fragment
+none. The corpus then held 522 stages (274 vertex, 149 fragment, 99 fragment
 stages that turn the uniformity analysis off), 16,921,160 bytes in 522
 files, 22 to 43 a folder (17,424,519 bytes in the sixteen JSON files it was
 kept in before; the map of format 1 made of either is the same 28,479,065
@@ -407,6 +407,23 @@ the 522 in format 1, each entry's WGSL whole, made on an Apple M4:
 read as one JSON in 25.9 ms, 5 MB under the ceiling of 32 MiB it then had.
 In format 2, each distinct line once (below), the same 522 entries are
 5,073,415 bytes raw, 933,349 gzip −9, 320,265 brotli −q 11.
+
+**What was added after the trailhead's board, and for a change of tier.**
+Content that adds a material adds stages: with the board at the trailhead in
+the level, a first visit from the start found 126 of its 130 stages in the
+shipped map and translated 4 in the browser. 68 more stages were recorded in
+Chrome on Windows with an NVIDIA T4, on the high tier, each text checked by
+its SHA-256 against the page that recorded it: those 4, from the start by day
+and by night and on a walk from the board up the trail; 2 more from the host
+of a party of two and 20 from the player who joins it, whose page starts from
+the title and not from a game's address; and 42 from a change to High in
+Settings during a hike that started on Medium, made twice with a change back
+to Medium between (the first change to High translated the 4 above, the
+second the 42). The canopy page asked for 96 stages and translated none. The
+corpus holds 590 stages (308 vertex, 170 fragment, 112 fragment stages that
+turn the uniformity analysis off), 19,126,675 bytes in 590 files, 25 to 49 a
+folder; 317 of them carry characters outside ASCII. The map's sizes in this
+document are those of the 522.
 
 **Line endings.** The recording was first made from a checkout with Windows
 line endings: the game's `.fx` shader files had no line-ending rule, so they
