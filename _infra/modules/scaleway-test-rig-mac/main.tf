@@ -1,13 +1,13 @@
 # STATUS: INCOMPLETE. This module has never been applied. Do not apply it as
-# it is. _infra/test-rig-mac/README.md's first section says where it stands,
+# it is. _infra/test-rig-scaleway-mac/README.md's first section says where it stands,
 # the known gaps to close before a first apply, what only a real machine can
-# settle, and how to pick it up. The root that calls it, _infra/test-rig-mac/,
+# settle, and how to pick it up. The root that calls it, _infra/test-rig-scaleway-mac/,
 # refuses `plan` and `apply` until `acknowledge_incomplete` is set (its
 # variables.tf).
 #
 # The Macs rented by the day from Scaleway: the login key, the servers, the
 # two guards against a surprise bill and the optional set-up. Called by one
-# root only, _infra/test-rig-mac/, which holds the backend, the provider and
+# root only, _infra/test-rig-scaleway-mac/, which holds the backend, the provider and
 # the state; see its main.tf for why that root is not _infra/. The scripts
 # the resources run (setup.sh, scaleway-macs.sh) are in this directory, found
 # through path.module.
@@ -147,7 +147,7 @@ resource "terraform_data" "auto_delete" {
   }
 }
 
-# Off by default: see _infra/test-rig-mac/README.md, "Set-up". Runs setup.sh
+# Off by default: see _infra/test-rig-scaleway-mac/README.md, "Set-up". Runs setup.sh
 # against each Mac from this machine, over SSH, once per server. Terraform
 # hides the whole output of a provisioner whose environment holds a sensitive
 # value, as this one's does.

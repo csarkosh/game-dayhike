@@ -1,4 +1,4 @@
-# Every input is passed by _infra/test-rig-mac/, whose variables.tf holds the
+# Every input is passed by _infra/test-rig-scaleway-mac/, whose variables.tf holds the
 # defaults, the validations and the full description of each, and the
 # `acknowledge_incomplete` guard, which this module does not need.
 

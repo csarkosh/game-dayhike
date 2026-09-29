@@ -22,7 +22,7 @@ output "passwords" {
     Each Mac's admin password, in the order of `macs`. setup.sh needs it for
     sudo and automatic login; `terraform output -json passwords` prints it.
     Sensitive, but stored in clear in the state; see
-    _infra/test-rig-mac/README.md.
+    _infra/test-rig-scaleway-mac/README.md.
   EOT
   value       = [for s in scaleway_apple_silicon_server.mac : s.password]
   sensitive   = true
@@ -58,6 +58,6 @@ output "day_cost" {
     or Scaleway's own deletion at that time when auto_delete_after_24h is on.
     A Mac left undeleted bills about EUR ${format("%.0f", 730 * local.hourly)} a month; check with
     `../modules/scaleway-test-rig-mac/scaleway-macs.sh list` (from
-    _infra/test-rig-mac/) at the end of every day.
+    _infra/test-rig-scaleway-mac/) at the end of every day.
   EOT
 }

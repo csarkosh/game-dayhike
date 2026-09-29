@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # STATUS: INCOMPLETE. Never run against a real account. The first section of
-# _infra/test-rig-mac/README.md lists this script's known gaps and how to pick
+# _infra/test-rig-scaleway-mac/README.md lists this script's known gaps and how to pick
 # the work up.
 #
 # Talks to Scaleway's Apple silicon API directly, for the three things the
@@ -20,7 +20,7 @@
 #       fr-par-1 and fr-par-3), set against the server ids in Terraform's
 #       state. Exits non-zero if a server is missing from state or is not
 #       scheduled for deletion. The end-of-day check. Reads the ids from
-#       _infra/test-rig-mac/, the root that holds the state.
+#       _infra/test-rig-scaleway-mac/, the root that holds the state.
 #
 #   scaleway-macs.sh try-early-delete <zone> <server-id>
 #       Send one DELETE and print the HTTP status and body exactly as the API
@@ -88,7 +88,7 @@ list)
   zones=("$@")
   ((${#zones[@]})) || zones=(fr-par-1 fr-par-3)
   : "${SCW_DEFAULT_PROJECT_ID:?export SCW_DEFAULT_PROJECT_ID first}"
-  known=$(cd "$(dirname "$0")/../../test-rig-mac" && terraform output -json server_ids 2>/dev/null || echo '[]')
+  known=$(cd "$(dirname "$0")/../../test-rig-scaleway-mac" && terraform output -json server_ids 2>/dev/null || echo '[]')
   problems=0
   for zone in "${zones[@]}"; do
     r=$(api GET "/zones/$zone/servers?project_id=$SCW_DEFAULT_PROJECT_ID&page_size=100")
