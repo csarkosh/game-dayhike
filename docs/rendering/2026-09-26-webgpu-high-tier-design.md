@@ -169,7 +169,10 @@ and the two starts are one; where this changes the text above and below:
   `onAfterShaderCompilationObservable` for every effect it translates, as on
   WebGL2, but makes each render pipeline at the effect's first draw, a frame
   or more later; the governor voids the frames that made one as well
-  (`watchPipelines`, reading Babylon's per-frame count).
+  (`watchPipelines`, reading Babylon's per-frame count). Since switched off,
+  with the governor itself: the level is decided at launch only (the
+  quality-tier design, §10), and a WebGPU switch during a hike comes only from
+  the player's Settings or a failure's rebuild.
 - **The early teardown holds on WebGPU.** Model loads end through the shell's
   abort on either engine; a given engine is disposed when the build throws;
   the BRDF lookup texture is expanded on WebGPU by the same path (only the

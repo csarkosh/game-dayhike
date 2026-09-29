@@ -4,6 +4,9 @@
  * the highest tier it should hold; the governor catches the machine, or the
  * window, for which that was wrong.
  *
+ * **Switched off** (`GOVERNOR_ENABLED`): the page does not use it. What follows
+ * is how it behaves where it is on; the module and its tests stay whole.
+ *
  * Conservative on purpose, since a drop costs the player a rebuild:
  *
  * - nothing for **30 s** after the hike starts or a tier changes, while models
@@ -43,6 +46,20 @@ export const GOVERNOR_STALL_MS = 250;
 export const GOVERNOR_LINE_MS = 6_000;
 /** The longest it times the page's idle frames before it stands down. */
 export const GOVERNOR_IDLE_MAX_MS = 2_000;
+
+/**
+ * Whether a hike uses the governor. Off: the graphics level is decided when
+ * the game launches (`startupTier`: the address's override, the saved choice,
+ * or Auto), and during a hike nothing measures the frames to change it and
+ * nothing changes it but the player in Settings. A change of level in the
+ * middle of a hike covers play and rebuilds the renderer in front of a player
+ * who did not ask for it; the decision belongs to the launch. So the page
+ * makes no governor (`governHike`), feeds none, times no idle frames, raises
+ * no cover and shows no line for it, and records no drop. A drop recorded
+ * before is still read at launch until it lapses (`GOVERNOR_VERDICT_DAYS`,
+ * `verdictHolds` in `quality.ts`).
+ */
+export const GOVERNOR_ENABLED = false;
 
 const NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium", low: "Low" };
 const BELOW: Record<QualityTier, QualityTier | null> = { high: "medium", medium: "low", low: null };
@@ -124,6 +141,35 @@ export function createGovernor(start: number): Governor {
     },
     get verdict() {
       return verdict;
+    },
+  };
+}
+
+/** The governor a hike uses, as the page feeds it (`app.ts`). */
+export type HikeGovernor = {
+  /** One frame of the hike; `steady` as `steadyFrame` reads it. */
+  frame(intervalMs: number, now: number, steady: boolean): void;
+  restart(now: number): void;
+  stop(): void;
+  readonly verdict: "none" | "drop";
+};
+
+/**
+ * The hike's governor (`app.ts`): where `enabled`, one made at `start` that
+ * calls `onDrop` on the frame its drop is to be acted on (`Governor.frame`);
+ * else null, and the page makes none, feeds none and acts on none.
+ */
+export function governHike(start: number, onDrop: () => void, enabled: boolean = GOVERNOR_ENABLED): HikeGovernor | null {
+  if (!enabled) return null;
+  const governor = createGovernor(start);
+  return {
+    frame(intervalMs, now, steady) {
+      if (governor.frame(intervalMs, now, steady)) onDrop();
+    },
+    restart: (now) => governor.restart(now),
+    stop: () => governor.stop(),
+    get verdict() {
+      return governor.verdict;
     },
   };
 }
