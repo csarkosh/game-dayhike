@@ -23,10 +23,10 @@
 
 # The recorded shader corpus: one GLSL file a stage, its bytes the stage's
 # exact text and its name a hash of them (tools/wgsl/lib/corpus.mjs), written
-# only by tools/wgsl/merge-corpus.mjs. It counts as GLSL in the host's language
-# statistics. -whitespace: Git neither flags nor, with --whitespace=fix, trims
-# its trailing spaces and blank lines, which are part of a stage's text. The
-# tests' fixtures are test data, and stay out of the statistics.
-client/shaders/corpus/**               -whitespace
+# only by tools/wgsl/merge-corpus.mjs. Generated: kept out of the host's
+# language statistics, which count the shaders written by hand alone, and its
+# diffs folded. -whitespace: Git neither flags nor, with --whitespace=fix,
+# trims its trailing spaces and blank lines, which are part of a stage's text.
+client/shaders/corpus/**               linguist-generated=true -whitespace
 tools/wgsl/test/fixtures/node-corpus/** linguist-generated=true -whitespace
 tools/wgsl/test/fixtures/corpus/**      linguist-generated=true -whitespace
