@@ -1,12 +1,13 @@
 // Merging recordings (`dayhikeWgsl.download()` on a page opened with
 // `?wgsl=record`, one JSON file of `wgslFormat.ts`'s `CORPUS_FORMAT`) into the
-// committed corpus (`merge-corpus.mjs`), which is one shader file a stage
-// (`corpus.mjs`): a new stage is a new file, and no file already there is
-// rewritten.
+// committed corpus (`merge-corpus.mjs`), which keeps each distinct block of
+// shader text once and each stage as the list of its blocks (`corpus.mjs`):
+// a new stage adds its stage file and only the blocks the corpus does not
+// hold, and no file already there is rewritten.
 
 import { readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { readCorpusDir, stageFile } from './corpus.mjs';
+import { dirname, join } from 'node:path';
+import { blockId, blockPath, cutBlocks, readCorpusDir, removeIfEmpty, stageFileText, stagePath } from './corpus.mjs';
 import { writeWhole } from './files.mjs';
 
 /** Reads the stages of a recording, naming it when it is not one. */
@@ -36,17 +37,19 @@ function withUnixLineEndings(entry, path, shared) {
 
 /**
  * Adds to the corpus in `dir` the stages of the `recorded` files that it does
- * not hold, each as a file of its own (`stageFile`), every `\r\n` in them
- * turned to `\n` first. A `*.json` at the top of `dir` is a recording dropped
- * in as it was downloaded: it is merged too and, once its stages are files,
- * removed; a recording named from elsewhere is only read. Every other name in
- * `dir` that is not a corpus file is left alone and returned in `leftAlone`.
- * Everything is read and checked before anything is written: a corpus file
- * that is not the stage its name says, a recording that is not one, or a
- * stage with a carriage return left refuses the whole merge. Returns how many
- * stages were read from the recordings, how many of them were new, how many
- * the corpus holds now, the recordings removed, how many stages had Windows
- * line endings, and the names left alone.
+ * not hold, each as its stage file (`stagePath`) and the blocks it is cut
+ * into that the corpus does not hold (`blockPath`), every `\r\n` in them
+ * turned to `\n` first; and removes every block no stage names. A `*.json`
+ * at the top of `dir` is a recording dropped in as it was downloaded: it is
+ * merged too and, once its stages are files, removed; a recording named from
+ * elsewhere is only read. Every other name in `dir` that is not a corpus
+ * file is left alone and returned in `leftAlone`. Everything is read and
+ * checked before anything is written: a corpus file that is not what its
+ * name says, a recording that is not one, or a stage with a carriage return
+ * left refuses the whole merge. Returns how many stages were read from the
+ * recordings, how many of them were new, how many the corpus holds now, the
+ * recordings removed, how many stages had Windows line endings, the names
+ * left alone, and how many block files were added and removed.
  */
 export function mergeCorpus({ dir, recorded, shared }) {
   let corpus;
@@ -57,15 +60,15 @@ export function mergeCorpus({ dir, recorded, shared }) {
   }
   const dropped = corpus.others.filter((name) => !name.includes('/') && name.endsWith('.json'));
   const leftAlone = corpus.others.filter((name) => !dropped.includes(name));
-  const union = new Map();
-  const taken = new Map();
-  for (const [i, entry] of corpus.stages.entries()) {
-    union.set(shared.corpusId(entry), entry);
-    taken.set(corpus.files[i], shared.corpusId(entry));
-  }
+  const union = new Map(corpus.stages.map((entry) => [shared.corpusId(entry), entry]));
+  const stageFiles = new Map(corpus.files.map((file, i) => [file, shared.corpusId(corpus.stages[i])]));
+  // Every block the corpus's stages name, by id, with its text.
+  const blocks = new Map();
+  for (const entry of corpus.stages) for (const text of cutBlocks(entry.glsl)) blocks.set(blockId(text), text);
   let read = 0;
   let normalised = 0;
   const added = [];
+  const newBlocks = new Map();
   for (const path of [...recorded, ...dropped.map((name) => join(dir, name))]) {
     for (const raw of readRecording(path, shared)) {
       read += 1;
@@ -74,15 +77,41 @@ export function mergeCorpus({ dir, recorded, shared }) {
       const { entry } = repaired;
       const id = shared.corpusId(entry);
       if (union.has(id)) continue;
-      const file = stageFile(entry, shared);
-      // Two stages whose ids share their first 16 digits would share a file.
-      if (taken.has(file)) throw new Error(`${path}: two stages would be ${join(dir, file)}, ${taken.get(file)} and ${id}; nothing was written`);
+      const file = stagePath(entry, shared);
+      // Two stages, or two blocks, whose hashes share their first 16 digits
+      // would share a file.
+      if (stageFiles.has(file)) throw new Error(`${path}: two stages would be ${join(dir, file)}, ${stageFiles.get(file)} and ${id}; nothing was written`);
+      const cut = cutBlocks(entry.glsl);
+      for (const text of cut) {
+        const block = blockId(text);
+        if (blocks.has(block) && blocks.get(block) !== text) throw new Error(`${path}: two blocks would be ${join(dir, blockPath(block))}; nothing was written`);
+        if (!blocks.has(block)) newBlocks.set(block, text);
+        blocks.set(block, text);
+      }
       union.set(id, entry);
-      taken.set(file, id);
-      added.push({ file, entry });
+      stageFiles.set(file, id);
+      added.push({ file, text: stageFileText(cut) });
     }
   }
-  for (const { file, entry } of added) writeWhole(join(dir, file), entry.glsl);
+  const unused = corpus.unused.filter((file) => !newBlocks.has(file.slice(file.lastIndexOf('/') + 1, -'.glsl'.length)));
+  for (const [block, text] of newBlocks) {
+    if (!corpus.unused.includes(blockPath(block))) writeWhole(join(dir, blockPath(block)), text);
+  }
+  for (const { file, text } of added) writeWhole(join(dir, file), text);
+  for (const file of unused) {
+    rmSync(join(dir, file));
+    removeIfEmpty(dirname(join(dir, file)));
+  }
   for (const name of dropped) rmSync(join(dir, name));
-  return { read, added: added.length, total: union.size, removed: dropped, normalised, leftAlone };
+  const reused = [...newBlocks.keys()].filter((block) => corpus.unused.includes(blockPath(block))).length;
+  return {
+    read,
+    added: added.length,
+    total: union.size,
+    removed: dropped,
+    normalised,
+    leftAlone,
+    blocksAdded: newBlocks.size - reused,
+    blocksRemoved: unused.length,
+  };
 }

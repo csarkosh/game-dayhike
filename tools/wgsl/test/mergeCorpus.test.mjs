@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { timeLimit } from '../../../client/test/helpers/timeLimit.ts';
-import { readCorpusDir, stageFile } from '../lib/corpus.mjs';
+import { readCorpusDir, stagePath } from '../lib/corpus.mjs';
 import { mergeCorpus } from '../lib/mergeCorpus.mjs';
 import { loadShared } from '../lib/shared.mjs';
 
@@ -31,7 +31,7 @@ beforeAll(async () => {
 }, timeLimit(30_000));
 
 describe('merging recordings into the corpus', () => {
-  it('writes the union, each stage once, in a file of its own, and counts what is new', () => {
+  it('writes the union, each stage once, as its stage file and its blocks, and counts what is new', () => {
     const a = stage('// a');
     const b = stage('// b', 'vertex');
     const c = stage('// c', 'fragment', true);
@@ -41,15 +41,16 @@ describe('merging recordings into the corpus', () => {
     });
     const dir = directory();
     const first = mergeCorpus({ dir, recorded: [join(recorded, 'one.json'), join(recorded, 'two.json')], shared });
-    expect(first).toEqual({ read: 4, added: 3, total: 3, removed: [], normalised: 0, leftAlone: [] });
-    expect(tree(dir)).toEqual([a, b, c].map((s) => stageFile(s, shared)).sort());
+    expect(first).toEqual({ read: 4, added: 3, total: 3, removed: [], normalised: 0, leftAlone: [], blocksAdded: 3, blocksRemoved: 0 });
+    expect(tree(dir).filter((file) => file.startsWith('stages/'))).toEqual([a, b, c].map((s) => stagePath(s, shared)).sort());
     const { stages } = readCorpusDir(dir, shared);
     expect(new Set(stages.map((s) => shared.corpusId(s)))).toEqual(new Set([a, b, c].map((s) => shared.corpusId(s))));
     // What it read from elsewhere, it leaves where it was.
     expect(existsSync(join(recorded, 'one.json'))).toBe(true);
-    expect(mergeCorpus({ dir, recorded: [join(recorded, 'one.json')], shared })).toEqual({ read: 2, added: 0, total: 3, removed: [], normalised: 0, leftAlone: [] });
-    expect(mergeCorpus({ dir, recorded: [], shared })).toEqual({ read: 0, added: 0, total: 3, removed: [], normalised: 0, leftAlone: [] });
-    expect(tree(dir)).toHaveLength(3);
+    expect(mergeCorpus({ dir, recorded: [join(recorded, 'one.json')], shared })).toEqual({ read: 2, added: 0, total: 3, removed: [], normalised: 0, leftAlone: [], blocksAdded: 0, blocksRemoved: 0 });
+    expect(mergeCorpus({ dir, recorded: [], shared })).toEqual({ read: 0, added: 0, total: 3, removed: [], normalised: 0, leftAlone: [], blocksAdded: 0, blocksRemoved: 0 });
+    // Three stage files, and a block each.
+    expect(tree(dir)).toHaveLength(6);
   });
 
   it('merges a recording dropped into the corpus as it was downloaded, and removes it once its stages are files', () => {
@@ -63,8 +64,11 @@ describe('merging recordings into the corpus', () => {
       removed: ['dayhike-wgsl-corpus-1790000000000.json'],
       normalised: 0,
       leftAlone: [],
+      blocksAdded: 2,
+      blocksRemoved: 0,
     });
-    expect(tree(dir)).toEqual([a, b].map((s) => stageFile(s, shared)).sort());
+    expect(tree(dir).filter((file) => file.startsWith('stages/'))).toEqual([a, b].map((s) => stagePath(s, shared)).sort());
+    expect(tree(dir)).toHaveLength(4);
   });
 
   it('refuses a recording that is not a corpus, naming it, and writes nothing', () => {
@@ -100,7 +104,7 @@ describe('line endings in a recording', () => {
     const other = stage('// three\r\nvoid main() {}', 'vertex');
     const dir = directory();
     const recorded = join(directory({ 'r.json': shared.corpusText([windows, unix, other]) }), 'r.json');
-    expect(mergeCorpus({ dir, recorded: [recorded], shared })).toEqual({ read: 3, added: 2, total: 2, removed: [], normalised: 2, leftAlone: [] });
+    expect(mergeCorpus({ dir, recorded: [recorded], shared })).toEqual({ read: 3, added: 2, total: 2, removed: [], normalised: 2, leftAlone: [], blocksAdded: 2, blocksRemoved: 0 });
     const { stages } = readCorpusDir(dir, shared);
     expect(stages.map((s) => s.glsl).sort()).toEqual(['#version 450\n// one\n// two\nvoid main() {}', '#version 450\n// three\nvoid main() {}']);
     for (const file of tree(dir)) expect(readFileSync(join(dir, file)).includes(0x0d)).toBe(false);

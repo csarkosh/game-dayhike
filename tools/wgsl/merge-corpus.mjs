@@ -1,15 +1,17 @@
 #!/usr/bin/env node
-// Merges recordings into the committed corpus (`client/shaders/corpus/`, one
-// shader file a stage: `tools/wgsl/lib/corpus.mjs`): each stage it does not
-// hold becomes a file of its own, and no file already there changes. It
-// reports how many stages the recordings hold and how many of them are new.
-// A recording is what `dayhikeWgsl.download()` saves on a page opened with
+// Merges recordings into the committed corpus (`client/shaders/corpus/`,
+// each distinct block of shader text once and each stage as the list of its
+// blocks: `tools/wgsl/lib/corpus.mjs`): each stage it does not hold adds its
+// stage file and the blocks the corpus does not hold, no file already there
+// changes, and a block no stage names any more is removed. It reports how
+// many stages the recordings hold and how many of them are new. A recording
+// is what `dayhikeWgsl.download()` saves on a page opened with
 // `?wgsl=record`, one JSON file; one dropped into the corpus directory as it
 // was downloaded is merged too, and removed once its stages are files. Every
 // `\r\n` in every recorded stage is turned to `\n`. It refuses, writing
 // nothing and exiting 1, a stage with a carriage return left, a recording
-// that is not one, and a corpus file whose bytes are not the stage its name
-// says (edited, reformatted or renamed).
+// that is not one, and a corpus file that is not what its name says (edited,
+// reformatted or renamed).
 //
 // Usage: node tools/wgsl/merge-corpus.mjs [--corpus <dir>] [recording.json ...]
 
@@ -36,5 +38,6 @@ console.log(`  read:   ${merged.read} stages from ${positionals.length + merged.
 console.log(`  new:    ${merged.added}`);
 console.log(`  holds:  ${merged.total} stages`);
 console.log(`  normalised: ${merged.normalised} stages had Windows line endings`);
+console.log(`  blocks: ${merged.blocksAdded} added, ${merged.blocksRemoved} no stage names removed`);
 for (const name of merged.removed) console.log(`  merged and removed ${name}`);
 for (const name of merged.leftAlone) console.log(`  left alone ${name}: not a corpus file`);

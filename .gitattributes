@@ -19,12 +19,17 @@
 *.glsl text eol=lf
 *.wgsl text eol=lf
 
-# The recorded shader corpus: one GLSL file a stage, its bytes the stage's
-# exact text and its name a hash of them (tools/wgsl/lib/corpus.mjs), written
-# only by tools/wgsl/merge-corpus.mjs. Generated: kept out of the language
+# The recorded shader corpus: each distinct block of shader text once, its
+# bytes the block's exact text and its name a hash of them, and each stage
+# as the list of its blocks (tools/wgsl/lib/corpus.mjs), written only by
+# tools/wgsl/merge-corpus.mjs. Generated: kept out of the language
 # statistics, its diffs folded. -whitespace: Git neither flags nor, with
 # --whitespace=fix, trims its trailing spaces and blank lines, which are part
-# of a stage's text.
-client/shaders/corpus/**               linguist-generated=true -whitespace
-tools/wgsl/test/fixtures/node-corpus/** linguist-generated=true -whitespace
-tools/wgsl/test/fixtures/corpus/**      linguist-generated=true -whitespace
+# of a stage's text. The stage files (.txt) are checked out with \n as the
+# blocks (.glsl) are.
+client/shaders/corpus/**                 linguist-generated=true -whitespace
+tools/wgsl/test/fixtures/node-corpus/**  linguist-generated=true -whitespace
+tools/wgsl/test/fixtures/corpus/**       linguist-generated=true -whitespace
+client/shaders/corpus/**/*.txt           text eol=lf
+tools/wgsl/test/fixtures/node-corpus/**/*.txt text eol=lf
+tools/wgsl/test/fixtures/corpus/**/*.txt text eol=lf

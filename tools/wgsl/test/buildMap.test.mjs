@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import * as page from '../../../client/src/game/wgslFormat.ts';
 import { timeLimit } from '../../../client/test/helpers/timeLimit.ts';
 import { buildMap, nodeSalt } from '../lib/buildMap.mjs';
-import { readCorpusDir } from '../lib/corpus.mjs';
+import { expandedPath, readCorpusDir } from '../lib/corpus.mjs';
 import { NODE_CORPUS_DIR } from '../lib/files.mjs';
 import { mergeCorpus } from '../lib/mergeCorpus.mjs';
 import { loadShared } from '../lib/shared.mjs';
@@ -186,7 +186,7 @@ describe('the map the build ships', () => {
 
   it('refuses a corpus in which a stage carries a carriage return, naming it, and writes no map', async () => {
     const corpus = corpusOf(readCorpusDir(FIXTURE, shared).stages);
-    const [file] = tree(corpus);
+    const [file] = tree(corpus).filter((name) => name.startsWith('blocks/'));
     writeFileSync(join(corpus, file), readFileSync(join(corpus, file), 'utf8').replaceAll('\n', '\r\n'));
     const out = join(directory(), 'map.json');
     const failed = await run(process.execPath, [TOOL, '--corpus', corpus, '--out', out]).then(
@@ -194,10 +194,30 @@ describe('the map the build ships', () => {
       (error) => error,
     );
     expect(failed?.code).toBe(1);
-    expect(failed?.stderr).toContain(`✗ ${join(corpus, file)}: carries a carriage return (Windows line endings), which no stage the corpus records has\n`);
+    expect(failed?.stderr).toContain(`✗ ${join(corpus, file)}: carries a carriage return (Windows line endings), which no block of the corpus has\n`);
     expect(failed?.stderr).toContain('node tools/wgsl/merge-corpus.mjs <recording.json>');
     expect(existsSync(out)).toBe(false);
   }, timeLimit(60_000));
+
+  it('writes every stage whole, expanded from its blocks, where it is asked to, and nowhere with --no-expanded', async () => {
+    const { stages } = readCorpusDir(FIXTURE, shared);
+    const expanded = directory();
+    writeFileSync(join(expanded, 'notes.txt'), 'kept');
+    const done = await tool(FIXTURE, join(directory(), 'map.json'), '--expanded', expanded);
+    expect(done.stdout).toMatch(/ {2}expanded: {5}2 stages whole in .+, 2 written, 0 removed, in \d+ ms\n/);
+    expect(tree(expanded)).toEqual([...stages.map((entry) => expandedPath(entry, shared)), 'notes.txt'].sort());
+    for (const entry of stages) expect(readFileSync(join(expanded, expandedPath(entry, shared)))).toEqual(Buffer.from(entry.glsl, 'utf8'));
+    // Again: what is already right is not written, and a stage the corpus no longer holds is removed.
+    mkdirSync(join(expanded, 'f'), { recursive: true });
+    writeFileSync(join(expanded, 'f/ffffffffffffffff.vertex.glsl'), 'gone');
+    const again = await tool(FIXTURE, join(directory(), 'map.json'), '--expanded', expanded);
+    expect(again.stdout).toMatch(/ {2}expanded: {5}2 stages whole in .+, 0 written, 1 removed, in \d+ ms\n/);
+    expect(tree(expanded)).toEqual([...stages.map((entry) => expandedPath(entry, shared)), 'notes.txt'].sort());
+    const skipped = directory();
+    const none = await tool(FIXTURE, join(directory(), 'map.json'), '--expanded', skipped, '--no-expanded');
+    expect(none.stdout).toContain('  expanded:     not written\n');
+    expect(tree(skipped)).toEqual([]);
+  }, timeLimit(120_000));
 
   it('leaves alone a file in the corpus that is not a corpus file, says so, and builds the rest', async () => {
     const corpus = corpusOf(readCorpusDir(FIXTURE, shared).stages);

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Translates the corpus of GLSL stages (`client/shaders/corpus/`, one shader
-// file a stage: `tools/wgsl/lib/corpus.mjs`) into
+// Translates the corpus of GLSL stages (`client/shaders/corpus/`, each stage
+// the list of its blocks of shader text: `tools/wgsl/lib/corpus.mjs`) into
 // the map of WGSL the page fetches on its WebGPU path, so that a player's
 // first visit finds its shaders instead of translating them on the page's
 // thread. Run by `npm run build` before Vite, which ships the map as a
@@ -11,32 +11,47 @@
 // translates it. The same corpus and translators give the same bytes. A stage
 // that does not translate is left out of the map and reported: the build goes
 // on, and the page translates that stage itself, as it always has. A map over
-// 32 MiB (`MAP_MAX_BYTES`) fails the build, and so does a corpus file whose
-// bytes are not the stage its name says (edited, reformatted or renamed).
+// 32 MiB (`MAP_MAX_BYTES`) fails the build, and so does a corpus file that
+// is not what its name says (edited, reformatted or renamed). Every stage is
+// also written whole, expanded from its blocks, into `client/shaders/expanded/`
+// (not committed), for a person to open.
 //
 // Usage: node tools/wgsl/build-map.mjs [--corpus <dir>] [--out <file>] [--reuse]
-//   --reuse  leaves a map made from the same corpus under the same salt as it
-//            is (the dev server's start).
+//                                      [--expanded <dir>] [--no-expanded]
+//   --reuse        leaves a map made from the same corpus under the same salt
+//                  as it is (the dev server's start).
+//   --expanded     where the stages are written whole; by default
+//                  `client/shaders/expanded/` for the committed corpus, and
+//                  nowhere for a corpus named with --corpus.
+//   --no-expanded  writes no stage whole.
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { asciiProblem, buildMap, formatTimes, inputsDigest, lineFigures, mapSizeProblem, nodeSalt, sizes } from './lib/buildMap.mjs';
-import { readCorpusDir, refusalText } from './lib/corpus.mjs';
-import { CORPUS_DIR, MAP_FILE, writeWhole } from './lib/files.mjs';
+import { readCorpusDir, refusalText, writeExpanded } from './lib/corpus.mjs';
+import { CORPUS_DIR, EXPANDED_DIR, MAP_FILE, writeWhole } from './lib/files.mjs';
 import { loadShared } from './lib/shared.mjs';
 import { startTranslators, translateStage } from './lib/translators.mjs';
 
 const { values } = parseArgs({
-  options: { corpus: { type: 'string' }, out: { type: 'string' }, reuse: { type: 'boolean', default: false } },
+  options: {
+    corpus: { type: 'string' },
+    out: { type: 'string' },
+    reuse: { type: 'boolean', default: false },
+    expanded: { type: 'string' },
+    'no-expanded': { type: 'boolean', default: false },
+  },
 });
 const corpusDir = values.corpus === undefined ? CORPUS_DIR : resolve(values.corpus);
 const out = values.out === undefined ? MAP_FILE : resolve(values.out);
 const inputsFile = `${out}.inputs`;
+const expandedDir = values['no-expanded'] ? null : values.expanded !== undefined ? resolve(values.expanded) : values.corpus === undefined ? EXPANDED_DIR : null;
 const shown = (path) => relative(process.cwd(), path) || path;
 
 const shared = await loadShared();
 const salt = nodeSalt(shared);
+const readFrom = performance.now();
 let corpus;
 try {
   corpus = readCorpusDir(corpusDir, shared);
@@ -44,11 +59,23 @@ try {
   console.error(`${refusalText(error)}\nNo map was written.`);
   process.exit(1);
 }
+const readMs = performance.now() - readFrom;
 const { stages } = corpus;
 for (const name of corpus.others) {
   const hint = !name.includes('/') && name.endsWith('.json') ? ' (a recording? node tools/wgsl/merge-corpus.mjs adds its stages)' : '';
   console.error(`! ${join(corpusDir, name)}: not a corpus file, left alone${hint}`);
 }
+for (const name of corpus.unused) {
+  console.error(`! ${join(corpusDir, name)}: a block no stage names (node tools/wgsl/merge-corpus.mjs removes it)`);
+}
+let expandedLine = 'not written';
+if (expandedDir !== null) {
+  const from = performance.now();
+  const done = writeExpanded(expandedDir, stages, shared);
+  expandedLine = `${stages.length} stages whole in ${shown(expandedDir)}, ${done.written} written, ${done.removed} removed, in ${(performance.now() - from).toFixed(0)} ms`;
+}
+console.log(`wgsl corpus: ${stages.length} stages from ${corpus.blocks.files} blocks (${corpus.blocks.bytes} B), read, checked and expanded in ${readMs.toFixed(0)} ms`);
+console.log(`  expanded:     ${expandedLine}`);
 const inputs = inputsDigest(salt, stages, shared);
 if (values.reuse && existsSync(out) && existsSync(inputsFile) && readFileSync(inputsFile, 'utf8') === inputs) {
   console.log(`wgsl map: ${shown(out)} is up to date with ${shown(corpusDir)}`);

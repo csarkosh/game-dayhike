@@ -66,9 +66,9 @@ export function stageKey(salt: string, stage: Stage, flag: boolean, glsl: string
 
 /** The format of a recording: the JSON a page opened with `?wgsl=record`
  * downloads, which `tools/wgsl/merge-corpus.mjs` reads. It is how a
- * recording travels, and it is never committed: the committed corpus is one
- * shader file a stage, its bytes the stage's text
- * (`tools/wgsl/lib/corpus.mjs`). */
+ * recording travels, and it is never committed: the committed corpus keeps
+ * each distinct block of shader text once, and each stage as the list of
+ * its blocks (`tools/wgsl/lib/corpus.mjs`). */
 export const CORPUS_FORMAT = "dayhike-wgsl-corpus/1";
 
 /** One stage of the corpus: what the recorder keeps of it that decides its
