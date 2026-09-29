@@ -950,26 +950,35 @@ describe("startFallbacks", () => {
   });
 });
 
-describe("a governor's drop at the next start", () => {
+describe("a drop remembered from an earlier hike, read at launch", () => {
+  const RTX = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)";
+  const signals: GpuSignals = {
+    renderer: RTX, adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 16, memoryGb: 32, mobile: false, browser: 153,
+  };
+  const deps = (s: Storage, now: number): StartupDeps => ({
+    storage: s, pixels: () => 8_000_000, now: () => now, runStep: async () => null,
+    showScreen: () => ({ dispose: () => undefined }), setTimer: () => () => undefined,
+    whenVisible: async () => true, idleCadence: async () => 16.7, log: () => undefined,
+  });
+
   it("starts the hike one tier down, for Auto only", async () => {
-    const RTX = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)";
-    const signals: GpuSignals = {
-      renderer: RTX, adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 16, memoryGb: 32, mobile: false, browser: 153,
-    };
     const s = memoryStorage();
     writeAutoRecord(s, {
       v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
       verdict: { tier: "medium", source: "governor", pixels: 500_000, at: 1_790_000_000_000 - 1 },
     });
-    const deps: StartupDeps = {
-      storage: s, pixels: () => 8_000_000, now: () => 1_790_000_000_000, runStep: async () => null,
-      showScreen: () => ({ dispose: () => undefined }), setTimer: () => () => undefined,
-      whenVisible: async () => true, idleCadence: async () => 16.7, log: () => undefined,
-    };
-    expect(await startupTier(signals, { search: "", choice: "auto", cancelled: () => false }, deps))
+    expect(await startupTier(signals, { search: "", choice: "auto", cancelled: () => false }, deps(s, 1_790_000_000_000)))
       .toEqual({ tier: "medium", source: "auto", cls: "discrete-modern" });
-    expect(await startupTier(signals, { search: "", choice: "high", cancelled: () => false }, deps))
+    expect(await startupTier(signals, { search: "", choice: "high", cancelled: () => false }, deps(s, 1_790_000_000_000)))
       .toEqual({ tier: "high", source: "choice", cls: "discrete-modern" });
+  });
+
+  it("still decides the launch, as recorded by the page (`withGovernorDrop`), until it lapses after 7 days", async () => {
+    const s = memoryStorage();
+    writeAutoRecord(s, withGovernorDrop(null, RTX, 153, "discrete-modern", "high", 2_073_600, 1_790_000_000_000)!);
+    const auto = { search: "", choice: "auto" as const, cancelled: () => false };
+    expect(await startupTier(signals, auto, deps(s, 1_790_604_799_999))).toEqual({ tier: "medium", source: "auto", cls: "discrete-modern" });
+    expect(await startupTier(signals, auto, deps(s, 1_790_604_800_000))).toEqual({ tier: "high", source: "auto", cls: "discrete-modern" });
   });
 });
 
@@ -1045,8 +1054,9 @@ describe("the probe's attempts when its verdict is for another engine than the o
 describe("Safari on a Mac slower than the reference machine, hike after hike", () => {
   // Every probe step's scene takes `loadMs` to build and load, then 1.5 s to
   // fall quiet; high draws at 70 ms a frame, medium at 50 and low at 30, all
-  // under the governor's 48 fps. Each hike is followed by a minute of play,
-  // after which the governor drops any tier played under 48 fps.
+  // under 48 fps. Each hike is followed by a minute of play, which changes
+  // nothing: the tier is decided at launch only (`GOVERNOR_ENABLED` off), so
+  // no hike writes a drop for the next.
   const SLOW_MAC: GpuSignals = {
     renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
   };
@@ -1061,7 +1071,6 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
     const probes: QualityTier[][] = [];
     const tiers: QualityTier[] = [];
     const screens: number[] = [];
-    let drops = 0;
     for (const day of days) {
       clock.now = Math.max(clock.now + 600_000, BASE + day * DAY);
       const steps: QualityTier[] = [];
@@ -1113,27 +1122,18 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
       tiers.push(started.tier);
       if (steps.length > 0) probes.push(steps);
       clock.now += 60_000;
-      if (frameMs[started.tier] > 20.8) {
-        const next = withGovernorDrop(readAutoRecord(storage), "Apple GPU", 26, "apple-unknown", started.tier, 1_045_960, clock.now);
-        if (next !== null) {
-          writeAutoRecord(storage, next);
-          drops += 1;
-        }
-      }
     }
-    return { storage, probes, tiers, screens, drops };
+    return { storage, probes, tiers, screens };
   }
 
-  it("probes once, reads low inside the cap, and is not probed or dropped again in 30 days", async () => {
+  it("probes once, reads low inside the cap, and is not probed again in 30 days", async () => {
     // 9 s to be ready. Before a step could end early this probe took 21.7 s
-    // over high alone, the cap cut medium, and the sequence ran: three hikes of
-    // 30 s of screen with no verdict, the governor's drop to low, and once that
-    // lapsed after 7 days, the probes again.
+    // over high alone, the cap cut medium, and three hikes of 30 s of screen
+    // ended with no verdict.
     const got = await hikes(7_500, [0, 0, 0, 0, 1, 7, 8, 14, 29]);
     expect(got.probes).toEqual([["high", "medium"]]);
     expect(got.screens).toEqual([27_000]);
     expect(got.tiers).toEqual(["low", "low", "low", "low", "low", "low", "low", "low", "low"]);
-    expect(got.drops).toBe(0);
     const verdict = readAutoRecord(got.storage)!.verdict!;
     expect(verdict.tier).toBe("low");
     expect(verdict.source).toBe("probe");
@@ -1153,14 +1153,18 @@ describe("Safari on a Mac slower than the reference machine, hike after hike", (
     expect(verdict.readings!.map((r) => [r.tier, r.frames, r.meanMs])).toEqual([["high", 120, 16]]);
   });
 
-  it("probes at most three times over nine weeks where the cap always cuts the second step", async () => {
+  it("probes at most three times over four months where the cap always cuts the second step", async () => {
     // 12 s to be ready: high misses at about 16 s and the cap cuts medium, so
-    // each probe's verdict is medium, unmeasured; medium plays under 48 fps
-    // and the governor drops to low, a verdict that lapses after 7 days. A
-    // cut verdict that cleared the count gave this machine a probe every week.
-    const got = await hikes(10_500, [0, 1, 8, 16, 24, 32, 40, 48, 56, 62]);
+    // each probe's verdict is medium, unmeasured, and holds 30 days. Medium
+    // plays under 48 fps, and no hike lowers it: the probe comes back only as
+    // each verdict lapses (days 32 and 70), and after the third the count
+    // holds the class's start tier (day 120) with no fourth.
+    const got = await hikes(10_500, [0, 1, 8, 16, 24, 32, 40, 48, 56, 62, 70, 90, 100, 120]);
     expect(got.probes).toEqual([["high", "medium"], ["high", "medium"], ["high", "medium"]]);
-    expect(got.tiers).toEqual(["medium", "low", "medium", "medium", "medium", "medium", "medium", "medium", "medium", "low"]);
+    expect(got.tiers).toEqual([
+      "medium", "medium", "medium", "medium", "medium", "medium", "medium",
+      "medium", "medium", "medium", "medium", "medium", "medium", "medium",
+    ]);
     expect(readAutoRecord(got.storage)!.attempts).toBe(3);
     // High ends 16.24 s into the cap, leaving medium 9.56 s to be ready where
     // it needs 12 s: it gives up there, not at the cap's 30 s.
