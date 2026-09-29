@@ -1,4 +1,5 @@
-// Checks of startup.ps1 that need neither Windows nor PowerShell:
+// Checks of startup.ps1 (in _infra/modules/gcp-test-rig/) that need neither
+// Windows nor PowerShell:
 //
 //   node --test _infra/test-rig-gcp/tests/*.test.mjs
 //
@@ -13,7 +14,7 @@ import { test } from 'node:test';
 import { TASK } from '../probe.mjs';
 
 const dir = new URL('..', import.meta.url);
-const script = readFileSync(new URL('startup.ps1', dir), 'utf8');
+const script = readFileSync(new URL('../modules/gcp-test-rig/startup.ps1', dir), 'utf8');
 const variables = readFileSync(new URL('variables.tf', dir), 'utf8');
 
 // The script with its comments and the contents of its strings blanked out

@@ -9,11 +9,18 @@
 # against the real project), which changes the provider answers with a
 # replacement (its schema marks them; the `build` label below lists them),
 # or that a real stopped machine plans no change (the first run's steps).
+#
+# The resources are in ../modules/gcp-test-rig/, and an assertion can name a
+# resource, a local, an output or a precondition of the configuration a run
+# tests only, never one inside a module it calls. So the runs that read the
+# machine test that module directly (their `module` block), with the addresses
+# it declares; the runs of this root's variable validations test this root.
 
 # Every variable pinned to its default, so that a terraform.tfvars in this
-# directory (git-ignored, a person's own) cannot change what a run tests.
-# tests/variables.test.mjs checks that each value here is variables.tf's
-# default, so the runs below still test the defaults.
+# directory (git-ignored, a person's own) cannot change what a run tests, and
+# the module's inputs as this root sets them. tests/variables.test.mjs checks
+# that each value here is variables.tf's default, and that this root passes
+# each one on unchanged, so the runs below still test the defaults.
 variables {
   gcp_project_id         = "fps-csarko"
   gcp_region             = "us-west1"
@@ -35,6 +42,13 @@ variables {
   direct_access_cidrs    = []
   billing_account_id     = ""
   monthly_budget_usd     = 45
+  labels                 = { purpose = "test-rig" }
+}
+
+# The budget's own provider (main.tf), mocked like the other: no run reaches
+# Google or reads a credential.
+mock_provider "google" {
+  alias = "billing"
 }
 
 mock_provider "google" {
@@ -62,6 +76,10 @@ mock_provider "google" {
 
 run "defaults" {
   command = plan
+
+  module {
+    source = "../modules/gcp-test-rig"
+  }
 
   assert {
     condition = (
@@ -182,6 +200,10 @@ run "defaults" {
 run "plain_l4" {
   command = plan
 
+  module {
+    source = "../modules/gcp-test-rig"
+  }
+
   variables {
     gpu_type = "nvidia-l4"
   }
@@ -205,6 +227,10 @@ run "plain_l4" {
 run "t4" {
   command = plan
 
+  module {
+    source = "../modules/gcp-test-rig"
+  }
+
   variables {
     machine_type = "n1-standard-4"
     gpu_type     = "nvidia-tesla-t4-vws"
@@ -224,6 +250,10 @@ run "t4" {
 run "spot" {
   command = plan
 
+  module {
+    source = "../modules/gcp-test-rig"
+  }
+
   variables {
     spot = true
   }
@@ -241,6 +271,10 @@ run "spot" {
 
 run "ninety_minutes" {
   command = plan
+
+  module {
+    source = "../modules/gcp-test-rig"
+  }
 
   variables {
     max_run_hours = 1.5
@@ -260,6 +294,10 @@ run "ninety_minutes" {
 run "new_desktop_user_is_the_same_build" {
   command = plan
 
+  module {
+    source = "../modules/gcp-test-rig"
+  }
+
   variables {
     desktop_user = "walker"
   }
@@ -272,6 +310,10 @@ run "new_desktop_user_is_the_same_build" {
 
 run "budget_on" {
   command = plan
+
+  module {
+    source = "../modules/gcp-test-rig"
+  }
 
   variables {
     billing_account_id = "000000-000000-000000"
@@ -298,6 +340,10 @@ run "budget_on" {
 run "no_backstop" {
   command = plan
 
+  module {
+    source = "../modules/gcp-test-rig"
+  }
+
   variables {
     backstop_stop_schedule = null
   }
@@ -311,6 +357,10 @@ run "no_backstop" {
 run "rejects_mismatched_pair" {
   command = plan
 
+  module {
+    source = "../modules/gcp-test-rig"
+  }
+
   variables {
     machine_type = "n1-standard-4"
   }
@@ -320,6 +370,10 @@ run "rejects_mismatched_pair" {
 
 run "rejects_zone_outside_region" {
   command = plan
+
+  module {
+    source = "../modules/gcp-test-rig"
+  }
 
   variables {
     zone = "us-west4-a"
@@ -426,6 +480,10 @@ run "rejects_a_computer_name_windows_truncates" {
 run "stop_reads_the_machine" {
   command = plan
 
+  module {
+    source = "../modules/gcp-test-rig"
+  }
+
   variables {
     running = false
   }
@@ -441,6 +499,10 @@ run "stop_reads_the_machine" {
 # carries an earlier build.
 run "replaced_while_stopped_is_refused" {
   command = plan
+
+  module {
+    source = "../modules/gcp-test-rig"
+  }
 
   variables {
     running  = false
@@ -463,6 +525,10 @@ run "replaced_while_stopped_is_refused" {
 # Created running, as it must be.
 run "created_running" {
   command = apply
+
+  module {
+    source = "../modules/gcp-test-rig"
+  }
 
   assert {
     condition     = google_compute_instance.test_rig.desired_status == "RUNNING" && google_compute_instance.test_rig.labels["build"] == output.build
@@ -501,6 +567,10 @@ run "created_running" {
 run "stopped" {
   command = apply
 
+  module {
+    source = "../modules/gcp-test-rig"
+  }
+
   variables {
     running = false
   }
@@ -516,6 +586,10 @@ run "stopped" {
 # A plan with the same variables keeps it.
 run "plan_while_stopped" {
   command = plan
+
+  module {
+    source = "../modules/gcp-test-rig"
+  }
 
   variables {
     running = false
@@ -540,6 +614,10 @@ run "plan_while_stopped" {
 run "desktop_user_changed_while_stopped" {
   command = apply
 
+  module {
+    source = "../modules/gcp-test-rig"
+  }
+
   variables {
     running      = false
     desktop_user = "walker"
@@ -559,6 +637,10 @@ run "desktop_user_changed_while_stopped" {
 # machine. The machine Google reports carries the build it was made with.
 run "limit_changed_while_stopped_is_refused" {
   command = plan
+
+  module {
+    source = "../modules/gcp-test-rig"
+  }
 
   variables {
     running       = false
@@ -582,6 +664,10 @@ run "limit_changed_while_stopped_is_refused" {
 run "limit_changed_while_running" {
   command = apply
 
+  module {
+    source = "../modules/gcp-test-rig"
+  }
+
   variables {
     running       = true
     desktop_user  = "walker"
@@ -602,6 +688,10 @@ run "limit_changed_while_running" {
 # Started again: the one change is its status.
 run "started_again" {
   command = apply
+
+  module {
+    source = "../modules/gcp-test-rig"
+  }
 
   variables {
     running       = true
