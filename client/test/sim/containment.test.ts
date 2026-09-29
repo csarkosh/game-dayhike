@@ -64,7 +64,8 @@ describe("the wall in a forest world", { timeout: timeLimit(120_000) }, () => {
     }
     // 5 was the wall at the road; 6, the ground's stick standing a hull on a
     // box top; 7, the car at the pad, the sign at the trail's entrance and
-    // the player facing the trail. Either way no peer from before can join.
-    expect(GEN_VERSION).toBe(7);
+    // the player facing the trail; 8, the trail from the treeline. Either way
+    // no peer from before can join.
+    expect(GEN_VERSION).toBe(8);
   });
 });

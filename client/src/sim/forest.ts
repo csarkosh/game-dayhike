@@ -8,7 +8,14 @@ const FNV_PRIME = 0x01000193;
 const FNV_OFFSET = 0x811c9dc5;
 
 /**
- * Escape hatch, not the main defence. Bumped to 7 when a player began to
+ * Escape hatch, not the main defence. Bumped to 8 when the trail began to
+ * leave the pad inland and the forest came down to the road at the
+ * trailhead: a trail is how the world is used as much as how it is
+ * generated, and a peer from before would walk another one. The strip, the
+ * doorway and the clearing move `passHash` in the same release, but this
+ * does not lean on that.
+ *
+ * Bumped to 7 when a player began to
  * arrive in front of the car, facing the trail's entrance (`trailheadSpawn`
  * in `spawn.ts`): spawn selection is how the world is used, not how it is
  * generated. The car's new place and the sign at the entrance move
@@ -43,7 +50,7 @@ const FNV_OFFSET = 0x811c9dc5;
  * change, and yet a peer on the old build resolves every step against a
  * different surface. This is exactly the case the escape hatch exists for.
  */
-export const GEN_VERSION = 7;
+export const GEN_VERSION = 8;
 
 export type Forest = {
   seed: number;
@@ -156,6 +163,14 @@ const PROBE_CHUNKS: readonly (readonly [number, number])[] = [
   // (x=−273.59, z=−8.07), all in [-9, -1], which joins the window for them.
   // [-10, 0] holds nothing of pass 8 now and stays, so that no id moves for
   // its going.
+  //
+  // Re-read 2026-09-29: the trail leaves the pad inland and the forest
+  // comes down to the road at the trailhead. Measured for PROBE_SEED: the
+  // car (x=−285.73, z=0) in [-9, 0], where it stood; the board's five
+  // boxes, from (x=−271.16, z=2.81) to (x=−271.68, z=4.49), in [-9, 0]
+  // too, north of the bed and not south of it. [-9, 0] holds 3 trunks and
+  // [-9, -1] holds 4, where each held 3. [-9, -1] holds nothing of pass 8
+  // now and stays, as [-10, 0] does.
   [-10, 0],
   [-9, 0],
   [-9, -1],
@@ -163,7 +178,12 @@ const PROBE_CHUNKS: readonly (readonly [number, number])[] = [
   // Measured: the graph for 0x0badf00d stands posts at (x=75.98, z=-166) in
   // [2, -6], two more in [8, -9] and one in [13, -10]; one chunk is enough for
   // the coverage case, and the cheapest is taken.
-  [2, -6],
+  //
+  // Re-derived 2026-09-29: the trail leaves the pad inland, so the probe's
+  // trail is another one and [2, -6] holds no post. Measured: posts at
+  // (x=144.35, z=59.91) in [4, 1], and in [9, -4], [10, -5], [14, -8],
+  // [14, -7] and [19, -9]; the nearest the origin is taken in its place.
+  [4, 1],
   // Extended 2026-09-25 for pass 10 (cliffs): the chunk nearest the origin
   // holding a cliff module's collider for PROBE_SEED. Measured by a ring
   // scan outward from [0, 0]: chunk [-1, -15] holds three boxes (and

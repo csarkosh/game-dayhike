@@ -753,6 +753,10 @@ describe("the level id does not move", () => {
     // the entrance. No constant changed; in the probe the board's five boxes
     // stand in chunk [-9, 0], north of the bed, where they stood in [-9, -1]
     // (probeDigest moves).
-    expect(passHash()).toBe(-1659667931);
+    // Re-baselined 2026-09-29 from -1659667931: the probe's chunk for a junction
+    // post is [4, 1] where it was [2, -6], which holds no post on the probe's
+    // new trail (probeDigest moves). No constant changed. This is the value the
+    // trail from the treeline carries.
+    expect(passHash()).toBe(-2079813416);
   });
 });

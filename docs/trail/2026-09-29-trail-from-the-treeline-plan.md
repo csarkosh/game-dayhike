@@ -1471,7 +1471,6 @@ Find where the posts stand now, with a working test file that is deleted afterwa
 import { it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { createChunkGrid } from "../../src/sim/chunkGrid.js";
 import { generateChunk } from "../../src/sim/chunk.js";
 
 it("prints the probe's posts and the trees by its pad", () => {
@@ -1479,7 +1478,7 @@ it("prints the probe's posts and the trees by its pad", () => {
   const seed = 0x0badf00d;
   const rows: string[] = [];
   for (let cx = -12; cx <= 32; cx++) for (let cz = -20; cz <= 20; cz++) {
-    const props = generateChunk(createChunkGrid(seed), seed, cx, cz).props;
+    const props = generateChunk(seed, cx, cz).props;
     const posts = props.filter((p) => p.material === "signpost").length;
     if (posts > 0) rows.push(`posts: [${cx}, ${cz}] holds ${posts}`);
     if (cx >= -10 && cx <= -7 && cz >= -2 && cz <= 1) rows.push(`trees: [${cx}, ${cz}] holds ${props.filter((p) => p.material === "trunk").length}`);
@@ -1502,9 +1501,9 @@ and, under the entries for pass 8:
 
 ```
   // Re-read 2026-09-29: the forest comes down to the road at the
-  // trailhead. Measured for PROBE_SEED: [-9, 0] holds <n> trees and
-  // [-9, -1] holds <n>, where each held none; the car and the board's five
-  // boxes stand where they stood.
+  // trailhead. Measured for PROBE_SEED: [-9, 0] holds <n> trunks and
+  // [-9, -1] holds <n>, where each held 3; and where the car and the
+  // board's five boxes stand.
 ```
 
 with the counts the working file printed, and the car's and board's chunks checked against the entry above it. Delete `client/test/sim/zzProbe.test.ts`.
