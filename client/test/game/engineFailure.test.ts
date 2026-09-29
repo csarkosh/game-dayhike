@@ -349,7 +349,7 @@ describe("the page's record of a failure", () => {
         out[name] = pinned;
       };
       // A failed start: the first load's, a switch's, a probe step's, a lost device's retry.
-      run("init", (pin) => void recordStartFailure({ storage: storage(), env: ENV, now: T0, override, current: true, pin }));
+      run("init", (pin) => void recordStartFailure("init", { storage: storage(), env: ENV, now: T0, override, current: true, pin }));
       run("pipeline", (pin) => void recordEngineFailure("pipeline", { storage: storage(), env: ENV, now: T0, override, pin }));
       // A second lost device in 24 h, on the storage the first one wrote to.
       run("lost twice", (pin) => {
@@ -359,11 +359,19 @@ describe("the page's record of a failure", () => {
       });
       // A first lost device retries on WebGPU: nothing to pin.
       run("lost once", (pin) => void recordEngineFailure("lost", { storage: storage(), env: ENV, now: T0, override, pin }));
+      // A start that ran out of time: a lone one tries WebGPU again, nothing to pin…
+      run("timeout once", (pin) => void recordStartFailure("timeout", { storage: storage(), env: ENV, now: T0, override, current: true, pin }));
+      // …a second in 24 h, on the storage the first one wrote to, holds.
+      run("timeout twice", (pin) => {
+        const kept = storage();
+        recordStartFailure("timeout", { storage: kept, env: ENV, now: T0, override, current: true, pin: () => undefined });
+        recordStartFailure("timeout", { storage: kept, env: ENV, now: T0 + HOUR, override, current: true, pin });
+      });
       return out;
     };
-    expect(paths(memoryStorage, null)).toEqual({ init: false, pipeline: false, "lost twice": false, "lost once": false });
-    expect(paths(memoryStorage, "webgpu")).toEqual({ init: true, pipeline: true, "lost twice": true, "lost once": false });
-    expect(paths(() => throwing, null)).toEqual({ init: true, pipeline: true, "lost twice": true, "lost once": true });
+    expect(paths(memoryStorage, null)).toEqual({ init: false, pipeline: false, "lost twice": false, "lost once": false, "timeout once": false, "timeout twice": false });
+    expect(paths(memoryStorage, "webgpu")).toEqual({ init: true, pipeline: true, "lost twice": true, "lost once": false, "timeout once": false, "timeout twice": true });
+    expect(paths(() => throwing, null)).toEqual({ init: true, pipeline: true, "lost twice": true, "lost once": true, "timeout once": true, "timeout twice": true });
     expect(pinsAfterFailure({ stored: true, override: null })).toBe(false);
     expect(pinsAfterFailure({ stored: true, override: "webgl2" })).toBe(false);
     expect(pinsAfterFailure({ stored: true, override: "webgpu" })).toBe(true);
@@ -373,10 +381,24 @@ describe("the page's record of a failure", () => {
   it("records a failed start as init, and leaves the address alone where the page no longer wants the engine", () => {
     const storage = memoryStorage();
     let pinned = 0;
-    const got = recordStartFailure({ storage, env: ENV, now: T0, override: "webgpu", current: false, pin: () => void pinned++ });
+    const got = recordStartFailure("init", { storage, env: ENV, now: T0, override: "webgpu", current: false, pin: () => void pinned++ });
     expect(got).toEqual({ stored: true, holds: true });
     expect(readFallback(storage)).toEqual({ reason: "init", browser: 153, babylon: "9.18.0", at: T0, losses: 0 });
     expect(pinned).toBe(0);
+  });
+
+  it("records a start that ran out of time as a timeout: a lone one does not hold, a second in 24 h holds a day", () => {
+    const storage = memoryStorage();
+    const pins: string[] = [];
+    const first = recordStartFailure("timeout", { storage, env: ENV, now: T0, override: null, current: true, pin: () => void pins.push("first") });
+    expect(first).toEqual({ stored: true, holds: false });
+    expect(readFallback(storage)).toEqual({ reason: "timeout", browser: 153, babylon: "9.18.0", at: T0, losses: 1 });
+    const second = recordStartFailure("timeout", { storage, env: ENV, now: T0 + HOUR, override: null, current: true, pin: () => void pins.push("second") });
+    expect(second).toEqual({ stored: true, holds: true });
+    expect(readFallback(storage)).toEqual({ reason: "timeout", browser: 153, babylon: "9.18.0", at: T0 + HOUR, losses: 2 });
+    expect(fallbackHolds(readFallback(storage), ENV, T0 + HOUR + 86_399_999)).toBe(true);
+    expect(fallbackHolds(readFallback(storage), ENV, T0 + HOUR + 86_400_000)).toBe(false);
+    expect(pins).toEqual([]);
   });
 });
 

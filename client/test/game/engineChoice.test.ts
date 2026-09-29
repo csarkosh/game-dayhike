@@ -5,8 +5,8 @@ import {
   withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
   type AdapterReport, type WebGpuSteps,
   FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
-  NOTICE_SWITCHED, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
-  WEBGPU_START_MS, WEBGPU_TIERS,
+  NOTICE_SWITCHED, TIMEOUT_HOLD_DAYS, TIMEOUT_WINDOW_MS, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
+  WEBGPU_START_MS, WEBGPU_TIERS, WebGpuStartTimeout,
 } from "../../src/game/engineChoice.js";
 
 describe("the engine override", () => {
@@ -206,6 +206,59 @@ describe("the remembered fallback", () => {
     expect(lapsed).toEqual({ reason: "lost", browser: 154, babylon: "9.18.0", at: t0 + 60_000, losses: 1 });
   });
 
+  it("holds an engine that failed to start (init) for 30 days", () => {
+    const r = recordFailure(null, "init", env, t0);
+    expect(r).toEqual({ reason: "init", browser: 153, babylon: "9.18.0", at: t0, losses: 0 });
+    expect(fallbackHolds(r, env, t0 + 2_591_999_999)).toBe(true);
+    expect(fallbackHolds(r, env, t0 + 2_592_000_000)).toBe(false);
+  });
+
+  it("never holds a lone start that ran out of time", () => {
+    const one = recordFailure(null, "timeout", env, t0);
+    expect(one).toEqual({ reason: "timeout", browser: 153, babylon: "9.18.0", at: t0, losses: 1 });
+    expect(fallbackHolds(one, env, t0)).toBe(false);
+    expect(fallbackHolds(one, env, t0 + 60_000)).toBe(false);
+  });
+
+  it("holds a second timeout inside 24 h of the last, for one day and no longer", () => {
+    const one = recordFailure(null, "timeout", env, t0);
+    const two = recordFailure(one, "timeout", env, t0 + 3_600_000);
+    expect(two).toEqual({ reason: "timeout", browser: 153, babylon: "9.18.0", at: t0 + 3_600_000, losses: 2 });
+    expect(fallbackHolds(two, env, t0 + 3_600_000)).toBe(true);
+    expect(fallbackHolds(two, env, t0 + 89_999_999)).toBe(true);
+    expect(fallbackHolds(two, env, t0 + 90_000_000)).toBe(false);
+    // Only on the browser and Babylon it was written on, as every record.
+    expect(fallbackHolds(two, { browser: 154, babylon: "9.18.0" }, t0 + 3_600_000)).toBe(false);
+    // A third inside the window counts on and holds a day from itself.
+    const three = recordFailure(two, "timeout", env, t0 + 7_200_000);
+    expect(three.losses).toBe(3);
+    expect(fallbackHolds(three, env, t0 + 93_599_999)).toBe(true);
+    expect(fallbackHolds(three, env, t0 + 93_600_000)).toBe(false);
+  });
+
+  it("starts the count again for two timeouts further apart than the window", () => {
+    const one = recordFailure(null, "timeout", env, t0);
+    const apart = recordFailure(one, "timeout", env, t0 + 86_400_000);
+    expect(apart).toEqual({ reason: "timeout", browser: 153, babylon: "9.18.0", at: t0 + 86_400_000, losses: 1 });
+    expect(fallbackHolds(apart, env, t0 + 86_400_000)).toBe(false);
+    // Nor does a lost device count towards a timeout, or a timeout towards a loss.
+    const lost = recordFailure(null, "lost", env, t0);
+    expect(recordFailure(lost, "timeout", env, t0 + 60_000).losses).toBe(1);
+    expect(recordFailure(one, "lost", env, t0 + 60_000).losses).toBe(1);
+  });
+
+  it("keeps a held init or pipeline record when a timeout follows it", () => {
+    for (const reason of ["init", "pipeline"] as const) {
+      const held = recordFailure(null, reason, env, t0);
+      const after = recordFailure(held, "timeout", env, t0 + 60_000);
+      expect(after).toEqual({ reason, browser: 153, babylon: "9.18.0", at: t0, losses: 0 });
+      expect(fallbackHolds(after, env, t0 + 60_000)).toBe(true);
+      // One that no longer holds (a new browser) is replaced.
+      const lapsed = recordFailure(held, "timeout", { browser: 154, babylon: "9.18.0" }, t0 + 60_000);
+      expect(lapsed).toEqual({ reason: "timeout", browser: 154, babylon: "9.18.0", at: t0 + 60_000, losses: 1 });
+    }
+  });
+
   it("survives storage that throws, and says it could not write", () => {
     const throwing = { getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); } } as unknown as Storage;
     expect(readFallback(throwing)).toBeNull();
@@ -230,10 +283,28 @@ describe("the remembered fallback", () => {
     expect(readFallback(store)).toBeNull();
   });
 
+  it("reads a record written before the timeout reason as it did, and round-trips a timeout", () => {
+    const items = new Map<string, string>();
+    const store = {
+      getItem: (k: string) => items.get(k) ?? null,
+      setItem: (k: string, v: string) => void items.set(k, v),
+    } as unknown as Storage;
+    items.set("dayhike.engine", '{"reason":"init","browser":153,"babylon":"9.18.0","at":1790000000000,"losses":0}');
+    expect(readFallback(store)).toEqual({ reason: "init", browser: 153, babylon: "9.18.0", at: t0, losses: 0 });
+    expect(fallbackHolds(readFallback(store), env, t0 + 2_591_999_999)).toBe(true);
+    items.set("dayhike.engine", '{"reason":"lost","browser":153,"babylon":"9.18.0","at":1790000000000,"losses":2}');
+    expect(readFallback(store)).toEqual({ reason: "lost", browser: 153, babylon: "9.18.0", at: t0, losses: 2 });
+    expect(fallbackHolds(readFallback(store), env, t0 + 3_600_000)).toBe(true);
+    expect(writeFallback(store, recordFailure(null, "timeout", env, t0))).toBe(true);
+    expect(readFallback(store)).toEqual({ reason: "timeout", browser: 153, babylon: "9.18.0", at: t0, losses: 1 });
+  });
+
   it("pins its keys and clocks", () => {
     expect(FALLBACK_KEY).toBe("dayhike.engine");
     expect(FALLBACK_DAYS).toBe(30);
     expect(LOSS_WINDOW_MS).toBe(86_400_000);
+    expect(TIMEOUT_WINDOW_MS).toBe(86_400_000);
+    expect(TIMEOUT_HOLD_DAYS).toBe(1);
     expect(WEBGPU_FETCH_MS).toBe(10_000);
     expect(WEBGPU_START_MS).toBe(10_000);
     expect(FALLBACK_NOTICE_MS).toBe(6_000);
@@ -429,14 +500,16 @@ describe("resolveWebGpu", () => {
     expect(log.warned).toEqual(["WebGPU: its module did not load in 10000 ms; drawing with WebGL2."]);
   });
 
-  it("gives up on an adapter probe that never settles, and remembers it", async () => {
+  it("gives up on an adapter probe that never settles, and remembers it as a timeout", async () => {
     vi.useFakeTimers();
     const { s, log } = steps({ probe: () => never<AdapterReport | null>() });
     const result = resolveWebGpu(high, s, budgets);
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(log.remembered).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
     expect(await result).toBeNull();
     expect(log.calls).toEqual(["load"]);
-    expect(log.remembered).toEqual(["init"]);
+    expect(log.remembered).toEqual(["timeout"]);
     expect(log.warned).toEqual(["WebGPU: the adapter did not answer in 10000 ms; drawing with WebGL2."]);
   });
 
@@ -494,6 +567,36 @@ describe("resolveWebGpu", () => {
     expect(await resolveWebGpu(high, broken.s, budgets)).toBeNull();
     expect(broken.log.remembered).toEqual(["init"]);
     expect(broken.log.warned).toEqual(["WebGPU: the engine did not start; drawing with WebGL2."]);
+  });
+
+  it("remembers an engine not ready in what the probe left of the GPU's budget as a timeout", async () => {
+    vi.useFakeTimers();
+    const { s, log } = steps({}, { load: () => Promise.resolve({
+      probe: () => after(4_000, fitting),
+      fetchTranslators: () => Promise.resolve(),
+      // As `createWebGpuEngine` gives up: its own limit's error, at its own time.
+      create: (ms: number) => after(ms, undefined).then(() => Promise.reject(new WebGpuStartTimeout(ms))),
+    }) });
+    const result = resolveWebGpu(high, s, budgets);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(log.remembered).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await result).toBeNull();
+    expect(log.remembered).toEqual(["timeout"]);
+    expect(log.warned).toEqual(["WebGPU: the engine did not start; drawing with WebGL2."]);
+  });
+
+  it("tells a timeout from a failure by its type, not its words: an engine that throws is init", async () => {
+    vi.useFakeTimers();
+    const thrown = steps({ create: () => after(2_000, undefined).then(() => Promise.reject(new Error("the WebGPU engine was not ready in 6000 ms"))) });
+    const result = resolveWebGpu(high, thrown.s, budgets);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(await result).toBeNull();
+    expect(thrown.log.remembered).toEqual(["init"]);
+    expect(thrown.log.warned).toEqual(["WebGPU: the engine did not start; drawing with WebGL2."]);
+    const timeout = new WebGpuStartTimeout(6_000);
+    expect(timeout).toBeInstanceOf(Error);
+    expect(timeout.message).toBe("the WebGPU engine was not ready in 6000 ms");
   });
 
   it("uses the pinned budgets by default", async () => {

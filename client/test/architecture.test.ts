@@ -235,9 +235,11 @@ describe("layer boundaries", () => {
 
   it("records every failed WebGPU start through the one pin rule: the first load's, a switch's, a retry's, a probe step's", () => {
     const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
-    expect(main).toContain("  return recordStartFailure({");
-    expect(main).toContain("    remember: () => {\n      if (wanted()) void rememberFailure(current());\n    },");
-    expect(main).toContain("    failed: () => void rememberFailure(!cancelled()),");
+    expect(main).toContain("  return recordStartFailure(reason, {");
+    expect(main).toContain("    remember: (reason) => {\n      if (wanted()) void rememberFailure(reason, current());\n    },");
+    // A probe step's engine that failed in its build or frames did not run
+    // out of time: its start's timeout is the rule's (`remember`).
+    expect(main).toContain('    failed: () => void rememberFailure("init", !cancelled()),');
     expect([...main.matchAll(/\brememberFailure\(/g)].length).toBe(3);
     expect(main).not.toMatch(/\b(recordFailure|writeFallback)\(/);
   });
