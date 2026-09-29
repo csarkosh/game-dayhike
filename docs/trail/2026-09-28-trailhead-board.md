@@ -1,7 +1,7 @@
 # The trailhead board
 
 **Date:** 2026-09-28
-**Status:** Designed, not built. The steps to build it are `docs/trail/2026-09-28-trailhead-board-plan.md`.
+**Status:** Built, but for the model's planks and the two images (§6). The steps that built it are `docs/trail/2026-09-28-trailhead-board-plan.md`; how it looks in the game is `docs/trail/2026-09-28-trailhead-board-verification.md`.
 **Amends:** `docs/trail/2026-09-28-trail-14-trailhead.md` §3.3 (the sign at the entrance, which
 goes) and §3.4 (the notice board, which moves). The car, the player's place and facing, the
 trail's name and the road wall are unchanged.
@@ -46,26 +46,29 @@ place and the shape of §3.
 
 | Measure | Least | Median | Most |
 | --- | --- | --- | --- |
-| The board's centre, off the centre of the player's view | 9.20° | 16.14° | 18.14° |
-| The board's far end, off the centre of the player's view | 15.86° | 22.72° | 24.72° |
-| The board's centre, from the player | 6.74 m | 9.55 m | 9.83 m |
-| The bed's centreline, from the board's boxes | 1.29 m | 1.35 m | 1.45 m |
-| The board's boxes, from the road's centreline | 10.11 m | 18.85 m | 19.99 m |
-| The board's boxes, from the car's box | 8.66 m | 11.31 m | 11.73 m |
-| The board's boxes, from the player | 6.36 m | 9.22 m | 9.49 m |
+| The board's centre, off the centre of the player's view | 4.62° | 13.28° | 15.09° |
+| The board's far end, off the centre of the player's view | 10.88° | 18.75° | 20.56° |
+| The board's centre, from the player | 7.19 m | 11.48 m | 11.72 m |
+| The bed's centreline, from the board's boxes | 1.27 m | 1.33 m | 1.74 m |
+| The board's boxes, from the road's centreline | 10.00 m | 20.79 m | 22.06 m |
+| The board's boxes, from the car's box | 9.14 m | 13.35 m | 13.69 m |
+| The board's boxes, from the player | 6.81 m | 11.17 m | 11.38 m |
 
-- Both sides of the trail clear the road and the bed on 218 seeds, one side on 9, neither on none.
+- A place clears the road and the bed on every seed. The board stands 4.5 m past the entrance
+  on 224 seeds, 3.5 m on 1 and 3 m on 2.
 - The board stands on the side of `+n` on 63 seeds and of `−n` on 164.
-- **The whole board is within 25° of the centre of the view on every seed.** A phone held
-  upright sees about 25° to each side (the view's 1.4 rad is its height), so the board is in
-  the first frame on every screen.
-- Three other places were measured and set aside:
+- **The whole board is within 21° of the centre of the view on every seed.** The view's 1.4 rad
+  is its height, so a phone held upright sees 25.4° to each side at 9 by 16 and 21.3° at 390 by
+  844, and the board is in the first frame on both.
+- Five other places were measured and set aside:
 
 | Place | The board's far end, off the view's centre | From the player | Why not |
 | --- | --- | --- | --- |
 | At the pad's rim, 2.35 m off the bed | 23.76°–38.69° | 4.63–7.49 m | Within 25° on only 4 seeds: part of the board is out of an upright phone's frame on the rest. |
 | 3 m past the rim, 2.35 m off the bed | 13.66°–22.73° | 7.10–10.25 m | The bed comes within 1.10 m of a box, under the 1.15 m a player needs, and neither side clears on 72 seeds. |
 | 2 m past the rim, 2.5 m off the bed | 17.31°–26.04° | 6.31–9.37 m | Over 25° on some seeds, once the side is chosen by the line of sight as §3.1 has it. |
+| 2.5 m past the rim, 2.5 m off the bed | 15.86°–24.72° | 6.74–9.83 m | Built first. Over 21.3° on 189 seeds: on a phone of 390 by 844 the board's far edge is cut by the frame. |
+| 4.5 m past the rim, 2.5 m off the bed, and nowhere nearer | 10.88°–38.17° | 8.02–11.72 m | On 3 seeds the trail bends into the side the player looks toward, and the board would stand on the far side, 34° to 38° off the view's centre. |
 
 ## 3. Where the board stands
 
@@ -79,20 +82,23 @@ It uses what the trailhead already gives: **E** and **d**, the entrance and the 
 
 ### 3.1 Its place and facing
 
-1. The two candidate centres are `E + BOARD_ALONG · d ± BOARD_OFFSET · n`, where `n` is `d` turned
-   a quarter turn.
+1. The candidate centres are `E + k · d ± BOARD_OFFSET · n`, where `n` is `d` turned a quarter
+   turn and `k` runs from `BOARD_ALONG` back to `BOARD_ALONG_MIN` in steps of
+   `BOARD_ALONG_STEP`: ten places, five to each side.
 2. For each, the board faces S: its facing **f** is the unit direction from the centre to S, and
    its own line **a** is `(−f.z, f.x)`, which is the player's right as they look at it.
 3. A candidate **clears** when every one of its boxes (§3.2) is at least `BOARD_ROAD_CLEAR` from
    the road's centreline at the box's own z, and the bed's centreline, on any edge, is at least
    `BOARD_BED_CLEAR` from every box.
-4. Where one candidate clears and the other does not, the board takes the one that clears.
-   Where both do, or neither does, it takes the one nearer the centre of the player's view,
-   which is the line from S to E. A tie goes to `+n`.
+4. Of the candidates that clear, the board takes the one nearest the centre of the player's
+   view, which is the line from S to E. Where none clears, it takes the nearest of them all.
+   A tie goes to the place further along, and then to `+n`.
 
 | Constant | Value | Why |
 | --- | --- | --- |
-| `BOARD_ALONG` | 2.5 m | Past the pad's rim, so the board sits inside the view (§2). |
+| `BOARD_ALONG` | 4.5 m | Far enough past the pad's rim that the whole board is inside an upright phone's view (§2). |
+| `BOARD_ALONG_MIN` | 2.5 m | The nearest the board may stand, where the trail bends into the side the player looks toward. |
+| `BOARD_ALONG_STEP` | 0.5 m | The step between one place and the next. |
 | `BOARD_OFFSET` | 2.5 m | The board's centre from the bed's centreline. |
 | `BOARD_BED_CLEAR` | 1.15 m | `TRAIL_BED_HALF` plus `PLAYER_HALF.x`, as for the car. |
 | `BOARD_ROAD_CLEAR` | 6 m | `ROAD_BED_HALF` plus 0.5, the shoulder the car keeps. |
@@ -289,13 +295,14 @@ Every numeric expectation is a literal.
 
 | Clause | Bound |
 | --- | --- |
-| The board's far end, off the player's facing | at most 25° |
-| The board's centre, from the player | between 6.5 m and 10 m |
+| The board's far end, off the player's facing | at most 21° |
+| The board's centre, from the player | between 7 m and 12 m |
 | The bed's centreline, from every box | at least 1.15 m |
 | Every box, from the road's centreline | at least 6 m |
 | The board's boxes, from the car's box | at least 8.5 m |
 | The board's facing: its angle off the direction to the player | 0, to nine places |
 | The side the board takes | `+n` on 63 seeds, `−n` on 164 |
+| How far past the entrance the board stands | 4.5 m on 224 seeds, 3.5 m on 1, 3 m on 2 |
 | The poster's point | within reach (`POSTER_RADIUS`) of a player standing 1 m in front of the poster sheet and facing it |
 
 **Unit tests:**

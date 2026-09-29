@@ -228,15 +228,15 @@ describe("the board's place", () => {
   // The pad at the origin, the road along z at x = -9, the stem straight inland: the entrance is (8, 0).
   const inland = padGraph([[0, 0], [100, 0]], [[0, 1, "stem"]]);
 
-  it("stands the board 2.5 m past the entrance and 2.5 m off the bed, facing where the player arrives", () => {
+  it("stands the board 4.5 m past the entrance and 2.5 m off the bed, facing where the player arrives", () => {
     const b = boardSite(inland, straightRoad, 1, { x: 1.3, z: -1 });
-    expect(b.x).toBeCloseTo(10.5, 9);
+    expect(b.x).toBeCloseTo(12.5, 9);
     expect(b.z).toBeCloseTo(2.5, 9);
-    expect(b.fx).toBeCloseTo(-0.9346485776323319, 9);
-    expect(b.fz).toBeCloseTo(-0.3555728284470828, 9);
+    expect(b.fx).toBeCloseTo(-0.9544799780350298, 9);
+    expect(b.fz).toBeCloseTo(-0.29827499313594685, 9);
     // Its own line is the player's right as they look at it: the facing turned a quarter turn.
-    expect(b.ax).toBeCloseTo(0.3555728284470828, 9);
-    expect(b.az).toBeCloseTo(-0.9346485776323319, 9);
+    expect(b.ax).toBeCloseTo(0.29827499313594685, 9);
+    expect(b.az).toBeCloseTo(-0.9544799780350298, 9);
   });
 
   it("takes the side toward which the player looks: a player off to -z looks across to +z", () => {
@@ -246,25 +246,43 @@ describe("the board's place", () => {
 
   it("takes +n where the two sides are as near the view's centre as each other", () => {
     const b = boardSite(inland, straightRoad, 1, { x: 1.3, z: 0 });
+    expect(b.x).toBeCloseTo(12.5, 9);
     expect(b.z).toBeCloseTo(2.5, 9);
-    expect(b.fx).toBeCloseTo(-0.9650054712111679, 9);
-    expect(b.fz).toBeCloseTo(-0.2622297476117304, 9);
+    expect(b.fx).toBeCloseTo(-0.9759815859905213, 9);
+    expect(b.fz).toBeCloseTo(-0.21785303258716995, 9);
   });
 
-  it("takes the side that clears when the other does not", () => {
-    // A second bed runs along +z just past the entrance, through where the board would stand on that side.
-    const g = padGraph([[0, 0], [100, 0], [10, 1.2], [10, 60]], [[0, 1, "stem"], [2, 3, "loop"]]);
-    expect(boardSite(g, straightRoad, 1, { x: 1.3, z: -1 }).z).toBeCloseTo(-2.5, 9);
+  it("takes the side that clears when the other does not, anywhere along it", () => {
+    // A second bed runs along +z through every place the board could stand on that side, 2.5 m to 4.5 m past the entrance.
+    const g = padGraph([[0, 0], [100, 0], [11.5, 1.2], [11.5, 60]], [[0, 1, "stem"], [2, 3, "loop"]]);
+    const b = boardSite(g, straightRoad, 1, { x: 1.3, z: -1 });
+    expect(b.x).toBeCloseTo(12.5, 9);
+    expect(b.z).toBeCloseTo(-2.5, 9);
   });
 
-  it("takes the nearer side when neither clears", () => {
+  it("steps back along the trail to stay on the side the player looks toward", () => {
+    // A second bed runs along +z through the two furthest places on that
+    // side, 4 m and 4.5 m past the entrance; 3.5 m past it the side clears.
+    const g = padGraph([[0, 0], [100, 0], [13.5, 1.2], [13.5, 60]], [[0, 1, "stem"], [2, 3, "loop"]]);
+    const b = boardSite(g, straightRoad, 1, { x: 1.3, z: -1 });
+    expect(b.x).toBeCloseTo(11.5, 9);
+    expect(b.z).toBeCloseTo(2.5, 9);
+    expect(b.fx).toBeCloseTo(-0.9458646319475186, 9);
+    expect(b.fz).toBeCloseTo(-0.324561393315325, 9);
+  });
+
+  it("takes the place nearest the view's centre when none clears", () => {
     const g = padGraph(
-      [[0, 0], [100, 0], [10, 1.2], [10, 60], [10, -1.2], [10, -60]],
+      [[0, 0], [100, 0], [11.5, 1.2], [11.5, 60], [11.5, -1.2], [11.5, -60]],
       [[0, 1, "stem"], [2, 3, "loop"], [4, 5, "loop"]],
     );
-    expect(boardSite(g, straightRoad, 1, { x: 1.3, z: -1 }).z).toBeCloseTo(2.5, 9);
+    const b = boardSite(g, straightRoad, 1, { x: 1.3, z: -1 });
+    expect(b.x).toBeCloseTo(12.5, 9);
+    expect(b.z).toBeCloseTo(2.5, 9);
     // And from the other side of the line, the other side of the trail.
-    expect(boardSite(g, straightRoad, 1, { x: 1.3, z: 1 }).z).toBeCloseTo(-2.5, 9);
+    const c = boardSite(g, straightRoad, 1, { x: 1.3, z: 1 });
+    expect(c.x).toBeCloseTo(12.5, 9);
+    expect(c.z).toBeCloseTo(-2.5, 9);
   });
 
   it("lays five boxes along the board's own line, 2.31 m from end to end at any facing", () => {
@@ -272,10 +290,10 @@ describe("the board's place", () => {
     const boxes = boardBoxes(b);
     expect(boxes).toHaveLength(5);
     expect(boxes[2]).toEqual({ x: b.x, z: b.z });
-    expect(boxes[0]!.x).toBeCloseTo(10.269237822101678, 9);
-    expect(boxes[0]!.z).toBeCloseTo(3.3492048146658275, 9);
-    expect(boxes[4]!.x).toBeCloseTo(10.730762177898322, 9);
-    expect(boxes[4]!.z).toBeCloseTo(1.6507951853341722, 9);
+    expect(boxes[0]!.x).toBeCloseTo(12.30828933132329, 9);
+    expect(boxes[0]!.z).toBeCloseTo(3.3588637956716587, 9);
+    expect(boxes[4]!.x).toBeCloseTo(12.69171066867671, 9);
+    expect(boxes[4]!.z).toBeCloseTo(1.6411362043283413, 9);
     expect(Math.hypot(boxes[4]!.x - boxes[0]!.x, boxes[4]!.z - boxes[0]!.z) + 0.55).toBeCloseTo(2.31, 9);
     expect(BOARD_BOX_HALF).toEqual({ x: 0.275, y: 1.25, z: 0.275 });
   });
@@ -286,6 +304,7 @@ describe("the board's place", () => {
       Math.hypot(Math.max(Math.abs(a.x - c.x) - 0.275 - h.x, 0), Math.max(Math.abs(a.z - c.z) - 0.275 - h.z, 0));
     let farEnd = 0, nearest = Infinity, farthest = 0, bed = Infinity, road = Infinity, carGap = Infinity, turned = 0;
     let plus = 0, minus = 0;
+    const along = new Map<string, number>();
     for (const seed of SEEDS) {
       const graph = v.trailGraph!(seed);
       const { car, start: s, board: b } = trailheadPlaces(graph, v.roadCenterX!, seed);
@@ -307,15 +326,21 @@ describe("the board's place", () => {
       const e = trailEntrance(graph);
       if ((b.x - e.x) * -e.dz + (b.z - e.z) * e.dx > 0) plus++;
       else minus++;
+      const past = ((b.x - e.x) * e.dx + (b.z - e.z) * e.dz).toFixed(1);
+      along.set(past, (along.get(past) ?? 0) + 1);
     }
     console.info(`[trailhead] board: far end ${farEnd.toFixed(2)} deg off the facing at most, ${nearest.toFixed(2)}-${farthest.toFixed(2)} m from the player, bed ${bed.toFixed(2)} m, road ${road.toFixed(2)} m, car ${carGap.toFixed(2)} m, sides +n ${plus} -n ${minus}`);
-    expect(farEnd).toBeLessThanOrEqual(25);
-    expect(nearest).toBeGreaterThanOrEqual(6.5);
-    expect(farthest).toBeLessThanOrEqual(10);
+    // An upright phone of 390 by 844 shows 21.3 degrees to each side.
+    expect(farEnd).toBeLessThanOrEqual(21);
+    expect(nearest).toBeGreaterThanOrEqual(7);
+    expect(farthest).toBeLessThanOrEqual(12);
     expect(bed).toBeGreaterThanOrEqual(1.15);
     expect(road).toBeGreaterThanOrEqual(6);
     expect(carGap).toBeGreaterThanOrEqual(8.5);
     expect(turned).toBeLessThan(1e-9);
     expect([plus, minus]).toEqual([63, 164]);
+    // All but three stand 4.5 m past the entrance; on those the trail bends
+    // into the side the player looks toward, and the board steps back.
+    expect([...along].sort()).toEqual([["3.0", 2], ["3.5", 1], ["4.5", 224]]);
   }, timeLimit(300000));
 });

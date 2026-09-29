@@ -152,8 +152,8 @@ const PROBE_CHUNKS: readonly (readonly [number, number])[] = [
   //
   // Re-read 2026-09-28: the car stands at the pad and the board at the
   // trail's entrance. Measured for PROBE_SEED: the car (x=−285.73, z=0) in
-  // [-9, 0]; the board's five boxes, from (x=−274.21, z=−5.05) to
-  // (x=−274.92, z=−6.66), all in [-9, -1], which joins the window for them.
+  // [-9, 0]; the board's five boxes, from (x=−272.77, z=−6.52) to
+  // (x=−273.59, z=−8.07), all in [-9, -1], which joins the window for them.
   // [-10, 0] holds nothing of pass 8 now and stays, so that no id moves for
   // its going.
   [-10, 0],

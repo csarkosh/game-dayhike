@@ -196,14 +196,17 @@ function sweep(token: string): Case[] {
  *
  * Re-pinned 2026-09-28 from 875 shown and 78 955 admitted: the notice
  * board left the pad's side for the trail's entrance, where it stands as
- * five boxes 2.5 m off the bed, 10.79 m from the pad's node. Nothing
+ * five boxes 2.5 m off the bed, 12.75 m from the pad's node where it
+ * stands 4.5 m past the entrance. Nothing
  * stands by the pad now, so nine pad stands show that did not: the six the
  * kiosk had cut (hollow8, 31 and 46 facing down; hollow12, 24 and 49
  * facing right) and three that the board before it had cut too (hollow5
  * facing down; hollow2 and 39 facing right). On each of the nine, the
  * placement the watcher now shows at has the kiosk's old box, 7.12–7.80 m
  * from the node, on the lead's sightline to it, and neither the old post
- * at the entrance nor any of the board's five boxes. No stand that showed
+ * at the entrance nor any of the board's five boxes. The sweep was
+ * measured with the board 2 m nearer the pad and again where it stands,
+ * and no count and no stand differs between the two. No stand that showed
  * has stopped showing: 884 of 936, the pad 160 of 200 (33 of the 52 that
  * never showed face down from the pad), 79 597 placements admitted and the
  * sightline refusing 59 173. No stand above the pad moved.

@@ -3,7 +3,8 @@
 **Date:** 2026-09-28
 **Checks:** [`2026-09-28-trailhead-board.md`](2026-09-28-trailhead-board.md) §9.2.
 **Looked at:** commit `b304873` for the stills; commit `6a22a93` for the depth measurement and
-the two-player view.
+the two-player view; the board's place as it stands now, 4.5 m past the entrance, for the last
+section.
 **Browser:** Chrome 154 on macOS, `ANGLE (Apple, ANGLE Metal Renderer: Apple M4)`. `?tier=high`
 drew with WebGPU at 1600 by 900; `?tier=low` drew with WebGL2 at 1066 by 600 (scaling 1.5).
 **Images:** the stand-ins. The paper and the photograph are not in the repository yet, and the
@@ -15,6 +16,8 @@ The stills are kept outside the repository: every file under `docs/` is a dated 
 ## The worlds
 
 Each opened with `seed <token>`, `weather clear`, `time 13`.
+
+The board stood 2.5 m past the entrance for every section but the last.
 
 | World | Seed | The hiker | The board reads | Board from arrival |
 | --- | --- | --- | --- | --- |
@@ -37,7 +40,7 @@ Each opened with `seed <token>`, `weather clear`, `time 13`.
 | 6 | The board can be walked round and not through | Met on all six | The same simulation |
 | 7 | "Read the poster" at the poster's sheet and nowhere else | Missed: see below | The same simulation |
 | 8 | By headlamp after dark the board can be read | Missed on all six | Not looked at |
-| | An upright phone, 390 by 844: the whole board in the first frame | Missed on five of six | Not looked at |
+| | An upright phone, 390 by 844: the whole board in the first frame | Missed on five of six; met on all six once the board was moved (last section) | Not looked at |
 | | Two players see the same marks | Met | Not looked at |
 
 ### 1 and 2. On arrival
@@ -175,3 +178,33 @@ The standpoints left out, 5 and 2, had the car between the eye and the board.
 
 The fork signs' lettering stands 1 mm in front of its planks with no constant bias, as the
 board's paint did. It was not looked at here.
+
+## The board moved further along
+
+For the phone, the board was moved from 2.5 m past the entrance to 4.5 m, with leave to step
+back in half metres, to 2.5 m at the least, where the trail bends into the side the player
+looks toward (the spec's §3.1). Over the 227 seeds its far end is 10.88° to 20.56° from the
+view's centre; it stands 4.5 m past the entrance on 224, 3.5 m on 1 and 3 m on 2.
+
+| World | Board from arrival | The board's ends, off the view's centre |
+| --- | --- | --- |
+| `hollow` | 10.8 m | 4.2° and 15.8° |
+| `room-1` | 11.5 m | 8.0° and 18.9° |
+| `room-140` | 7.2 m | 0.6° and 18.1° |
+| `room-50` | 8.7 m | 2.3° to one side and 12.1° to the other |
+| `room-19` | 11.7 m | 0.6° and 11.3° |
+| `room-30` | 10.6 m | 2.8° and 14.7° |
+
+Looked at on arrival on the high tier, before any input:
+
+| View | Seen |
+| --- | --- |
+| 390 by 844 | The whole board, roof and posts, is in the frame on all six. |
+| 360 by 800 | The same, on all six; on `room-1` the roof's end is at the frame's edge. |
+| 1600 by 900 | The whole board on all six. The trail's name is read on `room-140` and `room-50`, the two nearest. On the four that stand 10.6 to 11.7 m away its letters are a few pixels tall and are read only with the still enlarged. |
+
+So the move costs the name its reading from arrival on the worlds where the board stands
+furthest. The watcher's sweep was run with the board in both places and no count and no stand
+differs between them.
+
+The board by headlamp and the fork signs' lettering are left as they are.

@@ -121,10 +121,17 @@ export function trailheadSpawn(graph: EntranceGraph, car: Ground): Start {
   return { x, z, yaw: facingYaw(e.x - x, e.z - z) };
 }
 
-/** How far past the entrance, along the trail, the board stands. Over the
- * 227-seed sweep the whole board is then within 24.72 degrees of the centre
- * of the player's view, which an upright phone's 25 degrees still shows. */
-export const BOARD_ALONG = 2.5;
+/**
+ * How far past the entrance, along the trail, the board stands: BOARD_ALONG
+ * where it can, and nearer by BOARD_ALONG_STEP at a time, to BOARD_ALONG_MIN
+ * at the least, where that keeps it nearer the centre of the player's view.
+ * An upright phone of 390 by 844 shows 21.3 degrees to each side; over the
+ * 227-seed sweep the whole board is within 20.56 degrees, and stands 4.5 m
+ * past the entrance on 224 seeds, 3.5 m on 1 and 3 m on 2.
+ */
+export const BOARD_ALONG = 4.5;
+export const BOARD_ALONG_MIN = 2.5;
+export const BOARD_ALONG_STEP = 0.5;
 /** The board's centre from the bed's centreline. */
 export const BOARD_OFFSET = 2.5;
 /** The bed's half-width and a player's, as for the car. */
@@ -157,13 +164,16 @@ export function boardBoxes(board: Board): Ground[] {
 }
 
 /**
- * Where the board stands: BOARD_ALONG past the entrance along the trail and
- * BOARD_OFFSET to one side of the bed, facing the place a player arrives.
- * Of the two sides it takes the one that clears the road and the bed; where
- * both do, or neither does, the one nearer the centre of the player's view,
- * which is the line from where they arrive to the entrance; a tie goes to
- * the side of `n`, the trail's direction turned a quarter turn. Over the
- * 227-seed sweep both sides clear on 218 seeds and one on 9.
+ * Where the board stands: past the entrance along the trail, BOARD_OFFSET to
+ * one side of the bed, facing the place a player arrives. The places it may
+ * stand are on either side, from BOARD_ALONG past the entrance back to
+ * BOARD_ALONG_MIN in steps of BOARD_ALONG_STEP. Of those that clear the road
+ * and the bed it takes the one nearest the centre of the player's view,
+ * which is the line from where they arrive to the entrance; where none
+ * clears, the nearest of them all. A tie goes to the place further along,
+ * and then to the side of `n`, the trail's direction turned a quarter turn.
+ * Over the 227-seed sweep a place clears on every seed; on three the trail
+ * bends into the side the player looks toward, and the board steps back.
  */
 export function boardSite(
   graph: EntranceGraph,
@@ -177,9 +187,9 @@ export function boardSite(
   const vl = Math.sqrt(vx * vx + vz * vz);
   vx = vl > 0 ? vx / vl : e.dx;
   vz = vl > 0 ? vz / vl : e.dz;
-  const at = (side: number): { board: Board; clears: boolean; centred: number } => {
-    const x = e.x + e.dx * BOARD_ALONG + side * nx * BOARD_OFFSET;
-    const z = e.z + e.dz * BOARD_ALONG + side * nz * BOARD_OFFSET;
+  const at = (along: number, side: number): { board: Board; clears: boolean; centred: number } => {
+    const x = e.x + e.dx * along + side * nx * BOARD_OFFSET;
+    const z = e.z + e.dz * along + side * nz * BOARD_OFFSET;
     const tx = start.x - x, tz = start.z - z;
     const tl = Math.sqrt(tx * tx + tz * tz);
     const fx = tl > 0 ? tx / tl : -e.dx, fz = tl > 0 ? tz / tl : -e.dz;
@@ -193,9 +203,16 @@ export function boardSite(
     // board: nearer 1 is nearer the centre.
     return { board, clears, centred: -(fx * vx + fz * vz) };
   };
-  const plus = at(1), minus = at(-1);
-  if (plus.clears !== minus.clears) return plus.clears ? plus.board : minus.board;
-  return minus.centred > plus.centred ? minus.board : plus.board;
+  let best: { board: Board; clears: boolean; centred: number } | null = null;
+  for (let k = 0; BOARD_ALONG - k * BOARD_ALONG_STEP >= BOARD_ALONG_MIN; k++) {
+    for (const side of [1, -1]) {
+      const c = at(BOARD_ALONG - k * BOARD_ALONG_STEP, side);
+      // One that clears beats one that does not; of two alike, the more centred.
+      if (best === null || (c.clears && !best.clears) || (c.clears === best.clears && c.centred > best.centred)) best = c;
+    }
+  }
+  // BOARD_ALONG is not less than BOARD_ALONG_MIN, so the first place was tried.
+  return (best as { board: Board }).board;
 }
 
 export type TrailheadPlaces = { car: Ground; start: Start; board: Board };
