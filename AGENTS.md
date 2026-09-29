@@ -25,15 +25,15 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 
 | Path | What |
 |---|---|
-| `client/` | The game: `src/{game,net,sim}` (Babylon.js rendering, WebRTC networking, deterministic simulation), `index.html`, `levels/`, `public/` (favicons, in csarko.sh's colours, and the vendored KTX2 decoder), tests under `test/`. |
-| `client/shaders/corpus/` | The GLSL stages the build translates to WGSL ahead (`tools/wgsl/`), so the WebGPU path finds its shaders on a first visit: `stages-<h>.json`, one stage a line, merged from pages recorded with `?wgsl=record` by `tools/wgsl/merge-corpus.mjs`. The ten stages made under Node (`tools/wgsl/node-corpus.mjs`), which no browser asks for, are the tests' fixture in `tools/wgsl/test/fixtures/node-corpus/`, not shipped. The map the build makes of it goes to `client/shaders/map/`, not committed. |
+| `client/` | The game: `src/{game,net,sim}` (Babylon.js rendering, WebRTC networking, deterministic simulation), `index.html`, `levels/`, `shaders/corpus/` (the recorded shader corpus, below), `public/` (favicons, in csarko.sh's colours, and the vendored KTX2 decoder), tests under `test/`. |
+| `client/shaders/corpus/` | The GLSL stages the build translates to WGSL ahead (`tools/wgsl/`), so the WebGPU path finds its shaders on a first visit: one GLSL file a stage, `<h>/<id>.<stage>[.uniformity-off].glsl`, its bytes the stage's exact text and its name a hash of them, so a file edited, reformatted by an editor (a final newline added, whitespace trimmed) or renamed is refused by the tools. Recorded, never written by hand: `tools/wgsl/merge-corpus.mjs` adds the stages of a page recorded with `?wgsl=record` (one JSON download, never committed). The ten stages made under Node (`tools/wgsl/node-corpus.mjs`), which no browser asks for, are the tests' fixture in `tools/wgsl/test/fixtures/node-corpus/`, in the same layout, not shipped. The map the build makes of it goes to `client/shaders/map/`, not committed. |
 | `client/assets/` | Shipped models, ground textures and wildlife calls, committed through Git LFS. `client/assets/catalog.json` lists every one; [`CREDITS.md`](CREDITS.md) credits the third-party work. |
 | `branding/` | The Day Hike icon (`dayhike.svg`) shown at the top of the README. |
 | `server/` | The Node (`ws`) signaling server: introduces peers in a room, then steps out. |
 | `desktop/` | Electron launcher (macOS and Windows) that loads the hosted site. |
 | `_infra/` | Terraform for hosting, DNS and the signaling service. |
 | `docs/` | Research notes, specs, plans and design docs, grouped by subject (`docs/rendering/`, …). Every file is named `YYYY-MM-DD-<topic>.md`; see [Docs](#docs). |
-| `tools/` | `deploy/` (deploy and verify scripts), `wgsl/` (the shader corpus translated to the WGSL map the build ships, and merged from recorded pages; the dev server makes the map as it starts unless `DAYHIKE_SKIP_WGSL_MAP` is set), `vendor-ktx2.mjs`, `docs/` (the docs file-name test), and their tests. |
+| `tools/` | `deploy/` (deploy and verify scripts), `wgsl/` (the shader corpus translated to the WGSL map the build ships, and merged from recorded pages; every tool reads the corpus's files through `wgsl/lib/corpus.mjs`, which checks each file's name against its bytes; the dev server makes the map as it starts unless `DAYHIKE_SKIP_WGSL_MAP` is set), `vendor-ktx2.mjs`, `docs/` (the docs file-name test), and their tests. |
 | `.agents/skills/` | Agent skills. `.claude/skills` is a symlink to it so Claude Code discovers them. |
 | `.claude/settings.json` | Imports the shared skill plugins from [`csarkosh/skills-general`](https://github.com/csarkosh/skills-general); see [Skills](#skills). |
 | `.github/` | CI workflows: `test.yml` runs typecheck, lint and the three test suites, and builds the client as the deploy does and checks the built WGSL map (`tools/wgsl/check-build.mjs`), on every push to `main` and to `worktree-**`/`ci/**` branches and on pull requests, with the client suite's test time limits scaled by `TEST_TIME_SCALE` and the `wall-clock` tests left out (a local `npm test` runs them; `npm run test:wall-clock` runs only them); the Windows desktop smoke test is started by hand. |
@@ -46,7 +46,7 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | `eslint.config.js` | Flat ESLint config, including the `sim/` layering rule. |
 | `firebase.json`, `.firebaserc` | Firebase Hosting config for the client. |
 | `.dockerignore` | Build context excludes for the signaling server's Docker image. |
-| `.gitattributes` | Git LFS tracking for shipped binaries. |
+| `.gitattributes` | Git LFS tracking for shipped binaries; `\n` line endings for text and shader files; the shader corpus marked generated. |
 | `.gitignore` | Build output, local state and worktrees excluded from version control. |
 
 ## Docs
