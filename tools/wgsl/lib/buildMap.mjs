@@ -4,8 +4,6 @@
 // (`translators.mjs`), written as the page reads it (`mapText`).
 
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 import { AbstractEngine } from '@babylonjs/core/Engines/abstractEngine.js';
 import { WebGPUTintWASM } from '@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js';
@@ -23,33 +21,6 @@ export function nodeSalt(shared, clientDir = CLIENT_DIR) {
     translators: translatorDigests(clientDir),
     staticUniformityOff: WebGPUTintWASM.DisableUniformityAnalysis,
   });
-}
-
-/**
- * The stages of every corpus file in `dir` (`*.json`, in name order), how
- * many each file holds, and the stages whose text carries a carriage return
- * (`withCarriageReturns`: the file, the stage, its name), which the build
- * refuses. A file that is not a corpus throws, naming it: the corpus is
- * committed, and a damaged one is an error to fix, not to skip.
- */
-export function readCorpusDir(dir, shared) {
-  const files = [];
-  const stages = [];
-  const withCarriageReturns = [];
-  for (const name of readdirSync(dir).filter((n) => n.endsWith('.json')).sort()) {
-    let read;
-    try {
-      read = shared.readCorpus(readFileSync(join(dir, name), 'utf8'));
-    } catch (error) {
-      throw new Error(`${join(dir, name)}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    files.push({ name, stages: read.length });
-    stages.push(...read);
-    for (const entry of read) {
-      if (entry.glsl.includes('\r')) withCarriageReturns.push({ file: name, stage: entry.stage, id: shared.corpusId(entry) });
-    }
-  }
-  return { files, stages, withCarriageReturns };
 }
 
 /**

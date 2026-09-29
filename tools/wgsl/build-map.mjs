@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Translates the corpus of GLSL stages (`client/shaders/corpus/*.json`) into
+// Translates the corpus of GLSL stages (`client/shaders/corpus/`, one shader
+// file a stage: `tools/wgsl/lib/corpus.mjs`) into
 // the map of WGSL the page fetches on its WebGPU path, so that a player's
 // first visit finds its shaders instead of translating them on the page's
 // thread. Run by `npm run build` before Vite, which ships the map as a
@@ -10,16 +11,18 @@
 // translates it. The same corpus and translators give the same bytes. A stage
 // that does not translate is left out of the map and reported: the build goes
 // on, and the page translates that stage itself, as it always has. A map over
-// 32 MiB (`MAP_MAX_BYTES`) fails the build.
+// 32 MiB (`MAP_MAX_BYTES`) fails the build, and so does a corpus file whose
+// bytes are not the stage its name says (edited, reformatted or renamed).
 //
 // Usage: node tools/wgsl/build-map.mjs [--corpus <dir>] [--out <file>] [--reuse]
 //   --reuse  leaves a map made from the same corpus under the same salt as it
 //            is (the dev server's start).
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { asciiProblem, buildMap, formatTimes, inputsDigest, lineFigures, mapSizeProblem, nodeSalt, readCorpusDir, sizes } from './lib/buildMap.mjs';
+import { asciiProblem, buildMap, formatTimes, inputsDigest, lineFigures, mapSizeProblem, nodeSalt, sizes } from './lib/buildMap.mjs';
+import { readCorpusDir, refusalText } from './lib/corpus.mjs';
 import { CORPUS_DIR, MAP_FILE, writeWhole } from './lib/files.mjs';
 import { loadShared } from './lib/shared.mjs';
 import { startTranslators, translateStage } from './lib/translators.mjs';
@@ -34,17 +37,17 @@ const shown = (path) => relative(process.cwd(), path) || path;
 
 const shared = await loadShared();
 const salt = nodeSalt(shared);
-const { files, stages, withCarriageReturns } = readCorpusDir(corpusDir, shared);
-// The corpus is committed text, not repaired here: a stage with a carriage
-// return is one no page asks for, and the merge tool repairs it.
-if (withCarriageReturns.length > 0) {
-  for (const found of withCarriageReturns) {
-    console.error(
-      `✗ the ${found.stage} stage ${found.id.slice(0, 16)} in ${found.file} carries a carriage return: ` +
-        'the corpus is committed text; node tools/wgsl/merge-corpus.mjs repairs it',
-    );
-  }
+let corpus;
+try {
+  corpus = readCorpusDir(corpusDir, shared);
+} catch (error) {
+  console.error(`${refusalText(error)}\nNo map was written.`);
   process.exit(1);
+}
+const { stages } = corpus;
+for (const name of corpus.others) {
+  const hint = !name.includes('/') && name.endsWith('.json') ? ' (a recording? node tools/wgsl/merge-corpus.mjs adds its stages)' : '';
+  console.error(`! ${join(corpusDir, name)}: not a corpus file, left alone${hint}`);
 }
 const inputs = inputsDigest(salt, stages, shared);
 if (values.reuse && existsSync(out) && existsSync(inputsFile) && readFileSync(inputsFile, 'utf8') === inputs) {
@@ -71,7 +74,7 @@ const notAscii = asciiProblem(made.text);
 const largest = made.translated.reduce((a, b) => (b.wgslBytes > (a?.wgslBytes ?? -1) ? b : a), null);
 // The figures first, so a map over its ceiling still says what it is.
 console.log(`wgsl map: ${shown(out)}`);
-console.log(`  corpus:       ${stages.length} stages in ${files.length} files under ${shown(corpusDir)}, ${made.translated.length + made.failed.length} distinct`);
+console.log(`  corpus:       ${stages.length} stages under ${shown(corpusDir)}, ${made.translated.length + made.failed.length} distinct`);
 console.log(`  entries:      ${made.entries.size}`);
 console.log(`  failed:       ${made.failed.length}${made.failed.length > 0 ? ` (${made.failed.map((stage) => stage.id).join(', ')})` : ''}`);
 console.log(`  bytes:        ${size.raw} raw, ${size.gzip} gzip -9, ${size.brotli} brotli -q 11`);

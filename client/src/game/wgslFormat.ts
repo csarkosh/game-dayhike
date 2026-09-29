@@ -1,9 +1,9 @@
 /**
  * What identifies a WGSL translation: the key of a stage and the salt it is
- * made under (`shaderLookup.ts`); and the two files that carry translations
- * made ahead: the corpus, the GLSL stages the build translates
- * (`tools/wgsl/`), and the map, their WGSL under their keys, which the page
- * fetches. Nothing here imports Babylon or the DOM, so the build's tools load
+ * made under (`shaderLookup.ts`); and the two forms that carry translations
+ * made ahead: a recording of the GLSL stages the build translates, merged
+ * into the corpus (`tools/wgsl/`), and the map, their WGSL under their keys,
+ * which the page fetches. Nothing here imports Babylon or the DOM, so the build's tools load
  * it under Node and key a stage with the very code the page keys it with.
  */
 import { sha256Hex } from "./sha256.js";
@@ -64,7 +64,11 @@ export function stageKey(salt: string, stage: Stage, flag: boolean, glsl: string
   );
 }
 
-/** The format of a corpus file. */
+/** The format of a recording: the JSON a page opened with `?wgsl=record`
+ * downloads, which `tools/wgsl/merge-corpus.mjs` reads. It is how a
+ * recording travels, and it is never committed: the committed corpus is one
+ * shader file a stage, its bytes the stage's text
+ * (`tools/wgsl/lib/corpus.mjs`). */
 export const CORPUS_FORMAT = "dayhike-wgsl-corpus/1";
 
 /** One stage of the corpus: what the recorder keeps of it that decides its
@@ -72,16 +76,17 @@ export const CORPUS_FORMAT = "dayhike-wgsl-corpus/1";
 export type CorpusStage = { stage: Stage; flag: boolean; glsl: string };
 
 /** A corpus stage's name, the same under every build: its key with an empty
- * salt. The corpus is sorted, deduplicated and split by it. */
+ * salt. A recording is sorted and deduplicated by it, and the committed
+ * corpus names each stage's file by its first 16 digits. */
 export function corpusId(entry: CorpusStage): string {
   return stageKey("", entry.stage, entry.flag, entry.glsl);
 }
 
 /**
- * A corpus file: `{"format": CORPUS_FORMAT, "stages": [...]}`, each stage
- * once, sorted by `corpusId`, one stage a line, so that a change to the
- * corpus reads in a diff as the stages it adds and drops. What the recorder
- * downloads, and what `tools/wgsl/merge-corpus.mjs` writes.
+ * A recording: `{"format": CORPUS_FORMAT, "stages": [...]}`, each stage
+ * once, sorted by `corpusId`, one stage a line. What the recorder downloads
+ * (one file, which a browser can save), and what
+ * `tools/wgsl/merge-corpus.mjs` reads and writes into the corpus's files.
  */
 export function corpusText(stages: Iterable<CorpusStage>): string {
   const byId = new Map<string, CorpusStage>();
@@ -94,7 +99,7 @@ export function corpusText(stages: Iterable<CorpusStage>): string {
   return `{"format":${JSON.stringify(CORPUS_FORMAT)},"stages":[${body}]}\n`;
 }
 
-/** The stages of a corpus file; throws on another format, or on anything
+/** The stages of a recording; throws on another format, or on anything
  * that is not one. */
 export function readCorpus(text: string): CorpusStage[] {
   const file = JSON.parse(text) as { format?: unknown; stages?: unknown };

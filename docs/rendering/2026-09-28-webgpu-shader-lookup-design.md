@@ -326,35 +326,52 @@ player's first load.
 **The corpus.** The GLSL stages to translate ahead, committed in
 `client/shaders/corpus/`: for each, the stage, its uniformity switch and the
 exact text handed to glslang (`G_s`), the three the recorder keeps of a stage
-that decide its WGSL (§7). A corpus file is JSON, `{"format":
-"dayhike-wgsl-corpus/1", "stages": [...]}`, one stage a line, sorted by a
-name that no build changes (the stage's key under an empty salt,
-`corpusId`), and the committed corpus is up to sixteen such files,
-`stages-<h>.json`, a stage in the one named by the first digit of its name.
-Why that form:
+that decide its WGSL (§7). The corpus is one shader file a stage,
+`<h>/<id>.<stage>[.uniformity-off].glsl` (`tools/wgsl/lib/corpus.mjs`):
+`<id>` the first 16 hexadecimal digits of the stage's name, a name that no
+build changes (its key under an empty salt, `corpusId`), which the tools
+print; `<h>` its first digit, so sixteen folders of about 33 files each;
+`<stage>` `vertex` or `fragment`; `.uniformity-off` present exactly when the
+switch is on. The file's bytes are the stage's text: UTF-8, no byte-order
+mark, nothing added (no newline at the end of a text that has none) and
+nothing removed. Why that form:
 
-- **One download is one file.** `dayhikeWgsl.download()` on a page opened
-  with `?wgsl=record` saves exactly a corpus file (`corpusText`), which can be
-  dropped into the directory as it is and built. A file a stage, named by its
-  key, cannot come out of a browser as one download, and the key carries the
-  salt, so every Babylon or translator upgrade would rename every file though
-  its text had not changed.
-- **Review.** One stage a line, sorted: a merge reads in a diff as the stages
-  it adds, and a stage's text is still readable, escaped.
-- **Size.** Git keeps the text zlib'd and deltas one version of a file
-  against the last; an archive would defeat both and could not be reviewed.
-  Sixteen files keep each a sixteenth of the whole, so a real corpus (§8)
-  stays far below the size a Git host refuses a file at, and a stage always
-  lands in the same file.
+- **Read as shaders.** A stage opens in an editor as GLSL, a change to the
+  corpus diffs line by line as the files it adds, and grep finds a line in
+  it. Kept as JSON, each stage was one escaped string on one line.
+- **The name is checked against the bytes.** A key is a hash of the exact
+  text, so one byte of difference is a stage no page asks for, and an
+  editor that adds a final newline or trims trailing whitespace on save
+  (242 of the 522 stages have trailing whitespace) would make one silently.
+  Reading the corpus, the tools compute each stage's id from the stage and
+  flag in its name and the file's bytes, and refuse, naming every such file,
+  exiting 1 and writing nothing, a file that was edited, reformatted or
+  renamed; where it can tell, the message says how (a newline added at the
+  end, a byte-order mark, a file renamed to another stage or flag, a file in
+  another folder), and it says that the corpus is recorded, not written, and
+  which tool adds to it. A carriage return and a text that is not UTF-8 are
+  refused the same way. `.gitattributes` checks the files out with `\n`,
+  marks them generated (out of the repository's language statistics, their
+  diffs folded) and turns Git's whitespace rules off for them.
+- **Size.** Git keeps each file zlib'd, and a pack deltas one stage against
+  another: the 522 files pack to 97,198 bytes, the sixteen JSON files they
+  were kept in before to 374,554.
 
-`tools/wgsl/merge-corpus.mjs` takes recorded files and the corpus and writes
-the union, each stage once, saying how many stages the recorded files hold
-and how many are new; a recorded file dropped into the directory is merged
-and removed.
+**A recording.** `dayhikeWgsl.download()` on a page opened with
+`?wgsl=record` saves one JSON file, `{"format": "dayhike-wgsl-corpus/1",
+"stages": [...]}`, one stage a line, sorted by `corpusId` (`corpusText`): a
+browser can save one download, not five hundred files. It is how a
+recording travels, and it is never committed.
+`tools/wgsl/merge-corpus.mjs` reads recordings and the corpus's files and
+writes each stage the corpus does not hold as a file of its own: no file
+already there changes. It says how many stages the recordings hold and how
+many are new; a recording dropped into the corpus directory is merged and
+removed, and any other name there that is not a corpus file is left alone
+and reported.
 
 **What is shipped now.** 421 stages (221 vertex, 121 fragment, 79 fragment
 stages that turn the uniformity analysis off), 14,183,815 bytes in the
-sixteen files, recorded with `?wgsl=record` in Chrome 154 on Windows with an
+sixteen JSON files the corpus was then kept in, recorded with `?wgsl=record` in Chrome 154 on Windows with an
 NVIDIA T4 under Direct3D 12, on the high and medium tiers, each text checked
 by its SHA-256 against the page that recorded it, and merged. The pages
 covered: the standard pose on a first and a repeat visit; the trailhead with
@@ -373,7 +390,11 @@ party of two. Before them a first visit from the start translated 16 to 25
 stages in the browser in its first seconds (2.0 to 3.1 s on the page's
 thread), a walk 28 to 29 and a party 56 to 64; with them, two first visits
 from the start found 88 and 94 stages in the shipped map and translated
-none. The corpus holds 522 stages, 17,424,519 bytes in the sixteen files.
+none. The corpus holds 522 stages (274 vertex, 149 fragment, 99 fragment
+stages that turn the uniformity analysis off), 16,921,160 bytes in 522
+files, 22 to 43 a folder (17,424,519 bytes in the sixteen JSON files it was
+kept in before; the map made of either is the same 28,479,065 bytes, SHA-256
+`27e67da7…f834`).
 The stages recorded on Windows serve a page on macOS and the reverse where
 both ask for the same text: the key does not carry the platform. The map of
 the 522, made on an Apple M4: 28,479,065 bytes raw, 4,916,997 gzip −9,
@@ -392,9 +413,9 @@ map's WGSL the same 23,367,492 bytes) the same page found 100 and
 translated none. The corpus was repaired by the merge tool, and three
 things now keep it from happening again: `.gitattributes` checks `.fx`
 (and `.glsl`, `.wgsl`) out with `\n` everywhere; the merge tool turns every
-`\r\n` into `\n` in each stage it reads, reports how many, and refuses a
-stage with a carriage return left, and the map's build refuses a corpus
-with one, naming the stage and the tool that repairs it; and a page opened
+`\r\n` into `\n` in each recorded stage it reads, reports how many, and
+refuses a stage with a carriage return left, and the tools refuse a corpus
+file with one, naming it; and a page opened
 with `?wgsl=record` counts the stages it keeps whose text carries one
 (`stagesWithCarriageReturns` in `dayhikeWgsl`), so such a recording is seen
 at once. The key stays the hash of the exact text: the page repairs
@@ -634,7 +655,8 @@ A measurement reads it whole with `JSON.stringify(dayhikeWgsl)` from the
 page, and reads the counters alone for a gate: `hits` and `misses` show
 whether the mechanism fired, `hitsBySource.shipped` how many the map served.
 `dayhikeWgsl.download()` saves the stages a `?wgsl=record` page prepared as a
-corpus file (§5.2), each once: the input of the build's translation.
+recording (§5.2), each once, which the merge tool adds to the corpus the
+build translates.
 
 ## 8. What is not known yet, and how each will be measured
 
