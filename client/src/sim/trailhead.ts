@@ -5,7 +5,7 @@ import { segmentBoxGap, type Ground } from "./boxGap.js";
 import { TRAIL_BED_HALF } from "./trail.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import type { Vec3 } from "./types.js";
-import { facingYaw } from "./facing.js";
+import { facingDir, facingYaw } from "./facing.js";
 
 /**
  * The trailhead's places: the ranger's car, where a player arrives, and the
@@ -31,7 +31,7 @@ export const CAR_ROAD_Z = 0;                               // centre's z from th
  * car. Where the gap is less, the car slides along the road. */
 export const CAR_BED_CLEAR = TRAIL_BED_HALF + PLAYER_HALF.x;
 export const CAR_SLIDE_STEP = 0.5;
-/** The pad's radius. Over the 227-seed sweep the car slides 3.5 m at most. */
+/** The pad's radius. Over the 227-seed sweep the car does not slide. */
 export const CAR_SLIDE_MAX = 8;
 /** How far past the car's box, along the line to the entrance, a player
  * spawns (`trailheadSpawn` in spawn.ts). It stands here because it is part
@@ -77,7 +77,7 @@ export function bedGap(graph: Pick<TrailGraph, "nodes" | "edges">, centre: Groun
  * along the road in CAR_SLIDE_STEP steps until it does not, or until
  * CAR_SLIDE_MAX. It slides away from the way the trail heads, so the bed
  * runs off from the car and not along its flank. Over the 227-seed sweep it
- * stands at the pad on 216 seeds and slides 3 m on one and 3.5 m on ten.
+ * stands at the pad on every seed: the trail leaves the pad inland.
  */
 export function carSite(
   graph: EntranceGraph,
@@ -126,8 +126,8 @@ export function trailheadSpawn(graph: EntranceGraph, car: Ground): Start {
  * where it can, and nearer by BOARD_ALONG_STEP at a time, to BOARD_ALONG_MIN
  * at the least, where that keeps it nearer the centre of the player's view.
  * An upright phone of 390 by 844 shows 21.3 degrees to each side; over the
- * 227-seed sweep the whole board is within 20.56 degrees, and stands 4.5 m
- * past the entrance on 224 seeds, 3.5 m on 1 and 3 m on 2.
+ * 227-seed sweep the whole board is within 17.88 degrees, and stands 4.5 m
+ * past the entrance on every seed.
  */
 export const BOARD_ALONG = 4.5;
 export const BOARD_ALONG_MIN = 2.5;
@@ -168,25 +168,32 @@ export function boardBoxes(board: Board): Ground[] {
  * one side of the bed, facing the place a player arrives. The places it may
  * stand are on either side, from BOARD_ALONG past the entrance back to
  * BOARD_ALONG_MIN in steps of BOARD_ALONG_STEP. Of those that clear the road
- * and the bed it takes the one nearest the centre of the player's view,
- * which is the line from where they arrive to the entrance; where none
- * clears, the nearest of them all. A tie goes to the place further along,
- * and then to the side of `n`, the trail's direction turned a quarter turn.
- * Over the 227-seed sweep a place clears on every seed; on three the trail
- * bends into the side the player looks toward, and the board steps back.
+ * and the bed it takes the one whose further end is nearest the centre of
+ * the player's view, as the player faces; where none clears, the nearest of
+ * them all. A tie goes to the place further along, and then to the side of
+ * `n`, the trail's direction turned a quarter turn.
+ *
+ * The view's centre is the way the player faces, which is the way to the
+ * entrance only to within 4 degrees (`facingYaw`), and what has to be in the
+ * frame is the board's further end, not its centre. Measured to the centre
+ * from the line to the entrance, the further end stood 23.53 degrees from
+ * the view's centre on 4 of the 227 seeds of the sweep; an upright phone
+ * shows 21.3. Over the sweep a place clears on every seed, and the board
+ * stands BOARD_ALONG past the entrance on all of them.
  */
 export function boardSite(
   graph: EntranceGraph,
   roadCenterX: (seed: number, z: number) => number,
   seed: number,
-  start: Ground,
+  start: Start,
 ): Board {
   const e = trailEntrance(graph);
   const nx = -e.dz, nz = e.dx;
-  let vx = e.x - start.x, vz = e.z - start.z;
-  const vl = Math.sqrt(vx * vx + vz * vz);
-  vx = vl > 0 ? vx / vl : e.dx;
-  vz = vl > 0 ? vz / vl : e.dz;
+  // The way the player faces, which is the way to the entrance to within
+  // `facingYaw`'s own 0.072 rad: the view's centre is theirs, not the line's.
+  const v = facingDir(start.yaw);
+  // From the board's centre to either end of its row of boxes.
+  const half = ((BOARD_BOXES - 1) / 2) * BOARD_BOX_STEP + BOARD_BOX_HALF.x;
   const at = (along: number, side: number): { board: Board; clears: boolean; centred: number } => {
     const x = e.x + e.dx * along + side * nx * BOARD_OFFSET;
     const z = e.z + e.dz * along + side * nz * BOARD_OFFSET;
@@ -200,8 +207,14 @@ export function boardSite(
       if (bedGap(graph, b, BOARD_BOX_HALF) < BOARD_BED_CLEAR) clears = false;
     }
     // The cosine of the angle between the view's centre and the way to the
-    // board: nearer 1 is nearer the centre.
-    return { board, clears, centred: -(fx * vx + fz * vz) };
+    // board's further end: nearer 1 is nearer the centre.
+    let centred = 1;
+    for (const end of [-half, half]) {
+      const ex = x + board.ax * end - start.x, ez = z + board.az * end - start.z;
+      const c = (ex * v.x + ez * v.z) / Math.sqrt(ex * ex + ez * ez);
+      if (c < centred) centred = c;
+    }
+    return { board, clears, centred };
   };
   let best: { board: Board; clears: boolean; centred: number } | null = null;
   for (let k = 0; BOARD_ALONG - k * BOARD_ALONG_STEP >= BOARD_ALONG_MIN; k++) {

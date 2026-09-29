@@ -748,6 +748,11 @@ describe("the level id does not move", () => {
     // (registryDigest moves), and the trail is another one on most worlds, the
     // probe's among them (probeDigest moves). A peer from before would walk
     // another trail.
-    expect(passHash()).toBe(487194298);
+    // Re-baselined 2026-09-29 from 487194298: the board's place is judged by its
+    // further end as the player faces, and not by its centre from the line to
+    // the entrance. No constant changed; in the probe the board's five boxes
+    // stand in chunk [-9, 0], north of the bed, where they stood in [-9, -1]
+    // (probeDigest moves).
+    expect(passHash()).toBe(-1659667931);
   });
 });
