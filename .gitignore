@@ -54,6 +54,7 @@ crash.*.log
 *.tfvars.json
 !_infra/terraform.tfvars.example
 !_infra/test-rig/terraform.tfvars.example
+!_infra/test-rig-gcp/terraform.tfvars.example
 
 # Desktop release working state.
 desktop/.cache/

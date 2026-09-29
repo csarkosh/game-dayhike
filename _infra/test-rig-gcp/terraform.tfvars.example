@@ -1,0 +1,28 @@
+# Copy to terraform.tfvars (git-ignored) and uncomment what you change. Every
+# value below is the default; nothing is required.
+
+# gcp_project_id = "fps-csarko"
+# zone           = "us-west1-a"  # a change replaces the machine; see README.md, Zones and stock-outs
+
+# The GPU. The default is the L4 with the RTX Virtual Workstation licence; the
+# plain L4 is for a control run, the T4 needs the other machine type.
+# gpu_type     = "nvidia-l4"
+# machine_type = "n1-standard-4"
+# gpu_type     = "nvidia-tesla-t4-vws"
+
+# Stop the machine without destroying it (the disk is kept and billed). Only
+# for a machine that exists and has finished its first-boot set-up
+# (C:\ProgramData\test-rig\verified): a new machine must never be stopped
+# before then, so an apply that would create or replace one with this set is
+# refused. Never leave it here across a first apply or a destroy.
+# running = false
+
+# max_run_hours = 4
+
+# The daily stop from outside; null turns it off (`-var` cannot pass a null).
+# backstop_stop_schedule = null
+
+# Optional monthly budget alert. The billing account id stays in this
+# git-ignored file.
+# billing_account_id = "XXXXXX-XXXXXX-XXXXXX"
+# monthly_budget_usd = 45
