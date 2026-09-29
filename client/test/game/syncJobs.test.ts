@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, createCrossing, createSyncJobs, crossingAt, finish, nextCrossing, sortSlices, turn,
+  SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX, createCrossing, createSyncJobs, crossingAt, finish, nextCrossing, sortSlices, turn,
   type Slices,
 } from "../../src/game/syncJobs.js";
 
@@ -29,8 +29,63 @@ function job(clock: { advance(ms: number): void }, slices: number, ms: number, d
 }
 
 describe("the scheduler", () => {
-  it("names its budget and its lateness bound", () => {
-    expect([SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX]).toEqual([4, 6]);
+  it("names its budget and its lateness bounds", () => {
+    expect([SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX]).toEqual([4, 6, 100]);
+  });
+
+  /** A job of 400 slices of 0.125 ms begun at frame 0, with the clock set to
+   * `frameMs` times the frame as each frame's share starts (a share runs 32
+   * slices): the frame whose share ran it to its end, and how many slices
+   * that share ran late. `replaceAt` begins it again at that frame. */
+  function forcedAt(frameMs: number, replaceAt: number | null = null): { at: number | null; late: number } {
+    let now = 0;
+    const jobs = createSyncJobs(() => now);
+    const done = { at: null as number | null };
+    const clock = { advance: (ms: number) => { now += ms; } };
+    const owner = {};
+    jobs.begin(owner, job(clock, 400, 0.125, done, () => jobs.frame));
+    let late = 0;
+    for (let f = 0; f < 10 && done.at === null; f++) {
+      now = f * frameMs;
+      if (f === replaceAt) jobs.begin(owner, job(clock, 400, 0.125, done, () => jobs.frame));
+      jobs.run();
+      late = jobs.last.late;
+    }
+    return { at: done.at, late };
+  }
+
+  it("runs a job to its end 100 ms after its crossing at 30 frames a second: the fourth frame, not the sixth", () => {
+    // 33.3 ms a frame: frame 3's share starts at 99.9 ms, frame 4's at 133.2.
+    // Four shares of 32 slices, then the other 272 at once.
+    expect(forcedAt(33.3)).toEqual({ at: 4, late: 272 });
+  });
+
+  it("runs a job to its end in the sixth frame after its crossing at 60 frames a second, as before", () => {
+    // 16.6 ms a frame: the sixth frame's share starts at 99.6 ms. Six shares
+    // of 32 slices, then the other 208 at once.
+    expect(forcedAt(16.6)).toEqual({ at: 6, late: 208 });
+  });
+
+  it("keeps a replaced job's wait counted from its first crossing's time", () => {
+    // Replaced at frame 2 (66.6 ms): still forced at frame 4, 133.2 ms after
+    // the first crossing, with 336 of the new job's slices left; counted from
+    // the second crossing it would wait to frame 6.
+    expect(forcedAt(33.3, 2)).toEqual({ at: 4, late: 336 });
+  });
+
+  it("runs every pending job to its end at once when the clock jumps, as a first build does", () => {
+    let now = 0;
+    const jobs = createSyncJobs(() => now);
+    const clock = { advance: (ms: number) => { now += ms; } };
+    const a = { at: null as number | null }, b = { at: null as number | null };
+    jobs.begin({}, job(clock, 100, 0.125, a, () => jobs.frame));
+    jobs.begin({}, job(clock, 100, 0.125, b, () => jobs.frame));
+    jobs.run();
+    // A tab hidden for a minute: the next frame's clock is 60 s on. The
+    // first job's other 68 slices and the second's 100, all at once.
+    now += 60_000;
+    jobs.run();
+    expect([a.at, b.at, jobs.last.late]).toEqual([1, 1, 168]);
   });
 
   it("spends a frame's budget and at most one slice past it, oldest job first", () => {
@@ -68,7 +123,7 @@ describe("the scheduler", () => {
     }
     // Four slices a frame for six frames, then the other 76 at once.
     expect(late).toEqual([0, 0, 0, 0, 0, 0, 76]);
-    expect(done.at).toBe(SYNC_LATE_FRAMES_MAX);
+    expect(done.at).toBe(6);
     expect(jobs.pending(owner)).toBe(false);
   });
 
@@ -82,7 +137,8 @@ describe("the scheduler", () => {
     for (let f = 0; f < SYNC_LATE_FRAMES_MAX; f++) {
       const before = t.clock();
       jobs.run();
-      expect(t.clock() - before).toBeLessThanOrEqual(SYNC_BUDGET_MS + 0.5);
+      // The budget and one slice.
+      expect(t.clock() - before).toBeLessThanOrEqual(4.5);
       expect(jobs.last.late).toBe(0);
     }
     // 20 ms over frames of 4 ms: both done inside five frames, neither late.
@@ -120,7 +176,7 @@ describe("the scheduler", () => {
       jobs.run();
       late.push(jobs.last.late);
     }
-    expect([first.at, second.at, other.at]).toEqual([null, SYNC_LATE_FRAMES_MAX, SYNC_LATE_FRAMES_MAX]);
+    expect([first.at, second.at, other.at]).toEqual([null, 6, 6]);
     // Four frames of four slices, then in frame 6 the other 24 at once, and
     // the bystander's two, due then too.
     expect(late).toEqual([0, 0, 0, 0, 26]);

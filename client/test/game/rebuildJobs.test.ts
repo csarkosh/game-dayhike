@@ -19,13 +19,13 @@ vi.mock("../../src/game/groundMaps.js", () => ({
 
 import "../../src/sim/passes/index.js";
 import { createClipmap, type Clipmap } from "../../src/game/renderer.js";
+import { elevationAt } from "../../src/sim/terrain.js";
+import type { CullPose } from "../../src/game/grassCull.js";
 import {
   createRingSamples, holeCellsFor, ringGeometry, snapOrigin, updateRingSamples, RING_COUNT, type RingGeometry,
   type RingSamples,
 } from "../../src/game/clipmap.js";
-import {
-  SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, createSyncJobs, finish as finishSlices, type SyncJobs,
-} from "../../src/game/syncJobs.js";
+import { createSyncJobs, finish as finishSlices, type Slices, type SyncJobs } from "../../src/game/syncJobs.js";
 import { collectBladeCells, createBladeCollector } from "../../src/game/bladeField.js";
 import { createBladeMeshes, type BladeMeshes } from "../../src/game/bladeMeshes.js";
 import { DUFF_REACH, collectDuffCells, createDuffCollector } from "../../src/game/duffField.js";
@@ -116,12 +116,44 @@ function referenceRings(): RingSamples[] {
 
 // ---------------------------------------------------------------- the shells
 
+/** A shell as the tests drive it. `drawn` is every instance it draws; `cuts`,
+ * for the shells that cut their collected buffers to the view, is what two
+ * cuts facing opposite ways draw, so every call re-cuts and reads the
+ * collected buffers and counts the way the renderer's per-frame cull does. */
+type Made = {
+  update(x: number, z: number): void;
+  view: { x: number; z: number };
+  drawn(): Uploads;
+  cuts?: () => Uploads;
+  dispose(): void;
+};
+
+/** Two poses at `at`, eye height above the ground, looking down at the
+ * ground ahead facing +z and −z: each keeps a different half of the field,
+ * near and far, so a cut at one after the other always copies from the
+ * collected buffers again. */
+function opposingPoses(at: { x: number; z: number }): [CullPose, CullPose] {
+  const y = elevationAt(SEED, at.x, at.z) + 1.7;
+  const pose = (yaw: number): CullPose => ({ x: at.x, y, z: at.z, yaw, pitch: 0.5, roll: 0, fov: 1.4, aspect: 1.6 });
+  return [pose(0), pose(Math.PI)];
+}
+
+/** What the two opposing cuts draw, keyed by the cut. */
+function cutUploads(cull: (pose: CullPose) => void, poses: [CullPose, CullPose], read: () => Uploads): Uploads {
+  const out: Uploads = new Map();
+  poses.forEach((pose, i) => {
+    cull(pose);
+    for (const [key, bits] of read()) out.set(`cut${i}|${key}`, bits);
+  });
+  return out;
+}
+
 /** One shell under test: how to build it, where it walks, and what the
  * present rebuild uploads for a view. */
 type Shell = {
   name: string;
   start: { x: number; z: number };
-  make(jobs: SyncJobs | undefined): { update(x: number, z: number): void; view: { x: number; z: number }; drawn(): Uploads; dispose(): void };
+  make(jobs: SyncJobs | undefined): Made;
   expected(x: number, z: number): Uploads;
 };
 
@@ -159,6 +191,7 @@ function bladeShell(): Shell {
       const spy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
       const blades: BladeMeshes = createBladeMeshes(new Scene(engine), SEED, { quality: "high", jobs });
       meshes = blades.meshes;
+      const poses = opposingPoses(this.start);
       return {
         update: (x, z) => blades.update(x, z),
         get view() { return blades.view; },
@@ -167,6 +200,7 @@ function bladeShell(): Shell {
           blades.cull(null);
           return uploads(spy as unknown as Spy, blades.meshes, () => BLADE_KINDS);
         },
+        cuts: () => cutUploads((pose) => blades.cull(pose), poses, () => uploads(spy as unknown as Spy, blades.meshes, () => BLADE_KINDS)),
         dispose: () => { blades.dispose(); spy.mockRestore(); engine.dispose(); },
       };
     },
@@ -208,6 +242,7 @@ function clutterShell(): Shell {
       // Culled as the medium and high tiers build it, every card drawn.
       const clutter: ClutterMeshes = createClutterMeshes(scene, SEED, { assets, cull: true, jobs });
       meshes = bucketMeshes();
+      const poses = opposingPoses(this.start);
       return {
         update: (x, z) => clutter.update(x, z),
         get view() { return clutter.view; },
@@ -215,6 +250,7 @@ function clutterShell(): Shell {
           clutter.cull(null);
           return uploads(spy as unknown as Spy, meshes, clutterKinds);
         },
+        cuts: () => cutUploads((pose) => clutter.cull(pose), poses, () => uploads(spy as unknown as Spy, meshes, clutterKinds)),
         dispose: () => { clutter.dispose(); spy.mockRestore(); engine.dispose(); },
       };
     },
@@ -335,7 +371,178 @@ const GRIDS: Record<string, (v: number) => number> = {
   forest: (v) => Math.floor(v / 10) * 10,
 };
 
+/**
+ * A scheduler that runs nothing: it keeps the job a shell begins, for the
+ * test to step a slice at a time, and ends any idle work it is handed, so the
+ * rebuild does all its work itself.
+ */
+function keeper(): SyncJobs & { held: Slices | null } {
+  const owners = new Set<object>();
+  const k = {
+    held: null as Slices | null,
+    begin(owner: object, slices: Slices) {
+      k.held?.return(undefined);
+      k.held = slices;
+      owners.add(owner);
+    },
+    cancel() {
+      k.held?.return(undefined);
+      k.held = null;
+    },
+    pending(owner: object) {
+      return k.held !== null && owners.has(owner);
+    },
+    idle(_owner: object, slices: Slices | null) {
+      slices?.return(undefined);
+    },
+    run() {},
+    frame: 0,
+    last: { slices: 0, late: 0, completed: 0, idle: 0 },
+  };
+  return k;
+}
+
+/** Slices of each shell's rebuild at the first crossing of a walk from its
+ * start, with nothing prepared ahead: each loop of a rebuild yields by the
+ * work it has done, so a rebuild that stops slicing, in any of its loops,
+ * changes these. */
+const STEP_SLICES: Record<string, number> = { clipmap: 30, clutter: 80, blades: 18, duff: 5, forest: 137 };
+
+/** How a walk that turns meets each shell's grid: its rebuild cell (m), and
+ * where its lines lie. The clipmap's step is ring 0's snap, whose lines lie
+ * on even metres. */
+const LINES: Record<string, number> = { clipmap: 2, clutter: 3, blades: 1, duff: 1, forest: 10 };
+
+/**
+ * A walk that turns: a frame's walking step at a time along +x for three
+ * cells, back along −x for three, then up to a point a centimetre short of
+ * an x line, where it stops, steps across the line and back five times
+ * (across for a frame, back for three), then off along the diagonal so that
+ * it crosses an x line and a z line two frames apart, and stands.
+ */
+function* turningWalk(start: { x: number; z: number }, cell: number): Generator<{ x: number; z: number }> {
+  const step = WALKING * DT;
+  let x = start.x;
+  let z = start.z;
+  /** Walks to (tx, tz) a step a frame. */
+  function* to(tx: number, tz: number): Generator<{ x: number; z: number }> {
+    for (;;) {
+      const d = Math.hypot(tx - x, tz - z);
+      if (d <= step) {
+        x = tx;
+        z = tz;
+        yield { x, z };
+        return;
+      }
+      x += ((tx - x) / d) * step;
+      z += ((tz - z) / d) * step;
+      yield { x, z };
+    }
+  }
+  yield { x, z };
+  yield* to(start.x + 3 * cell, z);
+  yield* to(start.x, z);
+  const line = (Math.floor(x / cell) + 1) * cell;
+  yield* to(line - 0.01, z);
+  for (let i = 0; i < 5; i++) {
+    yield { x: line + 0.01, z };
+    x = line - 0.01;
+    for (let f = 0; f < 3; f++) yield { x, z };
+  }
+  // Two frames' diagonal steps short of the z line, a centimetre past the x line.
+  const d = step / Math.SQRT2;
+  const zLine = (Math.floor(z / cell) + 1) * cell;
+  yield* to(line - 0.01, zLine - 0.01 - 2 * d);
+  for (let f = 0; f < 40; f++) {
+    x += d;
+    z += d;
+    yield { x, z };
+  }
+  for (let f = 0; f < 20; f++) yield { x, z };
+}
+
+describe("rebuilds as jobs: a walk that turns", () => {
+  for (const shellOf of SHELLS.filter((of) => of().name !== "forest")) {
+    it(`${shellOf().name}: uploads, where the walk turns back, stops on a line, steps across it and back, and crosses two lines two frames apart, exactly what the present rebuild uploads for each view`, () => {
+      const shell = shellOf();
+      // A frame runs one slice, so a job spans frames and a further crossing
+      // finds it pending.
+      const jobs = createSyncJobs(tickClock(2.5));
+      let replaced = 0;
+      const counted: SyncJobs = {
+        ...jobs,
+        begin(owner, slices) {
+          if (jobs.pending(owner)) replaced++;
+          jobs.begin(owner, slices);
+        },
+        pending: (owner) => jobs.pending(owner),
+        cancel: (owner) => jobs.cancel(owner),
+        idle: (owner, slices) => jobs.idle(owner, slices),
+        run: () => jobs.run(),
+      };
+      const s = shell.make(counted);
+      let built = 0;
+      let lastView = { x: NaN, z: NaN };
+      for (const p of turningWalk(shell.start, LINES[shell.name]!)) {
+        s.update(p.x, p.z);
+        jobs.run();
+        if (s.view.x !== lastView.x || s.view.z !== lastView.z) {
+          lastView = { x: s.view.x, z: s.view.z };
+          expect(differences(s.drawn(), shell.expected(lastView.x, lastView.z)), `${shell.name} build ${built}`).toEqual([]);
+          built++;
+        }
+      }
+      // Builds applied, and jobs replaced while pending by a further crossing.
+      expect([built, replaced]).toEqual(TURNING[shell.name]);
+      s.dispose();
+    }, timeLimit(240_000));
+  }
+});
+
+/** Builds applied and jobs replaced on each shell's walk that turns. */
+const TURNING: Record<string, [number, number]> = { clipmap: [10, 7], clutter: [9, 8], blades: [11, 10], duff: [11, 8] };
+
 describe("rebuilds as jobs: when", () => {
+  for (const shellOf of SHELLS) {
+    it(`${shellOf().name}: slices its rebuild at a step, and leaves every buffer its meshes draw, and every one a cut reads, as it was until the last slice`, () => {
+      const shell = shellOf();
+      const k = keeper();
+      const s = shell.make(k);
+      /** Everything a frame draws: every instance, and for the shells that
+       * cut to the view, two opposing cuts, each of which reads the collected
+       * buffers and counts afresh. */
+      const seen = (): Uploads => {
+        const all = s.drawn();
+        if (s.cuts !== undefined) for (const [key, bits] of s.cuts()) all.set(key, bits);
+        return all;
+      };
+      let slices = 0;
+      for (const p of walk(shell.start, WALKING)) {
+        const was = { x: s.view.x, z: s.view.z };
+        const before = seen();
+        s.update(p.x, p.z);
+        if (k.held === null) continue;
+        // A crossing began a job: after every slice but its last, everything
+        // drawn and cut is as it was.
+        expect([s.view.x, s.view.z]).toEqual([was.x, was.z]);
+        const job = k.held;
+        for (let step = job.next(); step.done !== true; step = job.next()) {
+          slices++;
+          expect(differences(seen(), before), `${shell.name}: after slice ${slices}`).toEqual([]);
+        }
+        k.held = null;
+        // The last slice applied what the present rebuild uploads for its
+        // view, and changed what is drawn.
+        expect([s.view.x, s.view.z]).toEqual([p.x, p.z]);
+        expect(differences(s.drawn(), shell.expected(p.x, p.z))).toEqual([]);
+        expect(differences(seen(), before).length).toBeGreaterThan(0);
+        break;
+      }
+      expect(slices).toBe(STEP_SLICES[shell.name]);
+      s.dispose();
+    }, timeLimit(240_000));
+  }
+
   it("spends at most the budget and one slice a frame on a walk, and brings every view up within six frames of its crossing", () => {
     const jobs = createSyncJobs(tickClock(TICK));
     const shells = SHELLS.map((shellOf) => shellOf());
@@ -364,7 +571,8 @@ describe("rebuilds as jobs: when", () => {
       jobs.run();
       // Nothing was late, and the frame started no slice past its budget.
       expect(jobs.last.late, `frame ${p.frame}`).toBe(0);
-      expect(jobs.last.slices, `frame ${p.frame}`).toBeLessThanOrEqual(SYNC_BUDGET_MS / TICK + 1);
+      // Forty slices of 0.1 ms, and one past the budget.
+      expect(jobs.last.slices, `frame ${p.frame}`).toBeLessThanOrEqual(41);
       if (begun >= 2) crowded++;
       made.forEach((s, i) => {
         // The view drawn is a crossing's: that one and every one before it,
@@ -377,7 +585,7 @@ describe("rebuilds as jobs: when", () => {
           queue.splice(0, shown + 1);
         }
         // What is not yet on screen crossed fewer than six frames ago.
-        if (queue[0] !== undefined) expect(p.frame - queue[0].frame, `${shells[i]!.name} at frame ${p.frame}`).toBeLessThan(SYNC_LATE_FRAMES_MAX);
+        if (queue[0] !== undefined) expect(p.frame - queue[0].frame, `${shells[i]!.name} at frame ${p.frame}`).toBeLessThan(6);
       });
     }
     // 600 frames at a walk: 52.5 m. Crossings of all four grids, several of
@@ -385,7 +593,7 @@ describe("rebuilds as jobs: when", () => {
     // including any a further line along the diagonal overtook.
     expect(crossings).toBeGreaterThan(100);
     expect(crowded).toBeGreaterThan(5);
-    expect(slowest).toBeLessThanOrEqual(SYNC_LATE_FRAMES_MAX);
+    expect(slowest).toBeLessThanOrEqual(6);
     for (const s of made) s.dispose();
   }, timeLimit(240_000));
 
@@ -427,46 +635,6 @@ describe("rebuilds as jobs: when", () => {
         fast++;
       }
       expect(fast).toBe(3);
-      s.dispose();
-    }, timeLimit(240_000));
-
-    it(`${shellOf().name}: leaves every buffer its meshes draw as it was until the job applies`, () => {
-      const shell = shellOf();
-      // A clock that lets a frame run one slice: its reading as the share
-      // starts and before the first slice are 2.5 ms apart, the next 5 ms.
-      const jobs = createSyncJobs(tickClock(2.5));
-      const s = shell.make(jobs);
-      let before: Uploads | null = null;
-      let stood: { x: number; z: number } | null = null;
-      let held = 0;
-      for (const p of walk(shell.start, WALKING)) {
-        // Once a crossing has begun a job, stand still until it applies.
-        const at: { x: number; z: number } = stood ?? p;
-        const was = { x: s.view.x, z: s.view.z };
-        s.update(at.x, at.z);
-        const grid = GRIDS[shell.name]!;
-        const crossed = grid(at.x) !== grid(was.x) || grid(at.z) !== grid(was.z);
-        if (stood === null && p.frame > 0 && s.view.x === was.x && s.view.z === was.z && crossed) {
-          stood = { x: at.x, z: at.z };
-        }
-        before ??= s.drawn();
-        jobs.run();
-        if (stood === null) {
-          before = s.drawn();
-          continue;
-        }
-        const now = s.drawn();
-        if (s.view.x !== stood.x || s.view.z !== stood.z) {
-          expect(differences(now, before), `${shell.name}: still frame ${held}`).toEqual([]);
-          held++;
-          continue;
-        }
-        // Applied: every buffer is the new view's, and the job did change them.
-        expect(differences(now, shell.expected(stood.x, stood.z))).toEqual([]);
-        expect(differences(now, before).length).toBeGreaterThan(0);
-        break;
-      }
-      expect(held).toBeGreaterThanOrEqual(1);
       s.dispose();
     }, timeLimit(240_000));
   }

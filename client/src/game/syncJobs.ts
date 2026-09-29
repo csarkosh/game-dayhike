@@ -7,11 +7,12 @@
  * last slice applies the result to the shell's meshes in one step, so no frame
  * ever draws a buffer half written. `run`, called once a frame at the end of
  * the renderer's `sync`, first runs to its end any job begun
- * `SYNC_LATE_FRAMES_MAX` frames ago, then gives the jobs still pending, oldest
- * first, one slice after another until `SYNC_BUDGET_MS` of the clock has
- * gone. A job's result therefore reaches the screen at most
- * `SYNC_LATE_FRAMES_MAX` frames after the crossing that began it, and a frame
- * spends at most the budget and one slice on jobs unless a job is that late.
+ * `SYNC_LATE_FRAMES_MAX` frames or `SYNC_LATE_MS_MAX` milliseconds ago,
+ * whichever comes first, then gives the jobs still pending, oldest first, one
+ * slice after another until `SYNC_BUDGET_MS` of the clock has gone. A job's
+ * result therefore reaches the screen at most six frames and at most 100 ms
+ * after the crossing that began it, and a frame spends at most the budget and
+ * one slice on jobs unless a job is that late.
  *
  * What budget no job needs goes to idle work (`idle`): work a shell can do
  * ahead of a crossing it expects, such as the terrain sampling the ground its
@@ -33,9 +34,9 @@
  * has moved past a further line before that job applied, as a walk along a
  * diagonal does whenever it crosses an x line and a z line a few frames apart
  * — replaces it with the rebuild for the new view, which keeps the old job's
- * deadline: the view it was begun for is never drawn, and the picture is
- * still never more than `SYNC_LATE_FRAMES_MAX` frames behind the first
- * crossing it has not yet shown.
+ * deadline, in frames and in time: the view it was begun for is never
+ * drawn, and the picture is still never more than six frames or 100 ms
+ * behind the first crossing it has not yet shown.
  *
  * Pure and Babylon-free: time is the clock handed in, so a test drives it.
  */
@@ -47,6 +48,27 @@ export const SYNC_BUDGET_MS = 4;
 /** The most frames a job's result may reach the screen after the crossing
  * that began it; a job this old is run to its end, whatever the budget. */
 export const SYNC_LATE_FRAMES_MAX = 6;
+
+/**
+ * The most time (ms) a job's result may reach the screen after the crossing
+ * that began it, whatever the frame rate; a job this old is run to its end,
+ * whatever the budget, as one `SYNC_LATE_FRAMES_MAX` frames old is. At 60
+ * frames a second the two bounds are the same; below it, this one comes
+ * first. What hides the wait is reckoned against it: in 100 ms the view
+ * moves 0.33 m at 3.3 m/s, 0.525 m walking (5.25 m/s) and 0.70 m sprinting
+ * (7 m/s), at any frame rate. The blade field's `BLADE_PAD` of 2.12 m leaves
+ * 0.71 m past the worst offset inside its rebuild cell on a diagonal, the
+ * duff's `DUFF_PAD` 1.41 m, and every clutter fade ramp at full radius at
+ * least 8 m past the grass cell's 4.24 m snap; the forest's `SEAM_PAD` is
+ * exactly its snap, so a late forest is up to those distances past a seam's
+ * pad, and the low tier's litter ramp (4.8 m) up to 0.14 m at a sprint.
+ *
+ * Time is the renderer's clock. One that jumps — a tab hidden for a minute,
+ * whose frames stop while its clock runs on — makes every pending job late
+ * at once, and the next frame runs them all to their end, as a first build
+ * does.
+ */
+export const SYNC_LATE_MS_MAX = 100;
 
 /** A rebuild in slices: each `next()` runs one slice, and the call that
  * returns `done` has applied the result. A slice may yield what it expects
@@ -124,13 +146,13 @@ export type SyncJobs = {
   readonly last: { readonly slices: number; readonly late: number; readonly completed: number; readonly idle: number };
 };
 
-/** A queued job: its slices, the frame whose crossing began it, and what
- * its next slice is expected to take (ms). */
-type Job = { owner: object; slices: Slices; begun: number; next: number };
+/** A queued job: its slices, the frame whose crossing began it and the
+ * clock then, and what its next slice is expected to take (ms). */
+type Job = { owner: object; slices: Slices; begun: number; begunAt: number; next: number };
 
 /**
- * The scheduler. `clock` is read once as `run` starts and once before each
- * slice; the renderer passes `performance.now`.
+ * The scheduler. `clock` is read as a job begins, once as `run` starts and
+ * once before each slice; the renderer passes `performance.now`.
  */
 export function createSyncJobs(clock: () => number): SyncJobs {
   const queue: Job[] = [];
@@ -165,10 +187,11 @@ export function createSyncJobs(clock: () => number): SyncJobs {
     begin(owner, slices) {
       const held = queue.find((job) => job.owner === owner);
       if (held === undefined) {
-        queue.push({ owner, slices, begun: frame, next: 0 });
+        queue.push({ owner, slices, begun: frame, begunAt: clock(), next: 0 });
         return;
       }
-      // Dropped with `return`, so whatever it holds is handed back.
+      // Dropped with `return`, so whatever it holds is handed back. The
+      // replacement keeps the first crossing's frame and time.
       held.slices.return(undefined);
       held.slices = slices;
       held.next = 0;
@@ -199,7 +222,7 @@ export function createSyncJobs(clock: () => number): SyncJobs {
       // every frame, and allocates nothing.
       for (let i = 0; i < queue.length;) {
         const job = queue[i] as Job;
-        if (frame - job.begun < SYNC_LATE_FRAMES_MAX) {
+        if (frame - job.begun < SYNC_LATE_FRAMES_MAX && start - job.begunAt < SYNC_LATE_MS_MAX) {
           i++;
           continue;
         }
