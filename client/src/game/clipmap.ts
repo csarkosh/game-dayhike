@@ -61,7 +61,40 @@ export type RingSamples = {
   /** The ground cover's grass at the vertex, clamped to 1 — the blade
    * field's own strength. The terrain's sward floor keys on it. */
   cover: Float32Array;
+  /** SIDE² × 3 unit normals, from `dx`/`dz` at fill time: what `ringGeometry`
+   * uploads, kept with the samples so a re-emit copies them. */
+  normals: Float32Array;
+  /** SIDE² × `liftedHeight` of each vertex, kept at full precision so a
+   * re-emit, and the finer ring's border blend (`coarseHeight`), read the
+   * very doubles `liftedHeight` returns. A move copies the lift of every
+   * vertex that is interior in both the old ring and the new, and computes
+   * only the rest (`ringSampleSlices`). */
+  lift: Float64Array;
+  /** Vertices whose lift the last move or fill computed. For the tests. */
+  lifted: number;
+  /** Moves committed: what a move prepared ahead (`prepareRingMove`) checks
+   * that the arrays it read are still the ring's. */
+  moves: number;
 };
+
+/** A ring's sample arrays, as a move writes them before they replace the
+ * ring's own. */
+export type RingArrays = Pick<RingSamples, "h" | "hh" | "dx" | "dz" | "colors" | "weights" | "weights2" | "cover" | "normals" | "lift">;
+
+function ringArrays(): RingArrays {
+  return {
+    h: new Float32Array(SIDE * SIDE),
+    hh: new Float32Array(HALF_SIDE * HALF_SIDE),
+    dx: new Float32Array(SIDE * SIDE),
+    dz: new Float32Array(SIDE * SIDE),
+    colors: new Float32Array(SIDE * SIDE * 4),
+    weights: new Float32Array(SIDE * SIDE * 4),
+    weights2: new Float32Array(SIDE * SIDE * WEIGHTS2_STRIDE),
+    cover: new Float32Array(SIDE * SIDE),
+    normals: new Float32Array(SIDE * SIDE * 3),
+    lift: new Float64Array(SIDE * SIDE),
+  };
+}
 
 export type RingGeometry = {
   positions: Float32Array;
@@ -96,15 +129,31 @@ export function snapOrigin(cam: number, spacing: number): number {
   return Math.floor((cam - (RING_CELLS / 2) * spacing) / step) * step;
 }
 
-function sampleInto(ring: RingSamples, seed: number, ix: number, iz: number): void {
-  const x = ring.originX + ix * ring.spacing;
-  const z = ring.originZ + iz * ring.spacing;
+/** Where a fill writes: the arrays, and the ring's origin and spacing they
+ * are sampled at. */
+type Target = { a: RingArrays; originX: number; originZ: number; spacing: number };
+
+function sampleInto(t: Target, seed: number, ix: number, iz: number): void {
+  const { a } = t;
+  const x = t.originX + ix * t.spacing;
+  const z = t.originZ + iz * t.spacing;
   const s = elevationSampleAt(seed, x, z);
   const at = iz * SIDE + ix;
-  ring.h[at] = s.h;
-  ring.dx[at] = s.dx;
-  ring.dz[at] = s.dz;
-  ring.hh[2 * iz * HALF_SIDE + 2 * ix] = s.h;
+  a.h[at] = s.h;
+  a.dx[at] = s.dx;
+  a.dz[at] = s.dz;
+  a.hh[2 * iz * HALF_SIDE + 2 * ix] = s.h;
+  // Heightfield normal (-dh/dx, 1, -dh/dz), normalised — from the EXACT
+  // analytic gradient, which is the payoff of the derivative discipline in
+  // sim/montane.ts: it yields smooth true normals. Read back from the stored
+  // float32 gradient, as `ringGeometry` reads it. Handedness does not enter
+  // here; the index winding is where it does.
+  const gx = a.dx[at] as number;
+  const gz = a.dz[at] as number;
+  const len = Math.hypot(gx, 1, gz);
+  a.normals[at * 3] = -gx / len;
+  a.normals[at * 3 + 1] = 1 / len;
+  a.normals[at * 3 + 2] = -gz / len;
   // Passing the sample skips forestDensity and groundCover re-deriving the
   // terrain field. groundCover's own duff fraction rides along so the paint
   // agrees with where the duff pieces themselves stand, and the canopy
@@ -118,55 +167,57 @@ function sampleInto(ring: RingSamples, seed: number, ix: number, iz: number): vo
     seed, x, z, s.h, Math.hypot(s.dx, s.dz), canopy, duff,
   );
   const c = at * 4;
-  ring.colors[c] = albedo.r;
-  ring.colors[c + 1] = albedo.g;
-  ring.colors[c + 2] = albedo.b;
-  ring.colors[c + 3] = 1;
+  a.colors[c] = albedo.r;
+  a.colors[c + 1] = albedo.g;
+  a.colors[c + 2] = albedo.b;
+  a.colors[c + 3] = 1;
   // Material weights ride the same traversal: the
   // classification is already computed for the colour, so this is free.
-  ring.weights[c] = weights.grass;
-  ring.weights[c + 1] = weights.forestFloor;
-  ring.weights[c + 2] = weights.rock;
-  ring.weights[c + 3] = weights.sand;
+  a.weights[c] = weights.grass;
+  a.weights[c + 1] = weights.forestFloor;
+  a.weights[c + 2] = weights.rock;
+  a.weights[c + 3] = weights.sand;
   const w2 = at * WEIGHTS2_STRIDE;
-  ring.weights2[w2] = weights.pebble;
-  ring.weights2[w2 + 1] = weights.detail;
-  ring.weights2[w2 + 2] = duff;
-  ring.weights2[w2 + 3] = canopy;
-  ring.cover[at] = Math.min(1, gc.grass);
+  a.weights2[w2] = weights.pebble;
+  a.weights2[w2 + 1] = weights.detail;
+  a.weights2[w2 + 2] = duff;
+  a.weights2[w2 + 3] = canopy;
+  a.cover[at] = Math.min(1, gc.grass);
 }
 
 /** One half-lattice point that is NOT a vertex: a midpoint or a cell centre.
  * Height only — normals, colours and weights live at vertex resolution. */
-function sampleHalfInto(ring: RingSamples, seed: number, jx: number, jz: number): void {
-  const half = ring.spacing / 2;
-  ring.hh[jz * HALF_SIDE + jx] = elevationSampleAt(seed, ring.originX + jx * half, ring.originZ + jz * half).h;
+function sampleHalfInto(t: Target, seed: number, jx: number, jz: number): void {
+  const half = t.spacing / 2;
+  t.a.hh[jz * HALF_SIDE + jx] = elevationSampleAt(seed, t.originX + jx * half, t.originZ + jz * half).h;
 }
 
 export function createRingSamples(seed: number, level: number, camX: number, camZ: number): RingSamples {
   const spacing = ringSpacing(level);
-  const ring: RingSamples = {
-    level,
-    spacing,
-    originX: snapOrigin(camX, spacing),
-    originZ: snapOrigin(camZ, spacing),
-    h: new Float32Array(SIDE * SIDE),
-    hh: new Float32Array(HALF_SIDE * HALF_SIDE),
-    dx: new Float32Array(SIDE * SIDE),
-    dz: new Float32Array(SIDE * SIDE),
-    colors: new Float32Array(SIDE * SIDE * 4),
-    weights: new Float32Array(SIDE * SIDE * 4),
-    weights2: new Float32Array(SIDE * SIDE * WEIGHTS2_STRIDE),
-    cover: new Float32Array(SIDE * SIDE),
-  };
+  const originX = snapOrigin(camX, spacing);
+  const originZ = snapOrigin(camZ, spacing);
+  const target: Target = { a: ringArrays(), originX, originZ, spacing };
   for (let jz = 0; jz < HALF_SIDE; jz++) {
     for (let jx = 0; jx < HALF_SIDE; jx++) {
-      if ((jx & 1) === 0 && (jz & 1) === 0) sampleInto(ring, seed, jx >> 1, jz >> 1);
-      else sampleHalfInto(ring, seed, jx, jz);
+      if ((jx & 1) === 0 && (jz & 1) === 0) sampleInto(target, seed, jx >> 1, jz >> 1);
+      else sampleHalfInto(target, seed, jx, jz);
     }
   }
-  return ring;
+  const { a } = target;
+  for (let iz = 0; iz < SIDE; iz++) {
+    for (let ix = 0; ix < SIDE; ix++) a.lift[iz * SIDE + ix] = liftOf(a.h, a.hh, ix, iz);
+  }
+  return { level, spacing, originX, originZ, ...a, lifted: SIDE * SIDE, moves: 0 };
 }
+
+/** Rough cost of one vertex sample against one half-lattice height sample:
+ * the vertex also asks for the ground cover, the canopy and the class. */
+const VERTEX_SAMPLE_COST = 5;
+/** Half-lattice samples' worth of work a slice of a ring's move does before
+ * it yields: about a tenth of a millisecond. */
+const MOVE_SLICE_COST = 80;
+/** Lifts a slice computes before it yields: about as long. */
+const LIFT_SLICE = 1024;
 
 /**
  * Re-centres the ring on the camera if its snapped origin moved. Samples are
@@ -177,71 +228,200 @@ export function createRingSamples(seed: number, level: number, camX: number, cam
  * contention, so an upper bound — and about +1.8 ms per scroll step, ~+0.67 ms per frame
  * while walking, zero at rest. The scroll-equals-fresh-build test in
  * clipmap.test.ts is what keeps this path honest.
+ *
+ * The move writes a second set of arrays and swaps it in whole at its end,
+ * so a job dropped between two of its slices leaves the ring as it was.
+ * `spare` holds sets to write into: one is taken (or made), and the ring's
+ * old set is put back, so rings moved one after another share one spare set.
+ * The surviving samples are copied a row at a time; the lift of a vertex
+ * interior to both the old ring and the new is copied too, since every
+ * sample it reads survived with it, and only the lifts of the new strips and
+ * of the rows and columns on either ring's border (whose edges past the
+ * border `liftedHeight` skips) are computed. Returns whether the ring moved.
  */
-export function updateRingSamples(ring: RingSamples, seed: number, camX: number, camZ: number): boolean {
+export function* ringSampleSlices(
+  ring: RingSamples,
+  seed: number,
+  camX: number,
+  camZ: number,
+  spare: RingArrays[] = [],
+): Generator<void, boolean, void> {
   const ox = snapOrigin(camX, ring.spacing);
   const oz = snapOrigin(camZ, ring.spacing);
   if (ox === ring.originX && oz === ring.originZ) return false;
-  const shiftX = Math.round((ox - ring.originX) / ring.spacing);
-  const shiftZ = Math.round((oz - ring.originZ) / ring.spacing);
-  const oldH = ring.h;
-  const oldHh = ring.hh;
-  const oldDx = ring.dx;
-  const oldDz = ring.dz;
-  const oldColors = ring.colors;
-  const oldWeights = ring.weights;
-  const oldWeights2 = ring.weights2;
-  const oldCover = ring.cover;
-  ring.h = new Float32Array(SIDE * SIDE);
-  ring.hh = new Float32Array(HALF_SIDE * HALF_SIDE);
-  ring.dx = new Float32Array(SIDE * SIDE);
-  ring.dz = new Float32Array(SIDE * SIDE);
-  ring.colors = new Float32Array(SIDE * SIDE * 4);
-  ring.weights = new Float32Array(SIDE * SIDE * 4);
-  ring.weights2 = new Float32Array(SIDE * SIDE * WEIGHTS2_STRIDE);
-  ring.cover = new Float32Array(SIDE * SIDE);
-  ring.originX = ox;
-  ring.originZ = oz;
-  // One walk over the half-lattice. A vertex shift of k cells is 2k half
-  // cells, so a point's parity survives the shift and the vertex arrays can
-  // be copied in the same pass at the even-even points.
-  for (let jz = 0; jz < HALF_SIDE; jz++) {
-    for (let jx = 0; jx < HALF_SIDE; jx++) {
-      const fromJx = jx + 2 * shiftX;
-      const fromJz = jz + 2 * shiftZ;
-      const vertex = (jx & 1) === 0 && (jz & 1) === 0;
-      if (fromJx >= 0 && fromJx < HALF_SIDE && fromJz >= 0 && fromJz < HALF_SIDE) {
-        ring.hh[jz * HALF_SIDE + jx] = oldHh[fromJz * HALF_SIDE + fromJx] as number;
-        if (vertex) {
-          const to = (jz >> 1) * SIDE + (jx >> 1);
-          const from = (fromJz >> 1) * SIDE + (fromJx >> 1);
-          ring.h[to] = oldH[from] as number;
-          ring.dx[to] = oldDx[from] as number;
-          ring.dz[to] = oldDz[from] as number;
-          ring.colors[to * 4] = oldColors[from * 4] as number;
-          ring.colors[to * 4 + 1] = oldColors[from * 4 + 1] as number;
-          ring.colors[to * 4 + 2] = oldColors[from * 4 + 2] as number;
-          ring.colors[to * 4 + 3] = oldColors[from * 4 + 3] as number;
-          ring.weights[to * 4] = oldWeights[from * 4] as number;
-          ring.weights[to * 4 + 1] = oldWeights[from * 4 + 1] as number;
-          ring.weights[to * 4 + 2] = oldWeights[from * 4 + 2] as number;
-          ring.weights[to * 4 + 3] = oldWeights[from * 4 + 3] as number;
-          const toW2 = to * WEIGHTS2_STRIDE;
-          const fromW2 = from * WEIGHTS2_STRIDE;
-          ring.weights2[toW2] = oldWeights2[fromW2] as number;
-          ring.weights2[toW2 + 1] = oldWeights2[fromW2 + 1] as number;
-          ring.weights2[toW2 + 2] = oldWeights2[fromW2 + 2] as number;
-          ring.weights2[toW2 + 3] = oldWeights2[fromW2 + 3] as number;
-          ring.cover[to] = oldCover[from] as number;
-        }
-      } else if (vertex) {
-        sampleInto(ring, seed, jx >> 1, jz >> 1);
-      } else {
-        sampleHalfInto(ring, seed, jx, jz);
+  const to = spare.pop() ?? ringArrays();
+  let committed = false;
+  try {
+    const lifted = yield* ringMoveSlices(ring, seed, ox, oz, to);
+    commitRingMove(ring, { moves: ring.moves, originX: ox, originZ: oz, arrays: to, lifted }, spare);
+    committed = true;
+  } finally {
+    // A move dropped half done hands its arrays back.
+    if (!committed) spare.push(to);
+  }
+  return true;
+}
+
+/** A move worked out and not yet committed: the arrays for the ring at
+ * (originX, originZ), made from the ring as it stood after `moves` moves. */
+export type RingMove = { moves: number; originX: number; originZ: number; arrays: RingArrays; lifted: number };
+
+/** Makes `move` the ring's, in one step: its arrays become the ring's, and
+ * the ring's old ones go to `spare`. */
+export function commitRingMove(ring: RingSamples, move: RingMove, spare: RingArrays[]): void {
+  spare.push({
+    h: ring.h, hh: ring.hh, dx: ring.dx, dz: ring.dz, colors: ring.colors, weights: ring.weights,
+    weights2: ring.weights2, cover: ring.cover, normals: ring.normals, lift: ring.lift,
+  });
+  Object.assign(ring, move.arrays);
+  ring.originX = move.originX;
+  ring.originZ = move.originZ;
+  ring.lifted = move.lifted;
+  ring.moves++;
+}
+
+/**
+ * The move to (ox, oz) worked out ahead, while the ring stays where it is:
+ * `ringSampleSlices`' work, into arrays taken from `spare`, in slices. Null
+ * if the ring moves before it is done — it reads the ring's own arrays, which
+ * a move hands to `spare` — and then its arrays go back to `spare`. Committed
+ * later by `commitRingMove` while `ring.moves` is still the one it records,
+ * it makes the ring exactly what a move made then would: the same inputs,
+ * the same arithmetic.
+ */
+export function* prepareRingMove(
+  ring: RingSamples,
+  seed: number,
+  ox: number,
+  oz: number,
+  spare: RingArrays[],
+): Generator<void, RingMove | null, void> {
+  const moves = ring.moves;
+  const to = spare.pop() ?? ringArrays();
+  const slices = ringMoveSlices(ring, seed, ox, oz, to);
+  let made = false;
+  try {
+    for (;;) {
+      if (ring.moves !== moves) return null;
+      const step = slices.next();
+      if (step.done === true) {
+        made = true;
+        return { moves, originX: ox, originZ: oz, arrays: to, lifted: step.value };
+      }
+      yield;
+    }
+  } finally {
+    // Outrun by a move, or dropped half done: the arrays go back.
+    if (!made) spare.push(to);
+  }
+}
+
+/** The work of a move to (ox, oz), from the ring's arrays into `to`, in
+ * slices; the ring itself is not touched. Returns the lifts it computed. */
+function* ringMoveSlices(ring: RingSamples, seed: number, ox: number, oz: number, to: RingArrays): Generator<void, number, void> {
+  const sx = Math.round((ox - ring.originX) / ring.spacing);
+  const sz = Math.round((oz - ring.originZ) / ring.spacing);
+  const from: RingArrays = ring;
+  const target: Target = { a: to, originX: ox, originZ: oz, spacing: ring.spacing };
+  let cost = 0;
+
+  // Vertices, a row at a time: the span whose old index is inside the old
+  // ring is copied, the rest sampled.
+  const ixLo = Math.max(0, -sx);
+  const ixHi = Math.min(SIDE - 1, SIDE - 1 - sx);
+  for (let iz = 0; iz < SIDE; iz++) {
+    const fz = iz + sz;
+    const kept = fz >= 0 && fz < SIDE && ixLo <= ixHi;
+    if (kept) copyVertexSpan(from, to, iz * SIDE + ixLo, fz * SIDE + ixLo + sx, ixHi - ixLo + 1);
+    for (let ix = 0; ix < SIDE; ix++) {
+      if (kept && ix === ixLo) {
+        ix = ixHi;
+        continue;
+      }
+      sampleInto(target, seed, ix, iz);
+      cost += VERTEX_SAMPLE_COST;
+      if (cost >= MOVE_SLICE_COST) {
+        cost = 0;
+        yield;
       }
     }
   }
-  return true;
+  // The half-lattice, likewise: a vertex shift of k cells is 2k half cells,
+  // so the copied span keeps every point's parity, and the vertex points
+  // outside it were written by `sampleInto` above.
+  const jxLo = Math.max(0, -2 * sx);
+  const jxHi = Math.min(HALF_SIDE - 1, HALF_SIDE - 1 - 2 * sx);
+  for (let jz = 0; jz < HALF_SIDE; jz++) {
+    const fjz = jz + 2 * sz;
+    const kept = fjz >= 0 && fjz < HALF_SIDE && jxLo <= jxHi;
+    if (kept) {
+      const at = fjz * HALF_SIDE + jxLo + 2 * sx;
+      to.hh.set(from.hh.subarray(at, at + jxHi - jxLo + 1), jz * HALF_SIDE + jxLo);
+    }
+    for (let jx = 0; jx < HALF_SIDE; jx++) {
+      if (kept && jx === jxLo) {
+        jx = jxHi;
+        continue;
+      }
+      if ((jx & 1) === 0 && (jz & 1) === 0) continue;
+      sampleHalfInto(target, seed, jx, jz);
+      cost += 1;
+      if (cost >= MOVE_SLICE_COST) {
+        cost = 0;
+        yield;
+      }
+    }
+  }
+  // Lifts: copied where the vertex is interior to both rings, computed
+  // elsewhere, from the new samples.
+  let lifted = 0;
+  let liftedAtYield = 0;
+  const cxLo = Math.max(1, 1 - sx);
+  const cxHi = Math.min(RING_CELLS - 1, RING_CELLS - 1 - sx);
+  for (let iz = 0; iz < SIDE; iz++) {
+    const fz = iz + sz;
+    const kept = iz >= 1 && iz <= RING_CELLS - 1 && fz >= 1 && fz <= RING_CELLS - 1 && cxLo <= cxHi;
+    if (kept) {
+      const at = fz * SIDE + cxLo + sx;
+      to.lift.set(from.lift.subarray(at, at + cxHi - cxLo + 1), iz * SIDE + cxLo);
+    }
+    for (let ix = 0; ix < SIDE; ix++) {
+      if (kept && ix === cxLo) {
+        ix = cxHi;
+        continue;
+      }
+      to.lift[iz * SIDE + ix] = liftOf(to.h, to.hh, ix, iz);
+      lifted++;
+    }
+    // Checked a row at a time: a row's lifts are a few microseconds each.
+    if (lifted - liftedAtYield >= LIFT_SLICE) {
+      liftedAtYield = lifted;
+      yield;
+    }
+  }
+  return lifted;
+}
+
+/** Copies `n` vertices' samples from `from` at vertex index `fromAt` to `to`
+ * at `toAt`: every per-vertex array, lifts aside. */
+function copyVertexSpan(from: RingArrays, to: RingArrays, toAt: number, fromAt: number, n: number): void {
+  to.h.set(from.h.subarray(fromAt, fromAt + n), toAt);
+  to.dx.set(from.dx.subarray(fromAt, fromAt + n), toAt);
+  to.dz.set(from.dz.subarray(fromAt, fromAt + n), toAt);
+  to.cover.set(from.cover.subarray(fromAt, fromAt + n), toAt);
+  to.colors.set(from.colors.subarray(fromAt * 4, (fromAt + n) * 4), toAt * 4);
+  to.weights.set(from.weights.subarray(fromAt * 4, (fromAt + n) * 4), toAt * 4);
+  to.weights2.set(from.weights2.subarray(fromAt * WEIGHTS2_STRIDE, (fromAt + n) * WEIGHTS2_STRIDE), toAt * WEIGHTS2_STRIDE);
+  to.normals.set(from.normals.subarray(fromAt * 3, (fromAt + n) * 3), toAt * 3);
+}
+
+/** `ringSampleSlices` at once. */
+export function updateRingSamples(ring: RingSamples, seed: number, camX: number, camZ: number, spare?: RingArrays[]): boolean {
+  const slices = ringSampleSlices(ring, seed, camX, camZ, spare);
+  for (;;) {
+    const step = slices.next();
+    if (step.done === true) return step.value;
+  }
 }
 
 /** The finer ring's footprint in this ring's cell indices — always integral
@@ -298,17 +478,22 @@ const LIFT_EDGES: readonly (readonly [number, number])[] = [
  * overridden by the coarser ring in ringGeometry.
  */
 export function liftedHeight(ring: RingSamples, ix: number, iz: number): number {
-  const h = ring.h[iz * SIDE + ix] as number;
+  return liftOf(ring.h, ring.hh, ix, iz);
+}
+
+/** `liftedHeight` on a ring's two height arrays. */
+function liftOf(h: Float32Array, hh: Float32Array, ix: number, iz: number): number {
+  const own = h[iz * SIDE + ix] as number;
   let lift = LIFT_DEADBAND;
   for (const [ex, ez] of LIFT_EDGES) {
     const qx = ix + ex;
     const qz = iz + ez;
     if (qx < 0 || qx > RING_CELLS || qz < 0 || qz > RING_CELLS) continue;
-    const mid = ring.hh[(2 * iz + ez) * HALF_SIDE + (2 * ix + ex)] as number;
-    const excess = mid - (h + (ring.h[qz * SIDE + qx] as number)) / 2;
+    const mid = hh[(2 * iz + ez) * HALF_SIDE + (2 * ix + ex)] as number;
+    const excess = mid - (own + (h[qz * SIDE + qx] as number)) / 2;
     if (excess > lift) lift = excess;
   }
-  return lift > LIFT_DEADBAND ? h + lift : h;
+  return lift > LIFT_DEADBAND ? own + lift : own;
 }
 
 /**
@@ -454,4 +639,93 @@ export function ringGeometry(
   }
 
   return { positions, indices, normals, colors, weights, weights2, cover };
+}
+
+/** Buffers a re-emit writes into, sized for a ring with or without a hole. */
+export function ringGeometryBuffers(hole: boolean): RingGeometry {
+  const quadCount = RING_CELLS * RING_CELLS - (hole ? HOLE_CELLS * HOLE_CELLS : 0);
+  return {
+    positions: new Float32Array(SIDE * SIDE * 3),
+    indices: new Uint16Array(quadCount * 6),
+    normals: new Float32Array(SIDE * SIDE * 3),
+    colors: new Float32Array(SIDE * SIDE * 4),
+    weights: new Float32Array(SIDE * SIDE * 4),
+    weights2: new Float32Array(SIDE * SIDE * WEIGHTS2_STRIDE),
+    cover: new Float32Array(SIDE * SIDE),
+  };
+}
+
+/** Rows of positions a slice of a re-emit writes before it yields: a whole
+ * ring's positions are about a tenth of a millisecond. */
+const EMIT_SLICE_ROWS = 64;
+
+/** `coarseHeight` from the coarser ring's kept lifts: the same doubles,
+ * averaged the same way. */
+function coarseLift(lift: Float64Array, x0: number, z0: number, ix: number, iz: number): number {
+  const cx = x0 + (ix >> 1);
+  const cz = z0 + (iz >> 1);
+  const oddX = ix & 1;
+  const oddZ = iz & 1;
+  const at = cz * SIDE + cx;
+  if (oddX === 0 && oddZ === 0) return lift[at] as number;
+  if (oddZ === 0) return ((lift[at] as number) + (lift[at + 1] as number)) / 2;
+  if (oddX === 0) return ((lift[at] as number) + (lift[at + SIDE] as number)) / 2;
+  return ((lift[at + 1] as number) + (lift[at + SIDE] as number)) / 2;
+}
+
+/**
+ * `ringGeometry` into `out`, in slices: the same buffers, bit for bit, from
+ * what the ring keeps rather than computed again. The normals, colours,
+ * weights and cover are the ring's own arrays, copied whole; each vertex's
+ * height is its kept lift, blended toward the coarser ring's kept lifts
+ * exactly as `ringGeometry` blends the ones `liftedHeight` returns; the
+ * indices are written again, since the hole moves with the finer ring.
+ */
+export function* ringGeometrySlices(
+  ring: RingSamples,
+  hole: { x0: number; z0: number } | null,
+  coarser: RingSamples | null,
+  out: RingGeometry,
+): Generator<void, void, void> {
+  out.normals.set(ring.normals);
+  out.colors.set(ring.colors);
+  out.weights.set(ring.weights);
+  out.weights2.set(ring.weights2);
+  out.cover.set(ring.cover);
+  const { positions } = out;
+  const outer = coarser === null ? null : holeCellsFor(coarser, ring);
+  for (let iz = 0; iz < SIDE; iz++) {
+    for (let ix = 0; ix < SIDE; ix++) {
+      const at = iz * SIDE + ix;
+      let y = ring.lift[at] as number;
+      if (coarser !== null && outer !== null) {
+        const t = blendWeight(hole, ix, iz);
+        if (t >= 1) y = coarseLift(coarser.lift, outer.x0, outer.z0, ix, iz);
+        else if (t > 0) y += (coarseLift(coarser.lift, outer.x0, outer.z0, ix, iz) - y) * t;
+      }
+      const p = at * 3;
+      positions[p] = ring.originX + ix * ring.spacing;
+      positions[p + 1] = y;
+      positions[p + 2] = ring.originZ + iz * ring.spacing;
+    }
+    if ((iz + 1) % EMIT_SLICE_ROWS === 0) yield;
+  }
+  const { indices } = out;
+  let k = 0;
+  for (let iz = 0; iz < RING_CELLS; iz++) {
+    for (let ix = 0; ix < RING_CELLS; ix++) {
+      if (insideHole(hole, ix, iz)) continue;
+      const a = iz * SIDE + ix;
+      const b = a + 1;
+      const c = a + SIDE;
+      const d = c + 1;
+      // `ringGeometry`'s winding, which the winding test there guards.
+      indices[k++] = a;
+      indices[k++] = b;
+      indices[k++] = c;
+      indices[k++] = b;
+      indices[k++] = d;
+      indices[k++] = c;
+    }
+  }
 }

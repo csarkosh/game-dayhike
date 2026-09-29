@@ -25,6 +25,7 @@ import {
   COHORT_LOG,
   type TreeInstance,
 } from "../sim/vegetation.js";
+import { finish, sortSlices, type Slices } from "./syncJobs.js";
 
 /** Near band radius (m) — full-geometry trees; quality tiers may shrink it
  * via `collectBands`' `nearRadius` parameter (low runs 140 m).
@@ -219,20 +220,31 @@ export function collectBands(
   camZ: number,
   nearRadius: number = NEAR_RADIUS,
 ): ForestBands {
-  return collectBandsWith(camX, camZ, nearRadius, (cx, cz) => treeInCell(seed, cx, cz));
+  return finish(collectBandsSlices(camX, camZ, nearRadius, (cx, cz) => treeInCell(seed, cx, cz)));
 }
+
+/** Cells' worth of work a slice of the band walk does before it yields: a
+ * cell looked up counts 1, one sampled fresh `BAND_FRESH_COST`, its tree
+ * being several walks through the terrain's noise. About a tenth of a
+ * millisecond. */
+const BAND_SLICE = 1280;
+const BAND_FRESH_COST = 64;
 
 /**
  * The band walk itself, parameterised over the cell sampler so the memoizing
  * collector below and the pure `collectBands` share one loop — the collector
- * cannot drift from the pure function because they ARE the same function.
+ * cannot drift from the pure function because they ARE the same function. In
+ * slices for a job (`syncJobs.ts`), the pure one-shot running it at once;
+ * `fresh` counts the cells the sampler had to sample, which weigh on a slice
+ * more than those it looked up.
  */
-function collectBandsWith(
+function* collectBandsSlices(
   camX: number,
   camZ: number,
   nearRadius: number,
   sample: (cx: number, cz: number) => TreeInstance | null,
-): ForestBands {
+  fresh: { count: number } = { count: 0 },
+): Slices<ForestBands> {
   const { x: ax, z: az } = bandsOrigin(camX, camZ);
   const impostorR2 = IMPOSTOR_RADIUS * IMPOSTOR_RADIUS;
   // The near/impostor seam scales with nearRadius (tier-dependent); every
@@ -319,11 +331,22 @@ function collectBandsWith(
   // each axis. Walking only the lattice (instead of testing every cell of the
   // ~112k-cell bounding square for alignment) is what keeps a warm collect
   // cheap; `Math.ceil` finds the first aligned index at or after the corner.
+  let work = 0;
+  let freshSeen = fresh.count;
+  /** Counts a visit, and whether the slice has done its share. */
+  const due = (): boolean => {
+    work += 1 + (fresh.count - freshSeen) * BAND_FRESH_COST;
+    freshSeen = fresh.count;
+    if (work < BAND_SLICE) return false;
+    work = 0;
+    return true;
+  };
   const s = IMPOSTOR_CELL_STRIDE;
   for (let cz = Math.ceil(c0z / s) * s; cz <= c1z; cz += s) {
     for (let cx = Math.ceil(c0x / s) * s; cx <= c1x; cx += s) {
       if (cellMinDistSq(ax, az, cx, cz) >= impostorR2) continue; // square corner, outside the disc
       visit(cx, cz, true);
+      if (due()) yield;
     }
   }
 
@@ -347,14 +370,19 @@ function collectBandsWith(
       if (cx % s === 0 && cz % s === 0) continue; // the lattice already visited it
       if (cellMinDistSq(ax, az, cx, cz) >= fillPadR2) continue;
       visit(cx, cz, false);
+      if (due()) yield;
     }
   }
+  yield;
 
-  nearPicks.sort((a, b) => a.d2 - b.d2);
-  impostorPicks.sort((a, b) => a.d2 - b.d2);
-  saplingPicks.sort((a, b) => a.d2 - b.d2);
-  deadwoodPicks.sort((a, b) => a.d2 - b.d2);
-  fillPicks.sort((a, b) => a.d2 - b.d2);
+  // Nearest first, stably, in slices: the unthinned kilometre is thousands
+  // of picks long.
+  const nearest = (a: { d2: number }, b: { d2: number }): number => a.d2 - b.d2;
+  yield* sortSlices(nearPicks, nearest);
+  yield* sortSlices(impostorPicks, nearest);
+  yield* sortSlices(saplingPicks, nearest);
+  yield* sortSlices(deadwoodPicks, nearest);
+  yield* sortSlices(fillPicks, nearest);
   // Same nearest-first clamp as the other budgets: the far tail of the
   // unthinned kilometre drops first.
   if (fillPicks.length > IMPOSTOR_FILL_BUDGET_MAX) fillPicks.length = IMPOSTOR_FILL_BUDGET_MAX;
@@ -362,6 +390,7 @@ function collectBandsWith(
   if (impostorPicks.length > IMPOSTOR_BUDGET_MAX) impostorPicks.length = IMPOSTOR_BUDGET_MAX;
   if (saplingPicks.length > NEAR_BUDGET_MAX) saplingPicks.length = NEAR_BUDGET_MAX;
   if (deadwoodPicks.length > NEAR_BUDGET_MAX) deadwoodPicks.length = NEAR_BUDGET_MAX;
+  yield;
 
   /** Split sorted near-band picks into the three LOD rings — the one ring
    * rule (`bandForDistanceSq`) applied to giants and saplings alike — but
@@ -417,6 +446,9 @@ export const COLLECTOR_EVICT_MARGIN = 8 * TREE_CELL;
  * samples (~84k + ~56k ≈ 140k entries). */
 const COLLECTOR_SWEEP_SIZE = 84000;
 
+/** Cached cells a slice of the eviction sweep looks at before it yields. */
+const SWEEP_SLICE = 2048;
+
 // Numeric cell key: exact for |cell index| < 2^20 (±12,582 km of world — far
 // beyond anywhere a camera can stand). A packed number keeps the hot cache
 // lookup off string building.
@@ -426,6 +458,8 @@ const CELL_KEY_SPAN = 1 << 21;
 export type BandCollector = {
   /** Identical output to `collectBands(seed, camX, camZ, nearRadius)`. */
   collect(camX: number, camZ: number, nearRadius?: number): ForestBands;
+  /** `collect` as slices for a job (`syncJobs.ts`), returning the same bands. */
+  collectSlices(camX: number, camZ: number, nearRadius?: number): Slices<ForestBands>;
   /** Cached cell count — exposed so tests can pin the eviction bound. */
   readonly size: number;
 };
@@ -442,32 +476,41 @@ export type BandCollector = {
  */
 export function createBandCollector(seed: number): BandCollector {
   const cache = new Map<number, TreeInstance | null>();
-  return {
-    collect(camX: number, camZ: number, nearRadius: number = NEAR_RADIUS): ForestBands {
-      const bands = collectBandsWith(camX, camZ, nearRadius, (cx, cz) => {
-        const key = (cx + CELL_KEY_HALF) * CELL_KEY_SPAN + (cz + CELL_KEY_HALF);
-        let t = cache.get(key);
-        if (t === undefined) {
-          t = treeInCell(seed, cx, cz);
-          cache.set(key, t);
-        }
-        return t;
-      });
-      // Evict everything the disc can no longer reach, but only once enough
-      // stale growth has accumulated — the sweep itself costs ~1 ms of Map
-      // arithmetic, which should not be paid on every 12 m crossing.
-      if (cache.size > COLLECTOR_SWEEP_SIZE) {
-        const { x: ax, z: az } = bandsOrigin(camX, camZ);
-        const evictR = IMPOSTOR_RADIUS + COLLECTOR_EVICT_MARGIN;
-        const evictR2 = evictR * evictR;
-        for (const key of cache.keys()) {
-          const czPart = key % CELL_KEY_SPAN;
-          const cz = czPart - CELL_KEY_HALF;
-          const cx = (key - czPart) / CELL_KEY_SPAN - CELL_KEY_HALF;
-          if (cellMinDistSq(ax, az, cx, cz) >= evictR2) cache.delete(key);
-        }
+  const fresh = { count: 0 };
+  const lookup = (cx: number, cz: number): TreeInstance | null => {
+    const key = (cx + CELL_KEY_HALF) * CELL_KEY_SPAN + (cz + CELL_KEY_HALF);
+    let t = cache.get(key);
+    if (t === undefined) {
+      t = treeInCell(seed, cx, cz);
+      cache.set(key, t);
+      fresh.count++;
+    }
+    return t;
+  };
+  function* collectSlices(camX: number, camZ: number, nearRadius: number = NEAR_RADIUS): Slices<ForestBands> {
+    const bands = yield* collectBandsSlices(camX, camZ, nearRadius, lookup, fresh);
+    // Evict everything the disc can no longer reach, but only once enough
+    // stale growth has accumulated — the sweep itself costs ~1 ms of Map
+    // arithmetic, which should not be paid on every 12 m crossing.
+    if (cache.size > COLLECTOR_SWEEP_SIZE) {
+      const { x: ax, z: az } = bandsOrigin(camX, camZ);
+      const evictR = IMPOSTOR_RADIUS + COLLECTOR_EVICT_MARGIN;
+      const evictR2 = evictR * evictR;
+      let looked = 0;
+      for (const key of cache.keys()) {
+        const czPart = key % CELL_KEY_SPAN;
+        const cz = czPart - CELL_KEY_HALF;
+        const cx = (key - czPart) / CELL_KEY_SPAN - CELL_KEY_HALF;
+        if (cellMinDistSq(ax, az, cx, cz) >= evictR2) cache.delete(key);
+        if (++looked % SWEEP_SLICE === 0) yield;
       }
-      return bands;
+    }
+    return bands;
+  }
+  return {
+    collectSlices,
+    collect(camX: number, camZ: number, nearRadius: number = NEAR_RADIUS): ForestBands {
+      return finish(collectSlices(camX, camZ, nearRadius));
     },
     get size(): number {
       return cache.size;

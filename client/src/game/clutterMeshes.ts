@@ -33,9 +33,11 @@
  * Allocation discipline ("no per-frame allocation on the hot path"):
  * `update` allocates NOTHING while the camera stays inside its 3 m grass cell,
  * which is the per-frame case; a rebuild reuses one `Float32Array` per bucket,
- * grown geometrically and never shrunk, and composes each matrix through
- * module-level scratch objects. This is the one place the file deliberately
- * diverges from `forestMeshes.ts`, which allocates a fresh buffer per rebuild:
+ * and one staging array beside it that a rebuild in slices writes first
+ * (`Bucket.staged`), both grown geometrically and never shrunk, and composes
+ * each matrix through module-level scratch objects. This is the one place
+ * the file deliberately diverges from `forestMeshes.ts`, which allocates a
+ * fresh buffer per rebuild:
  * clutter rebuilds on a 3 m crossing rather than the forest's 12 m, so its
  * eighteen buffers would churn four times as often.
  *
@@ -93,6 +95,7 @@ import { ROCK_CUTS, rockPlanes, rockRelief, type RockPlane } from "./rockRelief.
 import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
 import { loadUntilAborted } from "./modelLoad.js";
 import { createKeptValues } from "./keptValues.js";
+import { createCrossing, crossingAt, finish, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
 // exactly BOULDER_SINK · (that variant's own BASE_H) · scale shows a visible
@@ -308,6 +311,9 @@ export type ClutterMeshesOptions = {
    * place of the seventeen production GLBs (the forestMeshes `assets` idiom).
    * `adopt` runs synchronously on them. */
   assets?: Mesh[][][][];
+  /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
+   * over the frames that follow rather than in the frame of the crossing. */
+  jobs?: SyncJobs;
 };
 
 export type ClutterMeshes = {
@@ -332,6 +338,8 @@ export type ClutterMeshes = {
   readonly casterMeshes: readonly Mesh[];
   /** Instances whose matrix and tint are kept (keptValues.ts). */
   readonly kept: number;
+  /** The camera position the buffers were last built for. */
+  readonly view: { readonly x: number; readonly z: number };
   dispose(): void;
 };
 
@@ -377,6 +385,12 @@ type Bucket = {
    * them, with the last cut's indices; rebuilt only on growth. Null for every
    * other bucket. */
   cull: CullSet | null;
+  /** Where a rebuild in slices writes, so that nothing the mesh draws or
+   * `cull` reads changes until the rebuild's last slice copies it across:
+   * the same four buffers, grown the same way, never uploaded. */
+  staged: { buf: Float32Array; bands: Float32Array; foliage: Float32Array; origins: Float32Array };
+  /** Instances staged — counted, then the write cursor, as `count` is. */
+  stagedCount: number;
 };
 
 const UP = Vector3.Up();
@@ -454,6 +468,50 @@ function ensureCapacity(bucket: Bucket): void {
   }
   bucket.grown = true;
 }
+
+/**
+ * Grows a bucket's staging buffers to hold `bucket.stagedCount` instances, by
+ * `ensureCapacity`'s doubling; old contents are dropped, as there.
+ */
+function ensureStaging(bucket: Bucket): void {
+  const needed = bucket.stagedCount * 16;
+  if (bucket.staged.buf.length >= needed) return;
+  let capacity = Math.max(bucket.staged.buf.length, BUCKET_MIN_INSTANCES * 16);
+  while (capacity < needed) capacity *= 2;
+  bucket.staged = {
+    buf: new Float32Array(capacity),
+    bands: new Float32Array(capacity / 4),
+    foliage: new Float32Array(capacity / 4),
+    origins: bucket.culled ? new Float32Array((capacity / 16) * 3) : EMPTY_BUFFER,
+  };
+}
+
+/**
+ * Copies a bucket's staged instances into the buffers its meshes draw from
+ * (the collected ones, for a culled bucket), growing those first by
+ * `ensureCapacity`: after this the bucket holds exactly what a rebuild writing
+ * them directly would, the tail past `count` included.
+ */
+function commitStaged(bucket: Bucket): void {
+  bucket.count = bucket.stagedCount;
+  ensureCapacity(bucket);
+  const n = bucket.count;
+  bucket.buf.set(bucket.staged.buf.subarray(0, n * 16));
+  bucket.bands.set(bucket.staged.bands.subarray(0, n * 4));
+  if (bucket.tints) bucket.foliage.set(bucket.staged.foliage.subarray(0, n * 4));
+  if (bucket.culled) bucket.origins.set(bucket.staged.origins.subarray(0, n * 3));
+}
+
+/** Instances' worth of work a slice of the clutter's fill does before it
+ * yields: an instance whose values are copied counts 1, one computed for the
+ * first time `FILL_NEW_COST` — its trample frame and ground tint are several
+ * walks through the terrain's noise. About a tenth of a millisecond. */
+const FILL_SLICE = 1536;
+const FILL_NEW_COST = 16;
+
+/** What computing an instance's kept values ahead weighs on a slice of idle
+ * work, in `prefetchWindow`'s units: about what sampling a cell does. */
+const KEPT_AHEAD_COST = 64;
 
 /**
  * Pushes a filled bucket to its meshes. A bucket whose buffer was just grown
@@ -554,15 +612,6 @@ function cutBucket(bucket: Bucket, planes: Float32Array): void {
     }
     mesh.setEnabled(kept > 0);
   }
-}
-
-/** A culled bucket's origin for the instance just written at its cursor:
- * the matrix's translation, which is what the cut tests. */
-function writeOrigin(bucket: Bucket): void {
-  const m = bucket.count * 16, o = bucket.count * 3;
-  bucket.origins[o] = bucket.buf[m + 12]!;
-  bucket.origins[o + 1] = bucket.buf[m + 13]!;
-  bucket.origins[o + 2] = bucket.buf[m + 14]!;
 }
 
 /** The untrampled identity frame: frozen, and shared by every card the bench
@@ -733,12 +782,10 @@ export function createClutterMeshes(
     dirty = true;
   });
 
-  // Last camera seen and last origin built. Split so an `update` that arrives
-  // while the GLBs are still loading is honoured the moment they land.
+  // Last camera seen. An `update` that arrives while the GLBs are still
+  // loading is honoured the moment they land.
   let camX = NaN;
   let camZ = NaN;
-  let builtX = NaN;
-  let builtZ = NaN;
 
   /**
    * The bucket an instance belongs in. Indexing by the sim's own `variant`
@@ -757,74 +804,122 @@ export function createClutterMeshes(
     return perLod[lod] as Bucket;
   }
 
-  /** One instance at a bucket's cursor: its kept matrix (and the origin a
-   * culled bucket tests), the bucket's fade bands, and its kept tint where
-   * the bucket wears the foliage plugin. */
-  function writeInstance(bucket: Bucket, inst: ClutterInstance): void {
+  /** One instance at a bucket's staging cursor: its kept matrix (and the
+   * origin a culled bucket tests), the bucket's fade bands, and its kept tint
+   * where the bucket wears the foliage plugin. */
+  function stageInstance(bucket: Bucket, inst: ClutterInstance): void {
     const at = kept.offsetOf(inst);
     const data = kept.data;
-    const { buf } = bucket;
-    const m = bucket.count * 16;
+    const { buf, origins, bands, foliage } = bucket.staged;
+    const i = bucket.stagedCount;
+    const m = i * 16;
     for (let k = 0; k < 16; k++) buf[m + k] = data[at + k]!;
-    if (bucket.culled) writeOrigin(bucket);
-    writeFadeBands(bucket.bands, bucket.count * 4, bucket.fade);
+    if (bucket.culled) {
+      // The matrix's translation, which is what the cut tests.
+      origins[i * 3] = buf[m + 12]!;
+      origins[i * 3 + 1] = buf[m + 13]!;
+      origins[i * 3 + 2] = buf[m + 14]!;
+    }
+    writeFadeBands(bands, i * 4, bucket.fade);
     if (bucket.tints) {
-      const { foliage } = bucket;
-      const f = bucket.count * 4;
+      const f = i * 4;
       for (let k = 0; k < 4; k++) foliage[f + k] = data[at + KEPT_FOLIAGE + k]!;
     }
-    bucket.count++;
+    bucket.stagedCount++;
   }
 
   /**
-   * Rebuild: two passes over the collected bands, so every bucket knows its
-   * size before a single matrix is written and no buffer has to grow
-   * mid-fill. Pass 1 counts, `ensureCapacity` grows what it must, pass 2
-   * writes (reusing `count` as the cursor), then the buffers are pushed (a
-   * culled bucket's by `cull`). Pass 2 copies each instance's kept matrix and
-   * tint, computing them only for an instance listed for the first time
-   * (`computeInstance`).
+   * Rebuild, as slices (`syncJobs.ts`): the bands collected, then two passes
+   * over them, so every bucket knows its size before a single matrix is
+   * written and no buffer has to grow mid-fill. Pass 1 counts, pass 2 writes
+   * each bucket's staging buffers (`stagedCount` the cursor), copying each
+   * instance's kept matrix and tint and computing them only for an instance
+   * listed for the first time (`computeInstance`), and yields by the work
+   * done (`FILL_SLICE`). The last slice copies every bucket's staged
+   * instances into the buffers it draws and pushes them (a culled bucket's by
+   * `cull`), all in one step, so no frame draws a bucket half rebuilt.
    */
-  function rebuild(x: number, z: number): void {
+  function* rebuild(x: number, z: number): Slices {
     const all = buckets as Bucket[][][];
-    const bands = collector.collect(x, z, radiusScale);
+    const bands = yield* collector.collectSlices(x, z, radiusScale);
+    yield;
 
     for (const variants of all) {
       for (const perLod of variants) {
-        for (const bucket of perLod) bucket.count = 0;
+        for (const bucket of perLod) bucket.stagedCount = 0;
       }
     }
     for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
       const variants = all[cls] as Bucket[][];
       const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
-      for (const inst of band.near) bucketFor(variants, inst, NEAR_LOD).count++;
-      for (const inst of band.far) bucketFor(variants, inst, FAR_LOD).count++;
+      for (const inst of band.near) bucketFor(variants, inst, NEAR_LOD).stagedCount++;
+      for (const inst of band.far) bucketFor(variants, inst, FAR_LOD).stagedCount++;
+      // A class's count is a pass over its lists, the meadow's thousands long.
+      yield;
+    }
+    for (const variants of all) {
+      for (const perLod of variants) {
+        for (const bucket of perLod) {
+          ensureStaging(bucket);
+          bucket.stagedCount = 0;
+        }
+      }
+    }
+    let work = 0;
+    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+      const variants = all[cls] as Bucket[][];
+      const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
+      for (let lod = NEAR_LOD; lod <= FAR_LOD; lod++) {
+        for (const inst of lod === NEAR_LOD ? band.near : band.far) {
+          const known = kept.size;
+          stageInstance(bucketFor(variants, inst, lod), inst);
+          work += kept.size > known ? FILL_NEW_COST : 1;
+          if (work >= FILL_SLICE) {
+            work = 0;
+            yield;
+          }
+        }
+      }
     }
 
     for (const variants of all) {
       for (const perLod of variants) {
         for (const bucket of perLod) {
-          ensureCapacity(bucket);
-          bucket.count = 0;
+          commitStaged(bucket);
+          applyBucket(bucket);
         }
-      }
-    }
-    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
-      const variants = all[cls] as Bucket[][];
-      const band = bands[cls] as { near: ClutterInstance[]; far: ClutterInstance[] };
-      for (const inst of band.near) writeInstance(bucketFor(variants, inst, NEAR_LOD), inst);
-      for (const inst of band.far) writeInstance(bucketFor(variants, inst, FAR_LOD), inst);
-    }
-
-    for (const variants of all) {
-      for (const perLod of variants) {
-        for (const bucket of perLod) applyBucket(bucket);
       }
     }
     // The collected buffers were rewritten: the last cuts' indices no longer
     // name the same cards.
     for (const bucket of culledBuckets) if (bucket.cull !== null) cullInvalidate(bucket.cull);
     dirty = true;
+    view.x = x;
+    view.z = z;
+    aimed = false;
+  }
+
+  const crossing = createCrossing();
+  const view = { x: NaN, z: NaN };
+  const owner = {};
+  const jobs = options.jobs;
+  const heading: Heading = { x: 0, z: 0 };
+  /** Whether the idle work is aimed at the next crossings from where the
+   * last rebuild left the bands, on the present heading. */
+  let aimed = false;
+  /** An instance looked up ahead: its matrix and tint computed too, so the
+   * fill at the crossing only copies them. */
+  const ahead = (inst: ClutterInstance): number => {
+    const known = kept.size;
+    kept.offsetOf(inst);
+    return kept.size > known ? KEPT_AHEAD_COST : 1;
+  };
+  /** Sets the idle work (`syncJobs.ts`) to look up the cells the next
+   * crossings add, while no rebuild is pending. */
+  function aim(): void {
+    if (aimed || jobs === undefined || jobs.pending(owner)) return;
+    aimed = true;
+    jobs.idle(owner, collector.prefetchSlices(camX, camZ, heading.x, heading.z, radiusScale, ahead));
   }
 
   /**
@@ -839,18 +934,28 @@ export function createClutterMeshes(
    * meadow's 20 m rim and its 9 m LOD split; rebuilding on the 0.7 m grid
    * would rebuild ~4× as often for no visible gain.
    *
-   * Snapped inline rather than through a `{x, z}` helper: this runs every
-   * frame, and an object per call is exactly the per-frame allocation this
-   * file rules out.
+   * A one-cell step at a walk is a job given `options.jobs` (`crossingAt`
+   * says which crossings build at once). The first build, when the models
+   * land, is always at once.
    */
-  function maybeBuild(): void {
+  function maybeBuild(first: boolean): void {
     if (buckets === null || Number.isNaN(camX)) return;
     const originX = Math.floor(camX / CLUTTER_GRASS_CELL) * CLUTTER_GRASS_CELL;
     const originZ = Math.floor(camZ / CLUTTER_GRASS_CELL) * CLUTTER_GRASS_CELL;
-    if (originX === builtX && originZ === builtZ) return;
-    builtX = originX;
-    builtZ = originZ;
-    rebuild(camX, camZ);
+    const kind = crossingAt(
+      crossing, camX, camZ, originX, originZ, CLUTTER_GRASS_CELL,
+      jobs !== undefined && !first,
+    );
+    if (kind === "none") {
+      aim();
+      return;
+    }
+    if (kind === "later") {
+      (jobs as SyncJobs).begin(owner, rebuild(camX, camZ));
+      return;
+    }
+    jobs?.cancel(owner);
+    finish(rebuild(camX, camZ));
   }
 
   /**
@@ -1046,12 +1151,14 @@ export function createClutterMeshes(
             cull: culling && CLUTTER_CULLED.has(cls)
               ? cullSet(0, EMPTY_BUFFER, { src: EMPTY_BUFFER, dst: EMPTY_BUFFER }, [], [])
               : null,
+            staged: { buf: EMPTY_BUFFER, bands: EMPTY_BUFFER, foliage: EMPTY_BUFFER, origins: EMPTY_BUFFER },
+            stagedCount: 0,
           };
         }),
       ),
     );
     culledBuckets = buckets.flat(2).filter((bucket) => bucket.culled);
-    maybeBuild();
+    maybeBuild(true);
   }
 
   /** Production path: the seventeen clutter GLBs, `forestMeshes.ts`'s loading
@@ -1087,11 +1194,12 @@ export function createClutterMeshes(
   return {
     update(x, z) {
       if (disposed) return;
+      if (turn(heading, x - camX, z - camZ)) aimed = false;
       camX = x;
       camZ = z;
       // While the GLBs are still loading this only remembers the camera;
       // adopt() replays it the moment they land.
-      maybeBuild();
+      maybeBuild(false);
     },
     cull(pose) {
       if (disposed || culledBuckets.length === 0) return;
@@ -1112,9 +1220,12 @@ export function createClutterMeshes(
     get kept() {
       return kept.size;
     },
+    view,
     dispose() {
       if (disposed) return;
       disposed = true;
+      jobs?.cancel(owner);
+      jobs?.idle(owner, null);
       loads.abort();
       scene.getEngine().onContextRestoredObservable.remove(restoreObserver);
       if (buckets !== null) {

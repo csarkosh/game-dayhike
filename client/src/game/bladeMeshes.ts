@@ -53,6 +53,7 @@ import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
 import { createKeptValues } from "./keptValues.js";
+import { createCrossing, crossingAt, finish, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 
 export const BLADE_MESH_PREFIX = "blade_clumps";
 export function bladeMeshName(character: number, tier: number, size: number): string {
@@ -74,7 +75,12 @@ export function bladeHeightScale(strength: number, canopy: number): number {
 /** The material's roughness. */
 const BLADE_ROUGHNESS = 0.8;
 
-export type BladeMeshesOptions = { quality: BladeQuality };
+export type BladeMeshesOptions = {
+  quality: BladeQuality;
+  /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
+   * over the frames that follow rather than in the frame of the crossing. */
+  jobs?: SyncJobs;
+};
 
 export type BladeMeshes = {
   update(camX: number, camZ: number): void;
@@ -86,6 +92,8 @@ export type BladeMeshes = {
    * buckets draw the prefix of the last cut.
    */
   cull(pose: CullPose | null): void;
+  /** The eye position the collected buffers were last built for. */
+  readonly view: { readonly x: number; readonly z: number };
   /**
    * Every bucket mesh, in tier-then-character-then-size order. Unlike the
    * clutter shell's `casterMeshes` this array is complete the moment
@@ -132,6 +140,12 @@ type Bucket = {
   /** Set when `buf` was replaced this rebuild: the mesh then needs a fresh
    * `thinInstanceSetBuffer` (a new GPU buffer) for the new drawn buffers. */
   grown: boolean;
+  /** Where a rebuild in slices writes first, so that nothing `cull` reads
+   * changes until its last slice copies it across: the collected buffers'
+   * four, grown the same way, never uploaded. */
+  staged: { buf: Float32Array; foliage: Float32Array; strength: Float32Array; origins: Float32Array };
+  /** Instances staged — counted, then the write cursor, as `count` is. */
+  stagedCount: number;
 };
 
 function emptyBucket(mesh: Mesh): Bucket {
@@ -139,6 +153,7 @@ function emptyBucket(mesh: Mesh): Bucket {
   return {
     mesh, buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER, drawn, origins: EMPTY_BUFFER,
     cull: bucketCullSet(0, EMPTY_BUFFER, EMPTY_BUFFER, EMPTY_BUFFER, EMPTY_BUFFER, drawn), count: 0, grown: false,
+    staged: { buf: EMPTY_BUFFER, foliage: EMPTY_BUFFER, strength: EMPTY_BUFFER, origins: EMPTY_BUFFER }, stagedCount: 0,
   };
 }
 
@@ -198,6 +213,34 @@ function ensureCapacity(bucket: Bucket): void {
   bucket.origins = new Float32Array((capacity / 16) * 3);
   bucket.cull = bucketCullSet(capacity / 16, bucket.origins, bucket.buf, bucket.foliage, bucket.strength, bucket.drawn);
   bucket.grown = true;
+}
+
+/** Grows a bucket's staging buffers to hold `bucket.stagedCount` instances,
+ * by `ensureCapacity`'s doubling; old contents are dropped, as there. */
+function ensureStaging(bucket: Bucket): void {
+  const needed = bucket.stagedCount * 16;
+  if (bucket.staged.buf.length >= needed) return;
+  let capacity = Math.max(bucket.staged.buf.length, BUCKET_MIN_INSTANCES * 16);
+  while (capacity < needed) capacity *= 2;
+  bucket.staged = {
+    buf: new Float32Array(capacity),
+    foliage: new Float32Array(capacity / 4),
+    strength: new Float32Array(capacity / 16),
+    origins: new Float32Array((capacity / 16) * 3),
+  };
+}
+
+/** Copies a bucket's staged cells into its collected buffers, growing those
+ * first by `ensureCapacity`: after this the bucket holds exactly what a fill
+ * writing them directly would. */
+function commitStaged(bucket: Bucket): void {
+  bucket.count = bucket.stagedCount;
+  ensureCapacity(bucket);
+  const n = bucket.count;
+  bucket.buf.set(bucket.staged.buf.subarray(0, n * 16));
+  bucket.foliage.set(bucket.staged.foliage.subarray(0, n * 4));
+  bucket.strength.set(bucket.staged.strength.subarray(0, n));
+  bucket.origins.set(bucket.staged.origins.subarray(0, n * 3));
 }
 
 /**
@@ -311,6 +354,17 @@ function createClumpMesh(scene: Scene, character: number, tier: number, size: nu
 const KEPT_STRIDE = 20;
 const KEPT_FOLIAGE = 16;
 
+/** Cells' worth of work a slice of a fill does before it yields: a cell whose
+ * values are copied counts 1, one computed for the first time
+ * `FILL_NEW_COST` — its trample frame and ground tint are several walks
+ * through the terrain's noise. About a tenth of a millisecond. */
+const FILL_SLICE = 1024;
+const FILL_NEW_COST = 16;
+
+/** What computing a cell's kept values ahead weighs on a slice of idle work,
+ * in `prefetchWindow`'s units: about what sampling a cell does. */
+const KEPT_AHEAD_COST = 64;
+
 export function createBladeMeshes(scene: Scene, seed: number, options: BladeMeshesOptions): BladeMeshes {
   /**
    * A cell's matrix and tint, computed the first time it is listed. Both are
@@ -376,8 +430,7 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
     buckets.push(row);
   }
   let disposed = false;
-  let builtX = NaN;
-  let builtZ = NaN;
+  const jobs = options.jobs;
   const restoreObserver = scene.getEngine().onContextRestoredObservable.add(() => {
     for (const row of buckets) for (const sizes of row) for (const bucket of sizes) rehandBucket(bucket);
     dirty = true;
@@ -391,38 +444,53 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
   const lastPose: CullPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 0, aspect: 0 };
 
   /**
-   * One tier's fill: two passes over its list, so every bucket knows its size
-   * before a single matrix is written and no buffer has to grow mid-fill.
-   * Pass 1 counts, `ensureCapacity` grows what it must, pass 2 writes
-   * (reusing `count` as the cursor) into the collected buffers, then a grown
-   * bucket's new drawn buffers go to its mesh; `cull` uploads the rest. The
-   * list arrives nearest-first from the field and is walked in order, so each
+   * One tier's fill, as slices: two passes over its list, so every bucket
+   * knows its size before a single matrix is written and no buffer has to
+   * grow mid-fill. Pass 1 counts, `ensureStaging` grows what it must, pass 2
+   * writes each bucket's staging buffers (`stagedCount` the cursor). The list
+   * arrives nearest-first from the field and is walked in order, so each
    * bucket's instances stay sorted by distance. Pass 2 copies each cell's
    * kept matrix and tint, computing them only for a cell listed for the
-   * first time (`computeCell`).
+   * first time (`computeCell`), and yields by the work done: a cell computed
+   * counts as `FILL_NEW_COST` copied ones.
    */
-  function fill(list: BladeCell[], row: Bucket[][]): void {
-    for (const sizes of row) for (const bucket of sizes) bucket.count = 0;
-    for (const c of list) row[c.character]![c.size]!.count++;
+  function* stage(list: BladeCell[], row: Bucket[][]): Slices {
+    for (const sizes of row) for (const bucket of sizes) bucket.stagedCount = 0;
+    for (const c of list) row[c.character]![c.size]!.stagedCount++;
     for (const sizes of row) for (const bucket of sizes) {
-      ensureCapacity(bucket);
-      bucket.count = 0;
+      ensureStaging(bucket);
+      bucket.stagedCount = 0;
     }
+    yield;
+    let work = 0;
     for (const c of list) {
       const bucket = row[c.character]![c.size]!;
+      const known = kept.size;
       const at = kept.offsetOf(c);
       const data = kept.data;
-      const { buf, foliage, origins } = bucket;
-      const m = bucket.count * 16, f = bucket.count * 4, o = bucket.count * 3;
+      const { buf, foliage, origins, strength } = bucket.staged;
+      const i = bucket.stagedCount;
+      const m = i * 16, f = i * 4, o = i * 3;
       for (let k = 0; k < 16; k++) buf[m + k] = data[at + k]!;
       origins[o] = data[at + 12]!;
       origins[o + 1] = data[at + 13]!;
       origins[o + 2] = data[at + 14]!;
       for (let k = 0; k < 4; k++) foliage[f + k] = data[at + KEPT_FOLIAGE + k]!;
-      bucket.strength[bucket.count] = c.strength;
-      bucket.count++;
+      strength[i] = c.strength;
+      bucket.stagedCount++;
+      work += kept.size > known ? FILL_NEW_COST : 1;
+      if (work >= FILL_SLICE) {
+        work = 0;
+        yield;
+      }
     }
+  }
+
+  /** One tier's staged cells into its collected buffers, then a grown
+   * bucket's new drawn buffers to its mesh; `cull` uploads the rest. */
+  function commit(row: Bucket[][]): void {
     for (const sizes of row) for (const bucket of sizes) {
+      commitStaged(bucket);
       applyGrown(bucket);
       // The collected buffers were rewritten: the last cut's indices no
       // longer name the same cells.
@@ -430,12 +498,45 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
     }
   }
 
-  function rebuild(x: number, z: number): void {
-    const tiers: BladeTiers = collector.collect(x, z);
-    fill(tiers.fine, buckets[0]!);
-    fill(tiers.mid, buckets[1]!);
-    fill(tiers.coarse, buckets[2]!);
+  /**
+   * The rebuild for an eye at (x, z), as slices (`syncJobs.ts`): the tier
+   * lists collected, the three tiers staged, then all three copied into the
+   * collected buffers `cull` reads in the last slice, in one step, so no cut
+   * ever reads a bucket half written.
+   */
+  function* rebuild(x: number, z: number): Slices {
+    const tiers: BladeTiers = yield* collector.collectSlices(x, z);
+    yield;
+    yield* stage(tiers.fine, buckets[0]!);
+    yield* stage(tiers.mid, buckets[1]!);
+    yield* stage(tiers.coarse, buckets[2]!);
+    for (const row of buckets) commit(row);
     dirty = true;
+    view.x = x;
+    view.z = z;
+    aimed = false;
+  }
+
+  const crossing = createCrossing();
+  const view = { x: NaN, z: NaN };
+  const owner = {};
+  const heading: Heading = { x: 0, z: 0 };
+  /** Whether the idle work is aimed at the next crossings from where the
+   * last rebuild left the field, on the present heading. */
+  let aimed = false;
+  /** A cell looked up ahead: its matrix and tint computed too, so the fill at
+   * the crossing only copies them. */
+  const ahead = (c: BladeCell): number => {
+    const known = kept.size;
+    kept.offsetOf(c);
+    return kept.size > known ? KEPT_AHEAD_COST : 1;
+  };
+  /** Sets the idle work (`syncJobs.ts`) to look up the cells the next
+   * crossings add, while no rebuild is pending. */
+  function aim(x: number, z: number): void {
+    if (aimed || jobs === undefined || jobs.pending(owner)) return;
+    aimed = true;
+    jobs.idle(owner, collector.prefetchSlices(x, z, heading.x, heading.z, ahead));
   }
 
   return {
@@ -443,19 +544,27 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
      * Rebuild only when the eye's snapped origin moves, on the field's own
      * BLADE_REBUILD_CELL — the cell BLADE_PAD is derived from, so every tier
      * list collected at the old origin still covers the eye anywhere inside
-     * the new cell and no clump pops. Snapped inline rather than through a
-     * `{x, z}` helper: this runs every frame, and an object per call is
-     * exactly the per-frame allocation this file rules out.
+     * the new cell and no clump pops. A one-cell step at a walk is a job
+     * given `options.jobs` (`crossingAt` says which crossings build at once).
      */
     update(x, z) {
       if (disposed) return;
       const ox = Math.floor(x / BLADE_REBUILD_CELL) * BLADE_REBUILD_CELL;
       const oz = Math.floor(z / BLADE_REBUILD_CELL) * BLADE_REBUILD_CELL;
-      if (ox === builtX && oz === builtZ) return;
-      builtX = ox;
-      builtZ = oz;
-      rebuild(x, z);
+      if (turn(heading, x - crossing.lastX, z - crossing.lastZ)) aimed = false;
+      const kind = crossingAt(crossing, x, z, ox, oz, BLADE_REBUILD_CELL, jobs !== undefined);
+      if (kind === "none") {
+        aim(x, z);
+        return;
+      }
+      if (kind === "later") {
+        (jobs as SyncJobs).begin(owner, rebuild(x, z));
+        return;
+      }
+      jobs?.cancel(owner);
+      finish(rebuild(x, z));
     },
+    view,
     cull(pose) {
       if (disposed) return;
       if (!dirty && (pose === null ? cutMode === "all" : cutMode === "pose" && !needsCull(lastPose, pose))) return;
@@ -478,6 +587,8 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
     dispose() {
       if (disposed) return;
       disposed = true;
+      jobs?.cancel(owner);
+      jobs?.idle(owner, null);
       scene.getEngine().onContextRestoredObservable.remove(restoreObserver);
       // The meshes and the materials are both ours — generated here, adopted
       // from no container — so both have to be disposed by hand.

@@ -530,8 +530,25 @@ describe("world shell wiring", () => {
     // field — both guards must agree, or one draws where the other does not.
     expect(creation).toMatch(/forest !== null && tier !== "low" \? createBladeMeshes\(/);
     expect(creation).toMatch(/forest !== null && tier !== "low" \? createDuffMeshes\(/);
-    expect(creation).toContain("createBladeMeshes(scene, forest.seed, { quality: tier })");
-    expect(creation).toContain("createDuffMeshes(scene, forest.seed, { quality: tier })");
+    expect(creation).toContain("createBladeMeshes(scene, forest.seed, { quality: tier, jobs })");
+    expect(creation).toContain("createDuffMeshes(scene, forest.seed, { quality: tier, jobs })");
+  });
+
+  it("hands the terrain and the ground cover one scheduler, and runs its share once a frame in both branches", () => {
+    // The rebuilds a crossing starts are jobs (`syncJobs.ts`): a shell built
+    // without the scheduler rebuilds whole in the crossing's frame, and a
+    // branch that never runs it leaves every job to wait out its lateness
+    // bound and run at once.
+    expect(src).toContain("const jobs = createSyncJobs(() => performance.now());");
+    expect(src).toContain("createClipmap(scene, forest.seed, jobs)");
+    expect(slice("const clutterMeshes =", "const bladeMeshes =")).toContain("jobs,");
+    const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
+    const playerBranch = slice("const local = state.players.get(localId);", "hasWildlife:");
+    expect(freecamBranch.match(/jobs\.run\(\)/g)).toHaveLength(1);
+    expect(playerBranch.match(/jobs\.run\(\)/g)).toHaveLength(1);
+    // After every shell's update in each branch.
+    expect(freecamBranch.indexOf("jobs.run()")).toBeGreaterThan(freecamBranch.indexOf("duffMeshes?.update("));
+    expect(playerBranch.indexOf("jobs.run()")).toBeGreaterThan(playerBranch.indexOf("duffMeshes?.update("));
   });
 
   it("updates duff in the freecam branch AND the player branch, with the blades' own eye position", () => {
