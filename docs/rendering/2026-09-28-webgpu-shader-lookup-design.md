@@ -419,11 +419,24 @@ of a party of two and 20 from the player who joins it, whose page starts from
 the title and not from a game's address; and 42 from a change to High in
 Settings during a hike that started on Medium, made twice with a change back
 to Medium between (the first change to High translated the 4 above, the
-second the 42). The canopy page asked for 96 stages and translated none. The
-corpus holds 590 stages (308 vertex, 170 fragment, 112 fragment stages that
-turn the uniformity analysis off), 19,126,675 bytes in 590 files, 25 to 49 a
-folder; 317 of them carry characters outside ASCII. The map's sizes in this
-document are those of the 522.
+second the 42). The canopy page asked for 96 stages and translated none.
+
+**What a first visit asks for varies.** With those 68 shipped, 22 first
+visits from the start were made in Chrome on an Apple M4, each in a browser
+context of its own, and read 40 s in: 16 found every stage in the map (84 to
+132 stages) and 6 translated 4, the same 4 each time, in 0.9 to 1.3 s: the
+cliff's material drawn with thin instances, under 4 lights and under 7, which
+a visit asks for in its first seconds or not by what has come into range by
+then. Those 4 were recorded from three of those visits, each text checked by
+its SHA-256 against the page, and added. One page recorded once is therefore
+not the whole of what that page can ask for: a pose is recorded several
+times, until visits stop bringing new stages.
+
+The corpus holds 594 stages (310 vertex, 170 fragment, 114 fragment stages
+that turn the uniformity analysis off), 19,268,759 bytes in 594 files, 26 to
+49 a folder; 319 of them carry characters outside ASCII. The map of the 590
+was 5,366,025 bytes; the map's other sizes in this document are those of the
+522.
 
 **Line endings.** The recording was first made from a checkout with Windows
 line endings: the game's `.fx` shader files had no line-ending rule, so they
