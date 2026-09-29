@@ -7,7 +7,8 @@ describe("the map's ceiling", () => {
     expect(MAP_MAX_BYTES).toBe(8_388_608);
     expect(mapSizeProblem(8_388_608)).toBe(null);
     expect(mapSizeProblem(8_388_609)).toBe(
-      "the WGSL map is 8388609 bytes, over its ceiling of 8388608 (MAP_MAX_BYTES): a page reads it in one task and holds its lines for the engine's life",
+      "the WGSL map is 8388609 bytes, over its ceiling of 8388608 (MAP_MAX_BYTES): a page reads it in one task and holds its lines for the engine's life. " +
+        'A corpus that outgrows it is answered by a map per platform, not by a higher ceiling: see MAP_MAX_BYTES and its reasons in client/src/game/wgslFormat.ts',
     );
   });
 });
