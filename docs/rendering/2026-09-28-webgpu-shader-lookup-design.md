@@ -538,7 +538,13 @@ practice, since a new entry's lines are mostly in the table already. (Format
 1's ceiling was 32 MiB, set from its 23,367,492 bytes for 421 entries.) A
 recording on another platform that takes the union past it is answered by a
 map per platform, not by a higher ceiling. The build fails on a larger map,
-naming its size and the ceiling. The build also prints how much of the map
+naming its size and the ceiling, and saying that answer and where the
+ceiling's reasons are (`MAP_MAX_BYTES`, `client/src/game/wgslFormat.ts`).
+One entry is bounded too: at most `MAP_ENTRY_MAX_CHARS`, 8,388,608
+characters expanded, 45 times the largest real entry (184,166). While each
+entry was stored whole the file's ceiling bounded it; a file of lines
+could name one long line enough times to expand past what a page can hold,
+so the page reckons each entry's length from its runs as it reads the map. The build also prints how much of the map
 is repeated lines (`lines:`: the lines in all, the distinct ones and their
 bytes, and the same with every run of digits read as `#`) and its runs
 (`runs:`). The
@@ -591,7 +597,9 @@ refused before it is parsed, and one damaged anywhere, refused whole before
 any entry is served: a line that is not text or holds a newline, an entry
 that is not an even count of numbers (at least two), a run that is not
 whole numbers, starts outside the table, holds no lines or reaches past the
-table's end. No entry of a map damaged in its structure is ever served;
+table's end, or an entry that would expand past `MAP_ENTRY_MAX_CHARS`
+(reckoned from the lines' lengths before anything is expanded, so asking
+the map for an entry never throws). No entry of a map damaged in its structure is ever served;
 a line's text altered in place is what `?wgsl=verify` and the honesty test
 below are for, as in format 1. It takes no writes,
 so a stage found in it is never written to the store. Its hits are counted
@@ -620,8 +628,10 @@ check 4d) finds the map in the WebGPU chunk, and checks that it is served
 translators' digests and the key's format the chunk was built with, Babylon's
 version the bundle carries and, where the bundle shows it, Babylon's
 page-wide uniformity switch, and holds translations: a table of lines and
-entries whose runs lie inside it, as the page reads them, at least one
-expanding to text. The bundle it searches
+entries whose runs lie inside it, as the page reads them, none expanding
+past `MAP_ENTRY_MAX_CHARS` and at least one expanding to text; and that it
+is no larger than `MAP_MAX_BYTES`, past which every page refuses it (the
+check's copies of both ceilings are held equal to the page's by its test). The bundle it searches
 is the entry chunk and every chunk it imports statically, fetched by the walk
 the build's check reads its files with (`tools/deploy/lib/bundle.mjs`, at
 most `MAX_STATIC_CHUNKS`, 500), so a version literal the build's check finds
