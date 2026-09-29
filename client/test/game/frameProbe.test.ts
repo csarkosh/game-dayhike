@@ -1054,9 +1054,8 @@ describe("the probe's attempts when its verdict is for another engine than the o
 describe("Safari on a Mac slower than the reference machine, hike after hike", () => {
   // Every probe step's scene takes `loadMs` to build and load, then 1.5 s to
   // fall quiet; high draws at 70 ms a frame, medium at 50 and low at 30, all
-  // under 48 fps. Each hike is followed by a minute of play, which changes
-  // nothing: the tier is decided at launch only (`GOVERNOR_ENABLED` off), so
-  // no hike writes a drop for the next.
+  // under 48 fps. No hike here writes a drop for the next: these tests are
+  // of the probe's own limits, whatever the governor does.
   const SLOW_MAC: GpuSignals = {
     renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
   };

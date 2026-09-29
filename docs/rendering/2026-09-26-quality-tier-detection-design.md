@@ -367,8 +367,9 @@ asking for sameness, and the setting overrides it.
 Only the `apple-base` row rests on a measurement of this machine class, and its
 medium is still unmeasured (§4.2): the gate confirms it or moves it (§13.1). The
 other named rows are set from the GPUs' throughput relative to the reference
-machine's; no one's hardware but the governor's checks them, and each is one
-literal in one test, so a later measurement moves one row.
+machine's; nothing checks them during a hike (the governor is off, §10; the
+player can lower the level in Settings), and each is one literal in one test,
+so a later measurement moves one row.
 
 ### 6.2 The Auto verdict
 
@@ -1153,7 +1154,7 @@ new modules by name: no file under `sim/` or `net/` imports `quality`,
 | --- | --- | --- | --- |
 | Chrome ≥ 147 and the launcher, ≥ 16 GB, > 8 threads, integrated or base Apple GPU | high | medium or low by class | cheaper: they were on high by memory alone |
 | the same, discrete RTX, RDNA or Apple Pro, Max, Ultra | high | high | none |
-| Chrome < 147, discrete modern | medium | high | dearer: the second cascade, the scene pass and halation, full blades and litter; the GPU margin and the governor carry it |
+| Chrome < 147, discrete modern | medium | high | dearer: the second cascade, the scene pass and halation, full blades and litter; the GPU margin carries it (the governor is off, §10) |
 | Safari on a Mac | low | probed from high: high, medium or low | dearer where the probe confirms it, at the heaviest pose before the first hike |
 | Firefox | low | by bucket; the unknown buckets probed | dearer where the probe confirms it; the Intel buckets stay at low unless it does |
 | a player with a choice | — | their choice | theirs |
@@ -1244,10 +1245,10 @@ Medium → Apply, on the host and then on the follower; on WebGL2, and with
 
 ### 13.5 The governor
 
-With the governor off (§10), the gate is the other way round: on Auto at
+With the governor off (§10), what a browser shows is the other way round: on Auto at
 medium with the scaling below, 2 min of play change nothing (no cover, no
 line, no drop in the log, the same tier in Settings), and a reload starts at
-the same tier. What follows is the gate for the governor switched on.
+the same tier. What follows is for the governor switched on.
 
 On Auto at medium with the measurement patch's `__engine.setHardwareScalingLevel(0.5)`
 at the canopy pose: the drop is logged between 60 and 61 s after the hike's
