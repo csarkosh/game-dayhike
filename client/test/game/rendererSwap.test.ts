@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import type { BoardDrawing } from "../../src/game/boardPaint.js";
+import { boardText } from "../../src/game/boardFace.js";
 
 // `terrainTexture.ts`'s plugin constructor calls the real `loadGroundArrays`
 // whenever it isn't handed a factory, and `renderer.ts`'s own
@@ -401,10 +403,17 @@ const POSTS = [
   { x: 0, z: 0, arms: [{ dx: 0, dz: 1, names: ["Trailhead"], ranks: [0] }] },
   { x: 4, z: 0, arms: [{ dx: 1, dz: 0, names: ["Trail 14"], ranks: [0] }] },
 ];
+/** What the board's face carries: enough for a painter that draws nothing. */
+const BOARD: BoardDrawing = {
+  seed: 1,
+  text: boardText("Trail 14", "Dana Whitcombe", "Last seen at Trail 14.", 1274),
+  map: { nodes: [{ x: 0, z: 0 }], edges: [], road: [], features: [], places: [], summitName: "Summit" },
+  urls: { paper: null, portrait: null },
+};
 /** The car on the road and the notice board by the trail. */
 const TRAILHEAD = {
   car: { site: { x: 10, z: 20 }, trailhead: { x: 1, z: 32 } },
-  kiosk: { site: { x: 6, z: 39 }, facing: { dx: 0, dz: -1 } },
+  board: { x: 6, z: 39, fx: 0, fz: -1, ax: 1, az: 0 },
 };
 const never = (): Promise<AssetContainer> => new Promise(() => undefined);
 
@@ -446,7 +455,7 @@ function sceneExtras() {
         }),
         createTrailheadMeshes(r.scene, TRAILHEAD, () => 2, {
           materialFor: (name) => new StandardMaterial(`box_${name}`, r.scene),
-          lines: ["MISSING", "Dana Whitcombe", "Last seen at Trail 14."],
+          board: BOARD,
           paint: (s, name) => new PBRMaterial(name, s),
           shadows: r.shadows,
           loader: never,

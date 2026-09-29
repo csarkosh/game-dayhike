@@ -8,12 +8,10 @@ import {
 } from "../../src/sim/terrain.js";
 import type { Brush } from "../../src/sim/level.js";
 import {
-  CAR_HALF, KIOSK_HALF, PROPS, bedGap, carSite, propSite, roadProp, trailEntrance, trailheadSite,
-} from "../../src/sim/passes/trailhead.js";
+  BOARD_BOX_HALF, CAR_HALF, bedGap, boardBoxes, boardSite, carSite, trailEntrance, trailheadPlaces,
+} from "../../src/sim/trailhead.js";
 import { trailheadSpawn } from "../../src/sim/spawn.js";
-import { SIGN_POST_HALF, trailSign, trailSignSite } from "../../src/sim/signs.js";
 import { ROAD_BED_HALF } from "../../src/sim/road.js";
-import { TRAIL_BED_HALF, trailDistance } from "../../src/sim/trail.js";
 import type { TrailGraph, TrailEdge } from "../../src/sim/trail.js";
 import { TRAILHEAD_U } from "../../src/sim/bowl.js";
 import { SEEDS } from "./trailGateSeeds.js";
@@ -59,35 +57,27 @@ describe("the trailhead pass", () => {
   // against the 120 s box once the whole suite competed for the CPU. The tests
   // were not failing, they were running out of clock.
   setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
-  it("holds two props, the kiosk and the car, found by material", () => {
-    expect(PROPS.map((p) => p.material)).toEqual(["kiosk", "car"]);
-    expect(roadProp("kiosk").half).toEqual({ x: 1.1, y: 1.25, z: 0.55 });
-    expect(roadProp("car").half).toEqual({ x: 0.9, y: 0.8, z: 2.3 });
-    expect(() => roadProp("pillar")).toThrow();
-  });
-
-  it("emits one kiosk and one car at the trailhead, once, in the road frame", () => {
+  it("emits one car and the board's five boxes at the trailhead, once", () => {
     for (const seed of [0x5eed, 1, 12345]) {
       const v = terrainVariant("olympic")!;
       const graph = v.trailGraph!(seed);
       const th = graph.trailhead;
       const grid = createChunkGrid(seed);
       const props = propsAround(grid, th.x, th.z);
-      expect(props.filter((b) => b.material === "pillar" || b.material === "crate"), `seed ${seed}`).toHaveLength(0);
+      expect(props.filter((b) => b.material === "car"), `seed ${seed}`).toHaveLength(1);
       const kiosks = props.filter((b) => b.material === "kiosk");
-      expect(kiosks.length, `seed ${seed}`).toBe(1);
-      expect(props.filter((b) => b.material === "car").length, `seed ${seed}`).toBe(1);
-      const k = kiosks[0]!.box;
-      expect(k.max.x - k.min.x).toBeCloseTo(2.2, 6);
-      expect(k.max.y - k.min.y).toBeCloseTo(2.5, 6);
-      expect(k.max.z - k.min.z).toBeCloseTo(1.1, 6);
-      // The EMITTED box, not a recomputed centre: the kiosk's road-side
-      // face clears the pavement. The sweep below holds the same
-      // predicate on the frame itself over all 227 seeds.
-      for (const b of kiosks) {
-        const zMid = (b.box.min.z + b.box.max.z) / 2;
-        expect(b.box.min.x - roadCenterXOf(seed, zMid), `seed ${seed}`).toBeGreaterThanOrEqual(ROAD_BED_HALF + 0.5);
+      expect(kiosks, `seed ${seed}`).toHaveLength(5);
+      const places = trailheadPlaces(graph, v.roadCenterX!, seed);
+      const centres = boardBoxes(places.board);
+      for (const c of centres) {
+        const box = kiosks.find((b) => Math.abs(b.box.min.x + 0.275 - c.x) < 1e-6 && Math.abs(b.box.min.z + 0.275 - c.z) < 1e-6);
+        expect(box, `seed ${seed} box at ${c.x}, ${c.z}`).toBeDefined();
+        expect(box!.box.max.x - box!.box.min.x).toBeCloseTo(0.55, 6);
+        expect(box!.box.max.y - box!.box.min.y).toBeCloseTo(2.5, 6);
+        expect(box!.box.max.z - box!.box.min.z).toBeCloseTo(0.55, 6);
       }
+      // The post at the entrance is gone: the only sign posts are the junctions'.
+      expect(props.filter((b) => b.material === "signpost" && Math.hypot(b.box.min.x - th.x, b.box.min.z - th.z) < 12), `seed ${seed}`).toHaveLength(0);
     }
   }, timeLimit(60_000));
 
@@ -125,60 +115,38 @@ describe("the trailhead pass", () => {
     expect(leastGap, `seed ${leastSeed}`).toBeGreaterThanOrEqual(1.15);
   }, timeLimit(300000));
 
-  it("keeps every trailhead prop off the road bed AND clear of the trail bed, over the 227-seed sweep", () => {
+  it("keeps the car off the road bed and clear of the trail bed, over the 227-seed sweep", () => {
     // TWO CLAUSES, both over the same 227 seeds trailBed.test.ts requires.
     //
-    // (a) OFF THE ROAD (2026-09-11). The post and
-    // the sign used to be placed in a departure frame pointing into the
-    // widest FREE wedge at node 0 — away from the trail. With TRAILHEAD_U
-    // moved to 9 the trail leaves the pad inland, so "away" pointed at the
-    // highway: 38 of the first 40 sweep seeds measured with the
-    // post or the sign standing on the pavement, and this sweep never looked
-    // at the road at all. (The post has since gone, and the sign is now
-    // the kiosk.) Both frames are gone; every prop is placed at
-    // a fixed u in the ROAD frame, and this asserts the consequence — the
-    // box's ROAD-SIDE FACE (min.x, the road is at lower x) is at least
-    // ROAD_BED_HALF + 0.5 from the centreline at the prop's own z.
+    // (a) OFF THE ROAD. The car's ROAD-SIDE FACE (min.x, the road is at
+    // lower x) is ROAD_BED_HALF + 0.5 from the centreline at the car's own
+    // z, where the centreline curves.
     //
-    // (b) CLEAR OF THE TRAIL BED. The distance from every
-    // prop's centre to every edge's centreline (trailDistance, a plain min
-    // over the graph's edges) must clear the bed's half-width plus the prop's
-    // own half-extent plus a 0.5 m margin. The car is inside the gate now
-    // that it is one of the same props; at u ≈ 6.9 it is outside the
-    // bowl the trail graph is built in, so its own margin is large.
+    // (b) CLEAR OF THE TRAIL BED. The bed's centreline, on any edge, is at
+    // least 1.15 m from the car's box: the bed's half-width and a player's.
+    // The car stands beside the pad's centre, where the bed begins, so the
+    // measure is to its box and not to its centre.
     //
-    // NO EXCEPTIONS LIST: track the WORST seed per prop and assert once, the
-    // way trailBed.test.ts's bucket-fit test does, rather than stopping at
-    // the first offender — but nothing here widens a threshold or drops a
-    // seed.
+    // The board's own clauses are in "the board's place" below.
+    //
+    // NO EXCEPTIONS LIST: track the WORST seed and assert once, the way
+    // trailBed.test.ts's bucket-fit test does, rather than stopping at the
+    // first offender — but nothing here widens a threshold or drops a seed.
     const v = terrainVariant("olympic")!;
-    for (const p of PROPS) {
-      // The board keeps the mirrored-site rule and its centre-to-bed
-      // threshold. The car stands by its own rule (`carSite`), beside the
-      // pad's centre where the bed begins, so its clause is the gap from
-      // the bed to its box: 1.15 m, a player's half-width off the bed's edge.
-      const isCar = p.material === "car";
-      const bedThreshold = TRAIL_BED_HALF + Math.max(p.half.x, p.half.z) + 0.5;
-      let worstRoad = Infinity, worstRoadSeed = 0;
-      let worstBed = Infinity, worstBedSeed = 0;
-      let mirrored = 0;
-      for (const seed of SEEDS) {
-        const graph = v.trailGraph!(seed);
-        const site = trailheadSite(graph, v.roadCenterX!, seed, p.material);
-        if (!isCar && site.z !== graph.trailhead.z + p.z) mirrored++;
-        const rx = roadCenterXOf(seed, site.z);
-        const road = (site.x - p.half.x) - rx - (ROAD_BED_HALF + 0.5);
-        if (road < worstRoad) { worstRoad = road; worstRoadSeed = seed; }
-        const bed = isCar
-          ? bedGap(graph, site, p.half) - 1.15
-          : v.trailDistance!(seed, site.x, site.z) - bedThreshold;
-        if (bed < worstBed) { worstBed = bed; worstBedSeed = seed; }
-      }
-      console.info(`[trailhead] ${p.material} u=${p.u}: mirrored on ${mirrored}/${SEEDS.length} seeds, worst road margin ${worstRoad.toFixed(2)} m, worst bed margin ${worstBed.toFixed(2)} m`);
-      expect(worstRoad, `${p.material} u=${p.u} off the road bed, worst seed ${worstRoadSeed}`).toBeGreaterThanOrEqual(-1e-9);
-      expect(worstBed, `${p.material} u=${p.u} clear of the trail bed, worst seed ${worstBedSeed}`).toBeGreaterThanOrEqual(0);
-      expect(mirrored, `${p.material} mirrored`).toBe(isCar ? 0 : 15);
+    let worstRoad = Infinity, worstRoadSeed = 0;
+    let worstBed = Infinity, worstBedSeed = 0;
+    for (const seed of SEEDS) {
+      const graph = v.trailGraph!(seed);
+      const site = carSite(graph, v.roadCenterX!, seed);
+      const rx = roadCenterXOf(seed, site.z);
+      const road = (site.x - CAR_HALF.x) - rx - (ROAD_BED_HALF + 0.5);
+      if (road < worstRoad) { worstRoad = road; worstRoadSeed = seed; }
+      const bed = bedGap(graph, site, CAR_HALF) - 1.15;
+      if (bed < worstBed) { worstBed = bed; worstBedSeed = seed; }
     }
+    console.info(`[trailhead] car: worst road margin ${worstRoad.toFixed(2)} m, worst bed margin ${worstBed.toFixed(2)} m`);
+    expect(worstRoad, `off the road bed, worst seed ${worstRoadSeed}`).toBeGreaterThanOrEqual(-1e-9);
+    expect(worstBed, `clear of the trail bed, worst seed ${worstBedSeed}`).toBeGreaterThanOrEqual(0);
   }, timeLimit(300000));
 });
 
@@ -217,11 +185,6 @@ describe("the car's place", () => {
     expect(car.z).toBe(8);
   });
 
-  it("gives the car by its own rule and the board by the mirrored one", () => {
-    const g = padGraph([[0, 0], [100, 0]], [[0, 1, "stem"]]);
-    expect(trailheadSite(g, straightRoad, 1, "car")).toEqual(carSite(g, straightRoad, 1));
-    expect(trailheadSite(g, straightRoad, 1, "kiosk")).toEqual(propSite(g, straightRoad, 1, roadProp("kiosk")));
-  });
 });
 
 describe("the player's place", () => {
@@ -233,8 +196,8 @@ describe("the player's place", () => {
     for (const seed of SEEDS) {
       const graph = v.trailGraph!(seed);
       const car = carSite(graph, v.roadCenterX!, seed);
-      const board = trailheadSite(graph, v.roadCenterX!, seed, "kiosk");
       const s = trailheadSpawn(graph, car);
+      const board = boardSite(graph, v.roadCenterX!, seed, s);
       const e = trailEntrance(graph);
       const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
       const off = (x: number, z: number): number => {
@@ -246,7 +209,7 @@ describe("the player's place", () => {
       ahead = Math.max(ahead, off(e.x, e.z));
       axis = Math.max(axis, (Math.acos(Math.max(-1, Math.min(1, fx * e.dx + fz * e.dz))) * 180) / Math.PI);
       carGap = Math.min(carGap, gapTo(s.x, s.z, car, CAR_HALF));
-      boardGap = Math.min(boardGap, gapTo(s.x, s.z, board, KIOSK_HALF));
+      for (const b of boardBoxes(board)) boardGap = Math.min(boardGap, gapTo(s.x, s.z, b, BOARD_BOX_HALF));
       road = Math.min(road, s.x - roadCenterXOf(seed, s.z));
       reach = Math.max(reach, Math.hypot(e.x - s.x, e.z - s.z));
     }
@@ -255,63 +218,129 @@ describe("the player's place", () => {
     expect(ahead).toBeLessThanOrEqual(5);
     expect(axis).toBeLessThanOrEqual(19);
     expect(carGap).toBeGreaterThanOrEqual(1.5);
-    expect(boardGap).toBeGreaterThanOrEqual(3);
+    expect(boardGap).toBeGreaterThanOrEqual(6);
     expect(road).toBeGreaterThanOrEqual(7.5);
     expect(reach).toBeLessThanOrEqual(7);
   }, timeLimit(300000));
 });
 
-describe("the trail's sign on real worlds", () => {
-  it("stands in the player's view at the entrance, clear of the bed, the car and the board, on every seed", () => {
+describe("the board's place", () => {
+  // The pad at the origin, the road along z at x = -9, the stem straight inland: the entrance is (8, 0).
+  const inland = padGraph([[0, 0], [100, 0]], [[0, 1, "stem"]]);
+
+  it("stands the board 4.5 m past the entrance and 2.5 m off the bed, facing where the player arrives", () => {
+    const b = boardSite(inland, straightRoad, 1, { x: 1.3, z: -1 });
+    expect(b.x).toBeCloseTo(12.5, 9);
+    expect(b.z).toBeCloseTo(2.5, 9);
+    expect(b.fx).toBeCloseTo(-0.9544799780350298, 9);
+    expect(b.fz).toBeCloseTo(-0.29827499313594685, 9);
+    // Its own line is the player's right as they look at it: the facing turned a quarter turn.
+    expect(b.ax).toBeCloseTo(0.29827499313594685, 9);
+    expect(b.az).toBeCloseTo(-0.9544799780350298, 9);
+  });
+
+  it("takes the side toward which the player looks: a player off to -z looks across to +z", () => {
+    expect(boardSite(inland, straightRoad, 1, { x: 1.3, z: -1 }).z).toBeCloseTo(2.5, 9);
+    expect(boardSite(inland, straightRoad, 1, { x: 1.3, z: 1 }).z).toBeCloseTo(-2.5, 9);
+  });
+
+  it("takes +n where the two sides are as near the view's centre as each other", () => {
+    const b = boardSite(inland, straightRoad, 1, { x: 1.3, z: 0 });
+    expect(b.x).toBeCloseTo(12.5, 9);
+    expect(b.z).toBeCloseTo(2.5, 9);
+    expect(b.fx).toBeCloseTo(-0.9759815859905213, 9);
+    expect(b.fz).toBeCloseTo(-0.21785303258716995, 9);
+  });
+
+  it("takes the side that clears when the other does not, anywhere along it", () => {
+    // A second bed runs along +z through every place the board could stand on that side, 2.5 m to 4.5 m past the entrance.
+    const g = padGraph([[0, 0], [100, 0], [11.5, 1.2], [11.5, 60]], [[0, 1, "stem"], [2, 3, "loop"]]);
+    const b = boardSite(g, straightRoad, 1, { x: 1.3, z: -1 });
+    expect(b.x).toBeCloseTo(12.5, 9);
+    expect(b.z).toBeCloseTo(-2.5, 9);
+  });
+
+  it("steps back along the trail to stay on the side the player looks toward", () => {
+    // A second bed runs along +z through the two furthest places on that
+    // side, 4 m and 4.5 m past the entrance; 3.5 m past it the side clears.
+    const g = padGraph([[0, 0], [100, 0], [13.5, 1.2], [13.5, 60]], [[0, 1, "stem"], [2, 3, "loop"]]);
+    const b = boardSite(g, straightRoad, 1, { x: 1.3, z: -1 });
+    expect(b.x).toBeCloseTo(11.5, 9);
+    expect(b.z).toBeCloseTo(2.5, 9);
+    expect(b.fx).toBeCloseTo(-0.9458646319475186, 9);
+    expect(b.fz).toBeCloseTo(-0.324561393315325, 9);
+  });
+
+  it("takes the place nearest the view's centre when none clears", () => {
+    const g = padGraph(
+      [[0, 0], [100, 0], [11.5, 1.2], [11.5, 60], [11.5, -1.2], [11.5, -60]],
+      [[0, 1, "stem"], [2, 3, "loop"], [4, 5, "loop"]],
+    );
+    const b = boardSite(g, straightRoad, 1, { x: 1.3, z: -1 });
+    expect(b.x).toBeCloseTo(12.5, 9);
+    expect(b.z).toBeCloseTo(2.5, 9);
+    // And from the other side of the line, the other side of the trail.
+    const c = boardSite(g, straightRoad, 1, { x: 1.3, z: 1 });
+    expect(c.x).toBeCloseTo(12.5, 9);
+    expect(c.z).toBeCloseTo(-2.5, 9);
+  });
+
+  it("lays five boxes along the board's own line, 2.31 m from end to end at any facing", () => {
+    const b = boardSite(inland, straightRoad, 1, { x: 1.3, z: 0 });
+    const boxes = boardBoxes(b);
+    expect(boxes).toHaveLength(5);
+    expect(boxes[2]).toEqual({ x: b.x, z: b.z });
+    expect(boxes[0]!.x).toBeCloseTo(12.30828933132329, 9);
+    expect(boxes[0]!.z).toBeCloseTo(3.3588637956716587, 9);
+    expect(boxes[4]!.x).toBeCloseTo(12.69171066867671, 9);
+    expect(boxes[4]!.z).toBeCloseTo(1.6411362043283413, 9);
+    expect(Math.hypot(boxes[4]!.x - boxes[0]!.x, boxes[4]!.z - boxes[0]!.z) + 0.55).toBeCloseTo(2.31, 9);
+    expect(BOARD_BOX_HALF).toEqual({ x: 0.275, y: 1.25, z: 0.275 });
+  });
+
+  it("stands in the player's view, clear of the bed, the road and the car, on every seed", () => {
     const v = terrainVariant("olympic")!;
-    const gapTo = (x: number, z: number, c: { x: number; z: number }, h: { x: number; z: number }): number =>
-      Math.hypot(Math.max(Math.abs(x - c.x) - h.x, 0), Math.max(Math.abs(z - c.z) - h.z, 0));
-    let widest = 0, nearest = Infinity, farthest = 0, carGap = Infinity, boardGap = Infinity, tipGap = Infinity, road = Infinity, turned = 0;
+    const boxGap = (a: { x: number; z: number }, c: { x: number; z: number }, h: { x: number; z: number }): number =>
+      Math.hypot(Math.max(Math.abs(a.x - c.x) - 0.275 - h.x, 0), Math.max(Math.abs(a.z - c.z) - 0.275 - h.z, 0));
+    let farEnd = 0, nearest = Infinity, farthest = 0, bed = Infinity, road = Infinity, carGap = Infinity, turned = 0;
+    let plus = 0, minus = 0;
+    const along = new Map<string, number>();
     for (const seed of SEEDS) {
       const graph = v.trailGraph!(seed);
-      const car = carSite(graph, v.roadCenterX!, seed);
-      const board = trailheadSite(graph, v.roadCenterX!, seed, "kiosk");
-      const s = trailheadSpawn(graph, car);
-      const post = trailSign(graph, board, s);
-      const arm = post.arms[0]!;
-      expect(trailSignSite(graph, board)).toEqual({ x: post.x, z: post.z });
-      // Measured on the graph's own edges: the variant's `trailDistance` is
-      // the terrain's, and answers Infinity outside the region the trail is
-      // built in, where a sign beside a trail that leaves along the road
-      // can stand (seed 195).
-      expect(trailDistance(graph, post.x, post.z), `seed ${seed}`).toBeCloseTo(1.75, 6);
-      const d = Math.hypot(post.x - s.x, post.z - s.z);
-      const c = ((post.x - s.x) * Math.sin(s.yaw) + (post.z - s.z) * Math.cos(s.yaw)) / d;
-      widest = Math.max(widest, (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI);
+      const { car, start: s, board: b } = trailheadPlaces(graph, v.roadCenterX!, seed);
+      const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
+      const off = (x: number, z: number): number => {
+        const d = Math.hypot(x - s.x, z - s.z);
+        return (Math.acos(Math.max(-1, Math.min(1, ((x - s.x) * fx + (z - s.z) * fz) / d))) * 180) / Math.PI;
+      };
+      farEnd = Math.max(farEnd, off(b.x + b.ax * 1.1, b.z + b.az * 1.1), off(b.x - b.ax * 1.1, b.z - b.az * 1.1));
+      const d = Math.hypot(b.x - s.x, b.z - s.z);
       nearest = Math.min(nearest, d);
       farthest = Math.max(farthest, d);
-      carGap = Math.min(carGap, gapTo(post.x, post.z, car, CAR_HALF));
-      boardGap = Math.min(boardGap, gapTo(post.x, post.z, board, KIOSK_HALF));
-      // The plank is 1.095 m long: its tip must be farther from the bed than the post.
-      tipGap = Math.min(tipGap, trailDistance(graph, post.x + arm.dx * 1.095, post.z + arm.dz * 1.095));
-      road = Math.min(road, post.x - roadCenterXOf(seed, post.z));
-      turned = Math.max(turned, Math.abs(arm.dx * ((s.x - post.x) / d) + arm.dz * ((s.z - post.z) / d)));
+      turned = Math.max(turned, Math.abs(b.fx * ((s.x - b.x) / d) + b.fz * ((s.z - b.z) / d) - 1));
+      for (const box of boardBoxes(b)) {
+        bed = Math.min(bed, bedGap(graph, box, BOARD_BOX_HALF));
+        road = Math.min(road, box.x - 0.275 - roadCenterXOf(seed, box.z));
+        carGap = Math.min(carGap, boxGap(box, car, CAR_HALF));
+      }
+      const e = trailEntrance(graph);
+      if ((b.x - e.x) * -e.dz + (b.z - e.z) * e.dx > 0) plus++;
+      else minus++;
+      const past = ((b.x - e.x) * e.dx + (b.z - e.z) * e.dz).toFixed(1);
+      along.set(past, (along.get(past) ?? 0) + 1);
     }
-    console.info(`[trailhead] sign: ${widest.toFixed(2)} deg off the view's centre at most, ${nearest.toFixed(2)}-${farthest.toFixed(2)} m from the player, ${carGap.toFixed(2)} m from the car, ${boardGap.toFixed(2)} m from the board, plank tip ${tipGap.toFixed(2)} m from the bed, ${road.toFixed(2)} m from the centreline`);
-    expect(widest).toBeLessThanOrEqual(35);
-    expect(nearest).toBeGreaterThanOrEqual(3);
-    expect(farthest).toBeLessThanOrEqual(7);
-    expect(carGap).toBeGreaterThanOrEqual(3);
-    expect(boardGap).toBeGreaterThanOrEqual(3);
-    expect(tipGap).toBeGreaterThanOrEqual(2.5);
-    expect(road).toBeGreaterThanOrEqual(6.5);
+    console.info(`[trailhead] board: far end ${farEnd.toFixed(2)} deg off the facing at most, ${nearest.toFixed(2)}-${farthest.toFixed(2)} m from the player, bed ${bed.toFixed(2)} m, road ${road.toFixed(2)} m, car ${carGap.toFixed(2)} m, sides +n ${plus} -n ${minus}`);
+    // An upright phone of 390 by 844 shows 21.3 degrees to each side.
+    expect(farEnd).toBeLessThanOrEqual(21);
+    expect(nearest).toBeGreaterThanOrEqual(7);
+    expect(farthest).toBeLessThanOrEqual(12);
+    expect(bed).toBeGreaterThanOrEqual(1.15);
+    expect(road).toBeGreaterThanOrEqual(6);
+    expect(carGap).toBeGreaterThanOrEqual(8.5);
     expect(turned).toBeLessThan(1e-9);
+    expect([plus, minus]).toEqual([63, 164]);
+    // All but three stand 4.5 m past the entrance; on those the trail bends
+    // into the side the player looks toward, and the board steps back.
+    expect([...along].sort()).toEqual([["3.0", 2], ["3.5", 1], ["4.5", 224]]);
   }, timeLimit(300000));
-
-  it("is emitted once as a prop, where it stands", () => {
-    for (const seed of [0x5eed, 1, 12345]) {
-      const v = terrainVariant("olympic")!;
-      const graph = v.trailGraph!(seed);
-      const site = trailSignSite(graph, trailheadSite(graph, v.roadCenterX!, seed, "kiosk"));
-      const chunk = chunkHolding(seed, site.x, site.z);
-      const emitted = chunk.props.filter((b) => b.material === "signpost" && Math.abs(b.box.min.x + SIGN_POST_HALF.x - site.x) < 1e-6 && Math.abs(b.box.min.z + SIGN_POST_HALF.z - site.z) < 1e-6);
-      expect(emitted, `seed ${seed}`).toHaveLength(1);
-      expect(emitted[0]!.box.max.y - emitted[0]!.box.min.y).toBeCloseTo(2.2, 6);
-    }
-  }, timeLimit(60_000));
 });

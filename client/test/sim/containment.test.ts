@@ -6,7 +6,7 @@ import { PLAYER_HALF } from "../../src/sim/constants.js";
 import { createForest, GEN_VERSION } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { activeTerrainVariant, elevationAt } from "../../src/sim/terrain.js";
-import { CAR_HALF, CAR_ROAD_U } from "../../src/sim/passes/trailhead.js";
+import { CAR_HALF, CAR_ROAD_U } from "../../src/sim/trailhead.js";
 import type { InputCommand } from "../../src/sim/types.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

@@ -342,6 +342,14 @@
     {
       "id": "ground.asphalt.rah",
       "output": "textures/ground.asphalt.rah.webp"
+    },
+    {
+      "id": "board.paper",
+      "output": "textures/board.paper.webp"
+    },
+    {
+      "id": "board.portrait",
+      "output": "textures/board.portrait.webp"
     }
   ],
   "audio": [

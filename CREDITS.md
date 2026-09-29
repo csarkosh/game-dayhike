@@ -2,6 +2,20 @@
 
 Everything not listed below is original work by Cyrus Sarkosh.
 
+## board.paper
+
+- **Source:** ambientCG: Paper 002
+- **Author:** ambientCG (Lennart Demes)
+- **Licence:** CC0-1.0
+- **URL:** https://ambientcg.com/view?id=Paper002
+
+## board.portrait
+
+- **Source:** Sketchfab: Manuel Animated 001 - 3D Dancing Man
+- **Author:** Renderpeople
+- **Licence:** CC-BY-4.0
+- **URL:** https://sketchfab.com/3d-models/manuel-animated-001-3d-dancing-man-e65e0fef4e0743868c8d5bff36d61116
+
 ## call.eagle_cry
 
 - **Source:** Freesound: Birds of Prey - Bald Eagle Chirping, Close Perspective
@@ -355,14 +369,14 @@ Everything not listed below is original work by Cyrus Sarkosh.
 ## sign.arm
 
 - **Source:** Sketchfab: Modular Medieval Signposts
-- **Author:** max_imum
+- **Author:** max_imum (Max Wittig)
 - **Licence:** CC-BY-4.0
 - **URL:** https://sketchfab.com/3d-models/modular-medieval-signposts-dc80c092f5234b8e8c70773e5ce826ef
 
 ## sign.post
 
 - **Source:** Sketchfab: Modular Medieval Signposts
-- **Author:** max_imum
+- **Author:** max_imum (Max Wittig)
 - **Licence:** CC-BY-4.0
 - **URL:** https://sketchfab.com/3d-models/modular-medieval-signposts-dc80c092f5234b8e8c70773e5ce826ef
 
@@ -390,7 +404,7 @@ Everything not listed below is original work by Cyrus Sarkosh.
 ## trailhead.kiosk
 
 - **Source:** Sketchfab: Wooden Sign With Roof
-- **Author:** Poligonik
+- **Author:** Poligonik (KenVeel)
 - **Licence:** CC-BY-4.0
 - **URL:** https://sketchfab.com/3d-models/wooden-sign-with-roof-d3c14c892ce54564b7fde91c73896ca3
 
