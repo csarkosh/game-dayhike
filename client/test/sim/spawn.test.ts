@@ -263,9 +263,11 @@ describe("trailheadStart", () => {
     const first = trailheadStart(seed)!;
     trailheadStart(seedFromToken("room-1"));
     expect(trailheadStart(seed)).toEqual(first);
-    expect(first.x).toBeCloseTo(-313.0286066837363, 6);
-    expect(first.z).toBeCloseTo(-2.398352174641473, 6);
-    expect(first.yaw).toBeCloseTo(2.295766724707367, 9);
+    // 2026-09-29: (-313.0286, -2.3984), facing 2.2958, before the trail left
+    // the pad inland: the entrance was south of the pad, and is inland of it.
+    expect(first.x).toBeCloseTo(-312.4371156894627, 6);
+    expect(first.z).toBeCloseTo(0.3092771331101147, 6);
+    expect(first.yaw).toBeCloseTo(1.439458163397687, 9);
   });
 
   it("has no start on a world with no trail", () => {
@@ -285,9 +287,9 @@ describe("a player's arrival", () => {
     const w = createForestWorld(createForest(seed));
     const a = spawnPlayer(w), b = spawnPlayer(w);
     for (const p of [a, b]) {
-      expect(p.pos.x).toBeCloseTo(-313.0286066837363, 6);
-      expect(p.pos.z).toBeCloseTo(-2.398352174641473, 6);
-      expect(p.yaw).toBeCloseTo(2.295766724707367, 9);
+      expect(p.pos.x).toBeCloseTo(-312.4371156894627, 6);
+      expect(p.pos.z).toBeCloseTo(0.3092771331101147, 6);
+      expect(p.yaw).toBeCloseTo(1.439458163397687, 9);
     }
   });
 });

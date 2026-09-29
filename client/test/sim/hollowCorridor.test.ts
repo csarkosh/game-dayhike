@@ -40,7 +40,7 @@ const uOf = (o: { x: number; z: number }) => o.x - roadX(o.z);
 describe("a Hollow on the road corridor", SUITE, () => {
   it("walks straight out to the treeline, then takes up the hunt from there", () => {
     // The trail's lower end is inside the corridor: the trailhead stands at
-    // u = 9, and on this seed the first stem node above it is at u = 36. A
+    // u = 9, and on this seed the first stem node above it is at u = 44. A
     // Hollow put down at u = 15 by the pad — where the pack's later spawns on
     // the trail's lower stretch can put one — hunting a player at that first
     // node, routes through the trailhead, which is DEEPER inside. Every step
@@ -50,7 +50,7 @@ describe("a Hollow on the road corridor", SUITE, () => {
     const th = w0.trail!.trailhead;
     const first = w0.trail!.nodes[stemNodes(w0.trail!)[1]!]!;
     expect(uOf(th)).toBeCloseTo(9, 6);
-    expect(uOf(first)).toBeCloseTo(36, 6);
+    expect(uOf(first)).toBeCloseTo(44, 6);
 
     const { w, p } = chase(first.x, first.z);
     const hx = roadX(th.z) + 15;
@@ -60,15 +60,24 @@ describe("a Hollow on the road corridor", SUITE, () => {
     let out = -1;
     let back = -1;
     let killed = -1;
+    let decided = -1;
     for (let t = 0; t < 900; t++) {
       const before = { x: h.pos.x, z: h.pos.z };
+      const approaching = h.approach;
       tickWorld(w, new Map());
       if (t === 0) expect(h.route[0], "its route starts at the trailhead").toBe(0);
       expect(p.safe, `tick ${t}`).toBe(false);
       const on = isOnCorridor(w, h.pos.x, h.pos.z);
-      if (on && out < 0) {
-        // Moving every tick it is inside, from the first: 0.0175 m is what
-        // one tick of acceleration from rest gives, and it only grows.
+      if (!approaching && h.approach) {
+        // The tick it catches sight of its prey and leaves the route for the
+        // straight line: it decides and does not move, once (`pursue`). The
+        // trail runs straight inland from the pad now, so from the corridor
+        // it sees the first node, 25 m up the bed, and decides there.
+        expect(decided, `decided twice, at ticks ${decided} and ${t}`).toBe(-1);
+        decided = t;
+      } else if (on && out < 0) {
+        // Moving every other tick it is inside, from the first: 0.0175 m is
+        // what one tick of acceleration from rest gives, and it only grows.
         const dx = h.pos.x - before.x, dz = h.pos.z - before.z;
         expect(Math.sqrt(dx * dx + dz * dz), `stood still on the corridor at tick ${t}`).toBeGreaterThan(0.01);
       }
@@ -76,12 +85,14 @@ describe("a Hollow on the road corridor", SUITE, () => {
       if (on && out >= 0 && back < 0) back = t;
       if (p.health <= 0) { killed = t; break; }
     }
-    // 15 m to the edge at 6.3 m/s is 2.4 s: out on tick 146, and never back.
+    // 15 m to the edge at 6.3 m/s is 2.4 s: out on tick 147, and never back.
     expect(out, `still on the corridor, at u = ${uOf(h.pos).toFixed(2)}`).toBeGreaterThanOrEqual(140);
     expect(out).toBeLessThanOrEqual(300);
     expect(back, `left the corridor at tick ${out} and was back on it at tick ${back}`).toBe(-1);
-    // Then the hunt, from where it came out: contact on tick 494, well inside 15 s.
+    // Then the hunt, from where it came out, straight up the bed to the first
+    // node 14 m past the edge: contact on tick 274, well inside 15 s.
     expect(killed, `never reached its target: ${Math.sqrt((h.pos.x - p.pos.x) ** 2 + (h.pos.z - p.pos.z) ** 2).toFixed(1)} m off`).toBeGreaterThan(out);
+    console.info(`[hollow corridor] decided on tick ${decided}, out on tick ${out}, contact on tick ${killed}`);
     expect(killed).toBeLessThanOrEqual(900);
   });
 

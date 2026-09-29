@@ -202,10 +202,14 @@ describe("the end", SUITE, () => {
     tick(w, 10);
     expect(p.safe).toBe(false);
     expect(p.health).toBeGreaterThan(0); // not caught yet: contact reach is 0.9 m
-    // 0.66 m of the 1.95 m gap in ten ticks — it walks from a standstill, so
-    // the first ticks are the acceleration, not the top speed.
+    // 0.44 m of the 1.95 m gap in ten ticks — it walks from a standstill, so
+    // the first ticks are the acceleration, not the top speed. 2026-09-29:
+    // 0.66 m before the trail left the pad inland. The player faces as they
+    // arrived, up the trail, which is inland now and toward the Hollow, and
+    // a Hollow that is looked at gathers speed more slowly: 3.71 m/s after
+    // the ten ticks, where it had 5.99.
     const travelled = ROAD_CORRIDOR_HALF + 2 - uOf(h.pos);
-    expect(travelled).toBeGreaterThan(0.5);
+    expect(travelled).toBeGreaterThan(0.4);
 
     // Now it is within one step of the edge — HOLLOW_HUNT_SPEED carries it
     // 0.105 m in a tick — and the player reaches the pad. The step it takes
