@@ -52,7 +52,8 @@
 > 1. Ask Scaleway's API whether an `M4-S` is in stock (`scaleway-macs.sh` shows how the API is
 >    called; the account needs a payment method and a verified identity, both done on
 >    2026-09-28).
-> 2. Close the gaps above; read `main.tf`, `setup.sh` and `scaleway-macs.sh` whole first.
+> 2. Close the gaps above; read the module's `main.tf`, `setup.sh` and `scaleway-macs.sh`
+>    (in `_infra/modules/scaleway-test-rig-mac/`) whole first.
 > 3. `terraform init`, then `terraform plan -var acknowledge_incomplete=true` with
 >    `server_count = 1`; read the plan; then the first day as "The first day" below describes.
 > 4. At the end of the day run `scaleway-macs.sh list` and compare it with Terraform's state:
@@ -61,7 +62,8 @@
 >    `acknowledge_incomplete` variable out.
 >
 > **What it cannot touch.** It is a root module of its own, with a state of its own (prefix
-> `test-rig-mac`) and one provider, Scaleway's. It reads no output, state or variable of
+> `test-rig-mac`) and one provider, Scaleway's; its resources are in
+> `_infra/modules/scaleway-test-rig-mac/`, which only this directory calls. It reads no output, state or variable of
 > `_infra/` (hosting, DNS, the signaling service), of `_infra/test-rig/` (the Windows machine
 > on AWS) or of `_infra/test-rig-gcp/` (the one on Google Cloud), and none of them reads it.
 > Running Terraform in any of those never loads a file of this directory.
@@ -76,12 +78,24 @@ This is its own Terraform root module with its own state (`gs://fps-csarko-tfsta
 and destroy never reads or writes a Windows machine's state, and none of them can touch
 hosting.
 
+The resources themselves, and the two scripts they run (`setup.sh`, `scaleway-macs.sh`), are in
+[`_infra/modules/scaleway-test-rig-mac/`](../modules/scaleway-test-rig-mac/), as `_infra/`'s own
+resources are in `_infra/modules/`. This directory is the root that calls it: the backend, the
+provider, one `module "test_rig"` call, and the variables (with `acknowledge_incomplete`) and
+outputs passed through. Every command below runs here, and a resource's address carries the
+call's name: `module.test_rig.scaleway_apple_silicon_server.mac[0]`. It is not called from
+`_infra/main.tf`: this state holds each Mac's admin password in clear text, which hosting's
+state must never hold.
+
 **Terraform's state is not a record of what is billed.** The Scaleway provider treats a `403`
 answer, to a read as well as to a delete, as "the server is gone" and forgets it, while the Mac
 may still exist and bill. `scaleway-macs.sh list`, which asks Scaleway's API directly, is the
 record; the end of every day runs it (below).
 
 ## What it defines
+
+Resources and data sources are the module's, at `module.test_rig.<address>`; so are the two
+scripts, in `../modules/scaleway-test-rig-mac/`.
 
 | Resource or file | Why |
 |---|---|
@@ -153,7 +167,7 @@ new type or zone, always gets fresh ones. Deletion takes Scaleway about 30 minut
 **If a create fails** (a timeout, an API error), the Mac may still have been ordered and be
 billing: the provider records a server as soon as Scaleway accepts the order, and marks it
 tainted, and neither guard exists for it yet. Before anything else, run
-`./scaleway-macs.sh list` and look in the Scaleway console. The next `apply` would replace the
+`../modules/scaleway-test-rig-mac/scaleway-macs.sh list` and look in the Scaleway console. The next `apply` would replace the
 tainted Mac, and the guard stops that until its 24 hours are up.
 
 ## Before the first day, once, by hand
@@ -193,11 +207,11 @@ terraform output macs                        # address, login, Screen Sharing po
 # then it accepts password logins over SSH and Screen Sharing.
 TEST_RIG_PASSWORD="$(terraform output -json passwords | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8"))[0]')" \
 TEST_RIG_VNC_PORT="$(terraform output -json macs | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8"))[0].vnc_port')" \
-  ./setup.sh --to <username>@<ip>
+  ../modules/scaleway-test-rig-mac/setup.sh --to <username>@<ip>
 
 # The first day: the probe, below. Then measure.
 
-./scaleway-macs.sh list                      # end of the day: every Mac scheduled, none unknown
+../modules/scaleway-test-rig-mac/scaleway-macs.sh list   # end of the day: every Mac scheduled, none unknown
 terraform destroy                            # after earliest_delete, even if Scaleway has already
                                              # deleted the Macs, so that state lists none
 ```
@@ -308,7 +322,7 @@ The first day rents **one** Mac (**EUR 5.28**). A second, for the spread between
    API, not through Terraform (where a refusal would read as success):
 
    ```bash
-   ./scaleway-macs.sh try-early-delete fr-par-1 <server-id>     # the id after "fr-par-1/"
+   ../modules/scaleway-test-rig-mac/scaleway-macs.sh try-early-delete fr-par-1 <server-id>   # the id after "fr-par-1/"
    ```
 
    It prints the HTTP status and body. A refusal (a `4xx`) is the expected answer and changes

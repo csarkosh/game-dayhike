@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 #
-# STATUS: INCOMPLETE. Never run against a real account. README.md's first
-# section lists this script's known gaps and how to pick the work up.
+# STATUS: INCOMPLETE. Never run against a real account. The first section of
+# _infra/test-rig-mac/README.md lists this script's known gaps and how to pick
+# the work up.
 #
 # Sets up a freshly delivered Scaleway Mac for frame-time measurements.
 #
-# Run from this machine, not on the Mac, straight after `terraform apply`:
+# Run from this machine, not on the Mac, straight after `terraform apply`,
+# from _infra/test-rig-mac/:
 #
-#   TEST_RIG_PASSWORD=... TEST_RIG_VNC_PORT=... ./setup.sh --to <username>@<ip>
+#   TEST_RIG_PASSWORD=... TEST_RIG_VNC_PORT=... ../modules/scaleway-test-rig-mac/setup.sh --to <username>@<ip>
 #
-# README.md shows how to fill both from `terraform output` without typing the
-# password. This side:
+# That directory's README.md shows how to fill both from `terraform output`
+# without typing the password. This side:
 #   - proves that key login works, on its own connection with BatchMode, before
 #     anything on the Mac changes (set-up turns password login off);
 #   - sends the password and then this script over one SSH connection's
@@ -92,7 +94,7 @@ if [[ "${1:-}" == --to ]]; then
       fi
       sleep 10
     done
-    ((back)) || fail "SSH did not come back within about 15 minutes. See README.md, 'When a Mac is unreachable'."
+    ((back)) || fail "SSH did not come back within about 15 minutes. See _infra/test-rig-mac/README.md, 'When a Mac is unreachable'."
   elif ! grep -qF "$DONE_NO_RESTART" "$out"; then
     fail "set-up stopped on the Mac before it finished; the lines above say where. ~/test-rig/setup.log on the Mac has them too."
   fi
@@ -100,7 +102,7 @@ if [[ "${1:-}" == --to ]]; then
 
   echo "Checking the Mac from outside..."
   console=$(ssh "${ssh_opts[@]}" "$target" 'stat -f %Su /dev/console')
-  [[ "$console" == "$user" ]] || fail "automatic login did not take effect (console user is '$console'). See README.md, 'Set-up'."
+  [[ "$console" == "$user" ]] || fail "automatic login did not take effect (console user is '$console'). See _infra/test-rig-mac/README.md, 'Set-up'."
   echo "  logged-in desktop: yes ($console)"
 
   nc -z -G 5 "$ip" 22 || fail "port 22 does not answer from outside"
