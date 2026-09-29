@@ -1,0 +1,34 @@
+shadow=computeShadowWithCSMPCF5_0;
+float frustumLength=frustumLengths1[index1];
+float diffRatio=clamp(diff1/frustumLength,0.,1.)*cascadeBlendFactor1;
+if (index1<(SHADOWCSMNUM_CASCADES1-1) && diffRatio<1.)
+{index1+=1;
+float nextShadow=0.;
+float computeShadowWithCSMPCF5_1;
+{vec3 clipSpace=vPositionFromLight1[index1].xyz/vPositionFromLight1[index1].w;
+vec3 uvDepth=vec3(0.5*clipSpace.xyz+vec3(0.5));
+uvDepth.z=clamp(ZINCLIP,0.,GREATEST_LESS_THAN_ONE);
+vec2 uv=uvDepth.xy*light1.shadowsInfo.yz.x;
+uv+=0.5;
+vec2 st=fract(uv);
+vec2 base_uv=floor(uv)-0.5;
+base_uv*=light1.shadowsInfo.yz.y;
+vec2 uvw0=4.-3.*st;
+vec2 uvw1=vec2(7.);
+vec2 uvw2=1.+3.*st;
+vec3 u=vec3((3.-2.*st.x)/uvw0.x-2.,(3.+st.x)/uvw1.x,st.x/uvw2.x+2.)*light1.shadowsInfo.yz.y;
+vec3 v=vec3((3.-2.*st.y)/uvw0.y-2.,(3.+st.y)/uvw1.y,st.y/uvw2.y+2.)*light1.shadowsInfo.yz.y;
+float shadow=0.;
+shadow+=uvw0.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[0]),float(index1),uvDepth.z));
+shadow+=uvw1.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[0]),float(index1),uvDepth.z));
+shadow+=uvw2.x*uvw0.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[0]),float(index1),uvDepth.z));
+shadow+=uvw0.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[1]),float(index1),uvDepth.z));
+shadow+=uvw1.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[1]),float(index1),uvDepth.z));
+shadow+=uvw2.x*uvw1.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[1]),float(index1),uvDepth.z));
+shadow+=uvw0.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[0],v[2]),float(index1),uvDepth.z));
+shadow+=uvw1.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[1],v[2]),float(index1),uvDepth.z));
+shadow+=uvw2.x*uvw2.y*texture(shadowTexture1,vec4(base_uv.xy+vec2(u[2],v[2]),float(index1),uvDepth.z));
+shadow=shadow/144.;
+shadow=mix(light1.shadowsInfo.x,1.,shadow);
+computeShadowWithCSMPCF5_1 = computeFallOff(shadow,clipSpace.xy,light1.shadowsInfo.w);
+}

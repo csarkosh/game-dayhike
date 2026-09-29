@@ -1,0 +1,4 @@
+float getLodFromAlphaG(float cubeMapDimensionPixels,float microsurfaceAverageSlope) {float microsurfaceAverageSlopeTexels=cubeMapDimensionPixels*microsurfaceAverageSlope;
+float lod=log2(microsurfaceAverageSlopeTexels);
+return lod;
+}

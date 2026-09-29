@@ -1,0 +1,12 @@
+vec3 clearCoatEnvironmentReflectance=getReflectanceFromBRDFLookup(vec3(vClearCoatRefractionParams.x),environmentClearCoatBrdf);
+clearCoatEnvironmentReflectance*=clearCoatIntensity;
+outParams.finalClearCoatRadianceScaled=
+environmentClearCoatRadiance.rgb *
+clearCoatEnvironmentReflectance *
+vLightingIntensity.z;
+float fresnelIBLClearCoat=fresnelSchlickGGX(clearCoatNdotV,vClearCoatRefractionParams.x,CLEARCOATREFLECTANCE90);
+fresnelIBLClearCoat*=clearCoatIntensity;
+outParams.conservationFactor=(1.-fresnelIBLClearCoat);
+outParams.energyConservationFactorClearCoat=getEnergyConservationFactor(outParams.specularEnvironmentR0,environmentClearCoatBrdf);
+clearcoatBlock_0 = outParams;
+}
