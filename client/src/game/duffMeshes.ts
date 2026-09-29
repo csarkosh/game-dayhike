@@ -28,7 +28,7 @@ import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliage
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { CLUTTER_SINK, instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { createKeptValues } from "./keptValues.js";
-import { createCrossing, crossingAt, finish, type Slices, type SyncJobs } from "./syncJobs.js";
+import { createCrossing, crossingAt, finish, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 
 export const DUFF_MESH_PREFIX = "duff_clumps";
 export function duffMeshName(character: number, tier: number): string {
@@ -205,6 +205,10 @@ function createClumpMesh(scene: Scene, character: number, tier: number, count: n
 const KEPT_STRIDE = 20;
 const KEPT_FOLIAGE = 16;
 
+/** What computing a cell's kept values ahead weighs on a slice of idle work,
+ * in `prefetchWindow`'s units: about what sampling a cell does. */
+const KEPT_AHEAD_COST = 64;
+
 export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshesOptions): DuffMeshes {
   const reach = DUFF_REACH[options.quality];
   /**
@@ -317,11 +321,29 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
     fill(tiers.far, buckets[1]!);
     view.x = x;
     view.z = z;
+    aimed = false;
   }
 
   const crossing = createCrossing();
   const view = { x: NaN, z: NaN };
   const owner = {};
+  const heading: Heading = { x: 0, z: 0 };
+  /** Whether the idle work is aimed at the next crossings from where the
+   * last rebuild left the field, on the present heading. */
+  let aimed = false;
+  /** A cell looked up ahead: its matrix and tint computed too. */
+  const ahead = (c: DuffCell): number => {
+    const known = kept.size;
+    kept.offsetOf(c);
+    return kept.size > known ? KEPT_AHEAD_COST : 1;
+  };
+  /** Sets the idle work (`syncJobs.ts`) to look up the cells the next
+   * crossings add, while no rebuild is pending. */
+  function aim(x: number, z: number): void {
+    if (aimed || jobs === undefined || jobs.pending(owner)) return;
+    aimed = true;
+    jobs.idle(owner, collector.prefetchSlices(x, z, heading.x, heading.z, reach, ahead));
+  }
 
   return {
     /**
@@ -333,8 +355,12 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
       if (disposed) return;
       const ox = Math.floor(x / DUFF_REBUILD_CELL) * DUFF_REBUILD_CELL;
       const oz = Math.floor(z / DUFF_REBUILD_CELL) * DUFF_REBUILD_CELL;
+      if (turn(heading, x - crossing.lastX, z - crossing.lastZ)) aimed = false;
       const kind = crossingAt(crossing, x, z, ox, oz, DUFF_REBUILD_CELL, jobs !== undefined);
-      if (kind === "none") return;
+      if (kind === "none") {
+        aim(x, z);
+        return;
+      }
       if (kind === "later") {
         (jobs as SyncJobs).begin(owner, rebuild(x, z));
         return;
@@ -351,6 +377,7 @@ export function createDuffMeshes(scene: Scene, seed: number, options: DuffMeshes
       if (disposed) return;
       disposed = true;
       jobs?.cancel(owner);
+      jobs?.idle(owner, null);
       // The meshes and the materials are both ours — generated here, adopted
       // from no container — so both have to be disposed by hand.
       for (const mesh of meshes) mesh.dispose();

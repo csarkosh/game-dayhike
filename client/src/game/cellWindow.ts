@@ -69,15 +69,21 @@ export function walkEveryCell<T>(sample: (cls: number, cx: number, cz: number) =
   };
 }
 
-/** Cells a slice of a move samples before it yields. */
-const MOVE_SLICE_CELLS = 16;
+
+/** Cells' worth of work a slice of a move or a prefetch does before it
+ * yields: a cell the lookup holds counts 1, one it samples `FRESH_COST` (its
+ * value is several walks through the terrain's noise); about a tenth of a
+ * millisecond. */
+const WINDOW_SLICE = 1024;
+const FRESH_COST = 64;
 
 /**
  * Moves the window to the square [x0, x1] × [z0, z1], in slices: the rows are
  * built anew, each from the held cells still inside and the cells the square
  * adds on either side, and replace the old in the last slice, so a move
  * dropped half done leaves the window as it was. A square of another size,
- * or one that does not overlap the last, is sampled whole.
+ * or one that does not overlap the last, is sampled whole. `fresh.count` is
+ * the lookup's count of the cells it had to sample, which weigh on a slice.
  */
 export function* moveWindow<T>(
   w: CellWindow<T>,
@@ -86,9 +92,19 @@ export function* moveWindow<T>(
   z0: number,
   z1: number,
   sample: (cx: number, cz: number) => T | null,
+  fresh: { count: number } = { count: 0 },
 ): Slices {
   let walked = 0;
-  let sinceYield = 0;
+  let work = 0;
+  let seen = fresh.count;
+  /** Counts a lookup, and whether the slice has done its share. */
+  const due = (): boolean => {
+    work += 1 + (fresh.count - seen) * FRESH_COST;
+    seen = fresh.count;
+    if (work < WINDOW_SLICE) return false;
+    work = 0;
+    return true;
+  };
   const rows: T[][] = [];
   const cxs: number[][] = [];
   const kept = x1 - x0 === w.x1 - w.x0 && z1 - z0 === w.z1 - w.z0 &&
@@ -108,10 +124,7 @@ export function* moveWindow<T>(
         rowCx.push(cx);
       }
       walked++;
-      if (++sinceYield >= MOVE_SLICE_CELLS) {
-        sinceYield = 0;
-        yield;
-      }
+      if (due()) yield;
     }
     if (old >= 0) {
       const values = w.rows[old] as T[];
@@ -129,10 +142,7 @@ export function* moveWindow<T>(
           rowCx.push(cx);
         }
         walked++;
-        if (++sinceYield >= MOVE_SLICE_CELLS) {
-          sinceYield = 0;
-          yield;
-        }
+        if (due()) yield;
       }
     }
     rows.push(row);
@@ -152,10 +162,7 @@ export function* moveWindow<T>(
     const rowCx = cxs[r] as number[];
     const v = sample(cx, cz);
     walked++;
-    if (++sinceYield >= MOVE_SLICE_CELLS) {
-      sinceYield = 0;
-      yield;
-    }
+    if (due()) yield;
     const at = lowerBound(rowCx, cx);
     const held = at < rowCx.length && rowCx[at] === cx;
     if (v === null) {
@@ -178,6 +185,48 @@ export function* moveWindow<T>(
   w.z1 = z1;
   w.refresh = [];
   w.walked = walked;
+}
+
+/**
+ * Looks up, ahead of a move to [x0, x1] × [z0, z1], the cells that square
+ * would add to the window's, through `sample` — the collector's memoised
+ * lookup, which keeps what it samples — so that the move finds them held
+ * and samples nothing. `found` is told of each non-empty one and returns the
+ * work it did (in the same units); `fresh.count` is the lookup's count of
+ * the cells it had to sample. In slices, for idle work (`syncJobs.ts`); the
+ * window itself is not touched, and a window never moved has nothing to add
+ * to.
+ */
+export function* prefetchWindow<T>(
+  w: CellWindow<T>,
+  x0: number,
+  x1: number,
+  z0: number,
+  z1: number,
+  sample: (cx: number, cz: number) => T | null,
+  fresh: { count: number },
+  found?: (v: T) => number,
+): Slices {
+  if (Number.isNaN(w.x0)) return;
+  let work = 0;
+  let seen = fresh.count;
+  for (let cz = z0; cz <= z1; cz++) {
+    const held = cz >= w.z0 && cz <= w.z1;
+    for (let cx = x0; cx <= x1; cx++) {
+      if (held && cx >= w.x0 && cx <= w.x1) {
+        cx = w.x1;
+        continue;
+      }
+      const v = sample(cx, cz);
+      work += 1 + (fresh.count - seen) * FRESH_COST;
+      seen = fresh.count;
+      if (v !== null && found !== undefined) work += found(v);
+      if (work >= WINDOW_SLICE) {
+        work = 0;
+        yield;
+      }
+    }
+  }
 }
 
 /** The first index in the sorted `list` whose value is at least `v`. */

@@ -95,7 +95,7 @@ import { ROCK_CUTS, rockPlanes, rockRelief, type RockPlane } from "./rockRelief.
 import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
 import { loadUntilAborted } from "./modelLoad.js";
 import { createKeptValues } from "./keptValues.js";
-import { createCrossing, crossingAt, finish, type Slices, type SyncJobs } from "./syncJobs.js";
+import { createCrossing, crossingAt, finish, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
 // exactly BOULDER_SINK · (that variant's own BASE_H) · scale shows a visible
@@ -506,8 +506,12 @@ function commitStaged(bucket: Bucket): void {
  * yields: an instance whose values are copied counts 1, one computed for the
  * first time `FILL_NEW_COST` — its trample frame and ground tint are several
  * walks through the terrain's noise. About a tenth of a millisecond. */
-const FILL_SLICE = 1024;
+const FILL_SLICE = 1536;
 const FILL_NEW_COST = 16;
+
+/** What computing an instance's kept values ahead weighs on a slice of idle
+ * work, in `prefetchWindow`'s units: about what sampling a cell does. */
+const KEPT_AHEAD_COST = 64;
 
 /**
  * Pushes a filled bucket to its meshes. A bucket whose buffer was just grown
@@ -892,12 +896,31 @@ export function createClutterMeshes(
     dirty = true;
     view.x = x;
     view.z = z;
+    aimed = false;
   }
 
   const crossing = createCrossing();
   const view = { x: NaN, z: NaN };
   const owner = {};
   const jobs = options.jobs;
+  const heading: Heading = { x: 0, z: 0 };
+  /** Whether the idle work is aimed at the next crossings from where the
+   * last rebuild left the bands, on the present heading. */
+  let aimed = false;
+  /** An instance looked up ahead: its matrix and tint computed too, so the
+   * fill at the crossing only copies them. */
+  const ahead = (inst: ClutterInstance): number => {
+    const known = kept.size;
+    kept.offsetOf(inst);
+    return kept.size > known ? KEPT_AHEAD_COST : 1;
+  };
+  /** Sets the idle work (`syncJobs.ts`) to look up the cells the next
+   * crossings add, while no rebuild is pending. */
+  function aim(): void {
+    if (aimed || jobs === undefined || jobs.pending(owner)) return;
+    aimed = true;
+    jobs.idle(owner, collector.prefetchSlices(camX, camZ, heading.x, heading.z, radiusScale, ahead));
+  }
 
   /**
    * Rebuild only when the cell-snapped origin moves. ONE snap for all eight
@@ -923,7 +946,10 @@ export function createClutterMeshes(
       crossing, camX, camZ, originX, originZ, CLUTTER_GRASS_CELL,
       jobs !== undefined && !first,
     );
-    if (kind === "none") return;
+    if (kind === "none") {
+      aim();
+      return;
+    }
     if (kind === "later") {
       (jobs as SyncJobs).begin(owner, rebuild(camX, camZ));
       return;
@@ -1168,6 +1194,7 @@ export function createClutterMeshes(
   return {
     update(x, z) {
       if (disposed) return;
+      if (turn(heading, x - camX, z - camZ)) aimed = false;
       camX = x;
       camZ = z;
       // While the GLBs are still loading this only remembers the camera;
@@ -1198,6 +1225,7 @@ export function createClutterMeshes(
       if (disposed) return;
       disposed = true;
       jobs?.cancel(owner);
+      jobs?.idle(owner, null);
       loads.abort();
       scene.getEngine().onContextRestoredObservable.remove(restoreObserver);
       if (buckets !== null) {

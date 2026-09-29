@@ -71,6 +71,7 @@ import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import {
   createBandCollector,
   bandsOrigin,
+  type ForestBands,
   NEAR_RADIUS,
   SEAM_LOD0,
   SEAM_LOD1,
@@ -84,6 +85,7 @@ import {
   COHORT_GIANT,
   COHORT_SAPLING,
   COHORT_SNAG,
+  TREE_CELL,
   forestDensity,
   type TreeInstance,
 } from "../sim/vegetation.js";
@@ -103,6 +105,7 @@ import {
 import { modelUrl } from "./assetUrls.js";
 import { loadUntilAborted } from "./modelLoad.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
+import { createCrossing, crossingAt, finish, nextCrossing, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 
 /** Species index 0 → fir/conifer_a, 1 → pine/conifer_b (the `treeInCell`
  * convention). Understory keeps pairing off SPECIES, not cohort. */
@@ -208,6 +211,9 @@ export type ForestMeshesOptions = {
   /** The WebGPU engine's asynchronous pipelines, handed to every bake
    * (`BakeOptions.pipelines`); absent on WebGL2. */
   pipelines?: BakePipelines;
+  /** The renderer's scheduler: a one-cell step at a walk rebuilds as a job
+   * over the frames that follow rather than in the frame of the crossing. */
+  jobs?: SyncJobs;
 };
 
 export type ForestMeshes = {
@@ -225,6 +231,8 @@ export type ForestMeshes = {
    * made: what a far forest missing from view can be traced to. Empty until
    * the models have loaded. */
   impostorBakes(): readonly ImpostorBake[];
+  /** The camera position the buffers were last built for. */
+  readonly view: { readonly x: number; readonly z: number };
   /**
    * Resolves once the forest's first fill is complete: its models have
    * landed (or failed, or the shell was disposed first) and every billboard
@@ -309,6 +317,13 @@ function fadeBandsBuffer(count: number, bands: FadeBands): Float32Array {
   for (let i = 0; i < count; i++) writeFadeBands(buf, i * 4, bands);
   return buf;
 }
+
+/** What handing every bucket its new buffers is expected to take (ms), the
+ * one step of a forest rebuild that cannot be sliced: an estimate — in a
+ * browser profile of a walk the fill and the hand-over together took about
+ * five milliseconds a rebuild, most of it the fill that is sliced now. The
+ * forest's job says so before its last slice (`syncJobs.ts`). */
+const FOREST_UPLOAD_MS = 2;
 
 /** Replaces a bucket's instance buffers wholesale and enables/disables it.
  * `bands` overrides the bucket's constant fade for the buckets that vary per
@@ -514,7 +529,7 @@ function deadwoodMatrixBuffer(
       // World XZ of the log's two ends, from yaw + native length only (see
       // the function comment on why the pitch's own foreshortening is
       // ignored here): rotating local +X by yaw about world Y lands it on
-      // (cosYaw, -sinYaw) — the same convention `impostorMatrixBuffer`
+      // (cosYaw, -sinYaw) — the same convention `impostorMatrixSlices`
       // documents for rotating local +Z by atan2(dx, dz) onto (dx, dz).
       const cosYaw = Math.cos(yaw);
       const sinYaw = Math.sin(yaw);
@@ -577,17 +592,19 @@ function deadwoodMatrixBuffer(
  * as two arguments rather than one concatenated list keeps a ~7k-element
  * copy out of every rebuild.
  */
-function impostorMatrixBuffer(
+function* impostorMatrixSlices(
   lattice: readonly TreeInstance[],
   fill: readonly TreeInstance[],
   centreY: number,
   camX: number,
   camZ: number,
-): Float32Array {
+): Slices<Float32Array> {
   const buf = new Float32Array(16 * (lattice.length + fill.length));
   let i = 0;
   for (const list of [lattice, fill]) {
     for (const t of list) {
+      // Thousands of billboards a bucket: a slice composes a share of them.
+      if (i > 0 && i % IMPOSTOR_SLICE === 0) yield;
       // Yaw that points the quad's normal (±Z; the material is two-sided) at
       // the camera: rotating +Z by atan2(dx, dz) about Y lands it on (dx, dz).
       Quaternion.RotationAxisToRef(UP, Math.atan2(camX - t.x, camZ - t.z), scratchQ);
@@ -602,6 +619,9 @@ function impostorMatrixBuffer(
   }
   return buf;
 }
+
+/** Billboard matrices a slice composes: about a tenth of a millisecond. */
+const IMPOSTOR_SLICE = 512;
 
 /**
  * The impostor lists in ONE pass each, split into the buckets that will draw
@@ -966,8 +986,6 @@ export function createForestMeshes(
   // while the GLBs are still loading is honoured the moment they land.
   let camX = NaN;
   let camZ = NaN;
-  let builtX = NaN;
-  let builtZ = NaN;
 
   /**
    * A bake landing on a billboard. A null texture — or a bake that failed —
@@ -1294,18 +1312,28 @@ export function createForestMeshes(
     );
 
     // An update that arrived while loading is honoured now.
-    maybeBuild();
+    maybeBuild(true);
   }
 
   /** Rebuild only when the cell-snapped origin moves — `collectBands` is a
-   * pure function of it, so the same origin would rebuild identical buffers. */
-  function maybeBuild(): void {
+   * pure function of it, so the same origin would rebuild identical buffers.
+   * A one-cell step at a walk is a job given `options.jobs` (`crossingAt`
+   * says which crossings build at once); the first build, when the models
+   * land, is always at once. */
+  function maybeBuild(first: boolean): void {
     if (species === null || Number.isNaN(camX)) return;
     const origin = bandsOrigin(camX, camZ);
-    if (origin.x === builtX && origin.z === builtZ) return;
-    builtX = origin.x;
-    builtZ = origin.z;
-    rebuild(camX, camZ);
+    const kind = crossingAt(crossing, camX, camZ, origin.x, origin.z, TREE_CELL, options.jobs !== undefined && !first);
+    if (kind === "none") {
+      aim();
+      return;
+    }
+    if (kind === "later") {
+      (options.jobs as SyncJobs).begin(owner, rebuild(camX, camZ));
+      return;
+    }
+    options.jobs?.cancel(owner);
+    finish(rebuild(camX, camZ));
   }
 
   /** Loads one container, adds it to the scene, and disables everything it
@@ -1464,16 +1492,16 @@ export function createForestMeshes(
    * edge of the drawn world — so the bands are written per instance rather
    * than per bucket. Both fade IN at the near seam, where the full-geometry
    * rings hand over. The band buffer is filled in the SAME order
-   * `impostorMatrixBuffer` writes its matrices; nothing else keeps the two
+   * `impostorMatrixSlices` writes its matrices; nothing else keeps the two
    * per-instance buffers aligned.
    */
-  function fillImpostor(
+  function* fillImpostor(
     imp: Impostor,
     lattice: readonly TreeInstance[],
     fill: readonly TreeInstance[],
     x: number,
     z: number,
-  ): void {
+  ): Slices<() => void> {
     const near = seamNear(nearRadius);
     // Hoisted: a rebuild writes thousands of instances per bucket, and
     // `fadeBands` allocates a quad each call.
@@ -1484,27 +1512,51 @@ export function createForestMeshes(
     for (let i = 0; i < fill.length; i++) {
       writeFadeBands(fade, (lattice.length + i) * 4, fillBands);
     }
-    applyBucketBuffer(
-      imp.bucket,
-      impostorMatrixBuffer(lattice, fill, imp.centreY, x, z),
-      undefined,
-      fade,
-    );
-    // Until (unless) a bake texture lands, the bucket must not draw: an
-    // untextured alpha-test material renders every quad as opaque grey.
-    if (!imp.ready) {
-      for (const mesh of imp.bucket.meshes) mesh.setEnabled(false);
-    }
+    const matrices = yield* impostorMatrixSlices(lattice, fill, imp.centreY, x, z);
+    return () => {
+      applyBucketBuffer(imp.bucket, matrices, undefined, fade);
+      // Until (unless) a bake texture lands, the bucket must not draw: an
+      // untextured alpha-test material renders every quad as opaque grey.
+      if (!imp.ready) {
+        for (const mesh of imp.bucket.meshes) mesh.setEnabled(false);
+      }
+    };
   }
 
-  function rebuild(x: number, z: number): void {
-    const bands = collector.collect(x, z, nearRadius);
+  /** A bucket's buffers made now, handed to its meshes when the rebuild
+   * applies: every array is new, so nothing a mesh holds changes before. */
+  function bucketApply(
+    bucket: Bucket,
+    buf: Float32Array,
+    grad?: Float32Array,
+    foliage?: Float32Array,
+  ): () => void {
+    const fade = fadeBandsBuffer(buf.length / 16, bucket.fade);
+    return () => applyBucketBuffer(bucket, buf, grad, fade, foliage);
+  }
+
+  /**
+   * The rebuild for a camera at (x, z), as slices (`syncJobs.ts`): the bands
+   * collected, then each bucket's buffers made in a slice of its own, all of
+   * them new arrays, then every bucket handed its buffers in the last slice,
+   * so no frame draws one bucket moved on against another that has not.
+   */
+  function* rebuild(x: number, z: number): Slices {
+    // The bands are a function of the snapped origin alone: ones collected
+    // ahead for this origin are the ones this collect would make.
+    const origin = bandsOrigin(x, z);
+    const early = prepared !== null && prepared.x === origin.x && prepared.z === origin.z ? prepared.bands : null;
+    prepared = null;
+    const bands = early ?? (yield* collector.collectSlices(x, z, nearRadius));
+    yield;
     const giants = species as SpeciesBuckets[];
     const saps = saplingSpecies as SpeciesBuckets[];
     // ONE pass over each impostor list, not one per plane: the five buckets
     // that draw them are disjoint, so they can be split in a single walk.
     const lattice = partitionImpostors(bands.impostors, giants.length, saps.length);
     const fill = partitionImpostors(bands.impostorsFill, giants.length, saps.length);
+    const applies: (() => void)[] = [];
+    yield;
 
     // Giants and saplings run the identical shape, off different near lists
     // (`near` is GIANT-only, `saplings` SAPLING-only) and different slots of
@@ -1522,23 +1574,20 @@ export function createForestMeshes(
           // buffers are derived from them here and the objects themselves
           // stay read-only.
           const list = (nearLists[lod] as TreeInstance[]).filter((t) => t.species === s);
-          applyBucketBuffer(sp.lods[lod] as Bucket, treeMatrixBuffer(list, false), groundGradBuffer(list));
+          applies.push(bucketApply(sp.lods[lod] as Bucket, treeMatrixBuffer(list, false), groundGradBuffer(list)));
+          yield;
         }
         if (sp.understory !== null) {
           const list = bands.understory.filter((t) => t.species === s);
           // The understory profile tints its root toward the ground, so its
           // material declares the `foliage` attribute and the bucket has to
           // fill it — see `applyBucketBuffer`.
-          applyBucketBuffer(
-            sp.understory,
-            treeMatrixBuffer(list, true),
-            undefined,
-            undefined,
-            treeFoliageBuffer(seed, list),
-          );
+          applies.push(bucketApply(sp.understory, treeMatrixBuffer(list, true), undefined, treeFoliageBuffer(seed, list)));
+          yield;
         }
         const slot = slotBase + s;
-        fillImpostor(sp.impostor, lattice[slot] as TreeInstance[], fill[slot] as TreeInstance[], x, z);
+        applies.push(yield* fillImpostor(sp.impostor, lattice[slot] as TreeInstance[], fill[slot] as TreeInstance[], x, z));
+        yield;
       }
     }
 
@@ -1546,16 +1595,17 @@ export function createForestMeshes(
     // species' snags — exactly like the deadwood bucket it continues, so it
     // takes the single slot `partitionImpostors` puts last.
     const snagSlot = giants.length + saps.length;
-    fillImpostor(
+    applies.push(yield* fillImpostor(
       snagImpostor as Impostor,
       lattice[snagSlot] as TreeInstance[],
       fill[snagSlot] as TreeInstance[],
       x,
       z,
-    );
+    ));
+    yield;
 
     // One bucket, both dead-tree roles — see `deadwoodMatrixBuffer`.
-    applyBucketBuffer(
+    applies.push(bucketApply(
       deadwoodBucket as Bucket,
       deadwoodMatrixBuffer(
         seed,
@@ -1565,7 +1615,41 @@ export function createForestMeshes(
         deadwoodLogMaxX,
         deadwoodLogMinY,
       ),
-    );
+    ));
+    // The hand-over is one step: every bucket's new buffers at once.
+    yield FOREST_UPLOAD_MS;
+    for (const apply of applies) apply();
+    view.x = x;
+    view.z = z;
+    aimed = false;
+  }
+
+  const crossing = createCrossing();
+  const view = { x: NaN, z: NaN };
+  const owner = {};
+  const heading: Heading = { x: 0, z: 0 };
+  /** Bands collected ahead, for the origin the camera is heading for. */
+  let prepared: { x: number; z: number; bands: ForestBands } | null = null;
+  /** Whether the idle work is aimed at the next crossing from where the last
+   * rebuild left the forest, on the present heading. */
+  let aimed = false;
+
+  /** Idle work: the bands of the tree cell the camera reaches next. */
+  function* prepare(x: number, z: number): Slices {
+    const ahead = new Float64Array(2);
+    if (!nextCrossing(x, z, heading.x, heading.z, TREE_CELL, ahead)) return;
+    const origin = bandsOrigin(ahead[0] as number, ahead[1] as number);
+    if (prepared !== null && prepared.x === origin.x && prepared.z === origin.z) return;
+    const bands = yield* collector.collectSlices(origin.x, origin.z, nearRadius);
+    prepared = { x: origin.x, z: origin.z, bands };
+  }
+
+  /** Sets the idle work (`syncJobs.ts`) to collect the next cell's bands,
+   * while no rebuild is pending. */
+  function aim(): void {
+    if (aimed || options.jobs === undefined || options.jobs.pending(owner)) return;
+    aimed = true;
+    options.jobs.idle(owner, prepare(camX, camZ));
   }
 
   let landed: Promise<void> = Promise.resolve();
@@ -1602,12 +1686,14 @@ export function createForestMeshes(
   return {
     update(x, z) {
       if (disposed) return;
+      if (turn(heading, x - camX, z - camZ)) aimed = false;
       camX = x;
       camZ = z;
       // While the GLBs are still loading this only remembers the camera;
       // adopt() replays it the moment they land.
-      maybeBuild();
+      maybeBuild(false);
     },
+    view,
     casterMeshes,
     impostorBakes() {
       return impostors.map((imp) => ({ ...imp.bake }));
@@ -1616,6 +1702,8 @@ export function createForestMeshes(
     dispose() {
       if (disposed) return;
       disposed = true;
+      options.jobs?.cancel(owner);
+      options.jobs?.idle(owner, null);
       // First: a GLB in flight ends quietly and a bake still waiting stops
       // polling and releases its target.
       loads.abort();

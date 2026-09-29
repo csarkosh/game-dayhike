@@ -23,8 +23,10 @@ import {
   CLUTTER_MEADOW,
   type ClutterInstance,
 } from "../sim/clutter.js";
-import { finish, type Slices } from "./syncJobs.js";
-import { createCellWindow, inWindow, moveWindow, walkEveryCell, type CellRows, type CellWindow } from "./cellWindow.js";
+import { finish, nextCrossing, type Slices } from "./syncJobs.js";
+import {
+  createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows, type CellWindow,
+} from "./cellWindow.js";
 
 /**
  * Per-class scatter radius (m), indexed by class id (CLUTTER_GRASS = 0 ..
@@ -276,7 +278,7 @@ function clutterOrigin(camX: number, camZ: number, cell: number): { x: number; z
 }
 
 /** Listed instances a slice of the band walk classifies before it yields. */
-const BAND_SLICE = 4096;
+const BAND_SLICE = 6144;
 
 /**
  * The band walk itself, parameterised over where the cells come from and the
@@ -434,6 +436,16 @@ export type ClutterCollector = {
   /** Cells the last collect looked up, over every class: the cells its
    * squares added and those a sweep had let go inside them. For the tests. */
   readonly walked: number;
+  /**
+   * Idle work (`syncJobs.ts`): looks up ahead the cells the next collect
+   * will add, that of a camera at (camX, camZ) moving (hx, hz) a frame once
+   * it crosses the grass-cell line it reaches first, so that the collect
+   * finds them cached. `found` is told of each instance and returns its work,
+   * as `prefetchWindow` counts it. The lists are what they would be without.
+   */
+  prefetchSlices(
+    camX: number, camZ: number, hx: number, hz: number, radiusScale: number, found?: (inst: ClutterInstance) => number,
+  ): Slices;
 };
 
 // Numeric cell key, class-prefixed since nine grids share one cache: exact
@@ -510,19 +522,21 @@ const SWEEP_SLICE = 2048;
 export function createClutterCollector(seed: number, release?: (inst: ClutterInstance) => void): ClutterCollector {
   const cache = new Map<number, ClutterInstance | null>();
   const windows = Array.from({ length: CLUTTER_CLASS_COUNT }, () => createCellWindow<ClutterInstance>());
+  const fresh = { count: 0 };
   const lookups = windows.map((_, cls) => (cx: number, cz: number): ClutterInstance | null => {
     const key = cls * CELL_KEY_CLASS_SPAN + (cx + CELL_KEY_HALF) * CELL_KEY_SPAN + (cz + CELL_KEY_HALF);
     let inst = cache.get(key);
     if (inst === undefined) {
       inst = clutterInCell(seed, cls, cx, cz);
       cache.set(key, inst);
+      fresh.count++;
     }
     return inst;
   });
   let walked = 0;
   const rowsOf: CellRows<ClutterInstance> = function* (cls, x0, x1, z0, z1) {
     const w = windows[cls] as CellWindow<ClutterInstance>;
-    yield* moveWindow(w, x0, x1, z0, z1, lookups[cls]!);
+    yield* moveWindow(w, x0, x1, z0, z1, lookups[cls]!, fresh);
     walked += w.walked;
     return w.rows;
   };
@@ -567,11 +581,28 @@ export function createClutterCollector(seed: number, release?: (inst: ClutterIns
     }
     return bands;
   }
+  function* prefetchSlices(
+    camX: number, camZ: number, hx: number, hz: number, radiusScale: number, found?: (inst: ClutterInstance) => number,
+  ): Slices {
+    const ahead = new Float64Array(2);
+    if (!nextCrossing(camX, camZ, hx, hz, CLUTTER_GRASS_CELL, ahead)) return;
+    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+      const cell = clutterCell(cls);
+      const r = CLUTTER_RADII[cls]! * radiusScale;
+      const { x: ax, z: az } = clutterOrigin(ahead[0] as number, ahead[1] as number, cell);
+      yield* prefetchWindow(
+        windows[cls] as CellWindow<ClutterInstance>,
+        Math.floor((ax - r) / cell), Math.floor((ax + r) / cell), Math.floor((az - r) / cell), Math.floor((az + r) / cell),
+        lookups[cls]!, fresh, found,
+      );
+    }
+  }
   return {
     collectSlices,
     collect(camX: number, camZ: number, radiusScale: number = 1): ClutterBands {
       return finish(collectSlices(camX, camZ, radiusScale));
     },
+    prefetchSlices,
     get size(): number {
       return cache.size;
     },

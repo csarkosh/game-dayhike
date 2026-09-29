@@ -367,12 +367,16 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clip
   let headingZ = 0;
 
   /** Hands back a prepared move that is not for ring `level` as it stands,
-   * going to (ox, oz). */
-  function dropPrepared(level: number, ox: number, oz: number): void {
+   * going to (ox, oz) — or, with `onTheWay`, going part of the way there:
+   * along one axis of a step that also goes along the other. */
+  function dropPrepared(level: number, ox: number, oz: number, onTheWay = false): void {
     const p = prepared[level];
     if (p === null || p === undefined) return;
     const ring = rings[level] as RingSamples;
-    if (p.moves === ring.moves && p.originX === ox && p.originZ === oz) return;
+    if (p.moves === ring.moves) {
+      if (p.originX === ox && p.originZ === oz) return;
+      if (onTheWay && (p.originX === ox || p.originX === ring.originX) && (p.originZ === oz || p.originZ === ring.originZ)) return;
+    }
     spare.push(p.arrays);
     prepared[level] = null;
   }
@@ -439,13 +443,17 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clip
       const oz = snapOrigin(camZ, ring.spacing);
       // A ring that stays keeps its prepared move for when it does go.
       if (ox === ring.originX && oz === ring.originZ) continue;
-      dropPrepared(level, ox, oz);
+      // A move prepared along one axis of a step along both — the camera
+      // crossed an x line and a z line of the ring's lattice before its
+      // rebuild ran — is committed, and the move samples only the rest of
+      // the way: the samples are functions of where they are, so two moves
+      // make what one would.
+      dropPrepared(level, ox, oz, true);
       const p = prepared[level];
       if (p !== null && p !== undefined) {
         commitRingMove(ring, p, spare);
         prepared[level] = null;
         used++;
-        continue;
       }
       if (yield* ringSampleSlices(ring, seed, camX, camZ, spare)) computed += ring.lifted;
     }
@@ -1203,7 +1211,11 @@ function buildRenderer(
   const lowTierNearRadius = Math.round(NEAR_RADIUS * (140 / 240));
   const forestMeshes =
     forest !== null
-      ? createForestMeshes(scene, forest.seed, { nearRadius: tier === "low" ? lowTierNearRadius : undefined, pipelines: bakePipelines(pipelines, scope) })
+      ? createForestMeshes(scene, forest.seed, {
+        nearRadius: tier === "low" ? lowTierNearRadius : undefined,
+        pipelines: bakePipelines(pipelines, scope),
+        jobs,
+      })
       : null;
   partOf(forestMeshes);
   // Forest shadow casters (the LOD0 bucket only) cannot be registered here: the GLBs load

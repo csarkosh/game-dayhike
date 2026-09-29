@@ -215,7 +215,7 @@ export function createRingSamples(seed: number, level: number, camX: number, cam
 const VERTEX_SAMPLE_COST = 5;
 /** Half-lattice samples' worth of work a slice of a ring's move does before
  * it yields: about a tenth of a millisecond. */
-const MOVE_SLICE_COST = 64;
+const MOVE_SLICE_COST = 80;
 /** Lifts a slice computes before it yields: about as long. */
 const LIFT_SLICE = 1024;
 

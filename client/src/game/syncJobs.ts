@@ -2,7 +2,8 @@
  * The renderer's rebuilds, spread over frames under a per-frame budget.
  *
  * A rebuild that a crossing starts — the terrain's rings, the ground cover's
- * lists — is a job: a generator whose every `yield` ends one slice and whose
+ * lists, the forest's bands — is a job: a generator whose every `yield` ends
+ * one slice and whose
  * last slice applies the result to the shell's meshes in one step, so no frame
  * ever draws a buffer half written. `run`, called once a frame at the end of
  * the renderer's `sync`, first runs to its end any job begun
@@ -25,7 +26,8 @@
  *
  * Which crossings wait and which do not is each shell's `crossingAt`: the
  * first build, a jump of more than one cell (a teleport) and a view moving
- * more than half a cell a frame (the free camera's boost) all build at once,
+ * more than half a cell or a metre a frame (the free camera's boost) all
+ * build at once,
  * as they did before there were jobs, so at those the picture is exactly what
  * it was. A crossing that finds the shell's last job still pending — the view
  * has moved past a further line before that job applied, as a walk along a
@@ -50,6 +52,44 @@ export const SYNC_LATE_FRAMES_MAX = 6;
  * returns `done` has applied the result. A slice may yield what it expects
  * the next to take (ms); nothing yielded means a small one. */
 export type Slices<T = void> = Generator<number | void, T, void>;
+
+/** Elements a slice of `sortSlices` moves before it yields. */
+const SORT_SLICE = 8192;
+
+/**
+ * Sorts `list` in place, in slices: a bottom-up merge sort, stable like
+ * `Array.prototype.sort`, so it leaves exactly the order that call would —
+ * a stable sort's result is the one permutation that orders the keys and
+ * keeps equal ones as they came.
+ */
+export function* sortSlices<T>(list: T[], compare: (a: T, b: T) => number): Slices {
+  const n = list.length;
+  let from = list;
+  let to: T[] = new Array<T>(n);
+  let moved = 0;
+  for (let width = 1; width < n; width *= 2) {
+    for (let lo = 0; lo < n; lo += 2 * width) {
+      const mid = Math.min(lo + width, n);
+      const hi = Math.min(lo + 2 * width, n);
+      let i = lo;
+      let j = mid;
+      let k = lo;
+      // Ties take the left run first: that is what keeps it stable.
+      while (i < mid && j < hi) to[k++] = compare(from[j] as T, from[i] as T) < 0 ? (from[j++] as T) : (from[i++] as T);
+      while (i < mid) to[k++] = from[i++] as T;
+      while (j < hi) to[k++] = from[j++] as T;
+      moved += hi - lo;
+      if (moved >= SORT_SLICE) {
+        moved = 0;
+        yield;
+      }
+    }
+    const swap = from;
+    from = to;
+    to = swap;
+  }
+  if (from !== list) for (let i = 0; i < n; i++) list[i] = from[i] as T;
+}
 
 /** Runs `slices` to its end at once and returns what it returns. */
 export function finish<T>(slices: Slices<T>): T {
@@ -94,8 +134,9 @@ type Job = { owner: object; slices: Slices; begun: number; next: number };
  */
 export function createSyncJobs(clock: () => number): SyncJobs {
   const queue: Job[] = [];
-  /** Idle work, one per owner, oldest first. */
+  /** Idle work, one per owner, and whose turn it is. */
   const idle: { owner: object; slices: Slices }[] = [];
+  let idleTurn = 0;
   let frame = 0;
   const last = { slices: 0, late: 0, completed: 0, idle: 0 };
 
@@ -179,14 +220,17 @@ export function createSyncJobs(clock: () => number): SyncJobs {
         slice(job);
         // A job done has left the queue, and the next has moved up to `i`.
       }
-      // Then idle work, with what is left, while nothing is pending.
+      // Then idle work, with what is left, while nothing is pending: a slice
+      // of each owner's in turn, so none waits on another's.
       while (queue.length === 0 && idle.length > 0 && clock() - start < SYNC_BUDGET_MS) {
-        const work = idle[0] as { owner: object; slices: Slices };
+        idleTurn %= idle.length;
+        const work = idle[idleTurn] as { owner: object; slices: Slices };
         let done = true;
         try {
           done = work.slices.next().done === true;
         } finally {
-          if (done) idle.shift();
+          if (done) idle.splice(idleTurn, 1);
+          else idleTurn++;
         }
         last.idle++;
       }
@@ -197,6 +241,50 @@ export function createSyncJobs(clock: () => number): SyncJobs {
     },
     last,
   };
+}
+
+/** A view that moved more than this between two frames (m) — 60 m/s at 60
+ * frames a second, past any speed on foot — builds at once whatever its
+ * shell's cell: the free camera's boost moves 2.4 m a frame. */
+export const SYNC_FAST_STEP_M = 1;
+
+/**
+ * Where a view at (x, z), moving (hx, hz) a frame, next crosses a line of a
+ * grid of `cell` metres — whichever line, x or z, it reaches first — a
+ * millimetre past the line: the view its next crossing will be built for,
+ * give or take a frame's travel. Writes it to `out` as x, z and returns
+ * false when the view is not moving.
+ */
+export function nextCrossing(x: number, z: number, hx: number, hz: number, cell: number, out: Float64Array): boolean {
+  const lineX = hx > 0 ? (Math.floor(x / cell) + 1) * cell : Math.floor(x / cell) * cell;
+  const lineZ = hz > 0 ? (Math.floor(z / cell) + 1) * cell : Math.floor(z / cell) * cell;
+  const tx = hx !== 0 ? (lineX - x) / hx : Infinity;
+  const tz = hz !== 0 ? (lineZ - z) / hz : Infinity;
+  if (tx === Infinity && tz === Infinity) return false;
+  if (tx <= tz) {
+    const px = lineX + Math.sign(hx) * 1e-3;
+    out[0] = px;
+    out[1] = z + ((px - x) / hx) * hz;
+  } else {
+    const pz = lineZ + Math.sign(hz) * 1e-3;
+    out[0] = x + ((pz - z) / hz) * hx;
+    out[1] = pz;
+  }
+  return true;
+}
+
+/** A view's heading: its last move between two frames that moved. */
+export type Heading = { x: number; z: number };
+
+/** Takes the view's move since last frame as its heading, if it moved, and
+ * says whether it turned: either component changed sign, so the lines its
+ * next crossings are on changed. */
+export function turn(h: Heading, dx: number, dz: number): boolean {
+  if ((dx === 0 && dz === 0) || Number.isNaN(dx) || Number.isNaN(dz)) return false;
+  const turned = Math.sign(dx) !== Math.sign(h.x) || Math.sign(dz) !== Math.sign(h.z);
+  h.x = dx;
+  h.z = dz;
+  return turned;
 }
 
 /** What a shell does with this frame's view. */
@@ -216,9 +304,10 @@ export function createCrossing(): Crossing {
  * holds. Otherwise "now" — build at once, as before there were jobs — for the
  * first build, for a jump of more than one cell on either axis since the last
  * origin (a teleport, a burst of speed), for a view that moved more than half a
- * cell since last frame (so the next crossing is at most a frame or two away),
- * and for a shell given no scheduler (`deferrable` false). "later" for
- * everything else: a one-cell step at a walk or a run, which becomes a job.
+ * cell since last frame (so the next crossing is at most a frame or two away)
+ * or more than `SYNC_FAST_STEP_M`, and for a shell given no scheduler
+ * (`deferrable` false). "later" for everything else: a one-cell step at a walk
+ * or a run, which becomes a job.
  */
 export function crossingAt(
   c: Crossing,
@@ -237,6 +326,6 @@ export function crossingAt(
   const jump = Math.abs(ox - c.originX) > cell || Math.abs(oz - c.originZ) > cell;
   c.originX = ox;
   c.originZ = oz;
-  if (!deferrable || first || jump || moved > cell / 2) return "now";
+  if (!deferrable || first || jump || moved > Math.min(cell / 2, SYNC_FAST_STEP_M)) return "now";
   return "later";
 }

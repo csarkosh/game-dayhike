@@ -3,8 +3,8 @@ import { activeTerrainVariant } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { latticeHash } from "./groundHexParams.js";
 import { CLUTTER_FAR_SPLIT, CLUTTER_RADII, clutterSeamEdges } from "./clutterField.js";
-import { finish, type Slices } from "./syncJobs.js";
-import { createCellWindow, inWindow, moveWindow, walkEveryCell, type CellRows } from "./cellWindow.js";
+import { finish, nextCrossing, type Slices } from "./syncJobs.js";
+import { createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows } from "./cellWindow.js";
 
 /**
  * The blade field: the near-field lattice the blade clumps stand on, walked
@@ -264,6 +264,14 @@ export type BladeCollector = {
   /** Cells the last collect looked up: those its square added and those a
    * sweep had let go inside it. For the tests. */
   readonly walked: number;
+  /**
+   * Idle work (`syncJobs.ts`): looks up ahead the cells the next collect
+   * will add, that of an eye at (camX, camZ) moving (hx, hz) a frame once it
+   * crosses the rebuild line it reaches first, so that the collect finds
+   * them cached. `found` is told of each cell and returns its work, as
+   * `prefetchWindow` counts it. The lists are what they would be without.
+   */
+  prefetchSlices(camX: number, camZ: number, hx: number, hz: number, found?: (cell: BladeCell) => number): Slices;
 };
 
 // Numeric cell key: exact for |index| < 2^20 (±524 km on a 0.5 m lattice).
@@ -290,17 +298,19 @@ const SWEEP_SLICE = 2048;
 export function createBladeCollector(seed: number, release?: (cell: BladeCell) => void): BladeCollector {
   const cache = new Map<number, BladeCell | null>();
   const square = createCellWindow<BladeCell>();
+  const fresh = { count: 0 };
   const lookup = (ci: number, cj: number): BladeCell | null => {
     const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);
     let c = cache.get(key);
     if (c === undefined) {
       c = bladeCellAt(seed, ci, cj);
       cache.set(key, c);
+      fresh.count++;
     }
     return c;
   };
   const rowsOf: CellRows<BladeCell> = function* (_, x0, x1, z0, z1) {
-    yield* moveWindow(square, x0, x1, z0, z1, lookup);
+    yield* moveWindow(square, x0, x1, z0, z1, lookup, fresh);
     return square.rows;
   };
   function* collectSlices(camX: number, camZ: number): Slices<BladeTiers> {
@@ -325,8 +335,20 @@ export function createBladeCollector(seed: number, release?: (cell: BladeCell) =
     }
     return tiers;
   }
+  function* prefetchSlices(camX: number, camZ: number, hx: number, hz: number, found?: (cell: BladeCell) => number): Slices {
+    const ahead = new Float64Array(2);
+    if (!nextCrossing(camX, camZ, hx, hz, BLADE_REBUILD_CELL, ahead)) return;
+    const r = BLADE_REACH + BLADE_PAD;
+    const ox = bladeOrigin(ahead[0] as number), oz = bladeOrigin(ahead[1] as number);
+    yield* prefetchWindow(
+      square,
+      Math.floor((ox - r) / BLADE_CELL), Math.floor((ox + r) / BLADE_CELL), Math.floor((oz - r) / BLADE_CELL), Math.floor((oz + r) / BLADE_CELL),
+      lookup, fresh, found,
+    );
+  }
   return {
     collectSlices,
+    prefetchSlices,
     collect(camX: number, camZ: number): BladeTiers {
       return finish(collectSlices(camX, camZ));
     },

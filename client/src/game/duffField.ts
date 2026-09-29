@@ -4,8 +4,8 @@ import { forestDensity } from "../sim/vegetation.js";
 import { latticeHash } from "./groundHexParams.js";
 import { DUFF_CHARACTER_COUNT, DUFF_TWIG } from "./duffClump.js";
 import { GROW_NONE, type BladeEdges } from "./bladeField.js";
-import { finish, type Slices } from "./syncJobs.js";
-import { createCellWindow, inWindow, moveWindow, walkEveryCell, type CellRows } from "./cellWindow.js";
+import { finish, nextCrossing, type Slices } from "./syncJobs.js";
+import { createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows } from "./cellWindow.js";
 
 /**
  * The duff field: the counterpart of `bladeField.ts` for the ground's dead
@@ -192,6 +192,14 @@ export type DuffCollector = {
   /** Cells the last collect looked up: those its square added and those a
    * sweep had let go inside it. For the tests. */
   readonly walked: number;
+  /**
+   * Idle work (`syncJobs.ts`): looks up ahead the cells the next collect
+   * will add, that of an eye at (camX, camZ) moving (hx, hz) a frame once it
+   * crosses the rebuild line it reaches first, so that the collect finds
+   * them cached. `found` is told of each cell and returns its work, as
+   * `prefetchWindow` counts it. The lists are what they would be without.
+   */
+  prefetchSlices(camX: number, camZ: number, hx: number, hz: number, reach: number, found?: (cell: DuffCell) => number): Slices;
 };
 
 // Numeric cell key: exact for |index| < 2^20 (±524 km on a 1 m lattice).
@@ -222,17 +230,19 @@ const SWEEP_SLICE = 2048;
 export function createDuffCollector(seed: number, release?: (cell: DuffCell) => void): DuffCollector {
   const cache = new Map<number, DuffCell | null>();
   const square = createCellWindow<DuffCell>();
+  const fresh = { count: 0 };
   const lookup = (ci: number, cj: number): DuffCell | null => {
     const key = (ci + KEY_HALF) * KEY_SPAN + (cj + KEY_HALF);
     let c = cache.get(key);
     if (c === undefined) {
       c = duffCellAt(seed, ci, cj);
       cache.set(key, c);
+      fresh.count++;
     }
     return c;
   };
   const rowsOf: CellRows<DuffCell> = function* (_, x0, x1, z0, z1) {
-    yield* moveWindow(square, x0, x1, z0, z1, lookup);
+    yield* moveWindow(square, x0, x1, z0, z1, lookup, fresh);
     return square.rows;
   };
   function* collectSlices(camX: number, camZ: number, reach: number): Slices<DuffTiers> {
@@ -264,8 +274,20 @@ export function createDuffCollector(seed: number, release?: (cell: DuffCell) => 
     }
     return tiers;
   }
+  function* prefetchSlices(camX: number, camZ: number, hx: number, hz: number, reach: number, found?: (cell: DuffCell) => number): Slices {
+    const ahead = new Float64Array(2);
+    if (!nextCrossing(camX, camZ, hx, hz, DUFF_REBUILD_CELL, ahead)) return;
+    const r = reach + DUFF_PAD;
+    const ox = duffOrigin(ahead[0] as number), oz = duffOrigin(ahead[1] as number);
+    yield* prefetchWindow(
+      square,
+      Math.floor((ox - r) / DUFF_CELL), Math.floor((ox + r) / DUFF_CELL), Math.floor((oz - r) / DUFF_CELL), Math.floor((oz + r) / DUFF_CELL),
+      lookup, fresh, found,
+    );
+  }
   return {
     collectSlices,
+    prefetchSlices,
     collect(camX: number, camZ: number, reach: number): DuffTiers {
       return finish(collectSlices(camX, camZ, reach));
     },

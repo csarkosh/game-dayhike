@@ -53,7 +53,7 @@ import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
 import { createKeptValues } from "./keptValues.js";
-import { createCrossing, crossingAt, finish, type Slices, type SyncJobs } from "./syncJobs.js";
+import { createCrossing, crossingAt, finish, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 
 export const BLADE_MESH_PREFIX = "blade_clumps";
 export function bladeMeshName(character: number, tier: number, size: number): string {
@@ -361,6 +361,10 @@ const KEPT_FOLIAGE = 16;
 const FILL_SLICE = 1024;
 const FILL_NEW_COST = 16;
 
+/** What computing a cell's kept values ahead weighs on a slice of idle work,
+ * in `prefetchWindow`'s units: about what sampling a cell does. */
+const KEPT_AHEAD_COST = 64;
+
 export function createBladeMeshes(scene: Scene, seed: number, options: BladeMeshesOptions): BladeMeshes {
   /**
    * A cell's matrix and tint, computed the first time it is listed. Both are
@@ -510,11 +514,30 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
     dirty = true;
     view.x = x;
     view.z = z;
+    aimed = false;
   }
 
   const crossing = createCrossing();
   const view = { x: NaN, z: NaN };
   const owner = {};
+  const heading: Heading = { x: 0, z: 0 };
+  /** Whether the idle work is aimed at the next crossings from where the
+   * last rebuild left the field, on the present heading. */
+  let aimed = false;
+  /** A cell looked up ahead: its matrix and tint computed too, so the fill at
+   * the crossing only copies them. */
+  const ahead = (c: BladeCell): number => {
+    const known = kept.size;
+    kept.offsetOf(c);
+    return kept.size > known ? KEPT_AHEAD_COST : 1;
+  };
+  /** Sets the idle work (`syncJobs.ts`) to look up the cells the next
+   * crossings add, while no rebuild is pending. */
+  function aim(x: number, z: number): void {
+    if (aimed || jobs === undefined || jobs.pending(owner)) return;
+    aimed = true;
+    jobs.idle(owner, collector.prefetchSlices(x, z, heading.x, heading.z, ahead));
+  }
 
   return {
     /**
@@ -528,8 +551,12 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
       if (disposed) return;
       const ox = Math.floor(x / BLADE_REBUILD_CELL) * BLADE_REBUILD_CELL;
       const oz = Math.floor(z / BLADE_REBUILD_CELL) * BLADE_REBUILD_CELL;
+      if (turn(heading, x - crossing.lastX, z - crossing.lastZ)) aimed = false;
       const kind = crossingAt(crossing, x, z, ox, oz, BLADE_REBUILD_CELL, jobs !== undefined);
-      if (kind === "none") return;
+      if (kind === "none") {
+        aim(x, z);
+        return;
+      }
       if (kind === "later") {
         (jobs as SyncJobs).begin(owner, rebuild(x, z));
         return;
@@ -561,6 +588,7 @@ export function createBladeMeshes(scene: Scene, seed: number, options: BladeMesh
       if (disposed) return;
       disposed = true;
       jobs?.cancel(owner);
+      jobs?.idle(owner, null);
       scene.getEngine().onContextRestoredObservable.remove(restoreObserver);
       // The meshes and the materials are both ours — generated here, adopted
       // from no container — so both have to be disposed by hand.
