@@ -183,9 +183,9 @@ export type WgslMap = {
  * line that is not text or that holds a newline, an entry that is not an
  * even count of numbers (at least two), a run that is not whole numbers, that
  * starts outside the table, holds no lines or reaches past the table's end.
- * A damaged map is refused whole, so that no entry of it ever expands to text
- * other than the translation it was made of. The runs are held in one typed
- * array, the lines as the parse made them.
+ * A damaged map is refused whole, so that no entry of a map whose table or
+ * runs are broken is ever served, not even one the damage does not touch.
+ * The runs are held in one typed array, the lines as the parse made them.
  */
 export function readMap(text: string, salt: string): WgslMap {
   const map = JSON.parse(text) as { format?: unknown; salt?: unknown; lines?: unknown; entries?: unknown };

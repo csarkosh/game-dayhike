@@ -7,7 +7,8 @@ and shipped as the lookup's first source (§5.2), on
 (`WEBGPU_ENABLED = false`, so reached only with `?engine=webgpu`). Nothing
 here but the lookup and the store has yet been measured in a browser (their
 first readings are in §8): §8 says what has to be, and §9 the
-bars it must meet.
+bars it must meet. Since 2026-09-29 the shipped map stores each distinct line
+of WGSL once, each entry as runs of those lines (format 2, §5.2).
 
 Babylon 9.18.0 throughout; line references are to its installed
 `node_modules/@babylonjs/core`.
@@ -279,13 +280,17 @@ hundred kilobytes, and, while the entries are unzipped, their gzipped bytes,
 a few MB. What it keeps is never held. The page's own translations are kept
 up to `WGSL_KEPT_MAX_CHARS`, the same 32 MB of text; past it a translation is
 not kept here, and the store keeps it for the next visit. The map holds what
-the build shipped. Over a long hike none of it grows past those bounds:
+the build shipped as it ships it: its table of distinct lines and each
+entry's runs, 7.4 MB for the 522 entries of the recorded corpus, measured
+under Node (27.7 MB when each entry was held whole); an entry is expanded
+when it is asked for, and the text handed over is not kept by the map. Over
+a long hike none of it grows past those bounds:
 nothing is read after the start's read. What a start holds, estimated from
 the Windows machine's reading (a start's WGSL 4.99 MB of text over 106
 stages; the store's 128 entries 5.9 M characters): about 5 MB of strings for
 the page's own on a first visit, about 6 MB for the store's read on a return
-visit, and the map's entries beside either (for a start's set, about as much
-again); 64 MB and the map at the very most.
+visit, and the map's table and runs beside either; 64 MB and the map at the
+very most.
 
 **Let go with its engine.** Every source is closed when the engine is disposed
 (`releaseShaderLookup`, which the engine's dispose observable calls), and
@@ -393,14 +398,15 @@ from the start found 88 and 94 stages in the shipped map and translated
 none. The corpus holds 522 stages (274 vertex, 149 fragment, 99 fragment
 stages that turn the uniformity analysis off), 16,921,160 bytes in 522
 files, 22 to 43 a folder (17,424,519 bytes in the sixteen JSON files it was
-kept in before; the map made of either is the same 28,479,065 bytes, SHA-256
-`27e67da7…f834`).
+kept in before; the map of format 1 made of either is the same 28,479,065
+bytes, SHA-256 `27e67da7…f834`).
 The stages recorded on Windows serve a page on macOS and the reverse where
 both ask for the same text: the key does not carry the platform. The map of
-the 522, made on an Apple M4: 28,479,065 bytes raw, 4,916,997 gzip −9,
-518,891 brotli −q 11, none failed, read as one JSON in 25.9 ms; it sits
-under the ceiling with 5 MB to spare, which the next recording of this size
-would use up (the ceiling's note below).
+the 522 in format 1, each entry's WGSL whole, made on an Apple M4:
+28,479,065 bytes raw, 4,916,997 gzip −9, 518,891 brotli −q 11, none failed,
+read as one JSON in 25.9 ms, 5 MB under the ceiling of 32 MiB it then had.
+In format 2, each distinct line once (below), the same 522 entries are
+5,073,415 bytes raw, 933,349 gzip −9, 320,265 brotli −q 11.
 
 **Line endings.** The recording was first made from a checkout with Windows
 line endings: the game's `.fx` shader files had no line-ending rule, so they
@@ -428,16 +434,24 @@ asks for them (the caps, the engine's version and the game's own defines
 differ from a browser's). They are the tests' fixture,
 `tools/wgsl/test/fixtures/node-corpus/`, which `node-corpus.mjs` rewrites.
 
-**The map it makes, measured** (the test workflow's `build` job, GitHub's
-runner, Node 22): 421 entries, none failed; 23,367,492 bytes raw, 4,035,679
-gzip −9, 488,023 brotli −q 11 (brotli's window sees across entries, gzip's
-does not); the largest entry 184,166 bytes, a fragment stage; 35.5 s of
-translation, 84 ms a stage on average, 477 ms the longest; read as one JSON
-in 24.4 ms, as an index and a text in 2.7 ms (17.7 and 3.3 ms on a later
-run). Its WGSL is 642,494 lines, 77,364 of them distinct, in 3,409,566
-bytes; with every run of digits read as `#`, 3,722 distinct, in 169,814
-bytes: most of the map is lines it repeats, and most of the rest differ only
-in a generated number. The map's ceiling was set from these figures (below).
+**The map it makes, measured.** In format 1 (the test workflow's `build`
+job, GitHub's runner, Node 22): 421 entries, none failed; 23,367,492 bytes
+raw, 4,035,679 gzip −9, 488,023 brotli −q 11 (brotli's window sees across
+entries, gzip's does not); the largest entry 184,166 bytes, a fragment
+stage; 35.5 s of translation, 84 ms a stage on average, 477 ms the longest;
+read as one JSON in 24.4 ms, as an index and a text in 2.7 ms (17.7 and
+3.3 ms on a later run). Its WGSL is 642,494 lines, 77,364 of them distinct,
+in 3,409,566 bytes; with every run of digits read as `#`, 3,722 distinct, in
+169,814 bytes: most of the map is lines it repeats, and most of the rest
+differ only in a generated number. That is why the map is now format 2
+(below). Of the 522 stages, on an Apple M4, Node 22: 783,340 lines,
+79,788 distinct in 3,520,706 bytes (each with its newline), stored as
+209,314 runs; 5,073,415 bytes raw, 933,349 gzip −9, 320,265 brotli −q 11,
+against 28,479,065, 4,916,997 and 518,891 in format 1; read with the page's
+reader (its parse and its checks) in 8.6 to 9.5 ms, against 28 to 30 ms for
+format 1's parse into a map of whole entries; every entry expanded in 11.6
+to 13.0 ms, the largest (184,166 bytes) in 0.08 ms, the median entry
+(23,654 bytes) in 0.01 ms.
 
 **The tool.** `tools/wgsl/build-map.mjs`, plain Node, run by `npm run build`
 before `vite build`: it loads each translator's loader, a classic script, in
@@ -453,31 +467,48 @@ by the build's own function); and translates each as the page does
 same corpus and translators give the same bytes. A stage that does not
 translate is left out and reported loudly, and the build goes on: the page
 translates that stage itself, as it always has. It prints the entries, the
-bytes raw, gzip −9 and brotli −q 11, each stage's milliseconds, and what
-reading the map costs in its two candidate forms. `--reuse` keeps a map made
-from the same corpus under the same salt (the dev server's start).
+bytes raw, gzip −9 and brotli −q 11, each stage's milliseconds, the lines in
+all and distinct, the runs, and what reading the map costs the page: reading
+it with the page's reader, expanding every entry, expanding the largest.
+**It proves its own output**: once the map is written, the tool reads the
+file back with the page's own reader (`readMap`), expands every entry and
+compares it with the translation it was made of, byte for byte; an entry
+that differs, is missing or is no translation fails the build, naming the
+key, and the map is removed with its record of inputs, so nothing ships it
+and nothing reuses it. `--reuse` keeps a map made from the same corpus under
+the same salt in the same format (the dev server's start).
 
-**The map.** `{"format": "dayhike-wgsl-map/1", "salt": ..., "entries":
-{key: wgsl}}`, one JSON, its keys sorted (`mapText`, `readMap`), written to
-`client/shaders/map/` (not committed). One map for every tier: the engine's
-maker does not know the tier, and whether a map per tier pays is for the
-real corpus's sizes to decide (§8). Chosen over a JSON index into one UTF-8
-text (the page parsing a small index and decoding each entry from its bytes,
-never parsing the WGSL as JSON) for three reasons, the first two decisive
-whatever the sizes:
+**The map.** `{"format": "dayhike-wgsl-map/2", "salt": ..., "lines":
+[...], "entries": {key: [start, length, start, length, ...]}}`, one JSON
+(`mapText`, `readMap`), written to `client/shaders/map/` (not committed):
 
-- the host compresses a JSON response (gzip or brotli) and would serve a
-  binary blob as it is: the WGSL is 6 to 50 times smaller compressed (§8);
-- parsed, each entry is one string, held once for the engine's life (§5);
-  the other form would hold the whole blob of bytes and, beside it, a decoded
-  string of every entry asked for;
-- reading it costs one `JSON.parse`, when it lands, before the preparations
-  that find it. The tool measures both forms on each map: on the committed
-  corpus (10 entries, 91,340 bytes raw, 16,655 gzip −9, 13,147 brotli −q 11)
-  0.09 ms as one JSON and 0.02 ms as an index and a text, under Node on
-  GitHub's runner, both nothing; the measurement to watch is the real
-  corpus's in a browser on the slow machine (§8): the index would be taken up
-  only if the JSON's parse is a long task the start can feel.
+- `lines` holds every distinct line of the entries' WGSL once, in order of
+  first appearance, the entries taken in ascending order of key. A line is
+  what `split("\n")` gives, so a text that ends in a newline ends in an
+  empty line, and an entry's lines joined with `"\n"` are its WGSL exactly.
+- `entries[key]` is the entry's lines as runs of consecutive indices into
+  `lines`, each run as long as it can be: a line extends a run only when it
+  is the next line of the table, so a line repeated in a row starts a run
+  of its own each time.
+- The same entries always make the same bytes, whatever the order the
+  stages were read or translated in. The keys and the salt are those of
+  format 1: the browser's store and every recorded key stay valid.
+
+Format 1 held each entry's WGSL whole, `{key: wgsl}`: 28.5 MB for the 522
+entries, where most lines repeat across entries (an eighth of its size is
+distinct lines). Format 2 is a fifth of that raw and gzipped (§5.2's
+figures). Storing the lines as templates with their numbers apart (3,840
+distinct with every run of digits read as `#`) would take it to about
+3.1 MB raw and 0.73 MB gzipped: too little gained for what it adds.
+
+One map for every tier: the engine's maker does not know the tier, and
+whether a map per tier pays is for the real corpus's sizes to decide (§8).
+JSON, not a binary form, because the host compresses a JSON response (gzip
+or brotli) and would serve a binary blob as it is: the WGSL is 5 to 16
+times smaller compressed. Reading it costs one `JSON.parse` and a check of
+every line and run, when it lands, before the preparations that find it:
+about 9 ms under Node for the 522 entries; the measurement to watch is a
+browser's on the slow machine (§8).
 
 **In the build.** The WebGPU module imports the map's URL from
 `virtual:dayhike-wgsl-map` (`tools/wgsl/lib/mapPlugin.mjs`): in `vite build`
@@ -498,16 +529,19 @@ server translates nothing and answers the map's request with a 404; the
 build always translates. Under the suite the URL is empty and no map is
 asked for.
 
-**Its ceiling.** A map is at most `MAP_MAX_BYTES`, 32 MiB (33,554,432 bytes)
-of text: the page holds it whole for the engine's life and parses it in one
-task on its thread. It was set from the map the recorded corpus makes,
-23,367,492 bytes for two tiers on one platform, which a page holds in about
-250 to 280 MB in all and reads as one JSON in 24 to 35 ms. A recording on
-another platform that takes the union past it is answered by a map per
-platform, not by a higher ceiling. The build fails on a larger map, naming
-its size and the ceiling. The build also prints how much of the map is
-repeated lines (`lines:`: the lines in all, the distinct ones and their
-bytes, and the same with every run of digits read as `#`). The
+**Its ceiling.** A map is at most `MAP_MAX_BYTES`, 8 MiB (8,388,608 bytes)
+of text: the page parses it in one task on its thread and holds its lines
+and runs for the engine's life. It was set from the measured map of the
+recorded corpus in format 2, 5,073,415 bytes for 522 entries, about 9,700
+bytes an entry: at that average it holds about 860 entries, and more in
+practice, since a new entry's lines are mostly in the table already. (Format
+1's ceiling was 32 MiB, set from its 23,367,492 bytes for 421 entries.) A
+recording on another platform that takes the union past it is answered by a
+map per platform, not by a higher ceiling. The build fails on a larger map,
+naming its size and the ceiling. The build also prints how much of the map
+is repeated lines (`lines:`: the lines in all, the distinct ones and their
+bytes, and the same with every run of digits read as `#`) and its runs
+(`runs:`). The
 page reads the map's body as it arrives, counting its decoded bytes, and
 stops and refuses it once they pass the ceiling, before anything is parsed;
 the `Content-Length` header cannot bound it alone, since the host serves the
@@ -520,7 +554,8 @@ it, one console line.
 **The build, checked on every push.** The test workflow's `build` job builds
 the client as the deploy does (`npm run build`, under the production base)
 and runs `tools/wgsl/check-build.mjs` on it: exactly one
-`assets/wgsl-map-*.json`, parsing as a map of the known format; the entry
+`assets/wgsl-map-*.json`, parsing as a map of the known format with its
+table of lines and its entries; the entry
 chunk and every chunk it imports statically naming none of `wgsl-map`,
 `wgslFormat`, `dayhike-wgsl`; the WebGPU chunk naming the map; and the deploy
 check (below) accepting the built map against the built chunks, read by the
@@ -528,7 +563,11 @@ same walk the deploy check fetches them with. Its log names the chunk that
 carries Babylon's version.
 
 **On the page.** `loadWgslMap` fetches the map as the engine is made, beside
-the store's read, and parses it into memory when it lands; a map that lands
+the store's read, and reads it into memory when it lands: its table of
+lines as the parse made them and every entry's runs in one `Uint32Array`,
+never the entries expanded. An entry is expanded, its lines joined, each
+time the lookup asks for it, and the map keeps nothing of the text it hands
+over (what the lookup keeps is its own rule, §5). A map that lands
 after the engine is handed over is found from then on, and its fetch is
 aborted when the engine is let go. The engine's maker waits for it by its
 own bound, `WGSL_MAP_MS`, 1 s from its fetch, within the start's budget. The
@@ -544,12 +583,19 @@ wait: the wait is that second. A start's map, about a megabyte compressed,
 comes within it over a link of 10 Mbit/s or more; fetching it earlier, beside
 the translators, is the lever for slower links. Its salt is checked against the page's
 and its format must be known; a map that does not come (a refused fetch, an
-HTTP error, a fetch that never answers), is another build's, or does not
-parse is a source with nothing in it: one console line, nothing the player
-sees, never a switch to WebGL2, never a record. So is one that reads past
-the map's ceiling (above), refused before it is parsed. It takes no writes, so a
-stage found in it is never written to the store. Its hits are counted as
-`shipped` in `hitsBySource`. What it read is held for the engine's life
+HTTP error, a fetch that never answers), is another build's, is of
+another format (format 1 included), or does not parse is a source with
+nothing in it: one console line, nothing the player sees, never a switch to
+WebGL2, never a record. So is one that reads past the map's ceiling (above),
+refused before it is parsed, and one damaged anywhere, refused whole before
+any entry is served: a line that is not text or holds a newline, an entry
+that is not an even count of numbers (at least two), a run that is not
+whole numbers, starts outside the table, holds no lines or reaches past the
+table's end. No entry of a map damaged in its structure is ever served;
+a line's text altered in place is what `?wgsl=verify` and the honesty test
+below are for, as in format 1. It takes no writes,
+so a stage found in it is never written to the store. Its hits are counted
+as `shipped` in `hitsBySource`. What it read is held for the engine's life
 (§5).
 
 **A stale entry** is one whose text the game no longer produces: after a
@@ -562,9 +608,10 @@ older build is re-recorded, not trusted.
 **Honesty.** `wgslHonesty.test.ts` translates the Node-made fixture with the
 tool and with the page's own lookup, both with the real translators under
 Node, through Babylon's own engine methods on a stand-in device, and holds
-every map entry byte for byte to the page's WGSL, and the tool's salt to the
-page's `buildSalt`. `?wgsl=verify` counts a map entry that differs from what
-the page translates (held with an entry altered by one byte). Whether a
+every map entry, read with the page's reader and expanded, byte for byte to
+the page's WGSL, and the tool's salt to the page's `buildSalt`.
+`?wgsl=verify` counts a map entry, expanded, that differs from what the page
+translates (held with an entry altered by one byte). Whether a
 browser's WebAssembly gives Node's bytes is §8's item 4.
 
 **The deploy check.** `npm run deploy:verify` (`tools/deploy/verify.mjs`,
@@ -572,7 +619,9 @@ check 4d) finds the map in the WebGPU chunk, and checks that it is served
 `immutable`, parses, is of a format the chunk reads, carries in its salt the
 translators' digests and the key's format the chunk was built with, Babylon's
 version the bundle carries and, where the bundle shows it, Babylon's
-page-wide uniformity switch, and holds translations. The bundle it searches
+page-wide uniformity switch, and holds translations: a table of lines and
+entries whose runs lie inside it, as the page reads them, at least one
+expanding to text. The bundle it searches
 is the entry chunk and every chunk it imports statically, fetched by the walk
 the build's check reads its files with (`tools/deploy/lib/bundle.mjs`, at
 most `MAX_STATIC_CHUNKS`, 500), so a version literal the build's check finds
@@ -676,10 +725,12 @@ page thread remains (9 s at the start), the GPU process compiling the render
 pipelines as far as the device's queue shows: the map does not remove it.
 
 1. **The real corpus's size, per tier.** Both tiers together, measured
-   (§5.2): 421 stages, a map of 23.4 MB raw, 4.0 MB gzip, 0.49 MB brotli,
-   under the 32 MiB ceiling set from it; its JSON read in 18 to 24 ms under
-   Node; with the 101 stages of a player's own view, 522 stages and 28.5 MB.
-   Per tier, and in a browser on the slow machine, not yet.
+   (§5.2): 421 stages, a map in format 1 of 23.4 MB raw, 4.0 MB gzip,
+   0.49 MB brotli, its JSON read in 18 to 24 ms under Node; with the 101
+   stages of a player's own view, 522 stages and 28.5 MB; in format 2,
+   5.07 MB raw, 0.93 MB gzip, 0.32 MB brotli, under its 8 MiB ceiling, read
+   in about 9 ms under Node and every entry expanded in about 12 ms. Per
+   tier, and in a browser on the slow machine, not yet.
 2. **What else in the text differs between loads of one page** (§3): two
    loads recorded with `?wgsl=record`, their reports kept whole
    (`JSON.stringify(dayhikeWgsl)`, the stages' `glsl` with them), and each
@@ -712,7 +763,8 @@ pipelines as far as the device's queue shows: the map does not remove it.
    trace with the GPU categories, a first and a second load.
 8. **The memory the kept WGSL costs**: the page's heap on a first and a
    return visit, against the estimate of §5 (about 5 MB for the page's own
-   translations, about 6 MB for the store's read, the map beside them).
+   translations, about 6 MB for the store's read, the map's 7.4 MB beside
+   them).
 9. **The skinned draw on a real device**, first and second load: no
    validation error at its first draw, its effect's vertex source carrying
    `_int_matricesIndices_`; `?wgsl=off` alike (read once on the Windows
@@ -770,5 +822,6 @@ picture.
 text, holds `PLUGIN_ORDER` to every plugin class a PBR and a Standard
 material carry and every one in `src/`, and two loads with the models
 arriving in either order to the same defines. `wgslHonesty.test.ts` holds
-the build's map, entry by entry, to the page's own translation of the same
-corpus with the real translators, and the tool's salt to the page's.
+the build's map, entry by entry, read and expanded by the page's reader, to
+the page's own translation of the same corpus with the real translators,
+and the tool's salt to the page's.
