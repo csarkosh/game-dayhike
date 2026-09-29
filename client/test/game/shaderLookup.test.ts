@@ -830,7 +830,7 @@ describe("the translations shipped with the build", () => {
     }
   });
 
-  it("is a source with nothing in it when the map is damaged: a run outside its lines, a run of no lines, an odd count, a line not text or holding a newline; one console line, nothing thrown", async () => {
+  it("is a source with nothing in it when the map is damaged: a run outside its lines, a run of no lines, an odd count, a line not text or holding a newline, an entry expanding past 8,388,608 characters; one console line, nothing thrown", async () => {
     const warn = vi.spyOn(Logger, "Warn").mockImplementation(() => undefined);
     const map = (lines: unknown, entries: unknown): string => JSON.stringify({ format: "dayhike-wgsl-map/2", salt: SALT, lines, entries });
     const LINES = ["// a", "// b"];
@@ -842,6 +842,12 @@ describe("the translations shipped with the build", () => {
       ["an odd number of numbers", map(LINES, { aa: [0, 1, 1] }), "the entry aa is not runs of lines"],
       ["a line that is not text", map(["// a", 7], { aa: [0, 1] }), "the line 1 is not text"],
       ["a line holding a newline", map(["// a", "// b\n// c"], { aa: [0, 1] }), "the line 1 holds a newline"],
+      // A line of 100,000 characters named 84 times: 8,400,083 characters from about 100 kB.
+      [
+        "an entry past the most one may expand to",
+        map(["x".repeat(100_000), "// b"], { aa: Array.from({ length: 84 }, () => [0, 1]).flat(), bb: [1, 1] }),
+        "the entry aa expands to 8400083 characters, past the ceiling of 8388608",
+      ],
     ];
     for (const [what, text, message] of cases) {
       warn.mockClear();

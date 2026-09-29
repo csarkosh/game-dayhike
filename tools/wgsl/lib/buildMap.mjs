@@ -66,7 +66,10 @@ const MAP_CEILING = 8_388_608;
  */
 export function mapSizeProblem(bytes, ceiling = MAP_CEILING) {
   if (bytes <= ceiling) return null;
-  return `the WGSL map is ${bytes} bytes, over its ceiling of ${ceiling} (MAP_MAX_BYTES): a page reads it in one task and holds its lines for the engine's life`;
+  return (
+    `the WGSL map is ${bytes} bytes, over its ceiling of ${ceiling} (MAP_MAX_BYTES): a page reads it in one task and holds its lines for the engine's life. ` +
+    'A corpus that outgrows it is answered by a map per platform, not by a higher ceiling: see MAP_MAX_BYTES and its reasons in client/src/game/wgslFormat.ts'
+  );
 }
 
 /**

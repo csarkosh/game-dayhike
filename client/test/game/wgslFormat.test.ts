@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import {
   CORPUS_FORMAT,
+  MAP_ENTRY_MAX_CHARS,
   MAP_FORMAT,
   corpusId,
   corpusText,
@@ -97,6 +98,36 @@ describe("the map", () => {
     expect(readMap(mapText(SALT, new Map()), SALT).size).toBe(0);
   });
 
+  it("keeps an entry whatever its key, __proto__ included", () => {
+    const entries = new Map([
+      ["__proto__", "a"],
+      ["b", "x"],
+    ]);
+    const text = mapText(SALT, entries);
+    expect(text).toBe('{"format":"dayhike-wgsl-map/2","salt":"dayhike-wgsl/1|babylon=test|staticUA=false","lines":["a","x"],"entries":{"__proto__":[0,1],"b":[1,1]}}');
+    expect(expanded(readMap(text, SALT))).toEqual(entries);
+  });
+
+  it("refuses a map with an entry that expands past 8,388,608 characters, reckoned from its runs before any is expanded", () => {
+    expect(MAP_ENTRY_MAX_CHARS).toBe(8_388_608);
+    // One line named three times: 3 × 2,796,202 characters and 2 newlines
+    // are exactly the most an entry may be.
+    const at = readMap(raw(["x".repeat(2_796_202), "y"], { aa: [0, 1, 0, 1, 0, 1], bb: [1, 1] }), SALT);
+    expect(at.get("aa")?.length).toBe(8_388_608);
+    expect(at.get("bb")).toBe("y");
+    // One character more: the map refused whole, its other entry too.
+    expect(() => readMap(raw(["x".repeat(2_796_203), "y"], { aa: [0, 1, 0, 1, 0, 1], bb: [1, 1] }), SALT)).toThrow(
+      "the entry aa expands to 8388611 characters, past the ceiling of 8388608",
+    );
+    // A line of 100,000 characters named 84 times, in a file of about 100 kB.
+    const runs = Array.from({ length: 84 }, () => [0, 1]).flat();
+    expect(() => readMap(raw(["x".repeat(100_000)], { aa: runs }), SALT)).toThrow("the entry aa expands to 8400083 characters, past the ceiling of 8388608");
+    // Runs of many lines are reckoned by their lines' lengths, not by one.
+    expect(() => readMap(raw(["x".repeat(4_194_304), "y".repeat(4_194_304)], { aa: [0, 2] }), SALT)).toThrow(
+      "the entry aa expands to 8388609 characters, past the ceiling of 8388608",
+    );
+  });
+
   it("refuses a map made for another salt or in another format, the format before this one included, and anything that is not one", () => {
     const text = mapText(SALT, new Map([["aa", "// vertex"]]));
     expect(() => readMap(text, `${SALT}x`)).toThrow("made for another build");
@@ -129,6 +160,10 @@ describe("the map", () => {
       ["a start that is not a whole number", raw(LINES, { aa: [0.5, 1] }), "the entry aa has a run outside its lines: 0.5, 1"],
       ["a length that is text", raw(LINES, { aa: [0, "1"] }), 'the entry aa has a run outside its lines: 0, "1"'],
       ["a start that is null", raw(LINES, { aa: [null, 1] }), "the entry aa has a run outside its lines: null, 1"],
+      // Past what a Uint32Array holds, and past every whole number a double
+      // counts exactly: refused before anything is stored.
+      ["a start of 2^32", raw(LINES, { aa: [4294967296, 1] }), "the entry aa has a run outside its lines: 4294967296, 1"],
+      ["a length of 10^21", raw(LINES, { aa: [0, 1e21] }), "the entry aa has a run outside its lines: 0, 1e+21"],
     ];
     for (const [what, text, message] of cases) expect(() => readMap(text, SALT), what).toThrow(message);
     // The same, whole: read.

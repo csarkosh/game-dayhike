@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { findMapUrl } from '../lib/modelUrls.mjs';
-import { mapProblems } from '../lib/wgslMap.mjs';
+import { MAP_ENTRY_MAX_CHARS, MAP_MAX_BYTES } from '../../../client/src/game/wgslFormat.ts';
+import { LIVE_ENTRY_MAX_CHARS, LIVE_MAP_MAX_BYTES, mapProblems } from '../lib/wgslMap.mjs';
 
 const hex = (c) => c.repeat(64);
 const TRANSLATORS = `glslang=${hex('a')}|twgsl=${hex('b')}|glslang.js=${hex('c')}|twgsl.js=${hex('d')}`;
@@ -79,10 +80,34 @@ describe('mapProblems', () => {
     expect(mapProblems(map({ lines: undefined }), CHUNK, ENTRY)).toEqual(['it has no table of lines']);
     expect(mapProblems(map({ lines: ['@vertex fn main() {}', 7] }), CHUNK, ENTRY)).toEqual(['a line of its table is not text without a newline']);
     expect(mapProblems(map({ lines: ['@vertex\nfn main() {}'] }), CHUNK, ENTRY)).toEqual(['a line of its table is not text without a newline']);
-    for (const runs of [7, '0,1', [], [0], [0, 1, 1], [0, 0], [1, -1], [2, 1], [-1, 2], [0.5, 1], [0, '1']]) {
+    for (const runs of [7, '0,1', [], [0], [0, 1, 1], [0, 0], [1, -1], [2, 1], [-1, 2], [0.5, 1], [0, '1'], [4294967296, 1], [0, 1e21]]) {
       expect(mapProblems(map({ entries: { [hex('e')]: runs } }), CHUNK, ENTRY), JSON.stringify(runs)).toEqual([
         'an entry is not runs of the lines in its table',
       ]);
     }
+  });
+
+  it("fails a map with an entry that expands past the most the page reads, as the page refuses it", () => {
+    // A line of 100,000 characters named 84 times: 8,400,083 characters from about 100 kB.
+    const runs = Array.from({ length: 84 }, () => [0, 1]).flat();
+    expect(mapProblems(map({ lines: ['x'.repeat(100_000), '@vertex fn main() {}'], entries: { [hex('e')]: runs, [hex('f')]: [1, 1] } }), CHUNK, ENTRY)).toEqual([
+      'an entry expands to 8400083 characters, past the ceiling of 8388608 the page reads',
+    ]);
+    // Exactly the most: 3 × 2,796,202 characters and 2 newlines.
+    expect(mapProblems(map({ lines: ['x'.repeat(2_796_202)], entries: { [hex('e')]: [0, 1, 0, 1, 0, 1] } }), CHUNK, ENTRY)).toEqual([]);
+  });
+
+  it("fails a map over the page's ceiling of 8,388,608 bytes with a plain line", () => {
+    const text = map({});
+    const padded = (bytes) => text + ' '.repeat(bytes - text.length);
+    expect(mapProblems(padded(8_388_608), CHUNK, ENTRY)).toEqual([]);
+    expect(mapProblems(padded(8_388_609), CHUNK, ENTRY)).toEqual([
+      "it is 8388609 bytes, over the page's ceiling of 8388608 (MAP_MAX_BYTES): every page refuses it and translates every stage itself",
+    ]);
+  });
+
+  it("holds the page's own ceilings", () => {
+    expect([LIVE_MAP_MAX_BYTES, LIVE_ENTRY_MAX_CHARS]).toEqual([8_388_608, 8_388_608]);
+    expect([LIVE_MAP_MAX_BYTES, LIVE_ENTRY_MAX_CHARS]).toEqual([MAP_MAX_BYTES, MAP_ENTRY_MAX_CHARS]);
   });
 });
