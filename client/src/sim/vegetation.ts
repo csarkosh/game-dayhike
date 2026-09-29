@@ -3,7 +3,9 @@
  * thickly. A pure point function of (seed, x, z) like everything in `sim/`:
  * five smoothstep gates (treeline altitude, slope, shore, road clearance, and a low-frequency
  * "raggedness" noise that breaks the forest into stands) multiplied together,
- * with a mild valley-floor density boost.
+ * with a mild valley-floor density boost. Inland of the trailhead's pad the
+ * shore gate reads the strip's height, and the density has a floor there
+ * (`shoreStrip.ts`).
  *
  * sim/ determinism rules apply: no trig, no Math.pow, no `**`, no hypot.
  * Math.sqrt is IEEE-exact and allowed.
@@ -11,6 +13,7 @@
 import { fbm2, hash3 } from "./field.js";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./terrain.js";
 import { TRAIL_CLEAR } from "./trail.js";
+import { shoreStrip, STRIP_FOREST_FLOOR, STRIP_LIFT } from "./shoreStrip.js";
 
 // ---- Tunables (every one of these must appear in VEGETATION_TUNABLES) ------
 /** Below this altitude (m) the treeline gate is fully open. Re-anchored for
@@ -138,17 +141,23 @@ export function forestDensityUnmasked(seed: number, x: number, z: number, sample
   // ROAD_CLEAR+ROAD_CLEAR_FADE, r) to 1, so the road gate passes wide open —
   // infinitely far from any road, as designed.
   const r = variant.roadDistance?.(seed, x, z) ?? Infinity;
-  if (s.h < SHORE_ALT || d < SHORE_D || r < ROAD_CLEAR) return 0;
+  // The shore's rule reads the strip's height (`shoreStrip.ts`): the ground's own, but inland of the pad.
+  const strip = shoreStrip(seed, x, z);
+  const sh = strip === 0 ? s.h : s.h + STRIP_LIFT * strip;
+  if (sh < SHORE_ALT || d < SHORE_D || r < ROAD_CLEAR) return 0;
   const slope = Math.sqrt(s.dx * s.dx + s.dz * s.dz);
   const alt = 1 - smoothstep(TREELINE_LO, TREELINE_HI, s.h);
   const grade = 1 - smoothstep(SLOPE_LO, SLOPE_HI, slope);
   const shore =
-    smoothstep(SHORE_ALT, SHORE_ALT + SHORE_ALT_FADE, s.h) *
+    smoothstep(SHORE_ALT, SHORE_ALT + SHORE_ALT_FADE, sh) *
     smoothstep(SHORE_D, SHORE_D + SHORE_D_FADE, d);
   const road = smoothstep(ROAD_CLEAR, ROAD_CLEAR + ROAD_CLEAR_FADE, r);
   const rag = smoothstep(RAG_LO, RAG_HI, fbm2(x / RAG_WAVELENGTH, z / RAG_WAVELENGTH, seed ^ RAG_SALT, RAG_OCTAVES));
   const valley = 1 + (VALLEY_DENSITY_BOOST - 1) * (1 - Math.min(1, s.h / TREELINE_HI));
-  return Math.min(1, alt * grade * shore * road * rag * valley);
+  const rho = Math.min(1, alt * grade * shore * road * rag * valley);
+  if (strip === 0) return rho;
+  // A floor, as a carved stand has one: a wood stands in the strip whatever the raggedness says there.
+  return Math.max(rho, STRIP_FOREST_FLOOR * strip * road);
 }
 
 /**

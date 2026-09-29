@@ -322,3 +322,44 @@ describe("trees keep off the trail", () => {
     }
   });
 });
+describe("the forest in the strip at the trailhead", () => {
+  const HOLLOW = 2032433950;
+
+  it("grows on ground the shore rule would leave bare, inland of the pad", () => {
+    setActiveTerrainVariant("olympic");
+    // 20 m from the centreline, 20 m along the road from the pad, on ground 4.20 m up, read as 13.20 m.
+    // The ground's own height would put it at the shore gate's foot; the road's gate is what is left.
+    expect(forestDensityUnmasked(HOLLOW, -304.3229187813898, 20)).toBeCloseTo(0.712015, 6);
+    // 31 m from it, on ground 5.89 m up.
+    expect(forestDensityUnmasked(HOLLOW, -291.7267739768348, 0)).toBe(1);
+  });
+
+  it("keeps the road's verge clear, and the beach bare", () => {
+    setActiveTerrainVariant("olympic");
+    // The pad, 9 m from the centreline: inside ROAD_CLEAR.
+    expect(forestDensityUnmasked(HOLLOW, -313.7267739768348, 0)).toBe(0);
+    // 10 m seaward of the centreline.
+    expect(forestDensityUnmasked(HOLLOW, -332.7267739768348, 0)).toBe(0);
+  });
+
+  it("is what it was outside the strip", () => {
+    setActiveTerrainVariant("olympic");
+    // 60 m along the road from the pad, 20 m from the centreline, 4.22 m up.
+    expect(forestDensityUnmasked(HOLLOW, -307.06319004698264, 60)).toBeCloseTo(0.010709, 6);
+  });
+
+  it("stands a wood in the strip where the raggedness would leave none", () => {
+    setActiveTerrainVariant("olympic");
+    // Seed 24301, 40 m from the centreline on the pad's line: 11.50 m up, a slope of 0.207,
+    // the road's gate wide open. The raggedness gives less than the floor there.
+    expect(forestDensityUnmasked(24301, -190.2775522776278, 0)).toBe(0.6);
+  });
+
+  it("stands trees within 40 m of the pad", () => {
+    setActiveTerrainVariant("olympic");
+    const near = treesInRect(HOLLOW, -353.7267739768348, -40, -273.7267739768348, 40)
+      .filter((t) => Math.hypot(t.x + 313.7267739768348, t.z) <= 40);
+    expect(near).toHaveLength(8);
+    expect(Math.min(...near.map((t) => Math.hypot(t.x + 313.7267739768348, t.z)))).toBeCloseTo(14.798, 3);
+  });
+});

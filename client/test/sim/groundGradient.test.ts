@@ -725,6 +725,10 @@ describe("the level id does not move", () => {
     // STRIP_HALF, STRIP_EDGE, STRIP_REACH, STRIP_FADE, STRIP_LIFT and
     // STRIP_FOREST_FLOOR join its tunables (registryDigest moves). Nothing reads
     // the strip yet, and the probe is as it was.
-    expect(passHash()).toBe(-1910539258);
+    // Re-baselined 2026-09-29 from -1910539258: the forest's shore rule reads
+    // the strip inland of the trailhead's pad, and its density has a floor
+    // there. No constant changed; in the probe, chunk [-9, 0] holds 4 trunks
+    // where it held 3 (probeDigest moves).
+    expect(passHash()).toBe(1648034580);
   });
 });
