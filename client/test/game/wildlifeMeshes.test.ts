@@ -781,8 +781,9 @@ function birdUnits(species: number) {
 }
 
 describe("the wildlife director at the trailhead", () => {
-  // The world "hollow". Its road runs along z at x = -322.73; the pad a player arrives on is
-  // 9 m inland of it, the sand runs a further 45 m inland, and the forest's ground starts there.
+  // The world "hollow". Its road runs along z at x = -322.73 and the pad a player arrives on
+  // is 9 m inland of it. Inland of the pad a wood comes down to the road; to either side of
+  // it the sand runs a further 45 m inland.
   const HOLLOW = 2032433950;
   /** Every ground animal drawn over a minute from one standpoint, read six times a second. */
   const watch = (x: number, z: number, yaw: number): { drawn: number; placed: number; strays: string[] } => {
@@ -807,13 +808,18 @@ describe("the wildlife director at the trailhead", () => {
     return seen;
   };
 
-  it("puts no animal that walks in front of a player on the pad, looking inland across the sand", () => {
-    // The trees are 45 m off and more, further than an animal is walked in from.
+  it("walks animals in on the strip inland of the pad, and none on the sand or the road", () => {
+    // The wood that comes down to the road stands inland of the pad, and its ground is the
+    // forest's from 30 m off the road, 21 m from the pad.
+    const placed: number[] = [];
     for (const yaw of [Math.PI / 2, Math.PI / 2 - 0.7, Math.PI / 2 + 0.7]) {
       const seen = watch(-314, 0, yaw);
       expect(seen.strays).toEqual([]);
-      expect(seen.placed).toBe(0);
+      placed.push(seen.placed);
     }
+    // Over the minute: none looking square inland, and one to either side of that. With no
+    // rule for the ground, the same minute starts animals on the sand by the pad.
+    expect(placed).toEqual([0, 1, 1]);
   }, timeLimit(60_000));
 
   it("walks animals in on the forest's side of a player at its edge, and none on the sand's", () => {

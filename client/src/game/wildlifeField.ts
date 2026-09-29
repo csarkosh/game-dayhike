@@ -19,6 +19,7 @@ import {
   CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_GRASS, CLUTTER_GRASS_CANOPY_LO, CLUTTER_MEADOW, clutterDensity, clutterInRect,
 } from "../sim/clutter.js";
 import { MAX_WALKABLE_GRADIENT } from "../sim/ground.js";
+import { shoreHeight } from "../sim/shoreStrip.js";
 
 export const SPECIES_ELK = 0;
 export const SPECIES_DEER = 1;
@@ -331,16 +332,19 @@ export function unitId(species: number, cx: number, cz: number): number {
 /**
  * The forest's ground, which everything that walks keeps to: above the height at which no
  * sand is left in the ground's paint (`terrainSurface.ts` fades it out between SAND_TOP and
- * 9 m) and clear of the strip the road is cleared through. Gulls are the shore's.
+ * 9 m) and clear of the strip the road is cleared through. Gulls are the shore's. The
+ * height is the one the shore's rules read, which inland of the trailhead's pad is the
+ * strip's and not the ground's (`sim/shoreStrip.ts`): the wood that comes down to the road
+ * there is the forest's ground too.
  */
 export const GROUND_SHORE_ALT = 9;
 /** The cleared strip's half-width: the sim's ROAD_CORRIDOR_HALF, held here as a number
  * because nothing in this module may move the level id. */
 export const GROUND_ROAD_CLEAR = 30;
 /** Where an animal that walks may be anchored: the forest's ground, no steeper than a
- * player could walk. */
-function standable(s: TerrainSample, road: number): boolean {
-  return s.h >= GROUND_SHORE_ALT && road >= GROUND_ROAD_CLEAR && Math.hypot(s.dx, s.dz) <= MAX_WALKABLE_GRADIENT;
+ * player could walk. `sh` is the height the shore's rules read there. */
+function standable(s: TerrainSample, road: number, sh: number): boolean {
+  return sh >= GROUND_SHORE_ALT && road >= GROUND_ROAD_CLEAR && Math.hypot(s.dx, s.dz) <= MAX_WALKABLE_GRADIENT;
 }
 /**
  * Where an animal that walks may go, and be put. How steep the ground is has no part in
@@ -350,7 +354,7 @@ function standable(s: TerrainSample, road: number): boolean {
 export function forestGround(seed: number, x: number, z: number): boolean {
   const road = activeTerrainVariant().roadDistance?.(seed, x, z) ?? Infinity;
   if (road < GROUND_ROAD_CLEAR) return false;
-  return elevationSampleAt(seed, x, z).h >= GROUND_SHORE_ALT;
+  return shoreHeight(seed, x, z, elevationSampleAt(seed, x, z).h) >= GROUND_SHORE_ALT;
 }
 /**
  * The ground a species keeps to, for whatever puts an animal somewhere the field did not:
@@ -441,7 +445,7 @@ function groundUnit(seed: number, species: number, cx: number, cz: number): Wild
   const s = elevationSampleAt(seed, x, z);
   const variant = activeTerrainVariant();
   const road = variant.roadDistance?.(seed, x, z) ?? Infinity;
-  if (!standable(s, road)) return null;
+  if (!standable(s, road, shoreHeight(seed, x, z, s.h))) return null;
   switch (species) {
     case SPECIES_ELK: {
       if (road < ELK_ROAD_CLEAR) return null;

@@ -15,6 +15,7 @@ import {
   type WildlifeUnit,
   GROUND_ROAD_CLEAR, GROUND_SHORE_ALT, forestGround, lastAllowed, speciesGround,
 } from "../../src/game/wildlifeField.js";
+import { shoreHeight } from "../../src/sim/shoreStrip.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant("olympic");
@@ -91,9 +92,12 @@ describe("the rabbits and the canopy", () => {
   // grass, so more rabbits (a total of 1664 / 1568 / 1349). Since no animal
   // stands on ground under 9 m or within 30 m of the road, the rabbits of the
   // shore's edge are gone: 7, 7 and 3 of the open ground's, and one of seed
-  // 1's under a partial canopy.
+  // 1's under a partial canopy. 2026-09-29: seed 1's were 698 and 958. A wood
+  // comes down to the road at the trailhead, and four of seed 1's rabbits
+  // stand in it: the ground they stand on was open and is under a canopy of
+  // 0.53 to 0.6 now.
   const want: Record<number, [number, number, number]> = {
-    1: [698, 958, 0],
+    1: [694, 962, 0],
     388817: [627, 934, 0],
     [-1117907922]: [553, 793, 0],
   };
@@ -154,7 +158,8 @@ describe("wildlife placement census", () => {
       for (const species of [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL]) {
         for (const u of census(seed, species)) {
           counted++;
-          expect(elevationSampleAt(seed, u.x, u.z).h, `species ${species} at ${u.x}, ${u.z}`).toBeGreaterThanOrEqual(9);
+          expect(shoreHeight(seed, u.x, u.z, elevationSampleAt(seed, u.x, u.z).h), `species ${species} at ${u.x}, ${u.z}`).toBeGreaterThanOrEqual(9);
+
           expect(variant.roadDistance!(seed, u.x, u.z), `species ${species} at ${u.x}, ${u.z}`).toBeGreaterThanOrEqual(30);
           // A rabbit bolts to its bush, so the bush is on the forest's ground too.
           if (species === SPECIES_RABBIT) expect(forestGround(seed, u.refugeX, u.refugeZ), `the bush at ${u.refugeX}, ${u.refugeZ}`).toBe(true);
@@ -421,16 +426,19 @@ describe("the ground an animal may stand on", () => {
   // The world "hollow": the road's centreline is at x = -322.73 where z = 0, and the pad 9 m inland of it.
   const HOLLOW = 2032433950;
 
-  it("is not the road, the pad, or the sand that runs inland of them", () => {
+  it("is not the road, the pad, the verge, or the sand to either side of the strip", () => {
     setActiveTerrainVariant("olympic");
     expect(forestGround(HOLLOW, -323, 0)).toBe(false); // the road
     expect(forestGround(HOLLOW, -314, 0)).toBe(false); // the pad
-    expect(forestGround(HOLLOW, -291, 0)).toBe(false); // 32 m inland, 5.99 m up: past the road's strip, still sand
-    expect(forestGround(HOLLOW, -283, 0)).toBe(false); // 40 m inland, 7.00 m up: the sand is fading, not gone
+    expect(forestGround(HOLLOW, -302.7267739768348, 0)).toBe(false); // 20 m from the centreline: the road's strip
+    expect(forestGround(HOLLOW, -287.06319004698264, 60)).toBe(false); // 60 m along the road, 40 m inland, 7.17 m up: sand
+    expect(forestGround(HOLLOW, -287.5514467082555, -60)).toBe(false); // 60 m the other way, 31 m inland, 5.88 m up: sand
   });
 
-  it("is the ground above the sand, clear of the road's strip", () => {
+  it("is the ground above the sand, and the strip inland of the pad, clear of the road's strip", () => {
     setActiveTerrainVariant("olympic");
+    expect(forestGround(HOLLOW, -291.7267739768348, 0)).toBe(true); // 31 m inland on the pad's line, 5.89 m up, read as 14.89 m
+    expect(forestGround(HOLLOW, -283, 0)).toBe(true); // 40 m inland, 7.00 m up
     expect(forestGround(HOLLOW, -263, 0)).toBe(true); // 60 m inland, 10.10 m up
     expect(forestGround(HOLLOW, -203, 0)).toBe(true); // 120 m inland, 24.60 m up
     expect(GROUND_SHORE_ALT).toBe(9);
@@ -447,9 +455,12 @@ describe("the ground each species keeps to", () => {
     setActiveTerrainVariant("olympic");
     for (const species of [...WALKERS, SPECIES_BUTTERFLY]) {
       expect(speciesGround(HOLLOW, species, -323, 0), `species ${species} on the road`).toBe(false);
-      expect(speciesGround(HOLLOW, species, -291, 0), `species ${species} on the sand`).toBe(false);
-      expect(speciesGround(HOLLOW, species, -283, 0), `species ${species} where the sand is fading`).toBe(false);
+      // 60 m along the road from the pad, to either side of the strip.
+      expect(speciesGround(HOLLOW, species, -287.5514467082555, -60), `species ${species} on the sand`).toBe(false);
+      expect(speciesGround(HOLLOW, species, -287.06319004698264, 60), `species ${species} where the sand is fading`).toBe(false);
       expect(speciesGround(HOLLOW, species, -263, 0), `species ${species} in the forest`).toBe(true);
+      // Inland of the pad, 31 m from the road's centreline on ground 5.89 m up: the strip.
+      expect(speciesGround(HOLLOW, species, -291.7267739768348, 0), `species ${species} in the strip`).toBe(true);
     }
   });
 

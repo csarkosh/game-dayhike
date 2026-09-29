@@ -991,9 +991,10 @@ describe("the butterfly", () => {
 });
 
 describe("the animals that walk keep to the forest's ground", () => {
-  // The world "hollow". Along z = 0 the road's centreline is at x = -322.73 and the
-  // ground reaches 9 m, where no sand is left, some 53 m inland of it, near x = -270:
-  // everything seaward of that is sand, the road's strip or the road.
+  // The world "hollow". Along z = 0, the line of the trailhead's pad, the road's centreline
+  // is at x = -322.73. A wood comes down to the road there, so the forest's ground starts
+  // where the road's own strip ends, 30 m from the centreline at x = -292.73: everything
+  // seaward of that is the road's strip or the road.
   const HOLLOW = 2032433950;
   const at = (species: number, x: number, z: number, over: Partial<WildlifeUnit> = {}): WildlifeUnit => {
     const h = elevationAt(HOLLOW, x, z);
@@ -1016,10 +1017,11 @@ describe("the animals that walk keep to the forest's ground", () => {
     return out;
   };
 
-  it("stands where the test says: the herd's place is the forest's, and the sand is 12 m seaward of it", () => {
+  it("stands where the test says: the herd's place is the forest's, and the road's strip is 35 m seaward of it", () => {
     setActiveTerrainVariant("olympic");
     expect(forestGround(HOLLOW, -258, 0)).toBe(true);
-    expect(forestGround(HOLLOW, -270, 0)).toBe(false);
+    expect(forestGround(HOLLOW, -292, 0)).toBe(true);
+    expect(forestGround(HOLLOW, -293, 0)).toBe(false);
     expect(forestGround(HOLLOW, -323, 0)).toBe(false);
   });
 
@@ -1072,9 +1074,9 @@ describe("the animals that walk keep to the forest's ground", () => {
     for (const species of [SPECIES_ELK, SPECIES_RABBIT, SPECIES_SQUIRREL]) {
       const u = createUnitState(at(species, -258, 0), 1000, HOLLOW);
       startCue(u, -323, 0, species !== SPECIES_ELK, 1000, HOLLOW);
-      // The mark it makes for is the forest's edge on the way to the road, 53 m short of it.
-      expect(u.goalX, `species ${species}`).toBeLessThan(-262);
-      expect(u.goalX, `species ${species}`).toBeGreaterThan(-272);
+      // The mark it makes for is the forest's edge on the way to the road, 30 m short of it.
+      expect(u.goalX, `species ${species}`).toBeLessThan(-292);
+      expect(u.goalX, `species ${species}`).toBeGreaterThan(-293);
       expect(forestGround(HOLLOW, u.goalX, u.goalZ), `species ${species}`).toBe(true);
       expect(strays(u, () => far, 40), `species ${species}`).toEqual([]);
       // It arrived there and went back to its own business.
