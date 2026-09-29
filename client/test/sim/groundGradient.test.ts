@@ -57,7 +57,9 @@ const CLUTTER_CENSUS: readonly (readonly [number, number, number, number])[] = [
   // litter: along the stem near the trailhead, not near the world origin.
   // 111 -> 164 on 2026-09-24 (CLUTTER_LITTER_D 0.6 -> 0.9: a neglected trail
   // carries more stray stone and twig litter along its margin).
-  [-500, -100, 164, 952976979],
+  // 164 -> 143 on 2026-09-29 (the trail leaves the pad inland, through the
+  // doorway, and takes another line under this rect by the trailhead).
+  [-500, -100, 143, -1041637376],
 ];
 
 describe("instances carry the ground gradient", () => {
@@ -253,8 +255,14 @@ describe("the scatter censuses are untouched", () => {
     // tunables now fold into the level id, and the strands and rungs they
     // add carve new trail bed under this rect, so three fewer trees clear
     // it. A deliberate elevation-field change.
+    // Re-baselined 2026-09-29 from (731, 1979230377): the shore is closed
+    // to the trail's search but for the doorway inland of the pad
+    // (`closeShore`, trailGrid.ts), so the trail takes another line and the
+    // ground the trees stand on moves with its bed. As many trees clear it
+    // under this rect as did, 731, on other ground. A deliberate
+    // elevation-field change; the level id moves with it.
     expect(list.length).toBe(731);
-    expect(h | 0).toBe(1979230377);
+    expect(h | 0).toBe(1882046793);
   });
 
   it("keeps every clutter field bit-identical, class by class", () => {
@@ -734,6 +742,12 @@ describe("the level id does not move", () => {
     // within 24 m of the pad's centre: TRAILHEAD_CLEARING joins pass 7's
     // tunables (registryDigest moves). Of the clutter only boulders collide, and
     // the probe holds the one it held.
-    expect(passHash()).toBe(1487772696);
+    // Re-baselined 2026-09-29 from 1487772696: the shore is closed to the
+    // trail's search but for two rows of cells straight inland of the pad:
+    // SHORE_GATE_ALT, SHORE_GATE_U and DOORWAY_HALF join the trail's tunables
+    // (registryDigest moves), and the trail is another one on most worlds, the
+    // probe's among them (probeDigest moves). A peer from before would walk
+    // another trail.
+    expect(passHash()).toBe(487194298);
   });
 });

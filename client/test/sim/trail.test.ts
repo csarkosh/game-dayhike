@@ -199,6 +199,7 @@ describe("trailCorridorD", () => {
       "TRAIL_HARD_SLOPE_MAX", "TRAIL_EDGE_GAP", "TRAIL_BED_HALF", "TRAIL_CORRIDOR_HALF", "TRAIL_SINK", "TRAIL_SINK_RAMP", "TRAIL_CLEAR", "TRAIL_SALT",
       "TRAIL_GRID_CELL", "TRAIL_GRID_CAP", "TRAIL_SLOPE_COST", "TRAIL_REUSE_FACTOR", "TRAIL_MOVE_GRADE_MAX", "TRAIL_SIMPLIFY_TOL",
       "TRAIL_PROFILE_STEP", "TRAIL_PROFILE_SMOOTH", "TRAIL_REROUTE_MAX",
+      "SHORE_GATE_ALT", "SHORE_GATE_U", "DOORWAY_HALF",
     ];
     for (const k of keys) expect(TRAIL_TUNABLES[k], k).toBeTypeOf("number");
     expect(Object.keys(TRAIL_TUNABLES).sort()).toEqual([...keys].sort());

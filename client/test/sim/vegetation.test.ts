@@ -359,7 +359,9 @@ describe("the forest in the strip at the trailhead", () => {
     setActiveTerrainVariant("olympic");
     const near = treesInRect(HOLLOW, -353.7267739768348, -40, -273.7267739768348, 40)
       .filter((t) => Math.hypot(t.x + 313.7267739768348, t.z) <= 40);
-    expect(near).toHaveLength(8);
+    // 2026-09-29: 8 before the trail left the pad inland. It runs down the pad's line now,
+    // and no tree stands within 8 m of a trail.
+    expect(near).toHaveLength(6);
     expect(Math.min(...near.map((t) => Math.hypot(t.x + 313.7267739768348, t.z)))).toBeCloseTo(14.798, 3);
   });
 });

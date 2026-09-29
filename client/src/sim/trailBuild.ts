@@ -27,7 +27,7 @@ import {
   BOWL_U_MIN, BOWL_U_MAX, BOWL_Z_HALF, TRAIL_Z_ANCHOR, TRAILHEAD_U, TRAILHEAD_RADIUS, TRAILHEAD_FADE,
 } from "./bowl.js";
 import {
-  buildTrailGrid, resampleCells, cellAt, searchFrom, TRAIL_GRID_CELL,
+  buildTrailGrid, resampleCells, cellAt, searchFrom, closeShore, TRAIL_GRID_CELL,
   type TrailGrid, type Search, type GroundFn,
 } from "./trailGrid.js";
 import {
@@ -136,6 +136,10 @@ export function buildTrail(
    * hillside's, and the bed's profile is what smooths it (this is the
    * trail's first edge); whether the ground BEYOND the doorway can be walked
    * is still the fine check's question and the bed scan's.
+   *
+   * The ring it opens is shore ground, and `closeShore` closes it again
+   * outside the two rows straight inland of the pad: the pad is left by
+   * those rows, and not round its side.
    */
   const doorway = (): void => {
     const R = TRAILHEAD_RADIUS + TRAILHEAD_FADE + TRAIL_GRID_CELL;
@@ -145,6 +149,7 @@ export function buildTrail(
     }
   };
   doorway();
+  closeShore(grid, frame.roadCenterX, thZ);
   /**
    * Re-read the cells a feature's dome just raised (or just took away), then
    * put back the passability the dome is not allowed to take: A DOME NEVER
@@ -181,6 +186,7 @@ export function buildTrail(
     resampleCells(grid, ground, f.x, f.z, reach);
     for (const c of keep) grid.pass[c] = 1;
     doorway();
+    closeShore(grid, frame.roadCenterX, thZ);
     smoothCache.clear(); // the dome moved the ground under every cached height
   };
 

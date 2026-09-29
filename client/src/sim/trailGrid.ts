@@ -23,6 +23,11 @@
  * cells in index order, a binary heap keyed by (cost, index). No RNG, no
  * trig; Math.SQRT2 is a constant.
  *
+ * The shore is closed to the search (`closeShore`): ground under
+ * SHORE_GATE_ALT, which is sand, and everything within SHORE_GATE_U of the
+ * road, but for the two rows of cells straight inland of the pad. A trail
+ * then runs on no sand, and leaves the pad inland and not along the road.
+ *
  * Generic: the road frame arrives as a callback, the ground as a sampler.
  */
 import type { TerrainSample } from "./terrain.js";
@@ -46,9 +51,16 @@ export const TRAIL_REUSE_FACTOR = 0.35;
  * climb.
  */
 export const TRAIL_MOVE_GRADE_MAX = 0.7;
+/** A cell is shore, and closed to the search, where its ground is under this (m)... */
+export const SHORE_GATE_ALT = 9;
+/** ...or it is within this of the road's centreline (m). */
+export const SHORE_GATE_U = 30;
+/** Shore cells within this of the pad's line along the road stay as they were (m): the two rows beside the line. */
+export const DOORWAY_HALF = 4;
 /** Folded into TRAIL_TUNABLES by trail.ts. */
 export const TRAIL_GRID_TUNABLES: Readonly<Record<string, number>> = {
   TRAIL_GRID_CELL, TRAIL_GRID_CAP, TRAIL_SLOPE_COST, TRAIL_REUSE_FACTOR, TRAIL_MOVE_GRADE_MAX,
+  SHORE_GATE_ALT, SHORE_GATE_U, DOORWAY_HALF,
 };
 
 export type GroundFn = (x: number, z: number) => TerrainSample;
@@ -114,6 +126,28 @@ export function recomputePass(grid: TrailGrid): void {
         }
       }
       grid.pass[j * nu + i] = ok ? 1 : 0;
+    }
+  }
+}
+
+/**
+ * Close the shore to the search, but for the rows straight inland of the
+ * pad: a trail runs on no sand, and leaves the pad inland. Shore is ground
+ * under SHORE_GATE_ALT, and everything within SHORE_GATE_U of the road. The
+ * height read is the ground's own and not the strip's (`shoreStrip.ts`):
+ * what is closed is what would be sand without it. It closes cells and opens
+ * none, so a doorway cell too steep for the search stays closed.
+ */
+export function closeShore(grid: TrailGrid, roadCenterX: (z: number) => number, padZ: number): void {
+  for (let j = 0; j < grid.nz; j++) {
+    const row = j * grid.nu;
+    const z = grid.z[row] as number;
+    const dz = z - padZ;
+    if ((dz < 0 ? -dz : dz) <= DOORWAY_HALF) continue;
+    const centre = roadCenterX(z);
+    for (let i = 0; i < grid.nu; i++) {
+      const c = row + i;
+      if ((grid.h[c] as number) < SHORE_GATE_ALT || (grid.x[c] as number) - centre < SHORE_GATE_U) grid.pass[c] = 0;
     }
   }
 }

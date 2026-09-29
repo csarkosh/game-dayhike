@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildTrailGrid, resampleCells, cellAt, cellNeighbours, searchFrom, pathCells,
   TRAIL_GRID_CELL, TRAIL_GRID_CAP, TRAIL_SLOPE_COST, TRAIL_REUSE_FACTOR, TRAIL_MOVE_GRADE_MAX, TRAIL_GRID_TUNABLES,
+  closeShore, SHORE_GATE_ALT, SHORE_GATE_U, DOORWAY_HALF,
   type TrailGrid, type GroundFn,
 } from "../../src/sim/trailGrid.js";
 import { BOWL_U_MIN, BOWL_U_MAX, BOWL_Z_HALF, TRAIL_Z_ANCHOR } from "../../src/sim/bowl.js";
@@ -139,7 +140,10 @@ describe("searchFrom", () => {
     expect(s.dist[cellOf(g, 500, 0)]).toBeCloseTo(TRAIL_REUSE_FACTOR * 400, 6);
   });
   it("declares its tunables", () => {
-    expect(Object.keys(TRAIL_GRID_TUNABLES).sort()).toEqual(["TRAIL_GRID_CAP", "TRAIL_GRID_CELL", "TRAIL_MOVE_GRADE_MAX", "TRAIL_REUSE_FACTOR", "TRAIL_SLOPE_COST"]);
+    expect(Object.keys(TRAIL_GRID_TUNABLES).sort()).toEqual([
+      "DOORWAY_HALF", "SHORE_GATE_ALT", "SHORE_GATE_U",
+      "TRAIL_GRID_CAP", "TRAIL_GRID_CELL", "TRAIL_MOVE_GRADE_MAX", "TRAIL_REUSE_FACTOR", "TRAIL_SLOPE_COST",
+    ]);
     expect(TRAIL_GRID_CAP).toBeLessThan(0.9);
   });
   it("forbids a move steeper than TRAIL_MOVE_GRADE_MAX, so a steep cone is switchbacked instead of climbed", () => {
@@ -199,5 +203,65 @@ describe("searchFrom", () => {
     const leftOfDisc = cellOf(grid, 320, 0);
     const a = searchFrom(grid, leftOfDisc, null, null), b = searchFrom(grid, leftOfDisc, null, ones);
     expect(Array.from(b.dist)).toEqual(Array.from(a.dist));
+  });
+});
+
+describe("closeShore", () => {
+  /** Low ground for 60 m inland of the road, high ground beyond: h = 5 where u < 60, else 40. */
+  const shore: GroundFn = (x) => ({ h: x - ROAD_X < 60 ? 5 : 40, dx: 0, dz: 0 });
+
+  it("closes shore ground outside the two rows beside the pad's line, and nothing else", () => {
+    const g = buildTrailGrid(roadCenterX, shore);
+    expect(g.pass.every((p) => p === 1)).toBe(true);
+    closeShore(g, roadCenterX, 0);
+    // The two rows, centred 4 m to either side of the pad's line: open down to the road.
+    expect(g.pass[cellOf(g, 12, 4)]).toBe(1);
+    expect(g.pass[cellOf(g, 12, -4)]).toBe(1);
+    expect(g.pass[cellOf(g, 52, 4)]).toBe(1);
+    // The next row out, 12 m from the line: closed while the ground is low.
+    expect(g.pass[cellOf(g, 12, 12)]).toBe(0);
+    expect(g.pass[cellOf(g, 52, 20)]).toBe(0);
+    // Far along the road: within 30 m of it, and past 30 m on low ground.
+    expect(g.pass[cellOf(g, 28, 100)]).toBe(0);
+    expect(g.pass[cellOf(g, 36, 100)]).toBe(0);
+    // High ground past 30 m is untouched.
+    expect(g.pass[cellOf(g, 68, 20)]).toBe(1);
+    expect(g.pass[cellOf(g, 68, 100)]).toBe(1);
+    // Six columns of low ground, 148 rows of them closed: 888 cells of 18600.
+    expect(g.pass.reduce((n: number, p: number) => n + p, 0)).toBe(17712);
+  });
+
+  it("closes ground within 30 m of the road however high it is", () => {
+    const g = buildTrailGrid(roadCenterX, flat);
+    closeShore(g, roadCenterX, 0);
+    expect(g.pass[cellOf(g, 28, 100)]).toBe(0);
+    expect(g.pass[cellOf(g, 36, 100)]).toBe(1);
+    expect(g.pass[cellOf(g, 28, 4)]).toBe(1);
+  });
+
+  it("opens no cell: a doorway cell too steep for the search stays closed", () => {
+    // A wall across the doorway, 24 to 32 m from the road.
+    const walled: GroundFn = (x, z) => {
+      const u = x - ROAD_X;
+      if (u >= 24 && u <= 32 && z > -8 && z < 8) return { h: 5 + 3 * (u - 24), dx: 3, dz: 0 };
+      return { h: u < 60 ? 5 : 40, dx: 0, dz: 0 };
+    };
+    const g = buildTrailGrid(roadCenterX, walled);
+    expect(g.pass[cellOf(g, 28, 4)]).toBe(0);
+    closeShore(g, roadCenterX, 0);
+    expect(g.pass[cellOf(g, 28, 4)]).toBe(0);
+    expect(g.pass[cellOf(g, 28, -4)]).toBe(0);
+  });
+
+  it("follows the pad's line, wherever along the road the pad is", () => {
+    const g = buildTrailGrid(roadCenterX, shore);
+    closeShore(g, roadCenterX, 40);
+    expect(g.pass[cellOf(g, 12, 44)]).toBe(1);
+    expect(g.pass[cellOf(g, 12, 36)]).toBe(1);
+    expect(g.pass[cellOf(g, 12, 4)]).toBe(0);
+  });
+
+  it("declares its constants", () => {
+    expect([SHORE_GATE_ALT, SHORE_GATE_U, DOORWAY_HALF]).toEqual([9, 30, 4]);
   });
 });
