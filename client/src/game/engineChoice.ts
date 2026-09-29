@@ -111,13 +111,25 @@ export const FALLBACK_KEY = "dayhike.engine";
 export const FALLBACK_DAYS = 30;
 /** A second lost device inside this window remembers WebGL2. */
 export const LOSS_WINDOW_MS = 86_400_000;
+/** A second WebGPU start that ran out of time (`timeout`) inside this window
+ * of the last one remembers WebGL2. */
+export const TIMEOUT_WINDOW_MS = 86_400_000;
+/** How long a remembered `timeout` holds, counted from the last one: a day,
+ * not `FALLBACK_DAYS`. A start runs out of time on a GPU that cannot run
+ * WebGPU and as well on one that was only busy: measured on an Apple M4 in
+ * Chrome while another page drew on the same GPU (load average 10 to 22),
+ * the adapter took 13 to 16 s to answer and the engine was not ready in
+ * `WEBGPU_START_MS`, on a machine that runs WebGPU well. So one alone never
+ * holds, and a machine that is always too slow waits `WEBGPU_START_MS` at
+ * most twice a day. */
+export const TIMEOUT_HOLD_DAYS = 1;
 /** Fetching what the WebGPU path needs, the engine's module and then the two
  * translators, gets this long between them. A fetch that runs out is WebGL2
  * for this load and is not remembered: nothing of the GPU failed. */
 export const WEBGPU_FETCH_MS = 10_000;
 /** The GPU's part, the adapter probe and then making the engine, gets this
  * long between them, measured apart from the fetch. Running out is remembered
- * (`init`). */
+ * as a `timeout`, which holds only from the second (`fallbackHolds`). */
 export const WEBGPU_START_MS = 10_000;
 
 /** How long the HUD shows the line after a swap that answered a failure. */
@@ -274,11 +286,27 @@ export function engineForTier<E>(input: EngineInput, resolve: () => Promise<E | 
   return chooseEngine(input) === "webgl2" ? Promise.resolve(null) : resolve();
 }
 
-export type FallbackReason = "init" | "pipeline" | "lost";
+/**
+ * Why WebGPU failed: `init`, a start that failed for a cause other than time
+ * (the device refused, the engine threw); `pipeline`, a pipeline or an
+ * uncaptured error on a running engine; `lost`, a lost device; `timeout`, a
+ * start that ran out of `WEBGPU_START_MS` (the adapter did not answer, or the
+ * engine was not ready: `WebGpuStartTimeout`).
+ */
+export type FallbackReason = "init" | "pipeline" | "lost" | "timeout";
+
+/** The reasons counted in a row, one alone never holding: a lost device, and a
+ * start that ran out of time. */
+function counted(reason: FallbackReason): reason is "lost" | "timeout" {
+  return reason === "lost" || reason === "timeout";
+}
 
 /**
  * A remembered failure: why, on which browser major and Babylon version, when,
- * and how many lost devices in the last `LOSS_WINDOW_MS`.
+ * and, for a counted reason (`lost`, `timeout`), how many of it in a row, each
+ * inside its window of the one before (`LOSS_WINDOW_MS`, `TIMEOUT_WINDOW_MS`);
+ * 0 for the others. The field keeps the name it was first stored under, so a
+ * record written before `timeout` existed reads as it did.
  */
 export type FallbackRecord = { reason: FallbackReason; browser: number; babylon: string; at: number; losses: number };
 
@@ -287,37 +315,42 @@ export type FallbackRecord = { reason: FallbackReason; browser: number; babylon:
 export type EngineEnv = { browser: number; babylon: string };
 
 /** The record after a failure. A lost device inside `LOSS_WINDOW_MS` of the
- * last one counts up; any other starts the count again. A lost device never
- * replaces a record of another reason that still holds: the fault that record
- * remembers has not gone away, and a lone loss would retry WebGPU. */
+ * last one, or a start that ran out of time inside `TIMEOUT_WINDOW_MS` of the
+ * last one, counts up; any other starts the count again, and neither counts
+ * towards the other. Neither replaces a record of another reason that still
+ * holds: the fault that record remembers has not gone away, and a lone loss
+ * or timeout would retry WebGPU. */
 export function recordFailure(
   prev: FallbackRecord | null,
   reason: FallbackReason,
   env: EngineEnv,
   now: number,
 ): FallbackRecord {
-  if (reason === "lost" && prev !== null && prev.reason !== "lost" && fallbackHolds(prev, env, now)) return prev;
+  if (counted(reason) && prev !== null && prev.reason !== reason && fallbackHolds(prev, env, now)) return prev;
   let losses = 0;
-  if (reason === "lost") {
-    losses = prev !== null && prev.reason === "lost" && now - prev.at < LOSS_WINDOW_MS ? prev.losses + 1 : 1;
+  if (counted(reason)) {
+    const window = reason === "lost" ? LOSS_WINDOW_MS : TIMEOUT_WINDOW_MS;
+    losses = prev !== null && prev.reason === reason && now - prev.at < window ? prev.losses + 1 : 1;
   }
   return { reason, browser: env.browser, babylon: env.babylon, at: now, losses };
 }
 
-/** Whether the record sends this load to WebGL2: not for a lone lost device,
- * and only on the browser and Babylon it was written on, for `FALLBACK_DAYS`. */
+/** Whether the record sends this load to WebGL2: not for a lone lost device or
+ * a lone timeout, and only on the browser and Babylon it was written on, for
+ * `TIMEOUT_HOLD_DAYS` after a timeout and `FALLBACK_DAYS` after any other. */
 export function fallbackHolds(record: FallbackRecord | null, env: EngineEnv, now: number): boolean {
   if (record === null) return false;
-  if (record.reason === "lost" && record.losses < 2) return false;
+  if (counted(record.reason) && record.losses < 2) return false;
   if (record.browser !== env.browser || record.babylon !== env.babylon) return false;
-  return now - record.at < FALLBACK_DAYS * DAY_MS;
+  const days = record.reason === "timeout" ? TIMEOUT_HOLD_DAYS : FALLBACK_DAYS;
+  return now - record.at < days * DAY_MS;
 }
 
 function isRecord(value: unknown): value is FallbackRecord {
   if (typeof value !== "object" || value === null) return false;
   const r = value as Record<string, unknown>;
   return (
-    (r.reason === "init" || r.reason === "pipeline" || r.reason === "lost") &&
+    (r.reason === "init" || r.reason === "pipeline" || r.reason === "lost" || r.reason === "timeout") &&
     typeof r.browser === "number" &&
     typeof r.babylon === "string" &&
     typeof r.at === "number" &&
@@ -387,6 +420,20 @@ export function failureSwap(input: {
   return { engine: "webgl2", pin: pinsAfterFailure(input), notice: NOTICE_SWITCHED };
 }
 
+/**
+ * A WebGPU engine not ready in the time it was given (`createWebGpuEngine`'s
+ * own limit): the start ran out of time rather than failed, which
+ * `resolveWebGpu` tells by this type, never by the message's words, and
+ * remembers as a `timeout`. Here rather than in `gpuEngine.ts` so the rule
+ * can be tested without the WebGPU module.
+ */
+export class WebGpuStartTimeout extends Error {
+  constructor(ms: number) {
+    super(`the WebGPU engine was not ready in ${ms} ms`);
+    this.name = "WebGpuStartTimeout";
+  }
+}
+
 const TIMED_OUT = Symbol("timed out");
 
 /** `promise`, or `TIMED_OUT` once `ms` pass first. */
@@ -410,11 +457,15 @@ export type WebGpuSteps<E> = {
     probe(): Promise<AdapterReport | null>;
     /** The translators (`loadTranslators`), fetched only once the adapter fits. */
     fetchTranslators(): Promise<void>;
-    /** The engine, given what is left of the GPU's budget and the features to ask for. */
+    /** The engine, given what is left of the GPU's budget and the features to
+     * ask for. Rejects with `WebGpuStartTimeout` where it was not ready in
+     * `ms` (remembered as a `timeout`), and with any other error where it
+     * failed (remembered as `init`). */
     create(ms: number, features: string[]): Promise<E>;
   }>;
-  /** Writes the remembered fallback. */
-  remember(reason: "init"): void;
+  /** Writes the remembered fallback: `timeout` for a start that ran out of
+   * the GPU's budget, `init` for one that failed. */
+  remember(reason: "init" | "timeout"): void;
   warn(message: string, detail?: unknown): void;
 };
 
@@ -428,7 +479,11 @@ export type WebGpuSteps<E> = {
  * so nothing on the way can leave the page waiting for good. Never rejects. A
  * fetch that fails or runs out is not remembered: nothing of the GPU failed,
  * and a slow network must not keep WebGPU off for the next 30 days. An adapter
- * that does not answer, or an engine that does not start, is (`init`). An
+ * that does not answer, or an engine not ready (`WebGpuStartTimeout`), within
+ * the GPU's budget is remembered as a `timeout`, which holds only from the
+ * second in a day and then for a day (`fallbackHolds`), since a busy machine
+ * runs out of it too; an engine that fails otherwise is remembered as `init`,
+ * held `FALLBACK_DAYS`. The console's words are the same either way. An
  * adapter that does not fit is WebGL2 with no record, and a word in the
  * console only where `?engine=webgpu` asked for it.
  */
@@ -468,7 +523,7 @@ export async function resolveWebGpu<E>(
 
   const [report, probed] = await timed(gpu.probe().catch(() => null), startLeft);
   if (report === TIMED_OUT) {
-    steps.remember("init");
+    steps.remember("timeout");
     steps.warn(`WebGPU: the adapter did not answer in ${budgets.startMs} ms; drawing with WebGL2.`);
     return null;
   }
@@ -490,7 +545,7 @@ export async function resolveWebGpu<E>(
   try {
     return await gpu.create(Math.max(0, startLeft), featuresToRequest(report?.features ?? []));
   } catch (err) {
-    steps.remember("init");
+    steps.remember(err instanceof WebGpuStartTimeout ? "timeout" : "init");
     steps.warn("WebGPU: the engine did not start; drawing with WebGL2.", err);
     return null;
   }

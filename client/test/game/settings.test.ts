@@ -85,7 +85,7 @@ describe("settingsModel", () => {
     expect(settingsModel({ ...base, choice: "low", selectionTier: "low" }).apply).toEqual({ label: "Apply", disabled: false });
     expect(settingsModel({ ...base, choice: "medium", selectionTier: "medium" }).apply).toEqual({ label: "Apply", disabled: true });
     expect(settingsModel({ ...base, choice: "auto", selectionTier: "medium" }).apply).toEqual({ label: "Apply", disabled: true });
-    // Auto's pick moved under a running hike (the governor): Apply switches to it.
+    // Auto's pick moved under a running hike (a verdict written since it launched): Apply switches to it.
     expect(settingsModel({ ...base, choice: "auto", auto: { tier: "low", probePending: false }, selectionTier: "low" }).apply).toEqual({
       label: "Apply", disabled: false,
     });

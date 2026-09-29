@@ -625,14 +625,15 @@ function engineFailed(reason: "pipeline" | "lost"): string {
 }
 
 /**
- * Remembers a failure of a WebGPU start (`init`), and pins this tab's URL to
+ * Remembers a WebGPU start that ended on WebGL2 (`init` where it failed,
+ * `timeout` where it ran out of time), and pins this tab's URL to
  * `engine=webgl2` where the rule would otherwise give WebGPU again: storage
  * refused the record, or `?engine=webgpu` outranks it (`recordStartFailure`,
  * the same rule as a running engine's failure). `current`: whether the page
  * still wants the engine; where it does not, the URL is left as it is.
  */
-function rememberFailure(current = true): { stored: boolean; holds: boolean } {
-  return recordStartFailure({
+function rememberFailure(reason: "init" | "timeout", current = true): { stored: boolean; holds: boolean } {
+  return recordStartFailure(reason, {
     storage: pageStorage(),
     env: engineEnv(),
     now: Date.now(),
@@ -676,8 +677,8 @@ function makeWebGpu(
       };
     },
     // An engine a switch gave up waiting for was slow, not broken.
-    remember: () => {
-      if (wanted()) void rememberFailure(current());
+    remember: (reason) => {
+      if (wanted()) void rememberFailure(reason, current());
     },
     warn: (message, detail) => {
       if (detail === undefined) console.warn(message);
@@ -797,7 +798,7 @@ function render(container: HTMLDivElement): void {
       const { canvas, engine, watchers } = await engineFor(tier, read, () => !cancelled());
       return { canvas, engine, watch: watchers?.failures ?? null };
     },
-    failed: () => void rememberFailure(!cancelled()),
+    failed: () => void rememberFailure("init", !cancelled()),
     // Asked of the engine a step got, which a failed WebGPU start makes
     // WebGL2; `?probe=` measures whatever the rule says.
     settles: async (engine) => parseProbeOverride(location.search) !== null || probeStepCanSettle((await signalsReady).parallelCompile, engine),

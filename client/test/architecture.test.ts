@@ -213,6 +213,29 @@ describe("layer boundaries", () => {
     expect(main).not.toMatch(/\bstarting\b/);
   });
 
+  it("decides the tier at launch only: with the governor off the hike makes none, feeds none, times no idle frames and acts on no drop", () => {
+    // What `governor.test.ts` cannot see: the page's side of the switch.
+    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    const body = (from: string): string => app.slice(app.indexOf(from), app.indexOf("\n  }\n", app.indexOf(from)));
+    // The one governor a hike has comes from `governHike`, null while
+    // `GOVERNOR_ENABLED` is off; none is made any other way.
+    expect([...app.matchAll(/\bgovernHike\(/g)].length).toBe(1);
+    expect(app).toContain("  const governor = governHike(performance.now(), () => void lowerTier());");
+    expect(app).not.toMatch(/\bcreateGovernor\(/);
+    // Without one, a frame feeds nothing, no compile is marked for it, and no
+    // drop is decided, covered, timed, recorded or switched to.
+    expect(body("  function feedGovernor(")).toMatch(/^ {2}function feedGovernor\(dt: number\): void \{\n {4}if \(governor === null\) return;\n/);
+    expect(body("  function watchCompiles(")).toMatch(/^ {2}function watchCompiles\(r: Renderer\): void \{\n {4}unwatchCompiles\?\.\(\);\s+if \(governor === null\) return;\n/);
+    expect(body("  async function lowerTier(")).toMatch(/^ {2}async function lowerTier\(\): Promise<void> \{\n {4}if \(governor === null\) return;\n/);
+    // The idle frames are timed, and a drop recorded, only inside `lowerTier`.
+    expect([...app.matchAll(/\btimeIdleCadence\(/g)].length).toBe(1);
+    expect(body("  async function lowerTier(")).toContain("timeIdleCadence(");
+    expect([...app.matchAll(/\bonGovernorDrop\(/g)].length).toBe(2);
+    expect(body("  async function lowerTier(")).toContain("options.onGovernorDrop(running)");
+    // Every other use of it is a no-op without one.
+    expect(app).not.toMatch(/\bgovernor\.(restart|stop)\(/);
+  });
+
   it("shows one line after a failure rebuild: the swap itself shows none, a switch its engine's, the answer its own", () => {
     const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
     const body = (from: string, to: string): string => app.slice(app.indexOf(from), app.indexOf(to, app.indexOf(from)));
@@ -235,9 +258,11 @@ describe("layer boundaries", () => {
 
   it("records every failed WebGPU start through the one pin rule: the first load's, a switch's, a retry's, a probe step's", () => {
     const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
-    expect(main).toContain("  return recordStartFailure({");
-    expect(main).toContain("    remember: () => {\n      if (wanted()) void rememberFailure(current());\n    },");
-    expect(main).toContain("    failed: () => void rememberFailure(!cancelled()),");
+    expect(main).toContain("  return recordStartFailure(reason, {");
+    expect(main).toContain("    remember: (reason) => {\n      if (wanted()) void rememberFailure(reason, current());\n    },");
+    // A probe step's engine that failed in its build or frames did not run
+    // out of time: its start's timeout is the rule's (`remember`).
+    expect(main).toContain('    failed: () => void rememberFailure("init", !cancelled()),');
     expect([...main.matchAll(/\brememberFailure\(/g)].length).toBe(3);
     expect(main).not.toMatch(/\b(recordFailure|writeFallback)\(/);
   });

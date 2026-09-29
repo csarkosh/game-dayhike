@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import type { Scene } from "@babylonjs/core/scene.js";
 import {
   GOVERNOR_IDLE_MAX_MS, GOVERNOR_LIMIT_MS, GOVERNOR_LINE_MS, GOVERNOR_START_MS, GOVERNOR_STALL_MS, GOVERNOR_WINDOW_MS, GOVERNOR_WINDOWS,
-  actOnDrop, createGovernor, governorDecision, governorLine, steadyFrame, type DropDeps, type Governor,
+  GOVERNOR_ENABLED, actOnDrop, createGovernor, governHike, governorDecision, governorLine, steadyFrame, type DropDeps, type Governor,
 } from "../../src/game/governor.js";
 import type { QualityTier } from "../../src/game/quality.js";
 import { whenSceneReady } from "../../src/game/rendererSwap.js";
@@ -348,5 +348,76 @@ describe("when a drop is acted on", () => {
     expect(g.frame(25, 60_000)).toBe(true);
     g.restart(60_000);
     expect(g.frame(25, 200_000)).toBe(false);
+  });
+});
+
+describe("a hike's governor, as the page makes and feeds it", () => {
+  /**
+   * A hike on Auto at high, made as `app.ts` makes it (`governHike`, the
+   * switch as given, or the module's own when `enabled` is undefined), whose
+   * every frame takes 25 ms, over the limit, steady and fed for 120 s of a test
+   * clock: past the grace, every window counts. A drop is acted on as
+   * `lowerTier` acts on it (`governorDecision`, then `actOnDrop`), and every
+   * cover, timing of the idle frames, record, switch and line is logged.
+   */
+  async function slowHike(enabled?: boolean) {
+    const did: string[] = [];
+    let tier: QualityTier = "high";
+    const acting: Promise<unknown>[] = [];
+    const deps: DropDeps = {
+      cover: () => {
+        did.push("cover");
+        return () => did.push("lift");
+      },
+      stopLoop: () => {
+        did.push("stop");
+        return () => did.push("resume");
+      },
+      idleCadence: async () => {
+        did.push("time");
+        return 16.7;
+      },
+      record: (running) => did.push(`record ${running}`),
+      switchTo: async (next) => {
+        did.push(`switch ${next}`);
+        tier = next;
+        return next;
+      },
+      flash: (line, ms) => did.push(`flash ${line} ${ms}`),
+      log: () => undefined,
+      alive: () => true,
+      whenEnded: () => () => undefined,
+    };
+    const onDrop = (): void => {
+      const decision = governorDecision(hike?.verdict ?? "none", tier, "auto");
+      if (decision !== null) acting.push(actOnDrop(tier, decision.next, deps));
+    };
+    const hike = enabled === undefined ? governHike(0, onDrop) : governHike(0, onDrop, enabled);
+    let fed = 0;
+    for (let now = 25; now <= 120_000; now += 25) {
+      if (hike === null) continue;
+      hike.frame(25, now, true);
+      fed += 1;
+    }
+    await Promise.all(acting);
+    return { made: hike !== null, fed, did, tier };
+  }
+
+  it("is switched off: the graphics level is decided at launch only", () => {
+    expect(GOVERNOR_ENABLED).toBe(false);
+  });
+
+  it("with the switch off, changes no tier, raises no cover and records no drop over 120 s of slow frames", async () => {
+    expect(await slowHike()).toEqual({ made: false, fed: 0, did: [], tier: "high" });
+    expect(await slowHike(false)).toEqual({ made: false, fed: 0, did: [], tier: "high" });
+  });
+
+  it("would lower the same hike once where the switch is on: the run above can show a drop", async () => {
+    expect(await slowHike(true)).toEqual({
+      made: true,
+      fed: 4_800,
+      did: ["cover", "stop", "time", "record high", "switch medium", "lift", "flash Graphics lowered to Medium to keep the game smooth. 6000"],
+      tier: "medium",
+    });
   });
 });

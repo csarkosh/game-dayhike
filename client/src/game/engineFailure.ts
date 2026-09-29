@@ -169,15 +169,18 @@ export function recordEngineFailure(
 }
 
 /**
- * Remembers a WebGPU start that failed (`init`: an adapter that does not
- * answer, an engine that does not start, a probe step's WebGPU engine that
- * fails), which ends on WebGL2, and pins `engine=webgl2` in this tab's
- * address by the same rule as a failure of a running engine
+ * Remembers a WebGPU start that ended on WebGL2: `timeout` where it ran out of
+ * the GPU's budget (an adapter that does not answer, an engine not ready),
+ * `init` where it failed (an engine that does not start, a probe step's WebGPU
+ * engine that fails in its build or frames). Pins `engine=webgl2` in this
+ * tab's address by the same rule as a failure of a running engine
  * (`pinsAfterFailure`): where storage refused the record, or the address's
- * `?engine=webgpu` outranks it. `page.pin` is not called where the page no
- * longer wants the engine. What was stored, and whether the record holds.
+ * `?engine=webgpu` outranks it; but not for a lone timeout that was stored,
+ * which, as a first lost device, tries WebGPU again. `page.pin` is not called
+ * where the page no longer wants the engine. What was stored, and whether the
+ * record holds.
  */
-export function recordStartFailure(page: {
+export function recordStartFailure(reason: "init" | "timeout", page: {
   storage: Storage | null;
   env: EngineEnv;
   now: number;
@@ -186,10 +189,12 @@ export function recordStartFailure(page: {
   current: boolean;
   pin(): void;
 }): { stored: boolean; holds: boolean } {
-  const record = recordFailure(readFallback(page.storage), "init", page.env, page.now);
+  const record = recordFailure(readFallback(page.storage), reason, page.env, page.now);
   const stored = writeFallback(page.storage, record);
-  if (page.current && pinsAfterFailure({ stored, override: page.override })) page.pin();
-  return { stored, holds: fallbackHolds(record, page.env, page.now) };
+  const holds = fallbackHolds(record, page.env, page.now);
+  const retry = reason === "timeout" && stored && !holds;
+  if (page.current && !retry && pinsAfterFailure({ stored, override: page.override })) page.pin();
+  return { stored, holds };
 }
 
 /**

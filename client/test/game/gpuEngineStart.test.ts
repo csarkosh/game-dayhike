@@ -48,6 +48,7 @@ vi.mock("@babylonjs/core/Engines/webgpuEngine.pure.js", () => {
 import { WebGPUEngine as WebGPUEngineMock } from "@babylonjs/core/Engines/webgpuEngine.pure.js";
 import { asyncPipelinesOf, createWebGpuEngine, forgetTranslators, loadTranslators } from "../../src/game/gpuEngine.js";
 import { buildSalt, type WgslSource } from "../../src/game/shaderLookup.js";
+import { WebGpuStartTimeout } from "../../src/game/engineChoice.js";
 
 const canvas = {} as HTMLCanvasElement;
 
@@ -373,7 +374,9 @@ describe("createWebGpuEngine", () => {
 
   it("disposes what it made and leaves the materials alone when the start fails", async () => {
     made.init = () => Promise.reject(new Error("device refused"));
-    await expect(createWebGpuEngine(canvas, { translators: TRANSLATORS })).rejects.toThrow("device refused");
+    const failing = createWebGpuEngine(canvas, { translators: TRANSLATORS });
+    await expect(failing).rejects.toThrow("device refused");
+    await expect(failing).rejects.not.toBeInstanceOf(WebGpuStartTimeout);
     expect(made.disposed).toBe(1);
     expect(PBRBaseMaterial.ForceGLSL).toBe(false);
     expect(StandardMaterial.ForceGLSL).toBe(false);
@@ -384,8 +387,11 @@ describe("createWebGpuEngine", () => {
     made.prepare = () => new Promise<void>(() => undefined);
     const start = createWebGpuEngine(canvas, { ms: 9_000, translators: TRANSLATORS });
     const settled = expect(start).rejects.toThrow("the WebGPU engine was not ready in 9000 ms");
+    // Its own limit's error, which `resolveWebGpu` remembers as a timeout.
+    const typed = expect(start).rejects.toBeInstanceOf(WebGpuStartTimeout);
     await vi.advanceTimersByTimeAsync(9_000);
     await settled;
+    await typed;
     expect(made.disposed).toBe(1);
   });
 });

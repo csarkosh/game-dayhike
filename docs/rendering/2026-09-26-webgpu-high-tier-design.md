@@ -37,7 +37,9 @@ Where the code differs from the text below, or adds to it:
   module and the translators; the GPU's 10 s (`WEBGPU_START_MS`) over the probe
   and the engine. A fetch that fails or runs out is WebGL2 for this load and is
   not remembered, since nothing of the GPU failed; a probe that does not
-  answer, or an engine that fails or runs out, is remembered (`init`). A probe
+  answer, or an engine not ready, within the GPU's budget is remembered as a
+  `timeout`, which holds only from the second in a day and then for a day
+  (§5.6); an engine that fails otherwise is remembered (`init`). A probe
   that fails, or finds no adapter that fits, is WebGL2 with no record, and
   fetches no translator. "Does not fit" is not remembered: with this order it
   costs a browser one cached chunk and an adapter request or two, and a stored
@@ -167,7 +169,10 @@ and the two starts are one; where this changes the text above and below:
   `onAfterShaderCompilationObservable` for every effect it translates, as on
   WebGL2, but makes each render pipeline at the effect's first draw, a frame
   or more later; the governor voids the frames that made one as well
-  (`watchPipelines`, reading Babylon's per-frame count).
+  (`watchPipelines`, reading Babylon's per-frame count). Since switched off,
+  with the governor itself: the level is decided at launch only (the
+  quality-tier design, §10), and a WebGPU switch during a hike comes only from
+  the player's Settings or a failure's rebuild.
 - **The early teardown holds on WebGPU.** Model loads end through the shell's
   abort on either engine; a given engine is disposed when the build throws;
   the BRDF lookup texture is expanded on WebGPU by the same path (only the
@@ -573,10 +578,12 @@ with its own identity re-pin, taken only if the measurement asks for it.
   again: storage refused the record, or `?engine=webgpu` outranks it
   (`pinsAfterFailure`). One rule on every such path: a start that fails
   (`init`, the first load's, a switch's, a probe step's, a lost device's
-  retry), a pipeline or uncaptured error, and a second lost device. A reload
-  then does not walk into the same failure while the record holds. A first
-  lost device retries on WebGPU and pins nothing; an engine that was only
-  slow for a switch's bound records nothing and pins nothing.
+  retry), a second start in a day that runs out of time (`timeout`), a
+  pipeline or uncaptured error, and a second lost device. A reload then does
+  not walk into the same failure while the record holds. A first lost device,
+  and a lone start that ran out of time where the record was stored, retry on
+  WebGPU and pin nothing; an engine that was only slow for a switch's bound
+  records nothing and pins nothing.
 - `?tier=low|medium|high`: the tier, in place of detection. Committed here
   because every rendering gate needs it and the switch is unreachable without
   it (§4).
@@ -632,6 +639,7 @@ requested, for at most 2 s. No preparation of a shader then waits.
 | --- | --- | --- | --- |
 | No WebGPU, a fallback adapter, a limit short | the rule (§5.1) | WebGL2, this load | the game, as today |
 | Translators fail to load, device refused, `initAsync` throws, or 15 s pass | `createWebGpuEngine` rejecting | WebGL2, this load; remembered (reason `init`) | the game, a moment later than usual |
+| As built: the adapter does not answer, or the engine is not ready, within `WEBGPU_START_MS` | `resolveWebGpu`'s own bound on the probe; `createWebGpuEngine` rejecting with `WebGpuStartTimeout` | WebGL2, this load; remembered (reason `timeout`), holding only from the second in 24 h, for a day (§5.6) | the game, 10 s later than usual; the console's warning as for `init` |
 | A shader fails to translate or compile, or WebGPU reports an uncaptured error, during the startup window | `engine.onEffectErrorObservable`; Babylon's `Logger` entries that begin `WebGPU uncaptured error` (`webgpuEngine.pure.js:451–458`, which logs them as warnings) | remembered (reason `pipeline`); reload | the page reloads to the same route on WebGL2; then, for 6 s, the HUD line "Graphics switched to WebGL2 after a GPU error." |
 | The same, after the startup window | the same | remembered (reason `pipeline`); no reload; one `console.error` | the game continues; the next load is WebGL2 |
 | The device is lost (a GPU process crash, a driver reset) | `engine.onContextLostObservable`, which Babylon fires only for a loss it did not cause | first loss in 24 h: counted, reload on WebGPU; second: remembered (reason `lost`), reload | after the first, a reload and the HUD line "Graphics restarted after a GPU error."; after the second, a reload onto WebGL2 and the line above |
@@ -696,12 +704,34 @@ a `sessionStorage` marker, dropped silently where that storage throws.
 ### 5.6 The remembered fallback
 
 `localStorage["dayhike.engine"]` holds `{ reason, browser, babylon, at,
-losses }`: the reason (`init`, `pipeline`, `lost`), the browser's major version
-from `navigator.userAgent`, Babylon's version (`AbstractEngine.Version`), the time, and the
-count of losses in the last 24 h. It **holds** (WebGL2 is chosen) while the
-reason is not a lone loss, `browser` and `babylon` equal the running ones, and
-`at` is less than 30 days old. A browser or Babylon upgrade therefore tries
-WebGPU again, once. Every access is wrapped as `playerName.ts` wraps its own:
+losses }`: the reason (`init`, `pipeline`, `lost`, and as built `timeout`),
+the browser's major version from `navigator.userAgent`, Babylon's version
+(`AbstractEngine.Version`), the time, and for `lost` and `timeout` how many of
+that reason in a row, each inside 24 h of the one before (the field keeps its
+first name, so a record stored before `timeout` existed reads as it did). It
+**holds** (WebGL2 is chosen) while the reason is not a lone loss or a lone
+timeout, `browser` and `babylon` equal the running ones, and `at` is less than
+30 days old, or for a `timeout` less than one day old. A browser or Babylon
+upgrade therefore tries WebGPU again, once.
+
+**A start that ran out of time** (`timeout`, as built) is told from one that
+failed by type, never by the message: the adapter not answering inside
+`WEBGPU_START_MS` is `resolveWebGpu`'s own bound, and an engine not ready in
+what is left of it rejects with `WebGpuStartTimeout` (`gpuEngine.ts`'s own
+time limit); any other throw is `init`. A running-out does not tell a GPU that
+cannot run WebGPU from a machine that was busy. Measured on an Apple M4 in
+Chrome while another page drew on the same GPU (load average 10 to 22):
+`navigator.gpu.requestAdapter` took 13 to 16 s, the engine was not ready in
+10 s, and the page drew with WebGL2; recorded as `init`, that browser would
+then have drawn with WebGL2 for 30 days on a machine that runs WebGPU well. So
+a `timeout` is counted as a lost device is: one alone never holds, a second
+inside 24 h of the last (`TIMEOUT_WINDOW_MS`) counts up, and from the second
+the record holds for one day (`TIMEOUT_HOLD_DAYS`), not 30. A machine busy
+once tries WebGPU again at its next launch; one that is always too slow waits
+the 10 s at most twice a day. A timeout never replaces a record of another
+reason that still holds, and neither it nor a lost device counts towards the
+other. The page's line and the console's warning are those of any start that
+ends on WebGL2; a lone timeout that was stored pins nothing in the address. Every access is wrapped as `playerName.ts` wraps its own:
 where storage throws, nothing is remembered and the reload URL carries
 `?engine=webgl2` instead, so a failure that recurs on every WebGPU start cannot
 loop.
@@ -1488,7 +1518,7 @@ landed. The rest hold on either path.
 6. Before Task 2 lands, the real failures of §3.3 on `?engine=webgpu`: the game
    ends on WebGL2 every time. Task 1's gate is this.
 7. A `requestAdapter` that never answers: WebGL2 once `WEBGPU_START_MS` have
-   passed, `init` recorded. A translator fetch that stalls: WebGL2 once
+   passed, `init` recorded (as built since, `timeout`, §5.6). A translator fetch that stalls: WebGL2 once
    `WEBGPU_FETCH_MS` have passed, nothing recorded.
 8. A translator loader served as the host's HTML page (a missing asset): WebGL2
    at once, nothing recorded.
@@ -1520,7 +1550,10 @@ a WebGPU hike above what it holds, and the switch stays off for that tier.
   rule reading it; `adapterFits` on literal limits (§6.4); the remembered
   record holding, lapsing on a new browser major, a new Babylon version and
   after 30 days, and the lost-device count (one loss does not hold, two within
-  24 h do, two a day apart do not).
+  24 h do, two a day apart do not); as built, the same count for a `timeout`,
+  whose record holds one day, and `resolveWebGpu` remembering `timeout` for an
+  adapter or an engine that ran out of time and `init` for an engine that
+  throws.
 - `renderer.test.ts`: the renderer uses an engine it is given and makes WebGL2's
   own otherwise, with WebGL2's options unchanged.
 - `webglIdentity.test.ts`: §6.0's pins.

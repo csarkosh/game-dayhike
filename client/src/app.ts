@@ -90,7 +90,7 @@ import {
 } from "./game/rendererSwap.js";
 import { releaseAtmosphere } from "./game/atmosphere.js";
 import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
-import { GOVERNOR_IDLE_MAX_MS, actOnDrop, createGovernor, governorDecision, steadyFrame } from "./game/governor.js";
+import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
@@ -160,7 +160,8 @@ export type GameOptions = {
    */
   onTierFallback(fallback: { attempted: QualityTier; built: QualityTier | null; source: TierSource }): void;
   /** The governor lowered Auto's tier from `running` (`governor.ts`): the page
-   * records it (`withGovernorDrop`) so the next hike starts there too. */
+   * records it (`withGovernorDrop`) so the next hike starts there too. Never
+   * called while `GOVERNOR_ENABLED` is off. */
   onGovernorDrop(running: QualityTier): void;
   /** The graphics setting, for the pause screen's Settings: the player's
    * choice, whether the browser keeps it, Auto's pick, `?tier=`, a line for a
@@ -298,10 +299,12 @@ function buildGame(
   /** The tier the running renderer was built at, and where it came from. */
   let tier: QualityTier = first.tier;
   let tierSource: TierSource = options.tierSource;
-  // The governor (`governor.ts`): fed every frame of play, restarted when the
-  // session starts and after a switch, stopped when it ends, acting at most
-  // once per hike.
-  const governor = createGovernor(performance.now());
+  // The governor (`governor.ts`): where `GOVERNOR_ENABLED` is on, fed every
+  // frame of play, restarted when the session starts and after a switch,
+  // stopped when it ends, acting at most once per hike. Off, it is null: the
+  // tier was decided at launch, and only the player changes it during the
+  // hike, in Settings.
+  const governor = governHike(performance.now(), () => void lowerTier());
   /** A tier is being switched: no frame of it is steady play. */
   let switching = false;
   /** The governor is acting: timing the page's idle frames, then its switch. */
@@ -321,6 +324,8 @@ function buildGame(
    * at an effect's first draw, after its compile. */
   function watchCompiles(r: Renderer): void {
     unwatchCompiles?.();
+    // Only the governor reads the marks.
+    if (governor === null) return;
     const mark = (): void => {
       compiledSinceFrame = true;
     };
@@ -1093,7 +1098,7 @@ function buildGame(
    * the ending is seen; a switch under it finishes, or is abandoned, as it
    * would. */
   function sessionOver(): void {
-    governor.stop();
+    governor?.stop();
     for (const lift of [...onSessionOver]) lift();
   }
 
@@ -1110,7 +1115,7 @@ function buildGame(
       hostPeerId: selfPeerId,
     });
     session = host;
-    governor.restart(performance.now());
+    governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
@@ -1214,7 +1219,7 @@ function buildGame(
       forest,
     });
     session = client;
-    governor.restart(performance.now());
+    governor?.restart(performance.now());
     escalation = ESCALATION_REST;
     registerInteractables(client.world);
     activeWorld = client.world;
@@ -1552,7 +1557,7 @@ function buildGame(
       swapError = outcome.line;
       if (got.fellBack) options.onTierFallback({ attempted: target, built: tier, source });
       else tierSource = source;
-      governor.restart(performance.now());
+      governor?.restart(performance.now());
       console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine ${renderer.engine.isWebGPU ? "webgpu" : "webgl2"}`);
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
@@ -1617,8 +1622,10 @@ function buildGame(
     log: (line) => console.error(line),
   });
 
-  /** Feeds the governor one frame of play, and acts on its verdict once. */
+  /** Feeds the governor one frame of play, which acts on its verdict once
+   * (`lowerTier`); nothing where the page has no governor. */
   function feedGovernor(dt: number): void {
+    if (governor === null) return;
     const steady = steadyFrame({
       engaged: input.engaged,
       menuOpen: menu.isOpen,
@@ -1630,7 +1637,7 @@ function buildGame(
       freecam: freecam !== null || freecamPending,
     });
     compiledSinceFrame = false;
-    if (governor.frame(dt * 1000, performance.now(), steady)) void lowerTier();
+    governor.frame(dt * 1000, performance.now(), steady);
   }
 
   /**
@@ -1645,6 +1652,7 @@ function buildGame(
    * line saying so.
    */
   async function lowerTier(): Promise<void> {
+    if (governor === null) return;
     const decision = governorDecision(governor.verdict, tier, tierSource);
     if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null) return;
     lowering = true;
