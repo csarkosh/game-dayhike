@@ -283,6 +283,68 @@ describe("createTrailheadMeshes", () => {
     meshes.dispose();
   });
 
+  it("lays a soft dark patch on the ground under the car, from the first frame", async () => {
+    const scene = freshScene();
+    const gate = gatedLoader(scene);
+    const { meshes, shadowed } = setup(scene, gate.loader);
+
+    const patch = scene.getMeshByName("trailhead_car_shadow") as Mesh;
+    expect(patch).not.toBeNull();
+    // About the car's own place, on the ground there: 3 + 0.01 x 10 - 0.02 x 20.
+    expect(patch.position.x).toBe(10);
+    expect(patch.position.y).toBeCloseTo(2.7, 9);
+    expect(patch.position.z).toBe(20);
+    expect(patch.scaling.asArray().map((v) => +v.toFixed(6))).toEqual([1.6, 1, 3]);
+    expect(patch.getIndices()).toBeInstanceOf(Uint16Array);
+    const corners = worldVertices(patch);
+    expect(corners).toHaveLength(104);
+    for (const c of corners) expect(c.p.y).toBeCloseTo(groundH(c.p.x, c.p.z) + 0.01, 5);
+    expect(Math.min(...corners.map((c) => c.p.x))).toBeCloseTo(8.4, 5);
+    expect(Math.max(...corners.map((c) => c.p.x))).toBeCloseTo(11.6, 5);
+    expect(Math.min(...corners.map((c) => c.p.z))).toBeCloseTo(17, 5);
+    expect(Math.max(...corners.map((c) => c.p.z))).toBeCloseTo(23, 5);
+
+    // Black, unlit, laid over the ground by its texture's alpha, and in the way of nothing.
+    const material = patch.material as StandardMaterial;
+    expect(material).toBeInstanceOf(StandardMaterial);
+    expect(material.disableLighting).toBe(true);
+    expect(material.emissiveColor.asArray()).toEqual([0, 0, 0]);
+    expect(material.disableDepthWrite).toBe(true);
+    expect(material.backFaceCulling).toBe(false);
+    expect(material.fogEnabled).toBe(true);
+    expect(material.zOffsetUnits).toBe(-120);
+    const texture = material.opacityTexture!;
+    expect(texture.hasAlpha).toBe(true);
+    expect(texture.getSize()).toEqual({ width: 64, height: 128 });
+    expect(texture.wrapU).toBe(0);
+    expect(texture.wrapV).toBe(0);
+    expect(material.needAlphaBlendingForMesh(patch)).toBe(true);
+    expect(patch.isPickable).toBe(false);
+    expect(patch.receiveShadows).toBe(false);
+    expect(shadowed.has(patch)).toBe(false);
+
+    // It stays when the model takes the box's place, and goes with the trailhead.
+    gate.release();
+    await meshes.ready;
+    expect(scene.getMeshByName("trailhead_car_box")).toBeNull();
+    expect(scene.getMeshByName("trailhead_car_shadow")).toBe(patch);
+    expect(shadowed.has(patch)).toBe(false);
+    meshes.dispose();
+    expect(scene.getMeshByName("trailhead_car_shadow")).toBeNull();
+    expect(scene.materials.includes(material)).toBe(false);
+    expect(scene.textures.includes(texture)).toBe(false);
+  });
+
+  it("keeps the patch under the box when the car's model never loads", async () => {
+    const scene = freshScene();
+    const { meshes } = setup(scene, () => Promise.reject(new Error("offline")));
+    await meshes.ready;
+    expect(scene.getMeshByName("trailhead_car_box")).not.toBeNull();
+    expect(scene.getMeshByName("trailhead_car_shadow")).not.toBeNull();
+    meshes.dispose();
+    expect(scene.getMeshByName("trailhead_car_shadow")).toBeNull();
+  });
+
   it("keeps the boxes, and paints nothing, when the models never load", async () => {
     const scene = freshScene();
     const { meshes, painted, shadowed } = setup(scene, () => Promise.reject(new Error("offline")));
