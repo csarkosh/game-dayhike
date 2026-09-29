@@ -329,34 +329,37 @@ export function unitId(species: number, cx: number, cz: number): number {
   return ((((cx + CELL_ID_BIAS) & 0x3fff) << 17) | (((cz + CELL_ID_BIAS_Z) & 0x1fff) << 4) | (species & 0xf));
 }
 /**
- * The ground a forest animal may stand on: above the height at which no sand is left in
- * the ground's paint (`terrainSurface.ts` fades it out between SAND_TOP and 9 m), clear
- * of the strip the road is cleared through, and no steeper than a player could walk.
- * Gulls are the shore's; everything that walks is kept to this, wherever it is put and
- * wherever it goes.
+ * The forest's ground, which everything that walks keeps to: above the height at which no
+ * sand is left in the ground's paint (`terrainSurface.ts` fades it out between SAND_TOP and
+ * 9 m) and clear of the strip the road is cleared through. Gulls are the shore's.
  */
 export const GROUND_SHORE_ALT = 9;
 /** The cleared strip's half-width: the sim's ROAD_CORRIDOR_HALF, held here as a number
  * because nothing in this module may move the level id. */
 export const GROUND_ROAD_CLEAR = 30;
+/** Where an animal that walks may be anchored: the forest's ground, no steeper than a
+ * player could walk. */
 function standable(s: TerrainSample, road: number): boolean {
   return s.h >= GROUND_SHORE_ALT && road >= GROUND_ROAD_CLEAR && Math.hypot(s.dx, s.dz) <= MAX_WALKABLE_GRADIENT;
 }
+/**
+ * Where an animal that walks may go, and be put. How steep the ground is has no part in
+ * it: a herd crosses steep ground as it always has, and held to walkable ground it would
+ * stop at the first steep band between it and its refuge.
+ */
 export function forestGround(seed: number, x: number, z: number): boolean {
   const road = activeTerrainVariant().roadDistance?.(seed, x, z) ?? Infinity;
   if (road < GROUND_ROAD_CLEAR) return false;
-  return standable(elevationSampleAt(seed, x, z), road);
+  return elevationSampleAt(seed, x, z).h >= GROUND_SHORE_ALT;
 }
 /**
  * The ground a species keeps to, for whatever puts an animal somewhere the field did not:
- * the forest's ground for the four that walk; anywhere above the sand and clear of the
- * road's strip for a butterfly, which no slope stops; and no rule at all for the birds.
+ * the forest's ground for the four that walk and for a butterfly, and no rule at all for
+ * the birds.
  */
 export function speciesGround(seed: number, species: number, x: number, z: number): boolean {
-  if (species < FIRST_BIRD_SPECIES) return forestGround(seed, x, z);
-  if (species !== SPECIES_BUTTERFLY) return true;
-  const road = activeTerrainVariant().roadDistance?.(seed, x, z) ?? Infinity;
-  return road >= GROUND_ROAD_CLEAR && elevationSampleAt(seed, x, z).h >= GROUND_SHORE_ALT;
+  if (species < FIRST_BIRD_SPECIES || species === SPECIES_BUTTERFLY) return forestGround(seed, x, z);
+  return true;
 }
 /** How far apart the way to a goal is tried, and how closely the edge is then found (m). */
 const ALLOWED_STRIDE = 1;

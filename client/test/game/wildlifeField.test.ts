@@ -443,24 +443,23 @@ describe("the ground each species keeps to", () => {
   const WALKERS = [SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL];
   const BIRDS = [SPECIES_RAVEN_ROOST, SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE];
 
-  it("holds the four that walk to the forest's ground", () => {
+  it("holds the four that walk, and the butterfly, off the sand and the road", () => {
     setActiveTerrainVariant("olympic");
-    for (const species of WALKERS) {
+    for (const species of [...WALKERS, SPECIES_BUTTERFLY]) {
       expect(speciesGround(HOLLOW, species, -323, 0), `species ${species} on the road`).toBe(false);
       expect(speciesGround(HOLLOW, species, -291, 0), `species ${species} on the sand`).toBe(false);
+      expect(speciesGround(HOLLOW, species, -283, 0), `species ${species} where the sand is fading`).toBe(false);
       expect(speciesGround(HOLLOW, species, -263, 0), `species ${species} in the forest`).toBe(true);
-      // 112.46 m up and 369.5 m from the road, on a slope of 1.04.
-      expect(speciesGround(HOLLOW, species, 47, 240), `species ${species} on a slope too steep to stand on`).toBe(false);
     }
   });
 
-  it("holds a butterfly off the sand and the road, and lets it over any slope", () => {
+  it("holds none of them off a slope: how steep the ground is decides where one is anchored, not where it may go", () => {
     setActiveTerrainVariant("olympic");
-    expect(speciesGround(HOLLOW, SPECIES_BUTTERFLY, -323, 0)).toBe(false);
-    expect(speciesGround(HOLLOW, SPECIES_BUTTERFLY, -291, 0)).toBe(false);
-    expect(speciesGround(HOLLOW, SPECIES_BUTTERFLY, -283, 0)).toBe(false);
-    expect(speciesGround(HOLLOW, SPECIES_BUTTERFLY, -263, 0)).toBe(true);
-    expect(speciesGround(HOLLOW, SPECIES_BUTTERFLY, 47, 240)).toBe(true);
+    // 112.46 m up and 369.5 m from the road, on a slope of 1.04.
+    const s = elevationSampleAt(HOLLOW, 47, 240);
+    expect(Math.hypot(s.dx, s.dz)).toBeGreaterThan(MAX_WALKABLE_GRADIENT);
+    for (const species of [...WALKERS, SPECIES_BUTTERFLY]) expect(speciesGround(HOLLOW, species, 47, 240), `species ${species}`).toBe(true);
+    expect(forestGround(HOLLOW, 47, 240)).toBe(true);
   });
 
   it("holds no bird anywhere", () => {
