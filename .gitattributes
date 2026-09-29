@@ -15,16 +15,18 @@
 
 # Shader sources: their text is what the WebGPU shader lookup keys a stage by,
 # so a checkout with Windows line endings would give every stage another key.
-*.fx   text eol=lf
+# The game's .fx files are GLSL, as Babylon's are; the host's statistics take
+# the extension for HLSL unless told.
+*.fx   text eol=lf linguist-language=GLSL
 *.glsl text eol=lf
 *.wgsl text eol=lf
 
 # The recorded shader corpus: one GLSL file a stage, its bytes the stage's
 # exact text and its name a hash of them (tools/wgsl/lib/corpus.mjs), written
-# only by tools/wgsl/merge-corpus.mjs. Generated: kept out of the language
-# statistics, its diffs folded. -whitespace: Git neither flags nor, with
-# --whitespace=fix, trims its trailing spaces and blank lines, which are part
-# of a stage's text.
+# only by tools/wgsl/merge-corpus.mjs. Generated: kept out of the host's
+# language statistics, which count the shaders written by hand alone, and its
+# diffs folded. -whitespace: Git neither flags nor, with --whitespace=fix,
+# trims its trailing spaces and blank lines, which are part of a stage's text.
 client/shaders/corpus/**               linguist-generated=true -whitespace
 tools/wgsl/test/fixtures/node-corpus/** linguist-generated=true -whitespace
 tools/wgsl/test/fixtures/corpus/**      linguist-generated=true -whitespace

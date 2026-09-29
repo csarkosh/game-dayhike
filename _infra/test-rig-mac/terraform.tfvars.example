@@ -1,0 +1,15 @@
+# STATUS: INCOMPLETE. This module has never been applied: read README.md's
+# first section. Nothing runs until this is true.
+# acknowledge_incomplete = true
+
+# Scaleway credentials are NOT set here: export SCW_ACCESS_KEY, SCW_SECRET_KEY,
+# SCW_DEFAULT_PROJECT_ID and SCW_DEFAULT_ORGANIZATION_ID in the shell.
+
+# The public key to log in with: the contents of ~/.ssh/id_ed25519.pub or similar.
+ssh_public_key = "ssh-ed25519 AAAA... name"
+
+# Macs to rent for the day.
+server_count = 1
+
+# Scaleway's default macOS unless set (a non-default version adds about an hour).
+# macos = "macos-tahoe-26.0"
