@@ -17,7 +17,7 @@ import {
   ELK_FLEE_AWAY, ELK_REFUGE_ARRIVE, SQUIRREL_FORAGE_RADIUS, SQUIRREL_CLIMB, SQUIRREL_CLING_CLEARANCE,
   RAVEN_BLEND_SECONDS, RAVEN_CLIMB_MPS, ravenBlendSeconds, clipForPhase,
   PHASE_CUE, RABBIT_RETURN_SPEED, GULL_SPEED, startCue, BUTTERFLY_ALT, BUTTERFLY_SPEED, BUTTERFLY_CUE_SPEED,
-  createUnitState, stepUnit, wildlifePresenceUnder, type PlayerPoint, type WildlifeEvent, type UnitState,
+  createUnitState, groundReads, stepUnit, wildlifePresenceUnder, type PlayerPoint, type WildlifeEvent, type UnitState,
 } from "../../src/game/wildlifeBehaviour.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -1022,6 +1022,26 @@ describe("the animals that walk keep to the forest's ground", () => {
     expect(forestGround(HOLLOW, -270, 0)).toBe(false);
     expect(forestGround(HOLLOW, -323, 0)).toBe(false);
   });
+
+  it("asks the ground nothing on a frame the herd's lead has not moved", () => {
+    setActiveTerrainVariant("olympic");
+    // Eight elk, 60 m inside the forest, with nobody near: they graze, and now and then walk a few metres.
+    const u = createUnitState(at(SPECIES_ELK, -210, 0), 1000, HOLLOW);
+    let still = 0, moving = 0, readsStill = 0, readsMoving = 0;
+    for (let t = 1001; t <= 1000 + 120 * SIM_TICK_HZ; t++) {
+      const x = u.x, z = u.z, before = groundReads();
+      stepUnit(u, t, far, HOLLOW, 12, [], []);
+      const reads = groundReads() - before;
+      if (u.x === x && u.z === z) { still++; readsStill += reads; } else { moving++; readsMoving += reads; }
+    }
+    // Both kinds of frame are in the two minutes, so the count is of something.
+    expect(still).toBeGreaterThan(3600);
+    expect(moving).toBeGreaterThan(60);
+    // A frame on which the lead stops is one on which it has moved: what is asked on the
+    // frames it stands is what a wander's new goal asks, once for each walk.
+    expect(readsStill).toBeLessThanOrEqual(120);
+    expect(readsMoving).toBeGreaterThan(0);
+  }, timeLimit(60_000));
 
   it("grazes a herd at the forest's edge without a member stepping onto the sand", () => {
     setActiveTerrainVariant("olympic");

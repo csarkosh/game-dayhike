@@ -321,6 +321,44 @@ function moveToward(u: UnitState, speed: number): boolean {
   u.z += (dz / d) * step;
   return false;
 }
+let reads = 0;
+/** How many times this module has asked whether a place is the forest's ground: a test's
+ * seam, for what a frame costs. */
+export function groundReads(): number {
+  return reads;
+}
+function onForest(seed: number, x: number, z: number): boolean {
+  reads++;
+  return forestGround(seed, x, z);
+}
+/**
+ * For each member of a herd, the place its offset last asked for and the place it was
+ * given, four numbers a member. A herd stands far more than it walks, and while its lead
+ * stands each member asks for the place it asked for the frame before: the answer is kept,
+ * and the ground is asked again only once the lead has moved.
+ */
+const keptPlaces = new WeakMap<UnitState, Float64Array>();
+function keptPlace(u: UnitState, m: number, seed: number, tx: number, tz: number): Float64Array {
+  let kept = keptPlaces.get(u);
+  if (kept === undefined || kept.length < u.memberOffsets.length * 4) {
+    kept = new Float64Array(u.memberOffsets.length * 4).fill(NaN);
+    keptPlaces.set(u, kept);
+  }
+  const i = m * 4;
+  if (kept[i] === tx && kept[i + 1] === tz) return kept;
+  kept[i] = tx;
+  kept[i + 1] = tz;
+  if (onForest(seed, tx, tz)) {
+    kept[i + 2] = tx;
+    kept[i + 3] = tz;
+  } else {
+    const p = lastAllowed((x, z) => onForest(seed, x, z), u.x, u.z, tx, tz);
+    kept[i + 2] = p.x;
+    kept[i + 3] = p.z;
+  }
+  return kept;
+}
+
 /**
  * Holds a goal just set to the forest's ground: the goal becomes the furthest point
  * toward it that the animal can reach without stepping onto the shore or into the road's
@@ -331,7 +369,7 @@ function moveToward(u: UnitState, speed: number): boolean {
  */
 function keepGoal(u: UnitState, seed: number): void {
   if (u.unit.species >= FIRST_BIRD_SPECIES) return;
-  const allowed = (x: number, z: number): boolean => forestGround(seed, x, z);
+  const allowed = (x: number, z: number): boolean => onForest(seed, x, z);
   if (!allowed(u.x, u.z)) {
     if (!allowed(u.goalX, u.goalZ)) { u.goalX = u.x; u.goalZ = u.z; }
     return;
@@ -410,8 +448,8 @@ export function createUnitState(unit: WildlifeUnit, tick: number, seed: number):
     offsets.push({ a, r, delay });
     let px = unit.x + r * Math.cos(a), pz = unit.z + r * Math.sin(a);
     // As `poseGround` holds a member's place, so it starts there.
-    if (unit.species < FIRST_BIRD_SPECIES && r > 0 && !forestGround(seed, px, pz)) {
-      const p = lastAllowed((x, z) => forestGround(seed, x, z), unit.x, unit.z, px, pz);
+    if (unit.species < FIRST_BIRD_SPECIES && r > 0 && !onForest(seed, px, pz)) {
+      const p = lastAllowed((x, z) => onForest(seed, x, z), unit.x, unit.z, px, pz);
       px = p.x;
       pz = p.z;
     }
@@ -870,10 +908,10 @@ function poseGround(u: UnitState, tick: number, seed: number): void {
     let tz = u.z + r * Math.sin(a);
     // A member's place about the lead is the forest's too: where its own offset would
     // stand it on the shore, it stands as far that way as the forest goes.
-    if (r > 0 && !forestGround(seed, tx, tz)) {
-      const p = lastAllowed((x, z) => forestGround(seed, x, z), u.x, u.z, tx, tz);
-      tx = p.x;
-      tz = p.z;
+    if (r > 0) {
+      const kept = keptPlace(u, m, seed, tx, tz);
+      tx = kept[m * 4 + 2]!;
+      tz = kept[m * 4 + 3]!;
     }
     if (tick - u.phaseStart >= delay || m === 0) {
       const dx = tx - pose.x, dz = tz - pose.z, dd = Math.hypot(dx, dz);
