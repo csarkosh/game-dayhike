@@ -10,6 +10,8 @@
  */
 import { fbm2, hash3, valueNoise2 } from "./field.js";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./terrain.js";
+import { shoreHeight } from "./shoreStrip.js";
+import { TRAIL_Z_ANCHOR, TRAILHEAD_U } from "./bowl.js";
 import { forestDensity, SLOPE_HI, SLOPE_LO } from "./vegetation.js";
 import { NO_FEATURE_MASK, type FeatureMask } from "./features.js";
 
@@ -442,19 +444,32 @@ type ClassConfig = {
   variants: number;
   /** Reject the jittered instance within this trailDistance (m); 0 = ungated. */
   trailClear: number;
+  /** Whether it is kept out of the trailhead's clearing (`TRAILHEAD_CLEARING`). */
+  standsTall?: boolean;
 };
 
 const CLASSES: readonly ClassConfig[] = [
   { cell: CLUTTER_GRASS_CELL, density: CLUTTER_GRASS_D, salt: CLUTTER_GRASS_SALT, scaleMin: CLUTTER_GRASS_SCALE_MIN, scaleMax: CLUTTER_GRASS_SCALE_MAX, variants: 2, trailClear: 0 },
-  { cell: CLUTTER_ROCK_CELL, density: CLUTTER_ROCK_D, salt: CLUTTER_ROCK_SALT, scaleMin: CLUTTER_ROCK_SCALE_MIN, scaleMax: CLUTTER_ROCK_SCALE_MAX, variants: 2, trailClear: 0 },
-  { cell: CLUTTER_BOULDER_CELL, density: CLUTTER_BOULDER_D, salt: CLUTTER_BOULDER_SALT, scaleMin: CLUTTER_BOULDER_SCALE_MIN, scaleMax: CLUTTER_BOULDER_SCALE_MAX, variants: 2, trailClear: CLUTTER_BOULDER_TRAIL_CLEAR },
+  { cell: CLUTTER_ROCK_CELL, density: CLUTTER_ROCK_D, salt: CLUTTER_ROCK_SALT, scaleMin: CLUTTER_ROCK_SCALE_MIN, scaleMax: CLUTTER_ROCK_SCALE_MAX, variants: 2, trailClear: 0, standsTall: true },
+  { cell: CLUTTER_BOULDER_CELL, density: CLUTTER_BOULDER_D, salt: CLUTTER_BOULDER_SALT, scaleMin: CLUTTER_BOULDER_SCALE_MIN, scaleMax: CLUTTER_BOULDER_SCALE_MAX, variants: 2, trailClear: CLUTTER_BOULDER_TRAIL_CLEAR, standsTall: true },
   { cell: CLUTTER_DRIFT_CELL, density: CLUTTER_DRIFT_D, salt: CLUTTER_DRIFT_SALT, scaleMin: CLUTTER_DRIFT_SCALE_MIN, scaleMax: CLUTTER_DRIFT_SCALE_MAX, variants: 1, trailClear: 0 },
-  { cell: CLUTTER_FUNGUS_CELL, density: CLUTTER_FUNGUS_D, salt: CLUTTER_FUNGUS_SALT, scaleMin: CLUTTER_FUNGUS_SCALE_MIN, scaleMax: CLUTTER_FUNGUS_SCALE_MAX, variants: 2, trailClear: CLUTTER_FUNGUS_TRAIL_CLEAR },
-  { cell: CLUTTER_BUSH_CELL, density: CLUTTER_BUSH_D, salt: CLUTTER_BUSH_SALT, scaleMin: CLUTTER_BUSH_SCALE_MIN, scaleMax: CLUTTER_BUSH_SCALE_MAX, variants: 2, trailClear: 0 },
+  { cell: CLUTTER_FUNGUS_CELL, density: CLUTTER_FUNGUS_D, salt: CLUTTER_FUNGUS_SALT, scaleMin: CLUTTER_FUNGUS_SCALE_MIN, scaleMax: CLUTTER_FUNGUS_SCALE_MAX, variants: 2, trailClear: CLUTTER_FUNGUS_TRAIL_CLEAR, standsTall: true },
+  { cell: CLUTTER_BUSH_CELL, density: CLUTTER_BUSH_D, salt: CLUTTER_BUSH_SALT, scaleMin: CLUTTER_BUSH_SCALE_MIN, scaleMax: CLUTTER_BUSH_SCALE_MAX, variants: 2, trailClear: 0, standsTall: true },
   { cell: CLUTTER_MEADOW_CELL, density: CLUTTER_MEADOW_D, salt: CLUTTER_MEADOW_SALT, scaleMin: CLUTTER_MEADOW_SCALE_MIN, scaleMax: CLUTTER_MEADOW_SCALE_MAX, variants: 1, trailClear: 0 },
   { cell: CLUTTER_FLOWER_CELL, density: CLUTTER_FLOWER_D, salt: CLUTTER_FLOWER_SALT, scaleMin: CLUTTER_FLOWER_SCALE_MIN, scaleMax: CLUTTER_FLOWER_SCALE_MAX, variants: 2, trailClear: 0 },
   { cell: CLUTTER_LITTER_CELL, density: CLUTTER_LITTER_D, salt: CLUTTER_LITTER_SALT, scaleMin: CLUTTER_LITTER_SCALE_MIN, scaleMax: CLUTTER_LITTER_SCALE_MAX, variants: 3, trailClear: 0 },
 ];
+
+/** Nothing that stands tall grows within this of the pad's centre (m): where a player arrives, the entrance and the board. */
+export const TRAILHEAD_CLEARING = 24;
+function inTrailheadClearing(seed: number, x: number, z: number): boolean {
+  const dz = z - TRAIL_Z_ANCHOR;
+  if (dz >= TRAILHEAD_CLEARING || dz <= -TRAILHEAD_CLEARING) return false;
+  const centre = activeTerrainVariant().roadCenterX?.(seed, TRAIL_Z_ANCHOR);
+  if (centre === undefined) return false;
+  const dx = x - (centre + TRAILHEAD_U);
+  return dx * dx + dz * dz < TRAILHEAD_CLEARING * TRAILHEAD_CLEARING;
+}
 
 export function clutterCell(cls: number): number {
   return (CLASSES[cls] as ClassConfig).cell;
@@ -472,8 +487,9 @@ export function clutterCell(cls: number): number {
  * rather than let this function fold the mask in earlier than that order
  * allows. */
 function groundCoverAt(seed: number, x: number, z: number, s: TerrainSample, r: number, rt: number, slopeSq: number, fm: FeatureMask): GroundCover {
+  // The low edge reads the strip's height (`shoreStrip.ts`); the high edge is the snow's, and reads the ground's.
   const alt =
-    smoothstep(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, s.h) *
+    smoothstep(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, shoreHeight(seed, x, z, s.h)) *
     (1 - smoothstep(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h));
   const grade = 1 - smoothstep(
     CLUTTER_GRASS_SLOPE_LO * CLUTTER_GRASS_SLOPE_LO,
@@ -556,8 +572,9 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       // factor beyond the field), so this no longer multiplies by it again.
       return groundCoverAt(seed, x, z, s, r, rt, slopeSq, fm).grass;
     case CLUTTER_ROCK: {
-      if (s.h < CLUTTER_ROCK_ALT_LO || r < CLUTTER_ROCK_ROAD_NEAR) return 0;
-      const alt = smoothstep(CLUTTER_ROCK_ALT_LO, CLUTTER_ROCK_ALT_LO + CLUTTER_ROCK_ALT_LO_FADE, s.h);
+      const sh = shoreHeight(seed, x, z, s.h);
+      if (sh < CLUTTER_ROCK_ALT_LO || r < CLUTTER_ROCK_ROAD_NEAR) return 0;
+      const alt = smoothstep(CLUTTER_ROCK_ALT_LO, CLUTTER_ROCK_ALT_LO + CLUTTER_ROCK_ALT_LO_FADE, sh);
       const grade = CLUTTER_ROCK_BASE + (1 - CLUTTER_ROCK_BASE) * rockSlopeBand(slopeSq);
       const road = smoothstep(CLUTTER_ROCK_ROAD_NEAR, CLUTTER_ROCK_ROAD_FAR, r);
       return alt * grade * road;
@@ -583,7 +600,7 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       // forestDensity already gates shore, road and slope; the explicit
       // altitude factor is belt-and-braces and keeps fungus
       // off any future ground where canopy leaks below the sand fade.
-      const alt = smoothstep(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, s.h);
+      const alt = smoothstep(CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO + CLUTTER_GRASS_ALT_LO_FADE, shoreHeight(seed, x, z, s.h));
       // The trees' own slope gate: no stump or mushroom on ground steep enough
       // that the forest (and the ground's soil class) has given it up.
       const grade = 1 - smoothstep(
@@ -594,7 +611,8 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       return canopy * alt * grade * fm.clutter;
     }
     case CLUTTER_BUSH: {
-      if (s.h < CLUTTER_BUSH_ALT_LO || r < CLUTTER_BUSH_ROAD_NEAR) return 0;
+      const sh = shoreHeight(seed, x, z, s.h);
+      if (sh < CLUTTER_BUSH_ALT_LO || r < CLUTTER_BUSH_ROAD_NEAR) return 0;
       const grade = 1 - smoothstep(
         CLUTTER_BUSH_SLOPE_LO * CLUTTER_BUSH_SLOPE_LO,
         CLUTTER_BUSH_SLOPE_HI * CLUTTER_BUSH_SLOPE_HI,
@@ -614,7 +632,7 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
           CLUTTER_BUSH_CANOPY_W * smoothstep(CLUTTER_BUSH_CANOPY_LO, CLUTTER_BUSH_CANOPY_HI, rho),
       );
       const alt =
-        smoothstep(CLUTTER_BUSH_ALT_LO, CLUTTER_BUSH_ALT_LO + CLUTTER_BUSH_ALT_LO_FADE, s.h) *
+        smoothstep(CLUTTER_BUSH_ALT_LO, CLUTTER_BUSH_ALT_LO + CLUTTER_BUSH_ALT_LO_FADE, sh) *
         (1 - smoothstep(CLUTTER_BUSH_ALT_HI, CLUTTER_BUSH_ALT_HI + CLUTTER_BUSH_ALT_HI_FADE, s.h));
       const road = smoothstep(CLUTTER_BUSH_ROAD_NEAR, CLUTTER_BUSH_ROAD_FAR, r);
       const patch =
@@ -739,6 +757,9 @@ export function clutterInCell(seed: number, cls: number, cellX: number, cellZ: n
     const trail = activeTerrainVariant().trailDistance?.(seed, x, z) ?? Infinity;
     if (trail < cfg.trailClear) return null;
   }
+  // Nothing that stands tall grows in the trailhead's clearing: rejected by
+  // its own place, as the trail's rule rejects it.
+  if (cfg.standsTall && inTrailheadClearing(seed, x, z)) return null;
   const ground = elevationSampleAt(seed, x, z);
   const groundH = ground.h;
   const scale = cfg.scaleMin + hash3(cellX, cellZ, 3, salted) * (cfg.scaleMax - cfg.scaleMin);
@@ -820,4 +841,5 @@ export const CLUTTER_TUNABLES: Readonly<Record<string, number>> = {
   CLUTTER_BUSH_SALT,
   CLUTTER_MEADOW_SALT, CLUTTER_FLOWER_SALT, CLUTTER_FLOWER_PATCH_SALT,
   CLUTTER_PATCH_SALT,
+  TRAILHEAD_CLEARING,
 };

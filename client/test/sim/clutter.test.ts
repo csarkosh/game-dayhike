@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
+import { shoreHeight } from "../../src/sim/shoreStrip.js";
 import {
   CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS, CLUTTER_GRASS, CLUTTER_ROCK,
   CLUTTER_MEADOW, CLUTTER_FLOWER, CLUTTER_LITTER,
@@ -31,6 +32,7 @@ import {
   CLUTTER_TUNABLES,
   CLUTTER_FUNGUS_TRAIL_CLEAR, CLUTTER_FUNGUS_SLOPE_LO, CLUTTER_FUNGUS_SLOPE_HI,
   clutterCell, clutterDensity, clutterInCell, clutterInRect, rockSlopeBand,
+  TRAILHEAD_CLEARING,
 } from "../../src/sim/clutter.js";
 import { SLOPE_HI, SLOPE_LO } from "../../src/sim/vegetation.js";
 import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
@@ -1208,25 +1210,50 @@ describe("groundCover", () => {
       [-306, 1000.5, -276, 1000.5], // across a road verge
       [-260, 380, -180, 440],       // toward the coast fade
     ];
-    const STEP = 0.25;
-    let maxGrassStep = 0, maxDuffStep = 0;
-    for (const [x0, z0, x1, z1] of lines) {
+    const stepsAlong = (line: [number, number, number, number], STEP: number): { grass: number; duff: number } => {
+      const [x0, z0, x1, z1] = line;
       const len = Math.hypot(x1 - x0, z1 - z0);
       const n = Math.floor(len / STEP);
-      let prev = groundCover(SEED, x0, z0);
+      let prev = groundCover(SEED, x0, z0), grass = 0, duff = 0;
       for (let i = 1; i <= n; i++) {
         const t = (i * STEP) / len;
         const cur = groundCover(SEED, x0 + (x1 - x0) * t, z0 + (z1 - z0) * t);
-        maxGrassStep = Math.max(maxGrassStep, Math.abs(cur.grass - prev.grass));
-        maxDuffStep = Math.max(maxDuffStep, Math.abs(cur.duff - prev.duff));
+        grass = Math.max(grass, Math.abs(cur.grass - prev.grass));
+        duff = Math.max(duff, Math.abs(cur.duff - prev.duff));
         prev = cur;
       }
+      return { grass, duff };
+    };
+    const TRAIL = 2;
+    let maxGrassStep = 0, maxDuffStep = 0;
+    for (const [k, line] of lines.entries()) {
+      if (k === TRAIL) continue;
+      const s = stepsAlong(line, 0.25);
+      maxGrassStep = Math.max(maxGrassStep, s.grass);
+      maxDuffStep = Math.max(maxDuffStep, s.duff);
     }
     // Measured on seed 1 at the true 0.25 m step: maxGrassStep ~ 0.131 (the
     // road line), maxDuffStep ~ 0.024 — real margin under the bound, not the
     // inflated one the finer, span/240 sampling used to report.
     expect(maxGrassStep).toBeLessThan(0.15);
     expect(maxDuffStep).toBeLessThan(0.15);
+    // 2026-09-29: the line across the trail is judged on its own. It crosses
+    // the bed 38 m from the road, 16 m along it from the trailhead's pad, on
+    // ground 7.08 m up: at the foot of the grass's altitude gate, where
+    // there was next to no grass for the trail's ramp to take. That ground
+    // is in the strip where the forest comes down to the road now
+    // (`shoreStrip.ts`) and carries grass in full, 1.29, and the trail's own
+    // ramp, which has not changed, takes it to nothing over 0.82 m there.
+    // A ramp and not a jump: its step falls with the sampling's, 0.460 at
+    // 0.25 m, 0.100 at 0.05 m and 0.020 at 0.01 m (the duff's 0.265, 0.069
+    // and 0.014).
+    const coarse = stepsAlong(lines[TRAIL]!, 0.25), fine = stepsAlong(lines[TRAIL]!, 0.05), finest = stepsAlong(lines[TRAIL]!, 0.01);
+    expect(coarse.grass).toBeLessThan(0.5);
+    expect(fine.grass).toBeLessThan(0.11);
+    expect(finest.grass).toBeLessThan(0.025);
+    expect(coarse.duff).toBeLessThan(0.3);
+    expect(fine.duff).toBeLessThan(0.08);
+    expect(finest.duff).toBeLessThan(0.02);
   });
 
   it("is continuous across the slope gate itself, stepping synthetic ground from flat to past SLOPE_HI", () => {
@@ -1295,7 +1322,10 @@ describe("groundCover", () => {
     for (let x = -600; x <= 600; x += 6) {
       for (let z = -600; z <= 600; z += 6) {
         const s = v.sample(SEED, x, z);
-        if (s.h < CLUTTER_GRASS_ALT_LO) { expect(groundCover(SEED, x, z, s).duff).toBe(0); sandChecked++; }
+        // 2026-09-29: sand is where the shore's rules read under the grass's
+        // floor, which inland of the trailhead's pad is the strip's height
+        // and not the ground's (`shoreStrip.ts`).
+        if (shoreHeight(SEED, x, z, s.h) < CLUTTER_GRASS_ALT_LO) { expect(groundCover(SEED, x, z, s).duff).toBe(0); sandChecked++; }
         const rt = v.trailDistance?.(SEED, x, z) ?? Infinity;
         if (rt < 0.1) {
           // Inside the core the floor duff is closed; whatever remains is the bed drift.
@@ -1341,3 +1371,53 @@ function smoothstepT(e0: number, e1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
   return t * t * (3 - 2 * t);
 }
+
+describe("the ground's cover in the strip at the trailhead", () => {
+  const HOLLOW = 2032433950;
+  const PAD_X = -313.7267739768348;
+
+  it("grows grass, bushes, rocks and stumps on ground the shore rule would leave bare", () => {
+    setActiveTerrainVariant("olympic");
+    // 20 m from the centreline, 20 m along the road from the pad, on ground 4.20 m up.
+    expect(clutterDensity(HOLLOW, CLUTTER_GRASS, -304.3229187813898, 20)).toBeCloseTo(1.074327, 6);
+    expect(clutterDensity(HOLLOW, CLUTTER_BUSH, -304.3229187813898, 20)).toBeCloseTo(0.95, 6);
+    expect(clutterDensity(HOLLOW, CLUTTER_ROCK, -304.3229187813898, 20)).toBeCloseTo(0.403524, 6);
+    expect(clutterDensity(HOLLOW, CLUTTER_FUNGUS, -304.3229187813898, 20)).toBe(1);
+  });
+
+  it("thins with the strip at its edge", () => {
+    setActiveTerrainVariant("olympic");
+    // 38 m along the road from the pad: the strip's weight is 0.450074 and the ground reads 8.26 m.
+    expect(clutterDensity(HOLLOW, CLUTTER_GRASS, -305.66117205148345, 38)).toBeCloseTo(0.190756, 6);
+    expect(clutterDensity(HOLLOW, CLUTTER_BUSH, -305.66117205148345, 38)).toBeCloseTo(0.224806, 6);
+  });
+
+  it("is what it was outside the strip: nothing, on the sand", () => {
+    setActiveTerrainVariant("olympic");
+    for (const cls of [CLUTTER_GRASS, CLUTTER_BUSH, CLUTTER_ROCK, CLUTTER_FUNGUS]) {
+      expect(clutterDensity(HOLLOW, cls, -307.06319004698264, 60), `class ${cls}`).toBe(0);
+      expect(clutterDensity(HOLLOW, cls, -332.7267739768348, 0), `class ${cls} on the beach`).toBe(0);
+    }
+  });
+
+  it("stands nothing tall within 24 m of the pad's centre", () => {
+    setActiveTerrainVariant("olympic");
+    expect(TRAILHEAD_CLEARING).toBe(24);
+    const nearest = (cls: number): number => {
+      const all = clutterInRect(HOLLOW, cls, PAD_X - 60, -60, PAD_X + 60, 60);
+      return all.reduce((least, c) => Math.min(least, Math.hypot(c.x - PAD_X, c.z)), Infinity);
+    };
+    // Bushes stand thick in the strip: some 277 in the 120 m square about the pad, none in the clearing.
+    expect(clutterInRect(HOLLOW, CLUTTER_BUSH, PAD_X - 60, -60, PAD_X + 60, 60).length).toBeGreaterThan(200);
+    expect(nearest(CLUTTER_BUSH)).toBeCloseTo(24.058, 3);
+    expect(nearest(CLUTTER_FUNGUS)).toBeCloseTo(24.44, 3);
+    expect(nearest(CLUTTER_ROCK)).toBeCloseTo(26.947, 3);
+    expect(nearest(CLUTTER_BOULDER)).toBe(Infinity);
+  });
+
+  it("leaves the grass in the clearing", () => {
+    setActiveTerrainVariant("olympic");
+    const grass = clutterInRect(HOLLOW, CLUTTER_GRASS, PAD_X, -12, PAD_X + 24, 12);
+    expect(grass.length).toBeGreaterThan(0);
+  });
+});

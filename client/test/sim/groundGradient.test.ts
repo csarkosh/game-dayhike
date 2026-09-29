@@ -729,6 +729,11 @@ describe("the level id does not move", () => {
     // the strip inland of the trailhead's pad, and its density has a floor
     // there. No constant changed; in the probe, chunk [-9, 0] holds 4 trunks
     // where it held 3 (probeDigest moves).
-    expect(passHash()).toBe(1648034580);
+    // Re-baselined 2026-09-29 from 1648034580: the ground's cover reads the
+    // strip inland of the trailhead's pad, and nothing that stands tall grows
+    // within 24 m of the pad's centre: TRAILHEAD_CLEARING joins pass 7's
+    // tunables (registryDigest moves). Of the clutter only boulders collide, and
+    // the probe holds the one it held.
+    expect(passHash()).toBe(1487772696);
   });
 });
