@@ -22,11 +22,11 @@ import {
   type RingSamples,
 } from "../../src/game/clipmap.js";
 import { SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, createSyncJobs, type SyncJobs } from "../../src/game/syncJobs.js";
-import { collectBladeCells } from "../../src/game/bladeField.js";
+import { collectBladeCells, createBladeCollector } from "../../src/game/bladeField.js";
 import { createBladeMeshes, type BladeMeshes } from "../../src/game/bladeMeshes.js";
-import { DUFF_REACH, collectDuffCells } from "../../src/game/duffField.js";
+import { DUFF_REACH, collectDuffCells, createDuffCollector } from "../../src/game/duffField.js";
 import { createDuffMeshes, type DuffMeshes } from "../../src/game/duffMeshes.js";
-import { collectClutter } from "../../src/game/clutterField.js";
+import { collectClutter, createClutterCollector } from "../../src/game/clutterField.js";
 import { createClutterMeshes, type ClutterMeshes } from "../../src/game/clutterMeshes.js";
 import {
   BLADE_KINDS, DUFF_KINDS, SEED, clutterKinds, clutterScene, differences, expectedBlades, expectedClutter,
@@ -412,6 +412,74 @@ describe("rebuilds as jobs: what is computed", () => {
     clipmap.dispose();
     engine.dispose();
   }, timeLimit(60_000));
+
+  it("looks up 979 clutter cells a grass cell on, where a walk of every cell looks up 36,273", () => {
+    const collector = createClutterCollector(SEED);
+    collector.collect(100.5, 100.5);
+    expect(collector.walked).toBe(36273);
+    const bands = collector.collect(103.5, 100.5);
+    // The strips the nine classes' squares add, a column or a few each.
+    expect(collector.walked).toBe(979);
+    expect(bands).toEqual(collectClutter(SEED, 103.5, 100.5));
+  }, timeLimit(60_000));
+
+  it("looks up 164 blade cells and 54 duff cells a metre on, where a walk of every cell looks up 6,724 and 2,916", () => {
+    const blades = createBladeCollector(SEED);
+    blades.collect(35.5, 21335.5);
+    expect(blades.walked).toBe(6724);
+    const tiers = blades.collect(36.5, 21335.5);
+    // Two columns of the half-metre lattice, 82 cells high.
+    expect(blades.walked).toBe(164);
+    expect(tiers).toEqual(collectBladeCells(SEED, 36.5, 21335.5));
+    const duff = createDuffCollector(SEED);
+    duff.collect(480.5, -599.5, DUFF_REACH.high);
+    expect(duff.walked).toBe(2916);
+    const pieces = duff.collect(481.5, -599.5, DUFF_REACH.high);
+    // One column of the metre lattice, 54 cells high.
+    expect(duff.walked).toBe(54);
+    expect(pieces).toEqual(collectDuffCells(SEED, 481.5, -599.5, DUFF_REACH.high));
+  }, timeLimit(60_000));
+
+  it("looks up again, after a sweep, the cells it let go inside a square, and lists what a walk of every cell lists", () => {
+    // The sweep lets go every cell whose nearest point is past the eviction
+    // radius, and a square's corner cells can be: a walk of every cell looks
+    // them up again at the next collect, and the collectors that keep their
+    // squares must too, or they would list instances the cache no longer
+    // holds.
+    const blades = createBladeCollector(SEED);
+    let x = 35.5;
+    blades.collect(x, 21335.5);
+    let size = blades.size;
+    for (;;) {
+      x += 1;
+      blades.collect(x, 21335.5);
+      if (blades.size < size) break;
+      size = blades.size;
+    }
+    const swept = x;
+    // The sweep 142 m on; the collect after it looks up the strip's 164
+    // cells and the 300 the sweep let go in the square's corners.
+    const tiers = blades.collect(x + 1, 21335.5);
+    expect([swept, blades.walked]).toEqual([177.5, 464]);
+    expect(tiers).toEqual(collectBladeCells(SEED, x + 1, 21335.5));
+    expect(blades.collect(x + 2, 21335.5)).toEqual(collectBladeCells(SEED, x + 2, 21335.5));
+
+    const clutter = createClutterCollector(SEED);
+    let cx = 100.5;
+    clutter.collect(cx, 100.5);
+    size = clutter.size;
+    for (;;) {
+      cx += 3;
+      clutter.collect(cx, 100.5);
+      if (clutter.size < size) break;
+      size = clutter.size;
+    }
+    // The sweep 216 m on; the collect after it looks up the nine strips and
+    // the corner cells the sweep let go, 2,551 in all.
+    const bands = clutter.collect(cx + 3, 100.5);
+    expect([cx, clutter.walked]).toEqual([316.5, 2551]);
+    expect(bands).toEqual(collectClutter(SEED, cx + 3, 100.5));
+  }, timeLimit(120_000));
 
   it("prepares the terrain's next moves with the budget jobs leave, and a crossing commits them without sampling", () => {
     const engine = new NullEngine();
