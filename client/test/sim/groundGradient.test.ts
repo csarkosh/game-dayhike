@@ -720,6 +720,11 @@ describe("the level id does not move", () => {
     // board's old box and [-9, -1] holds its five in the post's place
     // (probeDigest moves). A peer with the board beside the pad collides
     // differently.
-    expect(passHash()).toBe(992778962);
+    // Re-baselined 2026-09-29 from 992778962: pass 8 declares the strip where
+    // the forest comes down to the road at the trailhead (shoreStrip.ts):
+    // STRIP_HALF, STRIP_EDGE, STRIP_REACH, STRIP_FADE, STRIP_LIFT and
+    // STRIP_FOREST_FLOOR join its tunables (registryDigest moves). Nothing reads
+    // the strip yet, and the probe is as it was.
+    expect(passHash()).toBe(-1910539258);
   });
 });

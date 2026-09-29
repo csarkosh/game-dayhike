@@ -2,6 +2,7 @@ import { registerPass } from "../chunk.js";
 import { CHUNK_SIZE } from "../forestConstants.js";
 import { activeTerrainVariant, elevationSampleAt } from "../terrain.js";
 import type { Vec3 } from "../types.js";
+import { SHORE_STRIP_TUNABLES } from "../shoreStrip.js";
 import {
   BOARD_ALONG, BOARD_ALONG_MIN, BOARD_ALONG_STEP, BOARD_BED_CLEAR, BOARD_BOX_HALF, BOARD_BOX_STEP, BOARD_BOXES, BOARD_OFFSET, BOARD_ROAD_CLEAR,
   CAR_BED_CLEAR, CAR_HALF, CAR_MATERIAL, CAR_ROAD_U, CAR_ROAD_Z, CAR_SLIDE_MAX, CAR_SLIDE_STEP,
@@ -22,6 +23,7 @@ registerPass({
       BOARD_ALONG, BOARD_ALONG_MIN, BOARD_ALONG_STEP, BOARD_OFFSET, BOARD_BED_CLEAR, BOARD_ROAD_CLEAR,
       BOARD_BOX_HALF_X: BOARD_BOX_HALF.x, BOARD_BOX_HALF_Y: BOARD_BOX_HALF.y, BOARD_BOX_HALF_Z: BOARD_BOX_HALF.z,
       BOARD_BOX_STEP, BOARD_BOXES,
+      ...SHORE_STRIP_TUNABLES,
     };
   },
   run(chunk, worldSeed) {
