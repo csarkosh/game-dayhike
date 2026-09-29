@@ -32,6 +32,7 @@ git worktree add -b worktree-<name> .claude/worktrees/<name> origin/main
 | `server/` | The Node (`ws`) signaling server: introduces peers in a room, then steps out. |
 | `desktop/` | Electron launcher (macOS and Windows) that loads the hosted site. |
 | `_infra/` | Terraform for hosting, DNS and the signaling service. |
+| `_infra/test-rig/` | Terraform for a rented Windows machine with an NVIDIA GPU on AWS, run only on the days frame times are measured on it, with its start-up script and the probe for its first run. Its own root module and state: nothing in it can touch `_infra/`'s resources. |
 | `docs/` | Research notes, specs, plans and design docs, grouped by subject (`docs/rendering/`, …). Every file is named `YYYY-MM-DD-<topic>.md`; see [Docs](#docs). |
 | `tools/` | `deploy/` (deploy and verify scripts), `wgsl/` (the shader corpus translated to the WGSL map the build ships, and merged from recorded pages; every tool reads the corpus's files through `wgsl/lib/corpus.mjs`, which checks each file's name against its bytes; the dev server makes the map as it starts unless `DAYHIKE_SKIP_WGSL_MAP` is set), `vendor-ktx2.mjs`, `docs/` (the docs file-name test), and their tests. |
 | `.agents/skills/` | Agent skills. `.claude/skills` is a symlink to it so Claude Code discovers them. |
