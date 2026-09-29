@@ -168,10 +168,10 @@ export type ShaderLookupReport = {
    * merge as it is (`tools/wgsl/merge-corpus.mjs` repairs it). */
   stagesWithCarriageReturns: number;
   effects: EffectRecord[];
-  /** Saves the stages of the effects recorded as a corpus file
-   * (`corpusText`), the form the build translates ahead (`tools/wgsl/`):
-   * dropped into the corpus, it is built. Empty without `?wgsl=record`. The
-   * report whole is `JSON.stringify(dayhikeWgsl)`. */
+  /** Saves the stages of the effects recorded as one recording
+   * (`corpusText`), which `tools/wgsl/merge-corpus.mjs` adds to the corpus
+   * the build translates ahead (`tools/wgsl/`), a file a stage. Empty without
+   * `?wgsl=record`. The report whole is `JSON.stringify(dayhikeWgsl)`. */
   download(): void;
 };
 

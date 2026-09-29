@@ -711,6 +711,15 @@ describe("the level id does not move", () => {
     // Re-baselined 2026-09-28 from 1306907761: the probe gained chunk
     // [-9, -1], which holds the sign's post for the probe's seed
     // (probeDigest moves). No constant changed.
-    expect(passHash()).toBe(178231578);
+    // Re-baselined 2026-09-28 from 178231578: the notice board stands at the
+    // trail's entrance as five boxes, 4.5 m past it where it can and
+    // nearer where that keeps it in the player's view, and the post that
+    // stood there is gone. SIGN_ROAD_U/Z and KIOSK_HALF_* leave pass 8's
+    // tunables, the BOARD_* constants join them, and TRAIL_SIGNS leaves
+    // pass 9's (registryDigest moves); in the probe, [-9, 0] loses the
+    // board's old box and [-9, -1] holds its five in the post's place
+    // (probeDigest moves). A peer with the board beside the pad collides
+    // differently.
+    expect(passHash()).toBe(992778962);
   });
 });

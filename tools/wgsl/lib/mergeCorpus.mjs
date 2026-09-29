@@ -1,21 +1,16 @@
-// Merging recorded corpus files (`dayhikeWgsl.download()` on a page opened
-// with `?wgsl=record`) into the committed corpus (`merge-corpus.mjs`).
-//
-// The corpus is kept as sixteen files at most, `stages-<h>.json`, a stage in
-// the one named by the first hex digit of its `corpusId`: a stage always lands
-// in the same file, each file stays a sixteenth of the whole (a large corpus
-// would otherwise be one file near the size a Git host refuses), and a merge
-// reads in a diff as the stages it adds to each.
+// Merging recordings (`dayhikeWgsl.download()` on a page opened with
+// `?wgsl=record`, one JSON file of `wgslFormat.ts`'s `CORPUS_FORMAT`) into the
+// committed corpus (`merge-corpus.mjs`), which is one shader file a stage
+// (`corpus.mjs`): a new stage is a new file, and no file already there is
+// rewritten.
 
-import { readdirSync, readFileSync, rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { readCorpusDir, stageFile } from './corpus.mjs';
 import { writeWhole } from './files.mjs';
 
-/** The name of a corpus file the merge writes. */
-export const SHARD = /^stages-[0-9a-f]\.json$/;
-
-/** Reads the stages of a corpus file, naming it when it is not one. */
-function readFile(path, shared) {
+/** Reads the stages of a recording, naming it when it is not one. */
+function readRecording(path, shared) {
   try {
     return shared.readCorpus(readFileSync(path, 'utf8'));
   } catch (error) {
@@ -26,69 +21,68 @@ function readFile(path, shared) {
 /**
  * `entry` with every `\r\n` in its text turned to `\n`, and whether it
  * changed; throws, naming it and `path`, on a carriage return left that ends
- * no line. A stage's key is the hash of its exact text: one recorded from a
- * checkout with Windows line endings (the game's shader files read as
+ * no line, or on a text that is not Unicode (a lone surrogate, which has no
+ * UTF-8 bytes). A stage's key is the hash of its exact text: one recorded
+ * from a checkout with Windows line endings (the game's shader files read as
  * `\r\n`) is never asked for by a page built from one without.
  */
 function withUnixLineEndings(entry, path, shared) {
+  const name = () => `${path}: the ${entry.stage} stage ${shared.corpusId(entry).slice(0, 16)}`;
+  if (!entry.glsl.isWellFormed()) throw new Error(`${name()} is not valid UTF-8 text (it holds a lone surrogate); nothing was written`);
   const glsl = entry.glsl.replaceAll('\r\n', '\n');
-  if (glsl.includes('\r')) {
-    throw new Error(`${path}: the ${entry.stage} stage ${shared.corpusId(entry).slice(0, 16)} carries a carriage return that ends no line; nothing was written`);
-  }
+  if (glsl.includes('\r')) throw new Error(`${name()} carries a carriage return that ends no line; nothing was written`);
   return { entry: { ...entry, glsl }, changed: glsl !== entry.glsl };
 }
 
 /**
- * Writes into `dir` the union of its corpus and of the `recorded` files, each
- * stage once, into its `stages-<h>.json`, every `\r\n` in every stage read
- * (the corpus's own too) turned to `\n` first; a stage with a carriage
- * return left is refused before anything is written. Every file of `dir` is
- * rewritten from the union, and one that no stage names any more is removed.
- * A corpus file in `dir` that is not one of those (a recorded file dropped
- * in as it was downloaded) is read as recorded and, once its stages are in
- * the others, removed; a recorded file named from elsewhere is only read.
- * Returns how many stages were read from the recorded files, how many of
- * them were new, how many the corpus holds now, the files removed, and how
- * many stages had Windows line endings.
+ * Adds to the corpus in `dir` the stages of the `recorded` files that it does
+ * not hold, each as a file of its own (`stageFile`), every `\r\n` in them
+ * turned to `\n` first. A `*.json` at the top of `dir` is a recording dropped
+ * in as it was downloaded: it is merged too and, once its stages are files,
+ * removed; a recording named from elsewhere is only read. Every other name in
+ * `dir` that is not a corpus file is left alone and returned in `leftAlone`.
+ * Everything is read and checked before anything is written: a corpus file
+ * that is not the stage its name says, a recording that is not one, or a
+ * stage with a carriage return left refuses the whole merge. Returns how many
+ * stages were read from the recordings, how many of them were new, how many
+ * the corpus holds now, the recordings removed, how many stages had Windows
+ * line endings, and the names left alone.
  */
 export function mergeCorpus({ dir, recorded, shared }) {
-  const names = readdirSync(dir).filter((name) => name.endsWith('.json')).sort();
-  const shards = names.filter((name) => SHARD.test(name));
-  const dropped = names.filter((name) => !SHARD.test(name));
+  let corpus;
+  try {
+    corpus = readCorpusDir(dir, shared);
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\nNothing was written.`);
+  }
+  const dropped = corpus.others.filter((name) => !name.includes('/') && name.endsWith('.json'));
+  const leftAlone = corpus.others.filter((name) => !dropped.includes(name));
   const union = new Map();
-  let normalised = 0;
-  const unix = (entry, path) => {
-    const repaired = withUnixLineEndings(entry, path, shared);
-    if (repaired.changed) normalised += 1;
-    return repaired.entry;
-  };
-  for (const name of shards) {
-    for (const read of readFile(join(dir, name), shared)) {
-      const entry = unix(read, join(dir, name));
-      union.set(shared.corpusId(entry), entry);
-    }
+  const taken = new Map();
+  for (const [i, entry] of corpus.stages.entries()) {
+    union.set(shared.corpusId(entry), entry);
+    taken.set(corpus.files[i], shared.corpusId(entry));
   }
   let read = 0;
-  let added = 0;
+  let normalised = 0;
+  const added = [];
   for (const path of [...recorded, ...dropped.map((name) => join(dir, name))]) {
-    for (const raw of readFile(path, shared)) {
+    for (const raw of readRecording(path, shared)) {
       read += 1;
-      const entry = unix(raw, path);
+      const repaired = withUnixLineEndings(raw, path, shared);
+      if (repaired.changed) normalised += 1;
+      const { entry } = repaired;
       const id = shared.corpusId(entry);
       if (union.has(id)) continue;
+      const file = stageFile(entry, shared);
+      // Two stages whose ids share their first 16 digits would share a file.
+      if (taken.has(file)) throw new Error(`${path}: two stages would be ${join(dir, file)}, ${taken.get(file)} and ${id}; nothing was written`);
       union.set(id, entry);
-      added += 1;
+      taken.set(file, id);
+      added.push({ file, entry });
     }
   }
-  const byShard = new Map();
-  for (const [id, entry] of union) {
-    const name = `stages-${id[0]}.json`;
-    if (!byShard.has(name)) byShard.set(name, []);
-    byShard.get(name).push(entry);
-  }
-  for (const [name, entries] of byShard) writeWhole(join(dir, name), shared.corpusText(entries));
-  // A file whose stages all moved to others' names: nothing names it now.
-  for (const name of shards) if (!byShard.has(name)) rmSync(join(dir, name));
+  for (const { file, entry } of added) writeWhole(join(dir, file), entry.glsl);
   for (const name of dropped) rmSync(join(dir, name));
-  return { read, added, total: union.size, removed: dropped, normalised };
+  return { read, added: added.length, total: union.size, removed: dropped, normalised, leftAlone };
 }

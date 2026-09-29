@@ -1,4 +1,0 @@
-{"format":"dayhike-wgsl-corpus/1","stages":[
-{"stage":"fragment","flag":true,"glsl":"#version 450\n#define DISABLE_UNIFORMITY_ANALYSIS\nlayout(location = 0) out vec4 glFragColor;\nvoid main() { glFragColor = vec4(1.0); }"},
-{"stage":"vertex","flag":false,"glsl":"#version 450\nlayout(location = 0) in vec3 position;\nvoid main() { gl_Position = vec4(position, 1.0); }"}
-]}

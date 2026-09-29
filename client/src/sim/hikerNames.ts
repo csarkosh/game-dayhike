@@ -11,6 +11,16 @@ export const FIRST_NAMES: readonly string[] = [
   "Ada", "Felix", "Greta", "Amos", "Ines", "Rafe", "Sylvie", "Boyd", "Edith", "Callum",
   "Maeve", "Ansel",
 ];
+/**
+ * The missing hiker's first name is drawn from these: the men's names of
+ * FIRST_NAMES, in their order there. The hiker is one man, whose photograph
+ * is on the poster and whose body is at the crest, so the name on the poster
+ * is a man's. Places are named from the whole table.
+ */
+export const HIKER_FIRST_NAMES: readonly string[] = [
+  "Owen", "Miles", "Elias", "Theo", "Hugh", "Silas", "Reuben", "Abel",
+  "Cyrus", "Jonah", "Felix", "Amos", "Rafe", "Boyd", "Callum", "Ansel",
+];
 export const LAST_NAMES: readonly string[] = [
   "Whitcombe", "Harlan", "Petersen", "Okafor", "Lindqvist", "Marsh", "Delacroix", "Reyes",
   "Thornbury", "Kowalski", "Abernathy", "Nakamura", "Fenwick", "Oyelaran", "Castellano", "Brandt",
@@ -26,7 +36,7 @@ export function hikerNames(seed: number, count: number): string[] {
   const lasts = [...LAST_NAMES];
   const out: string[] = [];
   for (let i = 0; i < count; i++) {
-    const first = FIRST_NAMES[Math.floor(nextRandom(rng) * FIRST_NAMES.length)] as string;
+    const first = HIKER_FIRST_NAMES[Math.floor(nextRandom(rng) * HIKER_FIRST_NAMES.length)] as string;
     const at = Math.floor(nextRandom(rng) * lasts.length);
     const last = lasts.splice(at, 1)[0] as string;
     out.push(`${first} ${last}`);

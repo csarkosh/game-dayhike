@@ -193,9 +193,26 @@ function sweep(token: string): Case[] {
  * show within 120 ticks: 875 of 936, the pad 151 of 200 (37 of the 61 that
  * never showed face down from the pad), 78 955 placements admitted and the
  * sightline refusing 59 815. No other stand moved.
+ *
+ * Re-pinned 2026-09-28 from 875 shown and 78 955 admitted: the notice
+ * board left the pad's side for the trail's entrance, where it stands as
+ * five boxes 2.5 m off the bed, 12.75 m from the pad's node where it
+ * stands 4.5 m past the entrance. Nothing
+ * stands by the pad now, so nine pad stands show that did not: the six the
+ * kiosk had cut (hollow8, 31 and 46 facing down; hollow12, 24 and 49
+ * facing right) and three that the board before it had cut too (hollow5
+ * facing down; hollow2 and 39 facing right). On each of the nine, the
+ * placement the watcher now shows at has the kiosk's old box, 7.12–7.80 m
+ * from the node, on the lead's sightline to it, and neither the old post
+ * at the entrance nor any of the board's five boxes. The sweep was
+ * measured with the board 2 m nearer the pad and again where it stands,
+ * and no count and no stand differs between the two. No stand that showed
+ * has stopped showing: 884 of 936, the pad 160 of 200 (33 of the 52 that
+ * never showed face down from the pad), 79 597 placements admitted and the
+ * sightline refusing 59 173. No stand above the pad moved.
  */
 describe("the watcher on fifty seeds", () => {
-  it("stands only where every rule holds, and shows within 120 ticks on 875 of 936 stands", () => {
+  it("stands only where every rule holds, and shows within 120 ticks on 884 of 936 stands", () => {
     const cases: Case[] = [];
     for (let i = 0; i < 50; i++) cases.push(...sweep(`hollow${i}`));
     const shown = cases.filter((c) => c.shownAt !== -1);
@@ -220,14 +237,14 @@ describe("the watcher on fifty seeds", () => {
     ].join("\n");
     console.info(`[watcher sweep]\n${summary}`);
     expect(cases.length, summary).toBe(936);
-    expect(shown.length, summary).toBeGreaterThanOrEqual(875);
-    expect(admitted, summary).toBeGreaterThanOrEqual(78955);
+    expect(shown.length, summary).toBeGreaterThanOrEqual(884);
+    expect(admitted, summary).toBeGreaterThanOrEqual(79597);
     expect(refused.flee, summary).toBe(0);
     expect(Math.abs(ranges[0]! - 25), summary).toBeLessThanOrEqual(0.5);
     expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
     expect(bySlot.map((b) => `${b.slot} ${b.stands}`), summary).toEqual(["climb 0 200", "climb 0.25 200", "climb 0.5 200", "climb 0.75 200", "top fork 192"]);
-    const floors = [151, 196, 192, 200, 192];
-    const admittedFloors = [6222, 12547, 17832, 25745, 24154];
+    const floors = [160, 196, 192, 200, 192];
+    const admittedFloors = [6864, 12547, 17832, 25745, 24154];
     bySlot.forEach((b, i) => {
       expect(b.shown, summary).toBeGreaterThanOrEqual(floors[i]!);
       expect(b.admitted, summary).toBeGreaterThanOrEqual(admittedFloors[i]!);

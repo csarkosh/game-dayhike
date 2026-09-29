@@ -60,15 +60,17 @@ import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
 import { isTouchDevice } from "./game/platform.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
-import { createPosterPanel, posterBoardLines, posterModel } from "./game/posterPanel.js";
+import { POSTER_LAST_SEEN, createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { createEndPanel, endPanelModel } from "./game/endPanel.js";
 import { createBodyMesh } from "./game/bodyMesh.js";
 import { DEATH_LINE, END_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
-import { allSignPosts } from "./sim/signs.js";
+import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
-import { CAR_MATERIAL, KIOSK_MATERIAL, kioskFacing, trailheadSite } from "./sim/passes/trailhead.js";
+import { trailheadPlaces } from "./sim/trailhead.js";
+import { BOARD_IMAGE_URLS } from "./game/boardImages.js";
+import { boardDrawingOf } from "./game/boardPaint.js";
 import { createTrailheadMeshes } from "./game/trailheadMeshes.js";
 import { signSites } from "./sim/placeNames.js";
 import { afterNextPaint } from "./game/paint.js";
@@ -658,8 +660,8 @@ function buildGame(
    */
   let body: { dispose(): void } | null = null;
   /**
-   * Junction posts and the trail's sign, and the trailhead's car and notice
-   * board with the poster on it, from the same seed the sim used, in `r`'s
+   * Junction posts, and the trailhead's car and board, from the same seed
+   * the sim used, in `r`'s
    * scene: the renderer being built, which during a live tier change is not
    * yet `renderer`.
    */
@@ -669,25 +671,35 @@ function buildGame(
     const graph = variant.trailGraph?.(seed);
     const roadCenterX = variant.roadCenterX;
     if (search === null || graph === undefined || roadCenterX === undefined) return null;
-    const kiosk = trailheadSite(graph, roadCenterX, seed, KIOSK_MATERIAL);
-    const car = trailheadSite(graph, roadCenterX, seed, CAR_MATERIAL);
+    const places = trailheadPlaces(graph, roadCenterX, seed);
     const groundH = (x: number, z: number): number => elevationAt(seed, x, z);
     // The places the posts name: the summit where the body lies, and every
     // pond and meadow, never under the missing hiker's own first name.
     const hikerFirst = search.hiker.name.split(" ")[0] as string;
+    const sites = signSites(seed, graph.features, hikerFirst, search.body.pos);
     const posts: SignMeshes = createSignMeshes(
       r.scene,
-      allSignPosts(graph, signSites(seed, graph.features, hikerFirst, search.body.pos), kiosk, start ?? graph.trailhead),
+      signPosts(graph, sites),
       groundH,
       { materialFor: (name) => terrainMaterialFor(r.scene, name), shadows: r.shadows },
     );
     const trailhead = createTrailheadMeshes(
       r.scene,
-      { car: { site: car, trailhead: graph.trailhead }, kiosk: { site: kiosk, facing: kioskFacing(kiosk, graph.trailhead) } },
+      { car: { site: places.car, trailhead: graph.trailhead }, board: places.board },
       groundH,
       {
         materialFor: (name) => terrainMaterialFor(r.scene, name),
-        lines: posterBoardLines(search),
+        board: boardDrawingOf({
+          seed,
+          trailName: TRAIL_NAME,
+          hikerName: search.hiker.name,
+          lastSeen: POSTER_LAST_SEEN,
+          graph,
+          places: sites,
+          summitName: SUMMIT_LABEL,
+          roadCenterX,
+          urls: BOARD_IMAGE_URLS,
+        }),
         shadows: r.shadows,
       },
     );

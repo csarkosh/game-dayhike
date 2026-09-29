@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { bowlFor } from "../../src/sim/olympic.js";
-import { CAR_MATERIAL, KIOSK_MATERIAL, trailheadSite } from "../../src/sim/passes/trailhead.js";
+import { trailheadPlaces } from "../../src/sim/trailhead.js";
 import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { buildSearch } from "../../src/sim/search.js";
 import { SEEDS } from "./trailGateSeeds.js";
@@ -21,20 +21,20 @@ setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
  * there to catch a hang, not to fence the run time.
  */
 describe("the search over the 227-seed sweep", { timeout: timeLimit(600_000) }, () => {
-  it("names one hiker on every world, puts the body on the crest facing back down the stem, and hangs the poster toward the pad", () => {
+  it("names one hiker on every world, puts the body on the crest facing back down the stem, and hangs the poster on the board's face", () => {
     for (const seed of SEEDS) {
       const { graph } = bowlFor(seed);
-      const site = (material: string) => trailheadSite(graph, activeTerrainVariant().roadCenterX!, seed, material);
-      const r = buildSearch({ seed, graph, groundH: (x, z) => elevationAt(seed, x, z), kiosk: site(KIOSK_MATERIAL), car: site(CAR_MATERIAL) });
+      const places = trailheadPlaces(graph, activeTerrainVariant().roadCenterX!, seed);
+      const r = buildSearch({ seed, graph, groundH: (x, z) => elevationAt(seed, x, z), board: places.board, car: places.car });
       expect(r.hiker.name.length, `seed ${seed}`).toBeGreaterThan(0);
       const crest = graph.nodes[graph.summit]!;
       expect(r.body.pos.x).toBe(crest.x);
       expect(r.body.pos.z).toBe(crest.z);
       expect(Number.isFinite(r.body.yaw)).toBe(true);
-      // The poster hangs on the kiosk's face toward the pad, 0.6 m out from its site.
-      const kiosk = site(KIOSK_MATERIAL);
-      expect(Math.abs(r.poster.z - kiosk.z), `seed ${seed}`).toBeCloseTo(0.6, 9);
-      expect(Math.sign(r.poster.z - kiosk.z), `seed ${seed}`).toBe(Math.sign(graph.trailhead.z - kiosk.z));
+      // The poster hangs 0.36 m along the board and 0.325 m in front of it, toward where a player arrives.
+      const b = places.board;
+      expect(Math.hypot(r.poster.x - b.x, r.poster.z - b.z), `seed ${seed}`).toBeCloseTo(0.485, 3);
+      expect((r.poster.x - b.x) * b.fx + (r.poster.z - b.z) * b.fz, `seed ${seed}`).toBeCloseTo(0.325, 9);
     }
   });
 });

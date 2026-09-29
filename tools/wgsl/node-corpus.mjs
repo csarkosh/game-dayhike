@@ -15,10 +15,11 @@
 // the page's own translation in the tests, against each other.
 //
 // Usage: node tools/wgsl/node-corpus.mjs [out.json]
-//   with no file, the fixture's files are written afresh, split as the
+//   with a file, the stages are written to it as a recording; with none, the
+//   fixture's files are written afresh, one shader file a stage as the
 //   corpus is (`merge-corpus.mjs`)
 
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
@@ -35,6 +36,7 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js'
 import { Effect } from '@babylonjs/core/Materials/effect.js';
 import { PostProcess } from '@babylonjs/core/PostProcesses/postProcess.js';
 import '@babylonjs/core/Shaders/postprocess.vertex.js';
+import { removeCorpusFiles } from './lib/corpus.mjs';
 import { NODE_CORPUS_DIR } from './lib/files.mjs';
 import { mergeCorpus } from './lib/mergeCorpus.mjs';
 import { loadShared } from './lib/shared.mjs';
@@ -110,10 +112,10 @@ if (out) {
   writeFileSync(resolve(out), shared.corpusText(stages));
   console.log(`wrote ${made} stages to ${out}`);
 } else {
-  // The fixture afresh: its files removed, then these stages split into them.
+  // The fixture afresh: its files removed, then a file written for each stage.
   const recorded = join(mkdtempSync(join(tmpdir(), 'dayhike-node-corpus-')), 'node.json');
   writeFileSync(recorded, shared.corpusText(stages));
-  for (const name of readdirSync(NODE_CORPUS_DIR).filter((n) => n.endsWith('.json'))) rmSync(join(NODE_CORPUS_DIR, name));
+  removeCorpusFiles(NODE_CORPUS_DIR);
   mergeCorpus({ dir: NODE_CORPUS_DIR, recorded: [recorded], shared });
   console.log(`wrote ${made} stages to ${NODE_CORPUS_DIR}`);
 }
