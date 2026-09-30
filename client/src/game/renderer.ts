@@ -70,6 +70,7 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater } from "./waterPlugin.js";
 import { WATER_ROWS } from "./waterShading.js";
+import { attachWet, setWetLine, wetLineFor, type WetBody } from "./wetPlugin.js";
 import {
   BED_GRID,
   bakeBed,
@@ -165,6 +166,8 @@ export function terrainMaterialFor(scene: Scene, name: string): PBRMaterial {
   // plastic under any environment.
   mat.metallic = 0;
   mat.roughness = MATERIAL_ROUGHNESS[name] ?? (MATERIAL_ROUGHNESS.default as number);
+  // Darker and glossy below the wet line of the nearest body (spec §6).
+  attachWet(mat);
   // Base values recorded so wetness can scale them absolutely rather than
   // compounding a relative factor frame after frame.
   mat.metadata = {
@@ -1292,6 +1295,20 @@ function buildRenderer(
       : null;
   partOf(water);
 
+  // The wet line follows the nearest body, sea or pond. No bodies, no call.
+  const wetBodies: WetBody[] = [];
+  if (forest !== null && waterLevel !== undefined) {
+    wetBodies.push({ ...WATER_ROWS.sea, level: waterLevel, x: 0, z: 0, radius: Number.POSITIVE_INFINITY });
+  }
+  for (const p of ponds) {
+    wetBodies.push({ ...WATER_ROWS.lowlandLake, level: p.height, x: p.x, z: p.z, radius: p.radius });
+  }
+  const updateWet = (x: number, z: number): void => {
+    if (wetBodies.length === 0) return;
+    const w = wetLineFor(wetBodies, x, z);
+    setWetLine(w.line, w.kd, tier !== "high");
+  };
+
   // Every chunk prop the sim collides with, drawn: the trailhead's placeholder
   // car, post and sign used to be pure collision boxes, an invisible wall no
   // player could see coming. Rides the same forest
@@ -1594,6 +1611,7 @@ function buildRenderer(
         // the player, flying 500 m away shows void with no error.
         clipmap?.update(freecam.x, freecam.z);
         water?.update(freecam.x, freecam.z, seconds);
+        updateWet(freecam.x, freecam.z);
         propMeshes?.update(freecam.x, freecam.z);
         forestMeshes?.update(freecam.x, freecam.z);
         cliffMeshes?.update(freecam.x, freecam.z);
@@ -1630,6 +1648,7 @@ function buildRenderer(
       if (local) {
         clipmap?.update(local.pos.x, local.pos.z);
         water?.update(local.pos.x, local.pos.z, seconds);
+        updateWet(local.pos.x, local.pos.z);
         propMeshes?.update(local.pos.x, local.pos.z);
         forestMeshes?.update(local.pos.x, local.pos.z);
         cliffMeshes?.update(local.pos.x, local.pos.z);
