@@ -1,5 +1,6 @@
-float wetW = wetWeight(vPositionW, wetLine, wetCentre, wetRadius);
+float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);
+float wetW = wetBelow(vPositionW.y, wetLine) * wetIn;
 surfaceAlbedo *= mix(1.0, WET_ALBEDO, wetW);
 float wetKdMean = (wetKd.r + wetKd.g + wetKd.b) / 3.0;
-vec3 wetResidual = min(vec3(1.0), exp(-2.0 * (wetKd - vec3(wetKdMean)) * max(0.0, wetLevel - vPositionW.y)));
+vec3 wetResidual = min(vec3(1.0), exp(-2.0 * (wetKd - vec3(wetKdMean)) * max(0.0, wetLevel - vPositionW.y) * wetIn));
 surfaceAlbedo *= mix(vec3(1.0), wetResidual, wetAttenuate);

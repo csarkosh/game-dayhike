@@ -98,3 +98,40 @@ export function bakeBed(grid: BedGrid, seed: number, camX: number, camZ: number)
   bakeRows(grid, seed, bake, grid.texels);
   return true;
 }
+
+/** A pond's disc as the bed needs it: centre and basin radius, metres. */
+export type BedPond = { x: number; z: number; radius: number };
+
+/** How far a pond's disc reaches past its basin radius (renderer.ts `pondDisc`). */
+export const POND_DISC_MARGIN = 1;
+
+/**
+ * Whether any body can reach `bake`'s square: the sea where the terrain at one
+ * of nine points (corners, edge midpoints, centre) is below `waterLevel`, or a
+ * pond whose disc overlaps the square. Nine points are 128 m apart on a 256 m
+ * square, so a strip of sea between them can be missed; the caller then keeps
+ * its current square, and the ring's per-vertex depth stands in outside it, so
+ * a miss draws the water coarser, never not at all.
+ */
+export function bedSquareHasWater(
+  bake: BedBake,
+  grid: BedGrid,
+  ponds: readonly BedPond[],
+  waterLevel: number,
+  seed: number,
+): boolean {
+  const extent = grid.texels * grid.spacing;
+  const x0 = bake.originX;
+  const z0 = bake.originZ;
+  for (const p of ponds) {
+    const nx = Math.min(Math.max(p.x, x0), x0 + extent);
+    const nz = Math.min(Math.max(p.z, z0), z0 + extent);
+    if (Math.hypot(p.x - nx, p.z - nz) <= p.radius + POND_DISC_MARGIN) return true;
+  }
+  for (let j = 0; j <= 2; j++) {
+    for (let i = 0; i <= 2; i++) {
+      if (elevationAt(seed, x0 + (i * extent) / 2, z0 + (j * extent) / 2) < waterLevel) return true;
+    }
+  }
+  return false;
+}

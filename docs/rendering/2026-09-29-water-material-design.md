@@ -79,23 +79,36 @@ Two sources, by tier.
 
 `BedHeightTexture`: a square of terrain heights centred near the camera,
 sampled from `elevationAt` (the same function the water rings and the terrain
-clipmap sample, so the three agree), uploaded as one `R32F` (WebGPU, WebGL2
-with the float texture extension) or `RGBA8`-packed texture.
+clipmap sample, so the three agree), uploaded as one `R32F` texture on both
+backends, sampled nearest and blended by hand in the shader (`r32float` is not
+filterable on WebGPU, and linear filtering of float textures is not a given on
+WebGL2).
 
 | Tier | Texels | Spacing | Extent |
 | --- | ---: | ---: | ---: |
 | high, medium | 256² | 1 m | 256 m |
 | low | 128² | 2 m | 256 m |
 
-Re-baked when the camera leaves the inner half of the square (the ring
-clipmap's snap rule, `snapOrigin`). The bake is measured: 260 to 295 ms for
+Re-baked when the camera leaves the inner half of the square, the new origin
+snapped down to a quarter of the extent (`bedOriginFor`, the bake's own rule;
+the rings snap on theirs). The bake is measured: 260 to 295 ms for
 256² (3.8 µs a sample on an Apple M4 under Node), so it is never spent inside
 a frame. It is spread a row a frame into a spare grid (`beginBake` and
 `bakeRows`, `bedHeight.ts`) and swapped in with its origin in one call, so the
 origin and the heights always change together; the first fill is whole, at
-load, at the player's spawn. Beyond
-the extent the shader falls back to the vertex height the rings already carry:
-past 128 m a texel is smaller than a pixel anyway.
+load, at the player's spawn. A bake is begun only where a body can reach the
+new square (`bedSquareHasWater`: the terrain below the sea's level at one of
+nine points, corners, edge midpoints and centre, or a pond's disc overlapping
+the square); elsewhere the current square is kept, since there is no water to
+read it. A bake whose square the camera leaves before it ends (a teleport, a
+fast ride) is dropped and a fresh one begun for where the camera is.
+
+Beyond the square the shader falls back to the depth the ring vertices already
+carry (8 m apart on the nearest ring). The inner-half rule keeps the camera a
+quarter extent, 64 m, inside the square's edge, so the fallback can begin 64 m
+from the camera, and nearer while a bake is under way or where the square was
+kept because no body reached the new one; nine points 128 m apart can miss a
+strip of sea, which is then drawn on the fallback, coarser but never missing.
 
 The pond's basin is carved into `elevationAt` by `basinD` (`sim/features.ts`),
 so the disc needs no analytic profile of its own any more: `pondDisc` loses its
@@ -139,7 +152,10 @@ so the read is one sample a water pixel, with no copy of the depth and no
 change to the opaque pass. A prepass variant (Babylon's `PrePassRenderer` with
 the depth texture, an extra attachment on every opaque draw) was considered and
 dropped as strictly more work. The scene colour is still copied after the
-opaque pass (§5.2). Rain, mist and motes draw in the water's rendering group on
+opaque pass (§5.2), and only in a frame whose culling kept a water mesh (a ring
+or a pond's disc among the scene's active meshes): the water's group also holds
+rain, mist and motes and renders without the water in view, and then nothing
+is copied or resolved. Rain, mist and motes draw in the water's rendering group on
 high, so the opaque water does not paint over them.
 
 ## 5. The surface
@@ -218,12 +234,14 @@ is exact.
 
 ### 5.3 Ripples
 
-The material takes its normal from a `waterNormal` slot: a function of world
-xz and time that the plugin's fragment calls. This spec fills it with two
-scrolling bump octaves (24 m and 3 m a tile, the second at a third of the
-first's strength, both drifting with the wind's direction); the low tier
-takes the first alone. The wave sub-projects replace the slot's contents; the
-material does not change.
+Two octaves of one bump texture. The first is PBR's own bump texture, 24 m a
+tile, its UV offset scrolled by the shell at a fixed rate (`WATER_UV_SCROLL`,
+`renderer.ts`). The second is `waterRipple2` in the plugin's fragment: the same
+texture at 3 m a tile and a third of the first's slope, drifting with the
+wind's direction (`WATER_OCTAVE2_*`). The low tier takes the first alone
+(`waterOctaves`). There is no single normal function: the wave sub-projects
+replace these two, the bump texture's scroll and `waterRipple2`, with their
+own normals.
 
 ### 5.4 Fog and the colour path
 
@@ -261,7 +279,10 @@ body's level (`wetLevel`), not the wet line, so a wading player's legs and a
 half-sunk log read as wet above the surface and submerged below it. On
 medium and low the darkening is only the chromatic residual
 min(1, e^(−2 (Kd − K̄) d)) per channel, since the surface's blend already
-applied the mean (§5.2) and nothing may be attenuated twice. On the high tier
+applied the mean (§5.2) and nothing may be attenuated twice. The residual is
+bounded to the body's footprint as the wet look is (§6.1): its depth is
+multiplied by the same 1-inside, 0-from-3-m-past-the-rim term, so ground below
+the level but outside the body (the apron beside a pond) is not tinted. On the high tier
 the darkening is switched off (the true-depth read of §4.2 attenuates the
 frame already); the wet look above the line stays on every tier.
 
@@ -287,22 +308,23 @@ type WaterBody = {
 
 The sea is the terrain variant's `waterLevel` with the sea's row; a pond is a
 `Pond` feature with the lowland row; the high lake is the terrain
-sub-project's to place, and it arrives as another `WaterBody`. The material
-takes the list; each mesh (ring or disc) carries the index of its body.
+sub-project's to place, and it arrives as another `WaterBody`. Each row has
+its own material (`mat_water_sea`, `mat_water_lake`), and each mesh (ring or
+disc) carries its body's level (`metadata.waterLevel`, written on every draw).
 
-Slots the later sub-projects fill, each a named function or sampler the
-plugin's shader calls and this spec gives a default for:
+What the later sub-projects fill or replace, and what this spec puts there:
 
 | Slot | This spec | Filled later by |
 | --- | --- | --- |
-| `waterNormal(xz, t)` | two bump octaves | ocean waves, lake ripples |
+| the normal | PBR's bump texture, scrolled (`WATER_UV_SCROLL`), plus `waterRipple2` (§5.3) | ocean waves, lake ripples, replacing both |
 | `reflection(dir)` | the sky probe, horizon-clamped | the lake's mirror pass |
 | `wetLine` | level + 0.3 m | swash |
 | surface height | flat at `level` | ocean waves (displacement) |
 
-Pure maths in a Babylon-free module (`waterShading.ts`): Fresnel, the
-attenuation, roughness from wind and shelter, the height texture's bake and
-its re-centring rule; testable under Node, as `water.ts` and `sky.ts` are.
+Pure maths in Babylon-free modules: Fresnel, the attenuation and roughness
+from wind and shelter in `waterShading.ts`, the height texture's bake and its
+re-centring rule in `bedHeight.ts`, the wet residual's mirror in `wetPlugin.ts`
+(`wetResidual`); testable under Node, as `water.ts` and `sky.ts` are.
 
 ## 8. Costs and tiers
 
@@ -311,7 +333,7 @@ its re-centring rule; testable under Node, as `water.ts` and `sky.ts` are.
 | Depth | bed texture + frame depth | bed texture | bed texture, 128² at 2 m |
 | Transmission | colour copy, per channel, opaque | alpha blend, K̄ | alpha blend, K̄ |
 | Ripples | two octaves | two octaves | one octave |
-| Extra passes | one colour copy; the depth is the pass's own MSAA resolve | none | none |
+| Extra passes | one colour copy, in frames with water in view; the depth is the pass's own MSAA resolve | none | none |
 | Budget, full screen at 1080p | 0.5 ms | 0.3 ms | 0.15 ms |
 
 Budgets are for the material alone, before waves, mirror or surf, and they are
@@ -355,16 +377,27 @@ Node tests, in `client/test/`:
 - Roughness: shelter 0.1 in calm air is under 0.2; the sea in rain is at
   least 0.5; monotone in wind.
 - The height texture's bake: every texel equals `elevationAt` at its centre;
-  the re-centring rule fires exactly when the ring rule would.
+  no rebake until the camera leaves the inner half; a row-by-row bake applies
+  its origin only on its last call and equals a whole bake; a rebake changes
+  the origin and the heights together, never one without the other.
+- Where a body reaches: the sea at one of the nine points, a pond's disc
+  overlapping the square from inside or out, nothing just out of reach.
+- The wet residual: the per-channel formula at a body's centre, 1 in every
+  channel 5 m outside the footprint even 4 m below the level.
 
 The plugin's GLSL compiled and checked on both backends through the corpus
 tools, the corpus re-recorded at the gate poses several times each (a variant
 can show on one visit in three), and the built map checked as CI does.
 
-One test on the real material asserting the mechanism fired, not a fixture:
-the water mesh carries no vertex colours after the change, and a pixel read at
-a known shallow pose differs from one at a known deep pose by the attenuation
-predicted, not by the old ramp.
+Tests on the real water (`createWater` under NullEngine) asserting the
+mechanism fired, not a fixture: the water meshes carry `bedDepth` and no vertex
+colours; the bed is uploaded at creation at the camera's start; a re-centre
+uploads nothing mid-bake and exactly once when the bake is whole (a spy on the
+texture's upload), with the new origin and heights; no bake begins where no
+body reaches the new square; a bake left mid-way by a 500 m jump is dropped and
+the new square baked from its first row; on the high tier the frame is asked
+for its copy only while a water mesh is among the active meshes. No pixel is
+read under Node; the look is the gates' below.
 
 Look gates, each a still from the game at a pose matched to a photo of the
 approved reference set (kept outside the repository; a gate names its ids),

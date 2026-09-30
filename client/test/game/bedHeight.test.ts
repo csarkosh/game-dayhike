@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import "../../src/sim/olympic.js";
 import { elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { BED_GRID, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows } from "../../src/game/bedHeight.js";
+import { BED_GRID, POND_DISC_MARGIN, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows, bedSquareHasWater } from "../../src/game/bedHeight.js";
 
 const SEED = 0x5eed;
 beforeAll(() => setActiveTerrainVariant("olympic"));
@@ -91,5 +91,38 @@ describe("bed height grid", () => {
     const before = grid.heights.slice();
     expect(bakeRows(grid, SEED, bake, 10)).toBe(true);
     expect(grid.heights).toEqual(before);
+  });
+
+  describe("whether a body can reach a square (bedSquareHasWater)", () => {
+    const grid = createBedGrid(256, 1);
+    const bake = beginBake(grid, 1000, -600); // the square [x0, x0 + 256) x [z0, z0 + 256)
+    const x0 = bake.originX;
+    const z0 = bake.originZ;
+    // read in the tests, after beforeAll has set the terrain variant
+    const lowestOfNine = (): number => {
+      const nine: number[] = [];
+      for (let j = 0; j <= 2; j++) for (let i = 0; i <= 2; i++) nine.push(elevationAt(SEED, x0 + i * 128, z0 + j * 128));
+      return Math.min(...nine);
+    };
+
+    it("the sea reaches it when the ground at one of its nine points (corners, edge midpoints, centre) is below the level", () => {
+      const lowest = lowestOfNine();
+      expect(bedSquareHasWater(bake, grid, [], lowest + 0.01, SEED)).toBe(true);
+      expect(bedSquareHasWater(bake, grid, [], lowest - 0.01, SEED)).toBe(false);
+    });
+
+    it("a pond reaches it when its disc overlaps the square, its centre inside or out", () => {
+      const dry = lowestOfNine() - 1;
+      const r = 20;
+      // centre inside
+      expect(bedSquareHasWater(bake, grid, [{ x: x0 + 100, z: z0 + 100, radius: r }], dry, SEED)).toBe(true);
+      // centre outside, west of the square, the disc reaching in
+      expect(bedSquareHasWater(bake, grid, [{ x: x0 - r, z: z0 + 50, radius: r }], dry, SEED)).toBe(true);
+      expect(bedSquareHasWater(bake, grid, [{ x: x0 - r - POND_DISC_MARGIN + 0.01, z: z0 + 50, radius: r }], dry, SEED)).toBe(true);
+      // just out of reach, past a corner on the diagonal
+      const d = (r + POND_DISC_MARGIN + 0.5) / Math.SQRT2;
+      expect(bedSquareHasWater(bake, grid, [{ x: x0 + 256 + d, z: z0 + 256 + d, radius: r }], dry, SEED)).toBe(false);
+      expect(bedSquareHasWater(bake, grid, [{ x: x0 - r - POND_DISC_MARGIN - 0.5, z: z0 + 50, radius: r }], dry, SEED)).toBe(false);
+    });
   });
 });

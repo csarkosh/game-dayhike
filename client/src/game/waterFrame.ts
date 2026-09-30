@@ -12,7 +12,9 @@
  * linearised in the shader from the camera's near and far. The colour is an
  * attachment (the pass's resolve target), so it is copied out.
  *
- * The pass is broken once a frame, between group 0 and group 1. The copy runs
+ * The pass is broken once a frame, between group 0 and group 1, and only in a
+ * frame whose active meshes hold a water mesh (`hasWater`): rain, motes and
+ * mist share group 1, so the group renders with no water in view. The copy runs
  * before any other observer of the group, which keeps it outside the
  * async-pipeline scope (`scopeRenderingGroups`) that the water's own draws
  * are inside. WebGPU only, with a multisampled first pass
@@ -66,7 +68,11 @@ export function waterFrameSupported(scene: Scene): boolean {
   return scene.getEngine().isWebGPU && first !== null && first.samples > 1;
 }
 
-export function createWaterFrame(scene: Scene, engine: AbstractEngine): WaterFrame {
+/**
+ * `hasWater` says whether a water mesh is among this frame's active meshes; it
+ * is asked as group 1 is about to render, after the frame's culling.
+ */
+export function createWaterFrame(scene: Scene, engine: AbstractEngine, hasWater: () => boolean): WaterFrame {
   let width = engine.getRenderWidth();
   let height = engine.getRenderHeight();
   const screen: [number, number] = [1 / width, 1 / height];
@@ -102,7 +108,8 @@ export function createWaterFrame(scene: Scene, engine: AbstractEngine): WaterFra
 
   let copied = false;
   let missed = 0;
-  /** Counts a group 1 that went without its copy, and says why once, late. */
+  /** Counts a group 1 that went without its copy, and says why once, late.
+   * A frame with no water in view is not a miss: nothing needed the copy. */
   const miss = (reason: string): void => {
     if (copied || ++missed !== WATER_FRAME_MISS_WARN) return;
     console.warn(`Water: no copy of the opaque pass after ${WATER_FRAME_MISS_WARN} frames (${reason}); the high tier's water is not drawn.`);
@@ -111,6 +118,7 @@ export function createWaterFrame(scene: Scene, engine: AbstractEngine): WaterFra
   const observer: Observer<RenderingGroupInfo> = scene.onBeforeRenderingGroupObservable.add(
     (info) => {
       if (info.renderingGroupId !== WATER_GROUP || info.renderingManager !== scene.renderingManager) return;
+      if (!hasWater()) return;
       const camera = scene.activeCamera;
       const target = engine._currentRenderTarget;
       if (camera === null) return miss("no active camera");

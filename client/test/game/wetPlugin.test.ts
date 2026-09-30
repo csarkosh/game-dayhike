@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { WetPlugin, attachWet, setWetLine, wetLineFor, WET_ALBEDO, WET_ROUGHNESS, WET_BAND, WET_LINE_ABOVE, WET_ROUGHNESS_ANCHOR, WET_RADIUS_MAX } from "../../src/game/wetPlugin.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import { WetPlugin, attachWet, setWetLine, wetLineFor, wetResidual, WET_ALBEDO, WET_ROUGHNESS, WET_BAND, WET_LINE_ABOVE, WET_ROUGHNESS_ANCHOR, WET_RADIUS_MAX } from "../../src/game/wetPlugin.js";
 import { WATER_ROWS } from "../../src/game/waterShading.js";
 
 const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
@@ -25,7 +26,7 @@ describe("wet plugin", () => {
 
   it("injects the .fx files verbatim at definitions, before-lights and the roughness line", () => {
     const mat = new PBRMaterial("g2", scene);
-    const p = attachWet(mat);
+    const p = attachWet(mat)!;
     const f = p.getCustomCode("fragment")!;
     expect(Object.keys(f).sort()).toEqual(["!float roughness=reflectivityOut\\.roughness;", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_DEFINITIONS"]);
     expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("wet.fragment.fx"));
@@ -43,8 +44,13 @@ describe("wet plugin", () => {
     expect(d).toContain(`const float WET_ALBEDO = ${glslFloat(WET_ALBEDO)};`);
     expect(d).toContain(`const float WET_ROUGHNESS = ${glslFloat(WET_ROUGHNESS)};`);
     expect(d).toContain(`const float WET_BAND = ${glslFloat(WET_BAND)};`);
-    // the darkening below the line, per channel, gated on wetAttenuate
-    expect(fx("wetLights.fragment.fx")).toContain("vec3 wetResidual = min(vec3(1.0), exp(-2.0 * (wetKd - vec3(wetKdMean)) * max(0.0, wetLevel - vPositionW.y)));");
+    // the wet look below the line and inside the footprint, 1..3 m past the rim
+    expect(d).toContain("return 1.0 - smoothstep(line - WET_BAND * 0.5, line + WET_BAND * 0.5, y);");
+    expect(d).toContain("return 1.0 - smoothstep(radius + 1.0, radius + 3.0, length(xz - centre));");
+    expect(fx("wetLights.fragment.fx")).toContain("float wetIn = wetInside(vPositionW.xz, wetCentre, wetRadius);");
+    expect(fx("wetLights.fragment.fx")).toContain("float wetW = wetBelow(vPositionW.y, wetLine) * wetIn;");
+    // the darkening below the level, per channel, held to the footprint, gated on wetAttenuate
+    expect(fx("wetLights.fragment.fx")).toContain("vec3 wetResidual = min(vec3(1.0), exp(-2.0 * (wetKd - vec3(wetKdMean)) * max(0.0, wetLevel - vPositionW.y) * wetIn));");
     expect(fx("wetLights.fragment.fx")).toContain("surfaceAlbedo *= mix(vec3(1.0), wetResidual, wetAttenuate);");
   });
 
@@ -66,11 +72,67 @@ describe("wet plugin", () => {
   });
 
   it("setWetLine reaches every attached plugin", () => {
-    const a = attachWet(new PBRMaterial("g3", scene));
-    const b = attachWet(new PBRMaterial("g4", scene));
+    const a = attachWet(new PBRMaterial("g3", scene))!;
+    const b = attachWet(new PBRMaterial("g4", scene))!;
     setWetLine({ line: 12.3, level: 12, kd: [1, 2, 3], centre: [4, 5], radius: 6 }, false);
     expect(a.line).toBe(12.3);
     expect(b.kd).toEqual([1, 2, 3]);
     expect(b.attenuate).toBe(false);
+  });
+
+  it("a disposed material's plugin no longer takes the wet line", () => {
+    const keptMat = new PBRMaterial("g5", scene);
+    const goneMat = new PBRMaterial("g6", scene);
+    const kept = attachWet(keptMat)!;
+    const gone = attachWet(goneMat)!;
+    setWetLine({ line: 1.3, level: 1, kd: [1, 1, 1], centre: [0, 0], radius: 10 }, true);
+    goneMat.dispose();
+    setWetLine({ line: 7.3, level: 7, kd: [2, 2, 2], centre: [3, 3], radius: 20 }, false);
+    expect(kept.line).toBe(7.3);
+    expect(gone.line).toBe(1.3);
+    expect(gone.kd).toEqual([1, 1, 1]);
+    expect(gone.attenuate).toBe(true);
+    keptMat.dispose();
+  });
+
+  it("attaches to PBR materials only: any other material is left without the plugin", () => {
+    const mat = new StandardMaterial("s", scene);
+    expect(attachWet(mat)).toBeNull();
+    expect(mat.pluginManager?.getPlugin("Wet") ?? null).toBeNull();
+    setWetLine({ line: 2.3, level: 2, kd: [1, 2, 3], centre: [0, 0], radius: 5 }, true);
+    expect(mat.pluginManager?.getPlugin("Wet") ?? null).toBeNull();
+  });
+});
+
+describe("wet residual (the medium and low tiers' darkening, wetLights.fragment.fx)", () => {
+  const kd = WATER_ROWS.lowlandLake.kd;
+  const mean = (kd[0] + kd[1] + kd[2]) / 3;
+  const perChannel = (depth: number): number[] => kd.map((k) => Math.min(1, Math.exp(-2 * (k - mean) * depth)));
+
+  it("is the per-channel formula at the body's centre", () => {
+    const r = wetResidual(kd, 10, 6, [100, 50], 30, [100, 50]);
+    const want = perChannel(4);
+    for (let i = 0; i < 3; i++) expect(r[i]).toBeCloseTo(want[i]!, 12);
+    // the mechanism fired: some channel is darkened
+    expect(Math.min(...r)).toBeLessThan(0.99);
+  });
+
+  it("is 1 in every channel 5 m outside the footprint, even 4 m below the level", () => {
+    expect(wetResidual(kd, 10, 6, [100, 50], 30, [135, 50])).toEqual([1, 1, 1]);
+  });
+
+  it("blends over the 1..3 m edge past the rim", () => {
+    const at = (d: number): number => Math.min(...wetResidual(kd, 10, 6, [0, 0], 30, [30 + d, 0]));
+    expect(at(1)).toBeCloseTo(Math.min(...perChannel(4)), 12);
+    expect(at(2)).toBeGreaterThan(at(1));
+    expect(at(2)).toBeLessThan(1);
+    expect(at(3)).toBe(1);
+  });
+
+  it("caps the sea's infinite radius as the uniform is, and darkens anywhere below its level", () => {
+    const sea = WATER_ROWS.sea.kd;
+    const r = wetResidual(sea, 0, -2, [0, 0], Number.POSITIVE_INFINITY, [5000, -3000]);
+    expect(r.every((c) => Number.isFinite(c))).toBe(true);
+    expect(Math.min(...r)).toBeLessThan(1);
   });
 });
