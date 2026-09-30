@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import "../../src/sim/olympic.js";
 import { elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { BED_GRID, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed } from "../../src/game/bedHeight.js";
+import { BED_GRID, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows } from "../../src/game/bedHeight.js";
 
 const SEED = 0x5eed;
 beforeAll(() => setActiveTerrainVariant("olympic"));
@@ -52,5 +52,44 @@ describe("bed height grid", () => {
     const x = grid.originX + 0.5 * grid.spacing;
     const z = grid.originZ + 0.5 * grid.spacing;
     expect(grid.heights[0]).toBeCloseTo(elevationAt(SEED, x, z), 4);
+  });
+
+  it("bakes row by row into a spare grid and applies the origin only on the last call", () => {
+    const grid = createBedGrid(128, 2);
+    const bake = beginBake(grid, 300, -100);
+    expect(bake).toEqual({ originX: bedOriginFor(300, 128, 2), originZ: bedOriginFor(-100, 128, 2), nextRow: 0 });
+    expect(bakeRows(grid, SEED, bake, 50)).toBe(false);
+    expect(bake.nextRow).toBe(50);
+    expect(Number.isNaN(grid.originX)).toBe(true); // not applied yet
+    expect(bakeRows(grid, SEED, bake, 50)).toBe(false);
+    expect(bakeRows(grid, SEED, bake, 50)).toBe(true); // 28 rows left, clamped
+    expect(bake.nextRow).toBe(128);
+    expect(grid.originX).toBe(bake.originX);
+    expect(grid.originZ).toBe(bake.originZ);
+    for (const [ix, iz] of [[0, 0], [127, 127], [40, 99]] as const) {
+      const x = grid.originX + (ix + 0.5) * 2;
+      const z = grid.originZ + (iz + 0.5) * 2;
+      expect(grid.heights[iz * 128 + ix]).toBeCloseTo(elevationAt(SEED, x, z), 4);
+    }
+  });
+
+  it("an incremental bake equals a whole bake of the same camera", () => {
+    const whole = createBedGrid(128, 2);
+    bakeBed(whole, SEED, 300, -100);
+    const inc = createBedGrid(128, 2);
+    const bake = beginBake(inc, 300, -100);
+    while (!bakeRows(inc, SEED, bake, 7)) { /* seven rows a step */ }
+    expect(inc.originX).toBe(whole.originX);
+    expect(inc.originZ).toBe(whole.originZ);
+    expect(inc.heights).toEqual(whole.heights);
+  });
+
+  it("bakeRows after completion is a no-op that still reports done", () => {
+    const grid = createBedGrid(128, 2);
+    const bake = beginBake(grid, 0, 0);
+    expect(bakeRows(grid, SEED, bake, 128)).toBe(true);
+    const before = grid.heights.slice();
+    expect(bakeRows(grid, SEED, bake, 10)).toBe(true);
+    expect(grid.heights).toEqual(before);
   });
 });
