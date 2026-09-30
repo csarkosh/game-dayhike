@@ -10,6 +10,10 @@ import "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { createWater } from "../../src/game/renderer.js";
 import { WATER_RING_COUNT } from "../../src/game/water.js";
+import { timeLimit } from "../helpers/timeLimit.js";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+import { WaterPlugin } from "../../src/game/waterPlugin.js";
+import { bedOriginFor } from "../../src/game/bedHeight.js";
 
 setActiveTerrainVariant("olympic");
 
@@ -17,35 +21,92 @@ describe("createWater under NullEngine", () => {
   let engine: NullEngine;
   afterEach(() => engine?.dispose());
 
-  it("builds one alpha-blended mesh per ring and survives update/dispose", () => {
+  it("builds one alpha-blended mesh per ring carrying bedDepth, no vertex colours, with the water plugin", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     const water = createWater(scene, 0x5eed, 0);
     expect(water.meshes.length).toBe(WATER_RING_COUNT);
     for (const m of water.meshes) {
       expect(m.getTotalVertices()).toBeGreaterThan(0);
-      expect(m.hasVertexAlpha).toBe(true);
-      expect((m.material as PBRMaterial).transparencyMode).toBe(PBRMaterial.PBRMATERIAL_ALPHABLEND);
+      expect(m.isVerticesDataPresent("bedDepth")).toBe(true);
+      expect(m.isVerticesDataPresent(VertexBuffer.ColorKind)).toBe(false);
+      expect(m.useVertexColors).toBe(false);
+      expect((m.metadata as { waterLevel: number }).waterLevel).toBe(0);
+      const mat = m.material as PBRMaterial;
+      expect(mat.name).toBe("mat_water_sea");
+      expect(mat.transparencyMode).toBe(PBRMaterial.PBRMATERIAL_ALPHABLEND);
+      expect(mat.pluginManager?.getPlugin("Water")).toBeInstanceOf(WaterPlugin);
       expect(m.receiveShadows).toBe(false);
     }
-    water.update(-500, 300); // must re-emit without throwing
+    water.update(-500, 300, 1); // must re-emit and re-bake without throwing
     water.dispose();
-  });
+  }, timeLimit(30_000));
 
-  it("adds one depth-shaded disc per pond, sharing the water material, and disposes it", () => {
+  it("adds one disc per pond on the lake material at the pond's level, and disposes it", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     const water = createWater(scene, 1, 0, [{ x: 100, z: 50, radius: 30, height: 42 }]);
-    const pond = scene.getMeshByName("pond_0");
-    expect(pond).not.toBeNull();
-    expect(pond!.position.y).toBeCloseTo(42.02, 5);
-    // Babylon's default bounding sphere is fit around the AABB (radius =
-    // half the box diagonal, R·√2 for a flat disc), not the mesh's actual
-    // circumradius — the box extent is the honest read of "radius ≈ 31"
-    // (pond.radius + 1, the CreateDisc argument).
-    expect(pond!.getBoundingInfo().boundingBox.extendSizeWorld.x).toBeCloseTo(31, 0);
-    expect(pond!.material).toBe(scene.getMaterialByName("mat_water"));
+    const pond = scene.getMeshByName("pond_0")!;
+    expect(pond.position.y).toBeCloseTo(42.02, 5);
+    // Babylon's default bounding sphere is fit around the AABB, not the mesh's
+    // circumradius; the box extent is the honest read of "radius ~ 31".
+    expect(pond.getBoundingInfo().boundingBox.extendSizeWorld.x).toBeCloseTo(31, 0);
+    expect(pond.material).toBe(scene.getMaterialByName("mat_water_lake"));
+    expect((pond.metadata as { waterLevel: number }).waterLevel).toBe(42);
+    expect(pond.isVerticesDataPresent("bedDepth")).toBe(true);
+    expect(pond.isVerticesDataPresent(VertexBuffer.ColorKind)).toBe(false);
     water.dispose();
     expect(scene.getMeshByName("pond_0")).toBeNull();
-  });
+    expect(scene.getMaterialByName("mat_water_lake")).toBeNull();
+  }, timeLimit(30_000));
+
+  it("the mechanism fired: the bed texture is uploaded after the first update and the plugin points at it", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 7, 0, [], "low");
+    water.update(0, 0, 0);
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    expect(plugin.bedTexture).not.toBeNull();
+    expect(plugin.bedTexels).toBe(128);
+    expect(plugin.bedSpacing).toBe(2);
+    expect(plugin.bedOrigin).toEqual([bedOriginFor(0, 128, 2), bedOriginFor(0, 128, 2)]);
+    expect(plugin.octaves).toBe(1);
+    water.setWind(1, [0, 1]);
+    expect((water.meshes[0]!.material as PBRMaterial).roughness).toBeGreaterThan(0.5);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("uploads the bed at creation, before any frame, at the camera's start", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 7, 0, [], "low", 900, -400);
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    expect(plugin.bedTexture).not.toBeNull();
+    expect(plugin.bedOrigin).toEqual([bedOriginFor(900, 128, 2), bedOriginFor(-400, 128, 2)]);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("re-centres the bed a row a frame: origin and texture change together, on the completing call only", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 7, 0, [], "low");
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    water.update(0, 0, 0);
+    const origin0 = [...plugin.bedOrigin];
+    const tex0 = plugin.bedTexture;
+    let calls = 0;
+    while (plugin.bedOrigin[0] === origin0[0] && plugin.bedOrigin[1] === origin0[1]) {
+      water.update(500, 500, 0);
+      calls++;
+      if (calls < 128) {
+        expect(plugin.bedOrigin).toEqual(origin0);
+        expect(plugin.bedTexture).toBe(tex0);
+      }
+      expect(calls).toBeLessThanOrEqual(128);
+    }
+    expect(calls).toBe(128); // 128 rows at one a frame
+    expect(plugin.bedOrigin).toEqual([bedOriginFor(500, 128, 2), bedOriginFor(500, 128, 2)]);
+    expect(plugin.bedTexture).toBe(tex0); // updated in place
+    water.dispose();
+  }, timeLimit(30_000));
 });
