@@ -37,6 +37,9 @@ const attached = new Set<WetPlugin>();
 
 export class WetPlugin extends MaterialPluginBase {
   line = -1e6;
+  level = -1e6;
+  centre: [number, number] = [0, 0];
+  radius = 0;
   kd: [number, number, number] = [0, 0, 0];
   attenuate = true;
 
@@ -64,15 +67,21 @@ export class WetPlugin extends MaterialPluginBase {
     return {
       ubo: [
         { name: "wetLine", size: 1, type: "float" },
+        { name: "wetLevel", size: 1, type: "float" },
+        { name: "wetCentre", size: 2, type: "vec2" },
+        { name: "wetRadius", size: 1, type: "float" },
         { name: "wetKd", size: 3, type: "vec3" },
         { name: "wetAttenuate", size: 1, type: "float" },
       ],
-      fragment: ["uniform float wetLine;", "uniform vec3 wetKd;", "uniform float wetAttenuate;"].join("\n"),
+      fragment: ["uniform float wetLine;", "uniform float wetLevel;", "uniform vec2 wetCentre;", "uniform float wetRadius;", "uniform vec3 wetKd;", "uniform float wetAttenuate;"].join("\n"),
     };
   }
 
   override bindForSubMesh(uniformBuffer: UniformBuffer): void {
     uniformBuffer.updateFloat("wetLine", this.line);
+    uniformBuffer.updateFloat("wetLevel", this.level);
+    uniformBuffer.updateFloat2("wetCentre", this.centre[0], this.centre[1]);
+    uniformBuffer.updateFloat("wetRadius", Math.min(this.radius, 1e9));
     uniformBuffer.updateFloat3("wetKd", this.kd[0], this.kd[1], this.kd[2]);
     uniformBuffer.updateFloat("wetAttenuate", this.attenuate ? 1 : 0);
   }
@@ -94,14 +103,22 @@ export function attachWet(material: Material): WetPlugin {
 }
 
 /** How far past its rim a pond still claims the wet line over the sea, metres. */
-const POND_REACH = 8;
+const POND_REACH = 40;
 
 /**
  * The nearest body's wet line and kd for a point. The sea (infinite radius) is
  * everywhere at distance zero, so it is the fallback: a finite body wins only
  * within POND_REACH of its rim, the nearest such body.
  */
-export function wetLineFor(bodies: readonly WetBody[], x: number, z: number): { line: number; kd: [number, number, number] } {
+export type WetState = {
+  line: number;
+  level: number;
+  kd: [number, number, number];
+  centre: [number, number];
+  radius: number;
+};
+
+export function wetLineFor(bodies: readonly WetBody[], x: number, z: number): WetState {
   let best: WetBody | null = null;
   let bestD = POND_REACH;
   let fallback: WetBody | null = null;
@@ -111,11 +128,18 @@ export function wetLineFor(bodies: readonly WetBody[], x: number, z: number): { 
     if (d <= bestD) { bestD = d; best = b; }
   }
   const pick = best ?? fallback;
-  if (pick === null) return { line: -1e6, kd: [0, 0, 0] };
-  return { line: pick.level + WET_LINE_ABOVE, kd: pick.kd };
+  if (pick === null) return { line: -1e6, level: -1e6, kd: [0, 0, 0], centre: [0, 0], radius: 0 };
+  return { line: pick.level + WET_LINE_ABOVE, level: pick.level, kd: pick.kd, centre: [pick.x, pick.z], radius: Math.min(pick.radius, 1e9) };
 }
 
 /** Per frame: one wet line for every attached plugin. `attenuate` is false on the high tier. */
-export function setWetLine(line: number, kd: [number, number, number], attenuate: boolean): void {
-  for (const p of attached) { p.line = line; p.kd = kd; p.attenuate = attenuate; }
+export function setWetLine(w: WetState, attenuate: boolean): void {
+  for (const p of attached) {
+    p.line = w.line;
+    p.level = w.level;
+    p.kd = w.kd;
+    p.centre = w.centre;
+    p.radius = w.radius;
+    p.attenuate = attenuate;
+  }
 }

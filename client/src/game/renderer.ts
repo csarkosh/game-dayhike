@@ -1306,7 +1306,7 @@ function buildRenderer(
   const updateWet = (x: number, z: number): void => {
     if (wetBodies.length === 0) return;
     const w = wetLineFor(wetBodies, x, z);
-    setWetLine(w.line, w.kd, tier !== "high");
+    setWetLine(w, tier !== "high");
   };
 
   // Every chunk prop the sim collides with, drawn: the trailhead's placeholder
