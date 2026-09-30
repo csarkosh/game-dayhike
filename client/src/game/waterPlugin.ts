@@ -23,6 +23,7 @@ import vertexDefs from "./shaders/water.vertex.fx?raw";
 import vertexWorldPos from "./shaders/waterWorldPos.vertex.fx?raw";
 import fragmentDefs from "./shaders/water.fragment.fx?raw";
 import fragmentLights from "./shaders/waterLights.fragment.fx?raw";
+import fragmentCompose from "./shaders/waterCompose.fragment.fx?raw";
 import { WATER_F0, roughnessFor, type WaterRow } from "./waterShading.js";
 
 /** Babylon's dielectric F0 at metallicF0Factor 1 is 0.04; water's 0.02 is half of it. */
@@ -41,8 +42,6 @@ export class WaterPlugin extends MaterialPluginBase {
   screen: [number, number] = [1, 1];
   /** The camera's near and far, per frame: the copy's device depth is linearised with them. */
   nearFar: [number, number] = [0.05, 1000];
-  /** 1 when the depth texture holds linear view metres (the prepass), 0 for device depth (the copy). */
-  depthLinear = 0;
   time = 0;
   windDir: [number, number] = [1, 0];
   /** Ripple octaves the fragment blends: 2, or 1 on the low tier (spec §5.3). */
@@ -111,7 +110,6 @@ export class WaterPlugin extends MaterialPluginBase {
         { name: "waterHigh", size: 1, type: "float" },
         { name: "waterOctaves", size: 1, type: "float" },
         { name: "waterNearFar", size: 2, type: "vec2" },
-        { name: "waterDepthLinear", size: 1, type: "float" },
       ],
       fragment: [
         "uniform float waterLevel;",
@@ -124,7 +122,6 @@ export class WaterPlugin extends MaterialPluginBase {
         "uniform float waterHigh;",
         "uniform float waterOctaves;",
         "uniform vec2 waterNearFar;",
-        "uniform float waterDepthLinear;",
       ].join("\n"),
     };
   }
@@ -143,7 +140,6 @@ export class WaterPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("waterHigh", high ? 1 : 0);
     uniformBuffer.updateFloat("waterOctaves", this.octaves);
     uniformBuffer.updateFloat2("waterNearFar", this.nearFar[0], this.nearFar[1]);
-    uniformBuffer.updateFloat("waterDepthLinear", this.depthLinear);
     // Every declared sampler is bound on every draw: WebGPU validates the
     // bindings a pipeline declares whether or not a branch reads them. The
     // material is not ready until the bed texture exists, so the null guards
@@ -160,7 +156,11 @@ export class WaterPlugin extends MaterialPluginBase {
       return { CUSTOM_VERTEX_DEFINITIONS: vertexDefs, CUSTOM_VERTEX_UPDATE_WORLDPOS: vertexWorldPos };
     }
     if (shaderType === "fragment") {
-      return { CUSTOM_FRAGMENT_DEFINITIONS: fragmentDefs, CUSTOM_FRAGMENT_BEFORE_LIGHTS: fragmentLights };
+      return {
+        CUSTOM_FRAGMENT_DEFINITIONS: fragmentDefs,
+        CUSTOM_FRAGMENT_BEFORE_LIGHTS: fragmentLights,
+        CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: fragmentCompose,
+      };
     }
     return null;
   }
