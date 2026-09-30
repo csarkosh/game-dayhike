@@ -871,6 +871,10 @@ export type Renderer = {
    * still baking, ready or failed, and how long each took. Empty without a
    * forest, or until its models have loaded. */
   impostorBakes(): readonly ImpostorBake[];
+  /** Depth of field on or off, for a film shot's insert. The post chain has
+   * no depth of field today, so this is nothing yet; the insert's blur is
+   * the recording's. */
+  setDepthOfField(on: boolean): void;
   /** The first clipmap build, for a renderer made with `deferClipmap`:
    * stepped, a macrotask between every `yieldEvery` slices so the page
    * paints between, each ring's level told to `onRing` as it is sampled.
@@ -1701,6 +1705,9 @@ function buildRenderer(
     },
     impostorBakes() {
       return forestMeshes?.impostorBakes() ?? [];
+    },
+    setDepthOfField() {
+      // No depth of field in the post chain today (see the type's note).
     },
     async buildFirstClipmap(yieldEvery, onRing) {
       if (clipmap !== null) await stepSlices(clipmap.firstBuild(onRing), yieldEvery, () => scene.isDisposed);

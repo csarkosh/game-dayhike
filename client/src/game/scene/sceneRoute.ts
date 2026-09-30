@@ -1,0 +1,179 @@
+/**
+ * The scene route: the staged intro on its fixed world, with no local
+ * player, the way the title page's backdrop ran until the still replaced
+ * it. `?t` seeks and `?step` holds a frame; `window.dayhikeScene` lets a
+ * recorder seek and draw one frame at a time. Everything built here is
+ * disposed on leaving the route.
+ */
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import type { Scene as BabylonScene } from "@babylonjs/core/scene.js";
+import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
+import { parseLevel } from "../../sim/level.js";
+import { createForest } from "../../sim/forest.js";
+import { createWorld } from "../../sim/world.js";
+import type { WorldState } from "../../sim/types.js";
+import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "../../sim/terrain.js";
+import { trailheadPlaces } from "../../sim/trailhead.js";
+import { createCharacterPool, type CharacterPool } from "../characterModel.js";
+import { loadContainer, loadUntilAborted } from "../modelLoad.js";
+import { modelUrl } from "../assetUrls.js";
+import { placeStaticModel, type PlacedModel } from "../staticModel.js";
+import { createRenderer } from "../renderer.js";
+import type { QualityTier } from "../quality.js";
+import { seedFromToken } from "../seed.js";
+import { carYaw } from "../trailheadMeshes.js";
+import { createCaptionPanel } from "./captions.js";
+import { INTRO_CAR, INTRO_HOUR, INTRO_RANGER, INTRO_SEED_TOKEN, INTRO_WEATHER, introScene } from "./intro.js";
+import { createSceneClock, type SceneClock } from "./sceneClock.js";
+import { createScenePlayer } from "./scenePlayer.js";
+import { carModelOf, type CarModel, type StageDeps } from "./sceneStage.js";
+
+export type DayhikeScene = { seek(t: number): void; frame(): Promise<void>; time(): number };
+export type SceneRun = { dispose(): void; worldState(): WorldState };
+export type SceneRouteDeps = {
+  canvas: HTMLCanvasElement;
+  container: HTMLElement;
+  tier: QualityTier;
+  engine?: AbstractEngine;
+  now?: () => number;
+  loadCar?: (scene: BabylonScene) => Promise<PlacedModel | null>;
+  pool?: CharacterPool;
+  raf?: (fn: (ms: number) => void) => number;
+};
+
+const BLACK_STYLE = "position:absolute;inset:0;background:#000;pointer-events:none;z-index:29;";
+
+async function loadTrailheadCar(scene: BabylonScene, signal: AbortSignal): Promise<PlacedModel | null> {
+  try {
+    const container = await loadUntilAborted(() => loadContainer(modelUrl(`models/${INTRO_CAR}.glb`), scene), signal);
+    return placeStaticModel(container, INTRO_CAR, 0, 0, 0, 0);
+  } catch (error) {
+    if (!signal.aborted) console.warn(`scene: the car did not load (${error instanceof Error ? error.message : String(error)}); its boxes stand in`);
+    return null;
+  }
+}
+
+export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null; step: number | null }): SceneRun {
+  setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
+  const now = deps.now ?? (() => performance.now());
+  const raf = deps.raf ?? ((fn) => requestAnimationFrame(fn));
+  const seed = seedFromToken(INTRO_SEED_TOKEN);
+  const level = parseLevel(sandbox01);
+  const forest = createForest(seed);
+  const world = createWorld(level, seed, false);
+  const clock: SceneClock = createSceneClock(now);
+  const renderer = createRenderer(deps.canvas, level, forest, { tier: deps.tier, engine: deps.engine, clock: () => clock.time() * 1000 });
+  renderer.setWeather(INTRO_WEATHER, 0);
+  renderer.setHour(INTRO_HOUR);
+
+  const variant = activeTerrainVariant();
+  const graph = variant.trailGraph?.(seed);
+  const roadCenterX = variant.roadCenterX;
+  if (graph === undefined || roadCenterX === undefined) throw new Error("the scene's world has no road or trail");
+  const places = trailheadPlaces(graph, roadCenterX, seed);
+  const road = { centerX: (z: number) => roadCenterX(seed, z), groundY: (x: number, z: number) => elevationAt(seed, x, z) };
+  const scene = introScene(road, {
+    car: places.car,
+    start: places.start,
+    board: places.board,
+    direction: carYaw(places.car, graph.trailhead) === 0 ? 1 : -1,
+  });
+
+  const loads = new AbortController();
+  const pool = deps.pool ?? createCharacterPool();
+  let disposed = false;
+  void pool.load(renderer.scene, [INTRO_RANGER]);
+  let car: CarModel | null = null;
+  let carModel: PlacedModel | null = null;
+  void (deps.loadCar ?? ((s) => loadTrailheadCar(s, loads.signal)))(renderer.scene).then((placed) => {
+    if (placed === null || disposed) {
+      placed?.dispose();
+      return;
+    }
+    carModel = placed;
+    car = carModelOf(placed);
+    // `stage` is made below, before this promise can resolve.
+    stage.car = car;
+    for (const mesh of placed.meshes) renderer.shadows.add(mesh);
+  });
+
+  const black = document.createElement("div");
+  black.className = "scene-black";
+  black.setAttribute("style", BLACK_STYLE);
+  black.style.opacity = "1";
+  deps.container.append(black);
+  const captions = createCaptionPanel(deps.container);
+  const stage: StageDeps = {
+    setFreecam: (view) => renderer.setFreecam(view),
+    setDepthOfField: (on) => renderer.setDepthOfField(on),
+    actor: (id) => pool.acquire(1, id),
+    car,
+    captions,
+    black: (amount) => {
+      black.style.opacity = String(amount);
+    },
+    warn: (line) => console.warn(line),
+  };
+  const player = createScenePlayer(scene, clock, stage);
+  if (search.step !== null) player.step(search.step);
+  else if (search.t !== null) player.seek(search.t);
+
+  let looping = search.step === null;
+  const drawOnce = (): void => {
+    player.tick();
+    renderer.sync(world.state, -1, 0);
+    renderer.scene.render();
+  };
+  const loop = (): void => {
+    if (disposed || !looping) return;
+    drawOnce();
+    raf(loop);
+  };
+  raf(loop);
+  /** One frame drawn outside the loop: the engine's own frame brackets
+   * around the render, which the loop otherwise supplies. */
+  const drawOneFrame = (): void => {
+    renderer.engine.beginFrame();
+    drawOnce();
+    renderer.engine.endFrame();
+  };
+
+  const onVisibility = (): void => player.hidden(document.visibilityState === "hidden");
+  document.addEventListener("visibilitychange", onVisibility);
+  const onResize = (): void => renderer.resize();
+  window.addEventListener("resize", onResize);
+
+  const api: DayhikeScene = {
+    seek: (t) => {
+      player.seek(t);
+      clock.hold();
+    },
+    // Drawn now, and resolved on the animation frame after, when the
+    // picture has been presented and a screenshot reads it.
+    frame: () =>
+      new Promise<void>((resolve) => {
+        looping = false;
+        drawOneFrame();
+        raf(() => resolve());
+      }),
+    time: () => player.time(),
+  };
+  (globalThis as { dayhikeScene?: DayhikeScene }).dayhikeScene = api;
+
+  return {
+    worldState: () => world.state,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      loads.abort();
+      delete (globalThis as { dayhikeScene?: DayhikeScene }).dayhikeScene;
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("resize", onResize);
+      player.dispose();
+      black.remove();
+      pool.dispose();
+      carModel?.dispose();
+      renderer.dispose();
+    },
+  };
+}

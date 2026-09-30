@@ -8,7 +8,10 @@ export type Route =
   /** An invite: join this lobby, then show the landing page. */
   | { kind: "party"; lobbyId: string }
   /** A world. The token feeds the seed and nothing else. */
-  | { kind: "game"; token: string };
+  | { kind: "game"; token: string }
+  /** A staged scene on its fixed world, with no player: the intro, viewable
+   * and steppable a frame at a time for its recording. */
+  | { kind: "scene"; name: "intro" };
 
 /**
  * The path the bundle is served under: `/dayhike/` on the web, `/` in the
@@ -57,6 +60,7 @@ export function parseRoute(pathname: string, base: string = BASE): Route {
   if (trimmed === "/downloads") return { kind: "downloads" };
   if (trimmed === "/credits") return { kind: "credits" };
   if (trimmed === "/settings") return { kind: "settings" };
+  if (trimmed === "/scene/intro") return { kind: "scene", name: "intro" };
   const party = /^\/party\/([^/]+)$/.exec(trimmed);
   if (party) {
     const id = party[1] as string;
@@ -273,4 +277,17 @@ export const browserExit: PanelExit = {
 export function leavePanel(exit: PanelExit): void {
   if (exit.pushedFromLanding()) exit.back();
   else exit.toLanding();
+}
+
+/** The scene route's search: `?t=<seconds>` seeks, `?step=<frame>` holds a
+ * frame (24 a second); a value that is not a number at or above zero is none. */
+export function parseSceneSearch(search: string): { t: number | null; step: number | null } {
+  const q = new URLSearchParams(search);
+  const num = (key: string): number | null => {
+    const v = q.get(key);
+    if (v === null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  return { t: num("t"), step: num("step") };
 }

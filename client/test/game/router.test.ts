@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import {
+  parseSceneSearch,
   parseRoute,
   stripBase,
   withBase,
@@ -73,6 +74,16 @@ describe("stripBase / withBase", () => {
 });
 
 describe("parseRoute", () => {
+  it("parses the scene route, and the seek and the step out of its search", () => {
+    expect(parseRoute("/dayhike/scene/intro", BASE)).toEqual({ kind: "scene", name: "intro" });
+    expect(parseRoute("/scene/intro", "/")).toEqual({ kind: "scene", name: "intro" });
+    expect(parseRoute("/dayhike/scene/other", BASE)).toEqual({ kind: "landing" });
+    expect(parseSceneSearch("?t=12.5")).toEqual({ t: 12.5, step: null });
+    expect(parseSceneSearch("?step=48")).toEqual({ t: null, step: 48 });
+    expect(parseSceneSearch("?t=abc&step=-1")).toEqual({ t: null, step: null });
+    expect(parseSceneSearch("")).toEqual({ t: null, step: null });
+  });
+
   it("routes the root to the landing page", () => {
     expect(parseRoute("/", "/")).toEqual({ kind: "landing" });
     expect(parseRoute("/dayhike/", BASE)).toEqual({ kind: "landing" });

@@ -7,6 +7,7 @@ import {
   navigateToGame,
   navigateToLanding,
   navigateToPanel,
+  parseSceneSearch,
   replaceWithLanding,
   leavePanel,
   browserExit,
@@ -23,6 +24,7 @@ import { setLoadProgress } from "./game/modelLoad.js";
 import { stillUrl, videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";
 import { landingBackdrop } from "./game/landingBackdrop.js";
+import { startSceneRoute } from "./game/scene/sceneRoute.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
 import { inviteLink, parseJoinLink } from "./game/joinLink.js";
@@ -804,6 +806,18 @@ function render(container: HTMLDivElement): void {
   landing = null;
   endIntro(activeIntro);
   container.replaceChildren();
+
+  // The staged intro on its fixed world, a frame at a time for its recording:
+  // the film is made on the high tier, which is what Auto means here; the
+  // address's `?tier=` and a saved choice are the page's own as everywhere.
+  if (route.kind === "scene") {
+    const canvas = document.createElement("canvas");
+    container.appendChild(canvas);
+    const choice = parseTierOverride(location.search) ?? currentChoice();
+    const scene = startSceneRoute({ canvas, container, tier: choice === "auto" ? "high" : choice }, parseSceneSearch(location.search));
+    running = { dispose: () => scene.dispose() };
+    return;
+  }
 
   if (isLandingRoute(route)) {
     endIntro(pendingIntro);
