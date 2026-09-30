@@ -321,6 +321,27 @@ quiet machine. A tier over its budget cuts in this order: the second ripple
 octave, the refracted offset (sample unrefracted), the height texture to the
 next size down.
 
+Measured 2026-09-30 (provisional): paired frame times (off/on/on/off, four
+pairs, 5 s samples of `requestAnimationFrame` intervals) at the pond's rim pose
+with the water filling the frame, 1920×1080 on high and medium (hardware
+scaling 1) and 1280×720 on low (scaling 1.5), on an Apple M4 in headless Chrome
+through the chrome-devtools daemon, seed atmo at noon.
+
+| Path | Frames, mean | Water on minus off |
+| --- | --- | --- |
+| High tier on WebGPU (the high path on) | 54 ms | −1.3 ms (noise) |
+| High tier fallen back to WebGL2 (the blended path) | 45.8 ms | +0.68 ms |
+| Medium on WebGL2 | 44.8 ms | +0.54 ms |
+| Low on WebGL2 | 32.0 ms | +1.39 ms |
+
+These readings are not a verdict on the 0.5 / 0.3 / 0.15 ms bars. Another
+session's game page rendered in the same Chrome throughout, so every frame ran
+at 45 to 54 ms against the roughly 16 ms this machine gives the same poses on a
+quiet rig, and the on−off differences are inflated by that contention and by
+its noise (a negative delta on the high path). The re-measurement on a quiet
+rig, with no other game page open, is owed before the material ships; the cut
+order above applies to whatever it finds.
+
 ## 9. Tests and gates
 
 Node tests, in `client/test/`:
@@ -356,6 +377,25 @@ the sun pinned per reading and the reading recorded with it:
 | Wet sand | the beach at the wet line | `second-beach-06` | a darker glossy band mirroring the sky |
 | Night | the pond, headlamp on | none (research §2.5) | black water, a lamp glitter, nothing teal |
 | Wading | the player's legs in the pond | none | legs darken with depth, wet above the line |
+
+First stills, 2026-09-30 (in the archive outside the repository). The owner's
+verdicts are owed: no gate has passed yet, since a gate passes on the owner's
+word.
+
+- Murky pond: `g-high-noon-murky-pond.jpeg` (high, WebGPU, noon, sun y −0.97,
+  intensity 3.95). A sky-lit surface with a crisp waterline, a dark centre and
+  glitter; the amber rim reads faintly at this depth (`POND_DEPTH` 0.6 m).
+- Clear lake: not posable; no high lake exists until the terrain sub-project.
+- The sea: `g-high-dusk-sea.jpeg` (time 18, sun on the horizon). The glitter
+  path along the sun on the water, the sand foreground wet.
+- Wet sand: `g-high-noon-wet-sand.jpeg` and `g-high-dusk-wet-sand.jpeg`. The
+  foreground sand inside the 0.3 m still-swash band is all darkened and glossy,
+  with no dry band in the frame at a 1:67 bed.
+- Night: `g-high-night-night-pond-rim.jpeg` and `-west.jpeg` (time 0, lamp on,
+  player in the pond). Black water, the lamp's glitter on the ripples, nothing
+  teal.
+- Wading: not posed. The local player has no body mesh in first person and the
+  rig had no remote player or creature in the water.
 
 The local player has no body mesh in first person, so the wading gate poses a
 remote player or a creature in the water. The sea gate's pose is found on the
