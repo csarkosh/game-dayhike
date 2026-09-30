@@ -657,16 +657,22 @@ float waterBedDepth(vec2 xz) {
   return waterLevel - h;
 }
 
-// Tilts a ripple normal toward up until the reflected ray clears the
-// horizon. Mirrors horizonSafeNormal in waterShading.ts exactly.
+// Tilts a ripple normal so the reflected ray clears the horizon: the
+// reflection is lifted to y = WATER_HORIZON with its xz shortened to keep it
+// unit, and the normal that reflects the view exactly onto that ray is the
+// half-vector. One step, no loop. Mirrors horizonSafeNormal in
+// waterShading.ts exactly.
 vec3 waterHorizonNormal(vec3 n, vec3 view) {
-  for (int i = 0; i < 4; i++) {
-    float ry = reflect(-view, n).y;
-    if (ry >= WATER_HORIZON) break;
-    float t = clamp((WATER_HORIZON - ry) * 4.0, 0.0, 1.0);
-    n = normalize(mix(n, vec3(0.0, 1.0, 0.0), t));
+  vec3 r = reflect(-view, n);
+  if (r.y >= WATER_HORIZON) return n;
+  float xz = length(r.xz);
+  if (xz < 1.0e-4) {
+    r = vec3(0.0, 1.0, 0.0);
+  } else {
+    r.xz *= sqrt(1.0 - WATER_HORIZON * WATER_HORIZON) / xz;
+    r.y = WATER_HORIZON;
   }
-  return n;
+  return normalize(view + r);
 }
 ```
 
@@ -999,7 +1005,9 @@ In `waterRingGeometry`: replace the `colors` array with `bedDepth = new Float32A
   // (keep the existing scroll observer; it drives both through the one texture)
 
   const { texels, spacing } = BED_GRID[tier];
-  const grid = createBedGrid(texels, spacing);
+  let grid = createBedGrid(texels, spacing);
+  let spare = createBedGrid(texels, spacing);
+  let bake: BedBake | null = null;
   let bedTexture: RawTexture | null = null;
   function uploadBed(): void {
     if (bedTexture === null) {
@@ -1023,7 +1031,7 @@ In `waterRingGeometry`: replace the `colors` array with `bedDepth = new Float32A
 
 Ring meshes: `mesh.useVertexColors = false`, no `hasVertexAlpha`, `mesh.material = seaMat`, `mesh.metadata = { waterLevel }`. Ponds use `lakeMat`.
 
-`update(camX, camZ, seconds)`: the existing ring logic, then `if (bakeBed(grid, seed, camX, camZ)) uploadBed();` and `for (const p of plugins) p.time = seconds;`. Add `setWind(wind01, dir) { for (const p of plugins) p.setWind(wind01, dir); }`. `dispose` disposes both materials, the bump and `bedTexture`.
+`update(camX, camZ, seconds)`: the existing ring logic, then the bed's double-buffered bake (a whole 256² bake measured 260 to 295 ms, so it is spread a row a frame): two grids, `grid` (uploaded) and `spare`; on the first call `bakeBed(grid, seed, camX, camZ)` and `uploadBed()` at once (the first fill is at load, before any frame is shown); afterwards, when `bake === null && bedNeedsRebake(grid, camX, camZ)` start `bake = beginBake(spare, camX, camZ)`; while `bake !== null`, `if (bakeRows(spare, seed, bake, BED_ROWS_PER_FRAME)) { [grid, spare] = [spare, grid]; bake = null; uploadBed(); }` with `BED_ROWS_PER_FRAME = 1`; and `for (const p of plugins) p.time = seconds;`. `uploadBed` uploads whichever grid is current and sets the plugins' origin from it in the same call. A test pins that after `beginBake` and before completion the plugins' origin and texture are unchanged, and that they change together on the completing call. Add `setWind(wind01, dir) { for (const p of plugins) p.setWind(wind01, dir); }`. `dispose` disposes both materials, the bump and `bedTexture`.
 
 `Constants` comes from `@babylonjs/core/Engines/constants.js`; `budgetMaterial` from `./headlamp.js` (already imported in the renderer? grep; import if not).
 
