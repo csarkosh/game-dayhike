@@ -52,8 +52,12 @@ export type IntroOverlayDeps = {
 const INTRO_Z = 30;
 
 const STYLE = `
-  .intro { position: absolute; inset: 0; background: #000; display: grid; grid-template-rows: 1fr auto 1fr; z-index: ${INTRO_Z}; user-select: none; }
-  .intro video { grid-column: 1; grid-row: 2; width: 100%; aspect-ratio: 2 / 1; display: block; }
+  /* The bands above and below the film hold the caption (two lines and its
+     margin), the bar and the line: never under --band, so a wide viewport,
+     where the film at full width would leave them 1/18 of it, pillarboxes
+     the film instead. */
+  .intro { --band: clamp(110px, 12vh, 160px); position: absolute; inset: 0; background: #000; display: grid; grid-template-rows: minmax(var(--band), 1fr) auto minmax(var(--band), 1fr); z-index: ${INTRO_Z}; user-select: none; }
+  .intro video { grid-column: 1; grid-row: 2; justify-self: center; width: min(100%, calc((100vh - 2 * var(--band)) * 2)); aspect-ratio: 2 / 1; display: block; }
   /* The caption and the bar share the lower band: both in the one column,
      or the grid would place the second in an implicit column of its own. */
   .intro-caption { grid-column: 1; grid-row: 3; align-self: start; margin: 14px auto 0; max-width: 44ch; text-align: center; white-space: pre-line; color: #eee; font: 500 clamp(16px, 2.4vh, 26px)/1.35 system-ui, sans-serif; }
