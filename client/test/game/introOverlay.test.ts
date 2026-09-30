@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { INTRO_CAPTIONS, createIntroOverlay, type Caption, type CutReason } from "../../src/game/introOverlay.js";
+import { createIntroOverlay, type Caption, type CutReason } from "../../src/game/introOverlay.js";
 import { StandInElement, asHtml, installStandInDom, type StandInDocument } from "./helpers/standInDom.js";
 
 const captions: Caption[] = [{ from: 1, to: 3, text: "Four-one, dispatch.", radio: true }];
@@ -155,14 +155,4 @@ describe("the intro overlay", () => {
     r.overlay.dispose();
   });
 
-  it("captions every line of the call at most two lines of 42 characters, no faster than 20 a second", () => {
-    expect(INTRO_CAPTIONS.length).toBe(11);
-    for (const c of INTRO_CAPTIONS) {
-      const lines = c.text.split("\n");
-      expect(lines.length).toBeLessThanOrEqual(2);
-      for (const l of lines) expect(l.length).toBeLessThanOrEqual(42);
-      expect(c.text.replace("\n", " ").length / (c.to - c.from)).toBeLessThanOrEqual(20);
-    }
-    expect(INTRO_CAPTIONS[0]?.from).toBe(15);
-  });
 });

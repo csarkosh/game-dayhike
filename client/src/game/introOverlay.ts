@@ -11,9 +11,8 @@
 import { createIntroPlayback, type IntroPlayback } from "./introPlayback.js";
 import { createLoadProgress, type LoadProgress } from "./loadProgress.js";
 
-/** One caption: shown while the video's time is in [from, to), seconds. A
- * `\n` in the text is its second line. */
-export type Caption = { from: number; to: number; text: string; radio: boolean };
+import type { Caption } from "./scene/timeline.js";
+export type { Caption } from "./scene/timeline.js";
 
 /** Why the intro cut to the game: a full hold or the step-out click (both
  * gestures, so the cut can take the pointer), or the video failing, which
@@ -76,24 +75,6 @@ const STYLE = `
   .intro-title.shown { opacity: 1; }
 `;
 
-/**
- * The captions of the film's call, against the video's clock, until the
- * staged scene's own caption track replaces them: each line at the shot the
- * spec puts it in, dispatch's lines marked as heard through the radio.
- */
-export const INTRO_CAPTIONS: readonly Caption[] = [
-  { from: 15.0, to: 16.4, text: "Four-one, dispatch.", radio: true },
-  { from: 16.4, to: 17.8, text: "Four-one. Go ahead.", radio: false },
-  { from: 17.8, to: 20.9, text: "We've had reports of a missing hiker.\nLast seen at Trail 14.", radio: true },
-  { from: 20.9, to: 22.6, text: "Copy. Anyone see them come down?", radio: false },
-  { from: 22.6, to: 26.0, text: "Last sighting was near the summit.\nThe caller didn't leave a name.", radio: true },
-  { from: 26.0, to: 28.0, text: "All right. Who's meeting me out there?", radio: false },
-  { from: 28.0, to: 29.5, text: "I've got nobody else to send.", radio: true },
-  { from: 29.5, to: 33.0, text: "Figures. I'm ten minutes out.\nUp to the summit and back before dark.", radio: false },
-  { from: 33.0, to: 35.8, text: "Four-one, be advised,\nradio won't carry past the road.", radio: true },
-  { from: 35.8, to: 37.8, text: "If anything... ...get back to the road.", radio: true },
-  { from: 37.8, to: 40.4, text: "Dispatch, you're breaking up.\n...Dispatch?", radio: false },
-];
 
 const defaultDeps = (): IntroOverlayDeps => ({
   video: () => document.createElement("video"),

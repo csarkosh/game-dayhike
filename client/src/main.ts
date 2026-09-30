@@ -17,7 +17,8 @@ import {
 } from "./game/router.js";
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
 import { afterNextPaint } from "./game/paint.js";
-import { INTRO_CAPTIONS, createIntroOverlay, type CutReason, type IntroOverlay } from "./game/introOverlay.js";
+import { createIntroOverlay, type CutReason, type IntroOverlay } from "./game/introOverlay.js";
+import { INTRO_CAPTIONS } from "./game/scene/intro.js";
 import { setLoadProgress } from "./game/modelLoad.js";
 import { stillUrl, videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";
