@@ -42,6 +42,7 @@ export const WATER_REFRACT = 0.02;
 /** Depth at which the refraction offset stops growing (spec §5.2). Mirrored in shaders/water.fragment.fx. */
 export const WATER_REFRACT_DEPTH = 1;
 
+/** Schlick's approximation to Fresnel reflectance; stays within 6 % absolute of the exact unpolarised curve for n = 1.33 (the worst is 0.058 at 85°). */
 export function fresnelSchlick(cosTheta: number): number {
   const c = clamp01(cosTheta);
   const m = 1 - c;
@@ -88,27 +89,31 @@ export function roughnessFor(wind01: number, shelter: number): number {
 }
 
 /**
- * Tilts a ripple normal toward up until the reflected ray clears
- * WATER_HORIZON. `view` points from the surface to the eye, which is above
- * the water (the camera never submerges), so the flat normal always clears
- * it and the mix always converges. Mirrors waterHorizonNormal in
- * shaders/water.fragment.fx exactly, iteration count included.
+ * Tilts a ripple normal so the reflected ray clears WATER_HORIZON: the
+ * reflection r is lifted to y = WATER_HORIZON (its xz shortened to keep it
+ * unit), and the normal that reflects `view` exactly onto that ray is the
+ * half-vector normalize(view + r). One step, no iteration; mirrors
+ * waterHorizonNormal in shaders/water.fragment.fx exactly. `view` points
+ * from the surface to the eye, above the water.
  */
 export function horizonSafeNormal(
   n: readonly [number, number, number],
   view: readonly [number, number, number],
 ): [number, number, number] {
-  let nx = n[0], ny = n[1], nz = n[2];
-  for (let i = 0; i < 100; i++) {
-    const d = -(view[0] * nx + view[1] * ny + view[2] * nz);
-    const ry = -view[1] - 2 * d * ny;
-    if (ry >= WATER_HORIZON) break;
-    const t = clamp01((WATER_HORIZON - ry) * 4);
-    nx = nx * (1 - t);
-    ny = ny * (1 - t) + t;
-    nz = nz * (1 - t);
-    const len = Math.hypot(nx, ny, nz);
-    nx /= len; ny /= len; nz /= len;
+  const d = -(view[0] * n[0] + view[1] * n[1] + view[2] * n[2]);
+  let rx = -view[0] - 2 * d * n[0];
+  let ry = -view[1] - 2 * d * n[1];
+  let rz = -view[2] - 2 * d * n[2];
+  if (ry >= WATER_HORIZON) return [n[0], n[1], n[2]];
+  const h = WATER_HORIZON;
+  const xz = Math.hypot(rx, rz);
+  if (xz < 1e-4) {
+    rx = 0; ry = 1; rz = 0;
+  } else {
+    const s = Math.sqrt(1 - h * h) / xz;
+    rx *= s; rz *= s; ry = h;
   }
-  return [nx, ny, nz];
+  const hx = view[0] + rx, hy = view[1] + ry, hz = view[2] + rz;
+  const len = Math.hypot(hx, hy, hz);
+  return [hx / len, hy / len, hz / len];
 }
