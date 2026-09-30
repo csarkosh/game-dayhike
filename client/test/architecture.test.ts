@@ -73,6 +73,17 @@ describe("layer boundaries", () => {
     expect(sourceFiles(SRC).length).toBeGreaterThan(0);
   });
 
+  it("keeps the scene player pure of Babylon but its stage, and out of the sim's writes", () => {
+    const dir = join(SRC, "game/scene");
+    for (const pure of ["timeline.ts", "shots.ts", "roadPath.ts", "sceneClock.ts", "intro.ts", "scenePlayer.ts"]) {
+      expect(readFileSync(join(dir, pure), "utf8"), pure).not.toMatch(/from "@babylonjs/);
+    }
+    const route = readFileSync(join(dir, "sceneRoute.ts"), "utf8");
+    expect(route).toContain("createWorld(level, seed, false)");
+    expect(route).toContain("renderer.sync(world.state, -1, 0)");
+    expect(route).not.toMatch(/world\.(step|apply|input)/);
+  });
+
   it("sim/ imports nothing but node builtins and itself", () => {
     expect(violations(join(SRC, "sim"), [/^@babylonjs/, /net\//, /game\//])).toEqual([]);
   });
