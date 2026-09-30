@@ -352,30 +352,32 @@ function buildGame(
    * at an effect's first draw, after its compile. */
   function watchCompiles(r: Renderer): void {
     unwatchCompiles?.();
-    // On WebGL2 each compile is one of the loading bar's shaders, a stage
-    // with no total; on WebGPU the pipelines stage counts instead.
-    const told = r.engine.isWebGPU ? null : r.engine.onAfterShaderCompilationObservable.add(reportCompile);
-    const untell = (): void => {
-      if (told !== null) r.engine.onAfterShaderCompilationObservable.remove(told);
-    };
     // Only the governor reads the marks.
-    if (governor === null) {
-      unwatchCompiles = untell;
-      return;
-    }
+    if (governor === null) return;
     const mark = (): void => {
       compiledSinceFrame = true;
     };
     const observer = r.engine.onAfterShaderCompilationObservable.add(mark);
     const stopPipelines = r.engine.isWebGPU && watchers !== null ? watchers.pipelines(r.engine, mark) : () => undefined;
     unwatchCompiles = () => {
-      untell();
       r.engine.onAfterShaderCompilationObservable.remove(observer);
       stopPipelines();
     };
   }
   watchCompiles(renderer);
   made(() => unwatchCompiles?.());
+  /** Tells the loading bar each shader the WebGL2 engine compiles, one of a
+   * stage with no total; on WebGPU the pipelines stage counts instead. */
+  let untellCompiles: (() => void) | null = null;
+  function tellCompiles(r: Renderer): void {
+    untellCompiles?.();
+    untellCompiles = null;
+    if (r.engine.isWebGPU) return;
+    const told = r.engine.onAfterShaderCompilationObservable.add(reportCompile);
+    untellCompiles = () => r.engine.onAfterShaderCompilationObservable.remove(told);
+  }
+  tellCompiles(renderer);
+  made(() => untellCompiles?.());
   if (first.fellBack) options.onTierFallback({ attempted: options.tier, built: tier, source: options.tierSource });
   /** What the last switch of tier said, until the next choice: a fallback's line. */
   let swapError: string | null = null;
@@ -1497,6 +1499,7 @@ function buildGame(
     // The new camera is on no one until its first sync.
     cameraOnPlayer = false;
     watchCompiles(r);
+    tellCompiles(r);
   }
 
   const swapBindings: SwapBindings = {
