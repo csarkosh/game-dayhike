@@ -141,6 +141,13 @@ today's dish:
 The smallest pond (R 25) keeps a middle: the shelf takes its outer 10 m, the
 slope the next 8, the flat the rest.
 
+The player wades the shelf and no further. Sub-project 1's ruling is that a
+player wades to the waist and the camera never goes under; the old 0.6 m dish
+kept that by being shallow, and a 3 to 6 m middle does not. So a wall stands at
+the shelf's inner edge, 10 m in from the rim, where the water is 0.9 m deep, in
+the sim beside the road's wall (`containment.ts`); and wading slows a player by
+the lake's level as it does by the sea's.
+
 ### 4.3 The bed and the shore ground
 
 The ground paint under and beside the water takes murk: silt and mud, with dark
@@ -152,8 +159,14 @@ wet plugin's (sub-project 1). Paint and ground class only, no new models.
 
 A lake with murk above 0.5 gets one waterlogged lobe at its rim:
 
-- It points downhill (the base ground's gradient at the rim, before the basin),
-  where a real lake's marsh gathers at its outlet.
+- It lies where the ground around the rim is nearest the water's level: of 16
+  directions, the one whose footprint's ground (before the basin) stands least
+  far off the level on average, since a marsh is flat ground the water spreads
+  over. Downhill was the first thought (a marsh at the outlet) and measured
+  wrong: over 101 ponds in 200 worlds the ground under a downhill lobe lies a
+  median 3.2 m off the level (to 13 m), which would stand the marsh on an
+  embankment; the best direction's lies 1.1 m off (at most 2.6 m), a median
+  86° from downhill, along the contour.
 - It is an ellipse reaching 0.6 to 1.0 × R beyond the rim (larger the murkier)
   and about R wide.
 - Its ground is held between 5 cm below and 5 cm above the water level,
@@ -163,7 +176,8 @@ A lake with murk above 0.5 gets one waterlogged lobe at its rim:
   waterline.
 - The lobe is decided after the whole bowl is built (the trail, its loops,
   the landmarks), so it moves nothing already placed: it yields to them,
-  turned up to 45° either way, shrunk to 0.6 × R, or dropped, so that it meets
+  moved to the next-best of the five best directions, shrunk to 0.6 × R, or
+  dropped, so that it meets
   no trail edge (with its corridor), no other feature and no landmark. The
   route search is unchanged; a loop never wades through the marsh because the
   marsh is never put where a loop runs.
@@ -263,6 +277,7 @@ not every lake brown.
 | Piece | Where | Level id |
 | --- | --- | --- |
 | Murk, the basin, the lobe | `client/src/sim/features.ts` | yes |
+| The wall at the shelf, wading by a lake's level | `client/src/sim/containment.ts`, `world.ts` | yes (behaviour) |
 | The cove and the headlands | `client/src/sim/olympic.ts` | yes |
 | Reeds, lilies (placement), drift logs in the cove | `client/src/sim/clutter.ts` | yes |
 | `waterBodies` | the variant (`terrain.ts`, `olympic.ts`) | no (derived) |
@@ -281,8 +296,10 @@ Node tests:
 - The murk function at its ends and middle.
 - The basin: 0.9 m deep 10 m in from the rim, the middle depth by murk, and a
   middle on the smallest pond.
-- The lobe: flat within its tolerance, pointing downhill, absent at murk 0.5 and
-  below.
+- The lobe: flat within its tolerance, in the direction whose ground is nearest
+  the level, absent at murk 0.5 and below.
+- The wall at the shelf's edge: a player walking into a lake stops where the
+  water is 0.9 m deep, and slows by the lake's level as in the sea.
 - The cove: the berm's crest, 1:12 at the waterline, 1:50 beyond, the headlands
   at zero before the road corridor.
 - Every new stage through the variant's check that its derivatives match its
