@@ -21,9 +21,16 @@
 
 Also recorded: the line read `downloading models 9 of ?` on the first run; the models stage now has the catalog's count as its total (42) from its first word.
 
+## After the branch review, on `c819f09`
+
+- **A wide screen (added check).** The overlay had only been seen portrait and on a phone; at 16:9 the film at full width left the bands 60 px, under a two-line caption's 84. The bands are now never under 110 px (12 vh up to 160) and the film is sized from what is left: 1642 by 821 at 1920 by 1080, 1096 by 548 at 1366 by 768, 1000 by 500 at 1280 by 720, and 1642 by 821 pillarboxed at 2560 by 1080; a two-line caption inside its band and clear of the line at each (`04-desktop-*.jpg`).
+- **The high tier.** `?tier=high&engine=webgpu`: this headless Chrome's WebGPU adapter did not answer in 10 s and the start fell back to WebGL2 (as the rule says it should), so the pipelines stage and the shader map's bytes were **not driven**; the high tier on WebGL2 was, and its line read `compiling shaders 93` before `ready`, the film ending held with `click to step out`, 46 of 1,440 frames dropped. WebGPU needs a headed Chrome; it stays owed.
+- **A renderer disposed mid-build.** The deferred clipmap build now stops between slices once its scene is disposed, and the render loop starts only on the renderer the build was for; pinned in `rendererStart.test.ts`, not driven in the browser.
+
 ## What is owed
 
 - The start's block (check 1): stepping the world's generation, the renderer's construction and the per-model collectors, so no task holds the page over 150 ms. Part 1 stepped the clipmap only.
-- The look with the film, the still and the catalog's `bytes` once they ship; WebGPU on the high tier; a first visit on other hardware (spec §8.3).
+- The look with the film, the still and the catalog's `bytes` once they ship; WebGPU on the high tier in a headed Chrome; a first visit on other hardware (spec §8.3).
+- Until the still ships, the title page's backdrop is nothing: the page's own dark grey behind the buttons, where the rendered scene was. Deploying this branch alone accepts that, or waits for the still.
 - The models' bytes read `22.6 of 22.6 MB` while models are in flight: the loader's progress event lands once, at the end, for a `.glb`, so a model in flight has no size until it is whole. The catalog's `bytes` will give the size ahead.
 - Followers' intro (check 6) is a decision to make: a muted intro, or a gesture of their own.
