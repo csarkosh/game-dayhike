@@ -161,8 +161,12 @@ A lake with murk above 0.5 gets one waterlogged lobe at its rim:
   as marsh, not open lake. C² into the apron.
 - The water's mesh grows to cover the lobe; the depth map already draws its
   waterline.
-- The trail's route search treats the lobe as closed ground, as it does the
-  lake, so a loop never wades through it.
+- The lobe is decided after the whole bowl is built (the trail, its loops,
+  the landmarks), so it moves nothing already placed: it yields to them,
+  turned up to 45° either way, shrunk to 0.6 × R, or dropped, so that it meets
+  no trail edge (with its corridor), no other feature and no landmark. The
+  route search is unchanged; a loop never wades through the marsh because the
+  marsh is never put where a loop runs.
 
 ### 4.5 The plants
 
@@ -198,8 +202,11 @@ rules at the pad are untouched.
 
 In the coast's own coordinate, from the road seaward:
 
-- A backshore about 40 m wide, flat just under the road's height, with drift
-  logs: the existing driftwood clutter class, given a density here.
+- A backshore between the road's corridor (30 m either side of the centreline)
+  and the berm's crest: flat at 3 m, with drift logs (the existing driftwood
+  clutter class, given a density here). It is 6 to 33 m wide over 60 worlds
+  (median about 17 m), whatever ground is left between the corridor and a crest
+  36 m inland of the waterline.
 - A pebble berm, its crest about 3 m above the sea.
 - The face at 1:12 from the berm's crest down through the waterline to 2 m
   deep. The waterline lands where it is today, about 80 m from the road.
@@ -285,7 +292,9 @@ Node tests:
 Scans over 200 worlds, run before and after (a builder invariant is gated on
 the composed field, never on a few probe seeds):
 
-- No trail cell lies in a marsh lobe.
+- No trail edge (with its corridor) comes within the marsh lobe.
+- Every feature's position, radius and rim height is identical to today's
+  (the pond's placement unchanged), from a fixture recorded before the change.
 - The loops build for as many worlds as they do today.
 - The field inside the road corridor and at the pad is identical to today's.
 - No ground below sea level inland of the berm (no accidental puddles).
