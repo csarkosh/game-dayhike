@@ -16,6 +16,18 @@ import { timeLimit } from "../helpers/timeLimit.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
 import { bedOriginFor } from "../../src/game/bedHeight.js";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { WATER_GROUP } from "../../src/game/waterFrame.js";
+
+// Whether the high tier's frame can be made is a question for the engine
+// (WebGPU, a multisampled first pass), which NullEngine cannot answer yes to;
+// the wiring past that answer is what these tests pin.
+const frameSupport = vi.hoisted(() => ({ supported: false }));
+vi.mock("../../src/game/waterFrame.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/game/waterFrame.js")>();
+  return { ...actual, waterFrameSupported: () => frameSupport.supported };
+});
 
 setActiveTerrainVariant("olympic");
 
@@ -109,6 +121,56 @@ describe("createWater under NullEngine", () => {
     expect(plugin.bedOrigin).toEqual([o, o]);
     const heights = upload.mock.calls[0]![0] as Float32Array;
     expect(heights[0]).toBeCloseTo(elevationAt(7, o + 1, o + 1), 4);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("on the high tier draws the water opaque in group 1, reading the frame, near and far from the camera each frame", () => {
+    frameSupport.supported = true;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const camera = new FreeCamera("c", Vector3.Zero(), scene);
+    camera.minZ = 0.05;
+    camera.maxZ = 10000;
+    const water = createWater(scene, 7, 0, [{ x: 100, z: 50, radius: 30, height: 42 }], "high");
+    expect(water.high).toBe(true);
+    const pond = scene.getMeshByName("pond_0")!;
+    for (const m of [...water.meshes, pond]) {
+      expect(m.renderingGroupId).toBe(WATER_GROUP);
+      const mat = m.material as PBRMaterial;
+      expect(mat.transparencyMode).toBe(PBRMaterial.PBRMATERIAL_OPAQUE);
+      expect(mat.needDepthPrePass).toBe(false);
+      const plugin = mat.pluginManager!.getPlugin("Water") as WaterPlugin;
+      expect(plugin.sceneTexture).not.toBeNull();
+      expect(plugin.depthTexture).not.toBeNull();
+      expect(plugin.screen).toEqual([1 / engine.getRenderWidth(), 1 / engine.getRenderHeight()]);
+      expect(plugin.depthLinear).toBe(0);
+    }
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    water.update(0, 0, 1);
+    expect(plugin.nearFar).toEqual([0.05, 10000]);
+    camera.maxZ = 5000;
+    water.update(0, 0, 2);
+    expect(plugin.nearFar).toEqual([0.05, 5000]);
+    const clear = (scene as unknown as { _renderingManager: { _autoClearDepthStencil: Record<number, { autoClear: boolean }> } })._renderingManager._autoClearDepthStencil;
+    expect(clear[WATER_GROUP]?.autoClear).toBe(false);
+    water.dispose();
+    expect(clear[WATER_GROUP]?.autoClear).toBe(true);
+    frameSupport.supported = false;
+  }, timeLimit(30_000));
+
+  it("on the high tier without the frame's support keeps the blended water in group 0", () => {
+    frameSupport.supported = false;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    new FreeCamera("c", Vector3.Zero(), scene);
+    const water = createWater(scene, 7, 0, [], "high");
+    expect(water.high).toBe(false);
+    const mat = water.meshes[0]!.material as PBRMaterial;
+    expect(water.meshes[0]!.renderingGroupId).toBe(0);
+    expect(mat.transparencyMode).toBe(PBRMaterial.PBRMATERIAL_ALPHABLEND);
+    const plugin = mat.pluginManager!.getPlugin("Water") as WaterPlugin;
+    expect(plugin.sceneTexture).toBeNull();
+    expect(plugin.depthTexture).toBeNull();
     water.dispose();
   }, timeLimit(30_000));
 });

@@ -39,6 +39,10 @@ export class WaterPlugin extends MaterialPluginBase {
   sceneTexture: BaseTexture | null = null;
   depthTexture: BaseTexture | null = null;
   screen: [number, number] = [1, 1];
+  /** The camera's near and far, per frame: the copy's device depth is linearised with them. */
+  nearFar: [number, number] = [0.05, 1000];
+  /** 1 when the depth texture holds linear view metres (the prepass), 0 for device depth (the copy). */
+  depthLinear = 0;
   time = 0;
   windDir: [number, number] = [1, 0];
   /** Ripple octaves the fragment blends: 2, or 1 on the low tier (spec §5.3). */
@@ -79,7 +83,10 @@ export class WaterPlugin extends MaterialPluginBase {
   }
 
   override isReadyForSubMesh(): boolean {
-    return this.bedTexture !== null && this.bedTexture.isReady();
+    // On the high tier the frame's depth has no texture behind it until the
+    // first copy has run; the water waits for it rather than read nothing.
+    const high = (this.sceneTexture?.isReady() ?? true) && (this.depthTexture?.isReady() ?? true);
+    return this.bedTexture !== null && this.bedTexture.isReady() && high;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -103,6 +110,8 @@ export class WaterPlugin extends MaterialPluginBase {
         { name: "waterScreen", size: 2, type: "vec2" },
         { name: "waterHigh", size: 1, type: "float" },
         { name: "waterOctaves", size: 1, type: "float" },
+        { name: "waterNearFar", size: 2, type: "vec2" },
+        { name: "waterDepthLinear", size: 1, type: "float" },
       ],
       fragment: [
         "uniform float waterLevel;",
@@ -114,6 +123,8 @@ export class WaterPlugin extends MaterialPluginBase {
         "uniform vec2 waterScreen;",
         "uniform float waterHigh;",
         "uniform float waterOctaves;",
+        "uniform vec2 waterNearFar;",
+        "uniform float waterDepthLinear;",
       ].join("\n"),
     };
   }
@@ -131,6 +142,8 @@ export class WaterPlugin extends MaterialPluginBase {
     const high = this.sceneTexture !== null && this.depthTexture !== null;
     uniformBuffer.updateFloat("waterHigh", high ? 1 : 0);
     uniformBuffer.updateFloat("waterOctaves", this.octaves);
+    uniformBuffer.updateFloat2("waterNearFar", this.nearFar[0], this.nearFar[1]);
+    uniformBuffer.updateFloat("waterDepthLinear", this.depthLinear);
     // Every declared sampler is bound on every draw: WebGPU validates the
     // bindings a pipeline declares whether or not a branch reads them. The
     // material is not ready until the bed texture exists, so the null guards

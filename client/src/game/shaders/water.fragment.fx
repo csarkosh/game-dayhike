@@ -12,9 +12,8 @@ uniform sampler2D waterScene;
 uniform sampler2D waterDepth;
 
 varying float vBedDepth;
-
-// Task 6 replaces this with the vertex stage's view depth.
-float waterViewDepth = 0.0;
+// The surface's view depth in metres, from the vertex stage.
+varying float vWaterViewDepth;
 
 const float WATER_F0 = 0.02;
 const float WATER_HORIZON = 0.02;
