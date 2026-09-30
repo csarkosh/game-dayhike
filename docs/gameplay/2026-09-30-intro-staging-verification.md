@@ -31,9 +31,17 @@ Other checks:
 - Leaving the route through the router leaves no canvas, no caption, no black and no `dayhikeScene`; the title page renders with its roster.
 - The car slides along the road as a whole (no wheel spin, no door), stops beside the board at 43 s; the ranger appears at the door at 43.5 s, walks to the spawn and stands facing the trail by 48.5 s.
 
+## After the branch review, on `c66de97`
+
+- The route's loop drew outside the engine's `beginFrame`/`endFrame` (no delta time on WebGL2, nothing presented on WebGPU); every frame is drawn inside them now, `frame()` included. Not re-driven in the browser; pinned by the route's frame count moving under the loop.
+- The car's parts: a node the loader made carries a rotation quaternion, under which the stage's Euler writes were ignored; folded and cleared, pinned by a part with a quaternion turning as a bare node does.
+- The film ended on three seconds of fade to black, so the frame the playback holds and the title still would have been black; it ends on the held picture now (`fade(2, 60, 60)`), the black after it the playback's (spec §5.4).
+- The wings' beat and the water's ripple read the wall clock; both read the renderer's clock now, so a stepped scene moves them in step and a held frame holds them.
+
 ## What is owed
 
 - The look with the film's assets: the car's parts (wheels, door, interior), the ranger's six clips, the voices — the asset side's.
 - The WebGPU engine on the route (the record is meant for the high tier on WebGPU): the route makes the WebGL2 engine; a headed Chrome and the start's WebGPU rule are needed there.
 - Depth of field for the insert: the post chain has none; the record can add the blur.
 - The mist for the film: the spec's coastal long lens against the `mist` preset's reach, a choice to make in `INTRO_WEATHER` before the record.
+- The wildlife director steps once per render when the sim's tick does not move (`wildlifeMeshes.ts`, the `TICK_DT` floor), so on the route the birds advance a tick a frame however the scene's clock moves: eight ticks a recorded frame with the recorder's sub-frames, and on a held `?step=` page they keep moving. A hike renders many frames a tick at high refresh rates and steps the director on each, so the floor is the game's own behaviour and is left as it is here; the record should hold the wildlife or hand the director a tick from the scene's clock.
