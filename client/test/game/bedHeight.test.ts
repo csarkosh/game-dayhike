@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import "../../src/sim/olympic.js";
 import { elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { BED_GRID, POND_DISC_MARGIN, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows, bedSquareHasWater, bedOutsideSquare } from "../../src/game/bedHeight.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 0x5eed;
 beforeAll(() => setActiveTerrainVariant("olympic"));
@@ -21,7 +22,7 @@ describe("bed height grid", () => {
     expect(bedOriginFor(-1, 128, 2)).toBe(-192);
   });
 
-  it("bakes every texel equal to elevationAt at the texel's centre", { timeout: 15000 }, () => {
+  it("bakes every texel equal to elevationAt at the texel's centre", () => {
     const grid = createBedGrid(256, 1);
     expect(bakeBed(grid, SEED, 10, -20)).toBe(true);
     for (const [ix, iz] of [[0, 0], [255, 255], [17, 200], [128, 128]] as const) {
@@ -29,7 +30,7 @@ describe("bed height grid", () => {
       const z = grid.originZ + (iz + 0.5) * grid.spacing;
       expect(grid.heights[iz * 256 + ix]).toBeCloseTo(elevationAt(SEED, x, z), 4);
     }
-  });
+  }, timeLimit(15000));
 
   it("does not rebake until the camera leaves the inner half", () => {
     const grid = createBedGrid(256, 1);
