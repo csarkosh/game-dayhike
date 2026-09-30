@@ -12,7 +12,11 @@ if (waterOctaves > 1.5) {
 }
 normalW = waterHorizonNormal(normalW, viewDirectionW);
 if (waterHigh < 0.5) {
-  alpha = 1.0 - exp(-2.0 * wKdMean * wDepth);
+  // The blend scales the reflection too, so the reflected share is kept out
+  // of the transmission: alpha = 1 - (1 - F) * T, F Schlick on N.V.
+  float wNdV = clamp(dot(normalW, viewDirectionW), 0.0, 1.0);
+  float wF = WATER_F0 + (1.0 - WATER_F0) * pow(1.0 - wNdV, 5.0);
+  alpha = 1.0 - (1.0 - wF) * exp(-2.0 * wKdMean * wDepth);
 } else {
   vec2 wUv = gl_FragCoord.xy * waterScreen;
   float wSceneDepth = texture2D(waterDepth, wUv).r;

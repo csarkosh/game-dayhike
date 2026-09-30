@@ -34,12 +34,13 @@ describe("transmission by depth", () => {
     expect(transmission(WATER_ROWS.sea.kd, 0)).toEqual([1, 1, 1]);
     expect(transmission(WATER_ROWS.sea.kd, -2)).toEqual([1, 1, 1]);
   });
-  it("alpha is 1 minus the mean-Kd transmission", () => {
+  it("alpha is 1 - (1 - F) * T: the reflected share stays out of the transmission", () => {
     const kd = WATER_ROWS.sea.kd;
     expect(meanKd(kd)).toBeCloseTo((0.34 + 0.18 + 0.26) / 3, 6);
-    expect(alphaFor(kd, 1)).toBeCloseTo(1 - Math.exp(-2 * meanKd(kd)), 6);
-    expect(alphaFor(kd, 0)).toBe(0);
+    expect(alphaFor(kd, 1)).toBeCloseTo(1 - (1 - WATER_F0) * Math.exp(-2 * meanKd(kd)), 6);
+    expect(alphaFor(kd, 0)).toBeCloseTo(WATER_F0, 6);
     expect(alphaFor(kd, 100)).toBeCloseTo(1, 6);
+    expect(alphaFor(kd, 0.5, 0)).toBeCloseTo(1, 6); // grazing
   });
 });
 

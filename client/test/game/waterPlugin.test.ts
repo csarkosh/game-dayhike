@@ -73,7 +73,8 @@ describe("water plugin", () => {
     expect(l).toContain("if (wDepth <= 0.0) discard;");
     // outside the square the vertex depth stands in, never zero
     expect(fx("water.fragment.fx")).toContain("return outside ? vBedDepth : waterLevel - h;");
-    expect(l).toContain("alpha = 1.0 - exp(-2.0 * wKdMean * wDepth);");
+    expect(l).toContain("alpha = 1.0 - (1.0 - wF) * exp(-2.0 * wKdMean * wDepth);");
+    expect(l).toContain("float wF = WATER_F0 + (1.0 - WATER_F0) * pow(1.0 - wNdV, 5.0);");
   });
 
   it("sets F0 to water's and the row's kd on the material, and roughness from the wind and shelter", () => {
