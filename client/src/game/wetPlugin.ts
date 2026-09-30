@@ -28,6 +28,9 @@ export const WET_BAND = 0.1;
 /** The still swash band above a body's level (spec §6.1). */
 export const WET_LINE_ABOVE = 0.3;
 
+/** Radius cap for the sea: 1e6 + 1 and 1e6 + 3 are distinct in fp32, 1e9 + 1 is not (smoothstep needs distinct edges). */
+export const WET_RADIUS_MAX = 1e6;
+
 export const WET_ROUGHNESS_ANCHOR = "!float roughness=reflectivityOut\\.roughness;";
 const WET_ROUGHNESS_CODE = "float roughness=mix(reflectivityOut.roughness, WET_ROUGHNESS, wetW);";
 
@@ -81,7 +84,7 @@ export class WetPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("wetLine", this.line);
     uniformBuffer.updateFloat("wetLevel", this.level);
     uniformBuffer.updateFloat2("wetCentre", this.centre[0], this.centre[1]);
-    uniformBuffer.updateFloat("wetRadius", Math.min(this.radius, 1e9));
+    uniformBuffer.updateFloat("wetRadius", Math.min(this.radius, WET_RADIUS_MAX));
     uniformBuffer.updateFloat3("wetKd", this.kd[0], this.kd[1], this.kd[2]);
     uniformBuffer.updateFloat("wetAttenuate", this.attenuate ? 1 : 0);
   }
@@ -129,7 +132,7 @@ export function wetLineFor(bodies: readonly WetBody[], x: number, z: number): We
   }
   const pick = best ?? fallback;
   if (pick === null) return { line: -1e6, level: -1e6, kd: [0, 0, 0], centre: [0, 0], radius: 0 };
-  return { line: pick.level + WET_LINE_ABOVE, level: pick.level, kd: pick.kd, centre: [pick.x, pick.z], radius: Math.min(pick.radius, 1e9) };
+  return { line: pick.level + WET_LINE_ABOVE, level: pick.level, kd: pick.kd, centre: [pick.x, pick.z], radius: Math.min(pick.radius, WET_RADIUS_MAX) };
 }
 
 /** Per frame: one wet line for every attached plugin. `attenuate` is false on the high tier. */

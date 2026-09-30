@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { WetPlugin, attachWet, setWetLine, wetLineFor, WET_ALBEDO, WET_ROUGHNESS, WET_BAND, WET_LINE_ABOVE, WET_ROUGHNESS_ANCHOR } from "../../src/game/wetPlugin.js";
+import { WetPlugin, attachWet, setWetLine, wetLineFor, WET_ALBEDO, WET_ROUGHNESS, WET_BAND, WET_LINE_ABOVE, WET_ROUGHNESS_ANCHOR, WET_RADIUS_MAX } from "../../src/game/wetPlugin.js";
 import { WATER_ROWS } from "../../src/game/waterShading.js";
 
 const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
@@ -59,7 +59,8 @@ describe("wet plugin", () => {
       { level: 42, kd: WATER_ROWS.lowlandLake.kd, lInf: WATER_ROWS.lowlandLake.lInf, shelter: 0.1, x: 100, z: 50, radius: 30 },
     ];
     expect(wetLineFor(bodies, 100, 50)).toEqual({ line: 42 + WET_LINE_ABOVE, level: 42, kd: WATER_ROWS.lowlandLake.kd, centre: [100, 50], radius: 30 });
-    expect(wetLineFor(bodies, 500, 500)).toEqual({ line: 0 + WET_LINE_ABOVE, level: 0, kd: WATER_ROWS.sea.kd, centre: [0, 0], radius: 1e9 });
+    expect(wetLineFor(bodies, 500, 500)).toEqual({ line: 0 + WET_LINE_ABOVE, level: 0, kd: WATER_ROWS.sea.kd, centre: [0, 0], radius: WET_RADIUS_MAX });
+    expect(wetLineFor([bodies[0]!], 5, 5).radius).toBe(WET_RADIUS_MAX);
     expect(wetLineFor(bodies, 160, 50).level).toBe(42); // 30 m from the rim
     expect(wetLineFor(bodies, 180, 50).level).toBe(0); // 50 m from the rim
   });
