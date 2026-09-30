@@ -69,6 +69,9 @@ const STYLE = `
   .intro-skip, .intro-stepout { position: absolute; left: 16px; bottom: 16px; color: rgba(255,255,255,0.7); font: 12px/1.4 system-ui, sans-serif; opacity: 0; transition: opacity 400ms; }
   .intro-skip.shown, .intro-stepout.shown { opacity: 1; }
   .intro-ring { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.35); margin-right: 8px; vertical-align: -2px; }
+  .intro-sound { position: absolute; top: 16px; right: 16px; padding: 6px 12px; border: 1px solid rgba(255,255,255,0.35); border-radius: 4px; background: rgba(0,0,0,0.35); color: rgba(255,255,255,0.85); font: 12px/1.4 system-ui, sans-serif; cursor: pointer; opacity: 0.3; transition: opacity 400ms; }
+  .intro-sound.muted { opacity: 1; }
+  .intro-sound:hover { opacity: 1; }
   .intro-title { position: absolute; inset: 0; display: grid; place-items: center; color: #ddd; font: 300 clamp(28px, 6vw, 64px)/1 system-ui, sans-serif; letter-spacing: 0.3em; background: #000; opacity: 0; transition: opacity 600ms; pointer-events: none; }
   .intro-title.shown { opacity: 1; }
 `;
@@ -99,7 +102,15 @@ const defaultDeps = (): IntroOverlayDeps => ({
 
 export function createIntroOverlay(
   container: HTMLElement,
-  input: { src: string; captions: readonly Caption[]; onCut(reason: CutReason): void },
+  input: {
+    src: string;
+    captions: readonly Caption[];
+    /** Start with the sound off: a page moved to the hike by another's Play
+     * has no gesture of its own, and a browser plays a video without one
+     * only muted. The sound button, plain while muted, turns it on. */
+    muted?: boolean;
+    onCut(reason: CutReason): void;
+  },
   deps: IntroOverlayDeps = defaultDeps(),
 ): IntroOverlay {
   const style = document.createElement("style");
@@ -110,6 +121,10 @@ export function createIntroOverlay(
   video.setAttribute("src", input.src);
   video.setAttribute("playsinline", "");
   video.setAttribute("preload", "auto");
+  video.muted = input.muted === true;
+  const sound = document.createElement("button");
+  sound.className = "intro-sound";
+  sound.setAttribute("type", "button");
   const caption = document.createElement("div");
   caption.className = "intro-caption";
   const bar = document.createElement("div");
@@ -131,7 +146,7 @@ export function createIntroOverlay(
   const title = document.createElement("div");
   title.className = "intro-title";
   title.textContent = "DAY HIKE";
-  root.append(video, caption, bar, line, skip, stepOut, title);
+  root.append(video, caption, bar, line, skip, stepOut, sound, title);
   container.append(style, root);
 
   const progress = createLoadProgress();
@@ -154,7 +169,9 @@ export function createIntroOverlay(
   };
   // The step-out click is a gesture on the held last frame; before that a
   // press is the start of a hold.
-  const onPointerDown = (): void => {
+  const onPointerDown = (e: Event): void => {
+    // The sound button's press is its own, not a hold.
+    if (e.target === sound) return;
     if (playback.view().showStepOut) {
       playback.gesture();
       // Cut here, in the click's own task, so the game takes the pointer on it.
@@ -171,6 +188,16 @@ export function createIntroOverlay(
     stop();
     doCut("error");
   };
+  const onSoundClick = (): void => {
+    video.muted = !video.muted;
+    drawSound();
+  };
+  const drawSound = (): void => {
+    sound.classList.toggle("muted", video.muted);
+    sound.textContent = video.muted ? "sound off" : "sound on";
+  };
+  drawSound();
+  sound.addEventListener("click", onSoundClick);
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", holdEnd);
   window.addEventListener("pointerup", holdEnd);
@@ -221,6 +248,7 @@ export function createIntroOverlay(
       ring.style.background = `conic-gradient(rgba(255,255,255,0.9) ${Math.round(pv.holdFraction * 360)}deg, transparent 0)`;
       stepOut.classList.toggle("shown", pv.showStepOut);
       title.classList.toggle("shown", pv.titleCard);
+      drawSound();
     },
     stop,
     dispose() {

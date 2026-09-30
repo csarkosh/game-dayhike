@@ -276,9 +276,9 @@ function cutIntro(run: IntroRun, reason: CutReason): void {
   else run.cutEarly = reason;
 }
 
-function startIntro(src: string): IntroRun {
+function startIntro(src: string, muted: boolean): IntroRun {
   const run: IntroRun = { overlay: null as unknown as IntroOverlay, frame: 0, launched: null, cutEarly: null };
-  run.overlay = createIntroOverlay(app, { src, captions: INTRO_CAPTIONS, onCut: (reason) => cutIntro(run, reason) });
+  run.overlay = createIntroOverlay(app, { src, captions: INTRO_CAPTIONS, muted, onCut: (reason) => cutIntro(run, reason) });
   const draw = (now: number): void => {
     run.overlay.render(now);
     run.frame = requestAnimationFrame(draw);
@@ -623,7 +623,7 @@ function onPlay(): void {
   const src = introSource();
   if (src !== null) {
     endIntro(pendingIntro);
-    pendingIntro = startIntro(src);
+    pendingIntro = startIntro(src, false);
   }
   repaintLanding();
   afterNextPaint(() => {
@@ -865,9 +865,16 @@ function render(container: HTMLDivElement): void {
   // line rather than a blank page.
   const cancelled = (): boolean => token !== renderToken;
   // The intro Play started, over the hike from here: its bar is the one the
-  // loads report to, and the download waits for its buffer (`before`).
-  const intro = pendingIntro;
+  // loads report to, and the download waits for its buffer (`before`). A
+  // follower is brought here by the host's Play, with no click of its own,
+  // so its intro starts with the sound off (a browser plays it no other way
+  // without a gesture) and the sound button turns it on.
+  let intro = pendingIntro;
   pendingIntro = null;
+  if (intro === null && lobby !== null && lobby.state.role === "client") {
+    const src = introSource();
+    if (src !== null) intro = startIntro(src, true);
+  }
   activeIntro = intro;
   if (intro !== null) {
     intro.overlay.mount(container);

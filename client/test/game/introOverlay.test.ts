@@ -8,6 +8,7 @@ const captions: Caption[] = [{ from: 1, to: 3, text: "Four-one, dispatch.", radi
 class StandInVideo extends StandInElement {
   currentTime = 0;
   ended = false;
+  muted = false;
   played = 0;
   paused = 0;
   loaded = 0;
@@ -31,7 +32,7 @@ class StandInVideo extends StandInElement {
   }
 }
 
-function rig(over: { captions?: Caption[] } = {}) {
+function rig(over: { captions?: Caption[]; muted?: boolean } = {}) {
   const doc = installStandInDom();
   const container = doc.createElement("div");
   doc.body.append(container);
@@ -40,7 +41,7 @@ function rig(over: { captions?: Caption[] } = {}) {
   const cuts: CutReason[] = [];
   const overlay = createIntroOverlay(
     asHtml(container),
-    { src: "/x.mp4", captions: over.captions ?? captions, onCut: (reason) => void cuts.push(reason) },
+    { src: "/x.mp4", captions: over.captions ?? captions, muted: over.muted, onCut: (reason) => void cuts.push(reason) },
     { video: () => video as unknown as HTMLVideoElement, now: () => t },
   );
   return { doc, container, video, overlay, cuts, at: (ms: number) => { t = ms; } };
@@ -114,6 +115,34 @@ describe("the intro overlay", () => {
     expect(r.video.loaded).toBe(1);
     r.overlay.dispose();
     expect(r.video.paused).toBe(1);
+  });
+
+  it("starts muted when told to, shows the sound button plainly while muted, and a click on it unmutes", () => {
+    const r = rig({ muted: true });
+    expect(r.video.muted).toBe(true);
+    r.overlay.render(0);
+    const button = r.container.querySelector("button.intro-sound");
+    expect(button?.classList.contains("muted")).toBe(true);
+    expect(button?.textContent).toBe("sound off");
+    button?.dispatch("pointerdown");
+    expect(r.overlay.playback.state()).toBe("playing");
+    button?.click();
+    r.overlay.render(16);
+    expect(r.video.muted).toBe(false);
+    expect(button?.classList.contains("muted")).toBe(false);
+    expect(button?.textContent).toBe("sound on");
+    button?.click();
+    r.overlay.render(32);
+    expect(r.video.muted).toBe(true);
+    r.overlay.dispose();
+  });
+
+  it("starts with sound by default, the button faded", () => {
+    const r = rig();
+    r.overlay.render(0);
+    expect(r.video.muted).toBe(false);
+    expect(r.container.querySelector("button.intro-sound")?.classList.contains("muted")).toBe(false);
+    r.overlay.dispose();
   });
 
   it("reads the seconds buffered ahead of the video's time", () => {
