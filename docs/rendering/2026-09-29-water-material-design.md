@@ -113,7 +113,8 @@ reconstructs the distance to the surface behind the pixel, and takes d = min(bed
 depth, the depth below the surface along the eye ray), which is
 (eye.y − surface.y)·(sceneDepth/viewDepth − 1), so a leg 30 cm under is
 attenuated by 30 cm of water, not by the metre of water between the surface and
-the bed. The high path exists only on WebGPU: on WebGL2 the depth attachment is a
+the bed. Here `sceneDepth` is the view-space depth of the opaque pass,
+linearised from the resolved depth by the shader. The high path exists only on WebGPU: on WebGL2 the depth attachment is a
 renderbuffer no shader can read, so the high tier there keeps the blended water
 and the object tint of §6.2.
 
@@ -310,7 +311,7 @@ its re-centring rule; testable under Node, as `water.ts` and `sky.ts` are.
 | Depth | bed texture + frame depth | bed texture | bed texture, 128² at 2 m |
 | Transmission | colour copy, per channel, opaque | alpha blend, K̄ | alpha blend, K̄ |
 | Ripples | two octaves | two octaves | one octave |
-| Extra passes | one colour copy, one depth copy | none | none |
+| Extra passes | one colour copy; the depth is the pass's own MSAA resolve | none | none |
 | Budget, full screen at 1080p | 0.5 ms | 0.3 ms | 0.15 ms |
 
 Budgets are for the material alone, before waves, mirror or surf, and they are
@@ -397,9 +398,7 @@ word.
 - Wading: not posed. The local player has no body mesh in first person and the
   rig had no remote player or creature in the water.
 
-The local player has no body mesh in first person, so the wading gate poses a
-remote player or a creature in the water. The sea gate's pose is found on the
-coast (an earlier guess was under the terrain).
+The sea gate's pose is found on the coast.
 
 The gate passes when the owner says the still resembles the photo in the
 column's terms; a gate without a photo passes on the "what must hold" alone.
