@@ -263,6 +263,39 @@ describe("createWater under NullEngine", () => {
       water.dispose();
     }, timeLimit(30_000));
 
+    it("culls every ring by its wet box: none is active looking inland from the pond, one is looking to the coast", () => {
+      engine = new NullEngine();
+      const scene = new Scene(engine);
+      const ponds = activeTerrainVariant().trailGraph!(seed).features.filter((f) => f.kind === "pond");
+      // pond_0's west bank, at eye height over it
+      const camera = new FreeCamera("c", new Vector3(209.6, 87.5, 84), scene);
+      camera.maxZ = 10_000;
+      const water = createWater(scene, seed, 0, ponds, "medium", 209.6, 84);
+      water.update(209.6, 84, 0);
+      const activeRings = (): string[] => {
+        const active = scene.getActiveMeshes();
+        const names: string[] = [];
+        for (let i = 0; i < active.length; i++) {
+          const name = (active.data[i] as { name: string }).name;
+          if (name.startsWith("water_")) names.push(name);
+        }
+        return names;
+      };
+      // inland, east: the camera is inside ring 1's wet box's bounding sphere,
+      // so only the box test can cull it
+      camera.setTarget(new Vector3(1209.6, 87.5, 84));
+      scene.render();
+      expect(water.meshes[1]!.isEnabled()).toBe(true);
+      const sphere = water.meshes[1]!.getBoundingInfo().boundingSphere;
+      expect(Vector3.Distance(camera.position, sphere.centerWorld)).toBeLessThan(sphere.radiusWorld);
+      expect(activeRings()).toEqual([]);
+      // west, toward the coast
+      camera.setTarget(new Vector3(-790.4, 87.5, 84));
+      scene.render();
+      expect(activeRings().length).toBeGreaterThan(0);
+      water.dispose();
+    }, timeLimit(30_000));
+
     it("at the coast: ring 0 is enabled", () => {
       engine = new NullEngine();
       const scene = new Scene(engine);
