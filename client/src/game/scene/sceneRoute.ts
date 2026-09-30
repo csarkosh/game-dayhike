@@ -20,7 +20,6 @@ import { modelUrl } from "../assetUrls.js";
 import { placeStaticModel, type PlacedModel } from "../staticModel.js";
 import { createRenderer } from "../renderer.js";
 import type { QualityTier } from "../quality.js";
-import type { Scene as BabylonSceneType } from "@babylonjs/core/scene.js";
 import { seedFromToken } from "../seed.js";
 import { carYaw, createTrailheadMeshes } from "../trailheadMeshes.js";
 import { createSignMeshes } from "../signMeshes.js";
@@ -37,7 +36,7 @@ import { createScenePlayer } from "./scenePlayer.js";
 import { carModelOf, type CarModel, type StageDeps } from "./sceneStage.js";
 
 export type DayhikeScene = { seek(t: number): void; frame(): Promise<void>; time(): number };
-export type SceneRun = { dispose(): void; worldState(): WorldState; scene(): BabylonSceneType };
+export type SceneRun = { dispose(): void; worldState(): WorldState; scene(): BabylonScene };
 export type SceneRouteDeps = {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
@@ -160,24 +159,22 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   // same frame), so a page opened at a step shows it; a recorder's `frame()`
   // stops the loop and draws each frame itself.
   let looping = true;
-  const drawOnce = (): void => {
+  /** One frame, inside the engine's own frame brackets: `beginFrame` is
+   * where the engine measures its delta time and `endFrame` is what
+   * presents a WebGPU frame, which a bare `scene.render()` does neither of. */
+  const drawOneFrame = (): void => {
+    renderer.engine.beginFrame();
     player.tick();
     renderer.sync(world.state, -1, 0);
     renderer.scene.render();
+    renderer.engine.endFrame();
   };
   const loop = (): void => {
     if (disposed || !looping) return;
-    drawOnce();
+    drawOneFrame();
     raf(loop);
   };
   raf(loop);
-  /** One frame drawn outside the loop: the engine's own frame brackets
-   * around the render, which the loop otherwise supplies. */
-  const drawOneFrame = (): void => {
-    renderer.engine.beginFrame();
-    drawOnce();
-    renderer.engine.endFrame();
-  };
 
   const onVisibility = (): void => player.hidden(document.visibilityState === "hidden");
   document.addEventListener("visibilitychange", onVisibility);

@@ -341,6 +341,9 @@ export type WildlifeShadows = { add(mesh: AbstractMesh): void; remove(mesh: Abst
 export type WildlifeMeshesOptions = {
   radiusScale?: number;
   pool?: CreaturePool;
+  /** The clock (ms) the wings beat on: the renderer's, so a stepped scene
+   * beats in step with it; the wall clock absent. */
+  now?: () => number;
   shadows?: WildlifeShadows;
   /**
    * NullEngine escape hatch, the `clutterMeshes.ts` `assets` idiom: bird bucket
@@ -685,7 +688,7 @@ export function createWildlifeMeshes(
     }
     const halfSpan = 0.5 * (maxX - minX);
     for (const mesh of meshes) {
-      if (mesh.material !== null) attachWing(mesh.material, halfSpan, birdBucketOmega(assetId));
+      if (mesh.material !== null) attachWing(mesh.material, halfSpan, birdBucketOmega(assetId), options.now);
     }
     // Keyed on the ASSET, like the wing beat above it: the bucket is the model, and it is
     // the butterfly's model — the one built in code from a single shared geometry — that

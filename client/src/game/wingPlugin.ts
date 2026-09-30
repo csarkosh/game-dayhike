@@ -91,8 +91,12 @@ export class WingPlugin extends MaterialPluginBase {
     return this._omega;
   }
 
-  constructor(material: Material, halfSpan: number, omega: number) {
+  /** The clock (ms) the beat's time reads; the wall clock unless a scene hands in its own. */
+  private readonly _now: () => number;
+
+  constructor(material: Material, halfSpan: number, omega: number, now: () => number = () => performance.now()) {
     super(material, "Wing", 220, { WING: false });
+    this._now = now;
     // A zero or negative half span would divide by zero in the shader and take
     // every vertex of the bird to NaN; a degenerate bucket mesh simply holds
     // its wings still instead.
@@ -141,7 +145,7 @@ uniform float wingHalfSpan;
   // unsuppressed.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override bindForSubMesh(uniformBuffer: UniformBuffer, _scene: Scene, _engine: AbstractEngine, _subMesh: SubMesh): void {
-    uniformBuffer.updateFloat("wingTime", (performance.now() / 1000) % WING_TIME_WRAP);
+    uniformBuffer.updateFloat("wingTime", (this._now() / 1000) % WING_TIME_WRAP);
     uniformBuffer.updateFloat("wingOmega", this._omega);
     uniformBuffer.updateFloat("wingHalfSpan", this._halfSpan);
   }
@@ -166,7 +170,7 @@ uniform float wingHalfSpan;
  * first's wingspan and rate, and the only symptom would be a bird flapping at
  * the wrong speed. Naming it here beats hunting it in the browser.
  */
-export function attachWing(material: Material, halfSpan: number, omega: number): void {
+export function attachWing(material: Material, halfSpan: number, omega: number, now?: () => number): void {
   const existing = material.pluginManager?.getPlugin("Wing") as WingPlugin | undefined;
   if (existing) {
     if (existing.halfSpan !== (halfSpan > 0 ? halfSpan : 1) || existing.omega !== omega) {
@@ -179,5 +183,5 @@ export function attachWing(material: Material, halfSpan: number, omega: number):
     }
     return;
   }
-  new WingPlugin(material, halfSpan, omega);
+  new WingPlugin(material, halfSpan, omega, now);
 }

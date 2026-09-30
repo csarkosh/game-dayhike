@@ -558,7 +558,7 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, optio
 
 /** Bump-texture UV drift per second — u and v deliberately unequal so the
  * ripples drift diagonally instead of tracking an axis. */
-const WATER_UV_SCROLL = [0.015, 0.011] as const;
+export const WATER_UV_SCROLL = [0.015, 0.011] as const;
 
 /**
  * Runtime-generated 256² ripple normal map from `fbm2` finite differences.
@@ -682,6 +682,7 @@ export function createWater(
   seed: number,
   waterLevel: number,
   ponds: readonly Pond[] = [],
+  now: () => number = () => performance.now(),
 ): Water {
   // One material for all four rings. White albedo: the vertex colours carry
   // the depth ramp, and PBR multiplies the two.
@@ -693,11 +694,15 @@ export function createWater(
   const bump = createWaterBump(scene);
   mat.bumpTexture = bump;
 
-  // Cosmetic drift: scroll the bump's UV offset each frame. Delta
-  // time, not per-frame constants, so the ripple speed survives refresh-rate
-  // differences.
+  // Cosmetic drift: scroll the bump's UV offset each frame by the clock's
+  // delta, not per-frame constants, so the ripple speed survives
+  // refresh-rate differences, and a scene's own clock (`now`) moves the
+  // water in step with it, or holds it on a held frame.
+  let last = now();
   const scroll = scene.onBeforeRenderObservable.add(() => {
-    const dt = scene.getEngine().getDeltaTime() / 1000;
+    const at = now();
+    const dt = Math.max(0, at - last) / 1000;
+    last = at;
     bump.uOffset += WATER_UV_SCROLL[0] * dt;
     bump.vOffset += WATER_UV_SCROLL[1] * dt;
   });
@@ -1222,7 +1227,7 @@ function buildRenderer(
       : [];
   const water =
     forest !== null && waterLevel !== undefined
-      ? createWater(scene, forest.seed, waterLevel, ponds)
+      ? createWater(scene, forest.seed, waterLevel, ponds, clock)
       : null;
   partOf(water);
 
@@ -1353,6 +1358,7 @@ function buildRenderer(
     forest !== null
       ? createWildlifeMeshes(scene, forest.seed, {
           radiusScale: tier === "low" ? 0.6 : undefined,
+          now: clock,
           shadows: {
             add: (mesh) => lighting.addShadowMesh(mesh),
             remove: (mesh) => lighting.removeShadowMesh(mesh),

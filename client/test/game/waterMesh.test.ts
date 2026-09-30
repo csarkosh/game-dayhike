@@ -8,7 +8,8 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 // the ACTIVE variant, and this test states which one it means to exercise.
 import "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { createWater } from "../../src/game/renderer.js";
+import { WATER_UV_SCROLL, createWater } from "../../src/game/renderer.js";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { WATER_RING_COUNT } from "../../src/game/water.js";
 
 setActiveTerrainVariant("olympic");
@@ -29,6 +30,22 @@ describe("createWater under NullEngine", () => {
       expect(m.receiveShadows).toBe(false);
     }
     water.update(-500, 300); // must re-emit without throwing
+    water.dispose();
+  });
+
+  it("scrolls the ripple by the clock it is handed, not by the wall clock, so a held frame holds its water", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    let ms = 1000;
+    const water = createWater(scene, 0x5eed, 0, [], () => ms);
+    const bump = (water.meshes[0]?.material as PBRMaterial).bumpTexture as Texture;
+    const u0 = bump.uOffset;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(bump.uOffset).toBe(u0);
+    ms = 1500;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(bump.uOffset).toBeCloseTo(u0 + 0.5 * WATER_UV_SCROLL[0], 9);
     water.dispose();
   });
 

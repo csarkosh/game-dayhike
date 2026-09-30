@@ -33,6 +33,11 @@ describe("the scene route", () => {
       { t: 20, step: null },
     );
     const before = JSON.stringify(run.worldState());
+    // The loop draws inside the engine's own frame: its frame count moves.
+    const frameId = run.scene().getEngine().frameId;
+    for (const fn of frames.splice(0)) fn(0);
+    for (const fn of frames.splice(0)) fn(0);
+    expect(run.scene().getEngine().frameId).toBe(frameId + 2);
     const api = (globalThis as { dayhikeScene?: { seek(t: number): void; frame(): Promise<void>; time(): number } }).dayhikeScene;
     expect(api).toBeDefined();
     expect(api?.time()).toBe(20);

@@ -11,6 +11,25 @@ describe("wing beat", () => {
     expect(wingAngle(0.25, 0, 1, 2 * Math.PI)).toBeCloseTo(1, 9); // quarter period at 1 Hz
     expect(wingAngle(0.25, 0, 0, 2 * Math.PI)).toBe(0);           // glide
   });
+  it("reads the beat's time from the clock it is handed, so a stepped scene beats in step", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const material = new PBRMaterial("bird", scene);
+    const box = CreateBox("body", { size: 1 }, scene);
+    box.material = material;
+    let ms = 2500;
+    attachWing(material, 0.4, 2 * Math.PI, () => ms);
+    const plugin = material.pluginManager?.getPlugin("Wing") as WingPlugin;
+    const floats: Record<string, number> = {};
+    const buffer = { updateFloat: (name: string, v: number) => { floats[name] = v; } };
+    plugin.bindForSubMesh(buffer as never, scene, engine, box.subMeshes[0] as never);
+    expect(floats["wingTime"]).toBe(2.5);
+    ms = 2500 + WING_TIME_WRAP * 1000;
+    plugin.bindForSubMesh(buffer as never, scene, engine, box.subMeshes[0] as never);
+    expect(floats["wingTime"]).toBeCloseTo(2.5, 6);
+    engine.dispose();
+  });
+
   it("wraps time phase-continuously: every omega is 2π·n/WING_TIME_WRAP", () => {
     for (const omega of [(2 * Math.PI * 900) / WING_TIME_WRAP, (2 * Math.PI * 750) / WING_TIME_WRAP]) {
       expect(wingAngle(WING_TIME_WRAP, 0.3, 1, omega)).toBeCloseTo(wingAngle(0, 0.3, 1, omega), 6);

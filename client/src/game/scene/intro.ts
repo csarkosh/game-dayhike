@@ -157,6 +157,8 @@ export function introScene(road: Road, places: IntroPlaces): Scene {
     actors: [ranger],
     car,
     captions: INTRO_CAPTIONS,
-    black: fade(2, 57, INTRO_DURATION),
+    // The film ends on the held picture: the black after it, and the title
+    // card over it, are the playback's, and the last frame is the still's.
+    black: fade(2, INTRO_DURATION, INTRO_DURATION),
   };
 }

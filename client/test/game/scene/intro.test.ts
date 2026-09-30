@@ -69,11 +69,12 @@ describe("the intro's data", () => {
     expect(evaluate(scene, 50).caption).toBeNull();
   });
 
-  it("fades in over two seconds and is black at the end", () => {
+  it("fades in over two seconds and ends on the held picture: the black after it is the playback's", () => {
     const scene = introScene(road, places);
     expect(evaluate(scene, 0).black).toBe(1);
     expect(evaluate(scene, 1).black).toBe(0.5);
     expect(evaluate(scene, 30).black).toBe(0);
-    expect(evaluate(scene, 60).black).toBe(1);
+    expect(evaluate(scene, 57).black).toBe(0);
+    expect(evaluate(scene, 60).black).toBe(0);
   });
 });

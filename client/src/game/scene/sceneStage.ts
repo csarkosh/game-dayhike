@@ -31,10 +31,23 @@ const DOOR_NAME = "door_driver";
 /** How far the driver's door swings when fully open (rad), outward. */
 const DOOR_SWING = Math.PI / 1.5;
 
-/** The car's parts by name under a placed model; none found, the whole model is the stand-in. */
+/**
+ * The car's parts by name under a placed model; none found, the whole
+ * model is the stand-in. A node the loader made carries a rotation
+ * quaternion, under which Babylon ignores the Euler `rotation` the stage
+ * writes (`characterModel.ts` says why), so each part's quaternion is
+ * folded into its Euler angles and cleared.
+ */
 export function carModelOf(placed: PlacedModel): CarModel {
   const under = placed.node.getChildTransformNodes(false);
-  const byName = (name: string): TransformNode | null => under.find((n) => n.name === name || n.name.endsWith(`_${name}`)) ?? null;
+  const byName = (name: string): TransformNode | null => {
+    const node = under.find((n) => n.name === name || n.name.endsWith(`_${name}`)) ?? null;
+    if (node !== null && node.rotationQuaternion !== null) {
+      node.rotation = node.rotationQuaternion.toEulerAngles();
+      node.rotationQuaternion = null;
+    }
+    return node;
+  };
   const wheels = WHEEL_NAMES.map(byName).filter((n): n is TransformNode => n !== null);
   return { root: placed.node, wheels, door: byName(DOOR_NAME) };
 }

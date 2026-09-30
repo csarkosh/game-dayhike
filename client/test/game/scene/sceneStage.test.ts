@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { carModelOf, stageFrame, type StageDeps } from "../../../src/game/scene/sceneStage.js";
 import type { Frame } from "../../../src/game/scene/timeline.js";
 import type { CharacterInstance } from "../../../src/game/characterModel.js";
@@ -80,7 +81,28 @@ describe("the stage", () => {
     expect(parts.door).toBe(door);
     stageFrame(frame, deps({ car: parts }));
     expect(wheel.rotation.x).toBe(2);
-    expect(door.rotation.y).toBeCloseTo(-Math.PI / 3, 6);
+    expect(door.rotation.y).toBeCloseTo(-1.047198, 6);
+    engine.dispose();
+  });
+
+  it("turns a part that came from a loader with a rotation quaternion, which would otherwise ignore the write", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const root = new TransformNode("car3", scene);
+    const wheel = new TransformNode("wheel_rl", scene);
+    wheel.parent = root;
+    // What the glTF loader leaves on every node: a quaternion, under which
+    // Babylon ignores the Euler `rotation` entirely.
+    wheel.rotationQuaternion = Quaternion.Identity();
+    const parts = carModelOf({ node: root, meshes: [], dispose() {} });
+    stageFrame(frame, deps({ car: parts }));
+    // Turned as a bare node under the same car turned the same way is: the up axis of each.
+    const bare = new TransformNode("bare", scene);
+    bare.parent = root;
+    bare.rotation.x = 2;
+    const up = (n: TransformNode) => Vector3.TransformNormal(new Vector3(0, 1, 0), n.computeWorldMatrix(true)).asArray().map((v) => +v.toFixed(6));
+    expect(up(wheel)).toEqual(up(bare));
+    expect(up(wheel)).not.toEqual([0, 1, 0]);
     engine.dispose();
   });
 });
