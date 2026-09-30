@@ -52,6 +52,17 @@ export function reportProgress(): LoadProgress | null {
   return progress;
 }
 
+let compiles = 0;
+/** A shader the WebGL2 engine compiled: one of the bar's shaders, a stage
+ * with no total, since nothing says ahead how many the world will ask for. */
+export function reportCompile(): void {
+  const p = progress;
+  if (p === null) return;
+  const id = `c${compiles++}`;
+  p.start("shaders", id);
+  p.done("shaders", id);
+}
+
 /** Babylon's container loader, with the progress option the loads pass. */
 export type ContainerLoader = (
   url: string,

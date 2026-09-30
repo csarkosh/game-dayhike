@@ -28,6 +28,10 @@
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { WgslSource } from "./shaderLookup.js";
 import { MAP_MAX_BYTES, readMap, type WgslMap } from "./wgslFormat.js";
+import { reportProgress } from "./modelLoad.js";
+
+/** The map's name in the loading bar's shader stage, one of `SHADER_STAGE_TOTAL`. */
+const MAP_ITEM = "wgsl-map";
 
 /** How the report names the map (`hitsBySource`). */
 export const WGSL_MAP_SOURCE = "shipped";
@@ -67,7 +71,7 @@ export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fe
    * they pass `MAP_MAX_BYTES`, the reading stopped. A response with no body
    * to read as it comes is read whole and refused by its length before it
    * is parsed (a character a byte: the map is ASCII). */
-  const readBounded = async (response: Response): Promise<string> => {
+  const readBounded = async (response: Response, onBytes: (bytes: number) => void = () => undefined): Promise<string> => {
     const past = (): Error => new Error(`${url}: past the map's ceiling of ${MAP_MAX_BYTES} bytes as it was read`);
     if (!response.body) {
       const text = await response.text();
@@ -83,6 +87,7 @@ export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fe
       const { done, value } = await reader.read();
       if (done) break;
       bytes += value.byteLength;
+      onBytes(bytes);
       if (bytes > MAP_MAX_BYTES) {
         abort.abort();
         stopReading();
@@ -105,8 +110,16 @@ export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fe
       abort.abort();
       throw new Error(`${url}: ${length} bytes, over the map's ceiling of ${MAP_MAX_BYTES}`);
     }
-    const map = readMap(await readBounded(response), salt);
-    if (!closed) held = map;
+    // The loading bar's item: sized by the header where there is one (the
+    // bytes sent, so a compressed map reads full early and lands on `done`).
+    const p = reportProgress();
+    p?.start("shaders", MAP_ITEM, length > 0 ? length : undefined);
+    try {
+      const map = readMap(await readBounded(response, (bytes) => p?.bytes("shaders", MAP_ITEM, bytes)), salt);
+      if (!closed) held = map;
+    } finally {
+      p?.done("shaders", MAP_ITEM);
+    }
   })().catch((error: unknown) => {
     if (!closed) Logger.Warn(`WebGPU shader lookup: no translations shipped with the build (${error instanceof Error ? error.message : String(error)})`);
   });

@@ -95,7 +95,7 @@ import {
 } from "./featurePaint.js";
 import type { TrailGraph } from "../sim/trail.js";
 import type { Feature } from "../sim/features.js";
-import { loadGroundArrays, type GroundArrays, type GroundArraysFactory } from "./groundMaps.js";
+import { loadGroundArrays, reportLayer, type GroundArrays, type GroundArraysFactory } from "./groundMaps.js";
 import {
   DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
   HORIZON, HORIZON_MAX, TUFT_ALBEDO,
@@ -1038,9 +1038,13 @@ uniform vec4 terrainSwardBand;
 /** Trilinear + wrapped, which is what a tiled ground layer needs: mipmaps to
  * stop the distant repeat aliasing into moiré, WRAP so the repeat is seamless. */
 function loadGroundTexture(url: string, name: string, scene: Scene): Texture {
+  reportLayer("start", url);
+  const landed = () => reportLayer("done", url);
   const texture = new Texture(url, scene, {
     noMipmap: false,
     samplingMode: Texture.TRILINEAR_SAMPLINGMODE,
+    onLoad: landed,
+    onError: landed,
   });
   texture.name = name;
   texture.wrapU = Texture.WRAP_ADDRESSMODE;

@@ -65,6 +65,7 @@ import twgslWasm from "@babylonjs/core/assets/twgsl/twgsl.wasm?url";
 // The map of translations the build ships, named here so that only this
 // chunk refers to it.
 import wgslMapUrl from "virtual:dayhike-wgsl-map";
+import { reportProgress } from "./modelLoad.js";
 import {
   WEBGPU_FETCH_MS,
   WEBGPU_REQUIRED_LIMITS,
@@ -152,13 +153,35 @@ export type Translators = { glslang: unknown; twgsl: unknown };
  * link the download still finishes into that cache, so a later attempt in the
  * page, or the next load, starts from it instead of running out again. */
 async function prefetchWasm(url: string): Promise<void> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${url}: ${response.status}`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes[0] !== 0x00 || bytes[1] !== 0x61 || bytes[2] !== 0x73 || bytes[3] !== 0x6d) {
-    throw new Error(`${url}: not WebAssembly`);
+  const p = reportProgress();
+  p?.start("shaders", url);
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${url}: ${response.status}`);
+    const length = Number(response.headers.get("content-length"));
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    p?.bytes("shaders", url, bytes.byteLength, length > 0 ? length : bytes.byteLength);
+    if (bytes[0] !== 0x00 || bytes[1] !== 0x61 || bytes[2] !== 0x73 || bytes[3] !== 0x6d) {
+      throw new Error(`${url}: not WebAssembly`);
+    }
+  } finally {
+    p?.done("shaders", url);
   }
 }
+
+/** A loader script fetched and run, told to the loading bar as one item. */
+async function loadScript(url: string): Promise<void> {
+  const p = reportProgress();
+  p?.start("shaders", url);
+  try {
+    await Tools.LoadScriptAsync(url);
+  } finally {
+    p?.done("shaders", url);
+  }
+}
+
+/** The shader stage on WebGPU: two wasm files, their two loaders, and the map. */
+export const SHADER_STAGE_TOTAL = 5;
 
 /** Starts the translator the loader just run defined as the page global
  * `name`, on `wasm`; throws at once where the loader defined nothing (this
@@ -241,12 +264,13 @@ async function startWithinBudget(ms: number): Promise<Translators> {
 /** Fetches and starts the translators, one loader at a time; stops before its
  * next step once `signal` is aborted. */
 async function startTranslators(signal: AbortSignal): Promise<Translators> {
+  reportProgress()?.total("shaders", SHADER_STAGE_TOTAL);
   await Promise.all([prefetchWasm(glslangWasm), prefetchWasm(twgslWasm)]);
   signal.throwIfAborted();
-  await Tools.LoadScriptAsync(glslangJs);
+  await loadScript(glslangJs);
   signal.throwIfAborted();
   const glslang = startTranslator("glslang", glslangWasm);
-  await Tools.LoadScriptAsync(twgslJs);
+  await loadScript(twgslJs);
   signal.throwIfAborted();
   const twgsl = startTranslator("twgsl", twgslWasm);
   const [glslangReady, twgslReady] = await Promise.all([glslang, twgsl]);

@@ -1,6 +1,7 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
 import { createRenderer, terrainMaterialFor, type FreecamView, type Renderer } from "./game/renderer.js";
+import { reportCompile } from "./game/modelLoad.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { AsyncPipelines } from "./game/asyncPipelines.js";
 import { FALLBACK_NOTICE_MS } from "./game/engineChoice.js";
@@ -324,14 +325,24 @@ function buildGame(
    * at an effect's first draw, after its compile. */
   function watchCompiles(r: Renderer): void {
     unwatchCompiles?.();
+    // On WebGL2 each compile is one of the loading bar's shaders, a stage
+    // with no total; on WebGPU the pipelines stage counts instead.
+    const told = r.engine.isWebGPU ? null : r.engine.onAfterShaderCompilationObservable.add(reportCompile);
+    const untell = (): void => {
+      if (told !== null) r.engine.onAfterShaderCompilationObservable.remove(told);
+    };
     // Only the governor reads the marks.
-    if (governor === null) return;
+    if (governor === null) {
+      unwatchCompiles = untell;
+      return;
+    }
     const mark = (): void => {
       compiledSinceFrame = true;
     };
     const observer = r.engine.onAfterShaderCompilationObservable.add(mark);
     const stopPipelines = r.engine.isWebGPU && watchers !== null ? watchers.pipelines(r.engine, mark) : () => undefined;
     unwatchCompiles = () => {
+      untell();
       r.engine.onAfterShaderCompilationObservable.remove(observer);
       stopPipelines();
     };

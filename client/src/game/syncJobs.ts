@@ -121,6 +121,24 @@ export function finish<T>(slices: Slices<T>): T {
   }
 }
 
+/**
+ * Runs `slices` to its end with a macrotask between every `yieldEvery` of
+ * them, so the page paints and its video keeps its frames between, and
+ * returns what it returns. A rebuild done this way, not by `SyncJobs`, is one
+ * that has no frame to fit: the first build, before the render loop runs.
+ */
+export async function stepSlices<T>(slices: Slices<T>, yieldEvery: number): Promise<T> {
+  let sinceYield = 0;
+  for (;;) {
+    const step = slices.next();
+    if (step.done === true) return step.value;
+    if (++sinceYield >= yieldEvery) {
+      sinceYield = 0;
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+}
+
 export type SyncJobs = {
   /** Queues `slices` as `owner`'s job, begun this frame. An owner has at most
    * one job: one it already has is dropped unfinished, and the new one takes

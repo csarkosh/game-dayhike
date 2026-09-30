@@ -24,6 +24,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { Scene } from "@babylonjs/core/scene.js";
+import { reportProgress } from "./modelLoad.js";
 
 import grassN from "../../assets/textures/ground.grass.normal.webp?url";
 import floorN from "../../assets/textures/ground.forest_floor.normal.webp?url";
@@ -92,19 +93,40 @@ export function flipRowsY(data: Uint8ClampedArray, size: number): Uint8ClampedAr
  * the array still agrees with the albedo `Texture`s' default invertY=true on
  * which way v runs over the same planar world-XZ UV. */
 export async function decodeLayer(url: string, size: number, signal?: AbortSignal): Promise<Uint8ClampedArray> {
-  const res = await fetch(url, { signal });
-  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  const blob = await res.blob();
-  // The decode itself cannot be stopped once begun; this is the last point
-  // before it where a teardown still saves the work.
-  signal?.throwIfAborted();
-  const bitmap = await createImageBitmap(blob, { colorSpaceConversion: "none", premultiplyAlpha: "none" });
-  const canvas = new OffscreenCanvas(size, size);
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (ctx === null) throw new Error("no 2d context");
-  ctx.drawImage(bitmap, 0, 0, size, size);
-  bitmap.close();
-  return flipRowsY(ctx.getImageData(0, 0, size, size).data, size);
+  reportLayer("start", url);
+  try {
+    const res = await fetch(url, { signal });
+    if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+    const blob = await res.blob();
+    // The decode itself cannot be stopped once begun; this is the last point
+    // before it where a teardown still saves the work.
+    signal?.throwIfAborted();
+    const bitmap = await createImageBitmap(blob, { colorSpaceConversion: "none", premultiplyAlpha: "none" });
+    const canvas = new OffscreenCanvas(size, size);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (ctx === null) throw new Error("no 2d context");
+    ctx.drawImage(bitmap, 0, 0, size, size);
+    bitmap.close();
+    return flipRowsY(ctx.getImageData(0, 0, size, size).data, size);
+  } finally {
+    reportLayer("done", url);
+  }
+}
+
+/**
+ * The ground's downloads for the loading bar: the twelve maps here, the six
+ * albedos (`terrainTexture.ts`) and the six wildlife calls
+ * (`wildlifeAudio.ts`) are one stage of 24, told by name as each starts and
+ * lands. Nothing to report when no bar is up.
+ */
+export const GROUND_STAGE_TOTAL = 24;
+
+export function reportLayer(what: "start" | "done", id: string): void {
+  const p = reportProgress();
+  if (p === null) return;
+  p.total("ground", GROUND_STAGE_TOTAL);
+  if (what === "start") p.start("ground", id);
+  else p.done("ground", id);
 }
 
 type CreateArray = (data: Uint8Array, size: number, depth: number, name: string) => BaseTexture;

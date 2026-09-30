@@ -59,6 +59,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline.js";
 import { WebGPUTextureHelper } from "@babylonjs/core/Engines/WebGPU/webgpuTextureHelper.js";
 import type { PipelineMode } from "./engineChoice.js";
+import { reportProgress } from "./modelLoad.js";
 
 /** What the rest of the game uses of the patch on one engine. */
 export type AsyncPipelines = {
@@ -306,6 +307,7 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
         nodes.delete(creation.node);
         report.landed++;
         report.longestMs = Math.max(report.longestMs, now() - creation.askedAt);
+        reportPipelines(report);
       } else {
         nodes.set(creation.node, "failed");
         report.failed++;
@@ -368,6 +370,7 @@ function patch(engine: AbstractEngine, limit: number, report: PipelinesReport, n
       queue.push({ node, descriptor, askedAt: now() });
       tally.asked++;
       report.asked++;
+      reportPipelines(report);
       start();
       update();
     }
@@ -549,4 +552,19 @@ export function revealWhenWhole(engine: AbstractEngine, lift: () => void, maxMs 
     if (whole) finish();
   });
   return stop;
+}
+
+/**
+ * The pipelines for the loading bar: `landed` of `asked`, told whenever
+ * either moves. The stage's total is the count asked so far, which grows as
+ * draws are first met, so the bar reads by count and never runs backward.
+ */
+export function reportPipelines(n: { asked: number; landed: number }): void {
+  const p = reportProgress();
+  if (p === null) return;
+  p.total("pipelines", n.asked);
+  for (let i = 0; i < n.landed; i++) {
+    p.start("pipelines", `p${i}`);
+    p.done("pipelines", `p${i}`);
+  }
 }

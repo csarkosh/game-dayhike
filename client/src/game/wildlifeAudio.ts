@@ -27,6 +27,7 @@
 
 import type { AmbientAudio, ListenerPose } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
+import { reportLayer } from "./groundMaps.js";
 import type { Presence, WildlifeEvent } from "./wildlifeBehaviour.js";
 
 /**
@@ -210,10 +211,13 @@ export function createWildlifeAudio(
   // state until every recording lands — hence the catch around the fetch.
   const ready = Promise.all(
     CALL_CLIP.map(async (id) => {
+      reportCall("start", id);
       try {
         bytes.set(id, await fetchClip(id));
       } catch (e) {
         warnClip(id, e instanceof Error ? e.message : String(e));
+      } finally {
+        reportCall("done", id);
       }
     }),
   ).then(() => decodePending());
@@ -272,4 +276,9 @@ export function createWildlifeAudio(
       bytes.clear();
     },
   };
+}
+
+/** The calls' fetches for the loading bar: six of the ground stage's 24, beside the maps. */
+export function reportCall(what: "start" | "done", id: string): void {
+  reportLayer(what, `call.${id}`);
 }

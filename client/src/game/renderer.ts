@@ -45,7 +45,7 @@ import {
   type RingMove,
   type RingSamples,
 } from "./clipmap.js";
-import { createCrossing, createSyncJobs, crossingAt, finish, type Slices, type SyncJobs } from "./syncJobs.js";
+import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Slices, type SyncJobs } from "./syncJobs.js";
 import { createLighting } from "./lighting.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
@@ -241,6 +241,11 @@ export function applyRingGeometry(mesh: Mesh, geometry: RingGeometry): void {
 export type Clipmap = {
   /** One mesh per ring, coarsening outward. Also the whole shadow-caster set. */
   readonly meshes: readonly Mesh[];
+  /** The first build, as slices: each ring sampled whole (one slice a ring,
+   * its level told to `onRing` once it is), then every ring's geometry made
+   * and uploaded as a rebuild's is. Run once, by whoever made the clipmap
+   * `deferred`; before it, `update` does nothing. */
+  firstBuild(onRing?: (level: number) => void): Slices;
   update(camX: number, camZ: number): void;
   /** The camera position the rings' buffers were last built for. */
   readonly view: { readonly x: number; readonly z: number };
@@ -289,7 +294,7 @@ const CLIPMAP_UPLOAD_MS = 1;
  * it in one step instead of sampling. What it commits is exactly what the
  * move would make; a guess the camera does not follow is dropped.
  */
-export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clipmap {
+export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs, options: { deferred?: boolean } = {}): Clipmap {
   const rings: RingSamples[] = [];
   const meshes: Mesh[] = [];
   /** The origins each ring's buffers were built from: its own, the finer
@@ -484,13 +489,25 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clip
 
   const owner = {};
   for (let level = 0; level < RING_COUNT; level++) {
-    rings.push(createRingSamples(seed, level, 0, 0));
     meshes.push(createClipmapMesh(scene, `clipmap_${level}`));
     front.push(null);
     back.push(null);
     prepared.push(null);
   }
-  finish(build(0, 0));
+
+  /** The rings sampled at the origin, one a slice, then built as `build`
+   * builds them: the first build's sampling is the one `build` skips, since
+   * a ring made at the origin already stands there. */
+  function* firstBuild(onRing?: (level: number) => void): Slices {
+    if (rings.length === RING_COUNT) return;
+    for (let level = 0; level < RING_COUNT; level++) {
+      rings.push(createRingSamples(seed, level, 0, 0));
+      onRing?.(level);
+      yield;
+    }
+    yield* build(0, 0);
+  }
+  if (options.deferred !== true) finish(firstBuild());
 
   // The terrain material is shared and seedless; the road's centerline table
   // is per world, so the clipmap, which knows the seed, turns it on.
@@ -500,7 +517,9 @@ export function createClipmap(scene: Scene, seed: number, jobs?: SyncJobs): Clip
 
   return {
     meshes,
+    firstBuild,
     update(camX, camZ) {
+      if (rings.length < RING_COUNT) return;
       const hx = camX - crossing.lastX;
       const hz = camZ - crossing.lastZ;
       if ((hx !== 0 || hz !== 0) && !Number.isNaN(hx) && !Number.isNaN(hz)) {
@@ -847,6 +866,14 @@ export type Renderer = {
    * still baking, ready or failed, and how long each took. Empty without a
    * forest, or until its models have loaded. */
   impostorBakes(): readonly ImpostorBake[];
+  /** The first clipmap build, for a renderer made with `deferClipmap`:
+   * stepped, a macrotask between every `yieldEvery` slices so the page
+   * paints between, each ring's level told to `onRing` as it is sampled.
+   * Nothing to do without a forest, or once it has run. */
+  buildFirstClipmap(yieldEvery: number, onRing?: (level: number) => void): Promise<void>;
+  /** The first clipmap build run whole, for a start with nothing to paint
+   * between its slices. */
+  buildClipmapNow(): void;
 };
 
 export type RendererOptions = {
@@ -861,6 +888,10 @@ export type RendererOptions = {
    * nothing out, and the renderer takes the patch off before its engine goes.
    * Absent on WebGL2, where nothing of it happens. */
   pipelines?: AsyncPipelines;
+  /** Leave the clipmap's first build to `buildFirstClipmap` or
+   * `buildClipmapNow`, so a start can step it between paints; the renderer
+   * draws no terrain until one has run. Absent, it is built here as always. */
+  deferClipmap?: boolean;
 };
 
 /** What the impostor bakes read of the pipelines and the scope: the draws a
@@ -1159,7 +1190,7 @@ function buildRenderer(
   // Collision chunks still follow the player through world.boxes, untouched.
   // Ring meshes are also the complete shadow-caster set: seven meshes,
   // bounded, which closes the old grows-without-bound caster list.
-  const clipmap = forest === null ? null : createClipmap(scene, forest.seed, jobs);
+  const clipmap = forest === null ? null : createClipmap(scene, forest.seed, jobs, { deferred: options.deferClipmap });
   partOf(clipmap);
   if (clipmap !== null) {
     for (const mesh of clipmap.meshes) lighting.addShadowMesh(mesh);
@@ -1656,6 +1687,12 @@ function buildRenderer(
     },
     impostorBakes() {
       return forestMeshes?.impostorBakes() ?? [];
+    },
+    async buildFirstClipmap(yieldEvery, onRing) {
+      if (clipmap !== null) await stepSlices(clipmap.firstBuild(onRing), yieldEvery);
+    },
+    buildClipmapNow() {
+      if (clipmap !== null) finish(clipmap.firstBuild());
     },
     setHour(hour) {
       lighting.setHour(hour);
