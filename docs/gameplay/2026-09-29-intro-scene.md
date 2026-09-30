@@ -228,7 +228,11 @@ the last frame returns for the hold.
 ### 5.5 Followers, failures, the wire
 
 A player who joins by an invite link sees the same intro while connecting, on their own
-machine; the host never waits for anyone's video. A join that fails (a level id mismatch, a dead
+machine, with the sound off: they are brought to the hike by the host's Play with no click of
+their own, and a browser plays a video without a gesture only muted. A sound button at the top
+right of the film turns it on; it is plain while the sound is off and faded once it is on (the
+host's own intro, which plays with sound, shows it faded). The host never waits for anyone's
+video. A join that fails (a level id mismatch, a dead
 host) shows the connect-failure panel in place of the video, which stops. A video that fails to
 load starts the game as it does today, with no intro.
 
