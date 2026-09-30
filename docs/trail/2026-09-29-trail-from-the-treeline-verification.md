@@ -3,7 +3,8 @@
 **Date:** 2026-09-29
 **Checks:** [`2026-09-29-trail-from-the-treeline.md`](2026-09-29-trail-from-the-treeline.md)
 §9.2, its six, and two more: the car's patch and the animals that walk.
-**Looked at:** commit `9544ac9`.
+**Looked at:** commit `9544ac9`, with the forest's floor in the strip at 0.6, for every
+section but the last; commit `3955efc`, with the floor at 1, for the last.
 **Browser:** Chrome 154, headless, on macOS, `ANGLE (Apple, ANGLE Metal Renderer: Apple M4)`.
 Both tiers drew with WebGL2: this browser is not one the engine's rule gives WebGPU to. One
 more run, `hollow` on the high tier with `?engine=webgpu`, drew with WebGPU: 138 shader stages
@@ -116,8 +117,8 @@ road's centre: at the trailhead the animals come as near the road as their rule 
 
 ## With the strip's numbers changed on the running game
 
-Neither constant is changed by this work. Each was set on the running game for `room-50` and
-`room-19`, on the high tier, and the same views taken.
+Each was set on the running game for `room-50` and `room-19`, on the high tier, at commit
+`9544ac9`, and the same views taken.
 
 | Constant | As built | Set to | What it showed |
 | --- | --- | --- | --- |
@@ -132,3 +133,35 @@ Neither constant is changed by this work. Each was set on the running game for `
   ramp.
 - On worlds whose shore is open the strip at its floor of 0.6 is a lawn with a tree or two.
   At 1.0 it is a wood.
+
+## With the floor at 1
+
+`STRIP_FOREST_FLOOR` is 1 from commit `3955efc` on. Looked at there, on the high tier on all
+six worlds and on the low tier on `room-50` and `room-19`: the arrival at 1600 by 900 and at
+390 by 844, the view from above the beach, and the views from the road a hundred metres along
+it each way.
+
+| World | Trees within 40 m of the pad, at 0.6 | At 1 |
+| --- | --- | --- |
+| `hollow` | 6 | 6 |
+| `room-50` | 5 | 11, all of them giants |
+| `room-19` | 2 | 7, five of them giants |
+
+Over the 227 seeds the fewest within 40 m of a pad is 4 where it was 2, the median 10 where it
+was 9, and no trail is another line.
+
+| | Check | With the floor at 1 |
+| --- | --- | --- |
+| 1 | Grass underfoot, trees ahead, no sand between the player and the board | Met on all six, on `room-50` and `room-19` on both tiers |
+| 2 | The board whole in the first frame at both sizes, with nothing between it and the player | Met on all six |
+| 3 | The trail leaves the pad into the trees | Met on all six for the trees. `room-19`'s trail is the one it was, and turns along the shore |
+| 4 | No line where the grass stops | Missed, as before: the ground is the same |
+| 6 | From the road the strip reads as a wood that comes down to the road | Met on all six. From above the beach the rectangle of grass is under the trees on every world |
+
+On `room-50` and `room-19` trees stand to either side of the trail from 19 m in, and their
+shade falls across the trail's bed by the board. The four wooded worlds look as they did.
+
+Checks 5, 7 and 8 were not looked at again. The trail, the car and the ground the animals
+keep to are what they were: the floor moves no trail, and the animals' rule reads the shore's
+height and the road, not the forest's density. No rabbit stands in the strip now, under its
+closed canopy.
