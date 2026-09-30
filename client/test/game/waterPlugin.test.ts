@@ -161,18 +161,36 @@ describe("water plugin", () => {
     expect(fx("waterCompose.fragment.fx")).toContain("finalEmissive += wTransmit;");
   });
 
-  it("is not ready on the high tier until the frame's depth has a texture behind it", () => {
+  it("is ready on the high tier as soon as the bed is, whatever the frame's scene and depth report", () => {
     const mat = new PBRMaterial("w7", scene);
     const p = attachWater(mat, WATER_ROWS.sea);
+    // a scene copy and a depth with no texture behind them: neither is ready
+    const sceneCopy = new BaseTexture(scene);
+    const depth = new BaseTexture(scene);
+    p.sceneTexture = sceneCopy;
+    p.depthTexture = depth;
+    expect(sceneCopy.isReady()).toBe(false);
+    expect(depth.isReady()).toBe(false);
+    // no bed: not ready
+    expect(p.isReadyForSubMesh()).toBe(false);
     p.bedTexture = RawTexture.CreateRTexture(new Float32Array(4), 2, 2, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
+    expect(p.isReadyForSubMesh()).toBe(false);
+    // the bed ready: ready, with the scene and depth still not
     p.bedTexture.getInternalTexture()!.isReady = true;
     expect(p.isReadyForSubMesh()).toBe(true);
-    const depth = new BaseTexture(scene);
-    p.depthTexture = depth;
-    expect(p.isReadyForSubMesh()).toBe(false);
-    depth._texture = p.bedTexture.getInternalTexture();
-    expect(p.isReadyForSubMesh()).toBe(true);
-    depth._texture = null;
+    expect(sceneCopy.isReady() || depth.isReady()).toBe(false);
+    // and the high path stays on: both are bound
+    const floats: [string, number][] = [];
+    const record = (): void => undefined;
+    const ubo = {
+      updateFloat: (name: string, v: number) => { floats.push([name, v]); },
+      updateFloat2: record, updateFloat3: record, updateFloat4: record, setTexture: vi.fn(),
+    } as unknown as UniformBuffer;
+    p.bindForSubMesh(ubo);
+    expect(floats).toContainEqual(["waterHigh", 1]);
+    const setTexture = (ubo as unknown as { setTexture: ReturnType<typeof vi.fn> }).setTexture;
+    expect(setTexture).toHaveBeenCalledWith("waterScene", sceneCopy);
+    expect(setTexture).toHaveBeenCalledWith("waterDepth", depth);
   });
 
   it("writes each mesh's own level on every draw (hardBind), not only when the material rebinds", () => {

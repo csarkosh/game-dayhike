@@ -185,3 +185,39 @@ export function waterRingGeometry(
 
   return { positions, indices, normals, bedDepth, uvs };
 }
+
+/**
+ * The box a ring's water can be drawn in, or null when it has none. Its wet
+ * cells are the triangles it draws with a wet vertex (`bedDepth > 0`); outside
+ * the bed texture the fragment's depth is `bedDepth` interpolated, so such a
+ * triangle draws water up to its dry corners, and the box holds all three of
+ * its vertices. Triangles in the hole are not drawn, so they count for
+ * nothing. y is the water level. Null makes the ring's mesh disabled: a flat
+ * plane at the level is in view from almost anywhere, and a mesh in view is
+ * what asks for the high tier's copy.
+ */
+export function wetBounds(geometry: WaterGeometry): { min: [number, number, number]; max: [number, number, number] } | null {
+  const { positions, indices, bedDepth } = geometry;
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  let y = 0;
+  for (let t = 0; t < indices.length; t += 3) {
+    const a = indices[t] as number;
+    const b = indices[t + 1] as number;
+    const c = indices[t + 2] as number;
+    if ((bedDepth[a] as number) <= 0 && (bedDepth[b] as number) <= 0 && (bedDepth[c] as number) <= 0) continue;
+    for (const v of [a, b, c]) {
+      const x = positions[v * 3] as number;
+      const z = positions[v * 3 + 2] as number;
+      y = positions[v * 3 + 1] as number;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+  }
+  if (minX === Infinity) return null;
+  return { min: [minX, y, minZ], max: [maxX, y, maxZ] };
+}

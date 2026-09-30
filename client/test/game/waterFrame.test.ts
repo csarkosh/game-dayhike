@@ -9,7 +9,11 @@ import { PassPostProcess } from "@babylonjs/core/PostProcesses/passPostProcess.j
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { CopyTextureToTexture } from "@babylonjs/core/Misc/copyTextureToTexture.js";
 import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper.js";
-import { WATER_FRAME_MISS_WARN, WATER_GROUP, createWaterFrame, waterFrameSupported } from "../../src/game/waterFrame.js";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
+import { Constants } from "@babylonjs/core/Engines/constants.js";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture.js";
+import { WATER_DEPTH_FAR, WATER_FRAME_MISS_WARN, WATER_GROUP, createWaterFrame, waterFrameSupported } from "../../src/game/waterFrame.js";
 
 /** A NullEngine scene with a camera and a box in the water's group, so group 1 renders. */
 function sceneWithGroup1(engine: NullEngine): Scene {
@@ -32,7 +36,7 @@ describe("water frame (the high tier's copy of the opaque pass)", () => {
   it("puts the water in rendering group 1 with the depth kept across the group boundary", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
-    const frame = createWaterFrame(scene, engine, () => true);
+    const frame = createWaterFrame(scene, engine, () => true, []);
     expect(WATER_GROUP).toBe(1);
     // Babylon clears depth between groups unless told not to
     const info = (scene as unknown as { _renderingManager: { _autoClearDepthStencil: Record<number, { autoClear: boolean }> } })._renderingManager._autoClearDepthStencil;
@@ -44,7 +48,7 @@ describe("water frame (the high tier's copy of the opaque pass)", () => {
   it("copies before group 1 renders, once per frame, and exposes screen as 1/size", async () => {
     engine = new NullEngine({ renderWidth: 320, renderHeight: 200, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 1 });
     const scene = sceneWithGroup1(engine);
-    const frame = createWaterFrame(scene, engine, () => true);
+    const frame = createWaterFrame(scene, engine, () => true, []);
     expect(frame.screen).toEqual([1 / 320, 1 / 200]);
     let fired = 0;
     scene.onBeforeRenderingGroupObservable.add((ev) => { if (ev.renderingGroupId === WATER_GROUP) fired++; });
@@ -61,7 +65,7 @@ describe("water frame (the high tier's copy of the opaque pass)", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     const earlier = scene.onBeforeRenderingGroupObservable.add(() => undefined);
-    const frame = createWaterFrame(scene, engine, () => true);
+    const frame = createWaterFrame(scene, engine, () => true, []);
     expect(scene.onBeforeRenderingGroupObservable.observers[0]).not.toBe(earlier);
     expect(scene.onBeforeRenderingGroupObservable.observers[1]).toBe(earlier);
     frame.dispose();
@@ -89,7 +93,7 @@ describe("water frame (the high tier's copy of the opaque pass)", () => {
   it("says once, and only after 120 frames, when group 1 keeps going without its copy", () => {
     engine = new NullEngine();
     const scene = sceneWithGroup1(engine);
-    const frame = createWaterFrame(scene, engine, () => true);
+    const frame = createWaterFrame(scene, engine, () => true, []);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       // NullEngine draws into no render target, so no copy can run
@@ -112,7 +116,7 @@ describe("water frame (the high tier's copy of the opaque pass)", () => {
    * before group 1 renders (an observer ahead of the frame's), the copier
    * ready, and the engine's framebuffer calls spied rather than run.
    */
-  function withStandInTarget(scene: Scene): { unbind: ReturnType<typeof vi.spyOn>; copy: ReturnType<typeof vi.spyOn>; restore(): void } {
+  function withStandInTarget(scene: Scene): { target: RenderTargetWrapper; unbind: ReturnType<typeof vi.spyOn>; copy: ReturnType<typeof vi.spyOn>; restore(): void } {
     const e = scene.getEngine() as NullEngine;
     const target = {
       texture: {},
@@ -130,6 +134,7 @@ describe("water frame (the high tier's copy of the opaque pass)", () => {
     const unbind = vi.spyOn(e, "unBindFramebuffer").mockImplementation(() => undefined);
     const bind = vi.spyOn(e, "bindFramebuffer").mockImplementation(() => undefined);
     return {
+      target,
       unbind,
       copy,
       restore() {
@@ -140,19 +145,62 @@ describe("water frame (the high tier's copy of the opaque pass)", () => {
     };
   }
 
-  it("copies once a frame when a water mesh is in view", () => {
+  it("copies once a frame when a water mesh is in view, and points the water at the resolved depth", () => {
     engine = new NullEngine();
     const scene = sceneWithGroup1(engine);
-    const frame = createWaterFrame(scene, engine, () => true);
+    const reader: { depthTexture: BaseTexture | null } = { depthTexture: null };
+    const frame = createWaterFrame(scene, engine, () => true, [reader]);
+    const placeholder = frame.depth;
+    expect(reader.depthTexture).toBe(placeholder);
     const standIn = withStandInTarget(scene);
+    // the texture the group-1 observer ahead of the frame's reads each frame
+    let seen: BaseTexture | null = null;
+    const watch = scene.onBeforeRenderingGroupObservable.add((ev) => { if (ev.renderingGroupId === WATER_GROUP) seen = reader.depthTexture; });
     try {
-      for (let i = 0; i < 3; i++) scene.render();
+      scene.render();
+      // swapped before the group's draws, in the frame of the first copy
+      expect(seen).not.toBe(placeholder);
+      expect(reader.depthTexture).not.toBe(placeholder);
+      expect(reader.depthTexture).toBe(frame.depth);
+      expect(frame.depth.getInternalTexture()).toBe(standIn.target._depthStencilTexture);
+      for (let i = 0; i < 2; i++) scene.render();
       expect(standIn.unbind).toHaveBeenCalledTimes(3);
       expect(standIn.copy).toHaveBeenCalledTimes(3);
-      expect(frame.depth.getInternalTexture()).not.toBeNull();
+      // a resized target brings a new depth texture; the next copy follows it
+      const next = {} as InternalTexture;
+      (standIn.target as unknown as { _depthStencilTexture: InternalTexture })._depthStencilTexture = next;
+      scene.render();
+      expect(reader.depthTexture?.getInternalTexture()).toBe(next);
     } finally {
+      scene.onBeforeRenderingGroupObservable.remove(watch);
       standIn.restore();
-      frame.depth._texture = null;
+      frame.dispose();
+    }
+  });
+
+  it("hands the water textures that exist from creation: the colour target and a 1×1 far depth", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const reader: { depthTexture: BaseTexture | null } = { depthTexture: null };
+    const frame = createWaterFrame(scene, engine, () => true, [reader]);
+    try {
+      // before any render or copy
+      expect(frame.scene.isReady()).toBe(true);
+      expect(frame.depth).toBeInstanceOf(RawTexture);
+      expect(reader.depthTexture).toBe(frame.depth);
+      const t = frame.depth.getInternalTexture()!;
+      expect([t.width, t.height]).toEqual([1, 1]);
+      expect(t.type).toBe(Constants.TEXTURETYPE_FLOAT);
+      expect(t.format).toBe(Constants.TEXTUREFORMAT_R);
+      // device depth 1 is the far plane: the shader's linearisation gives the camera's far
+      expect(WATER_DEPTH_FAR).toBe(1);
+      expect(Array.from(t._bufferView as Float32Array)).toEqual([WATER_DEPTH_FAR]);
+      const [near, far] = [0.05, 10000];
+      expect((near * far) / (far - WATER_DEPTH_FAR * (far - near))).toBeCloseTo(far, 6);
+      // Its readiness is not asserted: NullEngine never uploads a raw texture,
+      // so it never marks one ready, where WebGL2 and WebGPU mark it ready as
+      // they create it. The material does not wait on it (waterPlugin.test.ts).
+    } finally {
       frame.dispose();
     }
   });
@@ -161,14 +209,17 @@ describe("water frame (the high tier's copy of the opaque pass)", () => {
     engine = new NullEngine();
     const scene = sceneWithGroup1(engine);
     let asked = 0;
-    const frame = createWaterFrame(scene, engine, () => { asked++; return false; });
+    const reader: { depthTexture: BaseTexture | null } = { depthTexture: null };
+    const frame = createWaterFrame(scene, engine, () => { asked++; return false; }, [reader]);
     const standIn = withStandInTarget(scene);
     try {
       for (let i = 0; i < 5; i++) scene.render();
       expect(asked).toBe(5);
       expect(standIn.unbind).not.toHaveBeenCalled();
       expect(standIn.copy).not.toHaveBeenCalled();
-      expect(frame.depth.getInternalTexture()).toBeNull();
+      // still the placeholder: no copy, no swap
+      expect(frame.depth).toBeInstanceOf(RawTexture);
+      expect(reader.depthTexture).toBe(frame.depth);
     } finally {
       standIn.restore();
       frame.dispose();
@@ -178,7 +229,7 @@ describe("water frame (the high tier's copy of the opaque pass)", () => {
   it("never warns for frames with no water in view: they are not misses", () => {
     engine = new NullEngine();
     const scene = sceneWithGroup1(engine);
-    const frame = createWaterFrame(scene, engine, () => false);
+    const frame = createWaterFrame(scene, engine, () => false, []);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       // with water in view these frames would warn at 120 (the test above)

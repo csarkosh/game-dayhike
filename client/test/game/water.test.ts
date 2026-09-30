@@ -4,7 +4,7 @@ import "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import {
   createWaterRingSamples, updateWaterRingSamples, waterHoleCellsFor,
-  waterRingGeometry, waterRingSpacing,
+  waterRingGeometry, waterRingSpacing, wetBounds,
   WATER_RING_CELLS, WATER_RING_COUNT,
 } from "../../src/game/water.js";
 import { RING_CELLS } from "../../src/game/clipmap.js";
@@ -64,5 +64,70 @@ describe("water rings", () => {
       const expected = Math.max(0, 10 - (ring.h[i] as number));
       expect(g.bedDepth[i]).toBeCloseTo(expected, 5);
     }
+  });
+
+  describe("the box a ring's water can be drawn in (wetBounds)", () => {
+    const SIDE = WATER_RING_CELLS + 1;
+
+    it("is null for a ring with no wet vertex", () => {
+      const ring = createWaterRingSamples(SEED, 1, 0, 0);
+      ring.h.fill(50);
+      expect(wetBounds(waterRingGeometry(ring, null, 0))).toBeNull();
+    });
+
+    it("is the box of the cells around the wet vertices, at the water level", () => {
+      const ring = createWaterRingSamples(SEED, 0, 0, 0);
+      ring.h.fill(50);
+      // two wet vertices: (10, 20) and (30, 25)
+      ring.h[20 * SIDE + 10] = -5;
+      ring.h[25 * SIDE + 30] = -1;
+      const b = wetBounds(waterRingGeometry(ring, null, 3))!;
+      const s = ring.spacing;
+      // each wet vertex's four cells draw water up to their dry corners
+      expect(b.min).toEqual([ring.originX + 9 * s, 3, ring.originZ + 19 * s]);
+      expect(b.max).toEqual([ring.originX + 31 * s, 3, ring.originZ + 26 * s]);
+    });
+
+    it("counts a vertex wet only when its depth is above zero, and a cell in the hole for nothing", () => {
+      const fine = createWaterRingSamples(SEED, 0, 0, 0);
+      const coarse = createWaterRingSamples(SEED, 1, 0, 0);
+      const hole = waterHoleCellsFor(coarse, fine);
+      coarse.h.fill(50);
+      // exactly at the level: depth 0, dry
+      coarse.h[10 * SIDE + 10] = 0;
+      expect(wetBounds(waterRingGeometry(coarse, hole, 0))).toBeNull();
+      // wet, but every cell around it is in the hole (not drawn)
+      const inside = (hole.z0 + 5) * SIDE + hole.x0 + 5;
+      coarse.h[inside] = -5;
+      expect(wetBounds(waterRingGeometry(coarse, hole, 0))).toBeNull();
+      expect(wetBounds(waterRingGeometry(coarse, null, 0))).not.toBeNull();
+    });
+
+    it("holds every wet vertex of a real ring and is no larger than the cells around them", () => {
+      const ring = createWaterRingSamples(SEED, 1, -500, 0);
+      const g = waterRingGeometry(ring, null, 0);
+      const b = wetBounds(g)!;
+      expect(b).not.toBeNull();
+      let wet = 0;
+      let [minX, minZ, maxX, maxZ] = [Infinity, Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < g.bedDepth.length; i++) {
+        if ((g.bedDepth[i] as number) <= 0) continue;
+        wet++;
+        const x = g.positions[i * 3] as number;
+        const z = g.positions[i * 3 + 2] as number;
+        [minX, minZ, maxX, maxZ] = [Math.min(minX, x), Math.min(minZ, z), Math.max(maxX, x), Math.max(maxZ, z)];
+      }
+      expect(wet).toBeGreaterThan(0);
+      expect(wet).toBeLessThan(g.bedDepth.length); // a shore: some of it is land
+      const s = ring.spacing;
+      expect(b.min[0]).toBeLessThanOrEqual(minX);
+      expect(b.min[0]).toBeGreaterThanOrEqual(minX - s);
+      expect(b.min[2]).toBeLessThanOrEqual(minZ);
+      expect(b.min[2]).toBeGreaterThanOrEqual(minZ - s);
+      expect(b.max[0]).toBeGreaterThanOrEqual(maxX);
+      expect(b.max[0]).toBeLessThanOrEqual(maxX + s);
+      expect(b.max[2]).toBeGreaterThanOrEqual(maxZ);
+      expect(b.max[2]).toBeLessThanOrEqual(maxZ + s);
+    }, timeLimit(30_000));
   });
 });

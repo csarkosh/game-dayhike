@@ -91,6 +91,27 @@ export function bedNeedsRebake(grid: BedGrid, camX: number, camZ: number): boole
   return !(inX && inZ);
 }
 
+/**
+ * True when the camera is outside the square [origin, origin + extent) on
+ * either axis: a bake for that square is then for somewhere the camera has
+ * left, and is dropped. While the camera is inside it, even past its inner
+ * half, the bake goes on: the bed it swaps in still holds the camera, and a
+ * camera moving a quarter extent a bake would otherwise never finish one.
+ */
+export function bedOutsideSquare(
+  originX: number,
+  originZ: number,
+  texels: number,
+  spacing: number,
+  camX: number,
+  camZ: number,
+): boolean {
+  const extent = texels * spacing;
+  const inX = camX >= originX && camX < originX + extent;
+  const inZ = camZ >= originZ && camZ < originZ + extent;
+  return !(inX && inZ);
+}
+
 /** Re-centres on the camera and fills the heights; false when no rebake was due. */
 export function bakeBed(grid: BedGrid, seed: number, camX: number, camZ: number): boolean {
   if (!bedNeedsRebake(grid, camX, camZ)) return false;

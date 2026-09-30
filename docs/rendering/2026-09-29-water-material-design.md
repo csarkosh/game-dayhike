@@ -101,7 +101,10 @@ new square (`bedSquareHasWater`: the terrain below the sea's level at one of
 nine points, corners, edge midpoints and centre, or a pond's disc overlapping
 the square); elsewhere the current square is kept, since there is no water to
 read it. A bake whose square the camera leaves before it ends (a teleport, a
-fast ride) is dropped and a fresh one begun for where the camera is.
+fast ride) is dropped and a fresh one begun for where the camera is. Only
+leaving the whole square drops it (`bedOutsideSquare`): leaving the inner half
+is what begins a bake, and a camera past that half is still inside the square
+the bake is for, so steady motion finishes each bake it begins.
 
 Beyond the square the shader falls back to the depth the ring vertices already
 carry (8 m apart on the nearest ring). The inner-half rule keeps the camera a
@@ -138,9 +141,12 @@ true 40 %; in the clear lake the two are within a few percent.
 
 ### 4.3 The sea's far field
 
-Beyond the height texture the sea is deep everywhere: d is taken as the ring
-vertex's depth, which is at least tens of metres, and the transmitted term is
-the water's own colour alone. No new cost out there.
+Beyond the height texture d is the ring vertices' depth (`bedDepth`),
+interpolated across each cell: the vertices are 8 m apart on the nearest ring
+and 16, 32 and 64 m on the outer three. Out at sea that depth is tens of metres
+and the transmitted term is the water's own colour alone; at a shore beyond the
+square the depth is only as fine as the ring's spacing, so the waterline there
+is coarser than inside it. No new cost out there.
 
 ### 4.4 Reading the frame on WebGPU
 
@@ -152,11 +158,22 @@ so the read is one sample a water pixel, with no copy of the depth and no
 change to the opaque pass. A prepass variant (Babylon's `PrePassRenderer` with
 the depth texture, an extra attachment on every opaque draw) was considered and
 dropped as strictly more work. The scene colour is still copied after the
-opaque pass (§5.2), and only in a frame whose culling kept a water mesh (a ring
-or a pond's disc among the scene's active meshes): the water's group also holds
-rain, mist and motes and renders without the water in view, and then nothing
-is copied or resolved. Rain, mist and motes draw in the water's rendering group on
+opaque pass (§5.2), and only in a frame whose culling kept a water mesh (a wet
+ring or a pond's disc in the frustum, among the scene's active meshes): the
+water's group also holds rain, mist and motes and renders without the water in
+view, and then nothing is copied or resolved. A ring with no wet cell (no cell
+it draws has a vertex below the level) is disabled, and a wet ring's bounds are
+the box of its wet cells (`wetBounds`, `water.ts`), not its whole plane: a flat
+plane at the sea's level reaches the frustum from almost anywhere, high ground
+inland included. Rain, mist and motes draw in the water's rendering group on
 high, so the opaque water does not paint over them.
+
+The material does not wait on the copy: it is ready as soon as its bed texture
+is, on every tier, with or without water in view, so the page's start never
+waits on the view. The frame's textures exist from its creation: the colour
+copy is a render target, and the depth is a 1×1 `R32F` texel at the far plane
+(device depth 1, `WATER_DEPTH_FAR`) until the first copy, when the frame points
+the plugins at the resolved depth before that frame's water draws.
 
 ## 5. The surface
 
@@ -248,7 +265,7 @@ own normals.
 Unchanged: PBR's fog line and the atmosphere plugin apply to the water as to
 any material, and the post colour path runs after. The water's alpha on
 medium and low is not fogged (fog acts on colour), so a distant sea does not
-turn clear; it is deep there anyway (§4.3).
+turn clear; out at sea the ring's depth is tens of metres anyway (§4.3).
 
 ## 6. The ground side
 
@@ -333,7 +350,7 @@ re-centring rule in `bedHeight.ts`, the wet residual's mirror in `wetPlugin.ts`
 | Depth | bed texture + frame depth | bed texture | bed texture, 128² at 2 m |
 | Transmission | colour copy, per channel, opaque | alpha blend, K̄ | alpha blend, K̄ |
 | Ripples | two octaves | two octaves | one octave |
-| Extra passes | one colour copy, in frames with water in view; the depth is the pass's own MSAA resolve | none | none |
+| Extra passes | one colour copy, in frames with a wet ring or a pond in the frustum; the depth is the pass's own MSAA resolve | none | none |
 | Budget, full screen at 1080p | 0.5 ms | 0.3 ms | 0.15 ms |
 
 Budgets are for the material alone, before waves, mirror or surf, and they are
@@ -379,7 +396,11 @@ Node tests, in `client/test/`:
 - The height texture's bake: every texel equals `elevationAt` at its centre;
   no rebake until the camera leaves the inner half; a row-by-row bake applies
   its origin only on its last call and equals a whole bake; a rebake changes
-  the origin and the heights together, never one without the other.
+  the origin and the heights together, never one without the other; the camera
+  has left a square only outside the whole of it.
+- A ring's wet box: null with no wet vertex; the box of the cells around the
+  wet vertices, at the level; a depth of exactly 0 and a cell in the hole count
+  for nothing.
 - Where a body reaches: the sea at one of the nine points, a pond's disc
   overlapping the square from inside or out, nothing just out of reach.
 - The wet residual: the per-channel formula at a body's centre, 1 in every
@@ -394,10 +415,15 @@ mechanism fired, not a fixture: the water meshes carry `bedDepth` and no vertex
 colours; the bed is uploaded at creation at the camera's start; a re-centre
 uploads nothing mid-bake and exactly once when the bake is whole (a spy on the
 texture's upload), with the new origin and heights; no bake begins where no
-body reaches the new square; a bake left mid-way by a 500 m jump is dropped and
-the new square baked from its first row; on the high tier the frame is asked
-for its copy only while a water mesh is among the active meshes. No pixel is
-read under Node; the look is the gates' below.
+body reaches the new square; a bake left mid-way by a 500 m jump, or a 300 m
+move, is dropped and the new square baked from its first row, and one whose
+camera moves 40 m but stays in its square finishes at its own origin; on seed
+atmo 620 m inland the nearest ring is disabled and the next one's box ends a
+cell past the coast, and at the coast the nearest ring is on; on the high tier
+the frame is asked for its copy only while a water mesh is among the active
+meshes, the material is ready with the bed alone, reading the far placeholder,
+and the first copy points it at the resolved depth. No pixel is read under
+Node; the look is the gates' below.
 
 Look gates, each a still from the game at a pose matched to a photo of the
 approved reference set (kept outside the repository; a gate names its ids),

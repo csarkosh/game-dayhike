@@ -2,6 +2,7 @@ import { Engine } from "@babylonjs/core/Engines/engine.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -62,6 +63,7 @@ import {
   updateWaterRingSamples,
   waterHoleCellsFor,
   waterRingGeometry,
+  wetBounds,
   WATER_RING_COUNT,
   type WaterGeometry,
   type WaterRingSamples,
@@ -77,6 +79,7 @@ import {
   bakeBed,
   bakeRows,
   bedNeedsRebake,
+  bedOutsideSquare,
   bedSquareHasWater,
   beginBake,
   createBedGrid,
@@ -740,7 +743,7 @@ export function createWater(
   // Every water mesh, rings and pond discs, filled below.
   const waterMeshes: Mesh[] = [];
   // The copy of the opaque pass, on the high tier. It follows the target's
-  // size by itself, so the plugins hold its textures and its `screen` once.
+  // size by itself, so the plugins hold its colour and its `screen` once.
   // It runs only in a frame whose culling kept a water mesh (the group also
   // holds rain, motes and mist).
   const inView = (): boolean => {
@@ -748,11 +751,12 @@ export function createWater(
     for (const mesh of waterMeshes) if (active.contains(mesh)) return true;
     return false;
   };
-  const frame = high ? createWaterFrame(scene, scene.getEngine(), inView) : null;
+  // The frame points the plugins at its depth itself: a far placeholder
+  // until its first copy, the resolved depth from then on.
+  const frame = high ? createWaterFrame(scene, scene.getEngine(), inView, plugins) : null;
   if (frame !== null) {
     for (const p of plugins) {
       p.sceneTexture = frame.scene;
-      p.depthTexture = frame.depth;
       p.screen = frame.screen;
     }
   }
@@ -814,13 +818,19 @@ export function createWater(
   const rings: WaterRingSamples[] = [];
   const meshes: Mesh[] = [];
 
+  // A ring with no wet cell is off, and a wet ring's bounds are its wet
+  // cells, not the whole plane: a flat plane at the level is in view from
+  // almost anywhere, which would ask for the high tier's copy inland too.
   function emitRing(level: number): void {
     const ring = rings[level] as WaterRingSamples;
     const finer = level > 0 ? (rings[level - 1] as WaterRingSamples) : null;
-    applyWaterGeometry(
-      meshes[level] as Mesh,
-      waterRingGeometry(ring, finer === null ? null : waterHoleCellsFor(ring, finer), waterLevel),
-    );
+    const mesh = meshes[level] as Mesh;
+    const geometry = waterRingGeometry(ring, finer === null ? null : waterHoleCellsFor(ring, finer), waterLevel);
+    applyWaterGeometry(mesh, geometry);
+    const bounds = wetBounds(geometry);
+    mesh.setEnabled(bounds !== null);
+    // Never refreshBoundingInfo after this: it would put back the whole plane.
+    if (bounds !== null) mesh.setBoundingInfo(new BoundingInfo(Vector3.FromArray(bounds.min), Vector3.FromArray(bounds.max)));
   }
 
   for (let level = 0; level < WATER_RING_COUNT; level++) {
@@ -868,8 +878,10 @@ export function createWater(
         if (bakeBed(grid, seed, camX, camZ)) uploadBed();
       }
       // A bake whose square the camera has already left (a teleport, a fast
-      // ride) would swap in a bed for somewhere else: start over.
-      if (bake !== null && bedNeedsRebake({ ...spare, originX: bake.originX, originZ: bake.originZ }, camX, camZ)) bake = null;
+      // ride) would swap in a bed for somewhere else: start over. Only the
+      // whole square counts: leaving its inner half is what starts a bake, and
+      // dropping on that would never let steady motion finish one.
+      if (bake !== null && bedOutsideSquare(bake.originX, bake.originZ, texels, spacing, camX, camZ)) bake = null;
       if (bake === null && bedNeedsRebake(grid, camX, camZ)) {
         const next = beginBake(spare, camX, camZ);
         // Where no body reaches the new square the current bed is kept: outside
