@@ -12,7 +12,7 @@ import type { CharacterInstance } from "../characterModel.js";
 import type { FreecamView } from "../renderer.js";
 import type { PlacedModel } from "../staticModel.js";
 import type { CaptionPanel } from "./captions.js";
-import type { Frame } from "./timeline.js";
+import type { ActorPose, Frame } from "./timeline.js";
 
 /** The car: the node the whole model moves by, and its named parts where the
  * model has them. The parts keep the model's own frame (the car drives +x in
@@ -105,6 +105,23 @@ function stageHandset(car: CarModel, hand: TransformNode | null): void {
 }
 
 const warnedActors = new WeakMap<StageDeps, Set<string>>();
+const warnedJoints = new WeakMap<StageDeps, Set<string>>();
+
+/** Moves the actor so its joint, as posed this frame, is at the anchor. */
+function placeByJoint(instance: CharacterInstance, id: string, anchor: NonNullable<ActorPose["anchor"]>, deps: StageDeps): void {
+  const joint = instance.joint(anchor.joint);
+  if (joint === null) {
+    let warned = warnedJoints.get(deps);
+    if (warned === undefined) warnedJoints.set(deps, (warned = new Set()));
+    if (!warned.has(anchor.joint)) {
+      warned.add(anchor.joint);
+      deps.warn(`scene: no joint ${anchor.joint} on ${id}; placed at its base`);
+    }
+    return;
+  }
+  const at = worldOf(joint).getTranslation();
+  instance.root.position.addInPlaceFromFloats(anchor.x - at.x, anchor.y - at.y, anchor.z - at.z);
+}
 
 export function stageFrame(frame: Frame, deps: StageDeps): void {
   const c = frame.camera;
@@ -125,7 +142,8 @@ export function stageFrame(frame: Frame, deps: StageDeps): void {
     if (!a.visible) continue;
     instance.root.position.set(a.x, a.y, a.z);
     instance.root.rotation.y = a.yaw;
-    instance.pose(a.clip, a.clipTime);
+    instance.pose(a.clip, a.clipTime, a.blend === undefined ? undefined : { clip: a.blend.clip, seconds: a.blend.clipTime, weight: a.blend.weight });
+    if (a.anchor !== undefined) placeByJoint(instance, a.id, a.anchor, deps);
   }
   if (frame.car !== null && deps.car !== null) {
     const car = frame.car;

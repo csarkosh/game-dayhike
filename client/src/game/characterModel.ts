@@ -1,5 +1,7 @@
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup.js";
+import type { Animation } from "@babylonjs/core/Animations/animation.js";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
@@ -127,20 +129,41 @@ export function clipNameFor(
   return pickClip([...available], kind);
 }
 
+/** A second clip mixed into a pose: its name, its time and its share (0 to 1). */
+export type PoseBlend = { clip: string; seconds: number; weight: number };
+
 export type CharacterInstance = {
   /** The node callers position, turn and scale; the model's feet sit at its origin. */
   root: TransformNode;
   play(kind: ClipKind): void;
   /** The named clip (its own name, or a kind's) held at `seconds` into it,
-   * wrapped for a loop: a scene posing the character at a time of its own.
+   * wrapped for a loop: a scene posing the character at a time of its own;
+   * with `blend`, mixed that share of the way to a second clip at its time.
    * A clip the model lacks warns once and leaves the pose as it was. */
-  pose(clip: string, seconds: number): void;
+  pose(clip: string, seconds: number, blend?: PoseBlend): void;
+  /** A node of the model by its own name (a joint, `chest`), or null. */
+  joint(name: string): TransformNode | null;
   /** The model's clip names. */
   clipNames(): readonly string[];
   /** Playback rate of every clip, so a walk can keep pace with the ground it covers. */
   setSpeed(ratio: number): void;
   dispose(): void;
 };
+
+/** Two values of one animated property mixed: a rotation by slerp, the rest by lerp. */
+function mix(a: unknown, b: unknown, w: number): unknown {
+  if (a instanceof Quaternion && b instanceof Quaternion) return Quaternion.Slerp(a, b, w);
+  if (a instanceof Vector3 && b instanceof Vector3) return Vector3.Lerp(a, b, w);
+  if (typeof a === "number" && typeof b === "number") return a + (b - a) * w;
+  return w < 0.5 ? a : b;
+}
+
+/** Writes an animation's value to its target along its property path (`position.y`). */
+function setAnimated(target: unknown, path: readonly string[], value: unknown): void {
+  let object = target as Record<string, unknown>;
+  for (const key of path.slice(0, -1)) object = object[key] as Record<string, unknown>;
+  object[path[path.length - 1]!] = value;
+}
 
 const CLIP_KINDS: readonly ClipKind[] = ["idle", "walk", "attack", "death"];
 
@@ -310,6 +333,21 @@ export function createCharacterPool(
       let ratio = 1;
       /** Clips asked of `pose` that the model lacks, each warned once. */
       const missingWarned = new Set<string>();
+      const groupFor = (clip: string): AnimationGroup | null => {
+        const byKind = (CLIP_KINDS as readonly string[]).includes(clip) ? clipNameFor(model.asset, model.clipNames, clip as ClipKind) : null;
+        const group = groups.get(byKind ?? clip) ?? null;
+        if (group === null && !missingWarned.has(clip)) {
+          missingWarned.add(clip);
+          console.warn(`character ${assetId}: no clip "${clip}"; holding the pose`);
+        }
+        return group;
+      };
+      const frameOf = (group: AnimationGroup, seconds: number): number => {
+        const fps = group.targetedAnimations[0]?.animation.framePerSecond ?? 30;
+        const span = group.to - group.from;
+        return group.from + (span > 0 ? (((seconds * fps) % span) + span) % span : 0);
+      };
+      const nodes = root.getChildTransformNodes(false);
       const instance: CharacterInstance = {
         root,
         play: (kind) => {
@@ -323,27 +361,38 @@ export function createCharacterPool(
           next.speedRatio = ratio;
           current = next;
         },
-        pose: (clip, seconds) => {
-          const byKind = (CLIP_KINDS as readonly string[]).includes(clip) ? clipNameFor(model.asset, model.clipNames, clip as ClipKind) : null;
-          const group = groups.get(byKind ?? clip) ?? null;
-          if (group === null) {
-            if (!missingWarned.has(clip)) {
-              missingWarned.add(clip);
-              console.warn(`character ${assetId}: no clip "${clip}"; holding the pose`);
+        pose: (clip, seconds, blend) => {
+          const group = groupFor(clip);
+          if (group === null) return;
+          const other = blend === undefined || blend.weight <= 0 ? null : groupFor(blend.clip);
+          if (other === null || other === group) {
+            if (current !== group) {
+              current?.stop();
+              group.start(true, ratio);
+              group.pause();
+              current = group;
             }
+            group.goToFrame(frameOf(group, seconds));
             return;
           }
-          if (current !== group) {
-            current?.stop();
-            group.start(true, ratio);
-            group.pause();
-            current = group;
+          // Two clips mixed by hand: `goToFrame` writes a clip's values straight to its
+          // targets, not through the scene's weighted blending, so each target's two
+          // values are evaluated and interpolated here.
+          current?.stop();
+          current = null;
+          const fa = frameOf(group, seconds);
+          const fb = frameOf(other, blend!.seconds);
+          const w = Math.min(1, blend!.weight);
+          const key = (target: unknown, animation: Animation) => `${(target as { uniqueId: number }).uniqueId}:${animation.targetProperty}`;
+          const theirs = new Map<string, Animation>();
+          for (const ta of other.targetedAnimations) theirs.set(key(ta.target, ta.animation), ta.animation);
+          for (const ta of group.targetedAnimations) {
+            const mine: unknown = ta.animation.evaluate(fa);
+            const b = theirs.get(key(ta.target, ta.animation));
+            setAnimated(ta.target, ta.animation.targetPropertyPath, b === undefined ? mine : mix(mine, b.evaluate(fb), w));
           }
-          const fps = group.targetedAnimations[0]?.animation.framePerSecond ?? 30;
-          const span = group.to - group.from;
-          const frame = group.from + (span > 0 ? (((seconds * fps) % span) + span) % span : 0);
-          group.goToFrame(frame);
         },
+        joint: (name) => nodes.find((n) => n.name === `${prefix}${name}`) ?? null,
         clipNames: () => model.clipNames,
         setSpeed: (value) => {
           if (value === ratio) return;

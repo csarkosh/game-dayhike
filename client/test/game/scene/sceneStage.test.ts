@@ -51,7 +51,7 @@ describe("the stage", () => {
     expect(root.position.asArray()).toEqual([5, 6, 7]);
     expect(root.rotation.y).toBe(1.2);
     expect(root.isEnabled()).toBe(true);
-    expect(pose).toHaveBeenCalledWith("walk", 0.75);
+    expect(pose).toHaveBeenCalledWith("walk", 0.75, undefined);
     stageFrame({ ...frame, actors: [{ ...frame.actors[0]!, visible: false }] }, d);
     expect(root.isEnabled()).toBe(false);
     engine.dispose();
@@ -173,6 +173,50 @@ describe("the film car's parts", () => {
     expect(model.handset!.position.asArray()).toEqual([0, 0.048, 0]);
     expect(model.handset!.rotationQuaternion?.asArray()).toEqual([0, 0, 0, 1]);
     expect(model.handset!.scaling.asArray()).toEqual([1, 1, 1]);
+    engine.dispose();
+  });
+});
+
+describe("an actor placed by a joint", () => {
+  function actor(scene: Scene, withJoint: boolean) {
+    const root = new TransformNode("ranger", scene);
+    const hips = new TransformNode("hips", scene);
+    hips.parent = root;
+    hips.position = new Vector3(0, 0.25, -1.3);
+    const pose = vi.fn();
+    const instance = { root, pose, joint: (n: string) => (withJoint && n === "hips" ? hips : null), clipNames: () => [], play() {}, setSpeed() {}, dispose() {} } as unknown as CharacterInstance;
+    return { root, hips, pose, instance };
+  }
+  const anchored = (yaw: number): Frame => ({
+    ...frame,
+    car: null,
+    actors: [{ id: "intro.ranger", x: 1, y: 2, z: 3, yaw, clip: "door", clipTime: 0.1, visible: true, blend: { clip: "drive", clipTime: 55, weight: 0.7 }, anchor: { joint: "hips", x: 5, y: 2, z: 7 } }],
+  });
+
+  it("poses the actor with its blend and moves it so the joint is at the anchor, whichever way it faces", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    for (const yaw of [0, Math.PI / 2]) {
+      const a = actor(scene, true);
+      stageFrame(anchored(yaw), deps({ actor: () => a.instance }));
+      expect(a.pose).toHaveBeenCalledWith("door", 0.1, { clip: "drive", seconds: 55, weight: 0.7 });
+      a.root.computeWorldMatrix(true);
+      a.hips.computeWorldMatrix(true);
+      const at = a.hips.getAbsolutePosition();
+      expect([at.x, at.y, at.z].map((v) => Number(v.toFixed(9)))).toEqual([5, 2, 7]);
+    }
+    engine.dispose();
+  });
+
+  it("places an actor at its base when its anchor's joint is missing, and says so once", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const a = actor(scene, false);
+    const d = deps({ actor: () => a.instance });
+    stageFrame(anchored(0), d);
+    stageFrame(anchored(0), d);
+    expect(a.root.position.asArray()).toEqual([1, 2, 3]);
+    expect(d.calls.filter((c) => c.startsWith("warn"))).toEqual(["warn scene: no joint hips on intro.ranger; placed at its base"]);
     engine.dispose();
   });
 });

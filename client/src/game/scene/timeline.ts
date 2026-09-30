@@ -9,8 +9,14 @@
 /** The camera: metres, radians; `fov` vertical, `roll` about the view axis,
  * `dof` whether depth of field is on. Yaw 0 faces +z, positive pitch looks down. */
 export type CameraPose = { x: number; y: number; z: number; yaw: number; pitch: number; fov: number; roll: number; dof: boolean };
-/** An actor: where it stands, which clip it is in and how far into it. */
-export type ActorPose = { id: string; x: number; y: number; z: number; yaw: number; clip: string; clipTime: number; visible: boolean };
+/** An actor: where it stands, which clip it is in and how far into it; a
+ * second clip it is mixed toward (its share, 0 to 1); and a joint the stage
+ * places at a point, moving the whole actor (a seated ranger by his chest). */
+export type ActorPose = {
+  id: string; x: number; y: number; z: number; yaw: number; clip: string; clipTime: number; visible: boolean;
+  blend?: { clip: string; clipTime: number; weight: number };
+  anchor?: { joint: string; x: number; y: number; z: number };
+};
 /** The car: its pose, the wheels' spin (radians), how open the driver's door is (0 to 1),
  * the front wheels' turn and the steering wheel's (radians, positive toward +x), and where
  * the handset is. */

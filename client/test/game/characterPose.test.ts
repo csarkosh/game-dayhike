@@ -60,4 +60,21 @@ describe("posing a character at a clip time", () => {
     warn.mockRestore();
     engine.dispose();
   });
+
+  it("mixes two clips by a weight, then poses one alone again, and finds a node of the model by name", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const pool = createCharacterPool({ assets: [asset] }, async () => fakeContainer(scene));
+    await pool.load(scene, [asset.id]);
+    const instance = pool.acquire(7, asset.id)!;
+    const node = scene.getTransformNodeByName("character_7_root")!;
+    // Idle at 1 s is 30, Walk at 0.5 s is 15: a quarter of the way to Walk is 26.25.
+    instance.pose("Idle", 1, { clip: "Walk", seconds: 0.5, weight: 0.25 });
+    expect(node.position.y).toBeCloseTo(26.25, 3);
+    instance.pose("Walk", 0.5);
+    expect(node.position.y).toBeCloseTo(15, 3);
+    expect(instance.joint("root")).toBe(node);
+    expect(instance.joint("hand")).toBeNull();
+    engine.dispose();
+  });
 });
