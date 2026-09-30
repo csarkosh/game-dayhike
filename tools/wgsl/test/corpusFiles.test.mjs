@@ -230,12 +230,12 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 596 recorded stages, each file\'s bytes hashing to the name it has', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(596);
+  it('holds the 642 recorded stages, each file\'s bytes hashing to the name it has', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(642);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(596);
+    expect(read.stages).toHaveLength(642);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(320);
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(344);
   }, timeLimit(30_000));
 
   it('holds the fixture\'s 10 stages the same way', () => {

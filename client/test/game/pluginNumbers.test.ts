@@ -95,7 +95,7 @@ describe("the material plugins' numbers", () => {
       const text = readFileSync(file, "utf8");
       return [...text.matchAll(/class \w+ extends MaterialPluginBase \{[\s\S]*?getClassName\(\): string \{\s*return "(\w+)";/g)].map((m) => m[1] as string);
     });
-    expect(games.length).toBe(9);
+    expect(games.length).toBe(11);
     expect(games.filter((name) => !PLUGIN_ORDER.includes(name))).toEqual([]);
     expect(new Set(PLUGIN_ORDER).size).toBe(PLUGIN_ORDER.length);
   });
@@ -116,8 +116,11 @@ describe("the material plugins' numbers", () => {
     pinPluginNumbers();
     expect(numbering._MaterialPluginClassToMainDefine.PBRBRDFConfiguration).toBe("MATERIALPLUGIN_1");
     expect(numbering._MaterialPluginClassToMainDefine.WingPlugin).toBe("MATERIALPLUGIN_17");
+    // What the recorded corpus carries: wetLine stages say 18, waterBedHeight stages 19.
+    expect(numbering._MaterialPluginClassToMainDefine.WetPlugin).toBe("MATERIALPLUGIN_18");
+    expect(numbering._MaterialPluginClassToMainDefine.WaterPlugin).toBe("MATERIALPLUGIN_19");
     expect(numbering._MaterialPluginClassToMainDefine.SomethingEarlier).toBe(undefined);
-    expect(numbering._MaterialPluginCounter).toBe(17);
+    expect(numbering._MaterialPluginCounter).toBe(19);
   });
 
   it("are pinned by the WebGPU engine's maker once its engine stands, before any of its materials", () => {

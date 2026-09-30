@@ -1,4 +1,6 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
+import { elevationAt } from "../../src/sim/terrain.js";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -7,10 +9,32 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 // nothing at runtime — it is kept as self-documentation: the water rings read
 // the ACTIVE variant, and this test states which one it means to exercise.
 import "../../src/sim/olympic.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { WATER_UV_SCROLL, createWater } from "../../src/game/renderer.js";
+import { activeTerrainVariant, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { seedFromToken } from "../../src/game/seed.js";
+import { WATER_UV_SCROLL, createWater, effectsGroupFor, setEffectsGroup } from "../../src/game/renderer.js";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
-import { WATER_RING_COUNT } from "../../src/game/water.js";
+import { createRain } from "../../src/game/rain.js";
+import { createMotes } from "../../src/game/motes.js";
+import { createMistMeshes } from "../../src/game/mistMeshes.js";
+import { WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "../../src/game/water.js";
+import { timeLimit } from "../helpers/timeLimit.js";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+import { WaterPlugin } from "../../src/game/waterPlugin.js";
+import { bedOriginFor } from "../../src/game/bedHeight.js";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { WATER_GROUP } from "../../src/game/waterFrame.js";
+
+// Whether the high tier's frame can be made is a question for the engine
+// (WebGPU, a multisampled first pass), which NullEngine cannot answer yes to;
+// the wiring past that answer is what these tests pin.
+const frameSupport = vi.hoisted(() => ({ supported: false }));
+vi.mock("../../src/game/waterFrame.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/game/waterFrame.js")>();
+  return { ...actual, waterFrameSupported: () => frameSupport.supported };
+});
 
 setActiveTerrainVariant("olympic");
 
@@ -18,26 +42,32 @@ describe("createWater under NullEngine", () => {
   let engine: NullEngine;
   afterEach(() => engine?.dispose());
 
-  it("builds one alpha-blended mesh per ring and survives update/dispose", () => {
+  it("builds one alpha-blended mesh per ring carrying bedDepth, no vertex colours, with the water plugin", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     const water = createWater(scene, 0x5eed, 0);
     expect(water.meshes.length).toBe(WATER_RING_COUNT);
     for (const m of water.meshes) {
       expect(m.getTotalVertices()).toBeGreaterThan(0);
-      expect(m.hasVertexAlpha).toBe(true);
-      expect((m.material as PBRMaterial).transparencyMode).toBe(PBRMaterial.PBRMATERIAL_ALPHABLEND);
+      expect(m.isVerticesDataPresent("bedDepth")).toBe(true);
+      expect(m.isVerticesDataPresent(VertexBuffer.ColorKind)).toBe(false);
+      expect(m.useVertexColors).toBe(false);
+      expect((m.metadata as { waterLevel: number }).waterLevel).toBe(0);
+      const mat = m.material as PBRMaterial;
+      expect(mat.name).toBe("mat_water_sea");
+      expect(mat.transparencyMode).toBe(PBRMaterial.PBRMATERIAL_ALPHABLEND);
+      expect(mat.pluginManager?.getPlugin("Water")).toBeInstanceOf(WaterPlugin);
       expect(m.receiveShadows).toBe(false);
     }
-    water.update(-500, 300); // must re-emit without throwing
+    water.update(-500, 300, 1); // must re-emit and re-bake without throwing
     water.dispose();
-  });
+  }, timeLimit(30_000));
 
   it("scrolls the ripple by the clock it is handed, not by the wall clock, so a held frame holds its water", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     let ms = 1000;
-    const water = createWater(scene, 0x5eed, 0, [], () => ms);
+    const water = createWater(scene, 0x5eed, 0, [], "medium", 0, 0, () => ms);
     const bump = (water.meshes[0]?.material as PBRMaterial).bumpTexture as Texture;
     const u0 = bump.uOffset;
     scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -49,20 +79,359 @@ describe("createWater under NullEngine", () => {
     water.dispose();
   });
 
-  it("adds one depth-shaded disc per pond, sharing the water material, and disposes it", () => {
+  it("adds one disc per pond on the lake material at the pond's level, and disposes it", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     const water = createWater(scene, 1, 0, [{ x: 100, z: 50, radius: 30, height: 42 }]);
-    const pond = scene.getMeshByName("pond_0");
-    expect(pond).not.toBeNull();
-    expect(pond!.position.y).toBeCloseTo(42.02, 5);
-    // Babylon's default bounding sphere is fit around the AABB (radius =
-    // half the box diagonal, R·√2 for a flat disc), not the mesh's actual
-    // circumradius — the box extent is the honest read of "radius ≈ 31"
-    // (pond.radius + 1, the CreateDisc argument).
-    expect(pond!.getBoundingInfo().boundingBox.extendSizeWorld.x).toBeCloseTo(31, 0);
-    expect(pond!.material).toBe(scene.getMaterialByName("mat_water"));
+    const pond = scene.getMeshByName("pond_0")!;
+    expect(pond.position.y).toBeCloseTo(42.02, 5);
+    // Babylon's default bounding sphere is fit around the AABB, not the mesh's
+    // circumradius; the box extent is the honest read of "radius ~ 31".
+    expect(pond.getBoundingInfo().boundingBox.extendSizeWorld.x).toBeCloseTo(31, 0);
+    expect(pond.material).toBe(scene.getMaterialByName("mat_water_lake"));
+    expect((pond.metadata as { waterLevel: number }).waterLevel).toBe(42);
+    expect(pond.isVerticesDataPresent("bedDepth")).toBe(true);
+    expect(pond.isVerticesDataPresent(VertexBuffer.ColorKind)).toBe(false);
     water.dispose();
     expect(scene.getMeshByName("pond_0")).toBeNull();
+    expect(scene.getMaterialByName("mat_water_lake")).toBeNull();
+  }, timeLimit(30_000));
+
+  it("the mechanism fired: the bed texture is uploaded after the first update and the plugin points at it", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 7, 0, [], "low");
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    expect(plugin.bedTexture).not.toBeNull();
+    expect(plugin.bedTexels).toBe(128);
+    expect(plugin.bedSpacing).toBe(2);
+    expect(plugin.bedOrigin).toEqual([bedOriginFor(0, 128, 2), bedOriginFor(0, 128, 2)]);
+    expect(plugin.octaves).toBe(1);
+    water.setWind(1, [0, 1]);
+    expect((water.meshes[0]!.material as PBRMaterial).roughness).toBeGreaterThan(0.5);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("uploads the bed at creation, before any frame, at the camera's start", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 7, 0, [], "low", 900, -400);
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    expect(plugin.bedTexture).not.toBeNull();
+    expect(plugin.bedOrigin).toEqual([bedOriginFor(900, 128, 2), bedOriginFor(-400, 128, 2)]);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("re-centres the bed a row a frame: nothing is uploaded mid-bake, one upload holds the new bake", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    // a pond by (500, 500), so the square there is one a body reaches
+    const water = createWater(scene, 7, 0, [{ x: 520, z: 480, radius: 10, height: 0 }], "low");
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    const upload = vi.spyOn(plugin.bedTexture as RawTexture, "update");
+    const origin0 = [...plugin.bedOrigin];
+    water.update(60, 0, 0); // inside the inner half [-64, 64): no bake, no upload
+    expect(upload).not.toHaveBeenCalled();
+    let calls = 0;
+    while (upload.mock.calls.length === 0) {
+      water.update(500, 500, 0);
+      calls++;
+      if (upload.mock.calls.length === 0) expect(plugin.bedOrigin).toEqual(origin0);
+      expect(calls).toBeLessThanOrEqual(128);
+    }
+    expect(calls).toBe(128); // 128 rows at one a frame
+    expect(upload).toHaveBeenCalledTimes(1);
+    const o = bedOriginFor(500, 128, 2);
+    expect(plugin.bedOrigin).toEqual([o, o]);
+    const heights = upload.mock.calls[0]![0] as Float32Array;
+    expect(heights[0]).toBeCloseTo(elevationAt(7, o + 1, o + 1), 4);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("begins no bake where no body reaches the new square, and keeps the bed it has", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    // level 0 on seed 7: the square around (500, 500) is dry at all nine points
+    const water = createWater(scene, 7, 0, [], "low");
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    const upload = vi.spyOn(plugin.bedTexture as RawTexture, "update");
+    const origin0 = [...plugin.bedOrigin];
+    water.update(0, 0, 0); // the first update: the creation grid is already here
+    for (let i = 0; i < 300; i++) water.update(500, 500, 0);
+    expect(upload).not.toHaveBeenCalled();
+    expect(plugin.bedOrigin).toEqual(origin0);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("drops a bake whose square the camera left mid-bake (a 500 m jump) and bakes the new square", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    // a level far above the ground: every square is under water
+    const water = createWater(scene, 7, 10_000, [], "low");
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    const upload = vi.spyOn(plugin.bedTexture as RawTexture, "update");
+    water.update(0, 0, 0); // the first update: the creation grid is already here
+    for (let i = 0; i < 50; i++) water.update(500, 0, 0); // 50 of 128 rows
+    expect(upload).not.toHaveBeenCalled();
+    let calls = 0;
+    while (upload.mock.calls.length === 0) {
+      water.update(1000, 0, 0);
+      calls++;
+      expect(calls).toBeLessThanOrEqual(128);
+    }
+    // a fresh bake from row 0, not the 78 rows left of the old one
+    expect(calls).toBe(128);
+    expect(upload).toHaveBeenCalledTimes(1);
+    const ox = bedOriginFor(1000, 128, 2);
+    const oz = bedOriginFor(0, 128, 2);
+    expect(plugin.bedOrigin).toEqual([ox, oz]);
+    const heights = upload.mock.calls[0]![0] as Float32Array;
+    expect(heights[0]).toBeCloseTo(elevationAt(7, ox + 1, oz + 1), 4);
+    expect(heights[127]).toBeCloseTo(elevationAt(7, ox + 255, oz + 1), 4);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("keeps a bake while the camera stays in its square, past the inner half (a 40 m move)", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 7, 10_000, [], "low");
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    const upload = vi.spyOn(plugin.bedTexture as RawTexture, "update");
+    water.update(0, 0, 0);
+    // a bake for (500, 0): the square [320, 576) x [-128, 128), inner half [384, 512) x [-64, 64)
+    const ox = bedOriginFor(500, 128, 2);
+    const oz = bedOriginFor(0, 128, 2);
+    expect([ox, oz]).toEqual([320, -128]);
+    for (let i = 0; i < 50; i++) water.update(500, 0, 0); // 50 of 128 rows
+    let calls = 0;
+    while (upload.mock.calls.length === 0) {
+      water.update(540, 0, 0); // out of the inner half, in the square
+      calls++;
+      expect(calls).toBeLessThanOrEqual(128);
+    }
+    // the 78 rows left, not a fresh 128, and for the square it was begun for
+    expect(calls).toBe(78);
+    expect(plugin.bedOrigin).toEqual([ox, oz]);
+    const heights = upload.mock.calls[0]![0] as Float32Array;
+    expect(heights[0]).toBeCloseTo(elevationAt(7, ox + 1, oz + 1), 4);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("drops a bake when the camera leaves its square (a 300 m move) and bakes the new one from row 0", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 7, 10_000, [], "low");
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    const upload = vi.spyOn(plugin.bedTexture as RawTexture, "update");
+    water.update(0, 0, 0);
+    for (let i = 0; i < 50; i++) water.update(500, 0, 0);
+    let calls = 0;
+    while (upload.mock.calls.length === 0) {
+      water.update(800, 0, 0); // past the square's east edge at 576
+      calls++;
+      expect(calls).toBeLessThanOrEqual(128);
+    }
+    expect(calls).toBe(128);
+    expect(plugin.bedOrigin).toEqual([bedOriginFor(800, 128, 2), bedOriginFor(0, 128, 2)]);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  describe("rings without water are off, and a wet ring's bounds are its wet cells (seed atmo)", () => {
+    // The olympic variant's sea is at level 0; on seed atmo the coast at z = 0
+    // is near x = -372, and pond_0 sits on high ground at (249.6, 84), about
+    // 620 m inland. Ring 0 is 1,024 m across, so it holds no sea only with the
+    // camera more than 512 m from the coast.
+    const seed = seedFromToken("atmo");
+    const pondCam = { x: 249.6, z: 84 };
+
+    it("inland: ring 0 is disabled, ring 1's box ends at the coast, the pond disc stays on", () => {
+      engine = new NullEngine();
+      const scene = new Scene(engine);
+      const level = activeTerrainVariant().waterLevel!;
+      expect(level).toBe(0);
+      const ponds = activeTerrainVariant().trailGraph!(seed).features.filter((f) => f.kind === "pond");
+      expect(ponds[0]!.x).toBeCloseTo(pondCam.x, 0);
+      const water = createWater(scene, seed, level, ponds, "medium", pondCam.x, pondCam.z);
+      const check = (): void => {
+        expect(water.meshes[0]!.isEnabled()).toBe(false);
+        const ring1 = water.meshes[1]!;
+        expect(ring1.isEnabled()).toBe(true);
+        const box = ring1.getBoundingInfo().boundingBox;
+        // the whole plane would reach 1,024 m east of the camera
+        const planeMaxX = box.minimumWorld.x + WATER_RING_CELLS * waterRingSpacing(1);
+        expect(planeMaxX).toBeGreaterThan(pondCam.x);
+        // the ring's east-most wet vertex is on the coast, and the box ends one 16 m cell past it
+        const pos = ring1.getVerticesData(VertexBuffer.PositionKind)!;
+        const depth = ring1.getVerticesData("bedDepth")!;
+        let wetMaxX = -Infinity;
+        for (let i = 0; i < depth.length; i++) if ((depth[i] as number) > 0) wetMaxX = Math.max(wetMaxX, pos[i * 3] as number);
+        expect(wetMaxX).toBeLessThan(-360);
+        expect(box.maximumWorld.x).toBeGreaterThanOrEqual(wetMaxX);
+        expect(box.maximumWorld.x).toBeLessThanOrEqual(wetMaxX + waterRingSpacing(1));
+        expect(box.minimumWorld.y).toBe(level);
+        expect(box.maximumWorld.y).toBe(level);
+        expect(scene.getMeshByName("pond_0")!.isEnabled()).toBe(true);
+      };
+      check();
+      // a re-emit (the rings moved) sets the same again, never the whole plane back
+      water.update(pondCam.x + 40, pondCam.z + 40, 0);
+      water.update(pondCam.x, pondCam.z, 0);
+      check();
+      water.dispose();
+    }, timeLimit(30_000));
+
+    it("culls every ring by its wet box: none is active looking inland from the pond, one is looking to the coast", () => {
+      engine = new NullEngine();
+      const scene = new Scene(engine);
+      const ponds = activeTerrainVariant().trailGraph!(seed).features.filter((f) => f.kind === "pond");
+      // pond_0's west bank, at eye height over it
+      const camera = new FreeCamera("c", new Vector3(209.6, 87.5, 84), scene);
+      camera.maxZ = 10_000;
+      const water = createWater(scene, seed, 0, ponds, "medium", 209.6, 84);
+      water.update(209.6, 84, 0);
+      const activeRings = (): string[] => {
+        const active = scene.getActiveMeshes();
+        const names: string[] = [];
+        for (let i = 0; i < active.length; i++) {
+          const name = (active.data[i] as { name: string }).name;
+          if (name.startsWith("water_")) names.push(name);
+        }
+        return names;
+      };
+      // inland, east: the camera is inside ring 1's wet box's bounding sphere,
+      // so only the box test can cull it
+      camera.setTarget(new Vector3(1209.6, 87.5, 84));
+      scene.render();
+      expect(water.meshes[1]!.isEnabled()).toBe(true);
+      const sphere = water.meshes[1]!.getBoundingInfo().boundingSphere;
+      expect(Vector3.Distance(camera.position, sphere.centerWorld)).toBeLessThan(sphere.radiusWorld);
+      expect(activeRings()).toEqual([]);
+      // west, toward the coast
+      camera.setTarget(new Vector3(-790.4, 87.5, 84));
+      scene.render();
+      expect(activeRings().length).toBeGreaterThan(0);
+      water.dispose();
+    }, timeLimit(30_000));
+
+    it("at the coast: ring 0 is enabled", () => {
+      engine = new NullEngine();
+      const scene = new Scene(engine);
+      const water = createWater(scene, seed, 0, [], "medium", -374, 0);
+      expect(water.meshes[0]!.isEnabled()).toBe(true);
+      const box = water.meshes[0]!.getBoundingInfo().boundingBox;
+      expect(box.minimumWorld.x).toBeLessThan(-374);
+      water.dispose();
+    }, timeLimit(30_000));
   });
+
+  it("on the high tier draws the water opaque in group 1, reading the frame, near and far from the camera each frame", () => {
+    frameSupport.supported = true;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const camera = new FreeCamera("c", Vector3.Zero(), scene);
+    camera.minZ = 0.05;
+    camera.maxZ = 10000;
+    const water = createWater(scene, 7, 0, [{ x: 100, z: 50, radius: 30, height: 42 }], "high");
+    expect(water.high).toBe(true);
+    const pond = scene.getMeshByName("pond_0")!;
+    for (const m of [...water.meshes, pond]) {
+      expect(m.renderingGroupId).toBe(WATER_GROUP);
+      const mat = m.material as PBRMaterial;
+      expect(mat.transparencyMode).toBe(PBRMaterial.PBRMATERIAL_OPAQUE);
+      expect(mat.needDepthPrePass).toBe(false);
+      const plugin = mat.pluginManager!.getPlugin("Water") as WaterPlugin;
+      expect(plugin.sceneTexture).not.toBeNull();
+      expect(plugin.depthTexture).not.toBeNull();
+      expect(plugin.screen).toEqual([1 / engine.getRenderWidth(), 1 / engine.getRenderHeight()]);
+    }
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    // before any copy: the frame's 1×1 far depth, and ready as soon as the bed is
+    // (NullEngine never uploads, so the bed's readiness is set by hand)
+    expect(plugin.depthTexture).toBeInstanceOf(RawTexture);
+    expect(plugin.depthTexture!.getSize()).toEqual({ width: 1, height: 1 });
+    plugin.bedTexture!.getInternalTexture()!.isReady = true;
+    expect(plugin.isReadyForSubMesh()).toBe(true);
+    water.update(0, 0, 1);
+    expect(plugin.nearFar).toEqual([0.05, 10000]);
+    camera.maxZ = 5000;
+    water.update(0, 0, 2);
+    expect(plugin.nearFar).toEqual([0.05, 5000]);
+    const clear = (scene as unknown as { _renderingManager: { _autoClearDepthStencil: Record<number, { autoClear: boolean }> } })._renderingManager._autoClearDepthStencil;
+    expect(clear[WATER_GROUP]?.autoClear).toBe(false);
+    water.dispose();
+    expect(clear[WATER_GROUP]?.autoClear).toBe(true);
+    frameSupport.supported = false;
+  }, timeLimit(30_000));
+
+  it("on the high tier asks the frame for its copy only while a water mesh is among the frame's active meshes", () => {
+    frameSupport.supported = true;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    new FreeCamera("c", new Vector3(0, 5, 0), scene);
+    // something else in group 1 (rain, motes, mist stand in), so the group renders without the water
+    const box = MeshBuilder.CreateBox("b", { size: 1 }, scene);
+    box.material = new StandardMaterial("m", scene);
+    box.position.set(0, 5, 5);
+    box.renderingGroupId = WATER_GROUP;
+    const water = createWater(scene, 7, 0, [], "high");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      // no water mesh active: no copy is asked for, so NullEngine's missing target is never a miss
+      for (const m of water.meshes) m.setEnabled(false);
+      for (let i = 0; i < 200; i++) scene.render();
+      expect(scene.getActiveMeshes().contains(box)).toBe(true);
+      expect(warn).not.toHaveBeenCalled();
+      // water in view: every frame asks, and NullEngine can never copy, so it says so at 120
+      for (const m of water.meshes) m.setEnabled(true);
+      for (let i = 0; i < 120; i++) scene.render();
+      expect(scene.getActiveMeshes().contains(water.meshes[0]!)).toBe(true);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+      water.dispose();
+      frameSupport.supported = false;
+    }
+  }, timeLimit(30_000));
+
+  it("on the high tier without the frame's support keeps the blended water in group 0", () => {
+    frameSupport.supported = false;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    new FreeCamera("c", Vector3.Zero(), scene);
+    const water = createWater(scene, 7, 0, [], "high");
+    expect(water.high).toBe(false);
+    const mat = water.meshes[0]!.material as PBRMaterial;
+    expect(water.meshes[0]!.renderingGroupId).toBe(0);
+    expect(mat.transparencyMode).toBe(PBRMaterial.PBRMATERIAL_ALPHABLEND);
+    const plugin = mat.pluginManager!.getPlugin("Water") as WaterPlugin;
+    expect(plugin.sceneTexture).toBeNull();
+    expect(plugin.depthTexture).toBeNull();
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it.each([
+    [true, WATER_GROUP],
+    [false, 0],
+  ])("puts rain, motes and mist in the water's group when its high path is on (%s: group %i)", (supported, group) => {
+    frameSupport.supported = supported;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    new FreeCamera("c", Vector3.Zero(), scene);
+    const water = createWater(scene, 7, 0, [], "high");
+    const rain = createRain(scene, "high");
+    const motes = createMotes(scene, "high");
+    const mist = createMistMeshes(scene, 7, "high");
+    setEffectsGroup(effectsGroupFor(water), { rain, motes, mist });
+    expect(motes).not.toBeNull();
+    expect(mist.meshes.length).toBeGreaterThan(0);
+    expect(rain.system.renderingGroupId).toBe(group);
+    for (const system of motes!.systems) expect(system.renderingGroupId).toBe(group);
+    for (const mesh of mist.meshes) expect(mesh.renderingGroupId).toBe(group);
+    expect(effectsGroupFor(null)).toBe(0);
+    mist.dispose();
+    motes!.dispose();
+    rain.dispose();
+    water.dispose();
+    frameSupport.supported = false;
+  }, timeLimit(30_000));
 });

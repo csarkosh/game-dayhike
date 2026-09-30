@@ -1,16 +1,15 @@
 /**
  * Pure water-ring math: a clipmap of flat rings at the water level, mirroring
  * `clipmap.ts` but for the ocean surface. Each ring stores only the
- * TERRAIN height under each vertex — the water itself is flat — so depth can
- * be baked into per-vertex colour and alpha: foam at the shoreline, dark and
- * opaque out at sea. Four rings at 8/16/32/64 m spacing cover 8,192 m in four
+ * TERRAIN height under each vertex — the water itself is flat — and write the
+ * depth below the surface per vertex (`bedDepth`), the fragment stage's
+ * fallback outside the bed height texture. Four rings at 8/16/32/64 m spacing cover 8,192 m in four
  * draw calls, within a budget of ≤ 4.
  *
  * Pure and Babylon-free; the water shell uploads the output.
  */
 import { elevationAt } from "../sim/terrain.js";
 import { HOLE_CELLS, snapOrigin } from "./clipmap.js";
-import { clamp01, mixRgb, type Rgb } from "./colour.js";
 
 /** Same cell count as the terrain clipmap's RING_CELLS, so `snapOrigin` and
  * `HOLE_CELLS` (both parameterised by spacing only beyond that count) can be
@@ -37,11 +36,10 @@ export type WaterGeometry = {
   /** 16-bit: the largest index is SIDE² − 1 = 16640, well inside 65535. */
   indices: Uint16Array;
   normals: Float32Array;
-  colors: Float32Array;
+  /** Water level minus the bed's height, clamped at 0 where the ground is above the surface. */
+  bedDepth: Float32Array;
   uvs: Float32Array;
 };
-
-export type Rgba = { r: number; g: number; b: number; a: number };
 
 export function waterRingSpacing(level: number): number {
   let s = WATER_BASE_SPACING;
@@ -128,32 +126,8 @@ function insideHole(hole: { x0: number; z0: number } | null, ix: number, iz: num
   return ix >= hole.x0 && ix < hole.x0 + HOLE_CELLS && iz >= hole.z0 && iz < hole.z0 + HOLE_CELLS;
 }
 
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = clamp01((x - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
-
-const FOAM: Rgb = { r: 0.82, g: 0.86, b: 0.84 };
-const SHALLOW: Rgb = { r: 0.16, g: 0.36, b: 0.36 };
-const DEEP: Rgb = { r: 0.06, g: 0.13, b: 0.18 };
-
 /**
- * Depth-ramped surface colour: foam-bright and most transparent right at the
- * shoreline, teal over the shallows, dark and near-opaque past ~10 m. Negative
- * depth (terrain above the water level — the plane still has vertices there)
- * clamps to the surface colour.
- */
-export function waterColorAt(depth: number): Rgba {
-  const d = Math.max(0, depth);
-  const toShallow = smoothstep(0.05, 2.5, d);
-  const toDeep = smoothstep(2.5, 10, d);
-  const rgb = mixRgb(mixRgb(FOAM, SHALLOW, toShallow), DEEP, toDeep);
-  const a = 0.55 + 0.17 * toShallow + 0.2 * toDeep;
-  return { ...rgb, a };
-}
-
-/**
- * Flat plane at `waterLevel` with depth baked into vertex colour and alpha.
+ * Flat plane at `waterLevel` carrying the bed depth per vertex.
  * No border clamping (a flat plane cannot crack) and no gradient normals —
  * every normal is (0, 1, 0); the bump texture supplies the ripple.
  */
@@ -164,7 +138,7 @@ export function waterRingGeometry(
 ): WaterGeometry {
   const positions = new Float32Array(SIDE * SIDE * 3);
   const normals = new Float32Array(SIDE * SIDE * 3);
-  const colors = new Float32Array(SIDE * SIDE * 4);
+  const bedDepth = new Float32Array(SIDE * SIDE);
   const uvs = new Float32Array(SIDE * SIDE * 2);
 
   for (let iz = 0; iz < SIDE; iz++) {
@@ -179,11 +153,7 @@ export function waterRingGeometry(
       normals[p] = 0;
       normals[p + 1] = 1;
       normals[p + 2] = 0;
-      const c = waterColorAt(waterLevel - (ring.h[at] as number));
-      colors[at * 4] = c.r;
-      colors[at * 4 + 1] = c.g;
-      colors[at * 4 + 2] = c.b;
-      colors[at * 4 + 3] = c.a;
+      bedDepth[at] = Math.max(0, waterLevel - (ring.h[at] as number));
       uvs[at * 2] = x / WATER_UV_SCALE;
       uvs[at * 2 + 1] = z / WATER_UV_SCALE;
     }
@@ -213,5 +183,41 @@ export function waterRingGeometry(
     }
   }
 
-  return { positions, indices, normals, colors, uvs };
+  return { positions, indices, normals, bedDepth, uvs };
+}
+
+/**
+ * The box a ring's water can be drawn in, or null when it has none. Its wet
+ * cells are the triangles it draws with a wet vertex (`bedDepth > 0`); outside
+ * the bed texture the fragment's depth is `bedDepth` interpolated, so such a
+ * triangle draws water up to its dry corners, and the box holds all three of
+ * its vertices. Triangles in the hole are not drawn, so they count for
+ * nothing. y is the water level. Null makes the ring's mesh disabled: a flat
+ * plane at the level is in view from almost anywhere, and a mesh in view is
+ * what asks for the high tier's copy.
+ */
+export function wetBounds(geometry: WaterGeometry): { min: [number, number, number]; max: [number, number, number] } | null {
+  const { positions, indices, bedDepth } = geometry;
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  let y = 0;
+  for (let t = 0; t < indices.length; t += 3) {
+    const a = indices[t] as number;
+    const b = indices[t + 1] as number;
+    const c = indices[t + 2] as number;
+    if ((bedDepth[a] as number) <= 0 && (bedDepth[b] as number) <= 0 && (bedDepth[c] as number) <= 0) continue;
+    for (const v of [a, b, c]) {
+      const x = positions[v * 3] as number;
+      const z = positions[v * 3 + 2] as number;
+      y = positions[v * 3 + 1] as number;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+  }
+  if (minX === Infinity) return null;
+  return { min: [minX, y, minZ], max: [maxX, y, maxZ] };
 }

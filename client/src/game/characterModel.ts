@@ -7,6 +7,7 @@ import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import "./ktx2.js";
 import { attachSkinToMaterials } from "./skin.js";
 import { budgetMaterial } from "./headlamp.js";
+import { attachWet } from "./wetPlugin.js";
 
 import catalog from "../../assets/catalog.json" with { type: "json" };
 import { modelUrl } from "./assetUrls.js";
@@ -174,7 +175,9 @@ export function orientationRoot(loaded: TransformNode, name: string): TransformN
  * covers the pool.
  */
 export function attachSkinToContainer(container: { materials: Material[] }): number {
-  return attachSkinToMaterials(container.materials);
+  const skins = attachSkinToMaterials(container.materials);
+  for (const m of container.materials) attachWet(m);
+  return skins;
 }
 
 /** Turns one catalog asset into a loaded container. Tests pass one that reads the file from disk. */

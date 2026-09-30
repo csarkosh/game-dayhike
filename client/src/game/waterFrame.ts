@@ -1,0 +1,210 @@
+// client/src/game/waterFrame.ts
+/**
+ * The high tier's view of the opaque pass for the water to read through
+ * (spec §4.4, §5.2): the frame's colour copied before the water's rendering
+ * group draws, and the depth behind each pixel.
+ *
+ * The depth is the scene's multisampled depth, resolved as the pass is broken
+ * before group 1 into the single-sample texture Babylon keeps beside it
+ * (`RenderTargetWrapper.resolveMSAADepth`, WebGPU's
+ * `resolveMSAADepthTexture`). That texture is not an attachment of the pass
+ * the water draws in, so the water reads it where it stands: device depth,
+ * linearised in the shader from the camera's near and far. The colour is an
+ * attachment (the pass's resolve target), so it is copied out.
+ *
+ * The pass is broken once a frame, between group 0 and group 1, and only in a
+ * frame whose active meshes hold a water mesh (`hasWater`): rain, motes and
+ * mist share group 1, so the group renders with no water in view. The copy runs
+ * before any other observer of the group, which keeps it outside the
+ * async-pipeline scope (`scopeRenderingGroups`) that the water's own draws
+ * are inside. WebGPU only, with a multisampled first pass
+ * (`waterFrameSupported`); elsewhere the water stays on the blended path.
+ *
+ * Every texture the frame hands the water exists and is ready from its
+ * creation, so the water's material is ready as soon as its bed is, with or
+ * without water in view: the colour copy is a render target, and the depth is
+ * a 1×1 placeholder at the far plane until the first copy, when the frame
+ * points the water at the resolved depth.
+ * Renderer-only.
+ */
+import type { Scene } from "@babylonjs/core/scene.js";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
+import type { Camera } from "@babylonjs/core/Cameras/camera.js";
+import type { PostProcess } from "@babylonjs/core/PostProcesses/postProcess.js";
+import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
+import { Constants } from "@babylonjs/core/Engines/constants.js";
+import { CopyTextureToTexture } from "@babylonjs/core/Misc/copyTextureToTexture.js";
+import type { Observer } from "@babylonjs/core/Misc/observable.js";
+import type { RenderingGroupInfo } from "@babylonjs/core/Rendering/renderingManager.js";
+
+/** The water draws after every opaque mesh, in its own group. */
+export const WATER_GROUP = 1;
+
+/** Frames of group 1 with water in view but no copy before the frame says
+ * so, once: without its first copy the water reads the far placeholder and an
+ * undrawn colour, so a copy that never comes would otherwise be a sea with
+ * nothing behind it and nothing said. */
+export const WATER_FRAME_MISS_WARN = 120;
+
+/** The device depth the placeholder holds: the far plane (the shader's
+ * linearisation reads 1 as the camera's far), so the water sees its whole
+ * bed depth behind it rather than a scene point at its surface. */
+export const WATER_DEPTH_FAR = 1;
+
+/** What reads the frame's depth: the water plugins. */
+export type WaterDepthReader = { depthTexture: BaseTexture | null };
+
+export type WaterFrame = {
+  /** The opaque pass's colour, copied before group 1 each frame. */
+  readonly scene: BaseTexture;
+  /** Device depth behind each pixel in `.r`: the 1×1 far placeholder until
+   * the first copy, the resolved depth from then on. */
+  readonly depth: BaseTexture;
+  /** 1 / the target's size, updated in place when the target is resized. */
+  screen: [number, number];
+  dispose(): void;
+};
+
+/** The first post-process on the camera: its input is the target the scene draws into. */
+function firstPostProcess(camera: Camera | null): PostProcess | null {
+  return camera?._postProcesses.find((p): p is PostProcess => p !== null && p !== undefined) ?? null;
+}
+
+/**
+ * Whether the frame can be made for `scene` as it stands: WebGPU, and a first
+ * post-process that multisamples (post.ts sets it where the engine can). Only
+ * a multisampled target keeps a resolved depth that is not also the pass's
+ * attachment; on WebGL2 the target's depth is a renderbuffer, which no shader
+ * reads.
+ */
+export function waterFrameSupported(scene: Scene): boolean {
+  const first = firstPostProcess(scene.activeCamera);
+  return scene.getEngine().isWebGPU && first !== null && first.samples > 1;
+}
+
+/**
+ * `hasWater` says whether a water mesh is among this frame's active meshes; it
+ * is asked as group 1 is about to render, after the frame's culling. Each of
+ * `readers` is pointed at the depth now (the placeholder) and again at the
+ * first copy (the resolved depth).
+ */
+export function createWaterFrame(
+  scene: Scene,
+  engine: AbstractEngine,
+  hasWater: () => boolean,
+  readers: readonly WaterDepthReader[],
+): WaterFrame {
+  let width = engine.getRenderWidth();
+  let height = engine.getRenderHeight();
+  const screen: [number, number] = [1 / width, 1 / height];
+  // Depth is not cleared between group 0 and group 1: the water must test
+  // against the opaque pass it reads.
+  scene.setRenderingAutoClearDepthStencil(WATER_GROUP, false, false, false);
+
+  const colour = new RenderTargetTexture("waterScene", { width, height }, scene, {
+    generateMipMaps: false,
+    type: Constants.TEXTURETYPE_HALF_FLOAT,
+    samplingMode: Texture.BILINEAR_SAMPLINGMODE,
+    generateDepthBuffer: false,
+  });
+  colour.wrapU = Texture.CLAMP_ADDRESSMODE;
+  colour.wrapV = Texture.CLAMP_ADDRESSMODE;
+  const copier = new CopyTextureToTexture(engine, false, false);
+
+  // What the water reads before the first copy: one texel at the far plane,
+  // uploaded at creation, so it is ready before any frame.
+  const far = RawTexture.CreateRTexture(
+    new Float32Array([WATER_DEPTH_FAR]),
+    1,
+    1,
+    scene,
+    false,
+    false,
+    Texture.NEAREST_SAMPLINGMODE,
+    Constants.TEXTURETYPE_FLOAT,
+  );
+  far.name = "waterDepthFar";
+  far.wrapU = Texture.CLAMP_ADDRESSMODE;
+  far.wrapV = Texture.CLAMP_ADDRESSMODE;
+  // The resolved depth: the scene target's own texture, set on every copy
+  // (the target's texture is replaced when it is resized).
+  const resolved = new BaseTexture(scene);
+  resolved.name = "waterDepth";
+  resolved.wrapU = Texture.CLAMP_ADDRESSMODE;
+  resolved.wrapV = Texture.CLAMP_ADDRESSMODE;
+  let depth: BaseTexture = far;
+  for (const r of readers) r.depthTexture = depth;
+
+  const fit = (w: number, h: number): void => {
+    if (w === width && h === height) return;
+    width = w;
+    height = h;
+    screen[0] = 1 / w;
+    screen[1] = 1 / h;
+    colour.resize({ width: w, height: h });
+  };
+
+  let copied = false;
+  let missed = 0;
+  /** Counts a group 1 that went without its copy, and says why once, late.
+   * A frame with no water in view is not a miss: nothing needed the copy. */
+  const miss = (reason: string): void => {
+    if (copied || ++missed !== WATER_FRAME_MISS_WARN) return;
+    console.warn(`Water: no copy of the opaque pass after ${WATER_FRAME_MISS_WARN} frames (${reason}); the high tier's water shows nothing behind its surface.`);
+  };
+
+  const observer: Observer<RenderingGroupInfo> = scene.onBeforeRenderingGroupObservable.add(
+    (info) => {
+      if (info.renderingGroupId !== WATER_GROUP || info.renderingManager !== scene.renderingManager) return;
+      if (!hasWater()) return;
+      const camera = scene.activeCamera;
+      const target = engine._currentRenderTarget;
+      if (camera === null) return miss("no active camera");
+      if (target === null || target.texture === null) return miss("the scene draws into no render target");
+      // The resolved depth is only apart from the attachment when multisampled.
+      if (target.samples <= 1) return miss(`the scene's target has ${target.samples} sample`);
+      if (target._depthStencilTexture === null) return miss("the scene's target has no depth texture");
+      if (!copier.isReady()) return miss("the copy's shader is not ready");
+      fit(target.width, target.height);
+      // Ending the pass resolves the colour into target.texture; the unbind
+      // resolves the depth when asked, and only this once a frame.
+      target.resolveMSAADepth = true;
+      engine.unBindFramebuffer(target, true);
+      target.resolveMSAADepth = false;
+      copier.copy(target.texture, colour);
+      resolved._texture = target._depthStencilTexture;
+      if (!copied) {
+        // Before this frame's water draws: it reads the pass it is drawn in.
+        depth = resolved;
+        for (const r of readers) r.depthTexture = depth;
+      }
+      copied = true;
+      // Back into the scene's target: the next draw loads what the pass stored.
+      engine.bindFramebuffer(target, 0, undefined, undefined, true);
+      engine.setViewport(camera.viewport);
+    },
+    undefined,
+    true,
+  )!;
+
+  return {
+    scene: colour,
+    get depth() {
+      return depth;
+    },
+    screen,
+    dispose() {
+      scene.onBeforeRenderingGroupObservable.remove(observer);
+      // The texture behind it is the target's, not this frame's to release.
+      resolved._texture = null;
+      resolved.dispose();
+      far.dispose();
+      colour.dispose();
+      copier.dispose();
+      scene.setRenderingAutoClearDepthStencil(WATER_GROUP, true, true, true);
+    },
+  };
+}
