@@ -20,8 +20,16 @@ import { modelUrl } from "../assetUrls.js";
 import { placeStaticModel, type PlacedModel } from "../staticModel.js";
 import { createRenderer } from "../renderer.js";
 import type { QualityTier } from "../quality.js";
+import type { Scene as BabylonSceneType } from "@babylonjs/core/scene.js";
 import { seedFromToken } from "../seed.js";
-import { carYaw } from "../trailheadMeshes.js";
+import { carYaw, createTrailheadMeshes } from "../trailheadMeshes.js";
+import { createSignMeshes } from "../signMeshes.js";
+import { boardDrawingOf, type BoardPainter } from "../boardPaint.js";
+import { BOARD_IMAGE_URLS } from "../boardImages.js";
+import { POSTER_LAST_SEEN } from "../posterPanel.js";
+import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "../../sim/signs.js";
+import { signSites } from "../../sim/placeNames.js";
+import { terrainMaterialFor } from "../renderer.js";
 import { createCaptionPanel } from "./captions.js";
 import { INTRO_CAR, INTRO_HOUR, INTRO_RANGER, INTRO_SEED_TOKEN, INTRO_WEATHER, introScene } from "./intro.js";
 import { createSceneClock, type SceneClock } from "./sceneClock.js";
@@ -29,7 +37,7 @@ import { createScenePlayer } from "./scenePlayer.js";
 import { carModelOf, type CarModel, type StageDeps } from "./sceneStage.js";
 
 export type DayhikeScene = { seek(t: number): void; frame(): Promise<void>; time(): number };
-export type SceneRun = { dispose(): void; worldState(): WorldState };
+export type SceneRun = { dispose(): void; worldState(): WorldState; scene(): BabylonSceneType };
 export type SceneRouteDeps = {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
@@ -39,6 +47,8 @@ export type SceneRouteDeps = {
   loadCar?: (scene: BabylonScene) => Promise<PlacedModel | null>;
   pool?: CharacterPool;
   raf?: (fn: (ms: number) => void) => number;
+  /** The board's painter; a test with no canvas hands in its own. */
+  paint?: BoardPainter;
 };
 
 const BLACK_STYLE = "position:absolute;inset:0;background:#000;pointer-events:none;z-index:29;";
@@ -77,6 +87,34 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     start: places.start,
     board: places.board,
     direction: carYaw(places.car, graph.trailhead) === 0 ? 1 : -1,
+  });
+
+  // The trailhead as the hike draws it, less the car: the board with its
+  // poster and the fingerposts, from the world's own search, so the film
+  // frames what a player meets. The scene's car moves; the hike's stands.
+  const groundH = (x: number, z: number): number => elevationAt(seed, x, z);
+  const found = world.search;
+  const hikerFirst = found === null ? "" : (found.hiker.name.split(" ")[0] as string);
+  const sites = found === null ? [] : signSites(seed, graph.features, hikerFirst, found.body.pos);
+  const posts = createSignMeshes(renderer.scene, signPosts(graph, sites), groundH, {
+    materialFor: (name) => terrainMaterialFor(renderer.scene, name),
+    shadows: renderer.shadows,
+  });
+  const trailhead = createTrailheadMeshes(renderer.scene, { board: places.board }, groundH, {
+    materialFor: (name) => terrainMaterialFor(renderer.scene, name),
+    board: boardDrawingOf({
+      seed,
+      trailName: TRAIL_NAME,
+      hikerName: found?.hiker.name ?? "",
+      lastSeen: POSTER_LAST_SEEN,
+      graph,
+      places: sites,
+      summitName: SUMMIT_LABEL,
+      roadCenterX,
+      urls: BOARD_IMAGE_URLS,
+    }),
+    shadows: renderer.shadows,
+    ...(deps.paint === undefined ? {} : { paint: deps.paint }),
   });
 
   const loads = new AbortController();
@@ -118,7 +156,10 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   if (search.step !== null) player.step(search.step);
   else if (search.t !== null) player.seek(search.t);
 
-  let looping = search.step === null;
+  // The loop runs on a held frame too (a held clock makes every tick the
+  // same frame), so a page opened at a step shows it; a recorder's `frame()`
+  // stops the loop and draws each frame itself.
+  let looping = true;
   const drawOnce = (): void => {
     player.tick();
     renderer.sync(world.state, -1, 0);
@@ -162,6 +203,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
 
   return {
     worldState: () => world.state,
+    scene: () => renderer.scene,
     dispose() {
       if (disposed) return;
       disposed = true;
@@ -171,6 +213,8 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       window.removeEventListener("resize", onResize);
       player.dispose();
       black.remove();
+      posts.dispose();
+      trailhead.dispose();
       pool.dispose();
       carModel?.dispose();
       renderer.dispose();

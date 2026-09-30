@@ -37,8 +37,9 @@ export const BOARD_FACE_LIFT = 0.002;
 type Site = { x: number; z: number };
 
 export type TrailheadSites = {
-  /** The car's footprint centre, and the trailhead it is parked beside. */
-  car: { site: Site; trailhead: Site };
+  /** The car's footprint centre, and the trailhead it is parked beside;
+   * absent, no car is placed: a staged scene brings its own and moves it. */
+  car?: { site: Site; trailhead: Site };
   /** The board: its centre, the way its face looks, and its own line. */
   board: Board;
 };
@@ -119,7 +120,7 @@ export function createTrailheadMeshes(
    * the mist's material is (`mistMeshes.ts`), so the two are drawn by one
    * shader.
    */
-  function carShadow(): { mesh: Mesh; material: StandardMaterial; texture: RawTexture } {
+  function carShadow(site: Site): { mesh: Mesh; material: StandardMaterial; texture: RawTexture } {
     const texture = RawTexture.CreateRGBATexture(
       carShadowAlphaMap(), CAR_SHADOW_TEX.width, CAR_SHADOW_TEX.height, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE,
       Engine.TEXTURETYPE_UNSIGNED_BYTE,
@@ -133,7 +134,7 @@ export function createTrailheadMeshes(
     material.disableDepthWrite = true;
     material.backFaceCulling = false;
     material.zOffsetUnits = CAR_SHADOW_BIAS;
-    const grid = carShadowGrid(sites.car.site, groundH);
+    const grid = carShadowGrid(site, groundH);
     const mesh = new Mesh("trailhead_car_shadow", scene);
     const data = new VertexData();
     data.positions = grid.positions;
@@ -150,8 +151,9 @@ export function createTrailheadMeshes(
     return { mesh, material, texture };
   }
 
-  const carBox = fallbackBox("trailhead_car_box", CAR_MATERIAL, sites.car.site, CAR_HALF);
-  const patch = carShadow();
+  const car = sites.car ?? null;
+  const carBox = car === null ? null : fallbackBox("trailhead_car_box", CAR_MATERIAL, car.site, CAR_HALF);
+  const patch = car === null ? null : carShadow(car.site);
   const kioskBoxes = boardBoxes(sites.board).map((b, k) => fallbackBox(`trailhead_kiosk_box_${k}`, KIOSK_MATERIAL, b, BOARD_BOX_HALF));
 
   async function place(
@@ -209,7 +211,7 @@ export function createTrailheadMeshes(
   }
 
   const ready = Promise.all([
-    place(TRAILHEAD_CAR_OUTPUT, "trailhead_car", sites.car.site, carYaw(sites.car.site, sites.car.trailhead), [carBox]),
+    car === null || carBox === null ? Promise.resolve() : place(TRAILHEAD_CAR_OUTPUT, "trailhead_car", car.site, carYaw(car.site, car.trailhead), [carBox]),
     place(
       TRAILHEAD_KIOSK_OUTPUT, "trailhead_kiosk", sites.board,
       // The model's face looks toward +Z; turn +Z onto the board's facing.
@@ -223,10 +225,12 @@ export function createTrailheadMeshes(
       if (disposed) return;
       disposed = true;
       loads.abort();
-      dropBox(carBox);
-      patch.mesh.dispose();
-      patch.material.dispose();
-      patch.texture.dispose();
+      if (carBox !== null) dropBox(carBox);
+      if (patch !== null) {
+        patch.mesh.dispose();
+        patch.material.dispose();
+        patch.texture.dispose();
+      }
       for (const box of kioskBoxes) dropBox(box);
       face?.dispose();
       face = null;

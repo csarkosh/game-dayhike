@@ -24,6 +24,12 @@ describe("the road path", () => {
     expect(WHEEL_RADIUS).toBe(0.36);
   });
 
+  it("takes a lane that changes with time, so a car can ease onto the shoulder as it stops", () => {
+    const car = carAlong(road, 0, (t) => 10 * t, (t) => 1.8 + t, 1);
+    expect(car(0).x).toBeCloseTo(101.8, 6);
+    expect(car(2).x).toBeCloseTo(100 + 2 + 3.8, 6);
+  });
+
   it("cruises then brakes to a stop at the total, with no motion after", () => {
     const d = stopAt(470, 12, 7);
     expect(d(0)).toBe(0);

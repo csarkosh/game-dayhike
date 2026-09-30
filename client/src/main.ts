@@ -336,6 +336,7 @@ function paintRoster(): void {
       selfName,
       inviteUrl: (id) => inviteLink(id, webBase),
       inGame: parseRoute(location.pathname).kind === "game",
+      hidden: parseRoute(location.pathname).kind === "scene",
       paused,
       attempt: clock?.attempt ?? null,
       touch,
@@ -816,6 +817,7 @@ function render(container: HTMLDivElement): void {
     const choice = parseTierOverride(location.search) ?? currentChoice();
     const scene = startSceneRoute({ canvas, container, tier: choice === "auto" ? "high" : choice }, parseSceneSearch(location.search));
     running = { dispose: () => scene.dispose() };
+    paintRoster();
     return;
   }
 

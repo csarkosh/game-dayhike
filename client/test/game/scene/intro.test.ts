@@ -22,7 +22,8 @@ describe("the intro's data", () => {
         expect(fov).toBeLessThanOrEqual(FOV_MAX);
       }
     }
-    expect(evaluate(scene, 4).camera.fov).toBe(0.12);
+    // The coastal wide within the mist's reach: 0.25 rad from 70 m out.
+    expect(evaluate(scene, 4).camera.fov).toBe(0.25);
     expect(evaluate(scene, 27).camera.dof).toBe(true);
     expect(evaluate(scene, 12).camera.dof).toBe(false);
   });
@@ -32,7 +33,9 @@ describe("the intro's data", () => {
     const at = (t: number) => evaluate(scene, t).car;
     expect(at(0)?.z).toBe(-470);
     expect(at(43)?.z).toBeCloseTo(0, 6);
-    expect(at(43)?.x).toBeCloseTo(-250 + 1.8, 6);
+    // Stopped on the shoulder where the hike's car stands, not in its lane.
+    expect(at(43)?.x).toBeCloseTo(-246, 6);
+    expect(at(30)?.x).toBeCloseTo(road.centerX(at(30)?.z ?? 0) + 1.8, 6);
     expect(at(55)?.z).toBeCloseTo(0, 6);
     expect(at(20)?.wheelSpin).toBeGreaterThan(at(19)?.wheelSpin ?? 0);
     expect(at(45)?.doorOpen).toBeGreaterThan(0);

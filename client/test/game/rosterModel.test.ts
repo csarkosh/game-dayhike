@@ -216,4 +216,9 @@ describe("rosterModel on a touch device", () => {
   it("keeps the desktop subdued presence without touch", () => {
     expect(rosterModel({ ...base, inGame: true, paused: false }).presence).toBe("subdued");
   });
+
+  it("is gone entirely on a scene route, which has no party to show", () => {
+    expect(rosterModel({ ...base, inGame: false, paused: false, hidden: true }).presence).toBe("hidden");
+    expect(rosterModel({ ...base, inGame: false, paused: false, hidden: false }).presence).toBe("full");
+  });
 });

@@ -177,6 +177,28 @@ describe("createTrailheadMeshes", () => {
     expect(scene.meshes.filter((m) => m.getTotalVertices() > 0)).toHaveLength(0);
   });
 
+  it("builds the board alone when the sites name no car: a scene brings its own", async () => {
+    const scene = freshScene();
+    const gate = gatedLoader(scene);
+    const boxMaterials: string[] = [];
+    const meshes = createTrailheadMeshes(scene, { board: SITES.board }, groundH, {
+      materialFor: (name) => {
+        boxMaterials.push(name);
+        return new StandardMaterial(`box_${name}`, scene);
+      },
+      board: DRAWING,
+      paint: (s, name) => new PBRMaterial(name, s),
+      loader: gate.loader,
+    });
+    expect(boxMaterials).toEqual(["kiosk", "kiosk", "kiosk", "kiosk", "kiosk"]);
+    expect(scene.getMeshByName("trailhead_car_box")).toBeNull();
+    gate.release();
+    await meshes.ready;
+    expect(scene.getTransformNodeByName("trailhead_kiosk")).not.toBeNull();
+    expect(scene.getTransformNodeByName("trailhead_car")).toBeNull();
+    meshes.dispose();
+  });
+
   it("parks the car nose-first toward the trailhead: its low bonnet is the end nearer the pad", async () => {
     const scene = freshScene();
     const { meshes } = setup(scene, diskLoader(scene));

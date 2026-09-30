@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FILM_FOV, FOV_MAX, FOV_MIN, cutList, ease, fade, follow, hold, holdLookingAt, lookAt, push } from "../../../src/game/scene/shots.js";
+import { FILM_FOV, FOV_MAX, FOV_MIN, cutList, ease, fade, follow, followLookingAt, hold, holdLookingAt, lookAt, push } from "../../../src/game/scene/shots.js";
 
 describe("shots", () => {
   it("looks from a point at a point: yaw 0 faces +z, positive pitch looks down", () => {
@@ -35,6 +35,17 @@ describe("shots", () => {
     const turned = follow(() => ({ x: 0, y: 0, z: 0, yaw: Math.PI / 2 }), () => ({ x: 0, y: 1, z: -8 }));
     expect(turned(0).x).toBeCloseTo(-8, 6);
     expect(turned(0).z).toBeCloseTo(0, 6);
+  });
+
+  it("rides beside a target and keeps it in the centre of the frame", () => {
+    const car = (t: number) => ({ x: 5, y: 0, z: 10 * t, yaw: 0 });
+    const beside = followLookingAt(car, () => ({ x: -6, y: 1.5, z: -8 }), () => ({ x: 0, y: 1, z: 0 }));
+    const f = beside(1);
+    expect(f.x).toBe(-1);
+    expect(f.z).toBe(2);
+    // From 6 m left and 8 m behind, the car is ahead and to the right.
+    expect(f.yaw).toBeCloseTo(Math.atan2(6, 8), 6);
+    expect(f.pitch).toBeCloseTo(Math.atan2(0.5, 10), 6);
   });
 
   it("pushes from a point to a point over its seconds with an ease, then holds", () => {

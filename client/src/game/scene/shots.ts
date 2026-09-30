@@ -59,6 +59,25 @@ export function follow(
   };
 }
 
+/**
+ * A camera carried by a target, as `follow`, but looking at a point of the
+ * target (`at`, in its frame) rather than the way it faces: the shot that
+ * rides beside a car and keeps it in the centre.
+ */
+export function followLookingAt(
+  target: (t: number) => { x: number; y: number; z: number; yaw: number },
+  offset: (t: number) => Look,
+  at: (t: number) => Look,
+  fov = FILM_FOV,
+): Shot {
+  return (t) => {
+    const p = target(t);
+    const s = Math.sin(p.yaw), c = Math.cos(p.yaw);
+    const world = (o: Look): Look => ({ x: p.x + o.x * c + o.z * s, y: p.y + o.y, z: p.z - o.x * s + o.z * c });
+    return lookAt(world(offset(t)), world(at(t)), fov);
+  };
+}
+
 /** A move from `from` to `to` over `seconds` with an ease, looking at `at`; then held. */
 export function push(from: Look, to: Look, seconds: number, at: Look, fov = FILM_FOV): Shot {
   return (t) => {

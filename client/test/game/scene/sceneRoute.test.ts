@@ -15,6 +15,7 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
 });
 
 import "../../../src/sim/passes/index.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { startSceneRoute } from "../../../src/game/scene/sceneRoute.js";
 import { asHtml, installStandInDom } from "../helpers/standInDom.js";
 import { timeLimit } from "../../helpers/timeLimit.js";
@@ -28,7 +29,7 @@ describe("the scene route", () => {
     const ms = 0;
     const frames: ((ms: number) => void)[] = [];
     const run = startSceneRoute(
-      { canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => ms, loadCar: async () => null, raf: (fn) => { frames.push(fn); return frames.length; } },
+      { canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => ms, loadCar: async () => null, raf: (fn) => { frames.push(fn); return frames.length; }, paint: (s, name) => new PBRMaterial(name, s) },
       { t: 20, step: null },
     );
     const before = JSON.stringify(run.worldState());
@@ -44,6 +45,10 @@ describe("the scene route", () => {
     expect(container.querySelector("div.scene-caption")?.textContent).toBe("Four-one, be advised,\nradio won't carry past the road.");
     // A scene frame leaves the sim's state as it found it.
     expect(JSON.stringify(run.worldState())).toBe(before);
+    // The trailhead's board stands on the route (the film frames it); the
+    // hike's car does not, the scene's own car moving in its place.
+    expect(run.scene().getMeshByName("trailhead_kiosk_box_0")).not.toBeNull();
+    expect(run.scene().getMeshByName("trailhead_car_box")).toBeNull();
     run.dispose();
     expect((globalThis as { dayhikeScene?: unknown }).dayhikeScene).toBeUndefined();
     expect(container.querySelector("div.scene-caption")).toBeNull();
@@ -56,7 +61,7 @@ describe("the scene route", () => {
     const container = doc.createElement("div");
     let ms = 0;
     const run = startSceneRoute(
-      { canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => ms, loadCar: async () => null, raf: () => 0 },
+      { canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => ms, loadCar: async () => null, raf: () => 0, paint: (s, name) => new PBRMaterial(name, s) },
       { t: null, step: 240 },
     );
     const api = (globalThis as { dayhikeScene?: { time(): number } }).dayhikeScene;

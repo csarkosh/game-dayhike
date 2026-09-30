@@ -163,6 +163,8 @@ export function rosterModel(input: {
   attempt: RosterAttempt | null;
   /** A touch device: the roster hides while playing and offers Share. */
   touch?: boolean;
+  /** Gone entirely: a route with no party to show (a staged scene). */
+  hidden?: boolean;
   error?: string;
 }): RosterView {
   const view: RosterView = {
@@ -171,7 +173,7 @@ export function rosterModel(input: {
     invite: inviteView(input.attempt),
     editable: !input.inGame,
     interactive: !input.inGame || input.paused,
-    presence: !input.inGame || input.paused ? "full" : input.touch ? "hidden" : "subdued",
+    presence: input.hidden === true ? "hidden" : !input.inGame || input.paused ? "full" : input.touch ? "hidden" : "subdued",
     share: input.touch === true,
     joining: false,
   };

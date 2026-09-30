@@ -26,11 +26,13 @@ export function roadPose(road: Road, z: number, lane: number, direction: 1 | -1)
   return { x, y: road.groundY(x, z), z, yaw };
 }
 
-/** The car driving from `startZ`, `distance(t)` metres along the road. */
-export function carAlong(road: Road, startZ: number, distance: (t: number) => number, lane: number, direction: 1 | -1): (t: number) => CarPose {
+/** The car driving from `startZ`, `distance(t)` metres along the road, in
+ * `lane` (metres right of the centreline, a number or a function of time so
+ * a car can ease onto the shoulder as it stops). */
+export function carAlong(road: Road, startZ: number, distance: (t: number) => number, lane: number | ((t: number) => number), direction: 1 | -1): (t: number) => CarPose {
   return (t) => {
     const d = distance(t);
-    const pose = roadPose(road, startZ + direction * d, lane, direction);
+    const pose = roadPose(road, startZ + direction * d, typeof lane === "number" ? lane : lane(t), direction);
     return { ...pose, wheelSpin: d / WHEEL_RADIUS, doorOpen: 0 };
   };
 }

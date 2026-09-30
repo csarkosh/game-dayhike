@@ -11,7 +11,7 @@
  */
 import { WEATHER_PRESETS, type WeatherParams } from "../weather.js";
 import { carAlong, stopAt, type Road } from "./roadPath.js";
-import { FILM_FOV, cutList, ease, fade, follow, holdLookingAt, push, type Cut } from "./shots.js";
+import { cutList, ease, fade, follow, followLookingAt, holdLookingAt, push, type Cut } from "./shots.js";
 import type { ActorPose, CarPose, Caption, Scene } from "./timeline.js";
 
 export const INTRO_SEED_TOKEN = "hollow";
@@ -45,10 +45,17 @@ const DOOR_Z_M = 0.6;
 /** The cab shots ride the car: the back seat and the handset's place, in the car's frame. */
 const BACK_SEAT = { x: -0.3, y: 1.05, z: -0.9 };
 const HANDSET = { x: 0.35, y: 0.95, z: 0.45 };
-/** The one wide lens, the cab; the coastal wide's long lens; the insert's. */
+/** The one wide lens, the cab; the coastal wide's lens; the insert's; the trail's. */
 const CAB_FOV = 0.9;
-const COAST_FOV = 0.12;
+/** The mist of the film's world hides everything past about 100 m, so the
+ * coastal wide is shot from 80 m out over the water with a 0.25 rad lens
+ * rather than the 0.12 rad long lens from far off, which would see fog alone. */
+const COAST_FOV = 0.25;
+const COAST_OUT_M = 70;
+const COAST_UP_M = 38;
+const COAST_AHEAD_M = 45;
 const INSERT_FOV = 0.3;
+const TRAIL_FOV = 0.5;
 
 export type IntroPlaces = {
   car: { x: number; z: number };
@@ -75,7 +82,12 @@ export const INTRO_CAPTIONS: readonly Caption[] = [
 export function introScene(road: Road, places: IntroPlaces): Scene {
   const dir = places.direction;
   const startZ = places.car.z - dir * DRIVE_M;
-  const drive = carAlong(road, startZ, stopAt(DRIVE_M, CRUISE_MPS, BRAKE_S), LANE_M, dir);
+  // The lane eases from the driving lane onto the shoulder at the car's
+  // site over the brake, so the car stops where the hike's car stands.
+  const brakeFrom = STOP_AT_S - BRAKE_S;
+  const shoulder = (places.car.x - road.centerX(places.car.z)) * dir;
+  const lane = (t: number): number => LANE_M + (shoulder - LANE_M) * ease((t - brakeFrom) / BRAKE_S);
+  const drive = carAlong(road, startZ, stopAt(DRIVE_M, CRUISE_MPS, BRAKE_S), lane, dir);
   const car = (t: number): CarPose => {
     const pose = drive(Math.min(t, STOP_AT_S));
     const door = t <= STOP_AT_S ? 0 : ease((t - STOP_AT_S) / DOOR_OPEN_S);
@@ -108,14 +120,18 @@ export function introScene(road: Road, places: IntroPlaces): Scene {
     return { x: c.x, y: c.y + 1, z: c.z };
   };
   const trailAhead = { x: places.start.x + Math.sin(places.start.yaw) * 12, y: ground(places.start.x, places.start.z) + 1.4, z: places.start.z + Math.cos(places.start.yaw) * 12 };
+  const boardTop = { x: places.board.x, y: ground(places.board.x, places.board.z) + 1.8, z: places.board.z };
+  const trailAndBoard = { x: trailAhead.x * 0.7 + boardTop.x * 0.3, y: trailAhead.y * 0.7 + boardTop.y * 0.3, z: trailAhead.z * 0.7 + boardTop.z * 0.3 };
 
   const s = INTRO_SHOTS;
   const cuts: Cut[] = [
-    // 1. Wide over the sea stacks and the mist, the car small on the coast
-    //    road from high up and far out, a long lens; the trailhead out of frame.
-    { ...s[0]!, shot: holdLookingAt({ x: seaSide(road.centerX(startZ), 380), y: ground(road.centerX(startZ), startZ) + 140, z: startZ - dir * 120 }, (t) => carLook(t), COAST_FOV) },
-    // 2. Along the road from the sea side: a beat behind the car, then level with it.
-    { ...s[1]!, shot: follow((t) => carAt(t + s[1]!.from), (t) => ({ x: -6, y: 1.5, z: -22 + 22 * ease(t / 6) })) },
+    // 1. Wide over the water and the mist, the car small on the coast road
+    //    from up and out over the sea, as far as the mist lets a lens see;
+    //    the trailhead out of frame.
+    { ...s[0]!, shot: holdLookingAt({ x: seaSide(road.centerX(startZ + dir * COAST_AHEAD_M), COAST_OUT_M), y: ground(road.centerX(startZ), startZ) + COAST_UP_M, z: startZ + dir * COAST_AHEAD_M }, (t) => carLook(t), COAST_FOV) },
+    // 2. Along the road from the sea side: a beat behind the car, then level
+    //    with it, the car kept in the frame's centre.
+    { ...s[1]!, shot: followLookingAt((t) => carAt(t + s[1]!.from), (t) => ({ x: -6, y: 1.5, z: -22 + 22 * ease(t / 6) }), () => ({ x: 0, y: 1, z: 0 })) },
     // 3. The cab from the back seat: the one wide lens.
     { ...s[2]!, shot: follow((t) => carAt(t + s[2]!.from), () => BACK_SEAT, CAB_FOV, 0.05) },
     // 4. The handset and the hand that holds it: the insert, depth of field on.
@@ -126,11 +142,12 @@ export function introScene(road: Road, places: IntroPlaces): Scene {
     { ...s[5]!, shot: holdLookingAt({ x: seaSide(carSite.x, 18), y: carSite.y + 1.6, z: carSite.z - dir * 26 }, (t) => carLook(t + s[5]!.from), 0.35) },
     // 7. The door, the step onto gravel, the ranger from behind facing the trail.
     { ...s[6]!, shot: holdLookingAt({ x: carSite.x - dir * 4, y: carSite.y + 1.4, z: carSite.z - dir * 7 }, (t) => rangerLook(t + s[6]!.from)) },
-    // 8. A slow push past the ranger's shoulder onto the trail, then held.
+    // 8. A slow push past the ranger's shoulder onto the trail, the board in
+    //    view: the look is aimed between the trail ahead and the board.
     { ...s[7]!, shot: push(
       { x: places.start.x - Math.sin(places.start.yaw) * 2.2 + Math.cos(places.start.yaw) * 0.6, y: ground(places.start.x, places.start.z) + 1.6, z: places.start.z - Math.cos(places.start.yaw) * 2.2 - Math.sin(places.start.yaw) * 0.6 },
       { x: places.start.x + Math.sin(places.start.yaw) * 1.5 + Math.cos(places.start.yaw) * 0.6, y: ground(places.start.x, places.start.z) + 1.6, z: places.start.z + Math.cos(places.start.yaw) * 1.5 - Math.sin(places.start.yaw) * 0.6 },
-      7, trailAhead, FILM_FOV,
+      7, trailAndBoard, TRAIL_FOV,
     ) },
   ];
 
