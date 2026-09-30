@@ -65,7 +65,11 @@ export class WaterPlugin extends MaterialPluginBase {
   /** Per frame from the renderer's wind record: the game's 0..1 wind and its direction. */
   setWind(wind01: number, dir: [number, number]): void {
     const m = this._material;
-    if (m instanceof PBRMaterial) m.roughness = roughnessFor(wind01, this.row.shelter);
+    if (m instanceof PBRMaterial) {
+      // The setter marks every submesh dirty, and this runs every frame.
+      const r = roughnessFor(wind01, this.row.shelter);
+      if (m.roughness === null || Math.abs(m.roughness - r) > 1e-3) m.roughness = r;
+    }
     this.windDir = dir;
   }
 

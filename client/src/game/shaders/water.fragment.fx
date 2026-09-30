@@ -50,7 +50,7 @@ float waterBedDepth(vec2 xz) {
   vec2 t = clamp(local, 0.0, 1.0) * waterBedTexels - 0.5;
   vec2 i = floor(t);
   vec2 f = t - i;
-  vec2 texel = 1.0 / waterBedTexels;
+  vec2 texel = vec2(1.0 / waterBedTexels);
   vec2 uv0 = (i + 0.5) * texel;
   float h00 = texture2D(waterBedHeight, uv0).r;
   float h10 = texture2D(waterBedHeight, uv0 + vec2(texel.x, 0.0)).r;

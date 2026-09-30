@@ -1288,7 +1288,7 @@ function buildRenderer(
       : [];
   const water =
     forest !== null && waterLevel !== undefined
-      ? createWater(scene, forest.seed, waterLevel, ponds, tier)
+      ? createWater(scene, forest.seed, waterLevel, ponds, tier, level.playerSpawns[0]?.x ?? 0, level.playerSpawns[0]?.z ?? 0)
       : null;
   partOf(water);
 
