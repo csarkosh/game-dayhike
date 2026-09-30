@@ -63,7 +63,6 @@ import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
 import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera.js";
 import { Camera } from "@babylonjs/core/Cameras/camera.js";
-import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
@@ -103,7 +102,7 @@ import {
   type FadeBands,
 } from "./distanceFadePlugin.js";
 import { modelUrl } from "./assetUrls.js";
-import { loadUntilAborted } from "./modelLoad.js";
+import { loadModelContainer } from "./modelLoad.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
 import { createCrossing, crossingAt, finish, nextCrossing, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 
@@ -980,7 +979,7 @@ export function createForestMeshes(
   // polling and lets its target go.
   const bakeOptions: BakeOptions = { signal: loads.signal, pipelines: options.pipelines };
   const loadModel = (url: string): Promise<AssetContainer> =>
-    loadUntilAborted(() => loadAssetContainerAsync(url, scene), loads.signal);
+    loadModelContainer(url, scene, loads.signal);
 
   // Last camera seen and last origin built. Split so an `update` that arrives
   // while the GLBs are still loading is honoured the moment they land.

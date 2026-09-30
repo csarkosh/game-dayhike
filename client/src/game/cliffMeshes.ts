@@ -19,7 +19,6 @@
 import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
-import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { Node } from "@babylonjs/core/node.js";
@@ -28,7 +27,7 @@ import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 
 import { modelUrl } from "./assetUrls.js";
-import { loadUntilAborted } from "./modelLoad.js";
+import { loadContainer, loadUntilAborted } from "./modelLoad.js";
 import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, createCliffCollector } from "./cliffField.js";
 import { CLIFF_MODEL_HEIGHT, CLIFF_MODELS, CLIFF_SINK, CLIFF_TILT_MAX, cliffFacing } from "../sim/cliffField.js";
 import { attachCliffTint } from "./cliffTintPlugin.js";
@@ -174,7 +173,7 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
   const rings = CLIFF_RINGS[options.quality];
   const reach = rings[2];
   const farBands: FadeBands = fadeBands(null, [reach - CLIFF_FADE_BAND, reach]);
-  const fetchModel = options.loader ?? ((output: string) => loadAssetContainerAsync(modelUrl(output), scene));
+  const fetchModel = options.loader ?? ((output: string) => loadContainer(modelUrl(output), scene));
   // Aborted first thing in `dispose`: a load in flight then ends at once and
   // quietly, and none starts after it (`modelLoad.ts`).
   const loads = new AbortController();

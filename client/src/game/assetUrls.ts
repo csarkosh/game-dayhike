@@ -27,6 +27,8 @@
  * because these are strings, not modules — the whole map is a couple of hundred
  * bytes in the bundle, and a lazy map would make every caller async for nothing.
  */
+import catalog from "../../assets/catalog.json" with { type: "json" };
+
 const GLOB_URLS = import.meta.glob("../../assets/models/*.glb", {
   query: "?url",
   import: "default",
@@ -99,6 +101,16 @@ const AUDIO_URLS = urlMap(AUDIO_GLOB_URLS);
  * capsules and clutter silently disappears. Failing here makes it a startup
  * error naming both places the model has to exist.
  */
+/**
+ * Bytes of a shipped asset by its catalog `output`, where the export wrote
+ * them (`bytes` on the entry); undefined for an entry without them. The
+ * loading bar weighs the download by these before the first byte lands.
+ */
+export function assetBytes(output: string): number | undefined {
+  const entry = (catalog as { assets: Array<{ output: string; bytes?: number }> }).assets.find((a) => a.output === output);
+  return entry?.bytes;
+}
+
 export function modelUrl(output: string): string {
   const url = Object.hasOwn(MODEL_URLS, output) ? MODEL_URLS[output] : undefined;
   if (url === undefined) {

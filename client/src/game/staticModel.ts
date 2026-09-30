@@ -1,4 +1,3 @@
-import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
@@ -7,7 +6,7 @@ import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 
 import { modelUrl } from "./assetUrls.js";
 import { orientationRoot } from "./characterModel.js";
-import { loadUntilAborted } from "./modelLoad.js";
+import { loadContainer, loadUntilAborted } from "./modelLoad.js";
 
 /**
  * How a model's GLB becomes a container, keyed by the catalog's `output`
@@ -19,7 +18,7 @@ export type ModelLoader = (output: string) => Promise<AssetContainer>;
 export function defaultModelLoader(scene: Scene): ModelLoader {
   return (output) => {
     registerBuiltInLoaders();
-    return loadAssetContainerAsync(modelUrl(output), scene);
+    return loadContainer(modelUrl(output), scene);
   };
 }
 

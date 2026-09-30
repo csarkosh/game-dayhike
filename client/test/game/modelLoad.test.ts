@@ -109,3 +109,32 @@ describe("loadUntilAborted", () => {
     expect(c.disposals).toBe(0);
   });
 });
+
+import { createLoadProgress } from "../../src/game/loadProgress.js";
+import { loadModelContainer, setLoadProgress } from "../../src/game/modelLoad.js";
+
+describe("the one loader every model passes through", () => {
+  it("reports a start, the bytes as they land, and the settle to the progress model", async () => {
+    const p = createLoadProgress();
+    // Two of a kind, so the line still names the stage after this one lands.
+    p.total("models", 2);
+    setLoadProgress(p);
+    const calls: Array<{ url: string; onProgress: ((e: { loaded: number; total: number }) => void) | undefined }> = [];
+    const fake = async (url: string, _scene: unknown, options?: { onProgress?: (e: { loaded: number; total: number }) => void }) => {
+      calls.push({ url, onProgress: options?.onProgress });
+      options?.onProgress?.({ loaded: 512, total: 2048 });
+      return { dispose() {} } as never;
+    };
+    const container = await loadModelContainer("/assets/tree-abc.glb", {} as never, new AbortController().signal, fake);
+    expect(container).toBeDefined();
+    expect(calls).toHaveLength(1);
+    expect(p.view().line).toBe("downloading models 1 of 2, 0.0 of 0.0 MB");
+    setLoadProgress(null);
+  });
+
+  it("reports nothing when no progress model is set", async () => {
+    setLoadProgress(null);
+    const fake = async () => ({ dispose() {} }) as never;
+    await expect(loadModelContainer("/assets/x.glb", {} as never, new AbortController().signal, fake)).resolves.toBeDefined();
+  });
+});

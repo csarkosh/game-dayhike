@@ -98,3 +98,14 @@ describe("audioUrl", () => {
     }
   });
 });
+
+import { assetBytes } from "../../src/game/assetUrls.js";
+
+describe("assetBytes", () => {
+  it("reads the catalog's bytes where the export wrote them, and nothing where it did not", () => {
+    // The catalog's first model: the export writes `bytes` from this work on.
+    const known = assetBytes("models/ranger.nathan.glb");
+    expect(known === undefined || known > 100_000).toBe(true);
+    expect(assetBytes("models/no-such-model.glb")).toBeUndefined();
+  });
+});

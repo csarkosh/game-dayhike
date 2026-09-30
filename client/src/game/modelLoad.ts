@@ -37,6 +37,55 @@
  * as before, and is reported however that shell reports it.
  */
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
+import type { Scene } from "@babylonjs/core/scene.js";
+import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
+import type { LoadProgress } from "./loadProgress.js";
+import { assetBytes } from "./assetUrls.js";
+
+let progress: LoadProgress | null = null;
+/** The progress model the loads report to while an intro is up; null otherwise. */
+export function setLoadProgress(p: LoadProgress | null): void {
+  progress = p;
+}
+/** The progress model the loads report to, for the other hooks. */
+export function reportProgress(): LoadProgress | null {
+  return progress;
+}
+
+/** Babylon's container loader, with the progress option the loads pass. */
+export type ContainerLoader = (
+  url: string,
+  scene: Scene,
+  options?: { onProgress?: (e: { loaded: number; total: number }) => void },
+) => Promise<AssetContainer>;
+
+/** The catalog `output` a hashed model url was built from: `/…/tree.giant_fir-Ab12Cd34.glb` is `models/tree.giant_fir.glb`. */
+function outputOf(url: string): string {
+  const name = url.split("?")[0]!.split("/").pop() ?? "";
+  return "models/" + name.replace(/-[A-Za-z0-9_-]{8}(\.glb)$/, "$1");
+}
+
+/**
+ * The one loader every model passes through: forest, clutter, cliffs, birds,
+ * creatures, characters, signs, the trailhead and the body. It reports the
+ * start, the bytes as they land and the settle to the progress model when one
+ * is set, keyed by the url, which is hashed and so unique; the catalog's
+ * `bytes`, where the export wrote them, give the size before the first byte
+ * lands. Sites that wrap their own abort (`loaderUntilAborted`) call this;
+ * `loadModelContainer` is the same with the abort folded in.
+ */
+export function loadContainer(url: string, scene: Scene, load: ContainerLoader = loadAssetContainerAsync): Promise<AssetContainer> {
+  const p = progress;
+  p?.start("models", url, assetBytes(outputOf(url)));
+  const pending = load(url, scene, {
+    onProgress: (e) => p?.bytes("models", url, e.loaded, e.total > 0 ? e.total : undefined),
+  });
+  return pending.finally(() => p?.done("models", url));
+}
+
+export function loadModelContainer(url: string, scene: Scene, signal: AbortSignal, load: ContainerLoader = loadAssetContainerAsync): Promise<AssetContainer> {
+  return loadUntilAborted(() => loadContainer(url, scene, load), signal);
+}
 
 export function loadUntilAborted(
   start: () => Promise<AssetContainer>,

@@ -23,7 +23,6 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
-import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
@@ -44,7 +43,7 @@ import {
   type PlayerPoint, type UnitState, type WildlifeEvent,
 } from "./wildlifeBehaviour.js";
 import { createCreaturePool, type CreatureInstance, type CreaturePool } from "./creatureModel.js";
-import { loadUntilAborted } from "./modelLoad.js";
+import { loadModelContainer } from "./modelLoad.js";
 import {
   createDirectorState, DIRECTOR_ID_BASE, onScreen, PLACE_BODY_H, step as stepDirector,
   type Candidate, type CueEvent, type Ground, type MatchState, type View,
@@ -731,7 +730,7 @@ export function createWildlifeMeshes(
       const output = birdOutputFor(assetId);
       if (output === null) continue;
       try {
-        const container = await loadUntilAborted(() => loadAssetContainerAsync(modelUrl(output), scene), loads.signal);
+        const container = await loadModelContainer(modelUrl(output), scene, loads.signal);
         // Disposed while awaiting: dispose() has already walked a shorter
         // container list, so clean up what just landed here.
         if (disposed) {

@@ -1,4 +1,3 @@
-import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup.js";
 import type { Scene } from "@babylonjs/core/scene.js";
@@ -11,7 +10,7 @@ import { budgetMaterial } from "./headlamp.js";
 
 import catalog from "../../assets/catalog.json" with { type: "json" };
 import { modelUrl } from "./assetUrls.js";
-import { loadUntilAborted } from "./modelLoad.js";
+import { loadContainer, loadUntilAborted } from "./modelLoad.js";
 
 export type ClipKind = "idle" | "walk" | "attack" | "death";
 
@@ -198,7 +197,7 @@ type LoadedCharacter = {
 
 const defaultLoader: CharacterLoader = (asset, scene) => {
   registerBuiltInLoaders();
-  return loadAssetContainerAsync(asset.url, scene);
+  return loadContainer(asset.url, scene);
 };
 
 /**

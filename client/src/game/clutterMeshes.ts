@@ -61,7 +61,6 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
@@ -93,7 +92,7 @@ import type { Rgb } from "./colour.js";
 import { trampleAt, TRAMPLE_BAND } from "./trailBenchParams.js";
 import { ROCK_CUTS, rockPlanes, rockRelief, type RockPlane } from "./rockRelief.js";
 import { cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, type CullPose, type CullSet } from "./grassCull.js";
-import { loadUntilAborted } from "./modelLoad.js";
+import { loadModelContainer } from "./modelLoad.js";
 import { createKeptValues } from "./keptValues.js";
 import { createCrossing, crossingAt, finish, turn, type Heading, type Slices, type SyncJobs } from "./syncJobs.js";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
@@ -1001,7 +1000,7 @@ export function createClutterMeshes(
    * wrappers). Returns null if disposed mid-await — the caller must bail out
    * without adopting anything. */
   async function loadBucketed(url: string): Promise<Mesh[][] | null> {
-    const container = await loadUntilAborted(() => loadAssetContainerAsync(url, scene), loads.signal);
+    const container = await loadModelContainer(url, scene, loads.signal);
     containers.push(container);
     // Disposed while awaiting: dispose() has already run over an earlier
     // (possibly empty) container list, so clean up what just landed here.
