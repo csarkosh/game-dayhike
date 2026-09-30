@@ -18,6 +18,7 @@ import type { TerrainTexturePlugin } from "../../src/game/terrainTexture.js";
 // factory injection). Mocked here, at the module boundary, rather than by
 // touching `renderer.ts`.
 vi.mock("../../src/game/groundMaps.js", () => ({
+  reportLayer: () => undefined,
   loadGroundArrays: () => ({
     normals: { isReady: () => true, dispose() {} },
     // `getSize` mirrors the real `BaseTexture` surface `bindForSubMesh` reads

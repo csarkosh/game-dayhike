@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 // cannot create, and `createRenderer`'s WebGL `Engine`, stand-ins at the
 // module boundary.
 vi.mock("../../src/game/groundMaps.js", () => ({
+  reportLayer: () => undefined,
   loadGroundArrays: () => ({
     normals: { isReady: () => true, dispose() {} },
     rah: { isReady: () => true, dispose() {}, getSize: () => ({ width: 1, height: 1 }) },

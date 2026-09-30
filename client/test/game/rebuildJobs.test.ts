@@ -9,6 +9,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 // The terrain material's ground textures are a texture array NullEngine
 // cannot make; `renderer.test.ts` stands in for them the same way.
 vi.mock("../../src/game/groundMaps.js", () => ({
+  reportLayer: () => undefined,
   loadGroundArrays: () => ({
     normals: { isReady: () => true, dispose() {} },
     rah: { isReady: () => true, dispose() {}, getSize: () => ({ width: 1, height: 1 }) },
