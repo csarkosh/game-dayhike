@@ -75,4 +75,19 @@ describe("the scene route", () => {
     run.dispose();
     vi.unstubAllGlobals();
   }, timeLimit(120_000));
+
+  it("resolves ready once the loads have settled, arrived or not, says its engine, and holds no wildlife", async () => {
+    const doc = installStandInDom();
+    const container = doc.createElement("div");
+    const run = startSceneRoute(
+      { canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => 0, loadCar: async () => null, raf: () => 0, paint: (s, name) => new PBRMaterial(name, s) },
+      { t: 20, step: null },
+    );
+    const api = (globalThis as { dayhikeScene?: { ready: Promise<void>; engine(): string } }).dayhikeScene!;
+    // The car's load answers null and the ranger's file cannot be read in Node: both settle.
+    await expect(api.ready).resolves.toBeUndefined();
+    expect(api.engine()).toBe("webgl2");
+    expect(run.hasWildlife).toBe(false);
+    run.dispose();
+  }, timeLimit(20000));
 });

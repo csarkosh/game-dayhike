@@ -1100,6 +1100,9 @@ export type RendererOptions = {
    * `buildClipmapNow`, so a start can step it between paints; the renderer
    * draws no terrain until one has run. Absent, it is built here as always. */
   deferClipmap?: boolean;
+  /** The wildlife shell: absent or true, as the world's forest allows; false, none at
+   * all (a scene recorded a frame at a time, which the director's own steps would not follow). */
+  wildlife?: boolean;
 };
 
 /** What the impostor bakes read of the pipelines and the scope: the draws a
@@ -1560,7 +1563,7 @@ function buildRenderer(
   // and go with the animal, so the shell registers and unregisters each one
   // itself through the pair handed in here.
   const wildlife =
-    forest !== null
+    forest !== null && options.wildlife !== false
       ? createWildlifeMeshes(scene, forest.seed, {
           radiusScale: tier === "low" ? 0.6 : undefined,
           now: clock,

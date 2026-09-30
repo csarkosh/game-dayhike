@@ -465,8 +465,9 @@ describe("world shell wiring", () => {
 
   it("creates wildlife under the forest guard, at the low tier's radius, with both shadow hooks", () => {
     const creation = slice("const wildlife =", "const wildlifePlayerPool");
-    // Hand-authored levels have no forest and must get no animals.
-    expect(creation).toMatch(/forest !== null\s*\?\s*createWildlifeMeshes\(/);
+    // Hand-authored levels have no forest and must get no animals; a renderer
+    // asked for none (a scene recorded a frame at a time) gets none either.
+    expect(creation).toMatch(/forest !== null && options\.wildlife !== false\s*\?\s*createWildlifeMeshes\(/);
     expect(creation).toContain('radiusScale: tier === "low" ? 0.6 : undefined');
     // Both halves of the shadow registry: an add with no remove leaks every
     // released animal into the shadow map (lighting.ts's own note).

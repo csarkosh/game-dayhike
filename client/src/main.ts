@@ -809,14 +809,23 @@ function render(container: HTMLDivElement): void {
   container.replaceChildren();
 
   // The staged intro on its fixed world, a frame at a time for its recording:
-  // the film is made on the high tier, which is what Auto means here; the
+  // the film is made on the high tier, which is what Auto means here, on the
+  // engine a hike on that tier gets (WebGPU where the rule gives it); the
   // address's `?tier=` and a saved choice are the page's own as everywhere.
   if (route.kind === "scene") {
-    const canvas = document.createElement("canvas");
-    container.appendChild(canvas);
     const choice = parseTierOverride(location.search) ?? currentChoice();
-    const scene = startSceneRoute({ canvas, container, tier: choice === "auto" ? "high" : choice }, parseSceneSearch(location.search));
-    running = { dispose: () => scene.dispose() };
+    const tier = choice === "auto" ? "high" : choice;
+    void signalsReady
+      .then((read) => engineFor(tier, read, () => token === renderToken))
+      .then(({ canvas, engine }) => {
+        if (token !== renderToken) {
+          engine?.dispose();
+          return;
+        }
+        container.appendChild(canvas);
+        const scene = startSceneRoute({ canvas, container, tier, ...(engine === null ? {} : { engine }) }, parseSceneSearch(location.search));
+        running = { dispose: () => scene.dispose() };
+      });
     paintRoster();
     return;
   }

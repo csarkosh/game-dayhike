@@ -35,8 +35,15 @@ import { createSceneClock, type SceneClock } from "./sceneClock.js";
 import { createScenePlayer } from "./scenePlayer.js";
 import { carModelOf, type CarModel, type StageDeps } from "./sceneStage.js";
 
-export type DayhikeScene = { seek(t: number): void; frame(): Promise<void>; time(): number };
-export type SceneRun = { dispose(): void; worldState(): WorldState; scene(): BabylonScene };
+export type DayhikeScene = {
+  seek(t: number): void;
+  frame(): Promise<void>;
+  time(): number;
+  /** Resolves once the film's ranger and car have loaded or failed: a recorder waits on it. */
+  ready: Promise<void>;
+  engine(): "webgpu" | "webgl2";
+};
+export type SceneRun = { dispose(): void; worldState(): WorldState; scene(): BabylonScene; hasWildlife: boolean };
 export type SceneRouteDeps = {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
@@ -71,7 +78,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   const forest = createForest(seed);
   const world = createWorld(level, seed, false);
   const clock: SceneClock = createSceneClock(now);
-  const renderer = createRenderer(deps.canvas, level, forest, { tier: deps.tier, engine: deps.engine, clock: () => clock.time() * 1000 });
+  const renderer = createRenderer(deps.canvas, level, forest, { tier: deps.tier, engine: deps.engine, clock: () => clock.time() * 1000, wildlife: false });
   renderer.setWeather(INTRO_WEATHER, 0);
   renderer.setHour(INTRO_HOUR);
 
@@ -119,10 +126,10 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   const loads = new AbortController();
   const pool = deps.pool ?? createCharacterPool();
   let disposed = false;
-  void pool.load(renderer.scene, [INTRO_RANGER]);
+  const rangerLoaded = pool.load(renderer.scene, [INTRO_RANGER]);
   let car: CarModel | null = null;
   let carModel: PlacedModel | null = null;
-  void (deps.loadCar ?? ((s) => loadFilmCar(s, loads.signal)))(renderer.scene).then((placed) => {
+  const carLoaded = (deps.loadCar ?? ((s) => loadFilmCar(s, loads.signal)))(renderer.scene).then((placed) => {
     if (placed === null || disposed) {
       placed?.dispose();
       return;
@@ -133,6 +140,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     stage.car = car;
     for (const mesh of placed.meshes) renderer.shadows.add(mesh);
   });
+  const ready = Promise.all([rangerLoaded, carLoaded]).then(() => undefined);
 
   const black = document.createElement("div");
   black.className = "scene-black";
@@ -145,6 +153,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     setDepthOfField: (on) => renderer.setDepthOfField(on),
     actor: (id) => pool.acquire(1, id),
     car,
+    hand: () => pool.acquire(1, INTRO_RANGER)?.joint("hand_r") ?? null,
     captions,
     black: (amount) => {
       black.style.opacity = String(amount);
@@ -195,12 +204,15 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
         raf(() => resolve());
       }),
     time: () => player.time(),
+    ready,
+    engine: () => (renderer.engine.isWebGPU ? "webgpu" : "webgl2"),
   };
   (globalThis as { dayhikeScene?: DayhikeScene }).dayhikeScene = api;
 
   return {
     worldState: () => world.state,
     scene: () => renderer.scene,
+    hasWildlife: renderer.hasWildlife,
     dispose() {
       if (disposed) return;
       disposed = true;
