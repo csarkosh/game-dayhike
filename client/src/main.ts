@@ -19,9 +19,9 @@ import { renderLanding, type LandingHandle, type LandingPanel } from "./game/lan
 import { afterNextPaint } from "./game/paint.js";
 import { INTRO_CAPTIONS, createIntroOverlay, type CutReason, type IntroOverlay } from "./game/introOverlay.js";
 import { setLoadProgress } from "./game/modelLoad.js";
-import { videoUrl } from "./game/assetUrls.js";
+import { stillUrl, videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";
-import { createLandingScene } from "./game/landingScene.js";
+import { landingBackdrop } from "./game/landingBackdrop.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
 import { inviteLink, parseJoinLink } from "./game/joinLink.js";
@@ -788,7 +788,7 @@ function render(container: HTMLDivElement): void {
 
   // Landing and its panels are one page, so moving between them swaps a class
   // rather than rebuilding: a rebuild would replace the nodes the transition is
-  // running on, and it would also tear down and re-create the backdrop scene.
+  // running on, and it would also drop and re-place the still behind them.
   if (isLandingRoute(route) && landing !== null) {
     landing.setPanel(panelFor(route));
     announcer.now();
@@ -806,13 +806,10 @@ function render(container: HTMLDivElement): void {
 
   if (isLandingRoute(route)) {
     endIntro(pendingIntro);
-    // The canvas is appended first so the UI overlay paints above it, but the
-    // scene is built last, once renderLanding has put its stylesheet in the
-    // DOM: the backdrop starts hidden through a class, and the engine must not
-    // render a frame before that rule can apply.
-    const backdrop = document.createElement("canvas");
-    backdrop.className = "landing-bg";
-    container.appendChild(backdrop);
+    // The still goes in first so the UI paints above it; nothing of the game
+    // is built or fetched before Play.
+    const backdrop = landingBackdrop(stillUrl());
+    if (backdrop !== null) container.appendChild(backdrop);
     landingNotice = takeNotice(pageSessionStorage(), Date.now());
 
     const handle = renderLanding(
@@ -851,14 +848,7 @@ function render(container: HTMLDivElement): void {
       if (landing === handle) handle.setView(landingModel(landingInput()));
     });
 
-    // Null when WebGL is unavailable; the landing page works flat in that case.
-    const scenery = createLandingScene(backdrop);
-    running = {
-      dispose: () => {
-        scenery?.dispose();
-        handle.dispose();
-      },
-    };
+    running = { dispose: () => handle.dispose() };
     announcer.now();
     paintRoster();
     return;

@@ -2,28 +2,25 @@
 const STYLE = `
   .landing-bg {
     position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover;
     filter: blur(6px);
     /* Blur samples past the edges; scaling hides the resulting bright rim. */
     transform: scale(1.08);
-    /* Hidden until the scene reports ready. Babylon skips a mesh whose shader
-       is still compiling, so the first frames draw the sky alone — the
-       brightest thing in the scene — and that reads as a flash on load. The
-       page background shows through meanwhile, which is already the dark grey
-       the settled scene resolves to. */
+    /* Hidden until ready: the page background shows through meanwhile, the
+       dark grey the still settles into. */
     opacity: 0;
   }
   /* The transition lives on the revealed state, not on the base rule: the
-     canvas enters the DOM before this stylesheet does, so a transition there
-     would animate the initial 1 -> 0 and fade the bright frames out in view
-     instead of never showing them. */
+     still enters the DOM before this stylesheet does, so a transition there
+     would animate the initial 1 -> 0 and fade it out in view. */
   .landing-bg.ready { opacity: 1; transition: opacity 900ms ease-in; }
   .landing {
     /* The positioning context for the two panels below; they carry the layout
        and the scrolling, because each panel is now the box that holds the
        content a short viewport has to scroll. */
     position: relative; height: 100%;
-    /* Translucent vignette over the scenery; reads as the old flat #101014
-       when WebGL is unavailable and no backdrop renders behind it. */
+    /* Translucent vignette over the still; reads as the old flat #101014
+       when no still ships and nothing is behind it. */
     background: radial-gradient(
       ellipse at center,
       rgba(16, 16, 20, 0.35) 0%,
@@ -322,7 +319,7 @@ export function renderLanding(
   panel: LandingPanel = "home",
 ): LandingHandle {
   // Appends rather than clearing: main.ts owns the container and may have
-  // already placed the scenery canvas this overlay sits on.
+  // already placed the still this overlay sits on.
   const style = document.createElement("style");
   style.textContent = STYLE;
 
