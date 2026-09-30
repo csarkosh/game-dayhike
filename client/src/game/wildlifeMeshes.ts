@@ -43,7 +43,7 @@ import {
   type PlayerPoint, type UnitState, type WildlifeEvent,
 } from "./wildlifeBehaviour.js";
 import { createCreaturePool, type CreatureInstance, type CreaturePool } from "./creatureModel.js";
-import { loadModelContainer } from "./modelLoad.js";
+import { loadContainer, loadUntilAborted } from "./modelLoad.js";
 import {
   createDirectorState, DIRECTOR_ID_BASE, onScreen, PLACE_BODY_H, step as stepDirector,
   type Candidate, type CueEvent, type Ground, type MatchState, type View,
@@ -730,7 +730,7 @@ export function createWildlifeMeshes(
       const output = birdOutputFor(assetId);
       if (output === null) continue;
       try {
-        const container = await loadModelContainer(modelUrl(output), scene, loads.signal);
+        const container = await loadUntilAborted(() => loadContainer(modelUrl(output), scene), loads.signal);
         // Disposed while awaiting: dispose() has already walked a shorter
         // container list, so clean up what just landed here.
         if (disposed) {

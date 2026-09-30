@@ -82,8 +82,8 @@ function outputOf(url: string): string {
  * start, the bytes as they land and the settle to the progress model when one
  * is set, keyed by the url, which is hashed and so unique; the catalog's
  * `bytes`, where the export wrote them, give the size before the first byte
- * lands. Sites that wrap their own abort (`loaderUntilAborted`) call this;
- * `loadModelContainer` is the same with the abort folded in.
+ * lands. Every site calls it inside its own `loadUntilAborted`, so a
+ * teardown ends the load the same way whichever shell started it.
  */
 export function loadContainer(url: string, scene: Scene, load: ContainerLoader = loadAssetContainerAsync): Promise<AssetContainer> {
   const p = progress;
@@ -92,10 +92,6 @@ export function loadContainer(url: string, scene: Scene, load: ContainerLoader =
     onProgress: (e) => p?.bytes("models", url, e.loaded, e.total > 0 ? e.total : undefined),
   });
   return pending.finally(() => p?.done("models", url));
-}
-
-export function loadModelContainer(url: string, scene: Scene, signal: AbortSignal, load: ContainerLoader = loadAssetContainerAsync): Promise<AssetContainer> {
-  return loadUntilAborted(() => loadContainer(url, scene, load), signal);
 }
 
 export function loadUntilAborted(

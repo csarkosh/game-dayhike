@@ -111,7 +111,7 @@ describe("loadUntilAborted", () => {
 });
 
 import { createLoadProgress } from "../../src/game/loadProgress.js";
-import { loadModelContainer, setLoadProgress } from "../../src/game/modelLoad.js";
+import { loadContainer, setLoadProgress } from "../../src/game/modelLoad.js";
 
 describe("the one loader every model passes through", () => {
   it("reports a start, the bytes as they land, and the settle to the progress model", async () => {
@@ -125,7 +125,7 @@ describe("the one loader every model passes through", () => {
       options?.onProgress?.({ loaded: 512, total: 2048 });
       return { dispose() {} } as never;
     };
-    const container = await loadModelContainer("/assets/tree-abc.glb", {} as never, new AbortController().signal, fake);
+    const container = await loadContainer("/assets/tree-abc.glb", {} as never, fake);
     expect(container).toBeDefined();
     expect(calls).toHaveLength(1);
     expect(p.view().line).toBe("downloading models 1 of 2, 0.0 of 0.0 MB");
@@ -135,6 +135,6 @@ describe("the one loader every model passes through", () => {
   it("reports nothing when no progress model is set", async () => {
     setLoadProgress(null);
     const fake = async () => ({ dispose() {} }) as never;
-    await expect(loadModelContainer("/assets/x.glb", {} as never, new AbortController().signal, fake)).resolves.toBeDefined();
+    await expect(loadContainer("/assets/x.glb", {} as never, fake)).resolves.toBeDefined();
   });
 });

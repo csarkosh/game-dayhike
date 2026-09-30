@@ -541,7 +541,7 @@ describe("world shell wiring", () => {
     // branch that never runs it leaves every job to wait out its lateness
     // bound and run at once.
     expect(src).toContain("const jobs = createSyncJobs(() => performance.now());");
-    expect(src).toContain("createClipmap(scene, forest.seed, jobs)");
+    expect(src).toContain("createClipmap(scene, forest.seed, jobs, { deferred: options.deferClipmap })");
     expect(slice("const clutterMeshes =", "const bladeMeshes =")).toContain("jobs,");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "hasWildlife:");

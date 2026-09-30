@@ -14,7 +14,7 @@ import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 import { modelUrl } from "./assetUrls.js";
-import { loadModelContainer } from "./modelLoad.js";
+import { loadContainer, loadUntilAborted } from "./modelLoad.js";
 import { orientationRoot } from "./characterModel.js";
 import type { ClipRole } from "./wildlifeBehaviour.js";
 
@@ -220,7 +220,7 @@ export function createCreaturePool(): CreaturePool {
       registerBuiltInLoaders();
       for (const asset of assets) {
         try {
-          const container = await loadModelContainer(asset.url, scene, loads.signal);
+          const container = await loadUntilAborted(() => loadContainer(asset.url, scene), loads.signal);
           // Disposed between the load settling and this line: nothing will
           // ever instantiate it.
           if (loads.signal.aborted) {
