@@ -82,6 +82,7 @@ describe("horizon-safe normal", () => {
     expect(horizonSafeNormal(n, v)).toEqual(n);
   });
   it("tilts a ripple normal up until the reflection clears the horizon, for the eye above the water", () => {
+    let fired = 0;
     for (let i = 0; i < 200; i++) {
       const a = (i / 200) * Math.PI * 2;
       const tilt = 0.6;
@@ -94,11 +95,15 @@ describe("horizon-safe normal", () => {
       expect(reflectY(safe, v)).toBeGreaterThanOrEqual(WATER_HORIZON - 1e-6);
       expect(Math.hypot(...safe)).toBeCloseTo(1, 6);
       if (origReflectY < WATER_HORIZON) {
+        fired++;
         expect(reflectY(safe, v)).toBeCloseTo(WATER_HORIZON, 5);
       }
     }
+    // the lift ran for at least one angle
+    expect(fired).toBeGreaterThan(0);
   });
   it("lifts the reflected ray exactly to the horizon for ripple normals across all angles", () => {
+    let fired = 0;
     for (let i = 0; i < 200; i++) {
       const a = (i / 200) * Math.PI * 2;
       const tilt = 0.6;
@@ -108,9 +113,11 @@ describe("horizon-safe normal", () => {
       const v: [number, number, number] = [0, 0.05, Math.sqrt(1 - 0.0025)];
       const origReflectY = reflectY(nn, v);
       if (origReflectY < WATER_HORIZON) {
+        fired++;
         const safe = horizonSafeNormal(nn, v);
         expect(reflectY(safe, v)).toBeCloseTo(WATER_HORIZON, 5);
       }
     }
+    expect(fired).toBeGreaterThan(0);
   });
 });

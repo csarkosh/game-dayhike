@@ -77,8 +77,10 @@ import {
   bakeBed,
   bakeRows,
   bedNeedsRebake,
+  bedSquareHasWater,
   beginBake,
   createBedGrid,
+  POND_DISC_MARGIN,
   type BedBake,
 } from "./bedHeight.js";
 import { POND_DEPTH } from "../sim/features.js";
@@ -681,7 +683,7 @@ export function setEffectsGroup(group: number, effects: SeeThroughEffects): void
  * Exported so it is reachable from a test without a full `createWater` call.
  */
 export function pondDisc(scene: Scene, mat: PBRMaterial, pond: Pond, index: number): Mesh {
-  const disc = MeshBuilder.CreateDisc(`pond_${index}`, { radius: pond.radius + 1, tessellation: 48 }, scene);
+  const disc = MeshBuilder.CreateDisc(`pond_${index}`, { radius: pond.radius + POND_DISC_MARGIN, tessellation: 48 }, scene);
   disc.rotation.x = Math.PI / 2;
   disc.position.set(pond.x, pond.height + 0.02, pond.z);
   disc.material = mat;
@@ -718,7 +720,9 @@ export function pondDisc(scene: Scene, mat: PBRMaterial, pond: Pond, index: numb
  *
  * The bed height texture is baked and uploaded here, at (`camX`, `camZ`), so no
  * frame is drawn with the material not ready (the plugin is not ready until it
- * has a texture); `update` then re-centres it a row a frame into a spare grid.
+ * has a texture); `update` then re-centres it a row a frame into a spare grid,
+ * only where a body can reach the new square (`bedSquareHasWater`), and starts
+ * over when the camera leaves the square a bake is for before it ends.
  *
  * On the high tier, where the engine can make the frame (`waterFrameSupported`:
  * WebGPU, a multisampled first pass, so the post chain must exist first), the
@@ -752,9 +756,18 @@ export function createWater(
   budgetMaterial(seaMat);
   budgetMaterial(lakeMat);
 
+  // Every water mesh, rings and pond discs, filled below.
+  const waterMeshes: Mesh[] = [];
   // The copy of the opaque pass, on the high tier. It follows the target's
   // size by itself, so the plugins hold its textures and its `screen` once.
-  const frame = high ? createWaterFrame(scene, scene.getEngine()) : null;
+  // It runs only in a frame whose culling kept a water mesh (the group also
+  // holds rain, motes and mist).
+  const inView = (): boolean => {
+    const active = scene.getActiveMeshes();
+    for (const mesh of waterMeshes) if (active.contains(mesh)) return true;
+    return false;
+  };
+  const frame = high ? createWaterFrame(scene, scene.getEngine(), inView) : null;
   if (frame !== null) {
     for (const p of plugins) {
       p.sceneTexture = frame.scene;
@@ -781,6 +794,10 @@ export function createWater(
   let grid = createBedGrid(texels, spacing);
   let spare = createBedGrid(texels, spacing);
   let bake: BedBake | null = null;
+  // The last square found out of every body's reach: not asked again until
+  // the camera's square changes.
+  let dryX = Number.NaN;
+  let dryZ = Number.NaN;
   let firstUpdate = true;
   let bedTexture: RawTexture | null = null;
   function uploadBed(): void {
@@ -844,6 +861,7 @@ export function createWater(
   // shadow-caster-exempt set); they are disposed alongside it instead.
   const pondMeshes: Mesh[] = ponds.map((p, i) => pondDisc(scene, lakeMat, p, i));
   for (const mesh of pondMeshes) mesh.renderingGroupId = group;
+  waterMeshes.push(...meshes, ...pondMeshes);
 
   return {
     meshes,
@@ -868,7 +886,18 @@ export function createWater(
         firstUpdate = false;
         if (bakeBed(grid, seed, camX, camZ)) uploadBed();
       }
-      if (bake === null && bedNeedsRebake(grid, camX, camZ)) bake = beginBake(spare, camX, camZ);
+      // A bake whose square the camera has already left (a teleport, a fast
+      // ride) would swap in a bed for somewhere else: start over.
+      if (bake !== null && bedNeedsRebake({ ...spare, originX: bake.originX, originZ: bake.originZ }, camX, camZ)) bake = null;
+      if (bake === null && bedNeedsRebake(grid, camX, camZ)) {
+        const next = beginBake(spare, camX, camZ);
+        // Where no body reaches the new square the current bed is kept: outside
+        // it the ring's per-vertex depth stands in, and there is no water there.
+        if (next.originX !== dryX || next.originZ !== dryZ) {
+          if (bedSquareHasWater(next, spare, ponds, waterLevel, seed)) bake = next;
+          else [dryX, dryZ] = [next.originX, next.originZ];
+        }
+      }
       if (bake !== null && bakeRows(spare, seed, bake, BED_ROWS_PER_FRAME)) {
         [grid, spare] = [spare, grid];
         bake = null;

@@ -52,6 +52,9 @@ export class WaterPlugin extends MaterialPluginBase {
     // water carries only this and the atmosphere, so the order is fixed.
     super(material, "Water", 230, { WATER: false });
     this.row = row;
+    // For hardBindForSubMesh, called on every draw; set before activation,
+    // which is when the manager reads it.
+    this.registerForExtraEvents = true;
     if (material instanceof PBRMaterial) {
       material.metallic = 0;
       material.metallicF0Factor = WATER_F0 / PBR_DIELECTRIC_F0;
@@ -126,10 +129,18 @@ export class WaterPlugin extends MaterialPluginBase {
     };
   }
 
-  override bindForSubMesh(uniformBuffer: UniformBuffer, _scene: Scene, _engine: AbstractEngine, subMesh: SubMesh): void {
+  /**
+   * The level is the mesh's, not the material's: two ponds share the lake
+   * material, and Babylon skips `bindForSubMesh` when one material and effect
+   * draw back to back, so it is written here, on every draw.
+   */
+  override hardBindForSubMesh(uniformBuffer: UniformBuffer, _scene: Scene, _engine: AbstractEngine, subMesh: SubMesh): void {
     const level = (subMesh.getMesh().metadata as { waterLevel?: number } | null)?.waterLevel ?? 0;
-    const extent = this.bedTexels * this.bedSpacing;
     uniformBuffer.updateFloat("waterLevel", level);
+  }
+
+  override bindForSubMesh(uniformBuffer: UniformBuffer): void {
+    const extent = this.bedTexels * this.bedSpacing;
     uniformBuffer.updateFloat3("waterKd", this.row.kd[0], this.row.kd[1], this.row.kd[2]);
     uniformBuffer.updateFloat4("waterBed", this.bedOrigin[0], this.bedOrigin[1], 1 / extent, this.bedSpacing);
     uniformBuffer.updateFloat("waterBedTexels", this.bedTexels);

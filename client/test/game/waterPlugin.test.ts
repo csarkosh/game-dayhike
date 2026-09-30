@@ -1,5 +1,5 @@
 // client/test/game/waterPlugin.test.ts
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -8,6 +8,8 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
+import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import { WaterPlugin, attachWater } from "../../src/game/waterPlugin.js";
 import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH } from "../../src/game/waterShading.js";
 
@@ -171,5 +173,27 @@ describe("water plugin", () => {
     depth._texture = p.bedTexture.getInternalTexture();
     expect(p.isReadyForSubMesh()).toBe(true);
     depth._texture = null;
+  });
+
+  it("writes each mesh's own level on every draw (hardBind), not only when the material rebinds", () => {
+    const mat = new PBRMaterial("w8", scene);
+    const p = attachWater(mat, WATER_ROWS.lowlandLake);
+    // the manager calls hardBindForSubMesh only for plugins registered for the extra events
+    expect(p.registerForExtraEvents).toBe(true);
+    const extra = (mat.pluginManager as unknown as { _activePluginsForExtraEvents: unknown[] })._activePluginsForExtraEvents;
+    expect(extra).toContain(p);
+    const updateFloat = vi.fn();
+    const ubo = { updateFloat } as unknown as UniformBuffer;
+    const pond = (level: number) => ({ getMesh: () => ({ metadata: { waterLevel: level } }) }) as unknown as SubMesh;
+    p.hardBindForSubMesh(ubo, scene, engine, pond(42));
+    p.hardBindForSubMesh(ubo, scene, engine, pond(17));
+    expect(updateFloat.mock.calls).toEqual([["waterLevel", 42], ["waterLevel", 17]]);
+    // and bindForSubMesh, skipped between back-to-back draws, no longer writes it
+    const writes: string[] = [];
+    const record = (name: string) => { writes.push(name); };
+    const full = { updateFloat: record, updateFloat2: record, updateFloat3: record, updateFloat4: record, setTexture: record } as unknown as UniformBuffer;
+    p.bindForSubMesh(full);
+    expect(writes).toContain("waterKd");
+    expect(writes).not.toContain("waterLevel");
   });
 });

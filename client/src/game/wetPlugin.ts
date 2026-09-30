@@ -14,6 +14,7 @@
  */
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import type { MaterialDefines } from "@babylonjs/core/Materials/materialDefines.js";
 import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import type { Scene } from "@babylonjs/core/scene.js";
@@ -99,10 +100,44 @@ export class WetPlugin extends MaterialPluginBase {
   }
 }
 
-export function attachWet(material: Material): WetPlugin {
+/**
+ * Attaches once per material; a later call returns the plugin already there.
+ * PBR only: the roughness anchor and `surfaceAlbedo` are PBR's, so any other
+ * material (a loaded model's StandardMaterial, say) is left alone and gets null.
+ */
+export function attachWet(material: Material): WetPlugin | null {
+  if (!(material instanceof PBRMaterial)) return null;
   const existing = material.pluginManager?.getPlugin("Wet");
   if (existing instanceof WetPlugin) return existing;
   return new WetPlugin(material);
+}
+
+function smoothstep(e0: number, e1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * The medium and low tiers' per-channel darkening by the water above a point,
+ * as wetLights.fragment.fx computes it: exp(−2·(kd − mean kd)·depth), capped
+ * at 1, where the depth below `level` is held to the body's footprint (1 inside,
+ * 0 from 3 m past the rim, blended from 1 m, `wetInside` in wet.fragment.fx).
+ * `radius` is capped at WET_RADIUS_MAX as the uniform is.
+ */
+export function wetResidual(
+  kd: readonly [number, number, number],
+  level: number,
+  y: number,
+  centre: readonly [number, number],
+  radius: number,
+  xz: readonly [number, number],
+): [number, number, number] {
+  const r = Math.min(radius, WET_RADIUS_MAX);
+  const inside = 1 - smoothstep(r + 1, r + 3, Math.hypot(xz[0] - centre[0], xz[1] - centre[1]));
+  const depth = Math.max(0, level - y) * inside;
+  const mean = (kd[0] + kd[1] + kd[2]) / 3;
+  const ch = (k: number): number => Math.min(1, Math.exp(-2 * (k - mean) * depth));
+  return [ch(kd[0]), ch(kd[1]), ch(kd[2])];
 }
 
 /** How far past its rim a pond still claims the wet line over the sea, metres. */

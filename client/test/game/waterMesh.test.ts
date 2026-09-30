@@ -20,6 +20,8 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
 import { bedOriginFor } from "../../src/game/bedHeight.js";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { WATER_GROUP } from "../../src/game/waterFrame.js";
 
@@ -105,7 +107,8 @@ describe("createWater under NullEngine", () => {
   it("re-centres the bed a row a frame: nothing is uploaded mid-bake, one upload holds the new bake", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
-    const water = createWater(scene, 7, 0, [], "low");
+    // a pond by (500, 500), so the square there is one a body reaches
+    const water = createWater(scene, 7, 0, [{ x: 520, z: 480, radius: 10, height: 0 }], "low");
     const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
     const upload = vi.spyOn(plugin.bedTexture as RawTexture, "update");
     const origin0 = [...plugin.bedOrigin];
@@ -124,6 +127,49 @@ describe("createWater under NullEngine", () => {
     expect(plugin.bedOrigin).toEqual([o, o]);
     const heights = upload.mock.calls[0]![0] as Float32Array;
     expect(heights[0]).toBeCloseTo(elevationAt(7, o + 1, o + 1), 4);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("begins no bake where no body reaches the new square, and keeps the bed it has", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    // level 0 on seed 7: the square around (500, 500) is dry at all nine points
+    const water = createWater(scene, 7, 0, [], "low");
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    const upload = vi.spyOn(plugin.bedTexture as RawTexture, "update");
+    const origin0 = [...plugin.bedOrigin];
+    water.update(0, 0, 0); // the first update: the creation grid is already here
+    for (let i = 0; i < 300; i++) water.update(500, 500, 0);
+    expect(upload).not.toHaveBeenCalled();
+    expect(plugin.bedOrigin).toEqual(origin0);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("drops a bake whose square the camera left mid-bake (a 500 m jump) and bakes the new square", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    // a level far above the ground: every square is under water
+    const water = createWater(scene, 7, 10_000, [], "low");
+    const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    const upload = vi.spyOn(plugin.bedTexture as RawTexture, "update");
+    water.update(0, 0, 0); // the first update: the creation grid is already here
+    for (let i = 0; i < 50; i++) water.update(500, 0, 0); // 50 of 128 rows
+    expect(upload).not.toHaveBeenCalled();
+    let calls = 0;
+    while (upload.mock.calls.length === 0) {
+      water.update(1000, 0, 0);
+      calls++;
+      expect(calls).toBeLessThanOrEqual(128);
+    }
+    // a fresh bake from row 0, not the 78 rows left of the old one
+    expect(calls).toBe(128);
+    expect(upload).toHaveBeenCalledTimes(1);
+    const ox = bedOriginFor(1000, 128, 2);
+    const oz = bedOriginFor(0, 128, 2);
+    expect(plugin.bedOrigin).toEqual([ox, oz]);
+    const heights = upload.mock.calls[0]![0] as Float32Array;
+    expect(heights[0]).toBeCloseTo(elevationAt(7, ox + 1, oz + 1), 4);
+    expect(heights[127]).toBeCloseTo(elevationAt(7, ox + 255, oz + 1), 4);
     water.dispose();
   }, timeLimit(30_000));
 
@@ -158,6 +204,36 @@ describe("createWater under NullEngine", () => {
     water.dispose();
     expect(clear[WATER_GROUP]?.autoClear).toBe(true);
     frameSupport.supported = false;
+  }, timeLimit(30_000));
+
+  it("on the high tier asks the frame for its copy only while a water mesh is among the frame's active meshes", () => {
+    frameSupport.supported = true;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    new FreeCamera("c", new Vector3(0, 5, 0), scene);
+    // something else in group 1 (rain, motes, mist stand in), so the group renders without the water
+    const box = MeshBuilder.CreateBox("b", { size: 1 }, scene);
+    box.material = new StandardMaterial("m", scene);
+    box.position.set(0, 5, 5);
+    box.renderingGroupId = WATER_GROUP;
+    const water = createWater(scene, 7, 0, [], "high");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      // no water mesh active: no copy is asked for, so NullEngine's missing target is never a miss
+      for (const m of water.meshes) m.setEnabled(false);
+      for (let i = 0; i < 200; i++) scene.render();
+      expect(scene.getActiveMeshes().contains(box)).toBe(true);
+      expect(warn).not.toHaveBeenCalled();
+      // water in view: every frame asks, and NullEngine can never copy, so it says so at 120
+      for (const m of water.meshes) m.setEnabled(true);
+      for (let i = 0; i < 120; i++) scene.render();
+      expect(scene.getActiveMeshes().contains(water.meshes[0]!)).toBe(true);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+      water.dispose();
+      frameSupport.supported = false;
+    }
   }, timeLimit(30_000));
 
   it("on the high tier without the frame's support keeps the blended water in group 0", () => {
