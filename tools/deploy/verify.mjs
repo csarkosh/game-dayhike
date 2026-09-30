@@ -14,7 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { fail, tfOutput } from './lib/preconditions.mjs';
 import { validateLatest } from './lib/desktopRelease.mjs';
-import { findChunkName, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
+import { findAssetUrl, findChunkName, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
 import { bundleMapProblems } from './lib/bundle.mjs';
 import { reach } from './lib/reach.mjs';
 
@@ -22,6 +22,11 @@ const siteUrl = tfOutput('site_url');
 const signalingUrl = tfOutput('signaling_url');
 const siteOrigin = new URL(siteUrl).origin;
 const legacyHost = tfOutput('legacy_domain_name');
+
+/** The title page's first load: the page, its scripts and styles, the still. */
+const TITLE_PAGE_MAX_BYTES = 1_500_000;
+/** The title still's weight, one frame of the film as WebP. */
+const STILL_MAX_BYTES = 200_000;
 
 const failures = [];
 const pass = (what) => console.log(`  ✓ ${what}`);
@@ -192,6 +197,71 @@ async function verify() {
         `cache-control: ${res.headers.get('cache-control')}`,
       );
     }
+  }
+
+  // 4b'. The intro's film and the title page's still, where the build
+  // references them: each is allowed to be absent until it ships (a note,
+  // not a failure), and present it must be the real file, served immutable;
+  // the still under 200 KB, the weight the title page allows it. The film is
+  // read by its first twelve bytes only: `ftyp` at bytes 4 to 8 is an MP4.
+  if (bundleSource) {
+    const videoUrl = findAssetUrl(bundleSource, 'intro', 'mp4');
+    if (!videoUrl) {
+      console.log('  · the bundle references no intro film; none has shipped');
+    } else {
+      const res = await reach(`${siteOrigin}${videoUrl}`, { headers: { Range: 'bytes=0-11' } });
+      if (res.status !== 200 && res.status !== 206) {
+        failures.push(`${videoUrl} — got ${res.status}`);
+      } else {
+        const head = Buffer.from(await res.arrayBuffer());
+        check(head.subarray(4, 8).toString('latin1') === 'ftyp', 'the intro film is a real MP4', `bytes 4 to 8 were ${JSON.stringify(head.subarray(4, 8).toString('latin1'))}`);
+        check(
+          (res.headers.get('cache-control') ?? '').includes('immutable'),
+          'the intro film is served immutable',
+          `cache-control: ${res.headers.get('cache-control')}`,
+        );
+      }
+    }
+    const stillUrl = findAssetUrl(bundleSource, 'intro.still', 'webp');
+    if (!stillUrl) {
+      console.log('  · the bundle references no title still; none has shipped');
+    } else {
+      const res = await reach(`${siteOrigin}${stillUrl}`);
+      if (res.status !== 200) {
+        failures.push(`${stillUrl} — got ${res.status}`);
+      } else {
+        const bytes = Buffer.from(await res.arrayBuffer());
+        const riff = bytes.subarray(0, 4).toString('latin1');
+        const webp = bytes.subarray(8, 12).toString('latin1');
+        check(riff === 'RIFF' && webp === 'WEBP', 'the title still is a real WebP image', `magic was ${JSON.stringify(riff)}/${JSON.stringify(webp)}`);
+        check(
+          (res.headers.get('cache-control') ?? '').includes('immutable'),
+          'the title still is served immutable',
+          `cache-control: ${res.headers.get('cache-control')}`,
+        );
+        check(bytes.length < STILL_MAX_BYTES, `the title still is under ${STILL_MAX_BYTES} bytes`, `${bytes.length} bytes`);
+      }
+    }
+    // The title page's first load: the page, every script, preloaded module
+    // and stylesheet it names, and the still. The page builds nothing before
+    // Play, so this is what a first visit costs; each size is what the server
+    // sent (`content-length`, compressed where it compresses), which is what
+    // the visitor waits for, or the body's bytes where no length was sent.
+    let total = Buffer.byteLength(html);
+    const named = [...html.matchAll(/<script[^>]*\ssrc="([^"]+)"|<link[^>]*rel="(?:stylesheet|modulepreload)"[^>]*href="([^"]+)"/g)]
+      .map((m) => m[1] ?? m[2]);
+    if (stillUrl) named.push(stillUrl);
+    for (const url of named) {
+      const res = await reach(url.startsWith('/') ? `${siteOrigin}${url}` : url);
+      if (res.status !== 200) {
+        failures.push(`the title page's ${url} — got ${res.status}`);
+        continue;
+      }
+      const body = await res.arrayBuffer();
+      const length = Number(res.headers.get('content-length'));
+      total += length > 0 ? length : body.byteLength;
+    }
+    check(total < TITLE_PAGE_MAX_BYTES, `the title page's first load is under ${TITLE_PAGE_MAX_BYTES} bytes`, `${total} bytes over ${named.length + 1} files`);
   }
 
   // 4c. The WebGPU engine's translators shipped whole and are served as

@@ -82,6 +82,17 @@ function findAssetUrls(source, ids, ext) {
   return found;
 }
 
+/**
+ * The URL a built bundle references for one file of another kind: the intro
+ * film (`intro`, `mp4`) and the title page's still (`intro.still`, `webp`),
+ * which `client/src/game/assetUrls.ts` imports with `?url`. Same matching
+ * rules as `findModelUrls`; null when the bundle does not reference it, which
+ * for these is allowed until the file ships.
+ */
+export function findAssetUrl(source, id, ext) {
+  return findAssetUrls(source, [id], ext)[id] ?? null;
+}
+
 /** The URLs a built bundle references for the given model ids (`.glb`). */
 export function findModelUrls(source, ids) {
   return findAssetUrls(source, ids, 'glb');
