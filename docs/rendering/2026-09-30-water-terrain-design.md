@@ -80,7 +80,7 @@ bay, with no headlands of its own.
 The systems that already exist, extended, rather than a new module:
 
 - The pond feature gains a murk value, a new basin profile and, when murky, a
-  marsh lobe: a stage in `features.ts`, as `basinD` is now.
+  marsh on its shelf: a stage in `features.ts`, as `basinD` is now.
 - The cove is a stage of the coast in `olympic.ts`, keyed to the pad's
   frontage, C² with exact derivatives like `shoreProfileD`.
 - The reeds, the lilies and the cove's drift logs are placed by the sim's
@@ -157,34 +157,34 @@ wet plugin's (sub-project 1). Paint and ground class only, no new models.
 
 ### 4.4 The marsh end
 
-A lake with murk above 0.5 gets one waterlogged lobe at its rim:
+A lake with murk above 0.5 gets one marsh at its rim: its shallow end, the shelf
+there silted up to the water's level.
 
-- It lies where the ground around the rim is nearest the water's level: of 16
-  directions, the one whose footprint's ground (before the basin) stands least
-  far off the level on average, since a marsh is flat ground the water spreads
-  over. Downhill was the first thought (a marsh at the outlet) and measured
-  wrong: over 101 ponds in 200 worlds the ground under a downhill lobe lies a
-  median 3.2 m off the level (to 13 m), which would stand the marsh on an
-  embankment; the best direction's lies 1.1 m off (at most 2.6 m), a median
-  86° from downhill, along the contour.
-- It is an ellipse reaching 0.6 to 1.0 × R beyond the rim (larger the murkier)
-  and about R wide.
+- It lies on the shelf, from the rim in to the shelf's edge 10 m in, and is 0.6
+  to 1.0 × R across (wider the murkier).
+- It lies where the ground just outside the rim is nearest the water's level:
+  of 16 directions, the one whose shore (before the lake) stands least far off
+  the level on average, since a marsh is flat ground the water spreads over.
+  Downhill was the first thought (a marsh at the outlet) and measured wrong:
+  over 101 ponds in 200 worlds the ground off a downhill rim lies a median
+  3.2 m off the level (to 13 m); the best direction's lies 1.1 m off (at most
+  2.6 m), a median 86° from downhill, along the contour.
 - Its ground is held between 5 cm below and 5 cm above the water level,
   varied by a seeded noise, so standing water and tussocks alternate: it reads
-  as marsh, not open lake. C² into the apron.
-- The water's mesh grows to cover the lobe; the depth map already draws its
-  waterline.
-- The lobe is decided after the whole bowl is built (the trail, its loops,
-  the landmarks), so it moves nothing already placed: it yields to them,
-  moved to the next-best of the five best directions, shrunk to 0.6 × R, or
-  dropped, so that it meets
-  no trail edge (with its corridor), no other feature and no landmark. The
-  route search is unchanged; a loop never wades through the marsh because the
-  marsh is never put where a loop runs.
+  as marsh, not open lake. C² into the lake's bed and the apron.
+- It stays inside the rim, where the trail never comes, so it moves nothing
+  placed and needs no room of its own. It was first drafted beyond the rim,
+  reaching 0.6 to 1.0 × R past it, and measured wrong: the loop that rings each
+  pond runs its corridor within 7 m of the rim in most directions (a median
+  7 m, a quarter within 4 m, 20 ponds of 101 at the rim itself), so such a lobe
+  fitted clear of the trail on flat ground for only 39 to 45 % of murky lakes,
+  and on any ground for 75 % with its ground up to 10 m off the level.
+- It lies outside the wall at the shelf's edge (§4.2), so a player can wade
+  through it, and never through its inner edge into deep water.
 
 ### 4.5 The plants
 
-- **Reeds and cattails.** In the lobe, and along the murky shore in water 0 to
+- **Reeds and cattails.** In the marsh, and along the murky shore in water 0 to
   0.6 m deep and on the wet band; density follows murk. Built in code by the
   blade-clump builder that makes the grass (`bladeClumpGeometry`), with reed
   characters: tall blades 1.2 to 2 m, some with cattail heads. They take the
@@ -263,20 +263,19 @@ The terrain variant gains `waterBodies(seed)`:
 type WaterBodySource =
   | { kind: "sea"; level: number }
   | { kind: "lake"; level: number; x: number; z: number; radius: number;
-      murk: number; lobe: { dirX: number; dirZ: number; reach: number; width: number } | null };
+      murk: number; lobe: { dirX: number; dirZ: number; width: number } | null };
 ```
 
 The sea is the variant's `waterLevel`; the lake is the world's pond feature, if
 any. The renderer reads this list in `createWater`: the lake's water row from
-murk (§4.1), its mesh covering the lobe, the wet plugin's footprint from the
-lake's disc and lobe. The water material then draws a clear high lake clear,
+murk (§4.1), its mesh, the wet plugin's footprint from the lake's disc. The water material then draws a clear high lake clear,
 not every lake brown.
 
 ## 7. Where the pieces live
 
 | Piece | Where | Level id |
 | --- | --- | --- |
-| Murk, the basin, the lobe | `client/src/sim/features.ts` | yes |
+| Murk, the basin, the marsh | `client/src/sim/features.ts` | yes |
 | The wall at the shelf, wading by a lake's level | `client/src/sim/containment.ts`, `world.ts` | yes (behaviour) |
 | The cove and the headlands | `client/src/sim/olympic.ts` | yes |
 | Reeds, lilies (placement), drift logs in the cove | `client/src/sim/clutter.ts` | yes |
@@ -296,8 +295,9 @@ Node tests:
 - The murk function at its ends and middle.
 - The basin: 0.9 m deep 10 m in from the rim, the middle depth by murk, and a
   middle on the smallest pond.
-- The lobe: flat within its tolerance, in the direction whose ground is nearest
-  the level, absent at murk 0.5 and below.
+- The marsh: flat within its tolerance, on the shelf and inside the rim only,
+  in the direction whose shore is nearest the level, absent at murk 0.5 and
+  below.
 - The wall at the shelf's edge: a player walking into a lake stops where the
   water is 0.9 m deep, and slows by the lake's level as in the sea.
 - The cove: the berm's crest, 1:12 at the waterline, 1:50 beyond, the headlands
@@ -309,7 +309,7 @@ Node tests:
 Scans over 200 worlds, run before and after (a builder invariant is gated on
 the composed field, never on a few probe seeds):
 
-- No trail edge (with its corridor) comes within the marsh lobe.
+- No trail edge comes inside a lake's rim.
 - Every feature's position, radius and rim height is identical to today's
   (the pond's placement unchanged), from a fixture recorded before the change.
 - The loops build for as many worlds as they do today.
