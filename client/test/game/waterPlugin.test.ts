@@ -88,6 +88,21 @@ describe("water plugin", () => {
     expect(mat.roughness).toBeGreaterThan(0.2);
   });
 
+  it("leaves the roughness alone for a wind change under 1e-3, and moves it for a real one", () => {
+    const mat = new PBRMaterial("w4b", scene);
+    const p = attachWater(mat, WATER_ROWS.sea);
+    p.setWind(0.5, [1, 0]);
+    const r = mat.roughness;
+    p.setWind(0.5001, [1, 0]);
+    expect(mat.roughness).toBe(r);
+    p.setWind(1, [1, 0]);
+    expect(mat.roughness).not.toBe(r);
+  });
+
+  it("declares the bed texel size as a vec2", () => {
+    expect(fx("water.fragment.fx")).toContain("vec2 texel = vec2(1.0 / waterBedTexels);");
+  });
+
   it("is not ready until the bed texture exists", () => {
     const mat = new PBRMaterial("w5", scene);
     const p = attachWater(mat, WATER_ROWS.sea);

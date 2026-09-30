@@ -1,4 +1,6 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
+import { elevationAt } from "../../src/sim/terrain.js";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -64,7 +66,6 @@ describe("createWater under NullEngine", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     const water = createWater(scene, 7, 0, [], "low");
-    water.update(0, 0, 0);
     const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
     expect(plugin.bedTexture).not.toBeNull();
     expect(plugin.bedTexels).toBe(128);
@@ -86,27 +87,28 @@ describe("createWater under NullEngine", () => {
     water.dispose();
   }, timeLimit(30_000));
 
-  it("re-centres the bed a row a frame: origin and texture change together, on the completing call only", () => {
+  it("re-centres the bed a row a frame: nothing is uploaded mid-bake, one upload holds the new bake", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     const water = createWater(scene, 7, 0, [], "low");
     const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
-    water.update(0, 0, 0);
+    const upload = vi.spyOn(plugin.bedTexture as RawTexture, "update");
     const origin0 = [...plugin.bedOrigin];
-    const tex0 = plugin.bedTexture;
+    water.update(60, 0, 0); // inside the inner half [-64, 64): no bake, no upload
+    expect(upload).not.toHaveBeenCalled();
     let calls = 0;
-    while (plugin.bedOrigin[0] === origin0[0] && plugin.bedOrigin[1] === origin0[1]) {
+    while (upload.mock.calls.length === 0) {
       water.update(500, 500, 0);
       calls++;
-      if (calls < 128) {
-        expect(plugin.bedOrigin).toEqual(origin0);
-        expect(plugin.bedTexture).toBe(tex0);
-      }
+      if (upload.mock.calls.length === 0) expect(plugin.bedOrigin).toEqual(origin0);
       expect(calls).toBeLessThanOrEqual(128);
     }
     expect(calls).toBe(128); // 128 rows at one a frame
-    expect(plugin.bedOrigin).toEqual([bedOriginFor(500, 128, 2), bedOriginFor(500, 128, 2)]);
-    expect(plugin.bedTexture).toBe(tex0); // updated in place
+    expect(upload).toHaveBeenCalledTimes(1);
+    const o = bedOriginFor(500, 128, 2);
+    expect(plugin.bedOrigin).toEqual([o, o]);
+    const heights = upload.mock.calls[0]![0] as Float32Array;
+    expect(heights[0]).toBeCloseTo(elevationAt(7, o + 1, o + 1), 4);
     water.dispose();
   }, timeLimit(30_000));
 });
