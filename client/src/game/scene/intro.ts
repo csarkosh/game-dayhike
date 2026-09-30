@@ -17,28 +17,33 @@ import type { ActorPose, CarPose, Caption, Scene } from "./timeline.js";
 export const INTRO_SEED_TOKEN = "hollow";
 export const INTRO_HOUR = 12;
 export const INTRO_WEATHER: WeatherParams = WEATHER_PRESETS.mist;
-export const INTRO_DURATION = 60;
+export const INTRO_DURATION = 72;
 export const INTRO_RANGER = "ranger.nathan";
 export const INTRO_CAR = "trailhead.car";
 
-/** The eight shots of §3, in seconds. */
+/** The eight shots of §3, in seconds: the cab, the insert and the shoulder
+ * hold the call, which runs from 15 s to 51.9 s. */
 export const INTRO_SHOTS: readonly { from: number; to: number }[] = [
-  { from: 0, to: 9 }, { from: 9, to: 15 }, { from: 15, to: 25 }, { from: 25, to: 30 },
-  { from: 30, to: 36 }, { from: 36, to: 43 }, { from: 43, to: 50 }, { from: 50, to: 60 },
+  { from: 0, to: 9 }, { from: 9, to: 15 }, { from: 15, to: 30.6 }, { from: 30.6, to: 38.4 },
+  { from: 38.4, to: 48 }, { from: 48, to: 55 }, { from: 55, to: 62 }, { from: 62, to: 72 },
 ];
 
-/** The car's drive: from this far down the road, at a cruise, braking over the last seconds to the site. */
-const DRIVE_M = 470;
+/** The car's drive: from this far down the road, at a cruise, braking over
+ * the last seconds to the site (12 m/s for 48 s and a 7 s brake). */
+const DRIVE_M = 618;
 const CRUISE_MPS = 12;
 const BRAKE_S = 7;
 /** The car's lane: metres right of the centreline. */
 const LANE_M = 1.8;
 /** The car stops at the end of shot 6, the door opens through shot 7. */
-const STOP_AT_S = 43;
+const STOP_AT_S = 55;
 const DOOR_OPEN_S = 1.5;
 /** The ranger steps from the door and walks to the spawn over shot 7. */
-const STEP_OUT_S = 43.5;
+const STEP_OUT_S = 55.5;
 const WALK_S = 5;
+/** Shot 5's camera: this far back along the road from the car's site, which
+ * the cruising car reaches at 41.6 s. */
+const PASS_BACK_M = 119;
 /** Where the ranger appears beside the car: at the driver's door, the car's left when it faces +z. */
 const DOOR_X_M = -1.0;
 const DOOR_Z_M = 0.6;
@@ -64,19 +69,21 @@ export type IntroPlaces = {
   direction: 1 | -1;
 };
 
-/** The call's ten lines against the video's clock, dispatch's marked as heard through the radio. */
+/** The call's ten lines against the video's clock, each from its start to
+ * the next line's, line 9 in two at the pause before "If anything";
+ * dispatch's marked as heard through the radio. */
 export const INTRO_CAPTIONS: readonly Caption[] = [
-  { from: 15.0, to: 16.4, text: "Four-one, dispatch.", radio: true },
-  { from: 16.4, to: 17.8, text: "Four-one. Go ahead.", radio: false },
-  { from: 17.8, to: 20.9, text: "We've had reports of a missing hiker.\nLast seen at Trail 14.", radio: true },
-  { from: 20.9, to: 22.6, text: "Copy. Anyone see them come down?", radio: false },
-  { from: 22.6, to: 26.0, text: "Last sighting was near the summit.\nThe caller didn't leave a name.", radio: true },
-  { from: 26.0, to: 28.0, text: "All right. Who's meeting me out there?", radio: false },
-  { from: 28.0, to: 29.5, text: "I've got nobody else to send.", radio: true },
-  { from: 29.5, to: 33.0, text: "Figures. I'm ten minutes out.\nUp to the summit and back before dark.", radio: false },
-  { from: 33.0, to: 35.8, text: "Four-one, be advised,\nradio won't carry past the road.", radio: true },
-  { from: 35.8, to: 37.8, text: "If anything... ...get back to the road.", radio: true },
-  { from: 37.8, to: 40.4, text: "Dispatch, you're breaking up.\n...Dispatch?", radio: false },
+  { from: 15.0, to: 17.14, text: "Four-one, dispatch.", radio: true },
+  { from: 17.14, to: 19.04, text: "Four-one. Go ahead.", radio: false },
+  { from: 19.04, to: 23.82, text: "We've had reports of a missing hiker.\nLast seen at Trail 14.", radio: true },
+  { from: 23.82, to: 26.28, text: "Copy. Anyone see them come down?", radio: false },
+  { from: 26.28, to: 30.58, text: "Last sighting was near the summit.\nThe caller didn't leave a name.", radio: true },
+  { from: 30.58, to: 33.52, text: "All right. Who's meeting me out there?", radio: false },
+  { from: 33.52, to: 35.98, text: "I've got nobody else to send.", radio: true },
+  { from: 35.98, to: 41.24, text: "Figures. I'm ten minutes out.\nUp to the summit and back before dark.", radio: false },
+  { from: 41.24, to: 45.46, text: "Four-one, be advised,\nradio won't carry past the road.", radio: true },
+  { from: 45.46, to: 48.42, text: "If anything... ...get back to the road.", radio: true },
+  { from: 48.42, to: 51.86, text: "Dispatch, you're breaking up.\n...Dispatch?", radio: false },
 ];
 
 export function introScene(road: Road, places: IntroPlaces): Scene {
@@ -137,7 +144,7 @@ export function introScene(road: Road, places: IntroPlaces): Scene {
     // 4. The handset and the hand that holds it: the insert, depth of field on.
     { ...s[3]!, shot: (t) => ({ ...follow((u) => carAt(u + s[3]!.from), () => HANDSET, INSERT_FOV, 0.55)(t), dof: true }) },
     // 5. Low on the shoulder, the car passing close into the treeline.
-    { ...s[4]!, shot: holdLookingAt({ x: seaSide(road.centerX(carSite.z - dir * 90), 4), y: ground(road.centerX(carSite.z - dir * 90), carSite.z - dir * 90) + 0.5, z: carSite.z - dir * 95 }, (t) => carLook(t + s[4]!.from)) },
+    { ...s[4]!, shot: holdLookingAt({ x: seaSide(road.centerX(carSite.z - dir * (PASS_BACK_M - 5)), 4), y: ground(road.centerX(carSite.z - dir * (PASS_BACK_M - 5)), carSite.z - dir * (PASS_BACK_M - 5)) + 0.5, z: carSite.z - dir * PASS_BACK_M }, (t) => carLook(t + s[4]!.from)) },
     // 6. A locked-off wide as the car slows onto the shoulder by the board.
     { ...s[5]!, shot: holdLookingAt({ x: seaSide(carSite.x, 18), y: carSite.y + 1.6, z: carSite.z - dir * 26 }, (t) => carLook(t + s[5]!.from), 0.35) },
     // 7. The door, the step onto gravel, the ranger from behind facing the trail.

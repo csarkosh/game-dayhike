@@ -41,8 +41,8 @@ describe("the scene route", () => {
     const api = (globalThis as { dayhikeScene?: { seek(t: number): void; frame(): Promise<void>; time(): number } }).dayhikeScene;
     expect(api).toBeDefined();
     expect(api?.time()).toBe(20);
-    api?.seek(33.5);
-    expect(api?.time()).toBe(33.5);
+    api?.seek(43);
+    expect(api?.time()).toBe(43);
     // `frame()` draws now and resolves on the animation frame after.
     const drawn = api?.frame();
     for (const fn of frames.splice(0)) fn(0);
