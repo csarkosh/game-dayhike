@@ -104,7 +104,11 @@ read it. A bake whose square the camera leaves before it ends (a teleport, a
 fast ride) is dropped and a fresh one begun for where the camera is. Only
 leaving the whole square drops it (`bedOutsideSquare`): leaving the inner half
 is what begins a bake, and a camera past that half is still inside the square
-the bake is for, so steady motion finishes each bake it begins.
+the bake is for. A bake begins with the camera 128 m from the new square's far
+edge, so it finishes for motion under 128 m a bake. A bake is 256 frames on
+high and medium (a row a frame), so a sprint (6.75 m/s) finishes one above
+about 13.5 frames a second and the freecam (12 m/s) above about 24; on low,
+128 frames, half those rates.
 
 Beyond the square the shader falls back to the depth the ring vertices already
 carry (8 m apart on the nearest ring). The inner-half rule keeps the camera a
@@ -163,7 +167,9 @@ ring or a pond's disc in the frustum, among the scene's active meshes): the
 water's group also holds rain, mist and motes and renders without the water in
 view, and then nothing is copied or resolved. A ring with no wet cell (no cell
 it draws has a vertex below the level) is disabled, and a wet ring's bounds are
-the box of its wet cells (`wetBounds`, `water.ts`), not its whole plane: a flat
+the box of its wet cells (`wetBounds`, `water.ts`), not its whole plane, and
+the rings cull by that box (`CULLINGSTRATEGY_STANDARD`; Babylon's default tests
+the box's bounding sphere alone, which a camera inland is still inside): a flat
 plane at the sea's level reaches the frustum from almost anywhere, high ground
 inland included. Rain, mist and motes draw in the water's rendering group on
 high, so the opaque water does not paint over them.
@@ -419,7 +425,10 @@ body reaches the new square; a bake left mid-way by a 500 m jump, or a 300 m
 move, is dropped and the new square baked from its first row, and one whose
 camera moves 40 m but stays in its square finishes at its own origin; on seed
 atmo 620 m inland the nearest ring is disabled and the next one's box ends a
-cell past the coast, and at the coast the nearest ring is on; on the high tier
+cell past the coast, and at the coast the nearest ring is on; rendered from the
+pond's west bank, no ring is active looking inland (the camera inside the
+wet box's bounding sphere, so only the box test culls it) and one is looking
+toward the coast; on the high tier
 the frame is asked for its copy only while a water mesh is among the active
 meshes, the material is ready with the bed alone, reading the far placeholder,
 and the first copy points it at the resolved depth. No pixel is read under

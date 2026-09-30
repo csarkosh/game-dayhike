@@ -8,6 +8,7 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
@@ -861,6 +862,8 @@ export function createWater(
     mesh.material = seaMat;
     mesh.metadata = { waterLevel };
     mesh.renderingGroupId = group;
+    // The wet box is what must be tested: the default sphere-only test never culls a camera inside the sphere.
+    mesh.cullingStrategy = AbstractMesh.CULLINGSTRATEGY_STANDARD;
     meshes.push(mesh);
     emitRing(level);
   }
