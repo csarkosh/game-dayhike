@@ -14,6 +14,7 @@
 
 - Babylon 9.18.0; every shader is GLSL in `client/src/game/shaders/*.fx`, imported with `?raw`; the WGSL corpus is re-recorded after any new material or plugin (`tools/wgsl/merge-corpus.mjs`, pages recorded with `?wgsl=record`).
 - No sim change: nothing in this plan touches `client/src/sim/`. The sim's `waterLevel`, `Pond` features and `elevationAt` are read only.
+- Rulings during execution are recorded in the spec's sections as built; the plan's task text is the argument as first written and is not updated.
 - Budgets (spec §8): 0.5 ms high, 0.3 ms medium, 0.15 ms low, full screen at 1080p, measured with paired frame times, never estimated.
 - Spec §5.1 constants: F0 = 0.02; horizon clamp y ≥ +0.02; σ² = 0.003 + 0.00512 U; U = 12 m/s × the game's wind (0 to 1); α = √(2σ²); roughness = √α.
 - Spec §5.2 rows: sea Kd (0.34, 0.18, 0.26); lowland lake (1.1, 1.5, 3.5); high lake (0.2, 0.12, 0.2). Transmission e^(−2 Kd d) per channel.

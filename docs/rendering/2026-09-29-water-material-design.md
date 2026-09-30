@@ -88,8 +88,12 @@ with the float texture extension) or `RGBA8`-packed texture.
 | low | 128² | 2 m | 256 m |
 
 Re-baked when the camera leaves the inner half of the square (the ring
-clipmap's snap rule, `snapOrigin`), on a worker or spread over frames: 65,536
-`elevationAt` calls is a few milliseconds, never spent inside a frame. Beyond
+clipmap's snap rule, `snapOrigin`). The bake is measured: 260 to 295 ms for
+256² (3.8 µs a sample on an Apple M4 under Node), so it is never spent inside
+a frame. It is spread a row a frame into a spare grid (`beginBake` and
+`bakeRows`, `bedHeight.ts`) and swapped in with its origin in one call, so the
+origin and the heights always change together; the first fill is whole, at
+load, at the player's spawn. Beyond
 the extent the shader falls back to the vertex height the rings already carry:
 past 128 m a texel is smaller than a pixel anyway.
 
@@ -104,11 +108,14 @@ what draws the waterline: the mesh has vertices on land, the pixels do not.
 ### 4.2 Things in the water: the frame's depth on high
 
 A height texture cannot see a log, a rock, or the wading player's legs. On the
-**high tier (WebGPU)** the plugin reads the main pass's depth attachment
-(§4.4), reconstructs the view-space distance to the surface behind the pixel,
-and takes d = min(bed depth, that distance projected onto the vertical) so a
-leg 30 cm under is attenuated by 30 cm of water, not by the metre of water
-between the surface and the bed.
+**high tier (WebGPU)** the plugin reads the opaque pass's depth (§4.4),
+reconstructs the distance to the surface behind the pixel, and takes d = min(bed
+depth, the depth below the surface along the eye ray), which is
+(eye.y − surface.y)·(sceneDepth/viewDepth − 1), so a leg 30 cm under is
+attenuated by 30 cm of water, not by the metre of water between the surface and
+the bed. The high path exists only on WebGPU: on WebGL2 the depth attachment is a
+renderbuffer no shader can read, so the high tier there keeps the blended water
+and the object tint of §6.2.
 
 On **medium and low** d is the bed depth alone; a submerged object is made to
 read as submerged by its own material instead (§6.2). In the humic lake at
@@ -124,14 +131,15 @@ the water's own colour alone. No new cost out there.
 ### 4.4 Reading the frame on WebGPU
 
 The water is drawn after every opaque mesh (alpha-blended on medium and
-low, a later rendering group on high); by then the opaque depth is final. Babylon does not hand a material the current
-depth attachment; the plan gets it one of two ways and the spike ranks them:
-a `PrePassRenderer` with the depth texture enabled (Babylon's own MRT of the
-opaque pass, an extra attachment on every opaque draw), or a copy of the
-depth attachment into a texture after the opaque pass, the way the spike
-copied colour (`CopyTextureToTexture`, under 1 ms at 1080p). The copy is the
-expected choice: nothing changes in the opaque pass. Either way the read is
-one sample a water pixel.
+low, a later rendering group on high); by then the opaque depth is final. On
+the high tier the plugin reads it from the WebGPU MSAA depth resolve: Babylon
+resolves the multisampled depth into a readable `r32float` texture when asked,
+so the read is one sample a water pixel, with no copy of the depth and no
+change to the opaque pass. A prepass variant (Babylon's `PrePassRenderer` with
+the depth texture, an extra attachment on every opaque draw) was considered and
+dropped as strictly more work. The scene colour is still copied after the
+opaque pass (§5.2). Rain, mist and motes draw in the water's rendering group on
+high, so the opaque water does not paint over them.
 
 ## 5. The surface
 
@@ -141,14 +149,20 @@ so the sun's glitter and the headlamp's spot are PBR's own terms.
 ### 5.1 Reflection
 
 F is Fresnel for n = 1.33: F0 = 0.02, Schlick's form, which is PBR's own and
-within a few percent of the exact curve for water over the whole range
-(research §2.1). The plugin sets `metallicF0Factor` so F0 is 0.02 and nothing
+within 6 % absolute of the exact curve for water over the whole range, the
+worst at 85° (0.058; research §2.1). The plugin sets `metallicF0Factor` so F0 is 0.02 and nothing
 else in the material can raise it.
 
 The reflected colour is the sky probe sampled along the reflected view vector
 with its y clamped to no less than +0.02, so a rough surface never pulls the
 skybox's ground half into the water. The plugin rewrites the reflection
-vector before PBR samples the probe; the probe itself is untouched.
+vector before PBR samples the probe; the probe itself is untouched. The clamp
+is the exact one-step half-vector construction, not an iteration: the reflected
+ray is lifted to y = 0.02 with its xz shortened to keep it unit, and the normal
+is normalize(view + r'). The bed height reads are unconditional (four taps
+always taken, the result selected afterwards), because a texture read inside a
+branch on a varying is non-uniform control flow that the WebGPU compiler
+refuses.
 
 Roughness from wind. Cox and Munk (research §2.2): the surface's slope
 variance is σ² = 0.003 + 0.00512 U, U the wind at 10 m in m/s. The game's wind
@@ -159,7 +173,8 @@ lake by its exposure, set per body); the plan calibrates the floor against
 the mirror photos. Beckmann's slope variance converts to a microfacet width
 α = √(2σ²) and PBR's perceptual roughness is √α. A shelter of 0.1 in calm air
 gives roughness 0.16; the open sea in the rain, 0.6. The plugin writes
-`roughness` per frame from the weather; no texture.
+`roughness` per frame from the weather, and only when it moves by more than
+1e-3, because PBR's setter marks every submesh dirty; no texture.
 
 Shore reflections (trees, stacks, the far bank) are not this spec. The lake
 sub-project adds the mirror pass and feeds it into the plugin's reflection
@@ -178,7 +193,10 @@ research doc's measured rows (§2.3):
 
 Transmitted = L∞ · (1 − e^(−2 Kd d)) + bed · e^(−2 Kd d), per channel. L∞ is
 handed to PBR as the albedo, so the sky's own brightness lights it: at night
-it is lit by nothing and the lake goes black, as it must.
+it is lit by nothing and the lake goes black, as it must. On the high tier the
+albedo is L∞·(1 − T), T = e^(−2 Kd d): the bed's radiance is not handed to PBR
+as an albedo, which would light it twice, and bed·T·(1 − F) is added after
+lighting through the emissive at the final colour composition.
 
 On the **high tier** the term is computed exactly: the plugin samples the
 scene-colour copy the spike measured (research §8.5, under 1 ms at 1080p) at
@@ -189,8 +207,10 @@ opaque pass (a later rendering group, depth write on) since the copy it reads
 is of that pass.
 
 On **medium and low** the surface stays alpha-blended and the blend does the
-transmission: the shader outputs colour L∞ and alpha = 1 − e^(−2 K̄ d) with K̄
-the mean of the three channels. The bed shows through by the right amount
+transmission: the shader outputs colour L∞ and alpha = 1 − (1 − F)·T̄ with T̄ = e^(−2 K̄ d), K̄
+the mean of the three channels, and F Schlick on N·V, because plain alpha
+blending scales PBR's reflection by alpha too and the sky's mirror would vanish
+with the transmission at the rim and at grazing angles. The bed shows through by the right amount
 with a single tint rather than three; the shoreline ramp and the amber rim of
 the humic lake still read, since the rim is L∞'s colour taking over, and that
 is exact.
@@ -214,14 +234,20 @@ turn clear; it is deep there anyway (§4.3).
 ## 6. The ground side
 
 A second, smaller plugin, `WetPlugin`, on the materials of things the water
-touches. It reads one uniform per body, `wetLine`, a height in world metres.
+touches. It reads one uniform per body, `wetLine`, a height in world metres, and is
+bounded to the body's footprint as well as to the line (§6.1).
 
 ### 6.1 Wet ground
 
 On the terrain material (which the pond's rim shares). For a ground pixel with
 world y below `wetLine`: albedo × 0.40 (saturated sand against dry, research
 §2.4) and roughness to 0.15 so the sky mirrors in it, blended over a 10 cm
-band about the line so it is soft. Above the line, nothing changes. This spec
+band about the line so it is soft. Above the line, nothing changes. The effect is also bounded to the body's
+footprint, a centre and a radius (`wetCentre`, `wetRadius`), fading out over 1
+to 3 m past the rim, because one global line would paint every surface below it
+(the apron 10 m from the pond is 3.7 m under the pond's line); the sea's radius
+is `WET_RADIUS_MAX = 1e6`, representable in fp32. A finite body's line applies
+within `POND_REACH = 40 m` of its rim, the sea's otherwise. This spec
 sets `wetLine` = the body's level + 0.3 m, a still swash band; the swash
 sub-project later drives it up and down the face with each wave, and how long
 sand stays wet belongs there.
@@ -229,12 +255,14 @@ sand stays wet belongs there.
 ### 6.2 Objects in the water
 
 The same plugin on the character and prop materials, keyed on the same
-`wetLine`: below it, albedo × 0.40 and a per-channel darkening
-e^(−Kd (wetLine − y)) of the body's Kd, so a wading player's legs and a
-half-sunk log read as wet above the surface and submerged below it. On the
-high tier the darkening is switched off (the true-depth read of §4.2
-attenuates the frame already, and nothing may be attenuated twice); the wet
-look above the line stays on every tier.
+`wetLine`: below it, albedo × 0.40, and objects darken by their depth below the
+body's level (`wetLevel`), not the wet line, so a wading player's legs and a
+half-sunk log read as wet above the surface and submerged below it. On
+medium and low the darkening is only the chromatic residual
+min(1, e^(−2 (Kd − K̄) d)) per channel, since the surface's blend already
+applied the mean (§5.2) and nothing may be attenuated twice. On the high tier
+the darkening is switched off (the true-depth read of §4.2 attenuates the
+frame already); the wet look above the line stays on every tier.
 
 ### 6.3 Night and the headlamp
 
@@ -298,7 +326,7 @@ next size down.
 Node tests, in `client/test/`:
 
 - Fresnel at 0°, 45°, 80°, 90° against the exact curve for n = 1.33, within
-  3 % absolute.
+  6 % absolute (the worst is 0.058, at 85°).
 - Transmission: the humic row at 0.3 m gives half the red, two fifths of the
   green, an eighth of the blue (research §2.3's worked numbers); at 10 m the
   bed is gone in every body.
@@ -328,6 +356,10 @@ the sun pinned per reading and the reading recorded with it:
 | Wet sand | the beach at the wet line | `second-beach-06` | a darker glossy band mirroring the sky |
 | Night | the pond, headlamp on | none (research §2.5) | black water, a lamp glitter, nothing teal |
 | Wading | the player's legs in the pond | none | legs darken with depth, wet above the line |
+
+The local player has no body mesh in first person, so the wading gate poses a
+remote player or a creature in the water. The sea gate's pose is found on the
+coast (an earlier guess was under the terrain).
 
 The gate passes when the owner says the still resembles the photo in the
 column's terms; a gate without a photo passes on the "what must hold" alone.
