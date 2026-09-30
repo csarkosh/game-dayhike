@@ -150,6 +150,23 @@ export function findChunkName(source, name) {
   return match ? match[1] : null;
 }
 
+/**
+ * Every chunk file (`<name>-<hash>.js`) the entry chunk names, once each, in
+ * the order first met: its static imports, its dynamic imports and Vite's
+ * preload map alike. The model map lives in whichever chunk the build put
+ * the asset urls in (`client/src/game/assetUrls.ts`), which moved out of the
+ * entry once the title page stopped building a scene; a check that reads the
+ * entry alone would then miss every model.
+ */
+export function findChunkNames(source) {
+  const names = [];
+  for (const match of source.matchAll(new RegExp(`[/"'\`]([A-Za-z0-9_.]+-[A-Za-z0-9_-]{${HASH_LENGTH}}\\.js)["'\`]`, 'g'))) {
+    const name = match[1];
+    if (!names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
 /** Whether `bytes` begin with the WebAssembly magic, `00 61 73 6d` (`\0asm`). */
 export function isWasm(bytes) {
   return bytes.length >= 4 && bytes[0] === 0x00 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d;

@@ -14,7 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { fail, tfOutput } from './lib/preconditions.mjs';
 import { validateLatest } from './lib/desktopRelease.mjs';
-import { findAssetUrl, findChunkName, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
+import { findAssetUrl, findChunkName, findChunkNames, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
 import { bundleMapProblems } from './lib/bundle.mjs';
 import { reach } from './lib/reach.mjs';
 
@@ -118,14 +118,29 @@ async function verify() {
   // `/assets/<id>-<hash>.glb` in the bundle at all, so the "does not reference"
   // failure below catches a lost guard for free, in production, which is where it
   // would actually matter.
+  //
+  // The map is read out of the entry chunk and every chunk it names: the
+  // build puts the asset urls (`client/src/game/assetUrls.ts`) in whichever
+  // chunk first needs them, which stopped being the entry once the title page
+  // built no scene.
   const modelIds = ['ranger.nathan', 'hollow.antlered', 'clutter.fungus_b'];
+  let chunkSources = '';
+  if (bundleSource) {
+    const entryDir = new URL(`${siteOrigin}${bundle}`);
+    for (const name of findChunkNames(bundleSource)) {
+      const res = await reach(new URL(name, entryDir).href);
+      if (res.status === 200) chunkSources += `\n${await res.text()}`;
+      else failures.push(`${name}, a chunk the bundle names — got ${res.status}`);
+    }
+  }
+  const builtSource = bundleSource + chunkSources;
   if (!bundleSource) {
     // Check 3 already reported why. Running the loop here would add one
     // "the bundle does not reference …" line per id, all blaming the model map
     // for a bundle that was never fetched.
     failures.push('skipped the model checks — no bundle source to read their URLs from');
   } else {
-    const modelUrls = findModelUrls(bundleSource, modelIds);
+    const modelUrls = findModelUrls(builtSource, modelIds);
     for (const id of modelIds) {
       const url = modelUrls[id];
       if (!url) {
@@ -172,7 +187,7 @@ async function verify() {
     // all blame the texture map for a bundle that was never fetched.
     failures.push('skipped the ground-texture checks — no bundle source to read their URLs from');
   } else {
-    const textureUrls = findTextureUrls(bundleSource, textureIds);
+    const textureUrls = findTextureUrls(builtSource, textureIds);
     for (const id of textureIds) {
       const url = textureUrls[id];
       if (!url) {
