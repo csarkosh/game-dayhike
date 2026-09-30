@@ -42,7 +42,11 @@ describe("water plugin", () => {
     const v = p.getCustomCode("vertex")!;
     expect(Object.keys(v).sort()).toEqual(["CUSTOM_VERTEX_DEFINITIONS", "CUSTOM_VERTEX_UPDATE_WORLDPOS"]);
     const f = p.getCustomCode("fragment")!;
-    expect(Object.keys(f).sort()).toEqual(["CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_DEFINITIONS"]);
+    expect(Object.keys(f).sort()).toEqual([
+      "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION",
+      "CUSTOM_FRAGMENT_BEFORE_LIGHTS",
+      "CUSTOM_FRAGMENT_DEFINITIONS",
+    ]);
     expect(p.getCustomCode("compute")).toBeNull();
   });
 
@@ -52,6 +56,7 @@ describe("water plugin", () => {
     const f = p.getCustomCode("fragment")!;
     expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("water.fragment.fx"));
     expect(f.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toBe(fx("waterLights.fragment.fx"));
+    expect(f.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION).toBe(fx("waterCompose.fragment.fx"));
     const v = p.getCustomCode("vertex")!;
     expect(v.CUSTOM_VERTEX_DEFINITIONS).toBe(fx("water.vertex.fx"));
     expect(v.CUSTOM_VERTEX_UPDATE_WORLDPOS).toBe(fx("waterWorldPos.vertex.fx"));
@@ -116,17 +121,15 @@ describe("water plugin", () => {
     expect(p.isReadyForSubMesh()).toBe(true);
   });
 
-  it("reads the scene depth by mode: the device depth linearised, or a linear depth as it stands", () => {
+  it("reads the scene depth as device depth linearised, and d as the depth below the surface on the eye ray", () => {
     const mat = new PBRMaterial("w6", scene);
     const p = attachWater(mat, WATER_ROWS.sea);
     const u = p.getUniforms();
     const names = u.ubo.map((e) => e.name);
     expect(names).toContain("waterNearFar");
-    expect(names).toContain("waterDepthLinear");
     expect(u.fragment).toContain("uniform vec2 waterNearFar;");
-    expect(u.fragment).toContain("uniform float waterDepthLinear;");
+    expect(names).not.toContain("waterDepthLinear");
     expect(p.nearFar).toEqual([0.05, 1000]);
-    expect(p.depthLinear).toBe(0);
     const d = fx("water.fragment.fx");
     expect(d).not.toContain("float waterViewDepth = 0.0;");
     expect(d).toContain("varying float vWaterViewDepth;");
@@ -135,9 +138,25 @@ describe("water plugin", () => {
     expect(fx("waterWorldPos.vertex.fx")).toContain("vWaterViewDepth = (view * worldPos).z;");
     const l = fx("waterLights.fragment.fx");
     expect(l).not.toContain("waterViewDepth");
-    expect(l).toContain("float wLin = waterNearFar.x * waterNearFar.y / (waterNearFar.y - wRaw * (waterNearFar.y - waterNearFar.x));");
-    expect(l).toContain("float wSceneDepth = mix(wLin, wView, waterDepthLinear);");
-    expect(l).toContain("float wBehind = max(0.0, min(wDepth, wSceneDepth - vWaterViewDepth));");
+    expect(l).toContain("float wSceneDepth = waterNearFar.x * waterNearFar.y / (waterNearFar.y - wRaw * (waterNearFar.y - waterNearFar.x));");
+    expect(l).not.toContain("mix(wLin");
+    // the scene point on the same eye ray, its depth below the surface (spec §4.2)
+    expect(l).toContain("float wRayOn = wSceneDepth / max(vWaterViewDepth, 1.0e-3) - 1.0;");
+    expect(l).toContain("float wBehind = max(0.0, min(wDepth, (vEyePosition.y - vPositionW.y) * wRayOn));");
+  });
+
+  it("lights the water's own colour and adds the bed as radiance after lighting, on the high path", () => {
+    const l = fx("waterLights.fragment.fx");
+    // one Fresnel before the branch, for both paths
+    const fresnel = "float wF = WATER_F0 + (1.0 - WATER_F0) * pow(1.0 - wNdV, 5.0);";
+    expect(l.split(fresnel)).toHaveLength(2);
+    expect(l.indexOf(fresnel)).toBeLessThan(l.indexOf("if (waterHigh < 0.5) {"));
+    expect(l.indexOf("vec3 wTransmit = vec3(0.0);")).toBeLessThan(l.indexOf("if (waterHigh < 0.5) {"));
+    // the copied bed is already lit: never an albedo
+    expect(l).not.toContain("surfaceAlbedo = mix(surfaceAlbedo, wBed, wT);");
+    expect(l).toContain("surfaceAlbedo *= 1.0 - wT;");
+    expect(l).toContain("wTransmit = wBed * wT * (1.0 - wF);");
+    expect(fx("waterCompose.fragment.fx")).toContain("finalEmissive += wTransmit;");
   });
 
   it("is not ready on the high tier until the frame's depth has a texture behind it", () => {

@@ -10,7 +10,10 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 // the ACTIVE variant, and this test states which one it means to exercise.
 import "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { createWater } from "../../src/game/renderer.js";
+import { createWater, effectsGroupFor, setEffectsGroup } from "../../src/game/renderer.js";
+import { createRain } from "../../src/game/rain.js";
+import { createMotes } from "../../src/game/motes.js";
+import { createMistMeshes } from "../../src/game/mistMeshes.js";
 import { WATER_RING_COUNT } from "../../src/game/water.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
@@ -143,7 +146,6 @@ describe("createWater under NullEngine", () => {
       expect(plugin.sceneTexture).not.toBeNull();
       expect(plugin.depthTexture).not.toBeNull();
       expect(plugin.screen).toEqual([1 / engine.getRenderWidth(), 1 / engine.getRenderHeight()]);
-      expect(plugin.depthLinear).toBe(0);
     }
     const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
     water.update(0, 0, 1);
@@ -172,5 +174,31 @@ describe("createWater under NullEngine", () => {
     expect(plugin.sceneTexture).toBeNull();
     expect(plugin.depthTexture).toBeNull();
     water.dispose();
+  }, timeLimit(30_000));
+
+  it.each([
+    [true, WATER_GROUP],
+    [false, 0],
+  ])("puts rain, motes and mist in the water's group when its high path is on (%s: group %i)", (supported, group) => {
+    frameSupport.supported = supported;
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    new FreeCamera("c", Vector3.Zero(), scene);
+    const water = createWater(scene, 7, 0, [], "high");
+    const rain = createRain(scene, "high");
+    const motes = createMotes(scene, "high");
+    const mist = createMistMeshes(scene, 7, "high");
+    setEffectsGroup(effectsGroupFor(water), { rain, motes, mist });
+    expect(motes).not.toBeNull();
+    expect(mist.meshes.length).toBeGreaterThan(0);
+    expect(rain.system.renderingGroupId).toBe(group);
+    for (const system of motes!.systems) expect(system.renderingGroupId).toBe(group);
+    for (const mesh of mist.meshes) expect(mesh.renderingGroupId).toBe(group);
+    expect(effectsGroupFor(null)).toBe(0);
+    mist.dispose();
+    motes!.dispose();
+    rain.dispose();
+    water.dispose();
+    frameSupport.supported = false;
   }, timeLimit(30_000));
 });

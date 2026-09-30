@@ -69,13 +69,7 @@ import {
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater } from "./waterPlugin.js";
-import {
-  WATER_DEPTH_MODE_DEFAULT,
-  WATER_GROUP,
-  createWaterFrame,
-  waterFrameSupported,
-  type WaterDepthMode,
-} from "./waterFrame.js";
+import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
 import { WATER_ROWS } from "./waterShading.js";
 import { attachWet, setWetLine, wetLineFor, type WetBody } from "./wetPlugin.js";
 import {
@@ -99,9 +93,9 @@ import { createWildlifeMeshes } from "./wildlifeMeshes.js";
 import type { PlayerPoint, WildlifeEvent } from "./wildlifeBehaviour.js";
 import type { MatchState, View } from "./wildlifeDirector.js";
 import type { ListenerPose } from "./ambientAudio.js";
-import { createMistMeshes } from "./mistMeshes.js";
-import { createRain } from "./rain.js";
-import { createMotes } from "./motes.js";
+import { createMistMeshes, type MistMeshes } from "./mistMeshes.js";
+import { createRain, type Rain } from "./rain.js";
+import { createMotes, type Motes } from "./motes.js";
 import { createPropMeshes, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo } from "./rendererSwap.js";
 
@@ -653,6 +647,27 @@ export type Water = {
 
 export type Pond = { x: number; z: number; radius: number; height: number };
 
+/** The see-through effects a camera moves among: rain, motes and the mist banks. */
+export type SeeThroughEffects = { rain: Rain | null; motes: Motes | null; mist: MistMeshes | null };
+
+/**
+ * The rendering group the see-through effects draw in: the water's own on its
+ * high path, else 0. They write no depth, so drawn in group 0 the opaque water
+ * of group 1 would paint over them and its copy would show them under the
+ * surface. In the water's group they draw after it (Babylon draws a group's
+ * opaque meshes before its particles and transparent meshes), depth-tested
+ * against it and against group 0's kept depth, and out of the copy.
+ */
+export function effectsGroupFor(water: Water | null): number {
+  return water?.high === true ? WATER_GROUP : 0;
+}
+
+export function setEffectsGroup(group: number, effects: SeeThroughEffects): void {
+  if (effects.rain !== null) effects.rain.system.renderingGroupId = group;
+  for (const system of effects.motes?.systems ?? []) system.renderingGroupId = group;
+  for (const mesh of effects.mist?.meshes ?? []) mesh.renderingGroupId = group;
+}
+
 /**
  * Builds one flat disc over a pond, carrying the same per-vertex `bedDepth` the
  * ring meshes carry (`waterRingGeometry`), so the water material shades it like
@@ -708,8 +723,7 @@ export function pondDisc(scene: Scene, mat: PBRMaterial, pond: Pond, index: numb
  * On the high tier, where the engine can make the frame (`waterFrameSupported`:
  * WebGPU, a multisampled first pass, so the post chain must exist first), the
  * water is opaque in `WATER_GROUP` and reads the opaque pass behind it from the
- * frame, its depth by `depthMode`; elsewhere, high included, it is the blended
- * water of the medium tier.
+ * frame; elsewhere, high included, it is the blended water of the medium tier.
  */
 export function createWater(
   scene: Scene,
@@ -719,7 +733,6 @@ export function createWater(
   tier: QualityTier = "medium",
   camX = 0,
   camZ = 0,
-  depthMode: WaterDepthMode = WATER_DEPTH_MODE_DEFAULT,
 ): Water {
   const high = tier === "high" && waterFrameSupported(scene);
   // White albedo is the plugin's business now: it sets the row's colour.
@@ -741,13 +754,12 @@ export function createWater(
 
   // The copy of the opaque pass, on the high tier. It follows the target's
   // size by itself, so the plugins hold its textures and its `screen` once.
-  const frame = high ? createWaterFrame(scene, scene.getEngine(), depthMode) : null;
+  const frame = high ? createWaterFrame(scene, scene.getEngine()) : null;
   if (frame !== null) {
     for (const p of plugins) {
       p.sceneTexture = frame.scene;
       p.depthTexture = frame.depth;
       p.screen = frame.screen;
-      p.depthLinear = frame.depthLinear ? 1 : 0;
     }
   }
   const group = high ? WATER_GROUP : 0;
@@ -1025,10 +1037,6 @@ export type RendererOptions = {
    * `buildClipmapNow`, so a start can step it between paints; the renderer
    * draws no terrain until one has run. Absent, it is built here as always. */
   deferClipmap?: boolean;
-  /** Where the high tier's water reads the depth behind it (`waterFrame.ts`):
-   * the resolved depth of the scene's own target, or the prepass renderer's.
-   * A measuring switch (`?waterDepth=` in `app.ts`); absent, the default. */
-  waterDepthMode?: WaterDepthMode;
 };
 
 /** What the impostor bakes read of the pipelines and the scope: the draws a
@@ -1344,16 +1352,7 @@ function buildRenderer(
       : [];
   const water =
     forest !== null && waterLevel !== undefined
-      ? createWater(
-          scene,
-          forest.seed,
-          waterLevel,
-          ponds,
-          tier,
-          level.playerSpawns[0]?.x ?? 0,
-          level.playerSpawns[0]?.z ?? 0,
-          options.waterDepthMode,
-        )
+      ? createWater(scene, forest.seed, waterLevel, ponds, tier, level.playerSpawns[0]?.x ?? 0, level.playerSpawns[0]?.z ?? 0)
       : null;
   partOf(water);
 
@@ -1586,6 +1585,7 @@ function buildRenderer(
   partOf(rain);
   const motes = createMotes(scene, tier);
   partOf(motes);
+  setEffectsGroup(effectsGroupFor(water), { rain, motes, mist });
 
   const views = new EntityViews(scene);
   partOf(views);
