@@ -50,8 +50,9 @@ a body with its own murk:
 4. Make what it touches wet: sand, pebbles, the pond's rim, a log, the
    player's legs, at 0.40 of their dry brightness and glossy (§2.4).
 5. At night go black and glitter under the headlamp (§2.5).
-6. Fit 0.5 ms on the high tier, 0.3 ms on medium, 0.15 ms on low, full screen
-   at 1080p, before any wave, mirror or surf is added.
+6. Add no more than 0.9 ms on the high tier, 0.35 ms on medium and 0.05 ms on
+   low over the water it replaces, with the water filling the frame, before any
+   wave, mirror or surf is added (§8).
 
 ## 3. Approach
 
@@ -357,36 +358,44 @@ re-centring rule in `bedHeight.ts`, the wet residual's mirror in `wetPlugin.ts`
 | Transmission | colour copy, per channel, opaque | alpha blend, K̄ | alpha blend, K̄ |
 | Ripples | two octaves | two octaves | one octave |
 | Extra passes | one colour copy, in frames with a wet ring or a pond in the frustum; the depth is the pass's own MSAA resolve | none | none |
-| Budget, full screen at 1080p | 0.5 ms | 0.3 ms | 0.15 ms |
+| Budget: cost added over main's water, water filling the frame | 0.9 ms (1080p) | 0.35 ms (1080p) | 0.05 ms (720p) |
 
-Budgets are for the material alone, before waves, mirror or surf, and they are
-measured, not estimated: paired frame times (off/on/on/off, four pairs, the
-spike's method, research §8.5) at the pond pose and at a sea pose with the
-water filling the frame, WebGPU on high and WebGL2 on medium and low, on a
-quiet machine. A tier over its budget cuts in this order: the second ripple
-octave, the refracted offset (sample unrefracted), the height texture to the
-next size down.
+The budgets are the cost this material adds over the water it replaces, not an
+absolute cost. The first bars, 0.5 / 0.3 / 0.15 ms for the material alone, were
+set before anything was measured, and the water it replaces already costs more
+than each of them (the table below): no full-screen PBR water here can meet
+them. They cover the material alone, before waves, mirror or surf.
 
-Measured 2026-09-30 (provisional): paired frame times (off/on/on/off, four
-pairs, 5 s samples of `requestAnimationFrame` intervals) at the pond's rim pose
-with the water filling the frame, 1920×1080 on high and medium (hardware
-scaling 1) and 1280×720 on low (scaling 1.5), on an Apple M4 in headless Chrome
-through the chrome-devtools daemon, seed atmo at noon.
+They are measured, not estimated: paired frame times (off/on/on/off, four
+pairs, 5 s samples of `requestAnimationFrame` intervals), the water meshes
+switched off against on, at the pond's rim pose looking across it with the
+water filling most of the frame (the worst case; inland the rings are culled
+and the water costs nothing), seed atmo at noon, on a silent machine (no test
+run, load under 2.5, no other game page). At native resolution every tier
+holds 60 Hz with the water off and drops frames with it on, so the frame time
+is quantised at the refresh cap; the readings are taken at hardware scaling 0.5
+(3840×2160), where every tier is bound by its fragment work, and scaled to the
+tier's own pixels (1920×1080 on high and medium, 1280×720 on low). The control
+is the commit this material was built on, measured the same way.
 
-| Path | Frames, mean | Water on minus off |
-| --- | --- | --- |
-| High tier on WebGPU (the high path on) | 54 ms | −1.3 ms (noise) |
-| High tier fallen back to WebGL2 (the blended path) | 45.8 ms | +0.68 ms |
-| Medium on WebGL2 | 44.8 ms | +0.54 ms |
-| Low on WebGL2 | 32.0 ms | +1.39 ms |
+Measured 2026-09-30, Apple M4, headless Chrome:
 
-These readings are not a verdict on the 0.5 / 0.3 / 0.15 ms bars. Another
-session's game page rendered in the same Chrome throughout, so every frame ran
-at 45 to 54 ms against the roughly 16 ms this machine gives the same poses on a
-quiet rig, and the on−off differences are inflated by that contention and by
-its noise (a negative delta on the high path). The re-measurement on a quiet
-rig, with no other game page open, is owed before the material ships; the cut
-order above applies to whatever it finds.
+| Tier | Main's water | This material | Added | Budget |
+| --- | ---: | ---: | ---: | ---: |
+| High (WebGPU, 1080p) | 0.54 ms | 1.40 ms | +0.86 ms | 0.9 ms |
+| Medium (WebGL2, 1080p) | 0.75 ms | 1.09 ms | +0.34 ms | 0.35 ms |
+| Low (WebGL2, 720p) | 0.47 ms | 0.52 ms | +0.05 ms | 0.05 ms |
+
+High's extra over medium is the refracted, depth-true view of the bed (§4.4,
+§5.2): the copy of the opaque pass, its depth resolve and the pass break. The
+wet plugin (§6) costs nothing measurable on any tier. Walking at 6 m/s while
+the bed is baked a row a frame costs no more than walking on main (+1.7 to
++2.6 ms against +2.7 to +3.2 ms at 3840×2160), so the bake is lost in what
+moving the camera already costs.
+
+A tier over its budget cuts in this order: the second ripple octave, the
+refracted offset (sample unrefracted), the height texture to the next size
+down, and on high the copy itself (high drawing medium's blended path).
 
 ## 9. Tests and gates
 
@@ -447,9 +456,9 @@ the sun pinned per reading and the reading recorded with it:
 | Night | the pond, headlamp on | none (research §2.5) | black water, a lamp glitter, nothing teal |
 | Wading | the player's legs in the pond | none | legs darken with depth, wet above the line |
 
-First stills, 2026-09-30 (in the archive outside the repository). The owner's
-verdicts are owed: no gate has passed yet, since a gate passes on the owner's
-word.
+Stills, 2026-09-30 (in the archive outside the repository). Every posed gate
+passed on the owner's word the same day; the clear lake and wading could not be
+posed on this build (below).
 
 - Murky pond: `g-high-noon-murky-pond.jpeg` (high, WebGPU, noon, sun y −0.97,
   intensity 3.95). A sky-lit surface with a crisp waterline, a dark centre and
