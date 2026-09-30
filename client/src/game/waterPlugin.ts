@@ -74,6 +74,10 @@ export class WaterPlugin extends MaterialPluginBase {
     defines.WATER = true;
   }
 
+  override isReadyForSubMesh(): boolean {
+    return this.bedTexture !== null && this.bedTexture.isReady();
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override getAttributes(attributes: string[], _scene: Scene, _mesh: AbstractMesh): void {
     attributes.push("bedDepth");
@@ -124,7 +128,9 @@ export class WaterPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("waterHigh", high ? 1 : 0);
     uniformBuffer.updateFloat("waterOctaves", this.octaves);
     // Every declared sampler is bound on every draw: WebGPU validates the
-    // bindings a pipeline declares whether or not a branch reads them.
+    // bindings a pipeline declares whether or not a branch reads them. The
+    // material is not ready until the bed texture exists, so the null guards
+    // are never reached on a draw.
     if (this.bedTexture !== null) uniformBuffer.setTexture("waterBedHeight", this.bedTexture);
     const scene = this.sceneTexture ?? this.bedTexture;
     const depth = this.depthTexture ?? this.bedTexture;

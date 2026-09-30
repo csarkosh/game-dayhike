@@ -31,8 +31,12 @@ const float WATER_OCTAVE2_DRIFT = 0.04;
 // scrolled by the shell). Returns an xz slope to add to the normal.
 vec2 waterRipple2(vec2 xz) {
   vec2 uv = xz / WATER_OCTAVE2_TILE + waterWind * waterTime * WATER_OCTAVE2_DRIFT;
+#ifdef BUMP
   vec3 n = texture2D(bumpSampler, uv).xyz * 2.0 - 1.0;
   return n.xy * WATER_OCTAVE2_WEIGHT;
+#else
+  return vec2(0.0);
+#endif
 }
 
 // Bed height under world xz from the R32F square, bilinear by hand: r32float
@@ -41,10 +45,9 @@ vec2 waterRipple2(vec2 xz) {
 // square the ring vertex's depth stands in (it is coarse but it is deep).
 float waterBedDepth(vec2 xz) {
   vec2 local = (xz - waterBed.xy) * waterBed.z;
-  if (local.x <= 0.0 || local.y <= 0.0 || local.x >= 1.0 || local.y >= 1.0) {
-    return vBedDepth;
-  }
-  vec2 t = local * waterBedTexels - 0.5;
+  // Every read happens on every path: a texture read inside a branch on a
+  // varying is non-uniform control flow, which the WebGPU compiler refuses.
+  vec2 t = clamp(local, 0.0, 1.0) * waterBedTexels - 0.5;
   vec2 i = floor(t);
   vec2 f = t - i;
   vec2 texel = 1.0 / waterBedTexels;
@@ -54,7 +57,8 @@ float waterBedDepth(vec2 xz) {
   float h01 = texture2D(waterBedHeight, uv0 + vec2(0.0, texel.y)).r;
   float h11 = texture2D(waterBedHeight, uv0 + texel).r;
   float h = mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
-  return waterLevel - h;
+  bool outside = local.x <= 0.0 || local.y <= 0.0 || local.x >= 1.0 || local.y >= 1.0;
+  return outside ? vBedDepth : waterLevel - h;
 }
 
 // Tilts a ripple normal so the reflected ray clears the horizon: the
