@@ -1,0 +1,52 @@
+/**
+ * The car on the road: its pose a distance along the road, in a lane, and
+ * its wheels' spin from the distance travelled. Pure; the road's centreline
+ * and the ground are injected (the sim's `roadCenterX` and `elevationAt`,
+ * which the scene route passes in), so a test can use a straight line.
+ */
+import type { CarPose } from "./timeline.js";
+
+/** The car's centreline x at z, and the ground's height. */
+export type Road = { centerX: (z: number) => number; groundY: (x: number, z: number) => number };
+
+/** The SUV's wheel radius (m), for the spin. */
+export const WHEEL_RADIUS = 0.36;
+/** The step along z the road's heading is read over. */
+const HEADING_DZ = 1;
+
+/** The car at `z`: on the centreline plus `lane` metres to its right, on the
+ * ground, headed along the road the way it drives. */
+export function roadPose(road: Road, z: number, lane: number, direction: 1 | -1): { x: number; y: number; z: number; yaw: number } {
+  const cx = road.centerX(z);
+  const dx = road.centerX(z + HEADING_DZ) - cx;
+  // The road's heading toward +z, as a yaw; driving toward -z turns it round.
+  const yaw = Math.atan2(dx, HEADING_DZ) + (direction === 1 ? 0 : Math.PI);
+  // The car's right, heading +z, is +x; heading -z, it is -x.
+  const x = cx + lane * direction;
+  return { x, y: road.groundY(x, z), z, yaw };
+}
+
+/** The car driving from `startZ`, `distance(t)` metres along the road. */
+export function carAlong(road: Road, startZ: number, distance: (t: number) => number, lane: number, direction: 1 | -1): (t: number) => CarPose {
+  return (t) => {
+    const d = distance(t);
+    const pose = roadPose(road, startZ + direction * d, lane, direction);
+    return { ...pose, wheelSpin: d / WHEEL_RADIUS, doorOpen: 0 };
+  };
+}
+
+/**
+ * Distance travelled: `cruise` m/s until a braking stretch of `brakeSeconds`
+ * that ends at `total` with the speed at zero (a linear brake covers half
+ * the cruise's distance over its time), and none after.
+ */
+export function stopAt(total: number, cruise: number, brakeSeconds: number): (t: number) => number {
+  const brakeDistance = (cruise * brakeSeconds) / 2;
+  const cruiseEnd = (total - brakeDistance) / cruise;
+  return (t) => {
+    if (t <= 0) return 0;
+    if (t <= cruiseEnd) return cruise * t;
+    const u = Math.min(1, (t - cruiseEnd) / brakeSeconds);
+    return total - brakeDistance + cruise * brakeSeconds * (u - u * u / 2);
+  };
+}
