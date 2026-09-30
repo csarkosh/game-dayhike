@@ -58,14 +58,63 @@ describe("the intro's data", () => {
     expect(evaluate(scene, 72).black).toBe(0);
   });
 
-  it("keeps the ranger out of sight until the step out, then standing at the spawn facing the trail", () => {
+  it("seats the ranger at the wheel from the start, his chest on the seat's mark in the moving car", () => {
     const scene = introScene(road, places);
-    expect(evaluate(scene, 20).actors[0]?.visible).toBe(false);
-    expect(evaluate(scene, 57).actors[0]?.clip).toBe("walk");
-    const standing = evaluate(scene, 67).actors[0];
-    expect(standing?.clip).toBe("idle");
-    expect(standing?.x).toBeCloseTo(-240, 6);
-    expect(standing?.z).toBeCloseTo(4, 6);
+    const r = evaluate(scene, 5).actors[0]!;
+    expect([r.id, r.clip, r.visible]).toEqual(["intro.ranger", "drive", true]);
+    expect(r.anchor?.joint).toBe("chest");
+    expect(r.anchor?.x).toBeCloseTo(-259.767039, 5);
+    expect(r.anchor?.y).toBeCloseTo(11.134, 6);
+    expect(r.anchor?.z).toBeCloseTo(-557.79782, 5);
+  });
+
+  it("plays the call: the reach, the handset taken and put back, the talk, the lower", () => {
+    const scene = introScene(road, places);
+    const clip = (t: number) => evaluate(scene, t).actors[0]?.clip;
+    const handset = (t: number) => evaluate(scene, t).car?.handset;
+    expect([clip(14), clip(15.2), clip(20), clip(52), clip(54.5)]).toEqual(["drive", "reach", "talk", "lower", "drive"]);
+    expect([handset(15.5), handset(15.7), handset(52.6), handset(52.8)]).toEqual(["cradle", "hand", "hand", "cradle"]);
+    // A function of t: a seek back from the call finds the handset in its cradle.
+    expect(handset(10)).toBe("cradle");
+  });
+
+  it("mixes each clip in over 0.3 s from the one before", () => {
+    const scene = introScene(road, places);
+    const into = evaluate(scene, 16.6).actors[0]!;
+    expect(into.clip).toBe("talk");
+    expect(into.blend?.clip).toBe("reach");
+    expect(into.blend?.weight).toBeCloseTo(0.740741, 6);
+    expect(evaluate(scene, 17).actors[0]?.blend).toBeUndefined();
+  });
+
+  it("holds a clip that does not loop at its last frame", () => {
+    const scene = introScene(road, places);
+    const face = evaluate(scene, 70).actors[0]!;
+    expect(face.clip).toBe("face_trail");
+    expect(face.clipTime).toBeCloseTo(3.983333, 6);
+  });
+
+  it("turns him out of the seat at the stop, his hips carried from the seat to outside the door", () => {
+    const scene = introScene(road, places);
+    const start = evaluate(scene, 55).actors[0]!;
+    expect(start.clip).toBe("door");
+    expect(start.anchor?.joint).toBe("hips");
+    expect(start.anchor?.x).toBeCloseTo(-246.407039, 5);
+    expect(start.anchor?.y).toBeCloseTo(10.71, 6);
+    expect(start.anchor?.z).toBeCloseTo(0.20218, 5);
+    const mid = evaluate(scene, 56.5).actors[0]!;
+    expect(mid.anchor?.x).toBeCloseTo(-246.825895, 5);
+    expect(mid.anchor?.y).toBeCloseTo(10.83, 6);
+    expect(mid.anchor?.z).toBeCloseTo(0.238562, 5);
+  });
+
+  it("walks him from the door to the spawn, and stands him there facing the trail", () => {
+    const scene = introScene(road, places);
+    const walking = evaluate(scene, 60.5).actors[0]!;
+    expect(walking.clip).toBe("walk");
+    expect(walking.anchor).toBeUndefined();
+    const standing = evaluate(scene, 67).actors[0]!;
+    expect([standing.clip, standing.x, standing.z, standing.yaw]).toEqual(["face_trail", -240, 4, 1.1]);
   });
   it("keeps every shot's field of view within the film's range but the cab shot", () => {
     const scene = introScene(road, places);

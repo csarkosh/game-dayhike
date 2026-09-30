@@ -18,7 +18,7 @@ export const INTRO_SEED_TOKEN = "hollow";
 export const INTRO_HOUR = 12;
 export const INTRO_WEATHER: WeatherParams = WEATHER_PRESETS.mist;
 export const INTRO_DURATION = 72;
-export const INTRO_RANGER = "ranger.nathan";
+export const INTRO_RANGER = "intro.ranger";
 export const INTRO_CAR = "intro.car";
 
 /** The eight shots of §3, in seconds: the cab, the insert and the shoulder
@@ -38,18 +38,56 @@ const LANE_M = 1.8;
 /** The car stops at the end of shot 6, the door opens through shot 7. */
 const STOP_AT_S = 55;
 const DOOR_OPEN_S = 1.5;
-/** The ranger steps from the door and walks to the spawn over shot 7. */
-const STEP_OUT_S = 55.5;
-const WALK_S = 5;
 /** Shot 5's camera: this far back along the road from the car's site, which
  * the cruising car reaches at 41.6 s. */
 const PASS_BACK_M = 119;
-/** Where the ranger appears beside the car: at the driver's door, the car's left when it faces +z. */
-const DOOR_X_M = -1.0;
-const DOOR_Z_M = 0.6;
-/** The cab shots ride the car: the back seat and the handset's place, in the car's frame. */
+
+/** The film car's steering wheel's centre in the car's frame (m), measured on the model. */
+const STEERING_AT = { x: -0.411, y: 1.034, z: 0.594 };
+/** The seated chest: the drive clips hold the wheel 0.1 m below the chest and 0.4 m ahead of it. */
+const CHEST_SEAT = { x: STEERING_AT.x, y: STEERING_AT.y + 0.1, z: STEERING_AT.z - 0.4 };
+/** The seated hips: 0.424 m below the chest in the first frame of `drive`. */
+const HIPS_SEAT = { x: CHEST_SEAT.x, y: CHEST_SEAT.y - 0.424, z: CHEST_SEAT.z };
+/** Where the stand-up ends: the hips 0.45 m outside the driver's door, at standing height. */
+const HIPS_OUT = { x: -1.25, y: 0.95, z: 0.25 };
+const CHEST = "chest";
+const HIPS = "hips";
+/** The handset at the mouth, in the car's frame: the talk clip's right hand, 0.04 m right, 0.2 m up and 0.1 m ahead of the chest. */
+const HANDSET_HELD = { x: CHEST_SEAT.x + 0.04, y: CHEST_SEAT.y + 0.2, z: CHEST_SEAT.z + 0.1 };
+/** The insert's camera, in the car's frame: across the cab, looking back at the handset. */
+const INSERT_FROM = { x: 0.25, y: 1.3, z: 0.75 };
+
+/** The ranger's performance, on the call's times (s). */
+const REACH_AT = 15.0;
+const HANDSET_TAKEN_AT = 15.6;
+const TALK_AT = 16.5;
+const LOWER_AT = 51.9;
+const HANDSET_BACK_AT = 52.7;
+const STEP_OUT_S = 58;
+const WALK_S = 5;
+/** The time two clips are mixed across at a change (s). */
+const BLEND_S = 0.3;
+
+/** A clip from its start: its length when it does not loop (null when it does), and where the ranger is. */
+type Segment = { from: number; clip: string; seconds: number | null; place: "seat" | "stand-up" | "walk" | "spawn" };
+const PERFORMANCE: readonly Segment[] = [
+  { from: 0, clip: "drive", seconds: null, place: "seat" },
+  { from: REACH_AT, clip: "reach", seconds: 1.5, place: "seat" },
+  { from: TALK_AT, clip: "talk", seconds: null, place: "seat" },
+  { from: LOWER_AT, clip: "lower", seconds: 2, place: "seat" },
+  { from: LOWER_AT + 2, clip: "drive", seconds: null, place: "seat" },
+  { from: STOP_AT_S, clip: "door", seconds: 3, place: "stand-up" },
+  { from: STEP_OUT_S, clip: "walk", seconds: null, place: "walk" },
+  { from: STEP_OUT_S + WALK_S, clip: "face_trail", seconds: 4, place: "spawn" },
+];
+
+/** How far into a segment's clip at `t`: a loop runs on, a clip that does not loop holds its last frame. */
+function clipTimeOf(segment: Segment, t: number): number {
+  const into = t - segment.from;
+  return segment.seconds === null ? into : Math.min(into, segment.seconds - 1 / 60);
+}
+/** The cab shot rides the car: the back seat, in the car's frame. */
 const BACK_SEAT = { x: -0.3, y: 1.05, z: -0.9 };
-const HANDSET = { x: 0.35, y: 0.95, z: 0.45 };
 /** The one wide lens, the cab; the coastal wide's lens; the insert's; the trail's. */
 const CAB_FOV = 0.9;
 /** The mist of the film's world hides everything past about 100 m, so the
@@ -98,29 +136,52 @@ export function introScene(road: Road, places: IntroPlaces): Scene {
   const car = (t: number): CarPose => {
     const pose = drive(Math.min(t, STOP_AT_S));
     const door = t <= STOP_AT_S ? 0 : ease((t - STOP_AT_S) / DOOR_OPEN_S);
-    return { ...pose, doorOpen: door };
+    const held = t >= HANDSET_TAKEN_AT && t < HANDSET_BACK_AT;
+    return { ...pose, doorOpen: door, handset: held ? "hand" : "cradle" };
   };
   const carAt = (t: number) => car(t);
   const seaSide = (x: number, m: number) => x - m;
   const carSite = drive(STOP_AT_S);
   const ground = (x: number, z: number) => road.groundY(x, z);
 
-  // The ranger: unseen in the cab until the step out, then from the door to
-  // the spawn over shot 7, then standing there facing the trail.
-  const doorAt = { x: carSite.x + DOOR_X_M * dir, z: carSite.z + DOOR_Z_M * dir };
+  /** A point of the car's frame in the world at `t`, as `follow` places a camera. */
+  const inCar = (t: number, p: { x: number; y: number; z: number }) => {
+    const c = car(t);
+    const s = Math.sin(c.yaw), co = Math.cos(c.yaw);
+    return { x: c.x + p.x * co + p.z * s, y: c.y + p.y, z: c.z - p.x * s + p.z * co };
+  };
   const ranger = (t: number): ActorPose => {
-    if (t < STEP_OUT_S) return { id: INTRO_RANGER, x: doorAt.x, y: carSite.y, z: doorAt.z, yaw: places.start.yaw, clip: "idle", clipTime: 0, visible: false };
-    const u = ease((t - STEP_OUT_S) / WALK_S);
-    const x = doorAt.x + (places.start.x - doorAt.x) * u;
-    const z = doorAt.z + (places.start.z - doorAt.z) * u;
-    const walking = u < 1;
-    const yaw = walking ? Math.atan2(places.start.x - doorAt.x, places.start.z - doorAt.z) : places.start.yaw;
-    return { id: INTRO_RANGER, x, y: ground(x, z), z, yaw, clip: walking ? "walk" : "idle", clipTime: t - STEP_OUT_S, visible: true };
+    let i = 0;
+    while (i + 1 < PERFORMANCE.length && PERFORMANCE[i + 1]!.from <= t) i += 1;
+    const segment = PERFORMANCE[i]!;
+    const previous = i > 0 ? PERFORMANCE[i - 1]! : null;
+    const into = t - segment.from;
+    const blend = previous !== null && into < BLEND_S ? { clip: previous.clip, clipTime: clipTimeOf(previous, t), weight: 1 - ease(into / BLEND_S) } : undefined;
+    const base = { id: INTRO_RANGER, clip: segment.clip, clipTime: clipTimeOf(segment, t), visible: true, ...(blend === undefined ? {} : { blend }) };
+    const yaw = car(t).yaw;
+    if (segment.place === "seat") {
+      const at = inCar(t, CHEST_SEAT);
+      return { ...base, ...at, yaw, anchor: { joint: CHEST, ...at } };
+    }
+    if (segment.place === "stand-up") {
+      const u = ease(into / (segment.seconds ?? 1));
+      const at = inCar(t, { x: HIPS_SEAT.x + (HIPS_OUT.x - HIPS_SEAT.x) * u, y: HIPS_SEAT.y + (HIPS_OUT.y - HIPS_SEAT.y) * u, z: HIPS_SEAT.z + (HIPS_OUT.z - HIPS_SEAT.z) * u });
+      return { ...base, ...at, yaw, anchor: { joint: HIPS, ...at } };
+    }
+    if (segment.place === "walk") {
+      const from = inCar(t, { x: HIPS_OUT.x, y: 0, z: HIPS_OUT.z });
+      const u = ease(into / WALK_S);
+      const x = from.x + (places.start.x - from.x) * u;
+      const z = from.z + (places.start.z - from.z) * u;
+      return { ...base, x, y: ground(x, z), z, yaw: Math.atan2(places.start.x - from.x, places.start.z - from.z) };
+    }
+    return { ...base, x: places.start.x, y: ground(places.start.x, places.start.z), z: places.start.z, yaw: places.start.yaw };
   };
 
   const rangerLook = (t: number) => {
     const r = ranger(t);
-    return { x: r.x, y: r.y + 1.5, z: r.z };
+    // An anchored ranger's point is his chest or hips; a standing one's, his feet.
+    return { x: r.x, y: r.y + (r.anchor === undefined ? 1.5 : 0.6), z: r.z };
   };
   const carLook = (t: number) => {
     const c = carAt(t);
@@ -141,8 +202,8 @@ export function introScene(road: Road, places: IntroPlaces): Scene {
     { ...s[1]!, shot: followLookingAt((t) => carAt(t + s[1]!.from), (t) => ({ x: -6, y: 1.5, z: -22 + 22 * ease(t / 6) }), () => ({ x: 0, y: 1, z: 0 })) },
     // 3. The cab from the back seat: the one wide lens.
     { ...s[2]!, shot: follow((t) => carAt(t + s[2]!.from), () => BACK_SEAT, CAB_FOV, 0.05) },
-    // 4. The handset and the hand that holds it: the insert, depth of field on.
-    { ...s[3]!, shot: (t) => ({ ...follow((u) => carAt(u + s[3]!.from), () => HANDSET, INSERT_FOV, 0.55)(t), dof: true }) },
+    // 4. The handset at the ranger's mouth: the insert, across the cab, depth of field on.
+    { ...s[3]!, shot: (t) => ({ ...followLookingAt((u) => carAt(u + s[3]!.from), () => INSERT_FROM, () => HANDSET_HELD, INSERT_FOV)(t), dof: true }) },
     // 5. Low on the shoulder, the car passing close into the treeline.
     { ...s[4]!, shot: holdLookingAt({ x: seaSide(road.centerX(carSite.z - dir * (PASS_BACK_M - 5)), 4), y: ground(road.centerX(carSite.z - dir * (PASS_BACK_M - 5)), carSite.z - dir * (PASS_BACK_M - 5)) + 0.5, z: carSite.z - dir * PASS_BACK_M }, (t) => carLook(t + s[4]!.from)) },
     // 6. A locked-off wide as the car slows onto the shoulder by the board.
