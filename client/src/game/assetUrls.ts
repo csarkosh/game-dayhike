@@ -109,6 +109,9 @@ const AUDIO_URLS = urlMap(AUDIO_GLOB_URLS);
 const VIDEO_URLS = urlMap(VIDEO_GLOB_URLS);
 const IMAGE_URLS = urlMap(IMAGE_GLOB_URLS);
 
+/** How many models the build ships: every one a hike loads today. */
+export const MODEL_COUNT: number = Object.keys(MODEL_URLS).length;
+
 /** The intro film's hashed url, or null until it ships. */
 export function videoUrl(): string | null {
   return Object.hasOwn(VIDEO_URLS, "video/intro.mp4") ? (VIDEO_URLS["video/intro.mp4"] as string) : null;

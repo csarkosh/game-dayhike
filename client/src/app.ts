@@ -13,6 +13,7 @@ import { holdReveal, whenFrameWhole } from "./game/revealHold.js";
 import { RING_COUNT } from "./game/clipmap.js";
 import { reportCompile, reportProgress } from "./game/modelLoad.js";
 import { READY_MAX_MS, startReady } from "./game/startReady.js";
+import { ENGAGE_MAX_MS, whenEngaged } from "./game/engageWait.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
 import { navigateToLanding } from "./game/router.js";
 import { createCommandBar } from "./game/commandBar.js";
@@ -129,8 +130,10 @@ export type GameHandle = {
    * over the start holds the hike with. */
   cover(): () => void;
   /** Engages the controls (the pointer's lock), as the pause menu's Resume
-   * does: the intro's cut to the world. */
-  engage(): void;
+   * does: the intro's cut to the world. Resolves once they are engaged, or
+   * false a second later when they could not be (`whenEngaged`), which is
+   * when a cover lifted beside it shows no pause menu between. */
+  engage(): Promise<boolean>;
 };
 
 export type GameOptions = {
@@ -1770,7 +1773,9 @@ function buildGame(
       };
     },
     engage() {
-      if (!disposed) input.engage();
+      if (disposed) return Promise.resolve(false);
+      input.engage();
+      return whenEngaged(() => !disposed && input.engaged, ENGAGE_MAX_MS);
     },
     attachLobby(next) {
       // A follower's game has no admission to attach to, and a lobby this

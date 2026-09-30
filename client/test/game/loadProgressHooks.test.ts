@@ -1,15 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { createLoadProgress } from "../../src/game/loadProgress.js";
-import { setLoadProgress, reportProgress } from "../../src/game/modelLoad.js";
+import { MODEL_TOTAL, setLoadProgress, reportProgress } from "../../src/game/modelLoad.js";
 import { reportLayer } from "../../src/game/groundMaps.js";
 import { reportCall } from "../../src/game/wildlifeAudio.js";
 import { reportPipelines } from "../../src/game/asyncPipelines.js";
 import { stepSlices } from "../../src/game/syncJobs.js";
 
+/** A progress model with every model landed, so the line reads the next stage. */
+function afterModels() {
+  const p = createLoadProgress();
+  setLoadProgress(p);
+  for (let i = 0; i < MODEL_TOTAL; i++) {
+    p.start("models", `m${i}`);
+    p.done("models", `m${i}`);
+  }
+  return p;
+}
+
 describe("the loading hooks", () => {
   it("count the ground maps and the calls as one stage of 24", () => {
-    const p = createLoadProgress();
-    setLoadProgress(p);
+    const p = afterModels();
     reportLayer("start", "ground.grass.normal");
     reportLayer("done", "ground.grass.normal");
     reportCall("start", "call.elk_bark");
@@ -20,8 +30,7 @@ describe("the loading hooks", () => {
   });
 
   it("report pipelines landed of asked", () => {
-    const p = createLoadProgress();
-    setLoadProgress(p);
+    const p = afterModels();
     reportPipelines({ asked: 60, landed: 40 });
     expect(p.view().line).toBe("pipelines 40 of 60");
     setLoadProgress(null);

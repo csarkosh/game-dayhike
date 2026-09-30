@@ -111,13 +111,11 @@ describe("loadUntilAborted", () => {
 });
 
 import { createLoadProgress } from "../../src/game/loadProgress.js";
-import { loadContainer, setLoadProgress } from "../../src/game/modelLoad.js";
+import { MODEL_TOTAL, loadContainer, setLoadProgress } from "../../src/game/modelLoad.js";
 
 describe("the one loader every model passes through", () => {
   it("reports a start, the bytes as they land, and the settle to the progress model", async () => {
     const p = createLoadProgress();
-    // Two of a kind, so the line still names the stage after this one lands.
-    p.total("models", 2);
     setLoadProgress(p);
     const calls: Array<{ url: string; onProgress: ((e: { loaded: number; total: number }) => void) | undefined }> = [];
     const fake = async (url: string, _scene: unknown, options?: { onProgress?: (e: { loaded: number; total: number }) => void }) => {
@@ -128,7 +126,15 @@ describe("the one loader every model passes through", () => {
     const container = await loadContainer("/assets/tree-abc.glb", {} as never, fake);
     expect(container).toBeDefined();
     expect(calls).toHaveLength(1);
-    expect(p.view().line).toBe("downloading models 1 of 2, 0.0 of 0.0 MB");
+    expect(p.view().line).toBe("downloading models 1 of 42, 0.0 of 0.0 MB");
+    setLoadProgress(null);
+  });
+
+  it("tells the model the models stage's total, the catalog's count, when it is set", () => {
+    const p = createLoadProgress();
+    setLoadProgress(p);
+    expect(p.view().line).toBe("downloading models 0 of 42");
+    expect(MODEL_TOTAL).toBe(42);
     setLoadProgress(null);
   });
 

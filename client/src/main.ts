@@ -1002,14 +1002,15 @@ function launch(
   console.info(launchLine(decided, handle.graphics()));
   running = handle;
   // Under the intro the hike is covered until the cut, which takes the
-  // pointer on the gesture it was made with; a video that failed lets the
-  // hike start as one with no intro does. Ready lets the intro be skipped.
+  // pointer on the gesture it was made with and lifts the cover once it has
+  // it, so no pause menu shows between; a video that failed lets the hike
+  // start as one with no intro does. Ready lets the intro be skipped.
   if (intro !== null) {
     const release = handle.cover();
     void handle.ready.then(() => intro.overlay.ready());
     intro.launched = (reason) => {
-      release();
-      if (reason !== "error") handle.engage();
+      if (reason === "error") release();
+      else void handle.engage().then(release);
     };
     if (intro.cutEarly !== null) intro.launched(intro.cutEarly);
   }

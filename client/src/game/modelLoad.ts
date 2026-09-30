@@ -40,12 +40,18 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import type { LoadProgress } from "./loadProgress.js";
-import { assetBytes } from "./assetUrls.js";
+import { MODEL_COUNT, assetBytes } from "./assetUrls.js";
+
+/** The models stage's total: every model the build ships, since a hike
+ * loads them all (the far forest, the clutter, the wildlife, the people and
+ * the placed things), so the line can say `n of N` from its first word. */
+export const MODEL_TOTAL = MODEL_COUNT;
 
 let progress: LoadProgress | null = null;
 /** The progress model the loads report to while an intro is up; null otherwise. */
 export function setLoadProgress(p: LoadProgress | null): void {
   progress = p;
+  p?.total("models", MODEL_TOTAL);
 }
 /** The progress model the loads report to, for the other hooks. */
 export function reportProgress(): LoadProgress | null {
