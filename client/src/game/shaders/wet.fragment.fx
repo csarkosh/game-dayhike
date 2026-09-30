@@ -12,7 +12,9 @@ const float WET_ALBEDO = 0.4;
 const float WET_ROUGHNESS = 0.15;
 const float WET_BAND = 0.1;
 
-// 1 below the line, 0 above, soft over WET_BAND about it.
-float wetWeight(float y, float line) {
-  return 1.0 - smoothstep(line - WET_BAND * 0.5, line + WET_BAND * 0.5, y);
+// 1 below the line and inside the body's footprint, 0 above or beyond it.
+float wetWeight(vec3 p, float line, vec2 centre, float radius) {
+  float below = 1.0 - smoothstep(line - WET_BAND * 0.5, line + WET_BAND * 0.5, p.y);
+  float inside = 1.0 - smoothstep(radius + 1.0, radius + 3.0, length(p.xz - centre));
+  return below * inside;
 }
