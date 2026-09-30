@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WHEEL_RADIUS, carAlong, roadPose, stopAt } from "../../../src/game/scene/roadPath.js";
+import { STEERING_RATIO, WHEELBASE, WHEEL_RADIUS, carAlong, roadPose, stopAt } from "../../../src/game/scene/roadPath.js";
 
 const road = { centerX: (z: number) => 100 + 0.1 * z, groundY: (x: number, z: number) => 5 + 0.01 * x + 0.001 * z };
 
@@ -21,7 +21,7 @@ describe("the road path", () => {
     expect(car(5).z).toBe(-50);
     expect(car(5).wheelSpin).toBeCloseTo(50 / WHEEL_RADIUS, 6);
     expect(car(5).doorOpen).toBe(0);
-    expect(WHEEL_RADIUS).toBe(0.36);
+    expect(WHEEL_RADIUS).toBe(0.348);
   });
 
   it("takes a lane that changes with time, so a car can ease onto the shoulder as it stops", () => {
@@ -40,5 +40,20 @@ describe("the road path", () => {
     expect(d(cruiseEnd + 3.5)).toBeGreaterThan(428);
     expect(d(cruiseEnd + 3.5)).toBeLessThan(470);
     expect(d(99)).toBe(470);
+  });
+
+  it("turns the front wheels and the steering wheel with the road's curve, straight on a straight road", () => {
+    const straight = { centerX: () => 100, groundY: () => 0 };
+    const along = carAlong(straight, 0, (t) => 10 * t, 1.8, 1);
+    expect(along(3).wheelTurn).toBe(0);
+    expect(along(3).steer).toBe(0);
+    expect(along(3).handset).toBe("cradle");
+    // A road bending toward +x: at z 30 the heading grows by 0.00199 rad over the next metre.
+    const bend = { centerX: (z: number) => 100 + 0.001 * z * z, groundY: () => 0 };
+    const car = carAlong(bend, 0, (t) => 10 * t, 0, 1);
+    expect(car(3).wheelTurn).toBeCloseTo(0.0053295, 7);
+    expect(car(3).steer).toBeCloseTo(0.0799419, 7);
+    expect(STEERING_RATIO).toBe(15);
+    expect(WHEELBASE).toBe(2.675);
   });
 });

@@ -19,7 +19,7 @@ export const INTRO_HOUR = 12;
 export const INTRO_WEATHER: WeatherParams = WEATHER_PRESETS.mist;
 export const INTRO_DURATION = 72;
 export const INTRO_RANGER = "ranger.nathan";
-export const INTRO_CAR = "trailhead.car";
+export const INTRO_CAR = "intro.car";
 
 /** The eight shots of §3, in seconds: the cab, the insert and the shoulder
  * hold the call, which runs from 15 s to 51.9 s. */

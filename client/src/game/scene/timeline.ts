@@ -11,8 +11,14 @@
 export type CameraPose = { x: number; y: number; z: number; yaw: number; pitch: number; fov: number; roll: number; dof: boolean };
 /** An actor: where it stands, which clip it is in and how far into it. */
 export type ActorPose = { id: string; x: number; y: number; z: number; yaw: number; clip: string; clipTime: number; visible: boolean };
-/** The car: its pose, the wheels' spin (radians) and how open the driver's door is (0 to 1). */
-export type CarPose = { x: number; y: number; z: number; yaw: number; wheelSpin: number; doorOpen: number };
+/** The car: its pose, the wheels' spin (radians), how open the driver's door is (0 to 1),
+ * the front wheels' turn and the steering wheel's (radians, positive toward +x), and where
+ * the handset is. */
+export type CarPose = {
+  x: number; y: number; z: number; yaw: number;
+  wheelSpin: number; doorOpen: number; wheelTurn: number; steer: number;
+  handset: "cradle" | "hand";
+};
 /** One caption, shown while `from <= t < to`; a `\n` in the text is its second line. */
 export type Caption = { from: number; to: number; text: string; radio: boolean };
 

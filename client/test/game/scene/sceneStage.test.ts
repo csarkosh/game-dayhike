@@ -3,7 +3,8 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { carModelOf, stageFrame, type StageDeps } from "../../../src/game/scene/sceneStage.js";
+import { GRIP, carModelOf, stageFrame, type StageDeps } from "../../../src/game/scene/sceneStage.js";
+import type { PlacedModel } from "../../../src/game/staticModel.js";
 import type { Frame } from "../../../src/game/scene/timeline.js";
 import type { CharacterInstance } from "../../../src/game/characterModel.js";
 
@@ -11,7 +12,7 @@ const frame: Frame = {
   t: 3,
   camera: { x: 1, y: 2, z: 3, yaw: 0.4, pitch: 0.1, fov: 0.43, roll: 0.02, dof: true },
   actors: [{ id: "ranger.nathan", x: 5, y: 6, z: 7, yaw: 1.2, clip: "walk", clipTime: 0.75, visible: true }],
-  car: { x: 10, y: 11, z: 12, yaw: 3, wheelSpin: 2, doorOpen: 0.5 },
+  car: { x: 10, y: 11, z: 12, yaw: 3, wheelSpin: 2, doorOpen: 0.5, wheelTurn: 0, steer: 0, handset: "cradle" },
   caption: { from: 1, to: 4, text: "hello", radio: false },
   black: 0.25,
 };
@@ -67,7 +68,7 @@ describe("the stage", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const whole = new TransformNode("car", scene);
-    const d = deps({ car: { root: whole, wheels: [], door: null } });
+    const d = deps({ car: { root: whole, wheels: [], door: null, steering: null, handset: null, cradle: null } });
     stageFrame(frame, d);
     expect(whole.position.asArray()).toEqual([10, 11, 12]);
     expect(whole.rotation.y).toBe(3);
@@ -80,7 +81,8 @@ describe("the stage", () => {
     expect(parts.wheels.length).toBe(1);
     expect(parts.door).toBe(door);
     stageFrame(frame, deps({ car: parts }));
-    expect(wheel.rotation.x).toBe(2);
+    // The parts keep the model's own frame: a wheel's axle is its z.
+    expect(wheel.rotation.z).toBe(-2);
     expect(door.rotation.y).toBeCloseTo(-1.047198, 6);
     engine.dispose();
   });
@@ -99,10 +101,78 @@ describe("the stage", () => {
     // Turned as a bare node under the same car turned the same way is: the up axis of each.
     const bare = new TransformNode("bare", scene);
     bare.parent = root;
-    bare.rotation.x = 2;
+    bare.rotation.z = -2;
     const up = (n: TransformNode) => Vector3.TransformNormal(new Vector3(0, 1, 0), n.computeWorldMatrix(true)).asArray().map((v) => +v.toFixed(6));
     expect(up(wheel)).toEqual(up(bare));
     expect(up(wheel)).not.toEqual([0, 1, 0]);
+    engine.dispose();
+  });
+});
+
+describe("the film car's parts", () => {
+  /** The car as the loader leaves a model: under a root that flips z, its parts in the model's own frame. */
+  function car(scene: Scene) {
+    const handedness = new TransformNode("__root__", scene);
+    handedness.scaling = new Vector3(1, 1, -1);
+    const root = new TransformNode("car", scene);
+    root.parent = handedness;
+    const part = (name: string, parent: TransformNode, at: [number, number, number]) => {
+      const node = new TransformNode(name, scene);
+      node.parent = parent;
+      node.position = new Vector3(...at);
+      return node;
+    };
+    const lod0 = part("LOD0", root, [0, 0, 0]);
+    part("wheel_fl", lod0, [1.326, 0.348, -0.73]);
+    part("wheel_rr", lod0, [-1.349, 0.348, 0.73]);
+    part("wheel_steering", lod0, [0.594, 1.034, -0.411]);
+    part("door_driver", lod0, [0.875, 0.897, -0.752]);
+    const cradle = part("cradle", lod0, [0.744, 0.784, 0.039]);
+    part("handset", cradle, [0, 0.048, 0]);
+    return carModelOf({ node: root, meshes: [], dispose() {} } as unknown as PlacedModel);
+  }
+  const at = (over: Partial<NonNullable<Frame["car"]>>): Frame => ({ ...frame, actors: [], car: { ...frame.car!, ...over } });
+
+  it("finds the wheels, the steering wheel, the door, the handset and its cradle by name", () => {
+    const engine = new NullEngine();
+    const model = car(new Scene(engine));
+    expect(model.wheels.map((w) => [w.node.name, w.front])).toEqual([["wheel_fl", true], ["wheel_rr", false]]);
+    expect([model.steering?.name, model.door?.name, model.handset?.name, model.cradle?.name]).toEqual(["wheel_steering", "door_driver", "handset", "cradle"]);
+    engine.dispose();
+  });
+
+  it("spins each wheel about its axle, steers the front ones, and turns the steering wheel about its column", () => {
+    const engine = new NullEngine();
+    const model = car(new Scene(engine));
+    stageFrame(at({ wheelSpin: 2, wheelTurn: 0.1, steer: 1.5, doorOpen: 0.5 }), deps({ car: model }));
+    const [fl, rr] = model.wheels;
+    expect([fl!.node.rotation.z, fl!.node.rotation.y, rr!.node.rotation.z, rr!.node.rotation.y]).toEqual([-2, 0.1, -2, 0]);
+    const q = model.steering!.rotationQuaternion!;
+    const want = Quaternion.RotationAxis(new Vector3(0.871, -0.491, 0).normalize(), 1.5);
+    for (const k of ["x", "y", "z", "w"] as const) expect(q[k]).toBeCloseTo(want[k], 9);
+    expect(model.door!.rotation.y).toBeCloseTo(-0.5 * (Math.PI / 1.5), 9);
+    engine.dispose();
+  });
+
+  it("carries the handset in the hand, and puts it back in its cradle on a seek backward", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const model = car(scene);
+    // A hand as a skeleton's joint is: scaled with its armature, turned, somewhere in the cab.
+    const hand = new TransformNode("hand", scene);
+    hand.position = new Vector3(0.4, 1.3, -0.2);
+    hand.rotationQuaternion = Quaternion.RotationYawPitchRoll(0.3, 0.2, 0.1);
+    hand.scaling = new Vector3(0.01, 0.01, 0.01);
+    const d = deps({ car: model, hand: () => hand });
+    stageFrame(at({ handset: "hand" }), d);
+    model.handset!.computeWorldMatrix(true);
+    const want = GRIP.position.applyRotationQuaternion(hand.rotationQuaternion).add(hand.position);
+    const got = model.handset!.getAbsolutePosition();
+    for (const k of ["x", "y", "z"] as const) expect(got[k]).toBeCloseTo(want[k], 6);
+    stageFrame(at({ handset: "cradle" }), d);
+    expect(model.handset!.position.asArray()).toEqual([0, 0.048, 0]);
+    expect(model.handset!.rotationQuaternion?.asArray()).toEqual([0, 0, 0, 1]);
+    expect(model.handset!.scaling.asArray()).toEqual([1, 1, 1]);
     engine.dispose();
   });
 });

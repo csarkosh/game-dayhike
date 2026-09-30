@@ -52,7 +52,7 @@ export type SceneRouteDeps = {
 
 const BLACK_STYLE = "position:absolute;inset:0;background:#000;pointer-events:none;z-index:29;";
 
-async function loadTrailheadCar(scene: BabylonScene, signal: AbortSignal): Promise<PlacedModel | null> {
+async function loadFilmCar(scene: BabylonScene, signal: AbortSignal): Promise<PlacedModel | null> {
   try {
     const container = await loadUntilAborted(() => loadContainer(modelUrl(`models/${INTRO_CAR}.glb`), scene), signal);
     return placeStaticModel(container, INTRO_CAR, 0, 0, 0, 0);
@@ -122,7 +122,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   void pool.load(renderer.scene, [INTRO_RANGER]);
   let car: CarModel | null = null;
   let carModel: PlacedModel | null = null;
-  void (deps.loadCar ?? ((s) => loadTrailheadCar(s, loads.signal)))(renderer.scene).then((placed) => {
+  void (deps.loadCar ?? ((s) => loadFilmCar(s, loads.signal)))(renderer.scene).then((placed) => {
     if (placed === null || disposed) {
       placed?.dispose();
       return;
