@@ -1,0 +1,86 @@
+// client/test/game/waterPlugin.test.ts
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { WaterPlugin, attachWater } from "../../src/game/waterPlugin.js";
+import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH } from "../../src/game/waterShading.js";
+
+const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
+const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
+
+let engine: NullEngine;
+let scene: Scene;
+beforeAll(() => { engine = new NullEngine(); scene = new Scene(engine); });
+afterAll(() => engine.dispose());
+
+describe("water plugin", () => {
+  it("attaches once, idempotently, and activates", () => {
+    const mat = new PBRMaterial("w", scene);
+    const a = attachWater(mat, WATER_ROWS.sea);
+    const b = attachWater(mat, WATER_ROWS.sea);
+    expect(a).toBe(b);
+    expect(a).toBeInstanceOf(WaterPlugin);
+    const active = (mat.pluginManager as unknown as { _activePlugins: unknown[] })._activePlugins;
+    expect(active.filter((p) => p instanceof WaterPlugin)).toHaveLength(1);
+  });
+
+  it("declares the bedDepth attribute, the bed sampler, and the four hook points", () => {
+    const mat = new PBRMaterial("w2", scene);
+    const p = attachWater(mat, WATER_ROWS.lowlandLake);
+    const attributes: string[] = [];
+    p.getAttributes(attributes, scene, undefined as never);
+    expect(attributes).toEqual(["bedDepth"]);
+    const samplers: string[] = [];
+    p.getSamplers(samplers);
+    expect(samplers).toEqual(["waterBedHeight", "waterScene", "waterDepth"]);
+    const v = p.getCustomCode("vertex")!;
+    expect(Object.keys(v).sort()).toEqual(["CUSTOM_VERTEX_DEFINITIONS", "CUSTOM_VERTEX_UPDATE_WORLDPOS"]);
+    const f = p.getCustomCode("fragment")!;
+    expect(Object.keys(f).sort()).toEqual(["CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_DEFINITIONS"]);
+    expect(p.getCustomCode("compute")).toBeNull();
+  });
+
+  it("injects exactly the GLSL the .fx files hold, with the constants in lockstep", () => {
+    const mat = new PBRMaterial("w3", scene);
+    const p = attachWater(mat, WATER_ROWS.sea);
+    const f = p.getCustomCode("fragment")!;
+    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("water.fragment.fx"));
+    expect(f.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toBe(fx("waterLights.fragment.fx"));
+    const v = p.getCustomCode("vertex")!;
+    expect(v.CUSTOM_VERTEX_DEFINITIONS).toBe(fx("water.vertex.fx"));
+    expect(v.CUSTOM_VERTEX_UPDATE_WORLDPOS).toBe(fx("waterWorldPos.vertex.fx"));
+    const d = f.CUSTOM_FRAGMENT_DEFINITIONS;
+    expect(d).toContain(`const float WATER_F0 = ${glslFloat(WATER_F0)};`);
+    expect(d).toContain(`const float WATER_HORIZON = ${glslFloat(WATER_HORIZON)};`);
+    expect(d).toContain(`const float WATER_REFRACT = ${glslFloat(WATER_REFRACT)};`);
+    expect(d).toContain(`const float WATER_REFRACT_DEPTH = ${glslFloat(WATER_REFRACT_DEPTH)};`);
+    expect(d).toContain("const float WATER_OCTAVE2_TILE = 3.0;");
+    expect(d).toContain("vec3 n = texture2D(bumpSampler, uv).xyz * 2.0 - 1.0;");
+    expect(fx("waterLights.fragment.fx")).toContain("if (waterOctaves > 1.5) {");
+    // the sampler lives in the .fx, never in getUniforms().fragment (the UBO-path trap)
+    expect(d).toContain("uniform sampler2D waterBedHeight;");
+    expect(p.getUniforms().fragment).not.toContain("sampler2D");
+  });
+
+  it("discards on land and saturates alpha where the bed texture does not reach", () => {
+    const l = fx("waterLights.fragment.fx");
+    expect(l).toContain("if (wDepth <= 0.0) discard;");
+    // outside the square the vertex depth stands in, never zero
+    expect(fx("water.fragment.fx")).toContain("return vBedDepth;");
+    expect(l).toContain("alpha = 1.0 - exp(-2.0 * wKdMean * wDepth);");
+  });
+
+  it("sets F0 to water's and the row's kd on the material, and roughness from the wind and shelter", () => {
+    const mat = new PBRMaterial("w4", scene);
+    const p = attachWater(mat, WATER_ROWS.lowlandLake);
+    expect(mat.metallicF0Factor).toBeCloseTo(WATER_F0 / 0.04, 6);
+    expect(mat.metallic).toBe(0);
+    expect(mat.albedoColor.asArray()).toEqual(WATER_ROWS.lowlandLake.lInf);
+    p.setWind(0, [1, 0]);
+    expect(mat.roughness).toBeLessThan(0.2);
+    p.setWind(1, [1, 0]);
+    expect(mat.roughness).toBeGreaterThan(0.2);
+  });
+});
