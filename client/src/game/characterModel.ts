@@ -130,10 +130,18 @@ export type CharacterInstance = {
   /** The node callers position, turn and scale; the model's feet sit at its origin. */
   root: TransformNode;
   play(kind: ClipKind): void;
+  /** The named clip (its own name, or a kind's) held at `seconds` into it,
+   * wrapped for a loop: a scene posing the character at a time of its own.
+   * A clip the model lacks warns once and leaves the pose as it was. */
+  pose(clip: string, seconds: number): void;
+  /** The model's clip names. */
+  clipNames(): readonly string[];
   /** Playback rate of every clip, so a walk can keep pace with the ground it covers. */
   setSpeed(ratio: number): void;
   dispose(): void;
 };
+
+const CLIP_KINDS: readonly ClipKind[] = ["idle", "walk", "attack", "death"];
 
 /**
  * Wraps a loaded glTF root in a plain node that callers can position and rotate.
@@ -297,6 +305,8 @@ export function createCharacterPool(
 
       let current: AnimationGroup | null = null;
       let ratio = 1;
+      /** Clips asked of `pose` that the model lacks, each warned once. */
+      const missingWarned = new Set<string>();
       const instance: CharacterInstance = {
         root,
         play: (kind) => {
@@ -304,10 +314,34 @@ export function createCharacterPool(
           const next = name === null ? null : (groups.get(name) ?? null);
           if (next === null || next === current) return;
           current?.stop();
+          // A group `pose` paused plays on from its start, not from the pause.
+          next.reset();
           next.play(kind !== "death"); // death holds its final pose
           next.speedRatio = ratio;
           current = next;
         },
+        pose: (clip, seconds) => {
+          const byKind = (CLIP_KINDS as readonly string[]).includes(clip) ? clipNameFor(model.asset, model.clipNames, clip as ClipKind) : null;
+          const group = groups.get(byKind ?? clip) ?? null;
+          if (group === null) {
+            if (!missingWarned.has(clip)) {
+              missingWarned.add(clip);
+              console.warn(`character ${assetId}: no clip "${clip}"; holding the pose`);
+            }
+            return;
+          }
+          if (current !== group) {
+            current?.stop();
+            group.start(true, ratio);
+            group.pause();
+            current = group;
+          }
+          const fps = group.targetedAnimations[0]?.animation.framePerSecond ?? 30;
+          const span = group.to - group.from;
+          const frame = group.from + (span > 0 ? (((seconds * fps) % span) + span) % span : 0);
+          group.goToFrame(frame);
+        },
+        clipNames: () => model.clipNames,
         setSpeed: (value) => {
           if (value === ratio) return;
           ratio = value;
