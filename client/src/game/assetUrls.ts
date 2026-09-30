@@ -49,6 +49,23 @@ const AUDIO_GLOB_URLS = import.meta.glob("../../assets/audio/*.mp3", {
   eager: true,
 }) as Record<string, string>;
 
+/**
+ * The intro's film and the title page's still, through the same mechanism.
+ * Empty until each ships, and a title page or a Play without them is the
+ * ordinary case until then: `videoUrl` and `stillUrl` give null rather than
+ * throwing, and the page shows no video and no still.
+ */
+const VIDEO_GLOB_URLS = import.meta.glob("../../assets/video/*.mp4", {
+  query: "?url",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+const IMAGE_GLOB_URLS = import.meta.glob("../../assets/images/*.webp", {
+  query: "?url",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
 /** The globs' own key prefix, stripped so the lookup key is the catalog's
  * `output` verbatim ("models/<id>.glb", "audio/<id>.mp3") rather than a path
  * relative to this file. Both globs sit under it, which is why one constant and
@@ -89,6 +106,18 @@ function urlMap(glob: Record<string, string>): Record<string, string> {
 
 const MODEL_URLS = urlMap(GLOB_URLS);
 const AUDIO_URLS = urlMap(AUDIO_GLOB_URLS);
+const VIDEO_URLS = urlMap(VIDEO_GLOB_URLS);
+const IMAGE_URLS = urlMap(IMAGE_GLOB_URLS);
+
+/** The intro film's hashed url, or null until it ships. */
+export function videoUrl(): string | null {
+  return Object.hasOwn(VIDEO_URLS, "video/intro.mp4") ? (VIDEO_URLS["video/intro.mp4"] as string) : null;
+}
+
+/** The title page's still (one frame of the film), or null until it ships. */
+export function stillUrl(): string | null {
+  return Object.hasOwn(IMAGE_URLS, "images/intro.still.webp") ? (IMAGE_URLS["images/intro.still.webp"] as string) : null;
+}
 
 /**
  * Resolves a catalog `output` ("models/<id>.glb") to the URL Vite serves it at

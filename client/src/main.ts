@@ -17,6 +17,9 @@ import {
 } from "./game/router.js";
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
 import { afterNextPaint } from "./game/paint.js";
+import { INTRO_CAPTIONS, createIntroOverlay, type CutReason, type IntroOverlay } from "./game/introOverlay.js";
+import { setLoadProgress } from "./game/modelLoad.js";
+import { videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";
 import { createLandingScene } from "./game/landingScene.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
@@ -82,8 +85,9 @@ import {
   type EngineInput,
 } from "./game/engineChoice.js";
 
-const app = document.querySelector<HTMLDivElement>("#app");
-if (!app) throw new Error("#app not found");
+const found = document.querySelector<HTMLDivElement>("#app");
+if (!found) throw new Error("#app not found");
+const app: HTMLDivElement = found;
 
 let running: { dispose(): void } | null = null;
 // The match on this page, when the route is the game's: what a lobby opened
@@ -208,6 +212,83 @@ let lobby: Lobby | null = null;
 let lobbyError: string | undefined;
 // Play was pressed; the world builds on the next frame (see `onPlay`).
 let launching = false;
+
+/**
+ * The intro over a start (`introOverlay.ts`). Made on Play, in the click,
+ * so the video plays with sound; taken by the game route's render, which
+ * mounts it over the hike, gates the download on its buffer and feeds it the
+ * loading bar; cut by a hold, the step-out click or the video failing, when
+ * the hike takes the pointer and the overlay goes.
+ */
+type IntroRun = {
+  overlay: IntroOverlay;
+  /** The animation frame drawing it, until the cut. */
+  frame: number;
+  /** Set once the hike is launched: what the cut does to it. */
+  launched: ((reason: CutReason) => void) | null;
+  /** A cut before the launch (the video failed at once), kept for it. */
+  cutEarly: CutReason | null;
+};
+/** Made by Play, waiting for the game route's render. */
+let pendingIntro: IntroRun | null = null;
+/** Playing over the hike being started. */
+let activeIntro: IntroRun | null = null;
+
+/** The intro's file: `?intro=<url>` names one for development, `?intro=off`
+ * plays none, else the film shipped with the build, if any. */
+function introSource(): string | null {
+  const asked = new URLSearchParams(location.search).get("intro");
+  if (asked === "off") return null;
+  if (asked !== null && asked !== "") return asked;
+  return videoUrl();
+}
+
+/** Seconds of video in hand before the download starts, and the longest the
+ * download waits for them: the film has the line to itself under its fade in. */
+const INTRO_BUFFER_S = 6;
+const INTRO_BUFFER_MAX_MS = 3000;
+
+/** Resolves once the video has `seconds` buffered ahead, or `maxMs` have passed. */
+function waitForBuffer(overlay: IntroOverlay, seconds: number, maxMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const began = performance.now();
+    const check = (): void => {
+      if (overlay.bufferedAhead() >= seconds || performance.now() - began >= maxMs) resolve();
+      else setTimeout(check, 100);
+    };
+    check();
+  });
+}
+
+function endIntro(run: IntroRun | null): void {
+  if (run === null) return;
+  cancelAnimationFrame(run.frame);
+  run.overlay.dispose();
+  setLoadProgress(null);
+  if (pendingIntro === run) pendingIntro = null;
+  if (activeIntro === run) activeIntro = null;
+}
+
+/** The intro cut: the overlay goes, and the hike, once launched, takes over. */
+function cutIntro(run: IntroRun, reason: CutReason): void {
+  endIntro(run);
+  if (run.launched !== null) run.launched(reason);
+  else run.cutEarly = reason;
+}
+
+function startIntro(src: string): IntroRun {
+  const run: IntroRun = { overlay: null as unknown as IntroOverlay, frame: 0, launched: null, cutEarly: null };
+  run.overlay = createIntroOverlay(app, { src, captions: INTRO_CAPTIONS, onCut: (reason) => cutIntro(run, reason) });
+  const draw = (now: number): void => {
+    run.overlay.render(now);
+    run.frame = requestAnimationFrame(draw);
+  };
+  run.frame = requestAnimationFrame(draw);
+  // A browser that refuses the play (no gesture it accepts) is a video that
+  // failed: the hike starts as one with no intro does.
+  run.overlay.play().catch(() => cutIntro(run, "error"));
+  return run;
+}
 let detachLobby: (() => void) | null = null;
 // One create-or-join in flight at a time. The button now disables itself the
 // moment an attempt starts, but this guard is what actually holds the line:
@@ -539,6 +620,11 @@ function onPlay(): void {
   // that changed nothing reads as a tap that missed.
   if (launching) return;
   launching = true;
+  const src = introSource();
+  if (src !== null) {
+    endIntro(pendingIntro);
+    pendingIntro = startIntro(src);
+  }
   repaintLanding();
   afterNextPaint(() => {
     launching = false;
@@ -715,9 +801,11 @@ function render(container: HTMLDivElement): void {
   game = null;
   paused = false;
   landing = null;
+  endIntro(activeIntro);
   container.replaceChildren();
 
   if (isLandingRoute(route)) {
+    endIntro(pendingIntro);
     // The canvas is appended first so the UI overlay paints above it, but the
     // scene is built last, once renderLanding has put its stylesheet in the
     // DOM: the backdrop starts hidden through a class, and the engine must not
@@ -786,6 +874,15 @@ function render(container: HTMLDivElement): void {
   // renderer, before building its own. A throw anywhere in the chain leaves a
   // line rather than a blank page.
   const cancelled = (): boolean => token !== renderToken;
+  // The intro Play started, over the hike from here: its bar is the one the
+  // loads report to, and the download waits for its buffer (`before`).
+  const intro = pendingIntro;
+  pendingIntro = null;
+  activeIntro = intro;
+  if (intro !== null) {
+    intro.overlay.mount(container);
+    setLoadProgress(intro.overlay.progress);
+  }
   // Each probe step draws on the engine the WebGPU rule gives its tier, on
   // its own canvas, and a WebGPU step that fails is the rule's start failure
   // (`measureOnRuleEngine`); the game's failure handling never hears of it.
@@ -822,6 +919,8 @@ function render(container: HTMLDivElement): void {
           return probe.showScreen();
         },
       }),
+    before: intro === null ? undefined : () => waitForBuffer(intro.overlay, INTRO_BUFFER_S, INTRO_BUFFER_MAX_MS),
+    paint: () => new Promise((resolve) => afterNextPaint(resolve)),
     engine: (decided, read) => {
       hikeSignals = read;
       return engineFor(decided.tier, read, () => !cancelled());
@@ -831,10 +930,11 @@ function render(container: HTMLDivElement): void {
       container.appendChild(onCanvas.canvas);
       const read = hikeSignals;
       if (read === null) throw new Error("the GPU's signals were not read");
-      launch(container, onCanvas, route.token, decided, (tier, wanted) => engineFor(tier, read, () => !cancelled(), wanted));
+      launch(container, onCanvas, route.token, decided, (tier, wanted) => engineFor(tier, read, () => !cancelled(), wanted), intro);
     },
     fail: (error) => {
       console.error("The game could not start.", error);
+      endIntro(intro);
       // Whichever canvas the start left: a renderer that fell back builds on
       // a fresh one in the first one's place.
       for (const left of container.querySelectorAll("canvas")) left.remove();
@@ -862,6 +962,7 @@ function launch(
   worldToken: string,
   decided: StartupTier,
   engineForGame: (tier: QualityTier, wanted: () => boolean) => Promise<EngineOnCanvas>,
+  intro: IntroRun | null,
 ): void {
   const handle = startOnEngine<GameHandle>(onCanvas, {
     // The recorder the game is handed is `startOnEngine`'s: a fault found
@@ -876,6 +977,10 @@ function launch(
           paused = next;
           paintRoster();
         },
+        onConnectPanel: () => {
+          if (intro !== null && activeIntro === intro) cutIntro(intro, "error");
+        },
+        deferClipmap: intro !== null,
         engine: engine ?? undefined,
         watchers: watchers ?? undefined,
         engineFor: engineForGame,
@@ -906,6 +1011,18 @@ function launch(
   game = handle;
   console.info(launchLine(decided, handle.graphics()));
   running = handle;
+  // Under the intro the hike is covered until the cut, which takes the
+  // pointer on the gesture it was made with; a video that failed lets the
+  // hike start as one with no intro does. Ready lets the intro be skipped.
+  if (intro !== null) {
+    const release = handle.cover();
+    void handle.ready.then(() => intro.overlay.ready());
+    intro.launched = (reason) => {
+      release();
+      if (reason !== "error") handle.engage();
+    };
+    if (intro.cutEarly !== null) intro.launched(intro.cutEarly);
+  }
   announcer.afterPaint();
   paintRoster();
 }

@@ -146,6 +146,9 @@ export type GameOptions = {
   /** A follower whose connection to the host failed chose to play alone:
    * leave the party and start a fresh world. */
   onContinueOffline(): void;
+  /** The connect-failure panel is up: whatever covers the hike (an intro
+   * playing over the start) must give way to it. */
+  onConnectPanel?(): void;
   /** The pause menu opened (true) or closed (false); false again on dispose. */
   onPauseChange(paused: boolean): void;
   /** Leave the clipmap's first build to be stepped, a paint between its
@@ -1292,6 +1295,7 @@ function buildGame(
       // The player may have resumed into the game while it connected; a
       // locked pointer cannot reach the panel's buttons.
       input.disengage();
+      options.onConnectPanel?.();
       connectPanel.show(outcome.panel);
     });
     // Not unconditionally: the lobby can end while the handshake is in flight,
@@ -1372,6 +1376,7 @@ function buildGame(
         hud.setStatus(null);
         // As for a different build above: the buttons need the pointer.
         input.disengage();
+        options.onConnectPanel?.();
         connectPanel.show(connectFailure(err));
       });
     };

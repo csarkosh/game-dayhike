@@ -109,3 +109,11 @@ describe("assetBytes", () => {
     expect(assetBytes("models/no-such-model.glb")).toBeUndefined();
   });
 });
+
+import { stillUrl, videoUrl } from "../../src/game/assetUrls.js";
+
+describe("the intro's files", () => {
+  it("gives the video's and the still's urls when they ship, and null when they do not", () => {
+    for (const v of [videoUrl(), stillUrl()]) expect(v === null || v.startsWith("/")).toBe(true);
+  });
+});
