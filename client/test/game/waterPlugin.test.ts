@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
+import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { WaterPlugin, attachWater } from "../../src/game/waterPlugin.js";
 import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH } from "../../src/game/waterShading.js";
 
@@ -57,6 +60,7 @@ describe("water plugin", () => {
     expect(d).toContain(`const float WATER_REFRACT = ${glslFloat(WATER_REFRACT)};`);
     expect(d).toContain(`const float WATER_REFRACT_DEPTH = ${glslFloat(WATER_REFRACT_DEPTH)};`);
     expect(d).toContain("const float WATER_OCTAVE2_TILE = 3.0;");
+    expect(fx("water.fragment.fx")).toContain("#ifdef BUMP");
     expect(d).toContain("vec3 n = texture2D(bumpSampler, uv).xyz * 2.0 - 1.0;");
     expect(fx("waterLights.fragment.fx")).toContain("if (waterOctaves > 1.5) {");
     // the sampler lives in the .fx, never in getUniforms().fragment (the UBO-path trap)
@@ -68,7 +72,7 @@ describe("water plugin", () => {
     const l = fx("waterLights.fragment.fx");
     expect(l).toContain("if (wDepth <= 0.0) discard;");
     // outside the square the vertex depth stands in, never zero
-    expect(fx("water.fragment.fx")).toContain("return vBedDepth;");
+    expect(fx("water.fragment.fx")).toContain("return outside ? vBedDepth : waterLevel - h;");
     expect(l).toContain("alpha = 1.0 - exp(-2.0 * wKdMean * wDepth);");
   });
 
@@ -82,5 +86,16 @@ describe("water plugin", () => {
     expect(mat.roughness).toBeLessThan(0.2);
     p.setWind(1, [1, 0]);
     expect(mat.roughness).toBeGreaterThan(0.2);
+  });
+
+  it("is not ready until the bed texture exists", () => {
+    const mat = new PBRMaterial("w5", scene);
+    const p = attachWater(mat, WATER_ROWS.sea);
+    expect(p.isReadyForSubMesh()).toBe(false);
+    p.bedTexture = RawTexture.CreateRTexture(new Float32Array(4), 2, 2, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
+    // NullEngine never uploads, so its internal texture reports not ready
+    expect(p.isReadyForSubMesh()).toBe(false);
+    p.bedTexture.getInternalTexture()!.isReady = true;
+    expect(p.isReadyForSubMesh()).toBe(true);
   });
 });
