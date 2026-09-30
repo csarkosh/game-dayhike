@@ -757,7 +757,12 @@ export function createWater(
   };
 }
 
-export type FreecamView = { x: number; y: number; z: number; yaw: number; pitch: number };
+/** The free camera's view; `fov` (rad, vertical) and `roll` (rad) are a film
+ * shot's, absent for the game's own lens and no roll. */
+export type FreecamView = { x: number; y: number; z: number; yaw: number; pitch: number; fov?: number; roll?: number };
+
+/** The game's own lens (rad, vertical). */
+export const GAME_FOV = 1.4;
 
 /** This frame's view inputs that come from neither the world nor the clock. */
 export type FrameView = { dt: number; sprinting: boolean };
@@ -889,6 +894,10 @@ export type RendererOptions = {
    * nothing out, and the renderer takes the patch off before its engine goes.
    * Absent on WebGL2, where nothing of it happens. */
   pipelines?: AsyncPipelines;
+  /** The clock (ms) the wind, the post effects and everything that moves
+   * with time read; `performance.now` absent. A scene stepped a frame at a
+   * time hands in its own, so the grass and the water move in step with it. */
+  clock?: () => number;
   /** Leave the clipmap's first build to `buildFirstClipmap` or
    * `buildClipmapNow`, so a start can step it between paints; the renderer
    * draws no terrain until one has run. Absent, it is built here as always. */
@@ -1115,7 +1124,7 @@ function buildRenderer(
   // ~5.8 km out and the skybox is 8 km across, so Babylon's default clips the
   // entire distant view away.
   camera.maxZ = 10000;
-  camera.fov = 1.4;
+  camera.fov = GAME_FOV;
 
   // The local player's headlamp, camera-parented so it needs no per-frame
   // position write: a child of the camera inherits its rotation, so +Z local
@@ -1144,7 +1153,8 @@ function buildRenderer(
   const postFeatures = postFeaturesFor(tier, fxSupportedBy(engine));
   const lighting = createLighting(scene, { tier, viewDistance: FOG_DISTANCE, colourPath: postFeatures.colourPath });
   partOf(lighting);
-  const post = createPost(scene, camera, postFeatures);
+  const clock = options.clock ?? (() => performance.now());
+  const post = createPost(scene, camera, postFeatures, { now: clock });
   partOf(post);
   let unsettle = 1;
 
@@ -1458,7 +1468,7 @@ function buildRenderer(
       // per call, and this reads it several times a frame otherwise. Read
       // BEFORE the views sync, which needs the lamp state derived from it.
       const weather = lighting.weather;
-      const seconds = performance.now() / 1000;
+      const seconds = clock() / 1000;
       const lampState = lampUnder(weather, seconds);
       // The one wind record every moving thing reads this frame: the
       // weather-driven speed, or the `/wind` override in its place. The
@@ -1534,7 +1544,8 @@ function buildRenderer(
         wildlife?.update(freecam.x, freecam.z, state.tick, playersOf(state), weather, lighting.hour, wildlifeDirectorArg);
         mist?.update(freecam.x, freecam.z, weather, atmosphere.midColour(), wind, seconds);
         camera.position.set(freecam.x, freecam.y, freecam.z);
-        camera.rotation.set(freecam.pitch, freecam.yaw, 0);
+        camera.rotation.set(freecam.pitch, freecam.yaw, freecam.roll ?? 0);
+        camera.fov = freecam.fov ?? GAME_FOV;
         setLamp(localLamp, false);
         // Flying is not walking. Dropping the stride here also means the jump
         // back to the player's own position is never read as one enormous step.
@@ -1600,6 +1611,8 @@ function buildRenderer(
         // and its default forward is +Z, which matches the sim convention.
         // Roll goes on z — the only thing that ever writes it.
         camera.rotation.set(local.pitch, local.yaw, offset.roll);
+        // A hike after a scene draws with the game's lens again.
+        camera.fov = GAME_FOV;
         setLamp(localLamp, local.lamp.on, lampState);
         rain.update(camera.position, weather, wind);
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);

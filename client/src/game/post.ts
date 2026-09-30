@@ -113,7 +113,9 @@ const HALATION_KERNEL = 32;
  * Babylon's in-material image processing (exposure, vignette, colour
  * curves) every call.
  */
-export function createPost(scene: Scene, camera: Camera, features: PostFeatures): Post {
+export function createPost(scene: Scene, camera: Camera, features: PostFeatures, options: { now?: () => number } = {}): Post {
+  /** The clock (ms) the effects' motion reads: the renderer's, so a stepped scene steps them. */
+  const now = options.now ?? (() => performance.now());
   const engine = scene.getEngine();
   const image = scene.imageProcessingConfiguration;
   let grade: PostProcess | null = null;
@@ -127,7 +129,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
   let black: RawTexture | null = null;
   let record: GradeRecord = gradeRecordUnder(WEATHER_PRESETS.clear, 12, 1);
   let finishRecord = finishUnder(WEATHER_PRESETS.clear, 1, 0);
-  const start = performance.now();
+  const start = now();
 
   if (features.pipeline) {
     const textureType = engine.getCaps().textureHalfFloatRender
@@ -241,7 +243,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures)
   return {
     features,
     update(weather, hour, unsettle, stare) {
-      const seconds = (performance.now() - start) / 1000;
+      const seconds = (now() - start) / 1000;
       record = gradeRecordUnder(weather, hour, unsettle, seconds, stare);
       finishRecord = finishUnder(weather, unsettle, seconds);
       if (aberration !== null) {
