@@ -895,6 +895,37 @@ describe("startHike", () => {
     await startHike(made.deps);
     expect(made.events).toEqual(["loading", "decide", "loading gone", "discard webgpu"]);
   });
+
+  it("awaits `before` after the tier and before the engine, and paints before the engine and before the build", async () => {
+    const p = page({
+      before: async () => void p.events.push("before"),
+      paint: async () => void p.events.push("paint"),
+    });
+    await startHike(p.deps);
+    expect(p.events).toEqual(["loading", "decide", "before", "paint", "engine medium", "loading gone", "paint", "build medium on webgl2"]);
+  });
+
+  it("waits for a build that returns a promise, and says the hike could not start when it rejects", async () => {
+    const p = page({
+      build: async (decided, engine) => {
+        await Promise.resolve();
+        p.events.push(`built ${decided.tier} on ${engine}`);
+        throw new Error("no terrain");
+      },
+    });
+    await startHike(p.deps);
+    expect(p.events).toEqual(["loading", "decide", "engine medium", "loading gone", "built medium on webgl2", "fail Error: no terrain"]);
+  });
+
+  it("builds nothing once the page has moved on during `before`", async () => {
+    const p = page({
+      before: async () => {
+        p.leave();
+      },
+    });
+    await startHike(p.deps);
+    expect(p.events).toEqual(["loading", "decide", "loading gone"]);
+  });
 });
 
 describe("the start's wait line", () => {

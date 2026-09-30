@@ -668,13 +668,21 @@ export type HikeStartDeps<E> = {
   showLoading(): { dispose(): void };
   /** The tier (`startupTier`); `hideLoading` gives way to the probe's screen. */
   decide(signals: GpuSignals, hideLoading: () => void): Promise<StartupTier>;
+  /** Waited for once the tier is decided and before the engine is made: the
+   * page's gate on the download, where an intro plays over the start. */
+  before?(): Promise<void>;
+  /** A paint of the page, waited for before the engine is made and before
+   * the build, so what the page shows over the start keeps its frames
+   * between the start's long tasks. Absent, the phases follow at once. */
+  paint?(): Promise<void>;
   /** The engine the WebGPU rule gives the tier decided, made for the game's
    * canvas, which is created here, after the probe. */
   engine(decided: StartupTier, signals: GpuSignals): Promise<E>;
   /** Lets go of an engine made for a start the page has since left. */
   discard(engine: E): void;
-  /** Builds the hike at the tier decided, on the engine made for it. */
-  build(decided: StartupTier, engine: E): void;
+  /** Builds the hike at the tier decided, on the engine made for it; a
+   * promise returned is waited for, and its rejection is a failed start. */
+  build(decided: StartupTier, engine: E): void | Promise<void>;
   /** The hike could not start: says so over the container. */
   fail(error: unknown): void;
 };
@@ -687,6 +695,8 @@ export type HikeStartDeps<E> = {
  * so nothing blank shows between. One catch for all of it: a throw anywhere
  * is answered with a line, never a blank page. A start the page has moved on
  * from builds nothing, says nothing, and lets go of an engine made meanwhile.
+ * With `before`, the start waits for it between the tier and the engine; with
+ * `paint`, it lets the page paint before the engine and before the build.
  */
 export async function startHike<E>(deps: HikeStartDeps<E>): Promise<void> {
   let loading = deps.showLoading();
@@ -701,10 +711,15 @@ export async function startHike<E>(deps: HikeStartDeps<E>): Promise<void> {
     if (!deps.current()) return;
     const decided = await deps.decide(signals, hide);
     if (!deps.current()) return;
+    if (deps.before !== undefined) {
+      await deps.before();
+      if (!deps.current()) return;
+    }
     if (!shown) {
       loading = deps.showLoading();
       shown = true;
     }
+    await deps.paint?.();
     const engine = await deps.engine(decided, signals);
     if (!deps.current()) {
       hide();
@@ -712,7 +727,8 @@ export async function startHike<E>(deps: HikeStartDeps<E>): Promise<void> {
       return;
     }
     hide();
-    deps.build(decided, engine);
+    await deps.paint?.();
+    await deps.build(decided, engine);
   } catch (error) {
     hide();
     if (deps.current()) deps.fail(error);

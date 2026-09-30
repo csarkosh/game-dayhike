@@ -1,7 +1,6 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
 import { createRenderer, terrainMaterialFor, type FreecamView, type Renderer } from "./game/renderer.js";
-import { reportCompile } from "./game/modelLoad.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { AsyncPipelines } from "./game/asyncPipelines.js";
 import { FALLBACK_NOTICE_MS } from "./game/engineChoice.js";
@@ -11,6 +10,9 @@ import { FixedStepAccumulator } from "./game/loop.js";
 import { createHud } from "./game/hud.js";
 import { LOADING_LINE } from "./game/frameProbe.js";
 import { holdReveal, whenFrameWhole } from "./game/revealHold.js";
+import { RING_COUNT } from "./game/clipmap.js";
+import { reportCompile, reportProgress } from "./game/modelLoad.js";
+import { READY_MAX_MS, startReady } from "./game/startReady.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
 import { navigateToLanding } from "./game/router.js";
 import { createCommandBar } from "./game/commandBar.js";
@@ -100,6 +102,11 @@ import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
 
+/** Slices of the clipmap's first build between paints, when it is deferred:
+ * a ring's sampling is one slice, its geometry a few, so a paint comes
+ * about every ring. */
+const CLIPMAP_YIELD_EVERY = 8;
+
 export type GameHandle = {
   dispose(): void;
   /**
@@ -113,6 +120,17 @@ export type GameHandle = {
   graphics(): { tier: QualityTier; engine: "webgl2" | "webgpu" };
   /** Shows a line on the HUD for a few seconds. */
   notify(line: string): void;
+  /** The world ready to be looked at (`startReady`): the scene ready, the
+   * forest's billboards in, on WebGPU a whole frame drawn; a minute after
+   * the build at the latest. The loading bar reads ready with it. */
+  ready: Promise<void>;
+  /** Covers play as the probe's screen does (the controls held, the pause
+   * menu kept), until the function returned is called: what an intro playing
+   * over the start holds the hike with. */
+  cover(): () => void;
+  /** Engages the controls (the pointer's lock), as the pause menu's Resume
+   * does: the intro's cut to the world. */
+  engage(): void;
 };
 
 export type GameOptions = {
@@ -130,6 +148,11 @@ export type GameOptions = {
   onContinueOffline(): void;
   /** The pause menu opened (true) or closed (false); false again on dispose. */
   onPauseChange(paused: boolean): void;
+  /** Leave the clipmap's first build to be stepped, a paint between its
+   * slices, before the render loop starts (`Renderer.buildFirstClipmap`):
+   * for a start with an intro playing over it, whose frames the build must
+   * not take. Absent, the terrain is built with the renderer, as always. */
+  deferClipmap?: boolean;
   /** An engine already made for the canvas (WebGPU, where `main.ts` chose
    * it) for the first renderer at `tier`; absent, the renderer makes the
    * WebGL2 one. */
@@ -286,7 +309,8 @@ function buildGame(
     canvas,
     [options.tier, ...options.fallbackTiers],
     {
-      build: (next, at, engine) => createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine) }),
+      build: (next, at, engine) =>
+        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
@@ -1380,11 +1404,14 @@ function buildGame(
   // it at once. WebGL2 shows its first frame as always.
   /** Lifts the start's hold, once, and stops waiting for a whole frame. */
   let endRevealHold = (): void => undefined;
+  /** On WebGPU, the first frame that left no draw out; never, on WebGL2. */
+  let firstWholeFrame: Promise<void> | null = null;
   if (renderer.engine.isWebGPU && watchers !== null) {
     const held = canvas;
     const engine = renderer.engine;
     const gpu = watchers;
     const line = createHud(container);
+    firstWholeFrame = new Promise<void>((resolve) => made(gpu.reveal(engine, resolve)));
     const lift = holdReveal({
       hideWorld: (hidden) => {
         held.style.visibility = hidden ? "hidden" : "";
@@ -1401,7 +1428,34 @@ function buildGame(
     endRevealHold = lift;
     made(() => endRevealHold());
   }
-  renderer.engine.runRenderLoop(loop);
+  // The world stage of the loading bar: the clipmap's rings, then the
+  // forest's billboards. With the build deferred, the rings are made a slice
+  // at a time with a paint between (`CLIPMAP_YIELD_EVERY`), and the render
+  // loop starts once they stand; otherwise they stood with the renderer.
+  const progress = reportProgress();
+  progress?.total("world", RING_COUNT + 1);
+  const ringBuilt = (level: number): void => {
+    progress?.start("world", `ring${level}`);
+    progress?.done("world", `ring${level}`);
+  };
+  let firstBuild: Promise<void>;
+  if (options.deferClipmap === true) {
+    firstBuild = renderer.buildFirstClipmap(CLIPMAP_YIELD_EVERY, ringBuilt).then(() => {
+      if (!disposed && !broken) renderer.engine.runRenderLoop(loop);
+    });
+  } else {
+    for (let level = 0; level < RING_COUNT; level++) ringBuilt(level);
+    renderer.engine.runRenderLoop(loop);
+    firstBuild = Promise.resolve();
+  }
+  progress?.start("world", "bakes");
+  void renderer.forestReady.then(
+    () => progress?.done("world", "bakes"),
+    () => progress?.done("world", "bakes"),
+  );
+  const ready = firstBuild.then(() =>
+    startReady({ scene: renderer.scene, forestReady: renderer.forestReady, reveal: firstWholeFrame, progress, maxMs: READY_MAX_MS }),
+  );
 
   const onResize = () => {
     if (broken) return;
@@ -1700,6 +1754,16 @@ function buildGame(
   }
 
   return {
+    ready,
+    cover() {
+      const release = gate.cover();
+      return () => {
+        if (!disposed) release();
+      };
+    },
+    engage() {
+      if (!disposed) input.engage();
+    },
     attachLobby(next) {
       // A follower's game has no admission to attach to, and a lobby this
       // page follows never reaches a running game (see `GameHandle`); the
