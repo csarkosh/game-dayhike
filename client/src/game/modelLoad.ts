@@ -42,9 +42,9 @@ import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js"
 import type { LoadProgress } from "./loadProgress.js";
 import { MODEL_COUNT, assetBytes } from "./assetUrls.js";
 
-/** The models stage's total: every model the build ships, since a hike
- * loads them all (the far forest, the clutter, the wildlife, the people and
- * the placed things), so the line can say `n of N` from its first word. */
+/** The models stage's total: every model a hike loads (the far forest, the
+ * clutter, the wildlife, the people and the placed things; not the film's
+ * own), so the line can say `n of N` from its first word. */
 export const MODEL_TOTAL = MODEL_COUNT;
 
 let progress: LoadProgress | null = null;

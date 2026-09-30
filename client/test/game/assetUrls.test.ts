@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { audioUrl, modelUrl } from "../../src/game/assetUrls.js";
+import { MODEL_COUNT, audioUrl, modelUrl } from "../../src/game/assetUrls.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 
 /** Every model the catalog declares, by the `output` key callers pass. */
@@ -10,11 +10,17 @@ describe("modelUrl", () => {
     // The whole point of the indirection: the catalog is the list of models,
     // and each entry's `output` is the key. A catalog entry that `modelUrl`
     // cannot resolve is a model that will not load in the game.
-    expect(OUTPUTS.length).toBe(42);
+    expect(OUTPUTS.length).toBe(44);
     for (const output of OUTPUTS) {
       expect(typeof modelUrl(output)).toBe("string");
       expect(modelUrl(output).length).toBeGreaterThan(0);
     }
+  });
+
+  it("counts toward a hike only the models a hike loads: the film's own are left out", () => {
+    const filmOnly = (catalog.assets as Array<{ id: string; scene?: string }>).filter((a) => a.scene !== undefined).map((a) => a.id);
+    expect(filmOnly).toEqual(["intro.car", "intro.ranger"]);
+    expect(MODEL_COUNT).toBe(42);
   });
 
   it("gives every model its own URL", () => {
