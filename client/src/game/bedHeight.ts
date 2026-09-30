@@ -7,6 +7,12 @@
  *
  * Re-centred when the camera leaves the inner half of the square, snapped
  * to a quarter of the extent so consecutive bakes share their alignment.
+ *
+ * A whole-grid bake (`bakeBed`) fills synchronously in ~260–295 ms and cannot
+ * run in a frame. For production, use the incremental API: `beginBake` starts
+ * a bake into a spare grid, then `bakeRows` fills a few rows per frame (~1 ms
+ * per row). The caller keeps the spare grid, swaps it in when `bakeRows` returns
+ * true, then uses it as the spare for the next bake.
  */
 import { elevationAt } from "../sim/terrain.js";
 import type { QualityTier } from "./quality.js";
@@ -21,6 +27,9 @@ export type BedGrid = {
   /** texels² heights, row-major by (iz, ix), each at its texel's centre. */
   heights: Float32Array;
 };
+
+/** A bake in progress into a spare grid: the origin it is for and the next row to fill. */
+export type BedBake = { originX: number; originZ: number; nextRow: number };
 
 /** Spec §4.1's table. */
 export const BED_GRID: Record<QualityTier, { texels: number; spacing: number }> = {
@@ -40,6 +49,38 @@ export function bedOriginFor(cam: number, texels: number, spacing: number): numb
   return Math.floor((cam - extent / 2) / step) * step;
 }
 
+/** Starts a bake for a camera position: the origin the grid will have once `bakeRows` finishes. */
+export function beginBake(grid: BedGrid, camX: number, camZ: number): BedBake {
+  return {
+    originX: bedOriginFor(camX, grid.texels, grid.spacing),
+    originZ: bedOriginFor(camZ, grid.texels, grid.spacing),
+    nextRow: 0,
+  };
+}
+
+/**
+ * Fills up to `rows` rows of `target` for `bake`'s origin and returns true when
+ * the whole grid is filled. `target`'s own origin is written only on that last
+ * call, so a reader of (origin, heights) never sees one changed without the
+ * other; the caller keeps `target` as a spare and swaps it in when this
+ * returns true. About 1 ms a row at 256 texels (3.8 µs a sample, measured).
+ */
+export function bakeRows(target: BedGrid, seed: number, bake: BedBake, rows: number): boolean {
+  const n = target.texels;
+  const end = Math.min(n, bake.nextRow + rows);
+  for (let iz = bake.nextRow; iz < end; iz++) {
+    const z = bake.originZ + (iz + 0.5) * target.spacing;
+    for (let ix = 0; ix < n; ix++) {
+      target.heights[iz * n + ix] = elevationAt(seed, bake.originX + (ix + 0.5) * target.spacing, z);
+    }
+  }
+  bake.nextRow = end;
+  if (end < n) return false;
+  target.originX = bake.originX;
+  target.originZ = bake.originZ;
+  return true;
+}
+
 /** True when the camera is outside the inner half of the current square (or nothing is baked). */
 export function bedNeedsRebake(grid: BedGrid, camX: number, camZ: number): boolean {
   if (Number.isNaN(grid.originX)) return true;
@@ -53,16 +94,7 @@ export function bedNeedsRebake(grid: BedGrid, camX: number, camZ: number): boole
 /** Re-centres on the camera and fills the heights; false when no rebake was due. */
 export function bakeBed(grid: BedGrid, seed: number, camX: number, camZ: number): boolean {
   if (!bedNeedsRebake(grid, camX, camZ)) return false;
-  const originX = bedOriginFor(camX, grid.texels, grid.spacing);
-  const originZ = bedOriginFor(camZ, grid.texels, grid.spacing);
-  const n = grid.texels;
-  for (let iz = 0; iz < n; iz++) {
-    const z = originZ + (iz + 0.5) * grid.spacing;
-    for (let ix = 0; ix < n; ix++) {
-      grid.heights[iz * n + ix] = elevationAt(seed, originX + (ix + 0.5) * grid.spacing, z);
-    }
-  }
-  grid.originX = originX;
-  grid.originZ = originZ;
+  const bake = beginBake(grid, camX, camZ);
+  bakeRows(grid, seed, bake, grid.texels);
   return true;
 }
