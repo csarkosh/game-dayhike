@@ -44,6 +44,9 @@ export const PLUGIN_ORDER: readonly string[] = [
   "SkinShadingPlugin",
   "TerrainTexturePlugin",
   "WingPlugin",
+  // Last, in this order: the recorded corpus already carries these as 18 and 19.
+  "WetPlugin",
+  "WaterPlugin",
 ];
 
 /** Babylon 9.18's page-wide numbering of plugin classes. */
