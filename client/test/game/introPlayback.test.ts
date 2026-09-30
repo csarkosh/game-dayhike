@@ -28,7 +28,13 @@ describe("the intro's playback model", () => {
     expect(p.state()).toBe("readyToSkip");
     p.holdStart(2000);
     p.tick(2000 + HOLD_MS, 2, false);
-    p.holdEnd(2000 + HOLD_MS);
+    // The ring is full and the hold goes on: the cut is the release, the
+    // gesture the browser lets the game take the pointer on.
+    expect(p.state()).toBe("holding");
+    expect(p.view().holdFraction).toBe(1);
+    p.tick(2000 + HOLD_MS + 500, 2.5, false);
+    expect(p.state()).toBe("holding");
+    p.holdEnd(2000 + HOLD_MS + 500);
     expect(p.state()).toBe("cut");
   });
 

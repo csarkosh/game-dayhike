@@ -79,8 +79,12 @@ describe("the intro overlay", () => {
     r.overlay.render(500);
     expect(r.cuts).toEqual([]);
     r.overlay.render(1000);
+    // Held past the ring: the cut waits for the release, in its own event.
+    expect(r.cuts).toEqual([]);
+    r.at(1100);
+    r.container.dispatch("keyup", { code: "Space" });
     expect(r.cuts).toEqual(["hold"]);
-    r.overlay.render(1100);
+    r.overlay.render(1200);
     expect(r.cuts).toEqual(["hold"]);
     r.overlay.dispose();
   });

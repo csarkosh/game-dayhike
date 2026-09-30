@@ -137,7 +137,12 @@ export function createIntroOverlay(
     input.onCut(reason);
   };
   const holdStart = (): void => playback.holdStart(deps.now());
-  const holdEnd = (): void => playback.holdEnd(deps.now());
+  // A release after a full hold is the cut, here in the release's own
+  // event so the game takes the pointer on it.
+  const holdEnd = (): void => {
+    playback.holdEnd(deps.now());
+    if (playback.state() === "cut") doCut("hold");
+  };
   const onKeyDown = (e: KeyboardEvent): void => {
     if (!e.repeat) holdStart();
   };
@@ -210,7 +215,6 @@ export function createIntroOverlay(
       ring.style.background = `conic-gradient(rgba(255,255,255,0.9) ${Math.round(pv.holdFraction * 360)}deg, transparent 0)`;
       stepOut.classList.toggle("shown", pv.showStepOut);
       title.classList.toggle("shown", pv.titleCard);
-      if (pv.state === "cut") doCut("hold");
     },
     stop,
     dispose() {

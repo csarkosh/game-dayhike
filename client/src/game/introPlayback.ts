@@ -3,7 +3,7 @@
  * readiness, the player's hold and their click go in; one of five states
  * and what to show come out. Nothing here touches the DOM or the sim.
  *
- * The cut is always on a gesture: a completed hold while the film plays,
+ * The cut is always on a gesture: the release of a completed hold while the film plays,
  * or the step-out click on the held last frame. Neither the world's
  * readiness nor the film's end cuts on its own, so the game never lands in
  * the pause menu with no click to have taken the pointer.
@@ -60,10 +60,9 @@ export function createIntroPlayback(input: { holdMs?: number }): IntroPlayback {
       if (ended && endedAt === null) { endedAt = now; holdSince = null; holdFraction = 0; }
       if (endedAt !== null && !cardShown && now - endedAt >= TITLE_CARD_MS) cardShown = true;
       if (isHidden) return;
-      if (holdSince !== null && isReady && endedAt === null) {
-        holdFraction = Math.min(1, (now - holdSince) / holdMs);
-        if (holdFraction >= 1) { state = "cut"; return; }
-      }
+      // The ring fills over the hold and stays full; the cut is the release
+      // (`holdEnd`), the gesture the browser lets the game take the pointer on.
+      if (holdSince !== null && isReady && endedAt === null) holdFraction = Math.min(1, (now - holdSince) / holdMs);
       settle();
     },
     ready() { isReady = true; settle(); },
@@ -75,8 +74,13 @@ export function createIntroPlayback(input: { holdMs?: number }): IntroPlayback {
     },
     holdEnd() {
       if (state === "cut") return;
+      const full = state === "holding" && holdFraction >= 1;
       holdSince = null;
       holdFraction = 0;
+      if (full) {
+        state = "cut";
+        return;
+      }
       settle();
     },
     gesture() {
