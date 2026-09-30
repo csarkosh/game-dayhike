@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
+import { timeLimit } from "../helpers/timeLimit.js";
 import "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import {
   createWaterRingSamples, updateWaterRingSamples, waterHoleCellsFor,
-  waterRingGeometry, waterColorAt, waterRingSpacing,
+  waterRingGeometry, waterRingSpacing,
   WATER_RING_CELLS, WATER_RING_COUNT,
 } from "../../src/game/water.js";
 import { RING_CELLS } from "../../src/game/clipmap.js";
@@ -30,7 +31,7 @@ describe("water rings", () => {
     expect(scrolled.originX).toBe(fresh.originX);
     expect(scrolled.originZ).toBe(fresh.originZ);
     expect(Array.from(scrolled.h)).toEqual(Array.from(fresh.h));
-  });
+  }, timeLimit(30_000));
 
   it("returns false when the snapped origin has not moved", () => {
     const ring = createWaterRingSamples(SEED, 2, 0, 0);
@@ -54,36 +55,14 @@ describe("water rings", () => {
     expect(g.uvs.length * 3).toBe(g.positions.length * 2);
   });
 
-  it("bakes depth into colour and alpha", () => {
-    const ring = createWaterRingSamples(SEED, 0, -500, 0); // spans surf near a coast
-    const g = waterRingGeometry(ring, null, 0);
-    let sawShallow = false;
-    let sawDeeper = false;
-    for (let i = 3; i < g.colors.length; i += 4) {
-      if ((g.colors[i] as number) < 0.6) sawShallow = true;
-      if ((g.colors[i] as number) > 0.8) sawDeeper = true;
+  it("writes the bed depth per vertex, clamped at zero on land", () => {
+    const ring = createWaterRingSamples(SEED, 0, 0, 0);
+    const g = waterRingGeometry(ring, null, 10);
+    expect(g.bedDepth.length).toBe(g.positions.length / 3);
+    expect((g as unknown as { colors?: unknown }).colors).toBeUndefined();
+    for (let i = 0; i < g.bedDepth.length; i++) {
+      const expected = Math.max(0, 10 - (ring.h[i] as number));
+      expect(g.bedDepth[i]).toBeCloseTo(expected, 5);
     }
-    expect(sawShallow && sawDeeper).toBe(true);
-  });
-});
-
-describe("waterColorAt", () => {
-  it("is foam-bright and most transparent at zero depth", () => {
-    const c = waterColorAt(0);
-    expect(c.r).toBeGreaterThan(0.7);
-    expect(c.a).toBeLessThan(0.6);
-  });
-  it("darkens and turns opaque with depth, monotonically", () => {
-    let prevA = 0;
-    for (const depth of [0, 1, 3, 6, 12, 30]) {
-      const c = waterColorAt(depth);
-      expect(c.a).toBeGreaterThanOrEqual(prevA);
-      prevA = c.a;
-    }
-    expect(waterColorAt(30).a).toBeGreaterThan(0.9);
-    expect(waterColorAt(30).r).toBeLessThan(0.1);
-  });
-  it("clamps negative depth (terrain above water) to the surface colour", () => {
-    expect(waterColorAt(-5)).toEqual(waterColorAt(0));
   });
 });

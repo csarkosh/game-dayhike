@@ -24,7 +24,7 @@ import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
 import { CHARACTER_IDS, EntityViews } from "./entityViews.js";
-import { budgetLights, createHeadlamp, setLamp } from "./headlamp.js";
+import { budgetLights, budgetMaterial, createHeadlamp, setLamp } from "./headlamp.js";
 import { lampUnder } from "./lampParams.js";
 import { windRecordUnder, type WindRecord } from "./windParams.js";
 import { setFoliageWind, FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED } from "./foliagePlugin.js";
@@ -60,7 +60,6 @@ import { fbm2 } from "../sim/field.js";
 import {
   createWaterRingSamples,
   updateWaterRingSamples,
-  waterColorAt,
   waterHoleCellsFor,
   waterRingGeometry,
   WATER_RING_COUNT,
@@ -68,6 +67,18 @@ import {
   type WaterRingSamples,
 } from "./water.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
+import { Constants } from "@babylonjs/core/Engines/constants.js";
+import { attachWater } from "./waterPlugin.js";
+import { WATER_ROWS } from "./waterShading.js";
+import {
+  BED_GRID,
+  bakeBed,
+  bakeRows,
+  bedNeedsRebake,
+  beginBake,
+  createBedGrid,
+  type BedBake,
+} from "./bedHeight.js";
 import { POND_DEPTH } from "../sim/features.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
 import { NEAR_RADIUS } from "./forestField.js";
@@ -608,26 +619,30 @@ function applyWaterGeometry(mesh: Mesh, geometry: WaterGeometry): void {
   data.positions = geometry.positions;
   data.indices = geometry.indices;
   data.normals = geometry.normals;
-  data.colors = geometry.colors;
   data.uvs = geometry.uvs;
   data.applyToMesh(mesh, true);
+  mesh.setVerticesData("bedDepth", geometry.bedDepth, true, 1);
 }
+
+/** Rows of the bed grid baked per frame: a whole 256² grid measured 260 to 295 ms. */
+const BED_ROWS_PER_FRAME = 1;
 
 export type Water = {
   /** One mesh per ring, coarsening outward — four draw calls, capped by design.
    * NEVER added to the shadow caster list: water neither casts nor receives. */
   readonly meshes: readonly Mesh[];
-  update(camX: number, camZ: number): void;
+  update(camX: number, camZ: number, seconds: number): void;
+  /** Per frame from the wind record: the 0..1 speed and the direction it blows toward. */
+  setWind(wind01: number, dir: [number, number]): void;
   dispose(): void;
 };
 
 export type Pond = { x: number; z: number; radius: number; height: number };
 
 /**
- * Builds one flat disc over a pond, shaded like the sea's shoreline: the ring
- * meshes bake depth into per-vertex colour+alpha (`waterRingGeometry`), so the
- * disc needs the same treatment rather than a flat tint, or a pond would read
- * as a plain coloured puddle next to the ocean's graded shore.
+ * Builds one flat disc over a pond, carrying the same per-vertex `bedDepth` the
+ * ring meshes carry (`waterRingGeometry`), so the water material shades it like
+ * the sea's shoreline rather than as a flat tint.
  *
  * `basinD` (sim/features.ts) carves the pond's ground as
  * `height − POND_DEPTH·(1 − (q/R)²)²` for q < R — the same profile, evaluated
@@ -646,23 +661,18 @@ export function pondDisc(scene: Scene, mat: PBRMaterial, pond: Pond, index: numb
 
   const positions = disc.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
   const vertexCount = positions.length / 3;
-  const colors = new Float32Array(vertexCount * 4);
+  const depths = new Float32Array(vertexCount);
   const R = pond.radius;
   for (let i = 0; i < vertexCount; i++) {
     const x = positions[i * 3] as number;
     const y = positions[i * 3 + 1] as number;
     const r = Math.hypot(x, y);
-    const u = 1 - (r / R) * (r / R);
-    const depth = POND_DEPTH * u * u;
-    const c = waterColorAt(depth);
-    colors[i * 4] = c.r;
-    colors[i * 4 + 1] = c.g;
-    colors[i * 4 + 2] = c.b;
-    colors[i * 4 + 3] = c.a;
+    // Zero outside the basin (r >= R), where the ground is back at the pond's level.
+    const u = Math.max(0, 1 - (r / R) * (r / R));
+    depths[i] = POND_DEPTH * u * u;
   }
-  disc.setVerticesData(VertexBuffer.ColorKind, colors, false, 4);
-  disc.useVertexColors = true;
-  disc.hasVertexAlpha = true;
+  disc.setVerticesData("bedDepth", depths, false, 1);
+  disc.metadata = { waterLevel: pond.height };
   disc.freezeWorldMatrix();
   return disc;
 }
@@ -673,34 +683,84 @@ export function pondDisc(scene: Scene, mat: PBRMaterial, pond: Pond, index: numb
  * in a coarser ring tracks the finer ring's footprint exactly as the terrain
  * clipmap's does. Takes only a `Scene` so it runs under `NullEngine`.
  *
- * `ponds` adds one flat, depth-shaded disc per pond feature, sharing this
- * water's material — the trail system's made ponds otherwise have no water at
- * all, just the basin ground `basinD` carved.
+ * `ponds` adds one flat disc per pond feature on the lake material — the trail
+ * system's made ponds otherwise have no water at all, just the basin ground
+ * `basinD` carved.
+ *
+ * The bed height texture is baked and uploaded here, at (`camX`, `camZ`), so no
+ * frame is drawn with the material not ready (the plugin is not ready until it
+ * has a texture); `update` then re-centres it a row a frame into a spare grid.
  */
 export function createWater(
   scene: Scene,
   seed: number,
   waterLevel: number,
   ponds: readonly Pond[] = [],
+  tier: QualityTier = "medium",
+  camX = 0,
+  camZ = 0,
 ): Water {
-  // One material for all four rings. White albedo: the vertex colours carry
-  // the depth ramp, and PBR multiplies the two.
-  const mat = new PBRMaterial("mat_water", scene);
-  mat.albedoColor = new Color3(1, 1, 1);
-  mat.metallic = 0;
-  mat.roughness = 0.12;
-  mat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+  // White albedo is the plugin's business now: it sets the row's colour.
+  const seaMat = new PBRMaterial("mat_water_sea", scene);
+  seaMat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+  seaMat.backFaceCulling = false;
+  const seaPlugin = attachWater(seaMat, WATER_ROWS.sea);
+  const lakeMat = new PBRMaterial("mat_water_lake", scene);
+  lakeMat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+  lakeMat.backFaceCulling = false;
+  const lakePlugin = attachWater(lakeMat, WATER_ROWS.lowlandLake);
+  const plugins = [seaPlugin, lakePlugin];
+  budgetMaterial(seaMat);
+  budgetMaterial(lakeMat);
+
   const bump = createWaterBump(scene);
-  mat.bumpTexture = bump;
+  seaMat.bumpTexture = bump;
+  lakeMat.bumpTexture = bump;
 
   // Cosmetic drift: scroll the bump's UV offset each frame. Delta
   // time, not per-frame constants, so the ripple speed survives refresh-rate
-  // differences.
+  // differences. One texture, so one scroll drives both materials.
   const scroll = scene.onBeforeRenderObservable.add(() => {
     const dt = scene.getEngine().getDeltaTime() / 1000;
     bump.uOffset += WATER_UV_SCROLL[0] * dt;
     bump.vOffset += WATER_UV_SCROLL[1] * dt;
   });
+
+  const { texels, spacing } = BED_GRID[tier];
+  let grid = createBedGrid(texels, spacing);
+  let spare = createBedGrid(texels, spacing);
+  let bake: BedBake | null = null;
+  let firstUpdate = true;
+  let bedTexture: RawTexture | null = null;
+  function uploadBed(): void {
+    if (bedTexture === null) {
+      bedTexture = RawTexture.CreateRTexture(
+        grid.heights,
+        texels,
+        texels,
+        scene,
+        false,
+        false,
+        Texture.NEAREST_SAMPLINGMODE,
+        Constants.TEXTURETYPE_FLOAT,
+      );
+      bedTexture.wrapU = Texture.CLAMP_ADDRESSMODE;
+      bedTexture.wrapV = Texture.CLAMP_ADDRESSMODE;
+    } else {
+      bedTexture.update(grid.heights);
+    }
+    // origin and texture change together, in this call, before any draw
+    for (const p of plugins) {
+      p.bedTexture = bedTexture;
+      p.bedOrigin = [grid.originX, grid.originZ];
+      p.bedTexels = texels;
+      p.bedSpacing = spacing;
+    }
+  }
+  for (const p of plugins) p.octaves = tier === "low" ? 1 : 2;
+  // The first fill is at load, before any frame is shown: the whole grid at once.
+  bakeBed(grid, seed, camX, camZ);
+  uploadBed();
 
   const rings: WaterRingSamples[] = [];
   const meshes: Mesh[] = [];
@@ -715,27 +775,26 @@ export function createWater(
   }
 
   for (let level = 0; level < WATER_RING_COUNT; level++) {
-    rings.push(createWaterRingSamples(seed, level, 0, 0));
+    rings.push(createWaterRingSamples(seed, level, camX, camZ));
     const mesh = new Mesh(`water_${level}`, scene);
-    mesh.useVertexColors = true;
-    mesh.hasVertexAlpha = true;
+    mesh.useVertexColors = false;
     mesh.isPickable = false;
     mesh.receiveShadows = false;
-    mesh.material = mat;
+    mesh.material = seaMat;
+    mesh.metadata = { waterLevel };
     meshes.push(mesh);
     emitRing(level);
   }
 
-  // One flat, depth-shaded disc per pond feature, sharing this water's
-  // material. Static — no ring-style re-emit, since a
-  // pond's ground does not scroll with the camera — so they need no place in
-  // `meshes` (the doc'd one-per-ring, shadow-caster-exempt set); they are
-  // disposed alongside it instead.
-  const pondMeshes: Mesh[] = ponds.map((p, i) => pondDisc(scene, mat, p, i));
+  // One flat disc per pond feature, on the lake material. Static — no
+  // ring-style re-emit, since a pond's ground does not scroll with the camera —
+  // so they need no place in `meshes` (the doc'd one-per-ring,
+  // shadow-caster-exempt set); they are disposed alongside it instead.
+  const pondMeshes: Mesh[] = ponds.map((p, i) => pondDisc(scene, lakeMat, p, i));
 
   return {
     meshes,
-    update(camX, camZ) {
+    update(camX, camZ, seconds) {
       const moved: boolean[] = [];
       for (let level = 0; level < WATER_RING_COUNT; level++) {
         moved.push(updateWaterRingSamples(rings[level] as WaterRingSamples, seed, camX, camZ));
@@ -746,13 +805,34 @@ export function createWater(
       for (let level = 0; level < WATER_RING_COUNT; level++) {
         if (moved[level] || (level > 0 && (moved[level - 1] as boolean))) emitRing(level);
       }
+      // The bed re-centres a row a frame into the spare grid (a whole 256²
+      // bake is 260 to 295 ms) and swaps in when complete.
+      if (firstUpdate) {
+        // The camera's real start is only known now: if it is outside the grid
+        // made at creation, fill the whole grid at once (at load, before the
+        // first frame is shown) rather than draw ~256 frames on the wrong bed.
+        firstUpdate = false;
+        if (bakeBed(grid, seed, camX, camZ)) uploadBed();
+      }
+      if (bake === null && bedNeedsRebake(grid, camX, camZ)) bake = beginBake(spare, camX, camZ);
+      if (bake !== null && bakeRows(spare, seed, bake, BED_ROWS_PER_FRAME)) {
+        [grid, spare] = [spare, grid];
+        bake = null;
+        uploadBed();
+      }
+      for (const p of plugins) p.time = seconds;
+    },
+    setWind(wind01, dir) {
+      for (const p of plugins) p.setWind(wind01, dir);
     },
     dispose() {
       scene.onBeforeRenderObservable.remove(scroll);
       for (const mesh of meshes) mesh.dispose();
       for (const mesh of pondMeshes) mesh.dispose();
       bump.dispose();
-      mat.dispose();
+      bedTexture?.dispose();
+      seaMat.dispose();
+      lakeMat.dispose();
     },
   };
 }
@@ -1208,7 +1288,7 @@ function buildRenderer(
       : [];
   const water =
     forest !== null && waterLevel !== undefined
-      ? createWater(scene, forest.seed, waterLevel, ponds)
+      ? createWater(scene, forest.seed, waterLevel, ponds, tier)
       : null;
   partOf(water);
 
@@ -1479,6 +1559,7 @@ function buildRenderer(
         n++;
       }
       setFoliageWind(wind, windPlayers);
+      water?.setWind(wind.speed, [wind.dirX, wind.dirZ]);
       views.sync(state, localId, alpha, lampState, frame.dt);
 
       // Late caster registration: the forest's LOD0/1 buckets exist only once
@@ -1512,7 +1593,7 @@ function buildRenderer(
         // The clipmap follows the *camera* here, not the player. Anchored to
         // the player, flying 500 m away shows void with no error.
         clipmap?.update(freecam.x, freecam.z);
-        water?.update(freecam.x, freecam.z);
+        water?.update(freecam.x, freecam.z, seconds);
         propMeshes?.update(freecam.x, freecam.z);
         forestMeshes?.update(freecam.x, freecam.z);
         cliffMeshes?.update(freecam.x, freecam.z);
@@ -1548,7 +1629,7 @@ function buildRenderer(
       const local = state.players.get(localId);
       if (local) {
         clipmap?.update(local.pos.x, local.pos.z);
-        water?.update(local.pos.x, local.pos.z);
+        water?.update(local.pos.x, local.pos.z, seconds);
         propMeshes?.update(local.pos.x, local.pos.z);
         forestMeshes?.update(local.pos.x, local.pos.z);
         cliffMeshes?.update(local.pos.x, local.pos.z);
