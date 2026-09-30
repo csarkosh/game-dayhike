@@ -1,0 +1,72 @@
+// client/test/game/wetPlugin.test.ts
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { WetPlugin, attachWet, setWetLine, wetLineFor, WET_ALBEDO, WET_ROUGHNESS, WET_BAND, WET_LINE_ABOVE } from "../../src/game/wetPlugin.js";
+import { WATER_ROWS } from "../../src/game/waterShading.js";
+
+const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
+const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
+
+let engine: NullEngine;
+let scene: Scene;
+beforeAll(() => { engine = new NullEngine(); scene = new Scene(engine); });
+afterAll(() => engine.dispose());
+
+describe("wet plugin", () => {
+  it("attaches once, idempotently (LOD buckets share materials)", () => {
+    const mat = new PBRMaterial("g", scene);
+    expect(attachWet(mat)).toBe(attachWet(mat));
+    const active = (mat.pluginManager as unknown as { _activePlugins: unknown[] })._activePlugins;
+    expect(active.filter((p) => p instanceof WetPlugin)).toHaveLength(1);
+  });
+
+  it("injects the .fx files verbatim at definitions, before-lights and the roughness line", () => {
+    const mat = new PBRMaterial("g2", scene);
+    const p = attachWet(mat);
+    const f = p.getCustomCode("fragment")!;
+    expect(Object.keys(f).sort()).toEqual(["!float roughness=reflectivityOut\\.roughness;", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_DEFINITIONS"]);
+    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("wet.fragment.fx"));
+    expect(f.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toBe(fx("wetLights.fragment.fx"));
+    expect(f["!float roughness=reflectivityOut\\.roughness;"]).toBe("float roughness=mix(reflectivityOut.roughness, WET_ROUGHNESS, wetW);");
+    expect(p.getCustomCode("vertex")).toBeNull();
+  });
+
+  it("keeps its constants in lockstep with the GLSL", () => {
+    const d = fx("wet.fragment.fx");
+    expect(WET_ALBEDO).toBe(0.4);
+    expect(WET_ROUGHNESS).toBe(0.15);
+    expect(WET_BAND).toBe(0.1);
+    expect(WET_LINE_ABOVE).toBe(0.3);
+    expect(d).toContain(`const float WET_ALBEDO = ${glslFloat(WET_ALBEDO)};`);
+    expect(d).toContain(`const float WET_ROUGHNESS = ${glslFloat(WET_ROUGHNESS)};`);
+    expect(d).toContain(`const float WET_BAND = ${glslFloat(WET_BAND)};`);
+    // the darkening below the line, per channel, gated on wetAttenuate
+    expect(fx("wetLights.fragment.fx")).toContain("surfaceAlbedo *= mix(vec3(1.0), exp(-wetKd * max(0.0, wetLine - vPositionW.y)), wetAttenuate);");
+  });
+
+  it("the regex anchor matches Babylon's real PBR fragment source", async () => {
+    const src = (await import("@babylonjs/core/Shaders/pbr.fragment.js")).pbrPixelShader.shader as string;
+    expect(new RegExp("float roughness=reflectivityOut\\.roughness;").test(src)).toBe(true);
+  });
+
+  it("wetLineFor picks the nearest body's level plus the still band, and its kd", () => {
+    const bodies = [
+      { level: 0, kd: WATER_ROWS.sea.kd, lInf: WATER_ROWS.sea.lInf, shelter: 1, x: 0, z: 0, radius: Number.POSITIVE_INFINITY },
+      { level: 42, kd: WATER_ROWS.lowlandLake.kd, lInf: WATER_ROWS.lowlandLake.lInf, shelter: 0.1, x: 100, z: 50, radius: 30 },
+    ];
+    expect(wetLineFor(bodies, 100, 50)).toEqual({ line: 42 + WET_LINE_ABOVE, kd: WATER_ROWS.lowlandLake.kd });
+    expect(wetLineFor(bodies, 500, 500)).toEqual({ line: 0 + WET_LINE_ABOVE, kd: WATER_ROWS.sea.kd });
+  });
+
+  it("setWetLine reaches every attached plugin", () => {
+    const a = attachWet(new PBRMaterial("g3", scene));
+    const b = attachWet(new PBRMaterial("g4", scene));
+    setWetLine(12.3, [1, 2, 3], false);
+    expect(a.line).toBe(12.3);
+    expect(b.kd).toEqual([1, 2, 3]);
+    expect(b.attenuate).toBe(false);
+  });
+});
