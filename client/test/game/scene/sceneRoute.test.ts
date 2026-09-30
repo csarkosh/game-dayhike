@@ -16,6 +16,7 @@ vi.mock("@babylonjs/core/Engines/engine.js", async () => {
 
 import "../../../src/sim/passes/index.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { startSceneRoute } from "../../../src/game/scene/sceneRoute.js";
 import { asHtml, installStandInDom } from "../helpers/standInDom.js";
 import { timeLimit } from "../../helpers/timeLimit.js";
@@ -75,6 +76,26 @@ describe("the scene route", () => {
     run.dispose();
     vi.unstubAllGlobals();
   }, timeLimit(120_000));
+
+  it("lays the car's soft patch under the film's car, riding with it", async () => {
+    const doc = installStandInDom();
+    const container = doc.createElement("div");
+    let root: TransformNode | null = null;
+    const run = startSceneRoute(
+      {
+        canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => 0, raf: () => 0, paint: (s, name) => new PBRMaterial(name, s),
+        loadCar: async (scene) => {
+          root = new TransformNode("film_car", scene);
+          return { node: root, meshes: [], dispose() {} };
+        },
+      },
+      { t: 20, step: null },
+    );
+    await (globalThis as { dayhikeScene?: { ready: Promise<void> } }).dayhikeScene!.ready;
+    const patch = run.scene().getMeshByName("film_car_shadow");
+    expect(patch?.parent).toBe(root);
+    run.dispose();
+  }, timeLimit(20000));
 
   it("resolves ready once the loads have settled, arrived or not, says its engine, and holds no wildlife", async () => {
     const doc = installStandInDom();

@@ -21,7 +21,7 @@ import { placeStaticModel, type PlacedModel } from "../staticModel.js";
 import { createRenderer } from "../renderer.js";
 import type { QualityTier } from "../quality.js";
 import { seedFromToken } from "../seed.js";
-import { carYaw, createTrailheadMeshes } from "../trailheadMeshes.js";
+import { carYaw, createCarShadowPatch, createTrailheadMeshes, type CarShadowPatch } from "../trailheadMeshes.js";
 import { createSignMeshes } from "../signMeshes.js";
 import { boardDrawingOf, type BoardPainter } from "../boardPaint.js";
 import { BOARD_IMAGE_URLS } from "../boardImages.js";
@@ -129,6 +129,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   const rangerLoaded = pool.load(renderer.scene, [INTRO_RANGER]);
   let car: CarModel | null = null;
   let carModel: PlacedModel | null = null;
+  let carPatch: CarShadowPatch | null = null;
   const carLoaded = (deps.loadCar ?? ((s) => loadFilmCar(s, loads.signal)))(renderer.scene).then((placed) => {
     if (placed === null || disposed) {
       placed?.dispose();
@@ -139,6 +140,11 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     // `stage` is made below, before this promise can resolve.
     stage.car = car;
     for (const mesh of placed.meshes) renderer.shadows.add(mesh);
+    // The dark under the car that the mist's light leaves, as under the hike's
+    // parked car; without it a car on the road stands on it like a cut-out.
+    carPatch = createCarShadowPatch(renderer.scene, { x: 0, z: 0 }, () => 0, { moving: true });
+    carPatch.mesh.name = "film_car_shadow";
+    carPatch.mesh.parent = placed.node;
   });
   const ready = Promise.all([rangerLoaded, carLoaded]).then(() => undefined);
 
@@ -225,6 +231,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       posts.dispose();
       trailhead.dispose();
       pool.dispose();
+      carPatch?.dispose();
       carModel?.dispose();
       renderer.dispose();
     },

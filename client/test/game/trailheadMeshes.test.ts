@@ -13,7 +13,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js"
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
-import { carYaw, createTrailheadMeshes, type TrailheadSites } from "../../src/game/trailheadMeshes.js";
+import { carYaw, createCarShadowPatch, createTrailheadMeshes, type TrailheadSites } from "../../src/game/trailheadMeshes.js";
 import type { BoardDrawing } from "../../src/game/boardPaint.js";
 import { boardText } from "../../src/game/boardFace.js";
 
@@ -395,5 +395,20 @@ describe("createTrailheadMeshes", () => {
     expect(scene.meshes.filter((m) => m.getTotalVertices() > 0)).toHaveLength(0);
     expect(painted).toHaveLength(0);
     expect(shadowed.size).toBe(0);
+  });
+});
+
+describe("the car's soft patch on a moving car", () => {
+  it("is laid flat in the car's own frame and left free to move with it", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const parked = createCarShadowPatch(scene, { x: 5, z: 7 }, () => 2, { moving: false });
+    expect(parked.mesh.isWorldMatrixFrozen).toBe(true);
+    const moving = createCarShadowPatch(scene, { x: 0, z: 0 }, () => 0, { moving: true });
+    expect(moving.mesh.isWorldMatrixFrozen).toBe(false);
+    expect(moving.mesh.position.asArray()).toEqual([0, 0, 0]);
+    moving.dispose();
+    expect(moving.mesh.isDisposed()).toBe(true);
+    engine.dispose();
   });
 });
