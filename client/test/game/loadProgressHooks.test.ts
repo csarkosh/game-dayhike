@@ -45,6 +45,18 @@ describe("the loading hooks", () => {
     }).not.toThrow();
   });
 
+  it("stop stepping, without a throw, once `stopped` says so between slices", async () => {
+    let ran = 0;
+    let stopped = false;
+    function* work(): Generator<number, string, void> {
+      for (let i = 0; i < 10; i++) { ran++; if (i === 2) stopped = true; yield i; }
+      return "done";
+    }
+    const out = await stepSlices(work(), 1, () => stopped);
+    expect(out).toBeUndefined();
+    expect(ran).toBe(3);
+  });
+
   it("step a generator of slices with a macrotask between every N, and return its value", async () => {
     const yields: number[] = [];
     function* work(): Generator<number, string, void> {

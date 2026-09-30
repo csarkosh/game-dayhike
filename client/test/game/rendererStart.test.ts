@@ -40,4 +40,16 @@ describe("the renderer's first clipmap build, stepped", () => {
     expect(RING_COUNT).toBe(7);
     r.dispose();
   }, timeLimit(60_000));
+
+  it("stops its deferred build quietly when the renderer is disposed in the middle of it", async () => {
+    const forest = createForest(12345);
+    const r = createRenderer(nullCanvas(), LEVEL, forest, { tier: "high", deferClipmap: true });
+    const rings: number[] = [];
+    const build = r.buildFirstClipmap(1, (level) => {
+      rings.push(level);
+      if (level === 1) r.dispose();
+    });
+    await expect(build).resolves.toBeUndefined();
+    expect(rings).toEqual([0, 1]);
+  }, timeLimit(60_000));
 });

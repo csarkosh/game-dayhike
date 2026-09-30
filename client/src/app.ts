@@ -1450,8 +1450,11 @@ function buildGame(
   };
   let firstBuild: Promise<void>;
   if (options.deferClipmap === true) {
-    firstBuild = renderer.buildFirstClipmap(CLIPMAP_YIELD_EVERY, ringBuilt).then(() => {
-      if (!disposed && !broken) renderer.engine.runRenderLoop(loop);
+    // The loop starts on the renderer the build was for: one swapped in
+    // meanwhile (`swapRenderer`) runs its own already.
+    const built = renderer;
+    firstBuild = built.buildFirstClipmap(CLIPMAP_YIELD_EVERY, ringBuilt).then(() => {
+      if (!disposed && !broken && renderer === built) built.engine.runRenderLoop(loop);
     });
   } else {
     for (let level = 0; level < RING_COUNT; level++) ringBuilt(level);

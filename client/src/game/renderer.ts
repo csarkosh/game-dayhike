@@ -869,7 +869,8 @@ export type Renderer = {
   /** The first clipmap build, for a renderer made with `deferClipmap`:
    * stepped, a macrotask between every `yieldEvery` slices so the page
    * paints between, each ring's level told to `onRing` as it is sampled.
-   * Nothing to do without a forest, or once it has run. */
+   * Nothing to do without a forest, or once it has run; a renderer disposed
+   * while it runs ends it quietly, no slice touching the scene it lost. */
   buildFirstClipmap(yieldEvery: number, onRing?: (level: number) => void): Promise<void>;
   /** The first clipmap build run whole, for a start with nothing to paint
    * between its slices. */
@@ -1689,7 +1690,7 @@ function buildRenderer(
       return forestMeshes?.impostorBakes() ?? [];
     },
     async buildFirstClipmap(yieldEvery, onRing) {
-      if (clipmap !== null) await stepSlices(clipmap.firstBuild(onRing), yieldEvery);
+      if (clipmap !== null) await stepSlices(clipmap.firstBuild(onRing), yieldEvery, () => scene.isDisposed);
     },
     buildClipmapNow() {
       if (clipmap !== null) finish(clipmap.firstBuild());

@@ -126,10 +126,13 @@ export function finish<T>(slices: Slices<T>): T {
  * them, so the page paints and its video keeps its frames between, and
  * returns what it returns. A rebuild done this way, not by `SyncJobs`, is one
  * that has no frame to fit: the first build, before the render loop runs.
+ * Asked before every slice, `stopped` ends the run early with nothing: what
+ * the slices build has gone (a renderer disposed while its world was made).
  */
-export async function stepSlices<T>(slices: Slices<T>, yieldEvery: number): Promise<T> {
+export async function stepSlices<T>(slices: Slices<T>, yieldEvery: number, stopped: () => boolean = () => false): Promise<T | undefined> {
   let sinceYield = 0;
   for (;;) {
+    if (stopped()) return undefined;
     const step = slices.next();
     if (step.done === true) return step.value;
     if (++sinceYield >= yieldEvery) {

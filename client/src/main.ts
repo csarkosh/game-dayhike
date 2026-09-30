@@ -1007,7 +1007,12 @@ function launch(
   // start as one with no intro does. Ready lets the intro be skipped.
   if (intro !== null) {
     const release = handle.cover();
-    void handle.ready.then(() => intro.overlay.ready());
+    // A start that fails while the world is made is the start's failure
+    // (`fail` above ends the intro); nothing is left for ready to say.
+    handle.ready.then(
+      () => intro.overlay.ready(),
+      () => undefined,
+    );
     intro.launched = (reason) => {
       if (reason === "error") release();
       else void handle.engage().then(release);
