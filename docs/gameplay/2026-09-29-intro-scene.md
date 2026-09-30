@@ -13,7 +13,7 @@ how films open, what makes sixty rendered seconds read as cinema, and what a fir
 
 ## 0. What this is
 
-A player who presses Play sees a sixty-second film: a park ranger drives the coast road alone,
+A player who presses Play sees a seventy-two-second film: a park ranger drives the coast road alone,
 takes a routine call from dispatch about a hiker last seen at Trail 14, the signal breaks up on
 the words that matter, the ranger pulls onto the shoulder by the trailhead board, steps out and
 faces the trail. The game cuts to first person on the same view, controls live.
@@ -34,7 +34,7 @@ the two voices, the sound mix and the recording are the asset side, specified ap
 | # | Piece | Where | What it delivers |
 | --- | --- | --- | --- |
 | 1 | The scene player | this repository, `client/src/game/scene/` | Plays a scene from timed tracks: camera, actors with blended clips, the car, faces, captions. A scene is a pure function of time. |
-| 2 | The intro, staged | this repository | The sixty-second scene on the scene player, on one fixed world, viewable on a scene route, with stand-ins until the assets arrive. |
+| 2 | The intro, staged | this repository | The seventy-two-second scene on the scene player, on one fixed world, viewable on a scene route, with stand-ins until the assets arrive. |
 | 3 | The intro's assets | the asset repository | One ranger with a face rig, mouth shapes and the new clips; a car with wheels, doors and an interior; two voices; the sound bed. |
 | 4 | The intro's video | the asset repository | The staged scene recorded at the high tier and encoded, delivered like every asset. |
 | 5 | Playback and loading | this repository | Play starts the video; the game loads behind it; a bar and a line; hold to skip once ready; a click to step out; the cut to first person. |
@@ -44,6 +44,10 @@ Pieces 1, 5 and 6 come first and do not depend on each other; playback is built 
 placeholder video. Piece 2 follows with stand-ins: the existing clips, the static car sliding
 along the road, captions with no voice. Piece 3's assets replace the stand-ins as they arrive,
 and piece 4 records the finished scene.
+
+The film's own models, the car with its parts and the ranger with the film's clips, are loaded
+by the scene route only; the catalog marks them (`scene`), and a hike neither loads nor counts
+them.
 
 The video's ranger and trailhead are not the player's: one ranger for everyone, one world for
 the film. The cut to first person, on the player's own pad and trail, hides both.
@@ -103,7 +107,7 @@ comes down to the road at its trailhead, the trail runs straight in, the board s
 left of the entrance. Lit under the marine layer, graded toward muted greens with slightly lifted
 blacks; no chromatic aberration; grain and halation, if any, added at playback, not in the file.
 
-**The shots (60 s).** Eight shots, one idea each: the place, the attitude, the person, the
+**The shots (72 s).** Eight shots, one idea each: the place, the attitude, the person, the
 problem, the wrong note, the threshold, the step, the hold. Every exterior is shot from the sea
 side, so the car always crosses the frame the same way. Deep focus throughout but shot 4.
 
@@ -111,12 +115,15 @@ side, so the car always crosses the frame the same way. Deep focus throughout bu
 | --- | --- | --- | --- |
 | 1 | 0:00 to 0:09 | Black, then a fade in. Wide over the sea stacks and mist, the car small on the coast road, a long lens from high up; the trailhead is not in frame. | surf, then the engine, then a radio squelch |
 | 2 | 0:09 to 0:15 | Along the road from the sea side, the forest to the tarmac, the camera a beat behind the car and then level with it. | dispatch keys up before the cut |
-| 3 | 0:15 to 0:25 | The cab from the back seat: gloved hands on the wheel, the handset in its cradle, the empty passenger seat, the road and the forest through the windscreen. The ranger's face is never framed closer than this. | the call, lines 1 to 6 |
-| 4 | 0:25 to 0:30 | The handset and the hand that holds it. | lines 7 and 8 |
-| 5 | 0:30 to 0:36 | Low on the shoulder: the car passes close, into the treeline. | line 9; the signal breaks; the static carries over the cut |
-| 6 | 0:36 to 0:43 | A locked-off wide as the car slows onto the shoulder by the board. | line 10; nothing; the engine cuts |
-| 7 | 0:43 to 0:50 | The door opens; the step onto gravel; the ranger from behind, facing the trail. | the door, boots, wind; no birds |
-| 8 | 0:50 to 1:00 | A slow push past the ranger's shoulder onto the trail, the board in view, then held with no movement for the last three seconds, then black. | wind, then silence |
+| 3 | 0:15 to 0:30.6 | The cab from the back seat: gloved hands on the wheel, the handset in its cradle, the empty passenger seat, the road and the forest through the windscreen. The ranger's face is never framed closer than this. | the call, lines 1 to 5 |
+| 4 | 0:30.6 to 0:38.4 | The handset and the hand that holds it. | lines 6 and 7, line 8 begins |
+| 5 | 0:38.4 to 0:48 | Low on the shoulder: the car passes close, into the treeline. | line 8 ends; line 9; the signal breaks; the static carries over the cut |
+| 6 | 0:48 to 0:55 | A locked-off wide as the car slows onto the shoulder by the board. | line 10; nothing; the engine cuts |
+| 7 | 0:55 to 1:02 | The door opens; the step onto gravel; the ranger from behind, facing the trail. | the door, boots, wind; no birds |
+| 8 | 1:02 to 1:12 | A slow push past the ranger's shoulder onto the trail, the board in view, then held with no movement for the last three seconds, then black. | wind, then silence |
+
+Amended 2026-09-30: the film runs 72 s. The call as recorded ends line 9 at 48.1 s, so shots 3
+to 5 hold 33 s instead of 21 s and shots 6 to 8 follow 12 s later.
 
 The game's name is not in the film. It shows for three seconds over the black after shot 8, then
 the last frame returns and holds (§5).
@@ -242,7 +249,7 @@ not engaged yet.
 ## 6. The recording
 
 The asset side records the film from the scene route on the high tier at 1280 by 640: for each
-of the 1,440 frames it asks the route for 8 sub-frames spread over the first half of the frame's
+of the 1,728 frames it asks the route for 8 sub-frames spread over the first half of the frame's
 1/24 s and averages them, which gives the motion blur of a half-frame shutter, then encodes as
 §4 says. The route's `frame()` promise and stepped clock are what make that frame-exact. How the
 frames are captured and encoded is the asset repository's tooling and is not written here.
@@ -266,7 +273,7 @@ frames are captured and encoded is the asset repository's tooling and is not wri
 Every numeric expectation is a literal; explicit time limits go through `timeLimit(<ms>)`.
 
 - `timeline.ts`, `shots.ts`, `roadPath.ts`: at *t* the frame's camera, actors, car and caption
-  are the same numbers every call; the eight shots sum to 60 s and each shot's field of view is
+  are the same numbers every call; the eight shots sum to 72 s and each shot's field of view is
   within [0.10, 0.57] rad; the caption at any *t* is the script's line for that *t* or none; the
   car's position along the road at a distance lies on the road's centreline plus its lane
   offset; a seek is idempotent.
