@@ -19,8 +19,15 @@ if (waterHigh < 0.5) {
   alpha = 1.0 - (1.0 - wF) * exp(-2.0 * wKdMean * wDepth);
 } else {
   vec2 wUv = gl_FragCoord.xy * waterScreen;
-  float wSceneDepth = texture2D(waterDepth, wUv).r;
-  float wBehind = max(0.0, min(wDepth, wSceneDepth - waterViewDepth));
+  // The opaque pass's depth behind this pixel, in view metres: the copy holds
+  // device depth in 0..1 and is linearised with the camera's near and far,
+  // the prepass holds view metres already and clears to 0 where nothing drew,
+  // which is the far plane.
+  float wRaw = texture2D(waterDepth, wUv).r;
+  float wLin = waterNearFar.x * waterNearFar.y / (waterNearFar.y - wRaw * (waterNearFar.y - waterNearFar.x));
+  float wView = wRaw > 0.0 ? wRaw : waterNearFar.y;
+  float wSceneDepth = mix(wLin, wView, waterDepthLinear);
+  float wBehind = max(0.0, min(wDepth, wSceneDepth - vWaterViewDepth));
   vec2 wOff = normalW.xz * WATER_REFRACT * min(wBehind, WATER_REFRACT_DEPTH);
   vec3 wBed = texture2D(waterScene, wUv + wOff).rgb;
   vec3 wT = exp(-2.0 * waterKd * wBehind);

@@ -7,6 +7,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
+import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import { WaterPlugin, attachWater } from "../../src/game/waterPlugin.js";
 import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH } from "../../src/game/waterShading.js";
 
@@ -113,5 +114,43 @@ describe("water plugin", () => {
     expect(p.isReadyForSubMesh()).toBe(false);
     p.bedTexture.getInternalTexture()!.isReady = true;
     expect(p.isReadyForSubMesh()).toBe(true);
+  });
+
+  it("reads the scene depth by mode: the device depth linearised, or a linear depth as it stands", () => {
+    const mat = new PBRMaterial("w6", scene);
+    const p = attachWater(mat, WATER_ROWS.sea);
+    const u = p.getUniforms();
+    const names = u.ubo.map((e) => e.name);
+    expect(names).toContain("waterNearFar");
+    expect(names).toContain("waterDepthLinear");
+    expect(u.fragment).toContain("uniform vec2 waterNearFar;");
+    expect(u.fragment).toContain("uniform float waterDepthLinear;");
+    expect(p.nearFar).toEqual([0.05, 1000]);
+    expect(p.depthLinear).toBe(0);
+    const d = fx("water.fragment.fx");
+    expect(d).not.toContain("float waterViewDepth = 0.0;");
+    expect(d).toContain("varying float vWaterViewDepth;");
+    expect(fx("water.vertex.fx")).toContain("varying float vWaterViewDepth;");
+    // Babylon's view space is left-handed here: +z is forward, so the depth is +z
+    expect(fx("waterWorldPos.vertex.fx")).toContain("vWaterViewDepth = (view * worldPos).z;");
+    const l = fx("waterLights.fragment.fx");
+    expect(l).not.toContain("waterViewDepth");
+    expect(l).toContain("float wLin = waterNearFar.x * waterNearFar.y / (waterNearFar.y - wRaw * (waterNearFar.y - waterNearFar.x));");
+    expect(l).toContain("float wSceneDepth = mix(wLin, wView, waterDepthLinear);");
+    expect(l).toContain("float wBehind = max(0.0, min(wDepth, wSceneDepth - vWaterViewDepth));");
+  });
+
+  it("is not ready on the high tier until the frame's depth has a texture behind it", () => {
+    const mat = new PBRMaterial("w7", scene);
+    const p = attachWater(mat, WATER_ROWS.sea);
+    p.bedTexture = RawTexture.CreateRTexture(new Float32Array(4), 2, 2, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
+    p.bedTexture.getInternalTexture()!.isReady = true;
+    expect(p.isReadyForSubMesh()).toBe(true);
+    const depth = new BaseTexture(scene);
+    p.depthTexture = depth;
+    expect(p.isReadyForSubMesh()).toBe(false);
+    depth._texture = p.bedTexture.getInternalTexture();
+    expect(p.isReadyForSubMesh()).toBe(true);
+    depth._texture = null;
   });
 });

@@ -1,6 +1,7 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
 import { createRenderer, terrainMaterialFor, type FreecamView, type Renderer } from "./game/renderer.js";
+import type { WaterDepthMode } from "./game/waterFrame.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { AsyncPipelines } from "./game/asyncPipelines.js";
 import { FALLBACK_NOTICE_MS } from "./game/engineChoice.js";
@@ -304,6 +305,10 @@ function buildGame(
    * (`asyncPipelines.ts`), for the renderer built on it; none on WebGL2. */
   const pipelinesFor = (engine: AbstractEngine | null): AsyncPipelines | undefined =>
     engine !== null && watchers !== null ? (watchers.asyncPipelines(engine) ?? undefined) : undefined;
+  /** Where the high tier's water reads its depth (`waterFrame.ts`): a measuring
+   * switch, `?waterDepth=prepass` for the prepass renderer's, else the copy's. */
+  const waterDepthMode = (): WaterDepthMode =>
+    new URLSearchParams(location.search).get("waterDepth") === "prepass" ? "prepass" : "copy";
   // The tier asked for, and should it fail to build, the class's start tier
   // and then low, each on a fresh canvas: only the renderer is retried, not
   // the world, which is built once. A WebGPU engine that cannot build the
@@ -315,8 +320,13 @@ function buildGame(
     canvas,
     [options.tier, ...options.fallbackTiers],
     {
-      build: (next, at, engine) =>
-        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap }),
+      build: (next, at, engine) => createRenderer(next, level, forest, {
+        tier: at,
+        engine: engine ?? undefined,
+        pipelines: pipelinesFor(engine),
+        deferClipmap: options.deferClipmap,
+        waterDepthMode: waterDepthMode(),
+      }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
@@ -1512,7 +1522,12 @@ function buildGame(
     // The target's engine is made before the swap by the WebGPU rule
     // (`options.engineFor`), on the canvas `freshCanvas` hands out first;
     // null, the renderer makes WebGL2's.
-    build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine) }),
+    build: (next, target, engine) => createRenderer(next, level, forest, {
+      tier: target,
+      engine: engine ?? undefined,
+      pipelines: pipelinesFor(engine),
+      waterDepthMode: waterDepthMode(),
+    }),
     freshCanvas: () => document.createElement("canvas"),
     extras: { dispose: disposeExtras, build: buildExtras },
     rebind: (next) => {

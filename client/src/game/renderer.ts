@@ -69,6 +69,13 @@ import {
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater } from "./waterPlugin.js";
+import {
+  WATER_DEPTH_MODE_DEFAULT,
+  WATER_GROUP,
+  createWaterFrame,
+  waterFrameSupported,
+  type WaterDepthMode,
+} from "./waterFrame.js";
 import { WATER_ROWS } from "./waterShading.js";
 import { attachWet, setWetLine, wetLineFor, type WetBody } from "./wetPlugin.js";
 import {
@@ -634,6 +641,10 @@ export type Water = {
   /** One mesh per ring, coarsening outward — four draw calls, capped by design.
    * NEVER added to the shadow caster list: water neither casts nor receives. */
   readonly meshes: readonly Mesh[];
+  /** True when the high tier's path is on: opaque in `WATER_GROUP`, reading the
+   * opaque pass through the surface (`waterFrame.ts`), so a wet object's own
+   * depth is attenuated by the water and the wet plugin need not darken it. */
+  readonly high: boolean;
   update(camX: number, camZ: number, seconds: number): void;
   /** Per frame from the wind record: the 0..1 speed and the direction it blows toward. */
   setWind(wind01: number, dir: [number, number]): void;
@@ -693,6 +704,12 @@ export function pondDisc(scene: Scene, mat: PBRMaterial, pond: Pond, index: numb
  * The bed height texture is baked and uploaded here, at (`camX`, `camZ`), so no
  * frame is drawn with the material not ready (the plugin is not ready until it
  * has a texture); `update` then re-centres it a row a frame into a spare grid.
+ *
+ * On the high tier, where the engine can make the frame (`waterFrameSupported`:
+ * WebGPU, a multisampled first pass, so the post chain must exist first), the
+ * water is opaque in `WATER_GROUP` and reads the opaque pass behind it from the
+ * frame, its depth by `depthMode`; elsewhere, high included, it is the blended
+ * water of the medium tier.
  */
 export function createWater(
   scene: Scene,
@@ -702,19 +719,38 @@ export function createWater(
   tier: QualityTier = "medium",
   camX = 0,
   camZ = 0,
+  depthMode: WaterDepthMode = WATER_DEPTH_MODE_DEFAULT,
 ): Water {
+  const high = tier === "high" && waterFrameSupported(scene);
   // White albedo is the plugin's business now: it sets the row's colour.
   const seaMat = new PBRMaterial("mat_water_sea", scene);
-  seaMat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
   seaMat.backFaceCulling = false;
   const seaPlugin = attachWater(seaMat, WATER_ROWS.sea);
   const lakeMat = new PBRMaterial("mat_water_lake", scene);
-  lakeMat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
   lakeMat.backFaceCulling = false;
   const lakePlugin = attachWater(lakeMat, WATER_ROWS.lowlandLake);
   const plugins = [seaPlugin, lakePlugin];
+  for (const mat of [seaMat, lakeMat]) {
+    // High: the surface writes its own colour, the transmission read from the
+    // frame's copy of what lies behind it. Otherwise one alpha blends it.
+    mat.transparencyMode = high ? PBRMaterial.PBRMATERIAL_OPAQUE : PBRMaterial.PBRMATERIAL_ALPHABLEND;
+    mat.needDepthPrePass = false;
+  }
   budgetMaterial(seaMat);
   budgetMaterial(lakeMat);
+
+  // The copy of the opaque pass, on the high tier. It follows the target's
+  // size by itself, so the plugins hold its textures and its `screen` once.
+  const frame = high ? createWaterFrame(scene, scene.getEngine(), depthMode) : null;
+  if (frame !== null) {
+    for (const p of plugins) {
+      p.sceneTexture = frame.scene;
+      p.depthTexture = frame.depth;
+      p.screen = frame.screen;
+      p.depthLinear = frame.depthLinear ? 1 : 0;
+    }
+  }
+  const group = high ? WATER_GROUP : 0;
 
   const bump = createWaterBump(scene);
   seaMat.bumpTexture = bump;
@@ -785,6 +821,7 @@ export function createWater(
     mesh.receiveShadows = false;
     mesh.material = seaMat;
     mesh.metadata = { waterLevel };
+    mesh.renderingGroupId = group;
     meshes.push(mesh);
     emitRing(level);
   }
@@ -794,9 +831,11 @@ export function createWater(
   // so they need no place in `meshes` (the doc'd one-per-ring,
   // shadow-caster-exempt set); they are disposed alongside it instead.
   const pondMeshes: Mesh[] = ponds.map((p, i) => pondDisc(scene, lakeMat, p, i));
+  for (const mesh of pondMeshes) mesh.renderingGroupId = group;
 
   return {
     meshes,
+    high,
     update(camX, camZ, seconds) {
       const moved: boolean[] = [];
       for (let level = 0; level < WATER_RING_COUNT; level++) {
@@ -824,6 +863,15 @@ export function createWater(
         uploadBed();
       }
       for (const p of plugins) p.time = seconds;
+      // The copy's depth is linearised with the camera's planes, read each
+      // frame: the active camera can change (the freecam, a cutscene).
+      const camera = scene.activeCamera;
+      if (frame !== null && camera !== null) {
+        for (const p of plugins) {
+          p.nearFar[0] = camera.minZ;
+          p.nearFar[1] = camera.maxZ;
+        }
+      }
     },
     setWind(wind01, dir) {
       for (const p of plugins) p.setWind(wind01, dir);
@@ -834,6 +882,7 @@ export function createWater(
       for (const mesh of pondMeshes) mesh.dispose();
       bump.dispose();
       bedTexture?.dispose();
+      frame?.dispose();
       seaMat.dispose();
       lakeMat.dispose();
     },
@@ -976,6 +1025,10 @@ export type RendererOptions = {
    * `buildClipmapNow`, so a start can step it between paints; the renderer
    * draws no terrain until one has run. Absent, it is built here as always. */
   deferClipmap?: boolean;
+  /** Where the high tier's water reads the depth behind it (`waterFrame.ts`):
+   * the resolved depth of the scene's own target, or the prepass renderer's.
+   * A measuring switch (`?waterDepth=` in `app.ts`); absent, the default. */
+  waterDepthMode?: WaterDepthMode;
 };
 
 /** What the impostor bakes read of the pipelines and the scope: the draws a
@@ -1291,7 +1344,16 @@ function buildRenderer(
       : [];
   const water =
     forest !== null && waterLevel !== undefined
-      ? createWater(scene, forest.seed, waterLevel, ponds, tier, level.playerSpawns[0]?.x ?? 0, level.playerSpawns[0]?.z ?? 0)
+      ? createWater(
+          scene,
+          forest.seed,
+          waterLevel,
+          ponds,
+          tier,
+          level.playerSpawns[0]?.x ?? 0,
+          level.playerSpawns[0]?.z ?? 0,
+          options.waterDepthMode,
+        )
       : null;
   partOf(water);
 
@@ -1306,7 +1368,9 @@ function buildRenderer(
   const updateWet = (x: number, z: number): void => {
     if (wetBodies.length === 0) return;
     const w = wetLineFor(wetBodies, x, z);
-    setWetLine(w, tier !== "high");
+    // The wet plugin darkens below the level only where the water cannot
+    // attenuate what stands in it by its own depth: everywhere but high's path.
+    setWetLine(w, water?.high !== true);
   };
 
   // Every chunk prop the sim collides with, drawn: the trailhead's placeholder
