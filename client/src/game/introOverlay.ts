@@ -53,11 +53,13 @@ const INTRO_Z = 30;
 
 const STYLE = `
   .intro { position: absolute; inset: 0; background: #000; display: grid; grid-template-rows: 1fr auto 1fr; z-index: ${INTRO_Z}; user-select: none; }
-  .intro video { grid-row: 2; width: 100%; aspect-ratio: 2 / 1; display: block; }
-  .intro-caption { grid-row: 3; align-self: start; margin: 14px auto 0; max-width: 44ch; text-align: center; white-space: pre-line; color: #eee; font: 500 clamp(16px, 2.4vh, 26px)/1.35 system-ui, sans-serif; }
+  .intro video { grid-column: 1; grid-row: 2; width: 100%; aspect-ratio: 2 / 1; display: block; }
+  /* The caption and the bar share the lower band: both in the one column,
+     or the grid would place the second in an implicit column of its own. */
+  .intro-caption { grid-column: 1; grid-row: 3; align-self: start; margin: 14px auto 0; max-width: 44ch; text-align: center; white-space: pre-line; color: #eee; font: 500 clamp(16px, 2.4vh, 26px)/1.35 system-ui, sans-serif; }
   .intro-caption.radio { font-style: italic; }
   .intro-caption.radio::before { content: "Dispatch (radio): "; font-style: normal; opacity: 0.7; }
-  .intro-bar { grid-row: 3; align-self: end; margin: 0 16px 10px; height: 2px; background: rgba(255,255,255,0.15); }
+  .intro-bar { grid-column: 1; grid-row: 3; align-self: end; margin: 0 16px 10px; height: 2px; background: rgba(255,255,255,0.15); }
   .intro-bar-fill { height: 100%; width: 0%; background: rgba(255,255,255,0.7); transition: width 300ms linear; }
   .intro-line { position: absolute; right: 16px; bottom: 16px; color: rgba(255,255,255,0.55); font: 12px/1.4 system-ui, sans-serif; }
   .intro-skip, .intro-stepout { position: absolute; left: 16px; bottom: 16px; color: rgba(255,255,255,0.7); font: 12px/1.4 system-ui, sans-serif; opacity: 0; transition: opacity 400ms; }
