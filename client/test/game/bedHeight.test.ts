@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import "../../src/sim/olympic.js";
 import { elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { BED_GRID, POND_DISC_MARGIN, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows, bedSquareHasWater } from "../../src/game/bedHeight.js";
+import { BED_GRID, POND_DISC_MARGIN, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows, bedSquareHasWater, bedOutsideSquare } from "../../src/game/bedHeight.js";
 
 const SEED = 0x5eed;
 beforeAll(() => setActiveTerrainVariant("olympic"));
@@ -91,6 +91,23 @@ describe("bed height grid", () => {
     const before = grid.heights.slice();
     expect(bakeRows(grid, SEED, bake, 10)).toBe(true);
     expect(grid.heights).toEqual(before);
+  });
+
+  it("says the camera has left a square only outside the whole of it, not its inner half", () => {
+    // 128 texels at 2 m from (320, -128): the square [320, 576) x [-128, 128), inner half [384, 512) x [-64, 64)
+    const out = (x: number, z: number): boolean => bedOutsideSquare(320, -128, 128, 2, x, z);
+    const grid = { ...createBedGrid(128, 2), originX: 320, originZ: -128 };
+    // past the inner half, inside the square: a rebake is due, but the square still holds the camera
+    expect(bedNeedsRebake(grid, 540, 0)).toBe(true);
+    expect(out(540, 0)).toBe(false);
+    expect(out(320, -128)).toBe(false); // the min corner is inside
+    expect(out(575.9, 127.9)).toBe(false);
+    // outside on either axis
+    expect(out(576, 0)).toBe(true); // the max edge is outside
+    expect(out(319.9, 0)).toBe(true);
+    expect(out(400, 128)).toBe(true);
+    expect(out(400, -128.1)).toBe(true);
+    expect(out(800, 0)).toBe(true);
   });
 
   describe("whether a body can reach a square (bedSquareHasWater)", () => {

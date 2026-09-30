@@ -36,7 +36,7 @@ export class WaterPlugin extends MaterialPluginBase {
   bedOrigin: [number, number] = [0, 0];
   bedTexels = 256;
   bedSpacing = 1;
-  /** High tier only (Task 6): the scene copy and depth read, and the screen's 1/size. */
+  /** High tier only: the scene copy and depth read (`waterFrame.ts`), and the screen's 1/size. */
   sceneTexture: BaseTexture | null = null;
   depthTexture: BaseTexture | null = null;
   screen: [number, number] = [1, 1];
@@ -84,11 +84,15 @@ export class WaterPlugin extends MaterialPluginBase {
     defines.WATER = true;
   }
 
+  /**
+   * Ready once the bed texture is, on every tier. The high tier's scene copy
+   * and depth are not waited on: the frame binds textures that exist from its
+   * creation (a far depth until its first copy), and the copy runs only with
+   * water in view, so waiting on it would hold the scene's readiness, and the
+   * page's start, on the view.
+   */
   override isReadyForSubMesh(): boolean {
-    // On the high tier the frame's depth has no texture behind it until the
-    // first copy has run; the water waits for it rather than read nothing.
-    const high = (this.sceneTexture?.isReady() ?? true) && (this.depthTexture?.isReady() ?? true);
-    return this.bedTexture !== null && this.bedTexture.isReady() && high;
+    return this.bedTexture !== null && this.bedTexture.isReady();
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
