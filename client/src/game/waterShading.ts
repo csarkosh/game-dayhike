@@ -71,9 +71,13 @@ export function meanKd(kd: readonly [number, number, number]): number {
   return (kd[0] + kd[1] + kd[2]) / 3;
 }
 
-/** The medium and low tiers' single alpha: 1 − e^(−2 K̄ d) (§5.2). */
-export function alphaFor(kd: readonly [number, number, number], depth: number): number {
-  return 1 - Math.exp(-2 * meanKd(kd) * Math.max(0, depth));
+/**
+ * The medium and low tiers' single alpha: 1 − (1 − F)·e^(−2 K̄ d) (§5.2). The
+ * blend scales the reflection too, so the reflected share F (Schlick on the
+ * view cosine) is kept out of the transmission.
+ */
+export function alphaFor(kd: readonly [number, number, number], depth: number, cosTheta = 1): number {
+  return 1 - (1 - fresnelSchlick(cosTheta)) * Math.exp(-2 * meanKd(kd) * Math.max(0, depth));
 }
 
 /** Cox and Munk's slope variance, σ² = 0.003 + 0.00512 U, scaled by the body's shelter (§5.1). */
