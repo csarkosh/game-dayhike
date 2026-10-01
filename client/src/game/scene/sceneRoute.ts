@@ -33,7 +33,7 @@ import { createCaptionPanel } from "./captions.js";
 import { INTRO_CAR, INTRO_HOUR, INTRO_RANGER, INTRO_SEED_TOKEN, INTRO_WEATHER, introScene } from "./intro.js";
 import { createSceneClock, type SceneClock } from "./sceneClock.js";
 import { createScenePlayer } from "./scenePlayer.js";
-import { carModelOf, type CarModel, type StageDeps } from "./sceneStage.js";
+import { carModelOf, dimCabParts, type CarModel, type StageDeps } from "./sceneStage.js";
 
 export type DayhikeScene = {
   seek(t: number): void;
@@ -140,6 +140,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     }
     carModel = placed;
     car = carModelOf(placed, (line) => console.warn(line));
+    dimCabParts(car);
     // `stage` is made below, before this promise can resolve.
     stage.car = car;
     for (const mesh of placed.meshes) renderer.shadows.add(mesh);

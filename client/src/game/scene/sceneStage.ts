@@ -6,6 +6,7 @@
  * scene plays with whatever has arrived.
  */
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Node } from "@babylonjs/core/node.js";
 import type { CharacterInstance } from "../characterModel.js";
@@ -24,6 +25,8 @@ export type CarModel = {
   steering: TransformNode | null;
   handset: TransformNode | null;
   cradle: TransformNode | null;
+  /** Where the model rests the handset in its cradle, under the cradle. */
+  handsetRest: { position: Vector3; rotation: Quaternion; scaling: Vector3 } | null;
 };
 
 export type StageDeps = {
@@ -45,12 +48,10 @@ const DOOR_SWING = Math.PI / 1.5;
 /** The steering wheel's column in the part's own frame: the wheel's thinnest direction, measured on the model. */
 const STEERING_COLUMN = new Vector3(0.871, -0.491, 0).normalize();
 /** The handset in the hand: its offset (m) and turn in the hand joint's own frame, the fingers
- * along +y and the palm toward +z, measured on the talk clip's fist: its centre in the fist, its
- * length along the row of knuckles (`docs/gameplay/2026-09-30-intro-film-staging.md`). */
-const GRIP = { position: new Vector3(0, 0.075, 0.03), rotation: Quaternion.Identity() };
-/** The handset's place in its cradle, as the model has it. */
-const IN_CRADLE = [0, 0.048, 0] as const;
-
+ * along +y and the palm toward +z, measured on the talk clip's fist: the microphone's middle in
+ * the fist and 0.025 m toward the index finger, so its grille end stands clear of it, and turned a
+ * quarter about its length so the grille faces the mouth (`docs/gameplay/2026-09-30-intro-film-staging.md`). */
+const GRIP = { position: new Vector3(0.025, 0.075, 0.03), rotation: Quaternion.RotationAxis(new Vector3(1, 0, 0), Math.PI / 2) };
 /**
  * The car's parts by name under a placed model, each one missing said once;
  * none found, the whole model is the stand-in. A node the loader made
@@ -60,9 +61,11 @@ const IN_CRADLE = [0, 0.048, 0] as const;
  */
 export function carModelOf(placed: PlacedModel, warn: (line: string) => void): CarModel {
   const under = placed.node.getChildTransformNodes(false);
+  const turns = new Map<TransformNode, Quaternion>();
   const byName = (name: string): TransformNode | null => {
     const node = under.find((n) => n.name === name || n.name.endsWith(`_${name}`)) ?? null;
     if (node === null) warn(`scene: no part ${name} on the car; not moved`);
+    if (node !== null) turns.set(node, node.rotationQuaternion?.clone() ?? Quaternion.FromEulerVector(node.rotation));
     if (node !== null && node.rotationQuaternion !== null) {
       node.rotation = node.rotationQuaternion.toEulerAngles();
       node.rotationQuaternion = null;
@@ -71,7 +74,25 @@ export function carModelOf(placed: PlacedModel, warn: (line: string) => void): C
   };
   const wheels = WHEEL_NAMES.map((name) => ({ node: byName(name), front: name.startsWith("wheel_f") }))
     .filter((w): w is { node: TransformNode; front: boolean } => w.node !== null);
-  return { root: placed.node, wheels, door: byName(DOOR_NAME), steering: byName("wheel_steering"), handset: byName("handset"), cradle: byName("cradle") };
+  const handset = byName("handset");
+  const handsetRest = handset === null ? null : { position: handset.position.clone(), rotation: turns.get(handset)!, scaling: handset.scaling.clone() };
+  return { root: placed.node, wheels, door: byName(DOOR_NAME), steering: byName("wheel_steering"), handset, cradle: byName("cradle"), handsetRest };
+}
+
+/** How much of the sky's reflected light the radio and its handset take, the rest of it roof: the
+ * environment lights a part as if all the sky were open around it, and these plain dark parts,
+ * unlike the cab's own textures, carry no darkness of their own. Set by eye on the insert. */
+const CAB_SKY = 0.3;
+
+/** The radio's and the handset's materials under `CAB_SKY` of the sky's reflection. */
+export function dimCabParts(car: CarModel): void {
+  for (const part of [car.cradle, car.handset]) {
+    if (part === null) continue;
+    for (const mesh of part.getChildMeshes(false)) {
+      const material = mesh.material;
+      if (material instanceof PBRMaterial) material.environmentIntensity = CAB_SKY;
+    }
+  }
 }
 
 /** A node's world matrix now: its ancestors' first, so a pose set this frame is in it. */
@@ -87,12 +108,12 @@ export function worldOf(node: TransformNode): Matrix {
  * place in the cradle by `grip`, written as a pose under the cradle it stays a child of; or
  * back in the cradle. */
 function stageHandset(car: CarModel, hand: TransformNode | null, grip: number): void {
-  const { handset, cradle } = car;
-  if (handset === null || cradle === null) return;
+  const { handset, cradle, handsetRest: rest } = car;
+  if (handset === null || cradle === null || rest === null) return;
   if (hand === null) {
-    handset.position.set(...IN_CRADLE);
-    handset.rotationQuaternion = Quaternion.Identity();
-    handset.scaling.setAll(1);
+    handset.position.copyFrom(rest.position);
+    handset.rotationQuaternion = rest.rotation.clone();
+    handset.scaling.copyFrom(rest.scaling);
     return;
   }
   // A decomposed rotation would fold the mirror into the grip, turning it about an axis.
@@ -107,8 +128,8 @@ function stageHandset(car: CarModel, hand: TransformNode | null, grip: number): 
   local.decompose(scaling, rotation, position);
   // Part of the way from its place in the cradle to the grip, by the pose's grip.
   handset.scaling.copyFrom(scaling);
-  handset.rotationQuaternion = Quaternion.Slerp(Quaternion.Identity(), rotation, grip);
-  handset.position = Vector3.Lerp(new Vector3(...IN_CRADLE), position, grip);
+  handset.rotationQuaternion = Quaternion.Slerp(rest.rotation, rotation, grip);
+  handset.position = Vector3.Lerp(rest.position, position, grip);
 }
 
 const warnedActors = new WeakMap<StageDeps, Set<string>>();

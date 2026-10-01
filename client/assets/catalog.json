@@ -89,7 +89,7 @@
       "kind": "environment",
       "output": "models/intro.car.glb",
       "scene": "intro",
-      "bytes": 1840080
+      "bytes": 1939744
     },
     {
       "id": "intro.ranger",

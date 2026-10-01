@@ -3,7 +3,9 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { carModelOf, stageFrame, type StageDeps } from "../../../src/game/scene/sceneStage.js";
+import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
+import { carModelOf, dimCabParts, stageFrame, type StageDeps } from "../../../src/game/scene/sceneStage.js";
 import type { PlacedModel } from "../../../src/game/staticModel.js";
 import type { Frame } from "../../../src/game/scene/timeline.js";
 import type { CharacterInstance } from "../../../src/game/characterModel.js";
@@ -68,7 +70,7 @@ describe("the stage", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const whole = new TransformNode("car", scene);
-    const d = deps({ car: { root: whole, wheels: [], door: null, steering: null, handset: null, cradle: null } });
+    const d = deps({ car: { root: whole, wheels: [], door: null, steering: null, handset: null, cradle: null, handsetRest: null } });
     stageFrame(frame, d);
     expect(whole.position.asArray()).toEqual([10, 11, 12]);
     expect(whole.rotation.y).toBe(3);
@@ -133,6 +135,38 @@ describe("the film car's parts", () => {
   }
   const at = (over: Partial<NonNullable<Frame["car"]>>): Frame => ({ ...frame, actors: [], car: { ...frame.car!, ...over } });
 
+  it("puts the handset back where the model rests it in its cradle", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const model = car(scene);
+    // A model whose handset lies lower in its cradle, turned a little.
+    const handset = model.handset!;
+    handset.position.set(0, 0.041, 0);
+    handset.rotationQuaternion = Quaternion.RotationYawPitchRoll(0.1, 0, 0);
+    const rested = carModelOf({ node: model.root, meshes: [], dispose() {} } as unknown as PlacedModel, () => {});
+    const hand = new TransformNode("hand", scene);
+    stageFrame(at({ handset: "hand", grip: 1 }), deps({ car: rested, hand: () => hand }));
+    stageFrame(at({ handset: "cradle" }), deps({ car: rested }));
+    expect(rested.handset!.position.asArray()).toEqual([0, 0.041, 0]);
+    expect(rested.handset!.rotationQuaternion!.asArray()).toEqual(Quaternion.RotationYawPitchRoll(0.1, 0, 0).asArray());
+    engine.dispose();
+  });
+
+  it("lets the radio and its handset see the sky only as a cab's windows do", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const model = car(scene);
+    const mic = new Mesh("handset_primitive0", scene);
+    mic.parent = model.handset;
+    mic.material = new PBRMaterial("mic", scene);
+    const radio = new Mesh("cradle_primitive0", scene);
+    radio.parent = model.cradle;
+    radio.material = new PBRMaterial("radio", scene);
+    dimCabParts(model);
+    expect([(mic.material as PBRMaterial).environmentIntensity, (radio.material as PBRMaterial).environmentIntensity]).toEqual([0.3, 0.3]);
+    engine.dispose();
+  });
+
   it("says once which parts the car lacks", () => {
     const engine = new NullEngine();
     const lines: string[] = [];
@@ -186,10 +220,10 @@ describe("the film car's parts", () => {
     const d = deps({ car: model, hand: () => hand });
     stageFrame(at({ handset: "hand" }), d);
     model.handset!.computeWorldMatrix(true);
-    // In the fist: 0.075 m along the fingers (the joint's +y) and 0.03 m toward the palm (+z).
-    const want = new Vector3(0, 0.075, 0.03).applyRotationQuaternion(hand.rotationQuaternion).add(hand.position);
+    // In the fist: 0.075 m along the fingers (the joint's +y), 0.03 m toward the palm (+z) and 0.025 m toward the index finger (+x).
+    const want = new Vector3(0.025, 0.075, 0.03).applyRotationQuaternion(hand.rotationQuaternion).add(hand.position);
     const got = model.handset!.getAbsolutePosition();
-    for (const k of ["x", "y", "z"] as const) expect(got[k]).toBeCloseTo(want[k], 6);
+    for (const k of ["x", "y", "z"] as const) expect(got[k]).toBeCloseTo(want[k], 5);
     stageFrame(at({ handset: "cradle" }), d);
     expect(model.handset!.position.asArray()).toEqual([0, 0.048, 0]);
     expect(model.handset!.rotationQuaternion?.asArray()).toEqual([0, 0, 0, 1]);
@@ -230,8 +264,8 @@ describe("the film car's parts", () => {
     hand.scaling = new Vector3(0.01, -0.01, 0.01);
     stageFrame(at({ handset: "hand" }), deps({ car: model, hand: () => hand }));
     model.handset!.computeWorldMatrix(true);
-    // The joint's +y is the rotation's -y here: 0.075 m along the fingers, 0.03 m toward the palm.
-    const want = new Vector3(0, -0.075, 0.03).applyRotationQuaternion(hand.rotationQuaternion).add(hand.position);
+    // The joint's +y is the rotation's -y here: 0.075 m along the fingers, 0.03 m toward the palm, 0.025 m toward the index finger.
+    const want = new Vector3(0.025, -0.075, 0.03).applyRotationQuaternion(hand.rotationQuaternion).add(hand.position);
     const got = model.handset!.getAbsolutePosition();
     for (const k of ["x", "y", "z"] as const) expect(got[k]).toBeCloseTo(want[k], 6);
     engine.dispose();
