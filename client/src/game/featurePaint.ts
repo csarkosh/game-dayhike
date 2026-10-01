@@ -113,7 +113,9 @@ export function featurePaintWeights(
       const w = 1 - smoothstep(f.z, f.z + fMeta.z, fd);
       meadow = 1 - (1 - meadow) * (1 - w);
     } else if (f.w > 2.5) {
-      const w = 1 - smoothstep(f.z + fMeta.w, f.z + fMeta.w + 2.0, fd);
+      let w = 1 - smoothstep(f.z + fMeta.w, f.z + fMeta.w + 2.0, fd);
+      // The bed under the water paints itself, so the shore's tint begins at the rim.
+      w *= smoothstep(f.z - 1, f.z, fd);
       shore = 1 - (1 - shore) * (1 - w);
     } else if (f.w > 0.5) {
       const above = smoothstep(fMeta.x - fMeta.y, fMeta.x, y);

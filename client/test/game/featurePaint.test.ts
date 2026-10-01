@@ -104,6 +104,11 @@ describe("the feature paint's weights", () => {
     expect(featurePaintWeights(all, pond.x, pond.z + pond.radius + POND_SHORE, 40).shore).toBeCloseTo(1, 9);
     expect(featurePaintWeights(all, pond.x, pond.z + pond.radius + POND_SHORE + 2, 40).shore).toBeCloseTo(0, 9);
     expect(featurePaintWeights(all, pond.x, pond.z + pond.radius + 40, 40).shore).toBe(0);
+    // the rim factor the shader has: nothing inside the rim, the band from it
+    expect(featurePaintWeights(all, pond.x, pond.z, 40).shore).toBe(0);
+    expect(featurePaintWeights(all, pond.x, pond.z + pond.radius - 1, 40).shore).toBe(0);
+    expect(featurePaintWeights(all, pond.x, pond.z + pond.radius - 0.5, 40).shore).toBeCloseTo(0.5, 9);
+    expect(featurePaintWeights(all, pond.x, pond.z + pond.radius + 0.5, 40).shore).toBeCloseTo(1, 9);
   });
 
   it("paints rock above the treeline INSIDE the peak's disc and nothing below it", () => {

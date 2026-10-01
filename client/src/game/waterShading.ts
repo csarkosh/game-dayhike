@@ -8,6 +8,7 @@
  * wire). See docs/rendering/2026-09-29-water-material-design.md §5.
  */
 import { clamp01 } from "./colour.js";
+import { CLUTTER_WATER_MURK_HI, CLUTTER_WATER_MURK_LO } from "../sim/clutter.js";
 
 /** One body of water, from the world at build time (spec §7). */
 export type WaterBody = {
@@ -55,10 +56,10 @@ export function lakeWaterRow(murk: number): WaterRow {
 }
 
 /** How much of a lake's surface may carry the duckweed and algae skin: none
- * up to murk 0.5, all of it from 0.8. The clutter field gates the reeds and
- * lilies by the same two numbers (`CLUTTER_WATER_MURK_LO`/`_HI`). */
+ * up to murk 0.5, all of it from 0.8: the two numbers the clutter field
+ * gates the reeds and lilies by (`CLUTTER_WATER_MURK_LO`/`_HI`). */
 export function lakeSkin(murk: number): number {
-  const t = clamp01((murk - 0.5) / 0.3);
+  const t = clamp01((murk - CLUTTER_WATER_MURK_LO) / (CLUTTER_WATER_MURK_HI - CLUTTER_WATER_MURK_LO));
   return t * t * (3 - 2 * t);
 }
 

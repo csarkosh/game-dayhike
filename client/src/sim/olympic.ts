@@ -374,14 +374,15 @@ function coveD(seed: number, x: number, z: number, d: number, dDz: number, u: nu
 
 /** The cove's weight at (x, z), 0 to 1: the ground paint and the clutter read it. */
 function coveMaskHook(seed: number, x: number, z: number): number {
+  // Past the along-shore window's far edge the weight is 0 whatever the
+  // seaward window says: skip the coast's frame there.
+  const cove = coveFor(seed);
+  if (Math.abs(z - cove.z0) >= cove.halfWidth + COVE_END_BLEND) return 0;
   const f = coastFrame(seed, z);
   const road = roadOffsetD(seed, z, BLEND_START, f.roadBlendEnd, f.roadBlendEndDz);
-  return coveWeightD(coveFor(seed), z, x - f.coastlineX - road.dr, f.dDz - road.drDz).v;
+  return coveWeightD(cove, z, x - f.coastlineX - road.dr, f.dDz - road.drDz).v;
 }
 
-/** The stack field and its exact gradient, BEFORE the band window. Sums C²
- * columns from the 3×3 cell neighbourhood; STACK_RADIUS_MAX ≤ STACK_CELL / 2
- * guarantees no column escapes it. */
 /** One C² column, height·(1 − r²/R²)³ inside R, and its gradient, added into
  * `out`. The sea stacks' shape: the stack field's and the cove's. */
 function addColumn(
@@ -400,6 +401,9 @@ function addColumn(
   out.dz += dPerR * rz;
 }
 
+/** The stack field and its exact gradient, BEFORE the band window. Sums C²
+ * columns from the 3×3 cell neighbourhood; STACK_RADIUS_MAX ≤ STACK_CELL / 2
+ * guarantees no column escapes it. */
 function stackFieldD(seed: number, x: number, z: number): { v: number; dx: number; dz: number } {
   const cellX = Math.floor(x / STACK_CELL);
   const cellZ = Math.floor(z / STACK_CELL);

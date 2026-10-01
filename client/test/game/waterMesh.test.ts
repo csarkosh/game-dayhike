@@ -10,7 +10,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 // the ACTIVE variant, and this test states which one it means to exercise.
 import "../../src/sim/olympic.js";
 import { activeTerrainVariant, setActiveTerrainVariant, type LakeSource } from "../../src/sim/terrain.js";
-import { lakeSkin, lakeWaterRow, waterSkinOffset } from "../../src/game/waterShading.js";
+import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "../../src/game/waterShading.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { LAKE_SURFACE_SPACING, WATER_UV_SCROLL, createWater, effectsGroupFor, lakeSurfaceShape, setEffectsGroup } from "../../src/game/renderer.js";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
@@ -88,19 +88,22 @@ describe("createWater under NullEngine", () => {
   it("adds one surface per lake on its own material, at its level, with its murk's water, and disposes both", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
-    const water = createWater(scene, 1, 0, [lake({ murk: 0 })]);
+    const water = createWater(scene, 1, 0, [lake({ murk: 1 })]);
     const pond = scene.getMeshByName("pond_0")!;
     expect(pond.position.y).toBeCloseTo(42.02, 5);
     expect(pond.getBoundingInfo().boundingBox.extendSizeWorld.x).toBeCloseTo(31, 0);
     const mat = scene.getMaterialByName("mat_water_lake_0") as PBRMaterial;
     expect(pond.material).toBe(mat);
-    const row = lakeWaterRow(0);
+    const row = lakeWaterRow(1);
+    // murk 1 is the lowland lake's row
+    for (let c = 0; c < 3; c++) expect(row.lInf[c]).toBeCloseTo(WATER_ROWS.lowlandLake.lInf[c]!, 9);
     for (let c = 0; c < 3; c++) expect(mat.albedoColor.asArray()[c]).toBeCloseTo(row.lInf[c]!, 6);
     expect((mat.pluginManager!.getPlugin("Water") as WaterPlugin).row).toEqual(row);
     expect((pond.metadata as { waterLevel: number }).waterLevel).toBe(42);
     expect(pond.isVerticesDataPresent("bedDepth")).toBe(true);
     expect(pond.isVerticesDataPresent(VertexBuffer.ColorKind)).toBe(false);
-    expect((mat.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([lakeSkin(0), waterSkinOffset(1)]);
+    expect((mat.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([lakeSkin(1), waterSkinOffset(1)]);
+    expect(lakeSkin(1)).toBe(1);
     const sea = water.meshes[0]!.material as PBRMaterial;
     expect((sea.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([0, 0]);
     water.dispose();

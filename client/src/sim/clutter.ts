@@ -670,9 +670,14 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
     }
     case CLUTTER_DRIFTWOOD: {
       // The cove's backshore holds drift logs up to the road's corridor, past
-      // the beach's own reach inland; everywhere else is as before.
-      const cove = variant.coveMask?.(seed, x, z) ?? 0;
-      if (c > CLUTTER_DRIFT_INLAND + CLUTTER_DRIFT_INLAND_FADE && cove === 0) return 0;
+      // the beach's own reach inland; everywhere else is as before. The mask
+      // is asked for only past the beach's full reach: within it the inland
+      // factor is 1, and the mask (at most 1) cannot raise the maximum below.
+      let cove = 0;
+      if (c > CLUTTER_DRIFT_INLAND) {
+        cove = variant.coveMask?.(seed, x, z) ?? 0;
+        if (c > CLUTTER_DRIFT_INLAND + CLUTTER_DRIFT_INLAND_FADE && cove === 0) return 0;
+      }
       const alt =
         smoothstep(CLUTTER_DRIFT_ALT_LO, CLUTTER_DRIFT_ALT_LO + CLUTTER_DRIFT_ALT_LO_FADE, s.h) *
         (1 - smoothstep(CLUTTER_DRIFT_ALT_HI, CLUTTER_DRIFT_ALT_HI + CLUTTER_DRIFT_ALT_HI_FADE, s.h));

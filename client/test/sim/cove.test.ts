@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import {
   coveFor, coveProfileD, COVE_WIDTH_MIN, COVE_WIDTH_MAX, COVE_FACE_GRADE, COVE_BED_GRADE, COVE_CREST,
-  COVE_BACK_FADE, HEAD_HEIGHT_MIN, HEAD_HEIGHT_MAX, HEAD_REACH_MIN, HEAD_REACH_MAX, HEAD_HALF_WIDTH,
+  COVE_BACK_FADE, COVE_END_BLEND, HEAD_HEIGHT_MIN, HEAD_HEIGHT_MAX, HEAD_REACH_MIN, HEAD_REACH_MAX, HEAD_HALF_WIDTH,
+  roadFrameAt,
 } from "../../src/sim/olympic.js";
 import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { TRAIL_Z_ANCHOR } from "../../src/sim/bowl.js";
@@ -95,6 +96,32 @@ describe("the cove in front of the trailhead", { timeout: timeLimit(120_000) }, 
     expect(v.coveMask!(seed, cx - ROAD_CORRIDOR_HALF + 0.5, 0)).toBe(0);
     const far = c.halfWidth + 40;
     expect(v.coveMask!(seed, v.roadCenterX!(seed, far) - 80, far)).toBe(0);
+  });
+
+  it("weighs nothing past the along-shore window's far edge, and the same as before inside it", () => {
+    const v = variantOrThrow("olympic");
+    const seed = 0x5eed;
+    const c = coveFor(seed);
+    const seaward = (z: number): number => v.roadCenterX!(seed, z) - ROAD_CORRIDOR_HALF - COVE_BACK_FADE - 5;
+    for (const sign of [-1, 1]) {
+      const past = c.z0 + sign * (c.halfWidth + COVE_END_BLEND + 1);
+      expect(v.coveMask!(seed, seaward(past), past)).toBe(0);
+      // a metre inside the edge the window's tail still holds a little
+      const inside = c.z0 + sign * (c.halfWidth + COVE_END_BLEND - 1);
+      expect(v.coveMask!(seed, seaward(inside), inside)).toBeGreaterThan(0);
+    }
+    // At z0 the along-shore window is 1, so the weight is the seaward
+    // window alone, in the back fade, from the road's own frame.
+    const smootherstep = (e0: number, e1: number, x: number): number => {
+      const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+      return t * t * t * (t * (t * 6 - 15) + 10);
+    };
+    const x = v.roadCenterX!(seed, c.z0) - ROAD_CORRIDOR_HALF - COVE_BACK_FADE / 3;
+    const u = roadFrameAt(seed, x, c.z0).u;
+    const full = 1 - smootherstep(-ROAD_CORRIDOR_HALF - COVE_BACK_FADE, -ROAD_CORRIDOR_HALF, u);
+    expect(full).toBeGreaterThan(0.05);
+    expect(full).toBeLessThan(0.95);
+    expect(v.coveMask!(seed, x, c.z0)).toBeCloseTo(full, 12);
   });
 
   it("has exact derivatives across the cove, its ends, the headlands and the stacks", () => {
