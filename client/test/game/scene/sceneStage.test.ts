@@ -3,7 +3,7 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { GRIP, carModelOf, stageFrame, type StageDeps } from "../../../src/game/scene/sceneStage.js";
+import { carModelOf, stageFrame, type StageDeps } from "../../../src/game/scene/sceneStage.js";
 import type { PlacedModel } from "../../../src/game/staticModel.js";
 import type { Frame } from "../../../src/game/scene/timeline.js";
 import type { CharacterInstance } from "../../../src/game/characterModel.js";
@@ -146,7 +146,8 @@ describe("the film car's parts", () => {
     const model = car(new Scene(engine));
     stageFrame(at({ wheelSpin: 2, wheelTurn: 0.1, steer: 1.5, doorOpen: 0.5 }), deps({ car: model }));
     const [fl, rr] = model.wheels;
-    expect([fl!.node.rotation.z, fl!.node.rotation.y, rr!.node.rotation.z, rr!.node.rotation.y]).toEqual([-2, 0.1, -2, 0]);
+    // The part's frame reverses a turn about y: a front wheel turned toward the car's right turns by -0.1.
+    expect([fl!.node.rotation.z, fl!.node.rotation.y, rr!.node.rotation.z, rr!.node.rotation.y]).toEqual([-2, -0.1, -2, 0]);
     const q = model.steering!.rotationQuaternion!;
     const want = Quaternion.RotationAxis(new Vector3(0.871, -0.491, 0).normalize(), 1.5);
     for (const k of ["x", "y", "z", "w"] as const) expect(q[k]).toBeCloseTo(want[k], 9);
@@ -166,13 +167,54 @@ describe("the film car's parts", () => {
     const d = deps({ car: model, hand: () => hand });
     stageFrame(at({ handset: "hand" }), d);
     model.handset!.computeWorldMatrix(true);
-    const want = GRIP.position.applyRotationQuaternion(hand.rotationQuaternion).add(hand.position);
+    // In the fist: 0.075 m along the fingers (the joint's +y) and 0.03 m toward the palm (+z).
+    const want = new Vector3(0, 0.075, 0.03).applyRotationQuaternion(hand.rotationQuaternion).add(hand.position);
     const got = model.handset!.getAbsolutePosition();
     for (const k of ["x", "y", "z"] as const) expect(got[k]).toBeCloseTo(want[k], 6);
     stageFrame(at({ handset: "cradle" }), d);
     expect(model.handset!.position.asArray()).toEqual([0, 0.048, 0]);
     expect(model.handset!.rotationQuaternion?.asArray()).toEqual([0, 0, 0, 1]);
     expect(model.handset!.scaling.asArray()).toEqual([1, 1, 1]);
+    engine.dispose();
+  });
+
+  it("eases the handset between its cradle and the fist by the pose's grip", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const model = car(scene);
+    const hand = new TransformNode("hand", scene);
+    hand.position = new Vector3(0.4, 1.3, -0.2);
+    hand.rotationQuaternion = Quaternion.RotationYawPitchRoll(0.3, 0.2, 0.1);
+    hand.scaling = new Vector3(0.01, -0.01, 0.01);
+    const d = deps({ car: model, hand: () => hand });
+    const placed = (grip: number): Vector3 => {
+      stageFrame(at({ handset: "hand", grip }), d);
+      model.handset!.computeWorldMatrix(true);
+      return model.handset!.getAbsolutePosition().clone();
+    };
+    const rest = placed(0);
+    expect(model.handset!.position.asArray()).toEqual([0, 0.048, 0]);
+    const held = placed(1);
+    const half = placed(0.5);
+    for (const k of ["x", "y", "z"] as const) expect(half[k]).toBeCloseTo((rest[k] + held[k]) / 2, 6);
+    engine.dispose();
+  });
+
+  it("sits the handset along a mirrored hand's own fingers, as the model's skeleton has them", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const model = car(scene);
+    // A glTF skeleton under Babylon's handedness root: its joints' world matrices mirror one axis.
+    const hand = new TransformNode("hand", scene);
+    hand.position = new Vector3(0.4, 1.3, -0.2);
+    hand.rotationQuaternion = Quaternion.RotationYawPitchRoll(0.3, 0.2, 0.1);
+    hand.scaling = new Vector3(0.01, -0.01, 0.01);
+    stageFrame(at({ handset: "hand" }), deps({ car: model, hand: () => hand }));
+    model.handset!.computeWorldMatrix(true);
+    // The joint's +y is the rotation's -y here: 0.075 m along the fingers, 0.03 m toward the palm.
+    const want = new Vector3(0, -0.075, 0.03).applyRotationQuaternion(hand.rotationQuaternion).add(hand.position);
+    const got = model.handset!.getAbsolutePosition();
+    for (const k of ["x", "y", "z"] as const) expect(got[k]).toBeCloseTo(want[k], 6);
     engine.dispose();
   });
 });

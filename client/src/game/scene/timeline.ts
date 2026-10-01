@@ -18,12 +18,14 @@ export type ActorPose = {
   anchor?: { joint: string; x: number; y: number; z: number };
 };
 /** The car: its pose, the wheels' spin (radians), how open the driver's door is (0 to 1),
- * the front wheels' turn and the steering wheel's (radians, positive toward +x), and where
- * the handset is. */
+ * the front wheels' turn and the steering wheel's (radians, positive toward +x), where the
+ * handset is, and how far a handset in the hand has come from its cradle into the grip (0
+ * to 1; absent, all the way). */
 export type CarPose = {
   x: number; y: number; z: number; yaw: number;
   wheelSpin: number; doorOpen: number; wheelTurn: number; steer: number;
   handset: "cradle" | "hand";
+  grip?: number;
 };
 /** One caption, shown while `from <= t < to`; a `\n` in the text is its second line. */
 export type Caption = { from: number; to: number; text: string; radio: boolean };

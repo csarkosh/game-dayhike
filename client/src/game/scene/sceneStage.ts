@@ -44,8 +44,10 @@ const DOOR_NAME = "door_driver";
 const DOOR_SWING = Math.PI / 1.5;
 /** The steering wheel's column in the part's own frame: the wheel's thinnest direction, measured on the model. */
 const STEERING_COLUMN = new Vector3(0.871, -0.491, 0).normalize();
-/** The handset in the hand: its offset (m) and turn in the hand's frame. Set at the look (`docs/gameplay/2026-09-30-intro-film-staging.md`). */
-export const GRIP = { position: new Vector3(0, 0.08, 0.03), rotation: Quaternion.Identity() };
+/** The handset in the hand: its offset (m) and turn in the hand joint's own frame, the fingers
+ * along +y and the palm toward +z, measured on the talk clip's fist: its centre in the fist, its
+ * length along the row of knuckles (`docs/gameplay/2026-09-30-intro-film-staging.md`). */
+const GRIP = { position: new Vector3(0, 0.075, 0.03), rotation: Quaternion.Identity() };
 /** The handset's place in its cradle, as the model has it. */
 const IN_CRADLE = [0, 0.048, 0] as const;
 
@@ -79,9 +81,11 @@ export function worldOf(node: TransformNode): Matrix {
   return node.getWorldMatrix();
 }
 
-/** The handset in the hand (the hand's pose, its scale taken out, then the grip), written
- * as a pose under the cradle it stays a child of; or back in the cradle. */
-function stageHandset(car: CarModel, hand: TransformNode | null): void {
+/** The handset in the hand (the grip in the joint's frame, its size taken out but not its
+ * mirror, which a glTF skeleton under Babylon's handedness root has), eased there from its
+ * place in the cradle by `grip`, written as a pose under the cradle it stays a child of; or
+ * back in the cradle. */
+function stageHandset(car: CarModel, hand: TransformNode | null, grip: number): void {
   const { handset, cradle } = car;
   if (handset === null || cradle === null) return;
   if (hand === null) {
@@ -90,18 +94,20 @@ function stageHandset(car: CarModel, hand: TransformNode | null): void {
     handset.scaling.setAll(1);
     return;
   }
-  const handRotation = new Quaternion();
-  const handPosition = new Vector3();
-  worldOf(hand).decompose(undefined, handRotation, handPosition);
-  const world = Matrix.Compose(Vector3.One(), GRIP.rotation, GRIP.position).multiply(Matrix.Compose(Vector3.One(), handRotation, handPosition));
+  // A decomposed rotation would fold the mirror into the grip, turning it about an axis.
+  const handWorld = worldOf(hand);
+  const m = handWorld.m;
+  const unit = 1 / Math.hypot(m[0]!, m[1]!, m[2]!);
+  const world = Matrix.Compose(Vector3.One(), GRIP.rotation, GRIP.position).multiply(Matrix.Scaling(unit, unit, unit)).multiply(handWorld);
   const local = world.multiply(worldOf(cradle).clone().invert());
   const scaling = new Vector3();
   const rotation = new Quaternion();
   const position = new Vector3();
   local.decompose(scaling, rotation, position);
+  // Part of the way from its place in the cradle to the grip, by the pose's grip.
   handset.scaling.copyFrom(scaling);
-  handset.rotationQuaternion = rotation;
-  handset.position.copyFrom(position);
+  handset.rotationQuaternion = Quaternion.Slerp(Quaternion.Identity(), rotation, grip);
+  handset.position = Vector3.Lerp(new Vector3(...IN_CRADLE), position, grip);
 }
 
 const warnedActors = new WeakMap<StageDeps, Set<string>>();
@@ -151,11 +157,12 @@ export function stageFrame(frame: Frame, deps: StageDeps): void {
     deps.car.root.rotation.y = car.yaw;
     for (const wheel of deps.car.wheels) {
       wheel.node.rotation.z = -car.wheelSpin;
-      wheel.node.rotation.y = wheel.front ? car.wheelTurn : 0;
+      // The part's frame (the pack's, under the loader's mirrored root) reverses a turn about y.
+      wheel.node.rotation.y = wheel.front ? -car.wheelTurn : 0;
     }
     if (deps.car.steering !== null) deps.car.steering.rotationQuaternion = Quaternion.RotationAxis(STEERING_COLUMN, car.steer);
     if (deps.car.door !== null) deps.car.door.rotation.y = -car.doorOpen * DOOR_SWING;
-    stageHandset(deps.car, car.handset === "hand" ? (deps.hand?.() ?? null) : null);
+    stageHandset(deps.car, car.handset === "hand" ? (deps.hand?.() ?? null) : null, car.grip ?? 1);
   }
   deps.captions.set(frame.caption);
   deps.black(frame.black);

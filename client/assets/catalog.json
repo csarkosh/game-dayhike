@@ -89,7 +89,7 @@
       "kind": "environment",
       "output": "models/intro.car.glb",
       "scene": "intro",
-      "bytes": 1840072
+      "bytes": 1840080
     },
     {
       "id": "intro.ranger",
@@ -108,7 +108,7 @@
         "face_trail": "face_trail"
       },
       "scene": "intro",
-      "bytes": 1919788
+      "bytes": 1949100
     },
     {
       "id": "trailhead.kiosk",
