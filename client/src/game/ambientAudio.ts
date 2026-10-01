@@ -1,7 +1,8 @@
 import { clamp01 } from "./colour.js";
 import { gustAt, type WindRecord } from "./windParams.js";
 import {
-  ambientGainsUnder, DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams,
+  ambientGainsUnder, DEFAULT_WEATHER, WEATHER_PRESETS, rainHissCentreHz, rainWindCut,
+  type WeatherParams,
 } from "./weather.js";
 
 /** Peak gain for the rain layer, applied on top of `ambientGainsUnder`. */
@@ -9,6 +10,32 @@ export const RAIN_LEVEL = 0.5;
 /** Peak gain for the wind layer, applied on top of `setWind`'s own
  * speed/mist-scaled gain (`ambientGainsUnder` no longer has a say in it). */
 export const WIND_LEVEL = 0.4;
+/**
+ * The drip layer: under a wet canopy, sparse synthesised plops. Each is a
+ * `DRIP_BURST_S` burst of the shared noise through a band-pass centred at
+ * random between `DRIP_HZ[0]` and `DRIP_HZ[1]` with Q `DRIP_Q`, its envelope
+ * up to `level × DRIP_LEVEL` over `DRIP_ATTACK_S` and down to `DRIP_FLOOR`
+ * by the burst's end, where `level` is the canopy's water times the canopy
+ * over the listener. The next drip follows after `DRIP_INTERVAL_S[0]` to
+ * `DRIP_INTERVAL_S[1]` seconds divided by `0.5 + level`, so a wetter canopy
+ * drips faster. Nothing drips below `DRIP_MIN_LEVEL`. `setDrip` schedules
+ * every drip that falls within `DRIP_LOOKAHEAD_S` of the context's clock, so
+ * a caller on the frame path keeps the train ahead of the audio thread.
+ */
+export const DRIP_LEVEL = 0.35;
+export const DRIP_HZ: readonly [number, number] = [1000, 2000];
+export const DRIP_Q = 6;
+export const DRIP_ATTACK_S = 0.003;
+export const DRIP_BURST_S = 0.025;
+/** The burst's source is stopped this long after it starts: past the
+ * envelope's floor, so nothing is cut while audible. */
+export const DRIP_STOP_S = 0.03;
+export const DRIP_FLOOR = 0.001;
+export const DRIP_INTERVAL_S: readonly [number, number] = [0.3, 1.5];
+export const DRIP_MIN_LEVEL = 0.02;
+export const DRIP_LOOKAHEAD_S = 0.2;
+/** The shared noise buffer's length, seconds. A drip reads a random stretch of it. */
+export const NOISE_S = 2;
 /**
  * `setWind` knobs: the low-pass cutoff at zero gust and zero mist, how much a
  * gust darkens it further, how much mist deepens the base cutoff, the gain
@@ -91,6 +118,14 @@ export type AmbientAudio = {
    * wraps at `WIND_TIME_WRAP`), so callers may call this every frame.
    */
   setWind(record: WindRecord): void;
+  /**
+   * Drives the drip layer: `canopyWater` is how wet the canopy is
+   * (`canopyWaterStep`, 0 to 1) and `canopyAtListener` the canopy over the
+   * listener (`forestDensity`, 0 to 1). Their product is the drip level.
+   * Schedules on the context's own clock with a short look-ahead, so call it
+   * every frame; inert before `unlock()`.
+   */
+  setDrip(canopyWater: number, canopyAtListener: number): void;
   setVolume(v: number): void;
   /**
    * Decodes compressed clip bytes on the ambient context. Resolves null rather
@@ -118,26 +153,40 @@ export type AmbientAudio = {
 };
 
 /**
- * Two synthesized ambience layers on gain nodes — not an audio engine. Rain
- * patter is band-passed noise; wind is low-passed noise whose cutoff and gain
+ * Three synthesized ambience layers on gain nodes — not an audio engine. Rain
+ * patter is band-passed noise whose centre falls as the rain gets heavier and
+ * whose gain the wind cuts; wind is low-passed noise whose cutoff and gain
  * `setWind` drives from the shared wind field (`windParams.ts`), so the bed
- * tracks the same gusts the grass leans under. Everything is inert until
+ * tracks the same gusts the grass leans under; drips are short bursts of the
+ * same noise `setDrip` schedules under a wet canopy. Everything is inert until
  * `unlock()`, and the latest weather/volume set before unlock applies then.
  *
  * `createCtx` is injectable so tests can hand in a fake — node has no
  * AudioContext, the same reason the Babylon shells test under NullEngine.
+ * `random` draws the drips' intervals, centres and noise offsets, injectable
+ * for the same reason.
  */
 export function createAmbientAudio(
   createCtx: () => AudioContext = () => new AudioContext(),
+  random: () => number = Math.random,
 ): AmbientAudio {
   let ctx: AudioContext | null = null;
   let pending: WeatherParams = { ...WEATHER_PRESETS[DEFAULT_WEATHER] };
   let volume = DEFAULT_VOLUME;
   let master: GainNode | null = null;
   let rainGain: GainNode | null = null;
+  let rainFilter: BiquadFilterNode | null = null;
   let windGain: GainNode | null = null;
   let windFilter: BiquadFilterNode | null = null;
   let wildlifeGain: GainNode | null = null;
+  let dripGain: GainNode | null = null;
+  /** The shared noise, read looping by the rain and wind beds and in bursts by the drips. */
+  let noise: AudioBuffer | null = null;
+  /** The wind speed of the last applied `setWind`, for the hiss's wind cut. */
+  let windSpeed = 0;
+  /** Whether a drip train is running, and when its next drip falls on the context's clock. */
+  let dripping = false;
+  let nextDrip = 0;
   /** Drained and emptied by `unlock`; a registration after that runs immediately. */
   const unlockListeners: (() => void)[] = [];
   /** Listener XZ for the gust sample, in Babylon's world (`setListener`'s mirrored z undone). */
@@ -146,10 +195,40 @@ export function createAmbientAudio(
    * context (or dispose/recreate) never throttles the first call. */
   let lastWindTime = -Infinity;
 
+  /** The rain bed's centre and gain for the pending weather and the last wind speed. */
   function applyGains(w: WeatherParams): void {
-    if (!ctx || !rainGain) return;
+    if (!ctx || !rainGain || !rainFilter) return;
     const g = ambientGainsUnder(w);
-    rainGain.gain.setTargetAtTime(g.rain * RAIN_LEVEL, ctx.currentTime, GAIN_RAMP_S);
+    rainFilter.frequency.setTargetAtTime(rainHissCentreHz(w.rain), ctx.currentTime, GAIN_RAMP_S);
+    rainGain.gain.setTargetAtTime(g.rain * RAIN_LEVEL * rainWindCut(windSpeed), ctx.currentTime, GAIN_RAMP_S);
+  }
+
+  /** Seconds to the next drip at a level: the interval's draw, faster when wetter. */
+  function dripInterval(level: number): number {
+    const [lo, hi] = DRIP_INTERVAL_S;
+    return (lo + (hi - lo) * random()) / (0.5 + level);
+  }
+
+  /** One drip at `t` on the context's clock: a burst of the noise through its own band-pass and envelope. */
+  function fireDrip(t: number, level: number): void {
+    if (!ctx || !dripGain || !noise) return;
+    const src = ctx.createBufferSource();
+    src.buffer = noise;
+    const filter = ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = DRIP_HZ[0] + (DRIP_HZ[1] - DRIP_HZ[0]) * random();
+    filter.Q.value = DRIP_Q;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level * DRIP_LEVEL, t + DRIP_ATTACK_S);
+    g.gain.exponentialRampToValueAtTime(DRIP_FLOOR, t + DRIP_BURST_S);
+    src.connect(filter);
+    filter.connect(g);
+    g.connect(dripGain);
+    // Nothing disconnects this chain: a stopped source and everything downstream
+    // of it is released once nothing else references it, as the emitters' are.
+    src.start(t, random() * (NOISE_S - DRIP_STOP_S));
+    src.stop(t + DRIP_STOP_S);
   }
 
   return {
@@ -161,22 +240,26 @@ export function createAmbientAudio(
       master.gain.value = volume;
       master.connect(ctx.destination);
 
-      // One shared 2 s noise buffer; two looping readers with different filters.
-      const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+      // One shared noise buffer; two looping readers with different filters,
+      // and the drips' bursts.
+      noise = ctx.createBuffer(1, ctx.sampleRate * NOISE_S, ctx.sampleRate);
       const samples = noise.getChannelData(0);
       for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+      const noiseBuffer = noise;
       function noiseSource(): AudioBufferSourceNode {
         const src = ctx!.createBufferSource();
-        src.buffer = noise;
+        src.buffer = noiseBuffer;
         src.loop = true;
         src.start();
         return src;
       }
 
-      // Rain patter: noise -> band-pass ~3 kHz -> gain.
-      const rainFilter = ctx.createBiquadFilter();
+      // Rain patter: noise -> band-pass -> gain. `applyGains` moves the
+      // centre with the rain value (`rainHissCentreHz`) and cuts the gain by
+      // the wind (`rainWindCut`).
+      rainFilter = ctx.createBiquadFilter();
       rainFilter.type = "bandpass";
-      rainFilter.frequency.value = 3000;
+      rainFilter.frequency.value = rainHissCentreHz(0);
       rainFilter.Q.value = 0.7;
       rainGain = ctx.createGain();
       rainGain.gain.value = 0;
@@ -204,6 +287,13 @@ export function createAmbientAudio(
       wildlifeGain = ctx.createGain();
       wildlifeGain.gain.value = WILDLIFE_LEVEL;
       wildlifeGain.connect(master);
+
+      // The drips' bus: each drip carries its own envelope, so this holds no
+      // level of its own; `setDrip` builds the drips into it.
+      dripGain = ctx.createGain();
+      dripGain.gain.value = 1;
+      dripGain.connect(master);
+      dripping = false;
 
       applyGains(pending);
 
@@ -234,6 +324,29 @@ export function createAmbientAudio(
       const cutoff = WIND_CUTOFF_BASE * (1 - WIND_MIST_DEEPEN * mist) + WIND_CUTOFF_GUST * gust;
       windFilter.frequency.setTargetAtTime(cutoff, ctx.currentTime, 0.15);
       windGain.gain.setTargetAtTime(windBedGain(record.speed, mist, gust), ctx.currentTime, WIND_GAIN_RAMP_S);
+      // The hiss's wind cut reads the same speed; re-applied on the weather
+      // fade's own ramp, which this call's throttle keeps to ten a second.
+      windSpeed = clamp01(record.speed);
+      applyGains(pending);
+    },
+    setDrip(canopyWater, canopyAtListener) {
+      if (!ctx || !dripGain || !noise) return;
+      const level = clamp01(canopyWater) * clamp01(canopyAtListener);
+      if (level <= DRIP_MIN_LEVEL) {
+        dripping = false;
+        return;
+      }
+      const now = ctx.currentTime;
+      // A train that starts (or resumes after a stall longer than the
+      // look-ahead) waits one interval first, rather than plopping at once.
+      if (!dripping || nextDrip < now) {
+        dripping = true;
+        nextDrip = now + dripInterval(level);
+      }
+      while (nextDrip < now + DRIP_LOOKAHEAD_S) {
+        fireDrip(nextDrip, level);
+        nextDrip += dripInterval(level);
+      }
     },
     setVolume(v) {
       volume = clamp01(v);
@@ -318,8 +431,10 @@ export function createAmbientAudio(
     dispose() {
       void ctx?.close();
       ctx = null;
-      master = rainGain = windGain = wildlifeGain = null;
-      windFilter = null;
+      master = rainGain = windGain = wildlifeGain = dripGain = null;
+      rainFilter = windFilter = null;
+      noise = null;
+      dripping = false;
       unlockListeners.length = 0;
     },
   };

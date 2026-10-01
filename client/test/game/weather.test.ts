@@ -35,7 +35,11 @@ import {
   AMBIENT_COLLAPSE,
   DREAD_PLATEAUS,
   DREAD_STEP_EDGE,
+  canopyWaterStep,
+  rainHissCentreHz,
+  rainWindCut,
 } from "../../src/game/weather.js";
+import { windRecordUnder } from "../../src/game/windParams.js";
 import {
   ambientColourFor, exposureFor, fillIntensityFor, fogDensityFor,
   skyColourAt, sunColourAt, sunIntensityAt, sunPositionAt,
@@ -117,6 +121,60 @@ describe("clear-identity sweep — the sunny look survives, exactly", () => {
     expect(wetSurfaceUnder(CLEAR)).toEqual({ albedoScale: 1, roughnessScale: 1 });
     expect(mistOpacityUnder(CLEAR)).toBe(0);
     expect(ambientGainsUnder(CLEAR)).toEqual({ rain: 0, wind: 0 });
+    // The hiss under clear: its resting centre, uncut by clear's light wind.
+    expect(rainHissCentreHz(CLEAR.rain)).toBe(3000);
+    expect(rainWindCut(windRecordUnder(CLEAR, 0).speed)).toBe(1);
+  });
+});
+
+describe("the rain's sound", () => {
+  it("the hiss's band centre falls from 3 kHz to 1.8 kHz with the rain, clamped", () => {
+    expect(rainHissCentreHz(0)).toBe(3000);
+    expect(rainHissCentreHz(1)).toBe(1800);
+    expect(rainHissCentreHz(0.5)).toBe(2400);
+    expect(rainHissCentreHz(0.25)).toBe(2700);
+    expect(rainHissCentreHz(-1)).toBe(3000);
+    expect(rainHissCentreHz(2)).toBe(1800);
+    expect(rainHissCentreHz(RAIN.rain)).toBe(1800);
+  });
+
+  it("the wind cuts the hiss by up to a third, from 0.6 to full speed, smoothly", () => {
+    expect(rainWindCut(0)).toBe(1);
+    expect(rainWindCut(0.25)).toBe(1);
+    expect(rainWindCut(0.6)).toBe(1);
+    expect(rainWindCut(0.7)).toBeCloseTo(0.9484375, 10); // smoothstep at 0.25 is 0.15625
+    expect(rainWindCut(0.8)).toBeCloseTo(0.835, 10);
+    expect(rainWindCut(0.9)).toBeCloseTo(0.7215625, 10); // at 0.75, 0.84375
+    expect(rainWindCut(1)).toBeCloseTo(0.67, 10);
+    expect(rainWindCut(1.5)).toBeCloseTo(0.67, 10);
+    let prev = 1;
+    for (let v = 0; v <= 1; v += 0.05) {
+      const cut = rainWindCut(v);
+      expect(cut).toBeLessThanOrEqual(prev + 1e-12);
+      prev = cut;
+    }
+  });
+
+  it("the canopy wets up in a minute of full rain and drains over ten", () => {
+    expect(canopyWaterStep(0, 1, 1)).toBeCloseTo(1 / 60, 12);
+    expect(canopyWaterStep(0, 1, 30)).toBeCloseTo(0.5, 12);
+    expect(canopyWaterStep(0, 1, 60)).toBe(1);
+    expect(canopyWaterStep(0, 0.5, 60)).toBeCloseTo(0.5, 12);
+    expect(canopyWaterStep(0, 0.5, 120)).toBe(1);
+    expect(canopyWaterStep(0.9, 1, 60)).toBe(1); // clamped at full
+    expect(canopyWaterStep(1, 0, 60)).toBeCloseTo(0.9, 12);
+    expect(canopyWaterStep(1, 0, 300)).toBeCloseTo(0.5, 12);
+    expect(canopyWaterStep(1, 0, 600)).toBe(0);
+    expect(canopyWaterStep(0.05, 0, 60)).toBe(0); // clamped at dry
+    expect(canopyWaterStep(0, 0, 60)).toBe(0);
+    // The eerie preset's 0.3 of rain fills it in 200 s.
+    expect(canopyWaterStep(0, WEATHER_PRESETS.eerie.rain, 200)).toBeCloseTo(1, 12);
+    // A frame at a time reaches the same place as one long step.
+    let w = 0;
+    for (let i = 0; i < 600; i++) w = canopyWaterStep(w, 1, 0.1);
+    expect(w).toBe(1);
+    for (let i = 0; i < 3000; i++) w = canopyWaterStep(w, 0, 0.1);
+    expect(w).toBeCloseTo(0.5, 6);
   });
 });
 

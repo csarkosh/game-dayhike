@@ -360,6 +360,44 @@ export function ambientGainsUnder(w: WeatherParams): { rain: number; wind: numbe
   return { rain: clamp01(w.rain), wind: 0.8 * Math.max(c, m) };
 }
 
+/** The rain hiss's band-pass centre, Hz, at no rain and at full rain: heavier
+ * rain is lower-pitched, so the centre falls as the rain value rises. */
+export const RAIN_HISS_HZ: readonly [number, number] = [3000, 1800];
+/** How much of the hiss the wind takes at full speed, and the speed band it
+ * takes it across: wind suppresses the small-drop hiss, from 0.6 up. */
+export const RAIN_WIND_CUT = 0.33;
+export const RAIN_WIND_CUT_BAND: readonly [number, number] = [0.6, 1];
+/** The canopy wets up at `rain / CANOPY_WATER_FILL_S` a second, so it starts
+ * dripping about a minute into full rain, and drains at `1 / CANOPY_WATER_DRAIN_S`
+ * a second once the rain stops, so it keeps dripping for ten minutes. */
+export const CANOPY_WATER_FILL_S = 60;
+export const CANOPY_WATER_DRAIN_S = 600;
+
+/** The rain hiss's band centre for a rain value, Hz. Exactly RAIN_HISS_HZ[0] at 0. */
+export function rainHissCentreHz(rain: number): number {
+  const r = clamp01(rain);
+  return RAIN_HISS_HZ[0] + (RAIN_HISS_HZ[1] - RAIN_HISS_HZ[0]) * r;
+}
+
+/** The rain hiss's gain multiplier for a wind speed (`WindRecord.speed`, 0 to 1):
+ * 1 up to the band's start, `1 - RAIN_WIND_CUT` at full speed. */
+export function rainWindCut(windSpeed: number): number {
+  const [lo, hi] = RAIN_WIND_CUT_BAND;
+  return 1 - RAIN_WIND_CUT * smoothstep01((windSpeed - lo) / (hi - lo));
+}
+
+/**
+ * How wet the canopy is after `dt` seconds: `prev` risen toward 1 at
+ * `rain / CANOPY_WATER_FILL_S` a second while it rains, fallen at
+ * `1 / CANOPY_WATER_DRAIN_S` a second when it does not, clamped to [0, 1].
+ * Pure; the caller holds the value between frames.
+ */
+export function canopyWaterStep(prev: number, rain: number, dt: number): number {
+  const r = clamp01(rain);
+  const next = r > 0 ? prev + (r / CANOPY_WATER_FILL_S) * dt : prev - dt / CANOPY_WATER_DRAIN_S;
+  return clamp01(next);
+}
+
 /** Vignette weight for the unease layer: baseline always on, deeper under dread. */
 export function vignetteWeightUnder(w: WeatherParams): number {
   return VIGNETTE_WEIGHT_BASE * (1 + DREAD_VIGNETTE_GAIN * dreadLensUnder(w));

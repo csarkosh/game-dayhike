@@ -40,7 +40,8 @@ import { createAmbientAudio } from "./game/ambientAudio.js";
 import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
 import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
 import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
-import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
+import { DEFAULT_WEATHER, WEATHER_PRESETS, canopyWaterStep, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
+import { clamp01 } from "./game/colour.js";
 import {
   ESCALATION_REST,
   atmosphereUnder,
@@ -71,6 +72,7 @@ import { DEATH_LINE, END_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
+import { forestDensity } from "./sim/vegetation.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
 import { trailheadPlaces } from "./sim/trailhead.js";
 import { BOARD_IMAGE_URLS } from "./game/boardImages.js";
@@ -624,6 +626,27 @@ function buildGame(
     // Placing it twice on a world that does have wildlife is free.
     ambient.setListener(...listenerToAudio(renderer.listener()));
     ambient.setWind(renderer.wind());
+  }
+
+  /**
+   * How wet the canopy is, 0 to 1: filled by the applied weather's rain and
+   * drained once it stops (`canopyWaterStep`). Cosmetic and local, like the
+   * weather it follows; nothing crosses the wire.
+   */
+  let canopyWater = 0;
+
+  /**
+   * Steps the canopy's water and hands the drip layer that and the canopy
+   * over the local player, read from the same field the trees stand in. Both
+   * loops, after `renderer.sync`. The field is sampled only while the canopy
+   * holds water: dry, the level is zero whatever stands overhead.
+   */
+  function syncDrip(self: PlayerState | undefined, dt: number): void {
+    canopyWater = canopyWaterStep(canopyWater, appliedWeather.rain, dt);
+    const canopy = canopyWater > 0 && self !== undefined
+      ? clamp01(forestDensity(seed, self.pos.x, self.pos.z))
+      : 0;
+    ambient.setDrip(canopyWater, canopy);
   }
 
   /**
@@ -1195,6 +1218,7 @@ function buildGame(
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncWind();
+      syncDrip(self, dt);
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(host.world, self);
       if (cmd !== null) syncPoster(host.world, self, cmd);
@@ -1332,6 +1356,7 @@ function buildGame(
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncWind();
+      syncDrip(self, dt);
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(client.world, self);
       if (cmd !== null) syncPoster(client.world, self, cmd);
