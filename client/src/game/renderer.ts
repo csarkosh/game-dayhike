@@ -1399,6 +1399,11 @@ function buildRenderer(
   let unsettle = 1;
   /** The rain on the lens, smoothed (lensParams.ts). */
   let lensStrength = 0;
+  // The forest's density over the camera, a full terrain sample: taken
+  // again only once the camera has moved a metre from where it was taken.
+  let lensCanopyX = Number.NaN;
+  let lensCanopyZ = Number.NaN;
+  let lensCanopy = 0;
 
   // A forest draws terrain instead of brushes. Guarded here rather than relying on
   // the caller to pass an empty level: app.ts passes the parsed sandbox01 so it
@@ -1811,8 +1816,12 @@ function buildRenderer(
       // Rain on the lens: strongest looking up, cleared under the canopy,
       // smoothed over a second. The camera's pose is last frame's (it is set
       // below), one frame behind, which the smoothing hides.
-      const canopyAtCamera = forest === null ? 0 : forestDensity(forest.seed, camera.position.x, camera.position.z);
-      lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x, canopyAtCamera), engine.getDeltaTime() / 1000);
+      if (forest !== null && !(Math.hypot(camera.position.x - lensCanopyX, camera.position.z - lensCanopyZ) <= 1)) {
+        lensCanopyX = camera.position.x;
+        lensCanopyZ = camera.position.z;
+        lensCanopy = forestDensity(forest.seed, lensCanopyX, lensCanopyZ);
+      }
+      lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x, lensCanopy), engine.getDeltaTime() / 1000);
       post.update(weather, lighting.hour, unsettle, stare, lensStrength);
 
       if (freecam !== null) {

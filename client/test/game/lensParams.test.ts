@@ -5,7 +5,7 @@ import {
 
 describe("the lens's numbers", () => {
   it("is a 128-texel map of 40 drops of 2 to 5 percent, tiled twice, refracting by 0.03, smoothed over a second, floored at 0.02", () => {
-    expect(LENS).toEqual({ size: 128, drops: 40, radius: [0.02, 0.05], tiles: 2, offset: 0.03, columns: 8, smoothS: 1, floor: 0.02 });
+    expect(LENS).toEqual({ size: 128, drops: 40, radius: [0.02, 0.05], tiles: 2, offset: 0.03, columns: 8, jitter: 0.05, smoothS: 1, floor: 0.02 });
   });
 });
 
@@ -39,12 +39,12 @@ describe("lensDropletMap", () => {
         expect([r, g]).toEqual([128, 128]);
       }
     }
-    expect(full).toBe(1930);
-    expect(trailed).toBe(1080);
-    expect(empty).toBe(12649);
+    expect(full).toBe(1885);
+    expect(trailed).toBe(1074);
+    expect(empty).toBe(12822);
   });
 
-  it("places 40 drops of radius 0.02 to 0.05 on texel centres, clear of the edges by their radius and their trail", () => {
+  it("places 40 drops of radius 0.02 to 0.05 on texel centres, clear of the edges by their radius, their trail and a tile's shift", () => {
     expect(drops).toHaveLength(40);
     expect(lensDrops(1)).toEqual(drops);
     for (const d of drops) {
@@ -52,10 +52,11 @@ describe("lensDropletMap", () => {
       expect(Number.isInteger(d.y)).toBe(true);
       expect(d.r).toBeGreaterThanOrEqual(0.02);
       expect(d.r).toBeLessThanOrEqual(0.05);
-      expect(d.x - d.r * size).toBeGreaterThanOrEqual(0);
-      expect(d.x + d.r * size).toBeLessThanOrEqual(127);
-      expect(d.y - d.r * (1 + LENS_TRAIL) * size).toBeGreaterThanOrEqual(0);
-      expect(d.y + d.r * size).toBeLessThanOrEqual(127);
+      // A tile may shift by 0.05 of the map each way: 6.4 texels.
+      expect(d.x - (d.r + 0.05) * size).toBeGreaterThanOrEqual(0);
+      expect(d.x + (d.r + 0.05) * size).toBeLessThanOrEqual(127);
+      expect(d.y - (d.r * (1 + LENS_TRAIL) + 0.05) * size).toBeGreaterThanOrEqual(0);
+      expect(d.y + (d.r + 0.05) * size).toBeLessThanOrEqual(127);
     }
   });
 
@@ -63,7 +64,7 @@ describe("lensDropletMap", () => {
     // Where another drop's cover reaches the centre, that drop's normal may
     // stand there instead: only the centres clear of every other drop.
     const clear = drops.filter((a, i) => drops.every((b, j) => i === j || Math.hypot(a.x - b.x, a.y - b.y) > b.r * size + 1));
-    expect(clear).toHaveLength(34);
+    expect(clear).toHaveLength(33);
     for (const d of clear) expect(texel(d.x, d.y).slice(0, 3)).toEqual([128, 128, 255]);
   });
 
@@ -78,11 +79,11 @@ describe("lensDropletMap", () => {
       const [, , b, a] = texel(d.x, d.y - Math.round(d.r * size) - 2) as [number, number, number, number];
       expect(b > 0 || a > 0).toBe(true);
     }
-    // A drop centred at (40, 29) with radius 0.0275 (3.5 texels): seven rows
-    // under it the trail is still strong, six rows over it there is none.
-    expect(drops.some((d) => d.x === 40 && d.y === 29)).toBe(true);
-    expect(texel(40, 22)[3]).toBe(154);
-    expect(texel(40, 35)[3]).toBe(0);
+    // A drop centred at (55, 34) with radius 0.0428 (5.5 texels): eleven
+    // rows under it the trail is still strong, seven rows over it there is none.
+    expect(drops.some((d) => d.x === 55 && d.y === 34)).toBe(true);
+    expect(texel(55, 23)[3]).toBe(152);
+    expect(texel(55, 41)[3]).toBe(0);
   });
 });
 

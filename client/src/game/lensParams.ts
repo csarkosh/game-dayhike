@@ -26,6 +26,8 @@ export const LENS = {
   offset: 0.03,
   /** Columns the procedural sliding drops fall in. */
   columns: 8,
+  /** How far the pass may shift a tile of the map, each way: the margin the drops keep. */
+  jitter: 0.05,
   /** The strength's smoothing time constant, seconds. */
   smoothS: 1,
   /** Below this strength the pass draws nothing worth its cost and is skipped. */
@@ -61,15 +63,21 @@ export type LensDrop = {
   r: number;
 };
 
-/** The static drops of a seed: centres on texel centres, inside the margin. */
+/**
+ * The static drops of a seed: centres on texel centres, inside a margin of
+ * the drop's radius, its trail below, and the shift the pass may give a tile,
+ * plus one texel so flooring the centre cannot push a drop over its edge.
+ */
 export function lensDrops(seed = 1): LensDrop[] {
   const [rMin, rMax] = LENS.radius;
-  const margin = rMax * (1 + LENS_TRAIL);
+  const texel = 1 / LENS.size;
+  const side = rMax + LENS.jitter + texel;
+  const bottom = rMax * (1 + LENS_TRAIL) + LENS.jitter + texel;
   const drops: LensDrop[] = [];
   for (let i = 0; i < LENS.drops; i++) {
     const r = rMin + (rMax - rMin) * unit(seed, i, 2);
-    const x = Math.floor((rMax + (1 - 2 * rMax) * unit(seed, i, 0)) * LENS.size);
-    const y = Math.floor((margin + (1 - margin - rMax) * unit(seed, i, 1)) * LENS.size);
+    const x = Math.floor((side + (1 - 2 * side) * unit(seed, i, 0)) * LENS.size);
+    const y = Math.floor((bottom + (1 - bottom - side) * unit(seed, i, 1)) * LENS.size);
     drops.push({ x, y, r });
   }
   return drops;

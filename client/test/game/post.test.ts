@@ -120,20 +120,27 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     post.dispose();
   });
 
-  it("attaches the passes in the spec's order on high and medium", () => {
+  it("attaches the passes in the spec's order on high and medium, the lens's slot empty until there is rain on the glass", () => {
     const names = (tier: "high" | "medium") => {
       const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
       const post = createPost(scene, camera, postFeaturesFor(tier, true));
-      // `_postProcesses` is `Nullable<PostProcess>[]`; `?.` keeps TS happy and
-      // still fails the assertion below if a slot is ever null, since `toEqual`
-      // would then see `undefined` where a pass name is expected.
-      const order = camera._postProcesses.map((p) => p?.name);
+      // `_postProcesses` is `Nullable<PostProcess>[]`: a detached pass leaves
+      // a null in its slot, read here as null.
+      const fresh = camera._postProcesses.map((p) => p?.name ?? null);
+      post.update(WEATHER_PRESETS.clear, 12, 1, 0, 1);
+      const order = camera._postProcesses.map((p) => p?.name ?? null);
       post.dispose();
       camera.dispose();
-      return order;
+      return { fresh, order };
     };
-    expect(names("high")).toEqual(["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "lens", "finish"]);
-    expect(names("medium")).toEqual(["grade", "chromaticAberration", "fxaa", "lens", "finish"]);
+    expect(names("high")).toEqual({
+      fresh: ["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", null, "finish"],
+      order: ["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "lens", "finish"],
+    });
+    expect(names("medium")).toEqual({
+      fresh: ["grade", "chromaticAberration", "fxaa", null, "finish"],
+      order: ["grade", "chromaticAberration", "fxaa", "lens", "finish"],
+    });
   });
 
   it("builds the lens at ratio 1.0 with its uniforms and samplers, on both tiers", () => {
@@ -141,20 +148,24 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
       const post = createPost(scene, camera, postFeaturesFor(tier, true));
       expect(post.features.lens).toBe(true);
+      post.update(WEATHER_PRESETS.clear, 12, 1, 0, 1);
       const lens = passNamed(camera, "lens");
       expect(ratioOf(lens)).toBe(1.0);
       // Babylon appends its own `scale` and `textureSampler` to what a pass declares.
-      expect((lens as unknown as { _parameters: string[] })._parameters).toEqual(["lensStrength", "time", "aspect", "lensFog", "scale"]);
-      expect((lens as unknown as { _samplers: string[] })._samplers).toEqual(["lensSampler", "blurSampler", "textureSampler"]);
+      expect((lens as unknown as { _parameters: string[] })._parameters).toEqual(["lensStrength", "time", "aspect", "texelSize", "scale"]);
+      expect((lens as unknown as { _samplers: string[] })._samplers).toEqual(["lensSampler", "textureSampler"]);
       post.dispose();
       camera.dispose();
     }
   });
 
-  it("binds the droplet map, and for the fog the halation blur on high and its own input with the fog off on medium", () => {
+  it("binds the droplet map, wrapping, and the texel size, the same on both tiers", () => {
     for (const tier of ["high", "medium"] as const) {
-      const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
-      const post = createPost(scene, camera, postFeaturesFor(tier, true));
+      const bigEngine = nullEngineAt(1920, 1080);
+      const bigScene = new Scene(bigEngine);
+      const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), bigScene);
+      const post = createPost(bigScene, camera, postFeaturesFor(tier, true));
+      post.update(WEATHER_PRESETS.clear, 12, 1, 0, 1);
       const lens = passNamed(camera, "lens");
       const calls: { fn: string; args: unknown[] }[] = [];
       const fakeEffect = new Proxy(
@@ -167,18 +178,16 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       expect(droplets?.args[1]).toBeInstanceOf(RawTexture);
       expect((droplets?.args[1] as RawTexture).wrapU).toBe(Texture.WRAP_ADDRESSMODE);
       expect((droplets?.args[1] as RawTexture).wrapV).toBe(Texture.WRAP_ADDRESSMODE);
-      const fog = calls.find((c) => c.fn === "setFloat" && c.args[0] === "lensFog");
-      if (tier === "high") {
-        const blur = calls.find((c) => c.fn === "setTextureFromPostProcessOutput");
-        expect(blur?.args).toEqual(["blurSampler", passNamed(camera, "halationBlurY")]);
-        expect(fog?.args).toEqual(["lensFog", 1]);
-      } else {
-        const own = calls.find((c) => c.fn === "setTextureFromPostProcess");
-        expect(own?.args).toEqual(["blurSampler", lens]);
-        expect(fog?.args).toEqual(["lensFog", 0]);
-      }
+      const texel = calls.find((c) => c.fn === "setFloat2");
+      expect(texel?.args[0]).toBe("texelSize");
+      expect(texel?.args[1]).toBeCloseTo(0.0005208333333333333, 15);
+      expect(texel?.args[2]).toBeCloseTo(0.0009259259259259259, 15);
+      // No other texture: the frost is the scene itself, read in the shader.
+      expect(calls.filter((c) => c.fn.startsWith("setTexture")).map((c) => c.args[0])).toEqual(["lensSampler"]);
       post.dispose();
       camera.dispose();
+      bigScene.dispose();
+      bigEngine.dispose();
     }
   });
 
@@ -206,21 +215,28 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     bigEngine.dispose();
   });
 
-  it("detaches the lens a second after its strength falls under 0.02, and re-attaches it in its slot", () => {
+  it("starts the lens detached, attaches it at 0.02, and detaches it a second after its strength falls under that, in its slot", () => {
     const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
     let ms = 0;
     const post = createPost(scene, camera, postFeaturesFor("medium", true), { now: () => ms });
     const names = () => camera._postProcesses.map((p) => p?.name ?? null);
     const attached = ["grade", "chromaticAberration", "fxaa", "lens", "finish"];
     const detached = ["grade", "chromaticAberration", "fxaa", null, "finish"];
-    expect(names()).toEqual(attached);
-    // An update with no strength (every other call site) idles the lens.
+    expect(names()).toEqual(detached);
+    // An update with no strength (every other call site) leaves it so.
     post.update(WEATHER_PRESETS.clear, 12, 1, 0);
+    expect(names()).toEqual(detached);
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.019);
+    expect(names()).toEqual(detached);
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.02);
     expect(names()).toEqual(attached);
     ms = 999;
     post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.019);
     expect(names()).toEqual(attached);
     ms = 1000;
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.019);
+    expect(names()).toEqual(attached);
+    ms = 1999;
     post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.019);
     expect(names()).toEqual(detached);
     // Back above the floor: attached at once, in the same slot.
@@ -248,6 +264,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       engine.getCaps().maxMSAASamples = 4;
       const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
       const post = createPost(scene, camera, postFeaturesFor(tier, true));
+      post.update(WEATHER_PRESETS.clear, 12, 1, 0, 1);
       const passes = camera._postProcesses.map((p) => p!);
       expect(passes[0]!.name).toBe(tier === "high" ? "scene" : "grade");
       expect(passes[0]!.samples).toBe(MSAA_SAMPLES);

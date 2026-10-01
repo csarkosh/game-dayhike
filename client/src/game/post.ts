@@ -233,38 +233,33 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     if (features.lens) {
       // Rain on the glass, after FXAA so the drops' edges are anti-aliased
       // and before the finish so the dither stays last. The droplet map is
-      // generated (lensParams.ts) and tiles, so it wraps. The pass's fog
-      // reads the halation blur where there is one (high) and, on medium,
-      // its own input: the same texture the pass already reads, so the bind
-      // is valid, and `lensFog` 0 keeps the mix at the first read.
+      // generated (lensParams.ts) and tiles, so it wraps. The frost between
+      // the drops is the scene itself, read four texels out on the
+      // diagonals and averaged in the shader: the same on every tier, and no
+      // other target involved.
       //
       // Below the strength's floor the pass is detached rather than
       // short-circuited in the shader: a pass that writes its input back
       // still costs a full-screen read and write. Babylon nulls a detached
       // pass's slot in place and refills a null slot on attach at that
       // index (`Camera.attachPostProcess`), so the pass returns between
-      // FXAA and the finish, where it was built.
+      // FXAA and the finish, where it was built. It starts detached: the
+      // constructor attaches it, which fixes its slot, and `update` brings
+      // it in once there is rain on the glass.
       droplets = RawTexture.CreateRGBATexture(lensDropletMap(), LENS.size, LENS.size, scene, true, false,
         Texture.TRILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_UNSIGNED_BYTE);
       droplets.name = "lensDroplets";
       droplets.wrapU = Texture.WRAP_ADDRESSMODE;
       droplets.wrapV = Texture.WRAP_ADDRESSMODE;
-      lens = new PostProcess("lens", "lens", ["lensStrength", "time", "aspect", "lensFog"], ["lensSampler", "blurSampler"],
+      lens = new PostProcess("lens", "lens", ["lensStrength", "time", "aspect", "texelSize"], ["lensSampler"],
         1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
       lensSlot = camera._postProcesses.indexOf(lens);
-      lensAttached = true;
-      const boundLens = lens;
+      camera.detachPostProcess(lens);
+      lensAttached = false;
       const boundDroplets = droplets;
-      const boundBlurY = blurY;
       lens.onApply = (effect) => {
         effect.setTexture("lensSampler", boundDroplets);
-        if (boundBlurY !== null) {
-          effect.setTextureFromPostProcessOutput("blurSampler", boundBlurY);
-          effect.setFloat("lensFog", 1);
-        } else {
-          effect.setTextureFromPostProcess("blurSampler", boundLens);
-          effect.setFloat("lensFog", 0);
-        }
+        effect.setFloat2("texelSize", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
         effect.setFloat("lensStrength", lensStrength);
         // Folded so the sliding drops' saw-tooth keeps its precision on a long hike.
         effect.setFloat("time", ((now() - start) / 1000) % 3600);
