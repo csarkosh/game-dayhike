@@ -20,7 +20,7 @@
 - GLSL injected into Babylon's shaders: never spell a hashed preprocessor keyword in comment prose, and never put a semicolon inside a trailing comment (`shaderHygiene` enforces both).
 - `waterShading.ts`, `terrainSurface.ts` and the new `waterGround.ts` stay Babylon-free (the architecture test).
 - Nothing written may say how an asset was made or where the reference photos came from; gates name reference ids only.
-- Commits: a Conventional Commits subject under 72 characters, a body with `## What` and `## How`, ending with the two trailer lines `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8`. Stage explicit paths; never `git add -A`; never `--no-verify`.
+- Commits: a Conventional Commits subject under 72 characters, a body with `## What` and `## How`, ending with the two trailer lines `Co-Authored-By: <the committing model's name> <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4`. Stage explicit paths; never `git add -A`; never `--no-verify`.
 - Run a client test file from the worktree root with `npx vitest run --root client test/<path>` (the client's own Vitest config, as `npm run test:client` uses). The full client suite (`npm run test:client`) is heavy: run only the files a task names unless the task says otherwise, and never while another suite or a browser gate runs.
 
 ## Review Focus
@@ -64,7 +64,7 @@
 - Consumes: `bowlFor(seed)` (`olympic.ts`), the olympic variant's `sample` and `roadCenterX`, `LOBBY_SEEDS` (`client/test/sim/trailGateSeeds.ts`), `timeLimit` (`client/test/helpers/timeLimit.ts`).
 - Produces: the file `waterTerrainSweep.test.ts` with a lazily built `worlds()` list and a `describe` block later tasks add `it`s to; the helper `lakeOf(seed)` later tasks use.
 
-This task changes no product code. It must run on the worktree exactly as branched from `origin/main` (plus the two spec commits): the fixture it writes is what "unchanged" means for every later task.
+This task changes no product code. It must run on the worktree exactly as branched from `origin/main` (plus the doc commits): the fixture it writes is what "unchanged" means for every later task.
 
 - [ ] **Step 1: Write the scan**
 
@@ -199,8 +199,8 @@ corridor and at the pad.
   compares it with the fixture; `RECORD_WATER_BASELINE=1` writes the fixture.
 - `client/test/sim/fixtures/waterBaseline.json` — the recording.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8
+Co-Authored-By: <the committing model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4
 EOF
 ```
 
@@ -392,8 +392,8 @@ the research's very clear, clear and humic rows.
 - `client/src/game/waterShading.ts` — `lakeWaterRow`, `CLEAR_LAKE_KD` and
   `lakeSkin`.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8
+Co-Authored-By: <the committing model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4
 EOF
 ```
 
@@ -702,8 +702,8 @@ trail, the features and the landmarks do not move.
 - `client/test/sim/helpers/derivatives.ts` — the derivative check takes a
   seed.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8
+Co-Authored-By: <the committing model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4
 EOF
 ```
 
@@ -990,8 +990,8 @@ variant lists its water: the sea, then a lake per pond.
 - `client/src/sim/world.ts` — the players' step wades by the local level and
   meets each lake's wall after the road's.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8
+Co-Authored-By: <the committing model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4
 EOF
 ```
 
@@ -1368,8 +1368,8 @@ the level. Inside the rim the trail never comes, so nothing placed moves.
 - The 200-world scan: no trail edge inside any lake, every marsh between its
   wall and its rim, every murky lake with one.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8
+Co-Authored-By: <the committing model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4
 EOF
 ```
 
@@ -1887,8 +1887,8 @@ the doorway are as they were.
 - The 200-world scan: the ground is the cove's profile exactly from the toe to
   the corridor's edge on every world.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8
+Co-Authored-By: <the committing model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4
 EOF
 ```
 
@@ -2139,8 +2139,8 @@ so the shelf, the drop and the marsh draw as the sim has them.
   `lakeSurface` replaces `pondDisc`; the wet line takes each lake's row.
 - `client/src/game/bedHeight.ts` — a comment follows the rename.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8
+Co-Authored-By: <the committing model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4
 EOF
 ```
 
@@ -2782,8 +2782,8 @@ none. Every peer sees the same plants: the sim places them.
 - `client/src/game/foliagePlugin.ts` — the reeds' wind profile.
 - `client/src/game/renderer.ts` — the plants beside the water.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8
+Co-Authored-By: <the committing model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4
 EOF
 ```
 
@@ -3003,8 +3003,8 @@ noise, so every peer sees the same skin. The sea and clear lakes have none.
 - `client/src/game/waterShading.ts` — `waterSkinOffset`.
 - `client/src/game/renderer.ts` — each lake's skin from its murk.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8
+Co-Authored-By: <the committing model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4
 EOF
 ```
 
@@ -3287,8 +3287,8 @@ Everywhere else the ground paints exactly as before.
 - `client/src/game/clipmap.ts` — passes it per vertex.
 - `client/src/sim/clutter.ts` — driftwood reaches the cove's backshore.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8
+Co-Authored-By: <the committing model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4
 EOF
 ```
 
@@ -3350,8 +3350,8 @@ release means them to.
   Rendering section's water paragraph names the lake's row, skin and plants.
 - `client/test/game/tierDeterminism.test.ts` — `passHash` from <old> to <new>.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017TcpRkLqxXeFire9EG97s8
+Co-Authored-By: <the committing model> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01DZCynEaC9jVSqMGsejsau4
 EOF
 ```
 
