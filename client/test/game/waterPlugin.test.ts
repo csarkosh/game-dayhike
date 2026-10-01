@@ -237,6 +237,8 @@ describe("water plugin", () => {
     const skin = l.indexOf("float wSkin = waterSkinMask(vPositionW.xz, wDepth);");
     expect(skin).toBeGreaterThan(l.indexOf("wTransmit = wBed * wT * (1.0 - wF);"));
     expect(l).toContain("wTransmit *= 1.0 - wSkin;");
+    expect(l).toContain("if (waterSkin.x > 0.0) {");
+    expect(l.indexOf("if (waterSkin.x > 0.0) {")).toBeGreaterThan(skin);
     const c = fx("waterCompose.fragment.fx");
     expect(c).toContain("finalRadianceScaled *= 1.0 - wSkin;");
     expect(c).toContain("finalSpecularScaled *= 1.0 - wSkin;");

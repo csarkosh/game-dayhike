@@ -46,7 +46,10 @@ if (waterHigh < 0.5) {
 // The skin, where a murky lake carries it: a matte film of fronds over the
 // water, the bed, the depth and the ripples hidden under it.
 float wSkin = waterSkinMask(vPositionW.xz, wDepth);
-surfaceAlbedo = mix(surfaceAlbedo, waterSkinColour(vPositionW.xz, vWaterViewDepth), wSkin);
-wTransmit *= 1.0 - wSkin;
-alpha = mix(alpha, 1.0, wSkin);
-normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wSkin));
+// The sea and a clear lake skip the film.
+if (waterSkin.x > 0.0) {
+  surfaceAlbedo = mix(surfaceAlbedo, waterSkinColour(vPositionW.xz, vWaterViewDepth), wSkin);
+  wTransmit *= 1.0 - wSkin;
+  alpha = mix(alpha, 1.0, wSkin);
+  normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wSkin));
+}
