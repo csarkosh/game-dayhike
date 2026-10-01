@@ -332,11 +332,39 @@ set, the sun pinned per reading:
 
 A gate passes on the owner's word.
 
+Stills taken 2026-10-01 on the high tier on WebGPU, weather clear, at noon
+(sun direction (0, −0.97, 0.243), intensity 3.95) and at night with the
+headlamp, the console clean on every page: the cove from the pad, from the
+berm and along the beach toward a headland; a murky lake (room-3's, murk 0.99)
+from across, from its shelf and from inside its marsh; a clear high lake
+(room-1's, murk 0.15) from its shelf and from across. The verdicts are owed.
+
 Cost, measured as the water material's was (the water material's §8): frame
 times at 3840×2160 where every tier is fragment-bound, scaled to each tier's
 pixels, a control build of `main`, a silent machine; at the worst poses (a lake
 world close to the lake; the cove from the pad); reported as cost added over
 `main` on the three tiers, for the owner to judge. No bar is set in advance.
+
+Measured 2026-10-01 at 3840×2160 (hardware scaling 0.5), fresh pages, the
+order control/branch/branch/control and then the reverse, three 5 s samples a
+page, the control a build of `main` at b43952d. The machine was quiet only for
+the first configuration; another session's load then rose from 3 to 140, so
+every figure below is provisional and the re-measurement on a silent machine is
+owed before the ship decision. Cost added over `main`, in ms per frame at that
+size, per round:
+
+| Pose | Tier | `main` | branch | added |
+| --- | --- | --- | --- | --- |
+| The murky lake, close, reeds and skin in view | high / WebGPU | 58.5, 69.6 | 58.3, 70.1 | −0.1, +0.4 |
+| | medium / WebGL2 | 79.5, 80.3 | 79.8, 80.2 | +0.3, −0.1 |
+| | low / WebGL2 | 57.6, 59.3 | 58.8, 58.4 | +1.2, −0.8 |
+| The cove from the pad | high / WebGPU | 40.1, 38.9 | 37.6, 37.4 | −2.5, −1.5 |
+| | medium / WebGL2 | 52.6, 49.2 | 45.7, 44.4 | −6.9, −4.8 |
+| | low / WebGL2 | 30.4, 30.0 | 28.2, 28.5 | −2.1, −1.5 |
+
+At the lake the branch costs nothing measurable on any tier. At the cove the
+branch drew faster than `main` on every page of every round; the sign held in
+both orders, the size was taken under load and is not to be trusted.
 
 ## 9. Out of scope
 
