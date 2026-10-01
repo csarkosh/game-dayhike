@@ -12,7 +12,8 @@ import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
 import { buildSearch, installSearch, type Search } from "./search.js";
 import { trailheadPlaces } from "./trailhead.js";
-import { containAtRoad } from "./containment.js";
+import { containAtLake, containAtRoad, waterLevelAt } from "./containment.js";
+import { LAKE_SHELF_WIDTH } from "./features.js";
 import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
@@ -345,16 +346,24 @@ function applyMove(world: World, player: PlayerState, cmd: InputCommand): void {
     TICK_DT,
     world.boxes,
     PLAYER_HALF,
-    world.waterLevel,
+    waterLevelAt(world, player.pos.x, player.pos.z),
     world.ground,
   );
   // The wall at the road (containment.ts): a forest world with a road keeps
   // every hull off the pavement. After the step, on the settled position, so
   // the box sweep and the ground have already had their say.
   if (world.forest !== null) {
-    const roadCenterX = activeTerrainVariant().roadCenterX;
+    const variant = activeTerrainVariant();
+    const roadCenterX = variant.roadCenterX;
     if (roadCenterX !== undefined) {
       containAtRoad(after.pos, after.vel, roadCenterX(world.forest.seed, after.pos.z));
+    }
+    // The wall in each lake, at the shelf's inner edge.
+    const bodies = variant.waterBodies?.(world.forest.seed);
+    if (bodies !== undefined) {
+      for (const b of bodies) {
+        if (b.kind === "lake") containAtLake(after.pos, after.vel, b.x, b.z, b.radius - LAKE_SHELF_WIDTH);
+      }
     }
   }
   player.pos = after.pos;

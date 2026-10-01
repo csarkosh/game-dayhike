@@ -29,6 +29,46 @@ export function containAtRoad(pos: Vec3, vel: Vec3, roadCenterX: number): boolea
   return true;
 }
 
+/**
+ * The wall in a lake: a hull's centre may not go deeper in than `wallQ` from
+ * the lake's centre (the shelf's inner edge, where the water is 0.9 m deep),
+ * so a player wades to the waist and the camera never goes under. Moves the
+ * hull back out along the radius and cancels the velocity into the lake.
+ */
+export function containAtLake(pos: Vec3, vel: Vec3, cx: number, cz: number, wallQ: number): boolean {
+  const rx = pos.x - cx, rz = pos.z - cz;
+  const q2 = rx * rx + rz * rz;
+  if (q2 >= wallQ * wallQ) return false;
+  const q = Math.sqrt(q2);
+  // At the very centre there is no outward direction: out along +x.
+  const nx = q > 1e-9 ? rx / q : 1;
+  const nz = q > 1e-9 ? rz / q : 0;
+  pos.x = cx + nx * wallQ;
+  pos.z = cz + nz * wallQ;
+  const inward = vel.x * nx + vel.z * nz;
+  if (inward < 0) {
+    vel.x -= inward * nx;
+    vel.z -= inward * nz;
+  }
+  return true;
+}
+
+/** The water a hull at (x, z) wades in: a lake's level within its rim (the
+ * marsh lies inside it), the world's sea level elsewhere. */
+export function waterLevelAt(world: World, x: number, z: number): number | null {
+  if (world.forest !== null) {
+    const bodies = activeTerrainVariant().waterBodies?.(world.forest.seed);
+    if (bodies !== undefined) {
+      for (const b of bodies) {
+        if (b.kind !== "lake") continue;
+        const dx = x - b.x, dz = z - b.z;
+        if (dx * dx + dz * dz < b.radius * b.radius) return b.level;
+      }
+    }
+  }
+  return world.waterLevel;
+}
+
 /** The road offset of (x, z): `x - roadCenterX(seed, z)`, or null on a world with no road. */
 export function roadOffset(world: World, x: number, z: number): number | null {
   if (world.forest === null) return null;

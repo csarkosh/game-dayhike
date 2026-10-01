@@ -4,6 +4,7 @@ import { bowlFor } from "../../src/sim/olympic.js";
 import { lakeDepthD, LAKE_SHELF_WIDTH } from "../../src/sim/features.js";
 import { checkDerivatives, TOL_RATIO, variantOrThrow } from "./helpers/derivatives.js";
 import { firstPondWorld } from "./helpers/lakes.js";
+import { activeTerrainVariant, type LakeSource } from "../../src/sim/terrain.js";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -41,5 +42,22 @@ describe("the lake in the composed field", { timeout: timeLimit(120_000) }, () =
     }
     const { worst, steepest } = checkDerivatives("olympic", pts, seed);
     expect(worst / steepest).toBeLessThan(TOL_RATIO);
+  });
+});
+
+describe("the water bodies", { timeout: timeLimit(120_000) }, () => {
+  it("are the sea, then one lake per pond, at the pond's rim height, murk and radius", () => {
+    const { seed, pond } = firstPondWorld();
+    const bodies = variantOrThrow("olympic").waterBodies!(seed);
+    expect(bodies[0]).toEqual({ kind: "sea", level: 0 });
+    const lakes = bodies.filter((b): b is LakeSource => b.kind === "lake");
+    expect(lakes).toHaveLength(1);
+    expect(lakes[0]).toMatchObject({ level: pond.height, x: pond.x, z: pond.z, radius: pond.radius, murk: pond.murk });
+    expect(variantOrThrow("olympic").waterBodies!(seed)).toBe(bodies); // cached
+  });
+
+  it("are the sea alone in a world with no pond", () => {
+    const seed = LOBBY_SEEDS.find((s) => !bowlFor(s).features.some((f) => f.kind === "pond"))!;
+    expect(activeTerrainVariant().waterBodies!(seed)).toEqual([{ kind: "sea", level: 0 }]);
   });
 });

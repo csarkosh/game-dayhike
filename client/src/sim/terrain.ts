@@ -12,7 +12,7 @@
 
 import type { TrailGraph } from "./trail.js";
 import type { Landmark, LandmarkMask } from "./landmarks.js";
-import type { FeatureMask } from "./features.js";
+import type { FeatureMask, Lobe } from "./features.js";
 
 export type TerrainSample = {
   /** Height in metres. */
@@ -23,6 +23,15 @@ export type TerrainSample = {
   dz: number;
 };
 
+/** A lake, as the renderer, the clutter field, the ground paint and the
+ * wading read it: the pond feature's rim height, place, radius, murk and
+ * marsh. */
+export type LakeSource = {
+  kind: "lake"; level: number; x: number; z: number; radius: number; murk: number; lobe: Lobe | null;
+};
+/** Every body of water in a world: the sea at the variant's level, then its lakes. */
+export type WaterBodySource = { kind: "sea"; level: number } | LakeSource;
+
 export type TerrainVariant = {
   name: string;
   /** Every constant steering the pipeline, by name — the level-id contract. */
@@ -30,6 +39,9 @@ export type TerrainVariant = {
   /** Sea level in metres for worlds built on this variant; absent = no water
    * anywhere. `world.ts` copies it onto `World.waterLevel` at creation. */
   waterLevel?: number;
+  /** The world's water: the sea first, then each lake. Derived from the
+   * bowl's features, cached per seed; absent on a variant with no water. */
+  waterBodies?: (seed: number) => readonly WaterBodySource[];
   /** Signed distance to the coastline in metres, positive inland — the same d
    * the variant's own sample uses. Absent = no coast (treated as infinitely
    * inland by consumers). Pure and deterministic like sample. */

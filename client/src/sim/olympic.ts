@@ -36,7 +36,7 @@ import {
   CLIFF_ROAD_NEAR, CLIFF_ROAD_FAR,
   cliffD,
 } from "./cliffs.js";
-import { registerTerrainVariant, type TerrainSample } from "./terrain.js";
+import { registerTerrainVariant, type TerrainSample, type WaterBodySource } from "./terrain.js";
 import {
   BOWL_TUNABLES, BOWL_Z_HALF, TRAIL_Z_ANCHOR,
   inBowl, padD, apronWindowD, apronKeepD, APRON_BLEND_END,
@@ -555,6 +555,23 @@ function landmarkMaskHook(seed: number, x: number, z: number): LandmarkMask {
  * peak's treeline is a height, not a radius, so `featureMaskAt` needs it, but
  * a caller that already sampled the ground should not
  * pay for a second `olympicSample`. */
+const WATER_BODIES_CACHE = new Map<number, readonly WaterBodySource[]>();
+/** The sea, then one lake per pond feature. A pure function of the bowl, so
+ * a per-seed cache is bit-transparent. */
+function waterBodiesHook(seed: number): readonly WaterBodySource[] {
+  let bodies = WATER_BODIES_CACHE.get(seed);
+  if (bodies === undefined) {
+    const list: WaterBodySource[] = [{ kind: "sea", level: SEA_LEVEL }];
+    for (const f of bowlFor(seed).features) {
+      if (f.kind !== "pond") continue;
+      list.push({ kind: "lake", level: f.height, x: f.x, z: f.z, radius: f.radius, murk: f.murk ?? 0.5, lobe: f.lobe ?? null });
+    }
+    bodies = list;
+    WATER_BODIES_CACHE.set(seed, bodies);
+  }
+  return bodies;
+}
+
 function featureMaskHook(seed: number, x: number, z: number, h?: number): FeatureMask {
   return featureMaskAt(bowlFor(seed).features, x, z, h ?? olympicSample(seed, x, z).h);
 }
@@ -711,6 +728,7 @@ registerTerrainVariant({
     ...BRAID_TUNABLES,
   },
   waterLevel: SEA_LEVEL,
+  waterBodies: waterBodiesHook,
   coastDistance: signedCoastDistance,
   roadDistance,
   roadCenterX,
