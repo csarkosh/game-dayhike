@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  RAIN_BOX, RAIN_CLASSES, RAIN_DT, RAIN_FOLD_S, RAIN_LENGTH, RAIN_TIERS,
-  rainBoxMin, rainClassOf, rainCountUnder, rainDrift, rainDropAt, rainFold, rainSeeds, smoothedDt, streakLength,
+  RAIN_BOX, RAIN_CLASSES, RAIN_DT, RAIN_FOLD_S, RAIN_LENGTH, RAIN_TIERS, RIPPLE_INSET, RIPPLE_LAYERS, RIPPLE_RADIUS, RIPPLE_TIME_WRAP,
+  rainBoxMin, rainClassOf, rainCountUnder, rainDrift, rainDropAt, rainFold, rainSeeds, rippleTime, smoothedDt, streakLength,
 } from "../../src/game/rainParams.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
@@ -189,5 +189,33 @@ describe("rainCountUnder", () => {
     expect(rainCountUnder(0, "medium")).toBe(0);
     expect(rainCountUnder(2, "medium")).toBe(10000);
     expect(rainCountUnder(0.00001, "low")).toBe(0);
+  });
+});
+
+describe("the ripple layers", () => {
+  it("are four, at the time rates and starts, each at its own scale and offset", () => {
+    expect(RIPPLE_LAYERS).toEqual([
+      { timeMul: 1, timeAdd: 0, scale: 2.5, offset: [0, 0] },
+      { timeMul: 0.85, timeAdd: 0.2, scale: 3.2, offset: [0.37, 0.61] },
+      { timeMul: 0.93, timeAdd: 0.45, scale: 2.1, offset: [0.71, 0.13] },
+      { timeMul: 1.13, timeAdd: 0.7, scale: 3.8, offset: [0.19, 0.83] },
+    ]);
+  });
+
+  it("fold the time at an hour, a whole number of cycles for every layer, so the fold moves no ring", () => {
+    expect(RIPPLE_TIME_WRAP).toBe(3600);
+    expect(RIPPLE_LAYERS.map((l) => Math.round(l.timeMul * 3600 * 1e6) / 1e6)).toEqual([3600, 3060, 3348, 4068]);
+    expect(rippleTime(0)).toBe(0);
+    expect(rippleTime(3599.5)).toBe(3599.5);
+    expect(rippleTime(3601.5)).toBe(1.5);
+    expect(rippleTime(-1)).toBe(3599);
+  });
+});
+
+describe("the ripple rings", () => {
+  it("keep each cell's ring inside its cell: the centre's inset leaves room for the radius", () => {
+    expect(RIPPLE_RADIUS).toBe(0.25);
+    expect(RIPPLE_INSET).toBe(0.25);
+    expect(RIPPLE_INSET).toBeGreaterThanOrEqual(RIPPLE_RADIUS);
   });
 });

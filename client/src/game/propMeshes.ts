@@ -4,6 +4,7 @@ import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { ChunkGrid } from "../sim/chunkGrid.js";
 import { CHUNK_SIZE } from "../sim/forestConstants.js";
+import { attachWet, WET_CAP } from "./wetPlugin.js";
 
 /**
  * Every chunk prop the sim collides with is drawn: the
@@ -63,6 +64,9 @@ export function createPropMeshes(
       const mesh = MeshBuilder.CreateBox(`prop_${cx}_${cz}_${i}_${p.material}`, { width: sx, height: sy, depth: sz }, scene);
       mesh.position.set(p.box.min.x + sx / 2, p.box.min.y + sy / 2, p.box.min.z + sz / 2);
       mesh.material = materialFor(p.material);
+      // The weather soaks a prop: the renderer's own wetness scale leaves a
+      // material with a cap to this rule (`applyWetness`).
+      attachWet(mesh.material, WET_CAP.prop);
       mesh.isPickable = false;
       mesh.freezeWorldMatrix();
       shadows?.add(mesh);

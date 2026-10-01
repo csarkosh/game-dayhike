@@ -101,6 +101,7 @@ import {
   writeFadeBands,
   type FadeBands,
 } from "./distanceFadePlugin.js";
+import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { modelUrl } from "./assetUrls.js";
 import { loadContainer, loadUntilAborted } from "./modelLoad.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
@@ -1044,6 +1045,8 @@ export function createForestMeshes(
     mat.metallic = 0;
     mat.roughness = 1;
     attachDistanceFade(mat);
+    // The bake is mostly crown: the weather glazes it as a leaf.
+    attachWet(mat, WET_CAP.leaf);
     plane.material = mat;
     materials.push(mat);
 
@@ -1137,6 +1140,9 @@ export function createForestMeshes(
       if (mesh.material) {
         attachGroundConform(mesh.material);
         attachDistanceFade(mesh.material);
+        // The weather's wetting: the crown's cards alpha-test, the bark does
+        // not, which is what tells the two materials of a tree apart here.
+        attachWet(mesh.material, mesh.material.needAlphaTesting() ? WET_CAP.leaf : WET_CAP.bark);
       }
     }
 
@@ -1180,6 +1186,7 @@ export function createForestMeshes(
           attachFoliage(mesh.material, FOLIAGE_PROFILES.UNDERSTORY, mesh.getBoundingInfo().boundingBox.maximum.y);
           attachFoliageLight(mesh.material);
           attachDistanceFade(mesh.material);
+          attachWet(mesh.material, WET_CAP.leaf);
         }
       }
     }
@@ -1246,7 +1253,10 @@ export function createForestMeshes(
       // trunk -> billboard hand-off at 120 m is 40-50 px on this one
       // material's ~24 instances — an exception judged worth the cost in
       // practice, not a measured disc-edge one (distanceFadePlugin.ts header).
-      if (mesh.material) attachDistanceFade(mesh.material, { force: true });
+      if (mesh.material) {
+        attachDistanceFade(mesh.material, { force: true });
+        attachWet(mesh.material, WET_CAP.deadwood);
+      }
     }
     return { meshes, fade };
   }

@@ -177,3 +177,38 @@ export function rainDropAt(seed: Vec3, k: number, drift: Drift, fold: number, bo
 export function rainCountUnder(rain: number, tier: QualityTier): number {
   return Math.round(clamp01(rain) * RAIN_TIERS[tier]);
 }
+
+/**
+ * The ripples' rings: the puddle plane is cut into cells of one metre over
+ * `scale`, and each cell holds one ring, its centre, its radius' share and
+ * its phase hashed from the cell (the hex include's `latticeHash`, in the
+ * shader). The rings are made in the fragment rather than read from a
+ * texture: the terrain's fragment stage already samples the sixteen
+ * textures WebGPU's default per-stage limit allows, which the engine keeps
+ * at the default on purpose (`stageBindings.test.ts`).
+ */
+/** A ring's radius, as a share of its cell: inside the cell at any centre. */
+export const RIPPLE_RADIUS = 0.25;
+/** A ring's centre sits this far from its cell's edges, in cells, at least. */
+export const RIPPLE_INSET = 0.25;
+
+/** One layer of ripples on a puddle: the cells read at `scale` a metre from
+ * `offset`, their rings' phase run at `timeMul` cycles a second from
+ * `timeAdd`. The layers blend in one per quarter of the rain value. */
+export type RippleLayer = { timeMul: number; timeAdd: number; scale: number; offset: readonly [number, number] };
+
+export const RIPPLE_LAYERS: readonly RippleLayer[] = [
+  { timeMul: 1, timeAdd: 0, scale: 2.5, offset: [0, 0] },
+  { timeMul: 0.85, timeAdd: 0.2, scale: 3.2, offset: [0.37, 0.61] },
+  { timeMul: 0.93, timeAdd: 0.45, scale: 2.1, offset: [0.71, 0.13] },
+  { timeMul: 1.13, timeAdd: 0.7, scale: 3.8, offset: [0.19, 0.83] },
+];
+
+/** The running time the ripples read folds modulo this many seconds. Every
+ * layer's `timeMul` times it is a whole number, so the fold moves no ring. */
+export const RIPPLE_TIME_WRAP = 3600;
+
+/** The running time, folded modulo RIPPLE_TIME_WRAP. */
+export function rippleTime(seconds: number): number {
+  return seconds - Math.floor(seconds / RIPPLE_TIME_WRAP) * RIPPLE_TIME_WRAP;
+}

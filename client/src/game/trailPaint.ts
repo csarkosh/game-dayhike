@@ -39,6 +39,7 @@
  */
 import { TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, TRAIL_SINK, TRAIL_SINK_RAMP, type TrailGraph } from "../sim/trail.js";
 import { NEEDLE_BED } from "./terrainSurface.js";
+import { RIPPLE_INSET, RIPPLE_LAYERS, RIPPLE_RADIUS } from "./rainParams.js";
 import {
   TRAIL_JUNCTION_W,
   TRAIL_WEAR_WAVE, TRAIL_WEAR_WEIGHT, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
@@ -294,6 +295,38 @@ export function trailPaintAt(x: number, z: number, table: TrailTable, opts?: Tra
 export function glslFloat(n: number): string { return Number.isInteger(n) ? n.toFixed(1) : String(n); }
 const f = glslFloat;
 
+/**
+ * One ripple layer of the puddles (rainParams.ts): the plane cut into cells
+ * at the layer's scale and offset, each cell's ring centred by two hashes of
+ * the cell (inset so the ring stays inside it), its phase a third hash run
+ * by the folded time at the layer's rate. `tRr` is 1 at the centre falling
+ * to 0 at the rim, and the ring front (a sine over the first third of the
+ * phase, moving out from the centre as the phase rises) tilts the normal
+ * along the direction from the centre. A layer weighs in over its own
+ * quarter of the rain value, and a layer at weight 0 shows only the first
+ * fifth of each ring. The sum is a tilt in xz, in cell units.
+ */
+function rippleLayerGlsl(index: number): string {
+  const layer = RIPPLE_LAYERS[index]!;
+  return `    {
+      vec2 tRp = vPositionW.xz * ${f(layer.scale)} + vec2(${f(layer.offset[0])}, ${f(layer.offset[1])});
+      vec2 tRc = floor(tRp);
+      vec2 tRcentre = vec2(latticeHash(tRc + vec2(37.0, 0.0)), latticeHash(tRc + vec2(0.0, 91.0))) * ${f(1 - 2 * RIPPLE_INSET)} + ${f(RIPPLE_INSET)};
+      vec2 tRd = tRp - tRc - tRcentre;
+      float tRdist = length(tRd);
+      float tRr = clamp(1.0 - tRdist / ${f(RIPPLE_RADIUS)}, 0.0, 1.0);
+      vec2 tRdir = tRd / max(tRdist, 0.0001);
+      float tRw = clamp(terrainRain * 4.0 - ${f(index)}, 0.0, 1.0);
+      float tRdrop = fract(latticeHash(tRc) + terrainTime * ${f(layer.timeMul)} + ${f(layer.timeAdd)});
+      float tRt = tRdrop - 1.0 + tRr;
+      float tRf = clamp(0.2 + tRw * 0.8 - tRdrop, 0.0, 1.0);
+      tRipple += tRdir * tRf * tRr * sin(clamp(tRt * 9.0, 0.0, 3.0) * 3.14159) * 0.35;
+    }`;
+}
+
+/** The four layers summed into `tRipple`. */
+const RIPPLE_LAYERS_GLSL = RIPPLE_LAYERS.map((_, i) => rippleLayerGlsl(i)).join("\n");
+
 /** Declarations; `terrainTexture.ts` declares `trailInfo` (x0, z0, 1/bucket, grid) beside its own uniforms. */
 export const TRAIL_FRAGMENT_DEFS = `
 #ifdef TRAILPAINT
@@ -464,7 +497,12 @@ export const TRAIL_FRAGMENT_PAINT = `
     float tRamp = smoothstep(${f(TRAIL_BED_HALF)}, ${f(TRAIL_BED_HALF + TRAIL_SINK_RAMP)}, tdN / tWidthK);
     float tLip = 4.0 * tRamp * (1.0 - tRamp) * (1.0 - tSnow);
     vec3 tLipN = normalize(normalW - vec3(tAway.x, 0.0, tAway.y) * ${f(TRAIL_SINK / TRAIL_SINK_RAMP)} * tLip);
-    normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), vec3(0.0, 1.0, 0.0), tPuddle));
+    // Rain on the puddles: the four ripple layers tilt the puddle's flat
+    // normal, by the rain, so a puddle under no rain stays a mirror.
+    vec2 tRipple = vec2(0.0);
+${RIPPLE_LAYERS_GLSL}
+    vec3 tPuddleN = normalize(vec3(tRipple.x * terrainRain, 1.0, tRipple.y * terrainRain));
+    normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), tPuddleN, tPuddle));
     float tRoughBench = clamp(terrainLayerRough2.x * mix(1.0, tBedRAH.r / 0.5, tk), 0.0, 1.0);
     tRoughBench = mix(tRoughBench, clamp(terrainLayerRough.y * mix(1.0, tFloorRAH.r / 0.5, tk), 0.0, 1.0), tDrift);
     tRoughBench = mix(tRoughBench, clamp(tRoughBench * ${f(TRAIL_WASH_ROUGH)}, 0.0, 1.0), tWash);

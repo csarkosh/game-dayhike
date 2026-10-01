@@ -54,7 +54,7 @@ import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
-import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
+import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainRain, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
 import type { WeatherParams } from "./weather.js";
 import { wetSurfaceUnder } from "./weather.js";
 import { detectTier, type QualityTier } from "./quality.js";
@@ -75,7 +75,7 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater } from "./waterPlugin.js";
 import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
 import { WATER_ROWS } from "./waterShading.js";
-import { attachWet, setWetLine, wetLineFor, type WetBody } from "./wetPlugin.js";
+import { attachWet, setWetLine, setWetWeather, wetCapOf, wetLineFor, type WetBody } from "./wetPlugin.js";
 import {
   BED_GRID,
   bakeBed,
@@ -191,15 +191,20 @@ export function terrainMaterialFor(scene: Scene, name: string): PBRMaterial {
  * material albedo — deliberately not a hue tint, which would apply the palette
  * twice (see the comment on `terrainMaterialFor`); vertex colours are untouched.
  * Tree/prop asset materials are excluded by construction: they are not in this
- * cache.
+ * cache. A cached material a prop box has given a porosity cap (`propMeshes.ts`)
+ * is wetted by the wet plugin's rule instead, so it is held at its base here.
  */
+/** The scales of a material the wet plugin's rule wets: its base, untouched. */
+const WET_BY_PLUGIN = { albedoScale: 1, roughnessScale: 1 } as const;
+
 export function applyWetness(scene: Scene, w: WeatherParams): void {
-  const { albedoScale, roughnessScale } = wetSurfaceUnder(w);
+  const scales = wetSurfaceUnder(w);
   for (const mat of materialCacheFor(scene).values()) {
     const base = mat.metadata as
       | { baseAlbedo: [number, number, number]; baseRoughness: number }
       | null;
     if (!base) continue;
+    const { albedoScale, roughnessScale } = wetCapOf(mat) > 0 ? WET_BY_PLUGIN : scales;
     mat.albedoColor.set(
       base.baseAlbedo[0] * albedoScale,
       base.baseAlbedo[1] * albedoScale,
@@ -1760,6 +1765,8 @@ function buildRenderer(
 
       applyWetness(scene, weather);
       setTerrainWetness(scene, terrainMaterialFor(scene, "terrain"), weather.wetness);
+      setTerrainRain(scene, terrainMaterialFor(scene, "terrain"), weather.rain, seconds);
+      setWetWeather(weather.wetness);
       atmosphere.update(weather, lighting.hour);
       const stare = state.players.get(localId)?.stare ?? 0;
       post.update(weather, lighting.hour, unsettle, stare);

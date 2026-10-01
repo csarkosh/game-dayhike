@@ -83,6 +83,7 @@ import { activeTerrainVariant } from "../sim/terrain.js";
 import { attachFoliage, setFoliageEdges, FOLIAGE_PROFILES, type FoliageProfile } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { attachDistanceFade, fadeBands, writeFadeBands, type FadeBands } from "./distanceFadePlugin.js";
+import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
 import { surfaceAlbedo } from "./terrainSurface.js";
@@ -255,6 +256,14 @@ const FOLIAGE_BY_CLASS = new Map<number, FoliageProfile>([
   [CLUTTER_FLOWER, FOLIAGE_PROFILES.FLOWER],
   [CLUTTER_BUSH, FOLIAGE_PROFILES.BUSH],
 ]);
+
+/** The weather's porosity cap per class (wetPlugin.ts): the cards glaze,
+ * stone darkens by half, driftwood and fungus soak. Litter is pebbles and
+ * twigs under a metre across, taken as stone. */
+const WET_CAP_BY_CLASS: readonly number[] = [
+  WET_CAP.leaf, WET_CAP.rock, WET_CAP.rock, WET_CAP.deadwood, WET_CAP.fungus,
+  WET_CAP.leaf, WET_CAP.leaf, WET_CAP.leaf, WET_CAP.rock,
+];
 
 /** Classes that LIE on the ground rather than stand on it, so they take the
  * ground normal. Grass, meadow, flower, bush and fungus are excluded: measured,
@@ -1133,7 +1142,10 @@ export function createClutterMeshes(
             ? fadeBands(nearIn, [seam.start, seam.end])
             : fadeBands([seam.start, seam.end], [edge.start, edge.end]);
           for (const mesh of meshes) {
-            if (mesh.material) attachDistanceFade(mesh.material);
+            if (mesh.material) {
+              attachDistanceFade(mesh.material);
+              attachWet(mesh.material, WET_CAP_BY_CLASS[cls]!);
+            }
           }
           return {
             meshes,

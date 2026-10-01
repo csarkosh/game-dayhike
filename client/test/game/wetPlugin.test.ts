@@ -5,8 +5,17 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
-import { WetPlugin, attachWet, setWetLine, wetLineFor, wetResidual, WET_ALBEDO, WET_ROUGHNESS, WET_BAND, WET_LINE_ABOVE, WET_ROUGHNESS_ANCHOR, WET_RADIUS_MAX } from "../../src/game/wetPlugin.js";
+import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
+import {
+  WetPlugin, attachWet, setWetLine, setWetWeather, wetCapOf, wetLineFor, wetResidual,
+  WET_ALBEDO, WET_CAP, WET_ROUGHNESS, WET_BAND, WET_LINE_ABOVE, WET_ROUGHNESS_ANCHOR, WET_RADIUS_MAX,
+} from "../../src/game/wetPlugin.js";
 import { WATER_ROWS } from "../../src/game/waterShading.js";
+import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
+import { translatorInput, uniformityOff } from "../../src/game/wgslFormat.js";
+import { drawnEffect, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
 const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
@@ -24,13 +33,16 @@ describe("wet plugin", () => {
     expect(active.filter((p) => p instanceof WetPlugin)).toHaveLength(1);
   });
 
-  it("injects the .fx files verbatim at definitions, before-lights and the roughness line", () => {
+  it("injects the .fx files verbatim at definitions, before-lights, inside the reflectivity block and the roughness line", () => {
     const mat = new PBRMaterial("g2", scene);
     const p = attachWet(mat)!;
     const f = p.getCustomCode("fragment")!;
-    expect(Object.keys(f).sort()).toEqual(["!float roughness=reflectivityOut\\.roughness;", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_DEFINITIONS"]);
+    expect(Object.keys(f).sort()).toEqual([
+      "!float roughness=reflectivityOut\\.roughness;", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_DEFINITIONS", "CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS",
+    ]);
     expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("wet.fragment.fx"));
     expect(f.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toBe(fx("wetLights.fragment.fx"));
+    expect(f.CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS).toBe(fx("wetWeather.fragment.fx"));
     expect(f["!float roughness=reflectivityOut\\.roughness;"]).toBe("float roughness=mix(reflectivityOut.roughness, WET_ROUGHNESS, wetW);");
     expect(p.getCustomCode("vertex")).toBeNull();
   });
@@ -135,4 +147,143 @@ describe("wet residual (the medium and low tiers' darkening, wetLights.fragment.
     expect(r.every((c) => Number.isFinite(c))).toBe(true);
     expect(Math.min(...r)).toBeLessThan(1);
   });
+});
+
+describe("the weather's wetting (wetWeather.fragment.fx)", () => {
+  const names = ["wetLine", "wetLevel", "wetCentre", "wetRadius", "wetKd", "wetAttenuate", "wetWeather", "wetCap"];
+
+  it("caps the porosity per kind of material", () => {
+    expect(WET_CAP).toEqual({ bark: 1, deadwood: 1, duff: 1, fungus: 1, prop: 1, rock: 0.5, cliff: 0.5, leaf: 0.3 });
+  });
+
+  it("declares wetWeather and wetCap on both uniform lists, after the wet line's", () => {
+    const p = attachWet(new PBRMaterial("w1", scene))!;
+    const uniforms = p.getUniforms();
+    expect(uniforms.ubo.map((u) => u.name)).toEqual(names);
+    expect([...uniforms.fragment.matchAll(/uniform\s+\w+\s+(\w+);/g)].map((m) => m[1])).toEqual(names);
+    expect(uniforms.ubo.filter((u) => u.name === "wetWeather" || u.name === "wetCap").map((u) => u.type)).toEqual(["float", "float"]);
+  });
+
+  it("attachWet takes a cap, clamped, keeps it on a call without one, and reports it through wetCapOf", () => {
+    const mat = new PBRMaterial("w2", scene);
+    expect(attachWet(mat)!.cap).toBe(0);
+    expect(wetCapOf(mat)).toBe(0);
+    expect(attachWet(mat, 0.5)!.cap).toBe(0.5);
+    expect(attachWet(mat)!.cap).toBe(0.5);
+    expect(wetCapOf(mat)).toBe(0.5);
+    expect(attachWet(mat, 1)!.cap).toBe(1);
+    expect(attachWet(mat, 7)!.cap).toBe(1);
+    expect(attachWet(mat, -1)!.cap).toBe(0);
+    const active = (mat.pluginManager as unknown as { _activePlugins: unknown[] })._activePlugins;
+    expect(active.filter((p) => p instanceof WetPlugin)).toHaveLength(1);
+    expect(wetCapOf(new PBRMaterial("w3", scene))).toBe(0);
+    expect(wetCapOf(new StandardMaterial("w4", scene))).toBe(0);
+    expect(attachWet(new StandardMaterial("w5", scene), 1)).toBeNull();
+  });
+
+  it("binds the page's wetness from setWetWeather, clamped, and the plugin's own cap", () => {
+    const a = attachWet(new PBRMaterial("w6", scene), 0.3)!;
+    const b = attachWet(new PBRMaterial("w7", scene))!;
+    const writes: Record<string, number[]> = {};
+    const ubo = {
+      updateFloat: (n: string, x: number) => { writes[n] = [x]; },
+      updateFloat2: (n: string, x: number, y: number) => { writes[n] = [x, y]; },
+      updateFloat3: (n: string, x: number, y: number, z: number) => { writes[n] = [x, y, z]; },
+    } as unknown as UniformBuffer;
+    setWetWeather(0.75);
+    a.bindForSubMesh(ubo);
+    expect(Object.keys(writes).sort()).toEqual([...names].sort());
+    expect(writes.wetWeather).toEqual([0.75]);
+    expect(writes.wetCap).toEqual([0.3]);
+    b.bindForSubMesh(ubo);
+    expect(writes.wetWeather).toEqual([0.75]);
+    expect(writes.wetCap).toEqual([0]);
+    setWetWeather(3);
+    a.bindForSubMesh(ubo);
+    expect(writes.wetWeather).toEqual([1]);
+    setWetWeather(-2);
+    a.bindForSubMesh(ubo);
+    expect(writes.wetWeather).toEqual([0]);
+    setWetWeather(0);
+  });
+
+  it("is Lagarde's rule on the block's final roughness, held to the cap", () => {
+    const d = fx("wetWeather.fragment.fx");
+    expect(d).toContain("float wetPorosity = min(wetCap, clamp((metallicRoughness.g - 0.5) / 0.4, 0.0, 1.0));");
+    expect(d).toContain("float wetFactor = mix(1.0, 0.2, wetPorosity);");
+    expect(d).toContain("surfaceAlbedo *= mix(1.0, wetFactor, wetWeather);");
+    expect(d).toContain("float wetGloss = mix(1.0, 1.0 - metallicRoughness.g, mix(1.0, wetFactor, 0.5 * wetWeather));");
+    expect(d).toContain("metallicRoughness.g = 1.0 - wetGloss;");
+    for (const line of d.split("\n")) {
+      const comment = line.indexOf("//");
+      if (comment === -1) continue;
+      expect(line.slice(comment)).not.toMatch(/#\s*(if|ifdef|ifndef|else|elif|endif|define)/);
+      if (!line.trim().startsWith("//")) expect(line.slice(comment)).not.toContain(";");
+    }
+  });
+
+  it("lands inside the reflectivity block of a compiled PBR fragment, before the block reads the roughness", async () => {
+    const e = new NullEngine();
+    const s = new Scene(e);
+    try {
+      const mat = new PBRMaterial("w8", s);
+      mat.metallic = 0;
+      mat.roughness = 0.9;
+      attachWet(mat, 1);
+      const mesh = CreateBox("w8box", {}, s);
+      mesh.material = mat;
+      const subMesh = mesh.subMeshes[0]!;
+      await new Promise<void>((resolve) => {
+        const tick = () => {
+          if (mat.isReadyForSubMesh(mesh, subMesh, false)) { resolve(); return; }
+          setTimeout(tick, 16);
+        };
+        tick();
+      });
+      const source = subMesh.effect!.fragmentSourceCode;
+      const at = source.indexOf("float wetPorosity = min(wetCap");
+      expect(at).toBeGreaterThan(source.indexOf("reflectivityOutParams reflectivityBlock("));
+      expect(at).toBeLessThan(source.indexOf("microSurface=1.0-metallicRoughness.g;vec3 baseColor=surfaceAlbedo;"));
+      expect(source.match(/float wetPorosity/g)).toHaveLength(1);
+      expect(source).toContain("float roughness=mix(reflectivityOut.roughness, WET_ROUGHNESS, wetW);");
+    } finally {
+      s.dispose();
+      e.dispose();
+    }
+  });
+});
+
+describe("a wet PBR material's stages, compiled", () => {
+  let translators: StartedTranslators;
+  beforeAll(async () => { translators = await startTranslators(); }, timeLimit(60_000));
+
+  it("compile through glslang and translate to WGSL as Babylon's WebGPU processing hands them over", async () => {
+    const gpu = webgpuProcessingEngine();
+    const gpuScene = new Scene(gpu);
+    try {
+      const mat = new PBRMaterial("w9", gpuScene);
+      mat.metallic = 0;
+      mat.roughness = 0.9;
+      attachWet(mat, WET_CAP.bark);
+      const mesh = CreateBox("w9box", {}, gpuScene);
+      mesh.material = mat;
+      const effect = await drawnEffect(mesh);
+      expect(effect._fragmentSourceCode).toContain("float wetPorosity = min(wetCap");
+      // Each stage composed as the page composes it for the first translator
+      // (`shaderLookup.ts`): a stage that does not parse throws here, with
+      // glslang's line and message on stderr. The albedo is a function
+      // parameter the rule writes, which the translation must carry.
+      const defines = (effect as unknown as { defines: string }).defines;
+      const stage = (kind: "vertex" | "fragment", code: string) =>
+        translateStage(translators, { stage: kind, flag: uniformityOff(code), glsl: translatorInput(code, defines) });
+      const vertex = stage("vertex", effect._vertexSourceCode);
+      const fragment = stage("fragment", effect._fragmentSourceCode);
+      expect(vertex.length).toBeGreaterThan(0);
+      expect(fragment).toContain("wetCap");
+      expect(fragment).toContain("wetWeather");
+    } finally {
+      gpuScene.dispose();
+      gpu.dispose();
+    }
+  }, timeLimit(60_000));
 });
