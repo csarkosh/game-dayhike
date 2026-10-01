@@ -57,6 +57,9 @@ export type SceneRouteDeps = {
   paint?: BoardPainter;
 };
 
+/** How dark the film car's patch is against the hike's parked car's (its alpha). */
+const FILM_PATCH_DARKNESS = 0.5;
+
 const BLACK_STYLE = "position:absolute;inset:0;background:#000;pointer-events:none;z-index:29;";
 
 async function loadFilmCar(scene: BabylonScene, signal: AbortSignal): Promise<PlacedModel | null> {
@@ -142,7 +145,9 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     for (const mesh of placed.meshes) renderer.shadows.add(mesh);
     // The dark under the car that the mist's light leaves, as under the hike's
     // parked car; without it a car on the road stands on it like a cut-out.
-    carPatch = createCarShadowPatch(renderer.scene, { x: 0, z: 0 }, () => 0, { moving: true });
+    // Fogged by the atmosphere as the road is, so it fades with it far off,
+    // and lighter than the parked car's: the film's light is all sky.
+    carPatch = createCarShadowPatch(renderer.scene, { x: 0, z: 0 }, () => 0, { moving: true, atmosphere: true, darkness: FILM_PATCH_DARKNESS });
     carPatch.mesh.name = "film_car_shadow";
     carPatch.mesh.parent = placed.node;
   });
