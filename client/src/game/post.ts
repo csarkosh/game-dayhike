@@ -246,8 +246,12 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       // FXAA and the finish, where it was built. It starts detached: the
       // constructor attaches it, which fixes its slot, and `update` brings
       // it in once there is rain on the glass.
-      droplets = RawTexture.CreateRGBATexture(lensDropletMap(), LENS.size, LENS.size, scene, true, false,
-        Texture.TRILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_UNSIGNED_BYTE);
+      // The map is always magnified (two tiles over the frame's height, so
+      // four texels a pixel at 1080p), so it has no mips to filter across:
+      // bilinear only, and a texel between the drops decodes to exactly no
+      // normal, no cover and no trail.
+      droplets = RawTexture.CreateRGBATexture(lensDropletMap(), LENS.size, LENS.size, scene, false, false,
+        Texture.BILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_UNSIGNED_BYTE);
       droplets.name = "lensDroplets";
       droplets.wrapU = Texture.WRAP_ADDRESSMODE;
       droplets.wrapV = Texture.WRAP_ADDRESSMODE;

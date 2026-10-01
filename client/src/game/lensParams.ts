@@ -22,8 +22,8 @@ export const LENS = {
   radius: [0.02, 0.05] as readonly [number, number],
   /** Times the map tiles across the frame's height. */
   tiles: 2,
-  /** The refraction: the scene's UV moves by strength × normal × this. */
-  offset: 0.03,
+  /** The refraction: the scene's UV moves against the normal by strength × this, less than a drop's radius. */
+  offset: 0.012,
   /** Columns the procedural sliding drops fall in. */
   columns: 8,
   /** How far the pass may shift a tile of the map, each way: the margin the drops keep. */

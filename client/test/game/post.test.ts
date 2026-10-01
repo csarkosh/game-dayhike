@@ -159,7 +159,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     }
   });
 
-  it("binds the droplet map, wrapping, and the texel size, the same on both tiers", () => {
+  it("binds the droplet map, wrapping, bilinear and without mips, and the texel size, the same on both tiers", () => {
     for (const tier of ["high", "medium"] as const) {
       const bigEngine = nullEngineAt(1920, 1080);
       const bigScene = new Scene(bigEngine);
@@ -178,6 +178,8 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       expect(droplets?.args[1]).toBeInstanceOf(RawTexture);
       expect((droplets?.args[1] as RawTexture).wrapU).toBe(Texture.WRAP_ADDRESSMODE);
       expect((droplets?.args[1] as RawTexture).wrapV).toBe(Texture.WRAP_ADDRESSMODE);
+      expect((droplets?.args[1] as RawTexture).noMipmap).toBe(true);
+      expect((droplets?.args[1] as RawTexture).samplingMode).toBe(Texture.BILINEAR_SAMPLINGMODE);
       const texel = calls.find((c) => c.fn === "setFloat2");
       expect(texel?.args[0]).toBe("texelSize");
       expect(texel?.args[1]).toBeCloseTo(0.0005208333333333333, 15);

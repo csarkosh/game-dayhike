@@ -4,8 +4,8 @@ import {
 } from "../../src/game/lensParams.js";
 
 describe("the lens's numbers", () => {
-  it("is a 128-texel map of 40 drops of 2 to 5 percent, tiled twice, refracting by 0.03, smoothed over a second, floored at 0.02", () => {
-    expect(LENS).toEqual({ size: 128, drops: 40, radius: [0.02, 0.05], tiles: 2, offset: 0.03, columns: 8, jitter: 0.05, smoothS: 1, floor: 0.02 });
+  it("is a 128-texel map of 40 drops of 2 to 5 percent, tiled twice, refracting by 0.012, smoothed over a second, floored at 0.02", () => {
+    expect(LENS).toEqual({ size: 128, drops: 40, radius: [0.02, 0.05], tiles: 2, offset: 0.012, columns: 8, jitter: 0.05, smoothS: 1, floor: 0.02 });
   });
 });
 

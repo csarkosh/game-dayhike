@@ -4,11 +4,13 @@
 // the margin the map keeps its drops in, so no drop repeats in place and
 // none is cut at a seam; and eight procedural drops sliding down their
 // columns. Each drop's normal refracts the scene by lensStrength times
-// LENS_OFFSET, read once at the moved UV. The glass between the drops and
-// their trails is frosted: the scene read four more times at the moved UV,
-// four texels out on the diagonals and averaged, and lerped in by the
-// strength. Six scene reads per pixel at full resolution, the same on
-// every tier.
+// LENS_OFFSET, read once at the moved UV: the UV moves against the normal,
+// so a drop shows the scene across itself, pulled in toward its centre, and
+// by less than its own radius, so what it shows is its own neighbourhood.
+// The glass between the drops and their trails is frosted: the scene read
+// four more times at the moved UV, two texels out on the diagonals and
+// averaged, and lerped in by a quarter of the strength. Six scene reads per
+// pixel at full resolution, the same on every tier.
 //
 // Every texture read is unconditional, so the pass needs no uniformity
 // switch on WebGPU. Nothing here gates on the strength: below its floor
@@ -29,7 +31,7 @@ uniform float aspect;
 uniform vec2 texelSize;
 
 const float LENS_TILES = 2.0;
-const float LENS_OFFSET = 0.03;
+const float LENS_OFFSET = 0.012;
 const float LENS_COLUMNS = 8.0;
 const float LENS_JITTER = 0.05;
 // A sliding drop's radius and its trail's length, of the frame's height.
@@ -40,8 +42,8 @@ const float SLIDE_CAP = 0.8;
 // The hour the clock folds over (post.ts): a column's speed is a whole
 // number of cycles per fold, so the fold moves no drop.
 const float FOLD = 3600.0;
-const float FROST_TEXELS = 4.0;
-const float FOG_GAIN = 0.6;
+const float FROST_TEXELS = 2.0;
+const float FOG_GAIN = 0.25;
 
 // Interleaved gradient noise on lattice points, the finish pass's hash.
 float lensHash(vec2 p) {
@@ -82,14 +84,14 @@ void main(void) {
   float mask = max(d.b, mSlide);
   float trail = max(d.a, tSlide);
   vec2 n = nStatic + nSlide;
-  vec2 uvR = vUV + lensStrength * LENS_OFFSET * vec2(n.x / aspect, n.y);
+  vec2 uvR = vUV - lensStrength * LENS_OFFSET * vec2(n.x / aspect, n.y);
   vec4 col = texture2D(textureSampler, uvR);
-  vec2 step4 = texelSize * FROST_TEXELS;
+  vec2 step2 = texelSize * FROST_TEXELS;
   vec4 soft = 0.25 * (
-    texture2D(textureSampler, uvR + step4)
-    + texture2D(textureSampler, uvR - step4)
-    + texture2D(textureSampler, uvR + vec2(step4.x, -step4.y))
-    + texture2D(textureSampler, uvR + vec2(-step4.x, step4.y)));
+    texture2D(textureSampler, uvR + step2)
+    + texture2D(textureSampler, uvR - step2)
+    + texture2D(textureSampler, uvR + vec2(step2.x, -step2.y))
+    + texture2D(textureSampler, uvR + vec2(-step2.x, step2.y)));
   float fog = lensStrength * (1.0 - mask) * (1.0 - trail) * FOG_GAIN;
   gl_FragColor = mix(col, soft, fog);
 }
