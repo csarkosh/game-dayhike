@@ -272,8 +272,10 @@ export function introScene(road: Road, places: IntroPlaces): Scene {
 
   const rangerLook = (t: number) => {
     const r = ranger(t);
-    // An anchored ranger's point is his chest or hips; a standing one's, his feet.
-    return { x: r.x, y: r.y + (r.anchor === undefined ? 1.5 : 0.6), z: r.z };
+    // An anchored ranger's point is his chest or hips; a standing one's, his feet, looked at as
+    // high over them as the stand-up's hips are at its end, so a shot holding on him does not
+    // jump as he starts to walk.
+    return { x: r.x, y: r.y + (r.anchor === undefined ? HIPS_OUT.y + 0.6 : 0.6), z: r.z };
   };
   const carLook = (t: number) => {
     const c = carAt(t);

@@ -156,6 +156,14 @@ describe("the intro's data", () => {
     }
   });
 
+  it("holds shot 7's camera steady as he goes from standing up to walking", () => {
+    const scene = introScene(road, places);
+    const [a, b] = [evaluate(scene, 57.99).camera, evaluate(scene, 58).camera];
+    // A hundredth of a second of his slow turn and step: well under a thousandth of a radian.
+    expect(Math.abs(b.pitch - a.pitch)).toBeLessThan(0.001);
+    expect(Math.abs(b.yaw - a.yaw)).toBeLessThan(0.001);
+  });
+
   it("keeps every shot's field of view within the film's range but the cab shot", () => {
     const scene = introScene(road, places);
     for (const [i, s] of INTRO_SHOTS.entries()) {
