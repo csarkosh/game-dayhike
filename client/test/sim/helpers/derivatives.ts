@@ -49,14 +49,15 @@ export function variantOrThrow(name: string): TerrainVariant {
 export function checkDerivatives(
   name: string,
   pts: Array<[number, number]> = sweepPoints(),
+  seed: number = DERIV_SEED,
 ): { worst: number; steepest: number } {
   const v = variantOrThrow(name);
   let worst = 0;
   let steepest = 0;
   for (const [x, z] of pts) {
-    const s = v.sample(DERIV_SEED, x, z);
-    const ndx = (v.sample(DERIV_SEED, x + H, z).h - v.sample(DERIV_SEED, x - H, z).h) / (2 * H);
-    const ndz = (v.sample(DERIV_SEED, x, z + H).h - v.sample(DERIV_SEED, x, z - H).h) / (2 * H);
+    const s = v.sample(seed, x, z);
+    const ndx = (v.sample(seed, x + H, z).h - v.sample(seed, x - H, z).h) / (2 * H);
+    const ndz = (v.sample(seed, x, z + H).h - v.sample(seed, x, z - H).h) / (2 * H);
     worst = Math.max(worst, Math.abs(s.dx - ndx), Math.abs(s.dz - ndz));
     steepest = Math.max(steepest, Math.abs(ndx), Math.abs(ndz));
   }

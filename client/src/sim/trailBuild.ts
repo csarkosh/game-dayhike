@@ -50,7 +50,7 @@ import {
   type Landmark, type Samplers,
 } from "./landmarks.js";
 import {
-  featureDraw, featureStageD, planFeatures, loopBand,
+  featureDraw, featureStageD, planFeatures, loopBand, murkFor,
   PEAK_RADIUS_MIN, PEAK_RADIUS_MAX, PEAK_RISE_MIN, PEAK_RISE_MAX,
   PEAK_INLAND_MIN, PEAK_INLAND_MAX, PEAK_SHOULDER, PEAK_LOWER_STEP, PEAK_LOWER_TRIES, PEAK_CENTRE_TRIES,
   LOOP_TRIES, TREE_PENALTY, LOOP_SCAN_STRIDE,
@@ -955,6 +955,16 @@ export function buildTrail(
     if (chosen === null) throw new Error(`no candidate for ${type} clears the trail`);
     const disc = scoredDisc(type, chosen.x, chosen.z, samplers);
     landmarks.push({ type, x: chosen.x, z: chosen.z, carved: !chosen.cand.found, discX: disc.x, discZ: disc.z });
+  }
+
+  // ---- The lakes, after everything is placed -------------------------------
+  // Written onto each pond and never read by the build: the lake's bed is the
+  // composed field's (`lakeStageD`), so nothing placed above can move.
+  const peak = features.find((g) => g.kind === "peak");
+  const padH = (state.nodes[0] as TrailNode).h;
+  for (const f of features) {
+    if (f.kind !== "pond") continue;
+    f.murk = murkFor(f.height, padH, peak?.crestH);
   }
 
   const homeDist = homeDistances(state.nodes, state.edges);

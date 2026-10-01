@@ -4,6 +4,7 @@ import {
   MEADOW_RADIUS_MIN, MEADOW_RADIUS_MAX, MEADOW_RIM, POND_RADIUS_MIN, POND_RADIUS_MAX, POND_DEPTH, POND_APRON,
   LOOP_WEIGHT_1, LOOP_WEIGHT_2, LOOP_WEIGHT_3, TREELINE_BELOW_CREST, TREELINE_BAND, PEAK_RIM_FADE,
   planFeatures, peakD, flatD, basinD, featureStageD, featureMaskAt, murkFor, MURK_LO, MURK_HI, type Feature,
+  lakeDepthD, lakeD, lakeMiddleDepth, LAKE_SHELF_DEPTH, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH, LAKE_DEPTH_MURKY, LAKE_DEPTH_CLEAR,
 } from "../../src/sim/features.js";
 import { TRAIL_GRID_CAP } from "../../src/sim/trailGrid.js";
 import type { TerrainSample } from "../../src/sim/terrain.js";
@@ -262,6 +263,7 @@ describe("the composed stage and the mask", () => {
       "MEADOW_RADIUS_MIN", "MEADOW_RADIUS_MAX", "MEADOW_RIM", "MEADOW_TREE_MARGIN", "MEADOW_SLOPE_MAX",
       "POND_RADIUS_MIN", "POND_RADIUS_MAX", "POND_DEPTH", "POND_APRON", "POND_SHORE", "POND_TREE_MARGIN", "POND_SLOPE_MAX",
       "MURK_LO", "MURK_HI",
+      "LAKE_SHELF_DEPTH", "LAKE_SHELF_WIDTH", "LAKE_SLOPE_WIDTH", "LAKE_DEPTH_MURKY", "LAKE_DEPTH_CLEAR",
       "LOOP_WEIGHT_1", "LOOP_WEIGHT_2", "LOOP_WEIGHT_3",
       "LOOP_BAND_LO_1", "LOOP_BAND_HI_1", "LOOP_BAND_LO_2", "LOOP_BAND_HI_2", "LOOP_BAND_LO_3", "LOOP_BAND_HI_3",
       "LOOP_LATERAL_MIN", "LOOP_LATERAL_MAX", "FEATURE_ROAD_CLEAR", "FEATURE_SPACING",
@@ -271,7 +273,7 @@ describe("the composed stage and the mask", () => {
     ];
     for (const k of keys) expect(FEATURE_TUNABLES[k], k).toBeTypeOf("number");
     expect(Object.keys(FEATURE_TUNABLES).sort()).toEqual([...keys].sort());
-    expect(Object.keys(FEATURE_TUNABLES).length).toBe(55);
+    expect(Object.keys(FEATURE_TUNABLES).length).toBe(60);
   });
   it("keeps its ranges within their working bounds", () => {
     // 220/220 and 60/90 → 300/300 and 50/80: the original numbers put the
@@ -308,5 +310,66 @@ describe("murkFor", () => {
   it("folds its two edges into the level id", () => {
     expect(FEATURE_TUNABLES.MURK_LO).toBe(0.25);
     expect(FEATURE_TUNABLES.MURK_HI).toBe(0.75);
+  });
+});
+
+describe("the lake's bed", () => {
+  it("falls to the shelf's depth 10 m in from the rim", () => {
+    for (const murk of [0, 0.5, 1]) expect(lakeDepthD(LAKE_SHELF_WIDTH, murk).v).toBeCloseTo(LAKE_SHELF_DEPTH, 12);
+    expect(LAKE_SHELF_DEPTH).toBe(0.9);
+    expect(LAKE_SHELF_WIDTH).toBe(10);
+  });
+
+  it("has a flat middle 3 m deep when murky and 6 m when clear", () => {
+    const flat = LAKE_SHELF_WIDTH + LAKE_SLOPE_WIDTH;
+    expect(lakeDepthD(flat, 1).v).toBeCloseTo(LAKE_DEPTH_MURKY, 12);
+    expect(lakeDepthD(flat, 0).v).toBeCloseTo(LAKE_DEPTH_CLEAR, 12);
+    expect(lakeDepthD(flat + 7, 0.5).v).toBeCloseTo(4.5, 12);
+    expect(lakeDepthD(flat + 7, 0.5).d).toBe(0);
+    expect(lakeMiddleDepth(0.25)).toBeCloseTo(5.25, 12);
+  });
+
+  it("is C² at the rim, the shelf's edge and the middle's", () => {
+    const e = 1e-4;
+    for (const murk of [0, 1]) {
+      expect(lakeDepthD(0, murk)).toEqual({ v: 0, d: 0 });
+      for (const s of [0, LAKE_SHELF_WIDTH, LAKE_SHELF_WIDTH + LAKE_SLOPE_WIDTH]) {
+        const second = (t: number): number => (lakeDepthD(t + e, murk).d - lakeDepthD(t - e, murk).d) / (2 * e);
+        // the second derivative is continuous: the same a little either side
+        expect(Math.abs(second(s - 1e-3) - second(s + 1e-3))).toBeLessThan(0.02);
+      }
+    }
+  });
+
+  it("keeps a flat middle on the smallest pond", () => {
+    expect(POND_RADIUS_MIN - LAKE_SHELF_WIDTH - LAKE_SLOPE_WIDTH).toBeGreaterThan(0);
+  });
+
+  const flat = (h: number) => ({ h, dx: 0, dz: 0 });
+  const pond = { id: 1, kind: "pond" as const, x: 0, z: 1000, radius: 30, height: 50, murk: 1 };
+
+  it("leaves the ground at and outside the rim untouched", () => {
+    const base = { h: 47, dx: 0.1, dz: -0.2 };
+    expect(lakeD(pond, 30, 1000, base)).toBe(base);
+    expect(lakeD(pond, 0, 1040, base)).toBe(base);
+  });
+
+  it("is the rim height less the depth inside, flat in the middle", () => {
+    expect(lakeD(pond, 0, 1000 + 20, flat(0)).h).toBeCloseTo(50 - lakeDepthD(10, 1).v, 12);
+    expect(lakeD(pond, 0, 1000, flat(0))).toEqual({ h: 50 - LAKE_DEPTH_MURKY, dx: 0, dz: 0 });
+  });
+
+  it("has exact derivatives", () => {
+    const e = 1e-5;
+    for (let i = 0; i < 40; i++) {
+      const a = i * 0.7853 + 0.1;
+      const q = 0.5 + (i * 29.3) % 29;
+      const x = Math.cos(a) * q, z = 1000 + Math.sin(a) * q;
+      const s = lakeD(pond, x, z, flat(0));
+      const ndx = (lakeD(pond, x + e, z, flat(0)).h - lakeD(pond, x - e, z, flat(0)).h) / (2 * e);
+      const ndz = (lakeD(pond, x, z + e, flat(0)).h - lakeD(pond, x, z - e, flat(0)).h) / (2 * e);
+      expect(Math.abs(s.dx - ndx)).toBeLessThan(1e-5);
+      expect(Math.abs(s.dz - ndz)).toBeLessThan(1e-5);
+    }
   });
 });
