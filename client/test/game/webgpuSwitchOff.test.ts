@@ -203,7 +203,7 @@ describe("the start where the rule gives WebGL2", () => {
     // The engine is made with the page's switch, and its module hands the
     // game the patch and the reveal.
     const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
-    expect(main).toContain("engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, lookup, pipelines }),");
+    expect(main).toContain("engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, tier: input.tier, lookup, pipelines }),");
     expect(main).toContain("watchers: { failures: gpu.watchWebGpu, pipelines: gpu.watchPipelines, asyncPipelines: gpu.asyncPipelinesOf, reveal: gpu.revealWhenWhole },");
     // The game holds its first frames only on a WebGPU engine, and gives the
     // patch only to a renderer on one.

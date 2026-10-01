@@ -323,51 +323,74 @@ async function verify() {
       );
     }
 
-    // 4d. The WGSL map: the translations the build made of the shader corpus
-    // (`tools/wgsl/build-map.mjs`), which a WebGPU page asks before it
-    // translates a shader itself. Named by the same chunk as a hashed asset.
-    // A map that does not come, or is not this build's (its salt against the
-    // translators' digests the chunk carries), costs nothing but speed on the
-    // page, which translates every stage as if there were none: exactly what
-    // would go unnoticed without this check.
-    const mapUrl = chunkSource ? findMapUrl(chunkSource) : null;
-    if (chunkSource && !mapUrl) {
-      failures.push('the WebGPU chunk does not reference the WGSL map — was it built (tools/wgsl/build-map.mjs) and imported?');
-    } else if (mapUrl) {
-      // One failure line for this check whatever goes wrong in it (a body
-      // cut short, a chunk that gets no answer), and the checks after it run.
-      try {
-        const res = await reach(`${siteOrigin}${mapUrl}`);
-        if (res.status !== 200) {
-          failures.push(`${mapUrl} — got ${res.status}`);
-        } else {
-          check(
-            (res.headers.get('cache-control') ?? '').includes('immutable'),
-            'the WGSL map is served immutable',
-            `cache-control: ${res.headers.get('cache-control')}`,
-          );
-          // Against the chunks the entry loads with it, as the build's check
-          // reads them: Babylon's version may be in any of them. The entry's
-          // text is check 3's; each chunk's path is resolved against the chunk
-          // that names it, under the entry's `assets/`.
-          const entryUrl = `${siteOrigin}${bundle}`;
-          const assetsUrl = entryUrl.slice(0, entryUrl.lastIndexOf('/assets/') + '/assets/'.length);
-          const checked = await bundleMapProblems({
-            entry: entryUrl.slice(assetsUrl.length),
-            entryText: bundleSource,
-            // A fetch that throws is the walk's to name, with the chunk.
-            read: async (path) => {
-              const chunkRes = await fetch(new URL(path, assetsUrl).href);
-              return chunkRes.status === 200 ? chunkRes.text() : null;
-            },
-            mapText: await res.text(),
-            chunkSource,
-          });
-          check(checked.problems.length === 0, "the WGSL map parses, is this build's and holds translations", checked.problems.join('; '));
-          for (const name of checked.carriers) console.log(`  · Babylon's version ${checked.babylon} is in ${name}`);
+    // 4d. The WGSL maps, one a quality tier: the translations the build made
+    // of the shader corpus's stages recorded on that tier
+    // (`tools/wgsl/build-map.mjs`), which a WebGPU page asks for its tier
+    // before it translates a shader itself. Each named by the same chunk as a
+    // hashed asset. A map that does not come, or is not this build's (its
+    // salt against the translators' digests the chunk carries), costs nothing
+    // but speed on the page, which translates every stage as if there were
+    // none: exactly what would go unnoticed without this check. A tier's map
+    // may be empty while another's holds translations (a tier not yet
+    // recorded), so every map is fetched before any is checked.
+    const tiers = ['low', 'medium', 'high'];
+    const maps = [];
+    for (const tier of tiers) {
+      const mapUrl = chunkSource ? findMapUrl(chunkSource, tier) : null;
+      if (chunkSource && !mapUrl) {
+        failures.push(`the WebGPU chunk does not reference the ${tier} tier's WGSL map — was it built (tools/wgsl/build-map.mjs) and imported?`);
+      } else if (mapUrl) {
+        // One failure line for this map whatever goes wrong (a body cut
+        // short), and the checks after it run.
+        try {
+          const res = await reach(`${siteOrigin}${mapUrl}`);
+          if (res.status !== 200) {
+            failures.push(`${mapUrl} — got ${res.status}`);
+          } else {
+            check(
+              (res.headers.get('cache-control') ?? '').includes('immutable'),
+              `the ${tier} tier's WGSL map is served immutable`,
+              `cache-control: ${res.headers.get('cache-control')}`,
+            );
+            maps.push({ tier, text: await res.text() });
+          }
+        } catch (err) {
+          failures.push(`the ${tier} tier's WGSL map could not be fetched — ${err instanceof Error ? err.message : String(err)}`);
         }
+      }
+    }
+    const entriesOf = (text) => {
+      try {
+        const entries = JSON.parse(text)?.entries;
+        return typeof entries === 'object' && entries !== null ? Object.keys(entries).length : 0;
+      } catch {
+        return 0;
+      }
+    };
+    for (const { tier, text } of maps) {
+      // Against the chunks the entry loads with it, as the build's check
+      // reads them: Babylon's version may be in any of them. The entry's
+      // text is check 3's; each chunk's path is resolved against the chunk
+      // that names it, under the entry's `assets/`.
+      try {
+        const entryUrl = `${siteOrigin}${bundle}`;
+        const assetsUrl = entryUrl.slice(0, entryUrl.lastIndexOf('/assets/') + '/assets/'.length);
+        const checked = await bundleMapProblems({
+          entry: entryUrl.slice(assetsUrl.length),
+          entryText: bundleSource,
+          // A fetch that throws is the walk's to name, with the chunk.
+          read: async (path) => {
+            const chunkRes = await fetch(new URL(path, assetsUrl).href);
+            return chunkRes.status === 200 ? chunkRes.text() : null;
+          },
+          mapText: text,
+          chunkSource,
+          mayBeEmpty: maps.some((other) => other.tier !== tier && entriesOf(other.text) > 0),
+        });
+        check(checked.problems.length === 0, `the ${tier} tier's WGSL map parses, is this build's and holds translations`, checked.problems.join('; '));
+        if (tier === maps[0].tier) for (const name of checked.carriers) console.log(`  · Babylon's version ${checked.babylon} is in ${name}`);
       } catch (err) {
-        failures.push(`the WGSL map check could not finish — ${err instanceof Error ? err.message : String(err)}`);
+        failures.push(`the ${tier} tier's WGSL map check could not finish — ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

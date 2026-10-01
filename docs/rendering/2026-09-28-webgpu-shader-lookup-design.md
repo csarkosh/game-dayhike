@@ -8,7 +8,10 @@ and shipped as the lookup's first source (§5.2), on
 here but the lookup and the store has yet been measured in a browser (their
 first readings are in §8): §8 says what has to be, and §9 the
 bars it must meet. Since 2026-09-29 the shipped map stores each distinct line
-of WGSL once, each entry as runs of those lines (format 2, §5.2).
+of WGSL once, each entry as runs of those lines (format 2, §5.2). Since
+2026-10-01 the build makes a map a quality tier, each of the stages recorded
+on that tier, and the page fetches its tier's
+([the map-per-tier design](2026-10-01-wgsl-map-per-tier-design.md)).
 
 Babylon 9.18.0 throughout; line references are to its installed
 `node_modules/@babylonjs/core`.
@@ -535,8 +538,14 @@ figures). Storing the lines as templates with their numbers apart (3,840
 distinct with every run of digits read as `#`) would take it to about
 3.1 MB raw and 0.73 MB gzipped: too little gained for what it adds.
 
-One map for every tier: the engine's maker does not know the tier, and
-whether a map per tier pays is for the real corpus's sizes to decide (§8).
+One map for every tier, at first: the engine's maker did not know the tier,
+and whether a map per tier paid was for the real corpus's sizes to decide
+(§8). At 762 stages the one map was 8,131,195 bytes, 3 % under the ceiling,
+with the low tier and a party of two still to record; since 2026-10-01 the
+build makes a map a tier, each carrying its tier, of the stages the corpus's
+index (`client/shaders/corpus/tiers.json`) puts on that tier, and the engine's
+maker is given the tier the page decided
+([the map-per-tier design](2026-10-01-wgsl-map-per-tier-design.md)).
 JSON, not a binary form, because the host compresses a JSON response (gzip
 or brotli) and would serve a binary blob as it is: the WGSL is 5 to 16
 times smaller compressed. Reading it costs one `JSON.parse` and a check of

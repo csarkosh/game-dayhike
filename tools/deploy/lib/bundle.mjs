@@ -56,13 +56,14 @@ export async function staticChunks(entry, read, max = MAX_STATIC_CHUNKS, entryTe
 /**
  * What is wrong with the map (`mapText`) against the WebGPU chunk that names
  * it (`chunkSource`) and the chunks the entry loads with it (`staticChunks`):
- * the walk's own problems, then `mapProblems`'. With the chunks read, and the
- * names of those carrying the version of Babylon the map's salt was made
- * against, as a quoted literal.
+ * the walk's own problems, then `mapProblems`' (`mayBeEmpty` passed on: a
+ * tier's map may hold nothing while another tier's holds translations). With
+ * the chunks read, and the names of those carrying the version of Babylon
+ * the map's salt was made against, as a quoted literal.
  */
-export async function bundleMapProblems({ entry, entryText = null, read, mapText, chunkSource, max = MAX_STATIC_CHUNKS }) {
+export async function bundleMapProblems({ entry, entryText = null, read, mapText, chunkSource, max = MAX_STATIC_CHUNKS, mayBeEmpty = false }) {
   const walk = await staticChunks(entry, read, max, entryText);
-  const problems = [...walk.problems, ...mapProblems(mapText, chunkSource, [...walk.chunks.values()].join('\n'))];
+  const problems = [...walk.problems, ...mapProblems(mapText, chunkSource, [...walk.chunks.values()].join('\n'), { mayBeEmpty })];
   let babylon;
   try {
     babylon = JSON.parse(mapText)?.salt?.match(/\|babylon=([^|]*)\|/)?.[1];

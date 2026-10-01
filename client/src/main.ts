@@ -761,7 +761,7 @@ function makeWebGpu(
           translators = await gpu.loadTranslators();
         },
         create: async (ms, features) => ({
-          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, lookup, pipelines }),
+          engine: await gpu.createWebGpuEngine(canvas, { ms, features, translators, tier: input.tier, lookup, pipelines }),
           watchers: { failures: gpu.watchWebGpu, pipelines: gpu.watchPipelines, asyncPipelines: gpu.asyncPipelinesOf, reveal: gpu.revealWhenWhole },
         }),
       };

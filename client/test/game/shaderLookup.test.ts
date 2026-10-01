@@ -12,6 +12,7 @@ import { WebGPUShaderProcessorGLSL } from "@babylonjs/core/Engines/WebGPU/webgpu
 import { checkNonFloatVertexBuffers } from "@babylonjs/core/Buffers/buffer.nonFloatVertexBuffers.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
+import type { QualityTier } from "../../src/game/quality.js";
 import { Observable } from "@babylonjs/core/Misc/observable.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import { parseShaderLookup } from "../../src/game/engineChoice.js";
@@ -124,9 +125,9 @@ function memorySource(entries: Record<string, string> = {}, name = "memory", sal
 
 /** The lookup on `h`'s engine with `sources`, and the engine as its maker
  * hands it over: translators loaded, the sources in. */
-async function lookUp(h: Harness, sources: readonly WgslSource[], mode: "on" | "record" | "verify" = "on", report?: ShaderLookupReport) {
+async function lookUp(h: Harness, sources: readonly WgslSource[], mode: "on" | "record" | "verify" = "on", report?: ShaderLookupReport, tier?: QualityTier) {
   const made = report ?? newLookupReport(mode, SALT);
-  const ready = lookUpShaders(h.engine, { mode, salt: SALT, sources: () => Promise.resolve(sources), report: made });
+  const ready = lookUpShaders(h.engine, { mode, tier, salt: SALT, sources: () => Promise.resolve(sources), report: made });
   await handOver(h.engine, h.translators);
   await ready;
   return made;
@@ -533,9 +534,12 @@ describe("the WebGPU shader lookup", () => {
       "mode",
       "salt",
       "stagesWithCarriageReturns",
+      "tiers",
       "translateMs",
     ]);
     expect([report.mode, report.salt, report.hits, report.misses, report.differences]).toEqual(["record", SALT, 2, 2, 0]);
+    // No engine here was made for a tier.
+    expect(report.tiers).toEqual([]);
     expect(report.hitsBySource).toEqual({ memory: 2 });
     expect(report.translateMs).toBeGreaterThan(0);
     expect(typeof report.download).toBe("function");
@@ -567,11 +571,16 @@ describe("the WebGPU shader lookup", () => {
     const first = harness();
     await lookUp(first, [], "record", report);
     await prepare(first);
-    // The same effect again, and one sharing its vertex stage: each stage once.
+    // The same effect again, and one sharing its vertex stage: each stage
+    // once. This engine, and a third, were made for a tier: the recording
+    // says so, once a tier.
     const second = harness();
-    await lookUp(second, [], "record", report);
+    await lookUp(second, [], "record", report, "high");
     await prepare(second);
     await prepare(second, { fragment: `#define DISABLE_UNIFORMITY_ANALYSIS\n${FRAGMENT}` });
+    await lookUp(harness(), [], "record", report, "medium");
+    await lookUp(harness(), [], "record", report, "high");
+    expect(report.tiers).toEqual(["high", "medium"]);
     const saved: Blob[] = [];
     const link = { href: "", download: "", click: vi.fn() };
     vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
@@ -585,12 +594,16 @@ describe("the WebGPU shader lookup", () => {
     expect(link.download).toMatch(/^dayhike-wgsl-corpus-\d+\.json$/);
     const text = await (saved[0] as Blob).text();
     expect(text).toBe(
-      corpusText([
-        { stage: "vertex", flag: false, glsl: translatorInput(VERTEX, DEFINES) },
-        { stage: "fragment", flag: false, glsl: translatorInput(FRAGMENT, DEFINES) },
-        { stage: "fragment", flag: true, glsl: translatorInput(`#define DISABLE_UNIFORMITY_ANALYSIS\n${FRAGMENT}`, DEFINES) },
-      ]),
+      corpusText(
+        [
+          { stage: "vertex", flag: false, glsl: translatorInput(VERTEX, DEFINES) },
+          { stage: "fragment", flag: false, glsl: translatorInput(FRAGMENT, DEFINES) },
+          { stage: "fragment", flag: true, glsl: translatorInput(`#define DISABLE_UNIFORMITY_ANALYSIS\n${FRAGMENT}`, DEFINES) },
+        ],
+        ["medium", "high"],
+      ),
     );
+    expect(text).toContain('"tiers":["medium","high"]');
     expect(readCorpus(text)).toHaveLength(3);
   });
 

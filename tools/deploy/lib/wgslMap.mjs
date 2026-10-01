@@ -20,12 +20,13 @@ export const LIVE_ENTRY_MAX_CHARS = 8_388_608;
  * it holds translations: a table of lines, each a text without a newline, and
  * entries, each runs of lines in the table (`[start, length, ...]`, as the
  * page reads them: `readMap`), none expanding past `LIVE_ENTRY_MAX_CHARS`
- * and at least one expanding to text; and it is no larger than the page
- * reads, `LIVE_MAP_MAX_BYTES`. A map of
+ * and at least one expanding to text, unless `mayBeEmpty` (a tier's map, when
+ * another tier's holds translations: a tier not yet recorded has none); and
+ * it is no larger than the page reads, `LIVE_MAP_MAX_BYTES`. A map of
  * another salt is never asked by the page, nor a damaged one read: every
  * stage would be translated as if there were none.
  */
-export function mapProblems(mapText, chunkSource, bundleSource = '') {
+export function mapProblems(mapText, chunkSource, bundleSource = '', { mayBeEmpty = false } = {}) {
   const bytes = Buffer.byteLength(mapText);
   // Past the page's ceiling every page refuses the map unread.
   const tooLarge =
@@ -73,7 +74,7 @@ export function mapProblems(mapText, chunkSource, bundleSource = '') {
   } else if (typeof entries !== 'object' || entries === null || Array.isArray(entries)) {
     problems.push('it has no entries');
   } else if (Object.keys(entries).length === 0) {
-    problems.push('it is empty');
+    if (!mayBeEmpty) problems.push('it is empty');
   } else if (!Object.values(entries).every((runs) => runsInTable(runs, lines.length))) {
     problems.push('an entry is not runs of the lines in its table');
   } else if (longest(Object.values(entries), lines) > LIVE_ENTRY_MAX_CHARS) {

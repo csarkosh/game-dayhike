@@ -9,6 +9,7 @@ import {
   mapText,
   readCorpus,
   readMap,
+  readRecording,
   stageKey,
   type CorpusStage,
   type WgslMap,
@@ -36,6 +37,22 @@ describe("the corpus", () => {
     expect(corpusText(recorded)).toBe(corpusText([FRAGMENT, VERTEX]));
     expect(corpusText([])).toBe('{"format":"dayhike-wgsl-corpus/1","stages":[]}\n');
     expect(readCorpus(corpusText([]))).toEqual([]);
+  });
+
+  it("names the tiers its stages were recorded on, in the tiers' order, and reads them back; none named is every tier", () => {
+    const text = corpusText([VERTEX], ["high", "low"]);
+    expect(text).toBe(`{"format":"dayhike-wgsl-corpus/1","tiers":["low","high"],"stages":[\n${JSON.stringify(VERTEX)}\n]}\n`);
+    expect(readRecording(text)).toEqual({ tiers: ["low", "high"], stages: [VERTEX] });
+    expect(readCorpus(text)).toEqual([VERTEX]);
+    expect(corpusText([VERTEX], ["medium", "medium"])).toBe(corpusText([VERTEX], ["medium"]));
+    expect(corpusText([VERTEX], [])).toBe(corpusText([VERTEX]));
+    expect(readRecording(corpusText([VERTEX]))).toEqual({ tiers: null, stages: [VERTEX] });
+    // Tiers that are not the three, each once, are refused.
+    for (const tiers of ['[]', '["ultra"]', '["low","low"]', '"low"', 'null']) {
+      expect(() => readRecording(`{"format":"dayhike-wgsl-corpus/1","tiers":${tiers},"stages":[]}`), tiers).toThrow(
+        `a corpus whose tiers are not some of low, medium, high, each once: ${tiers}`,
+      );
+    }
   });
 
   it("refuses a file of another format, and a stage without its stage, switch or text", () => {
@@ -168,5 +185,18 @@ describe("the map", () => {
     for (const [what, text, message] of cases) expect(() => readMap(text, SALT), what).toThrow(message);
     // The same, whole: read.
     expect(expanded(readMap(raw(LINES, { aa: [0, 3], bb: [2, 1, 0, 1] }), SALT))).toEqual(new Map([["aa", "a\nb\nc"], ["bb", "c\na"]]));
+  });
+
+  it("carries the tier it is built for, where one is given, and is refused for another tier", () => {
+    const entries = new Map([["aa", "a\nb"]]);
+    const low = mapText(SALT, entries, "low");
+    expect(low).toBe(`{"format":"dayhike-wgsl-map/2","salt":${JSON.stringify(SALT)},"tier":"low","lines":["a","b"],"entries":{"aa":[0,2]}}`);
+    expect(mapText(SALT, entries)).toBe(`{"format":"dayhike-wgsl-map/2","salt":${JSON.stringify(SALT)},"lines":["a","b"],"entries":{"aa":[0,2]}}`);
+    // No two tiers' maps of the same entries are the same bytes.
+    expect(new Set([low, mapText(SALT, entries, "medium"), mapText(SALT, entries, "high")]).size).toBe(3);
+    expect(expanded(readMap(low, SALT, "low"))).toEqual(entries);
+    expect(expanded(readMap(low, SALT))).toEqual(entries);
+    expect(() => readMap(low, SALT, "high")).toThrow("made for the low tier, not high");
+    expect(() => readMap(mapText(SALT, entries), SALT, "low")).toThrow("made for the undefined tier, not low");
   });
 });
