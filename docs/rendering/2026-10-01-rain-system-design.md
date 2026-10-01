@@ -1,8 +1,20 @@
 # Rain system: design
 
-**As written on 2026-10-01.** This is the design before any code; when the work
-lands, this paragraph is rewritten to say which layers shipped, on which tiers,
-and at what measured cost. The plan
+**As built, 2026-10-01.** Every layer below shipped on the tiers the design
+gave it, and at a cost the measurement could barely tell from zero: on an Apple
+M4 in Chrome at 1920 by 1080, the whole stack is about 0.2 to 0.3 ms on high
+with WebGPU, 0.5 to 0.9 ms on high with WebGL2, and about 0.5 ms on medium on
+either engine, against bars of 2.7 and 1.8 ms; the low tier stays on the
+display's 60 Hz with the rain on or off. The one layer the method resolves on
+its own is the lens at full strength on WebGL2, about 0.8 ms; the height map's
+refresh frame on WebGL2 was the one surprise, about 2.9 ms with seven terrain
+rings listed, so two are. Four things were built differently from the text
+below and are marked where they occur: the wet rule rides the existing
+`WetPlugin` (§6.1); the puddle ripples are hashed in the fragment behind a
+branch on the rain, not read from a texture (§6.2); splashes land on roofs at
+full strength (§5); and the lens frosts toward a two-texel blur of the scene
+itself at a quarter weight, not the halation blur (§7.1). The measurements are
+in the verification note. The plan
 ([2026-10-01-rain-system-plan](2026-10-01-rain-system-plan.md)) builds the
 layers in order, each behind its own gate, and the verification note
 ([2026-10-01-rain-system-verification](2026-10-01-rain-system-verification.md))
@@ -214,9 +226,11 @@ integer part of `time / life + hash`) at a random point in a 10 m disc around
 the camera, on the height the map gives at that point, facing the camera, 6 to
 10 cm wide, with a phase (the fractional part) that grows a ring from the
 centre and fades it over a life of 120 ms. The fragment draws the ring from
-the phase and a radial coordinate, no texture. Its alpha is the map's
-transmission at the point, the rain value, and a backlight term when the sun or
-the lamp is behind it (survey §4.5). The instance count drawn is
+the phase and a radial coordinate, no texture. Its alpha is the rain
+value, a backlight term when the sun or the lamp is behind it (survey §4.5), and
+under canopy the map's transmission at the point; on open ground, a roof or the
+water the top surface takes the whole rain, since the transmission is what
+falls below it, and the map's lift channel tells the two apart. The instance count drawn is
 `round(rain × capacity)`. A splash that is not raining is a disabled mesh.
 
 **Drip** (medium 600, high 1,000): the streak mesh's plugin with a `RAIN_DRIP`
@@ -234,7 +248,10 @@ the ground under them.
 
 ### 6.1 The plugin
 
-`WetPlugin` (the name the plugin order reserves) attaches to the PBR materials
+`WetPlugin` (the water's wet-line plugin, which already carries that name and
+the plugin order's slot; as built the weather's rule was added to it as a second
+uniform pair, `wetWeather` and a per-material `wetCap`, rather than as a new
+class) attaches to the PBR materials
 of the forest's bark and canopy at every LOD, the understory, the clutter, the
 cliffs, the deadwood and the props, with a per-material porosity cap: 1 for
 bark, soil, duff, deadwood and the props' wood and concrete; 0.5 for rock; 0.3
@@ -258,14 +275,20 @@ plugins.
 
 ### 6.2 Ripples
 
-A 256 by 256 ring texture generated in code (`rippleRingMap()`): red the
-inverted normalised distance from the ring centre, green and blue the
-direction from it, alpha a per-ring random phase. Four layers at the survey's
-time multipliers and offsets (§4.4), each at its own UV scale and offset,
-blended in one per quarter of rain intensity, summed into the trail paint's
-puddle normal where `tPuddle` is above zero. One uniform (`terrainRain`) and
-one sampler on the terrain plugin. Expected under 0.1 ms. The lake and the sea
-are left to the water design.
+As designed, a 256 by 256 ring texture generated in code. As built, no
+texture: the terrain's fragment stage already binds sixteen sampled textures on
+WebGPU, the device's default ceiling, so the rings are hashed in the fragment
+instead. Each of four layers cuts the plane into cells at its own scale and
+offset (2.5 to 3.8 cells per metre), each cell holds one ring whose centre
+(inset a quarter cell) and phase come from the terrain's own lattice hash, and
+the ring's distance, direction and phase give the same normal offset the
+texture would have; the four layers run at the survey's time multipliers and
+offsets (§4.4), blended in one per quarter of rain intensity, and the sum
+tilts the trail paint's puddle normal where `tPuddle` is above zero. The whole
+block sits behind a branch on the rain uniform, so a dry frame pays nothing,
+and the hash reads cell indices folded modulo 512 so it keeps its precision a
+kilometre from the origin. Two uniforms (`terrainRain`, `terrainTime`) and no
+sampler. The lake and the sea are left to the water design.
 
 ## 7. The lens and the sound
 
@@ -273,18 +296,27 @@ are left to the water design.
 
 On medium and high, a `lens` post-process between FXAA and the finish pass,
 so the drops are anti-aliased and the dither stays last. It reads the chain's
-colour, a 128 by 128 code-generated droplet texture (RG a normal, B a mask, A a
-trail channel; about forty static drops of 2 to 5 percent of the frame's
-height, tiled twice across the frame with a per-tile offset so no drop repeats
-in place) and, on high, the halation chain's quarter-resolution blur. Per
-pixel: the drop normal offsets the scene UV by `strength × normal × 0.03`,
-the colour is read once there; on high it is lerped toward the blur by the
-mask's complement times the trail channel for the foggy glass. Eight sliding
+colour and a 128 by 128 code-generated droplet texture (RG a normal, B a mask,
+A a trail channel; about forty static drops of 2 to 5 percent of the map's
+side, tiled twice across the frame with a per-tile offset and mirror so no drop
+repeats in place). Per pixel: the drop normal offsets the scene UV against itself by
+`strength × normal × 0.012` (about ten pixels at a drop's edge at 1080p, under
+the smallest drop's radius, so a drop pulls its own neighbourhood in as a convex
+lens does rather than showing a slab from outside itself), the colour is read
+once there, and for the foggy glass it is lerped toward a four-tap blur of the
+scene itself at that offset (reads two texels out on the diagonals, averaged)
+by a quarter of the strength times the mask's complement times the trail
+channel. Four texels and a weight of 0.6 were tried first and read as a
+four-way ghost of every edge, not as frost. The design first named the halation chain's blur as
+the fog's source; that blur is the extract's over-threshold excess, mostly
+black, and lerping toward it darkens the frame, so the pass blurs the scene it
+is given, on every tier alike. Eight sliding
 drops are procedural: a grid of 8 columns, each with a saw-tooth fall at its
 own speed and a sinusoidal wobble, each drop a circle whose analytic normal
-refracts the scene the same way and whose trail cuts the fog. That is three
-texture reads and a few dozen operations per pixel on high, two reads on
-medium, and no extra render target.
+refracts the scene the same way and whose trail cuts the fog. That is six scene reads and
+one droplet read per pixel, a few dozen operations, and no extra render
+target; the pass is detached from the chain while the strength has sat under
+its floor for a second, so a dry hike never pays for it.
 
 ### 7.2 Gating
 

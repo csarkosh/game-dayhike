@@ -191,3 +191,89 @@ the terrain's canopy density says they should. The trailhead spawn under
 WebGPU and WebGL2 shows the same cover on both engines, which closes the
 question of the render target's row order on WebGPU: the engine flips the clip
 position for render targets, so the streak's map read is the same on both.
+
+## 6. The final table
+
+Branch at `c77e79d` (every layer: the streak volume, the fog, the wet
+materials, the ripples, the height map, the splashes, the drips, the lens, the
+sound). The toggle method of §3, six cycles a page, two pages per pose for the
+whole stack; native 1920 by 1080; every page waited for a quiet machine (one-minute
+load under 4, no test runner) and the load at each page is recorded beside it in
+the archived tables. "canopy up" is the canopy pose pitched up into the rain,
+where the lens pass is at full strength.
+
+### 6.1 The whole stack, on minus off (ms)
+
+| tier, engine | canopy | meadow | night | canopy up |
+| --- | --- | --- | --- | --- |
+| high, WebGPU, page 1 | +0.26 ± 0.32 | +0.19 ± 0.64 | +5.15 ± 6.65 | +0.36 ± 0.33 |
+| high, WebGPU, page 2 | −0.24 ± 0.83 | +0.71 ± 0.40 | +0.16 ± 0.60 | −0.14 ± 2.09 |
+| high, WebGL2, page 1 | +1.43 ± 1.26 | +0.53 ± 0.29 | +0.78 ± 0.22 | +0.53 ± 0.38 |
+| high, WebGL2, page 2 | +0.91 ± 0.67 | +0.50 ± 0.13 | +0.71 ± 0.22 | +0.55 ± 0.19 |
+| medium, WebGPU, page 1 | +0.79 ± 0.46 | +0.72 ± 0.54 | | +0.24 ± 0.25 |
+| medium, WebGPU, page 2 | −0.55 ± 2.27 | +0.80 ± 0.55 | | +1.27 ± 1.37 |
+| medium, WebGL2, page 1 | +0.42 ± 0.69 | +0.31 ± 0.39 | | +0.92 ± 1.37 |
+| medium, WebGL2, page 2 | +0.66 ± 0.35 | +0.50 ± 0.29 | | +0.32 ± 0.63 |
+
+The frames those differences sit on: 20 to 24 ms on high WebGPU, 18 to 29 ms on
+high WebGL2, 18 to 24 ms on medium (the pose and the engine), with the rain on
+or off. The one wild row, high WebGPU night page 1 at +5.15 ± 6.65, is a page
+whose cycles spanned 20 ms, a disturbance, not a cost; its pair reads +0.16.
+
+**Reading.** On high the whole stack costs about **0.2 to 0.3 ms on WebGPU**
+and about **0.5 to 0.9 ms on WebGL2**; on medium about **0.5 ms on either
+engine**, with the lens looking up adding a few tenths on WebGL2. Every figure
+is under its bar (2.7 ms on high, 1.8 on medium) by a wide margin, and most are
+within one standard deviation of zero. Three to five draw calls are added
+(the streaks, the drips, the splashes, and the two terrain rings' map draws
+when a refresh lands).
+
+**The low tier.** Measured with every layer the tier has (the streaks, the
+fog, the wet materials, the ripples), the low tier on this machine runs at the
+display's 60 Hz with the rain on or off (16.67 ms both ways, ± 0.02), so its
+cost is under the cap and the method cannot resolve it; on a page that was
+disturbed off the cap (29 to 31 ms) the pair read +0.47 ± 1.39 and −0.30 ± 1.13.
+The tier's bar (0.8 ms) is met as far as the machine can say.
+
+### 6.2 Each layer alone, high tier, on minus off (ms)
+
+| layer alone | WebGPU canopy | WebGPU meadow | WebGL2 canopy | WebGL2 meadow |
+| --- | --- | --- | --- | --- |
+| streaks (24,000) | +0.09 ± 0.02 | −0.06 ± 0.28 | +0.27 ± 0.27 | +0.07 ± 0.28 |
+| wet materials | −0.16 ± 0.28 | −0.12 ± 0.46 | +0.34 ± 1.16 | −0.08 ± 0.21 |
+| ripples | −0.12 ± 0.37 | −0.22 ± 0.41 | | |
+| splashes (1,200) | −0.15 ± 0.18 | −0.35 ± 0.41 | | |
+| drips (up to 1,000) | −0.31 ± 0.73 | −0.59 ± 0.67 | | |
+| lens, looking ahead | +0.18 ± 0.51 | +0.04 ± 0.47 | | |
+| lens, looking up (full strength) | +0.17 ± 0.39 | | +0.83 ± 0.49 | |
+
+No layer alone is more than one standard deviation from zero on WebGPU. The one
+layer the method resolves on WebGL2 is the lens at full strength, about
+**0.8 ms**: six full-resolution reads of the scene per pixel, the cost the
+design priced (§7.1). The height map's refresh is §5's figure (free on WebGPU,
+about 2.9 ms on the refresh frame on WebGL2 with seven rings; the two inner
+rings are listed now and the amortised figure, once per 8 m of movement, is a
+few hundredths of a millisecond either way).
+
+### 6.3 What ships, per tier
+
+Every layer the design gave a tier ships on it: the air, the fog, the wet
+materials and the ripples on every tier; the height map, the splashes, the
+drips and the lens on medium and high; the sound everywhere. Nothing was
+removed by a gate (design §10).
+
+## 7. What this did not measure
+
+- **4× pixels.** The shared GPU gave 2 to 10 ms of spread per cycle at 3840 by
+  2160 on the day; no 4× figure is read. The fill-bound layers (the streaks, the
+  lens) scale with pixels and would read larger there.
+- **The low tier off the vsync cap.** Its frame sits at the display's 60 Hz on
+  this machine with or without rain.
+- **A party of two**, whose second headlamp changes every lit material's
+  variant, and a phone.
+- **Memory.** The map's half-float target (512 by 512 by four channels, with a
+  depth buffer), the lens's input render target (kept while the pass is
+  detached), the streak and drip seed buffers, and the splash seeds: a few
+  megabytes; not measured.
+- **The whole suite on the merged tip** ran per task before the merge; the
+  merge's own run is the continuous build's.
