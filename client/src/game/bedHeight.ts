@@ -123,7 +123,7 @@ export function bakeBed(grid: BedGrid, seed: number, camX: number, camZ: number)
 /** A pond's disc as the bed needs it: centre and basin radius, metres. */
 export type BedPond = { x: number; z: number; radius: number };
 
-/** How far a pond's disc reaches past its basin radius (renderer.ts `pondDisc`). */
+/** How far a lake's surface reaches past its basin radius (renderer.ts `lakeSurface`). */
 export const POND_DISC_MARGIN = 1;
 
 /**

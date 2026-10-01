@@ -57,7 +57,7 @@ import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeatureP
 import type { WeatherParams } from "./weather.js";
 import { wetSurfaceUnder } from "./weather.js";
 import { detectTier, type QualityTier } from "./quality.js";
-import { activeTerrainVariant } from "../sim/terrain.js";
+import { activeTerrainVariant, elevationAt, type LakeSource } from "../sim/terrain.js";
 import { fbm2 } from "../sim/field.js";
 import {
   createWaterRingSamples,
@@ -73,7 +73,7 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater } from "./waterPlugin.js";
 import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
-import { WATER_ROWS } from "./waterShading.js";
+import { WATER_ROWS, lakeWaterRow } from "./waterShading.js";
 import { attachWet, setWetLine, wetLineFor, type WetBody } from "./wetPlugin.js";
 import {
   BED_GRID,
@@ -87,7 +87,6 @@ import {
   POND_DISC_MARGIN,
   type BedBake,
 } from "./bedHeight.js";
-import { POND_DEPTH } from "../sim/features.js";
 import { createForestMeshes, type BakePipelines, type ImpostorBake } from "./forestMeshes.js";
 import { NEAR_RADIUS } from "./forestField.js";
 import { createClutterMeshes } from "./clutterMeshes.js";
@@ -651,8 +650,6 @@ export type Water = {
   dispose(): void;
 };
 
-export type Pond = { x: number; z: number; radius: number; height: number };
-
 /** The see-through effects a camera moves among: rain, motes and the mist banks. */
 export type SeeThroughEffects = { rain: Rain | null; motes: Motes | null; mist: MistMeshes | null };
 
@@ -674,42 +671,40 @@ export function setEffectsGroup(group: number, effects: SeeThroughEffects): void
   for (const mesh of effects.mist?.meshes ?? []) mesh.renderingGroupId = group;
 }
 
+/** Spacing (m) of a lake surface's vertices: fine enough that the per-vertex
+ * depth follows the shelf and its drop. */
+export const LAKE_SURFACE_SPACING = 2;
+
 /**
- * Builds one flat disc over a pond, carrying the same per-vertex `bedDepth` the
- * ring meshes carry (`waterRingGeometry`), so the water material shades it like
- * the sea's shoreline rather than as a flat tint.
- *
- * `basinD` (sim/features.ts) carves the pond's ground as
- * `height − POND_DEPTH·(1 − (q/R)²)²` for q < R — the same profile, evaluated
- * here in the disc's LOCAL frame (pre-rotation XY, z unused) so `r` is the
- * distance from the disc's centre before `rotation.x` lays it flat.
+ * One lake's surface: a flat square grid over the lake at its level, carrying
+ * the same per-vertex `bedDepth` the ring meshes carry (`waterRingGeometry`),
+ * read from the sim's own ground under each vertex, so the shelf, the drop and
+ * the marsh draw as the sim has them. Where the ground stands above the water
+ * the material discards, as it does on the sea's land. Static: a lake's
+ * ground does not scroll with the camera.
  *
  * Exported so it is reachable from a test without a full `createWater` call.
  */
-export function pondDisc(scene: Scene, mat: PBRMaterial, pond: Pond, index: number): Mesh {
-  const disc = MeshBuilder.CreateDisc(`pond_${index}`, { radius: pond.radius + POND_DISC_MARGIN, tessellation: 48 }, scene);
-  disc.rotation.x = Math.PI / 2;
-  disc.position.set(pond.x, pond.height + 0.02, pond.z);
-  disc.material = mat;
-  disc.isPickable = false;
-  disc.receiveShadows = false;
-
-  const positions = disc.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
+export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, seed: number, index: number): Mesh {
+  const ext = lake.radius + POND_DISC_MARGIN;
+  const subdivisions = Math.ceil((2 * ext) / LAKE_SURFACE_SPACING);
+  const mesh = MeshBuilder.CreateGround(`pond_${index}`, { width: 2 * ext, height: 2 * ext, subdivisions }, scene);
+  mesh.position.set(lake.x, lake.level + 0.02, lake.z);
+  mesh.material = mat;
+  mesh.isPickable = false;
+  mesh.receiveShadows = false;
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
   const vertexCount = positions.length / 3;
   const depths = new Float32Array(vertexCount);
-  const R = pond.radius;
   for (let i = 0; i < vertexCount; i++) {
-    const x = positions[i * 3] as number;
-    const y = positions[i * 3 + 1] as number;
-    const r = Math.hypot(x, y);
-    // Zero outside the basin (r >= R), where the ground is back at the pond's level.
-    const u = Math.max(0, 1 - (r / R) * (r / R));
-    depths[i] = POND_DEPTH * u * u;
+    const wx = lake.x + (positions[i * 3] as number);
+    const wz = lake.z + (positions[i * 3 + 2] as number);
+    depths[i] = Math.max(0, lake.level - elevationAt(seed, wx, wz));
   }
-  disc.setVerticesData("bedDepth", depths, false, 1);
-  disc.metadata = { waterLevel: pond.height };
-  disc.freezeWorldMatrix();
-  return disc;
+  mesh.setVerticesData("bedDepth", depths, false, 1);
+  mesh.metadata = { waterLevel: lake.level };
+  mesh.freezeWorldMatrix();
+  return mesh;
 }
 
 /**
@@ -718,9 +713,8 @@ export function pondDisc(scene: Scene, mat: PBRMaterial, pond: Pond, index: numb
  * in a coarser ring tracks the finer ring's footprint exactly as the terrain
  * clipmap's does. Takes only a `Scene` so it runs under `NullEngine`.
  *
- * `ponds` adds one flat disc per pond feature on the lake material — the trail
- * system's made ponds otherwise have no water at all, just the basin ground
- * `basinD` carved.
+ * `lakes` adds one surface per lake on its own material, drawn by its murk
+ * (`lakeSurface`).
  *
  * The bed height texture is baked and uploaded here, at (`camX`, `camZ`), so no
  * frame is drawn with the material not ready (the plugin is not ready until it
@@ -737,7 +731,7 @@ export function createWater(
   scene: Scene,
   seed: number,
   waterLevel: number,
-  ponds: readonly Pond[] = [],
+  lakes: readonly LakeSource[] = [],
   tier: QualityTier = "medium",
   camX = 0,
   camZ = 0,
@@ -748,18 +742,22 @@ export function createWater(
   const seaMat = new PBRMaterial("mat_water_sea", scene);
   seaMat.backFaceCulling = false;
   const seaPlugin = attachWater(seaMat, WATER_ROWS.sea);
-  const lakeMat = new PBRMaterial("mat_water_lake", scene);
-  lakeMat.backFaceCulling = false;
-  const lakePlugin = attachWater(lakeMat, WATER_ROWS.lowlandLake);
-  const plugins = [seaPlugin, lakePlugin];
-  for (const mat of [seaMat, lakeMat]) {
+  // One material per lake, on the row its murk gives (a world has at most one).
+  const lakeMats = lakes.map((_, i) => {
+    const mat = new PBRMaterial(`mat_water_lake_${i}`, scene);
+    mat.backFaceCulling = false;
+    return mat;
+  });
+  const lakePlugins = lakes.map((l, i) => attachWater(lakeMats[i] as PBRMaterial, lakeWaterRow(l.murk)));
+  const plugins = [seaPlugin, ...lakePlugins];
+  for (const mat of [seaMat, ...lakeMats]) {
     // High: the surface writes its own colour, the transmission read from the
     // frame's copy of what lies behind it. Otherwise one alpha blends it.
     mat.transparencyMode = high ? PBRMaterial.PBRMATERIAL_OPAQUE : PBRMaterial.PBRMATERIAL_ALPHABLEND;
     mat.needDepthPrePass = false;
   }
   budgetMaterial(seaMat);
-  budgetMaterial(lakeMat);
+  for (const mat of lakeMats) budgetMaterial(mat);
 
   // Every water mesh, rings and pond discs, filled below.
   const waterMeshes: Mesh[] = [];
@@ -785,7 +783,7 @@ export function createWater(
 
   const bump = createWaterBump(scene);
   seaMat.bumpTexture = bump;
-  lakeMat.bumpTexture = bump;
+  for (const mat of lakeMats) mat.bumpTexture = bump;
 
   // Cosmetic drift: scroll the bump's UV offset each frame by the clock's
   // delta, not per-frame constants, so the ripple speed survives
@@ -874,11 +872,11 @@ export function createWater(
     emitRing(level);
   }
 
-  // One flat disc per pond feature, on the lake material. Static — no
-  // ring-style re-emit, since a pond's ground does not scroll with the camera —
+  // One surface per lake, on its own material. Static — no
+  // ring-style re-emit, since a lake's ground does not scroll with the camera —
   // so they need no place in `meshes` (the doc'd one-per-ring,
   // shadow-caster-exempt set); they are disposed alongside it instead.
-  const pondMeshes: Mesh[] = ponds.map((p, i) => pondDisc(scene, lakeMat, p, i));
+  const pondMeshes: Mesh[] = lakes.map((l, i) => lakeSurface(scene, lakeMats[i] as PBRMaterial, l, seed, i));
   for (const mesh of pondMeshes) mesh.renderingGroupId = group;
   waterMeshes.push(...meshes, ...pondMeshes);
 
@@ -915,7 +913,7 @@ export function createWater(
         // Where no body reaches the new square the current bed is kept: outside
         // it the ring's per-vertex depth stands in, and there is no water there.
         if (next.originX !== dryX || next.originZ !== dryZ) {
-          if (bedSquareHasWater(next, spare, ponds, waterLevel, seed)) bake = next;
+          if (bedSquareHasWater(next, spare, lakes, waterLevel, seed)) bake = next;
           else [dryX, dryZ] = [next.originX, next.originZ];
         }
       }
@@ -946,7 +944,7 @@ export function createWater(
       bedTexture?.dispose();
       frame?.dispose();
       seaMat.dispose();
-      lakeMat.dispose();
+      for (const mat of lakeMats) mat.dispose();
     },
   };
 }
@@ -1410,13 +1408,13 @@ function buildRenderer(
   // water exactly when its variant declares a sea level. Deliberately NOT
   // added to the shadow caster list — water neither casts nor receives.
   const waterLevel = forest === null ? undefined : activeTerrainVariant().waterLevel;
-  const ponds: readonly Pond[] =
+  const lakes: readonly LakeSource[] =
     forest !== null
-      ? (activeTerrainVariant().trailGraph?.(forest.seed).features.filter((f) => f.kind === "pond") ?? [])
+      ? (activeTerrainVariant().waterBodies?.(forest.seed).filter((b): b is LakeSource => b.kind === "lake") ?? [])
       : [];
   const water =
     forest !== null && waterLevel !== undefined
-      ? createWater(scene, forest.seed, waterLevel, ponds, tier, level.playerSpawns[0]?.x ?? 0, level.playerSpawns[0]?.z ?? 0, clock)
+      ? createWater(scene, forest.seed, waterLevel, lakes, tier, level.playerSpawns[0]?.x ?? 0, level.playerSpawns[0]?.z ?? 0, clock)
       : null;
   partOf(water);
 
@@ -1425,8 +1423,8 @@ function buildRenderer(
   if (forest !== null && waterLevel !== undefined) {
     wetBodies.push({ ...WATER_ROWS.sea, level: waterLevel, x: 0, z: 0, radius: Number.POSITIVE_INFINITY });
   }
-  for (const p of ponds) {
-    wetBodies.push({ ...WATER_ROWS.lowlandLake, level: p.height, x: p.x, z: p.z, radius: p.radius });
+  for (const l of lakes) {
+    wetBodies.push({ ...lakeWaterRow(l.murk), level: l.level, x: l.x, z: l.z, radius: l.radius });
   }
   const updateWet = (x: number, z: number): void => {
     if (wetBodies.length === 0) return;
