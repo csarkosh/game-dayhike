@@ -8,6 +8,8 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import type { PostProcess } from "@babylonjs/core/PostProcesses/postProcess.js";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import finishFx from "../../src/game/shaders/finish.fragment.fx?raw";
 import { createPost, finishFragmentFor, fxSupportedBy } from "../../src/game/post.js";
 import { postFeaturesFor, MSAA_SAMPLES } from "../../src/game/postParams.js";
@@ -118,20 +120,141 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
     post.dispose();
   });
 
-  it("attaches the passes in the spec's order on high and medium", () => {
+  it("attaches the passes in the spec's order on high and medium, the lens's slot empty until there is rain on the glass", () => {
     const names = (tier: "high" | "medium") => {
       const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
       const post = createPost(scene, camera, postFeaturesFor(tier, true));
-      // `_postProcesses` is `Nullable<PostProcess>[]`; `?.` keeps TS happy and
-      // still fails the assertion below if a slot is ever null, since `toEqual`
-      // would then see `undefined` where a pass name is expected.
-      const order = camera._postProcesses.map((p) => p?.name);
+      // `_postProcesses` is `Nullable<PostProcess>[]`: a detached pass leaves
+      // a null in its slot, read here as null.
+      const fresh = camera._postProcesses.map((p) => p?.name ?? null);
+      post.update(WEATHER_PRESETS.clear, 12, 1, 0, 1);
+      const order = camera._postProcesses.map((p) => p?.name ?? null);
       post.dispose();
       camera.dispose();
-      return order;
+      return { fresh, order };
     };
-    expect(names("high")).toEqual(["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "finish"]);
-    expect(names("medium")).toEqual(["grade", "chromaticAberration", "fxaa", "finish"]);
+    expect(names("high")).toEqual({
+      fresh: ["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", null, "finish"],
+      order: ["scene", "halationExtract", "halationBlurX", "halationBlurY", "grade", "chromaticAberration", "fxaa", "lens", "finish"],
+    });
+    expect(names("medium")).toEqual({
+      fresh: ["grade", "chromaticAberration", "fxaa", null, "finish"],
+      order: ["grade", "chromaticAberration", "fxaa", "lens", "finish"],
+    });
+  });
+
+  it("builds the lens at ratio 1.0 with its uniforms and samplers, on both tiers", () => {
+    for (const tier of ["high", "medium"] as const) {
+      const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+      const post = createPost(scene, camera, postFeaturesFor(tier, true));
+      expect(post.features.lens).toBe(true);
+      post.update(WEATHER_PRESETS.clear, 12, 1, 0, 1);
+      const lens = passNamed(camera, "lens");
+      expect(ratioOf(lens)).toBe(1.0);
+      // Babylon appends its own `scale` and `textureSampler` to what a pass declares.
+      expect((lens as unknown as { _parameters: string[] })._parameters).toEqual(["lensStrength", "time", "aspect", "texelSize", "scale"]);
+      expect((lens as unknown as { _samplers: string[] })._samplers).toEqual(["lensSampler", "textureSampler"]);
+      post.dispose();
+      camera.dispose();
+    }
+  });
+
+  it("binds the droplet map, wrapping, and the texel size, the same on both tiers", () => {
+    for (const tier of ["high", "medium"] as const) {
+      const bigEngine = nullEngineAt(1920, 1080);
+      const bigScene = new Scene(bigEngine);
+      const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), bigScene);
+      const post = createPost(bigScene, camera, postFeaturesFor(tier, true));
+      post.update(WEATHER_PRESETS.clear, 12, 1, 0, 1);
+      const lens = passNamed(camera, "lens");
+      const calls: { fn: string; args: unknown[] }[] = [];
+      const fakeEffect = new Proxy(
+        {},
+        { get: (_target, prop: string) => (...args: unknown[]) => calls.push({ fn: prop, args }) },
+      ) as unknown as Effect;
+      lens.onApplyObservable.notifyObservers(fakeEffect);
+      const droplets = calls.find((c) => c.fn === "setTexture");
+      expect(droplets?.args[0]).toBe("lensSampler");
+      expect(droplets?.args[1]).toBeInstanceOf(RawTexture);
+      expect((droplets?.args[1] as RawTexture).wrapU).toBe(Texture.WRAP_ADDRESSMODE);
+      expect((droplets?.args[1] as RawTexture).wrapV).toBe(Texture.WRAP_ADDRESSMODE);
+      const texel = calls.find((c) => c.fn === "setFloat2");
+      expect(texel?.args[0]).toBe("texelSize");
+      expect(texel?.args[1]).toBeCloseTo(0.0005208333333333333, 15);
+      expect(texel?.args[2]).toBeCloseTo(0.0009259259259259259, 15);
+      // No other texture: the frost is the scene itself, read in the shader.
+      expect(calls.filter((c) => c.fn.startsWith("setTexture")).map((c) => c.args[0])).toEqual(["lensSampler"]);
+      post.dispose();
+      camera.dispose();
+      bigScene.dispose();
+      bigEngine.dispose();
+    }
+  });
+
+  it("hands the lens its strength, the clock folded modulo an hour and the frame's aspect", () => {
+    const bigEngine = nullEngineAt(1920, 1080);
+    const bigScene = new Scene(bigEngine);
+    const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), bigScene);
+    let ms = 0;
+    const post = createPost(bigScene, camera, postFeaturesFor("medium", true), { now: () => ms });
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.3);
+    ms = 3_601_000;
+    const calls: { fn: string; args: unknown[] }[] = [];
+    const fakeEffect = new Proxy(
+      {},
+      { get: (_target, prop: string) => (...args: unknown[]) => calls.push({ fn: prop, args }) },
+    ) as unknown as Effect;
+    passNamed(camera, "lens").onApplyObservable.notifyObservers(fakeEffect);
+    const floats = Object.fromEntries(calls.filter((c) => c.fn === "setFloat").map((c) => [c.args[0], c.args[1]]));
+    expect(floats["lensStrength"]).toBe(0.3);
+    expect(floats["time"]).toBe(1);
+    expect(floats["aspect"]).toBeCloseTo(1.7777777777777777, 12);
+    post.dispose();
+    camera.dispose();
+    bigScene.dispose();
+    bigEngine.dispose();
+  });
+
+  it("starts the lens detached, attaches it at 0.02, and detaches it a second after its strength falls under that, in its slot", () => {
+    const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
+    let ms = 0;
+    const post = createPost(scene, camera, postFeaturesFor("medium", true), { now: () => ms });
+    const names = () => camera._postProcesses.map((p) => p?.name ?? null);
+    const attached = ["grade", "chromaticAberration", "fxaa", "lens", "finish"];
+    const detached = ["grade", "chromaticAberration", "fxaa", null, "finish"];
+    expect(names()).toEqual(detached);
+    // An update with no strength (every other call site) leaves it so.
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0);
+    expect(names()).toEqual(detached);
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.019);
+    expect(names()).toEqual(detached);
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.02);
+    expect(names()).toEqual(attached);
+    ms = 999;
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.019);
+    expect(names()).toEqual(attached);
+    ms = 1000;
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.019);
+    expect(names()).toEqual(attached);
+    ms = 1999;
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.019);
+    expect(names()).toEqual(detached);
+    // Back above the floor: attached at once, in the same slot.
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0.02);
+    expect(names()).toEqual(attached);
+    // The idle clock restarts from the fall, not from the last attach.
+    ms = 1500;
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0);
+    ms = 2499;
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0);
+    expect(names()).toEqual(attached);
+    ms = 2500;
+    post.update(WEATHER_PRESETS.clear, 12, 1, 0, 0);
+    expect(names()).toEqual(detached);
+    // Disposing a detached lens leaves the chain's other passes to their own dispose.
+    post.dispose();
+    expect(camera._postProcesses.filter((p) => p !== null)).toEqual([]);
+    camera.dispose();
   });
 
   it("multisamples the first pass of the chain when the engine can, and leaves the rest at 1", () => {
@@ -141,6 +264,7 @@ describe("createPost under NullEngine — the silent-degradation contract", () =
       engine.getCaps().maxMSAASamples = 4;
       const camera = new UniversalCamera("cam", new Vector3(0, 2, 0), scene);
       const post = createPost(scene, camera, postFeaturesFor(tier, true));
+      post.update(WEATHER_PRESETS.clear, 12, 1, 0, 1);
       const passes = camera._postProcesses.map((p) => p!);
       expect(passes[0]!.name).toBe(tier === "high" ? "scene" : "grade");
       expect(passes[0]!.samples).toBe(MSAA_SAMPLES);

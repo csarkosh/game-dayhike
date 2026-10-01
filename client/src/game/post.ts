@@ -18,15 +18,21 @@ import type { WeatherParams } from "./weather.js";
 import { gradeUnder, saturationUnder, WEATHER_PRESETS } from "./weather.js";
 import { gradeRecordUnder, type GradeRecord } from "./gradeParams.js";
 import { finishUnder, MSAA_SAMPLES, type PostFeatures } from "./postParams.js";
+import { LENS, lensDropletMap } from "./lensParams.js";
 import halationExtractFragment from "./shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "./shaders/grade.fragment.fx?raw";
+import lensFragment from "./shaders/lens.fragment.fx?raw";
 import finishFragment from "./shaders/finish.fragment.fx?raw";
 
 export type Post = {
   readonly features: PostFeatures;
-  update(weather: WeatherParams, hour: number, unsettle: number, stare: number): void;
+  /** `lens` is the smoothed strength of the rain on the glass (lensParams.ts), 0 when dry. */
+  update(weather: WeatherParams, hour: number, unsettle: number, stare: number, lens?: number): void;
   dispose(): void;
 };
+
+/** How long the lens's strength sits under its floor before the pass is detached. */
+const LENS_IDLE_S = 1;
 
 /** The capability every HDR pass needs: float or half-float render targets. */
 export function fxSupportedBy(engine: AbstractEngine): boolean {
@@ -126,7 +132,15 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   let blurY: BlurPostProcess | null = null;
   let aberration: ChromaticAberrationPostProcess | null = null;
   let fxaa: FxaaPostProcess | null = null;
+  let lens: PostProcess | null = null;
+  let droplets: RawTexture | null = null;
   let black: RawTexture | null = null;
+  // The lens's gate: its strength this frame, the slot it holds in the
+  // camera's chain, whether it is attached, and when it last fell idle.
+  let lensStrength = 0;
+  let lensSlot = -1;
+  let lensAttached = false;
+  let lensIdleSince: number | null = null;
   let record: GradeRecord = gradeRecordUnder(WEATHER_PRESETS.clear, 12, 1);
   let finishRecord = finishUnder(WEATHER_PRESETS.clear, 1, 0);
   const start = now();
@@ -138,6 +152,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     Effect.ShadersStore["halationExtractFragmentShader"] = halationExtractFragment;
     Effect.ShadersStore["gradeFragmentShader"] = gradeFragment;
     Effect.ShadersStore["finishFragmentShader"] = finishFragmentFor(engine.isWebGPU);
+    Effect.ShadersStore["lensFragmentShader"] = lensFragment;
 
     if (features.halation) {
       // Absorbs the halation extract's quarter-resolution ratio so the scene
@@ -215,6 +230,43 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
 
     fxaa = new FxaaPostProcess("fxaa", 1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, textureType);
 
+    if (features.lens) {
+      // Rain on the glass, after FXAA so the drops' edges are anti-aliased
+      // and before the finish so the dither stays last. The droplet map is
+      // generated (lensParams.ts) and tiles, so it wraps. The frost between
+      // the drops is the scene itself, read four texels out on the
+      // diagonals and averaged in the shader: the same on every tier, and no
+      // other target involved.
+      //
+      // Below the strength's floor the pass is detached rather than
+      // short-circuited in the shader: a pass that writes its input back
+      // still costs a full-screen read and write. Babylon nulls a detached
+      // pass's slot in place and refills a null slot on attach at that
+      // index (`Camera.attachPostProcess`), so the pass returns between
+      // FXAA and the finish, where it was built. It starts detached: the
+      // constructor attaches it, which fixes its slot, and `update` brings
+      // it in once there is rain on the glass.
+      droplets = RawTexture.CreateRGBATexture(lensDropletMap(), LENS.size, LENS.size, scene, true, false,
+        Texture.TRILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_UNSIGNED_BYTE);
+      droplets.name = "lensDroplets";
+      droplets.wrapU = Texture.WRAP_ADDRESSMODE;
+      droplets.wrapV = Texture.WRAP_ADDRESSMODE;
+      lens = new PostProcess("lens", "lens", ["lensStrength", "time", "aspect", "texelSize"], ["lensSampler"],
+        1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
+      lensSlot = camera._postProcesses.indexOf(lens);
+      camera.detachPostProcess(lens);
+      lensAttached = false;
+      const boundDroplets = droplets;
+      lens.onApply = (effect) => {
+        effect.setTexture("lensSampler", boundDroplets);
+        effect.setFloat2("texelSize", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
+        effect.setFloat("lensStrength", lensStrength);
+        // Folded so the sliding drops' saw-tooth keeps its precision on a long hike.
+        effect.setFloat("time", ((now() - start) / 1000) % 3600);
+        effect.setFloat("aspect", engine.getRenderWidth() / engine.getRenderHeight());
+      };
+    }
+
     finish = new PostProcess("finish", "finish", ["texelSize", "overlapGain", "overlapPhase", "grainGain", "time"], [],
       1.0, camera, Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
     finish.onApply = (effect) => {
@@ -242,10 +294,26 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
 
   return {
     features,
-    update(weather, hour, unsettle, stare) {
+    update(weather, hour, unsettle, stare, lensTarget = 0) {
       const seconds = (now() - start) / 1000;
       record = gradeRecordUnder(weather, hour, unsettle, seconds, stare);
       finishRecord = finishUnder(weather, unsettle, seconds);
+      lensStrength = lensTarget;
+      if (lens !== null) {
+        if (lensTarget >= LENS.floor) {
+          lensIdleSince = null;
+          if (!lensAttached) {
+            camera.attachPostProcess(lens, lensSlot);
+            lensAttached = true;
+          }
+        } else {
+          lensIdleSince ??= seconds;
+          if (lensAttached && seconds - lensIdleSince >= LENS_IDLE_S) {
+            camera.detachPostProcess(lens);
+            lensAttached = false;
+          }
+        }
+      }
       if (aberration !== null) {
         aberration.aberrationAmount = record.aberrationAmount;
         return;
@@ -270,6 +338,8 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     },
     dispose() {
       finish?.dispose();
+      lens?.dispose();
+      droplets?.dispose();
       fxaa?.dispose();
       aberration?.dispose();
       grade?.dispose();

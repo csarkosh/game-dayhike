@@ -23,6 +23,7 @@ import type { Vec3, WorldState } from "../sim/types.js";
 import { AiState } from "../sim/types.js";
 import type { Forest } from "../sim/forest.js";
 import { isHollow } from "../sim/hollow.js";
+import { forestDensity } from "../sim/vegetation.js";
 import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
@@ -52,6 +53,7 @@ import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Sl
 import { createLighting } from "./lighting.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
+import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
 import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainRain, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
@@ -1405,6 +1407,13 @@ function buildRenderer(
   const post = createPost(scene, camera, postFeatures, { now: clock });
   partOf(post);
   let unsettle = 1;
+  /** The rain on the lens, smoothed (lensParams.ts). */
+  let lensStrength = 0;
+  // The forest's density over the camera, a full terrain sample: taken
+  // again only once the camera has moved a metre from where it was taken.
+  let lensCanopyX = Number.NaN;
+  let lensCanopyZ = Number.NaN;
+  let lensCanopy = 0;
 
   // A forest draws terrain instead of brushes. Guarded here rather than relying on
   // the caller to pass an empty level: app.ts passes the parsed sandbox01 so it
@@ -1820,7 +1829,16 @@ function buildRenderer(
       setWetWeather(weather.wetness);
       atmosphere.update(weather, lighting.hour);
       const stare = state.players.get(localId)?.stare ?? 0;
-      post.update(weather, lighting.hour, unsettle, stare);
+      // Rain on the lens: strongest looking up, cleared under the canopy,
+      // smoothed over a second. The camera's pose is last frame's (it is set
+      // below), one frame behind, which the smoothing hides.
+      if (forest !== null && !(Math.hypot(camera.position.x - lensCanopyX, camera.position.z - lensCanopyZ) <= 1)) {
+        lensCanopyX = camera.position.x;
+        lensCanopyZ = camera.position.z;
+        lensCanopy = forestDensity(forest.seed, lensCanopyX, lensCanopyZ);
+      }
+      lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x, lensCanopy), engine.getDeltaTime() / 1000);
+      post.update(weather, lighting.hour, unsettle, stare, lensStrength);
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to

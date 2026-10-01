@@ -8,16 +8,17 @@ import { dreadLensUnder, type WeatherParams } from "./weather.js";
  * BABYLON_FREE_FILES list; `post.ts` is the shell.
  */
 
-export type PostFeatures = { pipeline: boolean; halation: boolean; colourPath: "post" | "material" };
+export type PostFeatures = { pipeline: boolean; halation: boolean; lens: boolean; colourPath: "post" | "material" };
 
 /**
  * The tier ladder as data. Without float render targets (NullEngine, weak
  * WebGL) nothing HDR can run, so every tier falls to the material path: an
- * 8-bit chain would band the very frames this restyle exists for.
+ * 8-bit chain would band the very frames this restyle exists for. The lens
+ * (rain on the glass) rides the pipeline: every tier with the chain has it.
  */
 export function postFeaturesFor(tier: QualityTier, fxSupported: boolean): PostFeatures {
-  if (!fxSupported || tier === "low") return { pipeline: false, halation: false, colourPath: "material" };
-  return { pipeline: true, halation: tier === "high", colourPath: "post" };
+  if (!fxSupported || tier === "low") return { pipeline: false, halation: false, lens: false, colourPath: "material" };
+  return { pipeline: true, halation: tier === "high", lens: true, colourPath: "post" };
 }
 
 /** MSAA sample count on the first pass of the chain (the scene pass on high,
