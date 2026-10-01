@@ -369,8 +369,13 @@ and low tiers; on the high tier three rounds of four lie within half a
 millisecond and one, taken on a drifting page, read +10 ms, so the high tier
 at the lake is not settled. At the cove the branch drew faster than `main` in
 eleven rounds of twelve, on every tier: the cove's ground replaces the dunes
-and the inland blend in the pad's view. A silent reading of the high tier at
-the lake remains owed.
+and the inland blend in the pad's view. The silent reading came on 2026-10-01 at
+14:05, load 2.0 to 2.5 and no other page in the browser, the control `main`
+at 07c9914: at the lake on the high tier the four pages of the first round
+lay within 41.7 and 42.2 ms, branch less control −0.14 ms, so the lake costs
+the high tier nothing measurable; the two rounds after it climbed on both
+builds alike, the rig warming. The cove on the high tier read −1.8, −0.5 and
+−1.4 ms over three rounds. No tier pays for the water's ground.
 
 ## 9. Out of scope
 
