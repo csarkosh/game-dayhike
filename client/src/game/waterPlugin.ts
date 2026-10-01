@@ -44,6 +44,9 @@ export class WaterPlugin extends MaterialPluginBase {
   nearFar: [number, number] = [0.05, 1000];
   time = 0;
   windDir: [number, number] = [1, 0];
+  /** The wind's direction integrated over the run, in seconds: what the skin and the second octave drift by. */
+  windTime: [number, number] = [0, 0];
+  private _lastSeconds: number | null = null;
   /** Ripple octaves the fragment blends: 2, or 1 on the low tier (spec §5.3). */
   octaves = 2;
   /** The duckweed and algae skin: x how much of the surface may carry it
@@ -86,6 +89,15 @@ export class WaterPlugin extends MaterialPluginBase {
     this.windDir = dir;
   }
 
+  /** Per frame, with the renderer's clock: sets the time and adds the wind's direction times the step to `windTime`. */
+  advance(seconds: number): void {
+    const dt = this._lastSeconds === null ? 0 : Math.max(0, seconds - this._lastSeconds);
+    this.windTime[0] += this.windDir[0] * dt;
+    this.windTime[1] += this.windDir[1] * dt;
+    this._lastSeconds = seconds;
+    this.time = seconds;
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override prepareDefines(defines: MaterialDefines, _scene: Scene, _mesh: AbstractMesh): void {
     defines.WATER = true;
@@ -120,6 +132,7 @@ export class WaterPlugin extends MaterialPluginBase {
         { name: "waterBedTexels", size: 1, type: "float" },
         { name: "waterTime", size: 1, type: "float" },
         { name: "waterWind", size: 2, type: "vec2" },
+        { name: "waterWindTime", size: 2, type: "vec2" },
         { name: "waterScreen", size: 2, type: "vec2" },
         { name: "waterHigh", size: 1, type: "float" },
         { name: "waterOctaves", size: 1, type: "float" },
@@ -134,6 +147,7 @@ export class WaterPlugin extends MaterialPluginBase {
         "uniform float waterBedTexels;",
         "uniform float waterTime;",
         "uniform vec2 waterWind;",
+        "uniform vec2 waterWindTime;",
         "uniform vec2 waterScreen;",
         "uniform float waterHigh;",
         "uniform float waterOctaves;",
@@ -161,6 +175,7 @@ export class WaterPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("waterBedTexels", this.bedTexels);
     uniformBuffer.updateFloat("waterTime", this.time);
     uniformBuffer.updateFloat2("waterWind", this.windDir[0], this.windDir[1]);
+    uniformBuffer.updateFloat2("waterWindTime", this.windTime[0], this.windTime[1]);
     uniformBuffer.updateFloat2("waterScreen", this.screen[0], this.screen[1]);
     const high = this.sceneTexture !== null && this.depthTexture !== null;
     uniformBuffer.updateFloat("waterHigh", high ? 1 : 0);

@@ -24,8 +24,8 @@ const float WATER_REFRACT_DEPTH = 1.0;
 const float WATER_OCTAVE2_TILE = 3.0;
 const float WATER_OCTAVE2_WEIGHT = 0.333;
 const float WATER_OCTAVE2_DRIFT = 0.04;
-// The skin's drift in metres per second along the wind. The time is unfolded seconds, so a day's run
-// offsets the pattern by a few thousand metres, as large as the world coordinates the hash already takes
+// The skin's drift in metres per second along the wind. It is carried by the wind's integral over the run,
+// so a day's run offsets the pattern by a few thousand metres, the order of the world coordinates the hash takes
 const float WATER_SKIN_DRIFT = 0.04;
 // The rain's rings, the puddles' own: a ring's radius as a share of its cell,
 // and how far in from the cell's edges its centre sits at least. These and
@@ -38,7 +38,7 @@ const float WATER_RAIN_INSET = 0.25;
 // drifting with the wind. The first octave is PBR's own bump (24 m a tile,
 // scrolled by the shell). Returns an xz slope to add to the normal.
 vec2 waterRipple2(vec2 xz) {
-  vec2 uv = xz / WATER_OCTAVE2_TILE + waterWind * waterTime * WATER_OCTAVE2_DRIFT;
+  vec2 uv = xz / WATER_OCTAVE2_TILE + waterWindTime * WATER_OCTAVE2_DRIFT;
 #ifdef BUMP
   vec3 n = texture2D(bumpSampler, uv).xyz * 2.0 - 1.0;
   return n.xy * WATER_OCTAVE2_WEIGHT;
@@ -111,7 +111,7 @@ float waterSkinNoise(vec2 p) {
 // under 1.5 m, and algae in clumped mats along the margin, under 0.4 m.
 float waterSkinMask(vec2 xz, float depth) {
   if (waterSkin.x <= 0.0) return 0.0;
-  vec2 p = xz + waterSkin.y - waterWind * (waterTime * WATER_SKIN_DRIFT);
+  vec2 p = xz + waterSkin.y - waterWindTime * WATER_SKIN_DRIFT;
   float drift = waterSkinNoise(p / 9.0) * 0.65 + waterSkinNoise(p / 3.0) * 0.35;
   float duckweed = smoothstep(0.55, 0.62, drift) * (1.0 - smoothstep(0.9, 1.5, depth));
   float algae = smoothstep(0.5, 0.58, waterSkinNoise(p / 1.6)) * (1.0 - smoothstep(0.15, 0.4, depth));
@@ -122,7 +122,7 @@ float waterSkinMask(vec2 xz, float depth) {
 // and evened out with distance so the speckle never shimmers, and the
 // yellower algae where the mats clump.
 vec3 waterSkinColour(vec2 xz, float viewDepth) {
-  vec2 p = xz + waterSkin.y - waterWind * (waterTime * WATER_SKIN_DRIFT);
+  vec2 p = xz + waterSkin.y - waterWindTime * WATER_SKIN_DRIFT;
   float frond = mix(waterSkinNoise(p * 7.0), 0.5, smoothstep(10.0, 40.0, viewDepth));
   vec3 duckweed = mix(vec3(0.16, 0.26, 0.05), vec3(0.24, 0.34, 0.07), frond);
   vec3 algae = vec3(0.30, 0.32, 0.10);
@@ -153,7 +153,7 @@ vec2 waterRainLayer(vec2 xz, float t, float layer, float scale, vec2 offset, flo
 // The rain's rings at world xz, their xz slope: four layers, as on the
 // puddles. None without rain, a branch on the uniform. The time folds by the
 // hour as rippleTime does on the CPU, every layer's rate a whole number of
-// cycles in it, so a long run keeps its precision and no ring jumps.
+// cycles in it, so the fold keeps the t times timeMul product precise and no ring jumps.
 vec2 waterRainSlope(vec2 xz) {
   if (waterRain <= 0.0) return vec2(0.0);
   float t = mod(waterTime, 3600.0);

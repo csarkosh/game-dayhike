@@ -254,11 +254,15 @@ describe("water plugin", () => {
     const colour = d.indexOf("vec3 waterSkinColour(");
     const mask = d.slice(d.indexOf("float waterSkinMask("), colour);
     const col = d.slice(colour);
-    const drift = "vec2 p = xz + waterSkin.y - waterWind * (waterTime * WATER_SKIN_DRIFT);";
+    const drift = "vec2 p = xz + waterSkin.y - waterWindTime * WATER_SKIN_DRIFT;";
     expect(mask).toContain(drift);
     expect(col).toContain(drift);
-    expect(mask).toContain("- waterWind * (waterTime * ");
-    expect(col).toContain("- waterWind * (waterTime * ");
+    const ripple = d.slice(d.indexOf("waterRipple2("), d.indexOf("float waterSkinHash("));
+    expect(ripple).toContain("waterWindTime * WATER_OCTAVE2_DRIFT");
+    for (const part of [mask, col, ripple]) {
+      expect(part).not.toContain("waterWind * (waterTime");
+      expect(part).not.toContain("waterWind * waterTime");
+    }
     expect(fx("water.fragment.fx")).toContain(`const float WATER_SKIN_DRIFT = ${glslFloat(WATER_SKIN_DRIFT)};`);
   });
 });
@@ -321,5 +325,36 @@ describe("the rain's rings on the water", () => {
     expect(Math.abs(Number(radius?.[1]) - RIPPLE_RADIUS)).toBeLessThan(1e-9);
     expect(Math.abs(Number(inset?.[1]) - RIPPLE_INSET)).toBeLessThan(1e-9);
     expect(d).toContain("rainParams.ts");
+  });
+
+  it("integrates the wind's direction over the clock, turning with it", () => {
+    const p = attachWater(new PBRMaterial("wInt", scene), WATER_ROWS.lowlandLake);
+    expect(p.windTime).toEqual([0, 0]);
+    p.setWind(0.5, [1, 0]);
+    p.advance(1);
+    p.advance(2);
+    expect(p.windTime[0]).toBeCloseTo(1, 9);
+    p.advance(3);
+    expect(p.windTime[0]).toBeCloseTo(2, 9);
+    p.setWind(0.5, [0, 1]);
+    p.advance(4);
+    expect(p.windTime[0]).toBeCloseTo(2, 9);
+    expect(p.windTime[1]).toBeCloseTo(1, 9);
+    expect(p.time).toBe(4);
+  });
+
+  it("binds the wind's integral on both paths", () => {
+    const p = attachWater(new PBRMaterial("wInt", scene), WATER_ROWS.lowlandLake);
+    expect(p.getUniforms().ubo.map((u) => u.name)).toContain("waterWindTime");
+    expect(p.getUniforms().fragment).toContain("uniform vec2 waterWindTime;");
+    p.windTime = [3, 4];
+    const pairs: [string, number, number][] = [];
+    const record = (): void => undefined;
+    const ubo = {
+      updateFloat: record, updateFloat3: record, updateFloat4: record, setTexture: vi.fn(),
+      updateFloat2: (name: string, a: number, b: number) => { pairs.push([name, a, b]); },
+    } as unknown as UniformBuffer;
+    p.bindForSubMesh(ubo);
+    expect(pairs).toContainEqual(["waterWindTime", 3, 4]);
   });
 });

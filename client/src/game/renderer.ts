@@ -1035,7 +1035,7 @@ export function createWater(
         bake = null;
         uploadBed();
       }
-      for (const p of plugins) p.time = seconds;
+      for (const p of plugins) p.advance(seconds);
       // The copy's depth is linearised with the camera's planes, read each
       // frame: the active camera can change (the freecam, a cutscene).
       const camera = scene.activeCamera;

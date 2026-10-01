@@ -77,9 +77,9 @@ export const WATER_HORIZON = 0.02;
 export const WATER_WIND_MAX = 12;
 /**
  * Metres per second the murky lakes' skin slides along the wind, per unit of the wind's direction: duckweed
- * pushed over the surface, its rafts keeping their shape. Mirrored in shaders/water.fragment.fx. The time it
- * is multiplied by is unfolded seconds, so after a day's run the offset is a few thousand metres, the same
- * order as the world coordinates the skin's hash already takes, and no fold is added.
+ * pushed over the surface, its rafts keeping their shape. Mirrored in shaders/water.fragment.fx. The offset is
+ * the wind's integral over the run, a few thousand metres after a day, the order of the world coordinates
+ * the skin's hash already takes, so no fold is added.
  */
 export const WATER_SKIN_DRIFT = 0.04;
 /** Screen-space refraction offset per unit of ripple slope, in uv, at 1 m of depth. Mirrored in shaders/water.fragment.fx. */
