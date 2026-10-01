@@ -1421,3 +1421,59 @@ describe("the ground's cover in the strip at the trailhead", () => {
     expect(grass.length).toBeGreaterThan(0);
   });
 });
+
+import { CLUTTER_REED, CLUTTER_LILY } from "../../src/sim/clutter.js";
+import { firstPondWorld, lakeOf } from "./helpers/lakes.js";
+import { lobePoints, marshWeightAt } from "../../src/sim/features.js";
+import { elevationAt } from "../../src/sim/terrain.js";
+
+describe("the water plants", { timeout: timeLimit(120_000) }, () => {
+  it("follow the model-drawn classes, which still number nine", () => {
+    expect(CLUTTER_CLASS_COUNT).toBe(9);
+    expect([CLUTTER_REED, CLUTTER_LILY]).toEqual([9, 10]);
+    for (const k of ["CLUTTER_REED_CELL", "CLUTTER_REED_D", "CLUTTER_LILY_CELL", "CLUTTER_LILY_D", "CLUTTER_WATER_MURK_LO", "CLUTTER_WATER_MURK_HI"]) {
+      expect(CLUTTER_TUNABLES[k], k).toBeTypeOf("number");
+    }
+  });
+
+  it("fill a murky lake's marsh with reeds and keep them out of its deep water", () => {
+    const { seed, pond } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
+    const lake = lakeOf(seed);
+    let core = 0;
+    for (const [x, z] of lobePoints(lake, 1)) {
+      if (marshWeightAt(lake, x, z) < 1) continue;
+      core++;
+      expect(clutterDensity(seed, CLUTTER_REED, x, z)).toBe(1);
+    }
+    expect(core).toBeGreaterThan(10);
+    expect(clutterDensity(seed, CLUTTER_REED, pond.x, pond.z)).toBe(0);
+    expect(clutterDensity(seed, CLUTTER_LILY, pond.x, pond.z)).toBe(0);
+  });
+
+  it("float lilies only in water 0.5 to 2 m deep, in patches", () => {
+    const { seed } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
+    const lake = lakeOf(seed);
+    let most = 0;
+    for (let i = 0; i < 720; i++) {
+      const a = (i / 720) * Math.PI * 2;
+      for (let s = 0.5; s < 20; s += 0.5) {
+        const x = lake.x + Math.cos(a) * (lake.radius - s), z = lake.z + Math.sin(a) * (lake.radius - s);
+        const depth = lake.level - elevationAt(seed, x, z);
+        const d = clutterDensity(seed, CLUTTER_LILY, x, z);
+        if (depth < 0.5 || depth > 2) expect(d, `depth ${depth}`).toBe(0);
+        most = Math.max(most, d);
+      }
+    }
+    expect(most).toBeGreaterThan(0.5);
+  });
+
+  it("grow in no clear lake", () => {
+    const { seed } = firstPondWorld((f) => (f.murk ?? 1) <= 0.5);
+    const lake = lakeOf(seed);
+    for (let s = 0; s < 20; s += 0.5) {
+      const x = lake.x + lake.radius - s;
+      expect(clutterDensity(seed, CLUTTER_REED, x, lake.z)).toBe(0);
+      expect(clutterDensity(seed, CLUTTER_LILY, x, lake.z)).toBe(0);
+    }
+  });
+});

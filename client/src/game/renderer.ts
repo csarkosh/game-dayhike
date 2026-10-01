@@ -72,6 +72,7 @@ import {
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater } from "./waterPlugin.js";
+import { createWaterPlants } from "./waterPlants.js";
 import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
 import { WATER_ROWS, lakeWaterRow } from "./waterShading.js";
 import { attachWet, setWetLine, wetLineFor, type WetBody } from "./wetPlugin.js";
@@ -1417,6 +1418,9 @@ function buildRenderer(
       ? createWater(scene, forest.seed, waterLevel, lakes, tier, level.playerSpawns[0]?.x ?? 0, level.playerSpawns[0]?.z ?? 0, clock)
       : null;
   partOf(water);
+  // A murky lake's reeds, cattails and lilies: placed by the sim, built here.
+  const waterPlants = forest !== null && lakes.length > 0 ? createWaterPlants(scene, forest.seed, lakes) : null;
+  partOf(waterPlants);
 
   // The wet line follows the nearest body, sea or pond. No bodies, no call.
   const wetBodies: WetBody[] = [];
