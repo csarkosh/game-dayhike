@@ -62,9 +62,9 @@ import glslangJs from "@babylonjs/core/assets/glslang/glslang.js?url";
 import glslangWasm from "@babylonjs/core/assets/glslang/glslang.wasm?url";
 import twgslJs from "@babylonjs/core/assets/twgsl/twgsl.js?url";
 import twgslWasm from "@babylonjs/core/assets/twgsl/twgsl.wasm?url";
-// The map of translations the build ships, named here so that only this
-// chunk refers to it.
-import wgslMapUrl from "virtual:dayhike-wgsl-map";
+// The maps of translations the build ships, one a quality tier, named here
+// so that only this chunk refers to them.
+import wgslMapUrls from "virtual:dayhike-wgsl-map";
 import { reportProgress } from "./modelLoad.js";
 import {
   WEBGPU_FETCH_MS,
@@ -76,6 +76,7 @@ import {
 } from "./engineChoice.js";
 import { installPipelines, leftOutOn } from "./asyncPipelines.js";
 import { pinPluginNumbers } from "./pluginNumbers.js";
+import type { QualityTier } from "./quality.js";
 import { defaultSources, lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
 
 // The game reaches the patch on an engine made here, and the start's reveal,
@@ -87,9 +88,14 @@ export { asyncPipelinesOf, revealWhenWhole } from "./asyncPipelines.js";
  * deadline, since running out of that budget is remembered (`timeout`). */
 const SOURCES_MARGIN_MS = 500;
 
-/** The lookup's sources on every engine made here: the translations shipped
- * with the build, then the browser's store. */
-const shippedThenStored = (salt: string): Promise<readonly WgslSource[]> => defaultSources(salt, wgslMapUrl);
+/** The lookup's sources on every engine made here for `tier`: the
+ * translations shipped with the build for that tier, then the browser's
+ * store. */
+const shippedThenStored = (tier: QualityTier) => (salt: string): Promise<readonly WgslSource[]> => defaultSources(salt, wgslMapUrls[tier], tier);
+
+/** The tier an engine is made for where none is given: the renderer's own
+ * default (`renderer.ts`). `main.ts` always gives the tier it decided. */
+const DEFAULT_TIER: QualityTier = "medium";
 
 /** How `catchTranslationFailures` words a failure it cannot trace to an effect. */
 const UNTRANSLATED = "WebGPU shader translation failed";
@@ -285,8 +291,9 @@ async function startTranslators(signal: AbortSignal): Promise<Translators> {
  * adapter lacks), with the `translators` `loadTranslators` started handed to
  * Babylon as they are. Every GLSL shader is looked up before it is translated
  * (`lookUpShaders`, in `lookup`'s mode; `?wgsl=off` installs nothing), from
- * `sources` (by default the translations shipped with the build, then the
- * browser's store) read into memory while the
+ * `sources` (by default the translations shipped with the build for `tier`,
+ * the quality tier the engine is made for, then the browser's store) read
+ * into memory while the
  * device comes, each within its bound (`WGSL_SOURCES_MS`; the map's
  * `WGSL_MAP_MS`) and never closer than
  * `SOURCES_MARGIN_MS` to its deadline (entries still arriving are found as
@@ -306,11 +313,13 @@ export async function createWebGpuEngine(
     ms?: number;
     features?: readonly string[];
     translators?: Translators;
+    tier?: QualityTier;
     lookup?: ShaderLookupMode;
     sources?: (salt: string) => Promise<readonly WgslSource[]>;
     pipelines?: PipelineMode;
   } = {},
 ): Promise<WebGPUEngine> {
+  const tier = options.tier ?? DEFAULT_TIER;
   const translators = options.translators;
   if (translators === undefined) throw new Error("load the WebGPU translators first");
   const ms = options.ms ?? WEBGPU_START_MS;
@@ -348,7 +357,7 @@ export async function createWebGpuEngine(
     // Before the wrap below, which wraps whatever preparation it finds; its
     // sources are read in while the device comes, and waited for (bounded)
     // before the engine is handed over.
-    const looking = lookUpShaders(engine, { mode: options.lookup ?? "on", sources: options.sources ?? shippedThenStored });
+    const looking = lookUpShaders(engine, { mode: options.lookup ?? "on", tier, sources: options.sources ?? shippedThenStored(tier) });
     catchTranslationFailures(engine);
     // The started translators, as Babylon's options take them: glslang as a
     // promise (its setup waits on it), twgsl as the instance. No path to load.

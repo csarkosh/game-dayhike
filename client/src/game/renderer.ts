@@ -5,6 +5,7 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
+import type { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
@@ -22,6 +23,7 @@ import type { Vec3, WorldState } from "../sim/types.js";
 import { AiState } from "../sim/types.js";
 import type { Forest } from "../sim/forest.js";
 import { isHollow } from "../sim/hollow.js";
+import { forestDensity } from "../sim/vegetation.js";
 import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
@@ -51,9 +53,10 @@ import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Sl
 import { createLighting } from "./lighting.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
 import { createPost, fxSupportedBy } from "./post.js";
+import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
 import { createSkinShading } from "./skin.js";
-import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
+import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeaturePaint, setTerrainRain, setTerrainSward, setTerrainWetness } from "./terrainTexture.js";
 import type { WeatherParams } from "./weather.js";
 import { wetSurfaceUnder } from "./weather.js";
 import { detectTier, type QualityTier } from "./quality.js";
@@ -75,7 +78,7 @@ import { attachWater } from "./waterPlugin.js";
 import { createWaterPlants } from "./waterPlants.js";
 import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
 import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "./waterShading.js";
-import { attachWet, setWetLine, wetLineFor, type WetBody } from "./wetPlugin.js";
+import { attachWet, setWetLine, setWetWeather, wetCapOf, wetLineFor, type WetBody } from "./wetPlugin.js";
 import {
   BED_GRID,
   bakeBed,
@@ -100,9 +103,11 @@ import type { PlayerPoint, WildlifeEvent } from "./wildlifeBehaviour.js";
 import type { MatchState, View } from "./wildlifeDirector.js";
 import type { ListenerPose } from "./ambientAudio.js";
 import { createMistMeshes, type MistMeshes } from "./mistMeshes.js";
-import { createRain, type Rain } from "./rain.js";
+import { createRain, type Rain, type RainLamp } from "./rain.js";
+import { createRainMap } from "./rainMap.js";
+import { createRainSplash, type RainSplash } from "./rainSplash.js";
 import { createMotes, type Motes } from "./motes.js";
-import { createPropMeshes, type PropShadows } from "./propMeshes.js";
+import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo } from "./rendererSwap.js";
 
 const MATERIAL_COLORS: Record<string, [number, number, number]> = {
@@ -185,20 +190,25 @@ export function terrainMaterialFor(scene: Scene, name: string): PBRMaterial {
   return mat;
 }
 
+/** The scales of a material the wet plugin's rule wets: its base, untouched. */
+const WET_BY_PLUGIN = { albedoScale: 1, roughnessScale: 1 } as const;
+
 /**
  * Wet ground reads darker and glossier. A uniform luminance scale on the
  * material albedo — deliberately not a hue tint, which would apply the palette
  * twice (see the comment on `terrainMaterialFor`); vertex colours are untouched.
  * Tree/prop asset materials are excluded by construction: they are not in this
- * cache.
+ * cache. A cached material a prop box has given a porosity cap (`propMeshes.ts`)
+ * is wetted by the wet plugin's rule instead, so it is held at its base here.
  */
 export function applyWetness(scene: Scene, w: WeatherParams): void {
-  const { albedoScale, roughnessScale } = wetSurfaceUnder(w);
+  const scales = wetSurfaceUnder(w);
   for (const mat of materialCacheFor(scene).values()) {
     const base = mat.metadata as
       | { baseAlbedo: [number, number, number]; baseRoughness: number }
       | null;
     if (!base) continue;
+    const { albedoScale, roughnessScale } = wetCapOf(mat) > 0 ? WET_BY_PLUGIN : scales;
     mat.albedoColor.set(
       base.baseAlbedo[0] * albedoScale,
       base.baseAlbedo[1] * albedoScale,
@@ -641,6 +651,8 @@ export type Water = {
   /** One mesh per ring, coarsening outward — four draw calls, capped by design.
    * NEVER added to the shadow caster list: water neither casts nor receives. */
   readonly meshes: readonly Mesh[];
+  /** One surface per lake (`lakeSurface`), static, on its lake's own material. */
+  readonly lakeMeshes: readonly Mesh[];
   /** True when the high tier's path is on: opaque in `WATER_GROUP`, reading the
    * opaque pass through the surface (`waterFrame.ts`), so a wet object's own
    * depth is attenuated by the water and the wet plugin need not darken it. */
@@ -651,8 +663,9 @@ export type Water = {
   dispose(): void;
 };
 
-/** The see-through effects a camera moves among: rain, motes and the mist banks. */
-export type SeeThroughEffects = { rain: Rain | null; motes: Motes | null; mist: MistMeshes | null };
+/** The see-through effects a camera moves among: rain (its streaks and
+ * drips), its splashes, motes and the mist banks. */
+export type SeeThroughEffects = { rain: Rain | null; splash: RainSplash | null; motes: Motes | null; mist: MistMeshes | null };
 
 /**
  * The rendering group the see-through effects draw in: the water's own on its
@@ -666,8 +679,36 @@ export function effectsGroupFor(water: Water | null): number {
   return water?.high === true ? WATER_GROUP : 0;
 }
 
+/**
+ * The local headlamp as the rain reads it, into `out` (reused, never
+ * allocated per frame): its world position and direction, which the lamp
+ * computes from its parent's world matrix (the camera's), its intensity (0
+ * when off), its cone angle and its colour.
+ */
+export function lampForRain(lamp: SpotLight, out: RainLamp): RainLamp {
+  lamp.computeTransformedInformation();
+  const pos = lamp.getAbsolutePosition();
+  const dir = lamp.transformedDirection ?? lamp.direction;
+  out.x = pos.x;
+  out.y = pos.y;
+  out.z = pos.z;
+  out.dx = dir.x;
+  out.dy = dir.y;
+  out.dz = dir.z;
+  out.intensity = lamp.intensity;
+  out.angle = lamp.angle;
+  out.r = lamp.diffuse.r;
+  out.g = lamp.diffuse.g;
+  out.b = lamp.diffuse.b;
+  return out;
+}
+
 export function setEffectsGroup(group: number, effects: SeeThroughEffects): void {
-  if (effects.rain !== null) effects.rain.system.renderingGroupId = group;
+  if (effects.rain !== null) {
+    effects.rain.mesh.renderingGroupId = group;
+    if (effects.rain.drips !== null) effects.rain.drips.renderingGroupId = group;
+  }
+  if (effects.splash !== null) effects.splash.mesh.renderingGroupId = group;
   for (const system of effects.motes?.systems ?? []) system.renderingGroupId = group;
   for (const mesh of effects.mist?.meshes ?? []) mesh.renderingGroupId = group;
 }
@@ -951,6 +992,7 @@ export function createWater(
 
   return {
     meshes,
+    lakeMeshes,
     high,
     update(camX, camZ, seconds) {
       const moved: boolean[] = [];
@@ -1065,6 +1107,9 @@ export type Renderer = {
   views: EntityViews;
   /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
   shadows: PropShadows;
+  /** The rain's cover map, for the same scenery: a mesh added is hard cover
+   * (`rainMap.ts`); nothing on the tiers without a map. */
+  cover: MeshRegistry;
   /** Resolves once the forest's first fill, billboards included, is drawn
    * (`ForestMeshes.ready`); at once in a world without a forest. */
   readonly forestReady: Promise<void>;
@@ -1125,6 +1170,16 @@ export type Renderer = {
    * `/wind` override) — what `foliagePlugin.ts`'s players bend into and what
    * `ambientAudio.ts`'s wind bed hears. */
   wind(): WindRecord;
+  /** How wet the canopy is, 0 to 1, as the rain stepped it on the last
+   * `sync` (`canopyWaterStep`, `weather.ts`): what the drips are drawn from
+   * and what `ambientAudio.ts`'s drip layer hears, one value for both. */
+  canopyWater(): number;
+  /** The canopy over the camera, 0 to 1, as the lens read it on the last
+   * `sync` (`forestDensity`, read again once the camera has moved a metre):
+   * what keeps the rain off the lens and what `ambientAudio.ts`'s drip layer
+   * hears, one read for both. In freecam it is the camera's canopy, not the
+   * player's: the drips hear what the lens sees. */
+  canopyOver(): number;
   /** `null` restores the weather-driven speed; otherwise clamped to [0, 1]
    * and used in place of it (the `/wind` command). */
   setWindOverride(level: number | null): void;
@@ -1167,6 +1222,9 @@ export type RendererOptions = {
    * `buildClipmapNow`, so a start can step it between paints; the renderer
    * draws no terrain until one has run. Absent, it is built here as always. */
   deferClipmap?: boolean;
+  /** The wildlife shell: absent or true, as the world's forest allows; false, none at
+   * all (a scene recorded a frame at a time, which the director's own steps would not follow). */
+  wildlife?: boolean;
 };
 
 /** What the impostor bakes read of the pipelines and the scope: the draws a
@@ -1422,6 +1480,13 @@ function buildRenderer(
   const post = createPost(scene, camera, postFeatures, { now: clock });
   partOf(post);
   let unsettle = 1;
+  /** The rain on the lens, smoothed (lensParams.ts). */
+  let lensStrength = 0;
+  // The forest's density over the camera, a full terrain sample: taken
+  // again only once the camera has moved a metre from where it was taken.
+  let lensCanopyX = Number.NaN;
+  let lensCanopyZ = Number.NaN;
+  let lensCanopy = 0;
 
   // A forest draws terrain instead of brushes. Guarded here rather than relying on
   // the caller to pass an empty level: app.ts passes the parsed sandbox01 so it
@@ -1506,19 +1571,43 @@ function buildRenderer(
     setWetLine(w, water?.high !== true);
   };
 
+  // The rain's cover map, on the tiers that draw one, over the terrain the
+  // clipmap draws: the rings and the water are in it from here, the props
+  // below and the scenery placed outside the renderer through `cover`, the
+  // cliffs' near buckets once their GLBs land (the loop in `sync`).
+  const rainMap = forest !== null ? createRainMap(scene, tier) : null;
+  partOf(rainMap);
+  if (rainMap !== null) {
+    // The two inner rings cover the map's square (ring 0 alone is 128 m
+    // across); the outer five are clipped whole and cost their draws on WebGL2.
+    for (const mesh of clipmap?.meshes.slice(0, 2) ?? []) rainMap.register(mesh, "terrain");
+    for (const mesh of water?.meshes ?? []) rainMap.register(mesh, "water");
+    for (const mesh of water?.lakeMeshes ?? []) rainMap.register(mesh, "water");
+  }
+  const cover: MeshRegistry = {
+    add: (mesh) => rainMap?.register(mesh, "hard"),
+    remove: (mesh) => rainMap?.unregister(mesh),
+  };
+
   // Every chunk prop the sim collides with, drawn: the trailhead's placeholder
   // car, post and sign used to be pure collision boxes, an invisible wall no
   // player could see coming. Rides the same forest
   // guard as the water above it — hand-authored levels have no chunk grid.
   const propMeshes =
     forest !== null
-      ? createPropMeshes(scene, forest.grid, (name) => terrainMaterialFor(scene, name), {
-          // Direct method references, not pass-through arrows: `Lighting`'s
-          // methods close over local state (the shadow generator) rather than
-          // reading `this`, so nothing is lost by handing them over bare.
-          add: lighting.addShadowMesh,
-          remove: lighting.removeShadowMesh,
-        })
+      ? createPropMeshes(
+          scene,
+          forest.grid,
+          (name) => terrainMaterialFor(scene, name),
+          {
+            // Direct method references, not pass-through arrows: `Lighting`'s
+            // methods close over local state (the shadow generator) rather than
+            // reading `this`, so nothing is lost by handing them over bare.
+            add: lighting.addShadowMesh,
+            remove: lighting.removeShadowMesh,
+          },
+          cover,
+        )
       : null;
   partOf(propMeshes);
 
@@ -1630,7 +1719,7 @@ function buildRenderer(
   // and go with the animal, so the shell registers and unregisters each one
   // itself through the pair handed in here.
   const wildlife =
-    forest !== null
+    forest !== null && options.wildlife !== false
       ? createWildlifeMeshes(scene, forest.seed, {
           radiusScale: tier === "low" ? 0.6 : undefined,
           now: clock,
@@ -1715,12 +1804,18 @@ function buildRenderer(
   partOf(mist);
 
   // Rain is universal, unlike the forest-gated effects above: weather applies
-  // to hand-authored levels too, and a stopped particle system is free.
+  // to hand-authored levels too, and a disabled rain mesh is free.
   const rain = createRain(scene, tier);
   partOf(rain);
+  rain.setMap(rainMap);
+  // The splashes land on the map: a tier without one draws none.
+  const rainSplash = createRainSplash(scene, tier);
+  partOf(rainSplash);
+  rainSplash?.setMap(rainMap);
+  const rainLamp: RainLamp = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, intensity: 0, angle: 0, r: 1, g: 1, b: 1 };
   const motes = createMotes(scene, tier);
   partOf(motes);
-  setEffectsGroup(effectsGroupFor(water), { rain, motes, mist });
+  setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist });
 
   const views = new EntityViews(scene);
   partOf(views);
@@ -1746,6 +1841,7 @@ function buildRenderer(
     camera,
     views,
     shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
+    cover,
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
@@ -1792,18 +1888,33 @@ function buildRenderer(
           lighting.addShadowMesh(clutterMeshes.casterMeshes[clutterCastersRegistered] as Mesh);
         }
       }
-      // The cliff modules' near buckets, once their two GLBs have loaded.
+      // The cliff modules' near buckets, once their two GLBs have loaded:
+      // shadow casters, and hard cover for the rain. The bucket meshes are
+      // registered once; their instances come and go inside them.
       if (cliffMeshes !== null) {
         for (; cliffCastersRegistered < cliffMeshes.casterMeshes.length; cliffCastersRegistered++) {
-          lighting.addShadowMesh(cliffMeshes.casterMeshes[cliffCastersRegistered] as Mesh);
+          const bucket = cliffMeshes.casterMeshes[cliffCastersRegistered] as Mesh;
+          lighting.addShadowMesh(bucket);
+          rainMap?.register(bucket, "hard");
         }
       }
 
       applyWetness(scene, weather);
       setTerrainWetness(scene, terrainMaterialFor(scene, "terrain"), weather.wetness);
+      setTerrainRain(scene, terrainMaterialFor(scene, "terrain"), weather.rain, seconds);
+      setWetWeather(weather.wetness);
       atmosphere.update(weather, lighting.hour);
       const stare = state.players.get(localId)?.stare ?? 0;
-      post.update(weather, lighting.hour, unsettle, stare);
+      // Rain on the lens: strongest looking up, cleared under the canopy,
+      // smoothed over a second. The camera's pose is last frame's (it is set
+      // below), one frame behind, which the smoothing hides.
+      if (forest !== null && !(Math.hypot(camera.position.x - lensCanopyX, camera.position.z - lensCanopyZ) <= 1)) {
+        lensCanopyX = camera.position.x;
+        lensCanopyZ = camera.position.z;
+        lensCanopy = forestDensity(forest.seed, lensCanopyX, lensCanopyZ);
+      }
+      lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x, lensCanopy), engine.getDeltaTime() / 1000);
+      post.update(weather, lighting.hour, unsettle, stare, lensStrength);
 
       if (freecam !== null) {
         // The clipmap follows the *camera* here, not the player. Anchored to
@@ -1838,7 +1949,10 @@ function buildRenderer(
         // Flying is not walking. Dropping the stride here also means the jump
         // back to the player's own position is never read as one enormous step.
         bob.reset();
-        rain.update(camera.position, weather, wind);
+        // The map follows the camera here, as the clipmap does.
+        rainMap?.update(camera.position);
+        rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
+        rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
         jobs.run();
         return;
@@ -1903,7 +2017,9 @@ function buildRenderer(
         // A hike after a scene draws with the game's lens again.
         camera.fov = GAME_FOV;
         setLamp(localLamp, local.lamp.on, lampState);
-        rain.update(camera.position, weather, wind);
+        rainMap?.update(local.pos);
+        rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
+        rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
       }
       // This frame's share of the rebuilds the updates above began, once
@@ -1962,6 +2078,9 @@ function buildRenderer(
       views.dispose();
       localLamp.dispose();
       for (const m of brushMeshes) m.dispose();
+      // Before the meshes in its list: a render target's list is not told of
+      // a dispose.
+      rainMap?.dispose();
       clipmap?.dispose();
       water?.dispose();
       waterPlants?.dispose();
@@ -1974,6 +2093,7 @@ function buildRenderer(
       wildlife?.dispose();
       mist?.dispose();
       rain.dispose();
+      rainSplash?.dispose();
       motes?.dispose();
       post.dispose();
       skinShading.dispose();
@@ -2023,6 +2143,12 @@ function buildRenderer(
     },
     wind() {
       return wind;
+    },
+    canopyWater() {
+      return rain.canopyWater;
+    },
+    canopyOver() {
+      return lensCanopy;
     },
     setWindOverride(level) {
       windOverride = level === null ? null : Math.min(1, Math.max(0, level));

@@ -9,8 +9,12 @@ import type { CarPose } from "./timeline.js";
 /** The car's centreline x at z, and the ground's height. */
 export type Road = { centerX: (z: number) => number; groundY: (x: number, z: number) => number };
 
-/** The SUV's wheel radius (m), for the spin. */
-export const WHEEL_RADIUS = 0.36;
+/** The film car's tyre radius (m), for the spin. */
+export const WHEEL_RADIUS = 0.348;
+/** The film car's wheelbase (m): its axles 2.675 m apart. */
+export const WHEELBASE = 2.675;
+/** The steering wheel's turns per turn of the front wheels. */
+export const STEERING_RATIO = 15;
 /** The step along z the road's heading is read over. */
 const HEADING_DZ = 1;
 
@@ -32,9 +36,18 @@ export function roadPose(road: Road, z: number, lane: number, direction: 1 | -1)
 export function carAlong(road: Road, startZ: number, distance: (t: number) => number, lane: number | ((t: number) => number), direction: 1 | -1): (t: number) => CarPose {
   return (t) => {
     const d = distance(t);
-    const pose = roadPose(road, startZ + direction * d, typeof lane === "number" ? lane : lane(t), direction);
-    return { ...pose, wheelSpin: d / WHEEL_RADIUS, doorOpen: 0 };
+    const l = typeof lane === "number" ? lane : lane(t);
+    const pose = roadPose(road, startZ + direction * d, l, direction);
+    // The front wheels follow the road's curvature over the next metre.
+    const ahead = roadPose(road, startZ + direction * (d + 1), l, direction);
+    const wheelTurn = Math.atan(WHEELBASE * wrap(ahead.yaw - pose.yaw));
+    return { ...pose, wheelSpin: d / WHEEL_RADIUS, doorOpen: 0, wheelTurn, steer: wheelTurn * STEERING_RATIO, handset: "cradle" };
   };
+}
+
+/** An angle in (−π, π]. */
+function wrap(a: number): number {
+  return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
 /**

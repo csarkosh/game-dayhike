@@ -122,10 +122,11 @@ describe("resolveCharacterAssets", () => {
     expect(resolveCharacterAssets({ assets: [{ id: "x", kind: "character" }] })).toEqual([]);
   });
 
-  it("resolves the shipped catalog to the five rangers and the Hollow, through the real modelUrl", () => {
+  it("resolves the shipped catalog to the five rangers, the Hollow and the film's ranger, through the real modelUrl", () => {
     const found = resolveCharacterAssets(catalog);
+    // The film's ranger resolves for the scene route; a hike draws only RANGER_IDS and the Hollow.
     expect(found.map((a) => a.id)).toEqual([
-      "ranger.nathan", "ranger.eric", "ranger.sophia", "ranger.carla", "ranger.claudia", "hollow.antlered",
+      "ranger.nathan", "ranger.eric", "ranger.sophia", "ranger.carla", "ranger.claudia", "hollow.antlered", "intro.ranger",
     ]);
     for (const asset of found) {
       expect(asset.url).toBe(modelUrl(asset.output));

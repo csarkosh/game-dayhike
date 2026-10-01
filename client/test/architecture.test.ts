@@ -441,6 +441,8 @@ describe("layer boundaries", () => {
       join(SRC, "game", "frameProbe.ts"),
       join(SRC, "game", "settings.ts"),
       join(SRC, "game", "governor.ts"),
+      join(SRC, "game", "rainParams.ts"),
+      join(SRC, "game", "lensParams.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files

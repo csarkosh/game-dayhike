@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   ambientColourUnder, ambientGainsUnder, exposureUnder, fillIntensityUnder,
-  fogColourUnder, fogDensityUnder, mistOpacityUnder, RAIN_CAPACITY,
-  rainEmitRateUnder, saturationUnder, shadowDarknessUnder, skyMaterialParamsUnder,
+  fogColourUnder, fogDensityUnder, mistOpacityUnder,
+  saturationUnder, shadowDarknessUnder, skyMaterialParamsUnder,
   sunColourUnder, sunIntensityUnder, wetSurfaceUnder,
   DEFAULT_WEATHER,
   lerpWeather,
@@ -35,7 +35,11 @@ import {
   AMBIENT_COLLAPSE,
   DREAD_PLATEAUS,
   DREAD_STEP_EDGE,
+  canopyWaterStep,
+  rainHissCentreHz,
+  rainWindCut,
 } from "../../src/game/weather.js";
+import { windRecordUnder } from "../../src/game/windParams.js";
 import {
   ambientColourFor, exposureFor, fillIntensityFor, fogDensityFor,
   skyColourAt, sunColourAt, sunIntensityAt, sunPositionAt,
@@ -116,10 +120,70 @@ describe("clear-identity sweep — the sunny look survives, exactly", () => {
     expect(saturationUnder(CLEAR)).toBe(0); // Babylon curves: 0 is neutral
     expect(wetSurfaceUnder(CLEAR)).toEqual({ albedoScale: 1, roughnessScale: 1 });
     expect(mistOpacityUnder(CLEAR)).toBe(0);
-    for (const tier of ["low", "medium", "high"] as const) {
-      expect(rainEmitRateUnder(CLEAR, tier)).toBe(0);
-    }
     expect(ambientGainsUnder(CLEAR)).toEqual({ rain: 0, wind: 0 });
+    // The hiss under clear: its resting centre, uncut by clear's light wind.
+    expect(rainHissCentreHz(CLEAR.rain)).toBe(3000);
+    expect(rainWindCut(windRecordUnder(CLEAR, 0).speed)).toBe(1);
+  });
+});
+
+describe("the rain's sound", () => {
+  it("the hiss's band centre falls from 3 kHz to 1.8 kHz with the rain, clamped", () => {
+    expect(rainHissCentreHz(0)).toBe(3000);
+    expect(rainHissCentreHz(1)).toBe(1800);
+    expect(rainHissCentreHz(0.5)).toBe(2400);
+    expect(rainHissCentreHz(0.25)).toBe(2700);
+    expect(rainHissCentreHz(-1)).toBe(3000);
+    expect(rainHissCentreHz(2)).toBe(1800);
+    expect(rainHissCentreHz(RAIN.rain)).toBe(1800);
+  });
+
+  it("the wind cuts the hiss by up to a third, from 0.6 to full speed, smoothly", () => {
+    expect(rainWindCut(0)).toBe(1);
+    expect(rainWindCut(0.25)).toBe(1);
+    expect(rainWindCut(0.6)).toBe(1);
+    expect(rainWindCut(0.7)).toBeCloseTo(0.9484375, 10); // smoothstep at 0.25 is 0.15625
+    expect(rainWindCut(0.8)).toBeCloseTo(0.835, 10);
+    expect(rainWindCut(0.9)).toBeCloseTo(0.7215625, 10); // at 0.75, 0.84375
+    expect(rainWindCut(1)).toBeCloseTo(0.67, 10);
+    expect(rainWindCut(1.5)).toBeCloseTo(0.67, 10);
+    let prev = 1;
+    for (let v = 0; v <= 1; v += 0.05) {
+      const cut = rainWindCut(v);
+      expect(cut).toBeLessThanOrEqual(prev + 1e-12);
+      prev = cut;
+    }
+  });
+
+  it("the canopy wets up in a minute of full rain and drains over ten", () => {
+    expect(canopyWaterStep(0, 1, 1)).toBeCloseTo(1 / 60, 12);
+    expect(canopyWaterStep(0, 1, 30)).toBeCloseTo(0.5, 12);
+    expect(canopyWaterStep(0, 1, 60)).toBe(1);
+    expect(canopyWaterStep(0, 0.5, 60)).toBeCloseTo(0.5, 12);
+    expect(canopyWaterStep(0, 0.5, 120)).toBe(1);
+    expect(canopyWaterStep(0.9, 1, 60)).toBe(1); // clamped at full
+    expect(canopyWaterStep(1, 0, 60)).toBeCloseTo(0.9, 12);
+    expect(canopyWaterStep(1, 0, 300)).toBeCloseTo(0.5, 12);
+    expect(canopyWaterStep(1, 0, 600)).toBe(0);
+    expect(canopyWaterStep(0.05, 0, 60)).toBe(0); // clamped at dry
+    expect(canopyWaterStep(0, 0, 60)).toBe(0);
+    // The eerie preset's 0.3 of rain fills it in 200 s.
+    expect(canopyWaterStep(0, WEATHER_PRESETS.eerie.rain, 200)).toBeCloseTo(1, 12);
+    // A frame at a time reaches the same place as one long step.
+    let w = 0;
+    for (let i = 0; i < 600; i++) w = canopyWaterStep(w, 1, 0.1);
+    expect(w).toBe(1);
+    for (let i = 0; i < 3000; i++) w = canopyWaterStep(w, 0, 0.1);
+    expect(w).toBeCloseTo(0.5, 6);
+    // Half the rain, half the rate; a frame's step down from half full.
+    expect(canopyWaterStep(0, 0.5, 30)).toBeCloseTo(0.25, 12);
+    expect(canopyWaterStep(0.5, 0, 1 / 60)).toBeCloseTo(0.5 - 1 / 36000, 12);
+    // A second at a time: sixty of rain fill it, six hundred of none drain it.
+    let s = 0;
+    for (let i = 0; i < 60; i++) s = canopyWaterStep(s, 1, 1);
+    expect(s).toBeCloseTo(1, 9);
+    for (let i = 0; i < 600; i++) s = canopyWaterStep(s, 0, 1);
+    expect(s).toBeCloseTo(0, 9);
   });
 });
 
@@ -149,12 +213,29 @@ describe("modifiers under weather", () => {
     }
   });
 
-  it("wetness darkens and glosses; rain rate scales with tier capacity", () => {
+  it("wetness darkens and glosses", () => {
     const wet = wetSurfaceUnder(RAIN);
     expect(wet.albedoScale).toBeCloseTo(0.62, 10);
     expect(wet.roughnessScale).toBeCloseTo(0.6, 10);
-    expect(rainEmitRateUnder(RAIN, "high")).toBe(RAIN_CAPACITY.high);
-    expect(rainEmitRateUnder({ ...CLEAR, rain: 0.5 }, "low")).toBe(0.5 * RAIN_CAPACITY.low);
+  });
+
+  it("rain thickens the fog by half on top of the mist, and greys it toward its own luminance", () => {
+    // Rain alone: 1.5x. The rain preset's mist of 0.6 is 7.6x; with the rain, 11.4x.
+    expect(fogDensityUnder({ ...CLEAR, rain: 1 }, 4000)).toBeCloseTo(1.5 * fogDensityFor(4000), 10);
+    expect(fogDensityUnder({ ...CLEAR, rain: 0.5 }, 4000)).toBeCloseTo(1.25 * fogDensityFor(4000), 10);
+    expect(fogDensityUnder(RAIN, 4000)).toBeCloseTo(11.4 * fogDensityFor(4000), 10);
+    expect(fogDensityUnder(RAIN, 4000)).toBeCloseTo(1.5 * fogDensityUnder({ ...RAIN, rain: 0 }, 4000), 10);
+    for (const hour of [6, 12, 18, 22]) {
+      const dry = fogColourUnder({ ...RAIN, rain: 0 }, hour);
+      const wet = fogColourUnder(RAIN, hour);
+      const spread = (c: { r: number; g: number; b: number }) => Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
+      // The pull is toward the colour's own luminance, so the luminance holds
+      // and the colour's spread shrinks by the 0.3 pulled out.
+      expect(luma(wet)).toBeCloseTo(luma(dry), 10);
+      expect(spread(wet)).toBeCloseTo(0.7 * spread(dry), 10);
+      const half = fogColourUnder({ ...RAIN, rain: 0.5 }, hour);
+      expect(spread(half)).toBeCloseTo(0.85 * spread(dry), 10);
+    }
   });
 
   it("ambience: rain drives patter; mist and cloud drive wind", () => {

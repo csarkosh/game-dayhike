@@ -296,6 +296,34 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC-BY-4.0
 - **URL:** https://sketchfab.com/3d-models/wendigo-antlered-famine-horror-creature-3511c530080240dfa1b5882ff38ee8ea
 
+## intro.car
+
+- **Source:** Sketchfab: Urban '10 Cop Enforcer - Low poly model
+- **Author:** Daniel Zhabotinsky
+- **Licence:** CC-BY-4.0
+- **URL:** https://sketchfab.com/3d-models/urban-10-cop-enforcer-low-poly-model-745830362bb342128ef6509345606ffe
+
+## intro.ranger
+
+- **Source:** Sketchfab: Nathan Animated 003 - Walking 3D Man
+- **Author:** Renderpeople
+- **Licence:** CC-BY-4.0
+- **URL:** https://sketchfab.com/3d-models/nathan-animated-003-walking-3d-man-143a2b1ea5eb4385ae90a73657aca3bc
+
+## intro.ranger
+
+- **Source:** Sketchfab: (PSP) Campaign Hat
+- **Author:** fresh_wipe
+- **Licence:** CC-BY-4.0
+- **URL:** https://sketchfab.com/3d-models/psp-campaign-hat-18dd6e95ffb5402a80113c3e00d1228e
+
+## intro.ranger
+
+- **Source:** KayKit: Character Animations (1.1)
+- **Author:** Kay Lousberg
+- **Licence:** CC0-1.0
+- **URL:** https://kaylousberg.itch.io/kaykit-character-animations
+
 ## ranger.carla
 
 - **Source:** Sketchfab: Carla Rigged 001 - Rigged 3D Business Women

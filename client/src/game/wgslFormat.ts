@@ -6,7 +6,12 @@
  * which the page fetches. Nothing here imports Babylon or the DOM, so the build's tools load
  * it under Node and key a stage with the very code the page keys it with.
  */
+import type { QualityTier } from "./quality.js";
 import { sha256Hex } from "./sha256.js";
+
+/** The quality tiers, in the order the tools write them: a map is built for
+ * each (`tools/wgsl/build-map.mjs`), of the stages recorded on it. */
+export const TIERS: readonly QualityTier[] = ["low", "medium", "high"];
 
 /** The format of the key and of what is stored under it. A change to how
  * the key is made, or to what is stored for a key (the text composed for the
@@ -83,12 +88,18 @@ export function corpusId(entry: CorpusStage): string {
 }
 
 /**
- * A recording: `{"format": CORPUS_FORMAT, "stages": [...]}`, each stage
- * once, sorted by `corpusId`, one stage a line. What the recorder downloads
- * (one file, which a browser can save), and what
- * `tools/wgsl/merge-corpus.mjs` reads and writes into the corpus's files.
+ * A recording: `{"format": CORPUS_FORMAT, "tiers": [...], "stages":
+ * [...]}`, each stage once, sorted by `corpusId`, one stage a line. `tiers`
+ * names the quality tiers the stages were recorded on (`TIERS`' order), and
+ * is left out where none are given: such a recording is merged into every
+ * tier. What the recorder downloads (one file, which a browser can save), and
+ * what `tools/wgsl/merge-corpus.mjs` reads and writes into the corpus's files
+ * and its index of tiers.
  */
-export function corpusText(stages: Iterable<CorpusStage>): string {
+export function corpusText(stages: Iterable<CorpusStage>, tiers: Iterable<QualityTier> = []): string {
+  const asked = new Set(tiers);
+  const recordedOn = TIERS.filter((tier) => asked.has(tier));
+  const onTiers = recordedOn.length === 0 ? "" : `,"tiers":${JSON.stringify(recordedOn)}`;
   const byId = new Map<string, CorpusStage>();
   for (const { stage, flag, glsl } of stages) {
     const entry = { stage, flag, glsl };
@@ -96,16 +107,33 @@ export function corpusText(stages: Iterable<CorpusStage>): string {
   }
   const lines = [...byId].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, entry]) => JSON.stringify(entry));
   const body = lines.length === 0 ? "" : `\n${lines.join(",\n")}\n`;
-  return `{"format":${JSON.stringify(CORPUS_FORMAT)},"stages":[${body}]}\n`;
+  return `{"format":${JSON.stringify(CORPUS_FORMAT)}${onTiers},"stages":[${body}]}\n`;
 }
 
-/** The stages of a recording; throws on another format, or on anything
- * that is not one. */
-export function readCorpus(text: string): CorpusStage[] {
-  const file = JSON.parse(text) as { format?: unknown; stages?: unknown };
+/** A recording read: the tiers it says its stages were recorded on, in
+ * `TIERS`' order, or null where it says none (every tier), and its stages. */
+export type Recording = { tiers: readonly QualityTier[] | null; stages: CorpusStage[] };
+
+/** A recording; throws on another format, on tiers that are not `TIERS`'
+ * (or none at all, or one twice), or on anything that is not one. */
+export function readRecording(text: string): Recording {
+  const file = JSON.parse(text) as { format?: unknown; tiers?: unknown; stages?: unknown };
   if (file?.format !== CORPUS_FORMAT) throw new Error(`not a corpus of ${CORPUS_FORMAT}: ${String(file?.format)}`);
+  let tiers: readonly QualityTier[] | null = null;
+  if (file.tiers !== undefined) {
+    const listed = file.tiers;
+    if (
+      !Array.isArray(listed) ||
+      listed.length === 0 ||
+      !listed.every((tier: unknown) => (TIERS as readonly unknown[]).includes(tier)) ||
+      new Set(listed).size !== listed.length
+    ) {
+      throw new Error(`a corpus whose tiers are not some of ${TIERS.join(", ")}, each once: ${JSON.stringify(listed)}`);
+    }
+    tiers = TIERS.filter((tier) => (listed as readonly QualityTier[]).includes(tier));
+  }
   if (!Array.isArray(file.stages)) throw new Error("a corpus without stages");
-  return file.stages.map((value: unknown) => {
+  const stages = file.stages.map((value: unknown) => {
     const entry = value as Partial<CorpusStage> | null;
     if (
       (entry?.stage !== "vertex" && entry?.stage !== "fragment") ||
@@ -116,9 +144,16 @@ export function readCorpus(text: string): CorpusStage[] {
     }
     return { stage: entry.stage, flag: entry.flag, glsl: entry.glsl };
   });
+  return { tiers, stages };
 }
 
-/** The format of the map the build ships. */
+/** The stages of a recording (`readRecording`), its tiers aside. */
+export function readCorpus(text: string): CorpusStage[] {
+  return readRecording(text).stages;
+}
+
+/** The format of the maps the build ships, one a tier (`TIERS`), each of the
+ * stages recorded on that tier. */
 export const MAP_FORMAT = "dayhike-wgsl-map/2";
 
 /** The most a map may be, in bytes of text: 8 MiB. The page parses it in one
@@ -127,8 +162,10 @@ export const MAP_FORMAT = "dayhike-wgsl-map/2";
  * reads past it, before it is parsed (`loadWgslMap`). Set from the map the
  * recorded corpus makes: 5,073,415 bytes for 522 entries, about 9,700 bytes
  * an entry, so it holds about 860 entries at that average (more, since a new
- * entry's lines are mostly in the table already). A corpus whose union would
- * pass it is split into a map per platform, not given a higher ceiling. */
+ * entry's lines are mostly in the table already). The corpus's union passed
+ * it at 762 stages, so the build makes a map a tier (`TIERS`), each of the
+ * stages recorded on that tier, and the page fetches its tier's; a tier whose
+ * stages pass it is split further (by platform), not given a higher ceiling. */
 export const MAP_MAX_BYTES = 8_388_608;
 
 /** The most characters one entry of a map may expand to: 8,388,608, 45
@@ -140,8 +177,11 @@ export const MAP_MAX_BYTES = 8_388_608;
 export const MAP_ENTRY_MAX_CHARS = 8_388_608;
 
 /**
- * The map: `{"format": MAP_FORMAT, "salt": ..., "lines": [...], "entries":
- * {key: [start, length, ...]}}`. `lines` holds every distinct line of the
+ * The map: `{"format": MAP_FORMAT, "salt": ..., "tier": ..., "lines": [...],
+ * "entries": {key: [start, length, ...]}}`. `tier` is the quality tier the
+ * map is built for, where one is given (the build gives it: so no two tiers'
+ * maps are the same bytes, which the build would otherwise fold into one
+ * file, and a page can tell its tier's map). `lines` holds every distinct line of the
  * entries' WGSL once (a line is what `split("\n")` gives, so a text that ends
  * in a newline ends in an empty line), in order of first appearance over the
  * entries taken in ascending order of key; each entry is its lines as runs of
@@ -149,7 +189,7 @@ export const MAP_ENTRY_MAX_CHARS = 8_388_608;
  * entry's lines with `"\n"` gives its WGSL back exactly. The same entries
  * always make the same bytes, whatever their order.
  */
-export function mapText(salt: string, entries: ReadonlyMap<string, string>): string {
+export function mapText(salt: string, entries: ReadonlyMap<string, string>, tier?: QualityTier): string {
   const lines: string[] = [];
   const indexOf = new Map<string, number>();
   // No prototype: an entry keyed `__proto__` is an entry like any other.
@@ -171,7 +211,7 @@ export function mapText(salt: string, entries: ReadonlyMap<string, string>): str
     }
     runsOf[key] = runs;
   }
-  return JSON.stringify({ format: MAP_FORMAT, salt, lines, entries: runsOf });
+  return JSON.stringify(tier === undefined ? { format: MAP_FORMAT, salt, lines, entries: runsOf } : { format: MAP_FORMAT, salt, tier, lines, entries: runsOf });
 }
 
 /**
@@ -189,8 +229,9 @@ export type WgslMap = {
 };
 
 /**
- * The map made for `salt`, read from its text; throws on another format,
- * another salt, anything that is not a map, and a map damaged anywhere: a
+ * The map made for `salt` (and for `tier`, where one is asked), read from its
+ * text; throws on another format, another salt, another tier, anything that
+ * is not a map, and a map damaged anywhere: a
  * line that is not text or that holds a newline, an entry that is not an
  * even count of numbers (at least two), a run that is not whole numbers, that
  * starts outside the table, holds no lines or reaches past the table's end,
@@ -200,10 +241,11 @@ export type WgslMap = {
  * runs are broken is ever served, not even one the damage does not touch.
  * The runs are held in one typed array, the lines as the parse made them.
  */
-export function readMap(text: string, salt: string): WgslMap {
-  const map = JSON.parse(text) as { format?: unknown; salt?: unknown; lines?: unknown; entries?: unknown };
+export function readMap(text: string, salt: string, tier?: QualityTier): WgslMap {
+  const map = JSON.parse(text) as { format?: unknown; salt?: unknown; tier?: unknown; lines?: unknown; entries?: unknown };
   if (map?.format !== MAP_FORMAT) throw new Error(`not a map of ${MAP_FORMAT}: ${String(map?.format)}`);
   if (map.salt !== salt) throw new Error("made for another build");
+  if (tier !== undefined && map.tier !== tier) throw new Error(`made for the ${String(map.tier)} tier, not ${tier}`);
   const lines = map.lines;
   if (!Array.isArray(lines)) throw new Error("a map without its lines");
   for (let i = 0; i < lines.length; i++) {

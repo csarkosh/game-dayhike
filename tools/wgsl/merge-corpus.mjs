@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 // Merges recordings into the committed corpus (`client/shaders/corpus/`, one
-// shader file a stage: `tools/wgsl/lib/corpus.mjs`): each stage it does not
-// hold becomes a file of its own, and no file already there changes. It
-// reports how many stages the recordings hold and how many of them are new.
-// A recording is what `dayhikeWgsl.download()` saves on a page opened with
+// shader file a stage and an index of the tiers each stage was recorded on:
+// `tools/wgsl/lib/corpus.mjs`): each stage it does not hold becomes a file of
+// its own, no file already there changes, and the index gains the recording's
+// tiers for every stage it holds (every tier, for a recording that names
+// none). It reports how many stages the recordings hold, how many of them are
+// new, how many gained a tier, and how many the corpus holds on each tier. A
+// recording is what `dayhikeWgsl.download()` saves on a page opened with
 // `?wgsl=record`, one JSON file; one dropped into the corpus directory as it
 // was downloaded is merged too, and removed once its stages are files. Every
 // `\r\n` in every recorded stage is turned to `\n`. It refuses, writing
 // nothing and exiting 1, a stage with a carriage return left, a recording
-// that is not one, and a corpus file whose bytes are not the stage its name
-// says (edited, reformatted or renamed).
+// that is not one, a corpus file whose bytes are not the stage its name
+// says (edited, reformatted or renamed), and an index that does not match
+// the files.
 //
 // Usage: node tools/wgsl/merge-corpus.mjs [--corpus <dir>] [recording.json ...]
 
@@ -34,7 +38,8 @@ const shown = relative(process.cwd(), dir) || dir;
 console.log(`wgsl corpus: ${shown}`);
 console.log(`  read:   ${merged.read} stages from ${positionals.length + merged.removed.length} recorded files`);
 console.log(`  new:    ${merged.added}`);
-console.log(`  holds:  ${merged.total} stages`);
+console.log(`  tiers:  ${merged.retiered} stages the corpus held gained a tier`);
+console.log(`  holds:  ${merged.total} stages; ${shared.TIERS.map((tier) => `on ${tier} ${merged.tiers[tier]}`).join(', ')}`);
 console.log(`  normalised: ${merged.normalised} stages had Windows line endings`);
 for (const name of merged.removed) console.log(`  merged and removed ${name}`);
 for (const name of merged.leftAlone) console.log(`  left alone ${name}: not a corpus file`);

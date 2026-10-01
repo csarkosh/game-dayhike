@@ -124,13 +124,15 @@ export function findWasmUrls(source, ids) {
 }
 
 /**
- * The URL a built chunk references for the WGSL map (`wgsl-map-<hash>.json`),
- * the translations the build made of the shader corpus, which
+ * The URL a built chunk references for `tier`'s WGSL map
+ * (`wgsl-map-<tier>-<hash>.json`), the translations the build made of the
+ * shader corpus's stages recorded on that tier, which
  * `client/src/game/gpuEngine.ts` imports from `virtual:dayhike-wgsl-map`, or
  * null. Same matching rules as `findModelUrls`; named by the WebGPU chunk.
  */
-export function findMapUrl(source) {
-  return findAssetUrls(source, ['wgsl-map'], 'json')['wgsl-map'] ?? null;
+export function findMapUrl(source, tier) {
+  const id = `wgsl-map-${tier}`;
+  return findAssetUrls(source, [id], 'json')[id] ?? null;
 }
 
 /**

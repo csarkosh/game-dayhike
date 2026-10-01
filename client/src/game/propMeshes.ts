@@ -4,6 +4,7 @@ import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { ChunkGrid } from "../sim/chunkGrid.js";
 import { CHUNK_SIZE } from "../sim/forestConstants.js";
+import { attachWet, WET_CAP } from "./wetPlugin.js";
 
 /**
  * Every chunk prop the sim collides with is drawn: the
@@ -44,13 +45,20 @@ export type PropMeshes = {
  * a test with no `Lighting` in the loop simply builds meshes that never enter
  * a shadow map.
  */
-export type PropShadows = { add(mesh: Mesh): void; remove(mesh: Mesh): void };
+export type MeshRegistry = { add(mesh: Mesh): void; remove(mesh: Mesh): void };
+export type PropShadows = MeshRegistry;
 
+/**
+ * `cover` is the rain's cover map (`rainMap.ts`), the same shape: every prop
+ * drawn here is hard cover, registered as it is built and taken out before
+ * it is disposed, since a render target's list is not told of a dispose.
+ */
 export function createPropMeshes(
   scene: Scene,
   grid: ChunkGrid,
   materialFor: (name: string) => Material,
   shadows?: PropShadows,
+  cover?: MeshRegistry,
 ): PropMeshes {
   const live = new Map<string, Mesh[]>(); // "cx,cz" → that chunk's meshes
   let lastCx = Number.NaN, lastCz = Number.NaN;
@@ -63,9 +71,13 @@ export function createPropMeshes(
       const mesh = MeshBuilder.CreateBox(`prop_${cx}_${cz}_${i}_${p.material}`, { width: sx, height: sy, depth: sz }, scene);
       mesh.position.set(p.box.min.x + sx / 2, p.box.min.y + sy / 2, p.box.min.z + sz / 2);
       mesh.material = materialFor(p.material);
+      // The weather soaks a prop: the renderer's own wetness scale leaves a
+      // material with a cap to this rule (`applyWetness`).
+      attachWet(mesh.material, WET_CAP.prop);
       mesh.isPickable = false;
       mesh.freezeWorldMatrix();
       shadows?.add(mesh);
+      cover?.add(mesh);
       out.push(mesh);
     }
     return out;
@@ -87,6 +99,7 @@ export function createPropMeshes(
         if (want.has(key)) continue;
         for (const m of meshes) {
           shadows?.remove(m);
+          cover?.remove(m);
           m.dispose();
         }
         live.delete(key);
@@ -101,6 +114,7 @@ export function createPropMeshes(
       for (const meshes of live.values()) {
         for (const m of meshes) {
           shadows?.remove(m);
+          cover?.remove(m);
           m.dispose();
         }
       }

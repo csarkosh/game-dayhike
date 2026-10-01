@@ -7,7 +7,7 @@ import { Process } from "@babylonjs/core/Engines/Processors/shaderProcessor.js";
 import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/shaderProcessingOptions.js";
 import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2ShaderProcessors.js";
 import {
-  attachTerrainTexture, enableRoadPaint, enableFeaturePaint, TerrainTexturePlugin,
+  attachTerrainTexture, enableRoadPaint, enableFeaturePaint, setTerrainRain, TerrainTexturePlugin,
   heightBlendWeights, HEIGHT_BLEND_DEPTH, LAYER_ROUGHNESS, LAYER_F0,
   rockParallaxOffset, ROCK_PARALLAX_DEPTH, ROCK_PARALLAX_STEPS, ROCK_PARALLAX_MIN_WEIGHT,
 } from "../../src/game/terrainTexture.js";
@@ -18,7 +18,7 @@ import {
 } from "../../src/game/groundHexParams.js";
 import type { Feature } from "../../src/sim/features.js";
 import type { TrailGraph } from "../../src/sim/trail.js";
-import { TRAIL_PAINT_MAX_SEGMENTS } from "../../src/game/trailPaint.js";
+import { TRAIL_FRAGMENT_PAINT, TRAIL_PAINT_MAX_SEGMENTS } from "../../src/game/trailPaint.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import "../../src/sim/passes/index.js";
@@ -998,5 +998,96 @@ describe("the grass floor compiles into the fragment source on both paths", () =
         expect(source.indexOf("latticeHash(")).toBeLessThan(source.indexOf("trailValueNoise1("));
       } finally { s.dispose(); e.dispose(); }
     }
+  });
+
+  it("with the trail enabled: the rain and time uniforms declare once on both paths and the four ripple layers read them", async () => {
+    for (const forceUbo of [false, true]) {
+      const e = new NullEngine();
+      if (forceUbo) (e as unknown as { _webGLVersion: number })._webGLVersion = 2;
+      const s = new Scene(e);
+      try {
+        const source = await compiledFragmentSource(s, (plugin) => plugin.enableTrail(trailGraphFixture));
+        expect(source).not.toContain("rippleSampler");
+        expect(source.match(/float tRdrop = fract\(latticeHash\(tRh\) \+ terrainTime \* /g)).toHaveLength(4);
+        expect(source.indexOf("float latticeHash(")).toBeLessThan(source.indexOf("vec2 tRcentre"));
+        const rainDecl = forceUbo ? /\bfloat terrainRain;/g : /uniform\s+float\s+terrainRain\s*;/g;
+        const timeDecl = forceUbo ? /\bfloat terrainTime;/g : /uniform\s+float\s+terrainTime\s*;/g;
+        expect(source.match(rainDecl)).toHaveLength(1);
+        expect(source.match(timeDecl)).toHaveLength(1);
+      } finally { s.dispose(); e.dispose(); }
+    }
+  });
+});
+
+describe("rain on the puddles", () => {
+  it("declares terrainRain and terrainTime on both uniform lists, and adds no sampler: the terrain's sixteen are WebGPU's default", () => {
+    const plugin = pluginFor("rip1");
+    const names = plugin.getUniforms().ubo.map((u) => u.name);
+    expect(names).toContain("terrainRain");
+    expect(names).toContain("terrainTime");
+    expect(plugin.getUniforms().fragment).toMatch(/uniform\s+float\s+terrainRain\s*;/);
+    expect(plugin.getUniforms().fragment).toMatch(/uniform\s+float\s+terrainTime\s*;/);
+    const samplers: string[] = [];
+    plugin.getSamplers(samplers);
+    expect(samplers).toHaveLength(7);
+    expect(plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS).not.toContain("rippleSampler");
+  });
+
+  it("binds terrainRain from setRain, clamped, and terrainTime from setTime, folded at an hour", () => {
+    const plugin = pluginFor("rip2");
+    const ubo = fakeUniformBuffer();
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(ubo.values.terrainRain).toEqual([0]);
+    expect(ubo.values.terrainTime).toEqual([0]);
+    plugin.setRain(0.5);
+    plugin.setTime(3601.25);
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(ubo.values.terrainRain).toEqual([0.5]);
+    expect(ubo.values.terrainTime).toEqual([1.25]);
+    plugin.setRain(-1);
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(ubo.values.terrainRain).toEqual([0]);
+    plugin.setRain(2);
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(ubo.values.terrainRain).toEqual([1]);
+  });
+
+  it("setTerrainRain sets both on the material's plugin and is a no-op on a bare material", () => {
+    const mat = new PBRMaterial("rip3", scene);
+    attachTerrainTexture(scene, mat, { groundArrays: stubArrays });
+    setTerrainRain(scene, mat, 0.25, 12);
+    const plugin = mat.pluginManager!.getPlugin("TerrainTexture") as TerrainTexturePlugin;
+    const ubo = fakeUniformBuffer();
+    plugin.bindForSubMesh(ubo as never, scene, undefined as never, undefined as never);
+    expect(ubo.values.terrainRain).toEqual([0.25]);
+    expect(ubo.values.terrainTime).toEqual([12]);
+    expect(() => setTerrainRain(scene, new PBRMaterial("rip4", scene), 1, 1)).not.toThrow();
+  });
+
+  it("tilts the puddle's normal by four ripple layers of hashed rings, one in per quarter of the rain, scaled by the rain", () => {
+    expect(TRAIL_FRAGMENT_PAINT.match(/vec2 tRc = floor\(tRp\);/g)).toHaveLength(4);
+    // Skipped outright under no rain: a branch on the uniform, nothing sampled inside.
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec2 tRipple = vec2(0.0);\n    if (terrainRain > 0.0) {\n");
+    expect(TRAIL_FRAGMENT_PAINT.slice(TRAIL_FRAGMENT_PAINT.indexOf("if (terrainRain > 0.0) {"), TRAIL_FRAGMENT_PAINT.indexOf("vec3 tPuddleN"))).not.toContain("texture2D(");
+    // The cell hashed modulo 512, so the hash keeps its precision a kilometre out.
+    expect(TRAIL_FRAGMENT_PAINT.match(/vec2 tRh = mod\(tRc, 512\.0\);/g)).toHaveLength(4);
+    expect(TRAIL_FRAGMENT_PAINT).not.toContain("texture2D(rippleSampler");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec2 tRp = vPositionW.xz * 2.5 + vec2(0.0, 0.0);");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec2 tRp = vPositionW.xz * 3.8 + vec2(0.19, 0.83);");
+    // The centre inset a quarter from the cell's edges, the radius a quarter: the ring never leaves its cell.
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec2 tRcentre = vec2(latticeHash(tRh + vec2(37.0, 0.0)), latticeHash(tRh + vec2(0.0, 91.0))) * 0.5 + 0.25;");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("float tRr = clamp(1.0 - tRdist / 0.25, 0.0, 1.0);");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec2 tRdir = tRd / max(tRdist, 0.0001);");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("clamp(terrainRain * 4.0 - 0.0, 0.0, 1.0)");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("clamp(terrainRain * 4.0 - 3.0, 0.0, 1.0)");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("fract(latticeHash(tRh) + terrainTime * 1.0 + 0.0)");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("fract(latticeHash(tRh) + terrainTime * 1.13 + 0.7)");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("float tRt = tRdrop - 1.0 + tRr;");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("float tRf = clamp(0.2 + tRw * 0.8 - tRdrop, 0.0, 1.0);");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("tRipple += tRdir * tRf * tRr * sin(clamp(tRt * 9.0, 0.0, 3.0) * 3.14159) * 0.35;");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec3 tPuddleN = normalize(vec3(tRipple.x * terrainRain, 1.0, tRipple.y * terrainRain));");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), tPuddleN, tPuddle));");
+    // The ripples replace the flat puddle normal, not sit beside it.
+    expect(TRAIL_FRAGMENT_PAINT).not.toContain("vec3(0.0, 1.0, 0.0), tPuddle)");
   });
 });

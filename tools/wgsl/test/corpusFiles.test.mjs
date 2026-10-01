@@ -1,13 +1,13 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { timeLimit } from '../../../client/test/helpers/timeLimit.ts';
-import { RECORDED, readCorpusDir, stageFile } from '../lib/corpus.mjs';
+import { RECORDED, TIERS_FILE, readCorpusDir, readTiers, stageFile, tiersText } from '../lib/corpus.mjs';
 import { CORPUS_DIR, NODE_CORPUS_DIR } from '../lib/files.mjs';
 import { mergeCorpus } from '../lib/mergeCorpus.mjs';
 import { loadShared } from '../lib/shared.mjs';
@@ -56,6 +56,10 @@ function directory(files = {}) {
 
 /** Every file under `dir`, by its path relative to it. */
 const tree = (dir) => readdirSync(dir, { recursive: true }).filter((name) => statSync(join(dir, name)).isFile()).sort();
+/** The stage files under `dir`: every file but the index of tiers. */
+const stageTree = (dir) => tree(dir).filter((name) => name !== TIERS_FILE);
+/** Every tier, as a recording that names none is merged. */
+const EVERY_TIER = ['low', 'medium', 'high'];
 
 /** The first 16 digits of the SHA-256 the page names a stage by, over the file's own bytes. */
 function idOfBytes(stage, flag, bytes) {
@@ -76,9 +80,9 @@ function sixStages() {
 }
 
 describe('the corpus as one shader file a stage', () => {
-  it('writes a recording merged into an empty directory as exactly one file a stage, named by the stage, each file its exact bytes', () => {
+  it('writes a recording merged into an empty directory as exactly one file a stage, named by the stage, each file its exact bytes, and the index of tiers', () => {
     const dir = sixStages();
-    expect(tree(dir)).toEqual(Object.values(STAGES).map((s) => s.file).sort());
+    expect(tree(dir)).toEqual([...Object.values(STAGES).map((s) => s.file), TIERS_FILE].sort());
     for (const { file, entry } of Object.values(STAGES)) {
       expect(stageFile(entry, shared)).toBe(file);
       expect(readFileSync(join(dir, file))).toEqual(Buffer.from(entry.glsl, 'utf8'));
@@ -91,24 +95,49 @@ describe('the corpus as one shader file a stage', () => {
     expect(dash.indexOf(Buffer.from([0xe2, 0x80, 0x94]))).toBe(26);
     expect(dash.subarray(0, 3)).toEqual(Buffer.from('#ve'));
     expect(dash.length).toBe(66);
-    // Read back, the same six stages.
+    // Read back, the same six stages, each on every tier: the recording named none.
     const read = readCorpusDir(dir, shared);
-    expect(read.files).toEqual(tree(dir));
+    expect(read.files).toEqual(stageTree(dir));
     expect(read.others).toEqual([]);
     expect(new Set(read.stages.map((s) => JSON.stringify(s)))).toEqual(new Set(Object.values(STAGES).map((s) => JSON.stringify(s.entry))));
+    expect(read.tiers).toEqual(new Map(Object.values(STAGES).map((s) => [s.file.slice(2, 18), EVERY_TIER])));
+    // The index, one stage a line, the ids ascending.
+    expect(readFileSync(join(dir, TIERS_FILE), 'utf8')).toBe(
+      '{"format":"dayhike-wgsl-tiers/1","stages":{\n' +
+        Object.values(STAGES)
+          .map((s) => s.file.slice(2, 18))
+          .sort()
+          .map((id) => `"${id}":["low","medium","high"]`)
+          .join(',\n') +
+        '\n}}\n',
+    );
   });
 
-  it('adds a new stage as a new file, and changes nothing else in the directory', () => {
+  it('adds a new stage as a new file and to the index, and changes nothing else in the directory', () => {
     const dir = sixStages();
-    const before = new Map(tree(dir).map((file) => [file, { bytes: readFileSync(join(dir, file)), ms: statSync(join(dir, file)).mtimeMs }]));
+    const before = new Map(stageTree(dir).map((file) => [file, { bytes: readFileSync(join(dir, file)), ms: statSync(join(dir, file)).mtimeMs }]));
     const more = { stage: 'vertex', flag: false, glsl: '#version 450\nvoid main() { gl_Position = vec4(2.0); }\n' };
     const recording = join(directory({ 'r.json': shared.corpusText([STAGES.vertex.entry, more]) }), 'r.json');
-    expect(mergeCorpus({ dir, recorded: [recording], shared })).toEqual({ read: 2, added: 1, total: 7, removed: [], normalised: 0, leftAlone: [] });
-    expect(tree(dir)).toEqual([...before.keys(), stageFile(more, shared)].sort());
+    expect(mergeCorpus({ dir, recorded: [recording], shared })).toEqual({
+      read: 2,
+      added: 1,
+      retiered: 0,
+      total: 7,
+      tiers: { low: 7, medium: 7, high: 7 },
+      removed: [],
+      normalised: 0,
+      leftAlone: [],
+    });
+    expect(tree(dir)).toEqual([...before.keys(), stageFile(more, shared), TIERS_FILE].sort());
     for (const [file, { bytes, ms }] of before) {
       expect(readFileSync(join(dir, file))).toEqual(bytes);
       expect(statSync(join(dir, file)).mtimeMs).toBe(ms);
     }
+    expect(readCorpusDir(dir, shared).tiers.get(stageFile(more, shared).slice(2, 18))).toEqual(EVERY_TIER);
+    // A merge that adds nothing and puts no stage on a new tier leaves the index as it is.
+    const index = statSync(join(dir, TIERS_FILE)).mtimeMs;
+    expect(mergeCorpus({ dir, recorded: [recording], shared }).added).toBe(0);
+    expect(statSync(join(dir, TIERS_FILE)).mtimeMs).toBe(index);
   });
 
   it('leaves alone and reports a name that is not a corpus file', async () => {
@@ -125,6 +154,63 @@ describe('the corpus as one shader file a stage', () => {
     expect(stdout).toContain('  left alone notes.txt: not a corpus file\n');
     expect(tree(dir)).toContain('1/README.md');
   }, timeLimit(30_000));
+});
+
+describe('the index of tiers', () => {
+  const SIX = Object.values(STAGES).map((s) => s.file.slice(2, 18)).sort();
+  /** The six stages with `damage` done to the index, and what reading them throws. */
+  function refusal(damage) {
+    const dir = sixStages();
+    const index = join(dir, TIERS_FILE);
+    writeFileSync(index, damage(readFileSync(index, 'utf8')));
+    let thrown = null;
+    try {
+      readCorpusDir(dir, shared);
+    } catch (error) {
+      thrown = error.message;
+    }
+    return { dir, index, thrown };
+  }
+
+  it('writes each stage once, the ids ascending and the tiers in their order, and reads back what it wrote', () => {
+    const text = tiersText(new Map([['ffffffffffffffff', new Set(['high', 'low'])], ['0000000000000000', ['medium']]]), shared);
+    expect(text).toBe('{"format":"dayhike-wgsl-tiers/1","stages":{\n"0000000000000000":["medium"],\n"ffffffffffffffff":["low","high"]\n}}\n');
+    expect(readTiers(text, shared)).toEqual(new Map([['0000000000000000', ['medium']], ['ffffffffffffffff', ['low', 'high']]]));
+    expect(tiersText(new Map(), shared)).toBe('{"format":"dayhike-wgsl-tiers/1","stages":{}}\n');
+    expect(readTiers(tiersText(new Map(), shared), shared)).toEqual(new Map());
+  });
+
+  it('refuses an index that is not one: another format, no stages, a name that is no stage\'s, tiers that are not the three in order each once', () => {
+    expect(() => readTiers('{"format":"dayhike-wgsl-tiers/2","stages":{}}', shared)).toThrow('is not an index of dayhike-wgsl-tiers/1: dayhike-wgsl-tiers/2');
+    expect(() => readTiers('{"format":"dayhike-wgsl-tiers/1"}', shared)).toThrow('has no stages');
+    expect(() => readTiers('{"format":"dayhike-wgsl-tiers/1","stages":[]}', shared)).toThrow('has no stages');
+    expect(() => readTiers('{"format":"dayhike-wgsl-tiers/1","stages":{"abc":["low"]}}', shared)).toThrow('names "abc", which is not a stage\'s name (16 hexadecimal digits)');
+    const bad = (tiers) => `{"format":"dayhike-wgsl-tiers/1","stages":{"0000000000000000":${JSON.stringify(tiers)}}}`;
+    for (const tiers of [[], ['ultra'], ['high', 'low'], ['low', 'low'], 'low', null]) {
+      expect(() => readTiers(bad(tiers), shared)).toThrow(`names the tiers ${JSON.stringify(tiers)} for 0000000000000000, not some of low, medium, high in that order, each once`);
+    }
+    expect(() => readTiers('{', shared)).toThrow('does not parse as JSON');
+  });
+
+  it('refuses a corpus whose index names a stage that has no file, or leaves a file out, or is missing, naming each', () => {
+    const extra = refusal((text) => text.replace('"stages":{\n', '"stages":{\n"0000000000000000":["low"],\n'));
+    expect(extra.thrown).toBe(`${extra.index}: names the stage 0000000000000000, which has no file in the corpus\n${RECORDED}`);
+    const first = Object.values(STAGES).find((s) => s.file.slice(2, 18) === SIX[0]);
+    const missingOne = refusal((text) => text.replace(`"${SIX[0]}":["low","medium","high"],\n`, ''));
+    expect(missingOne.thrown).toBe(`${join(missingOne.dir, first.file)}: has no tiers in ${TIERS_FILE}\n${RECORDED}`);
+    const dir = sixStages();
+    rmSync(join(dir, TIERS_FILE));
+    expect(() => readCorpusDir(dir, shared)).toThrow(`${join(dir, TIERS_FILE)}: missing, so no stage has the tiers it was recorded on\n${RECORDED}`);
+    // An empty corpus has no index to miss.
+    expect(readCorpusDir(directory(), shared)).toEqual({ stages: [], files: [], others: [], tiers: new Map() });
+    const reordered = refusal((text) => text.replace(`"${SIX[0]}":["low","medium","high"],\n`, '').replace('\n}}\n', `,\n"${SIX[0]}":["low","medium","high"]\n}}\n`));
+    expect(reordered.thrown).toBe(`${reordered.index}: is not as the merge writes it (one stage a line, the ids ascending): it was edited by hand\n${RECORDED}`);
+    const reformatted = refusal((text) => JSON.stringify(JSON.parse(text), null, 2));
+    expect(reformatted.thrown).toContain(`${reformatted.index}: is not as the merge writes it`);
+    const unreadable = refusal(() => '{"format":"something else"}');
+    expect(unreadable.thrown).toBe(`${unreadable.index}: is not an index of dayhike-wgsl-tiers/1: something else\n${RECORDED}`);
+    expect(RECORDED).toContain('which also writes tiers.json, the index of the tiers each stage was recorded on');
+  });
 });
 
 describe('a corpus file whose bytes are not the stage its name says is refused', () => {
@@ -220,7 +306,7 @@ describe('a corpus file whose bytes are not the stage its name says is refused',
 describe('the committed corpus and the tests\' fixture', () => {
   /** Each file's name checked against its own bytes, hashed here, not through the tools. */
   function roundTrip(dir) {
-    const files = tree(dir);
+    const files = stageTree(dir);
     for (const file of files) {
       const [, folder, id, stage, off] = /^([0-9a-f])\/([0-9a-f]{16})\.(vertex|fragment)(\.uniformity-off)?\.glsl$/.exec(file) ?? [];
       expect(id, file).toBeDefined();
@@ -230,16 +316,28 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 663 recorded stages, each file\'s bytes hashing to the name it has', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(663);
+  it('holds the 927 recorded stages, each file\'s bytes hashing to the name it has: 763 on the medium and high tiers, 149 on low, 15 on high alone', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(927);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(663);
+    expect(read.stages).toHaveLength(927);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(359);
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(495);
+    // The 763 recorded on the medium and high tiers before the index was
+    // kept, the low tier's 149, recorded on it alone, and the lakes' and the
+    // cove's 15, recorded on the high tier alone: none yet on every tier.
+    expect(read.tiers.size).toBe(927);
+    const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
+    expect([on('low'), on('medium'), on('high')]).toEqual([149, 763, 778]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(763);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(149);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'high')).toHaveLength(15);
+    expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));
 
-  it('holds the fixture\'s 10 stages the same way', () => {
+  it('holds the fixture\'s 10 stages the same way, each on every tier', () => {
     expect(roundTrip(NODE_CORPUS_DIR)).toHaveLength(10);
-    expect(readCorpusDir(NODE_CORPUS_DIR, shared).stages).toHaveLength(10);
+    const read = readCorpusDir(NODE_CORPUS_DIR, shared);
+    expect(read.stages).toHaveLength(10);
+    expect([...read.tiers.values()]).toEqual(Array.from({ length: 10 }, () => EVERY_TIER));
   });
 });

@@ -302,10 +302,11 @@ describe("inter-stage variables on WebGPU", () => {
       plugins: [...babylon, ...ours],
     });
     expect(features, WEIGH).toEqual({
-      "tree.giant_fir.material0": giant(["Atmosphere", "Foliage", "GroundConform"]),
-      "tree.giant_fir.material1": giant(["Atmosphere", "Foliage", "DistanceFade", "GroundConform"]),
-      "tree.giant_pine.material0": giant(["Atmosphere", "Foliage", "GroundConform"]),
-      "tree.giant_pine.material1": giant(["Atmosphere", "Foliage", "DistanceFade", "GroundConform"]),
+      // The wet plugin adds uniforms and no varying.
+      "tree.giant_fir.material0": giant(["Atmosphere", "Foliage", "GroundConform", "Wet"]),
+      "tree.giant_fir.material1": giant(["Atmosphere", "Foliage", "DistanceFade", "GroundConform", "Wet"]),
+      "tree.giant_pine.material0": giant(["Atmosphere", "Foliage", "GroundConform", "Wet"]),
+      "tree.giant_pine.material1": giant(["Atmosphere", "Foliage", "DistanceFade", "GroundConform", "Wet"]),
     });
   });
 

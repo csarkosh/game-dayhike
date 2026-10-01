@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Checks a built client (`npm run build`'s `client/dist`) for the WGSL map
-// the WebGPU path fetches: one map of the known format, named by the WebGPU
-// chunk and by nothing the WebGL2 page loads, and one the deploy check
-// accepts. Exits 1 with a line for each problem.
+// Checks a built client (`npm run build`'s `client/dist`) for the WGSL maps
+// the WebGPU path fetches: one map a quality tier, each of the known format,
+// each named by the WebGPU chunk and by nothing the WebGL2 page loads, and
+// each one the deploy check accepts. Exits 1 with a line for each problem.
 //
 // Usage: node tools/wgsl/check-build.mjs [dist]
 
@@ -19,4 +19,4 @@ if (problems.length > 0) {
   for (const problem of problems) console.error(`✗ ${problem}`);
   process.exit(1);
 }
-console.log(`✓ the built client carries the WGSL map as it should (${dist})`);
+console.log(`✓ the built client carries the WGSL maps as it should (${dist})`);

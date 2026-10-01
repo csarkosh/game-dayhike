@@ -42,6 +42,7 @@ import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import { WebGPUTintWASM } from "@babylonjs/core/Engines/WebGPU/webgpuTintWASM.js";
 import { Logger } from "@babylonjs/core/Misc/logger.js";
 import type { ShaderLookupMode } from "./engineChoice.js";
+import type { QualityTier } from "./quality.js";
 import { LOOKUP_FORMAT, corpusText, lookupSalt, stageKey, translatorInput, uniformityOff, type Stage } from "./wgslFormat.js";
 import { loadWgslMap } from "./wgslMap.js";
 import { WGSL_START_MAX_BYTES, loadWgslStore } from "./wgslStore.js";
@@ -148,6 +149,13 @@ export type EffectRecord = {
 export type ShaderLookupReport = {
   mode: Exclude<ShaderLookupMode, "off">;
   salt: string;
+  /** The quality tiers the engines that looked shaders up on this page were
+   * made for, in the order first seen: a recording says it was made on them,
+   * and the merge puts its stages on those tiers' maps (one that names none
+   * is put on every tier's). A page that probed at two tiers, or changed tier
+   * in Settings, records every stage on both, over-inclusion only; `?tier=`
+   * on the URL pins a recording's tier. */
+  tiers: QualityTier[];
   /** Stages whose WGSL was found and used. */
   hits: number;
   /** The same, by the name of the source that had it (`page` for a stage
@@ -191,6 +199,7 @@ export function newLookupReport(mode: Exclude<ShaderLookupMode, "off">, salt: st
   return {
     mode,
     salt,
+    tiers: [],
     hits: 0,
     hitsBySource: {},
     misses: 0,
@@ -199,7 +208,10 @@ export function newLookupReport(mode: Exclude<ShaderLookupMode, "off">, salt: st
     stagesWithCarriageReturns: 0,
     effects: [],
     download() {
-      const corpus = corpusText(this.effects.flatMap((effect) => effect.stages));
+      const corpus = corpusText(
+        this.effects.flatMap((effect) => effect.stages),
+        this.tiers,
+      );
       const url = URL.createObjectURL(new Blob([corpus], { type: "application/json" }));
       const link = document.createElement("a");
       link.href = url;
@@ -219,13 +231,13 @@ function pageReport(mode: Exclude<ShaderLookupMode, "off">, salt: string): Shade
 
 /**
  * The lookup's sources by default: the translations shipped with the build,
- * the map at `mapUrl` (none where it is empty, as under the suite), then the
- * browser's store for `salt`. Each comes in on its own, so neither holds the
- * other back.
+ * the map at `mapUrl` (none where it is empty, as under the suite; `tier`'s
+ * map, where the tier is given), then the browser's store for `salt`. Each
+ * comes in on its own, so neither holds the other back.
  */
-export function defaultSources(salt: string, mapUrl = ""): Promise<readonly WgslSource[]> {
+export function defaultSources(salt: string, mapUrl = "", tier?: QualityTier): Promise<readonly WgslSource[]> {
   const store = openingSource("store", salt, loadWgslStore(salt));
-  return Promise.resolve(mapUrl === "" ? [store] : [loadWgslMap(mapUrl, salt), store]);
+  return Promise.resolve(mapUrl === "" ? [store] : [loadWgslMap(mapUrl, salt, { tier }), store]);
 }
 
 /**
@@ -346,13 +358,15 @@ function during<T extends object, K extends keyof T>(target: T, key: K, value: T
  * and the translators must be loaded by then too. What its sources read and
  * what it translates (up to `maxKeptChars` of text, `WGSL_KEPT_MAX_CHARS` by
  * default) are kept for the engine's life. `report` counts and records (the
- * page's, where none is given). Install it before `catchTranslationFailures`,
- * which wraps whatever preparation it finds.
+ * page's, where none is given), and notes `tier`, the quality tier the engine
+ * is made for, where one is given. Install it before
+ * `catchTranslationFailures`, which wraps whatever preparation it finds.
  */
 export function lookUpShaders(
   engine: AbstractEngine,
   options: {
     mode: ShaderLookupMode;
+    tier?: QualityTier;
     salt?: string;
     sources?: (salt: string) => Promise<readonly WgslSource[]>;
     report?: ShaderLookupReport;
@@ -364,6 +378,7 @@ export function lookUpShaders(
   const own = engine as unknown as LookupEngine;
   const salt = options.salt ?? buildSalt();
   const report = options.report ?? pageReport(mode, salt);
+  if (options.tier !== undefined && !report.tiers.includes(options.tier)) report.tiers.push(options.tier);
 
   /** The sources asked, in order, once they are in. */
   let asked: readonly WgslSource[] = [];

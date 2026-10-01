@@ -26,6 +26,7 @@
  * error, never a switch to WebGL2, never a record. It takes no writes.
  */
 import { Logger } from "@babylonjs/core/Misc/logger.js";
+import type { QualityTier } from "./quality.js";
 import type { WgslSource } from "./shaderLookup.js";
 import { MAP_MAX_BYTES, readMap, type WgslMap } from "./wgslFormat.js";
 import { reportProgress } from "./modelLoad.js";
@@ -53,12 +54,14 @@ export const WGSL_MAP_SOURCE = "shipped";
 export const WGSL_MAP_MS = 1_000;
 
 /**
- * The map at `url`, for `salt`, as a source of the lookup, at once: its
- * fetch begun, its lines and runs in memory once `ready` resolves (never
- * rejecting), none where the map is not this build's, is damaged or does not
- * come. `close` aborts a fetch still under way and lets the map go.
+ * The map at `url`, for `salt` (and for `tier`, the quality tier the engine
+ * is made for, where one is given: the build makes a map a tier), as a
+ * source of the lookup, at once: its fetch begun, its lines and runs in
+ * memory once `ready` resolves (never rejecting), none where the map is not
+ * this build's or this tier's, is damaged or does not come. `close` aborts a
+ * fetch still under way and lets the map go.
  */
-export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fetch } = {}): WgslSource {
+export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fetch; tier?: QualityTier } = {}): WgslSource {
   const request = deps.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
   const abort = new AbortController();
   /** The map read in, its lines and runs, held for the engine's life. */
@@ -115,7 +118,7 @@ export function loadWgslMap(url: string, salt: string, deps: { fetch?: typeof fe
     const p = reportProgress();
     p?.start("shaders", MAP_ITEM, length > 0 ? length : undefined);
     try {
-      const map = readMap(await readBounded(response, (bytes) => p?.bytes("shaders", MAP_ITEM, bytes)), salt);
+      const map = readMap(await readBounded(response, (bytes) => p?.bytes("shaders", MAP_ITEM, bytes)), salt, deps.tier);
       if (!closed) held = map;
     } finally {
       p?.done("shaders", MAP_ITEM);

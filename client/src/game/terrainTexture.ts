@@ -70,6 +70,7 @@
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
+import { rippleTime } from "./rainParams.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import type { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
@@ -651,6 +652,8 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   private _trailIndex: RawTexture | null = null;
   private _trailInfo: [number, number, number, number] = [0, 0, 0, 0];
   private _wet = 0;
+  private _rain = 0;
+  private _time = 0;
   private _swardOn = true;
   private _featureTex: RawTexture | null = null;
   private _featureInfo: [number, number, number, number] = [0, 0, 0, 0];
@@ -737,6 +740,13 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
   /** The weather's wetness in [0, 1]: the trail's core darkens, glosses and puddles with it. */
   setWet(wetness: number): void { this._wet = Math.min(1, Math.max(0, wetness)); }
 
+  /** The weather's rain in [0, 1]: the puddles' ripple layers blend in one
+   * per quarter of it. */
+  setRain(rain: number): void { this._rain = Math.min(1, Math.max(0, rain)); }
+
+  /** The running time the ripples read, seconds, folded (`rippleTime`). */
+  setTime(seconds: number): void { this._time = rippleTime(seconds); }
+
   /** Whether the sward floor's pull runs: only where the blade field is drawn,
    * since the pull stands for the shaded ground between its blades. Off binds
    * the pull's strength as 0; the colour and bands stay bound. */
@@ -805,6 +815,13 @@ export class TerrainTexturePlugin extends MaterialPluginBase {
         // The weather's wetness [0, 1] — declared unconditionally like
         // trailInfo; only the trail paint (TRAILPAINT) reads it today.
         { name: "terrainWet", size: 1, type: "float" },
+        // The weather's rain [0, 1] and the folded running time the puddles'
+        // ripples read (rainParams.ts: the rings are hashed in the fragment,
+        // the terrain's sixteen samplers being all WebGPU's default allows) —
+        // declared unconditionally like terrainWet; only the trail paint
+        // (TRAILPAINT) reads them.
+        { name: "terrainRain", size: 1, type: "float" },
+        { name: "terrainTime", size: 1, type: "float" },
         // (live feature count, 0, 0, 0) for the feature table — declared
         // unconditionally like trailInfo; the paint that reads it is gated
         // on FEATUREPAINT.
@@ -855,6 +872,8 @@ uniform vec3 terrainEye;
 uniform vec4 roadTable;
 uniform vec4 trailInfo;
 uniform float terrainWet;
+uniform float terrainRain;
+uniform float terrainTime;
 uniform vec4 featureInfo;
 uniform vec4 terrainLayerRough;
 uniform vec2 terrainLayerRough2;
@@ -908,6 +927,8 @@ uniform vec4 terrainSwardBand;
     uniformBuffer.updateFloat4("terrainSward", SWARD_FLOOR.r, SWARD_FLOOR.g, SWARD_FLOOR.b, this._swardOn ? SWARD_MAX : 0);
     uniformBuffer.updateFloat4("terrainSwardBand", SWARD_COVER[0], SWARD_COVER[1], SWARD_FADE[0], SWARD_FADE[1]);
     uniformBuffer.updateFloat("terrainWet", this._wet);
+    uniformBuffer.updateFloat("terrainRain", this._rain);
+    uniformBuffer.updateFloat("terrainTime", this._time);
     uniformBuffer.setTexture("terrainGrass", this._grass);
     uniformBuffer.setTexture("terrainFloor", this._floor);
     uniformBuffer.setTexture("terrainRock", this._rock);
@@ -1108,6 +1129,17 @@ export function enableTrailPaint(scene: Scene, material: PBRMaterial, seed: numb
 export function setTerrainWetness(_scene: Scene, material: PBRMaterial, wetness: number): void {
   const plugin = material.pluginManager?.getPlugin("TerrainTexture") as TerrainTexturePlugin | undefined;
   plugin?.setWet(wetness);
+}
+
+/**
+ * Feed the weather's rain and the running time into the trail paint: the
+ * puddles ripple with the rain. Defensive on a bare material, like
+ * `setTerrainWetness`.
+ */
+export function setTerrainRain(_scene: Scene, material: PBRMaterial, rain: number, seconds: number): void {
+  const plugin = material.pluginManager?.getPlugin("TerrainTexture") as TerrainTexturePlugin | undefined;
+  plugin?.setRain(rain);
+  plugin?.setTime(seconds);
 }
 
 /**

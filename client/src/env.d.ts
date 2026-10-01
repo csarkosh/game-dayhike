@@ -9,12 +9,13 @@
  * (`shaderLookup.ts`), so the page never hashes 2.6 MB. */
 declare const __WGSL_TRANSLATORS__: string;
 
-/** The URL of the WGSL map the build ships (`tools/wgsl/lib/mapPlugin.mjs`):
- * a content-hashed asset of the WebGPU chunk; on the dev server, the map it
- * makes as it starts; empty under the suite. */
+/** The URLs of the WGSL maps the build ships, one a quality tier
+ * (`tools/wgsl/lib/mapPlugin.mjs`): content-hashed assets of the WebGPU
+ * chunk; on the dev server, the maps it makes as it starts; each empty under
+ * the suite. */
 declare module "virtual:dayhike-wgsl-map" {
-  const url: string;
-  export default url;
+  const urls: { readonly low: string; readonly medium: string; readonly high: string };
+  export default urls;
 }
 
 interface ImportMetaEnv {

@@ -627,6 +627,17 @@ function buildGame(
   }
 
   /**
+   * Hands the drip layer the canopy's water, as the renderer stepped it for
+   * the drawn drips, and the canopy over the camera, as the renderer read it
+   * for the lens (`canopyOver`): one value for what is drawn and what is
+   * heard, one read for what is seen and what is heard. Both loops, after
+   * `renderer.sync`. Dry, the level is zero whatever stands overhead.
+   */
+  function syncDrip(): void {
+    ambient.setDrip(renderer.canopyWater(), renderer.canopyOver());
+  }
+
+  /**
    * The world's interactables, registered identically on the host and on a
    * client's predicted world so both can resolve what is in reach. Nothing
    * crosses the wire: the registry is seeded like everything else. Today that
@@ -729,7 +740,7 @@ function buildGame(
       r.scene,
       signPosts(graph, sites),
       groundH,
-      { materialFor: (name) => terrainMaterialFor(r.scene, name), shadows: r.shadows },
+      { materialFor: (name) => terrainMaterialFor(r.scene, name), shadows: r.shadows, cover: r.cover },
     );
     const trailhead = createTrailheadMeshes(
       r.scene,
@@ -749,6 +760,7 @@ function buildGame(
           urls: BOARD_IMAGE_URLS,
         }),
         shadows: r.shadows,
+        cover: r.cover,
       },
     );
     return {
@@ -1194,6 +1206,7 @@ function buildGame(
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncWind();
+      syncDrip();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(host.world, self);
       if (cmd !== null) syncPoster(host.world, self, cmd);
@@ -1331,6 +1344,7 @@ function buildGame(
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncWind();
+      syncDrip();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(client.world, self);
       if (cmd !== null) syncPoster(client.world, self, cmd);

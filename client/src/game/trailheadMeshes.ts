@@ -1,10 +1,12 @@
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import { Engine } from "@babylonjs/core/Engines/engine.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 // Non-.pure path, load-bearing (Babylon 9 split — see lighting.ts).
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
@@ -15,9 +17,10 @@ import type { Vec3 } from "../sim/types.js";
 import { BOARD_FACE } from "./boardFace.js";
 import { paintedBoard, type BoardDrawing, type BoardPainter } from "./boardPaint.js";
 import { CAR_SHADOW_BIAS, CAR_SHADOW_TEX, carShadowAlphaMap, carShadowGrid } from "./carShadow.js";
-import type { PropShadows } from "./propMeshes.js";
+import type { MeshRegistry, PropShadows } from "./propMeshes.js";
 import { armYaw } from "./signMeshes.js";
 import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
+import { attachWet, WET_CAP } from "./wetPlugin.js";
 
 export const TRAILHEAD_CAR_OUTPUT = "models/trailhead.car.glb";
 export const TRAILHEAD_KIOSK_OUTPUT = "models/trailhead.kiosk.glb";
@@ -51,6 +54,8 @@ export type TrailheadDeps = {
   board: BoardDrawing;
   paint?: BoardPainter;
   shadows?: PropShadows;
+  /** The rain's cover map: the car and the kiosk are hard cover, box or model. */
+  cover?: MeshRegistry;
   loader?: ModelLoader;
 };
 
@@ -82,6 +87,77 @@ export function carYaw(site: Site, trailhead: Site): number {
  * model's to keep. Under the car, box or model, lies its soft dark patch
  * (`carShadow.ts`).
  */
+/** The soft patch and its parts: what the caller disposes. */
+export type CarShadowPatch = { mesh: Mesh; material: StandardMaterial | PBRMaterial; texture: RawTexture; dispose(): void };
+
+/**
+ * The patch under the car: black, unlit, laid over the ground by its
+ * texture's alpha. It writes no depth, so it is in the way of nothing
+ * drawn after it. Built as the mist's material is (`mistMeshes.ts`), so
+ * the two are drawn by one shader; that material reads Babylon's own fog,
+ * which is lighter than the atmosphere's in a mist, so far off the patch
+ * stays dark on a fogged road. With `atmosphere` it is a PBR material
+ * instead, which the atmosphere's fog reaches as it reaches the ground.
+ * `darkness` scales its alpha.
+ */
+export function createCarShadowPatch(
+  scene: Scene,
+  site: { x: number; z: number },
+  groundH: (x: number, z: number) => number,
+  { moving = false, atmosphere = false, darkness = 1 }: { moving?: boolean; atmosphere?: boolean; darkness?: number } = {},
+): CarShadowPatch {
+  const texture = RawTexture.CreateRGBATexture(
+    carShadowAlphaMap(), CAR_SHADOW_TEX.width, CAR_SHADOW_TEX.height, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE,
+    Engine.TEXTURETYPE_UNSIGNED_BYTE,
+  );
+  texture.hasAlpha = true;
+  texture.wrapU = Texture.CLAMP_ADDRESSMODE;
+  texture.wrapV = Texture.CLAMP_ADDRESSMODE;
+  let material: StandardMaterial | PBRMaterial;
+  if (atmosphere) {
+    const pbr = new PBRMaterial("mat_car_shadow_fogged", scene);
+    pbr.unlit = true;
+    pbr.albedoColor = new Color3(0, 0, 0);
+    pbr.opacityTexture = texture;
+    pbr.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+    material = pbr;
+  } else {
+    const plain = new StandardMaterial("mat_trailhead_car_shadow", scene);
+    plain.disableLighting = true;
+    plain.opacityTexture = texture;
+    material = plain;
+  }
+  material.alpha = darkness;
+  material.disableDepthWrite = true;
+  material.backFaceCulling = false;
+  material.zOffsetUnits = CAR_SHADOW_BIAS;
+  const grid = carShadowGrid(site, groundH);
+  const mesh = new Mesh("trailhead_car_shadow", scene);
+  const data = new VertexData();
+  data.positions = grid.positions;
+  data.normals = grid.normals;
+  data.uvs = grid.uvs;
+  data.indices = grid.indices;
+  data.applyToMesh(mesh);
+  mesh.position.set(grid.origin.x, grid.origin.y, grid.origin.z);
+  mesh.scaling.set(grid.scale.x, grid.scale.y, grid.scale.z);
+  mesh.material = material;
+  mesh.isPickable = false;
+  mesh.receiveShadows = false;
+  // A parked car's patch never moves; a moving car's rides it, a child of its root.
+  if (!moving) mesh.freezeWorldMatrix();
+  return {
+    mesh,
+    material,
+    texture,
+    dispose() {
+      mesh.dispose();
+      material.dispose();
+      texture.dispose();
+    },
+  };
+}
+
 export function createTrailheadMeshes(
   scene: Scene,
   sites: TrailheadSites,
@@ -102,58 +178,24 @@ export function createTrailheadMeshes(
     const mesh = MeshBuilder.CreateBox(name, { width: 2 * half.x, height: 2 * half.y, depth: 2 * half.z }, scene);
     mesh.position.set(site.x, ground + half.y, site.z);
     mesh.material = deps.materialFor(material);
+    attachWet(mesh.material, WET_CAP.prop);
     mesh.isPickable = false;
     mesh.freezeWorldMatrix();
     deps.shadows?.add(mesh);
+    deps.cover?.add(mesh);
     return mesh;
   }
   function dropBox(box: Mesh): void {
     if (box.isDisposed()) return;
     deps.shadows?.remove(box);
+    deps.cover?.remove(box);
     box.dispose();
   }
 
-  /**
-   * The patch under the car: black, unlit, laid over the ground by its
-   * texture's alpha. It writes no depth, so it is in the way of nothing
-   * drawn after it, and it is fogged as the ground under it is. Built as
-   * the mist's material is (`mistMeshes.ts`), so the two are drawn by one
-   * shader.
-   */
-  function carShadow(site: Site): { mesh: Mesh; material: StandardMaterial; texture: RawTexture } {
-    const texture = RawTexture.CreateRGBATexture(
-      carShadowAlphaMap(), CAR_SHADOW_TEX.width, CAR_SHADOW_TEX.height, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE,
-      Engine.TEXTURETYPE_UNSIGNED_BYTE,
-    );
-    texture.hasAlpha = true;
-    texture.wrapU = Texture.CLAMP_ADDRESSMODE;
-    texture.wrapV = Texture.CLAMP_ADDRESSMODE;
-    const material = new StandardMaterial("mat_trailhead_car_shadow", scene);
-    material.disableLighting = true;
-    material.opacityTexture = texture;
-    material.disableDepthWrite = true;
-    material.backFaceCulling = false;
-    material.zOffsetUnits = CAR_SHADOW_BIAS;
-    const grid = carShadowGrid(site, groundH);
-    const mesh = new Mesh("trailhead_car_shadow", scene);
-    const data = new VertexData();
-    data.positions = grid.positions;
-    data.normals = grid.normals;
-    data.uvs = grid.uvs;
-    data.indices = grid.indices;
-    data.applyToMesh(mesh);
-    mesh.position.set(grid.origin.x, grid.origin.y, grid.origin.z);
-    mesh.scaling.set(grid.scale.x, grid.scale.y, grid.scale.z);
-    mesh.material = material;
-    mesh.isPickable = false;
-    mesh.receiveShadows = false;
-    mesh.freezeWorldMatrix();
-    return { mesh, material, texture };
-  }
 
   const car = sites.car ?? null;
   const carBox = car === null ? null : fallbackBox("trailhead_car_box", CAR_MATERIAL, car.site, CAR_HALF);
-  const patch = car === null ? null : carShadow(car.site);
+  const patch = car === null ? null : createCarShadowPatch(scene, car.site, groundH);
   const kioskBoxes = boardBoxes(sites.board).map((b, k) => fallbackBox(`trailhead_kiosk_box_${k}`, KIOSK_MATERIAL, b, BOARD_BOX_HALF));
 
   async function place(
@@ -179,7 +221,12 @@ export function createTrailheadMeshes(
       container.dispose();
       return;
     }
-    for (const m of model.meshes) deps.shadows?.add(m);
+    for (const m of model.meshes) {
+      deps.shadows?.add(m);
+      deps.cover?.add(m);
+      // The weather soaks the car and the kiosk as it does every prop.
+      if (m.material) attachWet(m.material, WET_CAP.prop);
+    }
     placed.push(model);
     for (const box of boxes) dropBox(box);
     try {
@@ -235,7 +282,10 @@ export function createTrailheadMeshes(
       face?.dispose();
       face = null;
       for (const model of placed) {
-        for (const m of model.meshes) deps.shadows?.remove(m);
+        for (const m of model.meshes) {
+          deps.shadows?.remove(m);
+          deps.cover?.remove(m);
+        }
         model.dispose();
       }
       placed.length = 0;

@@ -465,8 +465,9 @@ describe("world shell wiring", () => {
 
   it("creates wildlife under the forest guard, at the low tier's radius, with both shadow hooks", () => {
     const creation = slice("const wildlife =", "const wildlifePlayerPool");
-    // Hand-authored levels have no forest and must get no animals.
-    expect(creation).toMatch(/forest !== null\s*\?\s*createWildlifeMeshes\(/);
+    // Hand-authored levels have no forest and must get no animals; a renderer
+    // asked for none (a scene recorded a frame at a time) gets none either.
+    expect(creation).toMatch(/forest !== null && options\.wildlife !== false\s*\?\s*createWildlifeMeshes\(/);
     expect(creation).toContain('radiusScale: tier === "low" ? 0.6 : undefined');
     // Both halves of the shadow registry: an add with no remove leaks every
     // released animal into the shadow map (lighting.ts's own note).
@@ -600,7 +601,9 @@ describe("world shell wiring", () => {
   it("registers cliff casters late, updates cliffs in both camera branches after the forest, and disposes them", () => {
     const casters = slice("// Late caster registration", "applyWetness(scene, weather);");
     expect(casters).toContain("for (; cliffCastersRegistered < cliffMeshes.casterMeshes.length; cliffCastersRegistered++) {");
-    expect(casters).toContain("lighting.addShadowMesh(cliffMeshes.casterMeshes[cliffCastersRegistered] as Mesh);");
+    // A near bucket is a shadow caster and hard cover for the rain, registered once as it lands.
+    expect(casters).toContain("const bucket = cliffMeshes.casterMeshes[cliffCastersRegistered] as Mesh;");
+    expect(casters).toContain("lighting.addShadowMesh(bucket);\n          rainMap?.register(bucket, \"hard\");");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
     expect(freecamBranch.match(/cliffMeshes\?\.update\(/g)).toHaveLength(1);
@@ -608,6 +611,27 @@ describe("world shell wiring", () => {
     expect(freecamBranch).toContain("forestMeshes?.update(freecam.x, freecam.z);\n        cliffMeshes?.update(freecam.x, freecam.z);");
     expect(playerBranch).toContain("forestMeshes?.update(local.pos.x, local.pos.z);\n        cliffMeshes?.update(local.pos.x, local.pos.z);");
     expect(src.match(/cliffMeshes\?\.dispose\(\)/g)).toHaveLength(1);
+  });
+
+  it("lists the two inner clipmap rings in the rain map, makes the splashes after the rain over the same map, updates them in both camera branches and disposes them", () => {
+    // Ring 0 alone covers the map's 96 m square; the outer rings would be clipped whole and still cost their draws.
+    expect(src).toContain('for (const mesh of clipmap?.meshes.slice(0, 2) ?? []) rainMap.register(mesh, "terrain");');
+    expect(src).toContain("  const rain = createRain(scene, tier);\n  partOf(rain);\n  rain.setMap(rainMap);");
+    expect(src).toContain("  const rainSplash = createRainSplash(scene, tier);\n  partOf(rainSplash);\n  rainSplash?.setMap(rainMap);");
+    expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist });");
+    const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
+    const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
+    // After the rain's update, which fills the lamp the splashes read.
+    const after = "lampForRain(localLamp, rainLamp));\n        rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);";
+    expect(freecamBranch.match(/rainSplash\?\.update\(/g)).toHaveLength(1);
+    expect(playerBranch.match(/rainSplash\?\.update\(/g)).toHaveLength(1);
+    expect(freecamBranch).toContain(after);
+    expect(playerBranch).toContain(after);
+    expect(src.match(/rainSplash\?\.dispose\(\)/g)).toHaveLength(1);
+    // The one canopy-water value, read by the drip sound through the renderer.
+    expect(src).toContain("    canopyWater() {\n      return rain.canopyWater;\n    },");
+    // And the one canopy over the camera, read for the lens and heard by the drips.
+    expect(src).toContain("    canopyOver() {\n      return lensCanopy;\n    },");
   });
 });
 
@@ -831,6 +855,6 @@ describe("a part the renderer disposes is also torn down when a build fails", ()
     const registered = new Set([...src.matchAll(/partOf\((\w+)\);/g)].map((m) => m[1]!));
     if (/made\(\(\) => \{\s*for \(const m of brushMeshes\) m\.dispose\(\);/.test(src)) registered.add("brushMeshes");
     expect([...registered].sort()).toEqual([...disposed].sort());
-    expect(disposed.size).toBe(19);
+    expect(disposed.size).toBe(21);
   });
 });

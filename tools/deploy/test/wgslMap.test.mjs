@@ -7,12 +7,13 @@ const hex = (c) => c.repeat(64);
 const TRANSLATORS = `glslang=${hex('a')}|twgsl=${hex('b')}|glslang.js=${hex('c')}|twgsl.js=${hex('d')}`;
 // A slice shaped like the real WebGPU chunk: the key's format, the map's, the
 // translators' digests the build baked in, Babylon's uniformity switch, and
-// the map's URL, base-absolute.
+// the maps' URLs, one a tier, base-absolute.
 const CHUNK =
   'var Ci=`dayhike-wgsl/1`,Mf=`dayhike-wgsl-map/2`;' +
   `function Ei(){return\`\${Ci}|babylon=\${Ze.Version}|\${"${TRANSLATORS}"}|staticUA=\${Tn.DisableUniformityAnalysis}\`}` +
   'Tn.DisableUniformityAnalysis=!1;' +
-  'var Wm=`/dayhike/assets/wgsl-map-Qx3_Zk9a.json`,dr=`/dayhike/assets/glslang-G7Yt_-32.wasm`;';
+  'var Wm={low:`/dayhike/assets/wgsl-map-low-Lo1_Zk9a.json`,medium:`/dayhike/assets/wgsl-map-medium-Me2_Zk9a.json`,high:`/dayhike/assets/wgsl-map-high-Qx3_Zk9a.json`},' +
+  'dr=`/dayhike/assets/glslang-G7Yt_-32.wasm`;';
 // And of the entry chunk, which carries Babylon's version.
 const ENTRY = 'var Ze=class{static get Version(){return`9.18.0`}static get NpmPackage(){return`babylonjs@9.18.0`}};';
 const SALT = `dayhike-wgsl/1|babylon=9.18.0|${TRANSLATORS}|staticUA=false`;
@@ -20,16 +21,44 @@ const map = (fields) =>
   JSON.stringify({ format: 'dayhike-wgsl-map/2', salt: SALT, lines: ['@vertex fn main() {}', ''], entries: { [hex('e')]: [0, 1] }, ...fields });
 
 describe('findMapUrl', () => {
-  it('finds the map the WebGPU chunk names, and nothing where there is none', () => {
-    expect(findMapUrl(CHUNK)).toBe('/dayhike/assets/wgsl-map-Qx3_Zk9a.json');
-    expect(findMapUrl('`/dayhike/assets/wgsl-mapx-Qx3_Zk9a.json`')).toBeNull();
-    expect(findMapUrl('`/dayhike/assets/glslang-G7Yt_-32.wasm`')).toBeNull();
+  it("finds each tier's map the WebGPU chunk names, and nothing where there is none", () => {
+    expect(findMapUrl(CHUNK, 'low')).toBe('/dayhike/assets/wgsl-map-low-Lo1_Zk9a.json');
+    expect(findMapUrl(CHUNK, 'medium')).toBe('/dayhike/assets/wgsl-map-medium-Me2_Zk9a.json');
+    expect(findMapUrl(CHUNK, 'high')).toBe('/dayhike/assets/wgsl-map-high-Qx3_Zk9a.json');
+    // A map of no tier, as the build named it before there was one a tier.
+    expect(findMapUrl('`/dayhike/assets/wgsl-map-Qx3_Zk9a.json`', 'high')).toBeNull();
+    expect(findMapUrl('`/dayhike/assets/wgsl-map-highx-Qx3_Zk9a.json`', 'high')).toBeNull();
+    expect(findMapUrl('`/dayhike/assets/glslang-G7Yt_-32.wasm`', 'low')).toBeNull();
   });
 });
 
 describe('mapProblems', () => {
+  it('refuses an empty map, unless it may be empty: a tier not yet recorded, while another tier holds translations', () => {
+    expect(mapProblems(map({ entries: {} }), CHUNK, ENTRY)).toEqual(['it is empty']);
+    expect(mapProblems(map({ entries: {} }), CHUNK, ENTRY, { mayBeEmpty: true })).toEqual([]);
+    expect(mapProblems(map({ entries: {} }), CHUNK, ENTRY, { mayBeEmpty: false })).toEqual(['it is empty']);
+    // Only emptiness is forgiven.
+    expect(mapProblems(map({ entries: {}, format: 'dayhike-wgsl-map/3' }), CHUNK, ENTRY, { mayBeEmpty: true })).toEqual([
+      'its format "dayhike-wgsl-map/3" is not the one the WebGPU chunk reads',
+    ]);
+  });
+
   it('passes a map of this build that holds translations', () => {
     expect(mapProblems(map({}), CHUNK, ENTRY)).toEqual([]);
+  });
+
+  it("fails a map that says it is another tier's than the one asked, or no tier's, as the page refuses it; asked no tier, it reads none", () => {
+    expect(mapProblems(map({ tier: 'low' }), CHUNK, ENTRY, { tier: 'low' })).toEqual([]);
+    expect(mapProblems(map({ tier: 'high' }), CHUNK, ENTRY, { tier: 'low' })).toEqual(["it says it is the high tier's map, under the low tier's name"]);
+    expect(mapProblems(map({ tier: 3 }), CHUNK, ENTRY, { tier: 'high' })).toEqual(["it says it is the 3 tier's map, under the high tier's name"]);
+    expect(mapProblems(map({}), CHUNK, ENTRY, { tier: 'medium' })).toEqual(["it names no tier, under the medium tier's name"]);
+    expect(mapProblems(map({ tier: 'high' }), CHUNK, ENTRY)).toEqual([]);
+    expect(mapProblems(map({ tier: 'high' }), CHUNK, ENTRY, { mayBeEmpty: true })).toEqual([]);
+    // Beside the map's other problems, in their order.
+    expect(mapProblems(map({ tier: 'high', entries: {} }), CHUNK, ENTRY, { tier: 'low' })).toEqual([
+      "it says it is the high tier's map, under the low tier's name",
+      'it is empty',
+    ]);
   });
 
   it("fails a map made against another Babylon than the bundle's, or under the other uniformity switch", () => {

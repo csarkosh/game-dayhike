@@ -241,7 +241,7 @@ jobs:
         env:
           DAYHIKE_BASE: /dayhike/
         run: npm run build
-      - name: check the built client carries the WGSL map as it should
+      - name: check the built client carries the WGSL maps as it should
         run: node tools/wgsl/check-build.mjs client/dist
 
   # The one status to require and to read: it fails unless every job above

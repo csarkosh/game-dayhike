@@ -1,6 +1,8 @@
 // client/src/game/wetPlugin.ts
 /**
- * The wet plugin: below one wet line, a surface is darker (× WET_ALBEDO) and
+ * The wet plugin: what water and weather do to a surface.
+ *
+ * The wet line: below one wet line, a surface is darker (× WET_ALBEDO) and
  * glossy (WET_ROUGHNESS), and on the medium and low tiers darkened per
  * channel by the water above it (spec §6). On the terrain material, the
  * props' and the player's. One wet line at a time — the nearest body's —
@@ -11,6 +13,26 @@
  * `float roughness=reflectivityOut.roughness;` line rather than on the
  * reflectivity call, because the terrain plugin already rewrites that call
  * (terrainTexture.ts) and a second rewrite of it would not match.
+ *
+ * The weather: every material with a porosity cap above 0 darkens and
+ * glosses with the weather's wetness by Lagarde's porosity rule, the
+ * porosity read from the material's own final roughness and held to the
+ * cap (`WET_CAP`: 1 for bark, deadwood, duff and the props, 0.5 for rock
+ * and the cliffs, 0.3 for leaves and grass cards, which glaze more than
+ * they darken). The wetness is one value for the page, written once a
+ * frame by `setWetWeather` and read by every plugin at bind, as the
+ * foliage plugin's wind is. The rule runs at
+ * CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS, inside the reflectivity
+ * block: CUSTOM_FRAGMENT_BEFORE_LIGHTS comes BEFORE that block in Babylon's
+ * PBR fragment, when no roughness has been read yet, and after the block
+ * `surfaceAlbedo` is overwritten from the block's result, so the one place
+ * that has the final roughness and a writable albedo together is inside
+ * it. The hook exists in the metallic workflow only, which every material
+ * here uses (a GLB's, and one made with `metallic` and `roughness` set); a
+ * specular-workflow material compiles with the rule left out. The cap
+ * defaults to 0, so the terrain, the brushes and the player, which take the
+ * wet line only, are unchanged, and the terrain keeps its own trail-paint
+ * wetness.
  */
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
@@ -21,6 +43,8 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import fragmentDefs from "./shaders/wet.fragment.fx?raw";
 import fragmentLights from "./shaders/wetLights.fragment.fx?raw";
+import fragmentWeather from "./shaders/wetWeather.fragment.fx?raw";
+import { clamp01 } from "./colour.js";
 import type { WaterBody } from "./waterShading.js";
 
 export const WET_ALBEDO = 0.4;
@@ -35,6 +59,27 @@ export const WET_RADIUS_MAX = 1e6;
 export const WET_ROUGHNESS_ANCHOR = "!float roughness=reflectivityOut\\.roughness;";
 const WET_ROUGHNESS_CODE = "float roughness=mix(reflectivityOut.roughness, WET_ROUGHNESS, wetW);";
 
+/** The porosity cap of each kind of material the weather wets. */
+export const WET_CAP = {
+  bark: 1,
+  deadwood: 1,
+  duff: 1,
+  fungus: 1,
+  prop: 1,
+  rock: 0.5,
+  cliff: 0.5,
+  leaf: 0.3,
+} as const;
+
+// Module-level like the foliage plugin's wind: every plugin reads one
+// wetness, written once per frame by the renderer.
+let weatherWet = 0;
+
+/** Per frame: the weather's wetness in [0, 1], for every attached plugin. */
+export function setWetWeather(wetness: number): void {
+  weatherWet = clamp01(wetness);
+}
+
 export type WetBody = WaterBody & { x: number; z: number; radius: number };
 
 const attached = new Set<WetPlugin>();
@@ -46,6 +91,8 @@ export class WetPlugin extends MaterialPluginBase {
   radius = 0;
   kd: [number, number, number] = [0, 0, 0];
   attenuate = true;
+  /** The porosity cap, in [0, 1]: 0 leaves the weather's wetness unread. */
+  cap = 0;
 
   constructor(material: Material) {
     super(material, "Wet", 240, { WET: false });
@@ -76,8 +123,13 @@ export class WetPlugin extends MaterialPluginBase {
         { name: "wetRadius", size: 1, type: "float" },
         { name: "wetKd", size: 3, type: "vec3" },
         { name: "wetAttenuate", size: 1, type: "float" },
+        { name: "wetWeather", size: 1, type: "float" },
+        { name: "wetCap", size: 1, type: "float" },
       ],
-      fragment: ["uniform float wetLine;", "uniform float wetLevel;", "uniform vec2 wetCentre;", "uniform float wetRadius;", "uniform vec3 wetKd;", "uniform float wetAttenuate;"].join("\n"),
+      fragment: [
+        "uniform float wetLine;", "uniform float wetLevel;", "uniform vec2 wetCentre;", "uniform float wetRadius;",
+        "uniform vec3 wetKd;", "uniform float wetAttenuate;", "uniform float wetWeather;", "uniform float wetCap;",
+      ].join("\n"),
     };
   }
 
@@ -88,6 +140,8 @@ export class WetPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("wetRadius", Math.min(this.radius, WET_RADIUS_MAX));
     uniformBuffer.updateFloat3("wetKd", this.kd[0], this.kd[1], this.kd[2]);
     uniformBuffer.updateFloat("wetAttenuate", this.attenuate ? 1 : 0);
+    uniformBuffer.updateFloat("wetWeather", weatherWet);
+    uniformBuffer.updateFloat("wetCap", this.cap);
   }
 
   override getCustomCode(shaderType: string): { [pointName: string]: string } | null {
@@ -95,6 +149,7 @@ export class WetPlugin extends MaterialPluginBase {
     return {
       CUSTOM_FRAGMENT_DEFINITIONS: fragmentDefs,
       CUSTOM_FRAGMENT_BEFORE_LIGHTS: fragmentLights,
+      CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS: fragmentWeather,
       [WET_ROUGHNESS_ANCHOR]: WET_ROUGHNESS_CODE,
     };
   }
@@ -104,12 +159,23 @@ export class WetPlugin extends MaterialPluginBase {
  * Attaches once per material; a later call returns the plugin already there.
  * PBR only: the roughness anchor and `surfaceAlbedo` are PBR's, so any other
  * material (a loaded model's StandardMaterial, say) is left alone and gets null.
+ * `cap` is the material's porosity cap for the weather's wetting (`WET_CAP`),
+ * written whenever it is given, so a material two buckets share takes the
+ * cap of whichever attached it last (they give the same one), and a call
+ * without one leaves the cap as it was.
  */
-export function attachWet(material: Material): WetPlugin | null {
+export function attachWet(material: Material, cap?: number): WetPlugin | null {
   if (!(material instanceof PBRMaterial)) return null;
   const existing = material.pluginManager?.getPlugin("Wet");
-  if (existing instanceof WetPlugin) return existing;
-  return new WetPlugin(material);
+  const plugin = existing instanceof WetPlugin ? existing : new WetPlugin(material);
+  if (cap !== undefined) plugin.cap = clamp01(cap);
+  return plugin;
+}
+
+/** The porosity cap a material carries: 0 without the plugin. */
+export function wetCapOf(material: Material): number {
+  const plugin = material.pluginManager?.getPlugin("Wet");
+  return plugin instanceof WetPlugin ? plugin.cap : 0;
 }
 
 function smoothstep(e0: number, e1: number, x: number): number {

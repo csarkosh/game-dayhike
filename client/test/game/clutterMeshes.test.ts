@@ -22,7 +22,9 @@ import {
   LITTER_VARIANT_SCALE,
   reliefMesh,
   trampleFrame,
+  WET_CAP_BY_CLASS,
 } from "../../src/game/clutterMeshes.js";
+import { wetCapOf } from "../../src/game/wetPlugin.js";
 import { DistanceFadePlugin } from "../../src/game/distanceFadePlugin.js";
 import { FoliagePlugin } from "../../src/game/foliagePlugin.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
@@ -163,6 +165,22 @@ describe("foliage attribute and plugin", () => {
     const meshes = createClutterMeshes(scene, seed, { assets, radiusScale: RADIUS_SCALE });
     return { meshes, assets, seed, engine };
   }
+
+  it("gives every class a porosity cap for the weather's wetting, and attaches it to both LOD buckets", () => {
+    expect(WET_CAP_BY_CLASS.size).toBe(CLUTTER_CLASS_COUNT);
+    expect([...WET_CAP_BY_CLASS.entries()].sort((a, b) => a[0] - b[0])).toEqual([
+      [0, 0.3], [1, 0.5], [2, 0.5], [3, 1], [4, 1], [5, 0.3], [6, 0.3], [7, 0.3], [8, 0.5],
+    ]);
+    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) expect(WET_CAP_BY_CLASS.has(cls), `class ${cls}`).toBe(true);
+    const { meshes, assets, engine } = buildWithAssets();
+    for (let cls = 0; cls < CLUTTER_CLASS_COUNT; cls++) {
+      for (const lod of [0, 1]) {
+        expect(wetCapOf(assets[cls]![0]![lod]![0]!.material!), `class ${cls} lod ${lod}`).toBe(WET_CAP_BY_CLASS.get(cls));
+      }
+    }
+    meshes.dispose();
+    engine.dispose();
+  });
 
   it("attaches the foliage plugin to the swaying classes only, with the far bucket's edges", () => {
     const { meshes, assets, engine } = buildWithAssets();

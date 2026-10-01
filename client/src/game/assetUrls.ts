@@ -109,8 +109,13 @@ const AUDIO_URLS = urlMap(AUDIO_GLOB_URLS);
 const VIDEO_URLS = urlMap(VIDEO_GLOB_URLS);
 const IMAGE_URLS = urlMap(IMAGE_GLOB_URLS);
 
-/** How many models the build ships: every one a hike loads today. */
-export const MODEL_COUNT: number = Object.keys(MODEL_URLS).length;
+/** The film's own models (the catalog's `scene`): the scene route loads them, a hike never does. */
+const SCENE_ONLY = new Set(
+  (catalog as { assets: Array<{ output: string; scene?: string }> }).assets.filter((a) => a.scene !== undefined).map((a) => a.output),
+);
+
+/** How many models a hike loads: every one the build ships but the film's own. */
+export const MODEL_COUNT: number = Object.keys(MODEL_URLS).filter((output) => !SCENE_ONLY.has(output)).length;
 
 /** The intro film's hashed url, or null until it ships. */
 export function videoUrl(): string | null {

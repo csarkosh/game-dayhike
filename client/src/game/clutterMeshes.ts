@@ -72,6 +72,7 @@ import {
   CLUTTER_CLASS_COUNT,
   CLUTTER_DRIFTWOOD,
   CLUTTER_FLOWER,
+  CLUTTER_FUNGUS,
   CLUTTER_GRASS,
   CLUTTER_GRASS_CELL,
   CLUTTER_LITTER,
@@ -83,6 +84,7 @@ import { activeTerrainVariant } from "../sim/terrain.js";
 import { attachFoliage, setFoliageEdges, FOLIAGE_PROFILES, type FoliageProfile } from "./foliagePlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { attachDistanceFade, fadeBands, writeFadeBands, type FadeBands } from "./distanceFadePlugin.js";
+import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { seatOnGround } from "./groundTilt.js";
 import { modelUrl } from "./assetUrls.js";
 import { surfaceAlbedo } from "./terrainSurface.js";
@@ -254,6 +256,22 @@ const FOLIAGE_BY_CLASS = new Map<number, FoliageProfile>([
   [CLUTTER_MEADOW, FOLIAGE_PROFILES.MEADOW],
   [CLUTTER_FLOWER, FOLIAGE_PROFILES.FLOWER],
   [CLUTTER_BUSH, FOLIAGE_PROFILES.BUSH],
+]);
+
+/** The weather's porosity cap per class (wetPlugin.ts): the cards glaze,
+ * stone darkens by half, driftwood and fungus soak. Litter is pebbles and
+ * twigs under a metre across, taken as stone. Every class has an entry
+ * (`clutterMeshes.test.ts` pins it). */
+export const WET_CAP_BY_CLASS: ReadonlyMap<number, number> = new Map<number, number>([
+  [CLUTTER_GRASS, WET_CAP.leaf],
+  [CLUTTER_ROCK, WET_CAP.rock],
+  [CLUTTER_BOULDER, WET_CAP.rock],
+  [CLUTTER_DRIFTWOOD, WET_CAP.deadwood],
+  [CLUTTER_FUNGUS, WET_CAP.fungus],
+  [CLUTTER_BUSH, WET_CAP.leaf],
+  [CLUTTER_MEADOW, WET_CAP.leaf],
+  [CLUTTER_FLOWER, WET_CAP.leaf],
+  [CLUTTER_LITTER, WET_CAP.rock],
 ]);
 
 /** Classes that LIE on the ground rather than stand on it, so they take the
@@ -1133,7 +1151,10 @@ export function createClutterMeshes(
             ? fadeBands(nearIn, [seam.start, seam.end])
             : fadeBands([seam.start, seam.end], [edge.start, edge.end]);
           for (const mesh of meshes) {
-            if (mesh.material) attachDistanceFade(mesh.material);
+            if (mesh.material) {
+              attachDistanceFade(mesh.material);
+              attachWet(mesh.material, WET_CAP_BY_CLASS.get(cls)!);
+            }
           }
           return {
             meshes,

@@ -25,6 +25,7 @@ import {
 } from "./duffField.js";
 import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, duffClumpGeometry } from "./duffClump.js";
 import { attachFoliage, FOLIAGE_PROFILES, setFoliageBladeEdges } from "./foliagePlugin.js";
+import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { attachFoliageLight } from "./foliageLightPlugin.js";
 import { CLUTTER_SINK, instanceMatrixFor, prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { createKeptValues } from "./keptValues.js";
@@ -168,6 +169,7 @@ function createTierMaterial(scene: Scene, tier: number, meshHeight: number, reac
   mat.backFaceCulling = false;
   attachFoliage(mat, FOLIAGE_PROFILES.DUFF, meshHeight);
   attachFoliageLight(mat);
+  attachWet(mat, WET_CAP.duff);
   setFoliageBladeEdges(mat, duffTierBands(reach)[tier]!);
   return mat;
 }

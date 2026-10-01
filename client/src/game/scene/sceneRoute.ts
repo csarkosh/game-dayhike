@@ -21,7 +21,7 @@ import { placeStaticModel, type PlacedModel } from "../staticModel.js";
 import { createRenderer } from "../renderer.js";
 import type { QualityTier } from "../quality.js";
 import { seedFromToken } from "../seed.js";
-import { carYaw, createTrailheadMeshes } from "../trailheadMeshes.js";
+import { carYaw, createCarShadowPatch, createTrailheadMeshes, type CarShadowPatch } from "../trailheadMeshes.js";
 import { createSignMeshes } from "../signMeshes.js";
 import { boardDrawingOf, type BoardPainter } from "../boardPaint.js";
 import { BOARD_IMAGE_URLS } from "../boardImages.js";
@@ -30,13 +30,21 @@ import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "../../sim/signs.js";
 import { signSites } from "../../sim/placeNames.js";
 import { terrainMaterialFor } from "../renderer.js";
 import { createCaptionPanel } from "./captions.js";
+import { createCordTube } from "./cordTube.js";
 import { INTRO_CAR, INTRO_HOUR, INTRO_RANGER, INTRO_SEED_TOKEN, INTRO_WEATHER, introScene } from "./intro.js";
 import { createSceneClock, type SceneClock } from "./sceneClock.js";
 import { createScenePlayer } from "./scenePlayer.js";
-import { carModelOf, type CarModel, type StageDeps } from "./sceneStage.js";
+import { carModelOf, dimCabParts, type CarModel, type StageDeps } from "./sceneStage.js";
 
-export type DayhikeScene = { seek(t: number): void; frame(): Promise<void>; time(): number };
-export type SceneRun = { dispose(): void; worldState(): WorldState; scene(): BabylonScene };
+export type DayhikeScene = {
+  seek(t: number): void;
+  frame(): Promise<void>;
+  time(): number;
+  /** Resolves once the film's ranger and car have loaded or failed: a recorder waits on it. */
+  ready: Promise<void>;
+  engine(): "webgpu" | "webgl2";
+};
+export type SceneRun = { dispose(): void; worldState(): WorldState; scene(): BabylonScene; hasWildlife: boolean };
 export type SceneRouteDeps = {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
@@ -50,9 +58,12 @@ export type SceneRouteDeps = {
   paint?: BoardPainter;
 };
 
+/** How dark the film car's patch is against the hike's parked car's (its alpha). */
+const FILM_PATCH_DARKNESS = 0.5;
+
 const BLACK_STYLE = "position:absolute;inset:0;background:#000;pointer-events:none;z-index:29;";
 
-async function loadTrailheadCar(scene: BabylonScene, signal: AbortSignal): Promise<PlacedModel | null> {
+async function loadFilmCar(scene: BabylonScene, signal: AbortSignal): Promise<PlacedModel | null> {
   try {
     const container = await loadUntilAborted(() => loadContainer(modelUrl(`models/${INTRO_CAR}.glb`), scene), signal);
     return placeStaticModel(container, INTRO_CAR, 0, 0, 0, 0);
@@ -71,7 +82,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   const forest = createForest(seed);
   const world = createWorld(level, seed, false);
   const clock: SceneClock = createSceneClock(now);
-  const renderer = createRenderer(deps.canvas, level, forest, { tier: deps.tier, engine: deps.engine, clock: () => clock.time() * 1000 });
+  const renderer = createRenderer(deps.canvas, level, forest, { tier: deps.tier, engine: deps.engine, clock: () => clock.time() * 1000, wildlife: false });
   renderer.setWeather(INTRO_WEATHER, 0);
   renderer.setHour(INTRO_HOUR);
 
@@ -98,6 +109,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   const posts = createSignMeshes(renderer.scene, signPosts(graph, sites), groundH, {
     materialFor: (name) => terrainMaterialFor(renderer.scene, name),
     shadows: renderer.shadows,
+    cover: renderer.cover,
   });
   const trailhead = createTrailheadMeshes(renderer.scene, { board: places.board }, groundH, {
     materialFor: (name) => terrainMaterialFor(renderer.scene, name),
@@ -113,26 +125,40 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       urls: BOARD_IMAGE_URLS,
     }),
     shadows: renderer.shadows,
+    cover: renderer.cover,
     ...(deps.paint === undefined ? {} : { paint: deps.paint }),
   });
 
   const loads = new AbortController();
   const pool = deps.pool ?? createCharacterPool();
   let disposed = false;
-  void pool.load(renderer.scene, [INTRO_RANGER]);
+  const rangerLoaded = pool.load(renderer.scene, [INTRO_RANGER]);
   let car: CarModel | null = null;
   let carModel: PlacedModel | null = null;
-  void (deps.loadCar ?? ((s) => loadTrailheadCar(s, loads.signal)))(renderer.scene).then((placed) => {
+  let carPatch: CarShadowPatch | null = null;
+  let cordTube: ReturnType<typeof createCordTube> | null = null;
+  const carLoaded = (deps.loadCar ?? ((s) => loadFilmCar(s, loads.signal)))(renderer.scene).then((placed) => {
     if (placed === null || disposed) {
       placed?.dispose();
       return;
     }
     carModel = placed;
-    car = carModelOf(placed);
+    car = carModelOf(placed, (line) => console.warn(line));
+    dimCabParts(car);
+    cordTube = createCordTube(renderer.scene);
+    stage.cord = cordTube;
     // `stage` is made below, before this promise can resolve.
     stage.car = car;
     for (const mesh of placed.meshes) renderer.shadows.add(mesh);
+    // The dark under the car that the mist's light leaves, as under the hike's
+    // parked car; without it a car on the road stands on it like a cut-out.
+    // Fogged by the atmosphere as the road is, so it fades with it far off,
+    // and lighter than the parked car's: the film's light is all sky.
+    carPatch = createCarShadowPatch(renderer.scene, { x: 0, z: 0 }, () => 0, { moving: true, atmosphere: true, darkness: FILM_PATCH_DARKNESS });
+    carPatch.mesh.name = "film_car_shadow";
+    carPatch.mesh.parent = placed.node;
   });
+  const ready = Promise.all([rangerLoaded, carLoaded]).then(() => undefined);
 
   const black = document.createElement("div");
   black.className = "scene-black";
@@ -145,6 +171,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     setDepthOfField: (on) => renderer.setDepthOfField(on),
     actor: (id) => pool.acquire(1, id),
     car,
+    hand: () => pool.acquire(1, INTRO_RANGER)?.joint("hand_r") ?? null,
     captions,
     black: (amount) => {
       black.style.opacity = String(amount);
@@ -195,12 +222,15 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
         raf(() => resolve());
       }),
     time: () => player.time(),
+    ready,
+    engine: () => (renderer.engine.isWebGPU ? "webgpu" : "webgl2"),
   };
   (globalThis as { dayhikeScene?: DayhikeScene }).dayhikeScene = api;
 
   return {
     worldState: () => world.state,
     scene: () => renderer.scene,
+    hasWildlife: renderer.hasWildlife,
     dispose() {
       if (disposed) return;
       disposed = true;
@@ -213,6 +243,8 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       posts.dispose();
       trailhead.dispose();
       pool.dispose();
+      cordTube?.dispose();
+      carPatch?.dispose();
       carModel?.dispose();
       renderer.dispose();
     },

@@ -97,6 +97,9 @@ export type Lighting = {
   /** A copy of the current, possibly mid-fade, weather parameters. */
   readonly weather: WeatherParams;
   readonly shadows: CascadedShadowGenerator | null;
+  /** The direction the sun's light travels (the directional light's own
+   * vector, live, not a copy): the negation of the direction to the sun. */
+  readonly sunDirection: Vector3;
   /**
    * Registers `mesh` as a shadow caster and marks it as a receiver too.
    *
@@ -355,6 +358,9 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
     },
     get weather() {
       return { ...weather };
+    },
+    get sunDirection() {
+      return sun.direction;
     },
     shadows,
     setHour(next) {

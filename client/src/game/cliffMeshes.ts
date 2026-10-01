@@ -33,6 +33,7 @@ import { CLIFF_MODEL_HEIGHT, CLIFF_MODELS, CLIFF_SINK, CLIFF_TILT_MAX, cliffFaci
 import { attachCliffTint } from "./cliffTintPlugin.js";
 import { prepBucketMesh, trampleFrame, writeFoliage } from "./clutterMeshes.js";
 import { attachDistanceFade, fadeBands, type FadeBands } from "./distanceFadePlugin.js";
+import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { seatOnGroundCapped } from "./groundTilt.js";
 import type { QualityTier } from "./quality.js";
 import type { ClutterInstance } from "../sim/clutter.js";
@@ -324,6 +325,7 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
           // are few — `force`, because the material is opaque.
           if (lod === FAR_LOD) attachDistanceFade(mesh.material, { force: true });
           attachCliffTint(mesh.material);
+          attachWet(mesh.material, WET_CAP.cliff);
         }
         row.push({ mesh, buf: EMPTY_BUFFER, tint: EMPTY_BUFFER, fade: EMPTY_BUFFER, count: 0 });
         meshes.push(mesh);

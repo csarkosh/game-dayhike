@@ -10,7 +10,7 @@ const scene: Scene = {
   duration: 10,
   camera: (t) => ({ x: t, y: 2, z: 0, yaw: 0, pitch: 0, fov: 0.43, roll: 0, dof: false }),
   actors: [(t) => ({ id: "ranger", x: 0, y: 0, z: t * 2, yaw: 1, clip: "walk", clipTime: t, visible: t > 5 })],
-  car: (t) => ({ x: 1, y: 0, z: 10 * t, yaw: 0, wheelSpin: t, doorOpen: 0 }),
+  car: (t) => ({ x: 1, y: 0, z: 10 * t, yaw: 0, wheelSpin: t, doorOpen: 0, wheelTurn: 0, steer: 0, handset: "cradle" }),
   captions,
   black: (t) => (t < 1 ? 1 - t : 0),
 };

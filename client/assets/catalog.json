@@ -9,7 +9,8 @@
         "walk": "walk",
         "attack": "attack",
         "death": "death"
-      }
+      },
+      "bytes": 1638356
     },
     {
       "id": "ranger.eric",
@@ -20,7 +21,8 @@
         "walk": "walk",
         "attack": "attack",
         "death": "death"
-      }
+      },
+      "bytes": 1948060
     },
     {
       "id": "ranger.sophia",
@@ -31,7 +33,8 @@
         "walk": "walk",
         "attack": "attack",
         "death": "death"
-      }
+      },
+      "bytes": 1359684
     },
     {
       "id": "ranger.carla",
@@ -42,7 +45,8 @@
         "walk": "walk",
         "attack": "attack",
         "death": "death"
-      }
+      },
+      "bytes": 2271936
     },
     {
       "id": "ranger.claudia",
@@ -53,7 +57,8 @@
         "walk": "walk",
         "attack": "attack",
         "death": "death"
-      }
+      },
+      "bytes": 2081768
     },
     {
       "id": "hollow.antlered",
@@ -64,147 +69,202 @@
         "walk": "walk",
         "attack": "attack",
         "death": "death"
-      }
+      },
+      "bytes": 2503116
     },
     {
       "id": "summit.body",
       "kind": "environment",
-      "output": "models/summit.body.glb"
+      "output": "models/summit.body.glb",
+      "bytes": 1374864
     },
     {
       "id": "trailhead.car",
       "kind": "environment",
-      "output": "models/trailhead.car.glb"
+      "output": "models/trailhead.car.glb",
+      "bytes": 1536356
+    },
+    {
+      "id": "intro.car",
+      "kind": "environment",
+      "output": "models/intro.car.glb",
+      "scene": "intro",
+      "bytes": 1939744
+    },
+    {
+      "id": "intro.ranger",
+      "kind": "character",
+      "output": "models/intro.ranger.glb",
+      "animations": {
+        "idle": "idle",
+        "walk": "walk",
+        "attack": "attack",
+        "death": "death",
+        "drive": "drive",
+        "reach": "reach",
+        "talk": "talk",
+        "lower": "lower",
+        "door": "door",
+        "face_trail": "face_trail"
+      },
+      "scene": "intro",
+      "bytes": 1949100
     },
     {
       "id": "trailhead.kiosk",
       "kind": "prop",
-      "output": "models/trailhead.kiosk.glb"
+      "output": "models/trailhead.kiosk.glb",
+      "bytes": 1160736
     },
     {
       "id": "sign.post",
       "kind": "prop",
-      "output": "models/sign.post.glb"
+      "output": "models/sign.post.glb",
+      "bytes": 416984
     },
     {
       "id": "sign.arm",
       "kind": "prop",
-      "output": "models/sign.arm.glb"
+      "output": "models/sign.arm.glb",
+      "bytes": 389132
     },
     {
       "id": "tree.conifer_a",
       "kind": "prop",
-      "output": "models/tree.conifer_a.glb"
+      "output": "models/tree.conifer_a.glb",
+      "bytes": 2894004
     },
     {
       "id": "tree.conifer_b",
       "kind": "prop",
-      "output": "models/tree.conifer_b.glb"
+      "output": "models/tree.conifer_b.glb",
+      "bytes": 3282852
     },
     {
       "id": "tree.giant_pine",
       "kind": "prop",
-      "output": "models/tree.giant_pine.glb"
+      "output": "models/tree.giant_pine.glb",
+      "bytes": 3504788
     },
     {
       "id": "tree.giant_fir",
       "kind": "prop",
-      "output": "models/tree.giant_fir.glb"
+      "output": "models/tree.giant_fir.glb",
+      "bytes": 3102260
     },
     {
       "id": "understory.fern",
       "kind": "prop",
-      "output": "models/understory.fern.glb"
+      "output": "models/understory.fern.glb",
+      "bytes": 570916
     },
     {
       "id": "understory.shrub",
       "kind": "prop",
-      "output": "models/understory.shrub.glb"
+      "output": "models/understory.shrub.glb",
+      "bytes": 903528
     },
     {
       "id": "deadwood.snag",
       "kind": "prop",
-      "output": "models/deadwood.snag.glb"
+      "output": "models/deadwood.snag.glb",
+      "bytes": 2455772
     },
     {
       "id": "clutter.boulder_a",
       "kind": "prop",
-      "output": "models/clutter.boulder_a.glb"
+      "output": "models/clutter.boulder_a.glb",
+      "bytes": 2430088
     },
     {
       "id": "clutter.boulder_b",
       "kind": "prop",
-      "output": "models/clutter.boulder_b.glb"
+      "output": "models/clutter.boulder_b.glb",
+      "bytes": 1917596
     },
     {
       "id": "cliff.wall_a",
       "kind": "environment",
-      "output": "models/cliff.wall_a.glb"
+      "output": "models/cliff.wall_a.glb",
+      "bytes": 2031384
     },
     {
       "id": "cliff.wall_b",
       "kind": "environment",
-      "output": "models/cliff.wall_b.glb"
+      "output": "models/cliff.wall_b.glb",
+      "bytes": 2480400
     },
     {
       "id": "clutter.rock_a",
       "kind": "prop",
-      "output": "models/clutter.rock_a.glb"
+      "output": "models/clutter.rock_a.glb",
+      "bytes": 1460132
     },
     {
       "id": "clutter.rock_b",
       "kind": "prop",
-      "output": "models/clutter.rock_b.glb"
+      "output": "models/clutter.rock_b.glb",
+      "bytes": 1909016
     },
     {
       "id": "clutter.grass_a",
       "kind": "prop",
-      "output": "models/clutter.grass_a.glb"
+      "output": "models/clutter.grass_a.glb",
+      "bytes": 1250144
     },
     {
       "id": "clutter.grass_b",
       "kind": "prop",
-      "output": "models/clutter.grass_b.glb"
+      "output": "models/clutter.grass_b.glb",
+      "bytes": 265312
     },
     {
       "id": "clutter.meadow",
       "kind": "prop",
-      "output": "models/clutter.meadow.glb"
+      "output": "models/clutter.meadow.glb",
+      "bytes": 1222088
     },
     {
       "id": "clutter.driftwood",
       "kind": "prop",
-      "output": "models/clutter.driftwood.glb"
+      "output": "models/clutter.driftwood.glb",
+      "bytes": 2308988
     },
     {
       "id": "clutter.fungus_a",
       "kind": "prop",
-      "output": "models/clutter.fungus_a.glb"
+      "output": "models/clutter.fungus_a.glb",
+      "bytes": 18492
     },
     {
       "id": "clutter.fungus_b",
       "kind": "prop",
-      "output": "models/clutter.fungus_b.glb"
+      "output": "models/clutter.fungus_b.glb",
+      "bytes": 4236
     },
     {
       "id": "clutter.bush_a",
       "kind": "prop",
-      "output": "models/clutter.bush_a.glb"
+      "output": "models/clutter.bush_a.glb",
+      "bytes": 1363084
     },
     {
       "id": "clutter.bush_b",
       "kind": "prop",
-      "output": "models/clutter.bush_b.glb"
+      "output": "models/clutter.bush_b.glb",
+      "bytes": 1387728
     },
     {
       "id": "clutter.flower_a",
       "kind": "prop",
-      "output": "models/clutter.flower_a.glb"
+      "output": "models/clutter.flower_a.glb",
+      "bytes": 1225604
     },
     {
       "id": "clutter.flower_b",
       "kind": "prop",
-      "output": "models/clutter.flower_b.glb"
+      "output": "models/clutter.flower_b.glb",
+      "bytes": 712836
     },
     {
       "id": "wildlife.rabbit",
@@ -214,27 +274,32 @@
         "graze": "Graze",
         "walk": "Hop",
         "run": "Hop"
-      }
+      },
+      "bytes": 223208
     },
     {
       "id": "wildlife.crow_perched",
       "kind": "prop",
-      "output": "models/wildlife.crow_perched.glb"
+      "output": "models/wildlife.crow_perched.glb",
+      "bytes": 460592
     },
     {
       "id": "wildlife.eagle",
       "kind": "prop",
-      "output": "models/wildlife.eagle.glb"
+      "output": "models/wildlife.eagle.glb",
+      "bytes": 308752
     },
     {
       "id": "wildlife.gull",
       "kind": "prop",
-      "output": "models/wildlife.gull.glb"
+      "output": "models/wildlife.gull.glb",
+      "bytes": 676240
     },
     {
       "id": "wildlife.raven",
       "kind": "prop",
-      "output": "models/wildlife.raven.glb"
+      "output": "models/wildlife.raven.glb",
+      "bytes": 639924
     },
     {
       "id": "wildlife.squirrel",
@@ -245,7 +310,8 @@
         "walk": "Walk",
         "run": "Run",
         "alert": "Alert"
-      }
+      },
+      "bytes": 629864
     },
     {
       "id": "wildlife.elk",
@@ -256,7 +322,8 @@
         "walk": "Walk",
         "run": "Run",
         "alert": "Alert"
-      }
+      },
+      "bytes": 885140
     },
     {
       "id": "wildlife.deer",
@@ -267,115 +334,153 @@
         "walk": "Walk",
         "run": "Run",
         "alert": "Alert"
-      }
+      },
+      "bytes": 705536
     }
   ],
   "textures": [
     {
       "id": "ground.grass",
-      "output": "textures/ground.grass.webp"
+      "output": "textures/ground.grass.webp",
+      "bytes": 114298
     },
     {
       "id": "ground.grass.normal",
-      "output": "textures/ground.grass.normal.webp"
+      "output": "textures/ground.grass.normal.webp",
+      "bytes": 616844
     },
     {
       "id": "ground.grass.rah",
-      "output": "textures/ground.grass.rah.webp"
+      "output": "textures/ground.grass.rah.webp",
+      "bytes": 98634
     },
     {
       "id": "ground.forest_floor",
-      "output": "textures/ground.forest_floor.webp"
+      "output": "textures/ground.forest_floor.webp",
+      "bytes": 58896
     },
     {
       "id": "ground.forest_floor.normal",
-      "output": "textures/ground.forest_floor.normal.webp"
+      "output": "textures/ground.forest_floor.normal.webp",
+      "bytes": 479452
     },
     {
       "id": "ground.forest_floor.rah",
-      "output": "textures/ground.forest_floor.rah.webp"
+      "output": "textures/ground.forest_floor.rah.webp",
+      "bytes": 26404
     },
     {
       "id": "ground.rock",
-      "output": "textures/ground.rock.webp"
+      "output": "textures/ground.rock.webp",
+      "bytes": 100102
     },
     {
       "id": "ground.rock.normal",
-      "output": "textures/ground.rock.normal.webp"
+      "output": "textures/ground.rock.normal.webp",
+      "bytes": 548132
     },
     {
       "id": "ground.rock.rah",
-      "output": "textures/ground.rock.rah.webp"
+      "output": "textures/ground.rock.rah.webp",
+      "bytes": 58476
     },
     {
       "id": "ground.sand",
-      "output": "textures/ground.sand.webp"
+      "output": "textures/ground.sand.webp",
+      "bytes": 41552
     },
     {
       "id": "ground.sand.normal",
-      "output": "textures/ground.sand.normal.webp"
+      "output": "textures/ground.sand.normal.webp",
+      "bytes": 435736
     },
     {
       "id": "ground.sand.rah",
-      "output": "textures/ground.sand.rah.webp"
+      "output": "textures/ground.sand.rah.webp",
+      "bytes": 23420
     },
     {
       "id": "ground.pebble",
-      "output": "textures/ground.pebble.webp"
+      "output": "textures/ground.pebble.webp",
+      "bytes": 65634
     },
     {
       "id": "ground.pebble.normal",
-      "output": "textures/ground.pebble.normal.webp"
+      "output": "textures/ground.pebble.normal.webp",
+      "bytes": 627340
     },
     {
       "id": "ground.pebble.rah",
-      "output": "textures/ground.pebble.rah.webp"
+      "output": "textures/ground.pebble.rah.webp",
+      "bytes": 107794
     },
     {
       "id": "ground.asphalt",
-      "output": "textures/ground.asphalt.webp"
+      "output": "textures/ground.asphalt.webp",
+      "bytes": 27004
     },
     {
       "id": "ground.asphalt.normal",
-      "output": "textures/ground.asphalt.normal.webp"
+      "output": "textures/ground.asphalt.normal.webp",
+      "bytes": 326444
     },
     {
       "id": "ground.asphalt.rah",
-      "output": "textures/ground.asphalt.rah.webp"
+      "output": "textures/ground.asphalt.rah.webp",
+      "bytes": 2784
     },
     {
       "id": "board.paper",
-      "output": "textures/board.paper.webp"
+      "output": "textures/board.paper.webp",
+      "bytes": 31522
     },
     {
       "id": "board.portrait",
-      "output": "textures/board.portrait.webp"
+      "output": "textures/board.portrait.webp",
+      "bytes": 16298
     }
   ],
   "audio": [
     {
       "id": "call.raven_croak",
-      "output": "audio/call.raven_croak.mp3"
+      "output": "audio/call.raven_croak.mp3",
+      "bytes": 10971
     },
     {
       "id": "call.gull_cry",
-      "output": "audio/call.gull_cry.mp3"
+      "output": "audio/call.gull_cry.mp3",
+      "bytes": 17867
     },
     {
       "id": "call.elk_bugle",
-      "output": "audio/call.elk_bugle.mp3"
+      "output": "audio/call.elk_bugle.mp3",
+      "bytes": 23823
     },
     {
       "id": "call.elk_bark",
-      "output": "audio/call.elk_bark.mp3"
+      "output": "audio/call.elk_bark.mp3",
+      "bytes": 18808
     },
     {
       "id": "call.squirrel_chatter",
-      "output": "audio/call.squirrel_chatter.mp3"
+      "output": "audio/call.squirrel_chatter.mp3",
+      "bytes": 36675
     },
     {
       "id": "call.eagle_cry",
-      "output": "audio/call.eagle_cry.mp3"
+      "output": "audio/call.eagle_cry.mp3",
+      "bytes": 16613
+    }
+  ],
+  "video": [
+    {
+      "id": "intro",
+      "output": "video/intro.mp4",
+      "bytes": 42497674,
+      "still": {
+        "output": "images/intro.still.webp",
+        "bytes": 119160
+      }
     }
   ]
 }

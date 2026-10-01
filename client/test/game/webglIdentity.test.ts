@@ -41,11 +41,13 @@ const PINS: Record<string, string> = {
   "post.grade": "403c4b90876053e751bc21e76711f81212fef9437e422f0e7757337b3b5b71c4",
   "post.halationExtract": "1ee9b9ed30d66fd1e10e4a327104c3e9016a91a2b4ed6aa2cec64cb09df5d3fd",
   "skin.fragment": "111388dbf745542db596dae9ac3c41d726c7c0c61aeb4c8e87cc16e9e8c07fdf",
-  // Re-pinned for the WGSL-reserved local `macro` renamed `macroRgb`; the
-  // test below shows that rename is the whole difference.
-  // Re-pinned again for the shore tint's one added line in `featurePaint.ts`,
-  // which begins it at the lake's rim (the bed under the water paints itself);
-  // the foliage plugin for reeds is the tree's text and interface.
+  // Re-pinned for the WGSL-reserved local `macro` renamed `macroRgb`. The
+  // puddles' ripples under rain (trailPaint.ts) are stripped before hashing
+  // (`withoutRipples`), and the test below shows the rename and the ripples
+  // are the whole difference from the base. Re-pinned again for the shore
+  // tint's one added line in `featurePaint.ts`, which begins it at the lake's
+  // rim (the bed under the water paints itself); the foliage plugin for reeds
+  // is the tree's text and interface.
   "terrain.fragment": "393cbde35c652291d03850619cfdf4b67c6065aac4e84e87c4f9e865ffd71e10",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
@@ -71,24 +73,50 @@ const INTERFACE_PINS: Record<string, string> = {
   "foliageLight.interface": "a86a666d70d9ecddd600f74e67b8028f7795551c775a05e786e4ee73bea725e8",
   "groundConform.interface": "d1318897a8b44958dc6d4ba703fe861a79590ee61c6d7cb830bc54cb33e7b75a",
   "skin.interface": "d39b98bf284499c66f8b2765d9947ff326b97a8a716bcb4f2c89cf5b9c1bc2de",
-  "terrain.interface": "7f8eeb214ca436ea7e63d024459ba86645c3557a3f5e5e4345376bdb8259fb78",
+  // Re-pinned for `terrainRain` and `terrainTime`, the two floats the
+  // puddles' ripples read, declared on both uniform paths.
+  "terrain.interface": "c0528421aedd3e5f0c3030247b528331ea69f7bf78fcd8b9c59201a21ce63ad2",
   "wing.interface": "bb03268d86b3711b1e489d0f2a62c81f60556c063d98fc835954b43a11cff985",
 };
+
+/** The puddles' ripples (trailPaint.ts) taken out of the terrain fragment:
+ * from their comment through the normal they tilt, which goes back to the
+ * flat puddle normal it replaced. The text is the base's again. */
+function withoutRipples(text: string): string {
+  const from = text.indexOf("    // Rain on the puddles:");
+  const last = "normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), tPuddleN, tPuddle));\n";
+  const to = text.indexOf(last) + last.length;
+  expect(from).toBeGreaterThan(0);
+  expect(to).toBeGreaterThan(from);
+  return `${text.slice(0, from)}    normalW = normalize(mix(mix(tLipN, tBenchN, tGravel * tk), vec3(0.0, 1.0, 0.0), tPuddle));\n${text.slice(to)}`;
+}
 
 describe("WebGL2's shader text", () => {
   it("is byte for byte what it was", () => {
     const texts = pluginTexts();
     expect(Object.keys(texts).sort()).toEqual(Object.keys(PINS).sort());
-    for (const [key, text] of Object.entries(texts)) expect(sha(text), key).toBe(PINS[key]);
+    for (const [key, text] of Object.entries(texts)) {
+      expect(sha(key === "terrain.fragment" ? withoutRipples(text) : text), key).toBe(PINS[key]);
+    }
   });
 
-  it("changes the terrain fragment by one renamed identifier and nothing else", () => {
+  it("changes the terrain fragment by one renamed identifier and the puddles' ripples, and nothing else", () => {
     const text = pluginTexts()["terrain.fragment"] as string;
     // The WGSL-reserved local `macro` renamed at source on both engines. The
     // word survives only in the hex include's comments, which glslang drops.
     expect(text).toContain("vec3 macroRgb = macroTint(");
     expect(text).not.toContain("vec3 macro =");
-    expect(sha(text.replaceAll("macroRgb", "macro"))).toBe("fd74235171f3b423ebdc8126972fa2ca1b6aee08fba3eef1a0cca297e4d21669");
+    // The ripples: four hashed-ring layers in the trail paint's puddle normal,
+    // reading `terrainRain` and `terrainTime` (rainParams.ts, trailPaint.ts),
+    // run only under rain.
+    expect(text.match(/vec2 tRc = floor\(tRp\);/g)).toHaveLength(4);
+    expect(text).toContain("if (terrainRain > 0.0) {");
+    expect(text).toContain("vec3 tPuddleN = normalize(vec3(tRipple.x * terrainRain, 1.0, tRipple.y * terrainRain));");
+    // With the ripples taken out and the rename undone, the base's text and
+    // the shore tint's one line.
+    const base = withoutRipples(text).replaceAll("macroRgb", "macro");
+    expect(base).not.toContain("tRipple");
+    expect(sha(base)).toBe("fd74235171f3b423ebdc8126972fa2ca1b6aee08fba3eef1a0cca297e4d21669");
   });
 
   it("keeps every plugin's uniforms, samplers, attributes and defines what they were", () => {

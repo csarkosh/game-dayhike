@@ -58,6 +58,7 @@ import {
 } from "../../src/game/forestMeshes.js";
 import { macroNoise, macroTint } from "../../src/game/groundHexParams.js";
 import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
+import { wetCapOf } from "../../src/game/wetPlugin.js";
 
 setActiveTerrainVariant("olympic");
 
@@ -749,6 +750,34 @@ describe("createForestMeshes under NullEngine", () => {
     }
     expect(sawAlphaTested).toBe(true);
     expect(sawOpaqueSkipped).toBe(true);
+  });
+
+  it("caps the weather's wetting by what alpha-tests: crown cards, understory and impostors as leaf, opaque bark as bark, deadwood as deadwood", () => {
+    const { scene, forest } = build();
+    forest.update(FOREST_CAM.x, FOREST_CAM.z);
+    // The choice reads `needAlphaTesting()` on the stub pair (`pairedBoxes`:
+    // canopy MASK, bark opaque), the modes the shipped tree files carry. A
+    // crown shipped as BLEND or a bark shipped as MASK would take the other
+    // cap, which only a look at the shipped files can catch.
+    const withMaterial = scene.meshes.filter((m) => m.material !== null);
+    let barks = 0;
+    let leaves = 0;
+    for (const mesh of withMaterial) {
+      const mat = mesh.material!;
+      const cap = wetCapOf(mat);
+      if (mesh.name === "deadwood") {
+        expect(cap, mesh.name).toBe(1);
+      } else if (mat.needAlphaTesting()) {
+        leaves++;
+        expect(cap, mesh.name).toBe(0.3);
+      } else {
+        barks++;
+        expect(cap, mesh.name).toBe(1);
+      }
+    }
+    expect(barks).toBeGreaterThan(0);
+    expect(leaves).toBeGreaterThan(0);
+    expect(withMaterial.filter((m) => m.name.startsWith("forest_impostor_")).map((m) => wetCapOf(m.material!))).toEqual([0.3, 0.3, 0.3, 0.3, 0.3]);
   });
 
   it("attaches the foliage plugin to LOD0 and LOD1 of giants and saplings, never LOD2 or the impostor", () => {

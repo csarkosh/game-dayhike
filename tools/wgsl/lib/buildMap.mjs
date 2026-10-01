@@ -1,8 +1,9 @@
-// Translating the corpus into the map the page fetches (`build-map.mjs`):
+// Translating the corpus into the maps the page fetches (`build-map.mjs`):
 // every stage of the corpus, keyed under this build's salt with the page's own
-// code (`shared.mjs`), translated with the files the page ships
-// (`translators.mjs`), written as the page reads it (`mapText`: each distinct
-// line once, each stage as runs of them), and read back with the page's own
+// code (`shared.mjs`), translated once with the files the page ships
+// (`translators.mjs`), and written as a map a tier of the stages recorded on
+// that tier (`entriesOn`), as the page reads it (`mapText`: each distinct
+// line once, each stage as runs of them), each read back with the page's own
 // reader (`readMap`) before it is shipped.
 
 import { createHash } from 'node:crypto';
@@ -26,11 +27,13 @@ export function nodeSalt(shared, clientDir = CLIENT_DIR) {
 }
 
 /**
- * The map of `stages` under `salt`: each stage once (by `corpusId`), in the
- * order of its name, keyed by `stageKey` and translated by `translate`. A
- * stage that does not translate is left out and reported in `failed`, never
- * thrown: the page translates what the map lacks, as it always has. The same
- * stages and translators give the same `text`, whatever their order.
+ * The translations of `stages` under `salt`: each stage once (by `corpusId`),
+ * in the order of its name, keyed by `stageKey` and translated by
+ * `translate`, as `entries` (key to WGSL), of which each tier's map is made
+ * (`entriesOn`, `mapText`). A stage that does not translate is left out and
+ * reported in `failed`, never thrown: the page translates what the maps
+ * lack, as it always has. The same stages and translators give the same
+ * entries, whatever their order.
  */
 export function buildMap({ stages, salt, translate, shared, now = () => performance.now() }) {
   const byId = new Map();
@@ -52,7 +55,20 @@ export function buildMap({ stages, salt, translate, shared, now = () => performa
       failed.push({ id, stage: entry.stage, message: typeof error?.message === 'string' ? error.message : String(error) });
     }
   }
-  return { text: shared.mapText(salt, entries), entries, translated, failed };
+  return { entries, translated, failed };
+}
+
+/**
+ * The entries of `tier`'s map: of the stages `made` translated (`buildMap`),
+ * those `tiers` (the corpus's index: a stage's name to the tiers it was
+ * recorded on) puts on that tier, each key to its WGSL.
+ */
+export function entriesOn(made, tiers, tier) {
+  const entries = new Map();
+  for (const stage of made.translated) {
+    if ((tiers.get(stage.id.slice(0, 16)) ?? []).includes(tier)) entries.set(stage.key, made.entries.get(stage.key));
+  }
+  return entries;
 }
 
 /** The page's `MAP_MAX_BYTES` (`client/src/game/wgslFormat.ts`), 8 MiB of
@@ -61,28 +77,29 @@ export function buildMap({ stages, salt, translate, shared, now = () => performa
 const MAP_CEILING = 8_388_608;
 
 /**
- * Why a map of `bytes` may not ship, or null: over `ceiling` the page would
- * parse it in one task and hold its lines for the engine's life.
+ * Why a map of `bytes` (`named`, as the message calls it) may not ship, or
+ * null: over `ceiling` the page would parse it in one task and hold its
+ * lines for the engine's life.
  */
-export function mapSizeProblem(bytes, ceiling = MAP_CEILING) {
+export function mapSizeProblem(bytes, ceiling = MAP_CEILING, named = 'the WGSL map') {
   if (bytes <= ceiling) return null;
   return (
-    `the WGSL map is ${bytes} bytes, over its ceiling of ${ceiling} (MAP_MAX_BYTES): a page reads it in one task and holds its lines for the engine's life. ` +
-    'A corpus that outgrows it is answered by a map per platform, not by a higher ceiling: see MAP_MAX_BYTES and its reasons in client/src/game/wgslFormat.ts'
+    `${named} is ${bytes} bytes, over its ceiling of ${ceiling} (MAP_MAX_BYTES): a page reads it in one task and holds its lines for the engine's life. ` +
+    'A tier whose stages outgrow it is split further, by platform, not given a higher ceiling: see MAP_MAX_BYTES and its reasons in client/src/game/wgslFormat.ts'
   );
 }
 
 /**
  * Why the map's `text`, read back with the page's own reader (`readMap`) for
- * `salt`, does not serve exactly `entries` (key to WGSL), or nothing: a map
- * the page would refuse, with its reason; each entry that expands to other
- * text than its translation, byte for byte, or is missing; each entry that is
- * no translation.
+ * `salt` (and for `tier`, where one is given), does not serve exactly
+ * `entries` (key to WGSL), or nothing: a map the page would refuse, with its
+ * reason; each entry that expands to other text than its translation, byte
+ * for byte, or is missing; each entry that is no translation.
  */
-export function readBackProblems(text, salt, entries, shared) {
+export function readBackProblems(text, salt, entries, shared, tier) {
   let map;
   try {
-    map = shared.readMap(text, salt);
+    map = shared.readMap(text, salt, tier);
   } catch (error) {
     return [`the map does not read back: ${error instanceof Error ? error.message : String(error)}`];
   }
@@ -195,8 +212,17 @@ export function readTimes(text, salt, shared, runs = 5) {
   };
 }
 
-/** A digest of everything the map is made of: its format, the salt and the
- * corpus's stages. A map of another format is made again, never reused. */
-export function inputsDigest(salt, stages, shared) {
-  return createHash('sha256').update(shared.MAP_FORMAT).update('\0').update(salt).update('\0').update(shared.corpusText(stages)).digest('hex');
+/** A digest of everything the maps are made of: their format, the salt, the
+ * corpus's stages and its index of tiers (`tiersText`). Maps of another
+ * format are made again, never reused. */
+export function inputsDigest(salt, stages, shared, tiersIndex = '') {
+  return createHash('sha256')
+    .update(shared.MAP_FORMAT)
+    .update('\0')
+    .update(salt)
+    .update('\0')
+    .update(shared.corpusText(stages))
+    .update('\0')
+    .update(tiersIndex)
+    .digest('hex');
 }

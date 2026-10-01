@@ -9,11 +9,11 @@ const CLIENT = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
   plugins: [
-    // The WGSL map of the shader corpus, the WebGPU shader lookup's first
-    // source: a hashed asset of the WebGPU chunk in the build, made on the dev
-    // server as it starts (`tools/wgsl/lib/mapPlugin.mjs`).
+    // The WGSL maps of the shader corpus, one a quality tier, the WebGPU
+    // shader lookup's first source: hashed assets of the WebGPU chunk in the
+    // build, made on the dev server as it starts (`tools/wgsl/lib/mapPlugin.mjs`).
     wgslMapPlugin({
-      mapFile: fileURLToPath(new URL("shaders/map/wgsl-map.json", import.meta.url)),
+      mapDir: fileURLToPath(new URL("shaders/map/", import.meta.url)),
       tool: fileURLToPath(new URL("../tools/wgsl/build-map.mjs", import.meta.url)),
     }),
   ],

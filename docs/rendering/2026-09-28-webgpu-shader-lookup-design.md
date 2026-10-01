@@ -8,7 +8,10 @@ and shipped as the lookup's first source (§5.2), on
 here but the lookup and the store has yet been measured in a browser (their
 first readings are in §8): §8 says what has to be, and §9 the
 bars it must meet. Since 2026-09-29 the shipped map stores each distinct line
-of WGSL once, each entry as runs of those lines (format 2, §5.2).
+of WGSL once, each entry as runs of those lines (format 2, §5.2). Since
+2026-10-01 the build makes a map a quality tier, each of the stages recorded
+on that tier, and the page fetches its tier's
+([the map-per-tier design](2026-10-01-wgsl-map-per-tier-design.md)).
 
 Babylon 9.18.0 throughout; line references are to its installed
 `node_modules/@babylonjs/core`.
@@ -535,8 +538,14 @@ figures). Storing the lines as templates with their numbers apart (3,840
 distinct with every run of digits read as `#`) would take it to about
 3.1 MB raw and 0.73 MB gzipped: too little gained for what it adds.
 
-One map for every tier: the engine's maker does not know the tier, and
-whether a map per tier pays is for the real corpus's sizes to decide (§8).
+One map for every tier, at first: the engine's maker did not know the tier,
+and whether a map per tier paid was for the real corpus's sizes to decide
+(§8). At 762 stages the one map was 8,131,195 bytes, 3 % under the ceiling,
+with the low tier and a party of two still to record; since 2026-10-01 the
+build makes a map a tier, each carrying its tier, of the stages the corpus's
+index (`client/shaders/corpus/tiers.json`) puts on that tier, and the engine's
+maker is given the tier the page decided
+([the map-per-tier design](2026-10-01-wgsl-map-per-tier-design.md)).
 JSON, not a binary form, because the host compresses a JSON response (gzip
 or brotli) and would serve a binary blob as it is: the WGSL is 5 to 16
 times smaller compressed. Reading it costs one `JSON.parse` and a check of
@@ -544,15 +553,17 @@ every line and run, when it lands, before the preparations that find it:
 about 9 ms under Node for the 522 entries; the measurement to watch is a
 browser's on the slow machine (§8).
 
-**In the build.** The WebGPU module imports the map's URL from
+**In the build.** Since 2026-10-01 there are three such maps, one a tier,
+named `wgsl-map-<tier>-…`, and this paragraph describes each. The WebGPU
+module imports the map's URL from
 `virtual:dayhike-wgsl-map` (`tools/wgsl/lib/mapPlugin.mjs`): in `vite build`
 the map is re-exported with `?url&no-inline`, so it is emitted as
-`assets/wgsl-map-<hash>.json`, never inlined however small, named by the
+`assets/wgsl-map-<tier>-<hash>.json`, never inlined however small, named by the
 WebGPU chunk alone and served `immutable` under `/assets/**`; the WebGL2
 bundle neither holds nor names it (`webgpuSwitchOff.test.ts`; a page built
 with Vite as the game's is, in `tools/wgsl/test/mapPlugin.test.mjs`). A
-build whose map was not made fails, naming the step. The dev server runs the
-tool as it starts and serves the map at `<base>wgsl-map.json` once made (a
+build whose maps were not all made fails, naming the step. The dev server runs the
+tool as it starts and serves each map at `<base>wgsl-map-<tier>.json` once made (a
 request before then waits; one the tool failed to make is a 404, no map), so
 a measurement on the dev server sees what production will. A dev server's
 start so translates the whole corpus wherever no map was made yet (every

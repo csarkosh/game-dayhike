@@ -35,6 +35,7 @@ import { timeLimit } from "../helpers/timeLimit.js";
 import halationExtractFragment from "../../src/game/shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "../../src/game/shaders/grade.fragment.fx?raw";
 import finishFragment from "../../src/game/shaders/finish.fragment.fx?raw";
+import lensFragment from "../../src/game/shaders/lens.fragment.fx?raw";
 
 /**
  * WGSL refuses a texture read with implicit derivatives (`textureSample`) in
@@ -179,6 +180,7 @@ describe("WGSL's uniformity analysis and the game's shaders", () => {
       "post.grade": gradeFragment,
       "post.halationExtract": halationExtractFragment,
       "post.finish": finishFragment,
+      "post.lens": lensFragment,
     };
     const found = Object.fromEntries(
       Object.entries(shaders)
@@ -204,12 +206,14 @@ describe("WGSL's uniformity analysis and the game's shaders", () => {
       "post.grade": gradeFragment,
       "post.halationExtract": halationExtractFragment,
       "post.finish": finishFragmentFor(true),
+      "post.lens": lensFragment,
     };
     const webgl2: Record<string, string> = {
       ...onWebGl2,
       "post.grade": gradeFragment,
       "post.halationExtract": halationExtractFragment,
       "post.finish": finishFragmentFor(false),
+      "post.lens": lensFragment,
     };
     // Every shader that reads a texture under a branch: a new one fails here
     // until it carries the define on WebGPU, or its read moves.

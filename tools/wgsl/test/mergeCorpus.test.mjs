@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { timeLimit } from '../../../client/test/helpers/timeLimit.ts';
-import { readCorpusDir, stageFile } from '../lib/corpus.mjs';
+import { TIERS_FILE, readCorpusDir, stageFile } from '../lib/corpus.mjs';
 import { mergeCorpus } from '../lib/mergeCorpus.mjs';
 import { loadShared } from '../lib/shared.mjs';
 
@@ -24,6 +24,10 @@ function directory(files = {}) {
 
 /** Every file under `dir`, by its path relative to it. */
 const tree = (dir) => readdirSync(dir, { recursive: true }).filter((name) => statSync(join(dir, name)).isFile()).sort();
+/** The stage files under `dir`: every file but the index of tiers. */
+const stageTree = (dir) => tree(dir).filter((name) => name !== TIERS_FILE);
+/** The merge's count of a corpus of `n` stages, each on every tier. */
+const every = (n) => ({ low: n, medium: n, high: n });
 
 let shared;
 beforeAll(async () => {
@@ -41,15 +45,83 @@ describe('merging recordings into the corpus', () => {
     });
     const dir = directory();
     const first = mergeCorpus({ dir, recorded: [join(recorded, 'one.json'), join(recorded, 'two.json')], shared });
-    expect(first).toEqual({ read: 4, added: 3, total: 3, removed: [], normalised: 0, leftAlone: [] });
-    expect(tree(dir)).toEqual([a, b, c].map((s) => stageFile(s, shared)).sort());
+    expect(first).toEqual({ read: 4, added: 3, retiered: 0, total: 3, tiers: every(3), removed: [], normalised: 0, leftAlone: [] });
+    expect(stageTree(dir)).toEqual([a, b, c].map((s) => stageFile(s, shared)).sort());
     const { stages } = readCorpusDir(dir, shared);
     expect(new Set(stages.map((s) => shared.corpusId(s)))).toEqual(new Set([a, b, c].map((s) => shared.corpusId(s))));
     // What it read from elsewhere, it leaves where it was.
     expect(existsSync(join(recorded, 'one.json'))).toBe(true);
-    expect(mergeCorpus({ dir, recorded: [join(recorded, 'one.json')], shared })).toEqual({ read: 2, added: 0, total: 3, removed: [], normalised: 0, leftAlone: [] });
-    expect(mergeCorpus({ dir, recorded: [], shared })).toEqual({ read: 0, added: 0, total: 3, removed: [], normalised: 0, leftAlone: [] });
-    expect(tree(dir)).toHaveLength(3);
+    expect(mergeCorpus({ dir, recorded: [join(recorded, 'one.json')], shared })).toEqual({
+      read: 2,
+      added: 0,
+      retiered: 0,
+      total: 3,
+      tiers: every(3),
+      removed: [],
+      normalised: 0,
+      leftAlone: [],
+    });
+    expect(mergeCorpus({ dir, recorded: [], shared })).toEqual({ read: 0, added: 0, retiered: 0, total: 3, tiers: every(3), removed: [], normalised: 0, leftAlone: [] });
+    expect(stageTree(dir)).toHaveLength(3);
+  });
+
+  it('puts each stage on the tiers its recording names, every tier where it names none, and a stage held already on more', () => {
+    const a = stage('// a');
+    const b = stage('// b', 'vertex');
+    const c = stage('// c', 'fragment', true);
+    const id = (s) => stageFile(s, shared).slice(2, 18);
+    const recorded = directory({
+      'high.json': shared.corpusText([a, b], ['high']),
+      'low.json': shared.corpusText([b, c], ['low']),
+      'both.json': shared.corpusText([c], ['medium', 'low']),
+      'none.json': shared.corpusText([a]),
+    });
+    const dir = directory();
+    expect(mergeCorpus({ dir, recorded: [join(recorded, 'high.json')], shared })).toEqual({
+      read: 2,
+      added: 2,
+      retiered: 0,
+      total: 2,
+      tiers: { low: 0, medium: 0, high: 2 },
+      removed: [],
+      normalised: 0,
+      leftAlone: [],
+    });
+    expect(readCorpusDir(dir, shared).tiers).toEqual(new Map([[id(a), ['high']], [id(b), ['high']]]));
+    // b, held on high, gains low; c is new on low alone.
+    expect(mergeCorpus({ dir, recorded: [join(recorded, 'low.json')], shared })).toEqual({
+      read: 2,
+      added: 1,
+      retiered: 1,
+      total: 3,
+      tiers: { low: 2, medium: 0, high: 2 },
+      removed: [],
+      normalised: 0,
+      leftAlone: [],
+    });
+    expect(readCorpusDir(dir, shared).tiers).toEqual(new Map([[id(a), ['high']], [id(b), ['low', 'high']], [id(c), ['low']]]));
+    // c gains medium (its low it had); a, from a recording that names no tier, gains every tier. Each counted once.
+    expect(mergeCorpus({ dir, recorded: [join(recorded, 'both.json'), join(recorded, 'none.json'), join(recorded, 'none.json')], shared })).toEqual({
+      read: 3,
+      added: 0,
+      retiered: 2,
+      total: 3,
+      tiers: { low: 3, medium: 2, high: 2 },
+      removed: [],
+      normalised: 0,
+      leftAlone: [],
+    });
+    expect(readCorpusDir(dir, shared).tiers).toEqual(new Map([[id(a), ['low', 'medium', 'high']], [id(b), ['low', 'high']], [id(c), ['low', 'medium']]]));
+    expect(readFileSync(join(dir, TIERS_FILE), 'utf8')).toBe(
+      '{"format":"dayhike-wgsl-tiers/1","stages":{\n' +
+        [[id(a), '["low","medium","high"]'], [id(b), '["low","high"]'], [id(c), '["low","medium"]']]
+          .sort(([x], [y]) => (x < y ? -1 : 1))
+          .map(([name, tiers]) => `"${name}":${tiers}`)
+          .join(',\n') +
+        '\n}}\n',
+    );
+    // No stage file was touched by any of it.
+    expect(stageTree(dir)).toEqual([a, b, c].map((s) => stageFile(s, shared)).sort());
   });
 
   it('merges a recording dropped into the corpus as it was downloaded, and removes it once its stages are files', () => {
@@ -59,12 +131,14 @@ describe('merging recordings into the corpus', () => {
     expect(mergeCorpus({ dir, recorded: [], shared })).toEqual({
       read: 2,
       added: 2,
+      retiered: 0,
       total: 2,
+      tiers: every(2),
       removed: ['dayhike-wgsl-corpus-1790000000000.json'],
       normalised: 0,
       leftAlone: [],
     });
-    expect(tree(dir)).toEqual([a, b].map((s) => stageFile(s, shared)).sort());
+    expect(tree(dir)).toEqual([...[a, b].map((s) => stageFile(s, shared)), TIERS_FILE].sort());
   });
 
   it('refuses a recording that is not a corpus, naming it, and writes nothing', () => {
@@ -72,6 +146,9 @@ describe('merging recordings into the corpus', () => {
     const bad = join(directory({ 'report.json': '{"mode":"record","effects":[]}' }), 'report.json');
     const good = join(directory({ 'r.json': shared.corpusText([stage('// a')]) }), 'r.json');
     expect(() => mergeCorpus({ dir, recorded: [good, bad], shared })).toThrow(`${bad}: not a corpus of dayhike-wgsl-corpus/1`);
+    expect(tree(dir)).toEqual([]);
+    const tiers = join(directory({ 'r.json': shared.corpusText([stage('// a')]).replace('"stages"', '"tiers":["ultra"],"stages"') }), 'r.json');
+    expect(() => mergeCorpus({ dir, recorded: [good, tiers], shared })).toThrow(`${tiers}: a corpus whose tiers are not some of low, medium, high, each once: ["ultra"]`);
     expect(tree(dir)).toEqual([]);
   });
 
@@ -89,7 +166,13 @@ describe('merging recordings into the corpus', () => {
     const recorded = join(directory({ 'r.json': shared.corpusText([stage('// a'), stage('// b')]) }), 'r.json');
     const dir = directory();
     const { stdout } = await run(process.execPath, [TOOL, '--corpus', dir, recorded]);
-    expect(stdout).toContain('  read:   2 stages from 1 recorded files\n  new:    2\n  holds:  2 stages\n  normalised: 0 stages had Windows line endings\n');
+    expect(stdout).toContain(
+      '  read:   2 stages from 1 recorded files\n  new:    2\n  tiers:  0 stages the corpus held gained a tier\n' +
+        '  holds:  2 stages; on low 2, on medium 2, on high 2\n  normalised: 0 stages had Windows line endings\n',
+    );
+    const low = join(directory({ 'r.json': shared.corpusText([stage('// a'), stage('// c')], ['low']) }), 'r.json');
+    const again = await run(process.execPath, [TOOL, '--corpus', dir, low]);
+    expect(again.stdout).toContain('  new:    1\n  tiers:  0 stages the corpus held gained a tier\n  holds:  3 stages; on low 3, on medium 2, on high 2\n');
   }, timeLimit(30_000));
 });
 
@@ -100,10 +183,10 @@ describe('line endings in a recording', () => {
     const other = stage('// three\r\nvoid main() {}', 'vertex');
     const dir = directory();
     const recorded = join(directory({ 'r.json': shared.corpusText([windows, unix, other]) }), 'r.json');
-    expect(mergeCorpus({ dir, recorded: [recorded], shared })).toEqual({ read: 3, added: 2, total: 2, removed: [], normalised: 2, leftAlone: [] });
+    expect(mergeCorpus({ dir, recorded: [recorded], shared })).toEqual({ read: 3, added: 2, retiered: 0, total: 2, tiers: every(2), removed: [], normalised: 2, leftAlone: [] });
     const { stages } = readCorpusDir(dir, shared);
     expect(stages.map((s) => s.glsl).sort()).toEqual(['#version 450\n// one\n// two\nvoid main() {}', '#version 450\n// three\nvoid main() {}']);
-    for (const file of tree(dir)) expect(readFileSync(join(dir, file)).includes(0x0d)).toBe(false);
+    for (const file of stageTree(dir)) expect(readFileSync(join(dir, file)).includes(0x0d)).toBe(false);
   });
 
   it('refuses a stage that still carries a carriage return after that, naming it, and writes nothing', () => {
