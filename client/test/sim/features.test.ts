@@ -3,7 +3,7 @@ import {
   FEATURE_TUNABLES, PEAK_RADIUS_MIN, PEAK_RADIUS_MAX, PEAK_RISE_MIN, PEAK_RISE_MAX, PEAK_CREST_RADIUS,
   MEADOW_RADIUS_MIN, MEADOW_RADIUS_MAX, MEADOW_RIM, POND_RADIUS_MIN, POND_RADIUS_MAX, POND_DEPTH, POND_APRON,
   LOOP_WEIGHT_1, LOOP_WEIGHT_2, LOOP_WEIGHT_3, TREELINE_BELOW_CREST, TREELINE_BAND, PEAK_RIM_FADE,
-  planFeatures, peakD, flatD, basinD, featureStageD, featureMaskAt, type Feature,
+  planFeatures, peakD, flatD, basinD, featureStageD, featureMaskAt, murkFor, MURK_LO, MURK_HI, type Feature,
 } from "../../src/sim/features.js";
 import { TRAIL_GRID_CAP } from "../../src/sim/trailGrid.js";
 import type { TerrainSample } from "../../src/sim/terrain.js";
@@ -261,6 +261,7 @@ describe("the composed stage and the mask", () => {
       "TREELINE_BELOW_CREST", "TREELINE_BAND", "PEAK_RIM_FADE",
       "MEADOW_RADIUS_MIN", "MEADOW_RADIUS_MAX", "MEADOW_RIM", "MEADOW_TREE_MARGIN", "MEADOW_SLOPE_MAX",
       "POND_RADIUS_MIN", "POND_RADIUS_MAX", "POND_DEPTH", "POND_APRON", "POND_SHORE", "POND_TREE_MARGIN", "POND_SLOPE_MAX",
+      "MURK_LO", "MURK_HI",
       "LOOP_WEIGHT_1", "LOOP_WEIGHT_2", "LOOP_WEIGHT_3",
       "LOOP_BAND_LO_1", "LOOP_BAND_HI_1", "LOOP_BAND_LO_2", "LOOP_BAND_HI_2", "LOOP_BAND_LO_3", "LOOP_BAND_HI_3",
       "LOOP_LATERAL_MIN", "LOOP_LATERAL_MAX", "FEATURE_ROAD_CLEAR", "FEATURE_SPACING",
@@ -270,7 +271,7 @@ describe("the composed stage and the mask", () => {
     ];
     for (const k of keys) expect(FEATURE_TUNABLES[k], k).toBeTypeOf("number");
     expect(Object.keys(FEATURE_TUNABLES).sort()).toEqual([...keys].sort());
-    expect(Object.keys(FEATURE_TUNABLES).length).toBe(53);
+    expect(Object.keys(FEATURE_TUNABLES).length).toBe(55);
   });
   it("keeps its ranges within their working bounds", () => {
     // 220/220 and 60/90 → 300/300 and 50/80: the original numbers put the
@@ -281,5 +282,31 @@ describe("the composed stage and the mask", () => {
     expect([MEADOW_RADIUS_MIN, MEADOW_RADIUS_MAX]).toEqual([50, 90]);
     expect([POND_RADIUS_MIN, POND_RADIUS_MAX, POND_DEPTH]).toEqual([25, 40, 0.6]);
     expect(LOOP_WEIGHT_1 + LOOP_WEIGHT_2 + LOOP_WEIGHT_3).toBeCloseTo(1, 12);
+  });
+});
+
+describe("murkFor", () => {
+  it("is fully murky in the lowest quarter of the climb and fully clear in the highest", () => {
+    expect(murkFor(10, 10, 210)).toBe(1);
+    expect(murkFor(10 + 200 * MURK_LO, 10, 210)).toBe(1);
+    expect(murkFor(10 + 200 * MURK_HI, 10, 210)).toBe(0);
+    expect(murkFor(210, 10, 210)).toBe(0);
+    expect(murkFor(110, 10, 210)).toBeCloseTo(0.5, 12);
+  });
+
+  it("stays in [0, 1] off the ends of the climb", () => {
+    expect(murkFor(-50, 10, 210)).toBe(1);
+    expect(murkFor(400, 10, 210)).toBe(0);
+  });
+
+  it("falls back to 0.5 with no crest, or a crest not above the pad", () => {
+    expect(murkFor(50, 10, undefined)).toBe(0.5);
+    expect(murkFor(50, 10, 10)).toBe(0.5);
+    expect(murkFor(50, 10, 5)).toBe(0.5);
+  });
+
+  it("folds its two edges into the level id", () => {
+    expect(FEATURE_TUNABLES.MURK_LO).toBe(0.25);
+    expect(FEATURE_TUNABLES.MURK_HI).toBe(0.75);
   });
 });

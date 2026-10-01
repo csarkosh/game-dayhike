@@ -23,7 +23,18 @@ export type Feature = {
   /** peak only: the crest's absolute height, written by the builder once the
    * dome is placed — the treeline is a height, so the mask needs it. */
   crestH?: number;
+  /** pond only: 0 clear .. 1 murky, by where the lake lies on the climb
+   * (`murkFor`). Written by the builder after the whole bowl is placed. */
+  murk?: number;
+  /** pond only: the marsh on a murky lake's shelf at one end, or null for
+   * none. Written by the builder after the whole bowl is placed. */
+  lobe?: Lobe | null;
 };
+
+/** A murky lake's marsh: its shelf at one end, silted up to the water's
+ * level, in the direction (dirX, dirZ) from the lake's centre (a unit
+ * vector), `width` metres across. */
+export type Lobe = { dirX: number; dirZ: number; width: number };
 
 // ---- Peak --------------------------------------------------------------
 /**
@@ -167,6 +178,19 @@ export const POND_TREE_MARGIN = 8;
  * walkable, not the raw hillside. */
 export const POND_SLOPE_MAX = 0.25;
 
+// ---- Lake ----------------------------------------------------------------
+/** Murk by where the lake lies on the climb from the pad to the crest: the
+ * lowest quarter fully murky, the highest fully clear, a gradient between. */
+export const MURK_LO = 0.25;
+export const MURK_HI = 0.75;
+
+/** A lake's murk from its rim height `h`, the pad's height and the crest's.
+ * With no crest, or one not above the pad, the middle of the range. */
+export function murkFor(h: number, padH: number, crestH: number | undefined): number {
+  if (crestH === undefined || !(crestH > padH)) return 0.5;
+  return 1 - smoothstep(MURK_LO, MURK_HI, (h - padH) / (crestH - padH));
+}
+
 // ---- The plan ----------------------------------------------------------
 export const LOOP_WEIGHT_1 = 0.3;
 export const LOOP_WEIGHT_2 = 0.5;
@@ -284,6 +308,7 @@ export const FEATURE_TUNABLES: Readonly<Record<string, number>> = {
   TREELINE_BELOW_CREST, TREELINE_BAND, PEAK_RIM_FADE,
   MEADOW_RADIUS_MIN, MEADOW_RADIUS_MAX, MEADOW_RIM, MEADOW_TREE_MARGIN, MEADOW_SLOPE_MAX,
   POND_RADIUS_MIN, POND_RADIUS_MAX, POND_DEPTH, POND_APRON, POND_SHORE, POND_TREE_MARGIN, POND_SLOPE_MAX,
+  MURK_LO, MURK_HI,
   LOOP_WEIGHT_1, LOOP_WEIGHT_2, LOOP_WEIGHT_3,
   LOOP_BAND_LO_1, LOOP_BAND_HI_1, LOOP_BAND_LO_2, LOOP_BAND_HI_2, LOOP_BAND_LO_3, LOOP_BAND_HI_3,
   LOOP_LATERAL_MIN, LOOP_LATERAL_MAX, FEATURE_ROAD_CLEAR, FEATURE_SPACING,

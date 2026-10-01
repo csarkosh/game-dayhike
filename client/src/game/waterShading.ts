@@ -31,6 +31,37 @@ export const WATER_ROWS: { sea: WaterRow; lowlandLake: WaterRow; highLake: Water
   highLake: { kd: [0.2, 0.12, 0.2], lInf: [0.01, 0.025, 0.05], shelter: 0.3 },
 };
 
+/** Kd of the research's clear lake (§2.3, a 5.5 m Secchi depth): the row a
+ * lake takes halfway between the very clear high lake and the humic one. */
+export const CLEAR_LAKE_KD: [number, number, number] = [0.75, 0.8, 1.6];
+
+function mix3(a: readonly number[], b: readonly number[], t: number): [number, number, number] {
+  // a·(1 − t) + b·t, so t = 0 and t = 1 give a and b exactly.
+  return [a[0]! * (1 - t) + b[0]! * t, a[1]! * (1 - t) + b[1]! * t, a[2]! * (1 - t) + b[2]! * t];
+}
+
+/**
+ * A lake's water from its murk (the sim's `murkFor`): Kd through the very
+ * clear, the clear and the humic rows the research measured, piecewise
+ * linear; L∞ and the shelter straight from the clear high lake to the humic
+ * lowland one. Murk 0 is `WATER_ROWS.highLake`, murk 1 `WATER_ROWS.lowlandLake`.
+ */
+export function lakeWaterRow(murk: number): WaterRow {
+  const m = clamp01(murk);
+  const high = WATER_ROWS.highLake;
+  const low = WATER_ROWS.lowlandLake;
+  const kd = m <= 0.5 ? mix3(high.kd, CLEAR_LAKE_KD, m / 0.5) : mix3(CLEAR_LAKE_KD, low.kd, (m - 0.5) / 0.5);
+  return { kd, lInf: mix3(high.lInf, low.lInf, m), shelter: high.shelter * (1 - m) + low.shelter * m };
+}
+
+/** How much of a lake's surface may carry the duckweed and algae skin: none
+ * up to murk 0.5, all of it from 0.8. The clutter field gates the reeds and
+ * lilies by the same two numbers (`CLUTTER_WATER_MURK_LO`/`_HI`). */
+export function lakeSkin(murk: number): number {
+  const t = clamp01((murk - 0.5) / 0.3);
+  return t * t * (3 - 2 * t);
+}
+
 /** Fresnel reflectance of water at normal incidence, n = 1.33. Mirrored in shaders/water.fragment.fx. */
 export const WATER_F0 = 0.02;
 /** The reflected ray's least y (spec §5.1). Mirrored in shaders/water.fragment.fx. */
