@@ -12,7 +12,7 @@ import "../../src/sim/olympic.js";
 import { activeTerrainVariant, setActiveTerrainVariant, type LakeSource } from "../../src/sim/terrain.js";
 import { lakeSkin, lakeWaterRow, waterSkinOffset } from "../../src/game/waterShading.js";
 import { seedFromToken } from "../../src/game/seed.js";
-import { WATER_UV_SCROLL, createWater, effectsGroupFor, setEffectsGroup } from "../../src/game/renderer.js";
+import { LAKE_SURFACE_SPACING, WATER_UV_SCROLL, createWater, effectsGroupFor, lakeSurfaceShape, setEffectsGroup } from "../../src/game/renderer.js";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { createRain } from "../../src/game/rain.js";
 import { createMotes } from "../../src/game/motes.js";
@@ -21,7 +21,7 @@ import { WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "../../src/
 import { timeLimit } from "../helpers/timeLimit.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
-import { bedOriginFor } from "../../src/game/bedHeight.js";
+import { POND_DISC_MARGIN, bedOriginFor } from "../../src/game/bedHeight.js";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
@@ -130,6 +130,36 @@ describe("createWater under NullEngine", () => {
       const wx = 100 + positions[i * 3]!, wz = 50 + positions[i * 3 + 2]!;
       expect(depths[i]).toBeCloseTo(10_000 - elevationAt(seed, wx, wz), 1);
     }
+    // a disc, not a square: no vertex past the rim plus the margin, where the
+    // basin's apron may lie below the level outside the lake
+    const ext = 30 + POND_DISC_MARGIN;
+    let farthest = 0;
+    for (let i = 0; i < positions.length / 3; i++) {
+      farthest = Math.max(farthest, Math.hypot(positions[i * 3]!, positions[i * 3 + 2]!));
+    }
+    expect(farthest).toBeLessThanOrEqual(ext + 1e-6);
+    expect(farthest).toBeGreaterThan(ext - 1e-3);
+    const { rings, segments } = lakeSurfaceShape(ext);
+    expect(rings).toBe(Math.ceil(ext / LAKE_SURFACE_SPACING));
+    expect(segments).toBe(Math.ceil((2 * Math.PI * ext) / LAKE_SURFACE_SPACING));
+    expect(positions.length / 3).toBe(rings * segments + 1);
+    // wound as CreateGround winds its faces: the first triangle's cross
+    // product points down in Babylon's left-handed frame
+    const idx = pond.getIndices()!;
+    const p = (v: number): number[] => [positions[v * 3]!, positions[v * 3 + 1]!, positions[v * 3 + 2]!];
+    const [a, b, c] = [p(idx[0]!), p(idx[1]!), p(idx[2]!)];
+    const crossY = (b[2]! - a[2]!) * (c[0]! - a[0]!) - (b[0]! - a[0]!) * (c[2]! - a[2]!);
+    expect(crossY).toBeLessThan(0);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("gives no depth to a vertex over ground above the water", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 1, 0, [lake({ level: -1000 })]);
+    const depths = scene.getMeshByName("pond_0")!.getVerticesData("bedDepth")!;
+    expect(depths.length).toBeGreaterThan(0);
+    for (const d of depths) expect(d).toBe(0);
     water.dispose();
   }, timeLimit(30_000));
 

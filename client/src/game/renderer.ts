@@ -69,7 +69,6 @@ import {
   type WaterGeometry,
   type WaterRingSamples,
 } from "./water.js";
-import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater } from "./waterPlugin.js";
 import { createWaterPlants } from "./waterPlants.js";
@@ -677,35 +676,88 @@ export function setEffectsGroup(group: number, effects: SeeThroughEffects): void
 export const LAKE_SURFACE_SPACING = 2;
 
 /**
- * One lake's surface: a flat square grid over the lake at its level, carrying
- * the same per-vertex `bedDepth` the ring meshes carry (`waterRingGeometry`),
- * read from the sim's own ground under each vertex, so the shelf, the drop and
- * the marsh draw as the sim has them. Where the ground stands above the water
- * the material discards, as it does on the sea's land. Static: a lake's
- * ground does not scroll with the camera.
+ * One lake's surface: a flat polar grid over the lake at its level, rings from
+ * the centre out to the rim plus `POND_DISC_MARGIN`, carrying the same
+ * per-vertex `bedDepth` the ring meshes carry (`waterRingGeometry`), read from
+ * the sim's own ground under each vertex, so the shelf, the drop and the marsh
+ * draw as the sim has them. Where the ground stands above the water the
+ * material discards, as it does on the sea's land. A disc, not a square: past
+ * the rim the basin's apron blends back to the hillside, and on the downhill
+ * side that ground lies below the lake's level, so a square's corners would
+ * draw water hanging over the slope outside the lake. Static: a lake's ground
+ * does not scroll with the camera.
  *
  * Exported so it is reachable from a test without a full `createWater` call.
  */
 export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, seed: number, index: number): Mesh {
-  const ext = lake.radius + POND_DISC_MARGIN;
-  const subdivisions = Math.ceil((2 * ext) / LAKE_SURFACE_SPACING);
-  const mesh = MeshBuilder.CreateGround(`pond_${index}`, { width: 2 * ext, height: 2 * ext, subdivisions }, scene);
+  const g = lakeSurfaceGrid(lake.radius + POND_DISC_MARGIN);
+  const vertexCount = g.positions.length / 3;
+  const depths = new Float32Array(vertexCount);
+  for (let i = 0; i < vertexCount; i++) {
+    const wx = lake.x + (g.positions[i * 3] as number);
+    const wz = lake.z + (g.positions[i * 3 + 2] as number);
+    depths[i] = Math.max(0, lake.level - elevationAt(seed, wx, wz));
+  }
+  const mesh = new Mesh(`pond_${index}`, scene);
+  const data = new VertexData();
+  data.positions = g.positions;
+  data.normals = g.normals;
+  data.indices = g.indices;
+  data.applyToMesh(mesh, false);
+  mesh.setVerticesData("bedDepth", depths, false, 1);
   mesh.position.set(lake.x, lake.level + 0.02, lake.z);
   mesh.material = mat;
   mesh.isPickable = false;
   mesh.receiveShadows = false;
-  const positions = mesh.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
-  const vertexCount = positions.length / 3;
-  const depths = new Float32Array(vertexCount);
-  for (let i = 0; i < vertexCount; i++) {
-    const wx = lake.x + (positions[i * 3] as number);
-    const wz = lake.z + (positions[i * 3 + 2] as number);
-    depths[i] = Math.max(0, lake.level - elevationAt(seed, wx, wz));
-  }
-  mesh.setVerticesData("bedDepth", depths, false, 1);
   mesh.metadata = { waterLevel: lake.level };
   mesh.freezeWorldMatrix();
   return mesh;
+}
+
+/** A lake surface's rings and segments for an outer radius `ext`: rings no
+ * further apart than `LAKE_SURFACE_SPACING`, and enough segments that the
+ * outer ring's chord is no longer than it. */
+export function lakeSurfaceShape(ext: number): { rings: number; segments: number } {
+  return {
+    rings: Math.ceil(ext / LAKE_SURFACE_SPACING),
+    segments: Math.ceil((2 * Math.PI * ext) / LAKE_SURFACE_SPACING),
+  };
+}
+
+/** The flat polar grid of radius `ext`, centred on the origin: the centre
+ * vertex, then each ring's segments outward; a fan round the centre, quads
+ * between rings, wound as `CreateGround` winds its faces, to face up. */
+function lakeSurfaceGrid(ext: number): { positions: Float32Array; normals: Float32Array; indices: Uint32Array } {
+  const { rings, segments } = lakeSurfaceShape(ext);
+  const vertexCount = rings * segments + 1;
+  const positions = new Float32Array(vertexCount * 3);
+  const normals = new Float32Array(vertexCount * 3);
+  for (let v = 0; v < vertexCount; v++) normals[v * 3 + 1] = 1;
+  for (let r = 1; r <= rings; r++) {
+    const rad = (ext * r) / rings;
+    for (let s = 0; s < segments; s++) {
+      const a = (2 * Math.PI * s) / segments;
+      const v = 1 + (r - 1) * segments + s;
+      positions[v * 3] = rad * Math.cos(a);
+      positions[v * 3 + 2] = rad * Math.sin(a);
+    }
+  }
+  const indices = new Uint32Array(segments * 3 + (rings - 1) * segments * 6);
+  let k = 0;
+  const at = (r: number, s: number): number => 1 + (r - 1) * segments + (s % segments);
+  for (let s = 0; s < segments; s++) {
+    indices[k++] = 0;
+    indices[k++] = at(1, s);
+    indices[k++] = at(1, s + 1);
+  }
+  for (let r = 1; r < rings; r++) {
+    for (let s = 0; s < segments; s++) {
+      const a = at(r, s), b = at(r, s + 1), c = at(r + 1, s), d = at(r + 1, s + 1);
+      indices[k++] = a; indices[k++] = c; indices[k++] = b;
+      indices[k++] = b; indices[k++] = c; indices[k++] = d;
+    }
+  }
+  return { positions, normals, indices };
 }
 
 /**
@@ -763,7 +815,7 @@ export function createWater(
   budgetMaterial(seaMat);
   for (const mat of lakeMats) budgetMaterial(mat);
 
-  // Every water mesh, rings and pond discs, filled below.
+  // Every water mesh, rings and lake surfaces, filled below.
   const waterMeshes: Mesh[] = [];
   // The copy of the opaque pass, on the high tier. It follows the target's
   // size by itself, so the plugins hold its colour and its `screen` once.
@@ -880,9 +932,9 @@ export function createWater(
   // ring-style re-emit, since a lake's ground does not scroll with the camera —
   // so they need no place in `meshes` (the doc'd one-per-ring,
   // shadow-caster-exempt set); they are disposed alongside it instead.
-  const pondMeshes: Mesh[] = lakes.map((l, i) => lakeSurface(scene, lakeMats[i] as PBRMaterial, l, seed, i));
-  for (const mesh of pondMeshes) mesh.renderingGroupId = group;
-  waterMeshes.push(...meshes, ...pondMeshes);
+  const lakeMeshes: Mesh[] = lakes.map((l, i) => lakeSurface(scene, lakeMats[i] as PBRMaterial, l, seed, i));
+  for (const mesh of lakeMeshes) mesh.renderingGroupId = group;
+  waterMeshes.push(...meshes, ...lakeMeshes);
 
   return {
     meshes,
@@ -943,7 +995,7 @@ export function createWater(
     dispose() {
       scene.onBeforeRenderObservable.remove(scroll);
       for (const mesh of meshes) mesh.dispose();
-      for (const mesh of pondMeshes) mesh.dispose();
+      for (const mesh of lakeMeshes) mesh.dispose();
       bump.dispose();
       bedTexture?.dispose();
       frame?.dispose();
