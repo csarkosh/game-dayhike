@@ -66,6 +66,7 @@ import {
   waterRingGeometry,
   wetBounds,
   WATER_RING_COUNT,
+  WATER_UV_SCALE,
   type WaterGeometry,
   type WaterRingSamples,
 } from "./water.js";
@@ -684,13 +685,15 @@ export const LAKE_SURFACE_SPACING = 2;
  * material discards, as it does on the sea's land. A disc, not a square: past
  * the rim the basin's apron blends back to the hillside, and on the downhill
  * side that ground lies below the lake's level, so a square's corners would
- * draw water hanging over the slope outside the lake. Static: a lake's ground
+ * draw water hanging over the slope outside the lake. It carries the rings'
+ * UVs, in world metres over `WATER_UV_SCALE`, so the ripple bump samples a
+ * real tile and its pattern runs on from the rings'. Static: a lake's ground
  * does not scroll with the camera.
  *
  * Exported so it is reachable from a test without a full `createWater` call.
  */
 export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, seed: number, index: number): Mesh {
-  const g = lakeSurfaceGrid(lake.radius + POND_DISC_MARGIN);
+  const g = lakeSurfaceGrid(lake.radius + POND_DISC_MARGIN, lake.x, lake.z);
   const vertexCount = g.positions.length / 3;
   const depths = new Float32Array(vertexCount);
   for (let i = 0; i < vertexCount; i++) {
@@ -702,6 +705,7 @@ export function lakeSurface(scene: Scene, mat: PBRMaterial, lake: LakeSource, se
   const data = new VertexData();
   data.positions = g.positions;
   data.normals = g.normals;
+  data.uvs = g.uvs;
   data.indices = g.indices;
   data.applyToMesh(mesh, false);
   mesh.setVerticesData("bedDepth", depths, false, 1);
@@ -726,12 +730,17 @@ export function lakeSurfaceShape(ext: number): { rings: number; segments: number
 
 /** The flat polar grid of radius `ext`, centred on the origin: the centre
  * vertex, then each ring's segments outward; a fan round the centre, quads
- * between rings, wound as `CreateGround` winds its faces, to face up. */
-function lakeSurfaceGrid(ext: number): { positions: Float32Array; normals: Float32Array; indices: Uint32Array } {
+ * between rings, wound as `CreateGround` winds its faces, to face up. Its UVs
+ * are the rings' (`waterRingGeometry`): the vertex's world position, the grid
+ * standing at (`cx`, `cz`), over `WATER_UV_SCALE`. */
+function lakeSurfaceGrid(
+  ext: number, cx: number, cz: number,
+): { positions: Float32Array; normals: Float32Array; uvs: Float32Array; indices: Uint32Array } {
   const { rings, segments } = lakeSurfaceShape(ext);
   const vertexCount = rings * segments + 1;
   const positions = new Float32Array(vertexCount * 3);
   const normals = new Float32Array(vertexCount * 3);
+  const uvs = new Float32Array(vertexCount * 2);
   for (let v = 0; v < vertexCount; v++) normals[v * 3 + 1] = 1;
   for (let r = 1; r <= rings; r++) {
     const rad = (ext * r) / rings;
@@ -741,6 +750,10 @@ function lakeSurfaceGrid(ext: number): { positions: Float32Array; normals: Float
       positions[v * 3] = rad * Math.cos(a);
       positions[v * 3 + 2] = rad * Math.sin(a);
     }
+  }
+  for (let v = 0; v < vertexCount; v++) {
+    uvs[v * 2] = (cx + (positions[v * 3] as number)) / WATER_UV_SCALE;
+    uvs[v * 2 + 1] = (cz + (positions[v * 3 + 2] as number)) / WATER_UV_SCALE;
   }
   const indices = new Uint32Array(segments * 3 + (rings - 1) * segments * 6);
   let k = 0;
@@ -757,7 +770,7 @@ function lakeSurfaceGrid(ext: number): { positions: Float32Array; normals: Float
       indices[k++] = b; indices[k++] = c; indices[k++] = d;
     }
   }
-  return { positions, normals, indices };
+  return { positions, normals, uvs, indices };
 }
 
 /**

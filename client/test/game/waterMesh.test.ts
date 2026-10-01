@@ -17,7 +17,7 @@ import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { createRain } from "../../src/game/rain.js";
 import { createMotes } from "../../src/game/motes.js";
 import { createMistMeshes } from "../../src/game/mistMeshes.js";
-import { WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "../../src/game/water.js";
+import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterRingSpacing } from "../../src/game/water.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
@@ -132,6 +132,15 @@ describe("createWater under NullEngine", () => {
     for (const i of [0, Math.floor(depths.length / 2), depths.length - 1]) {
       const wx = 100 + positions[i * 3]!, wz = 50 + positions[i * 3 + 2]!;
       expect(depths[i]).toBeCloseTo(10_000 - elevationAt(seed, wx, wz), 1);
+    }
+    // the rings' texture coordinates, from the vertex's world position, so the
+    // ripple bump samples a real tile
+    expect(pond.isVerticesDataPresent(VertexBuffer.UVKind)).toBe(true);
+    const uvs = pond.getVerticesData(VertexBuffer.UVKind)!;
+    expect(uvs.length).toBe((positions.length / 3) * 2);
+    for (const i of [0, Math.floor(depths.length / 2), depths.length - 1]) {
+      expect(uvs[i * 2]).toBeCloseTo((100 + positions[i * 3]!) / WATER_UV_SCALE, 6);
+      expect(uvs[i * 2 + 1]).toBeCloseTo((50 + positions[i * 3 + 2]!) / WATER_UV_SCALE, 6);
     }
     // a disc, not a square: no vertex past the rim plus the margin, where the
     // basin's apron may lie below the level outside the lake
