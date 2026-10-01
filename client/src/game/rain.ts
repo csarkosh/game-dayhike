@@ -114,6 +114,9 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
   mesh.receiveShadows = false;
   mesh.alwaysSelectAsActiveMesh = true;
   mesh.doNotSyncBoundingInfo = true;
+  // Unsynced bounding info leaves the blended sort keyed on the world origin;
+  // the rain is the nearest blended volume, so it draws last in its group.
+  mesh.alphaIndex = Number.MAX_SAFE_INTEGER;
   const matrices = new Float32Array(count * 16);
   for (let i = 0; i < count; i++) {
     matrices[i * 16] = 1;
@@ -126,7 +129,8 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
   mesh.setEnabled(false);
 
   let fold = 0;
-  let drift = { x: 0, z: 0 };
+  const drift = { x: 0, z: 0 };
+  const boxMin = { x: 0, y: 0, z: 0 };
   let dtSmooth = 1 / 60;
 
   return {
@@ -137,7 +141,7 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
       // suspended tab resumes where it left off instead of lurching.
       const step = Math.min(1, Math.max(0, dt));
       fold = rainFold(fold + step);
-      drift = rainDrift(drift, wind, step);
+      rainDrift(drift, wind, step, drift);
       dtSmooth = smoothedDt(dtSmooth, step);
       const drawn = rainCountUnder(w.rain, tier);
       if (drawn === 0) {
@@ -147,7 +151,7 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
       mesh.thinInstanceCount = drawn;
       mesh.setEnabled(true);
 
-      const boxMin = rainBoxMin(camPos, yaw);
+      rainBoxMin(camPos, yaw, boxMin);
       plugin.boxMinX = boxMin.x;
       plugin.boxMinY = boxMin.y;
       plugin.boxMinZ = boxMin.z;

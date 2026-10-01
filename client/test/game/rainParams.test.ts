@@ -80,6 +80,16 @@ describe("the folds", () => {
     expect(rainDrift({ x: 0.2, z: 0.2 }, wind(0.5, "z"), 1).z).toBeCloseTo(0.2625, 9);
     expect(rainDrift({ x: 0.2, z: 0.2 }, wind(0, "z"), 1)).toEqual({ x: 0.2, z: 0.2 });
   });
+
+  it("rainDrift and rainBoxMin write into `out`, and rainDrift may step in place", () => {
+    const drift = { x: 0.9, z: 0.5 };
+    expect(rainDrift(drift, wind(1, "x"), 2, drift)).toBe(drift);
+    expect(drift.x).toBeCloseTo(0.15, 9);
+    expect(drift.z).toBe(0.5);
+    const out = { x: 0, y: 0, z: 0 };
+    expect(rainBoxMin({ x: 10, y: 5, z: -20 }, 0, out)).toBe(out);
+    expect(out).toEqual({ x: -2, y: -7, z: -26 });
+  });
 });
 
 describe("the streak's length", () => {

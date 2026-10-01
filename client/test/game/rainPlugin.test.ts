@@ -116,7 +116,7 @@ describe("the rain plugin", () => {
     expect(vertex).toContain("float rSky = 1.0 - 0.6 * smoothstep(0.0, 0.25, -rView.y)");
     expect(vertex).toContain("float rLampT = rainLamp.x * rCone / (1.0 + rLampD2)");
     // The fades gate the lamp term too: a drop at the eye never becomes an opaque slab.
-    expect(vertex).toContain("vRainAlpha = rFade * (rSky * rClassAlpha + rLampT)");
+    expect(vertex).toContain("vRainAlpha = min(rFade * (rSky * rClassAlpha + rLampT), 1.0)");
     expect(vertex).toContain("vRainLamp = min(rLampT, 1.0)");
     const fragment = plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR!;
     expect(fragment).toContain("color.rgb = mix(color.rgb, rainLampColour, vRainLamp);");

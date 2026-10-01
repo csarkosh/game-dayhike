@@ -42,6 +42,8 @@ describe("createRain", () => {
     expect(rain.mesh.receiveShadows).toBe(false);
     expect(rain.mesh.alwaysSelectAsActiveMesh).toBe(true);
     expect(rain.mesh.doNotSyncBoundingInfo).toBe(true);
+    // Unsynced bounds sort it by the world origin otherwise: last in its group.
+    expect(rain.mesh.alphaIndex).toBe(Number.MAX_SAFE_INTEGER);
     expect(rain.plugin).toBeInstanceOf(RainPlugin);
     const mat = rain.mesh.material as StandardMaterial;
     expect(mat.name).toBe("mat_rain");

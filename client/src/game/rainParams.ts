@@ -119,26 +119,31 @@ export function rainSeeds(count: number, seed: number): Float32Array {
   return out;
 }
 
+export type Vec3 = { x: number; y: number; z: number };
+export type Drift = { x: number; z: number };
+
 /** The box's low corner for an eye at `cam` facing `yaw` (Babylon's: 0 faces
- * +Z, forward is (sin yaw, 0, cos yaw)). */
-export function rainBoxMin(cam: { x: number; y: number; z: number }, yaw: number): { x: number; y: number; z: number } {
+ * +Z, forward is (sin yaw, 0, cos yaw)), written into `out` (a fresh object
+ * when none is given) so a caller on the frame path allocates nothing. */
+export function rainBoxMin(cam: Vec3, yaw: number, out: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
   const fx = Math.sin(yaw);
   const fz = Math.cos(yaw);
-  return {
-    x: cam.x + fx * RAIN_BOX.forward - RAIN_BOX.x / 2,
-    y: cam.y - RAIN_BOX.down - RAIN_BOX.y / 2,
-    z: cam.z + fz * RAIN_BOX.forward - RAIN_BOX.z / 2,
-  };
+  out.x = cam.x + fx * RAIN_BOX.forward - RAIN_BOX.x / 2;
+  out.y = cam.y - RAIN_BOX.down - RAIN_BOX.y / 2;
+  out.z = cam.z + fz * RAIN_BOX.forward - RAIN_BOX.z / 2;
+  return out;
 }
 
 /** The wind's horizontal displacement over `dt` seconds added to `prev`, in
- * units of the box and folded to [0, 1) per component. */
-export function rainDrift(prev: { x: number; z: number }, wind: WindRecord, dt: number): { x: number; z: number } {
+ * units of the box and folded to [0, 1) per component, written into `out`
+ * (a fresh object when none is given; `prev` itself is allowed). */
+export function rainDrift(prev: Drift, wind: WindRecord, dt: number, out: Drift = { x: 0, z: 0 }): Drift {
   const metres = RAIN_SLANT * wind.speed * dt;
-  return {
-    x: fract(prev.x + (wind.dirX * metres) / RAIN_BOX.x),
-    z: fract(prev.z + (wind.dirZ * metres) / RAIN_BOX.z),
-  };
+  const x = fract(prev.x + (wind.dirX * metres) / RAIN_BOX.x);
+  const z = fract(prev.z + (wind.dirZ * metres) / RAIN_BOX.z);
+  out.x = x;
+  out.z = z;
+  return out;
 }
 
 /** The streak's length for a class speed and a frame duration, metres. */
@@ -160,13 +165,7 @@ export function smoothedDt(prev: number, dt: number): number {
  * xyz, `k` its class, `drift` the folded horizontal drift, `fold` the folded
  * time and `boxMin` the box's low corner this frame. World metres.
  */
-export function rainDropAt(
-  seed: { x: number; y: number; z: number },
-  k: number,
-  drift: { x: number; z: number },
-  fold: number,
-  boxMin: { x: number; y: number; z: number },
-): { x: number; y: number; z: number } {
+export function rainDropAt(seed: Vec3, k: number, drift: Drift, fold: number, boxMin: Vec3): Vec3 {
   const speed = rainClassOf(k).speed;
   const qx = fract(seed.x + drift.x - boxMin.x / RAIN_BOX.x);
   const qy = fract(seed.y - (speed * fold) / RAIN_BOX.y - boxMin.y / RAIN_BOX.y);

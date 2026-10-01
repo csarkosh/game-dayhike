@@ -19,7 +19,8 @@
  * the `rainSpeeds`, `rainWidths` and `rainAlphas` uniforms. The alpha is the
  * near and far fades, a fade against the sky by the view's upward component
  * at the drop, the class's own alpha, and the headlamp's inverse-square term
- * inside its cone; the lamp term also lifts the streak's colour toward the
+ * inside its cone, bounded at 1 (the scene target is half-float, and an
+ * alpha above 1 would subtract from what is behind); the lamp term also lifts the streak's colour toward the
  * lamp's, since the material's own colour is the fog's and at night that is
  * near black. `RAIN_DRIP` and `RAIN_OCCLUSION` are declared for the drip
  * volume and the cover map and read by nothing yet.
@@ -83,7 +84,7 @@ const RAIN_VERTEX_POSITION = `
   float rCos = dot(rToLamp, rainLampDir) / sqrt(max(rLampD2, 0.0001));
   float rCone = smoothstep(rainLamp.y, 0.5 + 0.5 * rainLamp.y, rCos);
   float rLampT = rainLamp.x * rCone / (1.0 + rLampD2);
-  vRainAlpha = rFade * (rSky * rClassAlpha + rLampT);
+  vRainAlpha = min(rFade * (rSky * rClassAlpha + rLampT), 1.0);
   vRainLamp = min(rLampT, 1.0);
 }
 #endif
