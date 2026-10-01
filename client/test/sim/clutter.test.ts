@@ -1424,8 +1424,8 @@ describe("the ground's cover in the strip at the trailhead", () => {
 
 import { CLUTTER_REED, CLUTTER_LILY } from "../../src/sim/clutter.js";
 import { firstPondWorld, lakeOf } from "./helpers/lakes.js";
-import { lobePoints, marshWeightAt } from "../../src/sim/features.js";
-import { elevationAt } from "../../src/sim/terrain.js";
+import { lobePoints, marshWeightAt, POND_SHORE } from "../../src/sim/features.js";
+import { elevationAt, type LakeSource } from "../../src/sim/terrain.js";
 
 describe("the water plants", { timeout: timeLimit(120_000) }, () => {
   it("follow the model-drawn classes, which still number nine", () => {
@@ -1465,6 +1465,18 @@ describe("the water plants", { timeout: timeLimit(120_000) }, () => {
       }
     }
     expect(most).toBeGreaterThan(0.5);
+  });
+
+  it("float no lily outside the rim", () => {
+    const { seed, pond } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
+    const lake = activeTerrainVariant().waterBodies!(seed)
+      .find((b): b is LakeSource => b.kind === "lake" && b.x === pond.x && b.z === pond.z)!;
+    const r = lake.radius + POND_SHORE + 1;
+    const lilies = clutterInRect(seed, CLUTTER_LILY, lake.x - r, lake.z - r, lake.x + r, lake.z + r);
+    for (const inst of lilies) {
+      expect(Math.hypot(inst.x - lake.x, inst.z - lake.z), `(${inst.x}, ${inst.z})`).toBeLessThan(lake.radius);
+    }
+    expect(lilies.length).toBeGreaterThan(20);
   });
 
   it("grow in no clear lake", () => {

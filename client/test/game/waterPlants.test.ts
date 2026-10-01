@@ -88,10 +88,18 @@ describe("a lake's plants in the scene", { timeout: timeLimit(120_000) }, () => 
     }
     const pads = plants.meshes[3]!;
     expect(pads.thinInstanceCount).toBeGreaterThan(20);
+    const yaws: number[] = [];
     for (const m of pads.thinInstanceGetWorldMatrices().slice(0, 20)) {
       m.getTranslationToRef(t);
       expect(t.y).toBeCloseTo(lake.level + LILY_LIFT, 3);
+      yaws.push(Math.atan2(m.m[8]!, m.m[0]!));
     }
+    // the pads' notches point every way, not into one quarter turn: the
+    // smallest arc holding every yaw is more than a quarter turn
+    const sorted = yaws.map((a) => (a + 2 * Math.PI) % (2 * Math.PI)).sort((a, b) => a - b);
+    let widestGap = 2 * Math.PI - (sorted[sorted.length - 1]! - sorted[0]!);
+    for (let i = 1; i < sorted.length; i++) widestGap = Math.max(widestGap, sorted[i]! - sorted[i - 1]!);
+    expect(2 * Math.PI - widestGap).toBeGreaterThan(Math.PI / 2);
     plants.dispose();
     expect(scene.getMeshByName("water_reeds_0")).toBeNull();
   });

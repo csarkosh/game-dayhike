@@ -6,7 +6,8 @@ import { bowlFor, coveFor, olympicPreTrailSample, coveProfileD, COVE_BACK_FADE }
 import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { variantOrThrow } from "./helpers/derivatives.js";
 import { segmentDistance } from "../../src/sim/trail.js";
-import { lobePoints, LAKE_SHELF_WIDTH, MARSH_MURK_MIN } from "../../src/sim/features.js";
+import { lobePoints, LAKE_SHELF_WIDTH, MARSH_MURK_MIN, POND_SHORE } from "../../src/sim/features.js";
+import { CLUTTER_LILY, clutterInRect } from "../../src/sim/clutter.js";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -153,5 +154,20 @@ describe("the water terrain over 200 worlds", { timeout: timeLimit(900_000) }, (
         }
       }
     }
+  });
+
+  it("floats every lily inside its lake's rim", () => {
+    let lilies = 0;
+    for (const seed of LOBBY_SEEDS) {
+      for (const f of bowlFor(seed).features) {
+        if (f.kind !== "pond" || (f.murk ?? 0) < 0.8) continue;
+        const r = f.radius + POND_SHORE + 1;
+        for (const inst of clutterInRect(seed, CLUTTER_LILY, f.x - r, f.z - r, f.x + r, f.z + r)) {
+          lilies++;
+          expect(Math.hypot(inst.x - f.x, inst.z - f.z), `seed ${seed} (${inst.x}, ${inst.z})`).toBeLessThan(f.radius);
+        }
+      }
+    }
+    expect(lilies).toBeGreaterThan(500);
   });
 });

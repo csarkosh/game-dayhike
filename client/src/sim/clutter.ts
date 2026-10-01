@@ -438,7 +438,8 @@ function waterPlantDensity(
     if (b.kind !== "lake") continue;
     const reach = b.radius + POND_SHORE;
     const dx = x - b.x, dz = z - b.z;
-    if (dx * dx + dz * dz >= reach * reach) continue;
+    const q2 = dx * dx + dz * dz;
+    if (q2 >= reach * reach) continue;
     const murky = smoothstep(CLUTTER_WATER_MURK_LO, CLUTTER_WATER_MURK_HI, b.murk);
     if (murky <= 0) return 0;
     const depth = b.level - h;
@@ -448,6 +449,9 @@ function waterPlantDensity(
       const patch = smoothstep(CLUTTER_REED_PATCH_LO, CLUTTER_REED_PATCH_HI, valueNoise2(x / CLUTTER_REED_PATCH_WAVE, z / CLUTTER_REED_PATCH_WAVE, seed ^ CLUTTER_REED_SALT));
       return murky * Math.max(band * patch, marshWeightAt(b, x, z));
     }
+    // Lilies float on the lake alone: past the rim the basin's apron can lie
+    // below the level on the downhill side, but no water stands there.
+    if (q2 >= b.radius * b.radius) return 0;
     const band = smoothstep(CLUTTER_LILY_DEPTH_LO, CLUTTER_LILY_DEPTH_LO + CLUTTER_LILY_DEPTH_FADE, depth)
       * (1 - smoothstep(CLUTTER_LILY_DEPTH_HI - CLUTTER_LILY_DEPTH_FADE, CLUTTER_LILY_DEPTH_HI, depth));
     const patch = smoothstep(CLUTTER_LILY_PATCH_LO, CLUTTER_LILY_PATCH_HI, valueNoise2(x / CLUTTER_LILY_PATCH_WAVE, z / CLUTTER_LILY_PATCH_WAVE, seed ^ CLUTTER_LILY_SALT));

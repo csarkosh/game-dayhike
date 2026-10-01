@@ -202,9 +202,22 @@ function material(scene: Scene, name: string, albedo: Rgb, roughness: number): P
   return mat;
 }
 
-/** Every plant `list` holds, as thin instances: yaw by its hash, scaled
+/** A lily's yaw comes from its own hash channel, not `inst.hash` (which picks
+ * the flowering pads): a cell this many to the metre, finer than the class's
+ * cell so no two pads share one, and this channel of `hash3`. */
+const LILY_YAW_CELLS = 7;
+const LILY_YAW_CHANNEL = 11;
+
+/** A lily pad's (and its flower's) yaw, rad: a pure function of the instance
+ * and the seed, apart from the hash that decides whether it flowers, so the
+ * flowering pads' notches point every way. */
+export function lilyYaw(seed: number, inst: ClutterInstance): number {
+  return hash3(Math.floor(inst.x * LILY_YAW_CELLS), Math.floor(inst.z * LILY_YAW_CELLS), LILY_YAW_CHANNEL, seed ^ CLUTTER_LILY_SALT) * Math.PI * 2;
+}
+
+/** Every plant `list` holds, as thin instances: at the yaw `yaw` gives, scaled
  * (sx, sy, sx), at the height `y` gives. A mesh with none is disabled. */
-function place(mesh: Mesh, list: readonly ClutterInstance[], y: (inst: ClutterInstance) => number, sx: (inst: ClutterInstance) => number, sy: (inst: ClutterInstance) => number): void {
+function place(mesh: Mesh, list: readonly ClutterInstance[], yaw: (inst: ClutterInstance) => number, y: (inst: ClutterInstance) => number, sx: (inst: ClutterInstance) => number, sy: (inst: ClutterInstance) => number): void {
   if (list.length === 0) {
     mesh.setEnabled(false);
     return;
@@ -215,7 +228,7 @@ function place(mesh: Mesh, list: readonly ClutterInstance[], y: (inst: ClutterIn
   const scale = new Vector3();
   const at = new Vector3();
   list.forEach((inst, i) => {
-    Quaternion.RotationYawPitchRollToRef(inst.hash * Math.PI * 2, 0, 0, rot);
+    Quaternion.RotationYawPitchRollToRef(yaw(inst), 0, 0, rot);
     scale.set(sx(inst), sy(inst), sx(inst));
     at.set(inst.x, y(inst), inst.z);
     Matrix.ComposeToRef(scale, rot, at, m);
@@ -249,7 +262,7 @@ export function createWaterPlants(scene: Scene, seed: number, lakes: readonly La
     setFoliageEdges(mat, REED_WIND_EDGES);
     mesh.material = mat;
     mesh.receiveShadows = true;
-    place(mesh, reeds[variant] as ClutterInstance[], (i) => i.groundH, (i) => i.scale, (i) => i.scale);
+    place(mesh, reeds[variant] as ClutterInstance[], (i) => i.hash * Math.PI * 2, (i) => i.groundH, (i) => i.scale, (i) => i.scale);
     meshes.push(mesh);
     materials.push(mat);
   }
@@ -258,12 +271,13 @@ export function createWaterPlants(scene: Scene, seed: number, lakes: readonly La
   padMat.zOffsetUnits = LILY_DEPTH_BIAS;
   padMesh.material = padMat;
   const lifted = (i: ClutterInstance): number => (levelOf.get(i) as number) + LILY_LIFT;
-  place(padMesh, pads, lifted, (i) => i.scale, () => 1);
+  const padYaw = (i: ClutterInstance): number => lilyYaw(seed, i);
+  place(padMesh, pads, padYaw, lifted, (i) => i.scale, () => 1);
   const flowerMesh = meshFrom(scene, "water_lily_flowers", lilyFlowerGeometry());
   const flowerMat = material(scene, "water_lily_flowers_mat", LILY_FLOWER_COLOUR, 0.6);
   flowerMat.zOffsetUnits = LILY_DEPTH_BIAS;
   flowerMesh.material = flowerMat;
-  place(flowerMesh, pads.filter((i) => lilyFlowers(seed, i)), lifted, () => 1, () => 1);
+  place(flowerMesh, pads.filter((i) => lilyFlowers(seed, i)), padYaw, lifted, () => 1, () => 1);
   meshes.push(padMesh, flowerMesh);
   materials.push(padMat, flowerMat);
   return {
