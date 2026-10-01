@@ -42,6 +42,9 @@ export type TerrainVariant = {
   /** The world's water: the sea first, then each lake. Derived from the
    * bowl's features, cached per seed; absent on a variant with no water. */
   waterBodies?: (seed: number) => readonly WaterBodySource[];
+  /** The cove in front of the trailhead: its weight at (x, z), 0 to 1. Absent
+   * on a variant with no cove. */
+  coveMask?: (seed: number, x: number, z: number) => number;
   /** Signed distance to the coastline in metres, positive inland — the same d
    * the variant's own sample uses. Absent = no coast (treated as infinitely
    * inland by consumers). Pure and deterministic like sample. */

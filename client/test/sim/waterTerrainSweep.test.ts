@@ -2,7 +2,8 @@
 import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { bowlFor } from "../../src/sim/olympic.js";
+import { bowlFor, coveFor, coveProfileD, COVE_BACK_FADE } from "../../src/sim/olympic.js";
+import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { variantOrThrow } from "./helpers/derivatives.js";
 import { segmentDistance } from "../../src/sim/trail.js";
 import { lobePoints, LAKE_SHELF_WIDTH, MARSH_MURK_MIN } from "../../src/sim/features.js";
@@ -114,5 +115,39 @@ describe("the water terrain over 200 worlds", { timeout: timeLimit(900_000) }, (
     // every murky lake has its marsh, and there are some
     expect(marshes).toBe(murky);
     expect(marshes).toBeGreaterThan(10);
+  });
+
+  it("gives every world its cove: the profile exactly, from the toe to the corridor, with no dunes", () => {
+    const v = variantOrThrow("olympic");
+    let backshore = 0;
+    for (const seed of LOBBY_SEEDS) {
+      // Inside the cove's full window, clear of the headlands and their stacks.
+      for (const z of [-100, -50, 0, 50, 100]) {
+        const cx = v.roadCenterX!(seed, z);
+        const x0 = cx - v.coastDistance!(seed, cx, z);
+        const inner = cx - ROAD_CORRIDOR_HALF - COVE_BACK_FADE; // the cove is whole seaward of here
+        for (let d = -24; x0 + d <= inner; d += 0.5) {
+          const h = v.sample(seed, x0 + d, z).h;
+          expect(h, `seed ${seed} z ${z} d ${d}`).toBeCloseTo(coveProfileD(d).v, 9);
+          if (d >= 40) backshore++;
+        }
+      }
+    }
+    // the mechanism fired on the backshore too, not only on the face
+    expect(backshore).toBeGreaterThan(0);
+  });
+
+  it("keeps the cove's ground at or above the sea inland of the waterline, across its ends and under its headlands", () => {
+    const v = variantOrThrow("olympic");
+    for (const seed of LOBBY_SEEDS) {
+      const c = coveFor(seed);
+      for (let z = c.z0 - c.halfWidth - 60; z <= c.z0 + c.halfWidth + 60; z += 10) {
+        const cx = v.roadCenterX!(seed, z);
+        const x0 = cx - v.coastDistance!(seed, cx, z);
+        for (let d = 0; d <= cx - ROAD_CORRIDOR_HALF - x0; d += 2) {
+          expect(v.sample(seed, x0 + d, z).h, `seed ${seed} z ${z} d ${d}`).toBeGreaterThanOrEqual(-1e-9);
+        }
+      }
+    }
   });
 });
