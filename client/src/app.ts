@@ -729,7 +729,7 @@ function buildGame(
       r.scene,
       signPosts(graph, sites),
       groundH,
-      { materialFor: (name) => terrainMaterialFor(r.scene, name), shadows: r.shadows },
+      { materialFor: (name) => terrainMaterialFor(r.scene, name), shadows: r.shadows, cover: r.cover },
     );
     const trailhead = createTrailheadMeshes(
       r.scene,
@@ -749,6 +749,7 @@ function buildGame(
           urls: BOARD_IMAGE_URLS,
         }),
         shadows: r.shadows,
+        cover: r.cover,
       },
     );
     return {

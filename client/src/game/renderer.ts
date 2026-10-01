@@ -102,8 +102,9 @@ import type { MatchState, View } from "./wildlifeDirector.js";
 import type { ListenerPose } from "./ambientAudio.js";
 import { createMistMeshes, type MistMeshes } from "./mistMeshes.js";
 import { createRain, type Rain, type RainLamp } from "./rain.js";
+import { createRainMap } from "./rainMap.js";
 import { createMotes, type Motes } from "./motes.js";
-import { createPropMeshes, type PropShadows } from "./propMeshes.js";
+import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo } from "./rendererSwap.js";
 
 const MATERIAL_COLORS: Record<string, [number, number, number]> = {
@@ -647,6 +648,8 @@ export type Water = {
   /** One mesh per ring, coarsening outward — four draw calls, capped by design.
    * NEVER added to the shadow caster list: water neither casts nor receives. */
   readonly meshes: readonly Mesh[];
+  /** One flat disc per pond, static, on the lake material. */
+  readonly pondMeshes: readonly Mesh[];
   /** True when the high tier's path is on: opaque in `WATER_GROUP`, reading the
    * opaque pass through the surface (`waterFrame.ts`), so a wet object's own
    * depth is attenuated by the water and the wet plugin need not darken it. */
@@ -914,6 +917,7 @@ export function createWater(
 
   return {
     meshes,
+    pondMeshes,
     high,
     update(camX, camZ, seconds) {
       const moved: boolean[] = [];
@@ -1028,6 +1032,9 @@ export type Renderer = {
   views: EntityViews;
   /** The shadow registry, for scenery placed once outside the renderer (the trailhead and the body). */
   shadows: PropShadows;
+  /** The rain's cover map, for the same scenery: a mesh added is hard cover
+   * (`rainMap.ts`); nothing on the tiers without a map. */
+  cover: MeshRegistry;
   /** Resolves once the forest's first fill, billboards included, is drawn
    * (`ForestMeshes.ready`); at once in a world without a forest. */
   readonly forestReady: Promise<void>;
@@ -1469,19 +1476,41 @@ function buildRenderer(
     setWetLine(w, water?.high !== true);
   };
 
+  // The rain's cover map, on the tiers that draw one, over the terrain the
+  // clipmap draws: the rings and the water are in it from here, the props
+  // below and the scenery placed outside the renderer through `cover`, the
+  // cliffs' near buckets once their GLBs land (the loop in `sync`).
+  const rainMap = forest !== null ? createRainMap(scene, tier) : null;
+  partOf(rainMap);
+  if (rainMap !== null) {
+    for (const mesh of clipmap?.meshes ?? []) rainMap.register(mesh, "terrain");
+    for (const mesh of water?.meshes ?? []) rainMap.register(mesh, "water");
+    for (const mesh of water?.pondMeshes ?? []) rainMap.register(mesh, "water");
+  }
+  const cover: MeshRegistry = {
+    add: (mesh) => rainMap?.register(mesh, "hard"),
+    remove: (mesh) => rainMap?.unregister(mesh),
+  };
+
   // Every chunk prop the sim collides with, drawn: the trailhead's placeholder
   // car, post and sign used to be pure collision boxes, an invisible wall no
   // player could see coming. Rides the same forest
   // guard as the water above it — hand-authored levels have no chunk grid.
   const propMeshes =
     forest !== null
-      ? createPropMeshes(scene, forest.grid, (name) => terrainMaterialFor(scene, name), {
-          // Direct method references, not pass-through arrows: `Lighting`'s
-          // methods close over local state (the shadow generator) rather than
-          // reading `this`, so nothing is lost by handing them over bare.
-          add: lighting.addShadowMesh,
-          remove: lighting.removeShadowMesh,
-        })
+      ? createPropMeshes(
+          scene,
+          forest.grid,
+          (name) => terrainMaterialFor(scene, name),
+          {
+            // Direct method references, not pass-through arrows: `Lighting`'s
+            // methods close over local state (the shadow generator) rather than
+            // reading `this`, so nothing is lost by handing them over bare.
+            add: lighting.addShadowMesh,
+            remove: lighting.removeShadowMesh,
+          },
+          cover,
+        )
       : null;
   partOf(propMeshes);
 
@@ -1681,6 +1710,7 @@ function buildRenderer(
   // to hand-authored levels too, and a disabled rain mesh is free.
   const rain = createRain(scene, tier);
   partOf(rain);
+  rain.setMap(rainMap);
   const rainLamp: RainLamp = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, intensity: 0, angle: 0, r: 1, g: 1, b: 1 };
   const motes = createMotes(scene, tier);
   partOf(motes);
@@ -1710,6 +1740,7 @@ function buildRenderer(
     camera,
     views,
     shadows: { add: lighting.addShadowMesh, remove: lighting.removeShadowMesh },
+    cover,
     forestReady: forestMeshes?.ready ?? Promise.resolve(),
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       // Weather follows the fade, so surfaces wet and dry smoothly. A handful
@@ -1756,10 +1787,14 @@ function buildRenderer(
           lighting.addShadowMesh(clutterMeshes.casterMeshes[clutterCastersRegistered] as Mesh);
         }
       }
-      // The cliff modules' near buckets, once their two GLBs have loaded.
+      // The cliff modules' near buckets, once their two GLBs have loaded:
+      // shadow casters, and hard cover for the rain. The bucket meshes are
+      // registered once; their instances come and go inside them.
       if (cliffMeshes !== null) {
         for (; cliffCastersRegistered < cliffMeshes.casterMeshes.length; cliffCastersRegistered++) {
-          lighting.addShadowMesh(cliffMeshes.casterMeshes[cliffCastersRegistered] as Mesh);
+          const bucket = cliffMeshes.casterMeshes[cliffCastersRegistered] as Mesh;
+          lighting.addShadowMesh(bucket);
+          rainMap?.register(bucket, "hard");
         }
       }
 
@@ -1804,6 +1839,8 @@ function buildRenderer(
         // Flying is not walking. Dropping the stride here also means the jump
         // back to the player's own position is never read as one enormous step.
         bob.reset();
+        // The map follows the camera here, as the clipmap does.
+        rainMap?.update(camera.position);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
         jobs.run();
@@ -1869,6 +1906,7 @@ function buildRenderer(
         // A hike after a scene draws with the game's lens again.
         camera.fov = GAME_FOV;
         setLamp(localLamp, local.lamp.on, lampState);
+        rainMap?.update(local.pos);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
       }
@@ -1938,6 +1976,7 @@ function buildRenderer(
       cliffMeshes?.dispose();
       wildlife?.dispose();
       mist?.dispose();
+      rainMap?.dispose();
       rain.dispose();
       motes?.dispose();
       post.dispose();

@@ -15,7 +15,7 @@ import type { Vec3 } from "../sim/types.js";
 import { BOARD_FACE } from "./boardFace.js";
 import { paintedBoard, type BoardDrawing, type BoardPainter } from "./boardPaint.js";
 import { CAR_SHADOW_BIAS, CAR_SHADOW_TEX, carShadowAlphaMap, carShadowGrid } from "./carShadow.js";
-import type { PropShadows } from "./propMeshes.js";
+import type { MeshRegistry, PropShadows } from "./propMeshes.js";
 import { armYaw } from "./signMeshes.js";
 import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
@@ -52,6 +52,8 @@ export type TrailheadDeps = {
   board: BoardDrawing;
   paint?: BoardPainter;
   shadows?: PropShadows;
+  /** The rain's cover map: the car and the kiosk are hard cover, box or model. */
+  cover?: MeshRegistry;
   loader?: ModelLoader;
 };
 
@@ -163,11 +165,13 @@ export function createTrailheadMeshes(
     mesh.isPickable = false;
     mesh.freezeWorldMatrix();
     deps.shadows?.add(mesh);
+    deps.cover?.add(mesh);
     return mesh;
   }
   function dropBox(box: Mesh): void {
     if (box.isDisposed()) return;
     deps.shadows?.remove(box);
+    deps.cover?.remove(box);
     box.dispose();
   }
 
@@ -202,6 +206,7 @@ export function createTrailheadMeshes(
     }
     for (const m of model.meshes) {
       deps.shadows?.add(m);
+      deps.cover?.add(m);
       // The weather soaks the car and the kiosk as it does every prop.
       if (m.material) attachWet(m.material, WET_CAP.prop);
     }
@@ -260,7 +265,10 @@ export function createTrailheadMeshes(
       face?.dispose();
       face = null;
       for (const model of placed) {
-        for (const m of model.meshes) deps.shadows?.remove(m);
+        for (const m of model.meshes) {
+          deps.shadows?.remove(m);
+          deps.cover?.remove(m);
+        }
         model.dispose();
       }
       placed.length = 0;

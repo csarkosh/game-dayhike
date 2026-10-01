@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it, beforeAll, afterAll, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
@@ -10,6 +10,8 @@ import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/sha
 import { WebGL2ShaderProcessor } from "@babylonjs/core/Engines/WebGL/webGL2ShaderProcessors.js";
 import { attachRain, RainPlugin } from "../../src/game/rainPlugin.js";
 import { createRain } from "../../src/game/rain.js";
+import { createRainMap, type RainMap } from "../../src/game/rainMap.js";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
 import { translatorInput, uniformityOff } from "../../src/game/wgslFormat.js";
 import { drawnEffect, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
@@ -53,7 +55,8 @@ describe("the rain plugin", () => {
     const uniforms = plugin.getUniforms();
     const names = [
       "rainBoxMin", "rainBoxSize", "rainDrift", "rainFold", "rainDt", "rainWind", "rainCam",
-      "rainLampPos", "rainLampDir", "rainLamp", "rainSpeeds", "rainWidths", "rainAlphas", "rainLampColour",
+      "rainLampPos", "rainLampDir", "rainLamp", "rainSpeeds", "rainWidths", "rainAlphas", "rainMapCentre", "rainMapExtent",
+      "rainLampColour",
     ];
     expect(uniforms.ubo.map((u) => u.name)).toEqual(names);
     expect([...declaredUniforms(uniforms.vertex), ...declaredUniforms(uniforms.fragment)]).toEqual(names);
@@ -77,6 +80,7 @@ describe("the rain plugin", () => {
     plugin.lampDirX = 0; plugin.lampDirY = 0; plugin.lampDirZ = 1;
     plugin.lampIntensity = 3; plugin.lampCosHalf = 0.7;
     plugin.lampR = 1; plugin.lampG = 0.9; plugin.lampB = 0.8;
+    plugin.mapCentreX = 12; plugin.mapCentreZ = -4;
     const writes: Record<string, number[]> = {};
     const ubo = {
       updateFloat: (n: string, a: number) => { writes[n] = [a]; },
@@ -100,8 +104,60 @@ describe("the rain plugin", () => {
       rainSpeeds: [4.5, 6, 7.5, 9],
       rainWidths: [0.012, 0.018, 0.024, 0.03],
       rainAlphas: [0.35, 0.43, 0.52, 0.6],
+      rainMapCentre: [12, -4],
+      rainMapExtent: [96],
       rainLampColour: [1, 0.9, 0.8],
     });
+  });
+
+  it("reads the cover map under RAIN_OCCLUSION: the define, the vertex-stage sampler, the fetch at the drop's xz and the alpha's fade", () => {
+    const plugin = pluginFor("rp7");
+    const samplers: string[] = [];
+    plugin.getSamplers(samplers);
+    expect(samplers).toEqual([]);
+    const dirty = vi.spyOn(plugin, "markAllDefinesAsDirty");
+    plugin.occlusion = true;
+    plugin.occlusion = true;
+    expect(plugin.occlusion).toBe(true);
+    expect(dirty).toHaveBeenCalledTimes(1);
+    plugin.getSamplers(samplers);
+    expect(samplers).toEqual(["rainMapSampler"]);
+    const defines: Record<string, boolean> = { RAIN: false, RAIN_DRIP: false, RAIN_OCCLUSION: false };
+    plugin.prepareDefines(defines as never, scene, undefined as never);
+    expect(defines).toEqual({ RAIN: true, RAIN_DRIP: false, RAIN_OCCLUSION: true });
+    const defs = plugin.getCustomCode("vertex")!.CUSTOM_VERTEX_DEFINITIONS!;
+    expect(defs).toContain("#ifdef RAIN_OCCLUSION\nuniform sampler2D rainMapSampler;\n#endif");
+    const uniforms = plugin.getUniforms().vertex;
+    expect(uniforms).toContain("#ifdef RAIN_OCCLUSION\nuniform vec2 rainMapCentre;\nuniform float rainMapExtent;\n#endif");
+    const vertex = plugin.getCustomCode("vertex")!.CUSTOM_VERTEX_UPDATE_POSITION!;
+    expect(vertex).toContain("vec2 rMu = (rp.xz - rainMapCentre) / rainMapExtent + 0.5;");
+    expect(vertex).toContain("vec4 rMap = texture2D(rainMapSampler, rMu);");
+    // Outside the map, or above the texel's height plus its lift: uncovered.
+    expect(vertex).toContain("float rInMap = step(0.0, rMu.x) * step(rMu.x, 1.0) * step(0.0, rMu.y) * step(rMu.y, 1.0);");
+    expect(vertex).toContain("float rCovered = rInMap * step(rp.y, rMap.r + rMap.b);");
+    expect(vertex).toContain("rCover = mix(1.0, rMap.g, rCovered);");
+    expect(vertex).toContain("vRainAlpha = min(rFade * rCover * (rSky * rClassAlpha + rLampT), 1.0)");
+    // The map is bound only while on and set.
+    const map = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, scene);
+    const bound: unknown[] = [];
+    const ubo = {
+      updateFloat: () => undefined, updateFloat2: () => undefined, updateFloat3: () => undefined, updateFloat4: () => undefined,
+      setTexture: (n: string, t: unknown) => { bound.push([n, t]); },
+    } as unknown as UniformBuffer;
+    plugin.bindForSubMesh(ubo, scene, engine, undefined as never);
+    expect(bound).toEqual([]);
+    plugin.map = map;
+    plugin.bindForSubMesh(ubo, scene, engine, undefined as never);
+    expect(bound).toEqual([["rainMapSampler", map]]);
+    const active: unknown[] = [];
+    plugin.getActiveTextures(active as never);
+    expect(active).toEqual([map]);
+    expect(plugin.hasTexture(map)).toBe(true);
+    plugin.occlusion = false;
+    expect(dirty).toHaveBeenCalledTimes(2);
+    plugin.bindForSubMesh(ubo, scene, engine, undefined as never);
+    expect(bound).toHaveLength(1);
+    map.dispose();
   });
 
   it("places the drop by the fold, stretches it by the frame, fades it by distance, sky, class and lamp, and multiplies the alpha", () => {
@@ -115,8 +171,10 @@ describe("the rain plugin", () => {
     expect(vertex).toContain("float rFade = smoothstep(0.6, 1.5, rDist) * (1.0 - smoothstep(9.0, 12.0, rDist))");
     expect(vertex).toContain("float rSky = 1.0 - 0.6 * smoothstep(0.0, 0.25, -rView.y)");
     expect(vertex).toContain("float rLampT = rainLamp.x * rCone / (1.0 + rLampD2)");
-    // The fades gate the lamp term too: a drop at the eye never becomes an opaque slab.
-    expect(vertex).toContain("vRainAlpha = min(rFade * (rSky * rClassAlpha + rLampT), 1.0)");
+    // The fades and the cover gate the lamp term too: a drop at the eye never
+    // becomes an opaque slab, and a lit drop under a roof is no drop.
+    expect(vertex).toContain("float rCover = 1.0;");
+    expect(vertex).toContain("vRainAlpha = min(rFade * rCover * (rSky * rClassAlpha + rLampT), 1.0)");
     expect(vertex).toContain("vRainLamp = min(rLampT, 1.0)");
     const fragment = plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR!;
     expect(fragment).toContain("color.rgb = mix(color.rgb, rainLampColour, vRainLamp);");
@@ -154,6 +212,16 @@ describe("the rain plugin", () => {
     expect(frag).toContain("in float vRainAlpha");
     expect(frag).toContain("in float vRainLamp");
     expect(frag).toContain("uniform vec3 rainLampColour");
+    // With the cover map: the vertex-stage sampler survives, and its read is a plain `texture`.
+    const covered = await processInjected(
+      plugin.getUniforms().vertex + plugin.getCustomCode("vertex")!.CUSTOM_VERTEX_DEFINITIONS!
+        + "void main(void) {" + plugin.getCustomCode("vertex")!.CUSTOM_VERTEX_UPDATE_POSITION! + "}",
+      ["RAIN", "RAIN_OCCLUSION"], false,
+    );
+    expect(covered).toContain("uniform sampler2D rainMapSampler");
+    expect(covered).toContain("uniform vec2 rainMapCentre");
+    expect(covered).toContain("vec4 rMap = texture(rainMapSampler, rMu);");
+    expect(vert).not.toContain("rainMapSampler");
   });
 });
 
@@ -185,6 +253,38 @@ describe("the rain material's stages, compiled", () => {
       expect(vertex).toContain("vRainAlpha");
       expect(fragment).toContain("vRainAlpha");
       rain.dispose();
+    } finally {
+      gpuScene.dispose();
+      gpu.dispose();
+    }
+  }, timeLimit(60_000));
+
+  it("compile and translate with the cover map bound: the vertex stage reads it at a fixed level", async () => {
+    const gpu = webgpuProcessingEngine();
+    const gpuScene = new Scene(gpu);
+    try {
+      new UniversalCamera("c", new Vector3(0, 2, 0), gpuScene);
+      gpuScene.fogMode = Scene.FOGMODE_EXP2;
+      const rain = createRain(gpuScene, "high");
+      const map = createRainMap(gpuScene, "high") as RainMap;
+      rain.setMap(map);
+      rain.mesh.setEnabled(true);
+      const effect = await drawnEffect(rain.mesh);
+      const defines = (effect as unknown as { defines: string }).defines;
+      expect(defines).toContain("#define RAIN_OCCLUSION");
+      expect(effect._vertexSourceCode).toContain("rainMapSampler");
+      expect(effect._vertexSourceCode).toContain("rMap = texture(rainMapSampler, rMu)");
+      const stage = (kind: "vertex" | "fragment", code: string) =>
+        translateStage(translators, { stage: kind, flag: uniformityOff(code), glsl: translatorInput(code, defines) });
+      const vertex = stage("vertex", effect._vertexSourceCode);
+      // WGSL allows no implicit-derivative sample in a vertex stage: the read
+      // comes out at an explicit level.
+      expect(vertex).toContain("rainMapSampler");
+      expect(vertex).toMatch(/textureSampleLevel\(/);
+      expect(vertex).not.toMatch(/textureSample\(/);
+      stage("fragment", effect._fragmentSourceCode);
+      rain.dispose();
+      map.dispose();
     } finally {
       gpuScene.dispose();
       gpu.dispose();

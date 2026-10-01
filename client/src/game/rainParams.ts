@@ -213,3 +213,31 @@ export const RIPPLE_TIME_WRAP = 3600;
 export function rippleTime(seconds: number): number {
   return seconds - Math.floor(seconds / RIPPLE_TIME_WRAP) * RIPPLE_TIME_WRAP;
 }
+
+/**
+ * The cover map (`rainMap.ts`): a top-down render target of `texels` a side
+ * over `extent` metres around the player, looked down on from `height` metres
+ * above them, re-rendered once they have moved `step` metres from the centre
+ * it was last drawn at. Terrain under canopy writes a transmission of
+ * `1 - canopyBlock × density` (an old-growth canopy intercepts or delays about
+ * two thirds of the rain) and a ceiling `canopyLift` metres above the ground,
+ * under which a streak counts as covered.
+ */
+export const RAIN_MAP = { texels: 512, extent: 96, height: 100, step: 8, canopyBlock: 0.65, canopyLift: 10 } as const;
+
+/**
+ * The map's centre for a player at `player`: `prev` until the player is more
+ * than RAIN_MAP.step from it horizontally, then the player's own position,
+ * written into `out` (a fresh object when none is given; `prev` itself is
+ * allowed). The y is the player's at the move: the map's camera stands
+ * RAIN_MAP.height above it, and looks the same distance below.
+ */
+export function mapCentre(prev: Vec3, player: Vec3, out: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
+  const dx = player.x - prev.x;
+  const dz = player.z - prev.z;
+  const moved = dx * dx + dz * dz > RAIN_MAP.step * RAIN_MAP.step;
+  out.x = moved ? player.x : prev.x;
+  out.y = moved ? player.y : prev.y;
+  out.z = moved ? player.z : prev.z;
+  return out;
+}

@@ -22,8 +22,16 @@
  * inside its cone, bounded at 1 (the scene target is half-float, and an
  * alpha above 1 would subtract from what is behind); the lamp term also lifts the streak's colour toward the
  * lamp's, since the material's own colour is the fog's and at night that is
- * near black. `RAIN_DRIP` and `RAIN_OCCLUSION` are declared for the drip
- * volume and the cover map and read by nothing yet.
+ * near black.
+ *
+ * Under `RAIN_OCCLUSION` (set while a cover map is bound, `occlusion`), the
+ * vertex stage reads the map (`rainMap.ts`) once at the drop's xz: a drop
+ * below the texel's height plus its lift is under cover, and the alpha is
+ * multiplied by the texel's transmission. The read is a plain `texture2D` in
+ * the vertex stage, as Babylon's own bone texture is read: no derivatives, so
+ * the base level, and Babylon's migration turns it into `texture()`. A drop
+ * outside the map is uncovered. `RAIN_DRIP` is declared for the drip volume
+ * and read by nothing yet.
  *
  * Renderer-only by design — no constant here may migrate into sim/ or a
  * tunables registry, the foliagePlugin.ts rule.
@@ -36,8 +44,9 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import {
-  RAIN_BOX, RAIN_CLASSES, RAIN_FADE_FAR, RAIN_FADE_NEAR, RAIN_LENGTH, RAIN_SKY_FADE, RAIN_STRETCH,
+  RAIN_BOX, RAIN_CLASSES, RAIN_FADE_FAR, RAIN_FADE_NEAR, RAIN_LENGTH, RAIN_MAP, RAIN_SKY_FADE, RAIN_STRETCH,
 } from "./rainParams.js";
 
 /** A GLSL float literal: always with a decimal point, so `1` is `1.0`. */
@@ -51,6 +60,9 @@ const RAIN_VERTEX_DEFS = `
 attribute vec4 rainSeed;
 varying float vRainAlpha;
 varying float vRainLamp;
+#ifdef RAIN_OCCLUSION
+uniform sampler2D rainMapSampler;
+#endif
 #endif
 `;
 
@@ -84,7 +96,15 @@ const RAIN_VERTEX_POSITION = `
   float rCos = dot(rToLamp, rainLampDir) / sqrt(max(rLampD2, 0.0001));
   float rCone = smoothstep(rainLamp.y, 0.5 + 0.5 * rainLamp.y, rCos);
   float rLampT = rainLamp.x * rCone / (1.0 + rLampD2);
-  vRainAlpha = min(rFade * (rSky * rClassAlpha + rLampT), 1.0);
+  float rCover = 1.0;
+#ifdef RAIN_OCCLUSION
+  vec2 rMu = (rp.xz - rainMapCentre) / rainMapExtent + 0.5;
+  vec4 rMap = texture2D(rainMapSampler, rMu);
+  float rInMap = step(0.0, rMu.x) * step(rMu.x, 1.0) * step(0.0, rMu.y) * step(rMu.y, 1.0);
+  float rCovered = rInMap * step(rp.y, rMap.r + rMap.b);
+  rCover = mix(1.0, rMap.g, rCovered);
+#endif
+  vRainAlpha = min(rFade * rCover * (rSky * rClassAlpha + rLampT), 1.0);
   vRainLamp = min(rLampT, 1.0);
 }
 #endif
@@ -136,10 +156,27 @@ export class RainPlugin extends MaterialPluginBase {
   lampR = 1;
   lampG = 1;
   lampB = 1;
+  /** The cover map (`rainMap.ts`) and the centre it was drawn at, read while
+   * `occlusion` is on. */
+  map: BaseTexture | null = null;
+  mapCentreX = 0;
+  mapCentreZ = 0;
+  private _occlusion = false;
 
   constructor(material: Material) {
     super(material, "Rain", 220, { RAIN: false, RAIN_DRIP: false, RAIN_OCCLUSION: false });
     this._enable(true);
+  }
+
+  /** Whether the vertex stage reads the cover map: a change rebuilds the effect. */
+  get occlusion(): boolean {
+    return this._occlusion;
+  }
+
+  set occlusion(on: boolean) {
+    if (this._occlusion === on) return;
+    this._occlusion = on;
+    this.markAllDefinesAsDirty();
   }
 
   override getClassName(): string {
@@ -150,11 +187,24 @@ export class RainPlugin extends MaterialPluginBase {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override prepareDefines(defines: MaterialDefines, _scene: Scene, _mesh: AbstractMesh): void {
     defines.RAIN = true;
+    defines.RAIN_OCCLUSION = this._occlusion;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override getAttributes(attributes: string[], _scene: Scene, _mesh: AbstractMesh): void {
     attributes.push("rainSeed");
+  }
+
+  override getSamplers(samplers: string[]): void {
+    if (this._occlusion) samplers.push("rainMapSampler");
+  }
+
+  override getActiveTextures(activeTextures: BaseTexture[]): void {
+    if (this.map !== null) activeTextures.push(this.map);
+  }
+
+  override hasTexture(texture: BaseTexture): boolean {
+    return texture === this.map;
   }
 
   override getUniforms(): { ubo: { name: string; size: number; type: string }[]; vertex: string; fragment: string } {
@@ -173,6 +223,8 @@ export class RainPlugin extends MaterialPluginBase {
         { name: "rainSpeeds", size: 4, type: "vec4" },
         { name: "rainWidths", size: 4, type: "vec4" },
         { name: "rainAlphas", size: 4, type: "vec4" },
+        { name: "rainMapCentre", size: 2, type: "vec2" },
+        { name: "rainMapExtent", size: 1, type: "float" },
         { name: "rainLampColour", size: 3, type: "vec3" },
       ],
       vertex: `
@@ -190,6 +242,10 @@ uniform vec2 rainLamp;
 uniform vec4 rainSpeeds;
 uniform vec4 rainWidths;
 uniform vec4 rainAlphas;
+#ifdef RAIN_OCCLUSION
+uniform vec2 rainMapCentre;
+uniform float rainMapExtent;
+#endif
 #endif
 `,
       fragment: `
@@ -216,7 +272,10 @@ uniform vec3 rainLampColour;
     uniformBuffer.updateFloat4("rainSpeeds", c[0]!.speed, c[1]!.speed, c[2]!.speed, c[3]!.speed);
     uniformBuffer.updateFloat4("rainWidths", c[0]!.width, c[1]!.width, c[2]!.width, c[3]!.width);
     uniformBuffer.updateFloat4("rainAlphas", c[0]!.alpha, c[1]!.alpha, c[2]!.alpha, c[3]!.alpha);
+    uniformBuffer.updateFloat2("rainMapCentre", this.mapCentreX, this.mapCentreZ);
+    uniformBuffer.updateFloat("rainMapExtent", RAIN_MAP.extent);
     uniformBuffer.updateFloat3("rainLampColour", this.lampR, this.lampG, this.lampB);
+    if (this._occlusion && this.map !== null) uniformBuffer.setTexture("rainMapSampler", this.map);
   }
 
   override getCustomCode(shaderType: string): { [pointName: string]: string } | null {

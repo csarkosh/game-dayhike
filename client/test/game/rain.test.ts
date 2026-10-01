@@ -4,6 +4,7 @@ import { Scene } from "@babylonjs/core/scene.js";
 import type { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { createRain, RAIN_TEX_H, RAIN_TEX_W, rainStreakMap, type RainLamp } from "../../src/game/rain.js";
 import { RainPlugin } from "../../src/game/rainPlugin.js";
+import { createRainMap, type RainMap } from "../../src/game/rainMap.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
 
@@ -140,6 +141,33 @@ describe("createRain", () => {
     expect(rain.plugin.boxMinX).toBeCloseTo(4, 9);
     expect(rain.plugin.boxMinZ).toBeCloseTo(-32, 9);
     rain.dispose();
+  });
+
+  it("setMap hands the plugin the cover map and its centre and turns RAIN_OCCLUSION on; null turns it off", () => {
+    const s = scene();
+    const map = createRainMap(s, "high") as RainMap;
+    const rain = createRain(s, "high");
+    const defines = (): Record<string, boolean> => {
+      const d: Record<string, boolean> = { RAIN: false, RAIN_DRIP: false, RAIN_OCCLUSION: false };
+      rain.plugin.prepareDefines(d as never, s, undefined as never);
+      return d;
+    };
+    expect(defines()).toEqual({ RAIN: true, RAIN_DRIP: false, RAIN_OCCLUSION: false });
+    expect(rain.plugin.map).toBeNull();
+    rain.setMap(map);
+    expect(rain.plugin.map).toBe(map.texture);
+    expect(defines()).toEqual({ RAIN: true, RAIN_DRIP: false, RAIN_OCCLUSION: true });
+    map.update({ x: 10, y: 5, z: -20 });
+    rain.update(CAM, 0, WEATHER_PRESETS.rain, STILL, DT, LAMP_OFF);
+    expect([rain.plugin.mapCentreX, rain.plugin.mapCentreZ]).toEqual([10, -20]);
+    map.update({ x: 30, y: 5, z: -20 });
+    rain.update(CAM, 0, WEATHER_PRESETS.rain, STILL, DT, LAMP_OFF);
+    expect([rain.plugin.mapCentreX, rain.plugin.mapCentreZ]).toEqual([30, -20]);
+    rain.setMap(null);
+    expect(rain.plugin.map).toBeNull();
+    expect(defines()).toEqual({ RAIN: true, RAIN_DRIP: false, RAIN_OCCLUSION: false });
+    rain.dispose();
+    map.dispose();
   });
 
   it("dispose takes the mesh, the material and the texture out of the scene", () => {

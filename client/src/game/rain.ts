@@ -14,6 +14,7 @@ import type { WeatherParams } from "./weather.js";
 import type { QualityTier } from "./quality.js";
 import type { WindRecord } from "./windParams.js";
 import { attachRain, type RainPlugin } from "./rainPlugin.js";
+import type { RainMap } from "./rainMap.js";
 import {
   RAIN_LAMP_GAIN, RAIN_MILK, RAIN_SLANT, RAIN_TIERS, rainBoxMin, rainCountUnder, rainDrift, rainFold,
   rainSeeds, smoothedDt,
@@ -65,6 +66,10 @@ export type Rain = {
     dt: number,
     lamp: RainLamp,
   ): void;
+  /** The cover map the streaks fade under (`rainMap.ts`), or null for none:
+   * sets the plugin's `RAIN_OCCLUSION` and binds the map's texture and
+   * centre on every update after. */
+  setMap(map: RainMap | null): void;
   dispose(): void;
   mesh: Mesh;
   plugin: RainPlugin;
@@ -132,10 +137,16 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
   const drift = { x: 0, z: 0 };
   const boxMin = { x: 0, y: 0, z: 0 };
   let dtSmooth = 1 / 60;
+  let map: RainMap | null = null;
 
   return {
     mesh,
     plugin,
+    setMap(next) {
+      map = next;
+      plugin.map = next === null ? null : next.texture;
+      plugin.occlusion = next !== null;
+    },
     update(camPos, yaw, w, wind, dt, lamp) {
       // The clocks step whether or not it rains, at most a second a frame: a
       // suspended tab resumes where it left off instead of lurching.
@@ -176,6 +187,10 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
       plugin.lampR = lamp.r;
       plugin.lampG = lamp.g;
       plugin.lampB = lamp.b;
+      if (map !== null) {
+        plugin.mapCentreX = map.centre.x;
+        plugin.mapCentreZ = map.centre.z;
+      }
 
       const fog = scene.fogColor;
       mat.emissiveColor.set(

@@ -601,7 +601,9 @@ describe("world shell wiring", () => {
   it("registers cliff casters late, updates cliffs in both camera branches after the forest, and disposes them", () => {
     const casters = slice("// Late caster registration", "applyWetness(scene, weather);");
     expect(casters).toContain("for (; cliffCastersRegistered < cliffMeshes.casterMeshes.length; cliffCastersRegistered++) {");
-    expect(casters).toContain("lighting.addShadowMesh(cliffMeshes.casterMeshes[cliffCastersRegistered] as Mesh);");
+    // A near bucket is a shadow caster and hard cover for the rain, registered once as it lands.
+    expect(casters).toContain("const bucket = cliffMeshes.casterMeshes[cliffCastersRegistered] as Mesh;");
+    expect(casters).toContain("lighting.addShadowMesh(bucket);\n          rainMap?.register(bucket, \"hard\");");
     const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
     const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
     expect(freecamBranch.match(/cliffMeshes\?\.update\(/g)).toHaveLength(1);
@@ -832,6 +834,6 @@ describe("a part the renderer disposes is also torn down when a build fails", ()
     const registered = new Set([...src.matchAll(/partOf\((\w+)\);/g)].map((m) => m[1]!));
     if (/made\(\(\) => \{\s*for \(const m of brushMeshes\) m\.dispose\(\);/.test(src)) registered.add("brushMeshes");
     expect([...registered].sort()).toEqual([...disposed].sort());
-    expect(disposed.size).toBe(18);
+    expect(disposed.size).toBe(19);
   });
 });

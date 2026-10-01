@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  RAIN_BOX, RAIN_CLASSES, RAIN_DT, RAIN_FOLD_S, RAIN_LENGTH, RAIN_TIERS, RIPPLE_INSET, RIPPLE_LAYERS, RIPPLE_RADIUS, RIPPLE_TIME_WRAP,
-  rainBoxMin, rainClassOf, rainCountUnder, rainDrift, rainDropAt, rainFold, rainSeeds, rippleTime, smoothedDt, streakLength,
+  RAIN_BOX, RAIN_CLASSES, RAIN_DT, RAIN_FOLD_S, RAIN_LENGTH, RAIN_MAP, RAIN_TIERS, RIPPLE_INSET, RIPPLE_LAYERS, RIPPLE_RADIUS,
+  RIPPLE_TIME_WRAP, mapCentre, rainBoxMin, rainClassOf, rainCountUnder, rainDrift, rainDropAt, rainFold, rainSeeds, rippleTime,
+  smoothedDt, streakLength,
 } from "../../src/game/rainParams.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
@@ -217,5 +218,47 @@ describe("the ripple rings", () => {
     expect(RIPPLE_RADIUS).toBe(0.25);
     expect(RIPPLE_INSET).toBe(0.25);
     expect(RIPPLE_INSET).toBeGreaterThanOrEqual(RIPPLE_RADIUS);
+  });
+});
+
+describe("the cover map's numbers", () => {
+  it("is 512 texels over 96 m, looked down on from 100 m, moved every 8 m, canopy taking 0.65 of the rain under a 10 m ceiling", () => {
+    expect(RAIN_MAP).toEqual({ texels: 512, extent: 96, height: 100, step: 8, canopyBlock: 0.65, canopyLift: 10 });
+    // A texel is under 19 cm: the kiosk's posts are wider.
+    expect(RAIN_MAP.extent / RAIN_MAP.texels).toBeCloseTo(0.1875, 9);
+    // The streak box never leaves the map: its far face is 18 m ahead of the
+    // eye, and the eye at most 8 m from the centre.
+    expect(RAIN_BOX.x / 2 + RAIN_BOX.forward + RAIN_MAP.step).toBeLessThan(RAIN_MAP.extent / 2);
+  });
+});
+
+describe("mapCentre", () => {
+  const prev = { x: 10, y: 5, z: -20 };
+
+  it("keeps the centre until the player is more than 8 m from it horizontally, then takes the player's position", () => {
+    expect(mapCentre(prev, { x: 10, y: 5, z: -20 })).toEqual({ x: 10, y: 5, z: -20 });
+    expect(mapCentre(prev, { x: 18, y: 7, z: -20 })).toEqual({ x: 10, y: 5, z: -20 });
+    expect(mapCentre(prev, { x: 10, y: 7, z: -12 })).toEqual({ x: 10, y: 5, z: -20 });
+    // 6 by 5 is 7.8 m: still inside.
+    expect(mapCentre(prev, { x: 16, y: 7, z: -15 })).toEqual({ x: 10, y: 5, z: -20 });
+    expect(mapCentre(prev, { x: 18.001, y: 7, z: -20 })).toEqual({ x: 18.001, y: 7, z: -20 });
+    // 6 by 6 is 8.5 m: out.
+    expect(mapCentre(prev, { x: 4, y: 7, z: -26 })).toEqual({ x: 4, y: 7, z: -26 });
+  });
+
+  it("ignores a climb: the height follows the player only when the map moves", () => {
+    expect(mapCentre(prev, { x: 10, y: 80, z: -20 })).toEqual({ x: 10, y: 5, z: -20 });
+    expect(mapCentre(prev, { x: 10, y: 80, z: -29 })).toEqual({ x: 10, y: 80, z: -29 });
+  });
+
+  it("writes into `out`, and may step in place", () => {
+    const out = { x: 0, y: 0, z: 0 };
+    expect(mapCentre(prev, { x: 30, y: 1, z: -20 }, out)).toBe(out);
+    expect(out).toEqual({ x: 30, y: 1, z: -20 });
+    const centre = { x: 10, y: 5, z: -20 };
+    expect(mapCentre(centre, { x: 30, y: 1, z: -20 }, centre)).toBe(centre);
+    expect(centre).toEqual({ x: 30, y: 1, z: -20 });
+    expect(mapCentre(centre, { x: 31, y: 2, z: -21 }, centre)).toBe(centre);
+    expect(centre).toEqual({ x: 30, y: 1, z: -20 });
   });
 });

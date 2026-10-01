@@ -105,6 +105,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   const posts = createSignMeshes(renderer.scene, signPosts(graph, sites), groundH, {
     materialFor: (name) => terrainMaterialFor(renderer.scene, name),
     shadows: renderer.shadows,
+    cover: renderer.cover,
   });
   const trailhead = createTrailheadMeshes(renderer.scene, { board: places.board }, groundH, {
     materialFor: (name) => terrainMaterialFor(renderer.scene, name),
@@ -120,6 +121,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       urls: BOARD_IMAGE_URLS,
     }),
     shadows: renderer.shadows,
+    cover: renderer.cover,
     ...(deps.paint === undefined ? {} : { paint: deps.paint }),
   });
 
