@@ -156,17 +156,18 @@ export function readCorpus(text: string): CorpusStage[] {
  * stages recorded on that tier. */
 export const MAP_FORMAT = "dayhike-wgsl-map/2";
 
-/** The most a map may be, in bytes of text: 8 MiB. The page parses it in one
+/** The most a map may be, in bytes of text: 10 MiB. The page parses it in one
  * task on its thread and holds its lines for the engine's life; the build
  * refuses a larger one (`tools/wgsl/build-map.mjs`), and the page one that
- * reads past it, before it is parsed (`loadWgslMap`). Set from the map the
- * recorded corpus makes: 5,073,415 bytes for 522 entries, about 9,700 bytes
- * an entry, so it holds about 860 entries at that average (more, since a new
- * entry's lines are mostly in the table already). The corpus's union passed
- * it at 762 stages, so the build makes a map a tier (`TIERS`), each of the
- * stages recorded on that tier, and the page fetches its tier's; a tier whose
- * stages pass it is split further (by platform), not given a higher ceiling. */
-export const MAP_MAX_BYTES = 8_388_608;
+ * reads past it, before it is parsed (`loadWgslMap`). First set at 8 MiB from
+ * the map the recorded corpus made: 5,073,415 bytes for 522 entries, about
+ * 9,700 bytes an entry. The corpus's union passed that at 762 stages, so the
+ * build makes a map a tier (`TIERS`), each of the stages recorded on that
+ * tier, and the page fetches its tier's. On 2026-10-01 the high tier's stages
+ * passed 8 MiB and the ceiling was raised to 10 MiB (10,485,760), once; a
+ * tier whose stages pass this is split further, by platform, not given a
+ * higher ceiling again. */
+export const MAP_MAX_BYTES = 10_485_760;
 
 /** The most characters one entry of a map may expand to: 8,388,608, 45
  * times the largest real entry (184,166). A map past the file's ceiling was

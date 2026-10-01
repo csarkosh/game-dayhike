@@ -15,7 +15,7 @@
 // ceiling, and a page knows its tier before its engine is made. The same
 // corpus and translators give the same bytes. A stage that does not translate
 // is left out of every map and reported: the build goes on, and the page
-// translates that stage itself, as it always has. A map over 8 MiB
+// translates that stage itself, as it always has. A map over 10 MiB
 // (`MAP_MAX_BYTES`) fails the build, and so does a corpus file whose bytes
 // are not the stage its name says (edited, reformatted or renamed), or an
 // index that does not match the files. Once written, each map is read back
