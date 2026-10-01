@@ -154,3 +154,40 @@ camera moving at 7 m/s along the trail: rain at every height on both engines,
 slanted by the wind, fogged at distance, lit inside the lamp's cone at night, and
 no dry leading edge in the sprinting frame. The stills are kept beside this
 note outside the repository. No console error or warning on any page.
+
+## 5. Gate 2: the height map
+
+Branch at `73341a7` (the map, the cover fade), measured by the toggle method of §3
+with the map forced to re-render every frame against never, so the figure is the
+cost of one refresh frame, an upper bound: in play the map refreshes once per 8 m
+of movement, about every 1.5 s of walking, and never on a turn. Native 1920 by
+1080, six cycles.
+
+| tier, engine | pose | refresh every frame (ms) | never (ms) | per refresh (ms) | draws on / off |
+| --- | --- | --- | --- | --- | --- |
+| high, WebGPU | canopy | 21.36 | 21.30 | +0.06 ± 0.08 | 289 / 244 |
+| high, WebGPU | meadow | 19.43 | 19.41 | +0.02 ± 0.06 | 319 / 274 |
+| high, WebGL2 | canopy | 28.70 | 25.81 | +2.89 ± 1.63 | 288 / 244 |
+| high, WebGL2 | meadow | 29.06 | 26.19 | +2.87 ± 0.53 | 320 / 275 |
+| medium, WebGPU | canopy | 21.39 | 20.99 | +0.39 ± 0.37 | 286 / 241 |
+| medium, WebGPU | meadow | 20.10 | 20.10 | +0.00 ± 0.34 | 316 / 269 |
+
+**Reading.** A refresh adds 45 draws (seven terrain rings, the props, the cliff
+buckets, the water) into the 512-texel target. On WebGPU that is free to the
+measurement (under 0.1 ms on high, under 0.4 on medium). On WebGL2 the same
+draws cost about 2.9 ms on the frame they fall on, which is the price of a
+render-target pass with that many draws under ANGLE over Metal; amortised over
+the 90 or so frames between refreshes while walking it is about 0.03 ms, but as
+a single-frame hitch it is one frame 10 percent longer than its neighbours every
+1.5 s of walking. Five of the seven rings lie wholly outside the map's 96 m
+square and are clipped whole after their draw, so the next commit lists only
+the two inner rings; the figure is re-taken in §7. The cover itself (the fade
+read in the streak shader) adds a vertex-stage fetch per streak and is inside
+gate 1's spread.
+
+**Stills.** The canopy pose at noon with and without the map on the same build
+(§4's stills): with it the streaks under the canopy thin to about a third, as
+the terrain's canopy density says they should. The trailhead spawn under
+WebGPU and WebGL2 shows the same cover on both engines, which closes the
+question of the render target's row order on WebGPU: the engine flips the clip
+position for render targets, so the streak's map read is the same on both.
