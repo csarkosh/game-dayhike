@@ -12,6 +12,7 @@ import {
   surfaceAlbedo,
   surfaceWeights,
 } from "../../src/game/terrainSurface.js";
+import { NO_WATER_GROUND } from "../../src/game/waterGround.js";
 import { SLOPE_HI, SLOPE_LO } from "../../src/sim/vegetation.js";
 
 const SEED = 0x7e44a1;
@@ -377,3 +378,36 @@ describe("the ground agrees with the forest about where soil ends", () => {
   });
 });
 
+
+describe("the ground under and beside the water", () => {
+  const at = (altitude: number, water = NO_WATER_GROUND, slope = 0) => classifySurface(7, 1234, 5678, altitude, slope, 0, 0, water);
+
+  it("paints exactly as before with no water", () => {
+    for (const alt of [-3, 0.2, 2, 20, 120]) {
+      for (const slope of [0, 0.5, 1.2]) {
+        expect(classifySurface(7, 1234, 5678, alt, slope, 0.3, 0.2, NO_WATER_GROUND)).toEqual(classifySurface(7, 1234, 5678, alt, slope, 0.3, 0.2));
+      }
+    }
+  });
+
+  it("paints a murky lake's bed as the floor's silt and a clear one's as stones, over any slope", () => {
+    const murky = at(100, { bed: 1, murk: 1, marsh: 0, cove: 0 }, 1.2);
+    expect(murky.weights.forestFloor).toBeCloseTo(1, 9);
+    expect(murky.weights.rock).toBeCloseTo(0, 9);
+    const clear = at(100, { bed: 1, murk: 0, marsh: 0, cove: 0 }, 1.2);
+    expect(clear.weights.pebble).toBeCloseTo(1, 9);
+    expect(clear.albedo.r).toBeGreaterThan(murky.albedo.r);
+  });
+
+  it("paints the marsh as mud", () => {
+    const m = at(100, { bed: 0, murk: 1, marsh: 1, cove: 0 });
+    expect(m.weights.forestFloor).toBeCloseTo(1, 9);
+  });
+
+  it("paints the cove's berm and face as pebbles and its bed as sand", () => {
+    const berm = at(2, { bed: 0, murk: 0, marsh: 0, cove: 1 });
+    expect(berm.weights.pebble).toBeCloseTo(1, 9);
+    const bed = at(-3, { bed: 0, murk: 0, marsh: 0, cove: 1 });
+    expect(bed.weights.sand).toBeCloseTo(1, 9);
+  });
+});

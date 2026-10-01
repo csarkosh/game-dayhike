@@ -208,6 +208,8 @@ export const FEATURE_FRAGMENT_PAINT = `
       surfaceAlbedo *= mix(vec3(1.0), vec3(0.92, 1.06, 0.82), meadow * 0.5);
     } else if (f.w > 2.5) {
       float shore = 1.0 - smoothstep(f.z + fMeta.w, f.z + fMeta.w + 2.0, fd);
+      // The bed under the water paints itself, so the shore's tint begins at the rim.
+      shore *= smoothstep(f.z - 1.0, f.z, fd);
       surfaceAlbedo *= mix(vec3(1.0), vec3(0.85, 0.78, 0.70), shore * 0.8);
     } else if (f.w > 0.5) {
       float above = smoothstep(fMeta.x - fMeta.y, fMeta.x, vPositionW.y);

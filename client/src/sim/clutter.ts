@@ -665,12 +665,15 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       return Math.min(1, Math.max(raw * mask.boulder, mask.boulderFloor));
     }
     case CLUTTER_DRIFTWOOD: {
-      if (c > CLUTTER_DRIFT_INLAND + CLUTTER_DRIFT_INLAND_FADE) return 0;
+      // The cove's backshore holds drift logs up to the road's corridor, past
+      // the beach's own reach inland; everywhere else is as before.
+      const cove = variant.coveMask?.(seed, x, z) ?? 0;
+      if (c > CLUTTER_DRIFT_INLAND + CLUTTER_DRIFT_INLAND_FADE && cove === 0) return 0;
       const alt =
         smoothstep(CLUTTER_DRIFT_ALT_LO, CLUTTER_DRIFT_ALT_LO + CLUTTER_DRIFT_ALT_LO_FADE, s.h) *
         (1 - smoothstep(CLUTTER_DRIFT_ALT_HI, CLUTTER_DRIFT_ALT_HI + CLUTTER_DRIFT_ALT_HI_FADE, s.h));
       const inland = 1 - smoothstep(CLUTTER_DRIFT_INLAND, CLUTTER_DRIFT_INLAND + CLUTTER_DRIFT_INLAND_FADE, c);
-      return alt * inland;
+      return alt * Math.max(inland, cove);
     }
     case CLUTTER_FUNGUS: {
       const canopy = smoothstep(CLUTTER_FUNGUS_CANOPY_LO, CLUTTER_FUNGUS_CANOPY_HI, forestDensity(seed, x, z, s));

@@ -2,6 +2,7 @@ import { fbm2, valueNoise2 } from "../sim/field.js";
 import { shoreHeight } from "../sim/shoreStrip.js";
 import { clamp01, mixRgb, type Rgb } from "./colour.js";
 import { SLOPE_HI, SLOPE_LO } from "../sim/vegetation.js";
+import { NO_WATER_GROUND, type WaterGround } from "./waterGround.js";
 
 /**
  * Ground albedo from slope and altitude, alongside the per-material blend
@@ -106,6 +107,19 @@ const SEABED: Rgb = { r: 0.1, g: 0.09, b: 0.075 };
 const SEABED_ROCK: Rgb = { r: 0.14, g: 0.14, b: 0.13 };
 const WET_SAND: Rgb = { r: 0.3, g: 0.26, b: 0.2 };
 const DRY_SAND: Rgb = { r: 0.55, g: 0.5, b: 0.4 };
+/** The cove: its wet pebbles in the swash, dry above COVE_WET_TOP (m). */
+const PEBBLE_WET: Rgb = { r: 0.26, g: 0.24, b: 0.21 };
+const COVE_WET_TOP = 1.5;
+/** A lake's bed: silt under murky water, with dark patches of sunken wood
+ * where a seeded noise is high; stones under clear. The marsh is mud. */
+const SILT: Rgb = { r: 0.16, g: 0.13, b: 0.09 };
+const SUNKEN_WOOD: Rgb = { r: 0.05, g: 0.04, b: 0.03 };
+const LAKE_STONES: Rgb = { r: 0.3, g: 0.28, b: 0.24 };
+const MUD: Rgb = { r: 0.1, g: 0.08, b: 0.055 };
+const LAKE_WOOD_WAVE = 3;
+const LAKE_WOOD_LO = 0.62;
+const LAKE_WOOD_HI = 0.72;
+const LAKE_WOOD_SALT = 0x3d0d;
 const PEBBLE: Rgb = { r: 0.44, g: 0.41, b: 0.36 };
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -163,7 +177,9 @@ function mixW(a: W, b: W, t: number): W {
  * `clipmap.ts` passes it so the paint agrees with where the duff pieces
  * actually stand. Both default to 0, and `mixRgb`/`mixW` return their
  * untouched endpoint at t = 0, so every pre-canopy, pre-duff call site gets
- * bitwise-identical results.
+ * bitwise-identical results. `water` is what the lake, its marsh and the cove
+ * make of the ground here (`waterGround.ts`); its default leaves every value
+ * bitwise unchanged.
  */
 export function classifySurface(
   seed: number,
@@ -173,6 +189,7 @@ export function classifySurface(
   slope: number,
   canopy = 0,
   duff = 0,
+  water: WaterGround = NO_WATER_GROUND,
 ): { albedo: Rgb; weights: TerrainWeights } {
   // Gentle ground is a mottle of leaf litter and grass rather than one flat
   // green, which is most of what stops it reading as a painted plane.
@@ -195,8 +212,16 @@ export function classifySurface(
   const submerged = mixRgb(SEABED, SEABED_ROCK, smoothstep(2, 12, -altitude));
   // Both seabed colours (SEABED, SEABED_ROCK) are the pebble layer.
   const wSub = W_PEBBLE;
-  const coastal = mixRgb(submerged, sand, smoothstep(-0.4, 0.1, altitude));
-  const wCoastal = mixW(wSub, wSand, smoothstep(-0.4, 0.1, altitude));
+  let coastal = mixRgb(submerged, sand, smoothstep(-0.4, 0.1, altitude));
+  let wCoastal = mixW(wSub, wSand, smoothstep(-0.4, 0.1, altitude));
+  // The cove: pebbles on its berm and face down through the waterline, wet in
+  // the swash, and the sand bed below the water.
+  if (water.cove > 0) {
+    const above = smoothstep(-0.4, 0.1, altitude);
+    const beach = mixRgb(WET_SAND, mixRgb(PEBBLE_WET, PEBBLE, smoothstep(0, COVE_WET_TOP, altitude)), above);
+    coastal = mixRgb(coastal, beach, water.cove);
+    wCoastal = mixW(wCoastal, mixW(W_SAND, W_PEBBLE, above), water.cove);
+  }
   // Inland of the trailhead's pad the sand gives way by the strip's height
   // (`sim/shoreStrip.ts`). Ground at 9 m and above has no sand to take, and
   // is not asked about the strip.
@@ -225,6 +250,16 @@ export function classifySurface(
   w = mixW(w, W_ROCK, smoothstep(GRASS_SLOPE, ROCK_SLOPE, slope));
   colour = mixRgb(colour, SCREE, smoothstep(ROCK_SLOPE, SCREE_SLOPE, slope));
   w = mixW(w, W_ROCK, smoothstep(ROCK_SLOPE, SCREE_SLOPE, slope)); // scree is the rock layer
+  // A lake's bed and its marsh, over whatever the slope made of the ground
+  // (the drop below the shelf would otherwise paint as rock).
+  if (water.bed > 0 || water.marsh > 0) {
+    const wood = smoothstep(LAKE_WOOD_LO, LAKE_WOOD_HI, valueNoise2(x / LAKE_WOOD_WAVE, z / LAKE_WOOD_WAVE, seed ^ LAKE_WOOD_SALT));
+    const bedColour = mixRgb(mixRgb(LAKE_STONES, PEBBLE, ground), mixRgb(SILT, SUNKEN_WOOD, wood), water.murk);
+    colour = mixRgb(colour, bedColour, water.bed);
+    w = mixW(w, mixW(W_PEBBLE, W_FLOOR, water.murk), water.bed);
+    colour = mixRgb(colour, MUD, water.marsh);
+    w = mixW(w, W_FLOOR, water.marsh);
+  }
 
   const above = altitude - snowLineAt(seed, x, z);
   const settled = 1 - smoothstep(SNOW_MAX_SLOPE - SNOW_CLING_BAND, SNOW_MAX_SLOPE, slope);

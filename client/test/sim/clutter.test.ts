@@ -39,7 +39,7 @@ import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
 import { TRAIL_WEAR_W1, TRAIL_JUNCTION_W } from "../../src/game/trailBenchParams.js";
 import { fbm2 } from "../../src/sim/field.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
-import { ROAD_BED_HALF } from "../../src/sim/road.js";
+import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
 import { bowlFor } from "../../src/sim/olympic.js";
 import { variantOrThrow, DERIV_SEED } from "./helpers/derivatives.js";
@@ -1475,5 +1475,21 @@ describe("the water plants", { timeout: timeLimit(120_000) }, () => {
       expect(clutterDensity(seed, CLUTTER_REED, x, lake.z)).toBe(0);
       expect(clutterDensity(seed, CLUTTER_LILY, x, lake.z)).toBe(0);
     }
+  });
+});
+
+describe("driftwood in the cove", () => {
+  it("lies on the backshore up to the road's corridor, past the beach's own reach", () => {
+    const v = activeTerrainVariant();
+    let found = 0;
+    for (const seed of [0x5eed, 1, 12345, 777, 4242]) {
+      const cx = v.roadCenterX!(seed, 0);
+      const x0 = cx - v.coastDistance!(seed, cx, 0);
+      for (let d = 41; x0 + d <= cx - ROAD_CORRIDOR_HALF - 6; d += 1) {
+        found++;
+        expect(clutterDensity(seed, CLUTTER_DRIFTWOOD, x0 + d, 0), `seed ${seed} d ${d}`).toBeGreaterThan(0);
+      }
+    }
+    expect(found).toBeGreaterThan(0);
   });
 });

@@ -412,6 +412,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "quality.ts"),
       join(SRC, "game", "engineChoice.ts"),
       join(SRC, "game", "terrainSurface.ts"),
+      join(SRC, "game", "waterGround.ts"),
       join(SRC, "game", "atmosphereParams.ts"),
       join(SRC, "game", "clipmap.ts"),
       join(SRC, "game", "roadPaint.ts"),
