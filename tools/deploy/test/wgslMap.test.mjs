@@ -47,6 +47,20 @@ describe('mapProblems', () => {
     expect(mapProblems(map({}), CHUNK, ENTRY)).toEqual([]);
   });
 
+  it("fails a map that says it is another tier's than the one asked, or no tier's, as the page refuses it; asked no tier, it reads none", () => {
+    expect(mapProblems(map({ tier: 'low' }), CHUNK, ENTRY, { tier: 'low' })).toEqual([]);
+    expect(mapProblems(map({ tier: 'high' }), CHUNK, ENTRY, { tier: 'low' })).toEqual(["it says it is the high tier's map, under the low tier's name"]);
+    expect(mapProblems(map({ tier: 3 }), CHUNK, ENTRY, { tier: 'high' })).toEqual(["it says it is the 3 tier's map, under the high tier's name"]);
+    expect(mapProblems(map({}), CHUNK, ENTRY, { tier: 'medium' })).toEqual(["it names no tier, under the medium tier's name"]);
+    expect(mapProblems(map({ tier: 'high' }), CHUNK, ENTRY)).toEqual([]);
+    expect(mapProblems(map({ tier: 'high' }), CHUNK, ENTRY, { mayBeEmpty: true })).toEqual([]);
+    // Beside the map's other problems, in their order.
+    expect(mapProblems(map({ tier: 'high', entries: {} }), CHUNK, ENTRY, { tier: 'low' })).toEqual([
+      "it says it is the high tier's map, under the low tier's name",
+      'it is empty',
+    ]);
+  });
+
   it("fails a map made against another Babylon than the bundle's, or under the other uniformity switch", () => {
     expect(mapProblems(map({ salt: SALT.replace('babylon=9.18.0', 'babylon=9.17.0') }), CHUNK, ENTRY)).toEqual([
       'its salt was made against Babylon 9.17.0, which the bundle does not carry',

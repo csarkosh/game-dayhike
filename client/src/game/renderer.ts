@@ -190,6 +190,9 @@ export function terrainMaterialFor(scene: Scene, name: string): PBRMaterial {
   return mat;
 }
 
+/** The scales of a material the wet plugin's rule wets: its base, untouched. */
+const WET_BY_PLUGIN = { albedoScale: 1, roughnessScale: 1 } as const;
+
 /**
  * Wet ground reads darker and glossier. A uniform luminance scale on the
  * material albedo — deliberately not a hue tint, which would apply the palette
@@ -198,9 +201,6 @@ export function terrainMaterialFor(scene: Scene, name: string): PBRMaterial {
  * cache. A cached material a prop box has given a porosity cap (`propMeshes.ts`)
  * is wetted by the wet plugin's rule instead, so it is held at its base here.
  */
-/** The scales of a material the wet plugin's rule wets: its base, untouched. */
-const WET_BY_PLUGIN = { albedoScale: 1, roughnessScale: 1 } as const;
-
 export function applyWetness(scene: Scene, w: WeatherParams): void {
   const scales = wetSurfaceUnder(w);
   for (const mat of materialCacheFor(scene).values()) {
@@ -1107,6 +1107,12 @@ export type Renderer = {
    * `sync` (`canopyWaterStep`, `weather.ts`): what the drips are drawn from
    * and what `ambientAudio.ts`'s drip layer hears, one value for both. */
   canopyWater(): number;
+  /** The canopy over the camera, 0 to 1, as the lens read it on the last
+   * `sync` (`forestDensity`, read again once the camera has moved a metre):
+   * what keeps the rain off the lens and what `ambientAudio.ts`'s drip layer
+   * hears, one read for both. In freecam it is the camera's canopy, not the
+   * player's: the drips hear what the lens sees. */
+  canopyOver(): number;
   /** `null` restores the weather-driven speed; otherwise clamped to [0, 1]
    * and used in place of it (the `/wind` command). */
   setWindOverride(level: number | null): void;
@@ -2069,6 +2075,9 @@ function buildRenderer(
     },
     canopyWater() {
       return rain.canopyWater;
+    },
+    canopyOver() {
+      return lensCanopy;
     },
     setWindOverride(level) {
       windOverride = level === null ? null : Math.min(1, Math.max(0, level));

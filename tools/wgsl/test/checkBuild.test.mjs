@@ -15,7 +15,10 @@ const FORMAT = 'dayhike-wgsl-map/2';
 const hex = (c) => c.repeat(64);
 const TRANSLATORS = `glslang=${hex('a')}|twgsl=${hex('b')}|glslang.js=${hex('c')}|twgsl.js=${hex('d')}`;
 const SALT = `dayhike-wgsl/1|babylon=9.18.0|${TRANSLATORS}|staticUA=false`;
-const MAP = JSON.stringify({ format: FORMAT, salt: SALT, lines: ['@vertex fn main() {}'], entries: { [hex('e')]: [0, 1] } });
+/** A map of `tier`, as the build makes one: it says its tier. */
+const mapOf = (tier) => JSON.stringify({ format: FORMAT, salt: SALT, tier, lines: ['@vertex fn main() {}'], entries: { [hex('e')]: [0, 1] } });
+/** A map of `tier` that holds no translations. */
+const emptyOf = (tier) => JSON.stringify({ format: FORMAT, salt: SALT, tier, lines: [], entries: {} });
 /** The three maps' names in the build, one a tier. */
 const MAPS = { low: 'wgsl-map-low-Lo1_Zk9a.json', medium: 'wgsl-map-medium-Me2_Zk9a.json', high: 'wgsl-map-high-Qx3_Zk9a.json' };
 const URLS = `{low:\`/dayhike/assets/${MAPS.low}\`,medium:\`/dayhike/assets/${MAPS.medium}\`,high:\`/dayhike/assets/${MAPS.high}\`}`;
@@ -42,9 +45,9 @@ function dist(change = {}) {
       'const l=()=>import(`./gpuEngine-CCCCCCCC.js`),__vite__mapDeps=["assets/gpuEngine-CCCCCCCC.js"];',
     'assets/vendor-BBBBBBBB.js': 'export const a=1;',
     'assets/gpuEngine-CCCCCCCC.js': gpuChunk(URLS),
-    [`assets/${MAPS.low}`]: MAP,
-    [`assets/${MAPS.medium}`]: MAP,
-    [`assets/${MAPS.high}`]: MAP,
+    [`assets/${MAPS.low}`]: mapOf('low'),
+    [`assets/${MAPS.medium}`]: mapOf('medium'),
+    [`assets/${MAPS.high}`]: mapOf('high'),
     ...change,
   };
   for (const [name, text] of Object.entries(files)) {
@@ -63,10 +66,11 @@ describe('the check of the built client', () => {
   });
 
   it('passes a tier\'s map that is empty while another tier\'s holds translations, and fails a build whose every map is empty', async () => {
-    const empty = JSON.stringify({ format: FORMAT, salt: SALT, lines: [], entries: {} });
-    expect(await checkBuild(dist({ [`assets/${MAPS.low}`]: empty }), { mapFormat: FORMAT })).toEqual([]);
-    expect(await checkBuild(dist({ [`assets/${MAPS.low}`]: empty, [`assets/${MAPS.medium}`]: empty }), { mapFormat: FORMAT })).toEqual([]);
-    expect(await checkBuild(dist({ [`assets/${MAPS.low}`]: empty, [`assets/${MAPS.medium}`]: empty, [`assets/${MAPS.high}`]: empty }), { mapFormat: FORMAT })).toEqual([
+    expect(await checkBuild(dist({ [`assets/${MAPS.low}`]: emptyOf('low') }), { mapFormat: FORMAT })).toEqual([]);
+    expect(await checkBuild(dist({ [`assets/${MAPS.low}`]: emptyOf('low'), [`assets/${MAPS.medium}`]: emptyOf('medium') }), { mapFormat: FORMAT })).toEqual([]);
+    expect(
+      await checkBuild(dist({ [`assets/${MAPS.low}`]: emptyOf('low'), [`assets/${MAPS.medium}`]: emptyOf('medium'), [`assets/${MAPS.high}`]: emptyOf('high') }), { mapFormat: FORMAT }),
+    ).toEqual([
       "the deploy check refuses the low tier's map: it is empty",
       "the deploy check refuses the medium tier's map: it is empty",
       "the deploy check refuses the high tier's map: it is empty",
@@ -81,24 +85,24 @@ describe('the check of the built client', () => {
       'the build holds 0 WGSL maps for the low tier (assets/wgsl-map-low-*.json), not 1',
       'the build holds 0 WGSL maps for the medium tier (assets/wgsl-map-medium-*.json), not 1',
     ]);
-    expect(await checkBuild(dist({ 'assets/wgsl-map-low-Zz9_Zk9a.json': MAP }), { mapFormat: FORMAT })).toEqual([
+    expect(await checkBuild(dist({ 'assets/wgsl-map-low-Zz9_Zk9a.json': mapOf('low') }), { mapFormat: FORMAT })).toEqual([
       'the build holds 2 WGSL maps for the low tier (assets/wgsl-map-low-*.json), not 1',
     ]);
     // A map of no tier, as the build named it before there was one a tier, is none of the three.
-    expect(await checkBuild(dist({ [`assets/${MAPS.medium}`]: null, 'assets/wgsl-map-Qx3_Zk9a.json': MAP }), { mapFormat: FORMAT })).toEqual([
+    expect(await checkBuild(dist({ [`assets/${MAPS.medium}`]: null, 'assets/wgsl-map-Qx3_Zk9a.json': mapOf('medium') }), { mapFormat: FORMAT })).toEqual([
       'the build holds 0 WGSL maps for the medium tier (assets/wgsl-map-medium-*.json), not 1',
     ]);
     expect(await checkBuild(dist({ [`assets/${MAPS.medium}`]: '<!doctype html>' }), { mapFormat: FORMAT })).toContain(
       `assets/${MAPS.medium} does not parse as JSON`,
     );
-    expect(await checkBuild(dist({ [`assets/${MAPS.low}`]: MAP.replace(FORMAT, 'dayhike-wgsl-map/3') }), { mapFormat: FORMAT })).toContain(
+    expect(await checkBuild(dist({ [`assets/${MAPS.low}`]: mapOf('low').replace(FORMAT, 'dayhike-wgsl-map/3') }), { mapFormat: FORMAT })).toContain(
       `assets/${MAPS.low} is not a map of dayhike-wgsl-map/2`,
     );
     // The format before this one, each entry's WGSL whole.
-    const first = JSON.stringify({ format: 'dayhike-wgsl-map/1', salt: SALT, entries: { [hex('e')]: '@vertex fn main() {}' } });
+    const first = JSON.stringify({ format: 'dayhike-wgsl-map/1', salt: SALT, tier: 'high', entries: { [hex('e')]: '@vertex fn main() {}' } });
     expect(await checkBuild(dist({ [`assets/${MAPS.high}`]: first }), { mapFormat: FORMAT })).toContain(`assets/${MAPS.high} is not a map of dayhike-wgsl-map/2`);
     // Its format's name on a map without its lines.
-    const noLines = JSON.stringify({ format: FORMAT, salt: SALT, entries: { [hex('e')]: [0, 1] } });
+    const noLines = JSON.stringify({ format: FORMAT, salt: SALT, tier: 'high', entries: { [hex('e')]: [0, 1] } });
     expect(await checkBuild(dist({ [`assets/${MAPS.high}`]: noLines }), { mapFormat: FORMAT })).toContain(`assets/${MAPS.high} is not a map of dayhike-wgsl-map/2`);
   });
 
@@ -123,10 +127,26 @@ describe('the check of the built client', () => {
       `the WebGPU chunk assets/gpuEngine-CCCCCCCC.js does not name assets/${MAPS.low}`,
       `the WebGPU chunk assets/gpuEngine-CCCCCCCC.js does not name assets/${MAPS.medium}`,
     ]);
-    const other = MAP.replace('babylon=9.18.0', 'babylon=9.17.0');
+    const other = mapOf('low').replace('babylon=9.18.0', 'babylon=9.17.0');
     expect(await checkBuild(dist({ [`assets/${MAPS.low}`]: other }), { mapFormat: FORMAT })).toEqual([
       "the deploy check refuses the low tier's map: its salt was made against Babylon 9.17.0, which the bundle does not carry",
     ]);
+  });
+
+  it("fails a build whose map says it is another tier's than its name, or no tier's, as every page refuses it", async () => {
+    // Under the low tier's name, a map that says it is the high tier's: the build's own check and the deploy check both refuse it.
+    expect(await checkBuild(dist({ [`assets/${MAPS.low}`]: mapOf('high') }), { mapFormat: FORMAT })).toEqual([
+      `assets/${MAPS.low} says it is the high tier's map, under the low tier's name`,
+      "the deploy check refuses the low tier's map: it says it is the high tier's map, under the low tier's name",
+    ]);
+    // A map of no tier, as the build made one before there was one a tier, under a tier's name.
+    const noTier = JSON.stringify({ format: FORMAT, salt: SALT, lines: ['@vertex fn main() {}'], entries: { [hex('e')]: [0, 1] } });
+    expect(await checkBuild(dist({ [`assets/${MAPS.medium}`]: noTier }), { mapFormat: FORMAT })).toEqual([
+      `assets/${MAPS.medium} names no tier, under the medium tier's name`,
+      "the deploy check refuses the medium tier's map: it names no tier, under the medium tier's name",
+    ]);
+    // Two tiers' maps swapped: two problems a map.
+    expect(await checkBuild(dist({ [`assets/${MAPS.low}`]: mapOf('medium'), [`assets/${MAPS.medium}`]: mapOf('low') }), { mapFormat: FORMAT })).toHaveLength(4);
   });
 
   it("finds Babylon's version where only a chunk the entry imports statically carries it, as the deploy check does, and says which", async () => {

@@ -630,6 +630,8 @@ describe("world shell wiring", () => {
     expect(src.match(/rainSplash\?\.dispose\(\)/g)).toHaveLength(1);
     // The one canopy-water value, read by the drip sound through the renderer.
     expect(src).toContain("    canopyWater() {\n      return rain.canopyWater;\n    },");
+    // And the one canopy over the camera, read for the lens and heard by the drips.
+    expect(src).toContain("    canopyOver() {\n      return lensCanopy;\n    },");
   });
 });
 

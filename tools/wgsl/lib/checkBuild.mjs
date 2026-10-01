@@ -17,8 +17,10 @@ const mapPattern = (tier) => new RegExp(`^wgsl-map-${tier}-[A-Za-z0-9_-]{8}\\.js
  * What is wrong with the built client in `dist`, or nothing: for each tier
  * exactly one `assets/wgsl-map-<tier>-*.json`, parsing as a map of
  * `mapFormat` (its table of lines and its entries; the deploy check reads the
- * runs); the entry chunk and every chunk it imports statically naming none of
- * `WEBGPU_ONLY`; the WebGPU chunk naming every map; and the deploy check
+ * runs) that says it is that tier's (a page asks its tier's map by name and
+ * refuses one whose `tier` says otherwise); the entry chunk and every chunk
+ * it imports statically naming none of `WEBGPU_ONLY`; the WebGPU chunk
+ * naming every map; and the deploy check
  * accepting each map against the same chunks the deploy check reads
  * (`bundleMapProblems`), a tier's map allowed to be empty while another
  * tier's holds translations (a tier not yet recorded has none). `note` hears
@@ -47,6 +49,13 @@ export async function checkBuild(dist, { mapFormat, note = () => undefined }) {
     }
     if (map !== null && (map?.format !== mapFormat || !Array.isArray(map.lines) || typeof map.entries !== 'object' || map.entries === null)) {
       problems.push(`assets/${name} is not a map of ${mapFormat}`);
+    }
+    if (map !== null && map?.tier !== tier) {
+      problems.push(
+        map?.tier === undefined
+          ? `assets/${name} names no tier, under the ${tier} tier's name`
+          : `assets/${name} says it is the ${String(map.tier)} tier's map, under the ${tier} tier's name`,
+      );
     }
     maps.push({ tier, name, text, entries: map === null || typeof map.entries !== 'object' || map.entries === null ? 0 : Object.keys(map.entries).length });
   }
@@ -80,7 +89,7 @@ export async function checkBuild(dist, { mapFormat, note = () => undefined }) {
       continue;
     }
     const mayBeEmpty = maps.some((other) => other.tier !== tier && other.entries > 0);
-    const checked = await bundleMapProblems({ entry, entryText, read: readFile, mapText: text, chunkSource: chunk, mayBeEmpty });
+    const checked = await bundleMapProblems({ entry, entryText, read: readFile, mapText: text, chunkSource: chunk, tier, mayBeEmpty });
     for (const problem of checked.problems) problems.push(`the deploy check refuses the ${tier} tier's map: ${problem}`);
     for (const carrier of checked.carriers) carriers.set(carrier, checked.babylon);
   }

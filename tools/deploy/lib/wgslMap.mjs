@@ -14,8 +14,11 @@ export const LIVE_ENTRY_MAX_CHARS = 8_388_608;
  * What is wrong with a deployed map (`mapText`) for the WebGPU chunk that
  * names it (`chunkSource`) and the rest of the bundle (`bundleSource`, the
  * entry chunk, which carries Babylon), or nothing: it parses; its format is
- * one the chunk reads; its salt is the bundle's, the translators' digests the
- * build baked in (`__WGSL_TRANSLATORS__`), the key's format, Babylon's version
+ * one the chunk reads; where `tier` is given, the map says it is that tier's
+ * (the page asks its own tier's map by name and refuses one whose `tier`
+ * says otherwise, as `readMap` does); its salt is the bundle's, the
+ * translators' digests the build baked in (`__WGSL_TRANSLATORS__`), the
+ * key's format, Babylon's version
  * and, where the bundle shows it, Babylon's page-wide uniformity switch; and
  * it holds translations: a table of lines, each a text without a newline, and
  * entries, each runs of lines in the table (`[start, length, ...]`, as the
@@ -26,7 +29,7 @@ export const LIVE_ENTRY_MAX_CHARS = 8_388_608;
  * another salt is never asked by the page, nor a damaged one read: every
  * stage would be translated as if there were none.
  */
-export function mapProblems(mapText, chunkSource, bundleSource = '', { mayBeEmpty = false } = {}) {
+export function mapProblems(mapText, chunkSource, bundleSource = '', { mayBeEmpty = false, tier } = {}) {
   const bytes = Buffer.byteLength(mapText);
   // Past the page's ceiling every page refuses the map unread.
   const tooLarge =
@@ -43,6 +46,13 @@ export function mapProblems(mapText, chunkSource, bundleSource = '', { mayBeEmpt
   const problems = [...tooLarge];
   if (typeof map.format !== 'string' || !/^dayhike-wgsl-map\/\d+$/.test(map.format) || !chunkSource.includes(map.format)) {
     problems.push(`its format ${JSON.stringify(map.format)} is not the one the WebGPU chunk reads`);
+  }
+  if (tier !== undefined && map.tier !== tier) {
+    problems.push(
+      map.tier === undefined
+        ? `it names no tier, under the ${tier} tier's name`
+        : `it says it is the ${String(map.tier)} tier's map, under the ${tier} tier's name`,
+    );
   }
   const translators = chunkSource.match(/glslang=[0-9a-f]{64}\|twgsl=[0-9a-f]{64}\|glslang\.js=[0-9a-f]{64}\|twgsl\.js=[0-9a-f]{64}/)?.[0];
   const salt = typeof map.salt === 'string' ? map.salt : '';

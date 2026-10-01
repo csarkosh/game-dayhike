@@ -385,9 +385,10 @@ async function verify() {
           },
           mapText: text,
           chunkSource,
+          tier,
           mayBeEmpty: maps.some((other) => other.tier !== tier && entriesOf(other.text) > 0),
         });
-        check(checked.problems.length === 0, `the ${tier} tier's WGSL map parses, is this build's and holds translations, or none while another tier's does`, checked.problems.join('; '));
+        check(checked.problems.length === 0, `the ${tier} tier's WGSL map parses, is this build's and its tier's, and holds translations, or none while another tier's does`, checked.problems.join('; '));
         if (tier === maps[0].tier) for (const name of checked.carriers) console.log(`  · Babylon's version ${checked.babylon} is in ${name}`);
       } catch (err) {
         failures.push(`the ${tier} tier's WGSL map check could not finish — ${err instanceof Error ? err.message : String(err)}`);

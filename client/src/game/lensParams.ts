@@ -12,6 +12,7 @@
  * shifted inside that margin without cutting a drop at the seam.
  */
 import { clamp01 } from "./colour.js";
+import { RAIN_MAP } from "./rainParams.js";
 
 export const LENS = {
   /** The droplet map's side, texels. */
@@ -141,10 +142,11 @@ export function smoothstep(e0: number, e1: number, x: number): number {
 /**
  * The strength the lens heads for: the rain, scaled by the camera's pitch
  * (positive looking down: full strength looking up into the rain, a quarter
- * looking ahead) and by what the canopy over the camera keeps off the glass.
+ * looking ahead) and by what the canopy over the camera keeps off the glass
+ * (`RAIN_MAP.canopyBlock`, the share the map's own canopy keeps off the ground).
  */
 export function lensStrengthUnder(rain: number, pitch: number, canopy: number): number {
-  return clamp01(rain) * (0.25 + 0.75 * smoothstep(0.1, -0.5, pitch)) * (1 - 0.65 * clamp01(canopy));
+  return clamp01(rain) * (0.25 + 0.75 * smoothstep(0.1, -0.5, pitch)) * (1 - RAIN_MAP.canopyBlock * clamp01(canopy));
 }
 
 /** One frame's exponential approach to the target, time constant LENS.smoothS. */

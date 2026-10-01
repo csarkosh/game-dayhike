@@ -41,7 +41,6 @@ import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
 import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
 import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
-import { clamp01 } from "./game/colour.js";
 import {
   ESCALATION_REST,
   atmosphereUnder,
@@ -72,7 +71,6 @@ import { DEATH_LINE, END_LANDING_MS, roadLine } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
-import { forestDensity } from "./sim/vegetation.js";
 import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
 import { trailheadPlaces } from "./sim/trailhead.js";
 import { BOARD_IMAGE_URLS } from "./game/boardImages.js";
@@ -629,40 +627,14 @@ function buildGame(
   }
 
   /**
-   * The canopy last read over the local player, and where it was read.
-   * `forestDensity` samples the terrain (and allocates the sample) on every
-   * call, so it is read again only once the player has moved more than a
-   * metre: the canopy changes over metres, and a drip is never closer than
-   * the scheduler's look-ahead, so nothing hears the difference.
-   */
-  let lastCanopy = 0;
-  let lastCanopyX = NaN;
-  let lastCanopyZ = NaN;
-
-  /** The canopy over `(x, z)`, from the same field the trees stand in. */
-  function canopyOver(x: number, z: number): number {
-    const dx = x - lastCanopyX;
-    const dz = z - lastCanopyZ;
-    // Negated so the first read, against NaN, is taken too.
-    if (!(dx * dx + dz * dz <= 1)) {
-      lastCanopyX = x;
-      lastCanopyZ = z;
-      lastCanopy = clamp01(forestDensity(seed, x, z));
-    }
-    return lastCanopy;
-  }
-
-  /**
    * Hands the drip layer the canopy's water, as the renderer stepped it for
-   * the drawn drips (one value for what is drawn and what is heard), and the
-   * canopy over the local player. Both loops, after `renderer.sync`. The
-   * field is read only while the canopy holds water: dry, the level is zero
-   * whatever stands overhead.
+   * the drawn drips, and the canopy over the camera, as the renderer read it
+   * for the lens (`canopyOver`): one value for what is drawn and what is
+   * heard, one read for what is seen and what is heard. Both loops, after
+   * `renderer.sync`. Dry, the level is zero whatever stands overhead.
    */
-  function syncDrip(self: PlayerState | undefined): void {
-    const canopyWater = renderer.canopyWater();
-    const canopy = canopyWater > 0 && self !== undefined ? canopyOver(self.pos.x, self.pos.z) : 0;
-    ambient.setDrip(canopyWater, canopy);
+  function syncDrip(): void {
+    ambient.setDrip(renderer.canopyWater(), renderer.canopyOver());
   }
 
   /**
@@ -1234,7 +1206,7 @@ function buildGame(
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncWind();
-      syncDrip(self);
+      syncDrip();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(host.world, self);
       if (cmd !== null) syncPoster(host.world, self, cmd);
@@ -1372,7 +1344,7 @@ function buildGame(
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting });
       playWildlifeAudio();
       syncWind();
-      syncDrip(self);
+      syncDrip();
       syncTouch(self?.lamp.on ?? false);
       syncPrompt(client.world, self);
       if (cmd !== null) syncPoster(client.world, self, cmd);
