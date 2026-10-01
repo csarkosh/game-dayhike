@@ -337,7 +337,8 @@ Stills taken 2026-10-01 on the high tier on WebGPU, weather clear, at noon
 headlamp, the console clean on every page: the cove from the pad, from the
 berm and along the beach toward a headland; a murky lake (room-3's, murk 0.99)
 from across, from its shelf and from inside its marsh; a clear high lake
-(room-1's, murk 0.15) from its shelf and from across. The verdicts are owed.
+(room-1's, murk 0.15) from its shelf and from across. Judged 2026-10-01: every
+posed gate passes, with no change asked.
 
 Cost, measured as the water material's was (the water material's §8): frame
 times at 3840×2160 where every tier is fragment-bound, scaled to each tier's
