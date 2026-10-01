@@ -119,8 +119,8 @@ side, so the car always crosses the frame the same way. Deep focus throughout bu
 | 4 | 0:30.6 to 0:38.4 | The handset and the hand that holds it. | lines 6 and 7, line 8 begins |
 | 5 | 0:38.4 to 0:48 | Low on the shoulder: the car passes close, into the treeline. | line 8 ends; line 9; the signal breaks; the static carries over the cut |
 | 6 | 0:48 to 0:55 | A locked-off wide as the car slows onto the shoulder by the board. | line 10; nothing; the engine cuts |
-| 7 | 0:55 to 1:02 | The door opens; the step onto gravel; the ranger from behind, walking round the car's tail toward the trail. | the door, boots, wind; no birds |
-| 8 | 1:02 to 1:12 | A slow push past the ranger's shoulder onto the trail as he steps to its start and faces it (by 1:04), the board in view, then held with no movement for the last three seconds, then black. | wind, then silence |
+| 7 | 0:55 to 1:04 | The door opens; the step onto gravel; the ranger from behind, walking round the car's tail to the trail's start and turning to it. | the door, boots, wind; no birds |
+| 8 | 1:04 to 1:12 | A slow push past the ranger's shoulder onto the trail, the board in view, then held with no movement for the last three seconds, then black. | wind, then silence |
 
 Amended 2026-09-30: the film runs 72 s. The call as recorded ends line 9 at 48.1 s, so shots 3
 to 5 hold 33 s instead of 21 s and shots 6 to 8 follow 12 s later.

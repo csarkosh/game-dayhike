@@ -8,7 +8,7 @@ const places = { car: { x: -246, z: 0 }, start: { x: -240, z: 4, yaw: 1.1 }, boa
 
 describe("the intro's data", () => {
   it("has eight shots that sum to seventy-two seconds", () => {
-    expect(INTRO_SHOTS.map((s) => [s.from, s.to])).toEqual([[0, 9], [9, 15], [15, 30.6], [30.6, 38.4], [38.4, 48], [48, 55], [55, 62], [62, 72]]);
+    expect(INTRO_SHOTS.map((s) => [s.from, s.to])).toEqual([[0, 9], [9, 15], [15, 30.6], [30.6, 38.4], [38.4, 48], [48, 55], [55, 64], [64, 72]]);
     expect(INTRO_DURATION).toBe(72);
   });
 
@@ -162,6 +162,13 @@ describe("the intro's data", () => {
     // A hundredth of a second of his slow turn and step: well under a thousandth of a radian.
     expect(Math.abs(b.pitch - a.pitch)).toBeLessThan(0.001);
     expect(Math.abs(b.yaw - a.yaw)).toBeLessThan(0.001);
+  });
+
+  it("pushes onto the trail from the cut at 64 s and holds the last three seconds still", () => {
+    const scene = introScene(road, places);
+    const at = (t: number) => evaluate(scene, t).camera;
+    for (const k of ["x", "y", "z", "yaw", "pitch"] as const) expect(at(71.99)[k]).toBe(at(69)[k]);
+    expect(Math.hypot(at(69).x - at(64).x, at(69).z - at(64).z)).toBeGreaterThan(3);
   });
 
   it("keeps every shot's field of view within the film's range but the cab shot", () => {
