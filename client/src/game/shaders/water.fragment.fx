@@ -24,6 +24,9 @@ const float WATER_REFRACT_DEPTH = 1.0;
 const float WATER_OCTAVE2_TILE = 3.0;
 const float WATER_OCTAVE2_WEIGHT = 0.333;
 const float WATER_OCTAVE2_DRIFT = 0.04;
+// The skin's drift in metres per second along the wind. The time is unfolded seconds, so a day's run
+// offsets the pattern by a few thousand metres, as large as the world coordinates the hash already takes
+const float WATER_SKIN_DRIFT = 0.04;
 
 // The second octave's slope from the same bump texture at a finer tile,
 // drifting with the wind. The first octave is PBR's own bump (24 m a tile,
@@ -102,7 +105,7 @@ float waterSkinNoise(vec2 p) {
 // under 1.5 m, and algae in clumped mats along the margin, under 0.4 m.
 float waterSkinMask(vec2 xz, float depth) {
   if (waterSkin.x <= 0.0) return 0.0;
-  vec2 p = xz + waterSkin.y;
+  vec2 p = xz + waterSkin.y - waterWind * (waterTime * WATER_SKIN_DRIFT);
   float drift = waterSkinNoise(p / 9.0) * 0.65 + waterSkinNoise(p / 3.0) * 0.35;
   float duckweed = smoothstep(0.55, 0.62, drift) * (1.0 - smoothstep(0.9, 1.5, depth));
   float algae = smoothstep(0.5, 0.58, waterSkinNoise(p / 1.6)) * (1.0 - smoothstep(0.15, 0.4, depth));
@@ -113,7 +116,7 @@ float waterSkinMask(vec2 xz, float depth) {
 // and evened out with distance so the speckle never shimmers, and the
 // yellower algae where the mats clump.
 vec3 waterSkinColour(vec2 xz, float viewDepth) {
-  vec2 p = xz + waterSkin.y;
+  vec2 p = xz + waterSkin.y - waterWind * (waterTime * WATER_SKIN_DRIFT);
   float frond = mix(waterSkinNoise(p * 7.0), 0.5, smoothstep(10.0, 40.0, viewDepth));
   vec3 duckweed = mix(vec3(0.16, 0.26, 0.05), vec3(0.24, 0.34, 0.07), frond);
   vec3 algae = vec3(0.30, 0.32, 0.10);

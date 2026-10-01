@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  WATER_ROWS, lakeWaterRow, lakeSkin, waterSkinOffset, CLEAR_LAKE_KD, WATER_F0, WATER_HORIZON, WATER_WIND_MAX,
+  WATER_ROWS, lakeWaterRow, lakeSkin, waterSkinOffset, CLEAR_LAKE_KD, WATER_F0, WATER_HORIZON, WATER_WIND_MAX, WATER_SKIN_DRIFT,
   fresnelSchlick, fresnelExact, transmission, meanKd, alphaFor,
   slopeVariance, roughnessFor, horizonSafeNormal,
 } from "../../src/game/waterShading.js";
@@ -61,6 +61,7 @@ describe("roughness from wind", () => {
       last = r;
     }
     expect(WATER_WIND_MAX).toBe(12);
+    expect(WATER_SKIN_DRIFT).toBe(0.04);
     expect(slopeVariance(1, 1)).toBeCloseTo(0.003 + 0.00512 * 12, 6);
   });
   it("clamps wind and shelter to [0, 1]", () => {

@@ -11,7 +11,7 @@ import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import { WaterPlugin, attachWater } from "../../src/game/waterPlugin.js";
-import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH } from "../../src/game/waterShading.js";
+import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH, WATER_SKIN_DRIFT } from "../../src/game/waterShading.js";
 
 const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
 const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
@@ -246,5 +246,18 @@ describe("water plugin", () => {
     const d = fx("water.fragment.fx");
     expect(d).toContain("float waterSkinMask(vec2 xz, float depth)");
     expect(d).toContain("vec3 waterSkinColour(vec2 xz, float viewDepth)");
+  });
+
+  it("slides the skin along the wind in both its mask and its colour", () => {
+    const d = fx("water.fragment.fx");
+    const colour = d.indexOf("vec3 waterSkinColour(");
+    const mask = d.slice(d.indexOf("float waterSkinMask("), colour);
+    const col = d.slice(colour);
+    const drift = "vec2 p = xz + waterSkin.y - waterWind * (waterTime * WATER_SKIN_DRIFT);";
+    expect(mask).toContain(drift);
+    expect(col).toContain(drift);
+    expect(mask).toContain("- waterWind * (waterTime * ");
+    expect(col).toContain("- waterWind * (waterTime * ");
+    expect(fx("water.fragment.fx")).toContain(`const float WATER_SKIN_DRIFT = ${glslFloat(WATER_SKIN_DRIFT)};`);
   });
 });
