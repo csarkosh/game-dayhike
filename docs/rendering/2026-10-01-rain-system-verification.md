@@ -221,12 +221,15 @@ or off. The one wild row, high WebGPU night page 1 at +5.15 ± 6.65, is a page
 whose cycles spanned 20 ms, a disturbance, not a cost; its pair reads +0.16.
 
 **Reading.** On high the whole stack costs about **0.2 to 0.3 ms on WebGPU**
-and about **0.5 to 0.9 ms on WebGL2**; on medium about **0.5 ms on either
+and about **0.5 to 1 ms on WebGL2**; on medium about **0.5 ms on either
 engine**, with the lens looking up adding a few tenths on WebGL2. Every figure
 is under its bar (2.7 ms on high, 1.8 on medium) by a wide margin, and most are
-within one standard deviation of zero. Three to five draw calls are added
-(the streaks, the drips, the splashes, and the two terrain rings' map draws
-when a refresh lands).
+within one standard deviation of zero; the one row above a millisecond, high
+WebGL2 canopy page 1 at +1.43 ± 1.26, is inside its own spread and its pair
+reads +0.91. Three draw calls are added on an ordinary frame (the streaks, the
+drips, the splashes); on the frame a map refresh lands, about forty more (the
+two terrain rings, the props, the cliff buckets and the water into the map,
+§5).
 
 **The low tier.** Measured with every layer the tier has (the streaks, the
 fog, the wet materials, the ripples), the low tier on this machine runs at the
@@ -275,5 +278,5 @@ removed by a gate (design §10).
   depth buffer), the lens's input render target (kept while the pass is
   detached), the streak and drip seed buffers, and the splash seeds: a few
   megabytes; not measured.
-- **The whole suite on the merged tip** ran per task before the merge; the
-  merge's own run is the continuous build's.
+- **The whole suite on the merged tip** was run once at the end; every
+  layer's own run came before its merge.

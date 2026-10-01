@@ -21,7 +21,7 @@
 - Stage explicit paths only, never `git add -A` or `git add .`. Never bare `git stash`.
 - Commit format: type-prefixed subject under 72 characters, a blank line, a `## What` paragraph, a `## How` list led by backticked paths, a blank line, then the repository's two attribution trailer lines (written `<trailers>` below).
 - Public repository: no code comment, doc or commit message describes how an asset was made or the process around the work; write for an engineer reading the code.
-- Measurement hooks are applied to a worktree for a gate and reverted after it. They are never committed; `git status --porcelain` is clean before any commit.
+- Measurement hooks are applied to a checkout for a gate and reverted after it; they are never committed.
 
 ## File map
 
@@ -132,7 +132,7 @@ sky and brightens in the headlamp, and the fog follows the rain.
 <trailers>
 ```
 
-**Gate 1** (the controller, after review): design §8 at the three poses, high and medium, native and 4×, WebGL2 and WebGPU on high: the stack's cost (streaks on minus streaks off), the no-rain frame against the control, the sprint still. Bars: streaks + fog at most 1.0 ms on high, 0.5 ms on medium at native; no-rain within the noise floor.
+**Gate 1**, after the commit: design §8 at the three poses, high and medium, native and 4×, WebGL2 and WebGPU on high: the stack's cost (streaks on minus streaks off), the no-rain frame against the control, the sprint still. Bars: streaks + fog at most 1.0 ms on high, 0.5 ms on medium at native; no-rain within the noise floor.
 
 ---
 
@@ -223,7 +223,7 @@ forest gets a third of the open sky's rain.
 <trailers>
 ```
 
-**Gate 2** (the controller): the map's amortised cost and the cost of a refresh frame at the canopy pose while walking; the stack so far against the bars.
+**Gate 2**: the map's amortised cost and the cost of a refresh frame at the canopy pose while walking; the stack so far against the bars.
 
 ---
 
@@ -237,7 +237,7 @@ Design §5.
 
 **Interfaces:**
 - `rainParams.ts`: `SPLASH_TIERS` = 0 / 600 / 1200, `SPLASH = { radius: 10, life: 0.12, size: [0.06, 0.1] }`; `DRIP_TIERS` = 0 / 600 / 1000, `DRIP = { speed: 6, width: 0.04, length: 0.12 }`; `canopyWaterStep(prev, rain, dt)` (rise at `rain / 60` per second toward 1, fall at `1 / 600` when rain is 0), tested at the literal rates.
-- `rainSplash.ts`: `createRainSplash(scene, tier, map): RainSplash | null`, a thin-instanced quad mesh with a `StandardMaterial` and a small plugin (or a `ShaderMaterial`, the implementer's call, said in a comment) whose vertex stage places each sprite as design §5 says, reading the map for its height and transmission, and whose fragment draws the ring from the phase. `update(camPos, weather, lamp, sunDir, time)` sets the count to `round(rain × capacity)`.
+- `rainSplash.ts`: `createRainSplash(scene, tier, map): RainSplash | null`, a thin-instanced quad mesh with a `StandardMaterial` and a small plugin (or a `ShaderMaterial`, whichever is simpler, said in a comment) whose vertex stage places each sprite as design §5 says, reading the map for its height and transmission, and whose fragment draws the ring from the phase. `update(camPos, weather, lamp, sunDir, time)` sets the count to `round(rain × capacity)`.
 - `rain.ts`: a second mesh "rain_drips" sharing the material's texture with its own `RainPlugin` carrying `RAIN_DRIP`; `update` steps `canopyWater` and binds it.
 
 - [ ] **Step 1: The pure parts; the splash module and its test.**
@@ -344,6 +344,6 @@ follows the canopy-water value.
 ### Task 8: The corpus, the measurements and the close
 
 - [ ] **Step 1: Record the corpus on WebGPU** at high and medium, rain on and off, lamp on, night, a party of two, until no new stages appear; `merge-corpus.mjs`; `npm run build`; `node tools/wgsl/check-build.mjs`. Commit the `.glsl` files.
-- [ ] **Step 2: The final table** (the controller): design §8's five figures at every pose, tier and engine, whole and per layer, native and 4×, into the verification note §4; the per-tier shape that ships (design §10).
+- [ ] **Step 2: The final table**: design §8's five figures at every pose, tier and engine, whole and per layer, native and 4×, into the verification note §4; the per-tier shape that ships (design §10).
 - [ ] **Step 3: Close.** The design's first paragraph rewritten as built; `ARCHITECTURE.md`'s Rendering section gains the rain paragraph; the README's weather sentence if it has one.
-- [ ] **Step 4: Commit, whole-branch review, offer for push.**
+- [ ] **Step 4: Commit.**

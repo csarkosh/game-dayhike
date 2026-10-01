@@ -3,7 +3,7 @@
 **As built, 2026-10-01.** Every layer below shipped on the tiers the design
 gave it, and at a cost the measurement could barely tell from zero: on an Apple
 M4 in Chrome at 1920 by 1080, the whole stack is about 0.2 to 0.3 ms on high
-with WebGPU, 0.5 to 0.9 ms on high with WebGL2, and about 0.5 ms on medium on
+with WebGPU, 0.5 to 1 ms on high with WebGL2, and about 0.5 ms on medium on
 either engine, against bars of 2.7 and 1.8 ms; the low tier stays on the
 display's 60 Hz with the rain on or off. The one layer the method resolves on
 its own is the lens at full strength on WebGL2, about 0.8 ms; the height map's
@@ -56,7 +56,7 @@ the lens droplets) is generated in code, as the streak sprite is today.
 | Occlusion | On medium and high, a **top-down height map**: a 512-texel render target over 96 m around the player, re-rendered when the player has moved 8 m, drawing the terrain rings, the props, the cliffs and the water with a cheap height material. The terrain writes its canopy density as transmission; props and cliffs write hard cover. Streaks under cover fade by the transmission; splashes and drip read the same map. Low runs without it (§4) |
 | Splashes and drip | On medium and high: a thin-instanced sprite mesh of 600 or 1,200 short-lived crown rings placed on the map's height around the player, and a second wrapped volume of 600 or 1,000 large, slow, vertical drops drawn only under canopy and driven by a canopy-water scalar that fills about a minute after rain starts and drains over ten minutes after it stops (§5) |
 | Wet materials | A `WetPlugin` on the forest, understory, clutter, cliff and prop PBR materials: Lagarde's porosity rule from the material's own roughness, with a per-material porosity cap. The terrain keeps its own wetness. Four-layer ring-texture ripples on the trail's puddles, scaled by rain (§6) |
-| The lens | On medium and high: one post-process pass between FXAA and the finish pass, a code-generated droplet normal-and-mask texture that refracts the scene, a few procedural sliding drops, and on high a lerp toward the quarter-resolution halation blur for the foggy glass. Gated by rain, by pitch (strongest looking up) and by the canopy at the camera, smoothed over a second (§7) |
+| The lens | On medium and high: one post-process pass between FXAA and the finish pass, a code-generated droplet normal-and-mask texture that refracts the scene, a few procedural sliding drops, and a lerp toward a small blur of the scene itself for the foggy glass (as designed, the halation blur on high; as built, the scene's own blur on every tier, §7.1). Gated by rain, by pitch (strongest looking up) and by the canopy at the camera, smoothed over a second (§7) |
 | Sound | The hiss's band centre falls with rain intensity and wind dulls it; a drip layer of sparse synthesised plops under canopy follows the canopy-water scalar (§7.3) |
 | Order | Air and fog first (they remove the chasing emitter and the missing far field with no new render target), then wet materials and ripples, then the height map with splashes and drip, then the lens, then sound. Each behind a gate; a layer that misses its share of the budget ships smaller or not at all, and the note says which |
 | WebGPU | Nothing WebGPU-specific. Every new plugin, define combination and post-process is recorded into the WGSL corpus before the branch is offered (§9) |
@@ -185,8 +185,9 @@ On medium and high, a `RenderTargetTexture` of 512 by 512 texels, RGBA half
 float, rendered by an orthographic camera looking straight down from 100 m
 over a 96 by 96 m square centred on the player's position snapped to the last
 centre until the player has moved 8 m from it (so a refresh happens every 1.5
-to 2 s of walking and never on a turn). Its render list is the terrain's
-clipmap rings, the prop meshes (the trailhead's car, kiosk and board, the
+to 2 s of walking and never on a turn). Its render list is the terrain's two
+inner clipmap rings (as built; as designed, all of them, which cost about 2.9 ms
+on a refresh frame on WebGL2), the prop meshes (the trailhead's car, kiosk and board, the
 bench and sign meshes), the near cliff buckets and the water surface; the
 forest meshes are not in it. Every listed mesh is drawn through
 `setMaterialForRendering` with one cheap shader material that writes
@@ -210,7 +211,7 @@ with no streak occlusion, so it writes transmission 1 and no lift. Where the
 player stands under a crown with no canopy density under it (a lone tree), it
 rains; accepted.
 
-Cost: about twenty terrain ring draws and a handful of props with a trivial
+Cost: two terrain ring draws and a handful of props with a trivial
 shader into a 512-texel target, once per 8 m. Expected under 0.1 ms amortised
 on the reference machine; the gate measures it both as the amortised figure
 and as the cost of the frame it falls on.
@@ -395,7 +396,7 @@ vertex and fragment stages on an unlit material (with and without `RAIN_DRIP`,
 with and without `RAIN_OCCLUSION`), the height material's stages, the splash
 material's stages, the lens pass, and a new variant of every PBR material the
 `WetPlugin` attaches to. The last is the large one: every forest, clutter,
-cliff and prop material's text changes. The plan's last task records the
+cliff and prop material's text changes. The build's last step records the
 corpus on WebGPU at every tier and every state (rain on and off, lamp on,
 night, a party of two) until no new stages appear, merges it, and checks the
 build. The `RainPlugin` is appended to the plugin order after `WaterPlugin`
