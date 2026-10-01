@@ -198,13 +198,17 @@ export function createRainMap(scene: Scene, tier: QualityTier): RainMap | null {
   return {
     texture,
     centre,
+    // Both guard the list: `dispose` leaves it null, and a registry call can
+    // land after it (a prop chunk dropped as the renderer goes).
     register(mesh, kind) {
-      const list = texture.renderList as Mesh[];
+      const list = texture.renderList;
+      if (list === null) return;
       if (!list.includes(mesh)) list.push(mesh);
       texture.setMaterialForRendering(mesh, materials[kind]);
     },
     unregister(mesh) {
-      const list = texture.renderList as Mesh[];
+      const list = texture.renderList;
+      if (list === null) return;
       const at = list.indexOf(mesh);
       if (at !== -1) list.splice(at, 1);
       if (!mesh.isDisposed()) texture.setMaterialForRendering(mesh, undefined);

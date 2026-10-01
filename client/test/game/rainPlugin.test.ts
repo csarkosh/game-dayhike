@@ -112,16 +112,20 @@ describe("the rain plugin", () => {
 
   it("reads the cover map under RAIN_OCCLUSION: the define, the vertex-stage sampler, the fetch at the drop's xz and the alpha's fade", () => {
     const plugin = pluginFor("rp7");
+    // The sampler is listed whether or not the map is read: Babylon gathers
+    // the list once, at the uniform layout's build, and a map set later
+    // would otherwise have no entry in the effect.
     const samplers: string[] = [];
     plugin.getSamplers(samplers);
-    expect(samplers).toEqual([]);
+    expect(samplers).toEqual(["rainMapSampler"]);
     const dirty = vi.spyOn(plugin, "markAllDefinesAsDirty");
     plugin.occlusion = true;
     plugin.occlusion = true;
     expect(plugin.occlusion).toBe(true);
     expect(dirty).toHaveBeenCalledTimes(1);
-    plugin.getSamplers(samplers);
-    expect(samplers).toEqual(["rainMapSampler"]);
+    const again: string[] = [];
+    plugin.getSamplers(again);
+    expect(again).toEqual(["rainMapSampler"]);
     const defines: Record<string, boolean> = { RAIN: false, RAIN_DRIP: false, RAIN_OCCLUSION: false };
     plugin.prepareDefines(defines as never, scene, undefined as never);
     expect(defines).toEqual({ RAIN: true, RAIN_DRIP: false, RAIN_OCCLUSION: true });

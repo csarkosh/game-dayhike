@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, afterEach, beforeAll } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
@@ -198,7 +198,6 @@ describe("createRainMap", () => {
 describe("the height materials' stages, compiled", () => {
   let translators: StartedTranslators;
   beforeAll(async () => { translators = await startTranslators(); }, timeLimit(60_000));
-  afterAll(() => undefined);
 
   it("compile through glslang and translate to WGSL for a terrain ring, a thin-instanced bucket and a water ring", async () => {
     const gpu = webgpuProcessingEngine();

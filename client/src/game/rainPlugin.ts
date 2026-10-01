@@ -195,8 +195,14 @@ export class RainPlugin extends MaterialPluginBase {
     attributes.push("rainSeed");
   }
 
+  // Always listed, on or off: Babylon gathers a plugin's samplers once, when
+  // the material's uniform layout is built, and a define change rebuilds the
+  // effect but not that layout. Listed only while on, a map set after the
+  // first compile would give a shader whose sampler has no entry in the
+  // effect's list and reads unit 0. Undeclared while off, the entry is a null
+  // location on WebGL and ignored on WebGPU.
   override getSamplers(samplers: string[]): void {
-    if (this._occlusion) samplers.push("rainMapSampler");
+    samplers.push("rainMapSampler");
   }
 
   override getActiveTextures(activeTextures: BaseTexture[]): void {

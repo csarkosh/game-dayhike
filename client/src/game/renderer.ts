@@ -1966,6 +1966,9 @@ function buildRenderer(
       views.dispose();
       localLamp.dispose();
       for (const m of brushMeshes) m.dispose();
+      // Before the meshes in its list: a render target's list is not told of
+      // a dispose.
+      rainMap?.dispose();
       clipmap?.dispose();
       water?.dispose();
       propMeshes?.dispose();
@@ -1976,7 +1979,6 @@ function buildRenderer(
       cliffMeshes?.dispose();
       wildlife?.dispose();
       mist?.dispose();
-      rainMap?.dispose();
       rain.dispose();
       motes?.dispose();
       post.dispose();
