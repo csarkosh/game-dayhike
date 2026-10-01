@@ -103,6 +103,7 @@ import type { ListenerPose } from "./ambientAudio.js";
 import { createMistMeshes, type MistMeshes } from "./mistMeshes.js";
 import { createRain, type Rain, type RainLamp } from "./rain.js";
 import { createRainMap } from "./rainMap.js";
+import { createRainSplash, type RainSplash } from "./rainSplash.js";
 import { createMotes, type Motes } from "./motes.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo } from "./rendererSwap.js";
@@ -662,8 +663,9 @@ export type Water = {
 
 export type Pond = { x: number; z: number; radius: number; height: number };
 
-/** The see-through effects a camera moves among: rain, motes and the mist banks. */
-export type SeeThroughEffects = { rain: Rain | null; motes: Motes | null; mist: MistMeshes | null };
+/** The see-through effects a camera moves among: rain (its streaks and
+ * drips), its splashes, motes and the mist banks. */
+export type SeeThroughEffects = { rain: Rain | null; splash: RainSplash | null; motes: Motes | null; mist: MistMeshes | null };
 
 /**
  * The rendering group the see-through effects draw in: the water's own on its
@@ -702,7 +704,11 @@ export function lampForRain(lamp: SpotLight, out: RainLamp): RainLamp {
 }
 
 export function setEffectsGroup(group: number, effects: SeeThroughEffects): void {
-  if (effects.rain !== null) effects.rain.mesh.renderingGroupId = group;
+  if (effects.rain !== null) {
+    effects.rain.mesh.renderingGroupId = group;
+    if (effects.rain.drips !== null) effects.rain.drips.renderingGroupId = group;
+  }
+  if (effects.splash !== null) effects.splash.mesh.renderingGroupId = group;
   for (const system of effects.motes?.systems ?? []) system.renderingGroupId = group;
   for (const mesh of effects.mist?.meshes ?? []) mesh.renderingGroupId = group;
 }
@@ -1483,7 +1489,9 @@ function buildRenderer(
   const rainMap = forest !== null ? createRainMap(scene, tier) : null;
   partOf(rainMap);
   if (rainMap !== null) {
-    for (const mesh of clipmap?.meshes ?? []) rainMap.register(mesh, "terrain");
+    // The two inner rings cover the map's square (ring 0 alone is 128 m
+    // across); the outer five are clipped whole and cost their draws on WebGL2.
+    for (const mesh of clipmap?.meshes.slice(0, 2) ?? []) rainMap.register(mesh, "terrain");
     for (const mesh of water?.meshes ?? []) rainMap.register(mesh, "water");
     for (const mesh of water?.pondMeshes ?? []) rainMap.register(mesh, "water");
   }
@@ -1711,10 +1719,14 @@ function buildRenderer(
   const rain = createRain(scene, tier);
   partOf(rain);
   rain.setMap(rainMap);
+  // The splashes land on the map: a tier without one draws none.
+  const rainSplash = createRainSplash(scene, tier);
+  partOf(rainSplash);
+  rainSplash?.setMap(rainMap);
   const rainLamp: RainLamp = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, intensity: 0, angle: 0, r: 1, g: 1, b: 1 };
   const motes = createMotes(scene, tier);
   partOf(motes);
-  setEffectsGroup(effectsGroupFor(water), { rain, motes, mist });
+  setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist });
 
   const views = new EntityViews(scene);
   partOf(views);
@@ -1842,6 +1854,7 @@ function buildRenderer(
         // The map follows the camera here, as the clipmap does.
         rainMap?.update(camera.position);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
+        rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
         jobs.run();
         return;
@@ -1908,6 +1921,7 @@ function buildRenderer(
         setLamp(localLamp, local.lamp.on, lampState);
         rainMap?.update(local.pos);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
+        rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
       }
       // This frame's share of the rebuilds the updates above began, once
@@ -1980,6 +1994,7 @@ function buildRenderer(
       wildlife?.dispose();
       mist?.dispose();
       rain.dispose();
+      rainSplash?.dispose();
       motes?.dispose();
       post.dispose();
       skinShading.dispose();

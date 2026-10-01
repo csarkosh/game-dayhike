@@ -95,7 +95,7 @@ describe("the material plugins' numbers", () => {
       const text = readFileSync(file, "utf8");
       return [...text.matchAll(/class \w+ extends MaterialPluginBase \{[\s\S]*?getClassName\(\): string \{\s*return "(\w+)";/g)].map((m) => m[1] as string);
     });
-    expect(games.length).toBe(12);
+    expect(games.length).toBe(13);
     expect(games.filter((name) => !PLUGIN_ORDER.includes(name))).toEqual([]);
     expect(new Set(PLUGIN_ORDER).size).toBe(PLUGIN_ORDER.length);
   });
@@ -121,8 +121,9 @@ describe("the material plugins' numbers", () => {
     expect(numbering._MaterialPluginClassToMainDefine.WaterPlugin).toBe("MATERIALPLUGIN_19");
     // Appended after them, so neither number above moved.
     expect(numbering._MaterialPluginClassToMainDefine.RainPlugin).toBe("MATERIALPLUGIN_20");
+    expect(numbering._MaterialPluginClassToMainDefine.SplashPlugin).toBe("MATERIALPLUGIN_21");
     expect(numbering._MaterialPluginClassToMainDefine.SomethingEarlier).toBe(undefined);
-    expect(numbering._MaterialPluginCounter).toBe(20);
+    expect(numbering._MaterialPluginCounter).toBe(21);
   });
 
   it("are pinned by the WebGPU engine's maker once its engine stands, before any of its materials", () => {

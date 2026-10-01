@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  RAIN_BOX, RAIN_CLASSES, RAIN_DT, RAIN_FOLD_S, RAIN_LENGTH, RAIN_MAP, RAIN_TIERS, RIPPLE_INSET, RIPPLE_LAYERS, RIPPLE_RADIUS,
-  RIPPLE_TIME_WRAP, mapCentre, rainBoxMin, rainClassOf, rainCountUnder, rainDrift, rainDropAt, rainFold, rainSeeds, rippleTime,
-  smoothedDt, streakLength,
+  CANOPY_WATER, DRIP, DRIP_TIERS, RAIN_BOX, RAIN_CLASSES, RAIN_DT, RAIN_FOLD_S, RAIN_LENGTH, RAIN_MAP, RAIN_TIERS, RIPPLE_INSET,
+  RIPPLE_LAYERS, RIPPLE_RADIUS, RIPPLE_TIME_WRAP, SPLASH, SPLASH_CYCLES, SPLASH_FOLD_S, SPLASH_TIERS, canopyWaterStep,
+  dripCountUnder, mapCentre, rainBoxMin, rainClassOf, rainCountUnder, rainDrift, rainDropAt, rainFold, rainSeeds, rippleTime,
+  smoothedDt, splashCountUnder, splashFold, streakLength,
 } from "../../src/game/rainParams.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
@@ -260,5 +261,85 @@ describe("mapCentre", () => {
     expect(centre).toEqual({ x: 30, y: 1, z: -20 });
     expect(mapCentre(centre, { x: 31, y: 2, z: -21 }, centre)).toBe(centre);
     expect(centre).toEqual({ x: 30, y: 1, z: -20 });
+  });
+});
+
+describe("the splashes' numbers", () => {
+  it("are 600 and 1,200 rings on medium and high, none on low, in a 10 m disc, living 120 ms, 6 to 10 cm wide", () => {
+    expect(SPLASH_TIERS).toEqual({ low: 0, medium: 600, high: 1200 });
+    expect(SPLASH).toEqual({ radius: 10, life: 0.12, size: [0.06, 0.1] });
+    // The disc never leaves the map: 10 m out from an eye at most 8 m from the centre.
+    expect(SPLASH.radius + RAIN_MAP.step).toBeLessThan(RAIN_MAP.extent / 2);
+  });
+
+  it("fold the time at 36 s, exactly 300 lives, so the fold lands on a cycle's boundary", () => {
+    expect(SPLASH_FOLD_S).toBe(36);
+    expect(SPLASH_CYCLES).toBe(300);
+    expect(SPLASH_FOLD_S / SPLASH.life).toBeCloseTo(300, 9);
+    expect(splashFold(0)).toBe(0);
+    expect(splashFold(37)).toBe(1);
+    expect(splashFold(72)).toBe(0);
+    expect(splashFold(35.5)).toBe(35.5);
+  });
+
+  it("splashCountUnder is the rain value's share of the tier's rings, rounded and clamped", () => {
+    expect(splashCountUnder(1, "high")).toBe(1200);
+    expect(splashCountUnder(0.5, "medium")).toBe(300);
+    expect(splashCountUnder(0.25, "high")).toBe(300);
+    expect(splashCountUnder(1, "low")).toBe(0);
+    expect(splashCountUnder(0, "high")).toBe(0);
+    expect(splashCountUnder(2, "medium")).toBe(600);
+    expect(splashCountUnder(-1, "high")).toBe(0);
+  });
+});
+
+describe("the drips' numbers", () => {
+  it("are 600 and 1,000 drops on medium and high, none on low, at 6 m/s, 4 cm by 12 cm, in a 24 by 12 by 24 m box", () => {
+    expect(DRIP_TIERS).toEqual({ low: 0, medium: 600, high: 1000 });
+    expect(DRIP).toEqual({ speed: 6, width: 0.04, length: 0.12, box: { x: 24, y: 12, z: 24 } });
+  });
+
+  it("fold exactly: the speed times the 40 s fold is 20 box heights", () => {
+    expect((DRIP.speed * RAIN_FOLD_S) / DRIP.box.y).toBe(20);
+    expect(Number.isInteger((DRIP.speed * RAIN_FOLD_S) / DRIP.box.y)).toBe(true);
+  });
+
+  it("rainBoxMin takes the drip box's size with the streak box's offset", () => {
+    // Yaw 0 faces +Z: 6 m ahead, 2 m down, half the drip box off each axis.
+    expect(rainBoxMin({ x: 10, y: 5, z: -20 }, 0, undefined, DRIP.box)).toEqual({ x: -2, y: -3, z: -26 });
+  });
+
+  it("dripCountUnder is the canopy water's share of the tier's drops, rounded and clamped", () => {
+    expect(dripCountUnder(1, "high")).toBe(1000);
+    expect(dripCountUnder(0.5, "medium")).toBe(300);
+    expect(dripCountUnder(0.1, "high")).toBe(100);
+    expect(dripCountUnder(1, "low")).toBe(0);
+    expect(dripCountUnder(0, "high")).toBe(0);
+    expect(dripCountUnder(3, "medium")).toBe(600);
+  });
+});
+
+describe("canopyWaterStep", () => {
+  it("rises at rain / 60 per second toward 1: a minute of rain 1 fills it from dry", () => {
+    expect(CANOPY_WATER).toEqual({ rise: 1 / 60, fall: 1 / 600 });
+    let water = 0;
+    for (let i = 0; i < 60; i++) water = canopyWaterStep(water, 1, 1);
+    expect(water).toBeCloseTo(1, 9);
+    expect(canopyWaterStep(0, 1, 30)).toBeCloseTo(0.5, 9);
+    // Half the rain, half the rate.
+    expect(canopyWaterStep(0, 0.5, 30)).toBeCloseTo(0.25, 9);
+    // Clamped at 1.
+    expect(canopyWaterStep(0.9, 1, 60)).toBe(1);
+  });
+
+  it("falls at 1 / 600 per second once the rain stops: ten minutes drain it from full", () => {
+    let water = 1;
+    for (let i = 0; i < 600; i++) water = canopyWaterStep(water, 0, 1);
+    expect(water).toBeCloseTo(0, 9);
+    expect(canopyWaterStep(1, 0, 300)).toBeCloseTo(0.5, 9);
+    // Clamped at 0.
+    expect(canopyWaterStep(0.1, 0, 600)).toBe(0);
+    // A frame's step.
+    expect(canopyWaterStep(0.5, 0, 1 / 60)).toBeCloseTo(0.5 - 1 / 36000, 12);
   });
 });

@@ -30,8 +30,18 @@
  * multiplied by the texel's transmission. The read is a plain `texture2D` in
  * the vertex stage, as Babylon's own bone texture is read: no derivatives, so
  * the base level, and Babylon's migration turns it into `texture()`. A drop
- * outside the map is uncovered. `RAIN_DRIP` is declared for the drip volume
- * and read by nothing yet.
+ * outside the map is uncovered.
+ *
+ * Under `RAIN_DRIP` (`drip`, the drip volume's own material in `rain.ts`)
+ * the same plugin places large slow drops that fall straight down: one
+ * speed, width and length (DRIP), no wind slant or drift, in a box of the
+ * plugin's own size (`boxX/Y/Z`, bound as `rainBoxSize`; DRIP.box for the
+ * drips, whose speed times the fold is 6 × 40 / 12 = 20 box heights, exact).
+ * A drip shows only where the map covers it with a transmission below 1,
+ * below the ceiling: its cover term is `(1 - transmission)` there and 0
+ * elsewhere, times `rainCanopyWater`, the canopy's water (`rainParams.ts`);
+ * with no map bound it is 0 everywhere. The near and far fades, the sky
+ * fade and the lamp term apply as they do to a streak.
  *
  * Renderer-only by design — no constant here may migrate into sim/ or a
  * tunables registry, the foliagePlugin.ts rule.
@@ -46,7 +56,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import {
-  RAIN_BOX, RAIN_CLASSES, RAIN_FADE_FAR, RAIN_FADE_NEAR, RAIN_LENGTH, RAIN_MAP, RAIN_SKY_FADE, RAIN_STRETCH,
+  DRIP, RAIN_BOX, RAIN_CLASSES, RAIN_FADE_FAR, RAIN_FADE_NEAR, RAIN_LENGTH, RAIN_MAP, RAIN_SKY_FADE, RAIN_STRETCH,
 } from "./rainParams.js";
 
 /** A GLSL float literal: always with a decimal point, so `1` is `1.0`. */
@@ -73,21 +83,36 @@ uniform sampler2D rainMapSampler;
 const RAIN_VERTEX_POSITION = `
 #ifdef RAIN
 {
+#ifdef RAIN_DRIP
+  float rSpeed = ${lit(DRIP.speed)};
+  float rWidth = ${lit(DRIP.width)};
+  float rClassAlpha = 1.0;
+  vec3 rDrift = vec3(0.0, -rSpeed * rainFold / rainBoxSize.y, 0.0);
+#else
   float rkI = floor(rainSeed.w * 3.0 + 0.5);
   vec4 rkSel = vec4(equal(vec4(rkI), vec4(0.0, 1.0, 2.0, 3.0)));
   float rSpeed = dot(rainSpeeds, rkSel);
   float rWidth = dot(rainWidths, rkSel);
   float rClassAlpha = dot(rainAlphas, rkSel);
   vec3 rDrift = vec3(rainDrift.x, -rSpeed * rainFold / rainBoxSize.y, rainDrift.y);
+#endif
   vec3 rq = fract(rainSeed.xyz + rDrift - rainBoxMin / rainBoxSize);
   vec3 rp = rainBoxMin + rq * rainBoxSize;
+#ifdef RAIN_DRIP
+  vec3 rAlong = vec3(0.0, -1.0, 0.0);
+#else
   vec3 rAlong = normalize(vec3(rainWind.x, -rSpeed, rainWind.y));
+#endif
   vec3 rToCam = rainCam - rp;
   float rDist = max(length(rToCam), 0.001);
   vec3 rView = rToCam / rDist;
   vec3 rSide = cross(rAlong, rView);
   vec3 rRight = rSide / max(length(rSide), 0.001);
+#ifdef RAIN_DRIP
+  float rLen = ${lit(DRIP.length)};
+#else
   float rLen = clamp(rSpeed * rainDt * ${lit(RAIN_STRETCH)}, ${lit(RAIN_LENGTH[0])}, ${lit(RAIN_LENGTH[1])});
+#endif
   positionUpdated = rp + rRight * (position.x * rWidth) + rAlong * (position.y * rLen);
   float rFade = smoothstep(${lit(RAIN_FADE_NEAR[0])}, ${lit(RAIN_FADE_NEAR[1])}, rDist) * (1.0 - smoothstep(${lit(RAIN_FADE_FAR[0])}, ${lit(RAIN_FADE_FAR[1])}, rDist));
   float rSky = 1.0 - ${lit(RAIN_SKY_FADE)} * smoothstep(0.0, 0.25, -rView.y);
@@ -102,7 +127,15 @@ const RAIN_VERTEX_POSITION = `
   vec4 rMap = texture2D(rainMapSampler, rMu);
   float rInMap = step(0.0, rMu.x) * step(rMu.x, 1.0) * step(0.0, rMu.y) * step(rMu.y, 1.0);
   float rCovered = rInMap * step(rp.y, rMap.r + rMap.b);
+#ifdef RAIN_DRIP
+  rCover = rCovered * (1.0 - rMap.g) * rainCanopyWater;
+#else
   rCover = mix(1.0, rMap.g, rCovered);
+#endif
+#else
+#ifdef RAIN_DRIP
+  rCover = 0.0;
+#endif
 #endif
   vRainAlpha = min(rFade * rCover * (rSky * rClassAlpha + rLampT), 1.0);
   vRainLamp = min(rLampT, 1.0);
@@ -126,10 +159,13 @@ color.a *= vRainAlpha;
 `;
 
 export class RainPlugin extends MaterialPluginBase {
-  /** The box's low corner this frame, world metres. */
+  /** The box's low corner this frame, world metres, and its size. */
   boxMinX = 0;
   boxMinY = 0;
   boxMinZ = 0;
+  boxX: number = RAIN_BOX.x;
+  boxY: number = RAIN_BOX.y;
+  boxZ: number = RAIN_BOX.z;
   /** The wind's folded horizontal drift, in units of the box, and the folded time. */
   driftX = 0;
   driftZ = 0;
@@ -161,7 +197,10 @@ export class RainPlugin extends MaterialPluginBase {
   map: BaseTexture | null = null;
   mapCentreX = 0;
   mapCentreZ = 0;
+  /** The canopy's water, 0 to 1, read under `RAIN_DRIP`. */
+  canopyWater = 0;
   private _occlusion = false;
+  private _drip = false;
 
   constructor(material: Material) {
     super(material, "Rain", 220, { RAIN: false, RAIN_DRIP: false, RAIN_OCCLUSION: false });
@@ -179,6 +218,17 @@ export class RainPlugin extends MaterialPluginBase {
     this.markAllDefinesAsDirty();
   }
 
+  /** Whether the material is the drip volume's: a change rebuilds the effect. */
+  get drip(): boolean {
+    return this._drip;
+  }
+
+  set drip(on: boolean) {
+    if (this._drip === on) return;
+    this._drip = on;
+    this.markAllDefinesAsDirty();
+  }
+
   override getClassName(): string {
     return "RainPlugin";
   }
@@ -187,6 +237,7 @@ export class RainPlugin extends MaterialPluginBase {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override prepareDefines(defines: MaterialDefines, _scene: Scene, _mesh: AbstractMesh): void {
     defines.RAIN = true;
+    defines.RAIN_DRIP = this._drip;
     defines.RAIN_OCCLUSION = this._occlusion;
   }
 
@@ -231,6 +282,7 @@ export class RainPlugin extends MaterialPluginBase {
         { name: "rainAlphas", size: 4, type: "vec4" },
         { name: "rainMapCentre", size: 2, type: "vec2" },
         { name: "rainMapExtent", size: 1, type: "float" },
+        { name: "rainCanopyWater", size: 1, type: "float" },
         { name: "rainLampColour", size: 3, type: "vec3" },
       ],
       vertex: `
@@ -252,6 +304,9 @@ uniform vec4 rainAlphas;
 uniform vec2 rainMapCentre;
 uniform float rainMapExtent;
 #endif
+#ifdef RAIN_DRIP
+uniform float rainCanopyWater;
+#endif
 #endif
 `,
       fragment: `
@@ -266,7 +321,7 @@ uniform vec3 rainLampColour;
   override bindForSubMesh(uniformBuffer: UniformBuffer, _scene: Scene, _engine: AbstractEngine, _subMesh: SubMesh): void {
     const c = RAIN_CLASSES;
     uniformBuffer.updateFloat3("rainBoxMin", this.boxMinX, this.boxMinY, this.boxMinZ);
-    uniformBuffer.updateFloat3("rainBoxSize", RAIN_BOX.x, RAIN_BOX.y, RAIN_BOX.z);
+    uniformBuffer.updateFloat3("rainBoxSize", this.boxX, this.boxY, this.boxZ);
     uniformBuffer.updateFloat2("rainDrift", this.driftX, this.driftZ);
     uniformBuffer.updateFloat("rainFold", this.fold);
     uniformBuffer.updateFloat("rainDt", this.dt);
@@ -280,6 +335,7 @@ uniform vec3 rainLampColour;
     uniformBuffer.updateFloat4("rainAlphas", c[0]!.alpha, c[1]!.alpha, c[2]!.alpha, c[3]!.alpha);
     uniformBuffer.updateFloat2("rainMapCentre", this.mapCentreX, this.mapCentreZ);
     uniformBuffer.updateFloat("rainMapExtent", RAIN_MAP.extent);
+    uniformBuffer.updateFloat("rainCanopyWater", this.canopyWater);
     uniformBuffer.updateFloat3("rainLampColour", this.lampR, this.lampG, this.lampB);
     if (this._occlusion && this.map !== null) uniformBuffer.setTexture("rainMapSampler", this.map);
   }

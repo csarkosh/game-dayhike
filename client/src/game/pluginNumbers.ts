@@ -49,6 +49,7 @@ export const PLUGIN_ORDER: readonly string[] = [
   "WaterPlugin",
   // After them, so no number the corpus carries moves.
   "RainPlugin",
+  "SplashPlugin",
 ];
 
 /** Babylon 9.18's page-wide numbering of plugin classes. */

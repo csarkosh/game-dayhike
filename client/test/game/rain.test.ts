@@ -59,6 +59,9 @@ describe("createRain", () => {
     const rain = createRain(s, "low");
     const mat = rain.mesh.material as StandardMaterial;
     expect(mat.disableLighting).toBe(true);
+    // Black diffuse: unlit, the colour is the diffuse plus the emissive, so
+    // the emissive set each frame is the colour only with the diffuse black.
+    expect([mat.diffuseColor.r, mat.diffuseColor.g, mat.diffuseColor.b]).toEqual([0, 0, 0]);
     expect(mat.diffuseTexture?.hasAlpha).toBe(true);
     expect(mat.useAlphaFromDiffuseTexture).toBe(true);
     expect(mat.needAlphaBlending()).toBe(true);
@@ -181,5 +184,112 @@ describe("createRain", () => {
     expect(rain.mesh.isDisposed()).toBe(true);
     expect(s.materials).not.toContain(mat);
     expect(s.textures).not.toContain(tex);
+  });
+});
+
+describe("the drips", () => {
+  it("are a second volume on medium and high, none on low, on their own material over the streak texture with their own plugin under RAIN_DRIP in the shorter box", () => {
+    const s = scene();
+    const low = createRain(s, "low");
+    expect(low.drips).toBeNull();
+    expect(low.dripPlugin).toBeNull();
+    low.dispose();
+    for (const [tier, count] of [["medium", 600], ["high", 1000]] as const) {
+      const rain = createRain(s, tier);
+      const drips = rain.drips!;
+      expect(drips.name).toBe("rain_drips");
+      expect(drips.thinInstanceCount).toBe(count);
+      expect(drips.isEnabled()).toBe(false);
+      expect(drips.isPickable).toBe(false);
+      expect(drips.alwaysSelectAsActiveMesh).toBe(true);
+      expect(drips.doNotSyncBoundingInfo).toBe(true);
+      expect(drips.alphaIndex).toBe(Number.MAX_SAFE_INTEGER);
+      const mat = drips.material as StandardMaterial;
+      expect(mat.name).toBe("mat_rain_drips");
+      expect(mat).not.toBe(rain.mesh.material);
+      expect(mat.diffuseTexture).toBe((rain.mesh.material as StandardMaterial).diffuseTexture);
+      expect(mat.needAlphaBlending()).toBe(true);
+      expect(mat.fogEnabled).toBe(true);
+      const plugin = rain.dripPlugin!;
+      expect(plugin).toBeInstanceOf(RainPlugin);
+      expect(plugin).not.toBe(rain.plugin);
+      expect(mat.pluginManager?.getPlugin("Rain")).toBe(plugin);
+      expect(plugin.drip).toBe(true);
+      expect(rain.plugin.drip).toBe(false);
+      expect([plugin.boxX, plugin.boxY, plugin.boxZ]).toEqual([24, 12, 24]);
+      expect([rain.plugin.boxX, rain.plugin.boxY, rain.plugin.boxZ]).toEqual([24, 20, 24]);
+      const d: Record<string, boolean> = { RAIN: false, RAIN_DRIP: false, RAIN_OCCLUSION: false };
+      plugin.prepareDefines(d as never, s, undefined as never);
+      expect(d).toEqual({ RAIN: true, RAIN_DRIP: true, RAIN_OCCLUSION: false });
+      rain.dispose();
+      expect(drips.isDisposed()).toBe(true);
+      expect(s.materials).not.toContain(mat);
+    }
+  });
+
+  it("follow the canopy's water: none until the rain has filled it, a minute in on high, and still dripping ten minutes after it stops", () => {
+    const s = scene();
+    const map = createRainMap(s, "high") as RainMap;
+    const rain = createRain(s, "high");
+    rain.setMap(map);
+    map.update(CAM);
+    const drips = rain.drips!;
+    expect(rain.canopyWater).toBe(0);
+    rain.update(CAM, 0, WEATHER_PRESETS.rain, STILL, 1, LAMP_OFF);
+    // One second of rain 1: a sixtieth, 17 of 1,000.
+    expect(rain.canopyWater).toBeCloseTo(1 / 60, 9);
+    expect(drips.isEnabled()).toBe(true);
+    expect(drips.thinInstanceCount).toBe(17);
+    expect(rain.dripPlugin!.canopyWater).toBeCloseTo(1 / 60, 9);
+    for (let i = 0; i < 59; i++) rain.update(CAM, 0, WEATHER_PRESETS.rain, STILL, 1, LAMP_OFF);
+    expect(rain.canopyWater).toBeCloseTo(1, 9);
+    expect(drips.thinInstanceCount).toBe(1000);
+    // The rain stops: the streaks go, the drips stay and drain over ten minutes.
+    rain.update(CAM, 0, WEATHER_PRESETS.clear, STILL, 1, LAMP_OFF);
+    expect(rain.mesh.isEnabled()).toBe(false);
+    expect(drips.isEnabled()).toBe(true);
+    for (let i = 0; i < 299; i++) rain.update(CAM, 0, WEATHER_PRESETS.clear, STILL, 1, LAMP_OFF);
+    expect(rain.canopyWater).toBeCloseTo(0.5, 9);
+    expect(drips.thinInstanceCount).toBe(500);
+    for (let i = 0; i < 300; i++) rain.update(CAM, 0, WEATHER_PRESETS.clear, STILL, 1, LAMP_OFF);
+    expect(rain.canopyWater).toBeCloseTo(0, 9);
+    expect(drips.isEnabled()).toBe(false);
+    rain.dispose();
+    map.dispose();
+  });
+
+  it("take the drip box, the eye, the lamp, the map and the milk with the streaks, and stay off without a map", () => {
+    const s = scene();
+    s.fogColor.set(0.5, 0.5, 0.5);
+    const rain = createRain(s, "high");
+    const drips = rain.drips!;
+    for (let i = 0; i < 60; i++) rain.update(CAM, 0, WEATHER_PRESETS.rain, STILL, 1, LAMP_ON);
+    expect(rain.canopyWater).toBeCloseTo(1, 9);
+    // No map to fall under: full of water, still off.
+    expect(drips.isEnabled()).toBe(false);
+    const map = createRainMap(s, "high") as RainMap;
+    rain.setMap(map);
+    map.update({ x: 30, y: 5, z: -20 });
+    rain.update(CAM, 0, WEATHER_PRESETS.rain, STILL, DT, LAMP_ON);
+    expect(drips.isEnabled()).toBe(true);
+    const p = rain.dripPlugin!;
+    // Yaw 0 faces +Z: 6 m ahead, 2 m down, half the 24 by 12 by 24 m box off each axis.
+    expect([p.boxMinX, p.boxMinY, p.boxMinZ]).toEqual([-2, -3, -26]);
+    expect([rain.plugin.boxMinX, rain.plugin.boxMinY, rain.plugin.boxMinZ]).toEqual([-2, -7, -26]);
+    expect([p.camX, p.camY, p.camZ]).toEqual([10, 5, -20]);
+    expect(p.lampIntensity).toBeCloseTo(2, 9);
+    expect(p.map).toBe(map.texture);
+    expect(p.occlusion).toBe(true);
+    expect([p.mapCentreX, p.mapCentreZ]).toEqual([30, -20]);
+    expect(p.fold).toBe(rain.plugin.fold);
+    const mat = drips.material as StandardMaterial;
+    expect(mat.emissiveColor.r).toBeCloseTo(0.625, 9);
+    rain.setMap(null);
+    expect(p.map).toBeNull();
+    expect(p.occlusion).toBe(false);
+    rain.update(CAM, 0, WEATHER_PRESETS.rain, STILL, DT, LAMP_ON);
+    expect(drips.isEnabled()).toBe(false);
+    rain.dispose();
+    map.dispose();
   });
 });

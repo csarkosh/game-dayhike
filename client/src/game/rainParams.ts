@@ -124,13 +124,15 @@ export type Drift = { x: number; z: number };
 
 /** The box's low corner for an eye at `cam` facing `yaw` (Babylon's: 0 faces
  * +Z, forward is (sin yaw, 0, cos yaw)), written into `out` (a fresh object
- * when none is given) so a caller on the frame path allocates nothing. */
-export function rainBoxMin(cam: Vec3, yaw: number, out: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
+ * when none is given) so a caller on the frame path allocates nothing. The
+ * box is RAIN_BOX's size unless `size` says otherwise (the drip volume's,
+ * DRIP.box); its offset from the eye is RAIN_BOX's either way. */
+export function rainBoxMin(cam: Vec3, yaw: number, out: Vec3 = { x: 0, y: 0, z: 0 }, size: Vec3 = RAIN_BOX): Vec3 {
   const fx = Math.sin(yaw);
   const fz = Math.cos(yaw);
-  out.x = cam.x + fx * RAIN_BOX.forward - RAIN_BOX.x / 2;
-  out.y = cam.y - RAIN_BOX.down - RAIN_BOX.y / 2;
-  out.z = cam.z + fz * RAIN_BOX.forward - RAIN_BOX.z / 2;
+  out.x = cam.x + fx * RAIN_BOX.forward - size.x / 2;
+  out.y = cam.y - RAIN_BOX.down - size.y / 2;
+  out.z = cam.z + fz * RAIN_BOX.forward - size.z / 2;
   return out;
 }
 
@@ -176,6 +178,59 @@ export function rainDropAt(seed: Vec3, k: number, drift: Drift, fold: number, bo
 /** The streaks drawn at a rain value: `round(rain × tier)`. */
 export function rainCountUnder(rain: number, tier: QualityTier): number {
   return Math.round(clamp01(rain) * RAIN_TIERS[tier]);
+}
+
+/**
+ * The splashes (`rainSplash.ts`): short-lived rings on the cover map's
+ * surface in a disc of `radius` metres around the eye, each living `life`
+ * seconds and `size[0]` to `size[1]` metres wide. None on low, which has no
+ * map to land them on.
+ */
+export const SPLASH_TIERS: Record<QualityTier, number> = { low: 0, medium: 600, high: 1200 };
+export const SPLASH = { radius: 10, life: 0.12, size: [0.06, 0.1] as readonly [number, number] } as const;
+
+/** The splashes' running time folds modulo this many seconds: a whole number
+ * of lives (SPLASH_CYCLES), so the fold lands on a cycle's boundary and
+ * every ring's phase runs on unbroken. The cycle a ring is on is counted
+ * modulo SPLASH_CYCLES in the vertex stage, so the hash that places it is
+ * the same on either side of the fold. */
+export const SPLASH_FOLD_S = 36;
+export const SPLASH_CYCLES = 300;
+
+/** The running time, folded modulo SPLASH_FOLD_S. */
+export function splashFold(seconds: number): number {
+  return seconds - Math.floor(seconds / SPLASH_FOLD_S) * SPLASH_FOLD_S;
+}
+
+/** The splashes drawn at a rain value: `round(rain × tier)`. */
+export function splashCountUnder(rain: number, tier: QualityTier): number {
+  return Math.round(clamp01(rain) * SPLASH_TIERS[tier]);
+}
+
+/**
+ * The drips (`rain.ts`, the streak plugin under `RAIN_DRIP`): large, slow
+ * drops falling straight down under the canopy, in a box of their own
+ * (shorter than the streaks': they start at branch height) placed as the
+ * streak box is. `speed` times RAIN_FOLD_S must be a whole number of box
+ * heights, as a streak class's must: 6 × 40 / 12 = 20, exact.
+ */
+export const DRIP_TIERS: Record<QualityTier, number> = { low: 0, medium: 600, high: 1000 };
+export const DRIP = { speed: 6, width: 0.04, length: 0.12, box: { x: 24, y: 12, z: 24 } } as const;
+
+/** The canopy water the drips follow: rising toward 1 at `rise × rain` per
+ * second while it rains (full about a minute into a rain of 1), falling at
+ * `fall` per second once it stops (dry ten minutes after). */
+export const CANOPY_WATER = { rise: 1 / 60, fall: 1 / 600 } as const;
+
+/** `prev` stepped by `dt` seconds under a rain value, clamped to [0, 1]. */
+export function canopyWaterStep(prev: number, rain: number, dt: number): number {
+  const next = rain > 0 ? prev + CANOPY_WATER.rise * rain * dt : prev - CANOPY_WATER.fall * dt;
+  return clamp01(next);
+}
+
+/** The drips drawn at a canopy water: `round(water × tier)`. */
+export function dripCountUnder(water: number, tier: QualityTier): number {
+  return Math.round(clamp01(water) * DRIP_TIERS[tier]);
 }
 
 /**

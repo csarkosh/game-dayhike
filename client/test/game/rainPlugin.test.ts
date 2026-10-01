@@ -56,7 +56,7 @@ describe("the rain plugin", () => {
     const names = [
       "rainBoxMin", "rainBoxSize", "rainDrift", "rainFold", "rainDt", "rainWind", "rainCam",
       "rainLampPos", "rainLampDir", "rainLamp", "rainSpeeds", "rainWidths", "rainAlphas", "rainMapCentre", "rainMapExtent",
-      "rainLampColour",
+      "rainCanopyWater", "rainLampColour",
     ];
     expect(uniforms.ubo.map((u) => u.name)).toEqual(names);
     expect([...declaredUniforms(uniforms.vertex), ...declaredUniforms(uniforms.fragment)]).toEqual(names);
@@ -81,6 +81,7 @@ describe("the rain plugin", () => {
     plugin.lampIntensity = 3; plugin.lampCosHalf = 0.7;
     plugin.lampR = 1; plugin.lampG = 0.9; plugin.lampB = 0.8;
     plugin.mapCentreX = 12; plugin.mapCentreZ = -4;
+    plugin.canopyWater = 0.5;
     const writes: Record<string, number[]> = {};
     const ubo = {
       updateFloat: (n: string, a: number) => { writes[n] = [a]; },
@@ -106,8 +107,52 @@ describe("the rain plugin", () => {
       rainAlphas: [0.35, 0.43, 0.52, 0.6],
       rainMapCentre: [12, -4],
       rainMapExtent: [96],
+      rainCanopyWater: [0.5],
       rainLampColour: [1, 0.9, 0.8],
     });
+    // The box size is the plugin's own: the drip volume's is shorter.
+    plugin.boxX = 24; plugin.boxY = 12; plugin.boxZ = 24;
+    plugin.bindForSubMesh(ubo, scene, engine, undefined as never);
+    expect(writes.rainBoxSize).toEqual([24, 12, 24]);
+  });
+
+  it("places the drips under RAIN_DRIP: one speed, width and length, straight down, no drift, only under the map's canopy by the canopy's water", async () => {
+    const plugin = pluginFor("rp8");
+    const dirty = vi.spyOn(plugin, "markAllDefinesAsDirty");
+    expect(plugin.drip).toBe(false);
+    plugin.drip = true;
+    plugin.drip = true;
+    expect(plugin.drip).toBe(true);
+    expect(dirty).toHaveBeenCalledTimes(1);
+    const defines: Record<string, boolean> = { RAIN: false, RAIN_DRIP: false, RAIN_OCCLUSION: false };
+    plugin.prepareDefines(defines as never, scene, undefined as never);
+    expect(defines).toEqual({ RAIN: true, RAIN_DRIP: true, RAIN_OCCLUSION: false });
+    const vertex = plugin.getCustomCode("vertex")!.CUSTOM_VERTEX_UPDATE_POSITION!;
+    // The literals rainParams.ts carries: DRIP's speed, width and length.
+    expect(vertex).toContain("#ifdef RAIN_DRIP\n  float rSpeed = 6.0;\n  float rWidth = 0.04;\n  float rClassAlpha = 1.0;\n  vec3 rDrift = vec3(0.0, -rSpeed * rainFold / rainBoxSize.y, 0.0);\n#else");
+    expect(vertex).toContain("#ifdef RAIN_DRIP\n  vec3 rAlong = vec3(0.0, -1.0, 0.0);\n#else");
+    expect(vertex).toContain("#ifdef RAIN_DRIP\n  float rLen = 0.12;\n#else");
+    // Under the map: covered, by the transmission's complement, by the water. Without one: nothing.
+    expect(vertex).toContain("#ifdef RAIN_DRIP\n  rCover = rCovered * (1.0 - rMap.g) * rainCanopyWater;\n#else\n  rCover = mix(1.0, rMap.g, rCovered);\n#endif");
+    expect(vertex).toContain("#else\n#ifdef RAIN_DRIP\n  rCover = 0.0;\n#endif\n#endif");
+    expect(plugin.getUniforms().vertex).toContain("#ifdef RAIN_DRIP\nuniform float rainCanopyWater;\n#endif");
+    // The 40 s fold is exact for the drips too: 6 m/s over a 12 m box is 20 heights.
+    expect((6 * 40) / 12).toBe(20);
+    const migrated = await processInjected(
+      plugin.getUniforms().vertex + plugin.getCustomCode("vertex")!.CUSTOM_VERTEX_DEFINITIONS!
+        + "void main(void) {" + vertex + "}",
+      ["RAIN", "RAIN_DRIP", "RAIN_OCCLUSION"], false,
+    );
+    expect(migrated).toContain("float rSpeed = 6.0;");
+    expect(migrated).toContain("vec3 rAlong = vec3(0.0, -1.0, 0.0);");
+    expect(migrated).toContain("rCover = rCovered * (1.0 - rMap.g) * rainCanopyWater;");
+    // The class lanes and the wind are declared (the uniform block is the
+    // material's) and read by nothing.
+    expect(migrated).not.toContain("dot(rainSpeeds");
+    expect(migrated).not.toContain("rainWind.x");
+    const dry = await processInjected("void main(void) {" + vertex + "}", ["RAIN", "RAIN_DRIP"], false);
+    expect(dry).toContain("rCover = 0.0;");
+    expect(dry).not.toContain("rMap");
   });
 
   it("reads the cover map under RAIN_OCCLUSION: the define, the vertex-stage sampler, the fetch at the drop's xz and the alpha's fade", () => {
@@ -286,6 +331,37 @@ describe("the rain material's stages, compiled", () => {
       expect(vertex).toContain("rainMapSampler");
       expect(vertex).toMatch(/textureSampleLevel\(/);
       expect(vertex).not.toMatch(/textureSample\(/);
+      stage("fragment", effect._fragmentSourceCode);
+      rain.dispose();
+      map.dispose();
+    } finally {
+      gpuScene.dispose();
+      gpu.dispose();
+    }
+  }, timeLimit(60_000));
+
+  it("compile and translate the drip volume with the cover map bound", async () => {
+    const gpu = webgpuProcessingEngine();
+    const gpuScene = new Scene(gpu);
+    try {
+      new UniversalCamera("c", new Vector3(0, 2, 0), gpuScene);
+      gpuScene.fogMode = Scene.FOGMODE_EXP2;
+      const rain = createRain(gpuScene, "high");
+      const map = createRainMap(gpuScene, "high") as RainMap;
+      rain.setMap(map);
+      const drips = rain.drips!;
+      drips.setEnabled(true);
+      const effect = await drawnEffect(drips);
+      const defines = (effect as unknown as { defines: string }).defines;
+      expect(defines).toContain("#define RAIN_DRIP");
+      expect(defines).toContain("#define RAIN_OCCLUSION");
+      expect(effect._vertexSourceCode).toContain("rCover = rCovered * (1.0 - rMap.g) * rainCanopyWater;");
+      expect(effect._vertexSourceCode).not.toContain("dot(rainSpeeds");
+      const stage = (kind: "vertex" | "fragment", code: string) =>
+        translateStage(translators, { stage: kind, flag: uniformityOff(code), glsl: translatorInput(code, defines) });
+      const vertex = stage("vertex", effect._vertexSourceCode);
+      expect(vertex).toContain("rainCanopyWater");
+      expect(vertex).toMatch(/textureSampleLevel\(/);
       stage("fragment", effect._fragmentSourceCode);
       rain.dispose();
       map.dispose();

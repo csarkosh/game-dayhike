@@ -612,6 +612,23 @@ describe("world shell wiring", () => {
     expect(playerBranch).toContain("forestMeshes?.update(local.pos.x, local.pos.z);\n        cliffMeshes?.update(local.pos.x, local.pos.z);");
     expect(src.match(/cliffMeshes\?\.dispose\(\)/g)).toHaveLength(1);
   });
+
+  it("lists the two inner clipmap rings in the rain map, makes the splashes after the rain over the same map, updates them in both camera branches and disposes them", () => {
+    // Ring 0 alone covers the map's 96 m square; the outer rings would be clipped whole and still cost their draws.
+    expect(src).toContain('for (const mesh of clipmap?.meshes.slice(0, 2) ?? []) rainMap.register(mesh, "terrain");');
+    expect(src).toContain("  const rain = createRain(scene, tier);\n  partOf(rain);\n  rain.setMap(rainMap);");
+    expect(src).toContain("  const rainSplash = createRainSplash(scene, tier);\n  partOf(rainSplash);\n  rainSplash?.setMap(rainMap);");
+    expect(src).toContain("setEffectsGroup(effectsGroupFor(water), { rain, splash: rainSplash, motes, mist });");
+    const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
+    const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
+    // After the rain's update, which fills the lamp the splashes read.
+    const after = "lampForRain(localLamp, rainLamp));\n        rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);";
+    expect(freecamBranch.match(/rainSplash\?\.update\(/g)).toHaveLength(1);
+    expect(playerBranch.match(/rainSplash\?\.update\(/g)).toHaveLength(1);
+    expect(freecamBranch).toContain(after);
+    expect(playerBranch).toContain(after);
+    expect(src.match(/rainSplash\?\.dispose\(\)/g)).toHaveLength(1);
+  });
 });
 
 describe("the wildlife director goes quiet near the Hollow", () => {
@@ -834,6 +851,6 @@ describe("a part the renderer disposes is also torn down when a build fails", ()
     const registered = new Set([...src.matchAll(/partOf\((\w+)\);/g)].map((m) => m[1]!));
     if (/made\(\(\) => \{\s*for \(const m of brushMeshes\) m\.dispose\(\);/.test(src)) registered.add("brushMeshes");
     expect([...registered].sort()).toEqual([...disposed].sort());
-    expect(disposed.size).toBe(19);
+    expect(disposed.size).toBe(20);
   });
 });
