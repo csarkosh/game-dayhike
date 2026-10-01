@@ -26,7 +26,6 @@ export declare function buildMap(options: {
   shared: Shared;
   now?: () => number;
 }): {
-  text: string;
   entries: Map<string, string>;
   translated: { id: string; key: string; stage: "vertex" | "fragment"; ms: number; glslBytes: number; wgslBytes: number }[];
   failed: { id: string; stage: "vertex" | "fragment"; message: string }[];

@@ -49,7 +49,8 @@ One stage a line, the ids (the 16 digits that name a stage's file)
 ascending, the tiers in the order low, medium, high, each once, one at
 least: the same corpus gives the same bytes. `readCorpusDir`
 (`tools/wgsl/lib/corpus.mjs`) reads it with the files and refuses, naming
-each: an index of another format or shape; a stage it names that has no
+each: an index of another format or shape, or whose text is not what the
+merge writes (reordered, reformatted: edited by hand); a stage it names that has no
 file; a file whose stage it leaves out; a corpus with stage files and no
 index (an empty corpus has none). The tests' fixtures carry their own, every
 stage on every tier.
@@ -62,7 +63,11 @@ engines that looked shaders up on the page were made for, in the order
 first seen (`lookUpShaders` is told the engine's tier). `download()` writes
 them (`corpusText(stages, tiers)`); a report whose engines were made for no
 tier writes no field. `readRecording` gives the tiers back, or null for none,
-and refuses tiers that are not some of the three, each once.
+and refuses tiers that are not some of the three, each once. A page whose
+start probed at two tiers, or changed tier in Settings, records every stage
+on both: over-inclusion only (a map holds a stage no page at that tier asks
+for, and is larger by it), never a stage missing. A recording for one tier
+pins it with `?tier=` on the URL, which the start takes over the probe.
 
 The merge (`tools/wgsl/merge-corpus.mjs`) puts each stage of a recording on
 the recording's tiers, every tier for one that names none: a new stage is a

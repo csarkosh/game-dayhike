@@ -103,10 +103,11 @@ describe("the map the build ships, against the page's own translation", () => {
     expect(made.failed).toEqual([]);
     // Read as the page reads it: the table of lines and each entry's runs,
     // an entry expanded when it is asked for.
-    const map = format.readMap(made.text, salt);
+    const text = format.mapText(salt, made.entries);
+    const map = format.readMap(text, salt);
     expect(stages).toHaveLength(10);
     expect(map.size).toBe(10);
-    expect(JSON.parse(made.text).format).toBe("dayhike-wgsl-map/2");
+    expect(JSON.parse(text).format).toBe("dayhike-wgsl-map/2");
 
     // The page's own lookup, with no source: every stage translated in the page's way.
     const own = await page([], "record");
@@ -140,7 +141,7 @@ describe("the map the build ships, against the page's own translation", () => {
     const serve = (text: string): typeof fetch =>
       (() => Promise.resolve({ ok: true, status: 200, headers: new Headers(), text: () => Promise.resolve(text) } as Response)) as unknown as typeof fetch;
 
-    const shipped = await page([loadWgslMap("/dayhike/assets/wgsl-map-Ab12Cd34.json", salt, { fetch: serve(made.text) })], "verify");
+    const shipped = await page([loadWgslMap("/dayhike/assets/wgsl-map-Ab12Cd34.json", salt, { fetch: serve(format.mapText(salt, made.entries)) })], "verify");
     await shipped.prepare(vertex.glsl, fragment.glsl);
     expect([shipped.report.hits, shipped.report.misses, shipped.report.differences]).toEqual([2, 0, 0]);
     expect(shipped.report.hitsBySource).toEqual({ shipped: 2 });

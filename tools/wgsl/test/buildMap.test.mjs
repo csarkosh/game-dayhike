@@ -86,9 +86,10 @@ describe('the map the build ships', () => {
     const keys = stages.map((entry) => page.stageKey(salt, entry.stage, entry.flag, entry.glsl));
     expect([...made.entries.keys()].sort()).toEqual([...keys].sort());
     // Read with the page's reader, every entry expands to its translation, byte for byte.
-    expect(expanded(page.readMap(made.text, salt))).toEqual(made.entries);
+    const text = shared.mapText(salt, made.entries);
+    expect(expanded(page.readMap(text, salt))).toEqual(made.entries);
     // The two stages' 41 lines, 24 of them distinct, in 24 runs.
-    expect(tableAndRuns(made.text)).toEqual({ lines: 24, runs: 24 });
+    expect(tableAndRuns(text)).toEqual({ lines: 24, runs: 24 });
   }, timeLimit(60_000));
 
   it('translates each stage as the page does: WGSL of its stage, with Babylon\'s diagnostic where the stage turns the analysis off', () => {
@@ -111,9 +112,9 @@ describe('the map the build ships', () => {
     const { stages } = readCorpusDir(FIXTURE, shared);
     const translate = (entry) => translateStage(translators, entry);
     const made = buildMap({ stages, salt, translate, shared });
-    const once = made.text;
-    expect(buildMap({ stages: [...stages].reverse(), salt, translate, shared }).text).toBe(once);
-    expect(buildMap({ stages: [...stages, ...stages], salt, translate, shared }).text).toBe(once);
+    const once = shared.mapText(salt, made.entries);
+    expect(shared.mapText(salt, buildMap({ stages: [...stages].reverse(), salt, translate, shared }).entries)).toBe(once);
+    expect(shared.mapText(salt, buildMap({ stages: [...stages, ...stages], salt, translate, shared }).entries)).toBe(once);
     // Run as the build runs it, twice, and on the same stages written afresh:
     // each tier's map is the map of its entries, written for that tier.
     const out = directory();

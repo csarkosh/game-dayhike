@@ -13,7 +13,7 @@ import { build } from 'esbuild';
 
 const SOURCE = fileURLToPath(new URL('../../../client/src/game/wgslFormat.ts', import.meta.url));
 
-/** `wgslFormat.ts`'s exports: `lookupSalt`, `stageKey`, `corpusId`, `corpusText`, `readCorpus`, `mapText`, `readMap` and the formats. */
+/** `wgslFormat.ts`'s exports: `lookupSalt`, `stageKey`, `corpusId`, `corpusText`, `readCorpus`, `readRecording`, `mapText`, `readMap`, `TIERS`, `MAP_MAX_BYTES` and the formats. */
 export async function loadShared() {
   const bundled = await build({
     entryPoints: [SOURCE],

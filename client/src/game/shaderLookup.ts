@@ -152,7 +152,9 @@ export type ShaderLookupReport = {
   /** The quality tiers the engines that looked shaders up on this page were
    * made for, in the order first seen: a recording says it was made on them,
    * and the merge puts its stages on those tiers' maps (one that names none
-   * is put on every tier's). */
+   * is put on every tier's). A page that probed at two tiers, or changed tier
+   * in Settings, records every stage on both, over-inclusion only; `?tier=`
+   * on the URL pins a recording's tier. */
   tiers: QualityTier[];
   /** Stages whose WGSL was found and used. */
   hits: number;

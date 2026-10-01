@@ -27,11 +27,13 @@ export function nodeSalt(shared, clientDir = CLIENT_DIR) {
 }
 
 /**
- * The map of `stages` under `salt`: each stage once (by `corpusId`), in the
- * order of its name, keyed by `stageKey` and translated by `translate`. A
- * stage that does not translate is left out and reported in `failed`, never
- * thrown: the page translates what the map lacks, as it always has. The same
- * stages and translators give the same `text`, whatever their order.
+ * The translations of `stages` under `salt`: each stage once (by `corpusId`),
+ * in the order of its name, keyed by `stageKey` and translated by
+ * `translate`, as `entries` (key to WGSL), of which each tier's map is made
+ * (`entriesOn`, `mapText`). A stage that does not translate is left out and
+ * reported in `failed`, never thrown: the page translates what the maps
+ * lack, as it always has. The same stages and translators give the same
+ * entries, whatever their order.
  */
 export function buildMap({ stages, salt, translate, shared, now = () => performance.now() }) {
   const byId = new Map();
@@ -53,7 +55,7 @@ export function buildMap({ stages, salt, translate, shared, now = () => performa
       failed.push({ id, stage: entry.stage, message: typeof error?.message === 'string' ? error.message : String(error) });
     }
   }
-  return { text: shared.mapText(salt, entries), entries, translated, failed };
+  return { entries, translated, failed };
 }
 
 /**

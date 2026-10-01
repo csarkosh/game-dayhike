@@ -100,7 +100,10 @@ function checkFile(path, folder, name, shared) {
  * order, each once.
  */
 export function tiersText(tiers, shared) {
-  const lines = [...tiers.keys()].sort().map((id) => `${JSON.stringify(id)}:${JSON.stringify(shared.TIERS.filter((tier) => [...tiers.get(id)].includes(tier)))}`);
+  const lines = [...tiers.keys()].sort().map((id) => {
+    const on = new Set(tiers.get(id));
+    return `${JSON.stringify(id)}:${JSON.stringify(shared.TIERS.filter((tier) => on.has(tier)))}`;
+  });
   const body = lines.length === 0 ? '' : `\n${lines.join(',\n')}\n`;
   return `{"format":${JSON.stringify(TIERS_FORMAT)},"stages":{${body}}}\n`;
 }
@@ -140,8 +143,9 @@ export function readTiers(text, shared) {
  * report. A corpus file whose bytes are not the stage its name says, that
  * carries a carriage return or that is not UTF-8 is refused: it throws,
  * naming every such file, before anything is written. So is an index that
- * does not read, names a stage that has no file, or leaves a file's stage
- * out; and a corpus with stages but no index.
+ * does not read or is not as the merge writes it (`tiersText`: one stage a
+ * line, the ids ascending), names a stage that has no file, or leaves a
+ * file's stage out; and a corpus with stages but no index.
  */
 export function readCorpusDir(dir, shared) {
   const stages = [];
@@ -176,7 +180,9 @@ export function readCorpusDir(dir, shared) {
   let tiers = new Map();
   if (existsSync(indexPath) && statSync(indexPath).isFile()) {
     try {
-      tiers = readTiers(readFileSync(indexPath, 'utf8'), shared);
+      const text = readFileSync(indexPath, 'utf8');
+      tiers = readTiers(text, shared);
+      if (text !== tiersText(tiers, shared)) throw new Error('is not as the merge writes it (one stage a line, the ids ascending): it was edited by hand');
     } catch (error) {
       refused.push(`${indexPath}: ${error instanceof Error ? error.message : String(error)}`);
       tiers = null;

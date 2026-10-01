@@ -553,15 +553,17 @@ every line and run, when it lands, before the preparations that find it:
 about 9 ms under Node for the 522 entries; the measurement to watch is a
 browser's on the slow machine (§8).
 
-**In the build.** The WebGPU module imports the map's URL from
+**In the build.** Since 2026-10-01 there are three such maps, one a tier,
+named `wgsl-map-<tier>-…`, and this paragraph describes each. The WebGPU
+module imports the map's URL from
 `virtual:dayhike-wgsl-map` (`tools/wgsl/lib/mapPlugin.mjs`): in `vite build`
 the map is re-exported with `?url&no-inline`, so it is emitted as
-`assets/wgsl-map-<hash>.json`, never inlined however small, named by the
+`assets/wgsl-map-<tier>-<hash>.json`, never inlined however small, named by the
 WebGPU chunk alone and served `immutable` under `/assets/**`; the WebGL2
 bundle neither holds nor names it (`webgpuSwitchOff.test.ts`; a page built
 with Vite as the game's is, in `tools/wgsl/test/mapPlugin.test.mjs`). A
-build whose map was not made fails, naming the step. The dev server runs the
-tool as it starts and serves the map at `<base>wgsl-map.json` once made (a
+build whose maps were not all made fails, naming the step. The dev server runs the
+tool as it starts and serves each map at `<base>wgsl-map-<tier>.json` once made (a
 request before then waits; one the tool failed to make is a 404, no map), so
 a measurement on the dev server sees what production will. A dev server's
 start so translates the whole corpus wherever no map was made yet (every

@@ -97,7 +97,8 @@ export function corpusId(entry: CorpusStage): string {
  * and its index of tiers.
  */
 export function corpusText(stages: Iterable<CorpusStage>, tiers: Iterable<QualityTier> = []): string {
-  const recordedOn = TIERS.filter((tier) => [...tiers].includes(tier));
+  const asked = new Set(tiers);
+  const recordedOn = TIERS.filter((tier) => asked.has(tier));
   const onTiers = recordedOn.length === 0 ? "" : `,"tiers":${JSON.stringify(recordedOn)}`;
   const byId = new Map<string, CorpusStage>();
   for (const { stage, flag, glsl } of stages) {

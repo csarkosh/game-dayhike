@@ -203,6 +203,10 @@ describe('the index of tiers', () => {
     expect(() => readCorpusDir(dir, shared)).toThrow(`${join(dir, TIERS_FILE)}: missing, so no stage has the tiers it was recorded on\n${RECORDED}`);
     // An empty corpus has no index to miss.
     expect(readCorpusDir(directory(), shared)).toEqual({ stages: [], files: [], others: [], tiers: new Map() });
+    const reordered = refusal((text) => text.replace(`"${SIX[0]}":["low","medium","high"],\n`, '').replace('\n}}\n', `,\n"${SIX[0]}":["low","medium","high"]\n}}\n`));
+    expect(reordered.thrown).toBe(`${reordered.index}: is not as the merge writes it (one stage a line, the ids ascending): it was edited by hand\n${RECORDED}`);
+    const reformatted = refusal((text) => JSON.stringify(JSON.parse(text), null, 2));
+    expect(reformatted.thrown).toContain(`${reformatted.index}: is not as the merge writes it`);
     const unreadable = refusal(() => '{"format":"something else"}');
     expect(unreadable.thrown).toBe(`${unreadable.index}: is not an index of dayhike-wgsl-tiers/1: something else\n${RECORDED}`);
     expect(RECORDED).toContain('which also writes tiers.json, the index of the tiers each stage was recorded on');
@@ -312,16 +316,19 @@ describe('the committed corpus and the tests\' fixture', () => {
     return files;
   }
 
-  it('holds the 762 recorded stages, each file\'s bytes hashing to the name it has, every one on the medium and high tiers', () => {
-    expect(roundTrip(CORPUS_DIR)).toHaveLength(762);
+  it('holds the 912 recorded stages, each file\'s bytes hashing to the name it has: 763 on the medium and high tiers, 149 on low', () => {
+    expect(roundTrip(CORPUS_DIR)).toHaveLength(912);
     const read = readCorpusDir(CORPUS_DIR, shared);
-    expect(read.stages).toHaveLength(762);
+    expect(read.stages).toHaveLength(912);
     expect(read.others).toEqual([]);
-    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(408);
-    // Recorded on the medium and high tiers before the index was kept; a
-    // recording on low adds low to the stages it holds.
-    expect(read.tiers.size).toBe(762);
-    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(762);
+    expect(read.stages.filter((s) => s.glsl.includes('—'))).toHaveLength(484);
+    // The 763 recorded on the medium and high tiers before the index was
+    // kept, and the low tier's 149, recorded on it alone: none yet on both.
+    expect(read.tiers.size).toBe(912);
+    const on = (tier) => [...read.tiers.values()].filter((tiers) => tiers.includes(tier)).length;
+    expect([on('low'), on('medium'), on('high')]).toEqual([149, 763, 763]);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'medium,high')).toHaveLength(763);
+    expect([...read.tiers.values()].filter((tiers) => tiers.join() === 'low')).toHaveLength(149);
     expect(readFileSync(join(CORPUS_DIR, TIERS_FILE), 'utf8')).toBe(tiersText(read.tiers, shared));
   }, timeLimit(30_000));
 
