@@ -1,11 +1,12 @@
 import { clamp01 } from "./colour.js";
 import { gustAt, type WindRecord } from "./windParams.js";
 import {
-  ambientGainsUnder, DEFAULT_WEATHER, WEATHER_PRESETS, rainHissCentreHz, rainWindCut,
-  type WeatherParams,
+  DEFAULT_WEATHER, WEATHER_PRESETS, rainHissCentreHz, rainWindCut, type WeatherParams,
 } from "./weather.js";
 
-/** Peak gain for the rain layer, applied on top of `ambientGainsUnder`. */
+/** Peak gain for the rain layer, applied on top of the weather's rain value
+ * (`ambientGainsUnder`'s `rain`, computed inline here since `setWind`
+ * re-applies it ten times a second and that call allocates). */
 export const RAIN_LEVEL = 0.5;
 /** Peak gain for the wind layer, applied on top of `setWind`'s own
  * speed/mist-scaled gain (`ambientGainsUnder` no longer has a say in it). */
@@ -195,12 +196,12 @@ export function createAmbientAudio(
    * context (or dispose/recreate) never throttles the first call. */
   let lastWindTime = -Infinity;
 
-  /** The rain bed's centre and gain for the pending weather and the last wind speed. */
+  /** The rain bed's centre and gain for the pending weather and the last
+   * wind speed. On `setWind`'s path, so it allocates nothing. */
   function applyGains(w: WeatherParams): void {
     if (!ctx || !rainGain || !rainFilter) return;
-    const g = ambientGainsUnder(w);
     rainFilter.frequency.setTargetAtTime(rainHissCentreHz(w.rain), ctx.currentTime, GAIN_RAMP_S);
-    rainGain.gain.setTargetAtTime(g.rain * RAIN_LEVEL * rainWindCut(windSpeed), ctx.currentTime, GAIN_RAMP_S);
+    rainGain.gain.setTargetAtTime(clamp01(w.rain) * RAIN_LEVEL * rainWindCut(windSpeed), ctx.currentTime, GAIN_RAMP_S);
   }
 
   /** Seconds to the next drip at a level: the interval's draw, faster when wetter. */
@@ -256,10 +257,11 @@ export function createAmbientAudio(
 
       // Rain patter: noise -> band-pass -> gain. `applyGains` moves the
       // centre with the rain value (`rainHissCentreHz`) and cuts the gain by
-      // the wind (`rainWindCut`).
+      // the wind (`rainWindCut`). The centre rests where the pending weather
+      // puts it, so an unlock under rain does not slide down for two seconds.
       rainFilter = ctx.createBiquadFilter();
       rainFilter.type = "bandpass";
-      rainFilter.frequency.value = rainHissCentreHz(0);
+      rainFilter.frequency.value = rainHissCentreHz(pending.rain);
       rainFilter.Q.value = 0.7;
       rainGain = ctx.createGain();
       rainGain.gain.value = 0;

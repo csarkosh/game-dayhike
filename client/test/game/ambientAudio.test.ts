@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  createAmbientAudio, DEFAULT_VOLUME, GAIN_RAMP_S, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
+  createAmbientAudio, DEFAULT_VOLUME, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
   WIND_CUTOFF_BASE, WIND_CUTOFF_GUST, WIND_GAIN_FLOOR, WIND_MIST_DEEPEN, WIND_MIST_QUIET,
   WIND_GAIN_DEPTH, WIND_GAIN_RAMP_S, windBedGain,
 } from "../../src/game/ambientAudio.js";
@@ -336,10 +336,23 @@ describe("createAmbientAudio", () => {
     audio.unlock();
     const { filter } = rainBed(created);
     expect(filter.frequency.value).toBe(3000);
-    expect(filter.frequency.targets.at(-1)).toEqual({ value: 3000, time: 0, tc: GAIN_RAMP_S });
+    expect(filter.frequency.targets.at(-1)).toEqual({ value: 3000, time: 0, tc: 2 });
     audio.setWeather(WEATHER_PRESETS.rain);
-    expect(filter.frequency.targets.at(-1)).toEqual({ value: 1800, time: 0, tc: GAIN_RAMP_S });
+    expect(filter.frequency.targets.at(-1)).toEqual({ value: 1800, time: 0, tc: 2 });
     audio.setWeather({ ...WEATHER_PRESETS.rain, rain: 0.5 });
+    expect(filter.frequency.targets.at(-1)!.value).toBe(2400);
+    audio.dispose();
+  });
+
+  it("an unlock under rain rests the band centre at 1.8 kHz rather than sliding down from 3 kHz", () => {
+    const { ctx, created } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx);
+    audio.setWeather(WEATHER_PRESETS.rain);
+    audio.unlock();
+    const { filter } = rainBed(created);
+    expect(filter.frequency.value).toBe(1800);
+    audio.setWeather({ ...WEATHER_PRESETS.rain, rain: 0.5 });
+    expect(filter.frequency.value).toBe(1800); // the resting value is set once; ramps move it from here
     expect(filter.frequency.targets.at(-1)!.value).toBe(2400);
     audio.dispose();
   });
@@ -354,7 +367,7 @@ describe("createAmbientAudio", () => {
     const rec = windRecordUnder(WEATHER_PRESETS.rain, 5);
     audio.setWind({ ...rec, speed: 1 });
     expect(gain.gain.targets.at(-1)!.value).toBeCloseTo(0.335, 10);
-    expect(gain.gain.targets.at(-1)!.tc).toBe(GAIN_RAMP_S);
+    expect(gain.gain.targets.at(-1)!.tc).toBe(2);
     audio.setWind({ ...rec, speed: 0.8, time: 6 });
     expect(gain.gain.targets.at(-1)!.value).toBeCloseTo(0.4175, 10);
     audio.setWind({ ...rec, speed: 0.6, time: 7 });
@@ -422,6 +435,28 @@ describe("createAmbientAudio", () => {
     expect(created.sources.length).toBe(beds + 4);
     expect(created.sources.slice(beds).map((s) => s.startedAt!.toFixed(6)))
       .toEqual(["0.600000", "1.200000", "1.800000", "2.400000"]);
+    audio.dispose();
+  });
+
+  it("a stall longer than the look-ahead restarts the train rather than catching up on the drips it missed", () => {
+    const { ctx, created, clock } = fakeCtx();
+    const audio = createAmbientAudio(() => ctx, () => 0.5);
+    audio.unlock();
+    const beds = created.sources.length;
+    audio.setDrip(1, 1);
+    clock.currentTime = 0.45;
+    audio.setDrip(1, 1);
+    expect(created.sources.length).toBe(beds + 1);
+    expect(created.sources[beds]!.startedAt).toBeCloseTo(0.6, 10);
+    // The tab slept until 5 s: the drips at 1.2 to 4.8 are not fired late;
+    // the train starts again one interval out.
+    clock.currentTime = 5;
+    audio.setDrip(1, 1);
+    expect(created.sources.length).toBe(beds + 1);
+    clock.currentTime = 5.5;
+    audio.setDrip(1, 1);
+    expect(created.sources.length).toBe(beds + 2);
+    expect(created.sources[beds + 1]!.startedAt).toBeCloseTo(5.6, 10);
     audio.dispose();
   });
 

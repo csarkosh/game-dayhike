@@ -636,16 +636,38 @@ function buildGame(
   let canopyWater = 0;
 
   /**
+   * The canopy last read over the local player, and where it was read.
+   * `forestDensity` samples the terrain (and allocates the sample) on every
+   * call, so it is read again only once the player has moved more than a
+   * metre: the canopy changes over metres, and a drip is never closer than
+   * the scheduler's look-ahead, so nothing hears the difference.
+   */
+  let lastCanopy = 0;
+  let lastCanopyX = NaN;
+  let lastCanopyZ = NaN;
+
+  /** The canopy over `(x, z)`, from the same field the trees stand in. */
+  function canopyOver(x: number, z: number): number {
+    const dx = x - lastCanopyX;
+    const dz = z - lastCanopyZ;
+    // Negated so the first read, against NaN, is taken too.
+    if (!(dx * dx + dz * dz <= 1)) {
+      lastCanopyX = x;
+      lastCanopyZ = z;
+      lastCanopy = clamp01(forestDensity(seed, x, z));
+    }
+    return lastCanopy;
+  }
+
+  /**
    * Steps the canopy's water and hands the drip layer that and the canopy
-   * over the local player, read from the same field the trees stand in. Both
-   * loops, after `renderer.sync`. The field is sampled only while the canopy
-   * holds water: dry, the level is zero whatever stands overhead.
+   * over the local player. Both loops, after `renderer.sync`. The field is
+   * read only while the canopy holds water: dry, the level is zero whatever
+   * stands overhead.
    */
   function syncDrip(self: PlayerState | undefined, dt: number): void {
     canopyWater = canopyWaterStep(canopyWater, appliedWeather.rain, dt);
-    const canopy = canopyWater > 0 && self !== undefined
-      ? clamp01(forestDensity(seed, self.pos.x, self.pos.z))
-      : 0;
+    const canopy = canopyWater > 0 && self !== undefined ? canopyOver(self.pos.x, self.pos.z) : 0;
     ambient.setDrip(canopyWater, canopy);
   }
 
