@@ -52,16 +52,17 @@ const GRIP = { position: new Vector3(0, 0.075, 0.03), rotation: Quaternion.Ident
 const IN_CRADLE = [0, 0.048, 0] as const;
 
 /**
- * The car's parts by name under a placed model; none found, the whole
- * model is the stand-in. A node the loader made carries a rotation
- * quaternion, under which Babylon ignores the Euler `rotation` the stage
- * writes (`characterModel.ts` says why), so each part's quaternion is
- * folded into its Euler angles and cleared.
+ * The car's parts by name under a placed model, each one missing said once;
+ * none found, the whole model is the stand-in. A node the loader made
+ * carries a rotation quaternion, under which Babylon ignores the Euler
+ * `rotation` the stage writes (`characterModel.ts` says why), so each
+ * part's quaternion is folded into its Euler angles and cleared.
  */
-export function carModelOf(placed: PlacedModel): CarModel {
+export function carModelOf(placed: PlacedModel, warn: (line: string) => void): CarModel {
   const under = placed.node.getChildTransformNodes(false);
   const byName = (name: string): TransformNode | null => {
     const node = under.find((n) => n.name === name || n.name.endsWith(`_${name}`)) ?? null;
+    if (node === null) warn(`scene: no part ${name} on the car; not moved`);
     if (node !== null && node.rotationQuaternion !== null) {
       node.rotation = node.rotationQuaternion.toEulerAngles();
       node.rotationQuaternion = null;
@@ -112,6 +113,7 @@ function stageHandset(car: CarModel, hand: TransformNode | null, grip: number): 
 
 const warnedActors = new WeakMap<StageDeps, Set<string>>();
 const warnedJoints = new WeakMap<StageDeps, Set<string>>();
+const warnedHand = new WeakSet<StageDeps>();
 
 /** Moves the actor so its joint, as posed this frame, is at the anchor. */
 function placeByJoint(instance: CharacterInstance, id: string, anchor: NonNullable<ActorPose["anchor"]>, deps: StageDeps): void {
@@ -157,12 +159,17 @@ export function stageFrame(frame: Frame, deps: StageDeps): void {
     deps.car.root.rotation.y = car.yaw;
     for (const wheel of deps.car.wheels) {
       wheel.node.rotation.z = -car.wheelSpin;
-      // The part's frame (the pack's, under the loader's mirrored root) reverses a turn about y.
+      // The part's own frame, under the loader's mirrored root, reverses a turn about y.
       wheel.node.rotation.y = wheel.front ? -car.wheelTurn : 0;
     }
     if (deps.car.steering !== null) deps.car.steering.rotationQuaternion = Quaternion.RotationAxis(STEERING_COLUMN, car.steer);
     if (deps.car.door !== null) deps.car.door.rotation.y = -car.doorOpen * DOOR_SWING;
-    stageHandset(deps.car, car.handset === "hand" ? (deps.hand?.() ?? null) : null, car.grip ?? 1);
+    const hand = car.handset === "hand" && deps.hand !== undefined ? deps.hand() : null;
+    if (car.handset === "hand" && deps.hand !== undefined && hand === null && !warnedHand.has(deps)) {
+      warnedHand.add(deps);
+      deps.warn("scene: no hand for the handset; it stays in its cradle");
+    }
+    stageHandset(deps.car, hand, car.grip ?? 1);
   }
   deps.captions.set(frame.caption);
   deps.black(frame.black);

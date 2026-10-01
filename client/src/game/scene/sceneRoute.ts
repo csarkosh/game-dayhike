@@ -136,7 +136,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       return;
     }
     carModel = placed;
-    car = carModelOf(placed);
+    car = carModelOf(placed, (line) => console.warn(line));
     // `stage` is made below, before this promise can resolve.
     stage.car = car;
     for (const mesh of placed.meshes) renderer.shadows.add(mesh);

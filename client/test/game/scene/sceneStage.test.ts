@@ -77,7 +77,7 @@ describe("the stage", () => {
     wheel.parent = root;
     const door = new TransformNode("door_driver", scene);
     door.parent = root;
-    const parts = carModelOf({ node: root, meshes: [], dispose() {} });
+    const parts = carModelOf({ node: root, meshes: [], dispose() {} }, () => {});
     expect(parts.wheels.length).toBe(1);
     expect(parts.door).toBe(door);
     stageFrame(frame, deps({ car: parts }));
@@ -96,7 +96,7 @@ describe("the stage", () => {
     // What the glTF loader leaves on every node: a quaternion, under which
     // Babylon ignores the Euler `rotation` entirely.
     wheel.rotationQuaternion = Quaternion.Identity();
-    const parts = carModelOf({ node: root, meshes: [], dispose() {} });
+    const parts = carModelOf({ node: root, meshes: [], dispose() {} }, () => {});
     stageFrame(frame, deps({ car: parts }));
     // Turned as a bare node under the same car turned the same way is: the up axis of each.
     const bare = new TransformNode("bare", scene);
@@ -111,7 +111,7 @@ describe("the stage", () => {
 
 describe("the film car's parts", () => {
   /** The car as the loader leaves a model: under a root that flips z, its parts in the model's own frame. */
-  function car(scene: Scene) {
+  function car(scene: Scene, warn: (line: string) => void = () => {}) {
     const handedness = new TransformNode("__root__", scene);
     handedness.scaling = new Vector3(1, 1, -1);
     const root = new TransformNode("car", scene);
@@ -129,9 +129,28 @@ describe("the film car's parts", () => {
     part("door_driver", lod0, [0.875, 0.897, -0.752]);
     const cradle = part("cradle", lod0, [0.744, 0.784, 0.039]);
     part("handset", cradle, [0, 0.048, 0]);
-    return carModelOf({ node: root, meshes: [], dispose() {} } as unknown as PlacedModel);
+    return carModelOf({ node: root, meshes: [], dispose() {} } as unknown as PlacedModel, warn);
   }
   const at = (over: Partial<NonNullable<Frame["car"]>>): Frame => ({ ...frame, actors: [], car: { ...frame.car!, ...over } });
+
+  it("says once which parts the car lacks", () => {
+    const engine = new NullEngine();
+    const lines: string[] = [];
+    car(new Scene(engine), (line) => void lines.push(line));
+    expect(lines).toEqual(["scene: no part wheel_fr on the car; not moved", "scene: no part wheel_rl on the car; not moved"]);
+    engine.dispose();
+  });
+
+  it("says once when the handset has no hand to go to, and leaves it in its cradle", () => {
+    const engine = new NullEngine();
+    const model = car(new Scene(engine));
+    const d = deps({ car: model, hand: () => null });
+    stageFrame(at({ handset: "hand", grip: 1 }), d);
+    stageFrame(at({ handset: "hand", grip: 1 }), d);
+    expect(d.calls.filter((c) => c.startsWith("warn"))).toEqual(["warn scene: no hand for the handset; it stays in its cradle"]);
+    expect(model.handset!.position.asArray()).toEqual([0, 0.048, 0]);
+    engine.dispose();
+  });
 
   it("finds the wheels, the steering wheel, the door, the handset and its cradle by name", () => {
     const engine = new NullEngine();
