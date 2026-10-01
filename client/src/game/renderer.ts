@@ -1101,6 +1101,10 @@ export type Renderer = {
    * `/wind` override) — what `foliagePlugin.ts`'s players bend into and what
    * `ambientAudio.ts`'s wind bed hears. */
   wind(): WindRecord;
+  /** How wet the canopy is, 0 to 1, as the rain stepped it on the last
+   * `sync` (`canopyWaterStep`, `weather.ts`): what the drips are drawn from
+   * and what `ambientAudio.ts`'s drip layer hears, one value for both. */
+  canopyWater(): number;
   /** `null` restores the weather-driven speed; otherwise clamped to [0, 1]
    * and used in place of it (the `/wind` command). */
   setWindOverride(level: number | null): void;
@@ -2044,6 +2048,9 @@ function buildRenderer(
     },
     wind() {
       return wind;
+    },
+    canopyWater() {
+      return rain.canopyWater;
     },
     setWindOverride(level) {
       windOverride = level === null ? null : Math.min(1, Math.max(0, level));

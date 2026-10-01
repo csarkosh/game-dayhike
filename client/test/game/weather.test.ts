@@ -175,6 +175,15 @@ describe("the rain's sound", () => {
     expect(w).toBe(1);
     for (let i = 0; i < 3000; i++) w = canopyWaterStep(w, 0, 0.1);
     expect(w).toBeCloseTo(0.5, 6);
+    // Half the rain, half the rate; a frame's step down from half full.
+    expect(canopyWaterStep(0, 0.5, 30)).toBeCloseTo(0.25, 12);
+    expect(canopyWaterStep(0.5, 0, 1 / 60)).toBeCloseTo(0.5 - 1 / 36000, 12);
+    // A second at a time: sixty of rain fill it, six hundred of none drain it.
+    let s = 0;
+    for (let i = 0; i < 60; i++) s = canopyWaterStep(s, 1, 1);
+    expect(s).toBeCloseTo(1, 9);
+    for (let i = 0; i < 600; i++) s = canopyWaterStep(s, 0, 1);
+    expect(s).toBeCloseTo(0, 9);
   });
 });
 

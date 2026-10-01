@@ -39,7 +39,7 @@
  * drips, whose speed times the fold is 6 × 40 / 12 = 20 box heights, exact).
  * A drip shows only where the map covers it with a transmission below 1,
  * below the ceiling: its cover term is `(1 - transmission)` there and 0
- * elsewhere, times `rainCanopyWater`, the canopy's water (`rainParams.ts`);
+ * elsewhere, times `rainCanopyWater`, the canopy's water (`weather.ts`);
  * with no map bound it is 0 everywhere. The near and far fades, the sky
  * fade and the lamp term apply as they do to a streak.
  *

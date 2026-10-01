@@ -628,6 +628,8 @@ describe("world shell wiring", () => {
     expect(freecamBranch).toContain(after);
     expect(playerBranch).toContain(after);
     expect(src.match(/rainSplash\?\.dispose\(\)/g)).toHaveLength(1);
+    // The one canopy-water value, read by the drip sound through the renderer.
+    expect(src).toContain("    canopyWater() {\n      return rain.canopyWater;\n    },");
   });
 });
 

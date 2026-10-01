@@ -217,18 +217,8 @@ export function splashCountUnder(rain: number, tier: QualityTier): number {
 export const DRIP_TIERS: Record<QualityTier, number> = { low: 0, medium: 600, high: 1000 };
 export const DRIP = { speed: 6, width: 0.04, length: 0.12, box: { x: 24, y: 12, z: 24 } } as const;
 
-/** The canopy water the drips follow: rising toward 1 at `rise × rain` per
- * second while it rains (full about a minute into a rain of 1), falling at
- * `fall` per second once it stops (dry ten minutes after). */
-export const CANOPY_WATER = { rise: 1 / 60, fall: 1 / 600 } as const;
-
-/** `prev` stepped by `dt` seconds under a rain value, clamped to [0, 1]. */
-export function canopyWaterStep(prev: number, rain: number, dt: number): number {
-  const next = rain > 0 ? prev + CANOPY_WATER.rise * rain * dt : prev - CANOPY_WATER.fall * dt;
-  return clamp01(next);
-}
-
-/** The drips drawn at a canopy water: `round(water × tier)`. */
+/** The drips drawn at a canopy water (`canopyWaterStep` in `weather.ts`,
+ * stepped by `rain.ts`): `round(water × tier)`. */
 export function dripCountUnder(water: number, tier: QualityTier): number {
   return Math.round(clamp01(water) * DRIP_TIERS[tier]);
 }

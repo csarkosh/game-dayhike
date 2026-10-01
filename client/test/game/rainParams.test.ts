@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  CANOPY_WATER, DRIP, DRIP_TIERS, RAIN_BOX, RAIN_CLASSES, RAIN_DT, RAIN_FOLD_S, RAIN_LENGTH, RAIN_MAP, RAIN_TIERS, RIPPLE_INSET,
-  RIPPLE_LAYERS, RIPPLE_RADIUS, RIPPLE_TIME_WRAP, SPLASH, SPLASH_CYCLES, SPLASH_FOLD_S, SPLASH_TIERS, canopyWaterStep,
-  dripCountUnder, mapCentre, rainBoxMin, rainClassOf, rainCountUnder, rainDrift, rainDropAt, rainFold, rainSeeds, rippleTime,
-  smoothedDt, splashCountUnder, splashFold, streakLength,
+  DRIP, DRIP_TIERS, RAIN_BOX, RAIN_CLASSES, RAIN_DT, RAIN_FOLD_S, RAIN_LENGTH, RAIN_MAP, RAIN_TIERS, RIPPLE_INSET, RIPPLE_LAYERS,
+  RIPPLE_RADIUS, RIPPLE_TIME_WRAP, SPLASH, SPLASH_CYCLES, SPLASH_FOLD_S, SPLASH_TIERS, dripCountUnder, mapCentre, rainBoxMin,
+  rainClassOf, rainCountUnder, rainDrift, rainDropAt, rainFold, rainSeeds, rippleTime, smoothedDt, splashCountUnder, splashFold,
+  streakLength,
 } from "../../src/game/rainParams.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
@@ -316,30 +316,5 @@ describe("the drips' numbers", () => {
     expect(dripCountUnder(1, "low")).toBe(0);
     expect(dripCountUnder(0, "high")).toBe(0);
     expect(dripCountUnder(3, "medium")).toBe(600);
-  });
-});
-
-describe("canopyWaterStep", () => {
-  it("rises at rain / 60 per second toward 1: a minute of rain 1 fills it from dry", () => {
-    expect(CANOPY_WATER).toEqual({ rise: 1 / 60, fall: 1 / 600 });
-    let water = 0;
-    for (let i = 0; i < 60; i++) water = canopyWaterStep(water, 1, 1);
-    expect(water).toBeCloseTo(1, 9);
-    expect(canopyWaterStep(0, 1, 30)).toBeCloseTo(0.5, 9);
-    // Half the rain, half the rate.
-    expect(canopyWaterStep(0, 0.5, 30)).toBeCloseTo(0.25, 9);
-    // Clamped at 1.
-    expect(canopyWaterStep(0.9, 1, 60)).toBe(1);
-  });
-
-  it("falls at 1 / 600 per second once the rain stops: ten minutes drain it from full", () => {
-    let water = 1;
-    for (let i = 0; i < 600; i++) water = canopyWaterStep(water, 0, 1);
-    expect(water).toBeCloseTo(0, 9);
-    expect(canopyWaterStep(1, 0, 300)).toBeCloseTo(0.5, 9);
-    // Clamped at 0.
-    expect(canopyWaterStep(0.1, 0, 600)).toBe(0);
-    // A frame's step.
-    expect(canopyWaterStep(0.5, 0, 1 / 60)).toBeCloseTo(0.5 - 1 / 36000, 12);
   });
 });

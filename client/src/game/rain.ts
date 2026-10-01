@@ -10,14 +10,14 @@ import { Engine } from "@babylonjs/core/Engines/engine.js";
 import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 
 import { clamp01 } from "./colour.js";
-import type { WeatherParams } from "./weather.js";
+import { canopyWaterStep, type WeatherParams } from "./weather.js";
 import type { QualityTier } from "./quality.js";
 import type { WindRecord } from "./windParams.js";
 import { attachRain, type RainPlugin } from "./rainPlugin.js";
 import type { RainMap } from "./rainMap.js";
 import {
-  DRIP, DRIP_TIERS, RAIN_LAMP_GAIN, RAIN_MILK, RAIN_SLANT, RAIN_TIERS, canopyWaterStep, dripCountUnder, rainBoxMin,
-  rainCountUnder, rainDrift, rainFold, rainSeeds, smoothedDt,
+  DRIP, DRIP_TIERS, RAIN_LAMP_GAIN, RAIN_MILK, RAIN_SLANT, RAIN_TIERS, dripCountUnder, rainBoxMin, rainCountUnder, rainDrift,
+  rainFold, rainSeeds, smoothedDt,
 } from "./rainParams.js";
 
 export const RAIN_TEX_W = 4;
@@ -78,7 +78,9 @@ export type Rain = {
   /** The drip volume, on the tiers that draw one (DRIP_TIERS); else null. */
   drips: Mesh | null;
   dripPlugin: RainPlugin | null;
-  /** The canopy's water, 0 to 1, stepped by every `update`. */
+  /** The canopy's water, 0 to 1, stepped by every `update`
+   * (`canopyWaterStep`, `weather.ts`): the one value the drawn drips and
+   * the heard ones (`ambientAudio.ts`, through the renderer) follow. */
   readonly canopyWater: number;
 };
 
