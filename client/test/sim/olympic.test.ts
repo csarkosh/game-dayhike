@@ -20,7 +20,7 @@ import { POND_APRON, MEADOW_RIM } from "../../src/sim/features.js";
 import {
   inBowl, TRAILHEAD_U, TRAILHEAD_RADIUS, TRAILHEAD_FADE, TRAIL_Z_ANCHOR, apronKeepD,
 } from "../../src/sim/bowl.js";
-import { roadFrameAt, olympicPreTrailSample, bowlFor } from "../../src/sim/olympic.js";
+import { roadFrameAt, olympicPreTrailSample, bowlFor, coveFor, COVE_END_BLEND } from "../../src/sim/olympic.js";
 import { TRAIL_CORRIDOR_HALF } from "../../src/sim/trail.js";
 
 // Floors set to roughly half the measured counts (generous margin), per
@@ -338,6 +338,7 @@ describe("the endless highway", () => {
     let cold = 0;
     let checked = 0;
     for (const [x, z] of sweepPoints()) {
+      if (Math.abs(z - coveFor(SEED).z0) < coveFor(SEED).halfWidth + COVE_END_BLEND) continue; // the cove's stage owns that ground
       const dist = roadDist(x, z);
       if (dist < CLIFF_ROAD_FAR + 1) continue;
       const { u, uDz } = roadFrameAt(SEED, x, z);
@@ -571,6 +572,7 @@ describe("beach dunes", () => {
     const out: Array<{ dh: number; ddx: number; ddz: number }> = [];
     for (let i = -60; i <= 60; i++) {
       const z = i * 41.3 + 0.29;
+      if (Math.abs(z - coveFor(SEED).z0) < coveFor(SEED).halfWidth + COVE_END_BLEND) continue; // the cove's stage owns that ground
       const d = v.coastDistance!(SEED, 0, z);
       for (let inland = 10; inland <= 56; inland += 2) {
         const x = 0 - d + inland;
