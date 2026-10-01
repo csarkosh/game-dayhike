@@ -8,7 +8,7 @@ const places = { car: { x: -246, z: 0 }, start: { x: -240, z: 4, yaw: 1.1 }, boa
 
 describe("the intro's data", () => {
   it("has eight shots that sum to seventy-two seconds", () => {
-    expect(INTRO_SHOTS.map((s) => [s.from, s.to])).toEqual([[0, 9], [9, 15], [15, 30.6], [30.6, 38.4], [38.4, 48], [48, 55], [55, 64], [64, 72]]);
+    expect(INTRO_SHOTS.map((s) => [s.from, s.to])).toEqual([[0, 9], [9, 15], [15, 30.625], [30.625, 38.4], [38.4, 48], [48, 55], [55, 64], [64, 72]]);
     expect(INTRO_DURATION).toBe(72);
   });
 
@@ -169,6 +169,14 @@ describe("the intro's data", () => {
     const at = (t: number) => evaluate(scene, t).camera;
     for (const k of ["x", "y", "z", "yaw", "pitch"] as const) expect(at(71.99)[k]).toBe(at(69)[k]);
     expect(Math.hypot(at(69).x - at(64).x, at(69).z - at(64).z)).toBeGreaterThan(3);
+  });
+
+  it("cuts only where a 24 fps frame's half-open shutter is shut", () => {
+    // A frame opens at k/24 for 1/48 s; a cut inside that would mix two shots in one frame.
+    for (const { from } of INTRO_SHOTS.slice(1)) {
+      const into = (from * 24) % 1;
+      expect(into === 0 || into >= 0.5, `the cut at ${from} s is ${into.toFixed(3)} of a frame in`).toBe(true);
+    }
   });
 
   it("keeps every shot's field of view within the film's range but the cab shot", () => {

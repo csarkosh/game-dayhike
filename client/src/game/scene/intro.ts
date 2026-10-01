@@ -25,7 +25,7 @@ export const INTRO_CAR = "intro.car";
 /** The eight shots of §3, in seconds: the cab, the insert and the shoulder
  * hold the call, which runs from 15 s to 51.9 s. */
 export const INTRO_SHOTS: readonly { from: number; to: number }[] = [
-  { from: 0, to: 9 }, { from: 9, to: 15 }, { from: 15, to: 30.6 }, { from: 30.6, to: 38.4 },
+  { from: 0, to: 9 }, { from: 9, to: 15 }, { from: 15, to: 30.625 }, { from: 30.625, to: 38.4 },
   { from: 38.4, to: 48 }, { from: 48, to: 55 }, { from: 55, to: 64 }, { from: 64, to: 72 },
 ];
 

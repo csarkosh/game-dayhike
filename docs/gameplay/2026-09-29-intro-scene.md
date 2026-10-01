@@ -115,8 +115,8 @@ side, so the car always crosses the frame the same way. Deep focus throughout bu
 | --- | --- | --- | --- |
 | 1 | 0:00 to 0:09 | Black, then a fade in. Wide over the sea stacks and mist, the car small on the coast road, a long lens from high up; the trailhead is not in frame. | surf, then the engine, then a radio squelch |
 | 2 | 0:09 to 0:15 | Along the road from the sea side, the forest to the tarmac, the camera a beat behind the car and then level with it. | dispatch keys up before the cut |
-| 3 | 0:15 to 0:30.6 | The cab from the back seat: gloved hands on the wheel, the handset in its cradle, the empty passenger seat, the road and the forest through the windscreen. The ranger's face is never framed closer than this. | the call, lines 1 to 5 |
-| 4 | 0:30.6 to 0:38.4 | The handset and the hand that holds it. | lines 6 and 7, line 8 begins |
+| 3 | 0:15 to 0:30.625 | The cab from the back seat: gloved hands on the wheel, the handset in its cradle, the empty passenger seat, the road and the forest through the windscreen. The ranger's face is never framed closer than this. | the call, lines 1 to 5 |
+| 4 | 0:30.625 to 0:38.4 | The handset and the hand that holds it. | lines 6 and 7, line 8 begins |
 | 5 | 0:38.4 to 0:48 | Low on the shoulder: the car passes close, into the treeline. | line 8 ends; line 9; the signal breaks; the static carries over the cut |
 | 6 | 0:48 to 0:55 | A locked-off wide as the car slows onto the shoulder by the board. | line 10; nothing; the engine cuts |
 | 7 | 0:55 to 1:04 | The door opens; the step onto gravel; the ranger from behind, walking round the car's tail to the trail's start and turning to it. | the door, boots, wind; no birds |
@@ -124,6 +124,9 @@ side, so the car always crosses the frame the same way. Deep focus throughout bu
 
 Amended 2026-09-30: the film runs 72 s. The call as recorded ends line 9 at 48.1 s, so shots 3
 to 5 hold 33 s instead of 21 s and shots 6 to 8 follow 12 s later.
+
+Every cut falls where a frame's shutter is shut (24 fps, each frame's shutter open for its first
+half), so no frame mixes two shots: the cut into shot 4 is at 0:30.625, the frame after 0:30.6.
 
 The game's name is not in the film. It shows for three seconds over the black after shot 8, then
 the last frame returns and holds (§5).
