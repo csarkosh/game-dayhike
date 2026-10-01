@@ -46,6 +46,10 @@ export class WaterPlugin extends MaterialPluginBase {
   windDir: [number, number] = [1, 0];
   /** Ripple octaves the fragment blends: 2, or 1 on the low tier (spec §5.3). */
   octaves = 2;
+  /** The duckweed and algae skin: x how much of the surface may carry it
+   * (`lakeSkin` of the lake's murk; 0 on the sea), y the seed's noise offset
+   * (`waterSkinOffset`). */
+  skin: [number, number] = [0, 0];
 
   constructor(material: Material, row: WaterRow) {
     // 230: after the atmosphere's 200 and every look plugin's 205 to 220; the
@@ -117,6 +121,7 @@ export class WaterPlugin extends MaterialPluginBase {
         { name: "waterHigh", size: 1, type: "float" },
         { name: "waterOctaves", size: 1, type: "float" },
         { name: "waterNearFar", size: 2, type: "vec2" },
+        { name: "waterSkin", size: 2, type: "vec2" },
       ],
       fragment: [
         "uniform float waterLevel;",
@@ -129,6 +134,7 @@ export class WaterPlugin extends MaterialPluginBase {
         "uniform float waterHigh;",
         "uniform float waterOctaves;",
         "uniform vec2 waterNearFar;",
+        "uniform vec2 waterSkin;",
       ].join("\n"),
     };
   }
@@ -155,6 +161,7 @@ export class WaterPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("waterHigh", high ? 1 : 0);
     uniformBuffer.updateFloat("waterOctaves", this.octaves);
     uniformBuffer.updateFloat2("waterNearFar", this.nearFar[0], this.nearFar[1]);
+    uniformBuffer.updateFloat2("waterSkin", this.skin[0], this.skin[1]);
     // Every declared sampler is bound on every draw: WebGPU validates the
     // bindings a pipeline declares whether or not a branch reads them. The
     // material is not ready until the bed texture exists, so the null guards

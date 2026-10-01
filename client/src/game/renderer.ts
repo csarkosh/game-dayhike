@@ -74,7 +74,7 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater } from "./waterPlugin.js";
 import { createWaterPlants } from "./waterPlants.js";
 import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
-import { WATER_ROWS, lakeWaterRow } from "./waterShading.js";
+import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "./waterShading.js";
 import { attachWet, setWetLine, wetLineFor, type WetBody } from "./wetPlugin.js";
 import {
   BED_GRID,
@@ -750,6 +750,9 @@ export function createWater(
     return mat;
   });
   const lakePlugins = lakes.map((l, i) => attachWater(lakeMats[i] as PBRMaterial, lakeWaterRow(l.murk)));
+  lakePlugins.forEach((p, i) => {
+    p.skin = [lakeSkin((lakes[i] as LakeSource).murk), waterSkinOffset(seed)];
+  });
   const plugins = [seaPlugin, ...lakePlugins];
   for (const mat of [seaMat, ...lakeMats]) {
     // High: the surface writes its own colour, the transmission read from the

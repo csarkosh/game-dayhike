@@ -214,4 +214,35 @@ describe("water plugin", () => {
     expect(writes).toContain("waterKd");
     expect(writes).not.toContain("waterLevel");
   });
+
+  it("declares and binds the skin, off by default", () => {
+    const mat = new PBRMaterial("wSkin", scene);
+    const p = attachWater(mat, WATER_ROWS.lowlandLake);
+    expect(p.skin).toEqual([0, 0]);
+    expect(p.getUniforms().ubo.map((u) => u.name)).toContain("waterSkin");
+    expect(p.getUniforms().fragment).toContain("uniform vec2 waterSkin;");
+    p.skin = [0.75, 123.5];
+    const pairs: [string, number, number][] = [];
+    const record = (): void => undefined;
+    const ubo = {
+      updateFloat: record, updateFloat3: record, updateFloat4: record, setTexture: vi.fn(),
+      updateFloat2: (name: string, a: number, b: number) => { pairs.push([name, a, b]); },
+    } as unknown as UniformBuffer;
+    p.bindForSubMesh(ubo);
+    expect(pairs).toContainEqual(["waterSkin", 0.75, 123.5]);
+  });
+
+  it("lays the skin over the water after the transmission, and takes the reflection off it", () => {
+    const l = fx("waterLights.fragment.fx");
+    const skin = l.indexOf("float wSkin = waterSkinMask(vPositionW.xz, wDepth);");
+    expect(skin).toBeGreaterThan(l.indexOf("wTransmit = wBed * wT * (1.0 - wF);"));
+    expect(l).toContain("wTransmit *= 1.0 - wSkin;");
+    const c = fx("waterCompose.fragment.fx");
+    expect(c).toContain("finalRadianceScaled *= 1.0 - wSkin;");
+    expect(c).toContain("finalSpecularScaled *= 1.0 - wSkin;");
+    expect(c.indexOf("finalRadianceScaled")).toBeLessThan(c.indexOf("finalEmissive += wTransmit;"));
+    const d = fx("water.fragment.fx");
+    expect(d).toContain("float waterSkinMask(vec2 xz, float depth)");
+    expect(d).toContain("vec3 waterSkinColour(vec2 xz, float viewDepth)");
+  });
 });

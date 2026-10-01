@@ -77,3 +77,45 @@ vec3 waterHorizonNormal(vec3 n, vec3 view) {
   }
   return normalize(view + r);
 }
+
+// The skin: duckweed and algae mats on a murky lake. A value noise on the unit
+// lattice (a hash without sine, which loses precision at world coordinates),
+// the lake's seed offsetting it.
+float waterSkinHash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float waterSkinNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = p - i;
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = waterSkinHash(i);
+  float b = waterSkinHash(i + vec2(1.0, 0.0));
+  float c = waterSkinHash(i + vec2(0.0, 1.0));
+  float d = waterSkinHash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// Where the skin lies, 0 to 1: duckweed in drifts on the sheltered shallows,
+// under 1.5 m, and algae in clumped mats along the margin, under 0.4 m.
+float waterSkinMask(vec2 xz, float depth) {
+  if (waterSkin.x <= 0.0) return 0.0;
+  vec2 p = xz + waterSkin.y;
+  float drift = waterSkinNoise(p / 9.0) * 0.65 + waterSkinNoise(p / 3.0) * 0.35;
+  float duckweed = smoothstep(0.55, 0.62, drift) * (1.0 - smoothstep(0.9, 1.5, depth));
+  float algae = smoothstep(0.5, 0.58, waterSkinNoise(p / 1.6)) * (1.0 - smoothstep(0.15, 0.4, depth));
+  return waterSkin.x * max(duckweed, algae);
+}
+
+// The skin's colour: duckweed's bright fronds, finely speckled near the eye
+// and evened out with distance so the speckle never shimmers, and the
+// yellower algae where the mats clump.
+vec3 waterSkinColour(vec2 xz, float viewDepth) {
+  vec2 p = xz + waterSkin.y;
+  float frond = mix(waterSkinNoise(p * 7.0), 0.5, smoothstep(10.0, 40.0, viewDepth));
+  vec3 duckweed = mix(vec3(0.16, 0.26, 0.05), vec3(0.24, 0.34, 0.07), frond);
+  vec3 algae = vec3(0.30, 0.32, 0.10);
+  return mix(duckweed, algae, 0.5 * smoothstep(0.4, 0.6, waterSkinNoise(p / 1.6)));
+}

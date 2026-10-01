@@ -62,6 +62,12 @@ export function lakeSkin(murk: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/** The seed's offset (m) for the skin's noise, so two worlds' lakes do not
+ * wear the same pattern. Render-only, but seeded: every peer sees one skin. */
+export function waterSkinOffset(seed: number): number {
+  return ((seed >>> 0) % 4096) * 0.731;
+}
+
 /** Fresnel reflectance of water at normal incidence, n = 1.33. Mirrored in shaders/water.fragment.fx. */
 export const WATER_F0 = 0.02;
 /** The reflected ray's least y (spec §5.1). Mirrored in shaders/water.fragment.fx. */

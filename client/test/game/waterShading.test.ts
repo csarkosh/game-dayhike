@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  WATER_ROWS, lakeWaterRow, lakeSkin, CLEAR_LAKE_KD, WATER_F0, WATER_HORIZON, WATER_WIND_MAX,
+  WATER_ROWS, lakeWaterRow, lakeSkin, waterSkinOffset, CLEAR_LAKE_KD, WATER_F0, WATER_HORIZON, WATER_WIND_MAX,
   fresnelSchlick, fresnelExact, transmission, meanKd, alphaFor,
   slopeVariance, roughnessFor, horizonSafeNormal,
 } from "../../src/game/waterShading.js";
@@ -151,5 +151,14 @@ describe("lakeSkin", () => {
     expect(lakeSkin(0.8)).toBe(1);
     expect(lakeSkin(1)).toBe(1);
     expect(lakeSkin(0.65)).toBeCloseTo(0.5, 12);
+  });
+});
+
+describe("waterSkinOffset", () => {
+  it("is the same for a seed every time, and differs between seeds", () => {
+    expect(waterSkinOffset(0x5eed)).toBe(waterSkinOffset(0x5eed));
+    expect(waterSkinOffset(1)).not.toBe(waterSkinOffset(2));
+    expect(waterSkinOffset(-1)).toBeGreaterThanOrEqual(0);
+    expect(waterSkinOffset(-1)).toBeLessThan(4096);
   });
 });

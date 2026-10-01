@@ -10,7 +10,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 // the ACTIVE variant, and this test states which one it means to exercise.
 import "../../src/sim/olympic.js";
 import { activeTerrainVariant, setActiveTerrainVariant, type LakeSource } from "../../src/sim/terrain.js";
-import { lakeWaterRow } from "../../src/game/waterShading.js";
+import { lakeSkin, lakeWaterRow, waterSkinOffset } from "../../src/game/waterShading.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { WATER_UV_SCROLL, createWater, effectsGroupFor, setEffectsGroup } from "../../src/game/renderer.js";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
@@ -100,6 +100,9 @@ describe("createWater under NullEngine", () => {
     expect((pond.metadata as { waterLevel: number }).waterLevel).toBe(42);
     expect(pond.isVerticesDataPresent("bedDepth")).toBe(true);
     expect(pond.isVerticesDataPresent(VertexBuffer.ColorKind)).toBe(false);
+    expect((mat.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([lakeSkin(0), waterSkinOffset(1)]);
+    const sea = water.meshes[0]!.material as PBRMaterial;
+    expect((sea.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([0, 0]);
     water.dispose();
     expect(scene.getMeshByName("pond_0")).toBeNull();
     expect(scene.getMaterialByName("mat_water_lake_0")).toBeNull();
