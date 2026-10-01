@@ -72,6 +72,7 @@ import {
   CLUTTER_CLASS_COUNT,
   CLUTTER_DRIFTWOOD,
   CLUTTER_FLOWER,
+  CLUTTER_FUNGUS,
   CLUTTER_GRASS,
   CLUTTER_GRASS_CELL,
   CLUTTER_LITTER,
@@ -259,11 +260,19 @@ const FOLIAGE_BY_CLASS = new Map<number, FoliageProfile>([
 
 /** The weather's porosity cap per class (wetPlugin.ts): the cards glaze,
  * stone darkens by half, driftwood and fungus soak. Litter is pebbles and
- * twigs under a metre across, taken as stone. */
-const WET_CAP_BY_CLASS: readonly number[] = [
-  WET_CAP.leaf, WET_CAP.rock, WET_CAP.rock, WET_CAP.deadwood, WET_CAP.fungus,
-  WET_CAP.leaf, WET_CAP.leaf, WET_CAP.leaf, WET_CAP.rock,
-];
+ * twigs under a metre across, taken as stone. Every class has an entry
+ * (`clutterMeshes.test.ts` pins it). */
+export const WET_CAP_BY_CLASS: ReadonlyMap<number, number> = new Map<number, number>([
+  [CLUTTER_GRASS, WET_CAP.leaf],
+  [CLUTTER_ROCK, WET_CAP.rock],
+  [CLUTTER_BOULDER, WET_CAP.rock],
+  [CLUTTER_DRIFTWOOD, WET_CAP.deadwood],
+  [CLUTTER_FUNGUS, WET_CAP.fungus],
+  [CLUTTER_BUSH, WET_CAP.leaf],
+  [CLUTTER_MEADOW, WET_CAP.leaf],
+  [CLUTTER_FLOWER, WET_CAP.leaf],
+  [CLUTTER_LITTER, WET_CAP.rock],
+]);
 
 /** Classes that LIE on the ground rather than stand on it, so they take the
  * ground normal. Grass, meadow, flower, bush and fungus are excluded: measured,
@@ -1144,7 +1153,7 @@ export function createClutterMeshes(
           for (const mesh of meshes) {
             if (mesh.material) {
               attachDistanceFade(mesh.material);
-              attachWet(mesh.material, WET_CAP_BY_CLASS[cls]!);
+              attachWet(mesh.material, WET_CAP_BY_CLASS.get(cls)!);
             }
           }
           return {

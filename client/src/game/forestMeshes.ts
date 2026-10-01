@@ -1140,8 +1140,12 @@ export function createForestMeshes(
       if (mesh.material) {
         attachGroundConform(mesh.material);
         attachDistanceFade(mesh.material);
-        // The weather's wetting: the crown's cards alpha-test, the bark does
-        // not, which is what tells the two materials of a tree apart here.
+        // The weather's wetting: the crown's cards alpha-test (MASK), the
+        // bark is opaque, which is what tells the two materials of a tree
+        // apart here, as `attachDistanceFade` reads them. A crown shipped as
+        // BLEND or a bark shipped as MASK would take the other's cap, so the
+        // shipped tree files must keep those modes (`forestMeshes.test.ts`
+        // pins the choice on its stub pair).
         attachWet(mesh.material, mesh.material.needAlphaTesting() ? WET_CAP.leaf : WET_CAP.bark);
       }
     }

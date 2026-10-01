@@ -14,6 +14,7 @@ import type { PropShadows } from "./propMeshes.js";
 import { budgetMaterial } from "./headlamp.js";
 import { labelWear, type LabelWear } from "./labelWear.js";
 import { defaultModelLoader, loaderUntilAborted, instantiateStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
+import { attachWet, WET_CAP } from "./wetPlugin.js";
 
 export const SIGN_POST_OUTPUT = "models/sign.post.glb";
 export const SIGN_ARM_OUTPUT = "models/sign.arm.glb";
@@ -333,6 +334,7 @@ export function createSignMeshes(
     );
     mesh.position.set(post.x, groundH(post.x, post.z) + SIGN_POST_HALF.y, post.z);
     mesh.material = deps.materialFor("signpost");
+    attachWet(mesh.material, WET_CAP.prop);
     mesh.isPickable = false;
     mesh.freezeWorldMatrix();
     deps.shadows?.add(mesh);
@@ -346,7 +348,11 @@ export function createSignMeshes(
 
   function keep(model: PlacedModel, footing: TransformNode): void {
     model.node.parent = footing;
-    for (const m of model.meshes) deps.shadows?.add(m);
+    for (const m of model.meshes) {
+      deps.shadows?.add(m);
+      // The weather soaks the post as it does every prop.
+      if (m.material) attachWet(m.material, WET_CAP.prop);
+    }
     placed.push(model);
   }
 

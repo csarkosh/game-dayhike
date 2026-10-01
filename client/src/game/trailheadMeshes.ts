@@ -18,6 +18,7 @@ import { CAR_SHADOW_BIAS, CAR_SHADOW_TEX, carShadowAlphaMap, carShadowGrid } fro
 import type { PropShadows } from "./propMeshes.js";
 import { armYaw } from "./signMeshes.js";
 import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
+import { attachWet, WET_CAP } from "./wetPlugin.js";
 
 export const TRAILHEAD_CAR_OUTPUT = "models/trailhead.car.glb";
 export const TRAILHEAD_KIOSK_OUTPUT = "models/trailhead.kiosk.glb";
@@ -158,6 +159,7 @@ export function createTrailheadMeshes(
     const mesh = MeshBuilder.CreateBox(name, { width: 2 * half.x, height: 2 * half.y, depth: 2 * half.z }, scene);
     mesh.position.set(site.x, ground + half.y, site.z);
     mesh.material = deps.materialFor(material);
+    attachWet(mesh.material, WET_CAP.prop);
     mesh.isPickable = false;
     mesh.freezeWorldMatrix();
     deps.shadows?.add(mesh);
@@ -198,7 +200,11 @@ export function createTrailheadMeshes(
       container.dispose();
       return;
     }
-    for (const m of model.meshes) deps.shadows?.add(m);
+    for (const m of model.meshes) {
+      deps.shadows?.add(m);
+      // The weather soaks the car and the kiosk as it does every prop.
+      if (m.material) attachWet(m.material, WET_CAP.prop);
+    }
     placed.push(model);
     for (const box of boxes) dropBox(box);
     try {

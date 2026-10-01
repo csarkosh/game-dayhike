@@ -1008,7 +1008,7 @@ describe("the grass floor compiles into the fragment source on both paths", () =
       try {
         const source = await compiledFragmentSource(s, (plugin) => plugin.enableTrail(trailGraphFixture));
         expect(source).not.toContain("rippleSampler");
-        expect(source.match(/float tRdrop = fract\(latticeHash\(tRc\) \+ terrainTime \* /g)).toHaveLength(4);
+        expect(source.match(/float tRdrop = fract\(latticeHash\(tRh\) \+ terrainTime \* /g)).toHaveLength(4);
         expect(source.indexOf("float latticeHash(")).toBeLessThan(source.indexOf("vec2 tRcentre"));
         const rainDecl = forceUbo ? /\bfloat terrainRain;/g : /uniform\s+float\s+terrainRain\s*;/g;
         const timeDecl = forceUbo ? /\bfloat terrainTime;/g : /uniform\s+float\s+terrainTime\s*;/g;
@@ -1066,17 +1066,22 @@ describe("rain on the puddles", () => {
 
   it("tilts the puddle's normal by four ripple layers of hashed rings, one in per quarter of the rain, scaled by the rain", () => {
     expect(TRAIL_FRAGMENT_PAINT.match(/vec2 tRc = floor\(tRp\);/g)).toHaveLength(4);
+    // Skipped outright under no rain: a branch on the uniform, nothing sampled inside.
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec2 tRipple = vec2(0.0);\n    if (terrainRain > 0.0) {\n");
+    expect(TRAIL_FRAGMENT_PAINT.slice(TRAIL_FRAGMENT_PAINT.indexOf("if (terrainRain > 0.0) {"), TRAIL_FRAGMENT_PAINT.indexOf("vec3 tPuddleN"))).not.toContain("texture2D(");
+    // The cell hashed modulo 512, so the hash keeps its precision a kilometre out.
+    expect(TRAIL_FRAGMENT_PAINT.match(/vec2 tRh = mod\(tRc, 512\.0\);/g)).toHaveLength(4);
     expect(TRAIL_FRAGMENT_PAINT).not.toContain("texture2D(rippleSampler");
     expect(TRAIL_FRAGMENT_PAINT).toContain("vec2 tRp = vPositionW.xz * 2.5 + vec2(0.0, 0.0);");
     expect(TRAIL_FRAGMENT_PAINT).toContain("vec2 tRp = vPositionW.xz * 3.8 + vec2(0.19, 0.83);");
     // The centre inset a quarter from the cell's edges, the radius a quarter: the ring never leaves its cell.
-    expect(TRAIL_FRAGMENT_PAINT).toContain("vec2 tRcentre = vec2(latticeHash(tRc + vec2(37.0, 0.0)), latticeHash(tRc + vec2(0.0, 91.0))) * 0.5 + 0.25;");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("vec2 tRcentre = vec2(latticeHash(tRh + vec2(37.0, 0.0)), latticeHash(tRh + vec2(0.0, 91.0))) * 0.5 + 0.25;");
     expect(TRAIL_FRAGMENT_PAINT).toContain("float tRr = clamp(1.0 - tRdist / 0.25, 0.0, 1.0);");
     expect(TRAIL_FRAGMENT_PAINT).toContain("vec2 tRdir = tRd / max(tRdist, 0.0001);");
     expect(TRAIL_FRAGMENT_PAINT).toContain("clamp(terrainRain * 4.0 - 0.0, 0.0, 1.0)");
     expect(TRAIL_FRAGMENT_PAINT).toContain("clamp(terrainRain * 4.0 - 3.0, 0.0, 1.0)");
-    expect(TRAIL_FRAGMENT_PAINT).toContain("fract(latticeHash(tRc) + terrainTime * 1.0 + 0.0)");
-    expect(TRAIL_FRAGMENT_PAINT).toContain("fract(latticeHash(tRc) + terrainTime * 1.13 + 0.7)");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("fract(latticeHash(tRh) + terrainTime * 1.0 + 0.0)");
+    expect(TRAIL_FRAGMENT_PAINT).toContain("fract(latticeHash(tRh) + terrainTime * 1.13 + 0.7)");
     expect(TRAIL_FRAGMENT_PAINT).toContain("float tRt = tRdrop - 1.0 + tRr;");
     expect(TRAIL_FRAGMENT_PAINT).toContain("float tRf = clamp(0.2 + tRw * 0.8 - tRdrop, 0.0, 1.0);");
     expect(TRAIL_FRAGMENT_PAINT).toContain("tRipple += tRdir * tRf * tRr * sin(clamp(tRt * 9.0, 0.0, 3.0) * 3.14159) * 0.35;");

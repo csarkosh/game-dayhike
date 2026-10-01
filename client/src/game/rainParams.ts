@@ -185,11 +185,12 @@ export function rainCountUnder(rain: number, tier: QualityTier): number {
  * shader). The rings are made in the fragment rather than read from a
  * texture: the terrain's fragment stage already samples the sixteen
  * textures WebGPU's default per-stage limit allows, which the engine keeps
- * at the default on purpose (`stageBindings.test.ts`).
+ * at the default on purpose (`stageBindings.test.ts`). `RIPPLE_RADIUS` is a
+ * ring's radius as a share of its cell, and `RIPPLE_INSET` how far from the
+ * cell's edges, in cells, its centre sits at least: the ring never leaves
+ * its cell.
  */
-/** A ring's radius, as a share of its cell: inside the cell at any centre. */
 export const RIPPLE_RADIUS = 0.25;
-/** A ring's centre sits this far from its cell's edges, in cells, at least. */
 export const RIPPLE_INSET = 0.25;
 
 /** One layer of ripples on a puddle: the cells read at `scale` a metre from
