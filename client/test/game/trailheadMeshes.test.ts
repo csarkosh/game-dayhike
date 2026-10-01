@@ -411,4 +411,19 @@ describe("the car's soft patch on a moving car", () => {
     expect(moving.mesh.isDisposed()).toBe(true);
     engine.dispose();
   });
+
+  it("can be drawn as the ground is, fogged by the atmosphere, and lighter", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const patch = createCarShadowPatch(scene, { x: 0, z: 0 }, () => 0, { moving: true, atmosphere: true, darkness: 0.5 });
+    const material = patch.material as PBRMaterial;
+    // A PBR material is what the atmosphere's fog reaches; unlit and black, the alpha map its shape.
+    expect(material).toBeInstanceOf(PBRMaterial);
+    expect([material.unlit, material.albedoColor.asArray(), material.alpha]).toEqual([true, [0, 0, 0], 0.5]);
+    expect(material.opacityTexture).toBe(patch.texture);
+    const plain = createCarShadowPatch(scene, { x: 0, z: 0 }, () => 0);
+    expect(plain.material).toBeInstanceOf(StandardMaterial);
+    expect(plain.material.alpha).toBe(1);
+    engine.dispose();
+  });
 });

@@ -30,10 +30,11 @@ import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "../../sim/signs.js";
 import { signSites } from "../../sim/placeNames.js";
 import { terrainMaterialFor } from "../renderer.js";
 import { createCaptionPanel } from "./captions.js";
+import { createCordTube } from "./cordTube.js";
 import { INTRO_CAR, INTRO_HOUR, INTRO_RANGER, INTRO_SEED_TOKEN, INTRO_WEATHER, introScene } from "./intro.js";
 import { createSceneClock, type SceneClock } from "./sceneClock.js";
 import { createScenePlayer } from "./scenePlayer.js";
-import { carModelOf, type CarModel, type StageDeps } from "./sceneStage.js";
+import { carModelOf, dimCabParts, type CarModel, type StageDeps } from "./sceneStage.js";
 
 export type DayhikeScene = {
   seek(t: number): void;
@@ -56,6 +57,9 @@ export type SceneRouteDeps = {
   /** The board's painter; a test with no canvas hands in its own. */
   paint?: BoardPainter;
 };
+
+/** How dark the film car's patch is against the hike's parked car's (its alpha). */
+const FILM_PATCH_DARKNESS = 0.5;
 
 const BLACK_STYLE = "position:absolute;inset:0;background:#000;pointer-events:none;z-index:29;";
 
@@ -132,6 +136,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   let car: CarModel | null = null;
   let carModel: PlacedModel | null = null;
   let carPatch: CarShadowPatch | null = null;
+  let cordTube: ReturnType<typeof createCordTube> | null = null;
   const carLoaded = (deps.loadCar ?? ((s) => loadFilmCar(s, loads.signal)))(renderer.scene).then((placed) => {
     if (placed === null || disposed) {
       placed?.dispose();
@@ -139,12 +144,17 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     }
     carModel = placed;
     car = carModelOf(placed, (line) => console.warn(line));
+    dimCabParts(car);
+    cordTube = createCordTube(renderer.scene);
+    stage.cord = cordTube;
     // `stage` is made below, before this promise can resolve.
     stage.car = car;
     for (const mesh of placed.meshes) renderer.shadows.add(mesh);
     // The dark under the car that the mist's light leaves, as under the hike's
     // parked car; without it a car on the road stands on it like a cut-out.
-    carPatch = createCarShadowPatch(renderer.scene, { x: 0, z: 0 }, () => 0, { moving: true });
+    // Fogged by the atmosphere as the road is, so it fades with it far off,
+    // and lighter than the parked car's: the film's light is all sky.
+    carPatch = createCarShadowPatch(renderer.scene, { x: 0, z: 0 }, () => 0, { moving: true, atmosphere: true, darkness: FILM_PATCH_DARKNESS });
     carPatch.mesh.name = "film_car_shadow";
     carPatch.mesh.parent = placed.node;
   });
@@ -233,6 +243,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       posts.dispose();
       trailhead.dispose();
       pool.dispose();
+      cordTube?.dispose();
       carPatch?.dispose();
       carModel?.dispose();
       renderer.dispose();

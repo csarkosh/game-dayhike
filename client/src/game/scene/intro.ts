@@ -25,8 +25,8 @@ export const INTRO_CAR = "intro.car";
 /** The eight shots of §3, in seconds: the cab, the insert and the shoulder
  * hold the call, which runs from 15 s to 51.9 s. */
 export const INTRO_SHOTS: readonly { from: number; to: number }[] = [
-  { from: 0, to: 9 }, { from: 9, to: 15 }, { from: 15, to: 30.6 }, { from: 30.6, to: 38.4 },
-  { from: 38.4, to: 48 }, { from: 48, to: 55 }, { from: 55, to: 62 }, { from: 62, to: 72 },
+  { from: 0, to: 9 }, { from: 9, to: 15 }, { from: 15, to: 30.625 }, { from: 30.625, to: 38.4 },
+  { from: 38.4, to: 48 }, { from: 48, to: 55 }, { from: 55, to: 64 }, { from: 64, to: 72 },
 ];
 
 /** The car's drive: from this far down the road, at a cruise, braking over
@@ -55,10 +55,11 @@ const CHEST = "chest";
 const HIPS = "hips";
 /** The handset at the mouth, in the car's frame: its centre in the talk clip's fist, measured on the model. */
 const HANDSET_HELD = { x: CHEST_SEAT.x - 0.031, y: CHEST_SEAT.y + 0.207, z: CHEST_SEAT.z + 0.137 };
-/** The insert's camera, in the car's frame: across the cab, looking back at the handset. */
-const INSERT_FROM = { x: 0.25, y: 1.3, z: 0.75 };
-/** Where the insert looks: 0.06 m above the handset, so the eyes sit a third down the frame. */
-const INSERT_AT = { x: HANDSET_HELD.x, y: HANDSET_HELD.y + 0.06, z: HANDSET_HELD.z };
+/** The insert's camera, in the car's frame: inside the cab by the passenger seat, looking across at the
+ * handset (0.3 m forward of here is the windscreen's glass, which a camera there would film through). */
+const INSERT_FROM = { x: 0.3, y: 1.2, z: 0.45 };
+/** Where the insert looks: the handset's centre, the whole handset and the fist in frame, his chin at the top. */
+const INSERT_AT = HANDSET_HELD;
 
 /** The ranger's performance, on the call's times (s). */
 const REACH_AT = 15.0;
@@ -113,7 +114,7 @@ const COAST_FOV = 0.25;
 const COAST_OUT_M = 70;
 const COAST_UP_M = 38;
 const COAST_AHEAD_M = 45;
-const INSERT_FOV = 0.5;
+const INSERT_FOV = 0.3;
 const TRAIL_FOV = 0.5;
 
 export type IntroPlaces = {
@@ -272,8 +273,10 @@ export function introScene(road: Road, places: IntroPlaces): Scene {
 
   const rangerLook = (t: number) => {
     const r = ranger(t);
-    // An anchored ranger's point is his chest or hips; a standing one's, his feet.
-    return { x: r.x, y: r.y + (r.anchor === undefined ? 1.5 : 0.6), z: r.z };
+    // An anchored ranger's point is his chest or hips; a standing one's, his feet, looked at as
+    // high over them as the stand-up's hips are at its end, so a shot holding on him does not
+    // jump as he starts to walk.
+    return { x: r.x, y: r.y + (r.anchor === undefined ? HIPS_OUT.y + 0.6 : 0.6), z: r.z };
   };
   const carLook = (t: number) => {
     const c = carAt(t);
@@ -307,7 +310,8 @@ export function introScene(road: Road, places: IntroPlaces): Scene {
     { ...s[7]!, shot: push(
       { x: places.start.x - Math.sin(places.start.yaw) * 2.2 + Math.cos(places.start.yaw) * 0.6, y: ground(places.start.x, places.start.z) + 1.6, z: places.start.z - Math.cos(places.start.yaw) * 2.2 - Math.sin(places.start.yaw) * 0.6 },
       { x: places.start.x + Math.sin(places.start.yaw) * 1.5 + Math.cos(places.start.yaw) * 0.6, y: ground(places.start.x, places.start.z) + 1.6, z: places.start.z + Math.cos(places.start.yaw) * 1.5 - Math.sin(places.start.yaw) * 0.6 },
-      7, trailAndBoard, TRAIL_FOV,
+      // Shot 8's 8 s less the 3 s held still at the end.
+      5, trailAndBoard, TRAIL_FOV,
     ) },
   ];
 

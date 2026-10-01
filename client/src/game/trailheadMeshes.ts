@@ -1,10 +1,12 @@
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import { Engine } from "@babylonjs/core/Engines/engine.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 // Non-.pure path, load-bearing (Babylon 9 split — see lighting.ts).
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
+import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
@@ -86,20 +88,23 @@ export function carYaw(site: Site, trailhead: Site): number {
  * (`carShadow.ts`).
  */
 /** The soft patch and its parts: what the caller disposes. */
-export type CarShadowPatch = { mesh: Mesh; material: StandardMaterial; texture: RawTexture; dispose(): void };
+export type CarShadowPatch = { mesh: Mesh; material: StandardMaterial | PBRMaterial; texture: RawTexture; dispose(): void };
 
 /**
  * The patch under the car: black, unlit, laid over the ground by its
  * texture's alpha. It writes no depth, so it is in the way of nothing
- * drawn after it, and it is fogged as the ground under it is. Built as
- * the mist's material is (`mistMeshes.ts`), so the two are drawn by one
- * shader.
+ * drawn after it. Built as the mist's material is (`mistMeshes.ts`), so
+ * the two are drawn by one shader; that material reads Babylon's own fog,
+ * which is lighter than the atmosphere's in a mist, so far off the patch
+ * stays dark on a fogged road. With `atmosphere` it is a PBR material
+ * instead, which the atmosphere's fog reaches as it reaches the ground.
+ * `darkness` scales its alpha.
  */
 export function createCarShadowPatch(
-scene: Scene,
-site: { x: number; z: number },
-groundH: (x: number, z: number) => number,
-{ moving = false }: { moving?: boolean } = {},
+  scene: Scene,
+  site: { x: number; z: number },
+  groundH: (x: number, z: number) => number,
+  { moving = false, atmosphere = false, darkness = 1 }: { moving?: boolean; atmosphere?: boolean; darkness?: number } = {},
 ): CarShadowPatch {
   const texture = RawTexture.CreateRGBATexture(
     carShadowAlphaMap(), CAR_SHADOW_TEX.width, CAR_SHADOW_TEX.height, scene, true, false, Texture.TRILINEAR_SAMPLINGMODE,
@@ -108,9 +113,21 @@ groundH: (x: number, z: number) => number,
   texture.hasAlpha = true;
   texture.wrapU = Texture.CLAMP_ADDRESSMODE;
   texture.wrapV = Texture.CLAMP_ADDRESSMODE;
-  const material = new StandardMaterial("mat_trailhead_car_shadow", scene);
-  material.disableLighting = true;
-  material.opacityTexture = texture;
+  let material: StandardMaterial | PBRMaterial;
+  if (atmosphere) {
+    const pbr = new PBRMaterial("mat_car_shadow_fogged", scene);
+    pbr.unlit = true;
+    pbr.albedoColor = new Color3(0, 0, 0);
+    pbr.opacityTexture = texture;
+    pbr.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+    material = pbr;
+  } else {
+    const plain = new StandardMaterial("mat_trailhead_car_shadow", scene);
+    plain.disableLighting = true;
+    plain.opacityTexture = texture;
+    material = plain;
+  }
+  material.alpha = darkness;
   material.disableDepthWrite = true;
   material.backFaceCulling = false;
   material.zOffsetUnits = CAR_SHADOW_BIAS;

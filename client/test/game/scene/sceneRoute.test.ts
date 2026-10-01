@@ -94,6 +94,9 @@ describe("the scene route", () => {
     await (globalThis as { dayhikeScene?: { ready: Promise<void> } }).dayhikeScene!.ready;
     const patch = run.scene().getMeshByName("film_car_shadow");
     expect(patch?.parent).toBe(root);
+    // Fogged as the road is, and half as dark as the hike's parked car's under the film's mist.
+    expect(patch?.material?.getClassName()).toBe("PBRMaterial");
+    expect(patch?.material?.alpha).toBe(0.5);
     run.dispose();
   }, timeLimit(20000));
 

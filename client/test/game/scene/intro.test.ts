@@ -8,7 +8,7 @@ const places = { car: { x: -246, z: 0 }, start: { x: -240, z: 4, yaw: 1.1 }, boa
 
 describe("the intro's data", () => {
   it("has eight shots that sum to seventy-two seconds", () => {
-    expect(INTRO_SHOTS.map((s) => [s.from, s.to])).toEqual([[0, 9], [9, 15], [15, 30.6], [30.6, 38.4], [38.4, 48], [48, 55], [55, 62], [62, 72]]);
+    expect(INTRO_SHOTS.map((s) => [s.from, s.to])).toEqual([[0, 9], [9, 15], [15, 30.625], [30.625, 38.4], [38.4, 48], [48, 55], [55, 64], [64, 72]]);
     expect(INTRO_DURATION).toBe(72);
   });
 
@@ -153,6 +153,29 @@ describe("the intro's data", () => {
       expect(turn(63.99, 64)).toBeLessThan(0.02);
       // A half turn over the 0.3 s blend peaks at 0.65 rad a frame.
       for (let t = 58; t < 64; t += 1 / 24) expect(turn(t, t + 1 / 24)).toBeLessThan(0.7);
+    }
+  });
+
+  it("holds shot 7's camera steady as he goes from standing up to walking", () => {
+    const scene = introScene(road, places);
+    const [a, b] = [evaluate(scene, 57.99).camera, evaluate(scene, 58).camera];
+    // A hundredth of a second of his slow turn and step: well under a thousandth of a radian.
+    expect(Math.abs(b.pitch - a.pitch)).toBeLessThan(0.001);
+    expect(Math.abs(b.yaw - a.yaw)).toBeLessThan(0.001);
+  });
+
+  it("pushes onto the trail from the cut at 64 s and holds the last three seconds still", () => {
+    const scene = introScene(road, places);
+    const at = (t: number) => evaluate(scene, t).camera;
+    for (const k of ["x", "y", "z", "yaw", "pitch"] as const) expect(at(71.99)[k]).toBe(at(69)[k]);
+    expect(Math.hypot(at(69).x - at(64).x, at(69).z - at(64).z)).toBeGreaterThan(3);
+  });
+
+  it("cuts only where a 24 fps frame's half-open shutter is shut", () => {
+    // A frame opens at k/24 for 1/48 s; a cut inside that would mix two shots in one frame.
+    for (const { from } of INTRO_SHOTS.slice(1)) {
+      const into = (from * 24) % 1;
+      expect(into === 0 || into >= 0.5, `the cut at ${from} s is ${into.toFixed(3)} of a frame in`).toBe(true);
     }
   });
 

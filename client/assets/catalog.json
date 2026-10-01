@@ -89,7 +89,7 @@
       "kind": "environment",
       "output": "models/intro.car.glb",
       "scene": "intro",
-      "bytes": 1840080
+      "bytes": 1939744
     },
     {
       "id": "intro.ranger",
@@ -470,6 +470,17 @@
       "id": "call.eagle_cry",
       "output": "audio/call.eagle_cry.mp3",
       "bytes": 16613
+    }
+  ],
+  "video": [
+    {
+      "id": "intro",
+      "output": "video/intro.mp4",
+      "bytes": 42497674,
+      "still": {
+        "output": "images/intro.still.webp",
+        "bytes": 119160
+      }
     }
   ]
 }
