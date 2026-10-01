@@ -633,6 +633,14 @@ describe("world shell wiring", () => {
     // And the one canopy over the camera, read for the lens and heard by the drips.
     expect(src).toContain("    canopyOver() {\n      return lensCanopy;\n    },");
   });
+
+  it("rings the water with the weather's rain each frame, beside the puddles", () => {
+    const feed = slice("applyWetness(scene, weather);", "atmosphere.update(weather, lighting.hour);");
+    expect(feed).toContain(
+      "setTerrainRain(scene, terrainMaterialFor(scene, \"terrain\"), weather.rain, seconds);\n      water?.setRain(weather.rain);",
+    );
+    expect(src.match(/water\?\.setRain\(/g)).toHaveLength(1);
+  });
 });
 
 describe("the wildlife director goes quiet near the Hollow", () => {

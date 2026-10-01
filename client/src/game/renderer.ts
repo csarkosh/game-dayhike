@@ -660,6 +660,8 @@ export type Water = {
   update(camX: number, camZ: number, seconds: number): void;
   /** Per frame from the wind record: the 0..1 speed and the direction it blows toward. */
   setWind(wind01: number, dir: [number, number]): void;
+  /** Per frame from the weather: the rain, 0 to 1, that rings the surface. */
+  setRain(rain: number): void;
   dispose(): void;
 };
 
@@ -1046,6 +1048,9 @@ export function createWater(
     },
     setWind(wind01, dir) {
       for (const p of plugins) p.setWind(wind01, dir);
+    },
+    setRain(rain) {
+      for (const p of plugins) p.rain = rain;
     },
     dispose() {
       scene.onBeforeRenderObservable.remove(scroll);
@@ -1902,6 +1907,7 @@ function buildRenderer(
       applyWetness(scene, weather);
       setTerrainWetness(scene, terrainMaterialFor(scene, "terrain"), weather.wetness);
       setTerrainRain(scene, terrainMaterialFor(scene, "terrain"), weather.rain, seconds);
+      water?.setRain(weather.rain);
       setWetWeather(weather.wetness);
       atmosphere.update(weather, lighting.hour);
       const stare = state.players.get(localId)?.stare ?? 0;

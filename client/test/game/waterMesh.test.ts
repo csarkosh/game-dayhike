@@ -190,6 +190,20 @@ describe("createWater under NullEngine", () => {
     water.dispose();
   }, timeLimit(30_000));
 
+  it("hands the rain to every plugin, the sea's and each lake's", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 1, 0, [lake({ murk: 1 }), lake({ x: -300, z: 200, murk: 0 })]);
+    const plugins = [...water.meshes, ...water.lakeMeshes].map(
+      (m) => (m.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin,
+    );
+    expect(new Set(plugins).size).toBe(3);
+    for (const p of plugins) expect(p.rain).toBe(0);
+    water.setRain(0.3);
+    for (const p of plugins) expect(p.rain).toBe(0.3);
+    water.dispose();
+  }, timeLimit(30_000));
+
   it("uploads the bed at creation, before any frame, at the camera's start", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);

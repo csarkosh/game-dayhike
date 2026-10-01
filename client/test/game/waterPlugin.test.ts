@@ -12,6 +12,7 @@ import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import { WaterPlugin, attachWater } from "../../src/game/waterPlugin.js";
 import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH, WATER_SKIN_DRIFT } from "../../src/game/waterShading.js";
+import { RIPPLE_INSET, RIPPLE_LAYERS, RIPPLE_RADIUS, RIPPLE_TIME_WRAP } from "../../src/game/rainParams.js";
 
 const fx = (name: string) => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
 const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
@@ -259,5 +260,66 @@ describe("water plugin", () => {
     expect(mask).toContain("- waterWind * (waterTime * ");
     expect(col).toContain("- waterWind * (waterTime * ");
     expect(fx("water.fragment.fx")).toContain(`const float WATER_SKIN_DRIFT = ${glslFloat(WATER_SKIN_DRIFT)};`);
+  });
+});
+
+describe("the rain's rings on the water", () => {
+  it("declares and binds the rain, off by default", () => {
+    const mat = new PBRMaterial("wRain", scene);
+    const p = attachWater(mat, WATER_ROWS.lowlandLake);
+    expect(p.rain).toBe(0);
+    const names = p.getUniforms().ubo.map((u) => u.name);
+    expect(names).toContain("waterRain");
+    expect(names.indexOf("waterRain")).toBe(names.indexOf("waterSkin") + 1);
+    expect(p.getUniforms().fragment).toContain("uniform float waterRain;");
+    p.rain = 0.6;
+    const floats: [string, number][] = [];
+    const record = (): void => undefined;
+    const ubo = {
+      updateFloat2: record, updateFloat3: record, updateFloat4: record, setTexture: vi.fn(),
+      updateFloat: (name: string, v: number) => { floats.push([name, v]); },
+    } as unknown as UniformBuffer;
+    p.bindForSubMesh(ubo);
+    expect(floats).toContainEqual(["waterRain", 0.6]);
+  });
+
+  it("rings the normal before the horizon clamp and before the skin, on a uniform branch", () => {
+    const d = fx("water.fragment.fx");
+    expect(d).toContain("vec2 waterRainSlope(vec2 xz)");
+    expect(d).toContain(`mod(waterTime, ${glslFloat(RIPPLE_TIME_WRAP)})`);
+    expect(d).toContain("if (waterRain <= 0.0) return vec2(0.0);");
+    const l = fx("waterLights.fragment.fx");
+    const rings = l.indexOf("if (waterRain > 0.0) {");
+    expect(rings).toBeGreaterThan(-1);
+    expect(rings).toBeGreaterThan(l.indexOf("waterRipple2(vPositionW.xz)"));
+    expect(rings).toBeLessThan(l.indexOf("waterHorizonNormal("));
+    expect(rings).toBeLessThan(l.indexOf("float wSkin ="));
+    expect(l).toContain("vec2 wRs = waterRainSlope(vPositionW.xz);");
+    expect(l).toContain("normalW = normalize(normalW + vec3(wRs.x, 0.0, wRs.y) * waterRain);");
+  });
+
+  it("draws the puddles' four layers, their numbers those of rainParams.ts", () => {
+    const d = fx("water.fragment.fx");
+    const num = String.raw`(-?\d+(?:\.\d+)?)`;
+    const call = new RegExp(
+      String.raw`waterRainLayer\(xz, t, ${num}, ${num}, vec2\(${num}, ${num}\), ${num}, ${num}\)`,
+      "g",
+    );
+    const layers = [...d.matchAll(call)].map((m) => m.slice(1).map(Number));
+    expect(layers).toHaveLength(RIPPLE_LAYERS.length);
+    layers.forEach(([index, scale, ox, oy, timeMul, timeAdd], i) => {
+      const want = RIPPLE_LAYERS[i]!;
+      expect(index).toBe(i);
+      expect(Math.abs(scale! - want.scale)).toBeLessThan(1e-9);
+      expect(Math.abs(ox! - want.offset[0])).toBeLessThan(1e-9);
+      expect(Math.abs(oy! - want.offset[1])).toBeLessThan(1e-9);
+      expect(Math.abs(timeMul! - want.timeMul)).toBeLessThan(1e-9);
+      expect(Math.abs(timeAdd! - want.timeAdd)).toBeLessThan(1e-9);
+    });
+    const radius = /const float WATER_RAIN_RADIUS = ([\d.]+);/.exec(d);
+    const inset = /const float WATER_RAIN_INSET = ([\d.]+);/.exec(d);
+    expect(Math.abs(Number(radius?.[1]) - RIPPLE_RADIUS)).toBeLessThan(1e-9);
+    expect(Math.abs(Number(inset?.[1]) - RIPPLE_INSET)).toBeLessThan(1e-9);
+    expect(d).toContain("rainParams.ts");
   });
 });

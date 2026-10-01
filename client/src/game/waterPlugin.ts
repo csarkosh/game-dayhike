@@ -50,6 +50,9 @@ export class WaterPlugin extends MaterialPluginBase {
    * (`lakeSkin` of the lake's murk; 0 on the sea), y the seed's noise offset
    * (`waterSkinOffset`). */
   skin: [number, number] = [0, 0];
+  /** The weather's rain, 0 to 1, per frame: the drops' rings on the surface,
+   * the puddles' own (`waterRainSlope`). */
+  rain = 0;
 
   constructor(material: Material, row: WaterRow) {
     // 230: after the atmosphere's 200 and every look plugin's 205 to 220; the
@@ -122,6 +125,7 @@ export class WaterPlugin extends MaterialPluginBase {
         { name: "waterOctaves", size: 1, type: "float" },
         { name: "waterNearFar", size: 2, type: "vec2" },
         { name: "waterSkin", size: 2, type: "vec2" },
+        { name: "waterRain", size: 1, type: "float" },
       ],
       fragment: [
         "uniform float waterLevel;",
@@ -135,6 +139,7 @@ export class WaterPlugin extends MaterialPluginBase {
         "uniform float waterOctaves;",
         "uniform vec2 waterNearFar;",
         "uniform vec2 waterSkin;",
+        "uniform float waterRain;",
       ].join("\n"),
     };
   }
@@ -162,6 +167,7 @@ export class WaterPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("waterOctaves", this.octaves);
     uniformBuffer.updateFloat2("waterNearFar", this.nearFar[0], this.nearFar[1]);
     uniformBuffer.updateFloat2("waterSkin", this.skin[0], this.skin[1]);
+    uniformBuffer.updateFloat("waterRain", this.rain);
     // Every declared sampler is bound on every draw: WebGPU validates the
     // bindings a pipeline declares whether or not a branch reads them. The
     // material is not ready until the bed texture exists, so the null guards

@@ -27,6 +27,12 @@ const float WATER_OCTAVE2_DRIFT = 0.04;
 // The skin's drift in metres per second along the wind. The time is unfolded seconds, so a day's run
 // offsets the pattern by a few thousand metres, as large as the world coordinates the hash already takes
 const float WATER_SKIN_DRIFT = 0.04;
+// The rain's rings, the puddles' own: a ring's radius as a share of its cell,
+// and how far in from the cell's edges its centre sits at least. These and
+// the four layers' numbers in waterRainSlope mirror RIPPLE_RADIUS,
+// RIPPLE_INSET and RIPPLE_LAYERS in rainParams.ts, and a test holds them equal.
+const float WATER_RAIN_RADIUS = 0.25;
+const float WATER_RAIN_INSET = 0.25;
 
 // The second octave's slope from the same bump texture at a finer tile,
 // drifting with the wind. The first octave is PBR's own bump (24 m a tile,
@@ -121,4 +127,38 @@ vec3 waterSkinColour(vec2 xz, float viewDepth) {
   vec3 duckweed = mix(vec3(0.16, 0.26, 0.05), vec3(0.24, 0.34, 0.07), frond);
   vec3 algae = vec3(0.30, 0.32, 0.10);
   return mix(duckweed, algae, 0.5 * smoothstep(0.4, 0.6, waterSkinNoise(p / 1.6)));
+}
+
+// One layer of the rain's rings, line for line the puddles' layer in
+// trailPaint.ts on the water's own hash: the plane cut into cells at scale a
+// metre, one ring a cell, its centre and its phase hashed from the cell
+// folded to 512, the phase run at timeMul cycles a second from timeAdd. The
+// layer blends in over its quarter of the rain. Returns its xz slope.
+vec2 waterRainLayer(vec2 xz, float t, float layer, float scale, vec2 offset, float timeMul, float timeAdd) {
+  vec2 p = xz * scale + offset;
+  vec2 c = floor(p);
+  vec2 h = mod(c, 512.0);
+  vec2 centre = vec2(waterSkinHash(h + vec2(37.0, 0.0)), waterSkinHash(h + vec2(0.0, 91.0))) * (1.0 - 2.0 * WATER_RAIN_INSET) + WATER_RAIN_INSET;
+  vec2 d = p - c - centre;
+  float dist = length(d);
+  float r = clamp(1.0 - dist / WATER_RAIN_RADIUS, 0.0, 1.0);
+  vec2 dir = d / max(dist, 0.0001);
+  float w = clamp(waterRain * 4.0 - layer, 0.0, 1.0);
+  float drop = fract(waterSkinHash(h) + t * timeMul + timeAdd);
+  float rt = drop - 1.0 + r;
+  float f = clamp(0.2 + w * 0.8 - drop, 0.0, 1.0);
+  return dir * f * r * sin(clamp(rt * 9.0, 0.0, 3.0) * 3.14159) * 0.35;
+}
+
+// The rain's rings at world xz, their xz slope: four layers, as on the
+// puddles. None without rain, a branch on the uniform. The time folds by the
+// hour as rippleTime does on the CPU, every layer's rate a whole number of
+// cycles in it, so a long run keeps its precision and no ring jumps.
+vec2 waterRainSlope(vec2 xz) {
+  if (waterRain <= 0.0) return vec2(0.0);
+  float t = mod(waterTime, 3600.0);
+  return waterRainLayer(xz, t, 0.0, 2.5, vec2(0.0, 0.0), 1.0, 0.0)
+    + waterRainLayer(xz, t, 1.0, 3.2, vec2(0.37, 0.61), 0.85, 0.2)
+    + waterRainLayer(xz, t, 2.0, 2.1, vec2(0.71, 0.13), 0.93, 0.45)
+    + waterRainLayer(xz, t, 3.0, 3.8, vec2(0.19, 0.83), 1.13, 0.7);
 }

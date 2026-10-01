@@ -10,6 +10,12 @@ if (waterOctaves > 1.5) {
   vec2 wSlope = waterRipple2(vPositionW.xz);
   normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y));
 }
+// The rain's rings, every tier, scaled by the rain as the puddles' are. The
+// skin's flatten below damps them where it lies.
+if (waterRain > 0.0) {
+  vec2 wRs = waterRainSlope(vPositionW.xz);
+  normalW = normalize(normalW + vec3(wRs.x, 0.0, wRs.y) * waterRain);
+}
 normalW = waterHorizonNormal(normalW, viewDirectionW);
 // Fresnel on N.V, Schlick with water's F0: the reflected share, which the
 // transmitted light never gets.
