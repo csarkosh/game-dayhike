@@ -23,7 +23,8 @@ describe("darker and swallowed", () => {
   it("dread thickens the far fog on top of mist, and clear is exact", () => {
     expect(fogDensityUnder(CLEAR, 4000)).toBe(fogDensityFor(4000));
     expect(fogDensityUnder(DREAD_ONLY, 4000)).toBeCloseTo(fogDensityFor(4000) * (1 + FOG_DREAD_GAIN), 12);
-    expect(fogDensityUnder(EERIE, 4000)).toBeCloseTo(fogDensityFor(4000) * (1 + FOG_MIST_GAIN) * (1 + FOG_DREAD_GAIN), 12);
+    // Eerie carries rain 0.3, which at the rain gain of 0.5 is another 1.15x.
+    expect(fogDensityUnder(EERIE, 4000)).toBeCloseTo(fogDensityFor(4000) * (1 + FOG_MIST_GAIN) * 1.15 * (1 + FOG_DREAD_GAIN), 12);
   });
 
   it("the ambient collapses hard on the top plateau", () => {

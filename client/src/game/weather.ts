@@ -3,7 +3,6 @@ import {
   ambientColourFor, exposureFor, fillIntensityFor, fogDensityFor,
   skyColourAt, sunColourAt, sunIntensityAt, sunPositionAt,
 } from "./sky.js";
-import type { QualityTier } from "./quality.js";
 
 /**
  * The weather axis, alongside `hour`. Pure and Babylon-free like `sky.ts`;
@@ -16,7 +15,7 @@ export type WeatherParams = {
   cloudCover: number;
   /** 0–1. Fog density multiplier, mist-bank opacity, wind audio deepening. */
   mist: number;
-  /** 0–1. Rain particle rate, rain-loop gain. */
+  /** 0–1. The streak count's share of the tier's, fog gain and greying, rain-loop gain. */
   rain: number;
   /** 0–1. Surface darkening and gloss on terrain materials. */
   wetness: number;
@@ -92,6 +91,12 @@ export const FOG_MIST_GAIN = 11;
  * treeline dissolves a few tens of metres out instead of a few hundred, so
  * whatever is in it cannot be seen. Reads the stepped world dread. */
 export const FOG_DREAD_GAIN = 1;
+/** Fog density gain under rain, on top of the mist gain: the rain preset's
+ * mist is the cloud's veil; this is the difference between a misty day and a
+ * rainy one. The fog colour pulls toward its own luminance by FOG_RAIN_GREY
+ * times the rain as well, so the far field greys as it thickens. */
+export const FOG_RAIN_GAIN = 0.5;
+export const FOG_RAIN_GREY = 0.3;
 /** Exposure dip at full cloud cover — dim pallor, not darkness. */
 export const EXPOSURE_DIP = 0.15;
 /** globalSaturation drop at full cloud (Babylon curves: 0 neutral, -100 grey).
@@ -180,9 +185,6 @@ export function ambientCollapseUnder(w: WeatherParams): number {
   const d = dreadWorldUnder(w);
   return d === 0 ? 1 : 1 - AMBIENT_COLLAPSE * d;
 }
-
-/** Rain particle capacity by quality tier; emit rate is rain x capacity. */
-export const RAIN_CAPACITY: Record<QualityTier, number> = { low: 600, medium: 1200, high: 2000 };
 
 // ---- Rich-eerie split-tone palette. Browser-tunable. ----
 // Hues are HSB degrees; densities are tint STRENGTH (0 = the hue does nothing);
@@ -282,6 +284,7 @@ export function fogDensityUnder(w: WeatherParams, viewDistance: number): number 
   return (
     fogDensityFor(viewDistance) *
     (1 + FOG_MIST_GAIN * clamp01(w.mist)) *
+    (1 + FOG_RAIN_GAIN * clamp01(w.rain)) *
     (1 + FOG_DREAD_GAIN * dreadWorldUnder(w))
   );
 }
@@ -307,7 +310,12 @@ export function fogColourUnder(w: WeatherParams, hour: number): Rgb {
   // Identity at clear (c = 0) and by day (daylight 1), both exact.
   const daylight = clamp01(sunPositionAt(hour).y / 0.35);
   const duskDim = 1 - 0.85 * c * (1 - daylight);
-  const dimmed = { r: grey.r * duskDim, g: grey.g * duskDim, b: grey.b * duskDim };
+  const dusk = { r: grey.r * duskDim, g: grey.g * duskDim, b: grey.b * duskDim };
+  // Under rain the far field greys: pulled toward its own luminance, so the
+  // brightness the dusk term set is kept. Guarded, so the clear path is the
+  // same object arithmetic as before the rain term existed.
+  const r = clamp01(w.rain);
+  const dimmed = r === 0 ? dusk : mixRgb(dusk, { r: luma(dusk), g: luma(dusk), b: luma(dusk) }, FOG_RAIN_GREY * r);
   const d = dreadWorldUnder(w);
   // Early return to ensure no dread-term arithmetic touches the clear path; the
   // preceding cloud-term arithmetic is IEEE-exact at zero (dimmed is a freshly built
@@ -339,10 +347,6 @@ export function saturationUnder(w: WeatherParams): number {
 export function wetSurfaceUnder(w: WeatherParams): { albedoScale: number; roughnessScale: number } {
   const k = clamp01(w.wetness);
   return { albedoScale: 1 - WET_ALBEDO_LOSS * k, roughnessScale: 1 - WET_ROUGHNESS_LOSS * k };
-}
-
-export function rainEmitRateUnder(w: WeatherParams, tier: QualityTier): number {
-  return clamp01(w.rain) * RAIN_CAPACITY[tier];
 }
 
 export function mistOpacityUnder(w: WeatherParams): number {

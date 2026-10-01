@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   ambientColourUnder, ambientGainsUnder, exposureUnder, fillIntensityUnder,
-  fogColourUnder, fogDensityUnder, mistOpacityUnder, RAIN_CAPACITY,
-  rainEmitRateUnder, saturationUnder, shadowDarknessUnder, skyMaterialParamsUnder,
+  fogColourUnder, fogDensityUnder, mistOpacityUnder,
+  saturationUnder, shadowDarknessUnder, skyMaterialParamsUnder,
   sunColourUnder, sunIntensityUnder, wetSurfaceUnder,
   DEFAULT_WEATHER,
   lerpWeather,
@@ -116,9 +116,6 @@ describe("clear-identity sweep — the sunny look survives, exactly", () => {
     expect(saturationUnder(CLEAR)).toBe(0); // Babylon curves: 0 is neutral
     expect(wetSurfaceUnder(CLEAR)).toEqual({ albedoScale: 1, roughnessScale: 1 });
     expect(mistOpacityUnder(CLEAR)).toBe(0);
-    for (const tier of ["low", "medium", "high"] as const) {
-      expect(rainEmitRateUnder(CLEAR, tier)).toBe(0);
-    }
     expect(ambientGainsUnder(CLEAR)).toEqual({ rain: 0, wind: 0 });
   });
 });
@@ -149,12 +146,29 @@ describe("modifiers under weather", () => {
     }
   });
 
-  it("wetness darkens and glosses; rain rate scales with tier capacity", () => {
+  it("wetness darkens and glosses", () => {
     const wet = wetSurfaceUnder(RAIN);
     expect(wet.albedoScale).toBeCloseTo(0.62, 10);
     expect(wet.roughnessScale).toBeCloseTo(0.6, 10);
-    expect(rainEmitRateUnder(RAIN, "high")).toBe(RAIN_CAPACITY.high);
-    expect(rainEmitRateUnder({ ...CLEAR, rain: 0.5 }, "low")).toBe(0.5 * RAIN_CAPACITY.low);
+  });
+
+  it("rain thickens the fog by half on top of the mist, and greys it toward its own luminance", () => {
+    // Rain alone: 1.5x. The rain preset's mist of 0.6 is 7.6x; with the rain, 11.4x.
+    expect(fogDensityUnder({ ...CLEAR, rain: 1 }, 4000)).toBeCloseTo(1.5 * fogDensityFor(4000), 10);
+    expect(fogDensityUnder({ ...CLEAR, rain: 0.5 }, 4000)).toBeCloseTo(1.25 * fogDensityFor(4000), 10);
+    expect(fogDensityUnder(RAIN, 4000)).toBeCloseTo(11.4 * fogDensityFor(4000), 10);
+    expect(fogDensityUnder(RAIN, 4000)).toBeCloseTo(1.5 * fogDensityUnder({ ...RAIN, rain: 0 }, 4000), 10);
+    for (const hour of [6, 12, 18, 22]) {
+      const dry = fogColourUnder({ ...RAIN, rain: 0 }, hour);
+      const wet = fogColourUnder(RAIN, hour);
+      const spread = (c: { r: number; g: number; b: number }) => Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
+      // The pull is toward the colour's own luminance, so the luminance holds
+      // and the colour's spread shrinks by the 0.3 pulled out.
+      expect(luma(wet)).toBeCloseTo(luma(dry), 10);
+      expect(spread(wet)).toBeCloseTo(0.7 * spread(dry), 10);
+      const half = fogColourUnder({ ...RAIN, rain: 0.5 }, hour);
+      expect(spread(half)).toBeCloseTo(0.85 * spread(dry), 10);
+    }
   });
 
   it("ambience: rain drives patter; mist and cloud drive wind", () => {

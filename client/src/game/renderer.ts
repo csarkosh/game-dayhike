@@ -5,6 +5,7 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
+import type { SpotLight } from "@babylonjs/core/Lights/spotLight.js";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
@@ -100,7 +101,7 @@ import type { PlayerPoint, WildlifeEvent } from "./wildlifeBehaviour.js";
 import type { MatchState, View } from "./wildlifeDirector.js";
 import type { ListenerPose } from "./ambientAudio.js";
 import { createMistMeshes, type MistMeshes } from "./mistMeshes.js";
-import { createRain, type Rain } from "./rain.js";
+import { createRain, type Rain, type RainLamp } from "./rain.js";
 import { createMotes, type Motes } from "./motes.js";
 import { createPropMeshes, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo } from "./rendererSwap.js";
@@ -668,8 +669,32 @@ export function effectsGroupFor(water: Water | null): number {
   return water?.high === true ? WATER_GROUP : 0;
 }
 
+/**
+ * The local headlamp as the rain reads it, into `out` (reused, never
+ * allocated per frame): its world position and direction, which the lamp
+ * computes from its parent's world matrix (the camera's), its intensity (0
+ * when off), its cone angle and its colour.
+ */
+export function lampForRain(lamp: SpotLight, out: RainLamp): RainLamp {
+  lamp.computeTransformedInformation();
+  const pos = lamp.getAbsolutePosition();
+  const dir = lamp.transformedDirection ?? lamp.direction;
+  out.x = pos.x;
+  out.y = pos.y;
+  out.z = pos.z;
+  out.dx = dir.x;
+  out.dy = dir.y;
+  out.dz = dir.z;
+  out.intensity = lamp.intensity;
+  out.angle = lamp.angle;
+  out.r = lamp.diffuse.r;
+  out.g = lamp.diffuse.g;
+  out.b = lamp.diffuse.b;
+  return out;
+}
+
 export function setEffectsGroup(group: number, effects: SeeThroughEffects): void {
-  if (effects.rain !== null) effects.rain.system.renderingGroupId = group;
+  if (effects.rain !== null) effects.rain.mesh.renderingGroupId = group;
   for (const system of effects.motes?.systems ?? []) system.renderingGroupId = group;
   for (const mesh of effects.mist?.meshes ?? []) mesh.renderingGroupId = group;
 }
@@ -1648,9 +1673,10 @@ function buildRenderer(
   partOf(mist);
 
   // Rain is universal, unlike the forest-gated effects above: weather applies
-  // to hand-authored levels too, and a stopped particle system is free.
+  // to hand-authored levels too, and a disabled rain mesh is free.
   const rain = createRain(scene, tier);
   partOf(rain);
+  const rainLamp: RainLamp = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, intensity: 0, angle: 0, r: 1, g: 1, b: 1 };
   const motes = createMotes(scene, tier);
   partOf(motes);
   setEffectsGroup(effectsGroupFor(water), { rain, motes, mist });
@@ -1771,7 +1797,7 @@ function buildRenderer(
         // Flying is not walking. Dropping the stride here also means the jump
         // back to the player's own position is never read as one enormous step.
         bob.reset();
-        rain.update(camera.position, weather, wind);
+        rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
         jobs.run();
         return;
@@ -1836,7 +1862,7 @@ function buildRenderer(
         // A hike after a scene draws with the game's lens again.
         camera.fov = GAME_FOV;
         setLamp(localLamp, local.lamp.on, lampState);
-        rain.update(camera.position, weather, wind);
+        rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
       }
       // This frame's share of the rebuilds the updates above began, once

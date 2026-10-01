@@ -424,7 +424,7 @@ describe("createWater under NullEngine", () => {
     setEffectsGroup(effectsGroupFor(water), { rain, motes, mist });
     expect(motes).not.toBeNull();
     expect(mist.meshes.length).toBeGreaterThan(0);
-    expect(rain.system.renderingGroupId).toBe(group);
+    expect(rain.mesh.renderingGroupId).toBe(group);
     for (const system of motes!.systems) expect(system.renderingGroupId).toBe(group);
     for (const mesh of mist.meshes) expect(mesh.renderingGroupId).toBe(group);
     expect(effectsGroupFor(null)).toBe(0);
