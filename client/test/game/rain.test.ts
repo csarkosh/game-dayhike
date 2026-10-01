@@ -59,9 +59,6 @@ describe("createRain", () => {
     const rain = createRain(s, "low");
     const mat = rain.mesh.material as StandardMaterial;
     expect(mat.disableLighting).toBe(true);
-    // Black diffuse: unlit, the colour is the diffuse plus the emissive, so
-    // the emissive set each frame is the colour only with the diffuse black.
-    expect([mat.diffuseColor.r, mat.diffuseColor.g, mat.diffuseColor.b]).toEqual([0, 0, 0]);
     expect(mat.diffuseTexture?.hasAlpha).toBe(true);
     expect(mat.useAlphaFromDiffuseTexture).toBe(true);
     expect(mat.needAlphaBlending()).toBe(true);
@@ -203,7 +200,9 @@ describe("the drips", () => {
       expect(drips.isPickable).toBe(false);
       expect(drips.alwaysSelectAsActiveMesh).toBe(true);
       expect(drips.doNotSyncBoundingInfo).toBe(true);
-      expect(drips.alphaIndex).toBe(Number.MAX_SAFE_INTEGER);
+      // Between the splashes and the streaks in the blended sort.
+      expect(drips.alphaIndex).toBe(Number.MAX_SAFE_INTEGER - 1);
+      expect(rain.mesh.alphaIndex).toBe(Number.MAX_SAFE_INTEGER);
       const mat = drips.material as StandardMaterial;
       expect(mat.name).toBe("mat_rain_drips");
       expect(mat).not.toBe(rain.mesh.material);

@@ -18,8 +18,10 @@
  * the map gives the point's height and transmission; a point the map does not
  * hold is collapsed to nothing. The quad faces the camera, SPLASH.size wide
  * by the seed, growing with the phase. Its alpha is the phase's remainder,
- * the map's transmission (none under a roof, a third under canopy), the rain
- * value, and a backlight: half always, half when the sun or the headlamp is
+ * the cover at the point (under canopy, which the map marks by its lift, the
+ * canopy's transmission, a third; on open ground, a roof or the water, all:
+ * the map's transmission is what falls BELOW the top surface, and the top
+ * itself is rained on whole), the rain value, and a backlight: half always, half when the sun or the headlamp is
  * behind the ring (the sun's share is the view's agreement with the light's
  * travel, zero once the sun is down; the lamp's the inverse-square cone term
  * the streaks use, the sum bounded at 1). The fragment draws the ring from
@@ -29,8 +31,8 @@
  * counted modulo SPLASH_CYCLES, so the fold moves no ring. The hash is Dave
  * Hoskins' sine-free `hash22`, whose inputs stay in the hundreds. The colour
  * is the streaks': the fog colour lifted by RAIN_MILK, set each frame. The
- * mesh draws just before the streaks (its alphaIndex one under theirs), in
- * the same group, depth-tested but not written, always active, never picked,
+ * mesh draws before the drips and the streaks (its alphaIndex two under the
+ * streaks'; `rain.ts` has the order), in the same group, depth-tested but not written, always active, never picked,
  * never a shadow caster or receiver, its bounding info unsynced.
  *
  * Renderer-only by design: nothing here may migrate into sim/ or a tunables
@@ -121,7 +123,8 @@ const SPLASH_VERTEX_POSITION = `
   float sCone = smoothstep(splashLamp.y, 0.5 + 0.5 * splashLamp.y, sCos);
   float sLampT = splashLamp.x * sCone / (1.0 + sLampD2);
   float sBack = min(sSunT + sLampT, 1.0);
-  vSplashAlpha = (1.0 - sPhase) * sMap.g * splashRain * (0.5 + 0.5 * sBack) * sIn;
+  float sCover = mix(1.0, sMap.g, step(0.5, sMap.b));
+  vSplashAlpha = (1.0 - sPhase) * sCover * splashRain * (0.5 + 0.5 * sBack) * sIn;
   vSplashPhase = sPhase;
   vSplashUv = position.xy + 0.5;
 }
@@ -298,13 +301,7 @@ export function createRainSplash(scene: Scene, tier: QualityTier): RainSplash | 
 
   const mat = new StandardMaterial("mat_rain_splash", scene);
   mat.disableLighting = true;
-  // Unlit, the colour is the diffuse colour plus the emissive, clamped: the
-  // diffuse must be black for the emissive set each frame to be the colour.
-  mat.diffuseColor.set(0, 0, 0);
   mat.emissiveColor.set(1, 1, 1);
-  // Under 1, so the material blends: Babylon reads the blend from the alpha
-  // and no texture carries one here. The ring's alpha is the fragment's.
-  mat.alpha = 0.999;
   mat.transparencyMode = Material.MATERIAL_ALPHABLEND;
   mat.backFaceCulling = false;
   mat.disableDepthWrite = true;
@@ -317,8 +314,8 @@ export function createRainSplash(scene: Scene, tier: QualityTier): RainSplash | 
   mesh.receiveShadows = false;
   mesh.alwaysSelectAsActiveMesh = true;
   mesh.doNotSyncBoundingInfo = true;
-  // Just before the streaks in the blended sort (`rain.ts`).
-  mesh.alphaIndex = Number.MAX_SAFE_INTEGER - 1;
+  // First of the rain's three blended meshes: splashes, drips, streaks (`rain.ts`).
+  mesh.alphaIndex = Number.MAX_SAFE_INTEGER - 2;
   const matrices = new Float32Array(count * 16);
   for (let i = 0; i < count; i++) {
     matrices[i * 16] = 1;

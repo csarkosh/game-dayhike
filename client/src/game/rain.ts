@@ -118,9 +118,6 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
   const material = (name: string): StandardMaterial => {
     const mat = new StandardMaterial(name, scene);
     mat.disableLighting = true;
-    // Unlit, the colour is the diffuse colour plus the emissive, clamped: the
-    // diffuse must be black for the emissive set each frame to be the colour.
-    mat.diffuseColor.set(0, 0, 0);
     mat.emissiveColor.set(1, 1, 1);
     mat.diffuseTexture = tex;
     mat.useAlphaFromDiffuseTexture = true;
@@ -133,7 +130,7 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
     mat.fogEnabled = true;
     return mat;
   };
-  const volume = (name: string, mat: StandardMaterial, drops: number, seed: number): Mesh => {
+  const volume = (name: string, mat: StandardMaterial, drops: number, seed: number, alphaIndex: number): Mesh => {
     const mesh = MeshBuilder.CreatePlane(name, { size: 1 }, scene);
     mesh.material = mat;
     mesh.isPickable = false;
@@ -141,8 +138,9 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
     mesh.alwaysSelectAsActiveMesh = true;
     mesh.doNotSyncBoundingInfo = true;
     // Unsynced bounding info leaves the blended sort keyed on the world origin;
-    // the rain is the nearest blended volume, so it draws last in its group.
-    mesh.alphaIndex = Number.MAX_SAFE_INTEGER;
+    // the rain is the nearest blended volume, so it draws last in its group,
+    // in the order splashes (`rainSplash.ts`), drips, streaks: nearest last.
+    mesh.alphaIndex = alphaIndex;
     const matrices = new Float32Array(drops * 16);
     for (let i = 0; i < drops; i++) {
       matrices[i * 16] = 1;
@@ -158,7 +156,7 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
 
   const mat = material("mat_rain");
   const plugin = attachRain(mat);
-  const mesh = volume("rain_streaks", mat, count, RAIN_SEED);
+  const mesh = volume("rain_streaks", mat, count, RAIN_SEED, Number.MAX_SAFE_INTEGER);
 
   const dripMat = dripCount > 0 ? material("mat_rain_drips") : null;
   const dripPlugin = dripMat === null ? null : attachRain(dripMat);
@@ -168,7 +166,7 @@ export function createRain(scene: Scene, tier: QualityTier): Rain {
     dripPlugin.boxY = DRIP.box.y;
     dripPlugin.boxZ = DRIP.box.z;
   }
-  const drips = dripMat === null ? null : volume("rain_drips", dripMat, dripCount, DRIP_SEED);
+  const drips = dripMat === null ? null : volume("rain_drips", dripMat, dripCount, DRIP_SEED, Number.MAX_SAFE_INTEGER - 1);
   const plugins = dripPlugin === null ? [plugin] : [plugin, dripPlugin];
 
   let fold = 0;

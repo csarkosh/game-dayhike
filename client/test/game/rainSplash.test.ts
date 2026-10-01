@@ -48,8 +48,8 @@ describe("createRainSplash", () => {
       expect(splash.mesh.receiveShadows).toBe(false);
       expect(splash.mesh.alwaysSelectAsActiveMesh).toBe(true);
       expect(splash.mesh.doNotSyncBoundingInfo).toBe(true);
-      // Just before the streaks in the blended sort.
-      expect(splash.mesh.alphaIndex).toBe(Number.MAX_SAFE_INTEGER - 1);
+      // First of the rain's blended meshes: before the drips and the streaks.
+      expect(splash.mesh.alphaIndex).toBe(Number.MAX_SAFE_INTEGER - 2);
       expect(splash.plugin).toBeInstanceOf(SplashPlugin);
       const mat = splash.mesh.material as StandardMaterial;
       expect(mat.name).toBe("mat_rain_splash");
@@ -60,11 +60,11 @@ describe("createRainSplash", () => {
     }
   });
 
-  it("is unlit over a black diffuse, alpha-blended with no texture, depth-tested but not written, two-sided and fogged", () => {
+  it("is unlit, alpha-blended with no texture, depth-tested but not written, two-sided and fogged", () => {
     const splash = createRainSplash(scene, "medium")!;
     const mat = splash.mesh.material as StandardMaterial;
     expect(mat.disableLighting).toBe(true);
-    expect([mat.diffuseColor.r, mat.diffuseColor.g, mat.diffuseColor.b]).toEqual([0, 0, 0]);
+    expect(mat.alpha).toBe(1);
     expect(mat.diffuseTexture).toBeNull();
     expect(mat.needAlphaBlending()).toBe(true);
     expect(mat.needAlphaTesting()).toBe(false);
@@ -246,7 +246,9 @@ describe("the splash plugin", () => {
     expect(vertex).toContain("float sSunT = max(dot(sView, splashSun), 0.0);");
     expect(vertex).toContain("float sLampT = splashLamp.x * sCone / (1.0 + sLampD2);");
     expect(vertex).toContain("float sBack = min(sSunT + sLampT, 1.0);");
-    expect(vertex).toContain("vSplashAlpha = (1.0 - sPhase) * sMap.g * splashRain * (0.5 + 0.5 * sBack) * sIn;");
+    // Under canopy (the map's lift marks it) the canopy's transmission; on a roof or the water, all.
+    expect(vertex).toContain("float sCover = mix(1.0, sMap.g, step(0.5, sMap.b));");
+    expect(vertex).toContain("vSplashAlpha = (1.0 - sPhase) * sCover * splashRain * (0.5 + 0.5 * sBack) * sIn;");
     expect(vertex).toContain("vSplashPhase = sPhase;");
     expect(vertex).toContain("vSplashUv = position.xy + 0.5;");
     const fragment = plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR!;
