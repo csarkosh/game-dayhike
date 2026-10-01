@@ -348,24 +348,29 @@ world close to the lake; the cove from the pad); reported as cost added over
 
 Measured 2026-10-01 at 3840×2160 (hardware scaling 0.5), fresh pages, the
 order control/branch/branch/control and then the reverse, three 5 s samples a
-page, the control a build of `main` at b43952d. The machine was quiet only for
-the first configuration; another session's load then rose from 3 to 140, so
-every figure below is provisional and the re-measurement on a silent machine is
-owed before the ship decision. Cost added over `main`, in ms per frame at that
-size, per round:
+page, the control a build of `main` at b43952d, twice: once with another
+session's load rising from 3 to 140 over the run, and again in the quietest
+window the day offered, at load 3 to 16 with page-to-page spreads of up to
+30 ms. Neither run was silent, so the figures are the sign and the order of
+the cost, not its size. Cost added over `main`, in ms per frame at that size,
+per round, the first run then the second:
 
-| Pose | Tier | `main` | branch | added |
-| --- | --- | --- | --- | --- |
-| The murky lake, close, reeds and skin in view | high / WebGPU | 58.5, 69.6 | 58.3, 70.1 | −0.1, +0.4 |
-| | medium / WebGL2 | 79.5, 80.3 | 79.8, 80.2 | +0.3, −0.1 |
-| | low / WebGL2 | 57.6, 59.3 | 58.8, 58.4 | +1.2, −0.8 |
-| The cove from the pad | high / WebGPU | 40.1, 38.9 | 37.6, 37.4 | −2.5, −1.5 |
-| | medium / WebGL2 | 52.6, 49.2 | 45.7, 44.4 | −6.9, −4.8 |
-| | low / WebGL2 | 30.4, 30.0 | 28.2, 28.5 | −2.1, −1.5 |
+| Pose | Tier | first run | second run |
+| --- | --- | --- | --- |
+| The murky lake, close, reeds and skin in view | high / WebGPU | −0.1, +0.4 | +10.1 (one page drifting 60 → 82 ms), the second round lost |
+| | medium / WebGL2 | +0.3, −0.1 | +0.7, −1.4 |
+| | low / WebGL2 | +1.2, −0.8 | −6.3, −1.8 |
+| The cove from the pad | high / WebGPU | −2.5, −1.5 | −1.3, −1.7 |
+| | medium / WebGL2 | −6.9, −4.8 | −4.8, −2.3 |
+| | low / WebGL2 | −2.1, −1.5 | +0.7, −1.6 |
 
-At the lake the branch costs nothing measurable on any tier. At the cove the
-branch drew faster than `main` on every page of every round; the sign held in
-both orders, the size was taken under load and is not to be trusted.
+At the lake the branch costs nothing the noise can tell apart on the medium
+and low tiers; on the high tier three rounds of four lie within half a
+millisecond and one, taken on a drifting page, read +10 ms, so the high tier
+at the lake is not settled. At the cove the branch drew faster than `main` in
+eleven rounds of twelve, on every tier: the cove's ground replaces the dunes
+and the inland blend in the pad's view. A silent reading of the high tier at
+the lake remains owed.
 
 ## 9. Out of scope
 
