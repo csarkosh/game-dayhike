@@ -22,13 +22,13 @@ Each time as `dayhikeScene.seek(t)` then `frame()`:
 | 41.6 | Low on the shoulder | **Met.** The car passes the camera. |
 | 56 | The door | **Met.** The door opens outward; he turns out of the seat. |
 | 58 | Beside the door | **Met.** He stands outside the door on the ground. |
-| 59 to 64 | The walk | **Changed, then met.** The walk was a straight line from the door to the spawn, which is beside the car's passenger side, and went through the car. It now goes round the car's rear (the end on the spawn's side of the door, in view of shot 7's camera), 0.4 m clear of the footprint at its corners, turning into each corner by looking 0.8 m ahead; 6 s with a 0.6 s start and stop (was 5 s, eased): 8.97 m on this world, at most 1.67 m/s. He steps into the foreground of shot 8 at 63.5 s as the camera pushes past his shoulder. |
+| 59 to 64 | The walk | **Changed, then met.** The walk was a straight line from the door to the spawn, which is beside the car's passenger side, and went through the car. It now goes round the car's rear (the end on the spawn's side of the door, in view of shot 7's camera), 0.4 m clear of the footprint at its corners, turning into each corner by looking 0.8 m ahead; 6 s with a 0.6 s start and stop (was 5 s, eased): 8.97 m on this world, at most 1.67 m/s. He steps into the foreground of shot 8 at 63.5 s as the camera pushes past his shoulder, facing the trail from 64 s; the spec's rows 7 and 8 now say so (they had him standing at the trail by the cut at 62 s, which a walk round the car cannot reach at a walking pace). The turns were jumps: at 58 s the root took the first leg's heading in one frame while the pose still held the door clip's last frame, whose body is turned −1.654 rad (−94.8°) from the root, a 181° turn of the body in a frame on this world; at 64 s the heading jumped 0.86 rad to the spawn's facing. The root now turns over the pose's 0.3 s blend out of the door clip, the body the short way (−85° between 58.0 and 58.3 s, at most 0.30 rad in 0.04 s), and to the spawn's facing over the walk's 0.6 s stop (1.456 to 1.458 rad across 64 s). |
 | 67, 71 | The push onto the trail | **Met.** The board and the trail, the push past him. |
 
 ## What the look could not settle
 
 - The cab and the insert are milky: the `mist` preset fogs the cab's inside as it fogs the road. Whether the film's weather is thinned for the record (`INTRO_WEATHER`), or the cab's shots are drawn without the mist's haze, is a choice for the record.
-- The door clip's stand-up keeps the arms pushed wide as it was made; he reads as getting out, not as pulling himself up by the door frame.
+- The door clip's stand-up keeps the arms pushed wide; he reads as getting out, not as pulling himself up by the door frame.
 - A take 0.028 m from the handset's place in its cradle is within a frame's motion of the hand, and was left.
 
 ## What is owed

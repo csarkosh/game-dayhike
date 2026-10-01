@@ -10,7 +10,7 @@
 
 **Spec:** `docs/gameplay/2026-09-29-intro-scene.md` — §2 (the scene player), §3 (the shots and the script, amended by Task 7 for the 72 s film), §6 (the recording interface), §8.1, §9. Parts 1 and 2 are on `main`.
 
-**Where:** the worktree `.claude/worktrees/intro-assets` (branch `worktree-intro-assets`, off `origin/main` `65ed63e`), which holds the exported `client/assets/catalog.json`, `client/assets/models/intro.car.glb`, `client/assets/models/intro.ranger.glb` and `CREDITS.md`, not yet committed (Task 1 commits them).
+**Where:** the worktree `.claude/worktrees/intro-assets` (branch `worktree-intro-assets`, off `origin/main` `65ed63e`), which holds the new `client/assets/catalog.json`, `client/assets/models/intro.car.glb`, `client/assets/models/intro.ranger.glb` and `CREDITS.md`, not yet committed (Task 1 commits them).
 
 ## Global Constraints
 
@@ -1212,4 +1212,4 @@ git add docs/gameplay/2026-09-30-intro-film-staging.md client/src/game/scene/int
 git commit   # fix: the film's seat, grip and parts as the look set them
 ```
 
-Pushing, deploying and the record are the owner's word.
+Pushing, deploying and the record are decided separately.
