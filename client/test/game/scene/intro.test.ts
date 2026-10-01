@@ -141,6 +141,21 @@ describe("the intro's data", () => {
     }
   });
 
+  it("turns him into the walk and out of it with no jump, past the car's either end", () => {
+    // The spawn past the car's front (the fixture's), and beside its passenger side, whose walk
+    // goes round the rear: its first leg heads the car's way turned half round.
+    const beside = { ...places, start: { x: -242.6, z: -0.6, yaw: 1.1 } };
+    for (const p of [places, beside]) {
+      const scene = introScene(road, p);
+      const yaw = (t: number) => evaluate(scene, t).actors[0]!.yaw;
+      const turn = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(yaw(b) - yaw(a)), Math.cos(yaw(b) - yaw(a))));
+      expect(turn(57.99, 58)).toBeLessThan(0.02);
+      expect(turn(63.99, 64)).toBeLessThan(0.02);
+      // A half turn over the 0.3 s blend peaks at 0.65 rad a frame.
+      for (let t = 58; t < 64; t += 1 / 24) expect(turn(t, t + 1 / 24)).toBeLessThan(0.7);
+    }
+  });
+
   it("keeps every shot's field of view within the film's range but the cab shot", () => {
     const scene = introScene(road, places);
     for (const [i, s] of INTRO_SHOTS.entries()) {

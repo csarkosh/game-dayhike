@@ -78,6 +78,9 @@ const WALK_CLEAR = 0.3;
 const WALK_CORNER = 0.4;
 /** How far ahead along the walk he looks (m), so he turns into a corner rather than at it. */
 const WALK_LOOK_M = 0.8;
+/** How far the door clip's last frame turns his body from his root (rad, positive toward +x),
+ * measured on the model: out of the driver's door. */
+const DOOR_END_TURN = -1.654;
 /** The time two clips are mixed across at a change (s). */
 const BLEND_S = 0.3;
 
@@ -138,6 +141,11 @@ export const INTRO_CAPTIONS: readonly Caption[] = [
 ];
 
 type Point = { x: number; z: number };
+
+/** An angle brought into (-π, π]. */
+function wrapAngle(a: number): number {
+  return Math.atan2(Math.sin(a), Math.cos(a));
+}
 
 /** Whether the segment from `a` to `b` passes inside the box of half-extents `hx`, `hz` about the origin. */
 function crossesBox(a: Point, b: Point, hx: number, hz: number): boolean {
@@ -251,7 +259,13 @@ export function introScene(road: Road, places: IntroPlaces): Scene {
       const ahead = pointAlong(walkPath, gone + WALK_LOOK_M);
       const last = walkPath[walkPath.length - 2]!, end = walkPath[walkPath.length - 1]!;
       const [hx, hz] = Math.hypot(ahead.x - at.x, ahead.z - at.z) > 1e-6 ? [ahead.x - at.x, ahead.z - at.z] : [end.x - last.x, end.z - last.z];
-      return { ...base, x: at.x, y: ground(at.x, at.z), z: at.z, yaw: Math.atan2(hx, hz) };
+      // Into the walk the root turns from the stand-up's as the pose blends out of the door
+      // clip, which leaves the body DOOR_END_TURN from the root: the body turns the short way.
+      // Out of it, the root turns to the spawn's facing over the stop.
+      const heading = Math.atan2(hx, hz);
+      const walking = yaw + (wrapAngle(heading - (yaw + DOOR_END_TURN)) + DOOR_END_TURN) * ease(into / BLEND_S);
+      const facing = walking + wrapAngle(places.start.yaw - walking) * ease((into - (WALK_S - WALK_RAMP_S)) / WALK_RAMP_S);
+      return { ...base, x: at.x, y: ground(at.x, at.z), z: at.z, yaw: facing };
     }
     return { ...base, x: places.start.x, y: ground(places.start.x, places.start.z), z: places.start.z, yaw: places.start.yaw };
   };
