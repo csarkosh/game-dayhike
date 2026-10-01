@@ -760,6 +760,8 @@ describe("the level id does not move", () => {
     // Re-baselined 2026-09-29 from -2079813416: the forest's floor in the strip
     // at the trailhead is 1 where it was 0.6 (STRIP_FOREST_FLOOR, pass 8), so
     // that a wood stands at the pad on a world whose shore is open.
-    expect(passHash()).toBe(-1513373362);
+    // Re-baselined 2026-09-30 from -1513373362: the level's tunables carry the
+    // lake's and the cove's, so the id moves, and the world with it.
+    expect(passHash()).toBe(-418956087);
   });
 });

@@ -203,7 +203,9 @@ describe("the placement", () => {
     // 9 of them the ground by the old line or the new one opens or shuts a
     // cell's gate. 11 modules went and 32 came, every one within 31.2 m of
     // one line or the other. The farthest carry reads as it did.
-    expect(laid).toBe(426);
+    // 2026-09-30: 426 before the lakes and the cove. They are ground the
+    // placement reads, and 49 more modules stand on the worlds they change.
+    expect(laid).toBe(475);
     // Measured: the farthest a run carried a module across these worlds,
     // 50.59 m of the 63.84 the constants allow.
     expect(farthest).toBeCloseTo(50.594476156076325, 9);

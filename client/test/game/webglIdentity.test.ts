@@ -29,7 +29,9 @@ const PINS: Record<string, string> = {
   "foliage.GRASS.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
   "foliage.MEADOW.fragment": "b0130d6ef6b87a30998655a0ea50ebbd6d2eba1de66e4fe720fe50b4bdf6cea9",
   "foliage.MEADOW.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
+  "foliage.REEDS.fragment": "b0130d6ef6b87a30998655a0ea50ebbd6d2eba1de66e4fe720fe50b4bdf6cea9",
   "foliage.TREE.fragment": "b0130d6ef6b87a30998655a0ea50ebbd6d2eba1de66e4fe720fe50b4bdf6cea9",
+  "foliage.REEDS.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
   "foliage.TREE.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
   "foliage.UNDERSTORY.fragment": "b0130d6ef6b87a30998655a0ea50ebbd6d2eba1de66e4fe720fe50b4bdf6cea9",
   "foliage.UNDERSTORY.vertex": "1f71ad1ad3d7e4a14f2a4c1be37fdaccb5479d92b80a736723eb2ac52c338e96",
@@ -41,7 +43,10 @@ const PINS: Record<string, string> = {
   "skin.fragment": "111388dbf745542db596dae9ac3c41d726c7c0c61aeb4c8e87cc16e9e8c07fdf",
   // Re-pinned for the WGSL-reserved local `macro` renamed `macroRgb`; the
   // test below shows that rename is the whole difference.
-  "terrain.fragment": "a58cc4cbf6c22175636e3a7a941c55671dc1cbc81b23b9004a3f56958ea53ff0",
+  // Re-pinned again for the shore tint's one added line in `featurePaint.ts`,
+  // which begins it at the lake's rim (the bed under the water paints itself);
+  // the foliage plugin for reeds is the tree's text and interface.
+  "terrain.fragment": "393cbde35c652291d03850619cfdf4b67c6065aac4e84e87c4f9e865ffd71e10",
   "terrain.vertex": "6cb77a03482fa718ab0d086337dc427868eae556169055748622a8eec6ced007",
   "wing.vertex": "689d8ea88a0daa33ea1fc7e032e9e90c754ef7bd6ed0bec0bf55defcd341068e",
 };
@@ -60,6 +65,7 @@ const INTERFACE_PINS: Record<string, string> = {
   "foliage.FLOWER.interface": "fae1fc5cd58faeef68e40265e525943f3bb209eadaa23b7b27b2104a3ca22651",
   "foliage.GRASS.interface": "fae1fc5cd58faeef68e40265e525943f3bb209eadaa23b7b27b2104a3ca22651",
   "foliage.MEADOW.interface": "fae1fc5cd58faeef68e40265e525943f3bb209eadaa23b7b27b2104a3ca22651",
+  "foliage.REEDS.interface": "6ad630100290345752cb3563eefdb5cfaa5accaa8739e74d9329337cdb7dc640",
   "foliage.TREE.interface": "6ad630100290345752cb3563eefdb5cfaa5accaa8739e74d9329337cdb7dc640",
   "foliage.UNDERSTORY.interface": "fae1fc5cd58faeef68e40265e525943f3bb209eadaa23b7b27b2104a3ca22651",
   "foliageLight.interface": "a86a666d70d9ecddd600f74e67b8028f7795551c775a05e786e4ee73bea725e8",
@@ -82,7 +88,7 @@ describe("WebGL2's shader text", () => {
     // word survives only in the hex include's comments, which glslang drops.
     expect(text).toContain("vec3 macroRgb = macroTint(");
     expect(text).not.toContain("vec3 macro =");
-    expect(sha(text.replaceAll("macroRgb", "macro"))).toBe("748f988e8d74740112ecea806c8494d9811861224f78165aef7d2f646e6742b2");
+    expect(sha(text.replaceAll("macroRgb", "macro"))).toBe("fd74235171f3b423ebdc8126972fa2ca1b6aee08fba3eef1a0cca297e4d21669");
   });
 
   it("keeps every plugin's uniforms, samplers, attributes and defines what they were", () => {
