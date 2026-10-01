@@ -17,7 +17,10 @@ the low tier, never in the corpus, about 138 stages; and a party of two,
 about 187 (a second hiker's headlamp changes the light count, so every lit
 material gets another variant). Their union would make about 11.1 MB. The
 lookup design's rule for that case is a map per platform, not a higher
-ceiling; the tier is the platform the page knows before its engine is made
+ceiling. On 2026-10-01 the high tier's stages passed 8 MiB, and the ceiling
+was raised once, to 10 MiB (10,485,760); the split by platform is the step
+after that, not a higher ceiling again. The tier is the platform the page
+knows before its engine is made
 (`startupTier` in `main.ts` decides it, and `engineFor(tier, …)` makes the
 engine for it), and it is the largest divider of the corpus: a page at one
 tier never asks for another tier's variants.

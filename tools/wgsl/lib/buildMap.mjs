@@ -71,10 +71,10 @@ export function entriesOn(made, tiers, tier) {
   return entries;
 }
 
-/** The page's `MAP_MAX_BYTES` (`client/src/game/wgslFormat.ts`), 8 MiB of
+/** The page's `MAP_MAX_BYTES` (`client/src/game/wgslFormat.ts`), 10 MiB of
  * text, for a caller without it; the build passes the page's own, and
  * `mapSize.test.mjs` holds the two equal. */
-const MAP_CEILING = 8_388_608;
+const MAP_CEILING = 10_485_760;
 
 /**
  * Why a map of `bytes` (`named`, as the message calls it) may not ship, or

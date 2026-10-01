@@ -10,6 +10,12 @@ if (waterOctaves > 1.5) {
   vec2 wSlope = waterRipple2(vPositionW.xz);
   normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y));
 }
+// The rain's rings, every tier, scaled by the rain as the puddles' are. The
+// skin's flatten below damps them where it lies.
+if (waterRain > 0.0) {
+  vec2 wRs = waterRainSlope(vPositionW.xz);
+  normalW = normalize(normalW + vec3(wRs.x, 0.0, wRs.y) * waterRain);
+}
 normalW = waterHorizonNormal(normalW, viewDirectionW);
 // Fresnel on N.V, Schlick with water's F0: the reflected share, which the
 // transmitted light never gets.
@@ -41,4 +47,15 @@ if (waterHigh < 0.5) {
   surfaceAlbedo *= 1.0 - wT;
   wTransmit = wBed * wT * (1.0 - wF);
   alpha = 1.0;
+}
+
+// The skin, where a murky lake carries it: a matte film of fronds over the
+// water, the bed, the depth and the ripples hidden under it.
+float wSkin = waterSkinMask(vPositionW.xz, wDepth);
+// The sea and a clear lake skip the film.
+if (waterSkin.x > 0.0) {
+  surfaceAlbedo = mix(surfaceAlbedo, waterSkinColour(vPositionW.xz, vWaterViewDepth), wSkin);
+  wTransmit *= 1.0 - wSkin;
+  alpha = mix(alpha, 1.0, wSkin);
+  normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wSkin));
 }

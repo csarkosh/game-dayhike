@@ -4,6 +4,7 @@ import type { BoxProvider } from "./boxSource.js";
 import { raycastScene } from "./collision.js";
 import type { GroundField } from "./ground.js";
 import { stepMovement } from "./movement.js";
+import { containInLakes, waterLevelAt } from "./containment.js";
 import type { World } from "./world.js";
 import {
   ENEMY_ATTACK_COOLDOWN,
@@ -95,9 +96,11 @@ function move(enemy: EnemyState, world: World, dt: number, wish: number): void {
     dt,
     world.boxes,
     ENEMY_HALF,
-    world.waterLevel,
+    waterLevelAt(world, enemy.pos.x, enemy.pos.z),
     world.ground,
   );
+  // The lakes' wall holds an enemy as it holds a player.
+  containInLakes(world, result.pos, result.vel, ENEMY_HALF);
   enemy.pos = result.pos;
   enemy.vel = result.vel;
 }

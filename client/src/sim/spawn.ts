@@ -14,7 +14,8 @@ const RING_ATTEMPTS = 8;
 export const SPAWN_FREEBOARD = 2;
 
 /**
- * A hull standing on the ground at (x, z), or null if that spot is occupied.
+ * A hull standing on the ground at (x, z), or null if that spot is occupied,
+ * or under water: the sea's (with `SPAWN_FREEBOARD`) or a lake's.
  *
  * Validated with `depenetrate` rather than by inspecting geometry: that is the
  * exact test the first movement tick will apply, so agreeing with it is the only
@@ -30,8 +31,18 @@ export function groundSpawn(
   half: Vec3,
 ): Vec3 | null {
   const s = elevationSampleAt(seed, x, z);
-  const waterLevel = activeTerrainVariant().waterLevel;
+  const variant = activeTerrainVariant();
+  const waterLevel = variant.waterLevel;
   if (waterLevel !== undefined && s.h < waterLevel + SPAWN_FREEBOARD) return null;
+  // Nor on a lake's bed: ground under its water, inside its rim.
+  const bodies = variant.waterBodies?.(seed);
+  if (bodies !== undefined) {
+    for (const b of bodies) {
+      if (b.kind !== "lake" || s.h >= b.level) continue;
+      const dx = x - b.x, dz = z - b.z;
+      if (dx * dx + dz * dz < b.radius * b.radius) return null;
+    }
+  }
   const p: Vec3 = { x, y: s.h + half.y, z };
   const fixed = depenetrate(p, half, source);
   const moved =

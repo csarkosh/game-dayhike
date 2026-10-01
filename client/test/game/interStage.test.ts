@@ -238,6 +238,7 @@ describe("inter-stage variables on WebGPU", () => {
       "foliage.FLOWER": 4,
       "foliage.GRASS": 4,
       "foliage.MEADOW": 4,
+      "foliage.REEDS": 4,
       "foliage.TREE": 4,
       "foliage.UNDERSTORY": 4,
       foliageLight: 0,

@@ -10,7 +10,8 @@ import {
 } from "../../src/sim/terrain.js";
 import "../../src/sim/olympic.js";
 import { depenetrate } from "../../src/sim/collision.js";
-import { ENEMY_MIN_SPAWN_DISTANCE, PLAYER_HALF } from "../../src/sim/constants.js";
+import { ENEMY_HALF, ENEMY_MIN_SPAWN_DISTANCE, PLAYER_HALF } from "../../src/sim/constants.js";
+import { firstPondWorld } from "./helpers/lakes.js";
 import type { BoxProvider } from "../../src/sim/boxSource.js";
 import type { Vec3 } from "../../src/sim/types.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -133,6 +134,16 @@ describe("spawn freeboard", () => {
     // x = +2000 is deep inland: montane ground, min measured +12 m.
     expect(groundSpawn([], 0x5eed, 2000, 0.5, PLAYER_HALF)).not.toBeNull();
   });
+
+  it("rejects a lake's bed and allows its rim", () => {
+    setActiveTerrainVariant("olympic");
+    const { seed, pond } = firstPondWorld();
+    // the lake's flat middle, metres under its level
+    expect(elevationSampleAt(seed, pond.x, pond.z).h).toBeLessThan(pond.height);
+    expect(groundSpawn([], seed, pond.x, pond.z, ENEMY_HALF)).toBeNull();
+    // its rim, at the water's edge
+    expect(groundSpawn([], seed, pond.x + pond.radius, pond.z, ENEMY_HALF)).not.toBeNull();
+  }, timeLimit(30000));
 
   it("skips the check when the variant declares no water", () => {
     // montane has no waterLevel; a below-zero surface would still be legal.

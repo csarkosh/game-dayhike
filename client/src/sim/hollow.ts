@@ -22,7 +22,7 @@ import { route } from "./trailRoute.js";
 import { stepMovement } from "./movement.js";
 import { aimDirection } from "./view.js";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
-import { isOnCorridor, roadOffset } from "./containment.js";
+import { containInLakes, isOnCorridor, roadOffset, waterLevelAt } from "./containment.js";
 import { ROAD_CORRIDOR_HALF } from "./road.js";
 import {
   ENEMY_HALF,
@@ -268,9 +268,11 @@ function walkToward(h: EnemyState, world: World, dt: number, tx: number, tz: num
     dt,
     world.boxes,
     ENEMY_HALF,
-    world.waterLevel,
+    waterLevelAt(world, h.pos.x, h.pos.z),
     world.ground,
   );
+  // The lakes' wall holds a Hollow as it holds a player.
+  containInLakes(world, result.pos, result.vel, ENEMY_HALF);
   // The treeline: from outside, a step onto the corridor is refused. Safety is
   // the corridor, not the car.
   if (!inside && isOnCorridor(world, result.pos.x, result.pos.z)) {

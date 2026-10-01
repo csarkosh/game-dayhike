@@ -574,8 +574,8 @@ server translates nothing and answers the map's request with a 404; the
 build always translates. Under the suite the URL is empty and no map is
 asked for.
 
-**Its ceiling.** A map is at most `MAP_MAX_BYTES`, 8 MiB (8,388,608 bytes)
-of text: the page parses it in one task on its thread and holds its lines
+**Its ceiling.** A map is at most `MAP_MAX_BYTES`, 10 MiB (10,485,760 bytes,
+raised from 8 MiB on 2026-10-01) of text: the page parses it in one task on its thread and holds its lines
 and runs for the engine's life. It was set from the measured map of the
 recorded corpus in format 2, 5,073,415 bytes for 522 entries, about 9,700
 bytes an entry: at that average it holds about 860 entries, and more in

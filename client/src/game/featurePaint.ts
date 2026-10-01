@@ -113,7 +113,9 @@ export function featurePaintWeights(
       const w = 1 - smoothstep(f.z, f.z + fMeta.z, fd);
       meadow = 1 - (1 - meadow) * (1 - w);
     } else if (f.w > 2.5) {
-      const w = 1 - smoothstep(f.z + fMeta.w, f.z + fMeta.w + 2.0, fd);
+      let w = 1 - smoothstep(f.z + fMeta.w, f.z + fMeta.w + 2.0, fd);
+      // The bed under the water paints itself, so the shore's tint begins at the rim.
+      w *= smoothstep(f.z - 1, f.z, fd);
       shore = 1 - (1 - shore) * (1 - w);
     } else if (f.w > 0.5) {
       const above = smoothstep(fMeta.x - fMeta.y, fMeta.x, y);
@@ -208,6 +210,8 @@ export const FEATURE_FRAGMENT_PAINT = `
       surfaceAlbedo *= mix(vec3(1.0), vec3(0.92, 1.06, 0.82), meadow * 0.5);
     } else if (f.w > 2.5) {
       float shore = 1.0 - smoothstep(f.z + fMeta.w, f.z + fMeta.w + 2.0, fd);
+      // The bed under the water paints itself, so the shore's tint begins at the rim.
+      shore *= smoothstep(f.z - 1.0, f.z, fd);
       surfaceAlbedo *= mix(vec3(1.0), vec3(0.85, 0.78, 0.70), shore * 0.8);
     } else if (f.w > 0.5) {
       float above = smoothstep(fMeta.x - fMeta.y, fMeta.x, vPositionW.y);

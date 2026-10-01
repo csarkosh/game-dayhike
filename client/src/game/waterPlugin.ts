@@ -44,8 +44,18 @@ export class WaterPlugin extends MaterialPluginBase {
   nearFar: [number, number] = [0.05, 1000];
   time = 0;
   windDir: [number, number] = [1, 0];
+  /** The wind's direction integrated over the run, in seconds: what the skin and the second octave drift by. */
+  windTime: [number, number] = [0, 0];
+  private _lastSeconds: number | null = null;
   /** Ripple octaves the fragment blends: 2, or 1 on the low tier (spec §5.3). */
   octaves = 2;
+  /** The duckweed and algae skin: x how much of the surface may carry it
+   * (`lakeSkin` of the lake's murk; 0 on the sea), y the seed's noise offset
+   * (`waterSkinOffset`). */
+  skin: [number, number] = [0, 0];
+  /** The weather's rain, 0 to 1, per frame: the drops' rings on the surface,
+   * the puddles' own (`waterRainSlope`). */
+  rain = 0;
 
   constructor(material: Material, row: WaterRow) {
     // 230: after the atmosphere's 200 and every look plugin's 205 to 220; the
@@ -77,6 +87,15 @@ export class WaterPlugin extends MaterialPluginBase {
       if (m.roughness === null || Math.abs(m.roughness - r) > 1e-3) m.roughness = r;
     }
     this.windDir = dir;
+  }
+
+  /** Per frame, with the renderer's clock: sets the time and adds the wind's direction times the step to `windTime`. */
+  advance(seconds: number): void {
+    const dt = this._lastSeconds === null ? 0 : Math.max(0, seconds - this._lastSeconds);
+    this.windTime[0] += this.windDir[0] * dt;
+    this.windTime[1] += this.windDir[1] * dt;
+    this._lastSeconds = seconds;
+    this.time = seconds;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -113,10 +132,13 @@ export class WaterPlugin extends MaterialPluginBase {
         { name: "waterBedTexels", size: 1, type: "float" },
         { name: "waterTime", size: 1, type: "float" },
         { name: "waterWind", size: 2, type: "vec2" },
+        { name: "waterWindTime", size: 2, type: "vec2" },
         { name: "waterScreen", size: 2, type: "vec2" },
         { name: "waterHigh", size: 1, type: "float" },
         { name: "waterOctaves", size: 1, type: "float" },
         { name: "waterNearFar", size: 2, type: "vec2" },
+        { name: "waterSkin", size: 2, type: "vec2" },
+        { name: "waterRain", size: 1, type: "float" },
       ],
       fragment: [
         "uniform float waterLevel;",
@@ -125,10 +147,13 @@ export class WaterPlugin extends MaterialPluginBase {
         "uniform float waterBedTexels;",
         "uniform float waterTime;",
         "uniform vec2 waterWind;",
+        "uniform vec2 waterWindTime;",
         "uniform vec2 waterScreen;",
         "uniform float waterHigh;",
         "uniform float waterOctaves;",
         "uniform vec2 waterNearFar;",
+        "uniform vec2 waterSkin;",
+        "uniform float waterRain;",
       ].join("\n"),
     };
   }
@@ -150,11 +175,14 @@ export class WaterPlugin extends MaterialPluginBase {
     uniformBuffer.updateFloat("waterBedTexels", this.bedTexels);
     uniformBuffer.updateFloat("waterTime", this.time);
     uniformBuffer.updateFloat2("waterWind", this.windDir[0], this.windDir[1]);
+    uniformBuffer.updateFloat2("waterWindTime", this.windTime[0], this.windTime[1]);
     uniformBuffer.updateFloat2("waterScreen", this.screen[0], this.screen[1]);
     const high = this.sceneTexture !== null && this.depthTexture !== null;
     uniformBuffer.updateFloat("waterHigh", high ? 1 : 0);
     uniformBuffer.updateFloat("waterOctaves", this.octaves);
     uniformBuffer.updateFloat2("waterNearFar", this.nearFar[0], this.nearFar[1]);
+    uniformBuffer.updateFloat2("waterSkin", this.skin[0], this.skin[1]);
+    uniformBuffer.updateFloat("waterRain", this.rain);
     // Every declared sampler is bound on every draw: WebGPU validates the
     // bindings a pipeline declares whether or not a branch reads them. The
     // material is not ready until the bed texture exists, so the null guards

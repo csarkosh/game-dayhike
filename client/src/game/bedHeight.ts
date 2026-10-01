@@ -123,13 +123,13 @@ export function bakeBed(grid: BedGrid, seed: number, camX: number, camZ: number)
 /** A pond's disc as the bed needs it: centre and basin radius, metres. */
 export type BedPond = { x: number; z: number; radius: number };
 
-/** How far a pond's disc reaches past its basin radius (renderer.ts `pondDisc`). */
+/** How far a lake's surface reaches past its basin radius (renderer.ts `lakeSurface`). */
 export const POND_DISC_MARGIN = 1;
 
 /**
  * Whether any body can reach `bake`'s square: the sea where the terrain at one
  * of nine points (corners, edge midpoints, centre) is below `waterLevel`, or a
- * pond whose disc overlaps the square. Nine points are 128 m apart on a 256 m
+ * lake whose surface overlaps the square. Nine points are 128 m apart on a 256 m
  * square, so a strip of sea between them can be missed; the caller then keeps
  * its current square, and the ring's per-vertex depth stands in outside it, so
  * a miss draws the water coarser, never not at all.

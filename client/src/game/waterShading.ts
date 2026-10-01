@@ -8,6 +8,7 @@
  * wire). See docs/rendering/2026-09-29-water-material-design.md §5.
  */
 import { clamp01 } from "./colour.js";
+import { CLUTTER_WATER_MURK_HI, CLUTTER_WATER_MURK_LO } from "../sim/clutter.js";
 
 /** One body of water, from the world at build time (spec §7). */
 export type WaterBody = {
@@ -31,12 +32,56 @@ export const WATER_ROWS: { sea: WaterRow; lowlandLake: WaterRow; highLake: Water
   highLake: { kd: [0.2, 0.12, 0.2], lInf: [0.01, 0.025, 0.05], shelter: 0.3 },
 };
 
+/** Kd of the research's clear lake (§2.3, a 5.5 m Secchi depth): the row a
+ * lake takes halfway between the very clear high lake and the humic one. */
+export const CLEAR_LAKE_KD: [number, number, number] = [0.75, 0.8, 1.6];
+
+function mix3(a: readonly number[], b: readonly number[], t: number): [number, number, number] {
+  // a·(1 − t) + b·t, so t = 0 and t = 1 give a and b exactly.
+  return [a[0]! * (1 - t) + b[0]! * t, a[1]! * (1 - t) + b[1]! * t, a[2]! * (1 - t) + b[2]! * t];
+}
+
+/**
+ * A lake's water from its murk (the sim's `murkFor`): Kd through the very
+ * clear, the clear and the humic rows the research measured, piecewise
+ * linear; L∞ and the shelter straight from the clear high lake to the humic
+ * lowland one. Murk 0 is `WATER_ROWS.highLake`, murk 1 `WATER_ROWS.lowlandLake`.
+ */
+export function lakeWaterRow(murk: number): WaterRow {
+  const m = clamp01(murk);
+  const high = WATER_ROWS.highLake;
+  const low = WATER_ROWS.lowlandLake;
+  const kd = m <= 0.5 ? mix3(high.kd, CLEAR_LAKE_KD, m / 0.5) : mix3(CLEAR_LAKE_KD, low.kd, (m - 0.5) / 0.5);
+  return { kd, lInf: mix3(high.lInf, low.lInf, m), shelter: high.shelter * (1 - m) + low.shelter * m };
+}
+
+/** How much of a lake's surface may carry the duckweed and algae skin: none
+ * up to murk 0.5, all of it from 0.8: the two numbers the clutter field
+ * gates the reeds and lilies by (`CLUTTER_WATER_MURK_LO`/`_HI`). */
+export function lakeSkin(murk: number): number {
+  const t = clamp01((murk - CLUTTER_WATER_MURK_LO) / (CLUTTER_WATER_MURK_HI - CLUTTER_WATER_MURK_LO));
+  return t * t * (3 - 2 * t);
+}
+
+/** The seed's offset (m) for the skin's noise, so two worlds' lakes do not
+ * wear the same pattern. Render-only, but seeded: every peer sees one skin. */
+export function waterSkinOffset(seed: number): number {
+  return ((seed >>> 0) % 4096) * 0.731;
+}
+
 /** Fresnel reflectance of water at normal incidence, n = 1.33. Mirrored in shaders/water.fragment.fx. */
 export const WATER_F0 = 0.02;
 /** The reflected ray's least y (spec §5.1). Mirrored in shaders/water.fragment.fx. */
 export const WATER_HORIZON = 0.02;
 /** Metres per second the game's wind of 1 stands for (spec §5.1). */
 export const WATER_WIND_MAX = 12;
+/**
+ * Metres per second the murky lakes' skin slides along the wind, per unit of the wind's direction: duckweed
+ * pushed over the surface, its rafts keeping their shape. Mirrored in shaders/water.fragment.fx. The offset is
+ * the wind's integral over the run, a few thousand metres after a day, the order of the world coordinates
+ * the skin's hash already takes, so no fold is added.
+ */
+export const WATER_SKIN_DRIFT = 0.04;
 /** Screen-space refraction offset per unit of ripple slope, in uv, at 1 m of depth. Mirrored in shaders/water.fragment.fx. */
 export const WATER_REFRACT = 0.02;
 /** Depth at which the refraction offset stops growing (spec §5.2). Mirrored in shaders/water.fragment.fx. */

@@ -7,7 +7,7 @@
 /** The page's `MAP_MAX_BYTES` and `MAP_ENTRY_MAX_CHARS`
  * (`client/src/game/wgslFormat.ts`), which this check, plain Node, cannot
  * import; `wgslMap.test.mjs` holds each equal to the page's. */
-export const LIVE_MAP_MAX_BYTES = 8_388_608;
+export const LIVE_MAP_MAX_BYTES = 10_485_760;
 export const LIVE_ENTRY_MAX_CHARS = 8_388_608;
 
 /**

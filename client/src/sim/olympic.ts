@@ -36,7 +36,7 @@ import {
   CLIFF_ROAD_NEAR, CLIFF_ROAD_FAR,
   cliffD,
 } from "./cliffs.js";
-import { registerTerrainVariant, type TerrainSample } from "./terrain.js";
+import { registerTerrainVariant, type TerrainSample, type WaterBodySource } from "./terrain.js";
 import {
   BOWL_TUNABLES, BOWL_Z_HALF, TRAIL_Z_ANCHOR,
   inBowl, padD, apronWindowD, apronKeepD, APRON_BLEND_END,
@@ -49,7 +49,7 @@ import { buildTrail } from "./trailBuild.js";
 import {
   LANDMARK_TUNABLES, landmarkMaskAt, type Landmark, type LandmarkMask,
 } from "./landmarks.js";
-import { FEATURE_TUNABLES, featureStageD, featureMaskAt, type Feature, type FeatureMask } from "./features.js";
+import { FEATURE_TUNABLES, featureStageD, lakeStageD, featureMaskAt, type Feature, type FeatureMask } from "./features.js";
 import { BRAID_TUNABLES } from "./trailBraid.js";
 import { forestDensityUnmasked } from "./vegetation.js";
 import { boulderDensityUnmasked, CLUTTER_BOULDER_SLOPE_LO } from "./clutter.js";
@@ -146,6 +146,48 @@ export const DUNE_ROAD_FAR = ROAD_CORRIDOR_HALF + 10;
  * left alone rather than folded in as a drive-by level-id bump.) */
 const DUNE_SALT = 0xd0e5;
 
+// ---- The cove in front of the trailhead ---------------------------------------
+/** A pebble pocket beach between two headlands, centred on the pad's frontage
+ * (research §4.1, §4.2). Its width along the shore, seeded. */
+export const COVE_WIDTH_MIN = 260;
+export const COVE_WIDTH_MAX = 360;
+/** The cove's ends blend into the bay's profile over ± this about each end,
+ * under the headland there. */
+export const COVE_END_BLEND = 30;
+/** Seaward of the road's corridor the cove comes in over this (m). */
+export const COVE_BACK_FADE = 6;
+/** The face through the waterline, 1:12, down to COVE_TOE_DEPTH; then the bed
+ * at 1:50 to the shelf break, steeper than the bays' 1:67 so swell reaches the
+ * face unbroken. */
+export const COVE_FACE_GRADE = 1 / 12;
+export const COVE_BED_GRADE = 0.02;
+export const COVE_TOE_DEPTH = 2;
+/** Half-width (m) of the face-to-bed morph about the toe. */
+export const COVE_TOE_MORPH = 6;
+/** The berm's crest above the sea (m), and the height (m) over which the face
+ * rounds into it. */
+export const COVE_CREST = 3;
+export const COVE_CREST_MORPH = 0.3;
+/** Each headland: a ridge out to sea, its crest height and its reach past the
+ * waterline (both seeded), its half-width along the shore, the run (m) over
+ * which it rises from the corridor's edge, and the taper (m) at its tip. */
+export const HEAD_HEIGHT_MIN = 12;
+export const HEAD_HEIGHT_MAX = 25;
+export const HEAD_REACH_MIN = 100;
+export const HEAD_REACH_MAX = 150;
+export const HEAD_HALF_WIDTH = 30;
+export const HEAD_RISE = 50;
+export const HEAD_TIP = 40;
+/** One or two stacks off each tip, COVE_STACK_STEP apart beyond it. */
+export const COVE_STACK_STEP = 35;
+/** The odds that a headland has a second stack off its tip. */
+export const COVE_STACK_PAIR_ODDS = 0.5;
+export const COVE_STACK_RADIUS_MIN = 8;
+export const COVE_STACK_RADIUS_MAX = 14;
+export const COVE_STACK_HEIGHT_MIN = 14;
+export const COVE_STACK_HEIGHT_MAX = 28;
+export const COVE_SALT = 0xc07e;
+
 const COAST_WARP_SALT = 0x0cea;
 /** Fixed first coordinate for the 1-D use of fbm2d — off-lattice on purpose. */
 const WARP_LINE_X = 0.318;
@@ -196,15 +238,176 @@ function shoreProfileD(d: number): { v: number; dd: number } {
   };
 }
 
+/** Where the face meets the bed, and where the bed reaches the shelf break. */
+const COVE_TOE_D = -COVE_TOE_DEPTH / COVE_FACE_GRADE;
+const COVE_BREAK_D = COVE_TOE_D - (SHELF_BREAK_DEPTH - COVE_TOE_DEPTH) / COVE_BED_GRADE;
+
+/**
+ * The cove's profile in signed coast distance: a flat backshore at
+ * COVE_CREST, rounded into the face at 1:12 through the waterline (d = 0),
+ * morphing into the 1:50 bed at the toe, 2 m down, then blended to the open
+ * floor past the shelf break exactly as `shoreProfileD` is. C² throughout;
+ * monotone, and nowhere steeper than the face.
+ */
+export function coveProfileD(d: number): { v: number; dd: number } {
+  const toe = smoothPosD(d - COVE_TOE_D, COVE_TOE_MORPH);
+  const near = -COVE_TOE_DEPTH + COVE_BED_GRADE * (d - COVE_TOE_D) + (COVE_FACE_GRADE - COVE_BED_GRADE) * toe.v;
+  const nearDd = COVE_BED_GRADE + (COVE_FACE_GRADE - COVE_BED_GRADE) * toe.d;
+  // A softened min(near, COVE_CREST): the berm's crest.
+  const cap = smoothPosD(near - COVE_CREST, COVE_CREST_MORPH);
+  const capped = near - cap.v;
+  const cappedDd = nearDd * (1 - cap.d);
+  const w = smootherstepD(COVE_BREAK_D - SHELF_BREAK_WIDTH, COVE_BREAK_D, d);
+  return {
+    v: w.v * capped + (1 - w.v) * -FLOOR_DEPTH,
+    dd: w.v * cappedDd + w.d * (capped + FLOOR_DEPTH),
+  };
+}
+
+export type Headland = { z: number; height: number; reach: number };
+export type CoveStack = { x: number; z: number; radius: number; height: number };
+export type Cove = { z0: number; halfWidth: number; heads: Headland[]; stacks: CoveStack[] };
+
+const COVE_CACHE = new Map<number, Cove>();
+/** The seed's cove: its width, its two headlands and the stacks off their
+ * tips. A pure function of the seed, cached. */
+export function coveFor(seed: number): Cove {
+  const cached = COVE_CACHE.get(seed);
+  if (cached !== undefined) return cached;
+  const salted = seed ^ COVE_SALT;
+  const halfWidth = (COVE_WIDTH_MIN + (COVE_WIDTH_MAX - COVE_WIDTH_MIN) * hash3(0, 0, 0, salted)) / 2;
+  const z0 = TRAIL_Z_ANCHOR;
+  const heads: Headland[] = [];
+  const stacks: CoveStack[] = [];
+  for (let i = 0; i < 2; i++) {
+    const z = z0 + (i === 0 ? -halfWidth : halfWidth);
+    const height = HEAD_HEIGHT_MIN + (HEAD_HEIGHT_MAX - HEAD_HEIGHT_MIN) * hash3(i + 1, 0, 0, salted);
+    const reach = HEAD_REACH_MIN + (HEAD_REACH_MAX - HEAD_REACH_MIN) * hash3(i + 1, 1, 0, salted);
+    heads.push({ z, height, reach });
+    const count = hash3(i + 1, 2, 0, salted) < COVE_STACK_PAIR_ODDS ? 1 : 2;
+    for (let k = 0; k < count; k++) {
+      const sz = z + (hash3(i + 1, 3 + k, 0, salted) - 0.5) * HEAD_HALF_WIDTH;
+      const d = -(reach + HEAD_TIP + COVE_STACK_STEP * k);
+      stacks.push({
+        x: coastFrame(seed, sz).coastlineX + d,
+        z: sz,
+        radius: COVE_STACK_RADIUS_MIN + (COVE_STACK_RADIUS_MAX - COVE_STACK_RADIUS_MIN) * hash3(i + 1, 5 + k, 0, salted),
+        height: COVE_STACK_HEIGHT_MIN + (COVE_STACK_HEIGHT_MAX - COVE_STACK_HEIGHT_MIN) * hash3(i + 1, 7 + k, 0, salted),
+      });
+    }
+  }
+  const cove: Cove = { z0, halfWidth, heads, stacks };
+  COVE_CACHE.set(seed, cove);
+  return cove;
+}
+
+/** The cove's weight and its gradient: the along-shore window times the
+ * seaward window. Zero at and inside the road's corridor. */
+function coveWeightD(cove: Cove, z: number, u: number, uDz: number): { v: number; dx: number; dz: number } {
+  const seaward = smootherstepD(-ROAD_CORRIDOR_HALF - COVE_BACK_FADE, -ROAD_CORRIDOR_HALF, u);
+  const wu = 1 - seaward.v;
+  if (wu <= 0) return { v: 0, dx: 0, dz: 0 };
+  const off = z - cove.z0;
+  // |off| is flat-windowed near 0 (the window is 1 within halfWidth − END_BLEND),
+  // so its kink at 0 never reaches the weight.
+  const sign = off < 0 ? -1 : 1;
+  const along = smootherstepD(cove.halfWidth - COVE_END_BLEND, cove.halfWidth + COVE_END_BLEND, off * sign);
+  const wz = 1 - along.v;
+  if (wz <= 0) return { v: 0, dx: 0, dz: 0 };
+  // ∂u/∂x = 1, ∂u/∂z = uDz.
+  return { v: wz * wu, dx: -wz * seaward.d, dz: -wz * seaward.d * uDz - along.d * sign * wu };
+}
+
+/** One headland added into `out`: a ridge (1 − t²)³ across its axis, rising
+ * from nothing at the corridor's edge over HEAD_RISE, holding out to its reach
+ * past the waterline, tapering to nothing over HEAD_TIP. */
+function headlandD(
+  head: Headland, z: number, d: number, dDz: number, u: number, uDz: number,
+  out: { v: number; dx: number; dz: number },
+): void {
+  const t = (z - head.z) / HEAD_HALF_WIDTH;
+  if (t <= -1 || t >= 1) return;
+  const rise = smootherstepD(-ROAD_CORRIDOR_HALF - HEAD_RISE, -ROAD_CORRIDOR_HALF, u);
+  const r = 1 - rise.v;
+  if (r <= 0) return;
+  const tip = smootherstepD(-head.reach - HEAD_TIP, -head.reach, d);
+  if (tip.v <= 0) return;
+  const m = 1 - t * t;
+  const bump = m * m * m;
+  const bumpDz = (-6 * t * m * m) / HEAD_HALF_WIDTH;
+  const rDx = -rise.d, rDz = -rise.d * uDz;
+  out.v += head.height * bump * r * tip.v;
+  out.dx += head.height * bump * (rDx * tip.v + r * tip.d);
+  out.dz += head.height * (bumpDz * r * tip.v + bump * (rDz * tip.v + r * tip.d * dDz));
+}
+
+/**
+ * The cove's stage, after the dunes: where its weight is 1 the ground IS the
+ * cove's profile plus the sea stacks (no dunes, no cliffs, none of the inland
+ * blend), blended into the coast's own ground across the weight's edges; then
+ * the headlands and their stacks on top. Returns `base` itself wherever none
+ * of it reaches.
+ */
+function coveD(seed: number, x: number, z: number, d: number, dDz: number, u: number, uDz: number, base: TerrainSample): TerrainSample {
+  const cove = coveFor(seed);
+  let out = base;
+  const w = coveWeightD(cove, z, u, uDz);
+  if (w.v > 0) {
+    const p = coveProfileD(d);
+    const st = stackBandD(seed, x, z, d, dDz);
+    const th = p.v + st.v;
+    const tdx = p.dd + st.dx;
+    const tdz = p.dd * dDz + st.dz;
+    const gap = th - base.h;
+    out = {
+      h: base.h + w.v * gap,
+      dx: base.dx + w.v * (tdx - base.dx) + w.dx * gap,
+      dz: base.dz + w.v * (tdz - base.dz) + w.dz * gap,
+    };
+  }
+  const add = { v: 0, dx: 0, dz: 0 };
+  for (const head of cove.heads) headlandD(head, z, d, dDz, u, uDz, add);
+  for (const s of cove.stacks) addColumn(s.x, s.z, s.radius, s.height, x, z, add);
+  if (add.v === 0 && add.dx === 0 && add.dz === 0) return out;
+  return { h: out.h + add.v, dx: out.dx + add.dx, dz: out.dz + add.dz };
+}
+
+/** The cove's weight at (x, z), 0 to 1: the ground paint and the clutter read it. */
+function coveMaskHook(seed: number, x: number, z: number): number {
+  // Past the along-shore window's far edge the weight is 0 whatever the
+  // seaward window says: skip the coast's frame there.
+  const cove = coveFor(seed);
+  if (Math.abs(z - cove.z0) >= cove.halfWidth + COVE_END_BLEND) return 0;
+  const f = coastFrame(seed, z);
+  const road = roadOffsetD(seed, z, BLEND_START, f.roadBlendEnd, f.roadBlendEndDz);
+  return coveWeightD(cove, z, x - f.coastlineX - road.dr, f.dDz - road.drDz).v;
+}
+
+/** One C² column, height·(1 − r²/R²)³ inside R, and its gradient, added into
+ * `out`. The sea stacks' shape: the stack field's and the cove's. */
+function addColumn(
+  px: number, pz: number, radius: number, height: number, x: number, z: number,
+  out: { v: number; dx: number; dz: number },
+): void {
+  const rx = x - px;
+  const rz = z - pz;
+  const u = (rx * rx + rz * rz) / (radius * radius);
+  if (u >= 1) return;
+  const s = 1 - u;
+  // column = height·(1 − u)³;  ∂column/∂x = −3·height·(1 − u)²·(2·rx/R²)
+  out.v += height * s * s * s;
+  const dPerR = (-6 * height * s * s) / (radius * radius);
+  out.dx += dPerR * rx;
+  out.dz += dPerR * rz;
+}
+
 /** The stack field and its exact gradient, BEFORE the band window. Sums C²
  * columns from the 3×3 cell neighbourhood; STACK_RADIUS_MAX ≤ STACK_CELL / 2
  * guarantees no column escapes it. */
 function stackFieldD(seed: number, x: number, z: number): { v: number; dx: number; dz: number } {
   const cellX = Math.floor(x / STACK_CELL);
   const cellZ = Math.floor(z / STACK_CELL);
-  let v = 0;
-  let dx = 0;
-  let dz = 0;
+  const out = { v: 0, dx: 0, dz: 0 };
   for (let cz = cellZ - 1; cz <= cellZ + 1; cz++) {
     for (let cx = cellX - 1; cx <= cellX + 1; cx++) {
       if (hash3(cx, cz, 0, seed ^ STACK_SALT) >= STACK_DENSITY) continue;
@@ -214,19 +417,29 @@ function stackFieldD(seed: number, x: number, z: number): { v: number; dx: numbe
         STACK_RADIUS_MIN + (STACK_RADIUS_MAX - STACK_RADIUS_MIN) * hash3(cx, cz, 3, seed ^ STACK_SALT);
       const height =
         STACK_HEIGHT_MIN + (STACK_HEIGHT_MAX - STACK_HEIGHT_MIN) * hash3(cx, cz, 4, seed ^ STACK_SALT);
-      const rx = x - px;
-      const rz = z - pz;
-      const u = (rx * rx + rz * rz) / (radius * radius);
-      if (u >= 1) continue;
-      const s = 1 - u;
-      // column = height·(1 − u)³;  ∂column/∂x = −3·height·(1 − u)²·(2·rx/R²)
-      v += height * s * s * s;
-      const dPerR = (-6 * height * s * s) / (radius * radius);
-      dx += dPerR * rx;
-      dz += dPerR * rz;
+      addColumn(px, pz, radius, height, x, z, out);
     }
   }
-  return { v, dx, dz };
+  return out;
+}
+
+/** The stack field windowed by a C² band in d, so stacks fade in past the
+ * surf and out again before the shelf break. The window depends on position
+ * only through d, so its gradient rides ∂d/∂x = 1 and ∂d/∂z = dDz. Band
+ * support ends at d = STACK_BAND_NEAR < BLEND_START, so stacks never reach the
+ * montane blend region. */
+function stackBandD(seed: number, x: number, z: number, d: number, dDz: number): { v: number; dx: number; dz: number } {
+  const bIn = smootherstepD(STACK_BAND_FAR, STACK_BAND_FAR + STACK_BAND_FADE, d);
+  const bOut = smootherstepD(STACK_BAND_NEAR - STACK_BAND_FADE, STACK_BAND_NEAR, d);
+  const band = bIn.v * (1 - bOut.v);
+  const bandDd = bIn.d * (1 - bOut.v) - bIn.v * bOut.d;
+  if (!(band > 0)) return { v: 0, dx: 0, dz: 0 };
+  const st = stackFieldD(seed, x, z);
+  return {
+    v: band * st.v,
+    dx: band * st.dx + bandDd * st.v, // ∂band/∂x = bandDd·(∂d/∂x = 1)
+    dz: band * st.dz + bandDd * dDz * st.v,
+  };
 }
 
 /**
@@ -318,28 +531,10 @@ function olympicBaseFrom(
 
   const shore = shoreProfileD(d);
 
-  // Sea stacks: the field windowed by a C² band in d, so stacks
-  // fade in past the surf and out again before the shelf break. The window
-  // depends on position only through d, so its gradient rides ∂d/∂x = 1 and
-  // ∂d/∂z = dDz. Band support ends at d = STACK_BAND_NEAR < BLEND_START, so
-  // stacks never reach the montane blend region.
-  const bIn = smootherstepD(STACK_BAND_FAR, STACK_BAND_FAR + STACK_BAND_FADE, d);
-  const bOut = smootherstepD(STACK_BAND_NEAR - STACK_BAND_FADE, STACK_BAND_NEAR, d);
-  const band = bIn.v * (1 - bOut.v);
-  const bandDd = bIn.d * (1 - bOut.v) - bIn.v * bOut.d;
-  let stackH = 0;
-  let stackDx = 0;
-  let stackDz = 0;
-  if (band > 0) {
-    const st = stackFieldD(seed, x, z);
-    stackH = band * st.v;
-    stackDx = band * st.dx + bandDd * st.v;        // ∂band/∂x = bandDd·(∂d/∂x = 1)
-    stackDz = band * st.dz + bandDd * dDz * st.v;
-  }
-
-  const baseH = shore.v + stackH;
-  const baseDx = shore.dd + stackDx;
-  const baseDz = shore.dd * dDz + stackDz;
+  const stack = stackBandD(seed, x, z, d, dDz);
+  const baseH = shore.v + stack.v;
+  const baseDx = shore.dd + stack.dx;
+  const baseDz = shore.dd * dDz + stack.dz;
 
   const span = blendEnd - BLEND_START;
   const t = (d - BLEND_START) / span;
@@ -496,7 +691,8 @@ export function olympicPreTrailSample(seed: number, x: number, z: number): Terra
   const uDz = f.dDz - road.drDz;
   const base = olympicBaseFrom(seed, x, z, d, f.dDz, f.blendEnd, f.blendEndDz);
   const duned = duneD(seed, x, z, u, uDz, cliffD(seed, x, z, u, uDz, base, apronKeepD(u, uDz, z)));
-  const padded = inBowl(u, z) ? padD(u, uDz, z, padHeightFor(seed), duned) : duned;
+  const coved = coveD(seed, x, z, d, f.dDz, u, uDz, duned);
+  const padded = inBowl(u, z) ? padD(u, uDz, z, padHeightFor(seed), coved) : coved;
   if (Math.abs(u) >= ROAD_CORRIDOR_HALF) return padded;
   return corridorD(u, uDz, roadGradeAt(seed, z), padded);
 }
@@ -555,6 +751,23 @@ function landmarkMaskHook(seed: number, x: number, z: number): LandmarkMask {
  * peak's treeline is a height, not a radius, so `featureMaskAt` needs it, but
  * a caller that already sampled the ground should not
  * pay for a second `olympicSample`. */
+const WATER_BODIES_CACHE = new Map<number, readonly WaterBodySource[]>();
+/** The sea, then one lake per pond feature. A pure function of the bowl, so
+ * a per-seed cache is bit-transparent. */
+function waterBodiesHook(seed: number): readonly WaterBodySource[] {
+  let bodies = WATER_BODIES_CACHE.get(seed);
+  if (bodies === undefined) {
+    const list: WaterBodySource[] = [{ kind: "sea", level: SEA_LEVEL }];
+    for (const f of bowlFor(seed).features) {
+      if (f.kind !== "pond") continue;
+      list.push({ kind: "lake", level: f.height, x: f.x, z: f.z, radius: f.radius, murk: f.murk ?? 0.5, lobe: f.lobe ?? null });
+    }
+    bodies = list;
+    WATER_BODIES_CACHE.set(seed, bodies);
+  }
+  return bodies;
+}
+
 function featureMaskHook(seed: number, x: number, z: number, h?: number): FeatureMask {
   return featureMaskAt(bowlFor(seed).features, x, z, h ?? olympicSample(seed, x, z).h);
 }
@@ -588,12 +801,13 @@ function olympicSample(seed: number, x: number, z: number): TerrainSample {
   // duneD into olympicBaseFrom leaves every lattice point in that test's
   // sweep numerically unchanged.
   const duned = duneD(seed, x, z, u, uDz, cliffed);
-  let staged = duned;
+  const coved = coveD(seed, x, z, d, f.dDz, u, uDz, duned);
+  let staged = coved;
   if (inBowl(u, z)) {
     // The trailhead pad — bit-identity outside its own small window.
     // Cheaply gated by `inBowl` like every bowl
     // stage: the pad's own disc + fade never reaches the bowl's edge.
-    staged = padD(u, uDz, z, padHeightFor(seed), duned);
+    staged = padD(u, uDz, z, padHeightFor(seed), coved);
   }
   // The made features: applied for EVERY point,
   // not only inside `inBowl` — the peak's 300 m dome is centred up to
@@ -605,6 +819,7 @@ function olympicSample(seed: number, x: number, z: number): TerrainSample {
   // the world.
   const bowl = bowlFor(seed);
   staged = featureStageD(bowl.features, x, z, staged);
+  staged = lakeStageD(seed, bowl.features, x, z, staged);
   if (inBowl(u, z)) {
     // The trail corridor over every edge: every edge's own grid cell lies
     // inside the bowl, so its corridor never needs to reach past this gate.
@@ -670,6 +885,12 @@ registerTerrainVariant({
     DUNE_ROAD_NEAR,
     DUNE_ROAD_FAR,
     DUNE_SALT,
+    COVE_WIDTH_MIN, COVE_WIDTH_MAX, COVE_END_BLEND, COVE_BACK_FADE, COVE_FACE_GRADE, COVE_BED_GRADE,
+    COVE_TOE_DEPTH, COVE_TOE_MORPH, COVE_CREST, COVE_CREST_MORPH,
+    HEAD_HEIGHT_MIN, HEAD_HEIGHT_MAX, HEAD_REACH_MIN, HEAD_REACH_MAX, HEAD_HALF_WIDTH, HEAD_RISE, HEAD_TIP,
+    COVE_STACK_STEP, COVE_STACK_PAIR_ODDS, COVE_STACK_RADIUS_MIN, COVE_STACK_RADIUS_MAX,
+    COVE_STACK_HEIGHT_MIN, COVE_STACK_HEIGHT_MAX,
+    COVE_SALT,
     ROAD_WINDOW_FRACTION,
     ROAD_WOBBLE,
     ROAD_WOBBLE_WAVELENGTH,
@@ -710,6 +931,8 @@ registerTerrainVariant({
     ...BRAID_TUNABLES,
   },
   waterLevel: SEA_LEVEL,
+  waterBodies: waterBodiesHook,
+  coveMask: coveMaskHook,
   coastDistance: signedCoastDistance,
   roadDistance,
   roadCenterX,

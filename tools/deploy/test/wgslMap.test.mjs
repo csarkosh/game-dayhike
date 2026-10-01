@@ -126,17 +126,17 @@ describe('mapProblems', () => {
     expect(mapProblems(map({ lines: ['x'.repeat(2_796_202)], entries: { [hex('e')]: [0, 1, 0, 1, 0, 1] } }), CHUNK, ENTRY)).toEqual([]);
   });
 
-  it("fails a map over the page's ceiling of 8,388,608 bytes with a plain line", () => {
+  it("fails a map over the page's ceiling of 10,485,760 bytes with a plain line", () => {
     const text = map({});
     const padded = (bytes) => text + ' '.repeat(bytes - text.length);
-    expect(mapProblems(padded(8_388_608), CHUNK, ENTRY)).toEqual([]);
-    expect(mapProblems(padded(8_388_609), CHUNK, ENTRY)).toEqual([
-      "it is 8388609 bytes, over the page's ceiling of 8388608 (MAP_MAX_BYTES): every page refuses it and translates every stage itself",
+    expect(mapProblems(padded(10_485_760), CHUNK, ENTRY)).toEqual([]);
+    expect(mapProblems(padded(10_485_761), CHUNK, ENTRY)).toEqual([
+      "it is 10485761 bytes, over the page's ceiling of 10485760 (MAP_MAX_BYTES): every page refuses it and translates every stage itself",
     ]);
   });
 
   it("holds the page's own ceilings", () => {
-    expect([LIVE_MAP_MAX_BYTES, LIVE_ENTRY_MAX_CHARS]).toEqual([8_388_608, 8_388_608]);
+    expect([LIVE_MAP_MAX_BYTES, LIVE_ENTRY_MAX_CHARS]).toEqual([10_485_760, 8_388_608]);
     expect([LIVE_MAP_MAX_BYTES, LIVE_ENTRY_MAX_CHARS]).toEqual([MAP_MAX_BYTES, MAP_ENTRY_MAX_CHARS]);
   });
 });

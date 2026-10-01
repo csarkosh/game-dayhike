@@ -9,18 +9,19 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 // nothing at runtime — it is kept as self-documentation: the water rings read
 // the ACTIVE variant, and this test states which one it means to exercise.
 import "../../src/sim/olympic.js";
-import { activeTerrainVariant, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { activeTerrainVariant, setActiveTerrainVariant, type LakeSource } from "../../src/sim/terrain.js";
+import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "../../src/game/waterShading.js";
 import { seedFromToken } from "../../src/game/seed.js";
-import { WATER_UV_SCROLL, createWater, effectsGroupFor, setEffectsGroup } from "../../src/game/renderer.js";
+import { LAKE_SURFACE_SPACING, WATER_UV_SCROLL, createWater, effectsGroupFor, lakeSurfaceShape, setEffectsGroup } from "../../src/game/renderer.js";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { createRain } from "../../src/game/rain.js";
 import { createMotes } from "../../src/game/motes.js";
 import { createMistMeshes } from "../../src/game/mistMeshes.js";
-import { WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "../../src/game/water.js";
+import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterRingSpacing } from "../../src/game/water.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
-import { bedOriginFor } from "../../src/game/bedHeight.js";
+import { POND_DISC_MARGIN, bedOriginFor } from "../../src/game/bedHeight.js";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
@@ -37,6 +38,11 @@ vi.mock("../../src/game/waterFrame.js", async (importOriginal) => {
 });
 
 setActiveTerrainVariant("olympic");
+
+/** A lake as the variant lists it. */
+function lake(over: Partial<LakeSource> = {}): LakeSource {
+  return { kind: "lake", level: 42, x: 100, z: 50, radius: 30, murk: 1, lobe: null, ...over };
+}
 
 describe("createWater under NullEngine", () => {
   let engine: NullEngine;
@@ -79,22 +85,94 @@ describe("createWater under NullEngine", () => {
     water.dispose();
   });
 
-  it("adds one disc per pond on the lake material at the pond's level, and disposes it", () => {
+  it("adds one surface per lake on its own material, at its level, with its murk's water, and disposes both", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
-    const water = createWater(scene, 1, 0, [{ x: 100, z: 50, radius: 30, height: 42 }]);
+    const water = createWater(scene, 1, 0, [lake({ murk: 1 })]);
     const pond = scene.getMeshByName("pond_0")!;
     expect(pond.position.y).toBeCloseTo(42.02, 5);
-    // Babylon's default bounding sphere is fit around the AABB, not the mesh's
-    // circumradius; the box extent is the honest read of "radius ~ 31".
     expect(pond.getBoundingInfo().boundingBox.extendSizeWorld.x).toBeCloseTo(31, 0);
-    expect(pond.material).toBe(scene.getMaterialByName("mat_water_lake"));
+    const mat = scene.getMaterialByName("mat_water_lake_0") as PBRMaterial;
+    expect(pond.material).toBe(mat);
+    const row = lakeWaterRow(1);
+    // murk 1 is the lowland lake's row
+    for (let c = 0; c < 3; c++) expect(row.lInf[c]).toBeCloseTo(WATER_ROWS.lowlandLake.lInf[c]!, 9);
+    for (let c = 0; c < 3; c++) expect(mat.albedoColor.asArray()[c]).toBeCloseTo(row.lInf[c]!, 6);
+    expect((mat.pluginManager!.getPlugin("Water") as WaterPlugin).row).toEqual(row);
     expect((pond.metadata as { waterLevel: number }).waterLevel).toBe(42);
     expect(pond.isVerticesDataPresent("bedDepth")).toBe(true);
     expect(pond.isVerticesDataPresent(VertexBuffer.ColorKind)).toBe(false);
+    expect((mat.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([lakeSkin(1), waterSkinOffset(1)]);
+    expect(lakeSkin(1)).toBe(1);
+    const sea = water.meshes[0]!.material as PBRMaterial;
+    expect((sea.pluginManager!.getPlugin("Water") as WaterPlugin).skin).toEqual([0, 0]);
     water.dispose();
     expect(scene.getMeshByName("pond_0")).toBeNull();
-    expect(scene.getMaterialByName("mat_water_lake")).toBeNull();
+    expect(scene.getMaterialByName("mat_water_lake_0")).toBeNull();
+  }, timeLimit(30_000));
+
+  it("makes no lake material and no lake surface in a world with no lake", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 1, 0, []);
+    expect(scene.getMeshByName("pond_0")).toBeNull();
+    expect(scene.materials.some((m) => m.name.startsWith("mat_water_lake"))).toBe(false);
+    water.dispose();
+  });
+
+  it("gives a lake surface's vertices the depth of the sim's own ground under them", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const seed = 1;
+    const water = createWater(scene, seed, 0, [lake({ level: 10_000 })]);
+    const pond = scene.getMeshByName("pond_0")!;
+    const positions = pond.getVerticesData(VertexBuffer.PositionKind)!;
+    const depths = pond.getVerticesData("bedDepth")!;
+    expect(depths.length).toBe(positions.length / 3);
+    for (const i of [0, Math.floor(depths.length / 2), depths.length - 1]) {
+      const wx = 100 + positions[i * 3]!, wz = 50 + positions[i * 3 + 2]!;
+      expect(depths[i]).toBeCloseTo(10_000 - elevationAt(seed, wx, wz), 1);
+    }
+    // the rings' texture coordinates, from the vertex's world position, so the
+    // ripple bump samples a real tile
+    expect(pond.isVerticesDataPresent(VertexBuffer.UVKind)).toBe(true);
+    const uvs = pond.getVerticesData(VertexBuffer.UVKind)!;
+    expect(uvs.length).toBe((positions.length / 3) * 2);
+    for (const i of [0, Math.floor(depths.length / 2), depths.length - 1]) {
+      expect(uvs[i * 2]).toBeCloseTo((100 + positions[i * 3]!) / WATER_UV_SCALE, 6);
+      expect(uvs[i * 2 + 1]).toBeCloseTo((50 + positions[i * 3 + 2]!) / WATER_UV_SCALE, 6);
+    }
+    // a disc, not a square: no vertex past the rim plus the margin, where the
+    // basin's apron may lie below the level outside the lake
+    const ext = 30 + POND_DISC_MARGIN;
+    let farthest = 0;
+    for (let i = 0; i < positions.length / 3; i++) {
+      farthest = Math.max(farthest, Math.hypot(positions[i * 3]!, positions[i * 3 + 2]!));
+    }
+    expect(farthest).toBeLessThanOrEqual(ext + 1e-6);
+    expect(farthest).toBeGreaterThan(ext - 1e-3);
+    const { rings, segments } = lakeSurfaceShape(ext);
+    expect(rings).toBe(Math.ceil(ext / LAKE_SURFACE_SPACING));
+    expect(segments).toBe(Math.ceil((2 * Math.PI * ext) / LAKE_SURFACE_SPACING));
+    expect(positions.length / 3).toBe(rings * segments + 1);
+    // wound as CreateGround winds its faces: the first triangle's cross
+    // product points down in Babylon's left-handed frame
+    const idx = pond.getIndices()!;
+    const p = (v: number): number[] => [positions[v * 3]!, positions[v * 3 + 1]!, positions[v * 3 + 2]!];
+    const [a, b, c] = [p(idx[0]!), p(idx[1]!), p(idx[2]!)];
+    const crossY = (b[2]! - a[2]!) * (c[0]! - a[0]!) - (b[0]! - a[0]!) * (c[2]! - a[2]!);
+    expect(crossY).toBeLessThan(0);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("gives no depth to a vertex over ground above the water", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 1, 0, [lake({ level: -1000 })]);
+    const depths = scene.getMeshByName("pond_0")!.getVerticesData("bedDepth")!;
+    expect(depths.length).toBeGreaterThan(0);
+    for (const d of depths) expect(d).toBe(0);
+    water.dispose();
   }, timeLimit(30_000));
 
   it("the mechanism fired: the bed texture is uploaded after the first update and the plugin points at it", () => {
@@ -112,6 +190,20 @@ describe("createWater under NullEngine", () => {
     water.dispose();
   }, timeLimit(30_000));
 
+  it("hands the rain to every plugin, the sea's and each lake's", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 1, 0, [lake({ murk: 1 }), lake({ x: -300, z: 200, murk: 0 })]);
+    const plugins = [...water.meshes, ...water.lakeMeshes].map(
+      (m) => (m.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin,
+    );
+    expect(new Set(plugins).size).toBe(3);
+    for (const p of plugins) expect(p.rain).toBe(0);
+    water.setRain(0.3);
+    for (const p of plugins) expect(p.rain).toBe(0.3);
+    water.dispose();
+  }, timeLimit(30_000));
+
   it("uploads the bed at creation, before any frame, at the camera's start", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
@@ -126,7 +218,7 @@ describe("createWater under NullEngine", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     // a pond by (500, 500), so the square there is one a body reaches
-    const water = createWater(scene, 7, 0, [{ x: 520, z: 480, radius: 10, height: 0 }], "low");
+    const water = createWater(scene, 7, 0, [lake({ x: 520, z: 480, radius: 10, level: 0 })], "low");
     const plugin = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
     const upload = vi.spyOn(plugin.bedTexture as RawTexture, "update");
     const origin0 = [...plugin.bedOrigin];
@@ -249,9 +341,9 @@ describe("createWater under NullEngine", () => {
       const scene = new Scene(engine);
       const level = activeTerrainVariant().waterLevel!;
       expect(level).toBe(0);
-      const ponds = activeTerrainVariant().trailGraph!(seed).features.filter((f) => f.kind === "pond");
-      expect(ponds[0]!.x).toBeCloseTo(pondCam.x, 0);
-      const water = createWater(scene, seed, level, ponds, "medium", pondCam.x, pondCam.z);
+      const lakes = activeTerrainVariant().waterBodies!(seed).filter((b): b is LakeSource => b.kind === "lake");
+      expect(lakes[0]!.x).toBeCloseTo(pondCam.x, 0);
+      const water = createWater(scene, seed, level, lakes, "medium", pondCam.x, pondCam.z);
       const check = (): void => {
         expect(water.meshes[0]!.isEnabled()).toBe(false);
         const ring1 = water.meshes[1]!;
@@ -283,11 +375,11 @@ describe("createWater under NullEngine", () => {
     it("culls every ring by its wet box: none is active looking inland from the pond, one is looking to the coast", () => {
       engine = new NullEngine();
       const scene = new Scene(engine);
-      const ponds = activeTerrainVariant().trailGraph!(seed).features.filter((f) => f.kind === "pond");
+      const lakes = activeTerrainVariant().waterBodies!(seed).filter((b): b is LakeSource => b.kind === "lake");
       // pond_0's west bank, at eye height over it
       const camera = new FreeCamera("c", new Vector3(209.6, 87.5, 84), scene);
       camera.maxZ = 10_000;
-      const water = createWater(scene, seed, 0, ponds, "medium", 209.6, 84);
+      const water = createWater(scene, seed, 0, lakes, "medium", 209.6, 84);
       water.update(209.6, 84, 0);
       const activeRings = (): string[] => {
         const active = scene.getActiveMeshes();
@@ -331,7 +423,7 @@ describe("createWater under NullEngine", () => {
     const camera = new FreeCamera("c", Vector3.Zero(), scene);
     camera.minZ = 0.05;
     camera.maxZ = 10000;
-    const water = createWater(scene, 7, 0, [{ x: 100, z: 50, radius: 30, height: 42 }], "high");
+    const water = createWater(scene, 7, 0, [lake()], "high");
     expect(water.high).toBe(true);
     const pond = scene.getMeshByName("pond_0")!;
     for (const m of [...water.meshes, pond]) {

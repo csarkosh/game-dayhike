@@ -9,11 +9,11 @@
  * sim/ determinism rules apply: no trig, no Math.pow, no `**`, no hypot.
  */
 import { fbm2, hash3, valueNoise2 } from "./field.js";
-import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./terrain.js";
+import { activeTerrainVariant, elevationSampleAt, type TerrainSample, type WaterBodySource } from "./terrain.js";
 import { shoreHeight } from "./shoreStrip.js";
 import { TRAIL_Z_ANCHOR, TRAILHEAD_U } from "./bowl.js";
 import { forestDensity, SLOPE_HI, SLOPE_LO } from "./vegetation.js";
-import { NO_FEATURE_MASK, type FeatureMask } from "./features.js";
+import { NO_FEATURE_MASK, marshWeightAt, POND_SHORE, type FeatureMask } from "./features.js";
 
 // ---- Class ids (not tunables) ---------------------------------------------
 export const CLUTTER_GRASS = 0;
@@ -30,6 +30,11 @@ export const CLUTTER_FLOWER = 7;
 /** Litter: pebbles, twigs and torn turf along the trail's loose margin. */
 export const CLUTTER_LITTER = 8;
 export const CLUTTER_CLASS_COUNT = 9;
+/** Reeds and cattails at a murky lake's margin and on its marsh. Placed here
+ * like every class; drawn by `waterPlants.ts`, not the model-drawn clutter. */
+export const CLUTTER_REED = 9;
+/** Yellow pond-lily pads on a murky lake's shallows; drawn by `waterPlants.ts`. */
+export const CLUTTER_LILY = 10;
 
 // ---- Tunables (every one appears in CLUTTER_TUNABLES) ------------
 /** Cell sides (m): at most one instance per cell per class. */
@@ -419,6 +424,42 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/**
+ * A water plant's gate at a point: the reeds on a murky lake's wet band and
+ * shallows and throughout its marsh, the lilies on its 0.5 to 2 m water, each
+ * in seeded patches; nothing on a lake at murk CLUTTER_WATER_MURK_LO or below,
+ * or away from every lake.
+ */
+function waterPlantDensity(
+  seed: number, cls: number, x: number, z: number, h: number, bodies: readonly WaterBodySource[] | undefined,
+): number {
+  if (bodies === undefined) return 0;
+  for (const b of bodies) {
+    if (b.kind !== "lake") continue;
+    const reach = b.radius + POND_SHORE;
+    const dx = x - b.x, dz = z - b.z;
+    const q2 = dx * dx + dz * dz;
+    if (q2 >= reach * reach) continue;
+    const murky = smoothstep(CLUTTER_WATER_MURK_LO, CLUTTER_WATER_MURK_HI, b.murk);
+    if (murky <= 0) return 0;
+    const depth = b.level - h;
+    if (cls === CLUTTER_REED) {
+      const band = smoothstep(CLUTTER_REED_DEPTH_LO, CLUTTER_REED_DEPTH_LO + CLUTTER_REED_DEPTH_FADE_IN, depth)
+        * (1 - smoothstep(CLUTTER_REED_DEPTH_HI - CLUTTER_REED_DEPTH_FADE_OUT, CLUTTER_REED_DEPTH_HI, depth));
+      const patch = smoothstep(CLUTTER_REED_PATCH_LO, CLUTTER_REED_PATCH_HI, valueNoise2(x / CLUTTER_REED_PATCH_WAVE, z / CLUTTER_REED_PATCH_WAVE, seed ^ CLUTTER_REED_SALT));
+      return murky * Math.max(band * patch, marshWeightAt(b, x, z));
+    }
+    // Lilies float on the lake alone: past the rim the basin's apron can lie
+    // below the level on the downhill side, but no water stands there.
+    if (q2 >= b.radius * b.radius) return 0;
+    const band = smoothstep(CLUTTER_LILY_DEPTH_LO, CLUTTER_LILY_DEPTH_LO + CLUTTER_LILY_DEPTH_FADE, depth)
+      * (1 - smoothstep(CLUTTER_LILY_DEPTH_HI - CLUTTER_LILY_DEPTH_FADE, CLUTTER_LILY_DEPTH_HI, depth));
+    const patch = smoothstep(CLUTTER_LILY_PATCH_LO, CLUTTER_LILY_PATCH_HI, valueNoise2(x / CLUTTER_LILY_PATCH_WAVE, z / CLUTTER_LILY_PATCH_WAVE, seed ^ CLUTTER_LILY_SALT));
+    return murky * band * patch;
+  }
+  return 0;
+}
+
 /** How far up the rock class's slope band a squared gradient `dx² + dz²`
  * stands: 0 at `CLUTTER_ROCK_SLOPE_LO` and below, 1 at `CLUTTER_ROCK_SLOPE_HI`
  * and above, a smoothstep between. The rock props scale their density by it
@@ -448,6 +489,44 @@ type ClassConfig = {
   standsTall?: boolean;
 };
 
+/** Reeds: a clump a square metre at most, standing from the wet band 30 cm
+ * above the water down to 60 cm deep, in patches, and throughout the marsh. */
+export const CLUTTER_REED_CELL = 1;
+export const CLUTTER_REED_D = 1;
+export const CLUTTER_REED_SCALE_MIN = 0.9;
+export const CLUTTER_REED_SCALE_MAX = 1.1;
+export const CLUTTER_REED_SALT = 0x2eed;
+export const CLUTTER_REED_DEPTH_LO = -0.3;
+export const CLUTTER_REED_DEPTH_HI = 0.6;
+export const CLUTTER_REED_PATCH_WAVE = 6;
+/** The reed band's lower edge rises over this much depth (m) above its start. */
+export const CLUTTER_REED_DEPTH_FADE_IN = 0.2;
+/** The reed band's upper edge falls over this much depth (m) below its end. */
+export const CLUTTER_REED_DEPTH_FADE_OUT = 0.15;
+/** The reed patch noise's smoothstep edges. */
+export const CLUTTER_REED_PATCH_LO = 0.35;
+export const CLUTTER_REED_PATCH_HI = 0.6;
+/** Reeds stand this far off a trail's centreline (m), as the boulders do. */
+export const CLUTTER_REED_TRAIL_CLEAR = 4;
+/** Pond-lilies: a pad of 12 to 20 cm radius, in water 0.5 to 2 m deep (the
+ * depths a lake survey found them in, research §5.1), in patches. */
+export const CLUTTER_LILY_CELL = 0.8;
+export const CLUTTER_LILY_D = 1.2;
+export const CLUTTER_LILY_SCALE_MIN = 0.12;
+export const CLUTTER_LILY_SCALE_MAX = 0.2;
+export const CLUTTER_LILY_SALT = 0x1117;
+export const CLUTTER_LILY_DEPTH_LO = 0.5;
+export const CLUTTER_LILY_DEPTH_HI = 2;
+export const CLUTTER_LILY_PATCH_WAVE = 8;
+/** The lily band's edges fall and rise over this much depth (m) at each end. */
+export const CLUTTER_LILY_DEPTH_FADE = 0.2;
+/** The lily patch noise's smoothstep edges. */
+export const CLUTTER_LILY_PATCH_LO = 0.55;
+export const CLUTTER_LILY_PATCH_HI = 0.7;
+/** The water plants begin above this murk and are full from the next; the
+ * water's skin (`waterShading.ts` `lakeSkin`) takes the same two. */
+export const CLUTTER_WATER_MURK_LO = 0.5;
+export const CLUTTER_WATER_MURK_HI = 0.8;
 const CLASSES: readonly ClassConfig[] = [
   { cell: CLUTTER_GRASS_CELL, density: CLUTTER_GRASS_D, salt: CLUTTER_GRASS_SALT, scaleMin: CLUTTER_GRASS_SCALE_MIN, scaleMax: CLUTTER_GRASS_SCALE_MAX, variants: 2, trailClear: 0 },
   { cell: CLUTTER_ROCK_CELL, density: CLUTTER_ROCK_D, salt: CLUTTER_ROCK_SALT, scaleMin: CLUTTER_ROCK_SCALE_MIN, scaleMax: CLUTTER_ROCK_SCALE_MAX, variants: 2, trailClear: 0, standsTall: true },
@@ -458,6 +537,8 @@ const CLASSES: readonly ClassConfig[] = [
   { cell: CLUTTER_MEADOW_CELL, density: CLUTTER_MEADOW_D, salt: CLUTTER_MEADOW_SALT, scaleMin: CLUTTER_MEADOW_SCALE_MIN, scaleMax: CLUTTER_MEADOW_SCALE_MAX, variants: 1, trailClear: 0 },
   { cell: CLUTTER_FLOWER_CELL, density: CLUTTER_FLOWER_D, salt: CLUTTER_FLOWER_SALT, scaleMin: CLUTTER_FLOWER_SCALE_MIN, scaleMax: CLUTTER_FLOWER_SCALE_MAX, variants: 2, trailClear: 0 },
   { cell: CLUTTER_LITTER_CELL, density: CLUTTER_LITTER_D, salt: CLUTTER_LITTER_SALT, scaleMin: CLUTTER_LITTER_SCALE_MIN, scaleMax: CLUTTER_LITTER_SCALE_MAX, variants: 3, trailClear: 0 },
+  { cell: CLUTTER_REED_CELL, density: CLUTTER_REED_D, salt: CLUTTER_REED_SALT, scaleMin: CLUTTER_REED_SCALE_MIN, scaleMax: CLUTTER_REED_SCALE_MAX, variants: 3, trailClear: CLUTTER_REED_TRAIL_CLEAR },
+  { cell: CLUTTER_LILY_CELL, density: CLUTTER_LILY_D, salt: CLUTTER_LILY_SALT, scaleMin: CLUTTER_LILY_SCALE_MIN, scaleMax: CLUTTER_LILY_SCALE_MAX, variants: 1, trailClear: 0 },
 ];
 
 /** Nothing that stands tall grows within this of the pad's centre (m): where a player arrives, the entrance and the board. */
@@ -588,12 +669,20 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       return Math.min(1, Math.max(raw * mask.boulder, mask.boulderFloor));
     }
     case CLUTTER_DRIFTWOOD: {
-      if (c > CLUTTER_DRIFT_INLAND + CLUTTER_DRIFT_INLAND_FADE) return 0;
+      // The cove's backshore holds drift logs up to the road's corridor, past
+      // the beach's own reach inland; everywhere else is as before. The mask
+      // is asked for only past the beach's full reach: within it the inland
+      // factor is 1, and the mask (at most 1) cannot raise the maximum below.
+      let cove = 0;
+      if (c > CLUTTER_DRIFT_INLAND) {
+        cove = variant.coveMask?.(seed, x, z) ?? 0;
+        if (c > CLUTTER_DRIFT_INLAND + CLUTTER_DRIFT_INLAND_FADE && cove === 0) return 0;
+      }
       const alt =
         smoothstep(CLUTTER_DRIFT_ALT_LO, CLUTTER_DRIFT_ALT_LO + CLUTTER_DRIFT_ALT_LO_FADE, s.h) *
         (1 - smoothstep(CLUTTER_DRIFT_ALT_HI, CLUTTER_DRIFT_ALT_HI + CLUTTER_DRIFT_ALT_HI_FADE, s.h));
       const inland = 1 - smoothstep(CLUTTER_DRIFT_INLAND, CLUTTER_DRIFT_INLAND + CLUTTER_DRIFT_INLAND_FADE, c);
-      return alt * inland;
+      return alt * Math.max(inland, cove);
     }
     case CLUTTER_FUNGUS: {
       const canopy = smoothstep(CLUTTER_FUNGUS_CANOPY_LO, CLUTTER_FUNGUS_CANOPY_HI, forestDensity(seed, x, z, s));
@@ -686,6 +775,9 @@ export function clutterDensity(seed: number, cls: number, x: number, z: number, 
       const snow = 1 - smoothstep(CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI + CLUTTER_GRASS_ALT_HI_FADE, s.h);
       return band * snow;
     }
+    case CLUTTER_REED:
+    case CLUTTER_LILY:
+      return waterPlantDensity(seed, cls, x, z, s.h, variant.waterBodies?.(seed));
     default:
       return 0;
   }
@@ -797,6 +889,15 @@ export function clutterInRect(seed: number, cls: number, minX: number, minZ: num
 /** Every clutter constant, by name — the level-id contract. The clutter
  * pass's `tunables` getter spreads this, so registryDigest covers it. */
 export const CLUTTER_TUNABLES: Readonly<Record<string, number>> = {
+  CLUTTER_REED, CLUTTER_LILY,
+  CLUTTER_REED_CELL, CLUTTER_REED_D, CLUTTER_REED_SCALE_MIN, CLUTTER_REED_SCALE_MAX, CLUTTER_REED_SALT,
+  CLUTTER_REED_DEPTH_LO, CLUTTER_REED_DEPTH_HI, CLUTTER_REED_PATCH_WAVE,
+  CLUTTER_REED_DEPTH_FADE_IN, CLUTTER_REED_DEPTH_FADE_OUT, CLUTTER_REED_PATCH_LO, CLUTTER_REED_PATCH_HI,
+  CLUTTER_REED_TRAIL_CLEAR,
+  CLUTTER_LILY_CELL, CLUTTER_LILY_D, CLUTTER_LILY_SCALE_MIN, CLUTTER_LILY_SCALE_MAX, CLUTTER_LILY_SALT,
+  CLUTTER_LILY_DEPTH_LO, CLUTTER_LILY_DEPTH_HI, CLUTTER_LILY_PATCH_WAVE,
+  CLUTTER_LILY_DEPTH_FADE, CLUTTER_LILY_PATCH_LO, CLUTTER_LILY_PATCH_HI,
+  CLUTTER_WATER_MURK_LO, CLUTTER_WATER_MURK_HI,
   CLUTTER_GRASS_CELL, CLUTTER_ROCK_CELL, CLUTTER_BOULDER_CELL, CLUTTER_DRIFT_CELL, CLUTTER_FUNGUS_CELL,
   CLUTTER_GRASS_D, CLUTTER_ROCK_D, CLUTTER_BOULDER_D, CLUTTER_DRIFT_D, CLUTTER_FUNGUS_D,
   CLUTTER_GRASS_ALT_LO, CLUTTER_GRASS_ALT_LO_FADE, CLUTTER_GRASS_ALT_HI, CLUTTER_GRASS_ALT_HI_FADE,

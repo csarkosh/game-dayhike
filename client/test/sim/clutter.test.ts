@@ -39,7 +39,7 @@ import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
 import { TRAIL_WEAR_W1, TRAIL_JUNCTION_W } from "../../src/game/trailBenchParams.js";
 import { fbm2 } from "../../src/sim/field.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
-import { ROAD_BED_HALF } from "../../src/sim/road.js";
+import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
 import { bowlFor } from "../../src/sim/olympic.js";
 import { variantOrThrow, DERIV_SEED } from "./helpers/derivatives.js";
@@ -1419,5 +1419,89 @@ describe("the ground's cover in the strip at the trailhead", () => {
     setActiveTerrainVariant("olympic");
     const grass = clutterInRect(HOLLOW, CLUTTER_GRASS, PAD_X, -12, PAD_X + 24, 12);
     expect(grass.length).toBeGreaterThan(0);
+  });
+});
+
+import { CLUTTER_REED, CLUTTER_LILY } from "../../src/sim/clutter.js";
+import { firstPondWorld, lakeOf } from "./helpers/lakes.js";
+import { lobePoints, marshWeightAt, POND_SHORE } from "../../src/sim/features.js";
+import { elevationAt, type LakeSource } from "../../src/sim/terrain.js";
+
+describe("the water plants", { timeout: timeLimit(120_000) }, () => {
+  it("follow the model-drawn classes, which still number nine", () => {
+    expect(CLUTTER_CLASS_COUNT).toBe(9);
+    expect([CLUTTER_REED, CLUTTER_LILY]).toEqual([9, 10]);
+    for (const k of ["CLUTTER_REED_CELL", "CLUTTER_REED_D", "CLUTTER_LILY_CELL", "CLUTTER_LILY_D", "CLUTTER_WATER_MURK_LO", "CLUTTER_WATER_MURK_HI"]) {
+      expect(CLUTTER_TUNABLES[k], k).toBeTypeOf("number");
+    }
+  });
+
+  it("fill a murky lake's marsh with reeds and keep them out of its deep water", () => {
+    const { seed, pond } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
+    const lake = lakeOf(seed);
+    let core = 0;
+    for (const [x, z] of lobePoints(lake, 1)) {
+      if (marshWeightAt(lake, x, z) < 1) continue;
+      core++;
+      expect(clutterDensity(seed, CLUTTER_REED, x, z)).toBe(1);
+    }
+    expect(core).toBeGreaterThan(10);
+    expect(clutterDensity(seed, CLUTTER_REED, pond.x, pond.z)).toBe(0);
+    expect(clutterDensity(seed, CLUTTER_LILY, pond.x, pond.z)).toBe(0);
+  });
+
+  it("float lilies only in water 0.5 to 2 m deep, in patches", () => {
+    const { seed } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
+    const lake = lakeOf(seed);
+    let most = 0;
+    for (let i = 0; i < 720; i++) {
+      const a = (i / 720) * Math.PI * 2;
+      for (let s = 0.5; s < 20; s += 0.5) {
+        const x = lake.x + Math.cos(a) * (lake.radius - s), z = lake.z + Math.sin(a) * (lake.radius - s);
+        const depth = lake.level - elevationAt(seed, x, z);
+        const d = clutterDensity(seed, CLUTTER_LILY, x, z);
+        if (depth < 0.5 || depth > 2) expect(d, `depth ${depth}`).toBe(0);
+        most = Math.max(most, d);
+      }
+    }
+    expect(most).toBeGreaterThan(0.5);
+  });
+
+  it("float no lily outside the rim", () => {
+    const { seed, pond } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);
+    const lake = activeTerrainVariant().waterBodies!(seed)
+      .find((b): b is LakeSource => b.kind === "lake" && b.x === pond.x && b.z === pond.z)!;
+    const r = lake.radius + POND_SHORE + 1;
+    const lilies = clutterInRect(seed, CLUTTER_LILY, lake.x - r, lake.z - r, lake.x + r, lake.z + r);
+    for (const inst of lilies) {
+      expect(Math.hypot(inst.x - lake.x, inst.z - lake.z), `(${inst.x}, ${inst.z})`).toBeLessThan(lake.radius);
+    }
+    expect(lilies.length).toBeGreaterThan(20);
+  });
+
+  it("grow in no clear lake", () => {
+    const { seed } = firstPondWorld((f) => (f.murk ?? 1) <= 0.5);
+    const lake = lakeOf(seed);
+    for (let s = 0; s < 20; s += 0.5) {
+      const x = lake.x + lake.radius - s;
+      expect(clutterDensity(seed, CLUTTER_REED, x, lake.z)).toBe(0);
+      expect(clutterDensity(seed, CLUTTER_LILY, x, lake.z)).toBe(0);
+    }
+  });
+});
+
+describe("driftwood in the cove", () => {
+  it("lies on the backshore up to the road's corridor, past the beach's own reach", () => {
+    const v = activeTerrainVariant();
+    let found = 0;
+    for (const seed of [0x5eed, 1, 12345, 777, 4242]) {
+      const cx = v.roadCenterX!(seed, 0);
+      const x0 = cx - v.coastDistance!(seed, cx, 0);
+      for (let d = 41; x0 + d <= cx - ROAD_CORRIDOR_HALF - 6; d += 1) {
+        found++;
+        expect(clutterDensity(seed, CLUTTER_DRIFTWOOD, x0 + d, 0), `seed ${seed} d ${d}`).toBeGreaterThan(0);
+      }
+    }
+    expect(found).toBeGreaterThan(0);
   });
 });

@@ -14,6 +14,7 @@ import { groundCover } from "../sim/clutter.js";
 import { elevationSampleAt } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { classifySurface } from "./terrainSurface.js";
+import { waterGroundAt } from "./waterGround.js";
 
 export const RING_CELLS = 128;
 export const RING_COUNT = 7;
@@ -164,7 +165,7 @@ function sampleInto(t: Target, seed: number, ix: number, iz: number): void {
   const duff = gc.duff;
   const canopy = forestDensity(seed, x, z, s);
   const { albedo, weights } = classifySurface(
-    seed, x, z, s.h, Math.hypot(s.dx, s.dz), canopy, duff,
+    seed, x, z, s.h, Math.hypot(s.dx, s.dz), canopy, duff, waterGroundAt(seed, x, z, s.h),
   );
   const c = at * 4;
   a.colors[c] = albedo.r;
