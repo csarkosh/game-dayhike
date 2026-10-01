@@ -12,8 +12,7 @@ import { collisionBoxes } from "./level.js";
 import { activeTerrainVariant, elevationAt } from "./terrain.js";
 import { buildSearch, installSearch, type Search } from "./search.js";
 import { trailheadPlaces } from "./trailhead.js";
-import { containAtLake, containAtRoad, waterLevelAt } from "./containment.js";
-import { LAKE_SHELF_WIDTH } from "./features.js";
+import { containAtRoad, containInLakes, waterLevelAt } from "./containment.js";
 import { createGroundField, type GroundField } from "./ground.js";
 import { stepMovement, type MoveState } from "./movement.js";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
@@ -358,14 +357,9 @@ function applyMove(world: World, player: PlayerState, cmd: InputCommand): void {
     if (roadCenterX !== undefined) {
       containAtRoad(after.pos, after.vel, roadCenterX(world.forest.seed, after.pos.z));
     }
-    // The wall in each lake, at the shelf's inner edge.
-    const bodies = variant.waterBodies?.(world.forest.seed);
-    if (bodies !== undefined) {
-      for (const b of bodies) {
-        if (b.kind === "lake") containAtLake(after.pos, after.vel, b.x, b.z, b.radius - LAKE_SHELF_WIDTH);
-      }
-    }
   }
+  // The wall in each lake, at the shelf's inner edge.
+  containInLakes(world, after.pos, after.vel, PLAYER_HALF);
   player.pos = after.pos;
   player.vel = after.vel;
   player.grounded = after.grounded;

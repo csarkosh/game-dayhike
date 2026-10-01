@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { ROAD_WALL_U, containAtLake, containAtRoad, waterLevelAt } from "../../src/sim/containment.js";
 import { ROAD_BED_HALF } from "../../src/sim/road.js";
-import { PLAYER_HALF } from "../../src/sim/constants.js";
+import { ENEMY_HALF, PLAYER_HALF } from "../../src/sim/constants.js";
+import { spawnHollow } from "../../src/sim/hollow.js";
 import { createForest, GEN_VERSION } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../../src/sim/terrain.js";
@@ -137,6 +138,40 @@ describe("the lake in a forest world", { timeout: timeLimit(240_000) }, () => {
     p.pos = { x: lake.x, y: elevationAt(seed, lake.x, lake.z) + PLAYER_HALF.y, z: lake.z };
     tickWorld(world, new Map([[p.id, input({ seq: 1 })]]));
     expect(Math.hypot(p.pos.x - lake.x, p.pos.z - lake.z)).toBeCloseTo(wallQ, 6);
+  });
+
+  it("lifts a player the wall moves out onto the ground there", () => {
+    const { seed, lake } = lakeWorld();
+    const world = createForestWorld(createForest(seed));
+    const p = spawnPlayer(world);
+    p.pos = { x: lake.x, y: elevationAt(seed, lake.x, lake.z) + PLAYER_HALF.y, z: lake.z };
+    tickWorld(world, new Map([[p.id, input({ seq: 1 })]]));
+    expect(p.pos.y).toBeGreaterThanOrEqual(world.ground!.heightAt(p.pos.x, p.pos.z) + PLAYER_HALF.y - 1e-9);
+  });
+
+  it("holds a Hollow at the wall as it holds a player, chasing across the lake included", () => {
+    const { seed, lake, wallQ } = lakeWorld();
+    const world = createForestWorld(createForest(seed));
+    const p = spawnPlayer(world);
+    // the prey stands at the wall on the far side, so the chase is straight across
+    const px = lake.x - wallQ, pz = lake.z;
+    p.pos = { x: px, y: elevationAt(seed, px, pz) + PLAYER_HALF.y, z: pz };
+    const h = spawnHollow(world, { x: lake.x + 0.5, y: elevationAt(seed, lake.x + 0.5, lake.z) + ENEMY_HALF.y, z: lake.z }, p.id, 0);
+    // A Hollow decides on its approach in one tick and takes its first step
+    // the next (`pursue`): it is on the wall after the tick it first moves.
+    const start = { ...h.pos };
+    let t = 0;
+    while (t < 5 && h.pos.x === start.x && h.pos.z === start.z) {
+      t++;
+      tickWorld(world, new Map([[p.id, input({ seq: t })]]));
+    }
+    expect(t).toBeLessThanOrEqual(2);
+    expect(Math.hypot(h.pos.x - lake.x, h.pos.z - lake.z)).toBeCloseTo(wallQ, 6);
+    expect(h.pos.y).toBeGreaterThanOrEqual(world.ground!.heightAt(h.pos.x, h.pos.z) + ENEMY_HALF.y - 1e-9);
+    for (; t < 600 && world.state.enemies.has(h.id); t++) {
+      tickWorld(world, new Map([[p.id, input({ seq: t + 1 })]]));
+      expect(Math.hypot(h.pos.x - lake.x, h.pos.z - lake.z), `tick ${t}`).toBeGreaterThanOrEqual(wallQ - 1e-6);
+    }
   });
 
   it("wades by the lake's level within its rim and by the sea's elsewhere", () => {

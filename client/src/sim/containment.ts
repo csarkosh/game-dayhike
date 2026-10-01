@@ -3,6 +3,7 @@ import type { World } from "./world.js";
 import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "./road.js";
 import { activeTerrainVariant } from "./terrain.js";
 import { PLAYER_HALF } from "./constants.js";
+import { LAKE_SHELF_WIDTH } from "./features.js";
 
 /**
  * The invisible wall at the road: the one place the design admits one
@@ -51,6 +52,25 @@ export function containAtLake(pos: Vec3, vel: Vec3, cx: number, cz: number, wall
     vel.z -= inward * nz;
   }
   return true;
+}
+
+/**
+ * The wall in each of a forest world's lakes (`containAtLake`), for any hull,
+ * a player's or an enemy's, after its movement step. A hull the wall moved
+ * out is lifted to stand on the ground there if it lay below it: the wall
+ * puts it on the shelf, up the slope from where the step left it.
+ */
+export function containInLakes(world: World, pos: Vec3, vel: Vec3, half: Vec3): void {
+  if (world.forest === null) return;
+  const bodies = activeTerrainVariant().waterBodies?.(world.forest.seed);
+  if (bodies === undefined) return;
+  let walled = false;
+  for (const b of bodies) {
+    if (b.kind === "lake" && containAtLake(pos, vel, b.x, b.z, b.radius - LAKE_SHELF_WIDTH)) walled = true;
+  }
+  if (walled && world.ground !== null) {
+    pos.y = Math.max(pos.y, world.ground.heightAt(pos.x, pos.z) + half.y);
+  }
 }
 
 /** The water a hull at (x, z) wades in: a lake's level within its rim (the

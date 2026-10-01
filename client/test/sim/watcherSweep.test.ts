@@ -240,6 +240,11 @@ function sweep(token: string): Case[] {
  * cove change the ground the stands are judged on. 899 of 924 are shown and
  * 74 339 admitted; the pad is 187 of 200 shown and 3 980 admitted, and half
  * way up admits 17 233 where it admitted 17 356.
+ *
+ * Re-pinned 2026-10-01 from 74 339 admitted: a stand on a lake's bed, under
+ * its water inside its rim, is refused as the sea's is (`groundSpawn`). 899
+ * of 924 are still shown; 74 240 are admitted, and half way up admits 17 134
+ * where it admitted 17 233, no other slot moving.
  */
 describe("the watcher on fifty seeds", () => {
   it("stands only where every rule holds, and shows within 120 ticks on 899 of 924 stands", () => {
@@ -268,13 +273,13 @@ describe("the watcher on fifty seeds", () => {
     console.info(`[watcher sweep]\n${summary}`);
     expect(cases.length, summary).toBe(924);
     expect(shown.length, summary).toBeGreaterThanOrEqual(899);
-    expect(admitted, summary).toBeGreaterThanOrEqual(74339);
+    expect(admitted, summary).toBeGreaterThanOrEqual(74240);
     expect(refused.flee, summary).toBe(0);
     expect(Math.abs(ranges[0]! - 25), summary).toBeLessThanOrEqual(0.5);
     expect(Math.abs(ranges[ranges.length - 1]! - 90), summary).toBeLessThanOrEqual(0.5);
     expect(bySlot.map((b) => `${b.slot} ${b.stands}`), summary).toEqual(["climb 0 200", "climb 0.25 200", "climb 0.5 200", "climb 0.75 200", "top fork 180"]);
     const floors = [187, 197, 191, 200, 180];
-    const admittedFloors = [3980, 12528, 17233, 25792, 22864];
+    const admittedFloors = [3980, 12528, 17134, 25792, 22864];
     bySlot.forEach((b, i) => {
       expect(b.shown, summary).toBeGreaterThanOrEqual(floors[i]!);
       expect(b.admitted, summary).toBeGreaterThanOrEqual(admittedFloors[i]!);
