@@ -622,7 +622,7 @@ function olympicSample(seed: number, x: number, z: number): TerrainSample {
   // the world.
   const bowl = bowlFor(seed);
   staged = featureStageD(bowl.features, x, z, staged);
-  staged = lakeStageD(bowl.features, x, z, staged);
+  staged = lakeStageD(seed, bowl.features, x, z, staged);
   if (inBowl(u, z)) {
     // The trail corridor over every edge: every edge's own grid cell lies
     // inside the bowl, so its corridor never needs to reach past this gate.

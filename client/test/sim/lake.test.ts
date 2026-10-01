@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import { bowlFor } from "../../src/sim/olympic.js";
-import { lakeDepthD, LAKE_SHELF_WIDTH } from "../../src/sim/features.js";
+import { lakeDepthD, LAKE_SHELF_WIDTH, marshWeightAt, lobePoints, MARSH_AMP, MARSH_MURK_MIN } from "../../src/sim/features.js";
 import { checkDerivatives, TOL_RATIO, variantOrThrow } from "./helpers/derivatives.js";
 import { firstPondWorld } from "./helpers/lakes.js";
 import { activeTerrainVariant, type LakeSource } from "../../src/sim/terrain.js";
@@ -59,5 +59,32 @@ describe("the water bodies", { timeout: timeLimit(120_000) }, () => {
   it("are the sea alone in a world with no pond", () => {
     const seed = LOBBY_SEEDS.find((s) => !bowlFor(s).features.some((f) => f.kind === "pond"))!;
     expect(activeTerrainVariant().waterBodies!(seed)).toEqual([{ kind: "sea", level: 0 }]);
+  });
+});
+
+describe("the marsh in the composed field", { timeout: timeLimit(120_000) }, () => {
+  it("is held at the lake's level in a real world, and has exact derivatives", () => {
+    const { seed, pond } = firstPondWorld((f) => (f.murk ?? 0) > 0.7);
+    expect(pond.lobe).not.toBeNull();
+    const v = variantOrThrow("olympic");
+    const pts = lobePoints(pond, 1);
+    let core = 0;
+    for (const [x, z] of pts) {
+      if (marshWeightAt(pond, x, z) < 1) continue;
+      core++;
+      expect(Math.abs(v.sample(seed, x, z).h - pond.height)).toBeLessThanOrEqual(MARSH_AMP + 1e-9);
+    }
+    expect(core).toBeGreaterThan(10);
+    const { worst, steepest } = checkDerivatives("olympic", pts.filter((_, i) => i % 3 === 0), seed);
+    expect(worst / steepest).toBeLessThan(TOL_RATIO);
+  });
+
+  it("is on a pond exactly when its murk is above 0.5", () => {
+    for (const seed of LOBBY_SEEDS.slice(0, 40)) {
+      for (const f of bowlFor(seed).features) {
+        if (f.kind !== "pond") continue;
+        expect(f.lobe === null, `seed ${seed}`).toBe(!((f.murk ?? 0) > MARSH_MURK_MIN));
+      }
+    }
   });
 });

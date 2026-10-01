@@ -50,7 +50,7 @@ import {
   type Landmark, type Samplers,
 } from "./landmarks.js";
 import {
-  featureDraw, featureStageD, planFeatures, loopBand, murkFor,
+  featureDraw, featureStageD, planFeatures, loopBand, murkFor, chooseLobe,
   PEAK_RADIUS_MIN, PEAK_RADIUS_MAX, PEAK_RISE_MIN, PEAK_RISE_MAX,
   PEAK_INLAND_MIN, PEAK_INLAND_MAX, PEAK_SHOULDER, PEAK_LOWER_STEP, PEAK_LOWER_TRIES, PEAK_CENTRE_TRIES,
   LOOP_TRIES, TREE_PENALTY, LOOP_SCAN_STRIDE,
@@ -965,6 +965,8 @@ export function buildTrail(
   for (const f of features) {
     if (f.kind !== "pond") continue;
     f.murk = murkFor(f.height, padH, peak?.crestH);
+    // The marsh reads the ground before any feature, as the lake's rim does.
+    f.lobe = chooseLobe(f, f.murk, (x, z) => frame.sample(x, z).h);
   }
 
   const homeDist = homeDistances(state.nodes, state.edges);

@@ -4,6 +4,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { bowlFor } from "../../src/sim/olympic.js";
 import { variantOrThrow } from "./helpers/derivatives.js";
+import { segmentDistance } from "../../src/sim/trail.js";
+import { lobePoints, LAKE_SHELF_WIDTH, MARSH_MURK_MIN } from "../../src/sim/features.js";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -85,5 +87,32 @@ describe("the water terrain over 200 worlds", { timeout: timeLimit(900_000) }, (
     const before = JSON.parse(readFileSync(FIXTURE, "utf8")) as WorldRecord[];
     expect(now.length).toBe(before.length);
     for (let i = 0; i < now.length; i++) expect(now[i], `seed ${before[i]!.seed}`).toEqual(before[i]);
+  });
+
+  it("keeps every trail edge out of every lake, and every marsh between its wall and its rim", () => {
+    let murky = 0, marshes = 0;
+    for (const seed of LOBBY_SEEDS) {
+      const b = bowlFor(seed);
+      for (const f of b.features) {
+        if (f.kind !== "pond") continue;
+        let nearest = Infinity;
+        for (const e of b.graph.edges) {
+          const a = b.graph.nodes[e.a]!, c = b.graph.nodes[e.b]!;
+          nearest = Math.min(nearest, segmentDistance(a.x, a.z, c.x, c.z, f.x, f.z));
+        }
+        expect(nearest, `seed ${seed}: a trail edge inside the lake`).toBeGreaterThanOrEqual(f.radius);
+        if ((f.murk ?? 0) > MARSH_MURK_MIN) murky++;
+        if (!f.lobe) continue;
+        marshes++;
+        for (const [x, z] of lobePoints(f, 2)) {
+          const q = Math.hypot(x - f.x, z - f.z);
+          expect(q, `seed ${seed}`).toBeGreaterThan(f.radius - LAKE_SHELF_WIDTH);
+          expect(q, `seed ${seed}`).toBeLessThan(f.radius);
+        }
+      }
+    }
+    // every murky lake has its marsh, and there are some
+    expect(marshes).toBe(murky);
+    expect(marshes).toBeGreaterThan(10);
   });
 });
