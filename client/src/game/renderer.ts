@@ -1899,6 +1899,7 @@ function buildRenderer(
       for (const m of brushMeshes) m.dispose();
       clipmap?.dispose();
       water?.dispose();
+      waterPlants?.dispose();
       propMeshes?.dispose();
       forestMeshes?.dispose();
       clutterMeshes?.dispose();
