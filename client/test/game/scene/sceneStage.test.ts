@@ -167,6 +167,20 @@ describe("the film car's parts", () => {
     engine.dispose();
   });
 
+  it("lays the cord from the radio's socket to the microphone's foot, wherever the handset is", () => {
+    const engine = new NullEngine();
+    const model = car(new Scene(engine));
+    let laid: { x: number; y: number; z: number }[] = [];
+    stageFrame(at({ x: 0, y: 0, z: 0, yaw: 0, handset: "cradle" }), deps({ car: model, cord: { lay: (path) => void (laid = path) } }));
+    // The cradle's world is (0.744, 0.784, -0.039) under the loader's z mirror; the socket stands
+    // (-0.0645, -0.012, 0.025) off it, the microphone's foot (-0.0645, 0, 0) off the handset 0.048 m up.
+    const first = laid[0]!, last = laid[laid.length - 1]!;
+    for (const [got, want] of [[first, [0.6795, 0.772, -0.064]], [last, [0.6795, 0.832, -0.039]]] as const) {
+      expect([got.x, got.y, got.z].map((v) => +v.toFixed(6))).toEqual(want);
+    }
+    engine.dispose();
+  });
+
   it("says once which parts the car lacks", () => {
     const engine = new NullEngine();
     const lines: string[] = [];

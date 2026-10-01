@@ -13,6 +13,7 @@ import type { CharacterInstance } from "../characterModel.js";
 import type { FreecamView } from "../renderer.js";
 import type { PlacedModel } from "../staticModel.js";
 import type { CaptionPanel } from "./captions.js";
+import { coiledCord } from "./cord.js";
 import type { ActorPose, Frame } from "./timeline.js";
 
 /** The car: the node the whole model moves by, and its named parts where the
@@ -36,6 +37,8 @@ export type StageDeps = {
   car: CarModel | null;
   /** The hand the handset rides in while the car's pose says so; absent or null, it stays in its cradle. */
   hand?: () => TransformNode | null;
+  /** Where the handset's coiled cord is drawn, along the path the stage gives it each frame. */
+  cord?: { lay(path: { x: number; y: number; z: number }[]): void };
   captions: CaptionPanel;
   black(amount: number): void;
   warn(line: string): void;
@@ -82,7 +85,7 @@ export function carModelOf(placed: PlacedModel, warn: (line: string) => void): C
 /** How much of the sky's reflected light the radio and its handset take, the rest of it roof: the
  * environment lights a part as if all the sky were open around it, and these plain dark parts,
  * unlike the cab's own textures, carry no darkness of their own. Set by eye on the insert. */
-const CAB_SKY = 0.3;
+export const CAB_SKY = 0.3;
 
 /** The radio's and the handset's materials under `CAB_SKY` of the sky's reflection. */
 export function dimCabParts(car: CarModel): void {
@@ -131,6 +134,13 @@ function stageHandset(car: CarModel, hand: TransformNode | null, grip: number): 
   handset.rotationQuaternion = Quaternion.Slerp(rest.rotation, rotation, grip);
   handset.position = Vector3.Lerp(rest.position, position, grip);
 }
+
+/** The cord's socket on the radio's faceplate and its plug at the microphone's foot, each in its
+ * part's own frame, measured on the model; and the cord: 0.6 m, sagging 0.04 m at most, 20 coils
+ * of 6 mm. */
+const CORD_SOCKET = new Vector3(-0.0645, -0.012, 0.025);
+const CORD_PLUG = new Vector3(-0.0645, 0, 0);
+const CORD = { length: 0.6, maxSag: 0.04, radius: 0.006, turns: 20, points: 201 };
 
 const warnedActors = new WeakMap<StageDeps, Set<string>>();
 const warnedJoints = new WeakMap<StageDeps, Set<string>>();
@@ -191,6 +201,12 @@ export function stageFrame(frame: Frame, deps: StageDeps): void {
       deps.warn("scene: no hand for the handset; it stays in its cradle");
     }
     stageHandset(deps.car, hand, car.grip ?? 1);
+    const { cradle, handset } = deps.car;
+    if (deps.cord !== undefined && cradle !== null && handset !== null) {
+      const from = Vector3.TransformCoordinates(CORD_SOCKET, worldOf(cradle));
+      const to = Vector3.TransformCoordinates(CORD_PLUG, worldOf(handset));
+      deps.cord.lay(coiledCord(from, to, CORD));
+    }
   }
   deps.captions.set(frame.caption);
   deps.black(frame.black);

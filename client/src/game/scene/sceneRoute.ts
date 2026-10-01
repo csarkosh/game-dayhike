@@ -30,6 +30,7 @@ import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "../../sim/signs.js";
 import { signSites } from "../../sim/placeNames.js";
 import { terrainMaterialFor } from "../renderer.js";
 import { createCaptionPanel } from "./captions.js";
+import { createCordTube } from "./cordTube.js";
 import { INTRO_CAR, INTRO_HOUR, INTRO_RANGER, INTRO_SEED_TOKEN, INTRO_WEATHER, introScene } from "./intro.js";
 import { createSceneClock, type SceneClock } from "./sceneClock.js";
 import { createScenePlayer } from "./scenePlayer.js";
@@ -133,6 +134,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   let car: CarModel | null = null;
   let carModel: PlacedModel | null = null;
   let carPatch: CarShadowPatch | null = null;
+  let cordTube: ReturnType<typeof createCordTube> | null = null;
   const carLoaded = (deps.loadCar ?? ((s) => loadFilmCar(s, loads.signal)))(renderer.scene).then((placed) => {
     if (placed === null || disposed) {
       placed?.dispose();
@@ -141,6 +143,8 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     carModel = placed;
     car = carModelOf(placed, (line) => console.warn(line));
     dimCabParts(car);
+    cordTube = createCordTube(renderer.scene);
+    stage.cord = cordTube;
     // `stage` is made below, before this promise can resolve.
     stage.car = car;
     for (const mesh of placed.meshes) renderer.shadows.add(mesh);
@@ -237,6 +241,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       posts.dispose();
       trailhead.dispose();
       pool.dispose();
+      cordTube?.dispose();
       carPatch?.dispose();
       carModel?.dispose();
       renderer.dispose();
