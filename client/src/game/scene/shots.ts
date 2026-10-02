@@ -86,6 +86,17 @@ export function push(from: Look, to: Look, seconds: number, at: Look, fov = FILM
   };
 }
 
+/** A move from `from` to `to` at one speed over `seconds`, then held, looking at `at` (a point, or
+ * a point at the shot's time). No ease: a shot that dissolves into the next keeps its speed through
+ * the dissolve, where an eased one would be seen to stop. */
+export function drift(from: Look, to: Look, seconds: number, at: Look | ((t: number) => Look), fov = FILM_FOV): Shot {
+  return (t) => {
+    const u = seconds > 0 ? Math.min(1, Math.max(0, t / seconds)) : 1;
+    const target = typeof at === "function" ? at(t) : at;
+    return lookAt({ x: from.x + (to.x - from.x) * u, y: from.y + (to.y - from.y) * u, z: from.z + (to.z - from.z) * u }, target, fov);
+  };
+}
+
 /** The running cut's shot at the scene's `t`, on the shot's own clock; past
  * the last cut, the last cut's shot at its end. */
 export function cutList(cuts: readonly Cut[]): (t: number) => CameraPose {

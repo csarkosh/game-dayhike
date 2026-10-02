@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FILM_FOV, FOV_MAX, FOV_MIN, cutList, ease, fade, follow, followLookingAt, hold, holdLookingAt, lookAt, push } from "../../../src/game/scene/shots.js";
+import { FILM_FOV, FOV_MAX, FOV_MIN, cutList, drift, ease, fade, follow, followLookingAt, hold, holdLookingAt, lookAt, push } from "../../../src/game/scene/shots.js";
 
 describe("shots", () => {
   it("looks from a point at a point: yaw 0 faces +z, positive pitch looks down", () => {
@@ -75,5 +75,17 @@ describe("shots", () => {
     expect(black(30)).toBe(0);
     expect(black(58.5)).toBe(0.5);
     expect(black(60)).toBe(1);
+  });
+});
+
+describe("a drift", () => {
+  it("moves at one speed from start to end, looking where it is told", () => {
+    const shot = drift({ x: 0, y: 10, z: 0 }, { x: 14, y: 10, z: 0 }, 7, { x: 100, y: 10, z: 0 });
+    expect([shot(0).x, shot(3.5).x, shot(7).x, shot(9).x]).toEqual([0, 7, 14, 14]);
+    // Straight down +x is a yaw of a quarter turn.
+    expect(shot(1).yaw).toBeCloseTo(1.570796, 6);
+    const moving = drift({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 7 }, 7, (t) => ({ x: t, y: 0, z: 100 }));
+    expect(moving(0).yaw).toBe(0);
+    expect(moving(7).yaw).toBeCloseTo(0.075127, 6);
   });
 });
