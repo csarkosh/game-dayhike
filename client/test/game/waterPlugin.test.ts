@@ -10,7 +10,12 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
-import { WaterPlugin, attachWater } from "../../src/game/waterPlugin.js";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { WaterPlugin, attachWater, oceanArrayPlaceholder, type OceanBinding } from "../../src/game/waterPlugin.js";
+import { drawnEffect, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH, WATER_SKIN_DRIFT } from "../../src/game/waterShading.js";
 import { RIPPLE_INSET, RIPPLE_LAYERS, RIPPLE_RADIUS, RIPPLE_TIME_WRAP } from "../../src/game/rainParams.js";
 
@@ -33,7 +38,7 @@ describe("water plugin", () => {
     expect(active.filter((p) => p instanceof WaterPlugin)).toHaveLength(1);
   });
 
-  it("declares the bedDepth attribute, the bed sampler, and the four hook points", () => {
+  it("declares the bedDepth attribute, its samplers and the sea's, and its hook points", () => {
     const mat = new PBRMaterial("w2", scene);
     const p = attachWater(mat, WATER_ROWS.lowlandLake);
     const attributes: string[] = [];
@@ -41,9 +46,9 @@ describe("water plugin", () => {
     expect(attributes).toEqual(["bedDepth"]);
     const samplers: string[] = [];
     p.getSamplers(samplers);
-    expect(samplers).toEqual(["waterBedHeight", "waterScene", "waterDepth"]);
+    expect(samplers).toEqual(["waterBedHeight", "waterScene", "waterDepth", "oceanAtlas", "oceanWindDisp", "oceanWindSlope"]);
     const v = p.getCustomCode("vertex")!;
-    expect(Object.keys(v).sort()).toEqual(["CUSTOM_VERTEX_DEFINITIONS", "CUSTOM_VERTEX_UPDATE_WORLDPOS"]);
+    expect(Object.keys(v).sort()).toEqual(["CUSTOM_VERTEX_DEFINITIONS", "CUSTOM_VERTEX_UPDATE_POSITION", "CUSTOM_VERTEX_UPDATE_WORLDPOS"]);
     const f = p.getCustomCode("fragment")!;
     expect(Object.keys(f).sort()).toEqual([
       "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION",
@@ -57,12 +62,16 @@ describe("water plugin", () => {
     const mat = new PBRMaterial("w3", scene);
     const p = attachWater(mat, WATER_ROWS.sea);
     const f = p.getCustomCode("fragment")!;
-    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("water.fragment.fx"));
+    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("water.fragment.fx") + fx("ocean.fragment.fx"));
     expect(f.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toBe(fx("waterLights.fragment.fx"));
     expect(f.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION).toBe(fx("waterCompose.fragment.fx"));
     const v = p.getCustomCode("vertex")!;
-    expect(v.CUSTOM_VERTEX_DEFINITIONS).toBe(fx("water.vertex.fx"));
+    expect(v.CUSTOM_VERTEX_DEFINITIONS).toBe(fx("water.vertex.fx") + fx("ocean.vertex.fx"));
+    expect(v.CUSTOM_VERTEX_UPDATE_POSITION).toBe(fx("oceanDisplace.vertex.fx"));
     expect(v.CUSTOM_VERTEX_UPDATE_WORLDPOS).toBe(fx("waterWorldPos.vertex.fx"));
+    // the water's files end their last line, so the sea's never join it
+    expect(fx("water.vertex.fx").endsWith(";\n")).toBe(true);
+    expect(fx("water.fragment.fx").endsWith("}\n")).toBe(true);
     const d = f.CUSTOM_FRAGMENT_DEFINITIONS;
     expect(d).toContain(`const float WATER_F0 = ${glslFloat(WATER_F0)};`);
     expect(d).toContain(`const float WATER_HORIZON = ${glslFloat(WATER_HORIZON)};`);
@@ -75,6 +84,7 @@ describe("water plugin", () => {
     // the sampler lives in the .fx, never in getUniforms().fragment (the UBO-path trap)
     expect(d).toContain("uniform sampler2D waterBedHeight;");
     expect(p.getUniforms().fragment).not.toContain("sampler2D");
+    expect(p.getUniforms().vertex).not.toContain("sampler");
   });
 
   it("discards on land and saturates alpha where the bed texture does not reach", () => {
@@ -357,4 +367,211 @@ describe("the rain's rings on the water", () => {
     p.bindForSubMesh(ubo);
     expect(pairs).toContainEqual(["waterWindTime", 3, 4]);
   });
+});
+
+/** The eight vec4 uniforms the sea's waves read, in their order. */
+const OCEAN_UNIFORMS = [
+  "oceanPhase0", "oceanPhase1", "oceanPhase2", "oceanSwell", "oceanTips", "oceanCoast", "oceanWind", "oceanWindDir",
+];
+
+/** An ocean as `oceanRender.ts` binds one, with values to tell apart. */
+function testOcean(): OceanBinding {
+  return {
+    atlas: RawTexture.CreateRGBATexture(new Float32Array(4), 1, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT),
+    windDisp: oceanArrayPlaceholder(scene),
+    windSlope: oceanArrayPlaceholder(scene),
+    phases: Float32Array.from({ length: 12 }, (_, i) => i + 0.5),
+    swell: [0.96, 0.28, 11, 2],
+    tips: [-520, -150, -505, 160],
+    coast: [-2080, 4, 12, 0],
+    wind: [0.4, 0.81, 0, 0.01],
+    windDir: [0.6, -0.8, 9, 0.35],
+  };
+}
+
+/** A bed texture, as every drawn water material has one. */
+const bedTexture = (): RawTexture =>
+  RawTexture.CreateRTexture(new Float32Array(4), 2, 2, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
+
+describe("the sea's waves in the water plugin", () => {
+  it("declares the eight vec4 uniforms on every path, ocean or none", () => {
+    const p = attachWater(new PBRMaterial("wO1", scene), WATER_ROWS.lowlandLake);
+    const u = p.getUniforms();
+    for (const name of OCEAN_UNIFORMS) {
+      expect(u.ubo).toContainEqual({ name, size: 4, type: "vec4" });
+      expect(u.fragment).toContain(`uniform vec4 ${name};`);
+      // the vertex stage reads them too, which takes this where uniform buffers are not supported
+      expect(u.vertex).toContain(`uniform vec4 ${name};`);
+    }
+    expect(u.ubo.map((e) => e.name).slice(-8)).toEqual(OCEAN_UNIFORMS);
+    expect(u.ubo).toHaveLength(21);
+  });
+
+  it("declares its samplers in the .fx and never in getUniforms, and gates every line of its GLSL on OCEAN", () => {
+    const vertex = fx("ocean.vertex.fx");
+    const fragment = fx("ocean.fragment.fx");
+    expect(vertex).toContain("uniform highp sampler2D oceanAtlas;");
+    expect(vertex).toContain("uniform highp sampler2DArray oceanWindDisp;");
+    expect(vertex).not.toContain("oceanWindSlope");
+    expect(fragment).toContain("uniform highp sampler2D oceanAtlas;");
+    expect(fragment).toContain("uniform highp sampler2DArray oceanWindDisp;");
+    expect(fragment).toContain("uniform highp sampler2DArray oceanWindSlope;");
+    const u = attachWater(new PBRMaterial("wO2", scene), WATER_ROWS.sea).getUniforms();
+    expect(u.fragment).not.toContain("sampler");
+    expect(u.vertex).not.toContain("sampler");
+    for (const name of ["ocean.vertex.fx", "oceanDisplace.vertex.fx", "ocean.fragment.fx"]) {
+      const lines = fx(name).trimEnd().split("\n");
+      expect(lines[0], name).toBe("#ifdef OCEAN");
+      expect(lines[lines.length - 1], name).toBe("#endif");
+      expect(lines.filter((line) => line.trimStart().startsWith("#")), name).toEqual(["#ifdef OCEAN", "#endif"]);
+    }
+  });
+
+  it("carries the rings' stitch and the position before the waves, and moves nothing yet", () => {
+    const vertex = fx("ocean.vertex.fx");
+    expect(vertex).toContain("attribute float oceanMorph;");
+    expect(vertex).toContain("attribute vec2 oceanCoarse;");
+    expect(vertex).toContain("varying vec2 vOceanXZ;");
+    expect(fx("ocean.fragment.fx")).toContain("varying vec2 vOceanXZ;");
+    const displace = fx("oceanDisplace.vertex.fx");
+    expect(displace).toContain("vOceanXZ = positionUpdated.xz;");
+    expect(displace).not.toMatch(/positionUpdated\s*=/);
+  });
+
+  it("sets OCEAN and asks for the stitch only with an ocean, and rebuilds the effect when one comes or goes", () => {
+    const p = attachWater(new PBRMaterial("wO3", scene), WATER_ROWS.sea);
+    const dirty = vi.spyOn(p, "markAllDefinesAsDirty");
+    const defines = (): Record<string, unknown> => {
+      const d: Record<string, unknown> = {};
+      p.prepareDefines(d as never, scene, undefined as never);
+      return d;
+    };
+    const attributes = (): string[] => {
+      const a: string[] = [];
+      p.getAttributes(a, scene, undefined as never);
+      return a;
+    };
+    expect(p.ocean).toBeNull();
+    expect(defines()).toEqual({ WATER: true, OCEAN: false });
+    expect(attributes()).toEqual(["bedDepth"]);
+    p.ocean = testOcean();
+    expect(defines()).toEqual({ WATER: true, OCEAN: true });
+    expect(attributes()).toEqual(["bedDepth", "oceanMorph", "oceanCoarse"]);
+    expect(dirty).toHaveBeenCalledTimes(1);
+    // another ocean: the define stands, nothing to rebuild
+    p.ocean = testOcean();
+    expect(dirty).toHaveBeenCalledTimes(1);
+    p.ocean = null;
+    expect(defines().OCEAN).toBe(false);
+    expect(dirty).toHaveBeenCalledTimes(2);
+  });
+
+  it("binds the ocean's values, and zeros without one", () => {
+    const p = attachWater(new PBRMaterial("wO4", scene), WATER_ROWS.sea);
+    const record = (): Record<string, number[]> => {
+      const quads: Record<string, number[]> = {};
+      const ignore = (): void => undefined;
+      const ubo = {
+        updateFloat: ignore, updateFloat2: ignore, updateFloat3: ignore, setTexture: ignore,
+        updateFloat4: (name: string, a: number, b: number, c: number, d: number) => { quads[name] = [a, b, c, d]; },
+      } as unknown as UniformBuffer;
+      p.bindForSubMesh(ubo);
+      return quads;
+    };
+    const none = record();
+    for (const name of OCEAN_UNIFORMS) expect(none[name], name).toEqual([0, 0, 0, 0]);
+    p.ocean = testOcean();
+    const bound = record();
+    expect(bound.oceanPhase0).toEqual([0.5, 1.5, 2.5, 3.5]);
+    expect(bound.oceanPhase1).toEqual([4.5, 5.5, 6.5, 7.5]);
+    expect(bound.oceanPhase2).toEqual([8.5, 9.5, 10.5, 11.5]);
+    expect(bound.oceanSwell).toEqual([0.96, 0.28, 11, 2]);
+    expect(bound.oceanTips).toEqual([-520, -150, -505, 160]);
+    expect(bound.oceanCoast).toEqual([-2080, 4, 12, 0]);
+    expect(bound.oceanWind).toEqual([0.4, 0.81, 0, 0.01]);
+    expect(bound.oceanWindDir).toEqual([0.6, -0.8, 9, 0.35]);
+  });
+
+  it("binds every sampler it lists in every state it is drawn in: a lake, the sea, the high tier's sea, the sea's waves gone", () => {
+    const p = attachWater(new PBRMaterial("wO5", scene), WATER_ROWS.sea);
+    const ocean = testOcean();
+    const states: [string, () => void][] = [
+      ["a lake", () => { p.bedTexture = bedTexture(); }],
+      ["the sea", () => { p.ocean = ocean; }],
+      ["the high tier's sea", () => { p.sceneTexture = new BaseTexture(scene); p.depthTexture = new BaseTexture(scene); }],
+      ["the waves gone", () => { p.ocean = null; }],
+    ];
+    const missing: string[] = [];
+    const seen: Record<string, Record<string, unknown>> = {};
+    for (const [state, enter] of states) {
+      enter();
+      const declared: string[] = [];
+      p.getSamplers(declared);
+      const bound: Record<string, unknown> = {};
+      const ubo = new Proxy(
+        {},
+        { get: (_t, key) => (key === "setTexture" ? (n: string, t: unknown) => void (bound[n] = t) : () => undefined) },
+      ) as unknown as UniformBuffer;
+      p.bindForSubMesh(ubo);
+      for (const sampler of declared) if (!(sampler in bound)) missing.push(`${state}: ${sampler}`);
+      seen[state] = bound;
+    }
+    expect(missing).toEqual([]);
+    // the sea's own textures with an ocean; the bed and the scene's array placeholder without
+    expect(seen["the sea"]!.oceanAtlas).toBe(ocean.atlas);
+    expect(seen["the sea"]!.oceanWindDisp).toBe(ocean.windDisp);
+    expect(seen["a lake"]!.oceanAtlas).toBe(p.bedTexture);
+    expect(seen["a lake"]!.oceanWindDisp).toBe(oceanArrayPlaceholder(scene));
+    expect(seen["a lake"]!.oceanWindSlope).toBe(oceanArrayPlaceholder(scene));
+    expect(seen["the waves gone"]!.oceanWindSlope).toBe(oceanArrayPlaceholder(scene));
+  });
+
+  it("leaves a lake's shader as it was: compiled as WebGPU compiles it, the text the water's own hooks alone give", async () => {
+    /** The water plugin with only the water's own hooks, as it was before the sea's waves. */
+    class WaterAlone extends WaterPlugin {
+      override getCustomCode(shaderType: string): { [pointName: string]: string } | null {
+        const code = super.getCustomCode(shaderType);
+        if (code === null) return null;
+        if (shaderType === "vertex") {
+          return { CUSTOM_VERTEX_DEFINITIONS: fx("water.vertex.fx"), CUSTOM_VERTEX_UPDATE_WORLDPOS: fx("waterWorldPos.vertex.fx") };
+        }
+        return { ...code, CUSTOM_FRAGMENT_DEFINITIONS: fx("water.fragment.fx") };
+      }
+    }
+    /** The stages one water material compiles to, on an engine of its own (an
+     * engine shares an effect between materials of one define set). */
+    const compiled = async (make: (material: PBRMaterial) => WaterPlugin, sea: boolean): Promise<{ vertex: string; fragment: string }> => {
+      const own = webgpuProcessingEngine();
+      try {
+        const s = new Scene(own);
+        s.activeCamera = new UniversalCamera("c", new Vector3(0, 2, -5), s);
+        const material = new PBRMaterial("water", s);
+        material.backFaceCulling = false;
+        const plugin = make(material);
+        plugin.bedTexture = RawTexture.CreateRTexture(new Float32Array(4), 2, 2, s, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
+        if (sea) {
+          plugin.ocean = { ...testOcean(), atlas: plugin.bedTexture, windDisp: oceanArrayPlaceholder(s), windSlope: oceanArrayPlaceholder(s) };
+        }
+        const mesh = MeshBuilder.CreateGround("ground", { width: 4, height: 4 }, s);
+        const vertices = mesh.getTotalVertices();
+        mesh.setVerticesData("bedDepth", new Float32Array(vertices), false, 1);
+        mesh.setVerticesData("oceanMorph", new Float32Array(vertices), false, 1);
+        mesh.setVerticesData("oceanCoarse", new Float32Array(vertices * 2), false, 2);
+        mesh.material = material;
+        const effect = await drawnEffect(mesh);
+        return { vertex: effect._vertexSourceCode, fragment: effect._fragmentSourceCode };
+      } finally {
+        own.dispose();
+      }
+    };
+    const lake = await compiled((m) => new WaterPlugin(m, WATER_ROWS.lowlandLake), false);
+    const before = await compiled((m) => new WaterAlone(m, WATER_ROWS.lowlandLake), false);
+    expect(lake.vertex).toBe(before.vertex);
+    expect(lake.fragment).toBe(before.fragment);
+    expect(lake.vertex).not.toContain("vOceanXZ");
+    // and the sea's is not: the comparison can see the ocean's code
+    const sea = await compiled((m) => new WaterPlugin(m, WATER_ROWS.sea), true);
+    expect(sea.vertex).toContain("vOceanXZ = positionUpdated.xz;");
+    expect(sea.fragment).toContain("vOceanXZ");
+  }, timeLimit(30_000));
 });

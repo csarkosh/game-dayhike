@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
-// `terrainTexture.ts` builds `RawTexture2DArray`s NullEngine cannot create
-// (`rendererSwap.test.ts` says why); the flat placeholders stand in.
+// `terrainTexture.ts`'s real ground loader fetches and decodes the layer
+// images (`rendererSwap.test.ts` says why); the flat placeholders stand in.
 vi.mock("../../src/game/groundMaps.js", () => ({
   loadGroundArrays: () => ({
     normals: { isReady: () => true, dispose() {} },

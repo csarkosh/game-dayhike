@@ -28,6 +28,9 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { WATER_GROUP } from "../../src/game/waterFrame.js";
+import { oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
+import { windSeaStateFor } from "../../src/game/oceanWindSea.js";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 
 // Whether the high tier's frame can be made is a question for the engine
 // (WebGPU, a multisampled first pass), which NullEngine cannot answer yes to;
@@ -199,6 +202,53 @@ describe("createWater under NullEngine", () => {
     expect(plugin.octaves).toBe(1);
     water.setWind(1, [0, 1]);
     expect((water.meshes[0]!.material as PBRMaterial).roughness).toBeGreaterThan(0.5);
+    water.dispose();
+  }, timeLimit(30_000));
+
+  it("gives the sea's material the sea's waves and no lake's: OCEAN on the sea alone", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 1, 0, [lake({ murk: 1 }), lake({ x: -300, z: 200, murk: 0 })], "low");
+    const pluginOf = (m: AbstractMesh): WaterPlugin => (m.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    const oceanDefine = (p: WaterPlugin): unknown => {
+      const d: Record<string, unknown> = {};
+      p.prepareDefines(d as never, scene, undefined as never);
+      return d.OCEAN;
+    };
+    const sea = pluginOf(water.meshes[0]!);
+    for (const m of water.meshes) expect(pluginOf(m)).toBe(sea);
+    expect(sea.ocean ?? null).not.toBeNull();
+    expect(oceanDefine(sea)).toBe(true);
+    // the low tier draws the swell's eight largest components; the coastline row about z = 0
+    expect(sea.ocean!.coast).toEqual([-2080, 4, 8, 0]);
+    expect(sea.ocean!.atlas.getSize()).toEqual({ width: 1040, height: 28 });
+    expect(water.lakeMeshes).toHaveLength(2);
+    for (const pond of water.lakeMeshes) {
+      expect(pluginOf(pond)).not.toBe(sea);
+      expect(pluginOf(pond).ocean).toBeNull();
+      expect(oceanDefine(pluginOf(pond))).toBe(false);
+    }
+    const atlas = sea.ocean!.atlas;
+    water.dispose();
+    expect(atlas.getInternalTexture()).toBeNull();
+  }, timeLimit(30_000));
+
+  it("hands the sea's waves the clock's seconds, the wind setWind last had and the hour, noon when none is given", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const water = createWater(scene, 1, 0, [], "medium");
+    const sea = (water.meshes[0]!.material as PBRMaterial).pluginManager!.getPlugin("Water") as WaterPlugin;
+    const field = oceanFieldFor(1, 12);
+    water.setWind(0.9, [0, 1]);
+    water.update(0, 0, 42.5, 15);
+    expect(Array.from(sea.ocean!.phases)).toEqual(Array.from(swellPhases(field, 42.5)));
+    const afternoon = windSeaStateFor(0.9, [0, 1], 15);
+    expect(sea.ocean!.windDir).toEqual([afternoon.dir[0], afternoon.dir[1], afternoon.u10, afternoon.onshoreWeight]);
+    water.update(0, 0, 43);
+    const noon = windSeaStateFor(0.9, [0, 1], 12);
+    expect(sea.ocean!.windDir).toEqual([noon.dir[0], noon.dir[1], noon.u10, noon.onshoreWeight]);
+    // the hour reached it: the afternoon's sea breeze is the stronger wind
+    expect(afternoon.u10).toBeGreaterThan(noon.u10);
     water.dispose();
   }, timeLimit(30_000));
 

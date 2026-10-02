@@ -76,6 +76,7 @@ import {
 } from "./water.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater } from "./waterPlugin.js";
+import { createOcean } from "./oceanRender.js";
 import { createWaterPlants } from "./waterPlants.js";
 import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
 import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "./waterShading.js";
@@ -856,6 +857,13 @@ export function createWater(
   const seaMat = new PBRMaterial("mat_water_sea", scene);
   seaMat.backFaceCulling = false;
   const seaPlugin = attachWater(seaMat, WATER_ROWS.sea);
+  // The sea's waves, bound before any draw: the swell's tables and what moves
+  // each frame. The lakes have none (no `OCEAN` on their materials).
+  const ocean = createOcean(scene, seed, tier);
+  ocean.bind(seaPlugin);
+  // The wind the sea's waves are given in `update`, as `setWind` last had it.
+  let seaWind = 0;
+  let seaWindDir: [number, number] = [1, 0];
   // One material per lake, on the row its murk gives (a world has at most one).
   const lakeMats = lakes.map((_, i) => {
     const mat = new PBRMaterial(`mat_water_lake_${i}`, scene);
@@ -1003,7 +1011,7 @@ export function createWater(
     meshes,
     lakeMeshes,
     high,
-    update(camX, camZ, seconds) {
+    update(camX, camZ, seconds, hour = 12) {
       const moved: boolean[] = [];
       for (let level = 0; level < WATER_RING_COUNT; level++) {
         moved.push(updateWaterRingSamples(rings[level] as WaterRingSamples, seed, camX, camZ));
@@ -1043,6 +1051,7 @@ export function createWater(
         uploadBed();
       }
       for (const p of plugins) p.advance(seconds);
+      ocean.update(camX, camZ, seconds, seaWind, seaWindDir, hour);
       // The copy's depth is linearised with the camera's planes, read each
       // frame: the active camera can change (the freecam, a cutscene).
       const camera = scene.activeCamera;
@@ -1054,6 +1063,8 @@ export function createWater(
       }
     },
     setWind(wind01, dir) {
+      seaWind = wind01;
+      seaWindDir = dir;
       for (const p of plugins) p.setWind(wind01, dir);
     },
     setRain(rain) {
@@ -1065,6 +1076,7 @@ export function createWater(
       for (const mesh of lakeMeshes) mesh.dispose();
       bump.dispose();
       bedTexture?.dispose();
+      ocean.dispose();
       frame?.dispose();
       seaMat.dispose();
       for (const mat of lakeMats) mat.dispose();

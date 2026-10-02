@@ -28,8 +28,8 @@ let scene: Scene;
 beforeAll(() => { engine = new NullEngine(); scene = new Scene(engine); });
 afterAll(() => { scene.dispose(); engine.dispose(); });
 
-/** A stand-in for `loadGroundArrays`: NullEngine cannot build a real
- * `RawTexture2DArray`, so every test that attaches the plugin passes this
+/** A stand-in for `loadGroundArrays`, whose real loader fetches and decodes
+ * the ground's layer images: every test that attaches the plugin passes this
  * factory instead of letting the constructor call the real loader. */
 const stubArrays = (s: Scene) => {
   const tex = (name: string) => { const t = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, s); t.name = name; return t; };
