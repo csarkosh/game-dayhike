@@ -41,7 +41,8 @@ A second scene beside the intro on the scene route: `/dayhike/scene/title`, with
 **Setting.** The intro's world (`hollow`), so the place in the title, the film and the hike is one
 place; the `overcast` weather (cloud 0.8, mist 0.25), so the coast, the hills and the summit stand
 in a soft grey light with distant haze; one afternoon hour, held, so the light never changes across
-the loop (the hour is set at the look). No people, no car, no captions, no wildlife.
+the loop (the hour is set at the look). No people, no moving car, no captions, no wildlife: the
+trailhead is drawn as a hike finds it, its car parked out of every shot.
 
 **The shots.** Five, each 7 s long and starting on a whole second (0, 7, 14, 21 and 28 s), so no
 frame of the film straddles a cut. Each is placed from the world's own features, found the way the
@@ -119,7 +120,7 @@ the loop from two `<video>` elements, handing over at the end.
 ## 5. Deploy
 
 `npm run deploy:verify` checks the title film and its still on the live site: present, a real MP4
-(`ftyp`), the still under 200 KB, neither fetched in the title page's first load. The check finds
+(`ftyp`), the still under 200 KB, the film not fetched in the title page's first load. The check finds
 their hashed names in every chunk the entry names, where the asset-url map lives
 (`engineChoice-*.js`), as the models' check does; the film's and the still's checks do the same.
 

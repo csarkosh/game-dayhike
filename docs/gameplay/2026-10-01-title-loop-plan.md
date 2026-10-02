@@ -21,7 +21,8 @@ assembled and delivered by the asset repository's own plan; Task 9 here is where
 - The loop: silent, 1280 by 640, 24 fps, exactly 30 s (720 frames), its seam inside a dissolve; the
   still its first frame (spec §3).
 - The title scene: the world `hollow`, `overcast` (cloud 0.8, mist 0.25), one held afternoon hour,
-  five shots of 7 s starting on whole seconds, no people, car, captions or wildlife; the camera
+  five shots of 7 s starting on whole seconds, no people, moving car, captions or wildlife (the
+  hike's parked car stands at the trailhead, out of every shot); the camera
   under 2 m/s and under 0.12 rad/s in every shot (spec §2).
 - Still only: `saveData`; `effectiveType` `slow-2g`, `2g` or `3g` (no `navigator.connection` counts
   as fast); `prefers-reduced-motion: reduce`; no title film; any video error or refused `play()`.
@@ -1140,7 +1141,7 @@ branch's commit, built by `npm run build` and served by `vite preview`.
 back; its pop check's report, which reads each shot's first frames against that shot's own. A fill-in after a cut: raise
 `WARM_FRAMES` (Task 4) and re-draft.
 - [ ] **Step 4: The delivered film on the page.** After the asset export lands in this worktree (its
-own commit): `npm run build && npx vite preview --root client --port 5190`, then in Chrome, Safari
+own commit): `npm run build`, then from `client/` `npx vite preview --port 5190`, then in Chrome, Safari
 and Firefox on the title page: the frame timing across the loop's wrap
 (`requestVideoFrameCallback`; no gap over 2/24 s across it, 20 wraps each); the first load (the
 still and nothing of the video before `load`, in the network panel); a slow connection (the network
