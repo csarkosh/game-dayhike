@@ -24,12 +24,12 @@ export const WATER_BASE_SPACING = 1;
 export const WATER_UV_SCALE = 24;
 /**
  * How far the drawn sea may stand off its flat plane, in metres, on every
- * axis: the largest crest a wave reaches as it breaks, twice the largest
- * significant height the swell is given (8 m), taken whole on either side of
- * the level, plus the wind sea's in a storm (4 m). Up and down for the crest
- * and the trough; sideways too, since a trochoid carries its vertices along
- * the wave as well as up. Each ring's culling box is grown by it
- * (`wetBounds`).
+ * axis. The largest significant height the swell is given is 4 m, and the
+ * largest crest a wave reaches as it breaks is twice that, 8 m, taken whole on
+ * either side of the level; the wind sea adds 4 m in a storm: 12 m. Up and
+ * down for the crest and the trough; sideways too, since a trochoid carries
+ * its vertices along the wave as well as up. Each ring's culling box is grown
+ * by it (`wetBounds`).
  */
 export const OCEAN_BOUND = 12;
 const SIDE = WATER_RING_CELLS + 1;
@@ -243,12 +243,21 @@ export function waterRingGeometry(
  * its vertices. Triangles in the hole are not drawn, so they count for
  * nothing. The box is grown by `OCEAN_BOUND` on every side, since the waves
  * carry the surface off the plane: up and down from the water level, and
- * across. Null makes the ring's mesh disabled: a plane at the level is in
- * view from almost anywhere, and a mesh in view is what asks for the high
- * tier's copy.
+ * across. Across, it is grown by the stitch's reach as well: the vertex stage
+ * moves each vertex to p - `oceanMorph` * `oceanCoarse` before the waves, up to
+ * a cell of the ring (the largest component of `oceanCoarse`) along either
+ * axis and outward as well as in, so a wet triangle's dry corner may be drawn
+ * that far past its place. Null makes the ring's mesh disabled: a plane at the
+ * level is in view from almost anywhere, and a mesh in view is what asks for
+ * the high tier's copy.
  */
 export function wetBounds(geometry: WaterGeometry): { min: [number, number, number]; max: [number, number, number] } | null {
-  const { positions, indices, bedDepth } = geometry;
+  const { positions, indices, bedDepth, oceanCoarse } = geometry;
+  // How far the stitch moves a vertex along an axis, at most: a cell of the
+  // ring on rings 0 to 5, nothing on the outermost.
+  let reach = 0;
+  for (let i = 0; i < oceanCoarse.length; i++) reach = Math.max(reach, Math.abs(oceanCoarse[i] as number));
+  const across = OCEAN_BOUND + reach;
   let minX = Infinity;
   let minZ = Infinity;
   let maxX = -Infinity;
@@ -271,7 +280,7 @@ export function wetBounds(geometry: WaterGeometry): { min: [number, number, numb
   }
   if (minX === Infinity) return null;
   return {
-    min: [minX - OCEAN_BOUND, y - OCEAN_BOUND, minZ - OCEAN_BOUND],
-    max: [maxX + OCEAN_BOUND, y + OCEAN_BOUND, maxZ + OCEAN_BOUND],
+    min: [minX - across, y - OCEAN_BOUND, minZ - across],
+    max: [maxX + across, y + OCEAN_BOUND, maxZ + across],
   };
 }

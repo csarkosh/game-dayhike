@@ -23,6 +23,32 @@ function holeOf(rings: WaterRingSamples[], level: number): { x0: number; z0: num
   return level === 0 ? null : waterHoleCellsFor(rings[level] as WaterRingSamples, rings[level - 1] as WaterRingSamples);
 }
 
+/** What a ring's box fails to hold of the sea the vertex stage draws: each
+ * vertex of a wet triangle (the triangles the box is made of), moved to
+ * p - oceanMorph * oceanCoarse as the vertex stage does, and then OCEAN_BOUND
+ * off that on every axis, the farthest the waves take it. */
+function outsideBox(g: WaterGeometry, box: { min: number[]; max: number[] }): { outside: string[]; checked: number } {
+  const outside: string[] = [];
+  let checked = 0;
+  for (let t = 0; t < g.indices.length; t += 3) {
+    const tri = [g.indices[t]!, g.indices[t + 1]!, g.indices[t + 2]!];
+    if (tri.every((v) => (g.bedDepth[v] as number) <= 0)) continue;
+    for (const v of tri) {
+      const m = g.oceanMorph[v]!;
+      const at = [
+        g.positions[v * 3]! - m * g.oceanCoarse[v * 2]!,
+        g.positions[v * 3 + 1]!,
+        g.positions[v * 3 + 2]! - m * g.oceanCoarse[v * 2 + 1]!,
+      ];
+      for (let axis = 0; axis < 3; axis++) {
+        if (at[axis]! - OCEAN_BOUND < box.min[axis]! || at[axis]! + OCEAN_BOUND > box.max[axis]!) outside.push(`vertex ${v}, axis ${axis}`);
+      }
+      checked++;
+    }
+  }
+  return { outside, checked };
+}
+
 describe("water rings", () => {
   it("keeps the same cell count as the terrain clipmap", () => {
     // The borrowed `snapOrigin` centres rings using clipmap's RING_CELLS, so
@@ -144,11 +170,51 @@ describe("water rings", () => {
       const b = wetBounds(waterRingGeometry(ring, null, 3))!;
       const s = ring.spacing;
       // each wet vertex's four cells draw water up to their dry corners, and
-      // the waves may carry the surface OCEAN_BOUND off them every way
+      // the waves may carry the surface OCEAN_BOUND off them every way; across,
+      // the stitch's move of a vertex, up to a cell (here 1 m), as well
       expect(OCEAN_BOUND).toBe(12);
-      expect(b.min).toEqual([ring.originX + 9 * s - 12, 3 - 12, ring.originZ + 19 * s - 12]);
-      expect(b.max).toEqual([ring.originX + 31 * s + 12, 3 + 12, ring.originZ + 26 * s + 12]);
+      expect(s).toBe(1);
+      expect(b.min).toEqual([ring.originX + 9 * s - 12 - s, 3 - 12, ring.originZ + 19 * s - 12 - s]);
+      expect(b.max).toEqual([ring.originX + 31 * s + 12 + s, 3 + 12, ring.originZ + 26 * s + 12 + s]);
     });
+
+    it("holds the stitched surface of a coarse ring: each vertex moved by oceanMorph times oceanCoarse, a cell of 16 m, and the waves' bound past it", () => {
+      const rings = ringsAt(0, 0);
+      const ring = rings[4] as WaterRingSamples;
+      ring.h.fill(50);
+      // two wet vertices, out in the ring's band: (10, 20) and (115, 100)
+      ring.h[20 * SIDE + 10] = -5;
+      ring.h[100 * SIDE + 115] = -1;
+      const g = waterRingGeometry(ring, holeOf(rings, 4), 3);
+      const b = wetBounds(g)!;
+      const s = ring.spacing;
+      expect(s).toBe(16);
+      // the wet vertices' dry corners are odd ones, which the stitch moves by
+      // oceanMorph * 16 m along x or z, outward at the edge of the box
+      const held = outsideBox(g, b);
+      expect(held.outside).toEqual([]);
+      expect(held.checked).toBe(36);
+      // the box reaches a cell of 16 m beyond the waves' 12 m
+      expect(b.min).toEqual([ring.originX + 9 * s - 12 - s, 3 - 12, ring.originZ + 19 * s - 12 - s]);
+      expect(b.max).toEqual([ring.originX + 116 * s + 12 + s, 3 + 12, ring.originZ + 101 * s + 12 + s]);
+    });
+
+    it("holds the stitched surface of every wet ring around a coast: each vertex of a wet triangle moved by oceanMorph times oceanCoarse, and the waves' bound past it", () => {
+      const rings = ringsAt(-500, 0);
+      let wetRings = 0;
+      let checked = 0;
+      for (let level = 0; level < WATER_RING_COUNT; level++) {
+        const g = waterRingGeometry(rings[level] as WaterRingSamples, holeOf(rings, level), 0);
+        const b = wetBounds(g);
+        if (b === null) continue;
+        wetRings++;
+        const held = outsideBox(g, b);
+        expect(held.outside).toEqual([]);
+        checked += held.checked;
+      }
+      expect(wetRings).toBe(7);
+      expect(checked).toBe(380925);
+    }, timeLimit(30_000));
 
     it("counts a vertex wet only when its depth is above zero, and a cell in the hole for nothing", () => {
       const fine = createWaterRingSamples(SEED, 0, 0, 0);
@@ -182,28 +248,39 @@ describe("water rings", () => {
       expect(wet).toBeGreaterThan(0);
       expect(wet).toBeLessThan(g.bedDepth.length); // a shore: some of it is land
       const s = ring.spacing;
-      expect(b.min[0]).toBeLessThanOrEqual(minX - OCEAN_BOUND);
-      expect(b.min[0]).toBeGreaterThanOrEqual(minX - s - OCEAN_BOUND);
-      expect(b.min[2]).toBeLessThanOrEqual(minZ - OCEAN_BOUND);
-      expect(b.min[2]).toBeGreaterThanOrEqual(minZ - s - OCEAN_BOUND);
-      expect(b.max[0]).toBeGreaterThanOrEqual(maxX + OCEAN_BOUND);
-      expect(b.max[0]).toBeLessThanOrEqual(maxX + s + OCEAN_BOUND);
-      expect(b.max[2]).toBeGreaterThanOrEqual(maxZ + OCEAN_BOUND);
-      expect(b.max[2]).toBeLessThanOrEqual(maxZ + s + OCEAN_BOUND);
+      // across, past the cells by the waves' bound and the stitch's move: a cell (here 2 m)
+      const across = OCEAN_BOUND + s;
+      expect(s).toBe(2);
+      expect(b.min[0]).toBeLessThanOrEqual(minX - across);
+      expect(b.min[0]).toBeGreaterThanOrEqual(minX - s - across);
+      expect(b.min[2]).toBeLessThanOrEqual(minZ - across);
+      expect(b.min[2]).toBeGreaterThanOrEqual(minZ - s - across);
+      expect(b.max[0]).toBeGreaterThanOrEqual(maxX + across);
+      expect(b.max[0]).toBeLessThanOrEqual(maxX + s + across);
+      expect(b.max[2]).toBeGreaterThanOrEqual(maxZ + across);
+      expect(b.max[2]).toBeLessThanOrEqual(maxZ + s + across);
       // the crest and the trough: the level, 0 here, give or take OCEAN_BOUND
       expect(b.min[1]).toBe(-12);
       expect(b.max[1]).toBe(12);
     }, timeLimit(30_000));
   });
 
-  describe("what the vertex stage stitches a ring's waves to the coarser ring's with", () => {
+  // At two cameras. The second is an odd multiple of 2 m on each axis where the
+  // first is an even one, so every ring's origin falls on the other parity of
+  // its coarser neighbour's cells: ring 1's hole starts at an even cell index
+  // of ring 1 for the first, an odd one for the second.
+  for (const [camX, camZ, holeParity] of [[-500, 0, 0], [-498, 302, 1]] as const) describe(`what the vertex stage stitches a ring's waves to the coarser ring's with, the camera at (${camX}, ${camZ})`, () => {
     const SIDE = WATER_RING_CELLS + 1;
     let rings: WaterRingSamples[] = [];
     let geometries: WaterGeometry[] = [];
     beforeAll(() => {
-      rings = ringsAt(-500, 0);
+      rings = ringsAt(camX, camZ);
       geometries = rings.map((ring, level) => waterRingGeometry(ring, holeOf(rings, level), 0));
     }, timeLimit(30_000));
+    it("puts ring 1's hole at the cell index of its parity: even for the first camera, odd for the second", () => {
+      const hole = holeOf(rings, 1)!;
+      expect([hole.x0 % 2, hole.z0 % 2]).toEqual([holeParity, holeParity]);
+    });
     const onOuterEdge = (ix: number, iz: number): boolean =>
       ix === 0 || iz === 0 || ix === WATER_RING_CELLS || iz === WATER_RING_CELLS;
     // Any value the waves give a point: a displacement, here made up.

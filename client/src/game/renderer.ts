@@ -960,7 +960,8 @@ export function createWater(
   // A ring with no wet cell is off, and a wet ring's bounds are its wet
   // cells, not the whole plane: a plane at the level is in view from almost
   // anywhere, which would ask for the high tier's copy inland too. The
-  // bounds hold the waves: `OCEAN_BOUND` past the wet cells every way.
+  // bounds hold the waves: `OCEAN_BOUND` past the wet cells every way, and
+  // the stitch's move of up to a cell besides, across.
   function emitRing(level: number): void {
     const ring = rings[level] as WaterRingSamples;
     const finer = level > 0 ? (rings[level - 1] as WaterRingSamples) : null;

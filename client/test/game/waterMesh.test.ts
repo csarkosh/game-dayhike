@@ -362,17 +362,18 @@ describe("createWater under NullEngine", () => {
         expect(ring4.isEnabled()).toBe(true);
         const box = ring4.getBoundingInfo().boundingBox;
         // the whole plane would reach 1,024 m east of the camera
-        const planeMaxX = box.minimumWorld.x + OCEAN_BOUND + WATER_RING_CELLS * waterRingSpacing(4);
+        const planeMaxX = box.minimumWorld.x + OCEAN_BOUND + waterRingSpacing(4) + WATER_RING_CELLS * waterRingSpacing(4);
         expect(planeMaxX).toBeGreaterThan(pondCam.x);
         // the ring's east-most wet vertex is on the coast, and the box ends one
-        // 16 m cell past it, and the waves' 12 m past that
+        // 16 m cell past it, and past that the waves' 12 m and the stitch's
+        // move of a vertex, up to a cell, 16 m
         const pos = ring4.getVerticesData(VertexBuffer.PositionKind)!;
         const depth = ring4.getVerticesData("bedDepth")!;
         let wetMaxX = -Infinity;
         for (let i = 0; i < depth.length; i++) if ((depth[i] as number) > 0) wetMaxX = Math.max(wetMaxX, pos[i * 3] as number);
         expect(wetMaxX).toBeLessThan(-360);
-        expect(box.maximumWorld.x).toBeGreaterThanOrEqual(wetMaxX + 12);
-        expect(box.maximumWorld.x).toBeLessThanOrEqual(wetMaxX + waterRingSpacing(4) + 12);
+        expect(box.maximumWorld.x).toBeGreaterThanOrEqual(wetMaxX + 12 + 16);
+        expect(box.maximumWorld.x).toBeLessThanOrEqual(wetMaxX + 16 + 12 + 16);
         // the crest above the level and the trough below it
         expect(box.minimumWorld.y).toBe(level - 12);
         expect(box.maximumWorld.y).toBe(level + 12);
@@ -426,8 +427,8 @@ describe("createWater under NullEngine", () => {
       expect(water.meshes[0]!.isEnabled()).toBe(true);
       const box = water.meshes[0]!.getBoundingInfo().boundingBox;
       expect(box.minimumWorld.x).toBeLessThan(-374);
-      // ring 0 is 128 m across: its box, grown by the waves' 12 m, starts at most 76 m west of the camera
-      expect(box.minimumWorld.x).toBeGreaterThanOrEqual(-374 - 76);
+      // ring 0 is 128 m across: its box, grown by the waves' 12 m and the stitch's 1 m, starts at most 77 m west of the camera
+      expect(box.minimumWorld.x).toBeGreaterThanOrEqual(-374 - 77);
       expect(box.minimumWorld.y).toBe(-12);
       expect(box.maximumWorld.y).toBe(12);
       water.dispose();
