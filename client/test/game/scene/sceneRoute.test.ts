@@ -21,6 +21,17 @@ import { startSceneRoute } from "../../../src/game/scene/sceneRoute.js";
 import { asHtml, installStandInDom } from "../helpers/standInDom.js";
 import { timeLimit } from "../../helpers/timeLimit.js";
 
+/** Calls queued animation frames until `p` settles: a `frame()` that waits on the world asks for
+ * its animation frame only after the wait. */
+async function drain(frames: ((ms: number) => void)[], p: Promise<void>): Promise<void> {
+  let done = false;
+  void p.then(() => { done = true; });
+  while (!done) {
+    for (const fn of frames.splice(0)) fn(0);
+    await new Promise((r) => setTimeout(r, 0));
+  }
+}
+
 const nullCanvas = (): HTMLCanvasElement => ({ renderWidth: 1600, renderHeight: 900, clientWidth: 1600, clientHeight: 900 }) as unknown as HTMLCanvasElement;
 
 describe("the scene route", () => {
@@ -30,7 +41,7 @@ describe("the scene route", () => {
     const ms = 0;
     const frames: ((ms: number) => void)[] = [];
     const run = startSceneRoute(
-      { canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => ms, loadCar: async () => null, raf: (fn) => { frames.push(fn); return frames.length; }, paint: (s, name) => new PBRMaterial(name, s) },
+      { canvas: nullCanvas(), container: asHtml(container), tier: "low", now: () => ms, loadCar: async () => null, raf: (fn) => { frames.push(fn); return frames.length; }, paint: (s, name) => new PBRMaterial(name, s), worldIn: async () => undefined },
       { t: 20, step: null },
     );
     const before = JSON.stringify(run.worldState());
@@ -45,9 +56,7 @@ describe("the scene route", () => {
     api?.seek(43);
     expect(api?.time()).toBe(43);
     // `frame()` draws now and resolves on the animation frame after.
-    const drawn = api?.frame();
-    for (const fn of frames.splice(0)) fn(0);
-    await drawn;
+    await drain(frames, api!.frame());
     expect(container.querySelector("div.scene-caption")?.textContent).toBe("Four-one, be advised,\nradio won't carry past the road.");
     // A scene frame leaves the sim's state as it found it.
     expect(JSON.stringify(run.worldState())).toBe(before);
@@ -140,6 +149,35 @@ describe("the scene route", () => {
     expect([carLoads, api.time()]).toEqual([0, 3]);
     expect(run.scene().getMeshByName("trailhead_car_box")).not.toBeNull();
     expect(run.scene().getMeshByName("film_car_shadow")).toBeNull();
+    run.dispose();
+    vi.unstubAllGlobals();
+  }, timeLimit(120_000));
+
+  it("draws the world in at a cut's new camera before the frame that counts, and draws once within a shot", async () => {
+    const doc = installStandInDom();
+    const frames: ((ms: number) => void)[] = [];
+    let waits = 0;
+    const run = startSceneRoute(
+      {
+        canvas: nullCanvas(), container: asHtml(doc.createElement("div")), tier: "low", now: () => 0,
+        raf: (fn) => { frames.push(fn); return frames.length; }, paint: (s, name) => new PBRMaterial(name, s),
+        worldIn: async () => { waits += 1; },
+      },
+      { t: 6.9, step: null },
+      "title",
+    );
+    const api = (globalThis as { dayhikeScene?: { seek(t: number): void; frame(): Promise<void>; ready: Promise<void> } }).dayhikeScene!;
+    await api.ready;
+    for (const fn of frames.splice(0)) fn(0);
+    let renders = 0;
+    run.scene().onAfterRenderObservable.add(() => { renders += 1; });
+    api.seek(6.95);
+    await drain(frames, api.frame());
+    expect([renders, waits]).toEqual([1, 1]);
+    // 7.05 is the second shot, over the forest, hundreds of metres from the coast.
+    api.seek(7.05);
+    await drain(frames, api.frame());
+    expect([renders, waits]).toEqual([51, 2]);
     run.dispose();
     vi.unstubAllGlobals();
   }, timeLimit(120_000));

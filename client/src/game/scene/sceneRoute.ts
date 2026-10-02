@@ -29,9 +29,10 @@ import { BOARD_IMAGE_URLS } from "../boardImages.js";
 import { POSTER_LAST_SEEN } from "../posterPanel.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "../../sim/signs.js";
 import { signSites } from "../../sim/placeNames.js";
-import { terrainMaterialFor } from "../renderer.js";
+import { terrainMaterialFor, type FreecamView } from "../renderer.js";
 import { whenSceneReady } from "../rendererSwap.js";
 import { READY_MAX_MS } from "../startReady.js";
+import { SETTLE_MAX_MS, WARM_FRAMES, cameraJumped } from "./cameraJump.js";
 import { createCaptionPanel } from "./captions.js";
 import { createCordTube } from "./cordTube.js";
 import { INTRO_CAR, INTRO_HOUR, INTRO_RANGER, INTRO_SEED_TOKEN, INTRO_WEATHER, introScene } from "./intro.js";
@@ -200,8 +201,14 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   black.style.opacity = "1";
   deps.container.append(black);
   const captions = createCaptionPanel(deps.container);
+  /** The camera the stage last set, and the one the last drawn frame was drawn from. */
+  let lastView: FreecamView | null = null;
+  let drawnView: FreecamView | null = null;
   const stage: StageDeps = {
-    setFreecam: (view) => renderer.setFreecam(view),
+    setFreecam: (view) => {
+      lastView = view;
+      renderer.setFreecam(view);
+    },
     setDepthOfField: (on) => renderer.setDepthOfField(on),
     actor: (id) => pool.acquire(1, id),
     car,
@@ -229,6 +236,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     renderer.sync(world.state, -1, 0);
     renderer.scene.render();
     renderer.engine.endFrame();
+    drawnView = lastView;
   };
   const loop = (): void => {
     if (disposed || !looping) return;
@@ -248,13 +256,19 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       clock.hold();
     },
     // Drawn now, and resolved on the animation frame after, when the
-    // picture has been presented and a screenshot reads it.
-    frame: () =>
-      new Promise<void>((resolve) => {
-        looping = false;
+    // picture has been presented and a screenshot reads it. After a cut the
+    // world is drawn in first (`cameraJump.ts`).
+    frame: async () => {
+      looping = false;
+      const before = drawnView;
+      drawOneFrame();
+      if (lastView !== null && cameraJumped(before, lastView)) {
+        for (let i = 0; i < WARM_FRAMES; i += 1) drawOneFrame();
+        await worldIn(SETTLE_MAX_MS);
         drawOneFrame();
-        raf(() => resolve());
-      }),
+      }
+      await new Promise<void>((resolve) => raf(() => resolve()));
+    },
     time: () => player.time(),
     ready,
     engine: () => (renderer.engine.isWebGPU ? "webgpu" : "webgl2"),
