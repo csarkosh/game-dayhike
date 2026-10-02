@@ -443,6 +443,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "governor.ts"),
       join(SRC, "game", "rainParams.ts"),
       join(SRC, "game", "lensParams.ts"),
+      join(SRC, "game", "oceanWindSea.ts"),
       join(SRC, "game", "oceanWaves.ts"),
       join(SRC, "game", "oceanTables.ts"),
       join(SRC, "game", "oceanSwell.ts"),

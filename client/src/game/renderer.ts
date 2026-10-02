@@ -31,6 +31,7 @@ import { CHARACTER_IDS, EntityViews } from "./entityViews.js";
 import { budgetLights, budgetMaterial, createHeadlamp, setLamp } from "./headlamp.js";
 import { lampUnder } from "./lampParams.js";
 import { windRecordUnder, type WindRecord } from "./windParams.js";
+import { sharedSeconds } from "./oceanWindSea.js";
 import { setFoliageWind, FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED } from "./foliagePlugin.js";
 import {
   createRingSamples,
@@ -660,7 +661,8 @@ export type Water = {
    * opaque pass through the surface (`waterFrame.ts`), so a wet object's own
    * depth is attenuated by the water and the wet plugin need not darken it. */
   readonly high: boolean;
-  update(camX: number, camZ: number, seconds: number): void;
+  /** Per frame: the camera's place, the sea's shared seconds and the hour (12 when absent), which the sea's waves read. */
+  update(camX: number, camZ: number, seconds: number, hour?: number): void;
   /** Per frame from the wind record: the 0..1 speed and the direction it blows toward. */
   setWind(wind01: number, dir: [number, number]): void;
   /** Per frame from the weather: the rain, 0 to 1, that rings the surface. */
@@ -1861,12 +1863,16 @@ function buildRenderer(
       // BEFORE the views sync, which needs the lamp state derived from it.
       const weather = lighting.weather;
       const seconds = clock() / 1000;
+      // The sea's time, and the wind's: the simulation's tick and this frame's
+      // fraction of the next, so every peer's waves break together and its
+      // wind sea blows the same way. A scene that hands in its own clock keeps it.
+      const oceanSeconds = options.clock !== undefined ? seconds : sharedSeconds(state.tick, alpha);
       const lampState = lampUnder(weather, seconds);
       // The one wind record every moving thing reads this frame: the
       // weather-driven speed, or the `/wind` override in its place. The
       // players bend it — `windPlayers` is reused, not allocated, and absent
       // slots are parked far off in XZ so the bend never reaches them.
-      wind = windRecordUnder(weather, seconds, windOverride ?? undefined);
+      wind = windRecordUnder(weather, oceanSeconds, windOverride ?? undefined);
       let n = 0;
       windPlayers.fill(0);
       for (let i = 0; i < FOLIAGE_PLAYERS; i++) {
@@ -1931,7 +1937,7 @@ function buildRenderer(
         // The clipmap follows the *camera* here, not the player. Anchored to
         // the player, flying 500 m away shows void with no error.
         clipmap?.update(freecam.x, freecam.z);
-        water?.update(freecam.x, freecam.z, seconds);
+        water?.update(freecam.x, freecam.z, oceanSeconds, lighting.hour);
         updateWet(freecam.x, freecam.z);
         propMeshes?.update(freecam.x, freecam.z);
         forestMeshes?.update(freecam.x, freecam.z);
@@ -1972,7 +1978,7 @@ function buildRenderer(
       const local = state.players.get(localId);
       if (local) {
         clipmap?.update(local.pos.x, local.pos.z);
-        water?.update(local.pos.x, local.pos.z, seconds);
+        water?.update(local.pos.x, local.pos.z, oceanSeconds, lighting.hour);
         updateWet(local.pos.x, local.pos.z);
         propMeshes?.update(local.pos.x, local.pos.z);
         forestMeshes?.update(local.pos.x, local.pos.z);

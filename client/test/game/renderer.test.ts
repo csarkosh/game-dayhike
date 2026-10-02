@@ -374,6 +374,30 @@ describe("renderer.wind()", () => {
   });
 });
 
+describe("the sea's clock", () => {
+  it("runs the wind on the simulation's tick and its fraction, unless a scene hands in its own clock", () => {
+    const canvas = {} as unknown as HTMLCanvasElement;
+    const state = { ...windTestState(windTestPlayer(1)), tick: 7200 };
+    const shared = createRenderer(canvas, EMPTY_LEVEL, null);
+    try {
+      shared.sync(state, 1, 0.5);
+      // (7200 + 0.5) ticks at 60 Hz: the same on every peer at that tick.
+      expect(shared.wind().time).toBeCloseTo(120.00833333333333, 9);
+      expect(shared.wind().dirX).toBeCloseTo(0.335780920274179, 9);
+      expect(shared.wind().dirZ).toBeCloseTo(0.9419401114613526, 9);
+    } finally {
+      shared.dispose();
+    }
+    const stepped = createRenderer(canvas, EMPTY_LEVEL, null, { clock: () => 5000 });
+    try {
+      stepped.sync(state, 1, 0.5);
+      expect(stepped.wind().time).toBeCloseTo(5, 9);
+    } finally {
+      stepped.dispose();
+    }
+  });
+});
+
 describe("the renderer's engine", () => {
   // `Engine` here is this file's module mock (NullEngine standing in for the
   // WebGL2 engine), so an instance of it is what the WebGL2 path constructs.
@@ -640,6 +664,29 @@ describe("world shell wiring", () => {
       "setTerrainRain(scene, terrainMaterialFor(scene, \"terrain\"), weather.rain, seconds);\n      water?.setRain(weather.rain);",
     );
     expect(src.match(/water\?\.setRain\(/g)).toHaveLength(1);
+  });
+
+  it("runs the sea's waves and the wind on the shared seconds, and keeps the page's clock for everything else", () => {
+    expect(src).toContain('import { sharedSeconds } from "./oceanWindSea.js";');
+    expect(src).toContain("update(camX: number, camZ: number, seconds: number, hour?: number): void;");
+    const syncBlock = slice("sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {", "hasWildlife: wildlife !== null,");
+    expect(syncBlock).toContain("const seconds = clock() / 1000;");
+    expect(syncBlock).toContain(
+      "const oceanSeconds = options.clock !== undefined ? seconds : sharedSeconds(state.tick, alpha);",
+    );
+    expect(syncBlock).toContain("wind = windRecordUnder(weather, oceanSeconds, windOverride ?? undefined);");
+    const freecamBranch = slice("if (freecam !== null) {", "const local = state.players.get(localId);");
+    const playerBranch = slice("const local = state.players.get(localId);", "resize() {");
+    expect(freecamBranch.match(/water\?\.update\(/g)).toHaveLength(1);
+    expect(playerBranch.match(/water\?\.update\(/g)).toHaveLength(1);
+    expect(freecamBranch).toContain("water?.update(freecam.x, freecam.z, oceanSeconds, lighting.hour);");
+    expect(playerBranch).toContain("water?.update(local.pos.x, local.pos.z, oceanSeconds, lighting.hour);");
+    // The declaration, the wind and the two water updates: nothing else in the frame moves clock.
+    expect(syncBlock.match(/oceanSeconds/g)).toHaveLength(4);
+    expect(syncBlock).toContain("const lampState = lampUnder(weather, seconds);");
+    expect(syncBlock).toContain('setTerrainRain(scene, terrainMaterialFor(scene, "terrain"), weather.rain, seconds);');
+    expect(syncBlock.match(/mist\?\.update\([^;]*, wind, seconds\);/g)).toHaveLength(2);
+    expect(syncBlock.match(/rainSplash\?\.update\([^;]*, seconds\);/g)).toHaveLength(2);
   });
 });
 
