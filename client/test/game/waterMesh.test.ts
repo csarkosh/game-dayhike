@@ -17,7 +17,8 @@ import type { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { createRain } from "../../src/game/rain.js";
 import { createMotes } from "../../src/game/motes.js";
 import { createMistMeshes } from "../../src/game/mistMeshes.js";
-import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterRingSpacing } from "../../src/game/water.js";
+import { OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterRingSpacing } from "../../src/game/water.js";
+import { WEBGPU_REQUIRED_LIMITS } from "../../src/game/engineChoice.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { WaterPlugin } from "../../src/game/waterPlugin.js";
@@ -53,18 +54,29 @@ describe("createWater under NullEngine", () => {
     const scene = new Scene(engine);
     const water = createWater(scene, 0x5eed, 0);
     expect(water.meshes.length).toBe(WATER_RING_COUNT);
-    for (const m of water.meshes) {
+    expect(WATER_RING_COUNT).toBe(7);
+    water.meshes.forEach((m) => {
       expect(m.getTotalVertices()).toBeGreaterThan(0);
       expect(m.isVerticesDataPresent("bedDepth")).toBe(true);
       expect(m.isVerticesDataPresent(VertexBuffer.ColorKind)).toBe(false);
       expect(m.useVertexColors).toBe(false);
       expect((m.metadata as { waterLevel: number }).waterLevel).toBe(0);
+      // the stitch: a float and an (x, z) per vertex
+      expect(m.getVertexBuffer("oceanMorph")!.getSize()).toBe(1);
+      expect(m.getVertexBuffer("oceanCoarse")!.getSize()).toBe(2);
+      expect(m.getVerticesData("oceanMorph")!.length).toBe(m.getTotalVertices());
+      // one vertex buffer a kind: six, inside the eight the WebGPU device is made with
+      expect(m.getVerticesDataKinds().sort()).toEqual(["bedDepth", "normal", "oceanCoarse", "oceanMorph", "position", "uv"]);
+      expect(m.getVerticesDataKinds().length).toBeLessThanOrEqual(WEBGPU_REQUIRED_LIMITS.maxVertexBuffers as number);
+      // the vertices are world positions: the vertex stage's position is the world's
+      expect(m.computeWorldMatrix(true).isIdentity()).toBe(true);
       const mat = m.material as PBRMaterial;
       expect(mat.name).toBe("mat_water_sea");
       expect(mat.transparencyMode).toBe(PBRMaterial.PBRMATERIAL_ALPHABLEND);
       expect(mat.pluginManager?.getPlugin("Water")).toBeInstanceOf(WaterPlugin);
       expect(m.receiveShadows).toBe(false);
-    }
+    });
+    expect(WEBGPU_REQUIRED_LIMITS.maxVertexBuffers).toBe(8);
     water.update(-500, 300, 1); // must re-emit and re-bake without throwing
     water.dispose();
   }, timeLimit(30_000));
@@ -331,12 +343,12 @@ describe("createWater under NullEngine", () => {
   describe("rings without water are off, and a wet ring's bounds are its wet cells (seed atmo)", () => {
     // The olympic variant's sea is at level 0; on seed atmo the coast at z = 0
     // is near x = -372, and pond_0 sits on high ground at (249.6, 84), about
-    // 620 m inland. Ring 0 is 1,024 m across, so it holds no sea only with the
-    // camera more than 512 m from the coast.
+    // 620 m inland. Ring 3 is 1,024 m across, so it and the three inside it
+    // hold no sea only with the camera more than 512 m from the coast.
     const seed = seedFromToken("atmo");
     const pondCam = { x: 249.6, z: 84 };
 
-    it("inland: ring 0 is disabled, ring 1's box ends at the coast, the pond disc stays on", () => {
+    it("inland: rings 0 to 3 are disabled, ring 4's box ends at the coast, the pond disc stays on", () => {
       engine = new NullEngine();
       const scene = new Scene(engine);
       const level = activeTerrainVariant().waterLevel!;
@@ -345,23 +357,25 @@ describe("createWater under NullEngine", () => {
       expect(lakes[0]!.x).toBeCloseTo(pondCam.x, 0);
       const water = createWater(scene, seed, level, lakes, "medium", pondCam.x, pondCam.z);
       const check = (): void => {
-        expect(water.meshes[0]!.isEnabled()).toBe(false);
-        const ring1 = water.meshes[1]!;
-        expect(ring1.isEnabled()).toBe(true);
-        const box = ring1.getBoundingInfo().boundingBox;
+        for (const ring of water.meshes.slice(0, 4)) expect(ring.isEnabled()).toBe(false);
+        const ring4 = water.meshes[4]!;
+        expect(ring4.isEnabled()).toBe(true);
+        const box = ring4.getBoundingInfo().boundingBox;
         // the whole plane would reach 1,024 m east of the camera
-        const planeMaxX = box.minimumWorld.x + WATER_RING_CELLS * waterRingSpacing(1);
+        const planeMaxX = box.minimumWorld.x + OCEAN_BOUND + WATER_RING_CELLS * waterRingSpacing(4);
         expect(planeMaxX).toBeGreaterThan(pondCam.x);
-        // the ring's east-most wet vertex is on the coast, and the box ends one 16 m cell past it
-        const pos = ring1.getVerticesData(VertexBuffer.PositionKind)!;
-        const depth = ring1.getVerticesData("bedDepth")!;
+        // the ring's east-most wet vertex is on the coast, and the box ends one
+        // 16 m cell past it, and the waves' 12 m past that
+        const pos = ring4.getVerticesData(VertexBuffer.PositionKind)!;
+        const depth = ring4.getVerticesData("bedDepth")!;
         let wetMaxX = -Infinity;
         for (let i = 0; i < depth.length; i++) if ((depth[i] as number) > 0) wetMaxX = Math.max(wetMaxX, pos[i * 3] as number);
         expect(wetMaxX).toBeLessThan(-360);
-        expect(box.maximumWorld.x).toBeGreaterThanOrEqual(wetMaxX);
-        expect(box.maximumWorld.x).toBeLessThanOrEqual(wetMaxX + waterRingSpacing(1));
-        expect(box.minimumWorld.y).toBe(level);
-        expect(box.maximumWorld.y).toBe(level);
+        expect(box.maximumWorld.x).toBeGreaterThanOrEqual(wetMaxX + 12);
+        expect(box.maximumWorld.x).toBeLessThanOrEqual(wetMaxX + waterRingSpacing(4) + 12);
+        // the crest above the level and the trough below it
+        expect(box.minimumWorld.y).toBe(level - 12);
+        expect(box.maximumWorld.y).toBe(level + 12);
         expect(scene.getMeshByName("pond_0")!.isEnabled()).toBe(true);
       };
       check();
@@ -390,12 +404,12 @@ describe("createWater under NullEngine", () => {
         }
         return names;
       };
-      // inland, east: the camera is inside ring 1's wet box's bounding sphere,
+      // inland, east: the camera is inside ring 4's wet box's bounding sphere,
       // so only the box test can cull it
       camera.setTarget(new Vector3(1209.6, 87.5, 84));
       scene.render();
-      expect(water.meshes[1]!.isEnabled()).toBe(true);
-      const sphere = water.meshes[1]!.getBoundingInfo().boundingSphere;
+      expect(water.meshes[4]!.isEnabled()).toBe(true);
+      const sphere = water.meshes[4]!.getBoundingInfo().boundingSphere;
       expect(Vector3.Distance(camera.position, sphere.centerWorld)).toBeLessThan(sphere.radiusWorld);
       expect(activeRings()).toEqual([]);
       // west, toward the coast
@@ -412,6 +426,10 @@ describe("createWater under NullEngine", () => {
       expect(water.meshes[0]!.isEnabled()).toBe(true);
       const box = water.meshes[0]!.getBoundingInfo().boundingBox;
       expect(box.minimumWorld.x).toBeLessThan(-374);
+      // ring 0 is 128 m across: its box, grown by the waves' 12 m, starts at most 76 m west of the camera
+      expect(box.minimumWorld.x).toBeGreaterThanOrEqual(-374 - 76);
+      expect(box.minimumWorld.y).toBe(-12);
+      expect(box.maximumWorld.y).toBe(12);
       water.dispose();
     }, timeLimit(30_000));
   });

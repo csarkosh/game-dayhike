@@ -632,7 +632,8 @@ function createWaterBump(scene: Scene): RawTexture {
 /**
  * Uploads a water ring's buffers. Mirrors `applyRingGeometry` — same typed
  * arrays straight through, same `updatable` reasoning — plus the UV set the
- * scrolling bump texture samples.
+ * scrolling bump texture samples, and what the vertex stage stitches the
+ * ring's waves to the coarser ring's with (`oceanMorph`, `oceanCoarse`).
  */
 function applyWaterGeometry(mesh: Mesh, geometry: WaterGeometry): void {
   const data = new VertexData();
@@ -642,13 +643,15 @@ function applyWaterGeometry(mesh: Mesh, geometry: WaterGeometry): void {
   data.uvs = geometry.uvs;
   data.applyToMesh(mesh, true);
   mesh.setVerticesData("bedDepth", geometry.bedDepth, true, 1);
+  mesh.setVerticesData("oceanMorph", geometry.oceanMorph, true, 1);
+  mesh.setVerticesData("oceanCoarse", geometry.oceanCoarse, true, 2);
 }
 
 /** Rows of the bed grid baked per frame: a whole 256² grid measured 260 to 295 ms. */
 const BED_ROWS_PER_FRAME = 1;
 
 export type Water = {
-  /** One mesh per ring, coarsening outward — four draw calls, capped by design.
+  /** One mesh per ring, coarsening outward — seven draw calls, capped by design.
    * NEVER added to the shadow caster list: water neither casts nor receives. */
   readonly meshes: readonly Mesh[];
   /** One surface per lake (`lakeSurface`), static, on its lake's own material. */
@@ -817,7 +820,7 @@ function lakeSurfaceGrid(
 }
 
 /**
- * The four-ring camera-following ocean surface. Same shape as `createClipmap`
+ * The seven-ring camera-following ocean surface. Same shape as `createClipmap`
  * — rings array, `emitRing`, moved-or-finer-moved re-emit — because the hole
  * in a coarser ring tracks the finer ring's footprint exactly as the terrain
  * clipmap's does. Takes only a `Scene` so it runs under `NullEngine`.
@@ -955,8 +958,9 @@ export function createWater(
   const meshes: Mesh[] = [];
 
   // A ring with no wet cell is off, and a wet ring's bounds are its wet
-  // cells, not the whole plane: a flat plane at the level is in view from
-  // almost anywhere, which would ask for the high tier's copy inland too.
+  // cells, not the whole plane: a plane at the level is in view from almost
+  // anywhere, which would ask for the high tier's copy inland too. The
+  // bounds hold the waves: `OCEAN_BOUND` past the wet cells every way.
   function emitRing(level: number): void {
     const ring = rings[level] as WaterRingSamples;
     const finer = level > 0 ? (rings[level - 1] as WaterRingSamples) : null;

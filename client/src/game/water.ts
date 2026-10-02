@@ -1,24 +1,37 @@
 /**
- * Pure water-ring math: a clipmap of flat rings at the water level, mirroring
- * `clipmap.ts` but for the ocean surface. Each ring stores only the
- * TERRAIN height under each vertex — the water itself is flat — and write the
- * depth below the surface per vertex (`bedDepth`), the fragment stage's
- * fallback outside the bed height texture. Four rings at 8/16/32/64 m spacing cover 8,192 m in four
- * draw calls, within a budget of ≤ 4.
+ * Pure water-ring math: a clipmap of rings at the water level, mirroring
+ * `clipmap.ts` but for the ocean surface. Each ring stores only the TERRAIN
+ * height under each vertex and writes the depth below the surface per vertex
+ * (`bedDepth`), the fragment stage's fallback outside the bed height texture.
+ * Seven rings at 1, 2, 4, 8, 16, 32 and 64 m spacing cover 8,192 m in seven
+ * draw calls. Their vertices stay at the level: the waves are the vertex
+ * stage's, and each vertex carries what that stage needs to stitch a ring's
+ * outer edge to the coarser ring around it (`oceanMorph`, `oceanCoarse`), as
+ * the terrain's rings stitch their heights.
  *
  * Pure and Babylon-free; the water shell uploads the output.
  */
 import { elevationAt } from "../sim/terrain.js";
-import { HOLE_CELLS, snapOrigin } from "./clipmap.js";
+import { HOLE_CELLS, blendWeight, snapOrigin } from "./clipmap.js";
 
 /** Same cell count as the terrain clipmap's RING_CELLS, so `snapOrigin` and
  * `HOLE_CELLS` (both parameterised by spacing only beyond that count) can be
  * imported rather than re-derived. */
 export const WATER_RING_CELLS = 128;
-export const WATER_RING_COUNT = 4;
-export const WATER_BASE_SPACING = 8;
+export const WATER_RING_COUNT = 7;
+export const WATER_BASE_SPACING = 1;
 /** Metres per bump-texture tile. */
 export const WATER_UV_SCALE = 24;
+/**
+ * How far the drawn sea may stand off its flat plane, in metres, on every
+ * axis: the largest crest a wave reaches as it breaks, twice the largest
+ * significant height the swell is given (8 m), taken whole on either side of
+ * the level, plus the wind sea's in a storm (4 m). Up and down for the crest
+ * and the trough; sideways too, since a trochoid carries its vertices along
+ * the wave as well as up. Each ring's culling box is grown by it
+ * (`wetBounds`).
+ */
+export const OCEAN_BOUND = 12;
 const SIDE = WATER_RING_CELLS + 1;
 
 export type WaterRingSamples = {
@@ -39,6 +52,22 @@ export type WaterGeometry = {
   /** Water level minus the bed's height, clamped at 0 where the ground is above the surface. */
   bedDepth: Float32Array;
   uvs: Float32Array;
+  /**
+   * The terrain's border blend (`blendWeight`) per vertex: 0 where the ring
+   * draws its own waves (the edge of its hole, or ring 0's centre), rising
+   * linearly to 1 on its outer edge, where it draws the coarser ring's. 0
+   * throughout the outermost ring, which has no coarser ring.
+   */
+  oceanMorph: Float32Array;
+  /**
+   * Per vertex, (x, z) in metres: the half-edge to the coarser ring's
+   * lattice. The coarser ring's two vertices joined by the drawn edge this
+   * vertex lies at the middle of are at its position minus and plus it, so
+   * the coarser ring's surface here is the mean of what it draws at those
+   * two. (0, 0) on a vertex of the coarser lattice, where both are the vertex
+   * itself, and throughout the outermost ring.
+   */
+  oceanCoarse: Float32Array;
 };
 
 export function waterRingSpacing(level: number): number {
@@ -127,9 +156,13 @@ function insideHole(hole: { x0: number; z0: number } | null, ix: number, iz: num
 }
 
 /**
- * Flat plane at `waterLevel` carrying the bed depth per vertex.
- * No border clamping (a flat plane cannot crack) and no gradient normals —
- * every normal is (0, 1, 0); the bump texture supplies the ripple.
+ * The plane at `waterLevel` carrying the bed depth per vertex, and what the
+ * vertex stage needs to stitch the waves it adds: every normal is (0, 1, 0)
+ * and every vertex at the level, the waves displacing them there. A ring
+ * other than the outermost blends its waves toward the coarser ring's across
+ * its band (`oceanMorph`), and draws the coarser ring's exactly on its outer
+ * edge, where `oceanCoarse` names the two coarser vertices the edge's middle
+ * vertices lie between. Which ring this is comes from `ring.level`.
  */
 export function waterRingGeometry(
   ring: WaterRingSamples,
@@ -140,12 +173,16 @@ export function waterRingGeometry(
   const normals = new Float32Array(SIDE * SIDE * 3);
   const bedDepth = new Float32Array(SIDE * SIDE);
   const uvs = new Float32Array(SIDE * SIDE * 2);
+  const oceanMorph = new Float32Array(SIDE * SIDE);
+  const oceanCoarse = new Float32Array(SIDE * SIDE * 2);
+  const stitched = ring.level < WATER_RING_COUNT - 1;
+  const s = ring.spacing;
 
   for (let iz = 0; iz < SIDE; iz++) {
     for (let ix = 0; ix < SIDE; ix++) {
       const at = iz * SIDE + ix;
-      const x = ring.originX + ix * ring.spacing;
-      const z = ring.originZ + iz * ring.spacing;
+      const x = ring.originX + ix * s;
+      const z = ring.originZ + iz * s;
       const p = at * 3;
       positions[p] = x;
       positions[p + 1] = waterLevel;
@@ -156,6 +193,18 @@ export function waterRingGeometry(
       bedDepth[at] = Math.max(0, waterLevel - (ring.h[at] as number));
       uvs[at * 2] = x / WATER_UV_SCALE;
       uvs[at * 2 + 1] = z / WATER_UV_SCALE;
+      if (stitched) {
+        oceanMorph[at] = blendWeight(hole, ix, iz);
+        // The origin is a multiple of 2·spacing (snapOrigin), so an even index
+        // is on the coarser lattice. An odd one along one axis is the middle
+        // of a coarser edge along it; odd along both is a coarser cell's
+        // centre, on the diagonal the coarser ring draws from its cell's
+        // (+x, 0) corner to its (0, +z) corner (`coarseHeight`).
+        const oddX = (ix & 1) === 1;
+        const oddZ = (iz & 1) === 1;
+        oceanCoarse[at * 2] = oddX ? s : 0;
+        oceanCoarse[at * 2 + 1] = oddZ ? (oddX ? -s : s) : 0;
+      }
     }
   }
 
@@ -183,7 +232,7 @@ export function waterRingGeometry(
     }
   }
 
-  return { positions, indices, normals, bedDepth, uvs };
+  return { positions, indices, normals, bedDepth, uvs, oceanMorph, oceanCoarse };
 }
 
 /**
@@ -192,9 +241,11 @@ export function waterRingGeometry(
  * the bed texture the fragment's depth is `bedDepth` interpolated, so such a
  * triangle draws water up to its dry corners, and the box holds all three of
  * its vertices. Triangles in the hole are not drawn, so they count for
- * nothing. y is the water level. Null makes the ring's mesh disabled: a flat
- * plane at the level is in view from almost anywhere, and a mesh in view is
- * what asks for the high tier's copy.
+ * nothing. The box is grown by `OCEAN_BOUND` on every side, since the waves
+ * carry the surface off the plane: up and down from the water level, and
+ * across. Null makes the ring's mesh disabled: a plane at the level is in
+ * view from almost anywhere, and a mesh in view is what asks for the high
+ * tier's copy.
  */
 export function wetBounds(geometry: WaterGeometry): { min: [number, number, number]; max: [number, number, number] } | null {
   const { positions, indices, bedDepth } = geometry;
@@ -219,5 +270,8 @@ export function wetBounds(geometry: WaterGeometry): { min: [number, number, numb
     }
   }
   if (minX === Infinity) return null;
-  return { min: [minX, y, minZ], max: [maxX, y, maxZ] };
+  return {
+    min: [minX - OCEAN_BOUND, y - OCEAN_BOUND, minZ - OCEAN_BOUND],
+    max: [maxX + OCEAN_BOUND, y + OCEAN_BOUND, maxZ + OCEAN_BOUND],
+  };
 }
