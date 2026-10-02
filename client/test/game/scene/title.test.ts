@@ -26,11 +26,12 @@ describe("the title scene", () => {
     expect([frame.actors.length, frame.car, frame.caption, frame.black]).toEqual([0, null, null, 0]);
   });
 
-  it("frames the cove from well out over the sea, looking inland", () => {
+  it("frames the cove from low over its water, looking along the beach", () => {
     const c = camAt(world, 3);
-    expect(c.x).toBeLessThan(-500);
+    expect(c.x).toBeLessThan(-350);
     expect(Math.abs(c.z)).toBeLessThan(150);
-    expect(Math.sin(c.yaw)).toBeGreaterThan(0.9);
+    expect(Math.cos(c.yaw)).toBeGreaterThan(0.8);
+    expect(Math.sin(c.yaw)).toBeGreaterThan(0);
   });
 
   it("glides over the forest, well above the ground", () => {

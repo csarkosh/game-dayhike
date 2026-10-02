@@ -33,18 +33,22 @@ export type TitleWorld = {
 /** Every moving shot's move: 12 m in its 7 s, 1.7 m/s. */
 const DRIFT_M = 12;
 const SHOT_S = 7;
-/** The coast: this far out to sea from the shoreline (past the headlands' reach), this high, starting
- * this far along the shore from the cove's middle, looking into the cove. */
-const COAST_OUT_M = 250;
-const COAST_UP_M = 8;
-const COAST_ALONG_M = -30;
+/** The coast: inside the cove, this far out over the water from the shoreline and this high, starting
+ * this share of its half-width short of its middle and drifting along it, looking along the beach to
+ * a point this share of its half-width beyond its middle and this far inland: the sea on one side,
+ * the beach and the forest's edge on the other, a headland ahead in the haze. */
+const COAST_OUT_M = 70;
+const COAST_UP_M = 6;
+const COAST_FROM = -0.6;
+const COVE_LOOK = 0.7;
+const COVE_IN_M = 10;
 /** The forest: from this share of the way from the trail's start to the peak, this high over the ground. */
 const CANOPY_ALONG = 0.25;
-const CANOPY_UP_M = 45;
+const CANOPY_UP_M = 90;
 /** The lake: the camera this far beyond its rim on the trail's side, this high over the water or
  * the bank, panning this far across it. */
-const SHORE_OUT_M = 25;
-const SHORE_UP_M = 4;
+const SHORE_OUT_M = 55;
+const SHORE_UP_M = 25;
 const PAN_RAD = 0.6;
 /** Where there is no lake or meadow: over the trail's start, looking at the peak. */
 const HILLS_UP_M = 20;
@@ -54,9 +58,10 @@ const START_BACK_M = 6;
 const RISE_FROM_M = 1.6;
 const RISE_TO_M = 7.6;
 const TRAIL_LOOK_M = 30;
-/** The summit: the push starts this far short of the peak's middle, this high over the ground. */
-const SUMMIT_SHORT_M = 220;
-const SUMMIT_UP_M = 30;
+/** The summit: the push starts this far short of the peak's middle and this high over the ground,
+ * above the forest that covers its trail's side, at about the summit's own height. */
+const SUMMIT_SHORT_M = 300;
+const SUMMIT_UP_M = 110;
 
 export function titleScene(w: TitleWorld): Scene {
   const onGround = (x: number, z: number, up: number): Look => ({ x, y: w.ground(x, z) + up, z });
@@ -66,14 +71,16 @@ export function titleScene(w: TitleWorld): Scene {
   const peakLook = onGround(w.peak.x, w.peak.z, 0);
   const ahead = (from: Look): Look => ({ x: from.x + dir.x * DRIFT_M, y: from.y, z: from.z + dir.z * DRIFT_M });
 
-  // 1. The coast: well out over the sea, drifting along the shore across the cove's mouth.
+  // 1. The coast: low over the cove's water, drifting along the beach and looking along it.
   const coastAt = (z: number): Look => {
     const x = w.coastlineX(z) - COAST_OUT_M;
     return { x, y: Math.max(w.seaLevel, w.ground(x, z)) + COAST_UP_M, z };
   };
-  const coastFrom = coastAt(w.cove.z0 + COAST_ALONG_M);
-  const coastTo = coastAt(w.cove.z0 + COAST_ALONG_M + DRIFT_M);
-  const coveLook: Look = { x: w.coastlineX(w.cove.z0), y: w.seaLevel + 6, z: w.cove.z0 };
+  const coastZ = w.cove.z0 + COAST_FROM * w.cove.halfWidth;
+  const coastFrom = coastAt(coastZ);
+  const coastTo = coastAt(coastZ + DRIFT_M);
+  const lookZ = w.cove.z0 + COVE_LOOK * w.cove.halfWidth;
+  const coveLook: Look = { x: w.coastlineX(lookZ) + COVE_IN_M, y: w.seaLevel + 3, z: lookZ };
 
   // 2. Over the forest: from a quarter of the way to the peak, gliding toward it.
   const glideFrom = onGround(w.start.x + toPeak.x * CANOPY_ALONG, w.start.z + toPeak.z * CANOPY_ALONG, CANOPY_UP_M);
