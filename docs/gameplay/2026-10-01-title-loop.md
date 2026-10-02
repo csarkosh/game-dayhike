@@ -105,6 +105,10 @@ model and fades the still out over 0.5 s when the loop shows. The still is the t
 the catalog (`assetUrls.ts`: `titleVideoUrl`, `titleStillUrl`); `landingBackdrop.ts`'s still gives
 way to it.
 
+**The look.** The still and the loop sit under the page's vignette as the still does today, but
+softened by a 2 px blur (scaled 1.03 to hide the blur's edge) where the still had 6 px: the coast,
+the forest and the summit read, and the title and buttons stay in front.
+
 **Weight.** The page's first load stays under 1.5 MB and fetches the still alone; the loop's code
 is a few kilobytes and loads no engine.
 
