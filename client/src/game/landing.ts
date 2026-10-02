@@ -3,9 +3,10 @@ const STYLE = `
   .landing-bg {
     position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: cover;
-    filter: blur(6px);
-    /* Blur samples past the edges; scaling hides the resulting bright rim. */
-    transform: scale(1.08);
+    /* A 2 px blur: the world reads, the title and buttons stay in front.
+       Blur samples past the edges; scaling hides the resulting bright rim. */
+    filter: blur(2px);
+    transform: scale(1.03);
     /* Hidden until ready: the page background shows through meanwhile, the
        dark grey the still settles into. */
     opacity: 0;
@@ -14,6 +15,13 @@ const STYLE = `
      still enters the DOM before this stylesheet does, so a transition there
      would animate the initial 1 -> 0 and fade it out in view. */
   .landing-bg.ready { opacity: 1; transition: opacity 900ms ease-in; }
+  /* The loop behind the still, shown once it can play through: the still
+     fades off it, the loop's first frame and the still being one picture. */
+  .landing-bg.ready.gone { opacity: 0; transition: opacity 500ms ease-out; }
+  .landing-loop {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; filter: blur(2px); transform: scale(1.03);
+  }
   .landing {
     /* The positioning context for the two panels below; they carry the layout
        and the scrolling, because each panel is now the box that holds the

@@ -316,6 +316,28 @@ export class StandInSelect extends StandInElement {
   }
 }
 
+const eventOf = (type: string, target: StandInElement): StandInEvent => ({ type, target, defaultPrevented: false, preventDefault() {} });
+
+/** A `<video>`: it plays when asked unless told to refuse, as a browser that blocks autoplay does. */
+export class StandInVideo extends StandInElement {
+  muted = false;
+  paused = true;
+  refusePlay = false;
+  loads = 0;
+  play(): Promise<void> {
+    if (this.refusePlay) return Promise.reject(new Error("NotAllowedError"));
+    this.paused = false;
+    return Promise.resolve();
+  }
+  pause(): void {
+    this.paused = true;
+  }
+  load(): void {
+    this.loads += 1;
+    this.paused = true;
+  }
+}
+
 export class StandInWindow {
   private readonly listeners = new Map<string, Listener[]>();
   addEventListener(type: string, listener: Listener): void {
@@ -335,6 +357,9 @@ export class StandInDocument {
   activeElement: StandInElement;
   /** No pointer lock is ever held here. */
   readonly pointerLockElement = null;
+  /** A page that has loaded and is shown, as a browser's usually is; a test sets either. */
+  readyState: "loading" | "complete" = "complete";
+  visibilityState: "visible" | "hidden" = "visible";
   /** The document's own listeners (`pointerlockchange`); nothing fires them. */
   private readonly listeners = new StandInWindow();
   addEventListener(type: string, listener: Listener): void {
@@ -355,7 +380,18 @@ export class StandInDocument {
   createElement(tag: string): StandInElement {
     if (tag === "select") return new StandInSelect(this, tag);
     if (tag === "option") return new StandInOption(this, tag);
+    if (tag === "video") return new StandInVideo(this, tag);
     return new StandInElement(this, tag);
+  }
+  /** The page finishing its load, as the browser fires it. */
+  finishLoading(): void {
+    this.readyState = "complete";
+    this.window.fire(eventOf("load", this.body));
+  }
+  /** The tab hidden or shown. */
+  setVisibility(state: "visible" | "hidden"): void {
+    this.visibilityState = state;
+    this.listeners.fire(eventOf("visibilitychange", this.body));
   }
   createTextNode(text: string): StandInElement {
     const node = new StandInElement(this, "#text");

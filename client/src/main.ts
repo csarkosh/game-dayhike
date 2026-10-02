@@ -21,9 +21,9 @@ import { afterNextPaint } from "./game/paint.js";
 import { createIntroOverlay, type CutReason, type IntroOverlay } from "./game/introOverlay.js";
 import { INTRO_CAPTIONS } from "./game/scene/intro.js";
 import { setLoadProgress } from "./game/modelLoad.js";
-import { stillUrl, videoUrl } from "./game/assetUrls.js";
+import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";
-import { landingBackdrop } from "./game/landingBackdrop.js";
+import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { startSceneRoute } from "./game/scene/sceneRoute.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
@@ -97,6 +97,8 @@ let running: { dispose(): void } | null = null;
 // mid-game is handed to. Null on the landing page.
 let game: GameHandle | null = null;
 let landing: LandingHandle | null = null;
+/** The title page's loop behind its still, while the title page is up. */
+let titleLoop: TitleLoop | null = null;
 // Whether the game's pause menu is open. Only the game sets it; leaving the
 // game route resets it, so the roster never stays "full" on a stale flag.
 let paused = false;
@@ -624,6 +626,8 @@ function onPlay(): void {
   // that changed nothing reads as a tap that missed.
   if (launching) return;
   launching = true;
+  // The game's load gets the bandwidth: the loop's download stops here.
+  titleLoop?.stop();
   const src = introSource();
   if (src !== null) {
     endIntro(pendingIntro);
@@ -832,10 +836,10 @@ function render(container: HTMLDivElement): void {
 
   if (isLandingRoute(route)) {
     endIntro(pendingIntro);
-    // The still goes in first so the UI paints above it; nothing of the game
-    // is built or fetched before Play.
-    const backdrop = landingBackdrop(stillUrl());
-    if (backdrop !== null) container.appendChild(backdrop);
+    // The still goes in first so the UI paints above it; the loop behind it
+    // fetches nothing until the page has loaded, and nothing of the game is
+    // built or fetched before Play.
+    titleLoop = createTitleLoop(container, titleStillUrl(), titleVideoUrl(), titleLoopEnv());
     landingNotice = takeNotice(pageSessionStorage(), Date.now());
 
     const handle = renderLanding(
@@ -874,7 +878,13 @@ function render(container: HTMLDivElement): void {
       if (landing === handle) handle.setView(landingModel(landingInput()));
     });
 
-    running = { dispose: () => handle.dispose() };
+    running = {
+      dispose: () => {
+        titleLoop?.dispose();
+        titleLoop = null;
+        handle.dispose();
+      },
+    };
     announcer.now();
     paintRoster();
     return;
