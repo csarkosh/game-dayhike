@@ -119,7 +119,7 @@ describe("the scene route", () => {
     const doc = installStandInDom();
     let carLoads = 0;
     let release: () => void = () => undefined;
-    const worldIn = vi.fn((_maxMs: number) => new Promise<void>((resolve) => { release = resolve; }));
+    const worldIn = vi.fn<(maxMs: number) => Promise<void>>(() => new Promise<void>((resolve) => { release = resolve; }));
     const run = startSceneRoute(
       {
         canvas: nullCanvas(), container: asHtml(doc.createElement("div")), tier: "low", now: () => 0, raf: () => 0,
