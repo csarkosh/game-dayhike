@@ -82,14 +82,17 @@ describe("coastProfilesFor", () => {
     }
   });
 
-  it("windows the phase along the shore over OCEAN_PHASE_BLEND past the cove's ends: half at each end, 0 beyond, wider than the cove's window past the ends", () => {
+  it("windows the phase along the shore: 1 and flat on the cove's centre line, 0 from OCEAN_PHASE_BLEND past its ends, wider than the cove's window past them", () => {
     const cove = coveFor(SEED);
     expect(OCEAN_PHASE_BLEND).toBe(250);
-    // The cove here is 270.4 m wide, narrower than the blend, so its centre is just under 1.
+    // The cove here is 270.4 m wide, narrower than the blend: the window's lower edge is held at 0,
+    // so its centre is exactly 1 and the weight leaves it with no slope.
     expect(cove.halfWidth).toBeCloseTo(135.2007332, 6);
-    expect(p.phaseWeight(cove.z0)).toBeCloseTo(0.91682, 5);
-    expect(p.phaseWeight(cove.z0 + cove.halfWidth)).toBeCloseTo(0.5, 12);
-    expect(p.phaseWeight(cove.z0 - cove.halfWidth)).toBeCloseTo(0.5, 12);
+    expect(p.phaseWeight(cove.z0)).toBe(1);
+    expect(p.phaseWeight(cove.z0 + 1)).toBeGreaterThan(1 - 1e-6);
+    expect(p.phaseWeight(cove.z0 - 1)).toBe(p.phaseWeight(cove.z0 + 1));
+    expect(p.phaseWeight(cove.z0 + cove.halfWidth)).toBeCloseTo(0.763295, 6);
+    expect(p.phaseWeight(cove.z0 - cove.halfWidth)).toBeCloseTo(0.763295, 6);
     expect(p.phaseWeight(cove.z0 - cove.halfWidth - OCEAN_PHASE_BLEND)).toBe(0);
     expect(p.phaseWeight(cove.z0 + cove.halfWidth + OCEAN_PHASE_BLEND)).toBe(0);
     expect(p.phaseWeight(cove.z0 + 2000)).toBe(0);
@@ -97,8 +100,7 @@ describe("coastProfilesFor", () => {
       const q = coastProfilesFor(seed);
       const c = coveFor(seed);
       expect(c.halfWidth).toBeLessThan(OCEAN_PHASE_BLEND);
-      expect(q.phaseWeight(c.z0)).toBeLessThan(1);
-      expect(q.phaseWeight(c.z0)).toBeGreaterThan(0.9);
+      expect(q.phaseWeight(c.z0)).toBe(1);
       let prev = q.phaseWeight(c.z0);
       for (let off = 1; off <= c.halfWidth + OCEAN_PHASE_BLEND + 5; off += 1) {
         const w = q.phaseWeight(c.z0 + off);
@@ -292,7 +294,7 @@ describe("the coastline row", () => {
       expect(texel(tables, OCEAN_ROW_COAST, j, 3)).toBe(Math.fround(profiles.phaseWeight(z)));
     }
     expect(texel(tables, OCEAN_ROW_COAST, 520, 2)).toBe(1);
-    expect(texel(tables, OCEAN_ROW_COAST, 520, 3)).toBeCloseTo(0.91682, 5);
+    expect(texel(tables, OCEAN_ROW_COAST, 520, 3)).toBe(1);
     // Far from the cove both weights are 0.
     expect(texel(tables, OCEAN_ROW_COAST, 0, 2)).toBe(0);
     expect(texel(tables, OCEAN_ROW_COAST, 0, 3)).toBe(0);

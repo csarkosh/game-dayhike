@@ -53,9 +53,9 @@ export const OCEAN_ROW_COAST = 27;
 /**
  * The along-shore span (m) over which a crest's phase passes from the bay's to
  * the cove's: about the scale over which refraction smooths a crest built over a
- * few hundred metres. The phase weight falls from 1 to 0 across the cove's end
- * widened by this on each side, where the depth, a, b and the amplitude factor
- * blend across it widened by COVE_END_BLEND.
+ * few hundred metres. The phase weight is 1 on the cove's centre line and falls
+ * to 0 at the cove's end plus this, where the depth, a, b and the amplitude
+ * factor blend across the end widened by COVE_END_BLEND.
  */
 export const OCEAN_PHASE_BLEND = 250;
 /** At or below this depth (m) a sample is dry: the phase rows hold, the break is off. */
@@ -70,7 +70,14 @@ export type CoastProfiles = {
   coveDepth(d: number): { depth: number; slope: number };
   /** 1 − smootherstep(halfWidth − COVE_END_BLEND, halfWidth + COVE_END_BLEND, |z − z0|): the sim's along-shore window. */
   coveWeight(z: number): number;
-  /** 1 − smootherstep(halfWidth − OCEAN_PHASE_BLEND, halfWidth + OCEAN_PHASE_BLEND, |z − z0|): the weight of the cove's phase against the bay's. */
+  /**
+   * The weight of the cove's phase against the bay's:
+   * 1 − smootherstep(max(halfWidth − OCEAN_PHASE_BLEND, 0), halfWidth + OCEAN_PHASE_BLEND, |z − z0|).
+   * The lower edge is held at 0 so that a cove narrower than the blend, which every
+   * cove is, still has weight exactly 1 on its centre line with its first and second
+   * derivatives 0 there: an edge below 0 would put a corner in the weight, and so a
+   * jump in the crests' along-shore wavenumber, at |z − z0| = 0.
+   */
   phaseWeight(z: number): number;
   /** x − coastDistance(seed, x, z), the same for any x. */
   coastlineX(z: number): number;
@@ -121,7 +128,9 @@ export function coastProfilesFor(seed: number): CoastProfiles {
     coveWeight: (z) =>
       1 - smootherstep(cove.halfWidth - COVE_END_BLEND, cove.halfWidth + COVE_END_BLEND, Math.abs(z - cove.z0)),
     phaseWeight: (z) =>
-      1 - smootherstep(cove.halfWidth - OCEAN_PHASE_BLEND, cove.halfWidth + OCEAN_PHASE_BLEND, Math.abs(z - cove.z0)),
+      1 - smootherstep(
+        Math.max(cove.halfWidth - OCEAN_PHASE_BLEND, 0), cove.halfWidth + OCEAN_PHASE_BLEND, Math.abs(z - cove.z0),
+      ),
     coastlineX,
     shelfBreakD: { bay: depthCrossing(bayDepth, SHELF_BREAK_DEPTH), cove: depthCrossing(coveDepth, SHELF_BREAK_DEPTH) },
     headlandTips: cove.heads.map((h): [number, number] => [coastlineX(h.z) - h.reach, h.z]),
