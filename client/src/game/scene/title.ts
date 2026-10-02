@@ -53,8 +53,8 @@ const PAN_RAD = 0.6;
 /** Where there is no lake or meadow: over the trail's start, looking at the peak. */
 const HILLS_UP_M = 20;
 /** The trailhead: the camera this far behind the start, rising between these heights, looking this
- * far up the trail. */
-const START_BACK_M = 6;
+ * far up the trail. Close to the start: the hike's car is parked a few metres behind it. */
+const START_BACK_M = 1;
 const RISE_FROM_M = 1.6;
 const RISE_TO_M = 7.6;
 const TRAIL_LOOK_M = 30;
