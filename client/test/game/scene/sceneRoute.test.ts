@@ -114,4 +114,33 @@ describe("the scene route", () => {
     expect(run.hasWildlife).toBe(false);
     run.dispose();
   }, timeLimit(20000));
+
+  it("builds the title scene: no film models, the hike's parked car, and ready once the world is in", async () => {
+    const doc = installStandInDom();
+    let carLoads = 0;
+    let release: () => void = () => undefined;
+    const worldIn = vi.fn((_maxMs: number) => new Promise<void>((resolve) => { release = resolve; }));
+    const run = startSceneRoute(
+      {
+        canvas: nullCanvas(), container: asHtml(doc.createElement("div")), tier: "low", now: () => 0, raf: () => 0,
+        paint: (s, name) => new PBRMaterial(name, s), worldIn,
+        loadCar: async () => { carLoads += 1; return null; },
+      },
+      { t: 3, step: null },
+      "title",
+    );
+    const api = (globalThis as { dayhikeScene?: { ready: Promise<void>; time(): number } }).dayhikeScene!;
+    let readied = false;
+    void api.ready.then(() => { readied = true; });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(readied).toBe(false);
+    release();
+    await api.ready;
+    expect(worldIn).toHaveBeenCalledWith(60000);
+    expect([carLoads, api.time()]).toEqual([0, 3]);
+    expect(run.scene().getMeshByName("trailhead_car_box")).not.toBeNull();
+    expect(run.scene().getMeshByName("film_car_shadow")).toBeNull();
+    run.dispose();
+    vi.unstubAllGlobals();
+  }, timeLimit(120_000));
 });

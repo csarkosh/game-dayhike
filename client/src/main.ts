@@ -823,7 +823,7 @@ function render(container: HTMLDivElement): void {
           return;
         }
         container.appendChild(canvas);
-        const scene = startSceneRoute({ canvas, container, tier, ...(engine === null ? {} : { engine }) }, parseSceneSearch(location.search));
+        const scene = startSceneRoute({ canvas, container, tier, ...(engine === null ? {} : { engine }) }, parseSceneSearch(location.search), route.name);
         running = { dispose: () => scene.dispose() };
       });
     paintRoster();

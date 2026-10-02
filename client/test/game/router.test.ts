@@ -77,6 +77,7 @@ describe("parseRoute", () => {
   it("parses the scene route, and the seek and the step out of its search", () => {
     expect(parseRoute("/dayhike/scene/intro", BASE)).toEqual({ kind: "scene", name: "intro" });
     expect(parseRoute("/scene/intro", "/")).toEqual({ kind: "scene", name: "intro" });
+    expect(parseRoute("/dayhike/scene/title", BASE)).toEqual({ kind: "scene", name: "title" });
     expect(parseRoute("/dayhike/scene/other", BASE)).toEqual({ kind: "landing" });
     expect(parseSceneSearch("?t=12.5")).toEqual({ t: 12.5, step: null });
     expect(parseSceneSearch("?step=48")).toEqual({ t: null, step: 48 });
