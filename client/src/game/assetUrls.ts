@@ -50,10 +50,11 @@ const AUDIO_GLOB_URLS = import.meta.glob("../../assets/audio/*.mp3", {
 }) as Record<string, string>;
 
 /**
- * The intro's film and the title page's still, through the same mechanism.
- * Empty until each ships, and a title page or a Play without them is the
- * ordinary case until then: `videoUrl` and `stillUrl` give null rather than
- * throwing, and the page shows no video and no still.
+ * The intro's film and the title page's loop and still, through the same
+ * mechanism. Empty until each ships, and a title page or a Play without them
+ * is the ordinary case until then: `videoUrl`, `titleVideoUrl` and
+ * `titleStillUrl` give null rather than throwing, and the page shows no video
+ * and no still.
  */
 const VIDEO_GLOB_URLS = import.meta.glob("../../assets/video/*.mp4", {
   query: "?url",
@@ -122,9 +123,14 @@ export function videoUrl(): string | null {
   return Object.hasOwn(VIDEO_URLS, "video/intro.mp4") ? (VIDEO_URLS["video/intro.mp4"] as string) : null;
 }
 
-/** The title page's still (one frame of the film), or null until it ships. */
-export function stillUrl(): string | null {
-  return Object.hasOwn(IMAGE_URLS, "images/intro.still.webp") ? (IMAGE_URLS["images/intro.still.webp"] as string) : null;
+/** The title page's loop, or null until it ships. */
+export function titleVideoUrl(): string | null {
+  return Object.hasOwn(VIDEO_URLS, "video/title.mp4") ? (VIDEO_URLS["video/title.mp4"] as string) : null;
+}
+
+/** The title page's still, the loop's first frame, or null until it ships. */
+export function titleStillUrl(): string | null {
+  return Object.hasOwn(IMAGE_URLS, "images/title.still.webp") ? (IMAGE_URLS["images/title.still.webp"] as string) : null;
 }
 
 /**

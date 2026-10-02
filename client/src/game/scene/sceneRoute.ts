@@ -1,7 +1,7 @@
 /**
- * The scene route: the staged intro on its fixed world, with no local
- * player, the way the title page's backdrop ran until the still replaced
- * it. `?t` seeks and `?step` holds a frame; `window.dayhikeScene` lets a
+ * The scene route: a staged scene (the intro, or the title loop's tour) on
+ * its fixed world, with no local player, the way the title page's backdrop
+ * ran until the still replaced it. `?t` seeks and `?step` holds a frame; `window.dayhikeScene` lets a
  * recorder seek and draw one frame at a time. Everything built here is
  * disposed on leaving the route.
  */
@@ -12,7 +12,8 @@ import { parseLevel } from "../../sim/level.js";
 import { createForest } from "../../sim/forest.js";
 import { createWorld } from "../../sim/world.js";
 import type { WorldState } from "../../sim/types.js";
-import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "../../sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant, type LakeSource } from "../../sim/terrain.js";
+import { coveFor } from "../../sim/olympic.js";
 import { trailheadPlaces } from "../../sim/trailhead.js";
 import { createCharacterPool, type CharacterPool } from "../characterModel.js";
 import { loadContainer, loadUntilAborted } from "../modelLoad.js";
@@ -28,23 +29,29 @@ import { BOARD_IMAGE_URLS } from "../boardImages.js";
 import { POSTER_LAST_SEEN } from "../posterPanel.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "../../sim/signs.js";
 import { signSites } from "../../sim/placeNames.js";
-import { terrainMaterialFor } from "../renderer.js";
+import { terrainMaterialFor, type FreecamView } from "../renderer.js";
+import { whenSceneReady } from "../rendererSwap.js";
+import { READY_MAX_MS } from "../startReady.js";
+import { SETTLE_MAX_MS, WARM_FRAMES, cameraJumped } from "./cameraJump.js";
 import { createCaptionPanel } from "./captions.js";
 import { createCordTube } from "./cordTube.js";
 import { INTRO_CAR, INTRO_HOUR, INTRO_RANGER, INTRO_SEED_TOKEN, INTRO_WEATHER, introScene } from "./intro.js";
 import { createSceneClock, type SceneClock } from "./sceneClock.js";
 import { createScenePlayer } from "./scenePlayer.js";
+import { TITLE_HOUR, TITLE_SEED_TOKEN, TITLE_WEATHER, titleScene, type TitleWorld } from "./title.js";
 import { carModelOf, dimCabParts, type CarModel, type StageDeps } from "./sceneStage.js";
 
 export type DayhikeScene = {
   seek(t: number): void;
   frame(): Promise<void>;
   time(): number;
-  /** Resolves once the film's ranger and car have loaded or failed: a recorder waits on it. */
+  /** Resolves once the intro's ranger and car have loaded or failed, or the
+   * title's world is in around its first camera: a recorder waits on it. */
   ready: Promise<void>;
   engine(): "webgpu" | "webgl2";
 };
 export type SceneRun = { dispose(): void; worldState(): WorldState; scene(): BabylonScene; hasWildlife: boolean };
+export type SceneName = "intro" | "title";
 export type SceneRouteDeps = {
   canvas: HTMLCanvasElement;
   container: HTMLElement;
@@ -56,6 +63,10 @@ export type SceneRouteDeps = {
   raf?: (fn: (ms: number) => void) => number;
   /** The board's painter; a test with no canvas hands in its own. */
   paint?: BoardPainter;
+  /** Resolves when the world is in around the camera, or at `maxMs`. By
+   * default the scene's own readiness and the forest's layers; under Node's
+   * null engine the scene never says it is ready, so a test hands in its own. */
+  worldIn?: (maxMs: number) => Promise<void>;
 };
 
 /** How dark the film car's patch is against the hike's parked car's (its alpha). */
@@ -73,36 +84,58 @@ async function loadFilmCar(scene: BabylonScene, signal: AbortSignal): Promise<Pl
   }
 }
 
-export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null; step: number | null }): SceneRun {
+export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null; step: number | null }, name: SceneName = "intro"): SceneRun {
   setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
   const now = deps.now ?? (() => performance.now());
   const raf = deps.raf ?? ((fn) => requestAnimationFrame(fn));
-  const seed = seedFromToken(INTRO_SEED_TOKEN);
+  const title = name === "title";
+  const seed = seedFromToken(title ? TITLE_SEED_TOKEN : INTRO_SEED_TOKEN);
   const level = parseLevel(sandbox01);
   const forest = createForest(seed);
   const world = createWorld(level, seed, false);
   const clock: SceneClock = createSceneClock(now);
   const renderer = createRenderer(deps.canvas, level, forest, { tier: deps.tier, engine: deps.engine, clock: () => clock.time() * 1000, wildlife: false });
-  renderer.setWeather(INTRO_WEATHER, 0);
-  renderer.setHour(INTRO_HOUR);
+  renderer.setWeather(title ? TITLE_WEATHER : INTRO_WEATHER, 0);
+  renderer.setHour(title ? TITLE_HOUR : INTRO_HOUR);
+  const worldIn = deps.worldIn ?? ((maxMs: number) => whenSceneReady(renderer.scene, maxMs, renderer.forestReady));
 
   const variant = activeTerrainVariant();
   const graph = variant.trailGraph?.(seed);
   const roadCenterX = variant.roadCenterX;
   if (graph === undefined || roadCenterX === undefined) throw new Error("the scene's world has no road or trail");
   const places = trailheadPlaces(graph, roadCenterX, seed);
-  const road = { centerX: (z: number) => roadCenterX(seed, z), groundY: (x: number, z: number) => elevationAt(seed, x, z) };
-  const scene = introScene(road, {
-    car: places.car,
-    start: places.start,
-    board: places.board,
-    direction: carYaw(places.car, graph.trailhead) === 0 ? 1 : -1,
-  });
-
-  // The trailhead as the hike draws it, less the car: the board with its
-  // poster and the fingerposts, from the world's own search, so the film
-  // frames what a player meets. The scene's car moves; the hike's stands.
   const groundH = (x: number, z: number): number => elevationAt(seed, x, z);
+  const titleWorld = (): TitleWorld => {
+    const lake = (variant.waterBodies?.(seed) ?? []).find((b): b is LakeSource => b.kind === "lake") ?? null;
+    const meadow = graph.features.find((f) => f.kind === "meadow") ?? null;
+    const peak = graph.features[0]!;
+    const cove = coveFor(seed);
+    return {
+      ground: groundH,
+      seaLevel: variant.waterLevel ?? 0,
+      // Signed, positive inland, and one to one with x: the shoreline is where it is 0.
+      coastlineX: (z) => -(variant.coastDistance?.(seed, 0, z) ?? 0),
+      cove: { z0: cove.z0, halfWidth: cove.halfWidth },
+      water: lake === null ? null : { x: lake.x, z: lake.z, radius: lake.radius, level: lake.level },
+      meadow: meadow === null ? null : { x: meadow.x, z: meadow.z, radius: meadow.radius },
+      peak: { x: peak.x, z: peak.z, radius: peak.radius },
+      start: places.start,
+    };
+  };
+  const road = { centerX: (z: number) => roadCenterX(seed, z), groundY: groundH };
+  const scene = title
+    ? titleScene(titleWorld())
+    : introScene(road, {
+        car: places.car,
+        start: places.start,
+        board: places.board,
+        direction: carYaw(places.car, graph.trailhead) === 0 ? 1 : -1,
+      });
+
+  // The trailhead as the hike draws it: the board with its poster and the
+  // fingerposts, from the world's own search, so the film frames what a
+  // player meets. The title's tour has the hike's parked car too; in the
+  // intro the scene's car moves and the hike's is not there.
   const found = world.search;
   const hikerFirst = found === null ? "" : (found.hiker.name.split(" ")[0] as string);
   const sites = found === null ? [] : signSites(seed, graph.features, hikerFirst, found.body.pos);
@@ -111,7 +144,8 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     shadows: renderer.shadows,
     cover: renderer.cover,
   });
-  const trailhead = createTrailheadMeshes(renderer.scene, { board: places.board }, groundH, {
+  const trailheadSites = title ? { car: { site: places.car, trailhead: graph.trailhead }, board: places.board } : { board: places.board };
+  const trailhead = createTrailheadMeshes(renderer.scene, trailheadSites, groundH, {
     materialFor: (name) => terrainMaterialFor(renderer.scene, name),
     board: boardDrawingOf({
       seed,
@@ -132,12 +166,13 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   const loads = new AbortController();
   const pool = deps.pool ?? createCharacterPool();
   let disposed = false;
-  const rangerLoaded = pool.load(renderer.scene, [INTRO_RANGER]);
+  // The film's ranger and car are the intro's alone: the title's tour has no one in it.
+  const rangerLoaded = title ? Promise.resolve() : pool.load(renderer.scene, [INTRO_RANGER]);
   let car: CarModel | null = null;
   let carModel: PlacedModel | null = null;
   let carPatch: CarShadowPatch | null = null;
   let cordTube: ReturnType<typeof createCordTube> | null = null;
-  const carLoaded = (deps.loadCar ?? ((s) => loadFilmCar(s, loads.signal)))(renderer.scene).then((placed) => {
+  const carLoaded = title ? Promise.resolve() : (deps.loadCar ?? ((s) => loadFilmCar(s, loads.signal)))(renderer.scene).then((placed) => {
     if (placed === null || disposed) {
       placed?.dispose();
       return;
@@ -158,7 +193,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     carPatch.mesh.name = "film_car_shadow";
     carPatch.mesh.parent = placed.node;
   });
-  const ready = Promise.all([rangerLoaded, carLoaded]).then(() => undefined);
+  const ready = title ? worldIn(READY_MAX_MS) : Promise.all([rangerLoaded, carLoaded]).then(() => undefined);
 
   const black = document.createElement("div");
   black.className = "scene-black";
@@ -166,8 +201,14 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
   black.style.opacity = "1";
   deps.container.append(black);
   const captions = createCaptionPanel(deps.container);
+  /** The camera the stage last set, and the one the last drawn frame was drawn from. */
+  let lastView: FreecamView | null = null;
+  let drawnView: FreecamView | null = null;
   const stage: StageDeps = {
-    setFreecam: (view) => renderer.setFreecam(view),
+    setFreecam: (view) => {
+      lastView = view;
+      renderer.setFreecam(view);
+    },
     setDepthOfField: (on) => renderer.setDepthOfField(on),
     actor: (id) => pool.acquire(1, id),
     car,
@@ -195,6 +236,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     renderer.sync(world.state, -1, 0);
     renderer.scene.render();
     renderer.engine.endFrame();
+    drawnView = lastView;
   };
   const loop = (): void => {
     if (disposed || !looping) return;
@@ -214,13 +256,19 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
       clock.hold();
     },
     // Drawn now, and resolved on the animation frame after, when the
-    // picture has been presented and a screenshot reads it.
-    frame: () =>
-      new Promise<void>((resolve) => {
-        looping = false;
+    // picture has been presented and a screenshot reads it. After a cut the
+    // world is drawn in first (`cameraJump.ts`).
+    frame: async () => {
+      looping = false;
+      const before = drawnView;
+      drawOneFrame();
+      if (lastView !== null && cameraJumped(before, lastView)) {
+        for (let i = 0; i < WARM_FRAMES; i += 1) drawOneFrame();
+        await worldIn(SETTLE_MAX_MS);
         drawOneFrame();
-        raf(() => resolve());
-      }),
+      }
+      await new Promise<void>((resolve) => raf(() => resolve()));
+    },
     time: () => player.time(),
     ready,
     engine: () => (renderer.engine.isWebGPU ? "webgpu" : "webgl2"),

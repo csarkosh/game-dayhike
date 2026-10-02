@@ -116,10 +116,16 @@ describe("assetBytes", () => {
   });
 });
 
-import { stillUrl, videoUrl } from "../../src/game/assetUrls.js";
+import { titleStillUrl, titleVideoUrl, videoUrl } from "../../src/game/assetUrls.js";
 
 describe("the intro's files", () => {
-  it("gives the video's and the still's urls when they ship, and null when they do not", () => {
-    for (const v of [videoUrl(), stillUrl()]) expect(v === null || v.startsWith("/")).toBe(true);
+  it("gives the film's url when it ships, and null when it does not", () => {
+    const v = videoUrl();
+    expect(v === null || v.startsWith("/")).toBe(true);
+  });
+
+  it("gives the title film and its still as urls, or null before they ship", () => {
+    for (const url of [titleVideoUrl(), titleStillUrl()]) expect(url === null || url.startsWith("/")).toBe(true);
+    expect(titleVideoUrl() === null).toBe(titleStillUrl() === null);
   });
 });

@@ -476,10 +476,15 @@
     {
       "id": "intro",
       "output": "video/intro.mp4",
-      "bytes": 42497674,
+      "bytes": 42497674
+    },
+    {
+      "id": "title",
+      "output": "video/title.mp4",
+      "bytes": 17270210,
       "still": {
-        "output": "images/intro.still.webp",
-        "bytes": 119160
+        "output": "images/title.still.webp",
+        "bytes": 117088
       }
     }
   ]

@@ -9,9 +9,10 @@ export type Route =
   | { kind: "party"; lobbyId: string }
   /** A world. The token feeds the seed and nothing else. */
   | { kind: "game"; token: string }
-  /** A staged scene on its fixed world, with no player: the intro, viewable
-   * and steppable a frame at a time for its recording. */
-  | { kind: "scene"; name: "intro" };
+  /** A staged scene on its fixed world, with no player: the intro or the
+   * title loop's tour, viewable and steppable a frame at a time for its
+   * recording. */
+  | { kind: "scene"; name: "intro" | "title" };
 
 /**
  * The path the bundle is served under: `/dayhike/` on the web, `/` in the
@@ -61,6 +62,7 @@ export function parseRoute(pathname: string, base: string = BASE): Route {
   if (trimmed === "/credits") return { kind: "credits" };
   if (trimmed === "/settings") return { kind: "settings" };
   if (trimmed === "/scene/intro") return { kind: "scene", name: "intro" };
+  if (trimmed === "/scene/title") return { kind: "scene", name: "title" };
   const party = /^\/party\/([^/]+)$/.exec(trimmed);
   if (party) {
     const id = party[1] as string;
