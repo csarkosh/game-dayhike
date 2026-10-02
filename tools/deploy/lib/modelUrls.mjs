@@ -93,6 +93,16 @@ export function findAssetUrl(source, id, ext) {
   return findAssetUrls(source, [id], ext)[id] ?? null;
 }
 
+/** The films and the title still a built site references: read from the entry and every chunk it
+ * names together, since the asset-url map is in a chunk (`engineChoice-*.js`), not the entry. */
+export function filmUrls(source) {
+  return {
+    introFilm: findAssetUrl(source, 'intro', 'mp4'),
+    titleFilm: findAssetUrl(source, 'title', 'mp4'),
+    titleStill: findAssetUrl(source, 'title.still', 'webp'),
+  };
+}
+
 /** The URLs a built bundle references for the given model ids (`.glb`). */
 export function findModelUrls(source, ids) {
   return findAssetUrls(source, ids, 'glb');

@@ -14,7 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { fail, tfOutput } from './lib/preconditions.mjs';
 import { validateLatest } from './lib/desktopRelease.mjs';
-import { findAssetUrl, findChunkName, findChunkNames, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
+import { filmUrls, findChunkName, findChunkNames, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
 import { bundleMapProblems } from './lib/bundle.mjs';
 import { reach } from './lib/reach.mjs';
 
@@ -25,7 +25,7 @@ const legacyHost = tfOutput('legacy_domain_name');
 
 /** The title page's first load: the page, its scripts and styles, the still. */
 const TITLE_PAGE_MAX_BYTES = 1_500_000;
-/** The title still's weight, one frame of the film as WebP. */
+/** The title still's weight, the loop's first frame as WebP. */
 const STILL_MAX_BYTES = 200_000;
 
 const failures = [];
@@ -214,32 +214,38 @@ async function verify() {
     }
   }
 
-  // 4b'. The intro's film and the title page's still, where the build
-  // references them: each is allowed to be absent until it ships (a note,
-  // not a failure), and present it must be the real file, served immutable;
-  // the still under 200 KB, the weight the title page allows it. The film is
-  // read by its first twelve bytes only: `ftyp` at bytes 4 to 8 is an MP4.
+  // 4b'. The films and the title page's still, where the build references
+  // them: read from the entry and every chunk it names (the asset-url map is
+  // in a chunk, not the entry). Each is allowed to be absent until it ships
+  // (a note, not a failure), and present it must be the real file, served
+  // immutable; the still under 200 KB, the weight the title page allows it. A
+  // film is read by its first twelve bytes only: `ftyp` at bytes 4 to 8 is an
+  // MP4.
   if (bundleSource) {
-    const videoUrl = findAssetUrl(bundleSource, 'intro', 'mp4');
-    if (!videoUrl) {
-      console.log('  · the bundle references no intro film; none has shipped');
-    } else {
-      const res = await reach(`${siteOrigin}${videoUrl}`, { headers: { Range: 'bytes=0-11' } });
-      if (res.status !== 200 && res.status !== 206) {
-        failures.push(`${videoUrl} — got ${res.status}`);
-      } else {
-        const head = Buffer.from(await res.arrayBuffer());
-        check(head.subarray(4, 8).toString('latin1') === 'ftyp', 'the intro film is a real MP4', `bytes 4 to 8 were ${JSON.stringify(head.subarray(4, 8).toString('latin1'))}`);
-        check(
-          (res.headers.get('cache-control') ?? '').includes('immutable'),
-          'the intro film is served immutable',
-          `cache-control: ${res.headers.get('cache-control')}`,
-        );
+    const films = filmUrls(builtSource);
+    const checkFilm = async (url, label) => {
+      if (!url) {
+        console.log(`  · the build references no ${label}; none has shipped`);
+        return;
       }
-    }
-    const stillUrl = findAssetUrl(bundleSource, 'intro.still', 'webp');
+      const res = await reach(`${siteOrigin}${url}`, { headers: { Range: 'bytes=0-11' } });
+      if (res.status !== 200 && res.status !== 206) {
+        failures.push(`${url} — got ${res.status}`);
+        return;
+      }
+      const head = Buffer.from(await res.arrayBuffer());
+      check(head.subarray(4, 8).toString('latin1') === 'ftyp', `the ${label} is a real MP4`, `bytes 4 to 8 were ${JSON.stringify(head.subarray(4, 8).toString('latin1'))}`);
+      check(
+        (res.headers.get('cache-control') ?? '').includes('immutable'),
+        `the ${label} is served immutable`,
+        `cache-control: ${res.headers.get('cache-control')}`,
+      );
+    };
+    await checkFilm(films.introFilm, 'intro film');
+    await checkFilm(films.titleFilm, 'title film');
+    const stillUrl = films.titleStill;
     if (!stillUrl) {
-      console.log('  · the bundle references no title still; none has shipped');
+      console.log('  · the build references no title still; none has shipped');
     } else {
       const res = await reach(`${siteOrigin}${stillUrl}`);
       if (res.status !== 200) {
@@ -277,6 +283,8 @@ async function verify() {
       total += length > 0 ? length : body.byteLength;
     }
     check(total < TITLE_PAGE_MAX_BYTES, `the title page's first load is under ${TITLE_PAGE_MAX_BYTES} bytes`, `${total} bytes over ${named.length + 1} files`);
+    // The loop is fetched after the page's load, never with it.
+    check(!/\.mp4\b/.test(html), "the title page's html names no film", 'a film is named in the html');
   }
 
   // 4c. The WebGPU engine's translators shipped whole and are served as
