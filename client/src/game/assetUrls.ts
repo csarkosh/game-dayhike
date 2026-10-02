@@ -127,6 +127,16 @@ export function stillUrl(): string | null {
   return Object.hasOwn(IMAGE_URLS, "images/intro.still.webp") ? (IMAGE_URLS["images/intro.still.webp"] as string) : null;
 }
 
+/** The title page's loop, or null until it ships. */
+export function titleVideoUrl(): string | null {
+  return Object.hasOwn(VIDEO_URLS, "video/title.mp4") ? (VIDEO_URLS["video/title.mp4"] as string) : null;
+}
+
+/** The title page's still, the loop's first frame, or null until it ships. */
+export function titleStillUrl(): string | null {
+  return Object.hasOwn(IMAGE_URLS, "images/title.still.webp") ? (IMAGE_URLS["images/title.still.webp"] as string) : null;
+}
+
 /**
  * Resolves a catalog `output` ("models/<id>.glb") to the URL Vite serves it at
  * — content-hashed in a production build, the plain source path in dev and under
