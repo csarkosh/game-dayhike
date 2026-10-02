@@ -443,6 +443,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "governor.ts"),
       join(SRC, "game", "rainParams.ts"),
       join(SRC, "game", "lensParams.ts"),
+      join(SRC, "game", "oceanPhysics.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
