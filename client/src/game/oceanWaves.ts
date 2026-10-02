@@ -5,10 +5,16 @@
  * maths from the same atlas (`shaders/oceanSurface.fx`: `oceanSwellSum`,
  * `oceanSwellEval`); tests hold the two in lockstep.
  *
- * Each component's phase is φ = Ψ(d) + k0x·coastlineX(z) + k0z·z + θ, Ψ from
- * the tables at the coast distance d = x − coastlineX(z) and θ = phase0 − ωt
- * the frame's phase (`swellPhases`): far out the plane wave k0·x − ωt, near
- * shore the crests turned to the contours. The local height before breaking is
+ * Each component's phase is φ = Ψ(d, z) + k0x·coastlineX(z) + k0z·z + θ, Ψ
+ * from the tables at the coast distance d = x − coastlineX(z) and θ =
+ * phase0 − ωt the frame's phase (`swellPhases`): far out the plane wave
+ * k0·x − ωt, near shore the crests turned to the contours. The bay's and the
+ * cove's Ψ and kn blend by the phase weight wp (`OCEAN_PHASE_BLEND` wide), so
+ * Ψ = Ψ_bay + (Ψ_cove − Ψ_bay)·wp(z), and the wavevector's z part carries what
+ * that blend adds, (Ψ_cove − Ψ_bay)·dwp/dz, with the coastline's
+ * (k0x − kn)·dcoastlineX/dz, so the slopes, the normal and the Q cap follow
+ * the gradient of φ across the cove's ends as along the open coast. The depth, Weggel's a and b and the amplitude factor
+ * blend by the cove's window wc instead. The local height before breaking is
  * twice the envelope |Σ A e^{iφ}| of the shoaled, refracted, sheltered
  * components, so it rises and falls with the sets; where it passes Weggel's
  * γ_b·h the wave has broken, and its components are scaled down to the bore's
@@ -134,10 +140,22 @@ export function atlasRead(tables: OceanTables, row: number, column: number): [nu
   ];
 }
 
-/** The coastline row at z: (coastlineX, its slope dx/dz, the cove's weight). */
-export function coastRead(tables: OceanTables, z: number): [number, number, number] {
-  const r = atlasRead(tables, OCEAN_ROW_COAST, (z - tables.coastOriginZ) / OCEAN_COAST_STEP);
-  return [r[0], r[1], r[2]];
+/**
+ * The coastline row at z: [coastlineX, its slope dx/dz, the cove's weight wc,
+ * the phase weight wp, dwp/dz]. The first four are the linear read of the row's
+ * four channels; dwp/dz is the difference of the two texels that read mixes
+ * divided by OCEAN_COAST_STEP, the derivative of the linear read exactly (at a
+ * texel's own z, the one to its +z side), and 0 where the read is clamped.
+ */
+export function coastRead(tables: OceanTables, z: number): [number, number, number, number, number] {
+  const column = (z - tables.coastOriginZ) / OCEAN_COAST_STEP;
+  const r = atlasRead(tables, OCEAN_ROW_COAST, column);
+  const i0 = Math.floor(Math.min(Math.max(column, 0), tables.width - 1));
+  const i1 = Math.min(i0 + 1, tables.width - 1);
+  const row = OCEAN_ROW_COAST * tables.width;
+  const here = tables.data[(row + i0) * 4 + 3] as number;
+  const next = tables.data[(row + i1) * 4 + 3] as number;
+  return [r[0], r[1], r[2], r[3], column < 0 ? 0 : (next - here) / OCEAN_COAST_STEP];
 }
 
 /**
@@ -176,7 +194,7 @@ type Evaluation = {
 
 function evaluate(field: OceanField, phases: Float32Array, x: number, z: number): Evaluation {
   const t = field.tables;
-  const [cx, cdz, wc] = coastRead(t, z);
+  const [cx, cdz, wc, wp, wpDz] = coastRead(t, z);
   const d = x - cx;
   const column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;
   const deep = Math.min(d - OCEAN_D_MIN, 0);
@@ -204,13 +222,14 @@ function evaluate(field: OceanField, phases: Float32Array, x: number, z: number)
     const rc = atlasRead(t, OCEAN_ROW_COVE_FIRST + c, column);
     const k0x = k[0];
     const k0z = k[1];
-    const psi = rb[0] + (rc[0] - rb[0]) * wc + k0x * deep;
-    const kn = rb[1] + (rc[1] - rb[1]) * wc;
+    const dPsi = rc[0] - rb[0];
+    const psi = rb[0] + dPsi * wp + k0x * deep;
+    const kn = rb[1] + (rc[1] - rb[1]) * wp;
     const K = rb[2] + (rc[2] - rb[2]) * wc;
     const p = psi + k0x * cx + k0z * z + (phases[c] as number);
     phi[c] = p;
     kx[c] = kn;
-    kz[c] = k0z + (k0x - kn) * cdz;
+    kz[c] = k0z + (k0x - kn) * cdz + dPsi * wpDz;
     const A = k[3] * K * shelter;
     amp[c] = A;
     q0[c] = q[0];
@@ -289,7 +308,12 @@ function evaluate(field: OceanField, phases: Float32Array, x: number, z: number)
   };
 }
 
-/** The swell at the undisplaced point (x, z) under the frame's phases. */
+/**
+ * The swell at the undisplaced point (x, z) under the frame's phases. Its slopes
+ * are the gradient of the phase the evaluation sums: −∂height/∂x = Σ A·kn·sin φ
+ * and −∂height/∂z = Σ A·Kv.z·sin φ, Kv.z carrying the coastline's turn and the
+ * phase weight's change along z.
+ */
 export function swellAt(field: OceanField, phases: Float32Array, x: number, z: number): SwellSample {
   return evaluate(field, phases, x, z).sample;
 }

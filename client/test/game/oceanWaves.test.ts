@@ -1,13 +1,15 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/olympic.js";
-import { COVE_END_BLEND, coveFor } from "../../src/sim/olympic.js";
+import { coveFor } from "../../src/sim/olympic.js";
+import { elevationAt } from "../../src/sim/terrain.js";
 import {
   OCEAN_BORE_RATIO, OCEAN_BREAK_FULL, SHELTER_CHOP, SHELTER_SWELL, SHELTER_WIDTH,
   atlasRead, boreArrivals, coastRead, crestAt, oceanFieldFor, oceanFieldFromState, shelterAt, swellAt, swellNormal,
   swellPhases, type OceanField,
 } from "../../src/game/oceanWaves.js";
 import {
-  OCEAN_COAST_STEP, OCEAN_D_MIN, OCEAN_DRY_DEPTH, OCEAN_ROW_COAST, OCEAN_ROW_COVE_FIRST, OCEAN_ROW_COVE_PROFILE,
+  OCEAN_COAST_STEP, OCEAN_D_MIN, OCEAN_DRY_DEPTH, OCEAN_PHASE_BLEND, OCEAN_ROW_BAY_FIRST, OCEAN_ROW_COAST,
+  OCEAN_ROW_COVE_FIRST, OCEAN_ROW_COVE_PROFILE, coastProfilesFor, writeCoastRow,
 } from "../../src/game/oceanTables.js";
 import { SWELL_Q_SUM_MAX, type SwellState } from "../../src/game/oceanSwell.js";
 import { WEGGEL_GAMMA_MAX, breakerIndex } from "../../src/game/oceanPhysics.js";
@@ -58,9 +60,32 @@ describe("atlasRead and coastRead", () => {
     expect(atlasRead(t, OCEAN_ROW_COVE_PROFILE, 5000)).toEqual(raw(OCEAN_ROW_COVE_PROFILE, t.width - 1));
   });
 
-  it("read the coastline row by z from its origin", () => {
-    const z = t.coastOriginZ + 37 * OCEAN_COAST_STEP;
-    expect(coastRead(t, z)).toEqual(raw(OCEAN_ROW_COAST, 37).slice(0, 3));
+  it("read the coastline row by z from its origin: its four channels and the phase weight's slope to the +z side", () => {
+    for (const i of [37, 580, 640]) {
+      const z = t.coastOriginZ + i * OCEAN_COAST_STEP;
+      const here = raw(OCEAN_ROW_COAST, i);
+      const next = raw(OCEAN_ROW_COAST, i + 1);
+      const slope = ((next[3] as number) - (here[3] as number)) / OCEAN_COAST_STEP;
+      expect(coastRead(t, z)).toEqual([...here, slope]);
+      // Halfway to the next texel: the mean, with the same slope.
+      const mid = coastRead(t, z + OCEAN_COAST_STEP / 2);
+      here.forEach((v, ch) => expect(mid[ch]).toBeCloseTo((v + (next[ch] as number)) / 2, 7));
+      expect(mid[4]).toBe(slope);
+    }
+    // The flank of the cove's phase window has a slope to read: the weight falls 0.9 over 385 m.
+    expect(coastRead(t, t.coastOriginZ + 580 * OCEAN_COAST_STEP)[4]).toBeLessThan(-0.0005);
+  });
+
+  it("holds the phase weight's slope at 0 where the read is clamped, before the row's first texel", () => {
+    const f = oceanFieldFor(SEED, 1);
+    writeCoastRow(f.tables, coastProfilesFor(SEED), 2080);
+    expect(f.tables.coastOriginZ).toBe(0);
+    const first = coastRead(f.tables, 0);
+    expect(first[3]).toBeGreaterThan(0.9);
+    expect(first[4]).not.toBe(0);
+    const before = coastRead(f.tables, -100);
+    expect(before[3]).toBe(first[3]);
+    expect(before[4]).toBe(0);
   });
 });
 
@@ -228,38 +253,62 @@ describe("swellAt", () => {
     expect(step).toBeLessThan(0.05);
   }, timeLimit(60_000));
 
-  it("steps across the cove's ends no more than twice what the open coast steps along itself", () => {
-    const field = oceanFieldFromState(SEED, TYPICAL);
-    const { z0, halfWidth } = coveFor(SEED);
-    // A set's peak, as above.
-    const cx = shoreX(field, z0);
-    let peak = 0;
-    let at = 0;
-    for (let t = 0; t < 400; t += 0.25) {
-      const s = swellAt(field, swellPhases(field, t), cx - 69, z0);
-      if (s.unbroken > peak) [peak, at] = [s.unbroken, t];
-    }
-    const phases = swellPhases(field, at);
-    // The largest height difference between neighbours of a walk along the coast
-    // in 0.25 m steps, at distance d from the coastline, over the cove's end blend
-    // and 20 m either side of it.
-    const length = 2 * (COVE_END_BLEND + 20);
-    const walk = (from: number, d: number): number => {
+  it("holds the phase's change along z across the cove's ends under 0.75 of kn at every wet sample, from the tables", () => {
+    for (const seed of LOBBY_SEEDS.slice(0, 5)) {
+      const field = oceanFieldFor(seed);
+      const t = field.tables;
+      const { z0, halfWidth } = coveFor(seed);
+      let wet = 0;
       let worst = 0;
-      let prev = swellAt(field, phases, shoreX(field, from) + d, from).height;
-      for (let i = 1; i <= length / 0.25; i++) {
-        const z = from + i * 0.25;
-        const next = swellAt(field, phases, shoreX(field, z) + d, z).height;
-        worst = Math.max(worst, Math.abs(next - prev));
-        prev = next;
+      for (const d of [-30, -120, -250, -400]) {
+        const column = d - OCEAN_D_MIN;
+        const bay = atlasRead(t, OCEAN_ROW_BAY_FIRST, column);
+        const cove = atlasRead(t, OCEAN_ROW_COVE_FIRST, column);
+        for (const end of [-1, 1]) {
+          // From OCEAN_PHASE_BLEND short of the cove's end to OCEAN_PHASE_BLEND past it, a quarter metre at a time.
+          const from = z0 + end * (halfWidth - OCEAN_PHASE_BLEND);
+          const to = z0 + end * (halfWidth + OCEAN_PHASE_BLEND);
+          const steps = Math.round(Math.abs(to - from) / 0.25);
+          for (let i = 0; i <= steps; i++) {
+            const z = from + (end * i) / 4;
+            const [cx, , , wp, wpDz] = coastRead(t, z);
+            if (!(elevationAt(seed, cx + d, z) < -OCEAN_DRY_DEPTH)) continue;
+            wet++;
+            const kn = (bay[1] as number) + ((cove[1] as number) - (bay[1] as number)) * wp;
+            worst = Math.max(worst, Math.abs(((cove[0] as number) - (bay[0] as number)) * wpDz) / kn);
+          }
+        }
       }
-      return worst;
-    };
-    for (const d of [-30, -120]) {
-      // The open coast, well past the cove's far headland, carries no end.
-      const open = walk(z0 + halfWidth + COVE_END_BLEND + 20 + 300, d);
-      expect(walk(z0 - halfWidth - COVE_END_BLEND - 20, d)).toBeLessThan(2 * open);
-      expect(walk(z0 + halfWidth - COVE_END_BLEND - 20, d)).toBeLessThan(2 * open);
+      expect(wet).toBeGreaterThan(14_000);
+      expect(worst).toBeLessThanOrEqual(0.75);
+    }
+  }, timeLimit(60_000));
+
+  it("returns the slope of the phase it sums across the cove's ends: 250 m out, one component, a central difference of the height along z to 10 % and 0.002", () => {
+    for (const seed of LOBBY_SEEDS.slice(0, 5)) {
+      const field = oceanFieldFromState(seed, TYPICAL, 1);
+      const phases = swellPhases(field, 40);
+      const { z0, halfWidth } = coveFor(seed);
+      let wet = 0;
+      let misses = 0;
+      for (const end of [-1, 1]) {
+        // Each end from the cove's centre line, where the phase weight's slope changes sign, to OCEAN_PHASE_BLEND past the end.
+        const from = z0 + end;
+        const to = z0 + end * (halfWidth + OCEAN_PHASE_BLEND);
+        const steps = Math.round(Math.abs(to - from) / 0.25);
+        for (let i = 0; i <= steps; i++) {
+          const z = from + (end * i) / 4;
+          const x = coastRead(field.tables, z)[0] - 250;
+          if (!(elevationAt(seed, x, z) < -OCEAN_DRY_DEPTH)) continue;
+          wet++;
+          const along = (swellAt(field, phases, x, z + 0.05).height - swellAt(field, phases, x, z - 0.05).height) / 0.1;
+          // The sample's slope is minus the height's gradient: the normal's terms are (−∂h/∂x, 1, −∂h/∂z).
+          const slope = -swellAt(field, phases, x, z).slopeZ;
+          if (Math.abs(along - slope) > 0.1 * Math.abs(along) + 0.002) misses++;
+        }
+      }
+      expect(wet).toBeGreaterThan(1800);
+      expect(misses).toBe(0);
     }
   }, timeLimit(60_000));
 

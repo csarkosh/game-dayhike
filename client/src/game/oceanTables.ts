@@ -10,7 +10,11 @@
  * for each profile, Ψ(d) = ∫ kn, with kn the onshore wavenumber Snell's law
  * leaves it at each depth; far out Ψ is the plane wave's k0x·d. Past the shelf
  * break the tables take deep water (`deepWeight`), so the open swell is as long
- * as the real coast's rather than the 25 m floor's.
+ * as the real coast's rather than the 25 m floor's. The two profiles' phases
+ * differ by tens of radians near shore (the cove is deeper, so a crest runs
+ * ahead of the bay's), and a crest cannot change its phase by that over the
+ * cove's 60 m end blend: the phase passes from the bay's to the cove's over the
+ * wider OCEAN_PHASE_BLEND, by its own weight (`phaseWeight`).
  *
  * The atlas (RGBA32F, OCEAN_TABLE_SAMPLES wide, OCEAN_ATLAS_ROWS tall), column
  * i at d_i = OCEAN_D_MIN + i·OCEAN_D_STEP:
@@ -21,7 +25,8 @@
  *   sample each holds that sample's values;
  * - row 26, the components: texel 2c (k0x, k0z, ω, a0), texel 2c + 1 (q0, 0, 0, 0);
  * - row 27, the coastline along z from coastOriginZ every OCEAN_COAST_STEP:
- *   coastlineX, its slope dx/dz, the cove's weight, 0.
+ *   coastlineX, its slope dx/dz, the cove's weight (depth, Weggel's a and b and
+ *   the amplitude factor blend by it), the phase weight (Ψ and kn blend by it).
  */
 import {
   COVE_END_BLEND, SHELF_BREAK_DEPTH, SHELF_BREAK_WIDTH, coveFor, coveProfileD, shoreProfileD,
@@ -45,6 +50,14 @@ export const OCEAN_ROW_BAY_FIRST = 2;
 export const OCEAN_ROW_COVE_FIRST = 14;
 export const OCEAN_ROW_COMPONENTS = 26;
 export const OCEAN_ROW_COAST = 27;
+/**
+ * The along-shore span (m) over which a crest's phase passes from the bay's to
+ * the cove's: about the scale over which refraction smooths a crest built over a
+ * few hundred metres. The phase weight falls from 1 to 0 across the cove's end
+ * widened by this on each side, where the depth, a, b and the amplitude factor
+ * blend across it widened by COVE_END_BLEND.
+ */
+export const OCEAN_PHASE_BLEND = 250;
 /** At or below this depth (m) a sample is dry: the phase rows hold, the break is off. */
 export const OCEAN_DRY_DEPTH = 0.05;
 /** Sub-intervals of Simpson's rule in each table step of the phase integral. */
@@ -57,6 +70,8 @@ export type CoastProfiles = {
   coveDepth(d: number): { depth: number; slope: number };
   /** 1 − smootherstep(halfWidth − COVE_END_BLEND, halfWidth + COVE_END_BLEND, |z − z0|): the sim's along-shore window. */
   coveWeight(z: number): number;
+  /** 1 − smootherstep(halfWidth − OCEAN_PHASE_BLEND, halfWidth + OCEAN_PHASE_BLEND, |z − z0|): the weight of the cove's phase against the bay's. */
+  phaseWeight(z: number): number;
   /** x − coastDistance(seed, x, z), the same for any x. */
   coastlineX(z: number): number;
   /** Where each profile reaches SHELF_BREAK_DEPTH. */
@@ -105,6 +120,8 @@ export function coastProfilesFor(seed: number): CoastProfiles {
     coveDepth,
     coveWeight: (z) =>
       1 - smootherstep(cove.halfWidth - COVE_END_BLEND, cove.halfWidth + COVE_END_BLEND, Math.abs(z - cove.z0)),
+    phaseWeight: (z) =>
+      1 - smootherstep(cove.halfWidth - OCEAN_PHASE_BLEND, cove.halfWidth + OCEAN_PHASE_BLEND, Math.abs(z - cove.z0)),
     coastlineX,
     shelfBreakD: { bay: depthCrossing(bayDepth, SHELF_BREAK_DEPTH), cove: depthCrossing(coveDepth, SHELF_BREAK_DEPTH) },
     headlandTips: cove.heads.map((h): [number, number] => [coastlineX(h.z) - h.reach, h.z]),
@@ -221,7 +238,7 @@ export function writeCoastRow(tables: OceanTables, profiles: CoastProfiles, coas
     tables.data[o] = here;
     tables.data[o + 1] = (after - before) / (2 * OCEAN_COAST_STEP);
     tables.data[o + 2] = profiles.coveWeight(z);
-    tables.data[o + 3] = 0;
+    tables.data[o + 3] = profiles.phaseWeight(z);
     before = here;
     here = after;
   }

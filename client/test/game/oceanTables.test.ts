@@ -5,7 +5,7 @@ import { activeTerrainVariant } from "../../src/sim/terrain.js";
 import {
   OCEAN_ATLAS_ROWS, OCEAN_COAST_SAMPLES, OCEAN_COAST_STEP, OCEAN_D_MIN, OCEAN_D_STEP, OCEAN_DRY_DEPTH,
   OCEAN_ROW_BAY_FIRST, OCEAN_ROW_BAY_PROFILE, OCEAN_ROW_COAST, OCEAN_ROW_COMPONENTS, OCEAN_ROW_COVE_FIRST,
-  OCEAN_ROW_COVE_PROFILE, OCEAN_TABLE_SAMPLES,
+  OCEAN_PHASE_BLEND, OCEAN_ROW_COVE_PROFILE, OCEAN_TABLE_SAMPLES,
   buildOceanTables, coastProfilesFor, deepWeight, writeCoastRow, type CoastProfiles, type OceanTables,
 } from "../../src/game/oceanTables.js";
 import { refraction, shoalingFactor, waveNumber, weggelCoefficients, OCEAN_G } from "../../src/game/oceanPhysics.js";
@@ -79,6 +79,33 @@ describe("coastProfilesFor", () => {
     const coveMask = activeTerrainVariant().coveMask!;
     for (let z = cove.z0 - cove.halfWidth - 40; z <= cove.z0 + cove.halfWidth + 40; z += 7.3) {
       expect(p.coveWeight(z)).toBeCloseTo(coveMask(SEED, p.coastlineX(z) - 50, z), 12);
+    }
+  });
+
+  it("windows the phase along the shore over OCEAN_PHASE_BLEND past the cove's ends: half at each end, 0 beyond, wider than the cove's window past the ends", () => {
+    const cove = coveFor(SEED);
+    expect(OCEAN_PHASE_BLEND).toBe(250);
+    // The cove here is 270.4 m wide, narrower than the blend, so its centre is just under 1.
+    expect(cove.halfWidth).toBeCloseTo(135.2007332, 6);
+    expect(p.phaseWeight(cove.z0)).toBeCloseTo(0.91682, 5);
+    expect(p.phaseWeight(cove.z0 + cove.halfWidth)).toBeCloseTo(0.5, 12);
+    expect(p.phaseWeight(cove.z0 - cove.halfWidth)).toBeCloseTo(0.5, 12);
+    expect(p.phaseWeight(cove.z0 - cove.halfWidth - OCEAN_PHASE_BLEND)).toBe(0);
+    expect(p.phaseWeight(cove.z0 + cove.halfWidth + OCEAN_PHASE_BLEND)).toBe(0);
+    expect(p.phaseWeight(cove.z0 + 2000)).toBe(0);
+    for (const seed of LOBBY_SEEDS.slice(0, 50)) {
+      const q = coastProfilesFor(seed);
+      const c = coveFor(seed);
+      expect(c.halfWidth).toBeLessThan(OCEAN_PHASE_BLEND);
+      expect(q.phaseWeight(c.z0)).toBeLessThan(1);
+      expect(q.phaseWeight(c.z0)).toBeGreaterThan(0.9);
+      let prev = q.phaseWeight(c.z0);
+      for (let off = 1; off <= c.halfWidth + OCEAN_PHASE_BLEND + 5; off += 1) {
+        const w = q.phaseWeight(c.z0 + off);
+        expect(w).toBeLessThanOrEqual(prev);
+        if (off > c.halfWidth) expect(w).toBeGreaterThanOrEqual(q.coveWeight(c.z0 + off));
+        prev = w;
+      }
     }
   });
 
@@ -253,7 +280,7 @@ describe("the coastline row", () => {
     expect(tables.coastOriginZ).toBe(3044);
   });
 
-  it("holds the coastline, its slope by central difference and the cove's weight at each z", () => {
+  it("holds the coastline, its slope by central difference, the cove's weight and the phase weight at each z", () => {
     const { profiles, tables } = world(SEED);
     for (const j of [0, 1, 400, 520, 521, 1039]) {
       const z = tables.coastOriginZ + j * OCEAN_COAST_STEP;
@@ -262,9 +289,13 @@ describe("the coastline row", () => {
         (profiles.coastlineX(z + 4) - profiles.coastlineX(z - 4)) / 8, 6,
       );
       expect(texel(tables, OCEAN_ROW_COAST, j, 2)).toBe(Math.fround(profiles.coveWeight(z)));
-      expect(texel(tables, OCEAN_ROW_COAST, j, 3)).toBe(0);
+      expect(texel(tables, OCEAN_ROW_COAST, j, 3)).toBe(Math.fround(profiles.phaseWeight(z)));
     }
     expect(texel(tables, OCEAN_ROW_COAST, 520, 2)).toBe(1);
+    expect(texel(tables, OCEAN_ROW_COAST, 520, 3)).toBeCloseTo(0.91682, 5);
+    // Far from the cove both weights are 0.
+    expect(texel(tables, OCEAN_ROW_COAST, 0, 2)).toBe(0);
+    expect(texel(tables, OCEAN_ROW_COAST, 0, 3)).toBe(0);
   });
 
   it("refills that row alone on a recentre", () => {
