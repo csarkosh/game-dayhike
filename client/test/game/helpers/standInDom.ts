@@ -318,14 +318,19 @@ export class StandInSelect extends StandInElement {
 
 const eventOf = (type: string, target: StandInElement): StandInEvent => ({ type, target, defaultPrevented: false, preventDefault() {} });
 
-/** A `<video>`: it plays when asked unless told to refuse, as a browser that blocks autoplay does. */
+/** A `<video>`: it plays when asked unless told to refuse, as a browser that blocks autoplay does
+ * (a `NotAllowedError`), or unless the play is interrupted, as a `pause()` while it is pending does
+ * (an `AbortError`). */
 export class StandInVideo extends StandInElement {
   muted = false;
   paused = true;
   refusePlay = false;
+  interruptPlay = false;
   loads = 0;
   play(): Promise<void> {
-    if (this.refusePlay) return Promise.reject(new Error("NotAllowedError"));
+    const named = (name: string): Error => Object.assign(new Error(name), { name });
+    if (this.refusePlay) return Promise.reject(named("NotAllowedError"));
+    if (this.interruptPlay) return Promise.reject(named("AbortError"));
     this.paused = false;
     return Promise.resolve();
   }

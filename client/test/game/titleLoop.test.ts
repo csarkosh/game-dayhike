@@ -46,6 +46,18 @@ describe("the title loop on the page", () => {
     loop.dispose();
   });
 
+  it("keeps the loop when a play is interrupted rather than refused", async () => {
+    const doc = installStandInDom();
+    const container = doc.createElement("div");
+    const loop = createTitleLoop(asHtml(container), "/s.webp", "/v.mp4", fast);
+    const video = container.children[0] as StandInVideo;
+    video.interruptPlay = true;
+    video.dispatch("canplaythrough");
+    await tick();
+    expect([video.getAttribute("src"), video.loads, container.children[1]?.className]).toEqual(["/v.mp4", 0, "landing-bg ready gone"]);
+    loop.dispose();
+  });
+
   it("drops the download on stop, and leaves nothing behind on dispose", () => {
     const doc = installStandInDom();
     const container = doc.createElement("div");

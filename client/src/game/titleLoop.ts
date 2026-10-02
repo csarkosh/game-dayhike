@@ -38,7 +38,11 @@ export function createTitleLoop(container: HTMLElement, still: string | null, vi
         el.removeAttribute("src");
         el.load(); // drops the download in flight
       }
-      if (view.playing) el.play().catch(() => send("refused"));
+      // A play interrupted (a pause while it is pending, as a tab hidden just then makes) rejects
+      // with an `AbortError`: the browser has refused nothing, and the loop stays.
+      if (view.playing) el.play().catch((error: unknown) => {
+        if ((error as { name?: string } | null)?.name !== "AbortError") send("refused");
+      });
       else if (!el.paused) el.pause();
     }
     if (img !== null) img.className = view.still ? "landing-bg ready" : "landing-bg ready gone";
