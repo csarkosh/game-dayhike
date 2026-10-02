@@ -183,7 +183,8 @@ The page and the still: no engine, no models, no ground maps, no shader map befo
 the party's roster and the other links as today. The first load of the title page is under
 1.5 MB (a check). The looping title video comes later: a montage of several angles of a world,
 cut with dissolves, its loop's seam inside a dissolve so it is never seen, small enough to keep
-the page light; it takes the still's place and nothing else changes.
+the page light; it takes the still's place and nothing else changes. Designed in
+[`2026-10-01-title-loop.md`](2026-10-01-title-loop.md).
 
 ### 5.2 On Play
 
