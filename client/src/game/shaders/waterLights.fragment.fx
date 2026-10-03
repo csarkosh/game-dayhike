@@ -94,7 +94,7 @@ if (waterSkin.x > 0.0) {
 // spans more than a few of their cells.
 float wOceanPixel = max(length(wOceanDx), length(wOceanDy));
 float wFoamAge = oceanFoamLookAge(wOceanFoam.z);
-float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wFoamAge, wOceanPixel);
+float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wFoamAge, wOceanFoam.y, wOceanPixel);
 float wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel);
 wOceanCap *= 1.0 - wOceanFoam.y;
 float wFoam = max(wOceanLace, wOceanCap);

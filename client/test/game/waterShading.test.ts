@@ -3,7 +3,8 @@ import {
   WATER_ROWS, lakeWaterRow, lakeSkin, waterSkinOffset, CLEAR_LAKE_KD, WATER_F0, WATER_HORIZON, WATER_WIND_MAX, WATER_SKIN_DRIFT,
   fresnelSchlick, fresnelExact, transmission, meanKd, alphaFor,
   slopeVariance, roughnessFor, horizonSafeNormal,
-  OCEAN_CAP_CYCLES, OCEAN_CAP_PERIOD, OCEAN_FOAM_ALBEDO, OCEAN_FOAM_REFLECT_FRESH, OCEAN_LACE_THIN,
+  OCEAN_CAP_CYCLES, OCEAN_CAP_PERIOD, OCEAN_FOAM_ALBEDO, OCEAN_FOAM_REFLECT_FRESH, OCEAN_INNER_COVER, OCEAN_LACE_FIT_MAX,
+  OCEAN_LACE_THIN,
   capCycle, capCycleHash, capFires, foamCover, foamLookAge, foamShare, foamWhite, laceCover, laceLevel, oceanCapCells,
   oceanLace, waterSkinHash, waterSkinNoise,
 } from "../../src/game/waterShading.js";
@@ -212,36 +213,57 @@ describe("the foam's lace", () => {
     expect(laceCover(1, 0.05)).toBe(1);
   });
 
-  it("covers a fresh, full foam's share of the surface, a half, so that foam of albedo 0.8 reflects 0.4, never more than the fit's half", () => {
-    expect(foamShare(1, 0)).toBeCloseTo(0.5, 12);
-    expect(OCEAN_FOAM_REFLECT_FRESH / OCEAN_FOAM_ALBEDO).toBeLessThanOrEqual(0.5);
-    expect(foamShare(1, 0) * foamWhite(0)).toBeCloseTo(0.4, 12);
+  it("covers a fresh, full foam's share of the surface, a half, so that foam of albedo 0.8 reflects 0.4, with no inner surf", () => {
+    expect(foamShare(1, 0, 0)).toBeCloseTo(0.5, 12);
+    expect(foamShare(1, 0, 0) * foamWhite(0)).toBeCloseTo(0.4, 12);
   });
 
-  it("holds the quantile the shader fits to the lace's measured values, within 0.003 across the shares to a half", () => {
+  it("keeps every share it asks for inside the quantile fit's domain, 0.6", () => {
+    expect(OCEAN_LACE_FIT_MAX).toBe(0.6);
+    expect(OCEAN_FOAM_REFLECT_FRESH / OCEAN_FOAM_ALBEDO).toBeLessThanOrEqual(0.6);
+    expect(OCEAN_INNER_COVER).toBeLessThanOrEqual(0.6);
+    expect(OCEAN_INNER_COVER).toBe(0.6);
+  });
+
+  it("keeps the inner surf's foam at 0.6 of the surface however long since a crest, weighted by how broken the swell is", () => {
+    // The breaking weight times 0.6, or the ruled share where that is more: no thinning with age at full weight.
+    expect(foamShare(0.5, 0, 1)).toBeCloseTo(0.6, 12);
+    expect(foamShare(0.5, 12, 1)).toBeCloseTo(0.6, 12);
+    expect(foamShare(0.5, 100, 1)).toBeCloseTo(0.6, 12);
+    expect(foamShare(0.5, 100, 0.5)).toBeCloseTo(0.3, 12);
+    expect(foamShare(0.5, 10, 0.2)).toBeCloseTo(0.12, 12);
+    // At no weight the ruled share stands, thinning with age, as it did.
+    expect(foamShare(1, 0, 0)).toBeCloseTo(0.5, 12);
+    expect(foamShare(0.5, 100, 0)).toBeCloseTo(0, 5);
+    expect(foamShare(1, 0, 0.5)).toBeCloseTo(0.5, 12);
+  });
+
+  it("holds the quantile the shader fits to the lace's measured values, within 0.003 across the shares to 0.6", () => {
     const sorted = Float32Array.from(laceRidges()).sort();
-    for (const share of [0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5]) {
+    for (const share of [0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]) {
       const measured = sorted[Math.floor((1 - share) * sorted.length)] as number;
       expect(Math.abs(laceLevel(share) - measured), String(share)).toBeLessThan(0.003);
     }
     expect(laceLevel(0)).toBe(1);
   }, timeLimit(30_000));
 
-  it("covers the share it is asked for, within 0.01 at 0.05, 0.1, 0.25 and 0.5", () => {
+  it("covers the share it is asked for, within 0.01 at 0.05, 0.1, 0.25, 0.5 and 0.6", () => {
     const ridges = laceRidges();
-    for (const share of [0.05, 0.1, 0.25, 0.5]) {
+    for (const share of [0.05, 0.1, 0.25, 0.5, 0.6]) {
       expect(Math.abs(meanOver(ridges, (r) => laceCover(r, share)) - share), String(share)).toBeLessThan(0.01);
     }
   }, timeLimit(30_000));
 
   it("reflects 0.40 of the light, within 0.02, when fresh and full: its albedo times its mean cover", () => {
-    const cover = meanOver(laceRidges(), (r) => foamCover(r, 1, 0, 0));
+    // No breaking weight: the ruled share on its own, as before the inner surf's.
+    const cover = meanOver(laceRidges(), (r) => foamCover(r, 1, 0, 0, 0));
     expect(Math.abs(foamWhite(0) * cover - 0.4)).toBeLessThan(0.02);
   }, timeLimit(30_000));
 
   it("reflects 0.06 of the light, within 0.01, ten seconds after a lone bore's crest", () => {
     // The trailing foam's amount there is exp(-10 / OCEAN_FOAM_LIFE), 0.6065306597126334, and its age 10 s.
-    const cover = meanOver(laceRidges(), (r) => foamCover(r, 0.6065306597126334, 10, 0));
+    // (No breaking weight: the ruled share on its own, where the inner surf's floor does not stand.)
+    const cover = meanOver(laceRidges(), (r) => foamCover(r, 0.6065306597126334, 10, 0, 0));
     expect(Math.abs(foamWhite(10) * cover - 0.06)).toBeLessThan(0.01);
     // The thinning time that makes it so, solved: 8.08 s, written 8.1 to one decimal.
     const solved = -10 / Math.log(0.06 / (foamWhite(10) * 0.6065306597126334 * (OCEAN_FOAM_REFLECT_FRESH / OCEAN_FOAM_ALBEDO)));
@@ -249,21 +271,37 @@ describe("the foam's lace", () => {
     expect(OCEAN_LACE_THIN).toBe(8.1);
   }, timeLimit(30_000));
 
+  it("covers 0.60 of the inner surf, within 0.02, and reflects its albedo times that, however old its foam", () => {
+    const ridges = laceRidges();
+    // Full breaking weight, the foam's amount the inner surf's floor (0.5), its age long past the ruled share's thinning.
+    for (const age of [12, 30]) {
+      const near = meanOver(ridges, (r) => foamCover(r, 0.5, age, 1, 0));
+      expect(Math.abs(near - 0.6), `age ${age}`).toBeLessThan(0.02);
+      expect(Math.abs(foamWhite(age) * near - foamWhite(age) * 0.6), `age ${age}`).toBeLessThan(0.02);
+      // Near and far agree: the far value is the same share.
+      const far = meanOver(ridges, (r) => foamCover(r, 0.5, age, 1, 3));
+      expect(Math.abs(near - far), `age ${age}`).toBeLessThan(0.02);
+      expect(far).toBeCloseTo(0.6, 9);
+    }
+  }, timeLimit(30_000));
+
   it("keeps the surf's brightness across the level-of-detail band: the near mean and the far value within 0.02", () => {
     const ridges = laceRidges();
-    for (const foam of [0.5, 1]) {
-      for (const age of [0, 5, 10]) {
-        const share = foamShare(foam, age);
-        // A pixel from nothing to the cell's tenth (the band's start, 0.3 m), through the band, to two fifths (1.2 m) and beyond.
-        for (const pixel of [0, 0.3, 0.6, 0.9, 1.2, 3]) {
-          const gap = Math.abs(meanOver(ridges, (r) => foamCover(r, foam, age, pixel)) - share);
-          expect(gap, `foam ${foam} age ${age} pixel ${pixel}`).toBeLessThan(0.02);
+    for (const breaking of [0, 0.5, 1]) {
+      for (const foam of [0.5, 1]) {
+        for (const age of [0, 5, 10]) {
+          const share = foamShare(foam, age, breaking);
+          // A pixel from nothing to the cell's tenth (the band's start, 0.3 m), through the band, to two fifths (1.2 m) and beyond.
+          for (const pixel of [0, 0.3, 0.6, 0.9, 1.2, 3]) {
+            const gap = Math.abs(meanOver(ridges, (r) => foamCover(r, foam, age, breaking, pixel)) - share);
+            expect(gap, `weight ${breaking} foam ${foam} age ${age} pixel ${pixel}`).toBeLessThan(0.02);
+          }
+          // Past the band the cover is the share itself.
+          expect(foamCover(0.5, foam, age, breaking, 1.2)).toBeCloseTo(share, 12);
         }
-        // Past the band the cover is the share itself.
-        expect(foamCover(0.5, foam, age, 1.2)).toBeCloseTo(share, 12);
       }
     }
-  }, timeLimit(60_000));
+  }, timeLimit(120_000));
 
   it("takes the swell's age as the foam's, except on the roll at the crest's front, where it is fresh", () => {
     expect(foamLookAge(0, 12)).toBe(0);

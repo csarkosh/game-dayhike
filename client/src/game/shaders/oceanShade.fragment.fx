@@ -26,27 +26,35 @@ float oceanUndrawnVariance(float u10, float shelter, float drawn) {
 // the surface fresh foam reflects (what its lace of OCEAN_FOAM_ALBEDO covers is
 // that over the albedo). The foam's lace thins by a factor e every
 // OCEAN_LACE_THIN seconds (8.08 solved, to one decimal) so a lone bore's
-// trailing foam, ten seconds on, reflects 6 %. The lace's cell (m), its drift
-// along the swell's travel (m/s) and its edge's softness.
+// trailing foam, ten seconds on, reflects 6 %. The inner surf, where the
+// broken swell renews the foam every period, keeps OCEAN_INNER_COVER of the
+// surface in foam whatever the time since the last crest, weighted by how
+// broken the swell is (foam over 0.35 to 0.55 of the surf zone on average and
+// nearly all of its inner part). The lace's cell (m), its drift along the
+// swell's travel (m/s) and its edge's softness.
 const float OCEAN_FOAM_ALBEDO = 0.8;
 const float OCEAN_FOAM_ALBEDO_OLD = 0.5;
 const float OCEAN_FOAM_REFLECT_FRESH = 0.4;
 const float OCEAN_LACE_THIN = 8.1;
+const float OCEAN_INNER_COVER = 0.6;
 const float OCEAN_LACE_TILE = 3.0;
 const float OCEAN_LACE_DRIFT = 0.4;
 const float OCEAN_LACE_SOFT = 0.06;
 // The lace's noise: the coarse octave's weight (the fine octave has the rest),
 // the fine octave's cell as a fraction of the coarse one's, and its shift. The
 // level a given cover lies above, as a polynomial in the cover's square root,
-// fitted to the noise's measured quantiles (error under 0.003 for covers to a
-// half, with the soft edge centred on it), and the cover under which the lace
-// is held back, so none shows where there is no foam.
+// fitted to the noise's measured quantiles over the covers up to
+// OCEAN_LACE_FIT_MAX (error under 0.002, with the soft edge centred on it), and
+// the cover under which the lace is held back, so none shows where there is no
+// foam.
 const float OCEAN_LACE_WEIGHT = 0.65;
 const float OCEAN_LACE_FINE = 0.37;
 const float OCEAN_LACE_FINE_SHIFT = 19.0;
-const float OCEAN_LACE_FIT_A = 0.4313;
-const float OCEAN_LACE_FIT_B = -0.0802;
-const float OCEAN_LACE_FIT_C = 0.2164;
+const float OCEAN_LACE_FIT_A = 0.4101;
+const float OCEAN_LACE_FIT_B = 0.1029;
+const float OCEAN_LACE_FIT_C = -0.2382;
+const float OCEAN_LACE_FIT_D = 0.3427;
+const float OCEAN_LACE_FIT_MAX = 0.6;
 const float OCEAN_LACE_ONSET = 0.01;
 // A pattern is drawn whole while a pixel spans under a tenth of its size and
 // has faded to its mean by two fifths of it.
@@ -87,16 +95,18 @@ float oceanFoamLookAge(float foamAge) {
 }
 
 // The share of the surface a foam's lace covers on average: the foam's amount
-// times the share a full, fresh foam covers, thinning with its age.
-float oceanFoamShare(float foam, float lookAge) {
-  return foam * (OCEAN_FOAM_REFLECT_FRESH / OCEAN_FOAM_ALBEDO) * exp(-lookAge / OCEAN_LACE_THIN);
+// times the share a full, fresh foam covers, thinning with its age, or the
+// inner surf's, its breaking weight times OCEAN_INNER_COVER, whichever is the
+// more. The inner surf's foam is renewed by every bore, so it does not thin.
+float oceanFoamShare(float foam, float lookAge, float breaking) {
+  return max(foam * (OCEAN_FOAM_REFLECT_FRESH / OCEAN_FOAM_ALBEDO) * exp(-lookAge / OCEAN_LACE_THIN), breaking * OCEAN_INNER_COVER);
 }
 
 // The lace's value that a share of the surface lies above: the quantile at
 // one less the share, in closed form.
 float oceanLaceLevel(float share) {
-  float s = sqrt(clamp(share, 0.0, 0.5));
-  return 1.0 - s * (OCEAN_LACE_FIT_A + s * (OCEAN_LACE_FIT_B + s * OCEAN_LACE_FIT_C));
+  float s = sqrt(clamp(share, 0.0, OCEAN_LACE_FIT_MAX));
+  return 1.0 - s * (OCEAN_LACE_FIT_A + s * (OCEAN_LACE_FIT_B + s * (OCEAN_LACE_FIT_C + s * OCEAN_LACE_FIT_D)));
 }
 
 // The share of the surface the foam covers: the lace above the level that
@@ -104,8 +114,8 @@ float oceanLaceLevel(float share) {
 // thinning lines as the foam ages. Where a lace cell spans under a few pixels
 // the share stands in for it, so the net never shimmers and the surf keeps
 // its brightness across the distance.
-float oceanFoamCover(vec2 p, float foam, float lookAge, float pixel) {
-  float share = oceanFoamShare(foam, lookAge);
+float oceanFoamCover(vec2 p, float foam, float lookAge, float breaking, float pixel) {
+  float share = oceanFoamShare(foam, lookAge, breaking);
   float level = oceanLaceLevel(share);
   float lace = smoothstep(level - 0.5 * OCEAN_LACE_SOFT, level + 0.5 * OCEAN_LACE_SOFT, oceanLace(p)) * smoothstep(0.0, OCEAN_LACE_ONSET, share);
   return mix(lace, share, smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / OCEAN_LACE_TILE));
