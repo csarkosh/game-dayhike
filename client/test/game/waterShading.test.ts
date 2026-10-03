@@ -3,7 +3,11 @@ import {
   WATER_ROWS, lakeWaterRow, lakeSkin, waterSkinOffset, CLEAR_LAKE_KD, WATER_F0, WATER_HORIZON, WATER_WIND_MAX, WATER_SKIN_DRIFT,
   fresnelSchlick, fresnelExact, transmission, meanKd, alphaFor,
   slopeVariance, roughnessFor, horizonSafeNormal,
+  OCEAN_CAP_CYCLES, OCEAN_CAP_PERIOD, OCEAN_FOAM_ALBEDO, OCEAN_FOAM_REFLECT_FRESH, OCEAN_LACE_THIN,
+  capCycle, capCycleHash, capFires, foamCover, foamLookAge, foamShare, foamWhite, laceCover, laceLevel, oceanCapCells,
+  oceanLace, waterSkinHash, waterSkinNoise,
 } from "../../src/game/waterShading.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("Fresnel for water", () => {
   it("is F0 = 0.02 straight down and 1 at grazing", () => {
@@ -161,5 +165,191 @@ describe("waterSkinOffset", () => {
     expect(waterSkinOffset(1)).not.toBe(waterSkinOffset(2));
     expect(waterSkinOffset(-1)).toBeGreaterThanOrEqual(0);
     expect(waterSkinOffset(-1)).toBeLessThan(4096);
+  });
+});
+
+// The lace's distribution, measured the way the fit was: 2^20 points of a square kilometre at one time.
+const LACE_POINTS = 1 << 20;
+let laceSample: Float32Array | null = null;
+function laceRidges(): Float32Array {
+  if (laceSample !== null) return laceSample;
+  const ridges = new Float32Array(LACE_POINTS);
+  // A low-discrepancy sequence (the plastic number's), so the points tile the square evenly.
+  for (let n = 0; n < LACE_POINTS; n++) {
+    const x = 1000 * (0.5 + (n + 1) * 0.7548776662466927 - Math.floor(0.5 + (n + 1) * 0.7548776662466927));
+    const z = 1000 * (0.5 + (n + 1) * 0.5698402909980532 - Math.floor(0.5 + (n + 1) * 0.5698402909980532));
+    ridges[n] = oceanLace(x, z, 0.731, 0.8, 0.6, 123.4);
+  }
+  laceSample = ridges;
+  return ridges;
+}
+function meanOver(ridges: Float32Array, f: (ridge: number) => number): number {
+  let sum = 0;
+  for (let i = 0; i < ridges.length; i++) sum += f(ridges[i] as number);
+  return sum / ridges.length;
+}
+
+describe("the white water's hash and noise", () => {
+  it("are the water's sine-free hash and value noise, in doubles", () => {
+    expect(waterSkinHash(0, 0)).toBe(0);
+    expect(waterSkinHash(1, 0)).toBeCloseTo(0.8985930026147315, 12);
+    expect(waterSkinHash(3, 7)).toBeCloseTo(0.5719091971150192, 12);
+    expect(waterSkinHash(101, 250)).toBeCloseTo(0.3412801855629368, 12);
+    expect(waterSkinHash(511, 0)).toBeCloseTo(0.9256653240991, 12);
+    expect(waterSkinHash(12.5, 3.25)).toBeCloseTo(0.17377900379210587, 12);
+    expect(waterSkinNoise(0, 0)).toBe(0);
+    expect(waterSkinNoise(2.5, 3.25)).toBeCloseTo(0.38941598411964407, 12);
+    expect(waterSkinNoise(100.1, -37.9)).toBeCloseTo(0.330381180402622, 12);
+  });
+});
+
+describe("the foam's lace", () => {
+  it("is nothing without a share, and a sheet above the level a great share sits at", () => {
+    for (const ridge of [0, 0.5, 0.9, 1]) expect(laceCover(ridge, 0)).toBe(0);
+    expect(laceCover(0.3, 0.5)).toBe(0);
+    expect(laceCover(0.95, 0.5)).toBe(1);
+    expect(laceCover(0.2, 0.05)).toBe(0);
+    expect(laceCover(1, 0.05)).toBe(1);
+  });
+
+  it("covers a fresh, full foam's share of the surface, a half, so that foam of albedo 0.8 reflects 0.4, never more than the fit's half", () => {
+    expect(foamShare(1, 0)).toBeCloseTo(0.5, 12);
+    expect(OCEAN_FOAM_REFLECT_FRESH / OCEAN_FOAM_ALBEDO).toBeLessThanOrEqual(0.5);
+    expect(foamShare(1, 0) * foamWhite(0)).toBeCloseTo(0.4, 12);
+  });
+
+  it("holds the quantile the shader fits to the lace's measured values, within 0.003 across the shares to a half", () => {
+    const sorted = Float32Array.from(laceRidges()).sort();
+    for (const share of [0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5]) {
+      const measured = sorted[Math.floor((1 - share) * sorted.length)] as number;
+      expect(Math.abs(laceLevel(share) - measured), String(share)).toBeLessThan(0.003);
+    }
+    expect(laceLevel(0)).toBe(1);
+  }, timeLimit(30_000));
+
+  it("covers the share it is asked for, within 0.01 at 0.05, 0.1, 0.25 and 0.5", () => {
+    const ridges = laceRidges();
+    for (const share of [0.05, 0.1, 0.25, 0.5]) {
+      expect(Math.abs(meanOver(ridges, (r) => laceCover(r, share)) - share), String(share)).toBeLessThan(0.01);
+    }
+  }, timeLimit(30_000));
+
+  it("reflects 0.40 of the light, within 0.02, when fresh and full: its albedo times its mean cover", () => {
+    const cover = meanOver(laceRidges(), (r) => foamCover(r, 1, 0, 0));
+    expect(Math.abs(foamWhite(0) * cover - 0.4)).toBeLessThan(0.02);
+  }, timeLimit(30_000));
+
+  it("reflects 0.06 of the light, within 0.01, ten seconds after a lone bore's crest", () => {
+    // The trailing foam's amount there is exp(-10 / OCEAN_FOAM_LIFE), 0.6065306597126334, and its age 10 s.
+    const cover = meanOver(laceRidges(), (r) => foamCover(r, 0.6065306597126334, 10, 0));
+    expect(Math.abs(foamWhite(10) * cover - 0.06)).toBeLessThan(0.01);
+    // The thinning time that makes it so, solved: 8.08 s, written 8.1 to one decimal.
+    const solved = -10 / Math.log(0.06 / (foamWhite(10) * 0.6065306597126334 * (OCEAN_FOAM_REFLECT_FRESH / OCEAN_FOAM_ALBEDO)));
+    expect(solved).toBeCloseTo(8.08, 2);
+    expect(OCEAN_LACE_THIN).toBe(8.1);
+  }, timeLimit(30_000));
+
+  it("keeps the surf's brightness across the level-of-detail band: the near mean and the far value within 0.02", () => {
+    const ridges = laceRidges();
+    for (const foam of [0.5, 1]) {
+      for (const age of [0, 5, 10]) {
+        const share = foamShare(foam, age);
+        // A pixel from nothing to the cell's tenth (the band's start, 0.3 m), through the band, to two fifths (1.2 m) and beyond.
+        for (const pixel of [0, 0.3, 0.6, 0.9, 1.2, 3]) {
+          const gap = Math.abs(meanOver(ridges, (r) => foamCover(r, foam, age, pixel)) - share);
+          expect(gap, `foam ${foam} age ${age} pixel ${pixel}`).toBeLessThan(0.02);
+        }
+        // Past the band the cover is the share itself.
+        expect(foamCover(0.5, foam, age, 1.2)).toBeCloseTo(share, 12);
+      }
+    }
+  }, timeLimit(60_000));
+
+  it("takes the swell's age as the foam's, except on the roll at the crest's front, where it is fresh", () => {
+    expect(foamLookAge(0, 12)).toBe(0);
+    expect(foamLookAge(5, 12)).toBeCloseTo(5, 12);
+    expect(foamLookAge(10.9, 12)).toBeCloseTo(10.848901995803457, 9);
+    expect(foamLookAge(11.9, 12)).toBeCloseTo(0.25605423078037204, 9);
+    expect(foamLookAge(12, 12)).toBeCloseTo(0, 12);
+  });
+});
+
+describe("the whitecap cells", () => {
+  it("fire only while their hash is under the chance, so none fires at a chance of none", () => {
+    expect(capFires(0, 0)).toBe(0);
+    expect(capFires(0.5, 0.5)).toBe(0);
+    expect(capFires(0.49, 0.5)).toBe(1);
+    expect(capFires(0, 1e-9)).toBe(1);
+    // Nowhere, at no coverage, whatever the cell, the hour or the pixel.
+    for (let i = 0; i < 2000; i++) {
+      const x = i * 7.31;
+      expect(oceanCapCells(x, -x * 0.37, i * 1.7, 3, 4, 0.731, () => 0, 0)).toBe(0);
+    }
+  });
+
+  it("cover the coverage by construction, within 0.003 at 0.02, 0.05 and 0.1, and are the coverage itself past a few pixels", () => {
+    for (const coverage of [0.02, 0.05, 0.1]) {
+      let sum = 0;
+      const n = 1 << 19;
+      for (let i = 0; i < n; i++) {
+        const x = 1000 * ((0.5 + (i + 1) * 0.7548776662466927) % 1);
+        const z = 1000 * ((0.5 + (i + 1) * 0.5698402909980532) % 1);
+        const t = 3000 * ((0.3 + i * 0.618033988749895) % 1);
+        sum += oceanCapCells(x, z, t, 10, 5, 0.731, () => coverage, 0);
+      }
+      expect(Math.abs(sum / n - coverage), String(coverage)).toBeLessThan(0.003);
+      expect(oceanCapCells(12.3, 45.6, 78.9, 10, 5, 0.731, () => coverage, 1.2)).toBe(coverage);
+    }
+  }, timeLimit(60_000));
+
+  it("draw a hash fresh every cycle: a cap is not followed by one on the next cycle a cell away", () => {
+    const chance = 0.3;
+    let fired = 0;
+    const joint = [0, 0, 0, 0];
+    const offsets: [number, number][] = [[-3, 0], [3, 0], [0, -3], [1, 0]];
+    let cells = 0;
+    for (let hx = 8; hx < 136; hx++) {
+      for (let hz = 8; hz < 136; hz++) {
+        for (let n = 0; n < OCEAN_CAP_CYCLES - 1; n++) {
+          const f = capFires(capCycleHash(hx, hz, n), chance);
+          fired += f;
+          cells++;
+          offsets.forEach(([dx, dz], j) => {
+            joint[j] = (joint[j] as number) + f * capFires(capCycleHash(hx + dx, hz + dz, n + 1), chance);
+          });
+        }
+      }
+    }
+    expect(Math.abs(fired / cells - chance)).toBeLessThan(0.005);
+    // Independent cycles would fire together a chance squared, 0.09, of the time. The cell-stepping hash did a whole chance.
+    joint.forEach((j, i) => expect(Math.abs(j / cells - 0.09), `offset ${i}`).toBeLessThan(0.01));
+  }, timeLimit(60_000));
+
+  it("keep each cycle whole across the hour and every fold: the clock folds by the pattern's repeat", () => {
+    expect(OCEAN_CAP_CYCLES * OCEAN_CAP_PERIOD).toBe(485);
+    for (const phase of [0, 0.123, 0.5, 0.97]) {
+      for (const time of [0.3, 484.9, 485.2, 3599.9, 3600.1, 7199.95, 7200.05, 100000.3]) {
+        // The cycle with no fold at all: its index counted from the start, its place in it.
+        const cycle = time / OCEAN_CAP_PERIOD + phase;
+        const { n, frac } = capCycle(time, phase);
+        expect(n, `${phase} at ${time}`).toBe(Math.floor(cycle) % OCEAN_CAP_CYCLES);
+        expect(frac, `${phase} at ${time}`).toBeCloseTo(cycle - Math.floor(cycle), 6);
+      }
+    }
+  });
+
+  it("decide whether a cap fires by the coverage at its centre, so a lee's gradient never cuts it", () => {
+    // Two points of one cell ask for the coverage first at the same place, the cap's centre, however they differ.
+    const asked: [number, number][][] = [[], []];
+    [[12.3, 45.6], [13.1, 47.9]].forEach(([x, z], i) => {
+      oceanCapCells(x as number, z as number, 78.9, 0, 0, 0, (px, pz) => {
+        (asked[i] as [number, number][]).push([px, pz]);
+        return 0.05;
+      }, 0);
+    });
+    expect((asked[0] as [number, number][])[0]).toEqual((asked[1] as [number, number][])[0]);
+    const [cx, cz] = (asked[0] as [number, number][])[0] as [number, number];
+    expect(Math.floor(cx / 5)).toBe(2);
+    expect(Math.floor(cz / 5)).toBe(9);
   });
 });

@@ -10,7 +10,7 @@
 import { clamp01 } from "./colour.js";
 import { CLUTTER_WATER_MURK_HI, CLUTTER_WATER_MURK_LO } from "../sim/clutter.js";
 import { WATER_BASE_SPACING, WATER_RING_CELLS } from "./water.js";
-import { OCEAN_FOAM_LIFE } from "./oceanWaves.js";
+import { OCEAN_FOAM_LIFE, OCEAN_ROLL_WIDTH } from "./oceanWaves.js";
 
 /** One body of water, from the world at build time (spec §7). */
 export type WaterBody = {
@@ -216,16 +216,40 @@ export function oceanRingCell(dx: number, dz: number): number {
 }
 
 /**
- * The white water's look (spec §5): fresh foam's albedo and old foam's, under the lace that thins the
- * cover itself (fresh foam reflects about 40 % of the surface it lies on, old foam 3 to 10 %: its albedo
- * times the share the lace covers); the lace's cell (m), its drift along the swell's travel (m/s) and its
- * edge's softness. Mirrored in shaders/oceanShade.fragment.fx.
+ * The white water's look (spec §5): fresh foam's albedo and old foam's, and the share of the surface fresh
+ * foam reflects (OCEAN_FOAM_REFLECT_FRESH, 40 %, spec §5: the lace covers that over OCEAN_FOAM_ALBEDO of the
+ * surface, see `foamShare`). The lace thins by a factor e every OCEAN_LACE_THIN seconds, solved (8.08) so
+ * that a lone bore's trailing foam (amount exp(-10 / OCEAN_FOAM_LIFE) at 10 s) reflects 6 % ten seconds
+ * on, inside spec §5's 3 to 10 % for old foam, and rounded to one decimal. The lace's cell (m), its drift
+ * along the swell's travel (m/s) and its edge's softness. Mirrored in shaders/oceanShade.fragment.fx.
  */
 export const OCEAN_FOAM_ALBEDO = 0.8;
 export const OCEAN_FOAM_ALBEDO_OLD = 0.5;
+export const OCEAN_FOAM_REFLECT_FRESH = 0.4;
+export const OCEAN_LACE_THIN = 8.1;
 export const OCEAN_LACE_TILE = 3;
 export const OCEAN_LACE_DRIFT = 0.4;
 export const OCEAN_LACE_SOFT = 0.06;
+
+/**
+ * The lace's noise (`oceanLace`): the coarse octave's weight (the fine octave has the rest), the fine
+ * octave's cell as a fraction of the coarse one's, and its shift. OCEAN_LACE_FIT_A, B and C: the level a
+ * share of the lace lies above, 1 - s (A + s (B + s C)) for s the share's square root, fitted to the noise's
+ * quantiles measured over 2^20 points of a square kilometre (`laceLevel`, which holds to 0.0012 of the
+ * quantile for shares to a half, and gives the mean cover within 0.003 of the share with the soft edge
+ * centred on it). OCEAN_LACE_ONSET: the share under which the lace is held back. OCEAN_DETAIL_LO and
+ * HI: a pattern is drawn whole while a pixel spans under the first of its size and has faded to its mean by
+ * the second. Mirrored in shaders/oceanShade.fragment.fx.
+ */
+export const OCEAN_LACE_WEIGHT = 0.65;
+export const OCEAN_LACE_FINE = 0.37;
+export const OCEAN_LACE_FINE_SHIFT = 19;
+export const OCEAN_LACE_FIT_A = 0.4313;
+export const OCEAN_LACE_FIT_B = -0.0802;
+export const OCEAN_LACE_FIT_C = 0.2164;
+export const OCEAN_LACE_ONSET = 0.01;
+export const OCEAN_DETAIL_LO = 0.1;
+export const OCEAN_DETAIL_HI = 0.4;
 
 /**
  * The whitecaps where no wind sea is drawn (the low tier, `oceanCapCells`): a cap a cell (m), each cell's
@@ -233,9 +257,10 @@ export const OCEAN_LACE_SOFT = 0.06;
  * of the wind's integral), and OCEAN_CAP_SHARE, the cover a cell gives when its cap fires every cycle:
  * the cap's profile integrated over the cell (`capProfile`, 0.2056 of it) times its mean brightness over
  * the cycle (it fades linearly, ½). A cap fires with the chance coverage / OCEAN_CAP_SHARE, so the mean
- * cover is Callaghan's coverage by construction. And OCEAN_CAP_SOFT, the soft edge (in standard
- * deviations of its height) of the caps on a drawn wind sea (`oceanWhitecap`). Mirrored in
- * shaders/oceanShade.fragment.fx.
+ * cover is Callaghan's coverage by construction. OCEAN_CAP_CYCLES: the cycles after which the hashed
+ * pattern of which caps fire repeats, the clock folded by that many periods. And OCEAN_CAP_SOFT, the soft
+ * edge (in standard deviations of its height) of the caps on a drawn wind sea (`oceanWhitecap`). Mirrored
+ * in shaders/oceanShade.fragment.fx.
  */
 export const OCEAN_CAP_CELL = 5;
 export const OCEAN_CAP_PERIOD = 5;
@@ -243,7 +268,77 @@ export const OCEAN_CAP_RADIUS = 0.3;
 export const OCEAN_CAP_INSET = 0.3;
 export const OCEAN_CAP_DRIFT = 2;
 export const OCEAN_CAP_SHARE = 0.1028;
+export const OCEAN_CAP_CYCLES = 97;
 export const OCEAN_CAP_SOFT = 0.4;
+
+/** GLSL's mod: x less y times floor(x / y), never negative for a positive y. */
+function glslMod(x: number, y: number): number {
+  return x - y * Math.floor(x / y);
+}
+
+function fract(x: number): number {
+  return x - Math.floor(x);
+}
+
+function mix(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/**
+ * The water's sine-free hash of a lattice point (`waterSkinHash`, shaders/water.fragment.fx), in doubles:
+ * the GPU's floats differ in the last bits and no more.
+ */
+export function waterSkinHash(x: number, z: number): number {
+  let a = fract(x * 0.1031);
+  let b = fract(z * 0.1031);
+  let c = a;
+  const d = a * (b + 33.33) + b * (c + 33.33) + c * (a + 33.33);
+  a += d;
+  b += d;
+  c += d;
+  return fract((a + b) * c);
+}
+
+/** The water's value noise (`waterSkinNoise`, shaders/water.fragment.fx): the hash on the unit lattice, smoothly interpolated. */
+export function waterSkinNoise(x: number, z: number): number {
+  const ix = Math.floor(x);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fz = z - iz;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uz = fz * fz * (3 - 2 * fz);
+  const a = waterSkinHash(ix, iz);
+  const b = waterSkinHash(ix + 1, iz);
+  const c = waterSkinHash(ix, iz + 1);
+  const d = waterSkinHash(ix + 1, iz + 1);
+  const m1 = a + (b - a) * ux;
+  const m2 = c + (d - c) * ux;
+  return m1 + (m2 - m1) * uz;
+}
+
+/**
+ * The foam's lace at (x, z) (`oceanLace`): two octaves of ridged noise, near 1 along the lines of a net,
+ * drifting with the swell's travel (swellX, swellZ, a unit vector) at `time` seconds and offset by the
+ * world's seed (`waterSkinOffset`).
+ */
+export function oceanLace(x: number, z: number, skinOffset: number, swellX: number, swellZ: number, time: number): number {
+  const qx = x + skinOffset - swellX * (OCEAN_LACE_DRIFT * time);
+  const qz = z + skinOffset - swellZ * (OCEAN_LACE_DRIFT * time);
+  const a = 1 - Math.abs(2 * waterSkinNoise(qx / OCEAN_LACE_TILE, qz / OCEAN_LACE_TILE) - 1);
+  const fine = OCEAN_LACE_FINE * OCEAN_LACE_TILE;
+  const b = 1 - Math.abs(2 * waterSkinNoise(qx / fine + OCEAN_LACE_FINE_SHIFT, qz / fine + OCEAN_LACE_FINE_SHIFT) - 1);
+  return OCEAN_LACE_WEIGHT * a + (1 - OCEAN_LACE_WEIGHT) * b;
+}
+
+/**
+ * The age (s) the foam's look goes by, given the swell's `foamAge` and its peak period `tp`: the time since
+ * the crest passed, except on the spilling roll at the crest's front face, where that age has wrapped to
+ * nearly a whole period and the foam is fresh (`oceanFoamLookAge`).
+ */
+export function foamLookAge(foamAge: number, tp: number): number {
+  const ahead = 2 * Math.PI - foamAge * ((2 * Math.PI) / tp);
+  return foamAge * smoothstep(0, OCEAN_ROLL_WIDTH, ahead);
+}
 
 /** The foam's albedo at an age (s): fresh foam's, falling to old foam's over OCEAN_FOAM_LIFE (`oceanFoamWhite`). */
 export function foamWhite(foamAge: number): number {
@@ -251,10 +346,41 @@ export function foamWhite(foamAge: number): number {
   return OCEAN_FOAM_ALBEDO_OLD + (OCEAN_FOAM_ALBEDO - OCEAN_FOAM_ALBEDO_OLD) * fresh;
 }
 
-/** The lace's cover where the ridged noise is `ridge` (0 to 1) and the foam's amount `foam`: none at no
- * foam, nearly all of it at a full amount (`oceanFoamCover`'s threshold). */
-export function laceCover(ridge: number, foam: number): number {
-  return smoothstep(1 - foam, 1 - foam + OCEAN_LACE_SOFT, ridge);
+/**
+ * The share of the surface a foam's lace covers on average (`oceanFoamShare`): the foam's amount (0 to 1)
+ * times the share a full, fresh foam covers (OCEAN_FOAM_REFLECT_FRESH of OCEAN_FOAM_ALBEDO, a half),
+ * thinning with its age (s).
+ */
+export function foamShare(foam: number, lookAge: number): number {
+  return foam * (OCEAN_FOAM_REFLECT_FRESH / OCEAN_FOAM_ALBEDO) * Math.exp(-lookAge / OCEAN_LACE_THIN);
+}
+
+/** The lace's value that a `share` (0 to 0.5) of the surface lies above: the fitted quantile at one less the share (`oceanLaceLevel`). */
+export function laceLevel(share: number): number {
+  const s = Math.sqrt(Math.min(Math.max(share, 0), 0.5));
+  return 1 - s * (OCEAN_LACE_FIT_A + s * (OCEAN_LACE_FIT_B + s * OCEAN_LACE_FIT_C));
+}
+
+/**
+ * The lace's cover where the ridged noise is `ridge` (0 to 1) and the foam's mean `share`: the lace above
+ * the level that leaves that share of it, its soft edge centred there, held back to nothing as the share
+ * goes to none. The mean cover over the lace is the share (`oceanFoamCover`'s near value).
+ */
+export function laceCover(ridge: number, share: number): number {
+  const level = laceLevel(share);
+  return (
+    smoothstep(level - 0.5 * OCEAN_LACE_SOFT, level + 0.5 * OCEAN_LACE_SOFT, ridge) * smoothstep(0, OCEAN_LACE_ONSET, share)
+  );
+}
+
+/**
+ * The foam's cover at a point where the lace is `ridge`, its amount `foam`, its look's age `lookAge` and a
+ * pixel spans `pixel` metres (`oceanFoamCover`): the lace, faded to the share it averages to where a
+ * pixel spans more than a tenth of its cell.
+ */
+export function foamCover(ridge: number, foam: number, lookAge: number, pixel: number): number {
+  const share = foamShare(foam, lookAge);
+  return mix(laceCover(ridge, share), share, smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / OCEAN_LACE_TILE));
 }
 
 /** How many standard deviations above its mean a Gaussian sea's height stands over a `coverage` share of
@@ -268,6 +394,59 @@ export function whitecapThreshold(coverage: number): number {
 /** A whitecap's brightness at `r` of its radius from its centre (`oceanCapCells`). */
 export function capProfile(r: number): number {
   return 1 - smoothstep(0.7, 1, r);
+}
+
+/** Whether a cap fires under `chance`, 1 or 0: only while its hash is under the chance, so a chance of none never fires (`oceanCapFire`). */
+export function capFires(hash: number, chance: number): number {
+  return hash < chance ? 1 : 0;
+}
+
+/**
+ * A cell's cap's place in its cycles at `time` seconds, `phase` (0 to 1) its cell's hashed offset: the
+ * cycle's index n, counted from 0 to OCEAN_CAP_CYCLES - 1, and how far through the cycle it is (`frac`,
+ * 0 to 1). The clock folds by OCEAN_CAP_CYCLES periods, the pattern's own repeat, so no cycle is cut short.
+ */
+export function capCycle(time: number, phase: number): { n: number; frac: number } {
+  const cycle = glslMod(time, OCEAN_CAP_CYCLES * OCEAN_CAP_PERIOD) / OCEAN_CAP_PERIOD + phase;
+  const k = Math.floor(cycle);
+  return { n: glslMod(k, OCEAN_CAP_CYCLES), frac: cycle - k };
+}
+
+/**
+ * The hash a cell's cap fires on in cycle `n` (`oceanCapFire`): the cell's, shifted by a shift hashed from
+ * the cycle, so no two cycles share a pattern or a neighbour's.
+ */
+export function capCycleHash(hx: number, hz: number, n: number): number {
+  const shiftX = waterSkinHash(n, 31) * 512;
+  const shiftZ = waterSkinHash(n, 77) * 512;
+  return waterSkinHash(hx + shiftX, hz + shiftZ);
+}
+
+/**
+ * The whitecaps where no wind sea is drawn at (x, z), `time` seconds in (`oceanCapCells`): `windX` and
+ * `windZ` are the wind's integral, `skinOffset` the world's seed, `coverageAt` Callaghan's coverage cut by
+ * the lee (`oceanCapCoverage`), asked at the cap's centre for whether it fires, and `pixel` the metres a
+ * pixel spans.
+ */
+export function oceanCapCells(
+  x: number, z: number, time: number, windX: number, windZ: number, skinOffset: number,
+  coverageAt: (x: number, z: number) => number, pixel: number,
+): number {
+  const qx = (x + skinOffset - windX * OCEAN_CAP_DRIFT) / OCEAN_CAP_CELL;
+  const qz = (z + skinOffset - windZ * OCEAN_CAP_DRIFT) / OCEAN_CAP_CELL;
+  const cx = Math.floor(qx);
+  const cz = Math.floor(qz);
+  const hx = glslMod(cx, 512);
+  const hz = glslMod(cz, 512);
+  const centreX = waterSkinHash(hx + 13, hz) * (1 - 2 * OCEAN_CAP_INSET) + OCEAN_CAP_INSET;
+  const centreZ = waterSkinHash(hx, hz + 57) * (1 - 2 * OCEAN_CAP_INSET) + OCEAN_CAP_INSET;
+  const atX = (cx + centreX) * OCEAN_CAP_CELL - skinOffset + windX * OCEAN_CAP_DRIFT;
+  const atZ = (cz + centreZ) * OCEAN_CAP_CELL - skinOffset + windZ * OCEAN_CAP_DRIFT;
+  const { n, frac } = capCycle(time, waterSkinHash(hx, hz));
+  const fire = capFires(capCycleHash(hx, hz, n), coverageAt(atX, atZ) / OCEAN_CAP_SHARE);
+  const r = Math.hypot(qx - cx - centreX, qz - cz - centreZ) / OCEAN_CAP_RADIUS;
+  const cap = fire * (1 - frac) * capProfile(r);
+  return mix(cap, coverageAt(x, z), smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / (2 * OCEAN_CAP_RADIUS * OCEAN_CAP_CELL)));
 }
 
 /**
