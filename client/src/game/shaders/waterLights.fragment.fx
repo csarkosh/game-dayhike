@@ -4,17 +4,20 @@
 // writes unblended (waterHigh is the gate, a uniform, since plugin code is
 // applied before conditional evaluation).
 #ifdef OCEAN
-// The sea's swell at this pixel's undisplaced point, its drawn waves faded
-// by the pixel's own footprint (the derivatives are taken here, in uniform
-// control flow, before any branch). The depth is the displaced surface's
-// over the bed, so the water's edge rises and falls with each wave.
+// The sea's swell at this pixel's undisplaced point, from the vertex stage,
+// which summed it at the ring's vertices to displace them: its normal, height
+// and drawn slope variance interpolated over the ring's triangle, the
+// normal's up part rebuilt from its other two (it is a unit vector pointing
+// up), and its foam made here from the interpolated envelope vector and this
+// pixel's own depth. The derivatives are taken here, in uniform control flow,
+// before any branch. The depth is the displaced surface's over the bed, so
+// the water's edge rises and falls with each wave.
 vec2 wOceanDx = dFdx(vOceanXZ);
 vec2 wOceanDy = dFdy(vOceanXZ);
-vec3 wOceanDisp;
-vec3 wOceanNormal;
-vec4 wOceanFoam;
-float wOceanDrawn;
-oceanSwellSum(vOceanXZ, wOceanDx, wOceanDy, wOceanDisp, wOceanNormal, wOceanFoam, wOceanDrawn);
+vec3 wOceanNormal = vec3(vOceanSwellA.x, sqrt(max(1.0 - dot(vOceanSwellA.xy, vOceanSwellA.xy), 0.0)), vOceanSwellA.y);
+float wOceanHeight = vOceanSwellA.z;
+float wOceanDrawn = vOceanSwellA.w;
+vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy);
 float wOceanChop = oceanShelter(vOceanXZ, SHELTER_CHOP);
 // The wind sea here: its height for the water's edge and the whitecaps, its
 // slopes faded by the pixel's footprint, both scaled by its share of the
@@ -26,7 +29,7 @@ float wWindAmp = wWindShare * (1.0 - wOceanFoam.y) * wOceanChop;
 vec3 wWind = oceanWindDisplace(vOceanXZ);
 float wWindDrawn;
 vec2 wWindSlope = oceanWindSlopesAt(vOceanXZ, max(length(wOceanDx), length(wOceanDy)), wWindDrawn);
-float wDepth = waterBedDepth(vPositionW.xz) + wOceanDisp.y + wWind.y * wWindAmp;
+float wDepth = waterBedDepth(vPositionW.xz) + wOceanHeight + wWind.y * wWindAmp;
 #else
 float wDepth = waterBedDepth(vPositionW.xz);
 #endif

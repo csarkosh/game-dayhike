@@ -6,9 +6,14 @@
 // (oceanCoarse): at the ring's edge the weight is whole and the vertex lies
 // on a vertex of the coarser ring, which evaluates the same point, so no
 // border cracks. The sea is evaluated once, at that point, which is the point
-// the fragment stage shades. The ring's normal stays up: the sea's normal is
-// made per pixel.
+// the fragment stage shades, and the swell's sum goes on to it, so it sums no
+// swell of its own. The ring's normal stays up: the sea's normal is made per
+// pixel, from the swell's interpolated here and the wind sea's.
 positionUpdated.xz -= oceanMorph * oceanCoarse;
 vOceanXZ = positionUpdated.xz;
-positionUpdated += oceanDisplace(positionUpdated.xz);
+vec4 oceanVertexSwell;
+vec2 oceanVertexEnv;
+positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);
+vOceanSwellA = oceanVertexSwell;
+vOceanSwellB = vec4(oceanVertexEnv, 0.0, 0.0);
 #endif

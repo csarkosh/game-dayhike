@@ -495,7 +495,7 @@ describe("inter-stage variables of the sea's water material on WebGPU, its waves
     for (const dispose of disposers) dispose();
   });
 
-  it("writes seven vertex outputs on the low tier and six on high and medium, and reads front_facing on the low tier alone: 8 and 6 of the 19", () => {
+  it("writes nine vertex outputs on the low tier and eight on high and medium, and reads front_facing on the low tier alone: 10 and 8 of the 19", () => {
     for (const [tier, sea] of seas) {
       expect(sea.ocean, tier).toBe(true);
       // The water takes no shadows, so no light's shadow varyings join these.
@@ -514,13 +514,16 @@ describe("inter-stage variables of the sea's water material on WebGPU, its waves
         "float vBedDepth",
         "float vWaterViewDepth",
         "vec2 vOceanXZ",
+        // The swell the vertex stage sums, handed to the fragment stage.
+        "vec4 vOceanSwellA",
+        "vec4 vOceanSwellB",
       ]);
-      expect(sea.effect._processingContext._varyingNextLocation, tier).toBe(bump ? 7 : 6);
+      expect(sea.effect._processingContext._varyingNextLocation, tier).toBe(bump ? 9 : 8);
       // The bump's tangent frame reads front_facing in the fragment stage, on the low tier alone.
       const frontFacing = sea.effect._fragmentSourceCode.includes("gl_FrontFacing");
       expect(frontFacing, tier).toBe(bump);
-      expect(sea.effect._processingContext._varyingNextLocation + (frontFacing ? 1 : 0), `${tier}: ${WEIGH_SEA}`).toBe(bump ? 8 : 6);
-      expect(bump ? 8 : 6).toBeLessThanOrEqual(limit);
+      expect(sea.effect._processingContext._varyingNextLocation + (frontFacing ? 1 : 0), `${tier}: ${WEIGH_SEA}`).toBe(bump ? 10 : 8);
+      expect(bump ? 10 : 8).toBeLessThanOrEqual(limit);
     }
   });
 

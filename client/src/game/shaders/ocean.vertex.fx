@@ -19,4 +19,9 @@ uniform highp sampler2D oceanAtlas;
 uniform highp sampler2DArray oceanWindDisp;
 // The vertex's world xz before the waves move it.
 varying vec2 vOceanXZ;
+// The swell the vertex stage sums for the displacement, for the fragment
+// stage: its normal's x and z, its height and the slope variance its drawn
+// waves carry (vOceanSwellA), and its envelope vector in x and y (vOceanSwellB).
+varying vec4 vOceanSwellA;
+varying vec4 vOceanSwellB;
 #endif

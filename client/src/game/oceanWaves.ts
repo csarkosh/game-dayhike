@@ -2,8 +2,9 @@
  * The swell at a point: its height, its trochoidal displacement and slopes,
  * its envelope, its break and its white water, and how a headland shelters it.
  * Babylon-free (on BABYLON_FREE_FILES). The sea's shaders evaluate the same
- * maths from the same atlas (`shaders/oceanSurface.fx`: `oceanSwellSum`,
- * `oceanSwellEval`); tests hold the two in lockstep.
+ * maths from the same atlas (`shaders/oceanSurface.fx`: `oceanSwellSum`, and
+ * `oceanFoamFromEnvelope` for the foam from its envelope); tests hold the two
+ * in lockstep.
  *
  * Each component's phase is φ = Ψ(d, z) + k0x·coastlineX(z) + k0z·z + θ, Ψ
  * from the tables at the coast distance d = x − coastlineX(z) and θ =

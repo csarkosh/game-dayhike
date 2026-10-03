@@ -446,10 +446,17 @@ describe("the sea's waves in the water plugin", () => {
     expect(vertex).toContain("attribute vec2 oceanCoarse;");
     expect(vertex).toContain("varying vec2 vOceanXZ;");
     expect(fx("ocean.fragment.fx")).toContain("varying vec2 vOceanXZ;");
+    // and the swell the vertex stage sums, for the fragment stage, in both
+    for (const name of ["ocean.vertex.fx", "ocean.fragment.fx"]) {
+      expect(fx(name), name).toContain("varying vec4 vOceanSwellA;");
+      expect(fx(name), name).toContain("varying vec4 vOceanSwellB;");
+    }
     const displace = fx("oceanDisplace.vertex.fx");
     expect(displace).toContain("vOceanXZ = positionUpdated.xz;");
-    // the waves move it, once (oceanShader.test.ts pins how)
-    expect(displace).toContain("positionUpdated += oceanDisplace(positionUpdated.xz);");
+    // the waves move it, once (oceanShader.test.ts pins how), and the swell goes on
+    expect(displace).toContain("positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);");
+    expect(displace).toContain("vOceanSwellA = oceanVertexSwell;");
+    expect(displace).toContain("vOceanSwellB = vec4(oceanVertexEnv, 0.0, 0.0);");
   });
 
   it("sets OCEAN and asks for the stitch only with an ocean, and rebuilds the effect when one comes or goes", () => {
