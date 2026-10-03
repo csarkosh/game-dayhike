@@ -106,6 +106,16 @@ describe("the wind sea's h0", () => {
     expect(windSeaCascadeSeed(7, 0)).not.toBe(windSeaCascadeSeed(7, 1));
   });
 
+  it("draws the bins it drew before its spreading's normalisation was taken once a cascade, to the bit", () => {
+    // 9 m/s toward (0.8, 0.6), seed 42, each cascade's largest bin and a small one of the finest.
+    const wind = { u10: 9, dir: [0.8, 0.6] as [number, number] };
+    const h0 = [0, 1, 2].map((c) => windSeaH0(FFT_N, FFT_CASCADES[c]!, wind, bands[c]!, windSeaCascadeSeed(42, c)));
+    expect([h0[0]!.re[2310], h0[0]!.im[2310]]).toEqual([0.06781387329101562, 0.019821589812636375]);
+    expect([h0[1]!.re[4], h0[1]!.im[4]]).toEqual([0.03140721470117569, 0.010302353650331497]);
+    expect([h0[2]!.re[1285], h0[2]!.im[1285]]).toEqual([0.006255056243389845, 0.00235176389105618]);
+    expect([h0[2]!.re[6979], h0[2]!.im[6979]]).toEqual([0.000006724992999807, 0.000017080054021789692]);
+  }, timeLimit(30_000));
+
   it("is zero outside the band, at the DC bin and on the Nyquist row and column", () => {
     const n = 64;
     const size = 150;

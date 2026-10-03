@@ -108,14 +108,17 @@ export function oceanFieldFromState(seed: number, state: SwellState, count: numb
   };
 }
 
-/** The frame's phases θ_c = (phase0 − ω·t) mod 2π, folded in double precision; zeros past the count. */
-export function swellPhases(field: OceanField, seconds: number): Float32Array {
-  const out = new Float32Array(SWELL_COMPONENTS);
+/** The frame's phases θ_c = (phase0 − ω·t) mod 2π, folded in double precision; zeros past the count. Written
+ * into `out` (SWELL_COMPONENTS long) when one is given, as the renderer's binding is each frame, else into a new
+ * array; either is returned. */
+export function swellPhases(field: OceanField, seconds: number, out?: Float32Array): Float32Array {
+  const phases = out ?? new Float32Array(SWELL_COMPONENTS);
   for (let c = 0; c < field.count; c++) {
     const comp = field.components[c] as SwellComponent;
-    out[c] = mod(comp.phase0 - comp.omega * seconds, TWO_PI);
+    phases[c] = mod(comp.phase0 - comp.omega * seconds, TWO_PI);
   }
-  return out;
+  phases.fill(0, field.count);
+  return phases;
 }
 
 /**

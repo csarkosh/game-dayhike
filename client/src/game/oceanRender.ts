@@ -137,7 +137,7 @@ export function createOcean(
         atlas.update(tables.data);
         binding.coast[0] = tables.coastOriginZ;
       }
-      binding.phases.set(swellPhases(field, seconds));
+      swellPhases(field, seconds, binding.phases);
       const blowing = windSeaStateFor(wind01, windDir, hour);
       // The tier's wind sea: its field and mode, the loop's time (0 while no
       // loop is drawn) and the numbers the shaders normalise it by; and the

@@ -137,9 +137,13 @@ export function windSeaShare(state: WindSeaState, coastDistance: number): number
 /**
  * The sea's seconds: the simulation's tick and the frame's fraction of the
  * next, `alpha` (the fixed-step accumulator's leftover over TICK_DT, 0 to 1,
- * clamped there). The tick advances as the leftover wraps, so the sum is
- * continuous and never runs backward across a tick; every peer's tick is the
- * host's to within its prediction lead.
+ * clamped there). The tick advances as the leftover wraps, so the sum runs on
+ * without a break from frame to frame; every peer's tick is the host's to
+ * within its prediction lead. A client's tick reconciled to the host's can
+ * step it back a few ticks, so a consumer that keeps state from frame to frame
+ * (the wind sea's clocks and its lag, the water's wind drift) holds its step at
+ * no less than zero and runs on only once the seconds pass the latest it
+ * counted.
  */
 export function sharedSeconds(tick: number, alpha: number): number {
   return (tick + Math.min(1, Math.max(0, alpha))) * TICK_DT;

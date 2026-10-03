@@ -44,6 +44,14 @@ describe("swellPhases", () => {
     }
     expect([...phases.subarray(8)]).toEqual([0, 0, 0, 0]);
   });
+
+  it("writes the same into an array it is given, the renderer's binding each frame, and returns that array", () => {
+    const field = oceanFieldFor(SEED, 8);
+    const kept = new Float32Array(12).fill(9);
+    expect(swellPhases(field, 3600.25, kept)).toBe(kept);
+    expect(kept).toEqual(swellPhases(field, 3600.25));
+    expect([...kept.subarray(8)]).toEqual([0, 0, 0, 0]);
+  });
 });
 
 describe("atlasRead and coastRead", () => {

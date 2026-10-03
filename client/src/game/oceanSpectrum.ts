@@ -96,16 +96,26 @@ function lnGamma(x: number): number {
   return 0.5 * Math.log(2 * Math.PI) + (y + 0.5) * Math.log(t) - t + Math.log(a);
 }
 
+/** The cos-2s spreading's N(s) = 2^{2s} Γ(s+1)² / (2π Γ(2s+1)), s below 0 taken as 0. */
+function spreadingNorm(s: number): number {
+  const spread = Math.max(0, s);
+  return Math.exp(2 * spread * Math.LN2 + 2 * lnGamma(spread + 1) - lnGamma(2 * spread + 1)) / (2 * Math.PI);
+}
+
+/** D(θ) with its N(s) given, `norm` = spreadingNorm(s): what `spreading` is, its normalisation taken once. */
+function spreadingWith(norm: number, theta: number, s: number): number {
+  const spread = Math.max(0, s);
+  const wrapped = theta - 2 * Math.PI * Math.round(theta / (2 * Math.PI));
+  return norm * Math.pow(Math.max(0, Math.cos(wrapped / 2)), 2 * spread);
+}
+
 /**
  * The cos-2s spreading D(θ) = N(s) cos^{2s}(θ/2), θ the angle from the mean
  * direction (any angle, wrapped to (−π, π]), N(s) = 2^{2s} Γ(s+1)² / (2π Γ(2s+1))
  * so that its integral over a turn is 1. s below 0 is taken as 0 (uniform).
  */
 export function spreading(theta: number, s: number): number {
-  const spread = Math.max(0, s);
-  const wrapped = theta - 2 * Math.PI * Math.round(theta / (2 * Math.PI));
-  const norm = Math.exp(2 * spread * Math.LN2 + 2 * lnGamma(spread + 1) - lnGamma(2 * spread + 1)) / (2 * Math.PI);
-  return norm * Math.pow(Math.max(0, Math.cos(wrapped / 2)), 2 * spread);
+  return spreadingWith(spreadingNorm(s), theta, s);
 }
 
 /**
@@ -196,6 +206,7 @@ export function windSeaH0(
   const quantum = (2 * Math.PI) / repeat;
   const dk = (2 * Math.PI) / size;
   const nyquist = n / 2;
+  const norm = spreadingNorm(WIND_SEA_SPREAD);
   let drawn = 0;
   for (let row = 0; row < n; row++) {
     const kz = dk * fftWaveIndex(row, n);
@@ -207,7 +218,7 @@ export function windSeaH0(
       omega[i] = Math.round(w / quantum) * quantum;
       if (!live || k === 0 || k < band.kMin || k >= band.kMax || row === nyquist || col === nyquist) continue;
       const sk = (jonswap(w / (2 * Math.PI), fp, hs, WIND_SEA_GAMMA) * OCEAN_G) / (4 * Math.PI * w);
-      density[i] = (sk * spreading(Math.atan2(kz, kx) - windAngle, WIND_SEA_SPREAD)) / k;
+      density[i] = (sk * spreadingWith(norm, Math.atan2(kz, kx) - windAngle, WIND_SEA_SPREAD)) / k;
       drawn += density[i]! * dk * dk;
     }
   }

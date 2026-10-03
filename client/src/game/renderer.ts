@@ -920,7 +920,8 @@ export function createWater(
   // delta, not per-frame constants, so the ripple speed survives
   // refresh-rate differences, and a scene's own clock (`now`) moves the
   // water in step with it, or holds it on a held frame. One texture, so
-  // one scroll drives both materials.
+  // one scroll drives every material that carries it: each lake's, and the
+  // sea's on the low tier alone.
   let last = now();
   const scroll = scene.onBeforeRenderObservable.add(() => {
     const at = now();

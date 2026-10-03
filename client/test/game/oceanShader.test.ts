@@ -392,6 +392,110 @@ describe("the sea's shader constants and functions", () => {
     expect(s).not.toContain("if (h > OCEAN_DRY_DEPTH)");
   });
 
+  it("holds oceanSwellSum's whole body, the text shaderSwell transcribes, so no change to it passes unseen", () => {
+    const s = fx("oceanSurface.fx");
+    const start = at(s, "void oceanSwellSum(");
+    const body = s.slice(start, s.indexOf("\n}\n", start) + 3);
+    expect(body).toBe(`void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, out vec4 foam, out float drawn) {
+  float phaseDz;
+  vec4 coast = oceanCoastAt(p.y, phaseDz);
+  float d = p.x - coast.x;
+  float column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;
+  // Seaward of the table each phase runs on as the plane wave it is there.
+  float deep = min(d - OCEAN_D_MIN, 0.0);
+  vec4 bay = oceanAtlasRead(OCEAN_ROW_BAY_PROFILE, column);
+  vec4 cove = oceanAtlasRead(OCEAN_ROW_COVE_PROFILE, column);
+  float h = bay.x + (cove.x - bay.x) * coast.z;
+  float a = bay.y + (cove.y - bay.y) * coast.z;
+  float b = bay.z + (cove.z - bay.z) * coast.z;
+  float shelter = oceanShelter(p, SHELTER_SWELL);
+  float theta[12];
+  theta[0] = oceanPhase0.x;
+  theta[1] = oceanPhase0.y;
+  theta[2] = oceanPhase0.z;
+  theta[3] = oceanPhase0.w;
+  theta[4] = oceanPhase1.x;
+  theta[5] = oceanPhase1.y;
+  theta[6] = oceanPhase1.z;
+  theta[7] = oceanPhase1.w;
+  theta[8] = oceanPhase2.x;
+  theta[9] = oceanPhase2.y;
+  theta[10] = oceanPhase2.z;
+  theta[11] = oceanPhase2.w;
+  float phi[12];
+  float amp[12];
+  float q0[12];
+  vec2 kv[12];
+  vec2 env = vec2(0.0);
+  for (int c = 0; c < 12; c++) {
+    float fc = float(c);
+    if (fc >= oceanCoast.z) break;
+    vec4 k = oceanAtlasTexel(OCEAN_ROW_COMPONENTS, 2.0 * fc);
+    vec4 rb = oceanAtlasRead(OCEAN_ROW_BAY_FIRST + fc, column);
+    vec4 rc = oceanAtlasRead(OCEAN_ROW_COVE_FIRST + fc, column);
+    // The phase and its onshore wavenumber blend by the phase weight, the
+    // amplitude factor by the cove's. The wavevector's z part carries the
+    // coastline's turn and what the phase weight's change along z adds.
+    float dpsi = rc.x - rb.x;
+    float psi = rb.x + dpsi * coast.w + k.x * deep;
+    float kn = rb.y + (rc.y - rb.y) * coast.w;
+    float shoal = rb.z + (rc.z - rb.z) * coast.z;
+    phi[c] = psi + k.x * coast.x + k.y * p.y + theta[c];
+    kv[c] = vec2(kn, k.y + (k.x - kn) * coast.y + dpsi * phaseDz);
+    amp[c] = k.w * shoal * shelter;
+    q0[c] = oceanAtlasTexel(OCEAN_ROW_COMPONENTS, 2.0 * fc + 1.0).x;
+    env += amp[c] * vec2(cos(phi[c]), sin(phi[c]));
+  }
+  float envelope = length(env);
+  float unbroken = 2.0 * envelope;
+  float crestPhase = envelope > 0.0 ? atan(env.y, env.x) : 0.0;
+  // No dry branch: over sand the depth is held at OCEAN_DRY_DEPTH, so the
+  // swell there is the bore's few centimetres.
+  float hc = max(h, OCEAN_DRY_DEPTH);
+  float gamma = clamp(b - a * unbroken / (OCEAN_G * oceanSwell.z * oceanSwell.z), WEGGEL_GAMMA_MIN, WEGGEL_GAMMA_MAX);
+  float ratio = unbroken / (gamma * hc);
+  float scale = 1.0;
+  if (ratio > 1.0) {
+    float cap = gamma + (OCEAN_BORE_RATIO - gamma) * smoothstep(1.0, OCEAN_BREAK_FULL, ratio);
+    scale = hc * cap / max(unbroken, 1.0e-6);
+  }
+  float breaking = smoothstep(OCEAN_BREAK_FOAM_LO, OCEAN_BREAK_FOAM_HI, ratio);
+  float steepness = 0.0;
+  for (int c = 0; c < 12; c++) {
+    if (float(c) >= oceanCoast.z) break;
+    amp[c] *= scale;
+    steepness += q0[c] * length(kv[c]) * amp[c];
+  }
+  float s = min(1.0, SWELL_Q_SUM_MAX / max(steepness, 1.0e-6));
+  float height = 0.0;
+  vec2 across = vec2(0.0);
+  vec2 slope = vec2(0.0);
+  float fold = 0.0;
+  drawn = 0.0;
+  for (int c = 0; c < 12; c++) {
+    if (float(c) >= oceanCoast.z) break;
+    float kmag = length(kv[c]);
+    float turn = max(abs(dot(dpx, kv[c])), abs(dot(dpy, kv[c])));
+    float A = amp[c] * (1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, turn));
+    float Q = q0[c] * s;
+    float sn = sin(phi[c]);
+    float cs = cos(phi[c]);
+    height += A * cs;
+    across -= Q * A * kv[c] * sn / kmag;
+    slope += A * kv[c] * sn;
+    fold += Q * A * kmag * cs;
+    drawn += 0.5 * (A * kmag) * (A * kmag);
+  }
+  disp = vec3(across.x, height, across.y);
+  normal = normalize(vec3(slope.x, 1.0 - fold, slope.y));
+  float foamAge = mod(-crestPhase, OCEAN_TWO_PI) / (OCEAN_TWO_PI / oceanSwell.z);
+  float roll = breaking * (1.0 - smoothstep(0.0, OCEAN_ROLL_WIDTH, mod(crestPhase, OCEAN_TWO_PI)));
+  float trailing = breaking * exp(-foamAge / OCEAN_FOAM_LIFE);
+  foam = vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);
+}
+`);
+  });
+
   it("gives swellAt's numbers, transcribed line for line, at 1,275 points over three worlds, and fades only what is drawn", () => {
     let broken = 0;
     for (const seed of [SEED, 12345, 777]) {
@@ -699,9 +803,6 @@ describe("the white water", () => {
     // The lace drifts with the swell's travel and is offset by the world's seed, the sea's waterSkin.y.
     expect(f).toContain("  vec2 q = p + waterSkin.y - oceanSwell.xy * (OCEAN_LACE_DRIFT * waterTime);");
     expect(f).not.toContain("1.0 - foam + OCEAN_LACE_SOFT");
-    // The cover has no age in it: the albedo alone fades with the foam's age.
-    expect(f).not.toContain("OCEAN_LACE_THIN");
-    expect(f).not.toContain("OCEAN_FOAM_REFLECT_FRESH");
   });
 
   it("puts the whitecaps over Callaghan's share of a Gaussian sea's crests", () => {

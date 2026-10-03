@@ -104,6 +104,14 @@ const OCEAN_UNIFORMS = [
 const NO_PHASES = new Float32Array(12);
 const NO_VEC4: readonly [number, number, number, number] = [0, 0, 0, 0];
 
+/** One of the sea's vec4 uniforms, zeros where there is no sea: on every draw, so nothing is made for it. */
+function bindVec4(
+  uniformBuffer: UniformBuffer, name: (typeof OCEAN_UNIFORMS)[number], v: readonly [number, number, number, number] | undefined,
+): void {
+  const value = v ?? NO_VEC4;
+  uniformBuffer.updateFloat4(name, value[0], value[1], value[2], value[3]);
+}
+
 const arrayPlaceholders = new WeakMap<Scene, BaseTexture>();
 
 /**
@@ -322,11 +330,13 @@ export class WaterPlugin extends MaterialPluginBase {
         phases[i * 4] as number, phases[i * 4 + 1] as number, phases[i * 4 + 2] as number, phases[i * 4 + 3] as number,
       );
     }
-    const values = [ocean?.swell, ocean?.tips, ocean?.coast, ocean?.wind, ocean?.windDir, ocean?.windStats, ocean?.windPivot];
-    values.forEach((value, i) => {
-      const v = value ?? NO_VEC4;
-      uniformBuffer.updateFloat4(OCEAN_UNIFORMS[i + 3] as string, v[0], v[1], v[2], v[3]);
-    });
+    bindVec4(uniformBuffer, "oceanSwell", ocean?.swell);
+    bindVec4(uniformBuffer, "oceanTips", ocean?.tips);
+    bindVec4(uniformBuffer, "oceanCoast", ocean?.coast);
+    bindVec4(uniformBuffer, "oceanWind", ocean?.wind);
+    bindVec4(uniformBuffer, "oceanWindDir", ocean?.windDir);
+    bindVec4(uniformBuffer, "oceanWindStats", ocean?.windStats);
+    bindVec4(uniformBuffer, "oceanWindPivot", ocean?.windPivot);
     const atlas = ocean?.atlas ?? this.bedTexture;
     if (atlas !== null) uniformBuffer.setTexture("oceanAtlas", atlas);
     uniformBuffer.setTexture("oceanWindDisp", ocean?.windDisp ?? this._arrayPlaceholder);
