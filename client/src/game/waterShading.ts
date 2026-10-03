@@ -9,6 +9,7 @@
  */
 import { clamp01 } from "./colour.js";
 import { CLUTTER_WATER_MURK_HI, CLUTTER_WATER_MURK_LO } from "../sim/clutter.js";
+import { WATER_BASE_SPACING, WATER_RING_CELLS } from "./water.js";
 
 /** One body of water, from the world at build time (spec §7). */
 export type WaterBody = {
@@ -125,16 +126,92 @@ export function alphaFor(kd: readonly [number, number, number], depth: number, c
   return 1 - (1 - fresnelSchlick(cosTheta)) * Math.exp(-2 * meanKd(kd) * Math.max(0, depth));
 }
 
+/** Cox and Munk's slope variance for a wind of U m/s: σ² = A + B·U. Mirrored in shaders/oceanShade.fragment.fx. */
+export const WATER_COX_MUNK_A = 0.003;
+export const WATER_COX_MUNK_B = 0.00512;
+
+/** Cox and Munk's slope variance for a wind of `u10` m/s, the whole sea's. */
+export function coxMunkVariance(u10: number): number {
+  return WATER_COX_MUNK_A + WATER_COX_MUNK_B * u10;
+}
+
 /** Cox and Munk's slope variance, σ² = 0.003 + 0.00512 U, scaled by the body's shelter (§5.1). */
 export function slopeVariance(wind01: number, shelter: number): number {
   const u = clamp01(wind01) * WATER_WIND_MAX;
-  return (0.003 + 0.00512 * u) * clamp01(shelter);
+  return coxMunkVariance(u) * clamp01(shelter);
 }
 
 /** PBR perceptual roughness from the slope variance: Beckmann α = √(2σ²), roughness = √α. */
 export function roughnessFor(wind01: number, shelter: number): number {
   const alpha = Math.sqrt(2 * slopeVariance(wind01, shelter));
   return Math.sqrt(alpha);
+}
+
+/**
+ * The sea's roughness from the slope variance its normal leaves undrawn, per pixel in the shader (the
+ * roughness line `waterPlugin.ts` rewrites): √√(2σ²) as `roughnessFor`, at most 1.
+ */
+export function roughnessFromVariance(variance: number): number {
+  return Math.min(Math.sqrt(Math.sqrt(2 * Math.max(0, variance))), 1);
+}
+
+/**
+ * The least slope variance the sea's roughness keeps however much of Cox and Munk's the drawn waves carry:
+ * half their calm intercept, so a glassy sea's glint stays wider than a pixel. Mirrored in
+ * shaders/oceanShade.fragment.fx.
+ */
+export const OCEAN_SLOPE_VAR_FLOOR = 0.0015;
+
+/**
+ * The slope variance left to the sea's roughness (spec §7.3): Cox and Munk's for the wind sea's wind
+ * `u10` (m/s), scaled by the shelter, less `drawn`, the variance the drawn waves already put in the
+ * normal; never under OCEAN_SLOPE_VAR_FLOOR. `oceanUndrawnVariance` in shaders/oceanShade.fragment.fx.
+ */
+export function undrawnSlopeVariance(u10: number, shelter: number, drawn: number): number {
+  return Math.max(coxMunkVariance(u10) * shelter - drawn, OCEAN_SLOPE_VAR_FLOOR);
+}
+
+/**
+ * A drawn wave keeps all of its share while its phase turns by at most a quarter turn over one step of the
+ * drawing (a pixel, or a ring's cells): four steps a wavelength; none from a half turn, two steps, where it
+ * would alias. Mirrored in shaders/oceanSurface.fx.
+ */
+export const OCEAN_RESOLVE_PHASE_LO = Math.PI / 2;
+export const OCEAN_RESOLVE_PHASE_HI = Math.PI;
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/** The share of a wave the drawing keeps when its phase turns by `turn` radians over one step. */
+export function resolvedShare(turn: number): number {
+  return 1 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, turn);
+}
+
+/**
+ * The slope variance the drawn waves carry when each is drawn over steps of `step` metres along its own
+ * direction: Σ ½(a·k·share)², a sinusoid of amplitude a and wavenumber k carrying ½(a·k)², faded by
+ * `resolvedShare(k·step)`. With a step of 0 it is the waves' whole variance.
+ */
+export function resolvedSlopeVariance(waves: readonly { amplitude: number; k: number }[], step: number): number {
+  let sum = 0;
+  for (const { amplitude, k } of waves) {
+    const a = amplitude * resolvedShare(k * step);
+    sum += 0.5 * (a * k) * (a * k);
+  }
+  return sum;
+}
+
+/**
+ * The spacing (m) of the ring that draws a point (dx, dz) from the eye, as the vertex shader estimates it
+ * (`oceanRingCell`): a ring of spacing s lies from OCEAN_RING_REACH·s to twice that from the eye, so the
+ * estimate is the ring's own spacing at its inner edge and the next ring's at its outer, never under the
+ * finest ring's. It depends on the point alone, so two rings drawing one point displace it alike.
+ */
+export const OCEAN_RING_REACH = WATER_RING_CELLS / 4;
+export function oceanRingCell(dx: number, dz: number): number {
+  return Math.max(WATER_BASE_SPACING, Math.max(Math.abs(dx), Math.abs(dz)) / OCEAN_RING_REACH);
 }
 
 /**

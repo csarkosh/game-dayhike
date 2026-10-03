@@ -907,7 +907,10 @@ export function createWater(
   const group = high ? WATER_GROUP : 0;
 
   const bump = createWaterBump(scene);
-  seaMat.bumpTexture = bump;
+  // The sea's normal is its waves' on high and medium (oceanSurface.fx): PBR's
+  // bump stays on the low tier's sea alone, where it draws the wind sea, and on
+  // every lake.
+  if (tier === "low") seaMat.bumpTexture = bump;
   for (const mat of lakeMats) mat.bumpTexture = bump;
 
   // Cosmetic drift: scroll the bump's UV offset each frame by the clock's

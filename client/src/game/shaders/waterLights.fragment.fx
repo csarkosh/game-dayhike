@@ -3,13 +3,40 @@
 // transmitted colour is read from the scene copy instead and the surface
 // writes unblended (waterHigh is the gate, a uniform, since plugin code is
 // applied before conditional evaluation).
+#ifdef OCEAN
+// The sea's swell at this pixel's undisplaced point, its drawn waves faded
+// by the pixel's own footprint (the derivatives are taken here, in uniform
+// control flow, before any branch). The depth is the displaced surface's
+// over the bed, so the water's edge rises and falls with each wave.
+vec2 wOceanDx = dFdx(vOceanXZ);
+vec2 wOceanDy = dFdy(vOceanXZ);
+vec3 wOceanDisp;
+vec3 wOceanNormal;
+vec4 wOceanFoam;
+float wOceanDrawn;
+oceanSwellSum(vOceanXZ, wOceanDx, wOceanDy, wOceanDisp, wOceanNormal, wOceanFoam, wOceanDrawn);
+float wOceanChop = oceanShelter(vOceanXZ, SHELTER_CHOP);
+float wDepth = waterBedDepth(vPositionW.xz) + wOceanDisp.y;
+#else
 float wDepth = waterBedDepth(vPositionW.xz);
+#endif
 if (wDepth <= 0.0) discard;
 float wKdMean = (waterKd.r + waterKd.g + waterKd.b) / 3.0;
+#ifdef OCEAN
+// The sea's normal is the swell's. PBR's bump is on the sea on the low tier
+// alone, where its slope rides on the swell's: elsewhere normalW is still the
+// ring's up and adds nothing. The second octave never runs on the sea.
+vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05);
+normalW = normalize(wOceanNormal + vec3(wOceanExtra.x, 0.0, wOceanExtra.y) * wOceanNormal.y);
+// What Cox and Munk's slope variance for the wind leaves to the roughness
+// once the drawn waves carry theirs, calmer in a headland's lee as the chop is.
+float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn);
+#else
 if (waterOctaves > 1.5) {
   vec2 wSlope = waterRipple2(vPositionW.xz);
   normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y));
 }
+#endif
 // The rain's rings, every tier, scaled by the rain as the puddles' are. The
 // skin's flatten below damps them where it lies.
 if (waterRain > 0.0) {

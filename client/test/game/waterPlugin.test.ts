@@ -13,7 +13,7 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { WaterPlugin, attachWater, oceanArrayPlaceholder, type OceanBinding } from "../../src/game/waterPlugin.js";
+import { OCEAN_ROUGHNESS_ANCHOR, WaterPlugin, attachWater, oceanArrayPlaceholder, type OceanBinding } from "../../src/game/waterPlugin.js";
 import { drawnEffect, webgpuProcessingEngine } from "./helpers/webgpuProcessing.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { WATER_ROWS, WATER_F0, WATER_HORIZON, WATER_REFRACT, WATER_REFRACT_DEPTH, WATER_SKIN_DRIFT } from "../../src/game/waterShading.js";
@@ -51,10 +51,13 @@ describe("water plugin", () => {
     expect(Object.keys(v).sort()).toEqual(["CUSTOM_VERTEX_DEFINITIONS", "CUSTOM_VERTEX_UPDATE_POSITION", "CUSTOM_VERTEX_UPDATE_WORLDPOS"]);
     const f = p.getCustomCode("fragment")!;
     expect(Object.keys(f).sort()).toEqual([
+      OCEAN_ROUGHNESS_ANCHOR,
       "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION",
       "CUSTOM_FRAGMENT_BEFORE_LIGHTS",
       "CUSTOM_FRAGMENT_DEFINITIONS",
     ]);
+    // a lake's roughness line is left to Babylon
+    expect(f[OCEAN_ROUGHNESS_ANCHOR]).toBe("");
     expect(p.getCustomCode("compute")).toBeNull();
   });
 
@@ -62,11 +65,11 @@ describe("water plugin", () => {
     const mat = new PBRMaterial("w3", scene);
     const p = attachWater(mat, WATER_ROWS.sea);
     const f = p.getCustomCode("fragment")!;
-    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("water.fragment.fx") + fx("ocean.fragment.fx"));
+    expect(f.CUSTOM_FRAGMENT_DEFINITIONS).toBe(fx("water.fragment.fx") + fx("ocean.fragment.fx") + fx("oceanSurface.fx") + fx("oceanShade.fragment.fx"));
     expect(f.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toBe(fx("waterLights.fragment.fx"));
     expect(f.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION).toBe(fx("waterCompose.fragment.fx"));
     const v = p.getCustomCode("vertex")!;
-    expect(v.CUSTOM_VERTEX_DEFINITIONS).toBe(fx("water.vertex.fx") + fx("ocean.vertex.fx"));
+    expect(v.CUSTOM_VERTEX_DEFINITIONS).toBe(fx("water.vertex.fx") + fx("ocean.vertex.fx") + fx("oceanSurface.fx"));
     expect(v.CUSTOM_VERTEX_UPDATE_POSITION).toBe(fx("oceanDisplace.vertex.fx"));
     expect(v.CUSTOM_VERTEX_UPDATE_WORLDPOS).toBe(fx("waterWorldPos.vertex.fx"));
     // the water's files end their last line, so the sea's never join it
@@ -427,7 +430,7 @@ describe("the sea's waves in the water plugin", () => {
     }
   });
 
-  it("carries the rings' stitch and the position before the waves, and moves nothing yet", () => {
+  it("carries the rings' stitch and the position before the waves, and moves the vertex by them", () => {
     const vertex = fx("ocean.vertex.fx");
     expect(vertex).toContain("attribute float oceanMorph;");
     expect(vertex).toContain("attribute vec2 oceanCoarse;");
@@ -435,7 +438,8 @@ describe("the sea's waves in the water plugin", () => {
     expect(fx("ocean.fragment.fx")).toContain("varying vec2 vOceanXZ;");
     const displace = fx("oceanDisplace.vertex.fx");
     expect(displace).toContain("vOceanXZ = positionUpdated.xz;");
-    expect(displace).not.toMatch(/positionUpdated\s*=/);
+    // the waves move it, once (oceanShader.test.ts pins how)
+    expect(displace).toContain("positionUpdated += oceanDisplace(positionUpdated.xz);");
   });
 
   it("sets OCEAN and asks for the stitch only with an ocean, and rebuilds the effect when one comes or goes", () => {

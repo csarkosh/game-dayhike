@@ -88,7 +88,8 @@ describe("createWater under NullEngine", () => {
     engine = new NullEngine();
     const scene = new Scene(engine);
     let ms = 1000;
-    const water = createWater(scene, 0x5eed, 0, [], "medium", 0, 0, () => ms);
+    // The low tier's sea carries the bump; on high and medium its normal is its waves'.
+    const water = createWater(scene, 0x5eed, 0, [], "low", 0, 0, () => ms);
     const bump = (water.meshes[0]?.material as PBRMaterial).bumpTexture as Texture;
     const u0 = bump.uOffset;
     scene.onBeforeRenderObservable.notifyObservers(scene);
@@ -99,6 +100,18 @@ describe("createWater under NullEngine", () => {
     expect(bump.uOffset).toBeCloseTo(u0 + 0.5 * WATER_UV_SCROLL[0], 9);
     water.dispose();
   });
+
+  it("keeps PBR's bump on the sea on the low tier alone, the sea's normal its waves' elsewhere, and on every lake", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    for (const tier of ["high", "medium", "low"] as const) {
+      const water = createWater(scene, 0x5eed, 0, [lake()], tier);
+      const sea = water.meshes[0]!.material as PBRMaterial;
+      expect(sea.bumpTexture !== null, tier).toBe(tier === "low");
+      expect((water.lakeMeshes[0]!.material as PBRMaterial).bumpTexture, tier).not.toBeNull();
+      water.dispose();
+    }
+  }, timeLimit(60_000));
 
   it("adds one surface per lake on its own material, at its level, with its murk's water, and disposes both", () => {
     engine = new NullEngine();

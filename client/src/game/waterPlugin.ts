@@ -35,15 +35,30 @@ import fragmentCompose from "./shaders/waterCompose.fragment.fx?raw";
 import oceanVertexDefs from "./shaders/ocean.vertex.fx?raw";
 import oceanDisplace from "./shaders/oceanDisplace.vertex.fx?raw";
 import oceanFragmentDefs from "./shaders/ocean.fragment.fx?raw";
+import oceanSurface from "./shaders/oceanSurface.fx?raw";
+import oceanShade from "./shaders/oceanShade.fragment.fx?raw";
 import { WATER_F0, roughnessFor, type WaterRow } from "./waterShading.js";
 
 /** Babylon's dielectric F0 at metallicF0Factor 1 is 0.04; water's 0.02 is half of it. */
 const PBR_DIELECTRIC_F0 = 0.04;
 
-/** The definitions each stage gets: the water's, then the sea's waves'
- * (each file ends in a newline, so no two lines join). */
-const VERTEX_DEFINITIONS = vertexDefs + oceanVertexDefs;
-const FRAGMENT_DEFINITIONS = fragmentDefs + oceanFragmentDefs;
+/** The definitions each stage gets: the water's, then the sea's declarations,
+ * then the sea's surface, which both stages evaluate (`oceanSurface.fx`), and
+ * in the fragment stage the sea's shading (each file ends in a newline, so no
+ * two lines join). */
+const VERTEX_DEFINITIONS = vertexDefs + oceanVertexDefs + oceanSurface;
+const FRAGMENT_DEFINITIONS = fragmentDefs + oceanFragmentDefs + oceanSurface + oceanShade;
+
+/**
+ * Babylon 9.18's line that takes the reflectivity block's roughness, which
+ * comes after CUSTOM_FRAGMENT_BEFORE_LIGHTS, where no roughness can be written
+ * yet; and the sea's line in its place: the roughness of the slope variance
+ * its normal leaves undrawn, per pixel (`wOceanVar`, waterLights.fragment.fx;
+ * spec §7.3). The wet plugin rewrites the same line on the materials it wets;
+ * the water never carries that plugin.
+ */
+export const OCEAN_ROUGHNESS_ANCHOR = "!float roughness=reflectivityOut\\.roughness;";
+export const OCEAN_ROUGHNESS_CODE = "float roughness=min(sqrt(sqrt(2.0 * wOceanVar)), 1.0);";
 
 /**
  * What the sea's material draws its waves from, filled in place each frame
@@ -321,6 +336,10 @@ export class WaterPlugin extends MaterialPluginBase {
         CUSTOM_FRAGMENT_DEFINITIONS: FRAGMENT_DEFINITIONS,
         CUSTOM_FRAGMENT_BEFORE_LIGHTS: fragmentLights,
         CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: fragmentCompose,
+        // Listed always: Babylon gathers a plugin's hook names once, when the
+        // plugin is added. An empty string injects nothing, so a lake's line
+        // stays Babylon's own.
+        [OCEAN_ROUGHNESS_ANCHOR]: this._ocean !== null ? OCEAN_ROUGHNESS_CODE : "",
       };
     }
     return null;
