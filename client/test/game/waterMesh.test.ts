@@ -41,6 +41,25 @@ vi.mock("../../src/game/waterFrame.js", async (importOriginal) => {
   return { ...actual, waterFrameSupported: () => frameSupport.supported };
 });
 
+// What the sea's waves are told each frame of whether the sea is drawn: the
+// real ocean, its `update` recorded on the way in.
+const seaFrames = vi.hoisted(() => ({ drawn: [] as (boolean | undefined)[] }));
+vi.mock("../../src/game/oceanRender.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/game/oceanRender.js")>();
+  return {
+    ...actual,
+    createOcean: (...args: Parameters<typeof actual.createOcean>) => {
+      const ocean = actual.createOcean(...args);
+      const update = ocean.update.bind(ocean);
+      ocean.update = (...frame: Parameters<typeof update>) => {
+        seaFrames.drawn.push(frame[6]);
+        update(...frame);
+      };
+      return ocean;
+    },
+  };
+});
+
 setActiveTerrainVariant("olympic");
 
 /** A lake as the variant lists it. */
@@ -481,6 +500,33 @@ describe("createWater under NullEngine", () => {
       camera.setTarget(new Vector3(-790.4, 87.5, 84));
       scene.render();
       expect(activeRings().length).toBeGreaterThan(0);
+      water.dispose();
+    }, timeLimit(30_000));
+
+    it("tells the sea's waves the sea is drawn only after a frame whose culling kept a sea ring, a lake in view or not", () => {
+      engine = new NullEngine();
+      const scene = new Scene(engine);
+      const lakes = activeTerrainVariant().waterBodies!(seed).filter((b): b is LakeSource => b.kind === "lake");
+      const camera = new FreeCamera("c", new Vector3(209.6, 87.5, 84), scene);
+      camera.maxZ = 10_000;
+      const water = createWater(scene, seed, 0, lakes, "high", 209.6, 84);
+      seaFrames.drawn.length = 0;
+      // Before any frame is drawn: nothing kept.
+      water.update(209.6, 84, 0);
+      // Inland, east, the pond beside the camera and no sea ring in view.
+      camera.setTarget(new Vector3(1209.6, 87.5, 84));
+      scene.render();
+      expect(scene.getActiveMeshes().contains(scene.getMeshByName("pond_0")!)).toBe(true);
+      water.update(209.6, 84, 1);
+      // West, toward the coast.
+      camera.setTarget(new Vector3(-790.4, 87.5, 84));
+      scene.render();
+      water.update(209.6, 84, 2);
+      // East again.
+      camera.setTarget(new Vector3(1209.6, 87.5, 84));
+      scene.render();
+      water.update(209.6, 84, 3);
+      expect(seaFrames.drawn).toEqual([false, false, true, false]);
       water.dispose();
     }, timeLimit(30_000));
 

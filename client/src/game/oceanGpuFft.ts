@@ -34,6 +34,12 @@
  * `TEXTURE_CREATIONFLAG_STORAGE`. Every pipeline takes the device's automatic
  * layout: Babylon's explicit one gives a storage texture array a 2-D view.
  *
+ * The first frame that dispatches does so inside a validation error scope on
+ * the device: a pipeline or a binding the device refuses is reported there,
+ * and the wind sea fails (the caller falls back) rather than spoiling every
+ * frame's commands after it. Nothing more is dispatched until the scope
+ * answers.
+ *
  * WebGPU only, and only where the engine reports compute: `createGpuWindSea`
  * returns null on any other engine, and the caller draws the medium tier's
  * loop instead. This module names no module of Babylon's WebGPU engine at run
@@ -61,10 +67,12 @@ export type GpuWindSea = {
   /** Rebuilds h0 for the wind sea's state on the CPU and uploads it. */
   setSpectrum(state: { u10: number; dir: [number, number] }, seed: number): void;
   /** One frame at `seconds` on the shared clock: evolve, rows, columns, resolve.
-   * Nothing until every shader has compiled; then four dispatches. */
+   * Nothing until every shader has compiled, nor while the first frame's
+   * validation is awaited; then four dispatches. */
   step(seconds: number): void;
   /** `compiling` until the four shaders are ready, `running` once a frame has
-   * been dispatched, `failed` if one did not compile (the caller falls back). */
+   * been dispatched, `failed` if one did not compile or the device refused the
+   * first frame (the caller falls back). */
   status(): "compiling" | "running" | "failed";
   dispose(): void;
 };
@@ -98,6 +106,9 @@ export const OCEAN_FFT_DISPATCH = {
 /** A half float's 1.0: the Jacobian `disp` holds before the first frame, an unfolded sea. */
 const HALF_ONE = 0x3c00;
 
+/** The device's error scopes, the part of it the first frame's validation needs. */
+type ErrorScopes = Pick<GPUDevice, "pushErrorScope" | "popErrorScope">;
+
 /**
  * What `setSpectrum` uploads: h0 of each cascade for the wind sea's state
  * (`windSeaH0`, its seed `windSeaCascadeSeed(seed, c)`), as the evolve shader
@@ -129,6 +140,7 @@ export function createGpuWindSea(engine: AbstractEngine): GpuWindSea | null {
   const n = FFT_N;
   const cascades = FFT_CASCADES.length;
   const gpu = engine as WebGPUEngine;
+  const device: ErrorScopes = gpu._device;
 
   const h0 = new StorageBuffer(gpu, cascades * n * n * 16, Constants.BUFFER_CREATIONFLAG_WRITE, "oceanFftH0");
   const spectra = new StorageBuffer(gpu, 2 * cascades * n * n * 16, Constants.BUFFER_CREATIONFLAG_READWRITE, "oceanFftSpectra");
@@ -157,6 +169,8 @@ export function createGpuWindSea(engine: AbstractEngine): GpuWindSea | null {
 
   let failed = false;
   let ran = false;
+  // The first frame's validation: none asked yet, awaited, or answered clean.
+  let validation: "unasked" | "awaited" | "clean" = "unasked";
   let disposed = false;
   const shader = (name: string, source: string, bindingsMapping: ComputeBindingMapping, entryPoint = "main"): ComputeShader => {
     const made = new ComputeShader(name, engine, { computeSource: source }, { bindingsMapping, entryPoint });
@@ -180,6 +194,10 @@ export function createGpuWindSea(engine: AbstractEngine): GpuWindSea | null {
   resolve.setStorageTexture("disp", disp);
   resolve.setStorageTexture("slope", slope);
   const all = [evolve, rows, columns, resolve];
+  // Babylon compiles a compute shader when it is first asked whether it is
+  // ready, and each compiles by itself from then on: ask all four now, so they
+  // compile together whether or not the sea is in sight.
+  for (const s of all) s.isReady();
 
   return {
     disp,
@@ -188,16 +206,41 @@ export function createGpuWindSea(engine: AbstractEngine): GpuWindSea | null {
       if (!disposed) h0.update(gpuWindSeaH0(state, seed));
     },
     step(seconds) {
-      if (disposed || failed || !all.every((s) => s.isReady())) return;
+      if (disposed || failed || validation === "awaited") return;
+      // Every shader asked each frame, none skipped for another not ready yet.
+      if (!all.map((s) => s.isReady()).every(Boolean)) return;
       const folded = seconds - WIND_SEA_REPEAT * Math.floor(seconds / WIND_SEA_REPEAT);
       values[0] = folded;
       engine.updateUniformBuffer(params, values);
       const d = OCEAN_FFT_DISPATCH;
-      evolve.dispatch(d.evolve[0], d.evolve[1], d.evolve[2]);
-      rows.dispatch(d.rows[0], d.rows[1], d.rows[2]);
-      columns.dispatch(d.columns[0], d.columns[1], d.columns[2]);
-      resolve.dispatch(d.resolve[0], d.resolve[1], d.resolve[2]);
-      ran = true;
+      const first = validation === "unasked";
+      if (first) device.pushErrorScope("validation");
+      try {
+        evolve.dispatch(d.evolve[0], d.evolve[1], d.evolve[2]);
+        rows.dispatch(d.rows[0], d.rows[1], d.rows[2]);
+        columns.dispatch(d.columns[0], d.columns[1], d.columns[2]);
+        resolve.dispatch(d.resolve[0], d.resolve[1], d.resolve[2]);
+        ran = true;
+      } finally {
+        // The scope is popped whatever the dispatches did, so it never holds the device's later errors.
+        if (first) {
+          validation = "awaited";
+          device.popErrorScope().then(
+            (error) => {
+              if (error === null) {
+                validation = "clean";
+                return;
+              }
+              if (!failed) console.warn("Ocean: the device refused the wind sea's first frame; the sea draws without it.", error.message);
+              failed = true;
+            },
+            (reason: unknown) => {
+              if (!failed) console.warn("Ocean: the wind sea's first frame could not be checked; the sea draws without it.", reason);
+              failed = true;
+            },
+          );
+        }
+      }
     },
     status() {
       if (failed) return "failed";

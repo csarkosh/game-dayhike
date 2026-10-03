@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
@@ -141,7 +141,133 @@ describe("the wind sea's compute shaders", () => {
   });
 });
 
+/** What a fake device's first frame answers: no error, or the error it raises. */
+type ScopeAnswer = { message: string } | null;
+
+/**
+ * NullEngine standing in for WebGPU's: compute reported, its raw textures
+ * ready once made (WebGPU's upload at creation; NullEngine's never upload),
+ * the compute effects ready as `ready` says by their entry points, each
+ * dispatch logged by the bindings it carries, and a device whose error scopes
+ * are logged too and whose popped scope answers when the test settles it.
+ */
+function computeEngine(ready: (entry: string) => boolean = () => true) {
+  const engine = new NullEngine();
+  Object.defineProperty(engine, "isWebGPU", { get: () => true });
+  engine.getCaps().supportComputeShaders = true;
+  const makeArray = engine.createRawTexture2DArray.bind(engine);
+  engine.createRawTexture2DArray = (...args: Parameters<typeof makeArray>) => {
+    const made = makeArray(...args);
+    made.isReady = true;
+    return made;
+  };
+  const log: string[] = [];
+  const asked: string[] = [];
+  let answer: (value: ScopeAnswer) => void = () => undefined;
+  const device = {
+    pushErrorScope: vi.fn((filter: string) => {
+      log.push(`push ${filter}`);
+    }),
+    popErrorScope: vi.fn(() => {
+      log.push("pop");
+      return new Promise<ScopeAnswer>((resolve) => {
+        answer = resolve;
+      });
+    }),
+  };
+  Object.assign(engine, {
+    _device: device,
+    createStorageBuffer: (size: number) => ({ capacity: size, references: 1, underlyingResource: null }),
+    updateStorageBuffer: () => undefined,
+    createComputeContext: () => ({ clear: () => undefined }),
+    createComputeEffect: (_path: unknown, options: { entryPoint: string }) => {
+      asked.push(options.entryPoint);
+      return { isReady: () => ready(options.entryPoint) };
+    },
+    computeDispatch: (_effect: unknown, _context: unknown, bindings: Record<string, unknown>) => {
+      log.push(`dispatch ${Object.keys(bindings).join(",")}`);
+    },
+  });
+  return { engine, device, log, asked, answer: (value: ScopeAnswer) => answer(value) };
+}
+
 describe("createGpuWindSea", () => {
+  it("asks all four shaders whether they are ready when made and every frame, none waiting on another", () => {
+    let evolveReady = false;
+    const polled: string[] = [];
+    const { engine, log, asked } = computeEngine((entry) => {
+      polled.push(entry);
+      return entry !== "main" || evolveReady;
+    });
+    const sea = createGpuWindSea(engine)!;
+    // Made: each shader's compute effect made and asked, so all four compile together, in sight of the sea or not.
+    expect(asked).toEqual(["main", "rows", "columns", "main"]);
+    expect(polled).toEqual(["main", "rows", "columns", "main"]);
+    // Evolve (entry point main) still compiling: nothing dispatched, and every shader asked all the same.
+    polled.length = 0;
+    sea.step(1);
+    expect(polled).toEqual(["main", "rows", "columns", "main"]);
+    expect(log).toEqual([]);
+    expect(sea.status()).toBe("compiling");
+    evolveReady = true;
+    sea.step(2);
+    expect(log.filter((l) => l.startsWith("dispatch"))).toHaveLength(4);
+    expect(sea.status()).toBe("running");
+    sea.dispose();
+    engine.dispose();
+  });
+
+  it("dispatches its first frame inside a validation error scope, and nothing more until the scope answers clean", async () => {
+    const { engine, device, log, answer } = computeEngine();
+    const sea = createGpuWindSea(engine)!;
+    sea.step(1);
+    expect(log).toEqual([
+      "push validation",
+      "dispatch h0,spectra,params",
+      "dispatch spectra",
+      "dispatch spectra",
+      "dispatch spectra,params,disp,slope",
+      "pop",
+    ]);
+    expect(sea.status()).toBe("running");
+    // Awaiting the answer: no frame dispatched.
+    sea.step(2);
+    expect(log).toHaveLength(6);
+    answer(null);
+    await Promise.resolve();
+    sea.step(3);
+    // Clean: four dispatches a frame from then on, outside any scope.
+    expect(log.slice(6)).toEqual([
+      "dispatch h0,spectra,params", "dispatch spectra", "dispatch spectra", "dispatch spectra,params,disp,slope",
+    ]);
+    expect(device.pushErrorScope).toHaveBeenCalledTimes(1);
+    expect(device.popErrorScope).toHaveBeenCalledTimes(1);
+    expect(sea.status()).toBe("running");
+    sea.dispose();
+    engine.dispose();
+  });
+
+  it("fails, and dispatches no more, when the device refuses its first frame", async () => {
+    const { engine, log, answer } = computeEngine();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const sea = createGpuWindSea(engine)!;
+      sea.step(1);
+      expect(sea.status()).toBe("running");
+      answer({ message: "Storage texture binding's view dimension does not match the layout" });
+      await Promise.resolve();
+      expect(sea.status()).toBe("failed");
+      expect(warn).toHaveBeenCalledTimes(1);
+      sea.step(2);
+      sea.step(3);
+      expect(log).toHaveLength(6);
+      sea.dispose();
+    } finally {
+      warn.mockRestore();
+      engine.dispose();
+    }
+  });
+
   it("returns null on an engine without WebGPU compute", () => {
     const engine = new NullEngine();
     expect(createGpuWindSea(engine)).toBeNull();

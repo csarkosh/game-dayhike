@@ -42,8 +42,11 @@ export type Ocean = {
   /** How the wind sea is drawn: 0 low (normals), 1 the loop, 2 the GPU FFT. */
   windMode: 0 | 1 | 2;
   /** Per frame: the camera, the shared seconds, the game's wind (0..1 and the
-   * direction it blows toward) and the hour (0–24). */
-  update(camX: number, camZ: number, seconds: number, wind01: number, windDir: [number, number], hour: number): void;
+   * direction it blows toward), the hour (0–24), and whether the sea is drawn
+   * (the high tier's FFT is stepped only then; drawn when not said). */
+  update(
+    camX: number, camZ: number, seconds: number, wind01: number, windDir: [number, number], hour: number, drawn?: boolean,
+  ): void;
   /** Points the plugin at this ocean's binding, whose values `update` moves. */
   bind(plugin: WaterPlugin): void;
   dispose(): void;
@@ -126,7 +129,7 @@ export function createOcean(
     get windMode() {
       return binding.coast[3] as 0 | 1 | 2;
     },
-    update(camX, camZ, seconds, wind01, windDir, hour) {
+    update(camX, camZ, seconds, wind01, windDir, hour, drawn = true) {
       if (Math.abs(camZ - coastCentreZ) > OCEAN_COAST_RECENTRE) {
         coastCentreZ = camZ;
         writeCoastRow(tables, profiles, coastCentreZ);
@@ -140,7 +143,7 @@ export function createOcean(
       // loop is drawn) and the numbers the shaders normalise it by; and the
       // sea's own state, at the speed the sea follows, a minute behind its
       // wind's (`lagSeaWind`).
-      const sea = windSea.update(blowing, seconds);
+      const sea = windSea.update(blowing, seconds, drawn);
       // The fully developed height, uncut: `windSeaShare` takes the share of it that the fetch allows.
       binding.wind[0] = sea.hs;
       binding.wind[1] = sea.loopScale;

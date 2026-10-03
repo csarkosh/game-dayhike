@@ -6,8 +6,8 @@ import { Scene } from "@babylonjs/core/scene.js";
 import { RawTexture2DArray } from "@babylonjs/core/Materials/Textures/rawTexture2DArray.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import {
-  OCEAN_GPU_DEADLINE, WIND_SEA_RESPECTRUM_U, cascadeStats, createWindSeaSource, needsRespectrum, startLoopWorker,
-  type GpuStarter, type LoopStarter,
+  OCEAN_GPU_DEADLINE, OCEAN_GPU_FRAME_MAX, WIND_SEA_RESPECTRUM_U, cascadeStats, createWindSeaSource, needsRespectrum,
+  startLoopWorker, type GpuStarter, type LoopStarter, type WindSeaSource,
 } from "../../src/game/oceanWindSource.js";
 import type { GpuWindSea } from "../../src/game/oceanGpuFft.js";
 import type { LoopReply } from "../../src/game/oceanLoopBake.js";
@@ -71,6 +71,11 @@ const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve,
 
 /** The wind sea of a wind of u10 m/s blowing onshore, at noon. */
 const at = (u10: number) => windSeaStateFor(u10 / 12, [1, 0], 12);
+
+/** Frames a quarter of a second apart from `from` to `to`, both counted, at 10 m/s: the sea drawn or not. */
+function frames(source: WindSeaSource, from: number, to: number, drawn = true): void {
+  for (let t = from; t <= to; t += 0.25) source.update(at(10), t, drawn);
+}
 
 let engine: NullEngine;
 afterEach(() => engine?.dispose());
@@ -244,14 +249,15 @@ describe("the wind sea's field by tier", () => {
     const startLoop = vi.fn<LoopStarter>((seed) => Promise.resolve(reply(seed)));
     const source = createWindSeaSource(scene, SEED, "high", startLoop, () => Promise.resolve(gpu));
     await settle();
-    source.update(at(10), 100);
-    source.update(at(10), 125);
+    frames(source, 100, 125);
     // A step back and on again: 29 s have passed, not 34.
     source.update(at(10), 120);
-    source.update(at(10), 129);
+    frames(source, 120.25, 129);
     expect(gpu.dispose).not.toHaveBeenCalled();
     expect(startLoop).not.toHaveBeenCalled();
-    source.update(at(10), 130.5);
+    frames(source, 129.25, 130);
+    expect(gpu.dispose).not.toHaveBeenCalled();
+    source.update(at(10), 130.25);
     expect(gpu.dispose).toHaveBeenCalledTimes(1);
     expect(startLoop).toHaveBeenCalledWith(SEED, expect.any(AbortSignal));
     await vi.waitFor(() => expect(source.mode).toBe(1), { timeout: timeLimit(10_000) });
@@ -261,6 +267,75 @@ describe("the wind sea's field by tier", () => {
     expect(gpu.step).toHaveBeenCalledTimes(steps);
     source.dispose();
   }, timeLimit(30_000));
+
+  it("steps the FFT only while the sea is drawn, and again from the first frame it is drawn after", async () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const gpu = fakeGpu(scene);
+    const startLoop = vi.fn<LoopStarter>((seed) => Promise.resolve(reply(seed)));
+    const source = createWindSeaSource(scene, SEED, "high", startLoop, () => Promise.resolve(gpu));
+    await settle();
+    source.update(at(10), 50, true);
+    expect(source.mode).toBe(2);
+    // Out of sight: no step, and the field drawn when it is back is the FFT's still.
+    source.update(at(10), 51, false);
+    source.update(at(10), 52, false);
+    expect(gpu.step.mock.calls.map(([seconds]) => seconds)).toEqual([50]);
+    expect([source.mode, source.disp, source.slope]).toEqual([2, gpu.disp, gpu.slope]);
+    source.update(at(10), 53, true);
+    expect(gpu.step.mock.calls.map(([seconds]) => seconds)).toEqual([50, 53]);
+    // The rest runs on out of sight as before: the spectrum follows the sea's wind, which follows its own.
+    source.update(at(12), 300, false);
+    expect(gpu.setSpectrum).toHaveBeenCalledTimes(2);
+    expect(gpu.setSpectrum.mock.calls[1]?.[0].u10).toBeGreaterThan(11.5);
+    expect(gpu.step).toHaveBeenCalledTimes(2);
+    expect(startLoop).not.toHaveBeenCalled();
+    source.dispose();
+  });
+
+  it("holds the FFT's deadline while the sea is out of sight: only the frames that draw it count", async () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const gpu = fakeGpu(scene, "compiling");
+    const startLoop = vi.fn<LoopStarter>((seed) => Promise.resolve(reply(seed)));
+    const source = createWindSeaSource(scene, SEED, "high", startLoop, () => Promise.resolve(gpu));
+    await settle();
+    // Two minutes out of sight: nothing stepped, nothing counted.
+    frames(source, 100, 220, false);
+    expect(gpu.step).not.toHaveBeenCalled();
+    expect(gpu.dispose).not.toHaveBeenCalled();
+    // Then 20 s drawn, 60 s hidden and 10 s drawn: 30 s counted, and the next drawn frame passes the deadline.
+    frames(source, 220.25, 240);
+    frames(source, 240.25, 300, false);
+    frames(source, 300.25, 310);
+    expect(gpu.dispose).not.toHaveBeenCalled();
+    expect(source.mode).toBe(0);
+    source.update(at(10), 310.25, true);
+    expect(gpu.dispose).toHaveBeenCalledTimes(1);
+    expect(startLoop).toHaveBeenCalledWith(SEED, expect.any(AbortSignal));
+    source.dispose();
+  });
+
+  it("counts a forward jump of the shared seconds as a frame toward the deadline, not the time it skips", async () => {
+    expect(OCEAN_GPU_FRAME_MAX).toBe(0.25);
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const gpu = fakeGpu(scene, "compiling");
+    const startLoop = vi.fn<LoopStarter>((seed) => Promise.resolve(reply(seed)));
+    const source = createWindSeaSource(scene, SEED, "high", startLoop, () => Promise.resolve(gpu));
+    await settle();
+    source.update(at(10), 100);
+    // A tab resumed a minute on, or a client's welcome: one frame.
+    source.update(at(10), 160);
+    expect(gpu.dispose).not.toHaveBeenCalled();
+    expect(gpu.step.mock.calls.map(([seconds]) => seconds)).toEqual([100, 160]);
+    // From there the frames count as ever: 0.25 s for the jump, 29.75 s more is the deadline, one frame past it drops.
+    frames(source, 160.25, 189.75);
+    expect(gpu.dispose).not.toHaveBeenCalled();
+    source.update(at(10), 190);
+    expect(gpu.dispose).toHaveBeenCalledTimes(1);
+    source.dispose();
+  });
 
   it("follows its wind a minute behind: the wind's own speed on the first frame, a step approached exponentially, a step back held", () => {
     expect(OCEAN_SEA_LAG).toBe(60);

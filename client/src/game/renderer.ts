@@ -1013,6 +1013,18 @@ export function createWater(
   for (const mesh of lakeMeshes) mesh.renderingGroupId = group;
   waterMeshes.push(...meshes, ...lakeMeshes);
 
+  // Whether the last frame drew the sea: its culling kept one of the sea's
+  // rings (never a disabled ring, one outside the frustum, or a lake).
+  // `update` runs before this frame is culled, so this is the frame before's
+  // answer, a frame late: the high tier's FFT is stepped only while it is
+  // true, and the first frame the sea comes back into sight shows the last
+  // field the FFT made.
+  const seaDrawn = (): boolean => {
+    const active = scene.getActiveMeshes();
+    for (const mesh of meshes) if (active.contains(mesh)) return true;
+    return false;
+  };
+
   return {
     meshes,
     lakeMeshes,
@@ -1057,7 +1069,7 @@ export function createWater(
         uploadBed();
       }
       for (const p of plugins) p.advance(seconds);
-      ocean.update(camX, camZ, seconds, seaWind, seaWindDir, hour);
+      ocean.update(camX, camZ, seconds, seaWind, seaWindDir, hour, seaDrawn());
       // The copy's depth is linearised with the camera's planes, read each
       // frame: the active camera can change (the freecam, a cutscene).
       const camera = scene.activeCamera;

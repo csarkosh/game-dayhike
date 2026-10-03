@@ -5,7 +5,11 @@
  * baked in a worker (`oceanLoop.worker.ts`), on low nothing: the sea keeps
  * PBR's bump there. Until a field is ready the mode stays 0 and the sea is
  * the swell alone: the FFT is drawn once it runs, and if it is still
- * compiling OCEAN_GPU_DEADLINE seconds on, the loop is drawn instead.
+ * compiling after OCEAN_GPU_DEADLINE seconds of frames that draw the sea, the
+ * loop is drawn instead. The FFT is stepped only in a frame that draws the sea:
+ * each frame's field is evolved from h0 at that frame's time, so a frame
+ * skipped costs nothing, and a player out of sight of the sea pays no compute
+ * for it.
  *
  * Both fields are made with the wind blowing along +x; the shaders turn them
  * to the wind's direction (`oceanWindFrame`), so the high tier's spectrum is
@@ -27,8 +31,12 @@ import { lagSeaWind, windSeaAtSpeed, type WindSeaState } from "./oceanWindSea.js
 
 /** m/s the wind's speed moves before the high tier's spectrum is rebuilt. */
 export const WIND_SEA_RESPECTRUM_U = 0.5;
-/** s of the shared clock the high tier's FFT may stay compiling before the loop is drawn instead. */
+/** s of the shared clock the high tier's FFT may stay compiling, counted over the frames that draw the sea, before
+ * the loop is drawn instead. */
 export const OCEAN_GPU_DEADLINE = 30;
+/** The most seconds one frame counts toward OCEAN_GPU_DEADLINE: a forward jump of the shared seconds (a tab
+ * resuming, a client's welcome) is a frame, not the time it skips. */
+export const OCEAN_GPU_FRAME_MAX = 0.25;
 
 /** 0: no wind sea drawn (low, or a field not ready yet); 1: the medium loop; 2: the high tier's FFT. */
 export type WindSeaMode = 0 | 1 | 2;
@@ -45,10 +53,11 @@ export type WindSeaSource = {
   readonly stats: [number, number, number, number];
   /** The loop's time (s), run at the sea's rate and folded into [0, LOOP_SECONDS). */
   readonly loopTime: number;
-  /** Per frame, before the scene renders: the wind sea's state for the wind as it blows now, and the sea's
-   * seconds. Returns the sea's own state, the same at the speed the sea follows (`lagSeaWind`), which the
+  /** Per frame, before the scene renders: the wind sea's state for the wind as it blows now, the sea's
+   * seconds, and whether the sea is drawn (drawn when not said): the FFT is stepped, and its deadline counted,
+   * only then. Returns the sea's own state, the same at the speed the sea follows (`lagSeaWind`), which the
    * fields, the loop's scale and rate and the whitecaps take. */
-  update(state: WindSeaState, seconds: number): WindSeaState;
+  update(state: WindSeaState, seconds: number, drawn?: boolean): WindSeaState;
   dispose(): void;
 };
 
@@ -142,8 +151,9 @@ export function createWindSeaSource(
   let loop: { texture: RawTexture2DArray; heightStd: number; slopeVar: number } | null = null;
   let gpu: GpuWindSea | null = null;
   let gpuU10: number | null = null;
-  // The latest seconds counted when the FFT came (or on the first frame after): its deadline runs from there.
-  let gpuSince: number | null = null;
+  // The seconds the FFT has spent compiling over frames that drew the sea, each frame's held to
+  // OCEAN_GPU_FRAME_MAX: what its deadline is measured by.
+  let gpuWaited = 0;
   let loopAsked = false;
   let disposed = false;
   // Ends the loop's worker when the sea goes before it answers.
@@ -182,7 +192,7 @@ export function createWindSeaSource(
     gpu?.dispose();
     gpu = null;
     gpuU10 = null;
-    gpuSince = null;
+    gpuWaited = 0;
     useLoop();
     askLoop();
   }
@@ -200,7 +210,7 @@ export function createWindSeaSource(
       }
       // Drawn once it runs (`update`): until then its textures hold a flat sea.
       gpu = made;
-      gpuSince = lastSeconds;
+      gpuWaited = 0;
     }, () => {
       if (!disposed) askLoop();
     });
@@ -222,26 +232,26 @@ export function createWindSeaSource(
     get loopTime() {
       return loopTime;
     },
-    update(state, seconds) {
+    update(state, seconds, drawn = true) {
       // The shared seconds step back a few ticks when a client's tick is
       // reconciled to the host's: the clocks here hold through the step and
       // run on only once the seconds pass the latest counted, so no second is
       // counted twice.
       const dt = lastSeconds === null ? 0 : Math.max(0, seconds - lastSeconds);
-      const now = lastSeconds === null ? seconds : Math.max(lastSeconds, seconds);
-      lastSeconds = now;
+      lastSeconds = lastSeconds === null ? seconds : Math.max(lastSeconds, seconds);
       seaU10 = seaU10 === null ? state.u10 : lagSeaWind(seaU10, state.u10, dt);
       const sea = windSeaAtSpeed(state, seaU10);
       if (gpu !== null && gpu.status() === "failed") dropGpu();
       if (gpu !== null) {
-        gpuSince ??= now;
         if (needsRespectrum(gpuU10, sea.u10)) {
           gpu.setSpectrum({ u10: sea.u10, dir: [1, 0] }, seed);
           gpuU10 = sea.u10;
           const s = cascadeStats(sea.u10);
           for (let i = 0; i < 4; i++) stats[i] = s[i] as number;
         }
-        gpu.step(seconds);
+        // Out of sight the FFT is not stepped: its textures hold the last field
+        // it made until the sea is drawn again.
+        if (drawn) gpu.step(seconds);
         const status = gpu.status();
         if (status === "running") {
           mode = 2;
@@ -249,7 +259,8 @@ export function createWindSeaSource(
           slope = gpu.slope;
           return sea;
         }
-        if (status === "compiling" && now - gpuSince <= OCEAN_GPU_DEADLINE) return sea;
+        if (drawn) gpuWaited += Math.min(dt, OCEAN_GPU_FRAME_MAX);
+        if (status === "compiling" && gpuWaited <= OCEAN_GPU_DEADLINE) return sea;
         dropGpu();
       }
       // The loop's own clock, run at the sea's rate: a fully developed sea's
