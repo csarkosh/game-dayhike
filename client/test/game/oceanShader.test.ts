@@ -33,11 +33,11 @@ import { oceanTipsFor } from "../../src/game/oceanRender.js";
 import {
   OCEAN_BUMP_HS, OCEAN_BUMP_MAX, OCEAN_CAP_CELL, OCEAN_CAP_CYCLES, OCEAN_CAP_DRIFT, OCEAN_CAP_INSET, OCEAN_CAP_PERIOD,
   OCEAN_CAP_RADIUS, OCEAN_CAP_SHARE, OCEAN_CAP_SOFT, OCEAN_DETAIL_HI, OCEAN_DETAIL_LO, OCEAN_FOAM_ALBEDO,
-  OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_FADE, OCEAN_FOLD, OCEAN_FOLD_FULL, OCEAN_INNER_COVER, OCEAN_LACE_DRIFT,
+  OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_FADE, OCEAN_INNER_COVER, OCEAN_LACE_DRIFT,
   OCEAN_LACE_FINE, OCEAN_LACE_FINE_SHIFT, OCEAN_LACE_FIT_A, OCEAN_LACE_FIT_B, OCEAN_LACE_FIT_C, OCEAN_LACE_FIT_D,
   OCEAN_LACE_FIT_E, OCEAN_LACE_ONSET, OCEAN_LACE_SOFT, OCEAN_LACE_TILE, OCEAN_LACE_WEIGHT, OCEAN_LOOP_SCALE_MIN,
   OCEAN_RESOLVE_PHASE_HI, OCEAN_RESOLVE_PHASE_LO, OCEAN_RING_REACH, OCEAN_SLOPE_VAR_FLOOR, OCEAN_WIND_TILE_CELLS,
-  WATER_COX_MUNK_A, WATER_COX_MUNK_B, WATER_ROWS, bumpScale, capProfile, coxMunkVariance, foamWhite, foldCap,
+  WATER_COX_MUNK_A, WATER_COX_MUNK_B, WATER_ROWS, bumpScale, capProfile, coxMunkVariance, drawnWhitecap, foamWhite,
   oceanRingCell, resolvedShare, resolvedSlopeVariance, roughnessFor, roughnessFromVariance, slopeVariance,
   undrawnSlopeVariance, whitecapThreshold, windFrame, windPixelKeep, windRingKeep, windSlopeLimit,
 } from "../../src/game/waterShading.js";
@@ -605,7 +605,6 @@ describe("the water material's stages, compiled", () => {
         expect(fragment).toContain("oceanLaceLevel");
         expect(fragment).toContain("oceanCapCells");
         expect(fragment).toContain("oceanWindSlopesAt");
-        expect(fragment).toContain("oceanWindFold");
         expect(fragment).toContain("oceanCapFire");
       } finally {
         sea.dispose();
@@ -649,9 +648,9 @@ describe("the white water", () => {
     for (const signature of [
       "float oceanLace(vec2 p)", "float oceanFoamLookAge(float foamAge)", "float oceanFoamShare(float foam, float breaking)",
       "float oceanLaceLevel(float share)", "float oceanFoamCover(vec2 p, float foam, float breaking, float pixel)",
-      "float oceanFoamWhite(float lookAge)", "float oceanCapCoverage(vec2 p)", "float oceanCapThreshold(float coverage)",
-      "float oceanWhitecap(vec2 p, float crest)", "float oceanCapFire(vec2 h, float k, float chance)",
-      "float oceanCapCells(vec2 p, float pixel)",
+      "float oceanFoamWhite(float lookAge)", "float oceanCapCoverage(vec2 p, float share)",
+      "float oceanCapThreshold(float coverage)", "float oceanWhitecap(float coverage, float crest)",
+      "float oceanCapFire(vec2 h, float k, float chance)", "float oceanCapCells(vec2 p, float pixel, float share)",
     ]) expect(f).toContain(signature);
   });
 
@@ -743,9 +742,9 @@ describe("the white water", () => {
       "  vec2 centre = vec2(waterSkinHash(h + vec2(13.0, 0.0)), waterSkinHash(h + vec2(0.0, 57.0))) * (1.0 - 2.0 * OCEAN_CAP_INSET) + OCEAN_CAP_INSET;",
       "  vec2 at = (c + centre) * OCEAN_CAP_CELL - waterSkin.y + waterWindTime * OCEAN_CAP_DRIFT;",
       "  float cycle = mod(waterTime, OCEAN_CAP_CYCLES * OCEAN_CAP_PERIOD) / OCEAN_CAP_PERIOD + waterSkinHash(h);",
-      "  float fire = oceanCapFire(h, k, oceanCapCoverage(at) / OCEAN_CAP_SHARE);",
+      "  float fire = oceanCapFire(h, k, oceanCapCoverage(at, oceanWindAmp(at)) / OCEAN_CAP_SHARE);",
       "  float cap = fire * (1.0 - (cycle - k)) * (1.0 - smoothstep(0.7, 1.0, r));",
-      "  return mix(cap, oceanCapCoverage(p), smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / (2.0 * OCEAN_CAP_RADIUS * OCEAN_CAP_CELL)));",
+      "  return mix(cap, oceanCapCoverage(p, share), smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / (2.0 * OCEAN_CAP_RADIUS * OCEAN_CAP_CELL)));",
     ]) expect(f).toContain(line);
     // Not the hash that stepped by a whole cell a cycle, the hour's fold, or a hash that fires at a chance of none.
     expect(f).not.toContain("mod(k, 97.0) * 3.0");
@@ -762,7 +761,7 @@ describe("the white water", () => {
     expect(at(l, "float wOceanPixel = max(length(wOceanDx), length(wOceanDy));")).toBeLessThan(layer);
     expect(at(l, "float wFoamAge = oceanFoamLookAge(wOceanFoam.z);")).toBeLessThan(layer);
     expect(at(l, "float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wOceanFoam.y, wOceanPixel);")).toBeLessThan(layer);
-    expect(at(l, "float wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel);")).toBeLessThan(layer);
+    expect(at(l, "  wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel, wWindShare);")).toBeLessThan(layer);
     expect(at(l, "wOceanCap *= 1.0 - wOceanFoam.y;")).toBeLessThan(layer);
     expect(l).toContain("float wFoamWhite = wOceanLace >= wOceanCap ? oceanFoamWhite(wFoamAge) : OCEAN_FOAM_ALBEDO;");
     // Then the matte layer: albedo toward the foam's white, transmission held, alpha toward 1, normal toward up.
@@ -793,11 +792,14 @@ describe("the wind sea in the shaders", () => {
     expect(OCEAN_LOOP_SCALE_MIN).toBeCloseTo((WIND_SEA_U_FLOOR / WIND_SEA_U_REF) ** 2, 15);
     const f = fx("oceanShade.fragment.fx");
     for (const [name, value] of [
-      ["OCEAN_FOLD", OCEAN_FOLD], ["OCEAN_FOLD_FULL", OCEAN_FOLD_FULL], ["OCEAN_BUMP_HS", OCEAN_BUMP_HS], ["OCEAN_BUMP_MAX", OCEAN_BUMP_MAX],
+      ["OCEAN_BUMP_HS", OCEAN_BUMP_HS], ["OCEAN_BUMP_MAX", OCEAN_BUMP_MAX],
     ] as const) pinned(f, name, value);
     expect(s).toContain("vec3 oceanWindDisplace(vec2 p)");
     expect(f).toContain("vec2 oceanWindSlopes(vec2 p)");
-    expect(f).toContain("float oceanWindFold(vec2 p)");
+    expect(f).toContain("float oceanCrestKeep(float pixel)");
+    // No folds: the FFT's Jacobian stays in its texture, read by no stage.
+    expect(f).not.toContain("oceanWindFold");
+    expect(f).not.toContain("OCEAN_FOLD");
   });
 
   it("keeps the wind sea's share near shore windSeaShare's: the fetch off the land, mixed toward the whole onshore", () => {
@@ -813,9 +815,17 @@ describe("the wind sea in the shaders", () => {
     // Every caller passes its own point: the ring's vertex, the pixel, the caps' cut and the low tier's bump.
     const f = fx("oceanShade.fragment.fx");
     const l = fx("waterLights.fragment.fx");
-    expect(f).toContain("  return oceanShelter(p, SHELTER_CHOP) * min(oceanWindAmp(p), 1.0);");
-    expect(f).toContain("  return min(oceanWind.x * oceanWindAmp(p) * (1.0 - breaking) * shelter / OCEAN_BUMP_HS, OCEAN_BUMP_MAX);");
-    expect(l).toContain("float wWindAmp = oceanWindAmp(vOceanXZ) * (1.0 - wOceanFoam.y) * wOceanChop;");
+    // The fragment stage reads the share once, at the pixel, and hands it on; only a whitecap cell's centre,
+    // another point, reads its own. The vertex stage reads it once more, at the vertex.
+    expect(l).toContain("float wWindShare = oceanWindAmp(vOceanXZ);");
+    expect(l).toContain("float wWindAmp = wWindShare * (1.0 - wOceanFoam.y) * wOceanChop;");
+    expect(l.match(/oceanWindAmp\(/g)).toHaveLength(1);
+    expect(f.match(/oceanWindAmp\(/g)).toHaveLength(1);
+    expect(f).toContain("oceanCapCoverage(at, oceanWindAmp(at))");
+    expect(s.match(/oceanWindAmp\(/g)).toHaveLength(2);
+    expect(f).toContain("  return oceanShelter(p, SHELTER_CHOP) * min(share, 1.0);");
+    expect(f).toContain("  return oceanWind.w * oceanCapDamp(p, share);");
+    expect(f).toContain("  return min(oceanWind.x * share * (1.0 - breaking) * shelter / OCEAN_BUMP_HS, OCEAN_BUMP_MAX);");
     expect(`${s}${f}${l}`).not.toContain("oceanWindAmp()");
     // oceanWindAmp read line for line into TypeScript: the coastline's x as oceanCoastAt reads the atlas's
     // row, between texel centres, and the uniforms as oceanRender.ts writes them (oceanWindDir's z the wind's
@@ -882,9 +892,8 @@ describe("the wind sea in the shaders", () => {
       "  return disp + oceanWindDisplaceAt(p, cell) * chop;",
     ]) expect(s, line).toContain(line);
     const f = fx("oceanShade.fragment.fx");
-    // The slope texture's (slopeX, slopeZ), the displacement's Jacobian in its fourth channel (oceanGpuFft.ts).
+    // The slope texture's (slopeX, slopeZ) (oceanGpuFft.ts).
     expect(f).toContain("    g = textureLod(oceanWindSlope, vec3(w / FFT_CASCADE_0, 0.0), 0.0).xy * k0");
-    expect(f).toContain("  float j0 = textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_0, 0.0), 0.0).w;");
     expect(f).toContain("    g = vec2(gx, gz) * (LOOP_N / (2.0 * LOOP_SIZE)) * keep;");
     expect(f).toContain("  return -oceanFromWind(g);");
   });
@@ -934,21 +943,51 @@ describe("the wind sea in the shaders", () => {
     // A calm dawn, the wind onshore: the bump nearly gone, the sea glassy.
     const dawn = windSeaStateFor(0.25, [1, 0], 6);
     expect(bumpScale(dawn.hs * windSeaShare(dawn, -50), 0, 1)).toBeCloseTo(0.0411, 4);
-    expect(foldCap(0.5)).toBe(0);
-    expect(foldCap(0.35)).toBeCloseTo(0.5, 12);
-    expect(foldCap(0.2)).toBe(1);
     const l = fx("waterLights.fragment.fx");
     expect(l).toContain("float wWindSteep = wWindAmp * oceanWindSlopeLimit(oceanWindDir.z, wOceanChop, wWindDrawn * wWindAmp * wWindAmp);");
     expect(l).toContain(
-      "vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05) * oceanBumpScale(vOceanXZ, wOceanFoam.y, wOceanChop) + wWindSlope * wWindSteep;",
+      "vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05) * oceanBumpScale(wWindShare, wOceanFoam.y, wOceanChop) + wWindSlope * wWindSteep;",
     );
   });
 
-  it("whitens a drawn wind sea's own crests, and on the high tier its folds, the low tier keeping its cells", () => {
+  it("whitens a drawn wind sea's own crests, faded to their coverage as their waves fall under the pixel, the cells only where none is drawn", () => {
     const l = fx("waterLights.fragment.fx");
+    const f = fx("oceanShade.fragment.fx");
     const branch = at(l, "if (oceanCoast.w > 0.5) {");
-    expect(branch).toBeGreaterThan(at(l, "float wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel);"));
-    expect(l).toContain("  wOceanCap = max(oceanWhitecap(vOceanXZ, wWind.y / max(oceanWindStats.x, 1.0e-4)), wFold);");
-    expect(at(l, "wOceanCap *= 1.0 - wOceanFoam.y;")).toBeGreaterThan(branch);
+    for (const line of [
+      "  float wCapCover = oceanCapCoverage(vOceanXZ, wWindShare);",
+      "  wOceanCap = mix(wCapCover, oceanWhitecap(wCapCover, wWind.y / max(oceanWindStats.x, 1.0e-4)), oceanCrestKeep(wOceanPixel));",
+    ]) expect(at(l, line), line).toBeGreaterThan(branch);
+    // The cells, and the reads they make, in the other branch of the uniform alone: where no wind sea is drawn.
+    const cells = at(l, "  wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel, wWindShare);");
+    expect(l.slice(branch, cells)).toContain("} else {");
+    expect(l.match(/oceanCapCells\(/g)).toHaveLength(1);
+    expect(at(l, "wOceanCap *= 1.0 - wOceanFoam.y;")).toBeGreaterThan(cells);
+    // The keep: on medium the loop's own shortest wave, on high cascade 1's.
+    expect(f).toContain("  if (oceanCoast.w > 1.5) return oceanWindPixelKeep(FFT_CASCADE_1, FFT_N, pixel);");
+    expect(f).toContain("  return oceanWindPixelKeep(oceanLoopSize(), LOOP_N, pixel);");
+    expect(f).toContain("  return smoothstep(t - 0.5 * OCEAN_CAP_SOFT, t + 0.5 * OCEAN_CAP_SOFT, crest) * step(1.0e-6, coverage);");
+    // Cascade 1's shortest waves fall under a pixel between 0.29 m and 0.59 m: whole caps nearer, their mean beyond.
+    expect(windPixelKeep(150, 256, 0.29296875)).toBe(1);
+    expect(windPixelKeep(150, 256, 0.439453125)).toBeCloseTo(0.5, 12);
+    expect(windPixelKeep(150, 256, 0.5859375)).toBe(0);
+    // The mirror: whole caps at a keep of 1, the coverage at 0, none without coverage.
+    const t = whitecapThreshold(0.01);
+    expect(drawnWhitecap(t + 1, 0.01, 1)).toBeCloseTo(1, 12);
+    expect(drawnWhitecap(t - 1, 0.01, 1)).toBe(0);
+    expect(drawnWhitecap(t + 1, 0.01, 0)).toBe(0.01);
+    expect(drawnWhitecap(t + 1, 0, 1)).toBe(0);
+    // Over a Gaussian sea's crests (the midpoint rule over eight standard deviations each side) the faded caps
+    // cover the coverage at every keep, within the soft edge's few percent.
+    for (const keep of [0, 0.5, 1]) {
+      const n = 32_000;
+      const dx = 16 / n;
+      let mean = 0;
+      for (let i = 0; i < n; i++) {
+        const x = -8 + (i + 0.5) * dx;
+        mean += (drawnWhitecap(x, 0.01, keep) * Math.exp((-x * x) / 2) * dx) / Math.sqrt(2 * Math.PI);
+      }
+      expect(Math.abs(mean / 0.01 - 1), `${keep}`).toBeLessThan(0.03);
+    }
   });
 });

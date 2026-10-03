@@ -135,18 +135,22 @@ export function createOcean(
         binding.coast[0] = tables.coastOriginZ;
       }
       binding.phases.set(swellPhases(field, seconds));
-      const sea = windSeaStateFor(wind01, windDir, hour);
+      const blowing = windSeaStateFor(wind01, windDir, hour);
+      // The tier's wind sea: its field and mode, the loop's time (0 while no
+      // loop is drawn) and the numbers the shaders normalise it by; and the
+      // sea's own state, at the speed the sea follows, a minute behind its
+      // wind's (`lagSeaWind`).
+      const sea = windSea.update(blowing, seconds);
       // The fully developed height, uncut: `windSeaShare` takes the share of it that the fetch allows.
       binding.wind[0] = sea.hs;
       binding.wind[1] = sea.loopScale;
       binding.wind[3] = sea.coverage;
-      binding.windDir[0] = sea.dir[0];
-      binding.windDir[1] = sea.dir[1];
-      binding.windDir[2] = sea.u10;
-      binding.windDir[3] = sea.onshoreWeight;
-      // The tier's wind sea: its field and mode, the loop's time (0 while no
-      // loop is drawn) and the numbers the shaders normalise it by.
-      windSea.update(sea, seconds);
+      // The wind as it blows now: its direction turns the fields, and its
+      // speed sets the roughness, whose short slopes follow it within seconds.
+      binding.windDir[0] = blowing.dir[0];
+      binding.windDir[1] = blowing.dir[1];
+      binding.windDir[2] = blowing.u10;
+      binding.windDir[3] = blowing.onshoreWeight;
       binding.windDisp = windSea.disp ?? placeholder;
       binding.windSlope = windSea.slope ?? placeholder;
       binding.coast[3] = windSea.mode;

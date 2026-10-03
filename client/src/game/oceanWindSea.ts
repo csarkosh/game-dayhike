@@ -38,6 +38,9 @@ export const WIND_SEA_FETCH_COEFF = 0.0016;
 export const WIND_SEA_U_REF = 10;
 /** The least wind (m/s) the period and the loop's rate are taken at, so a still sea's stay finite. */
 export const WIND_SEA_U_FLOOR = 0.5;
+/** The time (s) by which the wind sea follows its wind's speed, a first-order lag: a sea state lags its wind by
+ * minutes, so a 3 s weather fade no longer rebuilds the spectrum a dozen times or sweeps the loop's tile. */
+export const OCEAN_SEA_LAG = 60;
 
 export type WindSeaState = {
   u10: number; dir: [number, number];
@@ -82,18 +85,30 @@ export function windSeaStateFor(wind01: number, dir: [number, number], hour: num
   const len = Math.hypot(dir[0], dir[1]);
   const unit: [number, number] = len > 0 ? [dir[0] / len, dir[1] / len] : [1, 0];
   const onshore = unit[0];
+  return windSeaAtSpeed({ dir: unit, onshore, onshoreWeight: smoothstep(-0.2, 0.3, onshore) }, u10);
+}
+
+/** The wind sea blowing as `heading` does (its direction and onshore weight) at a wind of u10 (m/s): the
+ * height, period, whitecaps and the loop's scale and rate the speed gives. */
+export function windSeaAtSpeed(heading: Pick<WindSeaState, "dir" | "onshore" | "onshoreWeight">, u10: number): WindSeaState {
   const floored = Math.max(u10, WIND_SEA_U_FLOOR);
   return {
     u10,
-    dir: unit,
+    dir: heading.dir,
     hs: (WIND_SEA_HS_COEFF * u10 * u10) / OCEAN_G,
     tp: floored / (WIND_SEA_FP_COEFF * OCEAN_G),
-    onshore,
-    onshoreWeight: smoothstep(-0.2, 0.3, onshore),
+    onshore: heading.onshore,
+    onshoreWeight: heading.onshoreWeight,
     coverage: whitecapCoverage(u10),
     loopScale: (u10 / WIND_SEA_U_REF) * (u10 / WIND_SEA_U_REF),
     loopRate: WIND_SEA_U_REF / floored,
   };
+}
+
+/** The wind speed the sea follows (m/s), `lagged`, a frame of `dt` seconds on: moved toward the wind's own
+ * u10 by the first-order lag OCEAN_SEA_LAG. A step back of the seconds (dt below 0) moves it not at all. */
+export function lagSeaWind(lagged: number, u10: number, dt: number): number {
+  return lagged + (u10 - lagged) * (1 - Math.exp(-Math.max(dt, 0) / OCEAN_SEA_LAG));
 }
 
 /**

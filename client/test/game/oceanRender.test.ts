@@ -11,7 +11,7 @@ import { attachWater, oceanArrayPlaceholder } from "../../src/game/waterPlugin.j
 import { WATER_ROWS } from "../../src/game/waterShading.js";
 import { coastProfilesFor, writeCoastRow } from "../../src/game/oceanTables.js";
 import { oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
-import { windSeaStateFor } from "../../src/game/oceanWindSea.js";
+import { windSeaAtSpeed, windSeaStateFor } from "../../src/game/oceanWindSea.js";
 import type { LoopReply } from "../../src/game/oceanLoopBake.js";
 import { LOOP_FRAMES, LOOP_N, LOOP_SIZE } from "../../src/game/oceanSpectrum.js";
 import { coveFor } from "../../src/sim/olympic.js";
@@ -99,15 +99,36 @@ describe("the sea's waves as the water material reads them (createOcean)", () =>
     ocean.bind(plugin);
     const binding = plugin.ocean!;
     const field = oceanFieldFor(SEED, 12);
-    for (const [seconds, wind01, dir, hour] of [[0, 0.25, [1, 0], 12], [3600.25, 0.9, [0.6, -0.8], 15], [12.5, 0.53, [-1, 0], 6]] as const) {
+    // An hour apart, so the sea has caught up with each wind (it follows a minute behind).
+    for (const [seconds, wind01, dir, hour] of [[0, 0.25, [1, 0], 12], [3600.25, 0.9, [0.6, -0.8], 15], [7200.5, 0.53, [-1, 0], 6]] as const) {
       ocean.update(0, 0, seconds, wind01, [dir[0], dir[1]], hour);
       expect(Array.from(binding.phases)).toEqual(Array.from(swellPhases(field, seconds)));
       const sea = windSeaStateFor(wind01, [dir[0], dir[1]], hour);
-      expect(binding.wind).toEqual([sea.hs, sea.loopScale, 0, sea.coverage]);
+      const want = [sea.hs, sea.loopScale, 0, sea.coverage];
+      binding.wind.forEach((value, i) => expect(value, `wind[${i}] at ${seconds}`).toBeCloseTo(want[i] as number, 12));
       expect(binding.windDir).toEqual([sea.dir[0], sea.dir[1], sea.u10, sea.onshoreWeight]);
     }
     // the binding is the plugin's, written in place: no frame needs a new bind
     expect(plugin.ocean).toBe(binding);
+    ocean.dispose();
+  }, timeLimit(30_000));
+
+  it("binds the sea's state a minute behind its wind, and the wind as it blows now for the roughness", () => {
+    engine = new NullEngine();
+    const scene = new Scene(engine);
+    const plugin = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
+    const ocean = createOcean(scene, SEED, "low");
+    ocean.bind(plugin);
+    const binding = plugin.ocean!;
+    // 6 m/s from the first frame, no ramp from still air.
+    ocean.update(0, 0, 100, 0.5, [1, 0], 12);
+    expect(binding.wind[1]).toBeCloseTo(0.36, 12);
+    // A minute of 8 m/s: the sea at 6 + 2 (1 - 1/e) = 7.264 m/s, the roughness at the wind's own 8.
+    ocean.update(0, 0, 160, 8 / 12, [1, 0], 12);
+    expect(binding.wind[0]).toBeCloseTo(1.5061545, 6);
+    expect(binding.wind[1]).toBeCloseTo(0.5276920, 6);
+    expect(binding.wind[3]).toBeCloseTo(windSeaAtSpeed(windSeaStateFor(8 / 12, [1, 0], 12), 7.264241117657115).coverage, 12);
+    expect(binding.windDir[2]).toBe(8);
     ocean.dispose();
   }, timeLimit(30_000));
 
@@ -201,7 +222,7 @@ describe("the wind sea by tier (createOcean)", () => {
       const plugin = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
       const medium = createOcean(scene, SEED, "medium", { startLoop, startGpu });
       medium.bind(plugin);
-      expect(startLoop).toHaveBeenCalledWith(SEED);
+      expect(startLoop).toHaveBeenCalledWith(SEED, expect.any(AbortSignal));
       await vi.waitFor(() => {
         medium.update(0, 0, 10, 0.5, [1, 0], 12);
         expect(medium.windMode).toBe(1);
@@ -251,7 +272,7 @@ describe("the wind sea by tier (createOcean)", () => {
         high.update(0, 0, 10, 0.9, [0.6, -0.8], 15);
         expect(high.windMode).toBe(1);
       }, { timeout: timeLimit(10_000) });
-      expect(startLoop).toHaveBeenCalledWith(SEED);
+      expect(startLoop).toHaveBeenCalledWith(SEED, expect.any(AbortSignal));
       high.dispose();
     } finally {
       engine.dispose();

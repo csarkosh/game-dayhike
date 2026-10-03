@@ -79,7 +79,8 @@ export type OceanBinding = {
   tips: [number, number, number, number];
   /** The coastline row's first z (m), its step (m), the swell components drawn, and the wind sea's mode (0 low, 1 loop, 2 FFT). */
   coast: [number, number, number, number];
-  /** The wind sea's fully developed height (m), the loop's length scale, the loop's time (s), the whitecap coverage. */
+  /** The wind sea's fully developed height (m), the loop's length scale, the loop's time (s), the whitecap coverage:
+   * the sea's, at the speed it follows a minute behind its wind (`lagSeaWind`). */
   wind: [number, number, number, number];
   /** The wind sea's direction (x, z), its wind speed U10 (m/s), and the onshore weight (0 to 1). */
   windDir: [number, number, number, number];

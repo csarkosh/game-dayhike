@@ -131,16 +131,17 @@ float oceanFoamWhite(float lookAge) {
   return mix(OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_ALBEDO, exp(-lookAge / OCEAN_FOAM_FADE));
 }
 
-// What cuts the whitecaps at p as it cuts the chop: a headland's lee, and the
-// fetch's share of the sea near shore under a wind off the land.
-float oceanCapDamp(vec2 p) {
-  return oceanShelter(p, SHELTER_CHOP) * min(oceanWindAmp(p), 1.0);
+// What cuts the whitecaps at p as it cuts the chop: a headland's lee, and
+// share, the wind sea's share of its fully developed height at p
+// (oceanWindAmp), which is the fetch's near shore under a wind off the land.
+float oceanCapDamp(vec2 p, float share) {
+  return oceanShelter(p, SHELTER_CHOP) * min(share, 1.0);
 }
 
 // The whitecaps' coverage at p: Callaghan's for the wind (oceanWind.w), cut
-// as the chop is.
-float oceanCapCoverage(vec2 p) {
-  return oceanWind.w * oceanCapDamp(p);
+// as the chop is, share the wind sea's share at p.
+float oceanCapCoverage(vec2 p, float share) {
+  return oceanWind.w * oceanCapDamp(p, share);
 }
 
 // How many standard deviations above its mean a Gaussian sea's height stands
@@ -151,12 +152,12 @@ float oceanCapThreshold(float coverage) {
   return s - (2.515517 + 0.802853 * s + 0.010328 * s * s) / (1.0 + 1.432788 * s + 0.189269 * s * s + 0.001308 * s * s * s);
 }
 
-// A whitecap at p on a drawn wind sea whose height there is crest standard
-// deviations above its mean: white over the coverage's top share of the
-// crests, so the caps cover what Callaghan's fraction says and flash and
-// fade as each crest rises through the threshold and falls back.
-float oceanWhitecap(vec2 p, float crest) {
-  float coverage = oceanCapCoverage(p);
+// A whitecap on a drawn wind sea whose height here is crest standard
+// deviations above its mean, coverage the whitecaps' coverage here
+// (oceanCapCoverage): white over the coverage's top share of the crests, so
+// the caps cover what Callaghan's fraction says and flash and fade as each
+// crest rises through the threshold and falls back.
+float oceanWhitecap(float coverage, float crest) {
   float t = oceanCapThreshold(coverage);
   return smoothstep(t - 0.5 * OCEAN_CAP_SOFT, t + 0.5 * OCEAN_CAP_SOFT, crest) * step(1.0e-6, coverage);
 }
@@ -180,7 +181,8 @@ float oceanCapFire(vec2 h, float k, float chance) {
 // flashes white and fades through the cycle. The clock folds by
 // OCEAN_CAP_CYCLES periods, the pattern's own repeat, so no cycle is ever cut
 // short. Where a cap spans under a few pixels the coverage stands in for it.
-float oceanCapCells(vec2 p, float pixel) {
+// share is the wind sea's share at p, the cap's centre taking its own.
+float oceanCapCells(vec2 p, float pixel, float share) {
   vec2 q = (p + waterSkin.y - waterWindTime * OCEAN_CAP_DRIFT) / OCEAN_CAP_CELL;
   vec2 c = floor(q);
   vec2 h = mod(c, 512.0);
@@ -188,16 +190,12 @@ float oceanCapCells(vec2 p, float pixel) {
   vec2 at = (c + centre) * OCEAN_CAP_CELL - waterSkin.y + waterWindTime * OCEAN_CAP_DRIFT;
   float cycle = mod(waterTime, OCEAN_CAP_CYCLES * OCEAN_CAP_PERIOD) / OCEAN_CAP_PERIOD + waterSkinHash(h);
   float k = floor(cycle);
-  float fire = oceanCapFire(h, k, oceanCapCoverage(at) / OCEAN_CAP_SHARE);
+  float fire = oceanCapFire(h, k, oceanCapCoverage(at, oceanWindAmp(at)) / OCEAN_CAP_SHARE);
   float r = length(q - c - centre) / OCEAN_CAP_RADIUS;
   float cap = fire * (1.0 - (cycle - k)) * (1.0 - smoothstep(0.7, 1.0, r));
-  return mix(cap, oceanCapCoverage(p), smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / (2.0 * OCEAN_CAP_RADIUS * OCEAN_CAP_CELL)));
+  return mix(cap, oceanCapCoverage(p, share), smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / (2.0 * OCEAN_CAP_RADIUS * OCEAN_CAP_CELL)));
 }
 
-// The high tier's folds: where the wind sea's Jacobian falls through
-// OCEAN_FOLD its crest folds over, white in full by OCEAN_FOLD_FULL.
-const float OCEAN_FOLD = 0.4;
-const float OCEAN_FOLD_FULL = 0.3;
 // The low tier's bump under the wind sea: its slope a metre of the wind
 // sea's height draws, and the most it is scaled.
 const float OCEAN_BUMP_HS = 1.0;
@@ -247,22 +245,23 @@ vec2 oceanWindSlopes(vec2 p) {
   return oceanWindSlopesAt(p, 0.0, drawn);
 }
 
-// The wind sea's Jacobian at p, the least of the three cascades', on the high
-// tier (1, unfolded, elsewhere).
-float oceanWindFold(vec2 p) {
-  if (oceanCoast.w < 1.5) return 1.0;
-  vec2 w = oceanWindFrame(p);
-  float j0 = textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_0, 0.0), 0.0).w;
-  float j1 = textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_1, 1.0), 0.0).w;
-  float j2 = textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_2, 2.0), 0.0).w;
-  return min(j0, min(j1, j2));
+// How much of a drawn wind sea's crests a pixel of pixel metres draws, so
+// their whitecaps fade to their coverage before the waves that shape them
+// fall under the pixel: on the medium tier the loop's own shortest wave, on
+// the high tier cascade 1's, the finest cascade whose heights move a crest
+// across the caps' soft edge. Cascade 2 holds under a sixth of the sea's
+// standard deviation wherever the caps cover a ten-thousandth of it or more,
+// and the soft edge absorbs that.
+float oceanCrestKeep(float pixel) {
+  if (oceanCoast.w > 1.5) return oceanWindPixelKeep(FFT_CASCADE_1, FFT_N, pixel);
+  return oceanWindPixelKeep(oceanLoopSize(), LOOP_N, pixel);
 }
 
-// The low tier's bump scaled by the wind sea's height at p, its share of the
-// fully developed height there, which the broken waves and the headland's lee
-// cut down. Zero on the other tiers, whose sea carries no bump.
-float oceanBumpScale(vec2 p, float breaking, float shelter) {
-  return min(oceanWind.x * oceanWindAmp(p) * (1.0 - breaking) * shelter / OCEAN_BUMP_HS, OCEAN_BUMP_MAX);
+// The low tier's bump scaled by the wind sea's height here, share its share
+// of the fully developed height (oceanWindAmp), which the broken waves and the
+// headland's lee cut down. Zero on the other tiers, whose sea carries no bump.
+float oceanBumpScale(float share, float breaking, float shelter) {
+  return min(oceanWind.x * share * (1.0 - breaking) * shelter / OCEAN_BUMP_HS, OCEAN_BUMP_MAX);
 }
 
 // The most of the drawn wind sea's slopes the normal takes, so the variance

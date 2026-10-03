@@ -19,8 +19,10 @@ float wOceanChop = oceanShelter(vOceanXZ, SHELTER_CHOP);
 // The wind sea here: its height for the water's edge and the whitecaps, its
 // slopes faded by the pixel's footprint, both scaled by its share of the
 // fully developed sea here, which the fetch off the land, the broken waves
-// and the headland's lee cut down.
-float wWindAmp = oceanWindAmp(vOceanXZ) * (1.0 - wOceanFoam.y) * wOceanChop;
+// and the headland's lee cut down. The fetch's share is read once, here, for
+// everything below that takes it.
+float wWindShare = oceanWindAmp(vOceanXZ);
+float wWindAmp = wWindShare * (1.0 - wOceanFoam.y) * wOceanChop;
 vec3 wWind = oceanWindDisplace(vOceanXZ);
 float wWindDrawn;
 vec2 wWindSlope = oceanWindSlopesAt(vOceanXZ, max(length(wOceanDx), length(wOceanDy)), wWindDrawn);
@@ -36,7 +38,7 @@ float wKdMean = (waterKd.r + waterKd.g + waterKd.b) / 3.0;
 // swell's, scaled by the wind sea's height: elsewhere normalW is still the
 // ring's up and adds nothing. The second octave never runs on the sea.
 float wWindSteep = wWindAmp * oceanWindSlopeLimit(oceanWindDir.z, wOceanChop, wWindDrawn * wWindAmp * wWindAmp);
-vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05) * oceanBumpScale(vOceanXZ, wOceanFoam.y, wOceanChop) + wWindSlope * wWindSteep;
+vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05) * oceanBumpScale(wWindShare, wOceanFoam.y, wOceanChop) + wWindSlope * wWindSteep;
 normalW = normalize(wOceanNormal + vec3(wOceanExtra.x, 0.0, wOceanExtra.y) * wOceanNormal.y);
 // What Cox and Munk's slope variance for the wind leaves to the roughness
 // once the drawn waves carry theirs, calmer in a headland's lee as the chop is.
@@ -107,11 +109,14 @@ if (waterSkin.x > 0.0) {
 float wOceanPixel = max(length(wOceanDx), length(wOceanDy));
 float wFoamAge = oceanFoamLookAge(wOceanFoam.z);
 float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wOceanFoam.y, wOceanPixel);
-float wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel);
+float wOceanCap;
 if (oceanCoast.w > 0.5) {
-  // A drawn wind sea's own crests, and on the high tier its folds.
-  float wFold = (1.0 - smoothstep(OCEAN_FOLD_FULL, OCEAN_FOLD, oceanWindFold(vOceanXZ))) * oceanCapDamp(vOceanXZ);
-  wOceanCap = max(oceanWhitecap(vOceanXZ, wWind.y / max(oceanWindStats.x, 1.0e-4)), wFold);
+  // A drawn wind sea's own crests, faded to their coverage as the waves that
+  // shape them fall under the pixel, as the cells fade where none is drawn.
+  float wCapCover = oceanCapCoverage(vOceanXZ, wWindShare);
+  wOceanCap = mix(wCapCover, oceanWhitecap(wCapCover, wWind.y / max(oceanWindStats.x, 1.0e-4)), oceanCrestKeep(wOceanPixel));
+} else {
+  wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel, wWindShare);
 }
 wOceanCap *= 1.0 - wOceanFoam.y;
 float wFoam = max(wOceanLace, wOceanCap);
