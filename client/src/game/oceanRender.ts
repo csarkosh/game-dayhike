@@ -22,6 +22,8 @@ import { OCEAN_COAST_RECENTRE, OCEAN_COAST_STEP, coastProfilesFor, writeCoastRow
 import { oceanFieldFor, swellPhases } from "./oceanWaves.js";
 import { windSeaStateFor } from "./oceanWindSea.js";
 import { oceanArrayPlaceholder, type OceanBinding, type WaterPlugin } from "./waterPlugin.js";
+import { createWindSeaSource, type GpuStarter, type LoopStarter } from "./oceanWindSource.js";
+import { coveFor } from "../sim/olympic.js";
 
 /**
  * Where an absent headland tip is written (x, metres, at z = 0): far inland.
@@ -61,10 +63,17 @@ export function oceanTipsFor(tips: readonly (readonly [number, number])[]): [num
 /**
  * The sea's waves for a world and a tier: the low tier draws the eight
  * largest of the swell's twelve components, the others all twelve. The wind
- * sea is drawn by its normals alone (mode 0) on every tier, its two
- * textures the scene's 1×1 array placeholder.
+ * sea is the tier's (`oceanWindSource.ts`): the FFT on high, the loop baked
+ * in a worker on medium and wherever the FFT cannot be had, none on low; its
+ * textures are the scene's 1×1 array placeholder until a field is ready.
+ * `wind` replaces how the fields are started (the tests', under Node).
  */
-export function createOcean(scene: Scene, seed: number, tier: QualityTier): Ocean {
+export function createOcean(
+  scene: Scene,
+  seed: number,
+  tier: QualityTier,
+  wind: { startLoop?: LoopStarter; startGpu?: GpuStarter } = {},
+): Ocean {
   const field = oceanFieldFor(seed, tier === "low" ? SWELL_COMPONENTS_LOW : SWELL_COMPONENTS);
   const profiles = coastProfilesFor(seed);
   const { tables } = field;
@@ -88,6 +97,10 @@ export function createOcean(scene: Scene, seed: number, tier: QualityTier): Ocea
   atlas.wrapV = Texture.CLAMP_ADDRESSMODE;
   const placeholder = oceanArrayPlaceholder(scene);
   const windMode = 0;
+  const windSea = createWindSeaSource(scene, seed, tier, wind.startLoop, wind.startGpu);
+  // The wind sea's fields turn with the wind about the cove's waterline
+  // centre, where the sea is seen up close, so nothing slides there.
+  const cove = coveFor(seed);
   const binding: OceanBinding = {
     atlas,
     windDisp: placeholder,
@@ -98,12 +111,21 @@ export function createOcean(scene: Scene, seed: number, tier: QualityTier): Ocea
     coast: [tables.coastOriginZ, OCEAN_COAST_STEP, field.count, windMode],
     wind: [0, 0, 0, 0],
     windDir: [1, 0, 0, 0],
+    windStats: [0, 0, 0, 0],
+    windPivot: [profiles.coastlineX(cove.z0), cove.z0, 0, 0],
   };
   return {
     atlas,
-    windDisp: placeholder,
-    windSlope: placeholder,
-    windMode,
+    // What the binding holds, which follows the wind sea's field as it comes.
+    get windDisp() {
+      return binding.windDisp;
+    },
+    get windSlope() {
+      return binding.windSlope;
+    },
+    get windMode() {
+      return binding.coast[3] as 0 | 1 | 2;
+    },
     update(camX, camZ, seconds, wind01, windDir, hour) {
       if (Math.abs(camZ - coastCentreZ) > OCEAN_COAST_RECENTRE) {
         coastCentreZ = camZ;
@@ -117,12 +139,19 @@ export function createOcean(scene: Scene, seed: number, tier: QualityTier): Ocea
       // The fully developed height, uncut: `windSeaShare` takes the share of it that the fetch allows.
       binding.wind[0] = sea.hs;
       binding.wind[1] = sea.loopScale;
-      // wind[2], the loop's time, is the loop's to keep: 0 while none is drawn.
       binding.wind[3] = sea.coverage;
       binding.windDir[0] = sea.dir[0];
       binding.windDir[1] = sea.dir[1];
       binding.windDir[2] = sea.u10;
       binding.windDir[3] = sea.onshoreWeight;
+      // The tier's wind sea: its field and mode, the loop's time (0 while no
+      // loop is drawn) and the numbers the shaders normalise it by.
+      windSea.update(sea, seconds);
+      binding.windDisp = windSea.disp ?? placeholder;
+      binding.windSlope = windSea.slope ?? placeholder;
+      binding.coast[3] = windSea.mode;
+      binding.wind[2] = windSea.loopTime;
+      for (let i = 0; i < 4; i++) binding.windStats[i] = windSea.stats[i] as number;
     },
     bind(plugin) {
       plugin.ocean = binding;
@@ -130,6 +159,7 @@ export function createOcean(scene: Scene, seed: number, tier: QualityTier): Ocea
     dispose() {
       // The placeholder is the scene's, shared, and goes with the scene.
       atlas.dispose();
+      windSea.dispose();
     },
   };
 }

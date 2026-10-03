@@ -16,21 +16,31 @@ vec4 wOceanFoam;
 float wOceanDrawn;
 oceanSwellSum(vOceanXZ, wOceanDx, wOceanDy, wOceanDisp, wOceanNormal, wOceanFoam, wOceanDrawn);
 float wOceanChop = oceanShelter(vOceanXZ, SHELTER_CHOP);
-float wDepth = waterBedDepth(vPositionW.xz) + wOceanDisp.y;
+// The wind sea here: its height for the water's edge and the whitecaps, its
+// slopes faded by the pixel's footprint, both scaled by its share of the
+// fully developed sea here, which the fetch off the land, the broken waves
+// and the headland's lee cut down.
+float wWindAmp = oceanWindAmp(vOceanXZ) * (1.0 - wOceanFoam.y) * wOceanChop;
+vec3 wWind = oceanWindDisplace(vOceanXZ);
+float wWindDrawn;
+vec2 wWindSlope = oceanWindSlopesAt(vOceanXZ, max(length(wOceanDx), length(wOceanDy)), wWindDrawn);
+float wDepth = waterBedDepth(vPositionW.xz) + wOceanDisp.y + wWind.y * wWindAmp;
 #else
 float wDepth = waterBedDepth(vPositionW.xz);
 #endif
 if (wDepth <= 0.0) discard;
 float wKdMean = (waterKd.r + waterKd.g + waterKd.b) / 3.0;
 #ifdef OCEAN
-// The sea's normal is the swell's. PBR's bump is on the sea on the low tier
-// alone, where its slope rides on the swell's: elsewhere normalW is still the
+// The sea's normal is the swell's with the wind sea's slopes on it. PBR's
+// bump is on the sea on the low tier alone, where its slope rides on the
+// swell's, scaled by the wind sea's height: elsewhere normalW is still the
 // ring's up and adds nothing. The second octave never runs on the sea.
-vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05);
+float wWindSteep = wWindAmp * oceanWindSlopeLimit(oceanWindDir.z, wOceanChop, wWindDrawn * wWindAmp * wWindAmp);
+vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05) * oceanBumpScale(vOceanXZ, wOceanFoam.y, wOceanChop) + wWindSlope * wWindSteep;
 normalW = normalize(wOceanNormal + vec3(wOceanExtra.x, 0.0, wOceanExtra.y) * wOceanNormal.y);
 // What Cox and Munk's slope variance for the wind leaves to the roughness
 // once the drawn waves carry theirs, calmer in a headland's lee as the chop is.
-float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn);
+float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn + wWindDrawn * wWindSteep * wWindSteep);
 #else
 if (waterOctaves > 1.5) {
   vec2 wSlope = waterRipple2(vPositionW.xz);
@@ -98,6 +108,11 @@ float wOceanPixel = max(length(wOceanDx), length(wOceanDy));
 float wFoamAge = oceanFoamLookAge(wOceanFoam.z);
 float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wOceanFoam.y, wOceanPixel);
 float wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel);
+if (oceanCoast.w > 0.5) {
+  // A drawn wind sea's own crests, and on the high tier its folds.
+  float wFold = (1.0 - smoothstep(OCEAN_FOLD_FULL, OCEAN_FOLD, oceanWindFold(vOceanXZ))) * oceanCapDamp(vOceanXZ);
+  wOceanCap = max(oceanWhitecap(vOceanXZ, wWind.y / max(oceanWindStats.x, 1.0e-4)), wFold);
+}
 wOceanCap *= 1.0 - wOceanFoam.y;
 float wFoam = max(wOceanLace, wOceanCap);
 float wFoamWhite = wOceanLace >= wOceanCap ? oceanFoamWhite(wFoamAge) : OCEAN_FOAM_ALBEDO;

@@ -406,6 +406,65 @@ export function capProfile(r: number): number {
   return 1 - smoothstep(0.7, 1, r);
 }
 
+/**
+ * The wind sea on the rings and the pixels (spec §6, §7.1, §7.3). A ring displaces a field while its cells
+ * are at most 1/OCEAN_WIND_TILE_CELLS of the field's tile, and none of it from twice that; the medium loop's
+ * least scale is the wind's floor's, (WIND_SEA_U_FLOOR / WIND_SEA_U_REF)²; the high tier's crests whiten as
+ * the wind sea's Jacobian falls through OCEAN_FOLD, in full by OCEAN_FOLD_FULL; the low tier's bump draws its
+ * slope at OCEAN_BUMP_HS metres of the wind sea's height, scaled with it to at most OCEAN_BUMP_MAX. Mirrored in
+ * shaders/oceanSurface.fx and shaders/oceanShade.fragment.fx.
+ */
+export const OCEAN_WIND_TILE_CELLS = 16;
+export const OCEAN_LOOP_SCALE_MIN = 0.0025;
+export const OCEAN_FOLD = 0.4;
+export const OCEAN_FOLD_FULL = 0.3;
+export const OCEAN_BUMP_HS = 1;
+export const OCEAN_BUMP_MAX = 2;
+
+/** The share of a wind sea field `size` metres across that a ring of `cell` metres displaces (`oceanWindRingKeep`). */
+export function windRingKeep(size: number, cell: number): number {
+  return 1 - smoothstep(1, 2, (OCEAN_WIND_TILE_CELLS * cell) / size);
+}
+
+/** The share of a field `size` metres across, `n` texels a side, a pixel of `pixel` metres draws: its shortest
+ * wave, of wavenumber π·n/size, turning by that times the pixel over one (`oceanWindPixelKeep`). */
+export function windPixelKeep(size: number, n: number, pixel: number): number {
+  return resolvedShare((Math.PI * n * pixel) / size);
+}
+
+/** How white the high tier's fold makes a crest at a Jacobian `jacobian`. */
+export function foldCap(jacobian: number): number {
+  return 1 - smoothstep(OCEAN_FOLD_FULL, OCEAN_FOLD, jacobian);
+}
+
+/** The low tier's bump scaled by the wind sea's height `hsCut` (m, Hs times its share near shore,
+ * `windSeaShare`), cut by the break's B and the headland's shelter as the chop is (`oceanBumpScale`). */
+export function bumpScale(hsCut: number, breaking: number, shelter: number): number {
+  return Math.min((hsCut * (1 - breaking) * shelter) / OCEAN_BUMP_HS, OCEAN_BUMP_MAX);
+}
+
+/**
+ * The most of the drawn wind sea's slopes the normal takes, so the variance they carry (`drawn`) is never
+ * more than Cox and Munk's whole sea for the wind `u10` in the shelter: the medium loop, one bake scaled to
+ * every wind, keeps a strong wind's steepness in a light one, where a calm sea should be glassy
+ * (`oceanWindSlopeLimit`).
+ */
+export function windSlopeLimit(u10: number, shelter: number, drawn: number): number {
+  return Math.min(1, Math.sqrt((coxMunkVariance(u10) * shelter) / Math.max(drawn, 1e-6)));
+}
+
+/**
+ * A point (px, pz) in the wind's frame (`oceanWindFrame`): x down the wind (dirX, dirZ), z across it, about
+ * the pivot, the cove's waterline centre (`oceanWindPivot`). Both wind sea fields are made with the wind
+ * along +x and sampled here, so as the wind turns they turn about the pivot: nothing slides there, and a
+ * point r metres off slides at r times the wind's turn (2π/WIND_DIR_PERIOD rad/s), 0.52 m/s at 100 m.
+ */
+export function windFrame(px: number, pz: number, dirX: number, dirZ: number, pivotX: number, pivotZ: number): [number, number] {
+  const rx = px - pivotX;
+  const rz = pz - pivotZ;
+  return [rx * dirX + rz * dirZ, dirX * rz - dirZ * rx];
+}
+
 /** Whether a cap fires under `chance`, 1 or 0: only while its hash is under the chance, so a chance of none never fires (`oceanCapFire`). */
 export function capFires(hash: number, chance: number): number {
   return hash < chance ? 1 : 0;

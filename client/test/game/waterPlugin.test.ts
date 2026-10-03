@@ -372,9 +372,10 @@ describe("the rain's rings on the water", () => {
   });
 });
 
-/** The eight vec4 uniforms the sea's waves read, in their order. */
+/** The ten vec4 uniforms the sea's waves read, in their order. */
 const OCEAN_UNIFORMS = [
   "oceanPhase0", "oceanPhase1", "oceanPhase2", "oceanSwell", "oceanTips", "oceanCoast", "oceanWind", "oceanWindDir",
+  "oceanWindStats", "oceanWindPivot",
 ];
 
 /** An ocean as `oceanRender.ts` binds one, with values to tell apart. */
@@ -389,6 +390,8 @@ function testOcean(): OceanBinding {
     coast: [-2080, 4, 12, 0],
     wind: [0.4, 0.81, 0, 0.01],
     windDir: [0.6, -0.8, 9, 0.35],
+    windStats: [0.7, 0.02, 0.03, 0.04],
+    windPivot: [-412.5, 37, 0, 0],
   };
 }
 
@@ -397,7 +400,7 @@ const bedTexture = (): RawTexture =>
   RawTexture.CreateRTexture(new Float32Array(4), 2, 2, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
 
 describe("the sea's waves in the water plugin", () => {
-  it("declares the eight vec4 uniforms on every path, ocean or none", () => {
+  it("declares the ten vec4 uniforms on every path, ocean or none", () => {
     const p = attachWater(new PBRMaterial("wO1", scene), WATER_ROWS.lowlandLake);
     const u = p.getUniforms();
     for (const name of OCEAN_UNIFORMS) {
@@ -406,8 +409,8 @@ describe("the sea's waves in the water plugin", () => {
       // the vertex stage reads them too, which takes this where uniform buffers are not supported
       expect(u.vertex).toContain(`uniform vec4 ${name};`);
     }
-    expect(u.ubo.map((e) => e.name).slice(-8)).toEqual(OCEAN_UNIFORMS);
-    expect(u.ubo).toHaveLength(21);
+    expect(u.ubo.map((e) => e.name).slice(-10)).toEqual(OCEAN_UNIFORMS);
+    expect(u.ubo).toHaveLength(23);
   });
 
   it("declares its samplers in the .fx and never in getUniforms, and gates every line of its GLSL on OCEAN", () => {
@@ -494,6 +497,8 @@ describe("the sea's waves in the water plugin", () => {
     expect(bound.oceanCoast).toEqual([-2080, 4, 12, 0]);
     expect(bound.oceanWind).toEqual([0.4, 0.81, 0, 0.01]);
     expect(bound.oceanWindDir).toEqual([0.6, -0.8, 9, 0.35]);
+    expect(bound.oceanWindStats).toEqual([0.7, 0.02, 0.03, 0.04]);
+    expect(bound.oceanWindPivot).toEqual([-412.5, 37, 0, 0]);
   });
 
   it("binds every sampler it lists in every state it is drawn in: a lake, the sea, the high tier's sea, the sea's waves gone", () => {

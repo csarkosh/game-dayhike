@@ -131,10 +131,16 @@ float oceanFoamWhite(float lookAge) {
   return mix(OCEAN_FOAM_ALBEDO_OLD, OCEAN_FOAM_ALBEDO, exp(-lookAge / OCEAN_FOAM_FADE));
 }
 
-// The whitecaps' coverage at p: Callaghan's for the wind (oceanWind.w), less
-// in a headland's lee as the chop is.
+// What cuts the whitecaps at p as it cuts the chop: a headland's lee, and the
+// fetch's share of the sea near shore under a wind off the land.
+float oceanCapDamp(vec2 p) {
+  return oceanShelter(p, SHELTER_CHOP) * min(oceanWindAmp(p), 1.0);
+}
+
+// The whitecaps' coverage at p: Callaghan's for the wind (oceanWind.w), cut
+// as the chop is.
 float oceanCapCoverage(vec2 p) {
-  return oceanWind.w * oceanShelter(p, SHELTER_CHOP);
+  return oceanWind.w * oceanCapDamp(p);
 }
 
 // How many standard deviations above its mean a Gaussian sea's height stands
@@ -186,5 +192,84 @@ float oceanCapCells(vec2 p, float pixel) {
   float r = length(q - c - centre) / OCEAN_CAP_RADIUS;
   float cap = fire * (1.0 - (cycle - k)) * (1.0 - smoothstep(0.7, 1.0, r));
   return mix(cap, oceanCapCoverage(p), smoothstep(OCEAN_DETAIL_LO, OCEAN_DETAIL_HI, pixel / (2.0 * OCEAN_CAP_RADIUS * OCEAN_CAP_CELL)));
+}
+
+// The high tier's folds: where the wind sea's Jacobian falls through
+// OCEAN_FOLD its crest folds over, white in full by OCEAN_FOLD_FULL.
+const float OCEAN_FOLD = 0.4;
+const float OCEAN_FOLD_FULL = 0.3;
+// The low tier's bump under the wind sea: its slope a metre of the wind
+// sea's height draws, and the most it is scaled.
+const float OCEAN_BUMP_HS = 1.0;
+const float OCEAN_BUMP_MAX = 2.0;
+
+// The share of a field size metres across, n texels a side, that a pixel of
+// pixel metres draws: all while its shortest wave, of wavenumber pi n / size,
+// spans four pixels, none from two.
+float oceanWindPixelKeep(float size, float n, float pixel) {
+  return 1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, 0.5 * OCEAN_TWO_PI * n * pixel / size);
+}
+
+// The wind sea's slopes at p as a normal's horizontal part (minus the height's
+// gradient), each field faded by the pixel's footprint, and in drawn the
+// slope variance the drawn fields carry (oceanWindStats.yzw, each field's
+// whole). The high tier's from the slope texture, the medium tier's from the
+// loop's heights, two taps an axis a texel apart: the loop's heights and
+// lengths scale alike with the wind, so its slopes are the bake's.
+vec2 oceanWindSlopesAt(vec2 p, float pixel, out float drawn) {
+  vec2 w = oceanWindFrame(p);
+  vec2 g = vec2(0.0);
+  drawn = 0.0;
+  if (oceanCoast.w > 1.5) {
+    float k0 = oceanWindPixelKeep(FFT_CASCADE_0, FFT_N, pixel);
+    float k1 = oceanWindPixelKeep(FFT_CASCADE_1, FFT_N, pixel);
+    float k2 = oceanWindPixelKeep(FFT_CASCADE_2, FFT_N, pixel);
+    g = textureLod(oceanWindSlope, vec3(w / FFT_CASCADE_0, 0.0), 0.0).xy * k0
+      + textureLod(oceanWindSlope, vec3(w / FFT_CASCADE_1, 1.0), 0.0).xy * k1
+      + textureLod(oceanWindSlope, vec3(w / FFT_CASCADE_2, 2.0), 0.0).xy * k2;
+    drawn = k0 * k0 * oceanWindStats.y + k1 * k1 * oceanWindStats.z + k2 * k2 * oceanWindStats.w;
+  } else if (oceanCoast.w > 0.5) {
+    float size = oceanLoopSize();
+    vec2 uv = w / size;
+    float e = 1.0 / LOOP_N;
+    float keep = oceanWindPixelKeep(size, LOOP_N, pixel);
+    float gx = oceanLoopRead(uv + vec2(e, 0.0)).x - oceanLoopRead(uv - vec2(e, 0.0)).x;
+    float gz = oceanLoopRead(uv + vec2(0.0, e)).x - oceanLoopRead(uv - vec2(0.0, e)).x;
+    g = vec2(gx, gz) * (LOOP_N / (2.0 * LOOP_SIZE)) * keep;
+    drawn = keep * keep * oceanWindStats.y;
+  }
+  return -oceanFromWind(g);
+}
+
+// The wind sea's slopes at p, nothing faded.
+vec2 oceanWindSlopes(vec2 p) {
+  float drawn;
+  return oceanWindSlopesAt(p, 0.0, drawn);
+}
+
+// The wind sea's Jacobian at p, the least of the three cascades', on the high
+// tier (1, unfolded, elsewhere).
+float oceanWindFold(vec2 p) {
+  if (oceanCoast.w < 1.5) return 1.0;
+  vec2 w = oceanWindFrame(p);
+  float j0 = textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_0, 0.0), 0.0).w;
+  float j1 = textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_1, 1.0), 0.0).w;
+  float j2 = textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_2, 2.0), 0.0).w;
+  return min(j0, min(j1, j2));
+}
+
+// The low tier's bump scaled by the wind sea's height at p, its share of the
+// fully developed height there, which the broken waves and the headland's lee
+// cut down. Zero on the other tiers, whose sea carries no bump.
+float oceanBumpScale(vec2 p, float breaking, float shelter) {
+  return min(oceanWind.x * oceanWindAmp(p) * (1.0 - breaking) * shelter / OCEAN_BUMP_HS, OCEAN_BUMP_MAX);
+}
+
+// The most of the drawn wind sea's slopes the normal takes, so the variance
+// they carry, drawn, is never more than Cox and Munk's whole sea for the wind
+// in this shelter: the loop, one bake scaled to every wind, keeps a strong
+// wind's steepness in a light one, where a calm sea is glassy.
+float oceanWindSlopeLimit(float u10, float shelter, float drawn) {
+  return min(1.0, sqrt((WATER_COX_MUNK_A + WATER_COX_MUNK_B * u10) * shelter / max(drawn, 1.0e-6)));
 }
 #endif

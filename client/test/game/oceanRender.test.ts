@@ -12,6 +12,9 @@ import { WATER_ROWS } from "../../src/game/waterShading.js";
 import { coastProfilesFor, writeCoastRow } from "../../src/game/oceanTables.js";
 import { oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
 import { windSeaStateFor } from "../../src/game/oceanWindSea.js";
+import type { LoopReply } from "../../src/game/oceanLoopBake.js";
+import { LOOP_FRAMES, LOOP_N, LOOP_SIZE } from "../../src/game/oceanSpectrum.js";
+import { coveFor } from "../../src/sim/olympic.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -176,4 +179,82 @@ describe("the water plugin's array placeholder", () => {
       engine.dispose();
     }
   });
+});
+
+describe("the wind sea by tier (createOcean)", () => {
+  /** A bake's answer with the loop's sizes and numbers to tell apart. */
+  const reply = (seed: number): LoopReply => ({
+    seed, frames: LOOP_FRAMES, n: LOOP_N, size: LOOP_SIZE, heightStd: 0.8, slopeVar: 0.03,
+    data: new Uint16Array(LOOP_FRAMES * LOOP_N * LOOP_N * 4),
+  });
+
+  it("draws none on low, and on medium the loop once its bake answers, its mode, field, time and numbers bound", async () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const startLoop = vi.fn((seed: number) => Promise.resolve(reply(seed)));
+      const startGpu = vi.fn(() => Promise.resolve(null));
+      const low = createOcean(scene, SEED, "low", { startLoop, startGpu });
+      low.update(0, 0, 1, 0.5, [1, 0], 12);
+      expect(low.windMode).toBe(0);
+      expect(startLoop).not.toHaveBeenCalled();
+      const plugin = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
+      const medium = createOcean(scene, SEED, "medium", { startLoop, startGpu });
+      medium.bind(plugin);
+      expect(startLoop).toHaveBeenCalledWith(SEED);
+      await vi.waitFor(() => {
+        medium.update(0, 0, 10, 0.5, [1, 0], 12);
+        expect(medium.windMode).toBe(1);
+      }, { timeout: timeLimit(10_000) });
+      medium.update(0, 0, 13, 0.5, [1, 0], 12);
+      const sea = windSeaStateFor(0.5, [1, 0], 12);
+      const binding = plugin.ocean!;
+      expect(binding.coast[3]).toBe(1);
+      expect(binding.windDisp).toBe(medium.windDisp);
+      expect(binding.windDisp.is2DArray).toBe(true);
+      expect(binding.windDisp.getInternalTexture()!.depth).toBe(LOOP_FRAMES);
+      expect(binding.windSlope).toBe(oceanArrayPlaceholder(scene));
+      expect(binding.wind[2]).toBeCloseTo(3 * sea.loopRate, 9);
+      expect(binding.windStats).toEqual([0.8 * sea.loopScale, 0.03, 0, 0]);
+      expect(startGpu).not.toHaveBeenCalled();
+      low.dispose();
+      medium.dispose();
+    } finally {
+      engine.dispose();
+    }
+  }, timeLimit(30_000));
+
+  it("turns the wind sea about the cove's waterline centre, bound for the shaders", () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const plugin = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
+      const ocean = createOcean(scene, SEED, "low");
+      ocean.bind(plugin);
+      const z0 = coveFor(SEED).z0;
+      expect(plugin.ocean!.windPivot).toEqual([coastProfilesFor(SEED).coastlineX(z0), z0, 0, 0]);
+      // at sea: the pivot is the cove's waterline, west of the road
+      expect(plugin.ocean!.windPivot[0]).toBeLessThan(-150);
+      ocean.dispose();
+    } finally {
+      engine.dispose();
+    }
+  }, timeLimit(30_000));
+
+  it("falls back on high to the medium loop where the engine has no compute (NullEngine's createGpuWindSea is null)", async () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const startLoop = vi.fn((seed: number) => Promise.resolve(reply(seed)));
+      const high = createOcean(scene, SEED, "high", { startLoop });
+      await vi.waitFor(() => {
+        high.update(0, 0, 10, 0.9, [0.6, -0.8], 15);
+        expect(high.windMode).toBe(1);
+      }, { timeout: timeLimit(10_000) });
+      expect(startLoop).toHaveBeenCalledWith(SEED);
+      high.dispose();
+    } finally {
+      engine.dispose();
+    }
+  }, timeLimit(30_000));
 });

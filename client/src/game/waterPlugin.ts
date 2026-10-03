@@ -83,11 +83,20 @@ export type OceanBinding = {
   wind: [number, number, number, number];
   /** The wind sea's direction (x, z), its wind speed U10 (m/s), and the onshore weight (0 to 1). */
   windDir: [number, number, number, number];
+  /** What the shaders normalise the drawn wind sea by: its height's standard
+   * deviation (m) at the wind, fully developed, before its share near shore,
+   * then each field's slope variance (the loop's alone, or the FFT's three
+   * cascades'); zeros where none is drawn (`oceanWindSource.ts`). */
+  windStats: [number, number, number, number];
+  /** The point the wind sea's fields turn about as the wind turns, (x, z, 0, 0): the cove's waterline centre,
+   * where the sea is seen up close, so nothing slides there (`oceanWindFrame`). */
+  windPivot: [number, number, number, number];
 };
 
-/** The eight vec4 uniforms the sea's waves read, in the order they are bound. */
+/** The ten vec4 uniforms the sea's waves read, in the order they are bound. */
 const OCEAN_UNIFORMS = [
   "oceanPhase0", "oceanPhase1", "oceanPhase2", "oceanSwell", "oceanTips", "oceanCoast", "oceanWind", "oceanWindDir",
+  "oceanWindStats", "oceanWindPivot",
 ] as const;
 
 /** Bound without an ocean: the uniforms exist on every water material. */
@@ -312,7 +321,7 @@ export class WaterPlugin extends MaterialPluginBase {
         phases[i * 4] as number, phases[i * 4 + 1] as number, phases[i * 4 + 2] as number, phases[i * 4 + 3] as number,
       );
     }
-    const values = [ocean?.swell, ocean?.tips, ocean?.coast, ocean?.wind, ocean?.windDir];
+    const values = [ocean?.swell, ocean?.tips, ocean?.coast, ocean?.wind, ocean?.windDir, ocean?.windStats, ocean?.windPivot];
     values.forEach((value, i) => {
       const v = value ?? NO_VEC4;
       uniformBuffer.updateFloat4(OCEAN_UNIFORMS[i + 3] as string, v[0], v[1], v[2], v[3]);

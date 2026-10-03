@@ -13,10 +13,11 @@
 // shaderHygiene test enforces both.
 //
 // The literals mirror oceanPhysics.ts, oceanSwell.ts, oceanTables.ts,
-// oceanWaves.ts, water.ts and waterShading.ts, and lockstep tests assert
-// they agree. Every read is at level 0, which the atlas's only level is: a
-// read at a fixed level needs no derivatives, so it is legal in any control
-// flow on WebGPU, in the vertex stage and the fragment stage alike.
+// oceanWaves.ts, oceanSpectrum.ts, oceanWindSea.ts, water.ts and
+// waterShading.ts, and lockstep tests assert they agree. Every read is at
+// level 0, which the atlas's only level is: a read at a fixed level needs no
+// derivatives, so it is legal in any control flow on WebGPU, in the vertex
+// stage and the fragment stage alike.
 const float OCEAN_G = 9.81;
 const float OCEAN_TWO_PI = 6.283185307179586;
 const float OCEAN_D_MIN = -1000.0;
@@ -230,9 +231,109 @@ float oceanRingCell(vec2 p) {
   return max(OCEAN_RING_BASE, max(r.x, r.y) / OCEAN_RING_REACH);
 }
 
+// The wind sea's fields: the medium tier's loop, LOOP_FRAMES frames of
+// LOOP_N texels a side over LOOP_SIZE metres at WIND_SEA_U_REF, and the high
+// tier's three cascades, FFT_N texels a side over FFT_CASCADE_ metres. Both
+// are made with the wind along +x and turned to the wind here.
+const float LOOP_N = 128.0;
+const float LOOP_SIZE = 60.0;
+const float LOOP_FRAMES = 64.0;
+const float LOOP_SECONDS = 20.0;
+const float FFT_N = 256.0;
+const float FFT_CASCADE_0 = 1000.0;
+const float FFT_CASCADE_1 = 150.0;
+const float FFT_CASCADE_2 = 25.0;
+// The loop's least scale, the wind's floor's: (0.5 / 10) squared.
+const float OCEAN_LOOP_SCALE_MIN = 0.0025;
+// A ring displaces a field while its cells are at most a sixteenth of the
+// field's tile, and none of it from an eighth.
+const float OCEAN_WIND_TILE_CELLS = 16.0;
+
+// The wind sea off the land: over a fetch X metres of water the fetch law
+// gives Hs = 0.0016 sqrt(g X / U^2) U^2 / g, which over the fully developed
+// height is OCEAN_FETCH_RATIO sqrt(g X) / U, the wind's speed U held to at
+// least WIND_SEA_U_FLOOR.
+const float OCEAN_FETCH_RATIO = 0.005714285714285714;
+const float WIND_SEA_U_FLOOR = 0.5;
+
+// The share of the wind sea's fully developed height (oceanWind.x) at p, as
+// windSeaShare in oceanWindSea.ts has it: under a wind off the land the fetch
+// law's share for the water the wind has crossed since the coastline, none at
+// the waterline and more with the distance out, mixed toward the whole sea by
+// how onshore the wind blows (the onshore weight, oceanWindDir.w).
+float oceanWindAmp(vec2 p) {
+  float phaseDz;
+  float fetch = max(oceanCoastAt(p.y, phaseDz).x - p.x, 0.0);
+  float share = min(1.0, OCEAN_FETCH_RATIO * sqrt(OCEAN_G * fetch) / max(oceanWindDir.z, WIND_SEA_U_FLOOR));
+  return share + (1.0 - share) * oceanWindDir.w;
+}
+
+// p in the wind's frame: x down the wind, z across it, about the pivot
+// (oceanWindPivot.xy, the cove's waterline centre). As the wind turns, the
+// fields turn about that point, where the sea is seen up close, so nothing
+// slides there; a point r metres off slides at r times the wind's turn.
+vec2 oceanWindFrame(vec2 p) {
+  vec2 d = oceanWindDir.xy;
+  vec2 r = p - oceanWindPivot.xy;
+  return vec2(dot(r, d), d.x * r.y - d.y * r.x);
+}
+
+// A vector of the wind's frame turned back into the world's.
+vec2 oceanFromWind(vec2 v) {
+  vec2 d = oceanWindDir.xy;
+  return vec2(v.x * d.x - v.y * d.y, v.x * d.y + v.y * d.x);
+}
+
+// The loop's tile in metres at this wind: LOOP_SIZE times the loop's scale.
+float oceanLoopSize() {
+  return LOOP_SIZE * max(oceanWind.y, OCEAN_LOOP_SCALE_MIN);
+}
+
+// The loop's (height, dx, dz) at uv as baked, between the two frames about
+// the loop's time (oceanWind.z, already run at the wind's rate and folded).
+vec3 oceanLoopRead(vec2 uv) {
+  float f = oceanWind.z / LOOP_SECONDS * LOOP_FRAMES;
+  float f0 = floor(f);
+  vec3 a = textureLod(oceanWindDisp, vec3(uv, f0), 0.0).xyz;
+  vec3 b = textureLod(oceanWindDisp, vec3(uv, mod(f0 + 1.0, LOOP_FRAMES)), 0.0).xyz;
+  return a + (b - a) * (f - f0);
+}
+
+// The share of a field size metres across that a ring of cell metres displaces.
+float oceanWindRingKeep(float size, float cell) {
+  return 1.0 - smoothstep(1.0, 2.0, OCEAN_WIND_TILE_CELLS * cell / size);
+}
+
+// The wind sea's displacement (x, height, z) at p as its field draws it,
+// each field faded on a ring too coarse for it (a cell of 0 fades nothing):
+// the high tier's three cascades summed, the medium tier's loop scaled to the
+// wind, nothing on the low tier. Not yet cut by the shore. The tier is a
+// uniform (oceanCoast.w), and every read is at level 0.
+vec3 oceanWindDisplaceAt(vec2 p, float cell) {
+  vec2 w = oceanWindFrame(p);
+  vec3 t = vec3(0.0);
+  if (oceanCoast.w > 1.5) {
+    t = textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_0, 0.0), 0.0).xyz * oceanWindRingKeep(FFT_CASCADE_0, cell)
+      + textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_1, 1.0), 0.0).xyz * oceanWindRingKeep(FFT_CASCADE_1, cell)
+      + textureLod(oceanWindDisp, vec3(w / FFT_CASCADE_2, 2.0), 0.0).xyz * oceanWindRingKeep(FFT_CASCADE_2, cell);
+  } else if (oceanCoast.w > 0.5) {
+    float size = oceanLoopSize();
+    t = oceanLoopRead(w / size) * (size / LOOP_SIZE) * oceanWindRingKeep(size, cell);
+  }
+  vec2 across = oceanFromWind(t.yz);
+  return vec3(across.x, t.x, across.y);
+}
+
+// The wind sea's displacement at p, nothing faded.
+vec3 oceanWindDisplace(vec2 p) {
+  return oceanWindDisplaceAt(p, 0.0);
+}
+
 // The sea's displacement of a ring's vertex at p: a swell component under four
-// of the ring's cells a wavelength is left to the pixels' normal, so no ring
-// aliases it.
+// of the ring's cells a wavelength, or a wind sea field a ring too coarse
+// for, is left to the pixels' normal, so no ring aliases it. The wind sea is
+// its share here, the fetch's off the land, and dies shoreward of the break,
+// where the broken waves eat it, and in a headland's lee.
 vec3 oceanDisplace(vec2 p) {
   float cell = oceanRingCell(p);
   vec3 disp;
@@ -240,6 +341,7 @@ vec3 oceanDisplace(vec2 p) {
   vec4 foam;
   float drawn;
   oceanSwellSum(p, vec2(2.0 * cell, 0.0), vec2(0.0, 2.0 * cell), disp, normal, foam, drawn);
-  return disp;
+  float chop = oceanWindAmp(p) * (1.0 - foam.y) * oceanShelter(p, SHELTER_CHOP);
+  return disp + oceanWindDisplaceAt(p, cell) * chop;
 }
 #endif
