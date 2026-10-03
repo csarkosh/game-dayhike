@@ -15,5 +15,5 @@ vec4 oceanVertexSwell;
 vec2 oceanVertexEnv;
 positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);
 vOceanSwellA = oceanVertexSwell;
-vOceanSwellB = vec4(oceanVertexEnv, 0.0, 0.0);
+vOceanSwellB = vec4(oceanVertexEnv, length(oceanVertexEnv), 0.0);
 #endif

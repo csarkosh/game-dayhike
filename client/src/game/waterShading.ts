@@ -10,6 +10,7 @@
 import { clamp01 } from "./colour.js";
 import { CLUTTER_WATER_MURK_HI, CLUTTER_WATER_MURK_LO } from "../sim/clutter.js";
 import { WATER_BASE_SPACING, WATER_RING_CELLS } from "./water.js";
+import { OCEAN_G } from "./oceanPhysics.js";
 import { OCEAN_ROLL_WIDTH } from "./oceanWaves.js";
 
 /** One body of water, from the world at build time (spec §7). */
@@ -202,6 +203,24 @@ export function resolvedSlopeVariance(waves: readonly { amplitude: number; k: nu
     sum += 0.5 * (a * k) * (a * k);
   }
   return sum;
+}
+
+/**
+ * The share of the swell's interpolated normal a pixel keeps (`oceanSwellPixelKeep` in
+ * shaders/oceanSurface.fx), `dpx` and `dpy` how far the pixel's undisplaced point moves across one pixel
+ * of the screen in x and in y: `resolvedShare` of the phase's turn over the larger of the two steps along
+ * the swell's travel (`travelX`, `travelZ`, a unit vector), at the deep-water wavenumber of the peak
+ * period `tp` (s), 4π²/(g·tp²). Where a pixel spans more than the ring's cells, the vertex's normal still
+ * holds a swell the pixel cannot draw; the fragment stage scales the normal's x and z by this share and
+ * the drawn variance by its square. The deep wavenumber is the least the peak takes (a wave shortens as it
+ * shoals), so it under-fades the shallows, whose pixels lie near the eye and need no fade.
+ */
+export function swellPixelKeep(
+  tp: number, travelX: number, travelZ: number, dpx: readonly [number, number], dpy: readonly [number, number],
+): number {
+  const kDeep = (2 * Math.PI * 2 * Math.PI) / (OCEAN_G * tp * tp);
+  const step = Math.max(Math.abs(dpx[0] * travelX + dpx[1] * travelZ), Math.abs(dpy[0] * travelX + dpy[1] * travelZ));
+  return resolvedShare(kDeep * step);
 }
 
 /**

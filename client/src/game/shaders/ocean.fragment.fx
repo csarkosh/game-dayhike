@@ -15,7 +15,8 @@ uniform highp sampler2DArray oceanWindSlope;
 varying vec2 vOceanXZ;
 // The swell the vertex stage sums for the displacement, for the fragment
 // stage: its normal's x and z, its height and the slope variance its drawn
-// waves carry (vOceanSwellA), and its envelope vector in x and y (vOceanSwellB).
+// waves carry (vOceanSwellA), and its envelope vector in x and y with the
+// vector's length in z (vOceanSwellB), the length interpolated on its own.
 varying vec4 vOceanSwellA;
 varying vec4 vOceanSwellB;
 #endif

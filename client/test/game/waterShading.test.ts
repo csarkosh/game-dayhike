@@ -5,7 +5,7 @@ import {
   slopeVariance, roughnessFor, horizonSafeNormal,
   OCEAN_CAP_CYCLES, OCEAN_CAP_PERIOD, OCEAN_FOAM_FADE, OCEAN_INNER_COVER,
   capCycle, capCycleHash, capFires, foamCover, foamLookAge, foamShare, foamWhite, laceCover, laceLevel, oceanCapCells,
-  oceanLace, waterSkinHash, waterSkinNoise,
+  oceanLace, swellPixelKeep, waterSkinHash, waterSkinNoise,
 } from "../../src/game/waterShading.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -386,5 +386,31 @@ describe("the whitecap cells", () => {
     const [cx, cz] = (asked[0] as [number, number][])[0] as [number, number];
     expect(Math.floor(cx / 5)).toBe(2);
     expect(Math.floor(cz / 5)).toBe(9);
+  });
+});
+
+describe("the swell's normal faded by the pixel's footprint", () => {
+  // A 10 s peak: its deep wavenumber 4π²/(9.81 · 100) is 0.0402430 rad/m, a quarter turn over 39.03 m and a
+  // half turn over 78.07 m.
+  it("keeps the whole normal while a pixel steps a fraction of the swell's wavelength", () => {
+    expect(swellPixelKeep(10, 1, 0, [0.5, 0], [0, 0.5])).toBe(1);
+    expect(swellPixelKeep(10, 1, 0, [39, 0], [0, 39])).toBe(1);
+    // A step across the travel turns no phase.
+    expect(swellPixelKeep(10, 0, 1, [500, 0], [0, 0.5])).toBe(1);
+  });
+
+  it("keeps none of it from a half turn of the deep wave a step", () => {
+    expect(swellPixelKeep(10, 1, 0, [78.07, 0], [0, 0])).toBe(0);
+    expect(swellPixelKeep(10, 1, 0, [0, 0], [200, 0])).toBe(0);
+    expect(swellPixelKeep(10, 0, 1, [0, -100], [0, 0])).toBe(0);
+  });
+
+  it("fades between, by the larger of the two steps along the travel", () => {
+    expect(swellPixelKeep(10, 1, 0, [50, 0], [0, 0.1])).toBeCloseTo(0.80752266, 8);
+    expect(swellPixelKeep(10, 1, 0, [0, 3], [60, 0])).toBeCloseTo(0.44434664, 8);
+    // Travel (0.6, 0.8): the x step's 48 m along it, over the y step's 1.4 m.
+    expect(swellPixelKeep(10, 0.6, 0.8, [40, 30], [5, -2])).toBeCloseTo(0.86591380, 8);
+    // A longer peak's deep wave is longer: the same step keeps all of a 12 s swell.
+    expect(swellPixelKeep(12, 1, 0, [50, 0], [0, 0.1])).toBe(1);
   });
 });

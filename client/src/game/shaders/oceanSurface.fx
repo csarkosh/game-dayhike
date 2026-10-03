@@ -229,15 +229,20 @@ void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, o
 }
 
 // The swell's foam (foam, B, foamAge, depth) at the undisplaced point p from
-// an envelope vector env, as oceanSwellSum makes it once it has its envelope:
-// the break from p's own depth and Weggel's index (the coastline's row and the
-// two profile rows, six texels), the crest's phase from env's angle, and from
-// those the roll, the age and the trailing foam: the sum's own lines, so where
-// env is the sum's at p the foam is the sum's. The fragment stage passes env
-// interpolated between the ring's vertices, so the break and the age are a
-// pixel's own and the roll's edge stays sharp, with no seam at a crest, where
-// the age wraps.
-vec4 oceanFoamFromEnvelope(vec2 p, vec2 env) {
+// an envelope vector env and its magnitude envelope, as oceanSwellSum makes it
+// once it has its envelope: the break from p's own depth, Weggel's index (the
+// coastline's row and the two profile rows, six texels) and the magnitude, the
+// crest's phase from env's angle, and from those the roll, the age and the
+// trailing foam: the sum's own lines, so where env and envelope are the sum's
+// at p the foam is the sum's. The fragment stage passes both interpolated
+// between the ring's vertices, so the break and the age are a pixel's own and
+// the roll's edge stays sharp, with no seam at a crest, where the age wraps.
+// The magnitude is interpolated apart from the vector: the vector turns with
+// the crest's phase across a cell, so its interpolation is a chord, whose
+// length dips mid-cell to the cosine of half the turn, and the break would
+// scallop along the ring's lattice. The magnitude's own interpolation keeps
+// the break smooth, and the vector's angle still places the crest.
+vec4 oceanFoamFromEnvelope(vec2 p, vec2 env, float envelope) {
   float phaseDz;
   vec4 coast = oceanCoastAt(p.y, phaseDz);
   float d = p.x - coast.x;
@@ -247,7 +252,6 @@ vec4 oceanFoamFromEnvelope(vec2 p, vec2 env) {
   float h = bay.x + (cove.x - bay.x) * coast.z;
   float a = bay.y + (cove.y - bay.y) * coast.z;
   float b = bay.z + (cove.z - bay.z) * coast.z;
-  float envelope = length(env);
   float unbroken = 2.0 * envelope;
   float crestPhase = envelope > 0.0 ? atan(env.y, env.x) : 0.0;
   float hc = max(h, OCEAN_DRY_DEPTH);
@@ -258,6 +262,23 @@ vec4 oceanFoamFromEnvelope(vec2 p, vec2 env) {
   float roll = breaking * (1.0 - smoothstep(0.0, OCEAN_ROLL_WIDTH, mod(crestPhase, OCEAN_TWO_PI)));
   float trailing = breaking * exp(-foamAge / OCEAN_FOAM_LIFE);
   return vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);
+}
+
+// The share of the swell's interpolated normal a pixel keeps, from how far its
+// undisplaced point moves over the pixel (dpx, dpy, the derivatives of the
+// point across the screen): the vertex stage fades a component over two of the
+// ring's cells, and where a pixel spans more than that, far out at a grazing
+// eye, the ring still draws a swell the pixel cannot, which would crawl in
+// bands. The fade is the vertex's own, a quarter to a half turn of the phase
+// over a step, taken here at the peak period's deep-water wavenumber along the
+// swell's travel (oceanSwell.xy). The deep wavenumber is the least the peak
+// takes, since a wave shortens as it shoals, so this fades no more than the
+// pixel needs: it under-fades the shallows, where the pixels lie near the eye
+// and are fine enough to need no fade.
+float oceanSwellPixelKeep(vec2 dpx, vec2 dpy) {
+  float kDeep = OCEAN_TWO_PI * OCEAN_TWO_PI / (OCEAN_G * oceanSwell.z * oceanSwell.z);
+  vec2 u = oceanSwell.xy;
+  return 1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, kDeep * max(abs(dot(dpx, u)), abs(dot(dpy, u))));
 }
 
 // The spacing of the ring that draws p, from p's distance to the eye: a ring

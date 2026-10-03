@@ -456,7 +456,7 @@ describe("the sea's waves in the water plugin", () => {
     // the waves move it, once (oceanShader.test.ts pins how), and the swell goes on
     expect(displace).toContain("positionUpdated += oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);");
     expect(displace).toContain("vOceanSwellA = oceanVertexSwell;");
-    expect(displace).toContain("vOceanSwellB = vec4(oceanVertexEnv, 0.0, 0.0);");
+    expect(displace).toContain("vOceanSwellB = vec4(oceanVertexEnv, length(oceanVertexEnv), 0.0);");
   });
 
   it("sets OCEAN and asks for the stitch only with an ocean, and rebuilds the effect when one comes or goes", () => {

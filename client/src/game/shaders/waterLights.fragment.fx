@@ -6,18 +6,23 @@
 #ifdef OCEAN
 // The sea's swell at this pixel's undisplaced point, from the vertex stage,
 // which summed it at the ring's vertices to displace them: its normal, height
-// and drawn slope variance interpolated over the ring's triangle, the
-// normal's up part rebuilt from its other two (it is a unit vector pointing
-// up), and its foam made here from the interpolated envelope vector and this
+// and drawn slope variance interpolated over the ring's triangle, and its foam
+// made here from the interpolated envelope vector, its magnitude and this
 // pixel's own depth. The derivatives are taken here, in uniform control flow,
-// before any branch. The depth is the displaced surface's over the bed, so
-// the water's edge rises and falls with each wave.
+// before any branch. Where the pixel spans more of the swell than the ring's
+// cells do, its normal's x and z fade by the pixel's own share and its drawn
+// variance by the share squared, which hands that variance to the roughness,
+// and only then is the normal's up part rebuilt from the other two (it is a
+// unit vector pointing up). The depth is the displaced surface's over the
+// bed, so the water's edge rises and falls with each wave.
 vec2 wOceanDx = dFdx(vOceanXZ);
 vec2 wOceanDy = dFdy(vOceanXZ);
-vec3 wOceanNormal = vec3(vOceanSwellA.x, sqrt(max(1.0 - dot(vOceanSwellA.xy, vOceanSwellA.xy), 0.0)), vOceanSwellA.y);
+float wOceanKeep = oceanSwellPixelKeep(wOceanDx, wOceanDy);
+vec2 wOceanTilt = vOceanSwellA.xy * wOceanKeep;
+vec3 wOceanNormal = vec3(wOceanTilt.x, sqrt(max(1.0 - dot(wOceanTilt, wOceanTilt), 0.0)), wOceanTilt.y);
 float wOceanHeight = vOceanSwellA.z;
-float wOceanDrawn = vOceanSwellA.w;
-vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy);
+float wOceanDrawn = vOceanSwellA.w * wOceanKeep * wOceanKeep;
+vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);
 float wOceanChop = oceanShelter(vOceanXZ, SHELTER_CHOP);
 // The wind sea here: its height for the water's edge and the whitecaps, its
 // slopes faded by the pixel's footprint, both scaled by its share of the
